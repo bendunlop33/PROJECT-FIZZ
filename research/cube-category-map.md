@@ -244,6 +244,35 @@ That is a narrower claim than the question assumed, and it is a brand and positi
 
 **OPINION, and it is a hard constraint on the range.** In this format, "focus" means caffeine. The user's caffeine-free decision therefore leaves, for a focus variant: one sentence about pantothenic acid and no mechanism a customer will feel. This is A-052 restated and now confirmed by what the category actually does rather than by inference. **A caffeine-free focus cube is not a product the evidence supports. A mushroom cube is not a product at all.**
 
+### 4.5 What Waterdrop's previous vitamin range actually was, and whether the formulation changed (CSO, 2026-09-22)
+
+Archived product pages recovered from the 27 January 2024 captures of en.waterdrop.com. The benefit variants sat at bare slugs — `/products/boost`, `/products/focus`, `/products/glow`, `/products/relax`, `/products/youth`, `/products/love` — alongside `vibe`, `breeze`, `sky`, `flair`, `clean` and the ice teas.
+
+**FACT — the 2024 range, panels transcribed from the captures. Every one is ~2.0–2.1 g and stevia-sweetened.**
+
+| Variant | Declared vitamins per 500 ml | The botanical carrying the story |
+|---|---|---|
+| **BOOST** | C 20 mg (25%) · B6 0.63 mg (45%) · B12 1 µg (40%) | acai extract, blackcurrant leaf extract |
+| **FOCUS** | C 20 mg (25%) · **pantothenic acid 3.0 mg (50%)** · thiamine 0.44 mg (40%) | green coffee extract + coffee extract, lemon leaf; "low caffeine content (≤0.1 mg/100 ml)" |
+| **GLOW** | C 24 mg (30%) · thiamine 0.50 mg (45%) · vitamin E 1.8 mg (15%) | cactus fruit extract, mango |
+| **RELAX** | C 32 mg (40%) · thiamine 0.33 mg (30%) · biotin 17.5 µg (35%) | hibiscus extract, rose hip extract |
+| **YOUTH** | C 28 mg (35%) · niacin 7.2 mg (45%) · biotin 17.5 µg (35%) | **ginseng extract**, ginger |
+| **LOVE** | C 24 mg (30%) · B6 0.42 mg (30%) · folic acid 90 µg (45%) | **goji berry extract, schizandra**, pomegranate |
+
+**The architecture is the finding: every variant was exactly three vitamins plus one botanical.** The vitamins were cheap, light and claimable at 15% NRV; the botanical carried the meaning and could say nothing. And **FOCUS is the tell** — it is the only variant built on **pantothenic acid at 50%**, which is the single nutrient carrying the authorised "contributes to normal mental performance" claim (A-009). Waterdrop was reading the register in 2024 too.
+
+**FACT — did the formulation change? For the survivor, no. Not at all.**
+
+Today's **Microdrink BLACKCURRANT** declares C 20 mg (25%), B6 0.63 mg (45%), B12 1.0 µg (40%), at 2.0 g, stevia-sweetened, from acai extract, blackcurrant leaf extract and blackcurrant fruit powder. **That is BOOST's panel, mass, sweetener and ingredient list, unchanged.** BOOST was renamed to its flavour. Nothing was reformulated.
+
+**FACT — for the rest, yes, and the three-plus-one architecture is gone.** Today's **Microdrink LEMON** carries **seven** nutrients at a uniform 25% — C, B1, niacin, B6, folic acid, B12, pantothenic acid — and **no botanical extract of any kind**, sweetened with **sucralose**. It is not a renamed FOCUS; FOCUS's coffee-extract-and-pantothenic-acid construction does not survive anywhere in the current range.
+
+**FACT — the sweetener system fragmented.** All six 2024 benefit variants read were **stevia**. The current range mixes stevia (Blackcurrant, Microlyte Berry) with **sucralose** (Lemon, Microlyte Lemon-Mint, Microenergy, Ice Tea Peach). A brand that was uniformly stevia in January 2024 is now split.
+
+**OPINION — what this does to A-074, honestly.** It is strong circumstantial support and still not proof. The 2024 construction was **a benefit name + an unclaimable botanical + three token vitamins** — YOUTH on ginseng, RELAX on hibiscus, LOVE on schizandra, GLOW on cactus fruit. That is the textbook shape of an implied health claim, and the variants that survived are precisely the ones that never needed a botanical to mean something: BOOST/Blackcurrant (a fruit, not an adaptogen) and the composition-named lines. **But the same facts fit two other readings just as well** — botanical extracts are expensive and supply-volatile, and the benefit variants may simply have sold badly. Nothing recovered here distinguishes between the three. The food-law opinion at A-074 is still the thing that settles it.
+
+**Two things V-Drop should take from this regardless of which reading is right.** First, **three vitamins plus a botanical is a proven shippable formulation at 2.0 g** — Waterdrop ran twelve of them — so the mass budget for a benefit-led cube is established, not speculative. Second, **the survivor kept stevia and the new arrivals use sucralose**, which is a live question for a brand whose differentiator is taste.
+
 ---
 
 ## 5. Where the varied-benefit dry range already exists in the UK
