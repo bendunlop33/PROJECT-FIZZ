@@ -119,6 +119,74 @@ The user's instinct is well supported by the claim data — **iron carries eight
 
 ---
 
+## 3B. The "two a day" spec — and why it resolves almost everything
+
+User spec, 2026-09-22: **medium-to-high efficacy, designed so you could take two in a day, tasty, with a clear product architecture.**
+
+Two a day is the most consequential constraint given so far, because it sets the dosing arithmetic — and it happens to resolve three problems this project had been treating as separate.
+
+### 3B.1 The category leader already assumes two a day. It just doesn't dose for it.
+
+**FACT.** Waterdrop's "30 Day Hydration Set" is **60 servings** (https://en.waterdrop.com/products/microdrink-blackcurrant, read 2026-09-22). Its own pack maths assumes **two cubes per day**.
+
+**FACT.** The largest coherent product complaint in the review data is that **one cube does not adequately flavour 500 ml**, with an independently-reported workaround of using two — *"you need two cubes to make a good flavour in a pint so not as cheap as would like"* (`research/review-mining.md`).
+
+**So the customer is already taking two, the brand's own pack is built for two, and the formulation is dosed for one.** That is the gap stated as plainly as it can be: **Waterdrop assumes two and doses for one. Dose for two.**
+
+### 3B.2 The dosing rule this produces is clean
+
+**Set each cube at 50% NRV. Two cubes then deliver exactly 100% NRV of the day's needs.**
+
+| Nutrient | Per cube (50% NRV) | Two cubes | Approx. mass per cube |
+|---|---|---|---|
+| Vitamin D | 2.5 µg | **100% NRV** | ~12 mg as CWS powder |
+| Iodine | 75 µg | **100% NRV** | ~0.1 mg as potassium iodide |
+| Selenium | 27.5 µg | **100% NRV** | ~0.07 mg as sodium selenite |
+| Folate | 100 µg | **100% NRV** | ~0.1 mg |
+| Vitamin C | 40 mg | **100% NRV** | 40 mg |
+| Zinc | 5 mg | **100% NRV** | ~25 mg as bisglycinate |
+
+**About 80 mg of actives per cube.** Against a 2.0 g cube of which perhaps 0.5–1.0 g is available after the acid–carbonate couple, that leaves the overwhelming majority of the free mass for **flavour** — which is the differentiator. **Efficacy and taste stop competing.**
+
+**It also gives the proposition a sentence that is true and simple: one cube is half your day, two is all of it.** Waterdrop's equivalent is 25–50% NRV on three to nine nutrients at one cube. Berocca's is 300–970% on a B-complex.
+
+**Vitamin D is worth an exception.** Its NRV is only 5 µg, while NHS advice is 10 µg daily through the winter. Dosing D at 5 µg per cube (100% NRV each) gives **10 µg at two a day — the NHS winter figure** — and remains far below any upper level. **ESTIMATE/OPINION; confirm with the safety check below.**
+
+### 3B.3 The safety constraint, stated honestly
+
+**A product designed for two a day must be safe at two a day, and that is a different test from a single serving.** The binding question is not whether one cube sits under the NRV but whether **two cubes sit under the upper level** — and the nutrients with narrow headroom between NRV and upper level are the ones that decide the formulation: **iron, zinc, selenium, iodine, vitamin A, vitamin B6, copper and manganese.** Vitamin C and most B vitamins have wide headroom and are not the constraint.
+
+**I could not retrieve the EVM *Safe Upper Levels for Vitamins and Minerals* (2003) tables this session** — cot.food.gov.uk returned 404 on both paths and the EU mirror rate-limited. **So no upper-level figure is asserted anywhere in this document.** This is a named, cheap, specific task for `claims-regulatory`: pull the EVM SULs and Guidance Levels and set the per-cube ceiling for each nutrient at half the supplemental upper level. **Do it before any dose is fixed.**
+
+**One design consequence is already clear, though: if the two cubes carry *different* nutrients, nothing doubles.** The upper-level problem only bites when someone takes two of the same cube — so the Core must be safe at 2×, and the second cube should carry a largely different nutrient set. That is not just a safety accommodation; it is the architecture.
+
+### 3B.4 The architecture the spec implies — Core + Choice
+
+**Cube one: the Core.** The efficacy base, same every day — vitamin D, iodine, selenium, folate, vitamin C, zinc at 50% NRV each. This is the subscription anchor and the single acquisition funnel.
+
+**Cube two: your choice.** A different nutrient set, chosen by the customer, taken with the second bottle:
+
+| Second cube | Carries | Nutrient overlap with Core |
+|---|---|---|
+| **Restore** | iron + copper + vitamin A (+ the C in the Core completes the absorption pair) | minimal |
+| **Defence** | vitamin E + manganese + copper (+ Core's C, zinc, selenium complete the antioxidant set) | complementary, not duplicative |
+| **Hydrate** | sodium, potassium, magnesium, chloride | **none** |
+| **Mind** | iron + the B-complex (+ Core's iodine and zinc complete the cognitive set) | minimal |
+
+**Why this shape is right, and it satisfies every constraint the project has accumulated:**
+
+- **One product everyone buys.** The Core is the funnel — a single acquisition story, which is the only shape A-028 permits under D2C-only. The range lives in the second cube, which is sold to an existing customer, not acquired separately.
+- **It answers "one product can't do everything" without multiplying funnels.** The user's exact objection, resolved structurally.
+- **The combinations complete across the pair, not within one cube.** Core + Restore is the iron system. Core + Defence is the antioxidant set. That is more interesting than either cube alone and it is a genuine reason to buy two.
+- **Nothing doubles**, so the upper-level headroom is spent once.
+- **Two cubes = two bottles = a litre of water**, which supports the drink-more-water behaviour the format exists for.
+- **Sixty cubes a month is a real subscription** — and it matches Waterdrop's own pack cadence, so the usage assumption is not ours alone.
+- **Flavour variety across the pair** answers the flavour-fatigue theme in the review data.
+
+**The honest caveats, unchanged:** the taste test has not happened; iron's metallic note in an effervescent is unsolved and constrains the Restore cube specifically; magnesium cannot be meaningfully dosed in any cube, so Hydrate is a source of it and not a solution; and **nobody in the review data asked for any of this.**
+
+---
+
 ## 4. Why three, and why these three
 
 - **Three distinct jobs, no overlap.** Everyday coverage · hydration · antioxidant. A customer can articulate which one they want without help, which is the test the Vitamin Well range fails (Reload and Recover are formulation-identical).
