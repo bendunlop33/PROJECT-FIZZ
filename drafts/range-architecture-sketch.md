@@ -68,6 +68,57 @@ Each does one thing, passes its own category's benchmark (`category-benchmarks.m
 
 ---
 
+## 3A. The candidate slot map — scarcity × claim set
+
+**CSO CORRECTION FIRST.** This project has twice said "focus" has only one authorised sentence (pantothenic acid → normal mental performance). **That was wrong.** The word *focus* is not claimable, but the territory around it is far better supported than recorded:
+
+- **Cognitive function — 3 nutrients: iodine, iron, zinc.** A complete, small, authorised set.
+- **Psychological function — 8: biotin, folate, magnesium, niacin, thiamine, B12, B6, vitamin C.**
+- **Nervous system — 11:** the above plus copper, iodine, potassium, riboflavin.
+- **Mental performance — 1: pantothenic acid.**
+
+**And the striking part: iodine and iron are the two scarcest nutrients in the entire UK market (3/71 and 5/71) — and they are two of the three nutrients carrying the cognitive-function claim.** A cognitive SKU is therefore both the best-claimed and the least-contested territory available, with no caffeine and no botanical.
+
+### The scarcity map — where the whitespace physically is
+
+From `ingredient-benchmark.csv`, 71 panelled UK products. **Scarcity is the opportunity: a nutrient almost nobody declares is a nutrient nobody can answer quickly.**
+
+| Nutrient | Declared by | Unlocks |
+|---|---|---|
+| **Iodine** | **3/71 (4%)** | cognitive function · nervous system · thyroid · skin · **no adult everyday-vitamin drink in the UK declares it** |
+| **Iron** | **5/71 (7%)** | 8 claims of its own — cognitive, immune, tiredness, red blood cells, oxygen transport, cell division |
+| **Copper** | **6/71 (9%)** | oxidative stress · nervous system · iron transport · immune |
+| **Manganese** | **6/71 (9%)** | oxidative stress · connective tissue · bones |
+| **Vitamin A** | **7/71 (10%)** | iron metabolism · immune · skin · vision |
+| **Selenium** | **9/71 (13%)** | oxidative stress · immune · thyroid · hair · nails |
+| **Vitamin E** | **9/71 (13%)** | oxidative stress |
+| **Vitamin D** | **13/71 (18%)** | immune · bones · muscle · calcium absorption |
+| Vitamin K | 4/71 (6%) | bones · blood clotting |
+
+### Five candidate slots, each a complete authorised set on scarce nutrients
+
+| Slot | The complete set it can own | Scarcity anchor | Occupied? |
+|---|---|---|---|
+| **Everyday / Multi** | the five coverage markers: D, B2, folate, **iodine**, selenium | iodine 3/71 · D 13/71 | **2 of 71 products carry all five; 38 carry none** |
+| **Mind / Cognitive** | cognitive function complete: **iodine + iron + zinc** (all 3), plus 8 psychological and 11 nervous-system nutrients | **iodine + iron — the two scarcest** | No UK drink carries all three at ≥15% NRV |
+| **Restore / Iron** | the iron system complete: **iron + C + copper + B2 + A** (all 5), plus iron's own 8 claims and the 4-nutrient red-blood-cell set | iron 5/71 · copper 6/71 · A 7/71 | **Phizz Daily Immune+ completes it** — but sells it as immunity |
+| **Defence / Antioxidant** | oxidative stress complete: copper, **manganese**, B2, selenium, C, E, zinc (all 7) | manganese 6/71 · copper 6/71 | **No UK drink completes it.** Best are three at 6/7 |
+| **Hydrate** | no authorised hydration claim exists for an enhancer — competes on declared sodium and potassium instead | — | 16 of 41 hydration products declare no sodium |
+
+**Note what the scarcity column shows: iodine, iron, copper, manganese and vitamin A between them anchor four of the five slots, and not one of them is carried by Waterdrop in any product.** That is the concrete shape of the whitespace.
+
+### On a women's variant
+
+The user's instinct is well supported by the claim data — **iron carries eight authorised claims, more than almost any nutrient**, and around it sit B6 → *regulation of hormonal activity*, zinc → *fertility and reproduction*, folate → *maternal tissue growth during pregnancy*, and the Article 14 folic acid neural-tube claim at 400 µg with its mandatory accompanying statement.
+
+**But two logged findings argue against gendering it.** A-036 found that **gender does not price** — Boots charges the same for men's and women's — and the user's own 2026-09-22 decision set variants as **lifestyle-based rather than gender-based**.
+
+**The reconciliation: build the iron product, do not gender it.** Iron deficiency is not exclusively female, iron is the second-scarcest nutrient in the market, and the iron system is a complete authorised combination. A *Restore* or *Iron+* SKU serves the same customer need, carries the same claims, avoids the A-036 pricing finding and respects the logged decision. Gender-specific formulation can sit underneath it later if the evidence supports it.
+
+**One hard constraint on any iron SKU: taste.** Iron is metallic in an effervescent and this range's whole premise is tasting good. The precedent exists — **Berocca Mind ships 12 mg of iron in an effervescent tablet today** — so it is solvable, but it is the single biggest formulation risk in the range and should be prototyped before the SKU is committed.
+
+---
+
 ## 4. Why three, and why these three
 
 - **Three distinct jobs, no overlap.** Everyday coverage · hydration · antioxidant. A customer can articulate which one they want without help, which is the test the Vitamin Well range fails (Reload and Recover are formulation-identical).
