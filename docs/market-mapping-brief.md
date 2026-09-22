@@ -5,6 +5,15 @@
 **Primary owner:** `market-mapper`. §5 (brand codes) may be split with `customer-insight`; §7 is a `red-team` hand-off.
 **Status of this document:** a scope of work, not a finding. Nothing in here is evidence.
 
+> ### Hard constraint — user direction, 2026-09-22
+> **No model, and no analysis that depends on a chain of estimates.**
+>
+> No spreadsheet. No market sizing, TAM or SAM. No forecasts, no growth rates, no share estimates, no quantified opportunity. The priority is understanding the market as it actually is.
+>
+> The test for every deliverable in this brief: **could someone verify it by looking?** A brand's own page, a search results page, an advertisement, a pack, a withdrawn product. That is the evidence this work runs on. Anything you arrive at by assuming your way to a number does not belong here — and a number is the most confident-looking thing on a page, which is exactly why it is the most dangerous when it is invented.
+>
+> Where judgement is unavoidable, make it one labelled OPINION sentence, not a calculation.
+
 ---
 
 ## 0. Why this brief exists
@@ -42,6 +51,10 @@ Four sub-questions, in priority order. If the work runs out of time, it answers 
 **In scope:** category definition and frames of reference; category entry points; competitive adjacency as the customer encounters it; positioning axes derived from customer language; brand codes, verbal and visual; whitespace stress-testing; category-creation precedents; defensibility.
 
 **Out of scope — do not reopen:** unit economics, margin, COGS, CAC, subscription LTV, pack architecture, postage, the price ladder, price-per-serving and price-per-gram-of-active comparisons. All of that is `pricing-economist`'s and is either done or deliberately parked. Do not re-derive it, do not re-argue it, and do not let a positioning finding be expressed as a pricing recommendation.
+
+**Also out of scope, per the constraint above:** market sizing, TAM and SAM, growth forecasts, category share estimates, and any spreadsheet whatsoever. `model/unit-economics.xlsx` stays where it is — not opened, not extended, not cited. It is parked, not wrong; `drafts/pricing-recommendation.md` likewise.
+
+**This brief overrides the `market-mapper` agent's standing instructions where the two conflict.** That agent's default scope makes the price ladder and `research/competitors.csv` its priority sections. For this piece of work neither is required, and neither should be produced or updated. Its scoring rubrics (functional intensity, portability) stay available if a positioning map needs them.
 
 **The one exception.** Price may be treated as a **positioning signal** — a quality cue, a permission-to-believe, a shelf-position statement — where it is doing semiotic work rather than arithmetic. "LYMA's £199 price point is itself the claim" is in scope. "V-Drop's contribution margin at £0.833 is 9.0%" is not. If a section starts producing decimals, it has drifted.
 
@@ -89,7 +102,9 @@ So, for every territory, the map must carry:
 - the evidence for that hypothesis, and its strength;
 - a **displacement verdict: real / partial / rhetorical.** A territory that scores "rhetorical" stays on the diagram, greyed, with its verdict printed next to it. It does not get quietly dropped, and it does not get counted.
 
-**Deliverable:** `research/share-of-throat.md` plus a diagram in `research/charts/`. Any territory-level market size is illustrative context only and is marked as such — see §6.
+**Deliverable:** `research/share-of-throat.md` plus a diagram in `research/charts/`.
+
+**Do not size the territories.** Name who is in each one and what we would be displacing. A number beside a territory is a guess wearing a suit, and it is the specific thing the user has ruled out — it is also, precisely, what makes the HOLY slide unusable as analysis.
 
 ### W2 — Category entry points (Q1)
 
@@ -177,7 +192,7 @@ House rules 1, 6, 7 and 9 in `CLAUDE.md` apply in full — sourced URLs with che
 1. **Read pages directly.** As of 2026-09-22 the egress restrictions that forced earlier sessions onto search-engine summaries have largely lifted: gov.uk, legislation.gov.uk, wildnutrition.com, ankhway.com and appliednutrition.uk were all read directly this session. **Re-test before assuming any domain is blocked** — several "blocked" notes in the register are now out of date. Known still-refusing, and refusing at their own edge rather than ours: `royalmail.com`, `boots.com`, `mailcoms.co.uk`. Record *how* a page failed, not just that it did.
 2. **Positioning claims need a primary artefact.** A statement about how a brand positions itself is evidenced by the brand's own page, pack or advertising — not by a listicle, a review site or a competitor's deck. Screenshot or quote briefly, and date it.
 3. **Separate observation from inference, visibly.** "Waterdrop's palette is pastel and its hero image is the object, not a person" is an observation. "Waterdrop is therefore selling design over function" is an inference. The existing research is generally good at this; keep it up.
-4. **No new numbers in the assumptions register without the calculation shown.** And nothing from a syndicated market-sizing house as FACT, per §5.
+4. **Prefer no number to a soft one.** If a question can be answered by description, describe it. If it can only be answered by estimating, the honest output is the named gap, not the estimate. Nothing from a syndicated market-sizing house enters the register as FACT, per §5.
 
 ---
 
@@ -191,7 +206,7 @@ House rules 1, 6, 7 and 9 in `CLAUDE.md` apply in full — sourced URLs with che
 | `research/brand-codes.md` | W5 | 12–15 brand audit; verdict on H2 |
 | `research/whitespace-and-precedent.md` | W6 | Graveyard check; five category-creation cases; defensibility verdict on Q4 |
 | `research/charts/` | W1, W4 | Share-of-throat diagram; two positioning maps |
-| `notes/assumptions.md` | all | A-065 opened for H3; updates to A-016, A-022, A-039, A-045, A-049, A-050, A-051; new rows as needed |
+| `notes/assumptions.md` | all | A-065 opened for H3. Touch A-016, A-022, A-039, A-049, A-050 and A-051 only where this work genuinely changes them. **Do not open speculative rows** — the register tracks what we know, and a good session should shrink it as often as it grows |
 
 Do not overwrite `research/competitor-map.md` or `research/vitamin-category-map.md`. They answer a different question and remain the record of it (house rule 8).
 
@@ -212,6 +227,7 @@ Do not overwrite `research/competitor-map.md` or `research/vitamin-category-map.
 - Treating syndicated market sizes as facts because they carry a research house's name.
 - Confirming H1 and H2 because the user has already decided them. They are decisions about intent; this brief tests whether the market agrees, and the user has asked for honest challenge throughout this project.
 - Six workstreams at half depth. Three finished beats six started.
+- Producing a number where an observation was asked for — a sized territory, a modelled opportunity, a forecast. The brief has no numeric deliverables by design.
 
 ---
 
