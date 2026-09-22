@@ -178,6 +178,31 @@ Reading the NDNS findings in §2 as gaps rather than as a list:
 
 ---
 
+## 5C. Can you use a B2 dose that does not colour the water? Probably yes — and it is still fully claimable
+
+**The concentration arithmetic is the whole answer.** Riboflavin's colour is intense — it is food colour E101 precisely because very little of it goes a long way — so the question is what concentration lands in the glass, not what goes in the cube.
+
+| B2 per cube | % NRV | Concentration in 500 ml | Claims unlocked |
+|---|---|---|---|
+| 0.21 mg | **15%** | **0.42 ppm** | **All nine** |
+| 0.35 mg | 25% | 0.70 ppm | All nine |
+| 0.70 mg | 50% | 1.4 ppm | All nine |
+| 1.4 mg | 100% | **2.8 ppm** | All nine |
+
+**ESTIMATE:** riboflavin is generally perceptible as a yellow tint in a clear solution somewhere around 1–2 ppm and is distinctly yellow above roughly 5 ppm. **On that basis 15–25% NRV (0.4–0.7 ppm) should sit below the visible threshold, and 100% NRV (2.8 ppm) probably would not.** The threshold figures are reasoned, not sourced — **a bench test settles this in an afternoon and should, before anything is committed.**
+
+**Three things make the low dose more comfortable than it looks:**
+
+1. **The claim threshold and the colour threshold do not conflict.** All nine riboflavin claims are conditioned on **15% NRV = 0.21 mg**. So the dose that is invisible in the glass is also the dose that is fully claimable. **You do not have to choose between saying it and hiding it.**
+2. **Use riboflavin-5′-phosphate sodium, not riboflavin.** Plain riboflavin is poorly water-soluble, which in an effervescent risks undissolved specks — and **dissolution and grittiness are already live complaints in this category** (`review-mining.md` §2.3). **Riboflavin 5′-phosphate, sodium is far more soluble and is a permitted GB source form** — Schedule 2 Part A, item 6 VITAMIN B2 (b), read directly at A-043. It also disperses more evenly, so what colour there is arrives uniformly rather than as visible flecks.
+3. **The flavour system is already coloured.** Waterdrop's own cubes carry anthocyanins for the berry variants and carotenes for citrus. **A faint yellow cast disappears entirely into an existing colour** — and it would only be conspicuous in a deliberately water-clear variant.
+
+**A caveat worth separating: the drink and the urine are two different questions.** Yellow urine is a concentration effect in the kidney, not in the glass, and it is dose-dependent — it appears well below the doses Berocca uses but is not guaranteed absent at every level. **At 15–25% NRV it is unlikely; the bench test should check both, because one is a taste-and-aesthetics question and the other is a customer-perception question.**
+
+**OPINION — and it resolves §5B's dilemma rather than accepting it.** The apparent trade-off between "B2 gives visible proof the product works" and "B2 ruins clear pretty water" is not forced. **The range can hold both positions at different doses:** a low, invisible, fully-claimable B2 in the everyday cube, and a higher dose in a cube that is coloured anyway and where visible effect is an asset — the antioxidant SKU, which needs B2 to complete its set and will carry a colour regardless.
+
+---
+
 ## 6. What is still not evidenced
 
 - **Nobody asked for this.** The review mining found no demand for combinations or for higher dosing; the largest complaint is flavour intensity. This document says what would work, not what would sell.
