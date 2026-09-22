@@ -2,7 +2,9 @@
 
 **Author:** `market-mapper` · **Date:** 2026-09-22 · **Brief:** answer A-035 (creatine) and A-036 (gender-targeted vitamins), and judge the proposed five-range architecture.
 
-**Scope note.** This file is additive. It does **not** modify `research/competitor-map.md` or `research/format-options.md` (house rule 8). It appends 29 new rows to `research/competitors.csv` (now 74 rows) using that file's existing header and conventions.
+**Scope note.** This file is additive. It does **not** modify `research/competitor-map.md` or `research/format-options.md` (house rule 8). It appends **32 new rows** to `research/competitors.csv` (now 77 rows) using that file's existing 26-column header and conventions.
+
+**Mid-task addition (coordinator, 2026-09-22):** two user-named positioning references were added and are covered in **§5A (Wild Nutrition)** and **§5B (Ankhway)**. §5A materially revises the pricing conclusion of my first run; that revision is stated openly in §5A.2 rather than quietly reconciled.
 
 ---
 
@@ -410,6 +412,8 @@ The reasoning, stated as plainly as I can:
 - **One of the five is actively unsafe.** Mind + creatine pairs an active whose cognitive claim was refused by EFSA with a botanical 78% of Britons have never heard of, in a tablet that cannot carry either at a studied dose.
 - **One of the five enters at 9.5–13.9× the own-label price of the same format.** Everyday vitamins in an effervescent tablet is the single worst price comparison available to this business.
 
+**One correction to my own first-run reasoning, made explicit.** The two brands the user named have moved my position on *price* but not on *architecture*. Wild Nutrition shows the category's ceiling is ~£1.01/serving sustained in real UK distribution, so **£0.833 is not the problem**. Ankhway shows the Mind range is beaten on price-to-potency by a live UK competitor at a lower price. And Wild Nutrition's own history — a decade from one founder's expertise to ~90 SKUs — is the clearest available evidence that **range breadth is an output of a business, not an input to one.** All three findings point the same way: fewer ranges, priced confidently, with a mechanism the customer can name.
+
 ### The subset I would back
 
 **Launch one range. Energy. To S1, at the mid-afternoon dip.** It is the only range with an evidenced segment (3.95, wins under every weighting tested), a daily non-discretionary occasion, a weak incumbent behaviour, no category education requirement, and a proposition the market already understands. Resolve A-024 (the ≤150 mg/L reformulation question) and ship it alone.
@@ -425,6 +429,10 @@ The reasoning, stated as plainly as I can:
 ## 12. Gaps, and what I could not verify
 
 **Must be read directly by someone with browser access, in priority order:**
+
+0a. **ankhway.com/products/mushroom-gummies** — the £29.99 / £23.99 price pair rests on a **single review site**, and Amazon UK listings span £12.99–£35.99. §5B argues this product undermines the whole Mind range; that argument must not be acted on until the brand's own page is read. Also confirm gummies per serving (2) and whether the 250 mg-per-species figure is per serving or per gummy.
+
+0b. **wildnutrition.com** — the standard Women's Daily Multi Nutrient UK RRP (not obtained; the 45+ sibling at £30.40 is the read-across), the exact subscription discount on that SKU, and whether the 20% is the standing rate or promotional. This is the anchor on which §5A.2's revised pricing conclusion rests.
 
 1. **vitabiotics.com** — Wellman Original, Wellwoman Original, Wellman Max, Wellwoman Max RRPs and pack regimens; confirm the 28-day assumption behind the Max per-day figures (this underpins §3.1 and the closest price analogue to V-Drop).
 2. **vitabiotics.com/pages/subscribe** — confirm the 20/25/30% tier structure and whether it applies across the range.
@@ -447,11 +455,14 @@ The reasoning, stated as plainly as I can:
 
 | ID | Action |
 |---|---|
-| A-035 | Updated to **DISPROVED** with dose and claims evidence, 2026-09-22 |
-| A-036 | Updated to **DISPUTED** with the full price ladder and the gender-vs-life-stage finding, 2026-09-22 |
-| A-040 | **New.** Premium price in UK vitamins is carried by specificity, dose or proof — never by format or gender |
-| A-041 | **New.** A gendered effervescent vitamin is unoccupied whitespace, but the routine-vs-occasion job mismatch is the likely reason |
-| A-042 | **New.** The tablet payload constraint (A-019/A-034) does not bind for a vitamin range |
-| A-043 | **New.** Under D2C-only, each additional range is an independent CAC line |
+| A-035 | Updated to **DISPROVED**. `claims-regulatory` had already settled the claims limb in parallel; I appended the market-side evidence (UK £/gram of creatine by format, the 6–9× convenience premium and its £0.744–0.833 ceiling, and the absence of any UK cognitive-creatine precedent). |
+| A-036 | Updated to **DISPUTED**, with the full six-tier ladder, the gender-vs-life-stage finding, the format constraint, the Vitabiotics scale and subscription threat, and the Care/of precedent. |
+| A-039 | Updated to **DISPUTED** (was OPEN). The natural-positioning / effervescent conflict is real; the only precedents are mid-market brands using "free-from" rather than food-state language; plus the March 2026 ASA ruling against Wild Nutrition. |
+| A-040 | Updated to **CONFIRMED**. Ankhway exists, the spelling is correct, it is UK-facing, and its price-to-potency beats V-Drop Mind decisively. |
+| **A-049** | **New.** Premium price in UK vitamins is carried by specificity, dose or proof — never by format, design or gender. Six-tier ladder documented. |
+| **A-050** | **New.** A gendered effervescent vitamin is unoccupied whitespace, but the routine-vs-occasion job mismatch is the likelier reason than oversight. Includes the finding that the payload constraint lifts for vitamins — and that parity is therefore also the ceiling. |
+| **A-051** | **New.** Under D2C-only, each additional range is an independent CAC line; range breadth is an output of a business, not an input. |
+| A-019 / A-026 / A-031 / A-034 | **Cross-reference only (not edited).** Ankhway (§5B) adds a third independent argument against the Mind SKU. Flagged to the CSO rather than written into those rows, since they are jointly owned. |
+| A-041 (claims-regulatory) | **Conflict flagged.** `claims-regulatory` records cordyceps as subject to an FSA stop-sale instruction. **Ankhway contains cordyceps**, so the benchmark product in §5B may itself be non-compliant — which weakens it as a *durable* competitor while leaving its price-to-potency arithmetic intact. The same instruction applies to V-Drop Mind. |
 
-**Note on numbering:** A-037, A-038 and A-039 have been deliberately left free for `claims-regulatory`, which is running in parallel and was also allocated IDs from A-037. If it claims fewer than three, the gap should be closed or documented at the next register tidy.
+**Note on numbering.** I originally reserved A-037–A-039 for `claims-regulatory`. In the event it claimed **A-037 through A-048**, so my new items were renumbered to **A-049–A-051** on writing. **A-039 and A-040 were already opened by the CSO for exactly the two questions the coordinator sent mid-task (the natural/effervescent conflict and the Ankhway identity), so I updated those rows rather than creating duplicates.** No ID collision occurred.
