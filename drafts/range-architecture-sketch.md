@@ -187,6 +187,41 @@ Two a day is the most consequential constraint given so far, because it sets the
 
 ---
 
+## 3C. Core + Choice is wrong. Withdrawn — each cube should be complete in itself.
+
+**User challenge, 2026-09-22:** *would customers get frustrated having to take two products with them? Why not just have different products?*
+
+**The challenge is right and §3B.4 is withdrawn.** The reasoning that produced it does not survive scrutiny:
+
+**The safety rationale was already solved.** Core + Choice split nutrients across two different cubes so that "nothing doubles" and the upper-level headroom is spent once. **But the 50% NRV dosing rule solves that on its own** — if each cube sits at 50% NRV, two of the *same* cube is 100% NRV and still inside the headroom. The pairing was solving a problem the dosing rule had already solved, and it charged the customer friction for the privilege.
+
+**And the review data points the other way on both counts.**
+
+- **FACT — portability is one of the few things Waterdrop is consistently praised for:** *"convenient to take on the go"*, recurring positive (`review-mining.md` P4). That praise is about the simplicity of one cube in a pocket. **An architecture that requires carrying and distinguishing two different cubes spends the format's clearest existing strength.**
+- **FACT — the per-cube plastic pod is already a recurring complaint** (5 occurrences), and it *"collides head-on with the brand's sustainability story"* — *"more waste than vitamin tablets"* (P1). Two cubes a day doubles the pod count whichever architecture is chosen, but a **two-different-cubes** regime also makes the waste visibly deliberate rather than incidental.
+- **No brand in the 97-product dataset sells a pair-it-up architecture.** Waterdrop's own 30-day pack is 60 servings of chosen flavours, not a morning cube and an afternoon cube. **The absence is not proof, but nobody has found it worth trying.**
+
+**OPINION: Core + Choice had two real benefits and both accrue to the business, not the customer** — it forces a second SKU into the basket, and it lets the range hit higher daily totals across more nutrients. Neither survives a test that starts from *"a product that truly works and delivers what you need"*.
+
+### The corrected architecture: four complete products, take one or two of the same
+
+Each cube is a whole proposition. **50% NRV per nutrient, so one cube is half your day and two is all of it — of that cube's own set.** No pairing, nothing to remember, nothing extra to carry.
+
+| SKU | The complete set it carries | Why it exists |
+|---|---|---|
+| **Daily** | vitamin D, iodine, selenium, folate, vitamin C, zinc (+ B-complex) | The evidenced UK shortfalls (`efficacy-design-basis.md`). Only 2 of 71 products carry all five coverage markers; 38 carry none |
+| **Defence** | the complete antioxidant set — copper, manganese, riboflavin, selenium, vitamin C, vitamin E, zinc | **No UK drink completes it.** Best in market is 6/7 |
+| **Restore** | the complete iron system — iron, vitamin C, copper, riboflavin, vitamin A | Iron is the second-scarcest nutrient in the market (5/71) and a worsening UK shortfall |
+| **Hydrate** | real declared sodium and potassium, plus magnesium and chloride | 16 of 41 hydration products declare no sodium; Microlyte Berry is ~63 mg |
+
+**What the second cube is now for: more of the same, or a different flavour.** That is exactly how the category already works — Waterdrop sells 60 servings and lets you pick flavours. Two a day is a **dose and hydration** decision, not a product-combining one.
+
+**This is also a better answer to the user's original range brief.** "You don't want one product that does everything" is satisfied by four products that each do one thing completely — not by one product split across two cubes, which is the same complexity moved onto the customer.
+
+**One open decision it forces:** four complete SKUs against the logged **3-product cap**. Hydrate is the weakest of the four on the efficacy test — it is the only one with no authorised claim available at all (§2.4 of `opportunity-areas.md`) — so if the cap holds, that is the one to drop or defer. **User decision, not a CSO one** (house rule 3).
+
+---
+
 ## 4. Why three, and why these three
 
 - **Three distinct jobs, no overlap.** Everyday coverage · hydration · antioxidant. A customer can articulate which one they want without help, which is the test the Vitamin Well range fails (Reload and Recover are formulation-identical).
