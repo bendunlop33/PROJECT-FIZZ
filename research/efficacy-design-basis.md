@@ -203,6 +203,40 @@ Reading the NDNS findings in §2 as gaps rather than as a list:
 
 ---
 
+## 5D. "Or would it not have any benefit?" — correct. §5C was claims-led thinking in efficacy clothing
+
+**The user's question lands, and §5C above should be read with this correction attached.**
+
+§5C resolved the B2 dilemma by pointing out that the invisible dose (15% NRV) is also the fully claimable dose. **But that resolves it by choosing the sayable option — which is precisely what §1 of this document says not to do.** I wrote *"a product designed to 15% NRV is designed to be sayable, not to be effective"* and then, four sections later, designed to 15% NRV.
+
+### What 0.21 mg of riboflavin actually does
+
+**It is about 15% of a day's requirement.** For someone whose diet already delivers riboflavin at or above the RNI — which NDNS intake data says is most adults — **a 15% top-up is a marginal addition to an adequate intake. It does not correct anything.** For someone with genuinely poor status, correcting it takes the RNI or more, not a sixth of it.
+
+**And a corrective dose colours the water.** ~1.4 mg per cube is 2.8 ppm in 500 ml, which is above the tint threshold. **There is no dose that both fixes a riboflavin shortfall and stays invisible.** §5C implied there was; there is not.
+
+### The one honest argument for a small dose, stated properly
+
+**Population top-ups do work — that is the entire logic of food fortification**, and UK flour fortification operates at modest levels precisely because shifting a whole distribution a little moves the tail above threshold. A 15% addition across many people is not nothing at population level.
+
+**But that is a different promise from the one this brand is making.** "Truly works and delivers what you need" is a claim about the individual drinking it. **A 15% top-up does not carry that promise, and dressing it in nine authorised claims makes the gap between what is said and what is delivered wider, not narrower** — which is the exact criticism this project has levelled at Waterdrop's 15% NRV tier and at Berocca's 900%.
+
+### Revised position on B2
+
+**Do not put token riboflavin in a cube to collect nine claims. That is the behaviour we have spent this project criticising.**
+
+The defensible options are:
+
+1. **A real dose where colour is acceptable.** The **antioxidant** cube needs riboflavin to complete its seven-nutrient set and will carry a flavour colour anyway. Put ~100% NRV there and let it be yellow. **The visible colour becomes honest proof rather than a defect** — the only perceptible signal any nutrient in this range produces.
+2. **Leave it out of the everyday cube**, or accept the tint there too. **Do not include 0.21 mg and call it a benefit.**
+3. **If B2 is included at a token level for set-completion, say so internally and never imply efficacy from it.** The claim is lawful; the benefit is not demonstrated.
+
+**This also generalises, and it is the more useful output.** **Every nutrient in the range should be tested the same way: is this dose correcting a gap, or collecting a claim?** The nutrients that pass on current evidence are vitamin D (the diet delivers almost none), selenium and folate (real status gaps, and folate's is a 31-percentage-point biomarker shift in women of childbearing age), iodine and iron (worsening shortfalls). The ones at risk of being claim-bait are riboflavin, vitamin A, manganese, calcium and vitamin C beyond 100% — **all of which the range would otherwise carry mainly to complete sets.**
+
+**That is an uncomfortable finding for the combination architecture**, and it should be faced: **completing an authorised set and delivering efficacy are different objectives, and the antioxidant set in particular is assembled from nutrients chosen by the register rather than by need.**
+
+---
+
 ## 6. What is still not evidenced
 
 - **Nobody asked for this.** The review mining found no demand for combinations or for higher dosing; the largest complaint is flavour intensity. This document says what would work, not what would sell.
