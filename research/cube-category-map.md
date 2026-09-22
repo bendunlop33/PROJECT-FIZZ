@@ -213,6 +213,37 @@ The question "how functional is Waterdrop vs Vitamin Well, and is that the gap?"
 
 That is a narrower claim than the question assumed, and it is a brand and positioning claim rather than a category one. It also happens to be exactly the territory the user's 2026-09-22 decision already staked out — functional and premium, explicitly not sport. **Whether that position is defensible is Q4, not Q1: Waterdrop could re-point Microlyte at everyday wellness without reformulating anything.**
 
+### 4.3 Can Microlyte replace a multivitamin? No — and the reason reopens something (CSO, 2026-09-22)
+
+**FACT — what Microlyte Berry actually declares** (direct read): 9 vitamins — C 100%, A 20%, E 30%, thiamin 50%, niacin 50%, B6 50%, B12 50%, biotin 50%, pantothenic acid 50% — and 4 minerals, all at 15%: magnesium, calcium, chloride, zinc.
+
+**FACT — what it omits, measured against the nutrients a standard GB multivitamin carries:** **vitamin D, riboflavin (B2), folate, vitamin K, iron, iodine, selenium, copper, manganese, chromium.** Cross-checked against the other two Waterdrop lines: **B2 and vitamin D are absent from every Waterdrop product read in this exercise.** Microdrink Lemon carries folic acid at 25%; Microlyte does not.
+
+**OPINION.** Microlyte is a B-complex-plus-C electrolyte drink, not a multivitamin. It fails as a multivitamin replacement on **coverage, not on dose** — and it omits the two nutrients UK public health actually talks about: vitamin D, which the NHS advises through the winter months, and folate.
+
+**And this is the part that matters, because it cuts against §3's conclusion.** §3 established there is no *dosing* headroom above Microlyte in a ~2 g cube. That stands. **But there is coverage headroom, and it is cheap in mass.** Full-NRV riboflavin (1.4 mg), folic acid (200 µg), iodine (150 µg), selenium (55 µg) and vitamin D (5 µg) together weigh well under 10 mg of actives — nothing like the bulky-mineral problem at A-066. **The nutrients Waterdrop leaves out are, with one exception, the ones that cost almost no mass at all.**
+
+**So the honest form of the residual opportunity is not "more of the same nutrients". It is "the nutrients they have left out".** That is a different and better-founded proposition than the one the question started with.
+
+**Three caveats before anyone builds on it, and they are testable rather than fatal:**
+- **Riboflavin is bright fluorescent yellow-green in solution.** For a brand whose product is *visibly pretty water*, that is a plausible deliberate exclusion rather than an oversight. It would need formulating around, or owning.
+- **Vitamin D is fat-soluble** and needs a cold-water-soluble encapsulated form — real cost, real mass multiplier, not trivial.
+- **Iron in an effervescent is a known taste problem** (metallic), and it collides head-on with the taste-and-ease differentiator. Iron is the one omission with an obvious innocent explanation.
+
+**Recommendation: this is the single most promising thread left in the map, and it is cheap to settle** — one formulator conversation on whether D, B2, folate, iodine and selenium can go into a 2 g cube without wrecking colour or taste.
+
+### 4.4 Mushroom and "focus" in this format — three independent walls
+
+**Mass.** A-034 records that no effervescent tablet anywhere carries a gram-scale mushroom extract. Studied mushroom doses run 500 mg–2 g; a 2.0 g cube is 50–75% acid and carbonate before anything else. **There is no room, at any dose worth taking.**
+
+**Law.** Botanicals carry **zero** authorised GB claims (A-009 limb 2). *C. militaris* is under an FSA stop-sale (A-041). Lion's mane concentrated extracts lean novel (A-042, A-055). And A-047 finds that "nootropic", "adaptogen", "focus", "brain" and "boost" are each claims-risky, several ASA-ruled. **Nothing lawful can be said about a mushroom in a GB food supplement.**
+
+**Taste.** A-034 again: bitter botanicals resist taste-masking without a mass penalty — a direct collision with the taste-and-ease differentiator.
+
+**On "focus" specifically — what the market actually does is the answer.** The only authorised GB sentence is "Pantothenic acid contributes to normal mental performance", at 0.9 mg. **FACT:** Waterdrop's focus product is **Microenergy**, merchandised under "For Work / For Afternoon Slumps / **For Focus** / For Pre- & During Workout", and its mechanism is **caffeine** — the panel is six nutrients at exactly 50% plus caffeine, carrying the mandatory "High caffeine content" warning (https://en.waterdrop.com/products/microenergy-white-peach, read 2026-09-22). Note the construction: **caffeine does the work, and pantothenic acid at 50% NRV supplies the one legal sentence.**
+
+**OPINION, and it is a hard constraint on the range.** In this format, "focus" means caffeine. The user's caffeine-free decision therefore leaves, for a focus variant: one sentence about pantothenic acid and no mechanism a customer will feel. This is A-052 restated and now confirmed by what the category actually does rather than by inference. **A caffeine-free focus cube is not a product the evidence supports. A mushroom cube is not a product at all.**
+
 ---
 
 ## 5. Where the varied-benefit dry range already exists in the UK
