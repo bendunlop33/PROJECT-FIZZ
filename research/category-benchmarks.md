@@ -290,6 +290,69 @@ Three candidate combinations, ranked by how buildable and how empty they are:
 
 ---
 
+## 10. Designing the hydration cube — what to put in, and what the competitors actually use
+
+### 10.1 Yes to all three, and in an effervescent two of them are nearly free
+
+**The key structural point: in an effervescent, the carbonate half of the acid–carbonate couple can *be* the electrolyte source.** Waterdrop's own Microlyte ingredient list reads *"acidifier: citric acid; **potassium chloride**, acidity regulator: calcium phosphates; **magnesium carbonate, sodium carbonate**…"* — the fizz chemistry and the mineral content are the same ingredients.
+
+**ESTIMATE** (stoichiometry, not a formulation — a formulator sets the real figures):
+
+| Salt | Delivers | In a 2.0 g cube |
+|---|---|---|
+| Potassium bicarbonate (39.1% K) | ~500 mg → **195 mg potassium** | part of the carbonate base, so no extra mass |
+| Sodium bicarbonate (27.4% Na) | ~400 mg → **110 mg sodium** | likewise |
+| Potassium chloride (52.4% K, 47.6% Cl) | ~200 mg → **105 mg K + 95 mg chloride** | small addition |
+| Magnesium carbonate (28.8% Mg) | ~200 mg → **58 mg magnesium** | doubles as an acidity regulator |
+
+**Running total: potassium ~300 mg, magnesium ~58 mg, sodium ~110 mg, chloride ~95 mg** — inside a 2.0 g cube that still has ~700 mg of citric acid and room for flavour.
+
+### 10.2 The claims arithmetic makes potassium and magnesium the priority, not sodium
+
+| Nutrient | 15% NRV | Authorised claims it unlocks |
+|---|---|---|
+| **Magnesium** | **56 mg** | **TEN** — electrolyte balance, muscle function, nervous system, tiredness and fatigue, energy metabolism, psychological function, protein synthesis, bones, teeth, cell division |
+| **Potassium** | **300 mg** | **THREE** — nervous system, muscle function, **maintenance of normal blood pressure** |
+| Chloride | 120 mg | one — digestion via stomach acid |
+| Calcium | 120 mg | ten, but mostly bone claims |
+| **Sodium** | **no NRV** | **NONE. Sodium carries no authorised claim at all.** |
+
+**Magnesium at 56 mg is the highest claim-per-milligram nutrient in the entire register — ten claims for 56 mg.** Potassium at 300 mg is heavy but buys three, including blood pressure, which no cube in the UK currently claims.
+
+**And sodium — the nutrient the sports category is built on — buys nothing.** It has no NRV and no authorised claim. It is an efficacy ingredient only.
+
+### 10.3 The honest constraint on sodium, and why it argues for the user's framing
+
+**A 2.0 g cube cannot be a serious sports-rehydration product.** Sports hydration runs 300–700 mg sodium per serving; 300 mg of sodium needs ~770 mg of sodium chloride or ~1,100 mg of bicarbonate, and with ~700 mg of citric acid already committed there is no room for that plus potassium plus magnesium plus flavour. **Microlyte's ~63–124 mg is not laziness. It is the format.**
+
+**But for an everyday product that is the right answer anyway, and NDNS says so.** The report records *"a significant average yearly reduction in sodium intake in all age/sex groups"* — reported as progress, because reducing UK salt intake is public health policy. **Sodium is the one mineral in this category that Britons consume too much of, not too little.** Potassium and magnesium are the under-consumed ones — NDNS records low magnesium intakes across all adult groups.
+
+**OPINION, and it resolves the SKU: an everyday hydration cube should be potassium- and magnesium-led with modest sodium.** That is nutritionally correct for a well person, it is what fits in 2.0 g, and it is a genuinely different product from the sports-hydration shelf rather than a weaker copy of it. The user's instinct — *"everyday hydration with different salts"* — is the right read.
+
+### 10.4 What the competitors actually put in, beyond the big three
+
+From the 97-product benchmark:
+
+| Ingredient | Who uses it | Worth copying? |
+|---|---|---|
+| **Chloride** | Waterdrop 120 mg · Phizz 229 · High5 272 · O.R.S. 350 | **Yes** — it arrives free with potassium chloride and clears its own claim threshold at 120 mg |
+| **Calcium** | Waterdrop 120 mg · High5 120 · Coleen Rooney 120 · SIS 102 | Maybe — ten claims, but adults are not short of it and it is heavy |
+| **Glucose / dextrose** | O.R.S. 3.27 g · Liquid I.V. (sugar + dextrose lead the list) | **No** — this is the sodium–glucose co-transport mechanism and it genuinely works, but it means sugar, which the proposition rules out |
+| **Vitamin C** | near-universal | Yes, cheap and expected |
+| **Zinc** | Waterdrop 1.5–2 mg · Humantra | Optional |
+| Coconut water powder | Coleen Rooney 5 g | No — needs a 7 g sachet |
+| Dandelion root, prickly pear | Coleen Rooney | No — botanicals, no claims, taste risk |
+
+### 10.5 The two reference brands both fail this on their own terms
+
+**FACT — Vitamin Well Hydrate declares magnesium and nothing else.** No sodium, no potassium, no chloride, no calcium. The product called *Hydrate* carries **one** electrolyte. Vitamin Well's actual electrolyte product is a separate SKU, Electrolytes Isotonic, at magnesium 3% NRV and potassium 3%.
+
+**FACT — Waterdrop Microlyte declares magnesium, calcium, chloride and zinc, and no potassium — despite potassium chloride being its second ingredient.**
+
+**So on the three minerals that matter for everyday hydration, neither reference brand declares all three, and one declares only one of them.** A cube that simply declares potassium at 300 mg, magnesium at 58 mg and sodium honestly would out-specify both — and, unlike the sodium race, it is achievable in the format.
+
+---
+
 ## 6. What is not evidenced here
 
 **Taste.** Nothing in this document measures it. Sweetener systems and sugar levels are declared and recorded elsewhere, but palatability is not inferable from a panel, and an earlier attempt to score it was inference dressed as data. Customer review evidence is being gathered separately; until it lands, **no claim about how any of these products tastes belongs in this project.**
