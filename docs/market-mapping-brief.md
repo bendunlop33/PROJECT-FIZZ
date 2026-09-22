@@ -33,7 +33,15 @@ So this brief commissions the work that should have come first: **the category m
 
 ## 1. The question this work must answer
 
-> **In the buyer's head, what category is this product in, who is the brand they already think of for that job, and is there a position we can take that is empty, believable from a new brand, and hard to copy?**
+The user set it on 2026-09-22, and it supersedes the more abstract framing this brief originally carried:
+
+> **Is there a gap in the market for a Waterdrop-equivalent effervescent cube that is more functional and vitamin-led than Waterdrop currently is — offering multiple and varied health benefits in the way Vitamin Well does — sold D2C?**
+
+**Three scoping notes, from a first look at the two anchor brands on 2026-09-22. They narrow the question considerably and the work should start from them, not rediscover them.**
+
+1. **Waterdrop is not functionally empty, and it already runs a benefit range.** A direct read of its Microdrink panel shows vitamin C 20 mg (25% NRV), B6 0.63 mg (45%) and B12 1.0 µg (40%) per serving — over the 15% NRV "source of" threshold, so it can and does make authorised claims. It also sells Microenergy and Microlyte, the latter declaring nine vitamins plus electrolytes. The "~1.6 mg of declared vitamins" figure this project has been using is wrong by roughly 13× — see the correction at A-022. **The gap is one of degree, not of kind, and the brief must be honest that it is arguing about dose.**
+2. **Vitamin Well has no dry format at all** — every variant is a still bottled drink. So the benefit-range architecture the question admires has never been executed as a cube or tablet. That is the genuine whitespace, and it is narrower than "a more functional Waterdrop": **the target is the intersection — Waterdrop's format carrying Vitamin Well's functional seriousness.** See A-067.
+3. **The Waterdrop cube is 2.0 g.** Every payload assumption in this project has used 3.5 g or 4.5 g. An effervescent matrix is ~50–75% acid and carbonates before any active goes in, so a 2.0 g cube leaves perhaps 0.5–1.0 g for everything — actives, sweetener, flavour, and the sensory matrix the taste-and-ease decision made the hero. Magnesium and calcium at full NRV are arithmetically impossible at that mass. **So the real question is not "is there a gap" but "is the gap reachable in this format".** See A-066.
 
 Four sub-questions, in priority order. If the work runs out of time, it answers them in this order and stops honestly.
 
@@ -42,7 +50,9 @@ Four sub-questions, in priority order. If the work runs out of time, it answers 
 | Q1 | **Compared to what?** What does the buyer put V-Drop next to when deciding — and, under D2C-only, where does that comparison physically happen? | Under the D2C-only decision the comparison is not on a shelf. It happens in search results and in a paid-social feed. We have never established what that adjacency looks like, so we do not actually know who we compete with. |
 | Q2 | **Instead of what?** Which existing purchase or habit does the money come out of? | "Share of throat" is a fundraising phrase until you name the thing it displaces. Every territory we claim needs a substitution hypothesis. |
 | Q3 | **Is "clinical but tasty and cool" empty, or is it a graveyard?** | An unoccupied position is only an opportunity if nobody has tried it. If brands have tried and withdrawn, the space is empty for a reason. A-050 already logs this doubt in a different context. |
-| Q4 | **What stops Bayer, Vitabiotics, Holland & Barrett or a supermarket own-label taking it within 12 months?** | A-009 establishes that the authorised claims behind this proposition are available to a £0.06/serving Tesco effervescent. Claims cannot be the moat. Something else has to be, or the position is rented. |
+| Q4 | **What stops Bayer, Vitabiotics, Holland & Barrett or a supermarket own-label taking it within 12 months — and, more pressingly, what stops Waterdrop?** | A-009 establishes that the authorised claims behind this proposition are available to a £0.06/serving Tesco effervescent. Claims cannot be the moat. And the specific gap now proposed is one Waterdrop could close by raising its own doses, which would cost it pennies per cube. **On this framing Q4 stops being the closing question and becomes one of the first.** |
+
+**A note on scope collisions.** "Multiple and varied health benefits" pulls against two logged decisions: the range cap of 3 products, and the single "super morning drink" concept. There is a reconciliation available — the logged direction that variants should be **lifestyle-based** is already a varied-benefit range within one concept, and three lifestyle variants would satisfy both. But Vitamin Well's model is seven-plus occasion-led drinks, which is a different animal. **Do not resolve this silently.** Establish what the market requires, report it, and let the user decide whether the 3-SKU cap or the Vitamin Well analogy gives way (house rule 3).
 
 ---
 
@@ -65,6 +75,9 @@ Four sub-questions, in priority order. If the work runs out of time, it answers 
 ## 3. The three hypotheses this work must test
 
 State a verdict on each. These are the CSO's hypotheses, not settled views — disconfirming any of them is a good outcome and more useful than confirming it.
+
+**H0 — The proposed gap is real rather than a dosing decision Waterdrop has already taken deliberately.** — the question's own premise, and the first thing to test.
+Waterdrop sits at 25–45% NRV on three vitamins in a 2.0 g cube at £0.749/serving, and has had years and the formulation budget to go further. The charitable reading is that it has not bothered. The uncharitable, and more likely, reading is that it **chose** this level — because the cube's mass will not carry more without hurting taste, because a heavier vitamin load changes the regulatory and labelling position, or because its buyer is bought on taste and design and does not reward dose. Establish which. **If Waterdrop's restraint is a considered choice rather than an oversight, the gap is a trap and the rest of this brief is moot.** Start with a direct read of Microlyte, which carries nine declared vitamins and has never been read directly — it may already be the product being proposed.
 
 **H1 — The frame of reference is the morning multivitamin, not the effervescent tablet.**
 The user has set Wild Nutrition as the positioning reference and explicitly rejected Berocca. If true, our competitive set is capsules and powders and our format is the differentiator. If false — if buyers file us next to Berocca and Phizz whatever we intend — then our price and our story are both being read against the wrong ladder and the proposition has a structural problem. *This is the single most consequential question in the brief.*
@@ -233,7 +246,7 @@ Do not overwrite `research/competitor-map.md` or `research/vitamin-category-map.
 
 ## 9. Sequencing
 
-W3 first — it is the most likely to change our minds, and its verdict on H1 reshapes everything after it. Then W1 and W2 in parallel. Then W4, which depends on W2's language. W5 and W6 last.
+**H0 first, and it is cheap** — a direct read of Waterdrop's full range (Microdrink variants, Microlyte, Microenergy) and of Vitamin Well's per-variant vitamin panels, against the 2.0 g mass constraint at A-066. If H0 fails, stop and report; nothing downstream matters. Then W3 — it is the most likely of the remaining workstreams to change our minds, and its verdict on H1 reshapes everything after it. Then W1 and W2 in parallel. Then W4, which depends on W2's language. W5 and W6 last.
 
 Report to the CSO on completion of W3 before starting W4, with the H1 verdict in three lines. If H1 fails, stop and escalate rather than completing the remaining workstreams against a frame of reference we no longer believe.
 
