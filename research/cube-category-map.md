@@ -183,6 +183,36 @@ Source: https://www.vitaminwell.com/product/{reload,hydrate,antioxidant,defence,
 
 **(b) FACT — the UK gets five of Vitamin Well's variants, not the full range.** The benefit-name richness the brief admires (Antioxidant, Defence, Awake, All Day) **is not what a GB buyer sees**. A GB buyer sees Reload, Hydrate, Recover and two Electrolytes lines. **OPINION: "offering varied health benefits the way Vitamin Well does" is, in the GB market, a description of roughly four names — very close to Waterdrop's three lines, and close to the logged cap of three products. The collision the brief flagged in §1 is smaller than it looked.**
 
+### 4.1 Head-to-head — Waterdrop vs Vitamin Well, the direct answer (CSO, 2026-09-22)
+
+The question "how functional is Waterdrop vs Vitamin Well, and is that the gap?" deserves the two best products side by side rather than brand-level impressions. Waterdrop panel re-read directly by the CSO; Vitamin Well panels as extracted above.
+
+| | **Waterdrop Microlyte Berry** | **Vitamin Well Hydrate** |
+|---|---|---|
+| Format | 2.2 g effervescent cube | 500 ml bottled drink |
+| Nutrients declared | **13** | 10 |
+| At ≥50% NRV | 7 | **9** |
+| At ≥100% NRV | 1 (C) | **4** (D 150%, C 100%, niacin 100%, biotin 100%) |
+| Highest single | C 100% | D 150% |
+| Bulky minerals | Mg 15%, Ca 15%, chloride 15%, zinc 15% | Mg 15%, zinc 50% |
+| **Sugar** | **0 g** | **21 g** |
+
+**FACT.** Vitamin Well Hydrate reaches ≥100% NRV on four nutrients to Microlyte's one. Microlyte declares three more nutrients and zero sugar.
+
+**FACT — the convergence is the tell.** Both products declare **magnesium at 56.3 mg**. The GB register conditions "Magnesium contributes to electrolyte balance" on 56.25 mg. **Two unrelated brands, in different formats, in different countries, have independently dosed magnesium to within 0.09% of the same regulatory threshold.** Neither is formulating to a physiological target; both are formulating to the register.
+
+**OPINION — the answer to "is that the gap?" is no.** The premise was that Vitamin Well is meaningfully more functionally serious than Waterdrop. On the panels it is not. It is modestly heavier at the top end on four nutrients, narrower by three, and carries 21 g of sugar that Waterdrop does not. **These two products are in the same functional band.** The differences that are real are sugar, format and naming — not dose. A proposition built on "Waterdrop's format with Vitamin Well's function" is therefore building on a difference that mostly is not there.
+
+### 4.2 The residual, and it is a positioning gap rather than a functional one
+
+**FACT.** The five Vitamin Well variants carrying a UK panel are **Reload, Hydrate, Recover, Electrolytes Isotonic and Electrolytes Sugar-Free**. Four of the five are sport- or exertion-coded. **Defence (immunity), Antioxidant, Awake and All Day carry no UK panel.**
+
+**FACT.** Waterdrop's most loaded cube, Microlyte, sits in a collection titled "**Microlyte: Electrolyte drinks for sport**" (https://en.waterdrop.com/collections/microlyte, read 2026-09-22), with four of its five flavours suffixed **RECHARGE**. Its everyday vitamin cube, Microdrink, is held at 25–45% NRV.
+
+**OPINION, and this is where the work now points.** In GB, on both reference brands, **the heavily dosed products are pointed at sport and the everyday products are deliberately kept light.** Immunity, antioxidant and all-day energy are formulated by Vitamin Well but not offered to GB buyers. So the unoccupied position is not "more functional than Waterdrop" — that rung is taken and the ceiling is near. It is **a full-load cube worn on an everyday, non-sport frame**.
+
+That is a narrower claim than the question assumed, and it is a brand and positioning claim rather than a category one. It also happens to be exactly the territory the user's 2026-09-22 decision already staked out — functional and premium, explicitly not sport. **Whether that position is defensible is Q4, not Q1: Waterdrop could re-point Microlyte at everyday wellness without reformulating anything.**
+
 ---
 
 ## 5. Where the varied-benefit dry range already exists in the UK
