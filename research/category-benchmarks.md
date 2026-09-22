@@ -183,6 +183,54 @@ It also sidesteps the taste ceiling entirely. The gradient at A-076 says taste d
 
 ---
 
+## 8. Waterdrop vs Vitamin Well — what each brand actually chooses to put in
+
+Not "who has more", which §4 of `cube-category-map.md` already settled as roughly the same band. **Which nutrients each brand picks, and whether the picks have a logic.** Waterdrop panels read direct; Vitamin Well from the UK country panels embedded in its product pages. Both 2026-09-22.
+
+| Nutrient | Waterdrop (best case, Microlyte Berry) | Vitamin Well (best case, Hydrate) | Who wins |
+|---|---|---|---|
+| **Vitamin D** | **absent from every product in the range** | **150% in Hydrate, Reload, Recover, Defence** | **Vitamin Well, decisively** |
+| Vitamin E | 30% (Microlyte Berry only) | 50–60% in all | Vitamin Well |
+| Vitamin C | **100%** | 100% | draw |
+| Vitamin A | 20% (Microlyte Berry only) | absent | Waterdrop |
+| Thiamine (B1) | **50%** | absent from UK panels | Waterdrop |
+| **Riboflavin (B2)** | **absent everywhere** | **absent everywhere** | **neither** |
+| Niacin | 50% | 100% | Vitamin Well |
+| Pantothenic acid | 50% | 50% | draw |
+| **Vitamin B6** | **25–50% in almost every product** | **absent** (except Electrolytes at 20%) | **Waterdrop** |
+| Folate | 25% (Microdrink Lemon only) | 50–100% | Vitamin Well |
+| Vitamin B12 | 40–50% | 50% | draw |
+| Biotin | 50% (Microlyte Berry only) | 100% | Vitamin Well |
+| Zinc | 15–20% (Microlyte only) | 45–50% in all | Vitamin Well |
+| Selenium | **absent everywhere** | 45% (Reload, Recover) | Vitamin Well |
+| Magnesium | 15% | 15% | draw |
+| **Iron / copper** | **absent** | **absent** | **neither** |
+| Sugar | **0 g** | **21 g** (Original range) | Waterdrop |
+
+### 8.1 The shape of the difference
+
+**Waterdrop is a B-complex-and-vitamin-C brand.** Its picks are almost entirely water-soluble: C, B1, B6, B12, niacin, pantothenic acid. Those are cheap, stable, dissolve clear and need no encapsulation.
+
+**Vitamin Well is a fat-soluble-and-mineral brand.** Vitamin D at 150% in everything, vitamin E at 50–60%, zinc at 45–50%, selenium — and it drops B1 and B6 almost entirely.
+
+**The obvious explanation is format physics, and it is only half right.** Vitamins D and E are fat-soluble and need cold-water-soluble encapsulated forms — trivial to disperse through 500 ml of bottled liquid, hard in a 2 g cube that has to dissolve clear. **But Microlyte Berry carries vitamin A at 20% and vitamin E at 30%, both fat-soluble.** So the cube *can* take them. **Waterdrop's total absence of vitamin D is therefore a choice, not a constraint** — and it is the single largest formulation gap between the two brands.
+
+**One shared blind spot, and it is conspicuous: neither brand carries riboflavin, iron or copper.** Not in any product, in either range. Riboflavin's bright yellow-green fluorescence is a plausible reason for a brand selling clear pretty water; iron's metallic note is a plausible reason for both. Neither explanation covers copper.
+
+### 8.2 Under the combination lens (§7), both are accidental
+
+Neither brand's panel shows any sign of being designed around a nutrient interaction. But two of the register's authorised combinations turn up in their products **by accident**:
+
+**The C + E regeneration pair** — *"Vitamin C contributes to the regeneration of the reduced form of vitamin E"*. **Both brands hold it**: Microlyte Berry at C 100% / E 30%, Vitamin Well Hydrate at C 100% / E 50%. Neither, on the pages read, says a word about it.
+
+**The homocysteine trio — and this one is the better illustration.** The claim needs folate, B12 or B6, each at 15% NRV. **Waterdrop Microdrink LEMON carries all three — folic acid 25%, B12 25%, B6 25% — a complete, authorised, three-nutrient combination sitting in a 2.1 g cube on sale today.** Vitamin Well's UK panels carry folate and B12 but no B6, so they cannot complete it.
+
+**Waterdrop sells that product as "Lemon."**
+
+**OPINION.** That is the clearest evidence in the project that combination is unoccupied territory rather than a crowded one. The strongest combination on either brand's shelf is an accident of a flavour SKU, and the brand that owns it has not noticed. **The gap is not that nobody can build these. It is that nobody is thinking in these terms at all.**
+
+---
+
 ## 6. What is not evidenced here
 
 **Taste.** Nothing in this document measures it. Sweetener systems and sugar levels are declared and recorded elsewhere, but palatability is not inferable from a panel, and an earlier attempt to score it was inference dressed as data. Customer review evidence is being gathered separately; until it lands, **no claim about how any of these products tastes belongs in this project.**
