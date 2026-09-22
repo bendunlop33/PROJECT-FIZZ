@@ -137,6 +137,47 @@ Reading the NDNS findings in §2 as gaps rather than as a list:
 
 ---
 
+## 5B. Riboflavin, settled — and a correction to §2.1 that also rescues folate
+
+**I have given three different answers on B2 across this project.** First that it was one of two nutrients missing from the entire competitive set and "the single formulation insight in the map". Then, when the 97-product benchmark showed it at 27% of products, that the finding was a two-brand artefact and should be withdrawn. Then, on the efficacy test, "**DROP IT** — NDNS shows mean intake above the RNI in every adult group."
+
+**The third answer was based on half the evidence, and the missing half matters.**
+
+### Intake says fine. Status does not.
+
+**FACT.** NDNS reports riboflavin twice, and they do not agree.
+
+- **Intake (§3.4):** *"mean intake of riboflavin was above the RNI in all age/sex groups"*, with no change over nine years in adult groups other than women 65+.
+- **Biomarker (§5.3):** the survey separately measures **EGRAC** — erythrocyte glutathione reductase activation coefficient — where *"the higher the EGRAC … the greater the degree of riboflavin deficiency in vivo."* It reports **a percentage of each age/sex group above the 1.30 deficiency threshold**, with only small improving trends. And the executive summary records *"little change over the 9 years for markers of status for vitamins B2 (riboflavin), B12, C and D or in iron."*
+
+**Riboflavin is the textbook case of a nutrient where intake looks adequate and biochemical status does not.** The fact that NDNS bothers to run a functional biomarker for B2 at all — it does not do this for most vitamins — is itself the signal.
+
+**Two honest caveats.** The narrative does not give the percentages (they sit in Tables 5.17–5.20, not read), and the report explicitly flags that **"this threshold is uncertain"**. So this is not a licence to claim widespread B2 deficiency. It is a reason to stop saying Britons definitively do not need it.
+
+**Revised verdict: B2 is neither the whitespace headline I first called it nor the drop I later called it. It is a legitimate inclusion at a modest dose.** §2.1 of this document is corrected accordingly.
+
+### And the same section rescues folate, much more strongly
+
+**FACT, from the same biomarker chapter and far more striking than the intake data I had been using:** *"The percentage of women of childbearing age (16 to 49 years) with serum folate concentration below 13 nmol/L increased significantly by 3 percentage points per year, **an overall increase of 31 percentage points over the 9 years**."*
+
+**That is a biomarker finding about a specific, nameable group, and it is much stronger evidence than the intake trend.** It materially strengthens both the folate case and the case for a women-relevant variant — on status, not on demographics.
+
+### Three reasons B2 belongs in the range regardless of the intake argument
+
+1. **It is load-bearing in two of the four complete combination sets.** The **antioxidant** set is copper, manganese, **riboflavin**, selenium, C, E, zinc — you cannot complete it without B2. The **iron system** is iron, C, copper, **riboflavin**, A — same. Dropping B2 breaks both, and those two sets are the range's functional flagships.
+2. **It is the cheapest claim payload in the register after magnesium: nine authorised claims for 0.21 mg** (15% NRV) — energy metabolism, nervous system, mucous membranes, red blood cells, skin, vision, iron metabolism, oxidative stress, and tiredness and fatigue. NRV is 1.4 mg, so even a full 100% is negligible in mass.
+3. **The category already uses it — as a colourant.** The benchmark found riboflavin declared in at least seven products as an **undeclared colourant** rather than as a nutrient. So the fluorescence objection is weaker than this project assumed: the formulation problem is solved, it is just not being credited.
+
+### The one real design decision B2 forces
+
+**Riboflavin is what turns urine bright yellow.** It is the Berocca effect, and it is the single most perceptible thing any of these nutrients does.
+
+**That is a strategic choice, not a formulation detail.** For a brand selling *felt* efficacy it is free proof the product is doing something — and this project has repeatedly noted that vitamins produce no acute felt effect, which collides with consumer expectation (A-052). **B2 is the only nutrient in the range that gives the customer visible evidence they took it.** For a brand selling clear, pretty water and a premium aesthetic, it is a liability.
+
+**The brand cannot have both, and it should decide deliberately rather than discover it in a prototype.**
+
+---
+
 ## 6. What is still not evidenced
 
 - **Nobody asked for this.** The review mining found no demand for combinations or for higher dosing; the largest complaint is flavour intensity. This document says what would work, not what would sell.
