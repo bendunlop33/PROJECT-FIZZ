@@ -81,6 +81,9 @@ Eleven territories. For each: GB occupancy split **LIQUID/RTD** vs **DRY** (tabl
 
 ## 2. The claims-feasibility filter
 
+> **CSO QUALIFICATION, 2026-09-22 (user direction).** Read every RAG rating below as **"what can lawfully be SAID here"**, not as "whether this territory can be entered". An ingredient with no authorised claim may still be included and declared by name and quantity; `research/claims-library.md` §5 sets out exactly that for each active. A **RED** territory is therefore one a brand can enter while saying nothing functional — not one that is closed. **Two exceptions where RED really does mean closed, and they are not claims issues at all:** novel-food status (lion's mane concentrated extracts, paraxanthine, theacrine) and the cordyceps stop-sale both govern whether the ingredient may be **sold**, and silence does not cure them. **And one trap that cuts the other way: a benefit-led variant name is itself a claim (A-074)**, so the freedom to include an unclaimed ingredient is forfeited the moment the product is called "Focus" or "Calm".
+
+
 This is a filter, not a footnote. A territory is only an opportunity if it can be legally said.
 
 ### 2.1 What makes a territory GREEN, cheaply
