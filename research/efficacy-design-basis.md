@@ -95,6 +95,48 @@ Doses at **100% NRV**, with approximate salt masses (ESTIMATE, from the method a
 
 ---
 
+## 5A. Correction — the 50% rule does not generalise, and a flat percentage is the wrong rule anyway
+
+**The user caught an inconsistency on 2026-09-22: §3B.2 of the range sketch sets the design target at 50% NRV per cube, and §10 of `category-benchmarks.md` then discusses the electrolytes at 15% NRV. Both numbers appear, and they are doing different jobs.**
+
+**15% NRV is the claim threshold** — the legal minimum at which a nutrient may be named. **50% NRV was proposed as the efficacy target**, so that two cubes deliver 100%. They are not alternatives; the first is a floor set by law, the second was a target set by design. The §10 tables listed 15% because they were showing *what unlocks a claim*, not *what to dose*. That should have been said.
+
+### But the deeper problem: at 50% NRV the bulky minerals do not fit
+
+| Nutrient | NRV | 50% NRV | Mass as a usable salt | Fits a 2.0 g cube? |
+|---|---|---|---|---|
+| **Potassium** | 2,000 mg | **1,000 mg** | ~1,900 mg as potassium chloride | **No — that is the whole cube** |
+| **Magnesium** | 375 mg | **187 mg** | ~650 mg as magnesium carbonate | **No — a third of the cube before flavour** |
+| **Calcium** | 800 mg | **400 mg** | ~1,000 mg as carbonate | **No** |
+| Chloride | 800 mg | 400 mg | comes with the potassium | Only at the potassium's expense |
+| Zinc, iron, iodine, selenium, folate, D, C | — | — | µg to tens of mg | **Yes, comfortably** |
+
+**So the 50% rule holds for everything light and fails for every bulky mineral.** It was right for the nutrients it was applied to — D, iodine, selenium, folate, C, zinc — and I should not have implied it generalises. For potassium, magnesium and calcium, **15–20% NRV is the physical ceiling of this format**, which is exactly where the whole category sits, Waterdrop, Phizz, Vitamin Well and High5 alike. That is A-066 biting harder than recorded: it is not only full NRV that is impossible, it is half NRV too.
+
+### And a flat percentage is the wrong rule regardless — the user's second point is the better one
+
+*"Need to consider what people have in their diets on average / how deficient."* That is right, and it supersedes both numbers. **The dose target should be the gap between what people actually eat and what they need — not a flat fraction of a label value.** A nutrient the diet already supplies needs a token; a nutrient the diet barely supplies needs most of the RNI.
+
+Reading the NDNS findings in §2 as gaps rather than as a list:
+
+| Nutrient | Diet supplies | Implied dose target |
+|---|---|---|
+| **Vitamin D** | **Below the RNI in every age/sex group** — the diet essentially does not deliver it | **High. Up to 100% NRV per cube, or the 10 µg NHS winter figure across two** |
+| **Selenium** | Possibly ~50% of females below the LRNI (medium confidence) | **High — 50–100%** |
+| **Iodine** | Worsening, ~10% of adults below the LRNI | **Moderate — 50%** |
+| **Folate** | Worsening in women 19–64; most adults above the RNI | **Moderate — 50%, and it is a women's-gap nutrient** |
+| **Iron** | Worsening; and **the UK RNI differs sharply by sex** — materially higher for menstruating women than for men (confirm exact figures before use) | **Moderate, and the honest case for a variant. A dose right for a woman of 30 is more than a man of 50 needs** |
+| **Magnesium** | Low intakes across all adults, but the diet supplies most of it | **Top-up. 15–20% is all the format allows and that is defensible as a contribution, not a correction** |
+| **Potassium** | No strong adult shortfall in NDNS | **Token. Enough for the claim if it fits, no more** |
+| **Sodium** | **Consumed in excess; reduction is public health policy** | **As little as the format allows** |
+| Calcium, riboflavin, vitamin C | At or above the RNI in adults | **Minimal or none. Dosing these is mass spent on a gap that does not exist** |
+
+**OPINION: this is the rule the brand should actually be built on — "we dose what the British diet misses, at the amount it misses it by" — and it is both more defensible and more interesting than "50% of everything".** It also explains the range: **Daily** fills the universal gaps, **Restore** fills the iron gap for the people who have one, **Defence** is the antioxidant set, and **Hydrate** is honest about being a top-up rather than a correction.
+
+**It does, however, put real weight on the NDNS figures**, which are from the 2008/09–2016/17 wave. **Refresh them against the latest NDNS before any dose is fixed**, and get the sex-specific iron and folate RNIs from a primary source rather than from this document.
+
+---
+
 ## 6. What is still not evidenced
 
 - **Nobody asked for this.** The review mining found no demand for combinations or for higher dosing; the largest complaint is flavour intensity. This document says what would work, not what would sell.
