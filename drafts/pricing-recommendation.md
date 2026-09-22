@@ -215,7 +215,10 @@ Ranked by how much they move the answer, not by how easy they are to get.
 ## 9. Assumptions touched
 
 Updated: **A-001, A-002, A-006, A-013, A-014, A-027, A-028**.
-New: **A-052** (taste as a COGS line) · **A-053** (cadence is the largest available lever) · **A-054** (the LTV ceiling sits within 5% of CAC) · **A-055** (branded source forms and the price floor) · **A-056** (shared-base MOQ) · **A-057** (the case consumes the starter kit's contribution) · **A-058** (promotional leakage is unmodelled in the brief).
+
+New: **A-058** (the premium flavour system is a material COGS line) · **A-059** (cadence is the largest available lever, and the 750 g Large Letter ceiling caps it at quarterly) · **A-060** (the business fails on the LTV *ceiling*, not the horizon) · **A-061** (branded source forms are the only lever that buys a defensible premium, and may not be permitted in GB) · **A-062** (the shared-base three-SKU architecture, and the one unasked question it rests on) · **A-063** (the case consumes the starter kit's contribution) · **A-064** (list price is not realised price).
+
+*Numbering note: `claims-regulatory` took A-052–A-057 concurrently with this run, so my new items begin at A-058. No existing row was overwritten.*
 
 ---
 
