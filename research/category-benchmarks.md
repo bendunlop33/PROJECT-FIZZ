@@ -231,6 +231,65 @@ Neither brand's panel shows any sign of being designed around a nutrient interac
 
 ---
 
+## 9. How Vitamin Well's variants actually differ — and where the gap is
+
+Panels from the per-country data embedded in each Vitamin Well product page, read 2026-09-22. **Sugars 21 g across the Original range.**
+
+| Variant | UK? | D | E | C | Niacin | B6 | Folate | B12 | Biotin | Panto | Mg | Zn | Se | Mn | Other |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Reload** | ✅ | 150% | 60% | — | 50% | — | 100% | 50% | 50% | 40% | 15% | 45% | 45% | — | — |
+| **Recover** | ✅ | **identical to Reload in every value** | | | | | | | | | | | | | |
+| **Hydrate** | ✅ | 150% | 50% | 100% | 100% | — | 50% | 50% | 100% | 50% | 15% | 50% | — | — | — |
+| **Electrolytes** (both) | ✅ | 11% | — | — | 20% | 20% | — | 20% | — | 20% | 3% | — | — | — | K, Na |
+| Antioxidant | ❌ | — | **100%** | **100%** | — | — | — | — | — | — | — | **50%** | **100%** | **40%** | — |
+| Defence | ❌ | 150% | 50% | 100% | — | — | 100% | — | — | — | — | 50% | — | — | — |
+| All Day | ❌ | — | — | 100% | 40% | 50% | — | 50% | 50% | 40% | — | — | — | — | green tea 50 mg |
+| Zero Peach / Lemon | ❌ | 80% | 58% | — | 50% | **100%** | — | 50% | 50% | 40% | — | — | — | — | green tea 20 mg (Lemon) |
+| Zero Raspberry / Wild Berries | ❌ | 150% | 58–60% | — | 50% | — | 100% | 50% | 50% | 40% | 15% | — | 45% | — | blackcurrant 40 mg |
+
+### 9.1 Most of the range is one chassis with a nutrient swapped
+
+**FACT.** A constant spine of **D + E + niacin + B12 + biotin + pantothenic acid** runs through almost every variant at near-identical levels. The benefit differentiation sits in one or two nutrients on top of it.
+
+- **Reload and Recover are formulation-identical.** Two benefit names, one product.
+- **Hydrate** is the chassis plus vitamin C, with niacin and biotin doubled and selenium dropped.
+- **The Zero range** is the chassis minus vitamin C, with B6 at 100% in two variants.
+
+**OPINION: for most of the range, the benefit is the name and the flavour, not the formulation.** That confirms A-067 from the other direction — the architecture V-Drop admired is thinner than it looks.
+
+### 9.2 But two variants are genuinely designed — and neither is sold in the UK
+
+**Antioxidant** is not the chassis at all. It drops D and the entire B-complex and carries **vitamin E 100%, vitamin C 100%, zinc 50%, selenium 100%, manganese 40%**. Set that against the register: the authorised "*contributes to the protection of cells from oxidative stress*" claim belongs to exactly **eight** entries — copper, manganese, riboflavin, selenium, vitamin C, vitamin E, zinc, and olive oil polyphenols. **Antioxidant carries five of the seven nutrients. That is a designed combination, built from the register.**
+
+**Defence** is the second: D 150% + C 100% + folate 100% + zinc 50%, all four of which carry authorised immune-function claims. Four of the ten nutrients in the authorised immune set.
+
+**FACT — neither Antioxidant nor Defence carries a UK panel.** The GB buyer gets Reload, Recover, Hydrate and two Electrolytes: the chassis variants. **Vitamin Well's only two properly designed combinations are the two it does not sell here.**
+
+### 9.3 The gap, stated precisely
+
+Four things are true at once, each evidenced above or in §7:
+
+1. **No dry format anywhere in the UK is built around a nutrient combination.** Not one of the 36 panels surveyed.
+2. **The best liquid attempts are not sold here.** Vitamin Well's Antioxidant and Defence have no UK panel.
+3. **Even those attempts are incomplete.** Antioxidant holds five of the seven authorised antioxidant nutrients. **The two it is missing are copper and riboflavin** — which are, precisely, the two nutrients absent from Waterdrop's and Vitamin Well's entire ranges (§8.1). **The complete authorised antioxidant combination has never been built by anyone in this category.**
+4. **And where a complete combination does exist, it is an accident.** Waterdrop Microdrink Lemon holds the full homocysteine trio and is sold as a flavour (§8.2).
+
+**So the gap is not "a more functional Waterdrop", and not "Vitamin Well in a cube". It is: the first product in the UK designed around a complete authorised nutrient combination, in a format that tastes good enough to drink daily.**
+
+Three candidate combinations, ranked by how buildable and how empty they are:
+
+| Combination | Complete set | Best existing attempt | Fits a 2 g cube? |
+|---|---|---|---|
+| **Antioxidant** | E, C, zinc, selenium, manganese, **copper, riboflavin** (7) | VW Antioxidant — 5 of 7, liquid, 21 g sugar, not sold in GB | Yes — all seven are µg-to-low-mg |
+| **Iron system** | iron, C, copper, riboflavin, A (§7) | Berocca Immuno — 4 of 5, framed as immunity | Yes, ~170 mg |
+| **Immune** | C, D, zinc, selenium, folate, A, B6, B12, copper, iron (10) | VW Defence — 4 of 10, not sold in GB | Yes, though iron and D are the hard two |
+
+**Note what all three have in common: copper and riboflavin appear in every one, and nobody in the category carries either.** Two nutrients, both trivial in mass, both unlocking multiple authorised combination claims, and both absent from the entire competitive set. **If there is a single concrete formulation insight in this whole map, that is it.**
+
+**OPINION, and the limit of it.** This says the claims are lawful, the sets are incomplete, the formats permit it and the space is empty. It does not say a buyer wants it. Nobody in the review data asked for combinations, and "designed to work together" versus "22 nutrients" is still an untested proposition.
+
+---
+
 ## 6. What is not evidenced here
 
 **Taste.** Nothing in this document measures it. Sweetener systems and sugar levels are declared and recorded elsewhere, but palatability is not inferable from a panel, and an earlier attempt to score it was inference dressed as data. Customer review evidence is being gathered separately; until it lands, **no claim about how any of these products tastes belongs in this project.**
