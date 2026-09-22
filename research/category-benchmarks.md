@@ -119,6 +119,70 @@ So the four categories divide cleanly by what the format permits:
 3. **Caffeine-free is normal here**, not brave — Berocca, the category's biggest energy brand, is caffeine-free.
 4. **The targeted-functional ambition and the cube format are incompatible.** This needs deciding rather than finessing.
 
+## 7. Combinations — the register authorises them, and nobody formulates to them
+
+**The question this answers:** is "a tasty vitamin drink with combinations that actually benefit you" a real differentiator, or just a nicer way of saying more vitamins? It is real, and it is legally sayable.
+
+**FACT — of the 267 GB-authorised claims, 19 describe one nutrient acting on another.** These are not general-function claims; they are claims *about a combination*. Extracted from the parsed register (19 May 2026 spreadsheet):
+
+**The iron system — five interlocking claims**
+- *Vitamin C increases iron absorption*
+- *Copper contributes to normal iron transport in the body*
+- *Riboflavin contributes to the normal metabolism of iron*
+- *Vitamin A contributes to normal iron metabolism*
+- plus iron's own six claims, including tiredness and fatigue, immune function, oxygen transport and cognitive function
+
+**The homocysteine system — five nutrients, one shared claim**
+- *Folate / Vitamin B12 / Vitamin B6 / Betaine / Choline contributes to normal homocysteine metabolism*
+
+**The bone-mineral system**
+- *Vitamin D contributes to normal absorption/utilisation of calcium and phosphorus*
+- *Vitamin D contributes to normal blood calcium levels*
+- with vitamin K's bone claim alongside
+
+**The antioxidant-regeneration pair — the most elegant one in the register**
+- *Vitamin C contributes to the regeneration of the reduced form of vitamin E*
+
+**And two singletons:** *Zinc contributes to normal metabolism of vitamin A*; *Magnesium / Vitamin B6 / Zinc contribute to normal protein synthesis*.
+
+### 7.1 Why this matters more than dose
+
+Every claim above is conditioned only on **"source of" — 15% NRV** (A-009). So a combination claim costs no more mass than a single-nutrient one. **The differentiator is which nutrients you put together and why, not how much of each you use** — and unlike dose, that is a design decision rather than a number a competitor can raise in an afternoon.
+
+It also sidesteps the taste ceiling entirely. The gradient at A-076 says taste degrades as dose climbs. A combination claim needs 15% NRV, which sits comfortably below the band where palatability starts to suffer. **Combination and taste are not in tension. Dose and taste are.**
+
+### 7.2 Nobody in the survey has built one
+
+**FACT — checked against all 36 declared panels.** The components are scattered; the architecture is absent.
+
+| Product | Of the 5 iron-system nutrients | Framed as? |
+|---|---|---|
+| Berocca Immuno | **4** — C 1000 mg, A 700 µg, copper 0.9 mg, **iron 5 mg (36%)** — no riboflavin | Immunity |
+| Phizz Daily 3-in-1 | 4 — C, B2, copper, A — **no iron**, so the system does nothing | Hydration |
+| Berocca Mind | 3 — C 60 mg, **iron 12 mg (86%)**, B2 1.6 mg — no copper, no A | Focus |
+| Vitabiotics Immunace | 3 — no iron | Immunity |
+| High5 Zero+ | 3 — no iron | Hydration |
+| **Every Waterdrop product** | **0** — no iron, no copper, no riboflavin anywhere in the range | — |
+
+**Berocca Immuno comes closest and does not know it** — it holds four of the five, at 36% NRV iron, and sells the result as immunity. **No product in the UK dry category is designed around, named after, or marketed on a nutrient interaction.**
+
+### 7.3 It fits the cube
+
+**ESTIMATE, from the same salt-mass method as A-038.** A complete iron system at full NRV: iron 14 mg as bisglycinate ≈ 70 mg · vitamin C 80 mg · copper 1 mg as bisglycinate ≈ 10 mg · riboflavin 1.4 mg · vitamin A 800 µg ≈ 5 mg as a CWS powder. **Roughly 170 mg of actives — comfortably inside a 2.0 g cube**, and nothing like the magnesium-and-calcium problem at A-066.
+
+**The one real obstacle is taste, and it is the known one: iron is metallic in an effervescent.** But it is demonstrably solvable — **Berocca Mind carries 12 mg of iron in an effervescent tablet today.** So this is a formulation problem with an existing precedent, not a barrier.
+
+### 7.4 What this changes
+
+1. **The differentiator is combination, not dose, and it is legally sayable.** Nineteen authorised claims describe nutrient interactions; the category uses none of them as an organising idea.
+2. **It survives the objection that sank "more vitamins".** Waterdrop can raise a dose cheaply. It cannot cheaply acquire a reason for its formulation, and its current architecture — three vitamins sitting on claim thresholds — is the opposite of a designed combination.
+3. **It is compatible with taste**, because 15% NRV sits below the band where the review data shows palatability failing.
+4. **The iron system is the strongest candidate** — five interlocking claims, a real UK deficiency behind it, absent from every cube on the market, and it fits the mass budget.
+
+**OPINION, and the caveat that matters.** Nothing here says a customer wants this or would pay for it. It says the claim is lawful, the formulation fits, and the space is empty. Whether "designed to work together" beats "22 nutrients" on a landing page is a demand question this document cannot answer, and the review evidence is silent on it — **nobody asked for combinations either.**
+
+---
+
 ## 6. What is not evidenced here
 
 **Taste.** Nothing in this document measures it. Sweetener systems and sugar levels are declared and recorded elsewhere, but palatability is not inferable from a panel, and an earlier attempt to score it was inference dressed as data. Customer review evidence is being gathered separately; until it lands, **no claim about how any of these products tastes belongs in this project.**
