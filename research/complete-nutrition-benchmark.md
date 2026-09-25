@@ -378,3 +378,54 @@ That is a 20-nutrient core. **Notice what it does not include:** no botanicals, 
 
 Two constraints, and both are taste rather than mass: **iron** and **riboflavin**. Notably, **Huel hit both of them too** — iron at 15% and riboflavin at 15% in a can. **Four capable brands declined to solve the iron problem in a drink.** That is worth weighing before assuming a formulator will solve it for us.
 
+
+---
+
+## CSO judgement — why Waterdrop and Vitamin Well don't carry a full vitamin profile
+
+**OPINION throughout, reasoned from the evidence in this document and `ingredient-benchmark.csv`. The user asked whether it is taste, cost or manufacturability. On the evidence it is mostly none of them.**
+
+### Manufacturability — ruled out
+
+**Phizz Daily Immune+ settles it.** A UK effervescent tablet carrying copper, riboflavin, iron, vitamin A, selenium, vitamin D, zinc and vitamin C — the complete authorised immune set and the complete iron system. **An effervescent can carry all of this.** Berocca and Vitabiotics Immunace do much the same.
+
+And **Huel Daily A–Z carries 150 µg iodine and 55 µg selenium at full NRV in a 330 ml can**, so it is not a beverage problem either. The technology is not the barrier.
+
+### Cost — not credible
+
+At these doses micronutrients are pennies. Iodine at 150 µg as potassium iodide, selenium at 55 µg as sodium selenite — fractions of a penny per serving. Even the genuinely expensive ones (K2 as MK-7, D3 in a cold-water-soluble form) are low single pence. **Against a serving that retails around £0.75, a complete micronutrient premix is a rounding error.** Nobody is omitting iodine to save money.
+
+### Taste — real, but narrow and specific
+
+**This is where the Huel panel does its work.** Huel has no claims-led incentive to stop at 15% NRV, sells explicitly on completeness, and took twelve vitamins to 100–400%. It then capped exactly five nutrients at exactly the claim floor: **iron, zinc, manganese, chromium and riboflavin.**
+
+**Four of those five are metals, and the fifth is the colourant.** Iron, zinc, manganese and copper are astringent and metallic in solution at perceptible mass; riboflavin turns the drink yellow. Meanwhile **selenium (55 µg) and iodine (150 µg) went to full NRV** — minerals too, but at microgram mass, where nothing is perceptible.
+
+**So the sensory constraint is real, and it is confined to metals at milligram mass plus B2's colour.** It does not explain the absence of vitamin D, vitamin K, folate or iodine, none of which taste or look of anything.
+
+### What actually explains it: they are beverage companies, not nutrition companies
+
+**This is the answer, and the benchmark states it numerically: iodine appears in 87% of complete-nutrition products and 4% of drinks. Selenium, 100% against 13%. Same technology; different question being asked.**
+
+- **Waterdrop's proposition is "drink more water."** Its vitamins are a halo on a flavour product. Its dosing ladder — 15%, 25%, 50%, 100% across the range — maps to **price tiers**, not to nutritional need. Adding iodine would not sell one more cube to a buyer who is there for taste and design.
+- **Vitamin Well competes with soft drinks**, carries 21 g of sugar, and uses vitamins to differentiate from Coke rather than to meet a requirement.
+- **Huel, Centrum and Forceval are nutrition companies.** Their reference point is the RNI. Everyone else's is the shelf next to them.
+
+**Neither brand has failed at building a multivitamin. Neither has tried.**
+
+### The fifth reason, which nobody names and which applies to us too
+
+**A drink has no dose control, and a cube in a water bottle has less than most.**
+
+A swallowed tablet is self-limiting — you take one. A cube that tastes good sitting in a tube on a desk is not: somebody will use two or three because they like the flavour, and the category's own review data shows **customers already double-dose Waterdrop routinely** to get enough flavour.
+
+For the nutrients where excess carries real risk — **iron above all** (acute iron overdose is a well-known paediatric poisoning risk), and **vitamin A** (teratogenic at high intake) — a mass-market drink brand keeping the dose low is a defensible duty-of-care position, not timidity. **It may be the single best explanation for why every drink in the dataset caps iron at 15–32% while every swallowed tablet goes to 100%.**
+
+**And it binds V-Drop exactly as hard.** The "two a day" architecture makes it sharper, not softer: the design must be safe at two, and safe at the four somebody will actually take on a hot day. **That argues for modest per-cube doses of iron and vitamin A specifically — and it is an argument from customer safety rather than from formulation difficulty, which is a much better reason to be able to give.**
+
+### What this means for the opportunity
+
+**The good news: the omissions are a convention, and conventions can be broken.** Vitamin D, iodine, selenium, folate and vitamin K are absent from these ranges for no technical or commercial reason at all — they are absent because beverage companies do not think in RNIs. A brand that does think that way can add all five for pennies and be genuinely first in the format.
+
+**The realistic news: iron and riboflavin are not part of that free lunch.** Four capable brands, including one with every incentive to solve it, left both at the floor. Assume they are hard until a formulator says otherwise.
+
