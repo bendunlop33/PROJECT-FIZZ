@@ -2,14 +2,17 @@ import type {
   EquipmentInstance,
   Exercise,
   Load,
+  LoadConvention,
   Routine,
   SessionAggregate,
   SessionExercise,
   UserProfile,
   WorkoutSet,
+  WeightUnit,
   ZonedTimestamp,
 } from '@fizz/schemas';
-import { roundToAvailableLoad } from '../equipment';
+import { isLoadAchievable, roundToAvailableLoad } from '../equipment';
+import { convertMassExactly } from '../units';
 import { resolveRestPreset } from '../rest';
 import { buildExecutionOrder } from './order';
 
@@ -17,13 +20,78 @@ export type StartWarning =
   | { kind: 'equipment_not_in_gym'; routineExerciseId: string; equipmentId: string }
   | { kind: 'exercise_missing'; routineExerciseId: string; exerciseId: string }
   | {
+      /** The planned load differs from the template (rounded, bounded, or converted to the equipment's unit). */
       kind: 'target_rounded';
       setTemplateId: string;
       requested: Load;
       planned: Load;
       bounded: 'min' | 'max' | null;
+      converted: boolean;
     }
-  | { kind: 'target_not_checkable'; setTemplateId: string; reason: string };
+  | {
+      /**
+       * The template load can't be used here, so the set has no planned load and
+       * the draft falls back to history or stays empty. `requested` keeps the
+       * template target visible.
+       */
+      kind: 'target_dropped';
+      setTemplateId: string;
+      requested: Load;
+      reason: 'convention_mismatch' | 'unit_not_convertible' | 'no_achievable_loads';
+    };
+
+export type PlannedLoadResult =
+  | { load: Load | null; warning: null }
+  | { load: Load | null; warning: Extract<StartWarning, { kind: 'target_rounded' | 'target_dropped' }> };
+
+/**
+ * Normalise a template load to the session exercise's unit and convention
+ * (review B1, ADR 0003). Every non-null result is in exactly that unit and
+ * convention, so the prefilled one-tap Log is always accepted.
+ * - Convention differs: never converted (no machine-to-free-weight equivalence); dropped.
+ * - Equipment present: rounded toward easier to an achievable load, converting
+ *   units explicitly; the rounded load is used even on an exact hit.
+ * - No equipment, unit differs: converted only if exact at display precision; otherwise dropped.
+ */
+export function planTemplateLoad(
+  setTemplateId: string,
+  target: Load | null,
+  session: { unit: WeightUnit; convention: LoadConvention; equipment: EquipmentInstance | null },
+): PlannedLoadResult {
+  if (target === null) return { load: null, warning: null };
+  const drop = (reason: Extract<StartWarning, { kind: 'target_dropped' }>['reason']): PlannedLoadResult => ({
+    load: null,
+    warning: { kind: 'target_dropped', setTemplateId, requested: target, reason },
+  });
+  if (target.convention !== session.convention) return drop('convention_mismatch');
+
+  const eq = session.equipment;
+  if (eq === null) {
+    if (target.unit === session.unit) return { load: target, warning: null };
+    const converted = convertMassExactly(target, session.unit);
+    if (converted === null) return drop('unit_not_convertible');
+    const planned: Load = { value: converted.value, unit: session.unit, convention: target.convention };
+    return {
+      load: planned,
+      warning: { kind: 'target_rounded', setTemplateId, requested: target, planned, bounded: null, converted: true },
+    };
+  }
+
+  if (isLoadAchievable(target, eq)) return { load: target, warning: null };
+  const rounded = roundToAvailableLoad(target, eq, 'easier');
+  if (!rounded.ok) return drop(rounded.reason === 'convention_mismatch' ? 'convention_mismatch' : 'no_achievable_loads');
+  return {
+    load: rounded.load,
+    warning: {
+      kind: 'target_rounded',
+      setTemplateId,
+      requested: target,
+      planned: rounded.load,
+      bounded: rounded.bounded,
+      converted: rounded.convertedRequest !== null,
+    },
+  };
+}
 
 export interface StartWorkoutInput {
   opId: string;
@@ -47,8 +115,9 @@ export interface StartWorkoutOutput {
 /**
  * Snapshot a routine and the gym's equipment into a new resumable session.
  * Rest durations are resolved and snapshotted per set. Planned loads are
- * rounded toward easier to what the equipment can make (never above its max);
- * each rounding is reported so the original template target stays visible.
+ * normalised to the session exercise's unit and convention by
+ * `planTemplateLoad` (rounded toward easier, never above the max); every
+ * change is reported so the original template target stays visible.
  * Missing equipment does not block logging; it is reported as a warning.
  */
 export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
@@ -74,6 +143,8 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
       }
     }
     const sessionExerciseId = input.newId();
+    const loadConvention = equipment?.loadConvention ?? exercise.defaultLoadConvention;
+    const unit = equipment?.unit ?? input.owner.preferredUnit;
     exercises.push({
       id: sessionExerciseId,
       sessionId,
@@ -81,8 +152,8 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
       exerciseName: exercise.name,
       measurement: exercise.measurement,
       equipmentId: equipment?.id ?? null,
-      loadConvention: equipment?.loadConvention ?? exercise.defaultLoadConvention,
-      unit: equipment?.unit ?? input.owner.preferredUnit,
+      loadConvention,
+      unit,
       order: position,
       supersetGroup: rex.supersetGroup,
       transitionRestS: rex.transitionRestS,
@@ -90,22 +161,8 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
     });
 
     rex.setTemplates.forEach((tpl, index) => {
-      let plannedLoad = tpl.targetLoad;
-      if (plannedLoad !== null && equipment !== null) {
-        const rounded = roundToAvailableLoad(plannedLoad, equipment, 'easier');
-        if (!rounded.ok) {
-          warnings.push({ kind: 'target_not_checkable', setTemplateId: tpl.id, reason: rounded.reason });
-        } else if (!rounded.exact) {
-          warnings.push({
-            kind: 'target_rounded',
-            setTemplateId: tpl.id,
-            requested: plannedLoad,
-            planned: rounded.load,
-            bounded: rounded.bounded,
-          });
-          plannedLoad = rounded.load;
-        }
-      }
+      const planned = planTemplateLoad(tpl.id, tpl.targetLoad, { unit, convention: loadConvention, equipment });
+      if (planned.warning) warnings.push(planned.warning);
       sets.push({
         id: input.newId(),
         sessionId,
@@ -114,7 +171,7 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
         setType: tpl.setType,
         status: 'pending',
         planned: {
-          load: plannedLoad,
+          load: planned.load,
           reps: tpl.targetReps,
           durationS: tpl.targetDurationS,
           rpe: tpl.targetRpe,

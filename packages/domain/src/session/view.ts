@@ -1,4 +1,4 @@
-import type { SessionAggregate, SetValues, WorkoutSet } from '@fizz/schemas';
+import type { Load, SessionAggregate, SessionExercise, SetValues, WorkoutSet } from '@fizz/schemas';
 import { restOverrunMs, restRemainingMs } from '../rest';
 import { toMs } from '../time';
 
@@ -76,6 +76,11 @@ export interface ComparableSet {
   values: SetValues;
 }
 
+function compatibleLoad(load: Load | null, ex: SessionExercise): Load | null {
+  if (load === null) return null;
+  return load.unit === ex.unit && load.convention === ex.loadConvention ? load : null;
+}
+
 const EMPTY: SetValues = { load: null, reps: null, durationS: null, rpe: null, rir: null };
 
 /**
@@ -92,13 +97,16 @@ export function prefillDraft(
   const set = state.sets.find((s) => s.id === setId);
   if (!set) return { values: EMPTY, source: 'none' };
   if (set.draft) return { values: set.draft, source: 'draft' };
+  const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
 
   const done = state.sets
     .filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.status === 'completed' && s.actual && s.completedAt)
     .sort((a, b) => toMs(b.completedAt?.utc ?? '') - toMs(a.completedAt?.utc ?? ''));
   const lastHere = done[0]?.actual ?? null;
-  const lastThere =
+  const comparable =
     (lastComparable.find((c) => c.index === set.index) ?? lastComparable[lastComparable.length - 1])?.values ?? null;
+  // History in another unit or convention is never copied in as-is (review B1).
+  const lastThere = comparable && ex ? { ...comparable, load: compatibleLoad(comparable.load, ex) } : comparable;
   const fallback = lastHere ?? lastThere;
 
   const p = set.planned;

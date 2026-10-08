@@ -36,3 +36,21 @@ export function roundToStep(value: number, step: number): number {
 export function sameMass(a: Mass, b: Mass): boolean {
   return a.unit === b.unit && toScaled(a.value) === toScaled(b.value);
 }
+
+/**
+ * Loads are shown to two decimals at most (enough for 1.25 kg and 2.5 lb
+ * plates). A unit conversion is only "exact" if it lands on this step.
+ */
+export const LOAD_DISPLAY_STEP = 0.01;
+
+/**
+ * Convert only when the result is exact at display precision; otherwise null.
+ * Used where a silent approximation would change what Ben is told to lift
+ * (e.g. a kg template on a session logged in lb with no equipment to round to).
+ */
+export function convertMassExactly(mass: Mass, to: WeightUnit): Mass | null {
+  if (mass.unit === to) return { value: mass.value, unit: to };
+  const converted = convertMass(mass, to).value;
+  const stepped = roundToStep(converted, LOAD_DISPLAY_STEP);
+  return Math.abs(converted - stepped) <= 1e-9 * Math.max(1, Math.abs(converted)) ? { value: stepped, unit: to } : null;
+}
