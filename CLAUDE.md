@@ -75,6 +75,7 @@ The main session acts as product manager and orchestrates. Subagents live in
 | `designer` | brief §1 and §12, research | `docs/design/<screen-or-flow>.md`, `docs/design/design-system.md` |
 | `developer` | design spec, brief, this file | `apps/`, `packages/`, tests |
 | `reviewer` | diff, spec, brief acceptance scenarios | `docs/reviews/<feature>.md` (verdict: PASS / CHANGES NEEDED) |
+| `training-researcher` | training topics Ben asks about | `docs/training-guides/<topic>.md`: candidate coaching-playbook rules with evidence grades; Ben approves rules |
 
 Work in thin vertical slices: research (if needed) → design → build → review →
 fix, one feature at a time. Record significant technical decisions in
