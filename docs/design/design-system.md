@@ -6,6 +6,8 @@
 
 > **Revision 2026-10-08 (workout builder, v0.5).** For [workout-builder.md](workout-builder.md): new timing token `timing.coachBuildTimeout` (§6) and components `ParamChip` (§9.17), `DraftExerciseRow` with diff markers (§9.18), `GuardNoteList` (§9.19) and `WorkoutDraftCard` (§9.20). No colour values added.
 
+> **Revision 2026-10-08 (Progress tab).** For [progress.md](progress.md): chart colour **aliases** of existing tokens (§2.1; no new colour values, one accent kept), number formats for fractional sets, changes and estimates (§3), chart dimension tokens (§4.1), components `Sparkline` (§9.21), `TrendRow` (§9.22), `TrendChart` (§9.23), `ChartMarker` (§9.24), `VolumeBandRow` (§9.25), `WeekStrip` (§9.26), `ChartDataTable` (§9.27), `SourceTag` (§9.28), `ResumeBar` (§9.29) and `CalendarDay` (§9.30), and chart items in the accessibility checklist (§10).
+
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
 Context: one person uses the app on an iPhone, one-handed, mid-workout, with sweaty fingers and headphones, often in bright or dim gym light. Every choice below favours speed, legibility and calm over decoration.
@@ -74,6 +76,29 @@ Rules:
 - `color.border.divider` is below 3:1 on purpose. Never use it as the only boundary of a tappable control.
 - When the system "Increase Contrast" setting is on, use `color.text.secondary` wherever `color.text.tertiary` appears, and make dividers 2pt wide in `color.border.control`.
 
+### 2.1 Chart colour aliases (revision 2026-10-08, Progress)
+
+Charts use **aliases** of the tokens above. No new colour values exist, and charts add no second accent. Implement them as references in `theme.ts` so both modes switch together.
+
+| Token | Alias of | Use |
+|---|---|---|
+| `color.chart.line` | `color.text.primary` | Trend line, sparkline line |
+| `color.chart.point` | `color.text.primary` | Data points |
+| `color.chart.selected` | `color.accent` | Selected point ring and its vertical guide line only (selection is the "active" item) |
+| `color.chart.grid` | `color.border.divider` | Horizontal gridlines. Decorative only |
+| `color.chart.axisText` | `color.text.secondary` | Axis labels, unit labels, month ticks |
+| `color.chart.bandFill` | `color.bg.raised` | Reference band fill (e.g. the 10–20 sets guide). Decorative only |
+| `color.chart.bandEdge` | `color.border.control` | Band edge lines (≥ 3:1 non-text contrast) |
+| `color.chart.bar` | `color.text.secondary` | Volume bars, endurance weekly bars |
+| `color.chart.marker` | `color.text.secondary` | Coach, deload, edited and gap markers (always icon + word) |
+| `color.chart.markerPain` | `color.status.warning` | Pain marker and span (always with `exclamationmark.triangle` + `Pain`) |
+
+Rules:
+- **One series per chart.** No chart needs a colour legend. Comparing series means switching the series picker, never overlaying lines in different colours.
+- The trend line is never `accent`. `accent` appears in a chart only for the selected point.
+- Up/down changes never use `status.done` or `status.danger`: a lower number isn't a failure (it may be a deload). Use arrow icons and words in `text.secondary`.
+- Meaningful graphics (line, points, bars, band edges, selected ring) need ≥ 3:1 against `bg.surface` and `bg.canvas` in both modes: `text.primary` and `text.secondary` exceed 7:1, `border.control` is 3.4:1 (dark) and 3.7:1 (light), `accent` exceeds 5.8:1. Re-check if any alias target changes.
+
 ---
 
 ## 3. Typography
@@ -103,6 +128,10 @@ Rules:
   - Rest and work timers use `m:ss` (for example `1:47`). Elapsed workout time uses `m:ss` under an hour and `h:mm:ss` from an hour up.
   - Summary durations use `54 min` or `1 h 04 min`.
   - Use a no-break space between a number and its unit (`100 kg`) and around the multiplication sign (`100 kg × 8`).
+  - Fractional set counts (helper muscles count ½) use the `½` glyph: `7½`, never `7.5 sets`. VoiceOver: "7 and a half".
+  - Changes: arrow icon + word + magnitude, `Up 7.5 kg since 16 Jul` / `Down 5 kg …` / `Same load as …`. Never a bare `+7.5` and never a percentage.
+  - Estimates: `≈` before the value and the word "estimate" (or `Est.`) on the same line, e.g. `≈ 123 kg (estimate)`. Estimates are rounded to 0.5 kg / 1 lb and are never snapped to achievable loads (they aren't targets).
+  - Date ranges: `9 Apr – 8 Oct`; weeks `Week of 5 Oct` or `5–11 Oct`; chart month ticks `Apr`; across a year boundary `Dec 2025`.
 
 ---
 
@@ -127,6 +156,21 @@ Layout:
 - Respect safe areas. The bottom action bar sits on top of the home indicator inset.
 - The focused card scrolls. The top bar and bottom action bar are fixed.
 - **Thumb zone.** Primary and frequent workout controls live in the bottom 40% of the screen. Rarely used controls (the menu, Finish, Discard) go in the top bar.
+
+### 4.1 Chart dimensions (revision 2026-10-08, Progress)
+
+| Token | Value | Use |
+|---|---|---|
+| `chart.sparkline` | 96 × 32 | `TrendRow` sparkline. Hidden at AX1+ |
+| `chart.detailHeight` | 220 | `TrendChart` plot area at default text sizes |
+| `chart.detailHeightAX` | 280 | Plot area at AX1+ (axis labels are larger) |
+| `chart.lineWidth` | 2 | Trend and sparkline lines (3 under Increase Contrast) |
+| `chart.point` | 6 diameter | Data points. Selected: 10 with a 2pt `chart.selected` ring |
+| `chart.markerLane` | 28 tall | Marker row under the x-axis |
+| `chart.bandBar` | 12 tall | `VolumeBandRow` bar |
+| `chart.weekBar` | 8 wide, gap 4 | Endurance weekly bars |
+
+Charts never animate their drawing, values or axes. Changing a chip redraws at once.
 
 ---
 
@@ -412,6 +456,69 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 ### 9.20 Workout draft card (`WorkoutDraftCard`, coach sheet)
 - Inline card in the conversation: `bg.surface`, 1pt `border.control`, `radius.md`. Pending: static `ellipsis` icon + `Building …` + `Cancel`. Ready: `TargetSourceTag` `Coach`, name + version, counts + estimate, `Checks: n`, and `Review ›` (secondary-style accent button). Never opens a screen by itself.
 
+### 9.21 Sparkline (`Sparkline`, Progress)
+- `chart.sparkline` (96 × 32), `chart.line` at `chart.lineWidth`, no axes, no points except the last one (`chart.point`). Gaps (progress.md PG12) break the line.
+- Drawn only with ≥ 3 points; otherwise the parent shows text instead. Never an empty frame.
+- Not focusable on its own: the parent row's VoiceOver label carries the numbers. Hidden at AX1+.
+
+### 9.22 Trend row (`TrendRow`, Progress)
+- A full-width button row (≥ 52pt), `bg.surface`, padding `space.3`, chevron `›`.
+- Lines: exercise name (`type.headline`); equipment context (`type.callout`, `text.secondary`, e.g. `Main Gym · barbell`); then `Sparkline` + latest actual (`type.body`, tabular, e.g. `102.5 kg × 6 · 8 Oct`); change line (`type.callout`, `text.secondary`, arrow icon `arrow.up.right` / `arrow.down.right` / `equal` + words).
+- Optional extra line for other-equipment or not-lately notes (`type.callout`, `text.secondary`, `info.circle`).
+- At AX1+: sparkline hidden, lines stack. VoiceOver: one element with the full sentence (progress.md §5.7).
+
+### 9.23 Trend chart (`TrendChart`, Progress)
+- One series. Plot `chart.detailHeight` (`chart.detailHeightAX` at AX1+), y-axis on the leading edge with 3–4 labels in `type.label`/`chart.axisText` and the unit above it (`kg`, `kg each`, `reps`); y range fits the data with padding, not forced to zero; x-axis month ticks. Gridlines `chart.grid`, horizontal only.
+- Line `chart.line`, points `chart.point`. A gap breaks the line.
+- **Marker lane** under the x-axis (`chart.markerLane`): `ChartMarker`s aligned to their dates; spans (deload, pain) are drawn as a bracket with the word. Markers never sit on the line.
+- **Selection panel** below the chart, fixed height, never a floating callout: range summary (`Latest`, `Best in range`, `Change`) or the selected session (date, value with `(actual)` or `(estimate)`, markers, `Open workout ›`, `Clear`).
+- Selection: tap anywhere in the plot selects the nearest point by date (the plot is the hit area); drag scrubs with `haptic.step`. Selected point uses `chart.selected` ring + a 1pt guide line.
+- VoiceOver: the chart is one adjustable element; its label is the summary, swipe up/down moves between points and reads each. A visible `Show as table` button always sits under the panel.
+- No animation on load, on chip changes or on selection.
+
+### 9.24 Chart marker (`ChartMarker`)
+
+| Kind | Icon (SF Symbol) | Colour | Word | VoiceOver |
+|---|---|---|---|---|
+| Coach adjusted (in-workout) | `text.bubble` | `chart.marker` | `Coach adjusted` | "Coach adjusted sets" |
+| Ran on coach target | `text.bubble` | `chart.marker` | `Coach target` | "Coach target used" |
+| Deload (span) | `arrow.down.to.line` | `chart.marker`, span fill `chart.bandFill` | `Deload` | "Deload week" |
+| Pain (point or span) | `exclamationmark.triangle` | `chart.markerPain` | `Pain` | "Pain flag" |
+| Edited | `pencil` | `chart.marker` | `Edited` | "Corrected after logging" |
+| Gap | `ellipsis` | `chart.marker` | `Gap 24 days` | "Gap of 24 days" |
+
+- Icon 16pt with the word in `type.label` when there is room; when markers crowd, the lane shows icons only and the word appears in the selection panel and the table. The icon is never the only carrier for VoiceOver.
+
+### 9.25 Volume band row (`VolumeBandRow`, Progress)
+- Line 1: muscle name (`type.body`) left; value + status text right (`type.body`, tabular): `14 · in 10–20`, `8 · under 10`, `23 · over 20`, `7½ · under 10`.
+- Line 2: a horizontal bar `chart.bandBar` tall on a fixed scale (0 to max(25, value)). Fill `chart.bar` up to the value; the guide band drawn behind it as `chart.bandFill` with 1pt `chart.bandEdge` lines at the band's min and max.
+- Status is the text, never the fill colour. With the guide off: no band, no status text.
+- At AX1+: line 1 wraps (value on its own line), bar full width. VoiceOver: "Chest, 14 hard sets this week, within the 10 to 20 guide."
+- As a button (detail screen), it expands to contributor lines (`type.callout`, `text.secondary`, tabular).
+
+### 9.26 Week strip (`WeekStrip`, Progress)
+- Seven equal columns, Mon–Sun (locale first weekday): weekday letter (`type.label`, `text.secondary`), glyph below. Not interactive (the parent card is the button), so columns may be narrower than 44pt.
+- Glyphs: `checkmark.circle.fill` in `status.done` = done; `circle` in `text.secondary` = planned; `minus` in `text.tertiary` = planned, not logged; none = rest. Today's letter is bold. A one-line text legend follows.
+- At AX1+: replaced by a list (`Mon · Done · Push A`). VoiceOver: one sentence for the week.
+
+### 9.27 Chart data table (`ChartDataTable`)
+- Replaces the chart when `Show as table` is on. Rows ≥ 44pt, columns `Date` + metric columns + `Notes` (markers as words). Values tabular; estimates keep `≈` and `(estimate)` in the column header.
+- Each row is a button to the session. At AX1+ rows stack (date, value, notes lines). No horizontal scrolling.
+
+### 9.28 Source tag (`SourceTag`)
+- Same frame as `TargetSourceTag` (§7): `type.label`, `text.secondary` on `bg.raised`, `radius.sm`, padding `space.1`/`space.2`, not tappable. Icon by kind: `iphone` = `Your logs`; `square.and.arrow.down` = imports (`FitNotes import`, `Garmin FIT files`, `Strava export`, `Garmin file, imported 3 Oct`); `text.bubble` = `Coach`; `gearshape` = `Built-in summary` variants.
+- Used for data provenance (week review observations, endurance cards, imported sessions). Never `accent`, never colour-only.
+
+### 9.29 Resume bar (`ResumeBar`)
+- Fixed above the tab bar on non-Today tabs while a workout is unfinished and < 6 h old. 60pt, `bg.surface`, top `border.divider`, padding `space.3`/`space.4`.
+- Left: status icon (§7 session status labels) + `Push A · Rest 1:12` / `· Ready` / `· Paused` (`type.headline`, tabular; the rest time is computed from the saved deadline, updated once per second, no animation). Right: `Resume` button (accent fill, `on.accent`, `radius.md`, ≥ 44pt tall, ≥ 96pt wide). Tapping anywhere on the bar resumes.
+- It is the only accent-filled button on the screen while shown. The `Ask` pill moves above it. VoiceOver: "Workout in progress, Push A, rest 1 minute 12 left. Resume, button."
+
+### 9.30 Calendar day (`CalendarDay`)
+- ≥ 44 × 44 cell: date number (`type.callout`, tabular) and up to two glyphs below: `●` (`circle.fill`, `text.primary`) workout, `▲` (`triangle.fill`, `text.secondary`) imported endurance, `○` (`circle`, `text.secondary`) planned. Shapes, not colours, carry the meaning; a legend sits under the grid.
+- Today: 1pt `border.control` ring and bold number. Selected: `accent.subtle` fill + `text.primary` number (selection, like a selected chip).
+- VoiceOver: "Thursday 8 October, Push A, 54 minutes, edited. Selected."
+
 ---
 
 ## 10. Accessibility checklist (applies to every screen)
@@ -422,3 +529,5 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 - The screen is usable at AX3 text size without horizontal scrolling. The Log button stays visible.
 - When a Bluetooth keyboard is connected, Return in the reps field acts like `Done`. Cmd+Return logs the set.
 - Status is always conveyed by icon or text as well as colour (§7).
+- Every chart has a VoiceOver summary sentence, point-by-point adjustable navigation and a visible `Show as table` alternative (§9.23, §9.27). Charts carry one series, so no colour legend is ever needed.
+- Every chart and progress value says whether it is an actual result, a target or an estimate.
