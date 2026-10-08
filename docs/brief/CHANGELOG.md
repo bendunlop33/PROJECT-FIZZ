@@ -42,3 +42,10 @@ The brief is a living document. Each approved change gets an entry here: the dat
 
 **Open**
 - The Apple Developer Program ($99/yr) dependency is being re-examined: Ben asked for a free install route. Research is in progress.
+
+## v0.3: 2026-10-08 (approved by Ben)
+
+- **Distribution:** use the free route (free Apple ID + SideStore + a cloud-built `.ipa`) and don't join the paid Developer Program. See ADR 0004 and `docs/research/free-ios-install.md`.
+- **First milestone additions:** backup and a tested restore, a cloud `.ipa` build, and an on-device capability probe screen.
+- **Native config:** only free-provisionable entitlements. Paid-only features are runtime capability flags.
+- **Dependencies resolved:** Ben has a Windows laptop and an iPhone 17 (iOS 26), so AlarmKit is available as the loud rest-alert fallback.
