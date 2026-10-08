@@ -8,6 +8,7 @@ import {
   STATUS_LABEL,
   appendDetail,
   confirmObservation,
+  recordAudioEvent,
   formatReport,
   recordResult,
   toUtcIso,
@@ -29,6 +30,7 @@ import {
   runAlarmKitProbe,
   runAppGroupProbe,
   runAudioCoachProbe,
+  runLockedCueProbe,
   runLiveActivityProbe,
   runNotificationProbe,
   runSecureStoreProbe,
@@ -37,6 +39,7 @@ import {
   runTtsProbe,
 } from '../probe/runners';
 import { getSnapshot, loadSavedResults, subscribe, updateResults } from '../probe/results-store';
+import AudioCoach from '../../modules/audio-coach';
 
 const REST_KEY = 'rest_deadline_probe';
 /** New per JS launch: lets the rest probe tell "same launch" from "after relaunch". */
@@ -94,6 +97,35 @@ export function CapabilityProbeScreen({ onBack }: Props) {
     };
   }, [apply, refreshRest]);
 
+  // Audio-coach events, logged while this screen is mounted (it stays mounted
+  // while the phone is locked during the locked-cue test).
+  const audioEvents = useRef<{ atMs: number; line: string }[]>([]);
+  useEffect(() => {
+    if (AudioCoach === null) return;
+    const log = (line: string) => {
+      const atMs = nowMs();
+      audioEvents.current = [...audioEvents.current, { atMs, line }].slice(-50);
+      updateResults((r) => recordAudioEvent(r, line, atMs));
+    };
+    const subs = [
+      AudioCoach.addListener('onInterruption', (e) => {
+        log(`interruption ${e.type}${e.type === 'ended' ? ` (shouldResume ${String(e.shouldResume)})` : ''}`);
+      }),
+      AudioCoach.addListener('onRouteChange', (e) => {
+        log(`route change: ${e.reason}; outputs ${e.outputs.join(', ') || 'none'}`);
+      }),
+    ];
+    return () => {
+      subs.forEach((s) => {
+        s.remove();
+      });
+    };
+  }, []);
+  const eventsSince = useCallback(
+    (sinceMs: number) => audioEvents.current.filter((e) => e.atMs >= sinceMs).map((e) => e.line),
+    [],
+  );
+
   const run = useCallback(
     async (id: ProbeId) => {
       setBusy((b) => new Set(b).add(id));
@@ -133,6 +165,15 @@ export function CapabilityProbeScreen({ onBack }: Props) {
           case 'audio_coach':
             update = await runAudioCoachProbe();
             break;
+          case 'audio_events':
+            update = {
+              status: 'not_run',
+              summary: 'Nothing to run: events are logged automatically while this screen is open',
+            };
+            break;
+          case 'locked_cue':
+            update = await runLockedCueProbe(eventsSince);
+            break;
           case 'speech_recognition':
             setTranscript('');
             update = await runSpeechRecognitionProbe(setTranscript);
@@ -160,7 +201,7 @@ export function CapabilityProbeScreen({ onBack }: Props) {
         return next;
       });
     },
-    [apply, refreshRest],
+    [apply, refreshRest, eventsSince],
   );
 
   const exportReport = useCallback(async () => {
@@ -210,7 +251,7 @@ export function CapabilityProbeScreen({ onBack }: Props) {
                 <Text style={styles.big}>{transcript.length > 0 ? transcript : 'Listening…'}</Text>
               ) : null}
               <Text style={styles.time}>{r.atUtc === null ? 'Never run' : `Last change ${r.atUtc} UTC`}</Text>
-              {def.id !== 'chatgpt_signin' ? (
+              {def.id !== 'chatgpt_signin' && def.id !== 'audio_events' ? (
                 <View style={styles.row}>
                   <Pressable
                     accessibilityRole="button"

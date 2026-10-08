@@ -10,6 +10,7 @@
  */
 
 import { bundleIdSuffix } from './app-group';
+import { LOCKED_CUE_DELAY_S } from './locked-cue';
 
 export type ProbeId =
   | 'sqlite'
@@ -18,6 +19,8 @@ export type ProbeId =
   | 'rest_deadline'
   | 'tts'
   | 'audio_coach'
+  | 'audio_events'
+  | 'locked_cue'
   | 'speech_recognition'
   | 'app_group'
   | 'live_activity'
@@ -95,6 +98,20 @@ export const PROBES: readonly ProbeDefinition[] = [
     title: 'Ducking while music plays (audio-coach module)',
     howTo: 'Start music in another app, come back, tap Run. Music should dip under the cue, then return to full volume.',
     confirmQuestion: 'Did the music dip during the cue and come back afterwards?',
+  },
+  {
+    id: 'audio_events',
+    ref: 'S7',
+    title: 'Audio interruptions and route changes (audio-coach events)',
+    howTo:
+      'No Run needed: logged while this screen is open. During a Ducking or Locked cue, try disconnecting AirPods, taking a call or invoking Siri.',
+  },
+  {
+    id: 'locked_cue',
+    ref: 'S7',
+    title: 'Spoken cue while locked (opt-in background-audio experiment)',
+    howTo: `Only in builds made with the background-audio experiment. Start music if you like, tap Run and lock the phone within 10 s. The cue plays ${LOCKED_CUE_DELAY_S} s after Run.`,
+    confirmQuestion: 'Did you hear the cue with the phone locked?',
   },
   {
     id: 'speech_recognition',
@@ -175,6 +192,26 @@ export function appendDetail(results: ProbeResults, id: ProbeId, line: string, n
   if (id === 'chatgpt_signin') return results;
   const current = results[id];
   return { ...results, [id]: { ...current, details: [...current.details, line], atUtc: toUtcIso(nowMs) } };
+}
+
+/** Most recent audio events kept in the report. */
+export const MAX_AUDIO_EVENTS = 20;
+
+/**
+ * Logs an audio-coach interruption or route-change event. Receiving one shows
+ * the module's observers fire, which is what "pass" means for this row.
+ */
+export function recordAudioEvent(results: ProbeResults, line: string, nowMs: number): ProbeResults {
+  const current = results.audio_events;
+  const previous = current.status === 'pass' ? current.details : [];
+  const details = [...previous, `${toUtcIso(nowMs)} ${line}`].slice(-MAX_AUDIO_EVENTS);
+  const total = (current.status === 'pass' ? Number(/^(\d+) /.exec(current.summary)?.[1] ?? 0) : 0) + 1;
+  return recordResult(
+    results,
+    'audio_events',
+    { status: 'pass', summary: `${total} event${total === 1 ? '' : 's'} received (latest ${Math.min(total, MAX_AUDIO_EVENTS)} listed)`, details },
+    nowMs,
+  );
 }
 
 /**

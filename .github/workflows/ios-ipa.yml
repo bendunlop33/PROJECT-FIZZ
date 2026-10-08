@@ -14,12 +14,17 @@ on:
         description: Include the Live Activity extension (untick only if it breaks the build or SideStore install)
         type: boolean
         default: true
+      background_audio:
+        description: Background-audio experiment (locked spoken cue). Leave unticked unless testing it
+        type: boolean
+        default: false
   push:
     tags:
       - 'ios-v*'
     # Manual runs only work once this file is on the default branch, so pushes to
     # Claude's working branches also run it. The macOS build (the expensive part)
-    # only runs when the head commit message contains [ios-build].
+    # only runs when the head commit message contains [ios-build]. Adding
+    # [bg-audio] to that message turns on the background-audio experiment.
     branches:
       - 'claude/**'
 
@@ -40,6 +45,8 @@ env:
   IOS_PROJECT: Fizz
   FIZZ_BUILD_NUMBER: ${{ github.run_number }}
   FIZZ_LIVE_ACTIVITY: ${{ (github.event_name != 'workflow_dispatch' || inputs.live_activity) && '1' || '0' }}
+  # Opt-in experiment, default off (ADR 0007): adds UIBackgroundModes audio.
+  FIZZ_BACKGROUND_AUDIO: ${{ ((github.event_name == 'workflow_dispatch' && inputs.background_audio) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[bg-audio]'))) && '1' || '0' }}
   CI: '1'
 
 jobs:
@@ -200,6 +207,7 @@ jobs:
             echo "| Bundle ID | \`$BUNDLE_ID\` (must never change) |"
             echo "| Version | $VERSION (build $FIZZ_BUILD_NUMBER) |"
             echo "| Live Activity extension | $([ "$FIZZ_LIVE_ACTIVITY" = 1 ] && echo included || echo left out) |"
+            echo "| Background-audio experiment | $([ "$FIZZ_BACKGROUND_AUDIO" = 1 ] && echo ON || echo off) |"
             echo "| Size | $(du -h "$STAGE/$IPA_NAME" | cut -f1) |"
             echo "| SHA-256 | \`$(shasum -a 256 "$STAGE/$IPA_NAME" | cut -d' ' -f1)\` |"
             echo "| Commit | \`$GITHUB_SHA\` |"

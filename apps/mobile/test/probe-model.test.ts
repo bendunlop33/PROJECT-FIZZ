@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  MAX_AUDIO_EVENTS,
   PROBES,
   appendDetail,
   confirmObservation,
   formatReport,
   initialResults,
   mergeNewer,
+  recordAudioEvent,
   recordResult,
   restoreResults,
   serialiseResults,
@@ -65,6 +67,16 @@ describe('probe model', () => {
     expect(appendDetail(r, 'chatgpt_signin', 'x', T0)).toBe(r);
   });
 
+  it('logs audio events with timestamps, counting all but keeping the latest', () => {
+    let r = recordAudioEvent(initialResults(), 'interruption began', T0);
+    expect(r.audio_events).toMatchObject({ status: 'pass', summary: '1 event received (latest 1 listed)' });
+    expect(r.audio_events.details).toEqual(['2026-10-08T09:00:00.000Z interruption began']);
+    for (let i = 0; i < 30; i++) r = recordAudioEvent(r, `route change ${i}`, T0 + i);
+    expect(r.audio_events.summary).toBe(`31 events received (latest ${MAX_AUDIO_EVENTS} listed)`);
+    expect(r.audio_events.details).toHaveLength(MAX_AUDIO_EVENTS);
+    expect(r.audio_events.details.at(-1)).toMatch(/route change 29$/);
+  });
+
   it('exports a text report with timestamps, statuses and totals', () => {
     let r = recordResult(initialResults(), 'sqlite', { status: 'pass', summary: 'ok', details: ['WAL'] }, T0);
     r = recordResult(r, 'alarmkit', { status: 'unavailable', summary: 'no AlarmKit' }, T0);
@@ -73,7 +85,7 @@ describe('probe model', () => {
     expect(text).toContain('[PASS] Spike: local DB: SQLite open, write, read (exclusive transaction)');
     expect(text).toContain('  - WAL');
     expect(text).toContain('[NOT IMPLEMENTED] S1: ChatGPT sign-in');
-    expect(text).toContain('Totals: 1 pass, 0 fail, 1 unavailable, 0 needs check, 8 not run, 1 not implemented');
+    expect(text).toContain('Totals: 1 pass, 0 fail, 1 unavailable, 0 needs check, 10 not run, 1 not implemented');
     expect(text).not.toContain('differs');
   });
 

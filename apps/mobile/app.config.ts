@@ -9,6 +9,9 @@ import { withFreeProvisioning } from './plugins/with-free-provisioning.mts';
  * - FIZZ_BUILD_NUMBER: CFBundleVersion; CI passes the run number so each IPA is newer.
  * - FIZZ_LIVE_ACTIVITY=0: leave out the expo-widgets Live Activity extension,
  *   a fallback if the extension breaks the unsigned build or SideStore signing.
+ * - FIZZ_BACKGROUND_AUDIO=1: opt-in experiment (default OFF). Adds
+ *   UIBackgroundModes "audio" so the probe can test a spoken cue while locked
+ *   (ios-platform-feasibility.md rec. 6; ADR 0007). Not a product decision.
  */
 // Expo's global typings declare env values as `any`; narrow them here.
 function envString(name: string): string | undefined {
@@ -18,6 +21,7 @@ function envString(name: string): string | undefined {
 
 const buildNumber = envString('FIZZ_BUILD_NUMBER') ?? '1';
 const includeLiveActivity = envString('FIZZ_LIVE_ACTIVITY') !== '0';
+const backgroundAudioExperiment = envString('FIZZ_BACKGROUND_AUDIO') === '1';
 
 const plugins: NonNullable<ExpoConfig['plugins']> = [
   [
@@ -56,11 +60,12 @@ const config: ExpoConfig = {
     supportsTablet: false,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
+      ...(backgroundAudioExperiment ? { UIBackgroundModes: ['audio'] } : {}),
     },
   },
   plugins,
   // Read at runtime by the capability probe (Metro can't import app-identity.mts).
-  extra: { includeLiveActivity, appGroupIdentifier: APP_GROUP_IDENTIFIER },
+  extra: { includeLiveActivity, backgroundAudioExperiment, appGroupIdentifier: APP_GROUP_IDENTIFIER },
 };
 
 // withFreeProvisioning wraps the config directly, so its mods are registered

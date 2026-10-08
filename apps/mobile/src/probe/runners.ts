@@ -12,6 +12,7 @@ import { isoUtc, nowMs } from '../clock';
 import { restCountdownActivity } from '../live-activity/RestCountdownActivity';
 import { judgeAlarmKitStatus } from './alarmkit';
 import { analyseAppGroup, parseNativeAppGroupInfo } from './app-group';
+import { LOCKED_CUE_DELAY_S, judgeLockedCue } from './locked-cue';
 import type { ResultUpdate } from './model';
 import { PROBE_CONTEXTUAL_STRINGS, describeTranscript } from './speech-probe';
 
@@ -316,6 +317,70 @@ export async function runAudioCoachProbe(): Promise<ResultUpdate> {
     return { status: 'needs_check', summary: 'Cue spoken over music', details };
   } catch (e) {
     return { status: 'fail', summary: `audio-coach error: ${errorText(e)}`, details: [] };
+  }
+}
+
+// ---------- Locked cue (opt-in background-audio experiment) ----------
+
+export function backgroundAudioInBuild(): boolean {
+  const extra: unknown = Constants.expoConfig?.extra;
+  return (
+    typeof extra === 'object' && extra !== null && (extra as { backgroundAudioExperiment?: unknown }).backgroundAudioExperiment === true
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** `recentEvents` returns audio events seen since a given time (from the screen's subscription). */
+export async function runLockedCueProbe(recentEvents: (sinceMs: number) => string[]): Promise<ResultUpdate> {
+  if (!backgroundAudioInBuild()) {
+    return {
+      status: 'unavailable',
+      summary: 'This build was made without the background-audio experiment (FIZZ_BACKGROUND_AUDIO=1)',
+      details: ['Default off by design; see ADR 0007'],
+    };
+  }
+  if (AudioCoach === null) {
+    return { status: 'unavailable', summary: 'audio-coach native module is not in this build', details: [] };
+  }
+  const coach = AudioCoach;
+  const startedAt = nowMs();
+  try {
+    // No ducking while idle: the keep-alive holds the session for the whole wait.
+    await withTimeout(
+      coach.configureSession({ category: 'playback', duckOthers: false, interruptSpokenAudioAndMixWithOthers: true }),
+      NATIVE_CALL_TIMEOUT_MS,
+      'configureSession',
+    );
+    const keepAlive = await withTimeout(coach.startKeepAlive(), NATIVE_CALL_TIMEOUT_MS, 'startKeepAlive');
+    if (!keepAlive.started) {
+      return { status: 'fail', summary: `Keep-alive did not start: ${keepAlive.reason ?? 'unknown'}`, details: [] };
+    }
+    try {
+      const dueAt = startedAt + LOCKED_CUE_DELAY_S * 1000;
+      await sleep(LOCKED_CUE_DELAY_S * 1000);
+      const firedAt = nowMs();
+      const appStateAtCue = AppState.currentState;
+      const result = await withTimeout(
+        coach.speak('Rest over. Next set, bench press, one hundred kilos for eight.', { language: 'en-US', deactivateAfter: false }),
+        NATIVE_CALL_TIMEOUT_MS,
+        'speak',
+      );
+      return judgeLockedCue({
+        appStateAtCue,
+        latenessMs: Math.max(0, firedAt - dueAt),
+        outcome: result.outcome,
+        otherAudioWasPlaying: result.otherAudioWasPlaying,
+        keepAliveCategory: keepAlive.category ?? null,
+        events: recentEvents(startedAt),
+      });
+    } finally {
+      await coach.stopKeepAlive().catch(() => undefined);
+    }
+  } catch (e) {
+    return { status: 'fail', summary: `Locked-cue experiment error: ${errorText(e)}`, details: recentEvents(startedAt) };
   }
 }
 
