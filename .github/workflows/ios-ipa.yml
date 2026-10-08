@@ -1,0 +1,198 @@
+# Builds an unsigned (ad hoc "-" signed) device .ipa for SideStore (ADR 0004).
+# Ben-facing instructions: docs/guides/building-the-ipa.md
+#
+# The bundle ID comes from apps/mobile/app-identity.mts and must never change
+# after the first install. The entitlement check fails the build if it does,
+# or if any entitlement a free Apple ID can't provision appears.
+
+name: iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      live_activity:
+        description: Include the Live Activity extension (untick only if it breaks the build or SideStore install)
+        type: boolean
+        default: true
+  push:
+    tags:
+      - 'ios-v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22.22.0'
+  XCODE_APP: /Applications/Xcode_26.6.app
+  IOS_PROJECT: Fizz
+  FIZZ_BUILD_NUMBER: ${{ github.run_number }}
+  FIZZ_LIVE_ACTIVITY: ${{ (github.event_name != 'workflow_dispatch' || inputs.live_activity) && '1' || '0' }}
+  CI: '1'
+
+jobs:
+  # Cheap Linux job first, so a failing test or config never spends macOS minutes.
+  check:
+    name: Check (tests, types, lint, entitlements)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Expo prebuild (config only)
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform ios --no-install --clean
+      - name: Entitlement check (generated project)
+        run: node scripts/check-entitlements.ts --prebuild apps/mobile/ios
+
+  build:
+    name: Build unsigned .ipa
+    needs: check
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
+      - run: npm ci
+
+      - name: Expo prebuild (iOS)
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform ios --no-install --clean
+
+      - name: Entitlement check (generated project)
+        run: node scripts/check-entitlements.ts --prebuild apps/mobile/ios
+
+      - name: Cache CocoaPods
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apps/mobile/ios/Pods
+            ~/Library/Caches/CocoaPods
+          key: pods-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('package-lock.json', 'apps/mobile/ios/Podfile', 'apps/mobile/ios/Podfile.properties.json', 'apps/mobile/modules/*/ios/*.podspec') }}
+
+      - name: Install pods
+        working-directory: apps/mobile/ios
+        run: pod install
+
+      - name: Build (Release, iphoneos, code signing off)
+        working-directory: apps/mobile/ios
+        run: |
+          LOG="$RUNNER_TEMP/xcodebuild.log"
+          if ! xcodebuild \
+              -workspace "$IOS_PROJECT.xcworkspace" \
+              -scheme "$IOS_PROJECT" \
+              -configuration Release \
+              -sdk iphoneos \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              COMPILER_INDEX_STORE_ENABLE=NO \
+              build > "$LOG" 2>&1; then
+            grep -E "error:|BUILD FAILED" "$LOG" | head -50 || true
+            tail -100 "$LOG"
+            exit 1
+          fi
+          tail -5 "$LOG"
+
+      - name: Ad hoc sign with entitlements
+        # A fully unsigned app carries no entitlements, and SideStore/AltStore then
+        # skip App Group registration (docs/research/free-ios-install.md §2).
+        # Sign inside-out: nested frameworks, then extensions, then the app.
+        run: |
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/$IOS_PROJECT.app"
+          test -d "$APP" || { echo "::error::$APP not found"; exit 1; }
+          echo "APP=$APP" >> "$GITHUB_ENV"
+          if [ -d "$APP/Frameworks" ]; then
+            find "$APP/Frameworks" -maxdepth 1 \( -name '*.framework' -o -name '*.dylib' \) -print0 |
+              xargs -0 -I{} codesign --force --sign - --timestamp=none "{}"
+          fi
+          for appex in "$APP"/PlugIns/*.appex; do
+            [ -d "$appex" ] || continue
+            name="$(basename "$appex" .appex)"
+            ent="apps/mobile/ios/$name/$name.entitlements"
+            if [ -f "$ent" ]; then
+              codesign --force --sign - --timestamp=none --entitlements "$ent" "$appex"
+            else
+              echo "::warning::No entitlements file for extension $name ($ent); signing without entitlements"
+              codesign --force --sign - --timestamp=none "$appex"
+            fi
+          done
+          codesign --force --sign - --timestamp=none \
+            --entitlements "apps/mobile/ios/$IOS_PROJECT/$IOS_PROJECT.entitlements" "$APP"
+          codesign --verify --deep --strict "$APP"
+
+      - name: Entitlement check (signed binaries)
+        run: |
+          OUT="$RUNNER_TEMP/entitlements"
+          mkdir -p "$OUT"
+          codesign -d --entitlements - --xml "$APP" > "$OUT/$IOS_PROJECT.app.plist"
+          for appex in "$APP"/PlugIns/*.appex; do
+            [ -d "$appex" ] || continue
+            codesign -d --entitlements - --xml "$appex" > "$OUT/$(basename "$appex").plist"
+          done
+          plutil -convert xml1 -o "$OUT/Info.xml" "$APP/Info.plist"
+          for f in "$OUT"/*.plist; do echo "== $(basename "$f")"; cat "$f"; echo; done
+          node scripts/check-entitlements.ts --signed "$OUT"/*.plist --info-plist "$OUT/Info.xml"
+
+      - name: Package .ipa
+        run: |
+          VERSION="$(plutil -extract CFBundleShortVersionString raw "$APP/Info.plist")"
+          BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Info.plist")"
+          IPA_NAME="$IOS_PROJECT-$VERSION-build$FIZZ_BUILD_NUMBER.ipa"
+          STAGE="$RUNNER_TEMP/ipa"
+          mkdir -p "$STAGE/Payload"
+          cp -R "$APP" "$STAGE/Payload/"
+          (cd "$STAGE" && zip -qry "$IPA_NAME" Payload)
+          echo "IPA_PATH=$STAGE/$IPA_NAME" >> "$GITHUB_ENV"
+          {
+            echo "### $IPA_NAME"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Bundle ID | \`$BUNDLE_ID\` (must never change) |"
+            echo "| Version | $VERSION (build $FIZZ_BUILD_NUMBER) |"
+            echo "| Live Activity extension | $([ "$FIZZ_LIVE_ACTIVITY" = 1 ] && echo included || echo left out) |"
+            echo "| Size | $(du -h "$STAGE/$IPA_NAME" | cut -f1) |"
+            echo "| SHA-256 | \`$(shasum -a 256 "$STAGE/$IPA_NAME" | cut -d' ' -f1)\` |"
+            echo "| Commit | \`$GITHUB_SHA\` |"
+            echo ""
+            echo "Download it from **Artifacts** below. It arrives as a plain \`.ipa\` (not zipped)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload .ipa
+        # archive: false uploads the .ipa itself (no zip), so the phone can open it
+        # straight from Safari's downloads. The artifact takes the file's name.
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ env.IPA_PATH }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: xcodebuild-log
+          path: ${{ runner.temp }}/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7
