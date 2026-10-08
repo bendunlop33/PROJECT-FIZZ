@@ -6,6 +6,7 @@ import { nowMs } from '../clock';
 import {
   PROBES,
   STATUS_LABEL,
+  appendDetail,
   confirmObservation,
   formatReport,
   recordResult,
@@ -40,6 +41,7 @@ import { getSnapshot, loadSavedResults, subscribe, updateResults } from '../prob
 const REST_KEY = 'rest_deadline_probe';
 /** New per JS launch: lets the rest probe tell "same launch" from "after relaunch". */
 const LAUNCH_ID = probeUuid();
+const BUILD_NUMBER = reportMeta().buildNumber;
 
 interface Props {
   onBack: () => void;
@@ -82,7 +84,7 @@ export function CapabilityProbeScreen({ onBack }: Props) {
         return;
       }
       if (cancelled()) return;
-      const verdict = judgeRecoveredRest(refreshRest());
+      const verdict = judgeRecoveredRest(refreshRest(), BUILD_NUMBER);
       if (verdict.status !== 'not_run') apply('rest_deadline', verdict);
     })();
     const tick = setInterval(refreshRest, 1000);
@@ -98,51 +100,58 @@ export function CapabilityProbeScreen({ onBack }: Props) {
       apply(id, { status: 'running', summary: 'Running…' });
       const now = nowMs();
       let update: ResultUpdate;
-      switch (id) {
-        case 'sqlite':
-          update = await runSqliteProbe(toUtcIso(now));
-          break;
-        case 'secure_store':
-          update = await runSecureStoreProbe();
-          break;
-        case 'notification':
-          update = await runNotificationProbe(now);
-          break;
-        case 'rest_deadline': {
-          const stored = serialiseProbeRest(
-            startProbeRest({ timerId: probeUuid(), sessionId: probeUuid(), setId: probeUuid() }, LAUNCH_ID, now),
-          );
-          try {
-            await putProbeValue(REST_KEY, stored, toUtcIso(now));
-            restStored.current = stored;
-            update = judgeRecoveredRest(refreshRest());
-          } catch (e) {
-            update = { status: 'fail', summary: `Could not save rest: ${String(e)}` };
+      // Any throw still ends in a terminal state, never a stuck RUNNING.
+      try {
+        switch (id) {
+          case 'sqlite':
+            update = await runSqliteProbe(toUtcIso(now));
+            break;
+          case 'secure_store':
+            update = await runSecureStoreProbe();
+            break;
+          case 'notification':
+            update = await runNotificationProbe(now, (line) => {
+              updateResults((r) => appendDetail(r, 'notification', line, nowMs()));
+            });
+            break;
+          case 'rest_deadline': {
+            const stored = serialiseProbeRest(
+              startProbeRest({ timerId: probeUuid(), sessionId: probeUuid(), setId: probeUuid() }, LAUNCH_ID, BUILD_NUMBER, now),
+            );
+            try {
+              await putProbeValue(REST_KEY, stored, toUtcIso(now));
+              restStored.current = stored;
+              update = judgeRecoveredRest(refreshRest(), BUILD_NUMBER);
+            } catch (e) {
+              update = { status: 'fail', summary: `Could not save rest: ${String(e)}` };
+            }
+            break;
           }
-          break;
+          case 'tts':
+            update = await runTtsProbe();
+            break;
+          case 'audio_coach':
+            update = await runAudioCoachProbe();
+            break;
+          case 'speech_recognition':
+            setTranscript('');
+            update = await runSpeechRecognitionProbe(setTranscript);
+            break;
+          case 'app_group':
+            update = await runAppGroupProbe();
+            break;
+          case 'live_activity':
+            update = await runLiveActivityProbe(now);
+            break;
+          case 'alarmkit':
+            update = await runAlarmKitProbe();
+            break;
+          case 'chatgpt_signin':
+            update = { status: 'not_implemented', summary: 'S1 ChatGPT sign-in: not yet implemented' };
+            break;
         }
-        case 'tts':
-          update = await runTtsProbe();
-          break;
-        case 'audio_coach':
-          update = await runAudioCoachProbe();
-          break;
-        case 'speech_recognition':
-          setTranscript('');
-          update = await runSpeechRecognitionProbe(setTranscript);
-          break;
-        case 'app_group':
-          update = await runAppGroupProbe();
-          break;
-        case 'live_activity':
-          update = await runLiveActivityProbe(now);
-          break;
-        case 'alarmkit':
-          update = await runAlarmKitProbe();
-          break;
-        case 'chatgpt_signin':
-          update = { status: 'not_implemented', summary: 'S1 ChatGPT sign-in: not yet implemented' };
-          break;
+      } catch (e) {
+        update = { status: 'fail', summary: `Probe threw: ${e instanceof Error ? e.message : String(e)}` };
       }
       apply(id, update);
       setBusy((b) => {

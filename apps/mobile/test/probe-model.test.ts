@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   PROBES,
+  appendDetail,
   confirmObservation,
   formatReport,
   initialResults,
@@ -54,6 +55,14 @@ describe('probe model', () => {
     expect(confirmObservation(failed, 'live_activity', true, T0)).toBe(failed);
     const unavailable = recordResult(initialResults(), 'alarmkit', { status: 'unavailable', summary: 'iOS < 26' }, T0);
     expect(confirmObservation(unavailable, 'alarmkit', true, T0)).toBe(unavailable);
+  });
+
+  it('appends a late observation without changing the status', () => {
+    const pending = recordResult(initialResults(), 'notification', { status: 'needs_check', summary: 'Scheduled', details: ['a'] }, T0);
+    const r = appendDetail(pending, 'notification', 'Delivered while the app was in the foreground', T0 + 15_000);
+    expect(r.notification).toMatchObject({ status: 'needs_check', details: ['a', 'Delivered while the app was in the foreground'] });
+    expect(r.notification.atUtc).toBe('2026-10-08T09:00:15.000Z');
+    expect(appendDetail(r, 'chatgpt_signin', 'x', T0)).toBe(r);
   });
 
   it('exports a text report with timestamps, statuses and totals', () => {

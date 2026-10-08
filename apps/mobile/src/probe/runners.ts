@@ -4,11 +4,13 @@ import * as Speech from 'expo-speech';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import * as SQLite from 'expo-sqlite';
 import Constants from 'expo-constants';
+import { AppState } from 'react-native';
 import { File, Paths } from 'expo-file-system';
 
 import AudioCoach from '../../modules/audio-coach';
 import { isoUtc, nowMs } from '../clock';
 import { restCountdownActivity } from '../live-activity/RestCountdownActivity';
+import { judgeAlarmKitStatus } from './alarmkit';
 import { analyseAppGroup, parseNativeAppGroupInfo } from './app-group';
 import type { ResultUpdate } from './model';
 import { PROBE_CONTEXTUAL_STRINGS, describeTranscript } from './speech-probe';
@@ -35,6 +37,27 @@ export function probeUuid(): string {
 function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
+
+/** Rejects if `p` hasn't settled in `ms`; a backstop for native calls. */
+export function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${what} did not respond within ${Math.round(ms / 1000)} s`));
+    }, ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(timer);
+        reject(e instanceof Error ? e : new Error(String(e)));
+      },
+    );
+  });
+}
+
+const NATIVE_CALL_TIMEOUT_MS = 30_000;
 
 // ---------- SQLite ----------
 
@@ -153,7 +176,13 @@ Notifications.setNotificationHandler({
     Promise.resolve({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
 });
 
-export async function runNotificationProbe(now: number): Promise<ResultUpdate> {
+/**
+ * Called with an extra detail after the runner has returned (the notification
+ * arrives up to NOTIFICATION_DELAY_S later).
+ */
+export type LateDetail = (line: string) => void;
+
+export async function runNotificationProbe(now: number, onLateDetail: LateDetail): Promise<ResultUpdate> {
   try {
     let perm = await Notifications.getPermissionsAsync();
     if (perm.status !== Notifications.PermissionStatus.GRANTED && perm.canAskAgain) {
@@ -162,6 +191,18 @@ export async function runNotificationProbe(now: number): Promise<ResultUpdate> {
     if (perm.status !== Notifications.PermissionStatus.GRANTED) {
       return { status: 'fail', summary: 'Notification permission not granted', details: [`status=${perm.status}`] };
     }
+    // iOS only hands the notification to the app when it's in the foreground,
+    // so this fires only if Ben did NOT lock the phone in time.
+    const sub = Notifications.addNotificationReceivedListener(() => {
+      sub.remove();
+      clearTimeout(stopListening);
+      onLateDetail(
+        `Delivered while the app was ${AppState.currentState === 'active' ? 'in the foreground (active)' : `in state "${AppState.currentState}"`}: a banner seen now does not prove delivery while locked`,
+      );
+    });
+    const stopListening = setTimeout(() => {
+      sub.remove();
+    }, (NOTIFICATION_DELAY_S + 120) * 1000);
     const id = await Notifications.scheduleNotificationAsync({
       content: { title: 'Fizz probe', body: `Rest over (scheduled ${NOTIFICATION_DELAY_S} s ahead)`, sound: true },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: NOTIFICATION_DELAY_S, repeats: false },
@@ -176,6 +217,7 @@ export async function runNotificationProbe(now: number): Promise<ResultUpdate> {
         `iOS settings: alert=${String(ios?.allowsAlert)}, sound=${String(ios?.allowsSound)}, lockScreen=${String(ios?.allowsDisplayOnLockScreen)}`,
         'Interruption level: active (time-sensitive needs the paid programme)',
         'Sound may be silent with the silent switch on or in a Focus',
+        'If the app sees the notification arrive in the foreground, a note is added below',
       ],
     };
   } catch (e) {
@@ -185,25 +227,47 @@ export async function runNotificationProbe(now: number): Promise<ResultUpdate> {
 
 // ---------- expo-speech ----------
 
+const TTS_TIMEOUT_MS = 20_000;
+
 export function runTtsProbe(): Promise<ResultUpdate> {
   return new Promise((resolve) => {
     const startedAt = nowMs();
-    Speech.speak('Rest over. Next set, bench press, one hundred kilos for eight.', {
-      language: 'en-US',
-      onDone: () => {
-        resolve({
-          status: 'needs_check',
-          summary: `expo-speech reported done after ${((nowMs() - startedAt) / 1000).toFixed(1)} s`,
-          details: [
-            '"Done" does not prove sound was heard: in silent mode iOS reports done with no sound (Expo docs)',
-            'Note the silent-switch position for this run',
-          ],
-        });
-      },
-      onError: (error: Error) => {
-        resolve({ status: 'fail', summary: `expo-speech error: ${error.message}`, details: [] });
-      },
-    });
+    let settled = false;
+    const finish = (update: ResultUpdate) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(update);
+    };
+    // Always reach a terminal state, even if expo-speech never calls back.
+    const timer = setTimeout(() => {
+      void Speech.stop();
+      finish({ status: 'fail', summary: `expo-speech did not report done within ${TTS_TIMEOUT_MS / 1000} s`, details: [] });
+    }, TTS_TIMEOUT_MS);
+    try {
+      Speech.speak('Rest over. Next set, bench press, one hundred kilos for eight.', {
+        language: 'en-US',
+        onDone: () => {
+          finish({
+            status: 'needs_check',
+            summary: `expo-speech reported done after ${((nowMs() - startedAt) / 1000).toFixed(1)} s`,
+            details: [
+              '"Done" does not prove sound was heard: in silent mode iOS reports done with no sound (Expo docs)',
+              'Note the silent-switch position for this run',
+            ],
+          });
+        },
+        // A call, Siri or another app's audio can stop the utterance; onDone never fires then.
+        onStopped: () => {
+          finish({ status: 'not_run', summary: 'The cue was stopped before it finished (interruption?). Run again', details: [] });
+        },
+        onError: (error: Error) => {
+          finish({ status: 'fail', summary: `expo-speech error: ${error.message}`, details: [] });
+        },
+      });
+    } catch (e) {
+      finish({ status: 'fail', summary: `expo-speech threw: ${errorText(e)}`, details: [] });
+    }
   });
 }
 
@@ -215,11 +279,16 @@ export async function runAudioCoachProbe(): Promise<ResultUpdate> {
   }
   try {
     const before = AudioCoach.getSessionState();
-    await AudioCoach.configureSession({ category: 'playback', duckOthers: true, interruptSpokenAudioAndMixWithOthers: true });
-    const result = await AudioCoach.speak('Rest over. Next set, bench press, one hundred kilos for eight.', {
-      language: 'en-US',
-      deactivateAfter: true,
-    });
+    await withTimeout(
+      AudioCoach.configureSession({ category: 'playback', duckOthers: true, interruptSpokenAudioAndMixWithOthers: true }),
+      NATIVE_CALL_TIMEOUT_MS,
+      'configureSession',
+    );
+    const result = await withTimeout(
+      AudioCoach.speak('Rest over. Next set, bench press, one hundred kilos for eight.', { language: 'en-US', deactivateAfter: true }),
+      NATIVE_CALL_TIMEOUT_MS,
+      'speak',
+    );
     const details = [
       `Other audio playing at start: ${result.otherAudioWasPlaying ? 'yes' : 'no'}`,
       `Category ${result.category}, options duckOthers + interruptSpokenAudioAndMixWithOthers`,
@@ -257,17 +326,7 @@ export async function runAlarmKitProbe(): Promise<ResultUpdate> {
     return { status: 'unavailable', summary: 'Cannot detect: audio-coach native module is not in this build', details: [] };
   }
   try {
-    const status = await AudioCoach.getAlarmKitStatus();
-    if (status === 'unsupportedOS') return { status: 'unavailable', summary: 'AlarmKit needs iOS 26 or later', details: [] };
-    if (status === 'notInSDK') return { status: 'unavailable', summary: 'Built with an SDK that has no AlarmKit', details: [] };
-    return {
-      status: 'pass',
-      summary: `AlarmKit framework present; authorization: ${status}`,
-      details: [
-        'Detection only. Scheduling an alarm needs a native module and NSAlarmKitUsageDescription (follow-up)',
-        'Whether a SideStore-signed app may schedule alarms is still unproven',
-      ],
-    };
+    return judgeAlarmKitStatus(await AudioCoach.getAlarmKitStatus());
   } catch (e) {
     return { status: 'fail', summary: `AlarmKit detection error: ${errorText(e)}`, details: [] };
   }
@@ -343,11 +402,19 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
   try {
     const factory = restCountdownActivity();
     for (const old of factory.getInstances()) await old.end('immediate');
-    const instance = factory.start({
-      startedAtMs: now,
-      endsAtMs: now + LIVE_ACTIVITY_DURATION_S * 1000,
-      nextLabel: 'Next: Bench press 100 kg × 8',
-    });
+    const endsAtMs = now + LIVE_ACTIVITY_DURATION_S * 1000;
+    // staleDate: the system can de-emphasise it once the countdown is over, so a
+    // 0:00 timer doesn't sit on the Lock Screen looking live. The next Run (or
+    // the timer below, if the app is still running) ends it.
+    const instance = factory.start(
+      { startedAtMs: now, endsAtMs, nextLabel: 'Next: Bench press 100 kg × 8' },
+      undefined,
+      // eslint-disable-next-line no-restricted-globals -- converting an injected time, not reading the clock
+      new Date(endsAtMs),
+    );
+    setTimeout(() => {
+      void instance.end('default').catch(() => undefined);
+    }, (LIVE_ACTIVITY_DURATION_S + 30) * 1000);
     return {
       status: 'needs_check',
       summary: `Started a ${LIVE_ACTIVITY_DURATION_S / 60}-minute countdown. Lock the phone to check`,
@@ -366,6 +433,7 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
 
 export const RECOGNITION_LOCALE = 'en-US';
 const RECOGNITION_TIMEOUT_MS = 8000;
+const RECOGNITION_END_GRACE_MS = 2000;
 
 export async function runSpeechRecognitionProbe(onPartial: (text: string) => void): Promise<ResultUpdate> {
   try {
@@ -391,10 +459,13 @@ export async function runSpeechRecognitionProbe(onPartial: (text: string) => voi
     let latest = '';
     let settled = false;
     const subs: { remove: () => void }[] = [];
+    const cleanup: (() => void)[] = [];
     const finish = (update: ResultUpdate) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      cleanup.forEach((c) => {
+        c();
+      });
       subs.forEach((s) => {
         s.remove();
       });
@@ -418,16 +489,33 @@ export async function runSpeechRecognitionProbe(onPartial: (text: string) => voi
         finish(fromTranscript());
       }),
     );
+    // After stop(), wait briefly for "end"; settle anyway if it never comes.
+    let fallback: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
-      ExpoSpeechRecognitionModule.stop();
+      try {
+        ExpoSpeechRecognitionModule.stop();
+      } catch {
+        // Settled by the fallback below.
+      }
+      fallback = setTimeout(() => {
+        finish(fromTranscript());
+      }, RECOGNITION_END_GRACE_MS);
     }, RECOGNITION_TIMEOUT_MS);
-
-    ExpoSpeechRecognitionModule.start({
-      lang: RECOGNITION_LOCALE,
-      interimResults: true,
-      requiresOnDeviceRecognition: true,
-      contextualStrings: [...PROBE_CONTEXTUAL_STRINGS],
-      addsPunctuation: false,
+    cleanup.push(() => {
+      clearTimeout(timer);
+      clearTimeout(fallback);
     });
+
+    try {
+      ExpoSpeechRecognitionModule.start({
+        lang: RECOGNITION_LOCALE,
+        interimResults: true,
+        requiresOnDeviceRecognition: true,
+        contextualStrings: [...PROBE_CONTEXTUAL_STRINGS],
+        addsPunctuation: false,
+      });
+    } catch (e) {
+      finish({ status: 'fail', summary: `Recognition did not start: ${errorText(e)}`, details: [] });
+    }
   });
 }

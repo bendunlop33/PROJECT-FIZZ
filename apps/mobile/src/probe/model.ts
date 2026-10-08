@@ -167,6 +167,17 @@ export function recordResult(results: ProbeResults, id: ProbeId, update: ResultU
 }
 
 /**
+ * Adds an observation that arrived after the runner returned (e.g. where a
+ * notification was delivered). Status is unchanged: a late detail informs Ben's
+ * answer, it never decides it.
+ */
+export function appendDetail(results: ProbeResults, id: ProbeId, line: string, nowMs: number): ProbeResults {
+  if (id === 'chatgpt_signin') return results;
+  const current = results[id];
+  return { ...results, [id]: { ...current, details: [...current.details, line], atUtc: toUtcIso(nowMs) } };
+}
+
+/**
  * Ben's answer to a "needs_check" probe. Ignored for any other state, so a
  * stale tap can't turn a failure or an unavailable capability into a pass.
  */
