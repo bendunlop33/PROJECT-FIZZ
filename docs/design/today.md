@@ -1,0 +1,206 @@
+# Today
+
+Status: v0.1 draft, 8 Oct 2026. Flow: [flow-first-milestone.md](flow-first-milestone.md). Tokens: [design-system.md](design-system.md).
+
+## 1. Purpose
+
+Today answers **"What am I training now, and where?"**
+
+Its single primary action is **Start workout**, or **Resume** when a workout is unfinished. There is never more than one primary button on screen.
+
+Supporting answers on the screen:
+- which gym is selected
+- how the week is going (in one line)
+- what comes next
+
+Today is the first tab. Detailed charts belong in Progress. Routines and the weekly plan open from here.
+
+## 2. Layout
+
+Regions, top to bottom:
+
+1. **Header (compact).** The date (`Thu 8 Oct`) on the left and the `GymChip` on the right. There's no large title; the space goes to the main card.
+2. **Main card.** Either Today's plan + `Start workout`, Resume, the stale-workout card, or No plan. Only one of these shows at a time.
+3. **Alternatives row.** Text buttons: `Other routine`, `Empty workout`, `Reschedule`, and `Shorter session` (shown only when a plan exists). It is hidden while a workout is in progress.
+4. **Readiness (optional).** `How do you feel today?` with chips [Normal] [Tired] [Sore]. It is hidden during and after today's workout.
+5. **This week.** `2 of 4 planned sessions done`, plus one pinned lift line. The data is static, with no chart animation.
+6. **Next session.** One row, which opens the weekly plan.
+7. **Ask pill.** The `TalkButton` pill, floating bottom-trailing above the tab bar. Content has a bottom inset so the pill never covers the Start button.
+8. **Tab bar.** Today · Progress · Profile.
+
+### Wireframe: planned session (normal)
+
+```
+┌────────────────────────────────────────┐
+│ Thu 8 Oct                [⌂ Main Gym ▾]│
+│                                        │
+│ ┌────────────────────────────────────┐ │
+│ │ Today's plan                       │ │
+│ │ Push A                             │ │
+│ │ Chest · shoulders · triceps        │ │
+│ │ 5 exercises · about 55 min         │ │
+│ │                                    │ │
+│ │ ┌────────────────────────────────┐ │ │
+│ │ │          Start workout         │ │ │
+│ │ └────────────────────────────────┘ │ │
+│ └────────────────────────────────────┘ │
+│  Other routine · Empty workout         │
+│  Reschedule · Shorter session          │
+│                                        │
+│ How do you feel today?  (optional)     │
+│ [ Normal ]  [ Tired ]  [ Sore ]        │
+│                                        │
+│ This week                              │
+│ 2 of 4 planned sessions done           │
+│ Bench press best set                   │
+│ 100 kg × 8 (6 Oct) · was 97.5 kg × 8   │
+│ (29 Sep)                               │
+│                                        │
+│ Next: Pull A · Sat 10 Oct            › │
+│                                        │
+│                            ( 💬 Ask )  │
+├────────────────────────────────────────┤
+│   Today        Progress       Profile  │
+└────────────────────────────────────────┘
+```
+
+### Wireframe: unfinished workout (Resume)
+
+```
+┌────────────────────────────────────────┐
+│ Thu 8 Oct                [⌂ Main Gym ▾]│
+│ ┌────────────────────────────────────┐ │
+│ │ ▶ In progress · started 18:02      │ │
+│ │ Push A                             │ │
+│ │ Now: Bench press · set 3 of 4      │ │
+│ │ 7 of 18 sets done                  │ │
+│ │ ⏱ Rest 1:12 left                   │ │
+│ │ ┌────────────────────────────────┐ │ │
+│ │ │             Resume             │ │ │
+│ │ └────────────────────────────────┘ │ │
+│ └────────────────────────────────────┘ │
+│ Next: Pull A · Sat 10 Oct            › │
+└────────────────────────────────────────┘
+```
+
+### Wireframe: stale unfinished workout (≥ 6 h since last activity)
+
+```
+│ ┌────────────────────────────────────┐ │
+│ │ ⚠ Unfinished workout · Wed 7 Oct   │ │
+│ │ Push A · 12 of 18 sets done        │ │
+│ │ Last set logged at 19:21           │ │
+│ │ ┌────────────────────────────────┐ │ │
+│ │ │    Finish (ended about 19:24)  │ │ │
+│ │ └────────────────────────────────┘ │ │
+│ │ Resume instead                     │ │
+│ └────────────────────────────────────┘ │
+```
+
+### Wireframe: no plan / first use
+
+```
+│ ┌────────────────────────────────────┐ │
+│ │ Nothing planned today              │ │
+│ │ ┌────────────────────────────────┐ │ │
+│ │ │       Start empty workout      │ │ │
+│ │ └────────────────────────────────┘ │ │
+│ │ Choose a routine · Create a routine│ │
+│ └────────────────────────────────────┘ │
+│ This week                              │
+│ No workouts logged yet this week.      │
+```
+
+## 3. States
+
+| State | Trigger | Main card | Other regions |
+|---|---|---|---|
+| Loading | Cold start before `buildTodayView` returns | Nothing for the first 300 ms, then static grey blocks (no shimmer) | Hidden |
+| Opening active workout | Cold start with an unfinished session < 6 h old | Today isn't shown. The app opens Active workout directly (P6) | none |
+| Planned | A scheduled session today, none started | Plan + `Start workout` | All regions |
+| Resume | Unfinished session < 6 h old (Ben came back to Today with the chevron) | Resume card with live rest or paused status | Alternatives and readiness hidden |
+| Stale unfinished | Unfinished, last activity ≥ 6 h ago | `Finish (ended about hh:mm)` primary, `Resume instead` link | Alternatives hidden |
+| Done today | A session finished today and no other is planned | `✓ Push A done · 54 min` + `View summary` link. The primary becomes `Start another workout` as a secondary button. **No primary button** | Readiness hidden |
+| No plan | No scheduled session | `Start empty workout` primary, routine links | This week shows text, not an empty chart |
+| Rest day | The plan marks today as rest | `Rest day in your plan` + secondary `Start a workout anyway` | Next session prominent |
+| No gym | No gym profile exists | Normal card. The gym chip reads `Add gym`. The start button stays enabled | Banner: `No gym selected. Loads won't be checked against equipment.` [Add gym] |
+| Sparse data | < 2 weeks of history | Normal | This week: `1 workout logged this week.` The pinned lift line is replaced by `Pin a lift in Progress to see it here.` |
+| Database error | SQLite open or read failed | `Couldn't open your training data.` [Try again], plus a link `Restore from backup` | Hidden |
+| AI unavailable | `getAiCapabilities` reports no text route | No change to the main card | The Ask pill shows `Offline` with the slashed icon |
+| Offline | No network | No change. Today needs no network | No banner (nothing here needs it). The Ask pill shows `Offline` if the coach needs the network |
+
+Transitions:
+- Planned → Start → Active workout (pushed full-screen).
+- Active workout → chevron-down (minimise) → Today in the Resume state.
+- Resume → Resume → Active workout.
+- Stale → Finish → finish sheet with the end time prefilled → Summary.
+- Finished → Done → Today (Done today).
+
+## 4. Interactions
+
+| Element | Tap | Other |
+|---|---|---|
+| `Start workout` | `startWorkout(routineId, gymId, opId)`, then open Active workout. Disabled for 1 s after the tap so it can't double-start. The opId stops a second session being created | none |
+| `Resume` | Opens Active workout in the persisted state | none |
+| `Finish (ended about 19:24)` | Opens the finish sheet (see active-workout.md §4.8) with the end time prefilled as the last set time + 3 min. Ben can edit it | none |
+| Gym chip | Opens the gym switcher sheet: a list of gyms with a check on the selected one, plus `Add gym` and `Edit gyms` (→ Profile). Choosing a gym before starting just selects it. During an unfinished session, it calls `setActiveGym(gymId, sessionId)`, which returns a proposal shown as a `ChangeReviewCard` in Active workout | none |
+| Readiness chip | Writes `recordReadiness(level)` immediately. The chip shows a selected state (check icon plus the `accent.subtle` fill). `Sore` reveals an optional one-line `Where? (optional)` field. Tapping the selected chip again clears the entry | Doesn't change targets (P11) |
+| Pinned lift line | Opens that exercise's history in Progress | none |
+| `Next: …` row | Opens the weekly plan | none |
+| `Reschedule` | Opens the weekly plan with today's session selected (move / skip / replace) | Out of milestone scope. The link exists but may route to a placeholder labelled `Coming soon` |
+| `Shorter session` | Out of milestone scope. Hide it until `shortenSession` exists | none |
+| Ask pill | Opens the coach sheet with Today's context attached. Long-press starts push-to-talk if voice is available | none |
+
+Voice equivalents (when voice is available): "Start my workout" maps to the Start action through the coach tool path. It needs no confirmation because it is reversible: an empty session can be discarded.
+
+Undo:
+- Starting by mistake: in Active workout, the menu offers `Discard workout`. With 0 sets logged, it discards at once and shows an undo toast.
+- A readiness tap is undone by tapping the chip again.
+
+## 5. Copy
+
+| Element | Text |
+|---|---|
+| Date header | `Thu 8 Oct` (locale short weekday, day, month) |
+| Plan card eyebrow | `Today's plan` |
+| Duration | `about 55 min` (from `estimateRemainingDuration`, so always "about") |
+| Primary | `Start workout` / `Resume` / `Start empty workout` / `Finish (ended about 19:24)` |
+| Resume eyebrow | `In progress · started 18:02` |
+| Resume lines | `Now: Bench press · set 3 of 4`, `7 of 18 sets done`, then one of `Rest 1:12 left` / `Ready for next set` / `Paused` |
+| Stale eyebrow | `Unfinished workout · Wed 7 Oct` |
+| Stale lines | `Last set logged at 19:21`, link `Resume instead` |
+| Readiness prompt | `How do you feel today?` with `(optional)` in secondary text |
+| Readiness chips | `Normal`, `Tired`, `Sore` |
+| Readiness confirmation (inline, 3 s) | `Saved. Targets don't change automatically.` |
+| This week | `2 of 4 planned sessions done` / `3 workouts this week` (no plan) |
+| Pinned lift | `Bench press best set` then `100 kg × 8 (6 Oct) · was 97.5 kg × 8 (29 Sep)`. These are actual results. If the two aren't comparable (different equipment or convention): `Bench press: not comparable with last time (different bar).` |
+| Next session | `Next: Pull A · Sat 10 Oct` |
+| Done today | `✓ Push A done · 54 min` and the link `View summary` |
+| Errors | `Couldn't open your training data.` [Try again] [Restore from backup] |
+| No-gym banner | `No gym selected. Loads won't be checked against equipment.` [Add gym] |
+| Ask pill | `Ask` / `Offline` |
+
+Spoken cue: none on Today. Starting a workout can trigger the optional set intro cue in Active workout.
+
+## 6. Data needed
+
+- `buildTodayView(ownerId, localDate)` is the single view call. It returns: `resume` (session summary, state, rest deadline), `plannedSession` (routine, focus, exercise count, `estimateRemainingDuration` result), `selectedGym`, `weekCounts` (from `getWeeklyTrainingSummary`), `pinnedLift` (from `getComparableHistory`, with a comparability flag) and `nextSession`. It has no AI dependency.
+- `getActiveSession(userId)` runs on cold start for the auto-open decision (P6).
+- `startWorkout(routineId?, gymId, operationId)`.
+- `setActiveGym(gymId, sessionId?)`.
+- `recordReadiness(ownerId, localDate, level, note?)` is a **proposed new function**.
+- `getAiCapabilities(userId)` sets the Ask pill state.
+- `finishWorkout` + `updateSessionTiming` for the stale card's Finish.
+
+## 7. Acceptance checks
+
+1. With an unfinished session started 30 min ago, a cold launch opens straight into Active workout. With one 8 h old, Today shows the stale card with `Finish (ended about …)` set to the last set time + 3 min.
+2. From Today in the Resume state, exactly one tap (`Resume`) shows the current set or rest. The rest time shown is correct.
+3. Only one `PrimaryButton` is visible in every state. The Ask pill never overlaps it at any Dynamic Type size, including AX3.
+4. With airplane mode on and no AI connected, Today renders fully. The only AI sign is the `Offline` Ask pill, and there is no error banner.
+5. Selecting `Tired` saves a readiness entry and the confirmation says targets don't change. Starting the workout shows the same targets as without it.
+6. Double-tapping `Start workout` creates one session.
+7. The pinned lift line never compares different equipment or load conventions. With no comparable data, it shows the "not comparable" or "pin a lift" text, not a blank chart.
+8. All text is at least 16pt by default, and numbers use tabular numerals.
+9. In light mode, all tokens switch and contrast meets design-system §2.
+10. There are no animations other than standard navigation and sheet transitions.
