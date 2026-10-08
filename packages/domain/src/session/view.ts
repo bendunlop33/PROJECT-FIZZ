@@ -55,12 +55,31 @@ export function getSessionPhase(state: SessionAggregate, nowMs: number): Session
   return { kind: 'ready', setId: session.activeSetId, restEnded };
 }
 
-/** Active workout duration: wall time minus paused time. */
+/**
+ * Paused time inside `[startMs, endMs]`: each closed pause (and the open one,
+ * up to `nowMs`) counts only for the part that overlaps the window. Pauses
+ * fully outside it are ignored; partial overlaps are clipped (review R1).
+ */
+export function pausedMsWithin(state: SessionAggregate, startMs: number, endMs: number, nowMs: number): number {
+  const { session } = state;
+  const intervals = session.pauses.map((p) => [toMs(p.startUtc), toMs(p.endUtc)] as const);
+  if (session.pause !== null) intervals.push([toMs(session.pause.pausedAtUtc), Math.max(nowMs, toMs(session.pause.pausedAtUtc))]);
+  let total = 0;
+  for (const [a, b] of intervals) total += Math.max(0, Math.min(b, endMs) - Math.max(a, startMs));
+  return total;
+}
+
+/**
+ * Active workout duration: wall time from start to end (or now) minus the
+ * paused time inside that window. A corrected start or end time therefore
+ * never subtracts a pause that happened outside the corrected window.
+ */
 export function getActiveDurationMs(state: SessionAggregate, nowMs: number): number {
   const { session } = state;
+  const start = toMs(session.startedAt.utc);
   const end = session.endedAt ? toMs(session.endedAt.utc) : nowMs;
-  const currentPause = session.pause ? Math.max(0, nowMs - toMs(session.pause.pausedAtUtc)) : 0;
-  return Math.max(0, end - toMs(session.startedAt.utc) - session.pausedTotalMs - currentPause);
+  if (end <= start) return 0;
+  return Math.max(0, end - start - pausedMsWithin(state, start, end, nowMs));
 }
 
 /**

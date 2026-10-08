@@ -218,7 +218,7 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
         activeSetId: order[0] ?? null,
         equipmentSnapshot: [...input.gymEquipment],
         pause: null,
-        pausedTotalMs: 0,
+        pauses: [],
         lastActivityAtUtc: input.at.utc,
       },
       exercises,

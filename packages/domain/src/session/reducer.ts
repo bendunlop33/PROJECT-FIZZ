@@ -3,6 +3,7 @@ import type {
   SessionTimingAuditEntry,
   ZonedTimestamp,
   EquipmentInstance,
+  PauseInterval,
   ProcessedOperation,
   RestTimer,
   SessionAggregate,
@@ -575,6 +576,14 @@ function handlePause(state: SessionAggregate, nowMs: number): Handled {
   };
 }
 
+/** The closed pauses, plus the open pause (if any) closed at `nowMs`. */
+function closePause(state: SessionAggregate, nowMs: number): PauseInterval[] {
+  const pause = state.session.pause;
+  if (pause === null) return state.session.pauses;
+  const startMs = toMs(pause.pausedAtUtc);
+  return [...state.session.pauses, { startUtc: pause.pausedAtUtc, endUtc: toIso(Math.max(startMs, nowMs)) }];
+}
+
 function handleResume(state: SessionAggregate, nowMs: number): Handled {
   const pause = state.session.pause;
   if (pause === null) return fail('not_paused', 'The workout is not paused.');
@@ -596,7 +605,7 @@ function handleResume(state: SessionAggregate, nowMs: number): Handled {
       ...state,
       restTimer,
       workInterval,
-      session: { ...state.session, pause: null, pausedTotalMs: state.session.pausedTotalMs + pausedFor },
+      session: { ...state.session, pause: null, pauses: closePause(state, nowMs) },
     },
     events: [{ type: 'SessionResumed' }],
   };
@@ -645,9 +654,9 @@ function handleFinish(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: 
     restTimer = endRestTimer(restTimer, 'cancelled', nowMs);
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'cancelled', timerVersion: restTimer.version, lateByMs: 0 });
   }
-  let pausedTotalMs = state.session.pausedTotalMs;
-  const pause = state.session.pause;
-  if (pause !== null) pausedTotalMs += Math.max(0, Math.min(endMs, nowMs) - toMs(pause.pausedAtUtc));
+  // An open pause is closed at the tap time and stored unclipped; duration
+  // counts only the part inside [startedAt, endedAt] (review R1).
+  const pauses = closePause(state, nowMs);
 
   events.push({ type: 'SessionFinished' });
   const next: SessionAggregate = {
@@ -661,7 +670,7 @@ function handleFinish(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: 
       status: 'finished',
       endedAt,
       pause: null,
-      pausedTotalMs,
+      pauses,
       activeSetId: null,
       version: state.session.version + 1,
     },
@@ -931,6 +940,7 @@ function handleDiscard(state: SessionAggregate, cmd: CommandOf<'discard'>, nowMs
       status: 'discarded',
       endedAt: cmd.at,
       pause: null,
+      pauses: closePause(state, nowMs),
       activeSetId: null,
       version: state.session.version + 1,
     },

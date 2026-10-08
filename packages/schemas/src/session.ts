@@ -124,6 +124,19 @@ export const PauseStateSchema = z.object({
 });
 export type PauseState = z.infer<typeof PauseStateSchema>;
 
+/**
+ * A closed pause, stored as recorded and never clipped (review R1, ADR 0003).
+ * Duration counts only the part of each pause that overlaps the session's
+ * current start→end window, so a corrected start or end time can't subtract
+ * pauses that happened outside it.
+ */
+export const PauseIntervalSchema = z.object({
+  startUtc: UtcTimestampSchema,
+  /** Never before `startUtc` (the reducer closes pauses at max(start, now)). */
+  endUtc: UtcTimestampSchema,
+});
+export type PauseInterval = z.infer<typeof PauseIntervalSchema>;
+
 export const WorkoutSessionSchema = z.object({
   id: IdSchema,
   ownerId: IdSchema,
@@ -143,8 +156,10 @@ export const WorkoutSessionSchema = z.object({
   version: z.int().min(1),
   activeSetId: IdSchema.nullable(),
   equipmentSnapshot: z.array(EquipmentInstanceSchema),
+  /** The open pause, if the workout is paused now. */
   pause: PauseStateSchema.nullable(),
-  pausedTotalMs: z.int().min(0),
+  /** Every closed pause, in order, unclipped. */
+  pauses: z.array(PauseIntervalSchema),
   lastActivityAtUtc: UtcTimestampSchema,
 });
 export type WorkoutSession = z.infer<typeof WorkoutSessionSchema>;
