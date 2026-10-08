@@ -460,6 +460,36 @@ describe('timed exercises (Working state)', () => {
     expect(stopped.sets.find((x) => x.id === hang.id)?.draft?.durationS).toBe(38);
   });
 
+  it('M6: Stop just after the deadline succeeds; the planned time is the draft and nothing is saved', () => {
+    const { s, hang } = atHang();
+    const working = apply(s, { type: 'start_work_interval', at: at(0), opId: 'w1', setId: hang.id, durationS: 45 });
+    const r = expectOk(reduceSession(working, { type: 'stop_work_interval', at: at(46), opId: 'stop', setId: hang.id }));
+    expect(r.events).toEqual([expect.objectContaining({ type: 'WorkIntervalEnded', reason: 'completed', elapsedS: 45 })]);
+    expect(r.state.workInterval?.status).toBe('completed');
+    expect(r.state.sets.find((x) => x.id === hang.id)).toMatchObject({ status: 'pending', draft: { durationS: 45 } });
+    // A retried Stop is a duplicate, not an error.
+    expect(expectOk(reduceSession(r.state, { type: 'stop_work_interval', at: at(47), opId: 'stop', setId: hang.id })).duplicate).toBe(true);
+  });
+
+  it('M6: a rejected command still returns the clock catch-up so the expiry can be persisted', () => {
+    const { state } = startFixture();
+    const [w, b1] = bench(state);
+    if (!w || !b1) throw new Error('fixture');
+    const resting = apply(state, logCmd(w.id, values(kg(60), 10), 30)); // deadline at 90
+    const r = reduceSession(resting, { type: 'set_active_set', at: at(120), opId: 'x', setId: w.id, expectedVersion: resting.session.version });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('set_not_pending');
+    expect(r.state.restTimer).toMatchObject({ status: 'expired', endedAtUtc: at(90).utc });
+    expect(r.state.revision).toBe(resting.revision + 1);
+    expect(r.events).toEqual([expect.objectContaining({ type: 'RestEnded', reason: 'expired' })]);
+    expect(r.state.processedOps.x).toBeUndefined();
+    expect(r.state.sets).toEqual(resting.sets);
+    // Before the deadline a rejection returns the input state untouched.
+    const early = reduceSession(resting, { type: 'set_active_set', at: at(40), opId: 'x', setId: w.id, expectedVersion: resting.session.version });
+    expect(!early.ok && early.state).toBe(resting);
+  });
+
   it('cannot log while the work timer runs; cannot start a work timer on a rep set', () => {
     const { s, hang } = atHang();
     const working = apply(s, { type: 'start_work_interval', at: at(10), opId: 'w1', setId: hang.id, durationS: 45 });

@@ -179,6 +179,24 @@ describe('session service over repository ports', () => {
     expect(stored?.sets.every((s) => s.status === 'pending')).toBe(true);
   });
 
+  it('M6: a rejected command persists the timer expiry it observed', async () => {
+    const repos = await seed();
+    const svc = createSessionService(repos, idGen());
+    const started = await svc.start(startReq());
+    if (!started.ok) throw new Error('start');
+    const sessionId = started.aggregate.session.id;
+    const w = setsFor(started.aggregate, BENCH)[0];
+    if (!w) throw new Error('fixture');
+    await svc.dispatch(sessionId, logCmd(w.id, values(kg(60), 10), 30)); // rest deadline at 90
+    const timerId = (await repos.sessions.get(sessionId))?.restTimer?.id ?? '';
+    // A stale -30 s tap lands after the deadline: rejected, but the expiry is kept.
+    const out = await svc.dispatch(sessionId, { type: 'adjust_rest', at: at(120), opId: 'late', timerId, deltaS: -30 });
+    expect(out).toMatchObject({ ok: false, error: { code: 'timer_not_running' } });
+    const stored = await repos.sessions.get(sessionId);
+    expect(stored?.restTimer).toMatchObject({ status: 'expired', endedAtUtc: at(90).utc });
+    expect(stored?.processedOps.late).toBeUndefined();
+  });
+
   it('recover returns null when there is no unfinished workout', async () => {
     const repos = await seed();
     expect(await createSessionService(repos, idGen()).recover(OWNER, at(0))).toBeNull();

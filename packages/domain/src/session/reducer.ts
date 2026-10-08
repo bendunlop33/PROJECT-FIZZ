@@ -95,7 +95,19 @@ export type ReduceResult =
        */
       superseded: boolean;
     }
-  | { ok: false; error: SessionError; state: SessionAggregate };
+  | {
+      ok: false;
+      error: SessionError;
+      /**
+       * The input state, plus any clock catch-up (timer expiry) that happened
+       * before the command was rejected. Persist it when it differs from the
+       * input so an expiry is never lost (review M6). The command itself is not
+       * recorded, so it can be retried.
+       */
+      state: SessionAggregate;
+      /** Clock events from that catch-up (e.g. RestEnded). Empty when nothing changed. */
+      events: SessionEvent[];
+    };
 
 type Handled = { ok: true; state: SessionAggregate; events: SessionEvent[] } | { ok: false; error: SessionError };
 
@@ -488,6 +500,11 @@ function handleStartWork(state: SessionAggregate, cmd: CommandOf<'start_work_int
 function handleStopWork(state: SessionAggregate, cmd: CommandOf<'stop_work_interval'>, nowMs: number): Handled {
   if (state.session.pause !== null) return fail('session_paused', 'Resume the workout first.');
   const wi = state.workInterval;
+  if (wi?.setId === cmd.setId && wi.status === 'completed') {
+    // The deadline passed just before Stop landed (review M6): the timer already
+    // ended and filled the planned duration as the draft. Stop is a no-op.
+    return { ok: true, state, events: [] };
+  }
   if (wi?.setId !== cmd.setId || wi.status !== 'running') {
     return fail('work_interval_not_running', 'No work timer is running for this set.');
   }
@@ -679,6 +696,7 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
           ok: false,
           error: { code: 'operation_id_reused', message: 'This operation ID was already used for a different action.' },
           state,
+          events: [],
         };
       }
       return { ok: true, state, events: [], duplicate: true, superseded: isSuperseded(state, command) };
@@ -687,12 +705,15 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
 
   if (state.session.status !== 'active' && command.type !== 'correct_set') {
     if (command.type === 'tick') return { ok: true, state, events: [], duplicate: false, superseded: false };
-    return { ok: false, error: { code: 'session_finished', message: 'This workout is finished.' }, state };
+    return { ok: false, error: { code: 'session_finished', message: 'This workout is finished.' }, state, events: [] };
   }
 
   const clocked = applyClock(state, nowMs);
   const handled = dispatch(clocked.state, command, nowMs);
-  if (!handled.ok) return { ok: false, error: handled.error, state };
+  if (!handled.ok) {
+    const caughtUp = clocked.state === state ? state : { ...clocked.state, revision: state.revision + 1 };
+    return { ok: false, error: handled.error, state: caughtUp, events: clocked.events };
+  }
 
   const events = [...clocked.events, ...handled.events];
   const changed = handled.state !== state;

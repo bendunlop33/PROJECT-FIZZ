@@ -95,7 +95,12 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       const current = await repos.sessions.get(sessionId);
       if (!current) return { ok: false, error: { code: 'not_found', message: 'Session not found.' } };
       const result = reduceSession(current, parsed.value);
-      if (!result.ok) return { ok: false, error: result.error };
+      if (!result.ok) {
+        // Keep any timer expiry observed before the rejection (review M6). A
+        // conflict here is harmless: whoever wrote first has caught up too.
+        if (result.state !== current) await repos.sessions.save(result.state, current.revision);
+        return { ok: false, error: result.error };
+      }
       if (result.state === current) {
         return { ok: true, aggregate: current, events: result.events, duplicate: result.duplicate, superseded: result.superseded };
       }
