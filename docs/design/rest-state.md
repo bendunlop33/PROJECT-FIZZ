@@ -1,5 +1,7 @@
 # Rest state
 
+> **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md) S2 and S1: one definition of Skip (`skip_rest` → `endRestTimer(timerId, 'skipped')`, no rest-end cue), matching flow §3.2; a `−30 s` that reaches 0 is an expiry, not a Skip; undo of the set during rest is guarded on that set's version, so effort chips don't block it. Noted that "This rest only" edits aren't in the domain yet.
+
 Status: v0.1 draft, 8 Oct 2026. Rest is part of the Active workout screen, not a separate screen. See [active-workout.md](active-workout.md) and the state machine in [flow-first-milestone.md](flow-first-milestone.md) §3. Tokens: [design-system.md](design-system.md) §9.6.
 
 ## 1. Purpose
@@ -87,6 +89,7 @@ There is a 52pt bar above the action bar: `⏱ Rest 2:47   [−30] [+30] [Skip]`
 ```
 - Opening it from the running countdown edits the running timer. Opening it from `Rest after:` edits the upcoming rest.
 - Only the third option changes the saved routine. Saving it shows a toast: `Saved for future Bench press workouts` [Undo].
+- `This rest only` and `… sets, today` for an **upcoming** rest have no domain command yet (ADR 0003 Open). Until they land, the editor opened from `Rest after:` shows only `Save as … default`, and the editor on the running countdown changes only the running timer through `adjustRestTimer`.
 
 ## 3. States
 
@@ -96,7 +99,7 @@ There is a 52pt bar above the action bar: `⏱ Rest 2:47   [−30] [+30] [Skip]`
 | Running | Countdown, controls | `commitSetAndBeginRest` returned a timer | Expiry, Skip, Log early, Pause, Undo |
 | Heads-up (optional) | Same, plus a cue at 15 s (off by default) | 15 s remaining | — |
 | Ended (Ready) | `Ready when you are` + count-up | Deadline reached | Log (count-up stops), or the next set changes |
-| Skipped | Same as Ready, but no count-up and no rest-end cue | Skip | Log |
+| Skipped | Same as Ready, but no count-up and no rest-end cue. Timer status `skipped` | Skip (`endRestTimer(timerId, 'skipped')`) | Log |
 | Ended early | Not shown. The next set's rest replaces it | Log during rest | — |
 | Paused | Countdown frozen at the remaining time, warning `Paused` label, controls disabled | `pauseSession` | `resumeSession` |
 | Cancelled by undo | The rest card disappears and the undone set is active again | Undo of the set that started it | — |
@@ -130,10 +133,10 @@ The resolved **source** is shown only in the duration editor (§2.4). The set ca
 
 ### 4.3 Adjust
 - **−30 s / +30 s** call `adjustRestTimer(timerId, ±30)`. This creates a new deadline and version, replaces any scheduled alert and cue, and fires `haptic.step`.
-  - Going below 0 clamps to 0 and ends rest. Treat this as Ended, not Skipped, and play the rest-end cue.
+  - Going below 0 clamps to 0 and ends rest. This is an expiry: Ended, not Skipped, and the rest-end cue plays once.
   - Adjusting doesn't change the saved routine preset.
 - **Tap the countdown** to open the editor with the remaining time preselected.
-- **Skip** calls `endRestTimer(timerId, 'skipped')` (proposed). It goes to Ready, cancels cues, and no rest-end cue plays.
+- **Skip** is the `skip_rest` command: `endRestTimer(timerId, 'skipped')`, then `cancelObsoleteCues`. It goes to Ready (Skipped), and no rest-end cue or notification follows. Skip is never `adjustRestTimer` to zero. This is the only definition of Skip; flow §3.2 uses the same one.
 
 ### 4.4 Ending early by logging
 - Tapping `Log …` during rest ends the current timer with the reason `ended_early`, cancels its cues, commits the new set and starts the new rest.
@@ -180,7 +183,7 @@ Available only where supported (`DEP-LIVE`, `DEP-NOTIF`).
 - Speaking never extends rest by itself.
 
 ### 4.10 Undo
-- **Undo the set that started this rest:** the timer is cancelled and its cues are cancelled (`cancelObsoleteCues`).
+- **Undo the set that started this rest:** the timer is cancelled and its cues are cancelled (`cancelObsoleteCues`). Undo is guarded on that set's own version (the one shown, including any effort chip just tapped) and on it still being the latest commit, so Log → effort `8` → Undo works within the 8 s toast.
 - **Undo a ±30 s change:** tap the opposite button. No toast is shown for timer nudges, because they are low-stakes and easy to reverse.
 - **Undo "Save as … default":** toast [Undo].
 
@@ -250,7 +253,7 @@ Durations are spoken as:
 
 - `commitSetAndBeginRest(command)` returns `{set, restTimer{timerId, deadlineUtc, durationS, source, version}}`, or `null` for a zero-length or final rest.
 - `resolveRestPreset(sessionId, setId)` returns `{durationS, source: 'set_override' | 'routine_set_type' | 'exercise_default' | 'global_default', sourceLabel}`.
-- `adjustRestTimer(timerId, deltaSeconds)`, and the proposed `endRestTimer(timerId, reason)`.
+- `adjustRestTimer(timerId, deltaSeconds)` (`adjust_rest`), and `endRestTimer(timerId, reason)` (Skip is the `skip_rest` command, reason `skipped`; Log during rest uses `ended_early`).
 - `pauseSession(sessionId)` / `resumeSession(sessionId)`.
 - `startRestTimer(setId, duration)` is used internally by the commit and is not called directly by the UI.
 - `buildSetCue(event, sessionVersion)`, `scheduleTimerCue(timerId, version)`, `cancelObsoleteCues(sessionId, version)`.
@@ -265,13 +268,14 @@ Durations are spoken as:
 3. Force-quit during rest and reopen after the deadline: the app shows `Ready when you are`, there is no spoken cue, and there is exactly one notification (if notifications are allowed).
 4. Tapping effort `8` during rest changes the set's RPE and leaves the countdown unchanged. Correcting the just-saved set also leaves it unchanged.
 5. `+30 s` at 0:20 gives 0:50, and the alert is rescheduled: one alert, at the new time. `−30 s` at 0:20 ends rest and plays one rest-end cue.
-6. Skip ends rest with no rest-end cue and no later notification.
+6. Skip ends rest with no rest-end cue and no later notification, and the timer is stored with status `skipped` (not an expiry).
 7. Logging the next set at 1:00 remaining cancels the old alert. Only the new rest's alert fires.
 8. Pause at 1:10, resume 2 min later: the countdown continues from 1:10, and no alert fires during the pause.
 9. Timer expiry never marks a set done and never changes the active set.
-10. With rest presets of Warm-up 1:00 and Heavy 3:00 configured, a warm-up set rests 1:00 and a working bench set rests 3:00. The editor shows the matching source label. "This rest only" doesn't change the next workout's preset.
+10. With rest presets of Warm-up 1:00 and Heavy 3:00 configured, a warm-up set rests 1:00 and a working bench set rests 3:00. The editor shows the matching source label. "This rest only" (once the domain supports it) doesn't change the next workout's preset.
 11. In Set cues mode, an accepted proposal during rest changes the next set to 92.5 kg, and the rest-end cue says 92.5 (not 100).
 12. In Quiet mode no speech is ever produced. In Set cues mode the microphone is never activated (check the iOS recording indicator).
 13. With headphones disconnected and the speaker option off, no cue plays through the phone speaker.
 14. After the workout's final set, no rest timer starts.
 15. The countdown digits don't shift horizontally as they change (tabular numerals), and nothing animates except the digit change.
+16. Log a set, tap effort `8`, then tap `Undo` in the toast: the set is removed and the rest timer and its cues are cancelled.

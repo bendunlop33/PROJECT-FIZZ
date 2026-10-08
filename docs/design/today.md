@@ -1,5 +1,7 @@
 # Today
 
+> **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md) S4 and S5: the stale card's Finish passes the chosen end time to `finishWorkout(…, endedAt)` in one call, and is blocked with a Stop prompt if a work timer was left running. `Empty workout` now opens the empty-workout state. Discard of a 0-set workout has no Undo.
+
 Status: v0.1 draft, 8 Oct 2026. Flow: [flow-first-milestone.md](flow-first-milestone.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -119,7 +121,7 @@ Regions, top to bottom:
 | Opening active workout | Cold start with an unfinished session < 6 h old | Today isn't shown. The app opens Active workout directly (P6) | none |
 | Planned | A scheduled session today, none started | Plan + `Start workout` | All regions |
 | Resume | Unfinished session < 6 h old (Ben came back to Today with the chevron) | Resume card with live rest or paused status | Alternatives and readiness hidden |
-| Stale unfinished | Unfinished, last activity ≥ 6 h ago | `Finish (ended about hh:mm)` primary, `Resume instead` link | Alternatives hidden |
+| Stale unfinished | Unfinished, last activity ≥ 6 h ago | `Finish (ended about hh:mm)` primary, `Resume instead` link. With nothing logged: `Discard (nothing logged)` primary instead | Alternatives hidden |
 | Done today | A session finished today and no other is planned | `✓ Push A done · 54 min` + `View summary` link. The primary becomes `Start another workout` as a secondary button. **No primary button** | Readiness hidden |
 | No plan | No scheduled session | `Start empty workout` primary, routine links | This week shows text, not an empty chart |
 | Rest day | The plan marks today as rest | `Rest day in your plan` + secondary `Start a workout anyway` | Next session prominent |
@@ -142,7 +144,7 @@ Transitions:
 |---|---|---|
 | `Start workout` | `startWorkout(routineId, gymId, opId)`, then open Active workout. Disabled for 1 s after the tap so it can't double-start. The opId stops a second session being created | none |
 | `Resume` | Opens Active workout in the persisted state | none |
-| `Finish (ended about 19:24)` | Opens the finish sheet (see active-workout.md §4.8) with the end time prefilled as the last set time + 3 min. Ben can edit it | none |
+| `Finish (ended about 19:24)` | Opens the finish sheet (see active-workout.md §4.8) with the end time prefilled as the last set time + 3 min. Ben can edit it between the last set and now. `Finish` calls `finishWorkout(sessionId, expectedVersion, endedAt)` once; the tap time is kept in the timing audit. If a work timer was left running or paused, the sheet shows `Stop the timer first` with [Stop] (the elapsed time is kept as that set's draft), then the normal Finish. Stale cards with 0 logged sets show `Discard (nothing logged)` instead of Finish | none |
 | Gym chip | Opens the gym switcher sheet: a list of gyms with a check on the selected one, plus `Add gym` and `Edit gyms` (→ Profile). Choosing a gym before starting just selects it. During an unfinished session, it calls `setActiveGym(gymId, sessionId)`, which returns a proposal shown as a `ChangeReviewCard` in Active workout | none |
 | Readiness chip | Writes `recordReadiness(level)` immediately. The chip shows a selected state (check icon plus the `accent.subtle` fill). `Sore` reveals an optional one-line `Where? (optional)` field. Tapping the selected chip again clears the entry | Doesn't change targets (P11) |
 | Pinned lift line | Opens that exercise's history in Progress | none |
@@ -154,7 +156,8 @@ Transitions:
 Voice equivalents (when voice is available): "Start my workout" maps to the Start action through the coach tool path. It needs no confirmation because it is reversible: an empty session can be discarded.
 
 Undo:
-- Starting by mistake: in Active workout, the menu offers `Discard workout`. With 0 sets logged, it discards at once and shows an undo toast.
+- Starting by mistake: in Active workout, the menu offers `Discard workout`. With 0 sets logged, it discards at once with the toast `Workout discarded` (no Undo; nothing was logged, so Ben just starts again).
+- `Empty workout` / `Start empty workout` call `startWorkout(null, gymId, opId)` and open Active workout in the empty state (`Add an exercise to start`, active-workout §2.10).
 - A readiness tap is undone by tapping the chip again.
 
 ## 5. Copy
@@ -164,11 +167,12 @@ Undo:
 | Date header | `Thu 8 Oct` (locale short weekday, day, month) |
 | Plan card eyebrow | `Today's plan` |
 | Duration | `about 55 min` (from `estimateRemainingDuration`, so always "about") |
-| Primary | `Start workout` / `Resume` / `Start empty workout` / `Finish (ended about 19:24)` |
+| Primary | `Start workout` / `Resume` / `Start empty workout` / `Finish (ended about 19:24)` / `Discard (nothing logged)` |
 | Resume eyebrow | `In progress · started 18:02` |
 | Resume lines | `Now: Bench press · set 3 of 4`, `7 of 18 sets done`, then one of `Rest 1:12 left` / `Ready for next set` / `Paused` |
 | Stale eyebrow | `Unfinished workout · Wed 7 Oct` |
-| Stale lines | `Last set logged at 19:21`, link `Resume instead` |
+| Stale lines | `Last set logged at 19:21`, link `Resume instead`. With a work timer left running: extra line `Dead hang timer still running` |
+| Stale, nothing logged | `Nothing logged` and primary `Discard (nothing logged)`, link `Resume instead` |
 | Readiness prompt | `How do you feel today?` with `(optional)` in secondary text |
 | Readiness chips | `Normal`, `Tired`, `Sore` |
 | Readiness confirmation (inline, 3 s) | `Saved. Targets don't change automatically.` |
@@ -190,7 +194,8 @@ Spoken cue: none on Today. Starting a workout can trigger the optional set intro
 - `setActiveGym(gymId, sessionId?)`.
 - `recordReadiness(ownerId, localDate, level, note?)` is a **proposed new function**.
 - `getAiCapabilities(userId)` sets the Ask pill state.
-- `finishWorkout` + `updateSessionTiming` for the stale card's Finish.
+- `finishWorkout(…, endedAt)` for the stale card's Finish (the chosen time goes in the same call).
+- `discardWorkout(sessionId, expectedVersion)` for a stale card with nothing logged.
 
 ## 7. Acceptance checks
 
@@ -204,3 +209,6 @@ Spoken cue: none on Today. Starting a workout can trigger the optional set intro
 8. All text is at least 16pt by default, and numbers use tabular numerals.
 9. In light mode, all tokens switch and contrast meets design-system §2.
 10. There are no animations other than standard navigation and sheet transitions.
+11. Finishing a stale workout with the end time at 19:24 makes one `finishWorkout` call with `endedAt` 19:24; the summary shows `(end time edited)` and the audit keeps the tap time. No separate `updateSessionTiming` call is made.
+12. A stale workout with a work timer left running shows `Stop the timer first` in the finish sheet; after [Stop], Finish succeeds and the timed set is skipped with its elapsed time kept as a draft.
+13. `Empty workout` opens `Add an exercise to start`, not `All planned sets done`.

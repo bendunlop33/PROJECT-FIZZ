@@ -1,5 +1,7 @@
 # Active workout (focused set card and Overview table)
 
+> **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md): Finish refused while a work timer runs (§4.8, S4); end time passed to `finishWorkout(…, endedAt)` (S5); Undo guarded on the set's version and commit order (S1); new empty-workout state (§2.10); homes and copy for add set, add exercise, delete set, skip exercise and discard (§4.4, §4.9); per-side entry for unilateral exercises (§2.9); dropped planned load (`target_dropped`) on the set card (§2.11).
+
 Status: v0.1 draft, 8 Oct 2026. Flow and state machine: [flow-first-milestone.md](flow-first-milestone.md). Rest behaviour: [rest-state.md](rest-state.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -204,6 +206,8 @@ Sequence:
 
 With the opt-in `Auto-save timed sets` setting (off by default), the result is saved at 0 with an undo toast. The setting's explanation reads: `When a work timer ends, save the planned time as done. You can undo.`
 
+While the work timer runs or is paused, Finish, Delete set and Skip exercise (for this exercise) are refused by the domain (`work_interval_running`). The UI shows why and offers [Stop] (see §4.8). A Stop tapped just after the timer reached 0 simply shows `Log 0:45`; it is never an error.
+
 ### 2.8 Paused
 
 ```
@@ -214,6 +218,74 @@ With the opt-in `Auto-save timed sets` setting (off by default), the result is s
 ├────────────────────────────────────────┤
 │ [ 🎙 ] [           Resume            ] │
 ```
+
+### 2.9 Unilateral exercise (shown only when the exercise's `laterality` is `unilateral`)
+
+Interim model (ADR 0003 M5): every unilateral set has a side. The default is `Both sides`, meaning the values were done on each side. Ben can log a set as Left or Right instead when the sides differ. Bilateral exercises never show any of this.
+
+```
+│ Single-arm cable row · Set 2 of 3      │
+│ Cable · Working · per side             │
+│ Last (1 Oct): 25 kg stack × 10 per side│
+│  Stack                   Reps          │
+│ ┌──┬────────────┬──┐ ┌──┬───────┬──┐   │
+│ │− │  25 kg     │+ │ │− │  10   │+ │   │
+│ └──┴────────────┴──┘ └──┴───────┴──┘   │
+│  Target 25 kg stack · 8–10 reps per side│
+│  Side [ Both sides | Left | Right ]    │ segmented, 44pt, Both preselected
+│  Rest after: 1:30 ›                    │
+├────────────────────────────────────────┤
+│ [🎙] [ Log 25 kg stack × 10 per side ] │
+```
+- **Both sides (default):** one tap logs, exactly like a bilateral set. Label `Log 25 kg stack × 10 per side`. Saved with `side: both`.
+- **Left or Right:** the segment changes only this set's side. Label `Log Left · 25 kg stack × 10`. Saved with `side: left` / `right` via `log_set.side`.
+- **The other side:** after a Left (or Right) log, the rest card's just-saved line reads `✓ Set 2 saved (left): 25 kg stack × 10` with a link `Log right side ›`. That link calls `addSet` then `setActiveSet` on the new set, with the side preset to Right and the same values in the draft. Rest keeps running; logging the right side ends it early as usual (P2). In the interim model the added set sits at the end of this exercise's list.
+- **Lists:** Left/right sets carry an `L` or `R` text badge next to the set number (as set-type badges, design-system §7). `Both` sets have no badge; the exercise header says `per side` once.
+- **Correction:** the correction sheet has the same Side control (`correctSet` patch `side`).
+- **Volume:** a `Both sides` set counts once with its per-side reps. A Left + Right pair counts as one set using the busier side, never the sum (`summariseVolume`).
+- **Open:** sides aren't yet used by progression (ADR 0003 Open). `Next time` for unilateral exercises is based on the logged values regardless of side, and says so if the domain reports it.
+
+### 2.10 Empty workout (phase `empty`)
+
+Shown when the workout has no live sets: started with `Empty workout`, or every set deleted.
+
+```
+├────────────────────────────────────────┤
+│                                        │
+│ Add an exercise to start               │
+│ Pick from your exercises. Sets, rest   │
+│ and targets come from your history.    │
+│                                        │
+├────────────────────────────────────────┤
+│ [ 🎙 ] [        Add exercise         ] │
+└────────────────────────────────────────┘
+```
+- `Add exercise` opens the exercise picker sheet (search field focused, recent exercises first). Choosing one calls `addExercise`, which adds the exercise with one empty working set and makes it active. The card then shows §2.1 with draft source `last_session` (`From 1 Oct`) or empty fields and the primary `Enter load` / `Enter reps`.
+- After that, `Add set` (exercise `⋯`, or `+ Add set` in Overview) adds the next set, copying the last set's values and rest. `+ Add exercise` sits at the end of the Overview list.
+- `Finish workout` stays in the `⋯` menu. Finishing an empty workout offers discard instead (§4.8).
+- Voice (when available): "add bench press" goes through the same `addExercise` service call.
+
+### 2.11 Planned load dropped (`target_dropped`)
+
+When the template's load can't be honoured on this gym's equipment (ADR 0003 B1), the domain sets no load target and raises a `target_dropped` warning that keeps the template value. The card never shows a converted guess.
+
+```
+│ Incline DB press · Set 1 of 3          │
+│ Last (1 Oct): 30 kg each × 9           │
+│  Load each               Reps          │
+│ ┌──┬────────────┬──┐ ┌──┬───────┬──┐   │
+│ │− │  30 kg     │+ │ │− │  10   │+ │   │
+│ └──┴────────────┴──┘ └──┴───────┴──┘   │
+│  From 1 Oct                            │ draft source caption
+│  Target 8–10 reps · no load target     │
+│  ⚠ Plan says 60 kg total. These are    │ status.warning icon + text
+│    dumbbells (kg each), so it isn't    │
+│    converted.                          │
+```
+- The warning sits under the target line on every affected set (one per template set), in `status.warning` with `exclamationmark.triangle` and text. It is not a banner, and it doesn't block Log.
+- The draft falls back to this session's last set, then last session (same unit and convention only), then empty. With nothing to fall back on, the load field is empty and the primary reads `Enter load`.
+- Overview: the Target cell shows `—×8–10` plus the `⚠` icon; VoiceOver reads `No load target. Plan says 60 kilograms total, not converted.`
+- [Update gym] appears only for `no_achievable_loads`. The routine itself is fixed outside the workout.
 
 ## 3. States
 
@@ -228,7 +300,11 @@ With the opt-in `Auto-save timed sets` setting (off by default), the result is s
 | Resting | §2.3 | `Log` for the next set | See rest-state.md |
 | Ready, rest ended | Rest card shows `Ready when you are` + `Rested 3:12` | `Log …` | — |
 | Final set ready | Normal | `Log …` | The next line reads `Last set of the workout` |
-| All sets done | Card: `All planned sets done.` + links `Add set` / `Add exercise` | `Finish workout` | No rest after the final set |
+| Empty workout (phase `empty`) | §2.10: `Add an exercise to start` | `Add exercise` | Not `All planned sets done`. Also reached if every set is deleted |
+| Ready, planned load dropped | §2.11: `Target 8–10 reps · no load target` + warning | `Log …` from the fallback draft, or `Enter load` | Never a converted or unchecked number |
+| Ready, unilateral | §2.9: Side control under the target | `Log 25 kg stack × 10 per side` / `Log Left · …` | Hidden for bilateral exercises |
+| All sets done | Card: `All planned sets done.` + links `Add set` / `Add exercise` | `Finish workout` | No rest after the final set. An empty workout shows `Add an exercise to start` (phase `empty`), not `All planned sets done` |
+| Finish blocked by work timer | Finish sheet shows `Stop the timer first` (§4.8) | [Stop] in the sheet | Domain error `work_interval_running` is never shown raw |
 | Paused | §2.8 | `Resume` | Log is hidden until Resume. Fields stay editable |
 | Restored after force-close | Normal + banner `Workout restored. Nothing was lost.` (4 s) | per state | See flow §4.2 |
 | Offline | No change to logging | per state | Status row: no banner unless Ben opens the coach. The Talk button shows `Offline` if the coach needs the network |
@@ -262,8 +338,8 @@ With the opt-in `Auto-save timed sets` setting (off by default), the result is s
 Rules, in order:
 1. If a draft was saved for this set (edited earlier or restored after a force-close), use the draft.
 2. If the set has a target load, use it for load. For reps, use the single target, or the **top** of a target range (the double-progression aim).
-3. If there's no target (empty workout), use the last logged set of this exercise in this session.
-4. If there's still nothing, use the last comparable session's matching set from `getComparableHistory`.
+3. If there's no target (empty workout, or the planned load was dropped, §2.11), use the last logged set of this exercise in this session.
+4. If there's still nothing, use the last comparable session's matching set from `getComparableHistory`. History in another unit or convention is never used (`prefillDraft` refuses it).
 5. Otherwise leave the field empty, and Log is disabled.
 
 The view returns `draftSource` (`draft | target | this_session | last_session | none`). If the source isn't the target, a caption under the fields shows it: `From your last set` / `From 1 Oct`.
@@ -276,7 +352,13 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 
 ### 4.4 Set and exercise controls
 - **Exercise header tap** opens the history sheet: comparable history from `getComparableHistory` and technique or setup notes.
-- **Exercise `⋯` menu:** `Add set`, `Swap exercise` (→ `rankSubstitutions` list → `ChangeReviewCard` with scope `Today only`), `Machine busy` (calls `setTemporaryAvailability`), `Notes`, `Skip exercise` (marks the pending sets skipped, with an undo toast).
+- **Exercise `⋯` menu:**
+  - `Add set` calls `addSet` (`add_set`). The new set copies the last set's planned values and rest. Toast `Set 4 added`. If nothing else is active, it becomes the active set.
+  - `Swap exercise` (→ `rankSubstitutions` list → `ChangeReviewCard` with scope `Today only`).
+  - `Machine busy` (calls `setTemporaryAvailability`).
+  - `Notes`.
+  - `Skip exercise` (`skip_exercise`) marks the pending sets skipped; logged sets are untouched. It confirms first because there is no Undo yet: `Skip the 2 remaining sets of Bench press?` [Skip] [Cancel]. Toast `Bench press skipped` (no Undo). Skipped rows stay visible with the Skipped style; `Add set` brings the exercise back.
+- **Add exercise:** `+ Add exercise` at the end of the Overview list, and on the All-done and Empty cards. Opens the exercise picker → `addExercise`.
 - **Tap a pending set** (mini list or Overview) to make it the active set (`setActiveSet`). The draft and the Log label update.
 - **Tap a done set** to open the correction sheet:
 
@@ -293,7 +375,8 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 └────────────────────────────────────────┘
 ```
   - `Save changes` calls `correctSet(setId, patch, expectedVersion)`. The row gets an `Edited` tag. Rest is not touched. There is no AI replanning, and targets update only through the deterministic rules.
-  - `Delete set` asks for confirmation (`Delete set 1? You can undo this.`) and gives an undo toast.
+  - `Delete set` calls `deleteSet` (`delete_set`, guarded on the set's version). It always confirms: `Delete set 1? It's removed from this workout's totals and history. The edit log keeps a record.` [Delete] [Cancel]. Toast `Set 1 deleted` (no Undo yet; ADR 0003 Open). The set is kept as an audited deleted record and disappears from the mini list, Overview and volume. Pending sets can be deleted the same way from their row's `⋯` in Overview.
+  - The sheet also shows the Side control for unilateral exercises (§2.9).
 
 ### 4.5 View toggle
 - `Focus | All` segmented control. The choice is remembered per device. Switching keeps the active set, the drafts and the timer.
@@ -306,8 +389,8 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
   - `Finish workout`
   - `Rest presets`
   - `Voice & alerts`
-  - `Edit workout times` (calls `updateSessionTiming`)
-  - `Discard workout` (destructive; red text)
+  - `Edit workout times` opens a small sheet: `Started at [18:02 ▾]` [Save]. It calls `updateSessionTiming(sessionId, expectedVersion, {startedAt})`. The end time can only be changed after Finish (finish sheet or summary Edit). The start can't move later than the first logged set or into the future; the picker limits it.
+  - `Discard workout` (destructive; red text) calls `discardWorkout` (`discard`). It also cancels a running rest or work timer. With ≥1 logged set it confirms first (§4.9).
 
 ### 4.7 Coach and Talk
 - **Tap Talk when voice is available:** this calls `startVoiceSession`, and the voice strip appears. Tap again (or `Stop`) to end listening. Speaking is interrupted with the same button (`interruptSpeech`).
@@ -333,20 +416,38 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 │ Keep going                             │
 └────────────────────────────────────────┘
 ```
-- If the last set was more than 20 min ago, the end time defaults to `19:24 (last set + 3 min)`, with `Use now (20:41)` as the alternative. The chosen time is recorded through `updateSessionTiming` with an audit, and the original value is kept.
-- `Finish` calls `finishWorkout(sessionId, expectedVersion)` → `cancelObsoleteCues` → Summary.
+- If the last set was more than 20 min ago, the end time defaults to `19:24 (last set + 3 min)`, with `Use now (20:41)` as the alternative. The picker allows only times between the last logged set and now.
+- The chosen time is passed to `finishWorkout` in the same transaction. When it differs from the tap time, the tap time is kept in the timing audit.
+- If a work timer is running, the finish sheet shows `Stop the timer first` with a [Stop] action instead of Finish:
+
+```
+┌────────────────────────────────────────┐
+│ Finish workout?                        │
+│ ⏱ Dead hang timer is running (0:38).   │
+│ Stop the timer first                   │
+│ ┌────────────────────────────────────┐ │
+│ │               Stop                 │ │
+│ └────────────────────────────────────┘ │
+│ Keep going                             │
+└────────────────────────────────────────┘
+```
+  [Stop] calls `stop_work_interval`; the sheet then shows the normal Finish content with an extra line `Dead hang: 0:38 not logged. It will be kept as a draft on the skipped set.` and a secondary `Log 0:38 first` link (which closes the sheet and logs). `Finish` then proceeds as normal. The same applies when the work timer is paused.
+- With no logged sets, the sheet reads `Nothing logged yet.` with primary `Discard workout` and a secondary `Finish anyway` (saves an empty workout).
+- `Finish` calls `finishWorkout(sessionId, expectedVersion, endedAt)` → `cancelObsoleteCues` → Summary.
 
 ### 4.9 Undo paths (summary)
 
 | Action | Undo |
 |---|---|
-| Log set | Toast `Undo` (8 s). After that: the done row → Delete set |
-| Correction | Toast `Undo` restores the previous version |
-| Delete set | Toast `Undo` |
-| Skip exercise | Toast `Undo` |
+| Log set | Toast `Undo` (8 s). Guarded on the set's own version (`expectedSetVersion`) and on it still being the latest commit by commit order, so an effort-chip tap during rest doesn't block it. After that: the done row → Delete set |
+| Correction | Not yet (ADR 0003 Open). Correct it again; the edit history keeps every version |
+| Delete set | Not yet (ADR 0003 Open), so it always confirms. The deleted record is kept, so Undo can be added later |
+| Skip exercise | Not yet (ADR 0003 Open), so it confirms. `Add set` brings the exercise back |
 | Applied proposal | Toast `Undo` → `undoAction` (or a compensating proposal if it isn't safe) |
-| Discard workout (0 sets) | Toast `Undo` |
-| Discard workout (≥1 set) | Confirmation alert first: `Discard Push A? 7 logged sets will be deleted.` [Discard] [Cancel]. No undo afterwards, which is why the confirmation is needed |
+| Discard workout (0 sets) | Discards at once. Toast `Workout discarded` (no Undo: nothing was logged; start again from Today) |
+| Discard workout (≥1 set) | Confirmation alert first: `Discard Push A? 7 logged sets will be discarded.` [Discard] [Cancel]. No undo afterwards, which is why the confirmation is needed |
+
+If an Undo is rejected (the set was corrected from another path, or something was logged after it), the toast changes to `Can't undo: set 2 changed. Tap it to edit or delete.` Nothing is removed.
 
 ## 5. Copy
 
@@ -362,6 +463,12 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 | Next | `Next exercise: Incline DB press` + `Target 30 kg each × 8–10` / `Last set of the workout` |
 | Draft caption | `From your last set` · `From 1 Oct` · `Copied from 1 Oct` · `Unsaved edit restored` |
 | All done | `All planned sets done.` |
+| Empty workout | `Add an exercise to start` · `Pick from your exercises. Sets, rest and targets come from your history.` · primary `Add exercise` |
+| Side control (unilateral only) | `Side` · `Both sides` · `Left` · `Right`; Log `Log 25 kg stack × 10 per side` / `Log Left · 25 kg stack × 10`; link `Log right side ›` / `Log left side ›`; badges `L` / `R` |
+| Dropped target | Target line `Target 8–10 reps · no load target`. Warning by reason: `convention_mismatch` → `Plan says 60 kg total. These are dumbbells (kg each), so it isn't converted.`; `unit_not_convertible` → `Plan says 225 lb. No equipment here to check it in kg, so it isn't converted.`; `no_achievable_loads` → `Plan says 40 kg stack, but Cable stack at Hotel Gym can't make any load as set up.` [Update gym] |
+| Add / delete / skip | Toasts `Set 4 added` · `Set 1 deleted` · `Bench press skipped` · `Workout discarded`. Confirms as in §4.4 and §4.9 |
+| Finish blocked | `Dead hang timer is running (0:38).` · `Stop the timer first` · [Stop] · after Stop: `Dead hang: 0:38 not logged. It will be kept as a draft on the skipped set.` · `Log 0:38 first` |
+| Undo rejected | `Can't undo: set 2 changed. Tap it to edit or delete.` |
 | Banners | `Workout restored. Nothing was lost.` · `Workout paused. Timers are stopped.` · `Couldn't save this set. Your entry is still here.` |
 | Talk captions | `Talk` · `Ask` · `Stop` · `Wait` · `Offline` |
 | Voice pill | `Quiet` · `Cues` · `Talk` · `Mic on` |
@@ -378,10 +485,12 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
 - `getActiveSession(userId)` and `buildActiveSetView(sessionId)`. The view returns the exercise, set index/count/type, `previous` (from `getComparableHistory`, with date and gym/equipment identity), `target`, `draft` + `draftSource`, `restAfter` (from `resolveRestPreset`), `next`, `timer` (rest or work, with deadline and version), `sessionVersion`, the equipment's `loadConvention`, unit and feasible neighbours (`getAchievableLoads` / `roundToAvailableLoad`).
 - `commitSetAndBeginRest(command)` handles Log.
 - `correctSet(setId, patch, expectedVersion)` handles corrections and RPE.
-- `undoAction(actionId)` handles undo.
+- `undoAction(actionId)` handles undo (for a logged set: `undo_log` with `expectedSetVersion`).
 - `pauseSession` / `resumeSession`.
-- `startWorkInterval(setId, duration)` for timed exercises.
-- `finishWorkout(sessionId, expectedVersion)`, `updateSessionTiming(sessionId, correction)`.
+- `startWorkInterval(setId, duration)` and `stop_work_interval` for timed exercises.
+- `finishWorkout(sessionId, expectedVersion, endedAt?)`, `updateSessionTiming(sessionId, expectedVersion, {startedAt?, endedAt?})` (end time only after Finish).
+- `addSet` (`add_set`), `addExercise` (service call that builds the catalogue snapshot), `deleteSet` (`delete_set`), `skipExercise` (`skip_exercise`), `discardWorkout` (`discard`).
+- From `buildActiveSetView`: `phase` (including `empty`), the exercise's `laterality` and each set's `side`, and any `target_dropped` warning (`requested` load and `reason`) for the active and pending sets.
 - `setActiveGym`, `setTemporaryAvailability`, `rankSubstitutions`, `getEquipmentSnapshot`.
 - `buildSetCue`, `scheduleTimerCue`, `cancelObsoleteCues` (cue layer).
 - Optional layers:
@@ -389,7 +498,7 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
   - `startVoiceSession`, `stopVoiceSession`, `transcribeUtterance`, `parseSpokenSet`, `handleVoiceTurn`, `interruptSpeech`
   - `runCoachTurn`
   - `validateCoachProposal`, `confirmProposal`, `applyCoachProposal`, `getDecisionEvidence`
-- Proposed new: `saveSetDraft`, `setActiveSet`, `addSet`, `endRestTimer`.
+- Proposed new: `saveSetDraft`, `setActiveSet`, `endRestTimer`.
 
 ## 7. Acceptance checks
 
@@ -410,3 +519,10 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
 15. With AI disconnected, tapping Talk shows an honest status sheet with no fake coach reply, and the workout is unaffected.
 16. A coach proposal never opens a sheet by itself. It appears inline with scope, before/after targets, Apply and an Undo path, and it can't change completed sets.
 17. Switching gym mid-session shows a review card for pending sets only. Completed sets keep their original gym and equipment.
+18. Log → tap effort `8` → `Undo` within 8 s removes the set.
+19. With a work timer running or paused, `Finish workout` shows `Stop the timer first` and [Stop], never a raw error. After Stop and Finish without logging, the timed set is skipped and still shows the stopped time as its draft in Edit workout.
+20. The finish sheet's end-time picker can't choose a time before the last logged set or after now. A chosen time other than now shows `(end time edited)` on the summary.
+21. An empty workout shows `Add an exercise to start` and primary `Add exercise`. Deleting every set of a workout returns to the same state.
+22. Delete set and Skip exercise always confirm and never offer an Undo they can't perform. A deleted set disappears from the lists and totals.
+23. The Side control appears only for unilateral exercises. `Both sides` logs in one tap; Left logs `side: left` and offers `Log right side ›`. Volume counts a Left + Right pair as one set.
+24. A template load in another convention (e.g. `60 kg total` on a dumbbell rack) shows `no load target` and the warning, never a converted number; Log still works with the fallback draft or `Enter load`.

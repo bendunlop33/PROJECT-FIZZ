@@ -1,5 +1,7 @@
 # Flow: first milestone loop (Today → Active set → Rest → Summary)
 
+> **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md) and review S1–S5: Undo is guarded on the set's own version and commit order (S1); Skip is `endRestTimer(…, 'skipped')` with no cue (S2); Finish is refused while a work timer runs (S4); end time goes into `finishWorkout(…, endedAt?)`, later edits use `updateSessionTiming` (S5). Added the `empty` phase and homes for add set / add exercise / delete set / skip exercise / discard (§3.4).
+
 Status: v0.1 draft, 8 Oct 2026. Screen specs: [today.md](today.md), [active-workout.md](active-workout.md), [rest-state.md](rest-state.md), [workout-summary.md](workout-summary.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -57,6 +59,7 @@ Research on voice, AI and Live Activity is happening in parallel. Each optional 
 | State | Meaning | Persisted fields | What's on screen |
 |---|---|---|---|
 | No session | No unfinished workout | none | Today: Start |
+| Empty | A workout with no live sets (started empty, or every set deleted). Domain phase `empty` | session row | `Add an exercise to start`, primary `Add exercise` |
 | Ready | The current set is waiting. For rep sets, Ben may already be lifting (see the P1 proposal) | `activeSetId`, draft values | Focused card, `Log …` |
 | Working | **Timed exercises only.** A work interval is running | `workInterval.deadlineUtc`, `startedAtUtc` | Work countdown, `Stop` |
 | Result saved | The set and the rest timer have committed in a single transaction. Lasts only as long as the write | set row, `restTimer` | `Saved` guard (1 s), undo toast |
@@ -70,21 +73,23 @@ Research on voice, AI and Live Activity is happening in parallel. Each optional 
 
 | From | Event | Guard | Effects (in order) | To |
 |---|---|---|---|---|
-| No session | Tap `Start workout` | none | `startWorkout(routineId?, gymId, opId)` snapshots the routine and equipment, then `buildActiveSetView` | Ready |
+| No session | Tap `Start workout` | none | `startWorkout(routineId?, gymId, opId)` snapshots the routine and equipment, then `buildActiveSetView` | Ready (Empty if no routine) |
+| Empty | Tap `Add exercise` → pick | none | `addExercise(…)` adds the exercise with one empty working set, which becomes active | Ready (values incomplete) |
 | No session (unfinished exists) | Tap `Resume` | none | `getActiveSession` → `buildActiveSetView` | the persisted state (Ready, Resting or Paused) |
 | Ready | Tap `Log …` / Cmd+Return / voice "log it"* | Draft valid; outside the commit guard | `commitSetAndBeginRest(cmd{opId})`, then cues (§5) | Result saved → Resting, or Ready (when rest is 0, mid-superset, or the final set) |
 | Ready | Tap `Start 0:45` (timed) | Timed exercise | `startWorkInterval(setId, duration)` | Working |
 | Working | Work deadline reached | none | End cue; primary becomes `Log 0:45` with the actual value filled in. **Nothing is saved** | Ready (timed result draft) |
-| Working | Tap `Stop` | none | Actual = elapsed; primary becomes `Log 0:38` | Ready (timed result draft) |
+| Working | Tap `Stop` | none | Actual = elapsed; primary becomes `Log 0:38`. A Stop just after the deadline is a no-op success (the interval already completed) | Ready (timed result draft) |
 | Resting | Deadline reached | none | Rest-end cue (once), haptic | Ready (rest ended) |
-| Resting | `Skip` | none | `adjustRestTimer` to zero (status `skipped`), then `cancelObsoleteCues` | Ready |
-| Resting | `−30 s` / `+30 s` / edit time | none | `adjustRestTimer(timerId, ±30)`: new version, alerts replaced | Resting (or Ready if the time reaches 0) |
+| Resting | `Skip` | none | `endRestTimer(timerId, 'skipped')`, then `cancelObsoleteCues`. No rest-end cue | Ready |
+| Resting | `−30 s` / `+30 s` / edit time | none | `adjustRestTimer(timerId, ±30)`: new version, alerts replaced. A `−30 s` that reaches 0 is an **expiry** (status ended, rest-end cue plays), not a Skip | Resting (or Ready (rest ended) if the time reaches 0) |
 | Resting | Tap `Log …` for the next set | Outside the commit guard | Ends the current rest (status `ended_early`), cancels its cues, then commits the new set and starts its rest | Result saved → … |
 | Resting | Edit the previous set's RPE or values | none | `correctSet` only. **The rest timer is untouched** | Resting |
-| Any active | Tap `Undo` on the latest set | The set is still the latest and the session version matches | `undoAction(actionId)` removes the set (audited), restores the pointer, cancels the rest timer and its cues | Ready (on the restored set) |
+| Any active | Tap `Undo` on the latest set | The set is still the latest commit (by commit order) and its version matches the one shown (`expectedSetVersion`) | `undoAction(actionId)` removes the set (audited), restores the pointer, cancels the rest timer and its cues | Ready (on the restored set) |
 | Ready / Working / Resting | Tap `Pause` | none | `pauseSession`: stores remaining time, cancels scheduled alerts | Paused |
 | Paused | Tap `Resume` | none | `resumeSession`: deadline = now + remaining, alerts rescheduled | the previous state |
-| Any active | `Finish workout` → confirm | none | `finishWorkout(sessionId, expectedVersion)`: pending sets → skipped, optional end-time correction, then `cancelObsoleteCues` | Finished |
+| Any active | `Finish workout` → confirm | No work timer running or paused (stop it first; its time becomes the draft) | `finishWorkout(sessionId, expectedVersion, endedAt?)`: pending sets → skipped; `endedAt` between the last set and now; the tap time is kept in the timing audit; then `cancelObsoleteCues` | Finished |
+| Any active | `Discard workout` → confirm | Session version matches | `discardWorkout(sessionId, expectedVersion)` (`discard`). Cancels any rest or work timer and all cues. Session status `discarded` | No session (Today) |
 | Finished | Tap `Done` | none | none | No session (Today) |
 
 \* Voice "log it" or "done" is available only if Ben has enabled that shortcut and the active set is unambiguous (brief §12). Otherwise voice must state the result.
@@ -102,7 +107,20 @@ Research on voice, AI and Live Activity is happening in parallel. Each optional 
 - **Final set of an exercise:** rest starts as normal unless a transition timer is configured. The rest card shows the next exercise.
 - **Final set of the workout:** no rest timer. The primary becomes `Finish workout`. If Ben is unsure, he can add a set from the exercise menu.
 - **Superset:** logging a member before the last moves to the next member. Rest is 0 or the configured transition. Rest starts after the last member of the round.
-- **Timed exercise:** the work interval is separate from rest. Saving needs Log, unless the timed auto-complete setting is on (off by default, and explained where it is switched on).
+- **Timed exercise:** the work interval is separate from rest. Saving needs Log, unless the timed auto-complete setting is on (off by default, and explained where it is switched on). Finish is not available while the work timer runs; Stop first. If Ben then finishes without logging, the set is marked skipped but keeps the stopped time as its draft, so nothing is lost. Discard is the exception: it is confirmed and throws away the whole workout, running timer included.
+- **Empty workout:** phase `empty`, not `all_done`. The card reads `Add an exercise to start`. A set added while nothing is active becomes the active set.
+- **Unilateral exercise:** sets default to `Each side` (values are per side). Ben can log a set as Left or Right instead (active-workout §2.9).
+
+### 3.4 Session edits (each has one home in the UI)
+
+| Command | UI home | Guard | Notes |
+|---|---|---|---|
+| `add_set` (`addSet`) | Exercise `⋯` → `Add set`; `+ Add set` in Overview; `Add set` link on the All-done card | none | Copies the planned values and rest of the exercise's last set. Becomes active if nothing else is active |
+| `add_exercise` (`addExercise`) | Empty card primary; `+ Add exercise` at the end of Overview; All-done card link | none | Catalogue picker → one empty working set. Tools and voice use the same service call |
+| `delete_set` | Correction sheet → `Delete set` (done sets); a pending row's `⋯` in Overview → `Delete set` | Set version matches; the set's work timer isn't running | Kept as an audited deleted record, hidden from lists, history and volume. No Undo yet (ADR 0003 Open), so it always confirms |
+| `skip_exercise` | Exercise `⋯` → `Skip exercise` | Its work timer isn't running | Marks pending sets skipped. Logged sets untouched. No Undo yet, so it confirms |
+| `discard` (`discardWorkout`) | Top-bar `⋯` → `Discard workout`; summary footer for 0-set workouts | Session version matches | Confirmed when any set is logged |
+| `update_session_timing` (`updateSessionTiming`) | Top-bar `⋯` → `Edit workout times` (start only, before Finish); summary `Edit workout` (start and end) | Session version matches; end time only after Finish | Each changed field adds a timing-audit entry keeping the previous value |
 
 ## 4. Persistence and force-close recovery
 
@@ -115,7 +133,9 @@ Research on voice, AI and Live Activity is happening in parallel. Each optional 
 | Log | The set result (actual values, `completedAtUtc` + tz, `opId`) + the rest timer row + the advanced `activeSetId` + the session version incremented. All or nothing |
 | Rest adjust / skip / end | Timer row: new `deadlineUtc`, `version`, `status` |
 | Pause / resume | `pausedAtUtc`, `pausedFromState`, `remainingMs`, accumulated paused duration |
-| Finish | `endedAtUtc`, skipped markers, optional timing correction with audit, then the summary |
+| Finish | `endedAtUtc`, skipped markers, and a timing-audit entry keeping the tap time if a different end time was chosen; then the summary |
+| Later timing edit | `updateSessionTiming`: new `startedAtUtc` / `endedAtUtc` plus a timing-audit entry per changed field (`source: 'correction'`) |
+| Delete set / skip exercise / discard | Set status `deleted` or `skipped`, or session status `discarded`, each with an audit entry. Nothing is physically removed |
 
 ### 4.2 Relaunch behaviour
 
@@ -182,7 +202,11 @@ From the brief: `buildTodayView`, `startWorkout`, `getActiveSession`, `buildActi
 | `saveSetDraft(setId, values)` | So unsaved edits survive a force-close without counting as results |
 | `setActiveSet(sessionId, setId, expectedVersion)` | Ben taps a different pending set (out of order) |
 | `endRestTimer(timerId, reason: 'skipped' \| 'ended_early')` | More explicit than `adjustRestTimer(-remaining)`, and keeps the reason for later analysis |
-| `addSet(sessionExerciseId, template, opId)` | The Add set control |
+| `addSet(sessionExerciseId, setType?, opId)` | The Add set control (now implemented as `add_set`) |
+| `addExercise(…)` | Empty workout and Add exercise (implemented; service builds the catalogue snapshot) |
+| `deleteSet(setId, expectedSetVersion, opId)` | Delete set (implemented as `delete_set`; audited tombstone) |
+| `skipExercise(sessionExerciseId, opId)` | Skip exercise (implemented as `skip_exercise`) |
+| `discardWorkout(sessionId, expectedVersion, opId)` | Discard workout (implemented as `discard`) |
 | `recordReadiness(ownerId, localDate, level, note?)` | The Today readiness chips (writes `ReadinessEntry`) |
 
 ## 7. Brief change proposals (for Ben to approve; not yet in CHANGELOG)
@@ -216,3 +240,7 @@ From the brief: `buildTodayView`, `startWorkout`, `getActiveSession`, `buildActi
 10. Undo the last set during its rest. The set is removed, rest is cancelled, no rest-end cue fires, and the same set is active again with the undone values in the draft.
 11. A coach proposal created before a new set is logged shows `Out of date` and can't be applied by tap or voice.
 12. Log the final set. No rest starts, and the primary becomes `Finish workout`.
+13. Log a set, tap effort `8` in the rest card, then tap `Undo` within 8 s. The set is removed (the RPE chip doesn't make Undo stale).
+14. Skip rest: no rest-end cue, no notification. `−30 s` to zero: exactly one rest-end cue.
+15. Start a timed set, then choose `Finish workout`. The sheet shows `Stop the timer first` with a [Stop] action instead of `Finish`; after Stop, the stopped time is kept as the set's draft even if Ben finishes without logging.
+16. Start an empty workout. The card reads `Add an exercise to start`, not `All planned sets done`, and `Add exercise` → pick → the new set is active with `Enter load` / `Enter reps`.

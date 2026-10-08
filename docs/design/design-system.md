@@ -1,5 +1,7 @@
 # Design system
 
+> **Revision 2026-10-08.** Added `L` / `R` side badges for unilateral sets and noted that deleted sets aren't shown (§7), per [ADR 0003](../decisions/0003-domain-review-decisions.md). No token values changed.
+
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
 Context: one person uses the app on an iPhone, one-handed, mid-workout, with sweaty fingers and headphones, often in bright or dim gym light. Every choice below favours speed, legibility and calm over decoration.
@@ -173,6 +175,8 @@ Never rely on colour alone. Every status also has an icon and a text label, and 
 | Skipped | `slash.circle` | `text.tertiary` | "Skipped" | Target only, labelled "Skipped" |
 
 Set-type badges sit next to the set number and are always text, never colour alone. They are: `W` Warm-up, `T` Top, `B` Back-off and `D` Drop. Working sets have no badge. The full word is shown in the focused card header and read by VoiceOver.
+
+Side badges (unilateral exercises only; revision 2026-10-08): `L` Left and `R` Right, same style as set-type badges, read as "left side" / "right side". `Both sides` sets have no badge. Deleted sets have no status style: they are not shown in set lists (audited record only).
 
 Session status labels (top bar / Today):
 
