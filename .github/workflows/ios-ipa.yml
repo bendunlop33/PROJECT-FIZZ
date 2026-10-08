@@ -178,26 +178,17 @@ jobs:
 
       - name: Live Activity check (runtime App Group patch compiled in)
         # ADR 0007: SideStore renames the App Group, so the patched expo-widgets
-        # (patches/expo-widgets+57.0.23.patch) must be in BOTH the app and the
-        # extension. The marker is a string literal only the patch contains.
+        # (patches/expo-widgets+57.0.23.patch) must be in the code BOTH the app
+        # and the extension run: their executables, anything else Mach-O in the
+        # bundle, and the @rpath libraries they load. Markers are strings only
+        # the patch contains. Prints what it searched, and diagnostics on failure.
         if: env.FIZZ_LIVE_ACTIVITY == '1'
         run: |
-          MARKER=parentAltAppGroups
-          APPEX="$APP/PlugIns/ExpoWidgetsTarget.appex"
-          has_marker() {
-            exe="$1/$(plutil -extract CFBundleExecutable raw "$1/Info.plist")"
-            grep -a -q "$MARKER" "$exe" && return 0
-            # Only if ExpoWidgets were ever linked dynamically.
-            fw="$APP/Frameworks/ExpoWidgets.framework/ExpoWidgets"
-            [ -f "$fw" ] && grep -a -q "$MARKER" "$fw"
-          }
-          has_marker "$APP" || { echo "::error::Patched expo-widgets not found in the app binary (was the patch applied by npm ci?)"; exit 1; }
-          has_marker "$APPEX" || { echo "::error::Patched expo-widgets not found in the widget extension binary"; exit 1; }
+          bash scripts/ci/check-patched-binaries.sh "$APP"
           if [ "$(plutil -extract NSSupportsLiveActivities raw "$APP/Info.plist" 2>/dev/null)" != true ]; then
             echo "::error::NSSupportsLiveActivities is not true in the app's Info.plist"
             exit 1
           fi
-          echo "Patched expo-widgets is in the app and the extension; NSSupportsLiveActivities = true"
 
       - name: Entitlement check (signed binaries)
         run: |

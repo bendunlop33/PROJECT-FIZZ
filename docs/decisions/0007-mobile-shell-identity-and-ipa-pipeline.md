@@ -80,7 +80,11 @@ CLAUDE.md says one Swift module (`audio-coach`) owns the iOS audio session. Two 
 - Guards against the patch silently not applying:
   - `scripts/test/native-patches.test.ts`, run by `npm run check`, fails in these cases: the patch isn't applied; `expo-widgets` isn't 57.0.23; another file reads the Info.plist key for real use; or `expo-widgets` ships a `prebuilds/` xcframework. Expo's Podfile turns on `EXPO_USE_PRECOMPILED_MODULES` by default, and a precompiled binary would ignore the patched source. Today `expo-widgets` has no prebuilds, so it is compiled from source.
   - `patch-package --error-on-warn` fails `npm ci` if the installed version differs from the patch.
-  - The macOS job greps the app and extension executables for a string literal only the patch contains (`parentAltAppGroups`), and checks `NSSupportsLiveActivities` is true.
+  - The macOS job runs `scripts/ci/check-patched-binaries.sh`, and checks that `NSSupportsLiveActivities` is true.
+    - The script looks for strings only the patch contains: the `parentAltAppGroups` literal and the `FizzAppGroupResolver` type name.
+    - It searches every Mach-O the app and the extension run, not just their main executables. That includes other Mach-O files in the bundle, such as an Xcode debug dylib, and the `@rpath` libraries they load, resolved through `LC_RPATH`.
+    - It prints what it searched, and diagnostics on failure.
+    - Build 8's first version grepped only each bundle's main executable. It passed for the app but failed for the extension, and the reason isn't known yet: the extension does link ExpoWidgets statically (`use_expo_modules_widgets!`).
 - **Upgrade rule:** when `expo-widgets` changes, re-read its group handling and remake the patch, or drop it if upstream resolves the group at runtime. Worth proposing upstream.
 
 **Does SideStore update `ALTAppGroups` in the extension too?**

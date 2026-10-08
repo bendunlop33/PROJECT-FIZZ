@@ -36,7 +36,7 @@ describe('expo-widgets runtime App Group patch', () => {
     expect(storage).toContain('public static var appGroupIdentifier: String? = FizzAppGroupResolver.resolve()');
     expect(storage).toContain('enum FizzAppGroupResolver');
     expect(storage).toContain('"ALTAppGroups"');
-    // The CI binary check greps the app and extension executables for this literal.
+    // scripts/ci/check-patched-binaries.sh looks for this literal in the built binaries.
     expect(storage).toContain('"parentAltAppGroups"');
   });
 
