@@ -7,6 +7,7 @@ import type {
   RepRange,
   Rir,
   Rpe,
+  SetSide,
   SetType,
   WeightUnit,
 } from '@fizz/schemas';
@@ -22,6 +23,11 @@ import { convertMass, convertMassExactly, fromScaled, toScaled } from './units';
 
 export interface HistorySet {
   setType: SetType;
+  /**
+   * Unilateral side, as on `WorkoutSet.side`: `both` = done on each side,
+   * `left`/`right` = that side only, null = bilateral (or no side recorded).
+   */
+  side: SetSide | null;
   load: Load | null;
   reps: number | null;
   rpe: Rpe | null;
@@ -100,11 +106,30 @@ interface Criteria {
   minRirToProgress: Rir | null;
 }
 
+/** One side of a unilateral exercise in one session: its own sets plus `both` sets. */
+interface SideEval {
+  sets: number;
+  minReps: number;
+  allHitTop: boolean;
+  effortOk: boolean;
+}
+
 interface SessionEval {
   sessionId: string;
   performedAtUtc: string;
-  /** Completed sets of the counted type (working, or top for top-set rules). */
-  countedSets: number;
+  /** Completed sets of the counted type (working, or top for top-set rules), as logged rows. */
+  loggedSets: number;
+  /**
+   * Prescribed sets completed. Bilateral: one per row. Unilateral (review R4):
+   * a `both` set counts once and a left + right pair counts once, never twice.
+   */
+  prescribedDone: number;
+  /** Per-side evaluation when any counted set is `left` or `right`; null otherwise. */
+  sides: { left: SideEval; right: SideEval } | null;
+  /** Sided and unsided sets are mixed, so sides can't be paired; never progresses. */
+  unpairable: boolean;
+  /** Completed sets of other types (e.g. back-offs when no top set was logged). */
+  otherSets: number;
   /** Easiest counted load (lowest resistance / most assistance); null for bodyweight or no sets. */
   load: number | null;
   minReps: number;
@@ -191,6 +216,25 @@ function byRecency(a: HistorySession, b: HistorySession): number {
   return a.sessionId < b.sessionId ? 1 : a.sessionId > b.sessionId ? -1 : 0;
 }
 
+/** Every set within the rule's effort limits (sets without a recorded effort pass). */
+function effortWithin(sets: readonly HistorySet[], criteria: Criteria): boolean {
+  return sets.every(
+    (x) =>
+      !(criteria.maxRpeToProgress !== null && x.rpe !== null && x.rpe > criteria.maxRpeToProgress) &&
+      !(criteria.minRirToProgress !== null && x.rir !== null && x.rir < criteria.minRirToProgress),
+  );
+}
+
+function evalSide(sets: readonly HistorySet[], criteria: Criteria): SideEval {
+  const reps = sets.map((x) => x.reps ?? 0);
+  return {
+    sets: sets.length,
+    minReps: reps.length === 0 ? 0 : Math.min(...reps),
+    allHitTop: reps.length > 0 && reps.every((r) => r >= criteria.repRange.max),
+    effortOk: effortWithin(sets, criteria),
+  };
+}
+
 /** Keep only like-for-like sessions: same equipment instance, unit and convention. */
 function comparableSessions(ctx: Ctx): SessionEval[] {
   const { input } = ctx;
@@ -218,25 +262,29 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
       numeric.length === 0 ? null : ctx.direction === 'resistance' ? Math.min(...numeric) : Math.max(...numeric);
     const reps = counted.map((x) => x.reps ?? 0);
     const wantsEffort = criteria.maxRpeToProgress !== null || criteria.minRirToProgress !== null;
-    let effortOk = true;
     let missingEffort = 0;
     for (const x of counted) {
-      const rpeLimit = criteria.maxRpeToProgress;
-      const rirLimit = criteria.minRirToProgress;
-      if (rpeLimit !== null && x.rpe !== null && x.rpe > rpeLimit) effortOk = false;
-      if (rirLimit !== null && x.rir !== null && x.rir < rirLimit) effortOk = false;
-      const recorded = (rpeLimit !== null && x.rpe !== null) || (rirLimit !== null && x.rir !== null);
+      const recorded = (criteria.maxRpeToProgress !== null && x.rpe !== null) || (criteria.minRirToProgress !== null && x.rir !== null);
       if (wantsEffort && !recorded) missingEffort += 1;
     }
+    const left = counted.filter((x) => x.side === 'left');
+    const right = counted.filter((x) => x.side === 'right');
+    const both = counted.filter((x) => x.side === 'both');
+    const sided = left.length + right.length > 0;
+    const unpairable = sided && counted.some((x) => x.side === null);
     out.push({
       sessionId: s.sessionId,
       performedAtUtc: s.performedAtUtc,
-      countedSets: counted.length,
+      loggedSets: counted.length,
+      otherSets: s.sets.length - counted.length,
+      prescribedDone: sided ? both.length + Math.min(left.length, right.length) : counted.length,
+      sides: sided ? { left: evalSide([...both, ...left], criteria), right: evalSide([...both, ...right], criteria) } : null,
+      unpairable,
       load: easiest,
       minReps: reps.length === 0 ? 0 : Math.min(...reps),
       allHitTop: reps.length > 0 && reps.every((r) => r >= criteria.repRange.max),
       anyBelowFloor: reps.some((r) => r < criteria.repRange.min),
-      effortOk,
+      effortOk: effortWithin(counted, criteria),
       missingEffort,
     });
   }
@@ -379,7 +427,7 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
   const name = input.exerciseName;
   const latest = sessions[0];
   // The most recent session in which anything counted was performed: the load reference.
-  const reference = sessions.find((s) => s.countedSets > 0);
+  const reference = sessions.find((s) => s.loggedSets > 0);
 
   if (input.pain.active) {
     const held = reference ? feasibleHold(ctx, reference.load) : null;
@@ -401,12 +449,25 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
   if (!latest) return startingPoint(ctx, criteria, `No comparable ${name} history yet.`);
 
   const required = requiredSets(rule);
-  if (latest.countedSets === 0) {
-    pushFact(ctx, `No ${countedLabel(rule, 2)} were logged on ${day(latest.performedAtUtc)} (all skipped); holding.`);
-  } else if (latest.countedSets < required) {
+  const when = day(latest.performedAtUtc);
+  if (latest.loggedSets === 0) {
+    // Review minor 7: say "no top set" when back-off (or other) sets were logged.
+    const why = latest.otherSets === 0 ? 'all skipped' : rule.method === 'double_progression' ? 'only other set types' : 'no top set';
+    pushFact(ctx, `No ${countedLabel(rule, 2)} were logged on ${when} (${why}); holding.`);
+  } else if (latest.unpairable) {
+    pushFact(ctx, `Some ${name} sets on ${when} have a left or right side and others have none, so the sides can't be compared; holding.`);
+  } else if (latest.sides !== null && latest.prescribedDone < required) {
+    const { left, right } = latest.sides;
+    const behind = left.sets === right.sets ? '' : `: the ${left.sets < right.sets ? 'left' : 'right'} side is behind`;
+    const lead = latest.prescribedDone === 0 ? 'None' : `Only ${latest.prescribedDone}`;
     pushFact(
       ctx,
-      `Only ${latest.countedSets} of ${required} ${countedLabel(rule, required)} ${latest.countedSets === 1 ? 'was' : 'were'} logged on ${day(latest.performedAtUtc)}; holding.`,
+      `${lead} of ${required} ${countedLabel(rule, required)} had both sides logged on ${when} (left ${left.sets}, right ${right.sets}${behind}); holding.`,
+    );
+  } else if (latest.prescribedDone < required) {
+    pushFact(
+      ctx,
+      `Only ${latest.prescribedDone} of ${required} ${countedLabel(rule, required)} ${latest.prescribedDone === 1 ? 'was' : 'were'} logged on ${when}; holding.`,
     );
   }
   if (!reference) {
@@ -415,7 +476,20 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
 
   const L = reference.load;
   const lastText = fmt(ctx, L);
-  const complete = latest.countedSets >= required;
+  const complete = latest.prescribedDone >= required && !latest.unpairable;
+  if (complete && latest.sides !== null) {
+    // Review R4: the load goes up only when both sides qualify; say which side lagged.
+    const ok = (x: SideEval) => x.allHitTop && x.effortOk;
+    const { left, right } = latest.sides;
+    if (ok(left) !== ok(right)) {
+      const [good, lagName, lag] = ok(left) ? ['left', 'right', right] : ['right', 'left', left];
+      const detail = !lag.allHitTop ? `lowest ${lag.minReps} reps` : 'effort above the limit';
+      pushFact(
+        ctx,
+        `The ${good} side reached ${criteria.repRange.max}+ reps on every set but the ${lagName} side didn't (${detail}); the load goes up only when both sides do.`,
+      );
+    }
+  }
   if (latest.missingEffort > 0) {
     pushFact(ctx, `Effort wasn't recorded for ${latest.missingEffort} set${latest.missingEffort === 1 ? '' : 's'}; reps alone were used.`);
   }
@@ -475,11 +549,11 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
     }
   }
 
-  if (latest.countedSets > 0 && latest.anyBelowFloor) {
+  if (latest.loggedSets > 0 && latest.anyBelowFloor) {
     let streak = 0;
     for (const s of sessions) {
       const sameLoad = (s.load === null && L === null) || (s.load !== null && L !== null && toScaled(s.load) === toScaled(L));
-      if (s.countedSets === 0 || !s.anyBelowFloor || !sameLoad) break;
+      if (s.loggedSets === 0 || !s.anyBelowFloor || !sameLoad) break;
       streak += 1;
     }
     const needed = rule.failuresBeforeReduce;

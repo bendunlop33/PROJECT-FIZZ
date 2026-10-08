@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { EquipmentInstance, Load, ProgressionRule, SetType } from '@fizz/schemas';
+import type { EquipmentInstance, Load, ProgressionRule, SetSide, SetType } from '@fizz/schemas';
 import { calculateNextTargets, formatLoad, type HistorySession, type NextTargetsInput } from '../src/index';
 import { assisted, barbell, doubleProgression, dumbbells, id, kg, lb, stack, topSetBackoff } from './fixtures';
 
@@ -7,14 +7,21 @@ let sessionN = 700;
 function session(
   day: number,
   equipmentId: string | null,
-  sets: { load: Load | null; reps: number; rpe?: number; rir?: number; setType?: SetType }[],
+  sets: { load: Load | null; reps: number; rpe?: number; rir?: number; setType?: SetType; side?: SetSide | null }[],
 ): HistorySession {
   sessionN += 1;
   return {
     sessionId: id(sessionN),
     performedAtUtc: `2026-09-${String(day).padStart(2, '0')}T06:00:00.000Z`,
     equipmentId,
-    sets: sets.map((s) => ({ setType: s.setType ?? 'working', load: s.load, reps: s.reps, rpe: s.rpe ?? null, rir: s.rir ?? null })),
+    sets: sets.map((s) => ({
+      setType: s.setType ?? 'working',
+      side: s.side ?? null,
+      load: s.load,
+      reps: s.reps,
+      rpe: s.rpe ?? null,
+      rir: s.rir ?? null,
+    })),
   };
 }
 
@@ -329,7 +336,9 @@ describe('incomplete sessions never progress (review B2, ADR 0003 S3)', () => {
     const t = calculateNextTargets(input(history, bar, topSetBackoff()));
     expect(t.decision).toBe('hold');
     expect(t.sets[0]?.load).toEqual(kg(140));
-    expect(t.explanation.facts).toContain('No top sets were logged on 2026-09-04 (all skipped); holding.');
+    // Review minor 7: back-offs were logged, so this isn't "all skipped".
+    expect(t.explanation.facts).toContain('No top sets were logged on 2026-09-04 (no top set); holding.');
+    expect(t.explanation.facts.join(' ')).not.toMatch(/all skipped/);
   });
 });
 
@@ -445,7 +454,7 @@ describe('timed exercises (review M2)', () => {
       sessionId: id(990),
       performedAtUtc: '2026-09-01T06:00:00.000Z',
       equipmentId: null,
-      sets: [{ setType: 'working', load: null, reps: null, rpe: null, rir: null }],
+      sets: [{ setType: 'working', side: null, load: null, reps: null, rpe: null, rir: null }],
     };
     const t = calculateNextTargets(
       input([hang], null, doubleProgression(), { exerciseName: 'Dead hang', measurement: 'duration', convention: 'bodyweight' }),
@@ -487,5 +496,66 @@ describe('determinism', () => {
     // The higher session ID is treated as the later one.
     expect(ab.decision).toBe('hold');
     expect(ab.basedOnSessionIds).toEqual([id(902), id(901)]);
+  });
+});
+
+describe('unilateral sides in progression (review R4, ADR 0003)', () => {
+  const rack = dumbbells();
+  const each = (v: number) => kg(v, 'per_hand');
+  type S = { load: Load; reps: number; side: SetSide | null; rpe?: number };
+  const L = (reps: number, rpe?: number): S => ({ load: each(20), reps, side: 'left', ...(rpe === undefined ? {} : { rpe }) });
+  const R = (reps: number, rpe?: number): S => ({ load: each(20), reps, side: 'right', ...(rpe === undefined ? {} : { rpe }) });
+  const B = (reps: number): S => ({ load: each(20), reps, side: 'both' });
+  const next = (sets: S[]) =>
+    calculateNextTargets(input([session(1, rack.id, sets)], rack, doubleProgression(), { exerciseName: 'Bulgarian split squat' }));
+
+  it('three "both sides" sets at the top progress as before', () => {
+    expect(next([B(8), B(8), B(8)]).decision).toBe('increase_load');
+  });
+
+  it('three left-only sets never progress: the right side was not trained', () => {
+    const t = next([L(8), L(8), L(8)]);
+    expect(t.decision).toBe('hold');
+    expect(t.sets[0]?.load).toEqual(each(20));
+    expect(t.explanation.facts).toContain(
+      'None of 3 working sets had both sides logged on 2026-09-01 (left 3, right 0: the right side is behind); holding.',
+    );
+  });
+
+  it('two sets per side count as two prescribed sets, not four', () => {
+    const t = next([L(8), R(8), L(8), R(8)]);
+    expect(t.decision).toBe('hold');
+    expect(t.explanation.facts).toContain('Only 2 of 3 working sets had both sides logged on 2026-09-01 (left 2, right 2); holding.');
+  });
+
+  it('three left + right pairs at the top progress; a mix of both and pairs counts each once', () => {
+    expect(next([L(8), R(8), L(8), R(8), L(8), R(8)]).decision).toBe('increase_load');
+    expect(next([B(8), L(8), R(8), L(8), R(8)]).decision).toBe('increase_load');
+    expect(next([B(8), L(8), R(8)]).decision).toBe('hold');
+  });
+
+  it('when the sides differ, hold and say which side lagged', () => {
+    const t = next([L(8), R(8), L(8), R(7), L(8), R(8)]);
+    expect(t.decision).toBe('hold');
+    expect(t.sets[0]?.load).toEqual(each(20));
+    expect(t.explanation.facts).toContain(
+      "The left side reached 8+ reps on every set but the right side didn't (lowest 7 reps); the load goes up only when both sides do.",
+    );
+  });
+
+  it('a side over the effort limit also holds and is named', () => {
+    const t = next([L(8, 10), R(8, 8), L(8, 8), R(8, 8), L(8, 8), R(8, 8)]);
+    expect(t.decision).toBe('hold');
+    expect(t.explanation.facts).toContain(
+      "The right side reached 8+ reps on every set but the left side didn't (effort above the limit); the load goes up only when both sides do.",
+    );
+  });
+
+  it('mixed sided and unsided sets can not be paired: hold with an explanation', () => {
+    const t = next([L(8), R(8), L(8), R(8), { load: each(20), reps: 8, side: null }, L(8), R(8)]);
+    expect(t.decision).toBe('hold');
+    expect(t.explanation.facts).toContain(
+      "Some Bulgarian split squat sets on 2026-09-01 have a left or right side and others have none, so the sides can't be compared; holding.",
+    );
   });
 });
