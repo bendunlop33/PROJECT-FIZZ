@@ -4,10 +4,12 @@ import * as Speech from 'expo-speech';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import * as SQLite from 'expo-sqlite';
 import Constants from 'expo-constants';
+import { File, Paths } from 'expo-file-system';
 
 import AudioCoach from '../../modules/audio-coach';
 import { isoUtc, nowMs } from '../clock';
 import { restCountdownActivity } from '../live-activity/RestCountdownActivity';
+import { analyseAppGroup, parseNativeAppGroupInfo } from './app-group';
 import type { ResultUpdate } from './model';
 import { PROBE_CONTEXTUAL_STRINGS, describeTranscript } from './speech-probe';
 
@@ -259,6 +261,60 @@ export async function runAlarmKitProbe(): Promise<ResultUpdate> {
     };
   } catch (e) {
     return { status: 'fail', summary: `AlarmKit detection error: ${errorText(e)}`, details: [] };
+  }
+}
+
+// ---------- App Group ----------
+
+function configuredAppGroup(): string | null {
+  const extra: unknown = Constants.expoConfig?.extra;
+  const group = typeof extra === 'object' && extra !== null ? (extra as { appGroupIdentifier?: unknown }).appGroupIdentifier : undefined;
+  return typeof group === 'string' && group.length > 0 ? group : null;
+}
+
+export async function runAppGroupProbe(): Promise<ResultUpdate> {
+  if (!liveActivityIncludedInBuild()) {
+    return {
+      status: 'unavailable',
+      summary: 'This build was made without the Live Activity extension, so it has no App Group',
+      details: [],
+    };
+  }
+  const configuredGroup = configuredAppGroup();
+  if (configuredGroup === null) {
+    return { status: 'fail', summary: 'No App Group identifier in the embedded app config', details: [] };
+  }
+  try {
+    let shared: Record<string, { uri: string }>;
+    let sharedError: string | null = null;
+    try {
+      shared = Paths.appleSharedContainers;
+    } catch (e) {
+      shared = {};
+      sharedError = errorText(e);
+    }
+    let jsWriteRead: { ok: boolean; error?: string } | null = null;
+    const container = shared[configuredGroup];
+    if (container !== undefined) {
+      try {
+        const file = new File(container.uri, 'fizz-probe-js.txt');
+        const token = probeUuid();
+        file.write(token);
+        const back = await file.text();
+        file.delete();
+        jsWriteRead = { ok: back === token };
+      } catch (e) {
+        jsWriteRead = { ok: false, error: errorText(e) };
+      }
+    }
+    const native =
+      AudioCoach === null ? null : parseNativeAppGroupInfo(await AudioCoach.getAppGroupInfo([configuredGroup]));
+    const result = analyseAppGroup({ configuredGroup, expoSharedContainers: Object.keys(shared), jsWriteRead, native });
+    return sharedError === null
+      ? result
+      : { ...result, details: [...(result.details ?? []), `Paths.appleSharedContainers error: ${sharedError}`] };
+  } catch (e) {
+    return { status: 'fail', summary: `App Group probe error: ${errorText(e)}`, details: [] };
   }
 }
 

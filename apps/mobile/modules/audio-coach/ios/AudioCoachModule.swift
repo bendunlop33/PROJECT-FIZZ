@@ -128,6 +128,13 @@ public final class AudioCoachModule: Module {
       return self.sessionState()
     }
 
+    // App Group evidence for the capability probe (free-ios-install.md §9 #3).
+    // Reads the installed signing profile, ALTAppGroups, and checks each
+    // candidate group's container with a test file write/read/delete.
+    AsyncFunction("getAppGroupInfo") { (configuredGroups: [String]) -> [String: Any] in
+      return AudioCoachModule.appGroupInfo(configuredGroups: configuredGroups)
+    }
+
     // Detect only. Returns "authorized" | "denied" | "notDetermined" (from the
     // system enum), "unsupportedOS" below iOS 26, or "notInSDK" if built with an
     // SDK that has no AlarmKit.
@@ -145,6 +152,60 @@ public final class AudioCoachModule: Module {
       return "notInSDK"
       #endif
     }.runOnQueue(.main)
+  }
+
+  private static func appGroupInfo(configuredGroups: [String]) -> [String: Any] {
+    var info: [String: Any] = ["profileFound": false]
+    var candidates = configuredGroups
+
+    // Absent keys mean "unknown"; the JS side validates every field.
+    if let altGroups = Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] {
+      info["altAppGroups"] = altGroups
+      candidates.append(contentsOf: altGroups)
+    }
+    // embedded.mobileprovision is CMS-signed; the plist is plain XML inside it.
+    if let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+       let data = try? Data(contentsOf: url),
+       let start = data.range(of: Data("<?xml".utf8)),
+       let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
+       let plist = try? PropertyListSerialization.propertyList(
+         from: data.subdata(in: start.lowerBound..<end.upperBound), options: [], format: nil
+       ) as? [String: Any] {
+      info["profileFound"] = true
+      let entitlements = plist["Entitlements"] as? [String: Any] ?? [:]
+      let groups = entitlements["com.apple.security.application-groups"] as? [String] ?? []
+      info["profileGroups"] = groups
+      candidates.append(contentsOf: groups)
+      if let teamId = entitlements["com.apple.developer.team-identifier"] as? String {
+        info["profileTeamId"] = teamId
+      }
+      if let expires = plist["ExpirationDate"] as? Date {
+        info["profileExpiresUtc"] = ISO8601DateFormatter().string(from: expires)
+      }
+    }
+
+    var containers: [String: Any] = [:]
+    for group in Set(candidates) {
+      containers[group] = checkContainer(group)
+    }
+    info["containers"] = containers
+    return info
+  }
+
+  private static func checkContainer(_ group: String) -> [String: Any] {
+    guard let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else {
+      return ["resolved": false]
+    }
+    let file = url.appendingPathComponent("fizz-probe-native.txt")
+    let token = UUID().uuidString
+    do {
+      try token.write(to: file, atomically: true, encoding: .utf8)
+      let readBack = try String(contentsOf: file, encoding: .utf8)
+      try? FileManager.default.removeItem(at: file)
+      return ["resolved": true, "path": url.path, "writeRead": readBack == token]
+    } catch {
+      return ["resolved": true, "path": url.path, "writeRead": false, "error": error.localizedDescription]
+    }
   }
 
   private func applyCategory() throws {

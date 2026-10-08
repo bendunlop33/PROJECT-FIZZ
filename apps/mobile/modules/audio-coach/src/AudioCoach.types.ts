@@ -32,6 +32,16 @@ export interface SpeakResult {
   deactivationError?: string;
 }
 
+/** Native App Group evidence; raw, validated by the probe before use. */
+export interface AppGroupInfo {
+  profileFound: boolean;
+  profileGroups?: string[];
+  profileTeamId?: string;
+  profileExpiresUtc?: string;
+  altAppGroups?: string[];
+  containers: Record<string, { resolved: boolean; path?: string; writeRead?: boolean; error?: string }>;
+}
+
 /** Raw string from the native side; see AudioCoachModule.swift. */
 export type AlarmKitStatus = string;
 

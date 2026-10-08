@@ -2,6 +2,7 @@ import { requireOptionalNativeModule, type NativeModule } from 'expo';
 
 import type {
   AlarmKitStatus,
+  AppGroupInfo,
   AudioCoachEvents,
   AudioSessionState,
   SessionOptions,
@@ -15,6 +16,7 @@ declare class AudioCoachNativeModule extends NativeModule<AudioCoachEvents> {
   stop(): Promise<void>;
   getSessionState(): AudioSessionState;
   getAlarmKitStatus(): Promise<AlarmKitStatus>;
+  getAppGroupInfo(configuredGroups: string[]): Promise<AppGroupInfo>;
 }
 
 /**

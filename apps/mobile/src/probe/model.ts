@@ -9,6 +9,8 @@
  *   a valid result, not a failure.
  */
 
+import { bundleIdSuffix } from './app-group';
+
 export type ProbeId =
   | 'sqlite'
   | 'secure_store'
@@ -17,6 +19,7 @@ export type ProbeId =
   | 'tts'
   | 'audio_coach'
   | 'speech_recognition'
+  | 'app_group'
   | 'live_activity'
   | 'alarmkit'
   | 'chatgpt_signin';
@@ -99,6 +102,13 @@ export const PROBES: readonly ProbeDefinition[] = [
     title: 'On-device speech recognition',
     howTo: 'Tap Run and say "bench one hundred kilos for eight". Try again in flight mode.',
     confirmQuestion: 'Was the transcript close to what you said?',
+  },
+  {
+    id: 'app_group',
+    ref: 'Spike: App Group',
+    title: 'App Group the app was signed with (Live Activity data sharing)',
+    howTo:
+      'Tap Run. Reads which App Group SideStore signed the app with, and writes a test file in the shared container. Run it before Live Activity.',
   },
   {
     id: 'live_activity',
@@ -314,6 +324,8 @@ export function formatReport(results: ProbeResults, meta: ReportMeta, nowMs: num
   ];
   if (meta.installedBundleId !== meta.configuredBundleId) {
     lines.push(`Bundle ID configured: ${meta.configuredBundleId} (differs: the signing tool changed it)`);
+    const suffix = bundleIdSuffix(meta.installedBundleId, meta.configuredBundleId);
+    if (suffix !== null) lines.push(`Team suffix added by the signing tool: .${suffix}`);
   }
   lines.push('');
   for (const def of PROBES) {

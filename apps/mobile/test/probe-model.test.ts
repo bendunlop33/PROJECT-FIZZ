@@ -64,13 +64,14 @@ describe('probe model', () => {
     expect(text).toContain('[PASS] Spike: local DB: SQLite open, write, read (exclusive transaction)');
     expect(text).toContain('  - WAL');
     expect(text).toContain('[NOT IMPLEMENTED] S1: ChatGPT sign-in');
-    expect(text).toContain('Totals: 1 pass, 0 fail, 1 unavailable, 0 needs check, 7 not run, 1 not implemented');
+    expect(text).toContain('Totals: 1 pass, 0 fail, 1 unavailable, 0 needs check, 8 not run, 1 not implemented');
     expect(text).not.toContain('differs');
   });
 
   it('flags a bundle ID changed by the signing tool', () => {
     const text = formatReport(initialResults(), { ...meta, installedBundleId: 'com.projectfizz.fizz.ABCDE12345' }, T0);
     expect(text).toContain('Bundle ID configured: com.projectfizz.fizz (differs: the signing tool changed it)');
+    expect(text).toContain('Team suffix added by the signing tool: .ABCDE12345');
   });
 });
 

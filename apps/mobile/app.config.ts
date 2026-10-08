@@ -59,7 +59,8 @@ const config: ExpoConfig = {
     },
   },
   plugins,
-  extra: { includeLiveActivity },
+  // Read at runtime by the capability probe (Metro can't import app-identity.mts).
+  extra: { includeLiveActivity, appGroupIdentifier: APP_GROUP_IDENTIFIER },
 };
 
 // withFreeProvisioning wraps the config directly, so its mods are registered

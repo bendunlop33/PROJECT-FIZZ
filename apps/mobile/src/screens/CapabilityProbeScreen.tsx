@@ -26,6 +26,7 @@ import {
   probeUuid,
   putProbeValue,
   runAlarmKitProbe,
+  runAppGroupProbe,
   runAudioCoachProbe,
   runLiveActivityProbe,
   runNotificationProbe,
@@ -129,6 +130,9 @@ export function CapabilityProbeScreen({ onBack }: Props) {
         case 'speech_recognition':
           setTranscript('');
           update = await runSpeechRecognitionProbe(setTranscript);
+          break;
+        case 'app_group':
+          update = await runAppGroupProbe();
           break;
         case 'live_activity':
           update = await runLiveActivityProbe(now);
