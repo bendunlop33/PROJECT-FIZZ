@@ -7,7 +7,14 @@ import AlarmKit
 // The one owner of the app's AVAudioSession (docs/research/ios-platform-feasibility.md §2.5).
 // Spike scope: category/options, speak() with activate -> speak -> deactivate
 // (notifyOthersOnDeactivation so music returns to full volume), interruption and
-// route-change events, and AlarmKit availability (detect only, never requests).
+// route-change events, AlarmKit availability (detect only, never requests), App
+// Group evidence, and an opt-in silent keep-alive for the locked-cue experiment.
+//
+// Overlapping cues: AVSpeechSynthesizer queues utterances, and so do we. The
+// session is deactivated only after the LAST pending cue, and never while the
+// keep-alive runs. Every speak() promise settles: on finish, on cancel, or on a
+// timeout (max(10 s, 0.15 s per character), counted from when the cue reaches
+// the front of the queue, estimated cumulatively).
 //
 // UNVERIFIED: written without a Mac. It has not been compiled yet; the first CI run
 // on macOS is its first compile. AlarmKit API names follow Apple's docs.
@@ -21,6 +28,10 @@ struct SessionOptions: Record {
   /// Apple's recommendation for occasional spoken audio in an exercise app.
   @Field
   var interruptSpokenAudioAndMixWithOthers: Bool = true
+  /// playAndRecord only: take the mic from a Bluetooth headset (HFP). Off by
+  /// default: HFP drops output quality, and cues only need A2DP output.
+  @Field
+  var bluetoothMicrophone: Bool = false
 }
 
 struct SpeakOptions: Record {
@@ -34,19 +45,43 @@ struct SpeakOptions: Record {
   var deactivateAfter: Bool = true
 }
 
-final class CueDelegate: NSObject, AVSpeechSynthesizerDelegate {
-  private var completions: [ObjectIdentifier: (Bool) -> Void] = [:]
+/// How a cue ended. Only the first outcome per cue counts.
+enum CueOutcome: String {
+  case finished
+  case cancelled
+  case timedOut
+}
 
-  func register(_ utterance: AVSpeechUtterance, completion: @escaping (Bool) -> Void) {
+/// Main-queue only (speak/stop and the delegate all run on main).
+final class CueDelegate: NSObject, AVSpeechSynthesizerDelegate {
+  private var completions: [ObjectIdentifier: (CueOutcome) -> Void] = [:]
+
+  var pendingCount: Int { completions.count }
+
+  func register(_ utterance: AVSpeechUtterance, completion: @escaping (CueOutcome) -> Void) {
     completions[ObjectIdentifier(utterance)] = completion
   }
 
+  /// Settles a cue once; later calls for the same cue are ignored.
+  func settle(_ utterance: AVSpeechUtterance, _ outcome: CueOutcome) {
+    // Remove first, so the completion sees the updated pendingCount.
+    completions.removeValue(forKey: ObjectIdentifier(utterance))?(outcome)
+  }
+
+  /// stopSpeaking may report didCancel only for the current utterance, not the
+  /// queued ones; settle everything still pending.
+  func cancelAll() {
+    let pending = Array(completions.values)
+    completions.removeAll()
+    pending.forEach { $0(.cancelled) }
+  }
+
   func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-    completions.removeValue(forKey: ObjectIdentifier(utterance))?(true)
+    settle(utterance, .finished)
   }
 
   func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-    completions.removeValue(forKey: ObjectIdentifier(utterance))?(false)
+    settle(utterance, .cancelled)
   }
 }
 
@@ -55,6 +90,11 @@ public final class AudioCoachModule: Module {
   private let cueDelegate = CueDelegate()
   private var options = SessionOptions()
   private var observers: [NSObjectProtocol] = []
+  /// Estimated time the last queued cue will have finished (for timeouts).
+  private var queueDrainsAt = Date.distantPast
+  /// Silent playback that keeps the app running while locked (opt-in experiment).
+  private var keepAliveEngine: AVAudioEngine?
+  private var keepAlivePlayer: AVAudioPlayerNode?
 
   public func definition() -> ModuleDefinition {
     Name("AudioCoach")
@@ -79,10 +119,18 @@ public final class AudioCoachModule: Module {
     }
 
     AsyncFunction("speak") { (text: String, speakOptions: SpeakOptions, promise: Promise) in
+      if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        promise.reject("ERR_EMPTY_CUE", "Cue text is empty")
+        return
+      }
       let session = AVAudioSession.sharedInstance()
       let otherAudioBefore = session.isOtherAudioPlaying
       do {
-        try self.applyCategory()
+        // Changing the category while a cue or the keep-alive is playing would
+        // interrupt it; only (re)apply it when the session is idle.
+        if self.cueDelegate.pendingCount == 0 && self.keepAliveEngine == nil {
+          try self.applyCategory()
+        }
         try session.setActive(true)
       } catch {
         promise.reject("ERR_AUDIO_SESSION", "Could not activate the audio session: \(error.localizedDescription)")
@@ -97,31 +145,97 @@ public final class AudioCoachModule: Module {
       }
       let category = session.category.rawValue
       let deactivate = speakOptions.deactivateAfter
-      self.cueDelegate.register(utterance) { finished in
-        var deactivationError: String? = nil
-        if deactivate {
-          do {
-            try session.setActive(false, options: .notifyOthersOnDeactivation)
-          } catch {
-            deactivationError = error.localizedDescription
-          }
-        }
+      let queuedBehind = self.cueDelegate.pendingCount
+      let budget = max(10.0, 0.15 * Double(text.count))
+      let deadline = max(Date(), self.queueDrainsAt).addingTimeInterval(budget)
+      self.queueDrainsAt = deadline
+
+      self.cueDelegate.register(utterance) { outcome in
         var result: [String: Any] = [
-          "finished": finished,
+          "finished": outcome == .finished,
+          "outcome": outcome.rawValue,
           "otherAudioWasPlaying": otherAudioBefore,
           "category": category,
-          "deactivated": deactivate && deactivationError == nil,
+          "queuedBehind": queuedBehind,
         ]
-        if let deactivationError {
+        if outcome == .timedOut && self.cueDelegate.pendingCount == 0 {
+          // The synthesizer never reported back; stop it so the session can go.
+          _ = self.synthesizer.stopSpeaking(at: .immediate)
+        }
+        let deactivation = self.deactivateIfIdle(requested: deactivate)
+        result["deactivated"] = deactivation.deactivated
+        if let skipped = deactivation.skipped {
+          result["deactivationSkipped"] = skipped
+        }
+        if let deactivationError = deactivation.error {
           result["deactivationError"] = deactivationError
         }
         promise.resolve(result)
       }
       self.synthesizer.speak(utterance)
+      DispatchQueue.main.asyncAfter(deadline: .now() + deadline.timeIntervalSinceNow) { [weak self] in
+        self?.cueDelegate.settle(utterance, .timedOut)
+      }
     }.runOnQueue(.main)
 
     AsyncFunction("stop") {
-      self.synthesizer.stopSpeaking(at: .immediate)
+      _ = self.synthesizer.stopSpeaking(at: .immediate)
+      // Every pending speak() promise resolves as "cancelled"; the last one
+      // deactivates the session (pendingCount is already 0 by then).
+      self.cueDelegate.cancelAll()
+    }.runOnQueue(.main)
+
+    // Opt-in experiment (FIZZ_BACKGROUND_AUDIO=1 builds only): loop silence so iOS
+    // keeps the app running while locked, letting a cue play at rest end. Needs
+    // UIBackgroundModes "audio"; refuses to start without it.
+    AsyncFunction("startKeepAlive") { () -> [String: Any] in
+      let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
+      guard modes.contains("audio") else {
+        return ["started": false, "reason": "This build has no audio background mode"]
+      }
+      if self.keepAliveEngine != nil {
+        return ["started": true, "reason": "already running"]
+      }
+      let session = AVAudioSession.sharedInstance()
+      try self.applyCategory()
+      try session.setActive(true)
+      let engine = AVAudioEngine()
+      let player = AVAudioPlayerNode()
+      engine.attach(player)
+      guard let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2),
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 44_100) else {
+        return ["started": false, "reason": "Could not create the silent buffer"]
+      }
+      buffer.frameLength = buffer.frameCapacity
+      if let channels = buffer.floatChannelData {
+        for c in 0..<Int(format.channelCount) {
+          channels[c].update(repeating: 0, count: Int(buffer.frameLength))
+        }
+      }
+      engine.connect(player, to: engine.mainMixerNode, format: format)
+      player.scheduleBuffer(buffer, at: nil, options: .loops)
+      try engine.start()
+      player.play()
+      self.keepAliveEngine = engine
+      self.keepAlivePlayer = player
+      return ["started": true, "category": session.category.rawValue]
+    }.runOnQueue(.main)
+
+    AsyncFunction("stopKeepAlive") { () -> [String: Any] in
+      self.keepAlivePlayer?.stop()
+      self.keepAliveEngine?.stop()
+      let wasRunning = self.keepAliveEngine != nil
+      self.keepAlivePlayer = nil
+      self.keepAliveEngine = nil
+      let deactivation = self.deactivateIfIdle(requested: true)
+      var result: [String: Any] = ["wasRunning": wasRunning, "deactivated": deactivation.deactivated]
+      if let skipped = deactivation.skipped {
+        result["deactivationSkipped"] = skipped
+      }
+      if let error = deactivation.error {
+        result["deactivationError"] = error
+      }
+      return result
     }.runOnQueue(.main)
 
     Function("getSessionState") { () -> [String: Any] in
@@ -208,6 +322,26 @@ public final class AudioCoachModule: Module {
     }
   }
 
+  /// Deactivates (notifying others, so ducked music comes back) only when no
+  /// cue is pending and the keep-alive isn't running. Main queue only.
+  private func deactivateIfIdle(requested: Bool) -> (deactivated: Bool, skipped: String?, error: String?) {
+    if !requested {
+      return (false, "notRequested", nil)
+    }
+    if cueDelegate.pendingCount > 0 {
+      return (false, "cuesPending", nil)
+    }
+    if keepAliveEngine != nil {
+      return (false, "keepAliveRunning", nil)
+    }
+    do {
+      try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+      return (true, nil, nil)
+    } catch {
+      return (false, nil, error.localizedDescription)
+    }
+  }
+
   private func applyCategory() throws {
     var categoryOptions: AVAudioSession.CategoryOptions = []
     if options.duckOthers {
@@ -218,7 +352,15 @@ public final class AudioCoachModule: Module {
     }
     let session = AVAudioSession.sharedInstance()
     if options.category == "playAndRecord" {
+      // Under playAndRecord, Bluetooth output must be opted into, or cues play
+      // from the loudspeaker while AirPods are in. A2DP = output only.
       categoryOptions.insert(.defaultToSpeaker)
+      categoryOptions.insert(.allowBluetoothA2DP)
+      if options.bluetoothMicrophone {
+        // HFP (headset mic). Named .allowBluetoothHFP from the iOS 26 SDK; the
+        // old name still compiles (deprecation warning only).
+        categoryOptions.insert(.allowBluetooth)
+      }
       try session.setCategory(.playAndRecord, mode: .default, options: categoryOptions)
     } else {
       try session.setCategory(.playback, mode: .voicePrompt, options: categoryOptions)

@@ -4,6 +4,11 @@ export interface SessionOptions {
   category?: AudioCategory;
   duckOthers?: boolean;
   interruptSpokenAudioAndMixWithOthers?: boolean;
+  /**
+   * playAndRecord only: also allow a Bluetooth headset mic (HFP). Bluetooth
+   * output (A2DP) is always allowed, so cues reach AirPods.
+   */
+  bluetoothMicrophone?: boolean;
 }
 
 export interface SpeakOptions {
@@ -22,13 +27,34 @@ export interface AudioSessionState {
   outputs: { portType: string; portName: string }[];
 }
 
+export type CueOutcome = 'finished' | 'cancelled' | 'timedOut';
+
 export interface SpeakResult {
-  /** false if the cue was cancelled before it finished. */
+  /** true only for outcome "finished". */
   finished: boolean;
+  /** Every speak() settles: finished, cancelled (stop/interruption) or timedOut. */
+  outcome: CueOutcome;
+  /** Cues still pending when this one was queued. */
+  queuedBehind: number;
   /** Whether other audio (music) was playing when the cue started. */
   otherAudioWasPlaying: boolean;
   category: string;
   deactivated: boolean;
+  /** Why the session was left active: other cues pending, the keep-alive, or not requested. */
+  deactivationSkipped?: 'cuesPending' | 'keepAliveRunning' | 'notRequested';
+  deactivationError?: string;
+}
+
+export interface KeepAliveStartResult {
+  started: boolean;
+  reason?: string;
+  category?: string;
+}
+
+export interface KeepAliveStopResult {
+  wasRunning: boolean;
+  deactivated: boolean;
+  deactivationSkipped?: string;
   deactivationError?: string;
 }
 

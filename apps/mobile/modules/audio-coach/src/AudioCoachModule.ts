@@ -5,6 +5,8 @@ import type {
   AppGroupInfo,
   AudioCoachEvents,
   AudioSessionState,
+  KeepAliveStartResult,
+  KeepAliveStopResult,
   SessionOptions,
   SpeakOptions,
   SpeakResult,
@@ -13,7 +15,11 @@ import type {
 declare class AudioCoachNativeModule extends NativeModule<AudioCoachEvents> {
   configureSession(options: SessionOptions): Promise<AudioSessionState>;
   speak(text: string, options: SpeakOptions): Promise<SpeakResult>;
+  /** Stops speech; every pending speak() resolves with outcome "cancelled". */
   stop(): Promise<void>;
+  /** Opt-in locked-cue experiment; refuses without the audio background mode. */
+  startKeepAlive(): Promise<KeepAliveStartResult>;
+  stopKeepAlive(): Promise<KeepAliveStopResult>;
   getSessionState(): AudioSessionState;
   getAlarmKitStatus(): Promise<AlarmKitStatus>;
   getAppGroupInfo(configuredGroups: string[]): Promise<AppGroupInfo>;

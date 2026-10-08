@@ -224,10 +224,19 @@ export async function runAudioCoachProbe(): Promise<ResultUpdate> {
       `Other audio playing at start: ${result.otherAudioWasPlaying ? 'yes' : 'no'}`,
       `Category ${result.category}, options duckOthers + interruptSpokenAudioAndMixWithOthers`,
       `Output route: ${before.outputs.map((o) => `${o.portType} (${o.portName})`).join(', ') || 'none'}`,
-      `Session deactivated with notifyOthersOnDeactivation: ${result.deactivated ? 'yes' : `no (${result.deactivationError ?? 'not requested'})`}`,
+      `Cue outcome: ${result.outcome}${result.queuedBehind > 0 ? ` (queued behind ${result.queuedBehind})` : ''}`,
+      `Session deactivated with notifyOthersOnDeactivation: ${
+        result.deactivated ? 'yes' : `no (${result.deactivationError ?? result.deactivationSkipped ?? 'unknown'})`
+      }`,
       'playback category is expected to play with the silent switch on',
     ];
-    if (!result.finished) return { status: 'fail', summary: 'Cue was cancelled before it finished', details };
+    if (!result.finished) {
+      return {
+        status: 'fail',
+        summary: result.outcome === 'timedOut' ? 'Cue never reported finishing (timed out)' : 'Cue was cancelled before it finished',
+        details,
+      };
+    }
     if (!result.otherAudioWasPlaying) {
       return {
         status: 'not_run',
