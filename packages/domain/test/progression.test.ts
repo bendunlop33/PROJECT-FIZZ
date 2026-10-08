@@ -28,6 +28,7 @@ function input(
 ): NextTargetsInput {
   return {
     exerciseName: 'Bench press',
+    measurement: 'reps',
     history,
     rule,
     equipment,
@@ -226,7 +227,9 @@ describe('assisted machines (more assistance = easier)', () => {
   });
 
   it('the easiest counted set (most assistance) is the reference load', () => {
-    const t = calculateNextTargets(input([session(1, m.id, [{ load: a(15), reps: 8 }, { load: a(20), reps: 8 }])], m));
+    const t = calculateNextTargets(
+      input([session(1, m.id, [{ load: a(15), reps: 8 }, { load: a(20), reps: 8 }, { load: a(20), reps: 8 }])], m),
+    );
     expect(t.sets[0]?.load).toEqual(a(15));
   });
 
@@ -288,10 +291,158 @@ describe('top set / back-off', () => {
   });
 });
 
+describe('incomplete sessions never progress (review B2, ADR 0003 S3)', () => {
+  const bar = barbell();
+
+  it('1 of 3 working sets at the top of the range holds, with an explanation', () => {
+    const t = calculateNextTargets(input([session(1, bar.id, working(kg(100), [8]))], bar));
+    expect(t.decision).toBe('hold');
+    expect(t.sets[0]?.load).toEqual(kg(100));
+    expect(t.explanation.facts).toContain('Only 1 of 3 working sets was logged on 2026-09-01; holding.');
+    expect(t.explanation.summary).toBe('Stay at 100 kg and work toward 8 reps on every set.');
+  });
+
+  it('2 of 3 also holds; 3 of 3 progresses', () => {
+    expect(calculateNextTargets(input([session(1, bar.id, working(kg(100), [8, 8]))], bar)).decision).toBe('hold');
+    expect(calculateNextTargets(input([session(1, bar.id, working(kg(100), [8, 8, 8]))], bar)).decision).toBe('increase_load');
+  });
+
+  it('a session where every set was skipped is the latest session and holds at the last performed load', () => {
+    const history = [session(1, bar.id, working(kg(100), [8, 8, 8])), session(4, bar.id, [])];
+    const t = calculateNextTargets(input(history, bar));
+    expect(t.decision).toBe('hold');
+    expect(t.sets[0]?.load).toEqual(kg(100));
+    expect(t.explanation.facts).toContain('No working sets were logged on 2026-09-04 (all skipped); holding.');
+    expect(t.basedOnSessionIds[0]).toBe(history[1]?.sessionId);
+  });
+
+  it('only skipped history and no starting load: no load is invented', () => {
+    const t = calculateNextTargets(input([session(4, bar.id, [])], bar));
+    expect(t.decision).toBe('insufficient_data');
+    expect(t.sets[0]?.load).toBeNull();
+  });
+
+  it('top-set rule: a session with back-offs but no top set holds instead of using an older session', () => {
+    const top = { load: kg(140), reps: 5, setType: 'top' as const, rpe: 8 };
+    const back = { load: kg(125), reps: 8, setType: 'backoff' as const };
+    const history = [session(1, bar.id, [top, back]), session(4, bar.id, [back, back])];
+    const t = calculateNextTargets(input(history, bar, topSetBackoff()));
+    expect(t.decision).toBe('hold');
+    expect(t.sets[0]?.load).toEqual(kg(140));
+    expect(t.explanation.facts).toContain('No top sets were logged on 2026-09-04 (all skipped); holding.');
+  });
+});
+
+describe('explanations name the prescribed load (review B3)', () => {
+  // The rack was edited down to 20 kg; history (off-profile or pre-edit) shows 30 kg each.
+  const small = dumbbells({ loads: [5, 10, 15, 20] });
+  const each = (v: number) => kg(v, 'per_hand');
+
+  it('all sets at the top, history above the new max: rep step at the real max, and the text says so', () => {
+    const t = calculateNextTargets(input([session(1, small.id, working(each(30), [8, 8, 8]))], small));
+    expect(t.decision).toBe('increase_reps');
+    expect(t.sets[0]?.load).toEqual(each(20));
+    expect(t.explanation.summary).toBe('Add a rep: aim for 9 at 20 kg each, because 20 kg each is the heaviest load available on Home dumbbells.');
+    expect(t.explanation.summary).not.toMatch(/30 kg/);
+    expect(t.explanation.facts).toContain('Last load 30 kg each is no longer available on Home dumbbells; using 20 kg each.');
+    expect(t.loadFeasibility).toBe('checked');
+  });
+
+  it('hold path: names the held load, not the historical one', () => {
+    const t = calculateNextTargets(input([session(1, small.id, working(each(30), [8, 7, 6]))], small));
+    expect(t.decision).toBe('hold');
+    expect(t.sets[0]?.load).toEqual(each(20));
+    expect(t.explanation.summary).toBe('Stay at 20 kg each and work toward 8 reps on every set.');
+  });
+
+  it('miss path: "Use" the held load rather than "Repeat" a load that no longer exists', () => {
+    const t = calculateNextTargets(input([session(1, small.id, working(each(30), [5, 5, 5]))], small));
+    expect(t.decision).toBe('hold_after_miss');
+    expect(t.explanation.summary).toBe('Use 20 kg each for 6–8 reps.');
+  });
+
+  it('at the rep cap above the max: the cap message names the held load', () => {
+    const t = calculateNextTargets(
+      input([session(1, small.id, working(each(30), [12, 12, 12]))], small, doubleProgression({ repRange: { min: 8, max: 12 }, ceilingRepCap: 12 })),
+    );
+    expect(t.decision).toBe('ceiling_reached');
+    expect(t.explanation.summary).toMatch(/^Bench press has reached the rep cap \(12\) at 20 kg each because 20 kg each is the heaviest/);
+  });
+
+  it('equipment that can make no load prescribes none and is not reported as checked', () => {
+    const broken = stack({ minLoad: 60, maxLoad: 70 }); // stack tops out at 50
+    for (const reps of [[12, 12, 12], [10, 9, 9], [4, 4, 4]]) {
+      const t = calculateNextTargets(input([session(1, broken.id, working(kg(40, 'stack'), reps))], broken));
+      expect(t.sets[0]?.load).toBeNull();
+      expect(t.loadFeasibility).toBe('infeasible');
+      expect(t.explanation.summary).not.toMatch(/40 kg stack and work|Repeat 40/);
+    }
+  });
+});
+
+describe('rule schema (review M1)', () => {
+  it('rejects a ceiling rep cap below the top of the rep range', () => {
+    expect(() => doubleProgression({ repRange: { min: 8, max: 12 }, ceilingRepCap: 10 })).toThrow(/ceilingRepCap/);
+    expect(() => topSetBackoff({ ceilingRepCap: 4 })).toThrow(/ceilingRepCap/);
+    expect(() => doubleProgression({ repRange: { min: 8, max: 12 }, ceilingRepCap: 12 })).not.toThrow();
+  });
+
+  it('a ceiling result always has a valid rep range', () => {
+    const m = stack();
+    const t = calculateNextTargets(
+      input([session(1, m.id, working(kg(50, 'stack'), [12, 12, 12]))], m, doubleProgression({ repRange: { min: 8, max: 12 }, ceilingRepCap: 12 })),
+    );
+    for (const set of t.sets) expect(set.reps.min).toBeLessThanOrEqual(set.reps.max);
+  });
+});
+
+describe('timed exercises (review M2)', () => {
+  it('returns an honest unsupported result instead of claiming there is no history', () => {
+    const hang: HistorySession = {
+      sessionId: id(990),
+      performedAtUtc: '2026-09-01T06:00:00.000Z',
+      equipmentId: null,
+      sets: [{ setType: 'working', load: null, reps: null, rpe: null, rir: null }],
+    };
+    const t = calculateNextTargets(
+      input([hang], null, doubleProgression(), { exerciseName: 'Dead hang', measurement: 'duration', convention: 'bodyweight' }),
+    );
+    expect(t.decision).toBe('unsupported');
+    expect(t.explanation.summary).toBe("Time-based progression isn't supported yet, so Dead hang targets stay as planned.");
+    expect(t.explanation.summary).not.toMatch(/No comparable/);
+    expect(t.sets).toEqual([]);
+  });
+});
+
+function permutations<T>(items: readonly T[]): T[][] {
+  if (items.length <= 1) return [[...items]];
+  return items.flatMap((item, i) => permutations([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest]));
+}
+
 describe('determinism', () => {
-  it('same input, same output', () => {
-    const bar = barbell();
-    const i = input([session(1, bar.id, working(kg(100), [8, 8, 8], 8))], bar);
-    expect(calculateNextTargets(i)).toEqual(calculateNextTargets(i));
+  const bar = barbell();
+
+  it('the result is identical for every ordering of the history', () => {
+    const history = [
+      session(1, bar.id, working(kg(100), [8, 8, 8], 8)),
+      session(3, bar.id, working(kg(102.5), [6, 5, 5])),
+      session(5, bar.id, working(kg(102.5), [5, 5, 4])),
+      session(6, id(998), working(kg(120), [8, 8, 8])),
+    ];
+    const outputs = permutations(history).map((h) => calculateNextTargets(input(h, bar)));
+    expect(outputs).toHaveLength(24);
+    for (const o of outputs) expect(o).toEqual(outputs[0]);
+    expect(outputs[0]?.decision).toBe('reduce_load');
+  });
+
+  it('sessions with the same timestamp are ordered by session ID, not input order', () => {
+    const a = { ...session(7, bar.id, working(kg(100), [8, 8, 8], 8)), sessionId: id(901) };
+    const b = { ...session(7, bar.id, working(kg(100), [6, 6, 6], 8)), sessionId: id(902) };
+    const ab = calculateNextTargets(input([a, b], bar));
+    const ba = calculateNextTargets(input([b, a], bar));
+    expect(ab).toEqual(ba);
+    // The higher session ID is treated as the later one.
+    expect(ab.decision).toBe('hold');
+    expect(ab.basedOnSessionIds).toEqual([id(902), id(901)]);
   });
 });

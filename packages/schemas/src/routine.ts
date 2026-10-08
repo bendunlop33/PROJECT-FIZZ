@@ -89,8 +89,11 @@ export const DoubleProgressionRuleSchema = ruleCommon.extend({
   repRange: RepRangeSchema,
   workingSets: z.int().min(1).max(10),
   ...effortCriteria,
-  /** At the equipment ceiling, reps keep progressing up to this count. */
+  /** At the equipment ceiling, reps keep progressing up to this count. Must be >= the top of the rep range. */
   ceilingRepCap: z.int().min(1).max(100),
+}).refine((r) => r.ceilingRepCap >= r.repRange.max, {
+  message: 'ceilingRepCap must be at least the top of the rep range',
+  path: ['ceilingRepCap'],
 });
 export type DoubleProgressionRule = z.infer<typeof DoubleProgressionRuleSchema>;
 
@@ -102,7 +105,11 @@ export const TopSetBackoffRuleSchema = ruleCommon.extend({
     percentOfTop: z.number().min(50).max(100),
     repRange: RepRangeSchema,
   }),
+  /** Must be >= the top of the top set's rep range. */
   ceilingRepCap: z.int().min(1).max(100),
+}).refine((r) => r.ceilingRepCap >= r.topSet.repRange.max, {
+  message: 'ceilingRepCap must be at least the top of the top-set rep range',
+  path: ['ceilingRepCap'],
 });
 export type TopSetBackoffRule = z.infer<typeof TopSetBackoffRuleSchema>;
 

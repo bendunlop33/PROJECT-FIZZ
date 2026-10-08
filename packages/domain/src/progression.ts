@@ -2,6 +2,7 @@ import type {
   EquipmentInstance,
   Load,
   LoadConvention,
+  Measurement,
   ProgressionRule,
   RepRange,
   Rir,
@@ -17,7 +18,7 @@ import {
   type LoadDirection,
 } from './equipment';
 import { toMs } from './time';
-import { convertMass, fromScaled, toScaled } from './units';
+import { convertMass, convertMassExactly, fromScaled, toScaled } from './units';
 
 export interface HistorySet {
   setType: SetType;
@@ -27,7 +28,11 @@ export interface HistorySet {
   rir: Rir | null;
 }
 
-/** One past session of this exercise, as actually performed (corrections applied). */
+/**
+ * One past session of this exercise, as actually performed (corrections
+ * applied). `sets` holds completed sets only: a set skipped at Finish is simply
+ * absent, so a session where everything was skipped has no counted sets.
+ */
 export interface HistorySession {
   sessionId: string;
   performedAtUtc: string;
@@ -43,6 +48,8 @@ export interface PainStatus {
 
 export interface NextTargetsInput {
   exerciseName: string;
+  /** Duration (timed) exercises aren't progressed yet; they return `unsupported`. */
+  measurement: Measurement;
   history: readonly HistorySession[];
   rule: ProgressionRule;
   /** Equipment the next session will use. Null = no equipment profile (bodyweight or unchecked). */
@@ -73,8 +80,12 @@ export interface TargetSet {
 export interface NextTargets {
   decision: ProgressionDecision;
   sets: TargetSet[];
-  /** `checked`: every load is achievable on the equipment. `unchecked`: no equipment profile. */
-  loadFeasibility: 'checked' | 'unchecked' | 'not_applicable';
+  /**
+   * `checked`: every load is achievable on the equipment. `unchecked`: no
+   * equipment profile. `infeasible`: the equipment can't make any load (e.g. its
+   * min is above every position), so no load is prescribed.
+   */
+  loadFeasibility: 'checked' | 'unchecked' | 'not_applicable' | 'infeasible';
   rule: { id: string; version: number; method: ProgressionRule['method']; name: string };
   explanation: { summary: string; facts: string[] };
   /** Comparable sessions used, latest first. */
@@ -90,9 +101,12 @@ interface Criteria {
 interface SessionEval {
   sessionId: string;
   performedAtUtc: string;
-  /** Easiest counted load (lowest resistance / most assistance); null for bodyweight. */
+  /** Completed sets of the counted type (working, or top for top-set rules). */
+  countedSets: number;
+  /** Easiest counted load (lowest resistance / most assistance); null for bodyweight or no sets. */
   load: number | null;
   minReps: number;
+  /** Every counted set reached the top of the range (false when nothing was counted). */
   allHitTop: boolean;
   anyBelowFloor: boolean;
   effortOk: boolean;
@@ -105,6 +119,8 @@ interface Ctx {
   convention: LoadConvention;
   direction: LoadDirection;
   facts: string[];
+  /** Set when the equipment can't produce any load, so no load can be prescribed. */
+  infeasible: boolean;
 }
 
 export function formatLoad(load: Load | null): string {
@@ -125,20 +141,46 @@ export function formatLoad(load: Load | null): string {
 }
 
 const range = (r: RepRange) => (r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`);
+const day = (utc: string) => utc.slice(0, 10);
 
 function asLoad(ctx: Ctx, value: number | null): Load | null {
   if (value === null) return null;
   return { value: fromScaled(toScaled(value)), unit: ctx.unit, convention: ctx.convention };
 }
 
+function fmt(ctx: Ctx, value: number | null): string {
+  return formatLoad(asLoad(ctx, value));
+}
+
+function pushFact(ctx: Ctx, fact: string): void {
+  if (!ctx.facts.includes(fact)) ctx.facts.push(fact);
+}
+
 function countedTypes(rule: ProgressionRule): SetType[] {
   return rule.method === 'double_progression' ? ['working'] : ['top'];
+}
+
+/** Sets that must be completed before the rule may progress (review B2, ADR 0003 S3). */
+function requiredSets(rule: ProgressionRule): number {
+  return rule.method === 'double_progression' ? rule.workingSets : 1;
+}
+
+function countedLabel(rule: ProgressionRule, n: number): string {
+  const noun = rule.method === 'double_progression' ? 'working set' : 'top set';
+  return n === 1 ? noun : `${noun}s`;
 }
 
 function criteriaOf(rule: ProgressionRule): Criteria {
   return rule.method === 'double_progression'
     ? { repRange: rule.repRange, maxRpeToProgress: rule.maxRpeToProgress, minRirToProgress: rule.minRirToProgress }
     : rule.topSet;
+}
+
+/** Latest first; equal timestamps are ordered by session ID so input order never matters. */
+function byRecency(a: HistorySession, b: HistorySession): number {
+  const d = toMs(b.performedAtUtc) - toMs(a.performedAtUtc);
+  if (d !== 0) return d;
+  return a.sessionId < b.sessionId ? 1 : a.sessionId > b.sessionId ? -1 : 0;
 }
 
 /** Keep only like-for-like sessions: same equipment instance, unit and convention. */
@@ -150,10 +192,8 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
   const out: SessionEval[] = [];
   let excluded = 0;
 
-  const sorted = [...input.history].sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
-  for (const s of sorted) {
+  for (const s of [...input.history].sort(byRecency)) {
     const counted = s.sets.filter((x) => types.includes(x.setType) && x.reps !== null);
-    if (counted.length === 0) continue;
     const mismatched = counted.some(
       (x) =>
         x.load !== null &&
@@ -183,16 +223,18 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
     out.push({
       sessionId: s.sessionId,
       performedAtUtc: s.performedAtUtc,
+      countedSets: counted.length,
       load: easiest,
-      minReps: Math.min(...reps),
-      allHitTop: reps.every((r) => r >= criteria.repRange.max),
+      minReps: reps.length === 0 ? 0 : Math.min(...reps),
+      allHitTop: reps.length > 0 && reps.every((r) => r >= criteria.repRange.max),
       anyBelowFloor: reps.some((r) => r < criteria.repRange.min),
       effortOk,
       missingEffort,
     });
   }
   if (excluded > 0) {
-    ctx.facts.push(
+    pushFact(
+      ctx,
       `${excluded} earlier session${excluded === 1 ? ' was' : 's were'} left out because the equipment, unit or load convention differs.`,
     );
   }
@@ -203,36 +245,46 @@ function harder(a: number, b: number, d: LoadDirection): boolean {
   return d === 'resistance' ? toScaled(a) > toScaled(b) : toScaled(a) < toScaled(b);
 }
 
-/** Make sure a held load is still achievable (equipment may have changed); round toward easier if not. */
+/**
+ * The load to prescribe when holding at the historical load `value`. If that
+ * load isn't on the equipment any more, round toward easier and say so. If the
+ * equipment can't make any load, prescribe none (never the raw, unachievable value).
+ */
 function feasibleHold(ctx: Ctx, value: number | null): number | null {
   const eq = ctx.input.equipment;
   if (value === null || eq === null) return value;
   const load = { value, unit: ctx.unit, convention: ctx.convention };
   if (isLoadAchievable(load, eq)) return value;
   const r = roundToAvailableLoad(load, eq, 'easier');
-  if (!r.ok) return value;
-  ctx.facts.push(`${formatLoad(load)} is no longer available on ${eq.name}; using ${formatLoad(r.load)}.`);
+  if (!r.ok) {
+    ctx.infeasible = true;
+    pushFact(ctx, `${eq.name} has no achievable loads with its current settings (check its min and max), so no load is prescribed.`);
+    return null;
+  }
+  pushFact(ctx, `Last load ${formatLoad(load)} is no longer available on ${eq.name}; using ${formatLoad(r.load)}.`);
   return r.load.value;
 }
 
-type Step = { kind: 'load'; value: number } | { kind: 'ceiling'; reason: string };
+type Step =
+  | { kind: 'load'; value: number }
+  | { kind: 'at_max' }
+  | { kind: 'no_assistance_left' }
+  | { kind: 'jump_too_big'; next: number; maxJump: number }
+  | { kind: 'no_loads' };
 
 function nextHarderLoad(ctx: Ctx, current: number): Step {
   const rule = ctx.input.rule;
   const inc = convertMass(rule.loadIncrement, ctx.unit).value;
   const desired = ctx.direction === 'resistance' ? current + inc : Math.max(0, current - inc);
   const eq = ctx.input.equipment;
-  const currentLoad = asLoad(ctx, current);
   if (eq === null) {
-    if (!harder(desired, current, ctx.direction)) return { kind: 'ceiling', reason: 'no assistance left to remove' };
+    if (!harder(desired, current, ctx.direction)) return { kind: 'no_assistance_left' };
     return { kind: 'load', value: desired };
   }
   const loads = getAchievableLoads(eq).loads;
+  if (loads.length === 0) return { kind: 'no_loads' };
   const candidates = loads.filter((l) => harder(l, current, ctx.direction));
-  if (candidates.length === 0) {
-    const where = ctx.direction === 'resistance' ? 'the heaviest' : 'the least-assisted';
-    return { kind: 'ceiling', reason: `${formatLoad(currentLoad)} is ${where} load available on ${eq.name}` };
-  }
+  if (candidates.length === 0) return { kind: 'at_max' };
   const rounded = roundToAvailableLoad({ value: desired, unit: ctx.unit, convention: ctx.convention }, eq, 'nearest');
   let chosen: number;
   if (rounded.ok && harder(rounded.load.value, current, ctx.direction)) chosen = rounded.load.value;
@@ -241,10 +293,7 @@ function nextHarderLoad(ctx: Ctx, current: number): Step {
   if (rule.maxLoadJump !== null) {
     const maxJump = convertMass(rule.maxLoadJump, ctx.unit).value;
     if (Math.abs(toScaled(chosen) - toScaled(current)) > toScaled(maxJump)) {
-      return {
-        kind: 'ceiling',
-        reason: `the next available load, ${formatLoad(asLoad(ctx, chosen))}, is a bigger jump than the rule allows (${fromScaled(toScaled(maxJump))} ${ctx.unit})`,
-      };
+      return { kind: 'jump_too_big', next: chosen, maxJump };
     }
   }
   return { kind: 'load', value: chosen };
@@ -271,16 +320,50 @@ interface PrimaryDecision {
   summary: string;
 }
 
+/** Starting point when there is no usable history. */
+function startingPoint(ctx: Ctx, criteria: Criteria, lead: string): PrimaryDecision {
+  const { input } = ctx;
+  const rule = input.rule;
+  let start: number | null = null;
+  if (rule.startingLoad !== null && ctx.convention !== 'bodyweight') {
+    if (input.equipment) {
+      const value = convertMass(rule.startingLoad, ctx.unit).value;
+      const r = roundToAvailableLoad({ value, unit: ctx.unit, convention: ctx.convention }, input.equipment, 'easier');
+      if (r.ok) start = r.load.value;
+      else {
+        ctx.infeasible = true;
+        pushFact(ctx, `${input.equipment.name} has no achievable loads with its current settings, so no starting load is prescribed.`);
+      }
+    } else {
+      // Same rule as planned loads (ADR 0003): convert only when exact, never approximate silently.
+      const exact = convertMassExactly(rule.startingLoad, ctx.unit);
+      if (exact) start = exact.value;
+      else pushFact(ctx, `The rule's starting load is in ${rule.startingLoad.unit} and doesn't convert exactly to ${ctx.unit}, so it isn't used.`);
+    }
+  }
+  return {
+    decision: 'insufficient_data',
+    load: start,
+    reps: criteria.repRange,
+    summary:
+      start === null
+        ? `${lead} Pick a load you can do for ${range(criteria.repRange)} reps.`
+        : `${lead} Starting at ${fmt(ctx, start)} for ${range(criteria.repRange)} reps.`,
+  };
+}
+
 function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): PrimaryDecision {
   const { input } = ctx;
   const rule = input.rule;
   const name = input.exerciseName;
   const latest = sessions[0];
+  // The most recent session in which anything counted was performed: the load reference.
+  const reference = sessions.find((s) => s.countedSets > 0);
 
   if (input.pain.active) {
-    const held = latest ? feasibleHold(ctx, latest.load) : null;
-    const when = input.pain.reportedAtUtc ? ` on ${input.pain.reportedAtUtc.slice(0, 10)}` : '';
-    ctx.facts.push('Targets are not increased while a pain flag is active. Clear the flag when you are ready.');
+    const held = reference ? feasibleHold(ctx, reference.load) : null;
+    const when = input.pain.reportedAtUtc ? ` on ${day(input.pain.reportedAtUtc)}` : '';
+    pushFact(ctx, 'Targets are not increased while a pain flag is active. Clear the flag when you are ready.');
     return {
       decision: 'halted_pain',
       load: held,
@@ -289,134 +372,158 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
     };
   }
 
-  if (!latest) {
-    let start: number | null = null;
-    if (rule.startingLoad !== null && ctx.convention !== 'bodyweight') {
-      const value = convertMass(rule.startingLoad, ctx.unit).value;
-      start = value;
-      if (input.equipment) {
-        const r = roundToAvailableLoad({ value, unit: ctx.unit, convention: ctx.convention }, input.equipment, 'easier');
-        start = r.ok ? r.load.value : null;
-      }
-    }
-    return {
-      decision: 'insufficient_data',
-      load: start,
-      reps: criteria.repRange,
-      summary:
-        start === null
-          ? `No comparable ${name} history yet. Pick a load you can do for ${range(criteria.repRange)} reps.`
-          : `No comparable ${name} history yet. Starting at ${formatLoad(asLoad(ctx, start))} for ${range(criteria.repRange)} reps.`,
-    };
+  if (!latest) return startingPoint(ctx, criteria, `No comparable ${name} history yet.`);
+
+  const required = requiredSets(rule);
+  if (latest.countedSets === 0) {
+    pushFact(ctx, `No ${countedLabel(rule, 2)} were logged on ${day(latest.performedAtUtc)} (all skipped); holding.`);
+  } else if (latest.countedSets < required) {
+    pushFact(
+      ctx,
+      `Only ${latest.countedSets} of ${required} ${countedLabel(rule, required)} ${latest.countedSets === 1 ? 'was' : 'were'} logged on ${day(latest.performedAtUtc)}; holding.`,
+    );
+  }
+  if (!reference) {
+    return startingPoint(ctx, criteria, `No completed ${name} sets to compare yet.`);
   }
 
-  const L = latest.load;
-  const lastText = formatLoad(asLoad(ctx, L));
+  const L = reference.load;
+  const lastText = fmt(ctx, L);
+  const complete = latest.countedSets >= required;
   if (latest.missingEffort > 0) {
-    ctx.facts.push(`Effort wasn't recorded for ${latest.missingEffort} set${latest.missingEffort === 1 ? '' : 's'}; reps alone were used.`);
+    pushFact(ctx, `Effort wasn't recorded for ${latest.missingEffort} set${latest.missingEffort === 1 ? '' : 's'}; reps alone were used.`);
   }
 
-  if (latest.allHitTop && latest.effortOk) {
-    ctx.facts.push(`Last session: every counted set reached ${criteria.repRange.max}+ reps at ${lastText}.`);
+  if (complete && latest.allHitTop && latest.effortOk) {
+    pushFact(ctx, `Last session: every counted set reached ${criteria.repRange.max}+ reps at ${lastText}.`);
     const cap = rule.ceilingRepCap;
-    const repStep = (reason: string): PrimaryDecision => {
+    /** Progress reps at the held load. All text names the prescribed load, never the historical one. */
+    const repStep = (reasonFor: (target: string) => string): PrimaryDecision => {
+      const held = feasibleHold(ctx, L);
+      const target = fmt(ctx, held);
+      const reason = reasonFor(target);
       const n = Math.max(latest.minReps + 1, criteria.repRange.max + 1);
       if (n > cap) {
         return {
           decision: 'ceiling_reached',
-          load: feasibleHold(ctx, L),
-          reps: { min: criteria.repRange.max, max: cap },
-          summary: `${name} has reached the rep cap (${cap}) at ${lastText} because ${reason}. Consider a substitution or another set.`,
+          load: held,
+          reps: { min: Math.min(criteria.repRange.max, cap), max: cap },
+          summary: `${name} has reached the rep cap (${cap}) at ${target} because ${reason}. Consider a substitution or another set.`,
         };
       }
       return {
         decision: 'increase_reps',
-        load: feasibleHold(ctx, L),
+        load: held,
         reps: { min: n, max: n },
-        summary: `Add a rep: aim for ${n} at ${lastText}, because ${reason}.`,
+        summary: `Add a rep: aim for ${n} at ${target}, because ${reason}.`,
       };
     };
-    if (L === null) return repStep('there is no external load to add');
+    if (L === null) return repStep(() => 'there is no external load to add');
     const step = nextHarderLoad(ctx, L);
-    if (step.kind === 'ceiling') return repStep(step.reason);
-    const verb = ctx.direction === 'resistance' ? 'Increase' : 'Reduce assistance';
-    return {
-      decision: 'increase_load',
-      load: step.value,
-      reps: criteria.repRange,
-      summary: `${verb} to ${formatLoad(asLoad(ctx, step.value))} for ${range(criteria.repRange)} reps.`,
-    };
+    const eqName = input.equipment?.name ?? 'this equipment';
+    switch (step.kind) {
+      case 'load': {
+        const verb = ctx.direction === 'resistance' ? 'Increase' : 'Reduce assistance';
+        return {
+          decision: 'increase_load',
+          load: step.value,
+          reps: criteria.repRange,
+          summary: `${verb} to ${fmt(ctx, step.value)} for ${range(criteria.repRange)} reps.`,
+        };
+      }
+      case 'at_max': {
+        // Only reached when L is at or beyond the hardest load, so the held load is that hardest load.
+        const where = ctx.direction === 'resistance' ? 'the heaviest' : 'the least-assisted';
+        return repStep((target) => `${target} is ${where} load available on ${eqName}`);
+      }
+      case 'no_assistance_left':
+        return repStep(() => 'there is no assistance left to remove');
+      case 'jump_too_big':
+        return repStep(
+          () =>
+            `the next available load, ${fmt(ctx, step.next)}, is a bigger jump than the rule allows (${fromScaled(toScaled(step.maxJump))} ${ctx.unit})`,
+        );
+      case 'no_loads':
+        return repStep(() => `${eqName} has no achievable loads`);
+    }
   }
 
-  if (latest.anyBelowFloor) {
+  if (latest.countedSets > 0 && latest.anyBelowFloor) {
     let streak = 0;
     for (const s of sessions) {
       const sameLoad = (s.load === null && L === null) || (s.load !== null && L !== null && toScaled(s.load) === toScaled(L));
-      if (!s.anyBelowFloor || !sameLoad) break;
+      if (s.countedSets === 0 || !s.anyBelowFloor || !sameLoad) break;
       streak += 1;
     }
     const needed = rule.failuresBeforeReduce;
     if (streak >= needed && L !== null) {
       const reduced = reducedLoad(ctx, L);
       if (reduced !== null) {
-        ctx.facts.push(`${streak} sessions in a row fell below ${criteria.repRange.min} reps at ${lastText}.`);
+        pushFact(ctx, `${streak} sessions in a row fell below ${criteria.repRange.min} reps at ${lastText}.`);
         return {
           decision: 'reduce_load',
           load: reduced,
           reps: criteria.repRange,
-          summary: `Repeated misses at ${lastText}: reduce to ${formatLoad(asLoad(ctx, reduced))} and build back up.`,
+          summary: `Repeated misses at ${lastText}: reduce to ${fmt(ctx, reduced)} and build back up.`,
         };
       }
-      ctx.facts.push('No easier load is available on this equipment.');
+      pushFact(ctx, 'No easier load is available on this equipment.');
     } else {
-      ctx.facts.push(
+      pushFact(
+        ctx,
         `One session below ${criteria.repRange.min} reps is treated as a bad day, not a trend (${streak} of ${needed} needed to reduce).`,
       );
     }
+    const held = feasibleHold(ctx, L);
+    const sameAsLast = held === L;
     return {
       decision: 'hold_after_miss',
-      load: feasibleHold(ctx, L),
+      load: held,
       reps: criteria.repRange,
-      summary: `Repeat ${lastText} for ${range(criteria.repRange)} reps.`,
+      summary: `${sameAsLast ? 'Repeat' : 'Use'} ${fmt(ctx, held)} for ${range(criteria.repRange)} reps.`,
     };
   }
 
-  if (latest.allHitTop && !latest.effortOk) {
-    ctx.facts.push('Reps reached the top of the range, but effort was above the rule’s limit.');
+  if (complete && latest.allHitTop && !latest.effortOk) {
+    pushFact(ctx, 'Reps reached the top of the range, but effort was above the rule’s limit.');
   }
+  const held = feasibleHold(ctx, L);
   return {
     decision: 'hold',
-    load: feasibleHold(ctx, L),
+    load: held,
     reps: criteria.repRange,
-    summary: `Stay at ${lastText} and work toward ${criteria.repRange.max} reps on every set.`,
+    summary: `Stay at ${fmt(ctx, held)} and work toward ${criteria.repRange.max} reps on every set.`,
   };
 }
 
 /**
  * Deterministic next-session targets with an inspectable explanation
  * (brief §3, §7). Loads are always achievable on the given equipment and never
- * above its maximum; at the ceiling, reps progress instead. One poor session
- * holds; only a repeated trend reduces. An active pain flag halts progression.
+ * above its maximum; at the ceiling, reps progress instead. Progress needs every
+ * prescribed counted set completed at the top of the range; otherwise hold. One
+ * poor session holds; only a repeated trend reduces. An active pain flag halts
+ * progression. The output does not depend on the order of `history`.
  */
 export function calculateNextTargets(input: NextTargetsInput): NextTargets {
   const unit = input.equipment?.unit ?? input.unit;
   const convention = input.equipment?.loadConvention ?? input.convention;
-  const ctx: Ctx = { input, unit, convention, direction: loadDirection(convention), facts: [] };
+  const ctx: Ctx = { input, unit, convention, direction: loadDirection(convention), facts: [], infeasible: false };
   const rule = input.rule;
   const ruleRef = { id: rule.id, version: rule.version, method: rule.method, name: rule.name };
+  const unsupported = (summary: string): NextTargets => ({
+    decision: 'unsupported',
+    sets: [],
+    loadFeasibility: 'not_applicable',
+    rule: ruleRef,
+    explanation: { summary, facts: [] },
+    basedOnSessionIds: [],
+  });
 
+  if (input.measurement === 'duration') {
+    return unsupported(`Time-based progression isn't supported yet, so ${input.exerciseName} targets stay as planned.`);
+  }
   if (rule.method === 'top_set_backoff' && ctx.direction === 'assistance') {
-    return {
-      decision: 'unsupported',
-      sets: [],
-      loadFeasibility: 'not_applicable',
-      rule: ruleRef,
-      explanation: {
-        summary: 'Top-set/back-off rules are not supported on assisted machines. Use double progression instead.',
-        facts: [],
-      },
-      basedOnSessionIds: [],
-    };
+    return unsupported('Top-set/back-off rules are not supported on assisted machines. Use double progression instead.');
   }
 
   const criteria = criteriaOf(rule);
@@ -434,12 +541,13 @@ export function calculateNextTargets(input: NextTargetsInput): NextTargets {
       const raw = (primary.load * rule.backoff.percentOfTop) / 100;
       if (input.equipment) {
         const r = roundToAvailableLoad({ value: raw, unit, convention }, input.equipment, 'easier');
-        backoff = r.ok ? r.load : null;
+        if (r.ok) backoff = r.load;
+        else ctx.infeasible = true;
       } else {
         backoff = asLoad(ctx, raw);
       }
       if (backoff) {
-        ctx.facts.push(`Back-off sets use ${rule.backoff.percentOfTop}% of the top set, rounded down to ${formatLoad(backoff)}.`);
+        pushFact(ctx, `Back-off sets use ${rule.backoff.percentOfTop}% of the top set, rounded down to ${formatLoad(backoff)}.`);
       }
     }
     for (let i = 0; i < rule.backoff.sets; i += 1) sets.push({ setType: 'backoff', load: backoff, reps: rule.backoff.repRange });
@@ -449,7 +557,7 @@ export function calculateNextTargets(input: NextTargetsInput): NextTargets {
   return {
     decision: primary.decision,
     sets,
-    loadFeasibility: !anyLoad ? 'not_applicable' : input.equipment ? 'checked' : 'unchecked',
+    loadFeasibility: ctx.infeasible ? 'infeasible' : !anyLoad ? 'not_applicable' : input.equipment ? 'checked' : 'unchecked',
     rule: ruleRef,
     explanation: { summary: primary.summary, facts: ctx.facts },
     basedOnSessionIds: sessions.map((s) => s.sessionId),
