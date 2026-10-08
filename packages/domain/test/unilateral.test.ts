@@ -117,8 +117,8 @@ describe('other-side rows (review R4, ADR 0003)', () => {
       ['left', p2.id],
       ['right', p3.id],
     ]);
-    // Split squat isn't done: the next active set is still one of its rows, not the bench.
-    expect(pending.map((x) => x.id)).toContain(s.session.activeSetId);
+    // Split squat isn't done: the next active set is the other side of set 3, not the bench.
+    expect(s.session.activeSetId).toBe(pending[2]?.id);
     for (const x of pending) s = apply(s, logCmd(x.id, each15(10), 300 + x.index, `other-${x.id}`));
     expect(summariseVolume(s)[0]?.bySide).toEqual({ left: { sets: 3, reps: 30 }, right: { sets: 3, reps: 30 } });
     expect(summariseVolume(s)[0]?.sets).toBe(3);

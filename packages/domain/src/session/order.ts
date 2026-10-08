@@ -25,17 +25,30 @@ function blocks(exercises: readonly SessionExercise[]): Block[] {
   return out;
 }
 
-/** Live sets of one exercise in index order. Deleted tombstones take no place in the order. */
-function setsOf(sets: readonly WorkoutSet[], exerciseId: string): WorkoutSet[] {
-  return sets
-    .filter((s) => s.sessionExerciseId === exerciseId && s.status !== 'deleted')
-    .sort((a, b) => a.index - b.index);
+/**
+ * One exercise's sets grouped into units, in execution order. A unit is a set
+ * plus the other-side rows paired with it (review T1): the other side is
+ * performed immediately after its partner and belongs to the same superset
+ * round. A companion whose partner was deleted keeps the partner's position.
+ * Deleted tombstones take no place in the order.
+ */
+function unitsOf(sets: readonly WorkoutSet[], exerciseId: string): WorkoutSet[][] {
+  const own = sets.filter((s) => s.sessionExerciseId === exerciseId).sort((a, b) => a.index - b.index);
+  const ids = new Set(own.map((s) => s.id));
+  const isHead = (s: WorkoutSet) => s.pairedWithSetId === null || !ids.has(s.pairedWithSetId);
+  const units: WorkoutSet[][] = [];
+  for (const head of own.filter(isHead)) {
+    const unit = [head, ...own.filter((s) => !isHead(s) && s.pairedWithSetId === head.id)].filter((s) => s.status !== 'deleted');
+    if (unit.length > 0) units.push(unit);
+  }
+  return units;
 }
 
 /**
  * The order sets are performed in. Plain exercises run all their sets in
  * order; superset members interleave round by round (A1 s1, A2 s1, A1 s2 …).
- * A superset is positioned where its first member appears.
+ * A superset is positioned where its first member appears. The other side of a
+ * single-side log comes straight after its partner (A1 L, A1 R, A2 s1 …).
  */
 export function buildExecutionOrder(
   exercises: readonly SessionExercise[],
@@ -43,12 +56,11 @@ export function buildExecutionOrder(
 ): string[] {
   const order: string[] = [];
   for (const block of blocks(exercises)) {
-    const memberSets = block.members.map((m) => setsOf(sets, m.id));
-    const rounds = Math.max(0, ...memberSets.map((s) => s.length));
+    const memberUnits = block.members.map((m) => unitsOf(sets, m.id));
+    const rounds = Math.max(0, ...memberUnits.map((u) => u.length));
     for (let r = 0; r < rounds; r += 1) {
-      for (const ms of memberSets) {
-        const set = ms[r];
-        if (set) order.push(set.id);
+      for (const units of memberUnits) {
+        for (const set of units[r] ?? []) order.push(set.id);
       }
     }
   }
@@ -57,7 +69,8 @@ export function buildExecutionOrder(
 
 /**
  * For a superset set: true when no later member of the group still has a
- * pending set in the same round. Plain exercises are always at a round end.
+ * pending set in the same round. An other-side row is in its partner's round.
+ * Plain exercises are always at a round end.
  */
 export function isRoundEnd(
   set: WorkoutSet,
@@ -70,8 +83,8 @@ export function isRoundEnd(
   const later = exercises
     .filter((e) => e.supersetGroup === group && e.order > own.order)
     .map((e) => e.id);
-  const round = setsOf(sets, own.id).findIndex((s) => s.id === set.id);
-  return !later.some((exId) => setsOf(sets, exId)[round]?.status === 'pending');
+  const round = unitsOf(sets, own.id).findIndex((u) => u.some((s) => s.id === set.id));
+  return !later.some((exId) => unitsOf(sets, exId)[round]?.some((s) => s.status === 'pending') ?? false);
 }
 
 /**

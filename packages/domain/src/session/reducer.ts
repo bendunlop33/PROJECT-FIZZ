@@ -368,7 +368,11 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   return { ok: true, state: next, events };
 }
 
-/** The pending other-side row for a set logged as `left` or `right` (review R4). */
+/**
+ * The pending other-side row for a set logged as `left` or `right` (review R4).
+ * `index` only keeps indexes unique; the execution order places the row
+ * straight after its partner (`buildExecutionOrder`, review T1).
+ */
 function makeCompanion(state: SessionAggregate, logged: WorkoutSet, cmd: CommandOf<'log_set'>): WorkoutSet {
   const index = Math.max(...state.sets.filter((s) => s.sessionExerciseId === logged.sessionExerciseId).map((s) => s.index)) + 1;
   return {

@@ -148,3 +148,26 @@ export function prefillDraft(
   if (lastThere) return { values: { ...lastThere, rpe: null, rir: null }, source: 'last_session' };
   return { values: EMPTY, source: 'none' };
 }
+
+export interface SetPair {
+  partnerSetId: string;
+  /** `first_side`: this set was logged as one side; `other_side`: this is the row added for the other side. */
+  role: 'first_side' | 'other_side';
+}
+
+/**
+ * The live left/right pair a unilateral set belongs to, for the "pair" badge
+ * (review R4, third review follow-up 2). Null when either side is deleted:
+ * `pairedWithSetId` is kept on a logged other-side row as provenance, but a
+ * row whose partner was deleted is shown as a standalone set, never as a pair.
+ */
+export function getSetPair(state: SessionAggregate, setId: string): SetPair | null {
+  const set = state.sets.find((s) => s.id === setId);
+  if (!set || set.status === 'deleted') return null;
+  if (set.pairedWithSetId !== null) {
+    const partner = state.sets.find((s) => s.id === set.pairedWithSetId);
+    return partner && partner.status !== 'deleted' ? { partnerSetId: partner.id, role: 'other_side' } : null;
+  }
+  const other = state.sets.find((s) => s.pairedWithSetId === set.id && s.status !== 'deleted');
+  return other ? { partnerSetId: other.id, role: 'first_side' } : null;
+}
