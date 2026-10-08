@@ -65,6 +65,8 @@ Open the failed run and look for the step with the red cross.
 | **Entitlement check** | The app asked for something a free Apple ID can't sign, for example push notifications. Or the Bundle ID changed. It's a developer fix. This check stops the build before you get an app that SideStore would refuse. |
 | **Build (Release…)** | The Mac couldn't compile the app. The build log is attached under Artifacts as `xcodebuild-log` for a developer. |
 | **Ad hoc sign** | Signing the file for SideStore failed. It's a developer fix. |
+| **npm ci** (with "patch-package" in the log) | Our fix to the Live Activity library no longer fits the library version. It's a developer fix. |
+| **Live Activity check** | The fixed Live Activity code is missing from the app or its Lock Screen extension, so the countdown would fail again under SideStore. It's a developer fix. |
 
 If builds keep failing only because of the Live Activity extension, run it again with **Include the Live Activity extension** unticked. The app works without it, and the probe screen will show Live Activity as "unavailable".
 
@@ -86,6 +88,13 @@ Most rows explain what to do. These need you to do something:
 - **Spoken cue while locked:** only in builds made with the background-audio experiment. Tap Run and lock the phone within 10 seconds. The cue plays 30 seconds after you tap Run.
 - **AlarmKit:** tap **Request permission** and answer the iOS prompt. iOS only asks once; to change your answer later, go to Settings > Fizz. No alarm is set yet.
 - **Audio events:** nothing to run. While the probe screen is open, it records interruptions such as calls, Siri or AirPods disconnecting.
+
+**Retest after build 7.** The next build changes these rows:
+- Live Activity, then App Group (the SideStore App Group fix);
+- Speech recognition, which now uses your iPhone's language and region;
+- AlarmKit, which now has **Request permission**;
+- Spoken cue while locked, because the background-audio experiment is on in this build;
+- Audio events, which now needs a call or Siri to pass.
 
 Results are saved on the phone as you go, including your yes/no answers. Going back to the home screen, or swiping the app away for the rest-deadline test, doesn't lose them. If saving ever fails, the probe screen says so in red: tap **Export** straight away in that case.
 
