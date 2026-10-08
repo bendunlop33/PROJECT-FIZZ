@@ -431,3 +431,69 @@ Add tests for:
   - the R4 pairing rule (a Left + Right pair is one prescribed set, and the load goes up only when both sides qualify).
 
   These change brief §3 behaviour. Record them before the UI ships.
+
+---
+
+# Final review (2026-10-08)
+
+**Verdict: PASS**
+
+Scope: commits `3bfb6f8` to `93d39e1` (after "Add third review of domain core: one blocker (T1)"), plus the "Third review decisions" section of ADR 0003. `npm run typecheck`, `npm run lint` and `npm test` all pass (13 files, 273 tests). I checked the new tests against the old logic in a detached worktree in the scratchpad, and ran extra probes there. No source files were edited.
+
+## Previous findings: status
+
+| Finding | Status | Evidence |
+|---|---|---|
+| T1 other-side order | **Fixed** | `unitsOf` (`order.ts:35-45`) groups each set with the live other-side rows paired to it. `buildExecutionOrder` emits unit by unit, so a superset round is a unit, not a single row. `isRoundEnd` finds the round by unit. `nextPendingSet`, `repointActive` and the rest kind all follow from this. |
+| Follow-up 1 lagging-side wording | **Fixed** | `progression.ts:486-494`: the effort case now reads "…reached 8+ reps with effort above the limit". The test enshrines the new text. |
+| Follow-up 2 orphaned other side | **Fixed** (domain side) | `getSetPair` (`view.ts:164`) returns null once either side is deleted. `pairedWithSetId` stays on the completed row as provenance, which is the right call under rule 2. An orphan keeps its partner's old position in the order. |
+| Follow-up 4 `superseded` | **Fixed** | `isSuperseded` (`reducer.ts:1128`) is now an exhaustive `switch` over command types (typecheck enforces this), and each "always false" case is documented. `createdIds` is recorded for `add_set`, so a retry with a regenerated `newSetId` still finds the original row. |
+| Follow-ups 3, 5, 6 | Recorded as open in ADR 0003 (3 and 5) or as design copy (6) | |
+
+## T1 probes, re-run
+
+All of these give the expected result. The developer's `companion-order.test.ts` asserts each one exactly:
+- **Plain exercise.** Split squat ×3. The sequence L → R → set 2, then L → R → set 3, then L → R → Bench.
+- **Superset.** One-arm row (unilateral) + Face pull, 2 rounds. A1 L → A1 R → B1 → A2 L → A2 R → B2 → Bench. Rests are `transition 15, transition 15, rest 90` for each round.
+- **Deleting the pending other side.** Plain → set 2. Superset → Face pull 1, the same round.
+- **Out-of-order logs.** Set 2 is logged Left before set 1 Right. The order is `1R, 1L, 2L, 2R*, 3, Bench`.
+
+**Tests fail against the old logic, as claimed.** I swapped in each old file from `fdb30f1` with everything else at HEAD:
+- Old `order.ts`: all 6 order and orphan tests in `companion-order.test.ts` fail.
+- Old `progression.ts`: the 2 lagging-side wording tests fail.
+- Old `reducer.ts`: all 4 `superseded` tests fail (`correct_set`, `skip_exercise`, `add_set`, `update_session_timing`).
+
+## Extra regression probes (scratch only)
+
+- **The unilateral exercise is the *last* superset member** (Face pull, then One-arm row). The order is right: F1 → R1 L → R1 R → F2 → R2 L → R2 R → Bench. The rest between the two sides is the full 90 s, because the row is at the round's end. See follow-up F1 below.
+- **Uneven superset** (unilateral A ×3, B ×2). The order is A1 L, A1 R, B1, A2 L, A2 R, B2, A3 L, A3 R, Bench. Under the old index order the other-side rows also shifted the round alignment. That no longer happens.
+- **Deleting a single-side set while its other side is pending.** The other side is tombstoned under the same opId, and the active set becomes set 2.
+- **Undoing the first side after the other side was logged** is refused (`not_latest_set`). A second other-side row can't be created by undo and re-log.
+- **Chains.** An other-side row never gets its own other-side row (`reducer.ts:307` requires `pairedWithSetId === null`). `add_set` always writes `pairedWithSetId: null`. Every live row therefore belongs to exactly one unit, so nothing drops out of the order.
+- **`index` users.** The other places that read `index` (`add_set`'s `last`, `prefillDraft`'s comparable-set match) don't depend on execution order. Other-side rows have a draft, so prefill uses the draft.
+- **Undo window, timers, duplicate detection, Finish bounds and volume.** All the earlier tests still pass unchanged.
+
+## Blocking
+
+None.
+
+## Follow-ups (non-blocking, later slices)
+
+1. **F1. Rest between sides when the unilateral exercise ends a superset round.** ADR 0003 says that inside a superset the rest between sides "is the transition rest". That holds only when a later member follows in the round. When the unilateral exercise is the last member, `isRoundEnd` is true for the first side, so a full rest runs before the other side. This is the same product question as follow-up 3. Correct the ADR's statement and settle both cases together with Ben.
+2. **F2. Design copy is not yet updated for the ADR table rows.**
+   - `workout-summary.md` (§5 row and the "Held (side lagging)" example) still ends with `; holding.`, but the domain text ends with `; the load goes up only when both sides do.` Make them match. Better still, have the UI show the domain fact verbatim.
+   - The pair-badge rule (`getSetPair`) is not in `active-workout.md` yet.
+   - The "after Stop on a paused workout" stale-card copy is not in the spec yet.
+
+   The ADR assigns all three to the designer.
+3. **F3. `index` no longer matches the order sets are performed in.** The UI must order rows with `buildExecutionOrder` and must not sort by `index`. When the UI slice lands, add a short note to the schema comment on `WorkoutSet.index`, or a lint rule or test.
+4. **F4. Superset round when a member exercise has `transitionRestS`.** This is not new. If the exercise that ends a round has `transitionRestS` set and has no more sets, it gets the transition instead of the full round rest, even though other members still have rounds to go. Example: B2 in an A×3 / B×2 superset. This only happens with uneven supersets and per-member transitions. Check it when supersets are built in the UI.
+5. Carried over: follow-up 5 (the `HistorySet` mapper must carry `side` and use `getSetPair`), side corrections on other-side rows, and S7 (Ben's approval and `docs/brief/CHANGELOG.md` entries for S1, S3 and the R4 pairing rule).
+
+## Durability and security
+- **New persisted field:** `ProcessedOperation.createdIds` is optional and capped at 4. Older records without it parse, and `add_set` duplicates on those records just report `superseded: false`. Nothing is persisted yet, so no migration is needed.
+- **No new credentials, network, logging or imported-content paths.**
+
+## Spec issues
+- **T-S1 is resolved** (`3bfb6f8`).
+- **S7 is still open** (see follow-up 5).
