@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import type { Exercise, SessionAggregate, SessionCommand, SetValues, WorkoutSet } from '@fizz/schemas';
+import type { Exercise, SessionAggregate, SessionCommand, SetSide, SetValues, WorkoutSet } from '@fizz/schemas';
 import { reduceSession, startWorkout, type ReduceResult, type StartWorkoutInput } from '../src/index';
 import {
   at,
@@ -120,7 +120,14 @@ export function setsFor(state: SessionAggregate, exerciseId: string): WorkoutSet
 }
 
 let timerCounter = 90_000;
-export function logCmd(setId: string, values: SetValues, seconds: number, opId = `op-${setId}-${seconds}`): SessionCommand {
+export function logCmd(
+  setId: string,
+  values: SetValues,
+  seconds: number,
+  opId = `op-${setId}-${seconds}`,
+  side?: SetSide,
+): SessionCommand {
   timerCounter += 1;
-  return { type: 'log_set', at: at(seconds), opId, setId, values, restTimerId: id(timerCounter) };
+  const cmd: SessionCommand = { type: 'log_set', at: at(seconds), opId, setId, values, restTimerId: id(timerCounter) };
+  return side === undefined ? cmd : { ...cmd, side };
 }

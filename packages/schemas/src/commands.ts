@@ -7,9 +7,9 @@ import {
   WeightUnitSchema,
   ZonedTimestampSchema,
 } from './common';
-import { MeasurementSchema } from './exercise';
+import { LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
-import { ResolvedRestSchema, SetValuesSchema } from './session';
+import { ResolvedRestSchema, SetSideSchema, SetValuesSchema } from './session';
 
 /**
  * Typed commands for the active-session state machine. Every mutating command
@@ -26,6 +26,11 @@ export const LogSetCommandSchema = z.object({
   opId: OperationIdSchema,
   setId: IdSchema,
   values: SetValuesSchema,
+  /**
+   * Unilateral sets only: which side these values are for. Omit to keep the
+   * set's side (`both` by default). Rejected on bilateral exercises.
+   */
+  side: SetSideSchema.optional(),
   /** ID for the rest timer this commit may start (generated with the draft). */
   restTimerId: IdSchema,
 });
@@ -52,7 +57,7 @@ export const CorrectSetCommandSchema = z.object({
   setId: IdSchema,
   /** The set's own version, not the session's. */
   expectedSetVersion: z.int().min(1),
-  patch: SetValuesSchema.partial().extend({ setType: SetTypeSchema.optional() }),
+  patch: SetValuesSchema.partial().extend({ setType: SetTypeSchema.optional(), side: SetSideSchema.optional() }),
 });
 
 /**
@@ -168,7 +173,7 @@ export const ExerciseSnapshotSchema = z.object({
   exerciseId: IdSchema,
   name: z.string().min(1).max(120),
   measurement: MeasurementSchema,
-  laterality: z.enum(['bilateral', 'unilateral']),
+  laterality: LateralitySchema,
   defaultLoadConvention: LoadConventionSchema,
 });
 export type ExerciseSnapshot = z.infer<typeof ExerciseSnapshotSchema>;

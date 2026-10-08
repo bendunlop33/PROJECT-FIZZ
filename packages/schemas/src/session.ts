@@ -13,7 +13,7 @@ import {
   ZonedTimestampSchema,
 } from './common';
 import { EquipmentInstanceSchema } from './equipment';
-import { MeasurementSchema } from './exercise';
+import { LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
 
 /** Values a set can hold: used for actual results and drafts alike. */
@@ -63,6 +63,15 @@ export type SetStatus = z.infer<typeof SetStatusSchema>;
 export const SetFlagSchema = z.enum(['off_profile_load']);
 export type SetFlag = z.infer<typeof SetFlagSchema>;
 
+/**
+ * Side of a unilateral set (brief §4: record per side, don't double-count).
+ * - `both`: the values are per side and were done on each side ("10 each side").
+ * - `left` / `right`: the values are for that side only.
+ * Always null on bilateral exercises.
+ */
+export const SetSideSchema = z.enum(['left', 'right', 'both']);
+export type SetSide = z.infer<typeof SetSideSchema>;
+
 export const WorkoutSetSchema = z.object({
   id: IdSchema,
   sessionId: IdSchema,
@@ -71,6 +80,7 @@ export const WorkoutSetSchema = z.object({
   index: z.int().min(0),
   setType: SetTypeSchema,
   status: SetStatusSchema,
+  side: SetSideSchema.nullable(),
   planned: PlannedSetSchema,
   rest: ResolvedRestSchema,
   actual: SetValuesSchema.nullable(),
@@ -93,6 +103,8 @@ export const SessionExerciseSchema = z.object({
   /** Snapshot so history survives catalogue renames. */
   exerciseName: z.string().min(1).max(120),
   measurement: MeasurementSchema,
+  /** Snapshot: unilateral sets carry a `side`. */
+  laterality: LateralitySchema,
   equipmentId: IdSchema.nullable(),
   loadConvention: LoadConventionSchema,
   unit: WeightUnitSchema,
@@ -176,6 +188,7 @@ export type WorkInterval = z.infer<typeof WorkIntervalSchema>;
 export const SetSnapshotSchema = z.object({
   status: SetStatusSchema,
   setType: SetTypeSchema,
+  side: SetSideSchema.nullable(),
   actual: SetValuesSchema.nullable(),
   version: z.int().min(1),
 });

@@ -152,6 +152,7 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
       exerciseId: exercise.id,
       exerciseName: exercise.name,
       measurement: exercise.measurement,
+      laterality: exercise.laterality,
       equipmentId: equipment?.id ?? null,
       loadConvention,
       unit,
@@ -171,6 +172,7 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
         index,
         setType: tpl.setType,
         status: 'pending',
+        side: exercise.laterality === 'unilateral' ? 'both' : null,
         planned: {
           load: planned.load,
           reps: tpl.targetReps,

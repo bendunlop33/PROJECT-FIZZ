@@ -9,6 +9,7 @@ import type {
   SessionCommand,
   SessionExercise,
   SetFlag,
+  SetSide,
   SetSnapshot,
   SetValues,
   WorkoutSet,
@@ -139,7 +140,7 @@ export function commandFingerprint(command: SessionCommand): string {
 }
 
 function snapshot(set: WorkoutSet): SetSnapshot {
-  return { status: set.status, setType: set.setType, actual: set.actual, version: set.version };
+  return { status: set.status, setType: set.setType, side: set.side, actual: set.actual, version: set.version };
 }
 
 function replaceSet(sets: readonly WorkoutSet[], next: WorkoutSet): WorkoutSet[] {
@@ -174,6 +175,17 @@ function validateValues(values: SetValues, ex: SessionExercise): SessionError | 
   }
   if (values.load.unit !== ex.unit) {
     return { code: 'unit_mismatch', message: `Load unit ${values.load.unit} does not match ${ex.unit}; convert explicitly first.` };
+  }
+  return null;
+}
+
+function checkSide(side: SetSide | null | undefined, ex: SessionExercise): SessionError | null {
+  if (side === undefined) return null;
+  if (ex.laterality === 'bilateral' && side !== null) {
+    return { code: 'invalid_values', message: `${ex.exerciseName} is not unilateral; a side can't be recorded.` };
+  }
+  if (ex.laterality === 'unilateral' && side === null) {
+    return { code: 'invalid_values', message: 'Unilateral sets need a side (left, right or both).' };
   }
   return null;
 }
@@ -253,7 +265,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   }
   const ex = exerciseOf(state, set);
   if (!ex) return fail('set_not_found', 'Exercise for this set not found.');
-  const invalid = validateValues(cmd.values, ex);
+  const invalid = validateValues(cmd.values, ex) ?? checkSide(cmd.side, ex);
   if (invalid) return { ok: false, error: invalid };
 
   const events: SessionEvent[] = [];
@@ -267,6 +279,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   const completed: WorkoutSet = {
     ...set,
     status: 'completed',
+    side: cmd.side ?? set.side,
     actual: cmd.values,
     draft: null,
     completedAt: cmd.at,
@@ -345,7 +358,9 @@ function handleCorrectSet(state: SessionAggregate, cmd: CommandOf<'correct_set'>
   }
   const ex = exerciseOf(state, set);
   if (!ex) return fail('set_not_found', 'Exercise for this set not found.');
-  const { setType, ...valuePatch } = cmd.patch;
+  const { setType, side, ...valuePatch } = cmd.patch;
+  const badSide = checkSide(side, ex);
+  if (badSide) return { ok: false, error: badSide };
   const actual: SetValues = { ...set.actual };
   for (const key of Object.keys(valuePatch) as (keyof SetValues)[]) {
     const v = valuePatch[key];
@@ -358,6 +373,7 @@ function handleCorrectSet(state: SessionAggregate, cmd: CommandOf<'correct_set'>
     ...set,
     actual,
     setType: setType ?? set.setType,
+    side: side ?? set.side,
     flags: flagsFor(actual, state, ex),
     edited: true,
     version: set.version + 1,
@@ -760,6 +776,8 @@ function handleAddSet(state: SessionAggregate, cmd: CommandOf<'add_set'>): Handl
     index: template.index + 1,
     setType: cmd.setType ?? template.setType,
     status: 'pending',
+    // A new unilateral set starts as "both sides"; it can be logged per side.
+    side: template.side === null ? null : 'both',
     planned: template.planned,
     rest: template.rest,
     actual: null,
@@ -794,6 +812,7 @@ function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise
     exerciseId: cmd.exercise.exerciseId,
     exerciseName: cmd.exercise.name,
     measurement: cmd.exercise.measurement,
+    laterality: cmd.exercise.laterality,
     equipmentId: equipment?.id ?? null,
     loadConvention: equipment?.loadConvention ?? cmd.exercise.defaultLoadConvention,
     unit: equipment?.unit ?? cmd.unit,
@@ -809,6 +828,7 @@ function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise
     index: 0,
     setType: 'working',
     status: 'pending',
+    side: cmd.exercise.laterality === 'unilateral' ? 'both' : null,
     planned: { load: null, reps: null, durationS: null, rpe: null, rir: null },
     rest: cmd.rest,
     actual: null,

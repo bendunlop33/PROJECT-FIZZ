@@ -14,6 +14,9 @@ export const EquipmentKindSchema = z.enum([
 export const MeasurementSchema = z.enum(['reps', 'duration']);
 export type Measurement = z.infer<typeof MeasurementSchema>;
 
+export const LateralitySchema = z.enum(['bilateral', 'unilateral']);
+export type Laterality = z.infer<typeof LateralitySchema>;
+
 export const ExerciseSchema = z.object({
   id: IdSchema,
   /** Null for catalogue entries; set for custom exercises. */
@@ -24,7 +27,7 @@ export const ExerciseSchema = z.object({
   primaryMuscles: z.array(z.string().min(1).max(60)).max(20),
   measurement: MeasurementSchema,
   /** Unilateral exercises are logged per side; volume is not double-counted. */
-  laterality: z.enum(['bilateral', 'unilateral']),
+  laterality: LateralitySchema,
   compatibleEquipment: z.array(EquipmentKindSchema).max(6),
   /** Convention used when no equipment instance is attached. */
   defaultLoadConvention: LoadConventionSchema,

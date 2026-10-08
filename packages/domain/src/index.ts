@@ -9,6 +9,7 @@ export * from './session/create';
 export * from './session/reducer';
 export * from './session/view';
 export * from './session/recovery';
+export * from './session/volume';
 export * from './ports';
 export * from './memory';
 export * from './session-service';
