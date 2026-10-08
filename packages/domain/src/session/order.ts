@@ -77,13 +77,18 @@ export function isRoundEnd(
 /**
  * Next pending set after `fromSetId` in execution order, wrapping to the first
  * pending set before it (out-of-order logging). Null when none remain.
+ *
+ * `orderFrom` is the set list the order is built from (default `sets`). Pass
+ * the sets from before a deletion so a just-deleted `fromSetId` still has a
+ * position and the search continues after it (review re-review minor 1).
  */
 export function nextPendingSet(
   fromSetId: string | null,
   exercises: readonly SessionExercise[],
   sets: readonly WorkoutSet[],
+  orderFrom: readonly WorkoutSet[] = sets,
 ): string | null {
-  const order = buildExecutionOrder(exercises, sets);
+  const order = buildExecutionOrder(exercises, orderFrom);
   const pending = new Set(sets.filter((s) => s.status === 'pending').map((s) => s.id));
   const start = fromSetId === null ? -1 : order.indexOf(fromSetId);
   for (let i = start + 1; i < order.length; i += 1) {

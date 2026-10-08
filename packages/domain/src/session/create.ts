@@ -265,6 +265,7 @@ export function buildAddExerciseCommand(input: AddExerciseInput): CommandOf<'add
       measurement: exercise.measurement,
       laterality: exercise.laterality,
       defaultLoadConvention: exercise.defaultLoadConvention,
+      compatibleEquipment: exercise.compatibleEquipment,
     },
     equipmentId: input.equipmentId,
     unit: input.owner.preferredUnit,

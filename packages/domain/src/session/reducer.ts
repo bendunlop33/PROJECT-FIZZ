@@ -49,7 +49,8 @@ export type SessionErrorCode =
   | 'work_interval_running'
   | 'work_interval_not_running'
   | 'exercise_not_found'
-  | 'equipment_not_found';
+  | 'equipment_not_found'
+  | 'equipment_incompatible';
 
 export interface SessionError {
   code: SessionErrorCode;
@@ -131,6 +132,11 @@ const fail = (code: SessionErrorCode, message: string): Handled => ({ ok: false,
  * are excluded so a retry after relaunch, which regenerates them, still matches.
  */
 export function commandFingerprint(command: SessionCommand): string {
+  if (command.type === 'add_exercise') {
+    // Re-review minor 5: the snapshot, unit and resolved rest are derived by the
+    // service and may change between a failed attempt and its retry.
+    return stableStringify({ type: command.type, exerciseId: command.exercise.exerciseId, equipmentId: command.equipmentId });
+  }
   return stableStringify({
     ...command,
     at: undefined,
@@ -471,6 +477,9 @@ function handleCorrectSet(state: SessionAggregate, cmd: CommandOf<'correct_set'>
 export function latestCommittedSetId(state: SessionAggregate): string | null {
   for (let i = state.audit.length - 1; i >= 0; i -= 1) {
     const entry = state.audit[i];
+    // Deleting a logged set ends the undo window (re-review minor 3): "Undo"
+    // must not reach past the delete and revert an older set.
+    if (entry?.kind === 'deleted' && entry.before?.status === 'completed') return null;
     if (entry?.kind !== 'logged') continue;
     const set = state.sets.find((s) => s.id === entry.setId);
     if (set?.status === 'completed' && set.completedByOpId === entry.opId) return set.id;
@@ -487,6 +496,12 @@ function handleUndoLog(state: SessionAggregate, cmd: CommandOf<'undo_log'>, nowM
   }
   if (latestCommittedSetId(state) !== set.id) {
     return fail('not_latest_set', 'Only the most recent set can be undone; correct or delete older sets instead.');
+  }
+  // Re-review minor 8: Undo makes this set active, which would leave a work
+  // timer running on another set. Stop it first.
+  const wi = state.workInterval;
+  if (wi !== null && wi.setId !== set.id && (wi.status === 'running' || wi.status === 'paused')) {
+    return fail('work_interval_running', 'Stop the work timer before undoing.');
   }
   // Restore the side the set had before this log (e.g. `both` before "Left").
   const logged = [...state.audit].reverse().find((e) => e.kind === 'logged' && e.setId === set.id && e.opId === set.completedByOpId);
@@ -835,7 +850,9 @@ function repointActive(
   const current = state.session.activeSetId;
   const stillPending = current !== null && sets.find((s) => s.id === current)?.status === 'pending';
   if (stillPending) return current;
-  const next = nextPendingSet(current, state.exercises, sets);
+  // Order from the sets before this change, so a deleted active set still has a
+  // position and the successor is the next set after it, not an earlier one.
+  const next = nextPendingSet(current, state.exercises, sets, state.sets);
   if (next !== current) {
     events.push({ type: 'ActiveSetChanged', setId: next });
     if (next === null) events.push({ type: 'AllSetsDone' });
@@ -855,14 +872,21 @@ function handleAddSet(state: SessionAggregate, cmd: CommandOf<'add_set'>): Handl
   if (!ex) return fail('exercise_not_found', 'Exercise not found in this workout.');
   if (state.sets.some((s) => s.id === cmd.newSetId)) return fail('invalid_values', 'That set ID is already used.');
   const own = state.sets.filter((s) => s.sessionExerciseId === ex.id).sort((a, b) => a.index - b.index);
-  const template = own[own.length - 1];
-  if (!template) return fail('set_not_found', 'This exercise has no set to copy.');
+  const last = own[own.length - 1];
+  if (!last) return fail('set_not_found', 'This exercise has no set to copy.');
+  // Copy the last live set of the requested type (re-review minor 2): a warm-up
+  // added after working sets must not inherit the working load and rest.
+  const live = own.filter((s) => s.status !== 'deleted');
+  const template = cmd.setType === null ? (live[live.length - 1] ?? last) : live.filter((s) => s.setType === cmd.setType).at(-1);
+  if (!template) {
+    return fail('set_not_found', `${ex.exerciseName} has no ${cmd.setType ?? ''} set to copy its target and rest from.`);
+  }
   const added: WorkoutSet = {
     id: cmd.newSetId,
     sessionId: state.session.id,
     sessionExerciseId: ex.id,
-    index: template.index + 1,
-    setType: cmd.setType ?? template.setType,
+    index: last.index + 1,
+    setType: template.setType,
     status: 'pending',
     // A new unilateral set starts as "both sides"; it can be logged per side.
     side: template.side === null ? null : 'both',
@@ -892,6 +916,9 @@ function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise
     equipment = state.session.equipmentSnapshot.find((e) => e.id === cmd.equipmentId);
     if (!equipment || equipment.availability === 'retired') {
       return fail('equipment_not_found', 'That equipment is not part of this gym.');
+    }
+    if (!cmd.exercise.compatibleEquipment.includes(equipment.kind)) {
+      return fail('equipment_incompatible', `${cmd.exercise.name} can't be done on ${equipment.name}.`);
     }
   }
   const order = Math.max(-1, ...state.exercises.map((e) => e.order)) + 1;
@@ -1080,10 +1107,20 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
   }
 }
 
+/** A duplicate whose effect is no longer in place (review M3, re-review minor 4). */
 function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean {
-  if (command.type !== 'log_set') return false;
-  const set = state.sets.find((s) => s.id === command.setId);
-  return set?.status !== 'completed' || set.completedByOpId !== command.opId;
+  if (command.type === 'log_set') {
+    const set = state.sets.find((s) => s.id === command.setId);
+    return set?.status !== 'completed' || set.completedByOpId !== command.opId;
+  }
+  if (command.type === 'undo_log') {
+    // The undo put the set back to pending; it has since been logged again (or deleted).
+    return state.sets.find((s) => s.id === command.setId)?.status !== 'pending';
+  }
+  if (command.type === 'delete_set') {
+    return state.sets.find((s) => s.id === command.setId)?.status !== 'deleted';
+  }
+  return false;
 }
 
 /**
