@@ -46,7 +46,16 @@ export const PROGRESSION_RULE_SPEC: DocumentSpec<ProgressionRule> = {
   columns: (r) => ({ owner_id: r.ownerId }),
 };
 
-export const DOCUMENT_SPECS = [PROFILE_SPEC, GYM_SPEC, EQUIPMENT_SPEC, EXERCISE_SPEC, ROUTINE_SPEC, PROGRESSION_RULE_SPEC] as const;
+/** A document table with its type erased, for whole-database checks. */
+export interface DocumentTable {
+  table: string;
+  decode(row: SqlRow): unknown;
+}
+
+const erase = <T extends Versioned>(spec: DocumentSpec<T>): DocumentTable => ({
+  table: spec.table,
+  decode: (row) => decodeDocument(spec, row),
+});
 
 /** Decode and validate one document row. Throws `CorruptDataError`. */
 export function decodeDocument<T extends Versioned>(spec: DocumentSpec<T>, row: SqlRow): T {
@@ -143,3 +152,12 @@ export class SqliteRoutines extends DocumentRepository<Routine> {
     return this.listWhere('owner_id = ?', [ownerId]);
   }
 }
+
+export const DOCUMENT_TABLES: readonly DocumentTable[] = [
+  erase(PROFILE_SPEC),
+  erase(GYM_SPEC),
+  erase(EQUIPMENT_SPEC),
+  erase(EXERCISE_SPEC),
+  erase(ROUTINE_SPEC),
+  erase(PROGRESSION_RULE_SPEC),
+];

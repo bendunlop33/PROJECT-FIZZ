@@ -10,7 +10,7 @@ import {
 import type { SaveResult, SessionRepository } from '@fizz/domain';
 import type { Database } from './database';
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
-import { HistoryRewriteError } from './errors';
+import { CorruptDataError, HistoryRewriteError } from './errors';
 import { bool, checkRead, checkWrite, insert, int, mismatch, parseJson, parseJsonOrNull, rowId, upsert } from './sql';
 
 const T = 'sessions';
@@ -155,7 +155,8 @@ function assertContiguous(table: string, sessionId: string, rows: readonly SqlRo
   });
 }
 
-async function readAggregate(q: SqlExecutor, sessionId: string): Promise<SessionAggregate | null> {
+/** Read and validate one session aggregate with an executor (inside an existing queue slot). */
+export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<SessionAggregate | null> {
   const s = await q.getFirst('SELECT * FROM sessions WHERE id = ?', [sessionId]);
   if (!s) return null;
   const id = rowId(s.id);
@@ -311,7 +312,24 @@ async function readAggregate(q: SqlExecutor, sessionId: string): Promise<Session
     ),
     revision: s.revision,
   };
-  return checkRead(SessionAggregateSchema, raw, T, id);
+  const aggregate = checkRead(SessionAggregateSchema, raw, T, id);
+  assertReferences(aggregate);
+  return aggregate;
+}
+
+/** References inside one aggregate must resolve; the schema can't see these. */
+function assertReferences(a: SessionAggregate): void {
+  const issues: { path: string; message: string }[] = [];
+  const exerciseIds = new Set(a.exercises.map((e) => e.id));
+  const setIds = new Set(a.sets.map((s) => s.id));
+  a.sets.forEach((s, i) => {
+    if (!exerciseIds.has(s.sessionExerciseId)) issues.push({ path: `sets.${i}.sessionExerciseId`, message: 'No such session exercise' });
+    if (s.pairedWithSetId !== null && !setIds.has(s.pairedWithSetId)) issues.push({ path: `sets.${i}.pairedWithSetId`, message: 'No such set' });
+  });
+  if (a.session.activeSetId !== null && !setIds.has(a.session.activeSetId)) issues.push({ path: 'session.activeSetId', message: 'No such set' });
+  if (a.restTimer && !setIds.has(a.restTimer.setId)) issues.push({ path: 'restTimer.setId', message: 'No such set' });
+  if (a.workInterval && !setIds.has(a.workInterval.setId)) issues.push({ path: 'workInterval.setId', message: 'No such set' });
+  if (issues.length > 0) throw new CorruptDataError(T, a.session.id, issues);
 }
 
 // ---------------------------------------------------------------------------

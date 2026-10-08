@@ -6,6 +6,7 @@ import type { SqlDriver, SqlExecutor } from './driver';
  * SQLite, and reads never observe another caller's half-finished transaction.
  *
  * - `write` runs `fn` in one exclusive transaction: all of it commits or none.
+ *   Foreign keys (if the connection enforces them) are checked at commit.
  * - `read` runs `fn` without a transaction; it is still consistent because no
  *   write can run while it holds the queue.
  *
@@ -23,7 +24,14 @@ export class Database {
   }
 
   write<T>(fn: (tx: SqlExecutor) => Promise<T>): Promise<T> {
-    return this.enqueue(() => this.driver.withExclusiveTransaction(fn));
+    return this.enqueue(() =>
+      this.driver.withExclusiveTransaction(async (tx) => {
+        // Where the driver enforces foreign keys, check them at commit, not per
+        // statement, so rows of one aggregate can be written in any order.
+        await tx.exec('PRAGMA defer_foreign_keys = ON');
+        return fn(tx);
+      }),
+    );
   }
 
   /** Close after every queued call has finished. Later calls fail loudly. */

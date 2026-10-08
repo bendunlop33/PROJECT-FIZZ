@@ -71,7 +71,8 @@ export interface SqlDriver extends SqlExecutor {
  * Notes for that adapter (to verify on the device, research §2.1):
  * - `withExclusiveTransactionAsync` runs on a separate connection, so it doesn't
  *   work with `:memory:` and per-connection PRAGMAs (e.g. `foreign_keys`) don't
- *   carry over. This package therefore never relies on `foreign_keys = ON`;
+ *   carry over. This package therefore never relies on `foreign_keys = ON`
+ *   (node:sqlite enables it by default; writes defer the checks to commit), and
  *   `checkIntegrity` runs `PRAGMA foreign_key_check` instead. Triggers and
  *   CHECK constraints are part of the schema and apply on every connection.
  * - `getAllAsync` returns `unknown[]`-ish rows; the cast to `SqlRow` is safe
