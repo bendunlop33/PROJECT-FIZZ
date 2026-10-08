@@ -32,7 +32,8 @@ export function judgeLockedCue(o: LockedCueObservation): ResultUpdate {
     `App state when due: ${o.appStateAtCue}`,
     `Cue outcome: ${o.outcome}`,
     `Other audio playing at cue time: ${o.otherAudioWasPlaying ? 'yes' : 'no'}`,
-    `Keep-alive category: ${o.keepAliveCategory ?? 'unknown'} (mixes with music, no ducking while idle)`,
+    `Keep-alive category: ${o.keepAliveCategory ?? 'unknown'} (mixes with music)`,
+    'The cue is not ducked in this experiment: it plays over music at full volume',
     ...o.events.map((e) => `Event: ${e}`),
   ];
   if (o.latenessMs > LOCKED_CUE_MAX_LATENESS_MS) {

@@ -19,6 +19,8 @@ export interface SpeakOptions {
 }
 
 export interface AudioSessionState {
+  /** configureSession only: false when a cue or the keep-alive was playing, so the options wait for the next idle cue. */
+  applied?: boolean;
   category: string;
   mode: string;
   categoryOptions: number;

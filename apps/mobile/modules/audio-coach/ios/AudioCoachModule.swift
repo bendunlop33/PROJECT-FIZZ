@@ -15,11 +15,13 @@ import AlarmKit
 // Overlapping cues: AVSpeechSynthesizer queues utterances, and so do we. The
 // session is deactivated only after the LAST pending cue, and never while the
 // keep-alive runs. Every speak() promise settles: on finish, on cancel, or on a
-// timeout (max(10 s, 0.15 s per character), counted from when the cue reaches
-// the front of the queue, estimated cumulatively).
+// timeout (max(10 s, 0.15 s per character), divided by the rate when it is
+// slower than default, counted from when the cue reaches the front of the queue,
+// estimated cumulatively).
 //
-// UNVERIFIED: written without a Mac. It has not been compiled yet; the first CI run
-// on macOS is its first compile. AlarmKit API names follow Apple's docs.
+// Written without a Mac. Build 7 compiled and ran it on iOS 26.6.1; later additions
+// (extension App Group evidence, AlarmKit request, keep-alive/timeout fixes) are
+// first compiled by the next macOS CI run. AlarmKit API names follow Apple's docs.
 
 struct SessionOptions: Record {
   /// "playback" (cues play with the silent switch on) or "playAndRecord" (needed while listening).
@@ -114,11 +116,19 @@ public final class AudioCoachModule: Module {
       self.removeObservers()
     }
 
+    // Changing the category while a cue or the keep-alive is playing would
+    // interrupt it. Then the options are stored and applied by the next idle
+    // speak(); "applied" says which happened.
     AsyncFunction("configureSession") { (newOptions: SessionOptions) -> [String: Any] in
       self.options = newOptions
-      try self.applyCategory()
-      return self.sessionState()
-    }
+      let idle = self.cueDelegate.pendingCount == 0 && self.keepAliveEngine == nil
+      if idle {
+        try self.applyCategory()
+      }
+      var state = self.sessionState()
+      state["applied"] = idle
+      return state
+    }.runOnQueue(.main)
 
     AsyncFunction("speak") { (text: String, speakOptions: SpeakOptions, promise: Promise) in
       if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -148,7 +158,9 @@ public final class AudioCoachModule: Module {
       let category = session.category.rawValue
       let deactivate = speakOptions.deactivateAfter
       let queuedBehind = self.cueDelegate.pendingCount
-      let budget = max(10.0, 0.15 * Double(text.count))
+      // Slower speech needs a longer budget; faster speech keeps the default.
+      let rate = speakOptions.rate ?? 1.0
+      let budget = max(10.0, 0.15 * Double(text.count)) / (rate > 0 ? min(rate, 1.0) : 1.0)
       let deadline = max(Date(), self.queueDrainsAt).addingTimeInterval(budget)
       self.queueDrainsAt = deadline
 
@@ -182,6 +194,8 @@ public final class AudioCoachModule: Module {
 
     AsyncFunction("stop") {
       _ = self.synthesizer.stopSpeaking(at: .immediate)
+      // Nothing is queued any more; later cues' timeouts start from now.
+      self.queueDrainsAt = Date.distantPast
       // Every pending speak() promise resolves as "cancelled"; the last one
       // deactivates the session (pendingCount is already 0 by then).
       self.cueDelegate.cancelAll()
@@ -206,6 +220,8 @@ public final class AudioCoachModule: Module {
       engine.attach(player)
       guard let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2),
             let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 44_100) else {
+        // keepAliveEngine is still nil, so this releases the session we just activated.
+        _ = self.deactivateIfIdle(requested: true)
         return ["started": false, "reason": "Could not create the silent buffer"]
       }
       buffer.frameLength = buffer.frameCapacity
@@ -216,7 +232,14 @@ public final class AudioCoachModule: Module {
       }
       engine.connect(player, to: engine.mainMixerNode, format: format)
       player.scheduleBuffer(buffer, at: nil, options: .loops)
-      try engine.start()
+      do {
+        try engine.start()
+      } catch {
+        // Don't leave the session active (music ducked/paused) after a failed start.
+        engine.stop()
+        _ = self.deactivateIfIdle(requested: true)
+        throw error
+      }
       player.play()
       self.keepAliveEngine = engine
       self.keepAlivePlayer = player

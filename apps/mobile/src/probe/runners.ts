@@ -351,7 +351,9 @@ export async function runLockedCueProbe(recentEvents: (sinceMs: number) => strin
   const coach = AudioCoach;
   const startedAt = nowMs();
   try {
-    // No ducking while idle: the keep-alive holds the session for the whole wait.
+    // duckOthers off: the keep-alive holds the session for the whole wait, and
+    // audio-coach doesn't change the category while it runs, so the cue itself
+    // isn't ducked either (review F4; a later version could duck around the cue).
     await withTimeout(
       coach.configureSession({ category: 'playback', duckOthers: false, interruptSpokenAudioAndMixWithOthers: true }),
       NATIVE_CALL_TIMEOUT_MS,
@@ -383,6 +385,10 @@ export async function runLockedCueProbe(recentEvents: (sinceMs: number) => strin
       await coach.stopKeepAlive().catch(() => undefined);
     }
   } catch (e) {
+    // e.g. startKeepAlive hit the JS timeout but then succeeded natively: never
+    // leave the silent loop running (it keeps the app awake and podcasts paused).
+    // Native calls run in order on the main queue, so this runs after the start.
+    await coach.stopKeepAlive().catch(() => undefined);
     return { status: 'fail', summary: `Locked-cue experiment error: ${errorText(e)}`, details: recentEvents(startedAt) };
   }
 }
