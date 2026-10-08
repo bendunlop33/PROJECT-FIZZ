@@ -83,3 +83,7 @@ Most rows explain what to do. These three need you to do something:
 - **Ducking:** start music in another app first.
 
 Tap **Export** to send the results as text, for example to Notes or by email, so a developer can read them.
+
+## Until the workflow is on the main branch
+
+GitHub only shows the **Run workflow** button for workflows that exist on the default branch (`main`). Until this branch is merged, a build runs when Claude pushes a commit whose message contains `[ios-build]` to a `claude/...` branch. Other pushes run only the cheap Linux checks. You'll find the `.ipa` under that run on the Actions tab, in the same way as described above.
