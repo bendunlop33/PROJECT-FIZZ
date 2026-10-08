@@ -151,7 +151,7 @@ Implements the "Third review" section of `docs/reviews/domain-core.md` (T1, foll
 
 | Doc | Current wording | Change to |
 |---|---|---|
-| active-workout §2.9, other-side set (T-S1) | "sits at the end of this exercise's list and becomes the next active set" | "It is performed immediately after its paired set (same superset round); after it, the order continues with the next set after the pair." |
+| active-workout §2.9, other-side set (T-S1) | Done in `3bfb6f8` | (no further change) |
 | active-workout §2.9 / pair badge | (add) | "The pair badge shows only while both sides exist (`getSetPair`); if one side is deleted, the other is shown as a standalone set." |
 | workout-summary §5 row "Next time: held, side lagging" and §150 example | "`The left side reached 8+ reps on every set but the right side didn't (lowest 7 reps); holding.`" | "`The left side reached 8+ reps on every set within the effort limit, but the right side didn't (lowest 7 reps); the load goes up only when both sides do.`" |
 | Stale card after Stop while paused (follow-up 6) | (add) | "After Stop on a paused workout, the card makes clear that Finish is now available; the workout stays paused (Resume is still offered but not the primary action)." |
