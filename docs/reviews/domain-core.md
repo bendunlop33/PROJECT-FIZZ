@@ -208,3 +208,138 @@ Untested today, each matching a finding or a focus area:
 - **S3. "Criteria met" is undefined for partial sessions.** Brief §3 says "Progress only when chosen rep and effort criteria are met" but doesn't say whether all prescribed working sets must be completed. B2 assumes they must. Ben should confirm.
 - **S4. Finish with a running work timer is unspecified.** Neither the flow nor active-workout says what Finish does to a timed set whose work interval is running. The code cancels it and marks the set skipped, so elapsed time is lost. Decide whether Finish should first offer `Log 0:38`.
 - **S5. The end-time correction has two homes.** Brief §7 `finishWorkout(sessionId, expectedVersion)` has no end-time parameter. Active-workout §4.8 routes it through `updateSessionTiming` with an audit. The code folds it into `finish.endedAt`. Pick one contract.
+
+---
+
+# Re-review after fixes
+
+**Verdict: CHANGES NEEDED**
+
+Reviewed: commits `6ec884a`..`454710a` (10 commits after `753adf6`), ADR 0003, 8 Oct 2026. Specs: same as above. I also read the designer's **uncommitted** revisions to `docs/design/{flow-first-milestone,active-workout,rest-state,today}.md` (working tree, not in any commit), because they now describe the new commands.
+
+## What I ran
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | clean |
+| `npm run lint` | clean |
+| `npm test` | 9 files, 220 tests, all passing (was 152) |
+| Probes (scratch, not committed) | 14 probes. I re-ran the original B1/B2/B3/M3/M6/M7/M8 cases and probed the new commands, the timing rules and the infeasible-equipment path. They confirm R1–R4 below |
+| Secrets / logging grep | still no credentials or `console.*` in `packages/` |
+
+The fixes are careful and well tested. Every original blocking and major finding is fixed. In each case the new regression test pins the behaviour the review asked for, so it would fail if the fix were reverted. I checked that claim by reading each test against its fix: for example, the M3 test commits B1 with an earlier `at` than W, and the M8 test mutates `maxLoad` without bumping `version`. One new blocking bug was introduced, in the pause/timing interaction that the M7/S5 work created.
+
+## Previous findings: status
+
+| Finding | Status | Evidence |
+|---|---|---|
+| B1 planned load unit/convention | **Fixed** | All four probe rows now prefill a load that `log_set` accepts. When a load can't be honoured, the planned load is null with a `target_dropped` warning that keeps the template. Rows 1–4 plus a mixed-input invariant are tested (`start-normalisation.test.ts`) |
+| B2 incomplete session progresses | **Fixed** | 1 of 3 → `hold` with fact; 2 of 3 holds; all-skipped latest session holds at the last performed load. Top-set rule needs a top set |
+| B3 explanation names historical load | **Fixed, with a residual** | Rack max 20, history 30: `increase_reps` at 20 kg each, and the text names 20 and adds a fact about 30. Equipment with no achievable loads now reports `infeasible`, but its text says "bodyweight" (see R3) |
+| M1 cap below rep range | **Fixed** | Schema refines on both rule types; tested |
+| M2 timed progression | **Fixed** | `unsupported`, honest text |
+| M3 undo order / duplicate after undo | **Fixed** | Commit-order "latest"; duplicate after undo returns `superseded: true` |
+| M4 missing commands / empty dead end | **Fixed** | Six commands with handlers. An empty workout's phase is `empty` |
+| M5 unilateral | **Fixed for logging and volume**; progression gap (R4) | `laterality` snapshotted, `side` on sets, `summariseVolume` never sums sides |
+| M6 stop after deadline / lost expiry | **Fixed** | Stop at 46 s on a 45 s interval is a no-op success with the 45 s draft. Rejected commands return the caught-up state, and the service persists it (tested through the service) |
+| M7 finish end time | **Fixed** | Future and before-last-set are rejected; the tap time is kept in `timingAudit`. The pause interaction is broken (R1) |
+| M8 recompute per call | **Fixed** | Content-keyed LRU of 64 entries. An in-place `maxLoad` edit is picked up (probe) |
+| Nits 1, 2, 4, 5, 10 | **Fixed** | Shuffled-order and tie determinism; failed save through the service; `correct_set` refused on discarded; log before start refused; completed ⇔ actual invariant |
+| Nits 3, 6 | **Documented** | Recovery tick requirement; weighted bodyweight uses `added` |
+| Nits 7, 8, 9 | **Deferred in ADR (acceptable)** | Per-plate units; SQLite read validation; counter table in ADR |
+| Test gaps list | **Closed** | Every listed gap now has a test |
+| S1–S5 | **Decided in ADR 0003** | Design docs updated, but uncommitted (see Spec issues) |
+
+---
+
+## Blocking
+
+### R1. A chosen or corrected end (or start) time ignores pauses outside the new window, so the recorded duration is wrong, down to 0
+`packages/domain/src/session/reducer.ts:648-650` (finish), `:728-731` (update_session_timing); `packages/domain/src/session/view.ts:63`
+
+`pausedTotalMs` is a single running total. Neither Finish with `endedAt` nor `update_session_timing` clips it to the new `[startedAt, endedAt]` window. `getActiveDurationMs` then subtracts pauses that happened after the chosen end (or before the chosen start). Probes:
+
+- **Summary Edit after a forgotten Finish.** Last set at 60 min, Pause at 61 min, app left, `Finish` tapped at 5 h (duration correctly 61 min, paused 239 min). Ben then edits the end time to 63 min on the summary (the designed correction path). Result: **duration 0 min**. It should be 62 min.
+- **Finish sheet with a chosen time after Resume.** Same as above, but Ben resumes (to look at something) and then finishes with `endedAt` = 63 min. Result: `pausedTotalMs` = 120 min, **duration 0**.
+- **Start-time correction.** Ben starts the workout at home by mistake, pauses for an hour, then resumes at the gym and edits the start to the arrival time. The hour of pause is still subtracted, so the duration is an hour short.
+
+Impact: the summary and weekly duration are wrong, and the stored data can't be repaired later. Only the total is kept, not the pause intervals, so once SQLite persists these rows the true duration can't be recomputed. This is the same class as rule 6 ("don't invent data"): a 0-minute workout is invented data. The tests for S5 have no pauses, so this path is untested.
+
+Fix:
+- Store pause intervals (`pauses: {startUtc, endUtc}[]`) instead of, or alongside, `pausedTotalMs`.
+- Compute the paused time as the overlap with `[startedAt, endedAt]` in Finish, in `update_session_timing`, and in `getActiveDurationMs`.
+- Add tests for each case above.
+
+---
+
+## Major (non-blocking, fix before the UI slice builds on them)
+
+### R2. Stale-card Finish with a paused work timer can't be completed as designed
+`reducer.ts:609-613` (Finish refuses `paused` intervals), `:537` (Stop refuses while the session is paused)
+
+A work interval can only be `paused` when the whole session is paused. In that state Finish returns `work_interval_running` and Stop returns `session_paused` (probe). The designer's (uncommitted) today.md says the stale sheet shows `Stop the timer first` with [Stop], "then the normal Finish". That [Stop] fails. A running interval almost never survives to the stale card, because `applyClock` completes it at its deadline. So the paused case is the main one this design covers, and it is the case that breaks. The only route that works is `Resume instead` → Resume (which restarts the timer and its cue) → Stop → Finish.
+
+Fix: let `stop_work_interval` succeed while paused, with elapsed time = `pausedAtUtc − startedAtUtc − pausedMs` (no clock). Alternatively, let Finish on a paused session convert a paused interval's elapsed time into the draft. Add a test for "paused session + paused interval → Stop → Finish".
+
+### R3. Infeasible equipment: the explanation says "bodyweight" for a weighted machine, and the decision is still `increase_reps`/`hold`
+`packages/domain/src/progression.ts:127, 401-418, 490-495`
+
+When `feasibleHold` returns null, `fmt(ctx, null)` → `formatLoad(null)` → `'bodyweight'`. Probe: cable stack with `minLoad: 100` (schema allows it), history 3 × 8 at 50 kg stack:
+- `increase_reps`, load null, summary **`Add a rep: aim for 9 at bodyweight, because Cable stack has no achievable loads.`**
+- With a miss, `hold`: **`Stay at bodyweight and work toward 8 reps on every set.`**
+
+`loadFeasibility: 'infeasible'` is correct, but the text tells Ben to do a cable row at bodyweight. This is the remaining case of B3: an explanation that doesn't describe the prescription.
+
+Fix: on `ctx.infeasible`, return a distinct decision (e.g. `no_feasible_load`) with text such as `Cable stack can't make any load with its current min/max; fix the equipment profile.` Never format a null load as "bodyweight" unless the convention is `bodyweight`. Add the hold-path case to the existing infeasible test.
+
+### R4. Unilateral sides aren't seen by progression, so B2's "every prescribed set" rule can be met with one side
+`progression.ts:23-29` (`HistorySet` has no `side`), `:164-166`, `:196`
+
+Under the interim model the left and right sides are separate rows. Progression counts rows. Probes and reasoning:
+- **Left only.** 3 planned rows logged as Left, Left, Left at the top of the range give 3 counted working sets → `increase_load`, though the right side was never trained.
+- **Two sets per side.** L, R for two planned sets with the third skipped gives 4 counted sets ≥ 3 → can progress on two sets per side, which is the B2 situation ADR 0003 S3 forbids.
+
+Separately, logging Left/Right onto planned rows consumes them: L, R, L on a 3-set plan reaches `all_done` with the right side done once (probe; volume shows `left 2, right 1`). The design's `Log right side ›` link avoids this by adding a set, but voice or manual side selection doesn't.
+
+active-workout §2.9 promises that "Next time … says so if the domain reports it", but the domain reports nothing. ADR 0003 lists this as open, which is acceptable only if progression is honest about it.
+
+Fix, either option:
+- Add `side` to `HistorySet` and count `both` as one set per side, and L/R per side (progress only if each side meets the rule).
+- Or, until then, have `calculateNextTargets` hold with a fact (`Left and right sets aren't compared yet; holding`) whenever any counted set is `left`/`right`.
+
+Test both.
+
+---
+
+## Minor
+
+1. **Deleting the active set jumps back to an earlier pending set.** `reducer.ts:742-756`. `repointActive` calls `nextPendingSet(current)` after `current` is deleted. Deleted sets are excluded from the execution order, so `indexOf` returns −1 and the search restarts from the top. Probe: Ben jumps past the warm-up to B1, logs it, then deletes B2 (active). The active set becomes **W (the skipped-over warm-up)**, not R1. Fix: compute the successor from the deleted set's position before removing it from the order.
+2. **`add_set` with a `setType` override copies the last set's planned load and rest anyway.** `reducer.ts:770-782`; the schema comment at `commands.ts:158` says "unless `setType` is given". Probe: `Add warm-up` after the bench working sets gives a warm-up with planned 100 kg and the 180 s Heavy rest. Either copy from the last set of that type (falling back to empty planned values and the type's rest preset), or fix the comment and have the UI never pass a different type.
+3. **After deleting the latest logged set, `undo_log` will undo an older set.** `latestCommittedSetId` skips deleted sets, so "Undo" (for example a voice "undo that") reverts the set before it. Consider treating a `deleted` audit entry as ending the undo window.
+4. **`superseded` is computed for `log_set` only.** A duplicate `undo_log` after the set was re-logged, or a duplicate `delete_set`, reports `superseded: false`. That's fine for now; extend it before voice or coach tools issue those commands.
+5. **The `add_exercise` fingerprint includes the catalogue snapshot and the resolved rest.** If the exercise's default rest or the profile unit changes between a failed attempt and its retry, the retry is rejected as `operation_id_reused` instead of being a duplicate. Fingerprint on `exerciseId` + `equipmentId` only, or document the behaviour.
+6. **`add_exercise` doesn't check that the equipment kind is in the exercise's `compatibleEquipment`.** The service could reject, for example, a barbell exercise on a dumbbell rack (which would give a `per_hand` session exercise).
+7. **Fact wording for top-set rules.** `No top sets were logged on … (all skipped)` is used when back-off sets were logged (and the test at `progression.test.ts:332` enshrines it). Say `(no top set)` instead when other sets exist.
+8. **Undo while a work timer runs on another set.** Undo moves `activeSetId` to the undone set and leaves the interval running on the other set. That's harmless today; add a guard or a test when the timed UI is built.
+
+---
+
+## Developer deviations (asked to judge)
+
+- **Content-keyed cache: agree.** It is strictly safer than `id` + `version`, because a stale list could put a target above a new maximum (rule 4), and the probe confirms in-place edits are seen. `stableStringify` of one instance per call is cheap next to the about 5 ms enumeration it replaces. Metadata (name, `updatedAtUtc`) is part of the key, so a rename causes a harmless miss.
+- **Refusing Finish while a work timer runs: agree with the principle** (never commit implicitly, never lose elapsed time, Stop keeps it as a draft on the skipped set; tested). The implementation leaves the paused case unreachable from the designed stale-card flow (R2). Stop must work while paused for this decision to hold.
+- **Interim unilateral model: agree for logging and volume.** `both` as the default keeps the one-tap Log, and L/R pairs never double-count in `summariseVolume`. It isn't yet safe for progression (R4), and the domain gives the UI no signal to say so.
+
+## Durability and security notes
+
+- **Failed saves:** `write_failed` is returned instead of throwing, and the retry with the same opId is a duplicate whether or not the write landed. Both cases are tested through the service.
+- **Generated IDs:** `newSetId` and `newSessionExerciseId` are excluded from the fingerprint, so a retry after relaunch is a duplicate (tested).
+- **Version guards:** `discard`, `finish` and `update_session_timing` check the session version. `delete_set` and `undo_log` check the set version.
+- **No new credentials, network, logging or imported-content paths.**
+
+## Spec issues
+
+- **S6. Design revisions are uncommitted.** The flow, active-workout, rest-state and today revisions that align with ADR 0003 exist only in the working tree. Commit them, so the code and its spec move together.
+- **S7. Brief changes still need Ben.** ADR 0003 is "Accepted by the product manager", but S1 (undo guard) and S3 ("every prescribed working set") change brief behaviour, and CLAUDE.md says Ben approves brief changes. The brief §3 and §7 wording and `docs/brief/CHANGELOG.md` are unchanged. Get Ben's approval and record it before the UI ships those behaviours.
+- **S8. Stale-card Stop on a paused session (R2) is a spec–code mismatch.** today.md assumes Stop works there. Whichever way R2 is fixed, state in the flow §3.2 guards whether Stop is allowed while paused.
+- **S9. Duration semantics with chosen times.** No spec says how pauses outside a corrected `[start, end]` window count. R1 assumes they're excluded (the only reading that can't produce 0). The design should state it in workout-summary §6.
