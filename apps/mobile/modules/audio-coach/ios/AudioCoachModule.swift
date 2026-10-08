@@ -8,9 +8,9 @@ import AlarmKit
 // The one owner of the app's AVAudioSession (docs/research/ios-platform-feasibility.md §2.5).
 // Spike scope: category/options, speak() with activate -> speak -> deactivate
 // (notifyOthersOnDeactivation so music returns to full volume), interruption and
-// route-change events, AlarmKit availability (detect only, never requests), App
-// Group evidence for the app and the Live Activity extension, and an opt-in
-// silent keep-alive for the locked-cue experiment.
+// route-change events, AlarmKit authorization (read, and request only when Ben taps
+// "Request permission"), App Group evidence for the app and the Live Activity
+// extension, and an opt-in silent keep-alive for the locked-cue experiment.
 //
 // Overlapping cues: AVSpeechSynthesizer queues utterances, and so do we. The
 // session is deactivated only after the LAST pending cue, and never while the
@@ -253,7 +253,7 @@ public final class AudioCoachModule: Module {
       return AudioCoachModule.appGroupInfo(configuredGroups: configuredGroups)
     }
 
-    // Detect only. Returns "authorized" | "denied" | "notDetermined" (from the
+    // Read only. Returns "authorized" | "denied" | "notDetermined" (from the
     // system enum), "unsupportedOS" below iOS 26, or "notInSDK" if built with an
     // SDK that has no AlarmKit.
     // Runs on the main queue and reads inside MainActor.assumeIsolated in case
@@ -270,7 +270,31 @@ public final class AudioCoachModule: Module {
       return "notInSDK"
       #endif
     }.runOnQueue(.main)
+
+    // Shows the system AlarmKit permission prompt (only if not yet determined;
+    // otherwise returns the current state). Needs NSAlarmKitUsageDescription.
+    // Same return values as getAlarmKitStatus. Scheduling is a follow-up.
+    AsyncFunction("requestAlarmKitAuthorization") { () async throws -> String in
+      #if canImport(AlarmKit)
+      if #available(iOS 26.0, *) {
+        return try await AudioCoachModule.requestAlarmKit()
+      }
+      return "unsupportedOS"
+      #else
+      return "notInSDK"
+      #endif
+    }
   }
+
+  #if canImport(AlarmKit)
+  // MainActor in case AlarmManager is main-actor isolated in the iOS 26 SDK.
+  @available(iOS 26.0, *)
+  @MainActor
+  private static func requestAlarmKit() async throws -> String {
+    let state = try await AlarmManager.shared.requestAuthorization()
+    return String(describing: state)
+  }
+  #endif
 
   /// Must match FizzAppGroupResolver.recordKeyPrefix in the expo-widgets patch.
   private static let resolutionKeyPrefix = "fizz.appGroupResolution."

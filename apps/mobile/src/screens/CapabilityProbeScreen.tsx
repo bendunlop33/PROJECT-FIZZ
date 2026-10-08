@@ -15,6 +15,7 @@ import {
   type ProbeId,
   type ProbeStatus,
   type ResultUpdate,
+  type SecondaryAction,
 } from '../probe/model';
 import {
   formatMs,
@@ -27,6 +28,7 @@ import {
   getProbeValue,
   probeUuid,
   putProbeValue,
+  requestAlarmKitPermission,
   runAlarmKitProbe,
   runAppGroupProbe,
   runAudioCoachProbe,
@@ -204,6 +206,30 @@ export function CapabilityProbeScreen({ onBack }: Props) {
     [apply, refreshRest, eventsSince],
   );
 
+  // A row's second button (e.g. AlarmKit "Request permission"). Shares the
+  // row's busy state with Run, and always ends in a terminal state.
+  const runSecondary = useCallback(
+    async (id: ProbeId, action: SecondaryAction) => {
+      setBusy((b) => new Set(b).add(id));
+      apply(id, { status: 'running', summary: `${action.label}…` });
+      let update: ResultUpdate;
+      try {
+        // The only action today ('alarmkit_request_permission'); switch on
+        // action.id when a second one is added.
+        update = await requestAlarmKitPermission();
+      } catch (e) {
+        update = { status: 'fail', summary: `${action.label} threw: ${e instanceof Error ? e.message : String(e)}` };
+      }
+      apply(id, update);
+      setBusy((b) => {
+        const next = new Set(b);
+        next.delete(id);
+        return next;
+      });
+    },
+    [apply],
+  );
+
   const exportReport = useCallback(async () => {
     await Share.share({ message: formatReport(results, reportMeta(), nowMs()) });
   }, [results]);
@@ -261,6 +287,18 @@ export function CapabilityProbeScreen({ onBack }: Props) {
                   >
                     <Text style={styles.buttonText}>Run</Text>
                   </Pressable>
+                  {def.secondaryAction !== undefined ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={!loaded || busy.has(def.id) || r.status === 'running'}
+                      style={[styles.button, (!loaded || busy.has(def.id) || r.status === 'running') && styles.disabled]}
+                      onPress={() => {
+                        if (def.secondaryAction !== undefined) void runSecondary(def.id, def.secondaryAction);
+                      }}
+                    >
+                      <Text style={styles.buttonText}>{def.secondaryAction.label}</Text>
+                    </Pressable>
+                  ) : null}
                   {r.status === 'needs_check' && def.confirmQuestion !== undefined ? (
                     <>
                       <Pressable

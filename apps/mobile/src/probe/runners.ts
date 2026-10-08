@@ -387,16 +387,29 @@ export async function runLockedCueProbe(recentEvents: (sinceMs: number) => strin
   }
 }
 
-// ---------- AlarmKit (detect only) ----------
+// ---------- AlarmKit (permission only; scheduling is a follow-up) ----------
 
 export async function runAlarmKitProbe(): Promise<ResultUpdate> {
   if (AudioCoach === null) {
     return { status: 'unavailable', summary: 'Cannot detect: audio-coach native module is not in this build', details: [] };
   }
   try {
-    return judgeAlarmKitStatus(await AudioCoach.getAlarmKitStatus());
+    return judgeAlarmKitStatus(await AudioCoach.getAlarmKitStatus(), 'read');
   } catch (e) {
     return { status: 'fail', summary: `AlarmKit detection error: ${errorText(e)}`, details: [] };
+  }
+}
+
+/** Shows the iOS AlarmKit permission prompt (Ben tapped Request permission). */
+export async function requestAlarmKitPermission(): Promise<ResultUpdate> {
+  if (AudioCoach === null) {
+    return { status: 'unavailable', summary: 'Cannot request: audio-coach native module is not in this build', details: [] };
+  }
+  try {
+    // No timeout: the promise waits for Ben to answer the system prompt.
+    return judgeAlarmKitStatus(await AudioCoach.requestAlarmKitAuthorization(), 'requested');
+  } catch (e) {
+    return { status: 'fail', summary: `AlarmKit permission request failed: ${errorText(e)}`, details: [] };
   }
 }
 

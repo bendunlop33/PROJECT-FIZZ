@@ -60,6 +60,9 @@ const config: ExpoConfig = {
     supportsTablet: false,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
+      // Shown by the AlarmKit permission prompt (probe "Request permission").
+      // AlarmKit needs no entitlement (free-ios-install.md, AlarmKit row).
+      NSAlarmKitUsageDescription: 'Fizz can sound an alarm when your rest ends, even in silent mode or a Focus.',
       ...(backgroundAudioExperiment ? { UIBackgroundModes: ['audio'] } : {}),
     },
   },

@@ -22,6 +22,8 @@ declare class AudioCoachNativeModule extends NativeModule<AudioCoachEvents> {
   stopKeepAlive(): Promise<KeepAliveStopResult>;
   getSessionState(): AudioSessionState;
   getAlarmKitStatus(): Promise<AlarmKitStatus>;
+  /** Shows the system prompt if not yet determined; resolves to the resulting state. */
+  requestAlarmKitAuthorization(): Promise<AlarmKitStatus>;
   getAppGroupInfo(configuredGroups: string[]): Promise<AppGroupInfo>;
 }
 

@@ -36,6 +36,12 @@ export type ProbeStatus =
   | 'needs_check'
   | 'not_implemented';
 
+/** A second button on a probe row, besides Run. */
+export interface SecondaryAction {
+  id: 'alarmkit_request_permission';
+  label: string;
+}
+
 export interface ProbeDefinition {
   id: ProbeId;
   /** Spike reference (docs/research/ai-access-and-voice.md S1-S8, free-ios-install.md §8). */
@@ -45,6 +51,7 @@ export interface ProbeDefinition {
   howTo: string;
   /** Question asked when the probe needs his confirmation. */
   confirmQuestion?: string;
+  secondaryAction?: SecondaryAction;
 }
 
 export interface ProbeResult {
@@ -139,8 +146,10 @@ export const PROBES: readonly ProbeDefinition[] = [
   {
     id: 'alarmkit',
     ref: 'Spike: AlarmKit',
-    title: 'AlarmKit availability (detect only)',
-    howTo: 'Tap Run. Only reads availability; it does not ask for permission or set an alarm.',
+    title: 'AlarmKit permission (scheduling not tested yet)',
+    howTo:
+      'Run reads the current permission. Request permission shows the iOS prompt (only once; afterwards change it in Settings > Fizz). No alarm is set: scheduling is a follow-up.',
+    secondaryAction: { id: 'alarmkit_request_permission', label: 'Request permission' },
   },
   {
     id: 'chatgpt_signin',

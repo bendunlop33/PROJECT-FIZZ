@@ -84,6 +84,7 @@ Most rows explain what to do. These need you to do something:
 - **Ducking:** start music in another app first.
 - **Live Activity, then App Group:** run Live Activity first and lock the phone to look for the countdown. Then run App Group. It checks that the app and the Lock Screen extension both found the same shared App Group, including the renamed one SideStore uses. If SideStore asks whether to keep the app's extensions, keep them: without the extension there is no Lock Screen countdown.
 - **Spoken cue while locked:** only in builds made with the background-audio experiment. Tap Run and lock the phone within 10 seconds. The cue plays 30 seconds after you tap Run.
+- **AlarmKit:** tap **Request permission** and answer the iOS prompt. iOS only asks once; to change your answer later, go to Settings > Fizz. No alarm is set yet.
 - **Audio events:** nothing to run. While the probe screen is open, it records interruptions such as calls, Siri or AirPods disconnecting.
 
 Results are saved on the phone as you go, including your yes/no answers. Going back to the home screen, or swiping the app away for the rest-deadline test, doesn't lose them. If saving ever fails, the probe screen says so in red: tap **Export** straight away in that case.
