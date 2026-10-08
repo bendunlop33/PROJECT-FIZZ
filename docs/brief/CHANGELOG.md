@@ -59,3 +59,12 @@ The brief is a living document. Each approved change gets an entry here: the dat
   - **Today's sets, coach raised it:** the coach offers the change first.
   - **Future sessions:** always proposals.
   - **Guardrails:** achievable loads, equipment limits, pain blocks and completed sets are never edited. The deterministic rules become the labelled offline fallback.
+
+## v0.5: 2026-10-08 (requested by Ben)
+
+- **Coach workout builder.** Ben can ask the coach to create a whole workout. Later, he can also ask for a multi-week programme.
+- **What the coach uses:** his goals, memories, recent training, the selected gym's equipment and his history.
+- **Checks before Ben sees it:** catalogue, equipment, achievable loads, machine maximums and pain flags. The checks are deterministic.
+- **Review:** he can Start now, Save as routine, Edit, or ask for changes. Programmes are approved before anything is scheduled.
+- **Order:** single sessions first; programmes come with build step 6, the calendar.
+- **Offline:** saved routines still work; generating a new workout needs the coach.
