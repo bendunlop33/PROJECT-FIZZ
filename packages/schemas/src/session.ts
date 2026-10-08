@@ -254,6 +254,11 @@ export const ProcessedOperationSchema = z.object({
   commandType: z.string().min(1),
   fingerprint: z.string(),
   atUtc: UtcTimestampSchema,
+  /**
+   * Rows this operation created (`add_set`: the new set), so a duplicate can
+   * tell whether its effect is still in place. Absent for other commands.
+   */
+  createdIds: z.array(IdSchema).max(4).optional(),
 });
 export type ProcessedOperation = z.infer<typeof ProcessedOperationSchema>;
 

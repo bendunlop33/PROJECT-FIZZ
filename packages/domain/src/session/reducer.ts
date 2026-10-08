@@ -1111,20 +1111,69 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
   }
 }
 
-/** A duplicate whose effect is no longer in place (review M3, re-review minor 4). */
+/**
+ * A duplicate whose effect is no longer in place (review M3, re-review minor 4,
+ * third review follow-up 4). Voice and coach tools report "not saved" or
+ * "since changed" for these instead of repeating a stale confirmation.
+ *
+ * Not tracked, by design (always false):
+ * - `finish`, `discard`: terminal; nothing can revert them.
+ * - `add_exercise`: an exercise can't be removed, so the addition stays in place.
+ * - `set_active_set`, `adjust_rest`, `skip_rest`, `start_work_interval`,
+ *   `stop_work_interval`, `pause`, `resume`: transient navigation and timer
+ *   state that moves on by itself (the next log changes the active set, a rest
+ *   expires). "Superseded" would be true almost always and carry no meaning;
+ *   callers read the current phase from the returned state instead.
+ */
 function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean {
-  if (command.type === 'log_set') {
-    const set = state.sets.find((s) => s.id === command.setId);
-    return set?.status !== 'completed' || set.completedByOpId !== command.opId;
+  switch (command.type) {
+    case 'log_set': {
+      const set = state.sets.find((s) => s.id === command.setId);
+      return set?.status !== 'completed' || set.completedByOpId !== command.opId;
+    }
+    case 'undo_log':
+      // The undo put the set back to pending; it has since been logged again (or deleted).
+      return state.sets.find((s) => s.id === command.setId)?.status !== 'pending';
+    case 'delete_set':
+      return state.sets.find((s) => s.id === command.setId)?.status !== 'deleted';
+    case 'correct_set': {
+      // A later correction, undo or delete changed the set after this correction.
+      const entry = state.audit.find((e) => e.opId === command.opId && e.kind === 'corrected');
+      const set = state.sets.find((s) => s.id === command.setId);
+      if (!entry?.after || set?.status !== 'completed') return true;
+      return set.version !== entry.after.version;
+    }
+    case 'skip_exercise':
+      // A skipped set has since been deleted.
+      return state.audit
+        .filter((e) => e.opId === command.opId && e.kind === 'skipped')
+        .some((e) => state.sets.find((s) => s.id === e.setId)?.status !== 'skipped');
+    case 'add_set': {
+      const created = state.processedOps[command.opId]?.createdIds ?? [];
+      return created.some((id) => state.sets.find((s) => s.id === id)?.status === 'deleted');
+    }
+    case 'update_session_timing':
+      // A later timing edit replaced a value this one set.
+      return state.timingAudit
+        .filter((e) => e.opId === command.opId)
+        .some((e) => {
+          const current = e.field === 'startedAt' ? state.session.startedAt : state.session.endedAt;
+          return current?.utc !== e.after.utc;
+        });
+    case 'finish':
+    case 'discard':
+    case 'add_exercise':
+    case 'set_active_set':
+    case 'adjust_rest':
+    case 'skip_rest':
+    case 'start_work_interval':
+    case 'stop_work_interval':
+    case 'pause':
+    case 'resume':
+    case 'save_draft':
+    case 'tick':
+      return false;
   }
-  if (command.type === 'undo_log') {
-    // The undo put the set back to pending; it has since been logged again (or deleted).
-    return state.sets.find((s) => s.id === command.setId)?.status !== 'pending';
-  }
-  if (command.type === 'delete_set') {
-    return state.sets.find((s) => s.id === command.setId)?.status !== 'deleted';
-  }
-  return false;
 }
 
 /**
@@ -1186,6 +1235,7 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
       commandType: command.type,
       fingerprint: commandFingerprint(command),
       atUtc: command.at.utc,
+      ...(command.type === 'add_set' ? { createdIds: [command.newSetId] } : {}),
     };
     next = { ...next, processedOps: { ...next.processedOps, [command.opId]: record } };
   }
