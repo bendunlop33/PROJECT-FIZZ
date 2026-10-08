@@ -51,7 +51,7 @@ export function gym(n: number, over: Partial<Gym> = {}): Gym {
   });
 }
 
-const SPLIT_SQUAT = exercise(230, 'Bulgarian split squat', {
+export const SPLIT_SQUAT = exercise(230, 'Bulgarian split squat', {
   compatibleEquipment: ['dumbbells'],
   defaultLoadConvention: 'per_hand',
   laterality: 'unilateral',

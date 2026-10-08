@@ -4,6 +4,8 @@ export * from './units';
 export * from './equipment';
 export * from './rest';
 export * from './progression';
+export * from './history';
+export * from './stable';
 export * from './session/order';
 export * from './session/create';
 export * from './session/reducer';
