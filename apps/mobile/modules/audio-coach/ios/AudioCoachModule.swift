@@ -1,3 +1,4 @@
+import ActivityKit
 import AVFoundation
 import ExpoModulesCore
 #if canImport(AlarmKit)
@@ -8,7 +9,8 @@ import AlarmKit
 // Spike scope: category/options, speak() with activate -> speak -> deactivate
 // (notifyOthersOnDeactivation so music returns to full volume), interruption and
 // route-change events, AlarmKit availability (detect only, never requests), App
-// Group evidence, and an opt-in silent keep-alive for the locked-cue experiment.
+// Group evidence for the app and the Live Activity extension, and an opt-in
+// silent keep-alive for the locked-cue experiment.
 //
 // Overlapping cues: AVSpeechSynthesizer queues utterances, and so do we. The
 // session is deactivated only after the LAST pending cue, and never while the
@@ -242,9 +244,11 @@ public final class AudioCoachModule: Module {
       return self.sessionState()
     }
 
-    // App Group evidence for the capability probe (free-ios-install.md §9 #3).
-    // Reads the installed signing profile, ALTAppGroups, and checks each
-    // candidate group's container with a test file write/read/delete.
+    // App Group evidence for the capability probe (free-ios-install.md §9 #3,
+    // ADR 0007). For the app AND the Live Activity extension: the installed
+    // signing profile and ALTAppGroups; each candidate group's container (test
+    // file write/read/delete); and the group each process actually resolved,
+    // as recorded by the patched expo-widgets (patches/expo-widgets+57.0.23.patch).
     AsyncFunction("getAppGroupInfo") { (configuredGroups: [String]) -> [String: Any] in
       return AudioCoachModule.appGroupInfo(configuredGroups: configuredGroups)
     }
@@ -268,8 +272,13 @@ public final class AudioCoachModule: Module {
     }.runOnQueue(.main)
   }
 
+  /// Must match FizzAppGroupResolver.recordKeyPrefix in the expo-widgets patch.
+  private static let resolutionKeyPrefix = "fizz.appGroupResolution."
+  /// expo-widgets' extension target name (its PlugIns/<name>.appex).
+  private static let widgetExtensionName = "ExpoWidgetsTarget"
+
   private static func appGroupInfo(configuredGroups: [String]) -> [String: Any] {
-    var info: [String: Any] = ["profileFound": false]
+    var info: [String: Any] = [:]
     var candidates = configuredGroups
 
     // Absent keys mean "unknown"; the JS side validates every field.
@@ -277,33 +286,81 @@ public final class AudioCoachModule: Module {
       info["altAppGroups"] = altGroups
       candidates.append(contentsOf: altGroups)
     }
-    // embedded.mobileprovision is CMS-signed; the plist is plain XML inside it.
-    if let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
-       let data = try? Data(contentsOf: url),
-       let start = data.range(of: Data("<?xml".utf8)),
-       let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
-       let plist = try? PropertyListSerialization.propertyList(
-         from: data.subdata(in: start.lowerBound..<end.upperBound), options: [], format: nil
-       ) as? [String: Any] {
-      info["profileFound"] = true
-      let entitlements = plist["Entitlements"] as? [String: Any] ?? [:]
-      let groups = entitlements["com.apple.security.application-groups"] as? [String] ?? []
-      info["profileGroups"] = groups
-      candidates.append(contentsOf: groups)
-      if let teamId = entitlements["com.apple.developer.team-identifier"] as? String {
-        info["profileTeamId"] = teamId
-      }
-      if let expires = plist["ExpirationDate"] as? Date {
-        info["profileExpiresUtc"] = ISO8601DateFormatter().string(from: expires)
-      }
+    let appProfile = readProfile(in: Bundle.main.bundleURL)
+    info.merge(appProfile) { _, new in new }
+    candidates.append(contentsOf: appProfile["profileGroups"] as? [String] ?? [])
+
+    // Live Activity prerequisites on the app side.
+    info["supportsLiveActivities"] = Bundle.main.object(forInfoDictionaryKey: "NSSupportsLiveActivities") as? Bool ?? false
+    if #available(iOS 16.1, *) {
+      info["activitiesEnabled"] = ActivityAuthorizationInfo().areActivitiesEnabled
     }
 
+    // The widget extension gets its own profile from the signing tool, and may
+    // have been removed by it entirely (review F2).
+    var ext: [String: Any] = ["present": false]
+    if let plugIns = Bundle.main.builtInPlugInsURL,
+       let appex = Bundle(url: plugIns.appendingPathComponent("\(widgetExtensionName).appex")) {
+      ext["present"] = true
+      if let bundleId = appex.bundleIdentifier {
+        ext["bundleId"] = bundleId
+      }
+      if let configured = appex.object(forInfoDictionaryKey: "ExpoWidgetsAppGroupIdentifier") as? String {
+        ext["configuredGroup"] = configured
+      }
+      if let altGroups = appex.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] {
+        ext["altAppGroups"] = altGroups
+        candidates.append(contentsOf: altGroups)
+      }
+      let extProfile = readProfile(in: appex.bundleURL)
+      ext.merge(extProfile) { _, new in new }
+      candidates.append(contentsOf: extProfile["profileGroups"] as? [String] ?? [])
+    }
+    info["extension"] = ext
+
     var containers: [String: Any] = [:]
+    var records: [[String: Any]] = []
     for group in Set(candidates) {
       containers[group] = checkContainer(group)
+      // Only read a group's defaults if we're entitled to it; otherwise
+      // UserDefaults(suiteName:) is a private local domain and proves nothing.
+      guard FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) != nil,
+            let shared = UserDefaults(suiteName: group) else { continue }
+      for role in ["app", "extension"] {
+        if var record = shared.dictionary(forKey: resolutionKeyPrefix + role) {
+          record["role"] = role
+          record["foundIn"] = group
+          records.append(record)
+        }
+      }
     }
     info["containers"] = containers
+    info["resolutionRecords"] = records
     return info
+  }
+
+  /// The installed signing profile of a bundle (app or appex).
+  private static func readProfile(in bundleURL: URL) -> [String: Any] {
+    // embedded.mobileprovision is CMS-signed; the plist is plain XML inside it.
+    let url = bundleURL.appendingPathComponent("embedded.mobileprovision")
+    guard let data = try? Data(contentsOf: url),
+          let start = data.range(of: Data("<?xml".utf8)),
+          let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
+          let plist = try? PropertyListSerialization.propertyList(
+            from: data.subdata(in: start.lowerBound..<end.upperBound), options: [], format: nil
+          ) as? [String: Any] else {
+      return ["profileFound": false]
+    }
+    var out: [String: Any] = ["profileFound": true]
+    let entitlements = plist["Entitlements"] as? [String: Any] ?? [:]
+    out["profileGroups"] = entitlements["com.apple.security.application-groups"] as? [String] ?? []
+    if let teamId = entitlements["com.apple.developer.team-identifier"] as? String {
+      out["profileTeamId"] = teamId
+    }
+    if let expires = plist["ExpirationDate"] as? Date {
+      out["profileExpiresUtc"] = ISO8601DateFormatter().string(from: expires)
+    }
+    return out
   }
 
   private static func checkContainer(_ group: String) -> [String: Any] {

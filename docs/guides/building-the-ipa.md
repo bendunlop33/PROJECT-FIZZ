@@ -82,7 +82,7 @@ Most rows explain what to do. These need you to do something:
 - **Notification:** tap Run and lock the phone straight away.
 - **Rest deadline:** tap Run, swipe the app away, reopen it and go back to the probe.
 - **Ducking:** start music in another app first.
-- **App Group:** tap Run before the Live Activity row. It shows whether SideStore changed the App Group name. If it did, the Live Activity is expected to fail.
+- **Live Activity, then App Group:** run Live Activity first and lock the phone to look for the countdown. Then run App Group. It checks that the app and the Lock Screen extension both found the same shared App Group, including the renamed one SideStore uses. If SideStore asks whether to keep the app's extensions, keep them: without the extension there is no Lock Screen countdown.
 - **Spoken cue while locked:** only in builds made with the background-audio experiment. Tap Run and lock the phone within 10 seconds. The cue plays 30 seconds after you tap Run.
 - **Audio events:** nothing to run. While the probe screen is open, it records interruptions such as calls, Siri or AirPods disconnecting.
 

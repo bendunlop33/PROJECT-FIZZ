@@ -3,9 +3,11 @@ import * as SecureStore from 'expo-secure-store';
 import * as Speech from 'expo-speech';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import * as SQLite from 'expo-sqlite';
+import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { AppState } from 'react-native';
 import { File, Paths } from 'expo-file-system';
+import { widgetsDirectory } from 'expo-widgets';
 
 import AudioCoach from '../../modules/audio-coach';
 import { isoUtc, nowMs } from '../clock';
@@ -440,9 +442,23 @@ export async function runAppGroupProbe(): Promise<ResultUpdate> {
         jsWriteRead = { ok: false, error: errorText(e) };
       }
     }
+    // expo-widgets reads this native constant when it is imported (at app start),
+    // which runs the patched runtime group resolution in the app and records it.
+    const expoWidgetsDirectory: unknown = widgetsDirectory;
     const native =
-      AudioCoach === null ? null : parseNativeAppGroupInfo(await AudioCoach.getAppGroupInfo([configuredGroup]));
-    const result = analyseAppGroup({ configuredGroup, expoSharedContainers: Object.keys(shared), jsWriteRead, native });
+      AudioCoach === null
+        ? null
+        : parseNativeAppGroupInfo(
+            await withTimeout(AudioCoach.getAppGroupInfo([configuredGroup]), NATIVE_CALL_TIMEOUT_MS, 'getAppGroupInfo'),
+          );
+    const result = analyseAppGroup({
+      configuredGroup,
+      buildNumber: Application.nativeBuildVersion ?? 'unknown',
+      expoSharedContainers: Object.keys(shared),
+      jsWriteRead,
+      expoWidgetsDirectory: typeof expoWidgetsDirectory === 'string' ? expoWidgetsDirectory : null,
+      native,
+    });
     return sharedError === null
       ? result
       : { ...result, details: [...(result.details ?? []), `Paths.appleSharedContainers error: ${sharedError}`] };
@@ -489,7 +505,7 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
     return {
       status: 'fail',
       summary: `Live Activity did not start: ${errorText(e)}`,
-      details: ['Check Settings > Fizz > Live Activities is on. Under SideStore the App Group may not be registered'],
+      details: ['Check Settings > Fizz > Live Activities is on. Run App Group for the extension and App Group evidence'],
     };
   }
 }

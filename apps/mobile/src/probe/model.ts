@@ -123,15 +123,16 @@ export const PROBES: readonly ProbeDefinition[] = [
   {
     id: 'app_group',
     ref: 'Spike: App Group',
-    title: 'App Group the app was signed with (Live Activity data sharing)',
+    title: 'App Group shared by the app and the Live Activity extension',
     howTo:
-      'Tap Run. Reads which App Group SideStore signed the app with, and writes a test file in the shared container. Run it before Live Activity.',
+      'Run Live Activity first (it starts the extension), then tap Run here. Checks which App Group SideStore signed the app and the extension with (it renames it), that both resolve the same group at runtime, and that its container is writable.',
   },
   {
     id: 'live_activity',
     ref: 'Spike: Live Activity',
     title: 'Live Activity countdown (no push)',
-    howTo: 'Tap Run, then lock the phone. A 2-minute countdown should show on the Lock Screen and Dynamic Island.',
+    howTo:
+      'Tap Run, then lock the phone. A 2-minute countdown should show on the Lock Screen and Dynamic Island. Afterwards, run App Group to confirm the extension shared data.',
     confirmQuestion: 'Did the countdown show on the Lock Screen and count down?',
   },
   {

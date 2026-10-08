@@ -4,13 +4,41 @@ import {
   analyseAppGroup,
   bundleIdSuffix,
   classifyAppGroup,
+  currentRecord,
   parseNativeAppGroupInfo,
   type AppGroupEvidence,
+  type ExtensionInfo,
   type NativeAppGroupInfo,
+  type ResolutionRecord,
 } from '../src/probe/app-group';
 
 const GROUP = 'group.com.projectfizz.fizz';
 const RENAMED = `${GROUP}.ABCDE12345`;
+
+const BUILD = '8';
+
+const record = (over: Partial<ResolutionRecord>): ResolutionRecord => ({
+  role: 'app',
+  group: GROUP,
+  source: 'configured',
+  bundleId: 'com.projectfizz.fizz',
+  buildNumber: BUILD,
+  atUtc: '2026-10-09T08:00:00Z',
+  foundIn: GROUP,
+  ...over,
+});
+
+const extension = (over: Partial<ExtensionInfo>): ExtensionInfo => ({
+  present: true,
+  bundleId: 'com.projectfizz.fizz.ExpoWidgetsTarget',
+  configuredGroup: GROUP,
+  altAppGroups: null,
+  profileFound: true,
+  profileGroups: [GROUP],
+  profileTeamId: 'ABCDE12345',
+  profileExpiresUtc: '2026-10-15T09:00:00Z',
+  ...over,
+});
 
 const native = (over: Partial<NativeAppGroupInfo>): NativeAppGroupInfo => ({
   profileFound: true,
@@ -18,17 +46,44 @@ const native = (over: Partial<NativeAppGroupInfo>): NativeAppGroupInfo => ({
   profileTeamId: 'ABCDE12345',
   profileExpiresUtc: '2026-10-15T09:00:00Z',
   altAppGroups: null,
+  supportsLiveActivities: true,
+  activitiesEnabled: true,
+  extension: extension({}),
   containers: { [GROUP]: { resolved: true, path: '/private/var/shared/X', writeRead: true } },
+  records: [record({}), record({ role: 'extension', bundleId: 'com.projectfizz.fizz.ExpoWidgetsTarget' })],
   ...over,
 });
 
 const evidence = (over: Partial<AppGroupEvidence>): AppGroupEvidence => ({
   configuredGroup: GROUP,
+  buildNumber: BUILD,
   expoSharedContainers: [GROUP],
   jsWriteRead: { ok: true },
+  expoWidgetsDirectory: 'file:///private/var/shared/X/ExpoWidgets/',
   native: native({}),
   ...over,
 });
+
+/** SideStore as seen on build 7, with the runtime fix working on both sides. */
+const renamedNative = (over: Partial<NativeAppGroupInfo>): NativeAppGroupInfo =>
+  native({
+    profileGroups: [RENAMED],
+    altAppGroups: [RENAMED],
+    extension: extension({
+      bundleId: 'com.projectfizz.fizz.ABCDE12345.ExpoWidgetsTarget',
+      profileGroups: [RENAMED],
+      altAppGroups: [RENAMED],
+    }),
+    containers: { [GROUP]: { resolved: false }, [RENAMED]: { resolved: true, path: '/p', writeRead: true } },
+    records: [
+      record({ group: RENAMED, foundIn: RENAMED, source: 'altAppGroups' }),
+      record({ role: 'extension', group: RENAMED, foundIn: RENAMED, source: 'altAppGroups' }),
+    ],
+    ...over,
+  });
+
+const renamedEvidence = (over: Partial<NativeAppGroupInfo>): AppGroupEvidence =>
+  evidence({ expoSharedContainers: [], jsWriteRead: null, native: renamedNative(over) });
 
 describe('classifyAppGroup', () => {
   it('matches, detects a team-suffix rename, a missing group, and no evidence', () => {
@@ -44,11 +99,13 @@ describe('classifyAppGroup', () => {
   });
 });
 
-describe('analyseAppGroup', () => {
-  it('passes only when signed with the configured group and the container is writable', () => {
+describe('analyseAppGroup: configured group kept', () => {
+  it('passes when the app can write and the extension resolved the same group', () => {
     const r = analyseAppGroup(evidence({}));
     expect(r.status).toBe('pass');
-    expect(r.details).toContain('Profile expires: 2026-10-15T09:00:00Z');
+    expect(r.summary).toContain('App and Live Activity extension both resolve it');
+    expect(r.details).toContain('App profile expires: 2026-10-15T09:00:00Z');
+    expect(r.details).toContain(`Extension resolved ${GROUP} and wrote its record to the shared container`);
   });
 
   it('fails when the configured group is signed but nothing could write to it', () => {
@@ -56,43 +113,128 @@ describe('analyseAppGroup', () => {
       evidence({ jsWriteRead: { ok: false, error: 'denied' }, native: native({ containers: { [GROUP]: { resolved: true, writeRead: false } } }) }),
     );
     expect(r.status).toBe('fail');
-  });
-
-  it('reports a SideStore-style rename as a failure naming both groups and the suffix', () => {
-    const r = analyseAppGroup(
-      evidence({
-        expoSharedContainers: [],
-        jsWriteRead: null,
-        native: native({
-          profileGroups: [RENAMED],
-          containers: { [GROUP]: { resolved: false }, [RENAMED]: { resolved: true, path: '/p', writeRead: true } },
-        }),
-      }),
-    );
-    expect(r.status).toBe('fail');
-    expect(r.summary).toContain(RENAMED);
-    expect(r.summary).toContain('suffix .ABCDE12345');
-    expect(r.summary).toContain(`looks for ${GROUP}`);
-    expect(r.details).toContain(`${GROUP}: no container (not entitled to this group)`);
-    expect(r.details).toContain("Renamed group's container is writable");
-    expect(r.details).toContain('expo-file-system shared containers (build-time list): none resolved');
+    expect(r.summary).toContain(`could not write to ${GROUP}`);
   });
 
   it('fails when the profile has no matching group', () => {
-    expect(analyseAppGroup(evidence({ native: native({ profileGroups: [] }) })).summary).toMatch(/signed without the configured App Group \(signed: none\)/);
+    expect(analyseAppGroup(evidence({ native: native({ profileGroups: [] }) })).summary).toMatch(
+      /signed without the configured App Group \(signed: none\)/,
+    );
   });
 
-  it('without a readable profile, passes on container access but says the rename was not checked', () => {
+  it('without a readable app profile, judges by container access and says the rename was not checked', () => {
     const r = analyseAppGroup(evidence({ native: native({ profileFound: false, profileGroups: null }) }));
     expect(r.status).toBe('pass');
     expect(r.details).toContain('Rename could not be checked without the signing profile');
-    expect(r.details).toContain('Signing profile: no embedded.mobileprovision found');
+    expect(r.details).toContain('App signing profile: no embedded.mobileprovision found');
   });
 
-  it('without the native module or a container, fails honestly', () => {
+  it('without the native module, fails honestly', () => {
     const r = analyseAppGroup(evidence({ native: null, expoSharedContainers: [], jsWriteRead: null }));
     expect(r.status).toBe('fail');
-    expect(r.details).toContain('Signing profile: not read (audio-coach native module not in this build)');
+    expect(r.details).toContain('Signing profiles: not read (audio-coach native module not in this build)');
+  });
+
+  it('with the native module but no container write, still fails before looking at the extension', () => {
+    const r = analyseAppGroup(evidence({ native: null, jsWriteRead: { ok: true } }));
+    expect(r.status).toBe('fail');
+    expect(r.summary).toContain('extension could not be checked');
+  });
+});
+
+describe('analyseAppGroup: SideStore rename (ADR 0007 runtime fix)', () => {
+  it('passes as "renamed (handled at runtime)" only when app and extension both resolve the renamed group', () => {
+    const r = analyseAppGroup(renamedEvidence({}));
+    expect(r.status).toBe('pass');
+    expect(r.summary).toContain(`Renamed by the signing tool to ${RENAMED} (suffix .ABCDE12345)`);
+    expect(r.summary).toContain('renamed (handled at runtime)');
+    expect(r.details).toContain(`${GROUP}: no container (not entitled to this group)`);
+    expect(r.details).toContain(`App resolved ${RENAMED} from altAppGroups at 2026-10-09T08:00:00Z (build 8, com.projectfizz.fizz)`);
+    expect(r.details).toContain('Extension ALTAppGroups: ' + RENAMED);
+  });
+
+  it('fails like build 7 when the app has no runtime record (stock expo-widgets)', () => {
+    const r = analyseAppGroup(renamedEvidence({ records: [] }));
+    expect(r.status).toBe('fail');
+    expect(r.summary).toContain('did not resolve the renamed group at runtime');
+    expect(r.details).toContain(
+      'Runtime resolution records: none (patched expo-widgets has not run, or this build predates it)',
+    );
+  });
+
+  it('fails when the renamed container is not writable', () => {
+    const r = analyseAppGroup(renamedEvidence({ containers: { [RENAMED]: { resolved: true, writeRead: false, error: 'EPERM' } } }));
+    expect(r.status).toBe('fail');
+    expect(r.summary).toContain(`could not write to ${RENAMED}`);
+  });
+
+  it('is incomplete (not a pass) until the extension has run in this build', () => {
+    const r = analyseAppGroup(renamedEvidence({ records: [record({ group: RENAMED, foundIn: RENAMED, source: 'altAppGroups' })] }));
+    expect(r.status).toBe('not_run');
+    expect(r.summary).toContain('run Live Activity, then App Group again');
+  });
+
+  it('ignores an extension record left by an older build', () => {
+    const r = analyseAppGroup(
+      renamedEvidence({
+        records: [
+          record({ group: RENAMED, foundIn: RENAMED }),
+          record({ role: 'extension', group: RENAMED, foundIn: RENAMED, buildNumber: '7' }),
+        ],
+      }),
+    );
+    expect(r.status).toBe('not_run');
+    expect(r.details?.some((d) => d.includes('OLDER build 7 (ignored)'))).toBe(true);
+  });
+
+  it('fails when the extension was removed from the installed app', () => {
+    const r = analyseAppGroup(renamedEvidence({ extension: extension({ present: false }) }));
+    expect(r.status).toBe('fail');
+    expect(r.summary).toContain('ExpoWidgetsTarget.appex is NOT in the installed app');
+  });
+
+  it("fails when the extension's own profile lacks the group (F2)", () => {
+    const r = analyseAppGroup(renamedEvidence({ extension: extension({ profileGroups: [`${GROUP}.OTHERTEAM`] }) }));
+    expect(r.status).toBe('fail');
+    expect(r.summary).toContain(`its profile does not include ${RENAMED}`);
+  });
+
+  it('fails when the extension resolved a different group from the app', () => {
+    const r = analyseAppGroup(
+      renamedEvidence({
+        records: [
+          record({ group: RENAMED, foundIn: RENAMED }),
+          record({ role: 'extension', group: GROUP, foundIn: GROUP, source: 'configured' }),
+        ],
+      }),
+    );
+    expect(r.status).toBe('fail');
+    expect(r.summary).toContain(`Extension resolved ${GROUP}, but the app uses ${RENAMED}`);
+  });
+
+  it('cannot pass when the native module does not report the extension', () => {
+    const r = analyseAppGroup(renamedEvidence({ extension: null }));
+    expect(r.status).toBe('fail');
+    expect(r.summary).toContain('this build does not report it');
+  });
+
+  it('reports Live Activity prerequisites', () => {
+    const r = analyseAppGroup(renamedEvidence({ activitiesEnabled: false, supportsLiveActivities: null }));
+    expect(r.details).toContain('Live Activities enabled in Settings: NO');
+    expect(r.details).toContain('NSSupportsLiveActivities: unknown');
+  });
+});
+
+describe('currentRecord', () => {
+  it('picks the newest record for the role from this build', () => {
+    const records = [
+      record({ atUtc: '2026-10-09T08:00:00Z' }),
+      record({ atUtc: '2026-10-09T09:00:00Z', group: RENAMED, foundIn: RENAMED }),
+      record({ atUtc: '2026-10-09T10:00:00Z', buildNumber: '7' }),
+      record({ role: 'extension', atUtc: '2026-10-09T11:00:00Z' }),
+    ];
+    expect(currentRecord(records, 'app', BUILD)?.group).toBe(RENAMED);
+    expect(currentRecord(records, 'extension', '7')).toBeNull();
   });
 });
 
@@ -103,6 +245,7 @@ describe('parseNativeAppGroupInfo', () => {
       profileGroups: [GROUP, 3],
       profileTeamId: 'T',
       altAppGroups: [RENAMED],
+      supportsLiveActivities: 'yes',
       containers: { [GROUP]: { resolved: true, writeRead: 'yes' }, bad: 'x', worse: { path: '/p' } },
     });
     expect(parsed).toEqual({
@@ -111,13 +254,52 @@ describe('parseNativeAppGroupInfo', () => {
       profileTeamId: 'T',
       profileExpiresUtc: null,
       altAppGroups: [RENAMED],
+      supportsLiveActivities: null,
+      activitiesEnabled: null,
+      extension: null,
       containers: { [GROUP]: { resolved: true } },
+      records: [],
     });
+  });
+
+  it('parses the extension and resolution records, dropping malformed or misplaced records', () => {
+    const good = { role: 'extension', group: RENAMED, source: 'altAppGroups', bundleId: 'b', buildNumber: '8', atUtc: 't', foundIn: RENAMED };
+    const parsed = parseNativeAppGroupInfo({
+      profileFound: false,
+      activitiesEnabled: true,
+      extension: { present: true, bundleId: 'x.ExpoWidgetsTarget', profileFound: true, profileGroups: [RENAMED], altAppGroups: 'no' },
+      containers: {},
+      resolutionRecords: [
+        good,
+        { ...good, role: 'widget' },
+        { ...good, buildNumber: 8 },
+        // A record can only vouch for the group whose defaults it was found in.
+        { ...good, foundIn: GROUP },
+        'junk',
+      ],
+    });
+    expect(parsed?.extension).toEqual({
+      present: true,
+      bundleId: 'x.ExpoWidgetsTarget',
+      configuredGroup: null,
+      altAppGroups: null,
+      profileFound: true,
+      profileGroups: [RENAMED],
+      profileTeamId: null,
+      profileExpiresUtc: null,
+    });
+    expect(parsed?.activitiesEnabled).toBe(true);
+    expect(parsed?.records).toEqual([good]);
+  });
+
+  it('treats an extension without a present flag as not reported', () => {
+    expect(parseNativeAppGroupInfo({ extension: { bundleId: 'x' } })?.extension).toBeNull();
   });
 
   it('returns null for a non-object', () => {
     expect(parseNativeAppGroupInfo(null)).toBeNull();
     expect(parseNativeAppGroupInfo('x')).toBeNull();
+    expect(parseNativeAppGroupInfo([])).toBeNull();
   });
 });
 

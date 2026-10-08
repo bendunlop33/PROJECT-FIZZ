@@ -58,14 +58,33 @@ export interface KeepAliveStopResult {
   deactivationError?: string;
 }
 
-/** Native App Group evidence; raw, validated by the probe before use. */
-export interface AppGroupInfo {
+/** Signing profile fields read from a bundle's embedded.mobileprovision. */
+export interface SigningProfileInfo {
   profileFound: boolean;
   profileGroups?: string[];
   profileTeamId?: string;
   profileExpiresUtc?: string;
+}
+
+/**
+ * Native App Group evidence for the app and the Live Activity extension; raw,
+ * validated by the probe (src/probe/app-group.ts) before use.
+ */
+export interface AppGroupInfo extends SigningProfileInfo {
   altAppGroups?: string[];
+  /** NSSupportsLiveActivities in the app's Info.plist. */
+  supportsLiveActivities?: boolean;
+  /** ActivityAuthorizationInfo().areActivitiesEnabled (Settings > Fizz > Live Activities). */
+  activitiesEnabled?: boolean;
+  extension?: SigningProfileInfo & {
+    present: boolean;
+    bundleId?: string;
+    configuredGroup?: string;
+    altAppGroups?: string[];
+  };
   containers: Record<string, { resolved: boolean; path?: string; writeRead?: boolean; error?: string }>;
+  /** Written by the patched expo-widgets in each process (patches/expo-widgets+57.0.23.patch). */
+  resolutionRecords?: Record<string, unknown>[];
 }
 
 /** Raw string from the native side; see AudioCoachModule.swift. */

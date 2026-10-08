@@ -52,23 +52,69 @@ CLAUDE.md says one Swift module (`audio-coach`) owns the iOS audio session. Two 
    - Closing (on `end`/`error`): audio-coach reapplies `playback`, then deactivates with `notifyOthersOnDeactivation` so music returns.
 4. If a library update changes its session behaviour, the probe's audio rows are the regression check.
 
+## App Group: resolved at runtime (SideStore rename)
+
+**Status:** implemented for the build after build 7, 8 Oct 2026; Ben to confirm. This takes option (a) from the earlier "Known risks" entry.
+
+**What build 7 showed** (`docs/device-tests/2026-10-08-probe-build7.md`):
+- SideStore signed the app with `group.com.projectfizz.fizz.<TEAMID>` and listed it in `ALTAppGroups`. The renamed group's container was writable.
+- `expo-widgets` read the build-time group (`group.com.projectfizz.fizz`), found no container, and no Live Activity appeared.
+
+**How `expo-widgets` 57.0.23 reads the group** (checked in `node_modules`):
+- Everything shared goes through `WidgetsStorage` (`ios/WidgetsStorage.swift`): `public static var appGroupIdentifier` is read once from the Info.plist key `ExpoWidgetsAppGroupIdentifier`, and `static let defaults = UserDefaults(suiteName: appGroupIdentifier)`.
+- The app side (layout written by `LiveActivityFactory`, `WidgetObject`, the `widgetsDirectory` constant) and the extension side (`getLiveActivityNodes`, `EntryView`, `AppIntent`) all use `WidgetsStorage`.
+- `TimelineProvider` also reads the Info.plist key, but only nil-checks it; `parseTimeline` ignores the value it is passed.
+- The app and the extension both compile the same pod source. The extension target links it through `use_expo_modules_widgets!`.
+
+**Route chosen: a pinned patch with `patch-package`** (`patches/expo-widgets+57.0.23.patch`, root `postinstall: patch-package --error-on-fail --error-on-warn`, `patch-package` 8.0.1 pinned).
+- The patch changes one file. `appGroupIdentifier` is initialised by `FizzAppGroupResolver.resolve()`, which runs once per process (app and extension) and tries, in order:
+  1. `ALTAppGroups` in that bundle's own Info.plist;
+  2. in the extension only, `ALTAppGroups` in the parent app's Info.plist, as a fallback in case a signing tool only updates the app;
+  3. the configured build-time group.
+- From `ALTAppGroups` it takes only the configured group or `<configured>.<suffix>`, and only if `containerURL` resolves, which means this binary is entitled to it. The app and the extension therefore pick the same group whenever both are entitled to it.
+- It writes its choice (group, source, bundle ID, build number, time) to that group's shared defaults under `fizz.appGroupResolution.app` or `.extension`. The probe reads both records.
+- Alternatives considered:
+  - A config plugin that injects code into the generated extension `index.swift`. This covers only the extension; the app side would also need a native shim that sets `WidgetsStorage.appGroupIdentifier` before first use, and that ordering is fragile.
+  - Our own shim module. It would duplicate `WidgetsStorage`.
+  - Building with the suffixed group (option b). This needs the Team ID baked in, and breaks if the Apple ID changes.
+- Guards against the patch silently not applying:
+  - `scripts/test/native-patches.test.ts`, run by `npm run check`, fails in these cases: the patch isn't applied; `expo-widgets` isn't 57.0.23; another file reads the Info.plist key for real use; or `expo-widgets` ships a `prebuilds/` xcframework. Expo's Podfile turns on `EXPO_USE_PRECOMPILED_MODULES` by default, and a precompiled binary would ignore the patched source. Today `expo-widgets` has no prebuilds, so it is compiled from source.
+  - `patch-package --error-on-warn` fails `npm ci` if the installed version differs from the patch.
+  - The macOS job greps the app and extension executables for a string literal only the patch contains (`parentAltAppGroups`), and checks `NSSupportsLiveActivities` is true.
+- **Upgrade rule:** when `expo-widgets` changes, re-read its group handling and remake the patch, or drop it if upstream resolves the group at runtime. Worth proposing upstream.
+
+**Does SideStore update `ALTAppGroups` in the extension too?**
+- AltStore's source says yes ([Community] `rileytestut/AltStore` develop):
+  - `FetchProvisioningProfilesOperation` registers an App ID per extension. It registers `<group>.<TEAMID>` for every group in that extension's own signed entitlements, and assigns the group to that App ID.
+  - `ResignAppOperation.prepareAppBundle` runs `prepare(_:)` on the app and on every bundle in `PlugIns/`. Each bundle's `ALTAppGroups` is set from its **own** profile's `application-groups`.
+  - Extension bundle IDs keep the parent prefix (`com.projectfizz.fizz.<TEAMID>.ExpoWidgetsTarget`).
+- SideStore is a fork. Its source files couldn't be fetched from this environment, but the build-7 app-side result matches AltStore's behaviour. The probe now checks the extension on the device, so this doesn't rest on the source reading.
+- This depends on CI ad hoc signing the `.appex` with `ExpoWidgetsTarget.entitlements`, which it already does. Without that, the tool sees no groups to register.
+
+**Other things that could block the Live Activity on a free account:**
+- `NSSupportsLiveActivities` must be on the **app** target. `expo-widgets` sets it there, and CI now asserts it.
+- The extension could be missing from the installed app. SideStore has a remove-extensions operation (`RemoveAppExtensionsOperation`) to save App IDs on free accounts. The probe now reports whether `PlugIns/ExpoWidgetsTarget.appex` is present.
+- The extension's App ID counts against the 10-per-week limit (research §1.2).
+- AltStore counts extensions against the 3-active-apps limit only below iOS 13.5, so this doesn't apply on iOS 26.
+- Live Activities can be switched off in Settings. The probe reports `areActivitiesEnabled`.
+- Push type must be nil. This is already the case (`enablePushNotifications: false`).
+- Rendering inside the extension (the widget JS runtime, memory) is untested. The Live Activity row is the end-to-end check.
+
+**Probe:** the `app_group` row PASSes only if both of these hold:
+- the app can write the group's container (the configured group, or the renamed group the app resolved at runtime);
+- the extension is present, its own `embedded.mobileprovision` includes that group (review F2), and its runtime record from this build names the same group.
+
+The extension's record exists only after the extension has run, so the row says "run Live Activity, then App Group again" until it has. A rename that is handled is reported as "renamed (handled at runtime)".
+
 ## Known risks
 
-- **SideStore may rename the App Group, which may break Live Activities** (review spec issue 1; free-ios-install.md §9 #3).
-  - Two sides of the mismatch:
-    - `expo-widgets` 57.0.23 reads the group from a build-time Info.plist key (`ExpoWidgetsAppGroupIdentifier`), set to `group.com.projectfizz.fizz`.
-    - AltStore-family tools register `<group>.<TEAMID>` instead.
-  - If they rename it:
-    - `UserDefaults(suiteName:)` in the app and the extension falls back to an unshared domain;
-    - the Live Activity renders blank or not at all;
-    - `containerURL` for the configured group returns nil.
-  - Also, `expo-file-system`'s `Paths.appleSharedContainers` can't show a rename. Its group list is baked in at `pod install` by autolinking from the build-time entitlements.
-  - The `app_group` probe therefore reads the installed `embedded.mobileprovision` and `ALTAppGroups`, and reports one of: match, renamed (with suffix), missing, or unknown.
-  - If the probe shows a rename, Ben chooses one of:
-    - (a) a config plugin plus a small native patch that resolves the group at runtime (signed profile, `ALTAppGroups`, or prefix match);
-    - (b) building with the suffixed group, which works only once the Team ID is known and stable;
-    - (c) treating it as an upgrade trigger under ADR 0004.
-- **The audio-coach Swift module, including the keep-alive and App Group code, has never been compiled.** The first macOS CI run is its compile test. `.allowBluetooth` is used for HFP. It was renamed `.allowBluetoothHFP` in the iOS 26 SDK, and the old name should only warn.
+- **The App Group fix above has not run on a device yet.** The next build is its test. If the extension's record never appears even though the countdown shows, or the countdown still doesn't show, the fallbacks are option (b) (build with the suffixed group) or (c) (an upgrade trigger under ADR 0004).
+- `expo-file-system`'s `Paths.appleSharedContainers` can't show a rename. Its group list is baked in at `pod install` by autolinking from the build-time entitlements. Production code that needs the shared container must use the runtime-resolved group, not this list.
+- **Swift written without a Mac.** The audio-coach module compiled and ran in build 7. These have not been compiled yet, and the next macOS CI run is their compile test:
+  - the `expo-widgets` patch;
+  - the audio-coach additions: extension evidence, `requestAlarmKitAuthorization`, and the keep-alive and timeout fixes.
+
+  `.allowBluetooth` is used for HFP. It was renamed `.allowBluetoothHFP` in the iOS 26 SDK, and the old name should only warn.
 
 ## Consequences
 - Native or config changes need a cloud build. JS-only changes do too, until EAS Update or a dev client is set up.
