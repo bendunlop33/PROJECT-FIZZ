@@ -119,8 +119,7 @@ CREATE TABLE session_exercises (
   sort_order INTEGER NOT NULL,
   superset_group TEXT,
   transition_rest_s INTEGER,
-  progression_rule_id TEXT,
-  UNIQUE (session_id, ordinal)
+  progression_rule_id TEXT
 ) STRICT;
 CREATE INDEX session_exercises_exercise ON session_exercises (exercise_id);
 
@@ -152,7 +151,6 @@ CREATE TABLE session_sets (
   flags TEXT NOT NULL CHECK (json_valid(flags)),
   edited INTEGER NOT NULL CHECK (edited IN (0, 1)),
   version INTEGER NOT NULL CHECK (version >= 1),
-  UNIQUE (session_id, ordinal),
   CHECK ((actual_load_value IS NULL) = (actual_load_unit IS NULL) AND (actual_load_unit IS NULL) = (actual_load_convention IS NULL)),
   CHECK (has_actual = 1 OR (actual_load_value IS NULL AND actual_reps IS NULL AND actual_duration_s IS NULL AND actual_rpe IS NULL AND actual_rir IS NULL)),
   CHECK ((completed_at_utc IS NULL) = (completed_at_tz IS NULL))
