@@ -83,7 +83,18 @@ export type SessionEvent =
   | { type: 'SessionFinished' };
 
 export type ReduceResult =
-  | { ok: true; state: SessionAggregate; events: SessionEvent[]; duplicate: boolean }
+  | {
+      ok: true;
+      state: SessionAggregate;
+      events: SessionEvent[];
+      duplicate: boolean;
+      /**
+       * True on a duplicate whose effect is no longer in place, e.g. a repeated
+       * log_set after that log was undone. Voice and coach tools must report
+       * "not saved" in this case, never "committed" (brief §8).
+       */
+      superseded: boolean;
+    }
   | { ok: false; error: SessionError; state: SessionAggregate };
 
 type Handled = { ok: true; state: SessionAggregate; events: SessionEvent[] } | { ok: false; error: SessionError };
@@ -337,30 +348,28 @@ function handleCorrectSet(state: SessionAggregate, cmd: CommandOf<'correct_set'>
   return { ok: true, state: next, events: [{ type: 'SetCorrected', setId: set.id, setVersion: corrected.version }] };
 }
 
-function latestCompletedSet(state: SessionAggregate): WorkoutSet | undefined {
-  let latest: { set: WorkoutSet; ms: number; auditIndex: number } | undefined;
-  for (const set of state.sets) {
-    if (set.status !== 'completed' || set.completedAt === null) continue;
-    const ms = toMs(set.completedAt.utc);
-    let auditIndex = -1;
-    state.audit.forEach((a, i) => {
-      if (a.setId === set.id && a.kind === 'logged') auditIndex = i;
-    });
-    if (!latest || ms > latest.ms || (ms === latest.ms && auditIndex > latest.auditIndex)) {
-      latest = { set, ms, auditIndex };
-    }
+/**
+ * The set whose log is the most recent commit still in effect, by commit
+ * order (audit append order), not by the client-supplied `at` (review M3).
+ */
+export function latestCommittedSetId(state: SessionAggregate): string | null {
+  for (let i = state.audit.length - 1; i >= 0; i -= 1) {
+    const entry = state.audit[i];
+    if (entry?.kind !== 'logged') continue;
+    const set = state.sets.find((s) => s.id === entry.setId);
+    if (set?.status === 'completed' && set.completedByOpId === entry.opId) return set.id;
   }
-  return latest?.set;
+  return null;
 }
 
 function handleUndoLog(state: SessionAggregate, cmd: CommandOf<'undo_log'>, nowMs: number): Handled {
-  if (state.session.version !== cmd.expectedVersion) {
-    return fail('stale_version', 'The workout changed since this undo was offered.');
-  }
   const set = state.sets.find((s) => s.id === cmd.setId);
   if (!set) return fail('set_not_found', 'Set not found.');
   if (set.status !== 'completed') return fail('set_not_completed', 'This set is not logged.');
-  if (latestCompletedSet(state)?.id !== set.id) {
+  if (set.version !== cmd.expectedSetVersion) {
+    return fail('stale_version', 'This set changed since the undo was offered.');
+  }
+  if (latestCommittedSetId(state) !== set.id) {
     return fail('not_latest_set', 'Only the most recent set can be undone; correct or delete older sets instead.');
   }
   const restored: WorkoutSet = {
@@ -642,6 +651,12 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
   }
 }
 
+function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean {
+  if (command.type !== 'log_set') return false;
+  const set = state.sets.find((s) => s.id === command.setId);
+  return set?.status !== 'completed' || set.completedByOpId !== command.opId;
+}
+
 /**
  * The active-session state machine (flow-first-milestone.md §3). Pure: the
  * same state and command always give the same result.
@@ -666,12 +681,12 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
           state,
         };
       }
-      return { ok: true, state, events: [], duplicate: true };
+      return { ok: true, state, events: [], duplicate: true, superseded: isSuperseded(state, command) };
     }
   }
 
   if (state.session.status !== 'active' && command.type !== 'correct_set') {
-    if (command.type === 'tick') return { ok: true, state, events: [], duplicate: false };
+    if (command.type === 'tick') return { ok: true, state, events: [], duplicate: false, superseded: false };
     return { ok: false, error: { code: 'session_finished', message: 'This workout is finished.' }, state };
   }
 
@@ -681,7 +696,7 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
 
   const events = [...clocked.events, ...handled.events];
   const changed = handled.state !== state;
-  if (!changed) return { ok: true, state, events, duplicate: false };
+  if (!changed) return { ok: true, state, events, duplicate: false, superseded: false };
 
   let next: SessionAggregate = { ...handled.state, revision: state.revision + 1 };
   if ('opId' in command) {
@@ -696,5 +711,5 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
   if (command.type !== 'tick') {
     next = { ...next, session: { ...next.session, lastActivityAtUtc: command.at.utc } };
   }
-  return { ok: true, state: next, events, duplicate: false };
+  return { ok: true, state: next, events, duplicate: false, superseded: false };
 }

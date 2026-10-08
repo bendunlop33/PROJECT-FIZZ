@@ -19,7 +19,14 @@ export type ServiceError =
   | { code: 'write_conflict'; message: string };
 
 export type CommandOutcome =
-  | { ok: true; aggregate: SessionAggregate; events: SessionEvent[]; duplicate: boolean }
+  | {
+      ok: true;
+      aggregate: SessionAggregate;
+      events: SessionEvent[];
+      duplicate: boolean;
+      /** See `ReduceResult.superseded`: the duplicate's effect is no longer in place. */
+      superseded: boolean;
+    }
   | { ok: false; error: ServiceError };
 
 export type StartOutcome =
@@ -89,9 +96,11 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       if (!current) return { ok: false, error: { code: 'not_found', message: 'Session not found.' } };
       const result = reduceSession(current, parsed.value);
       if (!result.ok) return { ok: false, error: result.error };
-      if (result.state === current) return { ok: true, aggregate: current, events: result.events, duplicate: result.duplicate };
+      if (result.state === current) {
+        return { ok: true, aggregate: current, events: result.events, duplicate: result.duplicate, superseded: result.superseded };
+      }
       const saved = await repos.sessions.save(result.state, current.revision);
-      if (saved.ok) return { ok: true, aggregate: result.state, events: result.events, duplicate: false };
+      if (saved.ok) return { ok: true, aggregate: result.state, events: result.events, duplicate: false, superseded: false };
     }
     return { ok: false, error: { code: 'write_conflict', message: 'The workout kept changing; try again.' } };
   }

@@ -4,6 +4,7 @@ import {
   draftOperationId,
   getActiveDurationMs,
   getSessionPhase,
+  latestCommittedSetId,
   prefillDraft,
   reduceSession,
   restRemainingMs,
@@ -304,7 +305,7 @@ describe('undo', () => {
     const w = bench(state)[0];
     if (!w) throw new Error('fixture');
     const logged = apply(state, logCmd(w.id, values(kg(60), 10), 30, 'tap'));
-    const r = expectOk(reduceSession(logged, { type: 'undo_log', at: at(35), opId: 'u1', setId: w.id, expectedVersion: 2 }));
+    const r = expectOk(reduceSession(logged, { type: 'undo_log', at: at(35), opId: 'u1', setId: w.id, expectedSetVersion: 2 }));
     const set = r.state.sets.find((s) => s.id === w.id);
     expect(set).toMatchObject({ status: 'pending', actual: null, draft: values(kg(60), 10), undoCount: 1 });
     expect(r.state.restTimer?.status).toBe('cancelled');
@@ -319,10 +320,46 @@ describe('undo', () => {
     const w = bench(state)[0];
     if (!w) throw new Error('fixture');
     const cmd = logCmd(w.id, values(kg(60), 10), 30, 'tap');
-    const undone = apply(apply(state, cmd), { type: 'undo_log', at: at(35), opId: 'u1', setId: w.id, expectedVersion: 2 });
+    const undone = apply(apply(state, cmd), { type: 'undo_log', at: at(35), opId: 'u1', setId: w.id, expectedSetVersion: 2 });
     const r = expectOk(reduceSession(undone, cmd));
     expect(r.duplicate).toBe(true);
+    // Review M3: a late duplicate must not be reported as "committed".
+    expect(r.superseded).toBe(true);
     expect(r.state.sets.find((s) => s.id === w.id)?.status).toBe('pending');
+  });
+
+  it('a duplicate of a log that is still in effect is not superseded', () => {
+    const { state } = startFixture();
+    const w = bench(state)[0];
+    if (!w) throw new Error('fixture');
+    const cmd = logCmd(w.id, values(kg(60), 10), 30, 'tap');
+    const r = expectOk(reduceSession(apply(state, cmd), cmd));
+    expect(r).toMatchObject({ duplicate: true, superseded: false });
+  });
+
+  it('S1: Log → RPE chip during rest → Undo succeeds (guarded on the set version, not the session version)', () => {
+    const { state } = startFixture();
+    const w = bench(state)[0];
+    if (!w) throw new Error('fixture');
+    let s = apply(state, logCmd(w.id, values(kg(60), 10), 30, 'tap'));
+    s = apply(s, { type: 'correct_set', at: at(32), opId: 'rpe', setId: w.id, expectedSetVersion: 2, patch: { rpe: 8 } });
+    expect(s.session.version).toBe(3);
+    const r = expectOk(reduceSession(s, { type: 'undo_log', at: at(34), opId: 'u', setId: w.id, expectedSetVersion: 3 }));
+    expect(r.state.sets.find((x) => x.id === w.id)).toMatchObject({ status: 'pending', draft: values(kg(60), 10, { rpe: 8 }) });
+    // The version shown before the RPE tap is now stale.
+    expectError(reduceSession(s, { type: 'undo_log', at: at(34), opId: 'u2', setId: w.id, expectedSetVersion: 2 }), 'stale_version');
+  });
+
+  it('M3: "latest" is by commit order, not by the client timestamp', () => {
+    const { state } = startFixture();
+    const [w, b1] = bench(state);
+    if (!w || !b1) throw new Error('fixture');
+    // W logged at t=100, then a delayed voice turn commits B1 stamped t=50.
+    let s = apply(state, logCmd(w.id, values(kg(60), 10), 100));
+    s = apply(s, logCmd(b1.id, values(kg(100), 8), 50));
+    expect(latestCommittedSetId(s)).toBe(b1.id);
+    expectOk(reduceSession(s, { type: 'undo_log', at: at(110), opId: 'u', setId: b1.id, expectedSetVersion: 2 }));
+    expectError(reduceSession(s, { type: 'undo_log', at: at(110), opId: 'u', setId: w.id, expectedSetVersion: 2 }), 'not_latest_set');
   });
 
   it('rejects stale undo and undo of an older set', () => {
@@ -330,8 +367,8 @@ describe('undo', () => {
     const [w, b1] = bench(state);
     if (!w || !b1) throw new Error('fixture');
     const two = apply(apply(state, logCmd(w.id, values(kg(60), 10), 30)), logCmd(b1.id, values(kg(100), 8), 120));
-    expectError(reduceSession(two, { type: 'undo_log', at: at(130), opId: 'u', setId: b1.id, expectedVersion: 2 }), 'stale_version');
-    expectError(reduceSession(two, { type: 'undo_log', at: at(130), opId: 'u', setId: w.id, expectedVersion: 3 }), 'not_latest_set');
+    expectError(reduceSession(two, { type: 'undo_log', at: at(130), opId: 'u', setId: b1.id, expectedSetVersion: 1 }), 'stale_version');
+    expectError(reduceSession(two, { type: 'undo_log', at: at(130), opId: 'u', setId: w.id, expectedSetVersion: 2 }), 'not_latest_set');
   });
 });
 

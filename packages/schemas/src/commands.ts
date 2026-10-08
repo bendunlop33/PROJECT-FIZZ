@@ -52,12 +52,17 @@ export const CorrectSetCommandSchema = z.object({
   patch: SetValuesSchema.partial().extend({ setType: SetTypeSchema.optional() }),
 });
 
+/**
+ * Undo the most recent commit. Guarded on the set's own version (the version
+ * the UI currently shows) plus "this set is still the latest commit" by commit
+ * order, not on the session version, so Log → RPE chip → Undo works (ADR 0003 S1).
+ */
 export const UndoLogCommandSchema = z.object({
   type: z.literal('undo_log'),
   ...base,
   opId: OperationIdSchema,
   setId: IdSchema,
-  expectedVersion: z.int().min(1),
+  expectedSetVersion: z.int().min(1),
 });
 
 export const AdjustRestCommandSchema = z.object({
