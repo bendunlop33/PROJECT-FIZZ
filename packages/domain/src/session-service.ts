@@ -7,7 +7,7 @@ import {
   type ZonedTimestamp,
 } from '@fizz/schemas';
 import type { Repositories } from './ports';
-import { startWorkout, type StartWarning } from './session/create';
+import { buildAddExerciseCommand, startWorkout, type StartWarning } from './session/create';
 import { recoverSession, type RecoveryResult } from './session/recovery';
 import { reduceSession, type SessionError, type SessionEvent } from './session/reducer';
 
@@ -110,6 +110,21 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     return { ok: false, error: { code: 'write_conflict', message: 'The workout kept changing; try again.' } };
   }
 
+  /**
+   * Add a catalogue exercise to the session (empty workout, or "Add exercise").
+   * Resolves the exercise and profile so the command carries a trusted snapshot.
+   */
+  async function addExercise(
+    sessionId: string,
+    req: { ownerId: string; exerciseId: string; equipmentId: string | null; opId: string; at: ZonedTimestamp },
+  ): Promise<CommandOutcome> {
+    const owner = await repos.profiles.get(req.ownerId);
+    if (!owner) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
+    const exercise = await repos.exercises.get(req.exerciseId);
+    if (!exercise) return { ok: false, error: { code: 'not_found', message: 'Exercise not found.' } };
+    return dispatch(sessionId, buildAddExerciseCommand({ ...req, owner, exercise, newId }));
+  }
+
   /** Cold-start recovery: restore the unfinished session (if any) without committing anything. */
   async function recover(ownerId: string, at: ZonedTimestamp): Promise<RecoveryResult | null> {
     const stored = await repos.sessions.getActive(ownerId);
@@ -122,7 +137,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     return result;
   }
 
-  return { start, dispatch, recover };
+  return { start, dispatch, addExercise, recover };
 }
 
 export type SessionService = ReturnType<typeof createSessionService>;

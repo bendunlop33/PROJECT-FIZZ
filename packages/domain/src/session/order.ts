@@ -25,8 +25,11 @@ function blocks(exercises: readonly SessionExercise[]): Block[] {
   return out;
 }
 
+/** Live sets of one exercise in index order. Deleted tombstones take no place in the order. */
 function setsOf(sets: readonly WorkoutSet[], exerciseId: string): WorkoutSet[] {
-  return sets.filter((s) => s.sessionExerciseId === exerciseId).sort((a, b) => a.index - b.index);
+  return sets
+    .filter((s) => s.sessionExerciseId === exerciseId && s.status !== 'deleted')
+    .sort((a, b) => a.index - b.index);
 }
 
 /**

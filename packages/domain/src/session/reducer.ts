@@ -45,7 +45,9 @@ export type SessionErrorCode =
   | 'timer_not_running'
   | 'not_timed_exercise'
   | 'work_interval_running'
-  | 'work_interval_not_running';
+  | 'work_interval_not_running'
+  | 'exercise_not_found'
+  | 'equipment_not_found';
 
 export interface SessionError {
   code: SessionErrorCode;
@@ -85,6 +87,10 @@ export type SessionEvent =
   | { type: 'SessionPaused' }
   | { type: 'SessionResumed' }
   | { type: 'SessionFinished' }
+  | { type: 'SessionDiscarded' }
+  | { type: 'SetAdded'; setId: string; sessionExerciseId: string }
+  | { type: 'ExerciseAdded'; sessionExerciseId: string }
+  | { type: 'SetDeleted'; setId: string }
   | { type: 'SessionTimingUpdated' };
 
 export type ReduceResult =
@@ -123,7 +129,13 @@ const fail = (code: SessionErrorCode, message: string): Handled => ({ ok: false,
  * are excluded so a retry after relaunch, which regenerates them, still matches.
  */
 export function commandFingerprint(command: SessionCommand): string {
-  return stableStringify({ ...command, at: undefined, restTimerId: undefined });
+  return stableStringify({
+    ...command,
+    at: undefined,
+    restTimerId: undefined,
+    newSetId: undefined,
+    newSessionExerciseId: undefined,
+  });
 }
 
 function snapshot(set: WorkoutSet): SetSnapshot {
@@ -705,6 +717,207 @@ function handleUpdateTiming(state: SessionAggregate, cmd: CommandOf<'update_sess
   return { ok: true, state: next, events: [{ type: 'SessionTimingUpdated' }] };
 }
 
+function isWorkLive(state: SessionAggregate, setIds: readonly string[]): boolean {
+  const wi = state.workInterval;
+  return wi !== null && setIds.includes(wi.setId) && (wi.status === 'running' || wi.status === 'paused');
+}
+
+/** Re-point the active set if it is no longer pending. */
+function repointActive(
+  state: SessionAggregate,
+  sets: WorkoutSet[],
+  events: SessionEvent[],
+): string | null {
+  const current = state.session.activeSetId;
+  const stillPending = current !== null && sets.find((s) => s.id === current)?.status === 'pending';
+  if (stillPending) return current;
+  const next = nextPendingSet(current, state.exercises, sets);
+  if (next !== current) {
+    events.push({ type: 'ActiveSetChanged', setId: next });
+    if (next === null) events.push({ type: 'AllSetsDone' });
+  }
+  return next;
+}
+
+/** A newly added pending set becomes active when nothing else is (empty workout, or all done). */
+function activateIfIdle(state: SessionAggregate, setId: string, events: SessionEvent[]): string | null {
+  if (state.session.activeSetId !== null) return state.session.activeSetId;
+  events.push({ type: 'ActiveSetChanged', setId });
+  return setId;
+}
+
+function handleAddSet(state: SessionAggregate, cmd: CommandOf<'add_set'>): Handled {
+  const ex = state.exercises.find((e) => e.id === cmd.sessionExerciseId);
+  if (!ex) return fail('exercise_not_found', 'Exercise not found in this workout.');
+  if (state.sets.some((s) => s.id === cmd.newSetId)) return fail('invalid_values', 'That set ID is already used.');
+  const own = state.sets.filter((s) => s.sessionExerciseId === ex.id).sort((a, b) => a.index - b.index);
+  const template = own[own.length - 1];
+  if (!template) return fail('set_not_found', 'This exercise has no set to copy.');
+  const added: WorkoutSet = {
+    id: cmd.newSetId,
+    sessionId: state.session.id,
+    sessionExerciseId: ex.id,
+    index: template.index + 1,
+    setType: cmd.setType ?? template.setType,
+    status: 'pending',
+    planned: template.planned,
+    rest: template.rest,
+    actual: null,
+    draft: null,
+    completedAt: null,
+    completedByOpId: null,
+    undoCount: 0,
+    flags: [],
+    edited: false,
+    version: 1,
+  };
+  const events: SessionEvent[] = [{ type: 'SetAdded', setId: added.id, sessionExerciseId: ex.id }];
+  const activeSetId = activateIfIdle(state, added.id, events);
+  return { ok: true, state: bumpVersion({ ...state, sets: [...state.sets, added] }, activeSetId), events };
+}
+
+function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise'>): Handled {
+  if (state.exercises.some((e) => e.id === cmd.newSessionExerciseId) || state.sets.some((s) => s.id === cmd.newSetId)) {
+    return fail('invalid_values', 'That exercise or set ID is already used.');
+  }
+  let equipment: EquipmentInstance | undefined;
+  if (cmd.equipmentId !== null) {
+    equipment = state.session.equipmentSnapshot.find((e) => e.id === cmd.equipmentId);
+    if (!equipment || equipment.availability === 'retired') {
+      return fail('equipment_not_found', 'That equipment is not part of this gym.');
+    }
+  }
+  const order = Math.max(-1, ...state.exercises.map((e) => e.order)) + 1;
+  const ex: SessionExercise = {
+    id: cmd.newSessionExerciseId,
+    sessionId: state.session.id,
+    exerciseId: cmd.exercise.exerciseId,
+    exerciseName: cmd.exercise.name,
+    measurement: cmd.exercise.measurement,
+    equipmentId: equipment?.id ?? null,
+    loadConvention: equipment?.loadConvention ?? cmd.exercise.defaultLoadConvention,
+    unit: equipment?.unit ?? cmd.unit,
+    order,
+    supersetGroup: null,
+    transitionRestS: null,
+    progressionRuleId: null,
+  };
+  const set: WorkoutSet = {
+    id: cmd.newSetId,
+    sessionId: state.session.id,
+    sessionExerciseId: ex.id,
+    index: 0,
+    setType: 'working',
+    status: 'pending',
+    planned: { load: null, reps: null, durationS: null, rpe: null, rir: null },
+    rest: cmd.rest,
+    actual: null,
+    draft: null,
+    completedAt: null,
+    completedByOpId: null,
+    undoCount: 0,
+    flags: [],
+    edited: false,
+    version: 1,
+  };
+  const events: SessionEvent[] = [
+    { type: 'ExerciseAdded', sessionExerciseId: ex.id },
+    { type: 'SetAdded', setId: set.id, sessionExerciseId: ex.id },
+  ];
+  const activeSetId = activateIfIdle(state, set.id, events);
+  const next = { ...state, exercises: [...state.exercises, ex], sets: [...state.sets, set] };
+  return { ok: true, state: bumpVersion(next, activeSetId), events };
+}
+
+function handleDeleteSet(state: SessionAggregate, cmd: CommandOf<'delete_set'>): Handled {
+  const set = state.sets.find((s) => s.id === cmd.setId);
+  if (!set || set.status === 'deleted') return fail('set_not_found', 'Set not found.');
+  if (set.version !== cmd.expectedSetVersion) return fail('stale_version', 'This set changed since it was shown.');
+  if (isWorkLive(state, [set.id])) return fail('work_interval_running', 'Stop the work timer before deleting this set.');
+  const deleted: WorkoutSet = { ...set, status: 'deleted', draft: null, version: set.version + 1 };
+  const sets = replaceSet(state.sets, deleted);
+  const audit = [
+    ...state.audit,
+    {
+      id: `${cmd.opId}:deleted`,
+      sessionId: state.session.id,
+      setId: set.id,
+      opId: cmd.opId,
+      kind: 'deleted' as const,
+      atUtc: cmd.at.utc,
+      before: snapshot(set),
+      after: snapshot(deleted),
+    },
+  ];
+  const events: SessionEvent[] = [{ type: 'SetDeleted', setId: set.id }];
+  // The rest timer is left alone, as for corrections (invariant 5).
+  const activeSetId = repointActive(state, sets, events);
+  return { ok: true, state: bumpVersion({ ...state, sets, audit }, activeSetId), events };
+}
+
+function handleSkipExercise(state: SessionAggregate, cmd: CommandOf<'skip_exercise'>): Handled {
+  const ex = state.exercises.find((e) => e.id === cmd.sessionExerciseId);
+  if (!ex) return fail('exercise_not_found', 'Exercise not found in this workout.');
+  const pending = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status === 'pending');
+  if (pending.length === 0) return { ok: true, state, events: [] };
+  if (isWorkLive(state, pending.map((s) => s.id))) {
+    return fail('work_interval_running', 'Stop the work timer before skipping this exercise.');
+  }
+  const audit = [...state.audit];
+  const skippedIds = new Set(pending.map((s) => s.id));
+  const sets = state.sets.map((s) => {
+    if (!skippedIds.has(s.id)) return s;
+    const skipped: WorkoutSet = { ...s, status: 'skipped', version: s.version + 1 };
+    audit.push({
+      id: `${cmd.opId}:skipped:${s.id}`,
+      sessionId: state.session.id,
+      setId: s.id,
+      opId: cmd.opId,
+      kind: 'skipped',
+      atUtc: cmd.at.utc,
+      before: snapshot(s),
+      after: snapshot(skipped),
+    });
+    return skipped;
+  });
+  const events: SessionEvent[] = [{ type: 'SetsSkipped', setIds: [...skippedIds] }];
+  const activeSetId = repointActive(state, sets, events);
+  return { ok: true, state: bumpVersion({ ...state, sets, audit }, activeSetId), events };
+}
+
+function handleDiscard(state: SessionAggregate, cmd: CommandOf<'discard'>, nowMs: number): Handled {
+  if (state.session.version !== cmd.expectedVersion) {
+    return fail('stale_version', 'The workout changed since Discard was opened. Review and try again.');
+  }
+  const events: SessionEvent[] = [];
+  let restTimer = state.restTimer;
+  if (isTimerLive(restTimer)) {
+    restTimer = endRestTimer(restTimer, 'cancelled', nowMs);
+    events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'cancelled', timerVersion: restTimer.version, lateByMs: 0 });
+  }
+  let workInterval = state.workInterval;
+  if (workInterval && (workInterval.status === 'running' || workInterval.status === 'paused')) {
+    // Explicit, confirmed discard of the whole workout: nothing is being kept.
+    workInterval = { ...workInterval, status: 'cancelled', endedAtUtc: toIso(nowMs) };
+    events.push({ type: 'WorkIntervalEnded', setId: workInterval.setId, reason: 'cancelled', elapsedS: 0, lateByMs: 0 });
+  }
+  events.push({ type: 'SessionDiscarded' });
+  const next: SessionAggregate = {
+    ...state,
+    restTimer,
+    workInterval,
+    session: {
+      ...state.session,
+      status: 'discarded',
+      endedAt: cmd.at,
+      pause: null,
+      activeSetId: null,
+      version: state.session.version + 1,
+    },
+  };
+  return { ok: true, state: next, events };
+}
+
 function handleSaveDraft(state: SessionAggregate, cmd: CommandOf<'save_draft'>): Handled {
   const set = state.sets.find((s) => s.id === cmd.setId);
   if (!set) return fail('set_not_found', 'Set not found.');
@@ -740,6 +953,16 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleSaveDraft(state, command);
     case 'update_session_timing':
       return handleUpdateTiming(state, command, nowMs);
+    case 'add_set':
+      return handleAddSet(state, command);
+    case 'add_exercise':
+      return handleAddExercise(state, command);
+    case 'delete_set':
+      return handleDeleteSet(state, command);
+    case 'skip_exercise':
+      return handleSkipExercise(state, command);
+    case 'discard':
+      return handleDiscard(state, command, nowMs);
     case 'tick':
       return { ok: true, state, events: [] };
   }

@@ -52,7 +52,11 @@ export const ResolvedRestSchema = z.object({
 });
 export type ResolvedRest = z.infer<typeof ResolvedRestSchema>;
 
-export const SetStatusSchema = z.enum(['pending', 'completed', 'skipped']);
+/**
+ * `deleted` is a tombstone: the row is kept (with its values) for the audit and
+ * a later undo, but it is excluded from execution order, history and volume.
+ */
+export const SetStatusSchema = z.enum(['pending', 'completed', 'skipped', 'deleted']);
 export type SetStatus = z.infer<typeof SetStatusSchema>;
 
 /** `off_profile_load`: actual load isn't achievable on the snapshotted equipment. */
@@ -183,7 +187,7 @@ export const SetAuditEntrySchema = z.object({
   sessionId: IdSchema,
   setId: IdSchema,
   opId: OperationIdSchema,
-  kind: z.enum(['logged', 'corrected', 'undone', 'skipped']),
+  kind: z.enum(['logged', 'corrected', 'undone', 'skipped', 'deleted']),
   atUtc: UtcTimestampSchema,
   before: SetSnapshotSchema.nullable(),
   after: SetSnapshotSchema.nullable(),

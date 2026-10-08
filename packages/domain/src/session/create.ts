@@ -1,4 +1,5 @@
 import type {
+  CommandOf,
   EquipmentInstance,
   Exercise,
   Load,
@@ -228,5 +229,49 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
       revision: 1,
     },
     warnings,
+  };
+}
+
+export interface AddExerciseInput {
+  opId: string;
+  owner: UserProfile;
+  exercise: Exercise;
+  /** Must be in the session's equipment snapshot; null = no equipment. */
+  equipmentId: string | null;
+  at: ZonedTimestamp;
+  newId: () => string;
+}
+
+/**
+ * Build an `add_exercise` command from catalogue and profile data, so the
+ * reducer (which has no catalogue access) gets a trustworthy snapshot. Rest
+ * after the first set is resolved with the usual order (exercise default,
+ * then global default).
+ */
+export function buildAddExerciseCommand(input: AddExerciseInput): CommandOf<'add_exercise'> {
+  const { exercise } = input;
+  return {
+    type: 'add_exercise',
+    at: input.at,
+    opId: input.opId,
+    newSessionExerciseId: input.newId(),
+    newSetId: input.newId(),
+    exercise: {
+      exerciseId: exercise.id,
+      name: exercise.name,
+      measurement: exercise.measurement,
+      laterality: exercise.laterality,
+      defaultLoadConvention: exercise.defaultLoadConvention,
+    },
+    equipmentId: input.equipmentId,
+    unit: input.owner.preferredUnit,
+    rest: resolveRestPreset({
+      setType: 'working',
+      exerciseName: exercise.name,
+      setOverrideS: null,
+      routineSetTypePreset: null,
+      exerciseDefaultS: exercise.defaultRestS ?? null,
+      globalDefault: input.owner.defaultRest,
+    }),
   };
 }

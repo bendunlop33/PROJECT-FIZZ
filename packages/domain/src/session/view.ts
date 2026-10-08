@@ -17,6 +17,8 @@ export type SessionPhase =
       /** Set when a rest just ended (expired or skipped) and the next set is waiting. */
       restEnded: { timerId: string; endedAtUtc: string | null; restedMs: number; skipped: boolean } | null;
     }
+  /** No live sets at all (empty workout, or every set deleted): offer Add exercise / Add set. */
+  | { kind: 'empty' }
   | { kind: 'all_done' };
 
 export function getSessionPhase(state: SessionAggregate, nowMs: number): SessionPhase {
@@ -29,6 +31,7 @@ export function getSessionPhase(state: SessionAggregate, nowMs: number): Session
       workRemainingMs: workInterval?.status === 'paused' ? workInterval.remainingMsAtPause : null,
     };
   }
+  if (!state.sets.some((s) => s.status !== 'deleted')) return { kind: 'empty' };
   if (workInterval?.status === 'running') {
     const remainingMs = Math.max(0, toMs(workInterval.deadlineUtc) - nowMs);
     if (remainingMs > 0) return { kind: 'working', setId: workInterval.setId, remainingMs };
