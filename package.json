@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "check:entitlements": "node scripts/check-entitlements.ts --prebuild apps/mobile/ios"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

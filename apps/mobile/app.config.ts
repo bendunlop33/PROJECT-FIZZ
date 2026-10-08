@@ -2,6 +2,7 @@ import { env } from 'node:process';
 
 import type { ExpoConfig } from 'expo/config';
 import { APP_GROUP_IDENTIFIER, APP_NAME, BUNDLE_IDENTIFIER, WIDGET_EXTENSION_BUNDLE_IDENTIFIER } from './app-identity.mts';
+import { withFreeProvisioning } from './plugins/with-free-provisioning.mts';
 
 /**
  * Build-time switches (read by `expo prebuild`, set by the IPA workflow):
@@ -61,4 +62,8 @@ const config: ExpoConfig = {
   extra: { includeLiveActivity },
 };
 
-export default config;
+// withFreeProvisioning wraps the config directly, so its mods are registered
+// before the `plugins` array (and before Expo's automatic plugins such as
+// expo-notifications). Expo runs mods newest-first, so it runs LAST and strips
+// what the others added. Don't move it into `plugins`.
+export default withFreeProvisioning(config);
