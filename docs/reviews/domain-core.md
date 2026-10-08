@@ -343,3 +343,91 @@ Test both.
 - **S7. Brief changes still need Ben.** ADR 0003 is "Accepted by the product manager", but S1 (undo guard) and S3 ("every prescribed working set") change brief behaviour, and CLAUDE.md says Ben approves brief changes. The brief §3 and §7 wording and `docs/brief/CHANGELOG.md` are unchanged. Get Ben's approval and record it before the UI ships those behaviours.
 - **S8. Stale-card Stop on a paused session (R2) is a spec–code mismatch.** today.md assumes Stop works there. Whichever way R2 is fixed, state in the flow §3.2 guards whether Stop is allowed while paused.
 - **S9. Duration semantics with chosen times.** No spec says how pauses outside a corrected `[start, end]` window count. R1 assumes they're excluded (the only reading that can't produce 0). The design should state it in workout-summary §6.
+
+---
+
+# Third review (2026-10-08)
+
+**Verdict: CHANGES NEEDED** (one blocker, T1; everything else is fixed or is a follow-up)
+
+Scope: commits `cd6d0ab` to `a6cd7fd` (after "Add re-review of domain core: one new blocker"), plus the "Re-review decisions" section of ADR 0003. `npm run typecheck`, `npm run lint` and `npm test` all pass (11 files, 261 tests). I re-ran my earlier probes and added new ones in a scratch vitest config outside the repo. No source files were edited.
+
+## Previous findings: status
+
+| Finding | Status | Evidence |
+|---|---|---|
+| R1 duration with corrected times | **Fixed** | `session.pauses` holds unclipped intervals. `pausedMsWithin` (`view.ts:63`) clips each one to `[startedAt, endedAt]`. Finish and Discard close an open pause at the tap time. All three probes are tested (`timing-pauses.test.ts:34-118`), plus "end moved back out restores 61". |
+| R1 probe value: 61 vs 62 | **61 is correct** | Window 0–63, pause 61→300, overlap 2 min, so 63 − 2 = 61. My "62" was an arithmetic slip. The rule is sound for Ben: he really was paused from 61 to 63, so any end he picks between 61 min and the tap time gives 61 min. The result is monotone, can only be 0 for a genuinely empty window, and can be recomputed from the stored originals. |
+| R2 Stop while paused | **Fixed** | The interval ends at `pause.pausedAtUtc` and elapsed time excludes earlier pauses, capped at `durationS`. Stop doesn't resume the workout, and Finish then completes. Tested, including "Resume after Stop doesn't restart" and "Stop with no interval still refused". |
+| R3 infeasible equipment | **Fixed** | `no_feasible_load` is checked after pain and before history. The summary names the equipment. `formatLoad(null)` is "no load" except for `bodyweight` and `added`. The hold, miss, skipped and no-history paths are tested. |
+| R4 unilateral progression | **Fixed in progression**; new ordering bug in the reducer (T1) | `prescribedDone = both + min(left, right)`. Left-only gives `None of 3 …`; 2 per side gives 2 of 3; the lagging side is named; mixed sided and unsided sets are unpairable. Planned rows are no longer consumed: Left, Right, Left leaves three other-side rows pending. |
+| Minor 1 delete active set | **Fixed** | `nextPendingSet(…, orderFrom = state.sets)`. Probe B1 → delete B2 now lands on R1. |
+| Minor 2 add_set type | **Fixed** | Copies the last live set of that type, and refuses when there is none. |
+| Minor 3 undo after delete | **Fixed** | A `deleted` entry whose `before.status` is `completed` ends the window. Tombstoned pending companions (whose `before` is pending) correctly don't end it. |
+| Minor 4 superseded | **Fixed** for `undo_log` and `delete_set` | |
+| Minor 5 add_exercise fingerprint | **Fixed** | `exerciseId` + `equipmentId` |
+| Minor 6 equipment compatibility | **Fixed** | `equipment_incompatible`, also checked through the service |
+| Minor 7 top-set fact wording | **Fixed** | `(no top set)` / `(only other set types)` |
+| Minor 8 undo while timer runs | **Fixed** | Refused with `work_interval_running` |
+| S6 design revisions | **Resolved** (`dae19bf`, and the docs now carry the re-review revisions) | |
+| S8, S9 | **Resolved** in flow §3.2 and workout-summary §6 and §187 | |
+
+---
+
+## Blocking
+
+### T1. After the other side of a set is logged (or deleted), the active set jumps to the next exercise, skipping that exercise's remaining sets
+`packages/domain/src/session/reducer.ts:373-378` (`makeCompanion`: `index = max + 1`), `:328` (`nextPendingSet(set.id, …)` after logging the companion), `packages/domain/src/session/order.ts:40-56` (execution order is by `index`), and `:855` (`repointActive` on delete)
+
+The companion row is appended at the end of the exercise's list, so in execution order it sits after every other set of that exercise. Logging it makes it active, which is correct. When the companion itself is logged, `nextPendingSet` searches forward from the companion's position. That position is the last of the exercise, so the search lands on the next exercise and only wraps back to the remaining sets after everything later.
+
+Probes (scratch tests, fixtures from `unilateral.test.ts`):
+- **Plain exercise.** Split squat ×3 (both), then Bench. Ben logs set 1 Left; active = `Split squat#3/right` (correct). He logs the right side; **active = `Bench press#0`**, with split squat sets 2 and 3 still pending. Order: `SS#0/left, SS#1, SS#2, SS#3/right(pair), Bench#0`.
+- **Superset.** One-arm cable row (unilateral) + Face pull, 2 rounds, then Bench. A1 Left → right companion (15 s transition), then right logged → **active = `Bench press#0`**, skipping Face pull round 1 and the whole of round 2. The 90 s rest is also started as if the round had ended.
+- **Deleting the other side** (the injured-side case the design allows): delete the pending companion → **active = `Bench press#0`**.
+
+This is the default per-side flow: Left, then the prefilled Right, then expect set 2. Every time, the "Up next", the one-tap Log target and the rest kind point at the wrong exercise. In a superset it also breaks the round structure. No data is lost, and the wrong order is recoverable by tapping a set. But it is a set-order correctness bug in the main path of the feature added to fix R4, so I'm blocking on it. The existing tests miss it: `unilateral.test.ts` logs `s2` explicitly after `r1` and only asserts that the active set is *some* pending split-squat row.
+
+Fix: make a companion follow its paired set in execution order, rather than taking a later `index` slot:
+- In `buildExecutionOrder`, emit each live companion immediately after its `pairedWithSetId` set, or after its pair's position when that set is deleted.
+- In `isRoundEnd`, treat a companion as belonging to its paired set's round. Then Left → Right → partner exercise (superset) or set 2 (plain).
+- `nextPendingSet`, `repointActive`, "Up next" and the rest kind all follow from the order. Leave `index` for display, or renumber it.
+
+Add tests for:
+- plain: L → R → active is set 2;
+- superset: A1 L → A1 R → active is B1, and the rest is transition;
+- deleting a pending companion → set 2;
+- Left, Right, Left in order, asserting the exact active-set sequence.
+
+(See also spec issue T-S1: the spec wording "sits at the end of this exercise's list" causes this.)
+
+---
+
+## Follow-ups (non-blocking, later slices)
+
+1. **Lagging-side wording for effort.** `progression.ts:487-490` produces `The right side reached 8+ reps on every set but the left side didn't (effort above the limit)`, but the left side did reach 8+. Phrase it as "met the progression criteria" or "reached 8+ reps within the effort limit". The test at `progression.test.ts:546` enshrines the current text.
+2. **Orphaned completed companion.** Deleting the original Left set after its Right companion was logged leaves a completed `right` row with `pairedWithSetId` pointing at a tombstone. Volume (`right 1, left 0`) and progression (hold, right side ahead) both handle it honestly. The UI should still not show a "pair" badge to a deleted set. This sits alongside the side-correction gap already Open in ADR 0003.
+3. **Rest between sides.** A Left log starts the full set rest before the Right side (by design, active-workout §2.9: "Rest keeps running"). Many lifters go straight to the other side. Worth confirming with Ben on device. A `transition`-kind rest (or 0) between the sides of a pair may fit better. Revisit with T1's round handling.
+4. **`superseded` for the remaining commands** (Open in ADR 0003). Needed before voice or coach tools issue `correct_set`, `skip_exercise` and so on.
+5. **HistorySet mapping.** No WorkoutSet → HistorySet mapper exists yet. When the persistence slice adds one, it must carry `side`, and test it. A dropped `side` (null) on unilateral rows would make every sided session look unpairable, or count L/R rows as separate sets again.
+6. **Stop while paused leaves the session paused.** That's correct per ADR. The stale card should make it obvious that Finish is now available, not Resume (UI copy, not domain).
+
+## Regression check
+- Pause/Resume of rest and work timers, clock catch-up, recovery tick, undo order, duplicate detection, Finish bounds, start normalisation and volume all still pass their earlier tests, and my earlier probes for M3, M6, M7 and B1–B3 give the same results.
+- The minor 1 change (`orderFrom`) only affects searches whose start set has left the order. Other callers pass the default.
+- `deriveId` produces a valid v8 UUID (aggregate schema round-trip tested). The seed is set ID + opId, so a retry derives the same companion and a re-log after undo derives a new one. There is a collision guard.
+- `undo_log` restores the pre-log side and tombstones the pending companion under the same opId (audited, `SetDeleted` event). `delete_set` cascades the same way. Neither cascade ends the undo window.
+
+## Durability and security
+- **New persisted fields:** `pauses`, `pairedWithSetId`, `compatibleEquipment`, `HistorySet.side`. Nothing is persisted yet, so no migration is needed.
+- **Pause intervals:** stored unclipped with the original start and end in `timingAudit`, so corrections stay reversible.
+- **No new credentials, network, logging or imported-content paths.**
+
+## Spec issues
+- **T-S1. Companion placement.** active-workout §2.9 says the other-side set "sits at the end of this exercise's list and becomes the next active set". It doesn't say what comes after it. Taken literally, the end-of-list position is what sends the next set to the following exercise (T1). Change it to: "It is performed immediately after its paired set (same superset round); after it, the order continues with the next set after the pair."
+- **S7 (still open).** Ben's approval and `docs/brief/CHANGELOG.md` entries are still missing for:
+  - S1 (undo guard);
+  - S3 ("every prescribed working set");
+  - the R4 pairing rule (a Left + Right pair is one prescribed set, and the load goes up only when both sides qualify).
+
+  These change brief §3 behaviour. Record them before the UI ships.
