@@ -26,9 +26,13 @@ on:
 permissions:
   contents: read
 
+# Never cancel a build. The group is keyed on the commit, so a later push (a docs
+# commit, say) starts its own run instead of cancelling an in-flight macOS build.
+# A per-ref group would cancel it: with cancel-in-progress the running build, and
+# without it a still-pending one (GitHub keeps only the newest pending run).
 concurrency:
-  group: ios-ipa-${{ github.ref }}
-  cancel-in-progress: true
+  group: ios-ipa-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
 
 env:
   NODE_VERSION: '22.22.0'
@@ -46,6 +50,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Keep the token out of .git/config: npm ci runs third-party install scripts.
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -66,6 +73,9 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Keep the token out of .git/config: npm ci runs third-party install scripts.
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -73,6 +83,12 @@ jobs:
 
       - name: Select Xcode
         run: |
+          if [ ! -d "$XCODE_APP" ]; then
+            echo "::error::$XCODE_APP is not on this runner image. Installed Xcodes:"
+            ls -d /Applications/Xcode*.app || true
+            echo "Update XCODE_APP (and the Pods cache key) in this workflow."
+            exit 1
+          fi
           sudo xcode-select -s "$XCODE_APP/Contents/Developer"
           xcodebuild -version
 
@@ -85,6 +101,8 @@ jobs:
       - name: Entitlement check (generated project)
         run: node scripts/check-entitlements.ts --prebuild apps/mobile/ios
 
+      # The key doesn't include FIZZ_LIVE_ACTIVITY: the extension adds no pods today.
+      # Add it if that ever changes.
       - name: Cache CocoaPods
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -126,6 +144,11 @@ jobs:
         run: |
           APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/$IOS_PROJECT.app"
           test -d "$APP" || { echo "::error::$APP not found"; exit 1; }
+          if [ "$FIZZ_LIVE_ACTIVITY" = 1 ] && [ ! -d "$APP/PlugIns/ExpoWidgetsTarget.appex" ]; then
+            echo "::error::FIZZ_LIVE_ACTIVITY=1 but PlugIns/ExpoWidgetsTarget.appex was not embedded"
+            ls "$APP/PlugIns" 2>/dev/null || echo "(no PlugIns directory)"
+            exit 1
+          fi
           echo "APP=$APP" >> "$GITHUB_ENV"
           if [ -d "$APP/Frameworks" ]; then
             find "$APP/Frameworks" -maxdepth 1 \( -name '*.framework' -o -name '*.dylib' \) -print0 |
