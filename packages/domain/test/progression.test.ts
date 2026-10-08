@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EquipmentInstance, Load, ProgressionRule, SetType } from '@fizz/schemas';
-import { calculateNextTargets, type HistorySession, type NextTargetsInput } from '../src/index';
+import { calculateNextTargets, formatLoad, type HistorySession, type NextTargetsInput } from '../src/index';
 import { assisted, barbell, doubleProgression, dumbbells, id, kg, lb, stack, topSetBackoff } from './fixtures';
 
 let sessionN = 700;
@@ -377,6 +377,49 @@ describe('explanations name the prescribed load (review B3)', () => {
       expect(t.loadFeasibility).toBe('infeasible');
       expect(t.explanation.summary).not.toMatch(/40 kg stack and work|Repeat 40/);
     }
+  });
+
+  it("R3: a weighted machine with no achievable loads gets 'no_feasible_load', never \"bodyweight\"", () => {
+    // Reviewer's probe: cable stack with minLoad 100 (stack tops out at 50).
+    const broken = stack({ minLoad: 100 });
+    const cases = [
+      [8, 8, 8], // would have been increase_reps "at bodyweight"
+      [8, 7, 6], // hold path: would have been "Stay at bodyweight"
+      [4, 4, 4], // miss path
+      [], // all skipped
+    ];
+    for (const reps of cases) {
+      const t = calculateNextTargets(input([session(1, broken.id, working(kg(50, 'stack'), reps))], broken, doubleProgression(), { exerciseName: 'Cable row' }));
+      expect(t.decision).toBe('no_feasible_load');
+      expect(t.sets.every((x) => x.load === null)).toBe(true);
+      expect(t.loadFeasibility).toBe('infeasible');
+      expect(t.explanation.summary).toBe(
+        "Cable stack can't make any load with its current min/max settings, so no Cable row target is set. Fix the equipment profile.",
+      );
+      expect(JSON.stringify(t.explanation)).not.toMatch(/bodyweight/);
+    }
+    // No history and a starting load: still no_feasible_load, not insufficient_data at "bodyweight".
+    const fresh = calculateNextTargets(input([], broken, doubleProgression({ startingLoad: kg(40) })));
+    expect(fresh.decision).toBe('no_feasible_load');
+    expect(JSON.stringify(fresh.explanation)).not.toMatch(/bodyweight/);
+  });
+
+  it('R3: a pain flag still wins over infeasible equipment', () => {
+    const broken = stack({ minLoad: 100 });
+    const t = calculateNextTargets(
+      input([session(1, broken.id, working(kg(50, 'stack'), [8, 8, 8]))], broken, doubleProgression(), { pain: { active: true, reportedAtUtc: null } }),
+    );
+    expect(t.decision).toBe('halted_pain');
+    expect(t.sets[0]?.load).toBeNull();
+    expect(JSON.stringify(t.explanation)).not.toMatch(/bodyweight/);
+  });
+
+  it('R3: formatLoad only calls a null load "bodyweight" when the convention is bodyweight', () => {
+    expect(formatLoad(null)).toBe('no load');
+    expect(formatLoad(null, 'stack')).toBe('no load');
+    expect(formatLoad(null, 'per_hand')).toBe('no load');
+    expect(formatLoad(null, 'bodyweight')).toBe('bodyweight');
+    expect(formatLoad(null, 'added')).toBe('bodyweight');
   });
 });
 

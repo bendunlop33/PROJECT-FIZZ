@@ -69,6 +69,8 @@ export type ProgressionDecision =
   | 'reduce_load'
   | 'ceiling_reached'
   | 'halted_pain'
+  /** The equipment can't make any load (e.g. its min is above every position): nothing is prescribed. */
+  | 'no_feasible_load'
   | 'unsupported';
 
 export interface TargetSet {
@@ -123,8 +125,14 @@ interface Ctx {
   infeasible: boolean;
 }
 
-export function formatLoad(load: Load | null): string {
-  if (load === null || load.convention === 'bodyweight') return 'bodyweight';
+/**
+ * Human-readable load. A null load reads as "bodyweight" only when the
+ * convention says so (bodyweight, or weighted bodyweight with nothing added);
+ * otherwise it is "no load", never a bodyweight claim (review R3).
+ */
+export function formatLoad(load: Load | null, convention?: LoadConvention): string {
+  if (load === null) return convention === 'bodyweight' || convention === 'added' ? 'bodyweight' : 'no load';
+  if (load.convention === 'bodyweight') return 'bodyweight';
   const n = `${fromScaled(toScaled(load.value))} ${load.unit}`;
   switch (load.convention) {
     case 'per_hand':
@@ -149,7 +157,7 @@ function asLoad(ctx: Ctx, value: number | null): Load | null {
 }
 
 function fmt(ctx: Ctx, value: number | null): string {
-  return formatLoad(asLoad(ctx, value));
+  return formatLoad(asLoad(ctx, value), ctx.convention);
 }
 
 function pushFact(ctx: Ctx, fact: string): void {
@@ -313,6 +321,19 @@ function reducedLoad(ctx: Ctx, current: number): number | null {
   return ctx.direction === 'resistance' ? Math.max(...easier) : Math.min(...easier);
 }
 
+/** Equipment that can make no load: say so plainly and prescribe nothing (review R3). */
+function noFeasibleLoad(ctx: Ctx, eq: EquipmentInstance | null, criteria: Criteria): PrimaryDecision {
+  ctx.infeasible = true;
+  const eqName = eq?.name ?? 'This equipment';
+  pushFact(ctx, `${eqName} has no achievable loads with its current settings (check its min and max), so no load is prescribed.`);
+  return {
+    decision: 'no_feasible_load',
+    load: null,
+    reps: criteria.repRange,
+    summary: `${eqName} can't make any load with its current min/max settings, so no ${ctx.input.exerciseName} target is set. Fix the equipment profile.`,
+  };
+}
+
 interface PrimaryDecision {
   decision: ProgressionDecision;
   load: number | null;
@@ -370,6 +391,11 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
       reps: criteria.repRange,
       summary: `Progression for ${name} is paused because pain was reported${when}. Targets are not increased.`,
     };
+  }
+
+  const eq = input.equipment;
+  if (eq !== null && ctx.convention !== 'bodyweight' && getAchievableLoads(eq).loads.length === 0) {
+    return noFeasibleLoad(ctx, eq, criteria);
   }
 
   if (!latest) return startingPoint(ctx, criteria, `No comparable ${name} history yet.`);
@@ -444,7 +470,8 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
             `the next available load, ${fmt(ctx, step.next)}, is a bigger jump than the rule allows (${fromScaled(toScaled(step.maxJump))} ${ctx.unit})`,
         );
       case 'no_loads':
-        return repStep(() => `${eqName} has no achievable loads`);
+        // Unreachable: handled before any history is read. Kept so the switch stays exhaustive.
+        return noFeasibleLoad(ctx, input.equipment ?? null, criteria);
     }
   }
 
