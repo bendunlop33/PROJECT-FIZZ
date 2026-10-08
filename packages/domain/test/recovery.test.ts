@@ -74,23 +74,85 @@ describe('recoverSession (cold start)', () => {
     expect(r.state.sets.find((x) => x.id === hang.id)).toMatchObject({ status: 'pending', draft: { durationS: 45 } });
   });
 
-  it('killed during the Log write: retrying with the persisted draft opId commits exactly once', () => {
+  it('killed during the Log write, write landed: the retry is a duplicate', () => {
     const { state } = startFixture();
     const w = setsFor(state, BENCH)[0];
     if (!w) throw new Error('fixture');
     const opId = draftOperationId(w);
-
-    // Case 1: the transaction did not commit; the draft opId is recomputed from persisted state.
-    const beforeWrite = persistAndReload(state);
-    const reopId = draftOperationId(beforeWrite.sets.find((x) => x.id === w.id) ?? w);
-    expect(reopId).toBe(opId);
-    const once = apply(beforeWrite, logCmd(w.id, values(kg(60), 10), 40, reopId));
-    expect(once.sets.filter((x) => x.status === 'completed')).toHaveLength(1);
-
-    // Case 2: the transaction committed; the retry is a duplicate.
     const afterWrite = persistAndReload(apply(state, logCmd(w.id, values(kg(60), 10), 30, opId)));
     const retry = apply(afterWrite, logCmd(w.id, values(kg(60), 10), 40, opId));
     expect(retry).toEqual(afterWrite);
+  });
+});
+
+describe('killed during the Log write, through the service (review nit 2)', () => {
+  async function setup() {
+    const repos = createMemoryRepositories();
+    await repos.profiles.save(profile(), null);
+    for (const eq of [barbell(), stack()]) await repos.equipment.save(eq, null);
+    for (const ex of exercises.values()) await repos.exercises.save(ex, null);
+    const routine = startFixture().input.routine;
+    if (!routine) throw new Error('fixture');
+    await repos.routines.save(routine, null);
+    const svc = createSessionService(repos, idGen());
+    const started = await svc.start({ ownerId: OWNER, gymId: GYM, routineId: id(300), opId: 'start-1', at: at(0) });
+    if (!started.ok) throw new Error('start');
+    const w = setsFor(started.aggregate, BENCH)[0];
+    if (!w) throw new Error('fixture');
+    return { repos, sessionId: started.aggregate.session.id, w };
+  }
+
+  it('the transaction never committed: nothing is saved, and the relaunched retry commits exactly once', async () => {
+    const { repos, sessionId, w } = await setup();
+    const realSave = repos.sessions.save.bind(repos.sessions);
+    let failNext = true;
+    repos.sessions.save = (agg, expected) => {
+      if (failNext) {
+        failNext = false;
+        return Promise.reject(new Error('SQLITE_FULL'));
+      }
+      return realSave(agg, expected);
+    };
+    const opId = draftOperationId(w);
+    const first = await createSessionService(repos, idGen(70_000)).dispatch(sessionId, logCmd(w.id, values(kg(60), 10), 30, opId));
+    expect(first).toMatchObject({ ok: false, error: { code: 'write_failed' } });
+    const stored = await repos.sessions.get(sessionId);
+    expect(stored?.sets.find((x) => x.id === w.id)?.status).toBe('pending');
+    expect(stored?.processedOps[opId]).toBeUndefined();
+
+    // Relaunch: a new service instance recovers, recomputes the opId from what was persisted, and retries.
+    const relaunched = createSessionService(repos, idGen(80_000));
+    const recovered = await relaunched.recover(OWNER, at(35));
+    const persistedSet = recovered?.state.sets.find((x) => x.id === w.id);
+    if (!persistedSet) throw new Error('lost set');
+    expect(draftOperationId(persistedSet)).toBe(opId);
+    const retry = await relaunched.dispatch(sessionId, logCmd(w.id, values(kg(60), 10), 40, draftOperationId(persistedSet)));
+    expect(retry).toMatchObject({ ok: true, duplicate: false });
+    const again = await relaunched.dispatch(sessionId, logCmd(w.id, values(kg(60), 10), 41, opId));
+    expect(again).toMatchObject({ ok: true, duplicate: true, superseded: false });
+    const final = await repos.sessions.get(sessionId);
+    expect(final?.sets.filter((x) => x.status === 'completed')).toHaveLength(1);
+    expect(final?.audit.filter((a) => a.kind === 'logged')).toHaveLength(1);
+  });
+
+  it('the write landed but the app died before the acknowledgement: the retry is a duplicate', async () => {
+    const { repos, sessionId, w } = await setup();
+    const realSave = repos.sessions.save.bind(repos.sessions);
+    let throwAfter = true;
+    repos.sessions.save = async (agg, expected) => {
+      const result = await realSave(agg, expected);
+      if (throwAfter) {
+        throwAfter = false;
+        throw new Error('process killed after commit');
+      }
+      return result;
+    };
+    const opId = draftOperationId(w);
+    const svc = createSessionService(repos, idGen(70_000));
+    expect(await svc.dispatch(sessionId, logCmd(w.id, values(kg(60), 10), 30, opId))).toMatchObject({ ok: false, error: { code: 'write_failed' } });
+    const retry = await svc.dispatch(sessionId, logCmd(w.id, values(kg(60), 10), 40, opId));
+    expect(retry).toMatchObject({ ok: true, duplicate: true, superseded: false });
+    expect((await repos.sessions.get(sessionId))?.sets.filter((x) => x.status === 'completed')).toHaveLength(1);
   });
 });
 
@@ -195,6 +257,58 @@ describe('session service over repository ports', () => {
     const stored = await repos.sessions.get(sessionId);
     expect(stored?.restTimer).toMatchObject({ status: 'expired', endedAtUtc: at(90).utc });
     expect(stored?.processedOps.late).toBeUndefined();
+  });
+
+  it('gives up with write_conflict when the session keeps changing', async () => {
+    const repos = await seed();
+    const svc = createSessionService(repos, idGen());
+    const started = await svc.start(startReq());
+    if (!started.ok) throw new Error('start');
+    let attempts = 0;
+    repos.sessions.save = () => {
+      attempts += 1;
+      return Promise.resolve({ ok: false, error: 'conflict', currentVersion: 99 });
+    };
+    const w = setsFor(started.aggregate, BENCH)[0];
+    const out = await svc.dispatch(started.aggregate.session.id, logCmd(w?.id ?? '', values(kg(60), 10), 30));
+    expect(out).toMatchObject({ ok: false, error: { code: 'write_conflict' } });
+    expect(attempts).toBe(3);
+  });
+
+  it('recover re-reads after a save conflict and returns the newer state', async () => {
+    const repos = await seed();
+    const svc = createSessionService(repos, idGen());
+    const started = await svc.start(startReq());
+    if (!started.ok) throw new Error('start');
+    const sessionId = started.aggregate.session.id;
+    const w = setsFor(started.aggregate, BENCH)[0];
+    if (!w) throw new Error('fixture');
+    await svc.dispatch(sessionId, logCmd(w.id, values(kg(60), 10), 30)); // rest deadline at 90
+    const realSave = repos.sessions.save.bind(repos.sessions);
+    let interfered = false;
+    repos.sessions.save = async (agg, expected) => {
+      if (!interfered) {
+        interfered = true;
+        const current = await repos.sessions.get(sessionId);
+        if (current) await realSave(apply(current, { type: 'pause', at: at(80), opId: 'other' }), current.revision);
+      }
+      return realSave(agg, expected);
+    };
+    const r = await createSessionService(repos, idGen(90_000)).recover(OWNER, at(200));
+    // The other writer paused before the deadline, so the rest did not expire.
+    expect(r?.state.session.pause).not.toBeNull();
+    expect(r?.state.restTimer?.status).toBe('paused');
+  });
+
+  it('a retried start after the workout finished returns that workout, not a new one', async () => {
+    const repos = await seed();
+    const svc = createSessionService(repos, idGen());
+    const started = await svc.start(startReq());
+    if (!started.ok) throw new Error('start');
+    const sessionId = started.aggregate.session.id;
+    await svc.dispatch(sessionId, { type: 'finish', at: at(60), opId: 'f', expectedVersion: 1, endedAt: null });
+    const retry = await svc.start(startReq());
+    expect(retry).toMatchObject({ ok: true, duplicate: true, aggregate: { session: { id: sessionId, status: 'finished' } } });
   });
 
   it('recover returns null when there is no unfinished workout', async () => {

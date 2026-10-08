@@ -6,7 +6,7 @@ import {
   type ValidationIssue,
   type ZonedTimestamp,
 } from '@fizz/schemas';
-import type { Repositories } from './ports';
+import type { Repositories, SaveResult } from './ports';
 import { buildAddExerciseCommand, startWorkout, type StartWarning } from './session/create';
 import { recoverSession, type RecoveryResult } from './session/recovery';
 import { reduceSession, type SessionError, type SessionEvent } from './session/reducer';
@@ -16,7 +16,9 @@ export type ServiceError =
   | { code: 'invalid_command'; message: string; issues: ValidationIssue[] }
   | { code: 'not_found'; message: string }
   | { code: 'session_already_active'; message: string; sessionId: string }
-  | { code: 'write_conflict'; message: string };
+  | { code: 'write_conflict'; message: string }
+  /** Storage threw (e.g. SQLite full or locked). Nothing was committed by us; retry with the same opId. */
+  | { code: 'write_failed'; message: string };
 
 export type CommandOutcome =
   | {
@@ -42,6 +44,20 @@ export interface StartRequest {
 }
 
 const MAX_CONFLICT_RETRIES = 2;
+
+const WRITE_FAILED = {
+  code: 'write_failed',
+  message: "Couldn't save this change. Your entry is still here; try again.",
+} as const;
+
+/** Run a save, turning a thrown storage error into a value. */
+async function trySave(save: () => Promise<SaveResult>): Promise<SaveResult | 'threw'> {
+  try {
+    return await save();
+  } catch {
+    return 'threw';
+  }
+}
 
 /**
  * In-process application service for the active session: validate the
@@ -81,7 +97,8 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       at: req.at,
       newId,
     });
-    const saved = await repos.sessions.save(aggregate, null);
+    const saved = await trySave(() => repos.sessions.save(aggregate, null));
+    if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: { code: 'write_conflict', message: 'Could not create the session.' } };
     return { ok: true, aggregate, warnings, duplicate: false };
   }
@@ -98,13 +115,15 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       if (!result.ok) {
         // Keep any timer expiry observed before the rejection (review M6). A
         // conflict here is harmless: whoever wrote first has caught up too.
-        if (result.state !== current) await repos.sessions.save(result.state, current.revision);
+        if (result.state !== current) await trySave(() => repos.sessions.save(result.state, current.revision));
         return { ok: false, error: result.error };
       }
       if (result.state === current) {
         return { ok: true, aggregate: current, events: result.events, duplicate: result.duplicate, superseded: result.superseded };
       }
-      const saved = await repos.sessions.save(result.state, current.revision);
+      const saved = await trySave(() => repos.sessions.save(result.state, current.revision));
+      // The write may or may not have landed; a retry with the same opId is safe either way.
+      if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
       if (saved.ok) return { ok: true, aggregate: result.state, events: result.events, duplicate: false, superseded: false };
     }
     return { ok: false, error: { code: 'write_conflict', message: 'The workout kept changing; try again.' } };
@@ -131,8 +150,11 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     if (!stored) return null;
     const result = recoverSession(stored, at);
     if (result.state.revision !== stored.revision) {
-      const saved = await repos.sessions.save(result.state, stored.revision);
-      if (!saved.ok) return recoverSession((await repos.sessions.get(stored.session.id)) ?? stored, at);
+      // If storage throws, the caught-up state is still shown; it is re-derived from deadlines on the next read.
+      const saved = await trySave(() => repos.sessions.save(result.state, stored.revision));
+      if (saved !== 'threw' && !saved.ok) {
+        return recoverSession((await repos.sessions.get(stored.session.id)) ?? stored, at);
+      }
     }
     return result;
   }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema } from '@fizz/schemas';
 import {
+  buildExecutionOrder,
   draftOperationId,
   getActiveDurationMs,
   getSessionPhase,
@@ -742,5 +743,47 @@ describe('persistence shape', () => {
     const parsed = SessionAggregateSchema.safeParse(JSON.parse(JSON.stringify(s)));
     expect(parsed.success).toBe(true);
     expect(s.session.gymId).toBe(GYM);
+  });
+
+  it('rejects a persisted set that claims completion without a result (nit 10)', () => {
+    const { state } = startFixture();
+    const bad = { ...state, sets: state.sets.map((x, i) => (i === 0 ? { ...x, status: 'completed' as const } : x)) };
+    expect(SessionAggregateSchema.safeParse(bad).success).toBe(false);
+  });
+});
+
+describe('review test gaps: ordering and staleness', () => {
+  it('set_active_set rejects a stale session version', () => {
+    const { state } = startFixture();
+    const [w, b1] = bench(state);
+    if (!w || !b1) throw new Error('fixture');
+    const s = apply(state, logCmd(w.id, values(kg(60), 10), 30));
+    expectError(reduceSession(s, { type: 'set_active_set', at: at(31), opId: 'sa', setId: b1.id, expectedVersion: 1 }), 'stale_version');
+  });
+
+  it('out-of-order logging wraps around to the first pending set', () => {
+    const { state } = startFixture();
+    const hang = setsFor(state, HANG)[0];
+    const w = bench(state)[0];
+    if (!hang || !w) throw new Error('fixture');
+    let s = apply(state, { type: 'set_active_set', at: at(1), opId: 'sa', setId: hang.id, expectedVersion: 1 });
+    s = apply(s, logCmd(hang.id, values(null, null, { durationS: 40 }), 60));
+    expect(s.session.activeSetId).toBe(w.id);
+    expect(s.restTimer).toMatchObject({ setId: hang.id, status: 'running' });
+  });
+
+  it('superset with uneven set counts: the extra round has a single member and gets a full rest', () => {
+    const { state } = startFixture();
+    const rowEx = state.exercises.find((e) => e.exerciseId === ROW);
+    let s = apply(state, { type: 'add_set', at: at(1), opId: 'as', sessionExerciseId: rowEx?.id ?? '', newSetId: id(33_000), setType: null });
+    const [r1, r2] = setsFor(s, ROW);
+    const [f1, f2] = setsFor(s, FACE);
+    if (!r1 || !r2 || !f1 || !f2) throw new Error('fixture');
+    const benchIds = bench(s).map((x) => x.id);
+    const order = buildExecutionOrder(s.exercises, s.sets).filter((x) => !benchIds.includes(x));
+    expect(order.slice(0, 5)).toEqual([r1.id, f1.id, r2.id, f2.id, id(33_000)]);
+    s = apply(s, { type: 'set_active_set', at: at(2), opId: 'sa', setId: id(33_000), expectedVersion: s.session.version });
+    s = apply(s, logCmd(id(33_000), values(kg(50, 'stack'), 12), 30));
+    expect(s.restTimer).toMatchObject({ kind: 'rest', setId: id(33_000), durationS: 90 });
   });
 });

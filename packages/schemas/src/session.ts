@@ -93,7 +93,11 @@ export const WorkoutSetSchema = z.object({
   flags: z.array(SetFlagSchema),
   edited: z.boolean(),
   version: z.int().min(1),
-});
+}).refine(
+  // A result exists exactly when the set is completed (a deleted tombstone may keep either shape).
+  (s) => s.status === 'deleted' || (s.status === 'completed') === (s.actual !== null && s.completedAt !== null),
+  { message: 'A completed set has an actual result and completion time; other sets have neither', path: ['status'] },
+);
 export type WorkoutSet = z.infer<typeof WorkoutSetSchema>;
 
 export const SessionExerciseSchema = z.object({
