@@ -23,7 +23,8 @@ and modular services so expansion stays possible, but don't build it.
 
 ## Stack (brief §5, current choice and open to revision)
 
-- React Native + Expo **development builds** + TypeScript (iOS target; Expo Go is not a release test)
+- React Native + Expo **SDK 57** (pinned, see ADR 0001) + TypeScript, iOS target; Expo Go is not a release test
+- One custom Swift Expo module owns the iOS audio session (TTS, ducking, interruptions)
 - Local SQLite is the authoritative record; in-process services, no HTTP layer
 - Monorepo, created only as needed:
   - `apps/mobile` — screens, audio, permissions, notifications
@@ -50,16 +51,17 @@ These are the rules reviewers check hardest:
 
 ## Build order (brief §10)
 
-1. Schemas, equipment conventions, service contracts; audio/own-account-AI feasibility spike
-2. Gym profiles, catalogue, manual logging, deterministic targets, local persistence
+1. Schemas, equipment conventions, service contracts; feasibility spikes on Ben's iPhone (audio-session Swift module, rest alerts, on-device speech, ChatGPT-plan sign-in)
+2. Gym profiles, catalogue, manual logging, deterministic targets, local persistence, layered rest alerts (deadline + notification + Live Activity)
 3. FitNotes import preview/commit, export/restore, versioned corrections
 4. Embedded text coach: memory, restricted tools, proposals, undo
-5. Tap-to-talk voice + spoken set cues, then optional Realtime
+5. On-device tap-to-talk voice + spoken set cues; Realtime only by later explicit decision
 6. Programme/calendar adaptation, permitted endurance imports
-7. Native polish: Live Activity, lock-screen timers, accessibility; HealthKit/Watch later
+7. Native polish: accessibility, optional AlarmKit/background-audio modes; HealthKit/Watch later
 
 First design milestone: Today → Active set → Rest → Summary working end-to-end
-on a real iPhone, with force-close recovery.
+on a real iPhone, with force-close recovery and reliable rest alerts.
+Approved brief amendments are summarised at the top of the brief (v0.2).
 
 ## Agent team and handoffs
 

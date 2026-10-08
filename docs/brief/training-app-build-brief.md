@@ -2,6 +2,15 @@
 
 Prepared and extended 8 October 2026. Research and implementation specification; no app has been built or connected to accounts. Findings reflect public documentation, not hands-on testing. Proposed advantages are hypotheses to validate, not proven superior training outcomes. Sections below define proposed application functions, not existing product APIs.
 
+> **Brief v0.2: approved amendments (8 October 2026).** These override the text below where they conflict. Details: `docs/brief/CHANGELOG.md`.
+> - Rest alerts (persisted deadline, local notification, Live Activity countdown, optional AlarmKit loud mode) move into the first milestone instead of native polish.
+> - The designer's workflow proposals P1–P12 (`docs/design/flow-first-milestone.md` §7) are adopted.
+> - AI: one shared OpenAI Responses adapter for the ChatGPT-plan and personal-key routes. ChatGPT-plan use on iPhone is unproven until the sign-in test passes. Claude subscriptions can't be used; Claude means a separately billed API key.
+> - Voice: the first release is on-device (Apple speech recognition plus spoken replies). `parseSpokenSet` is a deterministic parser in `packages/domain`. Realtime/GPT-Live becomes a later, explicit decision.
+> - Platform: stay on React Native + Expo, pinned to SDK 57 (ADR 0001). A small custom Swift module owns the iOS audio session. Background spoken cues are an opt-in experiment, not a promise.
+> - FitNotes: confirm which app (Android original or FitNotes 2 for iOS) and use a real export. RPE is not expected as a column.
+> - **Open:** how the app gets onto the iPhone (paid Apple Developer Program or a free route). Research is in progress in `docs/research/free-ios-install.md`.
+
 ## Product goal
 
 Build for Ben's personal use initially: one iPhone-friendly app that combines fast strength logging, an embedded coach with text and spoken conversation, durable training history, progression rules, saved gym/equipment profiles, and endurance context. Prioritise eligible access through Ben's own ChatGPT account; a personally funded API route is optional. Import his FitNotes history. Support Garmin/Strava only through verified, permitted routes. Keep logging functional without AI access.
