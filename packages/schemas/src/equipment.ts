@@ -1,0 +1,136 @@
+import { z } from 'zod';
+import {
+  IdSchema,
+  RecordMetaSchema,
+  UtcTimestampSchema,
+  WeightUnitSchema,
+} from './common';
+
+const positiveMass = z.number().positive();
+
+/** Plates of one mass. `count` is the number of physical plates, not pairs. */
+export const PlateCountSchema = z.object({
+  mass: positiveMass,
+  count: z.int().min(0).max(200),
+});
+export type PlateCount = z.infer<typeof PlateCountSchema>;
+
+function uniqueAscending(values: readonly number[]): boolean {
+  for (let i = 1; i < values.length; i += 1) {
+    const prev = values[i - 1];
+    const cur = values[i];
+    if (prev === undefined || cur === undefined || cur <= prev) return false;
+  }
+  return true;
+}
+
+const loadList = z
+  .array(positiveMass)
+  .min(1)
+  .max(500)
+  .refine(uniqueAscending, { message: 'Loads must be unique and ascending' });
+
+const plateList = z
+  .array(PlateCountSchema)
+  .max(50)
+  .refine((ps) => new Set(ps.map((p) => p.mass)).size === ps.length, {
+    message: 'Each plate mass appears once',
+  });
+
+const equipmentCommon = RecordMetaSchema.extend({
+  gymId: IdSchema,
+  name: z.string().min(1).max(120),
+  make: z.string().max(120).optional(),
+  model: z.string().max(120).optional(),
+  station: z.string().max(120).optional(),
+  /** Unit of every number on this equipment instance. */
+  unit: WeightUnitSchema,
+  /** Movement/exercise tags used for compatibility and substitution. */
+  movementTags: z.array(z.string().min(1).max(60)).max(50),
+  /** Optional lower bound below the physical minimum (e.g. user preference). */
+  minLoad: z.number().nonnegative().optional(),
+  /** Hard ceiling. Targets never exceed this (CLAUDE.md rule 4). */
+  maxLoad: z.number().positive().optional(),
+  /** Permanent availability. Temporary "busy today" lives on the session. */
+  availability: z.enum(['available', 'retired']),
+  notes: z.string().max(2000).optional(),
+});
+
+export const BarbellSchema = equipmentCommon.extend({
+  kind: z.literal('barbell'),
+  loadConvention: z.literal('total'),
+  barMass: z.number().nonnegative(),
+  plates: plateList,
+});
+
+export const PlateLoadedMachineSchema = equipmentCommon.extend({
+  kind: z.literal('plate_loaded_machine'),
+  /** Plates added only. This never claims the true resistance of the machine. */
+  loadConvention: z.literal('added'),
+  /** 2 = plates must be balanced across two horns; 1 = single horn. */
+  loadingSides: z.union([z.literal(1), z.literal(2)]),
+  plates: plateList,
+});
+
+export const DumbbellRackSchema = equipmentCommon.extend({
+  kind: z.literal('dumbbells'),
+  loadConvention: z.literal('per_hand'),
+  /** Every dumbbell mass present in the rack, per hand, ascending. */
+  loads: loadList,
+});
+
+export const WeightStackSchema = equipmentCommon.extend({
+  kind: z.literal('weight_stack'),
+  loadConvention: z.literal('stack'),
+  /** Selectable pin positions as printed on the stack, ascending. */
+  stackLoads: loadList,
+  /** Optional add-on weights (each usable at most once), e.g. a 2.5 magnet. */
+  addOns: z.array(positiveMass).max(5),
+});
+
+export const AssistedStackSchema = equipmentCommon.extend({
+  kind: z.literal('assisted_stack'),
+  /** Larger number = more assistance = easier. */
+  loadConvention: z.literal('assistance'),
+  assistanceLoads: loadList,
+});
+
+export const BodyweightStationSchema = equipmentCommon.extend({
+  kind: z.literal('bodyweight_station'),
+  loadConvention: z.literal('bodyweight'),
+});
+
+export const EquipmentInstanceSchema = z
+  .discriminatedUnion('kind', [
+    BarbellSchema,
+    PlateLoadedMachineSchema,
+    DumbbellRackSchema,
+    WeightStackSchema,
+    AssistedStackSchema,
+    BodyweightStationSchema,
+  ])
+  .superRefine((eq, ctx) => {
+    if (eq.minLoad !== undefined && eq.maxLoad !== undefined && eq.minLoad > eq.maxLoad) {
+      ctx.addIssue({ code: 'custom', message: 'minLoad must be <= maxLoad', path: ['minLoad'] });
+    }
+    if (eq.kind === 'barbell' && eq.maxLoad !== undefined && eq.maxLoad < eq.barMass) {
+      ctx.addIssue({ code: 'custom', message: 'maxLoad is below the bar mass', path: ['maxLoad'] });
+    }
+  });
+export type EquipmentInstance = z.infer<typeof EquipmentInstanceSchema>;
+export type EquipmentKind = EquipmentInstance['kind'];
+export type Barbell = z.infer<typeof BarbellSchema>;
+export type PlateLoadedMachine = z.infer<typeof PlateLoadedMachineSchema>;
+export type DumbbellRack = z.infer<typeof DumbbellRackSchema>;
+export type WeightStack = z.infer<typeof WeightStackSchema>;
+export type AssistedStack = z.infer<typeof AssistedStackSchema>;
+export type BodyweightStation = z.infer<typeof BodyweightStationSchema>;
+
+export const GymSchema = RecordMetaSchema.extend({
+  name: z.string().min(1).max(120),
+  locationLabel: z.string().max(200).optional(),
+  isDefault: z.boolean(),
+  notes: z.string().max(2000).optional(),
+  archivedAtUtc: UtcTimestampSchema.optional(),
+});
+export type Gym = z.infer<typeof GymSchema>;
