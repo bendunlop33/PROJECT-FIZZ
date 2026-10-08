@@ -6,6 +6,7 @@ import type {
   PlateCount,
   WeightUnit,
 } from '@fizz/schemas';
+import { stableStringify } from './stable';
 import { convertMass, fromScaled, toScaled } from './units';
 
 /**
@@ -54,40 +55,94 @@ function bounded(eq: EquipmentInstance, scaled: Iterable<number>, physicalMin: n
     .map(fromScaled);
 }
 
+/** Last element matching `pred`, scanning from the end (ES2022 has no `findLast`). */
+function findLastAscending(values: readonly number[], pred: (v: number) => boolean): number | undefined {
+  for (let i = values.length - 1; i >= 0; i -= 1) {
+    const v = values[i];
+    if (v !== undefined && pred(v)) return v;
+  }
+  return undefined;
+}
+
+interface CachedLoads {
+  achievable: AchievableLoads;
+  /** Same loads as scaled integers, ascending. */
+  scaled: number[];
+  scaledSet: Set<number>;
+}
+
 /**
- * Finite list of loads the equipment can actually produce, bounded by its
- * min/max. Never extrapolates beyond inventory or a machine's maximum.
+ * Small cache of computed load lists. The key is the equipment's full content
+ * (not only `id` + `version`), so an instance edited without a version bump can
+ * never be served a stale list: a stale list could put a target above a new max.
  */
-export function getAchievableLoads(eq: EquipmentInstance): AchievableLoads {
-  const base = {
-    equipmentId: eq.id,
-    unit: eq.unit,
-    convention: eq.loadConvention,
-    direction: loadDirection(eq.loadConvention),
-  };
+const CACHE_LIMIT = 64;
+const loadCache = new Map<string, CachedLoads>();
+
+function computeLoads(eq: EquipmentInstance): number[] {
   switch (eq.kind) {
     case 'barbell': {
       const bar = toScaled(eq.barMass);
       const sums = boundedSubsetSums(plateUnits(eq.plates, 2));
-      return { ...base, loads: bounded(eq, [...sums].map((s) => s + bar), bar) };
+      return bounded(eq, [...sums].map((s) => s + bar), bar);
     }
     case 'plate_loaded_machine': {
       const sums = boundedSubsetSums(plateUnits(eq.plates, eq.loadingSides));
-      return { ...base, loads: bounded(eq, sums, 0) };
+      return bounded(eq, sums, 0);
     }
     case 'dumbbells':
-      return { ...base, loads: bounded(eq, eq.loads.map(toScaled), 0) };
+      return bounded(eq, eq.loads.map(toScaled), 0);
     case 'weight_stack': {
       const addOnSums = boundedSubsetSums(eq.addOns.map((a) => ({ scaled: toScaled(a), maxUses: 1 })));
       const all: number[] = [];
       for (const s of eq.stackLoads) for (const a of addOnSums) all.push(toScaled(s) + a);
-      return { ...base, loads: bounded(eq, all, 0) };
+      return bounded(eq, all, 0);
     }
     case 'assisted_stack':
-      return { ...base, loads: bounded(eq, eq.assistanceLoads.map(toScaled), 0) };
+      return bounded(eq, eq.assistanceLoads.map(toScaled), 0);
     case 'bodyweight_station':
-      return { ...base, loads: [] };
+      return [];
   }
+}
+
+function cachedLoads(eq: EquipmentInstance): CachedLoads {
+  const key = stableStringify(eq);
+  const hit = loadCache.get(key);
+  if (hit) {
+    // Refresh recency so the active session's equipment stays cached.
+    loadCache.delete(key);
+    loadCache.set(key, hit);
+    return hit;
+  }
+  const loads = computeLoads(eq);
+  const scaled = loads.map(toScaled);
+  const entry: CachedLoads = {
+    achievable: {
+      equipmentId: eq.id,
+      unit: eq.unit,
+      convention: eq.loadConvention,
+      direction: loadDirection(eq.loadConvention),
+      loads,
+    },
+    scaled,
+    scaledSet: new Set(scaled),
+  };
+  loadCache.set(key, entry);
+  if (loadCache.size > CACHE_LIMIT) {
+    const oldest = loadCache.keys().next().value;
+    if (oldest !== undefined) loadCache.delete(oldest);
+  }
+  return entry;
+}
+
+/**
+ * Finite list of loads the equipment can actually produce, bounded by its
+ * min/max. Never extrapolates beyond inventory or a machine's maximum.
+ * Memoised by equipment content; callers get their own copy of the list.
+ */
+export function getAchievableLoads(eq: EquipmentInstance): AchievableLoads {
+  const { achievable } = cachedLoads(eq);
+  return { ...achievable, loads: [...achievable.loads] };
 }
 
 /** `up`/`down`/`nearest` act on the number. `easier`/`harder` respect the load direction. */
@@ -129,8 +184,7 @@ export function roundToAvailableLoad(
   if (target.convention !== eq.loadConvention) {
     return { ok: false, reason: 'convention_mismatch', expected: eq.loadConvention, received: target.convention };
   }
-  const achievable = getAchievableLoads(eq);
-  const scaledLoads = achievable.loads.map(toScaled);
+  const { achievable, scaled: scaledLoads, scaledSet } = cachedLoads(eq);
   const first = scaledLoads[0];
   const last = scaledLoads[scaledLoads.length - 1];
   if (first === undefined || last === undefined) return { ok: false, reason: 'no_achievable_loads' };
@@ -139,7 +193,7 @@ export function roundToAvailableLoad(
   const requested = toScaled(converted ? converted.value : target.value);
   const mode = numericPolicy(policy, achievable.direction);
 
-  const exactHit = scaledLoads.includes(requested);
+  const exactHit = scaledSet.has(requested);
   let chosen: number;
   let boundedTo: 'min' | 'max' | null = null;
   if (exactHit) {
@@ -152,7 +206,7 @@ export function roundToAvailableLoad(
     boundedTo = 'min';
   } else {
     const above = scaledLoads.find((s) => s > requested) ?? last;
-    const below = [...scaledLoads].reverse().find((s) => s < requested) ?? first;
+    const below = findLastAscending(scaledLoads, (s) => s < requested) ?? first;
     if (mode === 'up') chosen = above;
     else if (mode === 'down') chosen = below;
     else {
@@ -175,7 +229,7 @@ export function roundToAvailableLoad(
 export function isLoadAchievable(load: Load, eq: EquipmentInstance): boolean {
   if (load.convention !== eq.loadConvention || load.unit !== eq.unit) return false;
   if (eq.kind === 'bodyweight_station') return load.value === 0;
-  return getAchievableLoads(eq).loads.some((l) => toScaled(l) === toScaled(load.value));
+  return cachedLoads(eq).scaledSet.has(toScaled(load.value));
 }
 
 export type StepResult =
@@ -188,14 +242,14 @@ export type StepResult =
  * `increase` means more assistance (easier); the UI labels it so.
  */
 export function stepLoad(current: number, eq: EquipmentInstance, step: 'increase' | 'decrease'): StepResult {
-  const loads = getAchievableLoads(eq).loads.map(toScaled);
+  const loads = cachedLoads(eq).scaled;
   if (loads.length === 0) return { ok: false, reason: 'no_achievable_loads' };
   const cur = toScaled(current);
   if (step === 'increase') {
     const next = loads.find((l) => l > cur);
     return next === undefined ? { ok: false, reason: 'at_max' } : { ok: true, value: fromScaled(next) };
   }
-  const prev = [...loads].reverse().find((l) => l < cur);
+  const prev = findLastAscending(loads, (l) => l < cur);
   return prev === undefined ? { ok: false, reason: 'at_min' } : { ok: true, value: fromScaled(prev) };
 }
 
@@ -226,8 +280,8 @@ export function buildPlateSetup(totalLoad: Mass, eq: EquipmentInstance): PlateSe
     return { ok: false, reason: 'not_plate_loaded', nearestBelow: null, nearestAbove: null };
   }
   const requested = toScaled(convertMass(totalLoad, eq.unit).value);
-  const loads = getAchievableLoads(eq).loads.map(toScaled);
-  const nearestBelow = [...loads].reverse().find((l) => l <= requested);
+  const loads = cachedLoads(eq).scaled;
+  const nearestBelow = findLastAscending(loads, (l) => l <= requested);
   const nearestAbove = loads.find((l) => l >= requested);
   const near = {
     nearestBelow: nearestBelow === undefined ? null : fromScaled(nearestBelow),

@@ -259,3 +259,71 @@ describe('buildPlateSetup', () => {
     expect(buildPlateSetup({ value: 20, unit: 'kg' }, dumbbells())).toMatchObject({ ok: false, reason: 'not_plate_loaded' });
   });
 });
+
+describe('memoised achievable loads (review M8)', () => {
+  // A realistic commercial inventory: 10 plate sizes, 40 of each.
+  const commercial = () =>
+    barbell({
+      plates: [25, 20, 15, 10, 5, 2.5, 2, 1.25, 1, 0.5].map((mass) => ({ mass, count: 40 })),
+    });
+
+  it('a content change is never served a stale list, even with the same id and version', () => {
+    const before = dumbbells();
+    const after = dumbbells({ loads: [5, 10, 15, 20] });
+    expect(before.id).toBe(after.id);
+    expect(before.version).toBe(after.version);
+    expect(getAchievableLoads(before).loads.at(-1)).toBe(30);
+    expect(getAchievableLoads(after).loads.at(-1)).toBe(20);
+    expect(stepLoad(20, after, 'increase')).toEqual({ ok: false, reason: 'at_max' });
+    expect(isLoadAchievable(kg(30, 'per_hand'), after)).toBe(false);
+  });
+
+  it('callers get their own copy; mutating it does not poison the cache', () => {
+    const eq = barbell();
+    const first = getAchievableLoads(eq);
+    first.loads.push(999);
+    expect(getAchievableLoads(eq).loads).not.toContain(999);
+    expect(stepLoad(187.5, eq, 'increase')).toEqual({ ok: false, reason: 'at_max' });
+  });
+
+  it('stepper taps on a large inventory stay cheap (was ~5 ms per call before memoising)', () => {
+    const eq = commercial();
+    stepLoad(100, eq, 'increase'); // warm the cache
+    const t0 = performance.now();
+    for (let i = 0; i < 1000; i += 1) {
+      stepLoad(100 + (i % 50), eq, i % 2 === 0 ? 'increase' : 'decrease');
+      isLoadAchievable(kg(100 + (i % 50)), eq);
+    }
+    // Generous bound so slow CI machines don't flake; without the cache this takes seconds.
+    expect(performance.now() - t0).toBeLessThan(500);
+  });
+});
+
+describe('review test gaps: bounds and units', () => {
+  it('weight stack with add-ons AND a maxLoad never exceeds the max', () => {
+    const eq = stack({ addOns: [2.5], maxLoad: 45 });
+    const a = getAchievableLoads(eq);
+    expect(a.loads.at(-1)).toBe(45);
+    expect(a.loads).toContain(42.5);
+    expect(a.loads).not.toContain(47.5);
+    expect(roundToAvailableLoad(kg(50, 'stack'), eq, 'harder')).toMatchObject({ ok: true, load: { value: 45 }, bounded: 'max' });
+    expect(stepLoad(45, eq, 'increase')).toEqual({ ok: false, reason: 'at_max' });
+  });
+
+  it('assisted machine honours minLoad and maxLoad', () => {
+    const eq = assisted({ minLoad: 10, maxLoad: 30 });
+    expect(getAchievableLoads(eq).loads).toEqual([10, 15, 20, 25, 30]);
+    // Harder = less assistance, but never below the configured minimum.
+    expect(roundToAvailableLoad(kg(5, 'assistance'), eq, 'harder')).toMatchObject({ ok: true, load: { value: 10 }, bounded: 'min' });
+    expect(roundToAvailableLoad(kg(40, 'assistance'), eq, 'easier')).toMatchObject({ ok: true, load: { value: 30 }, bounded: 'max' });
+  });
+
+  it('lb dumbbells stay in lb; a kg request is converted explicitly', () => {
+    const eq = dumbbells({ unit: 'lb', loads: [10, 15, 20, 25, 30, 35, 40, 45, 50] });
+    expect(getAchievableLoads(eq).unit).toBe('lb');
+    expect(isLoadAchievable(lb(25, 'per_hand'), eq)).toBe(true);
+    expect(isLoadAchievable(kg(25, 'per_hand'), eq)).toBe(false);
+    const r = roundToAvailableLoad(kg(20, 'per_hand'), eq, 'easier'); // 44.09 lb
+    expect(r).toMatchObject({ ok: true, load: { value: 40, unit: 'lb', convention: 'per_hand' }, exact: false });
+  });
+});
