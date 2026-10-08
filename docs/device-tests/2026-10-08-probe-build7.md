@@ -21,3 +21,12 @@
 | ChatGPT sign-in (S1) | NOT IMPLEMENTED | |
 
 **Also observed:** SideStore appended the team suffix to the bundle ID (`com.projectfizz.fizz.<TEAMID>`). It stays stable as long as the same Apple ID and SideStore are used (ADR 0004).
+
+## Next build: retest list
+Install over the top with SideStore (never delete the app), then:
+1. Run **Live Activity** first, and lock the phone to look for the countdown.
+2. Then run **App Group** again.
+3. Run **AlarmKit → Request permission**.
+4. Run **Spoken cue while locked** (this build includes the background-audio experiment).
+5. Run **Speech recognition** again (now using the device locale).
+6. Export the results and paste them back.
