@@ -8,6 +8,7 @@ import {
   formatReport,
   initialResults,
   mergeNewer,
+  parseAudioTally,
   recordAudioEvent,
   recordResult,
   restoreResults,
@@ -68,13 +69,38 @@ describe('probe model', () => {
   });
 
   it('logs audio events with timestamps, counting all but keeping the latest', () => {
-    let r = recordAudioEvent(initialResults(), 'interruption began', T0);
-    expect(r.audio_events).toMatchObject({ status: 'pass', summary: '1 event received (latest 1 listed)' });
+    let r = recordAudioEvent(initialResults(), { kind: 'interruption', type: 'began', shouldResume: false }, T0);
     expect(r.audio_events.details).toEqual(['2026-10-08T09:00:00.000Z interruption began']);
-    for (let i = 0; i < 30; i++) r = recordAudioEvent(r, `route change ${i}`, T0 + i);
-    expect(r.audio_events.summary).toBe(`31 events received (latest ${MAX_AUDIO_EVENTS} listed)`);
+    for (let i = 0; i < 30; i++) r = recordAudioEvent(r, { kind: 'route_change', reason: `r${i}`, outputs: [] }, T0 + i);
+    expect(r.audio_events.summary).toMatch(/^Interruptions: 1 began, 0 ended; route changes: 30\./);
     expect(r.audio_events.details).toHaveLength(MAX_AUDIO_EVENTS);
-    expect(r.audio_events.details.at(-1)).toMatch(/route change 29$/);
+    expect(r.audio_events.details.at(-1)).toMatch(/route change: r29; outputs none$/);
+  });
+
+  it('passes audio events only once an interruption has begun and ended (review F1)', () => {
+    let r = recordAudioEvent(initialResults(), { kind: 'route_change', reason: 'categoryChange', outputs: ['Speaker'] }, T0);
+    expect(r.audio_events.status).toBe('needs_check');
+    expect(r.audio_events.summary).toContain('No complete interruption yet');
+    r = recordAudioEvent(r, { kind: 'interruption', type: 'began', shouldResume: false }, T0 + 1);
+    expect(r.audio_events.status).toBe('needs_check');
+    r = recordAudioEvent(r, { kind: 'interruption', type: 'ended', shouldResume: true }, T0 + 2);
+    expect(r.audio_events).toMatchObject({
+      status: 'pass',
+      summary: 'Interruptions: 1 began, 1 ended; route changes: 1. Interruption observed from start to end',
+    });
+    expect(r.audio_events.details.at(-1)).toMatch(/interruption ended \(shouldResume true\)$/);
+    // A later route change keeps the pass and the tally.
+    r = recordAudioEvent(r, { kind: 'route_change', reason: 'oldDeviceUnavailable', outputs: [] }, T0 + 3);
+    expect(r.audio_events.status).toBe('pass');
+    expect(parseAudioTally(r.audio_events.summary)).toEqual({ began: 1, ended: 1, routeChanges: 2 });
+  });
+
+  it('starts a fresh tally from an older build\'s audio row', () => {
+    const old = recordResult(initialResults(), 'audio_events', { status: 'pass', summary: '3 events received (latest 3 listed)', details: ['x'] }, T0);
+    const r = recordAudioEvent(old, { kind: 'interruption', type: 'ended', shouldResume: false }, T0 + 1);
+    expect(r.audio_events.status).toBe('needs_check');
+    expect(parseAudioTally(r.audio_events.summary)).toEqual({ began: 0, ended: 1, routeChanges: 0 });
+    expect(r.audio_events.details).toHaveLength(2);
   });
 
   it('exports a text report with timestamps, statuses and totals', () => {

@@ -8,10 +8,12 @@ import {
   STATUS_LABEL,
   appendDetail,
   confirmObservation,
+  describeAudioEvent,
   recordAudioEvent,
   formatReport,
   recordResult,
   toUtcIso,
+  type AudioEvent,
   type ProbeId,
   type ProbeStatus,
   type ResultUpdate,
@@ -104,17 +106,17 @@ export function CapabilityProbeScreen({ onBack }: Props) {
   const audioEvents = useRef<{ atMs: number; line: string }[]>([]);
   useEffect(() => {
     if (AudioCoach === null) return;
-    const log = (line: string) => {
+    const log = (event: AudioEvent) => {
       const atMs = nowMs();
-      audioEvents.current = [...audioEvents.current, { atMs, line }].slice(-50);
-      updateResults((r) => recordAudioEvent(r, line, atMs));
+      audioEvents.current = [...audioEvents.current, { atMs, line: describeAudioEvent(event) }].slice(-50);
+      updateResults((r) => recordAudioEvent(r, event, atMs));
     };
     const subs = [
       AudioCoach.addListener('onInterruption', (e) => {
-        log(`interruption ${e.type}${e.type === 'ended' ? ` (shouldResume ${String(e.shouldResume)})` : ''}`);
+        log({ kind: 'interruption', type: e.type, shouldResume: e.shouldResume });
       }),
       AudioCoach.addListener('onRouteChange', (e) => {
-        log(`route change: ${e.reason}; outputs ${e.outputs.join(', ') || 'none'}`);
+        log({ kind: 'route_change', reason: e.reason, outputs: e.outputs });
       }),
     ];
     return () => {

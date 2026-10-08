@@ -111,7 +111,7 @@ export const PROBES: readonly ProbeDefinition[] = [
     ref: 'S7',
     title: 'Audio interruptions and route changes (audio-coach events)',
     howTo:
-      'No Run needed: logged while this screen is open. During a Ducking or Locked cue, try disconnecting AirPods, taking a call or invoking Siri.',
+      'No Run needed: logged while this screen is open. PASS needs an interruption that begins and ends: take a call or invoke Siri (during a Ducking or Locked cue if you can). Disconnecting AirPods logs a route change.',
   },
   {
     id: 'locked_cue',
@@ -208,19 +208,64 @@ export function appendDetail(results: ProbeResults, id: ProbeId, line: string, n
 /** Most recent audio events kept in the report. */
 export const MAX_AUDIO_EVENTS = 20;
 
+/** An audio-coach event, as received from the native module. */
+export type AudioEvent =
+  | { kind: 'interruption'; type: 'began' | 'ended'; shouldResume: boolean }
+  | { kind: 'route_change'; reason: string; outputs: readonly string[] };
+
+export interface AudioEventTally {
+  began: number;
+  ended: number;
+  routeChanges: number;
+}
+
+const TALLY_PATTERN = /^Interruptions: (\d+) began, (\d+) ended; route changes: (\d+)/;
+
+/** Reads the running tally back from the row's summary (zero if it has none, e.g. an older build's row). */
+export function parseAudioTally(summary: string): AudioEventTally {
+  const m = TALLY_PATTERN.exec(summary);
+  return m === null
+    ? { began: 0, ended: 0, routeChanges: 0 }
+    : { began: Number(m[1]), ended: Number(m[2]), routeChanges: Number(m[3]) };
+}
+
+export function describeAudioEvent(e: AudioEvent): string {
+  return e.kind === 'interruption'
+    ? `interruption ${e.type}${e.type === 'ended' ? ` (shouldResume ${String(e.shouldResume)})` : ''}`
+    : `route change: ${e.reason}; outputs ${e.outputs.join(', ') || 'none'}`;
+}
+
 /**
- * Logs an audio-coach interruption or route-change event. Receiving one shows
- * the module's observers fire, which is what "pass" means for this row.
+ * Logs an audio-coach interruption or route-change event (review F1). PASS
+ * needs a complete interruption (began and ended) to have been observed: that
+ * is what the row exists to test. Route changes alone (the probe's own
+ * category changes cause some) show the observers fire, but leave the row at
+ * NEEDS CHECK with a hint.
  */
-export function recordAudioEvent(results: ProbeResults, line: string, nowMs: number): ProbeResults {
+export function recordAudioEvent(results: ProbeResults, event: AudioEvent, nowMs: number): ProbeResults {
   const current = results.audio_events;
-  const previous = current.status === 'pass' ? current.details : [];
-  const details = [...previous, `${toUtcIso(nowMs)} ${line}`].slice(-MAX_AUDIO_EVENTS);
-  const total = (current.status === 'pass' ? Number(/^(\d+) /.exec(current.summary)?.[1] ?? 0) : 0) + 1;
+  const keep = current.status === 'pass' || current.status === 'needs_check';
+  const previous = keep ? current.details : [];
+  const tally = keep ? parseAudioTally(current.summary) : { began: 0, ended: 0, routeChanges: 0 };
+  if (event.kind === 'interruption') {
+    if (event.type === 'began') tally.began += 1;
+    else tally.ended += 1;
+  } else {
+    tally.routeChanges += 1;
+  }
+  const details = [...previous, `${toUtcIso(nowMs)} ${describeAudioEvent(event)}`].slice(-MAX_AUDIO_EVENTS);
+  const counts = `Interruptions: ${tally.began} began, ${tally.ended} ended; route changes: ${tally.routeChanges}`;
+  const complete = tally.began > 0 && tally.ended > 0;
   return recordResult(
     results,
     'audio_events',
-    { status: 'pass', summary: `${total} event${total === 1 ? '' : 's'} received (latest ${Math.min(total, MAX_AUDIO_EVENTS)} listed)`, details },
+    {
+      status: complete ? 'pass' : 'needs_check',
+      summary: complete
+        ? `${counts}. Interruption observed from start to end`
+        : `${counts}. No complete interruption yet: take a call or invoke Siri while this screen is open`,
+      details,
+    },
     nowMs,
   );
 }

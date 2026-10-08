@@ -16,6 +16,10 @@ import { getProbeValue, putProbeValue } from './runners';
  *
  * Writes are serialised so an older snapshot can never land after a newer
  * one. A failed write is shown on screen (persistError), never hidden.
+ *
+ * If the saved results can't be read, nothing is written until a later read
+ * succeeds (review F6): the saved copy may still be fine, and writing this
+ * launch's results would overwrite it. The next mount retries the read.
  */
 
 export interface ProbeStoreState {
@@ -32,6 +36,11 @@ let state: ProbeStoreState = { results: initialResults(), loaded: false, loadIss
 const listeners = new Set<() => void>();
 let writeChain: Promise<void> = Promise.resolve();
 let loadPromise: Promise<void> | null = null;
+/** True from a failed read until a read succeeds; blocks writes meanwhile. */
+let readFailed = false;
+
+export const NOT_SAVING_UNTIL_READ =
+  'the saved results could not be read, and saving now would overwrite them. Leave and reopen this screen to retry';
 
 function setState(next: ProbeStoreState) {
   state = next;
@@ -72,31 +81,38 @@ export function updateResults(fn: (r: ProbeResults) => ProbeResults): void {
   if (next === state.results) return;
   setState({ ...state, results: next });
   // Don't write before the saved results are merged in, or they'd be overwritten.
-  if (state.loaded) persist(next);
+  if (state.loaded && !readFailed) persist(next);
 }
 
-/** Reads the saved results once per launch. Safe to call on every mount. */
+/**
+ * Reads the saved results once per launch. Safe to call on every mount: after
+ * a successful read it's a no-op; after a failed read it tries again.
+ */
 export function loadSavedResults(): Promise<void> {
   loadPromise ??= (async () => {
-    let stored: string | null = null;
-    let readError: string | null = null;
+    let stored: string | null;
     try {
       stored = await getProbeValue(PROBE_RESULTS_KEY);
     } catch (e) {
-      readError = `Could not read saved results: ${errorText(e)}`;
+      readFailed = true;
+      loadPromise = null;
+      // loaded: the screen stays usable; results are kept in memory only.
+      setState({
+        ...state,
+        loaded: true,
+        loadIssues: [`Could not read saved results: ${errorText(e)}`],
+        persistError: NOT_SAVING_UNTIL_READ,
+      });
+      return;
     }
+    readFailed = false;
     const restored = restoreResults(stored);
     // Anything recorded in this launch before the load finished is newer.
     const results = mergeNewer(restored.results, state.results);
-    setState({
-      ...state,
-      results,
-      loaded: true,
-      loadIssues: readError === null ? restored.issues : [readError, ...restored.issues],
-    });
+    setState({ ...state, results, loaded: true, loadIssues: restored.issues });
     // Write back the validated, merged form (drops bad rows, records interrupted
-    // runs). Not after a read error: the saved copy may still be fine.
-    if (readError === null) persist(results);
+    // runs, and saves anything recorded while a read was failing).
+    persist(results);
   })();
   return loadPromise;
 }
