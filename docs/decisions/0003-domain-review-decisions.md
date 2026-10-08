@@ -86,3 +86,47 @@ S1 and S3 change product behaviour described in the brief and flow spec. They ne
   - Per-plate units (kg bar with lb plates; nit 7)
   - Validating aggregates read by the SQLite adapter (nit 8)
   - With no equipment, a rule's `loadIncrement` in another unit is still converted approximately (e.g. 2.5 kg → 5.51 lb) and marked `unchecked`
+
+## Re-review decisions (2026-10-08)
+
+Implements the "Re-review after fixes" section of `docs/reviews/domain-core.md` (R1–R4, minors 1–8, spec issues S8 and S9). Product decisions are from the product manager; implementation choices are the developer's.
+
+### Product decisions
+
+- **R1 / S9. Duration with corrected times.** The session stores every pause as a closed interval (`session.pauses: {startUtc, endUtc}[]`, plus the open `pause`), never just a running total. `pausedTotalMs` is removed. Active duration = (end − start) − the paused time that overlaps the current `[startedAt, endedAt]` window. Pauses fully outside the window are ignored; partial overlaps are clipped. The stored intervals are the unclipped originals, and `timingAudit` keeps the original start and end, so any later correction can be recomputed from the original record.
+- **R2 / S8. Stop while paused.** `stop_work_interval` is allowed while the session is paused. The interval ends at the moment the pause began (elapsed = pause start − interval start − earlier paused time), so paused time is never counted as work. Stop does not resume the workout. The stale card's Stop → Finish path now completes.
+- **R3. Equipment with no achievable loads.** `calculateNextTargets` returns the decision `no_feasible_load`, no load, `loadFeasibility: 'infeasible'`, and the summary `<Equipment> can't make any load with its current min/max settings, so no <exercise> target is set. Fix the equipment profile.` A pain flag still takes precedence (`halted_pain`). A null load is formatted as "bodyweight" only for the `bodyweight` convention (and `added` with nothing added); otherwise it reads "no load".
+- **R4. Unilateral progression.** `HistorySet` carries `side`. Each side is evaluated on its own sets plus `both` sets. A `both` set counts as one prescribed set, and a Left + Right pair counts as one prescribed set, never two. "Every prescribed working set" means each prescribed set has both sides (or a Both) result meeting the criterion. The load goes up only when both sides qualify. If they differ, hold and name the lagging side (`The left side reached 8+ reps on every set but the right side didn't (lowest 7 reps); …`). Unequal side counts hold with `Only 2 of 3 working sets had both sides logged on … (left 3, right 2: the right side is behind); holding.` Mixed sided and unsided sets hold as unpairable.
+
+### Implementation decisions (developer)
+
+- **R4 planned-row consumption: other-side rows.** Logging a prescribed unilateral set as Left (or Right) adds a pending row for the other side. It has `pairedWithSetId` = the logged set, the same planned values and rest, and the logged values as its draft (no effort). It sits at the end of the exercise's list and becomes the next active set. So Left, Right, Left on three planned rows leaves three other-side rows pending, and the exercise is not done until each prescribed set has both sides.
+  - The other-side row only accepts its own side. Undoing the single-side log, or deleting the logged set, tombstones the still-pending other-side row (audited as `deleted` under the same opId). Undo also restores the set's side from before the log (normally `both`). Deleting only the other-side row is allowed (e.g. one side injured).
+  - Its ID is derived deterministically (`deriveId`, a UUID v8 from the set ID and opId), so a retried log on the same state yields the same row and a duplicate never adds a second one. No command field was added.
+  - Corrections that change a set's side do not add or remove other-side rows (Open).
+- **Minor 1:** the successor of a deleted active set is searched from its old position in the execution order.
+- **Minor 2:** `add_set` with a `setType` copies the last live set of that type; with none, it is refused (`set_not_found`) instead of inventing a target or rest. Without a type, it copies the last live set as before. The design never passes a type, so nothing changes for the UI.
+- **Minor 3:** deleting a logged set ends the undo window; deleting a pending set doesn't.
+- **Minor 4:** `superseded` is also computed for duplicate `undo_log` (the set is no longer pending) and `delete_set` (the set is no longer deleted). Other commands still report `false`.
+- **Minor 5:** the `add_exercise` fingerprint is `exerciseId` + `equipmentId` only.
+- **Minor 6:** the exercise snapshot carries `compatibleEquipment`; `add_exercise` on an incompatible kind fails with `equipment_incompatible`.
+- **Minor 7:** a top-set rule with only back-offs logged says `(no top set)`, not `(all skipped)`.
+- **Minor 8:** `undo_log` is refused (`work_interval_running`) while a work timer runs or is paused on another set.
+
+### Note on the reviewer's R1 probe numbers
+The review says the probe (last set 60 min, Pause at 61, Finish at 5 h, end edited to 63) "should be 62 min". Under the decided overlap rule it is **61 min**: the window is 0–63 and the pause overlaps it from 61 to 63, so 63 − 2 = 61. The test asserts 61. The same applies to the Finish-after-Resume probe (61 min).
+
+### Doc wording the designer should change
+
+| Doc | Current wording | Change to |
+|---|---|---|
+| active-workout §2.9, "The other side" bullet | "That link calls `addSet` then `setActiveSet` on the new set, with the side preset to Right and the same values in the draft." | "The domain has already added the right side as a pending set (same values drafted) and made it active; the link just scrolls to it. Undo of the left log removes it." |
+| active-workout §2.9, "Open" bullet | "sides aren't yet used by progression …" | "Progression evaluates each side; a Left + Right pair is one prescribed set; if the sides differ, `Next time` holds and names the lagging side." |
+| flow-first-milestone §3.2, Stop row, guard | (none stated) | "Allowed while paused: the interval ends when the pause began" |
+| workout-summary §6 | (add) | "Duration = end − start − paused time inside that window. Pauses outside a corrected start or end are not subtracted." |
+| active-workout / Next time copy | (add) | "`no_feasible_load`: `<Equipment> can't make any load with its current min/max settings. Fix the equipment profile.` with [Update gym]" |
+
+### Consequences
+- Persisted aggregates changed again: `session.pauses` replaces `pausedTotalMs`; `WorkoutSet.pairedWithSetId`; `ExerciseSnapshot.compatibleEquipment`; `HistorySet.side`. Nothing is persisted yet, so no migration is needed.
+- "Unilateral sides in progression history" is no longer Open.
+- **Open:** side corrections and other-side rows; `superseded` for the remaining commands; Ben's approval of S1/S3 (and now R4's pairing rule) as brief changes, with a `docs/brief/CHANGELOG.md` entry.
