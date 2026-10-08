@@ -8,6 +8,13 @@
 
 > **Revision 2026-10-08 (Progress tab).** For [progress.md](progress.md): chart colour **aliases** of existing tokens (§2.1; no new colour values, one accent kept), number formats for fractional sets, changes and estimates (§3), chart dimension tokens (§4.1), components `Sparkline` (§9.21), `TrendRow` (§9.22), `TrendChart` (§9.23), `ChartMarker` (§9.24), `VolumeBandRow` (§9.25), `WeekStrip` (§9.26), `ChartDataTable` (§9.27), `SourceTag` (§9.28), `ResumeBar` (§9.29) and `CalendarDay` (§9.30), and chart items in the accessibility checklist (§10).
 
+> **Revision 2026-10-08 (consolidation).** Merged the "Proposed design-system additions" sections from onboarding, profile-and-settings, gym-editor, coach-sheet, coach-memory, ai-connection, voice, coaching-playbook, routines, exercise-library, weekly-plan, change-review, data-import-export, lock-screen-and-alerts and system-states. Those sections now point here; where they disagree, this file wins.
+> - **Duplicates given one canonical name** (old names kept as aliases, §11): `SourceTag` now covers `TargetSourceTag`, `ProvenanceTag` and the routine/change-review author tags (§9.28); `StatusBanner` covers `AttentionRow` (§9.12); `StatusRow` + `StatusLabel` are one row and one vocabulary (§9.40); `SecureKeyField` is defined once (§9.45); `ClarifyChips` once (§9.37); `StepRow` covers `StepResultLine` (§9.42); `NoteLine` covers guard notes, conflict notes and load-preview warnings (§9.43); the card families are `ResultCard` (something already happened, with Undo), `SuggestionCard` (nothing happens until Ben taps) and `ProposalCard` (a summary that opens the Review screen); `ChangeReviewCard` (§9.11) is the inline `SuggestionCard` for plan changes and is extended per change-review.md.
+> - **Two approved changes from Ben (via the product manager) applied here:** data is split into **Your data** and **Coaching knowledge** (§7.2, `DomainLabel` §9.53); backups are stored **in the app by default**, with off-phone copies optional, and three distinct durability phrases (§7.1).
+> - **Timing tokens added** (§6): `timing.placeholderDelay`, `timing.staleWorkout`, `timing.spokenOfferMinRest`, `timing.cueOverlapWait`, `timing.lateCueDrop`, `timing.coachStreamStall`, `timing.signInTimeout`, `timing.voiceEndSilence`, `timing.voiceMaxUtterance`, `timing.voiceClarifyWindow`, `timing.clarifyExpiry`, `timing.ttsFallback`, `timing.offPhoneReminder`, `timing.coverDelay`, `timing.expiryNotice`, `timing.expiryUrgent`, `timing.expiryReminder`, `timing.loudModeMinRest`, `timing.stillRunningReminder`. `timing.coachFirstToken` (coach-sheet) is merged into `timing.coachTimeout` (same 20 s, same copy).
+> - **Status vocabularies added to §7**: capability, backup, schedule, proposal/action, memory and import-match statuses, with one icon per meaning (e.g. every warning-level state uses `exclamationmark.triangle` + `status.warning`; `Not working` no longer uses `xmark.octagon`).
+> - Added `SecondaryButton` and `DangerTextButton` (§9.2a, §9.2b), money format (§3), `type.liveCountdown` (§3), Live Activity colour mirror and app icon / launch tokens (§2.2). **No new colour values; one accent kept.**
+
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
 Context: one person uses the app on an iPhone, one-handed, mid-workout, with sweaty fingers and headphones, often in bright or dim gym light. Every choice below favours speed, legibility and calm over decoration.
@@ -99,6 +106,22 @@ Rules:
 - Up/down changes never use `status.done` or `status.danger`: a lower number isn't a failure (it may be a deload). Use arrow icons and words in `text.secondary`.
 - Meaningful graphics (line, points, bars, band edges, selected ring) need ≥ 3:1 against `bg.surface` and `bg.canvas` in both modes: `text.primary` and `text.secondary` exceed 7:1, `border.control` is 3.4:1 (dark) and 3.7:1 (light), `accent` exceeds 5.8:1. Re-check if any alias target changes.
 
+### 2.2 Surfaces outside the app (revision 2026-10-08, consolidation)
+
+These surfaces can't import `theme.ts`, so they **mirror** existing values in a comment-labelled constant. No new colour values.
+
+| Token | Value | Use |
+|---|---|---|
+| `widget.accent` | mirror of `color.accent` (`#5AA9FF` dark / `#0A63C9` light) | Live Activity `timer` icon only (lock-screen-and-alerts.md §2.1) |
+| `widget.warning` | mirror of `color.status.warning` (`#F2B84B` / `#8A5A00`) | Live Activity paused icon, always with the word `Paused` |
+| `widget.text` | system primary / secondary label colours on the system material | Live Activity text. With `isLuminanceReduced`: regular weight, no accent tint |
+| `icon.canvas` | `color.bg.canvas` dark `#0F1620` | App icon background (system-states.md §6.1) |
+| `icon.mark` | `color.accent` dark `#5AA9FF` | App icon ring and bubbles; dark icon mark; tinted icon uses white |
+| `launch.bg` | `color.bg.canvas` per appearance | Launch screen background |
+| `launch.mark` | `color.accent` per appearance | Launch screen mark, 96pt wide, no text, no spinner |
+
+Re-check contrast for these mirrors whenever the source tokens change.
+
 ---
 
 ## 3. Typography
@@ -116,6 +139,7 @@ The typeface is the system font (SF Pro). React Native gives you this by default
 | `type.callout` | 16 / 22 | Regular | When numeric | Callout | 3× | Secondary text, set rows, "Last" line |
 | `type.label` | 16 / 20 | Medium | When numeric | Callout | 3× | Chips, table headers, status labels, keypad hints |
 | `type.keypad` | 28 / 34 | Regular | Yes | Title 1 | 1.5× | Custom keypad digits |
+| `type.liveCountdown` | Banner 28 semibold; Dynamic Island expanded trailing 24 semibold; compact trailing system size | Semibold (regular when luminance is reduced) | Monospaced digits (`.monospacedDigit()`) | System-rendered | — | Live Activity countdown only (lock-screen-and-alerts.md). Widget-only; not used in the app |
 
 Rules:
 - **The minimum size is 16pt.** No token goes below 16pt at the default text size. System tab bar labels follow iOS and are exempt.
@@ -132,6 +156,9 @@ Rules:
   - Changes: arrow icon + word + magnitude, `Up 7.5 kg since 16 Jul` / `Down 5 kg …` / `Same load as …`. Never a bare `+7.5` and never a percentage.
   - Estimates: `≈` before the value and the word "estimate" (or `Est.`) on the same line, e.g. `≈ 123 kg (estimate)`. Estimates are rounded to 0.5 kg / 1 lb and are never snapped to achievable loads (they aren't targets).
   - Date ranges: `9 Apr – 8 Oct`; weeks `Week of 5 Oct` or `5–11 Oct`; chart month ticks `Apr`; across a year boundary `Dec 2025`.
+  - Money (revision 2026-10-08, consolidation): USD with two decimals and tabular numerals (`$1.42`, `$5.00`). Any figure the app worked out itself carries the word `estimate` on the same line or in its heading (`October (estimate)`), plus the price-table date (ai-connection.md §2.9).
+  - Dates in proposals and plan changes are local and written in full (`Thu 15 Oct`), never "tomorrow" (change-review.md §5).
+  - Counts in data screens use thousands separators (`4,105 sets`), tabular.
 
 ---
 
@@ -199,8 +226,27 @@ Rules:
 | `timing.commitGuard` | 1000 ms |
 | `timing.undoToast` | 8 s. With VoiceOver on, the toast stays until it is dismissed |
 | `timing.valueChangeGuard` | 1000 ms. Log ignores taps for this long after a coach adjustment changes its label. Never applied to normal logging |
-| `timing.coachTimeout` | 20 s. A coach adjustment request with no answer by then shows `The coach didn't answer in time. Nothing changed.` |
+| `timing.coachTimeout` | 20 s. A coach adjustment request, a coach-sheet turn or a voice question with no first answer (first chunk, tool call or result) by then shows `The coach didn't answer in time. Nothing changed.` Replaces coach-sheet's `timing.coachFirstToken` |
+| `timing.coachStreamStall` | 20 s without a new chunk in the middle of a coach reply → `The reply was cut off. Anything applied is shown above.` (coach-sheet.md §3) |
 | `timing.coachBuildTimeout` | 60 s. A workout-builder request with no answer by then shows `The coach didn't answer in time. Nothing was built.` |
+| `timing.signInTimeout` | 5 min. ChatGPT sign-in listener and browser sheet close; `Sign-in took too long. Nothing was connected.` (ai-connection.md §2.3) |
+| `timing.placeholderDelay` | 300 ms. A local read that takes longer than this shows static grey placeholder rows (never shimmer). Under it, nothing extra shows |
+| `timing.coverDelay` | 1 s. A start-up or data operation shorter than this shows no `BlockingCover` (system-states.md §3.6) |
+| `timing.staleWorkout` | 6 h since the last activity. Under it a cold launch opens the workout (P6) and the `ResumeBar` shows; at or over it, Today shows the stale-workout card |
+| `timing.spokenOfferMinRest` | 20 s. A coach offer may be spoken (Conversation mode only) only while Resting with at least this much left |
+| `timing.cueOverlapWait` | 3 s. A scripted cue that would overlap a coach reply waits up to this long, then is dropped if stale |
+| `timing.lateCueDrop` | 5 s. A spoken cue later than this is not spoken |
+| `timing.voiceEndSilence` | 1.2 s of quiet ends a tap-mode utterance (voice.md VO1) |
+| `timing.voiceMaxUtterance` | 12 s hard stop for one utterance |
+| `timing.voiceClarifyWindow` | 8 s. The mic stays open this long after a spoken clarification question |
+| `timing.clarifyExpiry` | 30 s. An unanswered voice clarification closes as `Not saved` |
+| `timing.ttsFallback` | 3 s to first OpenAI audio; after that the reply is spoken in the Apple voice |
+| `timing.loudModeMinRest` | 2:00. Default threshold for `Loud rest alerts: Long rests only`; editable in Voice & alerts |
+| `timing.stillRunningReminder` | 60 min after the last set (optional `still running` notification, off by default) |
+| `timing.offPhoneReminder` | 30 days without a `Copy saved to Files`. Then a quiet, dismissible row appears in Data & backup and on the Profile `Data & backup` row. Never a banner, never during a workout, and Ben can switch the reminder off. (Replaces data-import-export's `timing.backupOverdue`, which no longer applies now that automatic backups stay on the phone) |
+| `timing.expiryNotice` | 72 h before signing expiry: info banner on Today |
+| `timing.expiryUrgent` | 24 h before signing expiry: warning banner with the time |
+| `timing.expiryReminder` | One local notification at 19:00 local, two days before signing expiry (one per signing period) |
 | `haptic.commit` | Success notification haptic |
 | `haptic.undo` | Light impact |
 | `haptic.step` | Selection change (steppers, keypad) |
@@ -238,7 +284,7 @@ Target source (revision 2026-10-08, ADR 0006). A target's source is shown only w
 | Coach (summary `Next time`) | Summary rows | `TargetSourceTag` `Coach` | "Source: coach" |
 | Built-in rule (summary `Next time`) | Summary rows | `TargetSourceTag` `Built-in rule`, `Built-in rule (coach offline)` or `Built-in rule (coach unavailable)` | Same text |
 
-**`TargetSourceTag`**: a text tag, `type.label`, `text.secondary` on `bg.raised`, `radius.sm`, padding `space.1`/`space.2`. The `Coach` tag adds the `text.bubble` icon before the word (the same icon as the Talk button's text state). It is not tappable on its own. It never uses `accent` (accent stays for the primary action and the active set) and never relies on colour.
+**`TargetSourceTag`** (alias of `SourceTag`, §9.28, revision consolidation): a text tag, `type.label`, `text.secondary` on `bg.raised`, `radius.sm`, padding `space.1`/`space.2`. The `Coach` tag adds the `text.bubble` icon before the word (the same icon as the Talk button's text state). It is not tappable on its own. It never uses `accent` (accent stays for the primary action and the active set) and never relies on colour. New specs should say `SourceTag`.
 
 Session status labels (top bar / Today):
 
@@ -248,6 +294,64 @@ Session status labels (top bar / Today):
 | Ready | `figure.strengthtraining.traditional` | `text.primary` | "Ready" |
 | Paused | `pause.circle.fill` | `status.warning` | "Paused" |
 | Saved locally | `checkmark.circle.fill` | `status.done` | "Saved on this phone" |
+
+### 7.1 Other status vocabularies (revision 2026-10-08, consolidation)
+
+One icon per meaning across the app. Every status shows its word; VoiceOver reads the word. Warning-level states always use `exclamationmark.triangle` + `status.warning`.
+
+**Durability labels** (data-import-export.md §3.1, system-states.md §3.3; revised for "backups in the app by default", approved by Ben via the product manager). Exactly three durability phrases exist, so Ben always knows whether a copy exists off the phone. Never "sync", "synced", "uploaded", "in the cloud", or a bare "Backed up".
+
+| Level | Meaning | Icon | Colour | Label |
+|---|---|---|---|---|
+| Saved on this phone | Committed to the app's database | `checkmark.circle.fill` | `status.done` | `Saved on this phone` |
+| Backed up on this phone | An automatic backup file in the app's own container includes it. Lost if the app is deleted or re-signed with another Apple ID | `iphone` | `status.done` | `Backed up on this phone · 19:05` |
+| Copy saved to Files | A backup file exists outside the app (Files, iCloud Drive or another provider). Survives deleting the app | `externaldrive.fill.badge.checkmark` | `status.done` | `Copy saved to Files · Thu 8 Oct` |
+| Backing up | A write is in progress | static `ellipsis` | `text.secondary` | `Backing up…` |
+| Backup didn't save | The on-phone backup or an off-phone write failed | `exclamationmark.triangle` | `status.warning` | `Last backup on this phone didn't save` · `Copy to Files didn't save` |
+| No off-phone copy (quiet) | No `Copy saved to Files` in 30 days (`timing.offPhoneReminder`) | `info.circle` | `text.secondary` | `No copy off this phone since 8 Sep` (Settings row only, dismissible) |
+
+**Capability statuses** (`StatusLabel` vocabulary; App status, Alert check, Coach connection). `Working` is shown only with evidence (a runtime check, probe or user test, with date and build).
+
+| Status | Icon | Colour |
+|---|---|---|
+| `Working` | `checkmark.circle.fill` | `status.done` |
+| `Not working` | `exclamationmark.triangle` | `status.warning` |
+| `Not tested` | `questionmark.circle` | `text.secondary` |
+| `Not available` / `Not in this build` | `minus.circle` | `text.secondary` |
+| `Off` / `Not set up` | `circle` | `text.secondary` |
+
+**Proposal and action statuses** (change-review.md, coach-sheet.md card status words).
+
+| Status | Icon | Colour |
+|---|---|---|
+| `Applied` · `Saved` · `Logged` | `checkmark.circle.fill` | `status.done` |
+| `Out of date` | `exclamationmark.triangle` | `status.warning` |
+| `Expired` | `clock.badge.xmark` | `text.secondary` |
+| `Replaced` | `arrow.triangle.2.circlepath` | `text.secondary` |
+| `Not now` · `Dismissed` · `Not applied` | `minus.circle` | `text.secondary` |
+| `Undone` | `arrow.uturn.backward` | `text.secondary` |
+| `Couldn't apply` | `xmark.octagon` | `status.danger` (write failures only) |
+
+**Schedule statuses** (weekly-plan.md): `Planned` `circle` `text.tertiary` · `Done` `checkmark.circle.fill` `status.done` · `In progress` `arrowtriangle.right.fill` `accent` · `Missed` `exclamationmark.circle` `status.warning` · `Skipped` `slash.circle` `text.tertiary` · `Not confirmed` `questionmark.circle` `text.secondary` · `Didn't happen` `xmark.circle` `text.secondary`. `Fixed` (`lock.fill`) and `Key` (`flag.fill`) are `Tag`s (§9.28), never `accent`.
+
+**Memory statuses** (coach-memory.md): `Confirmed` `checkmark.circle` `status.done` · `Temporary` `clock` `text.secondary` · `Waiting for you` `questionmark.circle` `text.secondary` · `Worth checking` `checkmark.circle` + `not checked since <date>` · `Expired` `clock.badge.xmark` `text.tertiary` · `Off` `pause.circle` `text.tertiary`.
+
+**Playbook rule statuses** (coaching-playbook.md): `To review` `questionmark.circle` · `Approved 8 Oct` `checkmark.circle.fill` · `Edited by you` `pencil` · `Updated in research` `arrow.triangle.2.circlepath` · `Rejected` `xmark.circle`. Grades are `EvidenceGradeTag`s with no colour coding.
+
+**Import match statuses** (data-import-export.md): `Matched` `checkmark.circle.fill` `status.done` · `Check` `questionmark.circle` `status.warning` · `No match` `xmark.circle` `text.secondary` · `Skipped` `slash.circle` `text.tertiary`.
+
+### 7.2 Data domains: "Your data" and "Coaching knowledge" (revision 2026-10-08, approved by Ben via the product manager)
+
+Everything the app stores belongs to exactly one of two domains. Screens, backups, exports, deletes and the coach's context view always use these two names, in this order.
+
+| Domain | UI name | Icon | What's in it |
+|---|---|---|---|
+| Personal (owner-scoped) | `Your data` | `person.crop.circle` | Profile, goals, availability, workout history, coach memories about Ben, pain flags, his gyms and equipment, his routines and plans, conversations, his settings (including his rest presets), his guide **files** |
+| General | `Coaching knowledge` | `books.vertical` | Approved playbook rules with evidence and sources, research candidate rules, the guide library's index and excerpt metadata, the exercise catalogue and aliases (including custom exercise definitions, see open-decisions.md), default presets (gym presets, example rest presets) |
+
+- **Credentials** (ChatGPT tokens, API keys) live in the Keychain and belong to neither domain. They are never in a backup or export.
+- A `DomainLabel` (§9.53) heads any list or section that mixes the two, so Ben can always tell which one he is looking at.
+- Wording: "Your data" is about Ben; "Coaching knowledge" never contains anything about him. A general training rule ("deload every 5th week") is coaching knowledge (a candidate rule), never a memory. A personal preference ("I hate leg press") is a memory.
 
 ---
 
@@ -294,6 +398,13 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 | Paused session | accent fill | `Resume` |
 
 - VoiceOver label: "Log set 2, 100 kilograms, 8 reps". Hint: "Saves this set and starts rest".
+
+### 9.2a Secondary button (`SecondaryButton`) (revision consolidation)
+- Used wherever specs say "secondary-style accent button": `Apply` on cards, `Review ›`, a `RoutineRow`'s `Start`, `Back up first`, `Not now` when it is a button rather than a text link.
+- `bg.raised` fill, 1pt `border.control`, `radius.md`, label `type.headline` in `accent`, at least 44pt tall (52pt on the active workout screen). Disabled: `text.secondary` label. Never filled with `accent`, so the screen's `PrimaryButton` stays the only accent-filled button.
+
+### 9.2b Danger text button (`DangerTextButton`) (revision consolidation)
+- `type.headline` in `status.danger`, no fill, at least 44 × 44 hit area, at least `space.8` from any other button, usually at the bottom of a list. Used for `Delete set`, `Discard workout`, `Archive gym`, `Remove key`, `Delete my data`, `Reset coaching knowledge`. Always followed by a confirmation; the label names exactly what goes.
 
 ### 9.3 Set row (`SetRow`)
 - At least 52pt tall, `radius.md`, padding `space.3`.
@@ -364,6 +475,7 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 | Coach unavailable | `text.bubble` with `slash` | `Offline` |
 
 - Tapping it while the coach is unavailable still opens the coach sheet, which explains why. The control never vanishes.
+- The `Ask` pill: tap opens the coach sheet; long-press (≥ 0.4 s) starts listening when voice is available (voice.md §2.3). In the workout: tap Talk starts listening; long-press opens the coach sheet (voice.md §4.1). The pill sits above the `ResumeBar` when that is shown.
 
 ### 9.9 Voice status pill (`VoiceModePill`)
 - This is in the active workout status row. It shows the cue mode: `Quiet` (`speaker.slash`), `Cues` (`speaker.wave.1`) or `Talk` (`waveform`).
@@ -376,8 +488,11 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 - Example: `✓ Set 2 saved · 100 kg × 7` [Undo].
 - It stays for `timing.undoToast`. A new toast replaces the old one, and the replaced action can still be undone from its row.
 - VoiceOver announces it politely and keeps it until it is dismissed.
+- A set logged **by voice** shows its Undo in the `VoiceStrip` (§9.38) instead of this toast (voice.md VO4). There is one Undo per action, next to the words it undoes.
 
 ### 9.11 Change-review card (`ChangeReviewCard`)
+
+> Consolidation: this is the canonical **inline `SuggestionCard` for plan and target changes** (§9.48). change-review.md owns its behaviour and extends it: author tag (`Coach` / `Ben` / `Checks`) before the title; scope always in words from the four scopes (`Today only`, `Thu 15 Oct only`, `Push A from now on` / `Your weekly pattern from now on`, `This programme · weeks 2–6`) as a `ScopeBadge`; at most 4 change lines (`ChangeLine`, §9.47), then `Review all N changes ›`; a `Not changed` line; the `Out of date` variant **hides** Apply (rather than disabling it) and keeps the lines in `text.secondary` under `Was suggested:`. Anything bigger uses `ProposalCard` (§9.49) and the Review screen.
 - Used for exercise swaps, gym switches, compensating proposals from an unsafe Undo, and other changes that need Apply. It is an inline card, never a full-screen interruption. **Coach adjustments to today's remaining sets don't use it** (they apply at once: `CoachAdjustmentBanner`, §9.15), and summary next-time proposals use `CoachTargetProposal` (§9.16).
 
 ```
@@ -406,6 +521,9 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 - An inline banner, 44pt minimum, showing an icon, one line of text and an optional action. It uses the `.subtle` background of its status colour.
 - It is used for offline, coach-unavailable, paused, restored-after-close and equipment warnings. Banners never stack more than two deep. Lower-priority banners collapse into the status row.
 - Coach adjustments never use `StatusBanner`; they use the card's coach slot (§9.15).
+- **Severities (revision consolidation, from system-states.md):** `info` (`info.circle`, `bg.surface` with 1pt `border.control`), `warning` (`exclamationmark.triangle`, `status.warning.subtle`), `danger` (`exclamationmark.octagon`, `status.danger.subtle`; only for writes that failed). Info banners for one-time notices can be dismissed (`xmark`, 44 × 44); warnings clear only when the cause is fixed.
+- **Where and how many** (system-states.md §2.2 is the priority list): Today at most 2; the active workout's banner slot at most 2, and only write errors, damage to this workout, paused, restored after force-close, coach offline while Ben is using it, and equipment warnings (never signing expiry, backups, new builds, permissions or alert-layer status); the coach sheet at most 1; Profile root at most 2. Which banners show is decided by `buildSystemStatus`, never by the screen.
+- **`AttentionRow`** (profile-and-settings.md) is not a separate component: it is a `StatusBanner` at the top of Profile, chosen by the same priority list.
 
 ### 9.13 Adjust control (`AdjustControl`)
 - A text button `Adjust` (`type.label`, `accent`, `slider.horizontal.3` icon) in the exercise header line, left of `⋯`, in Ready and Resting, Focus and Overview. Hit area `target.workout` (52 × 52), like every active-workout control; it sits away from the Log thumb zone because it is used rarely.
@@ -505,9 +623,25 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 - Replaces the chart when `Show as table` is on. Rows ≥ 44pt, columns `Date` + metric columns + `Notes` (markers as words). Values tabular; estimates keep `≈` and `(estimate)` in the column header.
 - Each row is a button to the session. At AX1+ rows stack (date, value, notes lines). No horizontal scrolling.
 
-### 9.28 Source tag (`SourceTag`)
-- Same frame as `TargetSourceTag` (§7): `type.label`, `text.secondary` on `bg.raised`, `radius.sm`, padding `space.1`/`space.2`, not tappable. Icon by kind: `iphone` = `Your logs`; `square.and.arrow.down` = imports (`FitNotes import`, `Garmin FIT files`, `Strava export`, `Garmin file, imported 3 Oct`); `text.bubble` = `Coach`; `gearshape` = `Built-in summary` variants.
-- Used for data provenance (week review observations, endurance cards, imported sessions). Never `accent`, never colour-only.
+### 9.28 Tag frame and `SourceTag` (canonical; revision consolidation)
+
+**`Tag`** is the one small text-tag frame: `type.label`, `text.secondary` on `bg.raised`, `radius.sm`, padding `space.1`/`space.2`, optional leading SF Symbol, not tappable on its own, never `accent`, never colour-only. At AX1+ tags wrap; they never truncate numbers. Every tag below uses it.
+
+**`SourceTag`** answers "who or what produced this?". It replaces `TargetSourceTag` (§7), onboarding's `ProvenanceTag`, routines' source tag and change-review's author tag. Kinds:
+
+| Kind | Texts | Icon |
+|---|---|---|
+| Target source | `Coach` · `Built-in rule` · `Built-in rule (coach offline)` · `Built-in rule (coach unavailable)` · `Fixed` | `text.bubble` (Coach); none otherwise |
+| Author of a routine, proposal or rule | `Coach` · `Ben` · `Checks` · `Imported` · `From the research` · `From your guide` | `text.bubble` · `person` · `checkmark.shield` · `square.and.arrow.down` · `books.vertical` · `book.closed` |
+| Data provenance | `Your logs` · `FitNotes import` · `Garmin file, imported 3 Oct` · `Built-in summary` | `iphone` · `square.and.arrow.down` · `gearshape` |
+| Value provenance (how trustworthy a stored value is) | `Typical values, not checked` · `Checked by you` · `Set in setup, 8 Oct` · `Changed by you, 12 Oct` · `From coach chat, 14 Oct · you confirmed` | `questionmark.circle` · `checkmark` · none |
+
+Other `Tag` uses (same frame, different meaning; not sources):
+- `EvidenceGradeTag`: the grade words exactly as the research writes them (`Weak + Practice`, `Not graded`). No colour by grade.
+- `ScopeBadge`: `text.primary` on `bg.raised` with 1pt `border.control` and a `calendar` icon; always on every proposal (§9.11).
+- `FixedBadge` / `KeyBadge`: `lock.fill` + `Fixed`; `flag.fill` + `Key`.
+- `AvailabilityTag` (inline icon + word, no fill): `⚠ Busy today` / `⚠ Pain flagged` (`status.warning`), `⊘ Not at Main Gym` (`slash.circle`, `text.secondary`), `Custom`.
+- `DomainLabel` (§9.53): `Your data` / `Coaching knowledge`.
 
 ### 9.29 Resume bar (`ResumeBar`)
 - Fixed above the tab bar on non-Today tabs while a workout is unfinished and < 6 h old. 60pt, `bg.surface`, top `border.divider`, padding `space.3`/`space.4`.
@@ -518,6 +652,134 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 - ≥ 44 × 44 cell: date number (`type.callout`, tabular) and up to two glyphs below: `●` (`circle.fill`, `text.primary`) workout, `▲` (`triangle.fill`, `text.secondary`) imported endurance, `○` (`circle`, `text.secondary`) planned. Shapes, not colours, carry the meaning; a legend sits under the grid.
 - Today: 1pt `border.control` ring and bold number. Selected: `accent.subtle` fill + `text.primary` number (selection, like a selected chip).
 - VoiceOver: "Thursday 8 October, Push A, 54 minutes, edited. Selected."
+
+### 9.31–9.53 Components merged from the screen specs (revision 2026-10-08, consolidation)
+
+Each component has one name and one definition here. The owning spec says where it is used.
+
+#### Rows and lists
+
+**9.31 `SettingsRow`** (profile-and-settings, gym-editor). The base list row outside the workout. Min 52pt, padding `space.3`/`space.4`, `bg.surface`, rows separated by `border.divider` (decorative; the whole row is the target). Title `type.body` `text.primary`; value or subtitle `type.callout` `text.secondary`, tabular when numeric; optional leading SF Symbol; trailing `chevron.right` (`text.tertiary`), a system switch, or a radio. At AX1+ the value moves under the title. Variants:
+- *Radio row* (was ai-connection `RouteOption`): radio + name `type.body` + right-aligned cost word (`Included` / `Free · on device` / `Paid · …`) as `type.label` `text.secondary`. `Paid` is always a word, never a colour.
+- *Slider row* (was `SliderRow`): system slider, value as a percentage at the trailing edge (tabular); VoiceOver adjustable in 10% steps.
+- *Question row* (was data-import-export `ImportQuestionRow`): leading capability/status icon from §7.1 + one or two lines `type.body` + chevron; answered rows show the answer in `text.secondary`.
+- *Destructive*: use `DangerTextButton` (§9.2b), not a red row with a chevron.
+
+**9.32 `SettingsSectionHeader`.** `type.label`, `text.secondary`, sentence case, `space.6` above, `space.2` below.
+
+**9.33 `ChecklistRow`** (onboarding, gym-editor). Checkbox (`checkmark.square.fill` / `square`) row, 52pt min, whole row toggles; optional trailing `›` button 44 × 44 separated by `space.2` with non-overlapping hit areas; optional second line with a `SourceTag` (value provenance).
+
+**9.34 `ChoiceCard`** (onboarding, gym-editor). Single- or multi-select card: `bg.surface`, 1pt `border.control`, `radius.md`, padding `space.4`, min height 60. Selected: 2pt `accent` border, `accent.subtle` fill, `checkmark.circle.fill` before the title. Disabled: `text.secondary` title and a reason line.
+
+**9.35 Specialised rows** (all build on `SettingsRow` metrics, ≥ 52pt unless noted, numbers tabular, status by icon + word):
+
+| Component | Owner | Delta from `SettingsRow` |
+|---|---|---|
+| `ExerciseRow` / `SubstituteRow` | exercise-library | Line 1 `type.headline`, lines 2–3 `type.callout` `text.secondary`; trailing history button 44 × 44 (`clock.arrow.circlepath`); optional leading checkbox. Substitute adds up to 2 reason lines (`checkmark`, `text.primary`) and 1 difference line (`notequal`, `text.secondary`), then `More ›`. Never a numeric score |
+| `RoutineRow` | routines | Min 76pt; line 1 name + `SecondaryButton` `Start` (≥ 44 × 88); line 2 `SourceTag` + summary; line 3 one status. At AX1+ `Start` goes full width under line 3 |
+| `SetTemplateRow` | routines | Columns: set number + type badge, type word, target, rest; `●` + VoiceOver "own rest" for overrides. Stacks at AX1+ |
+| `ReorderRow` | routines | One line + drag handle + `Move up` / `Move down` buttons 44 × 44 (gesture never the only way) |
+| `DayRow` | weekly-plan | Date column 64pt; today = 4pt `accent` left bar + `accent.subtle` + the word `Today`. At AX1+ the date sits above its items |
+| `MemoryRow` | coach-memory | ≥ 64pt; status icon (§7.1) + `type.body` text (max 3 lines); line 2 source · date · expiry `type.label`; trailing chevron or inline `Not now` / `Save` (≥ `space.8` apart) |
+| `PainFlagRow` | coach-memory | Card frame (§9.48) with `exclamationmark.triangle` `status.warning` + `Movement · area` `type.headline`; source/date line; effect line; `Clear…` text button |
+| `RuleRow` | coaching-playbook | ≥ 64pt; number + title `type.headline`; summary `type.callout` (2 lines); `EvidenceGradeTag` + status |
+| `GuideRow` | coaching-playbook | ≥ 72pt; order number, title, switch; kind · pages; index status as text (`Reading page 112 of 260`), updated at most once a second |
+| `GuardrailRow` | coaching-playbook | `lock.fill` `text.secondary` + `type.body`; not tappable except where `›` is shown |
+| `ChangeLine` | change-review | Marker icon + word (`pencil` `Changed` / `arrow.right` `Moved` / `plus.circle` `Added` / `minus.circle` `Removed`, same markers as §9.18), entity `type.headline`, before → after `type.callout`; `→` read as "to"; removed rows strikethrough + word |
+
+**9.36 `StatusRow`** — see §9.40.
+
+#### Chips and inputs
+
+**9.37 `ClarifyChips`** (coach-sheet, voice, coach-memory; defined once). A question line `type.callout` above 2–4 options in the `ParamChip` frame (52pt), single choice, with the status word `Not saved` until one is chosen. Nothing applies until a choice is made.
+
+**`FilterChip`** (exercise-library): `ParamChip` plus a trailing `chevron.down`; when active it shows the choice (`Movement: Vertical pull`). Toggle chips (`At Main Gym`) use the `ParamChip` selected state.
+
+**`LoadChip`** (gym-editor): 44pt min, `radius.sm`, `type.label`, tabular. Present: `bg.raised`, 1pt `border.control`. Missing: `minus.circle`, strikethrough, `text.secondary`, dashed `border.control`. VoiceOver "30 kilograms, in the rack" / "missing".
+
+**`ContextChip`** (coach-sheet): pill, 44pt min, `bg.raised`, 1pt `border.control`, `eye` icon + `type.label` text (`Sees: Push A (live) · Main Gym`); optional trailing `xmark` 44 × 44; wraps at AX1+.
+
+**`CitationChip`** (coaching-playbook): pill, 44pt min, `bg.raised`, 1pt `border.control`, `type.label` `text.primary`, `list.number` (playbook rule) or `book.closed` (guide); wraps; never `accent`.
+
+**`SearchField`** (exercise-library): 52pt, `bg.raised`, 1pt `border.control`, `radius.sm`, `magnifyingglass`, `type.body`, clear button and optional `mic` (each 44 × 44, `space.2` apart). The mic hides when on-device speech is unavailable.
+
+**`RangeBuilder`** (gym-editor): `From [ ] to [ ] every [ ] <unit>`, three numeric fields (`bg.raised`, `border.control`, `radius.sm`, ≥ 44pt) and a remove button 44 × 44.
+
+**`CountStepper`** (gym-editor): `NumberStepper` variant for counts outside the workout: 44 × 44 buttons, value `type.headline`, trailing derived text (`2 a side`) in `text.secondary`.
+
+**`ScopeSelector`** (change-review): system segmented control 44pt; stacked radio rows (52pt) at AX1+; default = narrowest scope.
+
+**`PlanSegmentControl`** (routines, weekly-plan): system segmented control, 44pt, `Week` / `Routines`.
+
+**`WeekSwitcher`** (weekly-plan): `chevron.left` / `chevron.right` 44 × 44 buttons around a `type.headline` title (tabular dates); tap the title for this week. No swipe-only navigation.
+
+#### Voice and conversation
+
+**9.38 `VoiceStrip`** (voice, active-workout §2.5). Above the action bar, never over it: `bg.surface`, top 1pt `border.divider`, padding `space.3`/`space.4`; line 1 status icon + words (`type.headline`), line 2 values (`type.callout`, tabular), line 3 `Heard: "…"` (`type.callout`, `text.secondary`); trailing action (`Stop` / `Undo` / `Cancel` / `Settings`) with a 52 × 52 hit area. Max 4 lines; at AX1+ `Heard` collapses behind `Heard ›`. Carries the Undo for voice logs (§9.10). On other tabs the same strip sits above the tab bar.
+
+**9.39 `RecordingIndicator`.** Static 8pt dot in `status.danger` + the words `Mic on`. No pulse, whether or not Reduce Motion is on. Shown together with the iOS orange dot.
+
+**`ConversationMessage`** (coach-sheet): Ben = right-aligned `bg.raised` bubble, `radius.md`, padding `space.3`, max width 80%, `type.body`, time `type.label` `text.secondary`, `mic` icon when spoken. Coach = left-aligned, no bubble, label `Coach · hh:mm`. Gap `space.4` between messages.
+
+**`ToolSummaryLine`**: `type.callout` `text.secondary` + chevron; expands in place (at most `timing.fast`). Text comes from the tool log, never the model.
+
+**`SheetComposer`**: `Talk` 52 × 52 left; field `bg.raised` `radius.sm`, 52pt, grows to 5 lines; `Send`/`Stop` 52 × 52 right (`accent` fill when enabled, `bg.raised` when disabled); pinned above the keyboard.
+
+**`RouteLine`**: `type.label` `text.secondary`, link part in `accent` with a 44pt hit area (`Using ChatGPT plan · Manage usage`). Always visible under the composer.
+
+**`WorkoutBar`** (coach sheet during a workout): 52pt, card frame, icon + status `type.callout` tabular + `Back to workout ›` in `accent`; the whole bar is one button that closes the sheet. It never logs.
+
+#### Status and progress
+
+**9.40 `StatusRow`** (system-states App status, lock-screen Alert check, profile capability rows). ≥ 52pt on `bg.surface`: a `StatusLabel` icon from §7.1 (capability vocabulary) or the durability labels, title `type.body`, optional evidence/detail line `type.callout` `text.secondary` (`Tested 8 Oct, build 7`), optional trailing text button (`accent`, ≥ 44 × 44, e.g. `Open Settings`) or `chevron.right`. `StatusLabel` is the icon + word pair on its own, `type.label`.
+
+**9.41 `StatusCard`** (was ai-connection `ConnectionStatusCard`; also the Data & backup status card). Card frame (§9.48), padding `space.4`. Line 1 icon + status word `type.headline` from §7.1; body `type.callout`; optional `PrimaryButton` or `SecondaryButton` for its one action.
+
+**9.42 `StepRow`** (was onboarding `StepResultLine` and `BlockingCover` steps; also ai-connection's checking list). Icon + one or two lines `type.body`/`type.callout`: done `checkmark.circle.fill` `status.done`; current static `ellipsis` `text.secondary`; to do `circle` `text.tertiary`; problem `exclamationmark.triangle` `status.warning`. Steps are real and shown only while they run. No spinner animation.
+
+**9.43 `NoteLine`** (guard notes §9.19, weekly-plan `ConflictNote`, gym-editor `LoadPreview` warning, routine gym notes). Icon + one or two lines `type.callout`: `info.circle` `text.secondary` for facts (rounded, capped, swapped, removed); `exclamationmark.triangle` `status.warning` for pain, over-length and conflicts; optional trailing action (`Options ›`, `Swap ›`) in `accent` with a 44pt hit area. Acknowledged variant: one line, `text.secondary`, same icon. Text comes from the validator or a deterministic check, never the model. `GuardNoteList` (§9.19) is a list of these under `Checks (n)`.
+
+**`LoadPreview`** (gym-editor): one or two `type.callout` lines, tabular (`Makes 126 loads: 20–332.5 kg, total, every 2.5 kg.`), updates without animation; its warning is a `NoteLine`.
+
+**9.44 `ProgressLine`** (data-import-export). Determinate linear bar, 4pt tall, `radius.pill`, `accent` fill on `bg.raised`, always with a text count above (`180 of 412 workouts`, tabular). Jumps to each value without animation. Never indeterminate, never a ring. `SpendLine` (ai-connection) uses the same 4pt static bar with a `text.secondary` fill and is optional; its text (`Text $1.42 of $5.00 · 380 messages`, `⚠ 80% of cap` at ≥ 80%) carries the meaning.
+
+**`BlockingCover`** (data-import-export, system-states). Full screen, `bg.canvas`, no nav bar, tab bar or Ask pill; centred `type.title2` title; a `StepRow` list; one `type.callout` `text.secondary` line saying what happens if Fizz closes. No buttons unless the state needs one (`Copy details`). Appears only after `timing.coverDelay`. Used only for restore, undo restore, delete, database update and data from a newer build.
+
+**`CountCompareTable`** (data-import-export): label column `type.callout` `text.secondary`; value columns right-aligned `type.callout` tabular `text.primary`; headers `type.label`. At AX1+ each row stacks into `Label` / `Backup 412 · This phone 415`.
+
+#### Credentials
+
+**9.45 `SecureKeyField`** (ai-connection owns the key screens; profile-and-settings links to them). `bg.raised`, 1pt `border.control`, `radius.sm`, 52pt, masked, paste allowed, trailing `Paste` text button (44pt). Rejects text that isn't key-shaped. After saving it shows only `sk-…3F9a` read-only (`type.body`, tabular) and never the full value again. The `Check and save key` `PrimaryButton` sits above the keyboard.
+
+#### Frames for onboarding and full-screen editors
+
+**9.46 `OnboardingFrame`.** Top bar (`Back`, centred `Step n of m` in `type.label` `text.secondary`, optional `Skip`); title `type.title2`; one line `type.callout` `text.secondary`; scrolling content; fixed bottom bar with one `PrimaryButton`, same padding and keyboard behaviour as `ActionBar` (§9.1) without Talk. No progress bar. The same bottom-bar rule applies to every editor with `Save` (equipment, routine, memory, custom exercise) and to the Review screen (`Not now` text button above-left, `Apply` full width, ≥ `space.8` apart).
+
+#### Card families
+
+**9.47** — see `ChangeLine` in §9.35.
+
+**9.48 Card frame and card families.** One frame for every inline card: `bg.surface`, 1pt `border.control`, `radius.md`, padding `space.3`. Line 1 is always a status icon + words (§7.1). Buttons are text buttons or `SecondaryButton`s with 44pt hit areas (52pt on the workout screen), never a `PrimaryButton`. Cards never open a screen or sheet by themselves.
+
+| Family | Meaning | Members (existing names kept) |
+|---|---|---|
+| `ResultCard` | Something **already happened**; shows what and offers Undo (and `Why? ›` / `Edit` where useful) | `CoachAdjustmentBanner` (§9.15), `SetLoggedCard` and applied `CorrectionCard` (coach-sheet §2.7), saved `MemoryCard` and set `PainFlagCard` (coach-memory §2.4–2.5), `SwapSlotLine` (exercise-library §2.5, without the coach icon), the collapsed `Applied · …` line of any proposal |
+| `SuggestionCard` | **Nothing has happened yet**; Ben must tap to apply | `ChangeReviewCard` (§9.11, plan and target changes), `CoachTargetProposal` (§9.16, summary), suggested `MemoryCard` (`Save to memory?`), suggested `CorrectionCard`, suggested `PainFlagCard` (`Flag pain for Bench press?`), suggested playbook rule (`Add to playbook?`, coach-memory §2.4a), `ConflictCard` (coaching-playbook §2.8). `CoachOfferLine` (§9.14) is the borderless rest-card member |
+| `ProposalCard` (§9.49) | A one-line summary of something bigger that opens the Review screen | Change-review proposals; `WorkoutDraftCard` (§9.20) is its workout-draft variant |
+
+**9.49 `ProposalCard`** (change-review). Card frame: `SourceTag` (author) + title `type.headline`; scope + `nothing changed yet` (`type.callout`, `text.secondary`); first change line; `+ N more`; `Review ›` `SecondaryButton`. Overlap line: `exclamationmark.triangle` + `Overlaps with "…"`.
+
+**9.50 `PainFlagNote`** (coach-memory; placed on the active-workout set card, active-workout.md §2.1). One line under the target line: `exclamationmark.triangle` `status.warning` + `Pain flag: no increases` in `text.secondary`, `type.callout`. The whole line is a 44pt target that opens that flag in Pain flags. Never blocks Log. VoiceOver: "Pain flag on this movement. Loads won't go up."
+
+**9.51 `MemoryStatusIcon`** — see §7.1 memory statuses.
+
+**9.52 Icons used for system states** (system-states.md): offline `wifi.slash` · signing `clock.badge.exclamationmark` · build updated `arrow.down.app` · damaged record `exclamationmark.octagon` · permission off `slash.circle` · gym `building.2` · travel gym `airplane` (always with `Travel`) · out of order `wrench.and.screwdriver` (with text) · archived `archivebox`. Backup icons in §7.1.
+
+**9.53 `DomainLabel`** (revision: data domains, §7.2). A `SettingsSectionHeader` with a leading icon that names the domain: `person.crop.circle` + `Your data`, `books.vertical` + `Coaching knowledge`. Used wherever both domains appear together: Data & backup, the backup and restore previews, export and delete, the coach's `What the coach can see` view, App status. Never colour-coded; the word carries the meaning.
+
+#### Sound asset
+
+`sound.restEnd` is the file `rest-end.caf` (≤ 2 s), used by both the in-app chime and the rest-end notification sound.
 
 ---
 
@@ -531,3 +793,31 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 - Status is always conveyed by icon or text as well as colour (§7).
 - Every chart has a VoiceOver summary sentence, point-by-point adjustable navigation and a visible `Show as table` alternative (§9.23, §9.27). Charts carry one series, so no colour legend is ever needed.
 - Every chart and progress value says whether it is an actual result, a target or an estimate.
+- (Consolidation) Every durability statement uses one of the three phrases in §7.1, and every screen that mixes the two data domains labels them with `DomainLabel` (§9.53).
+- (Consolidation) Any figure in money says `estimate` when the app worked it out.
+
+---
+
+## 11. Component index: canonical names and aliases (revision consolidation)
+
+Use the canonical name in new specs. Aliases are kept so older specs stay readable; they mean exactly the canonical component.
+
+| Canonical | Section | Aliases / merged from |
+|---|---|---|
+| `SourceTag` (on the `Tag` frame) | §9.28 | `TargetSourceTag` (§7), `ProvenanceTag` (onboarding, profile, gym-editor), routines' source tag, change-review author tag |
+| `Tag` uses | §9.28 | `EvidenceGradeTag`, `ScopeBadge`, `FixedBadge`, `KeyBadge`, `AvailabilityTag`, `DomainLabel` text |
+| `StatusBanner` (info / warning / danger) | §9.12 | `AttentionRow` (profile) |
+| `StatusRow` + `StatusLabel` | §9.40, §7.1 | system-states `StatusRow`, profile `StatusLabel`, lock-screen "Alert check row" |
+| `StatusCard` | §9.41 | ai-connection `ConnectionStatusCard`, Data & backup status card |
+| `StepRow` | §9.42 | onboarding `StepResultLine`, `BlockingCover` step list, ai-connection checking steps |
+| `NoteLine` | §9.43 | guard notes (§9.19), weekly-plan `ConflictNote`, `LoadPreview` warning |
+| `SecureKeyField` | §9.45 | profile §2.6.2 and ai-connection §2.7 definitions |
+| `ClarifyChips` | §9.37 | coach-sheet and voice definitions |
+| `SettingsRow` (+ radio, slider, question variants) | §9.31 | `RouteOption`, `SliderRow`, `ImportQuestionRow` |
+| `ResultCard` family | §9.48 | `CoachAdjustmentBanner`, `SetLoggedCard`, `CorrectionCard` (applied), `MemoryCard` (saved), `PainFlagCard` (set), `SwapSlotLine` |
+| `SuggestionCard` family | §9.48 | `ChangeReviewCard`, `CoachTargetProposal`, `CoachOfferLine`, suggested `MemoryCard` / `CorrectionCard` / `PainFlagCard`, `ConflictCard`, suggested playbook rule |
+| `ProposalCard` | §9.49 | `WorkoutDraftCard` (variant) |
+| `SecondaryButton` | §9.2a | "secondary-style accent button" in every spec |
+| `DangerTextButton` | §9.2b | "danger text", "status.danger text button" |
+| `timing.coachTimeout` | §6 | `timing.coachFirstToken` (coach-sheet, voice) |
+| `timing.offPhoneReminder` | §6 | `timing.backupOverdue` (data-import-export; retired) |

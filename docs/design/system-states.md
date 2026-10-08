@@ -1,5 +1,11 @@
 # System states (app-wide), app icon and launch screen
 
+> **Revision 2026-10-08 (consolidation).**
+> - **Backups in the app by default (approved by Ben, relayed by the product manager).** Automatic backups go to Fizz's own container; copies to Files are optional. Durability now has three phrases: `Saved on this phone` · `Backed up on this phone` · `Copy saved to Files` (§3.3, design-system §7.1). Today no longer shows "backups not set up" (old T4) or "not backed up for 24 h" (old T6); only a **failed** on-phone backup is a Today banner (T5). The quiet "no copy off this phone in 30 days" reminder is a Settings row only (data-import-export.md §3.1). One-tap `Save a copy to Files first` is offered at risky moments: the How-to-refresh sheet (§3.5) and the `Updated to build N` notice (§3.6) here, plus import and restore (data-import-export.md §4.1a). Nothing about backups ever appears during a workout.
+> - **Two data domains** (approved by Ben): App status groups its first section as `Your data` and adds `Coaching knowledge` (design-system §7.2, `DomainLabel`).
+> - **App status absorbs Profile's "Phone capabilities"** (profile-and-settings.md §2.10): rows follow the evidence rule (`Working` only with a dated check, probe or test) and the `StatusLabel` vocabulary (design-system §7.1).
+> - Placeholder links replaced (profile-and-settings.md, ai-connection.md). Components merged into design-system (§11 index); `StatusRow` is §9.40.
+
 Status: v0.1 draft, 8 Oct 2026. Designer. Tokens: [design-system.md](design-system.md).
 
 This file is the single catalogue of states that aren't owned by one screen: connectivity, coach availability, saving and backup wording, errors, permissions, the 7-day signing expiry, new builds, data integrity and blocking operations. Screen specs show these states in their own layouts; the **wording, priority and surface** come from here. Where a screen spec already defines a string (coach-sheet.md, active-workout.md, today.md, onboarding.md), this file repeats it so there is one list to check, and the screen spec stays the owner of its layout.
@@ -42,9 +48,9 @@ Never used for status: system alerts (kept for confirming destructive actions), 
 | T1 | Data can't be opened, or data is from a newer build (main card replaced, §3.8) | Blocking |
 | T2 | Damaged record found (§3.7) | Warning |
 | T3 | Signing runs out within 24 h (§3.5) | Warning |
-| T4 | Backups not set up, or automatic backups need a folder | Warning |
-| T5 | Last backup didn't save | Warning |
-| T6 | Workouts not backed up for over 24 h | Warning |
+| T4 | (Removed in consolidation: backups need no setup) | — |
+| T5 | Last backup **on this phone** didn't save (e.g. storage full) | Warning |
+| T6 | (Removed in consolidation: no "not backed up" nagging; the 30-day off-phone reminder is a Settings row only) | — |
 | T7 | Signing runs out within 72 h | Info |
 | T8 | No gym selected (today.md) | Info |
 | T9 | One-time notices: updated to a new build, restore interrupted, import paused | Info (one launch only) |
@@ -63,12 +69,12 @@ Never used for status: system alerts (kept for confirming destructive actions), 
 | W4 | At most one action, named for what it does | [Open Settings], [Back up now], not [OK] |
 | W5 | No blame, no "Oops", no exclamation marks | — |
 | W6 | Exact dates, times and counts with tabular numerals. If a value is estimated, say "about" | `Signed until Sun 11 Oct, 09:00` / `about Thu 15 Oct` |
-| W7 | Never colour alone: icon + text always | `⚠ Not backed up yet` |
-| W8 | Never say "sync", "synced", "uploaded" or "in the cloud". Fizz has no sync | `Saved on this phone` / `Backed up` |
+| W7 | Never colour alone: icon + text always | `⚠ Last backup on this phone didn't save` |
+| W8 | Never say "sync", "synced", "uploaded" or "in the cloud", or a bare "Backed up". Fizz has no sync | `Saved on this phone` / `Backed up on this phone` / `Copy saved to Files` |
 
 ### 2.4 Wireframes
 
-Today with two banners (T3 and T4) above the normal content:
+Today with two banners (T3 and T5) above the normal content:
 
 ```
 ┌────────────────────────────────────────┐
@@ -78,9 +84,9 @@ Today with two banners (T3 and T4) above the normal content:
 │ │   by 21:00                    How ›│ │
 │ └────────────────────────────────────┘ │
 │ ┌────────────────────────────────────┐ │
-│ │ ⚠ Backups aren't set up. Set up    │ │
-│ │   before logging real workouts.    │ │
-│ │                            Set up ›│ │
+│ │ ⚠ Last backup on this phone didn't │ │
+│ │   save: this iPhone is out of      │ │
+│ │   space.                  Details ›│ │
 │ └────────────────────────────────────┘ │
 │ ┌────────────────────────────────────┐ │
 │ │ Today's plan                       │ │ main card unchanged;
@@ -96,12 +102,17 @@ App status (Profile → App status):
 ┌────────────────────────────────────────┐
 │ ‹ Profile        App status            │
 ├────────────────────────────────────────┤
-│ Your data                              │
+│ 👤 Your data                           │ DomainLabel
 │ ✓ Saved on this phone                  │ StatusRow
 │   415 workouts · 4,140 sets            │
-│ ✓ Backed up · Thu 8 Oct, 19:05       › │ → Data & backup
+│ ✓ Backed up on this phone · 19:05    › │ → Data & backup
+│ ⓘ No copy off this phone yet         › │ or: ✓ Copy saved to Files · 8 Oct
 │ ✓ Last full check: no problems         │
 │   Thu 8 Oct                    Check › │
+│                                        │
+│ 📚 Coaching knowledge                  │ DomainLabel
+│ ✓ 9 rules approved · 5 to review     › │ → Guides & playbook
+│ ✓ Exercise list: built-in (build 12)   │ or: "+ 3 custom exercises"
 │                                        │
 │ This install                           │
 │ ✓ Signed until Sun 11 Oct, 09:00     › │ → How to refresh
@@ -116,11 +127,17 @@ App status (Profile → App status):
 │ ✓ Speech: on this phone (English, UK)  │
 │ ✓ Spoken cues: Apple voice             │
 │                                        │
-│ Rest alerts                            │
-│ ✓ Notifications, with sound            │
-│ ⚠ Lock Screen timer: not working on  › │ → Voice & alerts
-│   this install                         │
-│ – Loud rest alerts: off                │
+│ Rest alerts                            │ evidence lines from
+│ ✓ Notifications: Working             › │ profile-and-settings §2.10
+│   Tested 8 Oct, build 7                │
+│ – Time-sensitive: Not available        │
+│   Needs paid Apple signing.            │
+│ ⚠ Lock Screen timer: Not working     › │ → detail (cause, instead,
+│   Checked 8 Oct, build 7               │   Check again)
+│ ? Loud rest alerts: Not tested       › │
+│ – Speak while locked: Not in this build│
+│                                        │
+│ Run phone checks                     › │ → capability probe screen
 │                                        │
 │ Permissions                            │
 │ ✓ Notifications                        │
@@ -162,11 +179,11 @@ Each row: how it's detected, where it shows (S1–S6 from §2.1), exact copy, th
 |---|---|---|---|---|---|
 | Offline | `getConnectivity()` (system network path) | S1 only: Talk `Offline`, `Adjust` `Coach offline`, coach sheet banner, summary coach note, workout builder. **No banner on Today or in the workout**: logging needs no network | Coach sheet: `No connection. The coach needs the internet. Your workout is saved on this phone.` · Summary: `Coach note will be added when you're back online.` · App status: `⚠ Coach: no connection` | None | Network returns (banners clear by themselves; nothing queued is sent on its own, coach-sheet.md CS4) |
 | Offline, OpenAI voice selected | Same, while the OpenAI voice route is chosen for coach replies | Voice strip, once per workout; Voice settings | `OpenAI voice isn't available offline. Using the Apple voice.` | None | Network returns |
-| Offline, backup folder in iCloud Drive | Same, after a backup is written | Data & backup card | `iCloud uploads it when you're back online.` | None | Network returns |
+| Offline, copy saved to iCloud Drive | Same, after a copy to Files is written | Data & backup card | `iCloud uploads it when you're back online.` | None | Network returns |
 
 ### 3.2 Coach and AI route
 
-Owned by [coach-sheet.md](coach-sheet.md) §3 and ai-connection.md; repeated here as the single list. Source: `getAiCapabilities(userId).unavailableReason`.
+Owned by [coach-sheet.md](coach-sheet.md) §3 and [ai-connection.md](ai-connection.md) §3; repeated here as the single list. Source: `getAiCapabilities(userId).unavailableReason`.
 
 | State | Talk caption (S1) | Coach sheet banner (S4) | App status (S2) | Rules |
 |---|---|---|---|---|
@@ -191,7 +208,8 @@ The durability ladder. These are the only words used for "where is my data".
 | Draft | Typed, not logged; kept through a force-close | `Unsaved edit restored` (caption) | Active workout |
 | Saving | The SQLite write is in progress (rarely visible) | `Saving…` | Log button |
 | Saved | Committed to SQLite on the phone | `Saved` (1 s button guard) · toast `✓ Set 2 saved · 100 kg × 8` · banner `Workout saved on this phone` · status `Saved on this phone` | Active workout, summary, App status |
-| Backed up | Included in a backup file in Ben's folder | `Backed up · 19:05` · `✓ Backed up · Thu 8 Oct, 19:05` | Data & backup, summary line (proposed), App status |
+| Backed up on this phone | Included in an automatic backup file in Fizz's own container. Lost if the app is deleted or re-signed with another Apple ID | `Backed up on this phone · 19:05` | Data & backup, summary line (X2), Profile row, App status |
+| Copy saved to Files | Included in a backup file outside the app (Files, iCloud Drive, another provider) | `Copy saved to Files · Thu 8 Oct` | Data & backup, Profile row, App status |
 | Waiting for the network | Coach work that will run when online (never a write of Ben's data) | `Coach note will be added when you're back online.` | Summary |
 
 Spoken:
@@ -210,11 +228,11 @@ Each permission is asked in context, with priming first (onboarding.md §4.6). T
 | | Sounds off for Fizz | Voice & alerts Alert check | `⚠ Notifications: sounds off for Fizz` | [Open Settings] |
 | Microphone | Denied | Talk shows `Ask`; voice strip: `Voice isn't available: microphone is off in iOS Settings` [Settings] (active-workout.md §2.5) | `⚠ Microphone: off in iOS Settings` | [Open Settings] |
 | Speech recognition | Denied | Talk shows `Ask`; voice strip: `Voice isn't available: speech recognition is off in iOS Settings` [Settings] | `⚠ Speech recognition: off in iOS Settings` | [Open Settings] |
-| On-device speech | Not available for the device language | Talk shows `Ask`; voice strip: `On-device speech isn't available for English (UK) on this iPhone. You can type instead.` | `⚠ Speech: not available on this phone for English (UK)` | None. Fizz never sends audio to a server instead (brief v0.2) |
+| On-device speech | Not available for the device language | Talk shows `Ask`; voice strip (voice.md §3.1, owner): `Voice isn't available: speech recognition for English (UK) isn't on this iPhone yet.` [Settings] | `⚠ Speech: not available on this phone for English (UK)` | None. Fizz never sends audio to a server instead (brief v0.2) |
 | Live Activities | Off for Fizz in iOS Settings | — | `⚠ Lock Screen timer: Live Activities are off for Fizz in iOS Settings` | [Open Settings] |
 | Live Activity (not a permission) | App Group renamed by the signing tool (build 7) | — | `⚠ Lock Screen timer: not working on this install` (lock-screen-and-alerts.md §3.1) | None for Ben; a developer fix (ADR 0007) |
 | Loud rest alerts (AlarmKit) | Denied | Switch shows Off with `Turned off in iOS Settings` (onboarding.md) | `⚠ Loud rest alerts: off in iOS Settings` | [Open Settings] |
-| Backup folder | Access lost | Data & backup card (data-import-export.md §3.1) | `⚠ Backup folder can't be reached` | [Choose backup folder] |
+| Backup folder (only when `Also back up off the phone automatically` is on) | Access lost | Data & backup card (data-import-export.md §3.1) | `⚠ Copy to Files didn't save: the folder can't be reached` | [Choose backup folder] |
 
 Permission rows never appear as banners on Today or in the workout. The feature that needs the permission shows its off state where Ben uses it.
 
@@ -254,6 +272,10 @@ How to refresh sheet (from the banner, the notification or App status), steps fr
 │ you refresh. Your workouts stay on the │
 │ phone. Never delete Fizz to fix it.    │
 │                                        │
+│ ⓘ Reinstalling with a different Apple  │ safeguard (data-import-export
+│ ID or tool starts an empty app.        │ §4.1a); only when there's no
+│ [ Save a copy to Files first ]         │ newer copy in Files
+│                                        │
 │ If you've refreshed but haven't opened │
 │ Fizz since, a reminder may still come. │
 └────────────────────────────────────────┘
@@ -267,14 +289,14 @@ With `Signing tool: Sideloadly` (App status), the banner reads `Refresh Fizz wit
 
 | State | Detected by | Surface | Copy | Action |
 |---|---|---|---|---|
-| Updated to a new build | `buildNumber` differs from the one stored at the last launch | Today info banner, **one launch only** (T9) | `Updated to build 13. Your data carried over: 415 workouts.` (count read from the database) | None |
+| Updated to a new build | `buildNumber` differs from the one stored at the last launch | Today info banner, **one launch only** (T9) | `Updated to build 13. Your data carried over: 415 workouts.` (count read from the database). When there's no copy in Files newer than the update, the banner adds `Save a copy to Files?` (safeguard, data-import-export.md §4.1a) | [Save a copy to Files] (optional) |
 | Updated, and the database was migrated | Same, plus a migration ran | Same | `Updated to build 13. Your data was updated and carried over: 415 workouts.` | None |
 | Database update in progress | Migration takes more than 1 s (`timing.coverDelay`) | S6 cover (§2.4) | `Updating your data for build 13` · `Updating (step 1 of 2)` · `Keep Fizz open. If it closes, the update carries on next time.` | None |
 | Database update failed | Migration error. Each migration is one transaction (ADR 0005), so the failed step is undone, but earlier steps in the same update stay applied. Installing the previous build may then hit "data from a newer build" | S6 cover | `This build couldn't finish updating your data.` · `Each step either finished or was undone, so nothing is half-changed. Send the details to the developer; a fixed build is needed.` | [Copy details] |
 | Data from a newer build | `SchemaTooNewError` (an older build installed over a newer one) | S6 cover; nothing is written | `Your data was saved by a newer Fizz (build 15). This build (12) can't open it.` · `Install build 15 or newer in SideStore. Nothing has been changed.` | [Copy details] |
 | New build available | **Needs an update feed that doesn't exist yet** (`DEP-UPDATE-FEED`, §6 P-S3). Until then, no state | App status only | `Build 14 is ready to install (you have 13).` | [How to install ›] |
 
-How to install sheet (when a feed exists): `1 Back up first.` [Back up now] · `2 Download the .ipa.` · `3 In SideStore, go to My Apps, tap +, choose the file. Keep the App ID it suggests.` · `4 Don't delete Fizz first. The update installs over it and keeps your data.` · `5 Open Fizz. It will say "Updated to build 14".` Never shown during a workout.
+How to install sheet (when a feed exists): `1 Save a copy to Files first.` [Save a copy to Files] · `2 Download the .ipa.` · `3 In SideStore, go to My Apps, tap +, choose the file. Keep the App ID it suggests.` · `4 Don't delete Fizz first. The update installs over it and keeps your data.` · `5 Open Fizz. It will say "Updated to build 14".` Never shown during a workout.
 
 ### 3.7 Data integrity
 
@@ -340,15 +362,16 @@ While a cover is up: notification taps and `fizz://` links are held and dropped 
 
 | Area | Strings |
 |---|---|
-| Durability | `Unsaved edit restored` · `Saving…` · `Saved` · `✓ Set 2 saved · 100 kg × 8` · `Workout saved on this phone` · `Saved on this phone` · `Backed up · 19:05` · `Coach note will be added when you're back online.` |
+| Durability | `Unsaved edit restored` · `Saving…` · `Saved` · `✓ Set 2 saved · 100 kg × 8` · `Workout saved on this phone` · `Saved on this phone` · `Backed up on this phone · 19:05` · `Copy saved to Files · Thu 8 Oct` · `No copy off this phone yet` · `Coach note will be added when you're back online.` |
 | Offline | `No connection. The coach needs the internet. Your workout is saved on this phone.` · `OpenAI voice isn't available offline. Using the Apple voice.` · `iCloud uploads it when you're back online.` |
 | Coach | as §3.2 (owned by coach-sheet.md) |
-| Permissions | `Rest alerts are off in iOS Settings.` · `Voice isn't available: microphone is off in iOS Settings` · `Voice isn't available: speech recognition is off in iOS Settings` · `On-device speech isn't available for English (UK) on this iPhone. You can type instead.` · `Lock Screen timer: Live Activities are off for Fizz in iOS Settings` · `Turned off in iOS Settings` · `Open Settings` |
+| Permissions | `Rest alerts are off in iOS Settings.` · `Voice isn't available: microphone is off in iOS Settings` · `Voice isn't available: speech recognition is off in iOS Settings` · `Voice isn't available: speech recognition for English (UK) isn't on this iPhone yet.` · `Lock Screen timer: Live Activities are off for Fizz in iOS Settings` · `Turned off in iOS Settings` · `Open Settings` |
 | Signing | `Refresh Fizz in SideStore by Sat` · `Refresh Fizz in SideStore today, by 21:00` · `Refresh Fizz in SideStore by tomorrow 09:00` · `Signed until Sun 11 Oct, 09:00` · `Refresh weekly in SideStore` · `Signing date unknown. Refresh weekly in SideStore.` · `I refreshed today` · `Signed until about Thu 15 Oct (estimated from your refresh on 8 Oct)` · notification `Refresh Fizz by Sat` / `Fizz stops opening on Sun at 09:00 until it's refreshed. Open SideStore on Wi-Fi with LocalDevVPN on.` · How sheet §3.5 |
 | Builds | `Updated to build 13. Your data carried over: 415 workouts.` · `Updating your data for build 13` · `Updating (step 1 of 2)` · `Keep Fizz open. If it closes, the update carries on next time.` · `This build couldn't finish updating your data.` · `Each step either finished or was undone, so nothing is half-changed. Send the details to the developer; a fixed build is needed.` · `Your data was saved by a newer Fizz (build 15). This build (12) can't open it.` · `Install build 15 or newer in SideStore. Nothing has been changed.` · `Build 14 is ready to install (you have 13).` |
 | Integrity | `Fizz found a damaged record (workout on Tue 6 Oct).` · `Fizz won't change or guess damaged records. Your other workouts open normally and you can keep logging.` · `Fizz is checking the rest of your data…` · `This workout's saved data is damaged, so Fizz can't open it safely.` · `Check all data` · `✓ Last full check: no problems` · `Switch back to your previous data` |
 | Errors | §3.8 |
-| Backups (Today) | `Backups aren't set up. Set up before logging real workouts.` [Set up] · `Automatic backups need a folder.` [Choose folder] · `Last backup didn't save: the folder can't be reached.` [Fix] · `2 workouts aren't backed up.` [Back up now] |
+| Backups (Today) | Only: `Last backup on this phone didn't save: this iPhone is out of space.` [Details ›] (T5). The earlier "not set up", "needs a folder" and "not backed up" banners are removed (consolidation) |
+| Data domains | `Your data` · `Coaching knowledge` |
 | App status | `App status` · section heads `Your data` · `This install` · `Coach and voice` · `Rest alerts` · `Permissions` · `Copy status report` · toast `Copied. Nothing personal is included.` |
 | Spoken | "Couldn't save that set. It's still on screen." · "The coach isn't available right now. Your set is saved." |
 
@@ -426,7 +449,8 @@ From existing contracts:
 ## 8. Acceptance checks
 
 1. With airplane mode on, Today and the active workout show **no** banner; Talk reads `Offline`; the coach sheet shows the `No connection…` banner; App status shows `⚠ Coach: no connection`. Logging a full workout works.
-2. With five Today-level states active at once (e.g. T2, T4, T6, T7, T8), Today shows exactly the two highest (T2, T4); all five are on App status; the Profile row shows its marker.
+2. With four Today-level states active at once (e.g. T2, T5, T7, T8), Today shows exactly the two highest (T2, T5); all four are on App status; the Profile row shows its marker.
+2a. With no copy ever saved to Files, Today, the workout and Profile's attention area show **no** backup banner; the only off-phone signals are the Data & backup card line, the Profile row line and, after 30 days, the quiet reminder line.
 3. During a workout, none of these ever appear: signing expiry, backup states, new build, permission states, Live Activity status. Verified by setting each condition mid-workout.
 4. With a signing profile expiring in 60 h, Today shows `Refresh Fizz in SideStore by <day>` using the day rule in §3.5; at 20 h the banner is a warning with the time. After a SideStore refresh, returning to Fizz clears it without a relaunch.
 5. Exactly one refresh notification is scheduled per signing period, at 19:00 local two days before expiry, and it's rescheduled from the new date after a refresh.
@@ -461,6 +485,8 @@ From existing contracts:
 
 ## Proposed design-system additions
 
+> **Merged into design-system.md (consolidation):** `StatusRow` §9.40, `StatusBanner` severities §9.12, state icons §9.52, `timing.expiryNotice` / `expiryUrgent` / `expiryReminder` / `coverDelay` §6, icon and launch tokens §2.2. Kept below for history.
+
 No new colours.
 
 | Addition | Spec |
@@ -476,12 +502,12 @@ No new colours.
 
 ## Cross-links
 
-- [coach-sheet.md](coach-sheet.md) §3 and ai-connection.md: owners of the coach states repeated in §3.2.
+- [coach-sheet.md](coach-sheet.md) §3 and [ai-connection.md](ai-connection.md) §3: owners of the coach states repeated in §3.2.
 - [today.md](today.md): banners and the `Couldn't open your training data.` card (T1, T8); P6 auto-open after the launch screen.
 - [active-workout.md](active-workout.md): banner slot rules (§2.2 here restricts what may appear), write errors, voice strip permission lines.
 - [onboarding.md](onboarding.md) §4.6: permission priming; backup step.
 - [data-import-export.md](data-import-export.md): backup states, `BlockingCover`, restore and delete operations, `verifyBackup`.
 - [lock-screen-and-alerts.md](lock-screen-and-alerts.md): alert-layer capability states, Alert check, `StatusRow` reuse.
 - [workout-summary.md](workout-summary.md) and [progress.md](progress.md): durability wording and the database-error state.
-- profile-and-settings.md (being written by another designer): hosts the `App status` row and Profile attention markers.
+- [profile-and-settings.md](profile-and-settings.md) §2.1, §2.10: hosts the `App status` row (which absorbed Phone capabilities) and the attention rows.
 - [ADR 0004](../decisions/0004-free-distribution-sidestore.md), [ADR 0005](../decisions/0005-persistence-and-backup.md), [ADR 0007](../decisions/0007-mobile-shell-identity-and-ipa-pipeline.md), [guides/sidestore-windows.md](../guides/sidestore-windows.md), [device test build 7](../device-tests/2026-10-08-probe-build7.md).

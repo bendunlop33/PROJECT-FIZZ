@@ -1,5 +1,7 @@
 # Exercise library (search, filters, custom exercises, history shortcut, substitutions)
 
+> **Revision 2026-10-08 (consolidation).** Data domains (design-system §7.2): the catalogue, aliases and custom exercise definitions are **Coaching knowledge**; Ben's history shown on rows (`Last …`) is **Your data**. `Reset coaching knowledge` keeps any custom exercise his history or routines use (data-import-export.md §2.7; the placement of custom exercises is listed in open-decisions.md). Proposed components are merged into design-system: `SearchField`, `FilterChip` (§9.37 area), `ExerciseRow` / `SubstituteRow` (§9.35), `AvailabilityTag` (on the `Tag` frame, §9.28), `SwapSlotLine` (a `ResultCard`, §9.48). EL4 and EL6 are in open-decisions.md.
+
 Status: v0.1 draft, 8 Oct 2026. Brief §1 ("exercise search"), §4 (`getCompatibleExercises`, `rankSubstitutions`), §6 (`Exercise` / `ExerciseAlias`), §12 Page 2. Schema: `packages/schemas/src/exercise.ts` (`movementPattern`, `primaryMuscles`, `measurement`, `laterality`, `compatibleEquipment`, `defaultLoadConvention`, `defaultRestS`). Tokens: [design-system.md](design-system.md).
 
 One component, four modes. The same search, rows and filters are used everywhere so Ben learns them once.

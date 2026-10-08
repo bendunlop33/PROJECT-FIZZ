@@ -1,5 +1,7 @@
 # Gym editor (gyms, equipment, availability, switching gym)
 
+> **Revision 2026-10-08 (consolidation).** Proposed components are merged into design-system.md: `SettingsRow` §9.31, `LoadChip`, `CountStepper`, `RangeBuilder` §9.37 area, `LoadPreview` and its warning `NoteLine` §9.43, `ChecklistRow` / `ChoiceCard` §9.33–9.34, icons §9.52; `ProvenanceTag` is now `SourceTag` (value provenance, §9.28). Data domains (design-system §7.2): Ben's gyms and equipment are **Your data**; the gym presets they start from (`listGymPresets`) are **Coaching knowledge**.
+
 Status: v0.1 draft, 8 Oct 2026. Tokens: [design-system.md](design-system.md). Entry points: [profile-and-settings.md](profile-and-settings.md) (Gyms section), [today.md](today.md) and [active-workout.md](active-workout.md) (gym chip, `Machine busy`, `[Update gym]`), [onboarding.md](onboarding.md) (first gym).
 
 ## 1. Purpose

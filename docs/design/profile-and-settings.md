@@ -1,6 +1,16 @@
 # Profile and settings
 
-Status: v0.1 draft, 8 Oct 2026. Tokens: [design-system.md](design-system.md). Gyms: [gym-editor.md](gym-editor.md). First-run values: [onboarding.md](onboarding.md). Coach internals belong to the coach area spec, and data tools (backup, restore, import, export, delete) belong to the data area spec. Both are owned by other designers; this file only places their entry rows and status lines.
+> **Revision 2026-10-08 (consolidation).** This file is now the **hub** that places rows; the screens behind several rows are owned by other specs, and duplicated definitions here were removed in their favour:
+> - **Pain flags** (§2.3): one list, owned by [coach-memory.md](coach-memory.md) §2.1/§2.6/§2.7 (clearing always asks for confirmation, then offers Undo). Profile → Training → `Pain flags` opens it directly.
+> - **Coach reply voice and API keys** (§2.6.2): owned by [ai-connection.md](ai-connection.md) §2.7–§2.9. The separate key sheet here is withdrawn. Canonical calls: `saveApiKey(purpose, key \| {sameAs: 'text'}, capUsd, opId)`, `removeApiKey(purpose)`, `getPersonalUsageSummary(purpose, month)` (replacing `setProviderCredential` / `checkProviderCredential` / `removeProviderCredential`). One Keychain item per distinct key: `Use the same key as text` stores no second copy (this keeps PS3's intent).
+> - **Voice & alerts** (§2.6) is regrouped: cue modes (rest-state.md §5), `Talking` (voice.md §2.5), voices, volume, vibration, and `When rest ends` + `Alert check` + `Test rest alert` (lock-screen-and-alerts.md §2.5). `Loud alerts (AlarmKit)` is now `Loud rest alerts` with modes `Off` / `Long rests only (2:00 or more)` / `Every rest`. Settings calls are `getVoiceSettings()` / `saveVoiceSettings(patch, opId)` (voice.md's `setVoicePreferences` folds into it).
+> - **Phone capabilities** (§2.10) is merged into **App status** ([system-states.md](system-states.md) §2.4), which adopts this file's evidence rule (`Working` only with a dated source) and `StatusLabel` vocabulary (design-system §7.1). `getInstallInfo()` → `getInstallStatus()`; `runRestAlertTest()` is the one test call.
+> - **Attention rows** (§2.1) are `StatusBanner`s chosen by `buildSystemStatus` with the same priority as Today (system-states.md §2.2); signing uses its 72 h / 24 h thresholds.
+> - **Data** (§2.8): one `Data & backup` row (data-import-export.md X3). Backups are in the app by default; off-phone copies are optional and never nag (approved by Ben, relayed by the product manager). Data is shown as two domains, **Your data** and **Coaching knowledge** (design-system §7.2).
+> - **Coach** section gains `Guides & playbook` ([coaching-playbook.md](coaching-playbook.md)); `What the coach remembers` opens [coach-memory.md](coach-memory.md).
+> - A `ResumeBar` (design-system §9.29) sits above the tab bar here while a workout is unfinished (progress.md PG5).
+
+Status: v0.1 draft, 8 Oct 2026. Tokens: [design-system.md](design-system.md). Gyms: [gym-editor.md](gym-editor.md). First-run values: [onboarding.md](onboarding.md). Coach connection, keys, usage and reply voice: [ai-connection.md](ai-connection.md). Memory and pain flags: [coach-memory.md](coach-memory.md). Backup, restore, import, export, delete and reset: [data-import-export.md](data-import-export.md). Rest-alert layers: [lock-screen-and-alerts.md](lock-screen-and-alerts.md). App status: [system-states.md](system-states.md). This file places their entry rows and status lines.
 
 ## 1. Purpose
 
@@ -24,8 +34,8 @@ Profile is the third tab. It's an iOS grouped list on `bg.canvas`, with `Setting
 ┌────────────────────────────────────────┐
 │ Profile                                │ type.title2
 │ ┌────────────────────────────────────┐ │
-│ │ (!) Not backed up yet.             │ │ attention rows (0–2),
-│ │     Back up now                  › │ │ StatusBanner style
+│ │ (!) Refresh Fizz in SideStore by   │ │ attention rows (0–2),
+│ │     Sat                     How › │ │ StatusBanner (system-states)
 │ └────────────────────────────────────┘ │
 │ Training                               │
 │ ┌────────────────────────────────────┐ │
@@ -52,40 +62,38 @@ Profile is the third tab. It's an iOS grouped list on `bg.canvas`, with `Setting
 │ └────────────────────────────────────┘ │
 │ Coach                                  │
 │ ┌────────────────────────────────────┐ │
-│ │ Coach connection                 › │ │ → coach area
+│ │ Coach connection                 › │ │ → ai-connection.md
 │ │ Not connected                      │ │
-│ │ Coach offers                     › │ │
+│ │ Coach offers                     › │ │ §2.7 here
 │ │ On · effort 9.5 · 2 reps short     │ │
-│ │ What the coach remembers         › │ │ → coach area
+│ │ What the coach remembers         › │ │ → coach-memory.md
+│ │ 7 confirmed · 2 waiting            │ │
+│ │ Guides & playbook                › │ │ → coaching-playbook.md
+│ │ 9 rules approved · 5 to review     │ │
 │ └────────────────────────────────────┘ │
 │ Data                                   │
 │ ┌────────────────────────────────────┐ │
-│ │ Backup & restore                 › │ │ → data area
-│ │ Last backup: never                 │ │
-│ │ Import, export & delete          › │ │ → data area
+│ │ Data & backup                    › │ │ → data-import-export.md
+│ │ Backed up on this phone · 19:05    │ │
+│ │ Copy saved to Files · 8 Oct        │ │ or: No copy off this phone yet
 │ └────────────────────────────────────┘ │
 │ App                                    │
 │ ┌────────────────────────────────────┐ │
 │ │ Appearance               System  › │ │
-│ │ Phone capabilities               › │ │
-│ │ 2 not working · 3 not tested       │ │
+│ │ App status                       › │ │ → system-states.md §2.4
+│ │ 1 not working · 2 not tested       │ │
 │ │ About this build                 › │ │
 │ │ 0.1.0 (7) · signed until 15 Oct    │ │
 │ └────────────────────────────────────┘ │
 │                            ( Ask )     │
 ├────────────────────────────────────────┤
+│ ▶ Push A · Rest 1:12        [Resume]   │ ResumeBar, only while a workout is unfinished
+├────────────────────────────────────────┤
 │   Today        Progress       Profile  │
 └────────────────────────────────────────┘
 ```
 
-Attention rows, in priority order (at most two show; the rest stay as status lines in their own sections):
-
-| Priority | Condition | Row |
-|---|---|---|
-| 1 | No backup, or the last one is unsafe (inside the app's own folder, or its test failed) | `Not backed up yet.` / `Your backup is inside the app and would be deleted with it.` → `Back up now ›` |
-| 2 | App signing ends in 2 days or less (`getInstallInfo`) | `App signing ends Thu 15 Oct. Refresh in SideStore.` (no link: the fix is outside the app) |
-| 3 | The data area reports the backup is behind (its rule, e.g. workouts logged since the last backup) | `Last backup 9 days ago · 3 workouts since.` → `Back up now ›` |
-| 4 | Notifications denied | `Rest alerts are off in iOS Settings.` → `Open Settings ›` (wording from rest-state.md §3) |
+Attention rows (revised, consolidation): up to two `StatusBanner`s at the top, chosen by `buildSystemStatus` with the **same priority list as Today** (system-states.md §2.2: data can't be opened, damaged record, signing within 24 h, last on-phone backup didn't save, signing within 72 h, no gym). Notifications denied is shown in App status and Voice & alerts, not here. **Off-phone backup is never an attention row.** The quiet 30-day "no copy off this phone" reminder appears only as a second line on the `Data & backup` row (`ⓘ No copy off this phone since 8 Sep`), dismissible from Data & backup, and can be switched off there.
 
 ### 2.2 Goals & schedule
 
@@ -119,6 +127,8 @@ Attention rows, in priority order (at most two show; the rest stay as status lin
 - Every goal row has a `ProvenanceTag`: `Set in setup, 8 Oct`, `Changed by you, 12 Oct`, or `From coach chat, 14 Oct · you confirmed`. Nothing appears here unconfirmed (brief §8 `saveConfirmedMemory`: "don't silently infer lasting goals").
 
 ### 2.3 Pain flags
+
+> **Consolidation:** the canonical Pain flags list, add sheet and clear confirmation are in [coach-memory.md](coach-memory.md) §2.1 (Pain flags section), §2.6 and §2.7. `Profile → Training → Pain flags` opens that same list on its own. The wireframe below is kept for reference only; where it differs (an inline `Clear` with no confirmation), coach-memory.md wins: `Clear…` → confirmation → toast with Undo.
 
 ```
 ┌────────────────────────────────────────┐
@@ -188,13 +198,13 @@ Tapping a preset opens a small editor: `Name` field and the rest wheel (rest-sta
 
 ### 2.6 Voice & alerts
 
-One long screen in five groups. Every row is at least 52pt; switches use the system control.
+One long screen in six groups (revised, consolidation). Every row is at least 52pt; switches use the system control. Each group's **content** is owned by the spec named on its header; this screen only orders them.
 
 ```
 ┌────────────────────────────────────────┐
 │ ‹ Profile      Voice & alerts          │
 ├────────────────────────────────────────┤
-│ During workouts                        │
+│ During workouts        (rest-state §5) │
 │ ( ) Quiet                              │
 │     Screen, vibration and alert sound. │
 │ (•) Set cues                           │
@@ -205,17 +215,24 @@ One long screen in five groups. Every row is at least 52pt; switches use the sys
 │     coach.  (!) Coach not connected  › │ disabled + link when no route
 │ Heads-up at 15 seconds left    [ Off ] │
 │ Announce each set before you start [ ]│
-│ Listen during rest (mic on in rest) [ ]│ Conversation only
 │ Speak through phone speaker when       │
 │ no headphones                  [ Off ] │
+│                                        │
+│ Talking                  (voice §2.5)  │
+│ Talk button      Tap to start        › │ / Hold to talk
+│ Use iPhone mic with headphones [ On ]  │
 │ Say "done" to log shown values [ Off ] │
+│ Listen during rest (mic on in rest) [ ]│ Conversation only
+│ Recognition language English (UK)    › │ on-device list
+│ Allow Apple's servers if this iPhone   │
+│ can't recognise speech itself  [ Off ] │
+│ Speak replies to questions I ask by    │
+│ voice                          [ On ]  │
 │                                        │
 │ Voices                                 │
 │ Set cues          Serena (Premium)   › │ → §2.6.1
-│ Coach replies     Same as set cues   › │ → §2.6.2
+│ Coach replies     Apple voice        › │ → ai-connection §2.8
 │ Speaking rate     [Slower|Normal|Faster]│
-│ Recognition language                   │
-│                   English (UK)       › │ on-device list
 │ Play a sample                          │ speaks a sample cue now
 │                                        │
 │ Volume and sound                       │
@@ -229,23 +246,24 @@ One long screen in five groups. Every row is at least 52pt; switches use the sys
 │ Steppers and keypad            [ On ]  │ haptic.step
 │ Undo                           [ On ]  │ haptic.undo
 │                                        │
-│ Rest alerts when the phone is locked   │
-│ Notification       Allowed           › │ or Off in iOS Settings / Allow
-│ Lock-screen countdown                  │
-│   (!) Not working on this install    › │ → capability detail
-│ Loud alerts (AlarmKit)          [ Off ]│
-│   Rings even in silent mode and Focus. │
-│ Spoken cues while locked               │
-│   Not in this build                    │
-│ Test rest alert (10 s)                 │ accent text button
+│ When rest ends   (lock-screen §2.5)    │
+│ Notification                     On  › │
+│ Loud rest alerts                 Off › │ Off / Long rests only / Every rest
+│ Speak while locked (experiment)  Off › │ only in builds that support it
+│ Show rest end time on the Lock Screen  │ only when the Live Activity
+│                                [ Off ] │ is unavailable
+│ Alert check                            │ StatusRows
+│ ✓ Notifications allowed, with sound    │
+│ ⚠ Lock Screen timer: not working on  › │ → App status detail
+│   this install                         │
+│ Test rest alert                      › │
 └────────────────────────────────────────┘
 ```
 
 - The cue-mode block is the same list and copy as the `VoiceModePill` menu (rest-state.md §5). Changing it in either place changes both.
-- `Recognition language` lists the locales the phone supports, with `On this phone` or `Needs internet` after each. The default is the phone's locale. The build 7 probe found the recogniser on **en-US** while Ben is in the UK, so when the phone's region and the recognition language differ, the row shows `Your region is UK. English (UK) may recognise you better.` [Use English (UK)].
+- `Talking` follows voice.md §2.5. `Recognition language` lists the locales the phone supports, with `On this phone` or `Needs internet` after each. The default is the phone's locale. The build 7 probe found the recogniser on **en-US** while Ben is in the UK, so when the phone's region and the recognition language differ, the row shows `Your region is UK. English (UK) may recognise you better.` [Use English (UK)].
 - `Say "done" to log shown values` has the explanation `Saying "done" or "log it" saves the values on the Log button. Only works when exactly one set is active.` (active-workout.md §4.1).
-- `Loud alerts`: turning it on opens the priming sheet (onboarding.md §4.6), then the system prompt. Once on, an extra row appears: `Use for rests of at least [2:00 ▾]`, so a 60 s warm-up rest doesn't ring a full-screen alarm.
-- `Test rest alert (10 s)` schedules one test alert through every enabled layer (notification, Live Activity, loud alert), tells Ben `Lock your phone now.`, and when he returns asks `Did the alert arrive?` [Yes] [No]. The answer is saved as that layer's evidence with the date and build (§2.10).
+- `When rest ends`, `Alert check` and `Test rest alert` follow lock-screen-and-alerts.md §2.5 and §3.1, including `Loud rest alerts` (priming sheet from onboarding.md §4.6, then the system prompt; threshold default `timing.loudModeMinRest`, 2:00) and the test (`runRestAlertTest()`, `Lock your phone now.`, `Did the alert arrive?` [Yes] [No]). Each answer is saved as that layer's evidence with the date and build and shown in App status.
 
 #### 2.6.1 Apple voice picker
 
@@ -275,6 +293,8 @@ One long screen in five groups. Every row is at least 52pt; switches use the sys
 - If the chosen voice is later deleted from the phone, cues use the system default and the row reads `Serena (not on this phone) · using default`.
 
 #### 2.6.2 Coach reply voice (OpenAI opt-in)
+
+> **Consolidation: withdrawn in favour of [ai-connection.md](ai-connection.md) §2.8 (Coach voice) and §2.9 (usage and spend).** `Voices → Coach replies` opens that screen. The two specs agreed on the substance (opt-in, Apple fallback that's announced, never another paid route, key in the Keychain and not in backups, an in-app monthly cap labelled as an estimate); ai-connection's version is canonical because it also covers the text route, separate caps per purpose and `Use the same key as text`. The wireframes below are kept for history only.
 
 ```
 ┌────────────────────────────────────────┐
@@ -332,12 +352,13 @@ One long screen in five groups. Every row is at least 52pt; switches use the sys
 
 - `Save and check` stores the key, then makes one free check request (listing models). Results: `✓ Key works.` / `OpenAI rejected this key.` (key not saved) / `Couldn't check the key: no connection. It's saved; it'll be checked before first use.`
 - After saving, only the last four characters are ever shown.
-- **One key, one Keychain item.** If the coach area also offers a personal OpenAI key for text, it must use this same sheet and item. Ben shouldn't enter one key twice, and removing it must say what stops working: `Remove the key? OpenAI voice stops, and so does the coach if it uses this key.`
+- **One key, one Keychain item.** (Consolidation: realised by ai-connection.md's `Use the same key as text`.) If ai-connection.md also offers a personal OpenAI key for text, it must use the same Keychain item. Ben shouldn't enter one key twice, and removing it must say what stops working: `Remove the key? OpenAI voice stops, and so does the coach if it uses this key.`
 
 ### 2.7 Coach
 
-- **Coach connection ›** opens the coach area. The row shows `getAiCapabilities` status only: `Not connected`, `ChatGPT plan · text`, `API key · text`, `Paused: usage limit reached`, `No connection right now`, or `Not available in this build yet`. Nothing else about the coach is configured on this tab.
-- **What the coach remembers ›** opens the coach area's memory list.
+- **Coach connection ›** opens [ai-connection.md](ai-connection.md) §2.1/§2.6. The row shows `getAiCapabilities` status only: `Not connected`, `ChatGPT plan · text`, `API key · text`, `Paused: usage limit reached`, `No connection right now`, or `Not available in this build yet`.
+- **What the coach remembers ›** opens the Memory list in [coach-memory.md](coach-memory.md) §2.1 (Your data only: memories hold personal facts; general training rules go to the playbook).
+- **Guides & playbook ›** opens [coaching-playbook.md](coaching-playbook.md) (Coaching knowledge; Ben's guide files are Your data).
 - **Coach offers ›** (this spec; behaviour from coach-adjustments.md §4.7):
 
 ```
@@ -365,19 +386,21 @@ One long screen in five groups. Every row is at least 52pt; switches use the sys
 
 With effort set to RIR, the effort rows read `Offer when RIR is at most [0]` (0–1) and `Offer when RIR is at least [4+]` (3–4+), matching the rest card's chips. With effort `Off`, those two rows are hidden and only the reps row remains. Warm-up and drop sets never trigger offers (coach-adjustments.md §4.2).
 
-### 2.8 Data
+### 2.8 Data (revised, consolidation)
 
-Two rows, both opening the data area:
-- `Backup & restore` with the status line from `getBackupStatus`: `Last backup: today 07:12 · iCloud Drive · test passed`, `Last backup: 9 days ago`, or `Last backup: never`.
-- `Import, export & delete` (FitNotes import, export, delete all data).
+One row, `Data & backup`, opening [data-import-export.md](data-import-export.md) §2.1 (X3). Its two status lines come from `getBackupStatus` and always use the three durability phrases (design-system §7.1):
+- line 1, on this phone: `Backed up on this phone · 19:05` / `Saved on this phone` (before the first workout) / `⚠ Last backup on this phone didn't save` / `ⓘ Automatic backups are off`;
+- line 2, off this phone: `Copy saved to Files · 8 Oct` / `No copy off this phone yet` / quiet reminder `ⓘ No copy off this phone since 8 Sep` (after 30 days, only if the reminder is on).
 
-Profile adds no data actions of its own.
+Behind the row, the hub groups everything by the two data domains (`Your data`, `Coaching knowledge`): backups (two sections, independent restore), export (`My data` / `Coaching knowledge only`), and `Delete my data (keep coaching knowledge)` / `Reset coaching knowledge`. Profile adds no data actions of its own.
 
 ### 2.9 Appearance
 
 `System` / `Dark` / `Light` (design-system §2). Applies immediately, including to an open workout.
 
-### 2.10 Phone capabilities
+### 2.10 Phone capabilities → App status
+
+> **Consolidation: merged into App status** ([system-states.md](system-states.md) §2.4). The Profile row is `App status`. What this section adds there: the evidence rule (`Working` only with a dated check, probe or test result; otherwise `Not tested`), the `StatusLabel` vocabulary (design-system §7.1; `Not working` uses `exclamationmark.triangle`), per-row detail screens (what it does, evidence, likely cause, what happens instead, one action) and `Run phone checks`. The wireframe below shows that content, now as App status sections.
 
 ```
 ┌────────────────────────────────────────┐
@@ -419,7 +442,7 @@ Status vocabulary (`StatusLabel`, icon + word, never colour alone):
 | Status | Icon | Colour | Meaning |
 |---|---|---|---|
 | `Working` | `checkmark.circle.fill` | `status.done` | A runtime check passed, or a probe/test passed on this install. The source line gives date and build |
-| `Not working` | `xmark.octagon` | `status.warning` | A check or test failed on this install. The detail explains the likely cause and the fallback |
+| `Not working` | `exclamationmark.triangle` (consolidation; was `xmark.octagon`) | `status.warning` | A check or test failed on this install. The detail explains the likely cause and the fallback |
 | `Not tested` | `questionmark.circle` | `text.secondary` | Supported by iOS, but no test on this install yet |
 | `Not available` / `Not in this build` | `minus.circle` | `text.secondary` | Free signing or this build doesn't include it (ADR 0004, ADR 0007) |
 | `Off` | `circle` | `text.secondary` | Ben turned it off, or iOS permission is off. The row links to the fix |
@@ -452,8 +475,8 @@ Detail screens (tap `›`) show: what it does, the evidence (`Probe: failed 8 Oc
 │ Database          Version 1 · 1.2 MB   │
 │                                        │
 │ Privacy                                │
-│ Your training data is stored only on   │
-│ this phone and in backups you save.    │
+│ Your data is stored only on this phone │
+│ and in copies you save to Files.       │
 │ The coach sends the context it needs   │
 │ to the service you connected. Audio    │
 │ isn't saved.                           │
@@ -473,12 +496,12 @@ Detail screens (tap `›`) show: what it does, the evidence (`Probe: failed 8 Oc
 |---|---|---|
 | Loading | First render; all reads are local | Static grey rows after 300 ms, no shimmer |
 | Normal | — | §2.1 |
-| Fresh setup with skips | Onboarding skipped gym and backup | Attention row `Not backed up yet.`; Gyms section `No gym yet. Loads won't be checked against equipment.` + `Add gym` |
+| Fresh setup with skips | Onboarding skipped the gym | Gyms section `No gym yet. Loads won't be checked against equipment.` + `Add gym`; Data row `Saved on this phone` (no warning: backups start after the first workout) |
 | Attention | Any §2.1 attention condition | Up to two rows, highest priority first |
-| Workout in progress | Unfinished session | Unchanged list. Changes apply as in §4.2. Data rows show the data area's own guard (e.g. restore isn't offered mid-workout) |
+| Workout in progress | Unfinished session | Unchanged list. Changes apply as in §4.2. The Data & backup screens show their own guard (data-import-export.md DX4: restore and import wait until the workout is finished) |
 | Offline | No network | Only rows that need the network change: coach connection `No connection right now`; OpenAI voice status `No connection. Replies use the Apple voice.` No banner |
 | AI unavailable | `getAiCapabilities` reports no text route | `Coach connection: Not connected`; `Conversation` disabled with `Coach not connected ›`; coach offers note. Everything else unchanged |
-| Database error | SQLite read fails | `Couldn't open your training data.` [Try again] [Restore from backup] (same as today.md §3). App rows (Appearance, Capabilities, About) still work |
+| Database error | SQLite read fails | `Couldn't open your training data.` [Try again] [Restore from backup] (same as today.md §3). App rows (Appearance, App status, About) still work |
 
 ### 3.2 Voice and alerts
 
@@ -495,6 +518,8 @@ Detail screens (tap `›`) show: what it does, the evidence (`Probe: failed 8 Oc
 | Test result | `✓ Arrived` or `✕ Didn't arrive`, saved with date and build |
 
 ### 3.3 OpenAI coach voice
+
+> Consolidation: canonical states are ai-connection.md §3.3; the table below agrees with it and is kept for reference. Fallback strip wording is voice.md §3.2 (`Using Apple voice: <reason>`).
 
 | State | Status line | Replies use |
 |---|---|---|
@@ -513,9 +538,9 @@ The fallback is per reply and automatic **only towards the free Apple voice**. I
 ### 3.4 Transitions
 
 - Profile root → any row → pushed detail; `‹` returns with the root's status lines refreshed.
-- Coach connection / memory / data rows → push into the other areas' screens; returning lands on Profile with fresh status.
+- Coach connection → ai-connection.md; What the coach remembers / Pain flags → coach-memory.md; Guides & playbook → coaching-playbook.md; Data & backup → data-import-export.md; App status → system-states.md. Returning lands on Profile with fresh status.
 - Gyms → gym-editor.md.
-- Attention row `Back up now ›` → the data area's backup flow → back to Profile with the row gone if the backup passed its test.
+- An attention row's action → the owning screen → back to Profile with the row gone once the cause is fixed.
 
 ## 4. Interactions
 
@@ -523,9 +548,9 @@ The fallback is per reply and automatic **only towards the free Apple voice**. I
 - Switches, segmented controls, radio lists and steppers save on change with an operation ID (`saveUserProfile`, `saveVoiceSettings`, `saveCoachTriggerThresholds`). Toggling back is the undo; no toast.
 - Destructive or bulk actions have an Undo toast or a confirmation:
   - `Reset to defaults` (coach offers): toast `Offer settings reset.` [Undo].
-  - Clearing a pain flag: toast `Pain flag cleared for Bench press. Loads can go up again.` [Undo] (coach-adjustments.md §4.4: clearing is always explicit by Ben).
+  - Clearing a pain flag: `Clear…` → confirmation → toast `Pain flag cleared for Bench press` [Undo] (coach-memory.md §2.7; clearing is always explicit by Ben).
   - Deleting a rest preset: toast [Undo].
-  - Removing the API key: confirmation alert (§2.6.2). No Undo: the key is gone from the Keychain.
+  - Removing an API key: confirmation alert in ai-connection.md §4. No Undo: the key is gone from the Keychain.
 - Text fields (goal note, limitation note) save when the field loses focus. Return closes the keyboard.
 
 ### 4.2 When changes take effect
@@ -555,7 +580,7 @@ Profile is the place to see and fix every permission. Each row shows `Allowed`, 
 ### 4.5 Gestures and keyboard
 - No custom gestures. Swipe-back works. Swipe-to-delete on rest presets has a `Delete` button equivalent in the preset editor.
 - Steppers have 44 × 44 targets (`target.min`); this tab isn't used mid-set, so `target.workout` isn't required.
-- The API key sheet's `Save and check` sits above the keyboard.
+- Key entry (ai-connection.md §2.7) keeps `Check and save key` above the keyboard.
 
 ## 5. Copy
 
@@ -563,7 +588,9 @@ Profile is the place to see and fix every permission. Each row shows `Allowed`, 
 |---|---|
 | Title | `Profile` |
 | Sections | `Training` · `Gyms` · `Voice & alerts` · `Coach` · `Data` · `App` |
-| Attention | `Not backed up yet.` · `Your backup is inside the app and would be deleted with it.` · `Back up now ›` · `App signing ends Thu 15 Oct. Refresh in SideStore.` · `Last backup 9 days ago · 3 workouts since.` · `Rest alerts are off in iOS Settings.` · `Open Settings ›` |
+| Attention | From system-states.md §5 (e.g. `Refresh Fizz in SideStore by Sat` [How ›], `Last backup on this phone didn't save`). No off-phone backup wording here |
+| Data row | `Data & backup` · `Backed up on this phone · 19:05` · `Saved on this phone` · `Copy saved to Files · 8 Oct` · `No copy off this phone yet` · `No copy off this phone since 8 Sep` |
+| Coach rows (added) | `Guides & playbook` (`9 rules approved · 5 to review`) · `What the coach remembers` (`7 confirmed · 2 waiting`) |
 | Training rows | `Goals & schedule` · `Pain flags` (`1 active: Bench press` / `None`) · `Logging` (`kg · RPE after the set`) · `Rest presets` (`1:00 · 1:30 · 3:00`) |
 | Goals screen | `Main focus` · `Also matters` · `Specific goal` · `Lifting regularly` · `Training days` · `Usual session length` · `Notes` · `Not set` · footer `The coach reads these. It can suggest changes in chat, but they only appear here after you confirm them.` |
 | Provenance | `Set in setup, 8 Oct` · `Changed by you, 12 Oct` · `From coach chat, 14 Oct · you confirmed` |
@@ -577,13 +604,14 @@ Profile is the place to see and fix every permission. Each row shows `Allowed`, 
 | Sample (spoken) | "Logged 100 kilos for 8. Rest 2 minutes." (an example of an **actual** result cue) |
 | Volume | `Voice volume` · `Lower music during cues` · `Timer sound (Quiet mode)` |
 | Vibration | `Set saved` · `Rest ended` · `Steppers and keypad` · `Undo` |
-| Rest alerts | `Rest alerts when the phone is locked` · `Notification` · `Lock-screen countdown` · `Loud alerts (AlarmKit)` / `Rings even in silent mode and Focus.` · `Use for rests of at least` · `Spoken cues while locked` · `Not in this build` · `Test rest alert (10 s)` · `Lock your phone now.` · `Did the alert arrive?` [Yes] [No] |
+| Rest alerts | Owned by lock-screen-and-alerts.md §5: `When rest ends` · `Notification` · `Loud rest alerts` (`Off` · `Long rests only (2:00 or more)` · `Every rest`) · `Speak while locked (experiment)` · `Show rest end time on the Lock Screen` · `Alert check` · `Test rest alert` · `Lock your phone now. In 10 seconds you should get the rest alert.` · `Did the alert arrive?` [Yes] [No] |
+| Talking | Owned by voice.md §2.5: `Talking` · `Talk button` · `Tap to start, stops when you stop talking` · `Hold to talk` · `Use iPhone mic with headphones` · `Allow Apple's servers if this iPhone can't recognise speech itself` · `Speak replies to questions I ask by voice` |
 | Coach voice | `Same as set cues (Apple)` / `Free. Works offline.` · `OpenAI voice` / `Paid by your OpenAI API key, not your ChatGPT plan.` · `API key` · `Voice` · `Play a sample (one paid request)` · `Spending` · `This month` · `Recorded by this app from OpenAI's usage figures. Your OpenAI bill is the final amount.` · `Monthly limit in this app` (`None`) · `Also set a hard limit on OpenAI's website (Limits page).` · fallback paragraph as in §2.6.2 |
 | Key sheet | `OpenAI API key` · `Stored in this phone's Keychain. It isn't included in backups, so add it again after a restore.` · `Create a key and set a spend limit on OpenAI's website first.` · `Save and check` · `Remove key` · `Key works.` · `OpenAI rejected this key.` · `Couldn't check the key: no connection. It's saved; it'll be checked before first use.` · `Remove the key? OpenAI voice stops, and so does the coach if it uses this key.` [Remove] [Cancel] |
 | Coach voice statuses | §3.3 lines, and in the workout strip `OpenAI voice unavailable. Using Apple voice.` |
 | Coach rows | `Coach connection` (`Not connected` · `ChatGPT plan · text` · `API key · text` · `Paused: usage limit reached` · `No connection right now` · `Not available in this build yet`) · `What the coach remembers` · `Coach offers` (`On · effort 9.5 · 2 reps short` / `Off`) |
 | Coach offers | `Offer to adjust after a hard or easy set` · `The coach only offers. Nothing changes until you tap Adjust.` · `Offer when effort is at least` · `Offer when reps are short by` · `Offer when effort is at most` · `Offer when RIR is at most` · `Offer when RIR is at least` · `Reset to defaults` · `Coach not connected. Offers start once it is.` · toast `Offer settings reset.` [Undo] |
-| Data rows | `Backup & restore` (`Last backup: today 07:12 · iCloud Drive · test passed` / `Last backup: 9 days ago` / `Last backup: never`) · `Import, export & delete` |
+| Data rows | (Replaced in consolidation by the single `Data & backup` row above.) |
 | Appearance | `System` · `Dark` · `Light` |
 | Capabilities | `What works on this phone and install. Logging and rest timers never depend on any of these.` · statuses `Working` `Not working` `Not tested` `Not available` `Not in this build` `Off` · `Tested 8 Oct, build 7` · `Needs paid Apple signing.` · `Run phone checks` · detail headings `What it does` · `Evidence` · `Likely cause` · `Instead` · [Check again] · `Did you see a countdown on the lock screen?` [Yes] [No] |
 | About | `Version` · `Built` · `Installed with` · `App ID` · `Signed until` (`Thu 15 Oct (7 days)` / `unknown`) · `If signing lapses, the app won't open until you refresh it in SideStore. Your data stays on the phone.` · `Database` · `Privacy` paragraph as in §2.11 · `Copy diagnostics` · `Licences` |
@@ -594,10 +622,12 @@ Existing (brief, ADRs, other specs):
 - `getAiCapabilities(userId)`: coach row, Conversation availability, coach offers note.
 - `checkPersonalSpendCap(requestId, estimate)`, `recordPersonalApiUsage(requestId, actualUsage)` (brief §2): OpenAI voice limit and spending.
 - `resolveInferenceRoute(userId, modality)`: returns the Apple voice when OpenAI speech is unavailable; never another paid route.
-- `setPainFlag(exerciseId, flag, note?)` (coach-adjustments.md §6).
+- `setPainFlag({exerciseIds[], active, area?, note?, source}, opId)`, `clearPainFlag`, `listPainFlags` (coach-memory.md §6, canonical).
 - `buildSetCue(event, sessionVersion)` for `Play a sample` (with a fixed sample event), `speakReply(text, preferences)`.
-- `scheduleTimerCue(timerId, version)`, `cancelObsoleteCues` for the test alert (on a test timer, not a session).
-- `createBackup`, `restoreBackup` via the data area.
+- `runRestAlertTest()` and `getRestAlertCapabilities()` (lock-screen-and-alerts.md §6) for the alert group.
+- `getBackupStatus(ownerId)` (data-import-export.md §6, canonical shape) for the Data row.
+- `saveApiKey`, `removeApiKey`, `setSpendCap`, `getPersonalUsageSummary(purpose, month)`, `setReplyVoice` (ai-connection.md §6) behind `Coach replies`.
+- `buildSystemStatus`, `getInstallStatus()` (system-states.md §7) for attention rows, App status and About.
 
 Proposed new:
 
@@ -605,36 +635,36 @@ Proposed new:
 |---|---|
 | `getUserProfile()` / `saveUserProfile(patch, expectedVersion, opId)` | Units, effort scale, effort timing (proposed field `effortPrompt: 'after' \| 'before'`), auto-save timed sets, rest presets, appearance |
 | `getTrainingGoals()` / `saveTrainingGoals(…, source)` / `saveAvailability(…)` | Shared with onboarding.md §6; returns provenance per value |
-| `listPainFlags()` | Pain flags screen and the Training row count |
 | `getCoachTriggerThresholds()` / `saveCoachTriggerThresholds({enabled, rpeHigh, repsShort, rpeLow, rirHigh, rirLow}, opId)` | Coach offers screen; read by `evaluateCoachTrigger` |
-| `getVoiceSettings()` / `saveVoiceSettings(patch)` | Cue mode and options, voices, rate, volume, ducking, timer sound, haptic switches, loud-alert threshold, recognition locale |
+| `getVoiceSettings()` / `saveVoiceSettings(patch, opId)` | **Canonical** (absorbs voice.md's `setVoicePreferences`). Cue mode and options, Talking options (`talkMode`, `phoneMicWithHeadphones`, `doneShortcut`, `listenDuringRest`, `serverRecognition`, `speakVoiceReplies`, `locale`), voices, rate, volume, ducking, timer sound, haptic switches, loud-alert mode and threshold |
 | `listSpeechVoices()` → `{id, name, locale, quality: 'premium' \| 'enhanced' \| 'default' \| 'personal'}[]` | audio-coach module; includes Personal Voice when authorised |
 | `requestPersonalVoiceAccess()` | Personal Voice authorisation |
 | `listRecognitionLocales()` → `{locale, onDevice}[]` | Recognition language row |
-| `setProviderCredential('openai', key)` / `checkProviderCredential('openai')` / `removeProviderCredential('openai')` | Keychain item (`WHEN_UNLOCKED_THIS_DEVICE_ONLY`, ai-access-and-voice.md); shared with the coach area |
-| `getPersonalUsageSummary({provider, month})` → `{amount, currency, requests, requestsWithoutUsage}` | Spending line |
-| `getDeviceCapabilities()` → per capability `{status, evidence: {kind: 'runtime' \| 'probe' \| 'user_test', at, build}?, cause?, fallback}` | Phone capabilities. Merges runtime detection (permissions, OS version, build flags such as `FIZZ_LIVE_ACTIVITY` and `FIZZ_BACKGROUND_AUDIO`) with stored probe and test results. Never returns `Working` without evidence |
-| `runRestAlertTest(layers)` / `recordCapabilityObservation(capability, ok)` | Test rest alert and `Check again` |
-| `getInstallInfo()` → `{version, build, builtAt, commit?, bundleId, installer: 'sidestore' \| 'unknown', signedUntil?}` | About; reads the installed provisioning profile and SideStore markers (the probe already reads them, ADR 0007) |
-| `getBackupStatus()` → `{lastBackupAt?, destinationKind?, verified, insideAppContainer, workoutsSince, behind}` | Data row and attention rows. Owned by the data area |
+| (withdrawn) `setProviderCredential` / `checkProviderCredential` / `removeProviderCredential` | Use ai-connection.md's `saveApiKey(purpose, key \| {sameAs: 'text'}, capUsd, opId)` / `removeApiKey(purpose)` (Keychain, `WHEN_UNLOCKED_THIS_DEVICE_ONLY`) |
+| (withdrawn) `getPersonalUsageSummary({provider, month})` | Use ai-connection.md's `getPersonalUsageSummary(purpose, month)` → `{estimateUsd, capUsd, requests, requestsWithoutUsage, priceTableCheckedAt}` (adds this file's `requestsWithoutUsage`) |
+| `getDeviceCapabilities()` → per capability `{status, evidence: {kind: 'runtime' \| 'probe' \| 'user_test', at, build}?, cause?, fallback}` | App status. Aggregates `getRestAlertCapabilities()`, `getVoiceCapabilities()`, `getAiCapabilities()`, `getPermissionStatus()` and stored probe/test results. Never returns `Working` without evidence |
+| `runRestAlertTest()` / `recordCapabilityObservation(capability, ok)` | Test rest alert and `Check again` (one name; lock-screen's `runAlertTest` folds into it) |
+| (withdrawn) `getInstallInfo()` | Use system-states.md's `getInstallStatus()` (adds `installer`, `builtAt`, `commit` from here) |
+| (withdrawn) `getBackupStatus()` shape | Use data-import-export.md §6's `getBackupStatus(ownerId)` |
 | `getPermissionStatus(kind)` / `requestPermission(kind)` | Notifications, microphone, speech, AlarmKit, Personal Voice |
 
 ## 7. Acceptance checks
 
 1. With airplane mode on and no coach, Profile renders fully. Only the coach connection row, Conversation and the OpenAI voice status mention it, and none shows an error banner.
-2. On the build 7 install, Phone capabilities shows the lock-screen countdown as `Not working` with `Checked 8 Oct, build 7`, time-sensitive alerts as `Not available` (`Needs paid Apple signing.`), AlarmKit as `Not tested`, and spoken cues while locked as `Not in this build`. No row says `Working` without a dated source line.
+2. On the build 7 install, App status shows the lock-screen countdown as `Not working` with `Checked 8 Oct, build 7`, time-sensitive alerts as `Not available` (`Needs paid Apple signing.`), AlarmKit as `Not tested`, and spoken cues while locked as `Not in this build`. No row says `Working` without a dated source line.
 3. `Conversation` can't be selected while `getAiCapabilities` reports no text route; it shows `Coach not connected ›`.
 4. OpenAI voice is never active unless Ben chose `OpenAI voice` **and** a key is saved. Connecting the ChatGPT plan doesn't change the coach reply voice.
 5. With OpenAI voice on: airplane mode, a rejected key and a reached app limit each produce an Apple-voice reply and the matching status line. No other provider is called, and the workout strip shows the fallback line once.
-6. After saving a key, the full key is never displayed again (only `sk-…` and four characters). A backup file made afterwards doesn't contain the key (search the JSON for the key's last 8 characters).
+6. After saving a key (ai-connection.md), the full key is never displayed again (only `sk-…` and four characters). A backup file made afterwards doesn't contain the key (search the JSON for the key's last 8 characters). With `Use the same key as text` on, the Keychain holds one item.
 7. The spending line is labelled as recorded by the app, and the count of replies without usage figures is shown when non-zero.
 8. Haptics, timer sound and voice volume are three separate controls: turning off `Rest ended` vibration leaves the timer sound and cues unchanged, and vice versa.
 9. Changing the Heavy preset from 3:00 to 2:30 during a workout doesn't change the running rest or the rest of that workout; the next workout's heavy sets rest 2:30.
 10. Changing thresholds to RPE 9 makes an RPE 9 working set raise an offer on the next set, with the coach connected. `Reset to defaults` restores 9.5 / 2 / 6 and offers [Undo].
-11. Clearing a pain flag needs a tap, shows an Undo toast, and the coach has no tool that can clear it.
-12. `Test rest alert (10 s)` schedules exactly one alert per enabled layer; locking the phone shows it; the answer is stored and shown as evidence with date and build.
-13. With signing ending in 2 days, the attention row appears. With 3 or more days left, it doesn't.
-14. With no backup, the root shows `Not backed up yet.` first. After a passed backup through the data area, the row is gone on return.
+11. Clearing a pain flag needs a tap and a confirmation, shows an Undo toast, and the coach has no tool that can clear it.
+12. `Test rest alert` schedules exactly one alert per enabled layer; locking the phone shows it; the answer is stored and shown as evidence with date and build.
+13. With signing ending in 60 h, an info attention row appears; at 20 h it's a warning with the time; with more than 72 h left there's none (system-states.md §3.5).
+14. With no copy saved to Files, the root shows **no** attention row about backups; the `Data & backup` row reads `Backed up on this phone · …` and `No copy off this phone yet`. After 30 days without a copy (reminder on), the row's second line reads `No copy off this phone since …`; nothing else changes. Nothing about backups appears during a workout.
+14a. Every Profile row that shows a durability state uses one of `Saved on this phone`, `Backed up on this phone`, `Copy saved to Files`.
 15. Changing `Weights in` to lb doesn't change any existing equipment's unit or any logged set.
 16. The recognition language row offers `Use English (UK)` when the phone's region is UK and recognition is English (US).
 17. Every row is at least 44pt (52pt for setting rows), all text is at least 16pt at the default size, values wrap under labels at AX1+, every status has an icon and a word, and numbers (times, money, counts) use tabular numerals.
@@ -644,15 +674,17 @@ Proposed new:
 
 | # | Proposal | Reason |
 |---|---|---|
-| PS1 | Add a **Phone capabilities** screen with evidence-based statuses, and a `Test rest alert` that records whether each layer actually arrived | ADR 0004 makes Live Activity, AlarmKit and time-sensitive alerts runtime flags; build 7 showed some fail. Ben needs to see that honestly, outside the probe screen |
-| PS2 | Show **signing expiry** in About and as an attention row at 2 days | On the free SideStore route the app stops opening when signing lapses (ADR 0004 weekly refresh) |
-| PS3 | One OpenAI key in the Keychain for both voice and any personal-key text route, excluded from backups | Avoids entering the key twice, and backups stay free of credentials (ADR 0005 proposal 2) |
-| PS4 | An optional **in-app monthly limit** for OpenAI voice, as well as the limit on OpenAI's site | Brief §2 asks for a personal spend cap; v0.6 sets it on OpenAI's dashboard. The in-app limit stops spending before OpenAI's cap and gives a clear fallback message |
-| PS5 | `Loud alerts` only for rests at or above a chosen length | AlarmKit's full-screen alarm is heavy for short rests (ios-platform-feasibility.md) |
+| PS1 | (Merged into App status, system-states.md.) Evidence-based capability statuses, and a `Test rest alert` that records whether each layer actually arrived | ADR 0004 makes Live Activity, AlarmKit and time-sensitive alerts runtime flags; build 7 showed some fail. Ben needs to see that honestly, outside the probe screen |
+| PS2 | (Merged with system-states.md §3.5.) Show **signing expiry** in About and App status, with banners at 72 h (info) and 24 h (warning) | On the free SideStore route the app stops opening when signing lapses (ADR 0004 weekly refresh) |
+| PS3 | (Merged with ai-connection AC3/AC7; see open-decisions.md.) One key entered once by default (`Use the same key as text`), with an optional separate key per purpose; never in backups | Avoids entering the key twice, and backups stay free of credentials (ADR 0005 proposal 2) |
+| PS4 | (Merged with ai-connection AC2.) An optional **in-app monthly cap** per purpose, as well as the budget on OpenAI's site | Brief §2 asks for a personal spend cap; v0.6 sets it on OpenAI's dashboard |
+| PS5 | (Merged with lock-screen-and-alerts §2.3.) `Loud rest alerts` modes `Off` / `Long rests only (2:00 or more)` / `Every rest` | AlarmKit's full-screen alarm is heavy for short rests (ios-platform-feasibility.md) |
 | PS6 | Recognition language as a setting, suggesting English (UK) | The build 7 probe ran in en-US; v0.6 assumes en-GB |
 | PS7 | Effort timing (`After` / `Before`) stored on the profile | P3 was adopted ("Ben can switch to before or off") but no spec or schema field holds it yet. The `Before` placement on the set card needs an active-workout.md revision |
 
 ## Proposed design-system additions
+
+> **Merged into design-system.md (consolidation):** `SettingsRow` §9.31 (with slider variant), `SettingsSectionHeader` §9.32, `StatusLabel` §7.1/§9.40 (`Not working` now uses `exclamationmark.triangle`), `AttentionRow` → `StatusBanner` §9.12, `SecureKeyField` §9.45, `ProvenanceTag` → `SourceTag` §9.28. Kept below for history.
 
 | Name | Kind | Spec |
 |---|---|---|
@@ -676,6 +708,11 @@ No new colour, type, spacing or timing tokens. Note for design-system §6: "Each
 - [today.md](today.md) §3 (Ask pill states, database error with `Restore from backup`).
 - [onboarding.md](onboarding.md) (first values, permission priming table, `ProvenanceTag`).
 - [gym-editor.md](gym-editor.md) (Gyms section rows and everything behind them).
-- Coach area spec (another designer): coach connection, ChatGPT-plan and API-key routes, memory, usage limits. Must share the §2.6.2 key sheet and Keychain item.
-- Data area spec (another designer): backup, verify, restore, import, export, delete, `getBackupStatus`.
+- [ai-connection.md](ai-connection.md): coach connection, ChatGPT-plan and API-key routes, keys, caps, usage and the coach reply voice.
+- [coach-memory.md](coach-memory.md): Memory and Pain flags.
+- [coaching-playbook.md](coaching-playbook.md): Guides & playbook.
+- [voice.md](voice.md) §2.5: the `Talking` group.
+- [lock-screen-and-alerts.md](lock-screen-and-alerts.md) §2.5, §3.1: `When rest ends`, `Alert check`, `Test rest alert`.
+- [data-import-export.md](data-import-export.md): backup (on this phone by default, optional copies to Files), check, restore by section, import, export, delete and reset, `getBackupStatus`.
+- [system-states.md](system-states.md): App status, attention-row priority, signing expiry.
 - [Device probe, build 7](../device-tests/2026-10-08-probe-build7.md), ADR 0004, ADR 0005, ADR 0006, ADR 0007; CHANGELOG v0.6 (voice plan).

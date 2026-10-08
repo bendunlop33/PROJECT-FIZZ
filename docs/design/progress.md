@@ -1,5 +1,7 @@
 # Progress
 
+> **Revision 2026-10-08 (consolidation).** PG20 now uses change-review.md's `update_template` kind name (plus `deload_week`). PG6's 10–20 guide band is a playbook rule (Coaching knowledge) that Ben approves in Guides & playbook; its on/off and min/max live with that rule rather than under a separate "Profile → Progress" screen. `SourceTag` (§9.28) is now the canonical tag for every source and provenance label. `Clear…` on the pain status line opens the canonical Pain flags list (coach-memory.md §2.7).
+
 Status: v0.1 draft, 8 Oct 2026. Brief §1 (Progress tab) and §12 "Page 6: Progress". Tokens and components: [design-system.md](design-system.md) (chart tokens §2.1 and §4.1, components §9.21–9.30). Related: [workout-summary.md](workout-summary.md) (the past-workout view and Edit workout reuse it), [coach-adjustments.md](coach-adjustments.md) (coach markers, proposals, Undo), [today.md](today.md) (gets only the compact version), [training-guides/evidence-core.md](../training-guides/evidence-core.md) (E1, E2, E5, E11, E13).
 
 Progress is **not** part of the logging loop. Nothing here is needed to train, nothing here needs a network, and nothing here interrupts a workout. The only AI-dependent part is the weekly review, and it degrades to plain facts.
@@ -36,7 +38,7 @@ Progress is **not** part of the logging loop. Nothing here is needed to train, n
 | PG17 | **Weekly streak** | Counts consecutive **weeks** with ≥ 1 finished workout; hidden below 2; never a "lost streak" message; can be hidden in Profile | Daily streaks punish rest days. A weekly count is factual and forgiving |
 | PG18 | **Weekly review: when** | One coach call per completed week, made the first time Progress is opened (foreground, coach reachable) on or after Monday. Never in the background, never on a timer | Matches the summary's "one call, retry on next open" pattern; ADR 0006 "not constantly" |
 | PG19 | **Weekly review: numbers are checked** | Every number in a coach observation must appear in the deterministic facts payload; an observation that fails is replaced by a built-in fact | "Factual observations" has to be enforceable, not a prompt hope |
-| PG20 | **Review proposal kinds** | `Proposal.kind` adds `'adjust_template'` (future sets/reps/loads of a routine exercise) and `'deload_week'`; scope always `future_template` | The brief §8 union lacks them |
+| PG20 | **Review proposal kinds** | `Proposal.kind` uses change-review.md's `'update_template'` (future sets/reps/loads of a routine exercise; consolidation: replaces the `'adjust_template'` name proposed here) and adds `'deload_week'`; scope always `future_template` | The brief §8 union lacks them |
 
 ---
 

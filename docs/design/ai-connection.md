@@ -1,5 +1,11 @@
 # AI connection (ChatGPT plan, personal OpenAI key, voice key, usage)
 
+> **Revision 2026-10-08 (consolidation).**
+> - This file is the **single owner** of API keys, spend caps, usage figures and the coach reply voice. profile-and-settings.md's separate key sheet and coach-voice screen (§2.6.2 there) are withdrawn; `Voice & alerts → Coach replies` opens §2.8 here. Canonical calls: `saveApiKey`, `removeApiKey`, `setSpendCap`, `getPersonalUsageSummary(purpose, month)` (now also returning `requestsWithoutUsage`), `setReplyVoice`.
+> - AC3 and profile's PS3 are merged into one decision (open-decisions.md): **by default one key is entered once** (`Use the same key as text` is on whenever a text key exists, storing no second Keychain item); a separate key per purpose stays optional. AC2 and PS4 (in-app monthly caps) are one decision.
+> - Credentials are in neither data domain and never in a backup or export (design-system §7.2). `Delete my data` removes them; `Reset coaching knowledge` doesn't.
+> - Components merged into design-system: `ConnectionStatusCard` → `StatusCard` §9.41, `RouteOption` → `SettingsRow` radio variant §9.31, `SpendLine` §9.44, `SecureKeyField` §9.45, `timing.signInTimeout` §6.
+
 Status: v0.1 draft, 8 Oct 2026. Covers brief §2 (own account first, personal API fallback, `getAiCapabilities` … `recordPersonalApiUsage`), CHANGELOG v0.2 (AI route), v0.6 (Ben has ChatGPT Pro: text only; opt-in OpenAI voice with his own key), [research ai-access-and-voice.md](../research/ai-access-and-voice.md) (OAuth facts, error codes, OpenAI UI guidelines, spike S1–S8), CLAUDE.md rules 1 and 7, and [device probe build 7](../device-tests/2026-10-08-probe-build7.md) (ChatGPT sign-in S1 **not implemented yet**; Keychain round-trip passes). Tokens: [design-system.md](design-system.md).
 
 Everything here lives in **Profile → Coach → Coach connection**. None of it appears in the workout except the honest one-line states the other specs already define (`Offline`, `Coach not connected`, route line in the coach sheet). OAuth details, tokens and scopes never appear on workout screens (brief §2).
@@ -445,7 +451,7 @@ Existing (brief §2): `getAiCapabilities(userId)`, `beginAiConnection(userId, mo
 | `saveApiKey(purpose: 'text' \| 'voice', key \| {sameAs: 'text'}, capUsd, opId)` | Validates with `GET /v1/models` (and, for voice, that a TTS model is listed), stores in Keychain (`WHEN_UNLOCKED_THIS_DEVICE_ONLY`), returns `{last4}`. Never logs the key |
 | `removeApiKey(purpose)` | Deletes from Keychain; resolves the route as §3.2 |
 | `setSpendCap(purpose, monthlyUsd)` | In-app cap read by `checkPersonalSpendCap` |
-| `getPersonalUsageSummary(purpose, month)` → `{estimateUsd, capUsd, requests, priceTableCheckedAt}` | From `recordPersonalApiUsage` rows × the app's dated price table |
+| `getPersonalUsageSummary(purpose, month)` → `{estimateUsd, capUsd, requests, requestsWithoutUsage, priceTableCheckedAt}` (canonical; profile-and-settings' variant withdrawn) | From `recordPersonalApiUsage` rows × the app's dated price table |
 | `getLocalCoachMessageCount(ownerId, weekStart)` | The ChatGPT-plan usage line (factual local count) |
 | `setReplyVoice({engine, voiceId})`, `previewVoice(engine, voiceId)` | Coach voice; preview through the same spend check |
 | `PriceTable` (bundled, dated) | Per model: input, cached input, output per 1M tokens; TTS per 1M characters/tokens; `checkedAt`. Updated with app builds |
@@ -485,6 +491,9 @@ No new colours.
 ## Cross-links
 
 - [coach-sheet.md](coach-sheet.md): route line, limit/cap/expired/model banners and their deep links here.
+- [profile-and-settings.md](profile-and-settings.md) §2.6–§2.7: the Profile rows that open this file (Coach connection; Voice & alerts → Coach replies).
+- [onboarding.md](onboarding.md) §2.8: the optional first-run entry to §2.2 and §2.7.
+- [data-import-export.md](data-import-export.md) §2.7: `Delete my data` disconnects and removes keys.
 - [voice.md](voice.md) §6: speech input engine and the spoken-reply engine switch at runtime.
 - [coach-adjustments.md](coach-adjustments.md) §3.1 and [workout-summary.md](workout-summary.md): coach failure lines and `Built-in rule (coach unavailable)`.
 - [rest-state.md](rest-state.md) §5: Conversation mode is selectable only when `getAiCapabilities` reports a route; set cues always Apple.

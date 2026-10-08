@@ -6,6 +6,8 @@
 >
 > **Revision 2026-10-08 (coach-led progression, v0.4).** Aligned with [ADR 0006](../decisions/0006-coach-led-progression.md) and rewritten rule 3; behaviour specified in [coach-adjustments.md](coach-adjustments.md). Added transition rows for coach offers, requests, applied adjustments and undo (§3.2); invariant 6 now covers coach adjustments and a new invariant 7 says a coach result never applies to a done set or a newer state; new events and the trigger check in §5; speech rule 3 covers offers; rule 5 now separates applied adjustments from review cards; data (§6); P8 marked as amended by v0.4 (§7); checks 17–20. Coach adjustments are an optional layer: the core loop and its tap counts are unchanged.
 
+> **Revision 2026-10-08 (consolidation).** §5.1 step 3 follows voice.md VO4: a voice-logged set shows `✓ Saved` and its Undo **in the voice strip**; the separate undo toast isn't shown for it. §5.1 now points to voice.md for the full voice path. §2 records where each `DEP-*` stands after device probe build 7 (DEP-NOTIF passed without Time Sensitive, which a free Apple ID can't use; DEP-LIVE failed pending the App Group fix). Fixed a missing line break between rules 5 and 6 in §5. The coach sheet, lock-screen alerts, voice, backups and system states now have their own specs (see README.md).
+
 Status: v0.1 draft, 8 Oct 2026. Screen specs: [today.md](today.md), [active-workout.md](active-workout.md), [rest-state.md](rest-state.md), [workout-summary.md](workout-summary.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -25,6 +27,14 @@ Research on voice, AI and Live Activity is happening in parallel. Each optional 
 | `DEP-LIVE` | Can the dev build show a Live Activity or Dynamic Island with a system-rendered countdown worked out from the deadline? | Notification only. Lock-screen copy is defined so it can be reused either way. |
 | `DEP-STT` | Is on-device speech-to-text good enough to parse "one fifteen, four reps" in a noisy gym without an LLM? | Voice logging goes through the coach pipeline when AI is available, and is unavailable otherwise (shown honestly). |
 | `DEP-AI` | Is own-account (Sign in with ChatGPT) inference eligible for a local personal build, and which capability flags are available? | The coach shows `Coach not connected`. Logging, targets and cues are unaffected. |
+
+**Status after device probe build 7 (8 Oct 2026; consolidation):**
+- `DEP-AUDIO`: on-screen speech and ducking over music **passed**; speaking while locked not yet tested (needs the background-audio build). Spec: voice.md, lock-screen-and-alerts.md §2.4.
+- `DEP-NOTIF`: **passed** at interruption level `active`. Time Sensitive isn't available on a free Apple ID (ADR 0004), so it is no longer part of the design. Spec: lock-screen-and-alerts.md §2.2.
+- `DEP-LIVE`: **failed** (SideStore renamed the App Group); runtime fix built, retest pending (ADR 0007). Spec: lock-screen-and-alerts.md §2.1.
+- `DEP-STT`: on-device recognition **passed** in en-US; retest in en-GB and with gym noise. Spec: voice.md §4.2, §7.
+- `DEP-AI`: ChatGPT sign-in (spike S1) **not implemented yet**. Spec: ai-connection.md.
+- New tags used by later specs: `DEP-ALARM` (AlarmKit), `DEP-FILES` (folder bookmark, only for optional automatic off-phone backups), `DEP-UPDATE-FEED`. All are listed in open-decisions.md.
 
 ## 3. State machine
 
@@ -193,7 +203,8 @@ Rules for every layer:
 2. **Committed values only.** Cues and lock-screen text come from committed state through `buildSetCue(event, sessionVersion)`. When `ActiveSetChanged`, `RestAdjusted`, `SetUndone` or `ProposalApplied` fires, call `cancelObsoleteCues(sessionId, version)` and reschedule.
 3. **No unsolicited speech outside Resting.** Rep sets have no explicit Working state (P1), so Ready may mean Ben is mid-set. Proactive coach speech, including a spoken coach offer, is allowed only while Resting with at least 20 s left, and only in Conversation mode. Scripted cues are allowed at commit (right after Log) and at rest end. Answers Ben asked for (push-to-talk, and the cue for an adjustment he asked for) are allowed any time.
 4. **Speech never overlaps.** A scripted cue that would overlap a coach reply waits up to 3 s, then is dropped if it is stale. The rest-end cue takes priority over a coach reply that hasn't started yet.
-5. **Coach output goes inline, in the card's coach slot.** An adjustment Ben asked for is applied and shown as a `CoachAdjustmentBanner` with Undo. A coach-raised change is first a `CoachOfferLine`. Swaps and gym changes are `ChangeReviewCard`s with Apply. Future-session changes are always proposals with before/after (summary). The coach sheet never opens by itself. See [coach-adjustments.md](coach-adjustments.md).6. **Proposals are bound to a version.** Every card and every coach request carries `baseVersion`. Any newer commit (another set, a correction, undo, a gym switch) makes it stale. Stale cards can't be applied, and a voice "yes" can't apply them either (`confirmProposal` checks the version). A stale adjustment request is re-sent once or dropped (coach-adjustments CA7).
+5. **Coach output goes inline, in the card's coach slot.** An adjustment Ben asked for is applied and shown as a `CoachAdjustmentBanner` with Undo. A coach-raised change is first a `CoachOfferLine`. Swaps and gym changes are `ChangeReviewCard`s with Apply. Future-session changes are always proposals with before/after (summary). The coach sheet never opens by itself. See [coach-adjustments.md](coach-adjustments.md).
+6. **Proposals are bound to a version.** Every card and every coach request carries `baseVersion`. Any newer commit (another set, a correction, undo, a gym switch) makes it stale. Stale cards can't be applied, and a voice "yes" can't apply them either (`confirmProposal` checks the version). A stale adjustment request is re-sent once or dropped (coach-adjustments CA7).
 7. **Honest status.** AI and voice availability come from `getAiCapabilities(userId)` and are shown on the Talk button and voice pill (and on `Adjust` as `Coach offline`). There are no canned coach replies.
 8. **Triggers are cheap and local.** `evaluateCoachTrigger` runs in `packages/domain` after `SetCommitted` and `SetCorrected`. It never calls the model. There is no AI call after every set.
 
@@ -201,9 +212,9 @@ Rules for every layer:
 
 1. Ben taps Talk. This calls `startVoiceSession(sessionId, 'push_to_talk')`. A voice strip appears above the action bar showing `Listening… · Mic on`.
 2. Ben says "100 kilos, eight reps, RPE eight". Then `transcribeUtterance` → `parseSpokenSet(transcript, context)` runs, using the active exercise and set.
-3. If the result is unambiguous, it calls the **same** `commitSetAndBeginRest` with the `opId` from `handleVoiceTurn(turnId, …)`. The strip shows `Heard: 100 kg × 8, RPE 8`, the undo toast appears, and the cue says "Logged 100 kilos for 8. Rest 2 minutes."
+3. If the result is unambiguous, it calls the **same** `commitSetAndBeginRest` with the `opId` from `handleVoiceTurn(turnId, …)`. The strip shows `✓ Saved · Bench press set 2`, `100 kg × 8 (actual) · RPE 8` and `Heard: "…"`, **with its own Undo** (voice.md VO4); the separate undo toast is not shown for voice logs. After the local commit returns, the cue says "Logged 100 kilos for 8. Rest 2 minutes."
 4. If it is ambiguous, the strip asks one question with two buttons, for example `115 kg or 150 kg?`. Nothing is saved until Ben answers.
-5. Proposal P7 asks for a deterministic on-device parser so that voice logging doesn't need the LLM. It depends on `DEP-STT`.
+5. Proposal P7 (adopted in v0.2) makes the parser deterministic and on-device, so voice logging doesn't need the LLM. It depends on `DEP-STT`. The full path, accepted forms and clarifications are in [voice.md](voice.md) §4.
 
 ## 6. Data needed (flow-level)
 

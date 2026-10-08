@@ -1,5 +1,7 @@
 # Change review (the generic card and screen for broad plan changes)
 
+> **Revision 2026-10-08 (consolidation).** The `ChangeReviewCard` extensions are written into design-system §9.11. `ProposalCard` is the canonical summary card (§9.49; `WorkoutDraftCard` is its variant), `ChangeLine` §9.35, `ScopeBadge` on the `Tag` frame and `ScopeSelector` (§9.28, §9.37 area), proposal statuses §7.1, Review-screen footer §9.46. The author tag is the canonical `SourceTag`. `Proposal.kind` `update_template` also replaces progress.md's `adjust_template`.
+
 Status: v0.1 draft, 8 Oct 2026. Brief §1 (Change review), §2 coach bullet ("show before/after changes, distinguish today-only from future-template changes, and offer undo"), §7 ("reject stale proposals"), §8 (`Proposal`, `validateCoachProposal`, `applyCoachProposal`, `undoAction`, `getDecisionEvidence`), §3 (`confirmProposal`). CLAUDE.md rules 2, 3 and 5. [ADR 0006](../decisions/0006-coach-led-progression.md). Existing component: `ChangeReviewCard` (design-system §9.11). Tokens: [design-system.md](design-system.md).
 
 This spec owns **how any reviewable change is shown, applied, undone, expired and rejected as stale**. Screen specs say *where* a proposal appears and link here.

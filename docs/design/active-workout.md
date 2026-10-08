@@ -6,6 +6,8 @@
 >
 > **Revision 2026-10-08 (coach-led progression, v0.4).** Aligned with [ADR 0006](../decisions/0006-coach-led-progression.md) and rewritten rule 3. The behaviour itself is specified once in [coach-adjustments.md](coach-adjustments.md); this file only places it. Added the `Adjust` control in the exercise header (§2, §2.1), the coach slot in the focused card (§2.1, §2.3), `Coach target` / `Plan was` markers and the Overview `C` badge (§2.4, §5), the 1 s Log guard when an adjustment changes the Log label (§4.1), Ben-asked adjustments applying at once with Undo while swaps and gym changes keep the `ChangeReviewCard` (§3, §4.7), undo rows (§4.9), data (§6) and checks 26–31. The normal Log loop gains no taps.
 
+> **Revision 2026-10-08 (consolidation).** Added `PainFlagNote` under the target line of any exercise with an active pain flag (§2.1, §5; design-system §9.50; coach-memory.md). The pain-flag undo path now points to the canonical Pain flags list (coach-memory.md §2.7). The voice strip (§2.5) is specified in voice.md; a voice-logged set carries its Undo in the strip instead of the undo toast (voice.md VO4). `Swap exercise` is pending Ben's call on exercise-library.md EL4 (§4.4). The banner slot follows system-states.md §2.2: nothing about backups, signing, builds, permissions or alert layers ever appears here.
+
 Status: v0.1 draft, 8 Oct 2026. Flow and state machine: [flow-first-milestone.md](flow-first-milestone.md). Rest behaviour: [rest-state.md](rest-state.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -57,6 +59,7 @@ Finish is in the `⋯` menu, and it is the primary only after the final set. It 
 │ │− │  100 kg    │+ │ │− │   8   │+ │   │ NumberSteppers (draft actual)
 │ └──┴────────────┴──┘ └──┴───────┴──┘   │
 │  Target 100 kg · 6–8 reps              │ target, always labelled
+│  ⚠ Pain flag: no increases             │ PainFlagNote, only when flagged
 │  Rest after: 3:00 ›                    │ resolved preset, tap to edit
 │  (coach slot: empty when idle)         │ coach-adjustments §2.1
 │                                        │
@@ -80,6 +83,7 @@ Notes:
 - **The mini set list** under the fields shows this exercise's sets with the §7 status styles, so progress is visible without switching to Overview.
 - **`Adjust`** (text button, `AdjustControl`) asks the coach to change today's remaining sets. It opens an inline reason-chip row, never a sheet. When the coach is unavailable it stays visible with the caption `Coach offline`. Full behaviour: [coach-adjustments.md](coach-adjustments.md) §2.2.
 - **Coach-changed pending sets** read `Coach target 95 kg × 8` with the `Coach` tag and a `Plan was 100 kg × 6–8` line (coach-adjustments §2.7). Unchanged sets keep the plain `Target` label.
+- **`PainFlagNote`** (consolidation): when the exercise has an active pain flag, one line sits directly under the target line: `⚠ Pain flag: no increases` (`exclamationmark.triangle` in `status.warning`, text `text.secondary`, `type.callout`). It is a 44pt target that opens that flag in Pain flags (coach-memory.md §2.1) as a sheet; Log stays one swipe away. It never blocks or changes Log, appears in Ready and Resting (under `Up next`'s target), and in Overview as a `⚠ Pain` text badge on the exercise header. In the condensed keypad layout (§2.2) it collapses to the `⚠` icon after the target, still read in full by VoiceOver: "Pain flag on this movement. Loads won't go up." It appears as soon as `setPainFlag` commits (e.g. `Adjust` → `Pain`) and disappears when the flag is cleared.
 
 ### 2.2 Focus view with the keypad open (editing load)
 
@@ -174,10 +178,10 @@ The rest timer takes the place of the previous-result line at the top of the car
 ├────────────────────────────────────────┤
 │ [ ■ ] [       Log 100 kg × 8         ] │ Log still visible and usable
 ```
-Strip states:
+Strip states (full list and copy: voice.md §2.1 and §3.1, which own them):
 - `Listening…`
 - `Working out what you said…`
-- `Heard: 100 kg × 8, RPE 8 · saved`
+- `✓ Saved · Bench press set 2` / `100 kg × 8 (actual) · RPE 8` / `Heard: "…"` with [Undo] (the strip carries the Undo for voice logs; no separate toast, voice.md VO4)
 - `115 kg or 150 kg?` [115 kg] [150 kg]
 - `Didn't catch a number. Say it again or use the buttons.`
 - `Voice isn't available: <reason>` [Settings]
@@ -375,7 +379,7 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 - **Exercise header tap** opens the history sheet: comparable history from `getComparableHistory` and technique or setup notes.
 - **Exercise `⋯` menu:**
   - `Add set` calls `addSet` (`add_set`). The new set copies the last set's planned values and rest. Toast `Set 4 added`. If nothing else is active, it becomes the active set.
-  - `Swap exercise` (→ `rankSubstitutions` list → `ChangeReviewCard` with scope `Today only`).
+  - `Swap exercise` (→ the Swap sheet in exercise-library.md §2.5 → `ChangeReviewCard` with scope `Today only`). If Ben approves exercise-library EL4, a swap he picks himself applies at once with Undo (`SwapSlotLine`) instead; coach-suggested swaps keep the card either way.
   - `Machine busy` (calls `setTemporaryAvailability`).
   - `Notes`.
   - `Skip exercise` (`skip_exercise`) marks the pending sets skipped; logged sets are untouched. It confirms first because there is no Undo yet: `Skip the 2 remaining sets of Bench press?` [Skip] [Cancel]. Toast `Bench press skipped` (no Undo). Skipped rows stay visible with the Skipped style; `Add set` brings the exercise back.
@@ -470,7 +474,7 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 | Skip exercise | Not yet (ADR 0003 Open), so it confirms. `Add set` brings the exercise back |
 | Applied proposal (swap, gym) | Toast `Undo` → `undoAction` (or a compensating proposal if it isn't safe) |
 | Coach adjustment | `Undo` on the banner; later, `Why?` on a coach-marked set → `Undo this change`, or exercise `⋯` → `Undo coach change`. `undoAction` restores only sets still pending (coach-adjustments §4.4) |
-| Pain flag | Tap `Pain` again, or Profile → Pain flags → Clear. Never cleared automatically |
+| Pain flag | Undo on the pain card or toast (8 s); after that, tap `Pain` again or the `PainFlagNote`, which opens Pain flags → `Clear…` → confirm (coach-memory.md §2.7). Never cleared automatically |
 | Discard workout (0 sets) | Discards at once. Toast `Workout discarded` (no Undo: nothing was logged; start again from Today) |
 | Discard workout (≥1 set) | Confirmation alert first: `Discard Push A? 7 logged sets will be discarded.` [Discard] [Cancel]. No undo afterwards, which is why the confirmation is needed |
 
@@ -484,6 +488,7 @@ If an Undo is rejected (the set was corrected from another path, or something wa
 | Previous | `Last (1 Oct): 100 kg × 8`. This is an **actual** from history. If the gym or machine differs: `Last (1 Oct, Hotel Gym): …`. If none: `No previous result` |
 | Field labels | `Load` (or `Load each`, `Stack`, `Assist`, `Added`), `Reps`, `Time` |
 | Target line | `Target 100 kg · 6–8 reps` / `Target 30 kg each · 8–10 reps` / `Target 0:45` |
+| Pain flag note | `Pain flag: no increases` (Overview header badge `⚠ Pain`; VoiceOver "Pain flag on this movement. Loads won't go up.") |
 | Rest line | `Rest after: 3:00 ›` |
 | Primary | `Log 100 kg × 8` · `Log 22.5 kg each × 10` · `Log Assist 20 kg × 6` · `Log BW × 12` · `Log 0:45` · `Start 0:45` · `Stop` · `Saved` · `Resume` · `Finish workout` · `Enter reps` |
 | Undo toast | `✓ Set 2 saved · 100 kg × 8` [Undo] |
@@ -565,4 +570,5 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
 29. A coach offer appears only in the rest card, after RPE ≥ 9.5, reps short by ≥ 2, or RPE ≤ 6 on a working set, and changes nothing until `Adjust` is tapped.
 30. Coach-changed pending sets show `Coach target` + `Plan was …` (Focus) and `C` (Overview); done sets show only actual values; VoiceOver reads both target values.
 31. When an adjustment changes the active set's Log label, a Log tap within 1 s is ignored; at all other times Log responds at once.
+32. With a pain flag on Bench press, its set card shows `⚠ Pain flag: no increases` under the target in Ready and Resting, Overview shows `⚠ Pain` on the header, tapping it opens that flag, and Log behaves exactly as without it. Setting the flag with `Adjust` → `Pain` makes the note appear at once; clearing it removes the note.
 The full coach-adjustment checks are in [coach-adjustments.md](coach-adjustments.md) §7.

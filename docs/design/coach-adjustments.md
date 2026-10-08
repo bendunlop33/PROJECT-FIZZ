@@ -1,5 +1,7 @@
 # Coach adjustments (in-workout and next-session)
 
+> **Revision 2026-10-08 (consolidation).** `setPainFlag` uses the canonical multi-exercise signature from [coach-memory.md](coach-memory.md) §6; pain flags are cleared from the canonical Pain flags list (coach-memory.md §2.7) and shown on the set card as `PainFlagNote`. The Coach offers settings screen is profile-and-settings.md §2.7. CA2 (swaps keep the Apply card) now has a pending alternative for swaps Ben picks himself (exercise-library.md EL4, open-decisions.md). Proposal kinds, scopes and the generic review UI are in [change-review.md](change-review.md); `Why?` uses the evidence frame in [coach-sheet.md](coach-sheet.md) §4.6.
+
 Status: v0.1 draft, 8 Oct 2026. This is the **single spec** for coach-led progression ([ADR 0006](../decisions/0006-coach-led-progression.md), CLAUDE.md rule 3, brief CHANGELOG v0.4). Other specs link here instead of repeating it:
 - [active-workout.md](active-workout.md): where Adjust sits on the set card, coach target markers, Log guard
 - [rest-state.md](rest-state.md): the offer line and adjustment banner in the rest card, cues
@@ -240,13 +242,13 @@ RIR mode: the triggers use the equivalent effort entries (`RIR 0` for RPE ≥ 9.
 | Applied adjustment (banner gone) | `Why?` on a coach-marked set → `Undo this change`; or exercise `⋯` → `Undo coach change` | Same, for still-pending sets only |
 | Older adjustment under a newer one | Not directly. `undoAction` returns a compensating proposal shown as a `ChangeReviewCard` (`Today only`) | Rule 5: never applied to newer state silently |
 | Offer | Nothing to undo: nothing changed |
-| Pain flag | `Pain` chip again, or Profile → Pain flags → Clear | Clearing is always explicit by Ben |
+| Pain flag | Undo on the pain card (8 s); later `Pain` chip again, or Pain flags → `Clear…` → confirm (coach-memory.md §2.7) | Clearing is always explicit by Ben |
 
 Voice "undo" undoes the most recent action of any kind (a set log or an adjustment). The strip says which: `Undid the coach change to sets 3–4.`
 
 ### 4.5 Pain
 
-- `Pain` (chip), or voice ("my shoulder hurts on this"), calls `setPainFlag(exerciseId, true, note?)`. This is deterministic and works offline. The domain then blocks increases for that movement, here and in `Next time`.
+- `Pain` (chip), or voice ("my shoulder hurts on this"), calls `setPainFlag({exerciseIds: [exerciseId], active: true, source: 'workout'}, opId)` (canonical signature, coach-memory.md §6). The pain card with optional area and similar-movement chips is coach-memory.md §2.5; the set card then shows `PainFlagNote` (active-workout.md §2.1). This is deterministic and works offline. The domain then blocks increases for that movement, here and in `Next time`.
 - The coach is then asked to adjust with increases blocked. It can lower or hold, suggest stopping the exercise (as a `Skip exercise` suggestion that Ben confirms) or suggest a swap (`ChangeReviewCard`). It never diagnoses.
 - Copy: `Pain noted for Bench press. No increases for this movement until you clear it.` Offline: `Pain noted for Bench press. Coach offline, so your sets are unchanged. Change them directly or skip the exercise.`
 
@@ -259,6 +261,8 @@ Specified in [workout-summary.md](workout-summary.md) §2 and §3. In short:
 - Unapplied proposals expire when the next session of that routine starts. The built-in rule's targets then apply.
 
 ### 4.7 Settings (Profile → Coach)
+
+The full screen, including RIR equivalents and `Reset to defaults` with Undo, is profile-and-settings.md §2.7 (`Coach offers`); calls `getCoachTriggerThresholds` / `saveCoachTriggerThresholds`.
 
 ```
 │ Coach offers                           │
@@ -345,7 +349,7 @@ Existing (brief §7–8, ADR 0006):
 | `recordTriggerResponse(triggerId, 'shown' \| 'accepted' \| 'dismissed' \| 'expired')` | Enforces CA4 and keeps evidence for later review |
 | `requestCoachAdjustment(sessionId, request, baseVersion, opId)` | Wraps `runCoachTurn` for `adjust_pending_sets`, with `origin: 'ben_request' \| 'trigger_offer'` |
 | `cancelCoachTurn(turnId)` | Cancel and Log-while-pending |
-| `setPainFlag(exerciseId, active, note?)` | `PainStatus` exists in the domain; the UI needs a write path |
+| `setPainFlag(exerciseId, active, note?)` → superseded by coach-memory.md §6 `setPainFlag({exerciseIds[], active, area?, note?, source}, opId)` | `PainStatus` exists in the domain; the UI needs a write path (and `PainFlagEvent` history, progress.md PG13) |
 | `Proposal.origin`, `Proposal.guardNotes`, `ActionRecord.reason` + `evidenceRefs` (already in the brief) | Banner, `Why?` and rule 3's "recorded with its reason" |
 
 ## 7. Acceptance checks

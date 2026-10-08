@@ -6,6 +6,8 @@
 >
 > **Revision 2026-10-08 (coach-led progression, v0.4).** Aligned with [ADR 0006](../decisions/0006-coach-led-progression.md). `Next time` now has a named **source** on every row. With the coach available, each changed exercise shows the coach's proposal as before (built-in rule) → after (coach), with its reason, guard notes, `Why?`, `Not now`, `Apply` and Undo, source `Coach`. Without it, rows show the built-in rule's targets labelled `Built-in rule (coach offline)` / `(coach unavailable)`. One coach call per workout produces both the note and the proposals. Exercise rows mention in-workout coach adjustments. Behaviour shared with the workout screen is in [coach-adjustments.md](coach-adjustments.md). Changed: §1, §2 (regions 5–7, wireframes), §3, §4, §5, §6, checks 7, 9 and 16–22. This supersedes proposal P8's "rule named" wording (flow §7).
 
+> **Revision 2026-10-08 (consolidation).** Applied data-import-export.md X2 with the approved "backups in the app by default" wording: one line under the saved banner from `getBackupStatus` (§2 region 1): `Backed up on this phone · 19:05` / `Backing up…` / `⚠ Last backup on this phone didn't save. Open Data & backup ›`. It never mentions off-phone copies, never blocks `Done`, and the automatic backup runs after the summary is shown. `⋯` → `Share / export` stays a per-session export of **Your data** only.
+
 Status: v0.1 draft, 8 Oct 2026. Flow: [flow-first-milestone.md](flow-first-milestone.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -22,7 +24,7 @@ The summary replaces the Active workout screen after `finishWorkout` commits. It
 
 Regions, top to bottom:
 
-1. **Saved banner.** `✓ Workout saved on this phone`, on the `status.done.subtle` background with the done icon. This is shown only after the local commit.
+1. **Saved banner.** `✓ Workout saved on this phone`, on the `status.done.subtle` background with the done icon. This is shown only after the local commit. Under it, one `type.callout` `text.secondary` line from `getBackupStatus` (consolidation, X2): `Backing up…` (static icon) → `Backed up on this phone · 19:05`, or `⚠ Last backup on this phone didn't save. Open Data & backup ›` (`status.warning` icon + text). The line updates in place, never delays `Done` and never mentions copies in Files.
 2. **Title block.** The workout name and date, then the gym and the time range.
 3. **Facts.** These are label–value rows:
    - Active time
@@ -178,6 +180,7 @@ Undo:
 | Element | Text |
 |---|---|
 | Saved banner | `Workout saved on this phone` |
+| Backup line | `Backing up…` · `Backed up on this phone · 19:05` · `Last backup on this phone didn't save. Open Data & backup ›` |
 | Title line | `Thu 8 Oct · Main Gym · 18:02–19:04` |
 | Facts labels | `Active time`, `Exercises`, `Working sets`, `Warm-up sets` |
 | Fact values | `54 min`, `5 of 5`, `16 (2 skipped)`, `4` |

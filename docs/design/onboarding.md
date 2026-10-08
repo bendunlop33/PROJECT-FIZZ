@@ -1,5 +1,12 @@
 # Onboarding (first-run setup)
 
+> **Revision 2026-10-08 (consolidation).**
+> - **Backup step replaced (approved by Ben, relayed by the product manager).** Backups now live in the app by default, so onboarding no longer asks Ben to save a file or choose a folder. Step 3 is a short, skippable explainer (§2.5). Data-import-export's X1 (`Choose backup folder` here) is withdrawn. OB2 is withdrawn; OB1 is revised. The `verifyBackup` test is no longer part of onboarding; it lives in Data & backup → `Check a backup`.
+> - Placeholder links replaced: the coach routes are [ai-connection.md](ai-connection.md); restore, import and backups are [data-import-export.md](data-import-export.md).
+> - Pain flags use the canonical `setPainFlag({exerciseIds[], active, area?, note?, source}, opId)` from [coach-memory.md](coach-memory.md) §6; the flags are listed and cleared in Pain flags (coach-memory.md §2.1, reached from Profile → Pain flags).
+> - `ProvenanceTag` and `StepResultLine` are now `SourceTag` and `StepRow` in design-system.md (§9.28, §9.42); the other additions are merged there (§11).
+> - Data domains: everything onboarding writes is **Your data**; the gym presets it reads are **Coaching knowledge** (design-system §7.2).
+
 Status: v0.1 draft, 8 Oct 2026. Tokens: [design-system.md](design-system.md). Gym details: [gym-editor.md](gym-editor.md). Settings that onboarding writes are edited later in [profile-and-settings.md](profile-and-settings.md).
 
 ## 1. Purpose
@@ -8,13 +15,13 @@ Onboarding answers **"What does the app need before I can log my first set safel
 
 Its single primary action on every step is **`Continue`**. The whole flow ends on Today, where `Start empty workout` is one tap away.
 
-The brief (§1) lists seven first-run items: goals and priorities, experience, weekly availability, session length, units, first gym and optional limitations, with the AI connection skippable. It also says onboarding must be "short enough to start logging immediately" and that richer questions "can follow when they affect a decision". ADR 0004 adds a tested backup before any real workout is logged.
+The brief (§1) lists seven first-run items: goals and priorities, experience, weekly availability, session length, units, first gym and optional limitations, with the AI connection skippable. It also says onboarding must be "short enough to start logging immediately" and that richer questions "can follow when they affect a decision".
 
-Those two needs pull against each other, so this spec splits the flow:
+This spec splits the flow:
 
-- **Essentials (3 steps, required path):** how you log (units and rest presets), first gym, and a first backup with a test restore. These are the only things that change what the logging screen does or whether data survives.
+- **Essentials (3 steps):** how you log (units and rest presets), first gym, and a short explainer about how data is kept (skippable; revision consolidation). The first two are the only things that change what the logging screen does.
 - **About your training (optional, 3 short steps):** goals and priorities, experience, week and session length, and limitations. These only feed the coach, the workout builder and the built-in rules' defaults. They're offered once at the end of Essentials and can be done later from Profile.
-- **Coach connection (optional, 1 step):** a single skippable card linking to the coach area.
+- **Coach connection (optional, 1 step):** a single skippable card linking to [ai-connection.md](ai-connection.md).
 
 This is a change to the brief's ordering, not its content. See §8 (proposal OB1).
 
@@ -45,7 +52,7 @@ The flow has no tab bar and no Ask pill. Onboarding is a full-screen stack prese
 │ You'll set:                            │
 │  1  Units and rest times               │
 │  2  Your gym's equipment               │
-│  3  A backup, so nothing is lost       │
+│  3  How your data is kept              │
 │                                        │
 │ Coach, goals and history import are    │
 │ optional and can come later.           │
@@ -58,7 +65,7 @@ The flow has no tab bar and no Ask pill. Onboarding is a full-screen stack prese
 └────────────────────────────────────────┘
 ```
 
-`Restore from a backup` is placed here on purpose. Under ADR 0004, changing the signing tool or Apple ID installs a new, empty app, and the documented fix is "backup, new app, restore". Ben must be able to restore **before** he's asked to set anything up again.
+`Restore from a backup` is placed here on purpose. Under ADR 0004, changing the signing tool or Apple ID installs a new, empty app, and the documented fix is "copy to Files, new app, restore". Ben must be able to restore **before** he's asked to set anything up again. On this empty phone both backup sections (`Your data` and `Coaching knowledge`) are pre-ticked in the restore preview (data-import-export.md §2.3).
 
 ### 2.2 Step 1 of 3: How you log
 
@@ -168,51 +175,33 @@ The preset becomes a **draft checklist** (brief §4: "Offer presets as draft equ
 - Saving a detail editor marks that item `Checked by you` and removes its `not checked` tag.
 - `Save gym` calls `createGym` then `addEquipment` for each ticked item, in one transaction (proposed `createGymFromDraft`, §6). Ticked items keep `detailsSource: 'preset'` until Ben saves their details (gym-editor.md §8, proposal GE1).
 
-### 2.5 Step 3 of 3: Back up
+### 2.5 Step 3 of 3: How your data is kept (revised, consolidation)
+
+A short explainer, nothing to set. Approved by Ben (relayed by the product manager): backups are kept in the app by default; an off-phone copy is optional and can be made any time.
 
 ```
 ┌────────────────────────────────────────┐
-│ ‹ Back         Step 3 of 3             │
-│ Protect your training data             │
+│ ‹ Back         Step 3 of 3       Skip  │
+│ How your data is kept                  │
 │                                        │
-│ Your workouts live only on this phone. │
-│ If the app is deleted, or reinstalled  │
-│ with a different Apple ID or signing   │
-│ tool, they're gone unless you have a   │
-│ backup.                                │
+│ Your data is saved and backed up on    │ type.body
+│ this phone.                            │
 │                                        │
-│ 1  Save a backup file                  │
-│    Choose iCloud Drive or another      │
-│    folder outside this app.            │
-│ 2  Test it                             │
-│    The app reads the file back and     │
-│    rebuilds a copy to check it. Your   │
-│    data isn't replaced.                │
+│ Copies on the phone are lost if the    │
+│ app is deleted or re-signed with a     │
+│ different Apple ID. You can save a     │
+│ copy to Files any time.                │
+│                                        │
+│ Save a copy to Files now             › │ optional text row, 44pt
 │                                        │
 ├────────────────────────────────────────┤
-│ [         Save backup file           ] │
-│          Back up later                 │ text button, text.secondary
+│ [             Continue               ] │
 └────────────────────────────────────────┘
 ```
 
-After the file is saved, the same screen updates in place:
-
-```
-│ ✓ Saved: fizz-backup-2026-10-08.json   │ status.done icon + text
-│   iCloud Drive › Training              │
-│   Checking it…                         │ static ellipsis icon, no spinner
-```
-
-then:
-
-```
-│ ✓ Saved: fizz-backup-2026-10-08.json   │
-│ ✓ Test passed. This file restores 1    │
-│   gym, 6 equipment items and your      │
-│   settings.                            │
-├────────────────────────────────────────┤
-│ [             Continue               ] │
-```
+- `Continue` and `Skip` both go to Ready. Nothing is written by this step.
+- `Save a copy to Files now` is optional: it calls `createBackup` → `saveBackupToFiles` (data-import-export.md §2.2) and returns here with one line `✓ Copy saved to Files · iCloud Drive › Fizz backups`. Cancelling the picker changes nothing and shows nothing.
+- No folder picker, no test, no warning, no confirmation alert.
 
 ### 2.6 Ready
 
@@ -222,7 +211,8 @@ then:
 │                                        │
 │ ✓ Units: kg · Rest 1:00 / 1:30 / 3:00  │
 │ ✓ Main gym · 6 items (3 not checked)   │
-│ ✓ Backed up · test passed              │
+│ ✓ Saved on this phone · backups run    │
+│   after each workout                   │
 │                                        │
 │ Optional, any time                     │
 │ ┌────────────────────────────────────┐ │
@@ -234,7 +224,7 @@ then:
 │ │ Not connected. Logging works       │ │
 │ │ without it.                        │ │
 │ ├────────────────────────────────────┤ │
-│ │ Import FitNotes history        ›   │ │ → data area
+│ │ Import FitNotes history        ›   │ │ → data-import-export §2.5
 │ └────────────────────────────────────┘ │
 ├────────────────────────────────────────┤
 │ [            Go to Today             ] │
@@ -313,7 +303,7 @@ The session length is what workout-builder.md §3.1 reads as the default `Length
 │ [           Save and finish          ] │
 ```
 
-`Choose movements` sets a pain flag on each chosen movement (`setPainFlag(exerciseId, true, note)`), the same flag as the `Pain` chip in the workout (coach-adjustments.md §4.5). The free-text note alone never sets a flag; CLAUDE.md rule 9 and workout-builder.md §5.1 treat text as context, and only an explicit choice blocks increases.
+`Choose movements` sets a pain flag on the chosen movements (`setPainFlag({exerciseIds, active: true, source: 'setup'}, opId)`, coach-memory.md §6), the same flag as the `Pain` chip in the workout (coach-adjustments.md §4.5). The free-text note alone never sets a flag; CLAUDE.md rule 9 and workout-builder.md §5.1 treat text as context, and only an explicit choice blocks increases.
 
 ### 2.8 Connect the coach (optional)
 
@@ -340,7 +330,7 @@ The session length is what workout-builder.md §3.1 reads as the default `Length
 └────────────────────────────────────────┘
 ```
 
-- Both rows hand over to the coach area spec (owned by another designer). Onboarding only shows the entry and the status text from `getAiCapabilities`. When the coach flow finishes or is cancelled, Ben comes back here, then to Ready.
+- `Use my ChatGPT plan` opens [ai-connection.md](ai-connection.md) §2.2 (explainer, then sign-in); `Use my own API key` opens ai-connection.md §2.7 (cost confirmation and key entry). When `chatgptSignIn` is false (spike S1 not passed), the plan row shows ai-connection's unsupported text and is disabled. Onboarding only shows the entry and the status text from `getAiCapabilities`. When the coach flow finishes or is cancelled, Ben comes back here, then to Ready.
 - The primary on this step is `Not now`, because skipping is the expected path for a first run.
 - No route is ever chosen automatically, and no paid route is suggested as a fallback for the plan route (rule 7).
 
@@ -355,8 +345,8 @@ The session length is what workout-builder.md §3.1 reads as the default `Length
 | Database error | SQLite can't be opened | Not onboarding. Today's database error state (`Couldn't open your training data.` [Try again] [Restore from backup], today.md §3) |
 | Restored from Welcome | `restoreBackup` succeeds and the restored data has a profile | Onboarding closes and Today opens (or Active workout if the restored backup had an unfinished session under 6 h old: flow §4.2) |
 | Restored, no profile in the file | The backup predates setup | Onboarding continues at Step 1, with any restored gyms listed on Step 2 as `Use Main gym (from your backup)` |
-| Restore cancelled or failed | Picker cancelled, or the data area's restore reports an error | Back on Welcome. The data area's error message shows as a `StatusBanner`. Nothing changed |
-| Essentials done | Step 3 finished or `Back up later` chosen | Ready |
+| Restore cancelled or failed | Picker cancelled, or the restore flow (data-import-export.md §3.3) reports an error | Back on Welcome. The restore flow's error message shows as a `StatusBanner`. Nothing changed |
+| Essentials done | Step 3 `Continue` or `Skip` | Ready |
 | Done | `Go to Today` | Today (No plan state, or No gym if the gym was skipped). `onboardingState = done` |
 
 ### 3.2 Step states
@@ -370,22 +360,16 @@ The session length is what workout-builder.md §3.1 reads as the default `Length
 | 2 Gym, checklist | Nothing ticked | Hint `Nothing ticked. Logging still works, but loads won't be checked.` | `Save empty gym` |
 | 2 Gym, checklist | Item detail invalid | The item's row shows `(!) Needs fixing: max is below the bar weight` (validator text) | `Save gym` disabled until fixed or unticked |
 | 2 Gym | Skipped | `Skip for now…` tapped | Goes to Step 3. Ready shows `No gym yet` with `Add gym ›` |
-| 3 Backup | Not started | §2.5 | `Save backup file` |
-| 3 Backup | Picker open | System document picker (export) | n/a |
-| 3 Backup | Picker cancelled | `No backup saved yet.` under the steps | `Save backup file` |
-| 3 Backup | Saved inside the app's own folder | Warning: `That folder is deleted with the app. Choose iCloud Drive or another folder.` (`status.warning`) | `Choose another folder` (the file stays; the warning stays on Ready) |
-| 3 Backup | Checking | `Checking it…` (static icon) | Disabled `Checking…` |
-| 3 Backup | Test passed | §2.5 passed view | `Continue` |
-| 3 Backup | Test failed | `(!) The test didn't pass: <reason from verifyBackup>. Your data on this phone is fine.` | `Try again` + text button `Back up later` |
-| 3 Backup | Write failed | `Couldn't save the file: <system reason>. Your data on this phone is fine.` | `Try again` |
-| 3 Backup | Later chosen | Confirmation alert (§4.4) | Ready shows `(!) Not backed up yet` |
+| 3 Data explainer | Normal | §2.5 | `Continue` (always enabled); `Skip` in the top bar |
+| 3 Data explainer | Copy saved to Files (optional) | `✓ Copy saved to Files · <location>` under the text | `Continue` |
+| 3 Data explainer | Optional copy failed or cancelled | Cancel: nothing shown. Failure: `Couldn't save the copy: <system reason>. Your data on this phone is fine.` | `Continue` |
 | About you | Any field empty | Valid; empty means "not set" | `Continue` always enabled |
 | Coach | Offline | Both rows show `No connection. You can connect later in Profile.` and are disabled | `Not now` |
 | Coach | Route unavailable in this build | Row shows `Not available in this build yet` and is disabled | `Not now` |
 
 ### 3.3 Offline, AI unavailable, loading
 
-- **Offline:** every Essentials step works. Saving to iCloud Drive while offline still writes the file; the Files app uploads it later. The passed line adds `iCloud uploads it when you're back online.` when the destination is iCloud Drive and the network is down.
+- **Offline:** every Essentials step works. An optional copy saved to iCloud Drive while offline is still written; the line adds `iCloud uploads it when you're back online.`
 - **AI unavailable:** only §2.8 changes. Nothing else mentions AI.
 - **Loading:** all reads are local. If a step's data takes over 300 ms, static grey blocks show (no shimmer), as on Today.
 
@@ -394,9 +378,9 @@ The session length is what workout-builder.md §3.1 reads as the default `Length
 ```
 Welcome ─Set up─► Step 1 ─► Step 2 (start) ─► Step 2 (checklist) ─Save gym─► Step 3 ─► Ready ─Go to Today─► Today
    │                          └─Skip for now──────────────────────────────►┘          │
-   └─Restore from a backup─► data area restore ─ok─► Today                            ├─► About you (3) ─► Ready
+   └─Restore from a backup─► restore (data-import-export §2.3) ─ok─► Today            ├─► About you (3) ─► Ready
                                                 └─cancel/fail─► Welcome               ├─► Connect coach ─► Ready
-                                                                                      └─► Import FitNotes (data area) ─► Ready
+                                                                                      └─► Import FitNotes (data-import-export) ─► Ready
 ```
 
 `Back` on any step returns to the previous step with its saved values. Going back over a saved gym edits that gym (`updateGym`), it never creates a second one.
@@ -415,23 +399,16 @@ Welcome ─Set up─► Step 1 ─► Step 2 (start) ─► Step 2 (checklist) �
 - `+ Add something else` opens the add-equipment sheet from gym-editor.md §2.3.
 - `Start empty` goes straight to Step 3 after creating a gym with no equipment. Ready shows `Main gym · no equipment yet`.
 
-### 4.3 Backup step
-- `Save backup file` calls `createBackup(store, {at, app})` (ADR 0005), then opens the system export picker with the suggested file name. The default folder is iCloud Drive when available.
-- After the picker returns a URL, the app checks whether that URL is inside its own container. If it is, it shows the "deleted with the app" warning.
-- The test calls `verifyBackup(file)` (proposed, data area): ADR 0005 restore steps 1–4 (parse, checksum, build a new file, load, migrate, integrity check), then it **throws the built copy away**. It never switches the database pointer. This proves the file restores without replacing anything. A plain `restoreBackup` of identical content would return `unchanged` and prove less.
-- The result line uses the counts from the verify report. It never says "all your data": it lists what the file contains.
+### 4.3 Data explainer step (revised, consolidation)
+- Nothing to decide. Automatic backups on this phone are on by default and run after the first finished workout (data-import-export.md §3.2).
+- `Save a copy to Files now` is optional: `createBackup(store, {at, app})` (ADR 0005) → `saveBackupToFiles` (system export picker, default iCloud Drive). It never blocks `Continue`.
+- No test runs here. `Check a backup` (`verifyBackup`) lives in Data & backup. The SideStore trial run (ADR 0004) is tracked by the trial-run line in Data & backup.
 
-### 4.4 Skipping the backup
-`Back up later` shows a confirmation alert:
-
-> **Skip the backup?**
-> Until you back up, deleting or reinstalling the app loses everything you log.
-> [Back up now] [Skip]
-
-`Back up now` is the bold (preferred) action. After Skip, Ready shows `(!) Not backed up yet` with `Back up ›`, and Profile shows its attention row (profile-and-settings.md §3.2).
+### 4.4 No backup nagging
+There's no "Skip the backup?" alert and no `Not backed up yet` warning on Ready or Profile. Off-phone copies are offered only at risky moments and by the quiet 30-day row (data-import-export.md §4.1a, §3.1).
 
 ### 4.5 Restore from Welcome
-`Restore from a backup` opens the data area's restore flow (file picker, then preview with counts and the "replaces" warning, then Restore). Onboarding doesn't define that UI. It only defines the entry and the two exits in §3.1.
+`Restore from a backup` opens the restore flow in [data-import-export.md](data-import-export.md) §2.3 (choose a file, check, preview by section with counts and the "replaces" warning, then Restore). Onboarding doesn't define that UI. It only defines the entry and the two exits in §3.1.
 
 ### 4.6 Permission priming (in context, never up front)
 
@@ -463,7 +440,7 @@ None. Voice isn't set up during onboarding and no microphone is opened.
 |---|---|
 | Welcome title | `Set up your training log` |
 | Welcome body | `Takes about 2 minutes. Everything is saved on this phone. Nothing needs an account or the internet.` |
-| Welcome list | `You'll set:` `Units and rest times` · `Your gym's equipment` · `A backup, so nothing is lost` |
+| Welcome list | `You'll set:` `Units and rest times` · `Your gym's equipment` · `How your data is kept` |
 | Welcome footer | `Coach, goals and history import are optional and can come later.` |
 | Welcome actions | `Set up` · `Restore from a backup` |
 | Step counter | `Step 1 of 3` (Essentials) · `Step 1 of 3` (About your training) |
@@ -478,14 +455,11 @@ None. Voice isn't set up during onboarding and no microphone is opened.
 | Item tag | `Typical values, not checked` · after saving details: `Checked by you` |
 | Checklist footer | `You can check the numbers at the gym. Until then they're marked "not checked".` |
 | Checklist primary | `Save gym` · `Save empty gym` |
-| Step 3 title | `Protect your training data` |
-| Step 3 body | `Your workouts live only on this phone. If the app is deleted, or reinstalled with a different Apple ID or signing tool, they're gone unless you have a backup.` |
-| Step 3 list | `Save a backup file` / `Choose iCloud Drive or another folder outside this app.` · `Test it` / `The app reads the file back and rebuilds a copy to check it. Your data isn't replaced.` |
-| Step 3 results | `Saved: <file name>` · `Checking it…` · `Test passed. This file restores 1 gym, 6 equipment items and your settings.` · `iCloud uploads it when you're back online.` |
-| Step 3 problems | `No backup saved yet.` · `That folder is deleted with the app. Choose iCloud Drive or another folder.` · `The test didn't pass: <reason>. Your data on this phone is fine.` · `Couldn't save the file: <reason>. Your data on this phone is fine.` |
-| Skip backup alert | `Skip the backup?` / `Until you back up, deleting or reinstalling the app loses everything you log.` [Back up now] [Skip] |
+| Step 3 title | `How your data is kept` |
+| Step 3 body | `Your data is saved and backed up on this phone.` · `Copies on the phone are lost if the app is deleted or re-signed with a different Apple ID. You can save a copy to Files any time.` (wording approved by Ben) |
+| Step 3 option | `Save a copy to Files now` · result `Copy saved to Files · <location>` · `iCloud uploads it when you're back online.` · failure `Couldn't save the copy: <reason>. Your data on this phone is fine.` |
 | Ready title | `You're ready to log` |
-| Ready lines | `Units: kg · Rest 1:00 / 1:30 / 3:00` · `Main gym · 6 items (3 not checked)` · `Backed up · test passed` / `Not backed up yet` / `No gym yet` |
+| Ready lines | `Units: kg · Rest 1:00 / 1:30 / 3:00` · `Main gym · 6 items (3 not checked)` · `Saved on this phone · backups run after each workout` (+ `Copy saved to Files` when one was made) / `No gym yet` |
 | Ready optional | `About your training` (`About 1 minute. Helps the coach and workout builder.`) · `Connect the coach` (`Not connected. Logging works without it.`) · `Import FitNotes history` |
 | Ready primary | `Go to Today` |
 | Goals | `What are you training for?` · `Main focus` · `Strength` `Muscle` `Maintain` · `Also matters (optional)` · `Endurance` `General fitness` · `Anything specific? (optional)` · `How long have you lifted regularly? (optional)` · `Under 1 year` `1–3 years` `Over 3 years` |
@@ -502,34 +476,33 @@ No spoken cues anywhere in onboarding.
 Existing (brief or ADRs):
 - `createGym(profile)`, `updateGym(id, patch)`, `addEquipment(gymId, equipment)` (brief §4).
 - `getAchievableLoads(equipment)` for the detail editors' preview (gym-editor.md).
-- `createBackup(store, {at, app})` (ADR 0005), and `restoreBackup(file)` through the data area's flow.
-- `setPainFlag(exerciseId, true, note?)` (coach-adjustments.md §6).
-- `getAiCapabilities(userId)` for the coach card. `beginAiConnection(userId, mode)` belongs to the coach area.
+- `createBackup(store, {at, app})` (ADR 0005) and `saveBackupToFiles` for the optional copy; `restoreBackup(file, {sections})` through data-import-export.md's flow.
+- `setPainFlag({exerciseIds[], active, area?, note?, source}, opId)` (coach-memory.md §6, canonical).
+- `getAiCapabilities(userId)` for the coach card. `beginAiConnection(userId, mode)` is in ai-connection.md.
 
 Proposed new:
 
 | Function | Why |
 |---|---|
-| `getOnboardingState(ownerId)` → `{state: 'not_started' \| 'essentials' \| 'done', completedSteps[], backup: {lastVerifiedAt?, destinationKind?}}` | Resume after a force-close, and the Ready summary |
+| `getOnboardingState(ownerId)` → `{state: 'not_started' \| 'essentials' \| 'done', completedSteps[]}` | Resume after a force-close, and the Ready summary (backup state comes from `getBackupStatus`, data-import-export.md §6) |
 | `saveUserProfile(patch, expectedVersion, opId)` | Units, rest presets, goals, experience, session length. `UserProfile` today only has `preferredUnit`, `defaultRest`, `restPresets` and `effortScale` (packages/schemas `profile.ts` notes goals come later) |
 | `saveTrainingGoals({primary, secondary[], note?, experienceYears?}, source: 'setup' \| 'profile')` | Stored with provenance and date (brief §2: "editable saved goals … with provenance and dates"). The coach reads them as confirmed by Ben |
 | `saveAvailability({days[], varies, sessionMinutes})` | Writes an `AvailabilityRule` (brief §6) with its effective date |
 | `listGymPresets()` / `buildPresetDraft(presetId, unit)` | Preset drafts with every value tagged `detailsSource: 'preset'` (gym-editor.md proposal GE1) |
 | `createGymFromDraft(draft, opId)` | `createGym` + `addEquipment` × n in one transaction, so a force-close can't leave half a gym |
-| `verifyBackup(file)` → `{ok, counts, schemaVersion, needsMigration, problems[]}` | ADR 0005 restore steps 1–4 without the pointer switch. Owned by the data area; listed here because onboarding depends on it |
-| `isInsideAppContainer(url)` | The "deleted with the app" warning |
+| (removed in consolidation) `verifyBackup`, `isInsideAppContainer` | No longer used by onboarding; both live in data-import-export.md §6 |
 
 ## 7. Acceptance checks
 
 1. A fresh install opens on Welcome. No system permission prompt appears anywhere in onboarding (check notifications, microphone, speech, location and AlarmKit are all "not determined" afterwards).
-2. From Welcome to Today with the `Commercial gym` preset, backup to iCloud Drive and no optional steps takes at most **8 taps**, not counting typing and navigating inside the Files picker: Set up, Continue, preset card, Continue, Save gym, Save backup file, Continue, Go to Today. Today then needs one tap for `Start empty workout`.
+2. From Welcome to Today with the `Commercial gym` preset and no optional steps takes at most **7 taps**, not counting typing: Set up, Continue, preset card, Continue, Save gym, Continue (or Skip), Go to Today. Today then needs one tap for `Start empty workout`. No file picker or folder picker appears unless Ben taps `Save a copy to Files now`.
 3. With airplane mode on and no AI, all three Essentials steps complete. The coach card shows the offline text and nothing else mentions AI.
 4. Force-quit on Step 3 and relaunch: the app opens on Step 3, the units and gym are already saved, and there's exactly one gym.
 5. Double-tapping `Save gym` creates one gym with one set of equipment.
 6. Preset items saved without opening their details show `Typical values, not checked` in the gym editor. Opening and saving an item changes it to `Checked by you`.
-7. The backup test never replaces the database: after a passed test, the database file and its pointer are unchanged and the restore rollback target is untouched.
-8. Saving the backup into the app's own folder shows the "deleted with the app" warning, and Ready and Profile both show that the backup isn't safe.
-9. `Back up later` shows the confirmation alert, and afterwards Ready and Profile show `Not backed up yet`.
+7. Step 3 shows the approved explainer text, writes nothing and asks for no permission; `Skip` and `Continue` both reach Ready.
+8. After finishing the first workout, an automatic backup exists in Fizz's container and Data & backup reads `Backed up on this phone`, with no setup during onboarding.
+9. No backup warning, alert or banner appears on Ready, Today or Profile because Ben didn't save a copy to Files.
 10. `Restore from a backup` on Welcome, using a backup with a profile, lands on Today without showing any setup step. Cancelling the picker returns to Welcome with nothing changed.
 11. The About-your-training fields all start empty. Skipping all three saves nothing; the workout builder then shows `No goals set` (workout-builder.md).
 12. Choosing `Bench press` under `Stop load increases` creates an active pain flag visible in Profile → Pain flags. Typing "shoulder" in the free-text field alone creates no flag.
@@ -541,12 +514,14 @@ Proposed new:
 
 | # | Brief says | Proposal | Reason |
 |---|---|---|---|
-| OB1 | §1 First-run setup lists goals, experience, availability, session length, units, first gym, limitations | Split into **Essentials** (units + rest presets, first gym, backup with test) and an optional **About your training** block (goals, experience, week, length, limitations), offered on the Ready screen and in Profile | Only the Essentials change what logging does or whether data survives. The brief already says onboarding must be short and that richer questions can follow |
-| OB2 | ADR 0004: tested restore before real data | Onboarding's backup step runs a **verify** (rebuild a copy, integrity check, discard) rather than a real restore, through a new `verifyBackup` | Restoring identical content returns `unchanged` (ADR 0005), so it doesn't exercise the restore path. Verify does, without risk |
+| OB1 | §1 First-run setup lists goals, experience, availability, session length, units, first gym, limitations | (Revised.) Split into **Essentials** (units + rest presets, first gym, a skippable "how your data is kept" explainer) and an optional **About your training** block (goals, experience, week, length, limitations), offered on the Ready screen and in Profile | Only the first two Essentials change what logging does. The brief already says onboarding must be short and that richer questions can follow |
+| OB2 | (Withdrawn in consolidation.) | Backups now live in the app by default (approved by Ben); the verify test moved to Data & backup → `Check a backup` | — |
 | OB3 | (not covered) | `Restore from a backup` on the Welcome screen | A signing-tool or Apple ID change gives an empty app (ADR 0004). Restore must come before setup |
 | OB4 | (not covered) | No permissions during onboarding; each asked in context (§4.6). Location never asked | Matches the brief's honest-status rule and keeps setup short |
 
 ## Proposed design-system additions
+
+> **Merged into design-system.md (consolidation):** `OnboardingFrame` §9.46, `ChoiceCard` §9.34, `ChecklistRow` §9.33, `ProvenanceTag` → `SourceTag` §9.28, `StepResultLine` → `StepRow` §9.42. Kept below for history.
 
 | Name | Kind | Spec |
 |---|---|---|
@@ -568,6 +543,7 @@ No new colour, type, spacing or timing tokens.
 - [active-workout.md](active-workout.md) §2.5: voice strip states used by microphone priming.
 - [coach-adjustments.md](coach-adjustments.md) §4.5: pain flags.
 - [workout-builder.md](workout-builder.md) §3.1: reads session length and goals.
-- Coach area spec (another designer): ChatGPT-plan sign-in and API-key routes behind §2.8.
-- Data area spec (another designer): restore flow, `verifyBackup`, FitNotes import, backup reminders.
+- [ai-connection.md](ai-connection.md): ChatGPT-plan sign-in and API-key routes behind §2.8.
+- [data-import-export.md](data-import-export.md): restore flow (§2.3), `Save a copy to Files` (§2.2), FitNotes import (§2.5), backup status and safeguards (§3.1, §4.1a).
+- [coach-memory.md](coach-memory.md): Pain flags list and clearing; `setPainFlag` signature.
 - ADR 0004 (backup before real data, signing-tool risk), ADR 0005 (backup format, restore steps), ADR 0006 (built-in rules work with no coach).

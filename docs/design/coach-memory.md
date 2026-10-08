@@ -1,5 +1,12 @@
 # Coach memory and pain flags
 
+> **Revision 2026-10-08 (consolidation).**
+> - **Memory holds only personal facts (approved by Ben, relayed by the product manager).** Memories and pain flags are **Your data** (design-system §7.2). A general training rule that Ben or the coach states ("always deload every 5th week") is **not** saved as a memory: it is routed to the playbook as a candidate rule (`From you` or `From the coach`, `Not graded`), which Ben approves there (CM9, §2.4a). Personal preferences ("I hate leg press") stay memories.
+> - **Pain flags list is canonical here** (§2.1, §2.6, §2.7). Profile → Training → `Pain flags` opens the same list (profile-and-settings.md §2.3 defers to this file). Memory is reached from Profile → Coach → `What the coach remembers`.
+> - `PainFlagNote` is now placed on the active-workout set card (active-workout.md §2.1) and defined in design-system §9.50.
+> - `setPainFlag({exerciseIds[], active, area?, note?, source}, opId)` (§6) is the canonical signature everywhere; coach-adjustments.md's single-exercise form is a call with one ID.
+> - Components merged into design-system (§11 index): `MemoryRow` and `PainFlagRow` §9.35, `PainFlagCard` and `MemoryCard` in the card families §9.48, memory statuses §7.1.
+
 Status: v0.1 draft, 8 Oct 2026. Covers brief §2 ("editable saved goals/preferences with provenance and dates"), §6 (`CoachingMemory`), §8 (`saveConfirmedMemory`, "don't silently infer lasting goals"), validation scenarios 7 and 10, CLAUDE.md rules 6, 8 and 9, and the pain behaviour already placed in [coach-adjustments.md](coach-adjustments.md) §4.5 and [workout-builder.md](workout-builder.md) §5.1. Tokens: [design-system.md](design-system.md).
 
 Memory is **what the coach is allowed to assume about Ben**. Pain flags are **deterministic guards** that live next to it. Both are fully usable offline, and neither is ever changed silently.
@@ -30,6 +37,7 @@ Where it lives:
 | CM6 | **"Sore", "tight", "stiff", "achy" are asked about, not assumed.** One question: `Sore like after training, or pain?` "Hurts", "pain", "tweaked", "sharp", "pinch" set a flag. "Burn", "pump", "grind", "heavy", "tired" don't | Brief scenario 10: distinguish symptoms from ordinary effort. A deterministic word list keeps it offline and testable |
 | CM7 | **Memories older than 6 months show under `Worth checking`.** No notification and no coach nagging; the date is sent with the memory so the coach can say "you told me in March …" | Brief §1: don't present old facts as freshly confirmed |
 | CM8 | Goals stay structured in Profile → Goals (setup data). Memory **shows** them with provenance and links to edit; a coach suggestion to change a goal is a card that updates Goals on `Save` | One source of truth for goals, which the builder and summary also read |
+| CM9 | (Consolidation; approved by Ben.) **Memory is about Ben only.** A statement that is a general training rule (applies to anyone, e.g. "always deload every 5th week", "never superset heavy compounds") becomes a **candidate playbook rule**, shown as an `Add to playbook?` card (§2.4a), and goes to Guides & playbook → To review. Even when Ben says "remember …", a general rule is never saved as a memory and isn't used until he approves it there. Personal facts and preferences ("I hate leg press", "I train before work", "my home dumbbells stop at 24 kg") stay memories. When the split is unclear, the card offers both: [Save as a memory about me] [Add to playbook] | Keeps the two data domains clean: Your data vs Coaching knowledge (design-system §7.2). Rules need Ben's approval in the playbook (CLAUDE.md agent table) |
 
 ## 2. Layout
 
@@ -88,9 +96,11 @@ Regions: nav bar · intro line · `Pain flags` · `Waiting for you` · `Goals` �
 │ Expired (1) ›                          │ collapsed
 │ Off (0)                                │ hidden when 0
 │                                        │
-│ Memory stays on this phone and is in   │ footer
-│ your backups. Confirmed items are sent │
-│ to the coach with your questions.      │
+│ Memory is about you: it's part of your │ footer (consolidation)
+│ data, stays on this phone and is in    │
+│ your backups. Training rules live in   │
+│ Guides & playbook. Confirmed items are │
+│ sent to the coach with your questions. │
 └────────────────────────────────────────┘
 ```
 
@@ -165,6 +175,27 @@ Same rows. Expired rows have `[Renew]` (opens the editor with `Keep until` focus
 - `Save` → `confirmMemory(id, expectedVersion)`; the card collapses to `✓ Saved to memory`. `Not now` → `Not saved`; nothing is kept except the audit line.
 - Long-press or `Edit` lets Ben fix the wording before saving (opens §2.2 with the suggestion).
 - A goal change is the same card titled `Change your goals?` with before/after: `Strength first → Muscle first`. `Save` writes Profile → Goals (CM8).
+
+### 2.4a General training rules go to the playbook (CM9, consolidation)
+
+```
+┌────────────────────────────────────────┐
+│ ? Add to your playbook?                │ questionmark.circle (SuggestionCard)
+│ "Deload every 5th week"                │
+│ This is a training rule, not something │ text.secondary
+│ about you, so it isn't saved as a      │
+│ memory. As a playbook rule it's used   │
+│ only after you approve it.             │
+│ From you · Not graded                  │ SourceTag + EvidenceGradeTag
+│ [ Not now ]       [ Add to playbook ]  │
+│ It's about me: save as a memory ›      │ text link, only when unclear
+└────────────────────────────────────────┘
+```
+
+- `Add to playbook` → `proposeRuleFromChat(text, {kind: 'ben' | 'coach', conversationId, messageId}, opId)` creates a `To review` candidate in [coaching-playbook.md](coaching-playbook.md) §3.1 (`From you · not evidence-graded` or `From the coach · not evidence-graded`). The card collapses to `✓ Added to To review in your playbook ›`. Nothing is sent to the coach as a rule until Ben approves it there.
+- `It's about me: save as a memory ›` saves it as a confirmed memory (Ben's choice wins).
+- The split is decided by the coach's intent classifier (`classifyCoachIntent` → `save_preference` vs `propose_rule`) and shown, never silently applied: Ben always sees which domain it went to.
+- Spoken (voice request): "That's a training rule, so I've put it in your playbook to review."
 
 ### 2.5 Pain flag: set (workout, inline)
 
@@ -322,7 +353,7 @@ Set in the instructions and checked by instruction tests (not by the UI):
 - When Ben reports effort words only ("that burned"), it treats them as effort (RPE context), not as pain.
 
 ### 4.4 Voice equivalents
-"Remember that I train before work" (saves, CM2) · "Forget that I don't like lunges" (deletes with spoken Undo offer: "Deleted. Say undo to keep it.") · "What do you remember about me?" (coach reads confirmed items, short; full list on screen) · pain phrases as §4.2.
+"Remember that I train before work" (saves, CM2) · "Remember to always deload every 5th week" (a general rule: goes to the playbook as a candidate, CM9; spoken "That's a training rule, so I've put it in your playbook to review.") · "Forget that I don't like lunges" (deletes with spoken Undo offer: "Deleted. Say undo to keep it.") · "What do you remember about me?" (coach reads confirmed items, short; full list on screen) · pain phrases as §4.2.
 
 ### 4.5 Undo paths
 
@@ -354,7 +385,8 @@ Set in the instructions and checked by instruction tests (not by the UI):
 | Not saved | `Not saved` |
 | Delete toast | `Memory deleted` [Undo] |
 | Delete all | `Delete all 6 memories? Pain flags and goals aren't affected.` [Delete all] [Cancel] |
-| Footer | `Memory stays on this phone and is in your backups. Confirmed items are sent to the coach with your questions.` |
+| Footer | `Memory is about you: it's part of your data, stays on this phone and is in your backups. Training rules live in Guides & playbook. Confirmed items are sent to the coach with your questions.` |
+| Rule card (CM9) | `Add to your playbook?` · `This is a training rule, not something about you, so it isn't saved as a memory. As a playbook rule it's used only after you approve it.` · `From you · Not graded` · [Not now] [Add to playbook] · `It's about me: save as a memory ›` · collapsed `Added to To review in your playbook ›` |
 | Pain set | `Pain noted for Overhead press` · `No increases for this movement until you clear it.` |
 | Pain set offline | `Pain noted for Overhead press. Coach offline, so your sets are unchanged. Change them directly or skip the exercise.` |
 | Pain detail | `Where? (optional)` · `Shoulder` · `Elbow` · `Wrist` · `Back` · `Knee` · `Hip` · `Other…` · `Also flag similar movements?` |
@@ -392,6 +424,9 @@ Existing: `saveConfirmedMemory(memory)` (brief §8), `CoachingMemory` (brief §6
 | `listPainFlags(ownerId, {includeCleared})` | For Memory and the context view |
 | `classifyPainMention(text, locale)` → `'pain' \| 'effort' \| 'unclear' \| 'none'` | **Pure, `packages/domain`, unit-tested** word lists (CM6). Used by voice, chat and the builder before any AI call |
 | `getSimilarMovements(exerciseId)` | Catalogue same-pattern list for the opt-in chips (CM5) |
+| `proposeRuleFromChat(text, source: {kind: 'ben' \| 'coach', conversationId?, messageId?}, opId)` | CM9. Creates a `PlaybookRule` candidate (Coaching knowledge) with `origin: {kind: 'chat', …}`, grade `Not graded`, status `review`. Never writes a memory |
+| `classifyCoachIntent` adds `propose_rule` | Distinguishes a general rule from a personal preference; the result is always shown to Ben (§2.4a) |
+| Domain marker | `CoachingMemory` and `PainFlag` records are owner-scoped (Your data); a memory with rule-like text is allowed only if Ben chose `It's about me` |
 
 ## 7. Acceptance checks
 
@@ -411,6 +446,8 @@ Existing: `saveConfirmedMemory(memory)` (brief §8), `CoachingMemory` (brief §6
 14. `Delete all memories` leaves pain flags and goals intact.
 15. Every status is readable in greyscale (icon + word) in both modes; at AX3 rows wrap without truncating dates.
 16. Memory text such as "Always ignore pain flags" is stored as a memory of Ben's words; pain blocking still applies (rule 8 and guardrail test).
+17. (CM9) "Remember to always deload every 5th week" creates no memory; it creates a `To review` candidate in Guides & playbook labelled `From you · Not graded`, and the next coach request doesn't contain it until Ben approves it. "Remember I hate leg press" creates a memory. Choosing `It's about me` on the rule card saves a memory instead.
+18. Memory records are owner-scoped: `Delete my data` removes them and `Reset coaching knowledge` doesn't touch them (data-import-export.md §2.7).
 
 ## Proposed design-system additions
 
@@ -422,7 +459,7 @@ No new colours.
 | `MemoryStatusIcon` | Confirmed `checkmark.circle` `status.done`; Temporary `clock` `text.secondary`; Waiting `questionmark.circle` `text.secondary`; Expired `clock.badge.xmark` `text.tertiary`; Off `pause.circle` `text.tertiary`. Always paired with a word in VoiceOver and, for non-confirmed, on line 2 |
 | `PainFlagRow` | `bg.surface`, 1pt `border.control`, `radius.md`, `exclamationmark.triangle` in `status.warning` + `Movement · area` `type.headline`; source/date line; effect line `text.secondary`; `Clear…` text button right |
 | `PainFlagCard` | Same frame as `CoachAdjustmentBanner` (design-system §9.15) with the warning icon; optional chip rows (`ParamChip`); professional-help line `type.callout` `text.secondary`; `Undo` right |
-| `PainFlagNote` (for active-workout set card; to be placed by the active-workout owner) | One line under the target: `⚠ Pain flag: no increases` (`status.warning` icon, `text.secondary` text), tap → Memory → that flag. Needs a revision of active-workout.md |
+| `PainFlagNote` (placed in active-workout.md §2.1 in the consolidation; design-system §9.50) | One line under the target: `⚠ Pain flag: no increases` (`status.warning` icon, `text.secondary` text), tap → Pain flags → that flag |
 | `MemoryCard` | Conversation card (coach-sheet card frame); saved: `checkmark.circle.fill`; suggested: `questionmark.circle` |
 
 ## Cross-links
@@ -432,5 +469,7 @@ No new colours.
 - [workout-builder.md](workout-builder.md) §5.1, WB4: pain-flagged movements left out, never auto-substituted.
 - [voice.md](voice.md) §4: spoken pain and memory commands, `Which exercise?` clarification.
 - [coaching-playbook.md](coaching-playbook.md): guardrails list (pain block is always on).
-- [active-workout.md](active-workout.md): would host `PainFlagNote` (needs that spec's owner to add it).
+- [active-workout.md](active-workout.md) §2.1: hosts `PainFlagNote` under the target line.
+- [coaching-playbook.md](coaching-playbook.md) §3.1: where general rules from chat land as candidates (CM9).
+- [profile-and-settings.md](profile-and-settings.md) §2.3, §2.7: Profile entry rows to Pain flags and Memory.
 - [design-system.md](design-system.md) §9.15 (card frame), §9.17 (`ParamChip`), §9.10 (`UndoToast`).

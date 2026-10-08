@@ -1,5 +1,11 @@
 # Coach sheet (conversation, context, action cards, history)
 
+> **Revision 2026-10-08 (consolidation).**
+> - **"What the coach can see" is grouped by the two data domains** (approved by Ben, relayed by the product manager; design-system §7.2): `Your data` (today's workout, history, gyms, memory, pain flags, goals, this conversation) and `Coaching knowledge` (approved playbook rules, guide excerpts, exercise catalogue), each under a `DomainLabel` (§2.4). Conversations are Your data.
+> - A general training rule stated in chat is routed to the playbook as a candidate, not saved as a memory (coach-memory.md CM9, §2.4a); the card is listed in §2.6.
+> - `timing.coachFirstToken` is merged into `timing.coachTimeout` (same 20 s, same copy). Card frames, `ClarifyChips` and the other additions are merged into design-system (§11 index).
+> - Fixed cross-links: cap-reached state is ai-connection.md §3.2 (was §3.5); not-eligible is ai-connection.md §3.1 (was §3.3).
+
 Status: v0.1 draft, 8 Oct 2026. Covers brief §1 (Coach sheet row), §2 (honest AI status), §8 (orchestration, structured actions, evidence), CLAUDE.md rules 1, 2, 3, 7, 8 and 9, ADR 0006 and CHANGELOG v0.4–v0.6. Builds on [coach-adjustments.md](coach-adjustments.md) and [workout-builder.md](workout-builder.md), which own the internals of their cards. Voice behaviour inside the sheet is in [voice.md](voice.md). Connection and usage states come from [ai-connection.md](ai-connection.md). Memory and pain flags: [coach-memory.md](coach-memory.md). Citations: [coaching-playbook.md](coaching-playbook.md). Tokens: [design-system.md](design-system.md).
 
 The sheet is a **side door, not a step in the loop**. It never opens by itself, it never sits between Ben and the Log button unless he opened it, and nothing in the workout waits for it.
@@ -135,7 +141,7 @@ Tapping the chip opens a read-only sheet from `describeCoachContext`:
 │ Built 18:21 · sent with your next      │
 │ message                                │
 │                                        │
-│ Included                               │
+│ 👤 Your data                           │ DomainLabel (consolidation)
 │ ✓ Push A, in progress: 5 sets done,    │
 │   11 to go (targets and actuals)       │
 │ ✓ Main Gym equipment (updated 2 Oct)   │
@@ -143,14 +149,20 @@ Tapping the chip opens a read-only sheet from `describeCoachContext`:
 │ ✓ Memory: 7 confirmed items ›          │
 │ ✓ Pain flags: Overhead press           │
 │   (shoulder) ›                         │
-│ ✓ Playbook: 9 approved rules ›         │
-│ ✓ Guide excerpts: picked per question  │
+│ ✓ Goals and week (set 2 Oct) ›         │
 │ ✓ This conversation: last 14 of 22     │
 │   messages                             │
+│                                        │
+│ 📚 Coaching knowledge                  │ DomainLabel
+│ ✓ Playbook: 9 approved rules ›         │
+│ ✓ Guide excerpts: picked per question  │
+│   from 2 guides ›                      │
+│ ✓ Exercise list and alternatives       │
 │                                        │
 │ Not included                           │
 │ – 2 memories waiting for you to        │
 │   confirm ›                            │
+│ – 5 rules still to review ›            │
 │ – Older conversations                  │
 │                                        │
 │ Not available                          │
@@ -163,6 +175,7 @@ Tapping the chip opens a read-only sheet from `describeCoachContext`:
 ```
 
 - Every line is generated from the context builder's own output, including the missing-data flags (brief §8). Nothing here is written by the model.
+- Lines are grouped by data domain (consolidation): everything about Ben under `Your data`, general rules and reference under `Coaching knowledge`. `describeCoachContext` returns `{yourData[], coachingKnowledge[], notIncluded[], notAvailable[]}`; an item can't appear in both groups.
 - `Not available` lines are the honesty list for rule 6: the coach can't use what isn't there, and this says so up front.
 
 ### 2.5 Ben's messages and coach replies
@@ -196,6 +209,7 @@ Cards appear in the reply, in the order the tools committed or proposed them. Ea
 | Correct a done set, coach inferred | `CorrectionCard` proposed | §2.7 | `Not now` · `Apply` | Only on `Apply` |
 | Save memory, Ben said "remember" | `MemoryCard` saved | coach-memory §2.4 | `Edit` · `Undo` | At once |
 | Save memory, coach suggested | `MemoryCard` proposed | coach-memory §2.4 | `Not now` · `Save` | Only on `Save` |
+| A general training rule (Ben's or the coach's words) | `Add to your playbook?` card (consolidation, CM9) | coach-memory §2.4a | `Not now` · `Add to playbook` | Adds a `To review` candidate only; used after approval in the playbook. Never a memory |
 | Pain flag | `PainFlagCard` | coach-memory §2.5 | `Undo` / `Clear` | At once (safety; Undo available) |
 | Clarification | `ClarifyChips`: `Which set? [Set 2 · 100 kg × 8] [Set 3 · 100 kg × 7]` | §4.4 | the options | Nothing until chosen |
 
@@ -275,7 +289,7 @@ Pushed inside the sheet (moves to large detent).
 | Empty thread | §2.3 starter chips | Enabled when text present | — |
 | Ready | Messages + composer | Enabled when text present | — |
 | Sending | Ben's message appears at once with `Sending…` under it | Replaced by `Stop` (`stop.fill`, 52pt) | Message is saved before the request starts (rule: persisted first) |
-| Thinking | `Coach · …` with static `ellipsis` icon; after 3 s an elapsed counter `0:05` | `Stop` | No animated dots. First-token timeout `timing.coachFirstToken` (20 s) |
+| Thinking | `Coach · …` with static `ellipsis` icon; after 3 s an elapsed counter `0:05` | `Stop` | No animated dots. First-response timeout `timing.coachTimeout` (20 s) |
 | Using tools | Tool summary line grows: `Reading today's workout…` → `Read today's workout` | `Stop` | One line per tool call, from the tool log |
 | Streaming | Reply text appears in chunks (no per-character animation); cards appear when committed | `Stop` | Stall timeout `timing.coachStreamStall` (20 s without a chunk) |
 | Done | Final reply, cards, citations | Enabled | — |
@@ -285,9 +299,9 @@ Pushed inside the sheet (moves to large detent).
 | Not connected | `StatusBanner`: `Coach not connected. Logging, targets and rest timers work without it.` [Connect] | Disabled; field still editable | Starter chips hidden except `Pain`. `Connect` opens ai-connection.md §2.1 |
 | Offline | `StatusBanner`: `No connection. The coach needs the internet. Your workout is saved on this phone.` | Disabled, text kept (CS4) | Banner clears by itself when the network returns |
 | Limit reached (ChatGPT plan) | `StatusBanner` warning: `ChatGPT usage limit reached. The coach is paused.` [Manage usage] + second line `Logging and built-in targets still work.` If an API key is set up: link `Switch coach to your API key (paid) ›` | Disabled | Never switches by itself (rule 7). No guessed reset time |
-| Paused at app spend cap (API key) | `Paused: you've reached your $5.00 cap for October.` [Change cap] | Disabled | ai-connection.md §3.5 |
+| Paused at app spend cap (API key) | `Paused: you've reached your $5.00 cap for October.` [Change cap] | Disabled | ai-connection.md §3.2 |
 | Sign-in expired / revoked | `ChatGPT disconnected. Sign in again to use the coach.` [Sign in] | Disabled | Old threads stay readable |
-| Not eligible | `This ChatGPT account can't be used by other apps.` [Options] | Disabled | ai-connection.md §3.3 |
+| Not eligible | `This ChatGPT account can't be used by other apps.` [Options] | Disabled | ai-connection.md §3.1 |
 | Model unavailable | `The model you chose isn't available any more.` [Choose model] | Disabled | Never picks another silently |
 | Provider error | `ⓘ Couldn't reach the coach. Nothing changed.` [Try again] on the turn | Enabled | — |
 | Interrupted (force-close or crash mid-turn) | On reopen, the turn shows its partial text and `ⓘ Coach request was interrupted. Anything applied is shown above.` [Try again] | Enabled | Committed tool actions are in SQLite and show their cards |
@@ -473,7 +487,7 @@ Existing (brief §2, §7, §8; coach-adjustments §6):
 | `createConversation(ownerId, {kind: 'workout' \| 'general', sessionId?})`, `renameConversation`, `deleteConversation(id)` | Thread lifecycle. Delete removes messages only; `ActionRecord`s keep their reason and evidence |
 | `listConversations(ownerId, {query?, cursor})` | History list with title, last Ben message, last time, action counts |
 | `getConversation(conversationId, cursor)` | Messages oldest→newest with cards' current statuses |
-| `describeCoachContext(ownerId, sessionId?, pageContext)` | The context view: included items with sources and dates, excluded items, missing-data flags, how many messages will be sent. Same builder as `buildCoachContext`, no AI |
+| `describeCoachContext(ownerId, sessionId?, pageContext)` → `{yourData[], coachingKnowledge[], notIncluded[], notAvailable[], messagesSent}` | The context view, grouped by data domain: included items with sources and dates, excluded items, missing-data flags, how many messages will be sent. Same builder as `buildCoachContext`, no AI |
 | `setConversationRetention(ownerId, 'forever' \| '1y' \| '90d')` | Retention; deletes older threads in one transaction |
 | `CoachMessage` (discriminated union) | `{kind: 'ben_text' \| 'ben_voice' \| 'ben_chip', text, at, tz}` · `{kind: 'coach_text', text, status: 'streaming' \| 'done' \| 'stopped' \| 'cut_off' \| 'interrupted', model, route}` · `{kind: 'tool_log', entries[]}` · `{kind: 'card', cardType, refId}` · `{kind: 'outcome', code}`. Persisted before the request (Ben) and in chunks (coach) so a force-close keeps what was shown |
 | `validateCitations(reply, playbookVersion)` | Drops citations to rules or guides that aren't approved and enabled (coaching-playbook §6) |
@@ -493,7 +507,7 @@ Existing (brief §2, §7, §8; coach-adjustments §6):
 11. A proposal created before Ben logs another set shows `Out of date`; Apply is disabled and a typed "yes" replies `That suggestion is out of date. Nothing changed.`
 12. With two cards awaiting Ben, "yes" makes the coach ask which; nothing applies until he picks.
 13. `Stop` during streaming keeps the partial text, shows `Stopped…`, and any card committed before Stop keeps working Undo; nothing proposed after Stop applies.
-14. The context view lists `Not available` items (no recovery data, no imported runs) when they're missing, and the counts match the database (memories, pain flags, approved rules, messages sent).
+14. The context view lists `Not available` items (no recovery data, no imported runs) when they're missing, and the counts match the database (memories, pain flags, approved rules, messages sent). Personal items appear only under `Your data` and rules, excerpts and catalogue only under `Coaching knowledge`.
 15. Removing the page chip on Progress sends the next message without that page's context (check the request payload); during a workout, the active workout chip can't be removed.
 16. `Why?` shows the coach's reason in quotes and every other section from records; with no playbook rule used it says `Rules and guides: none…`.
 17. Every card status has an icon and a word; checked in greyscale in both modes.
@@ -504,6 +518,8 @@ Existing (brief §2, §7, §8; coach-adjustments §6):
 22. No animated dots, shimmer or typing animation anywhere; the thinking state is a static icon plus elapsed time.
 
 ## Proposed design-system additions
+
+> **Merged into design-system.md (consolidation):** `timing.coachFirstToken` → `timing.coachTimeout`; `timing.coachStreamStall` §6; `ConversationMessage`, `ToolSummaryLine`, `ContextChip`, `WorkoutBar`, `SheetComposer`, `RouteLine` §9.37–9.39 area; `SetLoggedCard` / `CorrectionCard` in the card families §9.48; `ClarifyChips` §9.37; card status words §7.1. Kept below for history.
 
 No new colours. Everything uses existing tokens.
 

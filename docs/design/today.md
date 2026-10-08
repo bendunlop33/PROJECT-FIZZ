@@ -8,6 +8,8 @@
 
 > **Revision 2026-10-08 (workout builder, v0.5).** The alternatives row and the No-plan link row gain a `Build a workout` text link that opens the Build sheet in [workout-builder.md](workout-builder.md). It is never a primary button and is hidden in the Resume state. Today still makes no AI call (§2, §4, §5).
 
+> **Revision 2026-10-08 (consolidation).** Links now point at the new specs: `Other routine` opens the Plan hub's `Routines` segment ([routines.md](routines.md) RT1); `Next: …` and `Reschedule` open its `Week` segment ([weekly-plan.md](weekly-plan.md)), no longer a `Coming soon` placeholder once Phase A lands; `Edit gyms` opens [gym-editor.md](gym-editor.md); `Restore from backup` opens [data-import-export.md](data-import-export.md) §2.3. Banners above the main card follow [system-states.md](system-states.md) §2.2 (at most two; the only backup banner is a **failed** on-phone backup, since backups now live in the app by default and off-phone copies never nag). Today still makes no AI call.
+
 Status: v0.1 draft, 8 Oct 2026. Flow: [flow-first-milestone.md](flow-first-milestone.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -160,7 +162,7 @@ Transitions:
 | `Next: …` row | Opens the weekly plan | none |
 | `… coach suggestions to review ›` | Opens the summary of the workout they came from, scrolled to `Next time`. Apply/Undo happen there | none |
 | `Build a workout` | Opens the workout builder's Build sheet (workout-builder.md §3.1), or its offline frame (§3.7) when `getAiCapabilities` reports no text route. Nothing starts without a later tap on `Start now` | none |
-| `Reschedule` | Opens the weekly plan with today's session selected (move / skip / replace) | Out of milestone scope. The link exists but may route to a placeholder labelled `Coming soon` |
+| `Reschedule` | Opens the weekly plan ([weekly-plan.md](weekly-plan.md)) with today's session sheet open (move / skip / replace) | Until weekly-plan Phase A is built (WP1), the link is hidden rather than routed to a placeholder |
 | `Shorter session` | Out of milestone scope. Hide it until `shortenSession` exists | none |
 | Ask pill | Opens the coach sheet with Today's context attached. Long-press starts push-to-talk if voice is available | none |
 

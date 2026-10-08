@@ -1,5 +1,7 @@
 # Lock screen and alerts
 
+> **Revision 2026-10-08 (consolidation).** P-L1 is applied in rest-state.md §4.8 (no Time Sensitive option; the brief's wording is the product manager's to change). profile-and-settings.md §2.6 now hosts this file's `When rest ends`, `Alert check` and `Test rest alert` unchanged, and its own duplicate rest-alert rows (`Loud alerts (AlarmKit)` with a threshold picker) are withdrawn in favour of `Loud rest alerts` here. `runAlertTest()` is renamed `runRestAlertTest()` (one name across specs). Capability evidence from tests is shown in App status (system-states.md). Tokens and the widget colour mirror are merged into design-system (§2.2, §3 `type.liveCountdown`, §6 timings, `sound.restEnd`).
+
 Status: v0.1 draft, 8 Oct 2026. Designer. Tokens: [design-system.md](design-system.md). Timer behaviour inside the app: [rest-state.md](rest-state.md) and [flow-first-milestone.md](flow-first-milestone.md) §4–§5. App-wide permission and capability states: [system-states.md](system-states.md).
 
 Sources: brief §12 (rest state, spoken set companion); CHANGELOG v0.2 and v0.3 (layered rest alerts in the first milestone; AlarmKit as the loud fallback on Ben's iPhone 17); research `ios-platform-feasibility.md` §2.3–§2.5, `free-ios-install.md` §1.2; [ADR 0004](../decisions/0004-free-distribution-sidestore.md) (no push, no time-sensitive); [ADR 0007](../decisions/0007-mobile-shell-identity-and-ipa-pipeline.md) (App Group rename risk, background-audio experiment); device test [build 7](../device-tests/2026-10-08-probe-build7.md); `apps/mobile/src/live-activity/RestCountdownActivity.tsx` (current probe widget).
@@ -359,7 +361,7 @@ From the brief and existing specs:
 | `getRestAlertCapabilities()` → `{notifications{status, sound, lockScreen}, liveActivity{status, reason?: 'app_group_renamed' \| 'disabled_in_settings' \| 'not_in_build' \| 'start_failed'}, alarmKit{status: 'authorized' \| 'denied' \| 'not_determined' \| 'unavailable'}, lockedSpeech{status: 'not_in_build' \| 'off' \| 'ready' \| 'running' \| 'stopped', stoppedAtUtc?}}` | Drives Alert check, the arbitration and system-states.md. Reuses the probe's App Group check |
 | `startWorkoutActivity(sessionId)` / `updateWorkoutActivity(content)` / `endWorkoutActivity(sessionId)` / `reconcileActivities(activeSession)` | Live Activity lifecycle (§4.2) |
 | `scheduleRestAlarm(timerId, version, deadlineUtc)` / `cancelRestAlarm(timerId)` | AlarmKit layer |
-| `runAlertTest()` | The 10-second practice rest; no workout data |
+| `runRestAlertTest()` (was `runAlertTest()`) | The 10-second practice rest; no workout data. Records each layer's result with `recordCapabilityObservation` for App status |
 
 ---
 
@@ -443,5 +445,5 @@ No new colours. The widget can't import `theme.ts` (it's serialised alone), so i
 - [onboarding.md](onboarding.md) §4.6: permission priming for notifications and `Loud rest alerts`.
 - [system-states.md](system-states.md): permission-denied states, the refresh reminder notification, and `StatusRow`.
 - [data-import-export.md](data-import-export.md): restore and delete cancel every layer here.
-- profile-and-settings.md (being written by another designer): hosts Voice & alerts; this file supplies the `When rest ends` section, Alert check and Test rest alert.
+- [profile-and-settings.md](profile-and-settings.md) §2.6: hosts Voice & alerts; this file supplies the `When rest ends` section, Alert check and Test rest alert.
 - [ADR 0004](../decisions/0004-free-distribution-sidestore.md), [ADR 0007](../decisions/0007-mobile-shell-identity-and-ipa-pipeline.md), [device test build 7](../device-tests/2026-10-08-probe-build7.md).

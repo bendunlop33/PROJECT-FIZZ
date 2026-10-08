@@ -4,6 +4,8 @@
 >
 > **Revision 2026-10-08 (coach-led progression, v0.4).** Aligned with [ADR 0006](../decisions/0006-coach-led-progression.md). Region 5 is now the **coach slot** (offer line, pending, adjustment banner or outcome line), specified in [coach-adjustments.md](coach-adjustments.md). Coach offers appear only here, only during rest, never as a modal and never spoken outside rest (§2.1, §3, §5). Adjustments never touch the rest timer (§4.5). The "Plan change applied" cue now names the new targets (§5). New checks 17–20.
 
+> **Revision 2026-10-08 (consolidation).** §4.8 no longer offers "Time Sensitive" notifications: a free Apple ID can't use them (ADR 0004; lock-screen-and-alerts.md P-L1). Lock-screen and notification content, alert arbitration (one alert per rest end) and the optional loud alerts are owned by [lock-screen-and-alerts.md](lock-screen-and-alerts.md); §4.7–§4.8 now point there. Late speech uses `timing.lateCueDrop` and the 20 s rule uses `timing.spokenOfferMinRest` (design-system §6). The cue-mode menu and its options sit in Profile → Voice & alerts (profile-and-settings.md §2.6), with the `Talking` options from voice.md §2.5.
+
 Status: v0.1 draft, 8 Oct 2026. Rest is part of the Active workout screen, not a separate screen. See [active-workout.md](active-workout.md) and the state machine in [flow-first-milestone.md](flow-first-milestone.md) §3. Tokens: [design-system.md](design-system.md) §9.6.
 
 ## 1. Purpose
@@ -170,18 +172,18 @@ Applying a coach proposal or a coach adjustment, showing or answering a coach of
   - a Live Activity update (`DEP-LIVE`)
 - **Reopening** shows the true remaining time, never the full preset.
 - **Delivery de-duplication:** if the app is in the foreground at the deadline, the in-app cue plays and the pending notification is cancelled. If it's in the background, the notification is the only delivery. On returning, nothing is replayed.
-- **Late speech is dropped.** A spoken cue more than 5 s late is not spoken.
+- **Late speech is dropped.** A spoken cue more than `timing.lateCueDrop` (5 s) late is not spoken.
+- Which layer fires at the deadline (notification, Live Activity, loud alert, spoken while locked) is decided by the arbitration in lock-screen-and-alerts.md §4.1, so Ben gets exactly one alert.
 - Force-close behaviour is specified in flow §4.2.
 
 ### 4.8 Lock screen and notification content
-Available only where supported (`DEP-LIVE`, `DEP-NOTIF`).
+Full specification: [lock-screen-and-alerts.md](lock-screen-and-alerts.md) §2 (revision consolidation). In short:
 
-- **Live Activity, compact:** `Rest 2:47`, worked out by the system from the deadline.
-- **Live Activity, expanded:** `Bench press · Set 3 of 4`, `Rest 2:47`, `Next: 100 kg × 6–8 (target)`.
-- **Notification at the deadline:** title `Rest done`, body `Next: Bench press · 100 kg × 6–8 target`.
-  - It is Time Sensitive only if Ben enables it.
-  - It has no Log action in this milestone, because logging from the lock screen without seeing the values risks wrong data. That can be revisited later.
-- **If `DEP-LIVE` fails:** notification only. The design doesn't depend on a Live Activity.
+- **Live Activity** (`DEP-LIVE`; failing on build 7 because SideStore renamed the App Group, fix pending): one per workout, showing the countdown, the absolute end time (`Until 18:42`) and the next set's target.
+- **Notification at the deadline** (`DEP-NOTIF`; passed on build 7 at interruption level `active`): title `Rest done`, body `Next: Bench press · 100 kg × 6–8 target`.
+  - No Time Sensitive option: it needs the paid developer programme (ADR 0004).
+  - No Log action in this milestone, because logging from the lock screen without seeing the values risks wrong data. That can be revisited later.
+- **If `DEP-LIVE` fails:** notification only (and optionally a quiet `Resting until 18:42` notification). The design doesn't depend on a Live Activity.
 
 ### 4.9 Voice equivalents (Conversation mode; `DEP-STT`/`DEP-AI`)
 - "Add thirty seconds" / "skip rest" / "how long left?" map to the same functions. The reply is spoken and shown in the voice strip.

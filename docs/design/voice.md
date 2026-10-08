@@ -1,5 +1,12 @@
 # Voice (tap-to-talk, spoken set logging, spoken replies, cues)
 
+> **Revision 2026-10-08 (consolidation).**
+> - VO4 is applied in flow-first-milestone.md §5.1 step 3 (the strip carries the Undo for voice logs; no separate toast) and in design-system §9.10.
+> - `timing.coachFirstToken` → `timing.coachTimeout` (design-system §6). Voice timing tokens are now in design-system §6; `VoiceStrip`, `RecordingIndicator` and `ClarifyChips` in §9.37–9.39.
+> - Settings: the `Talking` group (§2.5) sits in Profile → Voice & alerts after the cue modes (profile-and-settings.md §2.6). `setVoicePreferences` is folded into `saveVoiceSettings(patch, opId)` (profile-and-settings.md §6).
+> - Microphone-denied wording aligned with active-workout.md and system-states.md: `Voice isn't available: microphone is off in iOS Settings.`
+> - "Remember …" with a general training rule goes to the playbook as a candidate, not to memory (coach-memory.md CM9).
+
 Status: v0.1 draft, 8 Oct 2026. The single spec for voice **input** and coach **speech**, covering brief §3, §12 (spoken set companion), validation scenarios in §10, CHANGELOG v0.2 (on-device first, deterministic `parseSpokenSet`) and v0.6 (Apple voices for cues; Apple or opt-in OpenAI voice for coach replies; en-GB on-device recognition), CLAUDE.md rules 1, 3, 5, 7 and 8, and [device probe build 7](../device-tests/2026-10-08-probe-build7.md). Scripted cue wording and cue modes stay in [rest-state.md](rest-state.md) §5; the inline voice strip's placement stays in [active-workout.md](active-workout.md) §2.5. This file defines what happens inside them. Tokens: [design-system.md](design-system.md).
 
 Voice is **another way to do the same things**. It uses the same services, operation IDs, guards and Undo as taps. With no network and no AI, simple set logging and workout commands still work by voice (rule 1).
@@ -100,7 +107,7 @@ Interrupted / error / unavailable:
 │ ⓘ Didn't catch a number. Say it again  │
 │   or use the buttons.                  │
 │ ⊘ Voice isn't available: microphone is │
-│   off for Fizz.          [ Settings ]  │
+│   off in iOS Settings.   [ Settings ]  │
 ```
 
 The strip has a `Type instead` link (opens the coach sheet) in Listening and error states, as active-workout §2.5.
@@ -178,14 +185,14 @@ The cue-mode section above it is rest-state §5. This section is added under it:
 |---|---|---|---|---|
 | Idle | Hidden | `Talk` (or `Ask` without voice) | Off | — |
 | Requesting permission | §2.4, then iOS prompts | `Talk` | Off | Once |
-| Permission denied | `Voice isn't available: microphone is off for Fizz.` [Settings] | `Ask` | Off | Talk opens the sheet for typing |
+| Permission denied | `Voice isn't available: microphone is off in iOS Settings.` [Settings] | `Ask` | Off | Talk opens the sheet for typing |
 | Recogniser unavailable (no on-device support for the locale, assets missing) | `Voice isn't available: speech recognition for English (UK) isn't on this iPhone yet.` [Settings] | `Ask` | Off | No silent switch to server recognition (VO6) |
 | Listening | `● Mic on · Listening…` + live partial | `Stop` | On | Indicator: our red dot **and** the iOS orange dot |
 | Processing | `Working out what you said…` | `Wait` | Off | Local; normally < 300 ms |
 | Clarifying | §2.1 clarification; `Not saved` | `Talk` | On for 8 s, then off | Expires when the active set changes or after 30 s (`Not saved`) |
 | Saved | §2.1 heard and saved, Undo | `Talk` | Off | Stays for `timing.undoToast` |
 | Command done | `✓ Skipped rest` / `✓ Added 30 s` etc. | `Talk` | Off | For deterministic commands (§4.3) |
-| Asking the coach | `… Asking the coach` + Ben's words | `Wait` | Off | `timing.coachFirstToken` |
+| Asking the coach | `… Asking the coach` + Ben's words | `Wait` | Off | `timing.coachTimeout` |
 | Speaking | `🔊 Coach: "…"` [Stop] | `Stop` | Off | Talk tap = stop speaking and start listening (VO7) |
 | Reconnecting | `Reconnecting to the coach…` | `Wait` | Off | One retry within 5 s, same turn ID; then Error |
 | Interrupted (call, Siri, alarm, another app) | `Voice stopped for a call.` / `Voice stopped: another app is using audio.` [OK] | `Talk` | Off, released | Never resumes listening by itself |
@@ -365,7 +372,7 @@ All audio-session changes go through the custom Swift module (CLAUDE.md stack). 
 | Interrupted | `Voice stopped for a call.` · `Voice stopped: another app is using audio.` · `Lost the microphone. Say it again.` |
 | Nothing heard | `Didn't hear anything.` · `Didn't catch a number. Say it again or use the buttons.` |
 | Error | `Voice stopped: something went wrong. Nothing was saved.` [Try again] |
-| Unavailable | `Voice isn't available: microphone is off for Fizz.` [Settings] · `Voice isn't available: speech recognition for English (UK) isn't on this iPhone yet.` [Settings] |
+| Unavailable | `Voice isn't available: microphone is off in iOS Settings.` [Settings] · `Voice isn't available: speech recognition for English (UK) isn't on this iPhone yet.` [Settings] |
 | Reply engine | `Using Apple voice: no connection` · `…: key not accepted` · `…: voice cap reached` · `…: OpenAI voice too slow` |
 | Hold hint | `Hold to talk` |
 | Settings | as §2.5 |
@@ -407,7 +414,7 @@ Existing (brief §3, §7, §12; coach-adjustments §6): `startVoiceSession(sessi
 | `parseVoiceCommand(transcript, context)` → `{command, args} \| null` | **Pure, `packages/domain`, unit-tested** grammar for §4.3. Runs before `parseSpokenSet` for command words; never calls the model |
 | `getVoiceCapabilities()` | `{micPermission, speechPermission, onDeviceSupported, locale, serverRecognitionAllowed, ttsVoices[], route: {input, output}}` from the native module; feeds `getAiCapabilities.speechIn` |
 | `resolveClarification(turnId, choice, sessionVersion)` | Commits the chosen candidate with the turn's opId; rejects if the version moved (`Not saved`) |
-| `setVoicePreferences({talkMode, phoneMicWithHeadphones, doneShortcut, listenDuringRest, serverRecognition, speakVoiceReplies, locale})` | Profile settings |
+| (folded) `saveVoiceSettings(patch, opId)` with `{talkMode, phoneMicWithHeadphones, doneShortcut, listenDuringRest, serverRecognition, speakVoiceReplies, locale}` | Profile settings; canonical name in profile-and-settings.md §6 (was `setVoicePreferences`) |
 | Audio events (native module) | `interruptionBegan/Ended`, `routeChanged {reason}`, `mediaServicesReset`; the voice layer maps them to §4.5 |
 | Spoken-reply summariser (UI rule, not a model call) | First two sentences up to ~200 characters (VO8) |
 

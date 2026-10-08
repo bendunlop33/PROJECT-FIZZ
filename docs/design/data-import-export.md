@@ -4,12 +4,18 @@ Status: v0.1 draft, 8 Oct 2026. Designer. Tokens: [design-system.md](design-syst
 
 Sources: brief §5 (data foundation), §7 (`previewFitNotesImport`, `commitImport`, `exportTrainingData`, `createBackup` / `restoreBackup`), §9; [ADR 0004](../decisions/0004-free-distribution-sidestore.md) (backup and a tested restore before any real workout); [ADR 0005](../decisions/0005-persistence-and-backup.md) (backup format, restore, rollback, modal restore); research `free-ios-install.md` §4 and §8, `ios-platform-feasibility.md` §2.2, §2.8 and §5 (FitNotes formats); `guides/sidestore-windows.md` §6 and §8.
 
-**Why this matters more than usual.** Fizz is signed with a free Apple ID through SideStore. Deleting the app, or re-signing it with another Apple ID or tool, installs a separate app with an empty database (ADR 0004). A backup that has left the phone is the only way back. So backup and restore are in the first milestone; FitNotes import and portable export are build step 3.
+> **Revision 2026-10-08 (consolidation).** Two changes approved by Ben (relayed by the product manager) are applied here, and they supersede the earlier text wherever the two disagree:
+> 1. **Backups live in the app by default; off-phone copies are optional.** Automatic backups (after each finished workout, rotating) go to Fizz's own container. No folder is needed. `Save a copy to Files` works any time, and `Also back up off the phone automatically` (off by default) is the only thing that uses `Choose backup folder`. Three durability phrases: `Saved on this phone` · `Backed up on this phone` · `Copy saved to Files` (design-system §7.1). Gentle safeguards replace nagging (§4.1a). Cross-spec proposal X1 is withdrawn; X2 and X3 are applied with the new wording.
+> 2. **Two data domains: `Your data` and `Coaching knowledge`** (design-system §7.2). A backup file has two separate sections that restore independently; export offers `My data` or `Coaching knowledge only`; delete offers `Delete my data (keep coaching knowledge)` and `Reset coaching knowledge`.
+>
+> Also: `profile-and-settings.md` now has a single `Data & backup` row (X3); components moved to design-system (§11 index); `timing.backupOverdue` is retired in favour of `timing.offPhoneReminder`.
+
+**Why this matters more than usual.** Fizz is signed with a free Apple ID through SideStore. Deleting the app, or re-signing it with another Apple ID or tool, installs a separate app with an empty database (ADR 0004). Backups on the phone protect against a damaged database or a bad restore, but not against that. Only a copy saved to Files (off the phone) survives it. Fizz says which kind Ben has, every time, and offers a one-tap copy to Files before the moments when it matters (§4.1a), without nagging.
 
 | Part | Milestone |
 |---|---|
-| Data & backup screen, manual and automatic backups, backup folder, `Check a backup`, restore with preview and Undo restore, delete all data | First milestone |
-| FitNotes import (preview, questions, commit, results, Undo import), import history, portable export | Build step 3 |
+| Data & backup screen, automatic backups on this phone, `Save a copy to Files`, optional automatic off-phone backups, `Check a backup`, restore by section with preview and Undo restore, `Delete my data` / `Reset coaching knowledge` | First milestone |
+| FitNotes import (preview, questions, commit, results, Undo import), import history, portable export (`My data` / `Coaching knowledge only`) | Build step 3 |
 
 ---
 
@@ -19,15 +25,17 @@ These go beyond the brief or settle open items. Each is listed again in "Propose
 
 | # | Decision | Why |
 |---|---|---|
-| DX1 | Only two durability words exist in the app: **Saved on this phone** (SQLite commit) and **Backed up** (a backup file written to a folder Ben chose). There is no "sync" wording anywhere. | There is no sync. Ben needs to know whether a copy exists off the phone, and nothing else. |
-| DX2 | Automatic backups go to **one folder Ben picks once** in Files (iCloud Drive or another provider). Fizz also keeps its last 3 backups in its own folder, labelled `On this phone only`. | Only a folder outside the app survives deleting the app. The local copies help with a damaged database, not with a deleted app, and the label says so. |
+| DX1 | (Revised.) Exactly three durability phrases exist: **Saved on this phone** (SQLite commit), **Backed up on this phone** (an automatic backup file in Fizz's container includes it) and **Copy saved to Files** (a backup file exists outside the app). There is no "sync" wording, and never a bare "Backed up". | Ben must always know whether a copy exists off the phone. |
+| DX2 | (Revised, approved by Ben.) Automatic backups go to **Fizz's own container** after every finished workout, rotating (`Keep last 14`). Off-phone copies are optional: `Save a copy to Files` any time, and `Also back up off the phone automatically` (off by default), which asks Ben to choose a folder once. | Zero setup to be protected against a damaged database or bad restore; the off-phone copy is Ben's choice, offered at the moments it matters. |
+| DX11 | (New, approved by Ben.) A backup file has **two sections**, `Your data` and `Coaching knowledge`, each with its own counts and checksum, and each can be restored on its own. Credentials are in neither. | Ben can reset or restore the general coaching knowledge without touching his history, and the reverse. |
+| DX12 | (New.) **Safeguards, not nagging.** A one-tap `Save a copy to Files first` is offered just before risky moments (§4.1a). If no copy has been saved to Files for 30 days, one quiet, dismissible row appears in Data & backup and on the Profile row, and Ben can switch that reminder off. Nothing about backups ever appears during a workout or as a Today banner, except a failed on-phone backup (system-states.md T5). | Matches "approved: non-nagging" and keeps the workout screen clean. |
 | DX3 | "Tested restore" inside the app is `Check a backup` (`verifyBackup`): rebuild the file into a scratch database, migrate, run the integrity check, compare counts, then throw the copy away. | Restoring a file identical to the current data returns `unchanged` (ADR 0005), which proves less. A real restore with a pointer switch belongs to the device trial run (ADR 0004). Matches onboarding.md §4.3. |
 | DX4 | Restore and FitNotes import are unavailable while a workout is unfinished. | Both replace or add history the active workout reads (drafts, "Last" values, timers). Finishing first takes one tap; recovering from a half-restored workout doesn't. |
 | DX5 | An unrecognised FitNotes header stops the import. There is no manual column mapping. | The real export hasn't been seen yet (brief v0.2). Letting Ben map columns by hand invites silent misreads (kg vs lb). The fix is a developer adding the variant against his real file. |
 | DX6 | Load convention questions (dumbbell each or both, bodyweight added or assisted, barbell total or plates only) have **no pre-selected answer**. One tap answers a whole equipment group, with per-exercise overrides. | The file doesn't record conventions (research §5). Pre-selecting one would be inventing data (rule 6). |
 | DX7 | `Undo this import` **reverts** the import's workouts (audited status `reverted`, hidden everywhere). It never deletes rows. | SQLite triggers forbid deleting sessions (ADR 0005); append-only history is the point. |
-| DX8 | Backups are plain JSON and never include credentials. The folder step says so in one line. | ADR 0005 open item 2 asks Ben to confirm plain JSON. The copy lets him decide with the facts in front of him. |
-| DX9 | Automatic backup files rotate (`Keep: last 14`, editable). Fizz deletes only automatic files it wrote itself (name pattern **and** a checksum it recorded). Manual backups are never deleted. | A year of workouts is ~200 files of ~1 MB each (ADR 0005 measured 1.2 MB per 300 sessions). Never touching a file Fizz didn't write keeps the folder trustworthy. |
+| DX8 | Backups are plain JSON and never include credentials. `Save a copy to Files` says so in one line. | ADR 0005 open item 2 asks Ben to confirm plain JSON. The copy lets him decide with the facts in front of him. |
+| DX9 | Automatic backup files rotate (`Keep: last 14`, editable), on the phone and, if turned on, in the off-phone folder. Fizz deletes only automatic files it wrote itself (name pattern **and** a checksum it recorded). Copies Ben saved himself are never deleted. | A year of workouts is ~200 files of ~1 MB each (ADR 0005 measured 1.2 MB per 300 sessions). Rotation keeps the phone's storage bounded. |
 | DX10 | Neither the coach nor voice can start a backup, restore, import, export or delete. | These are not in the restricted tool list (brief §8). Imported files are data, never instructions (rule 8). |
 
 ---
@@ -36,13 +44,13 @@ These go beyond the brief or settle open items. Each is listed again in "Propose
 
 | Surface | Question it answers | Single primary action |
 |---|---|---|
-| Data & backup (Profile → Data & backup) | "Is my training safe off this phone?" | `Back up now` |
-| Restore | "What will this backup replace, and can I go back?" | `Restore` |
+| Data & backup (Profile → Data & backup) | "Is my training safe, and is there a copy off this phone?" | `Save a copy to Files` |
+| Restore | "What will this backup replace, which part, and can I go back?" | `Restore` |
 | Check a backup | "Will this file actually restore?" | `Check` |
 | FitNotes import | "What will this file add, and is the mapping right?" | `Import 412 workouts` |
 | Import results | "What happened to every row?" | `Done` |
-| Export | "Get my data out in a format other tools read." | `Export` |
-| Delete all data | "Remove everything Fizz holds on this iPhone." | None in accent. `Back up first` is secondary; `Delete everything` is a danger text button |
+| Export | "Get my data, or the coaching knowledge, out in a format other tools read." | `Export` |
+| Delete my data / Reset coaching knowledge | "Remove what Fizz holds about me" / "Put the coaching knowledge back to how this build ships it." | None in accent. `Save a copy to Files first` is secondary; the delete or reset is a `DangerTextButton` |
 
 None of these surfaces is reachable from the active workout. They are never shown between sets.
 
@@ -54,35 +62,45 @@ Design width 390pt; checked at 375 and 430. All counts, dates and sizes use tabu
 
 ### 2.1 Data & backup (hub)
 
-Regions, top to bottom:
+Regions, top to bottom (revised, consolidation):
 1. **Navigation bar.** `‹ Profile` and the title `Data & backup`.
-2. **Backup status card.** Status line (icon + text), destination, what the last backup holds, and `Back up now` (primary). Shows the trial-run reminder line until Ben marks it done (§4.1).
-3. **Backups.** `After each workout` switch, `Backup folder`, `Keep automatic backups`, `Check a backup`, `Copies on this phone`.
-4. **Restore.** `Restore from a backup`; `Undo last restore` only when a rollback target exists.
-5. **Import.** `Import from FitNotes`, `Past imports`.
-6. **Export.** `Export workouts`.
-7. **Delete all data.** Danger text button, separated by `space.8`.
+2. **Backup status card** (`StatusCard`). Two lines, always both: the on-phone line (`✓ Backed up on this phone · 19:05`) and the off-phone line (`✓ Copy saved to Files · Thu 8 Oct` or `ⓘ No copy off this phone yet`). Then what the last backup holds, per domain, and the primary `Save a copy to Files`. Shows the trial-run reminder line until Ben marks it done (§4.1).
+3. **Backups on this phone.** `After each workout` (on by default; turning it off asks for confirmation, §4.1), `Keep automatic backups`, `Copies on this phone`, `Check a backup`.
+4. **Off this phone (optional).** `Save a copy to Files`, `Also back up off the phone automatically` (switch, off by default; turning it on asks for a folder), `Backup folder` (only when that switch is on), `Remind me if there's no copy off this phone` (switch, on by default; quiet row after 30 days).
+5. **Restore.** `Restore from a backup`; `Undo last restore` only when a rollback target exists.
+6. **Import.** `Import from FitNotes`, `Past imports`.
+7. **Export.** `Export` (`My data` or `Coaching knowledge only`).
+8. **Delete and reset.** Two `DangerTextButton`s, separated by `space.8`: `Delete my data (keep coaching knowledge)` and `Reset coaching knowledge`.
 
 ```
 ┌────────────────────────────────────────┐
 │ ‹ Profile      Data & backup           │
 ├────────────────────────────────────────┤
 │ ┌────────────────────────────────────┐ │
-│ │ ✓ Backed up · Thu 8 Oct, 19:05     │ │ status.done icon + text
-│ │ iCloud Drive › Fizz backups        │ │
-│ │ 412 workouts · 4,105 sets          │ │
+│ │ ✓ Backed up on this phone · 19:05  │ │ iphone icon, status.done
+│ │ ✓ Copy saved to Files · Thu 8 Oct  │ │ externaldrive icon, status.done
+│ │ 👤 Your data: 412 workouts ·       │ │ DomainLabel lines
+│ │    4,105 sets                      │ │
+│ │ 📚 Coaching knowledge: 9 rules ·   │ │
+│ │    412 exercises                   │ │
 │ │ ┌────────────────────────────────┐ │ │
-│ │ │          Back up now           │ │ │ PrimaryButton
+│ │ │      Save a copy to Files      │ │ │ PrimaryButton
 │ │ └────────────────────────────────┘ │ │
 │ └────────────────────────────────────┘ │
 │                                        │
-│ Backups                                │
+│ Backups on this phone                  │
 │ After each workout             [ On ]  │
-│ Backup folder                        › │
-│   iCloud Drive › Fizz backups          │
 │ Keep automatic backups    Last 14    › │
+│ Copies on this phone (14)            › │
 │ Check a backup                       › │
-│ Copies on this phone (3)             › │
+│ These are lost if Fizz is deleted or   │ text.secondary
+│ re-signed with another Apple ID.       │
+│                                        │
+│ Off this phone (optional)              │
+│ Also back up off the phone             │
+│ automatically                  [ Off ] │
+│ Remind me if there's no copy           │
+│ off this phone                 [ On ]  │
 │                                        │
 │ Restore                                │
 │ Restore from a backup                › │
@@ -95,75 +113,83 @@ Regions, top to bottom:
 │ Past imports (1)                     › │
 │                                        │
 │ Export                                 │
-│ Export workouts                      › │
+│ Export                               › │
 │                                        │
 │                                        │ space.8
-│ Delete all data                        │ status.danger text
+│ Delete my data (keep coaching          │ DangerTextButton
+│ knowledge)                             │
+│                                        │ space.8
+│ Reset coaching knowledge               │ DangerTextButton
 └────────────────────────────────────────┘
 ```
 
 Status card variants (icon + text, never colour alone; see §3.1 for triggers):
 
 ```
-│ ⚠ Not backed up yet                    │ status.warning
-│ Choose a folder outside Fizz, then     │
-│ back up.                               │
+│ ✓ Backed up on this phone · 19:05      │ status.done
+│ ⓘ No copy off this phone yet           │ info.circle, text.secondary
+│ Copies on this phone are lost if Fizz  │
+│ is deleted or re-signed with another   │
+│ Apple ID.                              │
+│ [        Save a copy to Files        ] │
+
+│ ⚠ Last backup on this phone didn't     │ status.warning
+│   save                                 │
+│ This iPhone is out of space. Your      │
+│ workouts are still saved on this phone.│
+│ [      Back up on this phone now     ] │
+
+│ ⚠ Copy to Files didn't save            │ status.warning (automatic off-phone on)
+│ The folder can't be reached. Your      │
+│ backups on this phone are fine.        │
 │ [        Choose backup folder        ] │
 
-│ ⚠ 2 workouts aren't backed up          │ status.warning
-│ Last backup: Tue 6 Oct, 18:51          │
-│ [            Back up now             ] │
-
-│ ⚠ Last backup didn't save              │ status.warning
-│ The folder can't be reached. A copy is │
-│ kept on this phone until it can be     │
-│ saved.                                 │
-│ [        Choose backup folder        ] │
-
-│ ⓘ Backed up on this phone only         │ status.warning icon
-│ Thu 8 Oct, 19:05. This copy is deleted │
-│ with the app.                          │
-│ [        Choose backup folder        ] │
+│ ⓘ No copy off this phone since 8 Sep   │ quiet reminder (30 days), dismissible
+│ [ Save a copy to Files ]   Not now     │
 ```
 
-### 2.2 Backup folder sheet
+### 2.2 Save a copy to Files, and the backup folder sheet
 
-Opened from `Backup folder ›`, from the status card, or from Today's backup banner (system-states.md). Medium detent.
+**`Save a copy to Files`** (any time, and in every safeguard prompt) writes the newest backup through the system export picker. The default location is iCloud Drive when available. One line above the picker: `Backups are plain files with your training data and coaching knowledge. They never contain your coach sign-in or API keys.` If the chosen location is inside Fizz's own container: `That's inside Fizz, so it's lost with the app. Choose iCloud Drive or another folder.` After success, toast `✓ Copy saved to Files · iCloud Drive › Fizz backups`.
+
+**Backup folder sheet** (only for `Also back up off the phone automatically`). Medium detent.
 
 ```
 ┌────────────────────────────────────────┐
-│ Backup folder                   Cancel │
-│                                        │
-│ Fizz saves a backup here after every   │
-│ workout. Pick a folder outside Fizz,   │
-│ like iCloud Drive, so it survives if   │
-│ the app is deleted.                    │
+│ Back up off the phone automatically    │
+│                                 Cancel │
+│ After each workout, Fizz also saves a  │
+│ copy in a folder you choose, like      │
+│ iCloud Drive. It survives if the app   │
+│ is deleted.                            │
 │                                        │
 │ Backups are plain files with your      │
-│ training data. They never contain your │
-│ coach sign-in or API keys.             │
-│                                        │
-│ Now: iCloud Drive › Fizz backups       │
+│ training data and coaching knowledge.  │
+│ They never contain your coach sign-in  │
+│ or API keys.                           │
 │ ┌────────────────────────────────────┐ │
-│ │          Choose a folder           │ │
+│ │       Choose backup folder         │ │
 │ └────────────────────────────────────┘ │
 └────────────────────────────────────────┘
 ```
 
-`Choose a folder` opens the system folder picker. If the chosen folder is inside Fizz's own container, the sheet shows `That folder is deleted with the app. Choose iCloud Drive or another folder.` (same text as onboarding.md) and keeps the old folder.
+`Choose backup folder` opens the system folder picker and stores a security-scoped bookmark. If the folder is inside Fizz's container, the sheet says so and keeps the switch off. Whether the bookmark survives a SideStore refresh is the device test `DEP-FILES` (§8 P-B5); it matters only when this switch is on.
 
 ### 2.3 Restore
 
-**Step 1: choose.** If a backup folder is reachable, list its Fizz backups newest first; otherwise go straight to the system file picker.
+**Before step 1 (safeguard, §4.1a):** if there's no copy in Files newer than the current data, the screen first offers `Save a copy to Files first` (one tap, `SecondaryButton`) with `Skip` beside it. Restore never waits for it.
+
+**Step 1: choose.** List Fizz's own backups on this phone newest first, then (if automatic off-phone backups are on and the folder is reachable) the folder's backups, then `Choose another file…` (system file picker).
 
 ```
 ┌────────────────────────────────────────┐
 │ ‹ Back       Restore from a backup     │
 ├────────────────────────────────────────┤
-│ In iCloud Drive › Fizz backups         │
+│ On this phone                          │
 │ Thu 8 Oct, 19:05 · after workout     › │
 │ Tue 6 Oct, 18:51 · after workout     › │
-│ Mon 5 Oct, 21:10 · made by you       › │
+│ In iCloud Drive › Fizz backups         │ only when off-phone auto is on
+│ Mon 5 Oct, 21:10 · saved by you      › │
 │ …                                      │
 │                                        │
 │ Choose another file…                 › │
@@ -182,7 +208,9 @@ Opened from `Backup folder ›`, from the status card, or from Today's backup ba
 │ … Rebuilding a test copy               │
 ```
 
-**Step 3: preview.** One primary.
+**Step 3: preview.** One primary. The backup's two sections are listed separately, each with its own checkbox (`ChecklistRow`) and counts (revision: two data domains, DX11). Each section restores on its own: restoring `Your data` never changes `Coaching knowledge`, and the reverse.
+
+Pre-selection: when this phone has no data (fresh install or after `Delete my data`), both sections are ticked. Otherwise **neither is ticked** and the primary reads `Choose what to restore` (disabled) until Ben ticks at least one. A section identical to the phone's shows `Same as this phone` and can't be ticked.
 
 ```
 ┌────────────────────────────────────────┐
@@ -192,6 +220,7 @@ Opened from `Backup folder ›`, from the status card, or from Today's backup ba
 │ Fizz 0.3 (build 12) · after a workout  │
 │ ✓ Checked: complete, no damaged records│
 │                                        │
+│ [x] 👤 Your data                       │ DomainLabel + ChecklistRow
 │                  Backup   This phone   │ CountCompareTable
 │ Workouts            412          415   │
 │ Sets              4,105        4,140   │
@@ -199,10 +228,19 @@ Opened from `Backup folder ›`, from the status card, or from Today's backup ba
 │ Gyms                  2            2   │
 │ Coach memories       14           15   │
 │ Coach chats          31           33   │
-│                                        │
 │ ⚠ 3 workouts on this phone aren't in   │ status.warning
 │   this backup (newest: Sat 10 Oct).    │
 │   They'll be replaced.                 │
+│                                        │
+│ [ ] 📚 Coaching knowledge              │
+│                  Backup   This phone   │
+│ Approved rules        9           11   │
+│ Exercises           412          414   │
+│ Guide index           2            3   │
+│ ⓘ Restoring this replaces approved     │
+│   rules and your exercise list. Your   │
+│   workouts aren't touched.             │
+│                                        │
 │ ⓘ This backup is from an older Fizz.   │ only when it needs migration
 │   It's updated as it's restored.       │
 │ ⓘ Coach sign-in and API keys aren't    │
@@ -210,19 +248,23 @@ Opened from `Backup folder ›`, from the status card, or from Today's backup ba
 │   are.                                 │
 │ ⓘ You can undo this from Data & backup.│
 ├────────────────────────────────────────┤
-│ [              Restore               ] │
+│ [        Restore your data           ] │ label names the ticked section(s)
 └────────────────────────────────────────┘
 ```
 
-At AX1 and above the count table stacks: one block per row, `Workouts` then `Backup 412 · This phone 415`.
+- Primary label: `Restore your data` · `Restore coaching knowledge` · `Restore both` · disabled `Choose what to restore`.
+- **Cross-domain references.** Workouts carry their own exercise snapshot (ADR 0003 M4), so history always shows the right names. If restoring `Your data` alone brings routines or plans that use an exercise this phone's coaching knowledge doesn't have, the preview lists them: `ⓘ 2 exercises in your routines aren't in this phone's exercise list: Landmine press, Hatfield squat. They show as "Exercise missing" until you add them or restore coaching knowledge.` Nothing is added to coaching knowledge silently.
+- If restoring `Coaching knowledge` alone would remove an exercise that Ben's data uses, that exercise is **kept** and the preview says `Kept: 3 exercises your workouts use.`
+
+At AX1 and above each count table stacks: one block per row, `Workouts` then `Backup 412 · This phone 415`.
 
 **Step 4: confirm (only when something would be replaced).** System alert:
 
-> **Replace this phone's data?**
-> 3 workouts on this phone aren't in the backup from Thu 8 Oct, 19:05. You can undo this from Data & backup.
+> **Replace your data on this phone?**
+> 3 workouts on this phone aren't in the backup from Thu 8 Oct, 19:05. Coaching knowledge isn't changed. You can undo this from Data & backup.
 > [Cancel] [Restore]
 
-When nothing would be lost (the backup contains every workout on the phone, or the phone is empty) there is no alert: the preview's `Restore` is the confirmation.
+(For a coaching-knowledge restore the alert reads `Replace coaching knowledge? 2 approved rules on this phone aren't in the backup. Your data isn't changed.`) When nothing would be lost (the backup contains everything in the ticked sections, or the phone is empty) there is no alert: the preview's primary is the confirmation.
 
 **Step 5: restoring.** `BlockingCover` (proposed component): full screen, `bg.canvas`, no buttons, no tab bar, no Ask pill.
 
@@ -520,11 +562,19 @@ Each skipped category lists its rows: `Row 1,204 · 2024-05-03 · Treadmill · 5
 
 ### 2.6 Export
 
+Revision (two data domains): the first choice is **what** to export. `My data` (default) shows the format and range choices below. `Coaching knowledge only` exports one JSON file with approved and candidate playbook rules (with grades, sources and Ben's approval record), the exercise catalogue and aliases, custom exercise definitions, default presets and the guide library index metadata (titles, section headings, page numbers; no guide text and no files). It contains **no personal data**: no workouts, memories, pain flags, goals, gyms, conversations or settings. It has no range or warm-up options.
+
 ```
 ┌────────────────────────────────────────┐
-│ ‹ Back         Export workouts         │
+│ ‹ Back             Export              │
 ├────────────────────────────────────────┤
-│ Format                                 │
+│ What to export                         │
+│ (•) 👤 My data                         │
+│ ( ) 📚 Coaching knowledge only         │
+│     Rules, sources and the exercise    │
+│     list. Nothing about you.           │
+│                                        │
+│ Format                                 │ My data only
 │ (•) Spreadsheet (CSV)                  │
 │     One row per set. Opens in Numbers, │
 │     Excel or Google Sheets.            │
@@ -588,37 +638,114 @@ Each skipped category lists its rows: `Row 1,204 · 2024-05-03 · Treadmill · 5
 > This can't be undone. Backups in your folder are kept.
 > [Cancel] [Delete] (destructive)
 
+**Superseded by the two-domain revision.** The screen above is replaced by the two actions below. Doing both (in either order) leaves Fizz as a fresh install.
+
+**Delete my data (keep coaching knowledge)**
+
+```
+┌────────────────────────────────────────┐
+│ ‹ Back          Delete my data         │
+├────────────────────────────────────────┤
+│ 👤 This removes from this iPhone:      │ DomainLabel
+│ • 412 workouts and all their sets      │
+│ • Your profile, goals and week         │
+│ • Routines, plans, gyms and equipment  │
+│ • Coach chats, memories and pain flags │
+│ • Your guide files                     │
+│ • Your settings and scheduled alerts   │
+│ • Coach sign-in and API keys           │
+│ • Backups on this phone, and the copy  │
+│   kept to undo a restore               │
+│                                        │
+│ 📚 Kept: coaching knowledge (approved  │
+│ rules, sources, exercise list, guide   │
+│ index).                                │
+│                                        │
+│ Not removed:                           │
+│ • Copies you saved to Files. Delete    │
+│   them in Files if you want them gone. │
+│ • Anything OpenAI keeps under your own │
+│   account.                             │
+│                                        │
+│ Copy saved to Files: Thu 8 Oct         │ or: No copy off this phone
+│ [      Save a copy to Files first    ] │ SecondaryButton
+│                                        │ space.8
+│ Delete my data                         │ DangerTextButton
+└────────────────────────────────────────┘
+```
+
+Alert: **Delete your data?** / `Your workouts and everything about you are removed from this iPhone. Coaching knowledge is kept. This can't be undone. Copies in Files are kept.` [Cancel] [Delete] (destructive). Afterwards Fizz opens first-run onboarding (Welcome, with `Restore from a backup`). Backups on this phone hold Ben's data, so they are deleted too; the confirmation says so.
+
+**Reset coaching knowledge**
+
+```
+┌────────────────────────────────────────┐
+│ ‹ Back     Reset coaching knowledge    │
+├────────────────────────────────────────┤
+│ 📚 This puts coaching knowledge back   │
+│ to how Fizz 0.3 (build 12) ships it:   │
+│ • Approved and rejected rules go back  │
+│   to To review (9 approved now)        │
+│ • Your edits to rule wording are       │
+│   removed                              │
+│ • Exercise list and aliases go back to │
+│   the built-in catalogue               │
+│ • Guide index is rebuilt from your     │
+│   guide files                          │
+│                                        │
+│ 👤 Not changed: your workouts,         │
+│ memories, pain flags, gyms, routines   │
+│ and settings.                          │
+│ Kept: 3 custom exercises your workouts │
+│ or routines use.                       │
+│                                        │
+│ [      Save a copy to Files first    ] │ SecondaryButton
+│                                        │ space.8
+│ Reset coaching knowledge               │ DangerTextButton
+└────────────────────────────────────────┘
+```
+
+Alert: **Reset coaching knowledge?** / `9 approved rules go back to To review and the exercise list returns to the built-in one. Your data isn't changed. You can undo this from Data & backup.` [Cancel] [Reset] (destructive). Reset keeps one rollback generation (the same mechanism as Undo restore), so it can be undone.
+
 ---
 
 ## 3. States
 
-### 3.1 Backup status (status card, Today banner, summary line)
+### 3.1 Backup status (status card, summary line, Profile row)
 
-`getBackupStatus` decides the state; screens never compute it.
+Revised (consolidation; backups in the app by default). `getBackupStatus` decides the state; screens never compute it. The card always shows **two lines**: on this phone, and off this phone.
 
-| State | Trigger | Card | Elsewhere |
+**On this phone**
+
+| State | Trigger | Card line | Elsewhere |
 |---|---|---|---|
-| Not set up | No backup has ever been written to a folder outside Fizz | `⚠ Not backed up yet` + `Choose backup folder` | Today banner until done (system-states.md, priority T4). Onboarding Ready shows `(!) Not backed up yet` (onboarding.md) |
-| Folder needed | A one-off file was saved (onboarding's export picker), but there's no folder Fizz can write to again | `⚠ Automatic backups need a folder` · `Your backup from Thu 8 Oct is saved, but Fizz can't add new ones there.` + `Choose backup folder` | Today banner after the first finished workout that isn't backed up |
-| Backed up | The newest backup in the folder includes every finished workout | `✓ Backed up · Thu 8 Oct, 19:05` | Summary line `Backed up · 19:05` (proposed, §8 X2) |
-| Backing up | `createBackup` + write in progress (normally < 2 s) | `Backing up…` (static icon); `Back up now` disabled | Summary line `Backing up…` |
-| Behind | A finished workout isn't in any folder backup (automatic backups off, or the last attempt failed) | `⚠ 2 workouts aren't backed up` + `Last backup: Tue 6 Oct, 18:51` | Today banner once the oldest unbacked workout is 24 h old (`timing.backupOverdue`) |
-| Failed: folder unreachable | Bookmark stale, folder deleted or moved, provider signed out | `⚠ Last backup didn't save` · `The folder can't be reached. A copy is kept on this phone until it can be saved.` + `Choose backup folder` | Today banner (priority T5) |
-| Failed: storage full | Write failed for lack of space | `⚠ Last backup didn't save` · `This iPhone is out of space. Free some up, then tap Back up now.` | Today banner |
-| On this phone only | Only Fizz's own copies exist | `ⓘ Backed up on this phone only` · `This copy is deleted with the app.` | Same as Not set up |
+| Backed up on this phone | The newest automatic backup in Fizz's container includes every finished workout | `✓ Backed up on this phone · 19:05` | Summary line `Backed up on this phone · 19:05` (X2) |
+| Backing up | `createBackup` + write in progress (normally < 2 s) | `Backing up…` (static icon) | Summary line `Backing up…` |
+| Nothing yet | No workout finished yet | `✓ Saved on this phone` · `The first backup runs after your first workout.` | — |
+| Failed: storage full | Write failed for lack of space | `⚠ Last backup on this phone didn't save` · `This iPhone is out of space. Your workouts are still saved on this phone.` + `Back up on this phone now` | Today banner (system-states.md T5); never in a workout |
+| Automatic backups off | Ben turned `After each workout` off | `ⓘ Automatic backups are off` · `Your workouts are saved on this phone, with no backup copy.` + `Turn on` | Profile row line |
 | Includes damaged records | `createBackup` returned an integrity report with problems (ADR 0005 #3) | `⚠ Backup saved, but it can't be restored` · `It includes 1 damaged record (workout on Tue 6 Oct). Your newest good backup: Sun 4 Oct.` + `Details` | system-states.md data integrity |
 
-The file is written to the folder, and iCloud uploads it later if Ben is offline. The card says `iCloud uploads it when you're back online.` only when the folder is in iCloud Drive and the device is offline; Fizz doesn't claim to know upload status.
+**Off this phone**
+
+| State | Trigger | Card line | Elsewhere |
+|---|---|---|---|
+| No copy yet | Nothing ever saved to Files | `ⓘ No copy off this phone yet` | Nothing else. Onboarding's explainer mentions it once |
+| Copy saved to Files | The newest off-phone file (manual or automatic) | `✓ Copy saved to Files · Thu 8 Oct` | Profile row line |
+| Off-phone copy older than 30 days | `timing.offPhoneReminder`, reminder switch on | `ⓘ No copy off this phone since 8 Sep` + `Save a copy to Files` · `Not now` | One quiet line on the Profile `Data & backup` row. `Not now` hides it for another 30 days; the switch turns it off. **No banner, never in a workout** |
+| Automatic off-phone failed | Bookmark stale, folder moved, provider signed out (only when `Also back up off the phone automatically` is on) | `⚠ Copy to Files didn't save` · `The folder can't be reached. Your backups on this phone are fine.` + `Choose backup folder` | Profile row line. No Today banner |
+
+Durability wording is exactly design-system §7.1. The off-phone file is written to the folder; iCloud uploads it later if Ben is offline. The card says `iCloud uploads it when you're back online.` only when the folder is in iCloud Drive and the device is offline.
 
 ### 3.2 Automatic backup
 
 | State | Trigger | Behaviour |
 |---|---|---|
-| Runs | `SessionFinished` committed and `After each workout` is on | Runs after the summary is shown. Never delays the summary, `Done` or the next workout. Also runs after a FitNotes import commits and after a restore (a snapshot of the restored data) |
+| Runs | `SessionFinished` committed and `After each workout` is on | Writes to Fizz's container (and also to the off-phone folder if that switch is on). Runs after the summary is shown. Never delays the summary, `Done` or the next workout. Also runs after a FitNotes import commits, after a restore and after a coaching-knowledge reset (a snapshot of the new state) |
 | App backgrounded during a run | Ben locks or leaves right after Finish | The write finishes within iOS's short background grace period. If iOS stops it, it runs again on the next launch |
 | Workout started during a run | Ben starts again immediately | The backup reads a consistent snapshot through the serialised queue (ADR 0005); logging isn't blocked |
-| Off | Ben turned the switch off | Card shows `Automatic backups are off.` under the status. `Behind` applies after 7 days without a manual backup |
-| Rotation | More automatic files than `Keep` | Oldest automatic files Fizz wrote are deleted after the new one is written and checked. Manual files are never deleted |
+| Off | Ben turned the switch off after the confirmation | Card shows `Automatic backups are off`. No reminder beyond the card and the Profile row |
+| Rotation | More automatic files than `Keep` | Oldest automatic files Fizz wrote are deleted after the new one is written and checked, in each location separately. Copies Ben saved himself are never deleted |
 
 ### 3.3 Restore
 
@@ -653,7 +780,7 @@ The file is written to the folder, and iCloud uploads it later if Ben is offline
 | Newer export of an earlier file | Preview as normal, plus `ⓘ 312 workouts came in with your import on Thu 8 Oct. They'll be skipped.` Fizz's version always wins, including sets Ben corrected since | as preview |
 | Needs answers | §2.5 step 3 | Disabled `Answer 3 questions to import` |
 | Ready | All answered | `Import 412 workouts` |
-| Backing up first | Commit tapped and a folder is set | `Backing up before import…` then importing |
+| Backing up first | Commit tapped | `Backing up on this phone before import…` then importing. The confirm step before it offers `Save a copy to Files first` (safeguard, §4.1a) |
 | Importing | §2.5 step 4 | — |
 | Stopped / interrupted | `Import paused at 180 of 412 workouts. The 180 are in your history.` | `Continue import` + text button `Undo this import` |
 | Write failed mid-way | `Couldn't save workout 181 (Mon 3 Jun 2024): <reason>. 180 workouts are in. Nothing was half-saved.` | `Try again` + `Undo this import` |
@@ -670,13 +797,15 @@ The file is written to the folder, and iCloud uploads it later if Ben is offline
 | Cancelled share | Back on Export, nothing kept |
 | Failed | `Couldn't create the file: <reason>.` + `Try again` |
 
-### 3.6 Delete all data
+### 3.6 Delete my data / Reset coaching knowledge
 
 | State | Display |
 |---|---|
 | Normal | §2.7 |
-| Not backed up | The `Last backup` line reads `⚠ Not backed up since Tue 6 Oct (2 workouts since)` |
-| Deleting | `BlockingCover`: `Deleting your data…` |
+| No copy off this phone | The off-phone line reads `ⓘ No copy off this phone. Deleting removes the backups on this phone too.` and `Save a copy to Files first` is listed first |
+| Deleting | `BlockingCover`: `Deleting your data…` (coaching knowledge kept) |
+| Resetting | `BlockingCover`: `Resetting coaching knowledge…` · `Your data isn't touched.` |
+| Reset done | Toast `Coaching knowledge reset to build 12.` [Undo] (rollback generation) |
 | Coach sign-out failed (offline) | After deleting, one line on the first-run screen: `Fizz couldn't sign out of ChatGPT online. The sign-in was removed from this phone; you can also remove Fizz's access in your ChatGPT account settings.` |
 | Interrupted | A marker is written first. The next launch finishes deleting before showing anything, then shows first-run |
 | Done | The app opens first-run onboarding (onboarding.md Welcome) |
@@ -685,20 +814,34 @@ The file is written to the folder, and iCloud uploads it later if Ben is offline
 
 ## 4. Interactions
 
-### 4.1 Backup
-- `Back up now` → `createBackup` → write to the folder as a **manual** file. Success: card updates; toast `✓ Backed up to iCloud Drive › Fizz backups`. No Undo (harmless).
-- `Back up now` long-press or the card's `⋯` → `Save a copy somewhere else…`: writes the same file through the share sheet (AirDrop to the laptop, Mail).
-- `After each workout` switch: on by default once a folder is set. Turning it off shows `Automatic backups are off. Fizz will remind you after 7 days.`
-- `Backup folder` → sheet §2.2. Changing it doesn't move old files.
-- `Keep automatic backups` → `Last 7` / `Last 14` (default) / `Last 30` / `All`. Lowering it shows `Fizz will delete 16 older automatic backups from the folder at the next backup. Backups you made yourself are kept.` [OK] [Cancel].
-- `Copies on this phone` lists Fizz's own last 3 copies with dates and `Restore` on each (useful when the database won't open). The header says `These are deleted with the app.`
-- **Trial-run reminder.** Until Ben taps `Mark as done`, the card shows: `Before real workouts: do the trial run in the SideStore guide (update over the top, skip a refresh, restore).` [Mark as done]. It stores the date. Fizz can't verify it, so it never claims to.
+### 4.1 Backup (revised, consolidation)
+- `Save a copy to Files` (primary) → `createBackup` → system export picker → a **manual** file outside Fizz. Success: the card's off-phone line updates; toast `✓ Copy saved to Files · iCloud Drive › Fizz backups`. No Undo (harmless). The card's `⋯` → `Send a copy…` uses the share sheet (AirDrop to the laptop, Mail).
+- `Back up on this phone now` (card `⋯`, and the storage-full state) writes an automatic-style file to Fizz's container.
+- `After each workout` switch: on by default, no setup. Turning it off asks `Turn off automatic backups? Your workouts stay saved on this phone, but there'll be no backup copy.` [Turn off] [Cancel].
+- `Also back up off the phone automatically`: off by default. Turning it on opens the folder sheet (§2.2); cancelling leaves it off. Changing the folder doesn't move old files.
+- `Remind me if there's no copy off this phone`: on by default; controls only the quiet 30-day row (§3.1).
+- `Keep automatic backups` → `Last 7` / `Last 14` (default) / `Last 30` / `All`. Lowering it shows `Fizz will delete 16 older automatic backups at the next backup. Copies you saved yourself are kept.` [OK] [Cancel].
+- `Copies on this phone` lists Fizz's own automatic backups with dates and `Restore` on each (useful when the database won't open). The header says `These are lost if Fizz is deleted or re-signed with another Apple ID.`
+- **Trial-run reminder.** Until Ben taps `Mark as done`, the card shows: `Before real workouts: do the trial run in the SideStore guide (save a copy to Files, update over the top, skip a refresh, restore).` [Mark as done]. It stores the date. Fizz can't verify it, so it never claims to.
+
+### 4.1a Safeguards before risky moments (new, consolidation)
+
+At each of these moments Fizz shows one inline `NoteLine` with a one-tap `SecondaryButton` `Save a copy to Files first` and a `Skip` text button. It shows only when there's no copy in Files newer than the current data. It never blocks the action, never appears during a workout, and is never a banner.
+
+| Moment | Where | Copy |
+|---|---|---|
+| Before a SideStore reinstall or signing change | The How-to-refresh sheet and any reinstall guidance (system-states.md §3.5), Signing tool setting | `Reinstalling with a different Apple ID or tool starts an empty app. Save a copy to Files first.` |
+| Before committing a FitNotes import | Import preview, after `Import 412 workouts` | `Importing adds 412 workouts. Save a copy to Files first?` |
+| Before a restore | Restore step 1 (§2.3) | `Restoring replaces data on this phone. Save a copy to Files first?` |
+| New build or database update detected | The one-time `Updated to build 13` notice on Today (system-states.md §3.6) | `Fizz was updated. Save a copy to Files?` (shown once with the notice) |
+| Before Delete my data / Reset coaching knowledge | Their screens (§2.7) | `Save a copy to Files first` button |
 
 ### 4.2 Restore
 - Rows in the choose list open the check, then the preview. `Choose another file…` opens the system picker filtered to JSON.
 - `Restore` → alert if needed → cover → done. Before the switch: `cancelObsoleteCues` for every timer, end any Live Activity, cancel AlarmKit alarms.
 - No cancel during the cover: the whole operation is a few seconds and a cancel mid-switch adds a failure mode. A crash before the switch leaves current data untouched (ADR 0005).
-- `Undo restore` / `Undo last restore` → `Bring back your data from before Thu 8 Oct, 19:20? The restored backup is kept, so you can switch again.` [Cancel] [Undo restore] → same cover with `Switching back…`.
+- `Undo restore` / `Undo last restore` → `Bring back your data from before Thu 8 Oct, 19:20? The restored backup is kept, so you can switch again.` [Cancel] [Undo restore] → same cover with `Switching back…`. Undo puts back the whole database as it was before the restore; because a section restore changed only that section, the other section ends up unchanged either way. The row names what was restored (`Undo last restore (your data)`).
+- **Restoring one section** (DX11): `restoreBackup(file, {sections: ['your_data']})` builds the new database from the current one plus the backup's chosen section, then runs the same integrity check and pointer switch (ADR 0005). Credentials are never touched.
 - After any restore or rollback: normal cold-start logic (flow §4.2). An unfinished workout inside the backup is usually older than 6 h, so Today shows the stale-workout card; no timers are rescheduled for deadlines in the past.
 
 ### 4.3 Import
@@ -706,7 +849,7 @@ The file is written to the folder, and iCloud uploads it later if Ben is offline
 - The preview is paged: the workouts list loads in pages of 50. A 10,000-row file must show the preview's summary within 5 s on the iPhone 17 (to measure).
 - Each `ImportQuestionRow` opens its screen; `Done` returns and the row shows `✓` with the answer (`Dumbbells: each`).
 - `Gym` row and all questions can be changed until commit. Changing an answer bumps `mappingVersion`; a commit with an old version is rejected (rule 5).
-- `Import 412 workouts` → backup first (if a folder is set) → `commitImport` in batches of one workout each, each batch atomic. Same `operationId` on retry, so a relaunch can't duplicate.
+- `Import 412 workouts` → safeguard (§4.1a) → backup on this phone → `commitImport` in batches of one workout each, each batch atomic. Same `operationId` on retry, so a relaunch can't duplicate.
 - `Stop` → `Stop importing? 180 workouts are already in your history.` [Keep going] [Stop]. Stopped imports resume from Data & backup → `Past imports` or the intro screen (`Continue import`).
 - `Undo this import` → `Undo this import? 412 workouts from FitNotes_Export_2026_10_01.csv will be hidden from history, Progress and targets. Your other workouts aren't touched.` [Cancel] [Undo import]. Calls `revertImport`. If a reverted workout was corrected later, it's still hidden (the import owns it); the toast says `412 workouts hidden. You can import the file again.`
 - `Save row-by-row results (CSV)` → share sheet: `row, date, exercise, result, detail` (`imported`, `skipped_cardio`, `skipped_duplicate`, `skipped_date_exists`, `skipped_exercise`, `unreadable`).
@@ -719,13 +862,15 @@ The file is written to the folder, and iCloud uploads it later if Ben is offline
   - **FitNotes 2 CSV** with the documented import header (`Date,Exercise,Category,Weight (kg),Weight (lbs),Reps,Distance,Distance Unit,Time,Notes,Kind`). Per-dumbbell loads are written as recorded; the lossy note is shown on the option.
 - Range `Choose dates…` opens two date pickers; the count updates.
 
-### 4.5 Delete all data
-Order, each step idempotent, behind a `deleteInProgress` marker:
+### 4.5 Delete my data / Reset coaching knowledge
+**Delete my data** (`deleteMyData(ownerId, confirmation)`). Order, each step idempotent, behind a `deleteInProgress` marker:
 1. `disconnectAiConnection` for every connection (revoke where supported; offline is fine), then delete every Keychain item Fizz owns, by listing the known keys.
 2. Cancel every scheduled notification and AlarmKit alarm; end every Live Activity; stop audio.
-3. Close the database; delete the current and previous database files with their `-wal`/`-shm`, `fizz-meta.db`, local backup copies, the probe database and cached import files.
+3. In one transaction, remove every owner-scoped (personal) record; the coaching-knowledge tables are untouched. Then delete the previous database generation (it holds personal data), Fizz's backups on this phone, guide files, the probe database and cached import files. Write one fresh on-phone backup containing coaching knowledge only.
 4. Release the backup folder bookmark.
 5. Clear the marker and relaunch into first-run.
+
+**Reset coaching knowledge** (`resetCoachingKnowledge(confirmation)`): keep a rollback generation, replace the coaching-knowledge tables with this build's bundle, keep any custom exercise that personal records reference (listed in the confirmation), clear the guide index and re-run `indexGuide` on Ben's guide files, then rebuild coach context. Personal tables are untouched.
 
 ### 4.6 Keyboard, voice and undo summary
 - Keyboard: only search fields (exercise picker) and date pickers. Primary actions sit in the fixed footer above the keyboard.
@@ -741,7 +886,8 @@ Order, each step idempotent, behind a `deleteInProgress` marker:
 | Import | `Undo this import` (revert) |
 | Import answers | Change before commit |
 | Export | None needed |
-| Delete all data | None. `Back up first` and a confirmation instead |
+| Delete my data | None. `Save a copy to Files first` and a confirmation instead |
+| Reset coaching knowledge | Toast `Undo` and `Undo last reset` row (one rollback generation) |
 
 ---
 
@@ -750,15 +896,18 @@ Order, each step idempotent, behind a `deleteInProgress` marker:
 | Element | Text |
 |---|---|
 | Hub title | `Data & backup` |
-| Status | `✓ Backed up · Thu 8 Oct, 19:05` · `⚠ Not backed up yet` · `⚠ 2 workouts aren't backed up` · `⚠ Last backup didn't save` · `ⓘ Backed up on this phone only` · `⚠ Automatic backups need a folder` · `Backing up…` |
-| Status details | `412 workouts · 4,105 sets` · `Last backup: Tue 6 Oct, 18:51` · `The folder can't be reached. A copy is kept on this phone until it can be saved.` · `This copy is deleted with the app.` · `iCloud uploads it when you're back online.` |
-| Buttons | `Back up now` · `Choose backup folder` · `Choose a folder` · `Check` · `Restore` · `Undo restore` · `Choose CSV file` · `Import 412 workouts` · `Answer 3 questions to import` · `Export` · `Back up first` · `Delete everything` · `Done` |
-| Folder sheet | `Fizz saves a backup here after every workout. Pick a folder outside Fizz, like iCloud Drive, so it survives if the app is deleted.` · `Backups are plain files with your training data. They never contain your coach sign-in or API keys.` · `That folder is deleted with the app. Choose iCloud Drive or another folder.` |
-| File names | `fizz-backup-2026-10-08-1905-auto.json` · `fizz-backup-2026-10-08-1912.json` (manual). Local time in the name; UTC + zone inside the file |
-| Toasts | `✓ Backed up to iCloud Drive › Fizz backups` · `412 workouts hidden. You can import the file again.` |
-| Trial run | `Before real workouts: do the trial run in the SideStore guide (update over the top, skip a refresh, restore).` · `Mark as done` · after: `Trial run done · Fri 9 Oct` |
-| Restore preview | `Made Thu 8 Oct 2026, 19:05` · `✓ Checked: complete, no damaged records` · column heads `Backup` / `This phone` · `⚠ 3 workouts on this phone aren't in this backup (newest: Sat 10 Oct). They'll be replaced.` · `ⓘ This backup is from an older Fizz. It's updated as it's restored.` · `ⓘ Coach sign-in and API keys aren't part of backups. Yours stay as they are.` (on a fresh install: `… You'll connect the coach again in Profile.`) · `ⓘ You can undo this from Data & backup.` |
-| Restore alert | `Replace this phone's data?` / `3 workouts on this phone aren't in the backup from Thu 8 Oct, 19:05. You can undo this from Data & backup.` [Cancel] [Restore] |
+| Status, on this phone | `✓ Backed up on this phone · 19:05` · `✓ Saved on this phone` + `The first backup runs after your first workout.` · `⚠ Last backup on this phone didn't save` · `ⓘ Automatic backups are off` · `Backing up…` |
+| Status, off this phone | `✓ Copy saved to Files · Thu 8 Oct` · `ⓘ No copy off this phone yet` · `ⓘ No copy off this phone since 8 Sep` · `⚠ Copy to Files didn't save` |
+| Status details | `👤 Your data: 412 workouts · 4,105 sets` · `📚 Coaching knowledge: 9 rules · 412 exercises` · `Copies on this phone are lost if Fizz is deleted or re-signed with another Apple ID.` · `The folder can't be reached. Your backups on this phone are fine.` · `This iPhone is out of space. Your workouts are still saved on this phone.` · `iCloud uploads it when you're back online.` |
+| Buttons | `Save a copy to Files` · `Save a copy to Files first` · `Skip` · `Back up on this phone now` · `Send a copy…` · `Choose backup folder` · `Check` · `Restore your data` · `Restore coaching knowledge` · `Restore both` · `Choose what to restore` · `Undo restore` · `Choose CSV file` · `Import 412 workouts` · `Answer 3 questions to import` · `Export` · `Delete my data` · `Reset coaching knowledge` · `Done` |
+| Settings rows | `Backups on this phone` · `After each workout` · `Keep automatic backups` · `Copies on this phone` · `Off this phone (optional)` · `Also back up off the phone automatically` · `Remind me if there's no copy off this phone` · `Turn off automatic backups? Your workouts stay saved on this phone, but there'll be no backup copy.` [Turn off] [Cancel] |
+| Files copy | `Backups are plain files with your training data and coaching knowledge. They never contain your coach sign-in or API keys.` · `That's inside Fizz, so it's lost with the app. Choose iCloud Drive or another folder.` · folder sheet title `Back up off the phone automatically` · `After each workout, Fizz also saves a copy in a folder you choose, like iCloud Drive. It survives if the app is deleted.` |
+| Safeguards | as §4.1a |
+| File names | `fizz-backup-2026-10-08-1905-auto.json` · `fizz-backup-2026-10-08-1912.json` (manual). Local time in the name; UTC + zone inside the file. One file, two sections (`your_data`, `coaching_knowledge`) |
+| Toasts | `✓ Copy saved to Files · iCloud Drive › Fizz backups` · `412 workouts hidden. You can import the file again.` · `Coaching knowledge reset to build 12.` [Undo] |
+| Trial run | `Before real workouts: do the trial run in the SideStore guide (save a copy to Files, update over the top, skip a refresh, restore).` · `Mark as done` · after: `Trial run done · Fri 9 Oct` |
+| Restore preview | `Made Thu 8 Oct 2026, 19:05` · `✓ Checked: complete, no damaged records` · section heads `Your data` / `Coaching knowledge` · column heads `Backup` / `This phone` · `Same as this phone` · `⚠ 3 workouts on this phone aren't in this backup (newest: Sat 10 Oct). They'll be replaced.` · `ⓘ Restoring this replaces approved rules and your exercise list. Your workouts aren't touched.` · `ⓘ 2 exercises in your routines aren't in this phone's exercise list: Landmine press, Hatfield squat. They show as "Exercise missing" until you add them or restore coaching knowledge.` · `Kept: 3 exercises your workouts use.` · `ⓘ This backup is from an older Fizz. It's updated as it's restored.` · `ⓘ Coach sign-in and API keys aren't part of backups. Yours stay as they are.` (on a fresh install: `… You'll connect the coach again in Profile.`) · `ⓘ You can undo this from Data & backup.` |
+| Restore alert | `Replace your data on this phone?` / `3 workouts on this phone aren't in the backup from Thu 8 Oct, 19:05. Coaching knowledge isn't changed. You can undo this from Data & backup.` [Cancel] [Restore] · `Replace coaching knowledge?` / `2 approved rules on this phone aren't in the backup. Your data isn't changed.` |
 | Restoring cover | `Restoring your data` · `Backup checked` · `Workouts loaded (412)` · `Checking every record` · `Switching to the restored data` · `Keep Fizz open. If it closes now, your current data stays as it is.` |
 | Restore done | `✓ Restored` · `Your data now matches the backup from Thu 8 Oct, 19:05.` |
 | Restore failures | `This isn't a Fizz backup file. Nothing was changed.` · `This backup file is damaged (its checksum doesn't match). Nothing was changed.` · `This backup has 2 damaged records (…), so it can't be restored. Nothing was changed.` · `This backup was made by a newer Fizz (build 15). Install build 15 or newer first. Nothing was changed.` · `This backup matches your data on this phone. Nothing to restore.` · `Restore didn't finish: <reason>. Your data is as it was.` · `A restore was interrupted. Your data is as it was before.` · `Finish or discard your workout first (Push A, started 18:02).` |
@@ -774,11 +923,12 @@ Order, each step idempotent, behind a `deleteInProgress` marker:
 | Other questions | `Rows have values in both the kg and lb columns. Which did you enter in FitNotes?` · `Keep as notes only` / `Review and import as RPE` · `Skip those dates` / `Import them as extra workouts` · `Not recorded` / `All at Main Gym` |
 | Provenance (history set detail) | `Imported from FitNotes on Thu 8 Oct 2026 · row 4,180` · `Original: Flat Barbell Bench Press · 100 kgs · 8 reps · "@8 felt heavy"` |
 | Import errors | `This file is empty.` · `This isn't a CSV file.` · `This looks like a FitNotes backup, not a CSV export. Export a CSV from FitNotes and choose that.` · `Fizz doesn't recognise this file's columns yet.` · `Copy first line` · `You imported this file on Thu 8 Oct (412 workouts). Nothing new to import.` |
-| Importing | `Importing from FitNotes` · `180 of 412 workouts` · `Keep Fizz open. If it closes, you can carry on from here.` · `Backing up before import…` · `Import paused at 180 of 412 workouts. The 180 are in your history.` · `Continue import` |
+| Importing | `Importing from FitNotes` · `180 of 412 workouts` · `Keep Fizz open. If it closes, you can carry on from here.` · `Backing up on this phone before import…` · `Import paused at 180 of 412 workouts. The 180 are in your history.` · `Continue import` |
 | Results | `✓ Import finished` · `412 workouts · 4,105 sets added` · `Save row-by-row results (CSV)` · `Undo this import` · row detail `Row 1,204 · 2024-05-03 · Treadmill · 5 km · 25:00 — cardio isn't imported yet` |
 | Undo import alert | `Undo this import?` / `412 workouts from FitNotes_Export_2026_10_01.csv will be hidden from history, Progress and targets. Your other workouts aren't touched.` [Cancel] [Undo import] |
-| Export | `Spreadsheet (CSV)` / `One row per set. Opens in Numbers, Excel or Google Sheets.` · `Full data (JSON)` / `Workouts, routines, gyms, coach decisions and memories.` · `FitNotes 2 CSV` / `For importing into FitNotes 2. Set types, RPE and load conventions are lost.` · `Include warm-up sets` · `Exports can't be restored into Fizz. Use Back up for that.` · `No workouts in this range.` · `Preparing…` |
-| Delete | list in §2.7 · alert `Delete all Fizz data?` / `This can't be undone. Backups in your folder are kept.` [Cancel] [Delete] · cover `Deleting your data…` |
+| Export | `What to export` · `My data` · `Coaching knowledge only` / `Rules, sources and the exercise list. Nothing about you.` · `Spreadsheet (CSV)` / `One row per set. Opens in Numbers, Excel or Google Sheets.` · `Full data (JSON)` / `Workouts, routines, gyms, coach decisions and memories.` · `FitNotes 2 CSV` / `For importing into FitNotes 2. Set types, RPE and load conventions are lost.` · `Include warm-up sets` · `Exports can't be restored into Fizz. Use Save a copy to Files for that.` · `No workouts in this range.` · `Preparing…` |
+| Delete my data | list in §2.7 · alert `Delete your data?` / `Your workouts and everything about you are removed from this iPhone. Coaching knowledge is kept. This can't be undone. Copies in Files are kept.` [Cancel] [Delete] · cover `Deleting your data…` |
+| Reset coaching knowledge | list in §2.7 · alert `Reset coaching knowledge?` / `9 approved rules go back to To review and the exercise list returns to the built-in one. Your data isn't changed. You can undo this from Data & backup.` [Cancel] [Reset] · cover `Resetting coaching knowledge…` / `Your data isn't touched.` |
 
 Spoken cues: none. These screens are never used mid-set.
 
@@ -787,13 +937,13 @@ Spoken cues: none. These screens are never used mid-set.
 ## 6. Data needed
 
 From the brief and ADR 0005:
-- `createBackup(store, {at, app})` → `{text, suggestedFileName, integrityReport}`; the native layer writes the file.
-- `restoreBackup(file)` via `DatabaseManager`: parse and verify → preview → build → load → migrate → integrity check → pointer switch. Returns `restored | unchanged | failed{reason}`.
+- `createBackup(store, {at, app})` → `{text, suggestedFileName, integrityReport}`; the native layer writes the file. **Revised:** the file holds two sections, `your_data` and `coaching_knowledge`, each with its own `schemaVersion` reference, `counts` and checksum, plus an overall checksum (open-decisions.md, developer section).
+- `restoreBackup(file, {sections: ('your_data' | 'coaching_knowledge')[]})` via `DatabaseManager`: parse and verify → preview → build (current database + chosen sections from the file) → load → migrate → integrity check → pointer switch. Returns `restored | unchanged | failed{reason}`.
 - `DatabaseManager.rollback()` for Undo restore (swaps current and previous).
 - `checkIntegrity()` (ADR 0005).
 - `previewFitNotesImport(file)` → `{jobId, format: 'fitnotes_android_csv' | 'fitnotes2_csv' | 'fitnotes_backup' | 'unknown', header, unit, rowCount, dateRange, workouts[], exerciseMatches[{sourceName, setCount, status: 'matched' | 'check' | 'no_match', suggestion?}], conventionQuestions[], unitQuestion?, rpeCandidates[], skipped{cardio[], unreadable[], datesInFizz[], alreadyImported{jobId, count}}, sameFileAs?: jobId, mappingVersion}`. Checksum (SHA-256, the pure implementation from ADR 0005) identifies the same file.
 - `commitImport(jobId, mappingVersion, operationId)` → per-workout batches, per-row results, resumable.
-- `exportTrainingData(userId, format: 'csv' | 'json' | 'fitnotes2_csv', range, {includeWarmups})`.
+- `exportTrainingData(userId, format: 'csv' | 'json' | 'fitnotes2_csv', range, {includeWarmups})` for `My data`; `exportCoachingKnowledge()` → JSON for `Coaching knowledge only` (no owner-scoped records; a test asserts it).
 - `getActiveSession(userId)` to block restore and import while a workout is unfinished.
 - `disconnectAiConnection(connectionId)` (brief §2) during delete.
 - `cancelObsoleteCues`, Live Activity end, AlarmKit cancel (lock-screen-and-alerts.md) before restore and delete.
@@ -803,26 +953,34 @@ From the brief and ADR 0005:
 
 | Function | Purpose |
 |---|---|
-| `getBackupStatus(ownerId)` → `{state, lastSuccess?{atUtc, zone, destinationLabel, fileName, counts}, lastAttempt?{atUtc, error?}, autoEnabled, keep, folder?{label, reachable, insideApp}, unbackedWorkouts, localCopies[], trialRunDoneAt?}` | One source for the card, Today banner and summary line |
-| `writeBackupFile(folderBookmark, fileName, text)` / `pickBackupFolder()` / `listBackupsInFolder()` / `rotateAutomaticBackups(keep)` | Native Files layer (security-scoped bookmark). Rotation deletes only files whose name and recorded checksum match ones Fizz wrote |
-| `verifyBackup(file)` → `{ok, counts, schemaVersion, needsMigration, problems[]}` | ADR 0005 restore steps 1–4, then discard. Also used by onboarding.md |
-| `previewRestore(file)` → ADR 0005 preview plus `onlyOnPhone{workouts, newestDate}` and `currentHasUnfinishedWorkout` | Drives the "will be replaced" warning |
+| `getBackupStatus(ownerId)` → `{onPhone: {state: 'backed_up' \| 'backing_up' \| 'nothing_yet' \| 'failed' \| 'off', lastSuccess?{atUtc, zone, fileName, counts{yourData, coachingKnowledge}}, lastAttempt?{atUtc, error?}, autoEnabled, keep, localCopies[]}, offPhone: {state: 'none' \| 'saved' \| 'stale' \| 'failed', lastCopy?{atUtc, zone, destinationLabel, kind: 'manual' \| 'automatic'}, autoEnabled, folder?{label, reachable, insideApp}, reminderEnabled, reminderDue}, integrityProblems?, trialRunDoneAt?}` | **Canonical shape** (supersedes the one in profile-and-settings.md). One source for the card, the summary line, the Profile row and safeguards. `offPhone.reminderDue` applies `timing.offPhoneReminder` |
+| `writeBackupToContainer(fileName, text)` / `rotateAutomaticBackups(location, keep)` | On-phone automatic backups (Fizz's container). Rotation deletes only files whose name and recorded checksum match ones Fizz wrote |
+| `saveBackupToFiles(text, suggestedFileName)` | System export picker; records `offPhone.lastCopy` |
+| `setOffPhoneAutoBackup(enabled)` / `pickBackupFolder()` / `writeBackupFile(folderBookmark, fileName, text)` / `listBackupsInFolder()` | Optional automatic off-phone layer (security-scoped bookmark; `DEP-FILES`) |
+| `dismissOffPhoneReminder()` / `setOffPhoneReminder(enabled)` | The quiet 30-day row |
+| `verifyBackup(file)` → `{ok, sections{yourData, coachingKnowledge}: {counts, problems[]}, schemaVersion, needsMigration}` | ADR 0005 restore steps 1–4, then discard. Also used by onboarding.md (restore from Welcome) and system-states.md |
+| `previewRestore(file, sections)` → ADR 0005 preview per section, plus `onlyOnPhone{workouts, newestDate}`, `missingExerciseRefs[]`, `keptExercises[]` and `currentHasUnfinishedWorkout` | Drives the "will be replaced" warnings |
 | `updateImportMapping(jobId, answers, expectedMappingVersion)` → new `mappingVersion` | Answers to every question; stale versions rejected |
 | `revertImport(jobId, expectedVersion, operationId)` | Marks the job's sessions `reverted` (audited); excluded from history, Progress, comparable history and targets |
 | `listImportJobs(ownerId)` / `getImportJob(jobId)` | Past imports, resume, row results |
-| `deleteAllData(ownerId, confirmation)` | §4.5 sequence behind a marker; resumable |
+| `deleteMyData(ownerId, confirmation)` | §4.5 sequence behind a marker; resumable; never touches coaching-knowledge tables (replaces `deleteAllData`) |
+| `resetCoachingKnowledge(confirmation)` / `undoKnowledgeReset()` | §4.5; never touches owner-scoped tables |
 
 ---
 
 ## 7. Acceptance checks
 
-Backup
-1. With a folder set, finishing a workout writes `fizz-backup-…-auto.json` to that folder within 10 s, and the summary and `Done` are never delayed by it (test with a write delayed 10 s).
-2. With the folder deleted in Files, the next automatic backup shows `⚠ Last backup didn't save`, keeps a copy in Fizz's own folder, and the Today banner appears. Choosing a folder again and tapping `Back up now` clears both.
-3. `Back up now` with airplane mode on and the folder in iCloud Drive succeeds and says `iCloud uploads it when you're back online.`
+Backup (revised, consolidation)
+1. On a fresh install with no setup, finishing a workout writes `fizz-backup-…-auto.json` to Fizz's own container within 10 s; the card reads `✓ Backed up on this phone · hh:mm` and `ⓘ No copy off this phone yet`; the summary and `Done` are never delayed (test with a write delayed 10 s).
+2. `Save a copy to Files` to iCloud Drive with airplane mode on succeeds, reads `✓ Copy saved to Files`, and says `iCloud uploads it when you're back online.`
+3. No string anywhere says a bare "Backed up", "sync" or "in the cloud"; on-phone and off-phone states always use the three phrases (string-table search).
 4. A backup file never contains any Keychain value (search the file for the stored token and API key test values).
-5. With `Keep: last 14` and 15 automatic files, the oldest automatic file is deleted only after the new one is written; manual files and a file Ben copied into the folder are untouched.
-6. Choosing a folder inside Fizz's container shows `That folder is deleted with the app…` and doesn't save it.
+5. With `Keep: last 14` and 15 automatic files, the oldest automatic file is deleted only after the new one is written; copies Ben saved himself are untouched.
+6. Saving to a location inside Fizz's container shows `That's inside Fizz, so it's lost with the app…`.
+6a. With `Also back up off the phone automatically` on and the folder deleted in Files, the card shows `⚠ Copy to Files didn't save` and the on-phone backup still succeeds. No Today banner and nothing during a workout.
+6b. With no copy in Files for 30 days, one quiet row appears in Data & backup and on the Profile row; `Not now` hides it for 30 days; switching the reminder off removes it. It never appears as a banner or in a workout.
+6c. Each safeguard in §4.1a appears only when there's no newer copy in Files, takes one tap to save, and never blocks the action behind it.
+6d. A backup file has `your_data` and `coaching_knowledge` sections with separate counts and checksums.
 
 Restore
 7. With an unfinished workout, restore rows are disabled with the `Finish or discard your workout first` line.
@@ -832,6 +990,8 @@ Restore
 11. During the restore cover, no Log, notification tap or deep link can write; queued writes on the old store fail with "Database is closed" and nothing reaches the new file (ADR 0005).
 12. Force-quit during the cover before the switch: on relaunch the old data is intact and `A restore was interrupted…` shows once. Force-quit after the switch: restored data shows.
 13. `Undo restore` brings back the previous data; `Switch back to the restored backup` swaps again.
+13a. Restoring only `Your data` leaves every coaching-knowledge table byte-identical (approved rules, catalogue, aliases); restoring only `Coaching knowledge` leaves every owner-scoped record identical. Missing exercise references are listed in the preview and nothing is added to coaching knowledge silently.
+13b. On a non-empty phone neither section is pre-ticked and the primary reads `Choose what to restore`.
 14. After a restore, no rest alert or Live Activity from the replaced data fires.
 
 Check a backup
@@ -854,10 +1014,12 @@ Import
 Export
 28. CSV opens in Numbers with correct columns, `.` decimals, ISO dates, units and conventions in their own columns, and no deleted sets; loads are actuals and targets are in `target_*` columns.
 29. FitNotes 2 CSV uses exactly the documented header.
+29a. `Coaching knowledge only` contains no owner-scoped record (no workouts, memories, pain flags, goals, gyms, conversations, settings or guide text); a test searches it for the test owner ID and known personal strings.
 
-Delete
-30. After `Delete everything`: the database files (with `-wal`/`-shm`), meta file, previous generation, local copies and every Fizz Keychain item are gone; no notification or alarm remains scheduled; no Live Activity is running; the backup folder's files are untouched; the app shows first-run.
+Delete and reset
+30. After `Delete my data`: every owner-scoped record, the previous generation, on-phone backups, guide files and every Fizz Keychain item are gone; coaching knowledge (approved rules, catalogue, aliases) is unchanged; no notification or alarm remains scheduled; no Live Activity is running; copies in Files are untouched; the app shows first-run.
 31. Kill the app mid-delete: relaunch finishes the deletion before showing anything.
+31a. `Reset coaching knowledge` returns rules to `To review` and the catalogue to the bundled one, keeps custom exercises that personal records use, leaves every owner-scoped record identical, and can be undone once.
 
 General
 32. All counts and dates use tabular numerals; all text ≥ 16pt at default size; every status has an icon and text; every screen works at AX3 with the primary visible.
@@ -871,24 +1033,26 @@ General
 |---|---|---|
 | P-B1 | ADR 0004 says "SQLite snapshot + JSON export". Adopt ADR 0005's JSON-only snapshot in the design; no raw `.db` copy | One format to restore and test (ADR 0005 #1) |
 | P-B2 | Ben confirms plain-JSON backups (ADR 0005 #2); the folder sheet tells him what's in them | He decides with the facts visible |
-| P-B3 | Add `verifyBackup`, `previewRestore` (with `onlyOnPhone`), `getBackupStatus`, `revertImport`, `updateImportMapping`, `deleteAllData` to the service contracts (brief §7) | Needed by this spec and onboarding.md |
+| P-B3 | Add `verifyBackup`, `previewRestore` (with `onlyOnPhone`), `getBackupStatus`, `revertImport`, `updateImportMapping`, `deleteMyData`, `resetCoachingKnowledge`, `exportCoachingKnowledge`, `saveBackupToFiles` to the service contracts (brief §7) | Needed by this spec and onboarding.md |
 | P-B4 | Restore and import are blocked while a workout is unfinished (DX4) | Avoids replacing or reshaping history the live workout reads |
-| P-B5 | Automatic backups need persistent write access to one folder (security-scoped bookmark). Device test `DEP-FILES`: does the bookmark survive relaunch, a SideStore refresh and an update over the top on a free-signed build, with no iCloud entitlement? **Fallback if not:** automatic backups go to Fizz's own folder (labelled `On this phone only`), and after each workout the summary line offers `Save a copy off the phone` (one tap + the system export picker) | Without it, "automatic backup after each finished workout" (research rec. 4) isn't possible |
+| P-B5 | (Revised.) Only matters if Ben turns on `Also back up off the phone automatically`: device test `DEP-FILES` — does the folder bookmark survive relaunch, a SideStore refresh and an update over the top on a free-signed build, with no iCloud entitlement? **If not:** the switch is hidden and `Save a copy to Files` stays the off-phone route | Automatic backups no longer depend on it |
+| P-B6 | (Approved by Ben, relayed by the product manager.) Backups in the app by default; off-phone optional with safeguards (DX2, DX12). **For the product manager:** ADR 0004's "Backup … to Files … before any real workout is logged" and the trial run need re-wording to match; the trial run should still save one copy to Files first | Recorded so the ADR and brief can be updated by their owners |
+| P-B7 | (Approved by Ben, relayed by the product manager.) Two data domains with independent restore, export and delete (DX11) | Recorded here; brief/CHANGELOG entry is the product manager's |
 | P-I1 | Unknown FitNotes headers stop the import; no manual column mapping (DX5) | Honest; brief v0.2 asks for the real export first |
 | P-I2 | Convention questions have no default (DX6) | Rule 6 |
 | P-I3 | **Domain decision needed:** can imported sets without an equipment instance count as comparable history ("Last" values, targets) when exercise, unit and convention match? Options: (a) never; (b) yes, labelled `Last (FitNotes, 1 Oct)`; (c) only when Ben assigned a gym and that gym has exactly one instance of the equipment type. Designer recommends (b) | Without it, importing years of history doesn't help the next workout |
 | P-I4 | Cardio rows are skipped (listed, never lost) until endurance imports exist (build step 6) | Scope |
 
-### Cross-spec proposals (other designers' files; not edited here)
-- **X1 (onboarding.md §2.5, §4.3):** change `Save backup file` (one-off export picker) to `Choose backup folder` (folder picker + bookmark), then write the file there. Same tap count, and automatic backups work from the first workout. Until then, the data area shows `Automatic backups need a folder` after the first finished workout.
-- **X2 (workout-summary.md §2, region 1):** under `✓ Workout saved on this phone`, one line from `getBackupStatus`: `Backed up · 19:05` / `Backing up…` / `⚠ Backup didn't save. Open Data & backup ›`. Never blocks `Done`.
-- **X3 (profile-and-settings.md):** the Profile list row `Data & backup` carries the attention marker when the backup state is Not set up, Folder needed, Behind or Failed (icon + text, not a dot alone).
+### Cross-spec proposals (status after consolidation)
+- **X1 (onboarding.md): withdrawn.** Superseded by Ben's approved change: onboarding has no required backup or folder step, only a short skippable explainer (onboarding.md §2.5).
+- **X2 (workout-summary.md §2, region 1): applied.** Under `✓ Workout saved on this phone`, one line from `getBackupStatus`: `Backed up on this phone · 19:05` / `Backing up…` / `⚠ Last backup on this phone didn't save. Open Data & backup ›`. Never blocks `Done`, never mentions off-phone copies.
+- **X3 (profile-and-settings.md): applied.** One Profile row `Data & backup` with a status line (e.g. `Backed up on this phone · 19:05 · Copy saved to Files 8 Oct`) and, only for a failed backup or the quiet 30-day reminder, an icon + text marker.
 
 ---
 
 ## Proposed design-system additions
 
-No new colours. All additions reuse existing tokens.
+> **Merged into design-system.md (consolidation).** `BlockingCover`, `ProgressLine`, `CountCompareTable` (§9.44), `ImportQuestionRow` (now the `SettingsRow` question variant, §9.31), match statuses and durability labels (§7.1), `DangerTextButton` (§9.2b). The backup labels below are superseded by the three durability phrases, and `timing.backupOverdue` is replaced by `timing.offPhoneReminder`. The table is kept for history only.
 
 | Addition | Spec |
 |---|---|
@@ -903,11 +1067,13 @@ No new colours. All additions reuse existing tokens.
 
 ## Cross-links
 
-- [onboarding.md](onboarding.md): the first-run backup step and `Restore from a backup` on Welcome call this area's `verifyBackup` and restore flow (X1 above).
-- [system-states.md](system-states.md): app-wide durability wording (DX1), the Today banners for backup states, the data-integrity states, and `BlockingCover` use outside this area.
+- [onboarding.md](onboarding.md): the backup explainer and `Restore from a backup` on Welcome (this area's restore flow).
+- [system-states.md](system-states.md): app-wide durability wording (DX1), the one backup banner left on Today (T5, failed on-phone backup), the data-integrity states, and `BlockingCover` use outside this area.
+- [profile-and-settings.md](profile-and-settings.md) §2.8: the `Data & backup` row (X3).
+- [workout-summary.md](workout-summary.md): the backup line under the saved banner (X2).
+- [design-system.md](design-system.md) §7.1 (durability phrases), §7.2 (data domains), §9.53 `DomainLabel`.
 - [lock-screen-and-alerts.md](lock-screen-and-alerts.md): alerts, Live Activities and AlarmKit alarms that restore and delete must cancel.
 - [workout-summary.md](workout-summary.md): automatic backup trigger after Finish; proposed backup line (X2); the per-session `Share / export` stays there.
 - [today.md](today.md) and [progress.md](progress.md): their `Couldn't open your training data.` [Restore from backup] link opens §2.3 here.
 - [exercise-library.md](exercise-library.md): the exercise picker used by `Choose…` in import matching.
-- profile-and-settings.md (being written by another designer): the Profile row that opens `Data & backup` (X3).
 - [ADR 0004](../decisions/0004-free-distribution-sidestore.md), [ADR 0005](../decisions/0005-persistence-and-backup.md), [guides/sidestore-windows.md](../guides/sidestore-windows.md) §6 and §8 (trial run).

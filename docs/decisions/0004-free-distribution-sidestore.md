@@ -31,3 +31,7 @@ See `docs/guides/sidestore-windows.md`.
   - restore from backup.
 
   Switching tools later means backup, new app, restore.
+
+## Update 2026-10-08: backups in the app by default (Ben, brief v0.7)
+- Automatic backups now go into the app's own storage. Off-phone copies (Files or iCloud) are optional.
+- This replaces "backup to Files before any real workout". The trial run still saves **one** copy to Files before real data, so that a restore across a re-sign is tested.
