@@ -1,6 +1,8 @@
 # Workout summary
 
 > **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md): `Next time` also lists exercises held because not every prescribed working set was done, with the domain's reason (S3); end time comes from `finishWorkout(…, endedAt?)`, later edits from `updateSessionTiming(sessionId, expectedVersion, …)` (S5). Deleted sets are excluded; unilateral exercises show per-side totals.
+>
+> **Revision 2026-10-08 (re-review).** Aligned with ADR 0003 "Re-review decisions": `Next time` also lists holds that name a lagging side (R4) and `no_feasible_load` with `Fix the equipment profile` guidance, never "bodyweight" (R3). Active time subtracts only paused time inside the final start–end window (S9; §3, §5, §6, check 4).
 
 Status: v0.1 draft, 8 Oct 2026. Flow: [flow-first-milestone.md](flow-first-milestone.md). Tokens: [design-system.md](design-system.md).
 
@@ -74,7 +76,7 @@ Regions, top to bottom:
 │ [ Edit workout ]  [      Done        ] │
 └────────────────────────────────────────┘
 ```
-The reason and rule text come from `calculateNextTargets`. The UI never writes its own explanation. An exercise appears under Next time when the rule changed its target, **or** when it held because the session was incomplete. Progression needs every prescribed working set completed at or above the top of the rep range within the effort limits (ADR 0003 S3, Ben may revise); a top-set rule needs at least one top set. A hold for any other reason (reps not yet at the top) isn't listed, to keep the section short.
+The reason and rule text come from `calculateNextTargets`. The UI never writes its own explanation. An exercise appears under Next time when the rule changed its target, **or** when it held because the session was incomplete, **or** when it held because one side lagged (unilateral), **or** when no feasible load exists on the equipment (`no_feasible_load`). Progression needs every prescribed working set completed at or above the top of the rep range within the effort limits (ADR 0003 S3, Ben may revise); a top-set rule needs at least one top set. A hold for any other reason (reps not yet at the top) isn't listed, to keep the section short.
 
 ## 3. States
 
@@ -87,10 +89,12 @@ The reason and rule text come from `calculateNextTargets`. The UI never writes i
 | Not comparable | History exists but with different equipment, convention or set type | `Last bench press was at Hotel Gym (different bar). Not compared.` |
 | Short or empty workout | 0 working sets | Facts only. The comparison and next-time sections are hidden. The footer adds `Discard workout` as a danger text link (confirmation required) |
 | Skipped sets | Pending sets at finish | `Working sets 16 (2 skipped)`. Skipped sets appear in the exercise rows as `skipped` text |
-| Timing corrected | The end time chosen in the finish sheet differs from the tap time (`finishWorkout` `endedAt`), or a time was edited later with `updateSessionTiming` | The title line reads `18:02–19:24 (end time edited)` or `(start time edited)`. The timing audit keeps the original values |
+| Timing corrected | The end time chosen in the finish sheet differs from the tap time (`finishWorkout` `endedAt`), or a time was edited later with `updateSessionTiming` | The title line reads `18:02–19:24 (end time edited)` or `(start time edited)`. The timing audit keeps the original values. Active time is recomputed: only paused time inside the new start–end window is subtracted (a pause after the corrected end isn't) |
 | Next time: no change | The rules keep the same targets | `No target changes. Same targets next time.` |
 | Next time: held, incomplete | Fewer completed working sets than the rule prescribes | `Bench press` · `Same target: 100 kg × 6–8` · domain fact, e.g. `Only 2 of 4 working sets were logged on 8 Oct; holding.` |
 | Next time: held, all skipped | Every working set of an exercise was skipped | `No working sets were logged on 8 Oct (all skipped); holding.` The target stays at the last performed load |
+| Next time: held, side lagging | Unilateral exercise where one side met the rule and the other didn't, or the sides have unequal set counts | `Single-arm cable row` · `Same target: 25 kg stack × 8–10` · domain fact, e.g. `The left side reached 8+ reps on every set but the right side didn't (lowest 7 reps); holding.` or `Only 2 of 3 working sets had both sides logged on 8 Oct (left 3, right 2: the right side is behind); holding.` |
+| Next time: no feasible load | `calculateNextTargets` returns `no_feasible_load` | `Lat pulldown` · `No load target` · `Cable stack can't make any load with its current min/max settings, so no Lat pulldown target is set. Fix the equipment profile.` [Update gym]. Never shown as "bodyweight" |
 | Unilateral exercise | `laterality` is unilateral | Row reads `Single-arm cable row 3 sets (per side)` and, when sides differ, `L 28 reps · R 26 reps`. A Left + Right pair counts as one set (`summariseVolume`) |
 | Deleted sets | Sets deleted during the workout | Not shown and not counted. Visible only in the edit history |
 | Next time: at equipment max | The rule hits the equipment maximum | `Dumbbells max out at 30 kg each at Main Gym. Next time: aim for more reps at 30 kg.` (from the domain, not invented) |
@@ -143,6 +147,9 @@ Undo:
 | Next time heading | `Next time` |
 | Next time row | `Incline DB press: target 32.5 kg each × 8–10` (a **target**) + reason `You did 10 reps on every set at 30 kg.` + `Rule: double progression` |
 | No change | `Same targets next time.` |
+| Held (side lagging) | `Same target: 25 kg stack × 8–10` (a **target**) + the domain's fact naming the lagging side, e.g. `… but the right side didn't (lowest 7 reps); holding.` |
+| No feasible load | `No load target` + the domain's summary ending `Fix the equipment profile.` + [Update gym]. A null load reads "bodyweight" only for the `bodyweight` convention (or `added` with nothing added); otherwise "no load" |
+| Time-edit helper (under the start/end pickers in Edit workout) | `Active time counts from start to end, minus pauses inside that window.` |
 | Held (incomplete) | `Same target: 100 kg × 6–8` (a **target**) + the domain's fact, e.g. `Only 2 of 4 working sets were logged on 8 Oct; holding.` |
 | Coach heading | `Coach note` |
 | Coach states | see §3 |
@@ -156,7 +163,7 @@ The summary makes **no personal-best claims** unless the domain confirms that th
 - `finishWorkout(sessionId, expectedVersion, endedAt?)`, which commits before navigation, and `updateSessionTiming(sessionId, expectedVersion, {startedAt?, endedAt?})` (end time only after Finish) for later edits.
 - `summariseVolume` (inside the summary build) for per-exercise working sets and reps, with per-side tallies for unilateral exercises.
 - `buildWorkoutSummary(sessionId)`, which works locally. It returns:
-  - facts (active duration excluding pauses, exercise count, working and warm-up sets counted separately, skipped count)
+  - facts (active duration excluding pauses, exercise count, working and warm-up sets counted separately, skipped count). Duration = end − start − paused time inside that window. Pauses outside a corrected start or end are not subtracted; a pause that straddles the start or end counts only for its part inside. Computed by the domain from the stored pause intervals (`session.pauses`), never by the UI
   - `comparison` (chosen lift, today and last, a comparability explanation or a `not_comparable` reason)
   - exercise rows
   - `timingEdited`
@@ -177,7 +184,7 @@ The summary makes **no personal-best claims** unless the domain confirms that th
 1. The summary appears only after the local commit. If the write is made to fail (a test hook), the summary doesn't appear and nothing is lost.
 2. With airplane mode on and no AI, the summary renders in full, with an honest coach state, and `Done` works at once.
 3. Warm-up sets are counted separately and are never included in `Working sets`.
-4. Active time excludes paused time. It matches the start-to-end time minus pauses, to within 1 min.
+4. Active time excludes paused time. It matches the start-to-end time minus the paused time inside that window, to within 1 min. Probe: last set at 60 min, Pause at 61, Finish hours later with the end edited to 63 → `61 min` (not 63, and not reduced by the hours of pause after 63).
 5. The comparison never pairs different equipment instances, conventions (e.g. per-dumbbell vs total) or units. Test with a hotel-gym session in history.
 6. Any estimated 1RM text contains the word "estimate". No PR or "best" claim appears for non-comparable lifts.
 7. `Next time` values come from `calculateNextTargets`. They match the domain unit tests, are labelled as targets, and never exceed equipment maximums.
@@ -187,3 +194,5 @@ The summary makes **no personal-best claims** unless the domain confirms that th
 11. Only `Done` is styled as primary. There are no animated elements.
 12. Finish a workout with 2 of 4 prescribed bench working sets done, both at the top of the range. `Next time` shows `Same target` with the domain's "Only 2 of 4…; holding." fact, never an increase.
 13. Deleted sets never appear in the exercise rows or counts. A unilateral Left + Right pair counts as one working set.
+14. A unilateral exercise where the right side fell short shows `Same target` under `Next time` with the domain's fact naming the right side, never an increase.
+15. An exercise whose equipment can make no load shows `No load target` with `Fix the equipment profile.` and [Update gym] under `Next time`, never "bodyweight".

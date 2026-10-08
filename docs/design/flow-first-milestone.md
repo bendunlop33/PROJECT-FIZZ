@@ -1,6 +1,8 @@
 # Flow: first milestone loop (Today → Active set → Rest → Summary)
 
 > **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md) and review S1–S5: Undo is guarded on the set's own version and commit order (S1); Skip is `endRestTimer(…, 'skipped')` with no cue (S2); Finish is refused while a work timer runs (S4); end time goes into `finishWorkout(…, endedAt?)`, later edits use `updateSessionTiming` (S5). Added the `empty` phase and homes for add set / add exercise / delete set / skip exercise / discard (§3.4).
+>
+> **Revision 2026-10-08 (re-review).** Aligned with ADR 0003 "Re-review decisions": Stop is allowed while paused and ends the interval at the pause start without resuming (§3.2, S8); pauses are stored as intervals and only those inside the start–end window are subtracted (§4.1, S9); a Left/Right log adds a pending other-side set that Undo removes (§3.2, §3.3).
 
 Status: v0.1 draft, 8 Oct 2026. Screen specs: [today.md](today.md), [active-workout.md](active-workout.md), [rest-state.md](rest-state.md), [workout-summary.md](workout-summary.md). Tokens: [design-system.md](design-system.md).
 
@@ -79,13 +81,13 @@ Research on voice, AI and Live Activity is happening in parallel. Each optional 
 | Ready | Tap `Log …` / Cmd+Return / voice "log it"* | Draft valid; outside the commit guard | `commitSetAndBeginRest(cmd{opId})`, then cues (§5) | Result saved → Resting, or Ready (when rest is 0, mid-superset, or the final set) |
 | Ready | Tap `Start 0:45` (timed) | Timed exercise | `startWorkInterval(setId, duration)` | Working |
 | Working | Work deadline reached | none | End cue; primary becomes `Log 0:45` with the actual value filled in. **Nothing is saved** | Ready (timed result draft) |
-| Working | Tap `Stop` | none | Actual = elapsed; primary becomes `Log 0:38`. A Stop just after the deadline is a no-op success (the interval already completed) | Ready (timed result draft) |
+| Working / Paused (work timer) | Tap `Stop` | Allowed while paused: the interval ends when the pause began | Actual = elapsed (paused time never counted). The draft becomes `0:38` (primary `Log 0:38` once active). While paused, Stop does not resume the workout. A Stop just after the deadline is a no-op success (the interval already completed) | Ready (timed result draft); from Paused, stays Paused (Finish is then allowed) |
 | Resting | Deadline reached | none | Rest-end cue (once), haptic | Ready (rest ended) |
 | Resting | `Skip` | none | `endRestTimer(timerId, 'skipped')`, then `cancelObsoleteCues`. No rest-end cue | Ready |
 | Resting | `−30 s` / `+30 s` / edit time | none | `adjustRestTimer(timerId, ±30)`: new version, alerts replaced. A `−30 s` that reaches 0 is an **expiry** (status ended, rest-end cue plays), not a Skip | Resting (or Ready (rest ended) if the time reaches 0) |
 | Resting | Tap `Log …` for the next set | Outside the commit guard | Ends the current rest (status `ended_early`), cancels its cues, then commits the new set and starts its rest | Result saved → … |
 | Resting | Edit the previous set's RPE or values | none | `correctSet` only. **The rest timer is untouched** | Resting |
-| Any active | Tap `Undo` on the latest set | The set is still the latest commit (by commit order) and its version matches the one shown (`expectedSetVersion`) | `undoAction(actionId)` removes the set (audited), restores the pointer, cancels the rest timer and its cues | Ready (on the restored set) |
+| Any active | Tap `Undo` on the latest set | The set is still the latest commit (by commit order) and its version matches the one shown (`expectedSetVersion`) | `undoAction(actionId)` removes the set (audited), restores the pointer, cancels the rest timer and its cues. For a single-side log it also removes the pending other-side set and restores the set's previous side | Ready (on the restored set) |
 | Ready / Working / Resting | Tap `Pause` | none | `pauseSession`: stores remaining time, cancels scheduled alerts | Paused |
 | Paused | Tap `Resume` | none | `resumeSession`: deadline = now + remaining, alerts rescheduled | the previous state |
 | Any active | `Finish workout` → confirm | No work timer running or paused (stop it first; its time becomes the draft) | `finishWorkout(sessionId, expectedVersion, endedAt?)`: pending sets → skipped; `endedAt` between the last set and now; the tap time is kept in the timing audit; then `cancelObsoleteCues` | Finished |
@@ -109,7 +111,7 @@ Research on voice, AI and Live Activity is happening in parallel. Each optional 
 - **Superset:** logging a member before the last moves to the next member. Rest is 0 or the configured transition. Rest starts after the last member of the round.
 - **Timed exercise:** the work interval is separate from rest. Saving needs Log, unless the timed auto-complete setting is on (off by default, and explained where it is switched on). Finish is not available while the work timer runs; Stop first. If Ben then finishes without logging, the set is marked skipped but keeps the stopped time as its draft, so nothing is lost. Discard is the exception: it is confirmed and throws away the whole workout, running timer included.
 - **Empty workout:** phase `empty`, not `all_done`. The card reads `Add an exercise to start`. A set added while nothing is active becomes the active set.
-- **Unilateral exercise:** sets default to `Each side` (values are per side). Ben can log a set as Left or Right instead (active-workout §2.9).
+- **Unilateral exercise:** sets default to `Both sides` (values are per side). Ben can log a set as Left or Right instead. That Log also adds a pending other-side set (`pairedWithSetId`, logged values drafted) at the end of the exercise, which becomes the next set and accepts only its own side. Undo or delete of the single-side log removes the pending partner (active-workout §2.9).
 
 ### 3.4 Session edits (each has one home in the UI)
 
@@ -132,7 +134,7 @@ Research on voice, AI and Live Activity is happening in parallel. Each optional 
 | Draft edit | `saveSetDraft(setId, values)` (**new function, proposed**), debounced 300 ms. Drafts are stored apart from results and never count as completed |
 | Log | The set result (actual values, `completedAtUtc` + tz, `opId`) + the rest timer row + the advanced `activeSetId` + the session version incremented. All or nothing |
 | Rest adjust / skip / end | Timer row: new `deadlineUtc`, `version`, `status` |
-| Pause / resume | `pausedAtUtc`, `pausedFromState`, `remainingMs`, accumulated paused duration |
+| Pause / resume | `pausedAtUtc`, `pausedFromState`, `remainingMs`; each pause is kept as a closed interval (`session.pauses: {startUtc, endUtc}[]`), never only a running total. Active duration = end − start − paused time inside that window, so a corrected start or end is recomputed from the original intervals |
 | Finish | `endedAtUtc`, skipped markers, and a timing-audit entry keeping the tap time if a different end time was chosen; then the summary |
 | Later timing edit | `updateSessionTiming`: new `startedAtUtc` / `endedAtUtc` plus a timing-audit entry per changed field (`source: 'correction'`) |
 | Delete set / skip exercise / discard | Set status `deleted` or `skipped`, or session status `discarded`, each with an audit entry. Nothing is physically removed |

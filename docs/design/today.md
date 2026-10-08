@@ -1,6 +1,8 @@
 # Today
 
 > **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md) S4 and S5: the stale card's Finish passes the chosen end time to `finishWorkout(…, endedAt)` in one call, and is blocked with a Stop prompt if a work timer was left running. `Empty workout` now opens the empty-workout state. Discard of a 0-set workout has no Undo.
+>
+> **Revision 2026-10-08 (re-review).** Aligned with ADR 0003 "Re-review decisions" S8: the stale card's Stop → Finish path also completes when the workout was left paused (Stop ends the interval at the pause start and doesn't resume) (§3 transitions, §4).
 
 Status: v0.1 draft, 8 Oct 2026. Flow: [flow-first-milestone.md](flow-first-milestone.md). Tokens: [design-system.md](design-system.md).
 
@@ -135,7 +137,7 @@ Transitions:
 - Planned → Start → Active workout (pushed full-screen).
 - Active workout → chevron-down (minimise) → Today in the Resume state.
 - Resume → Resume → Active workout.
-- Stale → Finish → finish sheet with the end time prefilled → Summary.
+- Stale → Finish → finish sheet with the end time prefilled → Summary. With a work timer left running or paused (even in a paused workout): finish sheet → [Stop] → Finish → Summary.
 - Finished → Done → Today (Done today).
 
 ## 4. Interactions
@@ -144,7 +146,7 @@ Transitions:
 |---|---|---|
 | `Start workout` | `startWorkout(routineId, gymId, opId)`, then open Active workout. Disabled for 1 s after the tap so it can't double-start. The opId stops a second session being created | none |
 | `Resume` | Opens Active workout in the persisted state | none |
-| `Finish (ended about 19:24)` | Opens the finish sheet (see active-workout.md §4.8) with the end time prefilled as the last set time + 3 min. Ben can edit it between the last set and now. `Finish` calls `finishWorkout(sessionId, expectedVersion, endedAt)` once; the tap time is kept in the timing audit. If a work timer was left running or paused, the sheet shows `Stop the timer first` with [Stop] (the elapsed time is kept as that set's draft), then the normal Finish. Stale cards with 0 logged sets show `Discard (nothing logged)` instead of Finish | none |
+| `Finish (ended about 19:24)` | Opens the finish sheet (see active-workout.md §4.8) with the end time prefilled as the last set time + 3 min. Ben can edit it between the last set and now. `Finish` calls `finishWorkout(sessionId, expectedVersion, endedAt)` once; the tap time is kept in the timing audit. If a work timer was left running or paused, the sheet shows `Stop the timer first` with [Stop] (the elapsed time is kept as that set's draft), then the normal Finish. This works even when the stale workout is paused: Stop ends the interval at the moment the pause began, leaves the workout paused, and Finish completes without a Resume. Stale cards with 0 logged sets show `Discard (nothing logged)` instead of Finish | none |
 | Gym chip | Opens the gym switcher sheet: a list of gyms with a check on the selected one, plus `Add gym` and `Edit gyms` (→ Profile). Choosing a gym before starting just selects it. During an unfinished session, it calls `setActiveGym(gymId, sessionId)`, which returns a proposal shown as a `ChangeReviewCard` in Active workout | none |
 | Readiness chip | Writes `recordReadiness(level)` immediately. The chip shows a selected state (check icon plus the `accent.subtle` fill). `Sore` reveals an optional one-line `Where? (optional)` field. Tapping the selected chip again clears the entry | Doesn't change targets (P11) |
 | Pinned lift line | Opens that exercise's history in Progress | none |
@@ -211,4 +213,5 @@ Spoken cue: none on Today. Starting a workout can trigger the optional set intro
 10. There are no animations other than standard navigation and sheet transitions.
 11. Finishing a stale workout with the end time at 19:24 makes one `finishWorkout` call with `endedAt` 19:24; the summary shows `(end time edited)` and the audit keeps the tap time. No separate `updateSessionTiming` call is made.
 12. A stale workout with a work timer left running shows `Stop the timer first` in the finish sheet; after [Stop], Finish succeeds and the timed set is skipped with its elapsed time kept as a draft.
-13. `Empty workout` opens `Add an exercise to start`, not `All planned sets done`.
+13. A stale workout left **paused** with a work timer running: [Stop] succeeds without resuming, the stopped time ends at the pause start (paused hours never count as work), and Finish then reaches the summary.
+14. `Empty workout` opens `Add an exercise to start`, not `All planned sets done`.

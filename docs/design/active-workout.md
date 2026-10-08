@@ -1,6 +1,8 @@
 # Active workout (focused set card and Overview table)
 
 > **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md): Finish refused while a work timer runs (§4.8, S4); end time passed to `finishWorkout(…, endedAt)` (S5); Undo guarded on the set's version and commit order (S1); new empty-workout state (§2.10); homes and copy for add set, add exercise, delete set, skip exercise and discard (§4.4, §4.9); per-side entry for unilateral exercises (§2.9); dropped planned load (`target_dropped`) on the set card (§2.11).
+>
+> **Revision 2026-10-08 (re-review).** Aligned with ADR 0003 "Re-review decisions": a Left/Right log makes the domain add a pending other-side set (`pairedWithSetId`) that becomes next and accepts only its own side; `Log right side ›` just scrolls to it, and Undo removes it (§2.9, §4.9). Progression now evaluates sides (§2.9). Stop works while paused (§4.8, S8). `no_feasible_load` shows `no load target` with `Fix the equipment profile`, never bodyweight (§2.11, §5).
 
 Status: v0.1 draft, 8 Oct 2026. Flow and state machine: [flow-first-milestone.md](flow-first-milestone.md). Rest behaviour: [rest-state.md](rest-state.md). Tokens: [design-system.md](design-system.md).
 
@@ -239,11 +241,15 @@ Interim model (ADR 0003 M5): every unilateral set has a side. The default is `Bo
 ```
 - **Both sides (default):** one tap logs, exactly like a bilateral set. Label `Log 25 kg stack × 10 per side`. Saved with `side: both`.
 - **Left or Right:** the segment changes only this set's side. Label `Log Left · 25 kg stack × 10`. Saved with `side: left` / `right` via `log_set.side`.
-- **The other side:** after a Left (or Right) log, the rest card's just-saved line reads `✓ Set 2 saved (left): 25 kg stack × 10` with a link `Log right side ›`. That link calls `addSet` then `setActiveSet` on the new set, with the side preset to Right and the same values in the draft. Rest keeps running; logging the right side ends it early as usual (P2). In the interim model the added set sits at the end of this exercise's list.
+- **The other side:** logging a prescribed set as Left (or Right) makes the domain add a pending other-side set in the same commit (`pairedWithSetId` = the logged set, same planned values and rest, the logged values as its draft, no effort). It sits at the end of this exercise's list and becomes the next active set, so the rest card's `Up next` already shows it. The just-saved line reads `✓ Set 2 saved (left): 25 kg stack × 10` with a link `Log right side ›`. The domain has already added the right side as a pending set (same values drafted) and made it active; the link just scrolls to it. Undo of the left log removes it. Rest keeps running; logging the right side ends it early as usual (P2).
+  - The other-side set accepts only its own side: its Side control shows the fixed side (`Right side`) instead of the three segments, and the Log label reads `Log Right · 25 kg stack × 10`.
+  - Undo of the single-side log, or deleting that logged set, removes the still-pending partner too (audited). Undo also puts the set's side back to what it was (normally `Both sides`). Deleting only the partner is allowed (e.g. one side injured), with the usual confirmation.
+  - The exercise isn't done until each prescribed set has both sides (or a `Both sides` result). Left, Left, Left on three sets leaves three right-side sets pending.
+  - Changing a done set's side in the correction sheet doesn't add or remove partner sets (ADR 0003 Open).
 - **Lists:** Left/right sets carry an `L` or `R` text badge next to the set number (as set-type badges, design-system §7). `Both` sets have no badge; the exercise header says `per side` once.
 - **Correction:** the correction sheet has the same Side control (`correctSet` patch `side`).
 - **Volume:** a `Both sides` set counts once with its per-side reps. A Left + Right pair counts as one set using the busier side, never the sum (`summariseVolume`).
-- **Open:** sides aren't yet used by progression (ADR 0003 Open). `Next time` for unilateral exercises is based on the logged values regardless of side, and says so if the domain reports it.
+- **Progression:** progression evaluates each side; a Left + Right pair is one prescribed set; if the sides differ, `Next time` holds and names the lagging side (workout-summary §3).
 
 ### 2.10 Empty workout (phase `empty`)
 
@@ -286,6 +292,7 @@ When the template's load can't be honoured on this gym's equipment (ADR 0003 B1)
 - The draft falls back to this session's last set, then last session (same unit and convention only), then empty. With nothing to fall back on, the load field is empty and the primary reads `Enter load`.
 - Overview: the Target cell shows `—×8–10` plus the `⚠` icon; VoiceOver reads `No load target. Plan says 60 kilograms total, not converted.`
 - [Update gym] appears only for `no_achievable_loads`. The routine itself is fixed outside the workout.
+- **No feasible load from progression (`no_feasible_load`):** when the equipment can't make any load, the rules set no load (`loadFeasibility: 'infeasible'`). The target line reads `Target 8–10 reps · no load target` with the warning `<Equipment> can't make any load with its current min/max settings. Fix the equipment profile.` and [Update gym]. It is never shown as `BW` or "bodyweight"; that wording is only for the `bodyweight` convention (or `added` with nothing added).
 
 ## 3. States
 
@@ -431,7 +438,7 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 │ Keep going                             │
 └────────────────────────────────────────┘
 ```
-  [Stop] calls `stop_work_interval`; the sheet then shows the normal Finish content with an extra line `Dead hang: 0:38 not logged. It will be kept as a draft on the skipped set.` and a secondary `Log 0:38 first` link (which closes the sheet and logs). `Finish` then proceeds as normal. The same applies when the work timer is paused.
+  [Stop] calls `stop_work_interval`; the sheet then shows the normal Finish content with an extra line `Dead hang: 0:38 not logged. It will be kept as a draft on the skipped set.` and a secondary `Log 0:38 first` link (which closes the sheet and logs). `Finish` then proceeds as normal. The same applies when the work timer is paused. Stop also works while the workout is paused: the interval ends at the moment the pause began (paused time never counts as work), and the workout stays paused. Finish then proceeds without a Resume.
 - With no logged sets, the sheet reads `Nothing logged yet.` with primary `Discard workout` and a secondary `Finish anyway` (saves an empty workout).
 - `Finish` calls `finishWorkout(sessionId, expectedVersion, endedAt)` → `cancelObsoleteCues` → Summary.
 
@@ -439,7 +446,7 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 
 | Action | Undo |
 |---|---|
-| Log set | Toast `Undo` (8 s). Guarded on the set's own version (`expectedSetVersion`) and on it still being the latest commit by commit order, so an effort-chip tap during rest doesn't block it. After that: the done row → Delete set |
+| Log set | Toast `Undo` (8 s). Guarded on the set's own version (`expectedSetVersion`) and on it still being the latest commit by commit order, so an effort-chip tap during rest doesn't block it. For a single-side log it also removes the pending other-side set (§2.9). After that: the done row → Delete set |
 | Correction | Not yet (ADR 0003 Open). Correct it again; the edit history keeps every version |
 | Delete set | Not yet (ADR 0003 Open), so it always confirms. The deleted record is kept, so Undo can be added later |
 | Skip exercise | Not yet (ADR 0003 Open), so it confirms. `Add set` brings the exercise back |
@@ -466,6 +473,8 @@ If an Undo is rejected (the set was corrected from another path, or something wa
 | Empty workout | `Add an exercise to start` · `Pick from your exercises. Sets, rest and targets come from your history.` · primary `Add exercise` |
 | Side control (unilateral only) | `Side` · `Both sides` · `Left` · `Right`; Log `Log 25 kg stack × 10 per side` / `Log Left · 25 kg stack × 10`; link `Log right side ›` / `Log left side ›`; badges `L` / `R` |
 | Dropped target | Target line `Target 8–10 reps · no load target`. Warning by reason: `convention_mismatch` → `Plan says 60 kg total. These are dumbbells (kg each), so it isn't converted.`; `unit_not_convertible` → `Plan says 225 lb. No equipment here to check it in kg, so it isn't converted.`; `no_achievable_loads` → `Plan says 40 kg stack, but Cable stack at Hotel Gym can't make any load as set up.` [Update gym] |
+| No feasible load (`no_feasible_load`) | Target line `Target 8–10 reps · no load target`; warning `<Equipment> can't make any load with its current min/max settings. Fix the equipment profile.` [Update gym]. Never `BW` |
+| Other-side set (unilateral) | Side shows `Right side` (fixed); Log `Log Right · 25 kg stack × 10` |
 | Add / delete / skip | Toasts `Set 4 added` · `Set 1 deleted` · `Bench press skipped` · `Workout discarded`. Confirms as in §4.4 and §4.9 |
 | Finish blocked | `Dead hang timer is running (0:38).` · `Stop the timer first` · [Stop] · after Stop: `Dead hang: 0:38 not logged. It will be kept as a draft on the skipped set.` · `Log 0:38 first` |
 | Undo rejected | `Can't undo: set 2 changed. Tap it to edit or delete.` |
@@ -490,7 +499,7 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
 - `startWorkInterval(setId, duration)` and `stop_work_interval` for timed exercises.
 - `finishWorkout(sessionId, expectedVersion, endedAt?)`, `updateSessionTiming(sessionId, expectedVersion, {startedAt?, endedAt?})` (end time only after Finish).
 - `addSet` (`add_set`), `addExercise` (service call that builds the catalogue snapshot), `deleteSet` (`delete_set`), `skipExercise` (`skip_exercise`), `discardWorkout` (`discard`).
-- From `buildActiveSetView`: `phase` (including `empty`), the exercise's `laterality` and each set's `side`, and any `target_dropped` warning (`requested` load and `reason`) for the active and pending sets.
+- From `buildActiveSetView`: `phase` (including `empty`), the exercise's `laterality`, each set's `side` and `pairedWithSetId` (other-side sets accept only their own side), the target's `loadFeasibility`, and any `target_dropped` warning (`requested` load and `reason`) for the active and pending sets.
 - `setActiveGym`, `setTemporaryAvailability`, `rankSubstitutions`, `getEquipmentSnapshot`.
 - `buildSetCue`, `scheduleTimerCue`, `cancelObsoleteCues` (cue layer).
 - Optional layers:
@@ -524,5 +533,6 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
 20. The finish sheet's end-time picker can't choose a time before the last logged set or after now. A chosen time other than now shows `(end time edited)` on the summary.
 21. An empty workout shows `Add an exercise to start` and primary `Add exercise`. Deleting every set of a workout returns to the same state.
 22. Delete set and Skip exercise always confirm and never offer an Undo they can't perform. A deleted set disappears from the lists and totals.
-23. The Side control appears only for unilateral exercises. `Both sides` logs in one tap; Left logs `side: left` and offers `Log right side ›`. Volume counts a Left + Right pair as one set.
+23. The Side control appears only for unilateral exercises. `Both sides` logs in one tap; Left logs `side: left`, and the next active set is a pending right-side set with the same values drafted; `Log right side ›` only scrolls to it (no `addSet` call). That set can only be logged as Right. Undo of the Left log removes both the Left result and the pending right-side set. Volume counts a Left + Right pair as one set.
+25. An exercise whose equipment can make no load shows `no load target` and `Fix the equipment profile` guidance with [Update gym], never `BW` or "bodyweight".
 24. A template load in another convention (e.g. `60 kg total` on a dumbbell rack) shows `no load target` and the warning, never a converted number; Log still works with the fallback draft or `Enter load`.
