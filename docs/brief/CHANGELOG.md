@@ -80,3 +80,11 @@ The brief is a living document. Each approved change gets an entry here: the dat
     - **Fallback:** if Ben is offline, out of credit or the key fails, the app falls back to Apple and says so. It never silently switches to a paid route.
   - **Live ChatGPT-style conversation (Realtime/GPT-Live):** still a later, explicit decision. It needs a credential-issuing service.
 - **Speech input:** Apple on-device recognition, using the device locale (en-GB). OpenAI transcription only if accuracy in the gym is poor.
+
+## v0.7: 2026-10-08 (Ben)
+
+- **Data is split into two domains everywhere:** storage, coach context, backup, export, delete and the UI.
+  - **Your data (personal, owner-scoped):** profile, goals, workout history, coach memories about Ben, pain flags, gyms and equipment, routines and plans, conversations, settings, and Ben's own guide files.
+  - **Coaching knowledge (general):** approved playbook rules with their evidence, candidate rules, the exercise catalogue and aliases, and default presets.
+- **Routing:** general training rules stated in chat become playbook *candidates*, not personal memories. Personal preferences stay as memories.
+- **Backup, export and delete:** backups have separate sections that can be restored independently. Each domain can be exported or reset on its own. Credentials stay in the Keychain, in neither domain.
