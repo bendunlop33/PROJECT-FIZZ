@@ -113,14 +113,37 @@ export const TickCommandSchema = z.object({
   ...base,
 });
 
+/**
+ * Finish (`finishWorkout(sessionId, expectedVersion, endedAt?)`). The end time
+ * chosen on the finish sheet is part of this one transaction (ADR 0003 S5). It
+ * must lie between the last completed set and `at`; when it differs from `at`,
+ * the tap time is kept in the timing audit. Rejected while a work timer is
+ * running or paused: stop it and Log or leave it first (ADR 0003 S4).
+ */
 export const FinishCommandSchema = z.object({
   type: z.literal('finish'),
   ...base,
   opId: OperationIdSchema,
   expectedVersion: z.int().min(1),
-  /** Optional corrected end time (e.g. forgotten Finish); defaults to `at`. */
+  /** Chosen end time (e.g. forgotten Finish: last set + 3 min); null = `at`. */
   endedAt: ZonedTimestampSchema.nullable(),
 });
+
+/**
+ * Later correction of the workout's start or end time ("Edit workout times").
+ * Every change is audited with the previous value. `endedAt` can only be set
+ * on a finished workout. Nothing may move outside the logged sets or into the future.
+ */
+export const UpdateSessionTimingCommandSchema = z
+  .object({
+    type: z.literal('update_session_timing'),
+    ...base,
+    opId: OperationIdSchema,
+    expectedVersion: z.int().min(1),
+    startedAt: ZonedTimestampSchema.nullable(),
+    endedAt: ZonedTimestampSchema.nullable(),
+  })
+  .refine((c) => c.startedAt !== null || c.endedAt !== null, { message: 'Nothing to change' });
 
 export const SessionCommandSchema = z.discriminatedUnion('type', [
   LogSetCommandSchema,
@@ -136,6 +159,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   ResumeCommandSchema,
   TickCommandSchema,
   FinishCommandSchema,
+  UpdateSessionTimingCommandSchema,
 ]);
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 export type SessionCommandType = SessionCommand['type'];

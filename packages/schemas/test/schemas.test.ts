@@ -133,6 +133,10 @@ describe('ProgressionRule', () => {
     expect(validate(ProgressionRuleSchema, rule).ok).toBe(true);
     expect(validate(ProgressionRuleSchema, { ...rule, loadIncrement: 2.5 }).ok).toBe(false);
     expect(validate(ProgressionRuleSchema, { ...rule, failuresBeforeReduce: 1 }).ok).toBe(false);
+    // Review M1: a rep cap below the top of the range would yield a 12–10 target.
+    const capped = validate(ProgressionRuleSchema, { ...rule, repRange: { min: 8, max: 12 }, ceilingRepCap: 10 });
+    expect(capped.ok).toBe(false);
+    if (!capped.ok) expect(capped.issues[0]?.path).toBe('ceilingRepCap');
   });
 });
 
@@ -152,6 +156,12 @@ describe('SessionCommand', () => {
   it('rejects unknown command types and missing operation IDs', () => {
     expect(validate(SessionCommandSchema, { type: 'delete_everything', at }).ok).toBe(false);
     expect(validate(SessionCommandSchema, { type: 'pause', at }).ok).toBe(false);
+  });
+
+  it('update_session_timing needs something to change', () => {
+    const base = { type: 'update_session_timing', at, opId: 't', expectedVersion: 2 };
+    expect(validate(SessionCommandSchema, { ...base, startedAt: null, endedAt: null }).ok).toBe(false);
+    expect(validate(SessionCommandSchema, { ...base, startedAt: at, endedAt: null }).ok).toBe(true);
   });
 
   it('rejects a correction without an expected version', () => {

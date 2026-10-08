@@ -223,6 +223,7 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
       restTimer: null,
       workInterval: null,
       audit: [],
+      timingAudit: [],
       processedOps: {},
       revision: 1,
     },

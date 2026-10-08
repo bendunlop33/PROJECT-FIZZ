@@ -190,6 +190,24 @@ export const SetAuditEntrySchema = z.object({
 });
 export type SetAuditEntry = z.infer<typeof SetAuditEntrySchema>;
 
+/**
+ * Append-only audit of session timing changes. The first entry for a field
+ * keeps the originally recorded value in `before` (review M7, ADR 0003 S5).
+ * - `finish`: Finish was confirmed with a chosen end time; `before` is the tap time.
+ * - `correction`: a later `update_session_timing` edit.
+ */
+export const SessionTimingAuditEntrySchema = z.object({
+  id: z.string().min(1),
+  sessionId: IdSchema,
+  opId: OperationIdSchema,
+  field: z.enum(['startedAt', 'endedAt']),
+  source: z.enum(['finish', 'correction']),
+  atUtc: UtcTimestampSchema,
+  before: ZonedTimestampSchema.nullable(),
+  after: ZonedTimestampSchema,
+});
+export type SessionTimingAuditEntry = z.infer<typeof SessionTimingAuditEntrySchema>;
+
 export const ProcessedOperationSchema = z.object({
   opId: OperationIdSchema,
   commandType: z.string().min(1),
@@ -209,6 +227,7 @@ export const SessionAggregateSchema = z.object({
   restTimer: RestTimerSchema.nullable(),
   workInterval: WorkIntervalSchema.nullable(),
   audit: z.array(SetAuditEntrySchema),
+  timingAudit: z.array(SessionTimingAuditEntrySchema),
   processedOps: z.record(z.string(), ProcessedOperationSchema),
   /** Storage revision: bumps on every persisted change (optimistic concurrency). */
   revision: z.int().min(0),

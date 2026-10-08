@@ -1,5 +1,7 @@
 import type {
   CommandOf,
+  SessionTimingAuditEntry,
+  ZonedTimestamp,
   EquipmentInstance,
   ProcessedOperation,
   RestTimer,
@@ -35,6 +37,8 @@ export type SessionErrorCode =
   | 'set_not_completed'
   | 'not_latest_set'
   | 'invalid_values'
+  | 'invalid_time'
+  | 'session_not_finished'
   | 'convention_mismatch'
   | 'unit_mismatch'
   | 'timer_not_found'
@@ -80,7 +84,8 @@ export type SessionEvent =
   | { type: 'WorkIntervalEnded'; setId: string; reason: 'completed' | 'stopped' | 'cancelled'; elapsedS: number; lateByMs: number }
   | { type: 'SessionPaused' }
   | { type: 'SessionResumed' }
-  | { type: 'SessionFinished' };
+  | { type: 'SessionFinished' }
+  | { type: 'SessionTimingUpdated' };
 
 export type ReduceResult =
   | {
@@ -224,6 +229,9 @@ function bumpVersion(state: SessionAggregate, activeSetId: string | null = state
 
 function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs: number): Handled {
   if (state.session.pause !== null) return fail('session_paused', 'Resume the workout before logging.');
+  if (nowMs < toMs(state.session.startedAt.utc)) {
+    return fail('invalid_time', 'A set cannot be logged before the workout started.');
+  }
   const set = state.sets.find((s) => s.id === cmd.setId);
   if (!set) return fail('set_not_found', 'Set not found.');
   if (set.status !== 'pending') return fail('set_not_pending', 'This set is already logged or skipped.');
@@ -570,11 +578,19 @@ function handleFinish(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: 
   if (state.session.version !== cmd.expectedVersion) {
     return fail('stale_version', 'The workout changed since Finish was opened. Review and try again.');
   }
+  const wiNow = state.workInterval;
+  if (wiNow && (wiNow.status === 'running' || wiNow.status === 'paused')) {
+    // ADR 0003 S4: never discard a running work interval. Stop it, then Log or leave it.
+    return fail('work_interval_running', 'Stop the work timer before finishing.');
+  }
   const endedAt = cmd.endedAt ?? cmd.at;
   const endMs = toMs(endedAt.utc);
-  if (endMs < toMs(state.session.startedAt.utc)) {
-    return fail('invalid_values', 'The end time is before the workout started.');
-  }
+  const timeError = checkEndTime(state, endMs, nowMs);
+  if (timeError) return { ok: false, error: timeError };
+  const timingAudit =
+    cmd.endedAt !== null && cmd.endedAt.utc !== cmd.at.utc
+      ? [...state.timingAudit, timingEntry(state, cmd.opId, 'endedAt', 'finish', cmd.at, cmd.at, cmd.endedAt)]
+      : state.timingAudit;
   const events: SessionEvent[] = [];
   const skippedIds: string[] = [];
   const audit = [...state.audit];
@@ -601,11 +617,6 @@ function handleFinish(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: 
     restTimer = endRestTimer(restTimer, 'cancelled', nowMs);
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'cancelled', timerVersion: restTimer.version, lateByMs: 0 });
   }
-  let workInterval = state.workInterval;
-  if (workInterval && (workInterval.status === 'running' || workInterval.status === 'paused')) {
-    workInterval = { ...workInterval, status: 'cancelled', endedAtUtc: toIso(nowMs) };
-    events.push({ type: 'WorkIntervalEnded', setId: workInterval.setId, reason: 'cancelled', elapsedS: 0, lateByMs: 0 });
-  }
   let pausedTotalMs = state.session.pausedTotalMs;
   const pause = state.session.pause;
   if (pause !== null) pausedTotalMs += Math.max(0, Math.min(endMs, nowMs) - toMs(pause.pausedAtUtc));
@@ -615,8 +626,8 @@ function handleFinish(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: 
     ...state,
     sets,
     audit,
+    timingAudit,
     restTimer,
-    workInterval,
     session: {
       ...state.session,
       status: 'finished',
@@ -628,6 +639,70 @@ function handleFinish(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: 
     },
   };
   return { ok: true, state: next, events };
+}
+
+function completedTimes(state: SessionAggregate): number[] {
+  return state.sets.flatMap((s) => (s.status === 'completed' && s.completedAt ? [toMs(s.completedAt.utc)] : []));
+}
+
+/** End time must not precede the start or the last completed set, nor lie in the future (review M7). */
+function checkEndTime(state: SessionAggregate, endMs: number, nowMs: number, startMs = toMs(state.session.startedAt.utc)): SessionError | null {
+  if (endMs < startMs) return { code: 'invalid_time', message: 'The end time is before the workout started.' };
+  const done = completedTimes(state);
+  if (done.length > 0 && endMs < Math.max(...done)) {
+    return { code: 'invalid_time', message: 'The end time is before the last logged set.' };
+  }
+  if (endMs > nowMs) return { code: 'invalid_time', message: 'The end time is in the future.' };
+  return null;
+}
+
+function timingEntry(
+  state: SessionAggregate,
+  opId: string,
+  field: SessionTimingAuditEntry['field'],
+  source: SessionTimingAuditEntry['source'],
+  at: ZonedTimestamp,
+  before: ZonedTimestamp | null,
+  after: ZonedTimestamp,
+): SessionTimingAuditEntry {
+  return { id: `${opId}:${field}`, sessionId: state.session.id, opId, field, source, atUtc: at.utc, before, after };
+}
+
+function handleUpdateTiming(state: SessionAggregate, cmd: CommandOf<'update_session_timing'>, nowMs: number): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed; reload.');
+  const { session } = state;
+  if (cmd.endedAt !== null && session.status !== 'finished') {
+    return fail('session_not_finished', 'The end time can only be edited after Finish.');
+  }
+  const startedAt = cmd.startedAt ?? session.startedAt;
+  const startMs = toMs(startedAt.utc);
+  if (startMs > nowMs) return fail('invalid_time', 'The start time is in the future.');
+  const done = completedTimes(state);
+  if (done.length > 0 && startMs > Math.min(...done)) {
+    return fail('invalid_time', 'The start time is after the first logged set.');
+  }
+  if (session.pause !== null && startMs > toMs(session.pause.pausedAtUtc)) {
+    return fail('invalid_time', 'The start time is after the workout was paused.');
+  }
+  const endedAt = cmd.endedAt ?? session.endedAt;
+  if (endedAt !== null) {
+    const timeError = checkEndTime(state, toMs(endedAt.utc), nowMs, startMs);
+    if (timeError) return { ok: false, error: timeError };
+  }
+  const entries: SessionTimingAuditEntry[] = [];
+  if (cmd.startedAt !== null && cmd.startedAt.utc !== session.startedAt.utc) {
+    entries.push(timingEntry(state, cmd.opId, 'startedAt', 'correction', cmd.at, session.startedAt, cmd.startedAt));
+  }
+  if (cmd.endedAt !== null && cmd.endedAt.utc !== session.endedAt?.utc) {
+    entries.push(timingEntry(state, cmd.opId, 'endedAt', 'correction', cmd.at, session.endedAt, cmd.endedAt));
+  }
+  if (entries.length === 0) return { ok: true, state, events: [] };
+  const next: SessionAggregate = {
+    ...state,
+    timingAudit: [...state.timingAudit, ...entries],
+    session: { ...session, startedAt, endedAt, version: session.version + 1 },
+  };
+  return { ok: true, state: next, events: [{ type: 'SessionTimingUpdated' }] };
 }
 
 function handleSaveDraft(state: SessionAggregate, cmd: CommandOf<'save_draft'>): Handled {
@@ -663,6 +738,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleFinish(state, command, nowMs);
     case 'save_draft':
       return handleSaveDraft(state, command);
+    case 'update_session_timing':
+      return handleUpdateTiming(state, command, nowMs);
     case 'tick':
       return { ok: true, state, events: [] };
   }
@@ -683,7 +760,8 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
  *   the ID is rejected.
  * - Version-checked commands reject stale input instead of applying it to newer state.
  * - Time only expires timers; it never commits a set.
- * - A finished session accepts only corrections (and ticks, which are no-ops).
+ * - A finished session accepts only corrections and timing edits (and ticks,
+ *   which are no-ops). A discarded session accepts nothing.
  */
 export function reduceSession(state: SessionAggregate, command: SessionCommand): ReduceResult {
   const nowMs = toMs(command.at.utc);
@@ -703,9 +781,15 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
     }
   }
 
-  if (state.session.status !== 'active' && command.type !== 'correct_set') {
+  if (state.session.status !== 'active') {
     if (command.type === 'tick') return { ok: true, state, events: [], duplicate: false, superseded: false };
-    return { ok: false, error: { code: 'session_finished', message: 'This workout is finished.' }, state, events: [] };
+    // A finished workout accepts only corrections and timing edits; a discarded one accepts nothing.
+    const allowed =
+      state.session.status === 'finished' && (command.type === 'correct_set' || command.type === 'update_session_timing');
+    if (!allowed) {
+      const message = state.session.status === 'finished' ? 'This workout is finished.' : 'This workout was discarded.';
+      return { ok: false, error: { code: 'session_finished', message }, state, events: [] };
+    }
   }
 
   const clocked = applyClock(state, nowMs);

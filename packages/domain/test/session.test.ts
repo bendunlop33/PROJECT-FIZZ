@@ -584,7 +584,113 @@ describe('finish', () => {
     const { state } = startFixture();
     expectError(
       reduceSession(state, { type: 'finish', at: at(100), opId: 'f', expectedVersion: 1, endedAt: at(-10) }),
-      'invalid_values',
+      'invalid_time',
+    );
+  });
+
+  it('M7: the end time can be neither in the future nor before the last completed set', () => {
+    const { state } = startFixture();
+    const w = bench(state)[0];
+    if (!w) throw new Error('fixture');
+    const s = apply(state, logCmd(w.id, values(kg(60), 10), 300));
+    const finish = (endedAt: ReturnType<typeof at>) =>
+      reduceSession(s, { type: 'finish', at: at(1000), opId: 'f', expectedVersion: 2, endedAt });
+    expectError(finish(at(1000 + 26 * 3600)), 'invalid_time');
+    expectError(finish(at(1001)), 'invalid_time');
+    expectError(finish(at(299)), 'invalid_time');
+    expectOk(finish(at(300)));
+    expectOk(finish(at(1000)));
+  });
+
+  it('M7/S5: a chosen end time keeps the tap time in the timing audit', () => {
+    const { state } = startFixture();
+    const w = bench(state)[0];
+    if (!w) throw new Error('fixture');
+    const s = apply(state, logCmd(w.id, values(kg(60), 10), 300));
+    const done = apply(s, { type: 'finish', at: at(5000), opId: 'f', expectedVersion: 2, endedAt: at(480) });
+    expect(done.session.endedAt).toEqual(at(480));
+    expect(done.timingAudit).toEqual([
+      {
+        id: 'f:endedAt',
+        sessionId: s.session.id,
+        opId: 'f',
+        field: 'endedAt',
+        source: 'finish',
+        atUtc: at(5000).utc,
+        before: at(5000),
+        after: at(480),
+      },
+    ]);
+    // Finishing at the tap time records no timing change.
+    expect(apply(s, { type: 'finish', at: at(5000), opId: 'f2', expectedVersion: 2, endedAt: null }).timingAudit).toEqual([]);
+  });
+
+  it('S4: Finish is refused while a work timer runs or is paused; after Stop the elapsed draft is kept on the skipped set', () => {
+    const { state } = startFixture();
+    const hang = setsFor(state, HANG)[0];
+    if (!hang) throw new Error('fixture');
+    let s = apply(state, { type: 'start_work_interval', at: at(10), opId: 'w', setId: hang.id, durationS: 45 });
+    const v = s.session.version;
+    expectError(reduceSession(s, { type: 'finish', at: at(30), opId: 'f', expectedVersion: v, endedAt: null }), 'work_interval_running');
+    const paused = apply(s, { type: 'pause', at: at(30), opId: 'p' });
+    expectError(reduceSession(paused, { type: 'finish', at: at(31), opId: 'f', expectedVersion: v, endedAt: null }), 'work_interval_running');
+    s = apply(s, { type: 'stop_work_interval', at: at(48), opId: 'stop', setId: hang.id });
+    const done = apply(s, { type: 'finish', at: at(50), opId: 'f', expectedVersion: v, endedAt: null });
+    expect(done.sets.find((x) => x.id === hang.id)).toMatchObject({ status: 'skipped', actual: null, draft: { durationS: 38 } });
+  });
+
+  it('nit 5: a set cannot be logged before the workout started', () => {
+    const { state } = startFixture();
+    const w = bench(state)[0];
+    expectError(reduceSession(state, logCmd(w?.id ?? '', values(kg(60), 10), -5)), 'invalid_time');
+  });
+});
+
+describe('update_session_timing (Edit workout times)', () => {
+  const finished = () => {
+    const { state } = startFixture();
+    const [w, b1] = bench(state);
+    if (!w || !b1) throw new Error('fixture');
+    let s = apply(state, logCmd(w.id, values(kg(60), 10), 120));
+    s = apply(s, logCmd(b1.id, values(kg(100), 8), 400));
+    return apply(s, { type: 'finish', at: at(4000), opId: 'f', expectedVersion: s.session.version, endedAt: null });
+  };
+
+  it('corrects start and end with an audit entry that keeps the previous values', () => {
+    const s = finished();
+    const r = expectOk(
+      reduceSession(s, { type: 'update_session_timing', at: at(5000), opId: 't', expectedVersion: s.session.version, startedAt: at(60), endedAt: at(600) }),
+    );
+    expect(r.state.session).toMatchObject({ startedAt: at(60), endedAt: at(600), version: s.session.version + 1 });
+    expect(r.state.timingAudit.map((e) => [e.field, e.source, e.before?.utc, e.after.utc])).toEqual([
+      ['startedAt', 'correction', at(0).utc, at(60).utc],
+      ['endedAt', 'correction', at(4000).utc, at(600).utc],
+    ]);
+    expect(getActiveDurationMs(r.state, ms(99_999))).toBe(540_000);
+  });
+
+  it('rejects times outside the logged sets, in the future, or stale', () => {
+    const s = finished();
+    const v = s.session.version;
+    const upd = (startedAt: ReturnType<typeof at> | null, endedAt: ReturnType<typeof at> | null, expectedVersion = v) =>
+      reduceSession(s, { type: 'update_session_timing', at: at(5000), opId: 't', expectedVersion, startedAt, endedAt });
+    expectError(upd(at(121), null), 'invalid_time'); // after the first set
+    expectError(upd(null, at(399)), 'invalid_time'); // before the last set
+    expectError(upd(null, at(5001)), 'invalid_time'); // future
+    expectError(upd(at(-60), null, v - 1), 'stale_version');
+    expectOk(upd(at(-60), null));
+  });
+
+  it('the end time can only be edited after Finish; a discarded-style status rejects corrections (nit 4)', () => {
+    const { state } = startFixture();
+    expectError(
+      reduceSession(state, { type: 'update_session_timing', at: at(10), opId: 't', expectedVersion: 1, startedAt: null, endedAt: at(5) }),
+      'session_not_finished',
+    );
+    const discarded = { ...state, session: { ...state.session, status: 'discarded' as const } };
+    expectError(
+      reduceSession(discarded, { type: 'correct_set', at: at(10), opId: 'c', setId: bench(state)[0]?.id ?? '', expectedSetVersion: 1, patch: { reps: 3 } }),
+      'session_finished',
     );
   });
 });
