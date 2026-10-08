@@ -28,6 +28,11 @@ export interface RecoveryResult {
  * Restore an unfinished session on cold start. Pure: timers are recomputed
  * from their stored deadlines, never reset to the full preset, and nothing is
  * committed. The caller persists `state` if its revision changed.
+ *
+ * `rest_ended_while_closed` is raised for any expiry first observed here. The
+ * app must therefore dispatch (and persist) a `tick` when a rest deadline
+ * passes in the foreground; otherwise a rest that ended while the app was open
+ * would be reported as ended while closed (review nit 3).
  */
 export function recoverSession(stored: SessionAggregate, at: ZonedTimestamp): RecoveryResult {
   const nowMs = toMs(at.utc);

@@ -58,7 +58,8 @@ export type WeightUnit = z.infer<typeof WeightUnitSchema>;
  * - `stack`: the pin/selector reading on a machine. Not a free-weight equivalent.
  * - `added`: plates added to a plate-loaded machine. Not the true resistance.
  * - `assistance`: assisted machine; a larger number means an easier set.
- * - `bodyweight`: no external load recorded (value is always 0).
+ * - `bodyweight`: no external load recorded (value is always 0). Weighted
+ *   dips or pull-ups record the added mass with `added` instead.
  */
 export const LoadConventionSchema = z.enum([
   'total',
