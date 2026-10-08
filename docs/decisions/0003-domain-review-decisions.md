@@ -130,3 +130,33 @@ The review says the probe (last set 60 min, Pause at 61, Finish at 5 h, end edit
 - Persisted aggregates changed again: `session.pauses` replaces `pausedTotalMs`; `WorkoutSet.pairedWithSetId`; `ExerciseSnapshot.compatibleEquipment`; `HistorySet.side`. Nothing is persisted yet, so no migration is needed.
 - "Unilateral sides in progression history" is no longer Open.
 - **Open:** side corrections and other-side rows; `superseded` for the remaining commands; Ben's approval of S1/S3 (and now R4's pairing rule) as brief changes, with a `docs/brief/CHANGELOG.md` entry.
+
+## Third review decisions (2026-10-08)
+
+Implements the "Third review" section of `docs/reviews/domain-core.md` (T1, follow-ups 1, 2 and 4). Follow-ups 3, 5 and 6 are recorded below and not implemented.
+
+### Implementation decisions (developer)
+
+- **T1. Other-side order.** `buildExecutionOrder` groups each other-side row with the set it is paired with, so it is performed immediately after its partner and belongs to the same superset round (`isRoundEnd`). After the pair, order continues normally: plain `L → R → set 2`; superset `A1 L → A1 R → B1` with the transition rest, then the full rest after B1. Deleting the pending other side continues with the next set in that order. A logged other side whose partner was deleted stays at the partner's old position. `index` is unchanged (it only keeps indexes unique); display order should come from `buildExecutionOrder`. Tests assert the exact active-set sequence (`companion-order.test.ts`).
+- **Follow-up 1. Lagging-side wording.** Effort case: `The right side reached 8+ reps on every set within the effort limit, but the left side reached 8+ reps with effort above the limit; the load goes up only when both sides do.` Reps case: `The left side reached 8+ reps on every set within the effort limit, but the right side didn't (lowest 7 reps); …`.
+- **Follow-up 2. Orphaned other side.** Deleting the original single-side set after its other side was logged no longer presents them as a pair. `getSetPair(state, setId)` returns the live partner and role (`first_side` / `other_side`), or null when either side is deleted; the UI's pair badge must use it. `pairedWithSetId` is kept on the completed row as provenance: changing it would silently modify a completed set, and the set snapshot in the audit doesn't carry it.
+- **Follow-up 4. `superseded` for the remaining commands.** Also computed for `correct_set` (the set changed after this correction, or is no longer completed), `skip_exercise` (a set it skipped was since deleted), `add_set` (the set it added was deleted; `ProcessedOperation.createdIds` records the added set because the retry may carry a regenerated `newSetId`), and `update_session_timing` (a later edit replaced a value it set). Always `false`, with reasons in the `isSuperseded` doc comment: `finish` and `discard` (terminal), `add_exercise` (an exercise can't be removed), and transient navigation and timer commands (`set_active_set`, rest, work interval, pause, resume).
+
+### Left open
+
+- **Follow-up 3. Rest between sides (product question for Ben).** A Left log on a plain exercise still starts the full set rest before the Right side; inside a superset it is the transition rest. Confirm on device whether the rest between the two sides of a pair should be a transition (or 0).
+- **Follow-up 5. HistorySet mapping (TODO for the persistence slice).** No `WorkoutSet → HistorySet` mapper exists yet. When it is added it must carry `side` (a null side on unilateral rows makes every sided session unpairable or double-counts L/R rows) and should use `getSetPair` rather than raw `pairedWithSetId`. Test both.
+
+### Doc wording the designer should change
+
+| Doc | Current wording | Change to |
+|---|---|---|
+| active-workout §2.9, other-side set (T-S1) | "sits at the end of this exercise's list and becomes the next active set" | "It is performed immediately after its paired set (same superset round); after it, the order continues with the next set after the pair." |
+| active-workout §2.9 / pair badge | (add) | "The pair badge shows only while both sides exist (`getSetPair`); if one side is deleted, the other is shown as a standalone set." |
+| workout-summary §5 row "Next time: held, side lagging" and §150 example | "`The left side reached 8+ reps on every set but the right side didn't (lowest 7 reps); holding.`" | "`The left side reached 8+ reps on every set within the effort limit, but the right side didn't (lowest 7 reps); the load goes up only when both sides do.`" |
+| Stale card after Stop while paused (follow-up 6) | (add) | "After Stop on a paused workout, the card makes clear that Finish is now available; the workout stays paused (Resume is still offered but not the primary action)." |
+
+### Consequences
+- Persisted shape: `ProcessedOperation.createdIds` (optional). Nothing is persisted yet, so no migration is needed.
+- "`superseded` for the remaining commands" is no longer Open.
+- **Still open:** side corrections and other-side rows; follow-ups 3 and 5 above; Ben's approval of S1/S3 and the R4 pairing rule as brief changes, with a `docs/brief/CHANGELOG.md` entry.
