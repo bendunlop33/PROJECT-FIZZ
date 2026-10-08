@@ -539,7 +539,7 @@ describe('unilateral sides in progression (review R4, ADR 0003)', () => {
     expect(t.decision).toBe('hold');
     expect(t.sets[0]?.load).toEqual(each(20));
     expect(t.explanation.facts).toContain(
-      "The left side reached 8+ reps on every set but the right side didn't (lowest 7 reps); the load goes up only when both sides do.",
+      "The left side reached 8+ reps on every set within the effort limit, but the right side didn't (lowest 7 reps); the load goes up only when both sides do.",
     );
   });
 
@@ -547,7 +547,7 @@ describe('unilateral sides in progression (review R4, ADR 0003)', () => {
     const t = next([L(8, 10), R(8, 8), L(8, 8), R(8, 8), L(8, 8), R(8, 8)]);
     expect(t.decision).toBe('hold');
     expect(t.explanation.facts).toContain(
-      "The right side reached 8+ reps on every set but the left side didn't (effort above the limit); the load goes up only when both sides do.",
+      'The right side reached 8+ reps on every set within the effort limit, but the left side reached 8+ reps with effort above the limit; the load goes up only when both sides do.',
     );
   });
 

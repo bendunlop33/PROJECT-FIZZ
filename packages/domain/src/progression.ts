@@ -483,10 +483,14 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
     const { left, right } = latest.sides;
     if (ok(left) !== ok(right)) {
       const [good, lagName, lag] = ok(left) ? ['left', 'right', right] : ['right', 'left', left];
-      const detail = !lag.allHitTop ? `lowest ${lag.minReps} reps` : 'effort above the limit';
+      // Third review follow-up 1: name what the lagging side actually missed.
+      const top = `${criteria.repRange.max}+ reps`;
+      const lagText = !lag.allHitTop
+        ? `the ${lagName} side didn't (lowest ${lag.minReps} reps)`
+        : `the ${lagName} side reached ${top} with effort above the limit`;
       pushFact(
         ctx,
-        `The ${good} side reached ${criteria.repRange.max}+ reps on every set but the ${lagName} side didn't (${detail}); the load goes up only when both sides do.`,
+        `The ${good} side reached ${top} on every set within the effort limit, but ${lagText}; the load goes up only when both sides do.`,
       );
     }
   }
