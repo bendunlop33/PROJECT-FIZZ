@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
 import { reportMeta } from '../app-info';
@@ -8,11 +8,9 @@ import {
   STATUS_LABEL,
   confirmObservation,
   formatReport,
-  initialResults,
   recordResult,
   toUtcIso,
   type ProbeId,
-  type ProbeResults,
   type ProbeStatus,
   type ResultUpdate,
 } from '../probe/model';
@@ -36,6 +34,7 @@ import {
   runSqliteProbe,
   runTtsProbe,
 } from '../probe/runners';
+import { getSnapshot, loadSavedResults, subscribe, updateResults } from '../probe/results-store';
 
 const REST_KEY = 'rest_deadline_probe';
 /** New per JS launch: lets the rest probe tell "same launch" from "after relaunch". */
@@ -46,14 +45,15 @@ interface Props {
 }
 
 export function CapabilityProbeScreen({ onBack }: Props) {
-  const [results, setResults] = useState<ProbeResults>(initialResults);
+  const { results, loaded, loadIssues, persistError } = useSyncExternalStore(subscribe, getSnapshot);
   const [transcript, setTranscript] = useState('');
   const [restLine, setRestLine] = useState<string | null>(null);
   const [busy, setBusy] = useState<ReadonlySet<ProbeId>>(new Set());
   const restStored = useRef<string | null>(null);
 
+  // Goes through the store, so a probe that finishes after ‹ Back is still saved.
   const apply = useCallback((id: ProbeId, update: ResultUpdate) => {
-    setResults((r) => recordResult(r, id, update, nowMs()));
+    updateResults((r) => recordResult(r, id, update, nowMs()));
   }, []);
 
   // Rest deadline: recompute from the stored deadline; the tick only refreshes the display.
@@ -66,16 +66,21 @@ export function CapabilityProbeScreen({ onBack }: Props) {
   }, []);
 
   useEffect(() => {
-    // Object, not a `let`: TypeScript can't see the cleanup closure's assignment.
+    // A function, not a `let`: TypeScript can't see the cleanup closure's
+    // assignment and would narrow a plain flag after the first check.
     const life = { cancelled: false };
+    const cancelled = () => life.cancelled;
     void (async () => {
+      // Saved results first, so the rest recovery below only replaces its own row.
+      await loadSavedResults();
+      if (cancelled()) return;
       try {
         restStored.current = await getProbeValue(REST_KEY);
       } catch (e) {
-        if (!life.cancelled) apply('rest_deadline', { status: 'fail', summary: `Could not read saved rest: ${String(e)}` });
+        if (!cancelled()) apply('rest_deadline', { status: 'fail', summary: `Could not read saved rest: ${String(e)}` });
         return;
       }
-      if (life.cancelled) return;
+      if (cancelled()) return;
       const verdict = judgeRecoveredRest(refreshRest());
       if (verdict.status !== 'not_run') apply('rest_deadline', verdict);
     })();
@@ -161,6 +166,15 @@ export function CapabilityProbeScreen({ onBack }: Props) {
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.list}>
+        {!loaded ? <Text style={styles.howTo}>Loading saved results…</Text> : null}
+        {persistError !== null ? (
+          <Text style={styles.warning}>Results are NOT being saved: {persistError}. Tap Export before leaving the app.</Text>
+        ) : null}
+        {loadIssues.map((issue) => (
+          <Text key={issue} style={styles.warning}>
+            {issue}
+          </Text>
+        ))}
         {PROBES.map((def) => {
           const r = results[def.id];
           return (
@@ -187,8 +201,8 @@ export function CapabilityProbeScreen({ onBack }: Props) {
                 <View style={styles.row}>
                   <Pressable
                     accessibilityRole="button"
-                    disabled={busy.has(def.id)}
-                    style={[styles.button, busy.has(def.id) && styles.disabled]}
+                    disabled={!loaded || busy.has(def.id) || r.status === 'running'}
+                    style={[styles.button, (!loaded || busy.has(def.id) || r.status === 'running') && styles.disabled]}
                     onPress={() => void run(def.id)}
                   >
                     <Text style={styles.buttonText}>Run</Text>
@@ -199,7 +213,7 @@ export function CapabilityProbeScreen({ onBack }: Props) {
                         accessibilityRole="button"
                         style={styles.button}
                         onPress={() => {
-                          setResults((x) => confirmObservation(x, def.id, true, nowMs()));
+                          updateResults((x) => confirmObservation(x, def.id, true, nowMs()));
                         }}
                       >
                         <Text style={styles.buttonText}>Yes</Text>
@@ -208,7 +222,7 @@ export function CapabilityProbeScreen({ onBack }: Props) {
                         accessibilityRole="button"
                         style={styles.button}
                         onPress={() => {
-                          setResults((x) => confirmObservation(x, def.id, false, nowMs()));
+                          updateResults((x) => confirmObservation(x, def.id, false, nowMs()));
                         }}
                       >
                         <Text style={styles.buttonText}>No</Text>
@@ -264,6 +278,7 @@ const styles = StyleSheet.create({
   big: { fontSize: 22, fontWeight: '600' },
   time: { fontSize: 11, color: '#777' },
   question: { fontSize: 13, fontStyle: 'italic' },
+  warning: { fontSize: 13, color: '#8a1111' },
   button: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#0a63c9' },
   disabled: { opacity: 0.4 },
   buttonText: { color: '#fff', fontSize: 15, fontWeight: '600' },

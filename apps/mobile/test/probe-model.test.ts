@@ -5,7 +5,10 @@ import {
   confirmObservation,
   formatReport,
   initialResults,
+  mergeNewer,
   recordResult,
+  restoreResults,
+  serialiseResults,
   type ReportMeta,
 } from '../src/probe/model';
 
@@ -68,5 +71,81 @@ describe('probe model', () => {
   it('flags a bundle ID changed by the signing tool', () => {
     const text = formatReport(initialResults(), { ...meta, installedBundleId: 'com.projectfizz.fizz.ABCDE12345' }, T0);
     expect(text).toContain('Bundle ID configured: com.projectfizz.fizz (differs: the signing tool changed it)');
+  });
+});
+
+describe('probe result persistence', () => {
+  const answered = () => {
+    let r = recordResult(initialResults(), 'notification', { status: 'needs_check', summary: 'Scheduled', details: ['id 1'] }, T0);
+    r = confirmObservation(r, 'notification', true, T0 + 20_000);
+    r = recordResult(r, 'sqlite', { status: 'pass', summary: 'ok' }, T0);
+    return r;
+  };
+
+  it('round-trips confirmed results, so a force-close does not lose them', () => {
+    const r = answered();
+    const restored = restoreResults(serialiseResults(r));
+    expect(restored.issues).toEqual([]);
+    expect(restored.results).toEqual(r);
+    expect(restored.results.notification.status).toBe('pass');
+  });
+
+  it('starts fresh with no saved results', () => {
+    expect(restoreResults(null)).toEqual({ results: initialResults(), issues: [] });
+  });
+
+  it.each([
+    ['not JSON', '{oops', /not valid JSON/],
+    ['not an object', '42', /not an object/],
+    ['an unknown version', JSON.stringify({ version: 99, results: {} }), /unknown format/],
+  ])('starts fresh, with a visible issue, when the saved text is %s', (_label, text, pattern) => {
+    const restored = restoreResults(text);
+    expect(restored.results).toEqual(initialResults());
+    expect(restored.issues[0]).toMatch(pattern);
+  });
+
+  it('drops only the invalid rows and says which', () => {
+    const r = answered();
+    const raw = JSON.parse(serialiseResults(r)) as { version: number; results: Record<string, Record<string, unknown>> };
+    raw.results.sqlite = { ...raw.results.sqlite, status: 'totally_passed' };
+    raw.results.tts = { id: 'tts', status: 'pass', summary: 'x', details: [1], atUtc: null };
+    raw.results.alarmkit = { id: 'alarmkit', status: 'pass', summary: 'x', details: [], atUtc: 'yesterday' };
+    raw.results.live_activity = { id: 'tts', status: 'pass', summary: 'x', details: [], atUtc: null };
+    const restored = restoreResults(JSON.stringify(raw));
+    expect(restored.results.notification.status).toBe('pass');
+    for (const id of ['sqlite', 'tts', 'alarmkit', 'live_activity'] as const) {
+      expect(restored.results[id].status).toBe('not_run');
+    }
+    expect(restored.issues).toHaveLength(4);
+    expect(restored.issues.join('\n')).toMatch(/sqlite result dropped: unknown status/);
+  });
+
+  it('never restores a pass over the S1 stub', () => {
+    const raw = { version: 1, results: { chatgpt_signin: { id: 'chatgpt_signin', status: 'pass', summary: 'fake', details: [], atUtc: null } } };
+    expect(restoreResults(JSON.stringify(raw)).results.chatgpt_signin.status).toBe('not_implemented');
+  });
+
+  it('turns a run cut off by the app closing into "not run", never a result', () => {
+    const r = recordResult(initialResults(), 'tts', { status: 'running', summary: 'Running…' }, T0);
+    const restored = restoreResults(serialiseResults(r)).results.tts;
+    expect(restored.status).toBe('not_run');
+    expect(restored.summary).toMatch(/Interrupted/);
+  });
+
+  it('keeps whichever result is newer when merging this launch with saved results', () => {
+    const saved = answered();
+    const thisLaunch = recordResult(initialResults(), 'rest_deadline', { status: 'pass', summary: 'Recovered' }, T0 + 60_000);
+    const merged = mergeNewer(saved, thisLaunch);
+    expect(merged.rest_deadline.summary).toBe('Recovered');
+    expect(merged.notification.status).toBe('pass');
+    const newerSqlite = recordResult(initialResults(), 'sqlite', { status: 'fail', summary: 'later' }, T0 + 1);
+    expect(mergeNewer(saved, newerSqlite).sqlite.summary).toBe('later');
+    expect(mergeNewer(newerSqlite, saved).sqlite.summary).toBe('later');
+  });
+
+  it('exports every persisted result after a relaunch', () => {
+    const text = formatReport(restoreResults(serialiseResults(answered())).results, meta, T0);
+    expect(text).toContain('[PASS] Spike: rest alert: Local notification while locked');
+    expect(text).toContain('Did the notification arrive while the phone was locked? Yes (confirmed on device)');
   });
 });

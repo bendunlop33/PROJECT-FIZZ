@@ -82,7 +82,9 @@ Most rows explain what to do. These three need you to do something:
 - **Rest deadline:** tap Run, swipe the app away, reopen it and go back to the probe.
 - **Ducking:** start music in another app first.
 
-Tap **Export** to send the results as text, for example to Notes or by email, so a developer can read them.
+Results are saved on the phone as you go, including your yes/no answers. Going back to the home screen, or swiping the app away for the rest-deadline test, doesn't lose them. If saving ever fails, the probe screen says so in red: tap **Export** straight away in that case.
+
+Tap **Export** to send the results as text, for example to Notes or by email, so a developer can read them. The export includes every saved result, with the time each one was recorded.
 
 ## Until the workflow is on the main branch
 

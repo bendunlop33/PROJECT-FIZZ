@@ -76,7 +76,8 @@ export const PROBES: readonly ProbeDefinition[] = [
     id: 'rest_deadline',
     ref: 'Spike: force-close',
     title: 'Rest deadline survives force-close',
-    howTo: 'Tap Run to save a 3-minute rest. Swipe the app away, reopen it, and check the remaining time below.',
+    howTo:
+      'Tap Run to save a 3-minute rest. Swipe the app away, reopen it, and check the remaining time below. Other results are saved and come back too.',
   },
   {
     id: 'tts',
@@ -178,6 +179,109 @@ export function confirmObservation(
     },
     nowMs,
   );
+}
+
+// ---------- Persistence (pure) ----------
+
+/** probe_kv key holding the serialised results (probe DB, not workout data). */
+export const PROBE_RESULTS_KEY = 'probe_results';
+const RESULTS_FORMAT_VERSION = 1;
+
+const ALL_STATUSES: readonly ProbeStatus[] = [
+  'not_run',
+  'running',
+  'pass',
+  'fail',
+  'unavailable',
+  'needs_check',
+  'not_implemented',
+];
+
+export function serialiseResults(results: ProbeResults): string {
+  return JSON.stringify({ version: RESULTS_FORMAT_VERSION, results });
+}
+
+export interface RestoredResults {
+  results: ProbeResults;
+  /** Rows that were dropped or changed while loading, for display. */
+  issues: string[];
+}
+
+function isIsoUtc(v: unknown): v is string {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(v);
+}
+
+function parseStoredResult(id: ProbeId, raw: unknown): ProbeResult | string {
+  if (typeof raw !== 'object' || raw === null) return 'not an object';
+  const r = raw as Record<string, unknown>;
+  if (r.id !== id) return 'id mismatch';
+  const status = r.status;
+  if (typeof status !== 'string' || !(ALL_STATUSES as readonly string[]).includes(status)) return 'unknown status';
+  if (typeof r.summary !== 'string') return 'summary is not text';
+  if (!Array.isArray(r.details) || !r.details.every((d): d is string => typeof d === 'string')) return 'details are not text';
+  if (r.atUtc !== null && !isIsoUtc(r.atUtc)) return 'timestamp is not ISO UTC';
+  return { id, status: status as ProbeStatus, summary: r.summary, details: r.details, atUtc: r.atUtc };
+}
+
+/**
+ * Loads results saved by an earlier launch. The stored text is untrusted
+ * (CLAUDE.md rule 8): each row is validated, and a bad row falls back to "not
+ * run" rather than discarding everything. A row saved as "running" was cut off
+ * by the app closing, so it comes back as "not run" with a note, never as a
+ * result. The S1 stub can't be overwritten.
+ */
+export function restoreResults(stored: string | null): RestoredResults {
+  const base = initialResults();
+  if (stored === null) return { results: base, issues: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    return { results: base, issues: ['Saved results were not valid JSON; starting fresh'] };
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return { results: base, issues: ['Saved results were not an object; starting fresh'] };
+  }
+  const { version, results } = parsed as { version?: unknown; results?: unknown };
+  if (version !== RESULTS_FORMAT_VERSION || typeof results !== 'object' || results === null) {
+    return { results: base, issues: [`Saved results have an unknown format (version ${String(version)}); starting fresh`] };
+  }
+  const rows = results as Record<string, unknown>;
+  const out: Record<ProbeId, ProbeResult> = { ...base };
+  const issues: string[] = [];
+  for (const def of PROBES) {
+    if (def.id === 'chatgpt_signin' || !(def.id in rows)) continue;
+    const row = parseStoredResult(def.id, rows[def.id]);
+    if (typeof row === 'string') {
+      issues.push(`Saved ${def.id} result dropped: ${row}`);
+      continue;
+    }
+    out[def.id] =
+      row.status === 'running'
+        ? {
+            ...row,
+            status: 'not_run',
+            summary: 'Interrupted: the app closed while this was running. Run it again',
+            details: [],
+          }
+        : row;
+  }
+  return { results: out, issues };
+}
+
+/**
+ * Per probe, keeps whichever result changed most recently. Used when results
+ * recorded in this launch race the load of the saved ones.
+ */
+export function mergeNewer(a: ProbeResults, b: ProbeResults): ProbeResults {
+  const entries = PROBES.map((p): [ProbeId, ProbeResult] => {
+    const x = a[p.id];
+    const y = b[p.id];
+    if (x.atUtc === null) return [p.id, y];
+    if (y.atUtc === null) return [p.id, x];
+    return [p.id, y.atUtc >= x.atUtc ? y : x];
+  });
+  return Object.fromEntries(entries) as Record<ProbeId, ProbeResult>;
 }
 
 export const STATUS_LABEL: Readonly<Record<ProbeStatus, string>> = {
