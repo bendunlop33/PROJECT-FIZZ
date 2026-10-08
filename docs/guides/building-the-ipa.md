@@ -19,7 +19,8 @@ You don't need a Mac. GitHub builds the app on one of its Macs and gives you a s
 3. Tap **Run workflow**.
 4. Leave the branch as it is, unless a developer told you to pick a different one.
 5. Leave **Include the Live Activity extension** ticked. Untick it only if a developer asks. It's the fallback if the Lock Screen countdown stops the app building or installing.
-6. Tap the green **Run workflow** button.
+6. Leave **Background-audio experiment** unticked unless you want to test whether a spoken cue can play while the phone is locked. It's off by default.
+7. Tap the green **Run workflow** button.
 
 The build has two stages:
 
@@ -76,11 +77,14 @@ The first builds are test builds. On the home screen, tap **Developer: capabilit
 - UNAVAILABLE
 - NEEDS CHECK: the app can't tell by itself whether it worked. It asks you a yes/no question, for example whether you heard the cue.
 
-Most rows explain what to do. These three need you to do something:
+Most rows explain what to do. These need you to do something:
 
 - **Notification:** tap Run and lock the phone straight away.
 - **Rest deadline:** tap Run, swipe the app away, reopen it and go back to the probe.
 - **Ducking:** start music in another app first.
+- **App Group:** tap Run before the Live Activity row. It shows whether SideStore changed the App Group name. If it did, the Live Activity is expected to fail.
+- **Spoken cue while locked:** only in builds made with the background-audio experiment. Tap Run and lock the phone within 10 seconds. The cue plays 30 seconds after you tap Run.
+- **Audio events:** nothing to run. While the probe screen is open, it records interruptions such as calls, Siri or AirPods disconnecting.
 
 Results are saved on the phone as you go, including your yes/no answers. Going back to the home screen, or swiping the app away for the rest-deadline test, doesn't lose them. If saving ever fails, the probe screen says so in red: tap **Export** straight away in that case.
 
@@ -88,4 +92,4 @@ Tap **Export** to send the results as text, for example to Notes or by email, so
 
 ## Until the workflow is on the main branch
 
-GitHub only shows the **Run workflow** button for workflows that exist on the default branch (`main`). Until this branch is merged, a build runs when Claude pushes a commit whose message contains `[ios-build]` to a `claude/...` branch. Other pushes run only the cheap Linux checks. You'll find the `.ipa` under that run on the Actions tab, in the same way as described above.
+GitHub only shows the **Run workflow** button for workflows that exist on the default branch (`main`). Until this branch is merged, a build runs when Claude pushes a commit whose message contains `[ios-build]` to a `claude/...` branch. Adding `[bg-audio]` to the same message turns the background-audio experiment on. Other pushes run only the cheap Linux checks, and they never cancel a build that's already running. You'll find the `.ipa` under that run on the Actions tab, in the same way as described above.
