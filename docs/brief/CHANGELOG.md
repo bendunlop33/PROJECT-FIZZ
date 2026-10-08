@@ -49,3 +49,13 @@ The brief is a living document. Each approved change gets an entry here: the dat
 - **First milestone additions:** backup and a tested restore, a cloud `.ipa` build, and an on-device capability probe screen.
 - **Native config:** only free-provisionable entitlements. Paid-only features are runtime capability flags.
 - **Dependencies resolved:** Ben has a Windows laptop and an iPhone 17 (iOS 26), so AlarmKit is available as the loud rest-alert fallback.
+
+## v0.4: 2026-10-08 (approved by Ben)
+
+- **Coach-led progression replaces fixed rules as the primary method** (ADR 0006).
+  - ChatGPT chooses weights, reps and sets.
+  - **When it acts:** only when Ben asks, or when a clear signal warrants it, such as RPE 10. Never constantly.
+  - **Today's sets, Ben asked:** the change applies immediately, with Undo.
+  - **Today's sets, coach raised it:** the coach offers the change first.
+  - **Future sessions:** always proposals.
+  - **Guardrails:** achievable loads, equipment limits, pain blocks and completed sets are never edited. The deterministic rules become the labelled offline fallback.

@@ -9,6 +9,7 @@ Prepared and extended 8 October 2026. Research and implementation specification;
 > - Voice: the first release is on-device (Apple speech recognition plus spoken replies). `parseSpokenSet` is a deterministic parser in `packages/domain`. Realtime/GPT-Live becomes a later, explicit decision.
 > - Platform: stay on React Native + Expo, pinned to SDK 57 (ADR 0001). A small custom Swift module owns the iOS audio session. Background spoken cues are an opt-in experiment, not a promise.
 > - FitNotes: confirm which app (Android original or FitNotes 2 for iOS) and use a real export. RPE is not expected as a column.
+> - **Progression (v0.4):** the coach chooses weights/reps/sets, either when asked or on a clear signal (e.g. RPE 10), never constantly. Today's changes apply with Undo when Ben asked, or are offered first when the coach raises them. Future changes are proposals. Deterministic code only guards (feasible loads, equipment max, pain, completed sets) and is the labelled offline fallback. This supersedes §3's "separate the rules generating numerical targets from the model" (ADR 0006).
 > - **Distribution (v0.3):** free Apple ID + SideStore with a cloud-built `.ipa`, at no cost (ADR 0004). Backup/restore, the cloud build and a capability-probe screen join the first milestone. Only free-provisionable entitlements are used.
 
 ## Product goal
