@@ -5,6 +5,7 @@ import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import * as SQLite from 'expo-sqlite';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
+import { getLocales } from 'expo-localization';
 import { AppState } from 'react-native';
 import { File, Paths } from 'expo-file-system';
 import { widgetsDirectory } from 'expo-widgets';
@@ -16,7 +17,7 @@ import { judgeAlarmKitStatus } from './alarmkit';
 import { analyseAppGroup, parseNativeAppGroupInfo } from './app-group';
 import { LOCKED_CUE_DELAY_S, judgeLockedCue } from './locked-cue';
 import type { ResultUpdate } from './model';
-import { PROBE_CONTEXTUAL_STRINGS, describeTranscript } from './speech-probe';
+import { PROBE_CONTEXTUAL_STRINGS, chooseRecognitionLocale, describeTranscript, type LocaleChoice } from './speech-probe';
 
 /**
  * Native probe runners. Each returns what it actually observed. Anything that
@@ -512,20 +513,49 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
 
 // ---------- Speech recognition ----------
 
-export const RECOGNITION_LOCALE = 'en-US';
 const RECOGNITION_TIMEOUT_MS = 8000;
 const RECOGNITION_END_GRACE_MS = 2000;
 
+/** Device locales in preference order, e.g. ["en-GB"]. */
+function deviceLocaleTags(): string[] {
+  try {
+    return getLocales()
+      .map((l) => l.languageTag)
+      .filter((t) => t.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+async function recognitionLocale(): Promise<{ choice: LocaleChoice; line: string }> {
+  const deviceTags = deviceLocaleTags();
+  let supported: string[] | null;
+  try {
+    const listed = await ExpoSpeechRecognitionModule.getSupportedLocales({});
+    supported = listed.locales.length > 0 ? listed.locales : null;
+  } catch {
+    supported = null;
+  }
+  const choice = chooseRecognitionLocale(deviceTags, supported);
+  return {
+    choice,
+    line: `Locale ${choice.locale}: ${choice.reason}. Device locales: ${deviceTags.length > 0 ? deviceTags.join(', ') : 'unknown'}`,
+  };
+}
+
 export async function runSpeechRecognitionProbe(onPartial: (text: string) => void): Promise<ResultUpdate> {
+  let locale: { choice: LocaleChoice; line: string };
   try {
     if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) {
       return { status: 'unavailable', summary: 'Speech recognition is not available on this device', details: [] };
     }
+    locale = await recognitionLocale();
+    // expo-speech-recognition checks this for the device's default locale, not the chosen one.
     if (!ExpoSpeechRecognitionModule.supportsOnDeviceRecognition()) {
       return {
         status: 'unavailable',
         summary: 'On-device recognition not supported; not falling back to Apple servers',
-        details: [`Locale ${RECOGNITION_LOCALE}`],
+        details: [locale.line, 'Checked for the device default locale'],
       };
     }
     const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
@@ -554,8 +584,8 @@ export async function runSpeechRecognitionProbe(onPartial: (text: string) => voi
     };
     const fromTranscript = (): ResultUpdate =>
       latest.trim().length === 0
-        ? { status: 'fail', summary: 'Nothing was transcribed', details: [`Locale ${RECOGNITION_LOCALE}`] }
-        : { status: 'needs_check', summary: 'Transcript captured', details: [...describeTranscript(latest), `Locale ${RECOGNITION_LOCALE}`] };
+        ? { status: 'fail', summary: 'Nothing was transcribed', details: [locale.line] }
+        : { status: 'needs_check', summary: 'Transcript captured', details: [...describeTranscript(latest), locale.line] };
 
     subs.push(
       ExpoSpeechRecognitionModule.addListener('result', (ev) => {
@@ -589,7 +619,7 @@ export async function runSpeechRecognitionProbe(onPartial: (text: string) => voi
 
     try {
       ExpoSpeechRecognitionModule.start({
-        lang: RECOGNITION_LOCALE,
+        lang: locale.choice.locale,
         interimResults: true,
         requiresOnDeviceRecognition: true,
         contextualStrings: [...PROBE_CONTEXTUAL_STRINGS],

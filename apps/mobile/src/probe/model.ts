@@ -117,7 +117,8 @@ export const PROBES: readonly ProbeDefinition[] = [
     id: 'speech_recognition',
     ref: 'S6',
     title: 'On-device speech recognition',
-    howTo: 'Tap Run and say "bench one hundred kilos for eight". Try again in flight mode.',
+    howTo:
+      'Tap Run and say "bench one hundred kilos for eight". Uses the iPhone\'s language and region (falls back to en-GB). Try again in flight mode.',
     confirmQuestion: 'Was the transcript close to what you said?',
   },
   {
