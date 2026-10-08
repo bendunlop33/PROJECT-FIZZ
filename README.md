@@ -5,3 +5,14 @@ A personal iOS strength-training app with fast logging, a voice/text coach and e
 - Product brief: [`docs/brief/training-app-build-brief.md`](docs/brief/training-app-build-brief.md)
 - Project context and agent workflow: [`CLAUDE.md`](CLAUDE.md)
 - Agents: [`.claude/agents/`](.claude/agents/) (researcher, designer, developer, reviewer)
+
+## Development
+
+Node 22.13+ and npm workspaces. Packages: `packages/schemas` (zod schemas and types), `packages/domain` (pure rules, session state machine, storage ports).
+
+```sh
+npm install
+npm run typecheck
+npm run lint
+npm test
+```
