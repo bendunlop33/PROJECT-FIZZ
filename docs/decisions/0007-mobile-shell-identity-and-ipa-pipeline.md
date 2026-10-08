@@ -1,4 +1,4 @@
-# 0005: Mobile app shell, iOS identity and the cloud .ipa pipeline
+# 0007: Mobile app shell, iOS identity and the cloud .ipa pipeline
 
 **Status:** Proposed, 2026-10-08. Ben to confirm the bundle ID before the first install.
 
