@@ -3,6 +3,8 @@
 > **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md) S4 and S5: the stale card's Finish passes the chosen end time to `finishWorkout(…, endedAt)` in one call, and is blocked with a Stop prompt if a work timer was left running. `Empty workout` now opens the empty-workout state. Discard of a 0-set workout has no Undo.
 >
 > **Revision 2026-10-08 (re-review).** Aligned with ADR 0003 "Re-review decisions" S8: the stale card's Stop → Finish path also completes when the workout was left paused (Stop ends the interval at the pause start and doesn't resume) (§3 transitions, §4).
+>
+> **Revision 2026-10-08 (coach-led progression, v0.4).** Per [ADR 0006](../decisions/0006-coach-led-progression.md): when a finished workout has unapplied, non-stale coach next-time proposals, the `Next:` row shows one extra line `2 coach suggestions to review ›` that opens that workout's summary (§2, §3, §4, §5, check 15). Nothing on Today applies a change. Readiness still never changes targets.
 
 Status: v0.1 draft, 8 Oct 2026. Flow: [flow-first-milestone.md](flow-first-milestone.md). Tokens: [design-system.md](design-system.md).
 
@@ -28,7 +30,7 @@ Regions, top to bottom:
 3. **Alternatives row.** Text buttons: `Other routine`, `Empty workout`, `Reschedule`, and `Shorter session` (shown only when a plan exists). It is hidden while a workout is in progress.
 4. **Readiness (optional).** `How do you feel today?` with chips [Normal] [Tired] [Sore]. It is hidden during and after today's workout.
 5. **This week.** `2 of 4 planned sessions done`, plus one pinned lift line. The data is static, with no chart animation.
-6. **Next session.** One row, which opens the weekly plan.
+6. **Next session.** One row, which opens the weekly plan. If the last finished workout has unapplied coach proposals for the next session, a second line `2 coach suggestions to review ›` opens that summary's `Next time` section ([coach-adjustments.md](coach-adjustments.md) §4.6).
 7. **Ask pill.** The `TalkButton` pill, floating bottom-trailing above the tab bar. Content has a bottom inset so the pill never covers the Start button.
 8. **Tab bar.** Today · Progress · Profile.
 
@@ -132,6 +134,7 @@ Regions, top to bottom:
 | Database error | SQLite open or read failed | `Couldn't open your training data.` [Try again], plus a link `Restore from backup` | Hidden |
 | AI unavailable | `getAiCapabilities` reports no text route | No change to the main card | The Ask pill shows `Offline` with the slashed icon |
 | Offline | No network | No change. Today needs no network | No banner (nothing here needs it). The Ask pill shows `Offline` if the coach needs the network |
+| Coach suggestions waiting | The last finished workout has unapplied, non-stale coach next-time proposals, and their routine hasn't started again | No change | `Next:` row gains `2 coach suggestions to review ›`. It disappears once each is applied, set to Not now, or expired (the routine started). Starting the routine without reviewing uses the built-in rule's targets |
 
 Transitions:
 - Planned → Start → Active workout (pushed full-screen).
@@ -151,6 +154,7 @@ Transitions:
 | Readiness chip | Writes `recordReadiness(level)` immediately. The chip shows a selected state (check icon plus the `accent.subtle` fill). `Sore` reveals an optional one-line `Where? (optional)` field. Tapping the selected chip again clears the entry | Doesn't change targets (P11) |
 | Pinned lift line | Opens that exercise's history in Progress | none |
 | `Next: …` row | Opens the weekly plan | none |
+| `… coach suggestions to review ›` | Opens the summary of the workout they came from, scrolled to `Next time`. Apply/Undo happen there | none |
 | `Reschedule` | Opens the weekly plan with today's session selected (move / skip / replace) | Out of milestone scope. The link exists but may route to a placeholder labelled `Coming soon` |
 | `Shorter session` | Out of milestone scope. Hide it until `shortenSession` exists | none |
 | Ask pill | Opens the coach sheet with Today's context attached. Long-press starts push-to-talk if voice is available | none |
@@ -181,6 +185,7 @@ Undo:
 | This week | `2 of 4 planned sessions done` / `3 workouts this week` (no plan) |
 | Pinned lift | `Bench press best set` then `100 kg × 8 (6 Oct) · was 97.5 kg × 8 (29 Sep)`. These are actual results. If the two aren't comparable (different equipment or convention): `Bench press: not comparable with last time (different bar).` |
 | Next session | `Next: Pull A · Sat 10 Oct` |
+| Coach suggestions | `1 coach suggestion to review ›` / `2 coach suggestions to review ›` |
 | Done today | `✓ Push A done · 54 min` and the link `View summary` |
 | Errors | `Couldn't open your training data.` [Try again] [Restore from backup] |
 | No-gym banner | `No gym selected. Loads won't be checked against equipment.` [Add gym] |
@@ -198,6 +203,7 @@ Spoken cue: none on Today. Starting a workout can trigger the optional set intro
 - `getAiCapabilities(userId)` sets the Ask pill state.
 - `finishWorkout(…, endedAt)` for the stale card's Finish (the chosen time goes in the same call).
 - `discardWorkout(sessionId, expectedVersion)` for a stale card with nothing logged.
+- `buildTodayView` also returns `pendingCoachProposals {sessionId, count}` (unapplied, non-stale, not expired). Local read; no AI call.
 
 ## 7. Acceptance checks
 
@@ -215,3 +221,4 @@ Spoken cue: none on Today. Starting a workout can trigger the optional set intro
 12. A stale workout with a work timer left running shows `Stop the timer first` in the finish sheet; after [Stop], Finish succeeds and the timed set is skipped with its elapsed time kept as a draft.
 13. A stale workout left **paused** with a work timer running: [Stop] succeeds without resuming, the stopped time ends at the pause start (paused hours never count as work), and Finish then reaches the summary.
 14. `Empty workout` opens `Add an exercise to start`, not `All planned sets done`.
+15. After a workout with 2 unapplied coach proposals, Today shows `2 coach suggestions to review ›`, which opens that summary's `Next time`. Starting the routine without reviewing them uses the built-in rule's targets, and the line disappears. Today never applies a change itself and makes no AI call.

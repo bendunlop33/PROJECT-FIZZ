@@ -1,6 +1,8 @@
 # Rest state
 
 > **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md) S2 and S1: one definition of Skip (`skip_rest` → `endRestTimer(timerId, 'skipped')`, no rest-end cue), matching flow §3.2; a `−30 s` that reaches 0 is an expiry, not a Skip; undo of the set during rest is guarded on that set's version, so effort chips don't block it. Noted that "This rest only" edits aren't in the domain yet.
+>
+> **Revision 2026-10-08 (coach-led progression, v0.4).** Aligned with [ADR 0006](../decisions/0006-coach-led-progression.md). Region 5 is now the **coach slot** (offer line, pending, adjustment banner or outcome line), specified in [coach-adjustments.md](coach-adjustments.md). Coach offers appear only here, only during rest, never as a modal and never spoken outside rest (§2.1, §3, §5). Adjustments never touch the rest timer (§4.5). The "Plan change applied" cue now names the new targets (§5). New checks 17–20.
 
 Status: v0.1 draft, 8 Oct 2026. Rest is part of the Active workout screen, not a separate screen. See [active-workout.md](active-workout.md) and the state machine in [flow-first-milestone.md](flow-first-milestone.md) §3. Tokens: [design-system.md](design-system.md) §9.6.
 
@@ -16,14 +18,14 @@ There is no rest-specific primary action. The primary remains **`Log <next set>`
 
 Regions inside the focused card, top to bottom:
 
-1. **Context line.** `Bench press · Set 3 of 4 next`, or `Next exercise: Incline DB press` after an exercise's final set.
+1. **Context line.** `Bench press · Set 3 of 4 next`, or `Next exercise: Incline DB press` after an exercise's final set. The `Adjust` control sits at its right, before `⋯` (coach-adjustments §2.2).
 2. **Rest timer (full).**
    - The label `Rest`.
    - The countdown in `type.timerDisplay`.
    - A control row: [−30 s] [+30 s] [Skip].
 3. **Just-saved line.** `✓ Set 2 saved: 100 kg × 7`. This is the actual result. Tap it to correct.
 4. **Effort chips (optional).** `Effort (optional)` 6 7 8 9 10 (or RIR 4+ 3 2 1 0, set in preferences). This edits the set that was just saved.
-5. **Inline coach card (optional).** A `ChangeReviewCard`, if there is a valid proposal.
+5. **Coach slot (optional, at most one item).** In priority order: the pending line (`Coach is working on sets 3–4`), the `CoachAdjustmentBanner` with Undo, an outcome line (blocked, no change, failed), or the `CoachOfferLine` raised by a deterministic trigger. A swap or gym `ChangeReviewCard` also sits here. See [coach-adjustments.md](coach-adjustments.md) §2.
 6. **Up next.** The next set's draft fields, with the `Target …` line and `Rest after: 1:30 ›`.
 7. **Action bar.** `Log …` for the next set.
 
@@ -32,7 +34,7 @@ Regions inside the focused card, top to bottom:
 │ ⌄  Push A          26:05     ⏸    ⋯   │
 │ [⌂ Main Gym ▾] [🔈 Cues ▾] [Focus|All] │
 ├────────────────────────────────────────┤
-│ Bench press · Set 3 of 4 next          │
+│ Bench press · Set 3 of 4 next  Adjust ⋯│
 │ ┌────────────────────────────────────┐ │
 │ │ ⏱ Rest                             │ │
 │ │                                    │ │
@@ -45,7 +47,8 @@ Regions inside the focused card, top to bottom:
 │ ✓ Set 2 saved: 100 kg × 7            › │
 │ Effort (optional)                      │
 │ [ 6 ] [ 7 ] [ 8 ] [ 9 ] [ 10 ]         │
-│                                        │
+│ (coach slot: empty unless asked or a   │ coach-adjustments §2.1
+│  trigger fired)                        │
 │ Up next · Set 3                        │
 │ ┌──┬────────────┬──┐ ┌──┬───────┬──┐   │
 │ │− │  100 kg    │+ │ │− │   8   │+ │   │
@@ -107,6 +110,8 @@ There is a 52pt bar above the action bar: `⏱ Rest 2:47   [−30] [+30] [Skip]`
 | Zero-length rest | No card. Goes straight to the next set (e.g. superset member, rest preset 0) | Commit | — |
 | After the workout's final set | No rest. Primary `Finish workout` | Commit of the final set | — |
 | Transition (optional) | After an exercise's final set, only if Ben has configured one: `Move to Incline DB press · 0:30` | Commit | As Running |
+| Coach offer | Rest runs as normal; the coach slot shows `That looked hard. Adjust remaining sets?` (or `That looked easy. …`) with the trigger fact and [No thanks] [Adjust] | `evaluateCoachTrigger` fired on the just-saved set (on commit, or on an effort chip tap), the coach is reachable, and CA4 allows it | `No thanks`, `Adjust` (→ Coach working), the next Log, or Finish |
+| Coach working / adjusted | Rest runs as normal; pending line, then the adjustment banner with Undo. `Up next` and the Log label update to the coach target | Ben asked (voice, text, `Adjust`) or accepted an offer | The next Log collapses the banner; the coach markers stay |
 | Notifications not allowed | Rest works normally. A one-time inline row in the rest card: `Get an alert when rest ends while your phone is locked?` [Allow] [Not now] | First rest of the first workout, if permission is undetermined | Answering. If it's denied, Profile shows `Rest alerts are off in iOS Settings` |
 
 ## 4. Interactions and timer behaviour
@@ -150,7 +155,7 @@ These never restart, extend or shorten the countdown:
 - switching Focus/Overview
 - opening the coach
 
-Applying a coach proposal also leaves rest alone. It changes targets, not timers.
+Applying a coach proposal or a coach adjustment, showing or answering a coach offer, and a pending coach request all leave rest alone. They change targets, not timers. Adjustments never change rest durations (coach-adjustments CA3).
 
 ### 4.6 Pause
 - Pause lives in the top bar and pauses the whole workout (proposal P4). The rest card controls are disabled while paused.
@@ -180,6 +185,7 @@ Available only where supported (`DEP-LIVE`, `DEP-NOTIF`).
 
 ### 4.9 Voice equivalents (Conversation mode; `DEP-STT`/`DEP-AI`)
 - "Add thirty seconds" / "skip rest" / "how long left?" map to the same functions. The reply is spoken and shown in the voice strip.
+- "That was a grind" / "too easy" asks the coach to adjust the remaining sets (coach-adjustments §4.1). "Yes" / "adjust" answers a visible offer; "no thanks" dismisses it. "Undo" undoes the most recent action, which may be the adjustment.
 - Speaking never extends rest by itself.
 
 ### 4.10 Undo
@@ -224,7 +230,8 @@ Rules:
   - If a phone call comes in, speech stops and the session continues.
 - **Music** is lowered briefly for cues, then restored (`DEP-AUDIO`). If lowering isn't supported, the cue mixes with the music, and Profile states this.
 - **Stale cues are never queued.** If the next set changes during rest (correction, proposal applied, set reordered), `cancelObsoleteCues` runs and the rest-end cue is rebuilt from the new committed values.
-- **No countdown announcements** (no "3, 2, 1"), no reading of summaries, and no speech during Ready except the rest-end cue itself.
+- **No countdown announcements** (no "3, 2, 1"), no reading of summaries, and no speech during Ready except the rest-end cue itself and replies Ben asked for.
+- **Coach offers are never spoken during a working set.** In Conversation mode an offer may be spoken once, only while Resting with at least 20 s left, and never over the rest-end cue. Set cues and Quiet modes never speak offers.
 
 ### Cue scripts (deterministic; `buildSetCue(event, sessionVersion)`)
 
@@ -240,7 +247,10 @@ Numbers are read as digits by TTS. The unit word comes from the equipment conven
 | Rest ends, new exercise | On | "Ready when you are. Incline dumbbell press, 30 kilos each, target 8 to 10 reps." | Target |
 | Set intro | Off | "Bench press. Set 3: 100 kilos, target 6 to 8 reps." | Target |
 | Timed work ends | On | "Time." | — |
-| Plan change applied | On | "Remaining sets updated for today." | — |
+| Coach adjustment applied | On | "Sets 3 and 4: 95 kilos for 8." (+ "Rounded to what your plates allow." when snapped) | Target |
+| Coach adjustment blocked by pain | On | "Not increasing. You flagged shoulder pain." | — |
+| Coach offer (Conversation only, Resting ≥ 20 s left) | Off in Set cues | "That looked hard. Want me to adjust the remaining sets?" | — |
+| Swap or gym proposal applied | On | "Remaining sets updated for today." | — |
 | Undo (only when triggered by voice) | On | "Removed set 2." | — |
 | Workout finished | On | "Workout saved. Your summary is ready." | — |
 
@@ -260,6 +270,7 @@ Durations are spoken as:
 - `correctSet` handles effort chips and just-saved corrections.
 - `getAiCapabilities` decides whether Conversation is selectable.
 - `startVoiceSession` handles rest-only listening.
+- Coach slot: `evaluateCoachTrigger`, `recordTriggerResponse`, `requestCoachAdjustment`, `cancelCoachTurn`, `validateCoachProposal`, `applyCoachProposal`, `undoAction`, `getDecisionEvidence` and the `buildActiveSetView` fields `coachOffer`, `coachRequest`, `lastAdjustment` (coach-adjustments §6).
 
 ## 7. Acceptance checks
 
@@ -279,3 +290,7 @@ Durations are spoken as:
 14. After the workout's final set, no rest timer starts.
 15. The countdown digits don't shift horizontally as they change (tabular numerals), and nothing animates except the digit change.
 16. Log a set, tap effort `8`, then tap `Undo` in the toast: the set is removed and the rest timer and its cues are cancelled.
+17. Tap effort `10` during rest: the offer line appears in the rest card within 100 ms with no network call, the countdown is unchanged, and no sheet or modal opens.
+18. Accepting an offer or asking for an adjustment never changes the countdown or the next rest duration; the rest-end cue (Set cues) speaks the coach target.
+19. In Conversation mode an offer is spoken at most once, only while Resting with ≥ 20 s left; with 15 s left it is shown but not spoken. In Set cues mode it is never spoken.
+20. Log the next set while the coach is still working: the Log commits at once, rest restarts as usual, and the old request never changes the set just logged.

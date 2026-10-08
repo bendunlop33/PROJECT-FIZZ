@@ -12,5 +12,6 @@ First milestone screens (brief §12): Today, Active set, Rest, Summary.
 | `active-workout.md` | Focused set card, Overview table, supersets, timed sets, finish sheet |
 | `rest-state.md` | Rest timer, preset resolution, background behaviour, spoken cue modes |
 | `workout-summary.md` | Post-workout summary |
+| `coach-adjustments.md` | Coach-led progression (ADR 0006): Ben-asked and trigger-offered adjustments to today's sets, guardrail outcomes, Undo, and coach vs built-in rule `Next time` targets. Single spec; the screen files link to it |
 
 Optional layers depend on research that is still open. Search the docs for `DEP-AUDIO`, `DEP-NOTIF`, `DEP-LIVE`, `DEP-STT` and `DEP-AI`.

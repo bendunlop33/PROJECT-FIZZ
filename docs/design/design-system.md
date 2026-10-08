@@ -1,6 +1,8 @@
 # Design system
 
 > **Revision 2026-10-08.** Added `L` / `R` side badges for unilateral sets and noted that deleted sets aren't shown (§7), per [ADR 0003](../decisions/0003-domain-review-decisions.md). No token values changed.
+>
+> **Revision 2026-10-08 (coach-led progression, v0.4).** For [ADR 0006](../decisions/0006-coach-led-progression.md) and [coach-adjustments.md](coach-adjustments.md): new timing tokens `timing.valueChangeGuard` and `timing.coachTimeout` (§6); target source styles and the `TargetSourceTag` (§7); `ChangeReviewCard` scope narrowed to swaps, gym changes and summary proposals (§9.11); new components `AdjustControl` (§9.13), `CoachOfferLine` (§9.14), `CoachAdjustmentBanner` (§9.15) and `CoachTargetProposal` (§9.16). No colour values added: coach UI uses existing tokens, so the one-accent rule holds.
 
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
@@ -150,6 +152,8 @@ Rules:
 | `timing.sheet` | System sheet animation |
 | `timing.commitGuard` | 1000 ms |
 | `timing.undoToast` | 8 s. With VoiceOver on, the toast stays until it is dismissed |
+| `timing.valueChangeGuard` | 1000 ms. Log ignores taps for this long after a coach adjustment changes its label. Never applied to normal logging |
+| `timing.coachTimeout` | 20 s. A coach adjustment request with no answer by then shows `The coach didn't answer in time. Nothing changed.` |
 | `haptic.commit` | Success notification haptic |
 | `haptic.undo` | Light impact |
 | `haptic.step` | Selection change (steppers, keypad) |
@@ -177,6 +181,17 @@ Never rely on colour alone. Every status also has an icon and a text label, and 
 Set-type badges sit next to the set number and are always text, never colour alone. They are: `W` Warm-up, `T` Top, `B` Back-off and `D` Drop. Working sets have no badge. The full word is shown in the focused card header and read by VoiceOver.
 
 Side badges (unilateral exercises only; revision 2026-10-08): `L` Left and `R` Right, same style as set-type badges, read as "left side" / "right side". `Both sides` sets have no badge. Deleted sets have no status style: they are not shown in set lists (audited record only).
+
+Target source (revision 2026-10-08, ADR 0006). A target's source is shown only where it matters, always as text:
+
+| Source | Where shown | Style | VoiceOver |
+|---|---|---|---|
+| Plan / built-in rule (in workout) | Default; no tag | `Target 100 kg × 6–8` | "Target …" |
+| Coach (in workout, pending sets) | Focused card, mini list, Overview | Label `Coach target`, `TargetSourceTag` `Coach`; Overview text badge `C` (set-type badge style); second line `Plan was …` in `text.secondary` | "Coach target, … Plan was …" |
+| Coach (summary `Next time`) | Summary rows | `TargetSourceTag` `Coach` | "Source: coach" |
+| Built-in rule (summary `Next time`) | Summary rows | `TargetSourceTag` `Built-in rule`, `Built-in rule (coach offline)` or `Built-in rule (coach unavailable)` | Same text |
+
+**`TargetSourceTag`**: a text tag, `type.label`, `text.secondary` on `bg.raised`, `radius.sm`, padding `space.1`/`space.2`. The `Coach` tag adds the `text.bubble` icon before the word (the same icon as the Talk button's text state). It is not tappable on its own. It never uses `accent` (accent stays for the primary action and the active set) and never relies on colour.
 
 Session status labels (top bar / Today):
 
@@ -316,7 +331,7 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 - VoiceOver announces it politely and keeps it until it is dismissed.
 
 ### 9.11 Change-review card (`ChangeReviewCard`)
-- Used for coach proposals, gym switches and summary suggestions. It is an inline card, never a full-screen interruption.
+- Used for exercise swaps, gym switches, compensating proposals from an unsafe Undo, and other changes that need Apply. It is an inline card, never a full-screen interruption. **Coach adjustments to today's remaining sets don't use it** (they apply at once: `CoachAdjustmentBanner`, §9.15), and summary next-time proposals use `CoachTargetProposal` (§9.16).
 
 ```
 ┌──────────────────────────────────────┐
@@ -343,6 +358,40 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 ### 9.12 Banners (`StatusBanner`)
 - An inline banner, 44pt minimum, showing an icon, one line of text and an optional action. It uses the `.subtle` background of its status colour.
 - It is used for offline, coach-unavailable, paused, restored-after-close and equipment warnings. Banners never stack more than two deep. Lower-priority banners collapse into the status row.
+- Coach adjustments never use `StatusBanner`; they use the card's coach slot (§9.15).
+
+### 9.13 Adjust control (`AdjustControl`)
+- A text button `Adjust` (`type.label`, `accent`, `slider.horizontal.3` icon) in the exercise header line, left of `⋯`, in Ready and Resting, Focus and Overview. Hit area `target.workout` (52 × 52), like every active-workout control; it sits away from the Log thumb zone because it is used rarely.
+- Tapping opens an inline **reason-chip row** under the header: prompt `What should change?` (`type.label`, `text.secondary`), chips `Too hard` · `Too easy` · `Pain` · `Type…` (each `target.workout` tall, `radius.sm`, `bg.raised`, `border.control` outline) and a close `xmark` (`target.workout`). Chips wrap to 2 × 2 at AX1+.
+
+| State | Look | Caption |
+|---|---|---|
+| Available | accent text + icon | `Adjust` |
+| Chips open | `accent.subtle` fill behind the label | `Adjust` |
+| Coach working | `ellipsis` icon, `text.secondary` | `Adjust` (tapping shows the pending line) |
+| Coach offline / not connected | `text.secondary` label + `slash` on the icon, second line `Coach offline` | `Coach offline`. Still tappable: it explains, offers only `Pain` |
+
+- VoiceOver: "Adjust remaining sets, button". Offline: "Adjust remaining sets. Coach offline."
+
+### 9.14 Coach offer line (`CoachOfferLine`)
+- Lives only in the rest card's coach slot. No card border, no fill, no icon animation.
+- Anatomy: line 1 question (`type.callout`, `text.primary`), line 2 trigger fact (`type.callout`, `text.secondary`, tabular numerals), row of two text buttons with `target.workout` hit areas: `No thanks` (left, `text.secondary`) and `Adjust` (right, `accent`). Gap ≥ `space.8` between them.
+- Never a modal, never auto-focused, never announced as an alert. VoiceOver announces it politely once: "That looked hard. Adjust remaining sets? RPE 10 on set 2."
+
+### 9.15 Coach adjustment banner (`CoachAdjustmentBanner`)
+- Lives in the focused card's coach slot (Focus) or under the active exercise header (Overview). `bg.surface`, 1pt `border.control`, `radius.md`, padding `space.3`. Not a toast: it doesn't time out; it collapses on the next Log.
+- Anatomy:
+  1. `text.bubble` icon + `Coach adjusted sets 3–4` (`type.headline`).
+  2. `100 → 97.5 kg × 8 · <reason>` (`type.callout`; numbers tabular; reason max 2 lines, tail ellipsis).
+  3. Optional guard note (`type.callout`, `text.secondary`, `info.circle` icon; pain block uses `exclamationmark.triangle` in `status.warning`).
+  4. Row: `Why? ›` (left, `accent` text) and `Undo` (right, `accent` text button); both `target.workout` hit areas, ≥ `space.8` apart.
+- Variants (same frame, no Undo): **pending** (`ellipsis` icon, `Coach is working on sets 3–4` / `Nothing has changed yet.` / `Cancel`), **outcome** (blocked, no change, timed out, failed, stale; `info.circle` or `exclamationmark.triangle` + text), **undone** (`arrow.uturn.backward` + `Back to the plan for sets 3–4.`).
+- No progress animation. The pending icon is static; Reduce Motion changes nothing because nothing moves.
+- VoiceOver announces the applied line politely, including both numbers: "Coach adjusted sets 3 and 4, from 100 to 97.5 kilograms, 8 reps."
+
+### 9.16 Coach target proposal (`CoachTargetProposal`, summary only)
+- One per exercise under `Next time`. Rows: exercise name + `TargetSourceTag` `Coach`; scope line (`From next Push A`); a two-row before/after table `Built-in rule  100 kg × 6–8` / `Coach  97.5 kg × 6–8` (labels `text.secondary`, values `text.primary`, tabular); the coach's reason; optional guard note; action row `Why? ›` · `Not now` · `Apply` (Apply is a secondary-style accent button, not `PrimaryButton`, so `Done` stays the only primary).
+- Collapsed states: `✓ Coach target applied to next Push A: 97.5 kg × 6–8` [Undo]; `Built-in rule: 100 kg × 6–8 next time` + `Show coach suggestion`; `Out of date` (warning icon + text, Apply disabled, [Dismiss]).
 
 ---
 

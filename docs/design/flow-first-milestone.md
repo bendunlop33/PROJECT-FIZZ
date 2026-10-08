@@ -3,6 +3,8 @@
 > **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md) and review S1–S5: Undo is guarded on the set's own version and commit order (S1); Skip is `endRestTimer(…, 'skipped')` with no cue (S2); Finish is refused while a work timer runs (S4); end time goes into `finishWorkout(…, endedAt?)`, later edits use `updateSessionTiming` (S5). Added the `empty` phase and homes for add set / add exercise / delete set / skip exercise / discard (§3.4).
 >
 > **Revision 2026-10-08 (re-review).** Aligned with ADR 0003 "Re-review decisions": Stop is allowed while paused and ends the interval at the pause start without resuming (§3.2, S8); pauses are stored as intervals and only those inside the start–end window are subtracted (§4.1, S9); a Left/Right log adds a pending other-side set that Undo removes (§3.2, §3.3).
+>
+> **Revision 2026-10-08 (coach-led progression, v0.4).** Aligned with [ADR 0006](../decisions/0006-coach-led-progression.md) and rewritten rule 3; behaviour specified in [coach-adjustments.md](coach-adjustments.md). Added transition rows for coach offers, requests, applied adjustments and undo (§3.2); invariant 6 now covers coach adjustments and a new invariant 7 says a coach result never applies to a done set or a newer state; new events and the trigger check in §5; speech rule 3 covers offers; rule 5 now separates applied adjustments from review cards; data (§6); P8 marked as amended by v0.4 (§7); checks 17–20. Coach adjustments are an optional layer: the core loop and its tap counts are unchanged.
 
 Status: v0.1 draft, 8 Oct 2026. Screen specs: [today.md](today.md), [active-workout.md](active-workout.md), [rest-state.md](rest-state.md), [workout-summary.md](workout-summary.md). Tokens: [design-system.md](design-system.md).
 
@@ -86,7 +88,14 @@ Research on voice, AI and Live Activity is happening in parallel. Each optional 
 | Resting | `Skip` | none | `endRestTimer(timerId, 'skipped')`, then `cancelObsoleteCues`. No rest-end cue | Ready |
 | Resting | `−30 s` / `+30 s` / edit time | none | `adjustRestTimer(timerId, ±30)`: new version, alerts replaced. A `−30 s` that reaches 0 is an **expiry** (status ended, rest-end cue plays), not a Skip | Resting (or Ready (rest ended) if the time reaches 0) |
 | Resting | Tap `Log …` for the next set | Outside the commit guard | Ends the current rest (status `ended_early`), cancels its cues, then commits the new set and starts its rest | Result saved → … |
-| Resting | Edit the previous set's RPE or values | none | `correctSet` only. **The rest timer is untouched** | Resting |
+| Resting | Edit the previous set's RPE or values | none | `correctSet` only. **The rest timer is untouched**. Then `evaluateCoachTrigger` (local, no AI) may show an offer | Resting |
+| Resting | Trigger fires on the just-saved set | Coach reachable; offers on; not a warm-up or drop set; CA4 allows it | `recordTriggerResponse(triggerId, 'shown')`; offer line in the rest card. **No AI call, no change** | Resting (offer shown) |
+| Resting (offer shown) | `No thanks` / next Log / Finish | none | `recordTriggerResponse(…, 'dismissed' \| 'expired')` | unchanged |
+| Ready / Resting | Ben asks (voice, text, `Adjust` chip) or taps `Adjust` on an offer | Coach reachable (else the honest offline line) | `requestCoachAdjustment(…, baseVersion, opId)` runs in the background. Nothing awaits it | unchanged (coach pending) |
+| Any active (coach pending) | Coach result arrives | `validateCoachProposal` passes and `baseVersion` is current | `applyCoachProposal(id, {confirmation: 'ben_request' \| 'offer_accepted', expectedVersion})`: pending targets only, reason + evidence + guard notes stored; `ProposalApplied` → `cancelObsoleteCues` → cues rebuilt. Log guarded 1 s if its label changed | unchanged (adjustment banner) |
+| Any active (coach pending) | Ben logs a set first | none | The Log commits first. The request is cancelled, then re-sent once if any covered set is still pending, else dropped (`Your workout moved on…`) | Result saved → … |
+| Any active | `Undo` on an adjustment | Affected sets still pending; it is the latest adjustment | `undoAction(actionId)` restores pending targets only; drafts that followed the target revert | unchanged |
+| Any active | Relaunch with a coach request pending | none | The request is dropped, never applied (`Coach request was interrupted. Nothing changed.`) | the persisted state |
 | Any active | Tap `Undo` on the latest set | The set is still the latest commit (by commit order) and its version matches the one shown (`expectedSetVersion`) | `undoAction(actionId)` removes the set (audited), restores the pointer, cancels the rest timer and its cues. For a single-side log it also removes the pending other-side set and restores the set's previous side | Ready (on the restored set) |
 | Ready / Working / Resting | Tap `Pause` | none | `pauseSession`: stores remaining time, cancels scheduled alerts | Paused |
 | Paused | Tap `Resume` | none | `resumeSession`: deadline = now + remaining, alerts rescheduled | the previous state |
@@ -102,7 +111,9 @@ Research on voice, AI and Live Activity is happening in parallel. Each optional 
 3. Each draft carries an operation ID created when that set becomes active. Retrying the same draft (double tap, a voice duplicate, a relaunch after a crash during the write) commits exactly once.
 4. Rest time is always worked out as `deadlineUtc − now`. No JS interval is the source of truth.
 5. Changing RPE or correcting a value never restarts, extends or shortens rest.
-6. Completed sets change only through an explicit correction or undo by Ben, or an applied proposal that names them. Proposals in this milestone never target completed sets.
+6. Completed sets change only through an explicit correction, undo or delete by Ben. Coach adjustments and proposals never change completed sets; any change naming one is dropped by `validateCoachProposal`.
+7. A coach result is applied only to the session version it was computed for. If anything was logged, corrected, undone or switched since, it is re-sent once or dropped, never applied to newer state (rule 5).
+8. Today's remaining sets change at once only when Ben asked (or tapped `Adjust` on an offer). A trigger alone never changes a value and never makes an AI call.
 
 ### 3.3 Sets that need special handling (summary; details in active-workout.md)
 
@@ -167,7 +178,8 @@ Cue de-duplication: each scheduled cue is keyed by `(timerId, timerVersion, kind
                  │ SetCommitted, SetCorrected, SetUndone, RestStarted,
                  │ RestAdjusted, RestEnded, ActiveSetChanged,
                  │ SessionPaused, SessionResumed, SessionFinished,
-                 │ ProposalApplied
+                 │ ProposalApplied, CoachTriggerFired,
+                 │ CoachAdjustmentApplied, CoachAdjustmentUndone
      ┌───────────┼───────────────┬──────────────────┬──────────────┐
      ▼           ▼               ▼                  ▼              ▼
  Alerts      Spoken cues      Lock screen        Voice input     Coach
@@ -179,11 +191,11 @@ Cue de-duplication: each scheduled cue is keyed by `(timerId, timerVersion, kind
 Rules for every layer:
 1. **They are subscribers, never gatekeepers.** The core never awaits a layer. A failing layer shows its own status and nothing else changes.
 2. **Committed values only.** Cues and lock-screen text come from committed state through `buildSetCue(event, sessionVersion)`. When `ActiveSetChanged`, `RestAdjusted`, `SetUndone` or `ProposalApplied` fires, call `cancelObsoleteCues(sessionId, version)` and reschedule.
-3. **No unsolicited speech outside Resting.** Rep sets have no explicit Working state (P1), so Ready may mean Ben is mid-set. Proactive coach speech is allowed only while Resting with at least 20 s left. Scripted cues are allowed at commit (right after Log) and at rest end. Answers Ben asked for (push-to-talk) are allowed any time.
+3. **No unsolicited speech outside Resting.** Rep sets have no explicit Working state (P1), so Ready may mean Ben is mid-set. Proactive coach speech, including a spoken coach offer, is allowed only while Resting with at least 20 s left, and only in Conversation mode. Scripted cues are allowed at commit (right after Log) and at rest end. Answers Ben asked for (push-to-talk, and the cue for an adjustment he asked for) are allowed any time.
 4. **Speech never overlaps.** A scripted cue that would overlap a coach reply waits up to 3 s, then is dropped if it is stale. The rest-end cue takes priority over a coach reply that hasn't started yet.
-5. **Coach output goes inline.** A proposal appears as a `ChangeReviewCard` inside the rest card (or, in Overview, below the active exercise). The coach sheet never opens by itself.
-6. **Proposals are bound to a version.** Every card carries `baseVersion`. Any newer commit (another set, a correction, undo, a gym switch) makes it stale. Stale cards can't be applied, and a voice "yes" can't apply them either (`confirmProposal` checks the version).
-7. **Honest status.** AI and voice availability come from `getAiCapabilities(userId)` and are shown on the Talk button and voice pill. There are no canned coach replies.
+5. **Coach output goes inline, in the card's coach slot.** An adjustment Ben asked for is applied and shown as a `CoachAdjustmentBanner` with Undo. A coach-raised change is first a `CoachOfferLine`. Swaps and gym changes are `ChangeReviewCard`s with Apply. Future-session changes are always proposals with before/after (summary). The coach sheet never opens by itself. See [coach-adjustments.md](coach-adjustments.md).6. **Proposals are bound to a version.** Every card and every coach request carries `baseVersion`. Any newer commit (another set, a correction, undo, a gym switch) makes it stale. Stale cards can't be applied, and a voice "yes" can't apply them either (`confirmProposal` checks the version). A stale adjustment request is re-sent once or dropped (coach-adjustments CA7).
+7. **Honest status.** AI and voice availability come from `getAiCapabilities(userId)` and are shown on the Talk button and voice pill (and on `Adjust` as `Coach offline`). There are no canned coach replies.
+8. **Triggers are cheap and local.** `evaluateCoachTrigger` runs in `packages/domain` after `SetCommitted` and `SetCorrected`. It never calls the model. There is no AI call after every set.
 
 ### 5.1 Voice set logging path (optional; `DEP-STT`, `DEP-AI`)
 
@@ -210,6 +222,7 @@ From the brief: `buildTodayView`, `startWorkout`, `getActiveSession`, `buildActi
 | `skipExercise(sessionExerciseId, opId)` | Skip exercise (implemented as `skip_exercise`) |
 | `discardWorkout(sessionId, expectedVersion, opId)` | Discard workout (implemented as `discard`) |
 | `recordReadiness(ownerId, localDate, level, note?)` | The Today readiness chips (writes `ReadinessEntry`) |
+| `evaluateCoachTrigger`, `recordTriggerResponse`, `requestCoachAdjustment`, `cancelCoachTurn`, `setPainFlag` | Coach-led progression (ADR 0006). Signatures in coach-adjustments §6 |
 
 ## 7. Brief change proposals (for Ben to approve; not yet in CHANGELOG)
 
@@ -222,7 +235,7 @@ From the brief: `buildTodayView`, `startWorkout`, `getActiveSession`, `buildActi
 | P5 | "Numeric keypad … large increment controls" | A custom in-app keypad whose step keys show the next **feasible** loads | The system decimal pad has no Done key and doesn't know about equipment. This puts rule 4 into the input itself |
 | P6 | One tap to resume | A cold launch with a recent unfinished workout (< 6 h) opens straight into it (zero taps). Older ones show a Finish-or-Resume card | Faster, and handles a forgotten Finish honestly |
 | P7 | Voice logging goes through the coach pipeline | Add a deterministic on-device route for set logging (STT → `parseSpokenSet` grammar → commit) that doesn't need the LLM | Voice logging would then work in Quiet/no-AI conditions, consistent with rule 1. Depends on `DEP-STT` |
-| P8 | Summary: facts plus an optional coach note | Add a "Next time" section showing `calculateNextTargets` output, with the rule named | Deterministic and inspectable (rule 3). Answers "what comes next" without AI |
+| P8 | Summary: facts plus an optional coach note | Add a "Next time" section showing `calculateNextTargets` output, with the rule named. **Amended by v0.4 (ADR 0006):** with the coach available, rows show the coach's proposal (before built-in rule → after coach, Apply/Undo, source `Coach`); without it, the rule output labelled `Built-in rule (coach offline)` | Answers "what comes next" with or without AI, and always names who decided |
 | P9 | Show the resolved rest preset before the first set | Show `Rest after: 1:30` on every current-set card, and tap it to edit | One line, always correctable, not just before set 1 |
 | P10 | The coach opens as a sheet / collapsible panel | Tap-to-talk uses an inline **voice strip** above the action bar. Typed chat uses the sheet (medium detent) | A sheet hides the Log button. The strip keeps it visible |
 | P11 | Today includes readiness | Readiness only records an entry in this milestone and never changes targets on its own. The coach may suggest changes later | Avoids a hidden adjustment the rules can't explain |
@@ -246,3 +259,7 @@ From the brief: `buildTodayView`, `startWorkout`, `getActiveSession`, `buildActi
 14. Skip rest: no rest-end cue, no notification. `−30 s` to zero: exactly one rest-end cue.
 15. Start a timed set, then choose `Finish workout`. The sheet shows `Stop the timer first` with a [Stop] action instead of `Finish`; after Stop, the stopped time is kept as the set's draft even if Ben finishes without logging.
 16. Start an empty workout. The card reads `Add an exercise to start`, not `All planned sets done`, and `Add exercise` → pick → the new set is active with `Enter load` / `Enter reps`.
+17. Repeat check 1 with the coach connected and no triggers firing: the tap count is identical and the provider log shows no AI calls until Finish (then exactly one).
+18. Log a set at RPE 10, tap `Adjust` on the offer, and log the next set before the coach answers: that set keeps exactly the values on its Log button, and the coach result changes only sets still pending, or is dropped.
+19. Ask for an adjustment, then force-quit before the answer: on relaunch nothing was applied and the slot reads `Coach request was interrupted. Nothing changed.`
+20. With airplane mode on, `Adjust` shows `Coach offline`, no offer ever appears, and the summary's `Next time` rows are tagged `Built-in rule (coach offline)`.

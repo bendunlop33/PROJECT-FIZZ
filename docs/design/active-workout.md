@@ -3,6 +3,8 @@
 > **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md): Finish refused while a work timer runs (§4.8, S4); end time passed to `finishWorkout(…, endedAt)` (S5); Undo guarded on the set's version and commit order (S1); new empty-workout state (§2.10); homes and copy for add set, add exercise, delete set, skip exercise and discard (§4.4, §4.9); per-side entry for unilateral exercises (§2.9); dropped planned load (`target_dropped`) on the set card (§2.11).
 >
 > **Revision 2026-10-08 (re-review).** Aligned with ADR 0003 "Re-review decisions": a Left/Right log makes the domain add a pending other-side set (`pairedWithSetId`) that becomes next and accepts only its own side; `Log right side ›` just scrolls to it, and Undo removes it (§2.9, §4.9). Progression now evaluates sides (§2.9). Stop works while paused (§4.8, S8). `no_feasible_load` shows `no load target` with `Fix the equipment profile`, never bodyweight (§2.11, §5).
+>
+> **Revision 2026-10-08 (coach-led progression, v0.4).** Aligned with [ADR 0006](../decisions/0006-coach-led-progression.md) and rewritten rule 3. The behaviour itself is specified once in [coach-adjustments.md](coach-adjustments.md); this file only places it. Added the `Adjust` control in the exercise header (§2, §2.1), the coach slot in the focused card (§2.1, §2.3), `Coach target` / `Plan was` markers and the Overview `C` badge (§2.4, §5), the 1 s Log guard when an adjustment changes the Log label (§4.1), Ben-asked adjustments applying at once with Undo while swaps and gym changes keep the `ChangeReviewCard` (§3, §4.7), undo rows (§4.9), data (§6) and checks 26–31. The normal Log loop gains no taps.
 
 Status: v0.1 draft, 8 Oct 2026. Flow and state machine: [flow-first-milestone.md](flow-first-milestone.md). Rest behaviour: [rest-state.md](rest-state.md). Tokens: [design-system.md](design-system.md).
 
@@ -31,8 +33,8 @@ Regions, top to bottom:
    - `GymChip`.
    - `VoiceModePill`.
    - The Focus/Overview segmented control, right-aligned and 44pt tall.
-3. **Banner slot (0–2 banners).** Restored, offline-and-coach, equipment warnings, paused.
-4. **Content (scrolls).** The focused card or the Overview table.
+3. **Banner slot (0–2 banners).** Restored, offline-and-coach, equipment warnings, paused. Coach adjustments never use this slot.
+4. **Content (scrolls).** The focused card or the Overview table. The exercise header carries the `Adjust` control (left of `⋯`). The card has one **coach slot** for an offer, a pending request, an adjustment banner or an outcome line ([coach-adjustments.md](coach-adjustments.md) §2.1).
 5. **Voice strip (only while voice is in use).** Above the action bar.
 6. **Undo toast slot.** Above the action bar.
 7. **Action bar (fixed).** `TalkButton` (60 × 60) and `PrimaryButton`. It moves up with the keypad.
@@ -46,7 +48,7 @@ Finish is in the `⋯` menu, and it is the primary only after the final set. It 
 │ ⌄  Push A          24:31     ⏸    ⋯   │ top bar
 │ [⌂ Main Gym ▾] [🔈 Cues ▾] [Focus|All] │ status row
 ├────────────────────────────────────────┤
-│ Bench press                     ⋯      │ exercise header (tap → history)
+│ Bench press             Adjust  ⋯      │ exercise header (tap → history)
 │ Barbell · Working · Set 2 of 4         │
 │ Last (1 Oct): 100 kg × 8               │ previous comparable, tap = copy
 │                                        │
@@ -56,6 +58,7 @@ Finish is in the `⋯` menu, and it is the primary only after the final set. It 
 │ └──┴────────────┴──┘ └──┴───────┴──┘   │
 │  Target 100 kg · 6–8 reps              │ target, always labelled
 │  Rest after: 3:00 ›                    │ resolved preset, tap to edit
+│  (coach slot: empty when idle)         │ coach-adjustments §2.1
 │                                        │
 │ ✓ 1  100 kg × 8   RPE 8                │ done sets for this exercise
 │ ▶ 2  now                               │
@@ -75,6 +78,8 @@ Finish is in the `⋯` menu, and it is the primary only after the final set. It 
 Notes:
 - **Draft values.** The fields hold the draft *actual*, prefilled by `buildActiveSetView` (rules in §4.2). The line beneath the fields always says `Target …`. The Log button repeats exactly what will be saved.
 - **The mini set list** under the fields shows this exercise's sets with the §7 status styles, so progress is visible without switching to Overview.
+- **`Adjust`** (text button, `AdjustControl`) asks the coach to change today's remaining sets. It opens an inline reason-chip row, never a sheet. When the coach is unavailable it stays visible with the caption `Coach offline`. Full behaviour: [coach-adjustments.md](coach-adjustments.md) §2.2.
+- **Coach-changed pending sets** read `Coach target 95 kg × 8` with the `Coach` tag and a `Plan was 100 kg × 6–8` line (coach-adjustments §2.7). Unchanged sets keep the plain `Target` label.
 
 ### 2.2 Focus view with the keypad open (editing load)
 
@@ -105,15 +110,17 @@ The rest timer takes the place of the previous-result line at the top of the car
 
 ```
 ├────────────────────────────────────────┤
-│ Bench press · Set 3 of 4 next          │
+│ Bench press · Set 3 of 4 next  Adjust ⋯│
 │ ┌────────────────────────────────────┐ │
 │ │ Rest                               │ │
 │ │              2:47                  │ │
 │ │  [ −30 s ]   [ +30 s ]   [ Skip ]  │ │
 │ └────────────────────────────────────┘ │
-│ ✓ Set 2 saved: 100 kg × 7              │
-│ Effort (optional)  6  7  8  9  10      │
-│                                        │
+│ ✓ Set 2 saved: 100 kg × 6              │
+│ Effort (optional)  6  7  8  9  [10]    │
+│ That looked hard. Adjust remaining sets?│ coach slot: offer (only after a
+│ RPE 10 on set 2                        │ deterministic trigger)
+│ [ No thanks ]              [ Adjust ]  │
 │ Up next · Set 3                        │
 │ ┌──┬────────────┬──┐ ┌──┬───────┬──┐   │
 │ │− │  100 kg    │+ │ │− │   8   │+ │   │
@@ -136,7 +143,7 @@ The rest timer takes the place of the previous-result line at the top of the car
 │ ✓ 1    100×8       100×6–8    100×8 ·8 │
 │ ▶ 2    100×8       100×6–8   [100][ 8] │ active row: inline fields
 │ ○ 3    100×7       100×6–8      —      │
-│ ○ 4    95×8        95×8–10      —      │
+│ ○ 4    95×8        97.5×8 C     —      │ C = coach target (text badge)
 │  + Add set                             │
 │                                        │
 │ Incline DB press · kg each         ⋯   │
@@ -156,6 +163,7 @@ The rest timer takes the place of the previous-result line at the top of the car
 - Column headers show the unit once per exercise header (`kg`, `kg each`). Inside cells, `×` is used without spaces to save width. VoiceOver reads full values.
 - At AX1 and larger, each set becomes a stacked block: line 1 is status and set number, line 2 is `Last 100 kg × 8`, line 3 is `Target 100 kg × 6–8`, and line 4 is `Done 100 kg × 8` or the fields.
 - The Log label in Overview includes the set number (`Log set 2 · …`), because the active row may be off screen.
+- A coach-changed target shows the `C` text badge after the value. VoiceOver: "Coach target, 97.5 kilograms, 8 reps. Plan was 95 kilograms, 8 to 10 reps." The exercise header row gets `Adjust` left of `⋯`, and the coach slot sits directly under the active exercise's header.
 
 ### 2.5 Voice strip (optional layer; `DEP-STT` / `DEP-AI`)
 
@@ -317,7 +325,12 @@ When the template's load can't be honoured on this gym's equipment (ADR 0003 B1)
 | Offline | No change to logging | per state | Status row: no banner unless Ben opens the coach. The Talk button shows `Offline` if the coach needs the network |
 | AI unavailable | No change to logging | per state | Talk button `Offline` / `Ask`. Coach sheet explains (§4.7) |
 | Voice unavailable, text available | — | — | Talk button shows `Ask` (text bubble). Tapping opens the coach sheet |
-| Coach proposal pending | `ChangeReviewCard` inline under the rest timer (Focus) or under the active exercise (Overview) | unchanged | It never takes over the screen |
+| Coach offer | Coach slot: `That looked hard. Adjust remaining sets?` [No thanks] [Adjust] (Resting only, after a deterministic trigger) | unchanged | Nothing changes until `Adjust`. Never a modal; never spoken outside Resting. coach-adjustments §2.3 |
+| Coach working | Coach slot: `Coach is working on sets 3–4 · Nothing has changed yet.` [Cancel] | unchanged, usable | Rest keeps running. A Log first wins; the result is re-sent once or dropped, never applied to a done set (coach-adjustments §4.3) |
+| Coach adjusted (Ben asked or accepted an offer) | Coach slot: `CoachAdjustmentBanner` `Coach adjusted sets 3–4` · `100 → 95 kg × 8 · <reason>` [Undo]; changed sets show `Coach target` | `Log <new values>`, guarded 1 s if the label changed | Applied at once. Guard notes (rounded, capped, pain) shown in the banner |
+| Coach blocked / no change / failed / timed out | Coach slot: one outcome line, e.g. `Not increasing: you flagged shoulder pain. Sets unchanged.` | unchanged | No Undo, because nothing changed |
+| Coach offline (Adjust tapped) | `Coach offline. Your sets are unchanged. Change the next set's numbers directly.` + `Pain` chip | unchanged | No offers appear while offline |
+| Coach proposal pending (swap or gym) | `ChangeReviewCard` inline under the rest timer (Focus) or under the active exercise (Overview) | unchanged | Swaps and gym changes still need Apply (coach-adjustments CA2). It never takes over the screen |
 | Proposal stale | The card shows `Out of date` | unchanged | Apply is disabled |
 | Gym switched mid-session | `ChangeReviewCard` from `setActiveGym`: `Main Gym → Hotel Gym · Today only` with pending-set changes | unchanged | Completed sets aren't listed and don't change |
 | Write error | `Couldn't save this set. Your entry is still here.` [Try again] | `Log …` stays available with the same opId | Extremely rare: SQLite full or locked |
@@ -333,7 +346,8 @@ When the template's load can't be honoured on this gym's equipment (ADR 0003 B1)
      - the undo toast `✓ Set 2 saved · 100 kg × 8` appears
      - the card switches to Resting (or the next superset member, or Final)
      - the commit cue plays, if cue mode is on
-- **Matching set:** one tap, nothing else.
+- **Matching set:** one tap, nothing else. A coach trigger check (`evaluateCoachTrigger`) runs after the commit, is local, and never delays or blocks the Log.
+- **Label changed by a coach adjustment:** if an applied adjustment changes the active set's Log label, Log ignores taps for `timing.valueChangeGuard` (1 s) so a tap aimed at the old values can't save the new ones. Normal logging never has this delay.
 - **Different result, reps:** tap `−` on reps (once per missing rep), then Log. Two taps for a single-rep miss.
 - **Different result, load:** tap `−`/`+` to the next feasible load, or tap the load field to use the keypad. Typing replaces the value, `Next ›` moves to reps, and `Done` hides the keypad. Log stays visible above the keypad the whole time.
 - **Copy last time:** tap the `Last (1 Oct): 100 kg × 8` line. The fields are set to those values and the caption reads `Copied from 1 Oct`. That line never logs anything itself.
@@ -381,7 +395,7 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 │ Delete set                             │ danger text, separated
 └────────────────────────────────────────┘
 ```
-  - `Save changes` calls `correctSet(setId, patch, expectedVersion)`. The row gets an `Edited` tag. Rest is not touched. There is no AI replanning, and targets update only through the deterministic rules.
+  - `Save changes` calls `correctSet(setId, patch, expectedVersion)`. The row gets an `Edited` tag. Rest is not touched. A correction never calls the coach and never changes other targets by itself. If the corrected effort or reps meet a trigger, the deterministic check may show a coach **offer** (no AI call until Ben taps `Adjust`).
   - `Delete set` calls `deleteSet` (`delete_set`, guarded on the set's version). It always confirms: `Delete set 1? It's removed from this workout's totals and history. The edit log keeps a record.` [Delete] [Cancel]. Toast `Set 1 deleted` (no Undo yet; ADR 0003 Open). The set is kept as an audited deleted record and disappears from the mini list, Overview and volume. Pending sets can be deleted the same way from their row's `⋯` in Overview.
   - The sheet also shows the Side control for unilateral exercises (§2.9).
 
@@ -406,7 +420,11 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
   - `Coach not connected. Logging, targets and rest timers work without it.` [Connect in Profile]
   - `No connection. The coach needs the internet; your workout is saved on this phone.`
   - `Voice isn't available on this phone yet. You can type to the coach.`
-- **Coach suggestions** appear only as an inline `ChangeReviewCard`. `Apply` calls `confirmProposal(proposalId, sessionVersion)` → `applyCoachProposal`, followed by a toast `Remaining sets updated for today` [Undo], and the cue `Remaining sets updated for today.`
+- **Adjusting today's remaining sets** (coach-led progression, ADR 0006) is specified in [coach-adjustments.md](coach-adjustments.md):
+  - Ben asks (voice "that was a grind", coach-sheet text, or `Adjust` → reason chip): the result applies at once and shows the `CoachAdjustmentBanner` with Undo in the coach slot.
+  - A deterministic trigger fires (RPE ≥ 9.5, reps short by ≥ 2, RPE ≤ 6 on a working set): a one-line offer in the rest card. Nothing changes until Ben taps `Adjust`.
+  - The coach sheet never opens by itself, and an adjustment never opens a sheet.
+- **Other coach suggestions** (exercise swaps, gym changes) still appear only as an inline `ChangeReviewCard`. `Apply` calls `confirmProposal(proposalId, sessionVersion)` → `applyCoachProposal`, followed by a toast `Remaining sets updated for today` [Undo], and the cue `Remaining sets updated for today.`
 
 ### 4.8 Finish
 - **Triggers:** `Finish workout` from the menu, or the primary once all sets are done. This opens the finish sheet:
@@ -450,7 +468,9 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 | Correction | Not yet (ADR 0003 Open). Correct it again; the edit history keeps every version |
 | Delete set | Not yet (ADR 0003 Open), so it always confirms. The deleted record is kept, so Undo can be added later |
 | Skip exercise | Not yet (ADR 0003 Open), so it confirms. `Add set` brings the exercise back |
-| Applied proposal | Toast `Undo` → `undoAction` (or a compensating proposal if it isn't safe) |
+| Applied proposal (swap, gym) | Toast `Undo` → `undoAction` (or a compensating proposal if it isn't safe) |
+| Coach adjustment | `Undo` on the banner; later, `Why?` on a coach-marked set → `Undo this change`, or exercise `⋯` → `Undo coach change`. `undoAction` restores only sets still pending (coach-adjustments §4.4) |
+| Pain flag | Tap `Pain` again, or Profile → Pain flags → Clear. Never cleared automatically |
 | Discard workout (0 sets) | Discards at once. Toast `Workout discarded` (no Undo: nothing was logged; start again from Today) |
 | Discard workout (≥1 set) | Confirmation alert first: `Discard Push A? 7 logged sets will be discarded.` [Discard] [Cancel]. No undo afterwards, which is why the confirmation is needed |
 
@@ -479,6 +499,8 @@ If an Undo is rejected (the set was corrected from another path, or something wa
 | Finish blocked | `Dead hang timer is running (0:38).` · `Stop the timer first` · [Stop] · after Stop: `Dead hang: 0:38 not logged. It will be kept as a draft on the skipped set.` · `Log 0:38 first` |
 | Undo rejected | `Can't undo: set 2 changed. Tap it to edit or delete.` |
 | Banners | `Workout restored. Nothing was lost.` · `Workout paused. Timers are stopped.` · `Couldn't save this set. Your entry is still here.` |
+| Coach target (pending sets) | `Coach target 95 kg × 8` + `Plan was 100 kg × 6–8` (both **targets**); Overview badge `C`; draft kept: `Your edit kept · Coach target 95 kg × 8` |
+| Adjust | `Adjust` · caption `Coach offline` · chips `What should change?` `Too hard` `Too easy` `Pain` `Type…`. Every other coach-adjustment string: coach-adjustments §5 |
 | Talk captions | `Talk` · `Ask` · `Stop` · `Wait` · `Offline` |
 | Voice pill | `Quiet` · `Cues` · `Talk` · `Mic on` |
 
@@ -507,6 +529,7 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
   - `startVoiceSession`, `stopVoiceSession`, `transcribeUtterance`, `parseSpokenSet`, `handleVoiceTurn`, `interruptSpeech`
   - `runCoachTurn`
   - `validateCoachProposal`, `confirmProposal`, `applyCoachProposal`, `getDecisionEvidence`
+  - Coach adjustments (coach-adjustments §6): from `buildActiveSetView`, per set `target.source` (`plan | rule | coach`), `target.planned` and `adjustmentActionId`, and per session `coachRequest`, `coachOffer`, `lastAdjustment`; plus `evaluateCoachTrigger`, `recordTriggerResponse`, `requestCoachAdjustment`, `cancelCoachTurn`, `setPainFlag` (proposed new)
 - Proposed new: `saveSetDraft`, `setActiveSet`, `endRestTimer`.
 
 ## 7. Acceptance checks
@@ -519,14 +542,14 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
 6. Typing an off-profile load shows the warning, still allows logging, and the saved set carries the flag.
 7. Targets are always labelled `Target`, and previous results `Last (date)`. No pending set displays values without the `Target` label or pending style.
 8. Each set status (done, active, pending, skipped) can be told apart in greyscale (check icon, triangle, hollow circle, slashed circle, plus text).
-9. Correcting a done set doesn't restart or change rest, adds the `Edited` tag, and doesn't trigger any AI call.
+9. Correcting a done set doesn't restart or change rest, adds the `Edited` tag, and doesn't trigger any AI call (at most a deterministic offer line appears).
 10. Switching Focus ↔ Overview while resting keeps the same timer, draft values and active set.
 11. In a superset, logging A1 doesn't start rest, and logging A2 does.
 12. A timed exercise's work timer runs separately from rest. Its end doesn't save the set unless `Auto-save timed sets` is on.
 13. While paused, the elapsed clock and any timer are frozen, the primary reads `Resume`, and Log can't be triggered.
 14. Finish is never next to Log. It is only in the `⋯` menu, at the end of the Overview list, or the primary once all sets are done.
 15. With AI disconnected, tapping Talk shows an honest status sheet with no fake coach reply, and the workout is unaffected.
-16. A coach proposal never opens a sheet by itself. It appears inline with scope, before/after targets, Apply and an Undo path, and it can't change completed sets.
+16. A coach swap or gym proposal never opens a sheet by itself. It appears inline with scope, before/after targets, Apply and an Undo path, and it can't change completed sets.
 17. Switching gym mid-session shows a review card for pending sets only. Completed sets keep their original gym and equipment.
 18. Log → tap effort `8` → `Undo` within 8 s removes the set.
 19. With a work timer running or paused, `Finish workout` shows `Stop the timer first` and [Stop], never a raw error. After Stop and Finish without logging, the timed set is skipped and still shows the stopped time as its draft in Edit workout.
@@ -536,3 +559,10 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
 23. The Side control appears only for unilateral exercises. `Both sides` logs in one tap; Left logs `side: left`, and the next active set is a pending right-side set with the same values drafted; `Log right side ›` only scrolls to it (no `addSet` call). That set can only be logged as Right. Undo of the Left log removes both the Left result and the pending right-side set. Volume counts a Left + Right pair as one set.
 25. An exercise whose equipment can make no load shows `no load target` and `Fix the equipment profile` guidance with [Update gym], never `BW` or "bodyweight".
 24. A template load in another convention (e.g. `60 kg total` on a dumbbell rack) shows `no load target` and the warning, never a converted number; Log still works with the fallback draft or `Enter load`.
+26. With the coach connected, a full workout of matching sets with no triggers takes exactly as many taps as with the coach off. `Adjust` is the only visible coach control.
+27. `Adjust` sits in the exercise header in both Ready and Resting, has a 52pt hit area, opens an inline chip row (no sheet), and with the coach offline stays visible with `Coach offline`.
+28. Saying "that was a grind" during rest changes sets 3–4 at once, shows `Coach adjusted sets 3–4: 100 → 95 kg × 8 · <reason>` with Undo, updates the Log label, and leaves the rest countdown unchanged. Undo restores `Target 100 kg · 6–8 reps`.
+29. A coach offer appears only in the rest card, after RPE ≥ 9.5, reps short by ≥ 2, or RPE ≤ 6 on a working set, and changes nothing until `Adjust` is tapped.
+30. Coach-changed pending sets show `Coach target` + `Plan was …` (Focus) and `C` (Overview); done sets show only actual values; VoiceOver reads both target values.
+31. When an adjustment changes the active set's Log label, a Log tap within 1 s is ignored; at all other times Log responds at once.
+The full coach-adjustment checks are in [coach-adjustments.md](coach-adjustments.md) §7.
