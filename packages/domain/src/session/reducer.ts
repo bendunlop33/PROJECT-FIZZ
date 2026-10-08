@@ -534,18 +534,25 @@ function handleStartWork(state: SessionAggregate, cmd: CommandOf<'start_work_int
   return { ok: true, state: next, events };
 }
 
+/**
+ * Stop a work interval. Allowed while the session is paused (review R2,
+ * ADR 0003): the interval then ends at the moment the pause began, so paused
+ * time never counts as work. This keeps the stale-card Stop → Finish path open.
+ */
 function handleStopWork(state: SessionAggregate, cmd: CommandOf<'stop_work_interval'>, nowMs: number): Handled {
-  if (state.session.pause !== null) return fail('session_paused', 'Resume the workout first.');
   const wi = state.workInterval;
   if (wi?.setId === cmd.setId && wi.status === 'completed') {
     // The deadline passed just before Stop landed (review M6): the timer already
     // ended and filled the planned duration as the draft. Stop is a no-op.
     return { ok: true, state, events: [] };
   }
-  if (wi?.setId !== cmd.setId || wi.status !== 'running') {
+  const pause = state.session.pause;
+  const expected = pause === null ? 'running' : 'paused';
+  if (wi?.setId !== cmd.setId || wi.status !== expected) {
     return fail('work_interval_not_running', 'No work timer is running for this set.');
   }
-  const elapsedS = Math.max(0, Math.round((nowMs - toMs(wi.startedAtUtc) - wi.pausedMs) / 1000));
+  const endMs = pause === null ? nowMs : toMs(pause.pausedAtUtc);
+  const elapsedS = Math.max(0, Math.min(wi.durationS, Math.round((endMs - toMs(wi.startedAtUtc) - wi.pausedMs) / 1000)));
   const set = state.sets.find((s) => s.id === wi.setId);
   let sets = state.sets;
   if (set?.status === 'pending') {
@@ -553,7 +560,7 @@ function handleStopWork(state: SessionAggregate, cmd: CommandOf<'stop_work_inter
   }
   return {
     ok: true,
-    state: { ...state, sets, workInterval: { ...wi, status: 'stopped', endedAtUtc: toIso(nowMs) } },
+    state: { ...state, sets, workInterval: { ...wi, status: 'stopped', remainingMsAtPause: null, endedAtUtc: toIso(endMs) } },
     events: [{ type: 'WorkIntervalEnded', setId: wi.setId, reason: 'stopped', elapsedS, lateByMs: 0 }],
   };
 }

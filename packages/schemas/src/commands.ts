@@ -96,6 +96,10 @@ export const StartWorkIntervalCommandSchema = z.object({
   durationS: DurationSecondsSchema.refine((d) => d > 0, { message: 'Duration must be > 0' }),
 });
 
+/**
+ * Stop the work timer; elapsed time becomes the set's draft. Allowed while the
+ * workout is paused: the interval then ends when the pause began (ADR 0003 R2).
+ */
 export const StopWorkIntervalCommandSchema = z.object({
   type: z.literal('stop_work_interval'),
   ...base,
