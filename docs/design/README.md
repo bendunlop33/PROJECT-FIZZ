@@ -13,5 +13,6 @@ First milestone screens (brief §12): Today, Active set, Rest, Summary.
 | `rest-state.md` | Rest timer, preset resolution, background behaviour, spoken cue modes |
 | `workout-summary.md` | Post-workout summary |
 | `coach-adjustments.md` | Coach-led progression (ADR 0006): Ben-asked and trigger-offered adjustments to today's sets, guardrail outcomes, Undo, and coach vs built-in rule `Next time` targets. Single spec; the screen files link to it |
+| `workout-builder.md` | Coach-built workouts (CHANGELOG v0.5): entry points, Build sheet, generating/offline states, review screen with checks, versions and diff, Start now / Save as routine / Edit / Ask for changes; programmes (later, step 6) |
 
 Optional layers depend on research that is still open. Search the docs for `DEP-AUDIO`, `DEP-NOTIF`, `DEP-LIVE`, `DEP-STT` and `DEP-AI`.

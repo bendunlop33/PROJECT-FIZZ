@@ -4,6 +4,8 @@
 >
 > **Revision 2026-10-08 (coach-led progression, v0.4).** For [ADR 0006](../decisions/0006-coach-led-progression.md) and [coach-adjustments.md](coach-adjustments.md): new timing tokens `timing.valueChangeGuard` and `timing.coachTimeout` (§6); target source styles and the `TargetSourceTag` (§7); `ChangeReviewCard` scope narrowed to swaps, gym changes and summary proposals (§9.11); new components `AdjustControl` (§9.13), `CoachOfferLine` (§9.14), `CoachAdjustmentBanner` (§9.15) and `CoachTargetProposal` (§9.16). No colour values added: coach UI uses existing tokens, so the one-accent rule holds.
 
+> **Revision 2026-10-08 (workout builder, v0.5).** For [workout-builder.md](workout-builder.md): new timing token `timing.coachBuildTimeout` (§6) and components `ParamChip` (§9.17), `DraftExerciseRow` with diff markers (§9.18), `GuardNoteList` (§9.19) and `WorkoutDraftCard` (§9.20). No colour values added.
+
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
 Context: one person uses the app on an iPhone, one-handed, mid-workout, with sweaty fingers and headphones, often in bright or dim gym light. Every choice below favours speed, legibility and calm over decoration.
@@ -154,6 +156,7 @@ Rules:
 | `timing.undoToast` | 8 s. With VoiceOver on, the toast stays until it is dismissed |
 | `timing.valueChangeGuard` | 1000 ms. Log ignores taps for this long after a coach adjustment changes its label. Never applied to normal logging |
 | `timing.coachTimeout` | 20 s. A coach adjustment request with no answer by then shows `The coach didn't answer in time. Nothing changed.` |
+| `timing.coachBuildTimeout` | 60 s. A workout-builder request with no answer by then shows `The coach didn't answer in time. Nothing was built.` |
 | `haptic.commit` | Success notification haptic |
 | `haptic.undo` | Light impact |
 | `haptic.step` | Selection change (steppers, keypad) |
@@ -392,6 +395,22 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 ### 9.16 Coach target proposal (`CoachTargetProposal`, summary only)
 - One per exercise under `Next time`. Rows: exercise name + `TargetSourceTag` `Coach`; scope line (`From next Push A`); a two-row before/after table `Built-in rule  100 kg × 6–8` / `Coach  97.5 kg × 6–8` (labels `text.secondary`, values `text.primary`, tabular); the coach's reason; optional guard note; action row `Why? ›` · `Not now` · `Apply` (Apply is a secondary-style accent button, not `PrimaryButton`, so `Done` stays the only primary).
 - Collapsed states: `✓ Coach target applied to next Push A: 97.5 kg × 6–8` [Undo]; `Built-in rule: 100 kg × 6–8 next time` + `Show coach suggestion`; `Out of date` (warning icon + text, Apply disabled, [Dismiss]).
+
+### 9.17 Parameter chip (`ParamChip`, workout builder)
+- Same frame as the Adjust reason chips: 52pt tall, `radius.sm`, `bg.raised`, 1pt `border.control`, label `type.label` in `text.primary`.
+- Selected: `accent.subtle` fill + `checkmark` icon before the label (never colour alone). Single-select groups allow deselecting by tapping again.
+- Chips wrap; at AX1+ one per row. VoiceOver: "45 minutes, selected, length".
+
+### 9.18 Draft exercise row (`DraftExerciseRow`, workout builder)
+- `bg.surface`, `radius.md`, padding `space.3`, rows separated by `border.divider`. Lines: name + equipment (`type.headline`), set scheme, `Target …` load, `Last …` (actual, `text.secondary`), optional `Built-in rule …` (`text.secondary`), optional guard note, `Rest m:ss`. All numbers tabular.
+- Superset members sit behind a 4pt `border.control` left bracket labelled `Superset A · 3 rounds`.
+- Diff markers (shown only when `Show changes` is on): `pencil` + `Changed`, `plus.circle` + `Added`, `minus.circle` + `Removed` (row text in `text.secondary` with strikethrough). Marker words are `type.label`; never colour alone, never `accent`.
+
+### 9.19 Guard note list (`GuardNoteList`)
+- Heading `Checks (n)` (`type.headline`). Each note: icon + one or two lines `type.callout`. `info.circle` in `text.secondary` for swapped/rounded/capped/removed; `exclamationmark.triangle` in `status.warning` for pain exclusions and over-length. Same note text as the row-level note. Text comes from the validator, never the model.
+
+### 9.20 Workout draft card (`WorkoutDraftCard`, coach sheet)
+- Inline card in the conversation: `bg.surface`, 1pt `border.control`, `radius.md`. Pending: static `ellipsis` icon + `Building …` + `Cancel`. Ready: `TargetSourceTag` `Coach`, name + version, counts + estimate, `Checks: n`, and `Review ›` (secondary-style accent button). Never opens a screen by itself.
 
 ---
 

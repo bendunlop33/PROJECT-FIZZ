@@ -6,6 +6,8 @@
 >
 > **Revision 2026-10-08 (coach-led progression, v0.4).** Per [ADR 0006](../decisions/0006-coach-led-progression.md): when a finished workout has unapplied, non-stale coach next-time proposals, the `Next:` row shows one extra line `2 coach suggestions to review ›` that opens that workout's summary (§2, §3, §4, §5, check 15). Nothing on Today applies a change. Readiness still never changes targets.
 
+> **Revision 2026-10-08 (workout builder, v0.5).** The alternatives row and the No-plan link row gain a `Build a workout` text link that opens the Build sheet in [workout-builder.md](workout-builder.md). It is never a primary button and is hidden in the Resume state. Today still makes no AI call (§2, §4, §5).
+
 Status: v0.1 draft, 8 Oct 2026. Flow: [flow-first-milestone.md](flow-first-milestone.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -27,7 +29,7 @@ Regions, top to bottom:
 
 1. **Header (compact).** The date (`Thu 8 Oct`) on the left and the `GymChip` on the right. There's no large title; the space goes to the main card.
 2. **Main card.** Either Today's plan + `Start workout`, Resume, the stale-workout card, or No plan. Only one of these shows at a time.
-3. **Alternatives row.** Text buttons: `Other routine`, `Empty workout`, `Reschedule`, and `Shorter session` (shown only when a plan exists). It is hidden while a workout is in progress.
+3. **Alternatives row.** Text buttons: `Other routine`, `Empty workout`, `Build a workout` ([workout-builder.md](workout-builder.md)), `Reschedule`, and `Shorter session` (shown only when a plan exists). It is hidden while a workout is in progress.
 4. **Readiness (optional).** `How do you feel today?` with chips [Normal] [Tired] [Sore]. It is hidden during and after today's workout.
 5. **This week.** `2 of 4 planned sessions done`, plus one pinned lift line. The data is static, with no chart animation.
 6. **Next session.** One row, which opens the weekly plan. If the last finished workout has unapplied coach proposals for the next session, a second line `2 coach suggestions to review ›` opens that summary's `Next time` section ([coach-adjustments.md](coach-adjustments.md) §4.6).
@@ -51,7 +53,8 @@ Regions, top to bottom:
 │ │ └────────────────────────────────┘ │ │
 │ └────────────────────────────────────┘ │
 │  Other routine · Empty workout         │
-│  Reschedule · Shorter session          │
+│  Build a workout · Reschedule          │
+│  Shorter session                       │
 │                                        │
 │ How do you feel today?  (optional)     │
 │ [ Normal ]  [ Tired ]  [ Sore ]        │
@@ -112,6 +115,7 @@ Regions, top to bottom:
 │ │ │       Start empty workout      │ │ │
 │ │ └────────────────────────────────┘ │ │
 │ │ Choose a routine · Create a routine│ │
+│ │ Build a workout                    │ │
 │ └────────────────────────────────────┘ │
 │ This week                              │
 │ No workouts logged yet this week.      │
@@ -155,6 +159,7 @@ Transitions:
 | Pinned lift line | Opens that exercise's history in Progress | none |
 | `Next: …` row | Opens the weekly plan | none |
 | `… coach suggestions to review ›` | Opens the summary of the workout they came from, scrolled to `Next time`. Apply/Undo happen there | none |
+| `Build a workout` | Opens the workout builder's Build sheet (workout-builder.md §3.1), or its offline frame (§3.7) when `getAiCapabilities` reports no text route. Nothing starts without a later tap on `Start now` | none |
 | `Reschedule` | Opens the weekly plan with today's session selected (move / skip / replace) | Out of milestone scope. The link exists but may route to a placeholder labelled `Coming soon` |
 | `Shorter session` | Out of milestone scope. Hide it until `shortenSession` exists | none |
 | Ask pill | Opens the coach sheet with Today's context attached. Long-press starts push-to-talk if voice is available | none |
@@ -190,6 +195,7 @@ Undo:
 | Errors | `Couldn't open your training data.` [Try again] [Restore from backup] |
 | No-gym banner | `No gym selected. Loads won't be checked against equipment.` [Add gym] |
 | Ask pill | `Ask` / `Offline` |
+| Builder link | `Build a workout` |
 
 Spoken cue: none on Today. Starting a workout can trigger the optional set intro cue in Active workout.
 
