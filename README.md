@@ -8,7 +8,7 @@ A personal iOS strength-training app with fast logging, a voice/text coach and e
 
 ## Development
 
-Node 22.13+ and npm workspaces. Packages: `packages/schemas` (zod schemas and types), `packages/domain` (pure rules, session state machine, storage ports).
+Node 22.18+ and npm workspaces. Packages: `packages/schemas` (zod schemas and types), `packages/domain` (pure rules, session state machine, storage ports).
 
 ```sh
 npm install

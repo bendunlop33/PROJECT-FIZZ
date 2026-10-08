@@ -30,15 +30,19 @@ export const FORBIDDEN_ENTITLEMENTS: readonly ForbiddenEntitlement[] = [
 ];
 
 /**
- * Entitlements we expect and believe a free team can carry. Anything not in
- * either list is reported as a warning so a new capability gets a deliberate
- * look before it reaches Ben's phone.
+ * The allowlist. The guard fails closed: any entitlement key not listed here
+ * is an error, so a new capability (from a plugin update, say) can't reach
+ * Ben's phone until someone deliberately checks it is free-provisionable and
+ * adds it here. Keep this list short and justified.
  */
-export const KNOWN_FREE_ENTITLEMENTS: readonly string[] = [
+export const ALLOWED_ENTITLEMENTS: readonly string[] = [
+  // App Group shared with the Live Activity extension (expo-widgets).
   'com.apple.security.application-groups',
+  // Added by signing tools; the app's own Keychain group.
   'keychain-access-groups',
   'application-identifier',
   'com.apple.developer.team-identifier',
+  // Development-signed builds (SideStore signs with a development certificate).
   'get-task-allow',
 ];
 
@@ -59,8 +63,12 @@ export function checkEntitlementKeys(keys: readonly string[]): EntitlementFindin
     const forbidden = FORBIDDEN_ENTITLEMENTS.find((f) => f.key === key);
     if (forbidden !== undefined) {
       findings.push({ key, severity: 'error', message: `${key}: ${forbidden.reason}` });
-    } else if (!KNOWN_FREE_ENTITLEMENTS.includes(key)) {
-      findings.push({ key, severity: 'warning', message: `${key}: not on the known free-provisionable list; check before shipping` });
+    } else if (!ALLOWED_ENTITLEMENTS.includes(key)) {
+      findings.push({
+        key,
+        severity: 'error',
+        message: `${key}: not on the free-provisioning allowlist. Check a free Apple ID can sign it, then add it to ALLOWED_ENTITLEMENTS`,
+      });
     }
   }
   return findings;

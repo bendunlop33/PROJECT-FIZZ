@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { BUNDLE_IDENTIFIER, WIDGET_EXTENSION_BUNDLE_IDENTIFIER } from '../../apps/mobile/app-identity.mts';
-import { checkEntitlementKeys, FORBIDDEN_ENTITLEMENTS } from '../../apps/mobile/plugins/entitlement-rules.mts';
+import { ALLOWED_ENTITLEMENTS, checkEntitlementKeys, FORBIDDEN_ENTITLEMENTS } from '../../apps/mobile/plugins/entitlement-rules.mts';
 import {
   checkEntitlementsXml,
   checkInfoPlistXml,
@@ -59,10 +59,17 @@ describe('entitlement rules', () => {
     expect(errors.map((e) => e.key)).toEqual(['aps-environment']);
   });
 
-  it('warns, without failing, on keys it does not know', () => {
-    expect(checkEntitlementKeys(['com.apple.developer.healthkit'])).toEqual([
-      expect.objectContaining({ severity: 'warning', key: 'com.apple.developer.healthkit' }),
-    ]);
+  it('accepts every allowlisted key', () => {
+    expect(checkEntitlementKeys(ALLOWED_ENTITLEMENTS)).toEqual([]);
+  });
+
+  it.each([
+    'com.apple.developer.applesignin',
+    'com.apple.developer.usernotifications.communication',
+    'com.apple.developer.healthkit',
+    'com.example.custom-key',
+  ])('fails closed on %s, which is not on the allowlist', (key) => {
+    expect(checkEntitlementKeys([key])).toEqual([expect.objectContaining({ severity: 'error', key })]);
   });
 
   it('warns when a signed binary carries no entitlements at all', () => {
