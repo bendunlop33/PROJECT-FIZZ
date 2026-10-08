@@ -93,7 +93,7 @@ The reason and rule text come from `calculateNextTargets`. The UI never writes i
 | Next time: no change | The rules keep the same targets | `No target changes. Same targets next time.` |
 | Next time: held, incomplete | Fewer completed working sets than the rule prescribes | `Bench press` · `Same target: 100 kg × 6–8` · domain fact, e.g. `Only 2 of 4 working sets were logged on 8 Oct; holding.` |
 | Next time: held, all skipped | Every working set of an exercise was skipped | `No working sets were logged on 8 Oct (all skipped); holding.` The target stays at the last performed load |
-| Next time: held, side lagging | Unilateral exercise where one side met the rule and the other didn't, or the sides have unequal set counts | `Single-arm cable row` · `Same target: 25 kg stack × 8–10` · domain fact, e.g. `The left side reached 8+ reps on every set but the right side didn't (lowest 7 reps); holding.` or `Only 2 of 3 working sets had both sides logged on 8 Oct (left 3, right 2: the right side is behind); holding.` |
+| Next time: held, side lagging | Unilateral exercise where one side met the rule and the other didn't, or the sides have unequal set counts | `Single-arm cable row` · `Same target: 25 kg stack × 8–10` · domain fact, e.g. `The left side reached 8+ reps on every set within the effort limit, but the right side didn't (lowest 7 reps); holding.` or `Only 2 of 3 working sets had both sides logged on 8 Oct (left 3, right 2: the right side is behind); holding.` |
 | Next time: no feasible load | `calculateNextTargets` returns `no_feasible_load` | `Lat pulldown` · `No load target` · `Cable stack can't make any load with its current min/max settings, so no Lat pulldown target is set. Fix the equipment profile.` [Update gym]. Never shown as "bodyweight" |
 | Unilateral exercise | `laterality` is unilateral | Row reads `Single-arm cable row 3 sets (per side)` and, when sides differ, `L 28 reps · R 26 reps`. A Left + Right pair counts as one set (`summariseVolume`) |
 | Deleted sets | Sets deleted during the workout | Not shown and not counted. Visible only in the edit history |
@@ -147,7 +147,7 @@ Undo:
 | Next time heading | `Next time` |
 | Next time row | `Incline DB press: target 32.5 kg each × 8–10` (a **target**) + reason `You did 10 reps on every set at 30 kg.` + `Rule: double progression` |
 | No change | `Same targets next time.` |
-| Held (side lagging) | `Same target: 25 kg stack × 8–10` (a **target**) + the domain's fact naming the lagging side, e.g. `… but the right side didn't (lowest 7 reps); holding.` |
+| Held (side lagging) | `Same target: 25 kg stack × 8–10` (a **target**) + the domain's fact naming the lagging side, e.g. `… within the effort limit, but the right side didn't (lowest 7 reps); holding.` |
 | No feasible load | `No load target` + the domain's summary ending `Fix the equipment profile.` + [Update gym]. A null load reads "bodyweight" only for the `bodyweight` convention (or `added` with nothing added); otherwise "no load" |
 | Time-edit helper (under the start/end pickers in Edit workout) | `Active time counts from start to end, minus pauses inside that window.` |
 | Held (incomplete) | `Same target: 100 kg × 6–8` (a **target**) + the domain's fact, e.g. `Only 2 of 4 working sets were logged on 8 Oct; holding.` |
