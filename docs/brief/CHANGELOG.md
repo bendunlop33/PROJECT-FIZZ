@@ -89,3 +89,7 @@ The brief is a living document. Each approved change gets an entry here: the dat
 - **Routing:** general training rules stated in chat become playbook *candidates*, not personal memories. Personal preferences stay as memories.
 - **Backup, export and delete:** backups have separate sections that can be restored independently. Each domain can be exported or reset on its own. Credentials stay in the Keychain, in neither domain.
 - **Backups are in-app by default (Ben).** Automatic backups go into the app's own storage only. Off-phone backup to Files or iCloud is optional: a manual button, plus an automatic off-phone setting that is off by default. Onboarding no longer requires an off-phone backup. The safeguards don't nag: the app offers a one-tap off-phone copy before risky moments, and shows a quiet Settings reminder after 30 days without one.
+
+## v0.8: 2026-10-08 (Ben)
+
+- **Wearables (Garmin) are read-only.** The app only pulls data in: through Apple Health, Garmin's activity/health data, or exported files. It never uploads or writes anything to Garmin: no workouts pushed to the watch, nothing written back. Research is in progress in `docs/research/wearables-garmin.md`.
