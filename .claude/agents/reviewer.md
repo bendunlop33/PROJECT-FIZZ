@@ -20,3 +20,5 @@ Write `docs/reviews/<feature>.md` with a verdict of **PASS** or **CHANGES NEEDED
 List findings from most to least severe, each with file:line, a concrete failure
 scenario, and a suggested fix. Separate blocking issues from nits. Don't edit source
 code. Return the verdict and the blocking findings.
+
+If a problem comes from the brief or spec itself rather than the code, report it under a separate "Spec issues" heading.

@@ -6,15 +6,22 @@ Shared context for every agent working in this repo. Read this first.
 
 A private, single-user iPhone app for Ben: fast strength logging, an embedded
 text/voice coach, deterministic progression rules, saved gym/equipment
-profiles, FitNotes import, and (later) endurance context. Full spec:
-`docs/brief/training-app-build-brief.md` — it is the source of truth. If
-anything here conflicts with the brief, the brief wins; raise the conflict.
+profiles, FitNotes import, and (later) endurance context. Initial brief:
+`docs/brief/training-app-build-brief.md`.
+
+**The brief is a living first draft, not a fixed spec.** Treat it as the current
+direction, not settled requirements. When research, design work or a real-device
+test shows it is wrong, outdated or over-specified, say so and propose the change
+instead of building around it. Ben approves brief changes. Record approved changes
+in `docs/brief/CHANGELOG.md`, and record any change to the stack or architecture
+as an ADR in `docs/decisions/`. Where CLAUDE.md and the brief disagree, flag it
+rather than picking one silently.
 
 **Scope: personal use only.** No registration, multi-user, billing,
 subscriptions, App Store launch, or cross-device sync. Keep a stable owner ID
 and modular services so expansion stays possible, but don't build it.
 
-## Stack (brief §5)
+## Stack (brief §5, current choice and open to revision)
 
 - React Native + Expo **development builds** + TypeScript (iOS target; Expo Go is not a release test)
 - Local SQLite is the authoritative record; in-process services, no HTTP layer

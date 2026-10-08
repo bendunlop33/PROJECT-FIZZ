@@ -28,3 +28,4 @@ Rules:
 - Borrow interaction patterns, never competitors' branding, assets or whole screens.
 - Follow iOS Human Interface Guidelines conventions unless the spec says otherwise.
 - Don't write app code. Return a short summary and the file paths you wrote.
+- The brief's §12 layouts are a starting point, not final. If a different layout serves the logging loop better, propose it with your reasoning instead of following the brief blindly.

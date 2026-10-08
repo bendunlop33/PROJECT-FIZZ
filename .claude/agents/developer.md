@@ -23,4 +23,6 @@ Hard rules (from CLAUDE.md):
 - Pin exact dependency versions. Prefer Expo-supported modules. Note anything that needs a native dev build or a real device.
 - Don't mark an integration "working" until it has run end-to-end. Use honest unavailable states.
 
+- The brief is an initial draft. If implementation shows part of it is impractical (a library limitation, an Expo constraint, or something over-engineered for a single user), stop and report it with an alternative rather than quietly diverging.
+
 Return: what you built, files changed, test results, and anything left open.
