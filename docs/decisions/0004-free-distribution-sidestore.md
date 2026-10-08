@@ -19,3 +19,15 @@ Ben chose not to pay for the Apple Developer Program (US$99/year). He has a Wind
 ## Consequences
 - **Cost:** $0, including updates. Ben does a weekly refresh tap in SideStore.
 - **Upgrade triggers** (Ben's call): refreshes become a nuisance or keep failing; Live Activities or App Groups fail under re-signing; or he wants time-sensitive alerts, HealthKit or TestFlight. Migration uses backup/restore.
+
+## Update 2026-10-08: SideStore risks
+See `docs/guides/sidestore-windows.md`.
+- **Sign-in break:** since early September 2026, SideStore stable builds (0.6.4 and older) can't sign in to an Apple ID. Only the 0.7.0 alpha/nightly builds have the fix.
+- **iOS 26.4+ refresh errors:** some users report them, and the SideStore maintainers have no fix yet.
+- **Fallback:** Sideloadly or AltStore Classic on the Windows laptop.
+- **Trial run before any real data:** the signing tool is confirmed only after a trial run on Ben's iPhone. The run must:
+  - install an update over the top;
+  - skip a refresh and recover;
+  - restore from backup.
+
+  Switching tools later means backup, new app, restore.
