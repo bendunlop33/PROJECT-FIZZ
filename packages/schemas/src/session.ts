@@ -81,6 +81,11 @@ export const WorkoutSetSchema = z.object({
   setType: SetTypeSchema,
   status: SetStatusSchema,
   side: SetSideSchema.nullable(),
+  /**
+   * Set only on an other-side companion: the unilateral set whose single-side
+   * (left or right) log created this row. The pair is one prescribed set (review R4).
+   */
+  pairedWithSetId: IdSchema.nullable(),
   planned: PlannedSetSchema,
   rest: ResolvedRestSchema,
   actual: SetValuesSchema.nullable(),

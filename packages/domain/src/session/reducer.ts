@@ -24,7 +24,7 @@ import {
   pauseRestTimer,
   resumeRestTimer,
 } from '../rest';
-import { stableStringify } from '../stable';
+import { deriveId, stableStringify } from '../stable';
 import { toIso, toMs } from '../time';
 import { isRoundEnd, nextPendingSet } from './order';
 
@@ -268,6 +268,9 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   if (!ex) return fail('set_not_found', 'Exercise for this set not found.');
   const invalid = validateValues(cmd.values, ex) ?? checkSide(cmd.side, ex);
   if (invalid) return { ok: false, error: invalid };
+  if (set.pairedWithSetId !== null && cmd.side !== undefined && cmd.side !== set.side) {
+    return fail('invalid_values', `This set is the ${set.side ?? 'other'} side of an earlier set. Log it as that side, or delete it.`);
+  }
 
   const events: SessionEvent[] = [];
   let restTimer = state.restTimer;
@@ -288,8 +291,19 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
     flags: flagsFor(cmd.values, state, ex),
     version: set.version + 1,
   };
-  const sets = replaceSet(state.sets, completed);
+  let sets = replaceSet(state.sets, completed);
   events.push({ type: 'SetCommitted', setId: set.id, opId: cmd.opId });
+
+  // Review R4: a single-side log of a prescribed set adds a pending row for the
+  // other side, which becomes the next set. The pair is one prescribed set, so
+  // Left, Right, Left can never leave the exercise "done" with one side short.
+  let companion: WorkoutSet | null = null;
+  if (ex.laterality === 'unilateral' && set.pairedWithSetId === null && (completed.side === 'left' || completed.side === 'right')) {
+    companion = makeCompanion(state, completed, cmd);
+    if (sets.some((s) => s.id === companion?.id)) return fail('invalid_values', 'Could not add the other side: ID already used.');
+    sets = [...sets, companion];
+    events.push({ type: 'SetAdded', setId: companion.id, sessionExerciseId: ex.id });
+  }
 
   const audit = [
     ...state.audit,
@@ -305,7 +319,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
     },
   ];
 
-  const nextActive = nextPendingSet(set.id, state.exercises, sets);
+  const nextActive = companion?.id ?? nextPendingSet(set.id, state.exercises, sets);
   if (nextActive === null) {
     // Final set of the workout: no rest; the primary becomes Finish.
     events.push({ type: 'ActiveSetChanged', setId: null }, { type: 'AllSetsDone' });
@@ -346,6 +360,59 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   events.push({ type: 'ActiveSetChanged', setId: nextActive });
   const next = bumpVersion({ ...state, sets, audit, restTimer, workInterval: wi?.setId === set.id ? null : wi }, nextActive);
   return { ok: true, state: next, events };
+}
+
+/** The pending other-side row for a set logged as `left` or `right` (review R4). */
+function makeCompanion(state: SessionAggregate, logged: WorkoutSet, cmd: CommandOf<'log_set'>): WorkoutSet {
+  const index = Math.max(...state.sets.filter((s) => s.sessionExerciseId === logged.sessionExerciseId).map((s) => s.index)) + 1;
+  return {
+    id: deriveId(`companion:${logged.id}:${cmd.opId}`),
+    sessionId: state.session.id,
+    sessionExerciseId: logged.sessionExerciseId,
+    index,
+    setType: logged.setType,
+    status: 'pending',
+    side: logged.side === 'left' ? 'right' : 'left',
+    pairedWithSetId: logged.id,
+    planned: logged.planned,
+    rest: logged.rest,
+    actual: null,
+    // Same values as the side just logged; effort is never prefilled.
+    draft: { ...cmd.values, rpe: null, rir: null },
+    completedAt: null,
+    completedByOpId: null,
+    undoCount: 0,
+    flags: [],
+    edited: false,
+    version: 1,
+  };
+}
+
+/** Tombstone the still-pending other-side rows of `setId` (when its log is undone or it is deleted). */
+function dropPendingCompanions(
+  state: SessionAggregate,
+  sets: WorkoutSet[],
+  setId: string,
+  cmd: { opId: string; at: ZonedTimestamp },
+  audit: SessionAggregate['audit'],
+  events: SessionEvent[],
+): WorkoutSet[] {
+  return sets.map((s) => {
+    if (s.pairedWithSetId !== setId || s.status !== 'pending') return s;
+    const deleted: WorkoutSet = { ...s, status: 'deleted', draft: null, version: s.version + 1 };
+    audit.push({
+      id: `${cmd.opId}:deleted:${s.id}`,
+      sessionId: state.session.id,
+      setId: s.id,
+      opId: cmd.opId,
+      kind: 'deleted',
+      atUtc: cmd.at.utc,
+      before: snapshot(s),
+      after: snapshot(deleted),
+    });
+    events.push({ type: 'SetDeleted', setId: s.id });
+    return deleted;
+  });
 }
 
 function handleCorrectSet(state: SessionAggregate, cmd: CommandOf<'correct_set'>): Handled {
@@ -421,8 +488,11 @@ function handleUndoLog(state: SessionAggregate, cmd: CommandOf<'undo_log'>, nowM
   if (latestCommittedSetId(state) !== set.id) {
     return fail('not_latest_set', 'Only the most recent set can be undone; correct or delete older sets instead.');
   }
+  // Restore the side the set had before this log (e.g. `both` before "Left").
+  const logged = [...state.audit].reverse().find((e) => e.kind === 'logged' && e.setId === set.id && e.opId === set.completedByOpId);
   const restored: WorkoutSet = {
     ...set,
+    side: logged?.before?.side ?? set.side,
     status: 'pending',
     draft: set.actual,
     actual: null,
@@ -439,8 +509,7 @@ function handleUndoLog(state: SessionAggregate, cmd: CommandOf<'undo_log'>, nowM
     restTimer = endRestTimer(restTimer, 'cancelled', nowMs);
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'cancelled', timerVersion: restTimer.version, lateByMs: 0 });
   }
-  events.push({ type: 'ActiveSetChanged', setId: set.id });
-  const audit = [
+  const audit: SessionAggregate['audit'] = [
     ...state.audit,
     {
       id: `${cmd.opId}:undone`,
@@ -453,7 +522,10 @@ function handleUndoLog(state: SessionAggregate, cmd: CommandOf<'undo_log'>, nowM
       after: snapshot(restored),
     },
   ];
-  const next = bumpVersion({ ...state, sets: replaceSet(state.sets, restored), audit, restTimer }, set.id);
+  // The other-side row this log created goes with it (review R4).
+  const sets = dropPendingCompanions(state, replaceSet(state.sets, restored), set.id, cmd, audit, events);
+  events.push({ type: 'ActiveSetChanged', setId: set.id });
+  const next = bumpVersion({ ...state, sets, audit, restTimer }, set.id);
   return { ok: true, state: next, events };
 }
 
@@ -794,6 +866,7 @@ function handleAddSet(state: SessionAggregate, cmd: CommandOf<'add_set'>): Handl
     status: 'pending',
     // A new unilateral set starts as "both sides"; it can be logged per side.
     side: template.side === null ? null : 'both',
+    pairedWithSetId: null,
     planned: template.planned,
     rest: template.rest,
     actual: null,
@@ -845,6 +918,7 @@ function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise
     setType: 'working',
     status: 'pending',
     side: cmd.exercise.laterality === 'unilateral' ? 'both' : null,
+    pairedWithSetId: null,
     planned: { load: null, reps: null, durationS: null, rpe: null, rir: null },
     rest: cmd.rest,
     actual: null,
@@ -871,8 +945,7 @@ function handleDeleteSet(state: SessionAggregate, cmd: CommandOf<'delete_set'>):
   if (set.version !== cmd.expectedSetVersion) return fail('stale_version', 'This set changed since it was shown.');
   if (isWorkLive(state, [set.id])) return fail('work_interval_running', 'Stop the work timer before deleting this set.');
   const deleted: WorkoutSet = { ...set, status: 'deleted', draft: null, version: set.version + 1 };
-  const sets = replaceSet(state.sets, deleted);
-  const audit = [
+  const audit: SessionAggregate['audit'] = [
     ...state.audit,
     {
       id: `${cmd.opId}:deleted`,
@@ -886,6 +959,8 @@ function handleDeleteSet(state: SessionAggregate, cmd: CommandOf<'delete_set'>):
     },
   ];
   const events: SessionEvent[] = [{ type: 'SetDeleted', setId: set.id }];
+  // A pending other-side row belongs to the deleted set: the pair is one prescribed set (review R4).
+  const sets = dropPendingCompanions(state, replaceSet(state.sets, deleted), set.id, cmd, audit, events);
   // The rest timer is left alone, as for corrections (invariant 5).
   const activeSetId = repointActive(state, sets, events);
   return { ok: true, state: bumpVersion({ ...state, sets, audit }, activeSetId), events };
