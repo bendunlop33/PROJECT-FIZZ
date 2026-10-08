@@ -187,3 +187,106 @@ The module emits `onInterruption` and `onRouteChange`, but nothing subscribes to
    This needs Ben's decision once the device result is in. It should be recorded as a known risk in ADR 0007 now.
 2. **"One Swift module owns the iOS audio session" (CLAUDE.md stack; research rec. 5) vs the probe's use of `expo-speech` and `expo-speech-recognition`.** Both of these set the session themselves. That's reasonable for a spike whose job is to measure the difference. But the brief should state which module owns the session during recognition. `expo-speech-recognition` will switch to `playAndRecord` on its own unless it is configured not to, which conflicts with the rule as written.
 3. **CLAUDE.md rule 3 vs ADR 0006/brief v0.4.** Rule 3 still says "Numerical targets come from deterministic … rules, not the model". This slice doesn't touch it, and per the brief it wasn't assessed. It still needs a CLAUDE.md update approved by Ben.
+
+---
+
+# Re-review after fixes
+
+**Verdict: PASS**
+
+Reviewed on 8 Oct 2026 at `85b3b13`. The fixes actually start at `bf1c92a`, not `c678adf`. B3/S5 are in `bf1c92a`, S1 is in `1b119d6` and B2 is in `02fbc92`, so I reviewed `8b83412..85b3b13` and skipped the docs-only commits `3355e99` and `2ab187d`. The macOS CI run for `85b3b13` is still in progress, so the Swift was judged statically.
+
+## What I ran
+
+| Check | Result |
+|---|---|
+| `npm run check` | Clean: typecheck, eslint, 27 files / 435 tests pass. |
+| Prebuild in a scratch copy (default env) + `check-entitlements.ts --prebuild` | OK. `Fizz.entitlements` and `ExpoWidgetsTarget.entitlements` each contain only `com.apple.security.application-groups = [group.com.projectfizz.fizz]`. There is no `UIBackgroundModes`. |
+| Prebuild with `FIZZ_BACKGROUND_AUDIO=1` | `UIBackgroundModes = [audio]` is in the app's Info.plist only, not the extension's. The entitlement check still passes. |
+| `com.apple.developer.applesignin` injected into the generated `Fizz.entitlements` | The check exits 1 with an "allowlist" error. The guard fails closed. |
+| `expo config --type public` | `extra` carries `includeLiveActivity`, `backgroundAudioExperiment: false` and `appGroupIdentifier: group.com.projectfizz.fizz`, which the probe reads at runtime. |
+| `expo-modules-autolinking` `apple.js:234` and `expo-modules-core` `AppCodeSignEntitlements` | These confirm the developer's claim that `Paths.appleSharedContainers` is built from **build-time** entitlements. It can't show a SideStore rename. |
+| `expo-widgets` `start(props, url?, staleDate?)` | The N4 fix uses the real signature. |
+| Logging/secrets grep over the changed files | No `console`/`print`/`NSLog` in app or module code, and no credentials. |
+
+Scratch output was deleted, and no generated files are in the repo.
+
+## Previous findings
+
+| ID | Status | Notes |
+|---|---|---|
+| B1 App Group probe | **Fixed (better than suggested)** | New native `getAppGroupInfo`, plus pure `analyseAppGroup` with match / renamed / missing / unknown. See the deviation below. |
+| B2 Results lost on Back/force-close | **Fixed** | `results-store.ts` holds module-level state and serialises writes to `probe_kv`. The load merges by `atUtc`. Restored rows are validated per row, a saved `running` row comes back as "Interrupted", not as a result, and the S1 stub can't be overwritten. A persist error is shown in red. Tested in `probe-model.test.ts:99-180`. |
+| B3 Cancelled builds | **Fixed** | Group `ios-ipa-<ref>-<sha>`, `cancel-in-progress: false`. See the deviation below. |
+| S1 Deny-list | **Fixed** | `ALLOWED_ENTITLEMENTS` makes every key not on the list an error, including non-`com.apple.developer` keys, which is stricter than I asked for. Tested with four unknown keys, and I confirmed it end to end above. The allowlist (app-groups, keychain-access-groups, application-identifier, team-identifier, get-task-allow) is minimal, and each entry is justified. |
+| S2 Overlapping cues / hang | **Fixed** | A `CueDelegate` map settles each cue once. The session is deactivated only when nothing is pending and the keep-alive is off. Empty text is rejected. A cumulative per-cue timeout is backed by a 30 s JS `withTimeout`. `stop()` settles every queued cue. |
+| S3 Bluetooth under playAndRecord | **Fixed** | `.allowBluetoothA2DP` is always set. HFP is opt-in (`bluetoothMicrophone`). |
+| S4 Stuck RUNNING | **Fixed** | TTS has `onStopped` and a 20 s backstop. Speech has a 2 s fallback after `stop()`, and sync throws are caught. `run()` wraps everything in try/catch, so it always reaches a terminal state. |
+| S5 Persisted token | **Fixed** | `persist-credentials: false` on both checkouts. |
+| S6 Interruptions/route/locked | **Fixed** | An `audio_events` row is subscribed while the screen is mounted. There is also an opt-in `locked_cue` row (deviation below). |
+| S7 Build provenance / AlarmKit | **Fixed** | `buildNumber` is stored, validated as untrusted, and shown as "saved by build N". `judgeAlarmKitStatus` gives denied → unavailable, notDetermined → not_run, and an unknown state → fail. |
+| N2, N3, N4, N5, N6, N7, N8 | **Fixed** | Xcode path check with a listing; `.appex` existence check; `staleDate` plus an end timer; a foreground-delivery note on the notification row; Node `>=22.18.0`; `_ =` on `stopSpeaking`; a cache-key comment. |
+| N1 | Deferred, as agreed | Until the first install. |
+
+## Deviations
+
+- **App Group probe reads `embedded.mobileprovision` and `ALTAppGroups` natively: accepted.** It is the right call, because the JS-only route I suggested can't see a rename (verified above). On honesty:
+  - A PASS needs the configured group in the installed profile **and** a successful write/read in its container. On iOS, `containerURL` returns nil for a group the binary isn't entitled to.
+  - A rename or a missing group is always FAIL.
+  - Without a profile, the result can only pass on container access, and it says "Rename could not be checked".
+  - Malformed native replies become `unknown`.
+
+  I found no false-PASS path for the **app** side (see F2 for the extension side).
+- **Concurrency keyed on ref + SHA with `cancel-in-progress: false`: accepted.** The ADR's reasoning is correct: a per-ref group without cancel still drops a *pending* run. The cost is that a superseded `[ios-build]` still runs to completion, which is acceptable at this volume. Two runs of the same SHA and ref (push plus dispatch) share a group and queue rather than cancel.
+- **Default-off `FIZZ_BACKGROUND_AUDIO`: accepted.** It is off unless the checkbox is ticked or `[bg-audio]` is in the message, and the run summary shows whether it was on.
+  - The `${{ }}` use of `head_commit.message` is in `env:`, not in a shell line, so it can't be injected.
+  - `startKeepAlive` refuses to run without the background mode. Only the probe calls it, and the JS path always calls `stopKeepAlive` in `finally` (but see F3).
+  - `UIBackgroundModes` isn't an entitlement, so free provisioning is unaffected.
+  - ADR 0007 correctly says this doesn't decide the product feature.
+
+## Swift compile plausibility (iOS 26 SDK, Swift 5.9 language mode)
+
+I found nothing I expect to be a compile error:
+- `MainActor.assumeIsolated` (iOS 17+) sits inside `#available(iOS 26.0, *)`, and its `String` result is Sendable.
+- `UnsafeMutablePointer.update(repeating:count:)` (SE-0370) exists.
+- `scheduleBuffer(_:at:options:)` in a sync context resolves to the completion-handler overload.
+- `Data.range(of:in:)` uses the defaulted `options`.
+- `try? … as? [String: Any]` flattens.
+- The optional-closure call `removeValue(forKey:)?(outcome)` is valid.
+- `DispatchTime + Double` is valid.
+- Throwing `AsyncFunction` closures are supported.
+- `.allowBluetooth` only gives a deprecation warning. `expo-speech-recognition` 57.1.0, which is built in the same project, uses the same symbol (`ExpoSpeechRecognizer.swift:628`).
+
+I expect Sendable warnings, which are not errors in Swift 5 mode, in two places: the `@Sendable` NotificationCenter/`asyncAfter` closures capturing `self`/`utterance`, and `AVSpeechSynthesizerDelegate` conformance on a non-isolated class.
+
+## Blocking
+
+None.
+
+## Follow-ups (non-blocking, most important first)
+
+- **F1. The `audio_events` row can PASS without any interruption being tested** (`apps/mobile/src/probe/model.ts:204-215`).
+  - Scenario: the probe's own `configureSession` or speech start causes a `categoryChange` route event, so the row shows PASS and counts in the totals as passed, but interruptions were never tested.
+  - The details list each event, so a reader can tell, but the badge overstates it.
+  - Fix: give PASS only once an `interruption began` and its `ended` have been seen, and show route-only events as `needs_check`. Or rename the row to "observers fire".
+- **F2. App Group PASS covers the app, not the extension** (`apps/mobile/src/probe/app-group.ts:123-126`). The extension gets its own profile from SideStore and could lack the group, or carry a differently renamed one, while the app row passes.
+  - Fix: also parse `Bundle.main.builtInPlugInsURL/ExpoWidgetsTarget.appex/embedded.mobileprovision`. It is the same code and cheap.
+  - At minimum, add "extension not checked; the Live Activity row is the end-to-end test" to the PASS details.
+- **F3. Keep-alive can be orphaned** (`apps/mobile/src/probe/runners.ts:357-361`).
+  - Scenario: if `startKeepAlive` exceeds the 30 s JS timeout but then succeeds natively, the catch path skips `stopKeepAlive`. The silent loop then keeps the app alive in the background, and spoken audio (podcasts) stays paused because of `interruptSpokenAudioAndMixWithOthers`.
+  - The same applies natively (`AudioCoachModule.swift:201,217`): if `engine.start()` throws after `setActive(true)`, the session stays active.
+  - Fix: call `stopKeepAlive` in the outer catch, and in Swift deactivate on the throw path.
+- **F4. The locked cue is never ducked, but the report text implies it is** (`apps/mobile/src/probe/locked-cue.ts:35`; `runners.ts:353`; `AudioCoachModule.swift:131-133` skips `applyCategory` while the keep-alive runs).
+  - The detail says "no ducking while idle", which suggests ducking happens during the cue. In fact the cue mixes over music at full volume.
+  - Fix the wording ("cue is not ducked in this experiment"). A future fix could switch options to `duckOthers` and reactivate around the cue.
+- **F5. The cue timeout ignores `rate`** (`AudioCoachModule.swift:149`). `0.15 s/char` with `rate: 0.5` can be shorter than real speech. The timeout path then calls `stopSpeaking` and truncates a genuine cue, which is reported honestly as `timedOut`. Fix: divide the budget by `min(rate, 1)`.
+- **F6. A transient read error lets the next write overwrite the saved results** (`apps/mobile/src/probe/results-store.ts:75` vs `:99`). The comment says the saved copy "may still be fine", but `loaded` is set to true, so the next `updateResults` persists fresh rows over it. Fix: keep a `readFailed` flag and skip persisting (with `persistError` shown) until the read succeeds, or retry it.
+- **F7. Minor native state issues.**
+  - `queueDrainsAt` isn't reset in `stop()`, so later timeouts are only lengthened.
+  - `configureSession` (`:115`) applies the category even while a cue or the keep-alive is playing. `speak` already guards against this, and `configureSession` should too.
+- **F8. No tests for the impure results store.** Write ordering and the load race in `results-store.ts` are covered only indirectly, through the pure `mergeNewer` and `restoreResults`. Add one test with a fake `putProbeValue`: two quick updates should land in order.
+
+## Spec issues
+
+- Previous items 2 and 3 are unchanged. ADR 0007 now proposes a concrete audio-session ownership rule. That is a good basis for Ben's decision, but it is still "proposed", and CLAUDE.md still says only "one Swift module owns the session".
+- Previous item 1 (the SideStore App Group rename) is now recorded in ADR 0007 "Known risks" with options (a)–(c), which resolves my request. Ben's decision waits for the device result.
