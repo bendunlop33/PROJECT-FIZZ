@@ -68,3 +68,15 @@ The brief is a living document. Each approved change gets an entry here: the dat
 - **Review:** he can Start now, Save as routine, Edit, or ask for changes. Programmes are approved before anything is scheduled.
 - **Order:** single sessions first; programmes come with build step 6, the calendar.
 - **Offline:** saved routines still work; generating a new workout needs the coach.
+
+## v0.6: 2026-10-08 (Ben)
+
+- **Ben has ChatGPT Pro.** It covers the text coach through the ChatGPT-plan route, once the iPhone sign-in test (S1) passes. It does **not** cover voice: the route excludes audio, transcription and Realtime.
+- **Voice plan:**
+  - **Set cues:** Apple on-device voices (Enhanced/Premium recommended). Instant, offline, free.
+  - **Coach replies:**
+    - **Default:** Apple voice.
+    - **Opt-in:** an OpenAI TTS voice, using Ben's own OpenAI API key (stored in the Keychain) with a spend cap set on OpenAI's dashboard, and spend shown in the app.
+    - **Fallback:** if Ben is offline, out of credit or the key fails, the app falls back to Apple and says so. It never silently switches to a paid route.
+  - **Live ChatGPT-style conversation (Realtime/GPT-Live):** still a later, explicit decision. It needs a credential-issuing service.
+- **Speech input:** Apple on-device recognition, using the device locale (en-GB). OpenAI transcription only if accuracy in the gym is poor.
