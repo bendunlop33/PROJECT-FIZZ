@@ -1,7 +1,16 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "allowImportingTsExtensions": true
   },
-  "include": ["packages/*/src", "packages/*/test", "vitest.config.ts", "eslint.config.js"]
+  "include": [
+    "packages/*/src",
+    "packages/*/test",
+    "scripts",
+    "vitest.config.ts",
+    "eslint.config.js"
+  ]
 }

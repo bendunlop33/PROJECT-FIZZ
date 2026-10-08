@@ -1,0 +1,34 @@
+{
+  "name": "@fizz/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo run:ios",
+    "prebuild:ios": "expo prebuild --platform ios --no-install",
+    "bundle:ios": "expo export --platform ios --output-dir dist",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@expo/ui": "57.0.22",
+    "@fizz/domain": "0.1.0",
+    "@fizz/schemas": "0.1.0",
+    "expo": "57.0.27",
+    "expo-application": "57.0.3",
+    "expo-constants": "57.0.21",
+    "expo-notifications": "57.0.22",
+    "expo-secure-store": "57.0.4",
+    "expo-speech": "57.0.3",
+    "expo-speech-recognition": "57.1.0",
+    "expo-sqlite": "57.0.4",
+    "expo-status-bar": "57.0.1",
+    "expo-widgets": "57.0.23",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "5.7.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18"
+  }
+}

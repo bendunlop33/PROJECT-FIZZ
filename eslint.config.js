@@ -3,7 +3,7 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/node_modules/**', '**/dist/**', '**/coverage/**'] },
+  { ignores: ['**/node_modules/**', '**/dist/**', '**/coverage/**', 'apps/mobile/ios/**', 'apps/mobile/android/**', 'apps/mobile/.expo/**', '.claude/**'] },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   {
@@ -30,5 +30,19 @@ export default tseslint.config(
   {
     files: ['eslint.config.js'],
     ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    // Metro loads this as CommonJS; Expo's tsconfig excludes it from the TS project.
+    files: ['apps/mobile/metro.config.js'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      sourceType: 'commonjs',
+      globals: { require: 'readonly', module: 'writable', __dirname: 'readonly' },
+    },
+    rules: {
+      ...tseslint.configs.disableTypeChecked.rules,
+      '@typescript-eslint/no-require-imports': 'off',
+    },
   },
 );
