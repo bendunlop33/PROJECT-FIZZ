@@ -30,6 +30,14 @@ export function DeveloperScreen() {
             navigation.navigate('CapabilityProbe');
           }}
         />
+        <Row
+          title="ChatGPT sign-in test"
+          icon="person.badge.key"
+          subtitle="Spike S1: sign in, models, one test reply, refresh"
+          onPress={() => {
+            navigation.navigate('ChatGptSignInTest');
+          }}
+        />
       </Group>
 
       <SectionHeader title="Look" />

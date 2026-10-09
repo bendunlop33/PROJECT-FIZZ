@@ -13,6 +13,8 @@ export type ProfileStackParams = {
   GymDetail: { gymId: string };
   /** `equipmentId` is chosen once per visit (a new item's ID too), so Save is idempotent. */
   EquipmentEditor: { gymId: string; equipmentId: string; kind: EquipmentKind; isNew: boolean };
+  /** Spike S1 (Developer). */
+  ChatGptSignInTest: undefined;
 };
 
 export type TabParams = {
