@@ -98,8 +98,8 @@ function plateFace(c: Vec, r: number, layer: Layer, stacked: boolean): Shape[] {
     ]),
     ...tier('full', [
       ...(stacked ? ([{ kind: 'circle', layer, c: add(c, v(0.006, -0.006)), r, stroke: 'implement', width: STROKE.hair, opacity: 0.3 }] satisfies Shape[]) : []),
-      { kind: 'circle', layer, c, r, fill: 'frameFill', stroke: 'implement', width: STROKE.edge, opacity: 0.7 },
-      { kind: 'circle', layer, c, r: r * 0.86, fill: 'frameFill', stroke: 'implement', width: STROKE.hair, opacity: 0.55 },
+      { kind: 'circle', layer, c, r, fill: 'frameFill', stroke: 'frame', width: STROKE.edge, opacity: 0.85 },
+      { kind: 'circle', layer, c, r: r * 0.86, fill: 'frameFill', stroke: 'frame', width: STROKE.hair, opacity: 0.6 },
       { kind: 'circle', layer, c, r: r * 0.6, stroke: 'implement', width: STROKE.hair, opacity: 0.25 },
       { kind: 'circle', layer, c, r: 0.045, fill: 'frame', opacity: 0.8 },
       { kind: 'circle', layer, c, r: 0.025, fill: 'implement', opacity: 0.8 },
