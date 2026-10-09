@@ -122,16 +122,21 @@ function padSlab(a: Vec, b: Vec, t: number, layer: Layer): Shape[] {
   ];
 }
 
-/** Front view: the bar runs across the picture with plates seen edge-on at each end. */
-export function frontBarbellShapes(id: string, c: Vec, plates: keyof typeof PLATE_RADIUS): PropGeometry {
+/**
+ * Front view: the bar runs across the picture with plates seen edge-on at
+ * each end. Held in front of the body, so it is drawn in front of the figure
+ * (`front`); seen from behind (`seenFrom: back`) the same bar is behind the
+ * body (`mid`): the head and trunk hide its middle, the hands grip over it.
+ */
+export function frontBarbellShapes(id: string, c: Vec, plates: keyof typeof PLATE_RADIUS, layer: Layer = 'front'): PropGeometry {
   const r = PLATE_RADIUS[plates];
   const half = r > 0 ? 0.36 : 0.32;
-  const shapes: Shape[] = [{ kind: 'line', layer: 'front', a: v(c.x - half, c.y), b: v(c.x + half, c.y), width: 0.014, paint: 'implement' }];
+  const shapes: Shape[] = [{ kind: 'line', layer, a: v(c.x - half, c.y), b: v(c.x + half, c.y), width: 0.014, paint: 'implement' }];
   if (r > 0) {
     for (const sx of [-1, 1]) {
       const x0 = c.x + sx * 0.3;
       const x1 = c.x + sx * 0.335;
-      shapes.push({ kind: 'poly', layer: 'front', points: [v(x0, c.y - r), v(x1, c.y - r), v(x1, c.y + r), v(x0, c.y + r)], fill: 'implement', detail: 'compact' });
+      shapes.push({ kind: 'poly', layer, points: [v(x0, c.y - r), v(x1, c.y - r), v(x1, c.y + r), v(x0, c.y + r)], fill: 'implement', detail: 'compact' });
       // M/L: the plate edge-on as a profile (thick rim, thinner hub), a collar inside, the sleeve past it.
       const xm = (x0 + x1) / 2;
       const rim = 0.019;
@@ -139,13 +144,13 @@ export function frontBarbellShapes(id: string, c: Vec, plates: keyof typeof PLAT
       const lip = r * 0.9;
       shapes.push({
         kind: 'poly',
-        layer: 'front',
+        layer,
         points: [v(xm - sx * rim, c.y + r), v(xm + sx * rim, c.y + r), v(xm + sx * rim, c.y + lip), v(xm + sx * hub, c.y + lip - 0.01), v(xm + sx * hub, c.y - lip + 0.01), v(xm + sx * rim, c.y - lip), v(xm + sx * rim, c.y - r), v(xm - sx * rim, c.y - r), v(xm - sx * rim, c.y - lip), v(xm - sx * hub, c.y - lip + 0.01), v(xm - sx * hub, c.y + lip - 0.01), v(xm - sx * rim, c.y + lip)],
         fill: 'implement',
         detail: 'full',
       });
-      shapes.push({ kind: 'poly', layer: 'front', points: roundedRect(x0 - sx * 0.026, c.y - 0.025, x0 - sx * 0.012, c.y + 0.025, 0.003), fill: 'implement', detail: 'full' });
-      shapes.push({ kind: 'line', layer: 'front', a: v(x1, c.y), b: v(x1 + sx * 0.03, c.y), width: 0.02, paint: 'implement', detail: 'full' });
+      shapes.push({ kind: 'poly', layer, points: roundedRect(x0 - sx * 0.026, c.y - 0.025, x0 - sx * 0.012, c.y + 0.025, 0.003), fill: 'implement', detail: 'full' });
+      shapes.push({ kind: 'line', layer, a: v(x1, c.y), b: v(x1 + sx * 0.03, c.y), width: 0.02, paint: 'implement', detail: 'full' });
     }
   }
   return { id, shapes, colliders: [], solidBottoms: r > 0 ? [c.y - r] : [] };

@@ -314,13 +314,21 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
     }
   }
   emitLayer('far');
-  emitLayer('mid');
   const legs: BodyGroup[] = side ? ['legNear'] : ['legFar', 'legNear'];
   const arms: BodyGroup[] = side ? ['armNear'] : ['armFar', 'armNear'];
+  // Seen from behind, the buttocks and the seat are nearer the camera than the legs: legs go first, under the mid props and the trunk.
+  const legsFirst = !side && body.seenFrom === 'back';
+  if (legsFirst) {
+    for (const g of legs) {
+      if (full && cs(g).length > 0) ops.push(halo(g));
+      drawGroup(g);
+    }
+  }
+  emitLayer('mid');
   // M/L: near-limb halos go under the trunk, so near limbs stand clear of the far side and props but not of their own body.
-  if (full) for (const g of [...legs, ...arms]) if (cs(g).length > 0) ops.push(halo(g));
+  if (full) for (const g of [...(legsFirst ? [] : legs), ...arms]) if (cs(g).length > 0) ops.push(halo(g));
   drawGroup('trunk');
-  for (const g of legs) drawGroup(g);
+  if (!legsFirst) for (const g of legs) drawGroup(g);
   // Pelvis regions after the near leg, so the thigh doesn't cut the glutes in half (§3.11 step 8).
   if (side) regionOps('pelvis');
   for (const g of arms) drawGroup(g);

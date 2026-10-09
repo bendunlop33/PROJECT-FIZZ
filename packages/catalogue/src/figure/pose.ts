@@ -425,7 +425,7 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
   for (const p of guide.props) {
     const c = propPoints[p.id];
     if (c === undefined) continue;
-    if (p.type === 'barbell') addGeometry(view === 'front' ? frontBarbellShapes(p.id, c, p.plates) : barbellShapes(p.id, c, p.plates));
+    if (p.type === 'barbell') addGeometry(view === 'front' ? frontBarbellShapes(p.id, c, p.plates, guide.seenFrom === 'back' ? 'mid' : 'front') : barbellShapes(p.id, c, p.plates));
     if (p.type === 'dumbbell' && p.anchor.kind !== 'hand') addGeometry(dumbbellShapes(p.id, c, p.size, p.seen ?? 'end'));
   }
 

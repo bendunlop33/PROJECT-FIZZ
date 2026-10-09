@@ -7,7 +7,9 @@
  * Notation: `segment.surface s0–s1 dD` (an edge band, surface `front`/`back`
  * in a side view, `lat`/`med` in front/back views) or `segment.face s0–s1 cC
  * wW` (a lens across the segment; `±c` = a mirrored left/right pair on the
- * trunk; `wA>B` = width from A at s0 to B at s1), or `hand.full`.
+ * trunk; `wA>B` = width from A at s0 to B at s1; `cA>B` = centre moving
+ * from A to B, e.g. a lat sweeping from the waist out to the armpit), or
+ * `hand.full`.
  *
  * `trunk` is the pelvis–lumbar–thorax chain read as one segment, so a muscle
  * that spans the trunk (abs, lower back, lats) is one smooth shape rather
@@ -31,13 +33,19 @@ export type RegionSeg = SegmentName | 'trunk';
 
 export type RegionSpec =
   | { kind: 'edge'; seg: RegionSeg; surface: 'front' | 'back' | 'lat' | 'med'; s: readonly [number, number]; d: number }
-  | { kind: 'face'; seg: RegionSeg; s: readonly [number, number]; c: number; w: readonly [number, number]; mirror: boolean }
+  | { kind: 'face'; seg: RegionSeg; s: readonly [number, number]; c: readonly [number, number]; w: readonly [number, number]; mirror: boolean }
   | { kind: 'hand' };
 
 /** Highest `s` a region may reach: a little past a segment's end, or the top of the trunk chain. */
 export const regionMaxS = (seg: RegionSeg): number => (seg === 'trunk' ? 3 : 1.5);
 
 const NUM = String.raw`[+-]?\d*\.?\d+`;
+
+/** `A` or `A>B` (a value that runs from A at s0 to B at s1). */
+const pair = (text: string): [number, number] => {
+  const [a, b] = text.split('>');
+  return [Number(a), Number(b ?? a)];
+};
 const RANGE = new RegExp(String.raw`^(${NUM})(?:–|\.\.)(${NUM})$`);
 
 /** Parses one region in the map's notation; null if it isn't valid. */
@@ -51,7 +59,7 @@ export function parseRegion(text: string): RegionSpec | null {
   const seg = segName as RegionSeg;
   let s: [number, number] | null = null;
   let d: number | null = null;
-  let c: number | null = null;
+  let c: [number, number] | null = null;
   let mirror = false;
   let w: [number, number] | null = null;
   for (const tok of tokens.slice(1)) {
@@ -61,13 +69,12 @@ export function parseRegion(text: string): RegionSpec | null {
     } else if (/^d/.test(tok)) {
       d = Number(tok.slice(1));
     } else if (/^±c/.test(tok)) {
-      c = Number(tok.slice(2));
+      c = pair(tok.slice(2));
       mirror = true;
     } else if (/^c/.test(tok)) {
-      c = Number(tok.slice(1));
+      c = pair(tok.slice(1));
     } else if (/^w/.test(tok)) {
-      const [a, b] = tok.slice(1).split('>');
-      w = [Number(a), Number(b ?? a)];
+      w = pair(tok.slice(1));
     } else {
       return null;
     }
@@ -78,7 +85,7 @@ export function parseRegion(text: string): RegionSpec | null {
     return { kind: 'edge', seg, surface, s, d };
   }
   if (surface === 'face') {
-    if (c === null || w === null || d !== null || !(c >= -1 && c <= 1) || w.some((x) => !(x > 0 && x <= 1))) return null;
+    if (c === null || w === null || d !== null || c.some((x) => !(x >= -1 && x <= 1)) || w.some((x) => !(x > 0 && x <= 1))) return null;
     return { kind: 'face', seg, s, c, w, mirror };
   }
   return null;
@@ -112,7 +119,7 @@ const MAP_TEXT: Record<Exclude<Muscle, 'core'>, Row> = {
   lats: {
     side: ['trunk.back 1.45–2.78 d0.5'],
     front: ['thorax.lat 0.25–0.80 d0.25'],
-    back: ['trunk.face 1.5–2.8 ±c0.6 w0.3>0.5'],
+    back: ['trunk.face 1.3–2.88 ±c0.3>0.6 w0.25>0.5'],
   },
   obliques: { side: ['trunk.face 0.6–2.3 c+0.1 w0.5'], front: ['trunk.lat 0.8–2.25 d0.35'], back: ['trunk.lat 0.8–2.25 d0.25'] },
   quads: { side: ['thigh.front 0.05–0.92 d0.75'], front: ['thigh.face 0.05–0.90 c+0.1 w0.7'], back: null },
@@ -166,7 +173,7 @@ export function adjustRegion(spec: RegionSpec, adj: RegionAdjust): RegionSpec {
   if (spec.kind === 'hand') return spec;
   const s = adj.s ?? spec.s;
   if (spec.kind === 'edge') return { ...spec, s, d: adj.d ?? spec.d };
-  return { ...spec, s, c: adj.c ?? spec.c, w: adj.w === undefined ? spec.w : [adj.w, adj.w] };
+  return { ...spec, s, c: adj.c === undefined ? spec.c : [adj.c, adj.c], w: adj.w === undefined ? spec.w : [adj.w, adj.w] };
 }
 
 /** Problems with an adjust (numbers moved more than `MAX_ADJUST`, or fields the region doesn't have). */
@@ -182,7 +189,7 @@ export function adjustProblems(spec: RegionSpec, adj: RegionAdjust): string[] {
     if (adj.d !== undefined && far(adj.d, spec.d)) out.push('d moves more than 0.25');
   } else {
     if (adj.d !== undefined) out.push('a face region has no d');
-    if (adj.c !== undefined && far(adj.c, spec.c)) out.push('c moves more than 0.25');
+    if (adj.c !== undefined && (far(adj.c, spec.c[0]) || far(adj.c, spec.c[1]))) out.push('c moves more than 0.25');
     if (adj.w !== undefined && (far(adj.w, spec.w[0]) || far(adj.w, spec.w[1]))) out.push('w moves more than 0.25');
   }
   return out;

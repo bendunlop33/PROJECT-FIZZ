@@ -184,13 +184,15 @@ describe('muscle region map (§4.5)', () => {
 
   it('parses the notation and rejects nonsense', () => {
     expect(parseRegion('thorax.back 0.10–0.70 d0.5')).toEqual({ kind: 'edge', seg: 'thorax', surface: 'back', s: [0.1, 0.7], d: 0.5 });
-    expect(parseRegion('thorax.face 0.50–0.88 ±c0.45 w0.55')).toEqual({ kind: 'face', seg: 'thorax', s: [0.5, 0.88], c: 0.45, w: [0.55, 0.55], mirror: true });
+    expect(parseRegion('thorax.face 0.50–0.88 ±c0.45 w0.55')).toEqual({ kind: 'face', seg: 'thorax', s: [0.5, 0.88], c: [0.45, 0.45], w: [0.55, 0.55], mirror: true });
     expect(parseRegion('upperArm.front −0.10–0.35 d0.7')).toMatchObject({ s: [-0.1, 0.35] });
     expect(parseRegion('hand.full')).toEqual({ kind: 'hand' });
     for (const bad of ['', 'head.front 0–1 d0.5', 'thigh.front 0.5–0.2 d0.5', 'thigh.front 0–1', 'thigh.face 0–1 d0.5', 'thigh.front 0–1 d0.5 junk']) expect(parseRegion(bad), bad).toBeNull();
     // `trunk` is the pelvis–lumbar–thorax chain as one segment: s runs to 3 there, to 1.5 on a single segment.
     expect(parseRegion('trunk.front 0.3–2.35 d0.45')).toEqual({ kind: 'edge', seg: 'trunk', surface: 'front', s: [0.3, 2.35], d: 0.45 });
-    expect(parseRegion('trunk.face 1.5–2.8 ±c0.6 w0.3>0.5')).toMatchObject({ seg: 'trunk', mirror: true, w: [0.3, 0.5] });
+    // `cA>B` moves the lens centre along its length (a lat sweeping from the waist out to the armpit).
+    expect(parseRegion('trunk.face 1.3–2.88 ±c0.3>0.6 w0.25>0.5')).toMatchObject({ seg: 'trunk', mirror: true, c: [0.3, 0.6], w: [0.25, 0.5] });
+    expect(parseRegion('trunk.face 1.3–2.88 c0.3>1.2 w0.5')).toBeNull();
     expect(parseRegion('thigh.front 0–2 d0.5')).toBeNull();
     expect(parseRegion('trunk.front 0–3.2 d0.5')).toBeNull();
   });
@@ -216,7 +218,8 @@ describe('muscle focus (§4)', () => {
     'machine-leg-press': ['adductors'],
     // The hanging arm covers the front of the trunk, so the guide hides core (focus.hide) rather than draw slivers either side of it.
     'dumbbell-bulgarian-split-squat': ['core', 'adductors'],
-    'cable-lat-pulldown': ['upper_back', 'rear_delts'],
+    // Seen from behind (B3, provisional): the arm flexors face away from the camera.
+    'cable-lat-pulldown': ['biceps', 'brachialis'],
     'barbell-bench-press': [],
     'barbell-overhead-press': [],
     'dumbbell-one-arm-row': [],
@@ -326,7 +329,7 @@ describe('legend text (§5.3)', () => {
     expect(squat.map((l) => l.swatch)).toEqual([true, true, false]);
     expect(squat[0]?.accessibilityLabel).toBe('Feel it most: front of thighs, quads, and glutes.');
     const pulldown = muscleLegend(muscleFocusFor(entry('cable-lat-pulldown'), loaded('cable-lat-pulldown').guide));
-    expect(pulldown[2]).toMatchObject({ label: 'Not shown from the front:', list: 'upper back, back of shoulders' });
+    expect(pulldown[2]).toMatchObject({ label: 'Not shown from behind:', list: 'front of upper arms' });
     // No guide: the lines without swatches, and no Not shown line.
     const noGuide = muscleLegend(muscleFocusFor(entry('barbell-back-squat'), null));
     expect(noGuide.map((l) => [l.kind, l.swatch])).toEqual([

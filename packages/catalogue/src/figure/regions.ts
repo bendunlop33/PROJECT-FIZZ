@@ -94,15 +94,16 @@ function edgeBand(base: RegionBase, x: 1 | -1, s0: number, s1: number, d: number
   return [...outer, ...inner.reverse()];
 }
 
-/** Face lens (§4.4): centred at `c` across the segment, `w` of its full width. */
-function faceLens(base: RegionBase, s0: number, s1: number, c: number, w: readonly [number, number]): Vec[] {
+/** Face lens (§4.4): centred at `c` across the segment, `w` of its full width (each may run from one value at s0 to another at s1). */
+function faceLens(base: RegionBase, s0: number, s1: number, c: readonly [number, number], w: readonly [number, number]): Vec[] {
   const ss = sampleRange(s0, s1, samplesFor(s0, s1));
   const upper: Vec[] = [];
   const lower: Vec[] = [];
   for (const s of ss) {
     const wd = base.widths(s);
-    const centre = c >= 0 ? c * wd.front : c * wd.back;
     const k = (s - s0) / (s1 - s0);
+    const ck = c[0] + (c[1] - c[0]) * k;
+    const centre = ck >= 0 ? ck * wd.front : ck * wd.back;
     const half = ((w[0] + (w[1] - w[0]) * k) * (wd.front + wd.back)) / 2 * taper(s, s0, s1);
     upper.push(across(base, s, centre + half));
     lower.push(across(base, s, centre - half));
@@ -156,7 +157,7 @@ function specContours(base: RegionBase, trunk: boolean, spec: Exclude<RegionSpec
     return [edgeBand(base, x, s0, s1, spec.d)];
   }
   const out = [faceLens(base, s0, s1, spec.c, spec.w)];
-  if (spec.mirror && trunk && spec.c !== 0) out.push(faceLens(base, s0, s1, -spec.c, spec.w));
+  if (spec.mirror && trunk && spec.c.some((x) => x !== 0)) out.push(faceLens(base, s0, s1, [-spec.c[0], -spec.c[1]], spec.w));
   return out;
 }
 

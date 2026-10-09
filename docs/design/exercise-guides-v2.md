@@ -1,6 +1,6 @@
 # Exercise guides v2: detailed figure, muscle focus, what not to do
 
-Status: v0.1 draft, 9 Oct 2026. **Mostly built** (9 Oct 2026, [ADR 0014](../decisions/0014-guides-v2-muscle-highlight-and-figure-drawing.md)): render quality, figure v2, muscle focus, What not to do and the How to order. **Not built yet:** Full screen (§2.2), the visible-area warning (§4.7) and the rack prop. The `camera: "back"` field (§4.8) is built as `seenFrom`, because `camera` already holds the fixed camera. It changes the How to screen in [exercise-library.md](exercise-library.md) §8, the figure drawing in `packages/catalogue/src/figure/`, and design-system principle 5, §2.3 and §9.57–9.60. Builds on [ADR 0011](../decisions/0011-exercise-catalogue-and-guide-tooling.md) (guide format, rig, Linux tooling) and [ADR 0013](../decisions/0013-in-app-guide-playback.md) (Skia playback). Research: [exercise-bank-and-visuals.md](../research/exercise-bank-and-visuals.md) §5.
+Status: v0.1 draft, 9 Oct 2026. **Mostly built** (9 Oct 2026, [ADR 0014](../decisions/0014-guides-v2-muscle-highlight-and-figure-drawing.md)): render quality, figure v2, muscle focus, What not to do and the How to order. **Not built yet:** Full screen (§2.2), the visible-area warning (§4.7) and the rack prop. The `camera: "back"` field (§4.8) is built as `seenFrom`, because `camera` already holds the fixed camera. The lat pulldown is drawn from behind (§4.10) as a **provisional** product-manager call; Ben confirms or rejects it (B3). It changes the How to screen in [exercise-library.md](exercise-library.md) §8, the figure drawing in `packages/catalogue/src/figure/`, and design-system principle 5, §2.3 and §9.57–9.60. Builds on [ADR 0011](../decisions/0011-exercise-catalogue-and-guide-tooling.md) (guide format, rig, Linux tooling) and [ADR 0013](../decisions/0013-in-app-guide-playback.md) (Skia playback). Research: [exercise-bank-and-visuals.md](../research/exercise-bank-and-visuals.md) §5.
 
 **Why.** Ben reviewed the 10 animated guides on 9 Oct 2026:
 
@@ -326,7 +326,9 @@ There are two tiers on purpose: one simple cut, and every in-app player size get
 10. Bar-path trace (static, as now)
 11. `front` props (bar dot, dumbbells, handles)
 
-Front and back views: floor → back props → trunk (fill, regions, shading, lines) → both legs → both arms → front props.
+Front view: floor → back props → mid props → trunk (fill, regions, shading, lines) → both legs → both arms → front props.
+
+Back view (`seenFrom: "back"`): floor → back props → **both legs** → mid props → trunk → both arms → front props. From behind, the buttocks and the seat are nearer the camera than the legs, so the legs go first. A front-view barbell is drawn with the mid props in a back view: it is held in front of the body, so the head and trunk hide its middle and the hands grip over it.
 
 ---
 
@@ -427,7 +429,7 @@ The head, the neck (apart from `traps` in the back view) and the feet are never 
 | Guide | View | Not shown |
 |---|---|---|
 | Back squat, Romanian deadlift, leg press, Bulgarian split squat | side | inner thighs (adductors) |
-| Lat pulldown | front (now) | upper back, back of shoulders. **From behind (GV11):** front of upper arms |
+| Lat pulldown | back (provisional, B3) | front of upper arms. (From the front it would be upper back, back of shoulders) |
 | Bench press, overhead press, one-arm row, triceps pushdown, sled push | side | nothing |
 
 ### 4.6 Which limbs are coloured
@@ -484,6 +486,8 @@ The pulldown's primary muscle is `lats`, and its secondaries are `upper_back`, `
 What changes when drawn from behind: the spine groove and shoulder-blade lines (§3.8). The machine column sits *behind* the figure in the picture (layer `back`). The bar is drawn in front of the head at the top and behind the torso at the bottom, where only the bar ends either side show. The cable runs from the bar centre up past the head. `cameraNote` and `a11y.summary` are updated ("Back view…"). The ROM and contact checks are unchanged (same 2D projection).
 
 If Ben prefers the front view, the guide keeps `camera: "front"` and the text lists upper back and rear shoulders under `Not shown from the front`.
+
+**As drawn (9 Oct 2026, provisional):** `seenFrom: "back"`. The lats are one wing each side (`trunk.face … ±c0.3>0.6`, sweeping from the waist out to the armpit), with the upper back and rear shoulders soft. The thigh pad sits behind the body. The bottom bar position is the upper chest (0.588 H, just below the top of the shoulders), so from behind the upper back hides the bar and only its ends show; at neck height it could read as a behind-the-neck pull, which the brief forbids. At the bottom the upper arm (0.83) and forearm (0.68) are foreshortened, because the elbows go back and the hands sit forward at the chest; in-plane arms would fold the elbows down to the waist. To go back to the front view, drop `seenFrom`; the rest of the pose (bar to the upper chest, foreshortened arms at the bottom) is right from the front too.
 
 ---
 
@@ -728,7 +732,7 @@ All pure, in `@fizz/catalogue` (`src/figure/`, `src/muscles.ts`) and `apps/mobil
 ### 12.2 How to screen
 
 12. On a 390 × 844 phone at default text size, the `What not to do` heading and its first two items are visible without scrolling. On 375 × 667, the heading and first item are.
-13. The header no longer shows `Main muscles:`. The legend shows `Feel it most:` (and `Also works:` when there are secondaries) with plain names. For lat pulldown in the front view, it shows `Not shown from the front: upper back, back of shoulders`.
+13. The header no longer shows `Main muscles:`. The legend shows `Feel it most:` (and `Also works:` when there are secondaries) with plain names. For lat pulldown seen from behind, it shows `Not shown from behind: front of upper arms` (in the front view it would be `Not shown from the front: upper back, back of shoulders`).
 14. `Common mistakes` is gone, and the same faults appear once, under `What not to do`, in catalogue order.
 15. At AX3 on 375pt, legend lines and `What not to do` items wrap with no truncation; the canvas stays ≥ 200pt; the controls stack.
 16. `Full screen` opens a portrait canvas in which the squat figure is visibly larger (≥ 1.4× the card's figure height). Closing returns to How to on the same frame and playing/paused state.
