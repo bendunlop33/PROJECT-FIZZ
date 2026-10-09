@@ -72,6 +72,7 @@ export function WorkoutScreen() {
   const insets = useSafeAreaInsets();
 
   const [data, setData] = useState<ActiveWorkoutData | null | 'loading'>('loading');
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [now, setNow] = useState(clockNow);
   const [edits, setEdits] = useState<DraftEdits | null>(null);
   const [guard, setGuard] = useState(false);
@@ -88,9 +89,16 @@ export function WorkoutScreen() {
   const tickedFor = useRef<string | null>(null);
 
   const reload = useCallback(async () => {
-    const d = await services.workout.load();
-    setData(d);
-    return d;
+    try {
+      const d = await services.workout.load();
+      setData(d);
+      setLoadError(null);
+      return d;
+    } catch (e) {
+      // Never a blank screen you can't leave (review S2).
+      setLoadError(e instanceof Error ? e.message : String(e));
+      return null;
+    }
   }, [services]);
 
   useFocusEffect(
@@ -230,6 +238,15 @@ export function WorkoutScreen() {
     });
   }, [now, data, services]);
 
+  if (loadError !== null && (data === 'loading' || data === null)) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top + theme.space['4'], paddingHorizontal: theme.space['4'], gap: theme.space['4'] }}>
+        <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t open this workout." detail={`Nothing was changed. ${loadError}`} />
+        <SecondaryButton label="Try again" onPress={() => void reload()} />
+        <TextButton label="Go to Today" onPress={close} />
+      </View>
+    );
+  }
   if (data === 'loading') return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
   if (data === null || view === null) {
     return (

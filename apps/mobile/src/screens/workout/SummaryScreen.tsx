@@ -37,7 +37,22 @@ export function SummaryScreen() {
     navigation.dispatch(popToToday());
   };
 
-  if (data.state !== 'ready' || data.value.summary === null) return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
+  if (data.state === 'loading') return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
+  if (data.state === 'error' || data.value.summary === null) {
+    // Never a blank full-screen modal (review S2): say so, offer a retry and a way out.
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top + theme.space['4'], paddingHorizontal: theme.components.screenMargin, gap: theme.space['4'] }}>
+        <StatusLine
+          icon="exclamationmark.triangle"
+          tone="warning"
+          text={data.state === 'error' ? 'Couldn’t show this summary.' : 'This workout wasn’t found.'}
+          detail={data.state === 'error' ? `Your workout is saved. ${data.message}` : null}
+        />
+        {data.state === 'error' ? <SecondaryButton label="Try again" onPress={reload} /> : null}
+        <TextButton label="Done" onPress={done} />
+      </View>
+    );
+  }
   const { summary: sum, backup } = data.value;
   const tz = sum.tz;
   const range = `${formatTime(toMs(sum.startedAtUtc), tz)}–${sum.endedAtUtc ? formatTime(toMs(sum.endedAtUtc), tz) : ''}`;

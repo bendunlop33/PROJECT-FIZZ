@@ -25,6 +25,12 @@ export type StartupOutcome =
       sqliteVersion: string;
       setup: SetupState;
       recovery: RecoveryResult | null;
+      /**
+       * The unfinished workout couldn't be read (e.g. a record that fails
+       * validation). Nothing is auto-opened; Today shows a recovery card
+       * instead of a blank workout (review workout-loop S2).
+       */
+      recoveryError: string | null;
     }
   | { kind: 'schema_too_new'; message: string }
   | { kind: 'sqlite_too_old'; version: string }
@@ -58,16 +64,22 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     // Coaching knowledge: the starter exercise list (only missing IDs are added).
     await services.coachingKnowledge.ensureStarterExercises().catch(() => 0);
     const setup = await services.setup.getState();
-    const recovery = setup.profile ? await services.sessions.recover() : null;
+    let recovery: RecoveryResult | null = null;
+    let recoveryError: string | null = null;
+    try {
+      recovery = setup.profile ? await services.sessions.recover() : null;
+    } catch (e) {
+      recoveryError = errorText(e);
+    }
     // Rest alerts follow the recovered state: one alert for a running rest, none otherwise (flow §4.2).
     if (recovery && deps.restAlerts) void deps.restAlerts.reconcile(recovery.state, toMs(deps.now().utc));
     // Background work: never awaited by the launch. The integrity check reads
     // in small turns so a Log isn't held behind it (review S4). The catch-up
     // backup exports everything in one turn, so it waits while a workout is
     // unfinished; finishing that workout backs up anyway.
-    if (recovery?.state.session.status !== 'active') void services.backups.ensureBackedUp().catch(() => null);
+    if (recoveryError === null && recovery?.state.session.status !== 'active') void services.backups.ensureBackedUp().catch(() => null);
     void services.integrity.checkAll().catch(() => null);
-    return { kind: 'ready', services, migration: manager.store.migration, sqliteVersion, setup, recovery };
+    return { kind: 'ready', services, migration: manager.store.migration, sqliteVersion, setup, recovery, recoveryError };
   } catch (e) {
     await manager.close().catch(() => undefined);
     return { kind: 'open_failed', message: errorText(e) };

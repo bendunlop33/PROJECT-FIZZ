@@ -53,7 +53,8 @@ export type UndoResult = { ok: true } | { ok: false; reason: 'workout_unfinished
 
 export function createRestoreService(deps: RestoreServiceDeps) {
   async function block(): Promise<RestoreBlock | null> {
-    const a = await deps.activeWorkout();
+    // An unfinished workout that can't even be read doesn't block: restoring is the way out (review S2).
+    const a = await deps.activeWorkout().catch(() => null);
     if (!a) return null;
     return { title: a.session.routineName ?? 'Workout', startedAtUtc: a.session.startedAt.utc, tz: a.session.startedAt.tz };
   }

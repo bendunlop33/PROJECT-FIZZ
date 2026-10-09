@@ -13,6 +13,8 @@ export interface LaunchInfo {
   sqliteVersion: string;
   /** Cold-start recovery of an unfinished workout (flow §4.2); its notices are shown once. */
   recovery: RecoveryResult | null;
+  /** The unfinished workout couldn't be read at launch; Today shows a recovery card (review S2). */
+  recoveryError: string | null;
   restAlerts: RestAlertController | null;
   /** A restore was building a file when Fizz last closed; the data is as it was (shown once on Today). */
   restoreInterrupted: boolean;

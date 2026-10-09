@@ -125,7 +125,7 @@ function Launch() {
         </MessageScreen>
       );
     case 'ready': {
-      const { services, migration, sqliteVersion, setup, recovery } = outcome;
+      const { services, migration, sqliteVersion, setup, recovery, recoveryError } = outcome;
       const relaunch = () => {
         void services
           .close()
@@ -135,7 +135,7 @@ function Launch() {
           });
       };
       return (
-        <AppProvider services={services} launch={{ migration, sqliteVersion, recovery, restAlerts, restoreInterrupted: services.restore.interruptedRestore }} relaunch={relaunch}>
+        <AppProvider services={services} launch={{ migration, sqliteVersion, recovery, recoveryError, restAlerts, restoreInterrupted: services.restore.interruptedRestore }} relaunch={relaunch}>
           <ForegroundAlerts services={services} />
           <AppNavigator
             setupStep={setup.step}

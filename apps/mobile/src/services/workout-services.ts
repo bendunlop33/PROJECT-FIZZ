@@ -240,7 +240,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       for (const ex of aggregate.exercises) {
         let h = byExercise.get(ex.exerciseId);
         if (!h) {
-          h = (await historyFor(p.id, ex.exerciseId)).filter((x) => x.sessionId !== aggregate.session.id);
+          // A past record that can't be read never stops today's logging: no `Last` line instead (review S2).
+          h = (await historyFor(p.id, ex.exerciseId).catch(() => [] as HistorySession[])).filter((x) => x.sessionId !== aggregate.session.id);
           byExercise.set(ex.exerciseId, h);
         }
         previous[ex.id] = lastComparableSession(h, ex);

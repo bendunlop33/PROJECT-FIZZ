@@ -9,7 +9,7 @@ import { nowMs as clockNow } from '../clock';
 import { newUuid } from '../device/runtime';
 import { formatShortDate, formatTime } from '../format/dates';
 import type { TabParams } from '../navigation/types';
-import { useDataChanged, useScreenData, useServices } from '../shell/context';
+import { useDataChanged, useLaunchInfo, useScreenData, useServices } from '../shell/context';
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { TIMING, useTheme } from '../theme';
@@ -32,6 +32,7 @@ export function TodayScreen() {
   const navigation = useNavigation();
   const route = useRoute<RouteProp<TabParams, 'Today'>>();
   const install = useInstallStatus();
+  const launch = useLaunchInfo();
   // The Start opId lives until a start succeeds: a double tap or retry starts one workout.
   const startOp = useRef<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -133,7 +134,22 @@ export function TodayScreen() {
   if (data.state === 'error') {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], padding: theme.space['4'] }}>
-        <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t open your training data." detail={data.message} action={<TextButton label="Try again" onPress={reload} />} />
+        <View style={{ gap: theme.space['3'] }}>
+          <StatusLine
+            icon="exclamationmark.triangle"
+            tone="warning"
+            text={launch.recoveryError ? 'Your unfinished workout couldn’t be read.' : 'Couldn’t open your training data.'}
+            detail={`Nothing was deleted. ${data.message}`}
+          />
+          <SecondaryButton label="Try again" onPress={reload} />
+          {/* The way out when a record can't be read (review S2): restore a backup; the current data is kept for Undo. */}
+          <TextButton
+            label="Restore from a backup"
+            onPress={() => {
+              navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'DataBackup', initial: false } });
+            }}
+          />
+        </View>
       </View>
     );
   }
