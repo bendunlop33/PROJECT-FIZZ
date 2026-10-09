@@ -9,6 +9,12 @@
  * wW` (a lens across the segment; `±c` = a mirrored left/right pair on the
  * trunk; `wA>B` = width from A at s0 to B at s1), or `hand.full`.
  *
+ * `trunk` is the pelvis–lumbar–thorax chain read as one segment, so a muscle
+ * that spans the trunk (abs, lower back, lats) is one smooth shape rather
+ * than a bead per segment. Its `s` is segment index + local s: pelvis
+ * −0.7…1, lumbar 1…2, thorax 2…3 (e.g. `trunk.front 0.3–2.35` runs from
+ * pelvis 0.3 to thorax 0.35).
+ *
  * Source of truth for *which* muscles: the catalogue entry only (rule 6);
  * a guide can hide, adjust or add regions only for muscles the entry lists.
  */
@@ -20,10 +26,16 @@ import { SEGMENT_NAMES, type SegmentName } from './profiles';
 export type FocusView = 'side' | 'front' | 'back';
 export type MuscleLevel = 'strong' | 'soft';
 
+/** A region's base: one body segment, or `trunk` (the pelvis–lumbar–thorax chain as one). */
+export type RegionSeg = SegmentName | 'trunk';
+
 export type RegionSpec =
-  | { kind: 'edge'; seg: SegmentName; surface: 'front' | 'back' | 'lat' | 'med'; s: readonly [number, number]; d: number }
-  | { kind: 'face'; seg: SegmentName; s: readonly [number, number]; c: number; w: readonly [number, number]; mirror: boolean }
+  | { kind: 'edge'; seg: RegionSeg; surface: 'front' | 'back' | 'lat' | 'med'; s: readonly [number, number]; d: number }
+  | { kind: 'face'; seg: RegionSeg; s: readonly [number, number]; c: number; w: readonly [number, number]; mirror: boolean }
   | { kind: 'hand' };
+
+/** Highest `s` a region may reach: a little past a segment's end, or the top of the trunk chain. */
+export const regionMaxS = (seg: RegionSeg): number => (seg === 'trunk' ? 3 : 1.5);
 
 const NUM = String.raw`[+-]?\d*\.?\d+`;
 const RANGE = new RegExp(String.raw`^(${NUM})(?:–|\.\.)(${NUM})$`);
@@ -35,8 +47,8 @@ export function parseRegion(text: string): RegionSpec | null {
   if (head === undefined) return null;
   if (head === 'hand.full') return tokens.length === 1 ? { kind: 'hand' } : null;
   const [segName, surface] = head.split('.');
-  if (!(SEGMENT_NAMES as readonly string[]).includes(segName ?? '')) return null;
-  const seg = segName as SegmentName;
+  if (segName !== 'trunk' && !(SEGMENT_NAMES as readonly string[]).includes(segName ?? '')) return null;
+  const seg = segName as RegionSeg;
   let s: [number, number] | null = null;
   let d: number | null = null;
   let c: number | null = null;
@@ -60,7 +72,7 @@ export function parseRegion(text: string): RegionSpec | null {
       return null;
     }
   }
-  if (s === null || !(s[0] < s[1]) || [...s].some((x) => !Number.isFinite(x) || x < -1 || x > 1.5)) return null;
+  if (s === null || !(s[0] < s[1]) || [...s].some((x) => !Number.isFinite(x) || x < -1 || x > regionMaxS(seg))) return null;
   if (surface === 'front' || surface === 'back' || surface === 'lat' || surface === 'med') {
     if (d === null || !(d > 0 && d <= 1) || c !== null || w !== null) return null;
     return { kind: 'edge', seg, surface, s, d };
@@ -75,14 +87,14 @@ export function parseRegion(text: string): RegionSpec | null {
 type Cell = readonly string[] | null;
 type Row = { side: Cell; front: Cell; back: Cell };
 
-/** §4.5, as written in the spec (`null` = not shown in that view; `core` expands below). */
+/**
+ * §4.5, as written in the spec (`null` = not shown in that view). A muscle
+ * that spans trunk segments is one `trunk` region, so it reads as one calm
+ * shape (per-segment lenses read as blotches; review of 9 Oct 2026).
+ */
 const MAP_TEXT: Record<Exclude<Muscle, 'core'>, Row> = {
-  abductors: { side: ['pelvis.face -0.1–0.9 c+0.15 w0.45'], front: ['pelvis.lat 0–0.9 d0.35'], back: ['pelvis.lat 0.1–1.0 d0.4'] },
-  abs: {
-    side: ['lumbar.front 0–1 d0.45', 'thorax.front 0–0.35 d0.4', 'pelvis.front 0.3–1 d0.4'],
-    front: ['lumbar.face 0–1 c0 w0.45', 'thorax.face 0–0.4 c0 w0.4', 'pelvis.face 0.4–1 c0 w0.4'],
-    back: null,
-  },
+  abductors: { side: ['pelvis.face 0–0.95 c-0.05 w0.5'], front: ['pelvis.lat 0–0.9 d0.35'], back: ['pelvis.lat 0.1–1.0 d0.4'] },
+  abs: { side: ['trunk.front 0.3–2.35 d0.45'], front: ['trunk.face 0.4–2.4 c0 w0.42'], back: null },
   adductors: { side: null, front: ['thigh.med 0.02–0.55 d0.55'], back: ['thigh.med 0.02–0.45 d0.5'] },
   biceps: { side: ['upperArm.front 0.30–0.88 d0.6'], front: ['upperArm.face 0.30–0.88 c-0.1 w0.6'], back: null },
   brachialis: { side: ['upperArm.face 0.60–0.95 c+0.35 w0.35'], front: ['upperArm.lat 0.60–0.95 d0.3'], back: null },
@@ -98,21 +110,17 @@ const MAP_TEXT: Record<Exclude<Muscle, 'core'>, Row> = {
   },
   hamstrings: { side: ['thigh.back 0.08–0.88 d0.65'], front: null, back: ['thigh.face 0.10–0.88 c0 w0.7'] },
   lats: {
-    side: ['thorax.back 0.05–0.78 d0.55', 'lumbar.back 0.45–1 d0.3'],
+    side: ['trunk.back 1.45–2.78 d0.5'],
     front: ['thorax.lat 0.25–0.80 d0.25'],
-    back: ['thorax.face 0.05–0.80 ±c0.6 w0.5', 'lumbar.face 0.5–1 ±c0.6 w0.4'],
+    back: ['trunk.face 1.5–2.8 ±c0.6 w0.3>0.5'],
   },
-  obliques: { side: ['lumbar.face 0.05–0.95 c0 w0.55', 'thorax.face 0–0.3 c+0.2 w0.4'], front: ['lumbar.lat 0–1 d0.35'], back: ['lumbar.lat 0–1 d0.25'] },
+  obliques: { side: ['trunk.face 0.6–2.3 c+0.1 w0.5'], front: ['trunk.lat 0.8–2.25 d0.35'], back: ['trunk.lat 0.8–2.25 d0.25'] },
   quads: { side: ['thigh.front 0.05–0.92 d0.75'], front: ['thigh.face 0.05–0.90 c+0.1 w0.7'], back: null },
   rear_delts: { side: ['upperArm.back -0.10–0.35 d0.7'], front: null, back: ['upperArm.face -0.10–0.35 c+0.3 w0.6'] },
   side_delts: { side: ['upperArm.face -0.12–0.40 c0 w0.7'], front: ['upperArm.lat -0.12–0.35 d0.6'], back: ['upperArm.lat -0.12–0.35 d0.6'] },
-  spinal_erectors: {
-    side: ['lumbar.back 0–1 d0.4', 'thorax.back 0–0.4 d0.3', 'pelvis.back 0.6–1 d0.3'],
-    front: null,
-    back: ['lumbar.face 0–1 ±c0.2 w0.25', 'thorax.face 0–0.4 ±c0.18 w0.2'],
-  },
+  spinal_erectors: { side: ['trunk.back 0.6–2.4 d0.4'], front: null, back: ['trunk.face 0.6–2.4 ±c0.2 w0.22'] },
   traps: {
-    side: ['thorax.back 0.86–1 d0.5', 'neck.back 0–0.6 d0.5'],
+    side: ['thorax.back 0.72–1 d0.55'],
     front: ['thorax.face 0.90–1.0 ±c0.55 w0.5'],
     back: ['thorax.face 0.55–1.0 c0 w0.3>0.7', 'neck.face 0–0.5 c0 w0.6'],
   },
@@ -126,11 +134,15 @@ const join = (...cells: Cell[]): Cell => {
   return all.length === 0 ? null : all;
 };
 
-/** `core` = abs + obliques from the side and front; spinal erectors + obliques from behind (§4.5). */
+/**
+ * `core`: from the side, one deep band down the front of the trunk (abs and
+ * obliques as one calm shape; two overlapping shapes read as blotches). From
+ * the front, abs + obliques; from behind, spinal erectors + obliques (§4.5).
+ */
 export const MUSCLE_REGION_TEXT: Record<Muscle, Row> = {
   ...MAP_TEXT,
   core: {
-    side: join(MAP_TEXT.abs.side, MAP_TEXT.obliques.side),
+    side: ['trunk.front 0.4–2.4 d0.75'],
     front: join(MAP_TEXT.abs.front, MAP_TEXT.obliques.front),
     back: join(MAP_TEXT.spinal_erectors.back, MAP_TEXT.obliques.back),
   },
@@ -164,6 +176,7 @@ export function adjustProblems(spec: RegionSpec, adj: RegionAdjust): string[] {
   if (spec.kind === 'hand') return Object.keys(adj).length > 0 ? ['hand regions have nothing to adjust'] : [];
   if (adj.s && (far(adj.s[0], spec.s[0]) || far(adj.s[1], spec.s[1]))) out.push('s moves more than 0.25');
   if (adj.s && !(adj.s[0] < adj.s[1])) out.push('s must run low to high');
+  if (adj.s && adj.s.some((x) => x < -1 || x > regionMaxS(spec.seg))) out.push(`s must stay within −1…${regionMaxS(spec.seg)} on ${spec.seg}`);
   if (spec.kind === 'edge') {
     if (adj.c !== undefined || adj.w !== undefined) out.push('an edge band has no c or w');
     if (adj.d !== undefined && far(adj.d, spec.d)) out.push('d moves more than 0.25');

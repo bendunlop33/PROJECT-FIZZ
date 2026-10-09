@@ -384,40 +384,43 @@ A region belongs to one segment and is built from that segment's own profile (§
 - **Edge band** `segment.front | segment.back` (side view), or `segment.lat | segment.med` (front/back views), over `s0–s1` with depth `d` (0–1). The outer curve is the edge inset by 0.0035 H. The inner curve sits `d × halfWidth(s) × τ(s)` in from the edge, where `τ(s) = sin(π·(s − s0)/(s1 − s0))^0.6`, so the band tapers to the edge at both ends like a muscle belly.
 - **Face lens** `segment.face` over `s0–s1`, centred at `c` with width `w`. `c` runs from −1 to +1 across the segment: −1 is the back edge and +1 the front edge in the side view; −1 is medial and +1 lateral on front/back limbs; −1 is the figure's right edge and +1 its left edge on the trunk. `w` is a fraction of the local full width. The half-width is `w × width(s)/2 × τ(s)`. **`±c` means a mirrored pair** (left and right, trunk only).
 - **Whole segment** `hand.full`: the hand outline inset by 0.0035 H.
+- **Trunk chain** `trunk.…`: pelvis, lumbar and thorax read as one segment, with `s` = segment index + local s (pelvis −0.7…1, lumbar 1…2, thorax 2…3). It uses the trunk outline's own frames, so a muscle that spans the trunk is **one** smooth shape. Per-segment bands each taper to nothing at the joints, so a muscle drawn as one band per segment showed as a row of beads (product-manager review of the v2 renders, 9 Oct 2026).
 - Each curve is sampled at 12 points, then drawn as a smooth closed path.
 - A region on a segment drawn with `projection` < 0.5 in a frame (pointing at the camera) isn't drawn in that frame.
 
 ### 4.5 Region map
 
-Notation: `segment.surface s0–s1 d` (edge band) or `segment.face s0–s1 c w` (lens). `—` means not shown in that view; the muscle is then listed as text only (§4.7). Side view = near-side limbs plus the trunk. Front view = figure facing the camera. Back view = figure facing away (§4.10).
+Notation: `segment.surface s0–s1 d` (edge band) or `segment.face s0–s1 c w` (lens); `trunk` is the trunk chain (§4.4). `—` means not shown in that view; the muscle is then listed as text only (§4.7). Side view = near-side limbs plus the trunk. Front view = figure facing the camera. Back view = figure facing away (§4.10).
 
 | Muscle | Side view | Front view | Back view |
 |---|---|---|---|
-| `abductors` | pelvis.face −0.1–0.9 c+0.15 w0.45 | pelvis.lat 0–0.9 d0.35 | pelvis.lat 0.1–1.0 d0.4 |
-| `abs` | lumbar.front 0–1 d0.45 + thorax.front 0–0.35 d0.4 + pelvis.front 0.3–1 d0.4 | lumbar.face 0–1 c0 w0.45 + thorax.face 0–0.4 c0 w0.4 + pelvis.face 0.4–1 c0 w0.4 | — |
+| `abductors` | pelvis.face 0–0.95 c−0.05 w0.5 (joins the glutes, so the hip reads as one mass) | pelvis.lat 0–0.9 d0.35 | pelvis.lat 0.1–1.0 d0.4 |
+| `abs` | trunk.front 0.3–2.35 d0.45 | trunk.face 0.4–2.4 c0 w0.42 | — |
 | `adductors` | — (the inner thigh faces away from the camera) | thigh.med 0.02–0.55 d0.55 | thigh.med 0.02–0.45 d0.5 |
 | `biceps` | upperArm.front 0.30–0.88 d0.6 | upperArm.face 0.30–0.88 c−0.1 w0.6 | — |
 | `brachialis` | upperArm.face 0.60–0.95 c+0.35 w0.35 | upperArm.lat 0.60–0.95 d0.3 | — |
 | `calves` | shank.back 0.08–0.62 d0.7 | shank.med 0.10–0.50 d0.3 + shank.lat 0.10–0.45 d0.25 | shank.face 0.05–0.65 c0 w0.85 |
 | `chest` | thorax.front 0.42–0.86 d0.55 | thorax.face 0.50–0.88 ±c0.45 w0.55 | — |
-| `core` | = `abs` + `obliques` regions | = `abs` + `obliques` | = `spinal_erectors` + `obliques` |
+| `core` | trunk.front 0.4–2.4 d0.75: one deep band for abs and obliques together (two overlapping soft shapes read as blotches) | = `abs` + `obliques` | = `spinal_erectors` + `obliques` |
 | `forearms` | forearm.face 0–0.65 c0 w0.8 | forearm.face 0–0.6 c0 w0.8 | forearm.face 0–0.6 c0 w0.8 |
 | `front_delts` | upperArm.front −0.10–0.35 d0.7 | upperArm.face −0.10–0.35 c−0.3 w0.6 | — |
 | `glutes` | pelvis.back −0.65–0.75 d0.7 | — | pelvis.face −0.65–0.8 ±c0.45 w0.6 |
 | `grip` (soft max) | hand.full + forearm.front 0–0.45 d0.5 | hand.full + forearm.face 0–0.4 c0 w0.6 | hand.full + forearm.face 0–0.4 c0 w0.6 |
 | `hamstrings` | thigh.back 0.08–0.88 d0.65 | — | thigh.face 0.10–0.88 c0 w0.7 |
-| `lats` | thorax.back 0.05–0.78 d0.55 + lumbar.back 0.45–1 d0.3 | thorax.lat 0.25–0.80 d0.25 (the "wings" beside the chest) | thorax.face 0.05–0.80 ±c0.6 w0.5 + lumbar.face 0.5–1 ±c0.6 w0.4 |
-| `obliques` | lumbar.face 0.05–0.95 c0 w0.55 + thorax.face 0–0.3 c+0.2 w0.4 | lumbar.lat 0–1 d0.35 | lumbar.lat 0–1 d0.25 |
+| `lats` | trunk.back 1.45–2.78 d0.5 | thorax.lat 0.25–0.80 d0.25 (the "wings" beside the chest) | trunk.face 1.5–2.8 ±c0.6 w0.3>0.5 (a wing each side, widest at the armpit) |
+| `obliques` | trunk.face 0.6–2.3 c+0.1 w0.5 | trunk.lat 0.8–2.25 d0.35 | trunk.lat 0.8–2.25 d0.25 |
 | `quads` | thigh.front 0.05–0.92 d0.75 | thigh.face 0.05–0.90 c+0.1 w0.7 | — |
 | `rear_delts` | upperArm.back −0.10–0.35 d0.7 | — | upperArm.face −0.10–0.35 c+0.3 w0.6 |
 | `side_delts` | upperArm.face −0.12–0.40 c0 w0.7 | upperArm.lat −0.12–0.35 d0.6 | upperArm.lat −0.12–0.35 d0.6 |
-| `spinal_erectors` | lumbar.back 0–1 d0.4 + thorax.back 0–0.4 d0.3 + pelvis.back 0.6–1 d0.3 | — | lumbar.face 0–1 ±c0.2 w0.25 + thorax.face 0–0.4 ±c0.18 w0.2 |
-| `traps` | thorax.back 0.86–1 d0.5 + neck.back 0–0.6 d0.5 | thorax.face 0.90–1.0 ±c0.55 w0.5 (the slope from the neck to the shoulder) | thorax.face 0.55–1.0 c0 w0.7, narrowing to w0.3 at s 0.55 + neck.face 0–0.5 c0 w0.6 |
+| `spinal_erectors` | trunk.back 0.6–2.4 d0.4 | — | trunk.face 0.6–2.4 ±c0.2 w0.22 |
+| `traps` | thorax.back 0.72–1 d0.55 (the slope into the neck; a separate neck piece pinched off into a second bead) | thorax.face 0.90–1.0 ±c0.55 w0.5 (the slope from the neck to the shoulder) | thorax.face 0.55–1.0 c0 w0.7, narrowing to w0.3 at s 0.55 + neck.face 0–0.5 c0 w0.6 |
 | `triceps` | upperArm.back 0.12–0.85 d0.7 | — | upperArm.face 0.10–0.85 c0 w0.75 |
 | `upper_back` | thorax.back 0.58–0.95 d0.45 | — | thorax.face 0.55–0.95 c0 w0.5 |
 | `upper_chest` | thorax.front 0.70–0.92 d0.45 | thorax.face 0.72–0.92 ±c0.45 w0.5 | — |
 
-The head, the neck (apart from `traps`) and the feet are never coloured. Values are starting points, with the same ±15% tuning freedom as §3.3. The map lives in one typed constant (`MUSCLE_REGION_MAP`) next to the profiles, keyed by the `Muscle` vocabulary in `src/vocab.ts`. A test fails if a vocabulary muscle has no row.
+**Why `trunk` and single shapes** (9 Oct 2026, after the first v2 renders): soft trunk muscles drawn one band or lens per segment showed as several separate blotches across the torso. Each muscle that spans the trunk is now one shape, and side-view `core` is one band. Strong limb regions (quads, glutes) were already one shape each and are unchanged.
+
+The head, the neck (apart from `traps` in the back view) and the feet are never coloured. Values are starting points, with the same ±15% tuning freedom as §3.3. The map lives in one typed constant (`MUSCLE_REGION_MAP`) next to the profiles, keyed by the `Muscle` vocabulary in `src/vocab.ts`. A test fails if a vocabulary muscle has no row.
 
 **Coverage of the 10 existing guides** (what the text will list as not shown):
 

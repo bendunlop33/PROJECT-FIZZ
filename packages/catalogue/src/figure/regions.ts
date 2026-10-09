@@ -5,7 +5,7 @@
  * segment's own outline by construction. Pure.
  */
 import { add, scale, sub, v, type Vec } from './math';
-import { frameAt, handContours, segmentPoint, widthsAt, type BodyGroup, type BodySegment, type FigureBody } from './body';
+import { frameAt, handContours, segmentPoint, trunkSegments, widthsAt, type BodyGroup, type BodySegment, type FigureBody } from './body';
 import { UNCHECKED_PROJECTION } from './pose';
 import { profileRange, type SegmentName } from './profiles';
 import type { MuscleLevel, RegionSpec, ResolvedFocus } from './muscle-map';
@@ -31,42 +31,81 @@ function sampleRange(s0: number, s1: number, n = REGION_SAMPLES): number[] {
   return Array.from({ length: n }, (_, i) => s0 + ((s1 - s0) * i) / (n - 1));
 }
 
-/** Offset across the segment at `s` (signed, along its front normal), clamped inside the inset outline. */
-function across(seg: BodySegment, s: number, off: number): Vec {
-  const { p, n } = frameAt(seg, s);
-  const w = widthsAt(seg, s);
+/**
+ * What a region is laid on: one body segment, or the whole trunk chain
+ * (pelvis → lumbar → thorax) read as one segment, so a muscle that spans the
+ * trunk is one smooth shape instead of a bead per segment.
+ */
+interface RegionBase {
+  frame: (s: number) => { p: Vec; n: Vec };
+  widths: (s: number) => { front: number; back: number };
+}
+
+const segmentBase = (seg: BodySegment): RegionBase => ({ frame: (s) => frameAt(seg, s), widths: (s) => widthsAt(seg, s) });
+
+/**
+ * The trunk chain as one region base. Chain position = segment index + local
+ * `s`: pelvis −0.7…1 (its buttock end runs below the hip joint), lumbar 1…2,
+ * thorax 2…3. The trunk outline is built from the same frames (blended normals
+ * at the joints), so a chain region follows it without seams.
+ */
+function chainBase(chain: readonly BodySegment[]): RegionBase | null {
+  if (chain.length === 0) return null;
+  const at = (s: number): { seg: BodySegment; local: number } => {
+    const i = Math.max(0, Math.min(chain.length - 1, Math.floor(s)));
+    return { seg: chain[i] as BodySegment, local: s - i };
+  };
+  return {
+    frame: (s) => {
+      const { seg, local } = at(s);
+      return frameAt(seg, local);
+    },
+    widths: (s) => {
+      const { seg, local } = at(s);
+      return widthsAt(seg, local);
+    },
+  };
+}
+
+/** Offset across the base at `s` (signed, along its front normal), clamped inside the inset outline. */
+function across(base: RegionBase, s: number, off: number): Vec {
+  const { p, n } = base.frame(s);
+  const w = base.widths(s);
   const clamped = Math.min(w.front - MUSCLE_INSET, Math.max(-(w.back - MUSCLE_INSET), off));
   return add(p, scale(n, clamped));
 }
 
+/** Samples along a region: 12 per unit of `s`, at least 12 (a trunk-chain region spans up to 3.7 units). */
+const samplesFor = (s0: number, s1: number): number => Math.max(REGION_SAMPLES, Math.ceil(REGION_SAMPLES * (s1 - s0)));
+
 /** Edge band (§4.4): along one edge, tapering to the edge at both ends like a muscle belly. */
-function edgeBand(seg: BodySegment, x: 1 | -1, s0: number, s1: number, d: number): Vec[] {
-  const ss = sampleRange(s0, s1);
+function edgeBand(base: RegionBase, x: 1 | -1, s0: number, s1: number, d: number): Vec[] {
+  const ss = sampleRange(s0, s1, samplesFor(s0, s1));
   const outer = ss.map((s) => {
-    const w = widthsAt(seg, s);
-    return across(seg, s, x > 0 ? w.front - MUSCLE_INSET : -(w.back - MUSCLE_INSET));
+    const w = base.widths(s);
+    return across(base, s, x > 0 ? w.front - MUSCLE_INSET : -(w.back - MUSCLE_INSET));
   });
   const inner = ss.map((s) => {
-    const w = widthsAt(seg, s);
+    const w = base.widths(s);
     const half = x > 0 ? w.front : w.back;
     const depth = d * half * taper(s, s0, s1);
-    return across(seg, s, x * Math.max(0, half - MUSCLE_INSET - depth));
+    return across(base, s, x * Math.max(0, half - MUSCLE_INSET - depth));
   });
   return [...outer, ...inner.reverse()];
 }
 
 /** Face lens (§4.4): centred at `c` across the segment, `w` of its full width. */
-function faceLens(seg: BodySegment, s0: number, s1: number, c: number, w: readonly [number, number]): Vec[] {
-  const ss = sampleRange(s0, s1);
+function faceLens(base: RegionBase, s0: number, s1: number, c: number, w: readonly [number, number]): Vec[] {
+  const ss = sampleRange(s0, s1, samplesFor(s0, s1));
   const upper: Vec[] = [];
   const lower: Vec[] = [];
   for (const s of ss) {
-    const wd = widthsAt(seg, s);
+    const wd = base.widths(s);
     const centre = c >= 0 ? c * wd.front : c * wd.back;
     const k = (s - s0) / (s1 - s0);
     const half = ((w[0] + (w[1] - w[0]) * k) * (wd.front + wd.back)) / 2 * taper(s, s0, s1);
-    upper.push(across(seg, s, centre + half));
-    lower.push(across(seg, s, centre - half));
+    upper.push(across(base, s, centre + half));
+    lower.push(across(base, s, centre - half));
   }
   return [...upper, ...lower.reverse()];
 }
@@ -103,18 +142,21 @@ function groupOf(body: FigureBody, seg: BodySegment): RegionGroup {
   return seg.group;
 }
 
-/** One region spec on one segment → contours (a mirrored trunk pair or trunk lat/med band gives two). */
-function specContours(seg: BodySegment, spec: Exclude<RegionSpec, { kind: 'hand' }>): Vec[][] {
-  if (seg.projection < UNCHECKED_PROJECTION) return [];
+/**
+ * One region spec on one base → contours. `trunk` is true for trunk segments
+ * and the trunk chain: there a mirrored pair, or a front/back-view lat/med
+ * band, gives two contours (one each side of the body).
+ */
+function specContours(base: RegionBase, trunk: boolean, spec: Exclude<RegionSpec, { kind: 'hand' }>): Vec[][] {
   const [s0, s1] = spec.s;
   if (spec.kind === 'edge') {
     const x = spec.surface === 'front' || spec.surface === 'lat' ? 1 : -1;
     // Front/back views: a trunk segment's lateral edge is both sides of the body.
-    if (seg.side === null && (spec.surface === 'lat' || spec.surface === 'med')) return [edgeBand(seg, 1, s0, s1, spec.d), edgeBand(seg, -1, s0, s1, spec.d)];
-    return [edgeBand(seg, x, s0, s1, spec.d)];
+    if (trunk && (spec.surface === 'lat' || spec.surface === 'med')) return [edgeBand(base, 1, s0, s1, spec.d), edgeBand(base, -1, s0, s1, spec.d)];
+    return [edgeBand(base, x, s0, s1, spec.d)];
   }
-  const out = [faceLens(seg, s0, s1, spec.c, spec.w)];
-  if (spec.mirror && seg.side === null && spec.c !== 0) out.push(faceLens(seg, s0, s1, -spec.c, spec.w));
+  const out = [faceLens(base, s0, s1, spec.c, spec.w)];
+  if (spec.mirror && trunk && spec.c !== 0) out.push(faceLens(base, s0, s1, -spec.c, spec.w));
   return out;
 }
 
@@ -122,6 +164,7 @@ function specContours(seg: BodySegment, spec: Exclude<RegionSpec, { kind: 'hand'
 export function regionShapes(body: FigureBody, focus: ResolvedFocus): RegionShape[] {
   const sides = limbSides(body, focus);
   const out: RegionShape[] = [];
+  const chain = chainBase(trunkSegments(body));
   for (const r of focus.regions) {
     if (r.spec.kind === 'hand') {
       for (const hand of body.hands) {
@@ -132,8 +175,14 @@ export function regionShapes(body: FigureBody, focus: ResolvedFocus): RegionShap
       }
       continue;
     }
+    if (r.spec.seg === 'trunk') {
+      // The whole trunk as one shape; drawn with the trunk (under the near leg), like the abs and lower back it carries.
+      if (chain !== null) for (const contour of specContours(chain, true, r.spec)) out.push({ group: 'trunk', level: r.level, contour });
+      continue;
+    }
     for (const seg of segmentsFor(body, r.spec.seg, sides)) {
-      for (const contour of specContours(seg, r.spec)) out.push({ group: groupOf(body, seg), level: r.level, contour });
+      if (seg.projection < UNCHECKED_PROJECTION) continue;
+      for (const contour of specContours(segmentBase(seg), seg.side === null, r.spec)) out.push({ group: groupOf(body, seg), level: r.level, contour });
     }
   }
   return out;

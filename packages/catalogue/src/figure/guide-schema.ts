@@ -182,9 +182,13 @@ export const PROJECTION_KEYS = ['armNear', 'armFar', 'forearmNear', 'forearmFar'
 /** A normalised-time range of the cycle (`focus.workPhase`). */
 const PhaseSchema = z.strictObject({ from: num.min(0).max(1), to: num.min(0).max(1) });
 
-/** Overrides to one mapped muscle region (§4.8); each number moves at most ±0.25 from the map. */
+/**
+ * Overrides to one mapped muscle region (§4.8); each number moves at most
+ * ±0.25 from the map. `s` reaches 3 for `trunk` regions (the whole trunk
+ * chain, pelvis −0.7 to thorax top 3).
+ */
 export const RegionAdjustSchema = z.strictObject({
-  s: z.tuple([num.min(-1).max(1.5), num.min(-1).max(1.5)]).optional(),
+  s: z.tuple([num.min(-1).max(3), num.min(-1).max(3)]).optional(),
   d: num.min(0).max(1).optional(),
   c: num.min(-1).max(1).optional(),
   w: num.min(0).max(1).optional(),

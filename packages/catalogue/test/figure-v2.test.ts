@@ -13,6 +13,7 @@ import {
   catmullRom,
   checkGuide,
   DIRECTION_D_GUIDE_TOKENS,
+  focusViewOf,
   frameOps,
   groupContours,
   guideStyleFromTokens,
@@ -187,6 +188,23 @@ describe('muscle region map (§4.5)', () => {
     expect(parseRegion('upperArm.front −0.10–0.35 d0.7')).toMatchObject({ s: [-0.1, 0.35] });
     expect(parseRegion('hand.full')).toEqual({ kind: 'hand' });
     for (const bad of ['', 'head.front 0–1 d0.5', 'thigh.front 0.5–0.2 d0.5', 'thigh.front 0–1', 'thigh.face 0–1 d0.5', 'thigh.front 0–1 d0.5 junk']) expect(parseRegion(bad), bad).toBeNull();
+    // `trunk` is the pelvis–lumbar–thorax chain as one segment: s runs to 3 there, to 1.5 on a single segment.
+    expect(parseRegion('trunk.front 0.3–2.35 d0.45')).toEqual({ kind: 'edge', seg: 'trunk', surface: 'front', s: [0.3, 2.35], d: 0.45 });
+    expect(parseRegion('trunk.face 1.5–2.8 ±c0.6 w0.3>0.5')).toMatchObject({ seg: 'trunk', mirror: true, w: [0.3, 0.5] });
+    expect(parseRegion('thigh.front 0–2 d0.5')).toBeNull();
+    expect(parseRegion('trunk.front 0–3.2 d0.5')).toBeNull();
+  });
+
+  it('a muscle that spans the trunk is one calm shape, not a bead per segment (review of 9 Oct 2026)', () => {
+    const body = poseAt(loaded('barbell-back-squat').prepared, 0.3).body;
+    for (const m of ['abs', 'obliques', 'core', 'spinal_erectors', 'lats', 'traps'] as const) {
+      expect(regionShapes(body, resolveFocus({ primary: [], secondary: [m] }, undefined, 'side')), m).toHaveLength(1);
+    }
+    // Behind: one strap or wing each side.
+    const pulldown = poseAt(loaded('cable-lat-pulldown').prepared, 0).body;
+    for (const m of ['lats', 'spinal_erectors'] as const) {
+      expect(regionShapes(pulldown, resolveFocus({ primary: [m], secondary: [] }, undefined, 'back')), m).toHaveLength(2);
+    }
   });
 });
 
@@ -205,11 +223,13 @@ describe('muscle focus (§4)', () => {
     'sled-push': [],
   };
 
-  it.each(Object.keys(NOT_SHOWN))('%s: strong = primary, soft = secondary, Not shown per the coverage table (§12.1 #2)', (key) => {
+  it.each(Object.keys(NOT_SHOWN))('%s: strong = primary, soft = secondary (minus hidden), Not shown per the coverage table (§12.1 #2)', (key) => {
     const e = entry(key);
-    const f = muscleFocusFor(e, loaded(key).guide);
-    expect(f.strong).toEqual(e.primaryMuscles);
-    expect(f.soft).toEqual(e.secondaryMuscles);
+    const g = loaded(key).guide;
+    const hidden = new Set<string>(g.focus?.hide ?? []);
+    const f = muscleFocusFor(e, g);
+    expect(f.strong).toEqual(e.primaryMuscles.filter((m) => !hidden.has(m)));
+    expect(f.soft).toEqual(e.secondaryMuscles.filter((m) => !hidden.has(m)));
     expect(f.notShown).toEqual(NOT_SHOWN[key]);
     expect([...f.drawn, ...f.notShown].sort()).toEqual([...e.primaryMuscles, ...e.secondaryMuscles].sort());
   });
@@ -241,7 +261,7 @@ describe('muscle focus (§4)', () => {
       polys.some((poly) => poly.some((a, i) => pointSegmentDistance(p, a, poly[(i + 1) % poly.length] ?? a) < MUSCLE_INSET * 0.5));
     for (const key of GUIDE_KEYS) {
       const { prepared } = loaded(key);
-      const focus = resolveFocus({ primary: [...MUSCLES], secondary: [] }, undefined, prepared.guide.view === 'side' ? 'side' : 'front');
+      const focus = resolveFocus({ primary: [...MUSCLES], secondary: [] }, undefined, focusViewOf(prepared.guide));
       for (const t of sampleTimes(prepared.guide, prepared.keys, 10)) {
         const body = poseAt(prepared, t).body;
         for (const r of regionShapes(body, focus)) {
