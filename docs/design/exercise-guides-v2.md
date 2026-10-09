@@ -1,6 +1,6 @@
 # Exercise guides v2: detailed figure, muscle focus, what not to do
 
-Status: v0.1 draft, 9 Oct 2026. **Mostly built** (9 Oct 2026, [ADR 0014](../decisions/0014-guides-v2-muscle-highlight-and-figure-drawing.md)): render quality, figure v2, muscle focus, What not to do and the How to order. **Not built yet:** Full screen (§2.2), the visible-area warning (§4.7) and the rack prop. The `camera: "back"` field (§4.8) is built as `seenFrom`, because `camera` already holds the fixed camera. The lat pulldown is drawn from behind (§4.10) as a **provisional** product-manager call; Ben confirms or rejects it (B3). It changes the How to screen in [exercise-library.md](exercise-library.md) §8, the figure drawing in `packages/catalogue/src/figure/`, and design-system principle 5, §2.3 and §9.57–9.60. Builds on [ADR 0011](../decisions/0011-exercise-catalogue-and-guide-tooling.md) (guide format, rig, Linux tooling) and [ADR 0013](../decisions/0013-in-app-guide-playback.md) (Skia playback). Research: [exercise-bank-and-visuals.md](../research/exercise-bank-and-visuals.md) §5.
+Status: v0.1 draft, 9 Oct 2026. **Mostly built** (9 Oct 2026, [ADR 0014](../decisions/0014-guides-v2-muscle-highlight-and-figure-drawing.md)): render quality, figure v2, muscle focus, What not to do and the How to order. **Not built yet:** Full screen (§2.2), the visible-area warning (§4.7) and the rack prop. **Specified, not built:** muscle definition for every group (§4.11, Ben's request of 9 Oct 2026; Ben picks the mode, B8). The `camera: "back"` field (§4.8) is built as `seenFrom`, because `camera` already holds the fixed camera. The lat pulldown is drawn from behind (§4.10) as a **provisional** product-manager call; Ben confirms or rejects it (B3). It changes the How to screen in [exercise-library.md](exercise-library.md) §8, the figure drawing in `packages/catalogue/src/figure/`, and design-system principle 5, §2.3 and §9.57–9.60. Builds on [ADR 0011](../decisions/0011-exercise-catalogue-and-guide-tooling.md) (guide format, rig, Linux tooling) and [ADR 0013](../decisions/0013-in-app-guide-playback.md) (Skia playback). Research: [exercise-bank-and-visuals.md](../research/exercise-bank-and-visuals.md) §5.
 
 **Why.** Ben reviewed the 10 animated guides on 9 Oct 2026:
 
@@ -32,6 +32,7 @@ Everything stays **Coaching knowledge** (rule 10). It is bundled, works offline 
 | GV9 | **Wrong-form ghost frame: not now.** Revisit only if Ben asks after using v2 | §6 |
 | GV10 | **Level of detail by canvas size** (S < 160pt, M/L ≥ 160pt), stroke floors in points, smooth Bézier outlines, review renders at 3×, and a `Full screen` view with a portrait canvas | §3.10, §7 |
 | GV11 | **Proposed:** lat pulldown redrawn **from behind** (`camera: "back"`), because its main muscles are on the back | §4.10 |
+| GV12 | **Muscle definition:** every muscle group the view can show gets one faint, calm shape, separated by grooves of plain body tone, not lines. Strong > soft > faint always. Recommended faint paint is a **tinted neutral** (`guide.definition`), with violet tint as the option for Ben to compare (B8). M/L tier only | §4.11 |
 
 ---
 
@@ -137,7 +138,7 @@ The canvas becomes **portrait** and the camera refits to the whole cycle at that
 ### 3.1 Rules that don't change
 
 - **Original art**, drawn in code from the shared rig. No traced photos, no third-party art or styles, no AI images.
-- **No face, hair, ears, fingers or text** in the art. Anatomy is shown as silhouette, soft shading and a few contour lines, never as an anatomical chart.
+- **No face, hair, ears, fingers or text** in the art. Anatomy is shown as silhouette, soft shading, a few contour lines and, when muscle definition is on, faint muscle-group shapes (§4.11). It is never an anatomical chart: no labels, no fibre lines and no outline around each muscle.
 - **Lengths don't change.** The rig `adult-v1` keeps every length, joint and IK rule, so every existing `guide.json` stays valid. Only the drawing changes. `review.renderedWith` becomes `fizz-figure@0.2.0`. All 10 guides are re-rendered and go back to Ben as drafts.
 - **Pure TypeScript.** `frameOps` still produces every shape. The SVG and Skia renderers draw the same ops, and the existing pixel-match test between them still applies.
 
@@ -307,8 +308,8 @@ Frames are recorded per **detail tier**, and the bake cache key gains the tier. 
 
 | Tier | Canvas (shorter side) | Draws | Stroke floors |
 |---|---|---|---|
-| **S** | < 160pt (3-up thumbnails, review strips) | v2 silhouettes (profiles, hands, feet), muscle colour (strong and soft), v1 halos, v1 prop shapes | halo 1.25pt · edge 1.0pt · hair 0.75pt |
-| **M/L** | ≥ 160pt (player 200–400pt, full screen) | Everything: silhouettes, muscle colour, shading, contour and anatomical lines, equipment detail, v2 separation (§3.6) | halo 1.0pt · edge 0.75pt · contour 0.75pt · hair 0.75pt |
+| **S** | < 160pt (3-up thumbnails, review strips) | v2 silhouettes (profiles, hands, feet), muscle colour (strong and soft), v1 halos, v1 prop shapes. No muscle definition (§4.11.5) | halo 1.25pt · edge 1.0pt · hair 0.75pt |
+| **M/L** | ≥ 160pt (player 200–400pt, full screen) | Everything: silhouettes, muscle definition (§4.11), muscle colour, shading, contour and anatomical lines, equipment detail, v2 separation (§3.6) | halo 1.0pt · edge 0.75pt · contour 0.75pt · hair 0.75pt |
 
 There are two tiers on purpose: one simple cut, and every in-app player size gets full detail. The bake for the M/L tier is used for every size in that range. Skia pictures are vector, so they scale without loss.
 
@@ -329,6 +330,8 @@ There are two tiers on purpose: one simple cut, and every in-app player size get
 Front view: floor → back props → mid props → trunk (fill, regions, shading, lines) → both legs → both arms → front props.
 
 Back view (`seenFrom: "back"`): floor → back props → **both legs** → mid props → trunk → both arms → front props. From behind, the buttocks and the seat are nearer the camera than the legs, so the legs go first. A front-view barbell is drawn with the mid props in a back view: it is held in front of the body, so the head and trunk hide its middle and the hands grip over it.
+
+**Muscle definition (§4.11.6).** In every order above, a group's faint shapes go straight after its fill and before its muscle regions, and each muscle-region op sits on a `nearBody` underlay of its own path. In the side view, the faint glutes go with the pelvis regions (step 8).
 
 ---
 
@@ -375,7 +378,7 @@ Back view (`seenFrom: "back"`): floor → back props → **both legs** → mid p
 | **Strong** | `primaryMuscles` | 1.0 | 0.80 → 1.0 | 1.0 steady |
 | **Soft** | `secondaryMuscles` | 0.45 | 0.36 → 0.50 | 0.60 steady |
 
-- Where regions overlap (e.g. `chest` strong and `upper_chest` soft), the higher level wins. Each pixel gets one muscle paint, never stacked opacity: regions of one level are merged into one path per segment before filling.
+- Where regions overlap (e.g. `chest` strong and `upper_chest` soft), the higher level wins. Each pixel gets one muscle paint, never stacked opacity: regions of one level are merged into one path per segment before filling, and each level's path is drawn over an opaque `nearBody` underlay of the same path (§4.11.6). The underlay also stops strong at 0.80 stacking on soft during the pulse (review N3).
 - `grip` is **capped at soft** even when it's primary. Hands are small and sit on the implement, so a strong hand would pull the eye to the bar.
 - **Differentiate Without Color** (iOS setting): strong regions also get a 1pt `text.primary` outline at 0.6 opacity. The legend text is unchanged.
 
@@ -409,7 +412,7 @@ Notation: `segment.surface s0–s1 d` (edge band) or `segment.face s0–s1 c w` 
 | `glutes` | pelvis.back −0.65–0.75 d0.7 | — | pelvis.face −0.65–0.8 ±c0.45 w0.6 |
 | `grip` (soft max) | hand.full + forearm.front 0–0.45 d0.5 | hand.full + forearm.face 0–0.4 c0 w0.6 | hand.full + forearm.face 0–0.4 c0 w0.6 |
 | `hamstrings` | thigh.back 0.08–0.88 d0.65 | — | thigh.face 0.10–0.88 c0 w0.7 |
-| `lats` | trunk.back 1.45–2.78 d0.5 | thorax.lat 0.25–0.80 d0.25 (the "wings" beside the chest) | trunk.face 1.5–2.8 ±c0.6 w0.3>0.5 (a wing each side, widest at the armpit) |
+| `lats` | trunk.back 1.45–2.78 d0.5 | thorax.lat 0.25–0.80 d0.25 (the "wings" beside the chest) | trunk.face 1.3–2.88 ±c0.3>0.6 w0.25>0.5 (a wing each side, sweeping from the waist out to the armpit; as built, review of 9 Oct 2026) |
 | `obliques` | trunk.face 0.6–2.3 c+0.1 w0.5 | trunk.lat 0.8–2.25 d0.35 | trunk.lat 0.8–2.25 d0.25 |
 | `quads` | thigh.front 0.05–0.92 d0.75 | thigh.face 0.05–0.90 c+0.1 w0.7 | — |
 | `rear_delts` | upperArm.back −0.10–0.35 d0.7 | — | upperArm.face −0.10–0.35 c+0.3 w0.6 |
@@ -489,6 +492,288 @@ What changes when drawn from behind: the spine groove and shoulder-blade lines (
 If Ben prefers the front view, the guide keeps `camera: "front"` and the text lists upper back and rear shoulders under `Not shown from the front`.
 
 **As drawn (9 Oct 2026, provisional):** `seenFrom: "back"`. The lats are one wing each side (`trunk.face … ±c0.3>0.6`, sweeping from the waist out to the armpit), with the upper back and rear shoulders soft. The thigh pad sits behind the body. The bottom bar position is the upper chest (0.588 H, just below the top of the shoulders), so from behind the upper back hides the bar and only its ends show; at neck height it could read as a behind-the-neck pull, which the brief forbids. At the bottom the upper arm (0.83) and forearm (0.68) are foreshortened, because the elbows go back and the hands sit forward at the chest; in-plane arms would fold the elbows down to the waist. To go back to the front view, drop `seenFrom`; the rest of the pose (bar to the upper chest, foreshortened arms at the bottom) is right from the front too.
+
+### 4.11 Muscle definition (all groups) (specified, not built; Ben picks the mode, B8)
+
+> Ben, 9 Oct 2026, on the v2 guides: "can we add more definition to the actual muscle groups so you can see it even when they are not being used (faint colour)"
+
+Today only the muscles the entry lists are drawn. The rest of the near body is one flat tone, so the triceps pushdown is a grey figure with one violet patch, and nothing says "these are shoulders, this is the chest". This section adds **one faint, always-visible shape for every muscle group the view can show**. The figure then reads as a body with muscles, and the coloured groups read as "these ones" against the rest.
+
+**Question:** "Where are the muscles on this body, and which of them is this exercise about?" **Primary action:** none. It is part of the drawing (§1).
+
+#### 4.11.1 Three levels, one paint per pixel
+
+| Level | Muscles | Paint (recommended mode) | Means |
+|---|---|---|---|
+| **Strong** | the entry's `primaryMuscles` | `guide.muscle` at 1.0 | `Feel it most` |
+| **Soft** | the entry's `secondaryMuscles` | `guide.muscle` at 0.45 | `Also works` |
+| **Faint** | every other definition group the view can show (§4.11.3) | `guide.definition` (neutral) | Anatomy only: "a muscle is here" |
+| Body | grooves between groups, joints, head, neck, hands, feet, shin, far-side limbs | `guide.nearBody` / `guide.farBody` | — |
+
+- **Faint makes no claim about effort.** It never means "not used" or "works a little". The catalogue lists the main muscles, others may still brace or steady, and the app doesn't know how much (rule 6). Copy calls them "other muscles", never "inactive", "unused" or "resting" (§4.11.8).
+- **The order never changes:** strong > soft > faint, in every state, look and scheme. The tests assert it (§4.11.11).
+- **One paint per pixel.** Faint, soft and strong never stack (§4.11.6).
+
+#### 4.11.2 Neutral or tint
+
+One draw option, `definition`, with three values (§4.11.9):
+
+| Mode | Faint paint | Dark scheme | Light scheme |
+|---|---|---|---|
+| **`neutral`** (recommended) | `color.guide.definition` = alias of `text.primary` | 0.25 over the body: a little **lighter** | 0.18 over the body: a little **darker** |
+| `tint` (Ben's literal ask, for comparison) | `color.guide.muscle` | 0.18: a little darker, violet | 0.18: a little lighter, violet |
+| `off` | none | today's drawing | today's drawing |
+
+`neutral` is a **tinted neutral**: the look's own `text.primary`, warm in Premium (D) and cool in Navy (A), never violet. It always moves the body tone **away from the canvas**, lighter on the dark canvas and darker on the light one. The violet always moves it **toward the canvas** (the dark-mode violet is darker than the body, the light-mode violet lighter). So faint and violet go in opposite directions in both schemes and can't be mistaken for each other.
+
+**Contrast.** Hand-calculated with the WCAG relative-luminance formula from the composites in design-system §2.3. Re-check in a tool; `guide-style.test.ts` asserts the floors.
+
+| Pair | Dark D / A | Light D / A | Floor (test) |
+|---|---|---|---|
+| strong vs body (unchanged) | 2.33 / 2.46 | 2.48 / 2.34 | ≥ 2.0 |
+| soft vs body (unchanged) | 1.51 / 1.53 | 1.51 / 1.48 | ≥ 1.4 |
+| **faint vs body**, neutral | 1.19 / 1.19 | 1.19 / 1.21 | 1.12–1.25 |
+| **faint vs body**, tint | 1.18 / 1.18 | 1.18 / 1.17 | 1.12–1.25 |
+| **soft vs faint**, neutral | 1.80 / 1.82 | 1.80 / 1.78 | ≥ 1.6 |
+| **soft vs faint**, tint | 1.28 / 1.29 | 1.28 / 1.26 | ≥ 1.25 |
+| strong vs faint, neutral | 2.79 / 2.92 | 2.96 / 2.81 | ≥ 2.5 |
+| strong vs faint, tint | 1.98 / 2.08 | 2.10 / 1.99 | ≥ 1.9 |
+| soft at its pulse low (0.36) vs faint, neutral | 1.66 / 1.66 | 1.65 / 1.64 | ≥ 1.5 |
+| soft at its pulse low (0.36) vs faint, tint | 1.18 / 1.19 | 1.17 / 1.16 | (why tint keeps soft steady) |
+
+A faint step of about 1.19:1 is a little more than the step from `bg.surface` to `bg.raised` (about 1.13:1 in Navy dark), which is how a card stands off the screen. It is clearly visible on a large shape and still quiet.
+
+**Recommendation: `neutral`.**
+
+1. **The hierarchy rests on two cues, not one.** Neutral faint differs from soft in hue *and* in the direction of lightness (about 1.8:1 apart). Tint faint differs only in the amount of the same violet (about 1.28:1 apart), which is the weakest cue at 240pt, in gym light and in a glance between sets.
+2. **Violet keeps one meaning.** Three strengths of one hue read as an amount scale, so faint violet would say "works a little". The catalogue doesn't say that (rule 6). Neutral says "a muscle is here", and violet still says only "this exercise works it".
+3. **Nothing else has to change.** The legend, the work-phase pulse, Increase Contrast and Differentiate Without Color all work as now. Tint needs an extra legend line, has to drop the soft pulse (at its low point, soft would sit only about 1.17:1 from faint) and has to fall back to neutral under Increase Contrast and Differentiate Without Color.
+4. **It suits both looks.** The faint tone carries the look's own warmth (D) or coolness (A), so violet stays the only hue that means anything.
+
+Ben asked for "faint colour", and `neutral` is a faint tone rather than a colour. The review page shows all three modes side by side (§4.11.9), and Ben picks (B8). If he picks `tint`, it is built exactly as specified here, rules included.
+
+#### 4.11.3 Groups and geometry (`DEFINITION_MAP`)
+
+A definition group is a muscle group a gym-goer would point to, drawn as **one calm shape** (a mirrored pair on the trunk; one per limb in front and back views). Not every vocabulary muscle gets a group. Sub-parts (`upper_chest`, `brachialis`) and composites (`core`, `grip`) would overlap their parent and put two tones on one muscle, which is the mottled look fixed on 9 Oct (§4.5).
+
+The notation and geometry are §4.4's. `= §4.5` means the same region the highlight uses. Other values are trimmed or deepened so that groups sit side by side with a narrow groove, instead of overlapping or leaving wide stripes of body tone. They are starting values, with the same ±15% tuning freedom as §3.3.
+
+| Group | Replaced by (§4.11.5) | Side view | Front view | Back view |
+|---|---|---|---|---|
+| `chest` | chest, upper_chest | = §4.5 `chest` | thorax.face 0.55–0.85 ±c0.5 w0.42 (leaves a breastbone groove) | — |
+| `abs` | abs, core | = §4.5 `abs` | = §4.5 `abs` | — |
+| `obliques` | obliques, core | trunk.face 0.65–2.05 c+0.05 w0.4 | trunk.lat 1.05–2.2 d0.35 | = §4.5 `obliques` |
+| `lowerBack` | spinal_erectors; back view also core | trunk.back 0.85–1.9 d0.38 | — | trunk.face 0.85–1.9 ±c0.24 w0.2 (leaves a spine groove) |
+| `lats` | lats | trunk.back 1.98–2.56 d0.55 | thorax.lat 0.30–0.58 d0.25 | trunk.face 1.95–2.72 ±c0.42>0.62 w0.3>0.45 |
+| `upperBack` | upper_back, traps | thorax.back 0.64–1.0 d0.45 (shoulder blade and trap slope) | = §4.5 `traps` (the slope only) | = §4.5 `traps` |
+| `glutes` | glutes, abductors | = §4.5 `glutes` | — | pelvis.face −0.65–0.8 ±c0.5 w0.48 (leaves the cleft) |
+| `outerHip` | abductors | — (part of `glutes`) | = §4.5 `abductors` | — (part of `glutes`) |
+| `deltoid` | front_delts, side_delts, rear_delts | upperArm.face −0.12–0.32 c0 w0.9 | upperArm.face −0.10–0.32 c0 w0.9 | upperArm.face −0.10–0.32 c0 w0.9 |
+| `frontArm` | biceps, brachialis | upperArm.front 0.38–0.88 d0.75 | upperArm.face 0.38–0.88 c−0.1 w0.6 | — |
+| `triceps` | triceps | upperArm.back 0.36–0.86 d0.8 | — | upperArm.face 0.36–0.86 c0 w0.75 |
+| `forearm` | forearms, grip | = §4.5 `forearms` | = §4.5 `forearms` | = §4.5 `forearms` |
+| `quads` | quads | thigh.front 0.05–0.92 d0.9 | thigh.face 0.05–0.90 c+0.15 w0.62 | — |
+| `hamstrings` | hamstrings | thigh.back 0.08–0.88 d0.85 | — | thigh.face 0.10–0.88 c+0.1 w0.62 |
+| `adductors` | adductors | — | thigh.med 0.02–0.55 d0.4 | thigh.med 0.02–0.45 d0.3 |
+| `calves` | calves | = §4.5 `calves` | = §4.5 `calves` (two edge bands) | = §4.5 `calves` |
+
+That is 14 groups from the side, 12 from the front and 11 from behind. Every one of the 23 vocabulary muscles appears in some `Replaced by` list. The head, the neck (apart from the back-view trap shape, as in §4.5), hands, feet and the front of the shin stay body tone. No vocabulary muscle sits there, and a plain shin reads as bone, which is right.
+
+Side view, facing right (schematic, not to scale):
+
+```
+  back edge ◄──────────────────────────────► front edge
+                       ╭──╮
+                       ╰┬┬╯            head, neck: body tone
+  thorax   ░upper back░ ┊            ┊ ░chest░
+           ░lats░░░░░░░ ┊            ┊
+  lumbar   ░lower back░ ┊ ░obliques░ ┊ ░abs░
+  pelvis   ░glutes░░░░░ ┊            ┊ ░abs░
+  thigh    ░hamstrings░ ┊            ┊ ░quads░
+  shank    ░calves░░░░░ ┊            ┊  shin: body tone
+  upper arm ░triceps░ ┊ ░deltoid cap (top)░ ┊ ░front of arm░
+  forearm   ░forearm░
+  ░ faint shape     ┊ groove: plain body tone, ≥ 0.006 H
+```
+
+Rules (tested, §4.11.11):
+
+- **Grooves, no overlaps, within a body group.** Within one body group (the trunk, one leg, one arm), two faint shapes never overlap, and at their closest point they are at least `guide.definitionGroove` apart. That is 0.006 H, about 1.2pt on a 240pt canvas. The test floor is 0.004 H at every key frame of every guide. Shapes in *different* body groups may overlap: draw order puts the nearer one in front (the glute over the top of the hamstrings, an arm over the trunk), and faint fills are opaque, so nothing stacks.
+- Shapes stay inside the silhouette by `guide.muscleInset`, like muscle regions.
+- `DEFINITION_MAP` is one typed constant beside `MUSCLE_REGION_MAP`, written in the same notation and parsed by the same `parseRegion`, so the table can be checked against the code line by line.
+
+#### 4.11.4 Separation: grooves, not lines
+
+**Decision: no new separation lines.** Neighbouring groups are separated by a **groove**, a narrow strip of plain body tone built into the geometry (§4.11.3). Why:
+
+- Outlining every muscle is what turns a figure into an anatomical chart (§3.1). A groove reads as form, like the shadow between two muscles.
+- Differentiate Without Color marks strong regions with an outline (§4.3). If every group had a line, that cue would be lost.
+- Strokes have point floors (0.75pt), so lines weigh relatively more at 240pt than at 400pt, and many hairlines on a moving figure shimmer. A groove is a gap between fills, so it scales with the figure.
+- The existing anatomical lines (§3.8: deltoid border, chest border, shoulder blade, glute fold, kneecap, calf border, iliac crest, spine, abs midline, collarbone) already fall on group boundaries. They stay as they are, at most 8, drawn above the faint shapes.
+
+If the device check (G18) finds that groups run together, widen the grooves (trim `s` ranges or depths) before considering lines.
+
+#### 4.11.5 Which groups are faint
+
+- **Replaced by colour.** A group isn't drawn faint when any muscle in its `Replaced by` list is coloured in this view. The coloured region takes its place, so a group is either faint or coloured, never both. For example, the bench press colours `front_delts`, so the deltoid cap shows only the front-delt colour, not faint plus violet on one small shape.
+- **Hidden means hidden.** A group is also skipped when the guide hides a muscle in its list (`focus.hide`). The `Not shown` line names that muscle, so a faint shape there would contradict the text. The split squat hides `core`, so it has no faint abs or obliques.
+- **Muscles a view can't show** have no group in that view (the `—` cells), so faint never contradicts `Not shown from this side`.
+- **Which limbs.** Side view: near limbs and the trunk (§4.6). Far limbs stay flat `farBody`. Front and back views: **both sides**, whatever `focus.side` says. Definition is anatomy, so a unilateral front-view guide shows the resting side faint and the working side coloured.
+- **Foreshortening.** The §4.4 projection rule applies: a segment pointing at the camera (projection < 0.5) gets no shape. `guide:check` warns when a faint shape appears or disappears mid-cycle, so the guide-maker can see any pop.
+- **Detail tier: M/L only** (≥ 160pt, the card and Full screen). The S tier (115pt thumbnails) draws **no** definition. At that size a 0.006 H groove is about 0.6pt, so the groups would merge into a faint blur around the strong colour, and a thumbnail's job is the pose plus the strong colour. Thumbnails stay exactly as they are. `definitionCompact` (review only) draws them anyway, so Ben can compare.
+
+What the 10 existing guides show (side view unless noted; "coloured" means strong or soft, as today):
+
+| Guide | Coloured groups | Faint groups |
+|---|---|---|
+| Back squat | quads, glutes, hamstrings, lowerBack, abs + obliques (core) | chest, lats, upperBack, deltoid, frontArm, triceps, forearm, calves |
+| Romanian deadlift | hamstrings, glutes, lowerBack, upperBack, forearm (grip) | chest, abs, obliques, lats, deltoid, frontArm, triceps, quads, calves |
+| Leg press | quads, glutes, hamstrings | chest, abs, obliques, lowerBack, lats, upperBack, deltoid, frontArm, triceps, forearm, calves |
+| Bulgarian split squat | quads, glutes, hamstrings, forearm (grip). Abs and obliques skipped (core hidden) | chest, lowerBack, lats, upperBack, deltoid, frontArm, triceps, calves |
+| Bench press | chest, deltoid (front delts), triceps | abs, obliques, lowerBack, lats, upperBack, glutes, frontArm, forearm, quads, hamstrings, calves |
+| Overhead press | deltoid, triceps, chest (upper chest only), upperBack (traps), abs + obliques (core) | lowerBack, lats, glutes, frontArm, forearm, quads, hamstrings, calves |
+| One-arm row | lats, upperBack, deltoid (rear delts), frontArm, forearm (grip) | chest, abs, obliques, lowerBack, glutes, triceps, quads, hamstrings, calves |
+| Triceps pushdown | triceps | chest, abs, obliques, lowerBack, lats, upperBack, glutes, deltoid, frontArm, forearm, quads, hamstrings, calves |
+| Sled push | quads, glutes, calves, hamstrings, abs + obliques (core), triceps | chest, lowerBack, lats, upperBack, deltoid, frontArm, forearm |
+| Lat pulldown (back view) | lats, upperBack, deltoid (rear delts) | lowerBack, obliques, glutes, triceps, forearm, calves; hamstrings and adductors only in frames where the thigh isn't pointing at the camera |
+
+The triceps pushdown is the stress case: one strong group among 13 faint ones.
+
+#### 4.11.6 Drawing: one paint per pixel
+
+- **The faint fill is opaque.** `guideStyleFromTokens` pre-composites the faint paint over `nearBody` (`compositeOver(paint, opacity, nearBody)`), and the op is drawn at opacity 1. Faint shapes from different ops can overlap without a darker sliver.
+- **Muscle regions get an underlay.** Each muscle-region op (soft, then strong) is drawn over an opaque `nearBody` fill of its own path. Where a coloured region overlaps a faint neighbour, the colour sits on plain body, exactly as it does today. This also stops strong at 0.80 stacking on soft during the pulse (review N3), so §4.3's "never stacked opacity" now holds in every frame.
+- **Order inside each body group:** contour → fill → **faint shapes (one op)** → soft (underlay, region) → strong (underlay, region) → shading → anatomical lines. Side-view glutes follow the pelvis regions (§3.11 step 8): faint glutes first, then the pelvis highlights. Shading still sits on top, so faint groups keep the figure's volume.
+- **Budget:** at most one faint op per region group (6) and one underlay per region op. Today's 32–73 ops per frame grow by fewer than 20, inside the 220 limit.
+- Faint ops are fills only, never stroked.
+
+#### 4.11.7 States and settings
+
+| State or setting | Faint shapes | Muscle colour |
+|---|---|---|
+| Playing, inside or outside the work phase | Steady. Faint never pulses: it's anatomy, not effort | `neutral`: as §4.9 (strong 0.80 → 1.0, soft 0.36 → 0.50). `tint`: strong pulses, **soft stays at 0.45** |
+| Paused, Finished, Key positions, poster | Steady, as drawn | As §8 |
+| Reduce Motion (stills, opt-in `Play animation`) | Steady. Nothing changes, because faint never moves on its own | As §8 |
+| Increase Contrast | `neutral` unchanged. `tint` draws as `neutral`, and the tint legend line goes | Soft 0.60 steady, so the gap to faint widens |
+| Differentiate Without Color | `neutral` unchanged. `tint` draws as `neutral`. Faint shapes never get an outline, so the outline stays a strong-only cue | Strong regions outlined (§4.3) |
+| Dark ↔ light, look A ↔ D | Re-bake. The composite follows the live tokens | As §8 |
+| Entry lists no muscles, or entry unreadable | `neutral`: every group faint (the figure's own anatomy; no legend, as §8). `tint`: none (no violet without the entry) | None |
+| S tier (thumbnails) | None (`definitionCompact` for review only) | As now |
+| Full screen | As the card (M/L tier) | As the card |
+| Far-side limbs (side view) | None | None |
+| `off` | None. Frames are identical to today's | As now |
+| Workout resting or paused, offline, AI unavailable | No change | No change |
+
+#### 4.11.8 Legend and copy
+
+- **`neutral`: no legend change.** Faint shapes carry no exercise-specific meaning, like the contour lines, so the legend keeps explaining the one coded thing, the violet. The canvas VoiceOver label is unchanged ("Highlighted muscles are listed below.").
+- **`tint` only:** one line after `Also works:` and before `Not shown…`, reading `Faint violet: other muscles, for reference`. It uses `type.callout` in `text.secondary`, with **no swatch** (a third violet swatch would be one more amount to compare). VoiceOver reads "Faint violet: other muscles, for reference." The line shows only while tint is actually drawn: not under Increase Contrast or Differentiate Without Color, and not without the entry.
+- **Words not to use** for faint groups (adds to §10): "inactive", "not used", "unused", "resting", "off", "a little", or any percentage or ranking.
+- **Review page:** control label `Muscle definition`, segments `Off` · `Neutral (recommended)` · `Violet tint`. `(recommended)` goes once Ben decides B8.
+
+How to card, `neutral` (390pt phone; the triceps pushdown, the stress case):
+
+```
+┌────────────────────────────────────────┐
+│ Triceps pushdown              ✕ Done   │
+├────────────────────────────────────────┤
+│ ┌────────────────────────────────────┐ │
+│ │ [Draft guide]       ⤢ Full screen  │ │
+│ │┌──────────────────────────────────┐│ │
+│ ││   ║                              ││ │ cable column
+│ ││   ║         ◯                    ││ │ head: body tone
+│ ││   ║        ░░▌                   ││ │ deltoid, upper back: faint ░
+│ ││   ╟──────╮ ░█▌                   ││ │ triceps: strong █
+│ ││   ║      ▐░░▌                    ││ │ chest, abs, obliques, lats,
+│ ││   ║       ░░▌                    ││ │ lower back: faint ░
+│ ││   ║      ▐░░░▌                   ││ │ glutes, quads, hamstrings:
+│ ││   ║       ░ ░                    ││ │ faint ░; calves faint ░
+│ ││ - - - - -▟▙▟▙- - - - - - - - - - ││ │
+│ │└──────────────────────────────────┘│ │
+│ │ [ ❚❚ Pause    ] [ ▥ Key positions ]│ │
+│ │ ● Feel it most: Back of upper arms │ │ legend unchanged
+│ │   (triceps)                        │ │
+│ └────────────────────────────────────┘ │
+│ ┌────────────────────────────────────┐ │
+│ │ What not to do                     │ │
+```
+
+`tint` adds one legend line:
+
+```
+│ │ ● Feel it most: Back of upper arms │ │
+│ │   (triceps)                        │ │
+│ │ Faint violet: other muscles, for   │ │ text.secondary, no swatch
+│ │   reference                        │ │
+```
+
+#### 4.11.9 Draw option, app setting and review page
+
+```ts
+type MuscleDefinition = 'off' | 'neutral' | 'tint';
+
+interface FrameOpsOptions {
+  // …existing options
+  /** Faint shapes for every muscle group the view can show (§4.11). Default 'off'. */
+  definition?: MuscleDefinition;
+  /** Review only: draw definition at the S tier too. Default false. */
+  definitionCompact?: boolean;
+}
+```
+
+- **`effectiveDefinition(mode, { tier, definitionCompact, increaseContrast, differentiateWithoutColor, hasMuscles })` → `MuscleDefinition`** is the one place the §4.11.5 and §4.11.7 rules live: `tint` becomes `neutral` under Increase Contrast or Differentiate Without Color, `tint` becomes `off` without the entry, and anything becomes `off` at the S tier unless `definitionCompact` is set. `frameOps` and the legend both use it.
+- **`frameOps` defaults to `'off'`,** so existing callers, tests and the SVG/Skia match are unchanged until a caller opts in.
+- **App:** `MUSCLE_DEFINITION` in `apps/mobile/src/guide/player-model.ts`, beside `MUSCLE_PULSE`, set to `'neutral'` (recommended) until Ben decides B8. There is no in-app setting, as with the pulse. The bake cache key gains the effective mode.
+- **`guide:render`:** `--definition=off|neutral|tint` (default: the app's value) for `preview.png` and `--frames`, and `--definition-compact` for the thumbnail sheet. It always writes **`preview-definition.png`**: the key positions at 240pt in three pairs of rows (off, neutral and tint, each dark and light) at 3×, plus the first key position at 400pt in each mode. The 10 guides are re-rendered and stay `Draft`.
+- **Web review page:** a segmented control `Muscle definition: Off · Neutral (recommended) · Violet tint` that applies to every guide on the page, plus a `Thumbnails too` checkbox (`definitionCompact`). It changes only the review render, never the app.
+
+#### 4.11.10 Data needed
+
+All pure, in `@fizz/catalogue` `src/figure/` and `apps/mobile/src/guide/`. Nothing reads or writes Ben's data (Coaching knowledge only, rule 10).
+
+| Function / constant | Contract |
+|---|---|
+| `DEFINITION_GROUPS` | The 16 group ids in §4.11.3 |
+| `DEFINITION_MAP` | `Record<DefinitionGroup, { replacedBy: Muscle[]; side, front, back: RegionSpec[] \| null }>`, parsed with `parseRegion`. A test fails on an unparsable cell or a vocabulary muscle missing from every `replacedBy` |
+| `definitionGroupsFor(view, focus \| null, hidden)` → `DefinitionGroup[]` | The faint groups after the replace and hide rules (§4.11.5). Unit-tested against the §4.11.5 table |
+| `definitionShapes(body, groups)` → `{ group: RegionGroup; contour: Vec[] }[]` | Per-frame geometry, using the §4.4 builders. Near side only in a side view, both sides otherwise. Projection rule applies |
+| `effectiveDefinition(...)` | §4.11.9 |
+| `DEFINITION_OPACITY` | `{ neutral: { dark: 0.25, light: 0.18 }, tint: { dark: 0.18, light: 0.18 } }` (design-system `guide.definitionOpacity`, `guide.definitionTintOpacity`) |
+| `DEFINITION_GROOVE` | 0.006 H target, 0.004 H test floor (`guide.definitionGroove`) |
+| `guideStyleFromTokens(tokens, scheme)` | Adds two opaque, derived paints: `faintNeutral` = `compositeOver(definition, 0.25 \| 0.18, nearBody)` and `faintTint` = `compositeOver(muscle, 0.18, nearBody)` |
+| `frameOps(pose, {…, definition, definitionCompact})` | Faint op and underlays per §4.11.6 |
+| `buildHowToView(...)` | `focus` gains `definitionNote: string \| null` (the tint line, or null) |
+| `guide:check` | Groove and overlap check, pop warning, and the faint group list per guide in `meta.json` |
+
+#### 4.11.11 Acceptance checks
+
+Code and tests:
+
+- **D1.** `DEFINITION_MAP` matches §4.11.3, including the `—` cells. Every cell parses, and each of the 23 vocabulary muscles is in at least one `replacedBy` list.
+- **D2.** At every key frame of the 10 guides, every faint shape lies inside its segment outline with the 0.0035 H inset. Within each body group, no two faint shapes overlap, and their closest distance is ≥ 0.004 H.
+- **D3.** `definitionGroupsFor` gives the §4.11.5 table for the 10 guides. The triceps pushdown has 13 faint groups and only `triceps` coloured. The split squat has no faint `abs` or `obliques`.
+- **D4.** The contrast floors in §4.11.2 hold for both modes, both looks and both schemes. Direction: the neutral faint composite is further from `bg.surface` in luminance than the body, and both violet composites are nearer to it.
+- **D5.** With `definition: 'off'`, every frame's SVG is byte-identical to today's, for all 10 guides.
+- **D6.** One paint per pixel: in `neutral` and `tint` renders, pixels inside coloured regions match the `off` render within 1 per channel. Where faint shapes from different body groups overlap, the pixel equals the faint composite (no darker sliver).
+- **D7.** Faint ops have the same paint and opacity in every frame. In `tint`, soft opacity is 0.45 in every frame, and strong still pulses.
+- **D8.** Under Increase Contrast or Differentiate Without Color, `tint` renders identically to `neutral`. With no entry, `tint` draws no faint shapes and `neutral` draws every group.
+- **D9.** Side views draw no faint shape on far limbs. Front and back views draw both sides whatever `focus.side` says.
+- **D10.** The S tier draws no faint shapes unless `definitionCompact` is set, so `preview-thumbs.png` is unchanged.
+- **D11.** No frame exceeds 220 ops with definition on. The SVG vs Skia match holds with definition on, at the §12.1 #9 thresholds. No faint op has a stroke.
+
+How to screen:
+
+- **D12.** `neutral`: the legend and canvas label are unchanged. `tint`: `Faint violet: other muscles, for reference` appears after `Also works`, with no swatch, and VoiceOver reads it. It is absent under Increase Contrast and Differentiate Without Color.
+- **D13.** No copy on How to says "inactive", "not used", "unused" or "resting".
+
+Review page (Ben and the reviewer):
+
+- **D14.** `preview-definition.png` exists for all 10 guides, and the review-page control switches every guide between `Off`, `Neutral` and `Violet tint`.
+- **D15.** At 240pt in both schemes, each figure reads as a body with muscle groups: shoulders, chest, arms, abs, back, glutes, thighs and calves can be told apart. Strong > soft > faint is obvious without reading the legend, in both modes.
+- **D16.** Nothing looks mottled. Each faint group is one smooth shape, the grooves are even and quiet, and no shape flickers or pops during playback.
+- **D17.** On the triceps pushdown, the eye lands on the triceps first.
+
+On Ben's iPhone: **G18** (§12.4).
 
 ---
 
@@ -686,7 +971,7 @@ All reference text (Coaching knowledge). No loads, targets or actuals appear on 
 | Avoid VoiceOver | Heading "What not to do"; each item read as written ("Don't let your heels or toes lift") |
 | Full screen VoiceOver canvas | Same label as the card canvas |
 
-Words not to use: "activate", "target zone", "burn", "pump", any percentage or score for a muscle, "pain" or "injury" on this screen (Safety's `Stop the set if:` excepted), and "correct/incorrect form" (say "Don't …").
+Words not to use: "activate", "target zone", "burn", "pump", any percentage or score for a muscle, "inactive", "unused", "not used" or "resting" for a faint muscle group (§4.11.8), "pain" or "injury" on this screen (Safety's `Stop the set if:` excepted), and "correct/incorrect form" (say "Don't …").
 
 Spoken cues: none. The guide is silent.
 
@@ -715,6 +1000,8 @@ All pure, in `@fizz/catalogue` (`src/figure/`, `src/muscles.ts`) and `apps/mobil
 ---
 
 ## 12. Acceptance checks
+
+Muscle definition has its own checks, D1–D17 in §4.11.11, plus G18 below.
 
 ### 12.1 Code and tests (developer and reviewer)
 
@@ -758,6 +1045,7 @@ All pure, in `@fizz/catalogue` (`src/figure/`, `src/muscles.ts`) and `apps/mobil
 - **G15 Battery:** 5 minutes on How to during a rest uses no more than v1 did (same off-screen pause rules).
 - **G16 Accessibility:** VoiceOver order per §9; Reduce Motion, Increase Contrast and Differentiate Without Color behave per §8.
 - **G17 Rest unaffected:** with How to or Full screen open mid-rest, the rest alert arrives on time, as in G4.
+- **G18 Muscle definition (§4.11):** at 240pt, 350pt and in Full screen, in bright gym light and in a dim room, Ben can make out the muscle groups and still finds the strong colour first. He compares `neutral` and `tint` (and `off`) on the triceps pushdown and the squat, and picks B8. If the groups run together, widen the grooves before adding lines (§4.11.4).
 
 ---
 
@@ -772,6 +1060,7 @@ All pure, in `@fizz/catalogue` (`src/figure/`, `src/muscles.ts`) and `apps/mobil
 | B5 | Soft shading on the figure | Yes, if the v2 previews look calm to him. It can be switched off without other changes |
 | B6 | Wrong-form ghost frame | Not now (§6) |
 | B7 | Optional rack with safety arms in the squat guide | Guide-maker's call. Show it in the preview and let Ben choose |
+| B8 | Muscle definition for every group (§4.11): `neutral` (a faint tone of the body), `tint` (faint violet, his literal ask) or `off` | `neutral`. It keeps strong > soft > faint apart by hue and by lightness, and violet keeps one meaning ("this exercise works it"). Faint violet would read as "works a little", which the catalogue doesn't claim. Compare all three on the review page and on device (G18) |
 
 ---
 
@@ -786,6 +1075,7 @@ Thin slices. Each one renders previews for Ben to review. **Don't start until th
 5. **Shading, contours and equipment detail (developer, then guide-maker).**
 6. **Full screen (developer).**
 7. **Pulldown from behind (guide-maker),** if B3 is approved.
+8. **Muscle definition (developer, then guide-maker):** `DEFINITION_MAP`, `effectiveDefinition`, the faint paints, the underlays (which also fix review N3), the `definition` option, `preview-definition.png` and the review-page control (§4.11). The guide-maker then tunes grooves on the renders. The app ships `MUSCLE_DEFINITION = 'neutral'` until Ben decides B8.
 
 Agent notes:
 

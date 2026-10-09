@@ -21,6 +21,8 @@
 
 > **Revision 2026-10-09 (exercise guides v2, [exercise-guides-v2.md](exercise-guides-v2.md); specified, not built).** **Per Ben's request of 9 Oct 2026** ("showing different bits of the body which it should focus on e.g. muscle groups you should feel it in the most"), guides may colour the muscles the exercise works. Principle 5 now allows **one new colour value**, `color.guide.muscle` (violet, `#7A4AF0` dark / `#9B7BF7` light, the same in every look). It is used only for muscle regions in the guide canvas and in the legend swatches. It is never `accent` or a status colour, and it is never the only signal, because the muscles are always listed in text. Also added: the `color.guide.shade` alias (§2.3), guide drawing dimensions (§4.2), guide emphasis timing (§6), changes to `ExerciseGuide` (§9.57) and new components `MuscleFocusLegend` (§9.58), `AvoidList` (§9.59) and `GuideFullScreen` (§9.60), an accessibility line (§10) and index rows (§11). This is the only non-neutral, non-accent hue in the system, and principle 6 (one accent) is unchanged.
 
+> **Revision 2026-10-09 (muscle definition, [exercise-guides-v2.md](exercise-guides-v2.md) §4.11; specified, not built; Ben picks the mode, B8).** **Per Ben's request of 9 Oct 2026** ("more definition to the actual muscle groups so you can see it even when they are not being used (faint colour)"), guides may draw one faint shape for every muscle group the view can show. Added: the alias `color.guide.definition` (§2.3; `text.primary`, **no new colour value**), the definition composites and contrast table (§2.3), the tokens `guide.definitionOpacity`, `guide.definitionTintOpacity` and `guide.definitionGroove` (§4.2), the `guide.muscleDefinition` setting (§6), a tint-only legend line (§9.58) and an accessibility clause (§10). The recommended mode is `neutral`. `tint` (`guide.muscle` at 0.18) is specified so Ben can compare. One accent kept.
+
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
 Context: one person uses the app on an iPhone, one-handed, mid-workout, with sweaty fingers and headphones, often in bright or dim gym light. Every choice below favours speed, legibility and calm over decoration.
@@ -36,7 +38,7 @@ Context: one person uses the app on an iPhone, one-handed, mid-workout, with swe
 5. **Motion stays quiet.** There are no animated dashboards, progress rings, confetti or shimmer skeletons. Transitions are at most 200 ms and are removed under Reduce Motion.
    **The one exception is the exercise guide** (`ExerciseGuide`, §9.57; approved 9 Oct 2026). A looping movement demonstration is allowed, but only:
    - **on the How to screen**, which Ben opens himself (exercise-library.md §8). It never appears in rows, the Log card, the rest screen, Today, the Live Activity or a notification;
-   - **in neutral tones, plus one muscle-highlight hue**, using the guide colour tokens (§2.3). The single exception to "neutral only" is `color.guide.muscle`, for the muscles the exercise works (strong = primary, soft = secondary). It was added **per Ben's request of 9 Oct 2026** (exercise-guides-v2.md). It is never `accent` or a status colour, the muscles are always listed in text beside the canvas, and there is no text in the art;
+   - **in neutral tones, plus one muscle-highlight hue**, using the guide colour tokens (§2.3). The single exception to "neutral only" is `color.guide.muscle`, for the muscles the exercise works (strong = primary, soft = secondary). It was added **per Ben's request of 9 Oct 2026** (exercise-guides-v2.md). It is never `accent` or a status colour, the muscles are always listed in text beside the canvas, and there is no text in the art. Faint muscle-group definition (§2.3) is neutral by default. If Ben picks the tint option, it is `guide.muscle` at 0.18. Either way it never pulses;
    - **with at most one subtle emphasis**: strong muscle regions may rise from 0.80 to 1.0 opacity during the loaded phase of each rep (`guide.musclePulse`). It is baked into the frames, and it is off under Reduce Motion, in stills, when paused and under Increase Contrast;
    - **briefly**: at the guide's own tempo, autoplay stops after `guide.autoplayPasses` (3 reps) and holds the start position with `Replay`. `Pause` is always visible while it moves;
    - **if Reduce Motion is off.** With Reduce Motion on, Ben sees still key positions with `Previous` / `Next` and an opt-in `Play animation`. Turning Reduce Motion on stops a running animation at once, and turning it off never starts one;
@@ -151,6 +153,7 @@ Guides use **aliases** of six neutral tokens, and nothing else. There are no new
 | `color.guide.trace` | `color.text.tertiary` | Static bar-path trace and floor line (dashed) |
 | `color.guide.cable` | `color.text.tertiary` | Cable lines |
 | `color.guide.shade` (v2) | `color.bg.canvas` (dark) / `color.text.primary` (light) | Soft shading gradients, outline contours and anatomical lines on the near body, always at partial opacity (exercise-guides-v2.md §3.7–3.8). The darkest neutral in each scheme |
+| `color.guide.definition` (v2.1) | `color.text.primary` (both schemes) | Faint muscle-group shapes in the `neutral` definition mode, at `guide.definitionOpacity`, pre-composited over `nearBody` into one opaque fill (exercise-guides-v2.md §4.11). The neutral furthest from the canvas, so faint shapes move the body tone **away** from the canvas while violet moves it **toward** it |
 
 **Muscle highlight (v2; per Ben's request of 9 Oct 2026).** This is the one guide colour that isn't an alias.
 
@@ -173,6 +176,33 @@ Rules:
 - Nothing in a guide may use `accent`, `status.*` or chart aliases. The accent stays reserved for the single primary action and the active set (principle 6). (`Full screen` is an app control outside the canvas, so it may use `accent` like any text button.)
 - Labels and captions are app text under the canvas, never drawn into the art. They can then scale with Dynamic Type and be read by VoiceOver.
 - Code: `GUIDE_PAINT_TOKENS` gains `muscle` → `guide.muscle` and `shade` → `guide.shade`. The existing test that no guide paint resolves to `accent` or `status.*` still applies, plus a contrast-floor test for the table above.
+
+**Muscle definition (v2.1; per Ben's request of 9 Oct 2026; mode is Ben's call, B8).** Every muscle group the view can show gets one faint shape (exercise-guides-v2.md §4.11). The draw option `definition` is `'off' | 'neutral' | 'tint'`. **Recommended: `neutral`.**
+
+| Mode | Source paint | Opacity over `nearBody` (dark / light) | Composite, look D dark / A dark | Composite, look D light / A light |
+|---|---|---|---|---|
+| `neutral` (recommended) | `guide.definition` (`text.primary`) | 0.25 / 0.18 (`guide.definitionOpacity`) | `#C5BDB6` / `#BAC4CF` | `#4B453F` / `#3F4A59` |
+| `tint` (option to compare) | `guide.muscle` | 0.18 / 0.18 (`guide.definitionTintOpacity`) | `#AA9BB3` / `#A1A1CA` | `#635869` / `#595D80` |
+
+The composites are what `compositeOver(source, opacity, nearBody)` gives. They are derived from existing values, not new ones, and the code computes them from the live theme rather than hard-coding them.
+
+| Pair (hand-calculated; re-check) | Dark D / A | Light D / A | Floor (test) |
+|---|---|---|---|
+| strong vs `nearBody` (unchanged) | 2.33 / 2.46 | 2.48 / 2.34 | ≥ 2.0 |
+| soft vs `nearBody` (unchanged) | 1.51 / 1.53 | 1.51 / 1.48 | ≥ 1.4 |
+| faint vs `nearBody`, neutral · tint | 1.19 / 1.19 · 1.18 / 1.18 | 1.19 / 1.21 · 1.18 / 1.17 | 1.12–1.25 |
+| soft vs faint, neutral · tint | 1.80 / 1.82 · 1.28 / 1.29 | 1.80 / 1.78 · 1.28 / 1.26 | ≥ 1.6 · ≥ 1.25 |
+| strong vs faint, neutral · tint | 2.79 / 2.92 · 1.98 / 2.08 | 2.96 / 2.81 · 2.10 / 1.99 | ≥ 2.5 · ≥ 1.9 |
+
+Rules:
+- **Strong > soft > faint, always.** The tests assert the order and the floors above in both looks and schemes. Neutral faint must also lie further from `bg.surface` in luminance than the body, while violet lies nearer, so the two can't be confused at any size.
+- **Faint carries no meaning beyond "a muscle is here".** It isn't a level of effort, so the legend doesn't explain it in `neutral` mode. Copy never calls these groups "inactive", "unused", "not used" or "resting" (rule 6).
+- **One paint per pixel.** The faint fill is opaque (the composite at opacity 1), and every muscle-region op is drawn over an opaque `nearBody` underlay of its own path. Nothing stacks.
+- **Grooves, not lines.** Neighbouring faint shapes are separated by plain body tone at least `guide.definitionGroove` wide. Faint shapes are never stroked or outlined, so the Differentiate Without Color outline stays unique to strong regions.
+- **Faint never pulses** and is the same in every frame. In `tint` mode the soft level also stays steady at 0.45, because its pulse low (0.36) would sit only about 1.17:1 from faint violet.
+- **`tint` falls back to `neutral`** under Increase Contrast and Differentiate Without Color, and draws nothing without the catalogue entry (no violet without a source). `neutral` is drawn whenever the figure is, at the M/L tier.
+- **M/L tier only.** No definition at the S tier (thumbnails) and none on far-side limbs.
+- Code: `guideStyleFromTokens` adds the opaque paints `faintNeutral` and `faintTint`. The no-`accent`/`status.*` test covers them.
 
 ---
 
@@ -264,6 +294,9 @@ Geometry is in body heights (H) inside the figure code (`STROKE`, `ADULT_V1_PROF
 | `guide.strokeFloor.ML` | halo 1.0 · edge 0.75 · contour 0.75 · hair 0.75 | Minimum stroke widths in pt at the M/L tier |
 | `guide.muscleInset` | 0.0035 H | Muscle regions stay this far inside the silhouette |
 | `guide.muscleSoftOpacity` | 0.45 (0.60 under Increase Contrast) | Secondary muscles |
+| `guide.definitionOpacity` | 0.25 dark · 0.18 light | `guide.definition` over `nearBody` for faint muscle groups, `neutral` mode (§2.3) |
+| `guide.definitionTintOpacity` | 0.18 dark · 0.18 light | `guide.muscle` over `nearBody` for faint muscle groups, `tint` mode (§2.3) |
+| `guide.definitionGroove` | 0.006 H target (about 1.2pt at 240pt); test floor 0.004 H | Minimum plain-body gap between two faint shapes in the same body group |
 | `guide.shadeMaxOpacity` | 0.26 (side) · 0.18 (front/back edges) | Peak shading at an edge facing away from the light |
 | `guide.fullScreenMinHeight` | 280 | Full screen canvas never shrinks below this at AX sizes |
 | `guide.legendSwatch` | 12 | `MuscleFocusLegend` swatch diameter, in pt |
@@ -320,7 +353,8 @@ Rules:
 | `guide.autoplayPasses` | 3. An exercise guide plays this many reps (one pass is one rep; for a ping-pong guide, forwards and back), then holds the start position with `Replay`. Code: `MAX_AUTOPLAY_PASSES`. Provisional, confirm on device (exercise-library.md §8.8) |
 | `guide.repDuration` | 2–6 s per rep, set by each guide (`durationMs`), checked by `guide:check`. Guides keep their own tempo; no global speed-up |
 | `guide.frameRate` | 30 frames per second of guide time, drawn on the UI thread. It is never a reason to raise the timer's once-a-second update |
-| `guide.musclePulse` | On (recommended, Ben to confirm, exercise-guides-v2.md §4.9). During a guide's `focus.workPhase`, strong muscles go 0.80 → 1.0 and soft 0.36 → 0.50, with 120 ms smoothstep ramps in guide time, baked into the frames. Steady (1.0 / 0.45) under Reduce Motion, Increase Contrast, in stills, the Finished frame and guides without `workPhase`. Off = steady everywhere |
+| `guide.musclePulse` | On (recommended, Ben to confirm, exercise-guides-v2.md §4.9). During a guide's `focus.workPhase`, strong muscles go 0.80 → 1.0 and soft 0.36 → 0.50, with 120 ms smoothstep ramps in guide time, baked into the frames. Steady (1.0 / 0.45) under Reduce Motion, Increase Contrast, in stills, the Finished frame and guides without `workPhase`. Off = steady everywhere. With `guide.muscleDefinition` = `tint`, soft stays at 0.45 and only strong pulses |
+| `guide.muscleDefinition` | `neutral` (recommended, Ben to confirm, B8; exercise-guides-v2.md §4.11). `off` · `neutral` · `tint`. Faint shapes are static: never animated, never pulsed. Code: `MUSCLE_DEFINITION` beside `MUSCLE_PULSE`. No in-app setting |
 | `haptic.commit` | Success notification haptic |
 | `haptic.undo` | Light impact |
 | `haptic.step` | Selection change (steppers, keypad) |
@@ -877,6 +911,7 @@ Each component has one name and one definition here. The owning spec says where 
 **9.58 `MuscleFocusLegend`** (guides v2; owner: exercise-guides-v2.md §5.3). Up to three lines in the player card under the controls, padding `space.4`, `space.2` between lines, `type.callout`:
 - `● Feel it most:` + primary muscles. ● is a 12pt filled circle in `guide.muscle`.
 - `◐ Also works:` + secondary muscles (line absent if none). ◐ is a 12pt circle filled with `guide.muscle` at 0.45 and a 1pt `guide.muscle` ring, so it differs from ● in shape as well as tone.
+- `tint` definition mode only (exercise-guides-v2.md §4.11.8): `Faint violet: other muscles, for reference`, in `text.secondary`, with no swatch, after `Also works`. Shown only while tint is actually drawn. In `neutral` mode the legend is unchanged.
 - `Not shown from this side:` / `from the front:` / `from behind:` + short names, in `text.secondary`, with no swatch.
 - The label word is semibold `text.primary` and the list is `text.primary`. Names come from `musclePlainLabel` (plain words, then the gym term in brackets). Lines wrap and are never truncated. Swatches show only when at least one muscle on that line is drawn, and they are hidden from VoiceOver. Each line is one VoiceOver element. Without a guide, the lines appear without swatches.
 
@@ -903,7 +938,7 @@ Each component has one name and one definition here. The owning spec says where 
 - (Consolidation) Every durability statement uses one of the three phrases in §7.1, and every screen that mixes the two data domains labels them with `DomainLabel` (§9.53).
 - (Consolidation) Any figure in money says `estimate` when the app worked it out.
 - (Revision 2026-10-09) Anything that moves on its own for more than 5 s has a visible `Pause` and stops by itself. Under Reduce Motion it doesn't move at all until Ben asks, and off-screen it doesn't move. Today only `ExerciseGuide` (§9.57) does this; anything else that wants to needs its own exception in principle 5.
-- (Revision 2026-10-09, guides v2) Coloured muscle regions in a guide are always matched by text that names the same muscles (`MuscleFocusLegend`), including the muscles the view can't show. With Differentiate Without Color on, strong regions also get an outline.
+- (Revision 2026-10-09, guides v2) Coloured muscle regions in a guide are always matched by text that names the same muscles (`MuscleFocusLegend`), including the muscles the view can't show. With Differentiate Without Color on, strong regions also get an outline. Faint muscle definition (§2.3) carries no meaning that the text lacks, is never outlined, and switches from violet tint to neutral under Increase Contrast and Differentiate Without Color.
 
 ---
 
