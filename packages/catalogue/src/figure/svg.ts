@@ -8,7 +8,7 @@ import type { PreparedGuide } from './pose';
 import { poseAt } from './pose';
 import { sampleTimes } from './keyframes';
 import { add, dist, scale, sub, v, type Vec } from './math';
-import { LAYERS, type Shape } from './props';
+import { LAYERS, STROKE, type Shape } from './props';
 import { GUIDE_CORNER_FRACTION, type GuideStyle } from './style';
 
 /** Square camera in world units. */
@@ -74,30 +74,61 @@ function pathOf(points: readonly Vec[], closed: boolean): string {
   return points.map((p, i) => `${i === 0 ? 'M' : 'L'}${f(p.x)} ${f(p.y)}`).join('') + (closed ? 'Z' : '');
 }
 
+const opacityAttr = (o: number | undefined): string => (o === undefined || o >= 1 ? '' : ` opacity="${f(o)}"`);
+
+/** A capsule's halo: its outline grown by `STROKE.halo` in the outline paint. */
+function capsuleHalo(s: Extract<Shape, { kind: 'capsule' }>, P: (p: Vec) => Vec, k: number, style: GuideStyle): string {
+  if (!s.outline) return '';
+  const c = style[s.outline];
+  return `<path d="${pathOf(capsuleOutline(s.a, s.b, s.ra, s.rb).map(P), true)}" fill="${c}" stroke="${c}" stroke-width="${f(2 * STROKE.halo * k)}" stroke-linejoin="round"/>`;
+}
+
 function shapeSvg(s: Shape, P: (p: Vec) => Vec, k: number, style: GuideStyle): string {
   switch (s.kind) {
     case 'line': {
       const a = P(s.a);
       const b = P(s.b);
       const dash = s.dash ? ` stroke-dasharray="${s.dash.map((d) => f(d * k)).join(' ')}"` : '';
-      return `<line x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}" stroke="${style[s.paint]}" stroke-width="${f(s.width * k)}" stroke-linecap="round"${dash}/>`;
+      return `<line x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}" stroke="${style[s.paint]}" stroke-width="${f(s.width * k)}" stroke-linecap="round"${dash}${opacityAttr(s.opacity)}/>`;
     }
     case 'circle': {
       const c = P(s.c);
       const fill = s.fill ? style[s.fill] : 'none';
-      const stroke = s.stroke ? ` stroke="${style[s.stroke]}" stroke-width="${f((s.width ?? 0.005) * k)}"` : '';
-      return `<circle cx="${f(c.x)}" cy="${f(c.y)}" r="${f(s.r * k)}" fill="${fill}"${stroke}/>`;
+      const stroke = s.stroke ? ` stroke="${style[s.stroke]}" stroke-width="${f((s.width ?? STROKE.edge) * k)}"` : '';
+      return `<circle cx="${f(c.x)}" cy="${f(c.y)}" r="${f(s.r * k)}" fill="${fill}"${stroke}${opacityAttr(s.opacity)}/>`;
     }
     case 'poly': {
       const fill = s.fill ? style[s.fill] : 'none';
-      const stroke = s.stroke ? ` stroke="${style[s.stroke]}" stroke-width="${f((s.width ?? 0.005) * k)}" stroke-linejoin="round"` : '';
-      return `<path d="${pathOf(s.points.map(P), true)}" fill="${fill}"${stroke}/>`;
+      const stroke = s.stroke ? ` stroke="${style[s.stroke]}" stroke-width="${f((s.width ?? STROKE.edge) * k)}" stroke-linejoin="round"` : '';
+      return `<path d="${pathOf(s.points.map(P), true)}" fill="${fill}"${stroke}${opacityAttr(s.opacity)}/>`;
     }
-    case 'capsule': {
-      const outline = s.outline ? ` stroke="${style[s.outline]}" stroke-width="${f(0.007 * k)}" stroke-linejoin="round"` : '';
-      return `<path d="${pathOf(capsuleOutline(s.a, s.b, s.ra, s.rb).map(P), true)}" fill="${style[s.paint]}"${outline}/>`;
+    case 'capsule':
+      return `<path d="${pathOf(capsuleOutline(s.a, s.b, s.ra, s.rb).map(P), true)}" fill="${style[s.paint]}"/>`;
+  }
+}
+
+/**
+ * Shapes of one layer in draw order. A capsule group (one limb) is drawn
+ * where its first capsule appears: all of its halos, then all of its fills,
+ * so the limb reads as one smooth silhouette with no seams at the joints.
+ */
+function layerSvg(shapes: readonly Shape[], P: (p: Vec) => Vec, k: number, style: GuideStyle): string[] {
+  const out: string[] = [];
+  const done = new Set<string>();
+  for (const s of shapes) {
+    if (s.kind === 'capsule' && s.group !== undefined) {
+      if (done.has(s.group)) continue;
+      done.add(s.group);
+      const members = shapes.filter((m): m is Extract<Shape, { kind: 'capsule' }> => m.kind === 'capsule' && m.group === s.group);
+      for (const m of members) out.push(capsuleHalo(m, P, k, style));
+      for (const m of members) out.push(shapeSvg(m, P, k, style));
+    } else if (s.kind === 'capsule') {
+      out.push(capsuleHalo(s, P, k, style), shapeSvg(s, P, k, style));
+    } else {
+      out.push(shapeSvg(s, P, k, style));
     }
   }
+  return out.filter((x) => x !== '');
 }
 
 /** Frame content in pixel coordinates (0..px), without the `<svg>` wrapper. */
@@ -116,14 +147,14 @@ export function renderFrameBody(pose: Pose, opts: RenderOptions): string {
   const dash = FLOOR_DASH;
   const shift = ((((pose.facing === 'left' ? -offset : offset) % dash) + dash) % dash) * k;
   parts.push(
-    `<line x1="${f(-dash * k + shift)}" y1="${f(floorY)}" x2="${f(px + dash * k)}" y2="${f(floorY)}" stroke="${style.trace}" stroke-width="${f(0.004 * k)}" stroke-dasharray="${f(dash * 0.6 * k)} ${f(dash * 0.4 * k)}"/>`,
+    `<line x1="${f(-dash * k + shift)}" y1="${f(floorY)}" x2="${f(px + dash * k)}" y2="${f(floorY)}" stroke="${style.trace}" stroke-width="${f(STROKE.hair * k)}" stroke-dasharray="${f(dash * 0.6 * k)} ${f(dash * 0.4 * k)}"/>`,
   );
   for (const layer of LAYERS) {
     // The static path overlay sits above the body and below front implements, so it stays visible.
     if (layer === 'front' && opts.trace && opts.trace.length > 1) {
       parts.push(`<path d="${pathOf(opts.trace.map(P), false)}" fill="none" stroke="${style.trace}" stroke-width="${f(0.005 * k)}" stroke-dasharray="${f(0.012 * k)} ${f(0.01 * k)}" stroke-linecap="round"/>`);
     }
-    for (const s of pose.shapes) if (s.layer === layer) parts.push(shapeSvg(s, P, k, style));
+    parts.push(...layerSvg(pose.shapes.filter((s) => s.layer === layer), P, k, style));
   }
   parts.push('</g>');
   return parts.join('');

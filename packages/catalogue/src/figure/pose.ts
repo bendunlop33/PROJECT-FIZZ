@@ -304,18 +304,20 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     const layer = view === 'side' && side === 'Far' ? 'far' : 'near';
     const paint = layer === 'far' ? 'farBody' : 'nearBody';
     const rr = R.radius;
-    shapes.push({ kind: 'capsule', layer, a: hipPt, b: knee, ra: rr.thighHip, rb: rr.thighKnee, paint, outline: 'background' });
-    shapes.push({ kind: 'capsule', layer, a: knee, b: ankle, ra: rr.shankKnee, rb: rr.shankAnkle, paint, outline: 'background' });
+    const group = `leg${side}`;
+    const limbCap = (a: Vec, b: Vec, ra: number, rb: number): Shape => ({ kind: 'capsule', layer, a, b, ra, rb, paint, outline: 'background', group });
+    shapes.push(limbCap(hipPt, knee, rr.thighHip, rr.thighKnee));
+    shapes.push(limbCap(knee, ankle, rr.shankKnee, rr.shankAnkle));
     if (view === 'side') {
       const heelTop = inFoot(ankle, u, n, R.foot.heel + 0.012, -R.foot.ankleHeight + rr.foot);
       const ballTop = inFoot(ankle, u, n, R.foot.ball, -R.foot.ankleHeight + rr.foot * 0.85);
       const toeDir = scale(sub(toe, ball), 1 / Math.max(1e-9, dist(toe, ball)));
       const toeTop = add(add(toe, scale(toeDir, -rr.foot * 0.5)), scale(perpCcw(toeDir), Math.sign(toeDir.x || 1) * rr.foot * 0.7));
-      shapes.push({ kind: 'capsule', layer, a: ballTop, b: toeTop, ra: rr.foot * 0.85, rb: rr.foot * 0.7, paint });
-      shapes.push({ kind: 'capsule', layer, a: heelTop, b: ballTop, ra: rr.foot, rb: rr.foot * 0.85, paint, outline: 'background' });
-      shapes.push({ kind: 'capsule', layer, a: ankle, b: heelTop, ra: rr.shankAnkle, rb: rr.foot, paint });
+      shapes.push(limbCap(ballTop, toeTop, rr.foot * 0.85, rr.foot * 0.7));
+      shapes.push(limbCap(heelTop, ballTop, rr.foot, rr.foot * 0.85));
+      shapes.push(limbCap(ankle, heelTop, rr.shankAnkle, rr.foot));
     } else {
-      shapes.push({ kind: 'capsule', layer, a: ankle, b: add(ankle, v(0.012 * sign, -R.foot.ankleHeight + rr.foot)), ra: rr.shankAnkle, rb: rr.foot * 1.4, paint, outline: 'background' });
+      shapes.push(limbCap(ankle, add(ankle, v(0.012 * sign, -R.foot.ankleHeight + rr.foot)), rr.shankAnkle, rr.foot * 1.4));
     }
   }
 
@@ -367,9 +369,10 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     const rr = R.radius;
     const gripDir = scale(sub(grip, wrist), 1 / Math.max(1e-9, dist(grip, wrist)));
     const handEnd = add(grip, scale(gripDir, (R.hand - R.grip) * kf));
-    shapes.push({ kind: 'capsule', layer, a: shoulder, b: elbow, ra: rr.upperArmShoulder, rb: rr.upperArmElbow, paint, outline: 'background' });
-    shapes.push({ kind: 'capsule', layer, a: elbow, b: wrist, ra: rr.forearmElbow, rb: rr.forearmWrist, paint, outline: 'background' });
-    shapes.push({ kind: 'capsule', layer, a: wrist, b: handEnd, ra: rr.hand, rb: rr.hand * 0.9, paint, outline: 'background' });
+    const group = `arm${side}`;
+    shapes.push({ kind: 'capsule', layer, a: shoulder, b: elbow, ra: rr.upperArmShoulder, rb: rr.upperArmElbow, paint, outline: 'background', group });
+    shapes.push({ kind: 'capsule', layer, a: elbow, b: wrist, ra: rr.forearmElbow, rb: rr.forearmWrist, paint, outline: 'background', group });
+    shapes.push({ kind: 'capsule', layer, a: wrist, b: handEnd, ra: rr.hand, rb: rr.hand * 0.9, paint, outline: 'background', group });
   }
 
   // 4. Props that hang from the hands, and the cable.

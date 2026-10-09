@@ -347,6 +347,17 @@ describe('SVG output and style', () => {
     expect(a.includes('<text')).toBe(false);
   });
 
+  it('draws side-view plates behind the body and each limb as one seamless group', () => {
+    const pose = poseAt(prepareGuide(squatEntryGuide()), 0);
+    const plates = pose.shapes.filter((s) => s.kind === 'circle' && s.r > 0.07);
+    expect(plates.length).toBeGreaterThan(0);
+    expect(plates.every((s) => s.layer === 'back')).toBe(true);
+    const limbs = pose.shapes.filter((s) => s.kind === 'capsule' && s.layer !== 'body');
+    expect(limbs.every((s) => s.kind === 'capsule' && s.group !== undefined && s.outline === 'background')).toBe(true);
+    const svg = renderSvg(pose, { px: 240, style, camera: fitCamera(prepareGuide(squatEntryGuide())) });
+    expect(svg).toContain('opacity="0.55"');
+  });
+
   it('mirrors when facing left', () => {
     const g = squatEntryGuide();
     const right = prepareGuide(g);

@@ -12,12 +12,32 @@ export type Paint = 'implement' | 'frame' | 'frameFill' | 'trace' | 'cable' | 'n
 export const LAYERS = ['back', 'far', 'mid', 'body', 'near', 'front'] as const;
 export type Layer = (typeof LAYERS)[number];
 
+/**
+ * Stroke weights in body heights, shared by every prop and the body so line
+ * weights stay consistent across guides.
+ */
+export const STROKE = {
+  /** Knock-out halo around a limb silhouette (drawn outside its edge). */
+  halo: 0.0075,
+  /** Outlines of pads, frames and plates. */
+  edge: 0.006,
+  /** Fine detail: plate hubs, floor, cable. */
+  hair: 0.004,
+  /** Bars, poles and handles seen side-on. */
+  bar: 0.014,
+} as const;
+
+/** `opacity` (0–1) softens secondary detail such as plates; colours still come only from tokens. */
 export type Shape =
-  | { kind: 'line'; layer: Layer; a: Vec; b: Vec; width: number; paint: Paint; dash?: readonly number[] }
-  | { kind: 'circle'; layer: Layer; c: Vec; r: number; fill?: Paint; stroke?: Paint; width?: number }
-  | { kind: 'poly'; layer: Layer; points: readonly Vec[]; fill?: Paint; stroke?: Paint; width?: number }
-  /** Tapered capsule (two radii); `outline` knocks it out from shapes behind. */
-  | { kind: 'capsule'; layer: Layer; a: Vec; b: Vec; ra: number; rb: number; paint: Paint; outline?: Paint };
+  | { kind: 'line'; layer: Layer; a: Vec; b: Vec; width: number; paint: Paint; dash?: readonly number[]; opacity?: number }
+  | { kind: 'circle'; layer: Layer; c: Vec; r: number; fill?: Paint; stroke?: Paint; width?: number; opacity?: number }
+  | { kind: 'poly'; layer: Layer; points: readonly Vec[]; fill?: Paint; stroke?: Paint; width?: number; opacity?: number }
+  /**
+   * Tapered capsule (two radii); `outline` knocks it out from shapes behind
+   * with a halo. Capsules sharing a `group` (one limb) are drawn as one
+   * silhouette: every halo first, then every fill, so joints show no seams.
+   */
+  | { kind: 'capsule'; layer: Layer; a: Vec; b: Vec; ra: number; rb: number; paint: Paint; outline?: Paint; group?: string };
 
 export interface Collider {
   propId: string;
@@ -60,14 +80,20 @@ export function frontBarbellShapes(id: string, c: Vec, plates: keyof typeof PLAT
   return { id, shapes, colliders: [], solidBottoms: r > 0 ? [c.y - r] : [] };
 }
 
+/**
+ * Side-view barbell: the bar end-on (a solid dot, in front of everything) and
+ * its plates. The plates are drawn *behind* the body as a soft disc with a
+ * thin ring, so the head, arms and grip stay readable at thumbnail size; the
+ * bar dot still shows exactly where the bar sits.
+ */
 export function barbellShapes(id: string, c: Vec, plates: keyof typeof PLATE_RADIUS): PropGeometry {
   const r = PLATE_RADIUS[plates];
   const shapes: Shape[] = [];
   if (r > 0) {
-    shapes.push({ kind: 'circle', layer: 'front', c, r, stroke: 'implement', width: 0.013 });
-    shapes.push({ kind: 'circle', layer: 'front', c, r: r * 0.62, stroke: 'implement', width: 0.004 });
+    shapes.push({ kind: 'circle', layer: 'back', c, r, fill: 'frameFill', stroke: 'implement', width: STROKE.edge, opacity: 0.55 });
+    shapes.push({ kind: 'circle', layer: 'back', c, r: r * 0.6, stroke: 'implement', width: STROKE.hair, opacity: 0.35 });
   }
-  shapes.push({ kind: 'circle', layer: 'front', c, r: 0.021, fill: 'implement' });
+  shapes.push({ kind: 'circle', layer: 'front', c, r: 0.019, fill: 'implement', stroke: 'background', width: STROKE.hair });
   return { id, shapes, colliders: [], solidBottoms: r > 0 ? [c.y - r] : [] };
 }
 
