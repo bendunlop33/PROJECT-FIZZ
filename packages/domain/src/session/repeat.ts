@@ -1,0 +1,184 @@
+import type { EquipmentInstance, Exercise, Load, Routine, RoutineExercise, SessionAggregate, SetTemplate, WeightUnit } from '@fizz/schemas';
+import { loadText, NBSP, repRangeText } from '../display';
+import { startWorkout, type StartWorkoutInput, type StartWorkoutOutput } from './create';
+
+/**
+ * `Repeat last workout` / `Start from a past workout` (routines.md RT4, §2.4,
+ * §4.6): a new session whose sets are all **pending**, with each done set's
+ * **actual** as the new **target** (`Target (as last time)`). Nothing is
+ * marked done and progression isn't applied. Skipped and deleted sets aren't
+ * copied; a left/right pair copies once. At another gym each load goes
+ * through the normal start-time check: rounded toward easier to what this
+ * gym can make (never above a max), or dropped with a note when it was on a
+ * different kind of equipment (never converted, rule 4).
+ */
+
+export interface RepeatInput {
+  opId: string;
+  owner: StartWorkoutInput['owner'];
+  gymId: string;
+  source: SessionAggregate;
+  /** The exercise list now (rest defaults); a missing one falls back to the source's snapshot. */
+  exercises: ReadonlyMap<string, Exercise>;
+  gymEquipment: readonly EquipmentInstance[];
+  at: StartWorkoutInput['at'];
+  newId: () => string;
+  checkIn?: StartWorkoutInput['checkIn'];
+}
+
+export interface RepeatNote {
+  exerciseName: string;
+  text: string;
+}
+
+export interface RepeatOutput extends StartWorkoutOutput {
+  notes: RepeatNote[];
+  /** `Not copied: 2 skipped sets (Cable fly)`. */
+  notCopied: { exerciseName: string; skipped: number }[];
+  /** Nothing to copy (no completed sets). */
+  empty: boolean;
+}
+
+/** Equipment for a repeated exercise at this gym: the same item, else the first available of the same kind. */
+function pickEquipment(sourceEq: EquipmentInstance | null, gym: readonly EquipmentInstance[], exercise: Pick<Exercise, 'compatibleEquipment'>): EquipmentInstance | null {
+  if (sourceEq === null) return null;
+  const usable = gym.filter((e) => e.availability === 'available');
+  const same = usable.find((e) => e.id === sourceEq.id);
+  if (same) return same;
+  return usable.find((e) => e.kind === sourceEq.kind && exercise.compatibleEquipment.includes(e.kind)) ?? null;
+}
+
+export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
+  const src = input.source;
+  const notes: RepeatNote[] = [];
+  const notCopied: RepeatOutput['notCopied'] = [];
+  const exercises = new Map<string, Exercise>();
+  const routineExercises: RoutineExercise[] = [];
+  const sorted = [...src.exercises].sort((a, b) => a.order - b.order);
+
+  for (const sx of sorted) {
+    const own = src.sets.filter((s) => s.sessionExerciseId === sx.id).sort((a, b) => a.index - b.index);
+    // A left/right pair is one prescribed set: the companion row isn't copied again.
+    const done = own.filter((s) => s.status === 'completed' && s.actual !== null && s.pairedWithSetId === null);
+    const skipped = own.filter((s) => s.status === 'skipped').length;
+    if (skipped > 0) notCopied.push({ exerciseName: sx.exerciseName, skipped });
+    if (done.length === 0) continue;
+    const known = input.exercises.get(sx.exerciseId);
+    const exercise: Exercise = known ?? {
+      id: sx.exerciseId,
+      ownerId: null,
+      source: 'catalogue',
+      name: sx.exerciseName,
+      movementPattern: 'unknown',
+      primaryMuscles: [],
+      measurement: sx.measurement,
+      laterality: sx.laterality,
+      compatibleEquipment: [],
+      defaultLoadConvention: sx.loadConvention,
+      version: 1,
+      createdAtUtc: src.session.startedAt.utc,
+      updatedAtUtc: src.session.startedAt.utc,
+    };
+    exercises.set(exercise.id, exercise);
+    const sourceEq = sx.equipmentId === null ? null : (src.session.equipmentSnapshot.find((e) => e.id === sx.equipmentId) ?? null);
+    const eq = pickEquipment(sourceEq, input.gymEquipment, { compatibleEquipment: known?.compatibleEquipment ?? (sourceEq ? [sourceEq.kind] : []) });
+    if (sourceEq && !eq) notes.push({ exerciseName: sx.exerciseName, text: `No ${sourceEq.name} here. Kept as done, loads not checked.` });
+
+    const templates: SetTemplate[] = [];
+    for (const s of done) {
+      const a = s.actual;
+      if (a === null || (a.reps === null && a.durationS === null)) continue;
+      templates.push({
+        id: input.newId(),
+        setType: s.setType,
+        targetLoad: a.load,
+        targetReps: a.reps === null ? null : { min: a.reps, max: a.reps },
+        targetDurationS: a.durationS,
+        targetRpe: null,
+        targetRir: null,
+        restOverrideS: null,
+      });
+    }
+    if (templates.length === 0) continue;
+    routineExercises.push({
+      id: input.newId(),
+      exerciseId: exercise.id,
+      equipmentId: eq?.id ?? null,
+      order: routineExercises.length,
+      supersetGroup: sx.supersetGroup,
+      setTemplates: templates,
+      restBySetType: {},
+      transitionRestS: sx.transitionRestS,
+      progressionRuleId: null,
+    });
+  }
+
+  const routine: Routine = {
+    id: input.newId(),
+    ownerId: input.owner.id,
+    version: 1,
+    createdAtUtc: input.at.utc,
+    updatedAtUtc: input.at.utc,
+    name: src.session.routineName ?? 'Workout',
+    exercises: routineExercises,
+  };
+  // Ben's own per-exercise rest defaults come first (rest-state §2.4).
+  const restOwner = input.owner.exerciseRestS ?? {};
+  const withRest = new Map([...exercises].map(([k, e]) => [k, restOwner[k] === undefined ? e : { ...e, defaultRestS: restOwner[k] }]));
+  const out = startWorkout({
+    opId: input.opId,
+    owner: input.owner,
+    gymId: input.gymId,
+    routine,
+    exercises: withRest,
+    gymEquipment: input.gymEquipment,
+    at: input.at,
+    newId: input.newId,
+    ...(input.checkIn !== undefined ? { checkIn: input.checkIn } : {}),
+  });
+
+  // Rounded or dropped loads become plain notes; every target is marked as copied.
+  const nameOfTemplate = new Map<string, string>();
+  for (const rex of routineExercises) for (const t of rex.setTemplates) nameOfTemplate.set(t.id, exercises.get(rex.exerciseId)?.name ?? 'Exercise');
+  const seen = new Set<string>();
+  for (const w of out.warnings) {
+    if (w.kind !== 'target_rounded' && w.kind !== 'target_dropped') continue;
+    const name = nameOfTemplate.get(w.setTemplateId) ?? 'Exercise';
+    const text =
+      w.kind === 'target_rounded'
+        ? w.bounded === 'max'
+          ? `Rounded down from ${loadWord(w.requested)}: this gym stops at ${loadWord(w.planned)}.`
+          : `Rounded from ${loadWord(w.requested)} to ${loadWord(w.planned)} to match this gym.`
+        : `No load target: the ${loadWord(w.requested)} was on different equipment.`;
+    const key = `${name}|${text}`;
+    if (!seen.has(key)) notes.push({ exerciseName: name, text });
+    seen.add(key);
+  }
+  const aggregate: SessionAggregate = {
+    ...out.aggregate,
+    session: { ...out.aggregate.session, routineId: null },
+    sets: out.aggregate.sets.map((s) => ({ ...s, planned: { ...s.planned, source: 'repeat' as const } })),
+  };
+  return { aggregate, warnings: out.warnings, notes, notCopied, empty: routineExercises.length === 0 };
+}
+
+function loadWord(l: Load | { value: number; unit: WeightUnit; convention: Load['convention'] }): string {
+  return loadText(l, l.convention).replaceAll(NBSP, ' ');
+}
+
+/** One line per exercise for the Repeat preview: `3 sets · Target (as last time) 100 kg × 8, 8, 7`. */
+export function repeatPreviewLines(state: SessionAggregate): { exerciseName: string; equipmentName: string | null; line: string }[] {
+  return [...state.exercises]
+    .sort((a, b) => a.order - b.order)
+    .map((ex) => {
+      const eq = ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
+      const sets = state.sets.filter((s) => s.sessionExerciseId === ex.id).sort((a, b) => a.index - b.index);
+      const parts = sets.map((s) => {
+        const load = s.planned.load ? loadText(s.planned.load, ex.loadConvention, eq) : null;
+        const reps = s.planned.reps ? repRangeText(s.planned.reps) : null;
+        const badge = s.setType === 'warmup' ? 'W ' : '';
+        return `${badge}${load ?? ''}${load && reps ? `${NBSP}×${NBSP}` : ''}${reps ?? ''}`.trim();
+      });
+      return { exerciseName: ex.exerciseName, equipmentName: eq?.name ?? null, line: `${String(sets.length)} ${sets.length === 1 ? 'set' : 'sets'} · ${parts.join(' · ')}` };
+    });
+}

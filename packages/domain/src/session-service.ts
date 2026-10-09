@@ -10,6 +10,7 @@ import {
 import type { Repositories, SaveResult } from './ports';
 import { buildAddExerciseCommand, startWorkout, type AddExerciseInput, type StartWarning } from './session/create';
 import { recoverSession, type RecoveryResult } from './session/recovery';
+import { startWorkoutFromSession, type RepeatNote, type RepeatOutput } from './session/repeat';
 import { reduceSession, type SessionError, type SessionEvent } from './session/reducer';
 
 export type ServiceError =
@@ -107,6 +108,55 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     return { ok: true, aggregate, warnings, duplicate: false };
   }
 
+  /**
+   * `startWorkoutFromSession` (routines.md §4.6): a new session whose targets
+   * are a finished session's actuals. Idempotent by `opId`, one active
+   * session at a time, like `start`. `preview: true` builds it without saving.
+   */
+  async function startFromSession(
+    req: StartRequest & { sourceSessionId: string; preview?: boolean },
+  ): Promise<
+    | { ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; notCopied: RepeatOutput['notCopied']; duplicate: boolean }
+    | { ok: false; error: ServiceError | { code: 'nothing_to_repeat'; message: string } }
+  > {
+    if (!req.preview) {
+      const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
+      if (existing) return { ok: true, aggregate: existing, notes: [], notCopied: [], duplicate: true };
+      const active = await repos.sessions.getActive(req.ownerId);
+      if (active) {
+        return { ok: false, error: { code: 'session_already_active', message: 'Finish or resume the unfinished workout first.', sessionId: active.session.id } };
+      }
+    }
+    const owner = await repos.profiles.get(req.ownerId);
+    const source = await repos.sessions.get(req.sourceSessionId);
+    if (!owner) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
+    if (!source || source.session.ownerId !== req.ownerId || source.session.status !== 'finished') {
+      return { ok: false, error: { code: 'not_found', message: 'That workout wasn’t found.' } };
+    }
+    const exercises = new Map<string, Exercise>();
+    for (const ex of source.exercises) {
+      const e = await repos.exercises.get(ex.exerciseId);
+      if (e) exercises.set(e.id, e);
+    }
+    const out = startWorkoutFromSession({
+      opId: req.opId,
+      owner,
+      gymId: req.gymId,
+      source,
+      exercises,
+      gymEquipment: await repos.equipment.listByGym(req.gymId),
+      at: req.at,
+      newId,
+      checkIn: req.checkIn ?? null,
+    });
+    if (out.empty) return { ok: false, error: { code: 'nothing_to_repeat', message: 'That workout has no logged sets to repeat.' } };
+    if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false };
+    const saved = await trySave(() => repos.sessions.save(out.aggregate, null));
+    if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
+    if (!saved.ok) return { ok: false, error: { code: 'write_conflict', message: 'Could not create the session.' } };
+    return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false };
+  }
+
   async function dispatch(sessionId: string, rawCommand: unknown): Promise<CommandOutcome> {
     const parsed = validate(SessionCommandSchema, rawCommand);
     if (!parsed.ok) {
@@ -171,7 +221,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     return result;
   }
 
-  return { start, dispatch, addExercise, recover };
+  return { start, startFromSession, dispatch, addExercise, recover };
 }
 
 export type SessionService = ReturnType<typeof createSessionService>;

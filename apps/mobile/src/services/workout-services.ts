@@ -14,6 +14,7 @@ import {
   newPainFlag,
   nextTargetsFor,
   plannedSetsFromTargets,
+  repeatPreviewLines,
   unspecifiedPain,
   searchExercises,
   shouldAskCheckIn,
@@ -76,6 +77,26 @@ export interface PickerExercise {
   exercise: Exercise;
   /** Compatible equipment at this workout's gym. Empty = none needed or none there (loads not checked). */
   equipment: Pick<EquipmentInstance, 'id' | 'name' | 'kind'>[];
+}
+
+export interface RepeatCandidate {
+  sessionId: string;
+  title: string;
+  startedAtUtc: string;
+  tz: string;
+  gymId: string;
+  gymName: string;
+  exerciseNames: string[];
+  sets: number;
+}
+
+export interface RepeatPreview {
+  exercises: { exerciseName: string; equipmentName: string | null; line: string }[];
+  notes: { exerciseName: string; text: string }[];
+  notCopied: { exerciseName: string; skipped: number }[];
+  sourceGymId: string;
+  sourceStartedAtUtc: string;
+  tz: string;
 }
 
 export interface ActiveWorkoutData {
@@ -255,7 +276,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * A gym is required (PM SP1). An answered check-in is linked in the same
      * write as the session; one already linked to another workout is refused.
      */
-    async start(req: { gymId: string; opId: string; checkIn: SessionCheckIn | null }): Promise<StartOutcome> {
+    async start(req: { gymId: string; opId: string; checkIn: SessionCheckIn | null; repeatOf?: string | null }): Promise<StartOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
       let checkIn = req.checkIn;
@@ -264,6 +285,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const linked = await repos().checkIns.linkedIds([checkIn.checkInId]);
         // Linked to another workout (not this start's retry): start without it rather than block.
         if (linked.has(checkIn.checkInId) && already?.session.checkIn?.kind !== 'answered') checkIn = { kind: 'skipped', atUtc: ctx.now().utc };
+      }
+      if (req.repeatOf) {
+        // Repeat a past workout (routines.md RT4): its actuals become today's targets.
+        const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.repeatOf });
+        if (!r.ok) return { ok: false, error: r.error.code === 'nothing_to_repeat' ? { code: 'not_found', message: r.error.message } : r.error };
+        return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate };
       }
       return domain().start({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn });
     },
@@ -385,6 +412,38 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
+  const repeat = {
+    /** `Start from a past workout`: finished workouts with logged sets, newest first. */
+    async candidates(limit = 30): Promise<RepeatCandidate[]> {
+      const p = await ctx.profile();
+      if (!p) return [];
+      const nowMs = toMs(ctx.now().utc);
+      const finished = await repos().sessions.listFinishedBetween(p.id, toIso(nowMs - 365 * 86_400_000), toIso(nowMs + 1));
+      const gyms = new Map<string, string>();
+      const out: RepeatCandidate[] = [];
+      for (const a of [...finished].sort((x, y) => (x.session.startedAt.utc < y.session.startedAt.utc ? 1 : -1))) {
+        const done = a.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null);
+        if (done.length === 0) continue;
+        if (!gyms.has(a.session.gymId)) gyms.set(a.session.gymId, (await repos().gyms.get(a.session.gymId))?.name ?? 'Gym');
+        const names = [...a.exercises].sort((x, y) => x.order - y.order).filter((e) => done.some((s) => s.sessionExerciseId === e.id)).map((e) => e.exerciseName);
+        out.push({ sessionId: a.session.id, title: a.session.routineName ?? 'Workout', startedAtUtc: a.session.startedAt.utc, tz: a.session.startedAt.tz, gymId: a.session.gymId, gymName: gyms.get(a.session.gymId) ?? 'Gym', exerciseNames: names, sets: done.length });
+        if (out.length >= limit) break;
+      }
+      return out;
+    },
+
+    /** The Repeat screen (routines.md §2.4): what the new workout would plan at this gym. Saves nothing. */
+    async preview(sourceSessionId: string, gymId: string): Promise<RepeatPreview | null> {
+      const p = await ctx.profile();
+      if (!p) return null;
+      const r = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview:${sourceSessionId}`, at: ctx.now(), sourceSessionId, preview: true });
+      if (!r.ok) return null;
+      const source = await repos().sessions.get(sourceSessionId);
+      if (!source) return null;
+      return { exercises: repeatPreviewLines(r.aggregate), notes: r.notes, notCopied: r.notCopied, sourceGymId: source.session.gymId, sourceStartedAtUtc: source.session.startedAt.utc, tz: source.session.startedAt.tz };
+    },
+  };
+
   const today = {
     async view(): Promise<TodayView | null> {
       const p = await ctx.profile();
@@ -408,7 +467,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
-  return { checkIns, pain, workout, today };
+  return { checkIns, pain, workout, today, repeat };
 }
 
 export type WorkoutServices = ReturnType<typeof createWorkoutServices>;
