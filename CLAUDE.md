@@ -77,6 +77,8 @@ The main session acts as product manager and orchestrates. Subagents live in
 | `developer` | design spec, brief, this file | `apps/`, `packages/`, tests |
 | `reviewer` | diff, spec, brief acceptance scenarios | `docs/reviews/<feature>.md` (verdict: PASS / CHANGES NEEDED) |
 | `training-researcher` | training topics Ben asks about | `docs/training-guides/<topic>.md`: candidate coaching-playbook rules with evidence grades; Ben approves rules |
+| `exercise-researcher` | exercise lists, sources, schema | `packages/catalogue/data/exercises/<id>.json`: catalogue entries with cues, safety and a guide brief |
+| `exercise-guide-maker` | catalogue entries, design system | `packages/catalogue/guides/<id>/`: original animated demos and static key frames |
 
 Work in thin vertical slices: research (if needed) → design → build → review →
 fix, one feature at a time. Record significant technical decisions in
