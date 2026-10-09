@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { EquipmentInstance, Exercise, SessionAggregate, SetValues } from '@fizz/schemas';
 
 import {
+  analyseImport,
   buildAddExerciseCommand,
+  buildImportedSession,
   buildTodayView,
   buildWorkoutSummary,
+  DEFAULT_ANSWERS,
+  parseFitNotesCsv,
+  planImportRows,
   newCheckIn,
   newPainFlag,
   NBSP,
@@ -16,6 +21,7 @@ import {
 } from '../src/index';
 import { assisted, at, barbell, dumbbells, exercise, GYM, id, idGen, kg, ms, OWNER, profile, values } from './fixtures';
 import { apply, logCmd } from './session-fixture';
+import { CANDIDATES } from './import-fixtures';
 
 const plain = (s: string | null | undefined) => (s ?? '').replaceAll(NBSP, ' ');
 const BENCH = exercise(220, 'Bench press');
@@ -188,5 +194,46 @@ describe('buildTodayView', () => {
     const recent = [one];
     expect(buildTodayView({ ...base, nowMs: ms(0), active: null, recentCheckIns: recent }).unlinkedCheckIn?.id).toBe(id(43));
     expect(buildTodayView({ ...base, nowMs: ms(0), active: null, recentCheckIns: [{ ...one, linked: true }] }).unlinkedCheckIn).toBeNull();
+  });
+});
+
+describe('date-only (imported) workouts on Today and the summary (review B2, N3)', () => {
+  /** A FitNotes workout dated `date`, imported in London (anchor 12:00 local, no end time). */
+  function imported(date: string): SessionAggregate {
+    const p = parseFitNotesCsv(`Date,Exercise,Category,Weight (kgs),Reps,Distance,Distance Unit,Time\n${date},Lat pulldown,Back,40,10,,,\n`, '2026-10-31');
+    if (!p.ok) throw new Error('not parsed');
+    const ctx = { ownerId: OWNER, candidates: CANDIDATES, aliases: new Map(), appDates: new Set<string>(), importedDates: new Map(), defaultUnit: 'kg' as const };
+    const jobId = '00000000-0000-4000-8000-0000000a0b01';
+    const rows = planImportRows(p, analyseImport(p, ctx, DEFAULT_ANSWERS), { jobId, defaultUnit: 'kg' });
+    return buildImportedSession({ ownerId: OWNER, jobId, operationId: 'op-1', tz: 'Europe/London', gymId: null, importedAtUtc: '2026-10-09T17:00:00.000Z', date, rows });
+  }
+  const londonDate = (utc: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date(utc));
+
+  it('trained with FitNotes this morning and imported at 18:00: Today says done with no duration', () => {
+    const now = Date.parse('2026-10-09T17:00:00.000Z');
+    const v = buildTodayView({ nowMs: now, active: null, finishedThisWeek: [imported('2026-10-09')], todayLocalDate: '2026-10-09', localDateOf: londonDate, recentCheckIns: [] });
+    expect(v.main).toEqual({ kind: 'done_today', sessionId: expect.any(String) as string, title: 'Workout', activeMs: null });
+  });
+
+  it('the summary shows the date only: no time range, no active time', () => {
+    const agg = imported('2026-10-09');
+    const sum = buildWorkoutSummary({ aggregate: agg, nowMs: Date.parse('2026-10-09T17:00:00.000Z'), gymName: null, history: {}, rules: {}, painFlags: [], checkIn: null, coach: 'not_connected' });
+    expect(sum.dateOnly).toBe('2026-10-09');
+    expect(sum.endedAtUtc).toBeNull();
+    expect(sum.facts).toMatchObject({ activeMs: null, activeText: null, workingSets: 1 });
+    // A workout logged in the app keeps its times.
+    const logged = finish(logAll(workout(BENCH, barbell(), 1), [values(kg(60), 10)], 0), 600);
+    const own = buildWorkoutSummary(input(logged, []));
+    expect(own.dateOnly).toBeNull();
+    expect(own.facts.activeMs).toBeGreaterThan(0);
+  });
+
+  it('keeps its own date in a phone zone 12+ hours away (London noon is already tomorrow in Auckland)', () => {
+    const agg = imported('2026-10-09');
+    const auckland = (utc: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland' }).format(new Date(utc));
+    expect(auckland(agg.session.startedAt.utc)).toBe('2026-10-10');
+    const now = Date.parse('2026-10-09T05:00:00.000Z'); // 18:00 on 9 Oct in Auckland
+    expect(buildTodayView({ nowMs: now, active: null, finishedThisWeek: [agg], todayLocalDate: '2026-10-09', localDateOf: auckland, recentCheckIns: [] }).main).toMatchObject({ kind: 'done_today', activeMs: null });
+    expect(buildTodayView({ nowMs: now + 86_400_000, active: null, finishedThisWeek: [agg], todayLocalDate: '2026-10-10', localDateOf: auckland, recentCheckIns: [] }).main).toEqual({ kind: 'no_plan' });
   });
 });

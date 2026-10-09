@@ -3,7 +3,7 @@ import { reusableCheckIn, type RecentCheckIn } from '../checkin';
 import { toIso, toMs } from '../time';
 import { buildActiveSetView } from './active-view';
 import { STALE_SESSION_MS } from './recovery';
-import { getActiveDurationMs } from './view';
+import { dateOnlyOf, workoutDurationMs } from './view';
 
 /**
  * `buildTodayView` (today.md §6) for this build: no weekly plan or routines
@@ -37,7 +37,8 @@ export type TodayMain =
       /** `Finish (ended about 19:24)`; null when nothing was logged (`Discard (nothing logged)`). */
       endedAboutUtc: string | null;
     }
-  | { kind: 'done_today'; sessionId: string; title: string; activeMs: number }
+  /** `activeMs` is null for a date-only (imported) workout: it has no times, so no duration is shown (review B2). */
+  | { kind: 'done_today'; sessionId: string; title: string; activeMs: number | null }
   | { kind: 'no_plan' };
 
 export interface TodayInput {
@@ -111,10 +112,11 @@ export function buildTodayView(input: TodayInput): TodayView {
       };
     }
   } else {
+    // A date-only workout is on its own calendar date, whatever zone the phone is in now (review N3).
     const today = [...input.finishedThisWeek]
-      .filter((a) => input.localDateOf(a.session.startedAt.utc) === input.todayLocalDate)
+      .filter((a) => (dateOnlyOf(a.session) ?? input.localDateOf(a.session.startedAt.utc)) === input.todayLocalDate)
       .sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc))[0];
-    if (today) main = { kind: 'done_today', sessionId: today.session.id, title: today.session.routineName ?? 'Workout', activeMs: getActiveDurationMs(today, nowMs) };
+    if (today) main = { kind: 'done_today', sessionId: today.session.id, title: today.session.routineName ?? 'Workout', activeMs: workoutDurationMs(today, nowMs) };
   }
 
   const count = input.finishedThisWeek.length;

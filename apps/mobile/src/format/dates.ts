@@ -1,3 +1,5 @@
+import { localHourUtcMs } from '@fizz/domain';
+
 /**
  * Local date and time wording (design-system §3). Pure: time and zone are
  * arguments, and `locale` defaults to the device's (tests pass 'en-GB').
@@ -24,6 +26,15 @@ export function formatShortDate(ms: number, tz: string, locale?: string): string
 export function formatDayMonth(ms: number, tz: string, locale?: string): string {
   const p = parts(ms, tz, locale, { day: 'numeric', month: 'short' });
   return `${p.day ?? ''} ${p.month ?? ''}`.trim();
+}
+
+/**
+ * `Wed 1 Oct 2026` for a calendar date with no time or zone (`YYYY-MM-DD`,
+ * an imported date-only workout). Never shifted by the phone's zone.
+ */
+export function formatCalendarDate(date: string, locale?: string): string {
+  const p = parts(localHourUtcMs(date, 12, 'UTC'), 'UTC', locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  return `${p.weekday ?? ''} ${p.day ?? ''} ${p.month ?? ''} ${p.year ?? ''}`.trim();
 }
 
 /** Calendar date in a zone, `YYYY-MM-DD`. */

@@ -248,7 +248,8 @@ export function TodayScreen() {
       case 'done_today':
         return (
           <Card>
-            <StatusLine icon="checkmark.circle.fill" tone="done" text={`${main.title} done · ${formatMinutes(main.activeMs)}`} />
+            {/* A date-only (imported) workout has no times, so no duration (rule 6). */}
+            <StatusLine icon="checkmark.circle.fill" tone="done" text={main.activeMs === null ? `${main.title} done` : `${main.title} done · ${formatMinutes(main.activeMs)}`} />
             <TextButton
               label="View summary"
               onPress={() => {

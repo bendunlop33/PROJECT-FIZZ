@@ -8,7 +8,7 @@ import { toIso, toMs, type NextTimeRow, type WorkoutSummary } from '@fizz/domain
 import { nowMs as clockNow } from '../../clock';
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
-import { formatDayMonth, formatShortDate, formatTime } from '../../format/dates';
+import { formatCalendarDate, formatDayMonth, formatShortDate, formatTime } from '../../format/dates';
 import { popToTabs, popToToday } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { firstTime, useDataChanged, useScreenData, useServices } from '../../shell/context';
@@ -114,7 +114,8 @@ export function SummaryScreen() {
             {sum.title}
           </AppText>
           <AppText variant="callout" color="text.secondary" numeric>
-            {[formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`].filter(Boolean).join(' · ')}
+            {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}
+            {(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), sum.gymName, 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`]).filter(Boolean).join(' · ')}
           </AppText>
         </View>
 
@@ -216,7 +217,7 @@ export function SummaryScreen() {
         ))}
 
         <View style={{ gap: theme.space['2'] }}>
-          <Fact label="Active time" value={sum.facts.activeText} />
+          {sum.facts.activeText !== null ? <Fact label="Active time" value={sum.facts.activeText} /> : null}
           <Fact label="Exercises" value={`${String(sum.facts.exercisesDone)} of ${String(sum.facts.exercisesTotal)}`} />
           <Fact label="Working sets" value={`${String(sum.facts.workingSets)}${sum.facts.skippedSets > 0 ? ` (${String(sum.facts.skippedSets)} skipped)` : ''}`} />
           {sum.facts.warmupSets > 0 ? <Fact label="Warm-up sets" value={String(sum.facts.warmupSets)} /> : null}
@@ -279,14 +280,16 @@ export function SummaryScreen() {
       {toast ? <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
       <BottomBar>
         <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-          <View style={{ flex: 1 }}>
-            <SecondaryButton
-              label="Edit times"
-              onPress={() => {
-                setTimes(true);
-              }}
-            />
-          </View>
+          {sum.dateOnly === null ? (
+            <View style={{ flex: 1 }}>
+              <SecondaryButton
+                label="Edit times"
+                onPress={() => {
+                  setTimes(true);
+                }}
+              />
+            </View>
+          ) : null}
           <View style={{ flex: 1 }}>
             <PrimaryButton label="Done" onPress={done} />
           </View>

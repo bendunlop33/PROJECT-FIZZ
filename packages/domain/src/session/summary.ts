@@ -8,7 +8,7 @@ import type { HistorySession, NextTargets } from '../progression';
 import { toIso, toMs } from '../time';
 import { lastComparableSession } from './active-view';
 import { summaryHighlight } from '../touches';
-import { getActiveDurationMs } from './view';
+import { dateOnlyOf, workoutDurationMs } from './view';
 import { summariseVolume } from './volume';
 
 /**
@@ -60,9 +60,16 @@ export interface WorkoutSummary {
   startedAtUtc: string;
   endedAtUtc: string | null;
   tz: string;
+  /**
+   * `YYYY-MM-DD` for a workout with no time of day (imported from FitNotes):
+   * show this date only, with no time range, no active time and no `Edit
+   * times` (rule 6; review B2). Null for a workout logged in the app.
+   */
+  dateOnly: string | null;
   gymName: string | null;
   timingEdited: { start: boolean; end: boolean };
-  facts: { activeMs: number; activeText: string; exercisesDone: number; exercisesTotal: number; workingSets: number; skippedSets: number; warmupSets: number };
+  /** `activeMs`/`activeText` are null for a date-only workout (no times to measure). */
+  facts: { activeMs: number | null; activeText: string | null; exercisesDone: number; exercisesTotal: number; workingSets: number; skippedSets: number; warmupSets: number };
   checkIn: { checkInId: string; scoreText: string; reasons: string | null; note: string | null; painNotFlagged: boolean } | null;
   comparison:
     | { kind: 'compared'; exerciseName: string; todayText: string; lastText: string; lastAtUtc: string; why: string }
@@ -147,7 +154,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   const skippedSets = liveSets.filter((x) => x.status === 'skipped' && isWork(x)).length;
   const exercisesWithSets = exercises.filter((e) => liveSets.some((x) => x.sessionExerciseId === e.id));
   const exercisesDone = exercisesWithSets.filter((e) => completed.some((x) => x.sessionExerciseId === e.id)).length;
-  const activeMs = getActiveDurationMs(state, nowMs);
+  const activeMs = workoutDurationMs(state, nowMs);
 
   const exerciseRows = exercisesWithSets.map((ex) => {
     const eq = equipmentOf(state, ex);
@@ -248,12 +255,13 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     startedAtUtc: s.startedAt.utc,
     endedAtUtc: s.endedAt?.utc ?? null,
     tz: s.startedAt.tz,
+    dateOnly: dateOnlyOf(s),
     gymName: input.gymName,
     timingEdited: {
       start: state.timingAudit.some((e) => e.field === 'startedAt'),
       end: state.timingAudit.some((e) => e.field === 'endedAt'),
     },
-    facts: { activeMs, activeText: formatMinutes(activeMs), exercisesDone, exercisesTotal: exercisesWithSets.length, workingSets, skippedSets, warmupSets },
+    facts: { activeMs, activeText: activeMs === null ? null : formatMinutes(activeMs), exercisesDone, exercisesTotal: exercisesWithSets.length, workingSets, skippedSets, warmupSets },
     checkIn: ci
       ? {
           checkInId: ci.id,

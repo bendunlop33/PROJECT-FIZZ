@@ -1,4 +1,4 @@
-import type { Load, SessionAggregate, SessionExercise, SetValues, WorkoutSet } from '@fizz/schemas';
+import type { Load, SessionAggregate, SessionExercise, SetValues, WorkoutSession, WorkoutSet } from '@fizz/schemas';
 import { restOverrunMs, restRemainingMs } from '../rest';
 import { toMs } from '../time';
 
@@ -80,6 +80,24 @@ export function getActiveDurationMs(state: SessionAggregate, nowMs: number): num
   const end = session.endedAt ? toMs(session.endedAt.utc) : nowMs;
   if (end <= start) return 0;
   return Math.max(0, end - start - pausedMsWithin(state, start, end, nowMs));
+}
+
+/**
+ * The calendar date of a workout with no time of day (an imported FitNotes
+ * workout), or null for a workout with real times. Such a workout is shown
+ * with this date only: no start or end time and no duration anywhere, since
+ * its `startedAt` is only an ordering anchor (rule 6; review B2).
+ */
+export function dateOnlyOf(session: Pick<WorkoutSession, 'localDate'>): string | null {
+  return session.localDate ?? null;
+}
+
+/**
+ * How long a workout took, for Today and the summary; null for a date-only
+ * workout, which has no times to measure (review B2).
+ */
+export function workoutDurationMs(state: SessionAggregate, nowMs: number): number | null {
+  return dateOnlyOf(state.session) === null ? getActiveDurationMs(state, nowMs) : null;
 }
 
 /**
