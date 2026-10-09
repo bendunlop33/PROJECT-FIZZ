@@ -154,3 +154,23 @@ Don't build on:
 - The placeholder's finish and discard handling (N8).
 
 Expect logging to wait behind the launch integrity check and catch-up backup until S4 is addressed. Everything else is safe to build on: `useScreenData` with `changed()`, `sessions.startEmpty({gymId, opId})` with the opId kept until success, `afterCommand` triggering backups, and the UI kit.
+
+---
+
+## Re-review of the fixes (9 Oct 2026, commits `c93eba5`..`52bb75c`, checked at `2eb78b4`)
+
+**Result: B1, B2, S1–S4, S6 and N8 are fixed. S5 is fixed at launch only. The remaining S5 pushes are now tracked as B1 in [workout-loop.md](workout-loop.md).** `npm run check` passes: 48 files, 689 tests.
+
+| Item | Status | Evidence |
+|---|---|---|
+| B1 Back over a saved gym | Fixed | Step 2 shows `Gym saved` read-only with Continue (`SetupScreen.tsx:163-187`). The service refuses a second gym ID while setup is open (`app-services.ts:180-183`), and `skipGym` after a save keeps the gym. Tested. Residual: after a force-close on Step 3, the local `gym` state is empty, so Back shows the gym chooser again. `Save gym` is then refused with an honest message. No duplicate is created; it's just a dead end. |
+| B2 Rotation keeps the newest good backup | Fixed | `planRotation` never selects the newest `integrityOk` record (`manifest.ts:125-130`). Tested with 1 good and 15 damaged backups. |
+| S1 Concurrent `saveUnits` | Fixed | The check and the insert run in one write transaction (`app-services.ts:148-165`). A concurrent test creates exactly one profile. |
+| S2 Manifest read error | Fixed | A read error makes the run non-writable: nothing is written over the record and nothing is rotated, and the run is kept in memory. A parse failure keeps `backup-state.damaged-<utc>.json` first. `manifestProblem` clears after a successful save. Tested. |
+| S3 Name clashes | Fixed | `freeName` checks the manifest **and** that the file exists, both on the phone and in the picked folder. Tested. |
+| S4 Launch work holds the queue | Fixed | `checkIntegrity` reads in turns (engine checks, then each table, then 10 sessions per turn). A test shows a write landing before the check ends. The catch-up backup is skipped while a workout is unfinished. Residual: the backup after Finish still exports in one turn, so an immediate second workout's first Log can wait behind it. |
+| S5 Workout as the root route | Partly fixed | The launch stack is `[Tabs, Workout]` (`initial-state.ts`, tested), so Minimise pops. But `navigate('Tabs', …)` from Summary `Done` and from in-workout Discard **pushes** a new Tabs in React Navigation 7. See workout-loop B1. |
+| S6 `services.manager` back door | Fixed | Removed. The Developer screen uses `developer.databaseNames()`. |
+| N8 Placeholder patterns | Fixed | `stale_version` reloads in `WorkoutScreen.run`, `FinishSheet.onStale` and Today's discard. Discarding with 0 sets logged has no Undo, per today.md's 2026-10-08 revision. |
+
+The other nits (N1–N7, N9–N12) were out of scope for this pass and remain open.
