@@ -23,7 +23,7 @@ import { deriveId } from '../stable';
 import { fromScaled, toScaled } from '../units';
 import { effortFromComment } from './effort';
 import type { FitNotesRow } from './fitnotes';
-import { implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
+import { barNamed, implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
 
 /**
  * The FitNotes import preview and plan (data-import-export §2.5, §3.4, §4.3).
@@ -35,6 +35,14 @@ import { implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch 
  * (DX6), kg and lb are never converted, imported loads are never snapped to
  * equipment (rule 2: they are completed sets, as written), and dates stay
  * dates (no invented time of day).
+ *
+ * A stored value differs from the file's only with a source for it (PM
+ * decision, review r5): (a) the name is one of the exercise's own names,
+ * (b) Ben's own answer, in this import or remembered from one still in
+ * effect, or (c) a word in the name. A word suggestion, even after `Use
+ * this`, gives the exercise only: an exercise whose dumbbell count or bar
+ * isn't known that way never takes a group answer and is asked on its own,
+ * with nothing selected, showing what it will import as.
  */
 
 export const DEFAULT_ANSWERS: ImportAnswers = {
@@ -109,11 +117,20 @@ export interface ResolvedExercise {
   /** Which bar a `plates_only` value adds (only read for `total`). */
   bar: BarOf;
   /**
-   * `per_hand`: one dumbbell or two, from the catalogue unless the source
-   * name contradicts it (`implementsFor`); null when not known (asked;
-   * review r3 S1, r4 S1).
+   * `total` on a bar: the bar is known from the name (`barNamed`: one of the
+   * exercise's own names, or a bar word) or from Ben's `Add new` answer, so
+   * the barbell group answer reads it. False: asked on its own (PM decision,
+   * review r5). Always true off a bar (nothing can be added).
+   */
+  barKnown: boolean;
+  /**
+   * `per_hand`: one dumbbell or two, only from the exercise's own name or a
+   * word in the source name (`implementsFor`); null when not known (asked;
+   * review r3 S1, r4 S1, r5 S1).
    */
   implements: ImplementCount | null;
+  /** The exercise's equipment (the dumbbell screen says kettlebell for a kettlebell exercise; review r5 N3). */
+  equipment: readonly ExerciseEquipmentKind[];
   /** `Add new`: a custom exercise created when the import commits. */
   newKind: CustomExerciseKind | null;
 }
@@ -142,12 +159,28 @@ export interface ExampleSet {
   reps: number;
 }
 
-export interface GroupQuestion<A> {
-  exercises: { key: string; name: string; sets: number; override: A | null }[];
-  answer: A | null;
-  example: ExampleSet | null;
-  /** Some exercise in the group has neither an override nor the group answer. */
-  open: boolean;
+/** One exercise on the barbell question (PM decision, review r5). */
+export interface TotalExercise {
+  key: string;
+  /** As first written in the file. */
+  name: string;
+  /** The app's exercise it maps to. */
+  exerciseName: string;
+  sets: number;
+  /** The bar "plates only" adds (`unknown`: none can be added). */
+  bar: Exclude<BarOf, 'none'>;
+  /** The bar is known (`ResolvedExercise.barKnown`): the group answer reads it. Otherwise it is asked on its own. */
+  known: boolean;
+  override: TotalAnswer | null;
+  /** How its values are read now (`totalReading`). Null: still to answer. */
+  reading: TotalAnswer | null;
+  /**
+   * Its newest weight in the file and what it imports as under `reading`:
+   * `imported` is null while unanswered, while the bar's weight is missing,
+   * or when no bar can be added (`bar: 'unknown'`); `barWeight` is the
+   * weight added for plates only.
+   */
+  sample: { value: number; unit: WeightUnit; imported: number | null; barWeight: number | null } | null;
 }
 
 /** One exercise on the dumbbell question (review r3 S1). */
@@ -160,6 +193,8 @@ export interface PerHandExercise {
   sets: number;
   /** One dumbbell or two (`implementsFor`). Null: not known, so it is asked on its own. */
   implements: ImplementCount | null;
+  /** What the copy calls it: a kettlebell exercise isn't "one dumbbell" (review r5 N3). */
+  implement: 'dumbbell' | 'kettlebell';
   override: PerHandReading | null;
   /** Ben's answer for this name in an earlier import (review r4 S2); null when there is none. */
   remembered: PerHandReading | null;
@@ -179,14 +214,37 @@ export interface PerHandQuestion {
   exercises: PerHandExercise[];
   /** The group answer, for two-dumbbell exercises with no answer of their own. */
   answer: PerHandAnswer | null;
-  /** Two-dumbbell exercises (the group question is shown only when there is one). */
+  /** Two-dumbbell exercises the group answer reads: no answer of their own (the group question is shown only when there is one; review r5 N4). */
   pairs: number;
-  /** The newest two-dumbbell set, for the group options. */
+  /** The newest set of an exercise the group answer reads, for the group options (review r5 N4). */
   example: ExampleSet | null;
   /** A two-dumbbell exercise waits for the group answer. */
   needsGroup: boolean;
   /** Exercises with no recorded count and no answer yet. */
   needsCount: number;
+  open: boolean;
+}
+
+/**
+ * Barbell weights (§2.5 step 3b; PM decision, review r5). The group answer
+ * (total / plates only) reads exercises whose bar is known; any other bar
+ * exercise is asked on its own with no default (DX6). Every exercise shows
+ * what it will import as.
+ */
+export interface TotalQuestion {
+  exercises: TotalExercise[];
+  /** The group answer, for exercises whose bar is known and with no answer of their own. */
+  answer: TotalAnswer | null;
+  /** Exercises the group answer reads (the group question is shown only when there is one). */
+  grouped: number;
+  /** The newest set of an exercise the group answer reads. */
+  example: ExampleSet | null;
+  /** An exercise the group answer reads waits for it. */
+  needsGroup: boolean;
+  /** Exercises whose bar isn't known, with no answer yet. */
+  needsOwn: number;
+  bars: BarWeightQuestion[];
+  missingBarWeight: boolean;
   open: boolean;
 }
 
@@ -253,7 +311,7 @@ export interface ImportAnalysis {
   names: NameRow[];
   perHand: PerHandQuestion | null;
   /** `total` exercises that use a bar (barbell, EZ bar, trap bar). Bar-less ones (a kettlebell) aren't asked. */
-  total: (GroupQuestion<TotalAnswer> & { bars: BarWeightQuestion[]; missingBarWeight: boolean }) | null;
+  total: TotalQuestion | null;
   bodyweight: BodyweightQuestion[];
   /** FitNotes 2 rows with both weight columns filled. */
   unit: { rows: number; answer: WeightUnit | null } | null;
@@ -308,6 +366,7 @@ function resolveName(
   const fromCandidate = (id: string | null): NameResolution => {
     const c = id === null ? undefined : byId.get(id);
     if (!c) return { kind: 'open' };
+    const bar = barOf(c.compatibleEquipment);
     return {
       kind: 'exercise',
       exercise: {
@@ -315,9 +374,12 @@ function resolveName(
         name: c.name,
         laterality: c.laterality,
         convention: c.defaultLoadConvention,
-        bar: barOf(c.compatibleEquipment),
-        // The source name can contradict the catalogue's count (`One-Arm Standing Dumbbell Press` on the pair press): then it's asked (review r4 S1).
+        bar,
+        // A bar the name doesn't establish is never added by the group answer (PM decision, review r5).
+        barKnown: bar === 'none' || bar === 'unknown' || barNamed(name, c, bar),
+        // Only the exercise's own name or a word in the source name gives the count; a suggestion never does (review r4 S1, r5 S1).
         implements: implementsFor(name, c),
+        equipment: c.compatibleEquipment,
         newKind: null,
       },
     };
@@ -337,8 +399,11 @@ function resolveName(
             laterality: 'bilateral',
             convention: CONVENTION_BY_KIND[answer.equipment],
             bar: answer.equipment === 'barbell' ? 'barbell' : 'none',
+            // Ben said it's a barbell exercise: the group answer reads it.
+            barKnown: true,
             // A new dumbbell exercise: one or two isn't known, so it is asked (review r3 S1).
             implements: null,
+            equipment: [answer.equipment],
             newKind: answer.equipment,
           },
         };
@@ -370,6 +435,21 @@ export function perHandReading(count: ImplementCount | null, override: PerHandRe
 /** The weight per dumbbell a written value imports as: halved only for `both`. */
 export function perHandValue(value: number, reading: PerHandReading): number {
   return reading === 'both' ? half(value) : value;
+}
+
+/**
+ * How one bar exercise's values are read (PM decision, review r5): Ben's
+ * own answer for it; else the group answer when its bar is known; else
+ * null until Ben answers it.
+ */
+export function totalReading(known: boolean, override: TotalAnswer | null, group: TotalAnswer | null): TotalAnswer | null {
+  if (override !== null) return override;
+  return known ? group : null;
+}
+
+/** What the copy calls an exercise's implement: kettlebell only when it uses a kettlebell and no dumbbells. */
+function implementOf(equipment: readonly ExerciseEquipmentKind[]): 'dumbbell' | 'kettlebell' {
+  return equipment.includes('kettlebell') && !equipment.includes('dumbbells') ? 'kettlebell' : 'dumbbell';
 }
 
 function plus(a: number, b: number): number {
@@ -419,6 +499,7 @@ function perHandQuestion(
         exerciseName: ex.name,
         sets: 0,
         implements: ex.implements,
+        implement: implementOf(ex.equipment),
         override,
         remembered: remembered.get(key) ?? null,
         reading: perHandReading(ex.implements, override, answers.perHand),
@@ -433,7 +514,8 @@ function perHandQuestion(
       m.sample = { value: w.value, unit: w.unit, imported: m.reading === null ? null : perHandValue(w.value, m.reading) };
       sampleDates.set(key, date);
     }
-    if (ex.implements === 2 && r.reps !== null && (example === null || date > example.date)) example = { name: r.exercise, date, value: w.value, unit: w.unit, reps: r.reps };
+    // The example is from an exercise the group answer reads: a pair with no answer of its own (review r5 N4).
+    if (ex.implements === 2 && m.override === null && r.reps !== null && (example === null || date > example.date)) example = { name: r.exercise, date, value: w.value, unit: w.unit, reps: r.reps };
   }
   if (members.size === 0) return null;
   const exercises = [...members.values()];
@@ -442,12 +524,97 @@ function perHandQuestion(
   return {
     exercises,
     answer: answers.perHand,
-    pairs: exercises.filter((e) => e.implements === 2).length,
+    pairs: exercises.filter((e) => e.implements === 2 && e.override === null).length,
     example,
     needsGroup,
     needsCount,
     open: needsGroup || needsCount > 0,
   };
+}
+
+/** The barbell question from the rows still to import (PM decision, review r5). */
+function totalQuestion(live: readonly FitNotesRow[], resolved: (r: FitNotesRow) => ResolvedExercise | null, answers: ImportAnswers): TotalQuestion | null {
+  const members = new Map<string, TotalExercise>();
+  const sampleDates = new Map<string, string>();
+  const barUse = new Map<ImportBarKind, { units: Set<WeightUnit>; needed: Set<WeightUnit> }>();
+  let example: ExampleSet | null = null;
+  for (const r of live) {
+    const ex = resolved(r);
+    if (ex?.convention !== 'total' || ex.bar === 'none') continue;
+    const entered = enteredWeight(r, answers);
+    const w = entered ?? (r.bothColumns ? { value: r.bothColumns.kg, unit: 'kg' as const } : null);
+    if (w === null) continue;
+    const key = nameKey(r.exercise);
+    let m = members.get(key);
+    if (!m) {
+      const override = answers.totalOverrides[key] ?? null;
+      m = { key, name: r.exercise, exerciseName: ex.name, sets: 0, bar: ex.bar, known: ex.barKnown, override, reading: totalReading(ex.barKnown, override, answers.total), sample: null };
+      members.set(key, m);
+    }
+    m.sets += 1;
+    const bar = ex.bar === 'unknown' ? null : ex.bar;
+    // Each bar's weight per unit, and whether plates-only rows need it (review S1).
+    if (bar !== null && entered) {
+      const use = barUse.get(bar) ?? { units: new Set<WeightUnit>(), needed: new Set<WeightUnit>() };
+      use.units.add(entered.unit);
+      if (m.reading === 'plates_only') use.needed.add(entered.unit);
+      barUse.set(bar, use);
+    }
+    const date = r.date ?? '';
+    // The newest readable set (first in the file on that date), with what it imports as.
+    if (r.reps !== null && w.value >= 0 && (m.sample === null || date > (sampleDates.get(key) ?? ''))) {
+      const barWeight = bar === null ? null : barWeightOf(bar, answers)[w.unit];
+      const imported = m.reading === 'total' ? w.value : m.reading === 'plates_only' && barWeight !== null ? plus(w.value, barWeight) : null;
+      m.sample = { value: w.value, unit: w.unit, imported, barWeight };
+      sampleDates.set(key, date);
+    }
+    if (m.known && m.override === null && r.reps !== null && (example === null || date > example.date)) example = { name: r.exercise, date, value: w.value, unit: w.unit, reps: r.reps };
+  }
+  if (members.size === 0) return null;
+  const exercises = [...members.values()];
+  const bars: BarWeightQuestion[] = BAR_KINDS.flatMap((bar) => {
+    const use = barUse.get(bar);
+    if (!use) return [];
+    const weight = barWeightOf(bar, answers);
+    const missing = [...use.needed].filter((u) => weight[u] === null).sort();
+    return [{ bar, units: [...use.units].sort(), weight, needed: use.needed.size > 0, missing }];
+  });
+  const missingBarWeight = bars.some((b) => b.missing.length > 0);
+  const needsGroup = exercises.some((e) => e.reading === null && e.known);
+  const needsOwn = exercises.filter((e) => e.reading === null && !e.known).length;
+  return {
+    exercises,
+    answer: answers.total,
+    grouped: exercises.filter((e) => e.known && e.override === null).length,
+    example,
+    needsGroup,
+    needsOwn,
+    bars,
+    missingBarWeight,
+    open: needsGroup || needsOwn > 0 || missingBarWeight,
+  };
+}
+
+/**
+ * Each name's match against one context, kept with the context: a preview is
+ * analysed again after every answer against the same context, and matching
+ * every name against every exercise is most of that work (check 27). The
+ * context is read-only, so a kept match is the match.
+ */
+const MATCHES = new WeakMap<ImportContext, Map<string, NameMatch>>();
+
+function matchIn(ctx: ImportContext, key: string, name: string): NameMatch {
+  let kept = MATCHES.get(ctx);
+  if (!kept) {
+    kept = new Map();
+    MATCHES.set(ctx, kept);
+  }
+  let m = kept.get(key);
+  if (!m) {
+    m = matchName(name, ctx.candidates, ctx.aliases);
+    kept.set(key, m);
+  }
+  return m;
 }
 
 /**
@@ -466,7 +633,7 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     const key = nameKey(r.exercise);
     let n = nameRows.get(key);
     if (!n) {
-      const match = matchName(r.exercise, ctx.candidates, ctx.aliases);
+      const match = matchIn(ctx, key, r.exercise);
       const answer = answers.names[key] ?? null;
       const resolution = resolveName(key, r.exercise, match, answer, ctx, byId);
       n = { key, name: r.exercise, sets: 0, match, answer, resolution, needsAnswer: resolution.kind === 'open' };
@@ -487,47 +654,9 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
   const unit = bothRows > 0 ? { rows: bothRows, answer: answers.bothColumns } : null;
 
   // Group questions (dumbbells, barbell) and per-exercise bodyweight questions.
-  const groupOf = <A>(inGroup: (ex: ResolvedExercise) => boolean, groupAnswer: A | null, overrides: Readonly<Record<string, A>>): GroupQuestion<A> | null => {
-    const members = new Map<string, { key: string; name: string; sets: number; override: A | null }>();
-    let example: ExampleSet | null = null;
-    for (const r of live) {
-      const ex = resolved(r);
-      if (!ex || !inGroup(ex)) continue;
-      const w = enteredWeight(r, answers) ?? (r.bothColumns ? { value: r.bothColumns.kg, unit: 'kg' as const } : null);
-      if (w === null) continue;
-      const key = nameKey(r.exercise);
-      const m = members.get(key) ?? { key, name: r.exercise, sets: 0, override: overrides[key] ?? null };
-      m.sets += 1;
-      members.set(key, m);
-      if (r.reps !== null && (example === null || (r.date ?? '') > example.date)) example = { name: r.exercise, date: r.date ?? '', value: w.value, unit: w.unit, reps: r.reps };
-    }
-    if (members.size === 0) return null;
-    const exercises = [...members.values()];
-    return { exercises, answer: groupAnswer, example, open: exercises.some((e) => e.override === null && groupAnswer === null) };
-  };
   const perHand = perHandQuestion(live, resolved, answers, ctx.perHandAnswers ?? new Map());
   // Barbell question: `total` exercises on a bar. Each bar kind has its own weight (review S1).
-  const onBar = (ex: ResolvedExercise) => ex.convention === 'total' && ex.bar !== 'none';
-  const totalGroup = groupOf<TotalAnswer>(onBar, answers.total, answers.totalOverrides);
-  const barUse = new Map<ImportBarKind, { units: Set<WeightUnit>; needed: Set<WeightUnit> }>();
-  for (const r of live) {
-    const ex = resolved(r);
-    const w = enteredWeight(r, answers);
-    if (!ex || !onBar(ex) || !w || ex.bar === 'none' || ex.bar === 'unknown') continue;
-    const use = barUse.get(ex.bar) ?? { units: new Set<WeightUnit>(), needed: new Set<WeightUnit>() };
-    use.units.add(w.unit);
-    if ((answers.totalOverrides[nameKey(r.exercise)] ?? answers.total) === 'plates_only') use.needed.add(w.unit);
-    barUse.set(ex.bar, use);
-  }
-  const bars: BarWeightQuestion[] = BAR_KINDS.flatMap((bar) => {
-    const use = barUse.get(bar);
-    if (!use) return [];
-    const weight = barWeightOf(bar, answers);
-    const missing = [...use.needed].filter((u) => weight[u] === null).sort();
-    return [{ bar, units: [...use.units].sort(), weight, needed: use.needed.size > 0, missing }];
-  });
-  const missingBarWeight = bars.some((b) => b.missing.length > 0);
-  const total = totalGroup ? { ...totalGroup, open: totalGroup.open || missingBarWeight, bars, missingBarWeight } : null;
+  const total = totalQuestion(live, resolved, answers);
 
   const bwMap = new Map<string, BodyweightQuestion>();
   for (const r of live) {
@@ -607,7 +736,8 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
         if (w === null || value === null) return set('total', null);
         // No bar (a kettlebell): the value is the total as written; nothing to ask.
         if (ex.bar === 'none') return value < 0 ? { result: 'unreadable', detail: negative(value) } : set('total', { value, unit: w.unit, convention: 'total' });
-        const choice = answers.totalOverrides[key] ?? answers.total;
+        // The group answer reads it only when its bar is known (PM decision, review r5).
+        const choice = totalReading(ex.barKnown, answers.totalOverrides[key] ?? null, answers.total);
         if (choice === null) return { result: 'pending', reason: 'total' };
         if (value < 0) return { result: 'unreadable', detail: negative(value) };
         if (choice === 'total') return set('total', { value, unit: w.unit, convention: 'total' });
@@ -820,7 +950,8 @@ export function planImportRows(
 /**
  * A name to remember (`ExerciseAlias`). `perHand`: Ben's own dumbbell
  * answer for the name to store with it; `null` clears an earlier one he
- * took back; absent leaves what is stored (review r4 S2).
+ * took back; absent: this import didn't ask, so it says nothing about it
+ * (review r4 S2).
  */
 export interface AliasSave {
   key: string;
@@ -833,7 +964,10 @@ export interface AliasSave {
  * Names Ben answered, to remember for the next import (`ExerciseAlias`,
  * §2.5 step 3a), and his own answer for an exercise's dumbbells, kept with
  * its name so a newer export reads it the same way (review r4 S2). Only an
- * answer for that exercise is kept; the group answer isn't.
+ * answer for that exercise is kept; the group answer isn't. A remembered
+ * name this import used (with sets) is saved again, so it stays in effect
+ * while this import is, even if the import that taught it is undone
+ * (review r5 S2).
  */
 export function aliasesToSave(analysis: ImportAnalysis): AliasSave[] {
   const dumbbells = new Map((analysis.perHand?.exercises ?? []).map((e) => [e.key, e]));
@@ -842,11 +976,12 @@ export function aliasesToSave(analysis: ImportAnalysis): AliasSave[] {
     const e = dumbbells.get(n.key);
     // Asked about this import: his answer, or null when he cleared the one remembered from last time.
     const perHand = e === undefined ? undefined : (e.override ?? (e.remembered === null ? undefined : null));
+    const used = n.answer === null && n.match.via === 'alias' && n.sets > 0;
     if (n.resolution.kind === 'skip') {
-      if (n.answer) out.push({ key: n.key, name: n.name, target: { kind: 'skip' } });
+      if (n.answer || used) out.push({ key: n.key, name: n.name, target: { kind: 'skip' } });
       continue;
     }
-    if (n.resolution.kind !== 'exercise' || (!n.answer && perHand === undefined)) continue;
+    if (n.resolution.kind !== 'exercise' || (!n.answer && !used && perHand === undefined)) continue;
     const target: AliasTarget = { kind: 'exercise', exerciseId: n.resolution.exercise.exerciseId };
     out.push(perHand === undefined ? { key: n.key, name: n.name, target } : { key: n.key, name: n.name, target, perHand });
   }

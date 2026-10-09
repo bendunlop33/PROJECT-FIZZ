@@ -6,11 +6,14 @@ import {
   buildImportedSession,
   catalogueExerciseId,
   conventionForKind,
+  customExerciseIdFor,
   importResultsCsv,
   localDateOf,
+  nameKey,
   newExercisesToCreate,
   parseFitNotesCsv,
   planImportRows,
+  rememberedAnswers,
   searchCandidates,
   stableStringify,
   startingAnswers,
@@ -31,7 +34,6 @@ import {
   type ImportAnswers,
   type ImportJob,
   type ImportRow,
-  type PerHandReading,
   type SessionAggregate,
   type UserProfile,
   type WeightUnit,
@@ -193,6 +195,8 @@ export function buildCandidates(
     exercises.set(e.id, e);
     // One dumbbell or two comes from the catalogue entry; a custom exercise has none, so it is asked (review r3 S1).
     const entry = e.catalogueKey ? byKey.get(e.catalogueKey) : undefined;
+    // Made by an earlier import's `Add new` for this very name: reached through that import's answer while it is in effect, never by its name (review r5 S2).
+    const importMade = e.source === 'custom' && e.id === customExerciseIdFor(ownerId, nameKey(e.name));
     candidates.push({
       exerciseId: e.id,
       name: e.name,
@@ -202,6 +206,7 @@ export function buildCandidates(
       defaultLoadConvention: e.defaultLoadConvention,
       compatibleEquipment: e.compatibleEquipment,
       implements: e.defaultLoadConvention === 'per_hand' ? (entry?.implements ?? null) : null,
+      ...(importMade ? { importMade } : {}),
     });
   };
   for (const e of dbExercises) {
@@ -267,10 +272,9 @@ export function createImportService(deps: ImportServiceDeps) {
   async function loadContext(ownerId: string, defaultUnit: WeightUnit, rows: readonly FitNotesRow[]) {
     const at = deps.now();
     const built = buildCandidates(await repos().exercises.list(), entries(), ownerId, at.utc);
-    const stored = await repos().imports.aliases(ownerId);
-    const aliases = new Map(stored.map((a) => [a.nameKey, a.target]));
-    // Ben's own dumbbell answer per name from earlier imports (review r4 S2).
-    const perHandAnswers = new Map(stored.flatMap((a): [string, PerHandReading][] => (a.perHand ? [[a.nameKey, a.perHand]] : [])));
+    // Ben's names and dumbbell answers from earlier imports still in effect: an undone import's are ignored (review r4 S2, r5 S2).
+    const undone = new Set((await repos().imports.listJobs(ownerId)).filter((j) => j.status === 'reverted').map((j) => j.id));
+    const { aliases, perHandAnswers } = rememberedAnswers(await repos().imports.aliases(ownerId), undone);
     const appDates = await repos().imports.appDates(ownerId);
     const importedDates = await repos().imports.importedDates(ownerId);
     const gyms = await gymsOf(ownerId);
@@ -279,7 +283,7 @@ export function createImportService(deps: ImportServiceDeps) {
     const stamp = stableStringify({
       defaultUnit,
       gyms: gyms.map((g) => g.id).sort(),
-      candidates: built.candidates.map((c) => [c.exerciseId, c.name, c.defaultLoadConvention, [...c.compatibleEquipment].sort(), c.implements]),
+      candidates: built.candidates.map((c) => [c.exerciseId, c.name, c.defaultLoadConvention, [...c.compatibleEquipment].sort(), c.implements, c.importMade === true]),
       aliases: [...aliases.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
       perHandAnswers: [...perHandAnswers.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
       appDates: [...appDates].filter((d) => fileDates.has(d)).sort(),

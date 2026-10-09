@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { equipmentInName, nameKey, NBSP } from '@fizz/domain';
+import { equipmentContradicts, nameKey, NBSP } from '@fizz/domain';
 
 import type { ImportDraft } from '../src/import/import-service';
 import {
@@ -176,6 +176,33 @@ describe('import preview wording', () => {
     ]);
   });
 
+  it('barbell: an exercise suggested by its words with no bar word is asked on its own; each shows what it imports as (PM decision, review r5)', async () => {
+    let d = await open([B2, '2026-09-01,Flat Barbell Bench Press,Chest,100.0,kgs,5,,,,', '2026-09-01,Stiff-Legged Deadlift,Legs,80.0,kgs,8,,,,', '2026-09-01,Deadlift,Back,140.0,kgs,3,,,,'].join('\n'));
+    for (const n of d.analysis.names.filter((x) => x.needsAnswer && x.match.exerciseId)) d = await step(d, { kind: 'name', key: n.key, answer: { kind: 'exercise', exerciseId: n.match.exerciseId ?? '' } });
+    const rows = (q: ReturnType<typeof totalOptions>, which: 'ask' | 'rows') => q?.[which]?.rows.map((r) => [r.title, plain(r.conversion), r.choices.filter((c) => c.selected).map((c) => c.label)]);
+    let q = totalOptions(d.analysis, 'en-GB');
+    expect(q?.question).toBe('For these 2 exercises, “100” means:');
+    expect(q?.ask).toMatchObject({ title: 'Total or plates only?', lead: 'This name doesn’t name the bar, so the answer above isn’t used for it. Choose for each.' });
+    expect(rows(q, 'ask')).toEqual([['Stiff-Legged Deadlift', '80 kg → not answered yet', []]]);
+    expect(previewView(d, 'en-GB').questions.map((x) => x.line.text)).toEqual(['Exercise names: 2 checked', 'Barbell weights: total or plates only?']);
+
+    d = await step(d, { kind: 'total', answer: 'plates_only' });
+    q = totalOptions(d.analysis, 'en-GB');
+    expect(rows(q, 'rows')).toEqual([
+      ['Flat Barbell Bench Press', '100 kg → 120 kg (plates + 20 kg bar)', ['Same']],
+      ['Deadlift', '140 kg → 160 kg (plates + 20 kg bar)', ['Same']],
+    ]);
+    // The group answer never reaches the suggested one.
+    expect(rows(q, 'ask')).toEqual([['Stiff-Legged Deadlift', '80 kg → not answered yet', []]]);
+    expect(previewView(d, 'en-GB').questions.map((x) => x.line.text)).toEqual(['Exercise names: 2 checked', '1 barbell exercise: total or plates only?']);
+
+    d = await step(d, { kind: 'total_override', key: nameKey('Stiff-Legged Deadlift'), answer: 'total' });
+    expect(rows(totalOptions(d.analysis, 'en-GB'), 'ask')).toEqual([['Stiff-Legged Deadlift', '80 kg → 80 kg total', ['Total']]]);
+    const ready = previewView(d, 'en-GB');
+    expect(ready.questions.map((x) => x.line.text)).toEqual(['Exercise names: 2 checked', 'Barbell: 1 total, including the bar · 2 plates only + bar']);
+    expect(ready.primary).toEqual({ label: 'Import 1 workout', enabled: true });
+  });
+
   it('dumbbells: one-dumbbell exercises are never halved, unknown ones are asked, and each shows what it imports as (review r3 S1)', async () => {
     const DB = [
       B2,
@@ -268,54 +295,41 @@ describe('import preview wording', () => {
     expect(job?.job.answers).toMatchObject({ perHand: 'both', perHandOverrides: { 'zottman curl': 'one' } });
   });
 
-  /** FitNotes' default names (and two common variants), one set each on 1 Sep. */
   type Row = readonly [name: string, kg: number, reps: number];
+  /**
+   * FitNotes' published defaults (`test/fixtures/fitnotes-default-exercises.txt`; all of them are run end to end in
+   * `fitnotes-import-defaults.test.ts`), then common variants that aren't on that list. One set each on 1 Sep.
+   */
   const DEFAULTS: readonly Row[] = [
     ['One-Arm Standing Dumbbell Press', 22, 8],
     ['Dumbbell Concentration Curl', 14, 10],
     ['Seated Dumbbell Press', 40, 8],
     ['Flat Dumbbell Bench Press', 60, 8],
-    ['Incline Dumbbell Bench Press', 50, 8],
-    ['Flat Dumbbell Fly', 28, 10],
-    ['Incline Dumbbell Fly', 24, 10],
-    ['Arnold Dumbbell Press', 32, 8],
-    ['Lateral Dumbbell Raise', 16, 12],
-    ['Seated Dumbbell Lateral Raise', 14, 12],
-    ['Front Dumbbell Raise', 16, 10],
-    ['Rear Delt Dumbbell Raise', 12, 12],
-    ['Dumbbell Curl', 24, 10],
-    ['Dumbbell Hammer Curl', 28, 10],
-    ['Dumbbell Preacher Curl', 20, 10],
-    ['Seated Incline Dumbbell Curl', 20, 10],
-    ['Dumbbell Overhead Triceps Extension', 24, 10],
-    ['Dumbbell Skullcrusher', 20, 10],
-    ['Lying Dumbbell Triceps Extension', 20, 10],
-    ['Dumbbell Row', 30, 10],
-    ['Dumbbell Squat', 40, 10],
-    ['Dumbbell Shrug', 60, 12],
     ['Flat Barbell Bench Press', 100, 5],
     ['Barbell Shrug', 100, 10],
     ['Machine Shrug', 80, 10],
     ['EZ-Bar Skullcrusher', 30, 10],
     ['Lateral Machine Raise', 30, 12],
     ['Smith Machine Close Grip Bench Press', 60, 8],
+    ['Smith Machine Overhead Press', 40, 8],
     ['Barbell Calf Raise', 80, 12],
+  ];
+  const VARIANTS: readonly Row[] = [
+    ['Dumbbell Skullcrusher', 20, 10],
+    ['Triceps Dip Machine', 80, 10],
+    ['Dip Machine', 70, 10],
+    ['Assisted Dip', 30, 8],
+    ['Two-Arm Dumbbell Row', 30, 10],
   ];
   const fileOf = (rows: readonly Row[], date = '2026-09-01') => [B2, ...rows.map(([n, w, r]) => `${date},${n},Other,${String(w)},kgs,${String(r)},,,,`)].join('\n');
 
-  it('FitNotes’ default names against the real catalogue: no suggestion contradicts an equipment word in the name (review r4 S3)', async () => {
-    const d = await open(fileOf(DEFAULTS));
+  it('FitNotes’ default names against the real catalogue: no suggestion contradicts an equipment or one-arm word in the name (review r4 S3, r5 S3, N1)', async () => {
+    const d = await open(fileOf([...DEFAULTS, ...VARIANTS]));
     const by = new Map(d.analysis.names.map((n) => [n.name, n]));
     const exercise = (id: string | null) => (id === null ? null : s.imports.candidate(d.draftId, id));
-    for (const [name] of DEFAULTS) {
-      const n = by.get(name);
-      const named = equipmentInName(name);
-      const c = exercise(n?.match.exerciseId ?? null);
-      if (!c || !named) continue;
-      expect(
-        c.compatibleEquipment.some((k) => named.has(k)),
-        `${name} → ${c.name} (${c.compatibleEquipment.join(', ')})`,
-      ).toBe(true);
+    for (const [name] of [...DEFAULTS, ...VARIANTS]) {
+      const c = exercise(by.get(name)?.match.exerciseId ?? null);
+      if (c) expect(equipmentContradicts(name, c), `${name} → ${c.name} (${c.compatibleEquipment.join(', ')})`).toBe(false);
     }
     const shown = (name: string) => {
       const n = by.get(name);
@@ -332,7 +346,18 @@ describe('import preview wording', () => {
     expect(shown('Machine Shrug')).toEqual(['no_match', null]);
     expect(shown('Barbell Calf Raise')).toEqual(['no_match', null]);
     expect(shown('Lateral Machine Raise')).toEqual(['check', 'Cable lateral raise']);
+    // A Smith machine is its own kind: only a Smith exercise, and only for the same movement (review r5 S3).
     expect(shown('Smith Machine Close Grip Bench Press')).toEqual(['check', 'Smith machine bench press']);
+    expect(shown('Smith Machine Overhead Press')).toEqual(['no_match', null]);
+    // A machine is never an assisted machine unless the name says assisted: 80 kg of stack is never 80 kg of help (review r5 S3).
+    expect(shown('Triceps Dip Machine')).toEqual(['no_match', null]);
+    expect(shown('Dip Machine')).toEqual(['no_match', null]);
+    expect(shown('Assisted Dip')).toEqual(['matched', 'Assisted dip']);
+    // A name that says two arms is never the one-arm row (review r5 N1).
+    expect(shown('Two-Arm Dumbbell Row')[1]).not.toBe('One-arm dumbbell row');
+    // The machines line names what is read as assistance.
+    const machines = previewView(d, 'en-GB').kept.find((l) => l.text.startsWith('Machines:'));
+    expect(machines?.detail).toBe('Read as assistance (more weight is easier): Assisted Dip');
   });
 
   it('FitNotes’ one-dumbbell defaults are never halved by "Both dumbbells together"; names that don’t say are asked (review r4 S1)', async () => {
@@ -437,6 +462,130 @@ describe('import preview wording', () => {
     ]);
     // The import records the answers it used.
     expect(later?.job.answers.perHandOverrides).toEqual({ [ONE_ARM]: 'one', 'zottman curl': 'one' });
+  });
+
+  it('a kettlebell exercise on the dumbbell screen says kettlebell, not dumbbell (review r5 N3)', async () => {
+    let d = await open(fileOf([['Kettlebell Press', 24, 8], ['Dumbbell Curl', 24, 10], ['Dumbbell Pullover', 30, 10]]));
+    d = await step(d, { kind: 'per_hand', answer: 'both' });
+    const q = perHandOptions(d.analysis, 'en-GB');
+    expect(q?.rows?.rows.map((r) => [r.title, plain(r.conversion), r.choices.map((c) => c.label)])).toEqual([
+      ['Kettlebell Press', '24 kg → 24 kg (one kettlebell)', ['One kettlebell', 'Both together']],
+      ['Dumbbell Curl', '24 kg → 12 kg each', ['Same', 'Each', 'Both together']],
+      ['Dumbbell Pullover', '30 kg → 30 kg (one dumbbell)', ['One dumbbell', 'Both together']],
+    ]);
+    expect(q?.rows?.note).toBe('2 exercises use one dumbbell or kettlebell, so their weights are imported as written.');
+    expect(q?.question).toBe('For this exercise with two dumbbells, “24” means:');
+  });
+
+  describe('Undo import takes back what that import taught (review r5 S2)', () => {
+    const withoutHeader = (text: string) => text.split('\n').slice(1).join('\n');
+    const commit = async (d: ImportDraft, op: string): Promise<string> => {
+      const r = await s.imports.commit(d.draftId, d.mappingVersion, op);
+      if (!r.ok) throw new Error(r.reason);
+      return r.jobId;
+    };
+    const undo = async (jobId: string) => {
+      const job = await s.imports.job(jobId);
+      if (!job) throw new Error('no job');
+      expect(await s.imports.revert(jobId, job.job.version, `undo-${jobId}`)).toMatchObject({ ok: true });
+    };
+    const useSuggestions = async (d: ImportDraft): Promise<ImportDraft> => {
+      let out = d;
+      for (const n of out.analysis.names.filter((x) => x.needsAnswer && x.match.exerciseId)) out = await step(out, { kind: 'name', key: n.key, answer: { kind: 'exercise', exerciseId: n.match.exerciseId ?? '' } });
+      return out;
+    };
+    const names = (d: ImportDraft) => d.analysis.names.map((n) => [n.name, n.match.status, n.match.via, n.needsAnswer]);
+    /** Each asked exercise: what it imports as, whether it is labelled as last time's answer, and what is selected. */
+    const asked = (d: ImportDraft) => perHandOptions(d.analysis, 'en-GB')?.ask?.rows.map((r) => [r.title, plain(r.conversion), r.remembered, r.choices.filter((c) => c.selected).map((c) => c.label)]);
+
+    it('dumbbell answers: an undone import’s answer is never filled in; the import still in effect’s is, and with none it is asked with nothing selected', async () => {
+      const A = fileOf([['Zottman Curl', 16, 10]]);
+      let a = await open(A);
+      a = await step(a, { kind: 'name', key: 'zottman curl', answer: { kind: 'new', equipment: 'dumbbells' } });
+      a = await step(a, { kind: 'per_hand_override', key: 'zottman curl', answer: 'one' });
+      const jobA = await commit(a, 'op-a');
+
+      // A newer export: Ben changes the Zottman curl to "Both together", imports it, sees 18 → 9 each, and undoes it.
+      const B = `${A}\n${withoutHeader(fileOf([['Zottman Curl', 18, 10]], '2026-09-20'))}`;
+      let b = await open(B);
+      expect(names(b)).toEqual([['Zottman Curl', 'matched', 'alias', false]]);
+      expect(asked(b)).toEqual([['Zottman Curl', '18 kg → 18 kg (one dumbbell)', 'Your answer last time', ['One dumbbell']]]);
+      b = await step(b, { kind: 'per_hand_override', key: 'zottman curl', answer: 'both' });
+      const jobB = await commit(b, 'op-b');
+      expect((await s.imports.importedRows(jobB, '2026-09-20'))?.rows.map((x) => x.imported?.load?.value)).toEqual([9]);
+      await undo(jobB);
+
+      // Opened again: the answer in effect is the first import's (one dumbbell), labelled; never "Both together".
+      const again = await open(B);
+      expect(names(again)).toEqual([['Zottman Curl', 'matched', 'alias', false]]);
+      expect(asked(again)).toEqual([['Zottman Curl', '18 kg → 18 kg (one dumbbell)', 'Your answer last time', ['One dumbbell']]]);
+
+      // With the first import undone too, nothing it taught is left: the name is a suggestion (not Matched), and its dumbbells are asked with nothing selected.
+      await undo(jobA);
+      let none = await open(B);
+      expect(names(none)).toEqual([['Zottman Curl', 'check', 'words', true]]);
+      none = await useSuggestions(none);
+      expect(asked(none)).toEqual([['Zottman Curl', '18 kg → not answered yet', null, []]]);
+      expect(none.analysis.ready).toBe(false);
+    });
+
+    it('names: an undone import’s `Use this` comes back as a suggestion to check; importing again with other answers teaches those', async () => {
+      const rows: readonly Row[] = [
+        ['Front Dumbbell Raise', 16, 10],
+        ['Dumbbell Preacher Curl', 20, 10],
+      ];
+      let a = await useSuggestions(await open(fileOf(rows)));
+      a = await step(a, { kind: 'per_hand_override', key: nameKey('Front Dumbbell Raise'), answer: 'both' });
+      a = await step(a, { kind: 'per_hand_override', key: nameKey('Dumbbell Preacher Curl'), answer: 'one' });
+      await undo(await commit(a, 'op-a'));
+
+      // Opened again: both are `Check`s again, and once accepted their dumbbells are asked with nothing selected.
+      let again = await open(fileOf(rows));
+      expect(names(again)).toEqual([
+        ['Dumbbell Preacher Curl', 'check', 'words', true],
+        ['Front Dumbbell Raise', 'check', 'words', true],
+      ]);
+      expect(previewView(again, 'en-GB').questions.map((q) => q.line.text)).toEqual(['2 exercise names to check']);
+      again = await useSuggestions(again);
+      expect(asked(again)).toEqual([
+        ['Front Dumbbell Raise', '16 kg → not answered yet', null, []],
+        ['Dumbbell Preacher Curl', '20 kg → not answered yet', null, []],
+      ]);
+      // This time Ben answers the other way round and imports.
+      again = await step(again, { kind: 'per_hand_override', key: nameKey('Front Dumbbell Raise'), answer: 'one' });
+      again = await step(again, { kind: 'per_hand_override', key: nameKey('Dumbbell Preacher Curl'), answer: 'each' });
+      await commit(again, 'op-a2');
+
+      // A newer export: the new answers are remembered; the undone ones never come back.
+      const newer = await open(`${fileOf(rows)}\n${withoutHeader(fileOf([['Front Dumbbell Raise', 18, 10], ['Dumbbell Preacher Curl', 22, 10]], '2026-10-08'))}`);
+      expect(names(newer)).toEqual([
+        ['Dumbbell Preacher Curl', 'matched', 'alias', false],
+        ['Front Dumbbell Raise', 'matched', 'alias', false],
+      ]);
+      expect(asked(newer)).toEqual([
+        ['Front Dumbbell Raise', '18 kg → 18 kg (one dumbbell)', 'Your answer last time', ['One dumbbell']],
+        ['Dumbbell Preacher Curl', '22 kg → 22 kg each', 'Your answer last time', ['Each']],
+      ]);
+      expect(newer.analysis.ready).toBe(true);
+    });
+
+    it('a name a later import used stays in effect while that import is, even when the import that taught it is undone', async () => {
+      const A = fileOf([['Front Dumbbell Raise', 16, 10]]);
+      let a = await useSuggestions(await open(A));
+      a = await step(a, { kind: 'per_hand_override', key: nameKey('Front Dumbbell Raise'), answer: 'one' });
+      const jobA = await commit(a, 'op-a');
+      const B = `${A}\n${withoutHeader(fileOf([['Front Dumbbell Raise', 18, 10]], '2026-10-01'))}`;
+      const b = await open(B);
+      expect(names(b)).toEqual([['Front Dumbbell Raise', 'matched', 'alias', false]]);
+      await commit(b, 'op-b');
+      await undo(jobA);
+      const c = await open(`${B}\n${withoutHeader(fileOf([['Front Dumbbell Raise', 20, 10]], '2026-10-08'))}`);
+      // The second import, still in effect, read it as the lateral raise with one dumbbell: so does this one.
+      expect(names(c)).toEqual([['Front Dumbbell Raise', 'matched', 'alias', false]]);
+      expect(asked(c)).toEqual([['Front Dumbbell Raise', '20 kg → 20 kg (one dumbbell)', 'Your answer last time', ['One dumbbell']]]);
+      // 1 Sep (the undone import's date) is offered again; 1 Oct (the second import's) is skipped.
+      expect(c.analysis.workouts.map((w) => w.date)).toEqual(['2026-10-08', '2026-09-01']);
+    });
   });
 
   it('copies the original row as written', () => {

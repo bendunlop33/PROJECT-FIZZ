@@ -311,8 +311,17 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(reopened.kind).toBe('preview');
     if (reopened.kind !== 'preview') return;
     expect(reopened.draft.analysis.alreadyImported.dates).toBe(0);
-    // Its names are remembered (aliases are kept after an undo).
-    expect(reopened.draft.analysis.names.filter((n) => n.needsAnswer)).toEqual([]);
+    // What the undone import taught isn't: its `Use this` and `Add new` names are asked again (suggested, never
+    // Matched), and the custom exercise it made is only a suggestion (review r5 S2).
+    expect(reopened.draft.analysis.names.map((n) => [n.name, n.match.status, n.match.via, n.needsAnswer])).toEqual([
+      ['Flat Barbell Bench Press', 'check', 'words', true],
+      ['Hammer Strength Row', 'check', 'words', true],
+      ['Lat Pulldown', 'matched', 'name', false],
+      ['Hammer Curl', 'matched', 'name', false],
+      ['Incline DB Press', 'matched', 'name', false],
+    ]);
+    const made = reopened.draft.analysis.names.find((n) => n.name === 'Hammer Strength Row')?.match.exerciseId ?? '';
+    expect(s.imports.candidate(reopened.draft.draftId, made)).toMatchObject({ name: 'Hammer Strength Row', catalogueKey: null, importMade: true });
   });
 
   it('a FitNotes workout dated today shows no time and no duration on Today or its summary (rule 6, review B2)', async () => {

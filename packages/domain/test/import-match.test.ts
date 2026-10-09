@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AliasTarget } from '@fizz/schemas';
-import { equipmentInName, implementCue, implementsFor, matchName, nameKey, nameTokens, searchCandidates, type MatchCandidate } from '../src';
+import { barNamed, equipmentContradicts, equipmentInName, implementCue, implementsFor, matchName, nameKey, namesExercise, nameTokens, searchCandidates, type MatchCandidate } from '../src';
 import { CANDIDATES, idOf } from './import-fixtures';
 
 /** Exercise name matching (data-import-export §2.5 step 3a). */
@@ -85,8 +85,15 @@ describe('equipment words in a name (review r4 S3)', () => {
     expect(kinds('Hex Bar Deadlift')).toEqual(['trap_bar']);
     expect(kinds('KB Swing')).toEqual(['kettlebell']);
     expect(kinds('Lat Pulldown (Pulley)')).toEqual(['weight_stack']);
-    expect(kinds('Smith Machine Squat')).toEqual(['assisted_stack', 'plate_loaded_machine', 'weight_stack']);
+    // A Smith machine is its own kind: its `Machine` isn't a weight stack (review r5 S3).
+    expect(kinds('Smith Machine Squat')).toEqual(['smith']);
+    expect(kinds('Smith Squat')).toEqual(['smith']);
     expect(kinds('Hammer Strength Row')).toEqual(['plate_loaded_machine', 'weight_stack']);
+    // `Machine` is a stack or plate-loaded machine, never an assisted one; only an assist word names that.
+    expect(kinds('Triceps Dip Machine')).toEqual(['plate_loaded_machine', 'weight_stack']);
+    expect(kinds('Assisted Dip Machine')).toEqual(['assisted_stack', 'plate_loaded_machine', 'weight_stack']);
+    expect(kinds('Gravitron Pull Up')).toEqual(['assisted_stack']);
+    expect(kinds('Band Assisted Pull Up')).toEqual(['assisted_stack', 'band']);
     expect(equipmentInName('Hammer Curl')).toBeNull();
     expect(equipmentInName('Flat Bench Press')).toBeNull();
   });
@@ -120,6 +127,74 @@ describe('equipment words in a name (review r4 S3)', () => {
   });
 });
 
+describe('machines, assisted machines and the Smith machine (review r5 S3)', () => {
+  const assistedDip = { ...(CANDIDATES.find((c) => c.name === 'Assisted dip') as MatchCandidate), aliases: ['Assisted dip machine', 'Gravitron dip'] };
+  const machineDip = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000e2', name: 'Seated dip machine', aliases: [], compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack', implements: null });
+  const machinePress = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000e3', name: 'Machine shoulder press', aliases: [], compatibleEquipment: ['weight_stack', 'plate_loaded_machine'], defaultLoadConvention: 'stack', implements: null });
+  const smithBench = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000e4', name: 'Smith machine bench press', aliases: ['Smith bench press'], compatibleEquipment: ['plate_loaded_machine'], defaultLoadConvention: 'added', implements: null });
+  const list = [...CANDIDATES.filter((c) => c.exerciseId !== assistedDip.exerciseId), assistedDip, machinePress, smithBench];
+
+  it('never suggests an assisted machine unless the name says so: a stack number is never read as assistance', () => {
+    for (const n of ['Triceps Dip Machine', 'Dip Machine', 'Machine Dip', 'Dips', 'Weighted Dip']) expect(matchName(n, list, none).exerciseId, n).not.toBe(assistedDip.exerciseId);
+    // Even when it is the only dip: a name with no equipment word gets no suggestion rather than the assisted one.
+    const noDip = list.filter((c) => c.name !== 'Dip');
+    for (const n of ['Dips', 'Triceps Dip', 'Weighted Dip']) expect(matchName(n, noDip, none), n).toMatchObject({ status: 'no_match' });
+    // A seated dip machine in the list is the suggestion instead.
+    expect(matchName('Triceps Dip Machine', [...list, machineDip], none)).toMatchObject({ status: 'check', exerciseId: machineDip.exerciseId });
+    // Names that say assisted, or are its own names, still reach it.
+    expect(matchName('Assisted Dips', list, none)).toMatchObject({ status: 'check', exerciseId: assistedDip.exerciseId });
+    expect(matchName('Gravitron Dip', list, none)).toMatchObject({ status: 'matched', exerciseId: assistedDip.exerciseId });
+  });
+
+  it('a Smith machine name is only ever a Smith machine exercise; a Smith exercise is never a plain machine', () => {
+    // FitNotes' default `Smith Machine Overhead Press`: not the stack shoulder press, nor the Smith bench press for sharing the words `Smith Machine`; no Smith press exists, so nothing.
+    expect(matchName('Smith Machine Overhead Press', list, none)).toMatchObject({ status: 'no_match', exerciseId: null });
+    expect(matchName('Smith Machine Row', list, none)).toMatchObject({ status: 'no_match' });
+    expect(matchName('Smith Machine Close Grip Bench Press', list, none)).toMatchObject({ status: 'check', exerciseId: smithBench.exerciseId });
+    expect(equipmentContradicts('Smith Machine Overhead Press', machinePress)).toBe(true);
+    expect(equipmentContradicts('Smith Machine Bench', smithBench)).toBe(false);
+    // `Machine Bench Press` names a machine, not a Smith machine.
+    expect(equipmentContradicts('Machine Bench Press', smithBench)).toBe(true);
+    expect(matchName('Machine Bench Press', list, none).exerciseId).not.toBe(smithBench.exerciseId);
+    // A name that doesn't say Smith is never suggested as a Smith exercise; its own names still match.
+    const smithSquat = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000e5', name: 'Smith machine squat', aliases: ['Smith squat'], compatibleEquipment: ['plate_loaded_machine'], defaultLoadConvention: 'added', implements: null });
+    expect(matchName('Squats', [...list, smithSquat], none)).toMatchObject({ status: 'check', exerciseId: idOf('Back squat') });
+    expect(matchName('Bench Presses', [...list, smithSquat], none).exerciseId).toBe(idOf('Bench press'));
+    expect(matchName('Smith Squat', [...list, smithSquat], none)).toMatchObject({ status: 'matched', exerciseId: smithSquat.exerciseId });
+    expect(matchName('Smith Machine Squats', [...list, smithSquat], none)).toMatchObject({ status: 'check', exerciseId: smithSquat.exerciseId });
+  });
+});
+
+describe('suggestions and one-arm / two-arm words (review r5 N1)', () => {
+  it('never suggests one dumbbell for a name that says two, or two for one that says one', () => {
+    const doubleKb = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000f1', name: 'Kettlebell press', aliases: ['KB press', 'Single-arm kettlebell press'], compatibleEquipment: ['kettlebell'], defaultLoadConvention: 'per_hand', implements: 1 });
+    expect(matchName('Two-Arm Dumbbell Row', CANDIDATES, none).exerciseId).not.toBe(idOf('One-arm dumbbell row'));
+    expect(matchName('Double Kettlebell Press', [...CANDIDATES, doubleKb], none).exerciseId).not.toBe(doubleKb.exerciseId);
+  });
+
+  it('count words are left out of the comparison, and a tie goes to the exercise whose own name says the same count', () => {
+    const singlePulldown = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000f5', name: 'Single-arm pulldown', aliases: ['Single-arm lat pulldown', 'One-arm lat pulldown'], compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack', implements: null });
+    const singleRow = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000f6', name: 'Single-arm cable row', aliases: ['Single-arm seated cable row', 'SA cable row'], compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack', implements: null });
+    const list = [...CANDIDATES, singlePulldown, singleRow];
+    // Names from the real 2020 FitNotes export: the two-arm exercises, not "no match" from a tie with the single-arm ones.
+    expect(matchName('Lat Pulldown (Pulley)', list, none)).toMatchObject({ status: 'check', exerciseId: idOf('Lat pulldown') });
+    expect(matchName('Seated Cable Row (Pulley)', list, none)).toMatchObject({ status: 'check', exerciseId: idOf('Seated cable row') });
+    // A name that says one arm: the single-arm exercise.
+    expect(matchName('Single Arm Cable Row (Pulley)', list, none)).toMatchObject({ status: 'check', exerciseId: singleRow.exerciseId });
+    expect(matchName('One Arm Lat Pulldown (Cable)', list, none)).toMatchObject({ status: 'check', exerciseId: singlePulldown.exerciseId });
+  });
+
+  it('a one-arm word never outweighs the movement', () => {
+    // As in the catalogue: its other names say single-arm.
+    const oneArmPress = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000f2', name: 'One-arm dumbbell shoulder press', aliases: ['Single-arm dumbbell press', 'Single-arm dumbbell shoulder press'], compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand', implements: 1 });
+    const list = [...CANDIDATES, oneArmPress];
+    expect(matchName('Dumbbell Bench Press (Single Arm)', list, none)).toMatchObject({ status: 'check', exerciseId: idOf('Dumbbell bench press') });
+    expect(matchName('Single Arm Dumbbell Preacher Curl', list, none).exerciseId).not.toBe(idOf('One-arm dumbbell row'));
+    // The count is still asked: the name says one, the bench press is two.
+    expect(implementsFor('Dumbbell Bench Press (Single Arm)', CANDIDATES.find((c) => c.name === 'Dumbbell bench press') as MatchCandidate)).toBeNull();
+  });
+});
+
 describe('one dumbbell or two, from the name (review r4 S1)', () => {
   it('reads words that say one implement or two', () => {
     for (const n of ['One-Arm Standing Dumbbell Press', 'Dumbbell Concentration Curl', 'Single Arm DB Row', '1-arm DB row', 'One Hand Dumbbell Snatch', 'Unilateral DB Press', 'Goblet Squats', 'Single-Leg RDL', 'Suitcase Carry']) expect(implementCue(n), n).toBe(1);
@@ -136,8 +211,48 @@ describe('one dumbbell or two, from the name (review r4 S1)', () => {
     expect(implementsFor('Dumbbell Concentration Curl', curl)).toBeNull();
     expect(implementsFor('Standing Dumbbell Press', standing)).toBe(2);
     expect(implementsFor('Alternating Dumbbell Curl', curl)).toBe(2);
-    // A name that says nothing reads a pair as a pair (shown with its conversion before commit).
-    expect(implementsFor('Dumbbell Preacher Curl', curl)).toBe(2);
+  });
+
+  it('a pair is a pair only from the exercise’s own name or a two-arm word, never from a suggestion (review r5 S1)', () => {
+    const curl = CANDIDATES.find((c) => c.name === 'Dumbbell curl') as MatchCandidate;
+    const raise = CANDIDATES.find((c) => c.name === 'Lateral raise') as MatchCandidate;
+    // FitNotes' defaults suggested as the pair by their words: asked, whichever way they were mapped.
+    expect(matchName('Dumbbell Preacher Curl', CANDIDATES, none)).toMatchObject({ status: 'check', exerciseId: curl.exerciseId });
+    expect(implementsFor('Dumbbell Preacher Curl', curl)).toBeNull();
+    expect(implementsFor('Front Dumbbell Raise', raise)).toBeNull();
+    expect(implementsFor('Dumbbell Side Bend', raise)).toBeNull();
+    expect(implementsFor('Dumbbell Wrist Curl', curl)).toBeNull();
+    expect(implementsFor('DB Curl', curl)).toBeNull();
+    // Its own names: a pair.
+    expect(implementsFor('Dumbbell Curl', curl)).toBe(2);
+    expect(implementsFor('dumbbell  lateral RAISE', raise)).toBe(2);
+    // A two-arm word agreeing with the catalogue: a pair (source (c)).
+    expect(implementsFor('Alternating Dumbbell Preacher Curl', curl)).toBe(2);
+  });
+
+  it('an exercise an earlier import made from the name is never that name’s own exercise (review r5 S2)', () => {
+    const made = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000f3', name: 'Zottman Curl', catalogueKey: null, compatibleEquipment: ['barbell'], defaultLoadConvention: 'total', implements: null, importMade: true });
+    const mine = { ...made, exerciseId: '00000000-0000-4000-8000-0000000000f4', importMade: false };
+    expect(namesExercise('Zottman Curl', made)).toBe(false);
+    expect(namesExercise('Zottman Curl', mine)).toBe(true);
+    // Suggested, never Matched, by its name; its bar isn't known from the name either.
+    expect(matchName('Zottman Curl', [...CANDIDATES, made], none)).toMatchObject({ status: 'check', exerciseId: made.exerciseId, via: 'words' });
+    expect(barNamed('Zottman Curl', made, 'barbell')).toBe(false);
+    expect(barNamed('Barbell Zottman Curl', made, 'barbell')).toBe(true);
+    // Through the remembered answer while its import is in effect.
+    expect(matchName('Zottman Curl', [...CANDIDATES, made], new Map([[nameKey('Zottman Curl'), { kind: 'exercise', exerciseId: made.exerciseId }]]))).toMatchObject({ status: 'matched', via: 'alias' });
+  });
+
+  it('a bar is known from the exercise’s own name or a bar word, never from a suggestion (PM decision, review r5)', () => {
+    const bench = CANDIDATES.find((c) => c.name === 'Bench press') as MatchCandidate;
+    const ez = CANDIDATES.find((c) => c.name === 'EZ-bar skull crusher') as MatchCandidate;
+    expect(barNamed('Bench Press', bench, 'barbell')).toBe(true);
+    expect(barNamed('Flat Bench', bench, 'barbell')).toBe(true);
+    expect(barNamed('Flat Barbell Bench Press', bench, 'barbell')).toBe(true);
+    expect(barNamed('Log Press', bench, 'barbell')).toBe(false);
+    expect(barNamed('Decline Bench Press', bench, 'barbell')).toBe(false);
+    expect(barNamed('EZ-Bar Skullcrusher', ez, 'ez_bar')).toBe(true);
+    expect(barNamed('Skullcrusher', ez, 'ez_bar')).toBe(false);
   });
 
   it('one dumbbell only when the name says so, or is the catalogue’s own name for it', () => {

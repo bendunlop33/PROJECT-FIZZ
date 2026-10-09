@@ -61,14 +61,20 @@ describe('import preview: questions before anything is saved', () => {
     expect(first.counts.byResult).toMatchObject({ pending: 5, skipped_cardio: 1, skipped_unsupported: 1 });
 
     const named = analyseImport(p, ctx(), answers({ names: useSuggestions(first) }));
-    expect(named.perHand).toMatchObject({ answer: null, open: true, example: { name: 'Incline DB Press', value: 22.5, unit: 'kg', reps: 10 } });
-    expect(named.total).toMatchObject({ answer: null, open: true, bars: [{ bar: 'barbell', units: ['kg'], weight: { kg: 20, lb: 45 }, needed: false, missing: [] }], missingBarWeight: false });
+    // `Use this` gives the exercise only: `Incline DB Press` isn't one of the incline press's own names and says neither one arm nor two, so its dumbbells are asked on their own, never by the group answer (PM decision, review r5).
+    expect(named.perHand).toMatchObject({ answer: null, open: true, pairs: 0, example: null, needsGroup: false, needsCount: 1 });
+    // `Flat Barbell Bench Press` names its bar: the barbell group answer reads it.
+    expect(named.total).toMatchObject({ answer: null, open: true, grouped: 1, needsGroup: true, needsOwn: 0, bars: [{ bar: 'barbell', units: ['kg'], weight: { kg: 20, lb: 45 }, needed: false, missing: [] }], missingBarWeight: false });
     expect(named.bodyweight).toEqual([]); // Pull-up rows are all 0: nothing to ask
     expect(named.machines).toEqual([{ key: 'lat pulldown (pulley)', name: 'Lat Pulldown (Pulley)', exerciseName: 'Lat pulldown', convention: 'stack' }]);
     expect(named.questionsOpen).toBe(2);
     expect(named.ready).toBe(false);
 
-    const done = analyseImport(p, ctx(), answers({ names: useSuggestions(first), perHand: 'both', total: 'total' }));
+    // The group answers alone leave the incline press waiting.
+    const grouped = analyseImport(p, ctx(), answers({ names: useSuggestions(first), perHand: 'both', total: 'total' }));
+    expect(grouped.ready).toBe(false);
+    expect(grouped.fates[2]).toEqual({ result: 'pending', reason: 'per_hand' });
+    const done = analyseImport(p, ctx(), answers({ names: useSuggestions(first), perHandOverrides: { [nameKey('Incline DB Press')]: 'both' }, total: 'total' }));
     expect(done.questionsOpen).toBe(0);
     expect(done.ready).toBe(true);
     expect(done.fates.map((f) => (f.result === 'imported' ? [f.set.exerciseName, f.set.load] : f.result))).toEqual([
@@ -88,10 +94,11 @@ describe('import preview: questions before anything is saved', () => {
   });
 
   it('"Both dumbbells together" halves the value; "Each dumbbell" keeps it; per-exercise overrides win (check 18)', () => {
-    const p = parsed(`${A1}2026-10-01,Incline DB Press,Chest,22.5,10,,,\n2026-10-01,Dumbbell Curl,Biceps,15,12,,,\n`);
-    const names = { [nameKey('Incline DB Press')]: { kind: 'exercise' as const, exerciseId: idOf('Incline dumbbell press') } };
-    const both = analyseImport(p, ctx(), answers({ names, perHand: 'both' }));
-    const each = analyseImport(p, ctx(), answers({ names, perHand: 'each', perHandOverrides: { [nameKey('Dumbbell Curl')]: 'both' } }));
+    // Both names are the exercises' own (a catalogue name and another name for it), so both are pairs.
+    const p = parsed(`${A1}2026-10-01,Incline Dumbbell Bench Press,Chest,22.5,10,,,\n2026-10-01,Dumbbell Curl,Biceps,15,12,,,\n`);
+    expect(analyseImport(p, ctx(), DEFAULT_ANSWERS).names.map((n) => n.match.status)).toEqual(['matched', 'matched']);
+    const both = analyseImport(p, ctx(), answers({ perHand: 'both' }));
+    const each = analyseImport(p, ctx(), answers({ perHand: 'each', perHandOverrides: { [nameKey('Dumbbell Curl')]: 'both' } }));
     const loads = (a: ReturnType<typeof analyseImport>) => a.fates.map((f) => (f.result === 'imported' ? f.set.load?.value : null));
     expect(loads(both)).toEqual([11.25, 7.5]);
     expect(loads(each)).toEqual([22.5, 7.5]);
@@ -383,7 +390,9 @@ describe('import preview: questions before anything is saved', () => {
     const id = customExerciseIdFor(OWNER, 'hammer strength row');
     expect(a.ready).toBe(true);
     expect(a.fates[0]).toMatchObject({ result: 'imported', set: { exerciseId: id, exerciseName: 'Hammer Strength Row', convention: 'added', load: { value: 40, convention: 'added' } } });
-    expect(newExercisesToCreate(a)).toEqual([{ exerciseId: id, name: 'Hammer Strength Row', laterality: 'bilateral', convention: 'added', bar: 'none', implements: null, newKind: 'plate_loaded_machine' }]);
+    expect(newExercisesToCreate(a)).toEqual([
+      { exerciseId: id, name: 'Hammer Strength Row', laterality: 'bilateral', convention: 'added', bar: 'none', barKnown: true, implements: null, equipment: ['plate_loaded_machine'], newKind: 'plate_loaded_machine' },
+    ]);
     expect(aliasesToSave(a)).toEqual([{ key: 'hammer strength row', name: 'Hammer Strength Row', target: { kind: 'exercise', exerciseId: id } }]);
   });
 
@@ -407,7 +416,9 @@ describe('FitNotes default one-dumbbell names (review r4)', () => {
     compatibleEquipment: ['dumbbells'],
     implements: 2,
   };
-  const withStanding = (over: Partial<ImportContext> = {}) => ctx({ candidates: [...CANDIDATES, standing], ...over });
+  /** The dumbbell shoulder press with the catalogue's other name `Seated dumbbell press`, so FitNotes' `Seated Dumbbell Press` is its own name (a pair). */
+  const shoulder: MatchCandidate = { ...(CANDIDATES.find((c) => c.name === 'Dumbbell shoulder press') as MatchCandidate), aliases: ['Seated dumbbell press'] };
+  const withStanding = (over: Partial<ImportContext> = {}) => ctx({ candidates: [...CANDIDATES.filter((c) => c.exerciseId !== shoulder.exerciseId), shoulder, standing], ...over });
   const FILE = `${A1}2026-09-01,One-Arm Standing Dumbbell Press,Shoulders,22,8,,,\n2026-09-01,Dumbbell Concentration Curl,Biceps,14,10,,,\n2026-09-01,Seated Dumbbell Press,Shoulders,40,8,,,\n`;
   const ONE_ARM = nameKey('One-Arm Standing Dumbbell Press');
   const CONC = nameKey('Dumbbell Concentration Curl');
@@ -475,11 +486,14 @@ describe('FitNotes default one-dumbbell names (review r4)', () => {
     // Only the pair waits for the group answer (DX6: it is still never pre-selected). "Both" again: 24 stays 24.
     expect(a2.perHand).toMatchObject({ needsGroup: true, needsCount: 0 });
     expect(loads(analyseImport(p2, later, { ...start, perHand: 'both' }))).toEqual([24, 16, 21]);
-    // Unchanged answers are saved again as they are; one Ben clears is forgotten (null), not kept.
+    // Unchanged answers are saved again as they are; one Ben clears is forgotten (null), not kept. A remembered name
+    // this import used is saved again too (with nothing about its dumbbells), so it stays in effect while this import
+    // is, even if the import that taught it is undone (review r5 S2).
     const cleared = analyseImport(p2, later, { ...start, perHand: 'both', perHandOverrides: { [ONE_ARM]: 'one' } });
-    expect(aliasesToSave(cleared).map((x) => [x.key, x.perHand])).toEqual([
-      [CONC, null],
-      [ONE_ARM, 'one'],
+    expect(aliasesToSave(cleared).map((x) => [x.key, x.target, x.perHand])).toEqual([
+      [CONC, { kind: 'exercise', exerciseId: idOf('Dumbbell curl') }, null],
+      [ONE_ARM, { kind: 'exercise', exerciseId: standing.exerciseId }, 'one'],
+      [SEATED, { kind: 'exercise', exerciseId: idOf('Dumbbell shoulder press') }, undefined],
     ]);
   });
 
@@ -499,6 +513,115 @@ describe('FitNotes default one-dumbbell names (review r4)', () => {
     const kept = startingAnswers(p.rows, {}, { answers: earlier, gymIds: new Set(['00000000-0000-4000-8000-0000000009a1']) });
     expect(kept.gymId).toBe('00000000-0000-4000-8000-0000000009a1');
     expect(startingAnswers(p.rows, {}, null)).toEqual(DEFAULT_ANSWERS);
+  });
+});
+
+describe('a word suggestion gives the exercise only (PM decision, review r5)', () => {
+  const loads = (a: ReturnType<typeof analyseImport>) => a.fates.map((f) => (f.result === 'imported' ? f.set.load?.value : f.result === 'pending' ? `pending:${f.reason}` : f.result));
+  const useAll = (p: ReturnType<typeof parsed>, c: ImportContext = ctx()) => useSuggestions(analyseImport(p, c, DEFAULT_ANSWERS));
+
+  it('S1: FitNotes’ `Dumbbell Preacher Curl` and `Front Dumbbell Raise`, accepted with Use this, are never halved by "Both together"', () => {
+    const p = parsed(`${A1}2026-09-01,Dumbbell Preacher Curl,Biceps,20,10,,,\n2026-09-01,Front Dumbbell Raise,Shoulders,16,10,,,\n2026-09-01,Dumbbell Curl,Biceps,24,10,,,\n`);
+    const first = analyseImport(p, ctx(), DEFAULT_ANSWERS);
+    expect(first.names.map((n) => [n.name, n.match.status, n.match.via, n.match.exerciseId])).toEqual([
+      ['Dumbbell Preacher Curl', 'check', 'words', idOf('Dumbbell curl')],
+      ['Front Dumbbell Raise', 'check', 'words', idOf('Lateral raise')],
+      ['Dumbbell Curl', 'matched', 'name', idOf('Dumbbell curl')],
+    ]);
+    const names = useAll(p);
+    const both = analyseImport(p, ctx(), answers({ names, perHand: 'both' }));
+    // Only the curl named by its own name is a pair; the two suggestions are asked, with nothing selected.
+    expect(both.perHand?.exercises.map((e) => [e.name, e.implements, e.override, e.reading, e.sample?.imported ?? null])).toEqual([
+      ['Dumbbell Preacher Curl', null, null, null, null],
+      ['Front Dumbbell Raise', null, null, null, null],
+      ['Dumbbell Curl', 2, null, 'both', 12],
+    ]);
+    expect(both.perHand).toMatchObject({ pairs: 1, needsGroup: false, needsCount: 2, open: true });
+    expect(loads(both)).toEqual(['pending:per_hand', 'pending:per_hand', 12]);
+    expect(both.ready).toBe(false);
+    // Ben's own answer for each (source (b)) is what changes or keeps the value.
+    const answered = analyseImport(p, ctx(), answers({ names, perHand: 'both', perHandOverrides: { [nameKey('Dumbbell Preacher Curl')]: 'one', [nameKey('Front Dumbbell Raise')]: 'both' } }));
+    expect(loads(answered)).toEqual([20, 8, 12]);
+    expect(answered.ready).toBe(true);
+  });
+
+  it('a word that says two (source (c)) lets the group answer read a suggested pair; one that says one never takes the pair’s count', () => {
+    const p = parsed(`${A1}2026-09-01,Alternating Dumbbell Preacher Curl,Biceps,20,10,,,\n2026-09-01,Single Arm Dumbbell Preacher Curl,Biceps,12,10,,,\n`);
+    const names = {
+      [nameKey('Alternating Dumbbell Preacher Curl')]: { kind: 'exercise' as const, exerciseId: idOf('Dumbbell curl') },
+      [nameKey('Single Arm Dumbbell Preacher Curl')]: { kind: 'exercise' as const, exerciseId: idOf('Dumbbell curl') },
+    };
+    const a = analyseImport(p, ctx(), answers({ names, perHand: 'both' }));
+    expect(a.perHand?.exercises.map((e) => [e.name, e.implements, e.reading])).toEqual([
+      ['Alternating Dumbbell Preacher Curl', 2, 'both'],
+      ['Single Arm Dumbbell Preacher Curl', null, null],
+    ]);
+    expect(loads(a)).toEqual([10, 'pending:per_hand']);
+  });
+
+  it('a bar is added by the group answer only when the name establishes it; a suggested bar exercise is asked on its own with what it imports as', () => {
+    const p = parsed(`${A1}2026-09-01,Decline Bench Press,Chest,60,8,,,\n2026-09-01,Flat Barbell Bench Press,Chest,80,5,,,\n2026-09-02,Flat Bench,Chest,70,5,,,\n`);
+    const first = analyseImport(p, ctx(), DEFAULT_ANSWERS);
+    expect(first.names.map((n) => [n.name, n.match.status])).toEqual([
+      ['Decline Bench Press', 'check'],
+      ['Flat Barbell Bench Press', 'check'],
+      ['Flat Bench', 'matched'],
+    ]);
+    const names = useAll(p);
+    const plates = analyseImport(p, ctx(), answers({ names, total: 'plates_only' }));
+    // `Decline Bench Press` says no bar and isn't the bench press's own name: asked, nothing selected.
+    expect(plates.total?.exercises.map((e) => [e.name, e.known, e.override, e.reading, e.sample])).toEqual([
+      ['Decline Bench Press', false, null, null, { value: 60, unit: 'kg', imported: null, barWeight: 20 }],
+      ['Flat Barbell Bench Press', true, null, 'plates_only', { value: 80, unit: 'kg', imported: 100, barWeight: 20 }],
+      ['Flat Bench', true, null, 'plates_only', { value: 70, unit: 'kg', imported: 90, barWeight: 20 }],
+    ]);
+    expect(plates.total).toMatchObject({ grouped: 2, needsGroup: false, needsOwn: 1, open: true, example: { name: 'Flat Bench', value: 70 } });
+    expect(loads(plates)).toEqual(['pending:total', 100, 90]);
+    // With no group answer, the group waits and the suggested one is still asked on its own.
+    expect(analyseImport(p, ctx(), answers({ names })).total).toMatchObject({ needsGroup: true, needsOwn: 1 });
+    // Ben's own answer (source (b)) reads it.
+    expect(loads(analyseImport(p, ctx(), answers({ names, total: 'plates_only', totalOverrides: { [nameKey('Decline Bench Press')]: 'plates_only' } })))).toEqual([80, 100, 90]);
+    const own = analyseImport(p, ctx(), answers({ names, total: 'plates_only', totalOverrides: { [nameKey('Decline Bench Press')]: 'total' } }));
+    expect(loads(own)).toEqual([60, 100, 90]);
+    expect(own.ready).toBe(true);
+    // An exercise with its own answer is neither counted nor the example for the group (review r5 N4).
+    const overridden = analyseImport(p, ctx(), answers({ names, totalOverrides: { [nameKey('Flat Bench')]: 'total' } }));
+    expect(overridden.total).toMatchObject({ grouped: 1, example: { name: 'Flat Barbell Bench Press', value: 80 } });
+  });
+
+  it('S3: a weight-stack dip machine is never read as assistance; a name that says assisted is', () => {
+    const p = parsed(`${A1}2026-09-01,Triceps Dip Machine,Arms,80,10,,,\n2026-09-01,Assisted Dips,Arms,30,8,,,\n`);
+    const first = analyseImport(p, ctx(), DEFAULT_ANSWERS);
+    expect(first.names.map((n) => [n.name, n.match.status, n.match.exerciseId])).toEqual([
+      ['Assisted Dips', 'check', idOf('Assisted dip')],
+      ['Triceps Dip Machine', 'no_match', null],
+    ]);
+    const a = analyseImport(p, ctx(), answers({ names: { ...useAll(p), [nameKey('Triceps Dip Machine')]: { kind: 'new', equipment: 'weight_stack' } } }));
+    expect(a.fates.map((f) => (f.result === 'imported' ? f.set.load : f.result))).toEqual([
+      { value: 80, unit: 'kg', convention: 'stack' },
+      { value: 30, unit: 'kg', convention: 'assistance' },
+    ]);
+    expect(a.machines.map((m) => [m.name, m.convention])).toEqual([
+      ['Triceps Dip Machine', 'stack'],
+      ['Assisted Dips', 'assistance'],
+    ]);
+  });
+
+  it('N4: the dumbbell group question counts and shows only pairs it reads: not one with its own answer', () => {
+    const p = parsed(`${A1}2026-09-01,Dumbbell Bench Press,Chest,60,8,,,\n2026-09-02,Dumbbell Curl,Biceps,24,10,,,\n`);
+    const a = analyseImport(p, ctx(), answers({ perHandOverrides: { [nameKey('Dumbbell Curl')]: 'one' } }));
+    expect(a.perHand).toMatchObject({ pairs: 1, needsGroup: true, example: { name: 'Dumbbell Bench Press', value: 60 } });
+    const none = analyseImport(p, ctx(), answers({ perHandOverrides: { [nameKey('Dumbbell Curl')]: 'one', [nameKey('Dumbbell Bench Press')]: 'each' } }));
+    expect(none.perHand).toMatchObject({ pairs: 0, needsGroup: false, example: null, open: false });
+  });
+
+  it('N3: a kettlebell exercise on the dumbbell question is called a kettlebell', () => {
+    const kb: MatchCandidate = { exerciseId: '00000000-0000-4000-8000-00000000e2d1', name: 'Kettlebell press', aliases: [], catalogueKey: 'kettlebell-press', laterality: 'unilateral', defaultLoadConvention: 'per_hand', compatibleEquipment: ['kettlebell'], implements: 1 };
+    const a = analyseImport(parsed(`${A1}2026-09-01,Kettlebell Press,Shoulders,24,8,,,\n2026-09-01,Dumbbell Curl,Biceps,24,10,,,\n`), ctx({ candidates: [...CANDIDATES, kb] }), DEFAULT_ANSWERS);
+    expect(a.perHand?.exercises.map((e) => [e.name, e.implement, e.reading])).toEqual([
+      ['Kettlebell Press', 'kettlebell', 'one'],
+      ['Dumbbell Curl', 'dumbbell', null],
+    ]);
   });
 });
 

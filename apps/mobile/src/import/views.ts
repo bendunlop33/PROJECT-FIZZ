@@ -17,8 +17,23 @@ import {
   type PerHandExercise,
   type PerHandQuestion,
   type RowFate,
+  type TotalExercise,
+  type TotalQuestion,
 } from '@fizz/domain';
-import { BAR_WEIGHT_MAX, type CustomExerciseKind, type FitNotesVariant, type ImportBarKind, type ImportJob, type ImportRow, type ImportRowResult, type Load, type LoadConvention, type PerHandReading, type WeightUnit } from '@fizz/schemas';
+import {
+  BAR_WEIGHT_MAX,
+  type CustomExerciseKind,
+  type FitNotesVariant,
+  type ImportBarKind,
+  type ImportJob,
+  type ImportRow,
+  type ImportRowResult,
+  type Load,
+  type LoadConvention,
+  type PerHandReading,
+  type TotalAnswer,
+  type WeightUnit,
+} from '@fizz/schemas';
 
 import { formatCount, plural } from '../format/numbers';
 import { parseNumber } from '../ui/number-text';
@@ -223,10 +238,7 @@ const BODYWEIGHT_WORD = { added: 'weight added to bodyweight', assistance: 'assi
 export const BAR_WORD: Record<ImportBarKind, string> = { barbell: 'Bar', ez_bar: 'EZ-bar', trap_bar: 'Trap-bar' };
 const BAR_NAME: Record<ImportBarKind, string> = { barbell: 'bar', ez_bar: 'EZ bar', trap_bar: 'trap bar' };
 
-function groupAnswerText<A extends string>(answer: A | null, overrides: number, word: (a: A) => string): string {
-  const base = answer === null ? 'by exercise' : word(answer);
-  return overrides > 0 ? `${base} (${String(overrides)} different)` : base;
-}
+const TOTAL_WORD: Record<TotalAnswer, string> = { total: 'total, including the bar', plates_only: 'plates only + bar' };
 
 export function questionRows(a: ImportAnalysis): QuestionRow[] {
   const out: QuestionRow[] = [];
@@ -246,16 +258,17 @@ export function questionRows(a: ImportAnalysis): QuestionRow[] {
     );
   }
   if (a.total) {
-    const overrides = a.total.exercises.filter((e) => e.override !== null).length;
-    const word = (x: 'total' | 'plates_only') => (x === 'total' ? 'total, including the bar' : 'plates only + bar');
-    const unanswered = a.total.exercises.some((e) => e.override === null && a.total?.answer === null);
-    const missingBar = a.total.bars.find((b) => b.missing.length > 0);
+    const q = a.total;
+    const warn = (text: string): QuestionRow => ({ key: { kind: 'total' }, answered: false, line: { icon: 'exclamationmark.triangle', tone: 'warning', text } });
+    const missingBar = q.bars.find((b) => b.missing.length > 0);
     out.push(
-      unanswered
-        ? { key: { kind: 'total' }, answered: false, line: { icon: 'exclamationmark.triangle', tone: 'warning', text: 'Barbell weights: total or plates only?' } }
-        : missingBar
-          ? { key: { kind: 'total' }, answered: false, line: { icon: 'exclamationmark.triangle', tone: 'warning', text: `${BAR_WORD[missingBar.bar]} weight needed for “plates only”` } }
-          : { key: { kind: 'total' }, answered: true, line: { icon: 'checkmark.circle.fill', tone: 'done', text: `Barbell: ${groupAnswerText(a.total.answer, overrides, word)}` } },
+      q.needsGroup
+        ? warn('Barbell weights: total or plates only?')
+        : q.needsOwn > 0
+          ? warn(`${plural(q.needsOwn, 'barbell exercise', 'barbell exercises')}: total or plates only?`)
+          : missingBar
+            ? warn(`${BAR_WORD[missingBar.bar]} weight needed for “plates only”`)
+            : { key: { kind: 'total' }, answered: true, line: { icon: 'checkmark.circle.fill', tone: 'done', text: `Barbell: ${totalSummary(q)}` } },
     );
   }
   for (const q of a.bodyweight) {
@@ -285,6 +298,14 @@ function perHandSummary(q: PerHandQuestion): string {
   const only = counts.length === 1 ? counts[0] : undefined;
   if (only) return READING_WORD[only.r];
   return counts.map((c) => `${formatCount(c.n)} ${READING_WORD[c.r]}`).join(' · ');
+}
+
+/** `total, including the bar`, or by reading when they differ: `2 total, including the bar · 1 plates only + bar`. */
+function totalSummary(q: TotalQuestion): string {
+  const counts = (['total', 'plates_only'] as const).map((r) => ({ r, n: q.exercises.filter((e) => e.reading === r).length })).filter((c) => c.n > 0);
+  const only = counts.length === 1 ? counts[0] : undefined;
+  if (only) return TOTAL_WORD[only.r];
+  return counts.map((c) => `${formatCount(c.n)} ${TOTAL_WORD[c.r]}`).join(' · ');
 }
 
 function skippedExerciseSets(a: ImportAnalysis): number {
@@ -320,7 +341,11 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
   if (a.comments > 0) kept.push(info(`${plural(a.comments, 'comment', 'comments')}, kept with each set as written`));
   else if (!variantHasComments(d.variant)) kept.push(info('No comments in this file (FitNotes export without comments)'));
   kept.push(info('FitNotes files have no times. These workouts show the date only.'));
-  if (a.machines.length > 0) kept.push(info('Machines: imported as stack readings, plates added or assistance, by exercise'));
+  if (a.machines.length > 0) {
+    // Assistance reads the number the other way round (more is easier): name those exercises (review r5 S3).
+    const assisted = a.machines.filter((m) => m.convention === 'assistance').map((m) => m.name);
+    kept.push(info('Machines: imported as stack readings, plates added or assistance, by exercise', assisted.length === 0 ? undefined : `Read as assistance (more weight is easier): ${assisted.join(', ')}`));
+  }
   if (a.barless.length > 0) kept.push(info(`Kettlebell and other no-bar weights imported as written (${a.barless.map((b) => b.name).join(', ')})`));
   kept.push(info('Warm-ups aren’t marked in FitNotes files, so every set comes in as a working set.'));
 
@@ -552,28 +577,32 @@ function weightText(value: number, unit: WeightUnit): string {
   return `${formatNumber(value)}${NBSP}${unit}`;
 }
 
-/** `60 kg → 30 kg each`; `30 kg → 30 kg (one dumbbell)`; `14 kg → not answered yet`. */
-export function perHandConversion(e: Pick<PerHandExercise, 'reading' | 'sample'>): string {
+/** `60 kg → 30 kg each`; `30 kg → 30 kg (one dumbbell)`; `24 kg → 24 kg (one kettlebell)`; `14 kg → not answered yet`. */
+export function perHandConversion(e: Pick<PerHandExercise, 'reading' | 'sample'> & Partial<Pick<PerHandExercise, 'implement'>>): string {
   const s = e.sample;
   if (!s) return 'No weight to show';
   const from = weightText(s.value, s.unit);
   if (e.reading === null || s.imported === null) return `${from} → not answered yet`;
-  return `${from} → ${weightText(s.imported, s.unit)}${e.reading === 'one' ? ' (one dumbbell)' : ' each'}`;
+  return `${from} → ${weightText(s.imported, s.unit)}${e.reading === 'one' ? ` (one ${e.implement ?? 'dumbbell'})` : ' each'}`;
 }
 
-const READING_LABEL: Record<PerHandReading, string> = { one: 'One dumbbell', each: 'Each', both: 'Both together' };
+/** `One dumbbell`, or `One kettlebell` for a kettlebell exercise (review r5 N3). */
+function oneLabel(e: Pick<PerHandExercise, 'implement'>): string {
+  return e.implement === 'kettlebell' ? 'One kettlebell' : 'One dumbbell';
+}
 
 function perHandRow(e: PerHandExercise): PerHandRowView {
   const pick = (value: PerHandReading | null, label: string): PerHandChoice => ({ value, label, selected: e.override === value });
+  const label: Record<PerHandReading, string> = { one: oneLabel(e), each: 'Each', both: 'Both together' };
   const choices =
     e.implements === 2
       ? [pick(null, 'Same'), pick('each', 'Each'), pick('both', 'Both together')]
       : e.implements === 1
         ? // One dumbbell: the only real choice is as written or halved (review r4 N4).
-          [{ value: null, label: 'One dumbbell', selected: e.override === null || e.override === 'one' }, pick('both', 'Both together')]
-        : [pick('one', 'One dumbbell'), pick('each', 'Each'), pick('both', 'Both together')];
+          [{ value: null, label: label.one, selected: e.override === null || e.override === 'one' }, pick('both', 'Both together')]
+        : [pick('one', label.one), pick('each', 'Each'), pick('both', 'Both together')];
   // An answer these choices don't offer (remembered from an import that read the exercise differently) stays visible and selected.
-  if (e.override !== null && !choices.some((c) => c.selected)) choices.push(pick(e.override, READING_LABEL[e.override]));
+  if (e.override !== null && !choices.some((c) => c.selected)) choices.push(pick(e.override, label[e.override]));
   const remembered = e.remembered !== null && e.override === e.remembered ? 'Your answer last time' : null;
   return { key: e.key, title: e.name, conversion: perHandConversion(e), remembered, choices };
 }
@@ -593,7 +622,11 @@ export function perHandOptions(a: ImportAnalysis, locale?: string): PerHandView 
   const unit = ex?.unit ?? 'kg';
   const unknown = q.exercises.filter((e) => e.implements === null);
   const known = q.exercises.filter((e) => e.implements !== null);
-  const ones = known.filter((e) => e.implements === 1).length;
+  // Imported as written: one-dumbbell exercises Ben hasn't said otherwise about.
+  const asWritten = known.filter((e) => e.implements === 1 && e.reading === 'one');
+  const ones = asWritten.length;
+  const kinds = new Set(asWritten.map((e) => e.implement));
+  const oneWord = kinds.size === 2 ? 'one dumbbell or kettlebell' : kinds.has('kettlebell') ? 'one kettlebell' : 'one dumbbell';
   // A lone two-dumbbell exercise is fully shown by the options above it.
   const lone = known.length === 1 && known[0]?.implements === 2 && known[0].override === null;
   return {
@@ -621,7 +654,7 @@ export function perHandOptions(a: ImportAnalysis, locale?: string): PerHandView 
         ? null
         : {
             title: q.pairs > 0 ? 'Different for some?' : 'Each exercise',
-            note: ones === 0 ? null : `${plural(ones, 'exercise uses', 'exercises use')} one dumbbell, so ${ones === 1 ? 'its weight is' : 'their weights are'} imported as written.`,
+            note: ones === 0 ? null : `${plural(ones, 'exercise uses', 'exercises use')} ${oneWord}, so ${ones === 1 ? 'its weight is' : 'their weights are'} imported as written.`,
             rows: known.map(perHandRow),
           },
   };
@@ -668,16 +701,66 @@ export function barWeightEntry(text: string, field: Pick<BarWeightView, 'value' 
   return { save: null, endText: text, warning: text.trim() === '' ? field.missing : ask };
 }
 
+export interface TotalChoice {
+  /** Null: back to the group answer. */
+  value: TotalAnswer | null;
+  label: string;
+  selected: boolean;
+}
+
+export interface TotalRowView {
+  key: string;
+  /** The FitNotes name. */
+  title: string;
+  /** What its newest weight imports as: `100 kg → 120 kg (plates + 20 kg bar)`, `100 kg → 100 kg total`. */
+  conversion: string;
+  choices: TotalChoice[];
+}
+
+export interface TotalView {
+  title: string;
+  lead: string;
+  /** The group question, for exercises whose bar is known; null when there are none. */
+  question: string | null;
+  options: OptionView<TotalAnswer>[];
+  example: string | null;
+  barWeights: BarWeightView[];
+  /** Exercises whose name doesn't establish the bar: each needs its own answer, with none pre-selected (PM decision, review r5). */
+  ask: { title: string; lead: string; rows: TotalRowView[] } | null;
+  /** Every other exercise with what it will import as, and a way to change it. */
+  rows: { title: string; rows: TotalRowView[] } | null;
+}
+
+/**
+ * `100 kg → 100 kg total`; `100 kg → 120 kg (plates + 20 kg bar)`;
+ * `30 kg → EZ-bar weight needed`; `100 kg → not answered yet`.
+ */
+export function totalConversion(e: Pick<TotalExercise, 'reading' | 'sample' | 'bar'>): string {
+  const s = e.sample;
+  if (!s) return 'No weight to show';
+  const from = weightText(s.value, s.unit);
+  if (e.reading === null) return `${from} → not answered yet`;
+  if (e.reading === 'total') return `${from} → ${from} total`;
+  if (e.bar === 'unknown') return `${from} → can’t be read: which bar it uses isn’t recorded`;
+  if (s.barWeight === null || s.imported === null) return `${from} → ${BAR_WORD[e.bar]} weight needed`;
+  return `${from} → ${weightText(s.imported, s.unit)} (plates + ${weightText(s.barWeight, s.unit)} ${BAR_NAME[e.bar]})`;
+}
+
+function totalRow(e: TotalExercise): TotalRowView {
+  const pick = (value: TotalAnswer | null, label: string): TotalChoice => ({ value, label, selected: e.override === value });
+  const choices = e.known ? [pick(null, 'Same'), pick('total', 'Total'), pick('plates_only', 'Plates only')] : [pick('total', 'Total'), pick('plates_only', 'Plates only')];
+  return { key: e.key, title: e.name, conversion: totalConversion(e), choices };
+}
+
 /**
  * The barbell question (§2.5 step 3b). One bar weight per bar kind and unit
  * (review S1): the Olympic bar's is always shown (20 kg / 45 lb, editable);
  * an EZ or trap bar's only once a plates-only answer needs it, and it starts
- * empty.
+ * empty. The group answer reads exercises whose bar is known; any other is
+ * asked on its own (PM decision, review r5). Every exercise shows what it
+ * will import as before the import.
  */
-export function totalOptions(
-  a: ImportAnalysis,
-  locale?: string,
-): { title: string; lead: string; question: string; options: OptionView<'total' | 'plates_only'>[]; example: string | null; barWeights: BarWeightView[] } | null {
+export function totalOptions(a: ImportAnalysis, locale?: string): TotalView | null {
   const q = a.total;
   if (!q) return null;
   const ex = q.example;
@@ -695,16 +778,33 @@ export function totalOptions(
         }),
       ),
     );
+  const unknown = q.exercises.filter((e) => !e.known);
+  const known = q.exercises.filter((e) => e.known);
+  // A lone exercise read by the group answer is fully shown by the options above it.
+  const lone = known.length === 1 && known[0]?.override === null;
   return {
     title: 'Barbell weights',
     lead: 'FitNotes doesn’t record whether a barbell weight includes the bar.',
-    question: `For ${q.exercises.length === 1 ? 'this exercise' : `these ${String(q.exercises.length)} exercises`}, “${v}” means:`,
-    options: [
-      { value: 'total', label: 'Total, including the bar', detail: `Imported as ${v}${NBSP}${ex?.unit ?? 'kg'}`, selected: q.answer === 'total' },
-      { value: 'plates_only', label: 'Plates only (bar not counted)', detail: q.bars.length > 1 ? 'Each bar’s own weight below is added' : 'The bar weight below is added', selected: q.answer === 'plates_only' },
-    ],
+    question: q.grouped === 0 ? null : `For ${q.grouped === 1 ? 'this exercise' : `these ${String(q.grouped)} exercises`}, “${v}” means:`,
+    options:
+      q.grouped === 0
+        ? []
+        : [
+            { value: 'total', label: 'Total, including the bar', detail: `Imported as ${v}${NBSP}${ex?.unit ?? 'kg'}`, selected: q.answer === 'total' },
+            { value: 'plates_only', label: 'Plates only (bar not counted)', detail: q.bars.length > 1 ? 'Each bar’s own weight below is added' : 'The bar weight below is added', selected: q.answer === 'plates_only' },
+          ],
     example: ex ? `Example from your file (${dayMonthYear(ex.date, locale)}): ${ex.name}  ${v}${NBSP}×${NBSP}${String(ex.reps)}` : null,
     barWeights,
+    ask:
+      unknown.length === 0
+        ? null
+        : {
+            title: 'Total or plates only?',
+            // Matched by its words only: the bar isn't known, so the group answer never adds one (PM decision, review r5).
+            lead: `${unknown.length === 1 ? 'This name doesn’t' : 'These names don’t'} name the bar${q.grouped > 0 ? `, so the answer above isn’t used for ${unknown.length === 1 ? 'it' : 'them'}` : ''}. Choose for each.`,
+            rows: unknown.map(totalRow),
+          },
+    rows: known.length === 0 || lone ? null : { title: q.grouped > 0 ? 'Different for some?' : 'Each exercise', rows: known.map(totalRow) },
   };
 }
 

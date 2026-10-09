@@ -1,4 +1,4 @@
-import type { AliasTarget, ExerciseEquipmentKind, ImplementCount, Laterality, LoadConvention } from '@fizz/schemas';
+import type { AliasTarget, ExerciseEquipmentKind, ImplementCount, ImportBarKind, Laterality, LoadConvention } from '@fizz/schemas';
 import { deriveId } from '../stable';
 
 /**
@@ -6,15 +6,28 @@ import { deriveId } from '../stable';
  *
  * - `matched`: the name equals (ignoring case and spacing) an exercise's name
  *   or one of its catalogue names, or a name Ben answered in an earlier import
- *   (a saved alias).
+ *   still in effect (a saved alias; review r5 S2). Never the custom exercise
+ *   an earlier import's `Add new` made from the name (`importMade`).
  * - `check`: a suggestion from the words of the name only. Ben confirms it.
  *   A suggestion never contradicts an equipment word in the name (`Flat
- *   Dumbbell Bench Press` is never the barbell bench press), and a tie is
- *   broken on equipment, never by alphabetical order: a tie equipment can't
- *   break gives no suggestion (review r4 S3).
+ *   Dumbbell Bench Press` is never the barbell bench press; a Smith name is
+ *   only a Smith exercise) or a one-arm / two-arm word (review r5 N1), and is
+ *   never an assisted machine or a Smith machine exercise unless the name
+ *   says assisted or Smith (review r5 S3).
+ *   Words that only count arms are left out of the comparison; a tie goes to
+ *   the exercise whose own name says the same count, then is broken on
+ *   equipment, never by alphabetical order: a tie neither can break gives no
+ *   suggestion (review r4 S3).
  * - `no_match`: nothing suggested.
  * No score is shown or stored: the matcher has no calibrated confidence.
  * Names are data, never instructions (rule 8).
+ *
+ * **A suggestion is about the exercise only (PM decision, review r5).**
+ * Nothing that changes a stored value (one dumbbell or two, total or
+ * plates only, load or assistance, the unit) is ever taken from a word
+ * suggestion, even after `Use this`. Those come only from (a) the name being
+ * one of the exercise's own names (`namesExercise`), (b) Ben's own answer,
+ * or (c) a word in the FitNotes name (`implementCue`, `equipmentInName`).
  */
 
 export type MatchStatus = 'matched' | 'check' | 'no_match';
@@ -35,6 +48,14 @@ export interface MatchCandidate {
    * commonly done either way (review r3 S1).
    */
   implements: ImplementCount | null;
+  /**
+   * A custom exercise an earlier import's `Add new` made from this very name
+   * (`customExerciseIdFor`). Its name is that import's answer, not knowledge
+   * of its own: it is reached through the remembered answer while that import
+   * is in effect, or suggested, but never matched by its name, so an undone
+   * import's answer can't come back as `Matched` (review r5 S2).
+   */
+  importMade?: boolean;
 }
 
 export interface NameMatch {
@@ -126,39 +147,133 @@ function plainText(name: string): string {
 }
 
 /**
- * Equipment words in a name and the equipment kinds each allows (review r4
- * S3). `Machine` allows any machine; `Smith` and `Hammer Strength` are
- * plate-loaded or stack machines, never a free barbell.
+ * Words that only say how many arms or implements (`One-Arm`, `Single`,
+ * `Two-Arm`, `Alternating`). They are left out of the word comparison, so a
+ * one-arm word never outweighs the movement (`Dumbbell Bench Press (Single
+ * Arm)` is a bench press, not the one-arm shoulder press; review r5 N1).
+ * Words that also name the movement (`Concentration`, `Goblet`, `Single
+ * Leg`) stay in.
  */
-const EQUIPMENT_WORDS: readonly [RegExp, readonly ExerciseEquipmentKind[]][] = [
+const COUNT_ONLY_WORDS: readonly RegExp[] = [
+  / (?:one|1|single|two|2) ?(?:arm|arms|armed|hand|hands|handed)(?= )/g,
+  / (?:two|2)(?= (?:dumbbells?|dbs?|kettlebells?|kbs?) )/g,
+  / (?:single(?! ?leg)|double|dual|unilateral|alternating|alternate|alt|sa)(?= )/g,
+];
+
+/**
+ * A name's words for comparison: without words that only count arms or
+ * implements, and without `Smith (Machine)`: a Smith name is only ever
+ * compared with Smith exercises (`equipmentFit`), so those words say nothing
+ * about the movement (`Smith Machine Overhead Press` isn't the Smith machine
+ * bench press; review r5 S3).
+ */
+function comparedTokens(name: string): string[] {
+  let text = plainText(name).replaceAll(/ smith(?: machines?)?(?= )/g, '');
+  for (const re of COUNT_ONLY_WORDS) text = text.replaceAll(re, '');
+  return nameTokens(text);
+}
+
+/**
+ * What a word in a name says about equipment. Exercise equipment kinds, plus
+ * `smith`: a Smith machine is its own kind here (review r5 S3). Its bar runs
+ * in a frame and takes plates, so it is neither a weight stack nor a free
+ * barbell; only an exercise whose own name says Smith is one.
+ */
+export type NamedEquipment = ExerciseEquipmentKind | 'smith';
+
+/**
+ * Equipment words in a name and the kinds each allows (review r4 S3, r5 S3).
+ * `Machine` allows a weight stack or a plate-loaded machine, never an
+ * assisted one: only `assisted` / `assist` / `Gravitron` / `counterweight`
+ * name an assisted machine, where more weight is easier. `Smith` (with or
+ * without `Machine`) names only a Smith machine.
+ */
+const EQUIPMENT_WORDS: readonly [RegExp, readonly NamedEquipment[]][] = [
   [/ (dumbbells?|dbs?) /, ['dumbbells']],
   [/ (barbells?|bb) /, ['barbell']],
   [/ (ez ?bar|ez) /, ['ez_bar']],
   [/ (trap|hex) ?bar /, ['trap_bar']],
   [/ (kettlebells?|kbs?) /, ['kettlebell']],
   [/ (cables?|pulley) /, ['weight_stack']],
-  [/ smith /, ['plate_loaded_machine', 'weight_stack']],
   [/ hammer strength /, ['plate_loaded_machine', 'weight_stack']],
-  [/ machines? /, ['weight_stack', 'plate_loaded_machine', 'assisted_stack']],
+  [/ machines? /, ['weight_stack', 'plate_loaded_machine']],
+  [/ (assist|assisted|assistance|gravitron|counter ?weight|counter ?weighted) /, ['assisted_stack']],
   [/ (bands?|banded) /, ['band']],
 ];
+
+const SMITH = / smith /;
 
 /**
  * The equipment a name says it uses (`Flat Dumbbell Bench Press` →
  * dumbbells), or null when it names none. Several words allow any of their
- * kinds (`Smith Machine …`).
+ * kinds (`Hammer Strength Machine …`). `Smith Machine …` is `smith` only:
+ * its `Machine` doesn't make it a weight stack (review r5 S3).
  */
-export function equipmentInName(name: string): ReadonlySet<ExerciseEquipmentKind> | null {
-  const text = plainText(name);
-  const kinds = new Set<ExerciseEquipmentKind>();
+export function equipmentInName(name: string): ReadonlySet<NamedEquipment> | null {
+  let text = plainText(name);
+  const kinds = new Set<NamedEquipment>();
+  if (SMITH.test(text)) {
+    kinds.add('smith');
+    text = text.replace(/ smith (machines? )?/g, ' ');
+  }
   for (const [re, allowed] of EQUIPMENT_WORDS) if (re.test(text)) for (const k of allowed) kinds.add(k);
   return kinds.size === 0 ? null : kinds;
 }
 
+/**
+ * What the matcher reads from a candidate's own names, worked out once per
+ * candidate object (candidates are read-only), so a preview re-analysed
+ * after every answer doesn't re-read every name (check 27).
+ */
+interface CandidateWords {
+  /** `comparedTokens` of its name and each other name. */
+  tokens: readonly string[][];
+  /** `implementCue` of its name and each other name. */
+  cues: readonly (ImplementCount | 'unclear' | null)[];
+  /** Its name says Smith. */
+  smith: boolean;
+}
+
+const WORDS = new WeakMap<MatchCandidate, CandidateWords>();
+
+function wordsOf(c: MatchCandidate): CandidateWords {
+  let w = WORDS.get(c);
+  if (!w) {
+    const names = [c.name, ...c.aliases];
+    w = { tokens: names.map(comparedTokens), cues: names.map(implementCue), smith: SMITH.test(plainText(c.name)) };
+    WORDS.set(c, w);
+  }
+  return w;
+}
+
+/** An exercise's equipment for matching: a Smith machine exercise (its name says Smith) is `smith` only. */
+function candidateEquipment(c: MatchCandidate): readonly NamedEquipment[] {
+  return wordsOf(c).smith ? ['smith'] : c.compatibleEquipment;
+}
+
 /** How a candidate's equipment compares with the name's: `agrees`, `contradicts`, or `unknown` (the name or the exercise names none). */
-function equipmentFit(named: ReadonlySet<ExerciseEquipmentKind> | null, c: MatchCandidate): 'agrees' | 'contradicts' | 'unknown' {
-  if (named === null || c.compatibleEquipment.length === 0) return 'unknown';
-  return c.compatibleEquipment.some((k) => named.has(k)) ? 'agrees' : 'contradicts';
+function equipmentFit(named: ReadonlySet<NamedEquipment> | null, c: MatchCandidate): 'agrees' | 'contradicts' | 'unknown' {
+  const own = candidateEquipment(c);
+  if (named === null || own.length === 0) return 'unknown';
+  return own.some((k) => named.has(k)) ? 'agrees' : 'contradicts';
+}
+
+/** Whether an exercise's equipment contradicts an equipment word in a name (`Smith` vs a weight stack, `Dumbbell` vs a barbell). */
+export function equipmentContradicts(name: string, c: MatchCandidate): boolean {
+  return equipmentFit(equipmentInName(name), c) === 'contradicts';
+}
+
+/**
+ * Words that count arms are left out of the comparison, so `Lat Pulldown`
+ * and `Single-arm lat pulldown` compare alike. Of tied exercises, those whose
+ * own name says the same count as the source name (one, two, or nothing)
+ * go on: `Lat Pulldown (Pulley)` is the lat pulldown, `Single Arm Cable Row
+ * (Pulley)` the single-arm cable row. When none does, all go on.
+ */
+function sameCount(tied: readonly MatchCandidate[], cue: ImplementCount | 'unclear' | null): readonly MatchCandidate[] {
+  if (cue === 'unclear') return tied;
+  const agreeing = tied.filter((c) => wordsOf(c).cues[0] === cue);
+  return agreeing.length > 0 ? agreeing : tied;
 }
 
 /**
@@ -167,7 +282,7 @@ function equipmentFit(named: ReadonlySet<ExerciseEquipmentKind> | null, c: Match
  * the matcher can't tell them apart, so it suggests nothing rather than the
  * first by name (review r4 S3).
  */
-function breakTie(tied: readonly MatchCandidate[], named: ReadonlySet<ExerciseEquipmentKind> | null): string | null {
+function breakTie(tied: readonly MatchCandidate[], named: ReadonlySet<NamedEquipment> | null): string | null {
   const ids = (list: readonly MatchCandidate[]) => [...new Set(list.map((c) => c.exerciseId))];
   if (ids(tied).length === 1) return tied[0]?.exerciseId ?? null;
   const agreeing = tied.filter((c) => equipmentFit(named, c) === 'agrees');
@@ -177,6 +292,19 @@ function breakTie(tied: readonly MatchCandidate[], named: ReadonlySet<ExerciseEq
 
 /** Scores this close are a tie. */
 const TIE = 1e-9;
+
+/**
+ * Whether the source name is one of the exercise's own names: its name or a
+ * catalogue name for it, ignoring case and spacing (source (a) of the PM
+ * decision). Not for an exercise an earlier import made from the name
+ * (`importMade`): that name is the import's answer, which counts only while
+ * the import is in effect, through the remembered answer (review r5 S2).
+ */
+export function namesExercise(sourceName: string, c: MatchCandidate): boolean {
+  if (c.importMade === true) return false;
+  const key = nameKey(sourceName);
+  return nameKey(c.name) === key || c.aliases.some((a) => nameKey(a) === key);
+}
 
 /**
  * Match one source name. `aliases` are Ben's saved answers by name key
@@ -190,8 +318,9 @@ export function matchName(name: string, candidates: readonly MatchCandidate[], a
     return { status: 'matched', exerciseId: saved.exerciseId, via: 'alias', skip: false };
   }
   const named = equipmentInName(name);
-  const byName = candidates.filter((c) => nameKey(c.name) === key);
-  const byAlias = candidates.filter((c) => c.aliases.some((a) => nameKey(a) === key));
+  const own = candidates.filter((c) => c.importMade !== true);
+  const byName = own.filter((c) => nameKey(c.name) === key);
+  const byAlias = own.filter((c) => c.aliases.some((a) => nameKey(a) === key));
   const exact = [...new Set([...byName, ...byAlias].map((c) => c.exerciseId))];
   if (exact.length === 1) return { status: 'matched', exerciseId: exact[0] ?? null, via: 'name', skip: false };
   if (exact.length > 1) {
@@ -200,20 +329,29 @@ export function matchName(name: string, candidates: readonly MatchCandidate[], a
     if (pick !== null) return { status: 'check', exerciseId: pick, via: 'name', skip: false };
   }
 
-  const words = nameTokens(name);
+  const words = comparedTokens(name);
+  const cue = implementCue(name);
+  const assisted = named?.has('assisted_stack') === true;
+  const smith = named?.has('smith') === true;
   let best = 0;
   let tied: MatchCandidate[] = [];
   for (const c of candidates) {
     // Never suggest an exercise whose equipment contradicts a word in the name.
     if (equipmentFit(named, c) === 'contradicts') continue;
-    const score = Math.max(...[c.name, ...c.aliases].map((n) => similarity(words, nameTokens(n))));
+    // Never an assisted machine unless the name says so: 80 kg on a stack would be read as 80 kg of help (review r5 S3).
+    if (c.defaultLoadConvention === 'assistance' && !assisted) continue;
+    // A Smith machine exercise only for a name that says Smith: `Squats` is never the Smith machine squat (review r5 S3).
+    if (wordsOf(c).smith && !smith) continue;
+    // Never one dumbbell for a name that says two, or two for one that says one (review r5 N1).
+    if (countContradicts(cue, c)) continue;
+    const score = Math.max(...wordsOf(c).tokens.map((t) => similarity(words, t)));
     if (score < SUGGEST_THRESHOLD || score < best - TIE) continue;
     if (score > best + TIE) {
       best = score;
       tied = [c];
     } else tied.push(c);
   }
-  const pick = tied.length === 0 ? null : breakTie(tied, named);
+  const pick = tied.length === 0 ? null : breakTie(sameCount(tied, cue), named);
   if (pick !== null) return { status: 'check', exerciseId: pick, via: 'words', skip: false };
   return { status: 'no_match', exerciseId: null, via: null, skip: false };
 }
@@ -236,27 +374,52 @@ export function implementCue(name: string): ImplementCount | 'unclear' | null {
 }
 
 /**
+ * A name that says one (or two) and an exercise one of whose own names says
+ * the other (`Two-Arm Dumbbell Row` and the one-arm row; `Double Kettlebell
+ * Press` and the kettlebell press, also called `Single-arm kettlebell
+ * press`): never suggested (review r5 N1). Words are compared with words:
+ * a one-arm version of a two-dumbbell movement (`Dumbbell Bench Press
+ * (Single Arm)`) can still be suggested as that movement; its count is
+ * asked (`implementsFor`).
+ */
+function countContradicts(cue: ImplementCount | 'unclear' | null, c: MatchCandidate): boolean {
+  if (cue !== 1 && cue !== 2) return false;
+  return wordsOf(c).cues.some((own) => (own === 1 || own === 2) && own !== cue);
+}
+
+/**
  * One dumbbell or two for a source name mapped to an exercise (review r4
- * S1). Null means not known, so the import asks with nothing selected.
+ * S1, r5 S1). Null means not known, so the import asks with nothing
+ * selected. The count changes the stored value ("Both together" halves a
+ * pair), so it is never taken from a word suggestion, however the name was
+ * mapped (its words, `Use this`, `Choose…` or an earlier answer):
  * - The catalogue doesn't record it: null.
- * - The name says one (`One-Arm …`, `Concentration`) or two: only when the
- *   catalogue agrees. A one-arm press mapped to the two-dumbbell standing
- *   press, by its words or by Ben, is never read by the pair's answer.
- * - The name says neither: two when the catalogue says two (the usual
- *   case, shown with its conversion before commit). One only when the name
- *   is the catalogue's own name for it, and that name doesn't owe its "one"
- *   to a word the source name lacks: `Dumbbell Pullover` is one dumbbell,
- *   but `Dumbbell Row` (also a name of the one-arm row) and `Dumbbell Squat`
- *   (suggested as the goblet squat) are asked.
+ * - The name says one (`One-Arm …`, `Concentration`) or two (`Alternating`):
+ *   the catalogue's count when they agree (source (c)), else null.
+ * - The name says neither: the catalogue's count, one or two, only when the
+ *   name is one of the exercise's own names (source (a)) and that name
+ *   doesn't owe its count to a word the source name lacks. `Dumbbell Curl`
+ *   is a pair and `Dumbbell Pullover` one dumbbell; `Dumbbell Preacher Curl`
+ *   suggested as the dumbbell curl, `Dumbbell Row` (a name of the one-arm
+ *   row) and `Dumbbell Squat` (suggested as the goblet squat) are asked.
  */
 export function implementsFor(sourceName: string, c: MatchCandidate): ImplementCount | null {
   if (c.implements === null) return null;
   const cue = implementCue(sourceName);
   if (cue !== null) return cue === c.implements ? c.implements : null;
-  if (c.implements === 2) return 2;
-  const key = nameKey(sourceName);
-  const exact = nameKey(c.name) === key || c.aliases.some((a) => nameKey(a) === key);
-  return exact && implementCue(c.name) === null ? 1 : null;
+  return namesExercise(sourceName, c) && wordsOf(c).cues[0] === null ? c.implements : null;
+}
+
+/**
+ * Whether the bar a `total` exercise uses is known for this source name
+ * (PM decision, review r5): the name is one of the exercise's own names
+ * (source (a)), or names that bar (`Barbell`, `EZ-Bar`, `Trap Bar`; source
+ * (c)). Otherwise "plates only" would add a bar the name never mentioned
+ * (`Log Press` taken as the overhead press), so the barbell group answer
+ * doesn't reach it and it is asked on its own.
+ */
+export function barNamed(sourceName: string, c: MatchCandidate, bar: ImportBarKind): boolean {
+  return namesExercise(sourceName, c) || equipmentInName(sourceName)?.has(bar) === true;
 }
 
 /**
