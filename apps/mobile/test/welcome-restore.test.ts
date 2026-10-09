@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { buildRestorePreviewView } from '../src/backup/restore-view';
+import type { AppServices } from '../src/services/app-services';
 import { createHarness, logWorkout, setUpGym, TZ, type Harness } from './harness';
 
 /**
@@ -9,8 +10,14 @@ import { createHarness, logWorkout, setUpGym, TZ, type Harness } from './harness
  * a profile skips setup.
  */
 const harnesses: Harness[] = [];
-function harness(): Harness {
-  const h = createHarness();
+/**
+ * This phone: a fresh install today. The "other phone" (the one the backup
+ * came from) was set up weeks earlier with its own clock and ID generator,
+ * as a reinstall on another day really is (review R1): its starter exercise
+ * rows carry a different first-launch time.
+ */
+function harness(start?: string, idStart?: number): Harness {
+  const h = start === undefined ? createHarness() : createHarness(start, idStart === undefined ? {} : { idStart });
   harnesses.push(h);
   return h;
 }
@@ -18,48 +25,74 @@ afterEach(async () => {
   for (const h of harnesses.splice(0)) await h.cleanup();
 });
 
-async function backupFromAnotherPhone(complete: boolean): Promise<string> {
-  const old = harness();
-  const { services: s } = await old.launch();
-  if (complete) {
-    const gymId = await setUpGym(old, s);
-    await logWorkout(old, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
-  } else {
-    // Step 3 of setup offers `Save a copy to Files now`, so a backup can hold a profile mid-setup.
-    await s.setup.saveUnits('kg');
-    await s.setup.saveGym({ gymId: old.ids(), name: 'Main Gym', draft: s.coachingKnowledge.buildGymDraft('commercial', 'kg') });
-  }
+async function backUp(h: Harness, s: AppServices): Promise<string> {
   const made = await s.backups.backUpOnPhone('manual');
   if (!made.ok) throw new Error(made.error);
-  const text = old.backupFiles.get(made.record.fileName);
+  const text = h.backupFiles.get(made.record.fileName);
   if (text === undefined) throw new Error('no backup');
   return text;
 }
 
+/** Backups from the old phone: `older` right after setup, `latest` after a workout (or part-way through setup). */
+async function backupsFromAnotherPhone(complete: boolean): Promise<{ older: string; latest: string }> {
+  const old = harness('2026-09-01T08:00:00.000Z', 500_000);
+  const { services: s } = await old.launch();
+  if (complete) {
+    const gymId = await setUpGym(old, s);
+    old.clockMs += 86_400_000;
+    const older = await backUp(old, s);
+    old.clockMs += 86_400_000;
+    await logWorkout(old, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    return { older, latest: await backUp(old, s) };
+  }
+  // Step 3 of setup offers `Save a copy to Files now`, so a backup can hold a profile mid-setup.
+  await s.setup.saveUnits('kg');
+  await s.setup.saveGym({ gymId: old.ids(), name: 'Main Gym', draft: s.coachingKnowledge.buildGymDraft('commercial', 'kg') });
+  const latest = await backUp(old, s);
+  return { older: latest, latest };
+}
+
+const NONE = { workouts: 0, newestWorkoutUtc: null, otherRecords: 0 };
+
 describe('Restore from a backup on Welcome', () => {
   it('a fresh install restores before setup and lands on Today, with no alert (nothing to replace)', async () => {
-    const text = await backupFromAnotherPhone(true);
+    const { older, latest } = await backupsFromAnotherPhone(true);
     const h = harness();
     let launched = await h.launch();
     expect(launched.setup.step).toBe('welcome');
     const s = launched.services;
     expect(await s.restore.blockedBy()).toBeNull();
-    const checked = await s.restore.prepare(text);
+    const checked = await s.restore.prepare(latest);
     if (!checked.ok) throw new Error(checked.error.message);
+    // The fresh install's own starter list (Coaching knowledge, stamped today) is never "your data" (review R1, rule 10).
+    expect(checked.preview.onlyOnPhone).toEqual(NONE);
+    expect(checked.preview.changedOnPhone).toEqual(NONE);
+    expect(checked.preview.keptForUndo).toBeNull();
     const view = buildRestorePreviewView(checked.preview, { nowMs: h.clockMs, tz: TZ, locale: 'en-GB' });
     expect(view.warnings).toEqual([]);
     expect(view.confirm).toBeNull();
-    expect(await s.restore.restore(text, view.stamp)).toMatchObject({ ok: true, status: 'restored' });
+    expect(await s.restore.restore(latest, view.stamp)).toMatchObject({ ok: true, status: 'restored' });
     expect(await s.setup.skipAfterRestore()).toEqual({ hasProfile: true });
     // Done relaunches: no setup step shows.
     await h.forceClose();
     launched = await h.launch();
     expect(launched.setup.step).toBe('done');
     expect((await launched.services.yourData.counts()).finishedWorkouts).toBe(1);
+
+    // A later restore of an older backup from the same phone: the copy kept for
+    // Undo is the empty install (only its starter list), so nothing is "lost" with it.
+    const later = await launched.services.restore.prepare(older);
+    if (!later.ok) throw new Error(later.error.message);
+    expect(later.preview.keptForUndo).toMatchObject({ workouts: 0, otherRecords: 0, unreadable: false });
+    expect(later.preview.changedOnPhone.otherRecords).toBe(0);
+    const laterView = buildRestorePreviewView(later.preview, { nowMs: h.clockMs, tz: TZ, locale: 'en-GB' });
+    expect(laterView.warnings.join(' ')).not.toContain('kept for Undo');
+    // What it does say is true: the workout logged after the older backup is replaced.
+    expect(later.preview.onlyOnPhone).toMatchObject({ workouts: 1, otherRecords: 0 });
   });
 
   it('a backup saved part-way through setup also skips setup; its gym is kept', async () => {
-    const text = await backupFromAnotherPhone(false);
+    const { latest: text } = await backupsFromAnotherPhone(false);
     const h = harness();
     const { services: s } = await h.launch();
     const checked = await s.restore.prepare(text);

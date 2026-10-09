@@ -15,6 +15,13 @@ import type { SqlRow } from '../driver';
  * from before an app update), they are compared by their version stamps
  * (`version`/`updated_at_utc`, and a workout's `revision`), which every write
  * through the app bumps.
+ *
+ * Only **Your data** is counted (rule 10; PM decision RS1 on the re-review,
+ * 2026-10-09). Shared Coaching-knowledge rows (the starter list and catalogue
+ * exercises, which have no owner) are never counted as replaced, changed or
+ * lost: they are re-seeded by catalogue key at every launch, and each install
+ * stamps its own copy with its own first-launch time, so comparing them would
+ * report records that don't exist (review R1).
  */
 
 type Tables = Record<string, readonly SqlRow[]>;
@@ -23,7 +30,7 @@ export interface ReplaceCounts {
   /** Finished or unfinished workouts. */
   workouts: number;
   newestWorkoutUtc: string | null;
-  /** Profiles, gyms, equipment, exercises, routines, rules, check-ins and pain flags. */
+  /** Profiles, gyms, equipment, custom exercises, routines, rules, check-ins and pain flags (Your data only). */
   otherRecords: number;
 }
 
@@ -31,6 +38,15 @@ export interface ReplaceCounts {
 export const OTHER_RECORD_TABLES = ['profiles', 'gyms', 'equipment', 'exercises', 'routines', 'progression_rules', 'check_ins', 'pain_flags'] as const;
 
 export type CompareMode = 'content' | 'stamp';
+
+/**
+ * Coaching knowledge: a row in a table with an `owner_id` column whose owner
+ * is null (today only starter/catalogue exercises). Profiles have no
+ * `owner_id`; they are the owner.
+ */
+export function isSharedKnowledge(row: SqlRow): boolean {
+  return 'owner_id' in row && row.owner_id === null;
+}
 
 function keyOf(row: SqlRow): string {
   return typeof row.id === 'string' || typeof row.id === 'number' ? String(row.id) : stableStringify(row);
@@ -69,7 +85,10 @@ function fingerprints(tables: Tables, mode: CompareMode): Fingerprints {
   const other = new Map<string, Map<string, string>>();
   for (const t of OTHER_RECORD_TABLES) {
     const m = new Map<string, string>();
-    for (const r of tables[t] ?? []) m.set(keyOf(r), mode === 'content' ? stableStringify(r) : stableStringify([r.version, r.updated_at_utc]));
+    for (const r of tables[t] ?? []) {
+      if (isSharedKnowledge(r)) continue;
+      m.set(keyOf(r), mode === 'content' ? stableStringify(r) : stableStringify([r.version, r.updated_at_utc]));
+    }
     other.set(t, m);
   }
   return { workouts, other };

@@ -33,7 +33,12 @@ export interface Harness {
   cleanup: () => Promise<void>;
 }
 
-export function createHarness(start = '2026-10-08T17:00:00.000Z'): Harness {
+/**
+ * `start` is the phone's clock at first launch; `idStart` seeds its ID
+ * generator. Two phones (a reinstall on another day) need both to differ,
+ * as real installs do (review R1).
+ */
+export function createHarness(start = '2026-10-08T17:00:00.000Z', opts: { idStart?: number } = {}): Harness {
   const dir = mkdtempSync(join(tmpdir(), 'fizz-harness-'));
   let dbNames = 0;
   let manifestText: string | null = null;
@@ -41,7 +46,7 @@ export function createHarness(start = '2026-10-08T17:00:00.000Z'): Harness {
   const h: Harness = {
     dir,
     clockMs: toMs(start),
-    ids: idGen(1),
+    ids: idGen(opts.idStart ?? 1),
     backupFiles: new Map(),
     pending: new Map(),
     now: () => ({ utc: toIso(h.clockMs), tz: TZ }),

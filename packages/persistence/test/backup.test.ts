@@ -534,11 +534,42 @@ describe('check a backup (verifyBackup, DX3) and restore bookkeeping', () => {
     const p = await source.preview(smallBackup);
     if (!p.ok) throw new Error(p.error.message);
     const sessions = await source.store.db.read((q) => q.getAll<{ started_at_utc: string }>("SELECT started_at_utc FROM sessions WHERE status != 'discarded' ORDER BY started_at_utc"));
-    // Gym, 6 equipment, 2 exercises, routine, 2 rules, check-in, pain flag; the profile is in both.
-    expect(p.preview.onlyOnPhone).toEqual({ workouts: 2, newestWorkoutUtc: sessions.at(-1)?.started_at_utc ?? null, otherRecords: 14 });
+    // Gym, 6 equipment, the custom exercise, routine, 2 rules, check-in, pain flag; the profile is in both.
+    // The catalogue exercise (no owner) is Coaching knowledge, never counted (review R1, rule 10).
+    expect(p.preview.onlyOnPhone).toEqual({ workouts: 2, newestWorkoutUtc: sessions.at(-1)?.started_at_utc ?? null, otherRecords: 13 });
     const same = await source.preview(backupText);
     if (!same.ok) throw new Error(same.error.message);
     expect(same.preview.onlyOnPhone).toEqual({ workouts: 0, newestWorkoutUtc: null, otherRecords: 0 });
+  });
+
+  it('never counts shared Coaching-knowledge rows (ownerless exercises) as replaced, changed or lost (review R1, RS1)', async () => {
+    // Two installs on different days: each seeds the same catalogue exercise with its own first-launch time.
+    const starter = (atUtc: string, name = 'Bench press') => exercise(900, name, { createdAtUtc: atUtc, updatedAtUtc: atUtc });
+    const other = await openManager(dir());
+    await other.store.repos.profiles.save(profile(), null);
+    await other.store.repos.exercises.save(starter(at(-86_400 * 30).utc), null);
+    const otherBackup = (await createBackup(other.store, { at: at(100), app: APP })).text;
+    await other.close();
+
+    const fresh = await openManager(dir());
+    // Only on this phone, and a different version of the shared row: neither is "your data".
+    await fresh.store.repos.exercises.save(starter(at(0).utc, 'Bench press (new name)'), null);
+    await fresh.store.repos.exercises.save(exercise(901, 'Starter only here'), null);
+    const p = await fresh.preview(otherBackup);
+    if (!p.ok) throw new Error(p.error.message);
+    expect(p.preview.onlyOnPhone).toEqual({ workouts: 0, newestWorkoutUtc: null, otherRecords: 0 });
+    expect(p.preview.changedOnPhone).toEqual({ workouts: 0, newestWorkoutUtc: null, otherRecords: 0 });
+    expect(await fresh.restore(otherBackup, at(200))).toMatchObject({ ok: true, status: 'restored' });
+    // The copy kept for Undo holds only shared rows: nothing is lost with it.
+    const again = await fresh.preview(otherBackup);
+    if (!again.ok) throw new Error(again.error.message);
+    expect(again.preview.keptForUndo).toMatchObject({ workouts: 0, otherRecords: 0 });
+    // A custom exercise (owned) is your data and still counts.
+    await fresh.store.repos.exercises.save(exercise(902, 'My press', { ownerId: OWNER, source: 'custom' }), null);
+    const owned = await fresh.preview(otherBackup);
+    if (!owned.ok) throw new Error(owned.error.message);
+    expect(owned.preview.onlyOnPhone.otherRecords).toBe(1);
+    await fresh.close();
   });
 
   it('counts records whose content differs from the backup as replaced (PM decision on SP3)', async () => {
