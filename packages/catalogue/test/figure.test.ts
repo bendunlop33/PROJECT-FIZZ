@@ -464,7 +464,8 @@ describe('SVG output and style', () => {
     expect(bodyFills.map((o) => (o.kind === 'path' ? o.contours.length : 0))).toEqual([3, 3, 4]);
     expect(bodyFills.every((o) => o.kind === 'path' && o.smooth)).toBe(true);
     const svg = renderSvg(pose, { px: 240, style, camera: fitCamera(prepared) });
-    expect(svg).toContain('opacity="0.7"');
+    // The plate rim is a soft `frame` ring behind the body (it ringed the head when stroked in `implement`).
+    expect(svg).toMatch(new RegExp(`<circle [^>]*stroke="${style.frame}"[^>]*opacity="0.85"`));
   });
 
   it('mirrors when facing left', () => {
