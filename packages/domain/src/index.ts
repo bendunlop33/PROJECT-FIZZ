@@ -16,3 +16,5 @@ export * from './session/volume';
 export * from './ports';
 export * from './memory';
 export * from './session-service';
+export * from './calendar';
+export * from './checkin';

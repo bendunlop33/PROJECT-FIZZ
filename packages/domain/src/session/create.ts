@@ -6,6 +6,7 @@ import type {
   LoadConvention,
   Routine,
   SessionAggregate,
+  SessionCheckIn,
   SessionExercise,
   UserProfile,
   WorkoutSet,
@@ -106,6 +107,11 @@ export interface StartWorkoutInput {
   at: ZonedTimestamp;
   /** Injected ID generator (UUIDs in the app; deterministic in tests). */
   newId: () => string;
+  /**
+   * The pre-workout check-in outcome, stored on the session in the same write
+   * (check-in.md §6 `startWorkout(…, opts.checkIn)`). Omitted = not recorded.
+   */
+  checkIn?: SessionCheckIn | null;
 }
 
 export interface StartWorkoutOutput {
@@ -221,6 +227,7 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
         pause: null,
         pauses: [],
         lastActivityAtUtc: input.at.utc,
+        checkIn: input.checkIn ?? null,
       },
       exercises,
       sets,

@@ -4,5 +4,6 @@ export * from './exercise';
 export * from './routine';
 export * from './profile';
 export * from './session';
+export * from './checkin';
 export * from './commands';
 export * from './validate';

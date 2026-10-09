@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readdirSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createSessionService, stableStringify } from '@fizz/domain';
+import { createSessionService, newCheckIn, newPainFlag, stableStringify } from '@fizz/domain';
 import {
   assisted,
   at,
@@ -32,6 +32,7 @@ import {
   createBackup,
   DatabaseManager,
   exportTables,
+  latestVersion,
   MIGRATIONS,
   parseBackup,
   readUserVersion,
@@ -94,7 +95,14 @@ async function populate(store: Store): Promise<void> {
   await repos.progressionRules.save(topSetBackoff(), null);
   await repos.sessions.save(richFinishedSession(), null);
   const active = unilateralSession('start-active', idGen(97_000));
-  await repos.sessions.save(active, null);
+  // Schema 2: a check-in linked to the active workout, and a pain flag.
+  const checkIn = newCheckIn({ id: id(300), ownerId: OWNER, opId: 'checkin-op', score: 2, reasons: ['tired', 'pain'], note: 'Baby was up at 3', at: at(10), localDate: '2026-10-08' });
+  await repos.checkIns.save(checkIn, null);
+  await repos.painFlags.save(
+    newPainFlag({ id: id(301), ownerId: OWNER, opId: 'pain-op', exerciseId: SPLIT_SQUAT.id, exerciseName: SPLIT_SQUAT.name, area: 'knee', source: 'check_in', checkInId: checkIn.id, at: at(11) }),
+    null,
+  );
+  await repos.sessions.save({ ...active, session: { ...active.session, checkIn: { kind: 'answered', checkInId: checkIn.id } } }, null);
 }
 
 const snapshot = (store: Store) => store.db.read((q) => exportTables(q));
@@ -123,7 +131,7 @@ describe('createBackup / restore', () => {
     const created = await createBackup(source.store, { at: at(3600), app: APP });
     backupText = created.text;
     expect(created.integrity.ok).toBe(true);
-    expect(created.fileName).toBe('fizz-backup-2026-10-08T07-00-00Z-v1.json');
+    expect(created.fileName).toBe(`fizz-backup-2026-10-08T07-00-00Z-v${latestVersion()}.json`);
     expect(created.counts).toMatchObject({ profiles: 1, gyms: 1, equipment: 6, exercises: 2, routines: 1, progressionRules: 2, finishedWorkouts: 1, unfinishedWorkouts: 1, loggedSets: 3 });
   });
   afterEach(async () => {
@@ -138,7 +146,7 @@ describe('createBackup / restore', () => {
       identical: false,
       needsMigration: false,
       replacesUnfinishedWorkout: false,
-      backup: { app: APP, schemaVersion: 1, counts: { equipment: 6, finishedWorkouts: 1 } },
+      backup: { app: APP, schemaVersion: latestVersion(), counts: { equipment: 6, finishedWorkouts: 1 } },
       current: { counts: { equipment: 0, finishedWorkouts: 0 } },
     });
 
@@ -315,25 +323,58 @@ describe('createBackup / restore', () => {
   });
 });
 
+describe('restoring a backup from schema 1 (before check-ins)', () => {
+  it('loads it at version 1, migrates it forward, and its sessions read with no check-in', async () => {
+    // A schema-1 file as an older build wrote it: no check-in tables or columns.
+    const src = await openManager(dir());
+    await src.store.repos.profiles.save(profile({ preferredUnit: 'lb' }), null);
+    await src.store.repos.sessions.save(richFinishedSession(), null);
+    const made = await createBackup(src.store, { at: at(100), app: APP });
+    await src.close();
+    const file = JSON.parse(made.text) as BackupFile;
+    const tables = { ...file.tables };
+    delete tables.check_ins;
+    delete tables.pain_flags;
+    tables.sessions = (tables.sessions ?? []).map((row) => {
+      const copy = { ...row };
+      delete copy.check_in;
+      delete copy.check_in_id;
+      return copy;
+    });
+    const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
+    const v1 = resign({ ...file, schemaVersion: 1, tables, counts });
+
+    const current = await openManager(dir());
+    const out = await current.restore(v1, at(200));
+    expect(out).toMatchObject({ ok: true, status: 'restored', preview: { needsMigration: true } });
+    expect(await current.store.db.read((q) => readUserVersion(q))).toBe(latestVersion());
+    const restored = await current.store.repos.sessions.get(richFinishedSession().session.id);
+    expect(restored?.session.checkIn).toBeNull();
+    expect(await current.store.repos.checkIns.listSince(OWNER, '2000-01-01T00:00:00.000Z')).toEqual([]);
+    await current.close();
+  });
+});
+
 describe('restoring a backup from an older schema version', () => {
-  const v2: Migration = sqlMigration(
-    2,
+  const next = latestVersion() + 1;
+  const vNext: Migration = sqlMigration(
+    next,
     'gym name column',
     "ALTER TABLE gyms ADD COLUMN name TEXT NOT NULL DEFAULT ''; UPDATE gyms SET name = json_extract(data, '$.name');",
   );
-  const withV2 = [...MIGRATIONS, v2];
+  const withV2 = [...MIGRATIONS, vNext];
 
   it('loads it at its own version, then migrates it forward', async () => {
     const old = await openManager(dir());
     await populate(old.store);
     const backup = await createBackup(old.store, { at: at(100), app: APP });
-    expect(backup.schemaVersion).toBe(1);
+    expect(backup.schemaVersion).toBe(latestVersion());
 
     const newer = await openManager(dir(), { migrations: withV2 });
-    expect(await newer.store.db.read((q) => readUserVersion(q))).toBe(2);
+    expect(await newer.store.db.read((q) => readUserVersion(q))).toBe(next);
     const out = await newer.restore(backup.text, at(200));
     expect(out).toMatchObject({ ok: true, status: 'restored', preview: { needsMigration: true, identical: false } });
-    expect(await newer.store.db.read((q) => readUserVersion(q))).toBe(2);
+    expect(await newer.store.db.read((q) => readUserVersion(q))).toBe(next);
     expect(await newer.store.db.read((q) => q.getAll('SELECT id, name FROM gyms'))).toEqual([{ id: id(2), name: 'Gym 2' }]);
     const richId = richFinishedSession().session.id;
     expect(await newer.store.repos.sessions.get(richId)).toEqual(await old.store.repos.sessions.get(richId));

@@ -1,10 +1,14 @@
 import {
+  CheckInSchema,
+  PainFlagSchema,
   EquipmentInstanceSchema,
   ExerciseSchema,
   GymSchema,
   ProgressionRuleSchema,
   RoutineSchema,
   UserProfileSchema,
+  type CheckIn,
+  type PainFlag,
   type EquipmentInstance,
   type Exercise,
   type Gym,
@@ -44,6 +48,17 @@ export const PROGRESSION_RULE_SPEC: DocumentSpec<ProgressionRule> = {
   table: 'progression_rules',
   schema: ProgressionRuleSchema,
   columns: (r) => ({ owner_id: r.ownerId }),
+};
+
+export const CHECK_IN_SPEC: DocumentSpec<CheckIn> = {
+  table: 'check_ins',
+  schema: CheckInSchema,
+  columns: (c) => ({ owner_id: c.ownerId, recorded_at_utc: c.recordedAt.utc }),
+};
+export const PAIN_FLAG_SPEC: DocumentSpec<PainFlag> = {
+  table: 'pain_flags',
+  schema: PainFlagSchema,
+  columns: (f) => ({ owner_id: f.ownerId, exercise_id: f.exerciseId, status: f.status }),
 };
 
 /** A document table with its type erased, for whole-database checks. */
@@ -190,6 +205,44 @@ export class SqliteRoutines extends DocumentRepository<Routine> {
   }
 }
 
+/** Pre-workout check-ins (Your data). */
+export class SqliteCheckIns extends DocumentRepository<CheckIn> {
+  constructor(db: Database) {
+    super(db, CHECK_IN_SPEC);
+  }
+
+  /** Check-ins recorded at or after `sinceUtc`, newest first (deleted ones included; callers filter). */
+  async listSince(ownerId: string, sinceUtc: string): Promise<CheckIn[]> {
+    const rows = await this.listWhere('owner_id = ? AND recorded_at_utc >= ?', [ownerId, sinceUtc]);
+    return rows.sort((a, b) => (a.recordedAt.utc < b.recordedAt.utc ? 1 : a.recordedAt.utc > b.recordedAt.utc ? -1 : 0));
+  }
+
+  /** IDs among `ids` that a workout already links to (`sessions.check_in_id`). */
+  linkedIds(ids: readonly string[]): Promise<Set<string>> {
+    if (ids.length === 0) return Promise.resolve(new Set());
+    return this.db.read(async (q) => {
+      const rows = await q.getAll<{ check_in_id: string }>(
+        `SELECT check_in_id FROM sessions WHERE check_in_id IN (${ids.map(() => '?').join(', ')})`,
+        ids,
+      );
+      return new Set(rows.map((r) => r.check_in_id));
+    });
+  }
+}
+
+/** Pain flags (Your data; rule 9). */
+export class SqlitePainFlags extends DocumentRepository<PainFlag> {
+  constructor(db: Database) {
+    super(db, PAIN_FLAG_SPEC);
+  }
+  listByOwner(ownerId: string): Promise<PainFlag[]> {
+    return this.listWhere('owner_id = ?', [ownerId]);
+  }
+  listActive(ownerId: string): Promise<PainFlag[]> {
+    return this.listWhere("owner_id = ? AND status = 'active'", [ownerId]);
+  }
+}
+
 export const DOCUMENT_TABLES: readonly DocumentTable[] = [
   erase(PROFILE_SPEC),
   erase(GYM_SPEC),
@@ -197,4 +250,6 @@ export const DOCUMENT_TABLES: readonly DocumentTable[] = [
   erase(EXERCISE_SPEC),
   erase(ROUTINE_SPEC),
   erase(PROGRESSION_RULE_SPEC),
+  erase(CHECK_IN_SPEC),
+  erase(PAIN_FLAG_SPEC),
 ];

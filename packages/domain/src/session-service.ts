@@ -3,6 +3,7 @@ import {
   validate,
   type Exercise,
   type SessionAggregate,
+  type SessionCheckIn,
   type ValidationIssue,
   type ZonedTimestamp,
 } from '@fizz/schemas';
@@ -41,6 +42,8 @@ export interface StartRequest {
   routineId: string | null;
   opId: string;
   at: ZonedTimestamp;
+  /** Check-in outcome stored on the new session (same write). */
+  checkIn?: SessionCheckIn | null;
 }
 
 const MAX_CONFLICT_RETRIES = 2;
@@ -96,6 +99,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       gymEquipment,
       at: req.at,
       newId,
+      checkIn: req.checkIn ?? null,
     });
     const saved = await trySave(() => repos.sessions.save(aggregate, null));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };

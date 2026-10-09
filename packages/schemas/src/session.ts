@@ -12,6 +12,7 @@ import {
   WeightUnitSchema,
   ZonedTimestampSchema,
 } from './common';
+import { SessionCheckInSchema } from './checkin';
 import { EquipmentInstanceSchema } from './equipment';
 import { LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
@@ -166,6 +167,12 @@ export const WorkoutSessionSchema = z.object({
   /** Every closed pause, in order, unclipped. */
   pauses: z.array(PauseIntervalSchema),
   lastActivityAtUtc: UtcTimestampSchema,
+  /**
+   * The pre-workout check-in for this session (check-in.md §6), written in the
+   * same transaction as the session. Null for sessions recorded before
+   * check-ins existed.
+   */
+  checkIn: SessionCheckInSchema.nullable(),
 });
 export type WorkoutSession = z.infer<typeof WorkoutSessionSchema>;
 

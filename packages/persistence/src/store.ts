@@ -5,8 +5,10 @@ import {
   DocumentRepository,
   PROFILE_SPEC,
   PROGRESSION_RULE_SPEC,
+  SqliteCheckIns,
   SqliteEquipment,
   SqliteExercises,
+  SqlitePainFlags,
   SqliteGyms,
   SqliteRoutines,
 } from './documents';
@@ -17,6 +19,8 @@ import { SqliteSessions } from './sessions';
 export interface SqliteRepositories extends Repositories {
   gyms: SqliteGyms;
   sessions: SqliteSessions;
+  checkIns: SqliteCheckIns;
+  painFlags: SqlitePainFlags;
 }
 
 export function createSqliteRepositories(db: Database): SqliteRepositories {
@@ -28,6 +32,8 @@ export function createSqliteRepositories(db: Database): SqliteRepositories {
     routines: new SqliteRoutines(db),
     progressionRules: new DocumentRepository<ProgressionRule>(db, PROGRESSION_RULE_SPEC) satisfies VersionedRepository<ProgressionRule>,
     sessions: new SqliteSessions(db),
+    checkIns: new SqliteCheckIns(db),
+    painFlags: new SqlitePainFlags(db),
   };
 }
 

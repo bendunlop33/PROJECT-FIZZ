@@ -55,6 +55,8 @@ function sessionRow(a: SessionAggregate): Record<string, SqlValue> {
     equipment_snapshot: JSON.stringify(s.equipmentSnapshot),
     paused_at_utc: s.pause?.pausedAtUtc ?? null,
     last_activity_at_utc: s.lastActivityAtUtc,
+    check_in: s.checkIn === null ? null : JSON.stringify(s.checkIn),
+    check_in_id: s.checkIn?.kind === 'answered' ? s.checkIn.checkInId : null,
   };
 }
 
@@ -192,6 +194,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       pause: s.paused_at_utc === null ? null : { pausedAtUtc: s.paused_at_utc },
       pauses: pauses.map((p) => ({ startUtc: p.start_utc, endUtc: p.end_utc })),
       lastActivityAtUtc: s.last_activity_at_utc,
+      checkIn: parseJsonOrNull(T, id, 'check_in', s.check_in ?? null),
     },
     exercises: exercises.map((e) => ({
       id: e.id,
@@ -313,6 +316,8 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
     revision: s.revision,
   };
   const aggregate = checkRead(SessionAggregateSchema, raw, T, id);
+  const linked = aggregate.session.checkIn?.kind === 'answered' ? aggregate.session.checkIn.checkInId : null;
+  if ((s.check_in_id ?? null) !== linked) throw mismatch(T, id, 'check_in_id', `Column says ${String(s.check_in_id)}, check_in says ${String(linked)}`);
   assertReferences(aggregate);
   return aggregate;
 }
@@ -510,6 +515,34 @@ export class SqliteSessions implements SessionRepository {
         if (agg) out.push(agg);
       }
       return out;
+    });
+  }
+
+  /** Finished sessions of `ownerId` that started in [fromUtc, toUtc), oldest first (Today's week strip). */
+  listFinishedBetween(ownerId: string, fromUtc: string, toUtc: string): Promise<SessionAggregate[]> {
+    return this.db.read(async (q) => {
+      const rows = await q.getAll<{ id: string }>(
+        `SELECT id FROM sessions WHERE owner_id = ? AND status = 'finished' AND started_at_utc >= ? AND started_at_utc < ?
+         ORDER BY started_at_utc, id`,
+        [ownerId, fromUtc, toUtc],
+      );
+      const out: SessionAggregate[] = [];
+      for (const r of rows) {
+        const agg = await readAggregate(q, r.id);
+        if (agg) out.push(agg);
+      }
+      return out;
+    });
+  }
+
+  /** The most recently started finished session, if any. */
+  latestFinished(ownerId: string): Promise<SessionAggregate | null> {
+    return this.db.read(async (q) => {
+      const row = await q.getFirst<{ id: string }>(
+        "SELECT id FROM sessions WHERE owner_id = ? AND status = 'finished' ORDER BY started_at_utc DESC, id DESC LIMIT 1",
+        [ownerId],
+      );
+      return row ? readAggregate(q, row.id) : null;
     });
   }
 

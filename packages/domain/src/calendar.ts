@@ -1,0 +1,83 @@
+import type { Weekday } from '@fizz/schemas';
+
+/**
+ * Local calendar helpers for a UTC instant read in an IANA zone. Pure: the
+ * instant and zone are arguments (no clock reads). Weeks run Monday–Sunday
+ * (progress.md PG16).
+ */
+
+function parts(ms: number, tz: string): { year: number; month: number; day: number; hour: number; minute: number; second: number; weekday: string } {
+  const out: Record<string, string> = {};
+  const f = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+    weekday: 'short',
+  });
+  for (const p of f.formatToParts(ms)) out[p.type] = p.value;
+  return {
+    year: Number(out.year),
+    month: Number(out.month),
+    day: Number(out.day),
+    hour: Number(out.hour),
+    minute: Number(out.minute),
+    second: Number(out.second),
+    weekday: (out.weekday ?? '').toLowerCase().slice(0, 3),
+  };
+}
+
+/** `YYYY-MM-DD` in `tz`. */
+export function localDateOf(ms: number, tz: string): string {
+  const p = parts(ms, tz);
+  return `${String(p.year).padStart(4, '0')}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
+
+const WEEKDAYS: readonly Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+export function weekdayOf(ms: number, tz: string): Weekday {
+  const w = parts(ms, tz).weekday;
+  const found = WEEKDAYS.find((d) => d === w);
+  if (!found) throw new RangeError(`Unknown weekday ${w}`);
+  return found;
+}
+
+/** Zone offset (local − UTC) in ms at instant `ms`. */
+function offsetMs(ms: number, tz: string): number {
+  const p = parts(ms, tz);
+  // eslint-disable-next-line no-restricted-globals -- arithmetic on calendar fields, not a clock read
+  const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  return asUtc - Math.floor(ms / 1000) * 1000;
+}
+
+/** The UTC instant of local midnight starting `localDate` (`YYYY-MM-DD`) in `tz`. */
+export function localMidnightUtcMs(localDate: string, tz: string): number {
+  const [y, m, d] = localDate.split('-').map(Number);
+  if (y === undefined || m === undefined || d === undefined || Number.isNaN(y + m + d)) throw new RangeError(`Bad date ${localDate}`);
+  // eslint-disable-next-line no-restricted-globals -- arithmetic on calendar fields, not a clock read
+  const naive = Date.UTC(y, m - 1, d);
+  // Two passes settle DST transitions (the offset at the guess can differ from the offset at the answer).
+  let guess = naive - offsetMs(naive, tz);
+  guess = naive - offsetMs(guess, tz);
+  return guess;
+}
+
+/** Add whole days to a `YYYY-MM-DD` date (calendar arithmetic, zone-free). */
+export function addDays(localDate: string, days: number): string {
+  const [y, m, d] = localDate.split('-').map(Number);
+  // eslint-disable-next-line no-restricted-globals -- arithmetic on calendar fields, not a clock read
+  const t = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, (d ?? 1) + days));
+  return `${String(t.getUTCFullYear()).padStart(4, '0')}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** Monday–Sunday week containing `ms` in `tz`, as UTC bounds [start, end). */
+export function localWeekBounds(ms: number, tz: string): { startMs: number; endMs: number; mondayLocalDate: string } {
+  const today = localDateOf(ms, tz);
+  const back = WEEKDAYS.indexOf(weekdayOf(ms, tz));
+  const monday = addDays(today, -back);
+  return { startMs: localMidnightUtcMs(monday, tz), endMs: localMidnightUtcMs(addDays(monday, 7), tz), mondayLocalDate: monday };
+}
