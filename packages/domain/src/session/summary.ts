@@ -68,7 +68,7 @@ export interface WorkoutSummary {
     | { kind: 'first_time'; text: string }
     | { kind: 'not_comparable'; text: string }
     | null;
-  exercises: { sessionExerciseId: string; name: string; setsText: string; results: string; skipped: number; sides: string | null }[];
+  exercises: { sessionExerciseId: string; exerciseId: string; name: string; setsText: string; results: string; skipped: number; sides: string | null }[];
   nextTime: { sourceTag: string; rows: NextTimeRow[]; emptyText: string | null } | null;
   /** No working sets: the comparison and next-time sections are hidden; Discard is offered. */
   empty: boolean;
@@ -155,6 +155,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     const n = v?.sets ?? done.length;
     return {
       sessionExerciseId: ex.id,
+      exerciseId: ex.exerciseId,
       name: ex.exerciseName,
       setsText: `${String(n)} ${n === 1 ? 'set' : 'sets'}${unitNote}`,
       results: done

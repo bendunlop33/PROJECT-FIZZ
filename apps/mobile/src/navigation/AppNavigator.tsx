@@ -13,6 +13,7 @@ import { CapabilityProbeScreen } from '../screens/CapabilityProbeScreen';
 import { DataBackupScreen } from '../screens/data/DataBackupScreen';
 import { AppStatusScreen } from '../screens/profile/AppStatusScreen';
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
+import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ProgressScreen } from '../screens/ProgressScreen';
 import { SetupScreen } from '../screens/setup/SetupScreen';
@@ -59,6 +60,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="ProfileHome" component={ProfileScreen} options={{ title: 'Profile', headerLargeTitle: true }} />
       <ProfileStack.Screen name="DataBackup" component={DataBackupScreen} options={{ title: 'Data & backup' }} />
       <ProfileStack.Screen name="AppStatus" component={AppStatusScreen} options={{ title: 'App status' }} />
+      <ProfileStack.Screen name="PainFlags" component={PainFlagsScreen} options={{ title: 'Pain flags' }} />
       <ProfileStack.Screen name="Developer" component={DeveloperScreen} options={{ title: 'Developer' }} />
       <ProfileStack.Screen name="CapabilityProbe" component={ProbeRoute} options={{ headerShown: false }} />
     </ProfileStack.Navigator>

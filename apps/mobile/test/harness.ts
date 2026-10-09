@@ -139,14 +139,21 @@ export async function logWorkout(h: Harness, s: AppServices, gymId: string, plan
     if (!added.ok) throw new Error(added.error.message);
     const ex = added.aggregate.exercises.at(-1);
     if (!ex) throw new Error('no exercise');
-    for (let i = 1; i < item.sets.length; i += 1) {
+    // Sets may already be planned (built-in rule); add or remove to match.
+    let own = added.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id);
+    for (let i = own.length; i < item.sets.length; i += 1) {
       const r = await s.workout.dispatch(sessionId, { type: 'add_set', at: h.now(), opId: h.ids(), sessionExerciseId: ex.id, newSetId: h.ids(), setType: null });
       if (!r.ok) throw new Error(r.error.message);
+      own = r.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id);
     }
-    for (const set of item.sets) {
-      const data = await s.workout.load(sessionId);
-      const focus = data ? s.workout.view(data, h.clockMs, null).focus : null;
-      if (!focus) throw new Error('no focus');
+    for (const extra of own.slice(item.sets.length)) {
+      const r = await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: h.ids(), setId: extra.id, expectedSetVersion: extra.version });
+      if (!r.ok) throw new Error(r.error.message);
+    }
+    const ordered = [...own].sort((a, b) => a.index - b.index).slice(0, item.sets.length);
+    for (const [i, set] of item.sets.entries()) {
+      const target = ordered[i];
+      if (!target) throw new Error('no set');
       h.clockMs += 60_000;
       const values = {
         load: set.load === null ? null : { value: set.load, unit: ex.unit, convention: ex.loadConvention },
@@ -155,7 +162,7 @@ export async function logWorkout(h: Harness, s: AppServices, gymId: string, plan
         rpe: set.rpe ?? null,
         rir: null,
       };
-      const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: focus.opId, setId: focus.setId, values, restTimerId: h.ids() });
+      const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log:${target.id}:0`, setId: target.id, values, restTimerId: h.ids() });
       if (!r.ok) throw new Error(r.error.message);
     }
   }

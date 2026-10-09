@@ -694,7 +694,36 @@ export function WorkoutScreen() {
               {focus.target ?? 'No target for this set'}
             </AppText>
             {focus.offProfileWarning ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={focus.offProfileWarning} /> : null}
-            {focus.painFlagged ? <StatusLine icon="exclamationmark.triangle" tone="warning" text="Pain flag: no increases" /> : null}
+            {focus.painFlagged ? (
+              <StatusLine
+                icon="exclamationmark.triangle"
+                tone="warning"
+                text="Pain flag: no increases"
+                action={
+                  <TextButton
+                    label="Clear"
+                    onPress={() => {
+                      // Only Ben clears a flag (rule 9); targets already planned stay as they are.
+                      Alert.alert(`Clear the pain flag for ${focus.exerciseName}?`, 'Its targets can go up again from the next workout.', [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Clear',
+                          onPress: () => {
+                            void services.pain
+                              .active()
+                              .then((flags) => services.pain.clear(flags.filter((f) => f.exerciseId === focus.exerciseId).map((f) => f.id)))
+                              .then(() => {
+                                changed();
+                                void reload();
+                              });
+                          },
+                        },
+                      ]);
+                    }}
+                  />
+                }
+              />
+            ) : null}
 
             {focus.side ? (
               focus.side.kind === 'fixed' ? (

@@ -25,8 +25,8 @@ export function ProfileScreen() {
   const install = useInstallStatus();
   const probe = useProbeResults();
   const [data, reload] = useScreenData(async (s) => {
-    const [backup, banners] = await Promise.all([s.backups.getStatus(), loadBanners(s, install)]);
-    return { backup, banners };
+    const [backup, banners, pain] = await Promise.all([s.backups.getStatus(), loadBanners(s, install), s.pain.active()]);
+    return { backup, banners, pain };
   });
   useEffect(() => {
     reload();
@@ -49,6 +49,18 @@ export function ProfileScreen() {
           secondLine={data.state === 'ready' ? data.value.backup.offPhone.line.text : null}
           onPress={() => {
             navigation.navigate('DataBackup');
+          }}
+        />
+      </Group>
+
+      <SectionHeader title="Training" />
+      <Group>
+        <Row
+          title="Pain flags"
+          icon="exclamationmark.triangle"
+          subtitle={data.state === 'ready' ? (data.value.pain.length === 0 ? 'None' : `${String(data.value.pain.length)} active: ${data.value.pain.map((f) => f.exerciseName).join(', ')}`) : null}
+          onPress={() => {
+            navigation.navigate('PainFlags');
           }}
         />
       </Group>

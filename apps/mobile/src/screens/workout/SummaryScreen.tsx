@@ -12,7 +12,7 @@ import { popToTabs, popToToday } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, BottomBar, Card, Chip, ChipRow, Icon, LinkLine, PrimaryButton, SecondaryButton, SectionHeader, StatusLine, Tag, TextButton } from '../../ui';
+import { AppText, BottomBar, Card, Chip, ChecklistRow, ChipRow, Icon, LinkLine, PrimaryButton, SecondaryButton, SectionHeader, StatusLine, Tag, TextButton } from '../../ui';
 import { stepTime } from '../../workout/finish';
 
 /**
@@ -24,13 +24,15 @@ import { stepTime } from '../../workout/finish';
 export function SummaryScreen() {
   const theme = useTheme();
   const changed = useDataChanged();
+  const services = useServices();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { sessionId } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
   const [times, setTimes] = useState(false);
+  const [choosePain, setChoosePain] = useState(false);
   const [data, reload] = useScreenData(async (s) => {
-    const [summary, backup] = await Promise.all([s.workout.summary(sessionId), s.backups.getStatus()]);
-    return { summary, backup };
+    const [summary, backup, painFlags] = await Promise.all([s.workout.summary(sessionId), s.backups.getStatus(), s.pain.active()]);
+    return { summary, backup, painFlags };
   });
 
   const done = () => {
@@ -53,7 +55,8 @@ export function SummaryScreen() {
       </View>
     );
   }
-  const { summary: sum, backup } = data.value;
+  const { summary: sum, backup, painFlags } = data.value;
+  const flaggedHere = painFlags.filter((f) => sum.exercises.some((e) => e.exerciseId === f.exerciseId));
   const tz = sum.tz;
   const range = `${formatTime(toMs(sum.startedAtUtc), tz)}–${sum.endedAtUtc ? formatTime(toMs(sum.endedAtUtc), tz) : ''}`;
   const edited = sum.timingEdited.end ? ' (end time edited)' : sum.timingEdited.start ? ' (start time edited)' : '';
@@ -115,13 +118,46 @@ export function SummaryScreen() {
               </AppText>
             ) : null}
             {sum.checkIn.note ? (
-              <AppText variant="callout" color="text.secondary" numberOfLines={2}>{`“${sum.checkIn.note}”`}</AppText>
+              // The note exactly as given, never cut off (review S4).
+              <AppText variant="callout" color="text.secondary">{`“${sum.checkIn.note}”`}</AppText>
             ) : null}
             {sum.checkIn.painNotFlagged ? (
-              <StatusLine icon="exclamationmark.triangle" tone="warning" text="You mentioned pain before this workout. Flag the movements that hurt so loads don’t go up." detail="Choosing movements here comes with the pain flags screen; you can flag them from the next check-in." />
+              <StatusLine
+                icon="exclamationmark.triangle"
+                tone="warning"
+                text="You mentioned pain before this workout. Flag the movements that hurt so their loads don’t go up."
+                detail="Until you do, no exercise in this workout is increased next time."
+                action={
+                  <TextButton
+                    label="Choose movements"
+                    onPress={() => {
+                      setChoosePain(true);
+                    }}
+                  />
+                }
+              />
             ) : null}
           </View>
         ) : null}
+
+        {flaggedHere.map((f) => (
+          <StatusLine
+            key={f.id}
+            icon="exclamationmark.triangle"
+            tone="warning"
+            text={`Pain flag: ${f.exerciseName} · no increases`}
+            action={
+              <TextButton
+                label="Clear"
+                onPress={() => {
+                  void services.pain.clear([f.id]).then(() => {
+                    changed();
+                  });
+                }}
+              />
+            }
+          />
+        ))}
 
         <View style={{ gap: theme.space['2'] }}>
           <Fact label="Active time" value={sum.facts.activeText} />
@@ -207,6 +243,18 @@ export function SummaryScreen() {
         }}
         onSaved={() => {
           setTimes(false);
+          changed();
+          reload();
+        }}
+      />
+      <PainChooseSheet
+        summary={sum}
+        visible={choosePain}
+        onClose={() => {
+          setChoosePain(false);
+        }}
+        onSaved={() => {
+          setChoosePain(false);
           changed();
           reload();
         }}
@@ -322,8 +370,9 @@ function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: Worko
       at,
       opId,
       expectedVersion: summary.sessionVersion,
-      startedAt: startChanged ? { utc: toIso(start), tz: at.tz } : null,
-      endedAt: endChanged ? { utc: toIso(end), tz: at.tz } : null,
+      // The workout's own zone, not the phone's current one (review N6).
+      startedAt: startChanged ? { utc: toIso(start), tz } : null,
+      endedAt: endChanged ? { utc: toIso(end), tz } : null,
     });
     if (!r.ok) {
       setError(r.error.code === 'stale_version' ? 'The workout changed. Close and try again.' : r.error.message);
@@ -361,6 +410,56 @@ function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: Worko
         </AppText>
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
         <PrimaryButton label="Save" onPress={() => void save()} />
+        <TextButton label="Cancel" tone="secondary" onPress={onClose} />
+      </ScrollView>
+    </Modal>
+  );
+}
+
+/** Summary `Choose movements` (check-in.md CI8): flag the exercises that hurt; the rest progress again. */
+function PainChooseSheet({ summary, visible, onClose, onSaved }: { summary: WorkoutSummary; visible: boolean; onClose: () => void; onSaved: () => void }) {
+  const theme = useTheme();
+  const services = useServices();
+  const insets = useSafeAreaInsets();
+  const [picked, setPicked] = useState<string[]>([]);
+  const [opId] = useState(newUuid);
+  const [error, setError] = useState<string | null>(null);
+  async function save() {
+    const id = summary.checkIn?.checkInId;
+    const checkIn = id ? await services.checkIns.get(id) : null;
+    if (!checkIn) {
+      setError('That check-in wasn’t found.');
+      return;
+    }
+    const exercises = summary.exercises.filter((e) => picked.includes(e.exerciseId)).map((e) => ({ id: e.exerciseId, name: e.name }));
+    const r = await services.pain.flagFromCheckIn({ checkIn, exercises, area: null, opId });
+    if (!r.ok) {
+      setError(r.message);
+      return;
+    }
+    onSaved();
+  }
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <ScrollView style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }} contentContainerStyle={{ padding: theme.space['4'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['3'] }}>
+        <AppText variant="title2" accessibilityRole="header">
+          Which movements hurt?
+        </AppText>
+        <AppText variant="callout" color="text.secondary">
+          Flagged movements won’t go up until you clear the flag in Profile › Pain flags.
+        </AppText>
+        {summary.exercises.map((e) => (
+          <ChecklistRow
+            key={e.sessionExerciseId}
+            title={e.name}
+            checked={picked.includes(e.exerciseId)}
+            onToggle={() => {
+              setPicked((p) => (p.includes(e.exerciseId) ? p.filter((x) => x !== e.exerciseId) : [...p, e.exerciseId]));
+            }}
+          />
+        ))}
+        {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
+        <PrimaryButton label={picked.length === 0 ? 'Choose at least one' : `Flag ${String(picked.length)} ${picked.length === 1 ? 'movement' : 'movements'}`} disabled={picked.length === 0} onPress={() => void save()} />
         <TextButton label="Cancel" tone="secondary" onPress={onClose} />
       </ScrollView>
     </Modal>

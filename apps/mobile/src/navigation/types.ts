@@ -6,6 +6,7 @@ export type ProfileStackParams = {
   AppStatus: undefined;
   Developer: undefined;
   CapabilityProbe: undefined;
+  PainFlags: undefined;
 };
 
 export type TabParams = {
