@@ -12,6 +12,7 @@ import {
   valuesText,
 } from '../display';
 import { getAchievableLoads, isLoadAchievable, loadDirection, stepLoad } from '../equipment';
+import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import type { HistorySession } from '../progression';
 import { toMs } from '../time';
 import { buildExecutionOrder, nextPendingSet } from './order';
@@ -123,6 +124,10 @@ export interface FocusView {
   restAfterS: number;
   /** Where the rest came from (`Heavy preset (Bench press, working sets)`), shown only in the Rest after editor. */
   restSourceLabel: string;
+  /** `20 bar + 25 + 10 + 2.5 / side` for the load about to be logged (barbell and plate-loaded only). */
+  plateLine: string | null;
+  /** Built-in warm-up ramp suggestion on the first barbell exercise's first working set; labelled and skippable. */
+  warmUp: string | null;
   rows: SetRowView[];
   next: { kind: 'exercise'; name: string; target: string | null } | { kind: 'last_set' } | null;
   /** Null when a value is missing. */
@@ -366,6 +371,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     side,
     restAfterS: set.rest.seconds,
     restSourceLabel: set.rest.sourceLabel,
+    plateLine: plateBreakdownLine(logValues.load, eq),
+    warmUp: eq !== null && showsWarmUp(state, set.id) ? warmUpText(warmUpRamp(logValues.load ?? set.planned.load, eq), eq) : null,
     rows: own.map((s, i) => {
       const { status, text } = rowText(s, ex, eq, s.id === set.id);
       return {

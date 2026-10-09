@@ -7,6 +7,7 @@ import { loadDirection } from '../equipment';
 import type { HistorySession, NextTargets } from '../progression';
 import { toIso, toMs } from '../time';
 import { lastComparableSession } from './active-view';
+import { summaryHighlight } from '../touches';
 import { getActiveDurationMs } from './view';
 import { summariseVolume } from './volume';
 
@@ -72,6 +73,8 @@ export interface WorkoutSummary {
   nextTime: { sourceTag: string; rows: NextTimeRow[]; emptyText: string | null } | null;
   /** No working sets: the comparison and next-time sections are hidden; Discard is offered. */
   empty: boolean;
+  /** One like-for-like highlight (`Heaviest Bench press set on Olympic bar: 102.5 kg × 6`), or null. Never invented. */
+  highlight: string | null;
   /** Bounds for `Edit times` (`update_session_timing`). */
   timingBounds: { startLatestUtc: string; endEarliestUtc: string; endLatestUtc: string };
   lastCompletedAtUtc: string | null;
@@ -267,6 +270,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
         ? null
         : { sourceTag: BUILT_IN_SOURCE_TAG[input.coach], rows, emptyText: rows.length === 0 ? 'No target changes. Same targets next time.' : null },
     empty: workingSets === 0,
+    highlight: workingSets === 0 ? null : summaryHighlight(state, input.history),
     timingBounds: {
       startLatestUtc: firstDone ?? (s.endedAt?.utc ?? nowIso),
       endEarliestUtc: lastDone ?? s.startedAt.utc,

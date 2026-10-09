@@ -233,8 +233,12 @@ export function TalkButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-/** `ActionBar` (§9.1): Talk + the one primary action, fixed at the bottom, on the keyboard when open. */
-export function ActionBar({ talk, primary, guard }: { talk: ReactNode; primary: { label: string; onPress: () => void; disabled?: boolean; busy?: boolean }; guard?: boolean }) {
+/**
+ * `ActionBar` (§9.1): the one primary action, fixed at the bottom, on the
+ * keyboard when open. Talk is passed only once voice exists; until then the
+ * bar has no dead control (critic T3).
+ */
+export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; primary: { label: string; onPress: () => void; disabled?: boolean; busy?: boolean }; guard?: boolean }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (

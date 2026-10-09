@@ -1,16 +1,17 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toIso, toMs, type NextTimeRow, type WorkoutSummary } from '@fizz/domain';
 
 import { nowMs as clockNow } from '../../clock';
+import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatShortDate, formatTime } from '../../format/dates';
 import { popToTabs, popToToday } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
-import { useDataChanged, useScreenData, useServices } from '../../shell/context';
+import { firstTime, useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, BottomBar, Card, Chip, ChecklistRow, ChipRow, Icon, LinkLine, PrimaryButton, SecondaryButton, SectionHeader, StatusLine, Tag, TextButton } from '../../ui';
 import { stepTime } from '../../workout/finish';
@@ -38,6 +39,13 @@ export function SummaryScreen() {
   const done = () => {
     navigation.dispatch(popToToday());
   };
+
+  // One success haptic when a just-finished workout's summary first shows (critic #10).
+  const endedUtc = data.state === 'ready' ? (data.value.summary?.endedAtUtc ?? null) : null;
+  useEffect(() => {
+    if (endedUtc === null) return;
+    if (clockNow() - toMs(endedUtc) < 5 * 60_000 && firstTime(`summary-success:${sessionId}`)) haptic('commit');
+  }, [endedUtc, sessionId]);
 
   if (data.state === 'loading') return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
   if (data.state === 'error' || data.value.summary === null) {
@@ -98,6 +106,17 @@ export function SummaryScreen() {
             {[formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`].filter(Boolean).join(' · ')}
           </AppText>
         </View>
+
+        {sum.highlight ? (
+          <View style={{ gap: theme.space['1'], borderTopWidth: theme.dividerWidth, borderBottomWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'], paddingVertical: theme.space['3'] }}>
+            <AppText variant="label" color="text.secondary">
+              Today
+            </AppText>
+            <AppText variant="title2" numeric>
+              {sum.highlight}
+            </AppText>
+          </View>
+        ) : null}
 
         {sum.checkIn ? (
           <View style={{ gap: theme.space['1'] }}>

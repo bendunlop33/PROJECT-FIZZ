@@ -30,7 +30,6 @@ import {
   NumberStepper,
   SecondaryButton,
   StatusLine,
-  TalkButton,
   TextButton,
   Toast,
   type SymbolName,
@@ -82,6 +81,7 @@ export function WorkoutScreen() {
   const [finishOpen, setFinishOpen] = useState(false);
   const [timesOpen, setTimesOpen] = useState(false);
   const [restEditor, setRestEditor] = useState(false);
+  const [hiddenWarmUps, setHiddenWarmUps] = useState<string[]>([]);
   const [permission, setPermission] = useState<AlertPermission | 'unknown'>('unknown');
   const [askLater, setAskLater] = useState(false);
   const [restoredDraft, setRestoredDraft] = useState<string | null>(null);
@@ -442,10 +442,6 @@ export function WorkoutScreen() {
     else await run({ type: 'resume', at: services.now(), opId: `resume:${session.id}:${n}` });
   }
 
-  function talk() {
-    Alert.alert('Not in this build', 'Voice and the coach aren’t in this build yet. Logging, targets and rest timers work without them.');
-  }
-
   const primary = (() => {
     switch (view.primary.kind) {
       case 'log':
@@ -639,6 +635,27 @@ export function WorkoutScreen() {
               </View>
             ) : null}
 
+            {focus.warmUp && !hiddenWarmUps.includes(focus.sessionExerciseId) ? (
+              <Card>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+                  <Icon name="flame" size={16} />
+                  <AppText variant="label" color="text.secondary" style={{ flex: 1 }}>
+                    Warm-up suggestion (built-in, not logged)
+                  </AppText>
+                  <TextButton
+                    label="Hide"
+                    tone="secondary"
+                    onPress={() => {
+                      setHiddenWarmUps((h) => [...h, focus.sessionExerciseId]);
+                    }}
+                  />
+                </View>
+                <AppText variant="body" numeric>
+                  {focus.warmUp}
+                </AppText>
+              </Card>
+            ) : null}
+
             {focus.previous ? (
               <LinkLine
                 accessibilityLabel={`Last time, ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}: ${focus.previous.text}. Tap to copy.`}
@@ -686,6 +703,11 @@ export function WorkoutScreen() {
                 />
               ) : null}
             </View>
+            {focus.plateLine ? (
+              <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={`Plates: ${focus.plateLine}`}>
+                {focus.plateLine}
+              </AppText>
+            ) : null}
             {draftCaption ? (
               <AppText variant="callout" color="text.secondary">
                 {draftCaption}
@@ -798,7 +820,8 @@ export function WorkoutScreen() {
       </ScrollView>
 
       {toast ? <Toast {...(toast.icon ? { icon: toast.icon } : {})} text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
-      <ActionBar talk={<TalkButton onPress={talk} />} primary={primary} guard={guard} />
+      {/* No Talk button until voice exists (critic T3): no dead control in the best thumb spot. */}
+      <ActionBar primary={primary} guard={guard} />
 
       <FinishSheet
         aggregate={loaded.aggregate}
