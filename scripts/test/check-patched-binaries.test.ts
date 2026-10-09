@@ -43,7 +43,9 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-describe('check-patched-binaries.sh', () => {
+// These tests run the real shell script; the failure path also runs the
+// diagnostic tools (otool, strings, ...), which took 6.5 s on a GitHub runner.
+describe('check-patched-binaries.sh', { timeout: 30_000 }, () => {
   it('passes when the app and extension executables contain the patch', () => {
     const r = run(fakeApp({ Fizz: machO('parentAltAppGroups'), [`${APPEX}/ExpoWidgetsTarget`]: machO('FizzAppGroupResolver') }));
     expect(r.out).toContain('Patched expo-widgets is in the code the app and the extension run');
