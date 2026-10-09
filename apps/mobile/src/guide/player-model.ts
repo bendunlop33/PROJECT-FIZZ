@@ -4,9 +4,11 @@
  *
  * - `animate`: the guide loops at its own tempo, autoplay stopping after
  *   `MAX_AUTOPLAY_PASSES` with `Replay`; `Pause` always available.
- * - `steps`: the static key frames (start, middle, end…) one at a time with
- *   Previous/Next. The default with Reduce Motion on (research §5.7); Ben can
- *   still choose `Play animation`.
+ * - `steps`: the still view: the key positions (start, middle, end…) one at a
+ *   time with Previous/Next. The default with Reduce Motion on (research
+ *   §5.7); Ben can still choose `Play animation`. A guide with no labelled
+ *   key positions shows its first frame still (spec §8.9 P6): Reduce Motion
+ *   never autoplays.
  */
 export type PlayerMode = 'animate' | 'steps';
 
@@ -16,7 +18,7 @@ export interface PlayerState {
   paused: boolean;
   /** Autoplay finished its passes; showing the first frame with Replay. */
   finished: boolean;
-  /** Current key frame in `steps` mode. */
+  /** Current key position in `steps` mode (0 when there are none). */
   step: number;
   stepCount: number;
   /** Bumped when the clock must restart from the first frame (Replay, Play animation). */
@@ -32,7 +34,7 @@ export type PlayerAction =
   | { type: 'reduce_motion'; on: boolean };
 
 export function initialPlayerState(reduceMotion: boolean, stepCount: number): PlayerState {
-  return { mode: reduceMotion && stepCount > 0 ? 'steps' : 'animate', paused: false, finished: false, step: 0, stepCount, run: 0 };
+  return { mode: reduceMotion ? 'steps' : 'animate', paused: false, finished: false, step: 0, stepCount, run: 0 };
 }
 
 export function playerReducer(s: PlayerState, a: PlayerAction): PlayerState {
@@ -50,12 +52,13 @@ export function playerReducer(s: PlayerState, a: PlayerAction): PlayerState {
       return step === s.step ? s : { ...s, step };
     }
     case 'show_steps':
+      // The `Key positions` button only exists when there are some.
       return s.stepCount === 0 || s.mode === 'steps' ? s : { ...s, mode: 'steps', step: 0 };
     case 'show_animation':
       return s.mode === 'animate' ? s : { ...s, mode: 'animate', paused: false, finished: false, run: s.run + 1 };
     case 'reduce_motion':
       // Turning Reduce Motion on stops the animation at once; turning it off never starts one by itself.
-      return a.on && s.mode === 'animate' && s.stepCount > 0 ? { ...s, mode: 'steps', step: 0 } : s;
+      return a.on && s.mode === 'animate' ? { ...s, mode: 'steps', step: 0 } : s;
   }
 }
 
@@ -82,4 +85,22 @@ export function playControlLabel(s: PlayerState): 'Pause' | 'Play' | 'Replay' {
 /** `2 of 3 · Bottom` for the steps view. */
 export function stepPosition(s: PlayerState, label: string): string {
   return `${String(s.step + 1)} of ${String(s.stepCount)} · ${label}`;
+}
+
+/** The still view's VoiceOver label: `Key position 2 of 3, Bottom. Hips just below knees.` (spec §8.9 P2). */
+export function stepAccessibilityLabel(s: PlayerState, stop: { label: string; caption?: string | null | undefined }): string {
+  const head = `Key position ${String(s.step + 1)} of ${String(s.stepCount)}, ${stop.label}.`;
+  return stop.caption ? `${head} ${stop.caption}` : head;
+}
+
+/**
+ * What VoiceOver should announce after a button changed the key position
+ * (review N6): focus stays on `Next`, so the new position isn't otherwise
+ * read. Null when nothing visible changed (e.g. `Next` on the last one).
+ */
+export function stepAnnouncement(prev: PlayerState, next: PlayerState, stops: readonly { label: string; caption?: string | null | undefined }[]): string | null {
+  if (next.mode !== 'steps') return null;
+  if (prev.mode === 'steps' && prev.step === next.step) return null;
+  const stop = stops[next.step];
+  return stop ? stepAccessibilityLabel(next, stop) : null;
 }

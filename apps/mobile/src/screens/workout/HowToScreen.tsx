@@ -8,7 +8,7 @@ import { buildHowToView, bundledHowToSources, howToLayout } from '../../guide/ho
 import { loadGuidePlayer } from '../../guide/load-player';
 import type { RootStackParams } from '../../navigation/types';
 import { useTheme } from '../../theme';
-import { AppText, Card, SectionHeader, StatusLine, TextButton } from '../../ui';
+import { AppText, Card, SectionHeader, StatusLine, Tag, TextButton } from '../../ui';
 
 /** Largest guide canvas; it stays legible down to about 240 pt (the narrowest phone with margins). */
 const MAX_GUIDE_SIZE = 360;
@@ -32,8 +32,8 @@ function CueList({ items }: { items: readonly string[] }) {
 }
 
 /**
- * How to (ADR 0013): the exercise's animated guide, key positions, cues and
- * common mistakes, from the bundled catalogue (Coaching knowledge; works
+ * How to (ADR 0013): the exercise's animated guide, key positions, cues,
+ * common mistakes and safety notes, from the bundled catalogue (Coaching knowledge; works
  * offline). Opened from the active workout's exercise menu and the exercise
  * picker. Exercises without a guide show their text cues only.
  *
@@ -112,6 +112,9 @@ export function HowToScreen() {
           <StatusLine key={text} icon="info.circle" tone="info" text={text} />
         ))}
 
+        {/* Unapproved text shown without the player's own `Draft guide` tag (spec §8.9 P5). */}
+        {layout.textDraftLabel ? <Tag text={layout.textDraftLabel} /> : null}
+
         {view.guide && view.guide.stops.length > 0 ? (
           <View style={{ gap: theme.space['2'] }}>
             <SectionHeader title="Key positions" />
@@ -144,6 +147,19 @@ export function HowToScreen() {
           <View style={{ gap: theme.space['2'] }}>
             <SectionHeader title="Common mistakes" />
             <CueList items={view.mistakes} />
+          </View>
+        ) : null}
+        {/* Reference text from the catalogue entry (spec §8.9 P1). No status colour; it never names a condition (rule 9). */}
+        {view.safety.notes.length > 0 || view.safety.stopIf.length > 0 ? (
+          <View style={{ gap: theme.space['2'] }}>
+            <SectionHeader title="Safety" />
+            <CueList items={view.safety.notes} />
+            {view.safety.stopIf.length > 0 ? (
+              <>
+                <AppText variant="headline">Stop the set if:</AppText>
+                <CueList items={view.safety.stopIf} />
+              </>
+            ) : null}
           </View>
         ) : null}
       </ScrollView>

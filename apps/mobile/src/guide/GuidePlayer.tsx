@@ -1,6 +1,6 @@
 import { Canvas, Fill, Group, Picture, rect, rrect, type SkPicture } from '@shopify/react-native-skia';
 import { useCallback, useEffect, useMemo, useReducer, useState, type ReactNode } from 'react';
-import { AppState, View } from 'react-native';
+import { AccessibilityInfo, AppState, View } from 'react-native';
 import { useDerivedValue, useFrameCallback, useSharedValue, type FrameInfo, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
@@ -12,7 +12,7 @@ import { AppText, SecondaryButton, Tag, TextButton } from '../ui';
 import { bakeKey, bakeTasks, cachedBake, storeBake, type BakeKind } from './bake';
 import { advanceClock, frameIndexAt } from './clock';
 import type { HowToGuide } from './how-to';
-import { initialPlayerState, isRunning, playControlLabel, playerReducer, stepPosition } from './player-model';
+import { initialPlayerState, isRunning, playControlLabel, playerReducer, stepAccessibilityLabel, stepAnnouncement, stepPosition, type PlayerAction } from './player-model';
 import { runSliced } from './sliced';
 
 /** Longest stretch of baking before the JS thread yields (one 120 Hz frame is ~8 ms). */
@@ -116,7 +116,8 @@ interface Props {
  * `ExerciseGuide` (ADR 0013, research §5.4 and §5.7): an original figure
  * animation drawn with Skia from the shared draw ops, animated on the UI
  * thread. Neutral tokens only (never the accent) and no text in the art.
- * Under Reduce Motion it shows the key frames, one at a time.
+ * Under Reduce Motion it shows the key positions, one at a time (or the first
+ * frame still, if the guide labels none), and never autoplays.
  */
 export function GuidePlayer({ guide, size, visible }: Props) {
   const theme = useTheme();
@@ -127,6 +128,12 @@ export function GuidePlayer({ guide, size, visible }: Props) {
     dispatch({ type: 'reduce_motion', on: reduceMotion });
   }, [reduceMotion]);
   const appActive = useAppActive();
+  /** A button press; VoiceOver hears the new key position, since focus stays on the button (review N6). */
+  const press = (action: PlayerAction) => {
+    const announcement = stepAnnouncement(state, playerReducer(state, action), stops);
+    dispatch(action);
+    if (announcement !== null) AccessibilityInfo.announceForAccessibility(announcement);
+  };
 
   const style = useMemo<GuideStyle>(() => {
     const tokens = {} as GuideTokens;
@@ -201,7 +208,7 @@ export function GuidePlayer({ guide, size, visible }: Props) {
       </View>
 
       {stop ? (
-        <View accessible accessibilityLabel={`Key frame ${String(state.step + 1)} of ${String(state.stepCount)}, ${stop.label}. ${stop.caption ?? ''}`} style={{ gap: theme.space['1'] }}>
+        <View accessible accessibilityLabel={stepAccessibilityLabel(state, stop)} style={{ gap: theme.space['1'] }}>
           <AppText variant="headline" numeric>
             {stepPosition(state, stop.label)}
           </AppText>
@@ -227,11 +234,11 @@ export function GuidePlayer({ guide, size, visible }: Props) {
           {stops.length > 0 ? (
             <View style={{ flexGrow: 1, flexBasis: 140 }}>
               <SecondaryButton
-                label="Key frames"
+                label="Key positions"
                 icon="rectangle.split.3x1"
                 accessibilityHint="Shows the key positions one at a time, without animation."
                 onPress={() => {
-                  dispatch({ type: 'show_steps' });
+                  press({ type: 'show_steps' });
                 }}
               />
             </View>
@@ -239,28 +246,31 @@ export function GuidePlayer({ guide, size, visible }: Props) {
         </View>
       ) : (
         <View style={{ gap: theme.space['2'] }}>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['3'] }}>
-            <View style={{ flexGrow: 1, flexBasis: 140 }}>
-              <SecondaryButton
-                label="Previous"
-                icon="chevron.left"
-                disabled={state.step === 0}
-                onPress={() => {
-                  dispatch({ type: 'step', delta: -1 });
-                }}
-              />
+          {/* No labelled key positions (P6): just the still first frame and Play animation. */}
+          {state.stepCount > 0 ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['3'] }}>
+              <View style={{ flexGrow: 1, flexBasis: 140 }}>
+                <SecondaryButton
+                  label="Previous"
+                  icon="chevron.left"
+                  disabled={state.step === 0}
+                  onPress={() => {
+                    press({ type: 'step', delta: -1 });
+                  }}
+                />
+              </View>
+              <View style={{ flexGrow: 1, flexBasis: 140 }}>
+                <SecondaryButton
+                  label="Next"
+                  icon="chevron.right"
+                  disabled={state.step >= state.stepCount - 1}
+                  onPress={() => {
+                    press({ type: 'step', delta: 1 });
+                  }}
+                />
+              </View>
             </View>
-            <View style={{ flexGrow: 1, flexBasis: 140 }}>
-              <SecondaryButton
-                label="Next"
-                icon="chevron.right"
-                disabled={state.step >= state.stepCount - 1}
-                onPress={() => {
-                  dispatch({ type: 'step', delta: 1 });
-                }}
-              />
-            </View>
-          </View>
+          ) : null}
           <TextButton
             label="Play animation"
             icon="play"

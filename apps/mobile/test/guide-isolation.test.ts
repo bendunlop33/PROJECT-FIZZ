@@ -112,20 +112,20 @@ describe('How to fallback when the player fails', () => {
   const squat = buildHowToView({ name: 'Back squat', catalogueKey: 'barbell-back-squat' }, src);
 
   it('shows the player while it works', () => {
-    expect(howToLayout(squat, false)).toEqual({ showPlayer: true, notices: [] });
+    expect(howToLayout(squat, false)).toEqual({ showPlayer: true, notices: [], textDraftLabel: null });
   });
 
   it('drops the player and keeps the cues, with one honest line', () => {
-    expect(howToLayout(squat, true)).toEqual({ showPlayer: false, notices: ['The animated guide couldn’t be shown. The cues below still apply.'] });
+    expect(howToLayout(squat, true)).toEqual({ showPlayer: false, notices: ['The animated guide couldn’t be shown. The cues below still apply.'], textDraftLabel: 'Draft' });
   });
 
   it('never claims cues that are not there', () => {
-    const bare: HowToView = { ...squat, guide: squat.guide && { ...squat.guide, stops: [] }, setup: [], execution: [], mistakes: [], notice: null };
+    const bare: HowToView = { ...squat, guide: squat.guide && { ...squat.guide, stops: [] }, setup: [], execution: [], mistakes: [], safety: { notes: [], stopIf: [] }, textDraftLabel: null, notice: null };
     expect(howToLayout(bare, true).notices).toEqual(['The animated guide couldn’t be shown.']);
   });
 
   it('without a guide nothing changes, failed or not', () => {
     const none = buildHowToView({ name: 'Landmine twist', catalogueKey: null }, src);
-    expect(howToLayout(none, true)).toEqual({ showPlayer: false, notices: ['No how-to for Landmine twist yet.'] });
+    expect(howToLayout(none, true)).toEqual({ showPlayer: false, notices: ['No how-to for Landmine twist yet.'], textDraftLabel: null });
   });
 });

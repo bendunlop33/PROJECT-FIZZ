@@ -8,8 +8,9 @@ import { bakeFrame, GUIDE_TOKEN_NAMES, guideStyleFromTokens, type DrawOp, type G
 
 import { advanceClock, frameIndexAt, MAX_AUTOPLAY_PASSES, passMs } from '../src/guide/clock';
 import { planOp, svgPathData } from '../src/guide/draw-plan';
-import { buildHowToView, bundledHowToSources, DRAFT_GUIDE_LABEL, guideDraftLabel, hasHowTo, howToKeyForExerciseId, type HowToSources } from '../src/guide/how-to';
-import { initialPlayerState, isRunning, playControlLabel, playerReducer, stepPosition, type PlayerAction, type PlayerState } from '../src/guide/player-model';
+import { BUNDLED_GUIDE_FILES } from '../../../packages/catalogue/src/generated/guide-files';
+import { buildHowToView, bundledHowToSources, DRAFT_GUIDE_LABEL, guideDraftLabel, hasHowTo, howToKeyForExerciseId, howToLayout, type HowToSources } from '../src/guide/how-to';
+import { initialPlayerState, isRunning, playControlLabel, playerReducer, stepAccessibilityLabel, stepAnnouncement, stepPosition, type PlayerAction, type PlayerState } from '../src/guide/player-model';
 import { runSliced } from '../src/guide/sliced';
 import { resolveTheme, THEME_DIRECTIONS } from '../src/theme/tokens';
 
@@ -69,11 +70,41 @@ describe('player state', () => {
   const run = (s: PlayerState, ...actions: PlayerAction[]) => actions.reduce(playerReducer, s);
   const env = { visible: true, appActive: true, framesReady: true };
 
-  it('animates by default; Reduce Motion starts on the key frames instead', () => {
+  it('animates by default; Reduce Motion starts on the key positions instead', () => {
     expect(initialPlayerState(false, 3)).toMatchObject({ mode: 'animate', step: 0 });
     expect(initialPlayerState(true, 3)).toMatchObject({ mode: 'steps', step: 0, stepCount: 3 });
-    // Nothing to step through: the animation is all there is.
-    expect(initialPlayerState(true, 0).mode).toBe('animate');
+  });
+
+  it('Reduce Motion never autoplays, even with no labelled key positions: a still first frame until Play animation (P6)', () => {
+    const s = initialPlayerState(true, 0);
+    expect(s).toMatchObject({ mode: 'steps', step: 0, stepCount: 0 });
+    expect(isRunning(s, env)).toBe(false);
+    expect(run(s, { type: 'step', delta: 1 })).toBe(s);
+    const playing = run(s, { type: 'show_animation' });
+    expect(isRunning(playing, env)).toBe(true);
+    // Reduce Motion turned on mid-play stops it the same way.
+    expect(run(initialPlayerState(false, 0), { type: 'reduce_motion', on: true })).toMatchObject({ mode: 'steps', step: 0 });
+  });
+
+  it('says "key position" to VoiceOver and announces each step a button makes (P2, review N6)', () => {
+    const stops = [
+      { label: 'Start', caption: 'Stand tall, brace' },
+      { label: 'Halfway', caption: null },
+      { label: 'Bottom', caption: 'Hips just below knees' },
+    ];
+    const s = initialPlayerState(true, 3);
+    expect(stepAccessibilityLabel(s, stops[0] ?? { label: '' })).toBe('Key position 1 of 3, Start. Stand tall, brace');
+    const next = run(s, { type: 'step', delta: 1 });
+    expect(stepAnnouncement(s, next, stops)).toBe('Key position 2 of 3, Halfway.');
+    // Previous on the first, Next on the last: nothing changed, nothing announced.
+    expect(stepAnnouncement(s, run(s, { type: 'step', delta: -1 }), stops)).toBeNull();
+    // Key positions from the animation lands on position 1 and says so.
+    const anim = initialPlayerState(false, 3);
+    expect(stepAnnouncement(anim, run(anim, { type: 'show_steps' }), stops)).toBe('Key position 1 of 3, Start. Stand tall, brace');
+    // Back to the animation: nothing to announce (the canvas label covers it).
+    expect(stepAnnouncement(next, run(next, { type: 'show_animation' }), stops)).toBeNull();
+    // A still frame with no labelled positions has nothing to announce.
+    expect(stepAnnouncement(anim, run(anim, { type: 'reduce_motion', on: true }), [])).toBeNull();
   });
 
   it('pauses and resumes; after the autoplay passes the control is Replay and restarts the clock', () => {
@@ -140,6 +171,30 @@ describe('how-to view (catalogue → screen)', () => {
     expect(guideDraftLabel('approved')).toBeNull();
   });
 
+  it('a guide stays a draft until its catalogue entry is approved too (P5)', () => {
+    expect(guideDraftLabel('approved', 'draft')).toBe('Draft guide');
+    expect(guideDraftLabel('approved', 'checked')).toBe('Draft guide');
+    expect(guideDraftLabel('draft', 'approved')).toBe('Draft guide');
+    expect(guideDraftLabel('approved', 'approved')).toBeNull();
+    // No entry read: only the guide's own status counts.
+    expect(guideDraftLabel('approved', null)).toBeNull();
+  });
+
+  it('unapproved cues without a guide are labelled Draft; approved ones are not (P5)', () => {
+    const raw = JSON.parse(readFileSync(join(import.meta.dirname, '../../../packages/catalogue/data/exercises/barbell-back-squat.json'), 'utf8')) as Record<string, unknown>;
+    const only = (entry: unknown): HowToSources => ({ catalogue: createLazyCatalogue([entry]), guides: createGuideLibrary([]) });
+    const draft = buildHowToView({ name: 'Back squat', catalogueKey: 'barbell-back-squat' }, only(raw));
+    expect(draft.textDraftLabel).toBe('Draft');
+    expect(howToLayout(draft, false).textDraftLabel).toBe('Draft');
+    const approved = buildHowToView({ name: 'Back squat', catalogueKey: 'barbell-back-squat' }, only({ ...raw, review: { status: 'approved', benApprovedOn: '2026-10-09' } }));
+    expect(approved.notice).toBeNull();
+    expect(approved.textDraftLabel).toBeNull();
+    // With the player showing, its own `Draft guide` tag is the label; the text gets one only if the player fails.
+    const squat = buildHowToView({ name: 'Back squat', catalogueKey: 'barbell-back-squat' }, src);
+    expect(howToLayout(squat, false).textDraftLabel).toBeNull();
+    expect(howToLayout(squat, true).textDraftLabel).toBe('Draft');
+  });
+
   it('all 10 bundled guides are still drafts', () => {
     expect(bundledGuides().keys.size).toBe(10);
     for (const key of bundledGuides().keys) expect(buildHowToView({ name: key, catalogueKey: key }, src).guide?.draftLabel, key).toBe('Draft guide');
@@ -149,12 +204,28 @@ describe('how-to view (catalogue → screen)', () => {
     const v = buildHowToView({ name: 'Squat (old name)', catalogueKey: 'barbell-back-squat' }, src);
     expect(v.title).toBe('Back squat');
     expect(v.muscles).toBe('Main muscles: Quads · Glutes');
-    expect(v.guide?.accessibilityLabel).toMatch(/^Animated guide for Back squat\. Side view, facing right\. Bar on the upper back\./);
+    // One label for the animation and the still view (P4).
+    expect(v.guide?.accessibilityLabel).toMatch(/^Exercise guide for Back squat\. Side view, facing right\. Bar on the upper back\./);
     expect(v.guide?.stops.map((s) => s.label)).toEqual(['Start', 'Halfway', 'Bottom']);
     expect(v.setup).toHaveLength(4);
     expect(v.execution[0]).toBe('Breathe in, brace, then sit down');
     expect(v.mistakes).toContain('Knees caving inward');
     expect(v.notice).toBeNull();
+  });
+
+  it('shows the entry\'s safety notes and when to stop the set (P1)', () => {
+    const v = buildHowToView({ name: 'Back squat', catalogueKey: 'barbell-back-squat' }, src);
+    expect(v.safety.notes[0]).toMatch(/safety arms/);
+    expect(v.safety.stopIf).toEqual(['Sharp, pinching or sudden pain', 'Pain that changes how you move', 'Dizziness, numbness or tingling']);
+    // Every rich entry has both, and none is a diagnosis-length paragraph (catalogue copy rules).
+    for (const key of src.catalogue.keys) {
+      if (src.catalogue.tierHint(key) !== 'rich') continue;
+      const s = buildHowToView({ name: key, catalogueKey: key }, src).safety;
+      expect(s.notes.length, key).toBeGreaterThan(0);
+      expect(s.stopIf.length, key).toBeGreaterThan(0);
+    }
+    const none = buildHowToView({ name: 'Landmine twist', catalogueKey: null }, src);
+    expect(none.safety).toEqual({ notes: [], stopIf: [] });
   });
 
   it('a basic entry or an unknown exercise says there is no how-to yet (never a blank screen)', () => {
@@ -187,7 +258,21 @@ describe('how-to view (catalogue → screen)', () => {
 
   it('an entry that fails validation is reported, not shown', () => {
     const bad: HowToSources = { catalogue: createLazyCatalogue([{ key: 'odd-lift', tier: 'rich', name: 'Odd lift' }]), guides: createGuideLibrary([]) };
-    expect(buildHowToView({ name: 'Odd lift', catalogueKey: 'odd-lift' }, bad)).toMatchObject({ guide: null, setup: [], notice: 'Couldn’t read the how-to for Odd lift.' });
+    expect(buildHowToView({ name: 'Odd lift', catalogueKey: 'odd-lift' }, bad)).toMatchObject({ guide: null, setup: [], entryUnreadable: true, notice: 'Couldn’t read the how-to for Odd lift.' });
+  });
+
+  it('an unreadable entry with a working guide says the guide still applies, and stops saying so if the player fails (P7)', () => {
+    const squatGuide = BUNDLED_GUIDE_FILES.filter((f) => f.key === 'barbell-back-squat');
+    const src2: HowToSources = { catalogue: createLazyCatalogue([{ key: 'barbell-back-squat', tier: 'rich', name: 'Back squat' }]), guides: createGuideLibrary(squatGuide) };
+    const v = buildHowToView({ name: 'Back squat', catalogueKey: 'barbell-back-squat' }, src2);
+    expect(v.guide).not.toBeNull();
+    expect(v.setup).toEqual([]);
+    expect(v.notice).toBe('Couldn’t read the cues for Back squat. The guide above still applies.');
+    expect(howToLayout(v, false)).toMatchObject({ showPlayer: true, notices: ['Couldn’t read the cues for Back squat. The guide above still applies.'] });
+    expect(howToLayout(v, true)).toMatchObject({
+      showPlayer: false,
+      notices: ['The animated guide couldn’t be shown and the cues for Back squat couldn’t be read. The key positions below still apply.'],
+    });
   });
 
   it('finds the catalogue key behind an exercise ID (the workout menu), only for exercises with a how-to', () => {
