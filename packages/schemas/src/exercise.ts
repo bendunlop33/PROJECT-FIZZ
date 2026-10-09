@@ -7,6 +7,11 @@ import { DurationSecondsSchema, IdSchema, LoadConventionSchema, UtcTimestampSche
  * (ADR 0010) tag catalogue exercises only: no gym-profile instance schema
  * exists for them yet, so loads for them are logged without equipment
  * feasibility (no snapping, no max) until an equipment slice adds one.
+ *
+ * `ez_bar` and `trap_bar` are their own kinds (re-review nit, 2026-10-09):
+ * each has a bar weight of its own, so an EZ-bar or trap-bar exercise must
+ * never be planned on the gym's Olympic `barbell` (rule 4). Until a gym can
+ * hold an EZ or trap bar, those exercises log without load checks.
  */
 export const EquipmentKindSchema = z.enum([
   'barbell',
@@ -21,6 +26,8 @@ export const EquipmentKindSchema = z.enum([
   'medicine_ball',
   'sandbag',
   'band',
+  'ez_bar',
+  'trap_bar',
 ]);
 export type ExerciseEquipmentKind = z.infer<typeof EquipmentKindSchema>;
 

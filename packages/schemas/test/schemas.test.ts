@@ -208,7 +208,7 @@ describe('Exercise (ADR 0010 additive fields)', () => {
   });
 
   it('accepts the new conditioning equipment kinds on exercises', () => {
-    for (const kind of ['kettlebell', 'sled', 'erg', 'medicine_ball', 'sandbag', 'band']) {
+    for (const kind of ['kettlebell', 'sled', 'erg', 'medicine_ball', 'sandbag', 'band', 'ez_bar', 'trap_bar']) {
       expect(validate(ExerciseSchema, { ...base, compatibleEquipment: [kind] }).ok).toBe(true);
     }
     expect(validate(ExerciseSchema, { ...base, compatibleEquipment: ['trampoline'] }).ok).toBe(false);
@@ -217,6 +217,9 @@ describe('Exercise (ADR 0010 additive fields)', () => {
   it('gym equipment instances still only accept the six instance kinds', () => {
     const r = validate(EquipmentInstanceSchema, { ...meta, kind: 'sled', gymId: id(3), name: 'Sled', unit: 'kg', movementTags: [], availability: 'available', loadConvention: 'added' });
     expect(r.ok).toBe(false);
+    // An EZ or trap bar can't be a gym item yet (no bar-weight instance schema): never a stand-in for the Olympic bar.
+    const ez = validate(EquipmentInstanceSchema, { ...meta, kind: 'ez_bar', gymId: id(3), name: 'EZ bar', unit: 'kg', movementTags: [], availability: 'available', loadConvention: 'total', barMass: 10, plates: [] });
+    expect(ez.ok).toBe(false);
   });
 
   it('keeps distance out of loggable measurements until distance logging exists', () => {

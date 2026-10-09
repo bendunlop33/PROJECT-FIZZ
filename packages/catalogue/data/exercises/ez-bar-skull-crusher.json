@@ -9,7 +9,7 @@
   "mechanic": "isolation",
   "primaryMuscles": ["triceps"],
   "secondaryMuscles": [],
-  "compatibleEquipment": ["barbell"],
+  "compatibleEquipment": ["ez_bar"],
   "requiresStation": ["bench"],
   "defaultLoadConvention": "total",
   "measurement": "reps",

@@ -18,6 +18,11 @@ describe('built-in default rule by category', () => {
     expect(ruleCategory(null, 'barbell', 'total')).toBe('isolation');
     // A barbell-compatible main lift with no equipment attached still counts by its load convention.
     expect(ruleCategory(starters.get('Bench press') ?? null, null, 'total')).toBe('main_barbell');
+    // A trap-bar deadlift has its own equipment kind (its bar weight differs) but is still a main lift; EZ-bar curls stay accessories.
+    const trap = { movementPattern: 'hinge', mechanic: 'compound' as const, family: 'deadlift', compatibleEquipment: ['trap_bar' as const] };
+    expect(ruleCategory(trap, null, 'total')).toBe('main_barbell');
+    expect(ruleCategory(trap, 'trap_bar', 'total')).toBe('main_barbell');
+    expect(ruleCategory({ movementPattern: 'arms', mechanic: 'isolation', family: 'curl', compatibleEquipment: ['ez_bar'] }, null, 'total')).toBe('isolation');
   });
 
   it('gives valid, labelled rules: 3–6 @ RPE 8.5, 6–10 @ 9, 8–12 @ 9', () => {

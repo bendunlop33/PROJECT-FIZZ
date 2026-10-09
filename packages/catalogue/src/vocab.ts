@@ -114,4 +114,6 @@ export const USUAL_CONVENTIONS = {
   medicine_ball: ['total'],
   sandbag: ['total'],
   band: ['bodyweight'],
+  ez_bar: ['total'],
+  trap_bar: ['total'],
 } as const;

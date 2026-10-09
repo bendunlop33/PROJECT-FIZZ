@@ -9,7 +9,7 @@
   "mechanic": "compound",
   "primaryMuscles": ["glutes", "quads"],
   "secondaryMuscles": ["hamstrings", "spinal_erectors", "adductors", "traps", "upper_back", "grip"],
-  "compatibleEquipment": ["barbell"],
+  "compatibleEquipment": ["trap_bar"],
   "defaultLoadConvention": "total",
   "measurement": "reps",
   "laterality": "bilateral",

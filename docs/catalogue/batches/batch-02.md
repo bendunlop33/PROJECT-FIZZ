@@ -41,15 +41,15 @@ Abbreviations: B = bilateral, U = unilateral; reps / dur / **dist** (distance: c
 | barbell-incline-bench-press | Incline bench press | horizontal_push | barbell · total | reps | B |
 | barbell-bent-over-row | Barbell row | horizontal_pull | barbell · total | reps | B |
 | barbell-hip-thrust | Hip thrust | hinge | barbell · total | reps | B |
-| trap-bar-deadlift | Trap-bar deadlift | hinge | barbell · total | reps | B |
+| trap-bar-deadlift | Trap-bar deadlift | hinge | trap_bar · total | reps | B |
 | barbell-close-grip-bench-press | Close-grip bench press | horizontal_push | barbell · total | reps | B |
 | barbell-sumo-deadlift | Sumo deadlift | hinge | barbell · total | reps | B |
 | barbell-pendlay-row | Pendlay row | horizontal_pull | barbell · total | reps | B |
 | barbell-push-press | Push press | vertical_push | barbell · total | reps | B |
 | barbell-good-morning | Good morning | hinge | barbell · total | reps | B |
 | barbell-curl | Barbell curl | arms | barbell · total | reps | B |
-| ez-bar-curl | EZ-bar curl | arms | barbell · total | reps | B |
-| ez-bar-skull-crusher | Skull crusher | arms | barbell · total | reps | B |
+| ez-bar-curl | EZ-bar curl | arms | ez_bar · total | reps | B |
+| ez-bar-skull-crusher | Skull crusher | arms | ez_bar · total | reps | B |
 | barbell-box-squat | Box squat | squat | barbell · total | reps | B |
 | barbell-landmine-press | Landmine press | vertical_push | barbell · **added** | reps | U |
 | barbell-paused-back-squat | Paused back squat | squat | barbell · total | reps | B |
@@ -189,7 +189,7 @@ The basic tier has no `uncertain` field (the zod schema is strict), so uncertain
 | kettlebell-turkish-get-up | `movementPattern` = core | Could equally be conditioning. |
 | wall-ball, bodyweight-burpee, bodyweight-box-jump, bodyweight-bear-crawl, battle-ropes, bodyweight-wall-drive | `movementPattern` = conditioning | Tagged by how they're usually trained, not by joint action. |
 | smith-machine-squat, smith-machine-bench-press, smith-machine-bulgarian-split-squat | `compatibleEquipment` = plate_loaded_machine, convention `added` | Research §4.4 still hasn't decided whether the Smith machine is a barbell instance or its own kind. Bar weight varies and is often counterbalanced, so "plates added" is the honest default. If it becomes a barbell instance, change to `barbell` · `total`. |
-| ez-bar-curl, ez-bar-skull-crusher, trap-bar-deadlift | `compatibleEquipment` = barbell (`total`) | Also open in §4.4. Works if the gym profile lists the EZ bar or trap bar as a barbell with its own bar weight. |
+| ez-bar-curl, ez-bar-skull-crusher, trap-bar-deadlift | `compatibleEquipment` = `ez_bar` / `trap_bar` (`total`) | Changed from `barbell` after the slice-3 re-review (rule 4: they must never be planned on the Olympic bar's weight). Exercise-only kinds (ADR 0011 amendment); a gym can't hold one with its own bar weight yet, so they log without load checks. The trap-bar deadlift still gets the `main_barbell` rule. |
 | barbell-landmine-press | `defaultLoadConvention` = added; `laterality` = unilateral | Half the bar rests on the floor, so "total on the bar" isn't meaningful. `added` is a valid barbell choice (exercise-library §2.6) but triggers the validator's "unusual" warning. Single-arm is the common form, but two-hand versions exist too. |
 | dumbbell-walking-lunge (B), sandbag-lunge (B), dumbbell-reverse-lunge (U) | `laterality` | Walking lunges alternate legs and are usually counted as total steps or reps. Reverse lunges are often prescribed per leg. Ben's FitNotes history should decide. |
 | dumbbell-triceps-kickback, cable-lateral-raise, cable-pallof-press, cable-woodchop | `laterality` = unilateral | Usually done one side at a time, but two-arm versions exist. |

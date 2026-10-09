@@ -144,6 +144,15 @@ describe('re-review minors 5 and 6: add_exercise retries and equipment compatibi
     expectOk(reduceSession(empty(), ok));
   });
 
+  it('an EZ-bar or trap-bar exercise is never put on the Olympic bar: its bar weight differs (rule 4; slice-3 re-review nit)', () => {
+    for (const [n, kind] of [[1, 'ez_bar'], [2, 'trap_bar']] as const) {
+      const ex = { ...benchEx, id: id(87_000 + n), name: kind, compatibleEquipment: [kind] };
+      expectError(reduceSession(empty(), buildAddExerciseCommand({ opId: `ez-${kind}`, owner: profile(), exercise: ex, equipmentId: barbell().id, at: at(5), newId: idGen(87_100 + n * 10) })), 'equipment_incompatible');
+      // Without equipment it logs, with no load checks (like the other catalogue-only kinds).
+      expectOk(reduceSession(empty(), buildAddExerciseCommand({ opId: `ez-none-${kind}`, owner: profile(), exercise: ex, equipmentId: null, at: at(5), newId: idGen(87_200 + n * 10) })));
+    }
+  });
+
   it('through the service too', async () => {
     const repos = createMemoryRepositories();
     await repos.profiles.save(profile(), null);

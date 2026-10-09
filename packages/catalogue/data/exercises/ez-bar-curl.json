@@ -9,7 +9,7 @@
   "mechanic": "isolation",
   "primaryMuscles": ["biceps"],
   "secondaryMuscles": ["brachialis", "forearms"],
-  "compatibleEquipment": ["barbell"],
+  "compatibleEquipment": ["ez_bar"],
   "defaultLoadConvention": "total",
   "measurement": "reps",
   "laterality": "bilateral",

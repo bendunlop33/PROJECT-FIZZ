@@ -30,14 +30,17 @@ export type RuleExerciseInfo = Pick<Exercise, 'movementPattern'> & Partial<Pick<
 /**
  * Category for the default rule. `equipmentKind` is the kind of equipment
  * the exercise is done with in this session (null = none attached; then a
- * `total` load with a barbell-compatible exercise counts as a barbell).
+ * `total` load with a barbell-, trap-bar- or EZ-bar-compatible exercise
+ * counts as a barbell).
  * Unknown exercises (no info) are treated as accessories: the widest range.
  */
 export function ruleCategory(ex: RuleExerciseInfo | null, equipmentKind: EquipmentKind | ExerciseEquipmentKind | null, convention: LoadConvention): RuleCategory {
   if (ex === null) return 'isolation';
   const isolation = ex.mechanic === 'isolation' || (ex.mechanic === undefined && ISOLATION_PATTERNS.has(ex.movementPattern));
   if (isolation) return 'isolation';
-  const barbell = equipmentKind === 'barbell' || (equipmentKind === null && convention === 'total' && (ex.compatibleEquipment ?? []).includes('barbell'));
+  // A trap bar or EZ bar is plate-loaded like a barbell (only its bar weight differs), so a trap-bar deadlift is still a main lift.
+  const isBar = (k: EquipmentKind | ExerciseEquipmentKind | null): boolean => k === 'barbell' || k === 'trap_bar' || k === 'ez_bar';
+  const barbell = isBar(equipmentKind) || (equipmentKind === null && convention === 'total' && (ex.compatibleEquipment ?? []).some(isBar));
   if (barbell) {
     const main = ex.family !== undefined ? MAIN_FAMILIES.has(ex.family) : MAIN_PATTERNS.has(ex.movementPattern);
     if (main) return 'main_barbell';

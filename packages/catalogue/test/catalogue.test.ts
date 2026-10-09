@@ -207,6 +207,18 @@ describe('loader', () => {
     expect(db.ok && db.exercise.laterality).toBe('unilateral');
   });
 
+  it('EZ-bar and trap-bar exercises use their own kinds, never the Olympic barbell (slice-3 re-review nit, rule 4)', () => {
+    for (const [key, kind] of [['ez-bar-curl', 'ez_bar'], ['ez-bar-skull-crusher', 'ez_bar'], ['trap-bar-deadlift', 'trap_bar']] as const) {
+      const row = toExerciseRow(entry(key), T);
+      if (!row.ok) throw new Error(key);
+      expect(row.exercise.compatibleEquipment, key).toEqual([kind]);
+    }
+    // No other entry names an EZ or trap bar while listing the barbell.
+    for (const e of bundledCatalogue().catalogue.entries) {
+      if (/\b(ez|trap|hex)[- ]bar\b/i.test(e.name)) expect(e.compatibleEquipment, e.key).not.toContain('barbell');
+    }
+  });
+
   it('does not create a loggable row for a distance exercise', () => {
     const sled = entry('sled-push');
     expect(toExerciseRow(sled, T)).toMatchObject({ ok: false, reason: 'distance_not_loggable' });
