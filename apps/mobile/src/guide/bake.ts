@@ -3,9 +3,11 @@
  * small slices (`runSliced`); the UI thread then only swaps which picture is
  * drawn, so playback never runs the rig maths per display frame.
  *
- * Pictures are recorded at unit size and scaled by the canvas, so one bake
- * serves any width. A few bakes are cached for the app session, keyed by guide,
- * kind and colours (a theme change re-bakes).
+ * Pictures are recorded at unit size and scaled by the canvas (Skia draws
+ * the vector picture at device scale, never through a bitmap). The canvas
+ * size in points still picks the detail tier and stroke floors (guides v2
+ * §3.10). A few bakes are cached for the app session, keyed by guide, kind,
+ * colours, size, muscles, emphasis and Increase Contrast (a change re-bakes).
  *
  * No Skia call may run at module load (review S1): this module is required
  * lazily with the player, and every Skia call happens inside a bake task,
@@ -14,7 +16,19 @@
 import { PaintStyle, Skia, StrokeCap, StrokeJoin, TileMode, createPicture, type SkPaint, type SkPicture } from '@shopify/react-native-skia';
 
 import type { LoadedGuide } from '@fizz/catalogue';
-import { bakeFrame, overlayPlans, overlayPoint, playbackTimes, type DrawOp, type GuideStyle, type KeyFrameStop, type Vec } from '@fizz/catalogue/figure';
+import {
+  bakeFrame,
+  overlayPlans,
+  overlayPoint,
+  playbackTimes,
+  workIntensityAt,
+  type BakeOptions,
+  type DrawOp,
+  type GuideStyle,
+  type KeyFrameStop,
+  type MuscleInput,
+  type Vec,
+} from '@fizz/catalogue/figure';
 
 import { opPathData, planOp, type PlanStep } from './draw-plan';
 
@@ -78,6 +92,17 @@ export function recordOps(ops: readonly DrawOp[], style: GuideStyle, paints: Map
 
 export type BakeKind = 'animation' | 'steps';
 
+/** What a bake draws besides the guide and colours (guides v2). */
+export interface BakeConfig {
+  /** Canvas size in points: picks the detail tier and the stroke floors. */
+  pt: number;
+  /** The entry's muscles, or null for no colour. */
+  muscles: MuscleInput | null;
+  /** Work-phase emphasis in the animation frames (`musclePulseOn`); stills are always steady. */
+  pulse: boolean;
+  increaseContrast: boolean;
+}
+
 /**
  * Tasks that fill `out` with pictures: one per baked frame (animation), or
  * one per key position (steps, which show the static bar path like the review
@@ -87,10 +112,21 @@ export interface BakePlan {
   tasks: (() => void)[];
   /** Tasks to run before the first yield so `out[0]` exists at once (the poster). */
   firstSync: number;
+  /**
+   * Animation with emphasis: index in `out` of a steady first frame, for the
+   * Finished state (guides v2 §8: the poster holds steady colour). Otherwise null.
+   */
+  steadyPoster: number | null;
 }
 
-export function bakeTasks(loaded: LoadedGuide, kind: BakeKind, stops: readonly KeyFrameStop[], style: GuideStyle, out: SkPicture[]): BakePlan {
+export function bakeTasks(loaded: LoadedGuide, kind: BakeKind, stops: readonly KeyFrameStop[], style: GuideStyle, out: SkPicture[], config: BakeConfig): BakePlan {
   const { prepared, camera } = loaded;
+  const steady: BakeOptions = { pt: config.pt, muscles: config.muscles, increaseContrast: config.increaseContrast };
+  const pulse = kind === 'animation' && config.pulse;
+  const optsAt = (t: number): BakeOptions => {
+    const w = pulse ? workIntensityAt(prepared, t) : null;
+    return w === null ? steady : { ...steady, pulse: w };
+  };
   const paints = new Map<string, SkPaint>();
   const mode = kind === 'animation' ? 'animated' : 'static';
   const times = kind === 'animation' ? playbackTimes(prepared.guide) : stops.length > 0 ? stops.map((s) => s.t) : [0];
@@ -104,7 +140,7 @@ export function bakeTasks(loaded: LoadedGuide, kind: BakeKind, stops: readonly K
     // the canvas is never empty while they're taken (review N1); it's redrawn
     // with the trace below.
     tasks.push(() => {
-      out[0] = recordOps(bakeFrame(prepared, camera, first, []), style, paints);
+      out[0] = recordOps(bakeFrame(prepared, camera, first, [], optsAt(first)), style, paints);
     });
     for (const t of plan.times) {
       tasks.push(() => {
@@ -115,20 +151,32 @@ export function bakeTasks(loaded: LoadedGuide, kind: BakeKind, stops: readonly K
   }
   times.forEach((t, i) => {
     tasks.push(() => {
-      out[i] = recordOps(bakeFrame(prepared, camera, t, trace), style, paints);
+      out[i] = recordOps(bakeFrame(prepared, camera, t, trace, optsAt(t)), style, paints);
     });
   });
-  return { tasks, firstSync: 1 };
+  if (pulse) {
+    const at = times.length;
+    tasks.push(() => {
+      out[at] = recordOps(bakeFrame(prepared, camera, first, trace, steady), style, paints);
+    });
+  }
+  return { tasks, firstSync: 1, steadyPoster: pulse ? times.length : null };
 }
 
 const CACHE_SIZE = 4;
-const cache = new Map<string, SkPicture[]>();
 
-export function bakeKey(guideKey: string, kind: BakeKind, style: GuideStyle): string {
-  return `${guideKey}|${kind}|${Object.values(style).join(',')}`;
+export interface CachedBake {
+  pictures: SkPicture[];
+  steadyPoster: number | null;
+}
+const cache = new Map<string, CachedBake>();
+
+export function bakeKey(guideKey: string, kind: BakeKind, style: GuideStyle, config: BakeConfig): string {
+  const muscles = config.muscles === null ? '-' : `${config.muscles.primary.join('+')}/${config.muscles.secondary.join('+')}`;
+  return `${guideKey}|${kind}|${Object.values(style).join(',')}|${String(Math.round(config.pt))}|${muscles}|${config.pulse ? 'pulse' : 'steady'}|${config.increaseContrast ? 'ic' : ''}`;
 }
 
-export function cachedBake(key: string): SkPicture[] | undefined {
+export function cachedBake(key: string): CachedBake | undefined {
   const hit = cache.get(key);
   if (hit) {
     cache.delete(key);
@@ -137,9 +185,9 @@ export function cachedBake(key: string): SkPicture[] | undefined {
   return hit;
 }
 
-export function storeBake(key: string, pictures: SkPicture[]): void {
+export function storeBake(key: string, bake: CachedBake): void {
   cache.delete(key);
-  cache.set(key, pictures);
+  cache.set(key, bake);
   while (cache.size > CACHE_SIZE) {
     const oldest = cache.keys().next().value;
     if (oldest === undefined) break;

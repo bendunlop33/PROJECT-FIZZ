@@ -9,10 +9,21 @@ import { GUIDE_CORNER_FRACTION, GUIDE_TOKEN_NAMES, guideStyleFromTokens, type Gu
 
 import { useTheme } from '../theme';
 import { AppText, SecondaryButton, Tag, TextButton } from '../ui';
-import { bakeKey, bakeTasks, cachedBake, storeBake, type BakeKind } from './bake';
+import { bakeKey, bakeTasks, cachedBake, storeBake, type BakeConfig, type BakeKind } from './bake';
 import { advanceClock, frameIndexAt } from './clock';
 import type { HowToGuide } from './how-to';
-import { initialPlayerState, isRunning, playControlLabel, playerReducer, stepAccessibilityLabel, stepAnnouncement, stepPosition, type PlayerAction } from './player-model';
+import {
+  initialPlayerState,
+  isRunning,
+  MUSCLE_PULSE,
+  musclePulseOn,
+  playControlLabel,
+  playerReducer,
+  stepAccessibilityLabel,
+  stepAnnouncement,
+  stepPosition,
+  type PlayerAction,
+} from './player-model';
 import { runSliced } from './sliced';
 
 /** Longest stretch of baking before the JS thread yields (one 120 Hz frame is ~8 ms). */
@@ -22,6 +33,8 @@ interface Baked {
   key: string;
   pictures: SkPicture[];
   done: boolean;
+  /** Index of the steady Finished poster (animation with emphasis), else null. */
+  steadyPoster: number | null;
 }
 
 /** A bake that threw (review S1); the player rethrows it in render so `GuideBoundary` takes over. */
@@ -36,15 +49,21 @@ interface BakeFailure {
  * every frame is ready. `kind: null` bakes nothing (the other view is showing). Every
  * Skia call happens inside a task, so a throw is reported, never fatal.
  */
-function useBakedPictures(loaded: LoadedGuide, kind: BakeKind | null, stops: readonly KeyFrameStop[], style: GuideStyle): { baked: Baked | null; failure: BakeFailure | null } {
-  const key = kind === null ? null : bakeKey(loaded.key, kind, style);
+function useBakedPictures(
+  loaded: LoadedGuide,
+  kind: BakeKind | null,
+  stops: readonly KeyFrameStop[],
+  style: GuideStyle,
+  config: BakeConfig,
+): { baked: Baked | null; failure: BakeFailure | null } {
+  const key = kind === null ? null : bakeKey(loaded.key, kind, style, config);
   const [baked, setBaked] = useState<Baked | null>(null);
   const [failure, setFailure] = useState<BakeFailure | null>(null);
   useEffect(() => {
     if (key === null || kind === null) return;
     const hit = cachedBake(key);
     if (hit) {
-      setBaked({ key, pictures: hit, done: true });
+      setBaked({ key, pictures: hit.pictures, done: true, steadyPoster: hit.steadyPoster });
       return;
     }
     const out: SkPicture[] = [];
@@ -53,7 +72,7 @@ function useBakedPictures(loaded: LoadedGuide, kind: BakeKind | null, stops: rea
     };
     let plan: ReturnType<typeof bakeTasks>;
     try {
-      plan = bakeTasks(loaded, kind, stops, style, out);
+      plan = bakeTasks(loaded, kind, stops, style, out, config);
     } catch (error) {
       fail(error);
       return;
@@ -72,15 +91,15 @@ function useBakedPictures(loaded: LoadedGuide, kind: BakeKind | null, stops: rea
       },
       onDone: () => {
         progress.finished = true;
-        storeBake(key, out);
-        setBaked({ key, pictures: out, done: true });
+        storeBake(key, { pictures: out, steadyPoster: plan.steadyPoster });
+        setBaked({ key, pictures: out, done: true, steadyPoster: plan.steadyPoster });
       },
       onError: fail,
     });
     // Show the poster while the rest bakes (unless it all finished synchronously; review N2).
-    if (!progress.finished && out.length > 0) setBaked({ key, pictures: out.slice(), done: false });
+    if (!progress.finished && out.length > 0) setBaked({ key, pictures: out.slice(), done: false, steadyPoster: null });
     return run.cancel;
-  }, [key, kind, loaded, stops, style]);
+  }, [key, kind, loaded, stops, style, config]);
   return {
     baked: baked !== null && baked.key === key ? baked : null,
     failure: failure !== null && failure.key === key ? failure : null,
@@ -108,10 +127,12 @@ function useAppActive(): boolean {
 
 interface Props {
   guide: HowToGuide;
-  /** Canvas width and height in points (legible from about 240). */
+  /** Canvas width and height in points (legible from about 240). The canvas has no side padding. */
   size: number;
   /** The player is on screen: its screen is focused and it isn't scrolled away. */
   visible: boolean;
+  /** Below the controls, with the same side padding (the muscle legend, guides v2 §5.3). */
+  footer?: ReactNode;
 }
 
 /**
@@ -121,7 +142,7 @@ interface Props {
  * Under Reduce Motion it shows the key positions, one at a time (or the first
  * frame still, if the guide labels none), and never autoplays.
  */
-export function GuidePlayer({ guide, size, visible }: Props) {
+export function GuidePlayer({ guide, size, visible, footer }: Props) {
   const theme = useTheme();
   const { loaded, stops } = guide;
   const reduceMotion = theme.a11y.reduceMotion;
@@ -140,12 +161,20 @@ export function GuidePlayer({ guide, size, visible }: Props) {
   const style = useMemo<GuideStyle>(() => {
     const tokens = {} as GuideTokens;
     for (const name of GUIDE_TOKEN_NAMES) tokens[name] = theme.colors[name];
-    return guideStyleFromTokens(tokens);
-  }, [theme.colors]);
+    return guideStyleFromTokens(tokens, theme.scheme);
+  }, [theme.colors, theme.scheme]);
 
-  const { baked: anim, failure: animFailure } = useBakedPictures(loaded, state.mode === 'animate' ? 'animation' : null, stops, style);
-  const { baked: still, failure: stillFailure } = useBakedPictures(loaded, state.mode === 'steps' ? 'steps' : null, stops, style);
-  const frames = anim?.done === true ? anim.pictures : null;
+  // Guides v2: muscle colour from the entry, sized for this canvas; the emphasis only in animation (never Reduce Motion or Increase Contrast).
+  const increaseContrast = theme.a11y.increaseContrast;
+  const pulse = musclePulseOn({ setting: MUSCLE_PULSE, reduceMotion, increaseContrast, hasWorkPhase: guide.hasWorkPhase, hasMuscles: guide.muscles !== null });
+  const animConfig = useMemo<BakeConfig>(() => ({ pt: size, muscles: guide.muscles, pulse, increaseContrast }), [size, guide.muscles, pulse, increaseContrast]);
+  const stillConfig = useMemo<BakeConfig>(() => ({ ...animConfig, pulse: false }), [animConfig]);
+
+  const { baked: anim, failure: animFailure } = useBakedPictures(loaded, state.mode === 'animate' ? 'animation' : null, stops, style, animConfig);
+  const { baked: still, failure: stillFailure } = useBakedPictures(loaded, state.mode === 'steps' ? 'steps' : null, stops, style, stillConfig);
+  // The steady poster (if any) sits after the frames; it is shown only when the passes are finished.
+  const frames = anim?.done === true ? (anim.steadyPoster === null ? anim.pictures : anim.pictures.slice(0, anim.steadyPoster)) : null;
+  const steadyPoster = anim?.done === true && anim.steadyPoster !== null ? (anim.pictures[anim.steadyPoster] ?? null) : null;
 
   // UI-thread clock: elapsed time → frame index → picture.
   const elapsed = useSharedValue(0);
@@ -195,12 +224,18 @@ export function GuidePlayer({ guide, size, visible }: Props) {
 
   let art: ReactNode = null;
   if (state.mode === 'steps') art = stillPicture ? <Picture picture={stillPicture} /> : null;
+  else if (state.finished && steadyPoster) art = <Picture picture={steadyPoster} />;
   else if (frames && poster) art = <AnimatedArt frames={frames} first={poster} frame={frame} />;
   else if (poster) art = <Picture picture={poster} />;
 
+  const pad = { paddingHorizontal: theme.space['4'] };
   return (
     <View style={{ gap: theme.space['3'] }}>
-      {guide.draftLabel ? <Tag text={guide.draftLabel} /> : null}
+      {guide.draftLabel ? (
+        <View style={pad}>
+          <Tag text={guide.draftLabel} />
+        </View>
+      ) : null}
       <View accessible accessibilityRole="image" accessibilityLabel={guide.accessibilityLabel} style={{ width: size, height: size, alignSelf: 'center' }}>
         <Canvas style={{ width: size, height: size }}>
           <Group clip={rrect(rect(0, 0, size, size), corner, corner)}>
@@ -211,7 +246,7 @@ export function GuidePlayer({ guide, size, visible }: Props) {
       </View>
 
       {stop ? (
-        <View accessible accessibilityLabel={stepAccessibilityLabel(state, stop)} style={{ gap: theme.space['1'] }}>
+        <View accessible accessibilityLabel={stepAccessibilityLabel(state, stop)} style={[pad, { gap: theme.space['1'] }]}>
           <AppText variant="headline" numeric>
             {stepPosition(state, stop.label)}
           </AppText>
@@ -224,7 +259,7 @@ export function GuidePlayer({ guide, size, visible }: Props) {
       ) : null}
 
       {state.mode === 'animate' ? (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['3'] }}>
+        <View style={[pad, { flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['3'] }]}>
           <View style={{ flexGrow: 1, flexBasis: 140 }}>
             <SecondaryButton
               label={playControlLabel(state)}
@@ -248,7 +283,7 @@ export function GuidePlayer({ guide, size, visible }: Props) {
           ) : null}
         </View>
       ) : (
-        <View style={{ gap: theme.space['2'] }}>
+        <View style={[pad, { gap: theme.space['2'] }]}>
           {/* No labelled key positions (P6): just the still first frame and Play animation. */}
           {state.stepCount > 0 ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['3'] }}>
@@ -284,6 +319,7 @@ export function GuidePlayer({ guide, size, visible }: Props) {
           />
         </View>
       )}
+      {footer ? <View style={pad}>{footer}</View> : null}
     </View>
   );
 }

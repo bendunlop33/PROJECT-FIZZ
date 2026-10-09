@@ -1,6 +1,7 @@
 /**
- * The "How to" view of an exercise (ADR 0013): animated guide, key positions,
- * cues and common mistakes, all from the bundled catalogue (Coaching
+ * The "How to" view of an exercise (ADR 0013, guides v2): animated guide with
+ * its muscle legend, What not to do, key positions and cues, all from the
+ * bundled catalogue (Coaching
  * knowledge, CLAUDE.md rule 10; nothing here is about Ben). Pure: screens
  * render the result and never read catalogue files themselves.
  */
@@ -8,12 +9,14 @@ import {
   bundledGuides,
   catalogueExerciseId,
   lazyBundledCatalogue,
-  MUSCLE_TO_GROUP,
+  muscleFocusFor,
+  muscleLegend,
   type GuideLibrary,
   type LazyCatalogue,
+  type LegendLine,
   type LoadedGuide,
 } from '@fizz/catalogue';
-import { keyFrameStops, type KeyFrameStop } from '@fizz/catalogue/figure';
+import { keyFrameStops, type KeyFrameStop, type MuscleInput } from '@fizz/catalogue/figure';
 
 export interface HowToSources {
   catalogue: LazyCatalogue;
@@ -78,16 +81,28 @@ export interface HowToGuide {
   accessibilityLabel: string;
   /** Key positions, also the Reduce Motion frames. */
   stops: KeyFrameStop[];
+  /**
+   * The entry's muscles to colour on the figure (guides v2 §4), or null when
+   * the entry couldn't be read: no source of truth, so no colour (§8).
+   */
+  muscles: MuscleInput | null;
+  /** The guide marks a loaded phase, so the work-phase emphasis can apply (§4.9). */
+  hasWorkPhase: boolean;
 }
 
 export interface HowToView {
   title: string;
-  /** `Main muscles: Quads · Glutes` (filter-group words). */
-  muscles: string | null;
   guide: HowToGuide | null;
+  /**
+   * `Feel it most:` / `Also works:` / `Not shown from this side:` (guides v2
+   * §5.3). Shown in the player card, or under the header without a player
+   * (then without swatches). Empty when the entry lists no muscles or can't be read.
+   */
+  legend: LegendLine[];
   setup: readonly string[];
   execution: readonly string[];
-  mistakes: readonly string[];
+  /** `What not to do`: the entry's faults in catalogue order (guides v2 §5.1; replaces Common mistakes). */
+  avoid: readonly string[];
   /** The entry's safety notes and `Stop the set if:` lines (P1). Reference text; never a diagnosis (rule 9). */
   safety: { notes: readonly string[]; stopIf: readonly string[] };
   /** `Draft` for the text sections when they are shown without the player's `Draft guide` tag (P5). */
@@ -108,19 +123,23 @@ export function buildHowToView(input: { name: string; catalogueKey: string | nul
   // A basic entry may have no review block: it isn't approved either.
   const entryStatus: ReviewStatus | null = entry === null ? null : (entry.review?.status ?? 'draft');
 
+  const focus = entry ? muscleFocusFor(entry, guideLoad?.ok === true ? guideLoad.value.guide : null) : null;
   let guide: HowToGuide | null = null;
   if (guideLoad?.ok === true) {
     const g = guideLoad.value.guide;
+    const highlighted = focus !== null && focus.drawn.length > 0;
     guide = {
       loaded: guideLoad.value,
       draftLabel: guideDraftLabel(g.review.status, entryStatus),
-      accessibilityLabel: `Exercise guide for ${title}. ${g.a11y.summary}`,
+      // The muscles themselves are the next element (the legend), so they aren't repeated here (guides v2 §10).
+      accessibilityLabel: `Exercise guide for ${title}. ${g.a11y.summary}${highlighted ? ' Highlighted muscles are listed below.' : ''}`,
       stops: keyFrameStops(guideLoad.value.prepared),
+      muscles: entry ? { primary: entry.primaryMuscles, secondary: entry.secondaryMuscles } : null,
+      hasWorkPhase: (g.focus?.workPhase?.length ?? 0) > 0,
     };
   }
 
   const rich = entry?.tier === 'rich' ? entry : null;
-  const muscles = entry ? [...new Set(entry.primaryMuscles.map((m) => MUSCLE_TO_GROUP[m]))].join(' · ') : '';
 
   let notice: string | null = null;
   if (entryUnreadable) notice = guide ? `Couldn’t read the cues for ${title}. The guide above still applies.` : `Couldn’t read the how-to for ${title}.`;
@@ -132,11 +151,11 @@ export function buildHowToView(input: { name: string; catalogueKey: string | nul
 
   return {
     title,
-    muscles: muscles === '' ? null : `Main muscles: ${muscles}`,
     guide,
+    legend: focus === null ? [] : muscleLegend(focus),
     setup: rich?.cues.setup ?? [],
     execution: rich?.cues.execution ?? [],
-    mistakes: rich?.cues.faults ?? [],
+    avoid: rich?.cues.faults ?? [],
     safety: { notes: rich?.safety.notes ?? [], stopIf: rich?.safety.stopIf ?? [] },
     textDraftLabel: textDraft ? DRAFT_TEXT_LABEL : null,
     entryUnreadable,
@@ -148,6 +167,11 @@ export function buildHowToView(input: { name: string; catalogueKey: string | nul
 export interface HowToLayout {
   /** Show the guide player (there is a guide and it hasn't failed). */
   showPlayer: boolean;
+  /**
+   * The muscle legend outside the player card (no player): lines without
+   * swatches, since nothing on screen is coloured (guides v2 §8).
+   */
+  standaloneLegend: LegendLine[];
   /** Honest one-line notices, in order, above the text sections. */
   notices: string[];
   /** `Draft` above the text sections; null while the player shows `Draft guide` itself. */
@@ -161,16 +185,17 @@ export interface HowToLayout {
  */
 export function howToLayout(view: HowToView, playerFailed: boolean): HowToLayout {
   const notices = view.notice === null ? [] : [view.notice];
-  if (view.guide === null) return { showPlayer: false, notices, textDraftLabel: view.textDraftLabel };
-  if (!playerFailed) return { showPlayer: true, notices, textDraftLabel: null };
+  const standaloneLegend = view.legend.map((l) => ({ ...l, swatch: false }));
+  if (view.guide === null) return { showPlayer: false, standaloneLegend, notices, textDraftLabel: view.textDraftLabel };
+  if (!playerFailed) return { showPlayer: true, standaloneLegend: [], notices, textDraftLabel: null };
   const stops = view.guide.stops.length > 0;
   let failure: string;
   if (view.entryUnreadable) {
     // The entry notice says "the guide above still applies"; with no player that's no longer true.
     failure = stops ? `The animated guide couldn’t be shown and the cues for ${view.title} couldn’t be read. The key positions below still apply.` : `Couldn’t read the how-to for ${view.title}.`;
-    return { showPlayer: false, notices: [failure], textDraftLabel: view.textDraftLabel };
+    return { showPlayer: false, standaloneLegend, notices: [failure], textDraftLabel: view.textDraftLabel };
   }
-  const hasText = stops || view.setup.length > 0 || view.execution.length > 0 || view.mistakes.length > 0 || view.safety.notes.length > 0;
+  const hasText = stops || view.setup.length > 0 || view.execution.length > 0 || view.avoid.length > 0 || view.safety.notes.length > 0;
   failure = hasText ? 'The animated guide couldn’t be shown. The cues below still apply.' : 'The animated guide couldn’t be shown.';
-  return { showPlayer: false, notices: [failure, ...notices], textDraftLabel: view.textDraftLabel };
+  return { showPlayer: false, standaloneLegend, notices: [failure, ...notices], textDraftLabel: view.textDraftLabel };
 }

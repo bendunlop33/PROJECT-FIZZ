@@ -104,3 +104,21 @@ export function stepAnnouncement(prev: PlayerState, next: PlayerState, stops: re
   const stop = stops[next.step];
   return stop ? stepAccessibilityLabel(next, stop) : null;
 }
+
+/**
+ * Design-system `guide.musclePulse` (guides v2 §4.9, decision B2): during a
+ * guide's loaded phase, strong muscles rise 0.80 → 1.0 and soft 0.36 → 0.50,
+ * baked into the frames. On, as the spec recommends; Ben to confirm on device
+ * (G13). Set to `false` for steady colour everywhere.
+ */
+export const MUSCLE_PULSE = true;
+
+/**
+ * Whether an animation bake carries the work-phase emphasis. Never under
+ * Reduce Motion (including the opt-in `Play animation`), never under
+ * Increase Contrast, never for a guide without a work phase, and never in
+ * stills: those bakes are steady. A paused frame is held exactly as baked.
+ */
+export function musclePulseOn(opts: { setting: boolean; reduceMotion: boolean; increaseContrast: boolean; hasWorkPhase: boolean; hasMuscles: boolean }): boolean {
+  return opts.setting && !opts.reduceMotion && !opts.increaseContrast && opts.hasWorkPhase && opts.hasMuscles;
+}

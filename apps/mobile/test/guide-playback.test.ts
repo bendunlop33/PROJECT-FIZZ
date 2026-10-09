@@ -10,7 +10,7 @@ import { advanceClock, frameIndexAt, MAX_AUTOPLAY_PASSES, passMs } from '../src/
 import { opPathData, planOp, rgba } from '../src/guide/draw-plan';
 import { BUNDLED_GUIDE_FILES } from '../../../packages/catalogue/src/generated/guide-files';
 import { buildHowToView, bundledHowToSources, DRAFT_GUIDE_LABEL, guideDraftLabel, hasHowTo, howToKeyForExerciseId, howToLayout, type HowToSources } from '../src/guide/how-to';
-import { initialPlayerState, isRunning, playControlLabel, playerReducer, stepAccessibilityLabel, stepAnnouncement, stepPosition, type PlayerAction, type PlayerState } from '../src/guide/player-model';
+import { initialPlayerState, isRunning, MUSCLE_PULSE, musclePulseOn, playControlLabel, playerReducer, stepAccessibilityLabel, stepAnnouncement, stepPosition, type PlayerAction, type PlayerState } from '../src/guide/player-model';
 import { runSliced } from '../src/guide/sliced';
 import { resolveTheme, THEME_DIRECTIONS } from '../src/theme/tokens';
 
@@ -153,6 +153,13 @@ describe('player state', () => {
     expect(run(initialPlayerState(false, 0), { type: 'show_steps' }).mode).toBe('animate');
   });
 
+  it('muscle emphasis only in animation, never under Reduce Motion or Increase Contrast, never without a work phase or muscles (guides v2 §4.9)', () => {
+    const base = { setting: true, reduceMotion: false, increaseContrast: false, hasWorkPhase: true, hasMuscles: true };
+    expect(MUSCLE_PULSE).toBe(true);
+    expect(musclePulseOn(base)).toBe(true);
+    for (const off of [{ setting: false }, { reduceMotion: true }, { increaseContrast: true }, { hasWorkPhase: false }, { hasMuscles: false }]) expect(musclePulseOn({ ...base, ...off }), JSON.stringify(off)).toBe(false);
+  });
+
   it('turning Reduce Motion on stops the animation at once; turning it off starts nothing', () => {
     const s = initialPlayerState(false, 3);
     expect(run(s, { type: 'reduce_motion', on: true }).mode).toBe('steps');
@@ -200,16 +207,25 @@ describe('how-to view (catalogue → screen)', () => {
     for (const key of bundledGuides().keys) expect(buildHowToView({ name: key, catalogueKey: key }, src).guide?.draftLabel, key).toBe('Draft guide');
   });
 
-  it('builds the squat: guide, one VoiceOver description, key positions, cues and mistakes', () => {
+  it('builds the squat: guide, one VoiceOver description, muscle legend, What not to do, key positions and cues', () => {
     const v = buildHowToView({ name: 'Squat (old name)', catalogueKey: 'barbell-back-squat' }, src);
     expect(v.title).toBe('Back squat');
-    expect(v.muscles).toBe('Main muscles: Quads · Glutes');
-    // One label for the animation and the still view (P4).
+    // One label for the animation and the still view (P4), ending with the v2 sentence (guides v2 §10).
     expect(v.guide?.accessibilityLabel).toMatch(/^Exercise guide for Back squat\. Side view, facing right\. Bar on the upper back\./);
+    expect(v.guide?.accessibilityLabel).toMatch(/ Highlighted muscles are listed below\.$/);
+    expect(v.guide?.muscles).toEqual({ primary: ['quads', 'glutes'], secondary: ['adductors', 'hamstrings', 'spinal_erectors', 'core'] });
+    expect(v.guide?.hasWorkPhase).toBe(true);
+    expect(v.legend.map((l) => `${l.label} ${l.list}`)).toEqual([
+      'Feel it most: Front of thighs (quads), glutes',
+      'Also works: Inner thighs (adductors), back of thighs (hamstrings), lower back (spinal erectors), core',
+      'Not shown from this side: inner thighs',
+    ]);
     expect(v.guide?.stops.map((s) => s.label)).toEqual(['Start', 'Halfway', 'Bottom']);
     expect(v.setup).toHaveLength(4);
     expect(v.execution[0]).toBe('Breathe in, brace, then sit down');
-    expect(v.mistakes).toContain("Don't let your knees cave inward");
+    // What not to do: every fault once, in catalogue order (guides v2 §5.1, §12.2 #14).
+    expect(v.avoid[0]).toBe("Don't let your heels or toes lift");
+    expect(v.avoid).toContain("Don't let your knees cave inward");
     expect(v.notice).toBeNull();
   });
 
@@ -247,12 +263,15 @@ describe('how-to view (catalogue → screen)', () => {
     expect(cuesOnly.guide).toBeNull();
     expect(cuesOnly.setup.length).toBeGreaterThan(0);
     expect(cuesOnly.notice).toBeNull();
+    // No guide: the legend lines still list the muscles (no Not shown line, nothing is drawn).
+    expect(cuesOnly.legend.map((l) => l.kind)).toEqual(['most', 'also']);
+    expect(cuesOnly.legend.every((l) => !l.swatch)).toBe(true);
     expect(hasHowTo('barbell-back-squat', noGuide)).toBe(true);
 
     const broken: HowToSources = { catalogue: createLazyCatalogue([rich]), guides: createGuideLibrary([{ key: 'barbell-back-squat', raw: { nope: true }, camera: null }]) };
     const b = buildHowToView({ name: 'Back squat', catalogueKey: 'barbell-back-squat' }, broken);
     expect(b.guide).toBeNull();
-    expect(b.mistakes.length).toBeGreaterThan(0);
+    expect(b.avoid.length).toBeGreaterThan(0);
     expect(b.notice).toBe('The animated guide for Back squat couldn’t be read. The cues below still apply.');
   });
 
@@ -268,6 +287,11 @@ describe('how-to view (catalogue → screen)', () => {
     expect(v.guide).not.toBeNull();
     expect(v.setup).toEqual([]);
     expect(v.notice).toBe('Couldn’t read the cues for Back squat. The guide above still applies.');
+    // No readable entry, no source of truth: no muscle colour, no legend, no What not to do (guides v2 §8).
+    expect(v.guide?.muscles).toBeNull();
+    expect(v.guide?.accessibilityLabel).not.toMatch(/Highlighted muscles/);
+    expect(v.legend).toEqual([]);
+    expect(v.avoid).toEqual([]);
     expect(howToLayout(v, false)).toMatchObject({ showPlayer: true, notices: ['Couldn’t read the cues for Back squat. The guide above still applies.'] });
     expect(howToLayout(v, true)).toMatchObject({
       showPlayer: false,

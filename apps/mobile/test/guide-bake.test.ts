@@ -56,13 +56,14 @@ function guide(key: string): LoadedGuide {
 }
 
 const style = guideStyleFromTokens(DIRECTION_D_GUIDE_TOKENS.dark);
+const steady: Bake.BakeConfig = { pt: 350, muscles: { primary: ['quads', 'glutes'], secondary: ['hamstrings'] }, pulse: false, increaseContrast: false };
 
 describe('bake plan', () => {
   it('still view: position 1 is drawn first, before the trace samples, then redrawn with the trace (review N1)', () => {
     const squat = guide('barbell-back-squat');
     const stops = keyFrameStops(squat.prepared);
     const out: FakePicture[] = [];
-    const plan = bake.bakeTasks(squat, 'steps', stops, style, out as never[]);
+    const plan = bake.bakeTasks(squat, 'steps', stops, style, out as never[], steady);
     expect(plan.firstSync).toBe(1);
     // The squat has a static bar-path trace, so there are samples to take.
     expect(plan.tasks.length).toBeGreaterThan(1 + stops.length + 10);
@@ -79,7 +80,7 @@ describe('bake plan', () => {
   it('animation without a trace: one task per frame, the first is the poster', () => {
     const squat = guide('barbell-back-squat');
     const out: FakePicture[] = [];
-    const plan = bake.bakeTasks(squat, 'animation', [], style, out as never[]);
+    const plan = bake.bakeTasks(squat, 'animation', [], style, out as never[], steady);
     const frames = playbackTimes(squat.prepared.guide).length;
     expect(plan.tasks).toHaveLength(frames);
     plan.tasks[0]?.();
@@ -88,10 +89,33 @@ describe('bake plan', () => {
     expect(out).toHaveLength(frames);
   });
 
+  it('with the work-phase emphasis, a steady poster follows the frames for the Finished state (guides v2 §8)', () => {
+    const squat = guide('barbell-back-squat');
+    const out: FakePicture[] = [];
+    const plan = bake.bakeTasks(squat, 'animation', [], style, out as never[], { ...steady, pulse: true });
+    const frames = playbackTimes(squat.prepared.guide).length;
+    expect(plan.steadyPoster).toBe(frames);
+    for (const task of plan.tasks) task();
+    expect(out).toHaveLength(frames + 1);
+    // Stills never pulse, so they never need one.
+    expect(bake.bakeTasks(squat, 'steps', keyFrameStops(squat.prepared), style, [], { ...steady, pulse: true }).steadyPoster).toBeNull();
+  });
+
+  it('the cache key changes with size, muscles, emphasis and Increase Contrast', () => {
+    const keys = new Set([
+      bake.bakeKey('k', 'animation', style, steady),
+      bake.bakeKey('k', 'animation', style, { ...steady, pt: 240 }),
+      bake.bakeKey('k', 'animation', style, { ...steady, muscles: null }),
+      bake.bakeKey('k', 'animation', style, { ...steady, pulse: true }),
+      bake.bakeKey('k', 'animation', style, { ...steady, increaseContrast: true }),
+    ]);
+    expect(keys.size).toBe(5);
+  });
+
   it('a guide with no labelled positions still bakes one still frame (P6)', () => {
     const squat = guide('barbell-back-squat');
     const out: FakePicture[] = [];
-    const plan = bake.bakeTasks(squat, 'steps', [], style, out as never[]);
+    const plan = bake.bakeTasks(squat, 'steps', [], style, out as never[], steady);
     for (const task of plan.tasks) task();
     expect(out).toHaveLength(1);
   });
