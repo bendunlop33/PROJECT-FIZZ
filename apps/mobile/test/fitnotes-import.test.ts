@@ -2,12 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { catalogueExerciseId, nameKey, starterExercises } from '@fizz/domain';
 import { idGen, profile, richFinishedSession } from '@fizz/domain/testing';
-import { openStore } from '@fizz/persistence';
+import { openStore, type Store } from '@fizz/persistence';
 import { openNodeDriver } from '@fizz/persistence/node';
-import type { SessionAggregate } from '@fizz/schemas';
+import type { SessionAggregate, UserProfile } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
-import { createImportService, type ImportDraft } from '../src/import/import-service';
+import { createImportService, type ImportDraft, type ImportServiceDeps } from '../src/import/import-service';
+import { introView, resultsView } from '../src/import/views';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -248,6 +249,41 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(reopened.draft.analysis.names.filter((n) => n.needsAnswer)).toEqual([]);
   });
 
+  it('a FitNotes workout dated today shows no time and no duration on Today or its summary (rule 6, review B2)', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    // 18:00 in London on 8 Oct: trained with FitNotes this morning, exported and imported now.
+    const draft = await openPreview(s, [A1, '2026-10-08,Lat Pulldown,Back,45.0,10,,,'].join('\n'));
+    const r = await s.imports.commit(draft.draftId, draft.mappingVersion, 'op-1');
+    expect(r).toMatchObject({ ok: true, status: 'finished' });
+    const today = await s.today.view();
+    expect(today?.main).toMatchObject({ kind: 'done_today', title: 'Workout', activeMs: null });
+    const sid = today?.main.kind === 'done_today' ? today.main.sessionId : '';
+    const sum = await s.workout.summary(sid);
+    expect(sum).toMatchObject({ dateOnly: '2026-10-08', endedAtUtc: null, facts: { activeMs: null, activeText: null, workingSets: 1 } });
+  });
+
+  it('Undo of a paused import hides what came in; results offer Continue and Undo until then', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    const draft = await answerAll(s, await openPreview(s, FILE_1));
+    let n = 0;
+    const r = await s.imports.commit(draft.draftId, draft.mappingVersion, 'op-1', { onProgress: (w) => (n = w), shouldStop: () => n >= 1 });
+    expect(r).toMatchObject({ ok: true, status: 'stopped', written: 1, total: 3 });
+    const jobId = r.ok ? r.jobId : '';
+    const paused = await s.imports.job(jobId);
+    if (!paused) throw new Error('no job');
+    expect(resultsView(paused, 'en-GB')).toMatchObject({ canContinue: true, canUndo: true });
+    expect(await s.imports.revert(jobId, paused.job.version, 'undo-1')).toMatchObject({ ok: true, workouts: 1 });
+    const undone = await s.imports.job(jobId);
+    if (!undone) throw new Error('no job');
+    expect(undone.state).toBe('undone');
+    expect(resultsView(undone, 'en-GB')).toMatchObject({ canContinue: false, canUndo: false });
+    expect(await s.imports.resume(jobId)).toMatchObject({ ok: false, reason: 'undone' });
+    expect(await s.imports.paused()).toBeNull();
+    expect(await s.yourData.counts()).toMatchObject({ finishedWorkouts: 0 });
+  });
+
   it('keeps provenance for every imported set, and names and comments as data (checks 24, 26)', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);
@@ -330,6 +366,136 @@ describe('FitNotes import: a workout started mid-import', () => {
     expect(await svc.resume(r.ok ? r.jobId : '')).toMatchObject({ ok: false, reason: 'workout_unfinished' });
     active = null;
     expect(await svc.resume(r.ok ? r.jobId : '')).toMatchObject({ ok: true, status: 'finished', written: 3 });
+    await store.close();
+  });
+});
+
+/** A bare store with the starter exercises, and an import service on it (a new one per app run). */
+async function bareStore(): Promise<{ store: Store; owner: UserProfile }> {
+  const store = await openStore(openNodeDriver(':memory:'));
+  const owner = profile();
+  await store.repos.profiles.save(owner, null);
+  for (const e of starterExercises('2026-10-08T17:00:00.000Z')) await store.repos.exercises.save(e, null);
+  return { store, owner };
+}
+function appRun(store: Store, owner: UserProfile | (() => UserProfile), idStart: number, over: Partial<ImportServiceDeps> = {}) {
+  const backups: string[] = [];
+  const svc = createImportService({
+    store: () => store,
+    now: () => ({ utc: '2026-10-08T17:00:00.000Z', tz: 'Europe/London' }),
+    newId: idGen(idStart),
+    profile: () => Promise.resolve(typeof owner === 'function' ? owner() : owner),
+    activeWorkout: () => Promise.resolve(null),
+    backUpOnPhone: (reason) => {
+      backups.push(reason);
+      return Promise.resolve({ ok: true });
+    },
+    catalogue: () => [],
+    ...over,
+  });
+  return { svc, backups };
+}
+const TWO_DAYS = [A1, '2026-09-01,Lat pulldown,Back,40,10,,,', '2026-09-02,Lat pulldown,Back,42.5,10,,,'].join('\n');
+const sessionCount = async (store: Store) => (await store.db.read((q) => q.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM sessions')))?.n ?? -1;
+
+describe('FitNotes import: closed or failed right after the last workout (review B1)', () => {
+  it('the next app run finishes it (with its after-import backup), and a later import isn’t refused', async () => {
+    const { store, owner } = await bareStore();
+    const imports = store.repos.imports;
+    const realFinish = imports.finishJob.bind(imports);
+    // Killed between the last workout and marking the import finished.
+    imports.finishJob = () => Promise.reject(new Error('App killed'));
+    const first = appRun(store, owner, 70_000);
+    const opened = await first.svc.open({ name: 'f.csv', text: TWO_DAYS });
+    if (opened.kind !== 'preview') throw new Error(opened.kind);
+    const jobId = opened.draft.draftId;
+    expect(await first.svc.commit(jobId, opened.draft.mappingVersion, 'op-1')).toEqual({ ok: false, reason: 'finish_failed', jobId, written: 2, total: 2, message: 'App killed' });
+    expect((await imports.getJob(jobId))?.status).toBe('committing');
+    expect(first.backups).toEqual(['before_import']);
+
+    imports.finishJob = realFinish;
+    const next = appRun(store, owner, 80_000);
+    expect(await next.svc.paused()).toBeNull();
+    expect((await next.svc.list()).map((p) => [p.state, p.written, p.job.status])).toEqual([['finished', 2, 'committed']]);
+    expect(next.backups).toEqual(['after_import']);
+    // A newer export imports normally: no "Another import isn't finished yet".
+    const newer = await next.svc.open({ name: 'g.csv', text: `${TWO_DAYS}\n2026-09-03,Lat pulldown,Back,45,10,,,` });
+    if (newer.kind !== 'preview') throw new Error(newer.kind);
+    expect(await next.svc.commit(newer.draft.draftId, newer.draft.mappingVersion, 'op-2')).toMatchObject({ ok: true, status: 'finished', written: 1, total: 1 });
+    expect(await sessionCount(store)).toBe(3);
+    await store.close();
+  });
+
+  it('while finishing keeps failing it is shown unfinished with Continue, never as finished; Continue finishes it', async () => {
+    const { store, owner } = await bareStore();
+    const imports = store.repos.imports;
+    const realFinish = imports.finishJob.bind(imports);
+    imports.finishJob = () => Promise.reject(new Error('disk I/O error'));
+    const first = appRun(store, owner, 70_000);
+    const opened = await first.svc.open({ name: 'f.csv', text: TWO_DAYS });
+    if (opened.kind !== 'preview') throw new Error(opened.kind);
+    const jobId = opened.draft.draftId;
+    expect(await first.svc.commit(jobId, opened.draft.mappingVersion, 'op-1')).toMatchObject({ ok: false, reason: 'finish_failed' });
+
+    const next = appRun(store, owner, 80_000);
+    const paused = await next.svc.paused();
+    expect(paused).toMatchObject({ state: 'paused', written: 2, total: 2 });
+    expect(introView({ block: null, blockTime: '', paused }).primary).toEqual({ label: 'Continue import', enabled: true });
+    const job = await next.svc.job(jobId);
+    if (!job) throw new Error('no job');
+    expect(resultsView(job, 'en-GB')).toMatchObject({ canContinue: true, canUndo: true, banner: { text: 'Import not finished. All 2 workouts are in your history; Continue import finishes it.' } });
+    // Another file waits for this one, and says so.
+    const other = await next.svc.open({ name: 'g.csv', text: [A1, '2026-09-05,Lat pulldown,Back,45,10,,,'].join('\n') });
+    if (other.kind !== 'preview') throw new Error(other.kind);
+    expect(await next.svc.commit(other.draft.draftId, other.draft.mappingVersion, 'op-2')).toMatchObject({ ok: false, reason: 'another_import', job: { id: jobId } });
+
+    imports.finishJob = realFinish;
+    expect(await next.svc.resume(jobId)).toMatchObject({ ok: true, status: 'finished', written: 2, total: 2 });
+    expect(next.backups).toEqual(['after_import']);
+    expect(await sessionCount(store)).toBe(2);
+    await store.close();
+  });
+});
+
+describe('FitNotes import: one write loop per import (review N2)', () => {
+  it('a double tap on Import, or Continue while it runs, joins the same loop; Undo is refused until it ends', async () => {
+    const { store, owner } = await bareStore();
+    const run = appRun(store, owner, 70_000);
+    const opened = await run.svc.open({ name: 'f.csv', text: `${TWO_DAYS}\n2026-09-03,Lat pulldown,Back,45,10,,,` });
+    if (opened.kind !== 'preview') throw new Error(opened.kind);
+    const jobId = opened.draft.draftId;
+    let during: Promise<unknown>[] = [];
+    const hooks = {
+      onProgress: (n: number) => {
+        if (n === 1 && during.length === 0) during = [run.svc.revert(jobId, 1, 'undo-1'), run.svc.resume(jobId)];
+      },
+    };
+    const [a, b] = await Promise.all([run.svc.commit(jobId, opened.draft.mappingVersion, 'op-1', hooks), run.svc.commit(jobId, opened.draft.mappingVersion, 'op-1')]);
+    expect(a).toEqual({ ok: true, jobId, status: 'finished', written: 3, total: 3 });
+    expect(b).toEqual(a);
+    const [undo, resumed] = await Promise.all(during);
+    expect(undo).toEqual({ ok: false, reason: 'busy' });
+    expect(resumed).toEqual(a);
+    expect(await sessionCount(store)).toBe(3);
+    expect(run.backups.filter((r) => r === 'before_import')).toHaveLength(1);
+    await store.close();
+  });
+});
+
+describe('FitNotes import: what the preview was checked against (review N9)', () => {
+  it('a change of the profile’s unit or of the gyms since the preview makes the commit stale', async () => {
+    const { store, owner } = await bareStore();
+    let current: UserProfile = owner;
+    const run = appRun(store, () => current, 70_000);
+    const opened = await run.svc.open({ name: 'f.csv', text: TWO_DAYS });
+    if (opened.kind !== 'preview') throw new Error(opened.kind);
+    current = { ...owner, preferredUnit: owner.preferredUnit === 'kg' ? 'lb' : 'kg' };
+    const r = await run.svc.commit(opened.draft.draftId, opened.draft.mappingVersion, 'op-1');
+    expect(r).toMatchObject({ ok: false, reason: 'stale' });
+    if (r.ok || r.reason !== 'stale') throw new Error('expected stale');
+    expect(r.draft.mappingVersion).toBe(opened.draft.mappingVersion + 1);
+    expect(await sessionCount(store)).toBe(0);
+    expect(await run.svc.commit(r.draft.draftId, r.draft.mappingVersion, 'op-1')).toMatchObject({ ok: true, status: 'finished' });
     await store.close();
   });
 });

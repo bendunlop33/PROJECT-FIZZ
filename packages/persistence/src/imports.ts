@@ -127,6 +127,11 @@ export class SqliteImports {
     return this.db.read(async (q) => (await q.getAll('SELECT * FROM import_rows WHERE job_id = ? ORDER BY row_number', [jobId])).map(decodeImportRow));
   }
 
+  /** A job's source rows on one date, in file order (one imported workout's sets and their originals). */
+  rowsOn(jobId: string, localDate: string): Promise<ImportRow[]> {
+    return this.db.read(async (q) => (await q.getAll('SELECT * FROM import_rows WHERE job_id = ? AND local_date = ? ORDER BY row_number', [jobId, localDate])).map(decodeImportRow));
+  }
+
   /** Where an imported set came from (check 24), or null for a set logged in the app. */
   provenance(setId: string): Promise<{ row: ImportRow; job: ImportJob } | null> {
     return this.db.read(async (q) => {

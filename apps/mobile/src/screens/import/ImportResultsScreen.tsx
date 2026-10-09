@@ -16,17 +16,20 @@ import { AppText, Card, Group, PrimaryButton, Row, Screen, SectionHeader, Status
 const ICON_TONE = { done: 'done', info: 'info', warning: 'warning' } as const;
 
 /**
- * Import results (data-import-export §2.5 step 5, §3.4): what came in, every
- * skipped row and why, `Save row-by-row results (CSV)`, and `Undo this
- * import` (hides its workouts, deletes nothing; DX7). A paused import offers
+ * Import results (data-import-export §2.5 step 5, §3.4): what came in (each
+ * workout opens its sets with the original rows, check 24), every skipped
+ * row and why, `Save row-by-row results (CSV)`, and `Undo this import`
+ * (hides its workouts, deletes nothing; DX7). An unfinished import offers
  * `Continue import`.
  */
+const WORKOUT_PAGE = 50;
 export function ImportResultsScreen() {
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParams>>();
   const { jobId } = useRoute<RouteProp<ProfileStackParams, 'ImportResults'>>().params;
   const [open, setOpen] = useState<string | null>(null);
+  const [workoutPages, setWorkoutPages] = useState(1);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [undoOp] = useState(() => newUuid());
   const [data] = useScreenData(async (s) => {
@@ -118,6 +121,31 @@ export function ImportResultsScreen() {
       </Card>
       {block !== null && v.canContinue ? <StatusLine icon="info.circle" tone="info" text={`Finish or discard your workout first (${block.title}).`} /> : null}
       {note ? <StatusLine icon={note.ok ? 'checkmark.circle.fill' : 'exclamationmark.triangle'} tone={note.ok ? 'done' : 'warning'} text={note.text} /> : null}
+
+      {v.imported ? (
+        <>
+          <SectionHeader title={v.imported.title} />
+          <Group>
+            {v.imported.workouts.slice(0, workoutPages * WORKOUT_PAGE).map((w) => (
+              <Row
+                key={w.date}
+                title={w.text}
+                onPress={() => {
+                  navigation.navigate('ImportedWorkout', { jobId, date: w.date });
+                }}
+              />
+            ))}
+          </Group>
+          {v.imported.workouts.length > workoutPages * WORKOUT_PAGE ? (
+            <TextButton
+              label="Show more"
+              onPress={() => {
+                setWorkoutPages((n) => n + 1);
+              }}
+            />
+          ) : null}
+        </>
+      ) : null}
 
       {v.skipped.length > 0 ? (
         <>

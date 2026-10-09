@@ -94,8 +94,12 @@ export interface ImportDraft {
 export type OpenResult =
   | { kind: 'empty' | 'not_csv' | 'fitnotes_backup' | 'no_profile' }
   | { kind: 'body_tracker' | 'unknown_header'; firstLine: string }
-  /** The same file came in before (and wasn't undone): nothing new to import (check 21). */
-  | { kind: 'same_file'; job: ImportJob; written: number }
+  /**
+   * The same file came in before (and wasn't undone): nothing new to import
+   * (check 21). `state` says whether that import is finished, or still
+   * unfinished (`paused`/`running`: continue it instead; review N1).
+   */
+  | { kind: 'same_file'; job: ImportJob; written: number; state: JobState }
   | { kind: 'preview'; draft: ImportDraft };
 
 export type AnswerResult =
@@ -114,7 +118,9 @@ export type WriteResult =
   | { ok: true; jobId: string; status: 'finished' | 'stopped'; written: number; total: number }
   | { ok: false; reason: 'undone'; jobId: string; written: number; total: number }
   /** A workout couldn't be saved; the ones before it are in, nothing was half-saved (§3.4). */
-  | { ok: false; reason: 'write_failed'; jobId: string; written: number; total: number; date: string; message: string };
+  | { ok: false; reason: 'write_failed'; jobId: string; written: number; total: number; date: string; message: string }
+  /** Every workout is in, but the import couldn't be marked finished; `Continue import` finishes it (review B1). */
+  | { ok: false; reason: 'finish_failed'; jobId: string; written: number; total: number; message: string };
 
 export type CommitResult =
   | WriteResult
@@ -129,6 +135,12 @@ export type RevertResult =
   | { ok: false; reason: 'workout_unfinished'; block: ImportBlock }
   | { ok: false; reason: 'busy' | 'stale' | 'not_found' | 'already_undone' };
 
+/**
+ * - `running`: being written by this app run now.
+ * - `paused`: not finished and not being written: stopped, force-closed or
+ *   failed, including after its last workout (review B1). `Continue import`.
+ * - `finished` / `undone`: committed / reverted.
+ */
 export type JobState = 'running' | 'paused' | 'finished' | 'undone';
 
 export interface PastImport {
@@ -145,6 +157,11 @@ export interface ImportedSetProvenance {
   variant: FitNotesVariant;
   row: ImportRow;
   header: string;
+}
+
+/** Where an imported set came from: its import and source row (check 24). */
+export function provenanceOf(job: ImportJob, row: ImportRow): ImportedSetProvenance {
+  return { fileName: job.fileName, importedAt: job.startedAt, variant: job.variant, row, header: job.header };
 }
 
 /** Catalogue and app exercises a name can map to (rule 10: the catalogue is Coaching knowledge, read-only here). */
@@ -198,6 +215,8 @@ interface Draft {
   ctx: ImportContext;
   /** What the preview was checked against (rule 5). */
   ctxStamp: string;
+  /** The commit in flight for this preview, so a second tap joins it (review N2). */
+  committing: Promise<CommitResult> | null;
   candidates: MatchCandidate[];
   catalogueRows: Map<string, Exercise>;
   answers: ImportAnswers;
@@ -207,7 +226,8 @@ interface Draft {
 
 export function createImportService(deps: ImportServiceDeps) {
   const drafts = new Map<string, Draft>();
-  const running = new Set<string>();
+  /** One write loop per job in this app run; a second caller joins it (review N2). */
+  const inflight = new Map<string, Promise<WriteResult>>();
   const repos = () => deps.store().repos;
   const entries = () => (deps.catalogue ? deps.catalogue() : bundledCatalogue().catalogue.entries);
 
@@ -221,17 +241,23 @@ export function createImportService(deps: ImportServiceDeps) {
     return (await repos().gyms.listByOwner(ownerId)).filter((g) => g.archivedAtUtc === undefined).map((g) => ({ id: g.id, name: g.name }));
   }
 
-  /** The data the preview depends on, re-read (exercise list, remembered names, dates in the app, earlier imports). */
+  /**
+   * The data the preview depends on, re-read (exercise list, remembered
+   * names, dates in the app, earlier imports, gyms, the profile's unit).
+   */
   async function loadContext(ownerId: string, defaultUnit: WeightUnit, rows: readonly FitNotesRow[]) {
     const at = deps.now();
     const built = buildCandidates(await repos().exercises.list(), entries(), ownerId, at.utc);
     const aliases = new Map((await repos().imports.aliases(ownerId)).map((a) => [a.nameKey, a.target]));
     const appDates = await repos().imports.appDates(ownerId);
     const importedDates = await repos().imports.importedDates(ownerId);
+    const gyms = await gymsOf(ownerId);
     const ctx: ImportContext = { ownerId, candidates: built.candidates, aliases, appDates, importedDates, defaultUnit };
     const fileDates = new Set(rows.map((r) => r.date).filter((d): d is string => d !== null));
     const stamp = stableStringify({
-      candidates: built.candidates.map((c) => [c.exerciseId, c.name, c.defaultLoadConvention]),
+      defaultUnit,
+      gyms: gyms.map((g) => g.id).sort(),
+      candidates: built.candidates.map((c) => [c.exerciseId, c.name, c.defaultLoadConvention, [...c.compatibleEquipment].sort()]),
       aliases: [...aliases.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
       appDates: [...appDates].filter((d) => fileDates.has(d)).sort(),
       importedDates: [...importedDates.entries()].filter(([d]) => fileDates.has(d)).map(([d, e]) => [d, e.jobId]).sort(),
@@ -257,70 +283,118 @@ export function createImportService(deps: ImportServiceDeps) {
     return (await repos().imports.writtenDates(jobId)).size;
   }
 
-  function stateOf(job: ImportJob, written: number): JobState {
+  /** Only `committed` is finished: a `committing` job that isn't being written is unfinished, however many workouts are in (review B1). */
+  function stateOf(job: ImportJob): JobState {
     if (job.status === 'reverted') return 'undone';
     if (job.status === 'committed') return 'finished';
-    return running.has(job.id) ? 'running' : written >= job.counts.workouts ? 'finished' : 'paused';
+    return inflight.has(job.id) ? 'running' : 'paused';
   }
 
-  /** Write the job's remaining workouts, oldest first, one transaction each. */
-  async function writeWorkouts(job: ImportJob, hooks: CommitHooks): Promise<WriteResult> {
-    running.add(job.id);
+  async function pastImport(job: ImportJob): Promise<PastImport> {
+    const written = await writtenCount(job.id);
+    return { job, written, total: job.counts.workouts, state: stateOf(job) };
+  }
+
+  /**
+   * An unfinished import whose workouts are all in (the app was closed, or
+   * the last step failed, after the last workout): finish it now, with its
+   * after-import backup. Anything short of that stays `paused` for
+   * `Continue import`; a failure here changes nothing (review B1).
+   */
+  async function settle(job: ImportJob): Promise<ImportJob> {
+    if (job.status !== 'committing' || inflight.has(job.id)) return job;
+    if ((await writtenCount(job.id)) < job.counts.workouts) return job;
     try {
-      const rows = await repos().imports.rows(job.id);
-      const dates = [...new Set(rows.filter((r) => r.result === 'imported').map((r) => r.localDate ?? ''))].filter((d) => d !== '').sort();
-      const total = dates.length;
-      const done = await repos().imports.writtenDates(job.id);
-      let written = dates.filter((d) => done.has(d)).length;
-      hooks.onProgress?.(written, total);
-      for (const date of dates) {
-        if (done.has(date)) continue;
-        if (hooks.shouldStop?.()) return { ok: true, jobId: job.id, status: 'stopped', written, total };
-        // A workout started meanwhile (another tab): pause rather than change the history it reads (DX4).
-        if (await block()) return { ok: true, jobId: job.id, status: 'stopped', written, total };
-        const aggregate = buildImportedSession({
-          ownerId: job.ownerId,
-          jobId: job.id,
-          operationId: job.operationId,
-          tz: job.timezone,
-          gymId: job.answers.gymId,
-          importedAtUtc: job.startedAt.utc,
-          date,
-          rows,
-        });
-        let outcome: Awaited<ReturnType<Store['repos']['imports']['commitWorkout']>>;
-        try {
-          outcome = await repos().imports.commitWorkout(job.id, aggregate);
-        } catch (e) {
-          return { ok: false, reason: 'write_failed', jobId: job.id, written, total, date, message: e instanceof Error ? e.message : String(e) };
-        }
-        if (outcome === 'job_not_committing') return { ok: false, reason: 'undone', jobId: job.id, written, total };
-        written += 1;
-        hooks.onProgress?.(written, total);
+      await writeWorkouts(job, {});
+    } catch {
+      // Left unfinished: shown as paused, and Continue import tries again.
+    }
+    return (await repos().imports.getJob(job.id)) ?? job;
+  }
+
+  /** Write the job's remaining workouts, oldest first, one transaction each. One loop per job: a second caller joins it. */
+  function writeWorkouts(job: ImportJob, hooks: CommitHooks): Promise<WriteResult> {
+    const existing = inflight.get(job.id);
+    if (existing) return existing;
+    const run = (async () => {
+      try {
+        return await runWrites(job, hooks);
+      } finally {
+        inflight.delete(job.id);
       }
-      const current = await repos().imports.getJob(job.id);
+    })();
+    inflight.set(job.id, run);
+    return run;
+  }
+
+  async function runWrites(job: ImportJob, hooks: CommitHooks): Promise<WriteResult> {
+    const rows = await repos().imports.rows(job.id);
+    const dates = [...new Set(rows.filter((r) => r.result === 'imported').map((r) => r.localDate ?? ''))].filter((d) => d !== '').sort();
+    const total = dates.length;
+    const done = await repos().imports.writtenDates(job.id);
+    let written = dates.filter((d) => done.has(d)).length;
+    hooks.onProgress?.(written, total);
+    for (const date of dates) {
+      if (done.has(date)) continue;
+      if (hooks.shouldStop?.()) return { ok: true, jobId: job.id, status: 'stopped', written, total };
+      // A workout started meanwhile (another tab): pause rather than change the history it reads (DX4).
+      if (await block()) return { ok: true, jobId: job.id, status: 'stopped', written, total };
+      const aggregate = buildImportedSession({
+        ownerId: job.ownerId,
+        jobId: job.id,
+        operationId: job.operationId,
+        tz: job.timezone,
+        gymId: job.answers.gymId,
+        importedAtUtc: job.startedAt.utc,
+        date,
+        rows,
+      });
+      let outcome: Awaited<ReturnType<Store['repos']['imports']['commitWorkout']>>;
+      try {
+        outcome = await repos().imports.commitWorkout(job.id, aggregate);
+      } catch (e) {
+        return { ok: false, reason: 'write_failed', jobId: job.id, written, total, date, message: e instanceof Error ? e.message : String(e) };
+      }
+      if (outcome === 'job_not_committing') return { ok: false, reason: 'undone', jobId: job.id, written, total };
+      written += 1;
+      hooks.onProgress?.(written, total);
+    }
+    // Every workout is in: mark the import finished. A failure is reported, never shown as finished (review B1).
+    const failed = (message: string): WriteResult => ({ ok: false, reason: 'finish_failed', jobId: job.id, written, total, message });
+    let current: ImportJob | null;
+    try {
+      current = await repos().imports.getJob(job.id);
       if (current?.status === 'committing') {
         const fin = await repos().imports.finishJob(job.id, current.version, deps.now());
-        if (fin.ok && !fin.duplicate) void deps.backUpOnPhone('after_import');
+        if (fin.ok) {
+          if (!fin.duplicate) void deps.backUpOnPhone('after_import');
+          return { ok: true, jobId: job.id, status: 'finished', written, total };
+        }
+        current = await repos().imports.getJob(job.id);
       }
-      return { ok: true, jobId: job.id, status: 'finished', written, total };
-    } finally {
-      running.delete(job.id);
+    } catch (e) {
+      return failed(e instanceof Error ? e.message : String(e));
     }
+    if (current?.status === 'committed') return { ok: true, jobId: job.id, status: 'finished', written, total };
+    if (current?.status === 'reverted') return { ok: false, reason: 'undone', jobId: job.id, written, total };
+    return failed(current ? 'The import changed while it was finishing' : 'The import record is missing');
   }
 
   const service = {
     /** Import and Undo import are unavailable while a workout is unfinished (DX4). */
     blockedBy: block,
 
-    /** The import still being written, if any: `Import paused at 180 of 412` (§3.4). */
+    /**
+     * The unfinished import, if any: `Import paused at 180 of 412` (§3.4).
+     * One whose workouts are all in is finished here instead (review B1).
+     */
     async paused(): Promise<PastImport | null> {
       const p = await deps.profile();
       if (!p) return null;
-      const job = await repos().imports.committingJob(p.id);
-      if (!job) return null;
-      const written = await writtenCount(job.id);
-      return { job, written, total: job.counts.workouts, state: stateOf(job, written) };
+      const found = await repos().imports.committingJob(p.id);
+      if (!found) return null;
+      const job = await settle(found);
+      return job.status === 'committing' ? pastImport(job) : null;
     },
 
     /**
@@ -346,8 +420,11 @@ export function createImportService(deps: ImportServiceDeps) {
         }
       }
       const checksum = sha256Hex(file.text);
-      const earlier = (await repos().imports.listJobs(p.id)).find((j) => j.checksum === checksum && j.status !== 'reverted');
-      if (earlier) return { kind: 'same_file', job: earlier, written: await writtenCount(earlier.id) };
+      const found = (await repos().imports.listJobs(p.id)).find((j) => j.checksum === checksum && j.status !== 'reverted');
+      if (found) {
+        const earlier = await pastImport(await settle(found));
+        return { kind: 'same_file', job: earlier.job, written: earlier.written, state: earlier.state };
+      }
       const loaded = await loadContext(p.id, p.preferredUnit, parsed.rows);
       const id = deps.newId();
       const d: Draft = {
@@ -362,6 +439,7 @@ export function createImportService(deps: ImportServiceDeps) {
         defaultUnit: p.preferredUnit,
         ctx: loaded.ctx,
         ctxStamp: loaded.stamp,
+        committing: null,
         candidates: loaded.candidates,
         catalogueRows: loaded.catalogueRows,
         answers: DEFAULT_ANSWERS,
@@ -446,108 +524,27 @@ export function createImportService(deps: ImportServiceDeps) {
         if (job?.status === 'committing' && job.operationId === operationId) return service.resume(job.id, hooks);
         return { ok: false, reason: 'not_found' };
       }
-      if (d.mappingVersion !== mappingVersion) return { ok: false, reason: 'stale', draft: await view(d) };
-      const b = await block();
-      if (b) return { ok: false, reason: 'workout_unfinished', block: b };
-      const other = await repos().imports.committingJob(d.ownerId);
-      if (other) return { ok: false, reason: 'another_import', job: other };
-      const fresh = await loadContext(d.ownerId, d.defaultUnit, d.rows);
-      if (fresh.stamp !== d.ctxStamp) {
-        d.ctx = fresh.ctx;
-        d.ctxStamp = fresh.stamp;
-        d.candidates = fresh.candidates;
-        d.catalogueRows = fresh.catalogueRows;
-        d.mappingVersion += 1;
-        d.analysis = analyseImport({ variant: d.variant, rows: d.rows }, d.ctx, d.answers);
-        return { ok: false, reason: 'stale', draft: await view(d) };
+      // `Import` tapped twice: the second tap joins the first commit (review N2).
+      if (d.committing) return d.committing;
+      const run = commitDraft(d, mappingVersion, operationId, hooks);
+      d.committing = run;
+      try {
+        return await run;
+      } finally {
+        d.committing = null;
       }
-      if (!d.analysis.ready) return { ok: false, reason: 'not_ready' };
-
-      const backup = await deps.backUpOnPhone('before_import');
-      if (!backup.ok) return { ok: false, reason: 'backup_failed', message: backup.error };
-
-      const at = deps.now();
-      const rows = planImportRows({ rows: d.rows }, d.analysis, { jobId: d.id, defaultUnit: d.defaultUnit });
-      const a = d.analysis;
-      const dates = rows.map((r) => r.localDate).filter((x): x is string => x !== null).sort();
-      const job: ImportJob = {
-        id: d.id,
-        ownerId: d.ownerId,
-        version: 1,
-        createdAtUtc: at.utc,
-        updatedAtUtc: at.utc,
-        source: 'fitnotes',
-        fileName: d.fileName,
-        checksum: d.checksum,
-        variant: d.variant,
-        header: d.firstLine.slice(0, 4000),
-        timezone: d.tz,
-        startedAt: at,
-        operationId,
-        mappingVersion: d.mappingVersion,
-        answers: d.answers,
-        counts: {
-          rows: a.rowCount,
-          workouts: a.counts.workouts,
-          sets: a.counts.byResult.imported,
-          exercises: a.counts.exercises,
-          byResult: {
-            imported: a.counts.byResult.imported,
-            skipped_cardio: a.counts.byResult.skipped_cardio,
-            skipped_unsupported: a.counts.byResult.skipped_unsupported,
-            skipped_duplicate: a.counts.byResult.skipped_duplicate,
-            skipped_date_exists: a.counts.byResult.skipped_date_exists,
-            skipped_exercise: a.counts.byResult.skipped_exercise,
-            unreadable: a.counts.byResult.unreadable,
-          },
-        },
-        dateRange: dates.length === 0 ? null : { first: dates[0] ?? '', last: dates.at(-1) ?? '' },
-        status: 'committing',
-        finishedAt: null,
-        revert: null,
-      };
-      const used = new Set(rows.flatMap((r) => (r.imported ? [r.imported.exerciseId] : [])));
-      const exercises: Exercise[] = [
-        ...newExercisesToCreate(a).map(
-          (n): Exercise => ({
-            id: n.exerciseId,
-            ownerId: d.ownerId,
-            source: 'custom',
-            name: n.name,
-            movementPattern: 'other',
-            primaryMuscles: [],
-            catalogueKey: null,
-            measurement: 'reps',
-            laterality: n.laterality,
-            compatibleEquipment: n.newKind === null ? [] : [n.newKind],
-            defaultLoadConvention: n.newKind === null ? n.convention : conventionForKind(n.newKind),
-            version: 1,
-            createdAtUtc: at.utc,
-            updatedAtUtc: at.utc,
-          }),
-        ),
-        ...[...d.catalogueRows.values()].filter((e) => used.has(e.id)),
-      ];
-      const aliases: AliasToSave[] = aliasesToSave(a).map((x) => ({ name: x.name.slice(0, 4000), nameKey: x.key, target: x.target }));
-      const created = await repos().imports.createJob(job, rows, { exercises, aliases, at, newId: deps.newId });
-      if (!created.ok) {
-        const running = await repos().imports.committingJob(d.ownerId);
-        if (created.error === 'another_import_running' && running) return { ok: false, reason: 'another_import', job: running };
-        return { ok: false, reason: 'not_found' };
-      }
-      drafts.delete(d.id);
-      const stored = (await repos().imports.getJob(d.id)) ?? job;
-      return writeWorkouts(stored, hooks);
     },
 
-    /** `Continue import` after Stop or a force-close (check 23). */
+    /** `Continue import` after Stop, a force-close or a failure (check 23; review B1). */
     async resume(jobId: string, hooks: CommitHooks = {}): Promise<CommitResult> {
-      const b = await block();
-      if (b) return { ok: false, reason: 'workout_unfinished', block: b };
       const job = await repos().imports.getJob(jobId);
       if (!job) return { ok: false, reason: 'not_found' };
       if (job.status === 'reverted') return { ok: false, reason: 'undone', jobId, written: await writtenCount(jobId), total: job.counts.workouts };
-      if (running.has(jobId)) return { ok: true, jobId, status: 'stopped', written: await writtenCount(jobId), total: job.counts.workouts };
+      // Already being written in this app run: wait for that run (review N2).
+      const existing = inflight.get(jobId);
+      if (existing) return existing;
+      const b = await block();
+      if (b) return { ok: false, reason: 'workout_unfinished', block: b };
       return writeWorkouts(job, hooks);
     },
 
@@ -557,7 +554,7 @@ export function createImportService(deps: ImportServiceDeps) {
      * Refused while it is being written, or while a workout is unfinished (DX4).
      */
     async revert(jobId: string, expectedVersion: number, operationId: string): Promise<RevertResult> {
-      if (running.has(jobId)) return { ok: false, reason: 'busy' };
+      if (inflight.has(jobId)) return { ok: false, reason: 'busy' };
       const b = await block();
       if (b) return { ok: false, reason: 'workout_unfinished', block: b };
       const r = await repos().imports.revertJob(jobId, expectedVersion, operationId, deps.now());
@@ -566,25 +563,34 @@ export function createImportService(deps: ImportServiceDeps) {
       return { ok: false, reason: r.error };
     },
 
-    /** `Past imports`, newest first. */
+    /** `Past imports`, newest first. An unfinished import whose workouts are all in is finished first (review B1). */
     async list(): Promise<PastImport[]> {
       const p = await deps.profile();
       if (!p) return [];
       const jobs = await repos().imports.listJobs(p.id);
       const out: PastImport[] = [];
-      for (const job of jobs) {
-        const written = await writtenCount(job.id);
-        out.push({ job, written, total: job.counts.workouts, state: stateOf(job, written) });
-      }
+      for (const job of jobs) out.push(await pastImport(await settle(job)));
       return out;
     },
 
     /** One import with every source row (results, §2.5 step 5). */
     async job(jobId: string): Promise<(PastImport & { rows: ImportRow[] }) | null> {
+      const found = await repos().imports.getJob(jobId);
+      if (!found) return null;
+      const job = await settle(found);
+      return { ...(await pastImport(job)), rows: await repos().imports.rows(job.id) };
+    },
+
+    /**
+     * The sets one imported workout brought in, each with where it came from
+     * (check 24: source file, row number, original values; review S2), in
+     * file order.
+     */
+    async importedRows(jobId: string, date: string): Promise<{ job: ImportJob; rows: ImportRow[] } | null> {
       const job = await repos().imports.getJob(jobId);
       if (!job) return null;
-      const written = await writtenCount(job.id);
-      return { job, written, total: job.counts.workouts, state: stateOf(job, written), rows: await repos().imports.rows(job.id) };
+      const rows = (await repos().imports.rowsOn(jobId, date)).filter((r) => r.result === 'imported');
+      return { job, rows };
     },
 
     /** `Save row-by-row results (CSV)`. */
@@ -599,9 +605,110 @@ export function createImportService(deps: ImportServiceDeps) {
     async provenance(setId: string): Promise<ImportedSetProvenance | null> {
       const p = await repos().imports.provenance(setId);
       if (!p) return null;
-      return { fileName: p.job.fileName, importedAt: p.job.startedAt, variant: p.job.variant, row: p.row, header: p.job.header };
+      return provenanceOf(p.job, p.row);
     },
   };
+
+  async function commitDraft(d: Draft, mappingVersion: number, operationId: string, hooks: CommitHooks): Promise<CommitResult> {
+    if (d.mappingVersion !== mappingVersion) return { ok: false, reason: 'stale', draft: await view(d) };
+    const b = await block();
+    if (b) return { ok: false, reason: 'workout_unfinished', block: b };
+    // An earlier import left unfinished after its last workout is finished first (review B1).
+    const found = await repos().imports.committingJob(d.ownerId);
+    const other = found ? await settle(found) : null;
+    if (other?.status === 'committing') return { ok: false, reason: 'another_import', job: other };
+    // The profile's unit labels weightless rows: a change since the preview makes it stale (review N9).
+    const unit = (await deps.profile())?.preferredUnit ?? d.defaultUnit;
+    const fresh = await loadContext(d.ownerId, unit, d.rows);
+    if (fresh.stamp !== d.ctxStamp) {
+      d.defaultUnit = unit;
+      d.ctx = fresh.ctx;
+      d.ctxStamp = fresh.stamp;
+      d.candidates = fresh.candidates;
+      d.catalogueRows = fresh.catalogueRows;
+      d.mappingVersion += 1;
+      d.analysis = analyseImport({ variant: d.variant, rows: d.rows }, d.ctx, d.answers);
+      return { ok: false, reason: 'stale', draft: await view(d) };
+    }
+    if (!d.analysis.ready) return { ok: false, reason: 'not_ready' };
+
+    const backup = await deps.backUpOnPhone('before_import');
+    if (!backup.ok) return { ok: false, reason: 'backup_failed', message: backup.error };
+
+    const at = deps.now();
+    const rows = planImportRows({ rows: d.rows }, d.analysis, { jobId: d.id, defaultUnit: d.defaultUnit });
+    const a = d.analysis;
+    const dates = rows.map((r) => r.localDate).filter((x): x is string => x !== null).sort();
+    const job: ImportJob = {
+      id: d.id,
+      ownerId: d.ownerId,
+      version: 1,
+      createdAtUtc: at.utc,
+      updatedAtUtc: at.utc,
+      source: 'fitnotes',
+      fileName: d.fileName,
+      checksum: d.checksum,
+      variant: d.variant,
+      header: d.firstLine.slice(0, 4000),
+      timezone: d.tz,
+      startedAt: at,
+      operationId,
+      mappingVersion: d.mappingVersion,
+      answers: d.answers,
+      counts: {
+        rows: a.rowCount,
+        workouts: a.counts.workouts,
+        sets: a.counts.byResult.imported,
+        exercises: a.counts.exercises,
+        byResult: {
+          imported: a.counts.byResult.imported,
+          skipped_cardio: a.counts.byResult.skipped_cardio,
+          skipped_unsupported: a.counts.byResult.skipped_unsupported,
+          skipped_duplicate: a.counts.byResult.skipped_duplicate,
+          skipped_date_exists: a.counts.byResult.skipped_date_exists,
+          skipped_exercise: a.counts.byResult.skipped_exercise,
+          unreadable: a.counts.byResult.unreadable,
+        },
+      },
+      dateRange: dates.length === 0 ? null : { first: dates[0] ?? '', last: dates.at(-1) ?? '' },
+      status: 'committing',
+      finishedAt: null,
+      revert: null,
+    };
+    const used = new Set(rows.flatMap((r) => (r.imported ? [r.imported.exerciseId] : [])));
+    const exercises: Exercise[] = [
+      ...newExercisesToCreate(a).map(
+        (n): Exercise => ({
+          id: n.exerciseId,
+          ownerId: d.ownerId,
+          source: 'custom',
+          name: n.name,
+          movementPattern: 'other',
+          primaryMuscles: [],
+          catalogueKey: null,
+          measurement: 'reps',
+          laterality: n.laterality,
+          compatibleEquipment: n.newKind === null ? [] : [n.newKind],
+          defaultLoadConvention: n.newKind === null ? n.convention : conventionForKind(n.newKind),
+          version: 1,
+          createdAtUtc: at.utc,
+          updatedAtUtc: at.utc,
+        }),
+      ),
+      ...[...d.catalogueRows.values()].filter((e) => used.has(e.id)),
+    ];
+    const aliases: AliasToSave[] = aliasesToSave(a).map((x) => ({ name: x.name.slice(0, 4000), nameKey: x.key, target: x.target }));
+    const created = await repos().imports.createJob(job, rows, { exercises, aliases, at, newId: deps.newId });
+    if (!created.ok) {
+      const running = await repos().imports.committingJob(d.ownerId);
+      if (created.error === 'another_import_running' && running) return { ok: false, reason: 'another_import', job: running };
+      return { ok: false, reason: 'not_found' };
+    }
+    drafts.delete(d.id);
+    const stored = (await repos().imports.getJob(d.id)) ?? job;
+    return writeWorkouts(stored, hooks);
+  }
+
   return service;
 }
 

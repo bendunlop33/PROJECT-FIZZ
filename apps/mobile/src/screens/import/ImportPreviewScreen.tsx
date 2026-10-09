@@ -21,9 +21,20 @@ export function ImportPreviewScreen() {
   const [pages, setPages] = useState(1);
   const [data] = useScreenData((s) => s.imports.draft(draftId));
 
+  // Leaving the preview any way but Import drops it; nothing was saved (review N8).
+  useEffect(
+    () =>
+      navigation.addListener('beforeRemove', () => {
+        services.imports.discard(draftId);
+      }),
+    [navigation, services, draftId],
+  );
+
   useEffect(() => {
     navigation.setOptions({
       headerBackVisible: false,
+      // Back is the Cancel button (it confirms); the swipe would skip that.
+      gestureEnabled: false,
       headerLeft: () => (
         <TextButton
           label="Cancel"

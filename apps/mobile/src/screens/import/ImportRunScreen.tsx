@@ -64,6 +64,15 @@ export function ImportRunScreen() {
           retry: true,
         });
         return;
+      case 'finish_failed':
+        // Every workout is in; only the last step failed. Continue import finishes it (review B1).
+        setPhase({
+          kind: 'failed',
+          text: `${plural(r.written, 'workout is', 'workouts are')} in, but the import couldn’t be marked finished: ${r.message}. Try again to finish it.`,
+          jobId: r.jobId,
+          retry: true,
+        });
+        return;
       case 'stale':
         Alert.alert('The preview changed', 'Something changed since the preview (an answer, a workout or another import). Check the preview again before importing.', [{ text: 'OK', onPress: () => { navigation.goBack(); } }]);
         return;

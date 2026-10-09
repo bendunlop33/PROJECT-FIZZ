@@ -16,7 +16,7 @@ import {
   type NameRow,
   type RowFate,
 } from '@fizz/domain';
-import type { CustomExerciseKind, FitNotesVariant, ImportBarKind, ImportRow, ImportRowResult, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
+import type { CustomExerciseKind, FitNotesVariant, ImportBarKind, ImportJob, ImportRow, ImportRowResult, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
 
 import { formatCount, plural } from '../format/numbers';
 import type { ImportBlock, ImportDraft, ImportedSetProvenance, OpenResult, PastImport } from './import-service';
@@ -91,6 +91,8 @@ export function blockLine(b: ImportBlock, time: string): string {
 }
 
 export function pausedLine(p: Pick<PastImport, 'written' | 'total'>): string {
+  // Every workout is in but the last step didn't finish (closed or failed right at the end; review B1).
+  if (p.written >= p.total) return `Import not finished. All ${plural(p.total, 'workout is', 'workouts are')} in your history; Continue import finishes it.`;
   return `Import paused at ${formatCount(p.written)} of ${plural(p.total, 'workout', 'workouts')}. The ${formatCount(p.written)} ${p.written === 1 ? 'is' : 'are'} in your history.`;
 }
 
@@ -121,6 +123,14 @@ export function openErrorView(r: OpenResult, locale?: string): OpenErrorView | n
     case 'unknown_header':
       return { text: 'GymSmarter doesn’t recognise this file’s columns yet. Nothing was guessed.', firstLine: r.firstLine, sameFileJobId: null };
     case 'same_file':
+      // Its import isn't finished: say where it stopped and point to Continue (review N1).
+      if (r.state === 'paused' || r.state === 'running') {
+        return {
+          text: `You started importing this file on ${shortDateOf(r.job.startedAt.utc, r.job.startedAt.tz, locale)}. ${pausedLine({ written: r.written, total: r.job.counts.workouts })} Continue that import instead.`,
+          firstLine: null,
+          sameFileJobId: r.job.id,
+        };
+      }
       return {
         text: `You imported this file on ${shortDateOf(r.job.startedAt.utc, r.job.startedAt.tz, locale)} (${plural(r.job.counts.workouts, 'workout', 'workouts')}). Nothing new to import.`,
         firstLine: null,
@@ -376,7 +386,12 @@ export function previewRowLines(variant: FitNotesVariant, row: FitNotesRow, fate
 
 /** `Row 1,204 · 2024-05-03 · Treadmill · 5 km · 25:00 — cardio isn’t imported yet` (§2.5 step 5). */
 export function resultRowLine(variant: FitNotesVariant, r: ImportRow): string {
-  const reason = r.result === 'imported' ? 'imported' : r.result === 'unreadable' || r.result === 'skipped_unsupported' ? (r.detail ?? SKIP_WORDS[r.result]) : SKIP_WORDS[r.result];
+  const reason =
+    r.result === 'imported'
+      ? `imported${r.imported ? ` as ${r.imported.exerciseName} · ${mappedSetText(r.imported)}` : ''}${r.detail ? ` (${r.detail})` : ''}`
+      : r.result === 'unreadable' || r.result === 'skipped_unsupported'
+        ? (r.detail ?? SKIP_WORDS[r.result])
+        : SKIP_WORDS[r.result];
   if (r.cells.length !== FITNOTES_HEADERS[variant].length) return `Row ${formatCount(r.row)} · ${originalText(variant, r.cells)} — ${reason}`;
   const date = r.localDate ?? (r.cells[0] ?? '').trim();
   return `Row ${formatCount(r.row)} · ${date === '' ? 'no date' : date} · ${originalText(variant, r.cells)} — ${reason}`;
@@ -577,6 +592,8 @@ export interface ResultsView {
   banner: Line;
   headline: string;
   from: string;
+  /** The workouts that came in, newest first (check 24: each opens its sets with their originals; review S2). */
+  imported: { title: string; workouts: { date: string; text: string }[] } | null;
   skipped: { result: Exclude<ImportRowResult, 'imported'>; title: string; lines: string[] }[];
   canUndo: boolean;
   canContinue: boolean;
@@ -602,12 +619,15 @@ export function resultsView(p: PastImport & { rows: readonly ImportRow[] }, loca
     p.state === 'finished'
       ? { icon: 'checkmark.circle.fill', tone: 'done', text: 'Import finished' }
       : stateLine(p, locale);
+  const workouts = importedWorkouts(p.rows, locale);
   return {
     banner,
     headline: p.state === 'finished' ? `${plural(p.written, 'workout', 'workouts')} · ${plural(sets, 'set', 'sets')} added` : `${plural(p.written, 'workout', 'workouts')} of ${formatCount(p.total)} in`,
     from: `From ${p.job.fileName}`,
+    imported: workouts.length === 0 || p.state === 'undone' ? null : { title: `Imported workouts (${formatCount(workouts.length)})`, workouts },
     skipped,
     canUndo: p.state !== 'undone' && p.state !== 'running',
+    // Any unfinished import that isn't being written now, including one whose workouts are all in (review B1).
     canContinue: p.state === 'paused',
   };
 }
@@ -627,4 +647,31 @@ export function undoneToast(workouts: number): string {
 export function provenanceLines(p: ImportedSetProvenance, locale?: string): { source: string; original: string } {
   const date = longDate(localDateOf(toMs(p.importedAt.utc), p.importedAt.tz), locale);
   return { source: `Imported from FitNotes on ${date} · row ${formatCount(p.row.row)}`, original: `Original: ${originalText(p.variant, p.row.cells)}` };
+}
+
+/** The dates an import's sets came in on, newest first: `Wed 1 Oct 2026 · 5 exercises · 18 sets` (review S2). */
+export function importedWorkouts(rows: readonly ImportRow[], locale?: string): { date: string; text: string }[] {
+  const perDate = new Map<string, { exercises: Set<string>; sets: number }>();
+  for (const r of rows) {
+    if (r.result !== 'imported' || r.localDate === null || r.imported === null) continue;
+    const d = perDate.get(r.localDate) ?? { exercises: new Set<string>(), sets: 0 };
+    d.exercises.add(r.imported.sessionExerciseId);
+    d.sets += 1;
+    perDate.set(r.localDate, d);
+  }
+  return [...perDate.entries()]
+    .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
+    .map(([date, d]) => ({ date, text: `${longDate(date, locale)} · ${plural(d.exercises.size, 'exercise', 'exercises')} · ${plural(d.sets, 'set', 'sets')}` }));
+}
+
+/**
+ * One imported set with where it came from (check 24; review S2): the set as
+ * it is in the app, then `Imported from FitNotes on … · row …` (the file is
+ * named on the screen) and `Original: …` exactly as written.
+ */
+export function importedSetLines(job: ImportJob, row: ImportRow, locale?: string): { title: string; source: string; original: string } {
+  const p = provenanceLines({ fileName: job.fileName, importedAt: job.startedAt, variant: job.variant, row, header: job.header }, locale);
+  const set = row.imported;
+  const title = set ? `${set.exerciseName} · ${mappedSetText(set)}` : row.exerciseName;
+  return { title, source: row.detail ? `${p.source} · ${row.detail}` : p.source, original: p.original };
 }

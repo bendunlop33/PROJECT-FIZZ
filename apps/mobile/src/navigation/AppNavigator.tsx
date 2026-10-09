@@ -15,6 +15,7 @@ import { EquipmentEditorScreen } from '../screens/gym/EquipmentEditorScreen';
 import { GymDetailScreen } from '../screens/gym/GymDetailScreen';
 import { RestoreScreen } from '../screens/data/RestoreScreen';
 import { ImportChooseScreen } from '../screens/import/ImportChooseScreen';
+import { ImportedWorkoutScreen } from '../screens/import/ImportedWorkoutScreen';
 import { ImportIntroScreen } from '../screens/import/ImportIntroScreen';
 import { ImportNamesScreen } from '../screens/import/ImportNamesScreen';
 import { ImportPreviewScreen } from '../screens/import/ImportPreviewScreen';
@@ -103,6 +104,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="ImportRows" component={ImportRowsScreen} options={{ title: 'Rows' }} />
       <ProfileStack.Screen name="ImportRun" component={ImportRunScreen} options={{ title: 'Import' }} />
       <ProfileStack.Screen name="ImportResults" component={ImportResultsScreen} options={{ title: 'Import results' }} />
+      <ProfileStack.Screen name="ImportedWorkout" component={ImportedWorkoutScreen} options={{ title: 'Imported workout' }} />
       <ProfileStack.Screen name="PastImports" component={PastImportsScreen} options={{ title: 'Past imports' }} />
       <ProfileStack.Screen name="Developer" component={DeveloperScreen} options={{ title: 'Developer' }} />
       <ProfileStack.Screen name="CapabilityProbe" component={ProbeRoute} options={{ headerShown: false }} />

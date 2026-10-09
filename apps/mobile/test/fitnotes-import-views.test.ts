@@ -5,11 +5,13 @@ import { NBSP } from '@fizz/domain';
 import type { ImportDraft } from '../src/import/import-service';
 import {
   bodyweightOptions,
+  importedSetLines,
   introView,
   namesView,
   openErrorView,
   originalText,
   pastImportRow,
+  pausedLine,
   perHandOptions,
   previewView,
   progressView,
@@ -221,6 +223,29 @@ describe('importing, results, past imports and undo wording', () => {
     if (!after) throw new Error('no job');
     expect(pastImportRow(after, 'en-GB').line).toEqual({ icon: 'slash.circle', tone: 'info', text: 'Undone on Thu 8 Oct · 1 workout hidden' });
     expect(resultsView(after, 'en-GB').canUndo).toBe(false);
+    expect(resultsView(after, 'en-GB').imported).toBeNull();
+  });
+
+  it('results list the imported workouts; each set shows its file, row and original values (check 24, review S2)', async () => {
+    const jobId = await importIt();
+    const job = await s.imports.job(jobId);
+    if (!job) throw new Error('no job');
+    expect(resultsView(job, 'en-GB').imported).toEqual({ title: 'Imported workouts (1)', workouts: [{ date: '2026-09-01', text: 'Tue 1 Sept 2026 · 1 exercise · 1 set' }] });
+    const one = await s.imports.importedRows(jobId, '2026-09-01');
+    if (!one) throw new Error('no rows');
+    expect(one.rows.map((r) => importedSetLines(one.job, r, 'en-GB')).map((l) => ({ ...l, title: plain(l.title) }))).toEqual([
+      { title: 'Lat pulldown · 45 kg stack × 10', source: 'Imported from FitNotes on Thu 8 Oct 2026 · row 2', original: 'Original: Lat Pulldown · 45.0 kgs · 10 reps' },
+    ]);
+    expect((await s.imports.importedRows(jobId, '2026-09-02'))?.rows).toEqual([]);
+  });
+
+  it('the same file while its import is unfinished says where it stopped (review N1)', async () => {
+    const text = [B2, '2026-09-01,Lat Pulldown,Back,45.0,kgs,10,,,,', '2026-09-03,Lat Pulldown,Back,40.0,kgs,10,,,,'].join('\n');
+    const d = await open(text);
+    await s.imports.commit(d.draftId, d.mappingVersion, 'op-1', { shouldStop: () => true });
+    const again = await s.imports.open({ name: 'renamed.csv', text });
+    expect(again).toMatchObject({ kind: 'same_file', state: 'paused', written: 0 });
+    expect(openErrorView(again, 'en-GB')?.text).toBe('You started importing this file on Thu 8 Oct. Import paused at 0 of 2 workouts. The 0 are in your history. Continue that import instead.');
   });
 
   it('intro: blocked by an unfinished workout, or offers Continue for a paused import', async () => {
@@ -237,6 +262,8 @@ describe('importing, results, past imports and undo wording', () => {
     const v = introView({ block: null, blockTime: '', paused });
     expect(v.paused?.text).toBe('Import paused at 1 of 2 workouts. The 1 is in your history.');
     expect(v.primary).toEqual({ label: 'Continue import', enabled: true });
+    // Every workout in but not marked finished (closed right at the end; review B1).
+    expect(pausedLine({ written: 2, total: 2 })).toBe('Import not finished. All 2 workouts are in your history; Continue import finishes it.');
     expect(progressView(180, 412)).toEqual({ text: '180 of 412 workouts', fraction: 180 / 412 });
   });
 });

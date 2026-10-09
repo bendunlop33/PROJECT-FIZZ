@@ -31,6 +31,8 @@ export type ProfileStackParams = {
   ImportRun: { draftId: string; mappingVersion: number; workouts: number } | { jobId: string };
   /** Results of one import, with Undo (§2.5 step 5). */
   ImportResults: { jobId: string };
+  /** One imported workout's sets, each with its source file, row and original values (check 24). */
+  ImportedWorkout: { jobId: string; date: string };
   PastImports: undefined;
 };
 
