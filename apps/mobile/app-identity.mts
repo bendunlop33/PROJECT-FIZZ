@@ -15,13 +15,20 @@
  */
 export const BUNDLE_IDENTIFIER = 'com.projectfizz.fizz';
 
-/** Display name under the icon. Safe to change (does not affect identity). */
-export const APP_NAME = 'Fizz';
+/**
+ * The name Ben sees: under the home-screen icon, in SideStore, in Settings,
+ * on notifications and in the app's own text. Set as CFBundleDisplayName.
+ * Safe to change (does not affect identity or data). Approved 9 Oct 2026.
+ */
+export const DISPLAY_NAME = 'GymSmarter';
 
 /**
- * Xcode project/scheme name produced by `expo prebuild` (derived from the
- * app name with non-alphanumerics removed). The IPA workflow uses it to find
- * `ios/<name>.xcworkspace`.
+ * Internal name: the Expo config `name`, which `expo prebuild` turns into the
+ * Xcode project/scheme/target name (non-alphanumerics removed) and so
+ * CFBundleName. Never shown to Ben (DISPLAY_NAME overrides it). The IPA
+ * workflow (`IOS_PROJECT` env), scripts/ci/check-patched-binaries.sh and the
+ * entitlement check use it to find `ios/<name>.xcworkspace` and `<name>.app`.
+ * Keep it in step with `IOS_PROJECT` in .github/workflows/ios-ipa.yml.
  */
 export const IOS_PROJECT_NAME = 'Fizz';
 

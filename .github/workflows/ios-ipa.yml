@@ -42,6 +42,8 @@ concurrency:
 env:
   NODE_VERSION: '22.22.0'
   XCODE_APP: /Applications/Xcode_26.6.app
+  # Internal Xcode project/scheme name (IOS_PROJECT_NAME in app-identity.mts),
+  # not the name Ben sees (that's CFBundleDisplayName, GymSmarter).
   IOS_PROJECT: Fizz
   FIZZ_BUILD_NUMBER: ${{ github.run_number }}
   FIZZ_LIVE_ACTIVITY: ${{ (github.event_name != 'workflow_dispatch' || inputs.live_activity) && '1' || '0' }}
@@ -207,7 +209,11 @@ jobs:
         run: |
           VERSION="$(plutil -extract CFBundleShortVersionString raw "$APP/Info.plist")"
           BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Info.plist")"
-          IPA_NAME="$IOS_PROJECT-$VERSION-build$FIZZ_BUILD_NUMBER.ipa"
+          # Named after what Ben sees (DISPLAY_NAME in app-identity.mts), e.g.
+          # GymSmarter-0.1.0-build42.ipa. IOS_PROJECT stays the internal Xcode name.
+          # Fails here if the CFBundleDisplayName override didn't reach the app.
+          DISPLAY_NAME="$(plutil -extract CFBundleDisplayName raw "$APP/Info.plist")"
+          IPA_NAME="$DISPLAY_NAME-$VERSION-build$FIZZ_BUILD_NUMBER.ipa"
           STAGE="$RUNNER_TEMP/ipa"
           mkdir -p "$STAGE/Payload"
           cp -R "$APP" "$STAGE/Payload/"
@@ -218,6 +224,7 @@ jobs:
             echo ""
             echo "| | |"
             echo "|---|---|"
+            echo "| Name on the home screen | $DISPLAY_NAME |"
             echo "| Bundle ID | \`$BUNDLE_ID\` (must never change) |"
             echo "| Version | $VERSION (build $FIZZ_BUILD_NUMBER) |"
             echo "| Live Activity extension | $([ "$FIZZ_LIVE_ACTIVITY" = 1 ] && echo included || echo left out) |"

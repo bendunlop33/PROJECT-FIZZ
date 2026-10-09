@@ -1,7 +1,7 @@
 import { env } from 'node:process';
 
 import type { ExpoConfig } from 'expo/config';
-import { APP_GROUP_IDENTIFIER, APP_NAME, BUNDLE_IDENTIFIER, WIDGET_EXTENSION_BUNDLE_IDENTIFIER } from './app-identity.mts';
+import { APP_GROUP_IDENTIFIER, BUNDLE_IDENTIFIER, DISPLAY_NAME, IOS_PROJECT_NAME, WIDGET_EXTENSION_BUNDLE_IDENTIFIER } from './app-identity.mts';
 import { withFreeProvisioning } from './plugins/with-free-provisioning.mts';
 
 /**
@@ -27,8 +27,8 @@ const plugins: NonNullable<ExpoConfig['plugins']> = [
   [
     'expo-speech-recognition',
     {
-      microphonePermission: 'Fizz uses the microphone when you hold Talk to log a set by voice.',
-      speechRecognitionPermission: 'Fizz turns your speech into text on this iPhone to log sets.',
+      microphonePermission: `${DISPLAY_NAME} uses the microphone when you hold Talk to log a set by voice.`,
+      speechRecognitionPermission: `${DISPLAY_NAME} turns your speech into text on this iPhone to log sets.`,
     },
   ],
 ];
@@ -47,7 +47,8 @@ if (includeLiveActivity) {
 }
 
 const config: ExpoConfig = {
-  name: APP_NAME,
+  // Internal: becomes the Xcode project name. Ben sees DISPLAY_NAME (CFBundleDisplayName).
+  name: IOS_PROJECT_NAME,
   slug: 'fizz',
   version: '0.1.0',
   orientation: 'portrait',
@@ -59,10 +60,12 @@ const config: ExpoConfig = {
     buildNumber,
     supportsTablet: false,
     infoPlist: {
+      // Home-screen, SideStore and Settings name; the Xcode project stays IOS_PROJECT_NAME.
+      CFBundleDisplayName: DISPLAY_NAME,
       ITSAppUsesNonExemptEncryption: false,
       // Shown by the AlarmKit permission prompt (probe "Request permission").
       // AlarmKit needs no entitlement (free-ios-install.md, AlarmKit row).
-      NSAlarmKitUsageDescription: 'Fizz can sound an alarm when your rest ends, even in silent mode or a Focus.',
+      NSAlarmKitUsageDescription: `${DISPLAY_NAME} can sound an alarm when your rest ends, even in silent mode or a Focus.`,
       ...(backgroundAudioExperiment ? { UIBackgroundModes: ['audio'] } : {}),
     },
   },
