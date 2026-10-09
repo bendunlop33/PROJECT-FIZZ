@@ -33,6 +33,8 @@ export * from './session/repeat';
 export * from './session/routines';
 export * from './session/duration';
 export * from './session/first-run';
+export * from './step-card';
+export * from './target-provenance';
 export * from './touches';
 export * from './import';
 export * from './session/lift-highlight';

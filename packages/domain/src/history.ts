@@ -18,8 +18,11 @@ import type { HistorySession, HistorySet } from './progression';
  * - `performedAtUtc` is the session's (possibly corrected) start time.
  * - `gymId` is the session's gym (null: not recorded); `imported` marks a
  *   FitNotes workout, which is never comparable history (review r2 B1).
+ * - `identity: true` also keeps each set's ID and version and the session's
+ *   zone and routine name, so a target made from this history can record its
+ *   basis for `Why?` (active-workout §2.12) and spot later edits.
  */
-export function toHistorySessions(aggregate: SessionAggregate, exerciseId: string): HistorySession[] {
+export function toHistorySessions(aggregate: SessionAggregate, exerciseId: string, opts: { identity?: boolean } = {}): HistorySession[] {
   const { session } = aggregate;
   if (session.status !== 'finished') return [];
   const exercises = aggregate.exercises
@@ -40,6 +43,7 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
         reps: s.actual.reps,
         rpe: s.actual.rpe,
         rir: s.actual.rir,
+        ...(opts.identity ? { setId: s.id, version: s.version } : {}),
       });
     }
     byEquipment.set(ex.equipmentId, bucket);
@@ -51,5 +55,6 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
     gymId: session.gymId,
     imported: session.source === 'import',
     sets,
+    ...(opts.identity ? { tz: session.startedAt.tz, routineName: session.routineName } : {}),
   }));
 }

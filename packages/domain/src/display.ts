@@ -1,4 +1,6 @@
 import type { EquipmentInstance, Load, LoadConvention, PlannedSet, RepRange, SetSide, SetType, SetValues, WeightUnit } from '@fizz/schemas';
+import { localDateOf } from './calendar';
+import { toMs } from './time';
 import { fromScaled, toScaled } from './units';
 
 /**
@@ -30,6 +32,14 @@ export function formatElapsed(ms: number): string {
   const m = Math.floor((s % 3600) / 60);
   const sec = String(s % 60).padStart(2, '0');
   return h > 0 ? `${String(h)}:${String(m).padStart(2, '0')}:${sec}` : `${String(m)}:${sec}`;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+/** `1 Oct`: the calendar day of a UTC instant in `tz` (design-system §3 dates), for domain-built sentences. */
+export function dayMonthText(utc: string, tz: string): string {
+  const [, month, day] = localDateOf(toMs(utc), tz).split('-');
+  return `${String(Number(day))}${NBSP}${MONTHS[Number(month) - 1] ?? ''}`;
 }
 
 /** Summary durations: `54 min`, `1 h 04 min`. */

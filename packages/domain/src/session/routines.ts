@@ -328,5 +328,5 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
       return exId !== undefined && targeted.has(exId) && s.setType !== 'warmup' ? { ...s, planned: { ...s.planned, source: 'built_in_rule' as const } } : s;
     }),
   };
-  return { aggregate, warnings: out.warnings, notes };
+  return { aggregate, warnings: out.warnings, setTemplateIds: out.setTemplateIds, notes };
 }

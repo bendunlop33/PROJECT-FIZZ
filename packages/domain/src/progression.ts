@@ -32,6 +32,9 @@ export interface HistorySet {
   reps: number | null;
   rpe: Rpe | null;
   rir: Rir | null;
+  /** The stored set and its version (sets logged in the app), so `Why?` can tell when it was edited later. */
+  setId?: string;
+  version?: number;
 }
 
 /**
@@ -54,6 +57,9 @@ export interface HistorySession {
    */
   imported: boolean;
   sets: readonly HistorySet[];
+  /** The workout's time zone and routine name, for `Why?` (`after Push A, 1 Oct`). */
+  tz?: string;
+  routineName?: string | null;
 }
 
 /** Active pain flag for this movement. Set and cleared explicitly by the user. */
