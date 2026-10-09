@@ -1,13 +1,27 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 
+import type { RecoveryResult } from '@fizz/domain';
 import type { MigrationReport } from '@fizz/persistence';
+
+import type { RestAlertController } from '../alerts/rest-alerts';
 
 import type { AppServices } from '../services/app-services';
 
 export interface LaunchInfo {
   migration: MigrationReport;
   sqliteVersion: string;
+  /** Cold-start recovery of an unfinished workout (flow §4.2); its notices are shown once. */
+  recovery: RecoveryResult | null;
+  restAlerts: RestAlertController | null;
+}
+
+const consumed = new Set<string>();
+/** True the first time `key` is asked for in this app run (one-off launch banners). */
+export function firstTime(key: string): boolean {
+  if (consumed.has(key)) return false;
+  consumed.add(key);
+  return true;
 }
 
 interface AppContextValue {

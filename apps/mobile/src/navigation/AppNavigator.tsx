@@ -17,7 +17,11 @@ import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ProgressScreen } from '../screens/ProgressScreen';
 import { SetupScreen } from '../screens/setup/SetupScreen';
 import { TodayScreen } from '../screens/TodayScreen';
-import { WorkoutPlaceholderScreen } from '../screens/WorkoutPlaceholderScreen';
+import { CheckInScreen } from '../screens/workout/CheckInScreen';
+import { EditSetScreen } from '../screens/workout/EditSetScreen';
+import { ExercisePickerScreen } from '../screens/workout/ExercisePickerScreen';
+import { SummaryScreen } from '../screens/workout/SummaryScreen';
+import { WorkoutScreen } from '../screens/workout/WorkoutScreen';
 import type { SetupStep } from '../services/setup';
 import { useTheme } from '../theme';
 import type { SymbolName } from '../ui';
@@ -124,7 +128,21 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
           {setupDone ? (
             <>
               <RootStack.Screen name="Tabs" component={TabsNavigator} />
-              <RootStack.Screen name="Workout" component={WorkoutPlaceholderScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
+              <RootStack.Screen name="Workout" component={WorkoutScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
+              {/* Swipe-down = "not now": back to where Ben was, nothing started (check-in.md CI3). */}
+              <RootStack.Screen
+                name="CheckIn"
+                component={CheckInScreen}
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.55, 1.0], sheetGrabberVisible: true, contentStyle: { backgroundColor: theme.colors['bg.surface'] } }}
+              />
+              <RootStack.Screen name="ExercisePicker" component={ExercisePickerScreen} options={{ presentation: 'modal' }} />
+              <RootStack.Screen
+                name="EditSet"
+                component={EditSetScreen}
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.7, 1.0], sheetGrabberVisible: true, contentStyle: { backgroundColor: theme.colors['bg.surface'] } }}
+              />
+              {/* No back navigation into a finished workout; corrections go through Edit (workout-summary §2). */}
+              <RootStack.Screen name="Summary" component={SummaryScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
               <RootStack.Screen name="AddGym" component={AddGymScreen} options={{ presentation: 'modal' }} />
             </>
           ) : (

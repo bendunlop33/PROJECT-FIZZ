@@ -1,19 +1,53 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { AppState, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { toMs } from '@fizz/domain';
+
+import { clearDeliveredWorkoutAlerts, expoNotifier } from '../alerts/notifier';
+import { createRestAlertController } from '../alerts/rest-alerts';
 import { containerBackupFiles, containerTextFile } from '../device/files';
 import { expoDatabaseHost } from '../data/expo-sqlite-host';
 import { loadPrefs, savePrefs, type DevicePrefs } from '../device/prefs';
 import { appInfo, newUuid, nowZoned } from '../device/runtime';
 import { AppNavigator } from '../navigation/AppNavigator';
+import type { AppServices } from '../services/app-services';
 import { startApp, type StartupOutcome } from '../services/startup';
 import { ThemeProvider, TIMING, useTheme, type AvailableDirectionId } from '../theme';
 import { MessageScreen, PrimaryButton } from '../ui';
 import { AppProvider } from './context';
 
 const BACKUP_MANIFEST = 'backup-state.json';
+
+/** One rest-alert controller for the app run (it remembers what is scheduled). */
+const restAlerts = createRestAlertController(expoNotifier);
+
+/**
+ * On return to the foreground: delivered workout alerts are stale (the screen
+ * shows the truth), and the pending one is reconciled with the workout
+ * (lock-screen-and-alerts §4.3). Never blocks anything.
+ */
+function useForegroundAlerts(services: AppServices) {
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      void clearDeliveredWorkoutAlerts().catch(() => undefined);
+      void services.sessions
+        .active()
+        .then((a) => restAlerts.reconcile(a, toMs(services.now().utc)))
+        .catch(() => undefined);
+    });
+    return () => {
+      sub.remove();
+    };
+  }, [services]);
+}
+
+function ForegroundAlerts({ services }: { services: AppServices }) {
+  useForegroundAlerts(services);
+  return null;
+}
 const DEVICE_PREFS = 'device-prefs.json';
 
 /** Launch: open the data (DatabaseManager, migrations, recovery), then the app. */
@@ -39,6 +73,7 @@ function Launch() {
       now: nowZoned,
       newId: newUuid,
       app: appInfo(),
+      restAlerts,
     }).then((o) => {
       clearTimeout(timer);
       if (alive) setOutcome(o);
@@ -89,7 +124,8 @@ function Launch() {
     case 'ready': {
       const { services, migration, sqliteVersion, setup, recovery } = outcome;
       return (
-        <AppProvider services={services} launch={{ migration, sqliteVersion }}>
+        <AppProvider services={services} launch={{ migration, sqliteVersion, recovery, restAlerts }}>
+          <ForegroundAlerts services={services} />
           <AppNavigator
             setupStep={setup.step}
             setupUnit={setup.profile?.preferredUnit ?? null}

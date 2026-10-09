@@ -1,0 +1,166 @@
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useEffect, useState } from 'react';
+import { Alert, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { buildSetEditView, toMs } from '@fizz/domain';
+import type { SessionAggregate, SetValues } from '@fizz/schemas';
+
+import { newUuid } from '../../device/runtime';
+import { formatTime } from '../../format/dates';
+import type { RootStackParams } from '../../navigation/types';
+import { useDataChanged, useServices } from '../../shell/context';
+import { useTheme } from '../../theme';
+import { AppText, Chip, ChipRow, DangerTextButton, NumberAccessory, NumberStepper, PrimaryButton, StatusLine, TextButton } from '../../ui';
+
+/**
+ * Correction sheet for a logged set (active-workout §4.4): `correct_set`
+ * guarded on the set's own version; the rest timer is never touched.
+ * `Delete set` always confirms and keeps an audited record (no Undo yet).
+ */
+export function EditSetScreen() {
+  const theme = useTheme();
+  const services = useServices();
+  const changed = useDataChanged();
+  const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const { sessionId, setId } = useRoute<RouteProp<RootStackParams, 'EditSet'>>().params;
+  const [aggregate, setAggregate] = useState<SessionAggregate | null>(null);
+  const [values, setValues] = useState<SetValues | null>(null);
+  const [effortScale, setEffortScale] = useState<'rpe' | 'rir' | 'off'>('rpe');
+  const [error, setError] = useState<string | null>(null);
+  const [saveOp] = useState(newUuid);
+  const [deleteOp] = useState(newUuid);
+
+  async function load() {
+    const d = await services.workout.load(sessionId);
+    if (!d) return;
+    setAggregate(d.aggregate);
+    setEffortScale(d.effortScale);
+  }
+  useEffect(() => {
+    void load();
+  }, [sessionId, setId]);
+
+  const view = aggregate ? buildSetEditView(aggregate, setId, values) : null;
+  if (!aggregate || !view) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'], padding: theme.space['4'] }}>
+        <AppText variant="body">{aggregate ? 'This set isn’t logged any more.' : ''}</AppText>
+        {aggregate ? <TextButton label="Close" onPress={() => { navigation.goBack(); }} /> : null}
+      </View>
+    );
+  }
+  const ex = aggregate.exercises.find((e) => aggregate.sets.find((s) => s.id === setId)?.sessionExerciseId === e.id);
+  const tz = aggregate.session.startedAt.tz;
+  const current = view.values;
+
+  async function save() {
+    if (!view) return;
+    const actual = aggregate?.sets.find((s) => s.id === setId)?.actual;
+    if (!actual) return;
+    const patch: Partial<SetValues> = {};
+    for (const k of ['load', 'reps', 'rpe', 'rir'] as const) {
+      if (JSON.stringify(current[k]) !== JSON.stringify(actual[k])) Object.assign(patch, { [k]: current[k] });
+    }
+    const r = await services.workout.dispatch(sessionId, { type: 'correct_set', at: services.now(), opId: saveOp, setId, expectedSetVersion: view.setVersion, patch });
+    if (!r.ok) {
+      setError(r.error.code === 'stale_version' ? 'This set changed since it was shown. Showing the latest.' : r.error.message);
+      setValues(null);
+      void load();
+      return;
+    }
+    changed();
+    navigation.goBack();
+  }
+
+  function remove() {
+    if (!view) return;
+    Alert.alert(`Delete set ${String(view.setNumber)}?`, 'It’s removed from this workout’s totals and history. The edit log keeps a record.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          void services.workout.dispatch(sessionId, { type: 'delete_set', at: services.now(), opId: deleteOp, setId, expectedSetVersion: view.setVersion }).then((r) => {
+            if (!r.ok) {
+              setError(r.error.message);
+              void load();
+              return;
+            }
+            changed();
+            navigation.goBack();
+          });
+        },
+      },
+    ]);
+  }
+
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
+      <NumberAccessory />
+      <ScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom }} keyboardShouldPersistTaps="handled">
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <AppText variant="title2" accessibilityRole="header">{`Edit set ${String(view.setNumber)} · ${view.exerciseName}`}</AppText>
+          <TextButton label="Cancel" tone="secondary" icon="xmark" onPress={() => { navigation.goBack(); }} />
+        </View>
+        {view.completedAtUtc ? <AppText variant="callout" color="text.secondary" numeric>{`Done at ${formatTime(toMs(view.completedAtUtc), tz)}`}</AppText> : null}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['3'] }}>
+          {view.loadField && ex ? (
+            <NumberStepper
+              label={view.loadField.label}
+              unit={view.loadField.unitText}
+              value={view.loadField.value}
+              decimals
+              down={view.loadField.down}
+              up={view.loadField.up}
+              onChange={(v) => {
+                setValues({ ...current, load: v === null ? null : { value: v, unit: ex.unit, convention: ex.loadConvention } });
+              }}
+            />
+          ) : null}
+          {view.reps ? (
+            <NumberStepper
+              label="Reps"
+              unit={null}
+              value={view.reps.value}
+              decimals={false}
+              down={view.reps.down}
+              up={view.reps.up}
+              onChange={(v) => {
+                setValues({ ...current, reps: v === null ? null : Math.round(v) });
+              }}
+            />
+          ) : null}
+        </View>
+        {effortScale !== 'off' ? (
+          <View style={{ gap: theme.space['1'] }}>
+            <AppText variant="label" color="text.secondary">
+              {effortScale === 'rir' ? 'Reps in reserve' : 'Effort (RPE)'}
+            </AppText>
+            <ChipRow>
+              {(effortScale === 'rir' ? [4, 3, 2, 1, 0] : [6, 7, 8, 9, 10]).map((n) => {
+                const selected = (effortScale === 'rir' ? current.rir : current.rpe) === n;
+                return (
+                  <Chip
+                    key={n}
+                    label={effortScale === 'rir' && n === 4 ? '4+' : String(n)}
+                    selected={selected}
+                    onPress={() => {
+                      setValues(effortScale === 'rir' ? { ...current, rir: selected ? null : n } : { ...current, rpe: selected ? null : n });
+                    }}
+                  />
+                );
+              })}
+            </ChipRow>
+          </View>
+        ) : null}
+        <AppText variant="callout" color="text.secondary" numeric>{`Saved as: ${view.text}`}</AppText>
+        {error ? <StatusLine icon="info.circle" tone="info" text={error} /> : null}
+        <PrimaryButton label="Save changes" disabled={!view.changed} onPress={() => void save()} />
+        <View style={{ height: theme.space['8'] }} />
+        <DangerTextButton label="Delete set" onPress={remove} />
+      </ScrollView>
+    </View>
+  );
+}
