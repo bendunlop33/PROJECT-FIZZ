@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import { DurationSecondsSchema, IdSchema, LoadConventionSchema, UtcTimestampSchema } from './common';
 
+/**
+ * Equipment kinds an exercise can be done with. The first six are the kinds a
+ * gym profile can hold an instance of (`EquipmentInstance['kind']`). The rest
+ * (ADR 0010) tag catalogue exercises only: no gym-profile instance schema
+ * exists for them yet, so loads for them are logged without equipment
+ * feasibility (no snapping, no max) until an equipment slice adds one.
+ */
 export const EquipmentKindSchema = z.enum([
   'barbell',
   'plate_loaded_machine',
@@ -8,14 +15,43 @@ export const EquipmentKindSchema = z.enum([
   'weight_stack',
   'assisted_stack',
   'bodyweight_station',
+  'kettlebell',
+  'sled',
+  'erg',
+  'medicine_ball',
+  'sandbag',
+  'band',
 ]);
+export type ExerciseEquipmentKind = z.infer<typeof EquipmentKindSchema>;
 
 /** `reps` sets log a count; `duration` sets log a work time (timed exercises). */
 export const MeasurementSchema = z.enum(['reps', 'duration']);
 export type Measurement = z.infer<typeof MeasurementSchema>;
 
+/**
+ * Measurement as described by the exercise catalogue. Adds `distance` (sled
+ * 50 m, farmer's carry, ski/row 1000 m). It is deliberately separate from
+ * `MeasurementSchema`: sets can't record a distance yet (no `SetValues`
+ * field, reducer check or progression rule), so a distance exercise is not
+ * loggable and the catalogue loader doesn't turn it into an `Exercise` row
+ * (ADR 0010). Merge the two once distance logging is built.
+ */
+export const CatalogueMeasurementSchema = z.enum(['reps', 'duration', 'distance']);
+export type CatalogueMeasurement = z.infer<typeof CatalogueMeasurementSchema>;
+
 export const LateralitySchema = z.enum(['bilateral', 'unilateral']);
 export type Laterality = z.infer<typeof LateralitySchema>;
+
+export const MechanicSchema = z.enum(['compound', 'isolation']);
+export type Mechanic = z.infer<typeof MechanicSchema>;
+
+/** Stable kebab-case catalogue key (`barbell-back-squat`). Never reused or renamed. */
+export const CatalogueKeySchema = z
+  .string()
+  .min(3)
+  .max(80)
+  .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, { message: 'Catalogue keys are lower-case kebab-case' });
+export type CatalogueKey = z.infer<typeof CatalogueKeySchema>;
 
 export const ExerciseSchema = z.object({
   id: IdSchema,
@@ -25,6 +61,16 @@ export const ExerciseSchema = z.object({
   name: z.string().min(1).max(120),
   movementPattern: z.string().min(1).max(60),
   primaryMuscles: z.array(z.string().min(1).max(60)).max(20),
+  /** Optional (ADR 0010). Same vocabulary as `primaryMuscles`. */
+  secondaryMuscles: z.array(z.string().min(1).max(60)).max(20).optional(),
+  /**
+   * Catalogue key this row was loaded from; `id` is UUIDv5(key). Null or
+   * absent for custom exercises (ADR 0010).
+   */
+  catalogueKey: CatalogueKeySchema.nullable().optional(),
+  /** Variant group for substitutions and guide templates, e.g. `squat`, `row`. */
+  family: z.string().min(1).max(60).optional(),
+  mechanic: MechanicSchema.optional(),
   measurement: MeasurementSchema,
   /** Unilateral exercises are logged per side; volume is not double-counted. */
   laterality: LateralitySchema,

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CatalogueKeySchema,
+  CatalogueMeasurementSchema,
   EquipmentInstanceSchema,
+  ExerciseSchema,
+  MeasurementSchema,
   LoadSchema,
   ProgressionRuleSchema,
   RpeSchema,
@@ -166,5 +170,64 @@ describe('SessionCommand', () => {
 
   it('rejects a correction without an expected version', () => {
     expect(validate(SessionCommandSchema, { type: 'correct_set', at, opId: 'x', setId: id(5), patch: { reps: 7 } }).ok).toBe(false);
+  });
+});
+
+describe('Exercise (ADR 0010 additive fields)', () => {
+  const base = {
+    id: id(10),
+    ownerId: null,
+    source: 'catalogue',
+    name: 'Back squat',
+    movementPattern: 'squat',
+    primaryMuscles: ['quads', 'glutes'],
+    measurement: 'reps',
+    laterality: 'bilateral',
+    compatibleEquipment: ['barbell'],
+    defaultLoadConvention: 'total',
+    version: 1,
+    createdAtUtc: T,
+    updatedAtUtc: T,
+  };
+
+  it('still accepts a row without any of the new fields', () => {
+    expect(validate(ExerciseSchema, base).ok).toBe(true);
+  });
+
+  it('accepts secondary muscles, catalogue key, family and mechanic', () => {
+    const r = validate(ExerciseSchema, {
+      ...base,
+      secondaryMuscles: ['adductors', 'core'],
+      catalogueKey: 'barbell-back-squat',
+      family: 'squat',
+      mechanic: 'compound',
+    });
+    expect(r.ok).toBe(true);
+    expect(validate(ExerciseSchema, { ...base, catalogueKey: null }).ok).toBe(true);
+    expect(validate(ExerciseSchema, { ...base, mechanic: 'hybrid' }).ok).toBe(false);
+  });
+
+  it('accepts the new conditioning equipment kinds on exercises', () => {
+    for (const kind of ['kettlebell', 'sled', 'erg', 'medicine_ball', 'sandbag', 'band']) {
+      expect(validate(ExerciseSchema, { ...base, compatibleEquipment: [kind] }).ok).toBe(true);
+    }
+    expect(validate(ExerciseSchema, { ...base, compatibleEquipment: ['trampoline'] }).ok).toBe(false);
+  });
+
+  it('gym equipment instances still only accept the six instance kinds', () => {
+    const r = validate(EquipmentInstanceSchema, { ...meta, kind: 'sled', gymId: id(3), name: 'Sled', unit: 'kg', movementTags: [], availability: 'available', loadConvention: 'added' });
+    expect(r.ok).toBe(false);
+  });
+
+  it('keeps distance out of loggable measurements until distance logging exists', () => {
+    expect(validate(CatalogueMeasurementSchema, 'distance').ok).toBe(true);
+    expect(validate(MeasurementSchema, 'distance').ok).toBe(false);
+    expect(validate(ExerciseSchema, { ...base, measurement: 'distance' }).ok).toBe(false);
+  });
+
+  it('catalogue keys are kebab-case', () => {
+    expect(validate(CatalogueKeySchema, 'barbell-back-squat').ok).toBe(true);
+    expect(validate(CatalogueKeySchema, 'Barbell Back Squat').ok).toBe(false);
+    expect(validate(CatalogueKeySchema, 'barbell--squat').ok).toBe(false);
   });
 });
