@@ -5,7 +5,7 @@
  * segment's easing (or a monotone cubic for `smooth`); IK modes are discrete
  * and taken from the segment start.
  */
-import type { FootIk, Guide, HandIk, IkLimb } from './guide-schema';
+import { PROJECTION_KEYS, type FootIk, type Guide, type HandIk, type IkLimb, type Projection } from './guide-schema';
 import { ease, hermite, lerp, monotoneSlope, type Ease } from './math';
 import { ADULT_V1, JOINT_NAMES, type JointName } from './rig';
 
@@ -31,6 +31,8 @@ export interface FrameState {
   joints: Record<JointName, number>;
   ik: { footNear: FootTarget | null; footFar: FootTarget | null; handNear: HandTarget | null; handFar: HandTarget | null };
   props: Record<string, { x: number; y: number; s: number }>;
+  /** Foreshortening in effect (guide-level values overridden by keyframes). */
+  proj: Projection;
 }
 
 export interface ResolvedKeyframe {
@@ -61,6 +63,7 @@ function cloneState(s: FrameState): FrameState {
       handFar: s.ik.handFar && { ...s.ik.handFar },
     },
     props: Object.fromEntries(Object.entries(s.props).map(([k, p]) => [k, { ...p }])),
+    proj: { ...s.proj },
   };
 }
 
@@ -93,6 +96,7 @@ export function resolveKeyframes(guide: Guide): ResolvedKeyframe[] {
     joints: zeroJoints(),
     ik: { footNear: null, footFar: null, handNear: null, handFar: null },
     props: {},
+    proj: { ...(guide.projection ?? {}) },
   };
   let prevT = 0;
   guide.keyframes.forEach((k, index) => {
@@ -122,6 +126,7 @@ export function resolveKeyframes(guide: Guide): ResolvedKeyframe[] {
         const prev = state.props[id] ?? { x: 0, y: 0, s: 0 };
         state.props[id] = { x: p.x ?? prev.x, y: p.y ?? prev.y, s: p.s ?? prev.s };
       }
+      Object.assign(state.proj, k.projection ?? {});
     }
     const holdEnd = k.t + (k.holdMs ?? 0) / guide.durationMs;
     out.push({
@@ -165,6 +170,10 @@ function flatten(s: FrameState): Channels {
     c.set(`props.${id}.y`, p.y);
     c.set(`props.${id}.s`, p.s);
   }
+  for (const key of PROJECTION_KEYS) {
+    const value = s.proj[key];
+    if (value !== undefined) c.set(`proj.${key}`, value);
+  }
   return c;
 }
 
@@ -184,6 +193,10 @@ function unflatten(base: FrameState, c: Channels): FrameState {
   }
   for (const [id, p] of Object.entries(out.props)) {
     out.props[id] = { x: c.get(`props.${id}.x`) ?? p.x, y: c.get(`props.${id}.y`) ?? p.y, s: c.get(`props.${id}.s`) ?? p.s };
+  }
+  for (const key of PROJECTION_KEYS) {
+    const value = c.get(`proj.${key}`);
+    if (value !== undefined) out.proj[key] = value;
   }
   return out;
 }

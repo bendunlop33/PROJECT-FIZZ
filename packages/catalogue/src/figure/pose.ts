@@ -221,7 +221,7 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     }
   }
 
-  const proj = guide.projection ?? {};
+  const proj = s.proj;
   const points: Record<string, Vec> = {
     hip: trunk.hip,
     lumbarBase: trunk.lumbarBase,

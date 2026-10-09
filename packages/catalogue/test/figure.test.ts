@@ -210,6 +210,43 @@ describe('props', () => {
     expect(failedFor(lying(0.2))).toContain('no-penetration');
   });
 
+  it('keyframe projection overrides the guide value and interpolates', () => {
+    const g = baseGuide({
+      projection: { armNear: 1 },
+      keyframes: [
+        { t: 0, label: 'A', caption: 'a', root: { x: 0, y: 0.5, pelvisDeg: 0 }, joints: { shoulderNear: 90 }, ease: 'linear' },
+        { t: 0.5, label: 'B', caption: 'b', projection: { armNear: 0.5 }, ease: 'linear' },
+        { t: 1, sameAs: 0 },
+      ],
+    });
+    const p = prepareGuide(g);
+    const upper = (t: number) => dist(poseAt(p, t).points.shoulderNear ?? v(0, 0), poseAt(p, t).points.elbowNear ?? v(0, 0));
+    expect(upper(0)).toBeCloseTo(ADULT_V1.upperArm, 6);
+    expect(upper(0.25)).toBeCloseTo(ADULT_V1.upperArm * 0.75, 6);
+    expect(upper(0.5)).toBeCloseTo(ADULT_V1.upperArm * 0.5, 6);
+    expect(poseAt(p, 0.5).outOfPlane).toContain('elbowNear');
+  });
+
+  it('besideProps lets a listed arm pass beside a bench but the trunk still may not', () => {
+    const lying = (besideProps: ('armNear' | 'armFar')[], y: number) =>
+      baseGuide({
+        props: [{ id: 'bench', type: 'bench', x: -0.3, length: 0.68, height: 0.24 }],
+        keyframes: [
+          {
+            t: 0, label: 'Start', caption: 'Lie', root: { x: 0.15, y, pelvisDeg: -90 },
+            joints: { hipNear: 60, kneeNear: 100, hipFar: 60, kneeFar: 100, shoulderNear: -70, shoulderFar: -70 },
+          },
+          { t: 1, sameAs: 0 },
+        ],
+        projection: { armNear: 0.4, armFar: 0.4 },
+        checks: { planted: [], besideProps, romProfile: 'adult-default' },
+      });
+    // Arms hanging down past the pad: fails unless the arms are declared beside the bench.
+    expect(failedFor(lying([], 0.24 + 0.068))).toContain('no-penetration');
+    expect(failedFor(lying(['armNear', 'armFar'], 0.24 + 0.068))).not.toContain('no-penetration');
+    expect(failedFor(lying(['armNear', 'armFar'], 0.2))).toContain('no-penetration');
+  });
+
   it('leg press: feet sit flat on the moving plate', () => {
     const g = baseGuide({
       props: [{ id: 'press', type: 'leg_press', x: 0.27, y: 0.62, railDeg: 45, seatX: 0, seatY: 0.3, seatDeg: 30, plates: 'large' }],

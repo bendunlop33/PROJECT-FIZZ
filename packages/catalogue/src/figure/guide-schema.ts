@@ -124,7 +124,24 @@ export const HandIkSchema = z.strictObject({
 export type HandIk = z.infer<typeof HandIkSchema>;
 
 export const IK_LIMBS = ['footNear', 'footFar', 'handNear', 'handFar'] as const;
+export const LIMB_GROUPS = ['armNear', 'armFar', 'legNear', 'legFar'] as const;
+export type LimbGroup = (typeof LIMB_GROUPS)[number];
 export type IkLimb = (typeof IK_LIMBS)[number];
+
+const projection = num.min(0.2).max(1);
+
+/** Foreshortening factors per limb (1 = in the picture plane). */
+export const ProjectionSchema = z.strictObject({
+  armNear: projection.optional(),
+  armFar: projection.optional(),
+  /** Forearm (and hand) only; defaults to the arm value. A wide grip foreshortens the forearm more. */
+  forearmNear: projection.optional(),
+  forearmFar: projection.optional(),
+  legNear: projection.optional(),
+  legFar: projection.optional(),
+});
+export type Projection = z.infer<typeof ProjectionSchema>;
+export const PROJECTION_KEYS = ['armNear', 'armFar', 'forearmNear', 'forearmFar', 'legNear', 'legFar'] as const;
 
 export const KeyframeSchema = z.strictObject({
   t: num.min(0).max(1),
@@ -144,13 +161,17 @@ export const KeyframeSchema = z.strictObject({
     .optional(),
   /** Keyframed prop positions (`anchor.kind = keyframed`): x, y, or `s` = leg-press travel. */
   props: z.record(propId, z.strictObject({ x: coord.optional(), y: coord.optional(), s: num.min(-1).max(1).optional() })).optional(),
+  /**
+   * Per-keyframe foreshortening (carried forward, interpolated like angles).
+   * For limbs that swing towards the camera mid-movement, e.g. a bench-press
+   * upper arm that points almost straight at the camera halfway down.
+   */
+  projection: ProjectionSchema.optional(),
   holdMs: z.int().min(0).max(5000).optional(),
   /** Easing of the segment that starts at this keyframe. */
   ease: z.enum(EASES).optional(),
 });
 export type Keyframe = z.infer<typeof KeyframeSchema>;
-
-const projection = num.min(0.2).max(1);
 
 export const GuideSchema = z
   .strictObject({
@@ -165,18 +186,8 @@ export const GuideSchema = z
     durationMs: z.int().min(500).max(20_000),
     loop: z.enum(['cycle', 'pingpong']),
     ground: z.strictObject({ y: num.min(-0.5).max(0.5), scrollPerCycle: num.min(0).max(3) }),
-    /** Shortens limbs that point partly towards the camera (1 = in the picture plane). */
-    projection: z
-      .strictObject({
-        armNear: projection.optional(),
-        armFar: projection.optional(),
-        /** Forearm (and hand) only; defaults to the arm value. A wide grip foreshortens the forearm more. */
-        forearmNear: projection.optional(),
-        forearmFar: projection.optional(),
-        legNear: projection.optional(),
-        legFar: projection.optional(),
-      })
-      .optional(),
+    /** Shortens limbs that point partly towards the camera (1 = in the picture plane). Keyframes may override it. */
+    projection: ProjectionSchema.optional(),
     /** Fixed square camera; omitted = fitted to every frame. */
     camera: z.strictObject({ cx: coord, cy: coord, size: num.min(0.3).max(4) }).optional(),
     props: z.array(PropSchema).max(8),
@@ -190,6 +201,12 @@ export const GuideSchema = z
       barDriftMax: num.min(0).max(1).optional(),
       barProp: propId.optional(),
       planted: z.array(z.enum(['footNear', 'footFar'])).max(2),
+      /**
+       * Limbs that pass *beside* a bench, seat or pad (outside its width, out
+       * of the picture plane), e.g. a bench-press elbow dropping past the pad.
+       * They skip the prop-penetration test only; the floor test still applies.
+       */
+      besideProps: z.array(z.enum(LIMB_GROUPS)).max(4).optional(),
       romProfile: z.enum(ROM_PROFILE_NAMES),
     }),
     a11y: z.strictObject({ summary: text(400) }),

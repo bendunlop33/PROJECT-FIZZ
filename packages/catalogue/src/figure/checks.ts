@@ -5,7 +5,7 @@
  * necessary, not sufficient (Ben still approves each guide).
  */
 import type { CatalogueEntry } from '../entry-schema';
-import { GuideSchema, type Guide } from './guide-schema';
+import { GuideSchema, type Guide, type LimbGroup } from './guide-schema';
 import { sampleTimes } from './keyframes';
 import { dist, penetrationDepth, lerpVec, v, type Vec } from './math';
 import { poseAt, prepareGuide, type Pose, type PreparedGuide } from './pose';
@@ -67,18 +67,18 @@ export interface GuideCheckReport {
 const r4 = (n: number): string => n.toFixed(4);
 
 /** Body segments as joint-name pairs (both sides). */
-const SEGMENTS: [string, string][] = [
-  ['hip', 'lumbarBase'],
-  ['lumbarBase', 'thoraxBase'],
-  ['thoraxBase', 'c7'],
-  ['c7', 'neckTop'],
-  ...(['Near', 'Far'] as const).flatMap((s): [string, string][] => [
-    [`hip${s}`, `knee${s}`],
-    [`knee${s}`, `ankle${s}`],
-    [`heel${s}`, `toe${s}`],
-    [`shoulder${s}`, `elbow${s}`],
-    [`elbow${s}`, `wrist${s}`],
-    [`wrist${s}`, `grip${s}`],
+const SEGMENTS: [string, string, LimbGroup | null][] = [
+  ['hip', 'lumbarBase', null],
+  ['lumbarBase', 'thoraxBase', null],
+  ['thoraxBase', 'c7', null],
+  ['c7', 'neckTop', null],
+  ...(['Near', 'Far'] as const).flatMap((s): [string, string, LimbGroup][] => [
+    [`hip${s}`, `knee${s}`, `leg${s}`],
+    [`knee${s}`, `ankle${s}`, `leg${s}`],
+    [`heel${s}`, `toe${s}`, `leg${s}`],
+    [`shoulder${s}`, `elbow${s}`, `arm${s}`],
+    [`elbow${s}`, `wrist${s}`, `arm${s}`],
+    [`wrist${s}`, `grip${s}`, `arm${s}`],
   ]),
 ];
 
@@ -153,7 +153,8 @@ function checkBarDrift(guide: Guide, poses: readonly Pose[]): CheckItem {
   return { id: 'bar-drift', ok: drift <= max, detail: `${id} drifts ${r4(drift)} H horizontally (limit ${max})` };
 }
 
-function checkPenetration(poses: readonly Pose[]): CheckItem {
+function checkPenetration(guide: Guide, poses: readonly Pose[]): CheckItem {
+  const beside = new Set<LimbGroup>(guide.checks.besideProps ?? []);
   for (const p of poses) {
     const floor = p.groundY - LIMITS.floorTolerance;
     const low: [string, number][] = [
@@ -165,7 +166,8 @@ function checkPenetration(poses: readonly Pose[]): CheckItem {
     const under = low.find(([, y]) => y < floor);
     if (under) return { id: 'no-penetration', ok: false, detail: `${under[0]} is ${r4(p.groundY - under[1])} H below the floor at t=${p.t.toFixed(3)}` };
     for (const c of p.colliders) {
-      for (const [a, b] of SEGMENTS) {
+      for (const [a, b, limb] of SEGMENTS) {
+        if (limb !== null && beside.has(limb)) continue;
         const pa = p.points[a];
         const pb = p.points[b];
         if (pa === undefined || pb === undefined) continue;
@@ -178,7 +180,8 @@ function checkPenetration(poses: readonly Pose[]): CheckItem {
       }
     }
   }
-  return { id: 'no-penetration', ok: true, detail: 'Nothing goes through the floor or a bench/seat' };
+  const note = beside.size > 0 ? ` (${[...beside].join(', ')} pass beside props)` : '';
+  return { id: 'no-penetration', ok: true, detail: `Nothing goes through the floor or a bench/seat${note}` };
 }
 
 function checkHands(poses: readonly Pose[]): CheckItem {
@@ -291,7 +294,7 @@ export function checkGuide(input: GuideCheckInput): GuideCheckReport {
     checkRom(guide, poses),
     checkPlanted(guide, poses),
     checkBarDrift(guide, poses),
-    checkPenetration(poses),
+    checkPenetration(guide, poses),
     checkHands(poses),
     checkLoop(prepared),
     {
