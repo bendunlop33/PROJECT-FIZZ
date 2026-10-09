@@ -143,3 +143,27 @@ export async function pickBackupFile(): Promise<PickedFile> {
     return { kind: 'failed', message: text };
   }
 }
+
+/** A FitNotes export of 10,000 rows is under 1 MB; anything this big isn't one and isn't read into memory. */
+const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
+
+/**
+ * `Choose CSV file` (data-import-export §4.3): the system document picker
+ * for CSV and plain text. iOS hands back a temporary copy in the app's
+ * cache, so the original in Files is never changed. The text is data, never
+ * instructions (rule 8); its kind is decided from the content, not the name.
+ * Needs a device test (iCloud Drive, On My iPhone, a file emailed from FitNotes 2).
+ */
+export async function pickCsvFile(): Promise<PickedFile> {
+  try {
+    const picked = await File.pickFileAsync({ mimeTypes: ['text/csv', 'text/comma-separated-values', 'text/plain', 'text/*'] });
+    if (picked.canceled) return { kind: 'cancelled' };
+    const file = picked.result;
+    if (file.size > MAX_IMPORT_BYTES) return { kind: 'failed', message: 'That file is too large to be a FitNotes export.' };
+    return { kind: 'picked', name: file.name, text: await file.text() };
+  } catch (e) {
+    const text = e instanceof Error ? e.message : String(e);
+    if (/cancel/i.test(text)) return { kind: 'cancelled' };
+    return { kind: 'failed', message: text };
+  }
+}
