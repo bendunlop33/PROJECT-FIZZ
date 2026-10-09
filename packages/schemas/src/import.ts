@@ -250,10 +250,30 @@ export const AliasTargetSchema = z.discriminatedUnion('kind', [
 ]);
 export type AliasTarget = z.infer<typeof AliasTargetSchema>;
 
+/** The most uses an alias keeps (one per import; the oldest drop off first). */
+export const ALIAS_USES_MAX = 100;
+
+/**
+ * One import's answer for a name (review r5 S2): the exercise (or Skip) it
+ * used and, when that import asked about the name's dumbbells, Ben's answer
+ * (`null`: he cleared it; absent: that import didn't ask).
+ */
+export const AliasUseSchema = z.object({
+  jobId: IdSchema,
+  target: AliasTargetSchema,
+  perHand: PerHandReadingSchema.nullable().optional(),
+});
+export type AliasUse = z.infer<typeof AliasUseSchema>;
+
 /**
  * Ben's own name for an exercise, learnt from an import, so the next import
  * of a newer file matches it automatically. Owner-scoped (Your data): it
  * describes his naming, not general knowledge.
+ *
+ * What it says now is read from `uses`, ignoring imports that were undone
+ * (`rememberedAnswer` in `@fizz/domain`): Undo import takes back what that
+ * import taught (review r5 S2). `target`, `perHand` and `jobId` are the last
+ * write, kept as they were for older records.
  */
 export const ExerciseAliasSchema = RecordMetaSchema.extend({
   source: z.literal('fitnotes'),
@@ -268,7 +288,9 @@ export const ExerciseAliasSchema = RecordMetaSchema.extend({
    * Absent when he gave none for this exercise (the group answer isn't kept).
    */
   perHand: PerHandReadingSchema.optional(),
-  /** The import that taught it. */
+  /** The import that last wrote it. */
   jobId: IdSchema,
+  /** Every import that answered or used the name, oldest first (absent on records written before review r5). */
+  uses: z.array(AliasUseSchema).max(ALIAS_USES_MAX).optional(),
 });
 export type ExerciseAlias = z.infer<typeof ExerciseAliasSchema>;
