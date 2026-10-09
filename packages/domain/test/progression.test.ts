@@ -14,6 +14,8 @@ function session(
     sessionId: id(sessionN),
     performedAtUtc: `2026-09-${String(day).padStart(2, '0')}T06:00:00.000Z`,
     equipmentId,
+    gymId: null,
+    imported: false,
     sets: sets.map((s) => ({
       setType: s.setType ?? 'working',
       side: s.side ?? null,
@@ -454,6 +456,8 @@ describe('timed exercises (review M2)', () => {
       sessionId: id(990),
       performedAtUtc: '2026-09-01T06:00:00.000Z',
       equipmentId: null,
+      gymId: null,
+      imported: false,
       sets: [{ setType: 'working', side: null, load: null, reps: null, rpe: null, rir: null }],
     };
     const t = calculateNextTargets(

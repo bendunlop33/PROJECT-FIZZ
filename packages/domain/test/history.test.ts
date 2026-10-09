@@ -91,8 +91,29 @@ describe('toHistorySessions (third-review follow-up 5)', () => {
     const discarded = apply(s, { type: 'discard', at: at(100), opId: 'disc', expectedVersion: s.session.version });
     expect(toHistorySessions(discarded, SPLIT_SQUAT.id)).toEqual([]);
 
-    const [h] = toHistorySessions(finish(s, 100), SPLIT_SQUAT.id);
+    const done = finish(s, 100);
+    const [h] = toHistorySessions(done, SPLIT_SQUAT.id);
+    // Its gym, and logged in the app: comparable (review r2 B1).
+    expect([h?.gymId, h?.imported]).toEqual([done.session.gymId, false]);
     // Two pending rows became skipped at Finish and are absent.
     expect(h?.sets).toEqual([{ setType: 'working', side: 'both', load: kg(15, 'per_hand'), reps: 9, rpe: null, rir: null }]);
+  });
+});
+
+describe('imported history (review r2 B1)', () => {
+  it('a FitNotes workout is marked imported; the rule ignores it even with no equipment either side', () => {
+    let s = unilateralSession();
+    for (const [i, set] of s.sets.entries()) s = log(s, set.id, 10, 10 + i * 60, 'both');
+    const done = finish(s, 600);
+    const asImported: SessionAggregate = { ...done, session: { ...done.session, source: 'import', gymId: null, importJobId: '00000000-0000-4000-8000-0000000a0c01', localDate: '2026-10-08' } };
+    const [h] = toHistorySessions(asImported, SPLIT_SQUAT.id);
+    expect([h?.imported, h?.gymId]).toEqual([true, null]);
+    // Logged in the app, every set at the top of the range: the rule would progress.
+    expect(next(toHistorySessions(done, SPLIT_SQUAT.id)).decision).not.toBe('insufficient_data');
+    // The same sets imported, with no equipment either side: nothing comparable.
+    const noEq = toHistorySessions(asImported, SPLIT_SQUAT.id).map((x) => ({ ...x, equipmentId: null }));
+    const t = calculateNextTargets({ exerciseName: SPLIT_SQUAT.name, measurement: 'reps', history: noEq, rule: RULE, equipment: null, unit: 'kg', convention: 'per_hand', pain: { active: false, reportedAtUtc: null } });
+    expect(t.decision).toBe('insufficient_data');
+    expect(t.explanation.facts.join(' ')).not.toMatch(/left out/);
   });
 });

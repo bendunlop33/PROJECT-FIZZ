@@ -16,6 +16,7 @@ import {
   startWorkout,
   toHistorySessions,
   toIso,
+  lastComparableSession,
   type HistorySession,
   type SummaryInput,
 } from '../src/index';
@@ -59,7 +60,7 @@ function input(s: SessionAggregate, history: HistorySession[], over: Partial<Sum
 describe('buildWorkoutSummary', () => {
   const bar = barbell();
   // Last week: 3 × 12 at 60 kg (the top of the default 8–12 range).
-  const lastWeek: HistorySession = { sessionId: id(600), performedAtUtc: at(-7 * 86_400).utc, equipmentId: bar.id, sets: [1, 2, 3].map(() => ({ setType: 'working' as const, side: null, load: kg(60), reps: 12, rpe: 8, rir: null })) };
+  const lastWeek: HistorySession = { sessionId: id(600), performedAtUtc: at(-7 * 86_400).utc, equipmentId: bar.id, gymId: GYM, imported: false, sets: [1, 2, 3].map(() => ({ setType: 'working' as const, side: null, load: kg(60), reps: 12, rpe: 8, rir: null })) };
 
   it('facts, a like-for-like comparison and a built-in Next time row tagged with its source', () => {
     const s = finish(logAll(workout(BENCH, bar, 3), [values(kg(60), 12, { rpe: 8 }), values(kg(60), 12, { rpe: 8.5 }), values(kg(60), 12, { rpe: 9 })], 0), 600);
@@ -144,7 +145,7 @@ describe('buildWorkoutSummary', () => {
   it('per-hand dumbbells at the rack max progress reps, never past the max', () => {
     const db = dumbbells();
     const press = exercise(221, 'Dumbbell press', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
-    const hist: HistorySession = { sessionId: id(601), performedAtUtc: at(-86_400).utc, equipmentId: db.id, sets: [1, 2].map(() => ({ setType: 'working' as const, side: null, load: kg(30, 'per_hand'), reps: 12, rpe: null, rir: null })) };
+    const hist: HistorySession = { sessionId: id(601), performedAtUtc: at(-86_400).utc, equipmentId: db.id, gymId: GYM, imported: false, sets: [1, 2].map(() => ({ setType: 'working' as const, side: null, load: kg(30, 'per_hand'), reps: 12, rpe: null, rir: null })) };
     const s = finish(logAll(workout(press, db, 2), [1, 2].map(() => values(kg(30, 'per_hand'), 12)), 0), 600);
     const sum = buildWorkoutSummary(input(s, [hist]));
     expect(sum.exercises[0]?.setsText).toBe('2 sets (kg each)');
@@ -154,7 +155,7 @@ describe('buildWorkoutSummary', () => {
   it('assisted machine: progress means less assistance', () => {
     const a = assisted();
     const pull = exercise(222, 'Assisted pull-up', { compatibleEquipment: ['assisted_stack'], defaultLoadConvention: 'assistance' });
-    const hist: HistorySession = { sessionId: id(602), performedAtUtc: at(-86_400).utc, equipmentId: a.id, sets: [1, 2].map(() => ({ setType: 'working' as const, side: null, load: kg(30, 'assistance'), reps: 12, rpe: null, rir: null })) };
+    const hist: HistorySession = { sessionId: id(602), performedAtUtc: at(-86_400).utc, equipmentId: a.id, gymId: GYM, imported: false, sets: [1, 2].map(() => ({ setType: 'working' as const, side: null, load: kg(30, 'assistance'), reps: 12, rpe: null, rir: null })) };
     const s = finish(logAll(workout(pull, a, 2), [1, 2].map(() => values(kg(30, 'assistance'), 12)), 0), 600);
     expect(buildWorkoutSummary(input(s, [hist])).nextTime?.rows.map((r) => plain(r.target))).toEqual(['Target Assist 25 kg × 8–12']);
   });
@@ -228,6 +229,18 @@ describe('date-only (imported) workouts on Today and the summary (review B2, N3)
     expect(own.facts.activeMs).toBeGreaterThan(0);
   });
 
+  it('an imported workout is a history record: no comparison, highlight or Next time (review r2 B1)', () => {
+    const earlier = imported('2026-10-01');
+    const agg = imported('2026-10-05');
+    const exId = agg.exercises[0]?.exerciseId ?? '';
+    const history = { [exId]: [...toHistorySessions(earlier, exId), ...toHistorySessions(agg, exId)] };
+    const sum = buildWorkoutSummary({ aggregate: agg, nowMs: Date.parse('2026-10-09T17:00:00.000Z'), gymName: null, history, rules: {}, painFlags: [], checkIn: null, coach: 'not_connected' });
+    expect(sum.facts.workingSets).toBe(1);
+    expect(sum.comparison).toBeNull();
+    expect(sum.highlight).toBeNull();
+    expect(sum.nextTime).toBeNull();
+  });
+
   it('keeps its own date in a phone zone 12+ hours away (London noon is already tomorrow in Auckland)', () => {
     const agg = imported('2026-10-09');
     const auckland = (utc: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland' }).format(new Date(utc));
@@ -235,5 +248,54 @@ describe('date-only (imported) workouts on Today and the summary (review B2, N3)
     const now = Date.parse('2026-10-09T05:00:00.000Z'); // 18:00 on 9 Oct in Auckland
     expect(buildTodayView({ nowMs: now, active: null, finishedThisWeek: [agg], todayLocalDate: '2026-10-09', localDateOf: auckland, recentCheckIns: [] }).main).toMatchObject({ kind: 'done_today', activeMs: null });
     expect(buildTodayView({ nowMs: now + 86_400_000, active: null, finishedThisWeek: [agg], todayLocalDate: '2026-10-10', localDateOf: auckland, recentCheckIns: [] }).main).toEqual({ kind: 'no_plan' });
+  });
+});
+
+describe('imported history is never comparable while P-I3 is open (review r2 B1)', () => {
+  /** FitNotes `Lat pulldown 40 × 10` on 1 Oct, imported with the gym not recorded and no equipment. */
+  function importedPulldown(): SessionAggregate {
+    const p = parseFitNotesCsv('Date,Exercise,Category,Weight (kgs),Reps,Distance,Distance Unit,Time\n2026-10-01,Lat pulldown,Back,40,10,,,\n', '2026-10-31');
+    if (!p.ok) throw new Error('not parsed');
+    const ctx = { ownerId: OWNER, candidates: CANDIDATES, aliases: new Map(), appDates: new Set<string>(), importedDates: new Map(), defaultUnit: 'kg' as const };
+    const jobId = '00000000-0000-4000-8000-0000000a0b02';
+    const rows = planImportRows(p, analyseImport(p, ctx, DEFAULT_ANSWERS), { jobId, defaultUnit: 'kg' });
+    return buildImportedSession({ ownerId: OWNER, jobId, operationId: 'op-2', tz: 'Europe/London', gymId: null, importedAtUtc: '2026-10-02T17:00:00.000Z', date: '2026-10-01', rows });
+  }
+
+  it('an exercise with no equipment either side: no Last, no comparison, no highlight from FitNotes', () => {
+    const imp = importedPulldown();
+    const impEx = imp.exercises[0];
+    if (!impEx) throw new Error('no exercise');
+    expect([impEx.equipmentId, impEx.unit, impEx.loadConvention]).toEqual([null, 'kg', 'stack']);
+    // Today in the app, added with no equipment (none at this gym): same exercise, unit and convention.
+    const pulldown = exercise(230, 'Lat pulldown', { id: impEx.exerciseId, movementPattern: 'pull', compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack' });
+    const s = finish(logAll(workout(pulldown, null, 1), [values(kg(45, 'stack'), 10)], 0), 600);
+    expect(s.exercises[0]).toMatchObject({ equipmentId: null, unit: 'kg', loadConvention: 'stack' });
+    const history = toHistorySessions(imp, impEx.exerciseId);
+    expect(history.map((h) => [h.imported, h.gymId, h.equipmentId])).toEqual([[true, null, null]]);
+
+    const ex = s.exercises[0];
+    if (!ex) throw new Error('no exercise');
+    expect(lastComparableSession(history, ex)).toBeNull();
+    const sum = buildWorkoutSummary(input(s, history));
+    expect(sum.comparison).toEqual({ kind: 'not_comparable', text: 'Earlier Lat pulldown sets were imported from FitNotes. Not compared.' });
+    // 45 > 40 would be "Heaviest" against FitNotes; it isn't compared.
+    expect(sum.highlight).toBeNull();
+    expect(JSON.stringify(sum)).not.toContain('Main Gym, working sets');
+  });
+
+  it('the comparison names the compared workout’s own gym, never assumes today’s', () => {
+    const bar = barbell();
+    const otherGym = id(77);
+    const elsewhere: HistorySession = { sessionId: id(603), performedAtUtc: at(-7 * 86_400).utc, equipmentId: bar.id, gymId: otherGym, imported: false, sets: [1, 2, 3].map(() => ({ setType: 'working' as const, side: null, load: kg(60), reps: 12, rpe: 8, rir: null })) };
+    const s = finish(logAll(workout(BENCH, bar, 3), [1, 2, 3].map(() => values(kg(60), 12, { rpe: 8 })), 0), 600);
+    const named = buildWorkoutSummary(input(s, [elsewhere], { gymNames: { [otherGym]: 'Home', [GYM]: 'Main Gym' } }));
+    expect(named.comparison?.kind === 'compared' ? plain(named.comparison.why) : null).toBe('Same Olympic bar at Home, working sets');
+    // Its gym's name isn't known: no gym named rather than today's.
+    const unnamed = buildWorkoutSummary(input(s, [elsewhere]));
+    expect(unnamed.comparison?.kind === 'compared' ? plain(unnamed.comparison.why) : null).toBe('Same Olympic bar, working sets');
+    // Not recorded: said so.
+    const notRecorded = buildWorkoutSummary(input(s, [{ ...elsewhere, gymId: null }]));
+    expect(notRecorded.comparison?.kind === 'compared' ? plain(notRecorded.comparison.why) : null).toBe('Same Olympic bar, gym not recorded, working sets');
   });
 });

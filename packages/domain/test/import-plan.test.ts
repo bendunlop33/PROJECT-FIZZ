@@ -355,7 +355,7 @@ describe('import plan: frozen rows and imported workouts', () => {
       ['logged', '2026-10-09T10:00:00.000Z'],
     ]);
     const history = toHistorySessions(agg, idOf('Bench press'));
-    expect(history).toEqual([{ sessionId: agg.session.id, performedAtUtc: '2026-10-02T11:00:00.000Z', equipmentId: null, sets: [{ setType: 'working', side: null, load: { value: 100, unit: 'kg', convention: 'total' }, reps: 5, rpe: null, rir: null }] }]);
+    expect(history).toEqual([{ sessionId: agg.session.id, performedAtUtc: '2026-10-02T11:00:00.000Z', equipmentId: null, gymId: null, imported: true, sets: [{ setType: 'working', side: null, load: { value: 100, unit: 'kg', convention: 'total' }, reps: 5, rpe: null, rir: null }] }]);
   });
 
   it('says when a row’s raw text was cut to fit storage, never silently (review N7)', () => {

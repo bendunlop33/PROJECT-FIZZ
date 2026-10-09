@@ -63,7 +63,7 @@ describe('summary highlight (like-for-like, never invented)', () => {
     for (const [i, [load, reps]] of sets.entries()) s = apply(s, logCmd(setsFor(s, BENCH)[i]?.id ?? '', values(kg(load), reps), 10 + i * 100));
     return apply(s, { type: 'finish', at: at(1000), opId: 'f', expectedVersion: s.session.version, endedAt: null });
   }
-  const hist = (sets: [number, number][], equipmentId = bar.id): HistorySession => ({ sessionId: id(990), performedAtUtc: at(-86_400).utc, equipmentId, sets: sets.map(([load, reps]) => ({ setType: 'working' as const, side: null, load: kg(load), reps, rpe: null, rir: null })) });
+  const hist = (sets: [number, number][], equipmentId = bar.id): HistorySession => ({ sessionId: id(990), performedAtUtc: at(-86_400).utc, equipmentId, gymId: GYM, imported: false, sets: sets.map(([load, reps]) => ({ setType: 'working' as const, side: null, load: kg(load), reps, rpe: null, rir: null })) });
 
   it('heaviest set, then most reps at a load done before, then most volume', () => {
     const s = finishedBench([[102.5, 6], [100, 6]]);

@@ -153,7 +153,7 @@ describe('pain flags (rule 9)', () => {
     expect(restorePainFlag(flag, at(30))).toBe(flag);
 
     const bar = barbell();
-    const history = [{ sessionId: id(60), performedAtUtc: at(-86400).utc, equipmentId: bar.id, sets: [1, 2, 3].map(() => ({ setType: 'working' as const, side: null, load: kg(100), reps: 8, rpe: null, rir: null })) }];
+    const history = [{ sessionId: id(60), performedAtUtc: at(-86400).utc, equipmentId: bar.id, gymId: null, imported: false, sets: [1, 2, 3].map(() => ({ setType: 'working' as const, side: null, load: kg(100), reps: 8, rpe: null, rir: null })) }];
     const rule = doubleProgression({ repRange: { min: 6, max: 8 }, workingSets: 3 });
     const input = { exerciseName: 'Bench press', measurement: 'reps' as const, history, rule, equipment: bar, unit: 'kg' as const, convention: 'total' as const };
     expect(calculateNextTargets({ ...input, pain: painStatusFor([], id(200)) }).decision).toBe('increase_load');

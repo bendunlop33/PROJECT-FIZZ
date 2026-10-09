@@ -16,6 +16,8 @@ import type { HistorySession, HistorySet } from './progression';
  *   partner was deleted (`getSetPair` returns null) counts as a lone side, never
  *   as half of a pair.
  * - `performedAtUtc` is the session's (possibly corrected) start time.
+ * - `gymId` is the session's gym (null: not recorded); `imported` marks a
+ *   FitNotes workout, which is never comparable history (review r2 B1).
  */
 export function toHistorySessions(aggregate: SessionAggregate, exerciseId: string): HistorySession[] {
   const { session } = aggregate;
@@ -46,6 +48,8 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
     sessionId: session.id,
     performedAtUtc: session.startedAt.utc,
     equipmentId,
+    gymId: session.gymId,
+    imported: session.source === 'import',
     sets,
   }));
 }

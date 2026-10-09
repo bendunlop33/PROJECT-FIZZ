@@ -218,6 +218,8 @@ describe('last comparable session (prefill and the Last line)', () => {
     sessionId: id(sessionId),
     performedAtUtc: at(-day * 86_400).utc,
     equipmentId,
+    gymId: GYM,
+    imported: false,
     sets: [{ setType: 'working' as const, side: null, load, reps: 8, rpe: 8, rir: null }],
   });
 
