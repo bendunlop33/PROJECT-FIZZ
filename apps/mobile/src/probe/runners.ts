@@ -1,4 +1,6 @@
 import * as Notifications from 'expo-notifications';
+
+import '../alerts/notifier';
 import * as SecureStore from 'expo-secure-store';
 import * as Speech from 'expo-speech';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
@@ -175,10 +177,8 @@ export async function runSecureStoreProbe(): Promise<ResultUpdate> {
 
 export const NOTIFICATION_DELAY_S = 15;
 
-Notifications.setNotificationHandler({
-  handleNotification: () =>
-    Promise.resolve({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
-});
+// The app has one notification handler (alerts/notifier.ts); it shows every
+// notification except a rest alert while the app is in the foreground.
 
 /**
  * Called with an extra detail after the runner has returned (the notification
