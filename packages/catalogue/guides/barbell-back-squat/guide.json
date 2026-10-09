@@ -8,6 +8,7 @@
   "units": "bodyHeight",
   "durationMs": 2800,
   "loop": "cycle",
+  "motion": "phases",
   "ground": { "y": 0, "scrollPerCycle": 0 },
   "projection": { "armNear": 0.8, "armFar": 0.8, "forearmNear": 0.68, "forearmFar": 0.68 },
   "props": [
@@ -27,18 +28,18 @@
       "ease": "smooth"
     },
     {
-      "t": 0.2857, "label": "Halfway", "caption": "Hips back and down, knees over toes",
-      "root": { "x": -0.0399, "y": 0.4623, "pelvisDeg": 25 },
+      "t": 0.1958, "pass": true, "label": "Halfway", "caption": "Hips back and down, knees over toes",
+      "root": { "x": -0.0282, "y": 0.4628, "pelvisDeg": 22.8 },
       "joints": { "neck": -14 },
       "ease": "smooth"
     },
     {
       "t": 0.5714, "label": "Bottom", "caption": "Hips just below knees, heels down",
-      "root": { "x": -0.1156, "y": 0.234, "pelvisDeg": 40 },
+      "root": { "x": -0.1151, "y": 0.2372, "pelvisDeg": 39.9 },
       "joints": { "neck": -24 },
       "holdMs": 200, "ease": "smooth"
     },
-    { "t": 0.8214, "sameAs": 1, "caption": "Hips and chest rise together", "ease": "smooth" },
+    { "t": 0.8776, "sameAs": 1, "caption": "Hips and chest rise together", "ease": "smooth" },
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
