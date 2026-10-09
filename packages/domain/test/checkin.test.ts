@@ -6,6 +6,7 @@ import {
   calculateNextTargets,
   checkInFact,
   clearPainFlag,
+  restorePainFlag,
   DEFAULT_CHECK_IN_SETTINGS,
   evaluateCheckInOffer,
   localDateOf,
@@ -145,6 +146,11 @@ describe('pain flags (rule 9)', () => {
     const cleared = clearPainFlag(flag, at(10));
     expect(cleared).toMatchObject({ status: 'cleared', version: 2 });
     expect(painStatusFor([cleared], id(200)).active).toBe(false);
+    // Undo of a clear is a new version, active again (review S4).
+    const restored = restorePainFlag(cleared, at(20));
+    expect(restored).toMatchObject({ status: 'active', clearedAtUtc: null, version: 3, updatedAtUtc: at(20).utc });
+    expect(painStatusFor([restored], id(200)).active).toBe(true);
+    expect(restorePainFlag(flag, at(30))).toBe(flag);
 
     const bar = barbell();
     const history = [{ sessionId: id(60), performedAtUtc: at(-86400).utc, equipmentId: bar.id, sets: [1, 2, 3].map(() => ({ setType: 'working' as const, side: null, load: kg(100), reps: 8, rpe: null, rir: null })) }];

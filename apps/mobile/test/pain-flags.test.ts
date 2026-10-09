@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { painClearConfirm, painClearedToast } from '../src/workout/pain-clear';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /** Review workout-loop S7: pain flags can be chosen from the Summary and cleared later (rule 9). */
@@ -50,3 +51,52 @@ describe('pain flags after the toast', () => {
     expect(sum?.nextTime?.rows.find((r) => r.exerciseName === 'Bench press')?.decision).toBe('increase_load');
   });
 });
+
+describe('Summary Clear on a pain flag (review S4, rule 9)', () => {
+  async function flagBench(): Promise<{ s: Awaited<ReturnType<Harness['launch']>>['services']; sessionId: string; flagId: string }> {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const sessionId = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [1, 2, 3].map(() => ({ load: 100, reps: 6, rpe: 8 })) }]);
+    const ci = await s.checkIns.record({ checkInId: h.ids(), opId: h.ids(), score: 3 });
+    if (!ci.ok) throw new Error('check-in');
+    const sum = await s.workout.summary(sessionId);
+    const bench = sum?.exercises.find((e) => e.name === 'Bench press');
+    const flagged = await s.pain.flagFromCheckIn({ checkIn: ci.checkIn, exercises: [{ id: bench?.exerciseId ?? '', name: 'Bench press' }], area: null, opId: 'flag-s4' });
+    const flagId = flagged.ok ? flagged.flagIds?.[0] : undefined;
+    if (!flagId) throw new Error('flag');
+    return { s, sessionId, flagId };
+  }
+
+  it('uses the same confirm wording as the set card and Profile', () => {
+    expect(painClearConfirm('Bench press')).toEqual({ title: 'Clear the pain flag for Bench press?', message: 'Its targets can go up again from the next workout.', confirm: 'Clear' });
+    expect(painClearedToast('Bench press')).toEqual({ text: 'Pain flag cleared for Bench press. Next time can go up again.', action: 'Undo' });
+  });
+
+  it('Clear then Undo puts the flag back as a new version, and Next time holds again', async () => {
+    const { s, sessionId, flagId } = await flagBench();
+    const decision = async () => (await s.workout.summary(sessionId))?.nextTime?.rows.find((r) => r.exerciseName === 'Bench press')?.decision;
+    expect(await decision()).toBe('halted_pain');
+    const cleared = await s.pain.clearWithUndo([flagId]);
+    expect(cleared).toEqual({ ok: true, cleared: [{ id: flagId, version: 2 }] });
+    expect(await decision()).toBe('increase_load');
+    expect(await s.pain.undoClear(cleared.cleared)).toBe(true);
+    const back = await s.pain.active();
+    expect(back.map((f) => [f.id, f.status, f.version, f.clearedAtUtc])).toEqual([[flagId, 'active', 3, null]]);
+    expect(await decision()).toBe('halted_pain');
+    // A second Undo (double tap) changes nothing.
+    expect(await s.pain.undoClear(cleared.cleared)).toBe(false);
+    expect((await s.pain.active()).map((f) => f.version)).toEqual([3]);
+  });
+
+  it('Undo never overwrites a flag that changed after the clear (stale)', async () => {
+    const { s, flagId } = await flagBench();
+    const cleared = await s.pain.clearWithUndo([flagId]);
+    // The flag moves on after the clear: Undo, then cleared again from Profile (version 4).
+    expect(await s.pain.undoClear(cleared.cleared)).toBe(true);
+    expect(await s.pain.clear([flagId])).toBe(true);
+    // The first toast's Undo is now stale: the flag stays cleared.
+    expect(await s.pain.undoClear(cleared.cleared)).toBe(false);
+    expect(await s.pain.active()).toEqual([]);
+  });
+});
+

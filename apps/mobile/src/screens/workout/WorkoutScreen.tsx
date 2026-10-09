@@ -38,6 +38,7 @@ import { createAfterDismiss } from '../../workout/after-dismiss';
 import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
+import { painClearConfirm } from '../../workout/pain-clear';
 
 /**
  * Active workout: focused set card, rest, summary hand-off
@@ -727,7 +728,7 @@ export function WorkoutScreen() {
                     label="Clear"
                     onPress={() => {
                       // Only Ben clears a flag (rule 9); targets already planned stay as they are.
-                      Alert.alert(`Clear the pain flag for ${focus.exerciseName}?`, 'Its targets can go up again from the next workout.', [
+                      Alert.alert(painClearConfirm(focus.exerciseName).title, painClearConfirm(focus.exerciseName).message, [
                         { text: 'Cancel', style: 'cancel' },
                         {
                           text: 'Clear',

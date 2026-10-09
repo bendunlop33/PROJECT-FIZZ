@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { Modal, ScrollView, View } from 'react-native';
+import { Alert, Modal, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toIso, toMs, type NextTimeRow, type WorkoutSummary } from '@fizz/domain';
@@ -12,9 +12,10 @@ import { formatDayMonth, formatShortDate, formatTime } from '../../format/dates'
 import { popToTabs, popToToday } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { firstTime, useDataChanged, useScreenData, useServices } from '../../shell/context';
-import { useTheme } from '../../theme';
-import { AppText, BottomBar, Card, Chip, ChecklistRow, ChipRow, Icon, LinkLine, PrimaryButton, SecondaryButton, SectionHeader, StatusLine, Tag, TextButton } from '../../ui';
+import { TIMING, useTheme } from '../../theme';
+import { AppText, BottomBar, Card, Chip, ChecklistRow, ChipRow, Icon, LinkLine, PrimaryButton, SecondaryButton, SectionHeader, StatusLine, Tag, TextButton, Toast } from '../../ui';
 import { stepTime } from '../../workout/finish';
+import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
 
 /**
  * Workout summary (workout-summary.md). Shown only after `finishWorkout`
@@ -31,6 +32,16 @@ export function SummaryScreen() {
   const { sessionId } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
   const [times, setTimes] = useState(false);
   const [choosePain, setChoosePain] = useState(false);
+  const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => {
+      setToast(null);
+    }, TIMING.undoToast);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [toast]);
   const [data, reload] = useScreenData(async (s) => {
     const [summary, backup, painFlags] = await Promise.all([s.workout.summary(sessionId), s.backups.getStatus(), s.pain.active()]);
     return { summary, backup, painFlags };
@@ -169,9 +180,35 @@ export function SummaryScreen() {
               <TextButton
                 label="Clear"
                 onPress={() => {
-                  void services.pain.clear([f.id]).then(() => {
-                    changed();
-                  });
+                  // Same confirm as the set card and Profile, plus Undo here (rule 9, review S4).
+                  const c = painClearConfirm(f.exerciseName);
+                  Alert.alert(c.title, c.message, [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: c.confirm,
+                      onPress: () => {
+                        void services.pain.clearWithUndo([f.id]).then((r) => {
+                          changed();
+                          if (!r.ok) {
+                            setToast({ text: 'The pain flag wasn’t cleared. Try again.' });
+                            return;
+                          }
+                          const t = painClearedToast(f.exerciseName);
+                          setToast({
+                            text: t.text,
+                            action: t.action,
+                            onAction: () => {
+                              setToast(null);
+                              void services.pain.undoClear(r.cleared).then((ok) => {
+                                changed();
+                                if (!ok) setToast({ text: 'The pain flag changed since, so it wasn’t put back. Check Profile › Pain flags.' });
+                              });
+                            },
+                          });
+                        });
+                      },
+                    },
+                  ]);
                 }}
               />
             }
@@ -239,6 +276,7 @@ export function SummaryScreen() {
 
         {/* A 0-set workout was offered Discard in the finish sheet; discarding a finished one isn't in the domain yet. */}
       </ScrollView>
+      {toast ? <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
       <BottomBar>
         <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
           <View style={{ flex: 1 }}>

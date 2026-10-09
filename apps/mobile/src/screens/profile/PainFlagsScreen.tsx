@@ -6,6 +6,7 @@ import type { PainArea } from '@fizz/schemas';
 import { formatShortDate } from '../../format/dates';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { AppText, Group, Row, Screen, StatusLine, TextButton } from '../../ui';
+import { painClearConfirm } from '../../workout/pain-clear';
 
 const AREA: Record<PainArea, string> = { shoulder: 'Shoulder', elbow: 'Elbow', wrist: 'Wrist', neck: 'Neck', back: 'Back', hip: 'Hip', knee: 'Knee', ankle: 'Ankle', other: 'Other' };
 
@@ -47,7 +48,7 @@ export function PainFlagsScreen() {
                 <TextButton
                   label="Clear"
                   onPress={() => {
-                    Alert.alert(`Clear the pain flag for ${f.exerciseName}?`, 'Its targets can go up again from the next workout.', [
+                    Alert.alert(painClearConfirm(f.exerciseName).title, painClearConfirm(f.exerciseName).message, [
                       { text: 'Cancel', style: 'cancel' },
                       {
                         text: 'Clear',

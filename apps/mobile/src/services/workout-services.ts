@@ -4,6 +4,7 @@ import {
   buildTodayView,
   buildWorkoutSummary,
   clearPainFlag,
+  restorePainFlag,
   createSessionService,
   deriveId,
   DEFAULT_CHECK_IN_SETTINGS,
@@ -229,6 +230,48 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (!r.ok) return false;
       }
       return true;
+    },
+
+    /**
+     * Clear with Undo (review S4): returns each cleared flag's new version, so
+     * `undoClear` only restores a flag nothing else has changed since.
+     */
+    async clearWithUndo(flagIds: readonly string[]): Promise<{ ok: boolean; cleared: { id: string; version: number }[] }> {
+      const at = ctx.now();
+      const cleared: { id: string; version: number }[] = [];
+      try {
+        for (const id of flagIds) {
+          const f = await repos().painFlags.get(id);
+          if (!f || f.status === 'cleared') continue;
+          const next = clearPainFlag(f, at);
+          const r = await repos().painFlags.save(next, f.version);
+          if (!r.ok) return { ok: false, cleared };
+          cleared.push({ id, version: next.version });
+        }
+        return { ok: true, cleared };
+      } catch {
+        return { ok: false, cleared };
+      }
+    },
+
+    /** Undo on the `Pain flag cleared` toast. A flag changed since the clear is left alone (stale). */
+    async undoClear(cleared: readonly { id: string; version: number }[]): Promise<boolean> {
+      const at = ctx.now();
+      let all = true;
+      try {
+        for (const c of cleared) {
+          const f = await repos().painFlags.get(c.id);
+          if (!f || f.version !== c.version || f.status !== 'cleared') {
+            all = false;
+            continue;
+          }
+          const r = await repos().painFlags.save(restorePainFlag(f, at), f.version);
+          if (!r.ok) all = false;
+        }
+        return all;
+      } catch {
+        return false;
+      }
     },
 
     async active(): Promise<PainFlag[]> {

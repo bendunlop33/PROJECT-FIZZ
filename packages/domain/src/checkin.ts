@@ -332,6 +332,15 @@ export function clearPainFlag(flag: PainFlag, at: ZonedTimestamp): PainFlag {
   return { ...flag, status: 'cleared', clearedAtUtc: at.utc, updatedAtUtc: at.utc, version: flag.version + 1 };
 }
 
+/**
+ * Undo of `clearPainFlag` (the Summary's `Pain flag cleared` toast, review
+ * S4): the flag is active again, as a new version, never an edit in place.
+ */
+export function restorePainFlag(flag: PainFlag, at: ZonedTimestamp): PainFlag {
+  if (flag.status === 'active') return flag;
+  return { ...flag, status: 'active', clearedAtUtc: null, updatedAtUtc: at.utc, version: flag.version + 1 };
+}
+
 /** `PainStatus` for `calculateNextTargets`: active if any flag on this exercise is active. */
 export function painStatusFor(flags: readonly PainFlag[], exerciseId: string): PainStatus {
   const active = flags
