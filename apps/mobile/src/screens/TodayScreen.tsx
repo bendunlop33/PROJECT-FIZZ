@@ -9,7 +9,7 @@ import { nowMs as clockNow } from '../clock';
 import { newUuid } from '../device/runtime';
 import { formatShortDate, formatTime } from '../format/dates';
 import type { TabParams } from '../navigation/types';
-import { useDataChanged, useLaunchInfo, useScreenData, useServices } from '../shell/context';
+import { firstTime, useDataChanged, useLaunchInfo, useScreenData, useServices } from '../shell/context';
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { TIMING, useTheme } from '../theme';
@@ -33,6 +33,8 @@ export function TodayScreen() {
   const route = useRoute<RouteProp<TabParams, 'Today'>>();
   const install = useInstallStatus();
   const launch = useLaunchInfo();
+  // Shown once per launch (data-import-export §3.3 "Interrupted").
+  const [interrupted, setInterrupted] = useState(() => launch.restoreInterrupted && firstTime('restore-interrupted'));
   // The Start opId lives until a start succeeds: a double tap or retry starts one workout.
   const startOp = useRef<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -281,6 +283,22 @@ export function TodayScreen() {
           </View>
 
           <BannerList banners={banners} />
+          {interrupted ? (
+            <StatusLine
+              icon="info.circle"
+              tone="info"
+              text="A restore was interrupted. Your data is as it was before."
+              action={
+                <TextButton
+                  label="OK"
+                  tone="secondary"
+                  onPress={() => {
+                    setInterrupted(false);
+                  }}
+                />
+              }
+            />
+          ) : null}
           {mainCard}
 
           {unlinked && main.kind !== 'resume' && main.kind !== 'stale' ? (

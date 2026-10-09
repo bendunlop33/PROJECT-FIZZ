@@ -1,13 +1,18 @@
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useState } from 'react';
-import { View } from 'react-native';
+import { Alert, View } from 'react-native';
 
 import { toMs } from '@fizz/domain';
 
-import { useDataChanged, useScreenData, useServices } from '../../shell/context';
+import { rollbackRowView } from '../../backup/restore-view';
+import type { ProfileStackParams } from '../../navigation/types';
+import { useDataChanged, useRelaunch, useScreenData, useServices } from '../../shell/context';
 import { formatShortDate, formatWhen } from '../../format/dates';
 import { formatCount, plural } from '../../format/numbers';
 import { useTheme } from '../../theme';
 import { AppText, Card, DomainLabel, Group, Row, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
+import { BlockingCover } from './BlockingCover';
 import { SaveCopyToFiles } from './SaveCopyToFiles';
 
 const TONE = { done: 'done', info: 'info', warning: 'warning', progress: 'progress' } as const;
@@ -15,9 +20,9 @@ const TONE = { done: 'done', info: 'info', warning: 'warning', progress: 'progre
 /**
  * Data & backup hub (data-import-export.md §2.1), the parts in this build:
  * the two-line status card, `Save a copy to Files`, `Back up on this phone
- * now`, the copies on this phone, the trial-run line and the quiet 30-day
- * reminder. Restore, check, import, export and delete are listed honestly as
- * not in this build.
+ * now`, the copies on this phone, the trial-run line, the quiet 30-day
+ * reminder, Restore, Check a backup and Undo last restore. Import, export and
+ * delete are listed honestly as not in this build.
  */
 export function DataBackupScreen() {
   const theme = useTheme();
@@ -25,9 +30,13 @@ export function DataBackupScreen() {
   const changed = useDataChanged();
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [undoing, setUndoing] = useState(false);
+  const [undoError, setUndoError] = useState<string | null>(null);
+  const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParams>>();
+  const relaunch = useRelaunch();
   const [data] = useScreenData(async (s) => {
-    const [status, counts] = await Promise.all([s.backups.getStatus(), s.yourData.counts()]);
-    return { status, counts };
+    const [status, counts, blocked] = await Promise.all([s.backups.getStatus(), s.yourData.counts(), s.restore.blockedBy()]);
+    return { status, counts, blocked, rollback: s.restore.rollbackTarget() };
   });
   const now = services.now();
 
@@ -42,7 +51,30 @@ export function DataBackupScreen() {
   }
 
   if (data.state !== 'ready') return <Screen>{null}</Screen>;
-  const { status, counts } = data.value;
+  const { status, counts, blocked, rollback } = data.value;
+  const undoRow = rollbackRowView(rollback, { nowMs: toMs(now.utc), tz: now.tz });
+
+  function undoRestore() {
+    if (!undoRow) return;
+    Alert.alert(`${undoRow.title}?`, `${undoRow.subtitle}. Anything logged since then stays only in the data you switch away from, which is kept so you can switch again.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: undoRow.title,
+        onPress: () => {
+          setUndoing(true);
+          setUndoError(null);
+          void services.restore.undo().then((r) => {
+            if (r.ok) {
+              relaunch();
+              return;
+            }
+            setUndoing(false);
+            setUndoError(r.reason === 'workout_unfinished' ? `Finish or discard your workout first (${r.block.title}).` : r.error.message);
+          });
+        },
+      },
+    ]);
+  }
   const on = status.onPhone.line;
   const off = status.offPhone.line;
 
@@ -88,7 +120,7 @@ export function DataBackupScreen() {
         {status.trialRunDoneAtUtc === null ? (
           <View style={{ gap: theme.space['1'] }}>
             <AppText variant="callout" color="text.secondary">
-              Before real workouts: do the trial run in the SideStore guide (save a copy to Files, update over the top, skip a refresh, restore).
+              Before real workouts, do the trial run: log a test workout, save a copy to Files, install the next build over the top, let one weekly refresh lapse and refresh again, then restore that copy here (Restore from a backup › Choose another file…). Steps are in the SideStore guide; Fizz can’t check them for you.
             </AppText>
             <TextButton
               label="Mark as done"
@@ -128,10 +160,32 @@ export function DataBackupScreen() {
         </Group>
       ) : null}
 
-      <SectionHeader title="Restore, import and export" />
+      <SectionHeader title="Restore" />
       <Group>
-        <Row title="Restore from a backup" subtitle="Not in this build yet" disabled />
-        <Row title="Check a backup" subtitle="Not in this build yet" disabled />
+        <Row
+          title="Restore from a backup"
+          icon="arrow.counterclockwise"
+          subtitle={blocked ? `Finish or discard your workout first (${blocked.title})` : 'From this phone or Files. You can undo it.'}
+          disabled={blocked !== null}
+          onPress={() => {
+            navigation.navigate('Restore', { mode: 'restore' });
+          }}
+        />
+        <Row
+          title="Check a backup"
+          icon="checkmark.shield"
+          subtitle="Rebuilds it in a test copy. Changes nothing."
+          onPress={() => {
+            navigation.navigate('Restore', { mode: 'check' });
+          }}
+        />
+        {undoRow ? <Row title={undoRow.title} subtitle={undoRow.subtitle} disabled={blocked !== null || undoing} onPress={undoRestore} /> : null}
+      </Group>
+      {undoError ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={undoError} /> : null}
+      <BlockingCover visible={undoing} title="Switching back…" lines={[{ text: undoRow?.subtitle ?? 'Switching databases', done: false }]} />
+
+      <SectionHeader title="Import and export" />
+      <Group>
         <Row title="Import from FitNotes" subtitle="Not in this build yet" disabled />
         <Row title="Export" subtitle="Not in this build yet" disabled />
       </Group>

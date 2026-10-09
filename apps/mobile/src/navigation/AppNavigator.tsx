@@ -11,6 +11,7 @@ import type { WeightUnit } from '@fizz/schemas';
 import { AddGymScreen } from '../screens/AddGymScreen';
 import { CapabilityProbeScreen } from '../screens/CapabilityProbeScreen';
 import { DataBackupScreen } from '../screens/data/DataBackupScreen';
+import { RestoreScreen } from '../screens/data/RestoreScreen';
 import { AppStatusScreen } from '../screens/profile/AppStatusScreen';
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
@@ -61,6 +62,11 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="DataBackup" component={DataBackupScreen} options={{ title: 'Data & backup' }} />
       <ProfileStack.Screen name="AppStatus" component={AppStatusScreen} options={{ title: 'App status' }} />
       <ProfileStack.Screen name="PainFlags" component={PainFlagsScreen} options={{ title: 'Pain flags' }} />
+      <ProfileStack.Screen
+        name="Restore"
+        component={RestoreScreen}
+        options={({ route }) => ({ title: route.params.mode === 'restore' ? 'Restore from a backup' : 'Check a backup' })}
+      />
       <ProfileStack.Screen name="Developer" component={DeveloperScreen} options={{ title: 'Developer' }} />
       <ProfileStack.Screen name="CapabilityProbe" component={ProbeRoute} options={{ headerShown: false }} />
     </ProfileStack.Navigator>

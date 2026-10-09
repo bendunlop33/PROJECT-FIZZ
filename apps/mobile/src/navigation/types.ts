@@ -7,6 +7,8 @@ export type ProfileStackParams = {
   Developer: undefined;
   CapabilityProbe: undefined;
   PainFlags: undefined;
+  /** Restore from a backup, or Check a backup (data-import-export §2.3–2.4). */
+  Restore: { mode: 'restore' | 'check' };
 };
 
 export type TabParams = {
