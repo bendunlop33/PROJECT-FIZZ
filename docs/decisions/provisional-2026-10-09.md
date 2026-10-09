@@ -22,3 +22,5 @@ Ben replied "s" to "go + 3 answers". This was read as **go**, with the stated de
 - **Next-time targets:** each exercise's built-in-rule target is stored, and pre-fills the next time that exercise is added, labelled "Target (built-in rule)".
 - **Pain with no movement chosen:** blocks increases on every exercise for that session only.
 - **Built-in defaults by exercise category:** big barbell lifts 3–6 reps (RPE up to 8.5); other compounds 6–10; accessories 8–12 (RPE up to 9). This replaces the flat 8–12.
+- **Next-time targets are worked out from history each time, not stored.** The result is the same as storing them, and a later correction updates the plan too.
+- **Restore is one whole-file restore.** Per-section restore (DX11) is deferred, which simplifies the spec. Recorded in the CHANGELOG.
