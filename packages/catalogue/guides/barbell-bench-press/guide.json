@@ -46,7 +46,7 @@
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
-  "focus": { "workPhase": [{ "from": 0.6078, "to": 1 }] },
+  "focus": { "workPhase": [{ "from": 0.6078, "to": 1 }], "adjust": { "chest": { "s": [0.2, 0.86], "d": 0.8 } } },
   "checks": { "barDriftMax": 0.08, "barProp": "bar", "planted": ["footNear", "footFar"], "besideProps": ["armNear", "armFar"], "romProfile": "adult-default" },
   "a11y": {
     "summary": "Side view, lying on a flat bench with the head on the left. Feet flat, glutes and upper back on the bench. Lower the bar from over the shoulders to a light touch on the lower chest with forearms vertical, then press it up and back to over the shoulders."
