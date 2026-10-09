@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { buildRestorePreviewView } from '../src/backup/restore-view';
+import { buildRestorePreviewView, restoreBackAllowed, type RestoreStepKind } from '../src/backup/restore-view';
 import type { AppServices } from '../src/services/app-services';
 import { createHarness, logWorkout, setUpGym, TZ, type Harness } from './harness';
 
@@ -113,5 +113,44 @@ describe('Restore from a backup on Welcome', () => {
     expect(await s.setup.skipAfterRestore()).toEqual({ hasProfile: false });
     await h.forceClose();
     expect((await h.launch()).setup.step).toBe('welcome');
+  });
+});
+
+describe('ways out of the restore screen (onboarding §4.5, PM decision RS2; review R2)', () => {
+  const before: RestoreStepKind[] = ['choose', 'checking', 'error', 'checked', 'preview'];
+
+  it('from Welcome: Back and swipe work until Restore; after the switch the only exits are Done and Undo restore', () => {
+    for (const step of before) expect(restoreBackAllowed(step, true)).toBe(true);
+    expect(restoreBackAllowed('restoring', true)).toBe(false);
+    expect(restoreBackAllowed('done', true)).toBe(false);
+    expect(restoreBackAllowed('undoing', true)).toBe(false);
+  });
+
+  it('from Data & backup: no way out while the data switches; Back stays on Done', () => {
+    for (const step of before) expect(restoreBackAllowed(step, false)).toBe(true);
+    expect(restoreBackAllowed('restoring', false)).toBe(false);
+    expect(restoreBackAllowed('undoing', false)).toBe(false);
+    expect(restoreBackAllowed('done', false)).toBe(true);
+  });
+
+  it('Done relaunches into Today: cold-start recovery runs on the restored data', async () => {
+    // The backup holds an unfinished workout; after Done (a relaunch) it is recovered, as on any cold start.
+    const old = harness('2026-09-01T08:00:00.000Z', 500_000);
+    const { services: o } = await old.launch();
+    const gymId = await setUpGym(old, o);
+    const started = await o.workout.start({ gymId, opId: 'start-old', checkIn: { kind: 'skipped', atUtc: old.now().utc } });
+    if (!started.ok) throw new Error(started.error.message);
+    const text = await backUp(old, o);
+
+    const h = harness();
+    const { services: s } = await h.launch();
+    const checked = await s.restore.prepare(text);
+    if (!checked.ok) throw new Error(checked.error.message);
+    expect(await s.restore.restore(text, checked.preview.stamp)).toMatchObject({ ok: true, status: 'restored' });
+    await h.forceClose();
+    const relaunched = await h.launch();
+    expect(relaunched.setup.step).toBe('done');
+    expect(relaunched.recovery?.state.session.id).toBe(started.aggregate.session.id);
+    expect(relaunched.recoveryError).toBeNull();
   });
 });

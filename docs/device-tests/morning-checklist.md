@@ -82,6 +82,7 @@ Before you start:
 11.5 Data & backup › **Undo last restore** › confirm. Fizz reopens with the extra workout back. The row now reads *Switch back to the restored backup*.
 11.6 With a workout in progress, **Restore from a backup** is greyed out with *Finish or discard your workout first*.
 11.7 The full SideStore trial run (install the next build over the top, let one weekly refresh lapse, refresh, restore) is in `docs/guides/sidestore-windows.md` §8; tick **Mark as done** in Data & backup when you've done it.
+11.8 Optional, only when you next reinstall Fizz (deleting the app deletes the backups on this phone, so have the Files copy from 9.2 first): on Welcome tap **Restore from a backup** › **Choose another file…**. The preview shows no warnings and Restore asks for no confirmation. On *Restored* there is no Back button and swiping from the left edge does nothing. **Done** opens Today, not setup.
 
 ## 12. Pain flags (30 s) — new
 
@@ -133,6 +134,7 @@ Run these after the checklist. They are the open rows from build 7.
 | 11.3–11.4 | Restore from Files copy, cover, Restored | | |
 | 11.5 | Undo last restore | | |
 | 11.6 | Restore greyed out during a workout | | |
+| 11.8 | (On a reinstall) Welcome restore: no alert, no Back after Restored, Done opens Today | | |
 | 12 | Pain flags screen | | |
 | 13 | App status | | |
 | R1 | Live Activity | | |

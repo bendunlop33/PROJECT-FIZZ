@@ -1,12 +1,13 @@
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useState } from 'react';
+import { useNavigation, useRoute, type ParamListBase, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useEffect, useState } from 'react';
 import { Alert, View } from 'react-native';
 
 import { toMs } from '@fizz/domain';
 
 import { haptic } from '../../device/haptics';
 import { pickBackupFile } from '../../device/files';
-import { buildCheckResultView, buildRestorePreviewView, describeBackupError, type CheckResultView, type RestorePreviewView } from '../../backup/restore-view';
+import { buildCheckResultView, buildRestorePreviewView, describeBackupError, restoreBackAllowed, type CheckResultView, type RestorePreviewView } from '../../backup/restore-view';
 import { formatShortDate, formatTime, formatWhen } from '../../format/dates';
 import { plural } from '../../format/numbers';
 import type { ProfileStackParams } from '../../navigation/types';
@@ -44,12 +45,17 @@ export function RestoreScreen(props: { mode?: 'restore' | 'check'; fromWelcome?:
   const theme = useTheme();
   const services = useServices();
   const relaunch = useRelaunch();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<ParamListBase>>();
   const routeParams = useRoute<RouteProp<ProfileStackParams, 'Restore'>>().params as ProfileStackParams['Restore'] | undefined;
   const mode = props.mode ?? routeParams?.mode ?? 'restore';
   // From Welcome (onboarding OB3) the phone has no data yet: nothing to save first.
   const fromWelcome = props.fromWelcome === true;
   const [step, setStep] = useState<Step>({ kind: 'choose' });
+  // After a Welcome restore the only exits are Done (relaunch) and Undo restore (onboarding §4.5, RS2; review R2).
+  const backAllowed = restoreBackAllowed(step.kind, fromWelcome);
+  useEffect(() => {
+    navigation.setOptions({ headerBackVisible: backAllowed, gestureEnabled: backAllowed });
+  }, [navigation, backAllowed]);
   const [data] = useScreenData(async (s) => {
     const [copies, blocked, status] = await Promise.all([s.restore.copiesOnPhone(), s.restore.blockedBy(), s.backups.getStatus()]);
     return { copies, blocked, status };

@@ -202,3 +202,23 @@ export function rollbackRowView(target: { available: boolean; last: { atUtc: str
     ? { title: 'Undo last restore', subtitle: `Brings back your data from before ${when}` }
     : { title: 'Switch back to the restored backup', subtitle: `You undid a restore at ${when}` };
 }
+
+/** The restore screen's steps, as far as leaving the screen is concerned. */
+export type RestoreStepKind = 'choose' | 'checking' | 'error' | 'checked' | 'preview' | 'restoring' | 'done' | 'undoing';
+
+/**
+ * Whether the header Back button and the swipe-back gesture are offered
+ * (onboarding §4.5, PM decision RS2 on the re-review, 2026-10-09).
+ *
+ * - While the database switches (`restoring`, `undoing`) there is no way out:
+ *   the cover is up and the services are being replaced.
+ * - After a restore from Welcome the only exits are `Done` (relaunch, so
+ *   cold-start recovery runs and the restored profile opens Today) and
+ *   `Undo restore`. Back would return to first-run setup over the restored
+ *   data (review R2).
+ */
+export function restoreBackAllowed(step: RestoreStepKind, fromWelcome: boolean): boolean {
+  if (step === 'restoring' || step === 'undoing') return false;
+  if (step === 'done') return !fromWelcome;
+  return true;
+}

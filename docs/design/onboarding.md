@@ -412,6 +412,8 @@ There's no "Skip the backup?" alert and no `Not backed up yet` warning on Ready 
 
 (PM decision on review SP4, 2026-10-09.) Built in this form: the empty phone skips the `Save a copy to Files first` offer, and nothing is replaced, so there's no alert. After `Done` the app relaunches; if the restored data has a profile, setup is skipped, even when the backup was saved part-way through setup (it's marked set up, and the gym editor covers anything missing). If the restored data has no profile, Welcome shows again.
 
+**Exits after the switch** (PM decision RS2 on the re-review, 2026-10-09). Once `Restore` is tapped, the Welcome restore has no Back: the header Back button is hidden and the swipe-back gesture is off on the restoring cover and on the `Restored` step. The only exits are `Done`, which relaunches Fizz (cold-start recovery runs: an unfinished workout from the backup reopens and rest alerts are reconciled; a restored profile opens Today), and `Undo restore`, which switches back to the empty install and relaunches into Welcome. Back before `Restore` (choosing, checking, preview) returns to Welcome as usual. Going back to first-run setup over restored data would let setup overwrite the restored profile and add a second gym (review R2).
+
 ### 4.6 Permission priming (in context, never up front)
 
 No system permission prompt appears during onboarding. Each permission is asked once, at the moment its feature is first used, with a one-line explanation **before** the system prompt. If Ben says no, the feature shows an honest off state and a way to iOS Settings; nothing else breaks.
