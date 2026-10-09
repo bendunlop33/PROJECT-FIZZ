@@ -15,6 +15,7 @@ import {
   createSessionService,
   deriveId,
   DEFAULT_CHECK_IN_SETTINGS,
+  explainTarget,
   lastComparableSession,
   localDateOf,
   localWeekBounds,
@@ -58,6 +59,7 @@ import {
   type RecentCheckIn,
   type StartOutcome,
   type LiftHighlight,
+  type TargetExplanation,
   type TodayView,
   type WorkoutSummary,
 } from '@fizz/domain';
@@ -429,7 +431,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       painFlags: await repos().painFlags.listActive(p.id),
       sessionPain: now.active ? now : then,
     });
-    return plannedSetsFromTargets(result) ?? defaultStartingPlan(exercise, equipment?.kind ?? null, convention, Math.max(1, previous.sets.length));
+    // Each planned set records what produced it, for `Why?` (active-workout §2.12, AW3).
+    return plannedSetsFromTargets(result, { history, equipment, at: ctx.now() }) ?? defaultStartingPlan(exercise, equipment?.kind ?? null, convention, Math.max(1, previous.sets.length));
   }
 
   /**
@@ -450,6 +453,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (done.length === 0) continue;
       const exercise = await repos().exercises.get(sx.exerciseId);
       const equipment = sx.equipmentId === null ? null : (source.session.equipmentSnapshot.find((e) => e.id === sx.equipmentId) ?? null);
+      const history = await historyFor(p.id, sx.exerciseId);
       const { result } = nextTargetsFor({
         ownerId: p.id,
         exerciseId: sx.exerciseId,
@@ -461,11 +465,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         exercise,
         rule: null,
         workingSets: done.length,
-        history: await historyFor(p.id, sx.exerciseId),
+        history,
         painFlags: flags,
         sessionPain,
       });
-      const plan = plannedSetsFromTargets(result);
+      // Rule provenance on each set, so `Why?` explains a progressed target as the rule's, never as a repeat (review B1.1).
+      const plan = plannedSetsFromTargets(result, { history, equipment, at: ctx.now() });
       if (plan) out.set(sx.exerciseId, plan);
     }
     return out;
@@ -792,6 +797,43 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           exerciseRestS: p.exerciseRestS?.[req.exerciseId] ?? null,
         }),
       );
+    },
+
+    /**
+     * `Why?` on a set target (active-workout §2.12): reads the provenance
+     * stored with the target, the pain flags on the movement and the basis
+     * workout as it is now. Local reads only: no rule runs, no coach, no
+     * network, and nothing is written. Null when the set has no target or
+     * the workout can't be read; a basis that can't be read is treated as
+     * not found (no `edited` claim either way).
+     */
+    async explainTarget(sessionId: string, setId: string): Promise<TargetExplanation | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const aggregate = await repos().sessions.get(sessionId);
+        const set = aggregate?.sets.find((x) => x.id === setId);
+        const ex = aggregate?.exercises.find((e) => e.id === set?.sessionExerciseId);
+        if (!aggregate || !set || !ex) return null;
+        const basisId = set.planned.provenance?.basis?.sessionId ?? null;
+        const [basisNow, gyms, flags, history] = await Promise.all([
+          basisId === null ? null : repos().sessions.get(basisId).catch(() => null),
+          repos().gyms.listByOwner(p.id).catch(() => []),
+          repos().painFlags.listByOwner(p.id).catch(() => [] as PainFlag[]),
+          historyFor(p.id, ex.exerciseId).catch(() => [] as HistorySession[]),
+        ]);
+        return explainTarget({
+          aggregate,
+          setId,
+          nowMs: toMs(ctx.now().utc),
+          basisNow,
+          gymNames: Object.fromEntries(gyms.map((g) => [g.id, g.name])),
+          painFlags: flags.filter((f) => f.exerciseId === ex.exerciseId),
+          history: history.filter((h) => h.sessionId !== aggregate.session.id),
+        });
+      } catch {
+        return null;
+      }
     },
 
     async summary(sessionId: string): Promise<WorkoutSummary | null> {
