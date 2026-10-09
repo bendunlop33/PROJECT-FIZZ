@@ -77,7 +77,7 @@ async function idle(s: AppServices) {
 async function closeAll() {
   for (const s of open.splice(0)) {
     await idle(s);
-    await s.manager.close().catch(() => undefined);
+    await s.close().catch(() => undefined);
   }
 }
 
@@ -143,6 +143,41 @@ describe('first run (onboarding.md §3.1)', () => {
     const again = await ready();
     expect(again.setup.step).toBe('data');
     expect(again.setup.gyms).toEqual([]);
+  });
+
+  it('Back over a saved gym never creates a second gym, and Skip after it keeps the gym (review B1)', async () => {
+    const { services: s } = await ready();
+    await s.setup.saveUnits('kg');
+    const draft = s.coachingKnowledge.buildGymDraft('commercial', 'kg');
+    const first = ids();
+    expect(await s.setup.saveGym({ gymId: first, name: 'Main gym', draft })).toEqual({ ok: true });
+    // Back, then Save gym again from a fresh visit (new ID): refused, honestly.
+    expect(await s.setup.saveGym({ gymId: ids(), name: 'Main gym', draft })).toEqual({
+      ok: false,
+      message: 'A gym is already saved. You can edit it later in the gym editor.',
+    });
+    // A retry of the first save is still a duplicate, not an error.
+    expect(await s.setup.saveGym({ gymId: first, name: 'Main gym', draft })).toEqual({ ok: true });
+    expect(await s.setup.skipGym()).toEqual({ ok: true });
+    const state = await s.setup.getState();
+    expect(state.gyms.map((g) => g.id)).toEqual([first]);
+    expect(state.profile?.setup?.gymStep).toBe('saved');
+    // After setup, Add gym (same flow) can add a second gym.
+    await s.setup.complete();
+    expect(await s.setup.saveGym({ gymId: ids(), name: 'Hotel', draft: null })).toEqual({ ok: true });
+    expect(await s.yourData.gyms()).toHaveLength(2);
+  });
+
+  it('saveUnits creates exactly one owner profile, even when called concurrently (review S1)', async () => {
+    const { services: s } = await ready();
+    const results = await Promise.all([s.setup.saveUnits('kg'), s.setup.saveUnits('kg'), s.setup.saveUnits('kg')]);
+    expect(results).toEqual([{ ok: true }, { ok: true }, { ok: true }]);
+    expect((await s.setup.getState()).profile?.preferredUnit).toBe('kg');
+    expect((await s.yourData.counts()).gyms).toBe(0);
+    const current = s.developer.databaseNames().current;
+    const db = new DatabaseSync(join(dir, current), { readOnly: true });
+    expect(db.prepare('SELECT count(*) AS n FROM profiles').get()).toEqual({ n: 1 });
+    db.close();
   });
 
   it('treats a restored profile without setup tracking as set up', () => {

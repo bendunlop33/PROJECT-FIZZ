@@ -13,6 +13,7 @@ import {
   checkIntegrity,
   listDocuments,
   PROFILE_SPEC,
+  saveDocumentIn,
   type AppInfo,
   type DatabaseManager,
   type IntegrityReport,
@@ -115,18 +116,30 @@ export function createAppServices(deps: AppServicesDeps) {
       return { step: setupStep(profile, gyms.length), profile, gyms };
     },
 
-    /** Step 1. Creates the profile on first save; later saves update it. Safe to repeat. */
+    /**
+     * Step 1. Creates the profile on first save; later saves update it. Safe to
+     * repeat, even concurrently (review S1): the "is there a profile?" check and
+     * the insert happen in one write transaction, so there is only ever one
+     * owner profile.
+     */
     async saveUnits(unit: WeightUnit): Promise<SetupWriteResult> {
-      const existing = await getProfile();
-      if (existing) return existing.preferredUnit === unit ? { ok: true } : updateProfile({ preferredUnit: unit });
       const at = deps.now();
       const id = deps.newId();
+      let created: boolean;
       try {
-        const saved = await repos().profiles.save(newProfile({ id, unit, timezone: at.tz, atUtc: at.utc }), null);
-        return saved.ok ? { ok: true } : { ok: false, message: WRITE_FAILED };
+        created = await deps.manager.store.db.write(async (tx) => {
+          if ((await listDocuments(tx, PROFILE_SPEC)).length > 0) return false;
+          const saved = await saveDocumentIn(tx, PROFILE_SPEC, newProfile({ id, unit, timezone: at.tz, atUtc: at.utc }), null);
+          if (!saved.ok) throw new Error('profile conflict');
+          return true;
+        });
       } catch {
         return { ok: false, message: WRITE_FAILED };
       }
+      if (created) return { ok: true };
+      const existing = await getProfile();
+      if (!existing) return { ok: false, message: WRITE_FAILED };
+      return existing.preferredUnit === unit ? { ok: true } : updateProfile({ preferredUnit: unit });
     },
 
     /**
@@ -138,6 +151,13 @@ export function createAppServices(deps: AppServicesDeps) {
       const profile = await getProfile();
       if (!profile) return { ok: false, message: 'Your profile wasn’t found. Start setup again.' };
       const existing = await repos().gyms.listByOwner(profile.id);
+      // Review B1 / PM SP3: during first run a saved gym is never saved again
+      // under a new ID (Back over a saved gym shows it read-only until the gym
+      // editor's updateGym exists). A retry with the same ID stays a duplicate.
+      const inSetup = profile.setup !== undefined && profile.setup.completedAtUtc === undefined;
+      if (inSetup && existing.some((g) => g.id !== req.gymId)) {
+        return { ok: false, message: 'A gym is already saved. You can edit it later in the gym editor.' };
+      }
       const result = materialiseGymDraft(req.draft, {
         name: req.name,
         ownerId: profile.id,
@@ -162,6 +182,8 @@ export function createAppServices(deps: AppServicesDeps) {
     async skipGym(): Promise<SetupWriteResult> {
       const profile = await getProfile();
       if (!profile) return { ok: false, message: 'Your profile wasn’t found. Start setup again.' };
+      // Skip after a gym was saved changes nothing: the gym stays (review B1).
+      if ((await repos().gyms.listByOwner(profile.id)).length > 0) return { ok: true };
       return updateProfile({ setup: { ...profile.setup, gymStep: 'skipped' } });
     },
 
@@ -217,7 +239,27 @@ export function createAppServices(deps: AppServicesDeps) {
     last: (): IntegrityCheck => lastIntegrity,
   };
 
-  return { yourData, coachingKnowledge, setup, sessions, backups, integrity, manager: deps.manager, now: deps.now, newId: deps.newId };
+  /**
+   * Developer settings only (review S6): read-only facts about the database
+   * files. Screens never get the manager, repositories or SQL.
+   */
+  const developer = {
+    databaseNames: () => deps.manager.databaseNames,
+  };
+
+  return {
+    yourData,
+    coachingKnowledge,
+    setup,
+    sessions,
+    backups,
+    integrity,
+    developer,
+    /** Close the database (tests, and before a future restore/delete). */
+    close: () => deps.manager.close(),
+    now: deps.now,
+    newId: deps.newId,
+  };
 }
 
 export type AppServices = ReturnType<typeof createAppServices>;

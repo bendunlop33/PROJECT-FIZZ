@@ -16,6 +16,11 @@ import { StepFrame } from './StepFrame';
 
 type Step = Exclude<SetupStep, 'done'> | 'ready';
 
+/** `Main gym · 4 items (4 not checked)` */
+function describeGym(gym: SavedGymSummary): string {
+  return `${gym.name} · ${gym.items === 0 ? 'no equipment yet' : `${String(gym.items)} items${gym.notChecked > 0 ? ` (${String(gym.notChecked)} not checked)` : ''}`}`;
+}
+
 const REST_LINE = DEFAULT_REST_PRESETS.map((p) => formatClock(p.seconds)).join(' / ');
 
 /**
@@ -156,6 +161,30 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
       );
 
     case 'gym':
+      // Back over a saved gym (review B1, PM SP3): shown read-only until the
+      // gym editor's updateGym exists. Saving again would create a second gym.
+      if (gym !== null && gym !== 'skipped') {
+        return (
+          <StepFrame
+            step="Step 2 of 3"
+            title="Gym saved"
+            explanation="You can edit it later in the gym editor."
+            onBack={() => {
+              setStep('units');
+            }}
+            footer={
+              <PrimaryButton
+                label="Continue"
+                onPress={() => {
+                  setStep('data');
+                }}
+              />
+            }
+          >
+            <StatusLine icon="checkmark.circle.fill" tone="done" text={describeGym(gym)} />
+          </StepFrame>
+        );
+      }
       return (
         <GymSetupFlow
           unit={unit}
@@ -212,10 +241,7 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
       );
 
     case 'ready': {
-      const gymLine =
-        gym === null || gym === 'skipped'
-          ? null
-          : `${gym.name} · ${gym.items === 0 ? 'no equipment yet' : `${String(gym.items)} items${gym.notChecked > 0 ? ` (${String(gym.notChecked)} not checked)` : ''}`}`;
+      const gymLine = gym === null || gym === 'skipped' ? null : describeGym(gym);
       return (
         <StepFrame
           step={null}

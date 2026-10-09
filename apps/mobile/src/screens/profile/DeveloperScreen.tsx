@@ -18,7 +18,7 @@ export function DeveloperScreen() {
   const { directionId, setDirection } = useThemeDirection();
   const services = useServices();
   const launch = useLaunchInfo();
-  const names = services.manager.databaseNames;
+  const names = services.developer.databaseNames();
   return (
     <Screen>
       <Group>
