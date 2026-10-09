@@ -57,8 +57,11 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     const services = createAppServices({ ...deps, manager });
     const setup = await services.setup.getState();
     const recovery = setup.profile ? await services.sessions.recover() : null;
-    // Background work: never awaited by the launch.
-    void services.backups.ensureBackedUp().catch(() => null);
+    // Background work: never awaited by the launch. The integrity check reads
+    // in small turns so a Log isn't held behind it (review S4). The catch-up
+    // backup exports everything in one turn, so it waits while a workout is
+    // unfinished; finishing that workout backs up anyway.
+    if (recovery?.state.session.status !== 'active') void services.backups.ensureBackedUp().catch(() => null);
     void services.integrity.checkAll().catch(() => null);
     return { kind: 'ready', services, migration: manager.store.migration, sqliteVersion, setup, recovery };
   } catch (e) {

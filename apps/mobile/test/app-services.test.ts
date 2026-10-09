@@ -211,6 +211,40 @@ describe('workouts and recovery', () => {
     expect(later.recovery?.openInto).toBe('today');
   });
 
+  it('defers the launch catch-up backup while a workout is unfinished (review S4)', async () => {
+    const { services: s } = await ready();
+    await setUp(s);
+    const gym = await s.yourData.currentGym();
+    if (!gym) throw new Error('no gym');
+    const one = await s.sessions.startEmpty({ gymId: gym.id, opId: 'start-1' });
+    if (!one.ok) throw new Error(one.error.message);
+    clockMs += 60_000;
+    await s.sessions.finish(one.aggregate, 'finish-1');
+    await idle(s);
+    // The backup is lost (e.g. iOS stopped it) and a new workout is in progress.
+    backupFiles.clear();
+    manifestText = null;
+    const two = await s.sessions.startEmpty({ gymId: gym.id, opId: 'start-2' });
+    if (!two.ok) throw new Error(two.error.message);
+    await closeAll();
+
+    clockMs += 60_000;
+    const relaunch = await ready();
+    await idle(relaunch.services);
+    expect(relaunch.recovery?.openInto).toBe('active_workout');
+    expect(backupFiles.size).toBe(0);
+    await closeAll();
+
+    // With no workout in progress, the launch catches up.
+    const s3 = (await ready()).services;
+    const active = await s3.sessions.active();
+    if (!active) throw new Error('no active');
+    await s3.sessions.discard(active, 'discard-2');
+    await closeAll();
+    await ready().then((o) => idle(o.services));
+    expect([...backupFiles.keys()].some((n) => n.endsWith('-auto.json'))).toBe(true);
+  });
+
   it('backs up on this phone after Finish, once, without the finish waiting for it', async () => {
     const { services: s } = await ready();
     await setUp(s);
