@@ -79,6 +79,7 @@ The main session acts as product manager and orchestrates. Subagents live in
 | Agent | Reads | Writes |
 |---|---|---|
 | `researcher` | brief, open questions | `docs/research/<topic>.md` |
+| `competitor-researcher` | brief, existing landscape | `docs/research/competitor-landscape.md`: capability matrix, user complaints, ranked opportunities (proposals; Ben decides) |
 | `designer` | brief §1 and §12, research | `docs/design/<screen-or-flow>.md`, `docs/design/design-system.md` |
 | `developer` | design spec, brief, this file | `apps/`, `packages/`, tests |
 | `reviewer` | diff, spec, brief acceptance scenarios | `docs/reviews/<feature>.md` (verdict: PASS / CHANGES NEEDED) |
