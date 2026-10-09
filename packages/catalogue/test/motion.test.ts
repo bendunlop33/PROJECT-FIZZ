@@ -452,3 +452,45 @@ describe('phase timing schema rules', () => {
     expect(issues({ ...g, keyframes: keys })).toEqual([]);
   });
 });
+
+/** The committed RDL with its bar on a `hang` anchor (plan §4.4) instead of keyframed positions. */
+function rdlHanging(elbowDeg = 13): Record<string, unknown> {
+  const raw = JSON.parse(readFileSync(join(GUIDES, 'barbell-romanian-deadlift', 'guide.json'), 'utf8')) as { props: Record<string, unknown>[]; keyframes: { props?: Record<string, unknown> }[] };
+  for (const p of raw.props) if (p.id === 'bar') p.anchor = { kind: 'hang', x: 0.035, elbowDeg };
+  for (const k of raw.keyframes) {
+    if (k.props !== undefined) {
+      delete k.props.bar;
+      if (Object.keys(k.props).length === 0) delete k.props;
+    }
+  }
+  return raw;
+}
+
+describe('hang barbell anchor (E4)', () => {
+  it('holds the elbow at elbowDeg and the bar over one x through the whole hinge', () => {
+    const g = GuideSchema.parse(rdlHanging(13));
+    const p = prepareGuide(g);
+    for (let i = 0; i <= 30; i += 1) {
+      const pose = poseAt(p, i / 30);
+      expect(Math.abs(pose.angles.elbowNear ?? NaN), `t=${i / 30}`).toBeCloseTo(13, 6);
+      expect(pose.propPoints.bar?.x).toBeCloseTo(0.035, 12);
+    }
+    expect(checkFailures(g)).toEqual([]);
+  });
+
+  it('removes the arm wobble of a separately keyframed bar', () => {
+    const before = measureMotion(prepareGuide(committed('barbell-romanian-deadlift')), { n: 600 }).metrics.find((m) => m.id === 'J2.any');
+    const after = measureMotion(prepareGuide(GuideSchema.parse(rdlHanging())), { n: 600 }).metrics.find((m) => m.id === 'J2.any');
+    expect(before?.value ?? 0).toBeGreaterThan(2);
+    expect(after?.value ?? 1).toBeLessThan(0.5);
+  });
+
+  it('is only for a side-view barbell without keyframed positions', () => {
+    const keyed = rdlHanging() as { keyframes: { props?: Record<string, unknown> }[] };
+    const first = keyed.keyframes[0];
+    if (first !== undefined) first.props = { bar: { y: 0.4 } };
+    expect(GuideSchema.safeParse(keyed).success).toBe(false);
+    const front = { ...rdlHanging(), view: 'front' };
+    expect(GuideSchema.safeParse(front).success).toBe(false);
+  });
+});

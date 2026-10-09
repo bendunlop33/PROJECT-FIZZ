@@ -36,6 +36,13 @@ export const AnchorSchema = z.discriminatedUnion('kind', [
   }),
   /** Hangs from a hand (dumbbells). Solved after the arms. */
   z.strictObject({ kind: z.literal('hand'), hand: z.enum(['near', 'far']) }),
+  /**
+   * Side-view barbell held on straight-ish arms (a Romanian deadlift): the bar
+   * stays at `x` and hangs at exactly arm's length from the shoulder with the
+   * elbow bent `elbowDeg`, so the arms hang still instead of wobbling as the
+   * trunk moves (ADR 0015). No `props.<id>` keyframe values.
+   */
+  z.strictObject({ kind: z.literal('hang'), x: coord, elbowDeg: num.min(0).max(60) }),
 ]);
 export type Anchor = z.infer<typeof AnchorSchema>;
 
@@ -384,6 +391,13 @@ export const GuideSchema = z
           ctx.addIssue({ code: 'custom', message: `Unknown prop ${target.prop}`, path: ['keyframes', i, 'ik', limb] });
         }
       }
+    });
+    g.props.forEach((p, i) => {
+      if (!('anchor' in p) || p.anchor.kind !== 'hang') return;
+      if (p.type !== 'barbell' || g.view !== 'side') ctx.addIssue({ code: 'custom', message: 'A hang anchor is for a side-view barbell', path: ['props', i, 'anchor'] });
+      g.keyframes.forEach((k, j) => {
+        if (k.props?.[p.id] !== undefined) ctx.addIssue({ code: 'custom', message: `${p.id} hangs from the shoulders; it has no keyframe position`, path: ['keyframes', j, 'props', p.id] });
+      });
     });
     for (const o of g.overlays ?? []) {
       if (!known.has(o.of)) ctx.addIssue({ code: 'custom', message: `Unknown prop ${o.of}`, path: ['overlays'] });

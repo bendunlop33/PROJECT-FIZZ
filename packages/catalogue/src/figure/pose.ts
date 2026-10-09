@@ -21,7 +21,7 @@
 import { chainTrunk, HEAD, makeSegment, type BodyFoot, type BodyHand, type BodySegment, type FigureBody } from './body';
 import type { Guide, GuideFocus, GuideProp } from './guide-schema';
 import { solveTwoBoneIk } from './ik';
-import { resolveKeyframes, stateAt, type FootTarget, type FrameState, type HandTarget, type ResolvedKeyframe } from './keyframes';
+import { effectiveProjection, resolveKeyframes, stateAt, type FootTarget, type FrameState, type HandTarget, type ResolvedKeyframe } from './keyframes';
 import { add, angleFromDown, dist, fromDown, fromUp, perpCcw, rad, scale, sub, v, wrapDeg, type Vec } from './math';
 import {
   barbellShapes,
@@ -169,6 +169,20 @@ function segmentAnchor(trunk: Trunk, segment: 'pelvis' | 'lumbar' | 'thorax' | '
   return add(add(start, scale(fromUp(lean), at * length + along)), scale(frontOf(lean), front));
 }
 
+/**
+ * A `hang` bar (ADR 0015): at `x`, exactly arm's length below the shoulder
+ * with the elbow bent `elbowDeg` (the hand IK then solves to that same
+ * elbow). Out of reach it sits level with the shoulder and `hand-contact` fails.
+ */
+export function hangPoint(shoulder: Vec, x: number, elbowDeg: number, armK: number, forearmK: number): Vec {
+  const l1 = R.upperArm * armK;
+  const l2 = (R.forearm + R.grip) * forearmK;
+  const reach = Math.sqrt(l1 * l1 + l2 * l2 + 2 * l1 * l2 * Math.cos(rad(elbowDeg)));
+  const dx = x - shoulder.x;
+  const below = reach * reach - dx * dx;
+  return v(x, below > 0 ? shoulder.y - Math.sqrt(below) : shoulder.y);
+}
+
 /** Foot frame from a sole angle: u towards the toes, v up out of the sole. */
 function footFrame(soleDeg: number): { u: Vec; n: Vec } {
   const u = v(Math.cos(rad(soleDeg)), -Math.sin(rad(soleDeg)));
@@ -213,6 +227,10 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
         if (a.kind === 'fixed') c = v(a.x, a.y);
         else if (a.kind === 'keyframed') c = v(s.props[p.id]?.x ?? 0, s.props[p.id]?.y ?? 0);
         else if (a.kind === 'segment') c = segmentAnchor(trunk, a.segment, a.at, a.along ?? 0, a.front ?? 0);
+        else if (a.kind === 'hang') {
+          const k = effectiveProjection(s.proj);
+          c = hangPoint(trunk.shoulderNear, a.x, a.elbowDeg, k.armNear, k.forearmNear);
+        }
         if (c === null) later.push(p);
         else propPoints[p.id] = c;
         break;
