@@ -6,6 +6,7 @@ import {
   ExerciseSchema,
   MeasurementSchema,
   LoadSchema,
+  PlannedSetSchema,
   ProgressionRuleSchema,
   RpeSchema,
   SessionCommandSchema,
@@ -232,5 +233,44 @@ describe('Exercise (ADR 0010 additive fields)', () => {
     expect(validate(CatalogueKeySchema, 'barbell-back-squat').ok).toBe(true);
     expect(validate(CatalogueKeySchema, 'Barbell Back Squat').ok).toBe(false);
     expect(validate(CatalogueKeySchema, 'barbell--squat').ok).toBe(false);
+  });
+});
+
+describe('PlannedSet provenance (Why?, active-workout §2.12)', () => {
+  const kg = (value: number) => ({ value, unit: 'kg', convention: 'total' });
+  const planned = { load: kg(102.5), reps: { min: 3, max: 6 }, durationS: null, rpe: null, rir: null, source: 'built_in_rule' };
+  const provenance = {
+    source: 'rule',
+    setAt: at,
+    routineName: null,
+    requestedLoad: null,
+    basis: {
+      sessionId: id(10),
+      performedAt: at,
+      routineName: 'Push A',
+      gymId: id(11),
+      equipmentId: id(12),
+      sets: [{ setId: id(13), version: 1, setType: 'working', side: null, values: { load: kg(100), reps: 6, durationS: null, rpe: 8, rir: null } }],
+    },
+    rule: { name: 'Double progression', decision: 'increase_load', summary: 'Increase to 102.5 kg for 3–6 reps.', facts: [] },
+    step: { from: kg(100), to: kg(102.5), pctChange: 2.5, smallest: true, equipmentKind: 'barbell' },
+    guardNotes: [],
+  };
+
+  it('is optional, so targets stored before it existed still read', () => {
+    expect(validate(PlannedSetSchema, planned).ok).toBe(true);
+  });
+
+  it('round-trips a stored provenance unchanged', () => {
+    const r = validate(PlannedSetSchema, { ...planned, provenance });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.provenance).toEqual(provenance);
+  });
+
+  it('rejects an unknown source or decision, and a basis load without its unit', () => {
+    expect(validate(PlannedSetSchema, { ...planned, provenance: { ...provenance, source: 'coach_guess' } }).ok).toBe(false);
+    expect(validate(PlannedSetSchema, { ...planned, provenance: { ...provenance, rule: { ...provenance.rule, decision: 'vibes' } } }).ok).toBe(false);
+    const noUnit = { ...provenance.basis, sets: [{ ...provenance.basis.sets[0], values: { load: { value: 100, convention: 'total' }, reps: 6, durationS: null, rpe: null, rir: null } }] };
+    expect(validate(PlannedSetSchema, { ...planned, provenance: { ...provenance, basis: noUnit } }).ok).toBe(false);
   });
 });

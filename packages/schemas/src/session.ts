@@ -15,7 +15,7 @@ import {
 import { SessionCheckInSchema } from './checkin';
 import { LocalDateSchema } from './import';
 import { EquipmentInstanceSchema } from './equipment';
-import { LateralitySchema, MeasurementSchema } from './exercise';
+import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
 
 /** Values a set can hold: used for actual results and drafts alike. */
@@ -27,27 +27,6 @@ export const SetValuesSchema = z.object({
   rir: RirSchema.nullable(),
 });
 export type SetValues = z.infer<typeof SetValuesSchema>;
-
-/**
- * Where a planned target came from, so the set card can say so (rule 3:
- * every suggestion is recorded with its reason). Absent = a routine template
- * or none (sessions written before this field existed).
- * - `built_in_rule`: the built-in progression rule's Next time (ADR 0006 fallback).
- * - `repeat`: copied from a past workout's actual result (routines.md RT4).
- */
-export const PlannedSourceSchema = z.enum(['built_in_rule', 'repeat']);
-export type PlannedSource = z.infer<typeof PlannedSourceSchema>;
-
-/** Planned (target) values, retained separately from the actual result. */
-export const PlannedSetSchema = z.object({
-  load: LoadSchema.nullable(),
-  reps: RepRangeSchema.nullable(),
-  durationS: DurationSecondsSchema.nullable(),
-  rpe: RpeSchema.nullable(),
-  rir: RirSchema.nullable(),
-  source: PlannedSourceSchema.optional(),
-});
-export type PlannedSet = z.infer<typeof PlannedSetSchema>;
 
 export const RestSourceSchema = z.enum([
   'set_override',
@@ -92,6 +71,118 @@ export type SetFlag = z.infer<typeof SetFlagSchema>;
  */
 export const SetSideSchema = z.enum(['left', 'right', 'both']);
 export type SetSide = z.infer<typeof SetSideSchema>;
+
+/**
+ * `Why?` on a set target (active-workout.md §2.12, AW3): what produced the
+ * number, written once by whichever path set the target and never
+ * recomputed. Owner-scoped (Your data). All text in here is deterministic app
+ * text; nothing comes from a model.
+ *
+ * Sources written today: `plan` (a routine's template, `startWorkout`),
+ * `rule` (the built-in rule's next targets, `plannedSetsFromTargets`) and
+ * `repeat` (a past workout's actual result, routines.md RT4). The coach,
+ * warm-up, swap and builder sources in the spec are added with the code that
+ * sets those targets.
+ */
+export const TargetSourceSchema = z.enum(['plan', 'rule', 'repeat']);
+export type TargetSource = z.infer<typeof TargetSourceSchema>;
+
+/** A set the target was built from, as it was when the target was made (an **actual** result). */
+export const TargetBasisSetSchema = z.object({
+  /** Absent only when the history row had no ID (never for sets logged in the app). */
+  setId: IdSchema.optional(),
+  /** The set's version then; a later correction bumps it (`Based on 1 Oct before you edited it`). */
+  version: z.int().min(1).optional(),
+  setType: SetTypeSchema,
+  side: SetSideSchema.nullable(),
+  values: SetValuesSchema,
+});
+export type TargetBasisSet = z.infer<typeof TargetBasisSetSchema>;
+
+/** The past workout a target was built from (`Last time`). */
+export const TargetBasisSchema = z.object({
+  sessionId: IdSchema,
+  performedAt: ZonedTimestampSchema,
+  routineName: z.string().max(120).nullable(),
+  gymId: IdSchema.nullable(),
+  equipmentId: IdSchema.nullable(),
+  sets: z.array(TargetBasisSetSchema).max(60),
+});
+export type TargetBasis = z.infer<typeof TargetBasisSchema>;
+
+/** `calculateNextTargets` decisions, stored with the rule's own words. */
+export const RuleDecisionSchema = z.enum([
+  'insufficient_data',
+  'increase_load',
+  'increase_reps',
+  'hold',
+  'hold_after_miss',
+  'reduce_load',
+  'ceiling_reached',
+  'halted_pain',
+  'no_feasible_load',
+  'unsupported',
+]);
+export type RuleDecision = z.infer<typeof RuleDecisionSchema>;
+
+/** The load change from the basis to the target, measured on the equipment (`buildStepCard`). */
+export const TargetStepSchema = z.object({
+  from: LoadSchema,
+  to: LoadSchema,
+  /** (to − from) / from × 100, one decimal place; null when `from` is 0. */
+  pctChange: z.number().nullable(),
+  /** `to` is the next achievable load after `from` in that direction. */
+  smallest: z.boolean(),
+  equipmentKind: EquipmentKindSchema.nullable(),
+});
+export type TargetStep = z.infer<typeof TargetStepSchema>;
+
+export const TargetProvenanceSchema = z.object({
+  source: TargetSourceSchema,
+  /** When the target was made. */
+  setAt: ZonedTimestampSchema,
+  /** `plan`: the routine's name. */
+  routineName: z.string().max(120).nullable(),
+  /** The load asked for before the equipment fit (template or last time's), if any. */
+  requestedLoad: LoadSchema.nullable(),
+  basis: TargetBasisSchema.nullable(),
+  /** `rule`: the built-in rule's own explanation, as `calculateNextTargets` gave it. */
+  rule: z
+    .object({
+      name: z.string().min(1).max(300),
+      decision: RuleDecisionSchema,
+      summary: z.string().max(600),
+      facts: z.array(z.string().max(600)).max(20),
+    })
+    .optional(),
+  step: TargetStepSchema.optional(),
+  /** Equipment notes made with the target: rounding, caps, conversions, drops. */
+  guardNotes: z.array(z.string().min(1).max(300)).max(10),
+});
+export type TargetProvenance = z.infer<typeof TargetProvenanceSchema>;
+
+/**
+ * Where a planned target came from, so the set card can say so (rule 3:
+ * every suggestion is recorded with its reason). Absent = a routine template
+ * or none (sessions written before this field existed).
+ * - `built_in_rule`: the built-in progression rule's Next time (ADR 0006 fallback).
+ * - `repeat`: copied from a past workout's actual result (routines.md RT4).
+ */
+export const PlannedSourceSchema = z.enum(['built_in_rule', 'repeat']);
+export type PlannedSource = z.infer<typeof PlannedSourceSchema>;
+
+/** Planned (target) values, retained separately from the actual result. */
+export const PlannedSetSchema = z.object({
+  load: LoadSchema.nullable(),
+  reps: RepRangeSchema.nullable(),
+  durationS: DurationSecondsSchema.nullable(),
+  rpe: RpeSchema.nullable(),
+  rir: RirSchema.nullable(),
+  source: PlannedSourceSchema.optional(),
+  /** Absent on targets made before `Why?` existed (shown as `Not recorded`). */
+  provenance: TargetProvenanceSchema.optional(),
+});
+export type PlannedSet = z.infer<typeof PlannedSetSchema>;
 
 export const WorkoutSetSchema = z.object({
   id: IdSchema,
