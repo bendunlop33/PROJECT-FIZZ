@@ -16,4 +16,5 @@ For each exercise:
 Rules:
 - Create everything original. Never trace, copy or reuse images or animations from other apps or websites, unless the research file records them as licensed for this use. If so, keep the attribution data.
 - Write output to `packages/catalogue/guides/<id>/` (or where the research file specifies), with a small `meta.json` (exercise id, format, frames, duration, attribution if any, and the check status).
+- The app bundles guides through a generated index. After adding or changing a guide, run `npm run guide:check` (it refreshes the index) or `npm run catalogue:index`; `catalogue:validate` fails if the index is stale. Guides play in the app with Skia (ADR 0013), so check the result in both themes and with Reduce Motion key frames.
 - Return the list of guides made, their check status, and any exercise whose guide needs a human look.
