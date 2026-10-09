@@ -535,7 +535,8 @@ export function planImportRows(
     const k = `${r.date}|${f.set.exerciseId}|${f.set.convention}`;
     if (!firstUnit.has(k)) firstUnit.set(k, f.set.unit);
   });
-  const groups = new Map<string, { order: number; sets: number }>();
+  const groups = new Map<string, { order: number; sets: number; id: string }>();
+  const sessionIds = new Map<string, string>();
   const groupsPerDate = new Map<string, number>();
   return analysis.fates.map((f, i): ImportRow => {
     const r = input.rows[i];
@@ -558,7 +559,7 @@ export function planImportRows(
     if (!g) {
       const order = groupsPerDate.get(date) ?? 0;
       groupsPerDate.set(date, order + 1);
-      g = { order, sets: 0 };
+      g = { order, sets: 0, id: importIds.sessionExercise(jobId, date, groupKey) };
       groups.set(gk, g);
     }
     const imported: ImportedSet = {
@@ -570,12 +571,17 @@ export function planImportRows(
       load: f.set.load,
       reps: f.set.reps,
       rpe: f.set.rpe,
-      sessionExerciseId: importIds.sessionExercise(jobId, date, groupKey),
+      sessionExerciseId: g.id,
       exerciseOrder: g.order,
       setIndex: g.sets,
     };
     g.sets += 1;
-    return { ...base, result: 'imported', detail: null, sessionId: importIds.session(jobId, date), setId: importIds.set(jobId, r.row), imported };
+    let sessionId = sessionIds.get(date);
+    if (sessionId === undefined) {
+      sessionId = importIds.session(jobId, date);
+      sessionIds.set(date, sessionId);
+    }
+    return { ...base, result: 'imported', detail: null, sessionId, setId: importIds.set(jobId, r.row), imported };
   });
 }
 
