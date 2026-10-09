@@ -16,7 +16,7 @@ import {
   type NameRow,
   type RowFate,
 } from '@fizz/domain';
-import type { CustomExerciseKind, FitNotesVariant, ImportRow, ImportRowResult, Load, LoadConvention } from '@fizz/schemas';
+import type { CustomExerciseKind, FitNotesVariant, ImportBarKind, ImportRow, ImportRowResult, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
 
 import { formatCount, plural } from '../format/numbers';
 import type { ImportBlock, ImportDraft, ImportedSetProvenance, OpenResult, PastImport } from './import-service';
@@ -172,6 +172,10 @@ export interface PreviewView {
 }
 
 const PER_HAND_WORD = { each: 'each', both: 'both together' } as const;
+const BODYWEIGHT_WORD = { added: 'weight added to bodyweight', assistance: 'assistance from a machine', split: 'negative = assistance, positive = added' } as const;
+/** `Bar weight` / `EZ-bar weight` / `Trap-bar weight` (each bar has its own weight; review S1). */
+export const BAR_WORD: Record<ImportBarKind, string> = { barbell: 'Bar', ez_bar: 'EZ-bar', trap_bar: 'Trap-bar' };
+const BAR_NAME: Record<ImportBarKind, string> = { barbell: 'bar', ez_bar: 'EZ bar', trap_bar: 'trap bar' };
 
 function groupAnswerText<A extends string>(answer: A | null, overrides: number, word: (a: A) => string): string {
   const base = answer === null ? 'by exercise' : word(answer);
@@ -195,10 +199,14 @@ export function questionRows(a: ImportAnalysis): QuestionRow[] {
   if (a.total) {
     const overrides = a.total.exercises.filter((e) => e.override !== null).length;
     const word = (x: 'total' | 'plates_only') => (x === 'total' ? 'total, including the bar' : 'plates only + bar');
+    const unanswered = a.total.exercises.some((e) => e.override === null && a.total?.answer === null);
+    const missingBar = a.total.bars.find((b) => b.missing.length > 0);
     out.push(
-      a.total.open
+      unanswered
         ? { key: { kind: 'total' }, answered: false, line: { icon: 'exclamationmark.triangle', tone: 'warning', text: 'Barbell weights: total or plates only?' } }
-        : { key: { kind: 'total' }, answered: true, line: { icon: 'checkmark.circle.fill', tone: 'done', text: `Barbell: ${groupAnswerText(a.total.answer, overrides, word)}` } },
+        : missingBar
+          ? { key: { kind: 'total' }, answered: false, line: { icon: 'exclamationmark.triangle', tone: 'warning', text: `${BAR_WORD[missingBar.bar]} weight needed for “plates only”` } }
+          : { key: { kind: 'total' }, answered: true, line: { icon: 'checkmark.circle.fill', tone: 'done', text: `Barbell: ${groupAnswerText(a.total.answer, overrides, word)}` } },
     );
   }
   for (const q of a.bodyweight) {
@@ -208,7 +216,7 @@ export function questionRows(a: ImportAnalysis): QuestionRow[] {
         : {
             key: { kind: 'bodyweight', key: q.key },
             answered: true,
-            line: { icon: 'checkmark.circle.fill', tone: 'done', text: `${q.name}: ${q.answer === 'added' ? 'weight added to bodyweight' : 'assistance from a machine'}` },
+            line: { icon: 'checkmark.circle.fill', tone: 'done', text: `${q.name}: ${BODYWEIGHT_WORD[q.answer]}` },
           },
     );
   }
@@ -256,6 +264,7 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
   else if (!variantHasComments(d.variant)) kept.push(info('No comments in this file (FitNotes export without comments)'));
   kept.push(info('FitNotes files have no times. These workouts show the date only.'));
   if (a.machines.length > 0) kept.push(info('Machines: imported as stack readings, plates added or assistance, by exercise'));
+  if (a.barless.length > 0) kept.push(info(`Kettlebell and other no-bar weights imported as written (${a.barless.map((b) => b.name).join(', ')})`));
   kept.push(info('Warm-ups aren’t marked in FitNotes files, so every set comes in as a working set.'));
 
   const effortReview =
@@ -456,36 +465,83 @@ export function perHandOptions(a: ImportAnalysis, locale?: string): { title: str
   };
 }
 
-export function totalOptions(a: ImportAnalysis, locale?: string): { title: string; lead: string; question: string; options: OptionView<'total' | 'plates_only'>[]; example: string | null; barWeights: { unit: 'kg' | 'lb'; value: number }[] } | null {
+export interface BarWeightView {
+  bar: ImportBarKind;
+  unit: WeightUnit;
+  /** Null: not entered yet (EZ and trap bars have no default). */
+  value: number | null;
+  label: string;
+  /** Shown under an empty field that a plates-only answer needs. */
+  missing: string | null;
+}
+
+/**
+ * The barbell question (§2.5 step 3b). One bar weight per bar kind and unit
+ * (review S1): the Olympic bar's is always shown (20 kg / 45 lb, editable);
+ * an EZ or trap bar's only once a plates-only answer needs it, and it starts
+ * empty.
+ */
+export function totalOptions(
+  a: ImportAnalysis,
+  locale?: string,
+): { title: string; lead: string; question: string; options: OptionView<'total' | 'plates_only'>[]; example: string | null; barWeights: BarWeightView[] } | null {
   const q = a.total;
   if (!q) return null;
   const ex = q.example;
   const v = ex ? formatNumber(ex.value) : '100';
+  const barWeights = q.bars
+    .filter((b) => b.bar === 'barbell' || b.needed)
+    .flatMap((b) =>
+      b.units.map(
+        (unit): BarWeightView => ({
+          bar: b.bar,
+          unit,
+          value: b.weight[unit],
+          label: `${BAR_WORD[b.bar]} weight (${unit}), added to “plates only” values`,
+          missing: b.missing.includes(unit) ? `Enter your ${BAR_NAME[b.bar]}’s weight in ${unit}. Plates-only sets on it can’t be imported without it.` : null,
+        }),
+      ),
+    );
   return {
     title: 'Barbell weights',
     lead: 'FitNotes doesn’t record whether a barbell weight includes the bar.',
     question: `For ${q.exercises.length === 1 ? 'this exercise' : `these ${String(q.exercises.length)} exercises`}, “${v}” means:`,
     options: [
       { value: 'total', label: 'Total, including the bar', detail: `Imported as ${v}${NBSP}${ex?.unit ?? 'kg'}`, selected: q.answer === 'total' },
-      { value: 'plates_only', label: 'Plates only (bar not counted)', detail: 'The bar weight below is added', selected: q.answer === 'plates_only' },
+      { value: 'plates_only', label: 'Plates only (bar not counted)', detail: q.bars.length > 1 ? 'Each bar’s own weight below is added' : 'The bar weight below is added', selected: q.answer === 'plates_only' },
     ],
     example: ex ? `Example from your file (${dayMonthYear(ex.date, locale)}): ${ex.name}  ${v}${NBSP}×${NBSP}${String(ex.reps)}` : null,
-    barWeights: (q.unitsUsed.length === 0 ? (['kg'] as const) : q.unitsUsed).map((unit) => ({ unit, value: q.barWeight[unit] })),
+    barWeights,
   };
 }
 
-export function bodyweightOptions(a: ImportAnalysis, key: string): { title: string; question: string; range: string; options: OptionView<'added' | 'assistance'>[] } | null {
+/**
+ * A bodyweight exercise with weights (§2.5 step 3b). When its values are
+ * both negative and positive, a third answer reads each by its sign, and
+ * `Assistance` says it can't read the positive ones (review B3). No option
+ * is pre-selected (DX6).
+ */
+export function bodyweightOptions(a: ImportAnalysis, key: string): { title: string; question: string; range: string; options: OptionView<'added' | 'assistance' | 'split'>[] } | null {
   const q = a.bodyweight.find((x) => x.key === key);
   if (!q) return null;
   const neg = q.min < 0 ? `, ${q.max <= 0 ? 'all' : 'some'} negative` : ', none negative';
+  const options: OptionView<'added' | 'assistance' | 'split'>[] = [
+    { value: 'added', label: 'Weight added to bodyweight', detail: q.min < 0 ? 'Negative values can’t be read this way' : 'Every value is weight added', selected: q.answer === 'added' },
+    {
+      value: 'assistance',
+      label: 'Assistance from a machine',
+      detail: q.mixed ? 'Negative values are read as assistance; positive values can’t be read this way' : q.min < 0 ? 'A negative value is read as that much assistance' : 'Each value is read as the assistance on the machine',
+      selected: q.answer === 'assistance',
+    },
+  ];
+  if (q.mixed) {
+    options.push({ value: 'split', label: 'Negative = assistance, positive = added', detail: `${formatNumber(q.min)} is read as ${formatNumber(-q.min)} assistance; ${formatNumber(q.max)} as ${formatNumber(q.max)} added`, selected: q.answer === 'split' });
+  }
   return {
     title: `${q.name} weights`,
     question: `For ${q.name}, “${formatNumber(q.max !== 0 ? q.max : q.min)}” means:`,
     range: `Values in your file: ${formatNumber(q.min)} to ${formatNumber(q.max)}${neg}`,
-    options: [
-      { value: 'added', label: 'Weight added to bodyweight', detail: 'Negative values can’t be read this way', selected: q.answer === 'added' },
-      { value: 'assistance', label: 'Assistance from a machine', detail: 'A negative value is read as that much assistance', selected: q.answer === 'assistance' },
-    ],
+    options,
   };
 }
 

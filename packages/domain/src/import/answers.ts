@@ -1,4 +1,4 @@
-import type { BodyweightAnswer, ImportAnswers, NameAnswer, PerHandAnswer, TotalAnswer, WeightUnit } from '@fizz/schemas';
+import type { BodyweightAnswer, ImportAnswers, ImportBarKind, NameAnswer, PerHandAnswer, TotalAnswer, WeightUnit } from '@fizz/schemas';
 
 /**
  * One change to the import answers (data-import-export §2.5 steps 3a–3c).
@@ -11,7 +11,8 @@ export type AnswerChange =
   | { kind: 'per_hand_override'; key: string; answer: PerHandAnswer | null }
   | { kind: 'total'; answer: TotalAnswer }
   | { kind: 'total_override'; key: string; answer: TotalAnswer | null }
-  | { kind: 'bar_weight'; unit: WeightUnit; value: number }
+  /** A bar's weight for `plates_only` values (each bar kind has its own; review S1). */
+  | { kind: 'bar_weight'; bar: ImportBarKind; unit: WeightUnit; value: number }
   | { kind: 'bodyweight'; key: string; answer: BodyweightAnswer }
   | { kind: 'both_columns'; answer: WeightUnit }
   | { kind: 'effort_mode'; mode: 'notes_only' | 'review' }
@@ -42,7 +43,9 @@ export function applyAnswerChange(a: ImportAnswers, c: AnswerChange): ImportAnsw
     case 'total_override':
       return { ...a, totalOverrides: setOrClear(a.totalOverrides, c.key, c.answer) };
     case 'bar_weight':
-      return { ...a, barWeight: { ...a.barWeight, [c.unit]: c.value } };
+      return c.bar === 'barbell'
+        ? { ...a, barWeight: { ...a.barWeight, [c.unit]: c.value } }
+        : { ...a, otherBarWeight: { ...a.otherBarWeight, [c.bar]: { ...a.otherBarWeight[c.bar], [c.unit]: c.value } } };
     case 'bodyweight':
       return { ...a, bodyweight: { ...a.bodyweight, [c.key]: c.answer } };
     case 'both_columns':

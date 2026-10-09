@@ -185,7 +185,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(await s.imports.answer(draft.draftId, draft.mappingVersion, { kind: 'per_hand', answer: 'both' })).toMatchObject({ ok: false, reason: 'stale' });
     expect(await s.imports.commit(draft.draftId, draft.mappingVersion, 'op')).toMatchObject({ ok: false, reason: 'stale' });
     expect(await s.imports.answer(draft.draftId, draft.mappingVersion + 1, { kind: 'gym', gymId: '00000000-0000-4000-8000-00000000dead' })).toMatchObject({ ok: false, reason: 'invalid' });
-    expect(await s.imports.answer(draft.draftId, draft.mappingVersion + 1, { kind: 'bar_weight', unit: 'kg', value: -1 })).toMatchObject({ ok: false, reason: 'invalid' });
+    expect(await s.imports.answer(draft.draftId, draft.mappingVersion + 1, { kind: 'bar_weight', bar: 'barbell', unit: 'kg', value: -1 })).toMatchObject({ ok: false, reason: 'invalid' });
     // Not ready until every question is answered (check 17).
     const cur = await s.imports.draft(draft.draftId);
     expect(await s.imports.commit(draft.draftId, cur?.mappingVersion ?? 0, 'op')).toMatchObject({ ok: false, reason: 'not_ready' });

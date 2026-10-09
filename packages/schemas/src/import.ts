@@ -76,9 +76,25 @@ export type PerHandAnswer = z.infer<typeof PerHandAnswerSchema>;
 export const TotalAnswerSchema = z.enum(['total', 'plates_only']);
 export type TotalAnswer = z.infer<typeof TotalAnswerSchema>;
 
-/** A bodyweight exercise with a weight: added to bodyweight, or assistance from a machine. */
-export const BodyweightAnswerSchema = z.enum(['added', 'assistance']);
+/**
+ * A bodyweight exercise with a weight: added to bodyweight, or assistance
+ * from a machine. `split` (offered only when the exercise has both negative
+ * and positive values, review B3): negative values are assistance, positive
+ * values are weight added. Under `assistance`, a positive value in a file
+ * that also has negative values for the exercise is unreadable, never
+ * flipped into assistance.
+ */
+export const BodyweightAnswerSchema = z.enum(['added', 'assistance', 'split']);
 export type BodyweightAnswer = z.infer<typeof BodyweightAnswerSchema>;
+
+/**
+ * Bars a "plates only" value can have a bar weight added to (review S1).
+ * Each kind has its own weight: an EZ bar or trap bar isn't the Olympic bar.
+ */
+export const ImportBarKindSchema = z.enum(['barbell', 'ez_bar', 'trap_bar']);
+export type ImportBarKind = z.infer<typeof ImportBarKindSchema>;
+
+const OtherBarWeightSchema = z.object({ kg: z.number().positive().max(100).nullable(), lb: z.number().positive().max(220).nullable() });
 
 /**
  * Every answer Ben gave on the preview (§2.5 steps 3a–3c). Changing any of
@@ -93,8 +109,14 @@ export const ImportAnswersSchema = z.object({
   perHandOverrides: z.record(NameKeySchema, PerHandAnswerSchema),
   total: TotalAnswerSchema.nullable(),
   totalOverrides: z.record(NameKeySchema, TotalAnswerSchema),
-  /** Bar weight added to `plates_only` values, per unit (never converted between kg and lb). */
+  /** Olympic bar weight added to `plates_only` values, per unit (never converted between kg and lb). Default 20 kg / 45 lb, shown and editable. */
   barWeight: z.object({ kg: z.number().positive().max(100), lb: z.number().positive().max(220) }),
+  /**
+   * EZ-bar and trap-bar weights for `plates_only` values, per unit. No
+   * default (they vary by bar): `null` until Ben enters one, and plates-only
+   * rows on that bar wait for it.
+   */
+  otherBarWeight: z.object({ ez_bar: OtherBarWeightSchema, trap_bar: OtherBarWeightSchema }),
   bodyweight: z.record(NameKeySchema, BodyweightAnswerSchema),
   /** FitNotes 2 rows with both weight columns filled: which one Ben entered. */
   bothColumns: WeightUnitSchema.nullable(),

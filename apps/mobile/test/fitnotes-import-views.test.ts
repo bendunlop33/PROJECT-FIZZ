@@ -105,20 +105,25 @@ describe('import preview wording', () => {
     ]);
     expect(plain(ph?.example)).toBe('Example from your file (1 Sept 2026): Incline DB Press  50 × 10');
     expect(totalOptions(d.analysis)?.options.every((o) => !o.selected)).toBe(true);
-    expect(totalOptions(d.analysis)?.barWeights).toEqual([{ unit: 'kg', value: 20 }]);
+    expect(totalOptions(d.analysis)?.barWeights).toEqual([{ bar: 'barbell', unit: 'kg', value: 20, label: 'Bar weight (kg), added to “plates only” values', missing: null }]);
+    // -20 and 10 under one exercise: a third answer reads each by its sign (review B3).
     const bw = bodyweightOptions(d.analysis, 'pull up');
     expect(bw?.range).toBe('Values in your file: -20 to 10, some negative');
-    expect(bw?.options.every((o) => !o.selected)).toBe(true);
+    expect(bw?.options.map((o) => [o.value, o.label, o.detail, o.selected])).toEqual([
+      ['added', 'Weight added to bodyweight', 'Negative values can’t be read this way', false],
+      ['assistance', 'Assistance from a machine', 'Negative values are read as assistance; positive values can’t be read this way', false],
+      ['split', 'Negative = assistance, positive = added', '-20 is read as 20 assistance; 10 as 10 added', false],
+    ]);
 
     d = await step(d, { kind: 'per_hand', answer: 'each' });
     d = await step(d, { kind: 'total', answer: 'plates_only' });
-    d = await step(d, { kind: 'bodyweight', key: 'pull up', answer: 'assistance' });
+    d = await step(d, { kind: 'bodyweight', key: 'pull up', answer: 'split' });
     const ready = previewView(d, 'en-GB');
     expect(ready.questions.map((q) => q.line.text)).toEqual([
       'Exercise names: 2 checked',
       'Dumbbells: each',
       'Barbell: plates only + bar',
-      'Pull Up: assistance from a machine',
+      'Pull Up: negative = assistance, positive = added',
     ]);
     expect(ready.questionsTitle).toBe('Your answers');
     expect(ready.primary).toEqual({ label: 'Import 1 workout', enabled: true });
@@ -126,11 +131,38 @@ describe('import preview wording', () => {
     expect(workoutRows(d.analysis, 0, 'en-GB')).toEqual([{ date: '2026-09-01', text: 'Tue 1 Sept 2026 · 3 exercises · 4 sets' }]);
     // Step 3d: the mapped value and the original row.
     const rows = s.imports.previewRows(d.draftId, '2026-09-01');
-    expect(rows.map((r) => (r.fate.result === 'imported' ? [r.fate.set.exerciseName, r.fate.set.load?.value] : r.fate.result))).toEqual([
-      ['Bench press', 120],
-      ['Incline dumbbell press', 50],
-      ['Pull-up', 10],
-      ['Pull-up', 20],
+    expect(rows.map((r) => (r.fate.result === 'imported' ? [r.fate.set.exerciseName, r.fate.set.load?.value, r.fate.set.convention] : r.fate.result))).toEqual([
+      ['Bench press', 120, 'total'],
+      ['Incline dumbbell press', 50, 'per_hand'],
+      ['Pull-up', 10, 'added'],
+      ['Pull-up', 20, 'assistance'],
+    ]);
+    // "Assistance" never turns the weighted set into assistance: it can't be read that way.
+    const assist = await step(d, { kind: 'bodyweight', key: 'pull up', answer: 'assistance' });
+    expect(s.imports.previewRows(assist.draftId, '2026-09-01').map((r) => (r.fate.result === 'imported' ? r.fate.set.convention : r.fate.result)).slice(2)).toEqual(['unreadable', 'assistance']);
+  });
+
+  it('EZ and trap bars ask for their own weight; the Olympic bar’s 20 kg is never added to them (review S1)', async () => {
+    let d = await open([B2, '2026-09-01,Bench press,Chest,60.0,kgs,5,,,,', '2026-09-01,EZ-bar skull crusher,Arms,20.0,kgs,10,,,,', '2026-09-01,Kettlebell swing,Legs,24.0,kgs,15,,,,'].join('\n'));
+    d = await step(d, { kind: 'total', answer: 'plates_only' });
+    const q = totalOptions(d.analysis);
+    expect(q?.options.find((o) => o.value === 'plates_only')?.detail).toBe('Each bar’s own weight below is added');
+    expect(q?.barWeights).toEqual([
+      { bar: 'barbell', unit: 'kg', value: 20, label: 'Bar weight (kg), added to “plates only” values', missing: null },
+      { bar: 'ez_bar', unit: 'kg', value: null, label: 'EZ-bar weight (kg), added to “plates only” values', missing: 'Enter your EZ bar’s weight in kg. Plates-only sets on it can’t be imported without it.' },
+    ]);
+    const v = previewView(d, 'en-GB');
+    expect(v.questions.map((x) => x.line.text)).toEqual(['EZ-bar weight needed for “plates only”']);
+    expect(v.primary).toEqual({ label: 'Answer 1 question to import', enabled: false });
+    // The kettlebell isn't a barbell question: imported as written.
+    expect(v.kept.map((l) => l.text)).toContain('Kettlebell and other no-bar weights imported as written (Kettlebell swing)');
+
+    d = await step(d, { kind: 'bar_weight', bar: 'ez_bar', unit: 'kg', value: 7.5 });
+    expect(previewView(d, 'en-GB').primary).toEqual({ label: 'Import 1 workout', enabled: true });
+    expect(s.imports.previewRows(d.draftId, '2026-09-01').map((r) => (r.fate.result === 'imported' ? [r.fate.set.exerciseName, r.fate.set.load?.value] : r.fate.result))).toEqual([
+      ['Bench press', 80],
+      ['Skull crusher', 27.5],
+      ['Kettlebell swing', 24],
     ]);
   });
 

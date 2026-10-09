@@ -4,7 +4,7 @@ import { TextInput, View } from 'react-native';
 
 import type { AnswerChange } from '@fizz/domain';
 
-import { bodyweightOptions, longDate, perHandOptions, totalOptions, type OptionView } from '../../import/views';
+import { bodyweightOptions, longDate, perHandOptions, totalOptions, type BarWeightView, type OptionView } from '../../import/views';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -84,7 +84,7 @@ export function ImportQuestionScreen() {
             <AppText variant="headline">{q.question}</AppText>
             {options(q.options, (v) => ({ kind: 'total', answer: v }))}
             {q.barWeights.map((b) => (
-              <BarWeightField key={b.unit} unit={b.unit} value={b.value} onSave={(value) => void answer({ kind: 'bar_weight', unit: b.unit, value })} />
+              <BarWeightField key={`${b.bar}-${b.unit}`} field={b} onSave={(value) => void answer({ kind: 'bar_weight', bar: b.bar, unit: b.unit, value })} />
             ))}
             {q.example ? <AppText variant="callout" color="text.secondary">{q.example}</AppText> : null}
             {overrides(a.total.exercises, [{ value: 'total', label: 'Total' }, { value: 'plates_only', label: 'Plates only' }], (k, v) => ({ kind: 'total_override', key: k, answer: v }))}
@@ -183,25 +183,29 @@ export function ImportQuestionScreen() {
   );
 }
 
-function BarWeightField({ unit, value, onSave }: { unit: 'kg' | 'lb'; value: number; onSave: (v: number) => void }) {
+/** One bar's weight in one unit (review S1: the Olympic bar, an EZ bar and a trap bar each have their own). An EZ or trap bar starts empty. */
+function BarWeightField({ field, onSave }: { field: BarWeightView; onSave: (v: number) => void }) {
   const theme = useTheme();
-  const [text, setText] = useState(String(value));
+  const [text, setText] = useState(field.value === null ? '' : String(field.value));
   const parsed = parseNumber(text);
+  const invalid = text.trim() !== '' && (parsed === null || parsed <= 0);
   return (
     <View style={{ gap: theme.space['1'] }}>
-      <AppText variant="label" color="text.secondary">{`Bar weight (${unit}), added to “plates only” values`}</AppText>
+      <AppText variant="label" color="text.secondary">
+        {field.label}
+      </AppText>
       <TextInput
         value={text}
         onChangeText={setText}
         onEndEditing={() => {
-          if (parsed !== null && parsed > 0 && parsed !== value) onSave(parsed);
+          if (parsed !== null && parsed > 0 && parsed !== field.value) onSave(parsed);
         }}
         keyboardType="decimal-pad"
-        accessibilityLabel={`Bar weight in ${unit}`}
+        accessibilityLabel={field.label}
         maxFontSizeMultiplier={theme.type.body.maxFontSizeMultiplier}
         style={{ minHeight: 52, paddingHorizontal: theme.space['3'], borderRadius: theme.radius.sm, borderWidth: 1, borderColor: theme.colors['border.control'], backgroundColor: theme.colors['bg.raised'], color: theme.colors['text.primary'], fontSize: theme.type.body.fontSize }}
       />
-      {parsed === null || parsed <= 0 ? <AppText variant="callout" color="status.warning">Enter a bar weight above 0.</AppText> : null}
+      {invalid ? <AppText variant="callout" color="status.warning">Enter a bar weight above 0.</AppText> : field.missing !== null ? <AppText variant="callout" color="status.warning">{field.missing}</AppText> : null}
     </View>
   );
 }

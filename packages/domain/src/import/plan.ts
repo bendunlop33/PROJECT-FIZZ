@@ -2,8 +2,10 @@ import type {
   AliasTarget,
   BodyweightAnswer,
   CustomExerciseKind,
+  ExerciseEquipmentKind,
   FitNotesVariant,
   ImportAnswers,
+  ImportBarKind,
   ImportedSet,
   ImportRow,
   ImportRowResult,
@@ -40,6 +42,7 @@ export const DEFAULT_ANSWERS: ImportAnswers = {
   total: null,
   totalOverrides: {},
   barWeight: { kg: 20, lb: 45 },
+  otherBarWeight: { ez_bar: { kg: null, lb: null }, trap_bar: { kg: null, lb: null } },
   bodyweight: {},
   bothColumns: null,
   effort: { mode: 'notes_only', rows: [] },
@@ -69,12 +72,33 @@ export interface ImportContext {
   defaultUnit: WeightUnit;
 }
 
+/**
+ * The bar a `total` exercise uses, for `Plates only` (review S1):
+ * - a bar kind: its own bar weight is added;
+ * - `none`: no bar at all (kettlebell, medicine ball, sandbag). The value is
+ *   the total as written and the barbell question doesn't ask about it;
+ * - `unknown`: no bar kind, or more than one, recorded for the exercise.
+ *   Asked, but a plates-only value can't have a bar weight added (unreadable).
+ */
+export type BarOf = ImportBarKind | 'none' | 'unknown';
+
+const BAR_KINDS: readonly ImportBarKind[] = ['barbell', 'ez_bar', 'trap_bar'];
+
+export function barOf(equipment: readonly ExerciseEquipmentKind[]): BarOf {
+  const bars = BAR_KINDS.filter((b) => equipment.includes(b));
+  if (bars.length === 1) return bars[0] ?? 'unknown';
+  if (bars.length === 0 && equipment.length > 0) return 'none';
+  return 'unknown';
+}
+
 /** What a source name maps to now. */
 export interface ResolvedExercise {
   exerciseId: string;
   name: string;
   laterality: Laterality;
   convention: LoadConvention;
+  /** Which bar a `plates_only` value adds (only read for `total`). */
+  bar: BarOf;
   /** `Add new`: a custom exercise created when the import commits. */
   newKind: CustomExerciseKind | null;
 }
@@ -118,7 +142,21 @@ export interface BodyweightQuestion {
   sets: number;
   min: number;
   max: number;
+  /** Both negative and positive values: `split` is offered, and `assistance` can't read the positive ones (review B3). */
+  mixed: boolean;
   answer: BodyweightAnswer | null;
+}
+
+/** A bar's weight for `plates_only` values (review S1). */
+export interface BarWeightQuestion {
+  bar: ImportBarKind;
+  /** Units the bar's exercises are written in. */
+  units: WeightUnit[];
+  weight: { kg: number | null; lb: number | null };
+  /** Some exercise on this bar is answered `plates_only`, so its weight is added. */
+  needed: boolean;
+  /** Units needed but with no weight entered yet (EZ and trap bars have no default). */
+  missing: WeightUnit[];
 }
 
 export interface EffortCandidate {
@@ -159,13 +197,16 @@ export interface ImportAnalysis {
   units: { kg: number; lb: number };
   names: NameRow[];
   perHand: GroupQuestion<PerHandAnswer> | null;
-  total: (GroupQuestion<TotalAnswer> & { barWeight: { kg: number; lb: number }; unitsUsed: WeightUnit[] }) | null;
+  /** `total` exercises that use a bar (barbell, EZ bar, trap bar). Bar-less ones (a kettlebell) aren't asked. */
+  total: (GroupQuestion<TotalAnswer> & { bars: BarWeightQuestion[]; missingBarWeight: boolean }) | null;
   bodyweight: BodyweightQuestion[];
   /** FitNotes 2 rows with both weight columns filled. */
   unit: { rows: number; answer: WeightUnit | null } | null;
   effort: { mode: 'notes_only' | 'review'; candidates: EffortCandidate[] };
   /** Exercises whose convention follows the exercise (stack, plates added, assisted): shown as text, not asked. */
   machines: { key: string; name: string; exerciseName: string; convention: LoadConvention }[];
+  /** `total` exercises with no bar (kettlebell, medicine ball, sandbag): imported as written, not asked. */
+  barless: { key: string; name: string; exerciseName: string }[];
   /** Rows with a comment (kept with each set as the original). */
   comments: number;
   decimalCommaRows: number;
@@ -212,7 +253,10 @@ function resolveName(
   const fromCandidate = (id: string | null): NameResolution => {
     const c = id === null ? undefined : byId.get(id);
     if (!c) return { kind: 'open' };
-    return { kind: 'exercise', exercise: { exerciseId: c.exerciseId, name: c.name, laterality: c.laterality, convention: c.defaultLoadConvention, newKind: null } };
+    return {
+      kind: 'exercise',
+      exercise: { exerciseId: c.exerciseId, name: c.name, laterality: c.laterality, convention: c.defaultLoadConvention, bar: barOf(c.compatibleEquipment), newKind: null },
+    };
   };
   if (answer) {
     switch (answer.kind) {
@@ -223,7 +267,14 @@ function resolveName(
       case 'new':
         return {
           kind: 'exercise',
-          exercise: { exerciseId: customExerciseIdFor(ctx.ownerId, key), name: name.slice(0, 120), laterality: 'bilateral', convention: CONVENTION_BY_KIND[answer.equipment], newKind: answer.equipment },
+          exercise: {
+            exerciseId: customExerciseIdFor(ctx.ownerId, key),
+            name: name.slice(0, 120),
+            laterality: 'bilateral',
+            convention: CONVENTION_BY_KIND[answer.equipment],
+            bar: answer.equipment === 'barbell' ? 'barbell' : 'none',
+            newKind: answer.equipment,
+          },
         };
     }
   }
@@ -247,6 +298,11 @@ function enteredWeight(row: FitNotesRow, answers: ImportAnswers): { value: numbe
     return { value: row.bothColumns[answers.bothColumns], unit: answers.bothColumns };
   }
   return row.weight;
+}
+
+/** A bar's weight per unit: the Olympic bar has the spec's editable default; EZ and trap bars have none until Ben enters one. */
+function barWeightOf(bar: ImportBarKind, answers: ImportAnswers): { kg: number | null; lb: number | null } {
+  return bar === 'barbell' ? answers.barWeight : answers.otherBarWeight[bar];
 }
 
 function negative(value: number): string {
@@ -290,12 +346,12 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
   const unit = bothRows > 0 ? { rows: bothRows, answer: answers.bothColumns } : null;
 
   // Group questions (dumbbells, barbell) and per-exercise bodyweight questions.
-  const groupOf = <A>(convention: 'per_hand' | 'total', groupAnswer: A | null, overrides: Readonly<Record<string, A>>): GroupQuestion<A> | null => {
+  const groupOf = <A>(inGroup: (ex: ResolvedExercise) => boolean, groupAnswer: A | null, overrides: Readonly<Record<string, A>>): GroupQuestion<A> | null => {
     const members = new Map<string, { key: string; name: string; sets: number; override: A | null }>();
     let example: ExampleSet | null = null;
     for (const r of live) {
       const ex = resolved(r);
-      if (ex?.convention !== convention) continue;
+      if (!ex || !inGroup(ex)) continue;
       const w = enteredWeight(r, answers) ?? (r.bothColumns ? { value: r.bothColumns.kg, unit: 'kg' as const } : null);
       if (w === null) continue;
       const key = nameKey(r.exercise);
@@ -308,15 +364,29 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     const exercises = [...members.values()];
     return { exercises, answer: groupAnswer, example, open: exercises.some((e) => e.override === null && groupAnswer === null) };
   };
-  const perHand = groupOf<PerHandAnswer>('per_hand', answers.perHand, answers.perHandOverrides);
-  const totalGroup = groupOf<TotalAnswer>('total', answers.total, answers.totalOverrides);
-  const unitsInTotal = new Set<WeightUnit>();
+  const perHand = groupOf<PerHandAnswer>((ex) => ex.convention === 'per_hand', answers.perHand, answers.perHandOverrides);
+  // Barbell question: `total` exercises on a bar. Each bar kind has its own weight (review S1).
+  const onBar = (ex: ResolvedExercise) => ex.convention === 'total' && ex.bar !== 'none';
+  const totalGroup = groupOf<TotalAnswer>(onBar, answers.total, answers.totalOverrides);
+  const barUse = new Map<ImportBarKind, { units: Set<WeightUnit>; needed: Set<WeightUnit> }>();
   for (const r of live) {
     const ex = resolved(r);
     const w = enteredWeight(r, answers);
-    if (ex?.convention === 'total' && w) unitsInTotal.add(w.unit);
+    if (!ex || !onBar(ex) || !w || ex.bar === 'none' || ex.bar === 'unknown') continue;
+    const use = barUse.get(ex.bar) ?? { units: new Set<WeightUnit>(), needed: new Set<WeightUnit>() };
+    use.units.add(w.unit);
+    if ((answers.totalOverrides[nameKey(r.exercise)] ?? answers.total) === 'plates_only') use.needed.add(w.unit);
+    barUse.set(ex.bar, use);
   }
-  const total = totalGroup ? { ...totalGroup, barWeight: answers.barWeight, unitsUsed: [...unitsInTotal].sort() } : null;
+  const bars: BarWeightQuestion[] = BAR_KINDS.flatMap((bar) => {
+    const use = barUse.get(bar);
+    if (!use) return [];
+    const weight = barWeightOf(bar, answers);
+    const missing = [...use.needed].filter((u) => weight[u] === null).sort();
+    return [{ bar, units: [...use.units].sort(), weight, needed: use.needed.size > 0, missing }];
+  });
+  const missingBarWeight = bars.some((b) => b.missing.length > 0);
+  const total = totalGroup ? { ...totalGroup, open: totalGroup.open || missingBarWeight, bars, missingBarWeight } : null;
 
   const bwMap = new Map<string, BodyweightQuestion>();
   for (const r of live) {
@@ -330,8 +400,9 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
       q.sets += 1;
       q.min = Math.min(q.min, value);
       q.max = Math.max(q.max, value);
+      q.mixed = q.min < 0 && q.max > 0;
     } else {
-      bwMap.set(key, { key, name: r.exercise, exerciseName: ex.name, sets: 1, min: value, max: value, answer: answers.bodyweight[key] ?? null });
+      bwMap.set(key, { key, name: r.exercise, exerciseName: ex.name, sets: 1, min: value, max: value, mixed: false, answer: answers.bodyweight[key] ?? null });
     }
   }
   // Asked only when the file has a weight other than 0 for that exercise.
@@ -339,11 +410,13 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
   const askedBodyweight = new Set(bodyweight.map((q) => q.key));
 
   const machines = new Map<string, { key: string; name: string; exerciseName: string; convention: LoadConvention }>();
+  const barless = new Map<string, { key: string; name: string; exerciseName: string }>();
   for (const r of live) {
     const ex = resolved(r);
-    if (!ex || !['stack', 'added', 'assistance'].includes(ex.convention)) continue;
+    if (!ex) continue;
     const key = nameKey(r.exercise);
-    if (!machines.has(key)) machines.set(key, { key, name: r.exercise, exerciseName: ex.name, convention: ex.convention });
+    if (['stack', 'added', 'assistance'].includes(ex.convention) && !machines.has(key)) machines.set(key, { key, name: r.exercise, exerciseName: ex.name, convention: ex.convention });
+    if (ex.convention === 'total' && ex.bar === 'none' && !barless.has(key)) barless.set(key, { key, name: r.exercise, exerciseName: ex.name });
   }
 
   const checked = new Set(answers.effort.rows);
@@ -391,22 +464,36 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
       }
       case 'total': {
         if (w === null || value === null) return set('total', null);
+        // No bar (a kettlebell): the value is the total as written; nothing to ask.
+        if (ex.bar === 'none') return value < 0 ? { result: 'unreadable', detail: negative(value) } : set('total', { value, unit: w.unit, convention: 'total' });
         const choice = answers.totalOverrides[key] ?? answers.total;
         if (choice === null) return { result: 'pending', reason: 'total' };
         if (value < 0) return { result: 'unreadable', detail: negative(value) };
-        return set('total', { value: choice === 'total' ? value : plus(value, answers.barWeight[w.unit]), unit: w.unit, convention: 'total' });
+        if (choice === 'total') return set('total', { value, unit: w.unit, convention: 'total' });
+        if (ex.bar === 'unknown') return { result: 'unreadable', detail: `Plates only (${String(value)}), but which bar ${ex.name} uses isn’t recorded, so no bar weight can be added` };
+        const bar = barWeightOf(ex.bar, answers)[w.unit];
+        if (bar === null) return { result: 'pending', reason: 'total' };
+        return set('total', { value: plus(value, bar), unit: w.unit, convention: 'total' });
       }
       case 'bodyweight': {
         if (!askedBodyweight.has(key)) return set('bodyweight', null);
         const choice = answers.bodyweight[key] ?? null;
         if (choice === null) return { result: 'pending', reason: 'bodyweight' };
-        if (w === null || value === null) return set(choice, null);
+        if (w === null || value === null) return set(choice === 'assistance' ? 'assistance' : 'added', null);
         if (choice === 'added') {
           if (value < 0) return { result: 'unreadable', detail: `Negative weight (${String(value)}), but you said weight is added` };
           return set('added', { value, unit: w.unit, convention: 'added' });
         }
-        // Assistance: FitNotes users write assistance as a negative weight or as the number on the machine.
-        return set('assistance', { value: Math.abs(value), unit: w.unit, convention: 'assistance' });
+        if (choice === 'assistance') {
+          // Assistance is written as a negative weight or as the number on the machine. When the
+          // exercise also has negative values, a positive one is weight added: never flipped (review B3).
+          if (value > 0 && bwMap.get(key)?.mixed === true) {
+            return { result: 'unreadable', detail: `Positive weight (${String(value)}), but you said this exercise’s values are assistance and its other values are negative` };
+          }
+          return set('assistance', { value: Math.abs(value), unit: w.unit, convention: 'assistance' });
+        }
+        // `split`: negative = assistance, positive (or 0) = weight added.
+        return value < 0 ? set('assistance', { value: Math.abs(value), unit: w.unit, convention: 'assistance' }) : set('added', { value, unit: w.unit, convention: 'added' });
       }
       case 'stack':
       case 'added': {
@@ -489,6 +576,7 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     unit,
     effort: { mode: answers.effort.mode, candidates: effortCandidates },
     machines: [...machines.values()],
+    barless: [...barless.values()],
     comments: rows.filter((r) => r.comment.trim() !== '').length,
     decimalCommaRows: rows.filter((r) => r.decimalComma).length,
     appDates: { count: appDatesInFile.length, newest: appDatesInFile.at(-1) ?? null },

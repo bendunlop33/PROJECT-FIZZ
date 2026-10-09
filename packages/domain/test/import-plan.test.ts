@@ -15,6 +15,7 @@ import {
   planImportRows,
   toHistorySessions,
   type ImportContext,
+  type MatchCandidate,
 } from '../src';
 import { OWNER } from './fixtures';
 import { CANDIDATES, fixture, idOf } from './import-fixtures';
@@ -60,7 +61,7 @@ describe('import preview: questions before anything is saved', () => {
 
     const named = analyseImport(p, ctx(), answers({ names: useSuggestions(first) }));
     expect(named.perHand).toMatchObject({ answer: null, open: true, example: { name: 'Incline DB Press', value: 22.5, unit: 'kg', reps: 10 } });
-    expect(named.total).toMatchObject({ answer: null, open: true, barWeight: { kg: 20, lb: 45 }, unitsUsed: ['kg'] });
+    expect(named.total).toMatchObject({ answer: null, open: true, bars: [{ bar: 'barbell', units: ['kg'], weight: { kg: 20, lb: 45 }, needed: false, missing: [] }], missingBarWeight: false });
     expect(named.bodyweight).toEqual([]); // Pull-up rows are all 0: nothing to ask
     expect(named.machines).toEqual([{ key: 'lat pulldown (pulley)', name: 'Lat Pulldown (Pulley)', exerciseName: 'Lat pulldown', convention: 'stack' }]);
     expect(named.questionsOpen).toBe(2);
@@ -100,7 +101,7 @@ describe('import preview: questions before anything is saved', () => {
     const first = analyseImport(p, ctx(), DEFAULT_ANSWERS);
     const a = analyseImport(p, ctx(), answers({ names: useSuggestions(first), total: 'plates_only', perHand: 'each' }));
     expect(a.ready).toBe(true);
-    expect(a.total?.unitsUsed).toEqual(['lb']);
+    expect(a.total?.bars.map((b) => [b.bar, b.units, b.needed])).toEqual([['barbell', ['lb'], true]]);
     expect(a.fates.map((f) => (f.result === 'imported' ? f.set.load : null))).toEqual([
       { value: 140, unit: 'lb', convention: 'total' },
       { value: 200, unit: 'lb', convention: 'total' },
@@ -111,25 +112,108 @@ describe('import preview: questions before anything is saved', () => {
     expect(kgBar.fates[0]).toMatchObject({ result: 'imported', set: { load: { value: 75, unit: 'kg' } } });
   });
 
-  it('bodyweight exercises with a weight: asked per exercise with the range; added, or assistance (negatives read as assistance)', () => {
+  it('bodyweight exercises with a weight: asked per exercise with the range; a mixed-sign file is never flipped (review B3)', () => {
+    // -20 is an assisted set and +10 a weighted one: the usual FitNotes habit.
     const p = parsed(`${A1}2026-10-01,Pull-up,Back,0,10,,,\n2026-10-02,Pull-up,Back,10,6,,,\n2026-10-03,Pull-up,Back,-20,8,,,\n2026-10-03,Push-up,Chest,0,20,,,\n`);
     const a = analyseImport(p, ctx(), DEFAULT_ANSWERS);
-    expect(a.bodyweight).toEqual([{ key: 'pull-up', name: 'Pull-up', exerciseName: 'Pull-up', sets: 3, min: -20, max: 10, answer: null }]);
+    expect(a.bodyweight).toEqual([{ key: 'pull-up', name: 'Pull-up', exerciseName: 'Pull-up', sets: 3, min: -20, max: 10, mixed: true, answer: null }]);
     expect(a.questionsOpen).toBe(1);
-    const added = analyseImport(p, ctx(), answers({ bodyweight: { 'pull-up': 'added' } }));
-    expect(added.fates.map((f) => (f.result === 'imported' ? f.set.load : f.result === 'pending' ? 'pending' : f.detail))).toEqual([
-      { value: 0, unit: 'kg', convention: 'added' },
-      { value: 10, unit: 'kg', convention: 'added' },
+    const fates = (x: ReturnType<typeof analyseImport>) => x.fates.map((f) => (f.result === 'imported' ? [f.set.convention, f.set.load?.value ?? null] : f.result === 'pending' ? 'pending' : f.detail));
+    // Added: the negative (assisted) set can't be read this way.
+    expect(fates(analyseImport(p, ctx(), answers({ bodyweight: { 'pull-up': 'added' } })))).toEqual([
+      ['added', 0],
+      ['added', 10],
       'Negative weight (-20), but you said weight is added',
-      null,
+      ['bodyweight', null],
     ]);
-    const assist = analyseImport(p, ctx(), answers({ bodyweight: { 'pull-up': 'assistance' } }));
-    expect(assist.fates.map((f) => (f.result === 'imported' ? [f.set.convention, f.set.load?.value ?? null] : f.result))).toEqual([
+    // Assistance: the positive (weighted) set is unreadable, never recorded as 10 kg of assistance.
+    expect(fates(analyseImport(p, ctx(), answers({ bodyweight: { 'pull-up': 'assistance' } })))).toEqual([
       ['assistance', 0],
-      ['assistance', 10],
+      'Positive weight (10), but you said this exercise’s values are assistance and its other values are negative',
       ['assistance', 20],
       ['bodyweight', null],
     ]);
+    // Split by sign: every row imports with the right convention.
+    const split = analyseImport(p, ctx(), answers({ bodyweight: { 'pull-up': 'split' } }));
+    expect(split.ready).toBe(true);
+    expect(fates(split)).toEqual([
+      ['added', 0],
+      ['added', 10],
+      ['assistance', 20],
+      ['bodyweight', null],
+    ]);
+    // On one date, assisted and weighted sets of the same exercise become two exercise entries (one convention each).
+    const sameDay = parsed(`${A1}2026-10-03,Pull-up,Back,-20,8,,,\n2026-10-03,Pull-up,Back,10,5,,,\n`);
+    const rows = planImportRows(sameDay, analyseImport(sameDay, ctx(), answers({ bodyweight: { 'pull-up': 'split' } })), { jobId: JOB, defaultUnit: 'kg' });
+    const agg = buildImportedSession({ ownerId: OWNER, jobId: JOB, operationId: OP, tz: 'Europe/London', gymId: null, importedAtUtc: '2026-10-09T10:00:00.000Z', date: '2026-10-03', rows });
+    expect(validate(SessionAggregateSchema, agg).ok).toBe(true);
+    expect(agg.exercises.map((e) => [e.exerciseName, e.loadConvention])).toEqual([
+      ['Pull-up', 'assistance'],
+      ['Pull-up', 'added'],
+    ]);
+    expect(agg.sets.map((x) => x.actual?.load)).toEqual([
+      { value: 20, unit: 'kg', convention: 'assistance' },
+      { value: 10, unit: 'kg', convention: 'added' },
+    ]);
+  });
+
+  it('assistance written one way only: positive machine numbers or negative weights are read as assistance', () => {
+    const positive = parsed(`${A1}2026-10-01,Pull-up,Back,30,8,,,\n2026-10-02,Pull-up,Back,25,8,,,\n`);
+    const pos = analyseImport(positive, ctx(), answers({ bodyweight: { 'pull-up': 'assistance' } }));
+    expect(pos.bodyweight[0]).toMatchObject({ min: 25, max: 30, mixed: false });
+    expect(pos.fates.map((f) => (f.result === 'imported' ? f.set.load : f.result))).toEqual([
+      { value: 30, unit: 'kg', convention: 'assistance' },
+      { value: 25, unit: 'kg', convention: 'assistance' },
+    ]);
+    const negative = parsed(`${A1}2026-10-01,Pull-up,Back,-30,8,,,\n2026-10-02,Pull-up,Back,0,8,,,\n`);
+    const neg = analyseImport(negative, ctx(), answers({ bodyweight: { 'pull-up': 'assistance' } }));
+    expect(neg.bodyweight[0]).toMatchObject({ min: -30, max: 0, mixed: false });
+    expect(neg.fates.map((f) => (f.result === 'imported' ? f.set.load?.value : f.result))).toEqual([30, 0]);
+  });
+
+  it('"Plates only" adds each bar’s own weight: an EZ or trap bar never gets the Olympic bar (review S1)', () => {
+    const extra: MatchCandidate[] = [
+      { exerciseId: '00000000-0000-4000-8000-00000000e2b1', name: 'Trap-bar deadlift', aliases: [], catalogueKey: 'trap-bar-deadlift', laterality: 'bilateral', defaultLoadConvention: 'total', compatibleEquipment: ['trap_bar'] },
+      { exerciseId: '00000000-0000-4000-8000-00000000e2b2', name: 'Kettlebell swing', aliases: [], catalogueKey: 'kettlebell-swing', laterality: 'bilateral', defaultLoadConvention: 'total', compatibleEquipment: ['kettlebell'] },
+      { exerciseId: '00000000-0000-4000-8000-00000000e2b3', name: 'Mystery bar lift', aliases: [], catalogueKey: null, laterality: 'bilateral', defaultLoadConvention: 'total', compatibleEquipment: [] },
+    ];
+    const c = ctx({ candidates: [...CANDIDATES, ...extra] });
+    const p = parsed(
+      `${A1}2026-10-01,Bench press,Chest,60,5,,,\n2026-10-01,EZ-bar skull crusher,Arms,20,10,,,\n2026-10-01,Trap-bar deadlift,Back,100,5,,,\n2026-10-01,Kettlebell swing,Legs,24,15,,,\n2026-10-01,Mystery bar lift,Back,40,5,,,\n`,
+    );
+    const loads = (x: ReturnType<typeof analyseImport>) => x.fates.map((f) => (f.result === 'imported' ? f.set.load?.value : f.result === 'pending' ? `pending ${f.reason}` : f.detail));
+
+    // The kettlebell has no bar: imported as written and never part of the barbell question.
+    const asked = analyseImport(p, c, DEFAULT_ANSWERS);
+    expect(asked.total?.exercises.map((e) => e.name)).toEqual(['Bench press', 'EZ-bar skull crusher', 'Trap-bar deadlift', 'Mystery bar lift']);
+    expect(asked.barless).toEqual([{ key: 'kettlebell swing', name: 'Kettlebell swing', exerciseName: 'Kettlebell swing' }]);
+    expect(loads(asked)[3]).toBe(24);
+
+    // Plates only: the Olympic bar's 20 kg is added to the bench only; EZ and trap bars wait for their own weight.
+    const plates = analyseImport(p, c, answers({ total: 'plates_only' }));
+    expect(plates.total?.bars).toEqual([
+      { bar: 'barbell', units: ['kg'], weight: { kg: 20, lb: 45 }, needed: true, missing: [] },
+      { bar: 'ez_bar', units: ['kg'], weight: { kg: null, lb: null }, needed: true, missing: ['kg'] },
+      { bar: 'trap_bar', units: ['kg'], weight: { kg: null, lb: null }, needed: true, missing: ['kg'] },
+    ]);
+    expect(plates.total?.open).toBe(true);
+    expect(plates.ready).toBe(false);
+    expect(loads(plates)).toEqual([80, 'pending total', 'pending total', 24, 'Plates only (40), but which bar Mystery bar lift uses isn’t recorded, so no bar weight can be added']);
+
+    // With their weights entered, each bar adds its own.
+    const entered = analyseImport(p, c, answers({ total: 'plates_only', otherBarWeight: { ez_bar: { kg: 7.5, lb: null }, trap_bar: { kg: 25, lb: null } } }));
+    expect(entered.total?.missingBarWeight).toBe(false);
+    expect(entered.ready).toBe(true);
+    expect(loads(entered).slice(0, 4)).toEqual([80, 27.5, 125, 24]);
+
+    // "Total" for everything needs no bar weight at all.
+    const totals = analyseImport(p, c, answers({ total: 'total' }));
+    expect(totals.total?.bars.map((b) => [b.bar, b.needed, b.missing])).toEqual([
+      ['barbell', false, []],
+      ['ez_bar', false, []],
+      ['trap_bar', false, []],
+    ]);
+    expect(loads(totals)).toEqual([60, 20, 100, 24, 40]);
   });
 
   it('negative weights elsewhere are unreadable, never guessed', () => {
@@ -201,7 +285,7 @@ describe('import preview: questions before anything is saved', () => {
     const id = customExerciseIdFor(OWNER, 'hammer strength row');
     expect(a.ready).toBe(true);
     expect(a.fates[0]).toMatchObject({ result: 'imported', set: { exerciseId: id, exerciseName: 'Hammer Strength Row', convention: 'added', load: { value: 40, convention: 'added' } } });
-    expect(newExercisesToCreate(a)).toEqual([{ exerciseId: id, name: 'Hammer Strength Row', laterality: 'bilateral', convention: 'added', newKind: 'plate_loaded_machine' }]);
+    expect(newExercisesToCreate(a)).toEqual([{ exerciseId: id, name: 'Hammer Strength Row', laterality: 'bilateral', convention: 'added', bar: 'none', newKind: 'plate_loaded_machine' }]);
     expect(aliasesToSave(a)).toEqual([{ key: 'hammer strength row', name: 'Hammer Strength Row', target: { kind: 'exercise', exerciseId: id } }]);
   });
 
