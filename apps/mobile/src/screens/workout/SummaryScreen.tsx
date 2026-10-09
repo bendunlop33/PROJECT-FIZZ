@@ -8,6 +8,7 @@ import { toIso, toMs, type NextTimeRow, type WorkoutSummary } from '@fizz/domain
 import { nowMs as clockNow } from '../../clock';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatShortDate, formatTime } from '../../format/dates';
+import { popToTabs, popToToday } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -33,7 +34,7 @@ export function SummaryScreen() {
   });
 
   const done = () => {
-    navigation.navigate('Tabs', { screen: 'Today' });
+    navigation.dispatch(popToToday());
   };
 
   if (data.state !== 'ready' || data.value.summary === null) return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
@@ -56,7 +57,7 @@ export function SummaryScreen() {
             <LinkLine
               accessibilityLabel="Last backup on this phone didn’t save. Open Data and backup."
               onPress={() => {
-                navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'DataBackup' } });
+                navigation.dispatch(popToTabs({ screen: 'Profile', params: { screen: 'DataBackup', initial: false } }));
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>

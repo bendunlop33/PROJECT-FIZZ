@@ -1,5 +1,7 @@
+import { StackRouter, type StackNavigationState, type ParamListBase } from '@react-navigation/routers';
 import { describe, expect, it } from 'vitest';
 
+import { popToTabs, popToToday, replaceWithSummary } from '../src/navigation/actions';
 import { initialRootState } from '../src/navigation/initial-state';
 
 describe('root stack at launch (review S5)', () => {
@@ -7,5 +9,65 @@ describe('root stack at launch (review S5)', () => {
     expect(initialRootState(true, true)).toEqual({ index: 1, routes: [{ name: 'Tabs' }, { name: 'Workout' }] });
     expect(initialRootState(true, false)).toEqual({ index: 0, routes: [{ name: 'Tabs' }] });
     expect(initialRootState(false, true)).toEqual({ index: 0, routes: [{ name: 'Setup' }] });
+  });
+});
+
+/**
+ * The app's real root-stack actions through React Navigation 7's StackRouter
+ * (review workout-loop B1): finishing or discarding never leaves a second
+ * Tabs, a stale Summary or a discarded Workout mounted underneath.
+ */
+describe('root stack after Finish, Done and Discard (review B1)', () => {
+  const routeNames = ['Tabs', 'Workout', 'CheckIn', 'ExercisePicker', 'EditSet', 'Summary', 'AddGym'];
+  const router = StackRouter({});
+  const options = { routeNames, routeParamList: {}, routeGetIdList: {} };
+  type State = StackNavigationState<ParamListBase>;
+  const apply = (state: State, action: Parameters<typeof router.getStateForAction>[1]): State => {
+    const next = router.getStateForAction(state, action, options);
+    if (next === null || next.stale) throw new Error(`action not handled: ${action.type}`);
+    return next as State;
+  };
+  const names = (s: State) => s.routes.map((r) => r.name);
+  const navigate = (name: string, params: object = {}) => ({ type: 'NAVIGATE', payload: { name, params } }) as const;
+  const goBack = { type: 'GO_BACK' } as const;
+  const start = () => router.getInitialState(options);
+
+  it('Start → Finish → Done → Start leaves [Tabs] then [Tabs, Workout]', () => {
+    let s = apply(start(), navigate('Workout'));
+    expect(names(s)).toEqual(['Tabs', 'Workout']);
+    s = apply(s, replaceWithSummary('session-1'));
+    expect(names(s)).toEqual(['Tabs', 'Summary']);
+    s = apply(s, popToToday());
+    expect(names(s)).toEqual(['Tabs']);
+    expect(s.routes[0]?.params).toEqual({ screen: 'Today' });
+    s = apply(s, navigate('Workout'));
+    expect(names(s)).toEqual(['Tabs', 'Workout']);
+  });
+
+  it('Start → Discard returns to the one Tabs with the toast, unmounting the workout', () => {
+    const first = start();
+    const tabsKey = first.routes[0]?.key;
+    let s = apply(first, navigate('Workout'));
+    s = apply(s, popToToday('Workout discarded'));
+    expect(names(s)).toEqual(['Tabs']);
+    expect(s.routes[0]?.key).toBe(tabsKey);
+    expect(s.routes[0]?.params).toEqual({ screen: 'Today', params: { toast: 'Workout discarded' } });
+  });
+
+  it('check-in → Start, and check-in → Skip workout', () => {
+    let s = apply(start(), navigate('CheckIn', { mode: 'start', gymId: 'g' }));
+    s = apply(s, goBack);
+    s = apply(s, navigate('Workout'));
+    expect(names(s)).toEqual(['Tabs', 'Workout']);
+    s = apply(apply(start(), navigate('CheckIn', { mode: 'start', gymId: 'g' })), popToToday('No workout started.'));
+    expect(names(s)).toEqual(['Tabs']);
+  });
+
+  it('Summary → Data & backup goes to the existing Tabs, never a second one', () => {
+    let s = apply(start(), navigate('Summary', { sessionId: 'x' }));
+    s = apply(s, popToTabs({ screen: 'Profile', params: { screen: 'DataBackup', initial: false } }));
+    expect(names(s)).toEqual(['Tabs']);
+    // What the old code did: navigate from above Tabs pushes another Tabs.
+    expect(names(apply(apply(start(), navigate('Summary', { sessionId: 'x' })), navigate('Tabs', { screen: 'Today' })))).toEqual(['Tabs', 'Summary', 'Tabs']);
   });
 });

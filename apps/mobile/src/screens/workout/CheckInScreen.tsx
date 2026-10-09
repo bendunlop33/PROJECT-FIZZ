@@ -17,6 +17,7 @@ import { CHECK_IN_NOTE_MAX, type CheckIn, type CheckInReason, type CheckInScore,
 
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
+import { popToToday } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -292,8 +293,7 @@ function StartCheckIn({ gymId }: { gymId: string }) {
     await services.checkIns.update(record.id, { outcome: 'skipped_workout' }, record.version, `${recordOp}:skip`);
     setBusy(false);
     changed();
-    navigation.goBack();
-    navigation.navigate('Tabs', { screen: 'Today', params: { toast: 'No workout started. Your check-in is saved.' } });
+    navigation.dispatch(popToToday('No workout started. Your check-in is saved.'));
   }
 
   const errorLine = error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null;

@@ -15,6 +15,7 @@ import { useInstallStatus } from '../shell/useInstallStatus';
 import { TIMING, useTheme } from '../theme';
 import { AppText, Card, Icon, LinkLine, PrimaryButton, SecondaryButton, SectionHeader, StatusLine, TextButton, Toast } from '../ui';
 import { BannerList } from './BannerList';
+import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
 
 /**
@@ -38,6 +39,8 @@ export function TodayScreen() {
   const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
   const [now, setNow] = useState(clockNow);
   const [finishFor, setFinishFor] = useState<SessionAggregate | null>(null);
+  const [finishVisible, setFinishVisible] = useState(false);
+  const [afterDismiss] = useState(() => createAfterDismiss());
   const [data, reload] = useScreenData(async (s) => {
     const [gym, view, banners, active, unlinked] = await Promise.all([
       s.yourData.currentGym(),
@@ -182,7 +185,10 @@ export function TodayScreen() {
               <PrimaryButton
                 label={`Finish (ended about ${formatTime(toMs(main.endedAboutUtc), zoned.tz)})`}
                 onPress={() => {
-                  if (active) setFinishFor(active);
+                  if (active) {
+                    setFinishFor(active);
+                    setFinishVisible(true);
+                  }
                 }}
               />
             ) : (
@@ -285,15 +291,19 @@ export function TodayScreen() {
       {finishFor ? (
         <FinishSheet
           aggregate={finishFor}
-          visible
+          visible={finishVisible}
           onClose={() => {
-            setFinishFor(null);
+            setFinishVisible(false);
           }}
           onFinished={(id) => {
-            setFinishFor(null);
+            afterDismiss.arm(() => {
+              setFinishFor(null);
+              navigation.navigate('Summary', { sessionId: id });
+            });
+            setFinishVisible(false);
             changed();
-            navigation.navigate('Summary', { sessionId: id });
           }}
+          onDismissed={afterDismiss.dismissed}
           onDiscard={() => {
             const target = finishFor;
             const logged = target.sets.filter((x) => x.status === 'completed').length;

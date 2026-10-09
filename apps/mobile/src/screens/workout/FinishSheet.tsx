@@ -26,6 +26,7 @@ export function FinishSheet({
   onFinished,
   onDiscard,
   onStale,
+  onDismissed,
 }: {
   aggregate: SessionAggregate;
   visible: boolean;
@@ -33,6 +34,8 @@ export function FinishSheet({
   onFinished: (sessionId: string) => void;
   onDiscard: () => void;
   onStale: () => void;
+  /** After the sheet has fully closed (iOS `onDismiss`): navigate from here, never mid-dismissal (review S8). */
+  onDismissed?: () => void;
 }) {
   const theme = useTheme();
   const services = useServices();
@@ -112,7 +115,7 @@ export function FinishSheet({
   );
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose} {...(onDismissed ? { onDismiss: onDismissed } : {})}>
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'], padding: theme.space['4'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }}>
         <AppText variant="title2" accessibilityRole="header">
           Finish workout?

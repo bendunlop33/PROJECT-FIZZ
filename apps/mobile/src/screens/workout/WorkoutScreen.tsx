@@ -1,4 +1,4 @@
-import { StackActions, useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, KeyboardAvoidingView, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { nowMs as clockNow } from '../../clock';
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatTime } from '../../format/dates';
+import { popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
 import type { ActiveWorkoutData } from '../../services/workout-services';
 import { firstTime, useDataChanged, useLaunchInfo, useServices } from '../../shell/context';
@@ -33,6 +34,7 @@ import {
   Toast,
   type SymbolName,
 } from '../../ui';
+import { createAfterDismiss } from '../../workout/after-dismiss';
 import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
@@ -81,6 +83,7 @@ export function WorkoutScreen() {
   const [askLater, setAskLater] = useState(false);
   const [restoredDraft, setRestoredDraft] = useState<string | null>(null);
   const played = useRef(new Set<string>());
+  const [afterDismiss] = useState(() => createAfterDismiss());
   const tickedFor = useRef<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -237,7 +240,7 @@ export function WorkoutScreen() {
 
   function close() {
     if (navigation.canGoBack()) navigation.goBack();
-    else navigation.navigate('Tabs', { screen: 'Today' });
+    else navigation.dispatch(popToToday());
   }
 
   /** Run one command; adopt the committed state; never throw. */
@@ -384,7 +387,7 @@ export function WorkoutScreen() {
           return;
         }
         setFinishOpen(false);
-        navigation.navigate('Tabs', { screen: 'Today', params: { toast: 'Workout discarded' } });
+        navigation.dispatch(popToToday('Workout discarded'));
       });
     };
     // Nothing logged: discard at once (today.md §4: no Undo, nothing was logged).
@@ -733,10 +736,13 @@ export function WorkoutScreen() {
           setFinishOpen(false);
         }}
         onFinished={(id) => {
+          afterDismiss.arm(() => {
+            navigation.dispatch(replaceWithSummary(id));
+          });
           setFinishOpen(false);
           changed();
-          navigation.dispatch(StackActions.replace('Summary', { sessionId: id }));
         }}
+        onDismissed={afterDismiss.dismissed}
         onDiscard={() => {
           confirmDiscard();
         }}
