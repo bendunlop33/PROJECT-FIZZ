@@ -90,6 +90,12 @@ export interface RepeatCandidate {
   sets: number;
 }
 
+/** Past workouts for Repeat; `unreadable` counts records skipped because they failed to decode. */
+export interface RepeatCandidates {
+  rows: RepeatCandidate[];
+  unreadable: number;
+}
+
 export interface RepeatPreview {
   exercises: { exerciseName: string; equipmentName: string | null; line: string }[];
   notes: { exerciseName: string; text: string }[];
@@ -434,23 +440,47 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   };
 
   const repeat = {
-    /** `Start from a past workout`: finished workouts with logged sets, newest first. */
-    async candidates(limit = 30): Promise<RepeatCandidate[]> {
+    /**
+     * `Start from a past workout`: the newest `limit` finished workouts with
+     * logged sets, newest first (review S1). Only those rows are decoded; a
+     * record that fails to decode is skipped and counted, never thrown.
+     */
+    async candidates(limit = 30): Promise<RepeatCandidates> {
       const p = await ctx.profile();
-      if (!p) return [];
-      const nowMs = toMs(ctx.now().utc);
-      const finished = await repos().sessions.listFinishedBetween(p.id, toIso(nowMs - 365 * 86_400_000), toIso(nowMs + 1));
+      if (!p) return { rows: [], unreadable: 0 };
       const gyms = new Map<string, string>();
-      const out: RepeatCandidate[] = [];
-      for (const a of [...finished].sort((x, y) => (x.session.startedAt.utc < y.session.startedAt.utc ? 1 : -1))) {
-        const done = a.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null);
-        if (done.length === 0) continue;
-        if (!gyms.has(a.session.gymId)) gyms.set(a.session.gymId, (await repos().gyms.get(a.session.gymId))?.name ?? 'Gym');
-        const names = [...a.exercises].sort((x, y) => x.order - y.order).filter((e) => done.some((s) => s.sessionExerciseId === e.id)).map((e) => e.exerciseName);
-        out.push({ sessionId: a.session.id, title: a.session.routineName ?? 'Workout', startedAtUtc: a.session.startedAt.utc, tz: a.session.startedAt.tz, gymId: a.session.gymId, gymName: gyms.get(a.session.gymId) ?? 'Gym', exerciseNames: names, sets: done.length });
-        if (out.length >= limit) break;
+      const rows: RepeatCandidate[] = [];
+      let unreadable = 0;
+      for (let offset = 0; rows.length < limit; ) {
+        const ids = await repos().sessions.listRepeatableIds(p.id, limit - rows.length, offset);
+        if (ids.length === 0) break;
+        offset += ids.length;
+        for (const id of ids) {
+          let a: SessionAggregate | null;
+          try {
+            a = await repos().sessions.get(id);
+          } catch {
+            unreadable += 1;
+            continue;
+          }
+          if (!a) continue;
+          const done = a.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null);
+          if (done.length === 0) continue;
+          if (!gyms.has(a.session.gymId)) gyms.set(a.session.gymId, (await repos().gyms.get(a.session.gymId).catch(() => null))?.name ?? 'Gym');
+          const names = [...a.exercises].sort((x, y) => x.order - y.order).filter((e) => done.some((s) => s.sessionExerciseId === e.id)).map((e) => e.exerciseName);
+          rows.push({ sessionId: a.session.id, title: a.session.routineName ?? 'Workout', startedAtUtc: a.session.startedAt.utc, tz: a.session.startedAt.tz, gymId: a.session.gymId, gymName: gyms.get(a.session.gymId) ?? 'Gym', exerciseNames: names, sets: done.length });
+        }
       }
-      return out;
+      return { rows, unreadable };
+    },
+
+    /** Today's `Repeat last workout` row: the newest readable candidate, or null. Never throws (review S1). */
+    async last(): Promise<RepeatCandidate | null> {
+      try {
+        return (await repeat.candidates(1)).rows[0] ?? null;
+      } catch {
+        return null;
+      }
     },
 
     /** The Repeat screen (routines.md §2.4): what the new workout would plan at this gym. Saves nothing. */
@@ -474,7 +504,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const week = localWeekBounds(nowMs, at.tz);
       const [active, finished, recent] = await Promise.all([
         repos().sessions.getActive(p.id),
-        repos().sessions.listFinishedBetween(p.id, toIso(week.startMs), toIso(week.endMs)),
+        // An unreadable workout this week is left out rather than blocking Today (review S1).
+        repos().sessions.listFinishedBetweenReadable(p.id, toIso(week.startMs), toIso(week.endMs)).then((r) => r.sessions),
         recentCheckIns(p.id, nowMs),
       ]);
       return buildTodayView({

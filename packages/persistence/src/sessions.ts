@@ -535,6 +535,32 @@ export class SqliteSessions implements SessionRepository {
     });
   }
 
+  /**
+   * Like `listFinishedBetween`, but a session that fails to decode is skipped
+   * and counted instead of failing the whole read (Today's week, review S1).
+   */
+  listFinishedBetweenReadable(ownerId: string, fromUtc: string, toUtc: string): Promise<{ sessions: SessionAggregate[]; unreadable: number }> {
+    return this.db.read(async (q) => {
+      const rows = await q.getAll<{ id: string }>(
+        `SELECT id FROM sessions WHERE owner_id = ? AND status = 'finished' AND started_at_utc >= ? AND started_at_utc < ?
+         ORDER BY started_at_utc, id`,
+        [ownerId, fromUtc, toUtc],
+      );
+      const sessions: SessionAggregate[] = [];
+      let unreadable = 0;
+      for (const r of rows) {
+        try {
+          const agg = await readAggregate(q, r.id);
+          if (agg) sessions.push(agg);
+        } catch (e) {
+          if (!(e instanceof CorruptDataError)) throw e;
+          unreadable += 1;
+        }
+      }
+      return { sessions, unreadable };
+    });
+  }
+
   /** The most recently started finished session, if any. */
   latestFinished(ownerId: string): Promise<SessionAggregate | null> {
     return this.db.read(async (q) => {
@@ -544,6 +570,25 @@ export class SqliteSessions implements SessionRepository {
       );
       return row ? readAggregate(q, row.id) : null;
     });
+  }
+
+  /**
+   * IDs of finished sessions with at least one completed set, newest first
+   * (Repeat candidates, review S1). Reads no aggregates, so one undecodable
+   * record never stops the list; callers decode each ID and skip failures.
+   */
+  listRepeatableIds(ownerId: string, limit: number, offset = 0): Promise<string[]> {
+    return this.db.read(async (q) =>
+      (
+        await q.getAll<{ id: string }>(
+          `SELECT s.id AS id FROM sessions s
+           WHERE s.owner_id = ? AND s.status = 'finished'
+             AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')
+           ORDER BY s.started_at_utc DESC, s.id DESC LIMIT ? OFFSET ?`,
+          [ownerId, limit, offset],
+        )
+      ).map((r) => r.id),
+    );
   }
 
   /** IDs of every stored session (for integrity checks). */

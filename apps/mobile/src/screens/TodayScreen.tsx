@@ -45,15 +45,16 @@ export function TodayScreen() {
   const [finishVisible, setFinishVisible] = useState(false);
   const [afterDismiss] = useState(() => createAfterDismiss());
   const [data, reload] = useScreenData(async (s) => {
-    const [gym, view, banners, active, unlinked, recent] = await Promise.all([
+    const [gym, view, banners, active, unlinked, last] = await Promise.all([
       s.yourData.currentGym(),
       s.today.view(),
       loadBanners(s, install),
       s.sessions.active(),
       s.checkIns.unlinked(),
-      s.repeat.candidates(1),
+      // Never blocks Today or Start (review S1): an unreadable past workout only hides the row.
+      s.repeat.last().catch(() => null),
     ]);
-    return { gym, view, banners, active, unlinked, last: recent[0] ?? null };
+    return { gym, view, banners, active, unlinked, last };
   });
 
   useEffect(() => {

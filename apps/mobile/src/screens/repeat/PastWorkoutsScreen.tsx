@@ -30,11 +30,19 @@ export function PastWorkoutsScreen() {
       <AppText variant="callout" color="text.secondary">
         Pick a workout to do again. Its sets become today’s targets; nothing is marked done.
       </AppText>
-      {data.value.length === 0 ? (
+      {data.value.unreadable > 0 ? (
+        <StatusLine
+          icon="exclamationmark.triangle"
+          tone="warning"
+          text={`${plural(data.value.unreadable, 'workout', 'workouts')} couldn’t be read and ${data.value.unreadable === 1 ? 'isn’t' : 'aren’t'} listed.`}
+          detail="Your other workouts are fine. Check all data in Data & backup for details."
+        />
+      ) : null}
+      {data.value.rows.length === 0 ? (
         <AppText variant="body">No finished workouts yet.</AppText>
       ) : (
         <Group>
-          {data.value.map((c) => (
+          {data.value.rows.map((c) => (
             <Row
               key={c.sessionId}
               title={`${formatShortDate(toMs(c.startedAtUtc), c.tz || tz)} · ${c.title}`}

@@ -21,7 +21,7 @@ describe('repeat a past workout', () => {
     const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 10 }, { load: 80, reps: 6 }] }]);
     h.clockMs += 86_400_000;
     const second = await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 45, reps: 10 }] }]);
-    const list = await s.repeat.candidates();
+    const list = (await s.repeat.candidates()).rows;
     expect(list.map((c) => [c.sessionId, c.exerciseNames, c.sets, c.gymName])).toEqual([
       [second, ['Lat pulldown'], 1, 'Main Gym'],
       [first, ['Bench press'], 2, 'Main Gym'],

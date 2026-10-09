@@ -58,4 +58,37 @@ describe('unreadable records', () => {
     await expect(s.workout.load()).rejects.toThrow();
     expect(await s.restore.blockedBy()).toBeNull();
   });
+
+  it('Today and Start still work with one unreadable finished workout; Repeat skips it with a count (review S1)', async () => {
+    let { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const older = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    h.clockMs += 86_400_000;
+    const broken = await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 45, reps: 10 }] }]);
+    const file = s.developer.databaseNames().current;
+    await h.forceClose();
+    corrupt(file, broken);
+    s = (await h.launch()).services;
+    h.clockMs += 86_400_000;
+
+    // Everything Today's loader reads resolves.
+    await expect(Promise.all([s.yourData.currentGym(), s.today.view(), s.sessions.active(), s.checkIns.unlinked(), s.repeat.last()])).resolves.toBeDefined();
+    // The newest readable workout is offered; the broken one is skipped and counted.
+    expect((await s.repeat.last())?.sessionId).toBe(older);
+    expect(await s.repeat.candidates()).toMatchObject({ rows: [{ sessionId: older }], unreadable: 1 });
+    // Start isn't blocked.
+    const started = await s.workout.start({ gymId, opId: 'after-corrupt', checkIn: null });
+    expect(started.ok).toBe(true);
+  });
+
+  it('Repeat candidates are limited: only the newest N are decoded', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const ids: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      h.clockMs += 86_400_000;
+      ids.push(await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]));
+    }
+    expect((await s.repeat.candidates(2)).rows.map((c) => c.sessionId)).toEqual([ids[3], ids[2]]);
+  });
 });
