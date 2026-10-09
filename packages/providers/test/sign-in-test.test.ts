@@ -281,6 +281,32 @@ describe('runSignInTest', () => {
     expect(run.steps.find((s) => s.id === 'id_token')?.details).toContain('The granted refresh token was revoked.');
   });
 
+  it('a different account: the discarded grant is revoked with its own client, the saved account untouched, a failed revoke said plainly (review S7)', async () => {
+    const savedReg = serializeRegistration({ hostId: 'urn:uuid:3f1c2b9e-1d2a-4c55-9a7e-0b1c2d3e4f50', clientId: 'oaiapp_ISSUED123', email: 'ben@example.com', subject: 'user-1' });
+    const oldTokens = serializeTokens({ clientId: 'oaiapp_ISSUED123', accessToken: 'OLD', refreshToken: 'OLDR', idToken: null, tokenType: 'Bearer', expiresAtMs: 0, earliestRefreshAtMs: null, scopes: [], savedAtMs: 0 });
+
+    const ok = world({ subject: 'someone-else', email: 'other@example.com' });
+    ok.vault.registration = savedReg;
+    ok.vault.tokens = oldTokens;
+    const run = await runSignInTest(ok.ports);
+    expect(run.outcome).not.toBe('connected');
+    const revokes = ok.calls.filter((c) => c.url.endsWith('/oauth/revoke'));
+    expect(revokes.map((c) => c.form)).toEqual([{ token: 'REFRESH-SECRET-1', token_type_hint: 'refresh_token', client_id: 'oaiapp_ISSUED123' }]);
+    expect(ok.vault.tokens).toBe(oldTokens);
+    expect(ok.vault.registration).toBe(savedReg);
+    expect(urlsCalled(ok)).not.toContain(OPENAI_MODELS_URL);
+
+    const failing = world({ subject: 'someone-else', routes: { 'https://auth.openai.com/api/accounts/oauth/revoke': () => Promise.reject(new Error('offline')) } });
+    failing.vault.registration = savedReg;
+    failing.vault.tokens = oldTokens;
+    const r2 = await runSignInTest(failing.ports);
+    const step = r2.steps.find((s) => s.id === 'id_token');
+    expect(step?.status).toBe('fail');
+    expect(step?.details.some((d) => d.startsWith("Revoking the granted refresh token wasn't confirmed"))).toBe(true);
+    expect(failing.vault.tokens).toBe(oldTokens);
+    expect(failing.vault.registration).toBe(savedReg);
+  });
+
   it('a revocation that fails is said plainly and never blocks the result', async () => {
     const w = world({ scope: 'openid profile email offline_access', routes: { 'https://auth.openai.com/api/accounts/oauth/revoke': () => Promise.reject(new Error('offline')) } });
     const run = await runSignInTest(w.ports);
