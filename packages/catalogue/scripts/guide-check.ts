@@ -2,13 +2,16 @@
  * `npm run guide:check <id>|--all [--verify]`: run the automatic guide checks
  * (research §5.6) and write each guide's `meta.json`. With `--verify` (used by
  * `npm run check`), a stale meta.json is an error instead of being rewritten.
- * Exit 1 if any guide fails.
+ * Exit 1 if any guide fails. Without `--verify` it also refreshes the app's
+ * guide index (`src/generated/guide-files.ts`, ADR 0013) when it is stale;
+ * `catalogue:validate` fails on a stale index.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkGuide, CHECK_FPS, type GuideCheckReport } from '../src/figure/checks.ts';
 import type { GuideMeta } from '../src/figure/guide-schema.ts';
-import { guideIds, loadGuideFile } from './lib/guides.ts';
+import { guideIds, guideIndexSource, loadGuideFile } from './lib/guides.ts';
+import { GUIDE_INDEX_FILE } from './lib/paths.ts';
 
 const args = process.argv.slice(2);
 const verify = args.includes('--verify');
@@ -63,4 +66,11 @@ for (const id of ids) {
   }
 }
 if (ids.length > 0) console.log(`\n${ids.length - failed}/${ids.length} guides pass.`);
+if (!verify && ids.length > 0) {
+  const index = guideIndexSource(guideIds());
+  if (!existsSync(GUIDE_INDEX_FILE) || readFileSync(GUIDE_INDEX_FILE, 'utf8') !== index) {
+    writeFileSync(GUIDE_INDEX_FILE, index);
+    console.log('Wrote src/generated/guide-files.ts (the guides the app bundles).');
+  }
+}
 if (failed > 0) process.exitCode = 1;

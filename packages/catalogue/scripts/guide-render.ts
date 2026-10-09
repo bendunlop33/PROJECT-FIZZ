@@ -12,7 +12,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Resvg } from '@resvg/resvg-js';
 import { GuideSchema } from '../src/figure/guide-schema.ts';
-import { sampleTimes } from '../src/figure/keyframes.ts';
+import { keyFrameStops, overlayTraces } from '../src/figure/playback.ts';
 import { poseAt, prepareGuide } from '../src/figure/pose.ts';
 import { DIRECTION_D_GUIDE_TOKENS, guideStyleFromTokens } from '../src/figure/style.ts';
 import { fitCamera, renderFrameBody, renderSvg } from '../src/figure/svg.ts';
@@ -54,13 +54,8 @@ interface StripFrame {
   sub: string;
   key: boolean;
 }
-const frames: StripFrame[] = [];
-const seen = new Set<string>();
-for (const k of prepared.keys) {
-  if (k.label === null || seen.has(k.label)) continue;
-  seen.add(k.label);
-  frames.push({ t: k.t, title: `${seen.size} ${k.label}`, sub: k.caption ?? '', key: true });
-}
+// The same key positions the app shows under Reduce Motion (`keyFrameStops`).
+const frames: StripFrame[] = keyFrameStops(prepared).map((k) => ({ t: k.t, title: `${k.number} ${k.label}`, sub: k.caption ?? '', key: true }));
 for (let i = 0; i < 6; i += 1) {
   const t = (i + 0.5) / 6;
   frames.push({ t, title: `${((t * guide.durationMs) / 1000).toFixed(2)} s`, sub: '', key: false });
@@ -68,14 +63,7 @@ for (let i = 0; i < 6; i += 1) {
 frames.sort((a, b) => a.t - b.t);
 
 // Static overlays: the path of each overlaid prop across the whole cycle.
-const traces: Vec[][] = [];
-for (const o of guide.overlays ?? []) {
-  if (!o.showIn.includes('static')) continue;
-  const pts = sampleTimes(guide, prepared.keys, 30)
-    .map((t) => poseAt(prepared, t).propPoints[o.of])
-    .filter((p): p is Vec => p !== undefined);
-  traces.push(pts);
-}
+const traces: Vec[][] = overlayTraces(prepared, 'static');
 
 const width = GAP + frames.length * (PX + GAP);
 const rowH = PX + LABEL_H + GAP;

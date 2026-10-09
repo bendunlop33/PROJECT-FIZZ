@@ -6,6 +6,7 @@ export const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', 
 export const EXERCISES_DIR = join(PACKAGE_ROOT, 'data', 'exercises');
 export const GUIDES_DIR = join(PACKAGE_ROOT, 'guides');
 export const INDEX_FILE = join(PACKAGE_ROOT, 'src', 'generated', 'exercise-files.ts');
+export const GUIDE_INDEX_FILE = join(PACKAGE_ROOT, 'src', 'generated', 'guide-files.ts');
 
 export function exerciseFileNames(): string[] {
   return readdirSync(EXERCISES_DIR)

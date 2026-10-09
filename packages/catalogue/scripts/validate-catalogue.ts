@@ -5,7 +5,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { validateCatalogueFiles, type CatalogueFile, type CatalogueIssue } from '../src/validate.ts';
-import { EXERCISES_DIR, exerciseFileNames, INDEX_FILE, indexSource, readJson } from './lib/paths.ts';
+import { guideIds, guideIndexSource } from './lib/guides.ts';
+import { EXERCISES_DIR, exerciseFileNames, GUIDE_INDEX_FILE, INDEX_FILE, indexSource, readJson } from './lib/paths.ts';
 
 const names = exerciseFileNames();
 const files: CatalogueFile[] = [];
@@ -21,6 +22,11 @@ const errors = [...parseErrors, ...report.errors];
 const expectedIndex = indexSource(names);
 if (!existsSync(INDEX_FILE) || readFileSync(INDEX_FILE, 'utf8') !== expectedIndex) {
   errors.push({ file: 'src/generated/exercise-files.ts', path: '', message: 'Stale; run `npm run catalogue:index`' });
+}
+// The app bundles guides through this list, cameras included: a new or edited guide.json needs a re-run.
+const expectedGuideIndex = guideIndexSource(guideIds());
+if (!existsSync(GUIDE_INDEX_FILE) || readFileSync(GUIDE_INDEX_FILE, 'utf8') !== expectedGuideIndex) {
+  errors.push({ file: 'src/generated/guide-files.ts', path: '', message: 'Stale; run `npm run catalogue:index`' });
 }
 
 const show = (label: string, list: readonly CatalogueIssue[]): void => {

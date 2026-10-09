@@ -69,6 +69,63 @@ export function bundledCatalogue(): CatalogueLoadResult {
   return bundled;
 }
 
+/** One entry, validated on demand (`missing`: no bundled file has that key). */
+export type EntryLoad = { ok: true; entry: CatalogueEntry } | { ok: false; reason: 'missing' } | { ok: false; reason: 'invalid'; message: string };
+
+/**
+ * Per-entry access without validating the whole catalogue. Parsing all 133
+ * entries takes ~50 ms cold in V8 and several times that on Hermes, which is
+ * too slow for a picker that only needs to know which rows have a how-to.
+ * `tierHint` reads the raw `tier` field without validation: it is only a
+ * hint for showing a button (the build validates every file, and `entry`
+ * validates before anything is shown).
+ */
+export interface LazyCatalogue {
+  readonly keys: ReadonlySet<string>;
+  tierHint(key: string): 'rich' | 'basic' | null;
+  entry(key: string): EntryLoad;
+}
+
+export function createLazyCatalogue(raw: readonly unknown[]): LazyCatalogue {
+  const byKey = new Map<string, unknown>();
+  for (const item of raw) {
+    const key = keyOf(item);
+    if (key !== null && !byKey.has(key)) byKey.set(key, item);
+  }
+  const memo = new Map<string, EntryLoad>();
+  return {
+    keys: new Set(byKey.keys()),
+    tierHint(key) {
+      const item = byKey.get(key);
+      if (typeof item !== 'object' || item === null || !('tier' in item)) return null;
+      return item.tier === 'rich' ? 'rich' : item.tier === 'basic' ? 'basic' : null;
+    },
+    entry(key) {
+      const hit = memo.get(key);
+      if (hit) return hit;
+      const item = byKey.get(key);
+      let result: EntryLoad;
+      if (item === undefined) {
+        result = { ok: false, reason: 'missing' };
+      } else {
+        const parsed = CatalogueEntrySchema.safeParse(item);
+        const first = parsed.success ? undefined : parsed.error.issues[0];
+        result = parsed.success ? { ok: true, entry: parsed.data } : { ok: false, reason: 'invalid', message: first ? `${first.path.join('.')}: ${first.message}` : 'Invalid entry' };
+      }
+      memo.set(key, result);
+      return result;
+    },
+  };
+}
+
+let lazyBundled: LazyCatalogue | undefined;
+
+/** The shipped catalogue, validated one entry at a time (memoised). */
+export function lazyBundledCatalogue(): LazyCatalogue {
+  lazyBundled ??= createLazyCatalogue(BUNDLED_EXERCISE_FILES);
+  return lazyBundled;
+}
+
 export type ExerciseRowResult =
   | { ok: true; exercise: Exercise }
   | { ok: false; reason: 'distance_not_loggable'; message: string };

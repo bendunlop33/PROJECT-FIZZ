@@ -250,6 +250,22 @@ function ridePlanted(guide: Guide, a: FrameState, b: FrameState, tc: number, seg
   }
 }
 
+/**
+ * Flattened keyframe channels, computed once per resolved keyframe list.
+ * `stateAt` runs for every sampled frame (the app bakes a whole cycle on
+ * Hermes, which has no JIT), so this avoids rebuilding the maps each call.
+ * Resolved keyframes are never mutated after `resolveKeyframes`.
+ */
+const flatCache = new WeakMap<readonly ResolvedKeyframe[], readonly Channels[]>();
+function flatKeys(keys: readonly ResolvedKeyframe[]): readonly Channels[] {
+  let flat = flatCache.get(keys);
+  if (flat === undefined) {
+    flat = keys.map((k) => flatten(k.state));
+    flatCache.set(keys, flat);
+  }
+  return flat;
+}
+
 /** The interpolated state at normalised time `t` (0–1). */
 export function stateAt(guide: Guide, keys: readonly ResolvedKeyframe[], t: number): FrameState {
   const first = keys[0];
@@ -267,7 +283,7 @@ export function stateAt(guide: Guide, keys: readonly ResolvedKeyframe[], t: numb
   }
   const span = b.t - a.holdEnd;
   const s = span <= 0 ? 1 : (tc - a.holdEnd) / span;
-  const flat = keys.map((k) => flatten(k.state));
+  const flat = flatKeys(keys);
   const fa = flat[i] ?? new Map<string, number>();
   const fb = flat[i + 1] ?? new Map<string, number>();
   const out: Channels = new Map();

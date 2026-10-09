@@ -1,7 +1,7 @@
 /**
- * Figure rig and guide tooling (ADR 0011). Pure TypeScript with no React or
- * native imports: the Linux renderer and checks use it now, and the in-app
- * player (a later slice) will draw the same poses.
+ * Figure rig and guide tooling (ADR 0011, ADR 0013). Pure TypeScript with no
+ * React, native or Node imports: the Linux renderer and checks use it, and
+ * the in-app Skia player draws the same `frameOps`.
  */
 export * from './math';
 export * from './rig';
@@ -11,5 +11,7 @@ export * from './keyframes';
 export * from './props';
 export * from './pose';
 export * from './style';
+export * from './draw';
 export * from './svg';
 export * from './checks';
+export * from './playback';
