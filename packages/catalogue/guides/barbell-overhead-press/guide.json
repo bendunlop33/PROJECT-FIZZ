@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "barbell-overhead-press",
+  "extends": null,
+  "rig": "adult-v1",
+  "view": "side",
+  "facing": "right",
+  "units": "bodyHeight",
+  "durationMs": 2900,
+  "loop": "cycle",
+  "ground": { "y": 0, "scrollPerCycle": 0 },
+  "props": [
+    { "id": "bar", "type": "barbell", "plates": "large", "anchor": { "kind": "keyframed" } }
+  ],
+  "keyframes": [
+    {
+      "t": 0, "label": "Start", "caption": "Bar on the front shoulders, glutes tight",
+      "root": { "x": -0.035, "y": 0.5285, "pelvisDeg": 0 },
+      "joints": { "lumbar": 0, "thoracic": 0, "neck": 0 },
+      "props": { "bar": { "x": 0.04, "y": 0.83 } },
+      "projection": { "armNear": 0.95, "armFar": 0.95 },
+      "ik": {
+        "footNear": { "x": 0, "y": 0, "planted": true },
+        "footFar": { "x": -0.012, "y": 0, "planted": true },
+        "handNear": { "prop": "bar", "bend": "cw" },
+        "handFar": { "prop": "bar", "bend": "cw" }
+      },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.2069, "label": "Forehead", "caption": "Head back, bar straight up past the face",
+      "root": { "x": -0.02, "y": 0.5293, "pelvisDeg": -5 },
+      "props": { "bar": { "y": 0.955 } },
+      "projection": { "armNear": 0.52, "armFar": 0.52, "forearmNear": 0.97, "forearmFar": 0.97 },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.4138, "label": "Lockout", "caption": "Arms straight, head through, bar over mid-foot",
+      "root": { "x": 0.016, "y": 0.5294, "pelvisDeg": 0 },
+      "props": { "bar": { "y": 1.174 } },
+      "projection": { "armNear": 0.95, "armFar": 0.95, "forearmNear": 0.95, "forearmFar": 0.95 },
+      "holdMs": 300, "ease": "smooth"
+    },
+    { "t": 0.7586, "sameAs": 1, "caption": "Head back again as the bar comes down", "ease": "smooth" },
+    { "t": 1, "sameAs": 0 }
+  ],
+  "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
+  "checks": { "barDriftMax": 0.03, "barProp": "bar", "planted": ["footNear", "footFar"], "romProfile": "adult-default" },
+  "a11y": {
+    "summary": "Side view, facing right. Standing tall with the bar on the front of the shoulders. Pull the head back and press the bar straight up past the face, then push the head through to lock out with the bar overhead over mid-foot. Lower the same way."
+  },
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+}
