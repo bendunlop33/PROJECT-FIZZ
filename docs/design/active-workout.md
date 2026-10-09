@@ -10,6 +10,8 @@
 
 > **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** Places [check-in.md](check-in.md) on this screen; behaviour is specified there. (1) The check-in normally happens on Today before the session exists, so this screen is unchanged for it. (2) **Resume / auto-open of a session with no set ever committed and an unanswered check-in** shows the `CheckInSheet` over this screen once; after any set is committed it never appears (never mid-workout). (3) After a check-in, the toast slot shows `✓ Check-in saved · 2 of 5` [Change]. (4) **Check-in offer:** with a low check-in and the coach reachable, the first set card's coach slot shows `Want a lighter session today?` / `You said 2 of 5 · …` [No thanks] [Adjust] **in Ready, before any set is logged** (an exception to "offers only while Resting", check-in.md CI5; never spoken). `Adjust` runs the normal Ben-accepted path for all of today's pending sets, with no increases allowed. Offline: one outcome line `Check-in saved. Coach offline, so today's plan is unchanged.` Changed: §3 (three rows), §4.7, §6, checks 33–35. The Log loop gains no taps.
 
+> **Revision 2026-10-09 (exercise guides, ADR 0013).** `How to` added as the first exercise `⋯` item (§4.4), for exercises with a guide or rich cues. The screen is specified in [exercise-library.md](exercise-library.md) §8. The Log card never shows a guide. The Log loop gains no taps.
+
 Status: v0.1 draft, 8 Oct 2026. Flow and state machine: [flow-first-milestone.md](flow-first-milestone.md). Rest behaviour: [rest-state.md](rest-state.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -383,6 +385,7 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 ### 4.4 Set and exercise controls
 - **Exercise header tap** opens the history sheet: comparable history from `getComparableHistory` and technique or setup notes.
 - **Exercise `⋯` menu:**
+  - `How to` (revision 2026-10-09, built for ADR 0013; provisional, confirm on device). This is the **first** item, shown only when the exercise has a guide or rich cues (`howToKeyForExerciseId`), and absent otherwise. It opens the How to modal (exercise-library.md §8) over the workout. The rest timer and alerts carry on underneath, and closing it returns to the same set, draft and Log label. It is first because the action sheet is anchored to the bottom: an item added at the top leaves every other item the same distance from the thumb.
   - `Add set` calls `addSet` (`add_set`). The new set copies the last set's planned values and rest. Toast `Set 4 added`. If nothing else is active, it becomes the active set.
   - `Swap exercise` (→ the Swap sheet in exercise-library.md §2.5 → `ChangeReviewCard` with scope `Today only`). If Ben approves exercise-library EL4, a swap he picks himself applies at once with Undo (`SwapSlotLine`) instead; coach-suggested swaps keep the card either way.
   - `Machine busy` (calls `setTemporaryAvailability`).

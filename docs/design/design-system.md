@@ -17,6 +17,8 @@
 
 > **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** For [check-in.md](check-in.md): new timing token `timing.checkInReuse` (§6); check-ins listed under Your data (§7.2); `UndoToast` may carry `Change` instead of `Undo` for a check-in (§9.10); `CoachOfferLine` may also sit in the first set card's coach slot in Ready for the check-in offer (§9.14); `TrendChart` gains a `pointsOnly` variant for self-reported 1–5 ratings (§9.23); new components `CheckInScale` (§9.54), `CheckInSheet` (§9.55) and `CheckInLine` (§9.56); index rows (§11). The readiness chips they replace had no component of their own. **No new colour values; one accent kept.** Check-in values are never shown as a score, ring, gauge or colour scale.
 
+> **Revision 2026-10-09 (exercise guides, [ADR 0013](../decisions/0013-in-app-guide-playback.md); approved by Ben 9 Oct 2026).** Principle 5 gains the one exception to "motion stays quiet": the exercise guide (research brief change 3). Added guide colour **aliases** (§2.3, no new colour values, never `accent`), guide timing values (§6), the `ExerciseGuide` component (§9.57), an accessibility checklist line (§10) and an index row (§11). The screen is specified in [exercise-library.md](exercise-library.md) §8. **The app is now called GymSmarter.** New copy uses that name; "Fizz" in older specs means GymSmarter. Identifiers containing "fizz" are unchanged (decisions/README.md). **Gap to note, not fixed here:** the code's default look is Direction D (provisional-2026-10-09.md, decision 1), whose colour values live in `apps/mobile/src/theme/tokens.ts` and research, not in §2. Until §2 records them, this file is not yet the single source for the default look's values; token *names* and roles still match.
+
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
 Context: one person uses the app on an iPhone, one-handed, mid-workout, with sweaty fingers and headphones, often in bright or dim gym light. Every choice below favours speed, legibility and calm over decoration.
@@ -30,6 +32,13 @@ Context: one person uses the app on an iPhone, one-handed, mid-workout, with swe
 3. **Status is never colour alone.** Every status has an icon or a text label, and colour adds to it.
 4. **Planned and actual values look different.** A target always carries the word "Target" or sits in a pending row style. Actual values are shown as done (see §7).
 5. **Motion stays quiet.** There are no animated dashboards, progress rings, confetti or shimmer skeletons. Transitions are at most 200 ms and are removed under Reduce Motion.
+   **The one exception is the exercise guide** (`ExerciseGuide`, §9.57; approved 9 Oct 2026). A looping movement demonstration is allowed, but only:
+   - **on the How to screen**, which Ben opens himself (exercise-library.md §8). It never appears in rows, the Log card, the rest screen, Today, the Live Activity or a notification;
+   - **in neutral tones only**, using the guide colour aliases (§2.3). Never `accent` or a status colour, no colour-highlighted muscles and no text in the art;
+   - **briefly**: at the guide's own tempo, autoplay stops after `guide.autoplayPasses` (3 reps) and holds the start position with `Replay`. `Pause` is always visible while it moves;
+   - **if Reduce Motion is off.** With Reduce Motion on, Ben sees still key positions with `Previous` / `Next` and an opt-in `Play animation`. Turning Reduce Motion on stops a running animation at once, and turning it off never starts one;
+   - **while on screen**: it pauses whenever it is off-screen (scrolled out of view, covered or closed, app in the background, phone locked);
+   - **silently**: no sound, speech or haptics, and it doesn't touch the audio session.
 6. **One accent colour.** The accent marks the single primary action and the active set. Semantic colours (done, warning, danger) are reserved for status.
 
 ---
@@ -123,6 +132,26 @@ These surfaces can't import `theme.ts`, so they **mirror** existing values in a 
 | `launch.mark` | `color.accent` per appearance | Launch screen mark, 96pt wide, no text, no spinner |
 
 Re-check contrast for these mirrors whenever the source tokens change.
+
+### 2.3 Exercise guide colour aliases (revision 2026-10-09, ADR 0013)
+
+Guides use **aliases** of six neutral tokens, and nothing else. There are no new colour values, and `accent` is deliberately excluded. The code's single source is `GUIDE_TOKEN_NAMES` / `GUIDE_PAINT_TOKENS` in `packages/catalogue/src/figure/style.ts`. The app resolves them from the live theme, so they follow the active look and dark/light. The Linux preview renderer uses a mirror, and a test fails if the mirror drifts from `theme/tokens.ts`.
+
+| Token | Alias of | Use |
+|---|---|---|
+| `color.guide.background` | `color.bg.surface` | Canvas fill (inside a `Card`), corners `radius.md` scaled to the canvas (12pt at 240pt) |
+| `color.guide.nearBody` | `color.text.secondary` | Near-side body and limbs (>7:1 on the canvas) |
+| `color.guide.farBody` | `color.border.control` | Far-side limbs drawn behind (≥3:1 non-text) |
+| `color.guide.implement` | `color.text.primary` | Bar, dumbbells, kettlebell, sled: the highest contrast, so the load path reads first |
+| `color.guide.frame` | `color.border.control` | Machine frames, bench outlines |
+| `color.guide.frameFill` | `color.bg.raised` | Pads, seat and bench fills. Decorative only |
+| `color.guide.trace` | `color.text.tertiary` | Static bar-path trace and floor line (dashed) |
+| `color.guide.cable` | `color.text.tertiary` | Cable lines |
+
+Rules:
+- Working muscles are never colour-highlighted; the header's `Main muscles:` text carries that meaning (principle 3).
+- Nothing in a guide may use `accent`, `status.*` or chart aliases. The accent stays reserved for the single primary action and the active set (principle 6).
+- Labels and captions are app text under the canvas, never drawn into the art. They can then scale with Dynamic Type and be read by VoiceOver.
 
 ---
 
@@ -250,6 +279,9 @@ Rules:
 | `timing.expiryNotice` | 72 h before signing expiry: info banner on Today |
 | `timing.expiryUrgent` | 24 h before signing expiry: warning banner with the time |
 | `timing.expiryReminder` | One local notification at 19:00 local, two days before signing expiry (one per signing period) |
+| `guide.autoplayPasses` | 3. An exercise guide plays this many reps (one pass is one rep; for a ping-pong guide, forwards and back), then holds the start position with `Replay`. Code: `MAX_AUTOPLAY_PASSES`. Provisional, confirm on device (exercise-library.md §8.8) |
+| `guide.repDuration` | 2–6 s per rep, set by each guide (`durationMs`), checked by `guide:check`. Guides keep their own tempo; no global speed-up |
+| `guide.frameRate` | 30 frames per second of guide time, drawn on the UI thread. It is never a reason to raise the timer's once-a-second update |
 | `haptic.commit` | Success notification haptic |
 | `haptic.undo` | Light impact |
 | `haptic.step` | Selection change (steppers, keypad) |
@@ -793,6 +825,16 @@ Each component has one name and one definition here. The owning spec says where 
 
 **9.56 `CheckInLine`.** How a recorded check-in is shown (summary, past workout, edit entry points). Line 1 `How you said you felt: 2 of 5` (`type.body`, tabular) with a trailing `chevron.right`; line 2 reasons joined by ` · ` (`type.callout`, `text.secondary`); line 3 the note in quotes (`type.callout`, `text.secondary`, max 2 lines, tail ellipsis). No icon colour, no fill, no gauge or bar. Whole line is a ≥ 44pt button that opens the edit sheet. VoiceOver: "How you said you felt before this workout: 2 of 5. Tired, poor sleep. Note: Baby was up at 3."
 
+#### Exercise guide (revision 2026-10-09; owner: exercise-library.md §8)
+
+**9.57 `ExerciseGuide`** (code: `GuidePlayer`). A square canvas inside a `Card`, 200–360pt (`min(360, content width − 2 × space.4)`), centred, drawn only in the §2.3 aliases. Above it, a `Tag` reading `Draft guide` until Ben approves the guide. Below it, the controls, built from `SecondaryButton`s (`flexBasis` 140, wrapping, ≥ 44pt tall, `space.3` apart):
+- *Animating:* one play control whose label is what a tap will do: `Pause` (`pause.fill`) · `Play` (`play.fill`) · `Replay` (`arrow.counterclockwise`). It is joined by `Key frames` (`rectangle.split.3x1`) when the guide has labelled key positions. exercise-library.md §8.9 P2 proposes renaming it `Key positions`.
+- *Key positions (still):* `1 of 3 · Start` (`type.headline`, tabular) and its caption (`type.callout`, `text.secondary`), `Previous` (`chevron.left`) and `Next` (`chevron.right`), disabled at the ends, then a secondary-tone text button `Play animation` (`play`).
+- Motion follows the principle 5 exception. The canvas itself isn't tappable (no scrub, no tap-to-pause), so a stray touch can't change it.
+- VoiceOver: the canvas is one image with a fixed label, `Animated guide for <name>. <a11y.summary>`, so it isn't re-announced while it moves. The still view's text is one element (`Key frame 1 of 3, Start. <caption>`).
+- Loading: the first frame shows at once, and the rest are prepared in ≤ 8 ms slices so the JS thread never stalls. No spinner or shimmer.
+- Errors are never drawn in the canvas. The screen shows a `StatusLine` instead (exercise-library.md §8.4).
+
 #### Sound asset
 
 `sound.restEnd` is the file `rest-end.caf` (≤ 2 s), used by both the in-app chime and the rest-end notification sound.
@@ -811,6 +853,7 @@ Each component has one name and one definition here. The owning spec says where 
 - Every chart and progress value says whether it is an actual result, a target or an estimate. (Revision 2026-10-09) A check-in value says it is Ben's own rating (`How you said you felt`, `your own rating`) and is never called a score, readiness or recovery.
 - (Consolidation) Every durability statement uses one of the three phrases in §7.1, and every screen that mixes the two data domains labels them with `DomainLabel` (§9.53).
 - (Consolidation) Any figure in money says `estimate` when the app worked it out.
+- (Revision 2026-10-09) Anything that moves on its own for more than 5 s has a visible `Pause` and stops by itself. Under Reduce Motion it doesn't move at all until Ben asks, and off-screen it doesn't move. Today only `ExerciseGuide` (§9.57) does this; anything else that wants to needs its own exception in principle 5.
 
 ---
 
@@ -837,4 +880,5 @@ Use the canonical name in new specs. Aliases are kept so older specs stay readab
 | `DangerTextButton` | §9.2b | "danger text", "status.danger text button" |
 | `timing.coachTimeout` | §6 | `timing.coachFirstToken` (coach-sheet, voice) |
 | `timing.offPhoneReminder` | §6 | `timing.backupOverdue` (data-import-export; retired) |
+| `ExerciseGuide` | §9.57, §2.3 | `GuidePlayer` (code), "guide player", "animated guide" (research §5.4) |
 | `CheckInScale`, `CheckInSheet`, `CheckInLine` | §9.54–9.56 | Replace the Today readiness chips (`Normal` / `Tired` / `Sore`), which had no component name (revision 2026-10-09) |

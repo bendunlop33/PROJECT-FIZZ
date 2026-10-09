@@ -2,6 +2,8 @@
 
 > **Revision 2026-10-08 (consolidation).** Data domains (design-system §7.2): the catalogue, aliases and custom exercise definitions are **Coaching knowledge**; Ben's history shown on rows (`Last …`) is **Your data**. `Reset coaching knowledge` keeps any custom exercise his history or routines use (data-import-export.md §2.7; the placement of custom exercises is listed in open-decisions.md). Proposed components are merged into design-system: `SearchField`, `FilterChip` (§9.37 area), `ExerciseRow` / `SubstituteRow` (§9.35), `AvailabilityTag` (on the `Tag` frame, §9.28), `SwapSlotLine` (a `ResultCard`, §9.48). EL4 and EL6 are in open-decisions.md.
 
+> **Revision 2026-10-09 (exercise guides, [ADR 0013](../decisions/0013-in-app-guide-playback.md)).** Ben approved in-app guide playback on 9 Oct 2026, and the developer has built it. This revision brings the spec in line with the build. **EL8 is replaced**: rich catalogue entries now get an original, code-drawn animated guide plus cues. New **§8 Guide (How to screen)** documents the screen as built and lists the developer's own calls, marked *provisional, confirm on device*, with the designer's view on each. §1 now lists How to as a third screen. §2.4 Exercise detail gains a `How to ›` row (specified here, not built yet). Design-system principle 5 gains the guide motion exception, with guide colour aliases (§2.3) and `ExerciseGuide` (§9.57). The app is now called **GymSmarter**, and new copy uses that name. "Fizz" in older specs means GymSmarter.
+
 Status: v0.1 draft, 8 Oct 2026. Brief §1 ("exercise search"), §4 (`getCompatibleExercises`, `rankSubstitutions`), §6 (`Exercise` / `ExerciseAlias`), §12 Page 2. Schema: `packages/schemas/src/exercise.ts` (`movementPattern`, `primaryMuscles`, `measurement`, `laterality`, `compatibleEquipment`, `defaultLoadConvention`, `defaultRestS`). Tokens: [design-system.md](design-system.md).
 
 One component, four modes. The same search, rows and filters are used everywhere so Ben learns them once.
@@ -15,7 +17,7 @@ One component, four modes. The same search, rows and filters are used everywhere
 | **Swap** | Active workout exercise `⋯` → `Swap exercise` or `Machine busy`; routine editor `⋯` → `Replace`; routine detail `Swap ›` | "What can I do instead, here, and how different is it?" | Tap a substitute row |
 | **Browse** | Plan hub 🔍 (routines.md RT1) | "What do I know about this exercise?" | Tap a row (opens Detail) |
 
-Plus two screens: **Exercise detail** (browse) and **Custom exercise** (create/edit; primary `Save exercise`).
+Plus three screens: **Exercise detail** (browse), **Custom exercise** (create/edit; primary `Save exercise`) and **How to** (the exercise guide, §8; read-only, so it has no primary action beyond `Done`).
 
 ### Design decisions to confirm with Ben (flagged, not yet in the brief)
 
@@ -28,7 +30,7 @@ Plus two screens: **Exercise detail** (browse) and **Custom exercise** (create/e
 | EL5 | Substitution reasons are **deterministic text from `rankSubstitutions`**, never model text. No numeric score is shown | No invented scores (rule 6). The coach can quote the same reasons via `get_substitutions` |
 | EL6 | With a **pain flag** on the exercise being swapped, the list shows a warning, and same-movement rows say so. For **today's** session, a substitute that shares the flagged movement pattern also gets increases blocked | Rule 9 says pain stops progression "for that movement". This is the conservative reading. **Needs Ben's confirmation** |
 | EL7 | Sled push/pull and similar default to the `added` convention with the note `Plates loaded. Not the true resistance.` | concurrent-training.md flag (C7); brief §4: plate maths doesn't prove sled resistance |
-| EL8 | No images or videos in the library | Brief defers large exercise-media libraries |
+| EL8 | **Rich catalogue entries show an original animated guide and cues on a `How to` screen (§8). Basic entries show none.** Guides are drawn in code from the shared figure rig (ADR 0011, 0013), bundled, and work offline. There is no filmed, third-party or AI-generated media | **Approved by Ben, 9 Oct 2026** (replaces "No images or videos in the library"). A guide opens only when Ben asks for it, so it never adds a tap or any motion to the logging loop. The brief §157 wording ("defer large exercise-media libraries") still needs the matching change (research brief change 1) |
 
 ## 2. Layout
 
@@ -87,6 +89,7 @@ Typing `rdl`:
 
 Row rules (`ExerciseRow`, 52pt min):
 - Line 1: name (`type.headline`, two lines max), `🕘` history button on the right (44 × 44, VoiceOver "History for Bench press").
+- `ⓘ` How to button (revision 2026-10-09, built, provisional; §8.8): `info.circle` in `text.secondary`, 44 × 44. It is shown only for exercises with a guide or rich cues. It sits immediately left of `🕘`, `space.2` apart, so history stays at the trailing edge. It opens How to over the picker. The row tap still adds the exercise in one tap. VoiceOver: "How to do Bench press". At AX1+ the name wraps; the two buttons never push numbers or units into truncation.
 - Line 2: `Matches "<alias>"` (only on alias hits), the equipment kinds this gym has for it, `per side` (unilateral), `Time` (timed).
 - Line 3 (or end of line 2): `Last <actual> · <date>` from the most recent comparable set **at this gym**; `Last at Hotel Gym: …` if only elsewhere; `No history`.
 - Tags, as icon + text: `⚠ Busy today` (`status.warning`), `⊘ Not at Main Gym` (`text.secondary`), `Custom`, `⚠ Pain flagged` (`status.warning`).
@@ -139,6 +142,8 @@ Exercises are added in the order they were ticked, each with one working set (`A
 │ Last 100 kg × 8 · 6 Oct · Main Gym     │ actual
 │ 14 workouts since 2 Jul                │
 │                                        │
+│ How to         Guide · Draft         › │ opens How to (§8); only with a how-to
+│                                        │
 │ Default rest   Heavy 3:00            › │ exercise default (step 3)
 │ Notes          Grip on the ring      › │
 │ Alternatives at Main Gym             › │ Swap list, read-only
@@ -147,6 +152,8 @@ Exercises are added in the order they were ticked, each with one working set (`A
 ```
 
 Catalogue exercises are read-only except `Other names`, `Default rest` and `Notes`, which are Ben's. Custom exercises add `Edit` in the nav bar.
+
+**`How to ›` row (revision 2026-10-09; specified, not built).** The row is shown only when `hasHowTo(catalogueKey)` is true. Its value reads `Guide` (animated guide), `Guide · Draft` (guide not yet approved) or `Cues` (rich entry with no guide). It opens the same How to screen as the workout (§8). The player is **not** embedded in Exercise detail. That departs from research §5.7 ("Guide section in Exercise detail"), for three reasons. Detail stays a data screen about Ben's history. There is one player surface to test for battery and Reduce Motion. Detail opens without starting an animation Ben didn't ask for.
 
 ### 2.5 Swap (substitutions)
 
@@ -406,6 +413,213 @@ Existing (brief §4, §7; schemas; active-workout §6):
 15. At AX3 in Pick several, `Add 2 exercises` is fully visible above the keyboard at 375pt width; rows stack without truncating numbers or units.
 16. Every gesture has a button equivalent; every tag and reason has text or an icon as well as colour, in dark and light modes.
 
+## 8. Guide (How to screen)
+
+Revision 2026-10-09. This describes the screen **as built** for [ADR 0013](../decisions/0013-in-app-guide-playback.md) (`apps/mobile/src/screens/workout/HowToScreen.tsx`, `apps/mobile/src/guide/`). Nothing here has run on an iPhone yet; see [device-tests/guide-playback.md](../device-tests/guide-playback.md). Items marked **provisional, confirm on device** are the developer's own calls, which no spec had settled. §8.8 gives the designer's view on each. §8.9 lists changes proposed to what was built; none of them is built.
+
+### 8.1 Purpose
+
+**Question:** "What does this movement look like, and what should I watch for?"
+**Primary action:** none to commit. The screen is read-only reference, and `Done` returns Ben to where he was. It never logs, swaps or changes anything, so it has no Undo.
+
+Everything shown is **Coaching knowledge** (rule 10): the bundled catalogue entry and its guide. It reads nothing about Ben and writes nothing. It works offline and with no AI (rule 1).
+
+### 8.2 Entry points
+
+| From | Control | Shown when | Notes |
+|---|---|---|---|
+| Active workout, exercise `⋯` menu | `How to`, **first item** (provisional, confirm on device) | `howToKeyForExerciseId(exerciseId)` finds a guide or a rich entry | Built. Exercises without a how-to have no `How to` item at all; there is never a dead item |
+| Exercise picker (Pick one) | `ⓘ` button at the row's trailing edge (provisional, confirm on device; §2.1 row rules) | `hasHowTo(catalogueKey)` | Built. A row tap still adds the exercise in one tap |
+| Exercise detail (Browse) | `How to ›` row (§2.4) | `hasHowTo(catalogueKey)` | **Specified, not built** |
+
+The guide is never shown inside a row, the Log card, the rest screen, Today, the Live Activity or a notification.
+
+Presentation: a full-height iOS modal (`presentation: 'modal'`, page sheet) over the screen it was opened from. Swiping down or tapping `Done` closes it. The workout underneath keeps running: the rest deadline, the layered rest alerts and any spoken cues behave exactly as they would without the modal.
+
+### 8.3 Layout
+
+Regions, top to bottom: fixed header (title, main muscles, `Done`) · scroll view: **player card** (`Draft guide` tag, square canvas, controls) · notice line (if any) · `Key positions` · `Setup` · `How to do it` · `Common mistakes`.
+
+Animating (default):
+
+```
+┌────────────────────────────────────────┐
+│ Back squat                    ✕ Done   │ header, bg.surface; type.title2
+│ Main muscles: Quads · Glutes           │ type.callout, text.secondary
+├────────────────────────────────────────┤
+│ ┌────────────────────────────────────┐ │ Card
+│ │ [Draft guide]                      │ │ Tag; until Ben approves the guide
+│ │   ┌────────────────────────────┐   │ │
+│ │   │                            │   │ │ ExerciseGuide canvas: square,
+│ │   │     figure + bar + rack    │   │ │ 200–360pt, radius.md (scaled),
+│ │   │     (neutral tones only,   │   │ │ guide colour aliases, no text
+│ │   │      no text in the art)   │   │ │ in the art. One VoiceOver image
+│ │   │                            │   │ │
+│ │   └────────────────────────────┘   │ │
+│ │ [ ❚❚ Pause      ] [ ▥ Key frames  ]│ │ SecondaryButtons, wrap at AX
+│ └────────────────────────────────────┘ │
+│ Key positions                          │ section header
+│ 1 Start                                │ type.headline, tabular number
+│ Stand tall, brace                      │ type.callout, text.secondary
+│ 2 Bottom                               │
+│ Hips just below knees, heels down      │
+│ Setup                                  │
+│ • Bar on upper back, not neck          │ type.body; bullet hidden from VO
+│ • Feet about shoulder width            │
+│ How to do it                           │
+│ • Brace, then sit down between your    │
+│   hips                                 │
+│ • Knees track over toes                │
+│ Common mistakes                        │
+│ • Heels lifting                        │
+│ • Chest collapsing at the bottom       │
+└────────────────────────────────────────┘
+```
+
+After 3 reps (autoplay finished, holding the start position):
+
+```
+│ │   │   start position (first frame) │   │ │
+│ │ [ ↺ Replay      ] [ ▥ Key frames  ]│ │
+```
+
+Key positions view (the default with Reduce Motion on, or after `Key frames`):
+
+```
+│ │ [Draft guide]                      │ │
+│ │   ┌────────────────────────────┐   │ │
+│ │   │   still: key position 1    │   │ │ the same frames as preview.png
+│ │   └────────────────────────────┘   │ │
+│ │ 1 of 2 · Start                     │ │ type.headline, tabular
+│ │ Stand tall, brace                  │ │ caption, type.callout
+│ │ [ ‹ Previous    ] [ Next ›        ]│ │ Previous disabled on 1, Next on last
+│ │ ▷ Play animation                   │ │ text button, secondary tone
+│ └────────────────────────────────────┘ │
+```
+
+No guide, rich cues only: there is no player card. `Key positions` is absent, and `Setup` / `How to do it` / `Common mistakes` follow the header directly.
+
+Sizing: canvas = `min(360, screen width − 2 × screenMargin − 2 × space.4)`, never under 200pt. That is about 311pt on a 375pt phone. It is meant to be legible from about 240pt (device test G5). Control buttons use `flexBasis` 140 with wrap, so at large text sizes they stack one per line rather than truncate.
+
+### 8.4 States
+
+| State | Shows | Notes |
+|---|---|---|
+| Opening | The first frame (poster) is drawn at once. The rest of the frames are prepared in the background in short slices; the animation starts when they are all ready. `Pause` is shown from the start | No spinner or skeleton. Up to 4 prepared guides are cached per session, so reopening starts at once (G2) |
+| Playing (autoplay) | The guide loops at its own tempo (each guide is 2–6 s per rep) | Stops after **3 passes**. One pass is one rep; for a ping-pong guide it is forwards and back, and for sled push it is one stride cycle. **Provisional, confirm on device** |
+| Paused by Ben | Holds the current frame; the button reads `Play` | Survives scrolling away and back |
+| Finished | Holds the **first frame** (the start position); the button reads `Replay` | `Replay` plays 3 more passes from the start |
+| Off-screen | The clock stops and holds the current frame. This happens when the player is scrolled out of view, another screen covers How to, the app goes to the background or the phone locks | Resumes where it was when visible again. Battery during rest. This isn't Ben pausing, so the button still reads `Pause` |
+| Reduce Motion on at open | Key positions view on `1 of n`; nothing moves | `Play animation` opts in (3 passes, then `Replay`) |
+| Reduce Motion turned on while animating | Switches to the key positions view on `1 of n` at once | — |
+| Reduce Motion turned off | No change. An animation never starts by itself | — |
+| Key positions view (chosen) | As above; `Play animation` returns to animating from the first frame | — |
+| Draft guide | `Draft guide` tag above the canvas | Shown while the guide's `review.status` is `draft` or `checked`; it disappears only at `approved`, which is set from Ben's own message |
+| No guide, rich entry | Cues only, no notice | Honest: nothing pretends to be a guide |
+| Guide unreadable, rich entry | Notice `The animated guide for Back squat couldn’t be read. The cues below still apply.` + cues | Validation is lazy; a broken file never crashes the screen |
+| Guide unreadable, no cues / entry unreadable | Notice `Couldn’t read the how-to for Back squat.` | — |
+| Nothing to show | `No how-to for Back squat yet.` | Normally unreachable: the entry points are hidden for these exercises |
+| Offline / AI unavailable / coach offline | No change | Everything is bundled. No network, ever |
+| Workout resting (opened mid-rest) | No change on this screen. The rest countdown keeps running underneath, and rest-end alerts (haptic, sound, spoken cue, notification) fire as usual | This screen shows no timer (see §8.9 P3) |
+| Workout paused | No change | — |
+| Light / dark switch | Recolours live from the neutral guide aliases | Never `accent` |
+
+Transitions:
+
+```
+open ─► (Reduce Motion?) ─no──► Playing ─3 passes─► Finished ─Replay─► Playing
+            │                    │  ▲ └─Pause─► Paused ─Play─┘
+            │                    │  └──── visible again ◄── Off-screen (auto)
+            │                    └─Key frames / Reduce Motion on─► Key positions
+            └─yes─► Key positions ─Previous/Next─► Key positions
+                         └─Play animation─► Playing (from the first frame)
+any ─Done / swipe down─► back to the workout or picker, unchanged
+```
+
+### 8.5 Interactions
+
+- **Play control** (one button that changes label): `Pause` ↔ `Play`, or `Replay` after autoplay finishes. It is always shown while animating, so the moving content can always be stopped (WCAG 2.2.2).
+- **`Key frames`** (shown only when the guide has labelled key positions) switches to the still view on position 1. **`Previous` / `Next`** step through positions; they are disabled, not hidden, at the ends. **`Play animation`** goes back to animating from the first frame.
+- **Scroll:** the cues scroll under the fixed header. Once the player scrolls out of view it pauses itself.
+- **Close:** `Done` (top right, `xmark` icon plus the word) or the system swipe-down. Ben returns to the exact workout state: same active set, same draft values, same Log label. From the picker he returns with his query and filters kept, and a row tap still adds in one tap.
+- **No gestures on the canvas.** It isn't tappable, so a sweaty brush can't start, stop or scrub it.
+- **Keyboard:** none. Opening How to from the picker covers the keyboard; it comes back with the picker.
+- **Voice:** no voice equivalent in v1. The guide is **silent**: no speech, no sound, and it doesn't touch the audio session, so music and spoken set cues are unaffected. Asking the coach "how do I do a squat?" is a coach question, not a way to open this screen. The coach may quote the same cues, but must not claim to show the animation.
+- **Undo:** nothing to undo. The screen changes no data.
+- **Haptics:** none.
+
+### 8.6 Copy (as built)
+
+All text here is reference (Coaching knowledge). There are no loads, targets or actuals on this screen.
+
+| Element | Text |
+|---|---|
+| Entry: workout `⋯` | `How to` |
+| Entry: picker `ⓘ` (VoiceOver) | `How to do Back squat` |
+| Entry: Exercise detail (not built) | `How to` with value `Guide` · `Guide · Draft` · `Cues` |
+| Header | Exercise name · `Main muscles: Quads · Glutes` (muscle filter-group words) · `Done` |
+| Tag | `Draft guide` |
+| Play control | `Pause` (`pause.fill`) · `Play` (`play.fill`) · `Replay` (`arrow.counterclockwise`) |
+| Still view | `Key frames` (`rectangle.split.3x1`; hint `Shows the key positions one at a time, without animation.`) · `1 of 3 · Start` + caption · `Previous` · `Next` · `Play animation` |
+| Sections | `Key positions` (rows `1 Start` + caption) · `Setup` · `How to do it` · `Common mistakes` |
+| Notices (`StatusLine`, `info.circle`) | `The animated guide for Back squat couldn’t be read. The cues below still apply.` · `Couldn’t read the how-to for Back squat.` · `No how-to for Back squat yet.` |
+| VoiceOver: canvas (one image, fixed label, so it isn't re-announced while it moves) | `Animated guide for Back squat. Side view. Bar on upper back. Squat down until hips are just below knees, then stand up.` (the guide's `a11y.summary`) |
+| VoiceOver: still view | `Key frame 1 of 3, Start. Stand tall, brace.` |
+| VoiceOver: key position rows | `1, Start. Stand tall, brace.` |
+
+No spoken cues. Captions and cues follow the catalogue copy rules: imperative, at most 60 characters, plain words.
+
+### 8.7 Data needed
+
+All pure, in `apps/mobile/src/guide/` and `@fizz/catalogue`. The screen never reads catalogue files itself.
+
+- `bundledHowToSources()` → `{catalogue, guides}` (lazy: an entry or guide is validated only when first asked for).
+- `buildHowToView({name, catalogueKey}, sources)` → `HowToView {title, muscles, guide: HowToGuide | null, setup, execution, mistakes, notice}`. `HowToGuide` carries `{loaded, draftLabel, accessibilityLabel, stops}`.
+- `hasHowTo(catalogueKey, sources)` (picker and detail; cheap, reads only the `tier` hint) and `howToKeyForExerciseId(exerciseId, sources)` (workout `⋯`).
+- `guideDraftLabel(review.status)`, `keyFrameStops(prepared)`.
+- Player model: `initialPlayerState(reduceMotion, stepCount)`, `playerReducer`, `isRunning(state, {visible, appActive, framesReady})`, `playControlLabel`, `stepPosition`.
+- Clock (UI-thread worklets): `advanceClock`, `frameIndexAt`, `MAX_AUTOPLAY_PASSES = 3`.
+- Colours: `guideStyleFromTokens(theme)` with `GUIDE_PAINT_TOKENS` (design-system §2.3).
+- Not called: no session, history, gym, coach or provider function. Opening How to doesn't read or write Your data.
+
+### 8.8 Developer calls (provisional, confirm on device) and the designer's view
+
+| Call | Built as | Designer's view |
+|---|---|---|
+| Autoplay stops after 3 reps | 3 passes, then hold the start position with `Replay` | **Agree.** Research §5.7 says the same, and it meets WCAG 2.2.2 with `Pause` always shown. At 2–6 s a rep, 3 reps is 6–18 s: enough to read the movement once and check one detail, and it stops before it becomes background motion while Ben rests. Confirm on device (G3) that 3 is enough. If Ben taps `Replay` most times, try 5. Don't make it loop forever |
+| `ⓘ` button on picker rows | A separate 44 × 44 `info.circle` button; row tap still adds | **Agree.** It keeps one-tap add, which matters more than discoverability. It respects research §5.7's "never in rows or pickers", because the row opens the guide and never contains it. One condition: when the spec'd `🕘` history button is built, `ⓘ` sits left of `🕘` with `space.2` between them (§2.1 row rules), so each button's position stays stable |
+| `How to` first in the `⋯` menu | First item when the exercise has a how-to; absent otherwise | **Agree.** The iOS action sheet is anchored to the bottom, so an item added at the top leaves `Add set`, `Skip exercise` and `Cancel` the same distance from the thumb on every exercise. Muscle memory holds whether or not an exercise has a guide. The top slot is also the farthest reach, which suits a rare, non-urgent action. active-workout.md §4.4 now lists it |
+| `Stop if` and variations not shown | How to shows the guide, key positions, setup, execution and common mistakes only | **Variations: agree** to leave them out. A reference screen that can add or swap exercises would be a second, unreviewed path into the workout, and the Swap sheet (§2.5) already covers alternatives. **`Stop if` and safety notes: disagree.** I'd add them (P1 below). They are the most safety-relevant text in a rich entry, they are short, static and offline, and the catalogue rules already forbid naming conditions or diagnosing (rule 9) |
+
+### 8.9 Proposed changes to what was built (not built; for Ben and the developer)
+
+| # | Change | Why |
+|---|---|---|
+| P1 | Add a **`Safety`** section after `Common mistakes`: `safety.notes` as bullets, then the line `Stop the set if:` followed by the `safety.stopIf` bullets. Plain text, no status colour (it's reference, not a status) | Same reasons as §8.8. A line like `Set safety arms just below your lowest depth` is practical setup help, and `Stop the set if: sharp or pinching pain` supports rule 9 without diagnosing. Show only text that already passed the catalogue copy rules |
+| P2 | Use one word for one thing: rename the `Key frames` button to **`Key positions`**, and the still-view VoiceOver label to `Key position 1 of 3, Start.` | The section header and research both say "key positions". "Key frame" is animation jargon |
+| P3 | When How to is opened from a workout that is **resting**, show one line under the muscles line: `Rest 1:12` (`type.callout`, tabular, computed once a second from the saved deadline, the same as the `ResumeBar`), then `Rest over` once it reaches zero. Nothing else changes | Rest is when Ben is most likely to read a guide. Without the countdown he has to close the screen to check it, and the logging loop comes first. Alerts already fire regardless. **Confirm on device** whether he misses it before building |
+| P4 | Make the canvas VoiceOver label mode-neutral: `Exercise guide for Back squat. <summary>` | The fixed label says "Animated" even when it shows a still (Reduce Motion) |
+| P5 | Show `Draft guide` (or `Draft` on the cue sections when there is no guide) whenever the **catalogue entry's** `review.status` isn't `approved`, not only the guide's | Cues are written by an agent and Ben approves them too. Today, unapproved cues appear with no label |
+| P6 | Under Reduce Motion, a guide with **no** labelled key positions must not autoplay. Show the first frame still, with `Play animation` | Today, `initialPlayerState(reduceMotion, 0)` starts animating. `guide:check` makes such a guide unlikely, but the rule shouldn't depend on that |
+| P7 | If the entry can't be read but the guide can, say `Couldn’t read the cues for Back squat. The guide above still applies.` | The current `Couldn’t read the how-to…` appears above a working guide, which reads as if nothing works |
+
+### 8.10 Acceptance checks
+
+1. In a workout, an exercise with a guide or rich cues shows `How to` as the **first** `⋯` item; an exercise without one has no `How to` item (G1, G9).
+2. In the picker, `ⓘ` appears only on rows with a how-to, is 44 × 44, and opens How to; tapping the same row elsewhere adds the exercise in one tap (G1).
+3. Closing How to (Done or swipe) returns to the identical workout state: same active set, draft values and Log label. Nothing was logged, changed or proposed.
+4. The first frame is visible immediately on open; no spinner or shimmer (G2).
+5. Autoplay stops after 3 reps on the start position with `Replay`; `Pause`/`Play` works before that (G3).
+6. The animation stops when scrolled out of view, when the app is backgrounded and when the phone is locked; it resumes when visible again. The rest alert still arrives on time (G4).
+7. With Reduce Motion on, nothing moves on open; `1 of n · <label>` and its caption show; `Previous`/`Next` step; `Play animation` plays only when tapped. Turning Reduce Motion on mid-play stops it at once (G7).
+8. VoiceOver reads the canvas once as one image with the guide's summary, and isn't re-announced while it moves; key positions and every cue section are reachable by swiping (G8).
+9. No pixel of the guide uses `accent` or any status colour, and there's no text in the art, in both looks and both schemes (G6; covered by a unit test on `GUIDE_PAINT_TOKENS`).
+10. `Draft guide` shows for every guide whose `review.status` isn't `approved`.
+11. A corrupted `guide.json` shows the notice and the cues, and the app doesn't crash; a corrupted entry shows `Couldn’t read the how-to for …`.
+12. In Airplane mode with no AI configured, How to and the animation work fully (G10).
+13. At AX3 on a 375pt phone, the control buttons stack without truncation, and the canvas stays at least 200pt.
+14. The guide never appears in a row, the Log card, the rest screen, Today, the Live Activity or a notification, and plays no sound.
+
 ## Proposed design-system additions
 
 No new colours or timing tokens.
@@ -421,7 +635,9 @@ No new colours or timing tokens.
 
 ## Cross-links
 
-- [active-workout.md](active-workout.md) §2.10, §4.4: `Add exercise`, `Swap exercise`, `Machine busy` (EL4 proposes changing the swap step)
+- [active-workout.md](active-workout.md) §2.10, §4.4: `Add exercise`, `Swap exercise`, `Machine busy` (EL4 proposes changing the swap step), `How to` (§8)
+- [ADR 0013](../decisions/0013-in-app-guide-playback.md), [device-tests/guide-playback.md](../device-tests/guide-playback.md), [research/exercise-bank-and-visuals.md](../research/exercise-bank-and-visuals.md) §5.5–5.7: guide playback, the device test and the guide rules
+- [design-system.md](design-system.md) principle 5, §2.3, §9.57: guide motion exception, colours and `ExerciseGuide`
 - [coach-adjustments.md](coach-adjustments.md) CA2: coach-initiated swaps keep the Apply card
 - [routines.md](routines.md): `＋ Add exercise`, `Replace`, `Swap ›`, Plan hub 🔍
 - [change-review.md](change-review.md): `Change Push A too ›` and coach swap proposals
