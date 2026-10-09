@@ -27,7 +27,7 @@ import { TodayScreen } from '../screens/TodayScreen';
 import { CheckInScreen } from '../screens/workout/CheckInScreen';
 import { EditSetScreen } from '../screens/workout/EditSetScreen';
 import { ExercisePickerScreen } from '../screens/workout/ExercisePickerScreen';
-import { HowToScreen } from '../screens/workout/HowToScreen';
+import type { HowToScreen } from '../screens/workout/HowToScreen';
 import { SummaryScreen } from '../screens/workout/SummaryScreen';
 import { WorkoutScreen } from '../screens/workout/WorkoutScreen';
 import type { SetupStep } from '../services/setup';
@@ -35,6 +35,17 @@ import { useTheme } from '../theme';
 import type { SymbolName } from '../ui';
 import { initialRootState } from './initial-state';
 import type { ProfileStackParams, RootStackParams, TabParams } from './types';
+
+/**
+ * How to is required on first open, not at launch (review S1): it keeps the
+ * guide code and its catalogue reads off the cold-start path, which is also the
+ * force-close recovery path. Skia itself is loaded later still, behind a guard
+ * (`guide/load-player.ts`).
+ */
+function loadHowToScreen(): typeof HowToScreen {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate lazy load
+  return (require('../screens/workout/HowToScreen') as { HowToScreen: typeof HowToScreen }).HowToScreen;
+}
 
 const RootStack = createNativeStackNavigator<RootStackParams>();
 const TabNav = createBottomTabNavigator<TabParams>();
@@ -153,7 +164,7 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
                 options={{ presentation: 'formSheet', sheetAllowedDetents: [0.55, 1.0], sheetGrabberVisible: true, contentStyle: { backgroundColor: theme.colors['bg.surface'] } }}
               />
               <RootStack.Screen name="ExercisePicker" component={ExercisePickerScreen} options={{ presentation: 'modal' }} />
-              <RootStack.Screen name="HowTo" component={HowToScreen} options={{ presentation: 'modal' }} />
+              <RootStack.Screen name="HowTo" getComponent={loadHowToScreen} options={{ presentation: 'modal' }} />
               <RootStack.Screen
                 name="EditSet"
                 component={EditSetScreen}

@@ -254,6 +254,9 @@ describe('Skia draw plan', () => {
 });
 
 describe('sliced baking', () => {
+  const unexpected = (e: unknown) => {
+    throw new Error(`unexpected bake error: ${String(e)}`);
+  };
   function harness() {
     let now = 0;
     const queue: (() => void)[] = [];
@@ -286,7 +289,7 @@ describe('sliced baking', () => {
       ran.push(i);
       h.advance(3);
     });
-    runSliced(tasks, { budgetMs: 8, firstSync: 1, now: h.now, schedule: h.schedule, onDone: () => (done += 1) });
+    runSliced(tasks, { budgetMs: 8, firstSync: 1, now: h.now, schedule: h.schedule, onDone: () => (done += 1), onError: unexpected });
     expect(ran).toEqual([0]);
     expect(h.pending()).toBe(1);
     h.flush();
@@ -306,7 +309,7 @@ describe('sliced baking', () => {
         ran += 1;
         h.advance(10);
       }),
-      { budgetMs: 8, firstSync: 0, now: h.now, schedule: h.schedule, onDone: () => (done = true) },
+      { budgetMs: 8, firstSync: 0, now: h.now, schedule: h.schedule, onDone: () => (done = true), onError: unexpected },
     );
     h.flush();
     expect(ran).toBe(1);
@@ -315,11 +318,55 @@ describe('sliced baking', () => {
     expect(done).toBe(false);
   });
 
+  it('a task that throws in a later slice stops the run: reported once, never done, nothing left scheduled (review S1)', () => {
+    const h = harness();
+    const ran: number[] = [];
+    const errors: unknown[] = [];
+    let done = false;
+    const boom = new Error('Skia path failed');
+    const tasks = Array.from({ length: 8 }, (_, i) => () => {
+      if (i === 4) throw boom;
+      ran.push(i);
+      h.advance(3);
+    });
+    runSliced(tasks, { budgetMs: 8, firstSync: 1, now: h.now, schedule: h.schedule, onDone: () => (done = true), onError: (e) => errors.push(e) });
+    // The slice that hits the throw must not let it escape (a timer throw is fatal in a release build).
+    expect(() => {
+      while (h.flush());
+    }).not.toThrow();
+    expect(ran).toEqual([0, 1, 2, 3]);
+    expect(errors).toEqual([boom]);
+    expect(done).toBe(false);
+    expect(h.pending()).toBe(0);
+  });
+
+  it('a throw while drawing the poster (synchronously) is reported, not thrown, and schedules nothing', () => {
+    const h = harness();
+    const errors: unknown[] = [];
+    let done = false;
+    const r = runSliced(
+      [
+        () => {
+          throw new TypeError('Skia is undefined');
+        },
+        () => undefined,
+      ],
+      { budgetMs: 8, firstSync: 1, now: h.now, schedule: h.schedule, onDone: () => (done = true), onError: (e) => errors.push(e) },
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toBeInstanceOf(TypeError);
+    expect(done).toBe(false);
+    expect(h.pending()).toBe(0);
+    expect(() => {
+      r.cancel();
+    }).not.toThrow();
+  });
+
   it('an empty or fully synchronous job finishes immediately', () => {
     const h = harness();
     let done = 0;
-    runSliced([], { budgetMs: 8, firstSync: 1, now: h.now, schedule: h.schedule, onDone: () => (done += 1) });
-    runSliced([() => undefined], { budgetMs: 8, firstSync: 1, now: h.now, schedule: h.schedule, onDone: () => (done += 1) });
+    runSliced([], { budgetMs: 8, firstSync: 1, now: h.now, schedule: h.schedule, onDone: () => (done += 1), onError: unexpected });
+    runSliced([() => undefined], { budgetMs: 8, firstSync: 1, now: h.now, schedule: h.schedule, onDone: () => (done += 1), onError: unexpected });
     expect(done).toBe(2);
     expect(h.pending()).toBe(0);
   });

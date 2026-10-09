@@ -120,3 +120,25 @@ export function buildHowToView(input: { name: string; catalogueKey: string | nul
     notice,
   };
 }
+
+/** How to's player region and notices once the player's fate is known. */
+export interface HowToLayout {
+  /** Show the guide player (there is a guide and it hasn't failed). */
+  showPlayer: boolean;
+  /** Honest one-line notices, in order, above the cues. */
+  notices: string[];
+}
+
+/**
+ * `playerFailed`: Skia couldn't load, the player threw while rendering, or a
+ * bake task threw (review S1). The screen then drops the player and keeps
+ * everything else, with one line saying so. Never a blank screen, never a crash.
+ */
+export function howToLayout(view: HowToView, playerFailed: boolean): HowToLayout {
+  const notices = view.notice === null ? [] : [view.notice];
+  if (view.guide === null) return { showPlayer: false, notices };
+  if (!playerFailed) return { showPlayer: true, notices };
+  const hasText = view.guide.stops.length > 0 || view.setup.length > 0 || view.execution.length > 0 || view.mistakes.length > 0;
+  const failure = hasText ? 'The animated guide couldn’t be shown. The cues below still apply.' : 'The animated guide couldn’t be shown.';
+  return { showPlayer: false, notices: [failure, ...notices] };
+}

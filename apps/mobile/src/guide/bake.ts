@@ -6,6 +6,10 @@
  * Pictures are recorded at unit size and scaled by the canvas, so one bake
  * serves any width. A few bakes are cached for the app session, keyed by guide,
  * kind and colours (a theme change re-bakes).
+ *
+ * No Skia call may run at module load (review S1): this module is required
+ * lazily with the player, and every Skia call happens inside a bake task,
+ * where a throw is caught and the How to screen falls back to the cues.
  */
 import { PaintStyle, Skia, StrokeCap, StrokeJoin, createPicture, type SkPaint, type SkPicture } from '@shopify/react-native-skia';
 
@@ -14,7 +18,10 @@ import { bakeFrame, overlayPlans, overlayPoint, playbackTimes, type DrawOp, type
 
 import { planOp, svgPathData, type PlanStep } from './draw-plan';
 
-const UNIT = Skia.XYWHRect(-0.25, -0.25, 1.5, 1.5);
+/** The recorded area in unit coordinates (with a margin for strokes at the edge). */
+function unitBounds() {
+  return Skia.XYWHRect(-0.25, -0.25, 1.5, 1.5);
+}
 
 function paintFor(step: PlanStep, cache: Map<string, SkPaint>): SkPaint {
   const key = step.draw === 'fill' ? `f|${step.color}|${String(step.alpha)}` : `s|${step.color}|${String(step.alpha)}|${String(step.stroke.width)}|${step.stroke.join}|${step.stroke.cap}|${step.stroke.dash?.join(',') ?? ''}`;
@@ -56,7 +63,7 @@ export function recordOps(ops: readonly DrawOp[], style: GuideStyle, paints: Map
       }
       if (plan.layerAlpha !== null) canvas.restore();
     }
-  }, UNIT);
+  }, unitBounds());
 }
 
 export type BakeKind = 'animation' | 'steps';

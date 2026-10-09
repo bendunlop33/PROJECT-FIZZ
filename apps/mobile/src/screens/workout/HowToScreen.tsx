@@ -1,10 +1,11 @@
 import { useIsFocused, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { GuidePlayer } from '../../guide/GuidePlayer';
-import { buildHowToView, bundledHowToSources } from '../../guide/how-to';
+import { GuideBoundary } from '../../guide/GuideBoundary';
+import { buildHowToView, bundledHowToSources, howToLayout } from '../../guide/how-to';
+import { loadGuidePlayer } from '../../guide/load-player';
 import type { RootStackParams } from '../../navigation/types';
 import { useTheme } from '../../theme';
 import { AppText, Card, SectionHeader, StatusLine, TextButton } from '../../ui';
@@ -35,6 +36,10 @@ function CueList({ items }: { items: readonly string[] }) {
  * common mistakes, from the bundled catalogue (Coaching knowledge; works
  * offline). Opened from the active workout's exercise menu and the exercise
  * picker. Exercises without a guide show their text cues only.
+ *
+ * Loaded lazily by the navigator, and the player (Skia) is required only here,
+ * behind `GuideBoundary`: if Skia fails, How to shows the cues with a notice
+ * and the workout underneath is untouched (review S1).
  */
 export function HowToScreen() {
   const theme = useTheme();
@@ -44,6 +49,13 @@ export function HowToScreen() {
   const { width } = useWindowDimensions();
   const { catalogueKey, name } = useRoute<RouteProp<RootStackParams, 'HowTo'>>().params;
   const view = useMemo(() => buildHowToView({ name, catalogueKey }, bundledHowToSources()), [name, catalogueKey]);
+  const player = view.guide === null ? null : loadGuidePlayer();
+  const [playerThrew, setPlayerThrew] = useState(false);
+  const onPlayerError = useCallback(() => {
+    setPlayerThrew(true);
+  }, []);
+  const layout = howToLayout(view, playerThrew || player?.ok === false);
+  const Player = layout.showPlayer && player?.ok === true ? player.value : null;
 
   // The player pauses once it is scrolled out of sight (battery during rest).
   const playerBottom = useRef(Number.POSITIVE_INFINITY);
@@ -82,19 +94,23 @@ export function HowToScreen() {
         }}
         contentContainerStyle={{ paddingHorizontal: margin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom, gap: theme.space['5'] }}
       >
-        {view.guide ? (
+        {Player && view.guide ? (
           <View
             onLayout={(e) => {
               playerBottom.current = e.nativeEvent.layout.y + e.nativeEvent.layout.height;
             }}
           >
             <Card>
-              <GuidePlayer guide={view.guide} size={size} visible={focused && !scrolledAway} />
+              <GuideBoundary onError={onPlayerError}>
+                <Player guide={view.guide} size={size} visible={focused && !scrolledAway} />
+              </GuideBoundary>
             </Card>
           </View>
         ) : null}
 
-        {view.notice ? <StatusLine icon="info.circle" tone="info" text={view.notice} /> : null}
+        {layout.notices.map((text) => (
+          <StatusLine key={text} icon="info.circle" tone="info" text={text} />
+        ))}
 
         {view.guide && view.guide.stops.length > 0 ? (
           <View style={{ gap: theme.space['2'] }}>

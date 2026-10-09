@@ -24,14 +24,22 @@ interface Baked {
   done: boolean;
 }
 
+/** A bake that threw (review S1); the player rethrows it in render so `GuideBoundary` takes over. */
+interface BakeFailure {
+  key: string;
+  error: unknown;
+}
+
 /**
  * Pictures for one guide and kind, baked in slices on the JS thread. The
  * animation shows its first frame at once (poster) and plays once every frame
- * is ready. `kind: null` bakes nothing (the other view is showing).
+ * is ready. `kind: null` bakes nothing (the other view is showing). Every
+ * Skia call happens inside a task, so a throw is reported, never fatal.
  */
-function useBakedPictures(loaded: LoadedGuide, kind: BakeKind | null, stops: readonly KeyFrameStop[], style: GuideStyle): Baked | null {
+function useBakedPictures(loaded: LoadedGuide, kind: BakeKind | null, stops: readonly KeyFrameStop[], style: GuideStyle): { baked: Baked | null; failure: BakeFailure | null } {
   const key = kind === null ? null : bakeKey(loaded.key, kind, style);
   const [baked, setBaked] = useState<Baked | null>(null);
+  const [failure, setFailure] = useState<BakeFailure | null>(null);
   useEffect(() => {
     if (key === null || kind === null) return;
     const hit = cachedBake(key);
@@ -40,7 +48,17 @@ function useBakedPictures(loaded: LoadedGuide, kind: BakeKind | null, stops: rea
       return;
     }
     const out: SkPicture[] = [];
-    const { tasks, firstFrame } = bakeTasks(loaded, kind, stops, style, out);
+    const fail = (error: unknown) => {
+      setFailure({ key, error });
+    };
+    let plan: ReturnType<typeof bakeTasks>;
+    try {
+      plan = bakeTasks(loaded, kind, stops, style, out);
+    } catch (error) {
+      fail(error);
+      return;
+    }
+    const { tasks, firstFrame } = plan;
     const run = runSliced(tasks, {
       budgetMs: BAKE_BUDGET_MS,
       // Animation: draw the first frame before yielding, so the canvas is never empty (poster).
@@ -56,11 +74,15 @@ function useBakedPictures(loaded: LoadedGuide, kind: BakeKind | null, stops: rea
         storeBake(key, out);
         setBaked({ key, pictures: out, done: true });
       },
+      onError: fail,
     });
     if (out.length > 0 && out.length < tasks.length) setBaked({ key, pictures: out.slice(), done: false });
     return run.cancel;
   }, [key, kind, loaded, stops, style]);
-  return baked !== null && baked.key === key ? baked : null;
+  return {
+    baked: baked !== null && baked.key === key ? baked : null,
+    failure: failure !== null && failure.key === key ? failure : null,
+  };
 }
 
 /** The picture for the clock's current frame, swapped on the UI thread (no React render per frame). */
@@ -112,8 +134,8 @@ export function GuidePlayer({ guide, size, visible }: Props) {
     return guideStyleFromTokens(tokens);
   }, [theme.colors]);
 
-  const anim = useBakedPictures(loaded, state.mode === 'animate' ? 'animation' : null, stops, style);
-  const still = useBakedPictures(loaded, state.mode === 'steps' ? 'steps' : null, stops, style);
+  const { baked: anim, failure: animFailure } = useBakedPictures(loaded, state.mode === 'animate' ? 'animation' : null, stops, style);
+  const { baked: still, failure: stillFailure } = useBakedPictures(loaded, state.mode === 'steps' ? 'steps' : null, stops, style);
   const frames = anim?.done === true ? anim.pictures : null;
 
   // UI-thread clock: elapsed time → frame index → picture.
@@ -150,6 +172,10 @@ export function GuidePlayer({ guide, size, visible }: Props) {
     frame.value = 0;
     done.value = false;
   }, [state.run, state.finished, elapsed, frame, done]);
+
+  // After every hook: hand a bake failure to GuideBoundary (cues-only fallback).
+  const failure = animFailure ?? stillFailure;
+  if (failure) throw failure.error;
 
   const poster = anim?.pictures[0] ?? null;
 
