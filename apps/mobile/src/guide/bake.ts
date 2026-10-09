@@ -11,12 +11,12 @@
  * lazily with the player, and every Skia call happens inside a bake task,
  * where a throw is caught and the How to screen falls back to the cues.
  */
-import { PaintStyle, Skia, StrokeCap, StrokeJoin, createPicture, type SkPaint, type SkPicture } from '@shopify/react-native-skia';
+import { PaintStyle, Skia, StrokeCap, StrokeJoin, TileMode, createPicture, type SkPaint, type SkPicture } from '@shopify/react-native-skia';
 
 import type { LoadedGuide } from '@fizz/catalogue';
 import { bakeFrame, overlayPlans, overlayPoint, playbackTimes, type DrawOp, type GuideStyle, type KeyFrameStop, type Vec } from '@fizz/catalogue/figure';
 
-import { planOp, svgPathData, type PlanStep } from './draw-plan';
+import { opPathData, planOp, type PlanStep } from './draw-plan';
 
 /** The recorded area in unit coordinates (with a margin for strokes at the edge). */
 function unitBounds() {
@@ -24,6 +24,16 @@ function unitBounds() {
 }
 
 function paintFor(step: PlanStep, cache: Map<string, SkPaint>): SkPaint {
+  if (step.draw === 'fill' && step.gradient) {
+    // Shading gradients are per op (their ends move with the limb), so they aren't cached.
+    const g = step.gradient;
+    const paint = Skia.Paint();
+    paint.setAntiAlias(true);
+    paint.setStyle(PaintStyle.Fill);
+    if (step.alpha < 1) paint.setAlphaf(step.alpha);
+    paint.setShader(Skia.Shader.MakeLinearGradient(Skia.Point(g.from.x, g.from.y), Skia.Point(g.to.x, g.to.y), g.colors.map((c) => Skia.Color(c)), g.positions, TileMode.Clamp));
+    return paint;
+  }
   const key = step.draw === 'fill' ? `f|${step.color}|${String(step.alpha)}` : `s|${step.color}|${String(step.alpha)}|${String(step.stroke.width)}|${step.stroke.join}|${step.stroke.cap}|${step.stroke.dash?.join(',') ?? ''}`;
   const hit = cache.get(key);
   if (hit) return hit;
@@ -54,7 +64,7 @@ export function recordOps(ops: readonly DrawOp[], style: GuideStyle, paints: Map
         layer.setAlphaf(plan.layerAlpha);
         canvas.saveLayer(layer);
       }
-      const path = op.kind === 'path' ? Skia.Path.MakeFromSVGString(svgPathData(op.points, op.closed)) : null;
+      const path = op.kind === 'path' ? Skia.Path.MakeFromSVGString(opPathData(op)) : null;
       for (const step of plan.steps) {
         const paint = paintFor(step, paints);
         if (op.kind === 'line') canvas.drawLine(op.a.x, op.a.y, op.b.x, op.b.y, paint);

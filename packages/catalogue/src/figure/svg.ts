@@ -1,37 +1,32 @@
 /**
  * SVG output for a pose. Pure string building, no DOM. Used on Linux for the
- * PNG previews and checks. The shapes and their order come from `frameOps`
- * (`draw.ts`), which the app's Skia player draws too.
+ * PNG previews and checks, and by the web review page. The shapes and their
+ * order come from `frameOps` (`draw.ts`), which the app's Skia player draws too.
  * Frames contain no text (labels come from the app).
  */
 import type { Pose } from './pose';
 import type { PreparedGuide } from './pose';
 import { poseAt } from './pose';
+import { bodyOutlinePoints } from './body';
 import { sampleTimes } from './keyframes';
 import { v, type Vec } from './math';
-import { frameOps, type Camera, type DrawOp } from './draw';
+import { pathData } from './paths';
+import { frameOps, type Camera, type DrawOp, type FrameOpsOptions } from './draw';
 import { GUIDE_CORNER_FRACTION, type GuideStyle } from './style';
 
-export interface RenderOptions {
-  px: number;
+/** `frameOps` options plus the colours (with `muscle` and `shade`) and an id prefix. */
+export interface RenderOptions extends FrameOpsOptions {
   style: GuideStyle;
-  camera: Camera;
-  /** Static overlay: a dashed path (e.g. the bar path over the whole cycle). */
-  trace?: readonly Vec[];
-  /** Unique per frame when several frames share one SVG document. */
+  /** Unique per frame when several frames share one SVG document (clip and gradient ids). */
   idPrefix?: string;
 }
 
 const f = (n: number): string => (Math.round(n * 100) / 100).toString();
 
-function pathOf(points: readonly Vec[], closed: boolean): string {
-  return points.map((p, i) => `${i === 0 ? 'M' : 'L'}${f(p.x)} ${f(p.y)}`).join('') + (closed ? 'Z' : '');
-}
-
 const opacityAttr = (o: number): string => (o >= 1 ? '' : ` opacity="${f(o)}"`);
 const dashAttr = (dash: readonly number[] | null): string => (dash ? ` stroke-dasharray="${dash.map(f).join(' ')}"` : '');
 
-function opSvg(op: DrawOp, style: GuideStyle): string {
+function opSvg(op: DrawOp, style: GuideStyle, id: string): string {
   switch (op.kind) {
     case 'line': {
       const cap = op.cap === 'round' ? ' stroke-linecap="round"' : '';
@@ -43,23 +38,31 @@ function opSvg(op: DrawOp, style: GuideStyle): string {
       return `<circle cx="${f(op.c.x)}" cy="${f(op.c.y)}" r="${f(op.r)}" fill="${fill}"${stroke}${opacityAttr(op.opacity)}/>`;
     }
     case 'path': {
-      const fill = op.fill ? style[op.fill] : 'none';
+      let defs = '';
+      let fill = op.fill ? style[op.fill] : 'none';
+      if (op.gradient) {
+        const g = op.gradient;
+        const stops = g.stops.map((s) => `<stop offset="${f(s.at)}" stop-color="${style[s.paint]}" stop-opacity="${f(s.opacity)}"/>`).join('');
+        defs = `<defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${f(g.from.x)}" y1="${f(g.from.y)}" x2="${f(g.to.x)}" y2="${f(g.to.y)}">${stops}</linearGradient></defs>`;
+        fill = `url(#${id})`;
+      }
       const stroke = op.stroke
         ? ` stroke="${style[op.stroke]}" stroke-width="${f(op.width)}"${dashAttr(op.dash)}${op.join === 'round' ? ' stroke-linejoin="round"' : ''}${op.cap === 'round' ? ' stroke-linecap="round"' : ''}`
         : '';
-      return `<path d="${pathOf(op.points, op.closed)}" fill="${fill}"${stroke}${opacityAttr(op.opacity)}/>`;
+      return `${defs}<path d="${pathData(op.contours, op.closed, op.smooth, 2)}" fill="${fill}"${stroke}${opacityAttr(op.opacity)}/>`;
     }
   }
 }
 
 /** Frame content in pixel coordinates (0..px), without the `<svg>` wrapper. */
 export function renderFrameBody(pose: Pose, opts: RenderOptions): string {
-  const { px, style, camera } = opts;
+  const { px, style } = opts;
+  const prefix = opts.idPrefix ?? 'g';
   const rect = `<rect width="${f(px)}" height="${f(px)}" rx="${f(px * GUIDE_CORNER_FRACTION)}"`;
-  const clipId = `${opts.idPrefix ?? 'g'}-clip`;
+  const clipId = `${prefix}-clip`;
   const parts: string[] = [`<defs><clipPath id="${clipId}">${rect}/></clipPath></defs>`, `${rect} fill="${style.background}"/>`];
   parts.push(`<g clip-path="url(#${clipId})">`);
-  for (const op of frameOps(pose, { px, camera, ...(opts.trace ? { trace: opts.trace } : {}) })) parts.push(opSvg(op, style));
+  frameOps(pose, opts).forEach((op, i) => parts.push(opSvg(op, style, `${prefix}-g${String(i)}`)));
   parts.push('</g>');
   return parts.join('');
 }
@@ -69,7 +72,7 @@ export function renderSvg(pose: Pose, opts: RenderOptions): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 ${px} ${px}">${renderFrameBody(pose, opts)}</svg>`;
 }
 
-/** Bounding box of everything drawn in a pose (approximate for capsules: joint ± radius). */
+/** Bounding box of everything drawn in a pose (the v2 body outline plus props; capsules approximated by joint ± radius). */
 export function poseBounds(pose: Pose): { minX: number; maxX: number; minY: number; maxY: number } {
   let minX = Infinity;
   let maxX = -Infinity;
@@ -94,12 +97,13 @@ export function poseBounds(pose: Pose): { minX: number; maxX: number; minY: numb
       grow(s.b, s.rb);
     }
   }
+  for (const p of bodyOutlinePoints(pose.body)) grow(p, 0);
   grow(v(minX, pose.groundY), 0);
   return { minX, maxX, minY, maxY };
 }
 
-/** A fixed square camera that fits every frame of the guide with a margin. */
-export function fitCamera(prepared: PreparedGuide, margin = 0.08): Camera {
+/** A fixed square camera that fits every frame of the guide with a margin (guides v2 §7.2: 0.06 H). */
+export function fitCamera(prepared: PreparedGuide, margin = 0.06): Camera {
   if (prepared.guide.camera) return prepared.guide.camera;
   let minX = Infinity;
   let maxX = -Infinity;

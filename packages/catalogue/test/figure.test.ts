@@ -8,6 +8,7 @@ import {
   DIRECTION_D_GUIDE_TOKENS,
   dist,
   fitCamera,
+  frameOps,
   GUIDE_PAINT_TOKENS,
   GuideMetaSchema,
   guideStyleFromTokens,
@@ -450,14 +451,20 @@ describe('SVG output and style', () => {
   });
 
   it('draws side-view plates behind the body and each limb as one seamless group', () => {
-    const pose = poseAt(prepareGuide(squatEntryGuide()), 0);
+    const prepared = prepareGuide(squatEntryGuide());
+    const pose = poseAt(prepared, 0);
     const plates = pose.shapes.filter((s) => s.kind === 'circle' && s.r > 0.07);
     expect(plates.length).toBeGreaterThan(0);
     expect(plates.every((s) => s.layer === 'back')).toBe(true);
-    const limbs = pose.shapes.filter((s) => s.kind === 'capsule' && s.layer !== 'body');
-    expect(limbs.every((s) => s.kind === 'capsule' && s.group !== undefined && s.outline === 'background')).toBe(true);
-    const svg = renderSvg(pose, { px: 240, style, camera: fitCamera(prepareGuide(squatEntryGuide())) });
-    expect(svg).toContain('opacity="0.55"');
+    // v2: the body is no longer capsules in the shape list; each limb is one fill op with all its contours.
+    expect(pose.shapes.some((s) => s.kind === 'capsule' && s.paint === 'nearBody')).toBe(false);
+    const ops = frameOps(pose, { px: 240, camera: fitCamera(prepared) });
+    const bodyFills = ops.filter((o) => o.kind === 'path' && o.fill === 'nearBody');
+    // Trunk (with neck and head), near leg (thigh, shank, shoe), near arm (upper arm, forearm, fist, thumb).
+    expect(bodyFills.map((o) => (o.kind === 'path' ? o.contours.length : 0))).toEqual([3, 3, 4]);
+    expect(bodyFills.every((o) => o.kind === 'path' && o.smooth)).toBe(true);
+    const svg = renderSvg(pose, { px: 240, style, camera: fitCamera(prepared) });
+    expect(svg).toContain('opacity="0.7"');
   });
 
   it('mirrors when facing left', () => {

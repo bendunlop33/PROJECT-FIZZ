@@ -13,6 +13,39 @@
   "reviewStatus": "draft",
   "check": {
     "status": "pass",
-    "failed": []
-  }
+    "failed": [],
+    "warnings": []
+  },
+  "focus": [
+    {
+      "muscle": "quads",
+      "level": "strong",
+      "shown": true
+    },
+    {
+      "muscle": "glutes",
+      "level": "strong",
+      "shown": true
+    },
+    {
+      "muscle": "calves",
+      "level": "soft",
+      "shown": true
+    },
+    {
+      "muscle": "hamstrings",
+      "level": "soft",
+      "shown": true
+    },
+    {
+      "muscle": "core",
+      "level": "soft",
+      "shown": true
+    },
+    {
+      "muscle": "triceps",
+      "level": "soft",
+      "shown": true
+    }
+  ]
 }

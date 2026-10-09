@@ -40,9 +40,10 @@
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "db", "showIn": ["static"] }],
+  "focus": { "workPhase": [{ "from": 0, "to": 0.3704 }] },
   "checks": { "planted": ["footNear"], "besideProps": ["armNear", "legNear"], "romProfile": "adult-default" },
   "a11y": {
     "summary": "Side view. Far knee and far hand on a flat bench, near foot on the floor, back flat and close to level. The near arm pulls the dumbbell up by driving the elbow up and back towards the hip, holds briefly by the lower ribs, then lowers slowly to a full hang. The torso stays still and square."
   },
-  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.2.0" }
 }

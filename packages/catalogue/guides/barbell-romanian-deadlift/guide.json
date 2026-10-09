@@ -48,9 +48,10 @@
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
+  "focus": { "workPhase": [{ "from": 0.5333, "to": 1 }] },
   "checks": { "barDriftMax": 0.03, "barProp": "bar", "planted": ["footNear", "footFar"], "romProfile": "adult-default" },
   "a11y": {
     "summary": "Side view, facing right. Bar held in straight arms against the thighs. Push the hips back with the knees softly bent and the back flat, sliding the bar down the legs to just below the knees, then drive the hips forward to stand tall. The bar stays over mid-foot."
   },
-  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.2.0" }
 }

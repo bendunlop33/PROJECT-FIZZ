@@ -55,5 +55,5 @@
   "a11y": {
     "summary": "Side view, facing right, pushing a loaded sled. Body leans about 45 degrees in a straight line from the driving foot to the head, hands on the poles at chest height with arms nearly straight. Short steps push the floor back off the balls of the feet while the hips stay low and level."
   },
-  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.2.0" }
 }

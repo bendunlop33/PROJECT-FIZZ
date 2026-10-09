@@ -10,12 +10,18 @@
  * phone draws it at (guides v2 §7.2), so the review shows the app's sharpness.
  * `--frames` also writes every 30 fps frame (400 pt at 2×) to
  * `guides/<id>/.frames/` (gitignored) for a closer look.
+ *
+ * Guides v2: muscles come from the catalogue entry (primary strong,
+ * secondary soft). Key frames are steady; the in-betweens show the
+ * work-phase emphasis (`--steady` turns it off, `--no-shading` drops the soft
+ * shading). Also writes `preview-thumbs.png`: the key positions at the S
+ * tier, 115 pt at 3× (the 3-up thumbnail size on a 375 pt phone).
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Resvg } from '@resvg/resvg-js';
 import { GuideSchema } from '../src/figure/guide-schema.ts';
-import { keyFrameStops, overlayTraces } from '../src/figure/playback.ts';
+import { keyFrameStops, overlayTraces, workIntensityAt } from '../src/figure/playback.ts';
 import { poseAt, prepareGuide } from '../src/figure/pose.ts';
 import { DIRECTION_D_GUIDE_TOKENS, guideStyleFromTokens } from '../src/figure/style.ts';
 import { fitCamera, renderFrameBody, renderSvg } from '../src/figure/svg.ts';
@@ -30,6 +36,8 @@ const SHEET = {
 
 /** Frame size in points, and the scale the sheet is rasterised at (an iPhone draws at 3×). */
 const PX = 240;
+/** Thumbnail sheet: the S tier at the 3-up size. */
+const THUMB_PX = 115;
 const SCALE = 3;
 /** `--frames`: the largest card canvas (design-system `guide.canvasMax`) at 2×. */
 const FRAME_PX = 400;
@@ -40,7 +48,7 @@ const LABEL_H = 46;
 const args = process.argv.slice(2);
 const id = args.find((a) => !a.startsWith('--'));
 if (id === undefined) {
-  console.log('Usage: npm run guide:render -- <id> [--frames]');
+  console.log('Usage: npm run guide:render -- <id> [--frames] [--steady] [--no-shading]');
   process.exit(1);
 }
 const file = loadGuideFile(id);
@@ -52,6 +60,14 @@ if (!parsed.success) {
 const guide = parsed.data;
 const prepared = prepareGuide(guide);
 const camera = fitCamera(prepared);
+const steady = args.includes('--steady');
+const shading = !args.includes('--no-shading');
+// The entry is the only source of muscles (guides v2 §4.1); no entry, no colour.
+const muscles = file.entry ? { primary: file.entry.primaryMuscles, secondary: file.entry.secondaryMuscles } : null;
+const pulseAt = (t: number): { pulse?: number } => {
+  const w = steady ? null : workIntensityAt(prepared, t);
+  return w === null ? {} : { pulse: w };
+};
 
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -85,7 +101,7 @@ const parts: string[] = [];
     const x = GAP + i * (PX + GAP);
     const pose = poseAt(prepared, fr.t);
     const trace = fr.key ? traces[0] : undefined;
-    const body = renderFrameBody(pose, { px: PX, style, camera, idPrefix: `${scheme}${i}`, ...(trace ? { trace } : {}) });
+    const body = renderFrameBody(pose, { px: PX, style, camera, muscles, shading, idPrefix: `${scheme}${i}`, ...(trace ? { trace } : {}), ...(fr.key ? {} : pulseAt(fr.t)) });
     parts.push(`<g transform="translate(${x} ${y0 + GAP})">${body}</g>`);
     const weight = fr.key ? '600' : '400';
     const colour = fr.key ? sheet.label : sheet.faint;
@@ -103,6 +119,24 @@ const out = join(file.dir, 'preview.png');
 writeFileSync(out, png(svg, SCALE));
 console.log(`Wrote ${out} (${frames.length} frames × dark/light at ${SCALE}×, camera ${camera.size.toFixed(3)} H).`);
 
+// Thumbnail sheet: key positions only, dark and light rows, at the S tier.
+const stops = keyFrameStops(prepared);
+const thumbW = GAP + stops.length * (THUMB_PX + GAP);
+const thumbRow = THUMB_PX + 2 * GAP;
+const thumbs: string[] = [];
+(['dark', 'light'] as const).forEach((scheme, row) => {
+  const style = guideStyleFromTokens(DIRECTION_D_GUIDE_TOKENS[scheme]);
+  const y0 = row * thumbRow;
+  thumbs.push(`<rect x="0" y="${y0}" width="${thumbW}" height="${thumbRow}" fill="${SHEET[scheme].canvas}"/>`);
+  stops.forEach((k, i) => {
+    const body = renderFrameBody(poseAt(prepared, k.t), { px: THUMB_PX, style, camera, muscles, idPrefix: `t${scheme}${i}` });
+    thumbs.push(`<g transform="translate(${GAP + i * (THUMB_PX + GAP)} ${y0 + GAP})">${body}</g>`);
+  });
+});
+const thumbOut = join(file.dir, 'preview-thumbs.png');
+writeFileSync(thumbOut, png(`<svg xmlns="http://www.w3.org/2000/svg" width="${thumbW}" height="${thumbRow * 2}" viewBox="0 0 ${thumbW} ${thumbRow * 2}">${thumbs.join('')}</svg>`, SCALE));
+console.log(`Wrote ${thumbOut} (${stops.length} key positions at ${THUMB_PX} pt, S tier, ${SCALE}×).`);
+
 if (args.includes('--frames')) {
   const dir = join(file.dir, '.frames');
   mkdirSync(dir, { recursive: true });
@@ -110,7 +144,7 @@ if (args.includes('--frames')) {
   const n = Math.round((guide.durationMs / 1000) * 30);
   for (let i = 0; i < n; i += 1) {
     const name = join(dir, `frame-${String(i).padStart(3, '0')}.png`);
-    writeFileSync(name, png(renderSvg(poseAt(prepared, i / n), { px: FRAME_PX, style, camera }), FRAME_SCALE));
+    writeFileSync(name, png(renderSvg(poseAt(prepared, i / n), { px: FRAME_PX, style, camera, muscles, shading, ...pulseAt(i / n) }), FRAME_SCALE));
   }
   console.log(`Wrote ${n} frames to ${dir}.`);
 }

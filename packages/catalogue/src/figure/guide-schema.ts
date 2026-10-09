@@ -7,6 +7,7 @@
 import { CatalogueKeySchema } from '@fizz/schemas';
 import { z } from 'zod';
 import { GuideViewSchema } from '../entry-schema';
+import { MuscleSchema } from '../vocab';
 import { EASES } from './math';
 import { ANGLE_NAMES, JOINT_NAMES, RIG_ID, ROM_PROFILE_NAMES } from './rig';
 
@@ -178,6 +179,35 @@ export const ProjectionSchema = z.strictObject({
 export type Projection = z.infer<typeof ProjectionSchema>;
 export const PROJECTION_KEYS = ['armNear', 'armFar', 'forearmNear', 'forearmFar', 'legNear', 'legFar', 'shankNear', 'shankFar'] as const;
 
+/** A normalised-time range of the cycle (`focus.workPhase`). */
+const PhaseSchema = z.strictObject({ from: num.min(0).max(1), to: num.min(0).max(1) });
+
+/** Overrides to one mapped muscle region (§4.8); each number moves at most ±0.25 from the map. */
+export const RegionAdjustSchema = z.strictObject({
+  s: z.tuple([num.min(-1).max(1.5), num.min(-1).max(1.5)]).optional(),
+  d: num.min(0).max(1).optional(),
+  c: num.min(-1).max(1).optional(),
+  w: num.min(0).max(1).optional(),
+});
+export type RegionAdjust = z.infer<typeof RegionAdjustSchema>;
+
+/**
+ * Muscle focus overrides (guides v2 §4.8). Muscles always come from the
+ * catalogue entry; a guide can only hide, adjust or add regions for muscles
+ * the entry already lists (`guide:check` enforces that).
+ */
+export const FocusSchema = z.strictObject({
+  /** Which limbs carry colour: side view default `near`, front/back default `both`. */
+  side: z.enum(['near', 'far', 'both']).optional(),
+  /** When the target muscles are loaded (lifting): drives the optional work-phase emphasis (§4.9). */
+  workPhase: z.array(PhaseSchema).min(1).max(4).optional(),
+  hide: z.array(MuscleSchema).max(23).optional(),
+  adjust: z.partialRecord(MuscleSchema, RegionAdjustSchema).optional(),
+  /** A region the map leaves out in this view, in the map's notation (e.g. `thorax.back 0.10–0.70 d0.5`). */
+  add: z.array(z.strictObject({ muscle: MuscleSchema, region: text(60) })).max(6).optional(),
+});
+export type GuideFocus = z.infer<typeof FocusSchema>;
+
 export const KeyframeSchema = z.strictObject({
   t: num.min(0).max(1),
   label: text(40).optional(),
@@ -223,6 +253,14 @@ export const GuideSchema = z
     ground: z.strictObject({ y: num.min(-0.5).max(0.5), scrollPerCycle: num.min(0).max(3) }),
     /** Shortens limbs that point partly towards the camera (1 = in the picture plane). Keyframes may override it. */
     projection: ProjectionSchema.optional(),
+    /**
+     * Front-view guides only: drawn facing the camera (`front`, default) or
+     * from behind (`back`). Same pose maths; the drawing and the muscle map
+     * change (guides v2 §4.8, §4.10). The spec calls this `camera`, but that
+     * key already holds the fixed camera below.
+     */
+    seenFrom: z.enum(['front', 'back']).optional(),
+    focus: FocusSchema.optional(),
     /** Fixed square camera; omitted = fitted to every frame. */
     camera: z.strictObject({ cx: coord, cy: coord, size: num.min(0.3).max(4) }).optional(),
     props: z.array(PropSchema).max(8),
@@ -275,6 +313,13 @@ export const GuideSchema = z
     for (const o of g.overlays ?? []) {
       if (!known.has(o.of)) ctx.addIssue({ code: 'custom', message: `Unknown prop ${o.of}`, path: ['overlays'] });
     }
+    if (g.seenFrom !== undefined && g.view !== 'front') ctx.addIssue({ code: 'custom', message: 'seenFrom is for front-view guides only', path: ['seenFrom'] });
+    const phases = g.focus?.workPhase ?? [];
+    phases.forEach((ph, i) => {
+      const prev = phases[i - 1];
+      if (ph.to <= ph.from) ctx.addIssue({ code: 'custom', message: 'A work phase must end after it starts', path: ['focus', 'workPhase', i] });
+      if (prev !== undefined && ph.from < prev.to) ctx.addIssue({ code: 'custom', message: 'Work phases must be in order and not overlap', path: ['focus', 'workPhase', i] });
+    });
     if (g.checks.barProp !== undefined && !known.has(g.checks.barProp)) {
       ctx.addIssue({ code: 'custom', message: `Unknown prop ${g.checks.barProp}`, path: ['checks', 'barProp'] });
     }
@@ -298,6 +343,10 @@ export const GuideMetaSchema = z.strictObject({
   check: z.strictObject({
     status: z.enum(['pass', 'fail']),
     failed: z.array(z.string()),
+    /** Checks that passed with a note for the guide-maker (e.g. v2 outline overlap). */
+    warnings: z.array(z.string()).optional(),
   }),
+  /** Muscle focus table (guides v2 §4.8): each listed muscle, its level and whether this view shows it. */
+  focus: z.array(z.strictObject({ muscle: z.string(), level: z.enum(['strong', 'soft']), shown: z.boolean() })).optional(),
 });
 export type GuideMeta = z.infer<typeof GuideMetaSchema>;

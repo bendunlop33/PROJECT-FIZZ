@@ -45,9 +45,10 @@
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
+  "focus": { "workPhase": [{ "from": 0, "to": 0.4138 }] },
   "checks": { "barDriftMax": 0.03, "barProp": "bar", "planted": ["footNear", "footFar"], "romProfile": "adult-default" },
   "a11y": {
     "summary": "Side view, facing right. Standing tall with the bar on the front of the shoulders. Pull the head back and press the bar straight up past the face, then push the head through to lock out with the bar overhead over mid-foot. Lower the same way."
   },
-  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.2.0" }
 }

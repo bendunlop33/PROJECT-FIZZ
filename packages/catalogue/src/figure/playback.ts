@@ -3,7 +3,7 @@
  * (ADR 0013). Pure: the app bakes `bakeFrame` output into Skia pictures, the
  * renderer turns the same ops into SVG.
  */
-import { frameOps, type Camera, type DrawOp } from './draw';
+import { frameOps, type Camera, type DrawOp, type FrameOpsOptions } from './draw';
 import { sampleTimes } from './keyframes';
 import type { Vec } from './math';
 import { poseAt, type PreparedGuide } from './pose';
@@ -77,10 +77,44 @@ export function playbackTimes(guide: PreparedGuide['guide'], fps = PLAYBACK_FPS)
   return Array.from({ length: count }, (_, i) => i / n);
 }
 
+/** `frameOps` options for a bake (the camera, size and trace come from the bake itself). */
+export type BakeOptions = Omit<FrameOpsOptions, 'px' | 'camera' | 'trace'>;
+
+/** Size a bake's tier and stroke floors assume when the caller doesn't say (the legibility size). */
+export const DEFAULT_BAKE_PT = 240;
+
 /**
  * Draw ops for one frame in unit coordinates (the canvas is 1 × 1; the app
- * scales the recorded picture to its size), so one bake serves any width.
+ * scales the recorded picture to its size), so one bake serves every width in
+ * its tier. `opts.pt` is the size it will be shown at (tier and stroke floors).
  */
-export function bakeFrame(prepared: PreparedGuide, camera: Camera, t: number, trace?: readonly Vec[]): DrawOp[] {
-  return frameOps(poseAt(prepared, t), { px: 1, camera, ...(trace && trace.length > 1 ? { trace } : {}) });
+export function bakeFrame(prepared: PreparedGuide, camera: Camera, t: number, trace?: readonly Vec[], opts: BakeOptions = {}): DrawOp[] {
+  return frameOps(poseAt(prepared, t), { ...opts, pt: opts.pt ?? DEFAULT_BAKE_PT, px: 1, camera, ...(trace && trace.length > 1 ? { trace } : {}) });
+}
+
+/** Length of the work-phase emphasis ramps, in ms of guide time (§4.9). */
+export const WORK_RAMP_MS = 120;
+
+const smoothstep = (x: number): number => {
+  const t = Math.min(1, Math.max(0, x));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * Work-phase emphasis at normalised time `t` (§4.9): 0 outside the guide's
+ * `focus.workPhase`, rising to 1 over the first 120 ms of each phase and
+ * falling back over its last 120 ms (smoothstep, in guide time). `null` when
+ * the guide has no work phase: draw steady colour.
+ */
+export function workIntensityAt(prepared: PreparedGuide, t: number): number | null {
+  const phases = prepared.guide.focus?.workPhase;
+  if (phases === undefined || phases.length === 0) return null;
+  const ramp = Math.min(0.5, WORK_RAMP_MS / prepared.guide.durationMs);
+  let best = 0;
+  for (const ph of phases) {
+    if (t < ph.from || t > ph.to) continue;
+    const r = Math.min(ramp, (ph.to - ph.from) / 2);
+    best = Math.max(best, Math.min(smoothstep((t - ph.from) / r), smoothstep((ph.to - t) / r)));
+  }
+  return best;
 }

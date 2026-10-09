@@ -37,7 +37,8 @@ function metaOf(id: string, bytes: number, report: GuideCheckReport): GuideMeta 
     guideBytes: bytes,
     attribution: 'Original figure animation made for Fizz; no third-party media.',
     reviewStatus: g.review.status,
-    check: { status: report.ok ? 'pass' : 'fail', failed: report.items.filter((i) => !i.ok).map((i) => i.id) },
+    check: { status: report.ok ? 'pass' : 'fail', failed: report.items.filter((i) => !i.ok).map((i) => i.id), warnings: report.items.filter((i) => i.ok && i.warn === true).map((i) => i.id) },
+    focus: report.focus,
   };
 }
 
@@ -46,7 +47,7 @@ for (const id of ids) {
   const file = loadGuideFile(id);
   const report = checkGuide({ raw: file.raw, bytes: file.bytes, dirKey: id, entry: file.entry });
   console.log(`\n${id}: ${report.ok ? 'PASS' : 'FAIL'} (${report.frames} frames sampled at ${CHECK_FPS} fps + keyframes)`);
-  for (const item of report.items) console.log(`  ${item.ok ? 'ok  ' : 'FAIL'} ${item.id.padEnd(16)} ${item.detail}`);
+  for (const item of report.items) console.log(`  ${item.ok ? (item.warn === true ? 'warn' : 'ok  ') : 'FAIL'} ${item.id.padEnd(16)} ${item.detail}`);
   if (!report.ok) failed += 1;
 
   const meta = metaOf(id, file.bytes, report);

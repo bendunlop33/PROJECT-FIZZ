@@ -44,9 +44,10 @@
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
+  "focus": { "workPhase": [{ "from": 0, "to": 0.3448 }] },
   "checks": { "barDriftMax": 0.005, "barProp": "bar", "planted": ["footNear", "footFar"], "besideProps": ["legNear", "legFar"], "romProfile": "adult-default" },
   "a11y": {
     "summary": "Front view, seated with thighs under the pad. Hands on a wide bar overhead. Pull the elbows down towards the ribs so the bar comes straight down in front of the face to the upper chest, then let it rise slowly back to straight arms."
   },
-  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.2.0" }
 }

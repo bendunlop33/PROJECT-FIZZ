@@ -18,7 +18,8 @@
  * its projected joint angle has no meaningful sign; it is reported as the
  * fold magnitude and marked in `outOfPlane`.
  */
-import type { Guide, GuideProp } from './guide-schema';
+import { chainTrunk, HEAD, makeSegment, type BodyFoot, type BodyHand, type BodySegment, type FigureBody } from './body';
+import type { Guide, GuideFocus, GuideProp } from './guide-schema';
 import { solveTwoBoneIk } from './ik';
 import { resolveKeyframes, stateAt, type FootTarget, type FrameState, type HandTarget, type ResolvedKeyframe } from './keyframes';
 import { add, angleFromDown, dist, fromDown, fromUp, perpCcw, rad, scale, sub, v, wrapDeg, type Vec } from './math';
@@ -79,7 +80,13 @@ export interface Pose {
    * from the front), so the ROM check skips them and says so.
    */
   unchecked: AngleName[];
+  /** Prop shapes. The body is drawn from `body` (guides v2 §3), not from shapes. */
   shapes: Shape[];
+  /** The figure's segments, hands, feet and head for the v2 drawing. */
+  body: FigureBody;
+  /** The guide's muscle-focus overrides (guides v2 §4.8); the muscles themselves come from the catalogue. */
+  focus: GuideFocus | null;
+  /** Head centre and its vertical radius (floor check). */
   head: { c: Vec; r: number };
   feet: FootContact[];
   hands: HandContact[];
@@ -250,6 +257,9 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
   const flipBend = (bend: 'ccw' | 'cw', side: 'Near' | 'Far'): 'ccw' | 'cw' => (sideSign(side) < 0 ? (bend === 'ccw' ? 'cw' : 'ccw') : bend);
   const lean = view === 'side' ? trunk.leans.pelvis : 0;
   const thoraxLean = view === 'side' ? trunk.leans.thorax : 0;
+  const segments: BodySegment[] = [];
+  const bodyHands: BodyHand[] = [];
+  const bodyFeet: BodyFoot[] = [];
 
   // 2. Legs.
   for (const side of ['Near', 'Far'] as const) {
@@ -319,27 +329,9 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     points[`ankle${side}`] = ankle;
     points[`heel${side}`] = heel;
     points[`toe${side}`] = toe;
-    const layer = view === 'side' && side === 'Far' ? 'far' : 'near';
-    const paint = layer === 'far' ? 'farBody' : 'nearBody';
-    const rr = R.radius;
-    const group = `leg${side}`;
-    const limbCap = (a: Vec, b: Vec, ra: number, rb: number): Shape => ({ kind: 'capsule', layer, a, b, ra, rb, paint, outline: 'background', group });
-    shapes.push(limbCap(hipPt, knee, rr.thighHip, rr.thighKnee));
-    shapes.push(limbCap(knee, ankle, rr.shankKnee, rr.shankAnkle));
-    if (view === 'side') {
-      const heelTop = inFoot(ankle, u, n, R.foot.heel + 0.012, -R.foot.ankleHeight + rr.foot);
-      const ballTop = inFoot(ankle, u, n, R.foot.ball, -R.foot.ankleHeight + rr.foot * 0.85);
-      const toeDir = scale(sub(toe, ball), 1 / Math.max(1e-9, dist(toe, ball)));
-      // Round the toes towards the top of the foot (its own "up", so a laces-down foot works too).
-      const toeUp = perpCcw(toeDir);
-      const toeSide = toeUp.x * n.x + toeUp.y * n.y >= 0 ? 1 : -1;
-      const toeTop = add(add(toe, scale(toeDir, -rr.foot * 0.5)), scale(toeUp, toeSide * rr.foot * 0.7));
-      shapes.push(limbCap(ballTop, toeTop, rr.foot * 0.85, rr.foot * 0.7));
-      shapes.push(limbCap(heelTop, ballTop, rr.foot, rr.foot * 0.85));
-      shapes.push(limbCap(ankle, heelTop, rr.shankAnkle, rr.foot));
-    } else {
-      shapes.push(limbCap(ankle, add(ankle, v(0.012 * sign, -R.foot.ankleHeight + rr.foot)), rr.shankAnkle, rr.foot * 1.4));
-    }
+    const group = `leg${side}` as const;
+    segments.push(makeSegment(view, 'thigh', side, group, hipPt, knee, kt), makeSegment(view, 'shank', side, group, knee, ankle, ks));
+    bodyFeet.push({ side, group, ankle, u, n, ball, toe, sign });
   }
 
   // 3. Arms.
@@ -398,17 +390,16 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     points[`elbow${side}`] = elbow;
     points[`wrist${side}`] = wrist;
     points[`grip${side}`] = grip;
-    const layer = view === 'side' && side === 'Far' ? 'far' : 'near';
-    const paint = layer === 'far' ? 'farBody' : 'nearBody';
-    const rr = R.radius;
+    const group = `arm${side}` as const;
+    const upper = makeSegment(view, 'upperArm', side, group, shoulder, elbow, ku);
+    const fore = makeSegment(view, 'forearm', side, group, elbow, wrist, kf);
+    segments.push(upper, fore);
     const gripDir = scale(sub(grip, wrist), 1 / Math.max(1e-9, dist(grip, wrist)));
-    // A flat hand runs along the surface (fingers forward), just above the palm contact.
-    const handEnd = palm ? add(grip, v(R.hand - R.palm.back, R.radius.hand * 0.9)) : add(grip, scale(gripDir, (R.hand - R.grip) * kf));
-    const handStart = palm ? v(wrist.x, grip.y + R.radius.hand) : wrist;
-    const group = `arm${side}`;
-    shapes.push({ kind: 'capsule', layer, a: shoulder, b: elbow, ra: rr.upperArmShoulder, rb: rr.upperArmElbow, paint, outline: 'background', group });
-    shapes.push({ kind: 'capsule', layer, a: elbow, b: wrist, ra: rr.forearmElbow, rb: rr.forearmWrist, paint, outline: 'background', group });
-    shapes.push({ kind: 'capsule', layer, a: handStart, b: handEnd, ra: rr.hand, rb: rr.hand * 0.9, paint, outline: 'background', group });
+    bodyHands.push(
+      palm
+        ? { side, group, kind: 'palm', wrist, dir: v(1, 0), length: R.hand, contact: grip, front: fore.n }
+        : { side, group, kind: 'fist', wrist, dir: gripDir, length: R.hand * kf, contact: grip, front: fore.n },
+    );
   }
 
   // 4. Props that hang from the hands, and the cable.
@@ -438,22 +429,25 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     if (p.type === 'dumbbell' && p.anchor.kind !== 'hand') addGeometry(dumbbellShapes(p.id, c, p.size, p.seen ?? 'end'));
   }
 
-  // 5. Trunk, neck and head (drawn between the far and near limbs).
-  const rr = R.radius;
-  if (view === 'side') {
-    shapes.push({ kind: 'capsule', layer: 'body', a: trunk.hip, b: trunk.lumbarBase, ra: rr.pelvis, rb: rr.lumbar, paint: 'nearBody' });
-    shapes.push({ kind: 'capsule', layer: 'body', a: trunk.lumbarBase, b: trunk.thoraxBase, ra: rr.lumbar, rb: rr.thoraxLow, paint: 'nearBody' });
-    shapes.push({ kind: 'capsule', layer: 'body', a: trunk.thoraxBase, b: add(trunk.c7, scale(fromUp(trunk.leans.thorax), -0.025)), ra: rr.thoraxLow, rb: rr.thoraxHigh, paint: 'nearBody' });
-  } else {
-    const w = (lean: number, half: number, at: Vec, dy = 0): [Vec, Vec] => [add(at, add(scale(frontOf(lean), half), v(0, dy))), add(at, add(scale(frontOf(lean), -half), v(0, dy)))];
-    const [hl, hr] = w(trunk.leans.pelvis, 0.1, trunk.hip, -0.03);
-    const [wl, wr] = w(trunk.leans.lumbar, 0.085, trunk.thoraxBase);
-    const [sl, sr] = w(trunk.leans.thorax, 0.125, trunk.c7, -0.03);
-    shapes.push({ kind: 'poly', layer: 'body', points: [hl, wl, sl, sr, wr, hr], fill: 'nearBody', stroke: 'nearBody', width: 0.05 });
-  }
-  shapes.push({ kind: 'capsule', layer: 'body', a: trunk.c7, b: trunk.neckTop, ra: rr.neck, rb: rr.neck, paint: 'nearBody' });
-  const head = { c: trunk.head, r: R.headRadius };
-  shapes.push({ kind: 'circle', layer: 'body', c: head.c, r: head.r, fill: 'nearBody' });
+  // 5. Trunk, neck and head (drawn between the far and near limbs): one chain, pelvis to thorax (§3.5).
+  const thoraxTop = add(trunk.c7, scale(fromUp(trunk.leans.thorax), -0.025));
+  const chain = [
+    makeSegment(view, 'pelvis', null, 'trunk', trunk.hip, trunk.lumbarBase),
+    makeSegment(view, 'lumbar', null, 'trunk', trunk.lumbarBase, trunk.thoraxBase),
+    makeSegment(view, 'thorax', null, 'trunk', trunk.thoraxBase, thoraxTop),
+  ];
+  chainTrunk(chain);
+  segments.unshift(...chain, makeSegment(view, 'neck', null, 'trunk', trunk.c7, trunk.neckTop));
+  const headSize = view === 'side' ? HEAD.side : HEAD.front;
+  const body: FigureBody = {
+    view,
+    seenFrom: guide.seenFrom ?? 'front',
+    segments,
+    hands: bodyHands,
+    feet: bodyFeet,
+    head: { c: trunk.head, rx: headSize.rx, ry: headSize.ry, rot: -rad(trunk.leans.neck) },
+  };
+  const head = { c: trunk.head, r: headSize.ry };
 
   const scroll = guide.ground.scrollPerCycle;
   return {
@@ -465,6 +459,8 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     outOfPlane,
     unchecked,
     shapes,
+    body,
+    focus: guide.focus ?? null,
     head,
     feet,
     hands,

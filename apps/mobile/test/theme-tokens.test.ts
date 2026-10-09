@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { GUIDE_PAINT_TOKENS } from '@fizz/catalogue/figure';
+import { GUIDE_MUSCLE_COLOR, GUIDE_PAINT_TOKENS, GUIDE_SHADE_TOKEN } from '@fizz/catalogue/figure';
 
 import {
   BASE_COLOR_TOKENS,
@@ -30,15 +30,19 @@ function referencedTokens(): string[] {
   return [...new Set([...text.matchAll(re)].map((m) => m[1] ?? ''))].filter((t) => t !== '' && !RETIRED.has(t)).sort();
 }
 
-/** `color.guide.<paint>` aliases, resolved from the live theme by `guideStyleFromTokens` (ADR 0013). */
-const GUIDE_ALIASES = new Set(Object.keys(GUIDE_PAINT_TOKENS).map((p) => `color.guide.${p}`));
+/**
+ * `color.guide.<paint>` colours, resolved from the live theme by
+ * `guideStyleFromTokens` (ADR 0013): the neutral aliases, plus guides v2's
+ * scheme-dependent `shade` alias and the `muscle` hue (ADR 0014).
+ */
+const GUIDE_ALIASES = new Set([...Object.keys(GUIDE_PAINT_TOKENS), 'shade', 'muscle'].map((p) => `color.guide.${p}`));
 
 /**
- * Named in design-system.md but specified, not built: guides v2
- * (exercise-guides-v2.md, 9 Oct 2026). Remove each entry when the code adds
- * it; the test below fails once it exists, so this list can't go stale.
+ * Named in design-system.md but specified, not built. Remove each entry when
+ * the code adds it; the test below fails once it exists, so this list can't
+ * go stale. (Guides v2's `color.guide.muscle` and `color.guide.shade` are built.)
  */
-const SPECIFIED_NOT_BUILT = new Set(['color.guide.muscle', 'color.guide.shade']);
+const SPECIFIED_NOT_BUILT = new Set<string>();
 
 const directions: ThemeDirection[] = Object.values(THEME_DIRECTIONS);
 
@@ -70,6 +74,14 @@ describe('theme tokens', () => {
     expect(documented).toEqual(GUIDE_PAINT_TOKENS);
     const names = new Set(tokenNames(CURRENT_DIRECTION));
     for (const alias of Object.values(GUIDE_PAINT_TOKENS)) expect(names.has(`color.${alias}`), alias).toBe(true);
+  });
+
+  it('documents the guide shade alias and the muscle hue as the catalogue resolves them (design-system §2.3, guides v2 §4.2)', () => {
+    const text = readFileSync(DESIGN_SYSTEM, 'utf8');
+    expect(text).toContain(`| \`color.guide.shade\` (v2) | \`color.${GUIDE_SHADE_TOKEN.dark}\` (dark) / \`color.${GUIDE_SHADE_TOKEN.light}\` (light) |`);
+    expect(text).toContain(`| \`color.guide.muscle\` | \`${GUIDE_MUSCLE_COLOR.dark}\` | \`${GUIDE_MUSCLE_COLOR.light}\` |`);
+    const names = new Set(tokenNames(CURRENT_DIRECTION));
+    for (const alias of Object.values(GUIDE_SHADE_TOKEN)) expect(names.has(`color.${alias}`), alias).toBe(true);
   });
 
   it.each(directions.map((d) => [d.id, d] as const))('direction %s has a value for every colour in both schemes', (_id, direction) => {

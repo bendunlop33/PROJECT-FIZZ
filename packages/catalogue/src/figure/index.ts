@@ -5,6 +5,11 @@
  */
 export * from './math';
 export * from './rig';
+export * from './profiles';
+export * from './paths';
+export * from './body';
+export * from './muscle-map';
+export * from './regions';
 export * from './guide-schema';
 export * from './ik';
 export * from './keyframes';

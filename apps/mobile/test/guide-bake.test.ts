@@ -26,8 +26,11 @@ beforeAll(async () => {
       Color: (c: string) => c,
       Path: { MakeFromSVGString: () => ({}) },
       PathEffect: { MakeDash: () => ({}) },
+      Shader: { MakeLinearGradient: () => ({}) },
+      Point: (x: number, y: number) => ({ x, y }),
     },
     PaintStyle: { Fill: 0, Stroke: 1 },
+    TileMode: { Clamp: 0 },
     StrokeCap: { Round: 0, Butt: 1 },
     StrokeJoin: { Round: 0, Miter: 1 },
     createPicture: (draw: (canvas: unknown) => void): FakePicture => {

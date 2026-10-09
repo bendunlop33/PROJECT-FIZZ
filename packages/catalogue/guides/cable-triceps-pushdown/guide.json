@@ -37,9 +37,10 @@
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "cable", "showIn": ["static"] }],
+  "focus": { "workPhase": [{ "from": 0, "to": 0.3462 }] },
   "checks": { "planted": ["footNear", "footFar"], "romProfile": "adult-default" },
   "a11y": {
     "summary": "Side view, facing a high cable with a rope. Standing with soft knees and a slight forward lean, elbows pinned at the sides. Push the rope down until the arms are straight, pause, then let the hands rise slowly back to chest height. Only the forearms move."
   },
-  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.2.0" }
 }

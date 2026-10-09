@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { bundledGuides, catalogueExerciseId, createGuideLibrary, createLazyCatalogue } from '@fizz/catalogue';
-import { bakeFrame, GUIDE_TOKEN_NAMES, guideStyleFromTokens, type DrawOp, type GuideTokens } from '@fizz/catalogue/figure';
+import { bakeFrame, GUIDE_MUSCLE_COLOR, GUIDE_TOKEN_NAMES, guideStyleFromTokens, type DrawOp, type GuideTokens } from '@fizz/catalogue/figure';
 
 import { advanceClock, frameIndexAt, MAX_AUTOPLAY_PASSES, passMs } from '../src/guide/clock';
-import { planOp, svgPathData } from '../src/guide/draw-plan';
+import { opPathData, planOp, rgba } from '../src/guide/draw-plan';
 import { BUNDLED_GUIDE_FILES } from '../../../packages/catalogue/src/generated/guide-files';
 import { buildHowToView, bundledHowToSources, DRAFT_GUIDE_LABEL, guideDraftLabel, hasHowTo, howToKeyForExerciseId, howToLayout, type HowToSources } from '../src/guide/how-to';
 import { initialPlayerState, isRunning, playControlLabel, playerReducer, stepAccessibilityLabel, stepAnnouncement, stepPosition, type PlayerAction, type PlayerState } from '../src/guide/player-model';
@@ -285,7 +285,7 @@ describe('how-to view (catalogue → screen)', () => {
 });
 
 describe('Skia draw plan', () => {
-  const style = guideStyleFromTokens({ 'bg.surface': '#000001', 'bg.raised': '#000002', 'border.control': '#000003', 'text.primary': '#000004', 'text.secondary': '#000005', 'text.tertiary': '#000006' });
+  const style = guideStyleFromTokens({ 'bg.canvas': '#000007', 'bg.surface': '#000001', 'bg.raised': '#000002', 'border.control': '#000003', 'text.primary': '#000004', 'text.secondary': '#000005', 'text.tertiary': '#000006' });
 
   it('mirrors SVG: one alpha for a semi-transparent fill-and-stroke (a layer), per-paint alpha otherwise', () => {
     const plate: DrawOp = { kind: 'circle', c: { x: 0.5, y: 0.5 }, r: 0.1, fill: 'frameFill', stroke: 'implement', width: 0.006, opacity: 0.55 };
@@ -303,32 +303,46 @@ describe('Skia draw plan', () => {
   it('keeps the floor butt-capped and dashed, limbs round-joined', () => {
     const floor: DrawOp = { kind: 'line', a: { x: 0, y: 0.9 }, b: { x: 1, y: 0.9 }, width: 0.004, paint: 'trace', cap: 'butt', dash: [0.03, 0.02], opacity: 1 };
     expect(planOp(floor, style).steps).toEqual([{ draw: 'stroke', color: '#000006', alpha: 1, stroke: { width: 0.004, join: 'miter', cap: 'butt', dash: [0.03, 0.02] } }]);
-    const halo: DrawOp = { kind: 'path', points: [], closed: true, fill: 'background', stroke: 'background', width: 0.01, join: 'round', cap: null, dash: null, opacity: 1 };
+    const halo: DrawOp = { kind: 'path', contours: [], closed: true, smooth: true, fill: 'background', gradient: null, stroke: 'background', width: 0.01, join: 'round', cap: null, dash: null, opacity: 1 };
     expect(planOp(halo, style)).toMatchObject({ layerAlpha: null, steps: [{ draw: 'fill', color: '#000001' }, { draw: 'stroke', stroke: { join: 'round', cap: 'butt' } }] });
   });
 
-  it('writes compact SVG path data for Skia', () => {
-    expect(svgPathData([{ x: 0.123456789, y: 1 }, { x: 0.5, y: 0.25 }], true)).toBe('M0.12346 1L0.5 0.25Z');
-    expect(svgPathData([{ x: 0, y: 0 }, { x: 1, y: 1 }], false)).toBe('M0 0L1 1');
+  it('writes compact SVG path data for Skia: polylines, smooth cubics and several contours', () => {
+    const path = (contours: { x: number; y: number }[][], closed: boolean, smooth: boolean): Extract<DrawOp, { kind: 'path' }> => ({ kind: 'path', contours, closed, smooth, fill: 'nearBody', gradient: null, stroke: null, width: 0, join: null, cap: null, dash: null, opacity: 1 });
+    expect(opPathData(path([[{ x: 0.123456789, y: 1 }, { x: 0.5, y: 0.25 }]], true, false))).toBe('M0.12346 1L0.5 0.25Z');
+    expect(opPathData(path([[{ x: 0, y: 0 }, { x: 1, y: 1 }]], false, false))).toBe('M0 0L1 1');
+    const square = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
+    expect(opPathData(path([square], true, true))).toMatch(/^M0 0C.*Z$/);
+    expect(opPathData(path([square, square], true, false)).match(/M/g)).toHaveLength(2);
   });
 
-  it('every guide frame uses only the six neutral tokens, never the accent, in every look and scheme', () => {
+  it('turns a shading gradient into one fill with per-stop rgba colours', () => {
+    const band: DrawOp = { kind: 'path', contours: [], closed: true, smooth: false, fill: null, gradient: { from: { x: 0, y: 0 }, to: { x: 1, y: 0 }, stops: [{ at: 0, paint: 'shade', opacity: 0.26 }, { at: 1, paint: 'shade', opacity: 0 }] }, stroke: null, width: 0, join: null, cap: null, dash: null, opacity: 1 };
+    const live = { ...style, shade: '#0D0C0B' };
+    expect(planOp(band, live).steps).toEqual([{ draw: 'fill', color: '#0D0C0B', alpha: 1, gradient: { from: { x: 0, y: 0 }, to: { x: 1, y: 0 }, colors: ['rgba(13, 12, 11, 0.26)', 'rgba(13, 12, 11, 0)'], positions: [0, 1] } }]);
+    expect(rgba('#7A4AF0', 0.45)).toBe('rgba(122, 74, 240, 0.45)');
+  });
+
+  it('every guide frame uses only the neutral guide tokens plus the muscle hue, never the accent or a status colour, in every look and scheme', () => {
     for (const direction of Object.values(THEME_DIRECTIONS)) {
       for (const scheme of ['dark', 'light'] as const) {
         const theme = resolveTheme(direction, scheme);
         const tokens = {} as GuideTokens;
         for (const name of GUIDE_TOKEN_NAMES) tokens[name] = theme.colors[name];
-        const live = guideStyleFromTokens(tokens);
-        const allowed = new Set(Object.values(tokens));
-        // The accent is its own value in every look, so "only these six" means "never the accent".
-        expect(allowed.has(theme.colors.accent), `${direction.id} ${scheme}`).toBe(false);
+        const live = guideStyleFromTokens(tokens, scheme);
+        expect(live.muscle).toBe(GUIDE_MUSCLE_COLOR[scheme]);
+        const allowed = new Set([...Object.values(tokens), GUIDE_MUSCLE_COLOR[scheme]]);
+        // The accent and the status colours are their own values in every look, so "only these" means "never those" (§12.1 #4).
+        const forbidden = [theme.colors.accent, theme.colors['status.done'], theme.colors['status.warning'], theme.colors['status.danger']];
+        for (const c of forbidden) expect(allowed.has(c), `${direction.id} ${scheme} ${c}`).toBe(false);
         for (const key of bundledGuides().keys) {
           const g = bundledGuides().load(key);
           if (!g.ok) throw new Error(`${key} should load`);
           for (const t of [0, 0.37, 0.71]) {
-            for (const op of bakeFrame(g.value.prepared, g.value.camera, t)) {
+            for (const op of bakeFrame(g.value.prepared, g.value.camera, t, undefined, { muscles: { primary: ['quads', 'chest', 'lats', 'triceps'], secondary: ['core', 'grip'] }, pulse: 0.5 })) {
               for (const step of planOp(op, live).steps) {
                 expect(allowed.has(step.color), `${direction.id} ${scheme} ${key}`).toBe(true);
+                if (step.draw === 'fill' && step.gradient) for (const c of step.gradient.colors) expect(c.startsWith('rgba(')).toBe(true);
               }
             }
           }

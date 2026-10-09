@@ -61,7 +61,7 @@ describe('frame ops (shared by the SVG preview and the app player)', () => {
     const big = frameOps(poseAt(prepared, 0.4), { px: 240, camera });
     expect(unit.length).toBe(big.length);
     const coords = (o: DrawOp): number[] =>
-      o.kind === 'line' ? [o.a.x, o.a.y, o.b.x, o.b.y, o.width] : o.kind === 'circle' ? [o.c.x, o.c.y, o.r, o.width] : [...o.points.flatMap((p) => [p.x, p.y]), o.width];
+      o.kind === 'line' ? [o.a.x, o.a.y, o.b.x, o.b.y, o.width] : o.kind === 'circle' ? [o.c.x, o.c.y, o.r, o.width] : [...o.contours.flat().flatMap((p) => [p.x, p.y]), o.width];
     unit.forEach((o, i) => {
       const b = big[i];
       if (b === undefined) throw new Error('missing op');
@@ -86,16 +86,17 @@ describe('frame ops (shared by the SVG preview and the app player)', () => {
     for (const key of bundledGuides().keys) {
       const g = bundledGuides().load(key);
       if (!g.ok) continue;
-      for (const o of bakeFrame(g.value.prepared, g.value.camera, 0.25)) {
+      for (const o of bakeFrame(g.value.prepared, g.value.camera, 0.25, undefined, { muscles: { primary: ['quads', 'chest', 'lats', 'triceps', 'front_delts'], secondary: ['core'] } })) {
         if (o.kind === 'line') paints.add(o.paint);
         else {
           if (o.fill) paints.add(o.fill);
           if (o.stroke) paints.add(o.stroke);
+          if (o.kind === 'path') for (const st of o.gradient?.stops ?? []) paints.add(st.paint);
         }
       }
     }
-    expect([...paints].sort()).toEqual(expect.arrayContaining(['nearBody', 'trace']));
-    for (const p of paints) expect(['background', 'nearBody', 'farBody', 'implement', 'trace', 'cable', 'frame', 'frameFill']).toContain(p);
+    expect([...paints].sort()).toEqual(expect.arrayContaining(['nearBody', 'trace', 'shade', 'muscle']));
+    for (const p of paints) expect(['background', 'nearBody', 'farBody', 'implement', 'trace', 'cable', 'frame', 'frameFill', 'shade', 'muscle']).toContain(p);
   });
 });
 

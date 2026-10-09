@@ -19,14 +19,14 @@ export interface BundledGuideFile {
 }
 
 export const BUNDLED_GUIDE_FILES: readonly BundledGuideFile[] = [
-  { key: 'barbell-back-squat', raw: g0, camera: { cx: -0.000675, cy: 0.491813, size: 1.143626 } },
-  { key: 'barbell-bench-press', raw: g1, camera: { cx: 0.0017, cy: 0.39425, size: 1.0634 } },
-  { key: 'barbell-overhead-press', raw: g2, camera: { cx: 0.02549, cy: 0.65, size: 1.46 } },
-  { key: 'barbell-romanian-deadlift', raw: g3, camera: { cx: 0.088485, cy: 0.49305, size: 1.1461 } },
-  { key: 'cable-lat-pulldown', raw: g4, camera: { cx: 0, cy: 0.573, size: 1.334 } },
-  { key: 'cable-triceps-pushdown', raw: g5, camera: { cx: 0.14575, cy: 0.58, size: 1.32 } },
-  { key: 'dumbbell-bulgarian-split-squat', raw: g6, camera: { cx: -0.302403, cy: 0.477612, size: 1.143224 } },
-  { key: 'dumbbell-one-arm-row', raw: g7, camera: { cx: -0.068105, cy: 0.33702, size: 0.95003 } },
-  { key: 'machine-leg-press', raw: g8, camera: { cx: 0.158585, cy: 0.526954, size: 1.245909 } },
-  { key: 'sled-push', raw: g9, camera: { cx: 0.302366, cy: 0.393903, size: 1.503068 } },
+  { key: 'barbell-back-squat', raw: g0, camera: { cx: -0.000265, cy: 0.494294, size: 1.108587 } },
+  { key: 'barbell-bench-press', raw: g1, camera: { cx: 0, cy: 0.39425, size: 1.02 } },
+  { key: 'barbell-overhead-press', raw: g2, camera: { cx: 0.03102, cy: 0.65, size: 1.42 } },
+  { key: 'barbell-romanian-deadlift', raw: g3, camera: { cx: 0.088964, cy: 0.49555, size: 1.1111 } },
+  { key: 'cable-lat-pulldown', raw: g4, camera: { cx: 0, cy: 0.573, size: 1.294 } },
+  { key: 'cable-triceps-pushdown', raw: g5, camera: { cx: 0.144831, cy: 0.58, size: 1.28 } },
+  { key: 'dumbbell-bulgarian-split-squat', raw: g6, camera: { cx: -0.304048, cy: 0.480035, size: 1.108071 } },
+  { key: 'dumbbell-one-arm-row', raw: g7, camera: { cx: -0.064427, cy: 0.336316, size: 0.910585 } },
+  { key: 'machine-leg-press', raw: g8, camera: { cx: 0.158585, cy: 0.526954, size: 1.205909 } },
+  { key: 'sled-push', raw: g9, camera: { cx: 0.319274, cy: 0.396343, size: 1.509252 } },
 ];

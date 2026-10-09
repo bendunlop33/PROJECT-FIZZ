@@ -10,6 +10,8 @@ import { sampleTimes } from './keyframes';
 import { dist, penetrationDepth, lerpVec, v, type Vec } from './math';
 import { poseAt, prepareGuide, type Pose, type PreparedGuide } from './pose';
 import { ROM_PROFILES, type AngleName } from './rig';
+import { BODY_GROUPS, groupContours } from './body';
+import { adjustProblems, focusViewOf, MUSCLE_REGION_MAP, parseRegion, resolveFocus, type MuscleLevel } from './muscle-map';
 
 export const CHECK_FPS = 30;
 export const LIMITS = {
@@ -22,6 +24,8 @@ export const LIMITS = {
   minDurationMs: 2000,
   maxDurationMs: 6000,
   maxBytes: 8 * 1024,
+  /** v2 outline overlap reported (not failed) above this (guides v2 §3.2). */
+  outlineTolerance: 0.005,
 } as const;
 
 export const CHECK_IDS = [
@@ -38,13 +42,24 @@ export const CHECK_IDS = [
   'file-size',
   'captions',
   'key-positions',
+  'focus',
+  'outline-contact',
 ] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
 export interface CheckItem {
   id: CheckId;
   ok: boolean;
+  /** Passes, but the guide-maker should look (reported as `warn`, never fails the guide). */
+  warn?: boolean;
   detail: string;
+}
+
+/** One row of the focus table `guide:check` prints and writes to meta.json (guides v2 §4.8). */
+export interface FocusRow {
+  muscle: string;
+  level: MuscleLevel;
+  shown: boolean;
 }
 
 export interface GuideCheckInput {
@@ -62,6 +77,8 @@ export interface GuideCheckReport {
   items: CheckItem[];
   guide: Guide | null;
   frames: number;
+  /** Muscle focus table (empty without a rich entry). */
+  focus: FocusRow[];
 }
 
 const r4 = (n: number): string => n.toFixed(4);
@@ -291,16 +308,83 @@ function checkExercise(guide: Guide, dirKey: string, entry: CatalogueEntry | nul
   return { id: 'exercise-match', ok: true, detail: `${entry.name} (${guide.view} view)` };
 }
 
+/**
+ * Focus overrides (guides v2 §4.8): `hide`, `adjust` and `add` may only name
+ * muscles the catalogue entry lists, so the figure never shows a muscle the
+ * text doesn't name; adjustments stay within ±0.25 of the map; added regions
+ * must parse. Warns when a unilateral front/back-view guide doesn't say which
+ * side is working (§4.6).
+ */
+function checkFocus(guide: Guide, entry: CatalogueEntry | null): { item: CheckItem; rows: FocusRow[] } {
+  if (entry === null) return { item: { id: 'focus', ok: guide.focus === undefined, detail: guide.focus === undefined ? 'No entry, no focus' : 'Focus overrides need a catalogue entry' }, rows: [] };
+  const listed = new Set<string>([...entry.primaryMuscles, ...entry.secondaryMuscles]);
+  const view = focusViewOf(guide);
+  const problems: string[] = [];
+  const f = guide.focus;
+  for (const m of f?.hide ?? []) if (!listed.has(m)) problems.push(`hide: ${m} isn't listed in the entry`);
+  for (const [m, adj] of Object.entries(f?.adjust ?? {})) {
+    if (!listed.has(m)) problems.push(`adjust: ${m} isn't listed in the entry`);
+    const first = MUSCLE_REGION_MAP[m as keyof typeof MUSCLE_REGION_MAP][view]?.[0];
+    if (first === undefined) problems.push(`adjust: ${m} has no mapped region in the ${view} view`);
+    else for (const p of adjustProblems(first, adj)) problems.push(`adjust ${m}: ${p}`);
+  }
+  for (const a of f?.add ?? []) {
+    if (!listed.has(a.muscle)) problems.push(`add: ${a.muscle} isn't listed in the entry`);
+    if (parseRegion(a.region) === null) problems.push(`add ${a.muscle}: can't read region "${a.region}"`);
+  }
+  const resolved = resolveFocus({ primary: entry.primaryMuscles, secondary: entry.secondaryMuscles }, f, view);
+  const rows: FocusRow[] = [...resolved.strong.map((m) => ({ m, level: 'strong' as const })), ...resolved.soft.map((m) => ({ m, level: 'soft' as const }))].map(({ m, level }) => ({ muscle: m, level, shown: resolved.drawn.includes(m) }));
+  for (const m of [...entry.primaryMuscles, ...entry.secondaryMuscles]) {
+    if (!rows.some((r) => r.muscle === m)) rows.push({ muscle: m, level: entry.primaryMuscles.includes(m) ? 'strong' : 'soft', shown: false });
+  }
+  const table = rows.map((r) => `${r.muscle} ${r.level}${r.shown ? '' : ' (not shown)'}`).join(' · ');
+  if (problems.length > 0) return { item: { id: 'focus', ok: false, detail: problems.join('; ') }, rows };
+  const unilateralFront = guide.view === 'front' && entry.laterality === 'unilateral' && f?.side === undefined;
+  return {
+    item: { id: 'focus', ok: true, ...(unilateralFront ? { warn: true } : {}), detail: `${view} view: ${table}${unilateralFront ? '; unilateral front/back view without focus.side' : ''}` },
+    rows,
+  };
+}
+
+/**
+ * Report-only (guides v2 §3.2): how far the v2 body *outline* goes into the
+ * floor or a bench/seat. The pass/fail check above tests the joint
+ * centrelines (unchanged, so existing guides still pass); this tells the
+ * guide-maker where the fuller silhouette now overlaps, for re-tuning.
+ */
+function checkOutlineContact(guide: Guide, poses: readonly Pose[]): CheckItem {
+  const beside = new Set<string>(guide.checks.besideProps ?? []);
+  let worst = { depth: 0, what: '', t: 0 };
+  for (const p of poses) {
+    for (const g of BODY_GROUPS) {
+      if (beside.has(g)) continue;
+      for (const pt of groupContours(p.body, g).flat()) {
+        const under = p.groundY - pt.y;
+        if (under > worst.depth) worst = { depth: under, what: `${g} below the floor`, t: p.t };
+        for (const c of p.colliders) {
+          const d = penetrationDepth(pt, c.polygon);
+          if (d > worst.depth) worst = { depth: d, what: `${g} into ${c.propId}`, t: p.t };
+        }
+      }
+    }
+  }
+  const tol = LIMITS.outlineTolerance;
+  return worst.depth > tol
+    ? { id: 'outline-contact', ok: true, warn: true, detail: `v2 outline: ${worst.what} by ${r4(worst.depth)} H at t=${worst.t.toFixed(3)} (report only; tolerance ${tol})` }
+    : { id: 'outline-contact', ok: true, detail: `v2 outline stays out of the floor and props (max ${r4(worst.depth)} H)` };
+}
+
 export function checkGuide(input: GuideCheckInput): GuideCheckReport {
   const parsed = GuideSchema.safeParse(input.raw);
   if (!parsed.success) {
     const detail = parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
-    return { ok: false, guide: null, frames: 0, items: [{ id: 'schema', ok: false, detail }] };
+    return { ok: false, guide: null, frames: 0, focus: [], items: [{ id: 'schema', ok: false, detail }] };
   }
   const guide = parsed.data;
   const prepared = prepareGuide(guide);
   const times = sampleTimes(guide, prepared.keys, CHECK_FPS);
   const poses = times.map((t) => poseAt(prepared, t));
+  const focus = checkFocus(guide, input.entry);
   const items: CheckItem[] = [
     { id: 'schema', ok: true, detail: 'guide.json matches format v1' },
     checkExercise(guide, input.dirKey, input.entry),
@@ -319,6 +403,8 @@ export function checkGuide(input: GuideCheckInput): GuideCheckReport {
     { id: 'file-size', ok: input.bytes <= LIMITS.maxBytes, detail: `${input.bytes} bytes (limit ${LIMITS.maxBytes})` },
     checkCaptions(prepared),
     checkKeyPositions(prepared, input.entry),
+    focus.item,
+    checkOutlineContact(guide, poses),
   ];
-  return { ok: items.every((i) => i.ok), items, guide, frames: poses.length };
+  return { ok: items.every((i) => i.ok), items, guide, frames: poses.length, focus: focus.rows };
 }

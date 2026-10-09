@@ -8,11 +8,51 @@
   "keyframes": 5,
   "renderFps": 30,
   "frames": 84,
-  "guideBytes": 2576,
+  "guideBytes": 2635,
   "attribution": "Original figure animation made for Fizz; no third-party media.",
   "reviewStatus": "draft",
   "check": {
     "status": "pass",
-    "failed": []
-  }
+    "failed": [],
+    "warnings": [
+      "outline-contact"
+    ]
+  },
+  "focus": [
+    {
+      "muscle": "quads",
+      "level": "strong",
+      "shown": true
+    },
+    {
+      "muscle": "glutes",
+      "level": "strong",
+      "shown": true
+    },
+    {
+      "muscle": "adductors",
+      "level": "soft",
+      "shown": false
+    },
+    {
+      "muscle": "hamstrings",
+      "level": "soft",
+      "shown": true
+    },
+    {
+      "muscle": "abductors",
+      "level": "soft",
+      "shown": true
+    },
+    {
+      "muscle": "core",
+      "level": "soft",
+      "shown": true
+    },
+    {
+      "muscle": "grip",
+      "level": "soft",
+      "shown": true
+    }
+  ]
 }

@@ -41,6 +41,7 @@
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "dbNear", "showIn": ["static"] }],
+  "focus": { "workPhase": [{ "from": 0.6428, "to": 1 }] },
   "checks": {
     "barDriftMax": 0.04, "barProp": "dbNear", "planted": ["footNear", "footFar"],
     "romSkip": { "angles": ["ankleFar"], "reason": "laces-down rear foot: the rig's sole-line ankle lies near in line with the shin; real plantarflexion is about 50 degrees" },
@@ -49,5 +50,5 @@
   "a11y": {
     "summary": "Side view, facing right, bench behind. Split stance with the top of the back foot on the bench and dumbbells hanging at the sides. Lower the hips straight down until the front thigh is about level and the back knee is just above the floor, front heel down, then drive up through the front foot."
   },
-  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.2.0" }
 }

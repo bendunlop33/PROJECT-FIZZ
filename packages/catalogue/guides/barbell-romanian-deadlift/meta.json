@@ -8,11 +8,44 @@
   "keyframes": 9,
   "renderFps": 30,
   "frames": 90,
-  "guideBytes": 2582,
+  "guideBytes": 2641,
   "attribution": "Original figure animation made for Fizz; no third-party media.",
   "reviewStatus": "draft",
   "check": {
     "status": "pass",
-    "failed": []
-  }
+    "failed": [],
+    "warnings": []
+  },
+  "focus": [
+    {
+      "muscle": "hamstrings",
+      "level": "strong",
+      "shown": true
+    },
+    {
+      "muscle": "glutes",
+      "level": "strong",
+      "shown": true
+    },
+    {
+      "muscle": "spinal_erectors",
+      "level": "soft",
+      "shown": true
+    },
+    {
+      "muscle": "adductors",
+      "level": "soft",
+      "shown": false
+    },
+    {
+      "muscle": "upper_back",
+      "level": "soft",
+      "shown": true
+    },
+    {
+      "muscle": "grip",
+      "level": "soft",
+      "shown": true
+    }
+  ]
 }

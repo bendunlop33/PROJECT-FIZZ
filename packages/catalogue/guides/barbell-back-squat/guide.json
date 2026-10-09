@@ -42,9 +42,10 @@
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
+  "focus": { "workPhase": [{ "from": 0.6428, "to": 1 }] },
   "checks": { "barDriftMax": 0.03, "barProp": "bar", "planted": ["footNear", "footFar"], "romProfile": "adult-default" },
   "a11y": {
     "summary": "Side view, facing right. Bar on the upper back. Sit down and back until the hips are just below the knees, heels flat, then stand up with hips and chest rising together. The bar stays over mid-foot."
   },
-  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.2.0" }
 }
