@@ -21,6 +21,7 @@ import { WorkoutPlaceholderScreen } from '../screens/WorkoutPlaceholderScreen';
 import type { SetupStep } from '../services/setup';
 import { useTheme } from '../theme';
 import type { SymbolName } from '../ui';
+import { initialRootState } from './initial-state';
 import type { ProfileStackParams, RootStackParams, TabParams } from './types';
 
 const RootStack = createNativeStackNavigator<RootStackParams>();
@@ -97,6 +98,8 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
   const theme = useTheme();
   const options = useStackOptions();
   const [setupDone, setSetupDone] = useState(setupStep === 'done');
+  // Computed once: the launch stack (review S5). Later changes navigate normally.
+  const [initialState] = useState(() => initialRootState(setupStep === 'done', openWorkout));
   const navTheme = useMemo<NavTheme>(() => {
     const base = theme.scheme === 'dark' ? DarkTheme : DefaultTheme;
     return {
@@ -116,8 +119,8 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
-      <NavigationContainer theme={navTheme}>
-        <RootStack.Navigator screenOptions={{ ...options, headerShown: false }} initialRouteName={setupDone ? (openWorkout ? 'Workout' : 'Tabs') : 'Setup'}>
+      <NavigationContainer theme={navTheme} initialState={initialState}>
+        <RootStack.Navigator screenOptions={{ ...options, headerShown: false }}>
           {setupDone ? (
             <>
               <RootStack.Screen name="Tabs" component={TabsNavigator} />
