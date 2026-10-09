@@ -30,3 +30,6 @@ Install over the top with SideStore (never delete the app), then:
 4. Run **Spoken cue while locked** (this build includes the background-audio experiment).
 5. Run **Speech recognition** again (now using the device locale).
 6. Export the results and paste them back.
+
+## First real-app build (overnight 9 Oct)
+The app now has first run, Today, check-in, the workout loop with rest alerts, Summary, and Profile with Data & backup, App status and Developer → Capability probe. Test list: `docs/device-tests/morning-checklist.md` (written before the morning).
