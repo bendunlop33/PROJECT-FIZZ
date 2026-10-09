@@ -428,7 +428,8 @@ The head, the neck (apart from `traps` in the back view) and the feet are never 
 
 | Guide | View | Not shown |
 |---|---|---|
-| Back squat, Romanian deadlift, leg press, Bulgarian split squat | side | inner thighs (adductors) |
+| Back squat, Romanian deadlift, leg press | side | inner thighs (adductors) |
+| Bulgarian split squat | side | inner thighs (adductors); core too, because the guide hides it (`focus.hide`: the hanging arm covers the front of the trunk) |
 | Lat pulldown | back (provisional, B3) | front of upper arms. (From the front it would be upper back, back of shoulders) |
 | Bench press, overhead press, one-arm row, triceps pushdown, sled push | side | nothing |
 
@@ -441,7 +442,7 @@ The head, the neck (apart from `traps` in the back view) and the feet are never 
 
 ### 4.7 Muscles that can't be shown
 
-A muscle whose map cell is `—` in the guide's view (or that a guide hides, §4.8) is **not drawn**. It stays in the text lists, and the legend adds one line, `Not shown from this side: inner thighs.` (wording by view, §10). It is never drawn on a surface the camera can't see.
+A muscle whose map cell is `—` in the guide's view (or that a guide hides, §4.8) is **not drawn**. **Every muscle the entry lists always stays in its text list** (`Feel it most` = primary, `Also works` = secondary), drawn or not. The legend also adds one line naming the listed muscles that aren't coloured, `Not shown from this side: inner thighs.` (wording by view, §10), so a hidden or undrawable muscle appears twice: in its list and on the `Not shown` line. A line's swatch shows only when at least one muscle on it is drawn (§5.3). A muscle is never drawn on a surface the camera can't see.
 
 `guide:check` also measures what is actually visible: it renders a mask of each region at every key frame, after occlusion by later layers. It **warns** when a primary muscle's visible area is under 1.5% of the figure's area in every key frame. That way a region hidden behind an arm all cycle is caught and the guide-maker can hide or adjust it.
 
@@ -463,7 +464,7 @@ A muscle whose map cell is `—` in the guide's view (or that a guide hides, §4
 | `camera` | Front-view guides only: `"front"` (default, facing the camera) or `"back"` (facing away). Same pose maths; only the drawing and the region map change | Rejected on side-view guides |
 | `focus.side` | `"near"` · `"far"` · `"both"` | Defaults: side → `near`; front/back → `both` |
 | `focus.workPhase` | Ranges of normalised `t` when the target muscles are loaded (lifting the weight). Drives §4.9 | Inside 0–1, ordered, not overlapping. Omitted means no emphasis |
-| `focus.hide` | Don't draw these muscles in this guide. They move to the `Not shown` line | Must be listed in the entry's primary or secondary muscles |
+| `focus.hide` | Don't draw these muscles in this guide. They stay in their `Feel it most` / `Also works` list and are also named on the `Not shown` line (§4.7) | Must be listed in the entry's primary or secondary muscles |
 | `focus.adjust` | Change the extent (`s`), depth (`d`), centre (`c`) or width (`w`) of a mapped region | Same muscle rule; at most ±0.25 on any number |
 | `focus.add` | Draw a region the map leaves out in this view, with explicit geometry | **Only muscles the entry already lists**, so the figure can never show a muscle the text doesn't name |
 
@@ -533,7 +534,7 @@ Lives in the player card under the controls (§2.1).
 |---|---|---|
 | `Feel it most:` | Primary muscles, plain names | ● filled circle 12pt in `guide.muscle`, shown when at least one listed muscle is drawn |
 | `Also works:` | Secondary muscles; the line is absent when there are none | ◐ 12pt circle, `guide.muscle` at 0.45 fill with a 1pt `guide.muscle` ring, so it differs from ● in shape as well as tone |
-| `Not shown from this side:` (or `…from the front:` / `…from behind:`) | Short names of listed muscles not drawn (§4.7) | none; `text.secondary` |
+| `Not shown from this side:` (or `…from the front:` / `…from behind:`) | Short names of listed muscles not drawn (§4.7); they also stay on their own line above | none; `text.secondary` |
 
 Text: `type.callout`, label word in `text.primary` semibold, list in `text.primary`, wrapping. The first item is capitalised and the rest are lowercase, joined with `, `.
 
@@ -626,7 +627,7 @@ v1 states (exercise-library.md §8.4) all still apply. Additions and changes:
 | State | Shows |
 |---|---|
 | Entry has primary and secondary muscles, all drawable | Strong and soft regions; legend with ● and ◐ lines; no `Not shown` line |
-| Some listed muscles not drawable in this view, or hidden by the guide | They aren't drawn; `Not shown from this side: …` line |
+| Some listed muscles not drawable in this view, or hidden by the guide | They aren't drawn but stay in their `Feel it most` / `Also works` list; `Not shown from this side: …` line names them too |
 | No listed muscle drawable | No colour on the figure; legend lines **without swatches**, plus the `Not shown` line |
 | Entry lists no muscles (custom or incomplete) | No legend and no colour |
 | No guide, rich cues only | Legend lines without swatches under the header; `What not to do` card; the rest of the cues |
@@ -718,7 +719,7 @@ All pure, in `@fizz/catalogue` (`src/figure/`, `src/muscles.ts`) and `apps/mobil
 ### 12.1 Code and tests (developer and reviewer)
 
 1. Every one of the 23 vocabulary muscles has a `MUSCLE_REGION_MAP` row for side, front and back (a region or an explicit `—`). The test fails on a missing muscle.
-2. For each of the 10 rich entries, `muscleFocusFor` gives strong = `primaryMuscles` and soft = `secondaryMuscles`, minus hidden muscles, with `notShown` matching the §4.5 coverage table (`adductors` for squat, Romanian deadlift, leg press and split squat).
+2. For each of the 10 rich entries, `muscleFocusFor` gives strong = `primaryMuscles` and soft = `secondaryMuscles`, every listed muscle included whether drawn or hidden (§4.7), with `notShown` matching the §4.5 coverage table plus any `focus.hide` muscles, in listed order (`adductors` for squat, Romanian deadlift and leg press; `adductors, core` for the split squat, whose guide hides `core`). A hidden secondary muscle stays under `Also works` and is also on the `Not shown` line.
 3. A `focus.add` or `focus.hide` naming a muscle the entry doesn't list fails `guide:check`.
 4. No guide pixel uses `accent` or any `status.*` value, in either look or scheme. The only non-neutral paint is `guide.muscle` (extends the existing `GUIDE_PAINT_TOKENS` test).
 5. Contrast floors (§4.2) hold for both looks and schemes: strong on canvas ≥ 3:1, strong vs near body ≥ 2:1, soft composite vs near body ≥ 1.4:1.
