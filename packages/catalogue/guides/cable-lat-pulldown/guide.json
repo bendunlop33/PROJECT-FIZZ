@@ -8,6 +8,7 @@
   "units": "bodyHeight",
   "durationMs": 2900,
   "loop": "cycle",
+  "motion": "phases",
   "ground": { "y": 0, "scrollPerCycle": 0 },
   "projection": { "legNear": 0.2, "legFar": 0.2, "shankNear": 1, "shankFar": 1 },
   "seenFrom": "back",
@@ -23,6 +24,7 @@
       "root": { "x": 0, "y": 0.317, "pelvisDeg": 0 },
       "joints": { "lumbar": 0, "thoracic": 0, "neck": 0 },
       "props": { "bar": { "x": 0, "y": 0.969 } },
+      "projection": { "armNear": 1, "armFar": 1, "forearmNear": 1, "forearmFar": 1 },
       "ik": {
         "footNear": { "x": 0.125, "y": 0, "planted": true, "bend": "ccw" },
         "footFar": { "x": -0.125, "y": 0, "planted": true, "bend": "ccw" },
@@ -32,8 +34,9 @@
       "ease": "smooth"
     },
     {
-      "t": 0.1724, "label": "Halfway", "caption": "Elbows drive down and out",
+      "t": 0.1976, "pass": true, "label": "Halfway", "caption": "Elbows drive down and out",
       "props": { "bar": { "y": 0.727 } },
+      "projection": { "armNear": 0.86, "armFar": 0.86, "forearmNear": 0.72, "forearmFar": 0.72 },
       "ease": "smooth"
     },
     {
@@ -42,7 +45,7 @@
       "projection": { "armNear": 0.83, "armFar": 0.83, "forearmNear": 0.68, "forearmFar": 0.68 },
       "holdMs": 300, "ease": "smooth"
     },
-    { "t": 0.7241, "sameAs": 1, "caption": "Let the bar rise slowly", "ease": "smooth" },
+    { "t": 0.6838, "sameAs": 1, "caption": "Let the bar rise slowly", "ease": "smooth" },
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
