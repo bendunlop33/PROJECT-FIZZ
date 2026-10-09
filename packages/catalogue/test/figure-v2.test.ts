@@ -32,6 +32,7 @@ import {
   renderSvg,
   resolveFocus,
   sampleTimes,
+  shadeBands,
   STROKE_FLOORS_PT,
   workIntensityAt,
   type DrawOp,
@@ -130,6 +131,22 @@ describe('figure drawing v2', () => {
     expect(compact.some((o) => isPath(o) && o.fill === 'muscle')).toBe(true);
     // shading: false drops only the gradients.
     expect(frameOps(pose, { px: 240, camera, shading: false }).filter(isPath).some((o) => o.gradient !== null)).toBe(false);
+  });
+
+  it('trunk shading is one band per edge, and every band fades out at its ends (no step at a joint)', () => {
+    for (const [key, t] of [['barbell-romanian-deadlift', 0.5], ['cable-lat-pulldown', 0.3]] as const) {
+      const body = poseAt(loaded(key).prepared, t).body;
+      expect(shadeBands(body, 'trunk').length, key).toBeLessThanOrEqual(2);
+      for (const g of ['trunk', 'legNear', 'armNear'] as const) {
+        for (const b of shadeBands(body, g)) {
+          const n = b.contour.length / 2;
+          // Edge points run out, inner points run back: the band's first and last inner points sit on the edge.
+          const gap = (i: number, j: number): number => Math.hypot((b.contour[i]?.x ?? 0) - (b.contour[j]?.x ?? 0), (b.contour[i]?.y ?? 0) - (b.contour[j]?.y ?? 0));
+          expect(gap(0, 2 * n - 1), `${key} ${g}`).toBeLessThan(1e-9);
+          expect(gap(n - 1, n), `${key} ${g}`).toBeLessThan(1e-9);
+        }
+      }
+    }
   });
 
   it('strokes never fall under the tier floors in points', () => {

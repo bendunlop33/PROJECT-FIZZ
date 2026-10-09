@@ -207,28 +207,55 @@ export interface ShadeBand {
 /** Depth of a shade band, as a fraction of the local half-width (§3.7). */
 const BAND_DEPTH = 0.4;
 
+/** Point on a region base: `x` across it (+1 front/lateral edge … −1 back/medial edge). */
+function basePoint(base: RegionBase, s: number, x: number): Vec {
+  const { p, n } = base.frame(s);
+  const w = base.widths(s);
+  return add(p, scale(n, x >= 0 ? x * w.front : x * w.back));
+}
+
+/** Share of a band's length over which it fades in and out at each end, so it never ends in a hard step. */
+const BAND_FADE = 0.2;
+
 /**
- * Soft shading bands (§3.7) for one body group: one per segment edge.
+ * Soft shading bands (§3.7) for one body group: one per edge of each limb
+ * segment, and one per edge of the whole trunk (the trunk chain, so the
+ * shading runs through the waist without a step at each joint). Each band
+ * fades to the edge at both ends instead of stopping square at a joint.
  * Side view: opacity 0.26 × clamp(0.2 − n·ℓ, 0, 1), continuous as a limb turns.
  * Front/back views: 0.18 on both lateral edges.
  */
 export function shadeBands(body: FigureBody, group: BodyGroup): ShadeBand[] {
   const out: ShadeBand[] = [];
-  for (const seg of body.segments) {
-    if (seg.group !== group || seg.name === 'neck') continue;
-    const [lo, hi] = profileRange(seg.profile);
-    const s0 = Math.max(lo, seg.side === null ? lo : 0);
-    const s1 = hi;
+  const band = (base: RegionBase, s0: number, s1: number, samples: number): void => {
     const mid = (s0 + s1) / 2;
+    const fade = (s: number): number => {
+      const k = Math.min(s - s0, s1 - s) / ((s1 - s0) * BAND_FADE);
+      const t = Math.min(1, Math.max(0, k));
+      return t * t * (3 - 2 * t);
+    };
     for (const x of [1, -1] as const) {
-      const nE = scale(frameAt(seg, mid).n, x);
+      const nE = scale(base.frame(mid).n, x);
       const opacity = body.view === 'side' ? 0.26 * Math.min(1, Math.max(0, 0.2 - (nE.x * LIGHT.x + nE.y * LIGHT.y))) : 0.18;
       if (opacity < 0.01) continue;
-      const ss = sampleRange(s0, s1, 8);
-      const edge = ss.map((s) => segmentPoint(seg, s, x));
-      const inner = ss.map((s) => segmentPoint(seg, s, x * (1 - BAND_DEPTH)));
-      out.push({ group, contour: [...edge, ...inner.reverse()], from: segmentPoint(seg, mid, x), to: segmentPoint(seg, mid, x * (1 - BAND_DEPTH)), opacity });
+      const ss = sampleRange(s0, s1, samples);
+      const edge = ss.map((s) => basePoint(base, s, x));
+      const inner = ss.map((s) => basePoint(base, s, x * (1 - BAND_DEPTH * fade(s))));
+      out.push({ group, contour: [...edge, ...inner.reverse()], from: basePoint(base, mid, x), to: basePoint(base, mid, x * (1 - BAND_DEPTH)), opacity });
     }
+  };
+  if (group === 'trunk') {
+    const chain = trunkSegments(body);
+    const base = chainBase(chain);
+    const first = chain[0];
+    const last = chain[chain.length - 1];
+    if (base !== null && first !== undefined && last !== undefined) band(base, profileRange(first.profile)[0], chain.length - 1 + profileRange(last.profile)[1], 24);
+    return out;
+  }
+  for (const seg of body.segments) {
+    if (seg.group !== group) continue;
+    const [, hi] = profileRange(seg.profile);
+    band(segmentBase(seg), 0, hi, 10);
   }
   return out;
 }

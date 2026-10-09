@@ -264,7 +264,7 @@ At the **S tier** (thumbnails), v1 separation stays: halos everywhere and no con
 ### 3.7 Soft shading (M/L tier; on by default, Ben to confirm on the v2 previews)
 
 - Light comes from above and slightly in front of the figure, along the world vector `ℓ = normalise(0.35, 1)` (in the facing-right frame).
-- Each near segment and the trunk gets a **shade band** on each edge. The band is 40% of the local half-width deep, with a linear gradient from `shade` at the edge to transparent at the band's inner edge. The gradient runs along the segment normal.
+- Each near limb segment gets a **shade band** on each edge, and the trunk gets one band per edge along the whole trunk chain (§4.4), so its shading runs through the waist without a step at each joint. The band is 40% of the local half-width deep, with a linear gradient from `shade` at the edge to transparent at the band's inner edge. The gradient runs along the segment normal. Each band fades to the edge over the first and last 20% of its length, so it never ends square at a joint (a visible seam on the first v2 renders).
 - Band opacity at the edge is `0.26 × clamp(0.2 − dot(nₑ, ℓ), 0, 1)`, where `nₑ` is that edge's outward normal. This is continuous, so a limb rotating through the horizontal never pops from one side to the other.
 - Front/back views: both lateral edges get bands at 0.18. There is no top-down band.
 - Shading sits **above** the muscle colour (§3.11), so highlighted muscles keep their volume.
