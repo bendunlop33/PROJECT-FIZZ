@@ -1,0 +1,240 @@
+import { useEffect, useState } from 'react';
+import { View } from 'react-native';
+
+import type { WeightUnit } from '@fizz/schemas';
+
+import { useDataChanged, useServices } from '../../shell/context';
+import { measurementSystem } from '../../device/runtime';
+import { formatClock } from '../../format/numbers';
+import type { SetupStep } from '../../services/setup';
+import { DEFAULT_REST_PRESETS, unitFromMeasurementSystem } from '../../services/setup';
+import { useTheme } from '../../theme';
+import { AppText, ChoiceCard, Group, PrimaryButton, Row, StatusLine } from '../../ui';
+import { SaveCopyToFiles } from '../data/SaveCopyToFiles';
+import { GymSetupFlow, type SavedGymSummary } from './GymSetupFlow';
+import { StepFrame } from './StepFrame';
+
+type Step = Exclude<SetupStep, 'done'> | 'ready';
+
+const REST_LINE = DEFAULT_REST_PRESETS.map((p) => formatClock(p.seconds)).join(' / ');
+
+/**
+ * First run, Essentials only (onboarding.md §2.1–2.6): Welcome → How you log
+ * → Your gym → How your data is kept → Ready → Today. No permission prompts.
+ * Each step writes on Continue, so a force-close resumes at the right step.
+ * Not in this build: editing rest presets here, the optional About-your-
+ * training and coach steps, and Restore from Welcome.
+ */
+export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep: Exclude<SetupStep, 'done'>; initialUnit: WeightUnit | null; onDone: () => void }) {
+  const theme = useTheme();
+  const services = useServices();
+  const changed = useDataChanged();
+  const [step, setStep] = useState<Step>(initialStep);
+  const [unit, setUnit] = useState<WeightUnit>(initialUnit ?? unitFromMeasurementSystem(measurementSystem()));
+  const [gym, setGym] = useState<SavedGymSummary | 'skipped' | null>(null);
+  const [copySaved, setCopySaved] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(write: () => Promise<{ ok: true } | { ok: false; message: string }>, next: () => void) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const r = await write();
+    setBusy(false);
+    if (!r.ok) {
+      setError(r.message);
+      return;
+    }
+    changed();
+    next();
+  }
+
+  // Resumed after a force-close: describe the gym from what was saved.
+  useEffect(() => {
+    if (step !== 'ready' || gym !== null) return;
+    const run = { alive: true };
+    void (async () => {
+      const current = await services.yourData.currentGym();
+      const items = current ? await services.yourData.equipment(current.id) : [];
+      if (!run.alive) return;
+      setGym(
+        current === null
+          ? 'skipped'
+          : { name: current.name, items: items.length, notChecked: items.filter((i) => i.detailsSource === 'preset').length },
+      );
+    })();
+    return () => {
+      run.alive = false;
+    };
+  }, [step, gym, services]);
+
+  const errorLine = error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null;
+
+  switch (step) {
+    case 'welcome':
+      return (
+        <StepFrame
+          step={null}
+          title="Set up your training log"
+          explanation="Takes about 2 minutes. Everything is saved on this phone. Nothing needs an account or the internet."
+          footer={
+            <>
+              <PrimaryButton
+                label="Set up"
+                onPress={() => {
+                  setStep('units');
+                }}
+              />
+              <Row title="Restore from a backup" subtitle="Not in this build yet" disabled />
+            </>
+          }
+        >
+          <View style={{ gap: theme.space['2'] }}>
+            <AppText variant="body">You’ll set:</AppText>
+            {['Units and rest times', 'Your gym’s equipment', 'How your data is kept'].map((t, i) => (
+              <AppText key={t} variant="body" numeric>{`${String(i + 1)}  ${t}`}</AppText>
+            ))}
+          </View>
+          <AppText variant="callout" color="text.secondary">
+            Coach, goals and history import are optional and can come later.
+          </AppText>
+        </StepFrame>
+      );
+
+    case 'units':
+      return (
+        <StepFrame
+          step="Step 1 of 3"
+          title="How you log"
+          explanation="You can change these any time in Profile."
+          onBack={() => {
+            setStep('welcome');
+          }}
+          footer={
+            <PrimaryButton
+              label="Continue"
+              busy={busy}
+              onPress={() =>
+                void run(
+                  () => services.setup.saveUnits(unit),
+                  () => {
+                    setStep('gym');
+                  },
+                )
+              }
+            />
+          }
+        >
+          <View style={{ gap: theme.space['2'] }}>
+            <AppText variant="headline">Weights in</AppText>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }} accessibilityRole="radiogroup">
+              <View style={{ flexGrow: 1, flexBasis: 150 }}>
+                <ChoiceCard title="Kilograms (kg)" selected={unit === 'kg'} onPress={() => { setUnit('kg'); }} />
+              </View>
+              <View style={{ flexGrow: 1, flexBasis: 150 }}>
+                <ChoiceCard title="Pounds (lb)" selected={unit === 'lb'} onPress={() => { setUnit('lb'); }} />
+              </View>
+            </View>
+            <AppText variant="callout" color="text.secondary">
+              Picked from your phone’s region. Each piece of equipment keeps its own unit, so a kg gym and a lb gym both work.
+            </AppText>
+          </View>
+          <View style={{ gap: theme.space['2'] }}>
+            <AppText variant="headline">Rest times</AppText>
+            <AppText variant="callout" color="text.secondary">
+              Starting points, not advice.
+            </AppText>
+            <Group>
+              {DEFAULT_REST_PRESETS.map((p) => (
+                <Row key={p.presetName} title={p.presetName === 'Standard' ? 'Standard (default)' : p.presetName} trailing={<AppText variant="body" numeric>{formatClock(p.seconds)}</AppText>} />
+              ))}
+            </Group>
+          </View>
+          {errorLine}
+        </StepFrame>
+      );
+
+    case 'gym':
+      return (
+        <GymSetupFlow
+          unit={unit}
+          step="Step 2 of 3"
+          onBack={() => {
+            setStep('units');
+          }}
+          onSkip={() =>
+            void run(
+              () => services.setup.skipGym(),
+              () => {
+                setGym('skipped');
+                setStep('data');
+              },
+            )
+          }
+          onSaved={(summary) => {
+            setGym(summary);
+            setStep('data');
+          }}
+        />
+      );
+
+    case 'data':
+      return (
+        <StepFrame
+          step="Step 3 of 3"
+          title="How your data is kept"
+          onBack={
+            gym === null
+              ? undefined
+              : () => {
+                  setStep('gym');
+                }
+          }
+          onSkip={() => {
+            setStep('ready');
+          }}
+          footer={
+            <PrimaryButton
+              label="Continue"
+              onPress={() => {
+                setStep('ready');
+              }}
+            />
+          }
+        >
+          <AppText variant="body">Your data is saved and backed up on this phone.</AppText>
+          <AppText variant="body">
+            Copies on the phone are lost if the app is deleted or re-signed with a different Apple ID. You can save a copy to Files any time.
+          </AppText>
+          <SaveCopyToFiles variant="row" label="Save a copy to Files now" onSaved={setCopySaved} />
+        </StepFrame>
+      );
+
+    case 'ready': {
+      const gymLine =
+        gym === null || gym === 'skipped'
+          ? null
+          : `${gym.name} · ${gym.items === 0 ? 'no equipment yet' : `${String(gym.items)} items${gym.notChecked > 0 ? ` (${String(gym.notChecked)} not checked)` : ''}`}`;
+      return (
+        <StepFrame
+          step={null}
+          title="You’re ready to log"
+          footer={<PrimaryButton label="Go to Today" busy={busy} onPress={() => void run(() => services.setup.complete(), onDone)} />}
+        >
+          <View style={{ gap: theme.space['2'] }}>
+            <StatusLine icon="checkmark.circle.fill" tone="done" text={`Units: ${unit} · Rest ${REST_LINE}`} />
+            {gymLine === null ? (
+              <StatusLine icon="info.circle" tone="info" text={gym === 'skipped' ? 'No gym yet' : 'Gym saved'} />
+            ) : (
+              <StatusLine icon="checkmark.circle.fill" tone="done" text={gymLine} />
+            )}
+            <StatusLine icon="checkmark.circle.fill" tone="done" text="Saved on this phone · backups run after each workout" />
+            {copySaved ? <StatusLine icon="externaldrive.fill.badge.checkmark" tone="done" text={`Copy saved to Files · ${copySaved}`} /> : null}
+          </View>
+          {errorLine}
+        </StepFrame>
+      );
+    }
+  }
+}
