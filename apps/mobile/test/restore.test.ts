@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import type { DatabaseManager } from '@fizz/persistence';
+
+import { createRestoreService } from '../src/backup/restore-service';
 import { buildCheckResultView, buildRestorePreviewView, describeBackupError, rollbackRowView } from '../src/backup/restore-view';
 import { createHarness, logWorkout, setUpGym, TZ, type Harness } from './harness';
 
@@ -144,5 +147,38 @@ describe('restore from a backup on this phone', () => {
     if (!checked.ok) throw new Error(checked.error.message);
     const view = buildRestorePreviewView(checked.preview, { nowMs: h.clockMs, tz: TZ, locale: 'en-GB' });
     expect(view).toMatchObject({ identical: true, warnings: [], confirm: null });
+  });
+});
+
+describe('I/O errors during Restore and Undo (review S3)', () => {
+  it('never reject: each becomes a "didn’t finish" result the screen can show instead of the cover', async () => {
+    const boom = () => Promise.reject(new Error('ENOSPC: no space left on device'));
+    const manager = { check: boom, restore: boom, rollback: boom, rollbackTarget: { available: true, last: null } } as unknown as DatabaseManager;
+    const svc = createRestoreService({
+      manager,
+      backupFiles: { read: boom, write: boom, remove: boom },
+      now: () => ({ utc: '2026-10-09T08:00:00.000Z', tz: TZ }),
+      activeWorkout: () => Promise.resolve(null),
+      copiesOnPhone: () => Promise.resolve([]),
+      backupsIdle: () => Promise.resolve(),
+    });
+    for (const r of [await svc.restore('{}'), await svc.undo()]) {
+      expect(r).toMatchObject({ ok: false, reason: 'failed', error: { code: 'restore_failed' } });
+      if (!r.ok && r.reason === 'failed') expect(describeBackupError(r.error)).toBe('Restore didn’t finish: ENOSPC: no space left on device. Your data is as it was.');
+    }
+    expect(await svc.prepare('{}')).toMatchObject({ ok: false, error: { code: 'restore_failed' } });
+    expect(await svc.check('{}')).toMatchObject({ ok: false, error: { code: 'restore_failed' } });
+    expect(await svc.readOnPhone('x.json')).toBeNull();
+
+    // Waiting for a backup that fails is caught too.
+    const svc2 = createRestoreService({
+      manager,
+      backupFiles: { read: boom, write: boom, remove: boom },
+      now: () => ({ utc: '2026-10-09T08:00:00.000Z', tz: TZ }),
+      activeWorkout: () => Promise.resolve(null),
+      copiesOnPhone: () => Promise.resolve([]),
+      backupsIdle: boom,
+    });
+    expect(await svc2.undo()).toMatchObject({ ok: false, reason: 'failed' });
   });
 });

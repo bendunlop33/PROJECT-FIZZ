@@ -61,6 +61,14 @@ export function RestoreScreen() {
   const needsCopyFirst = isRestore && (lastCopy === null || lastCopy.atUtc < (status.onPhone.lastSuccess?.createdAtUtc ?? ''));
 
   async function examine(label: string, read: () => Promise<string | null>) {
+    try {
+      await examineNow(label, read);
+    } catch (e) {
+      setStep({ kind: 'error', label, text: describeBackupError({ code: 'restore_failed', message: e instanceof Error ? e.message : String(e) }) });
+    }
+  }
+
+  async function examineNow(label: string, read: () => Promise<string | null>) {
     setStep({ kind: 'checking', label });
     const text = await read();
     if (text === null) {
@@ -84,7 +92,7 @@ export function RestoreScreen() {
   }
 
   async function chooseFile() {
-    const picked = await pickBackupFile();
+    const picked = await pickBackupFile().catch((e: unknown) => ({ kind: 'failed' as const, message: e instanceof Error ? e.message : String(e) }));
     if (picked.kind === 'cancelled') return;
     if (picked.kind === 'failed') {
       setStep({ kind: 'error', label: 'File', text: `Couldn’t open that file: ${picked.message}. Nothing was changed.` });
@@ -95,7 +103,8 @@ export function RestoreScreen() {
 
   async function restore(text: string, view: RestorePreviewView) {
     setStep({ kind: 'restoring', view });
-    const r = await services.restore.restore(text);
+    // Any throw dismisses the cover with the "didn't finish" state (§3.3; review S3).
+    const r = await services.restore.restore(text).catch((e: unknown) => ({ ok: false as const, reason: 'failed' as const, error: { code: 'restore_failed' as const, message: e instanceof Error ? e.message : String(e) } }));
     if (!r.ok) {
       setStep(
         r.reason === 'workout_unfinished'
@@ -127,13 +136,16 @@ export function RestoreScreen() {
         text: 'Undo restore',
         onPress: () => {
           setStep({ kind: 'undoing' });
-          void services.restore.undo().then((r) => {
-            if (!r.ok) {
-              setStep({ kind: 'error', label: '', text: r.reason === 'workout_unfinished' ? 'Finish or discard your workout first.' : describeBackupError(r.error) });
-              return;
-            }
-            relaunch();
-          });
+          void services.restore
+            .undo()
+            .catch((e: unknown) => ({ ok: false as const, reason: 'failed' as const, error: { code: 'restore_failed' as const, message: e instanceof Error ? e.message : String(e) } }))
+            .then((r) => {
+              if (!r.ok) {
+                setStep({ kind: 'error', label: '', text: r.reason === 'workout_unfinished' ? 'Finish or discard your workout first.' : describeBackupError(r.error) });
+                return;
+              }
+              relaunch();
+            });
         },
       },
     ]);

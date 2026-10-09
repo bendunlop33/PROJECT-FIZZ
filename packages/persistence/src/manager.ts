@@ -128,6 +128,15 @@ class RestoreAbort extends Error {
 
 const describe = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+/** Any thrown error (disk full, a file that won't open) becomes a `restore_failed` result: nothing was switched. */
+async function failSafe<T>(fn: () => Promise<T>): Promise<T | { ok: false; error: BackupError }> {
+  try {
+    return await fn();
+  } catch (e) {
+    return { ok: false, error: { code: 'restore_failed', message: `Restore failed; your current data is unchanged. (${describe(e)})` } };
+  }
+}
+
 async function quietly(fn: () => Promise<void>): Promise<boolean> {
   try {
     await fn();
@@ -216,7 +225,7 @@ export class DatabaseManager {
 
   /** Verify a backup file and compare it with the current data. Changes nothing. */
   preview(text: string): Promise<PreviewOutcome> {
-    return this.exclusive(() => this.previewNow(text));
+    return this.exclusive(() => failSafe(() => this.previewNow(text)));
   }
 
   /**
@@ -226,7 +235,7 @@ export class DatabaseManager {
    * the last-switch record.
    */
   check(text: string): Promise<CheckOutcome> {
-    return this.exclusive(async () => {
+    return this.exclusiveSafe(async (): Promise<CheckOutcome> => {
       const previewed = await this.previewNow(text);
       if (!previewed.ok) return previewed;
       const { preview, file } = previewed;
@@ -250,7 +259,7 @@ export class DatabaseManager {
    * removes the half-built file.
    */
   restore(text: string, at: ZonedTimestamp): Promise<RestoreOutcome> {
-    return this.exclusive(async () => {
+    return this.exclusiveSafe(async (): Promise<RestoreOutcome> => {
       const previewed = await this.previewNow(text);
       if (!previewed.ok) return previewed;
       const { preview, file } = previewed;
@@ -281,16 +290,19 @@ export class DatabaseManager {
     const { host, migrations } = this.options;
     const notNew: BackupError = { code: 'restore_failed', message: `Restore failed: ${name} is already in use. Nothing was changed.` };
     if (name === this.slots.current || name === this.slots.previous || name === this.slots.orphan) return { ok: false, error: notNew };
-    // Never adopt (and later delete) a file we didn't create: it must be empty.
-    const driver = await host.open(name);
-    if ((await readUserVersion(driver)) !== 0) {
-      await quietly(() => driver.close());
-      return { ok: false, error: notNew };
-    }
     const keptOrphan = { orphan: this.slots.orphan, reason: this.orphanReason };
-    await this.writeSlots({ ...this.slots, orphan: name }, purpose);
+    let driver: SqlDriver | null = null;
     let fresh: Store | null = null;
+    // The file is ours to delete once it's known to be new and empty; the slot is restored once recorded (review S3).
+    let owned = false;
+    let recorded = false;
     try {
+      driver = await host.open(name);
+      // Never adopt (and later delete) a file we didn't create: it must be empty.
+      if ((await readUserVersion(driver)) !== 0) throw new RestoreAbort(notNew);
+      owned = true;
+      await this.writeSlots({ ...this.slots, orphan: name }, purpose);
+      recorded = true;
       await driver.exec('PRAGMA journal_mode = WAL');
       await migrate(driver, migrations, file.schemaVersion);
       const shape = await checkBackupShape(driver, file);
@@ -311,8 +323,8 @@ export class DatabaseManager {
       return { ok: true, store: fresh };
     } catch (e) {
       const closing = fresh ?? driver;
-      await quietly(() => closing.close());
-      if (await quietly(() => host.remove(name))) {
+      if (closing !== null) await quietly(() => closing.close());
+      if (owned && (await quietly(() => host.remove(name))) && recorded) {
         await quietly(() => this.writeSlots({ ...this.slots, orphan: keptOrphan.orphan }, keptOrphan.reason));
       }
       if (e instanceof RestoreAbort) return { ok: false, error: e.error };
@@ -325,13 +337,14 @@ export class DatabaseManager {
    * rollback). The two swap places, so a rollback can itself be rolled back.
    */
   rollback(at: ZonedTimestamp): Promise<RollbackOutcome> {
-    return this.exclusive(async () => {
+    return this.exclusiveSafe(async (): Promise<RollbackOutcome> => {
       const previous = this.slots.previous;
       const missing: BackupError = { code: 'nothing_to_roll_back', message: 'There is no earlier database to go back to.' };
       if (previous === null) return { ok: false, error: missing };
-      const driver = await this.options.host.open(previous);
+      let driver: SqlDriver | null = null;
       let store: Store | null = null;
       try {
+        driver = await this.options.host.open(previous);
         // Opening a missing file creates an empty one; never switch to that.
         if ((await readUserVersion(driver)) === 0) throw new RestoreAbort(missing);
         store = await openStore(driver, { migrations: this.options.migrations });
@@ -342,7 +355,7 @@ export class DatabaseManager {
         await this.writeSlots({ current: previous, previous: this.slots.current, orphan: null }, null, { atUtc: at.utc, reason: 'rollback' });
       } catch (e) {
         const closing = store ?? driver;
-        await quietly(() => closing.close());
+        if (closing !== null) await quietly(() => closing.close());
         if (e instanceof RestoreAbort) return { ok: false, error: e.error };
         return { ok: false, error: { code: 'restore_failed', message: `Rollback failed; staying on the current database. (${describe(e)})` } };
       }
@@ -451,6 +464,11 @@ export class DatabaseManager {
     this.slots = next;
     this.orphanReason = reason;
     if (switched) this.switched = switched;
+  }
+
+  /** `exclusive`, and an unexpected I/O error becomes `restore_failed` instead of a rejection (review S3). */
+  private exclusiveSafe<T>(fn: () => Promise<T>): Promise<T | { ok: false; error: BackupError }> {
+    return this.exclusive(() => failSafe(fn));
   }
 
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {

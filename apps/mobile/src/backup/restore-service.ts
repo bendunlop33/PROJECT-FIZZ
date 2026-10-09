@@ -51,6 +51,11 @@ export type RestoreResult =
 
 export type UndoResult = { ok: true } | { ok: false; reason: 'workout_unfinished'; block: RestoreBlock } | { ok: false; reason: 'failed'; error: BackupError };
 
+/** An unexpected throw (I/O, a closed database) becomes a plain failure: nothing was switched (review S3). */
+function failed(e: unknown): { ok: false; reason: 'failed'; error: BackupError } {
+  return { ok: false, reason: 'failed', error: { code: 'restore_failed', message: `Restore failed; ${e instanceof Error ? e.message : String(e)}.` } };
+}
+
 export function createRestoreService(deps: RestoreServiceDeps) {
   async function block(): Promise<RestoreBlock | null> {
     // An unfinished workout that can't even be read doesn't block: restoring is the way out (review S2).
@@ -81,28 +86,36 @@ export function createRestoreService(deps: RestoreServiceDeps) {
     },
 
     /** `Check a backup`: verify, rebuild in a scratch file, integrity-check, discard. */
-    check: (text: string): Promise<CheckFileResult> => deps.manager.check(text),
+    check: (text: string): Promise<CheckFileResult> => deps.manager.check(text).catch((e: unknown) => ({ ok: false as const, error: failed(e).error })),
 
     /** Step 2–3 of a restore: the same full check, so the preview says `Checked: complete, no damaged records`. */
-    prepare: (text: string): Promise<CheckFileResult> => deps.manager.check(text),
+    prepare: (text: string): Promise<CheckFileResult> => deps.manager.check(text).catch((e: unknown) => ({ ok: false as const, error: failed(e).error })),
 
     async restore(text: string): Promise<RestoreResult> {
-      const b = await block();
-      if (b) return { ok: false, reason: 'workout_unfinished', block: b };
-      await quiesce();
-      const r = await deps.manager.restore(text, deps.now());
-      if (!r.ok) return { ok: false, reason: 'failed', error: r.error };
-      return { ok: true, status: r.status, preview: r.preview };
+      try {
+        const b = await block();
+        if (b) return { ok: false, reason: 'workout_unfinished', block: b };
+        await quiesce();
+        const r = await deps.manager.restore(text, deps.now());
+        if (!r.ok) return { ok: false, reason: 'failed', error: r.error };
+        return { ok: true, status: r.status, preview: r.preview };
+      } catch (e) {
+        return failed(e);
+      }
     },
 
     rollbackTarget: (): { available: boolean; last: LastSwitch | null } => deps.manager.rollbackTarget,
 
     async undo(): Promise<UndoResult> {
-      const b = await block();
-      if (b) return { ok: false, reason: 'workout_unfinished', block: b };
-      await quiesce();
-      const r = await deps.manager.rollback(deps.now());
-      return r.ok ? { ok: true } : { ok: false, reason: 'failed', error: r.error };
+      try {
+        const b = await block();
+        if (b) return { ok: false, reason: 'workout_unfinished', block: b };
+        await quiesce();
+        const r = await deps.manager.rollback(deps.now());
+        return r.ok ? { ok: true } : { ok: false, reason: 'failed', error: r.error };
+      } catch (e) {
+        return failed(e);
+      }
     },
 
     /** A restore was building a file when Fizz last closed; the data is as it was before. */

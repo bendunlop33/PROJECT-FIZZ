@@ -304,6 +304,51 @@ describe('createBackup / restore', () => {
       await expectUntouched();
     });
 
+    it.each([
+      ['a new file won’t open (disk full)', 'open'],
+      ['the meta database can’t record the new file', 'meta'],
+    ] as const)('returns restore_failed, never a rejection, when %s (review S3)', async (_label, broken) => {
+      await target.close();
+      const real = nodeDatabaseHost(d);
+      const host: DatabaseHost = {
+        open: async (name) => {
+          if (name === 'fizz-meta.db') return broken === 'meta' ? failingDriver(await real.open(name), (sql) => sql.startsWith('UPDATE database_slots')) : real.open(name);
+          if (broken === 'open' && name !== 'training-1.db') throw new Error('ENOSPC: no space left on device');
+          return real.open(name);
+        },
+        remove: (name) => real.remove(name),
+      };
+      target = await openManager(d, { host });
+      await expect(target.restore(backupText, at(4000))).resolves.toMatchObject({ ok: false, error: { code: 'restore_failed' } });
+      await expect(target.check(backupText)).resolves.toMatchObject({ ok: false, error: { code: 'restore_failed' } });
+      expect(await snapshot(target.store)).toEqual(before);
+      expect(target.databaseNames).toEqual({ current: 'training-1.db', previous: null, orphan: null });
+      await target.close();
+      // A relaunch with working storage leaves nothing behind.
+      target = await openManager(d);
+      await expectUntouched();
+    });
+
+    it('rollback returns restore_failed, never a rejection, when the earlier file won’t open (review S3)', async () => {
+      expect(await target.restore(backupText, at(4000))).toMatchObject({ ok: true, status: 'restored' });
+      await target.close();
+      const real = nodeDatabaseHost(d);
+      const host: DatabaseHost = {
+        open: (name) => (name === 'training-1.db' ? Promise.reject(new Error('unable to open database file')) : real.open(name)),
+        remove: (name) => real.remove(name),
+      };
+      target = await openManager(d, { host });
+      const restored = await snapshot(target.store);
+      await expect(target.rollback(at(4100))).resolves.toMatchObject({ ok: false, error: { code: 'restore_failed' } });
+      expect(target.databaseNames).toMatchObject({ current: 'training-2.db', previous: 'training-1.db' });
+      expect(await snapshot(target.store)).toEqual(restored);
+      await target.close();
+      // Nothing was lost: with the file readable again, Undo works.
+      target = await openManager(d);
+      expect(await target.rollback(at(4200))).toMatchObject({ ok: true });
+      expect(await snapshot(target.store)).toEqual(before);
+    });
+
     it('cleans up after a restore that crashed before the switch', async () => {
       await target.close();
       const real = nodeDatabaseHost(d);

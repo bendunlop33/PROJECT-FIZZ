@@ -5,7 +5,7 @@ import { Alert, View } from 'react-native';
 
 import { toMs } from '@fizz/domain';
 
-import { rollbackRowView } from '../../backup/restore-view';
+import { describeBackupError, rollbackRowView } from '../../backup/restore-view';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useRelaunch, useScreenData, useServices } from '../../shell/context';
 import { formatShortDate, formatWhen } from '../../format/dates';
@@ -63,14 +63,18 @@ export function DataBackupScreen() {
         onPress: () => {
           setUndoing(true);
           setUndoError(null);
-          void services.restore.undo().then((r) => {
-            if (r.ok) {
-              relaunch();
-              return;
-            }
-            setUndoing(false);
-            setUndoError(r.reason === 'workout_unfinished' ? `Finish or discard your workout first (${r.block.title}).` : r.error.message);
-          });
+          // Any throw dismisses the cover with a message (review S3).
+          void services.restore
+            .undo()
+            .catch((e: unknown) => ({ ok: false as const, reason: 'failed' as const, error: { code: 'restore_failed' as const, message: e instanceof Error ? e.message : String(e) } }))
+            .then((r) => {
+              if (r.ok) {
+                relaunch();
+                return;
+              }
+              setUndoing(false);
+              setUndoError(r.reason === 'workout_unfinished' ? `Finish or discard your workout first (${r.block.title}).` : describeBackupError(r.error));
+            });
         },
       },
     ]);
