@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-triceps-pushdown",
+  "tier": "rich",
+  "name": "Triceps pushdown",
+  "aliases": ["Cable triceps pushdown", "Tricep pushdown", "Cable pushdown", "Triceps pressdown", "Cable pressdown", "Straight-bar pushdown"],
+  "family": "triceps_pushdown",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["triceps"],
+  "secondaryMuscles": [],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-09"
+  },
+  "cues": {
+    "setup": [
+      "Set the pulley at its highest point",
+      "Hold the bar with hands at chest height",
+      "Stand tall, slight forward lean, soft knees",
+      "Pin your elbows to your sides"
+    ],
+    "execution": [
+      "Push down until your arms are straight",
+      "Keep your elbows still at your sides",
+      "Pause briefly at the bottom",
+      "Let your hands rise slowly to chest height"
+    ],
+    "faults": [
+      "Elbows drifting forward and back",
+      "Leaning over the bar to push with bodyweight",
+      "Bending at the wrists",
+      "Letting the stack yank the hands up"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Stand where the bar and cable can't hit your face as they come back up.",
+      "Straighten your arms fully, but don't snap the elbows hard into lockout.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "band-triceps-pushdown", "name": "Band triceps pushdown", "reason": "Light resistance with a band anchored overhead; no cable station needed." }
+    ],
+    "progressions": [
+      { "key": "cable-overhead-triceps-extension", "name": "Overhead cable triceps extension", "reason": "Trains the triceps with the arms overhead, a longer range for the long head." },
+      { "key": "bodyweight-diamond-push-up", "name": "Diamond push-up", "reason": "Highest triceps activity of the eight exercises in one ACE-funded EMG study." }
+    ],
+    "substitutions": [
+      { "key": "cable-rope-triceps-pushdown", "name": "Rope pushdown", "reason": "Same movement with a rope handle. Logged separately because loads can differ." },
+      { "key": "dumbbell-overhead-triceps-extension", "name": "Dumbbell overhead triceps extension", "reason": "Free-weight triceps work when the cable is busy." },
+      { "key": "ez-bar-skull-crusher", "name": "EZ-bar skull crusher", "reason": "Lying triceps extension with a free bar." },
+      { "key": "dumbbell-triceps-kickback", "name": "Dumbbell kickback", "reason": "Free-weight option with similar triceps activity in one EMG study." },
+      { "key": "bodyweight-diamond-push-up", "name": "Diamond push-up", "reason": "No equipment needed." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view, figure facing right toward the cable column, camera at chest height. Cable runs from a high pulley above and slightly in front of the head down to the hands.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Standing, feet hip width, knees soft, torso leaning forward about 10–15° from the hips. Upper arms by the sides, elbows close to the ribs. Elbows bent so the hands are at lower-chest height. Wrists straight.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 12, "hipFlexion": 12, "kneeFlexion": 10, "shoulderFlexion": 5, "elbowFlexion": 105 }
+      },
+      {
+        "label": "Halfway",
+        "describe": "Forearms angled down, hands moving in an arc in front of the body. Elbows have not moved. Torso unchanged.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 12, "hipFlexion": 12, "kneeFlexion": 10, "shoulderFlexion": 5, "elbowFlexion": 55 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Arms straight, hands in front of the thighs, elbows still at the sides. Wrists straight. Torso unchanged.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 12, "hipFlexion": 12, "kneeFlexion": 10, "shoulderFlexion": 5, "elbowFlexion": 3 }
+      }
+    ],
+    "barPath": "Hands move in an arc around a fixed elbow; elbow drift ≤ 1% of body height",
+    "tempo": { "downMs": 900, "holdMs": 300, "upMs": 1400 },
+    "props": ["cable_high_anchor", "short_straight_bar"],
+    "emphasise": [
+      "Elbow stays pinned; only the forearm moves",
+      "Cable line stays attached to the hands",
+      "Torso stays still"
+    ],
+    "doNotShow": ["Elbows flaring or swinging", "Body leaning over the bar", "Hard elbow snap at lockout"]
+  },
+  "sources": [
+    {
+      "url": "https://www.acefitness.org/resources/everyone/exercise-library/185/triceps-pushdowns/",
+      "title": "ACE Exercise Library: Triceps Pushdowns",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[0,2-3]; cues.execution[0-3]; cues.faults[0,2-3]; safety.notes[1]; guideBrief.keyPositions[0] (hands return to about upper-chest height)"
+    },
+    {
+      "url": "https://acefitness.org/certifiednewsarticle/3008/ace-study-identifies-best-triceps-exercises",
+      "title": "ACE: ACE Study Identifies Best Triceps Exercises (Boehler, Porcari et al., University of Wisconsin-La Crosse, about 2011)",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.faults[1] (momentum makes pushdowns easy to cheat); variations.progressions[1]; variations.substitutions[3-4]",
+      "note": "Small study funded by ACE: 15 trained women, surface EMG. Measures activity, not strength or muscle growth."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    },
+    {
+      "field": "variations.substitutions[0]",
+      "note": "Keeping rope and bar pushdowns as separate entries is a design suggestion to avoid mixing histories. Ben may prefer one entry."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

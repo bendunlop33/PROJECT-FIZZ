@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-one-arm-row",
+  "tier": "rich",
+  "name": "One-arm dumbbell row",
+  "aliases": ["Single-arm dumbbell row", "One-arm DB row", "1-arm DB row", "DB row", "Dumbbell row", "Bench-supported dumbbell row"],
+  "family": "row",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "upper_back"],
+  "secondaryMuscles": ["rear_delts", "biceps", "brachialis", "grip"],
+  "compatibleEquipment": ["dumbbells"],
+  "requiresStation": ["bench"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-09"
+  },
+  "cues": {
+    "setup": [
+      "Same-side knee and hand on a flat bench",
+      "Hand under shoulder, knee under hip",
+      "Other foot on the floor, back flat",
+      "Let the arm hang straight under your shoulder"
+    ],
+    "execution": [
+      "Pull your elbow up and back toward your hip",
+      "Keep your chest square to the bench",
+      "Squeeze your upper back at the top",
+      "Lower slowly to a full stretch"
+    ],
+    "faults": [
+      "Twisting the torso to lift the weight",
+      "Jerking the weight up with momentum",
+      "Shrugging the shoulder toward the ear",
+      "Back rounding or sagging"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Pick the dumbbell up from the floor with a flat back, or set it beside the bench before you get into position.",
+      "Use a stable bench and keep the supporting hand directly under the shoulder.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "dumbbell-chest-supported-row", "name": "Chest-supported dumbbell row", "reason": "Chest on an incline bench removes the need to brace the torso." },
+      { "key": "machine-chest-supported-row", "name": "Chest-supported machine row", "reason": "Guided path and full support." }
+    ],
+    "progressions": [
+      { "key": "dumbbell-three-point-row", "name": "Three-point dumbbell row", "reason": "Only one hand on the bench, so the trunk works harder to stay still." },
+      { "key": "barbell-bent-over-row", "name": "Bent-over row", "reason": "Unsupported, both arms, heavier loads; more lower-back demand." }
+    ],
+    "substitutions": [
+      { "key": "cable-single-arm-row", "name": "Single-arm cable row", "reason": "Same one-arm pull with steady cable tension. Stack load." },
+      { "key": "dumbbell-chest-supported-row", "name": "Chest-supported dumbbell row", "reason": "Same pull with no torso bracing needed." },
+      { "key": "cable-seated-row", "name": "Seated cable row", "reason": "Both arms on a stack; easy to load in small steps." },
+      { "key": "machine-chest-supported-row", "name": "Chest-supported machine row", "reason": "Guided and easy to load." },
+      { "key": "barbell-bent-over-row", "name": "Bent-over row", "reason": "Both arms with a bar; more lower-back demand." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at bench height. The working arm and standing leg are the near side, closest to camera. The supporting knee and hand on the bench are the far side, drawn behind. Bench along the floor line.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Torso roughly parallel to the floor (about 10–15° above horizontal), back flat, head in line. Far knee and far hand on the bench, hand under the shoulder, knee under the hip. Near foot planted beside the bench with a soft knee. Near arm hanging straight down from the shoulder holding the dumbbell.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 78, "nearShoulderFlexion": 78, "nearElbowFlexion": 5, "nearHipFlexion": 88, "nearKneeFlexion": 20, "farHipFlexion": 90, "farKneeFlexion": 90 }
+      },
+      {
+        "label": "Halfway",
+        "describe": "Elbow bent and travelling up and back. Dumbbell rising under the elbow. Torso and support limbs unchanged, no twist.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 78, "nearShoulderFlexion": 40, "nearElbowFlexion": 60, "nearHipFlexion": 88, "nearKneeFlexion": 20, "farHipFlexion": 90, "farKneeFlexion": 90 }
+      },
+      {
+        "label": "Top",
+        "describe": "Elbow drawn up and back just past the line of the torso. Dumbbell beside the lower ribs and hip, forearm close to vertical. Shoulder blade pulled back, not shrugged. Chest still square to the bench.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 78, "nearShoulderFlexion": -10, "nearElbowFlexion": 100, "nearHipFlexion": 88, "nearKneeFlexion": 20, "farHipFlexion": 90, "farKneeFlexion": 90 }
+      }
+    ],
+    "barPath": "Dumbbell moves close to vertical, finishing slightly toward the hip in a small arc",
+    "tempo": { "downMs": 1400, "holdMs": 300, "upMs": 1000 },
+    "props": ["dumbbell", "bench_flat"],
+    "emphasise": [
+      "Elbow leads the pull toward the hip",
+      "Torso stays still and square with no twist",
+      "Near working arm drawn clearly in front of the far support limbs"
+    ],
+    "doNotShow": ["Torso rotation", "Rounded back", "Dumbbell swung up with momentum"]
+  },
+  "sources": [
+    {
+      "url": "https://www.acefitness.org/exercise-library-details/3/126/",
+      "title": "ACE Exercise Library: Single Arm Row",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[0-3]; cues.execution[0-1,3]; cues.faults[0,3]"
+    },
+    {
+      "url": "https://catalystathletics.com/exercise/568/Single-Arm-Dumbbell-Row/",
+      "title": "Catalyst Athletics Exercise Library: Single-Arm Dumbbell Row",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.execution[0,2-3]; guideBrief.keyPositions[0] (torso roughly parallel to floor)"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "cues.setup[3]",
+      "note": "Sources differ on the start. ACE keeps the shoulder blade set back; Catalyst lets it reach forward for a full stretch. The entry uses a neutral hang as the conservative default."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

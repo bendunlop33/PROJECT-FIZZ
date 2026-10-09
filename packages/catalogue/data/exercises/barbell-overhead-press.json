@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-overhead-press",
+  "tier": "rich",
+  "name": "Overhead press",
+  "aliases": ["OHP", "Standing press", "Military press", "Barbell shoulder press", "Strict press", "Standing barbell press"],
+  "family": "overhead_press",
+  "movementPattern": "vertical_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["front_delts"],
+  "secondaryMuscles": ["side_delts", "triceps", "upper_chest", "traps", "core"],
+  "compatibleEquipment": ["barbell"],
+  "requiresStation": ["rack"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 150,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-09"
+  },
+  "cues": {
+    "setup": [
+      "Set the bar at upper-chest height in the rack",
+      "Grip just outside shoulders, forearms vertical",
+      "Bar on your front shoulders, elbows slightly forward",
+      "Feet hip width, squeeze glutes, brace"
+    ],
+    "execution": [
+      "Pull your chin back and press straight up",
+      "Once past your forehead, push your head through",
+      "Lock out with the bar over mid-foot",
+      "Lower under control to your shoulders"
+    ],
+    "faults": [
+      "Leaning back into an incline press",
+      "Bar looping forward around the face",
+      "Grip too wide, forearms angled",
+      "Dipping the knees to drive the bar"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Press inside a rack. For heavy sets, set the safety arms just below the height of the bar on your shoulders so a failed rep can be lowered onto them.",
+      "Keep ribs down and glutes tight so the lower back doesn't arch hard as the bar goes up.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "dumbbell-seated-shoulder-press", "name": "Seated dumbbell shoulder press", "reason": "Back support and a freer arm path; less balance demand." },
+      { "key": "machine-shoulder-press", "name": "Shoulder press machine", "reason": "Guided path with no balance demand." },
+      { "key": "barbell-landmine-press", "name": "Landmine press", "reason": "Angled press that needs less overhead range." }
+    ],
+    "progressions": [
+      { "key": "barbell-push-press", "name": "Push press", "reason": "A leg drive moves heavier loads overhead." },
+      { "key": "dumbbell-standing-shoulder-press", "name": "Standing dumbbell shoulder press", "reason": "More stability demand; one study found higher deltoid activity but lower maximal loads." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-seated-shoulder-press", "name": "Seated dumbbell shoulder press", "reason": "Same vertical press; each arm works on its own. Load is each dumbbell." },
+      { "key": "machine-shoulder-press", "name": "Shoulder press machine", "reason": "Guided path; safe to train hard alone." },
+      { "key": "barbell-seated-overhead-press", "name": "Seated barbell press", "reason": "Same bar with the back supported; less balance demand." },
+      { "key": "barbell-landmine-press", "name": "Landmine press", "reason": "Angled press for when full overhead range isn't comfortable." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view, figure facing right, camera at chest height, whole body in frame including the bar at lockout.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Standing tall, knees straight, glutes tight. Bar resting on the front of the shoulders just above the collarbones, over mid-foot. Elbows slightly in front of the bar, forearms near vertical.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 0, "hipFlexion": 0, "kneeFlexion": 0, "shoulderFlexion": 35, "elbowFlexion": 145 }
+      },
+      {
+        "label": "Forehead",
+        "describe": "Bar at forehead height, still travelling straight up. Head pulled back slightly (chin tucked) so the bar clears the chin and nose. Torso stays near vertical, leaning back no more than about 5°.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": -5, "hipFlexion": 0, "kneeFlexion": 0, "shoulderFlexion": 100, "elbowFlexion": 85 }
+      },
+      {
+        "label": "Lockout",
+        "describe": "Arms straight overhead, bar over mid-foot and roughly over the shoulder joints. Head pushed forward again under the bar to neutral. Shoulders shrugged slightly up. Torso vertical.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 0, "hipFlexion": 0, "kneeFlexion": 0, "shoulderFlexion": 175, "elbowFlexion": 0 }
+      }
+    ],
+    "barPath": "Near-vertical over mid-foot; drift ≤ 3% of body height. The head moves around the bar, not the bar around the head",
+    "tempo": { "downMs": 1400, "holdMs": 300, "upMs": 1200 },
+    "props": ["barbell_loaded", "rack_optional"],
+    "emphasise": [
+      "Head moves back, then through under the bar",
+      "Bar travels straight up over mid-foot",
+      "Ribs down; no big backward lean"
+    ],
+    "doNotShow": ["Knee dip or hip drive", "Large backward lean", "Bar travelling forward around the face"]
+  },
+  "sources": [
+    {
+      "url": "https://www.acefitness.org/exerciselibrary/71/standing-barbell-shoulder-press",
+      "title": "ACE Exercise Library: Standing Shoulder Press",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[0,2]; cues.execution[3]"
+    },
+    {
+      "url": "https://us.humankinetics.com/blogs/excerpt/what-is-the-overhead-press",
+      "title": "Human Kinetics: What is the overhead press? (excerpt from Foundational Strength, J. Flagg)",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.execution[0-2]; guideBrief.barPath; guideBrief.keyPositions[0-2] (bar over mid-foot, head moves out of the way and back)"
+    },
+    {
+      "url": "https://barbell-logic.com/overhead-press-common-mistakes/",
+      "title": "Barbell Logic: Overhead Press Common Mistakes",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[1]; cues.faults[1-2]"
+    },
+    {
+      "url": "https://www.bisp-surf.de/Record/PU201311007613",
+      "title": "Saeterbakken AH, Fimland MS (2013) Effects of body position and loading modality on muscle activity and strength in shoulder presses. J Strength Cond Res 27(7):1824-1831",
+      "checkedOn": "2026-10-09",
+      "supports": "primaryMuscles; secondaryMuscles; variations.progressions[1]",
+      "note": "Abstract only."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. The rack-position elbow angle depends on forearm length and grip width."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

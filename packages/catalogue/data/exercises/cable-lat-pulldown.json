@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-lat-pulldown",
+  "tier": "rich",
+  "name": "Lat pulldown",
+  "aliases": ["Lat pull-down", "Pulldown", "Front lat pulldown", "Wide-grip lat pulldown", "Cable pulldown", "Lat pulls"],
+  "family": "pulldown",
+  "movementPattern": "vertical_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats"],
+  "secondaryMuscles": ["upper_back", "biceps", "brachialis", "rear_delts"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-09"
+  },
+  "cues": {
+    "setup": [
+      "Set the thigh pad snug on top of your thighs",
+      "Grip a little wider than your shoulders",
+      "Palms facing away from you",
+      "Sit tall, chest up, slight lean back"
+    ],
+    "execution": [
+      "Pull your elbows down toward your ribs",
+      "Bring the bar to your upper chest",
+      "Keep your chest up; don't swing back",
+      "Let the bar rise slowly to straight arms"
+    ],
+    "faults": [
+      "Pulling the bar behind the neck",
+      "Leaning far back and swinging",
+      "Shoulders shrugging toward the ears",
+      "Letting the stack yank the arms up"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Pull to the front of the face, not behind the neck.",
+      "Return the bar under control so it doesn't drop toward your head.",
+      "Keep hold of the bar as you stand up, then let it rise slowly. Don't let go at the top.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "cable-single-arm-pulldown", "name": "Single-arm pulldown", "reason": "One arm at a time with a lighter load; easier to feel the elbow path." }
+    ],
+    "progressions": [
+      { "key": "machine-assisted-pull-up", "name": "Assisted pull-up", "reason": "Moves the same pull onto your own bodyweight, with help." },
+      { "key": "bodyweight-pull-up", "name": "Pull-up", "reason": "Same vertical pull with bodyweight as the load." }
+    ],
+    "substitutions": [
+      { "key": "machine-assisted-pull-up", "name": "Assisted pull-up", "reason": "Same vertical pull. Load is assistance: a larger number is easier." },
+      { "key": "bodyweight-pull-up", "name": "Pull-up", "reason": "Same vertical pull with no machine." },
+      { "key": "cable-neutral-grip-pulldown", "name": "Neutral-grip pulldown", "reason": "Same machine with a different handle; some people find it more comfortable." },
+      { "key": "cable-straight-arm-pulldown", "name": "Straight-arm pulldown", "reason": "Lats with little biceps work; isolation." },
+      { "key": "dumbbell-one-arm-row", "name": "One-arm dumbbell row", "reason": "Back pull on a bench when the pulldown station is busy (horizontal pull)." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view, figure facing the camera, seated, camera at chest height. Pulley and cable directly above the centre of the bar. Seat and thigh pads visible; the weight stack is optional, behind the figure.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Seated, thighs under the pads, feet flat, knees about 90°. Arms reaching up in a wide V, hands on the bar about 1.5× shoulder width with an overhand grip. Elbows almost straight, shoulders allowed to rise slightly.",
+        "approxAnglesDeg": { "shoulderAbduction": 160, "elbowFlexion": 10, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Halfway",
+        "describe": "Bar at about eye level, moving straight down in front of the face. Elbows bending and travelling down and out. Shoulders have moved down.",
+        "approxAnglesDeg": { "shoulderAbduction": 110, "elbowFlexion": 70, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Bar at the upper chest, just below the chin. Elbows down beside the ribs, roughly under the hands, forearms close to vertical. Shoulders down and back, chest up.",
+        "approxAnglesDeg": { "shoulderAbduction": 30, "elbowFlexion": 140, "kneeFlexion": 90 }
+      }
+    ],
+    "ikHints": [
+      "Hands fixed to the bar at about 1.5× shoulder width",
+      "Bar centre on the body's midline, moving vertically from overhead to upper-chest height",
+      "Hips fixed on the seat; thighs under the pads; feet planted"
+    ],
+    "barPath": "Straight down and up along the body's midline; cable stays vertical from the bar centre to the pulley",
+    "tempo": { "downMs": 1000, "holdMs": 300, "upMs": 1600 },
+    "props": ["pulldown_bar", "cable_high_anchor", "machine_seat_with_thigh_pad", "weight_stack_optional"],
+    "emphasise": [
+      "Elbows drive down toward the ribs",
+      "Bar finishes at the upper chest, in front of the face",
+      "Shoulders move down as the pull starts"
+    ],
+    "doNotShow": ["Bar behind the neck", "Large backward swing", "Bar touching the head"]
+  },
+  "sources": [
+    {
+      "url": "https://pure.psu.edu/en/publications/grip-width-and-forearm-orientation-effects-on-muscle-activity-dur/",
+      "title": "Lusk SJ, Hale BD, Russell DM (2010) Grip width and forearm orientation effects on muscle activity during the lat pull-down. J Strength Cond Res 24(7):1895-1900",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[2] (pronated grip); primaryMuscles; guideBrief.keyPositions (front pull)",
+      "note": "Abstract only."
+    },
+    {
+      "url": "https://mikereinold.com/lat-pulldown-how-to-maximize-latissimus/",
+      "title": "Mike Reinold: The Lat Pulldown – How to Maximize Latissimus Activity",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[1]; cues.execution[2]; cues.faults[0-1]; safety.notes[0]"
+    },
+    {
+      "url": "https://www.mayoclinic.org/healthy-lifestyle/fitness/multimedia/lat-pull-down/vid-20084683",
+      "title": "Mayo Clinic video: Lat pull-down with weight machine",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[1]; cues.execution[0-1,3]; safety.notes[0]",
+      "note": "The page returned 403 to the fetcher. Content was seen only through a search-result summary. Supporting source only."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[2].approxAnglesDeg",
+      "note": "Front-view elbow angle is a 2D projection. With the elbows partly in front of the body, the true elbow bend is smaller than it looks from the front. The guide-maker should use IK (hands on the bar at upper-chest height, elbows under the hands) rather than these numbers."
+    },
+    {
+      "field": "cues.setup[3]",
+      "note": "Sources differ: Reinold advises an upright spine, while a slight lean back is common gym practice. Neither gives an angle. A front view can't show the lean anyway, so it is cued in text only."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}
