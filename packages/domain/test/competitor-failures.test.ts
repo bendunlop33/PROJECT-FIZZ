@@ -5,6 +5,7 @@ import type { EquipmentInstance, Exercise, Load, LoadConvention, ProgressionRule
 import {
   buildActiveSetView,
   buildAddExerciseCommand,
+  buildTodayView,
   calculateNextTargets,
   discardConfirmation,
   formatLoad,
@@ -556,6 +557,33 @@ describe('(e) Discard needs a confirmation or Undo (LiftTrack: "no second step")
     expectError(r, 'stale_version');
     expect(r.state.session.status).toBe('active');
     expect(r.state.sets).toEqual(s.sets);
+  });
+
+  it('Today’s stale card offers its one-tap Discard only when discardConfirmation says nothing is logged, at the version it was shown for', () => {
+    const later = ms(7 * 3600);
+    const today = (s: SessionAggregate) => {
+      const local = (utc: string) => utc.slice(0, 10);
+      const v = buildTodayView({ nowMs: later, active: s, finishedThisWeek: [], todayLocalDate: local(at(7 * 3600).utc), localDateOf: local, recentCheckIns: [] });
+      if (v.main.kind !== 'stale') throw new Error(`expected the stale card, got ${v.main.kind}`);
+      return v.main;
+    };
+    const w = setOf(startFixture().state, BENCH, 0);
+    const logged = apply(startFixture().state, logCmd(w.id, values(kg(60), 10), 10));
+    const states: [string, SessionAggregate][] = [
+      ['nothing logged', startFixture().state],
+      ['one set logged', logged],
+      ['logged then undone', apply(logged, { type: 'undo_log', at: at(12), opId: 'undo', setId: w.id, expectedSetVersion: current(logged, w.id).version })],
+      ['logged then deleted', apply(logged, { type: 'delete_set', at: at(12), opId: 'del', setId: w.id, expectedSetVersion: current(logged, w.id).version })],
+      ['all skipped', apply(startFixture().state, { type: 'skip_exercise', at: at(5), opId: 'skip', sessionExerciseId: w.sessionExerciseId })],
+    ];
+    for (const [name, s] of states) {
+      const card = today(s);
+      const ask = discardConfirmation(s);
+      // `Discard (nothing logged)` (no prompt) is shown exactly when endedAboutUtc is null.
+      expect(card.endedAboutUtc === null, name).toBe(!ask.required);
+      expect(card.sessionVersion, name).toBe(ask.expectedVersion);
+    }
+    expect(today(logged).endedAboutUtc).not.toBeNull();
   });
 
   it('a confirmed discard keeps every row and its audit (only the workout’s status changes); a repeated tap is a no-op', () => {
