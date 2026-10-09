@@ -8,6 +8,10 @@ import { deriveId } from '../stable';
  *   or one of its catalogue names, or a name Ben answered in an earlier import
  *   (a saved alias).
  * - `check`: a suggestion from the words of the name only. Ben confirms it.
+ *   A suggestion never contradicts an equipment word in the name (`Flat
+ *   Dumbbell Bench Press` is never the barbell bench press), and a tie is
+ *   broken on equipment, never by alphabetical order: a tie equipment can't
+ *   break gives no suggestion (review r4 S3).
  * - `no_match`: nothing suggested.
  * No score is shown or stored: the matcher has no calibrated confidence.
  * Names are data, never instructions (rule 8).
@@ -116,10 +120,67 @@ function similarity(a: readonly string[], b: readonly string[]): number {
 /** A suggestion needs at least this much of the words in common. */
 export const SUGGEST_THRESHOLD = 0.6;
 
+/** Lower case, punctuation as spaces, single spaces, padded: `" one arm db row "`. */
+function plainText(name: string): string {
+  return ` ${name.normalize('NFKC').toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim()} `;
+}
+
+/**
+ * Equipment words in a name and the equipment kinds each allows (review r4
+ * S3). `Machine` allows any machine; `Smith` and `Hammer Strength` are
+ * plate-loaded or stack machines, never a free barbell.
+ */
+const EQUIPMENT_WORDS: readonly [RegExp, readonly ExerciseEquipmentKind[]][] = [
+  [/ (dumbbells?|dbs?) /, ['dumbbells']],
+  [/ (barbells?|bb) /, ['barbell']],
+  [/ (ez ?bar|ez) /, ['ez_bar']],
+  [/ (trap|hex) ?bar /, ['trap_bar']],
+  [/ (kettlebells?|kbs?) /, ['kettlebell']],
+  [/ (cables?|pulley) /, ['weight_stack']],
+  [/ smith /, ['plate_loaded_machine', 'weight_stack']],
+  [/ hammer strength /, ['plate_loaded_machine', 'weight_stack']],
+  [/ machines? /, ['weight_stack', 'plate_loaded_machine', 'assisted_stack']],
+  [/ (bands?|banded) /, ['band']],
+];
+
+/**
+ * The equipment a name says it uses (`Flat Dumbbell Bench Press` →
+ * dumbbells), or null when it names none. Several words allow any of their
+ * kinds (`Smith Machine …`).
+ */
+export function equipmentInName(name: string): ReadonlySet<ExerciseEquipmentKind> | null {
+  const text = plainText(name);
+  const kinds = new Set<ExerciseEquipmentKind>();
+  for (const [re, allowed] of EQUIPMENT_WORDS) if (re.test(text)) for (const k of allowed) kinds.add(k);
+  return kinds.size === 0 ? null : kinds;
+}
+
+/** How a candidate's equipment compares with the name's: `agrees`, `contradicts`, or `unknown` (the name or the exercise names none). */
+function equipmentFit(named: ReadonlySet<ExerciseEquipmentKind> | null, c: MatchCandidate): 'agrees' | 'contradicts' | 'unknown' {
+  if (named === null || c.compatibleEquipment.length === 0) return 'unknown';
+  return c.compatibleEquipment.some((k) => named.has(k)) ? 'agrees' : 'contradicts';
+}
+
+/**
+ * The single exercise among tied candidates, preferring those whose
+ * equipment agrees with the name's. Null when equipment can't break the tie:
+ * the matcher can't tell them apart, so it suggests nothing rather than the
+ * first by name (review r4 S3).
+ */
+function breakTie(tied: readonly MatchCandidate[], named: ReadonlySet<ExerciseEquipmentKind> | null): string | null {
+  const ids = (list: readonly MatchCandidate[]) => [...new Set(list.map((c) => c.exerciseId))];
+  if (ids(tied).length === 1) return tied[0]?.exerciseId ?? null;
+  const agreeing = tied.filter((c) => equipmentFit(named, c) === 'agrees');
+  const left = ids(agreeing);
+  return left.length === 1 ? (left[0] ?? null) : null;
+}
+
+/** Scores this close are a tie. */
+const TIE = 1e-9;
+
 /**
  * Match one source name. `aliases` are Ben's saved answers by name key
- * (they win over everything); `candidates` must be in a stable order (ties
- * suggest the first).
+ * (they win over everything). A tie is never broken by candidate order.
  */
 export function matchName(name: string, candidates: readonly MatchCandidate[], aliases: ReadonlyMap<string, AliasTarget>): NameMatch {
   const key = nameKey(name);
@@ -128,19 +189,74 @@ export function matchName(name: string, candidates: readonly MatchCandidate[], a
   if (saved?.kind === 'exercise' && candidates.some((c) => c.exerciseId === saved.exerciseId)) {
     return { status: 'matched', exerciseId: saved.exerciseId, via: 'alias', skip: false };
   }
-  const exact = candidates.filter((c) => nameKey(c.name) === key || c.aliases.some((a) => nameKey(a) === key));
-  const distinct = [...new Set(exact.map((c) => c.exerciseId))];
-  if (distinct.length === 1) return { status: 'matched', exerciseId: distinct[0] ?? null, via: 'name', skip: false };
-  if (distinct.length > 1) return { status: 'check', exerciseId: distinct[0] ?? null, via: 'name', skip: false };
+  const named = equipmentInName(name);
+  const byName = candidates.filter((c) => nameKey(c.name) === key);
+  const byAlias = candidates.filter((c) => c.aliases.some((a) => nameKey(a) === key));
+  const exact = [...new Set([...byName, ...byAlias].map((c) => c.exerciseId))];
+  if (exact.length === 1) return { status: 'matched', exerciseId: exact[0] ?? null, via: 'name', skip: false };
+  if (exact.length > 1) {
+    // Two exercises share the name: an exercise's own name beats another's other name, then equipment decides. Ben confirms either way.
+    const pick = breakTie(byName.length > 0 ? byName : byAlias, named);
+    if (pick !== null) return { status: 'check', exerciseId: pick, via: 'name', skip: false };
+  }
 
   const words = nameTokens(name);
-  let best: { id: string; score: number } | null = null;
+  let best = 0;
+  let tied: MatchCandidate[] = [];
   for (const c of candidates) {
+    // Never suggest an exercise whose equipment contradicts a word in the name.
+    if (equipmentFit(named, c) === 'contradicts') continue;
     const score = Math.max(...[c.name, ...c.aliases].map((n) => similarity(words, nameTokens(n))));
-    if (score >= SUGGEST_THRESHOLD && (best === null || score > best.score)) best = { id: c.exerciseId, score };
+    if (score < SUGGEST_THRESHOLD || score < best - TIE) continue;
+    if (score > best + TIE) {
+      best = score;
+      tied = [c];
+    } else tied.push(c);
   }
-  if (best) return { status: 'check', exerciseId: best.id, via: 'words', skip: false };
+  const pick = tied.length === 0 ? null : breakTie(tied, named);
+  if (pick !== null) return { status: 'check', exerciseId: pick, via: 'words', skip: false };
   return { status: 'no_match', exerciseId: null, via: null, skip: false };
+}
+
+/**
+ * Words in a name that say one implement (`One-Arm`, `Single`, `Concentration`,
+ * `Goblet`) or two (`Two-Arm`, `Double`, `Alternating`). `Two-hand` says
+ * neither: one dumbbell can be held in both hands (review r4 S1).
+ */
+const ONE_IMPLEMENT = / ((one|1|single) ?(arm|arms|armed|hand|hands|handed|leg|legged|side|sided)|single|unilateral|concentration|goblet|suitcase|sa) /;
+const TWO_IMPLEMENT = / ((two|2) ?(arm|arms|armed|dumbbells?|dbs?|kettlebells?|kbs?)|double|dual|alternating|alternate|alt) /;
+
+/** What a name says about the number of dumbbells or kettlebells: 1, 2, `unclear` (both kinds of word), or null (nothing). */
+export function implementCue(name: string): ImplementCount | 'unclear' | null {
+  const text = plainText(name);
+  const one = ONE_IMPLEMENT.test(text);
+  const two = TWO_IMPLEMENT.test(text);
+  if (one && two) return 'unclear';
+  return one ? 1 : two ? 2 : null;
+}
+
+/**
+ * One dumbbell or two for a source name mapped to an exercise (review r4
+ * S1). Null means not known, so the import asks with nothing selected.
+ * - The catalogue doesn't record it: null.
+ * - The name says one (`One-Arm …`, `Concentration`) or two: only when the
+ *   catalogue agrees. A one-arm press mapped to the two-dumbbell standing
+ *   press, by its words or by Ben, is never read by the pair's answer.
+ * - The name says neither: two when the catalogue says two (the usual
+ *   case, shown with its conversion before commit). One only when the name
+ *   is the catalogue's own name for it, and that name doesn't owe its "one"
+ *   to a word the source name lacks: `Dumbbell Pullover` is one dumbbell,
+ *   but `Dumbbell Row` (also a name of the one-arm row) and `Dumbbell Squat`
+ *   (suggested as the goblet squat) are asked.
+ */
+export function implementsFor(sourceName: string, c: MatchCandidate): ImplementCount | null {
+  if (c.implements === null) return null;
+  const cue = implementCue(sourceName);
+  if (cue !== null) return cue === c.implements ? c.implements : null;
+  if (c.implements === 2) return 2;
+  const key = nameKey(sourceName);
+  const exact = nameKey(c.name) === key || c.aliases.some((a) => nameKey(a) === key);
+  return exact && implementCue(c.name) === null ? 1 : null;
 }
 
 /**

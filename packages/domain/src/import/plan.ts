@@ -23,7 +23,7 @@ import { deriveId } from '../stable';
 import { fromScaled, toScaled } from '../units';
 import { effortFromComment } from './effort';
 import type { FitNotesRow } from './fitnotes';
-import { matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
+import { implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
 
 /**
  * The FitNotes import preview and plan (data-import-export §2.5, §3.4, §4.3).
@@ -62,7 +62,7 @@ export interface EarlierImport {
 
 export interface ImportContext {
   ownerId: string;
-  /** Exercises a name can map to, in a stable order (ties suggest the first). */
+  /** Exercises a name can map to, in a stable order. */
   candidates: readonly MatchCandidate[];
   /** Ben's saved answers from earlier imports, by name key. */
   aliases: ReadonlyMap<string, AliasTarget>;
@@ -101,7 +101,11 @@ export interface ResolvedExercise {
   convention: LoadConvention;
   /** Which bar a `plates_only` value adds (only read for `total`). */
   bar: BarOf;
-  /** `per_hand`: one dumbbell or two, from the catalogue; null when not recorded (asked; review r3 S1). */
+  /**
+   * `per_hand`: one dumbbell or two, from the catalogue unless the source
+   * name contradicts it (`implementsFor`); null when not known (asked;
+   * review r3 S1, r4 S1).
+   */
   implements: ImplementCount | null;
   /** `Add new`: a custom exercise created when the import commits. */
   newKind: CustomExerciseKind | null;
@@ -147,7 +151,7 @@ export interface PerHandExercise {
   /** The app's exercise it maps to. */
   exerciseName: string;
   sets: number;
-  /** One dumbbell or two, from the catalogue. Null: not recorded, so it is asked on its own. */
+  /** One dumbbell or two (`implementsFor`). Null: not known, so it is asked on its own. */
   implements: ImplementCount | null;
   override: PerHandReading | null;
   /** How its values are read now (`perHandReading`). Null: still to answer. */
@@ -303,7 +307,8 @@ function resolveName(
         laterality: c.laterality,
         convention: c.defaultLoadConvention,
         bar: barOf(c.compatibleEquipment),
-        implements: c.implements,
+        // The source name can contradict the catalogue's count (`One-Arm Standing Dumbbell Press` on the pair press): then it's asked (review r4 S1).
+        implements: implementsFor(name, c),
         newKind: null,
       },
     };
