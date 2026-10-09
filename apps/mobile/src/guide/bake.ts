@@ -70,24 +70,32 @@ export type BakeKind = 'animation' | 'steps';
 
 /**
  * Tasks that fill `out` with pictures: one per baked frame (animation), or
- * the overlay trace samples and then one picture per key frame (steps, which
- * show the static bar path like the review preview).
+ * one per key position (steps, which show the static bar path like the review
+ * preview). `out[i]` is frame or position i.
  */
 export interface BakePlan {
   tasks: (() => void)[];
-  /** Index of the first picture task (overlay samples come before it). */
-  firstFrame: number;
+  /** Tasks to run before the first yield so `out[0]` exists at once (the poster). */
+  firstSync: number;
 }
 
 export function bakeTasks(loaded: LoadedGuide, kind: BakeKind, stops: readonly KeyFrameStop[], style: GuideStyle, out: SkPicture[]): BakePlan {
   const { prepared, camera } = loaded;
   const paints = new Map<string, SkPaint>();
   const mode = kind === 'animation' ? 'animated' : 'static';
+  const times = kind === 'animation' ? playbackTimes(prepared.guide) : stops.length > 0 ? stops.map((s) => s.t) : [0];
+  const first = times[0] ?? 0;
   // Only the first overlay is drawn (as in the preview).
   const plan = overlayPlans(prepared, mode)[0];
   const trace: Vec[] = [];
   const tasks: (() => void)[] = [];
   if (plan) {
+    // A trace needs ~a cycle of samples first. Draw frame 0 without it now, so
+    // the canvas is never empty while they're taken (review N1); it's redrawn
+    // with the trace below.
+    tasks.push(() => {
+      out[0] = recordOps(bakeFrame(prepared, camera, first, []), style, paints);
+    });
     for (const t of plan.times) {
       tasks.push(() => {
         const p = overlayPoint(prepared, plan.propId, t);
@@ -95,14 +103,12 @@ export function bakeTasks(loaded: LoadedGuide, kind: BakeKind, stops: readonly K
       });
     }
   }
-  const firstFrame = tasks.length;
-  const times = kind === 'animation' ? playbackTimes(prepared.guide) : stops.length > 0 ? stops.map((s) => s.t) : [0];
-  for (const t of times) {
+  times.forEach((t, i) => {
     tasks.push(() => {
-      out.push(recordOps(bakeFrame(prepared, camera, t, trace), style, paints));
+      out[i] = recordOps(bakeFrame(prepared, camera, t, trace), style, paints);
     });
-  }
-  return { tasks, firstFrame };
+  });
+  return { tasks, firstSync: 1 };
 }
 
 const CACHE_SIZE = 4;

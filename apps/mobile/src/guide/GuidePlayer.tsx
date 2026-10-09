@@ -31,9 +31,9 @@ interface BakeFailure {
 }
 
 /**
- * Pictures for one guide and kind, baked in slices on the JS thread. The
- * animation shows its first frame at once (poster) and plays once every frame
- * is ready. `kind: null` bakes nothing (the other view is showing). Every
+ * Pictures for one guide and kind, baked in slices on the JS thread. Both
+ * kinds show their first frame at once (poster); the animation plays once
+ * every frame is ready. `kind: null` bakes nothing (the other view is showing). Every
  * Skia call happens inside a task, so a throw is reported, never fatal.
  */
 function useBakedPictures(loaded: LoadedGuide, kind: BakeKind | null, stops: readonly KeyFrameStop[], style: GuideStyle): { baked: Baked | null; failure: BakeFailure | null } {
@@ -58,11 +58,11 @@ function useBakedPictures(loaded: LoadedGuide, kind: BakeKind | null, stops: rea
       fail(error);
       return;
     }
-    const { tasks, firstFrame } = plan;
-    const run = runSliced(tasks, {
+    const progress = { finished: false };
+    const run = runSliced(plan.tasks, {
       budgetMs: BAKE_BUDGET_MS,
-      // Animation: draw the first frame before yielding, so the canvas is never empty (poster).
-      firstSync: kind === 'animation' ? firstFrame + 1 : 0,
+      // Draw the first frame before yielding, so the canvas is never empty (poster; review N1).
+      firstSync: plan.firstSync,
       now: () => performance.now(),
       schedule: (fn) => {
         const handle = setTimeout(fn, 0);
@@ -71,12 +71,14 @@ function useBakedPictures(loaded: LoadedGuide, kind: BakeKind | null, stops: rea
         };
       },
       onDone: () => {
+        progress.finished = true;
         storeBake(key, out);
         setBaked({ key, pictures: out, done: true });
       },
       onError: fail,
     });
-    if (out.length > 0 && out.length < tasks.length) setBaked({ key, pictures: out.slice(), done: false });
+    // Show the poster while the rest bakes (unless it all finished synchronously; review N2).
+    if (!progress.finished && out.length > 0) setBaked({ key, pictures: out.slice(), done: false });
     return run.cancel;
   }, [key, kind, loaded, stops, style]);
   return {
@@ -187,7 +189,8 @@ export function GuidePlayer({ guide, size, visible }: Props) {
   const poster = anim?.pictures[0] ?? null;
 
   const stop = state.mode === 'steps' ? stops[state.step] : undefined;
-  const stillPicture = still?.done === true ? (still.pictures[state.step] ?? null) : null;
+  // Position 1 shows as soon as its poster exists; later positions once baked.
+  const stillPicture = still?.pictures[state.step] ?? null;
   const corner = size * GUIDE_CORNER_FRACTION;
 
   let art: ReactNode = null;
