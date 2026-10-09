@@ -15,7 +15,7 @@ Specs read:
 - The brief's "Validation before claiming it is better" (scenario 6), the §10 additional scenarios (home gym with dumbbells to 30 kg) and §12.
 - `docs/design/data-import-export.md`: §0, §2.5, §3.4, §4.1a, §4.3 and checks 16–27.
 - `docs/research/fitnotes-export-format.md`.
-- ADR 0015.
+- ADR 0016.
 - Rounds 1 and 2.
 
 ## What I ran
@@ -30,10 +30,10 @@ Specs read:
 
 | # | Status | Evidence |
 |---|---|---|
-| B1 Repeat of an imported workout, and imported "Last" with no equipment | **Fixed** | `HistorySession.imported` (`progression.ts:55`, set in `history.ts`) is checked in `lastComparableSession` (`active-view.ts:49`), `comparableSessions` (`progression.ts:258`) and `summaryHighlight` (`touches.ts:112`). Repeat: `listRepeatableIds` uses `source = 'manual'` (`sessions.ts:593`); `candidates` skips imports (`workout-services.ts:524`); `startFromSession` refuses with `imported_not_repeatable` (`session-service.ts:140`), so a stale link reads "That workout has nothing to repeat." `planFor` (adding an exercise) reads `previous.sessionId`, which is filtered too. The Summary of an imported workout has no comparison, highlight or Next time. The comparison names the compared workout's own gym (`summary.ts:129`). Tests: the reviewer's home-dumbbells scenario end to end (`fitnotes-import.test.ts:340`), no equipment on either side (`summary-today.test.ts`), and the rule (`history.test.ts`). ADR 0015 records option (a) and widens P-I3 |
+| B1 Repeat of an imported workout, and imported "Last" with no equipment | **Fixed** | `HistorySession.imported` (`progression.ts:55`, set in `history.ts`) is checked in `lastComparableSession` (`active-view.ts:49`), `comparableSessions` (`progression.ts:258`) and `summaryHighlight` (`touches.ts:112`). Repeat: `listRepeatableIds` uses `source = 'manual'` (`sessions.ts:593`); `candidates` skips imports (`workout-services.ts:524`); `startFromSession` refuses with `imported_not_repeatable` (`session-service.ts:140`), so a stale link reads "That workout has nothing to repeat." `planFor` (adding an exercise) reads `previous.sessionId`, which is filtered too. The Summary of an imported workout has no comparison, highlight or Next time. The comparison names the compared workout's own gym (`summary.ts:129`). Tests: the reviewer's home-dumbbells scenario end to end (`fitnotes-import.test.ts:340`), no equipment on either side (`summary-today.test.ts`), and the rule (`history.test.ts`). ADR 0016 records option (a) and widens P-I3 |
 | S1 Cleared bar weight | **Fixed** | `barWeightEntry` (`views.ts:538`) puts the stored weight back when editing ends and warns while the field is blank. Tested. One leftover case is N1 below |
 | N1–N5 | Fixed | The same unfinished file says Continue once, and a running import isn't called paused. Data & backup uses `pausedLine`. The set line reads `imported as …`. `writeFailedLine` says "may not have saved". A chosen `split` answer stays visible after the values stop spanning zero. Each is tested |
-| N6–N8 | Open, acknowledged in ADR 0015 | Unchanged |
+| N6–N8 | Open, acknowledged in ADR 0016 | Unchanged |
 
 ## Blocking
 
@@ -96,20 +96,20 @@ None.
 
 - Check 16: re-run detection against Ben's real export and add its first line as a fixture.
 - Check 27: preview within 5 s for 10,000 rows on the iPhone, plus per-answer latency and the results screen's full row decode (round-2 N8).
-- Device checks in ADR 0015:
+- Device checks in ADR 0016:
   - migration 3 under expo-sqlite after a copy is saved to Files;
   - the CSV picker from iCloud Drive, On My iPhone and FitNotes 2 email;
   - Stop, force-close and Continue;
   - Undo.
-- Ben's answers listed in ADR 0015 "Open for Ben". Ask in particular how he logged one-arm and goblet exercises (S1).
+- Ben's answers listed in ADR 0016 "Open for Ben". Ask in particular how he logged one-arm and goblet exercises (S1).
 
 ## Spec issues
 
 - **SP1. P-I3 is still the main open decision** (Domain owner and PM; open-decisions B7). Option (a) is now enforced consistently and labelled in the copy, which is correct while the decision is open. Option (a) means years of imported history don't help the next workout, which was the point of the import. The decision also needs to cover Repeat, and how loads with `Gym: Not recorded` are checked at today's gym.
 - **SP2. The dumbbell question has no answer for one-implement exercises** (S1). §2.5 step 3b treats every per-hand exercise as a pair. The designer should say how one-arm and one-dumbbell exercises are asked about, or shown, under "Both dumbbells together". The catalogue owner should consider an `implements: 1 | 2` field, because `laterality` can't tell a one-arm row from a split squat.
 - **SP3. "Same file" vs "nothing new"** (S2). §3.4's "Same file again" row assumes the file's earlier import still covers everything in it. The spec should say what happens once another import that the file depended on has been undone.
-- **SP4. Which domain do aliases belong to?** Checks 13a and 30 list "aliases" under Coaching knowledge. ADR 0015 stores FitNotes `ExerciseAlias` rows as owner-scoped Your data (Ben's own naming), and restore counts them that way. Probably both are meant (catalogue synonyms are Coaching knowledge; Ben's import answers are Your data), but rule 10's split for backup, export and delete needs this written down. The same goes for custom exercises from `Add new`, which the Coaching-knowledge export (§2.6) lists.
-- **SP5. ADR 0015 differences 10–19 still need designer or PM acceptance.** The ADR is still "Proposed". workout-summary.md and system-states.md should carry the date-only rules and the new Summary wording (difference 16).
+- **SP4. Which domain do aliases belong to?** Checks 13a and 30 list "aliases" under Coaching knowledge. ADR 0016 stores FitNotes `ExerciseAlias` rows as owner-scoped Your data (Ben's own naming), and restore counts them that way. Probably both are meant (catalogue synonyms are Coaching knowledge; Ben's import answers are Your data), but rule 10's split for backup, export and delete needs this written down. The same goes for custom exercises from `Add new`, which the Coaching-knowledge export (§2.6) lists.
+- **SP5. ADR 0016 differences 10–19 still need designer or PM acceptance.** The ADR is still "Proposed". workout-summary.md and system-states.md should carry the date-only rules and the new Summary wording (difference 16).
 - **Still open from earlier rounds:**
   - Smith machine and other bars (r2 SP3);
   - timed and distance strength sets (r1 SP2);

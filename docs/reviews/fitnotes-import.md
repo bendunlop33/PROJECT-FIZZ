@@ -5,14 +5,14 @@
 - B2: a FitNotes workout dated today shows an invented time and duration.
 - B3: "Assistance" turns weighted pull-ups into assisted ones.
 
-Reviewed: `fc1b3f8..43c5c21` on `claude/fitnotes-import` (8 commits: research, schemas, domain, persistence schema 3, service, screens, ADR 0015, the DX4 pause).
+Reviewed: `fc1b3f8..43c5c21` on `claude/fitnotes-import` (8 commits: research, schemas, domain, persistence schema 3, service, screens, ADR 0016, the DX4 pause).
 
 Specs read:
 - CLAUDE.md.
 - The brief's "Validation before claiming it is better" scenarios (especially 6), the §10 additional scenarios and §12.
 - `docs/design/data-import-export.md`: §0 DX4–DX7 and DX10, §2.5, §3.4, §4.3, §6, and checks 16–27.
 - `docs/research/fitnotes-export-format.md`.
-- ADR 0015.
+- ADR 0016.
 
 ## What I ran
 
@@ -80,7 +80,7 @@ Specs read:
 - **Failure path (probe R5, clock 18:00 BST):** Ben trains with FitNotes in the morning, exports and imports the same day.
   - Today shows `Workout done · 6 h 00 min`. Tapping it opens Summary with `12:00–` and `Active time 6 h 00 min`.
   - Before noon the duration reads `0 min` and the start time is in the future.
-- **Why it matters:** ADR 0015 says the anchor "is never shown". It is shown, and so is a duration computed from it. Neither exists in the file.
+- **Why it matters:** ADR 0016 says the anchor "is never shown". It is shown, and so is a duration computed from it. Neither exists in the file.
 - **Fix:**
   - When `session.localDate` is set, treat the workout as date-only everywhere. There is no duration (`activeMs: null` → `Workout done`) and no time range, and Summary shows the date only.
   - Alternatively, keep date-only workouts out of `done_today` and Summary.
@@ -120,7 +120,7 @@ Specs read:
   - `ImportResultsScreen.tsx:122-146` lists skipped rows only.
   - The preview's per-row original (`ImportRowsScreen`) disappears with the draft at commit.
 - **Failure path:** Ben imports, then wonders why a set reads 11.25 kg each. Nowhere in the app shows `FitNotes row 4,180: … 22.5 …`.
-- **Fix:** list imported rows (original → mapped) on the results screen, which the job already stores. Alternatively, get the PM to defer the UI half of check 24 explicitly, and add it to ADR 0015's differences.
+- **Fix:** list imported rows (original → mapped) on the results screen, which the job already stores. Alternatively, get the PM to defer the UI half of check 24 explicitly, and add it to ADR 0016's differences.
 
 ## Nits
 
@@ -164,9 +164,9 @@ Missing:
 
 ## Conditions before calling this done (known, not code defects)
 
-- Check 16: re-run detection against Ben's real export and add its first line as a fixture. ADR 0015 already says this.
+- Check 16: re-run detection against Ben's real export and add its first line as a fixture. ADR 0016 already says this.
 - Check 27: preview within 5 s for 10,000 rows on the iPhone, and per-answer latency (N10).
-- Device checks listed in ADR 0015:
+- Device checks listed in ADR 0016:
   - migration 3 under expo-sqlite on a phone with real workouts, after a copy saved to Files;
   - the CSV picker from iCloud Drive, On My iPhone and FitNotes 2 email;
   - Stop, force-close and Continue;
@@ -185,7 +185,7 @@ Missing:
 - **SP4. One bar weight can't cover several bar types.** §2.5 step 3b's barbell question has one `Bar weight` for the whole group, so it can't represent EZ bars or trap bars (S1). It should ask per bar kind.
 - **SP5. The bodyweight question needs a mixed-sign answer.** It offers only "added" or "assistance" per exercise, but FitNotes users commonly log assisted sets as negative and weighted sets as positive under one exercise (B3). Add a third answer for that case.
 - **SP6. Date-only workouts need app-wide rules.** The spec says FitNotes workouts "show the date only" but doesn't say what Today, Summary, durations or week totals do with a workout that has no time (B2, N3). system-states or workout-summary should cover date-only workouts. Research S5 also asks to state that FitNotes keeps one workout per date.
-- **SP7. ADR 0015's differences need PM acceptance.** The ADR is still "Proposed". The differences are:
+- **SP7. ADR 0016's differences need PM acceptance.** The ADR is still "Proposed". The differences are:
   - the extra `skipped_unsupported` category;
   - Undo also blocked by an unfinished workout;
   - `Share first line` instead of `Copy first line`;

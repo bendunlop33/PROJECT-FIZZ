@@ -190,7 +190,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   });
 
   // An imported (FitNotes) workout is a history record: no comparison, highlight or `Next time`.
-  // Imported history isn't comparable while P-I3 is open (ADR 0015; review r2 B1), and a
+  // Imported history isn't comparable while P-I3 is open (ADR 0016; review r2 B1), and a
   // `Next time` read from it would say "Same targets next time" about an old FitNotes date.
   const imported = s.source === 'import';
 

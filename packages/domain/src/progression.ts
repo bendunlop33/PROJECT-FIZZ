@@ -46,7 +46,7 @@ export interface HistorySession {
   /** The workout's gym; null when it wasn't recorded (an imported workout). */
   gymId: string | null;
   /**
-   * Imported from FitNotes. Until P-I3 is decided (ADR 0015), imported
+   * Imported from FitNotes. Until P-I3 is decided (ADR 0016), imported
    * history is never comparable: it doesn't feed `Last`, targets, the summary
    * comparison or a highlight, whatever its equipment (review r2 B1). It
    * isn't enough that it has no equipment: an exercise with no equipment on

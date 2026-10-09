@@ -11,7 +11,7 @@ Specs read:
 - The brief's "Validation before claiming it is better" (scenario 6), §10 additional scenarios and §12.
 - `docs/design/data-import-export.md`: §0, §2.5, §3.4, §4.3, §6 and checks 16–27.
 - `docs/research/fitnotes-export-format.md`.
-- ADR 0015.
+- ADR 0016.
 - Round 1: `docs/reviews/fitnotes-import.md`.
 
 ## What I ran
@@ -31,8 +31,8 @@ Specs read:
 | B3 mixed-sign bodyweight | **Fixed** | `plan.ts:478-497`: there is a third answer, `split`. Under `assistance`, positive values in a mixed file are unreadable and never flipped. Each answer is tested; same-day sets become two entries |
 | S1 EZ-bar and trap-bar get the Olympic bar | **Fixed** | `plan.ts:87` (`barOf`), `:371-389` and `:466-476`. EZ and trap bars have no default, so their rows wait for a weight. A kettlebell isn't asked about. With more than one bar or none, plates-only rows are unreadable. Tested |
 | S2 provenance after commit (check 24) | **Fixed** | `ImportResultsScreen.tsx:125-148` → `ImportedWorkoutScreen.tsx`, with file, row and original values. Tested (`fitnotes-import-views.test.ts:229`) |
-| N1, N2, N3, N6, N7, N8, N9 | Fixed | N3 is fixed for Today's "done" card. The week count still uses the anchor (open in ADR 0015) |
-| N4, N5, N10 | Open, acknowledged in ADR 0015 | Unchanged. Check them against Ben's file and on the device |
+| N1, N2, N3, N6, N7, N8, N9 | Fixed | N3 is fixed for Today's "done" card. The week count still uses the anchor (open in ADR 0016) |
+| N4, N5, N10 | Open, acknowledged in ADR 0016 | Unchanged. Check them against Ben's file and on the device |
 
 ## Blocking
 
@@ -60,11 +60,11 @@ Specs read:
 **Why it blocks:**
 - It breaks CLAUDE.md rule 4 ("achievable on the selected gym's real equipment") and the brief's additional scenario ("Home gym has only dumbbells up to 30 kg: no unavailable dumbbell or cable prescriptions").
 - It is reachable in one tap from Today on the first day after an import.
-- It contradicts ADR 0015, which says imported sets "don't feed 'Last' values or targets" (option (a) of P-I3). In practice, any exercise with no equipment gets option (b) without the designer's `Last (FitNotes, …)` label.
+- It contradicts ADR 0016, which says imported sets "don't feed 'Last' values or targets" (option (a) of P-I3). In practice, any exercise with no equipment gets option (b) without the designer's `Last (FitNotes, …)` label.
 - The "Same set-up at Main Gym" wording invents a fact (rule 6).
 - The built-in rule reads the same comparable set (`progression.ts:255`) with no equipment to snap to. I didn't probe a progression step-up.
 
-**Fix (pick one and record it in ADR 0015):**
+**Fix (pick one and record it in ADR 0016):**
 - (a) Until P-I3 is decided, leave `source: 'import'` workouts out of Repeat candidates and `Repeat last workout`. Also skip imported history in `lastComparableSession` and `comparableSessions`, for example with an `imported` flag on `HistorySession`, rather than relying on `equipmentId === null`.
 - (b) In `startWorkoutFromSession`, when the source exercise has no equipment, choose the first available equipment at this gym that suits the exercise (`compatibleEquipment`). Run the target through `planTemplateLoad` with it: round toward easier and never go above the maximum. When the gym has none, drop the load and keep a note.
 
@@ -115,7 +115,7 @@ Either way:
 
 - Check 16: re-run detection against Ben's real export.
 - Check 27: preview within 5 s for 10,000 rows on the iPhone, plus per-answer latency (round-1 N10 and N8 above).
-- Device checks in ADR 0015:
+- Device checks in ADR 0016:
   - migration 3 under expo-sqlite after a copy is saved to Files;
   - the CSV picker from iCloud Drive, On My iPhone and FitNotes 2 email;
   - Stop, force-close and Continue;
@@ -124,7 +124,7 @@ Either way:
 ## Spec issues
 
 - **SP1. P-I3 can't wait any longer** (Domain owner and PM). The code now behaves two ways: (a) for exercises on equipment, and unlabelled (b) for exercises with no equipment and for Repeat (B1). The decision must also say whether imported workouts can be repeated, and how loads from "Gym: Not recorded" are checked at the current gym.
-- **SP2. ADR 0015 differences 10–14 need designer or PM acceptance.** They answer round-1 SP4–SP6:
+- **SP2. ADR 0016 differences 10–14 need designer or PM acceptance.** They answer round-1 SP4–SP6:
   - the third bodyweight answer and its copy;
   - one bar weight per bar kind, with no EZ or trap default;
   - date-only rules on Today and Summary;

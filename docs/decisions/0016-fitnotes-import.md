@@ -1,4 +1,4 @@
-# 0015: FitNotes import (parser, preview, commit, Undo import)
+# 0016: FitNotes import (parser, preview, commit, Undo import)
 
 **Status:** Proposed, 2026-10-09 (developer; for review). Built and tested on Linux only. **Not yet run on an iPhone, and not yet run against Ben's real export** (spec check 16 says to re-run detection on his file before calling this done).
 
