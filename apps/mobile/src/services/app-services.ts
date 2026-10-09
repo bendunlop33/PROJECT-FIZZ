@@ -3,6 +3,8 @@ import {
   createSessionService,
   listGymPresets,
   materialiseGymDraft,
+  starterExercises,
+  toMs,
   type GymDraft,
   type GymPresetId,
   type CommandOutcome,
@@ -11,6 +13,7 @@ import {
 } from '@fizz/domain';
 import {
   checkIntegrity,
+  EXERCISE_SPEC,
   listDocuments,
   PROFILE_SPEC,
   saveDocumentIn,
@@ -22,7 +25,9 @@ import {
 } from '@fizz/persistence';
 import type { EquipmentInstance, Exercise, Gym, SessionAggregate, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
+import type { RestAlertController } from '../alerts/rest-alerts';
 import { createBackupService, type BackupFileStore, type TextFile } from '../backup/backup-service';
+import { createWorkoutServices } from './workout-services';
 import { bumpProfile, newProfile, setupStep, type SetupStep } from './setup';
 
 /**
@@ -50,6 +55,8 @@ export interface AppServicesDeps {
   newId: () => string;
   app: AppInfo;
   locale?: string;
+  /** Rest-end alerts (phone binding); absent in tests that don't need it. */
+  restAlerts?: RestAlertController;
 }
 
 export type SetupState = { step: SetupStep; profile: UserProfile | null; gyms: Gym[] };
@@ -106,6 +113,22 @@ export function createAppServices(deps: AppServicesDeps) {
   const coachingKnowledge = {
     exercises: (): Promise<Exercise[]> => repos().exercises.list(),
     gymPresets: listGymPresets,
+    /**
+     * Seed the starter exercise list (until the catalogue package is wired).
+     * One transaction; only missing IDs are added, so it is safe every launch
+     * and never overwrites an existing record.
+     */
+    ensureStarterExercises: (): Promise<number> =>
+      deps.manager.store.db.write(async (tx) => {
+        const have = new Set((await listDocuments(tx, EXERCISE_SPEC)).map((e) => e.id));
+        let added = 0;
+        for (const e of starterExercises(deps.now().utc)) {
+          if (have.has(e.id)) continue;
+          const r = await saveDocumentIn(tx, EXERCISE_SPEC, e, null);
+          if (r.ok) added += 1;
+        }
+        return added;
+      }),
     buildGymDraft: (presetId: GymPresetId, unit: WeightUnit): GymDraft => buildPresetDraft(presetId, unit),
   };
 
@@ -196,11 +219,16 @@ export function createAppServices(deps: AppServicesDeps) {
     },
   };
 
-  /** After any command: a finished workout triggers an on-phone backup, without waiting for it. */
+  /**
+   * After any command (committed events → subscribers, never gatekeepers):
+   * a finished workout triggers an on-phone backup, and the rest-end alert is
+   * reconciled with the new state. Neither is awaited by the write.
+   */
   function afterCommand(outcome: CommandOutcome): CommandOutcome {
     if (outcome.ok && !outcome.duplicate && outcome.events.some((e) => e.type === 'SessionFinished')) {
       void backups.backUpOnPhone('workout_finished');
     }
+    if (outcome.ok && deps.restAlerts) void deps.restAlerts.reconcile(outcome.aggregate, toMs(deps.now().utc));
     return outcome;
   }
 
@@ -247,7 +275,17 @@ export function createAppServices(deps: AppServicesDeps) {
     databaseNames: () => deps.manager.databaseNames,
   };
 
+  const loop = createWorkoutServices({
+    repos,
+    store: () => deps.manager.store,
+    now: deps.now,
+    newId: deps.newId,
+    profile: getProfile,
+    afterCommand,
+  });
+
   return {
+    ...loop,
     yourData,
     coachingKnowledge,
     setup,

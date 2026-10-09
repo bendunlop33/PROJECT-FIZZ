@@ -317,7 +317,12 @@ describe('startup failures are reported, never guessed', () => {
 describe('Your data and Coaching knowledge are separate (rule 10)', () => {
   it('exposes owner-scoped records only under yourData and general ones only under coachingKnowledge', async () => {
     const { services: s } = await ready();
-    expect(Object.keys(s.coachingKnowledge).sort()).toEqual(['buildGymDraft', 'exercises', 'gymPresets']);
+    expect(Object.keys(s.coachingKnowledge).sort()).toEqual(['buildGymDraft', 'ensureStarterExercises', 'exercises', 'gymPresets']);
+    // The starter exercise list is seeded at launch, owner-free, and seeding again adds nothing.
+    const exercises = await s.coachingKnowledge.exercises();
+    expect(exercises.length).toBeGreaterThan(20);
+    expect(exercises.every((e) => e.ownerId === null)).toBe(true);
+    expect(await s.coachingKnowledge.ensureStarterExercises()).toBe(0);
     expect(Object.keys(s.yourData).sort()).toEqual(['counts', 'currentGym', 'equipment', 'gyms', 'profile']);
     // Presets carry nothing about Ben.
     const draft = s.coachingKnowledge.buildGymDraft('commercial', 'kg');

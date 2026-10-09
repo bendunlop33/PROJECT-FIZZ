@@ -1,4 +1,4 @@
-import type { RecoveryResult } from '@fizz/domain';
+import { toMs, type RecoveryResult } from '@fizz/domain';
 import { DatabaseManager, SchemaTooNewError, type DatabaseHost, type MigrationReport } from '@fizz/persistence';
 
 import { isSqliteVersionSupported, readSqliteVersion } from '../data/expo-driver';
@@ -55,8 +55,12 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
       return { kind: 'sqlite_too_old', version: sqliteVersion };
     }
     const services = createAppServices({ ...deps, manager });
+    // Coaching knowledge: the starter exercise list (only missing IDs are added).
+    await services.coachingKnowledge.ensureStarterExercises().catch(() => 0);
     const setup = await services.setup.getState();
     const recovery = setup.profile ? await services.sessions.recover() : null;
+    // Rest alerts follow the recovered state: one alert for a running rest, none otherwise (flow §4.2).
+    if (recovery && deps.restAlerts) void deps.restAlerts.reconcile(recovery.state, toMs(deps.now().utc));
     // Background work: never awaited by the launch. The integrity check reads
     // in small turns so a Log isn't held behind it (review S4). The catch-up
     // backup exports everything in one turn, so it waits while a workout is
