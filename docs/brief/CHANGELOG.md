@@ -93,3 +93,13 @@ The brief is a living document. Each approved change gets an entry here: the dat
 ## v0.8: 2026-10-08 (Ben)
 
 - **Wearables (Garmin) are read-only.** The app only pulls data in: through Apple Health, Garmin's activity/health data, or exported files. It never uploads or writes anything to Garmin: no workouts pushed to the watch, nothing written back. Research is in progress in `docs/research/wearables-garmin.md`.
+
+## v0.9: 2026-10-09 (Ben)
+
+- **Wearables integration is parked.** Ben judged it too complex for now. The core app comes first: logging, rest, coach, progress. Endurance data stays a separate, empty-by-default domain. The coach never assumes runs it hasn't seen.
+- **Later, read-only, in this order:**
+  1. FIT file import.
+  2. A HealthKit probe.
+  3. Possibly the unofficial connector, only if Ben explicitly accepts the risks.
+
+  Research is kept in `docs/research/wearables-garmin.md` and `garmin-live-data.md`.
