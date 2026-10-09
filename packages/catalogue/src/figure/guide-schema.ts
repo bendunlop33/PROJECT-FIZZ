@@ -8,7 +8,7 @@ import { CatalogueKeySchema } from '@fizz/schemas';
 import { z } from 'zod';
 import { GuideViewSchema } from '../entry-schema';
 import { EASES } from './math';
-import { JOINT_NAMES, RIG_ID, ROM_PROFILE_NAMES } from './rig';
+import { ANGLE_NAMES, JOINT_NAMES, RIG_ID, ROM_PROFILE_NAMES } from './rig';
 
 const num = z.number();
 const coord = num.min(-3).max(3);
@@ -240,6 +240,13 @@ export const GuideSchema = z
        * They skip the prop-penetration test only; the floor test still applies.
        */
       besideProps: z.array(z.enum(LIMB_GROUPS)).max(4).optional(),
+      /**
+       * Angles the rig can't range-check for this movement, with the reason
+       * (shown in the check output). E.g. a laces-down rear foot on a bench:
+       * the rig's ankle angle is measured on the sole line, which lies near
+       * in line with the shin although the real plantarflexion is ~50°.
+       */
+      romSkip: z.strictObject({ angles: z.array(z.enum(ANGLE_NAMES)).min(1).max(4), reason: text(160) }).optional(),
       romProfile: z.enum(ROM_PROFILE_NAMES),
     }),
     a11y: z.strictObject({ summary: text(400) }),

@@ -389,6 +389,19 @@ describe('guide checks', () => {
     expect(failed({ ...squatRaw(), keyframes: open })).toContain('loop-continuity');
   });
 
+  it('romSkip excludes only the named angles and reports the reason', () => {
+    const keys = structuredClone(squatRaw().keyframes) as { ik?: Record<string, unknown>; joints?: Record<string, number> }[];
+    if (keys[0]?.ik) keys[0].ik.footNear = null;
+    if (keys[0]?.joints) Object.assign(keys[0].joints, { hipNear: 0, kneeNear: -30 });
+    const checks = { ...(squatRaw().checks as object), romSkip: { angles: ['kneeNear'], reason: 'test reason' } };
+    const r = checkGuide({ raw: { ...squatRaw(), keyframes: keys, checks }, bytes: 2000, dirKey: 'barbell-back-squat', entry: squatEntry() });
+    const rom = r.items.find((i) => i.id === 'rom');
+    expect(rom?.ok).toBe(true);
+    expect(rom?.detail).toContain('test reason');
+    const other = { ...checks, romSkip: { angles: ['kneeFar'], reason: 'test reason' } };
+    expect(failed({ ...squatRaw(), keyframes: keys, checks: other })).toContain('rom');
+  });
+
   it('catches bar drift, unreachable planted feet and hyperextension', () => {
     expect(failed({ ...squatRaw(), checks: { ...(squatRaw().checks as object), barDriftMax: 0.0001 } })).toEqual(['bar-drift']);
     const keys = structuredClone(squatRaw().keyframes) as { ik?: Record<string, unknown>; joints?: Record<string, number> }[];

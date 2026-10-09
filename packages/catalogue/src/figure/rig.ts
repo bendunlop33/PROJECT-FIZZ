@@ -101,7 +101,8 @@ export const JOINT_NAMES = [
 export type JointName = (typeof JOINT_NAMES)[number];
 
 /** Effective angles a pose reports (joints after IK, plus the pelvis tilt). */
-export type AngleName = JointName | 'pelvis';
+export const ANGLE_NAMES = ['pelvis', ...JOINT_NAMES] as const;
+export type AngleName = (typeof ANGLE_NAMES)[number];
 
 export interface RomLimits {
   readonly min: number;

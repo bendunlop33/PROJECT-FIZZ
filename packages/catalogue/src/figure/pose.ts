@@ -330,7 +330,10 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
       const heelTop = inFoot(ankle, u, n, R.foot.heel + 0.012, -R.foot.ankleHeight + rr.foot);
       const ballTop = inFoot(ankle, u, n, R.foot.ball, -R.foot.ankleHeight + rr.foot * 0.85);
       const toeDir = scale(sub(toe, ball), 1 / Math.max(1e-9, dist(toe, ball)));
-      const toeTop = add(add(toe, scale(toeDir, -rr.foot * 0.5)), scale(perpCcw(toeDir), Math.sign(toeDir.x || 1) * rr.foot * 0.7));
+      // Round the toes towards the top of the foot (its own "up", so a laces-down foot works too).
+      const toeUp = perpCcw(toeDir);
+      const toeSide = toeUp.x * n.x + toeUp.y * n.y >= 0 ? 1 : -1;
+      const toeTop = add(add(toe, scale(toeDir, -rr.foot * 0.5)), scale(toeUp, toeSide * rr.foot * 0.7));
       shapes.push(limbCap(ballTop, toeTop, rr.foot * 0.85, rr.foot * 0.7));
       shapes.push(limbCap(heelTop, ballTop, rr.foot, rr.foot * 0.85));
       shapes.push(limbCap(ankle, heelTop, rr.shankAnkle, rr.foot));

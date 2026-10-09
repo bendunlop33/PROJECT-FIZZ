@@ -86,8 +86,10 @@ function checkRom(guide: Guide, poses: readonly Pose[]): CheckItem {
   const limits = ROM_PROFILES[guide.checks.romProfile][guide.view];
   let worst: { name: AngleName; value: number; t: number; over: number } | null = null;
   const skipped = new Set<AngleName>();
+  const declared = new Set<AngleName>(guide.checks.romSkip?.angles ?? []);
   for (const p of poses) {
     for (const [name, value] of Object.entries(p.angles) as [AngleName, number][]) {
+      if (declared.has(name)) continue;
       if (p.unchecked.includes(name)) {
         skipped.add(name);
         continue;
@@ -103,7 +105,8 @@ function checkRom(guide: Guide, poses: readonly Pose[]): CheckItem {
         ok: true,
         detail:
           `All joint angles inside ${guide.checks.romProfile} (${guide.view} view)` +
-          (skipped.size > 0 ? `; not checked where foreshortened: ${[...skipped].join(', ')}` : ''),
+          (skipped.size > 0 ? `; not checked where foreshortened: ${[...skipped].join(', ')}` : '') +
+          (guide.checks.romSkip ? `; skipped by the guide: ${guide.checks.romSkip.angles.join(', ')} (${guide.checks.romSkip.reason})` : ''),
       }
     : { id: 'rom', ok: false, detail: `${worst.name} = ${worst.value.toFixed(1)}° at t=${worst.t.toFixed(3)} (limit ${limits[worst.name].min}…${limits[worst.name].max})` };
 }
