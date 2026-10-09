@@ -46,7 +46,7 @@ export interface ListenerInfo {
 /** A listener diagnostic. Never carries the callback's query string. */
 export interface ListenerLogEntry {
   atMs: number;
-  kind: 'ready' | 'connection' | 'request' | 'callback' | 'not_found' | 'error' | 'stopped';
+  kind: 'ready' | 'sheet' | 'connection' | 'request' | 'callback' | 'not_found' | 'error' | 'stopped';
   detail: string;
 }
 
