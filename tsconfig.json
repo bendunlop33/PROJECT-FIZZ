@@ -9,6 +9,7 @@
   "include": [
     "packages/*/src",
     "packages/*/test",
+    "packages/*/scripts",
     "scripts",
     "vitest.config.ts",
     "eslint.config.js"

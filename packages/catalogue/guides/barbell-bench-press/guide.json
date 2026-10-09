@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "barbell-bench-press",
+  "extends": null,
+  "rig": "adult-v1",
+  "view": "side",
+  "facing": "right",
+  "units": "bodyHeight",
+  "durationMs": 2550,
+  "loop": "cycle",
+  "ground": { "y": 0, "scrollPerCycle": 0 },
+  "props": [
+    { "id": "bench", "type": "bench", "x": -0.45, "length": 0.7, "height": 0.24 },
+    { "id": "bar", "type": "barbell", "plates": "large", "anchor": { "kind": "keyframed" } }
+  ],
+  "keyframes": [
+    {
+      "t": 0, "label": "Start", "caption": "Arms straight, bar over the shoulders",
+      "root": { "x": 0.12, "y": 0.31, "pelvisDeg": -85 },
+      "joints": { "lumbar": -2, "thoracic": -8, "neck": -5 },
+      "props": { "bar": { "x": -0.1678, "y": 0.6765 } },
+      "projection": { "armNear": 0.94, "armFar": 0.94, "forearmNear": 0.94, "forearmFar": 0.94 },
+      "ik": {
+        "footNear": { "x": 0.337, "y": 0, "planted": true },
+        "footFar": { "x": 0.325, "y": 0, "planted": true },
+        "handNear": { "prop": "bar", "bend": "cw" },
+        "handFar": { "prop": "bar", "bend": "cw" }
+      },
+      "ease": "smooth"
+    },
+    { "t": 0.1373, "props": { "bar": { "x": -0.156, "y": 0.61 } }, "projection": { "armNear": 0.6, "armFar": 0.6, "forearmNear": 0.97, "forearmFar": 0.97 }, "ease": "smooth" },
+    {
+      "t": 0.2745, "label": "Halfway", "caption": "Lower towards the lower chest, elbows bending",
+      "props": { "bar": { "x": -0.145, "y": 0.545 } },
+      "projection": { "armNear": 0.28, "armFar": 0.28, "forearmNear": 1, "forearmFar": 1 },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.549, "label": "Chest touch", "caption": "Touch the lower chest, forearms vertical",
+      "props": { "bar": { "x": -0.118, "y": 0.392 } },
+      "projection": { "armNear": 0.71, "armFar": 0.71 },
+      "holdMs": 150, "ease": "smooth"
+    },
+    { "t": 0.8039, "sameAs": 2, "caption": "Press up and back over the shoulders", "ease": "smooth" },
+    { "t": 0.902, "sameAs": 1, "ease": "smooth" },
+    { "t": 1, "sameAs": 0 }
+  ],
+  "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
+  "checks": { "barDriftMax": 0.08, "barProp": "bar", "planted": ["footNear", "footFar"], "besideProps": ["armNear", "armFar"], "romProfile": "adult-default" },
+  "a11y": {
+    "summary": "Side view, lying on a flat bench with the head on the left. Feet flat, glutes and upper back on the bench. Lower the bar from over the shoulders to a light touch on the lower chest with forearms vertical, then press it up and back to over the shoulders."
+  },
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+}
