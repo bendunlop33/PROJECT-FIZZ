@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "ez-bar-curl",
+  "tier": "basic",
+  "name": "EZ-bar curl",
+  "aliases": ["EZ bar curl", "EZ curl", "Cambered-bar curl", "EZ-bar biceps curl"],
+  "family": "curl",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["biceps"],
+  "secondaryMuscles": ["brachialis", "forearms"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

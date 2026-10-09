@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-goblet-squat",
+  "tier": "basic",
+  "name": "Goblet squat",
+  "aliases": ["Dumbbell goblet squat", "DB goblet squat", "Goblet squats"],
+  "family": "goblet_squat",
+  "movementPattern": "squat",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["adductors", "upper_back", "core"],
+  "compatibleEquipment": ["dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

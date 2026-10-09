@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-standing-shoulder-press",
+  "tier": "basic",
+  "name": "Standing dumbbell shoulder press",
+  "aliases": ["Standing dumbbell press", "Standing DB press", "Standing DB shoulder press", "Standing dumbbell overhead press"],
+  "family": "overhead_press",
+  "movementPattern": "vertical_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["front_delts"],
+  "secondaryMuscles": ["side_delts", "triceps", "upper_chest", "traps", "core"],
+  "compatibleEquipment": ["dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

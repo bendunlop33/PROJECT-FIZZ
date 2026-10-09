@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "smith-machine-squat",
+  "tier": "basic",
+  "name": "Smith machine squat",
+  "aliases": ["Smith squat", "Smith machine back squat", "Smith back squat"],
+  "family": "squat",
+  "movementPattern": "squat",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["adductors", "hamstrings", "core"],
+  "compatibleEquipment": ["plate_loaded_machine"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

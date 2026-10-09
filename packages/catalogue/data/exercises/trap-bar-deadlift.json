@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "trap-bar-deadlift",
+  "tier": "basic",
+  "name": "Trap-bar deadlift",
+  "aliases": ["Trap bar deadlift", "Hex bar deadlift", "Hex-bar deadlift", "Trap-bar DL", "Hex bar DL"],
+  "family": "deadlift",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes", "quads"],
+  "secondaryMuscles": ["hamstrings", "spinal_erectors", "adductors", "traps", "upper_back", "grip"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 180,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

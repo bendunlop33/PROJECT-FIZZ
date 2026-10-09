@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "smith-machine-bulgarian-split-squat",
+  "tier": "basic",
+  "name": "Smith machine Bulgarian split squat",
+  "aliases": ["Smith Bulgarian split squat", "Smith machine BSS", "Smith BSS", "Smith rear-foot-elevated split squat"],
+  "family": "split_squat",
+  "movementPattern": "lunge",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["adductors", "hamstrings"],
+  "compatibleEquipment": ["plate_loaded_machine"],
+  "requiresStation": ["specific_machine", "bench"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

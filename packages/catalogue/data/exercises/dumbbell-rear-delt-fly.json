@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-rear-delt-fly",
+  "tier": "basic",
+  "name": "Dumbbell rear-delt fly",
+  "aliases": ["Rear delt fly", "Rear-delt fly", "Bent-over reverse fly", "Bent-over lateral raise", "Rear delt raise", "DB reverse fly"],
+  "family": "rear_delt_fly",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "isolation",
+  "primaryMuscles": ["rear_delts"],
+  "secondaryMuscles": ["upper_back", "traps"],
+  "compatibleEquipment": ["dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

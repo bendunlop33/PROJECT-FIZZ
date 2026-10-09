@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-seated-shoulder-press",
+  "tier": "basic",
+  "name": "Dumbbell shoulder press",
+  "aliases": ["Seated dumbbell shoulder press", "Seated dumbbell press", "DB shoulder press", "Seated DB press", "Seated DB shoulder press"],
+  "family": "overhead_press",
+  "movementPattern": "vertical_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["front_delts"],
+  "secondaryMuscles": ["side_delts", "triceps", "upper_chest", "traps"],
+  "compatibleEquipment": ["dumbbells"],
+  "requiresStation": ["incline_bench"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

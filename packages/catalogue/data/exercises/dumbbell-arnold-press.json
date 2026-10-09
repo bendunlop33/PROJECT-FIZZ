@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-arnold-press",
+  "tier": "basic",
+  "name": "Arnold press",
+  "aliases": ["Dumbbell Arnold press", "DB Arnold press", "Arnold dumbbell press", "Seated Arnold press"],
+  "family": "overhead_press",
+  "movementPattern": "vertical_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["front_delts"],
+  "secondaryMuscles": ["side_delts", "triceps", "upper_chest"],
+  "compatibleEquipment": ["dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

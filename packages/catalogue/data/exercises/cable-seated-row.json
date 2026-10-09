@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-seated-row",
+  "tier": "basic",
+  "name": "Seated cable row",
+  "aliases": ["Cable row", "Seated row", "Low row", "Low cable row", "Cable seated row"],
+  "family": "row",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "upper_back"],
+  "secondaryMuscles": ["rear_delts", "traps", "biceps", "brachialis", "grip"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

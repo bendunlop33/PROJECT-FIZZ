@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "battle-ropes",
+  "tier": "basic",
+  "name": "Battle ropes",
+  "aliases": ["Battle rope", "Battling ropes", "Rope waves", "Battle rope waves", "Heavy rope waves"],
+  "family": "battle_ropes",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["front_delts"],
+  "secondaryMuscles": ["side_delts", "biceps", "triceps", "forearms", "core", "quads"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "duration",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

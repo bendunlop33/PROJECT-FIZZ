@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-reverse-pec-deck",
+  "tier": "basic",
+  "name": "Reverse pec deck",
+  "aliases": ["Rear delt machine", "Reverse fly machine", "Rear delt fly machine", "Machine reverse fly", "Reverse pec dec"],
+  "family": "rear_delt_fly",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "isolation",
+  "primaryMuscles": ["rear_delts"],
+  "secondaryMuscles": ["upper_back", "traps"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}
