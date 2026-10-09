@@ -55,6 +55,12 @@ export function containerTextFile(name: string): TextFile {
       t.write(text);
       await t.move(main(), { overwrite: true });
     },
+    async keepDamagedCopy(suffix) {
+      const m = main();
+      const copyName = `${name.replace(/\.json$/, '')}.damaged-${suffix}.json`;
+      if (m.exists) new File(Paths.document, copyName).write(await m.text());
+      return copyName;
+    },
   };
 }
 

@@ -32,8 +32,16 @@ class MemoryFiles implements BackupFileStore {
 
 class MemoryText implements TextFile {
   text: string | null = null;
+  failRead: Error | null = null;
+  readonly copies = new Map<string, string | null>();
   read() {
+    if (this.failRead) return Promise.reject(this.failRead);
     return Promise.resolve(this.text);
+  }
+  keepDamagedCopy(suffix: string) {
+    const name = `backup-state.damaged-${suffix}.json`;
+    this.copies.set(name, this.text);
+    return Promise.resolve(name);
   }
   write(text: string) {
     this.text = text;
@@ -268,6 +276,59 @@ describe('backup service', () => {
     expect(status.manifestProblem).toMatch(/started again/);
     expect((await svc.backUpOnPhone('manual')).ok).toBe(true);
     expect(files.files.has('fizz-backup-2026-10-01-1200-auto.json')).toBe(true);
+  });
+
+  it('keeps a copy of a damaged manifest before starting it again (review S2)', async () => {
+    manifest.text = '{not json';
+    const svc = service();
+    expect((await svc.backUpOnPhone('manual')).ok).toBe(true);
+    expect([...manifest.copies.values()]).toEqual(['{not json']);
+    expect(parseManifest(manifest.text).problem).toBeNull();
+    expect((await svc.getStatus()).manifestProblem).toBeNull();
+  });
+
+  it('never overwrites the record after a read error, and deletes nothing (review S2)', async () => {
+    const svc = service();
+    await svc.markTrialRunDone();
+    for (let i = 0; i < 15; i += 1) {
+      clockMs += 60_000;
+      await svc.backUpOnPhone('workout_finished');
+    }
+    const before = manifest.text;
+    const filesBefore = [...files.files.keys()].sort();
+    manifest.failRead = new Error('I/O error');
+    clockMs += 60_000;
+    const run = await svc.backUpOnPhone('workout_finished');
+    expect(run).toMatchObject({ ok: true, deleted: [] });
+    expect(manifest.text).toBe(before);
+    expect([...files.files.keys()].filter((n) => !filesBefore.includes(n))).toHaveLength(1);
+    expect(filesBefore.every((n) => files.files.has(n))).toBe(true);
+    const status = await svc.getStatus();
+    expect(status.manifestProblem).toMatch(/couldn’t be read/);
+    expect(status.trialRunDoneAtUtc).not.toBeNull();
+    // Readable again: the record is intact and the next run carries on from it.
+    manifest.failRead = null;
+    expect((await svc.getStatus()).trialRunDoneAtUtc).not.toBeNull();
+  });
+
+  it('never overwrites an existing file with the same name (review S3)', async () => {
+    files.files.set('fizz-backup-2026-10-08-1905.json', 'Ben’s own file');
+    const svc = service();
+    const run = await svc.backUpOnPhone('manual');
+    expect(run).toMatchObject({ ok: true, record: { fileName: 'fizz-backup-2026-10-08-1905-2.json' } });
+    expect(files.files.get('fizz-backup-2026-10-08-1905.json')).toBe('Ben’s own file');
+    const folder = new Map<string, string>([['fizz-backup-2026-10-08-1905.json', 'earlier copy']]);
+    const copy = await svc.saveCopyTo({
+      label: 'iCloud Drive › Fizz',
+      insideApp: false,
+      write: (n, t) => {
+        folder.set(n, t);
+        return Promise.resolve();
+      },
+      read: (n) => Promise.resolve(folder.get(n) ?? null),
+    });
+    expect(copy).toMatchObject({ ok: true, fileName: 'fizz-backup-2026-10-08-1905-2.json' });
+    expect(folder.get('fizz-backup-2026-10-08-1905.json')).toBe('earlier copy');
   });
 
   it('records the trial run without claiming to verify it', async () => {

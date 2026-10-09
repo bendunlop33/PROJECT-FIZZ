@@ -20,7 +20,7 @@ import { buildBackupStatus, type BackupStatus } from './status';
  *
  * No React Native here: storage is injected, so the whole flow (write,
  * verify, rotate, status) is tested on Linux. The phone bindings are in
- * `container-files.ts`.
+ * `device/files.ts`.
  *
  * Never blocks logging: callers fire `backUpOnPhone` without awaiting, and
  * runs are queued one at a time. A failure is recorded and shown, never thrown.
@@ -37,6 +37,12 @@ export interface BackupFileStore {
 export interface TextFile {
   read(): Promise<string | null>;
   write(text: string): Promise<void>;
+  /**
+   * Keep the current (damaged) content beside the file under a new name
+   * before it is started again (review S2), so there is something to look
+   * at later. Returns the copy's name.
+   */
+  keepDamagedCopy?(suffix: string): Promise<string>;
 }
 
 /** A place outside Fizz that Ben picked (Files). */
@@ -82,6 +88,9 @@ export function createBackupService(deps: BackupServiceDeps) {
   let chain: Promise<unknown> = Promise.resolve();
   let running = 0;
   let manifestProblem: string | null = null;
+  /** The last manifest read or written, used when the file can't be read (review S2). */
+  let lastKnown: BackupManifest | null = null;
+  let damagedCopyKept = false;
   const listeners = new Set<() => void>();
 
   const notify = () => {
@@ -96,31 +105,81 @@ export function createBackupService(deps: BackupServiceDeps) {
     return run;
   }
 
-  async function loadManifest(): Promise<BackupManifest> {
+  /**
+   * `writable: false` when the record couldn't be read: it may still be fine
+   * on disk, so nothing is written over it and nothing is rotated (review S2).
+   */
+  interface Loaded {
+    manifest: BackupManifest;
+    writable: boolean;
+  }
+
+  async function loadManifest(): Promise<Loaded> {
     let text: string | null;
     try {
       text = await deps.manifest.read();
     } catch (e) {
-      manifestProblem = `The backup record couldn’t be read (${errorText(e)}).`;
-      text = null;
+      manifestProblem = `The backup record couldn’t be read (${errorText(e)}). Nothing was changed; it’s tried again next time.`;
+      return { manifest: lastKnown ?? parseManifest(null).manifest, writable: false };
     }
     const read = parseManifest(text);
-    if (read.problem !== null) manifestProblem = read.problem;
-    return read.manifest;
+    if (read.problem !== null) {
+      manifestProblem = read.problem;
+      // A damaged record is started again, but a copy is kept first.
+      if (text !== null && !damagedCopyKept && deps.manifest.keepDamagedCopy) {
+        try {
+          await deps.manifest.keepDamagedCopy(deps.now().utc.replace(/[:.]/g, '-'));
+          damagedCopyKept = true;
+        } catch {
+          return { manifest: read.manifest, writable: false };
+        }
+      }
+    }
+    lastKnown = read.manifest;
+    return { manifest: read.manifest, writable: true };
   }
 
-  async function saveManifest(m: BackupManifest): Promise<void> {
+  /** Save only over a record that was read (or is known damaged and copied). Returns false when skipped. */
+  async function saveManifest(loaded: Loaded, m: BackupManifest): Promise<boolean> {
+    lastKnown = m;
+    if (!loaded.writable) return false;
     await deps.manifest.write(serialiseManifest(m));
+    manifestProblem = null;
+    damagedCopyKept = false;
+    return true;
+  }
+
+  /** A name not used by the manifest or by any file already there (review S3). */
+  async function freeName(
+    at: ZonedTimestamp,
+    kind: BackupRecord['kind'],
+    recorded: Iterable<string>,
+    exists: (name: string) => Promise<boolean>,
+  ): Promise<string> {
+    const taken = new Set(recorded);
+    for (let i = 0; i < 100; i += 1) {
+      const name = backupFileName(toMs(at.utc), at.tz, kind, taken);
+      if (!(await exists(name))) return name;
+      taken.add(name);
+    }
+    throw new Error('no free backup file name');
   }
 
   async function backUpNow(reason: BackupReason): Promise<BackupRunResult> {
     const at = deps.now();
-    const manifest = await loadManifest();
+    const loaded = await loadManifest();
+    const { manifest } = loaded;
     const kind: BackupRecord['kind'] = reason === 'manual' ? 'manual' : 'automatic';
-    const fileName = backupFileName(toMs(at.utc), at.tz, kind, new Set(manifest.onPhone.files.map((f) => f.fileName)));
     const attempt = (ok: boolean, error: string | null): BackupAttempt => ({ atUtc: at.utc, tz: at.tz, ok, error });
     let record: BackupRecord;
+    let fileName: string;
     try {
+      fileName = await freeName(
+        at,
+        kind,
+        manifest.onPhone.files.map((f) => f.fileName),
+        async (n) => (await deps.files.read(n)) !== null,
+      );
       const store = deps.store();
       const created = await createBackup(store, { at, app: deps.app });
       const counts = await store.countRecords();
@@ -145,11 +204,16 @@ export function createBackupService(deps: BackupServiceDeps) {
       };
     } catch (e) {
       const error = describeWriteError(e);
-      await saveManifest({ ...manifest, onPhone: { ...manifest.onPhone, lastAttempt: attempt(false, error) } }).catch(() => undefined);
+      await saveManifest(loaded, { ...manifest, onPhone: { ...manifest.onPhone, lastAttempt: attempt(false, error) } }).catch(() => undefined);
       return { ok: false, error };
     }
 
     const files = [...manifest.onPhone.files, record];
+    if (!loaded.writable) {
+      // The record couldn't be read: keep this run in memory, delete nothing.
+      await saveManifest(loaded, { ...manifest, onPhone: { files, lastAttempt: attempt(true, null) } });
+      return { ok: true, record, deleted: [] };
+    }
     const deleted: string[] = [];
     const kept: BackupRecord[] = [];
     const doomed = new Set(planRotation(files, manifest.keep, fileName).map((f) => f.fileName));
@@ -173,7 +237,7 @@ export function createBackupService(deps: BackupServiceDeps) {
         kept.push(f);
       }
     }
-    await saveManifest({ ...manifest, onPhone: { files: kept, lastAttempt: attempt(true, null) } });
+    await saveManifest(loaded, { ...manifest, onPhone: { files: kept, lastAttempt: attempt(true, null) } });
     return { ok: true, record, deleted };
   }
 
@@ -188,7 +252,7 @@ export function createBackupService(deps: BackupServiceDeps) {
     }
   }
 
-  return {
+  const service = {
     /** Write a backup into Fizz's container, then rotate automatic files. Queued; never throws. */
     backUpOnPhone(reason: BackupReason): Promise<BackupRunResult> {
       return track(() =>
@@ -207,11 +271,11 @@ export function createBackupService(deps: BackupServiceDeps) {
      * launch"): back up if a finished workout isn't in the newest backup.
      */
     async ensureBackedUp(): Promise<BackupRunResult | null> {
-      const manifest = await loadManifest();
+      const { manifest } = await loadManifest();
       const counts = await deps.store().countRecords();
       const newest = manifest.onPhone.files.reduce<BackupRecord | null>((b, f) => (b === null || f.createdAtUtc > b.createdAtUtc ? f : b), null);
       if (counts.finishedWorkouts === 0 || (newest !== null && newest.finishedWorkouts >= counts.finishedWorkouts)) return null;
-      return this.backUpOnPhone('catch_up');
+      return service.backUpOnPhone('catch_up');
     },
 
     /** `Save a copy to Files`: a fresh backup written to the folder Ben picked, read back to prove it. */
@@ -222,8 +286,9 @@ export function createBackupService(deps: BackupServiceDeps) {
             return { ok: false, reason: 'inside_app', message: 'That’s inside Fizz, so it’s lost with the app. Choose iCloud Drive or another folder.' };
           }
           const at = deps.now();
-          const fileName = backupFileName(toMs(at.utc), at.tz, 'manual', new Set());
+          let fileName: string;
           try {
+            fileName = await freeName(at, 'manual', [], async (n) => (await dest.read(n)) !== null);
             const created = await createBackup(deps.store(), { at, app: deps.app });
             await dest.write(fileName, created.text);
             const back = await dest.read(fileName);
@@ -231,8 +296,9 @@ export function createBackupService(deps: BackupServiceDeps) {
           } catch (e) {
             return { ok: false, reason: 'failed', message: `Couldn’t save the copy: ${describeWriteError(e)} Your data on this phone is fine.` };
           }
-          const manifest = await loadManifest();
-          await saveManifest({
+          const loaded = await loadManifest();
+          const { manifest } = loaded;
+          await saveManifest(loaded, {
             ...manifest,
             offPhone: { ...manifest.offPhone, lastCopy: { atUtc: at.utc, tz: at.tz, fileName, destinationLabel: dest.label } },
           });
@@ -242,7 +308,7 @@ export function createBackupService(deps: BackupServiceDeps) {
     },
 
     async getStatus(): Promise<BackupStatus & { manifestProblem: string | null }> {
-      const manifest = await loadManifest();
+      const { manifest } = await loadManifest();
       const counts = await deps.store().countRecords();
       const at = deps.now();
       const status = buildBackupStatus(manifest, {
@@ -257,16 +323,17 @@ export function createBackupService(deps: BackupServiceDeps) {
 
     markTrialRunDone(): Promise<void> {
       return queued(async () => {
-        const m = await loadManifest();
-        await saveManifest({ ...m, trialRunDoneAtUtc: deps.now().utc });
+        const loaded = await loadManifest();
+        await saveManifest(loaded, { ...loaded.manifest, trialRunDoneAtUtc: deps.now().utc });
         notify();
       });
     },
 
     dismissOffPhoneReminder(): Promise<void> {
       return queued(async () => {
-        const m = await loadManifest();
-        await saveManifest({ ...m, offPhone: { ...m.offPhone, reminderDismissedAtUtc: deps.now().utc } });
+        const loaded = await loadManifest();
+        const m = loaded.manifest;
+        await saveManifest(loaded, { ...m, offPhone: { ...m.offPhone, reminderDismissedAtUtc: deps.now().utc } });
         notify();
       });
     },
@@ -281,6 +348,7 @@ export function createBackupService(deps: BackupServiceDeps) {
       return running > 0;
     },
   };
+  return service;
 }
 
 export type BackupService = ReturnType<typeof createBackupService>;
