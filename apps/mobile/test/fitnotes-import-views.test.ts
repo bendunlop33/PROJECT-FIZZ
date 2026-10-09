@@ -363,7 +363,7 @@ describe('import wording without a database', () => {
   it('a cleared bar weight warns and goes back to the weight still in use (review r2 S1)', () => {
     const olympic = { value: 20, unit: 'kg' as const, missing: null };
     // Cleared while editing: says what's still added.
-    expect(barWeightEntry('', olympic)).toEqual({ save: null, endText: '20', warning: `Enter a bar weight above 0. Until you do, 20${NBSP}kg is added.` });
+    expect(barWeightEntry('', olympic)).toEqual({ save: null, endText: '20', warning: `Enter a bar weight above 0. Until you do, 20${NBSP}kg is added to plates-only values.` });
     expect(barWeightEntry('0', olympic)).toMatchObject({ save: null, endText: '20' });
     expect(barWeightEntry('abc', olympic)).toMatchObject({ save: null, endText: '20' });
     // A new weight is saved; the same weight isn't saved again.
@@ -375,6 +375,17 @@ describe('import wording without a database', () => {
     expect(barWeightEntry('', ez)).toEqual({ save: null, endText: '', warning: ez.missing });
     expect(barWeightEntry('0', ez)).toEqual({ save: null, endText: '0', warning: 'Enter a bar weight above 0.' });
     expect(barWeightEntry('10', ez)).toEqual({ save: 10, endText: '10', warning: null });
+  });
+
+  it('a bar weight above the maximum is refused in the app’s words, never saved (review r3 N1)', () => {
+    const olympic = { value: 20, unit: 'kg' as const, missing: null };
+    expect(barWeightEntry('200', olympic)).toEqual({ save: null, endText: '20', warning: `Enter a bar weight up to 100${NBSP}kg. Until you do, 20${NBSP}kg is added to plates-only values.` });
+    expect(barWeightEntry('100', olympic)).toEqual({ save: 100, endText: '100', warning: null });
+    const lb = { value: 45, unit: 'lb' as const, missing: null };
+    expect(barWeightEntry('220', lb)).toMatchObject({ save: 220, warning: null });
+    expect(barWeightEntry('450', lb)).toEqual({ save: null, endText: '45', warning: `Enter a bar weight up to 220${NBSP}lb. Until you do, 45${NBSP}lb is added to plates-only values.` });
+    const ez = { value: null, unit: 'kg' as const, missing: 'Enter your EZ bar’s weight in kg. Plates-only sets on it can’t be imported without it.' };
+    expect(barWeightEntry('150', ez)).toEqual({ save: null, endText: '150', warning: `Enter a bar weight up to 100${NBSP}kg.` });
   });
 
   it('Past workouts says imported workouts are left out (review r2 B1)', () => {

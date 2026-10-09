@@ -110,7 +110,10 @@ export type BodyweightAnswer = z.infer<typeof BodyweightAnswerSchema>;
 export const ImportBarKindSchema = z.enum(['barbell', 'ez_bar', 'trap_bar']);
 export type ImportBarKind = z.infer<typeof ImportBarKindSchema>;
 
-const OtherBarWeightSchema = z.object({ kg: z.number().positive().max(100).nullable(), lb: z.number().positive().max(220).nullable() });
+/** The heaviest bar weight an import accepts, per unit (never converted between kg and lb). */
+export const BAR_WEIGHT_MAX = { kg: 100, lb: 220 } as const;
+
+const OtherBarWeightSchema = z.object({ kg: z.number().positive().max(BAR_WEIGHT_MAX.kg).nullable(), lb: z.number().positive().max(BAR_WEIGHT_MAX.lb).nullable() });
 
 /**
  * Every answer Ben gave on the preview (§2.5 steps 3a–3c). Changing any of
@@ -127,7 +130,7 @@ export const ImportAnswersSchema = z.object({
   total: TotalAnswerSchema.nullable(),
   totalOverrides: z.record(NameKeySchema, TotalAnswerSchema),
   /** Olympic bar weight added to `plates_only` values, per unit (never converted between kg and lb). Default 20 kg / 45 lb, shown and editable. */
-  barWeight: z.object({ kg: z.number().positive().max(100), lb: z.number().positive().max(220) }),
+  barWeight: z.object({ kg: z.number().positive().max(BAR_WEIGHT_MAX.kg), lb: z.number().positive().max(BAR_WEIGHT_MAX.lb) }),
   /**
    * EZ-bar and trap-bar weights for `plates_only` values, per unit. No
    * default (they vary by bar): `null` until Ben enters one, and plates-only

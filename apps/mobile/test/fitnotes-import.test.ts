@@ -114,6 +114,8 @@ describe('FitNotes import: preview, answers, commit', () => {
 
     // In history, date only, gym not recorded, no equipment; never offered for Repeat (P-I3 open; review r2 B1).
     expect(await s.repeat.candidates()).toEqual({ rows: [], unreadable: 0, importedNotListed: 3 });
+    // Today's row doesn't count them (review r3 N4).
+    expect(await s.repeat.candidates(1, { countImported: false })).toEqual({ rows: [], unreadable: 0, importedNotListed: 0 });
     expect(await s.repeat.last()).toBeNull();
     const jobId = r.ok ? r.jobId : '';
     const past = await Promise.all(['2026-09-05', '2026-09-03', '2026-09-01'].map(async (d) => s.workout.load(await importedSessionId(s, jobId, d))));

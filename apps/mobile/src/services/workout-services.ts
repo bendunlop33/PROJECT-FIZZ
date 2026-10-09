@@ -503,7 +503,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * Imported (FitNotes) workouts are left out and counted: their loads
      * were never checked on any equipment, and P-I3 is open (review r2 B1).
      */
-    async candidates(limit = 30): Promise<RepeatCandidates> {
+    async candidates(limit = 30, opts: { countImported?: boolean } = {}): Promise<RepeatCandidates> {
       const p = await ctx.profile();
       if (!p) return { rows: [], unreadable: 0, importedNotListed: 0 };
       const gyms = new Map<string, string>();
@@ -539,14 +539,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           });
         }
       }
-      const importedNotListed = await repos().sessions.countImportedFinished(p.id).catch(() => 0);
+      // Only `Start from a past workout` shows this count; Today's row doesn't read it (review r3 N4).
+      const importedNotListed = opts.countImported === false ? 0 : await repos().sessions.countImportedFinished(p.id).catch(() => 0);
       return { rows, unreadable, importedNotListed };
     },
 
     /** Today's `Repeat last workout` row: the newest readable candidate, or null. Never throws (review S1). */
     async last(): Promise<RepeatCandidate | null> {
       try {
-        return (await repeat.candidates(1)).rows[0] ?? null;
+        return (await repeat.candidates(1, { countImported: false })).rows[0] ?? null;
       } catch {
         return null;
       }

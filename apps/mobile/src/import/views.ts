@@ -18,7 +18,7 @@ import {
   type PerHandQuestion,
   type RowFate,
 } from '@fizz/domain';
-import type { CustomExerciseKind, FitNotesVariant, ImportBarKind, ImportJob, ImportRow, ImportRowResult, Load, LoadConvention, PerHandReading, WeightUnit } from '@fizz/schemas';
+import { BAR_WEIGHT_MAX, type CustomExerciseKind, type FitNotesVariant, type ImportBarKind, type ImportJob, type ImportRow, type ImportRowResult, type Load, type LoadConvention, type PerHandReading, type WeightUnit } from '@fizz/schemas';
 
 import { formatCount, plural } from '../format/numbers';
 import { parseNumber } from '../ui/number-text';
@@ -642,15 +642,22 @@ export interface BarWeightEntry {
   warning: string | null;
 }
 
-/** The bar weight field's rules (review r2 S1), so the screen only renders them. */
+/**
+ * The bar weight field's rules (review r2 S1), so the screen only renders
+ * them. A weight above the maximum (100 kg / 220 lb, a typo such as `200`)
+ * is refused here in the app's words, never saved, and the field goes back
+ * to the weight in use (review r3 N1). The weight in use is only ever added
+ * to plates-only values (review r3 N2).
+ */
 export function barWeightEntry(text: string, field: Pick<BarWeightView, 'value' | 'unit' | 'missing'>): BarWeightEntry {
   const parsed = parseNumber(text);
-  if (parsed !== null && parsed > 0) return { save: parsed === field.value ? null : parsed, endText: text, warning: null };
-  const blank = text.trim() === '';
+  const max = BAR_WEIGHT_MAX[field.unit];
+  if (parsed !== null && parsed > 0 && parsed <= max) return { save: parsed === field.value ? null : parsed, endText: text, warning: null };
+  const ask = parsed !== null && parsed > max ? `Enter a bar weight up to ${formatNumber(max)}${NBSP}${field.unit}.` : 'Enter a bar weight above 0.';
   if (field.value !== null) {
-    return { save: null, endText: String(field.value), warning: `Enter a bar weight above 0. Until you do, ${formatNumber(field.value)}${NBSP}${field.unit} is added.` };
+    return { save: null, endText: String(field.value), warning: `${ask} Until you do, ${formatNumber(field.value)}${NBSP}${field.unit} is added to plates-only values.` };
   }
-  return { save: null, endText: text, warning: blank ? field.missing : 'Enter a bar weight above 0.' };
+  return { save: null, endText: text, warning: text.trim() === '' ? field.missing : ask };
 }
 
 /**
