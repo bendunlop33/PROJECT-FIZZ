@@ -46,7 +46,7 @@ export const CALLBACK_PATH = '/auth/callback';
 export const PREFERRED_CALLBACK_PORT = 1455;
 
 /** The app's real name, sent as `agent_name_hint` on first registration only. */
-export const AGENT_NAME = 'Fizz';
+export const AGENT_NAME = 'GymSmarter';
 
 /** Access tokens last 1 h; refresh this long before expiry. */
 export const REFRESH_SKEW_MS = 5 * 60 * 1000;

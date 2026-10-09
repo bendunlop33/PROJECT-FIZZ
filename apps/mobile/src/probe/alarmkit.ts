@@ -41,7 +41,7 @@ export function judgeAlarmKitStatus(status: string, how: 'read' | 'requested' = 
     case 'denied':
       return {
         status: 'unavailable',
-        summary: 'AlarmKit present, but permission is denied (change it in Settings > Fizz)',
+        summary: 'AlarmKit present, but permission is denied (change it in Settings > GymSmarter)',
         details: common,
       };
     default:

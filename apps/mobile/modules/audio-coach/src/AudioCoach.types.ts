@@ -76,7 +76,7 @@ export interface AppGroupInfo extends SigningProfileInfo {
   altAppGroups?: string[];
   /** NSSupportsLiveActivities in the app's Info.plist. */
   supportsLiveActivities?: boolean;
-  /** ActivityAuthorizationInfo().areActivitiesEnabled (Settings > Fizz > Live Activities). */
+  /** ActivityAuthorizationInfo().areActivitiesEnabled (Settings > GymSmarter > Live Activities). */
   activitiesEnabled?: boolean;
   extension?: SigningProfileInfo & {
     present: boolean;

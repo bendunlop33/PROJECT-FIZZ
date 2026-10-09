@@ -56,14 +56,14 @@ export function signingStatus(expiresUtc: string | null, nowMs: number, tz: stri
   const left = expiresMs - nowMs;
   const until = `${formatShortDate(expiresMs, tz, locale)}, ${formatTime(expiresMs, tz, locale)}`;
   const line = `Signed until ${until}`;
-  if (left <= 0) return { state: 'expired', expiresUtc, banner: null, line: `Signing ended ${until}`, detail: 'Refresh Fizz in SideStore.' };
+  if (left <= 0) return { state: 'expired', expiresUtc, banner: null, line: `Signing ended ${until}`, detail: 'Refresh GymSmarter in SideStore.' };
   if (left < TIMING.expiryUrgent) {
     const sameDay = localDateKey(expiresMs, tz) === localDateKey(nowMs, tz);
     const by = sameDay ? `today, by ${formatTime(expiresMs, tz, locale)}` : `by tomorrow ${formatTime(expiresMs, tz, locale)}`;
-    return { state: 'urgent', expiresUtc, banner: `Refresh Fizz in SideStore ${by}`, line, detail: 'Refresh weekly in SideStore.' };
+    return { state: 'urgent', expiresUtc, banner: `Refresh GymSmarter in SideStore ${by}`, line, detail: 'Refresh weekly in SideStore.' };
   }
   if (left < TIMING.expiryNotice) {
-    return { state: 'notice', expiresUtc, banner: `Refresh Fizz in SideStore by ${refreshByDay(expiresMs, tz, locale)}`, line, detail: 'Refresh weekly in SideStore.' };
+    return { state: 'notice', expiresUtc, banner: `Refresh GymSmarter in SideStore by ${refreshByDay(expiresMs, tz, locale)}`, line, detail: 'Refresh weekly in SideStore.' };
   }
   return { state: 'ok', expiresUtc, banner: null, line, detail: 'Refresh weekly in SideStore.' };
 }

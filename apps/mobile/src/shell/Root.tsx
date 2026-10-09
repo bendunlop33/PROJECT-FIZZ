@@ -95,7 +95,7 @@ function Launch() {
 
   if (outcome === null) {
     return slow ? (
-      <MessageScreen title="Opening your training data" lines={['Keep Fizz open. If it closes, this carries on next time.']} />
+      <MessageScreen title="Opening your training data" lines={['Keep GymSmarter open. If it closes, this carries on next time.']} />
     ) : (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />
     );
@@ -104,15 +104,15 @@ function Launch() {
     case 'schema_too_new':
       return (
         <MessageScreen
-          title="Your data was saved by a newer Fizz"
+          title="Your data was saved by a newer GymSmarter"
           lines={['This build can’t open it. Install the newer build in SideStore. Nothing has been changed.', outcome.message]}
         />
       );
     case 'sqlite_too_old':
       return (
         <MessageScreen
-          title="Fizz can’t open its database on this iPhone"
-          lines={[`The database engine is SQLite ${outcome.version}; Fizz needs 3.37 or newer. Nothing has been changed.`]}
+          title="GymSmarter can’t open its database on this iPhone"
+          lines={[`The database engine is SQLite ${outcome.version}; GymSmarter needs 3.37 or newer. Nothing has been changed.`]}
         />
       );
     case 'open_failed':

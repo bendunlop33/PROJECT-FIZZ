@@ -148,7 +148,7 @@ export const PROBES: readonly ProbeDefinition[] = [
     ref: 'Spike: AlarmKit',
     title: 'AlarmKit permission (scheduling not tested yet)',
     howTo:
-      'Run reads the current permission. Request permission shows the iOS prompt (only once; afterwards change it in Settings > Fizz). No alarm is set: scheduling is a follow-up.',
+      'Run reads the current permission. Request permission shows the iOS prompt (only once; afterwards change it in Settings > GymSmarter). No alarm is set: scheduling is a follow-up.',
     secondaryAction: { id: 'alarmkit_request_permission', label: 'Request permission' },
   },
   {
@@ -421,7 +421,7 @@ export interface ReportMeta {
 
 export function formatReport(results: ProbeResults, meta: ReportMeta, nowMs: number): string {
   const lines: string[] = [
-    'Fizz capability probe',
+    'GymSmarter capability probe',
     `Exported: ${toUtcIso(nowMs)} (device time zone ${meta.timeZone})`,
     `App ${meta.appVersion} (build ${meta.buildNumber}), iOS ${meta.osVersion}`,
     `Bundle ID installed: ${meta.installedBundleId}`,

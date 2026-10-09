@@ -32,9 +32,9 @@ describe('signing expiry (system-states §3.5)', () => {
 
   it('is quiet over 72 h, informs within 72 h and warns within 24 h', () => {
     expect(signingStatus(expiry, at('2026-10-07T08:00:00Z'), TZ, L)).toMatchObject({ state: 'ok', banner: null, line: 'Signed until Sun 11 Oct, 09:00' });
-    expect(signingStatus(expiry, at('2026-10-08T20:00:00Z'), TZ, L)).toMatchObject({ state: 'notice', banner: 'Refresh Fizz in SideStore by Sat' });
-    expect(signingStatus(expiry, at('2026-10-10T20:00:00Z'), TZ, L)).toMatchObject({ state: 'urgent', banner: 'Refresh Fizz in SideStore by tomorrow 09:00' });
-    expect(signingStatus(expiry, at('2026-10-11T06:00:00Z'), TZ, L)).toMatchObject({ state: 'urgent', banner: 'Refresh Fizz in SideStore today, by 09:00' });
+    expect(signingStatus(expiry, at('2026-10-08T20:00:00Z'), TZ, L)).toMatchObject({ state: 'notice', banner: 'Refresh GymSmarter in SideStore by Sat' });
+    expect(signingStatus(expiry, at('2026-10-10T20:00:00Z'), TZ, L)).toMatchObject({ state: 'urgent', banner: 'Refresh GymSmarter in SideStore by tomorrow 09:00' });
+    expect(signingStatus(expiry, at('2026-10-11T06:00:00Z'), TZ, L)).toMatchObject({ state: 'urgent', banner: 'Refresh GymSmarter in SideStore today, by 09:00' });
     expect(signingStatus(expiry, at('2026-10-11T09:00:00Z'), TZ, L).state).toBe('expired');
   });
 

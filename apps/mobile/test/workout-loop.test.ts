@@ -75,7 +75,7 @@ async function launch(): Promise<Extract<StartupOutcome, { kind: 'ready' }>> {
     backupManifest: manifest,
     now,
     newId: ids,
-    app: { name: 'Fizz', version: '0.1.0', build: 'test' },
+    app: { name: 'GymSmarter', version: '0.1.0', build: 'test' },
     locale: 'en-GB',
     restAlerts: createRestAlertController(notifier),
   });

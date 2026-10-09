@@ -53,7 +53,7 @@ function fallbackUuid(): string {
 
 export function appInfo(): AppInfo {
   return {
-    name: 'Fizz',
+    name: 'GymSmarter',
     version: Application.nativeApplicationVersion ?? '0.0.0',
     build: Application.nativeBuildVersion ?? null,
   };

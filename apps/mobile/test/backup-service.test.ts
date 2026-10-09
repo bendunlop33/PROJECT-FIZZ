@@ -10,7 +10,7 @@ import { createBackupService, type BackupFileStore, type CopyDestination, type T
 import { backupFileName, emptyManifest, parseManifest, planRotation, type BackupRecord } from '../src/backup/manifest';
 
 const TZ = 'Europe/London';
-const APP = { name: 'Fizz', version: '0.1.0', build: '9' };
+const APP = { name: 'GymSmarter', version: '0.1.0', build: '9' };
 
 class MemoryFiles implements BackupFileStore {
   readonly files = new Map<string, string>();

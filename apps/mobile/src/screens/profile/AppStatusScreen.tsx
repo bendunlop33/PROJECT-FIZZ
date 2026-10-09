@@ -79,7 +79,7 @@ export function AppStatusScreen() {
             icon={integrity.report.ok ? 'checkmark.circle.fill' : 'exclamationmark.triangle'}
             tone={integrity.report.ok ? 'done' : 'warning'}
             text={integrity.report.ok ? 'Last full check: no problems' : `Last full check: ${plural(integrity.report.issues.length, 'damaged record', 'damaged records')}`}
-            detail={`${formatWhen(toMs(integrity.atUtc), nowMs, now.tz)}${integrity.report.ok ? '' : '. Fizz won’t change or guess damaged records.'}`}
+            detail={`${formatWhen(toMs(integrity.atUtc), nowMs, now.tz)}${integrity.report.ok ? '' : '. GymSmarter won’t change or guess damaged records.'}`}
             action={<TextButton label={checking ? 'Checking…' : 'Check'} onPress={() => void checkAll()} disabled={checking} />}
           />
         )}
@@ -108,7 +108,7 @@ export function AppStatusScreen() {
           <StatusLine
             icon="checkmark.circle.fill"
             tone="done"
-            text={`Fizz ${install.appVersion} · build ${install.buildNumber}`}
+            text={`GymSmarter ${install.appVersion} · build ${install.buildNumber}`}
             detail={`App ID ${install.installedBundleId}${install.installedBundleId === install.configuredBundleId ? '' : ` (configured ${install.configuredBundleId})`}`}
           />
         ) : null}

@@ -135,7 +135,7 @@ export async function pickBackupFile(): Promise<PickedFile> {
     const picked = await File.pickFileAsync({ mimeTypes: ['application/json', 'public.json', 'text/plain'] });
     if (picked.canceled) return { kind: 'cancelled' };
     const file = picked.result;
-    if (file.size > MAX_BACKUP_BYTES) return { kind: 'failed', message: 'That file is too large to be a Fizz backup.' };
+    if (file.size > MAX_BACKUP_BYTES) return { kind: 'failed', message: 'That file is too large to be a GymSmarter backup.' };
     return { kind: 'picked', name: file.name, text: await file.text() };
   } catch (e) {
     const text = e instanceof Error ? e.message : String(e);

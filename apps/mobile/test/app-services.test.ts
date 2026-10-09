@@ -55,7 +55,7 @@ async function launch(): Promise<StartupOutcome> {
     backupManifest: manifest,
     now: (): ZonedTimestamp => ({ utc: toIso(clockMs), tz: TZ }),
     newId: ids,
-    app: { name: 'Fizz', version: '0.1.0', build: 'test' },
+    app: { name: 'GymSmarter', version: '0.1.0', build: 'test' },
     locale: 'en-GB',
   });
   if (outcome.kind === 'ready') open.push(outcome.services);

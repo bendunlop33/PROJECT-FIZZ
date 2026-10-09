@@ -193,7 +193,7 @@ describe('runSignInTest', () => {
     const t = await runSignInTest(world({ browser: () => ({ kind: 'timeout' }) }).ports);
     expect(t.steps.find((s) => s.id === 'browser')?.summary).toBe('Sign-in took too long. Nothing was connected.');
     const e = await runSignInTest(world({ browser: () => ({ kind: 'error', message: 'boom' }) }).ports);
-    expect(e.steps.find((s) => s.id === 'browser')?.summary).toBe("The sign-in page didn't return to Fizz: boom");
+    expect(e.steps.find((s) => s.id === 'browser')?.summary).toBe("The sign-in page didn't return to GymSmarter: boom");
   });
 
   it('a missing native module is "unavailable", not a failure, and nothing else runs', async () => {

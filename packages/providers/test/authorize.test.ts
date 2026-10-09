@@ -79,7 +79,7 @@ describe('createAuthAttempt', () => {
     expect(a.url.startsWith('https://auth.openai.com/api/accounts/authorize?')).toBe(true);
     const q = parseQuery(a.url);
     expect(q.client_id).toBe(DYNAMIC_CLIENT_ID);
-    expect(q.agent_name_hint).toBe('Fizz');
+    expect(q.agent_name_hint).toBe('GymSmarter');
     expect(q.ext_agent_host_id).toBe(fresh.hostId);
     expect(q.response_type).toBe('code');
     expect(q.redirect_uri).toBe('http://127.0.0.1:1455/auth/callback');

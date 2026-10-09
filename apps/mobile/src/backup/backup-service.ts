@@ -283,7 +283,7 @@ export function createBackupService(deps: BackupServiceDeps) {
       return track(() =>
         queued(async (): Promise<CopyResult> => {
           if (dest.insideApp) {
-            return { ok: false, reason: 'inside_app', message: 'That’s inside Fizz, so it’s lost with the app. Choose iCloud Drive or another folder.' };
+            return { ok: false, reason: 'inside_app', message: 'That’s inside GymSmarter, so it’s lost with the app. Choose iCloud Drive or another folder.' };
           }
           const at = deps.now();
           let fileName: string;

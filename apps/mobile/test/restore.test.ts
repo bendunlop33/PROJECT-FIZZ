@@ -114,7 +114,7 @@ describe('restore from a backup on this phone', () => {
     expect(h.pending.size).toBe(0);
 
     const bad = await s.restore.check('{"hello":"world"}');
-    expect(bad.ok ? null : describeBackupError(bad.error)).toBe('This isn’t a Fizz backup file. Nothing was changed.');
+    expect(bad.ok ? null : describeBackupError(bad.error)).toBe('This isn’t a GymSmarter backup file. Nothing was changed.');
     const tampered = await s.restore.check(text.replace('"reps"', '"rEps"'));
     expect(tampered.ok ? null : describeBackupError(tampered.error)).toBe('This backup file is damaged (its checksum doesn’t match). Nothing was changed.');
   });

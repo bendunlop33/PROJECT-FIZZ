@@ -32,7 +32,7 @@ export function buildSystemStatus(input: SystemStatusInput): Banner[] {
     all.push({
       id: 'T2',
       severity: 'warning',
-      text: `Fizz found ${String(input.damagedRecords)} damaged record${input.damagedRecords === 1 ? '' : 's'}.`,
+      text: `GymSmarter found ${String(input.damagedRecords)} damaged record${input.damagedRecords === 1 ? '' : 's'}.`,
       action: { kind: 'integrity_details', label: 'Details' },
     });
   }

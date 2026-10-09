@@ -208,7 +208,7 @@ export async function runNotificationProbe(now: number, onLateDetail: LateDetail
       sub.remove();
     }, (NOTIFICATION_DELAY_S + 120) * 1000);
     const id = await Notifications.scheduleNotificationAsync({
-      content: { title: 'Fizz probe', body: `Rest over (scheduled ${NOTIFICATION_DELAY_S} s ahead)`, sound: true },
+      content: { title: 'GymSmarter probe', body: `Rest over (scheduled ${NOTIFICATION_DELAY_S} s ahead)`, sound: true },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: NOTIFICATION_DELAY_S, repeats: false },
     });
     const ios = perm.ios;
@@ -525,7 +525,7 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
     return {
       status: 'fail',
       summary: `Live Activity did not start: ${errorText(e)}`,
-      details: ['Check Settings > Fizz > Live Activities is on. Run App Group for the extension and App Group evidence'],
+      details: ['Check Settings > GymSmarter > Live Activities is on. Run App Group for the extension and App Group evidence'],
     };
   }
 }

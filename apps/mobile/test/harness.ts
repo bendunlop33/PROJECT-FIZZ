@@ -86,7 +86,7 @@ export function createHarness(start = '2026-10-08T17:00:00.000Z', opts: { idStar
         backupManifest: manifest,
         now: h.now,
         newId: h.ids,
-        app: { name: 'Fizz', version: '0.1.0', build: 'test' },
+        app: { name: 'GymSmarter', version: '0.1.0', build: 'test' },
         locale: 'en-GB',
         restAlerts: createRestAlertController(notifier),
       });

@@ -22,7 +22,7 @@ export interface CountRow {
 export interface RestorePreviewView {
   /** `Made Thu 8 Oct 2026, 19:05` */
   made: string;
-  /** `Fizz 0.1.0 (build 12)` */
+  /** `GymSmarter 0.1.0 (build 12)` */
   app: string;
   rows: CountRow[];
   /** Status-warning lines (what would be replaced). */
@@ -68,7 +68,7 @@ export function buildRestorePreviewView(p: RestorePreview, ctx: WhenContext): Re
   const made = formatWhen(toMs(p.backup.createdAt.utc), ctx.nowMs, ctx.tz, ctx.locale);
   const lines = replaceLines(p, ctx);
   const notes: string[] = [];
-  if (p.needsMigration) notes.push('This backup is from an older Fizz. It’s updated as it’s restored.');
+  if (p.needsMigration) notes.push('This backup is from an older GymSmarter. It’s updated as it’s restored.');
   notes.push('Coach sign-in and API keys aren’t part of backups. Yours stay as they are.');
   notes.push('You can undo this from Data & backup.');
 
@@ -126,7 +126,7 @@ function replaceLines(p: RestorePreview, ctx: WhenContext): { long: string; shor
   if (kept !== null) {
     const since = kept.keptSinceUtc ? ` (what you switched away from on ${formatShortDate(toMs(kept.keptSinceUtc), ctx.tz, ctx.locale)}, ${formatTime(toMs(kept.keptSinceUtc), ctx.tz, ctx.locale)})` : '';
     if (kept.unreadable) {
-      const text = `The data kept for Undo${since} couldn’t be read, so Fizz can’t say what’s in it. This restore deletes it.`;
+      const text = `The data kept for Undo${since} couldn’t be read, so GymSmarter can’t say what’s in it. This restore deletes it.`;
       out.push({ long: text, short: text });
     } else if (kept.workouts + kept.otherRecords > 0) {
       const parts = [kept.workouts > 0 ? `${workouts(kept.workouts)}${newest(kept.newestWorkoutUtc)}` : null, kept.otherRecords > 0 ? records(kept.otherRecords) : null].filter((x): x is string => x !== null);
@@ -141,7 +141,7 @@ function replaceLines(p: RestorePreview, ctx: WhenContext): { long: string; shor
 export function describeBackupError(e: BackupError): string {
   switch (e.code) {
     case 'not_a_backup':
-      return 'This isn’t a Fizz backup file. Nothing was changed.';
+      return 'This isn’t a GymSmarter backup file. Nothing was changed.';
     case 'checksum_mismatch':
     case 'counts_mismatch':
       return 'This backup file is damaged (its checksum doesn’t match). Nothing was changed.';
@@ -149,10 +149,10 @@ export function describeBackupError(e: BackupError): string {
       return 'This backup file is damaged or incomplete. Nothing was changed.';
     case 'backup_too_new':
     case 'schema_too_new':
-      return 'This backup was made by a newer Fizz. Install that build or newer first. Nothing was changed.';
+      return 'This backup was made by a newer GymSmarter. Install that build or newer first. Nothing was changed.';
     case 'unexpected_tables':
     case 'unexpected_columns':
-      return 'This backup doesn’t match any Fizz database layout, so it wasn’t read. Nothing was changed.';
+      return 'This backup doesn’t match any GymSmarter database layout, so it wasn’t read. Nothing was changed.';
     case 'integrity_failed':
       return `This backup has ${plural(e.issues?.length ?? 1, 'damaged record', 'damaged records')}, so it can’t be restored. Nothing was changed.`;
     case 'preview_stale':
@@ -180,7 +180,7 @@ export function buildCheckResultView(
   const made = `Made ${formatWhen(toMs(r.preview.backup.createdAt.utc), ctx.nowMs, ctx.tz, ctx.locale)}`;
   const counts = `${plural(b.finishedWorkouts, 'workout', 'workouts', ctx.locale)} · ${plural(b.loggedSets, 'set', 'sets', ctx.locale)} · ${plural(b.gyms, 'gym', 'gyms', ctx.locale)}`;
   if (r.restorable) {
-    return { ok: true, title: 'This backup restores', lines: [made, counts, r.preview.needsMigration ? 'It’s from an older Fizz and is updated when restored.' : null, 'Nothing on this phone was changed.'].filter((l): l is string => l !== null) };
+    return { ok: true, title: 'This backup restores', lines: [made, counts, r.preview.needsMigration ? 'It’s from an older GymSmarter and is updated when restored.' : null, 'Nothing on this phone was changed.'].filter((l): l is string => l !== null) };
   }
   return {
     ok: false,

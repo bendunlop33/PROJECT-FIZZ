@@ -107,7 +107,7 @@ export function DataBackupScreen() {
         />
         {status.offPhone.state === 'none' ? (
           <AppText variant="callout" color="text.secondary">
-            Copies on this phone are lost if Fizz is deleted or re-signed with another Apple ID.
+            Copies on this phone are lost if GymSmarter is deleted or re-signed with another Apple ID.
           </AppText>
         ) : null}
         <View style={{ gap: theme.space['1'] }}>
@@ -124,7 +124,7 @@ export function DataBackupScreen() {
         {status.trialRunDoneAtUtc === null ? (
           <View style={{ gap: theme.space['1'] }}>
             <AppText variant="callout" color="text.secondary">
-              Before real workouts, do the trial run: log a test workout, save a copy to Files, install the next build over the top, let one weekly refresh lapse and refresh again, then restore that copy here (Restore from a backup › Choose another file…). Steps are in the SideStore guide; Fizz can’t check them for you.
+              Before real workouts, do the trial run: log a test workout, save a copy to Files, install the next build over the top, let one weekly refresh lapse and refresh again, then restore that copy here (Restore from a backup › Choose another file…). Steps are in the SideStore guide; GymSmarter can’t check them for you.
             </AppText>
             <TextButton
               label="Mark as done"
@@ -149,7 +149,7 @@ export function DataBackupScreen() {
       </Group>
       {runResult ? <StatusLine icon={runResult.ok ? 'iphone' : 'exclamationmark.triangle'} tone={runResult.ok ? 'done' : 'warning'} text={runResult.text} /> : null}
       <AppText variant="callout" color="text.secondary">
-        These are lost if Fizz is deleted or re-signed with another Apple ID.
+        These are lost if GymSmarter is deleted or re-signed with another Apple ID.
       </AppText>
       {status.copiesOnPhone.length > 0 ? (
         <Group>

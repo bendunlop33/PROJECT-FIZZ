@@ -170,6 +170,8 @@ describe('DatabaseManager over the expo host', () => {
     const manager = await DatabaseManager.open({ host: createExpoDatabaseHost(fakeHostDeps(dir)), newName: () => `training-${String(++n)}.db` });
     const owner = profile();
     expect((await manager.store.repos.profiles.save(owner, null)).ok).toBe(true);
+    // 'Fizz' on purpose: a backup made before the GymSmarter rename. The app
+    // name is provenance only (shown as "made by"), never part of recognition.
     const backup = await createBackup(manager.store, { at: at(0), app: { name: 'Fizz', version: '0.1.0', build: '1' } });
     expect((await manager.store.repos.gyms.save(gym(2), null)).ok).toBe(true);
 

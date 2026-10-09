@@ -194,7 +194,7 @@ export function RestoreScreen(props: { mode?: 'restore' | 'check'; fromWelcome?:
           {step.counts}
         </AppText>
         <AppText variant="callout" color="text.secondary">
-          Done reopens Fizz’s data. Your previous data is kept until the next restore.
+          Done reopens GymSmarter’s data. Your previous data is kept until the next restore.
         </AppText>
         <TextButton label="Undo restore" onPress={undo} />
       </Screen>
@@ -339,10 +339,10 @@ export function RestoreScreen(props: { mode?: 'restore' | 'check'; fromWelcome?:
             </Group>
           )}
           <Group>
-            <Row title="Choose another file…" icon="folder" disabled={blockedForRestore} onPress={() => void chooseFile()} accessibilityHint="Opens Files to pick a Fizz backup" />
+            <Row title="Choose another file…" icon="folder" disabled={blockedForRestore} onPress={() => void chooseFile()} accessibilityHint="Opens Files to pick a GymSmarter backup" />
           </Group>
           <AppText variant="callout" color="text.secondary">
-            Backups on this phone are lost if Fizz is deleted or re-signed with another Apple ID. Copies you saved to Files are under Choose another file.
+            Backups on this phone are lost if GymSmarter is deleted or re-signed with another Apple ID. Copies you saved to Files are under Choose another file.
           </AppText>
         </>
       ) : null}

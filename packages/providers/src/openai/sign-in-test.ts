@@ -257,7 +257,7 @@ export async function runSignInTest(ports: SignInTestPorts, options: RunOptions 
           recorder.end('browser', 'fail', 'Sign-in took too long. Nothing was connected.', [kindLine, listenerLine]);
           return finish();
         case 'error':
-          recorder.end('browser', 'fail', `The sign-in page didn't return to Fizz: ${session.message}`, [kindLine, listenerLine]);
+          recorder.end('browser', 'fail', `The sign-in page didn't return to GymSmarter: ${session.message}`, [kindLine, listenerLine]);
           return finish();
       }
 
@@ -335,7 +335,7 @@ export async function runSignInTest(ports: SignInTestPorts, options: RunOptions 
         return finish();
       }
       recorder.pass('store', 'Tokens saved in the Keychain and read back', [
-        'Accessibility: WHEN_UNLOCKED_THIS_DEVICE_ONLY (not migrated by backups, not in Fizz backups)',
+        'Accessibility: WHEN_UNLOCKED_THIS_DEVICE_ONLY (not migrated by backups, not in GymSmarter backups)',
         `Access token expires in ${formatDuration(tokens.expiresAtMs - ports.nowMs())}`,
         tokens.refreshToken === null ? 'No refresh token granted' : 'Refresh token present',
         tokens.earliestRefreshAtMs === null ? 'No earliest_refresh_at sent' : `earliest_refresh_at in ${formatDuration(tokens.earliestRefreshAtMs - ports.nowMs())}`,
@@ -381,9 +381,9 @@ async function revokeDiscarded(tokens: ChatGptTokenSet, ports: Pick<SignInTestPo
   if (tokens.refreshToken === null) return 'No refresh token was granted, so there was nothing to revoke.';
   try {
     const r = await revokeRefreshToken(tokens, { fetch: ports.fetch, nowMs: ports.nowMs });
-    return r.confirmed ? 'The granted refresh token was revoked.' : `Revoking the granted refresh token wasn't confirmed (${r.failure?.message ?? 'unknown'}). You can disconnect Fizz in ChatGPT Settings.`;
+    return r.confirmed ? 'The granted refresh token was revoked.' : `Revoking the granted refresh token wasn't confirmed (${r.failure?.message ?? 'unknown'}). You can disconnect GymSmarter in ChatGPT Settings.`;
   } catch (e) {
-    return `Revoking the granted refresh token failed (${errorText(e)}). You can disconnect Fizz in ChatGPT Settings.`;
+    return `Revoking the granted refresh token failed (${errorText(e)}). You can disconnect GymSmarter in ChatGPT Settings.`;
   }
 }
 
@@ -554,7 +554,7 @@ export async function disconnect(ports: Pick<SignInTestPorts, 'fetch' | 'vault' 
   return {
     revoked: false,
     summary: 'Disconnected on this phone; remote revocation was not confirmed',
-    details: [...details, `Revocation: ${revoke.failure?.message ?? 'unknown'}`, 'You can also disconnect Fizz in ChatGPT Settings.'],
+    details: [...details, `Revocation: ${revoke.failure?.message ?? 'unknown'}`, 'You can also disconnect GymSmarter in ChatGPT Settings.'],
   };
 }
 
@@ -603,7 +603,7 @@ const STATUS_WORD: Record<StepStatus, string> = {
 /** Plain-text export. Emails are masked; tokens and codes never reach steps. */
 export function formatSignInReport(steps: readonly StepResult[], listenerLog: readonly ListenerLogEntry[], ctx: ReportContext): string {
   const lines = [
-    'Fizz spike S1: ChatGPT sign-in test',
+    'GymSmarter spike S1: ChatGPT sign-in test',
     `Exported: ${ctx.exportedAtIso} (device time zone ${ctx.timeZone})`,
     `App ${ctx.appVersion} (build ${ctx.buildNumber}), iOS ${ctx.osVersion}`,
     '',

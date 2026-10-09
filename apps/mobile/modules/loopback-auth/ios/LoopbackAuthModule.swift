@@ -311,11 +311,11 @@ public class LoopbackAuthModule: Module {
     }
     guard pendingAuth != nil else {
       record("callback", "callback arrived with no sign-in waiting; ignored")
-      respond(connection, status: "200 OK", title: "Nothing to do", message: "You can close this page and return to Fizz.")
+      respond(connection, status: "200 OK", title: "Nothing to do", message: "You can close this page and return to GymSmarter.")
       return
     }
     record("callback", "GET \(path) received (query passed to the app, not logged)")
-    respond(connection, status: "200 OK", title: "Back to Fizz", message: "Sign-in reply received. This page closes by itself.")
+    respond(connection, status: "200 OK", title: "Back to GymSmarter", message: "Sign-in reply received. This page closes by itself.")
     finishAuth(["outcome": "callback", "url": "http://127.0.0.1:\(listenerPort)\(target)"])
   }
 
@@ -365,7 +365,7 @@ public class LoopbackAuthModule: Module {
 
   private func beginBackgroundTask() {
     endBackgroundTask()
-    backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Fizz ChatGPT sign-in") { [weak self] in
+    backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "GymSmarter ChatGPT sign-in") { [weak self] in
       self?.record("error", "background time ran out while signing in")
       self?.endBackgroundTask()
     }

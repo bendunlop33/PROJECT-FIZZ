@@ -99,7 +99,7 @@ export function buildBackupStatus(m: BackupManifest, facts: BackupFacts): Backup
           tone: 'warning',
           icon: 'exclamationmark.triangle',
           text: 'Backup saved, but it can’t be restored',
-          detail: `It includes ${String(last?.integrityIssues ?? 0)} damaged record(s). Fizz won’t change or guess damaged records.`,
+          detail: `It includes ${String(last?.integrityIssues ?? 0)} damaged record(s). GymSmarter won’t change or guess damaged records.`,
         };
       case 'pending':
         return { tone: 'done', icon: 'checkmark.circle.fill', text: 'Saved on this phone', detail: 'A backup on this phone runs next.' };

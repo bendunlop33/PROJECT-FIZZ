@@ -77,7 +77,7 @@ export interface NativeAppGroupInfo extends SigningProfile {
   altAppGroups: readonly string[] | null;
   /** NSSupportsLiveActivities in the app's Info.plist; null if not reported. */
   supportsLiveActivities: boolean | null;
-  /** Settings > Fizz > Live Activities; null if not reported. */
+  /** Settings > GymSmarter > Live Activities; null if not reported. */
   activitiesEnabled: boolean | null;
   /** null if this build's native module doesn't report it. */
   extension: ExtensionInfo | null;
