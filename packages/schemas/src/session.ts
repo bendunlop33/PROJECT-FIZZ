@@ -13,6 +13,7 @@ import {
   ZonedTimestampSchema,
 } from './common';
 import { SessionCheckInSchema } from './checkin';
+import { LocalDateSchema } from './import';
 import { EquipmentInstanceSchema } from './equipment';
 import { LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
@@ -159,11 +160,29 @@ export const WorkoutSessionSchema = z.object({
   ownerId: IdSchema,
   routineId: IdSchema.nullable(),
   routineName: z.string().max(120).nullable(),
-  gymId: IdSchema,
+  /**
+   * The gym the workout was done at. Null only for imported workouts whose
+   * gym wasn't recorded (data-import-export §2.5 step 3c, `Not recorded`).
+   */
+  gymId: IdSchema.nullable(),
   /** Operation ID that created the session; makes startWorkout idempotent. */
   startOperationId: OperationIdSchema,
-  status: z.enum(['active', 'finished', 'discarded']),
+  /**
+   * `reverted`: an imported workout hidden by `Undo this import` (DX7). Like
+   * `discarded`, it is excluded from history, Progress, "Last" values and
+   * targets; the rows are kept.
+   */
+  status: z.enum(['active', 'finished', 'discarded', 'reverted']),
   source: z.enum(['manual', 'import']),
+  /** The import job this workout came in with (imported workouts only). */
+  importJobId: IdSchema.optional(),
+  /**
+   * Set only when the time of day isn't known (imported workouts: FitNotes
+   * files have dates only). The calendar date as written in the source; the
+   * workout is shown with this date and no time. `startedAt` is then only an
+   * ordering anchor (12:00 on that date in `startedAt.tz`) and is never shown.
+   */
+  localDate: LocalDateSchema.optional(),
   startedAt: ZonedTimestampSchema,
   endedAt: ZonedTimestampSchema.nullable(),
   /**

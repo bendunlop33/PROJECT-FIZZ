@@ -47,7 +47,7 @@ export function PastWorkoutsScreen() {
               key={c.sessionId}
               title={`${formatShortDate(toMs(c.startedAtUtc), c.tz || tz)} · ${c.title}`}
               subtitle={c.exerciseNames.join(', ')}
-              secondLine={`${c.gymName} · ${plural(c.sets, 'set', 'sets')}`}
+              secondLine={`${c.gymName} · ${plural(c.sets, 'set', 'sets')}${c.imported ? ' · from FitNotes' : ''}`}
               onPress={() => {
                 navigation.navigate('Repeat', { sessionId: c.sessionId });
               }}
