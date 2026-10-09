@@ -269,6 +269,13 @@ describe('C2 spline slopes (E2a)', () => {
   });
 });
 
+/** The committed sled push with the stance rule turned off (how it was before E2b), as a fixture. */
+function sledWithoutStance(): Guide {
+  const raw = JSON.parse(readFileSync(join(GUIDES, 'sled-push', 'guide.json'), 'utf8')) as { ground: Record<string, unknown> };
+  delete raw.ground.matchFloorSpeed;
+  return GuideSchema.parse(raw);
+}
+
 /** The committed sled push with the stance rule and the plan's stride (§4.10), as a fixture. */
 function sledWithStance(stride: boolean): Guide {
   const raw = JSON.parse(readFileSync(join(GUIDES, 'sled-push', 'guide.json'), 'utf8')) as { ground: Record<string, unknown>; keyframes: { ik?: Record<string, Record<string, unknown>> }[] };
@@ -285,8 +292,8 @@ function sledWithStance(stride: boolean): Guide {
 }
 
 describe('feet on a scrolling floor (E2b)', () => {
-  it('without matchFloorSpeed a foot stops dead where it leaves the floor (the sled today)', () => {
-    const p = prepareGuide(committed('sled-push'));
+  it('without matchFloorSpeed a foot stops dead where it leaves the floor (the sled before the stance rule)', () => {
+    const p = prepareGuide(sledWithoutStance());
     const m = measureMotion(p, { n: 600 }).metrics.find((x) => x.id === 'C2');
     expect(m?.ok).toBe(false);
     expect(m?.value).toBeCloseTo(0.262, 2);
