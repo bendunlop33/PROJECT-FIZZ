@@ -103,3 +103,11 @@ The brief is a living document. Each approved change gets an entry here: the dat
   3. Possibly the unofficial connector, only if Ben explicitly accepts the risks.
 
   Research is kept in `docs/research/wearables-garmin.md` and `garmin-live-data.md`.
+- **Pre-workout check-in (Ben):**
+  - **When:** on Start workout, the app asks "How are you feeling today?" (1–5) with Skip.
+  - **Below 4:** it asks "What's up?" with multi-select reasons, an optional note, or voice.
+  - **What the answers do:**
+    - **Pain:** goes to the pain-flag flow.
+    - **Feeling ill:** gets a gentle suggestion to rest.
+    - **Low score:** the coach may *offer* a lighter session (rule 3), and never applies it on its own.
+  - **Storage and display:** the check-in is recorded in Your data and shown as-is, never turned into a recovery score. It replaces the Today readiness chips. Spec: `docs/design/check-in.md`.
