@@ -8,6 +8,7 @@
   "units": "bodyHeight",
   "durationMs": 2550,
   "loop": "cycle",
+  "motion": "phases",
   "ground": { "y": 0, "scrollPerCycle": 0 },
   "props": [
     { "id": "bench", "type": "bench", "x": -0.45, "length": 0.7, "height": 0.24 },
@@ -28,21 +29,19 @@
       },
       "ease": "smooth"
     },
-    { "t": 0.1373, "props": { "bar": { "x": -0.156, "y": 0.61 } }, "projection": { "armNear": 0.6, "armFar": 0.6, "forearmNear": 0.97, "forearmFar": 0.97 }, "ease": "smooth" },
     {
-      "t": 0.2745, "label": "Halfway", "caption": "Lower towards the lower chest, elbows bending",
-      "props": { "bar": { "x": -0.145, "y": 0.545 } },
-      "projection": { "armNear": 0.28, "armFar": 0.28, "forearmNear": 1, "forearmFar": 1 },
+      "t": 0.2652, "pass": true, "label": "Halfway", "caption": "Lower towards the lower chest, elbows bending",
+      "props": { "bar": { "x": -0.135, "y": 0.545 } },
+      "projection": { "armNear": 0.6, "armFar": 0.6, "forearmNear": 0.97, "forearmFar": 0.97 },
       "ease": "smooth"
     },
     {
       "t": 0.549, "label": "Chest touch", "caption": "Touch the lower chest, forearms vertical",
       "props": { "bar": { "x": -0.118, "y": 0.392 } },
-      "projection": { "armNear": 0.71, "armFar": 0.71 },
+      "projection": { "armNear": 0.71, "armFar": 0.71, "forearmNear": 1, "forearmFar": 1 },
       "holdMs": 150, "ease": "smooth"
     },
-    { "t": 0.8039, "sameAs": 2, "caption": "Press up and back over the shoulders", "ease": "smooth" },
-    { "t": 0.902, "sameAs": 1, "ease": "smooth" },
+    { "t": 0.8106, "sameAs": 1, "caption": "Press up and back over the shoulders", "ease": "smooth" },
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
