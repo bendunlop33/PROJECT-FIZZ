@@ -1,0 +1,210 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { NBSP } from '@fizz/domain';
+
+import type { ImportDraft } from '../src/import/import-service';
+import {
+  bodyweightOptions,
+  introView,
+  namesView,
+  openErrorView,
+  originalText,
+  pastImportRow,
+  perHandOptions,
+  previewView,
+  progressView,
+  provenanceLines,
+  resultsView,
+  totalOptions,
+  undoAlert,
+  undoneToast,
+  workoutRows,
+} from '../src/import/views';
+import type { AppServices } from '../src/services/app-services';
+import { createHarness, setUpGym, type Harness } from './harness';
+
+/** Import screen wording (data-import-export §2.5, §3.4, §5). Synthetic files only. */
+const plain = (s: string | null | undefined) => (s ?? '').replaceAll(NBSP, ' ');
+const B2 = 'Date,Exercise,Category,Weight,Weight Unit,Reps,Distance,Distance Unit,Time,Comment';
+const FILE = [
+  B2,
+  '2026-09-01,Flat Barbell Bench Press,Chest,100.0,kgs,8,,,,"@8, felt heavy"',
+  '2026-09-01,Incline DB Press,Chest,50.0,lbs,10,,,,',
+  '2026-09-01,Pull Up,Back,10.0,kgs,6,,,,',
+  '2026-09-01,Pull Up,Back,-20.0,kgs,8,,,,',
+  '2026-09-02,Treadmill,Cardio,,,,5.0,km,0:25:00,',
+  '2026-09-02,Squat,Legs,22,5,kgs,5,,,,',
+  '2026-09-02,Mystery Machine,Back,40.0,kgs,10,,,,',
+].join('\n');
+
+let h: Harness;
+let s: AppServices;
+beforeEach(async () => {
+  h = createHarness('2026-10-08T17:00:00.000Z');
+  s = (await h.launch()).services;
+  await setUpGym(h, s);
+});
+afterEach(async () => {
+  await h.cleanup();
+});
+
+async function open(text = FILE): Promise<ImportDraft> {
+  const r = await s.imports.open({ name: 'FitNotes_Export_2026_10_01.csv', text });
+  if (r.kind !== 'preview') throw new Error(r.kind);
+  return r.draft;
+}
+async function step(d: ImportDraft, change: Parameters<AppServices['imports']['answer']>[2]): Promise<ImportDraft> {
+  const r = await s.imports.answer(d.draftId, d.mappingVersion, change);
+  if (!r.ok) throw new Error(r.reason);
+  return r.draft;
+}
+
+describe('import preview wording', () => {
+  it('names the app and units, lists what needs Ben first, and keeps the primary disabled until answered (check 17)', async () => {
+    const d = await open();
+    const v = previewView(d, 'en-GB');
+    expect(v.detection).toBe('FitNotes (Android) CSV · weights in kg and lb (per set)');
+    expect(v.rowsLine).toBe('7 rows · 1 Sept 2026 – 2 Sept 2026');
+    // `Pull Up` and `Incline DB Press` match catalogue names, so their convention questions come at once.
+    expect(v.questionsTitle).toBe('Needs your answer (3)');
+    expect(v.questions.map((q) => [q.line.icon, q.line.text])).toEqual([
+      ['exclamationmark.triangle', '2 exercise names to check'],
+      ['exclamationmark.triangle', 'Dumbbell weights: each or both?'],
+      ['exclamationmark.triangle', 'Pull Up weights: added or assist?'],
+    ]);
+    expect(v.skipped.map((x) => [x.key, x.line.text, x.line.detail ?? null])).toEqual([
+      ['cardio', '1 cardio row (not imported yet)', null],
+      ['unreadable', '1 row can’t be read', null],
+    ]);
+    expect(v.kept.map((k) => k.text)).toContain('FitNotes files have no times. These workouts show the date only.');
+    expect(v.kept.map((k) => k.text)).toContain('1 comment, kept with each set as written');
+    expect(v.effortReview).toBe('1 comment looks like effort ratings. Kept as notes only · Review');
+    expect(v.gymRow).toBe('Gym: Not recorded');
+    expect(v.primary).toEqual({ label: 'Answer 3 questions to import', enabled: false });
+  });
+
+  it('after the names, each convention is its own question with no option selected (DX6)', async () => {
+    let d = await open();
+    const names = namesView(d.analysis, (id) => s.imports.candidate(d.draftId, id)?.name ?? null);
+    expect(names.rows.map((r) => [r.title, r.status.word, r.status.text, r.actions])).toEqual([
+      ['Flat Barbell Bench Press', 'Check', 'Bench press', ['use', 'choose', 'new']],
+      ['Mystery Machine', 'No match', 'No match', ['choose', 'new', 'skip']],
+    ]);
+    expect(names.matchedCount).toBe(2);
+    d = await step(d, { kind: 'name', key: 'flat barbell bench press', answer: { kind: 'exercise', exerciseId: names.rows[0]?.suggestionId ?? '' } });
+    d = await step(d, { kind: 'name', key: 'mystery machine', answer: { kind: 'skip' } });
+    const v = previewView(d, 'en-GB');
+    expect(v.questions.map((q) => q.line.text)).toEqual(['Exercise names: 2 checked', 'Dumbbell weights: each or both?', 'Barbell weights: total or plates only?', 'Pull Up weights: added or assist?']);
+    expect(v.primary).toEqual({ label: 'Answer 3 questions to import', enabled: false });
+
+    const ph = perHandOptions(d.analysis, 'en-GB');
+    expect(ph?.question).toBe('For this exercise, “50” means:');
+    expect(ph?.options.map((o) => [o.label, plain(o.detail), o.selected])).toEqual([
+      ['Each dumbbell', 'Imported as 50 lb each', false],
+      ['Both dumbbells together', 'Imported as 25 lb each', false],
+    ]);
+    expect(plain(ph?.example)).toBe('Example from your file (1 Sept 2026): Incline DB Press  50 × 10');
+    expect(totalOptions(d.analysis)?.options.every((o) => !o.selected)).toBe(true);
+    expect(totalOptions(d.analysis)?.barWeights).toEqual([{ unit: 'kg', value: 20 }]);
+    const bw = bodyweightOptions(d.analysis, 'pull up');
+    expect(bw?.range).toBe('Values in your file: -20 to 10, some negative');
+    expect(bw?.options.every((o) => !o.selected)).toBe(true);
+
+    d = await step(d, { kind: 'per_hand', answer: 'each' });
+    d = await step(d, { kind: 'total', answer: 'plates_only' });
+    d = await step(d, { kind: 'bodyweight', key: 'pull up', answer: 'assistance' });
+    const ready = previewView(d, 'en-GB');
+    expect(ready.questions.map((q) => q.line.text)).toEqual([
+      'Exercise names: 2 checked',
+      'Dumbbells: each',
+      'Barbell: plates only + bar',
+      'Pull Up: assistance from a machine',
+    ]);
+    expect(ready.questionsTitle).toBe('Your answers');
+    expect(ready.primary).toEqual({ label: 'Import 1 workout', enabled: true });
+    expect(ready.skipped.map((x) => x.line.text)).toContain('1 set of exercises you chose to skip');
+    expect(workoutRows(d.analysis, 0, 'en-GB')).toEqual([{ date: '2026-09-01', text: 'Tue 1 Sept 2026 · 3 exercises · 4 sets' }]);
+    // Step 3d: the mapped value and the original row.
+    const rows = s.imports.previewRows(d.draftId, '2026-09-01');
+    expect(rows.map((r) => (r.fate.result === 'imported' ? [r.fate.set.exerciseName, r.fate.set.load?.value] : r.fate.result))).toEqual([
+      ['Bench press', 120],
+      ['Incline dumbbell press', 50],
+      ['Pull-up', 10],
+      ['Pull-up', 20],
+    ]);
+  });
+
+  it('copies the original row as written', () => {
+    expect(originalText('B2', ['2026-10-01', 'Flat Barbell Bench Press', 'Chest', '100.0', 'kgs', '8', '', '', '', '@8 felt heavy'])).toBe('Flat Barbell Bench Press · 100.0 kgs · 8 reps · “@8 felt heavy”');
+    expect(originalText('A1-kg', ['2024-05-03', 'Treadmill', 'Cardio', '', '', '5', 'km', '25:00'])).toBe('Treadmill · 5 km · 25:00');
+    expect(originalText('C', ['2026-10-02', 'Bench', 'Chest', '100', '220.46', '5', '', '', '', '', 'wr'])).toBe('Bench · 100 kg · 220.46 lbs · 5 reps');
+  });
+
+  it('explains every file it can’t preview', () => {
+    expect(openErrorView({ kind: 'empty' })?.text).toBe('This file is empty.');
+    expect(openErrorView({ kind: 'not_csv' })?.text).toBe('This isn’t a CSV file.');
+    expect(openErrorView({ kind: 'fitnotes_backup' })?.text).toBe('This looks like a FitNotes backup, not a CSV export. Export a CSV from FitNotes and choose that.');
+    expect(openErrorView({ kind: 'unknown_header', firstLine: 'a,b' })).toEqual({ text: 'GymSmarter doesn’t recognise this file’s columns yet. Nothing was guessed.', firstLine: 'a,b', sameFileJobId: null });
+    expect(openErrorView({ kind: 'body_tracker', firstLine: 'Date,Weight' })?.text).toBe('This looks like a FitNotes Body Tracker export. Choose the Workout Data export.');
+  });
+});
+
+describe('importing, results, past imports and undo wording', () => {
+  async function importIt(): Promise<string> {
+    let d = await open([B2, '2026-09-01,Lat Pulldown,Back,45.0,kgs,10,,,,', '2026-09-02,Treadmill,Cardio,,,,5.0,km,0:25:00,', '2026-09-03,Lat Pulldown,Back,22,5,kgs,10,,,,'].join('\n'));
+    d = (await s.imports.draft(d.draftId)) ?? d;
+    const r = await s.imports.commit(d.draftId, d.mappingVersion, 'op-1');
+    if (!r.ok) throw new Error(r.reason);
+    return r.jobId;
+  }
+
+  it('results list every skipped row with its reason (§2.5 step 5)', async () => {
+    const jobId = await importIt();
+    const job = await s.imports.job(jobId);
+    if (!job) throw new Error('no job');
+    const v = resultsView(job, 'en-GB');
+    expect(v.banner).toEqual({ icon: 'checkmark.circle.fill', tone: 'done', text: 'Import finished' });
+    expect(v.headline).toBe('1 workout · 1 set added');
+    expect(v.from).toBe('From FitNotes_Export_2026_10_01.csv');
+    expect(v.skipped.map((x) => [x.title, x.lines])).toEqual([
+      ['1 cardio row', ['Row 3 · 2026-09-02 · Treadmill · 5.0 km · 0:25:00 — cardio isn’t imported yet']],
+      ['1 row couldn’t be read', ['Row 4 · 2026-09-03,Lat Pulldown,Back,22,5,kgs,10,,,, — This row has 11 values; the header has 10']],
+    ]);
+    expect(v.canUndo).toBe(true);
+    expect(pastImportRow(job, 'en-GB')).toEqual({
+      title: 'FitNotes_Export_2026_10_01.csv',
+      subtitle: 'Imported Thu 8 Oct · FitNotes (Android) CSV',
+      line: { icon: 'checkmark.circle.fill', tone: 'done', text: 'Finished · 1 workout' },
+    });
+    expect(undoAlert(job)).toEqual({ title: 'Undo this import?', message: '1 workout from FitNotes_Export_2026_10_01.csv will be hidden from history, Progress and targets. Your other workouts aren’t touched.' });
+    const setId = job.rows[0]?.setId ?? '';
+    const p = await s.imports.provenance(setId);
+    if (!p) throw new Error('no provenance');
+    expect(provenanceLines(p, 'en-GB')).toEqual({ source: 'Imported from FitNotes on Thu 8 Oct 2026 · row 2', original: 'Original: Lat Pulldown · 45.0 kgs · 10 reps' });
+
+    const undo = await s.imports.revert(jobId, job.job.version, 'undo-1');
+    if (!undo.ok) throw new Error(undo.reason);
+    expect(undoneToast(undo.workouts)).toBe('1 workout hidden. You can import the file again.');
+    const after = await s.imports.job(jobId);
+    if (!after) throw new Error('no job');
+    expect(pastImportRow(after, 'en-GB').line).toEqual({ icon: 'slash.circle', tone: 'info', text: 'Undone on Thu 8 Oct · 1 workout hidden' });
+    expect(resultsView(after, 'en-GB').canUndo).toBe(false);
+  });
+
+  it('intro: blocked by an unfinished workout, or offers Continue for a paused import', async () => {
+    const block = { title: 'Push A', startedAtUtc: '2026-10-08T17:02:00.000Z', tz: 'Europe/London' };
+    expect(introView({ block, blockTime: '18:02', paused: null })).toEqual({
+      blockLine: 'Finish or discard your workout first (Push A, started 18:02).',
+      paused: null,
+      primary: { label: 'Choose CSV file', enabled: false },
+    });
+    const d = await open([B2, '2026-09-01,Lat Pulldown,Back,45.0,kgs,10,,,,', '2026-09-03,Lat Pulldown,Back,40.0,kgs,10,,,,'].join('\n'));
+    let n = 0;
+    await s.imports.commit(d.draftId, d.mappingVersion, 'op-1', { onProgress: (w) => (n = w), shouldStop: () => n >= 1 });
+    const paused = await s.imports.paused();
+    const v = introView({ block: null, blockTime: '', paused });
+    expect(v.paused?.text).toBe('Import paused at 1 of 2 workouts. The 1 is in your history.');
+    expect(v.primary).toEqual({ label: 'Continue import', enabled: true });
+    expect(progressView(180, 412)).toEqual({ text: '180 of 412 workouts', fraction: 180 / 412 });
+  });
+});
