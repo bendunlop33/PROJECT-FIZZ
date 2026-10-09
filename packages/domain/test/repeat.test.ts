@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionAggregate } from '@fizz/schemas';
 
-import { NBSP, repeatPreviewLines, startWorkoutFromSession } from '../src/index';
+import { lastTimeTopSet, NBSP, repeatPreviewLines, startWorkoutFromSession } from '../src/index';
 import { reduceSession, startWorkout } from '../src/index';
-import { at, barbell, dumbbells, exercise, GYM, id, idGen, kg, lb, profile, routine, routineExercise, stack, template, values } from './fixtures';
+import { assisted, at, barbell, dumbbells, exercise, GYM, id, idGen, kg, lb, profile, routine, routineExercise, stack, template, values } from './fixtures';
 import { apply, BENCH, exercises, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
 const plain = (s: string) => s.replaceAll(NBSP, ' ');
@@ -148,5 +148,45 @@ describe('Repeat across units', () => {
   it('same unit, no equipment either side: the load is kept as before', () => {
     const out = startWorkoutFromSession({ opId: 'r-su', owner: profile(), gymId: GYM, source, exercises: dbExercises, gymEquipment: [], at: at(86_400), newId: idGen(64_000) });
     expect(setsFor(out.aggregate, CURL)[0]?.planned.load).toEqual(kg(10));
+  });
+});
+
+/** The "last time" note names the top set by convention (re-review nit). */
+describe('Repeat: the top set in a missing-equipment note', () => {
+  const PULL = id(212);
+  const pullExercises = new Map([[PULL, exercise(212, 'Assisted pull-up', { compatibleEquipment: ['assisted_stack'], defaultLoadConvention: 'assistance' })]]);
+  const machine = assisted();
+
+  it('on an assisted machine the top set is the least assistance, not the biggest number', () => {
+    const r = routine([
+      routineExercise(610, {
+        exerciseId: PULL,
+        equipmentId: machine.id,
+        setTemplates: [template(6101, { targetLoad: kg(40, 'assistance') }), template(6102, { targetLoad: kg(30, 'assistance') }), template(6103, { targetLoad: kg(35, 'assistance') })],
+      }),
+    ]);
+    let s = startWorkout({ opId: 's-a', owner: profile(), gymId: GYM, routine: r, exercises: pullExercises, gymEquipment: [machine], at: at(0), newId: idGen(65_000) }).aggregate;
+    const sets = setsFor(s, PULL);
+    s = apply(s, logCmd(sets[0]?.id ?? '', values(kg(40, 'assistance'), 8), 10));
+    s = apply(s, logCmd(sets[1]?.id ?? '', values(kg(30, 'assistance'), 6), 200));
+    s = apply(s, logCmd(sets[2]?.id ?? '', values(kg(35, 'assistance'), 7), 400));
+    s = apply(s, { type: 'finish', at: at(600), opId: 'fin-a', expectedVersion: s.session.version, endedAt: null });
+    const out = startWorkoutFromSession({ opId: 'r-a', owner: profile(), gymId: GYM, source: s, exercises: pullExercises, gymEquipment: [barbell()], at: at(86_400), newId: idGen(66_000) });
+    expect(out.notes).toHaveLength(1);
+    expect(out.notes[0]?.text).toBe('No Assisted pull-up here: no load target (last time Assist 30 kg × 6).');
+    expect(lastTimeTopSet(s.sets)?.actual?.load?.value).toBe(30);
+  });
+
+  it('loads in different units are compared in one unit; warm-ups only when nothing else is loaded', () => {
+    let s = finishedPushA();
+    const bench = setsFor(s, BENCH);
+    const kgTop = bench[1];
+    if (!kgTop?.actual) throw new Error('fixture');
+    // 102.5 kg (≈ 226 lb) beats 220 lb (≈ 99.8 kg), though 220 is the bigger number.
+    s = { ...s, sets: s.sets.map((x) => (x.id === bench[2]?.id && x.actual ? { ...x, actual: { ...x.actual, load: lb(220) } } : x)) };
+    expect(lastTimeTopSet(setsFor(s, BENCH))?.id).toBe(kgTop.id);
+    const warmOnly = setsFor(s, BENCH).filter((x) => x.setType === 'warmup');
+    expect(lastTimeTopSet(warmOnly)?.actual?.load?.value).toBe(60);
+    expect(lastTimeTopSet([])).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 import type { EquipmentInstance, Exercise, Load, Routine, RoutineExercise, SessionAggregate, SetTemplate, WeightUnit, WorkoutSet } from '@fizz/schemas';
 import { loadText, NBSP, repRangeText } from '../display';
-import { getAchievableLoads, roundToAvailableLoad } from '../equipment';
+import { getAchievableLoads, loadDirection, roundToAvailableLoad } from '../equipment';
+import { convertMass } from '../units';
 import { startWorkout, type StartWorkoutInput, type StartWorkoutOutput } from './create';
 
 /**
@@ -207,18 +208,37 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   return { aggregate, warnings: out.warnings, notes, notCopied, empty: routineExercises.length === 0 };
 }
 
-/** `No Olympic bar here: no load target (last time 100 kg × 5).` — the heaviest set, said once. */
+/**
+ * `No Olympic bar here: no load target (last time 100 kg × 5).`, said once,
+ * about the top set: the hardest working set by its load convention (on an
+ * assisted machine the least assistance), compared in one unit. Only sets
+ * in the last working set's convention are compared; ties go to the later
+ * set.
+ */
 function missingEquipmentNote(equipmentName: string, done: readonly WorkoutSet[]): string {
-  const loaded = done.filter((s) => s.actual?.load);
-  if (loaded.length === 0) return `No ${equipmentName} here.`;
-  const working = loaded.filter((s) => s.setType !== 'warmup');
-  const pool = working.length > 0 ? working : loaded;
-  let top = pool[0];
-  for (const s of pool) if ((s.actual?.load?.value ?? 0) > (top?.actual?.load?.value ?? 0)) top = s;
+  const top = lastTimeTopSet(done);
   const a = top?.actual;
   if (!a?.load) return `No ${equipmentName} here.`;
   const amount = a.reps !== null ? ` × ${String(a.reps)}` : a.durationS !== null ? ` for ${String(a.durationS)} s` : '';
   return `No ${equipmentName} here: no load target (last time ${loadWord(a.load)}${amount}).`;
+}
+
+/** The hardest loaded set (working sets first) by convention: most resistance, or least assistance. */
+export function lastTimeTopSet(done: readonly WorkoutSet[]): WorkoutSet | null {
+  const loaded = done.filter((s) => s.actual?.load);
+  const working = loaded.filter((s) => s.setType !== 'warmup');
+  const pool = working.length > 0 ? working : loaded;
+  const convention = pool.at(-1)?.actual?.load?.convention;
+  if (convention === undefined) return null;
+  const sameKind = pool.filter((s) => s.actual?.load?.convention === convention);
+  const harder = loadDirection(convention) === 'assistance' ? -1 : 1;
+  const kgOf = (s: WorkoutSet): number => {
+    const l = s.actual?.load;
+    return l ? convertMass(l, 'kg').value : 0;
+  };
+  let top: WorkoutSet | null = null;
+  for (const s of sameKind) if (top === null || harder * (kgOf(s) - kgOf(top)) >= 0) top = s;
+  return top;
 }
 
 function loadWord(l: Load | { value: number; unit: WeightUnit; convention: Load['convention'] }): string {
