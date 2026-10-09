@@ -1,5 +1,20 @@
 # Workout builder (coach-made workouts and, later, programmes)
 
+> **Revision 2026-10-09 (playbook v1 review fixes).**
+> - **"Rule defaults" is gone.** With no goal set, a single workout builds from the session length only (no goal profile, rule 3's RPE 7–9, each exercise's planned reps), and the sheet says `No goal set: using your session length only. Set a goal ›`. With no length chosen and none set, the budget assumes 60 min and says so (`about 60 min (assumed)`).
+> - **WB3:** the `Built-in rule` reference line is playbook 7-F (equipment-aware, no added sets) and shows its %. In a coach-built draft the coach's load is the target, because Ben asked for the build.
+> - **WB2 vs playbook rule 7 step 7:** WB2 wins. No load is estimated for equipment with no history (B6 is still Ben's). The playbook now says the same.
+> - **Programmes:** `Gym days per week` offers 1–7 (7 = the 6-day split plus one short accessory day). Programme suggestions record the goal, setup and other-training versions and go out of date if any changes. The phase example now falls inside the programme.
+> - Changed: header, WB2, WB3, WB11, §3.1, §6.1, §8, checks 27, 33 and 34.
+
+> **Revision 2026-10-09 (playbook v1, approved by Ben 9 Oct).** The builder now uses the goal-adaptive playbook ([playbook-v1.md](../training-guides/playbook-v1.md)) and assumes no sport or event:
+> - **Inputs:** the request context comes from `resolveTrainingContext`: the goal profile (rule G), stated days a week and session length (rule 1's set budget), other training and the endurance switch, key sessions, experience, gym and any named programme. The Build sheet's context line names them, e.g. `Strength · 3 days · 60 min`.
+> - **No goal set:** the build still works from the session length alone (playbook D15 isn't decided; revised in the review fixes). The sheet says so and links to Goals & schedule; nothing is saved as a goal.
+> - **Loads (rule 7):** a target with history shows its change from last time in kg and %. Loads come from the equipment step card in code.
+> - **Endurance rules only when the switch is on:** a heavy-legs draft within 48 h before a key session gets a rule 12 check note. With no endurance-type training, no such note and no mention.
+> - **Programmes (§8):** gym days default from `Days a week you lift`; there's a goal row; usual other training is listed as fixed; event phases show only for a dated `Working towards`, and apply only when Ben schedules the programme.
+> - Changed: §1, WB3, WB11–WB13, §3.1, §3.3, §5.1, §6.1, §7, §8, §9 checks 26–32.
+
 > **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** `Start now` runs its pre-start check first; when that passes and a check-in is due, the `CheckInSheet` appears before `startWorkoutFromDraft(…, opts.checkIn)` ([check-in.md](check-in.md) §2.1). A low check-in never rebuilds the draft by itself; the coach's lighter-session offer, if any, appears on the first set card like any other workout. Check-ins are not sent to the builder (CI10).
 
 Status: v0.1 draft, 8 Oct 2026. Feature approved in brief CHANGELOG v0.5. Builds on [ADR 0006](../decisions/0006-coach-led-progression.md) and [coach-adjustments.md](coach-adjustments.md) (guard notes, source tags, honest failure lines). Tokens: [design-system.md](design-system.md). Entry from [today.md](today.md).
@@ -8,7 +23,7 @@ The builder sits **outside the logging loop**. It adds nothing to Active workout
 
 ## 1. Purpose
 
-The builder answers **"What should I train today, given my goals, my history and this gym?"** when Ben has no routine he wants to use.
+The builder answers **"What should I train today, given my goal, how I train, my history and this gym?"** when Ben has no routine he wants to use.
 
 The flow has three screens, each with one primary action:
 
@@ -25,8 +40,11 @@ The coach chooses exercises, order, sets, reps, rest and (where there is history
 | # | Decision | Reason |
 |---|---|---|
 | WB1 | A generated workout is a **workout draft** with numbered versions (v1, v2, …). It's stored locally, is not a routine and is not a session. `Start now` makes a session snapshot straight from the draft version; saving as a routine is optional | Ben often wants a one-off. Forcing a save would clutter Routines. A draft keeps provenance either way |
-| WB2 | **No history on this equipment → no load target.** The row shows `No history: start light, enter your load.` Any load the model gave for it is discarded and listed in `Why?` | Rule 6 (no invented data). The brief's `calculateNextTargets` says "insufficient data yields bounded defaults"; for a coach-built workout that default would look like a real prescription. **This conflicts with brief §7 wording; please confirm** |
-| WB3 | Loads with history: the **built-in rule's** next target (`calculateNextTargets`) is the reference. The coach may choose a different load (ADR 0006); the validator snaps it with policy `down` (never rounds up a load in a fresh workout) and caps it at the equipment max. When the coach's value differs from the rule, the row shows both | Keeps the coach in charge (ADR 0006) while showing what the rule would say. Rounding down is the safe choice when there's no in-session signal yet |
+| WB2 | **No history on this equipment → no load target.** The row shows `No history: start light, enter your load.` Any load the model gave for it is discarded and listed in `Why?` | Rule 6 (no invented data). The brief's `calculateNextTargets` says "insufficient data yields bounded defaults"; for a coach-built workout that default would look like a real prescription. **This conflicts with brief §7 wording; please confirm** (open-decisions B6). (Review fixes) Playbook rule 7 step 7 now agrees: no estimated starting load in drafts unless Ben approves estimates under B6. If he does, they're labelled `Estimate`, rounded down and aimed at ≤ RPE 7 |
+| WB3 | Loads with history: the **built-in rule's** next target (`calculateNextTargets`, playbook rule 7-F: smallest achievable step, reps first over ~10%, no added sets) is the reference. The coach may choose a different load (ADR 0006); the validator snaps it with policy `down` (never rounds up a load in a fresh workout) and caps it at the equipment max. When the coach's value differs from the rule, the row shows both, each with its % from last time. (9 Oct, rule 7) The coach chooses from Ben's goal, his history on that equipment and routine slot, and the step card from code. Because Ben asked for this workout, the coach's checked value is the draft's target; the built-in line is for comparison only (this isn't playbook D21, which is about next-session targets Ben didn't ask for) | Keeps the coach in charge (ADR 0006) while showing what the rule would say. Rounding down is the safe choice when there's no in-session signal yet |
+| WB11 | (9 Oct; revised in the review fixes) **The context line and `What it uses` come from `resolveTrainingContext`,** not from the model. With no goal set, the build uses the session length only (no goal profile) and says `No goal set: using your session length only`. It never asks Ben to pick a goal before building a single workout, and never saves a goal | Rule G and D15 (until decided: ask for a goal only when Ben asks the coach to plan). One-tap building stays one tap |
+| WB12 | (9 Oct) **Rule 12 check on drafts.** While the endurance switch is on, `validateGeneratedWorkout` runs the same deterministic check as the weekly plan. A heavy-legs draft within 48 h before a key session, or under 6 h from a hard session that day, gets a warning note. It never blocks `Start now` and never edits the draft | The plan and the builder must agree. The note is deterministic, so the model can't skip it or invent one |
+| WB13 | (9 Oct) **% change on targets with history** (`Target 102.5 kg · +2.5% on last`). No % without comparable history; never on bodyweight | Rule 7: every load change is stated in kg/lb and %. Makes coarse dumbbell or stack steps visible before Ben starts |
 | WB4 | An exercise **not possible at this gym** is replaced by the top `rankSubstitutions` result **with the same movement pattern**, and flagged. If none exists, it's removed and flagged. A **pain-flagged** movement is removed and **never auto-substituted** | A substitute for a painful movement could load the same area. Ben can ask for a replacement himself |
 | WB5 | The estimated duration is always `estimateRemainingDuration` on the checked workout. The model's own estimate is never shown. If the estimate is more than 5 min over the requested length, a warning note shows; **nothing is trimmed automatically** | Deterministic, inspectable, and Ben decides what to cut (`Make it fit 45 min` chip) |
 | WB6 | Generation timeout is **60 s** (`timing.coachBuildTimeout`), not the 20 s in-workout timeout | A whole workout is a bigger request, and nobody is waiting mid-set |
@@ -75,16 +93,17 @@ Regions top to bottom: sheet header · Length chips · Focus chips · Gym chip �
 │ ┌──────────────────────────────┬─────┐ │
 │ │ e.g. finish with core        │  🎙 │ │ text field + Talk
 │ └──────────────────────────────┴─────┘ │
-│ Uses your goals, last 4 weeks of       │ type.callout, text.secondary
-│ training, Main Gym's equipment and     │
-│ pain flags.             What it uses › │
+│ Uses Strength · 3 days · 60 min, your  │ type.callout, text.secondary
+│ last 4 weeks, Main Gym's equipment and │ (revised 9 Oct: from
+│ pain flags.             What it uses › │ resolveTrainingContext)
 ├────────────────────────────────────────┤
 │ [        Build 45 min workout        ] │ PrimaryButton, above keyboard
 └────────────────────────────────────────┘
 ```
 
 Defaults (so one tap works):
-- **Length:** the preferred session length from Profile (first-run setup). If none is set, no chip is selected and the label reads `Build workout`.
+- **Length:** today's session length from Goals & schedule (the per-day length if Ben set one for today, otherwise the usual length; revised 9 Oct). If none is set, no chip is selected and the label reads `Build workout`. The length also sets rule 1's set budget for the draft. (Review fixes) With no chip and no length set, the budget assumes 60 min, and the context line says `about 60 min (assumed)`.
+- **Context line (9 Oct; revised in the review fixes):** `Uses <focus> · <days> days · <length>, your last 4 weeks, <gym>'s equipment and pain flags.` Missing parts are named, not filled in: `days a week not set`, `about 60 min (assumed)`. With endurance rules on and a key session within 48 h, a second line is added: `Key long run Sat 07:30 (in 40 h).` With no goal: `No goal set: using your session length only. Set a goal ›` (opens Goals & schedule; the sheet stays open underneath). Values come from `resolveTrainingContext`.
 - **Focus:** `Coach picks`. If Today has a planned session, focus is not prefilled from it (Ben chose to build something else).
 - **Gym:** the selected gym. With no gym: chip reads `Add gym`, and a line under it says `No gym selected. The coach can't check equipment or loads.` Build still works, but every row shows `no load target` (no equipment to snap to).
 - **Not today:** none. Equipment marked busy for today (`setTemporaryAvailability`) is shown pre-selected with the caption `Marked busy today`.
@@ -148,7 +167,7 @@ Regions: nav bar (back, title, version menu, `⋯`) · header (name, gym, counts
 │ ┌────────────────────────────────────┐ │
 │ │ 1 Bench press · Barbell          ⋯ │ │ DraftExerciseRow
 │ │ 2 warm-up + 4 × 6–8                │ │
-│ │ Target 95 kg                       │ │
+│ │ Target 95 kg · −5% on last         │ │ % change (WB13)
 │ │ Last 100 kg × 7 (6 Oct)            │ │ actual, dated
 │ │ Rest 2:30                          │ │
 │ ├────────────────────────────────────┤ │
@@ -178,7 +197,7 @@ Regions: nav bar (back, title, version menu, `⋯`) · header (name, gym, counts
 Row rules (`DraftExerciseRow`):
 - Line 1: order number (or `A1`), exercise name, equipment (as named in the gym profile), `⋯`.
 - Line 2: set scheme. Warm-ups are counted separately (`2 warm-up + 4 × 6–8`). Timed: `3 × 0:45`. Unilateral: `3 × 8–10 per side`.
-- Line 3: `Target <load>` in the equipment's convention (design-system §8), or `No history: start light, enter your load.` or, for bodyweight, `Bodyweight`.
+- Line 3: `Target <load>` in the equipment's convention (design-system §8), or `No history: start light, enter your load.` or, for bodyweight, `Bodyweight`. (9 Oct, WB13) With comparable history the target adds its change from the last working load: `· +2.5% on last`, `· −5% on last` or `· same as last`. The % comes from `buildStepCard` (one decimal place, tabular), never the model.
 - Line 4 (when history exists): `Last <actual> (<date>)` from `getComparableHistory`, same equipment and convention only.
 - Line 5 (only when the coach's load differs from the built-in rule): `Built-in rule <load>`.
 - Guard note for this row (if any), `info.circle` or `exclamationmark.triangle`, text.
@@ -354,7 +373,7 @@ In Routines the row reads `Push · 45 min` with the `Coach` tag and `8 Oct` on l
 - Chips: tap toggles. Single-select groups deselect on a second tap (`Length` → none = coach decides; label `Build workout`). All chips are `ParamChip`, 52pt tall.
 - Gym chip: opens the gym switcher (today.md §4). Changing it here only changes the gym for this request; it does **not** change the selected gym.
 - Text field: system keyboard (it's free text). Return inserts a newline; the primary sits above the keyboard as the action bar does in Active workout. `🎙` dictates into the field (on-device speech, `DEP-STT`). Without voice, the mic is hidden.
-- `What it uses ›` opens a short read-only list from `buildWorkoutRequestContext`: goals, date range of training used, gym and equipment version, active pain flags, saved preferences. Each item names its source. Missing items say so (`No goals set`).
+- `What it uses ›` opens a short read-only list from `buildWorkoutRequestContext` (revised 9 Oct): goal (main focus, also matters, `Working towards` and its phase by date), days a week, session length and about how many working sets fit, other training and whether endurance rules 11–13 are on (with the next key session), experience, any named programme, date range of training used, gym and equipment version, active pain flags, saved preferences. Each item names its source (`set in setup`, `changed by you`, `your logs`). Missing items say so (`No goal set`, `Days a week: not set`). The list ends with `See how the playbook uses these ›` (coaching-playbook §2.1a).
 - `Build …` → `generateWorkout(request, opId)`. Disabled 1 s after tap (`timing.commitGuard`); the opId prevents a double request.
 - Pain words in the free text ("my shoulder hurts") don't set a flag by themselves. The review shows a line: `You mentioned shoulder pain. Flag the movements that hurt so loads don't go up:` [Choose movements ›] (opens Profile → Pain flags with movements listed). Rule 9; the coach never diagnoses.
 
@@ -410,7 +429,8 @@ All loads, reps and rest on the review screen are **targets**. The list is heade
 | Focus chips | `Coach picks` · `Push` · `Pull` · `Legs` · `Upper` · `Lower` · `Full body` |
 | Not today chips | `Barbell` · `Dumbbells` · `Cables` · `Machines` · `Bench`; busy caption `Marked busy today` |
 | Text placeholder | `e.g. finish with core` |
-| Context line | `Uses your goals, last 4 weeks of training, Main Gym's equipment and pain flags.` · link `What it uses ›` |
+| Context line (revised 9 Oct and in the review fixes) | `Uses Strength · 3 days · 60 min, your last 4 weeks, Main Gym's equipment and pain flags.` · missing parts `days a week not set` · `about 60 min (assumed)` · key-session line `Key long run Sat 07:30 (in 40 h).` · no goal `No goal set: using your session length only. Set a goal ›` · link `What it uses ›` |
+| What it uses (9 Oct) | `Goal` · `Working towards` · `Days a week` · `Session length · about 16 working sets fit` · `Other training` · `Endurance rules 11–13: on (running is your usual training)` / `off` · `Experience` · `Programme` · `Training used: 8 Sep–6 Oct` · `Gym` · `Pain flags` · `Preferences` · sources `set in setup` · `changed by you` · `your logs` · missing `No goal set` · `Days a week: not set` · link `See how the playbook uses these ›` |
 | No-gym line | `No gym selected. The coach can't check equipment or loads.` |
 | Primary | `Build 45 min workout` · `Build 45 min push workout` · `Build workout` |
 | Generating | `Asking the coach` + `0:12` · `Checking against Main Gym` · `Nothing is saved or started yet.` · `You can leave this screen. The draft will be in Routines → Coach drafts.` · `Start a saved routine instead ›` · `Cancel` |
@@ -418,7 +438,8 @@ All loads, reps and rest on the review screen are **targets**. The list is heade
 | Header | `Main Gym · 6 exercises · about 46 min` · `Coach` tag + `8 Oct 18:02` · `You asked: "…"` |
 | List heading | `All values are targets.` |
 | Set scheme | `2 warm-up + 4 × 6–8` · `3 × 0:45` · `3 × 8–10 per side` |
-| Load line | `Target 95 kg` · `Target 27.5 kg each` · `Target 45 kg stack` · `Bodyweight` · `No history: start light, enter your load.` |
+| Load line | `Target 95 kg` · `Target 27.5 kg each` · `Target 45 kg stack` · `Bodyweight` · `No history: start light, enter your load.` · (9 Oct) suffixes `· +2.5% on last` · `· −5% on last` · `· same as last` |
+| Guard: schedule (9 Oct, rule 12; endurance switch on only) | `Heavy legs 40 h before your key long run (Sat 07:30).` · `Heavy legs under 6 h after your intervals today.` |
 | History line (actual) | `Last 100 kg × 7 (6 Oct)` |
 | Rule line | `Built-in rule 30 kg each` |
 | Rest | `Rest 2:30` · superset: `Rest 1:30 after each round` |
@@ -458,7 +479,7 @@ All loads, reps and rest on the review screen are **targets**. The list is heade
 | Discard confirm | `Discard this coach workout and all its versions?` [Discard] [Cancel] |
 | Drafts list | `Coach drafts` · row `Push · 45 min · v2 · 8 Oct` · footer `Unsaved drafts are deleted after 14 days.` |
 
-Rationale length: at most **240 characters**, plain, no praise, no diagnosis, no scores, no claims about recovery (set in the instructions). Shown in 3 lines; the rest in `Why?`. It may cite only facts in the context (e.g. "you trained chest on Monday"), and `Why?` lists those facts with dates.
+Rationale length: at most **240 characters**, plain, no praise, no diagnosis, no scores, no claims about recovery (set in the instructions). Shown in 3 lines; the rest in `Why?`. It may cite only facts in the context (e.g. "you trained chest on Monday"), and `Why?` lists those facts with dates. (9 Oct, rule G) It starts by naming the goal and context it used, e.g. `Strength focus, 3 days, run Sat: bench first, legs light.` It never mentions endurance rules while they're off.
 
 ### 6.2 Spoken (voice requests only; never in Quiet mode)
 
@@ -490,9 +511,9 @@ Existing (brief §4, §7, §8; ADR 0006; coach-adjustments §6):
 
 | Function / type | Contract |
 |---|---|
-| `buildWorkoutRequestContext(ownerId, request)` | Wraps `buildCoachContext` for a build request: goals, last 4 weeks, gym equipment snapshot + version, pain flags, preferences, rest presets. Returns the `What it uses` list with sources and missing-data flags |
+| `buildWorkoutRequestContext(ownerId, request)` | Wraps `buildCoachContext` for a build request: (9 Oct) `resolveTrainingContext` output (goal profile and version, days a week, session budget for the requested length, other training, endurance switch, key sessions, experience, programme), last 4 weeks, gym equipment snapshot + version, step cards for exercises with history, pain flags, preferences, rest presets, and approved playbook rules with their on/off status. Returns the `What it uses` list with sources and missing-data flags. Records the goal version on the draft so a later goal change shows it as built for the old goal |
 | `generateWorkout(request, opId)` → `{draftId, versionId, turnId}` or a typed error (`offline`, `not_connected`, `limit`, `timeout`, `invalid_output`, `unusable`) | `request = {origin: 'today' \| 'coach_sheet' \| 'routines' \| 'voice', gymId, durationMin?, focus?, excludeEquipment: EquipmentType[], text?}`. Runs one coach turn with the restricted tool `propose_workout`, then `validateGeneratedWorkout`, then stores the version. Idempotent on opId. Request text is stored as data (rule 8) |
-| `validateGeneratedWorkout(raw, gymId, equipmentVersion, painFlags, constraints)` → `{status: 'ok' \| 'partial' \| 'unusable', workout, guardNotes[], estimateMin, checkVersion}` | **Pure, `packages/domain`, unit-tested.** Resolves catalogue IDs/aliases; drops unknown exercises; substitutes or removes impossible exercises (WB4); removes pain-flagged movements; applies `excludeEquipment`; sets loads (WB2, WB3: rule reference, snap `down`, cap); resolves rest to presets; checks supersets (2–4 members, same gym); computes the estimate (WB5). Guard note kinds: `swapped`, `removed_no_substitute`, `excluded_by_request`, `pain_excluded`, `snapped`, `capped`, `no_history_load_dropped`, `unknown_exercise`, `over_length` |
+| `validateGeneratedWorkout(raw, gymId, equipmentVersion, painFlags, constraints)` → `{status: 'ok' \| 'partial' \| 'unusable', workout, guardNotes[], estimateMin, checkVersion}` | **Pure, `packages/domain`, unit-tested.** Resolves catalogue IDs/aliases; drops unknown exercises; substitutes or removes impossible exercises (WB4); removes pain-flagged movements; applies `excludeEquipment`; sets loads (WB2, WB3: rule reference, snap `down`, cap); resolves rest to presets; checks supersets (2–4 members, same gym); computes the estimate (WB5); (9 Oct) adds `pctFromLast` per target from `buildStepCard` (WB13) and, when `context.enduranceRulesActive`, runs `checkScheduleConflicts` for today's date (WB12). Guard note kinds: `swapped`, `removed_no_substitute`, `excluded_by_request`, `pain_excluded`, `snapped`, `capped`, `no_history_load_dropped`, `unknown_exercise`, `over_length`, `schedule_conflict` (9 Oct). Takes `context` as a parameter |
 | `requestWorkoutChanges(draftId, baseVersionId, {chips, text}, opId)` | `generateWorkout` with `parentVersionId`; the coach gets the base version and the change request |
 | `buildWorkoutDraftView(draftId, versionId?)` | View model for §3.3–3.4: rows, notes, estimate, history lines, rule lines, versions list, `diff` vs parent, stale status |
 | `diffWorkoutVersions(a, b)` → `{added[], removed[], changed[{exerciseKey, fields}]}` | Pure. Matches by position + exercise ID; a swap shows as `Changed` with `Was …` |
@@ -510,11 +531,19 @@ Existing (brief §4, §7, §8; ADR 0006; coach-adjustments §6):
 **Not in the first builder slice.** Kept short so the single-session design doesn't block it.
 
 - **Request:** the Build sheet with a `Programme` toggle adding `Weeks` (4 / 6 / 8), `Gym days per week` (2–5), and `Fixed sessions` listed from the calendar (e.g. `Sat · Long run`, from confirmed imports or entered by Ben). Fixed sessions are constraints the coach must plan around, never sessions it moves.
+- **Revised 9 Oct (playbook v1, goal-adaptive; no sport special cases):**
+  - **Gym days per week** defaults to `Days a week you lift` from Goals & schedule, labelled `From Goals & schedule`. The chips widen to 1–7, matching onboarding and Profile (7 = the 6-day split plus one short accessory or mobility day with no main-lift sets; playbook rule 1). Changing it here affects only this request. With no days set, no chip is preselected and `Schedule` stays disabled until one is picked (playbook "Missing inputs": weekly sets need days).
+  - **Out of date (review fixes):** the programme proposal records the goal, setup and other-training versions from `resolveTrainingContext`. If any changes before `Schedule N weeks`, the preview shows `Built for your old <goal / days / other training>. Ask for changes to update it.` and `Schedule` is disabled (playbook guardrail 5).
+  - **Goal for this block:** a row prefilled from Profile. With no goal set it shows the five main-focus chips, with `Also save as my goal` (unticked by default). A programme needs a goal, unlike a single workout (D15: the coach asks for one when Ben asks it to plan).
+  - **Fixed sessions** also list usual other training as `Tue · Running (usual)`. With the endurance switch off, the list is empty and no spacing rule is mentioned.
+  - **`Working towards`:** with a date inside the programme, the preview labels weeks by phase from the date (`Week 5 of 6 · Taper (10k run Sun 22 Nov)`, for a 6-week programme from Mon 12 Oct). The coach builds targets from what Ben said the event involves, never from built-in sport defaults. Scheduling the programme is how Ben applies those phases, so nothing changes before `Schedule N weeks`.
+  - **Rules 11–13** shape the programme only while the endurance switch is on. Each scheduled week is checked with `checkScheduleConflicts`, and notes show in the preview's `Checks`.
 - **Preview:** a vertical week list (better than a 7-column grid at 390pt):
 
 ```
 │ ‹ Back   Coach programme   v1 ▾    ⋯  │
 │ 6 weeks · 3 gym days · from Mon 12 Oct │
+│ Strength · 60 min sessions             │ goal + length used (9 Oct)
 │ [◀] Week 1 of 6 [▶]                    │
 │ Mon  Push · about 50 min             › │
 │ Tue  —                                 │
@@ -560,3 +589,12 @@ Existing (brief §4, §7, §8; ADR 0006; coach-adjustments §6):
 23. At AX3, `Start now` stays visible; secondary actions stack; no numbers or units are truncated; all numbers use tabular numerals.
 24. All markers, tags and notes have text or icons as well as colour, in dark and light modes.
 25. (Later, step 6) A programme preview with `Sat · Long run` fixed never moves or replaces it, and no `ScheduledSession` exists until `Schedule N weeks` is tapped.
+26. (9 Oct) With Strength, 3 days a week and 60 min set, the Build sheet's context line reads `Uses Strength · 3 days · 60 min, …`. `What it uses` lists each with its source; the request payload carries the same values from `resolveTrainingContext`.
+27. (9 Oct; revised in the review fixes) With no goal set, `Build …` is still one tap. The sheet shows `No goal set: using your session length only. Set a goal ›`, the draft builds, and `TrainingGoals` is unchanged afterwards. No builder copy contains "rule defaults".
+28. (9 Oct) With `Running · Sat · key` as usual training and a heavy-legs draft built on Thu evening, Checks shows `Heavy legs … before your key run (Sat)`, and `Start now` still works. With other training `None` and nothing planned, imported or reported, the same draft has no schedule note and the rationale doesn't mention running or interference (instruction test).
+29. (9 Oct) A target with history shows its % from the last comparable working load (`Target 102.5 kg · +2.5% on last`), computed by code. Stub the coach to return 12 kg each where the last was 10 kg: the row shows `+20% on last`. Bodyweight rows and no-history rows show no %.
+30. (9 Oct) The programme request prefills `Gym days per week` from `Days a week you lift` with `From Goals & schedule`. Changing it in the request doesn't change Profile.
+31. (9 Oct) A programme with a dated `Working towards` inside its range labels weeks by phase. Nothing about those phases is saved or scheduled until `Schedule N weeks`, and Undo removes them with the programme.
+32. (9 Oct) No builder copy, chip, placeholder or example names HYROX or another sport as a special case.
+33. (Review fixes) With no session length set and no `Length` chip chosen, the context line says `about 60 min (assumed)`, the draft's estimate targets about 60 min, and Profile's session length stays `Not set`.
+34. (Review fixes, later step 6) A programme preview built for 4 gym days becomes `Built for your old days…` with `Schedule` disabled after `Days a week you lift` changes to 3 in Profile. Unit test: `confirmProposal` rejects it with `stale_context`.

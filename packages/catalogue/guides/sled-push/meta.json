@@ -14,7 +14,9 @@
   "check": {
     "status": "pass",
     "failed": [],
-    "warnings": []
+    "warnings": [
+      "contact-velocity"
+    ]
   },
   "focus": [
     {

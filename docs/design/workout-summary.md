@@ -10,6 +10,8 @@
 
 > **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** The session's check-in ([check-in.md](check-in.md)) is shown **as given** in a `CheckInLine` under the title line, above the facts (region 2a): `How you said you felt: 2 of 5`, reasons, the note in quotes. It is not a fact row, is never combined with any number on this screen, and doesn't change `Next time` (the built-in rules ignore it). When Ben picked `Pain` without choosing movements, a `NoteLine` asks him to flag them. The single coach call may read this session's check-in as Ben's words (check-in.md CI10). Changed: §2, §3, §4, §5, §6, checks 23–26.
 
+> **Revision 2026-10-09 (playbook v1 review fixes).** The "built-in rule" on this screen is playbook rule **7-F**: equipment-aware double progression. It uses the smallest achievable step at this gym, adds reps first when that step is over ~10% or the equipment is at its max, then holds. It never adds sets (playbook D2). Each built-in target now shows its % change from the last working load (`Target 32.5 kg each × 8–10 · +8.3%`), as rule 7 requires. **Who sets next time's target when the coach is connected and Ben doesn't tap Apply is still the built-in rule.** That's what CLAUDE.md rule 3 allows today (future-session changes are always proposals). The screen already says so honestly: `Built-in rule` is the "before" value and the `Not now` result. Playbook **D21** asks Ben whether the coach's target should apply instead. If he chooses that (option A, which needs a CLAUDE.md rule 3 and ADR 0006 change), this screen changes as described in §3 "If D21 option A". Until this build enforces 7-F's 10% limit, built-in targets can jump more (coaching-playbook PB15); the `Why?` text names the real step either way. Changed: §2 region 6, §3, §5, §6, checks 7, 17 and 27–28.
+
 Status: v0.1 draft, 8 Oct 2026. Flow: [flow-first-milestone.md](flow-first-milestone.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -36,8 +38,8 @@ Regions, top to bottom:
    - Warm-up sets, shown separately
 4. **Comparison.** One comparable lift: today vs the last comparable session, plus a line explaining why they count as comparable.
 5. **Exercises.** One compact row per exercise: the name, the set count, and the actual results for the working sets. If the coach adjusted that exercise's sets during the workout, one extra line says so: `Coach adjusted sets 3–4 (RPE 10 on set 2)`.
-6. **Next time.** One row per exercise whose next target changes or is held for a listed reason. Each row names its source:
-   - **Coach available and answered:** a proposal (`CoachTargetProposal`): before = the built-in rule's target (what happens if Ben does nothing), after = the coach's target, the coach's one-sentence reason, any guard notes, `Why? ›`, [Not now] [Apply]. Source tag `Coach`.
+6. **Next time.** One row per exercise whose next target changes or is held for a listed reason. Each row names its source. Built-in values come from playbook rule 7-F (equipment-aware; review fixes) and show their % change:
+   - **Coach available and answered:** a proposal (`CoachTargetProposal`): before = the built-in rule's target (what happens if Ben does nothing; playbook D21), after = the coach's target, the coach's one-sentence reason, any guard notes, `Why? ›`, [Not now] [Apply]. Source tag `Coach`.
    - **Coach agrees with the rule:** `Coach agrees: 100 kg × 6–8`, no buttons.
    - **Coach offline, not connected or failed:** the built-in rule's target with `Built-in rule (coach offline)` or `Built-in rule (coach unavailable)`, and the rule's own explanation.
    - **Coach still working:** the built-in rule's target labelled `Built-in rule` and the line `Coach is reviewing…`.
@@ -74,16 +76,17 @@ Regions, top to bottom:
 │                                        │
 │ Next time                              │
 │ Incline DB press                       │
-│ Target 32.5 kg each × 8–10             │
+│ Target 32.5 kg each × 8–10 · +8.3%     │ % from code (buildStepCard)
 │ You did 10 reps on every set at 30 kg. │
 │ Built-in rule (coach offline)          │ source tag
-│ Rule: double progression · Why? ›      │
+│ Rule: smallest step at Main Gym ·      │ 7-F explanation
+│ Why? ›                                 │
 │ Triceps pushdown                       │
 │ Same target: 35 kg stack × 10–12       │
 │ Only 1 of 3 working sets was logged on │
 │ 8 Oct; holding.                        │
 │ Built-in rule (coach offline)          │
-│ Rule: double progression · Why? ›      │
+│ Rule: holding · Why? ›                 │
 │                                        │
 │ Coach note                             │
 │ Coach not connected. Your workout is   │
@@ -155,6 +158,8 @@ Built-in rule text comes from `calculateNextTargets`. Coach reasons come from th
 | Proposal undone | Undo tapped | Back to the unapplied proposal (before/after, Apply) |
 | Proposal stale | The template or history changed since the proposal was made (e.g. an Edit workout correction) | `Out of date` styling, Apply disabled, [Dismiss]. Rows recompute the built-in rule; the coach is not re-called automatically |
 | Proposal expired | The next session of that routine started without Apply | Status `expired`; shown in history as `Not applied`. The built-in rule's target was used |
+| Built-in step over 10% (review fixes) | 7-F's next achievable load is more than ~10% heavier (e.g. 10 → 12 kg dumbbells, +20%) | `Same load, one more rep: 10 kg each × 13` (a **target**) + `Next dumbbell is 12 kg, +20%: adding reps first.` No added set. At the rep cap: `Holding at 10 kg each × 15. Next step is +20%. Microplates or the coach can help.` |
+| If D21 option A (only if Ben chooses it) | Coach connected and answered | The coach's target is used for next time without Apply. The row reads `✓ Next Push A: 97.5 kg × 6–8 (Coach)` with the built-in value as `Built-in rule would be 100 kg × 6–8`, the reason, guard notes and [Undo]. `Not now` becomes `Use built-in rule instead`. Until Ben decides, this state doesn't exist |
 | Check-in answered (2026-10-09) | `session.checkIn.kind = 'answered'` | Region 2a `CheckInLine` with score, reasons and note exactly as given |
 | Check-in skipped / not asked | `skipped` or `not_asked` | No check-in line; nothing says it was skipped |
 | Pain mentioned, not flagged | Check-in has `Pain` and no `painFlagIds` | Region 2a `NoteLine` + [Choose movements ›] until a flag is set from it or the check-in is edited |
@@ -204,7 +209,7 @@ Undo:
 | Not comparable | `Last bench press was at Hotel Gym (different bar). Not compared.` |
 | First time | `First time logging Bench press with this barbell at Main Gym. Nothing to compare yet.` |
 | Next time heading | `Next time` |
-| Next time row (built-in rule) | `Incline DB press: target 32.5 kg each × 8–10` (a **target**) + reason `You did 10 reps on every set at 30 kg.` + source tag + `Rule: double progression` |
+| Next time row (built-in rule) | `Incline DB press: target 32.5 kg each × 8–10 · +8.3%` (a **target**; % from code) + reason `You did 10 reps on every set at 30 kg.` + source tag + `Rule: smallest step at Main Gym` (revised in the review fixes; was `Rule: double progression`) · held rows `Rule: holding` · big step `Next dumbbell is 12 kg, +20%: adding reps first.` · at the cap `Holding at 10 kg each × 15. Next step is +20%. Microplates or the coach can help.` |
 | Source tags | `Coach` · `Built-in rule` · `Built-in rule (coach offline)` (no route or no network) · `Built-in rule (coach unavailable)` (error or limit) |
 | Next time row (coach) | Scope `From next Push A`; `Built-in rule 100 kg × 6–8` → `Coach 97.5 kg × 6–8` (both **targets**); coach reason (one sentence); guard note; `Why? ›` · `Not now` · `Apply` |
 | Coach agrees | `Coach agrees: 100 kg × 6–8` (a **target**) |
@@ -235,7 +240,7 @@ The summary makes **no personal-best claims** unless the domain confirms that th
   - exercise rows
   - `timingEdited`
 - `getComparableHistory(exerciseId, equipmentId, filters)` is used inside the summary build.
-- `calculateNextTargets(history, rule, equipment)` returns the changed targets and an explanation for each, with equipment bounds applied. It is always computed: it is the offline fallback and the "before" value of every coach proposal.
+- `calculateNextTargets(history, rule, equipment)` returns the changed targets and an explanation for each, with equipment bounds applied. It is always computed: it's the offline fallback, the "before" value of every coach proposal, and (until Ben decides playbook D21) the target used when no coach proposal is applied. (Review fixes) It implements playbook rule 7-F: the smallest achievable step, reps first when the step is over ~10% or at max, then hold, never an added set. Each result carries `pctChange` from `buildStepCard`. Until the build enforces the 10% limit (`maxLoadJump: null` today), `getRuleImplementationStatus` reports the gap (coaching-playbook PB15).
 - `buildWorkoutSummary(sessionId)` also returns `nextTime[]`: `{exerciseId, builtIn, coachStatus: 'unavailable' | 'offline' | 'loading' | 'ready' | 'failed', coachProposal?: {proposalId, after, reason, guardNotes, scope, status}}`, and per exercise `adjustments[]` from the workout (coach-adjustments §6).
 - `correctSet` for edits (timing as above).
 - (2026-10-09) `buildWorkoutSummary` adds `checkIn?: {checkInId, score, reasons, note?, recordedAtUtc}` and `painMentionedNotFlagged`; `updateCheckIn`, `deleteCheckIn`, `setPainFlag` (check-in.md §6). The summary coach turn receives this session's check-in labelled as Ben's words; `calculateNextTargets` never reads it.
@@ -256,7 +261,7 @@ The summary makes **no personal-best claims** unless the domain confirms that th
 4. Active time excludes paused time. It matches the start-to-end time minus the paused time inside that window, to within 1 min. Probe: last set at 60 min, Pause at 61, Finish hours later with the end edited to 63 → `61 min` (not 63, and not reduced by the hours of pause after 63).
 5. The comparison never pairs different equipment instances, conventions (e.g. per-dumbbell vs total) or units. Test with a hotel-gym session in history.
 6. Any estimated 1RM text contains the word "estimate". No PR or "best" claim appears for non-comparable lifts.
-7. Built-in rule values under `Next time` come from `calculateNextTargets` and match the domain unit tests. Every `Next time` value, from either source, is labelled as a target, carries a source tag, and never exceeds equipment maximums.
+7. Built-in rule values under `Next time` come from `calculateNextTargets` and match the domain unit tests. Every `Next time` value, from either source, is labelled as a target, carries a source tag and its % change from the last working load, and never exceeds equipment maximums.
 8. Pressing `Done` while the coach note is loading returns to Today without an error. The note appears later in the session history.
 9. A coach next-time proposal shows its scope (`From next Push A`), the built-in rule value as before and the coach value as after, the coach's reason, Apply and Undo, and it never edits completed sets.
 10. Editing the end time keeps the original timestamp in the audit, and the summary shows `(end time edited)`.
@@ -266,7 +271,7 @@ The summary makes **no personal-best claims** unless the domain confirms that th
 14. A unilateral exercise where the right side fell short shows `Same target` under `Next time` with the domain's fact naming the right side, never an increase.
 15. An exercise whose equipment can make no load shows `No load target` with `Fix the equipment profile.` and [Update gym] under `Next time`, never "bodyweight".
 16. With airplane mode on, every `Next time` row is tagged `Built-in rule (coach offline)` and shows the rule's explanation; no row says `Coach` and no coach text appears.
-17. With the coach connected, finishing makes exactly **one** coach call (note + proposals). Nothing changes for the next session until `Apply`; without Apply, the next Push A uses the built-in rule's targets.
+17. With the coach connected, finishing makes exactly **one** coach call (note + proposals). Nothing changes for the next session until `Apply`; without Apply, the next Push A uses the built-in rule's targets, tagged `Built-in rule` (playbook D21, until Ben decides). The playbook screen meanwhile reads 7-F `In use: when no coach target is applied`, never "not in use".
 18. A coach proposal of 98 kg on a 2.5 kg-step barbell shows 97.5 kg with `Rounded to 97.5 kg: nearest your bar and plates allow.`; a proposal above a rack maximum shows the capped value and `Capped at …`.
 19. With a pain flag active, a coach increase for that movement shows `Not increasing: you flagged … pain.` with no Apply.
 20. Apply → the row collapses with [Undo]; Undo restores the unapplied proposal and the next session's target is the built-in rule's again.
@@ -276,3 +281,5 @@ The summary makes **no personal-best claims** unless the domain confirms that th
 24. (2026-10-09) A skipped check-in leaves no line. `Next time` targets are identical for the same logs with a check-in of 1, of 5, or skipped.
 25. (2026-10-09) Editing the check-in from the line versions it, shows in `Edit history`, and changes nothing else on the summary.
 26. (2026-10-09) `Pain` picked with no movement flagged shows the pain prompt; `Choose movements ›` → flag Bench press sets a flag with source `check_in` and the prompt disappears.
+27. (Review fixes) Lateral raise at 10 kg each with every set at the top of the range, on a rack whose next step is 12 kg: `Next time` shows the same load with more reps and `Next dumbbell is 12 kg, +20%: adding reps first.`, never 12 kg and never an extra set (on a build that enforces 7-F's limit; otherwise the PB15 card is shown on the playbook screens).
+28. (Review fixes) Over three sessions at the rep cap with a +20% next step, the target holds at the same load, reps and set count, and the explanation names the step.

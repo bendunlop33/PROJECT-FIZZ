@@ -4,6 +4,8 @@
 
 > **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** A fourth way in: **path B′, check-in offer** ([check-in.md](check-in.md) §4.4). A low pre-workout check-in (score at or below the setting, default 2, or `Tired` / `Poor sleep`) makes `evaluateCheckInOffer` (pure, no AI) show `Want a lighter session today?` / `You said 2 of 5 · …` [No thanks] [Adjust] in the **first set card's coach slot, in Ready, before any set is logged**: the one exception to §2.3's "only in the rest card" (CI5). It is never spoken. `Adjust` counts as Ben accepting (CA1) and sends `requestCoachAdjustment(…, {origin: 'check_in_offer', checkInId, intent: 'lighter_session'}, …)` for all of today's pending sets. Two new deterministic guards: `lighter_no_increase` (a lighter-session result can't raise anything) and `pain_unspecified` (Ben picked `Pain` in the check-in without choosing movements: no increases anywhere in that session). Offline after a low check-in: one outcome line, no adjustment; the built-in rules ignore check-ins. Changed: §1 table, §2.3, §2.6, §6, checks 22–25.
 
+> **Revision 2026-10-09 (playbook v1 review fixes).** §4.6 now says plainly that the built-in rule (playbook 7-F, equipment-aware, no added sets) sets next-session targets in two cases: when the coach is unavailable, and when the coach is connected but Ben doesn't apply its proposal. Whether the coach's target should apply instead is playbook D21, for Ben; it would need CLAUDE.md rule 3 and ADR 0006 changed. The trigger thresholds in §1 path B and §4.7 still read as fixed numbers. They follow rule T's planned-effort conditions once built (listed in open-decisions.md "Playbook v1 follow-ups"). Changed: §4.6, §6.
+
 Status: v0.1 draft, 8 Oct 2026. This is the **single spec** for coach-led progression ([ADR 0006](../decisions/0006-coach-led-progression.md), CLAUDE.md rule 3, brief CHANGELOG v0.4). Other specs link here instead of repeating it:
 - [active-workout.md](active-workout.md): where Adjust sits on the set card, coach target markers, Log guard
 - [rest-state.md](rest-state.md): the offer line and adjustment banner in the rest card, cues
@@ -264,6 +266,7 @@ Specified in [workout-summary.md](workout-summary.md) §2 and §3. In short:
 - `Next time` shows each changed exercise with **before** = the built-in rule's target (what happens if Ben does nothing) and **after** = the coach's target, both labelled, plus the coach's reason, guard notes, `Why?`, `Not now` and `Apply`.
 - If the coach is offline, not connected or fails: the built-in rule's targets show with the label `Built-in rule (coach offline)` (or `Built-in rule (coach unavailable)` on errors).
 - Unapplied proposals expire when the next session of that routine starts. The built-in rule's targets then apply.
+- (Revision 2026-10-09, playbook v1 review fixes) **The built-in rule is playbook rule 7-F**: equipment-aware, smallest achievable step, reps first when that step is over ~10% or at the equipment max, then hold, never an added set. Every target shows its % change. It is used in two cases: the coach is unavailable, **and** the coach is connected but Ben didn't apply its proposal (`Not now`, or the proposal expired). The second case follows CLAUDE.md rule 3 (future-session changes are always proposals). Playbook **D21** asks Ben whether the coach's target should apply instead, with visible change and Undo. That would need CLAUDE.md rule 3 and ADR 0006 changed, so until Ben decides, the behaviour above stands and the playbook screen says so (`In use: when no coach target is applied`).
 
 ### 4.7 Settings (Profile → Coach)
 
@@ -342,7 +345,7 @@ Existing (brief §7–8, ADR 0006):
 - `applyCoachProposal(id, confirmation)`: `confirmation` adds `{kind: 'ben_request' | 'offer_accepted' | 'review_apply', expectedVersion}`.
 - `undoAction(actionId)`, `getDecisionEvidence(actionId)`.
 - `buildActiveSetView(sessionId)`: adds, per set, `target.source: 'plan' | 'rule' | 'coach'`, `target.planned` (the pre-adjustment target), `adjustmentActionId`; and at session level `coachRequest {turnId, status, coveredSetIds}`, `coachOffer {triggerId, kind, fact, setId}`, `lastAdjustment {actionId, summary, reason, guardNotes}`.
-- `calculateNextTargets(history, rule, equipment)`: the built-in "before" value and the offline fallback.
+- `calculateNextTargets(history, rule, equipment)`: the built-in "before" value, the offline fallback, and (until playbook D21 is decided) the target used when no coach proposal is applied. It implements playbook rule 7-F (review fixes, §4.6).
 - `buildWorkoutSummary(sessionId)`: `nextTime[]` with `builtIn`, `coachProposal?`, `coachStatus`.
 - `buildSetCue`, `cancelObsoleteCues`.
 

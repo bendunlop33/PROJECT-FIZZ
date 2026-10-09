@@ -41,9 +41,11 @@ export const lerp = (a: number, b: number, s: number): number => a + (b - a) * s
 export const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
 
 /**
- * `smooth` is not a per-segment curve: it is a monotone cubic through the
- * neighbouring keyframes (continuous velocity, no overshoot), with zero
- * velocity at holds and turning points. See `keyframes.ts`.
+ * `smooth` is not a per-segment curve: it is a C2 cubic spline through the
+ * keyframes (continuous velocity and acceleration at mid-movement keys, no
+ * overshoot), with zero velocity at holds and turning points. In a
+ * `motion: "phases"` guide every channel shares one minimum-jerk progress per
+ * phase instead (ADR 0015). See `keyframes.ts`.
  */
 export const EASES = ['linear', 'inSine', 'outSine', 'inOutSine', 'inOutCubic', 'smooth'] as const;
 export type Ease = (typeof EASES)[number];
@@ -116,4 +118,112 @@ export function monotoneSlope(left: number | null, right: number | null, hLeft: 
   const m = (left * hRight + right * hLeft) / (hLeft + hRight);
   const cap = 3 * Math.min(Math.abs(left), Math.abs(right));
   return Math.sign(m) * Math.min(Math.abs(m), cap);
+}
+
+/**
+ * Slopes for a C2 cubic spline through (x[i], y[i]): continuous velocity and
+ * acceleration at every free knot (ADR 0015). For per-channel keyframe
+ * interpolation; `monotoneSlope` stays for body-width profiles.
+ *
+ * - `fixed[i]`: a slope to keep (0 at holds and turning points), or null to solve.
+ * - Open spline: a free end has no acceleration (the natural end condition).
+ * - `cyclic`: knot n − 1 is knot 0 again (`y[n−1] = y[0]`, `fixed[0]` applies); the spline wraps.
+ *
+ * Guard (Fritsch–Carlson): a free knot's slope becomes 0 where it disagrees in
+ * sign with a neighbouring secant (or one is flat), and is capped at 3× the
+ * smaller secant, so no segment overshoots its knot values. A clipped knot
+ * keeps C1 but loses C2.
+ */
+export function splineSlopes(x: readonly number[], y: readonly number[], fixed: readonly (number | null)[], cyclic: boolean): number[] {
+  const n = x.length;
+  if (n < 2) return Array.from({ length: n }, () => 0);
+  const K = cyclic ? n - 1 : n;
+  const h = Array.from({ length: n - 1 }, (_, i) => (x[i + 1] ?? 0) - (x[i] ?? 0));
+  const d = h.map((hi, i) => (hi > 0 ? ((y[i + 1] ?? 0) - (y[i] ?? 0)) / hi : 0));
+  // Knot j's neighbouring segments (segment i runs from knot i to knot i + 1; in a cycle knot n − 1 is knot 0).
+  const leftSeg = (j: number): number => (j > 0 ? j - 1 : cyclic ? n - 2 : -1);
+  const rightSeg = (j: number): number => (j < n - 1 ? j : -1);
+  const knot = (i: number): number => (cyclic && i === n - 1 ? 0 : i);
+  const A = Array.from({ length: K }, () => new Array<number>(K + 1).fill(0));
+  const free: boolean[] = [];
+  for (let j = 0; j < K; j += 1) {
+    const row = A[j] as number[];
+    const L = leftSeg(j);
+    const R = rightSeg(j);
+    const hl = L >= 0 ? (h[L] ?? 0) : 0;
+    const hr = R >= 0 ? (h[R] ?? 0) : 0;
+    const f = fixed[j] ?? null;
+    const degenerate = (L >= 0 && !(hl > 0)) || (R >= 0 && !(hr > 0)) || (L < 0 && R < 0) || (cyclic && K < 2);
+    if (f !== null || degenerate) {
+      row[j] = 1;
+      row[K] = f ?? 0;
+      free.push(false);
+      continue;
+    }
+    free.push(true);
+    if (L < 0) {
+      // Natural start: 2·m0 + m1 = 3·d0.
+      row[j] = (row[j] ?? 0) + 2 / hr;
+      row[knot(R + 1)] = (row[knot(R + 1)] ?? 0) + 1 / hr;
+      row[K] = (3 * (d[R] ?? 0)) / hr;
+    } else if (R < 0) {
+      // Natural end: m(n−2) + 2·m(n−1) = 3·d(n−2).
+      row[knot(L)] = (row[knot(L)] ?? 0) + 1 / hl;
+      row[j] = (row[j] ?? 0) + 2 / hl;
+      row[K] = (3 * (d[L] ?? 0)) / hl;
+    } else {
+      row[knot(L)] = (row[knot(L)] ?? 0) + 1 / hl;
+      row[j] = (row[j] ?? 0) + 2 * (1 / hl + 1 / hr);
+      row[knot(R + 1)] = (row[knot(R + 1)] ?? 0) + 1 / hr;
+      row[K] = 3 * ((d[L] ?? 0) / hl + (d[R] ?? 0) / hr);
+    }
+  }
+  // Dense Gauss–Jordan with partial pivoting: at most 16 keys, solved once per channel and cached.
+  for (let c = 0; c < K; c += 1) {
+    let piv = c;
+    for (let r = c + 1; r < K; r += 1) if (Math.abs(A[r]?.[c] ?? 0) > Math.abs(A[piv]?.[c] ?? 0)) piv = r;
+    const pr = A[piv] as number[];
+    A[piv] = A[c] as number[];
+    A[c] = pr;
+    const pv = pr[c] ?? 0;
+    if (Math.abs(pv) < 1e-15) continue;
+    for (let r = 0; r < K; r += 1) {
+      const row = A[r] as number[];
+      if (r === c || row[c] === 0) continue;
+      const k = (row[c] ?? 0) / pv;
+      for (let q = c; q <= K; q += 1) row[q] = (row[q] ?? 0) - k * (pr[q] ?? 0);
+    }
+  }
+  const m = A.map((row, j) => (Math.abs(row[j] ?? 0) < 1e-15 ? 0 : (row[K] ?? 0) / (row[j] ?? 1)));
+  for (let j = 0; j < K; j += 1) {
+    if (free[j] !== true) continue;
+    const sides = [leftSeg(j), rightSeg(j)].filter((i) => i >= 0).map((i) => d[i] ?? 0);
+    const mj = m[j] ?? 0;
+    if (sides.some((s) => s === 0 || Math.sign(s) !== Math.sign(mj))) {
+      m[j] = 0;
+      continue;
+    }
+    const cap = 3 * Math.min(...sides.map(Math.abs));
+    m[j] = Math.sign(mj) * Math.min(Math.abs(mj), cap);
+  }
+  return Array.from({ length: n }, (_, i) => m[knot(i)] ?? 0);
+}
+
+/** Minimum-jerk progress 10s³ − 15s⁴ + 6s⁵ on [0, 1]: zero velocity and acceleration at both ends. */
+export function minimumJerk(s: number): number {
+  const x = clamp(s, 0, 1);
+  return x * x * x * (10 + x * (-15 + 6 * x));
+}
+
+/** Inverse of `minimumJerk` on [0, 1] (bisection; it is strictly increasing). */
+export function minimumJerkInverse(p: number): number {
+  const target = clamp(p, 0, 1);
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 60; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (minimumJerk(mid) < target) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
 }

@@ -1,5 +1,21 @@
 # Onboarding (first-run setup)
 
+> **Revision 2026-10-09 (playbook v1 review fixes).**
+> - **Effort for every other-training type.** Each chosen type gets `Hard or long` / `Easy` (optional), not just `Other`. Only hard, long or key entries turn the endurance switch on, so an easy jog or a yoga class changes nothing. `Classes or HIIT` and `Team or court sport` start on `Hard or long`, and Ben can change it.
+> - **Missing values are named, not filled in.** Skipping days a week means weekly sets aren't worked out until Ben gives them; the coach asks when he asks it to plan. Skipping session length means plans assume 60 min, labelled `(assumed)`. Skipping experience means the lowest start cap, labelled. The "rule defaults" wording is gone.
+> - **7 days a week** is defined in the playbook: the 6-day split plus one short accessory day.
+> - The goal and other-training fields are the D13 design, **pending Ben's bulk approval** (open-decisions §B). Checks 16, 19 and 20 are marked that way.
+> - The cross-link name is `Applied to you` (was `Your training context`), matching coaching-playbook §2.1a.
+> - Changed: §2.7 step 2 and 3, §3.2, §5, §6, §7 checks 16, 19–20 and new 22–23, cross-links.
+
+> **Revision 2026-10-09 (coaching playbook v1, approved by Ben 9 Oct).** [playbook-v1.md](../training-guides/playbook-v1.md) adapts targets to Ben's goal and to how he trains. Ben's direction: weekly volume "should be guided by how often people say they gym per week", and "stop with hyrox, it should be more adaptable depending on what the goal is / how training is being run". So **About your training** now collects what the playbook reads:
+> - **Goal (step 1):** the main-focus options now match the playbook: `Strength`, `Muscle`, `General fitness`, `Maintain`, `Support other training`. There's an optional `Working towards` field with a date. The HYROX placeholder is gone; examples are neutral.
+> - **How you train (step 2):** `Days a week you lift` is now the key question, because rule 1 starts weekly sets from it. The step also asks session length, usual days (optional) and experience.
+> - **Other training (new step 3):** running, cycling, swimming, rowing, classes or HIIT, team or court sport, or other, each with optional usual days. This drives the endurance switch for rules 11–13.
+> - Limitations move to step 4. The block is now 4 short steps, each optional, and still offered only after Essentials (OB1).
+> - Field layout is the design answer to playbook open decision D13. It's listed for Ben's bulk approval in [open-decisions.md](open-decisions.md) (§B "Goals and week"). Priority muscle groups and event details are set in Profile only, to keep this short.
+> - Changed: §1, §2.6, §2.7, §3.2, §3.4, §4.1a (new), §5, §6, §7 checks 11 and 16–21, §8 OB1 and OB5.
+
 > **Revision 2026-10-08 (consolidation).**
 > - **Backup step replaced (approved by Ben, relayed by the product manager).** Backups now live in the app by default, so onboarding no longer asks Ben to save a file or choose a folder. Step 3 is a short, skippable explainer (§2.5). Data-import-export's X1 (`Choose backup folder` here) is withdrawn. OB2 is withdrawn; OB1 is revised. The `verifyBackup` test is no longer part of onboarding; it lives in Data & backup → `Check a backup`.
 > - Placeholder links replaced: the coach routes are [ai-connection.md](ai-connection.md); restore, import and backups are [data-import-export.md](data-import-export.md).
@@ -20,7 +36,7 @@ The brief (§1) lists seven first-run items: goals and priorities, experience, w
 This spec splits the flow:
 
 - **Essentials (3 steps):** how you log (units and rest presets), first gym, and a short explainer about how data is kept (skippable; revision consolidation). The first two are the only things that change what the logging screen does.
-- **About your training (optional, 3 short steps):** goals and priorities, experience, week and session length, and limitations. These only feed the coach, the workout builder and the built-in rules' defaults. They're offered once at the end of Essentials and can be done later from Profile.
+- **About your training (optional, 4 short steps; revised 9 Oct):** goal; how you train (days a week, session length, usual days, experience); other training; limitations. These only feed the coach and the workout builder (playbook rules 1 and G). The built-in rule (7-F) doesn't read them, because it never adds sets (review fixes). They're offered once at the end of Essentials and can be done later from Profile.
 - **Coach connection (optional, 1 step):** a single skippable card linking to [ai-connection.md](ai-connection.md).
 
 This is a change to the brief's ordering, not its content. See §8 (proposal OB1).
@@ -216,9 +232,9 @@ A short explainer, nothing to set. Approved by Ben (relayed by the product manag
 │                                        │
 │ Optional, any time                     │
 │ ┌────────────────────────────────────┐ │
-│ │ About your training            ›   │ │ goals, week, limitations
-│ │ About 1 minute. Helps the coach    │ │
-│ │ and workout builder.               │ │
+│ │ About your training            ›   │ │ goal, week, other training,
+│ │ About 1 minute. Sets your goal and │ │ limitations (revised 9 Oct)
+│ │ week for the coach and builder.    │ │
 │ ├────────────────────────────────────┤ │
 │ │ Connect the coach              ›   │ │ → §2.8
 │ │ Not connected. Logging works       │ │
@@ -231,58 +247,146 @@ A short explainer, nothing to set. Approved by Ben (relayed by the product manag
 └────────────────────────────────────────┘
 ```
 
-Each optional row returns to this screen when finished or skipped, with its line changed to a done state (`✓ Goals saved`, `✓ Coach connected (text)`, `Import started` or `Skipped`).
+Each optional row returns to this screen when finished or skipped, with its line changed to a done state (`✓ Strength · 3 days a week · 60 min` (revised 9 Oct: the saved values, not just "saved"; `✓ Saved` when only some fields were set), `✓ Coach connected (text)`, `Import started` or `Skipped`).
 
-### 2.7 About your training (optional, 3 steps)
+### 2.7 About your training (optional, 4 steps; revised 9 Oct for playbook v1)
 
-Shown only when Ben taps `About your training`. Every field starts **empty**. Nothing is prefilled from history or guessed (brief §1).
+Shown only when Ben taps `About your training`. Every field starts **empty**. Nothing is prefilled from history or guessed (brief §1). Each step has `Skip`; skipping a step saves nothing for it (empty means "not set", which is different from `None`).
 
-**Step 1 of 3: Goals**
+Why these questions (playbook v1): the **goal** picks the target profile (rule G); **days a week** and **session length** set the weekly starting sets (rule 1, from Ben's direction "guided by how often people say they gym per week"); **other training** decides whether the endurance rules 11–13 apply at all; **experience** sets the starting caps. No question is sport-specific.
+
+**Step 1 of 4: Your goal**
 
 ```
 ┌────────────────────────────────────────┐
-│ ‹ Back         Step 1 of 3       Skip  │
-│ What are you training for?             │
-│                                        │
-│ Main focus                             │
-│ [ Strength ] [ Muscle ] [ Maintain ]   │ ParamChip, single select
-│                                        │
-│ Also matters (optional)                │
-│ [ Strength ] [ Muscle ] [ Endurance ]  │ multi-select; main focus hidden
-│ [ General fitness ]                    │
-│                                        │
-│ Anything specific? (optional)          │
+│ ‹ Back         Step 1 of 4       Skip  │
+│ What's your main goal?                 │ type.title2
+│ The coach sets reps, sets and rest     │ type.callout, text.secondary
+│ from this. Change it any time.         │
 │ ┌────────────────────────────────────┐ │
-│ │ e.g. 140 kg squat, HYROX in March  │ │ placeholder in text.tertiary
+│ │ ( ) Strength                       │ │ ChoiceCard, single select
+│ │     Lift heavier on the main lifts │ │ one-line description
+│ ├────────────────────────────────────┤ │
+│ │ ( ) Muscle                         │ │
+│ │     Build muscle size              │ │
+│ ├────────────────────────────────────┤ │
+│ │ ( ) General fitness                │ │
+│ │     Health, ability and habit      │ │
+│ ├────────────────────────────────────┤ │
+│ │ ( ) Maintain                       │ │
+│ │     Keep what you have, less time  │ │
+│ ├────────────────────────────────────┤ │
+│ │ ( ) Support other training         │ │
+│ │     Lifting that helps your        │ │
+│ │     running, cycling, classes or   │ │
+│ │     sport                          │ │
 │ └────────────────────────────────────┘ │
 │                                        │
-│ How long have you lifted regularly?    │
-│ (optional)                             │
-│ [ Under 1 year ] [ 1–3 years ]         │
-│ [ Over 3 years ]                       │
+│ Also matters (optional)                │
+│ [Strength] [Muscle] [General fitness]  │ multi-select ParamChip;
+│ [Endurance]                            │ the main focus is hidden
+│                                        │
+│ Working towards something? (optional)  │
+│ ┌────────────────────────────────────┐ │
+│ │ e.g. 10k run, 140 kg squat         │ │ placeholder in text.tertiary
+│ └────────────────────────────────────┘ │
+│ Date (optional)              Add date ›│ 44pt row → system date picker
+│ The coach asks what it involves when   │ text.secondary, shown once
+│ you plan for it.                       │ something is typed
 ├────────────────────────────────────────┤
 │ [             Continue               ] │
 └────────────────────────────────────────┘
 ```
 
-Experience is asked in years, not as "beginner/advanced" labels, so the answer is a fact rather than a self-rating.
+- The five main-focus options are the playbook's goal profiles (rule G): Strength, Muscle, General fitness, Maintain and "performance alongside endurance", shown as `Support other training`. A named event isn't a sixth focus; it sits on top of the focus (`Working towards`).
+- `Also matters` hides the chip that matches the main focus. With `Support other training` as the focus, `Endurance` is hidden too (it's implied).
+- `Working towards` is free text, stored as data (rule 8), with an optional date. The coach treats it as a named event only when it has a date. It asks what the event involves and whether it's the priority when Ben plans for it, and phase changes are always suggestions he applies. Details can also be set in Profile (profile-and-settings.md §2.2).
+- At AX1+ each card's description wraps under its title; the step scrolls and `Continue` stays fixed above the bottom edge.
 
-**Step 2 of 3: Your week**
+**Step 2 of 4: How you train**
 
 ```
-│ Which days can you usually train?      │
-│ (optional)                             │
-│ [Mon][Tue][Wed][Thu][Fri][Sat][Sun]    │ 7 chips, 44pt min, wrap at AX
-│ [ ] It changes week to week            │
+┌────────────────────────────────────────┐
+│ ‹ Back         Step 2 of 4       Skip  │
+│ How do you train?                      │
+│ Your weekly sets start from this, not  │
+│ from a fixed number.                   │
+│                                        │
+│ Days a week you lift                   │ type.headline: the key question
+│ [1] [2] [3] [4] [5] [6] [7]            │ single-select ParamChip, compact
 │                                        │
 │ Usual session length                   │
-│ [ 30 min ] [ 45 min ] [ 60 min ]       │
-│ [ 75 min ] [ 90 min ]                  │
+│ [30 min] [45 min] [60 min]             │ single-select ParamChip
+│ [75 min] [90 min]                      │
+│                                        │
+│ Days you can usually train (optional)  │
+│ [Mon][Tue][Wed][Thu][Fri][Sat][Sun]    │ multi-select ParamChip, compact
+│ [ ] It changes week to week            │ ChecklistRow
+│                                        │
+│ How long have you lifted regularly?    │
+│ (optional)                             │
+│ [Under 1 year] [1–3 years]             │
+│ [Over 3 years]                         │
+├────────────────────────────────────────┤
+│ [             Continue               ] │
+└────────────────────────────────────────┘
 ```
 
-The session length is what workout-builder.md §3.1 reads as the default `Length` chip. Time-of-day windows aren't asked here; they come with the calendar (build step 6).
+- `Days a week you lift` is the stated frequency, kept separate from **which** days Ben can train. 3 days a week with Mon–Fri available is valid; 3 days a week with only Mon and Wed picked isn't (§3.2).
+- `It changes week to week` clears and disables the weekday chips. The days-a-week number still counts as his usual week.
+- The session length is what workout-builder.md §3.1 reads as the default `Length` chip and what rule 1 uses for the set budget. Different lengths on different days are set in Profile (profile-and-settings.md §2.2), not here. Time-of-day windows aren't asked here; they come with the calendar (build step 6).
+- Experience is asked in years, not as "beginner/advanced" labels, so the answer is a fact rather than a self-rating. It moved here from step 1 because it describes how Ben trains, not what he's aiming for.
+- Digit and weekday chips use the compact `ParamChip` size (design-system §9.17): 52pt tall, seven to a row at default size (never narrower than 44pt), wrapping by row at AX1+.
+- (Review fixes) `7` is a valid answer. The playbook plans it as the 6-day split plus one short accessory or mobility day, with no extra main-lift sets.
+- (Review fixes) Skipping a field leaves it `Not set`; nothing is filled in. Days a week not set: no weekly-set number is worked out until Ben gives it (the coach asks when he asks it to plan). Session length not set: plans assume 60 min, shown as `60 min (assumed)`. Experience not set: the lowest start cap (8 sets a week per muscle), labelled, until there's history.
 
-**Step 3 of 3: Anything to work around?**
+**Step 3 of 4: Other training (new, 9 Oct)**
+
+```
+┌────────────────────────────────────────┐
+│ ‹ Back         Step 3 of 4       Skip  │
+│ Any other training?                    │
+│ Lifting is planned around it.          │
+│                                        │
+│ [None]                                 │ ParamChip; clears the others
+│ [Running] [Cycling] [Swimming]         │ multi-select ParamChip
+│ [Rowing] [Classes or HIIT]             │
+│ [Team or court sport] [Other]          │
+│                                        │
+│ Running                                │ one block per chosen type
+│ Usual days (optional)                  │
+│ [Mon][Tue][Wed][Thu][Fri][Sat][Sun]    │
+│ Usually (optional)                     │ review fixes: every type
+│ [Hard or long] [Easy, like a walk]     │ single-select ParamChip
+│                                        │
+│ Other: what is it?                     │ only when Other is chosen
+│ ┌────────────────────────────────────┐ │
+│ │ e.g. climbing                      │ │
+│ └────────────────────────────────────┘ │
+│ Usually (optional)                     │
+│ [Hard or long] [Easy, like a walk]     │
+│                                        │
+│ You can mark key sessions, like a long │ text.secondary
+│ run or a match, in Profile or your     │
+│ weekly plan.                           │
+├────────────────────────────────────────┤
+│ [             Continue               ] │
+└────────────────────────────────────────┘
+```
+
+- Choosing `None` saves "no other training" as a confirmed fact. Skipping saves nothing (§3.2).
+- How each choice maps (deterministic, `resolveTrainingContext`, §6; revised in the review fixes):
+  - Running, cycling, swimming and rowing count as endurance.
+  - `Classes or HIIT` counts as hard classes. Its `Usually` starts on `Hard or long`.
+  - `Team or court sport` counts as sport. Its `Usually` starts on `Hard or long`, and its matches are key sessions.
+  - `Other` counts as endurance-type when Ben names it.
+  - **Every type** has the optional `Usually` choice. Only an entry that's `Hard or long` (or has a key day, set later in Profile or the weekly plan) turns the endurance switch on, so that rules 11 and 12 apply. `Easy` changes nothing in the rules, and neither does an entry with no effort set and no key day. Otherwise those rules stay off and the coach doesn't mention them.
+  - Rule 13 also needs endurance to be one of Ben's goals (step 1: `Support other training`, or `Endurance` under also matters).
+- Each block is one tap per answer. With several types chosen, the blocks stack and the step scrolls; `Continue` stays fixed above the bottom edge.
+- When the main focus is `Support other training` and nothing is chosen here, one `text.secondary` line shows above the chips: `Add what you train for so lifting can be planned around it.` It never blocks `Continue`.
+- Key days aren't asked here, to keep the step short. Marking them is in Profile (`Other training` editor) and in the weekly plan's session sheet.
+
+**Step 4 of 4: Anything to work around?**
 
 ```
 │ Anything to work around? (optional)    │
@@ -363,7 +467,13 @@ The session length is what workout-builder.md §3.1 reads as the default `Length
 | 3 Data explainer | Normal | §2.5 | `Continue` (always enabled); `Skip` in the top bar |
 | 3 Data explainer | Copy saved to Files (optional) | `✓ Copy saved to Files · <location>` under the text | `Continue` |
 | 3 Data explainer | Optional copy failed or cancelled | Cancel: nothing shown. Failure: `Couldn't save the copy: <system reason>. Your data on this phone is fine.` | `Continue` |
-| About you | Any field empty | Valid; empty means "not set" | `Continue` always enabled |
+| About you | Any field empty | Valid; empty means "not set" | `Continue` enabled |
+| About you, step 2 (9 Oct) | Fewer usual days picked than days a week | `NoteLine` warning under the weekday chips: `3 days a week, but only 2 days picked. Add a day or clear them.` | `Continue` disabled, label `Check your days`. Clearing the weekdays, adding one, lowering the number or ticking `It changes week to week` fixes it |
+| About you, step 2 | Days a week set, nothing else | Valid. Rule 1 starts from the days a week. Session length reads `Not set` and plans assume `60 min (assumed)`; experience reads `Not set` and the lowest start cap is used, labelled (revised in the review fixes; was "rule defaults") | `Continue` |
+| About you, step 2 | Nothing set (skipped) | Valid. Days a week `Not set`: no weekly-set number is worked out, and the coach asks for days and length when Ben asks it to plan | `Continue` |
+| About you, step 3 (9 Oct) | `None` chosen | Other chips cleared; usual-days rows hidden | `Continue` (saves "no other training", confirmed) |
+| About you, step 3 | `Other` chosen with no name | Field shows `Name it so the coach knows what it is` (`status.warning` border + text) | `Continue` disabled until named or `Other` is unticked |
+| About you, step 3 | Main focus is `Support other training`, nothing chosen | Hint line (§2.7) | `Continue` enabled |
 | Coach | Offline | Both rows show `No connection. You can connect later in Profile.` and are disabled | `Not now` |
 | Coach | Route unavailable in this build | Row shows `Not available in this build yet` and is disabled | `Not now` |
 
@@ -378,7 +488,7 @@ The session length is what workout-builder.md §3.1 reads as the default `Length
 ```
 Welcome ─Set up─► Step 1 ─► Step 2 (start) ─► Step 2 (checklist) ─Save gym─► Step 3 ─► Ready ─Go to Today─► Today
    │                          └─Skip for now──────────────────────────────►┘          │
-   └─Restore from a backup─► restore (data-import-export §2.3) ─ok─► Today            ├─► About you (3) ─► Ready
+   └─Restore from a backup─► restore (data-import-export §2.3) ─ok─► Today            ├─► About you (4) ─► Ready
                                                 └─cancel/fail─► Welcome               ├─► Connect coach ─► Ready
                                                                                       └─► Import FitNotes (data-import-export) ─► Ready
 ```
@@ -393,6 +503,14 @@ Welcome ─Set up─► Step 1 ─► Step 2 (start) ─► Step 2 (checklist) �
 - Chips and cards toggle on tap. Tapping a selected single-select chip again clears it (ParamChip behaviour).
 - No swipe gestures are needed. The system back-swipe works as `Back`.
 - Every step writes when `Continue` is tapped, with an operation ID, so a force-close never loses a finished step and a double tap never saves twice.
+
+### 4.1a About your training (revised 9 Oct)
+- Step 1 `Continue` → `saveTrainingGoals(…, source: 'setup', expectedVersion, opId)`. Step 2 → `saveTrainingSetup(…)`. Step 3 → `saveOtherTraining(…)`. Step 4 → the note and any pain flags (§2.7). Each write is versioned, so editing later in Profile makes a new version with its own provenance.
+- `Add date ›` opens the system date picker (inline wheel in a sheet, `Done` / `Clear`). Dates before today are rejected with `Pick a date from today on.`
+- Tapping `None` on step 3 deselects every other chip; tapping any type deselects `None`.
+- Removing a type on step 3 removes its usual-days row and anything picked in it.
+- `Back` keeps unsaved choices on the step being left. `Skip` leaves that step's saved values unchanged.
+- Nothing on these steps changes a plan or a target by itself. A rebuilt plan is always a suggestion Ben applies (playbook rule 1, CLAUDE.md rule 2).
 
 ### 4.2 Gym steps
 - Preset choice calls `buildPresetDraft(presetId, unit)` (proposed). Changing the preset after visiting the checklist asks `Replace the checklist with the "Home: dumbbells" draft? Your changes to it will be lost.` [Replace] [Keep mine].
@@ -447,7 +565,7 @@ None. Voice isn't set up during onboarding and no microphone is opened.
 | Welcome list | `You'll set:` `Units and rest times` · `Your gym's equipment` · `How your data is kept` |
 | Welcome footer | `Coach, goals and history import are optional and can come later.` |
 | Welcome actions | `Set up` · `Restore from a backup` |
-| Step counter | `Step 1 of 3` (Essentials) · `Step 1 of 3` (About your training) |
+| Step counter | `Step 1 of 3` (Essentials) · `Step 1 of 4` (About your training, revised 9 Oct) |
 | Step 1 title | `How you log` / `You can change these any time in Profile.` |
 | Unit | `Weights in` · `Kilograms (kg)` · `Pounds (lb)` · `Picked from your phone's region.` · `Each piece of equipment keeps its own unit, so a kg gym and a lb gym both work.` |
 | Rest | `Rest times` · `Starting points, not advice. Edit them to match how you train.` · `Warm-up 1:00` · `Standard (default) 1:30` · `Heavy 3:00` |
@@ -464,10 +582,11 @@ None. Voice isn't set up during onboarding and no microphone is opened.
 | Step 3 option | `Save a copy to Files now` · result `Copy saved to Files · <location>` · `iCloud uploads it when you're back online.` · failure `Couldn't save the copy: <reason>. Your data on this phone is fine.` |
 | Ready title | `You're ready to log` |
 | Ready lines | `Units: kg · Rest 1:00 / 1:30 / 3:00` · `Main gym · 6 items (3 not checked)` · `Saved on this phone · backups run after each workout` (+ `Copy saved to Files` when one was made) / `No gym yet` |
-| Ready optional | `About your training` (`About 1 minute. Helps the coach and workout builder.`) · `Connect the coach` (`Not connected. Logging works without it.`) · `Import FitNotes history` |
+| Ready optional | `About your training` (`About 1 minute. Sets your goal and week for the coach and builder.`; done: `Strength · 3 days a week · 60 min` or `Saved`) · `Connect the coach` (`Not connected. Logging works without it.`) · `Import FitNotes history` |
 | Ready primary | `Go to Today` |
-| Goals | `What are you training for?` · `Main focus` · `Strength` `Muscle` `Maintain` · `Also matters (optional)` · `Endurance` `General fitness` · `Anything specific? (optional)` · `How long have you lifted regularly? (optional)` · `Under 1 year` `1–3 years` `Over 3 years` |
-| Week | `Which days can you usually train? (optional)` · `It changes week to week` · `Usual session length` · `30 min` … `90 min` |
+| Goal (revised 9 Oct) | `What's your main goal?` · `The coach sets reps, sets and rest from this. Change it any time.` · `Strength` / `Lift heavier on the main lifts` · `Muscle` / `Build muscle size` · `General fitness` / `Health, ability and habit` · `Maintain` / `Keep what you have, less time` · `Support other training` / `Lifting that helps your running, cycling, classes or sport` · `Also matters (optional)` · `Strength` `Muscle` `General fitness` `Endurance` · `Working towards something? (optional)` · placeholder `e.g. 10k run, 140 kg squat` · `Date (optional)` · `Add date` · `The coach asks what it involves when you plan for it.` · `Pick a date from today on.` |
+| How you train (revised 9 Oct) | `How do you train?` · `Your weekly sets start from this, not from a fixed number.` · `Days a week you lift` · `1` … `7` · `Usual session length` · `30 min` … `90 min` · `Days you can usually train (optional)` · `It changes week to week` · `How long have you lifted regularly? (optional)` · `Under 1 year` `1–3 years` `Over 3 years` · warning `3 days a week, but only 2 days picked. Add a day or clear them.` · disabled primary `Check your days` |
+| Other training (new, 9 Oct; revised in the review fixes) | `Any other training?` · `Lifting is planned around it.` · `None` · `Running` `Cycling` `Swimming` `Rowing` `Classes or HIIT` `Team or court sport` `Other` · block title `<Type>` · `Usual days (optional)` · `Usually (optional)` · `Hard or long` `Easy, like a walk` · `Other: what is it?` · placeholder `e.g. climbing` · `Name it so the coach knows what it is` · `You can mark key sessions, like a long run or a match, in Profile or your weekly plan.` · hint `Add what you train for so lifting can be planned around it.` |
 | Limits | `Anything to work around? (optional)` · `The coach reads this. It doesn't diagnose anything.` · `Stop load increases on a movement (optional)` · `Choose movements` · `Pain flags hold loads until you clear them in Profile.` · primary `Save and finish` |
 | Coach | `Connect the coach (optional)` · `The coach can adjust your sets when you ask, build workouts and review sessions. Logging, rest timers and the built-in progression rules work without it.` · `Use my ChatGPT plan` · `Use my own API key` (`Paid separately by you.`) · primary `Not now` |
 | Coach statuses | From `getAiCapabilities`: `Not tested on iPhone yet.` · `Not available in this build yet` · `No connection. You can connect later in Profile.` |
@@ -489,9 +608,11 @@ Proposed new:
 | Function | Why |
 |---|---|
 | `getOnboardingState(ownerId)` → `{state: 'not_started' \| 'essentials' \| 'done', completedSteps[]}` | Resume after a force-close, and the Ready summary (backup state comes from `getBackupStatus`, data-import-export.md §6) |
-| `saveUserProfile(patch, expectedVersion, opId)` | Units, rest presets, goals, experience, session length. `UserProfile` today only has `preferredUnit`, `defaultRest`, `restPresets` and `effortScale` (packages/schemas `profile.ts` notes goals come later) |
-| `saveTrainingGoals({primary, secondary[], note?, experienceYears?}, source: 'setup' \| 'profile')` | Stored with provenance and date (brief §2: "editable saved goals … with provenance and dates"). The coach reads them as confirmed by Ben |
-| `saveAvailability({days[], varies, sessionMinutes})` | Writes an `AvailabilityRule` (brief §6) with its effective date |
+| `saveUserProfile(patch, expectedVersion, opId)` | Units, rest presets. `UserProfile` today only has `preferredUnit`, `defaultRest`, `restPresets` and `effortScale` (packages/schemas `profile.ts` notes goals come later). Goals and how Ben trains have their own versioned records below |
+| `saveTrainingGoals({primary?: 'strength' \| 'muscle' \| 'general_fitness' \| 'maintain' \| 'support_other', secondary[], target?: {text, date?, involves?, priority?: 'main' \| 'alongside'}, priorityMuscleGroups?[]}, source: 'setup' \| 'profile' \| 'coach_confirmed', expectedVersion, opId)` (revised 9 Oct) | A versioned `TrainingGoals` record (Your data) stored with provenance and date (brief §2: "editable saved goals … with provenance and dates"). The coach reads it as confirmed by Ben. Plan suggestions record the goal, setup and other-training versions they were built on, so a change to any of them makes them out of date (playbook rule G and guardrail 5, CLAUDE.md rule 5; revised in the review fixes). `involves`, `priority` and `priorityMuscleGroups` are set in Profile only |
+| `saveTrainingSetup({daysPerWeek?: 1..7, sessionMinutes?, minutesByDay?, usualDays[], varies, experience?: 'under_1y' \| '1_3y' \| 'over_3y'}, source, expectedVersion, opId)` (new 9 Oct; replaces `saveAvailability`) | Stated days a week, the main input to rule 1, and experience. It also writes the `AvailabilityRule` (brief §6) for usual days and minutes, with its effective date. Rejects `usualDays.length < daysPerWeek` unless `varies` |
+| `saveOtherTraining(entries[{id, kind: 'running' \| 'cycling' \| 'swimming' \| 'rowing' \| 'class' \| 'sport' \| 'other', label?, effort?: 'hard' \| 'easy', usualDays[], keyDays[]}] \| 'none', source, expectedVersion, opId)` (new 9 Oct; revised in the review fixes) | Usual other training (Your data, with provenance). `effort` is optional for **every** kind (`class` and `sport` default to `hard` in the UI). Only `effort: 'hard'` or a non-empty `keyDays` makes an entry count for the endurance switch. Different efforts on different days are separate entries (Profile, e.g. `Easy run · Tue` and `Long run · Sat · hard`). `keyDays` ⊆ `usualDays`, set in Profile or the weekly plan. Read by `resolveTrainingContext`. Each save bumps the other-training version that plan suggestions record |
+| `resolveTrainingContext(ownerId, date)` (new 9 Oct; pure, `packages/domain`) | Returns the active goal profile, floors, event phase by date, days a week, session budget, other training, `enduranceRulesActive` with its reason, and key sessions. Onboarding doesn't call it; it's listed here because every value onboarding writes feeds it (owner: coaching-playbook.md §6) |
 | `listGymPresets()` / `buildPresetDraft(presetId, unit)` | Preset drafts with every value tagged `detailsSource: 'preset'` (gym-editor.md proposal GE1) |
 | `createGymFromDraft(draft, opId)` | `createGym` + `addEquipment` × n in one transaction, so a force-close can't leave half a gym |
 | (removed in consolidation) `verifyBackup`, `isInsideAppContainer` | No longer used by onboarding; both live in data-import-export.md §6 |
@@ -508,17 +629,26 @@ Proposed new:
 8. After finishing the first workout, an automatic backup exists in Fizz's container and Data & backup reads `Backed up on this phone`, with no setup during onboarding.
 9. No backup warning, alert or banner appears on Ready, Today or Profile because Ben didn't save a copy to Files.
 10. `Restore from a backup` on Welcome, using a backup with a profile, lands on Today without showing any setup step. Cancelling the picker returns to Welcome with nothing changed.
-11. The About-your-training fields all start empty. Skipping all three saves nothing; the workout builder then shows `No goals set` (workout-builder.md).
+11. The About-your-training fields all start empty. Skipping all four steps saves nothing; the workout builder then shows `No goal set` (workout-builder.md).
 12. Choosing `Bench press` under `Stop load increases` creates an active pain flag visible in Profile → Pain flags. Typing "shoulder" in the free-text field alone creates no flag.
 13. Every step's primary button stays fully visible with the keyboard open at 375pt width and at AX3.
 14. All text is at least 16pt at the default size; durations and counts use tabular numerals; every selected chip or card shows a check icon as well as colour.
 15. The choice of `Use my ChatGPT plan` or `Use my own API key` is never made for Ben, and `Not now` leaves `getAiCapabilities` reporting no route.
+16. (9 Oct; D13 design, pending Ben's bulk approval) The main-focus options are exactly `Strength`, `Muscle`, `General fitness`, `Maintain` and `Support other training`. No onboarding text, placeholder or option names a specific sport or race brand; searching the copy for "HYROX" finds nothing.
+17. (9 Oct) Choosing only `3` days a week and `60 min` saves `daysPerWeek: 3, sessionMinutes: 60` with `Set in setup, <date>`. Profile → Goals & schedule shows them, and the workout builder's `What it uses` lists `3 days a week · 60 min (set in setup)`.
+18. (9 Oct) With `3` days a week and only Mon and Wed picked, the warning shows and `Continue` reads `Check your days` (disabled). Ticking `It changes week to week` clears the weekdays and re-enables `Continue`.
+19. (9 Oct; revised in the review fixes; D13 design, pending Ben's bulk approval) `None` on step 3 saves "no other training" (confirmed), and `resolveTrainingContext` reports the endurance rules off with that reason. `Running` with `Tue` and `Sat` and `Hard or long` saves usual training, and it reports them on with a reason naming the hard run. The same with `Easy`, or with no effort chosen, saves the entry but leaves the rules off. Skipping step 3 saves nothing, and the context reports "other training not set".
+20. (9 Oct; revised in the review fixes) For **every** type, `Easy` leaves the endurance rules off and `Hard or long` turns them on (tested for `Running`, `Cycling`, `Classes or HIIT` and `Other` named "climbing"). `Classes or HIIT` and `Team or court sport` show `Hard or long` already selected.
+21. (9 Oct) No step in About your training changes a weekly plan, routine or target. Any rebuild appears later only as a suggestion with Apply and Undo.
+22. (Review fixes) Muscle as the main focus plus `Running · Easy`: rules 11–13 are off everywhere (playbook screen, weekly plan, builder), and no screen mentions spacing or heavy sessions.
+23. (Review fixes) Skipping step 2 entirely: no screen shows a weekly-set number, and none contains "rule defaults". Setting only `3` days gives `Session length: Not set` with `60 min (assumed)` wherever a budget is shown, and Profile still reads `Not set`.
 
 ## 8. Proposals for Ben (brief changes)
 
 | # | Brief says | Proposal | Reason |
 |---|---|---|---|
-| OB1 | §1 First-run setup lists goals, experience, availability, session length, units, first gym, limitations | (Revised.) Split into **Essentials** (units + rest presets, first gym, a skippable "how your data is kept" explainer) and an optional **About your training** block (goals, experience, week, length, limitations), offered on the Ready screen and in Profile | Only the first two Essentials change what logging does. The brief already says onboarding must be short and that richer questions can follow |
+| OB1 | §1 First-run setup lists goals, experience, availability, session length, units, first gym, limitations | (Revised.) Split into **Essentials** (units + rest presets, first gym, a skippable "how your data is kept" explainer) and an optional **About your training** block (revised 9 Oct: goal, days a week and session length, other training, limitations; 4 short steps), offered on the Ready screen and in Profile | Only the first two Essentials change what logging does. The brief already says onboarding must be short and that richer questions can follow |
+| OB5 | §1 lists "weekly availability" but not lifting frequency or other training (new 9 Oct) | Ask **days a week you lift** as its own question, separate from which days are free; add **Other training** (type, usual days) and a dated `Working towards` field; main-focus options become Strength / Muscle / General fitness / Maintain / Support other training. Priority muscle groups and event details live in Profile only | Playbook v1 (approved 9 Oct): rule 1 starts from stated days a week (Ben: "guided by how often people say they gym per week"); rule G adapts to the goal and how training is run, with no sport special case (Ben: "stop with hyrox"). Answers playbook open decision D13 as a design default for Ben's bulk approval |
 | OB2 | (Withdrawn in consolidation.) | Backups now live in the app by default (approved by Ben); the verify test moved to Data & backup → `Check a backup` | — |
 | OB3 | (not covered) | `Restore from a backup` on the Welcome screen | A signing-tool or Apple ID change gives an empty app (ADR 0004). Restore must come before setup |
 | OB4 | (not covered) | No permissions during onboarding; each asked in context (§4.6). Location never asked | Matches the brief's honest-status rule and keeps setup short |
@@ -546,7 +676,8 @@ No new colour, type, spacing or timing tokens.
 - [today.md](today.md) §3: No plan, No gym and Database error states that onboarding hands over to.
 - [active-workout.md](active-workout.md) §2.5: voice strip states used by microphone priming.
 - [coach-adjustments.md](coach-adjustments.md) §4.5: pain flags.
-- [workout-builder.md](workout-builder.md) §3.1: reads session length and goals.
+- [workout-builder.md](workout-builder.md) §3.1: reads session length, days a week and goal.
+- [coaching-playbook.md](coaching-playbook.md) §2.1a: `Applied to you`, which shows how these answers are used. The rules are in [playbook-v1.md](../training-guides/playbook-v1.md) (rules 1, G, 11–13 and the "Inputs the coach uses" table).
 - [ai-connection.md](ai-connection.md): ChatGPT-plan sign-in and API-key routes behind §2.8.
 - [data-import-export.md](data-import-export.md): restore flow (§2.3), `Save a copy to Files` (§2.2), FitNotes import (§2.5), backup status and safeguards (§3.1, §4.1a).
 - [coach-memory.md](coach-memory.md): Pain flags list and clearing; `setPainFlag` signature.

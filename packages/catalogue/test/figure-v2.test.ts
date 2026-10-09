@@ -122,11 +122,12 @@ describe('figure drawing v2', () => {
     expect(full.filter(isPath).some((o) => o.gradient !== null)).toBe(true);
     expect(full.filter(isPath).some((o) => o.stroke === 'shade' && !o.closed)).toBe(true);
     expect(compact.filter(isPath).some((o) => o.gradient !== null || o.stroke === 'shade')).toBe(false);
-    // S keeps the halo right before each near limb; M/L puts near halos before the trunk fill.
+    // S keeps the halo right before the near arm, and the near leg's under the trunk (no seam at the hip, ADR 0015);
+    // M/L puts near halos before the trunk fill.
     const haloIdx = (ops: DrawOp[]) => ops.map((o, i) => (isPath(o) && o.fill === 'background' && o.stroke === 'background' ? i : -1)).filter((i) => i >= 0);
     const trunkFill = (ops: DrawOp[]) => ops.findIndex((o) => isPath(o) && o.fill === 'nearBody');
     expect(haloIdx(full).filter((i) => i > trunkFill(full))).toEqual([]);
-    expect(haloIdx(compact).filter((i) => i > trunkFill(compact)).length).toBe(2);
+    expect(haloIdx(compact).filter((i) => i > trunkFill(compact)).length).toBe(1);
     // Both tiers carry the muscle colour (§3.10).
     expect(compact.some((o) => isPath(o) && o.fill === 'muscle')).toBe(true);
     // shading: false drops only the gradients.
@@ -279,7 +280,8 @@ describe('muscle focus (§4)', () => {
     }
   });
 
-  it('regions lie inside the silhouette at every frame of every guide (§12.1 #6)', () => {
+  // About 3.5 s alone; under the full parallel suite it ran past vitest's 5 s default.
+  it('regions lie inside the silhouette at every frame of every guide (§12.1 #6)', { timeout: 20_000 }, () => {
     const inside = (p: Vec, polys: readonly (readonly Vec[])[]): boolean =>
       polys.some((poly) => pointInPolygon(p, poly)) ||
       polys.some((poly) => poly.some((a, i) => pointSegmentDistance(p, a, poly[(i + 1) % poly.length] ?? a) < MUSCLE_INSET * 0.5));

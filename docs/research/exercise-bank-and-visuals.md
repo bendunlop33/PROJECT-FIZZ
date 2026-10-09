@@ -355,7 +355,7 @@ If all 10 pass `guide:check` and Ben approves 8 or more without a rig change, th
 - ① Sled push ★, Sled pull ★, SkiErg ★, Rowing erg ★, Wall ball ★, Burpee broad jump ★, Farmer's carry ★, Sandbag lunge ★
 - Air/assault bike, Box jump, Burpee, Battle ropes, Bear crawl, Treadmill run (logging only, no guide needed)
 
-Total: 111, plus about 10 variants Ben names → ~120. The ★ count is 41; drop one when the first batch is planned. The ★ items follow Ben's likely programmes (5/3/1 or upper/lower plus HYROX, programmes.md) [Inference].
+Total: 111, plus about 10 variants Ben names → ~120. The ★ count is 41; drop one when the first batch is planned. The ★ items follow Ben's likely programmes (5/3/1 or upper/lower plus HYROX, programmes.md) [Inference]. *(Note 2026-10-09: HYROX is no longer a special case in the approved playbook. Rank guide priority by Ben's actual routines and stated goal and other training, not by HYROX. The conditioning exercises stay in the catalogue as ordinary exercises.)*
 
 Batches: examples (10) → remaining ★ (31) → the rest by Ben's actual usage after the FitNotes import. Templates cut effort: incline DB press is the bench template with `bench.angleDeg: 30` and a dumbbell implement. About 35 templates cover the ~120 guides [Inference].
 

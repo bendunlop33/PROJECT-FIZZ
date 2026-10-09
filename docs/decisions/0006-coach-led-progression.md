@@ -27,3 +27,7 @@ Ben doesn't want fixed progression rules setting his numbers. He wants the coach
 - CLAUDE.md rule 3 is rewritten.
 - The coach becomes central, which raises the priority of the ChatGPT-plan sign-in spike (S1) and the personal-key fallback.
 - The designs need updating: the summary "Next time" section, rest-card offers, Undo banners, and the source labels "Coach" vs "Built-in rule".
+
+## Amendment, 2026-10-09 (approved by Ben with playbook v1)
+- **Trigger compares against the plan.** The deterministic offer triggers use the set's *planned* effort: "too hard" fires on logged RPE ≥ 9.5 when the plan was ≤ 8.5 (or reps short by ≥ 2); "too easy" fires on logged RPE ≤ 6 when the plan was ≥ 8. Warm-ups and planned all-out/AMRAP sets never trigger, and "too easy" never fires on sets above 12 reps. Thresholds stay editable.
+- **Progression is coach-chosen and equipment-aware.** When the coach is available it picks load, reps and sets from the selected gym's real equipment and Ben's history (playbook v1 rule 7). The built-in rule (playbook v1 rule 7-F) keeps its `Built-in rule` label and sets next-session targets when the coach is unavailable or no coach target has been applied (who wins when the coach is connected but Ben doesn't tap Apply is open decision D21). It uses the smallest achievable increment, and when that jump is over ~10% or hits a machine's max it progresses reps up to the cap and then holds; it never adds sets on its own (D2).

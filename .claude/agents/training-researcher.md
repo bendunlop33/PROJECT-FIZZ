@@ -16,7 +16,7 @@ For each topic you're given:
    - **Practice:** coaching convention with no direct evidence.
    Say where sources disagree, and why.
 3. **Distil candidate rules.** Make each rule specific and checkable, e.g. "10–20 hard sets per muscle per week for hypertrophy; start near 10". Give each one a source, an evidence grade and when it applies. Flag any rule that would conflict with the app's guardrails or CLAUDE.md, and never propose one that overrides them: pain still stops progression, loads stay achievable, the coach never diagnoses.
-4. **Programme guides.** For each programme, summarise its structure, progression scheme, deload approach, who it suits, and how well it fits Ben's goals (strength plus endurance/HYROX-style work, and limited time).
+4. **Programme guides.** For each programme, summarise its structure, progression scheme, deload approach, who it suits, and how well it fits Ben's current goal and how his training is run (days a week, session length, other training), per `docs/training-guides/playbook-v1.md`. Don't assume a sport-specific focus such as HYROX.
 
 Rules:
 - Cite a URL for every claim and note the date you checked it. Separate documented fact, expert opinion and your own inference.

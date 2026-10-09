@@ -1,5 +1,23 @@
 # Profile and settings
 
+> **Revision 2026-10-09 (playbook v1 review fixes).**
+> - **Other training** entries have an effort (`Hard or long` / `Easy`) for every type, not just `Other`. Only hard, long or key entries turn the endurance switch on. Different efforts on different days are separate entries, e.g. `Easy run · Tue` and `Long run · Sat · Hard · Key`.
+> - **Out of date means out of date.** Changing goal, days a week, session length, usual days, experience or other training marks open plan suggestions `Out of date`. Proposals record those versions and `confirmProposal` rejects them (playbook guardrail 5; coaching-playbook §6). Check 21 now has a contract behind it.
+> - `7` days is defined (6-day split plus one short accessory day). With `1` day, the editor also notes that rule 13's two heavy sessions aren't possible, when endurance is a goal.
+> - 7-F no longer reads the session budget, because it never adds sets (§4.2).
+> - Names and dates: `Applied to you` (was `Your training context`); `Sun 16 May` (17 May 2027 is a Monday).
+> - The goal and other-training fields are the D13 design, pending Ben's bulk approval (checks 20 and 23).
+> - Changed: §2.2, §3.4, §4.2, §5, §7 checks 20, 21, 23 and new 27–28, cross-links.
+
+> **Revision 2026-10-09 (coaching playbook v1, approved by Ben 9 Oct).** **Goals & schedule** (§2.2) is rebuilt around what [playbook-v1.md](../training-guides/playbook-v1.md) reads:
+> - **Goal:** main focus (Strength / Muscle / General fitness / Maintain / Support other training), also matters, a generic `Working towards` goal or event (no HYROX example; any event, with optional date, what it involves and priority), and priority muscles when Muscle is a goal.
+> - **Week:** `Days a week you lift` is the key value for weekly sets (rule 1), with a fact line from logs.
+> - **Other training:** usual days and key days, which drive the endurance switch for rules 11–13.
+> - Every value carries provenance. A one-line `Coach uses` summary links to the playbook's `Applied to you`.
+> - **Changes:** Ben's own edits apply at once with Undo; the plan never changes by itself. Coach-raised goal changes arrive as suggestions (rule G).
+> - Root rows updated: Goals subtitle and the playbook count.
+> - Changed: §2.1, §2.2, §3.4, §4.1, §4.2, §5, §6, §7 checks 20–26, §8 PS8–PS9.
+
 > **Revision 2026-10-08 (consolidation).** This file is now the **hub** that places rows; the screens behind several rows are owned by other specs, and duplicated definitions here were removed in their favour:
 > - **Pain flags** (§2.3): one list, owned by [coach-memory.md](coach-memory.md) §2.1/§2.6/§2.7 (clearing always asks for confirmation, then offers Undo). Profile → Training → `Pain flags` opens it directly.
 > - **Coach reply voice and API keys** (§2.6.2): owned by [ai-connection.md](ai-connection.md) §2.7–§2.9. The separate key sheet here is withdrawn. Canonical calls: `saveApiKey(purpose, key \| {sameAs: 'text'}, capUsd, opId)`, `removeApiKey(purpose)`, `getPersonalUsageSummary(purpose, month)` (replacing `setProviderCredential` / `checkProviderCredential` / `removeProviderCredential`). One Keychain item per distinct key: `Use the same key as text` stores no second copy (this keeps PS3's intent).
@@ -42,7 +60,7 @@ Profile is the third tab. It's an iOS grouped list on `bg.canvas`, with `Setting
 │ Training                               │
 │ ┌────────────────────────────────────┐ │
 │ │ Goals & schedule                 › │ │
-│ │ Strength · Mon Wed Fri · 60 min    │ │
+│ │ Strength · 3 days · 60 min         │ │ revised 9 Oct: days a week
 │ │ Pain flags                       › │ │
 │ │ 1 active: Bench press              │ │
 │ │ Logging                          › │ │
@@ -74,7 +92,7 @@ Profile is the third tab. It's an iOS grouped list on `bg.canvas`, with `Setting
 │ │ What the coach remembers         › │ │ → coach-memory.md
 │ │ 7 confirmed · 2 waiting            │ │
 │ │ Guides & playbook                › │ │ → coaching-playbook.md
-│ │ 9 rules approved · 5 to review     │ │
+│ │ Playbook v1 · 16 rules approved    │ │ revised 9 Oct
 │ └────────────────────────────────────┘ │
 │ Data                                   │
 │ ┌────────────────────────────────────┐ │
@@ -100,22 +118,40 @@ Profile is the third tab. It's an iOS grouped list on `bg.canvas`, with `Setting
 
 Attention rows (revised, consolidation): up to two `StatusBanner`s at the top, chosen by `buildSystemStatus` with the **same priority list as Today** (system-states.md §2.2: data can't be opened, damaged record, signing within 24 h, last on-phone backup didn't save, signing within 72 h, no gym). Notifications denied is shown in App status and Voice & alerts, not here. **Off-phone backup is never an attention row.** The quiet 30-day "no copy off this phone" reminder appears only as a second line on the `Data & backup` row (`ⓘ No copy off this phone since 8 Sep`), dismissible from Data & backup, and can be switched off there.
 
-### 2.2 Goals & schedule
+### 2.2 Goals & schedule (revised 9 Oct for playbook v1)
+
+This screen answers **"What does the coach think I'm training for, and how do I train?"** It holds every personal input that [playbook-v1.md](../training-guides/playbook-v1.md) reads (its "Inputs the coach uses" table). All of it is **Your data**. The rules themselves are Coaching knowledge, in Guides & playbook.
 
 ```
 ┌────────────────────────────────────────┐
 │ ‹ Profile      Goals & schedule        │
 ├────────────────────────────────────────┤
-│ Goals                                  │
+│ Coach uses: Strength · 3 days · 60 min │ TrainingContextCard (compact)
+│ · running Tue, Sat                   › │ → coaching-playbook §2.1a
+│                                        │
+│ Goal                                   │ SettingsSectionHeader
 │ Main focus            Strength       › │
-│   Set in setup, 8 Oct                  │ ProvenanceTag
+│   Set in setup, 8 Oct                  │ SourceTag (value provenance)
 │ Also matters          Endurance      › │
-│ Specific goal         HYROX in March › │
+│ Working towards       10k run ·      › │ generic goal or event
+│                       Sun 16 May       │
+│   Alongside your main focus            │ priority, when set
+│                                        │
+│ How you train                          │
+│ Days a week you lift  3              › │ key input for weekly sets
+│   Set in setup, 8 Oct                  │
+│   Your logs: about 2 a week lately     │ fact line, text.secondary;
+│   (last 4 weeks)                       │ only when it differs (PS8)
+│ Session length        60 min         › │ or "45–90 min" when per day
+│ Usual days            Mon Wed Fri    › │
 │ Lifting regularly     1–3 years      › │
 │                                        │
-│ Week                                   │
-│ Training days         Mon Wed Fri    › │
-│ Usual session length  60 min         › │
+│ Other training                         │
+│ Easy run · Tue · Easy                › │ effort shown on every entry
+│   Set in setup, 8 Oct                  │
+│ Long run · Sat · Hard · Key          › │
+│   Changed by you, 9 Oct                │
+│ + Add other training                   │ 44pt text row
 │                                        │
 │ Work around                            │
 │ Notes                 Left shoulder, › │
@@ -123,13 +159,40 @@ Attention rows (revised, consolidation): up to two `StatusBanner`s at the top, c
 │ Pain flags            1 active       › │ → §2.3
 │                                        │
 │ The coach reads these. It can suggest  │ text.secondary
-│ changes in chat, but they only appear  │
+│ changes in chat, but they only change  │
 │ here after you confirm them.           │
 └────────────────────────────────────────┘
 ```
 
-- Each value opens the same control as onboarding §2.7 (chips, chip grid or text field). Unset values read `Not set` in `text.secondary`.
-- Every goal row has a `ProvenanceTag`: `Set in setup, 8 Oct`, `Changed by you, 12 Oct`, or `From coach chat, 14 Oct · you confirmed`. Nothing appears here unconfirmed (brief §8 `saveConfirmedMemory`: "don't silently infer lasting goals").
+**Rows and their editors.** Each row opens a pushed editor that saves on change (Profile convention), using the same controls as onboarding §2.7. Unset values read `Not set` in `text.secondary`.
+
+| Row | Editor | Notes |
+|---|---|---|
+| `Coach uses` | Opens `Applied to you` (coaching-playbook.md §2.1a) | Worked out by `resolveTrainingContext`; never typed. With no goal: `Coach uses: no goal set · 3 days · 60 min` |
+| `Main focus` | Five `ChoiceCard`s: `Strength`, `Muscle`, `General fitness`, `Maintain`, `Support other training`, each with its one-line description; `Clear goal` text row at the bottom | Matches the playbook's goal profiles (rule G) |
+| `Also matters` | Multi-select `ParamChip`s `Strength` `Muscle` `General fitness` `Endurance` (the main focus is hidden) | Adds the playbook's "also matters" floors |
+| `Working towards` | `What` (text, placeholder `e.g. 10k run, 140 kg squat, ski trip`) · `Date (optional)` · `What it involves (optional)` (text, placeholder `e.g. running plus carries and climbs`) · `Until then` radio: `Main priority` / `Alongside my main focus` · footer `Phase changes before the date (build, specific, taper) come as suggestions you apply.` · `Remove` (`DangerTextButton`, with Undo toast) | Any event or target. No sport defaults: the coach works from what Ben writes here or tells it (rule G). After the date: the row shows `10k run · was Sun 16 May` and a `Date passed` tag. It isn't removed or changed by itself |
+| `Priority muscles` | Multi-select `ParamChip`s of the catalogue's muscle groups. Caption: Muscle as main focus → `Up to 20 hard sets a week for these; about 6–10 for the rest.`; Muscle as also matters → `At least 6 hard sets a week for these.` | **Shown only when Muscle is the main focus or also matters.** The numbers are playbook defaults (rule 1); they're labelled as such on the rule detail |
+| `Days a week you lift` | Compact `ParamChip`s `1`–`7` | The starting point for weekly sets (rule 1). With 1 day and a Strength focus, the editor shows one line: `With 1 day, each lift is trained once a week. The coach can plan a full-body day.` (Review fixes) With 1 day and endurance as a goal: `With 1 day, rule 13's two heavy sessions a week aren't possible. Your one session keeps its heavy sets.` With 7: `7 days: six lifting days plus one short accessory day.` It never changes his number. Not set: `Not set` + `Weekly sets need this. The coach asks when you ask it to plan.` |
+| `Session length` | `ParamChip`s `30` `45` `60` `75` `90 min` + switch `Different on some days` → one chip row per usual day (or all seven if none set) | Sets the per-session set budget (rule 1). After 3 logged sessions, the playbook uses Ben's own minutes per set; that figure shows on rule 1's detail, not here. Not set: `Not set` + `Plans assume 60 min until you set it.` |
+| `Usual days` | Weekday `ParamChip`s + `It changes week to week` | Same validation as onboarding §3.2 (fewer days than days a week → warning, editor's back button still works, the value isn't saved until fixed) |
+| `Lifting regularly` | `Under 1 year` / `1–3 years` / `Over 3 years` | Sets rule 1's starting caps. Not set: `Not set` + `Until you set this (and with no logs), weekly sets start at the lowest cap.` |
+| `Other training` rows | Editor: `Type` (`Running` `Cycling` `Swimming` `Rowing` `Classes or HIIT` `Team or court sport` `Other`) · `Name (optional)`, e.g. `Long run` · `Usually` `Hard or long` / `Easy, like a walk` for **every** type (review fixes; `Classes or HIIT` and `Team or court sport` start on `Hard or long`) · `Usual days` · `Key days (optional)` (only the usual days are offered) with caption `Heavy leg work is kept away from key sessions.` · `Remove`. Row value: `<name> · <days> · <Easy / Hard> · <Key day>` | Only `Hard or long` or key entries turn the endurance switch on (rules 11 and 12; rule 13 also needs endurance as a goal). Easy entries and entries with no effort and no key day are listed but change nothing; the editor says `Easy sessions don't change your lifting plan.` `+ Add other training` opens the same editor. With none: the section shows `None` (confirmed) or `Not set` |
+| `Notes`, `Pain flags` | As before | — |
+
+**Provenance.** Every value row has a `SourceTag` second line: `Set in setup, 8 Oct`, `Changed by you, 12 Oct`, or `From coach chat, 14 Oct · you confirmed`. Nothing appears here unconfirmed (brief §8 `saveConfirmedMemory`: "don't silently infer lasting goals"). Logged days never overwrite `Days a week you lift` (playbook "Inputs" table).
+
+**When Ben changes something here** (his explicit edit; PS9):
+- The new value is saved at once as a new version, with a toast that has Undo. Examples: `Main focus: Muscle → Strength.` [Undo] and `Days a week: 4 → 3.` [Undo].
+- **The plan never changes by itself.** If a weekly pattern or programme no longer matches, one `NoteLine` appears under the changed row:
+  - Days: `ⓘ Your weekly plan has 4 gym days. Ask the coach to rebuild it for 3 ›`
+  - Goal: `ⓘ Your plan was built for Muscle. Ask the coach to update it ›`
+
+  The link opens the coach sheet with that request typed in. The coach's answer is a suggestion with Apply and Undo (change-review.md). With the coach offline, the link reads `Edit weekly pattern ›` (weekly-plan.md).
+- Open plan suggestions built on the older goal, week (days, session length, usual days, experience) or other training become `Out of date` (CLAUDE.md rule 5). Each plan-level proposal records the goal, setup and other-training versions from `resolveTrainingContext`, and `confirmProposal` rejects it if any has changed (playbook guardrail 5; coaching-playbook §6). Undoing the edit restores the old version, but a suggestion that went out of date stays out of date; Ben asks again.
+- The note stays until the plan matches, or until Ben taps `Keep plan as is`.
+
+**When the coach suggests a goal change** (rule G): it never changes goals itself. In chat it shows a **goal suggestion** (before/after and the date it starts) with Apply and Undo. A separate **plan suggestion** follows, built on the new goal version. Both go through [change-review.md](change-review.md). After Apply, the row's tag reads `From coach chat, 14 Oct · you confirmed`.
 
 ### 2.3 Pain flags
 
@@ -548,6 +611,7 @@ The fallback is per reply and automatic **only towards the free Apple voice**. I
 
 - Profile root → any row → pushed detail; `‹` returns with the root's status lines refreshed.
 - Coach connection → ai-connection.md; What the coach remembers / Pain flags → coach-memory.md; Guides & playbook → coaching-playbook.md; Data & backup → data-import-export.md; App status → system-states.md. Returning lands on Profile with fresh status.
+- (9 Oct) Goals & schedule → `Coach uses` → coaching-playbook.md §2.1a (`Applied to you`); its value rows link back here. A plan-mismatch note → coach sheet (prefilled request) or, offline, weekly-plan.md's pattern editor.
 - Gyms → gym-editor.md.
 - An attention row's action → the owning screen → back to Profile with the row gone once the cause is fixed.
 
@@ -560,7 +624,8 @@ The fallback is per reply and automatic **only towards the free Apple voice**. I
   - Clearing a pain flag: `Clear…` → confirmation → toast `Pain flag cleared for Bench press` [Undo] (coach-memory.md §2.7; clearing is always explicit by Ben).
   - Deleting a rest preset: toast [Undo].
   - Removing an API key: confirmation alert in ai-connection.md §4. No Undo: the key is gone from the Keychain.
-- Text fields (goal note, limitation note) save when the field loses focus. Return closes the keyboard.
+- Text fields (`Working towards`, `What it involves`, limitation note) save when the field loses focus. Return closes the keyboard.
+- (9 Oct) Goal and week values (main focus, also matters, working towards, priority muscles, days a week, session length, usual days, experience, other training) save on change as a new version, and each change shows a toast with Undo (§2.2). Undo restores the previous version and its provenance.
 
 ### 4.2 When changes take effect
 
@@ -575,6 +640,7 @@ The fallback is per reply and automatic **only towards the free Apple voice**. I
 | Coach offers and thresholds | From the next logged or corrected set (`evaluateCoachTrigger` reads them) |
 | Check-in settings (2026-10-09) | From the next Start. A workout in progress keeps its check-in and any offer already shown |
 | Goals, week, limitations | Next coach turn or workout build |
+| (9 Oct; revised in the review fixes) Goal, days a week, session length, other training | Next coach turn and workout build. The built-in next-session target (rule 7-F) doesn't change, because it never adds sets. The endurance switch is re-worked out at once, so `Coach uses` and rules 11–13's on/off status update on return. Open plan suggestions become `Out of date`. Plans and routines don't change; a mismatch shows the §2.2 note |
 | Pain flag set or cleared | Immediately; the domain re-checks pending coach changes |
 | Appearance | Immediately |
 | OpenAI voice choice | From the next coach reply |
@@ -600,10 +666,16 @@ Profile is the place to see and fix every permission. Each row shows `Allowed`, 
 | Sections | `Training` · `Gyms` · `Voice & alerts` · `Coach` · `Data` · `App` |
 | Attention | From system-states.md §5 (e.g. `Refresh Fizz in SideStore by Sat` [How ›], `Last backup on this phone didn't save`). No off-phone backup wording here |
 | Data row | `Data & backup` · `Backed up on this phone · 19:05` · `Saved on this phone` · `Copy saved to Files · 8 Oct` · `No copy off this phone yet` · `No copy off this phone since 8 Sep` |
-| Coach rows (added) | `Guides & playbook` (`9 rules approved · 5 to review`) · `What the coach remembers` (`7 confirmed · 2 waiting`) |
-| Training rows | `Goals & schedule` · `Pain flags` (`1 active: Bench press` / `None`) · `Logging` (`kg · RPE after the set`) · `Check-in` (`Every workout · asks what's up at 3 or lower` / `Off`; 2026-10-09) · `Rest presets` (`1:00 · 1:30 · 3:00`) |
+| Coach rows (added) | `Guides & playbook` (`Playbook v1 · 16 rules approved`; with candidates waiting: `Playbook v1 · 16 approved · 2 to review`) · `What the coach remembers` (`7 confirmed · 2 waiting`) |
+| Training rows | `Goals & schedule` (`Strength · 3 days · 60 min` / `No goal set · 3 days` / `Not set`) · `Pain flags` (`1 active: Bench press` / `None`) · `Logging` (`kg · RPE after the set`) · `Check-in` (`Every workout · asks what's up at 3 or lower` / `Off`; 2026-10-09) · `Rest presets` (`1:00 · 1:30 · 3:00`) |
 | Check-in screen (2026-10-09) | As check-in.md §2.8 and §5.3 |
-| Goals screen | `Main focus` · `Also matters` · `Specific goal` · `Lifting regularly` · `Training days` · `Usual session length` · `Notes` · `Not set` · footer `The coach reads these. It can suggest changes in chat, but they only appear here after you confirm them.` |
+| Goals screen (revised 9 Oct) | `Coach uses: …` · sections `Goal` · `How you train` · `Other training` · `Work around` · rows `Main focus` · `Also matters` · `Working towards` · `Priority muscles` · `Days a week you lift` · `Session length` · `Usual days` · `Lifting regularly` · `Notes` · `Not set` · `None` · `+ Add other training` · fact line `Your logs: about 2 a week lately (last 4 weeks)` · footer `The coach reads these. It can suggest changes in chat, but they only change here after you confirm them.` |
+| Main focus options | `Strength` / `Lift heavier on the main lifts` · `Muscle` / `Build muscle size` · `General fitness` / `Health, ability and habit` · `Maintain` / `Keep what you have, less time` · `Support other training` / `Lifting that helps your running, cycling, classes or sport` · `Clear goal` |
+| Working towards | `What` · placeholder `e.g. 10k run, 140 kg squat, ski trip` · `Date (optional)` · `What it involves (optional)` · placeholder `e.g. running plus carries and climbs` · `Until then` · `Main priority` · `Alongside my main focus` · `Phase changes before the date (build, specific, taper) come as suggestions you apply.` · `Remove` · `Date passed` · `was Sun 16 May` |
+| Priority muscles | `Up to 20 hard sets a week for these; about 6–10 for the rest.` · `At least 6 hard sets a week for these.` |
+| Week editors | `1` … `7` · `With 1 day, each lift is trained once a week. The coach can plan a full-body day.` · (review fixes) `With 1 day, rule 13's two heavy sessions a week aren't possible. Your one session keeps its heavy sets.` · `7 days: six lifting days plus one short accessory day.` · `Weekly sets need this. The coach asks when you ask it to plan.` · `Plans assume 60 min until you set it.` · `Until you set this (and with no logs), weekly sets start at the lowest cap.` · `Different on some days` · `It changes week to week` · `3 days a week, but only 2 days picked. Add a day or clear them.` |
+| Other training editor | `Type` · `Running` `Cycling` `Swimming` `Rowing` `Classes or HIIT` `Team or court sport` `Other` · `Name (optional)` · `Usually` · `Hard or long` `Easy, like a walk` · `Easy sessions don't change your lifting plan.` · `Usual days` · `Key days (optional)` · `Heavy leg work is kept away from key sessions.` · `Remove` · row value `Long run · Sat · Hard · Key` |
+| Change toasts and notes | `Main focus: Muscle → Strength.` [Undo] · `Days a week: 4 → 3.` [Undo] · `Your weekly plan has 4 gym days. Ask the coach to rebuild it for 3 ›` · `Your plan was built for Muscle. Ask the coach to update it ›` · offline `Edit weekly pattern ›` · `Keep plan as is` |
 | Provenance | `Set in setup, 8 Oct` · `Changed by you, 12 Oct` · `From coach chat, 14 Oct · you confirmed` |
 | Pain flags | `Loads don't go up on these movements until you clear them. This isn't a diagnosis.` · `since 8 Oct` · `Clear` · `Flag a movement` · empty `No pain flags. Flag a movement here, or tap Pain in a workout.` · toast `Pain flag cleared for Bench press. Loads can go up again.` [Undo] |
 | Logging | `Weights in` · `Used for new equipment. Existing equipment and past sets keep their unit and are never converted.` · `Effort` `RPE` `RIR` `Off` · `Ask for effort` `After` `Before` · `After the set is the default: it never delays logging or rest.` · `Auto-save timed sets` · `When a work timer ends, save the planned time as done. You can undo.` |
@@ -645,7 +717,10 @@ Proposed new:
 | Function | Why |
 |---|---|
 | `getUserProfile()` / `saveUserProfile(patch, expectedVersion, opId)` | Units, effort scale, effort timing (proposed field `effortPrompt: 'after' \| 'before'`), auto-save timed sets, rest presets, appearance |
-| `getTrainingGoals()` / `saveTrainingGoals(…, source)` / `saveAvailability(…)` | Shared with onboarding.md §6; returns provenance per value |
+| `getTrainingGoals()` / `saveTrainingGoals(…, source, expectedVersion, opId)` / `getTrainingSetup()` / `saveTrainingSetup(…)` / `getOtherTraining()` / `saveOtherTraining(…)` (revised 9 Oct; `saveAvailability` folds into `saveTrainingSetup`) | Shared with onboarding.md §6 (contracts there); each returns provenance per value and a version. `undoProfileChange(changeId)` restores the previous version |
+| `resolveTrainingContext(ownerId, date)` (9 Oct; contract in coaching-playbook.md §6) | The `Coach uses` line and the endurance switch status |
+| `getLoggedFrequency(ownerId, weeks: 4)` → `{medianDaysPerWeek, weeksWithLogs}` (9 Oct; pure, `packages/domain`) | The `Your logs:` fact line. Shown only when `weeksWithLogs ≥ 4` and the median differs from the stated value by ≥ 1 |
+| `comparePlanToSetup(ownerId)` → `{daysMismatch?: {planned, stated}, goalMismatch?: {builtFor, current}}` (9 Oct) | The plan-mismatch `NoteLine`s; reads the weekly pattern's or programme's recorded goal version |
 | `getCoachTriggerThresholds()` / `saveCoachTriggerThresholds({enabled, rpeHigh, repsShort, rpeLow, rirHigh, rirLow}, opId)` | Coach offers screen; read by `evaluateCoachTrigger` |
 | `getCheckInSettings(ownerId)` / `saveCheckInSettings(patch, expectedVersion, opId)` (2026-10-09) | Check-in screen; `CheckInSettings` shape in check-in.md §6. Read by `shouldAskCheckIn` and `evaluateCheckInOffer` |
 | `getVoiceSettings()` / `saveVoiceSettings(patch, opId)` | **Canonical** (absorbs voice.md's `setVoicePreferences`). Cue mode and options, Talking options (`talkMode`, `phoneMicWithHeadphones`, `doneShortcut`, `listenDuringRest`, `serverRecognition`, `speakVoiceReplies`, `locale`), voices, rate, volume, ducking, timer sound, haptic switches, loud-alert mode and threshold |
@@ -682,6 +757,15 @@ Proposed new:
 17. Every row is at least 44pt (52pt for setting rows), all text is at least 16pt at the default size, values wrap under labels at AX1+, every status has an icon and a word, and numbers (times, money, counts) use tabular numerals.
 18. Nothing on this tab animates beyond standard navigation and switches.
 19. (2026-10-09) The `Check-in` screen saves each change at once; turning it off makes the next `Start workout` open the workout in one tap; choosing `Only on these days` with Mon/Wed/Fri means Tuesday's Start shows no sheet; the coach-offer `Never` option stops the lighter-session offer while check-ins are still recorded.
+20. (9 Oct, playbook v1; D13 design, pending Ben's bulk approval) Goals & schedule has no HYROX or other sport-specific example or option. `Main focus` offers exactly Strength, Muscle, General fitness, Maintain and Support other training, and `Working towards` accepts any text with an optional date.
+21. (9 Oct; revised in the review fixes) Changing `Days a week you lift` from 4 to 3 saves at once with `Changed by you, <date>` and a toast with Undo. The weekly plan isn't changed; the row shows `Your weekly plan has 4 gym days. Ask the coach to rebuild it for 3 ›`. Any open plan suggestion built on the old values reads `Out of date`, and tapping its Apply is refused: `confirmProposal` rejects it with `stale_context` because the setup version changed (unit test in coaching-playbook check 31). The same holds for session length, usual days, experience, goal and other-training edits. Undo restores 4 and the old provenance; the old suggestion stays out of date.
+22. (9 Oct) With 4+ weeks of logs averaging 2 sessions and a stated 4, the fact line `Your logs: about 2 a week lately (last 4 weeks)` shows. It has no button and never changes the stated value. With fewer than 4 weeks of logs, or a matching median, there's no line.
+23. (9 Oct; revised in the review fixes; D13 design, pending Ben's bulk approval) Adding `Running · Tue, Sat · Sat key` turns the endurance rules on: `Coach uses` gains `running Tue, Sat`, and the playbook shows rules 11–12 as `On now` (rule 13 only if endurance is a goal). Removing it, or setting `None`, turns them off; with `Not set` they're off and the reason says so. `Running · Tue · Easy` with no key day leaves them off.
+24. (9 Oct) `Priority muscles` appears only when Muscle is the main focus or also matters, and its caption matches which one.
+25. (9 Oct) A coach chat that says "switch my focus to strength" never changes `Main focus` until Ben taps Apply on the goal suggestion. After Apply, the row shows `From coach chat, <date> · you confirmed`, and Undo restores the previous goal.
+26. (9 Oct) At AX3 every Goals & schedule value wraps under its label, the `Your logs` line and provenance stay readable, and nothing truncates.
+27. (Review fixes) Every `Other training` type offers `Hard or long` / `Easy`. `Classes or HIIT` and `Team or court sport` open with `Hard or long` selected. Changing an entry from `Hard or long` to `Easy` (with no key day) turns the endurance rules off on return if it was the only hard entry.
+28. (Review fixes) With session length or experience `Not set`, the row shows `Not set` and its one-line consequence. Nothing on this screen shows an assumed value as if Ben had set it.
 
 ## 8. Proposals for Ben (brief changes)
 
@@ -694,6 +778,8 @@ Proposed new:
 | PS5 | (Merged with lock-screen-and-alerts §2.3.) `Loud rest alerts` modes `Off` / `Long rests only (2:00 or more)` / `Every rest` | AlarmKit's full-screen alarm is heavy for short rests (ios-platform-feasibility.md) |
 | PS6 | Recognition language as a setting, suggesting English (UK) | The build 7 probe ran in en-US; v0.6 assumes en-GB |
 | PS7 | Effort timing (`After` / `Before`) stored on the profile | P3 was adopted ("Ben can switch to before or off") but no spec or schema field holds it yet. The `Before` placement on the set card needs an active-workout.md revision |
+| PS8 | (9 Oct) Show a passive `Your logs: about N a week lately` fact line under `Days a week you lift` when 4+ weeks of logs differ from the stated number. No button and no coach prompt | Rule 1 starts from stated days, and logs must never overwrite them silently. Showing the fact where Ben edits the value lets him decide, without the coach raising it (that's playbook D1/D11, still open) |
+| PS9 | (9 Oct) Ben's own edits to goal and week apply at once with Undo. The plan follows only through a suggestion he applies, and old suggestions become out of date | Matches Profile's save-on-change convention. Rule G's two-proposal flow is for changes the coach suggests; rule 2 keeps plan changes as proposals |
 
 ## Proposed design-system additions
 
@@ -723,7 +809,7 @@ No new colour, type, spacing or timing tokens. Note for design-system §6: "Each
 - [gym-editor.md](gym-editor.md) (Gyms section rows and everything behind them).
 - [ai-connection.md](ai-connection.md): coach connection, ChatGPT-plan and API-key routes, keys, caps, usage and the coach reply voice.
 - [coach-memory.md](coach-memory.md): Memory and Pain flags.
-- [coaching-playbook.md](coaching-playbook.md): Guides & playbook.
+- [coaching-playbook.md](coaching-playbook.md): Guides & playbook; §2.1a `Applied to you` (the `Coach uses` line). Rules and inputs: [playbook-v1.md](../training-guides/playbook-v1.md).
 - [voice.md](voice.md) §2.5: the `Talking` group.
 - [lock-screen-and-alerts.md](lock-screen-and-alerts.md) §2.5, §3.1: `When rest ends`, `Alert check`, `Test rest alert`.
 - [data-import-export.md](data-import-export.md): backup (on this phone by default, optional copies to Files), check, restore by section, import, export, delete and reset, `getBackupStatus`.
