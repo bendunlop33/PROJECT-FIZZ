@@ -1,5 +1,7 @@
 # Design
 
+**Name:** the app is called **GymSmarter** (approved 9 Oct 2026). "Fizz" in older specs means GymSmarter.
+
 Written by the `designer` agent. Last consolidated 8 Oct 2026. Added 9 Oct 2026: `check-in.md` (brief v0.9), with revision notes in the specs it touches.
 
 - **Tokens and components:** `design-system.md` is the only source. If a screen needs a value that isn't there, add it there first. Old component names still used in some specs are listed as aliases in design-system §11.

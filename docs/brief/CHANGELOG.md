@@ -113,3 +113,9 @@ The brief is a living document. Each approved change gets an entry here: the dat
   - **Storage and display:** the check-in is recorded in Your data and shown as-is, never turned into a recovery score. It replaces the Today readiness chips. Spec: `docs/design/check-in.md`.
 - **Exercise bank with visual guides (Ben).** This overrides EL8 ("no exercise videos"). A large catalogue (all common exercises, with basic entries). Rich entries with visual guides start with 10 examples (Ben), expanding later to about 100 to 150, each with original animated guides plus static key frames for Reduce Motion. Two new agents, `exercise-researcher` and `exercise-guide-maker`, do the work. The approach and licences are being researched in `docs/research/exercise-bank-and-visuals.md`.
 - **Simplification (provisional, overnight 9 Oct).** Restore swaps the whole database; per-section restore is deferred. Backups still label the two data domains. Ben to confirm.
+
+## 2026-10-09: App name (approved by Ben)
+- **The app is called GymSmarter.** This replaces the placeholder "Fizz" (provisional decision 2 in `docs/decisions/provisional-2026-10-09.md`).
+- **What changes:** only the name Ben sees. That's the home-screen and SideStore name (`CFBundleDisplayName`, `DISPLAY_NAME` in `apps/mobile/app-identity.mts`), in-app text, permission prompts, and the `.ipa` file name (`GymSmarter-<version>-build<N>.ipa`).
+- **What stays the same:** bundle ID `com.projectfizz.fizz`, the App Group, the widget extension ID, the Expo slug, the internal Xcode project name (`Fizz`), the database, keychain and backup identifiers (backup files keep the `fizz-backup-` prefix), and all data. An installed "Fizz" build updated over the top becomes GymSmarter with its data intact.
+- The repo stays `PROJECT-FIZZ`, and the `@fizz/*` package scope and `FIZZ_*` build variables are unchanged. In older docs (research, reviews, ADRs, design specs), "Fizz" means GymSmarter.
