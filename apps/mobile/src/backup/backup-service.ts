@@ -1,0 +1,286 @@
+import type { ZonedTimestamp } from '@fizz/schemas';
+import { toMs } from '@fizz/domain';
+import { createBackup, sha256Hex, type AppInfo, type Store } from '@fizz/persistence';
+
+import {
+  backupFileName,
+  parseManifest,
+  planRotation,
+  serialiseManifest,
+  AUTOMATIC_NAME,
+  type BackupAttempt,
+  type BackupManifest,
+  type BackupRecord,
+} from './manifest';
+import { buildBackupStatus, type BackupStatus } from './status';
+
+/**
+ * Automatic backups on this phone, `Back up on this phone now` and
+ * `Save a copy to Files` (data-import-export.md §2.1, §3.2, §4.1).
+ *
+ * No React Native here: storage is injected, so the whole flow (write,
+ * verify, rotate, status) is tested on Linux. The phone bindings are in
+ * `container-files.ts`.
+ *
+ * Never blocks logging: callers fire `backUpOnPhone` without awaiting, and
+ * runs are queued one at a time. A failure is recorded and shown, never thrown.
+ */
+
+/** Backup files in Fizz's own container. */
+export interface BackupFileStore {
+  write(name: string, text: string): Promise<void>;
+  read(name: string): Promise<string | null>;
+  remove(name: string): Promise<void>;
+}
+
+/** One small text file (the manifest). Writes must replace it atomically. */
+export interface TextFile {
+  read(): Promise<string | null>;
+  write(text: string): Promise<void>;
+}
+
+/** A place outside Fizz that Ben picked (Files). */
+export interface CopyDestination {
+  /** Human label, e.g. `iCloud Drive › Fizz backups`. */
+  label: string;
+  /** True when the chosen folder is inside Fizz's container (lost with the app). */
+  insideApp: boolean;
+  write(name: string, text: string): Promise<void>;
+  /** Read the file back, to prove it landed. */
+  read(name: string): Promise<string | null>;
+}
+
+export interface BackupServiceDeps {
+  store: () => Store;
+  files: BackupFileStore;
+  manifest: TextFile;
+  now: () => ZonedTimestamp;
+  app: AppInfo;
+  locale?: string;
+}
+
+export type BackupReason = BackupRecord['reason'];
+
+export type BackupRunResult = { ok: true; record: BackupRecord; deleted: string[] } | { ok: false; error: string };
+
+export type CopyResult =
+  | { ok: true; fileName: string; destinationLabel: string }
+  | { ok: false; reason: 'inside_app' | 'failed'; message: string };
+
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** Plain-language reason for a failed write (system-states §3.8). */
+export function describeWriteError(e: unknown): string {
+  const text = errorText(e);
+  if (/no space|ENOSPC|disk is full|out of space/i.test(text)) return 'This iPhone is out of space.';
+  return `The file couldn’t be written (${text.slice(0, 160)}).`;
+}
+
+export function createBackupService(deps: BackupServiceDeps) {
+  let chain: Promise<unknown> = Promise.resolve();
+  let running = 0;
+  let manifestProblem: string | null = null;
+  const listeners = new Set<() => void>();
+
+  const notify = () => {
+    listeners.forEach((l) => {
+      l();
+    });
+  };
+
+  function queued<T>(fn: () => Promise<T>): Promise<T> {
+    const run = chain.then(fn);
+    chain = run.catch(() => undefined);
+    return run;
+  }
+
+  async function loadManifest(): Promise<BackupManifest> {
+    let text: string | null;
+    try {
+      text = await deps.manifest.read();
+    } catch (e) {
+      manifestProblem = `The backup record couldn’t be read (${errorText(e)}).`;
+      text = null;
+    }
+    const read = parseManifest(text);
+    if (read.problem !== null) manifestProblem = read.problem;
+    return read.manifest;
+  }
+
+  async function saveManifest(m: BackupManifest): Promise<void> {
+    await deps.manifest.write(serialiseManifest(m));
+  }
+
+  async function backUpNow(reason: BackupReason): Promise<BackupRunResult> {
+    const at = deps.now();
+    const manifest = await loadManifest();
+    const kind: BackupRecord['kind'] = reason === 'manual' ? 'manual' : 'automatic';
+    const fileName = backupFileName(toMs(at.utc), at.tz, kind, new Set(manifest.onPhone.files.map((f) => f.fileName)));
+    const attempt = (ok: boolean, error: string | null): BackupAttempt => ({ atUtc: at.utc, tz: at.tz, ok, error });
+    let record: BackupRecord;
+    try {
+      const store = deps.store();
+      const created = await createBackup(store, { at, app: deps.app });
+      const counts = await store.countRecords();
+      const sha256 = sha256Hex(created.text);
+      await deps.files.write(fileName, created.text);
+      // Written and checked before anything older is deleted (§3.2 Rotation).
+      const back = await deps.files.read(fileName);
+      if (back === null || sha256Hex(back) !== sha256) throw new Error('the file read back differently from what was written');
+      record = {
+        fileName,
+        kind,
+        reason,
+        createdAtUtc: at.utc,
+        tz: at.tz,
+        sha256,
+        textLength: created.text.length,
+        finishedWorkouts: created.counts.finishedWorkouts,
+        loggedSets: created.counts.loggedSets,
+        exercises: counts.exercises,
+        integrityOk: created.integrity.ok,
+        integrityIssues: created.integrity.issues.length,
+      };
+    } catch (e) {
+      const error = describeWriteError(e);
+      await saveManifest({ ...manifest, onPhone: { ...manifest.onPhone, lastAttempt: attempt(false, error) } }).catch(() => undefined);
+      return { ok: false, error };
+    }
+
+    const files = [...manifest.onPhone.files, record];
+    const deleted: string[] = [];
+    const kept: BackupRecord[] = [];
+    const doomed = new Set(planRotation(files, manifest.keep, fileName).map((f) => f.fileName));
+    for (const f of files) {
+      if (!doomed.has(f.fileName)) {
+        kept.push(f);
+        continue;
+      }
+      // Delete only a file Fizz wrote: automatic name pattern AND the recorded checksum.
+      try {
+        const text = await deps.files.read(f.fileName);
+        if (text === null) {
+          deleted.push(f.fileName); // already gone: drop the record
+        } else if (AUTOMATIC_NAME.test(f.fileName) && sha256Hex(text) === f.sha256) {
+          await deps.files.remove(f.fileName);
+          deleted.push(f.fileName);
+        } else {
+          kept.push(f);
+        }
+      } catch {
+        kept.push(f);
+      }
+    }
+    await saveManifest({ ...manifest, onPhone: { files: kept, lastAttempt: attempt(true, null) } });
+    return { ok: true, record, deleted };
+  }
+
+  async function track<T>(fn: () => Promise<T>): Promise<T> {
+    running += 1;
+    notify();
+    try {
+      return await fn();
+    } finally {
+      running -= 1;
+      notify();
+    }
+  }
+
+  return {
+    /** Write a backup into Fizz's container, then rotate automatic files. Queued; never throws. */
+    backUpOnPhone(reason: BackupReason): Promise<BackupRunResult> {
+      return track(() =>
+        queued(async () => {
+          try {
+            return await backUpNow(reason);
+          } catch (e) {
+            return { ok: false, error: describeWriteError(e) } as const;
+          }
+        }),
+      );
+    },
+
+    /**
+     * Launch catch-up (§3.2 "If iOS stops it, it runs again on the next
+     * launch"): back up if a finished workout isn't in the newest backup.
+     */
+    async ensureBackedUp(): Promise<BackupRunResult | null> {
+      const manifest = await loadManifest();
+      const counts = await deps.store().countRecords();
+      const newest = manifest.onPhone.files.reduce<BackupRecord | null>((b, f) => (b === null || f.createdAtUtc > b.createdAtUtc ? f : b), null);
+      if (counts.finishedWorkouts === 0 || (newest !== null && newest.finishedWorkouts >= counts.finishedWorkouts)) return null;
+      return this.backUpOnPhone('catch_up');
+    },
+
+    /** `Save a copy to Files`: a fresh backup written to the folder Ben picked, read back to prove it. */
+    saveCopyTo(dest: CopyDestination): Promise<CopyResult> {
+      return track(() =>
+        queued(async (): Promise<CopyResult> => {
+          if (dest.insideApp) {
+            return { ok: false, reason: 'inside_app', message: 'That’s inside Fizz, so it’s lost with the app. Choose iCloud Drive or another folder.' };
+          }
+          const at = deps.now();
+          const fileName = backupFileName(toMs(at.utc), at.tz, 'manual', new Set());
+          try {
+            const created = await createBackup(deps.store(), { at, app: deps.app });
+            await dest.write(fileName, created.text);
+            const back = await dest.read(fileName);
+            if (back === null || sha256Hex(back) !== sha256Hex(created.text)) throw new Error('the copy read back differently from what was written');
+          } catch (e) {
+            return { ok: false, reason: 'failed', message: `Couldn’t save the copy: ${describeWriteError(e)} Your data on this phone is fine.` };
+          }
+          const manifest = await loadManifest();
+          await saveManifest({
+            ...manifest,
+            offPhone: { ...manifest.offPhone, lastCopy: { atUtc: at.utc, tz: at.tz, fileName, destinationLabel: dest.label } },
+          });
+          return { ok: true, fileName, destinationLabel: dest.label };
+        }),
+      );
+    },
+
+    async getStatus(): Promise<BackupStatus & { manifestProblem: string | null }> {
+      const manifest = await loadManifest();
+      const counts = await deps.store().countRecords();
+      const at = deps.now();
+      const status = buildBackupStatus(manifest, {
+        finishedWorkouts: counts.finishedWorkouts,
+        backingUp: running > 0,
+        nowMs: toMs(at.utc),
+        tz: at.tz,
+        ...(deps.locale === undefined ? {} : { locale: deps.locale }),
+      });
+      return { ...status, manifestProblem };
+    },
+
+    markTrialRunDone(): Promise<void> {
+      return queued(async () => {
+        const m = await loadManifest();
+        await saveManifest({ ...m, trialRunDoneAtUtc: deps.now().utc });
+        notify();
+      });
+    },
+
+    dismissOffPhoneReminder(): Promise<void> {
+      return queued(async () => {
+        const m = await loadManifest();
+        await saveManifest({ ...m, offPhone: { ...m.offPhone, reminderDismissedAtUtc: deps.now().utc } });
+        notify();
+      });
+    },
+
+    /** Re-render when a run starts or ends. */
+    subscribe(listener: () => void): () => void {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+
+    get isRunning(): boolean {
+      return running > 0;
+    },
+  };
+}
+
+export type BackupService = ReturnType<typeof createBackupService>;

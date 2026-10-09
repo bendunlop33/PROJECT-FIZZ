@@ -282,3 +282,17 @@ describe('gyms.createWithEquipment (createGymFromDraft)', () => {
     await store.close();
   });
 });
+
+describe('countRecords', () => {
+  it('counts finished and unfinished workouts, and logged sets of finished workouts only', async () => {
+    const store = await openStore(memoryDriver());
+    expect(await store.countRecords()).toEqual({ finishedWorkouts: 0, unfinishedWorkouts: 0, loggedSets: 0, gyms: 0, exercises: 0 });
+    const finished = richFinishedSession();
+    await store.repos.sessions.save(finished, null);
+    const counts = await store.countRecords();
+    expect(counts.finishedWorkouts).toBe(1);
+    expect(counts.unfinishedWorkouts).toBe(0);
+    expect(counts.loggedSets).toBe(finished.sets.filter((s) => s.status === 'completed').length);
+    await store.close();
+  });
+});

@@ -31,6 +31,15 @@ export function createSqliteRepositories(db: Database): SqliteRepositories {
   };
 }
 
+/** Cheap record counts for status lines (App status, Data & backup). */
+export interface RecordCounts {
+  finishedWorkouts: number;
+  unfinishedWorkouts: number;
+  loggedSets: number;
+  gyms: number;
+  exercises: number;
+}
+
 export interface Store {
   db: Database;
   repos: SqliteRepositories;
@@ -40,6 +49,7 @@ export interface Store {
    * `calculateNextTargets` (finished sessions only; sides carried).
    */
   listExerciseHistory(ownerId: string, exerciseId: string): Promise<HistorySession[]>;
+  countRecords(): Promise<RecordCounts>;
   close(): Promise<void>;
 }
 
@@ -67,6 +77,25 @@ export async function openStore(driver: SqlDriver, options: OpenStoreOptions = {
         .flatMap((a) => toHistorySessions(a, exerciseId))
         .sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
     },
+    countRecords: () =>
+      db.read(async (q) => {
+        const row = await q.getFirst<Record<keyof RecordCounts, number>>(
+          `SELECT
+             (SELECT count(*) FROM sessions WHERE status = 'finished') AS finishedWorkouts,
+             (SELECT count(*) FROM sessions WHERE status = 'active') AS unfinishedWorkouts,
+             (SELECT count(*) FROM session_sets s JOIN sessions p ON p.id = s.session_id
+                WHERE s.status = 'completed' AND p.status = 'finished') AS loggedSets,
+             (SELECT count(*) FROM gyms) AS gyms,
+             (SELECT count(*) FROM exercises) AS exercises`,
+        );
+        return {
+          finishedWorkouts: row?.finishedWorkouts ?? 0,
+          unfinishedWorkouts: row?.unfinishedWorkouts ?? 0,
+          loggedSets: row?.loggedSets ?? 0,
+          gyms: row?.gyms ?? 0,
+          exercises: row?.exercises ?? 0,
+        };
+      }),
     close: () => db.close(),
   };
 }
