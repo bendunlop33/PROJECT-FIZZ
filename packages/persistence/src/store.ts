@@ -15,6 +15,7 @@ import { migrate, MIGRATIONS, type Migration, type MigrationReport } from './mig
 import { SqliteSessions } from './sessions';
 
 export interface SqliteRepositories extends Repositories {
+  gyms: SqliteGyms;
   sessions: SqliteSessions;
 }
 

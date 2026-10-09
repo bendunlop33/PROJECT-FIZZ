@@ -83,22 +83,7 @@ export class DocumentRepository<T extends Versioned> {
   }
 
   save(record: T, expectedVersion: number | null): Promise<SaveResult> {
-    return this.db.write(async (tx) => {
-      const valid = checkWrite(this.spec.schema, record, this.spec.table, record.id);
-      const current = await tx.getFirst<{ version: number }>(`SELECT version FROM ${ident(this.spec.table)} WHERE id = ?`, [valid.id]);
-      const currentVersion = current?.version ?? null;
-      if (currentVersion !== expectedVersion) return { ok: false, error: 'conflict', currentVersion };
-      const row = {
-        id: valid.id,
-        version: valid.version,
-        updated_at_utc: valid.updatedAtUtc,
-        ...this.spec.columns(valid),
-        data: JSON.stringify(valid),
-      };
-      if (current === null) await insert(tx, this.spec.table, row);
-      else await upsert(tx, this.spec.table, ['id'], row);
-      return { ok: true, version: valid.version };
-    });
+    return this.db.write((tx) => saveDocumentIn(tx, this.spec, record, expectedVersion));
   }
 
   /** Rows matching `where` (trusted SQL from this package), ordered by id. */
@@ -106,6 +91,34 @@ export class DocumentRepository<T extends Versioned> {
     return this.db.read((q) => listDocuments(q, this.spec, where, params));
   }
 }
+
+/**
+ * Validate and save one document inside a caller's transaction, with the
+ * same optimistic version check as `DocumentRepository.save`.
+ */
+export async function saveDocumentIn<T extends Versioned>(
+  tx: SqlExecutor,
+  spec: DocumentSpec<T>,
+  record: T,
+  expectedVersion: number | null,
+): Promise<SaveResult> {
+  const valid = checkWrite(spec.schema, record, spec.table, record.id);
+  const current = await tx.getFirst<{ version: number }>(`SELECT version FROM ${ident(spec.table)} WHERE id = ?`, [valid.id]);
+  const currentVersion = current?.version ?? null;
+  if (currentVersion !== expectedVersion) return { ok: false, error: 'conflict', currentVersion };
+  const row = {
+    id: valid.id,
+    version: valid.version,
+    updated_at_utc: valid.updatedAtUtc,
+    ...spec.columns(valid),
+    data: JSON.stringify(valid),
+  };
+  if (current === null) await insert(tx, spec.table, row);
+  else await upsert(tx, spec.table, ['id'], row);
+  return { ok: true, version: valid.version };
+}
+
+export type CreateGymOutcome = { ok: true; duplicate: boolean } | { ok: false; error: 'conflict' | 'mismatched_equipment' };
 
 export async function listDocuments<T extends Versioned>(
   q: SqlExecutor,
@@ -123,6 +136,30 @@ export class SqliteGyms extends DocumentRepository<Gym> {
   }
   listByOwner(ownerId: string): Promise<Gym[]> {
     return this.listWhere('owner_id = ?', [ownerId]);
+  }
+
+  /**
+   * Create a gym and its equipment in one transaction (onboarding's
+   * `createGymFromDraft`), so a force-close can't leave half a gym. Idempotent
+   * by gym ID: a retry with the same gym ID (double tap, retry after an
+   * error) changes nothing and reports `duplicate`.
+   */
+  createWithEquipment(gym: Gym, equipment: readonly EquipmentInstance[]): Promise<CreateGymOutcome> {
+    if (equipment.some((e) => e.gymId !== gym.id || e.ownerId !== gym.ownerId)) {
+      return Promise.resolve({ ok: false, error: 'mismatched_equipment' });
+    }
+    return this.db.write(async (tx) => {
+      const existing = await tx.getFirst('SELECT id FROM gyms WHERE id = ?', [gym.id]);
+      if (existing) return { ok: true, duplicate: true };
+      const saved = await saveDocumentIn(tx, GYM_SPEC, gym, null);
+      if (!saved.ok) return { ok: false, error: 'conflict' };
+      for (const eq of equipment) {
+        const r = await saveDocumentIn(tx, EQUIPMENT_SPEC, eq, null);
+        // Roll back the gym too: all or nothing.
+        if (!r.ok) throw new Error(`Equipment ${eq.id} already exists; nothing was saved`);
+      }
+      return { ok: true, duplicate: false };
+    });
   }
 }
 

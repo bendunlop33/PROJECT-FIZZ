@@ -54,6 +54,14 @@ const equipmentCommon = RecordMetaSchema.extend({
   /** Permanent availability. Temporary "busy today" lives on the session. */
   availability: z.enum(['available', 'retired']),
   notes: z.string().max(2000).optional(),
+  /**
+   * Where the numbers came from (gym-editor.md GE1): `preset` = typical values
+   * from a gym preset that Ben hasn't checked yet ("Typical values, not
+   * checked"); `user` = entered or confirmed by Ben. Absent = `user`.
+   */
+  detailsSource: z.enum(['preset', 'user']).optional(),
+  /** When Ben last saved this item's details. */
+  checkedAtUtc: UtcTimestampSchema.optional(),
 });
 
 export const BarbellSchema = equipmentCommon.extend({

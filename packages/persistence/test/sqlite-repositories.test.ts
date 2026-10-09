@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createSessionService } from '@fizz/domain';
+import { buildPresetDraft, createSessionService, materialiseGymDraft } from '@fizz/domain';
 import {
   apply,
   at,
@@ -230,6 +230,55 @@ describe('listExerciseHistory', () => {
     // Set 1 left, set 2 both, then set 1's right side (the companion row); set 3 was undone and skipped.
     expect(history[1]?.sets.map((x) => x.side)).toEqual(['left', 'both', 'right']);
     expect(await store.listExerciseHistory(OWNER, id(999))).toEqual([]);
+    await store.close();
+  });
+});
+
+describe('gyms.createWithEquipment (createGymFromDraft)', () => {
+  const draftGym = () => {
+    const result = materialiseGymDraft(buildPresetDraft('commercial', 'kg'), {
+      name: 'Main gym',
+      ownerId: OWNER,
+      gymId: GYM,
+      isDefault: true,
+      atUtc: at(0).utc,
+      newId: idGen(50_000),
+    });
+    if (!result.ok) throw new Error('preset did not validate');
+    return result;
+  };
+
+  it('saves the gym and every item in one write, and a retry is a duplicate', async () => {
+    const store = await openStore(memoryDriver());
+    const { gym, equipment } = draftGym();
+    expect(await store.repos.gyms.createWithEquipment(gym, equipment)).toEqual({ ok: true, duplicate: false });
+    expect(await store.repos.gyms.createWithEquipment(gym, equipment)).toEqual({ ok: true, duplicate: true });
+    expect(await store.repos.gyms.listByOwner(OWNER)).toHaveLength(1);
+    const saved = await store.repos.equipment.listByGym(GYM);
+    expect(saved).toHaveLength(4);
+    expect(saved.every((e) => e.detailsSource === 'preset')).toBe(true);
+    await store.close();
+  });
+
+  it('writes nothing when any item fails (all or nothing)', async () => {
+    const store = await openStore(memoryDriver());
+    const { gym, equipment } = draftGym();
+    const first = equipment[0];
+    if (!first) throw new Error('no equipment');
+    // An equipment ID that already exists makes the whole write roll back.
+    await store.repos.equipment.save(first, null);
+    await expect(store.repos.gyms.createWithEquipment(gym, equipment)).rejects.toThrow(/already exists/);
+    expect(await store.repos.gyms.listByOwner(OWNER)).toEqual([]);
+    expect(await store.repos.equipment.listByGym(GYM)).toHaveLength(1);
+    await store.close();
+  });
+
+  it('refuses equipment that belongs to another gym or owner', async () => {
+    const store = await openStore(memoryDriver());
+    const { gym, equipment } = draftGym();
+    const stray = equipment.map((e, i) => (i === 0 ? { ...e, gymId: id(77) } : e));
+    expect(await store.repos.gyms.createWithEquipment(gym, stray)).toEqual({ ok: false, error: 'mismatched_equipment' });
+    expect(await store.repos.gyms.listByOwner(OWNER)).toEqual([]);
     await store.close();
   });
 });
