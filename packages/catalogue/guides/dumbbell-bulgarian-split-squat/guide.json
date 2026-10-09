@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "dumbbell-bulgarian-split-squat",
+  "extends": null,
+  "rig": "adult-v1",
+  "view": "side",
+  "facing": "right",
+  "units": "bodyHeight",
+  "durationMs": 2800,
+  "loop": "cycle",
+  "ground": { "y": 0, "scrollPerCycle": 0 },
+  "props": [
+    { "id": "bench", "type": "bench", "x": -0.735, "length": 0.45, "height": 0.25 },
+    { "id": "dbNear", "type": "dumbbell", "size": "medium", "seen": "side", "anchor": { "kind": "hand", "hand": "near" } },
+    { "id": "dbFar", "type": "dumbbell", "size": "medium", "seen": "side", "anchor": { "kind": "hand", "hand": "far" } }
+  ],
+  "keyframes": [
+    {
+      "t": 0, "label": "Start", "caption": "Tall split stance, back foot laces-down on the bench",
+      "root": { "x": -0.12, "y": 0.513, "pelvisDeg": 10 },
+      "joints": { "lumbar": 0, "thoracic": 0, "neck": -6, "shoulderNear": 10, "elbowNear": 3, "shoulderFar": 10, "elbowFar": 3 },
+      "ik": {
+        "footNear": { "x": 0, "y": 0, "planted": true },
+        "footFar": { "x": -0.294, "y": 0.284, "soleDeg": 180, "planted": true }
+      },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.2857, "label": "Halfway", "caption": "Hips straight down, front heel down",
+      "root": { "x": -0.132, "y": 0.415, "pelvisDeg": 15 },
+      "joints": { "neck": -10, "shoulderNear": 15, "shoulderFar": 15 },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.5714, "label": "Bottom", "caption": "Front thigh about level, back knee just off the floor",
+      "root": { "x": -0.144, "y": 0.308, "pelvisDeg": 20 },
+      "joints": { "neck": -14, "shoulderNear": 20, "shoulderFar": 20 },
+      "holdMs": 200, "ease": "smooth"
+    },
+    { "t": 0.8214, "sameAs": 1, "caption": "Drive through the front foot", "ease": "smooth" },
+    { "t": 1, "sameAs": 0 }
+  ],
+  "overlays": [{ "type": "path", "of": "dbNear", "showIn": ["static"] }],
+  "checks": {
+    "barDriftMax": 0.04, "barProp": "dbNear", "planted": ["footNear", "footFar"],
+    "romSkip": { "angles": ["ankleFar"], "reason": "laces-down rear foot: the rig's sole-line ankle lies near in line with the shin; real plantarflexion is about 50 degrees" },
+    "romProfile": "adult-default"
+  },
+  "a11y": {
+    "summary": "Side view, facing right, bench behind. Split stance with the top of the back foot on the bench and dumbbells hanging at the sides. Lower the hips straight down until the front thigh is about level and the back knee is just above the floor, front heel down, then drive up through the front foot."
+  },
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+}
