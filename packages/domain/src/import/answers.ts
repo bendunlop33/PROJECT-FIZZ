@@ -1,4 +1,4 @@
-import type { BodyweightAnswer, ImportAnswers, ImportBarKind, NameAnswer, PerHandAnswer, TotalAnswer, WeightUnit } from '@fizz/schemas';
+import type { BodyweightAnswer, ImportAnswers, ImportBarKind, NameAnswer, PerHandAnswer, PerHandReading, TotalAnswer, WeightUnit } from '@fizz/schemas';
 
 /**
  * One change to the import answers (data-import-export §2.5 steps 3a–3c).
@@ -8,7 +8,8 @@ import type { BodyweightAnswer, ImportAnswers, ImportBarKind, NameAnswer, PerHan
 export type AnswerChange =
   | { kind: 'name'; key: string; answer: NameAnswer | null }
   | { kind: 'per_hand'; answer: PerHandAnswer }
-  | { kind: 'per_hand_override'; key: string; answer: PerHandAnswer | null }
+  /** One exercise's reading (`one` / `each` / `both`); null goes back to the default (review r3 S1). */
+  | { kind: 'per_hand_override'; key: string; answer: PerHandReading | null }
   | { kind: 'total'; answer: TotalAnswer }
   | { kind: 'total_override'; key: string; answer: TotalAnswer | null }
   /** A bar's weight for `plates_only` values (each bar kind has its own; review S1). */

@@ -68,9 +68,25 @@ export const NameAnswerSchema = z.discriminatedUnion('kind', [
 ]);
 export type NameAnswer = z.infer<typeof NameAnswerSchema>;
 
-/** Dumbbells: `"22.5"` means one dumbbell, or both together (DX6: never pre-selected). */
+/**
+ * Dumbbells, the group answer: `"22.5"` means each dumbbell of the pair, or
+ * both together (DX6: never pre-selected). It applies only to exercises the
+ * catalogue records as done with two dumbbells (review r3 S1).
+ */
 export const PerHandAnswerSchema = z.enum(['each', 'both']);
 export type PerHandAnswer = z.infer<typeof PerHandAnswerSchema>;
+
+/**
+ * How one exercise's dumbbell values are read (review r3 S1): `each` and
+ * `both` as above, or `one`: the exercise is done with a single dumbbell or
+ * kettlebell (a one-arm row, a goblet squat), so the value is that one's
+ * weight, as written. A one-dumbbell exercise reads `one` unless Ben says
+ * otherwise; an exercise whose count isn't recorded (a custom exercise,
+ * `Add new`, or one done either way) never takes the group answer and is
+ * asked on its own.
+ */
+export const PerHandReadingSchema = z.enum(['one', 'each', 'both']);
+export type PerHandReading = z.infer<typeof PerHandReadingSchema>;
 
 /** Barbell: `"100"` is the total including the bar, or the plates only. */
 export const TotalAnswerSchema = z.enum(['total', 'plates_only']);
@@ -106,7 +122,8 @@ export const ImportAnswersSchema = z.object({
   /** Answers per source name key. Names that matched exactly need none (they can still be changed). */
   names: z.record(NameKeySchema, NameAnswerSchema),
   perHand: PerHandAnswerSchema.nullable(),
-  perHandOverrides: z.record(NameKeySchema, PerHandAnswerSchema),
+  /** Per exercise (by name key): wins over the group answer and the catalogue's count. */
+  perHandOverrides: z.record(NameKeySchema, PerHandReadingSchema),
   total: TotalAnswerSchema.nullable(),
   totalOverrides: z.record(NameKeySchema, TotalAnswerSchema),
   /** Olympic bar weight added to `plates_only` values, per unit (never converted between kg and lb). Default 20 kg / 45 lb, shown and editable. */

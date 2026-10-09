@@ -1,4 +1,4 @@
-import type { AliasTarget, ExerciseEquipmentKind, Laterality, LoadConvention } from '@fizz/schemas';
+import type { AliasTarget, ExerciseEquipmentKind, ImplementCount, Laterality, LoadConvention } from '@fizz/schemas';
 import { deriveId } from '../stable';
 
 /**
@@ -25,6 +25,12 @@ export interface MatchCandidate {
   laterality: Laterality;
   defaultLoadConvention: LoadConvention;
   compatibleEquipment: readonly ExerciseEquipmentKind[];
+  /**
+   * `per_hand` exercises: one dumbbell or two, from the catalogue entry
+   * (`implements`). Null when it isn't recorded: a custom exercise, or one
+   * commonly done either way (review r3 S1).
+   */
+  implements: ImplementCount | null;
 }
 
 export interface NameMatch {

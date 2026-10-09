@@ -45,6 +45,7 @@ const candidates: MatchCandidate[] = starterExercises(AT.utc).map((e) => ({
   laterality: e.laterality,
   defaultLoadConvention: e.defaultLoadConvention,
   compatibleEquipment: e.compatibleEquipment,
+  implements: null,
 }));
 const LAT = candidates.find((c) => c.name === 'Lat pulldown')?.exerciseId ?? '';
 

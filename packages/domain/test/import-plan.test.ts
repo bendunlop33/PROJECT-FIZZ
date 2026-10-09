@@ -96,6 +96,103 @@ describe('import preview: questions before anything is saved', () => {
     expect(loads(each)).toEqual([22.5, 7.5]);
   });
 
+  describe('one dumbbell or two (review r3 S1)', () => {
+    const loads = (a: ReturnType<typeof analyseImport>) => a.fates.map((f) => (f.result === 'imported' ? f.set.load?.value : f.result === 'pending' ? `pending:${f.reason}` : f.result));
+    const rows = (a: ReturnType<typeof analyseImport>) => a.perHand?.exercises.map((e) => [e.name, e.implements, e.reading, e.sample]);
+    const FILE = `${A1}2026-10-01,Dumbbell Bench Press,Chest,60,8,,,\n2026-10-01,One-Arm DB Row,Back,30,10,,,\n2026-10-01,Goblet Squats,Legs,24,10,,,\n`;
+    const names = {
+      [nameKey('One-Arm DB Row')]: { kind: 'exercise' as const, exerciseId: idOf('One-arm dumbbell row') },
+      [nameKey('Goblet Squats')]: { kind: 'exercise' as const, exerciseId: idOf('Goblet squat') },
+    };
+
+    it('"Both dumbbells together" halves two-dumbbell exercises only: a one-arm row and a goblet squat import as written', () => {
+      const p = parsed(FILE);
+      const open = analyseImport(p, ctx(), answers({ names }));
+      // Only the pair waits for the group answer; the one-dumbbell exercises are never asked it.
+      expect(open.perHand).toMatchObject({ pairs: 1, needsGroup: true, needsCount: 0, open: true, example: { name: 'Dumbbell Bench Press', value: 60 } });
+      expect(loads(open)).toEqual(['pending:per_hand', 30, 24]);
+      expect(open.questionsOpen).toBe(1);
+
+      const both = analyseImport(p, ctx(), answers({ names, perHand: 'both' }));
+      expect(both.ready).toBe(true);
+      expect(loads(both)).toEqual([30, 30, 24]);
+      // What each exercise imports as, shown before commit.
+      expect(rows(both)).toEqual([
+        ['Dumbbell Bench Press', 2, 'both', { value: 60, unit: 'kg', imported: 30 }],
+        ['One-Arm DB Row', 1, 'one', { value: 30, unit: 'kg', imported: 30 }],
+        ['Goblet Squats', 1, 'one', { value: 24, unit: 'kg', imported: 24 }],
+      ]);
+      expect(loads(analyseImport(p, ctx(), answers({ names, perHand: 'each' })))).toEqual([60, 30, 24]);
+      // The imported set keeps its convention and side: a one-arm row is per dumbbell, per side.
+      expect(both.fates[1]).toMatchObject({ result: 'imported', set: { exerciseName: 'One-arm dumbbell row', laterality: 'unilateral', convention: 'per_hand', load: { value: 30, unit: 'kg', convention: 'per_hand' } } });
+    });
+
+    it('Ben can say a one-dumbbell exercise was done with two, and a pair exercise with one', () => {
+      const p = parsed(FILE);
+      const a = analyseImport(p, ctx(), answers({ names, perHand: 'both', perHandOverrides: { [nameKey('One-Arm DB Row')]: 'both', [nameKey('Dumbbell Bench Press')]: 'one' } }));
+      expect(loads(a)).toEqual([60, 15, 24]);
+      expect(rows(a)?.map((r) => r.slice(0, 3))).toEqual([
+        ['Dumbbell Bench Press', 2, 'one'],
+        ['One-Arm DB Row', 1, 'both'],
+        ['Goblet Squats', 1, 'one'],
+      ]);
+      // Answered one by one: no pair is left waiting, so the group answer isn't needed.
+      const noGroup = analyseImport(p, ctx(), answers({ names, perHandOverrides: { [nameKey('Dumbbell Bench Press')]: 'each' } }));
+      expect(noGroup.perHand).toMatchObject({ needsGroup: false, open: false });
+      expect(noGroup.ready).toBe(true);
+    });
+
+    it('a file with only one-dumbbell exercises needs no dumbbell answer (lb stays lb)', () => {
+      const lb = 'Date,Exercise,Category,Weight (lbs),Reps,Distance,Distance Unit,Time\n';
+      const a = analyseImport(parsed(`${lb}2026-10-01,One-Arm DB Row,Back,70,10,,,\n2026-10-02,One-Arm DB Row,Back,75,8,,,\n`), ctx(), answers({ names }));
+      expect(a.perHand).toMatchObject({ pairs: 0, example: null, needsGroup: false, needsCount: 0, open: false });
+      expect(rows(a)).toEqual([['One-Arm DB Row', 1, 'one', { value: 75, unit: 'lb', imported: 75 }]]);
+      expect(a.ready).toBe(true);
+      expect(a.fates.map((f) => (f.result === 'imported' ? f.set.load : null))).toEqual([
+        { value: 70, unit: 'lb', convention: 'per_hand' },
+        { value: 75, unit: 'lb', convention: 'per_hand' },
+      ]);
+    });
+
+    it('an unmatched name added as a new dumbbell exercise is asked on its own: the group answer never applies to it', () => {
+      const p = parsed(`${A1}2026-10-01,Dumbbell Bench Press,Chest,60,8,,,\n2026-10-01,Zottman Curl,Biceps,14,10,,,\n`);
+      expect(analyseImport(p, ctx(), DEFAULT_ANSWERS).names.find((n) => n.name === 'Zottman Curl')?.match.status).toBe('no_match');
+      const added = { [nameKey('Zottman Curl')]: { kind: 'new' as const, equipment: 'dumbbells' as const } };
+      const a = analyseImport(p, ctx(), answers({ names: added, perHand: 'both' }));
+      expect(loads(a)).toEqual([30, 'pending:per_hand']);
+      expect(a.perHand).toMatchObject({ needsGroup: false, needsCount: 1, open: true });
+      expect(rows(a)?.[1]).toEqual(['Zottman Curl', null, null, { value: 14, unit: 'kg', imported: null }]);
+      expect(a.questionsOpen).toBe(1);
+      expect(a.ready).toBe(false);
+      const as = (reading: 'one' | 'each' | 'both') => loads(analyseImport(p, ctx(), answers({ names: added, perHand: 'both', perHandOverrides: { [nameKey('Zottman Curl')]: reading } })));
+      expect(as('one')).toEqual([30, 14]);
+      expect(as('each')).toEqual([30, 14]);
+      expect(as('both')).toEqual([30, 7]);
+    });
+
+    it('a catalogue exercise done either way (no recorded count) is asked too', () => {
+      const slRdl: MatchCandidate = {
+        exerciseId: '00000000-0000-4000-8000-00000000e2b4',
+        name: 'Single-leg Romanian deadlift',
+        aliases: ['Single-leg RDL'],
+        catalogueKey: 'dumbbell-single-leg-romanian-deadlift',
+        laterality: 'unilateral',
+        defaultLoadConvention: 'per_hand',
+        compatibleEquipment: ['dumbbells'],
+        implements: null,
+      };
+      const withRdl = ctx({ candidates: [...CANDIDATES, slRdl] });
+      const p = parsed(`${A1}2026-10-01,Single-leg RDL,Legs,20,10,,,\n`);
+      const a = analyseImport(p, withRdl, answers({ perHand: 'both' }));
+      expect(a.names[0]?.match.status).toBe('matched');
+      expect(a.perHand).toMatchObject({ pairs: 0, needsCount: 1, open: true });
+      expect(loads(a)).toEqual(['pending:per_hand']);
+      const one = analyseImport(p, withRdl, answers({ perHandOverrides: { [nameKey('Single-leg RDL')]: 'one' } }));
+      expect(loads(one)).toEqual([20]);
+      expect(one.ready).toBe(true);
+    });
+  });
+
   it('"Plates only" adds the bar weight in the row’s own unit; lb stays lb (check 19)', () => {
     const p = parsed('A1-lb.synthetic.csv');
     const first = analyseImport(p, ctx(), DEFAULT_ANSWERS);
@@ -173,9 +270,9 @@ describe('import preview: questions before anything is saved', () => {
 
   it('"Plates only" adds each bar’s own weight: an EZ or trap bar never gets the Olympic bar (review S1)', () => {
     const extra: MatchCandidate[] = [
-      { exerciseId: '00000000-0000-4000-8000-00000000e2b1', name: 'Trap-bar deadlift', aliases: [], catalogueKey: 'trap-bar-deadlift', laterality: 'bilateral', defaultLoadConvention: 'total', compatibleEquipment: ['trap_bar'] },
-      { exerciseId: '00000000-0000-4000-8000-00000000e2b2', name: 'Kettlebell swing', aliases: [], catalogueKey: 'kettlebell-swing', laterality: 'bilateral', defaultLoadConvention: 'total', compatibleEquipment: ['kettlebell'] },
-      { exerciseId: '00000000-0000-4000-8000-00000000e2b3', name: 'Mystery bar lift', aliases: [], catalogueKey: null, laterality: 'bilateral', defaultLoadConvention: 'total', compatibleEquipment: [] },
+      { exerciseId: '00000000-0000-4000-8000-00000000e2b1', name: 'Trap-bar deadlift', aliases: [], catalogueKey: 'trap-bar-deadlift', laterality: 'bilateral', defaultLoadConvention: 'total', compatibleEquipment: ['trap_bar'], implements: null },
+      { exerciseId: '00000000-0000-4000-8000-00000000e2b2', name: 'Kettlebell swing', aliases: [], catalogueKey: 'kettlebell-swing', laterality: 'bilateral', defaultLoadConvention: 'total', compatibleEquipment: ['kettlebell'], implements: null },
+      { exerciseId: '00000000-0000-4000-8000-00000000e2b3', name: 'Mystery bar lift', aliases: [], catalogueKey: null, laterality: 'bilateral', defaultLoadConvention: 'total', compatibleEquipment: [], implements: null },
     ];
     const c = ctx({ candidates: [...CANDIDATES, ...extra] });
     const p = parsed(
@@ -285,7 +382,7 @@ describe('import preview: questions before anything is saved', () => {
     const id = customExerciseIdFor(OWNER, 'hammer strength row');
     expect(a.ready).toBe(true);
     expect(a.fates[0]).toMatchObject({ result: 'imported', set: { exerciseId: id, exerciseName: 'Hammer Strength Row', convention: 'added', load: { value: 40, convention: 'added' } } });
-    expect(newExercisesToCreate(a)).toEqual([{ exerciseId: id, name: 'Hammer Strength Row', laterality: 'bilateral', convention: 'added', bar: 'none', newKind: 'plate_loaded_machine' }]);
+    expect(newExercisesToCreate(a)).toEqual([{ exerciseId: id, name: 'Hammer Strength Row', laterality: 'bilateral', convention: 'added', bar: 'none', implements: null, newKind: 'plate_loaded_machine' }]);
     expect(aliasesToSave(a)).toEqual([{ key: 'hammer strength row', name: 'Hammer Strength Row', target: { kind: 'exercise', exerciseId: id } }]);
   });
 

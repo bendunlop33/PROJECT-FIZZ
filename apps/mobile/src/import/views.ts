@@ -14,9 +14,11 @@ import {
   type LoadContext,
   type MatchCandidate,
   type NameRow,
+  type PerHandExercise,
+  type PerHandQuestion,
   type RowFate,
 } from '@fizz/domain';
-import type { CustomExerciseKind, FitNotesVariant, ImportBarKind, ImportJob, ImportRow, ImportRowResult, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
+import type { CustomExerciseKind, FitNotesVariant, ImportBarKind, ImportJob, ImportRow, ImportRowResult, Load, LoadConvention, PerHandReading, WeightUnit } from '@fizz/schemas';
 
 import { formatCount, plural } from '../format/numbers';
 import { parseNumber } from '../ui/number-text';
@@ -212,7 +214,8 @@ export interface PreviewView {
   primary: { label: string; enabled: boolean };
 }
 
-const PER_HAND_WORD = { each: 'each', both: 'both together' } as const;
+/** How a dumbbell value is read, in the preview's answer line. */
+const READING_WORD: Record<PerHandReading, string> = { each: 'each', both: 'both together', one: 'one dumbbell' };
 const BODYWEIGHT_WORD = { added: 'weight added to bodyweight', assistance: 'assistance from a machine', split: 'negative = assistance, positive = added' } as const;
 /** `Bar weight` / `EZ-bar weight` / `Trap-bar weight` (each bar has its own weight; review S1). */
 export const BAR_WORD: Record<ImportBarKind, string> = { barbell: 'Bar', ez_bar: 'EZ-bar', trap_bar: 'Trap-bar' };
@@ -230,11 +233,14 @@ export function questionRows(a: ImportAnalysis): QuestionRow[] {
   if (open > 0) out.push({ key: { kind: 'names' }, answered: false, line: { icon: 'exclamationmark.triangle', tone: 'warning', text: `${plural(open, 'exercise name', 'exercise names')} to check` } });
   else if (answeredNames > 0) out.push({ key: { kind: 'names' }, answered: true, line: { icon: 'checkmark.circle.fill', tone: 'done', text: `Exercise names: ${formatCount(answeredNames)} checked` } });
   if (a.perHand) {
-    const overrides = a.perHand.exercises.filter((e) => e.override !== null).length;
+    const q = a.perHand;
+    const warn = (text: string): QuestionRow => ({ key: { kind: 'per_hand' }, answered: false, line: { icon: 'exclamationmark.triangle', tone: 'warning', text } });
     out.push(
-      a.perHand.open
-        ? { key: { kind: 'per_hand' }, answered: false, line: { icon: 'exclamationmark.triangle', tone: 'warning', text: 'Dumbbell weights: each or both?' } }
-        : { key: { kind: 'per_hand' }, answered: true, line: { icon: 'checkmark.circle.fill', tone: 'done', text: `Dumbbells: ${groupAnswerText(a.perHand.answer, overrides, (x) => PER_HAND_WORD[x])}` } },
+      q.needsGroup
+        ? warn('Dumbbell weights: each or both?')
+        : q.needsCount > 0
+          ? warn(`${plural(q.needsCount, 'dumbbell exercise', 'dumbbell exercises')}: one dumbbell or two?`)
+          : { key: { kind: 'per_hand' }, answered: true, line: { icon: 'checkmark.circle.fill', tone: 'done', text: `Dumbbells: ${perHandSummary(q)}` } },
     );
   }
   if (a.total) {
@@ -269,6 +275,14 @@ export function questionRows(a: ImportAnalysis): QuestionRow[] {
     );
   }
   return out;
+}
+
+/** `each`, or by reading when they differ: `2 both together · 1 one dumbbell` (review r3 S1). */
+function perHandSummary(q: PerHandQuestion): string {
+  const counts = (['each', 'both', 'one'] as const).map((r) => ({ r, n: q.exercises.filter((e) => e.reading === r).length })).filter((c) => c.n > 0);
+  const only = counts.length === 1 ? counts[0] : undefined;
+  if (only) return READING_WORD[only.r];
+  return counts.map((c) => `${formatCount(c.n)} ${READING_WORD[c.r]}`).join(' · ');
 }
 
 function skippedExerciseSets(a: ImportAnalysis): number {
@@ -493,21 +507,105 @@ export interface OptionView<A extends string> {
   selected: boolean;
 }
 
-export function perHandOptions(a: ImportAnalysis, locale?: string): { title: string; lead: string; question: string; options: OptionView<'each' | 'both'>[]; example: string | null } | null {
+export interface PerHandChoice {
+  /** Null: back to the default (the group answer, or one dumbbell when the catalogue says so). */
+  value: PerHandReading | null;
+  label: string;
+  selected: boolean;
+}
+
+export interface PerHandRowView {
+  key: string;
+  /** The FitNotes name. */
+  title: string;
+  /** What its newest weight imports as: `60 kg → 30 kg each`, `30 kg → 30 kg (one dumbbell)` (review r3 S1). */
+  conversion: string;
+  choices: PerHandChoice[];
+}
+
+export interface PerHandView {
+  title: string;
+  lead: string;
+  /** The group question, asked only for exercises done with two dumbbells; null when the file has none. */
+  question: string | null;
+  options: OptionView<'each' | 'both'>[];
+  example: string | null;
+  /** Exercises with no recorded dumbbell count: each needs its own answer, with none pre-selected (DX6). */
+  ask: { title: string; lead: string; rows: PerHandRowView[] } | null;
+  /** Every other exercise with what it will import as, and a way to change it. */
+  rows: { title: string; note: string | null; rows: PerHandRowView[] } | null;
+}
+
+function weightText(value: number, unit: WeightUnit): string {
+  return `${formatNumber(value)}${NBSP}${unit}`;
+}
+
+/** `60 kg → 30 kg each`; `30 kg → 30 kg (one dumbbell)`; `14 kg → not answered yet`. */
+export function perHandConversion(e: Pick<PerHandExercise, 'reading' | 'sample'>): string {
+  const s = e.sample;
+  if (!s) return 'No weight to show';
+  const from = weightText(s.value, s.unit);
+  if (e.reading === null || s.imported === null) return `${from} → not answered yet`;
+  return `${from} → ${weightText(s.imported, s.unit)}${e.reading === 'one' ? ' (one dumbbell)' : ' each'}`;
+}
+
+function perHandRow(e: PerHandExercise): PerHandRowView {
+  const pick = (value: PerHandReading | null, label: string): PerHandChoice => ({ value, label, selected: e.override === value });
+  const choices =
+    e.implements === 2
+      ? [pick(null, 'Same'), pick('each', 'Each'), pick('both', 'Both together')]
+      : e.implements === 1
+        ? [pick(null, 'One dumbbell'), pick('each', 'Each'), pick('both', 'Both together')]
+        : [pick('one', 'One dumbbell'), pick('each', 'Each'), pick('both', 'Both together')];
+  return { key: e.key, title: e.name, conversion: perHandConversion(e), choices };
+}
+
+/**
+ * The dumbbell question (§2.5 step 3b; review r3 S1). Each / both is asked
+ * for two-dumbbell exercises only; one-dumbbell exercises (a one-arm row, a
+ * goblet squat) import as written; an exercise whose count isn't recorded is
+ * asked on its own. Every exercise shows what it will import as before the
+ * import, so a wrong reading is visible.
+ */
+export function perHandOptions(a: ImportAnalysis, locale?: string): PerHandView | null {
   const q = a.perHand;
   if (!q) return null;
   const ex = q.example;
   const v = ex ? formatNumber(ex.value) : '22.5';
   const unit = ex?.unit ?? 'kg';
+  const unknown = q.exercises.filter((e) => e.implements === null);
+  const known = q.exercises.filter((e) => e.implements !== null);
+  const ones = known.filter((e) => e.implements === 1).length;
+  // A lone two-dumbbell exercise is fully shown by the options above it.
+  const lone = known.length === 1 && known[0]?.implements === 2 && known[0].override === null;
   return {
     title: 'Dumbbell weights',
     lead: 'FitNotes doesn’t record whether a dumbbell weight is one dumbbell or both together.',
-    question: `For ${q.exercises.length === 1 ? 'this exercise' : `these ${String(q.exercises.length)} exercises`}, “${v}” means:`,
-    options: [
-      { value: 'each', label: 'Each dumbbell', detail: `Imported as ${v}${NBSP}${unit} each`, selected: q.answer === 'each' },
-      { value: 'both', label: 'Both dumbbells together', detail: `Imported as ${formatNumber((ex?.value ?? 22.5) / 2)}${NBSP}${unit} each`, selected: q.answer === 'both' },
-    ],
+    question: q.pairs === 0 ? null : `For ${q.pairs === 1 ? 'this exercise' : `these ${String(q.pairs)} exercises`} with two dumbbells, “${v}” means:`,
+    options:
+      q.pairs === 0
+        ? []
+        : [
+            { value: 'each', label: 'Each dumbbell', detail: `Imported as ${v}${NBSP}${unit} each`, selected: q.answer === 'each' },
+            { value: 'both', label: 'Both dumbbells together', detail: `Imported as ${formatNumber((ex?.value ?? 22.5) / 2)}${NBSP}${unit} each`, selected: q.answer === 'both' },
+          ],
     example: ex ? `Example from your file (${dayMonthYear(ex.date, locale)}): ${ex.name}  ${v}${NBSP}×${NBSP}${String(ex.reps)}` : null,
+    ask:
+      unknown.length === 0
+        ? null
+        : {
+            title: 'One dumbbell or two?',
+            lead: `GymSmarter doesn’t know whether ${unknown.length === 1 ? 'this exercise uses' : 'these exercises use'} one dumbbell or two. Choose for each.`,
+            rows: unknown.map(perHandRow),
+          },
+    rows:
+      known.length === 0 || lone
+        ? null
+        : {
+            title: q.pairs > 0 ? 'Different for some?' : 'Each exercise',
+            note: ones === 0 ? null : `${plural(ones, 'exercise uses', 'exercises use')} one dumbbell, so ${ones === 1 ? 'its weight is' : 'their weights are'} imported as written.`,
+            rows: known.map(perHandRow),
+          },
   };
 }
 

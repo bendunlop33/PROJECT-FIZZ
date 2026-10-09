@@ -10,6 +10,8 @@ const ALIASES: Record<string, string[]> = {
   'Lateral raise': ['Dumbbell lateral raise', 'Side raise'],
   'Triceps pushdown': ['Cable pushdown', 'Rope pushdown'],
 };
+/** The catalogue's `implements` for the starter dumbbell exercises (packages/catalogue/data/exercises); the rest use two. */
+const ONE_DUMBBELL = new Set(['dumbbell-one-arm-row', 'dumbbell-goblet-squat']);
 export const CANDIDATES: MatchCandidate[] = [
   ...starterExercises('2026-10-01T00:00:00.000Z').map((e) => ({
     exerciseId: e.id,
@@ -19,6 +21,7 @@ export const CANDIDATES: MatchCandidate[] = [
     laterality: e.laterality,
     defaultLoadConvention: e.defaultLoadConvention,
     compatibleEquipment: e.compatibleEquipment,
+    implements: e.defaultLoadConvention === 'per_hand' ? (ONE_DUMBBELL.has(e.catalogueKey ?? '') ? (1 as const) : (2 as const)) : null,
   })),
   {
     exerciseId: '00000000-0000-4000-8000-00000000e2b0',
@@ -28,6 +31,7 @@ export const CANDIDATES: MatchCandidate[] = [
     laterality: 'bilateral',
     defaultLoadConvention: 'total',
     compatibleEquipment: ['ez_bar'],
+    implements: null,
   },
 ];
 export const idOf = (name: string): string => {

@@ -6,6 +6,7 @@ import type {
   FitNotesVariant,
   ImportAnswers,
   ImportBarKind,
+  ImplementCount,
   ImportedSet,
   ImportRow,
   ImportRowResult,
@@ -14,6 +15,7 @@ import type {
   LoadConvention,
   NameAnswer,
   PerHandAnswer,
+  PerHandReading,
   TotalAnswer,
   WeightUnit,
 } from '@fizz/schemas';
@@ -99,6 +101,8 @@ export interface ResolvedExercise {
   convention: LoadConvention;
   /** Which bar a `plates_only` value adds (only read for `total`). */
   bar: BarOf;
+  /** `per_hand`: one dumbbell or two, from the catalogue; null when not recorded (asked; review r3 S1). */
+  implements: ImplementCount | null;
   /** `Add new`: a custom exercise created when the import commits. */
   newKind: CustomExerciseKind | null;
 }
@@ -132,6 +136,44 @@ export interface GroupQuestion<A> {
   answer: A | null;
   example: ExampleSet | null;
   /** Some exercise in the group has neither an override nor the group answer. */
+  open: boolean;
+}
+
+/** One exercise on the dumbbell question (review r3 S1). */
+export interface PerHandExercise {
+  key: string;
+  /** As first written in the file. */
+  name: string;
+  /** The app's exercise it maps to. */
+  exerciseName: string;
+  sets: number;
+  /** One dumbbell or two, from the catalogue. Null: not recorded, so it is asked on its own. */
+  implements: ImplementCount | null;
+  override: PerHandReading | null;
+  /** How its values are read now (`perHandReading`). Null: still to answer. */
+  reading: PerHandReading | null;
+  /** Its newest weight in the file, and that weight per dumbbell under `reading` (null while unanswered). */
+  sample: { value: number; unit: WeightUnit; imported: number | null } | null;
+}
+
+/**
+ * Dumbbell weights (§2.5 step 3b; review r3 S1). The group answer (each /
+ * both) is asked only for exercises done with two dumbbells. One-dumbbell
+ * exercises read as written; exercises with no recorded count are asked one
+ * by one with no default (DX6). Every exercise shows what it will import as.
+ */
+export interface PerHandQuestion {
+  exercises: PerHandExercise[];
+  /** The group answer, for two-dumbbell exercises with no answer of their own. */
+  answer: PerHandAnswer | null;
+  /** Two-dumbbell exercises (the group question is shown only when there is one). */
+  pairs: number;
+  /** The newest two-dumbbell set, for the group options. */
+  example: ExampleSet | null;
+  /** A two-dumbbell exercise waits for the group answer. */
+  needsGroup: boolean;
+  /** Exercises with no recorded count and no answer yet. */
+  needsCount: number;
   open: boolean;
 }
 
@@ -196,7 +238,7 @@ export interface ImportAnalysis {
   /** Weighted rows per unit, to say `weights in kg`, `in lb` or `in kg and lb (per set)`. */
   units: { kg: number; lb: number };
   names: NameRow[];
-  perHand: GroupQuestion<PerHandAnswer> | null;
+  perHand: PerHandQuestion | null;
   /** `total` exercises that use a bar (barbell, EZ bar, trap bar). Bar-less ones (a kettlebell) aren't asked. */
   total: (GroupQuestion<TotalAnswer> & { bars: BarWeightQuestion[]; missingBarWeight: boolean }) | null;
   bodyweight: BodyweightQuestion[];
@@ -255,7 +297,15 @@ function resolveName(
     if (!c) return { kind: 'open' };
     return {
       kind: 'exercise',
-      exercise: { exerciseId: c.exerciseId, name: c.name, laterality: c.laterality, convention: c.defaultLoadConvention, bar: barOf(c.compatibleEquipment), newKind: null },
+      exercise: {
+        exerciseId: c.exerciseId,
+        name: c.name,
+        laterality: c.laterality,
+        convention: c.defaultLoadConvention,
+        bar: barOf(c.compatibleEquipment),
+        implements: c.implements,
+        newKind: null,
+      },
     };
   };
   if (answer) {
@@ -273,6 +323,8 @@ function resolveName(
             laterality: 'bilateral',
             convention: CONVENTION_BY_KIND[answer.equipment],
             bar: answer.equipment === 'barbell' ? 'barbell' : 'none',
+            // A new dumbbell exercise: one or two isn't known, so it is asked (review r3 S1).
+            implements: null,
             newKind: answer.equipment,
           },
         };
@@ -285,6 +337,25 @@ function resolveName(
 
 function half(v: number): number {
   return fromScaled(toScaled(v) / 2);
+}
+
+/**
+ * How one exercise's dumbbell values are read (review r3 S1): Ben's own
+ * answer for it; else `one` when the catalogue says it uses one dumbbell
+ * (the group answer never halves a one-arm row or a goblet squat); else the
+ * group answer when it uses two. An exercise whose count isn't recorded
+ * never takes the group answer: null until Ben answers it.
+ */
+export function perHandReading(count: ImplementCount | null, override: PerHandReading | null, group: PerHandAnswer | null): PerHandReading | null {
+  if (override !== null) return override;
+  if (count === 1) return 'one';
+  if (count === 2) return group;
+  return null;
+}
+
+/** The weight per dumbbell a written value imports as: halved only for `both`. */
+export function perHandValue(value: number, reading: PerHandReading): number {
+  return reading === 'both' ? half(value) : value;
 }
 
 function plus(a: number, b: number): number {
@@ -307,6 +378,47 @@ function barWeightOf(bar: ImportBarKind, answers: ImportAnswers): { kg: number |
 
 function negative(value: number): string {
   return `Negative weight (${String(value)}) on an exercise that doesn’t use assistance`;
+}
+
+/** The dumbbell question from the rows still to import (review r3 S1). */
+function perHandQuestion(live: readonly FitNotesRow[], resolved: (r: FitNotesRow) => ResolvedExercise | null, answers: ImportAnswers): PerHandQuestion | null {
+  const members = new Map<string, PerHandExercise>();
+  const sampleDates = new Map<string, string>();
+  let example: ExampleSet | null = null;
+  for (const r of live) {
+    const ex = resolved(r);
+    if (ex?.convention !== 'per_hand') continue;
+    const w = enteredWeight(r, answers) ?? (r.bothColumns ? { value: r.bothColumns.kg, unit: 'kg' as const } : null);
+    if (w === null) continue;
+    const key = nameKey(r.exercise);
+    let m = members.get(key);
+    if (!m) {
+      const override = answers.perHandOverrides[key] ?? null;
+      m = { key, name: r.exercise, exerciseName: ex.name, sets: 0, implements: ex.implements, override, reading: perHandReading(ex.implements, override, answers.perHand), sample: null };
+      members.set(key, m);
+    }
+    m.sets += 1;
+    const date = r.date ?? '';
+    // The newest readable set (first in the file on that date); a negative weight can't be read for dumbbells.
+    if (r.reps !== null && w.value >= 0 && (m.sample === null || date > (sampleDates.get(key) ?? ''))) {
+      m.sample = { value: w.value, unit: w.unit, imported: m.reading === null ? null : perHandValue(w.value, m.reading) };
+      sampleDates.set(key, date);
+    }
+    if (ex.implements === 2 && r.reps !== null && (example === null || date > example.date)) example = { name: r.exercise, date, value: w.value, unit: w.unit, reps: r.reps };
+  }
+  if (members.size === 0) return null;
+  const exercises = [...members.values()];
+  const needsGroup = exercises.some((e) => e.reading === null && e.implements === 2);
+  const needsCount = exercises.filter((e) => e.reading === null && e.implements === null).length;
+  return {
+    exercises,
+    answer: answers.perHand,
+    pairs: exercises.filter((e) => e.implements === 2).length,
+    example,
+    needsGroup,
+    needsCount,
+    open: needsGroup || needsCount > 0,
+  };
 }
 
 /**
@@ -364,7 +476,7 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     const exercises = [...members.values()];
     return { exercises, answer: groupAnswer, example, open: exercises.some((e) => e.override === null && groupAnswer === null) };
   };
-  const perHand = groupOf<PerHandAnswer>((ex) => ex.convention === 'per_hand', answers.perHand, answers.perHandOverrides);
+  const perHand = perHandQuestion(live, resolved, answers);
   // Barbell question: `total` exercises on a bar. Each bar kind has its own weight (review S1).
   const onBar = (ex: ResolvedExercise) => ex.convention === 'total' && ex.bar !== 'none';
   const totalGroup = groupOf<TotalAnswer>(onBar, answers.total, answers.totalOverrides);
@@ -457,10 +569,10 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     switch (ex.convention) {
       case 'per_hand': {
         if (w === null || value === null) return set('per_hand', null);
-        const choice = answers.perHandOverrides[key] ?? answers.perHand;
-        if (choice === null) return { result: 'pending', reason: 'per_hand' };
+        const reading = perHandReading(ex.implements, answers.perHandOverrides[key] ?? null, answers.perHand);
+        if (reading === null) return { result: 'pending', reason: 'per_hand' };
         if (value < 0) return { result: 'unreadable', detail: negative(value) };
-        return set('per_hand', { value: choice === 'each' ? value : half(value), unit: w.unit, convention: 'per_hand' });
+        return set('per_hand', { value: perHandValue(value, reading), unit: w.unit, convention: 'per_hand' });
       }
       case 'total': {
         if (w === null || value === null) return set('total', null);

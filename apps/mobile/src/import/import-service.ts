@@ -177,6 +177,8 @@ export function buildCandidates(
   const candidates: MatchCandidate[] = [];
   const add = (e: Exercise, aliases: readonly string[]) => {
     exercises.set(e.id, e);
+    // One dumbbell or two comes from the catalogue entry; a custom exercise has none, so it is asked (review r3 S1).
+    const entry = e.catalogueKey ? byKey.get(e.catalogueKey) : undefined;
     candidates.push({
       exerciseId: e.id,
       name: e.name,
@@ -185,6 +187,7 @@ export function buildCandidates(
       laterality: e.laterality,
       defaultLoadConvention: e.defaultLoadConvention,
       compatibleEquipment: e.compatibleEquipment,
+      implements: e.defaultLoadConvention === 'per_hand' ? (entry?.implements ?? null) : null,
     });
   };
   for (const e of dbExercises) {
@@ -257,7 +260,7 @@ export function createImportService(deps: ImportServiceDeps) {
     const stamp = stableStringify({
       defaultUnit,
       gyms: gyms.map((g) => g.id).sort(),
-      candidates: built.candidates.map((c) => [c.exerciseId, c.name, c.defaultLoadConvention, [...c.compatibleEquipment].sort()]),
+      candidates: built.candidates.map((c) => [c.exerciseId, c.name, c.defaultLoadConvention, [...c.compatibleEquipment].sort(), c.implements]),
       aliases: [...aliases.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
       appDates: [...appDates].filter((d) => fileDates.has(d)).sort(),
       importedDates: [...importedDates.entries()].filter(([d]) => fileDates.has(d)).map(([d, e]) => [d, e.jobId]).sort(),

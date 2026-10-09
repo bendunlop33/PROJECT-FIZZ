@@ -4,7 +4,7 @@ import { TextInput, View } from 'react-native';
 
 import type { AnswerChange } from '@fizz/domain';
 
-import { barWeightEntry, bodyweightOptions, longDate, perHandOptions, totalOptions, type BarWeightView, type OptionView } from '../../import/views';
+import { barWeightEntry, bodyweightOptions, longDate, perHandOptions, totalOptions, type BarWeightView, type OptionView, type PerHandRowView } from '../../import/views';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -12,7 +12,9 @@ import { AppText, ChecklistRow, ChoiceCard, Group, Screen, SectionHeader, Status
 
 /**
  * One import question (data-import-export §2.5 steps 3b–3c): dumbbell and
- * barbell conventions (one answer for the group, per-exercise overrides),
+ * barbell conventions (one answer for the group, per-exercise overrides;
+ * dumbbells: each exercise shows what it will import as, and one-dumbbell
+ * or unknown exercises are never read by the group answer, review r3 S1),
  * a bodyweight exercise with weights, the weight unit for rows with both
  * columns, effort ratings in comments, dates already in GymSmarter, and the
  * gym. Convention questions start with nothing selected (DX6). Each change
@@ -61,14 +63,46 @@ export function ImportQuestionScreen() {
   switch (question) {
     case 'per_hand': {
       const q = perHandOptions(a);
-      if (q && a.perHand) {
+      if (q) {
+        const row = (r: PerHandRowView) => (
+          <View key={r.key} style={{ gap: theme.space['1'] }}>
+            <AppText variant="body">{r.title}</AppText>
+            <AppText variant="callout" color="text.secondary">
+              {r.conversion}
+            </AppText>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+              {r.choices.map((c) => (
+                <TextButton key={c.label} label={c.selected ? `✓ ${c.label}` : c.label} tone={c.selected ? 'accent' : 'secondary'} onPress={() => void answer({ kind: 'per_hand_override', key: r.key, answer: c.value })} />
+              ))}
+            </View>
+          </View>
+        );
         body = (
           <>
             <AppText variant="body">{q.lead}</AppText>
-            <AppText variant="headline">{q.question}</AppText>
+            {q.question ? <AppText variant="headline">{q.question}</AppText> : null}
             {options(q.options, (v) => ({ kind: 'per_hand', answer: v }))}
             {q.example ? <AppText variant="callout" color="text.secondary">{q.example}</AppText> : null}
-            {overrides(a.perHand.exercises, [{ value: 'each', label: 'Each' }, { value: 'both', label: 'Both together' }], (k, v) => ({ kind: 'per_hand_override', key: k, answer: v }))}
+            {q.ask ? (
+              <>
+                <SectionHeader title={q.ask.title} />
+                <AppText variant="callout" color="text.secondary">
+                  {q.ask.lead}
+                </AppText>
+                {q.ask.rows.map(row)}
+              </>
+            ) : null}
+            {q.rows ? (
+              <>
+                <SectionHeader title={q.rows.title} />
+                {q.rows.note ? (
+                  <AppText variant="callout" color="text.secondary">
+                    {q.rows.note}
+                  </AppText>
+                ) : null}
+                {q.rows.rows.map(row)}
+              </>
+            ) : null}
           </>
         );
       }

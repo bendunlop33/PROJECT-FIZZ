@@ -103,7 +103,9 @@ describe('import preview wording', () => {
     expect(v.primary).toEqual({ label: 'Answer 3 questions to import', enabled: false });
 
     const ph = perHandOptions(d.analysis, 'en-GB');
-    expect(ph?.question).toBe('For this exercise, “50” means:');
+    expect(ph?.question).toBe('For this exercise with two dumbbells, “50” means:');
+    // A lone two-dumbbell exercise: the options say it all, so no per-exercise list.
+    expect([ph?.ask, ph?.rows]).toEqual([null, null]);
     expect(ph?.options.map((o) => [o.label, plain(o.detail), o.selected])).toEqual([
       ['Each dumbbell', 'Imported as 50 lb each', false],
       ['Both dumbbells together', 'Imported as 25 lb each', false],
@@ -172,6 +174,84 @@ describe('import preview wording', () => {
       ['Skull crusher', 27.5],
       ['Kettlebell swing', 24],
     ]);
+  });
+
+  it('dumbbells: one-dumbbell exercises are never halved, unknown ones are asked, and each shows what it imports as (review r3 S1)', async () => {
+    const DB = [
+      B2,
+      '2026-09-01,Dumbbell Bench Press,Chest,60.0,kgs,8,,,,',
+      '2026-09-01,One-Arm DB Row,Back,30.0,kgs,10,,,,',
+      '2026-09-01,Goblet Squats,Legs,24.0,kgs,10,,,,',
+      '2026-09-01,Zottman Curl,Arms,14.0,kgs,10,,,,',
+    ].join('\n');
+    let d = await open(DB);
+    // The real catalogue: two names match, the third is checked, and Zottman Curl isn't in it.
+    expect(d.analysis.names.map((n) => [n.name, n.match.status])).toEqual([
+      ['Zottman Curl', 'no_match'],
+      ['Dumbbell Bench Press', 'matched'],
+      ['Goblet Squats', 'matched'],
+      ['One-Arm DB Row', 'matched'],
+    ]);
+    d = await step(d, { kind: 'name', key: 'zottman curl', answer: { kind: 'new', equipment: 'dumbbells' } });
+    expect(previewView(d, 'en-GB').questions.map((q) => q.line.text)).toEqual(['Exercise names: 1 checked', 'Dumbbell weights: each or both?']);
+
+    const before = perHandOptions(d.analysis, 'en-GB');
+    expect(before?.question).toBe('For this exercise with two dumbbells, “60” means:');
+    expect(before?.ask).toEqual({
+      title: 'One dumbbell or two?',
+      lead: 'GymSmarter doesn’t know whether this exercise uses one dumbbell or two. Choose for each.',
+      rows: [
+        {
+          key: 'zottman curl',
+          title: 'Zottman Curl',
+          conversion: `14${NBSP}kg → not answered yet`,
+          choices: [
+            { value: 'one', label: 'One dumbbell', selected: false },
+            { value: 'each', label: 'Each', selected: false },
+            { value: 'both', label: 'Both together', selected: false },
+          ],
+        },
+      ],
+    });
+    const known = (q: ReturnType<typeof perHandOptions>) => q?.rows?.rows.map((r) => [r.title, plain(r.conversion), r.choices.filter((c) => c.selected).map((c) => c.label)]);
+    expect(before?.rows?.title).toBe('Different for some?');
+    expect(before?.rows?.note).toBe('2 exercises use one dumbbell, so their weights are imported as written.');
+    expect(known(before)).toEqual([
+      ['Dumbbell Bench Press', '60 kg → not answered yet', ['Same']],
+      ['One-Arm DB Row', '30 kg → 30 kg (one dumbbell)', ['One dumbbell']],
+      ['Goblet Squats', '24 kg → 24 kg (one dumbbell)', ['One dumbbell']],
+    ]);
+
+    // "Both together" for the pair: the one-arm row and the goblet squat stay as written; the new exercise still waits.
+    d = await step(d, { kind: 'per_hand', answer: 'both' });
+    expect(known(perHandOptions(d.analysis, 'en-GB'))).toEqual([
+      ['Dumbbell Bench Press', '60 kg → 30 kg each', ['Same']],
+      ['One-Arm DB Row', '30 kg → 30 kg (one dumbbell)', ['One dumbbell']],
+      ['Goblet Squats', '24 kg → 24 kg (one dumbbell)', ['One dumbbell']],
+    ]);
+    expect(previewView(d, 'en-GB').questions.map((q) => q.line.text)).toEqual(['Exercise names: 1 checked', '1 dumbbell exercise: one dumbbell or two?']);
+    expect(previewView(d, 'en-GB').primary).toEqual({ label: 'Answer 1 question to import', enabled: false });
+
+    d = await step(d, { kind: 'per_hand_override', key: 'zottman curl', answer: 'one' });
+    expect(perHandOptions(d.analysis, 'en-GB')?.ask?.rows.map((r) => [plain(r.conversion), r.choices.filter((c) => c.selected).map((c) => c.label)])).toEqual([['14 kg → 14 kg (one dumbbell)', ['One dumbbell']]]);
+    expect(previewView(d, 'en-GB').questions.map((q) => q.line.text)).toEqual(['Exercise names: 1 checked', 'Dumbbells: 1 both together · 3 one dumbbell']);
+
+    // Ben says he rowed with two dumbbells and wrote the pair: only then is the row halved.
+    d = await step(d, { kind: 'per_hand_override', key: 'one-arm db row', answer: 'both' });
+    expect(known(perHandOptions(d.analysis, 'en-GB'))?.[1]).toEqual(['One-Arm DB Row', '30 kg → 15 kg each', ['Both together']]);
+    d = await step(d, { kind: 'per_hand_override', key: 'one-arm db row', answer: null });
+
+    const r = await s.imports.commit(d.draftId, d.mappingVersion, 'op-dumbbells');
+    if (!r.ok) throw new Error(r.reason);
+    const job = await s.imports.importedRows(r.jobId, '2026-09-01');
+    expect(job?.rows.map((x) => [x.imported?.exerciseName, x.imported?.load, x.imported?.laterality])).toEqual([
+      ['Dumbbell bench press', { value: 30, unit: 'kg', convention: 'per_hand' }, 'bilateral'],
+      ['One-arm dumbbell row', { value: 30, unit: 'kg', convention: 'per_hand' }, 'unilateral'],
+      ['Goblet squat', { value: 24, unit: 'kg', convention: 'per_hand' }, 'bilateral'],
+      ['Zottman Curl', { value: 14, unit: 'kg', convention: 'per_hand' }, 'bilateral'],
+    ]);
+    // Ben's answers are kept with the import.
+    expect(job?.job.answers).toMatchObject({ perHand: 'both', perHandOverrides: { 'zottman curl': 'one' } });
   });
 
   it('copies the original row as written', () => {
