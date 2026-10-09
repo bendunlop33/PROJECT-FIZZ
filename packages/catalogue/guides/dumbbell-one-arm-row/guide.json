@@ -8,6 +8,7 @@
   "units": "bodyHeight",
   "durationMs": 2700,
   "loop": "cycle",
+  "motion": "phases",
   "ground": { "y": 0, "scrollPerCycle": 0 },
   "props": [
     { "id": "bench", "type": "bench", "x": -0.33, "length": 0.58, "height": 0.244 },
@@ -27,8 +28,8 @@
       "ease": "smooth"
     },
     {
-      "t": 0.1852, "label": "Halfway", "caption": "Elbow leads up and back",
-      "joints": { "shoulderNear": 30, "elbowNear": 65 },
+      "t": 0.1581, "pass": true, "label": "Halfway", "caption": "Elbow leads up and back",
+      "joints": { "shoulderNear": 30, "elbowNear": 60 },
       "ease": "smooth"
     },
     {
@@ -36,7 +37,7 @@
       "joints": { "shoulderNear": -22, "elbowNear": 98 },
       "holdMs": 300, "ease": "smooth"
     },
-    { "t": 0.7407, "sameAs": 1, "caption": "Lower slowly to a full hang", "ease": "smooth" },
+    { "t": 0.7787, "sameAs": 1, "caption": "Lower slowly to a full hang", "ease": "smooth" },
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "db", "showIn": ["static"] }],
