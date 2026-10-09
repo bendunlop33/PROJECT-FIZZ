@@ -5,8 +5,11 @@
  * Writes `guides/<id>/preview.png`: a strip of the labelled key frames plus 6
  * in-between frames, in Direction D dark (top row) and light (bottom row).
  * Key frames carry the static bar-path trace. Labels sit under the frames
- * (frames themselves never contain text). `--frames` also writes every 30 fps
- * frame to `guides/<id>/.frames/` (gitignored) for a closer look.
+ * (frames themselves never contain text). The sheet is laid out in points
+ * (each frame 240 pt, the legibility size) and rasterised at 3×, the scale a
+ * phone draws it at (guides v2 §7.2), so the review shows the app's sharpness.
+ * `--frames` also writes every 30 fps frame (400 pt at 2×) to
+ * `guides/<id>/.frames/` (gitignored) for a closer look.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -25,7 +28,12 @@ const SHEET = {
   light: { canvas: '#F6F3EF', label: '#57504A', faint: '#6B645D' },
 } as const;
 
+/** Frame size in points, and the scale the sheet is rasterised at (an iPhone draws at 3×). */
 const PX = 240;
+const SCALE = 3;
+/** `--frames`: the largest card canvas (design-system `guide.canvasMax`) at 2×. */
+const FRAME_PX = 400;
+const FRAME_SCALE = 2;
 const GAP = 14;
 const LABEL_H = 46;
 
@@ -87,13 +95,13 @@ const parts: string[] = [];
 });
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${rowH * 2}" viewBox="0 0 ${width} ${rowH * 2}">${parts.join('')}</svg>`;
 
-function png(svgText: string): Buffer {
-  return new Resvg(svgText, { font: { loadSystemFonts: true, defaultFontFamily: 'DejaVu Sans' } }).render().asPng();
+function png(svgText: string, zoom: number): Buffer {
+  return new Resvg(svgText, { fitTo: { mode: 'zoom', value: zoom }, font: { loadSystemFonts: true, defaultFontFamily: 'DejaVu Sans' } }).render().asPng();
 }
 
 const out = join(file.dir, 'preview.png');
-writeFileSync(out, png(svg));
-console.log(`Wrote ${out} (${frames.length} frames × dark/light, camera ${camera.size.toFixed(3)} H).`);
+writeFileSync(out, png(svg, SCALE));
+console.log(`Wrote ${out} (${frames.length} frames × dark/light at ${SCALE}×, camera ${camera.size.toFixed(3)} H).`);
 
 if (args.includes('--frames')) {
   const dir = join(file.dir, '.frames');
@@ -102,7 +110,7 @@ if (args.includes('--frames')) {
   const n = Math.round((guide.durationMs / 1000) * 30);
   for (let i = 0; i < n; i += 1) {
     const name = join(dir, `frame-${String(i).padStart(3, '0')}.png`);
-    writeFileSync(name, png(renderSvg(poseAt(prepared, i / n), { px: PX * 2, style, camera })));
+    writeFileSync(name, png(renderSvg(poseAt(prepared, i / n), { px: FRAME_PX, style, camera }), FRAME_SCALE));
   }
   console.log(`Wrote ${n} frames to ${dir}.`);
 }
