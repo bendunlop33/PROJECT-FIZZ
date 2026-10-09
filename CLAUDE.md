@@ -1,6 +1,10 @@
-# PROJECT-FIZZ — personal training app
+# PROJECT-FIZZ — GymSmarter, a personal training app
 
 Shared context for every agent working in this repo. Read this first.
+
+The app is called **GymSmarter** (approved by Ben, 9 Oct 2026). "Fizz" in older
+docs and internal identifiers (bundle ID, `@fizz/*`, `FIZZ_*`, the Xcode project,
+data and backup formats) is the same app; never rename those identifiers.
 
 ## What we're building
 
