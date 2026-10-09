@@ -29,6 +29,7 @@ import type { EquipmentInstance, Exercise, Gym, SessionAggregate, SessionCommand
 import type { RestAlertController } from '../alerts/rest-alerts';
 import { createBackupService, type BackupFileStore, type TextFile } from '../backup/backup-service';
 import { createRestoreService } from '../backup/restore-service';
+import { createGymServices } from './gym-services';
 import { createWorkoutServices } from './workout-services';
 import { bumpProfile, newProfile, setupStep, type SetupStep } from './setup';
 
@@ -305,8 +306,12 @@ export function createAppServices(deps: AppServicesDeps) {
     afterCommand,
   });
 
+  /** Gyms and equipment (Your data): the minimal gym editor. */
+  const gyms = createGymServices({ repos, now: deps.now, profile: getProfile });
+
   return {
     ...loop,
+    gyms,
     yourData,
     coachingKnowledge,
     setup,

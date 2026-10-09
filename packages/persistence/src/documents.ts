@@ -185,6 +185,22 @@ export class SqliteEquipment extends DocumentRepository<EquipmentInstance> {
   listByGym(gymId: string): Promise<EquipmentInstance[]> {
     return this.listWhere('gym_id = ?', [gymId]);
   }
+
+  /**
+   * Whether any logged set used this item (gym-editor GE6: its unit is then
+   * locked, so history stays comparable). Finished, active or discarded
+   * workouts all count: the set exists either way.
+   */
+  hasLoggedSets(equipmentId: string): Promise<boolean> {
+    return this.db.read(async (q) => {
+      const row = await q.getFirst(
+        `SELECT 1 AS used FROM session_exercises e JOIN session_sets s ON s.session_exercise_id = e.id
+         WHERE e.equipment_id = ? AND s.status = 'completed' LIMIT 1`,
+        [equipmentId],
+      );
+      return row !== null;
+    });
+  }
 }
 
 export class SqliteExercises extends DocumentRepository<Exercise> {

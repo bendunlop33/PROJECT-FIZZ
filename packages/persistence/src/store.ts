@@ -18,6 +18,7 @@ import { SqliteSessions } from './sessions';
 
 export interface SqliteRepositories extends Repositories {
   gyms: SqliteGyms;
+  equipment: SqliteEquipment;
   sessions: SqliteSessions;
   checkIns: SqliteCheckIns;
   painFlags: SqlitePainFlags;
