@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { AppState } from 'react-native';
 
+import { isWorkoutOnScreen, showRestAlertInForeground } from './presentation';
 import type { NotifierPort } from './rest-alerts';
 
 /**
@@ -10,12 +11,16 @@ import type { NotifierPort } from './rest-alerts';
  * Device test still needed for this build's alerts (lock-screen-and-alerts §7).
  */
 
-// In the foreground the app's own cue is the alert: never also a banner (§4.3).
+// With the workout screen on screen, the app's own cue is the alert: never
+// also a banner (§4.3). Minimised to Today or Profile, the banner and sound
+// are the alert (review S1).
 Notifications.setNotificationHandler({
   handleNotification: (n) => {
-    const workout = n.request.identifier.startsWith('fizz.rest.');
-    const foreground = AppState.currentState === 'active';
-    const show = !(workout && foreground);
+    const show = showRestAlertInForeground({
+      isWorkoutAlert: n.request.identifier.startsWith('fizz.rest.'),
+      appActive: AppState.currentState === 'active',
+      workoutOnScreen: isWorkoutOnScreen(),
+    });
     return Promise.resolve({ shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false });
   },
 });

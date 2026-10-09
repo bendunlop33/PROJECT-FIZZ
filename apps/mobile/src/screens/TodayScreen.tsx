@@ -146,7 +146,9 @@ export function TodayScreen() {
       case 'resume': {
         const status =
           main.status.kind === 'resting'
-            ? `Rest ${formatDuration(Math.max(0, Math.ceil((toMs(main.status.deadlineUtc) - now) / 1000)))} left`
+            ? toMs(main.status.deadlineUtc) <= now
+              ? 'Rest over · ready for next set'
+              : `Rest ${formatDuration(Math.ceil((toMs(main.status.deadlineUtc) - now) / 1000))} left`
             : main.status.kind === 'paused'
               ? 'Paused'
               : main.status.kind === 'all_done'

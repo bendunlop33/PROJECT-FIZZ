@@ -7,6 +7,7 @@ import { formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type D
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { getAlertPermission, requestAlertPermission, type AlertPermission } from '../../alerts/notifier';
+import { restEndCueKey, setWorkoutOnScreen } from '../../alerts/presentation';
 import { nowMs as clockNow } from '../../clock';
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
@@ -95,6 +96,11 @@ export function WorkoutScreen() {
   useFocusEffect(
     useCallback(() => {
       void reload();
+      // While this screen is focused its own cue is the rest-end alert (review S1).
+      setWorkoutOnScreen(true);
+      return () => {
+        setWorkoutOnScreen(false);
+      };
     }, [reload]),
   );
 
@@ -548,7 +554,15 @@ export function WorkoutScreen() {
                 rest={rest}
                 tz={tz}
                 onAdjust={(deltaS) => {
-                  if (rest.kind === 'running') void run({ type: 'adjust_rest', at: services.now(), opId: newUuid(), timerId: rest.timerId, deltaS });
+                  if (rest.kind !== 'running') return;
+                  void run({ type: 'adjust_rest', at: services.now(), opId: newUuid(), timerId: rest.timerId, deltaS }).then((r) => {
+                    // −30 s to zero ends the rest here: play the rest-end cue once (review S6).
+                    const key = r.ok ? restEndCueKey(r.events) : null;
+                    if (key !== null && !played.current.has(key)) {
+                      played.current.add(key);
+                      haptic('restEnd');
+                    }
+                  });
                 }}
                 onSkip={() => {
                   if (rest.kind === 'running') void run({ type: 'skip_rest', at: services.now(), opId: `skip:${rest.timerId}:${String(rest.timerVersion)}`, timerId: rest.timerId });
