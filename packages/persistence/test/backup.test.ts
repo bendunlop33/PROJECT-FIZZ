@@ -483,6 +483,56 @@ describe('check a backup (verifyBackup, DX3) and restore bookkeeping', () => {
     expect(same.preview.onlyOnPhone).toEqual({ workouts: 0, newestWorkoutUtc: null, otherRecords: 0 });
   });
 
+  it('counts records whose content differs from the backup as replaced (PM decision on SP3)', async () => {
+    const target = await openManager(dir());
+    await target.restore(backupText, at(4000));
+    await target.store.repos.profiles.save({ ...profile({ preferredUnit: 'lb' }), effortScale: 'off', version: 2, updatedAtUtc: at(4100).utc }, 1);
+    const p = await target.preview(backupText);
+    if (!p.ok) throw new Error(p.error.message);
+    expect(p.preview.identical).toBe(false);
+    expect(p.preview.onlyOnPhone).toEqual({ workouts: 0, newestWorkoutUtc: null, otherRecords: 0 });
+    expect(p.preview.changedOnPhone).toEqual({ workouts: 0, newestWorkoutUtc: null, otherRecords: 1 });
+    await target.close();
+  });
+
+  it('a second restore after Undo says what the data kept for Undo holds before deleting it (review S2)', async () => {
+    const d = dir();
+    const target = await openManager(d);
+    await target.store.repos.profiles.save(profile({ preferredUnit: 'lb' }), null);
+    // 1. Restore A.
+    expect(await target.restore(backupText, at(4000))).toMatchObject({ ok: true, status: 'restored' });
+    expect(target.databaseNames).toEqual({ current: 'training-2.db', previous: 'training-1.db', orphan: null });
+    // 2. Train on the restored data: finish the backup's unfinished workout and add a gym.
+    const svc = createSessionService(target.store.repos, idGen(98_000));
+    const active = await target.store.repos.sessions.getActive(OWNER);
+    if (!active) throw new Error('fixture');
+    expect(await svc.dispatch(active.session.id, { type: 'finish', at: at(4500), opId: 'fin-after-restore', expectedVersion: active.session.version, endedAt: null })).toMatchObject({ ok: true });
+    await target.store.repos.gyms.save(gym(31), null);
+    // 3. Undo restore: training-2.db (with that work) is now the copy kept for Undo.
+    expect(await target.rollback(at(5000))).toMatchObject({ ok: true });
+    expect(target.databaseNames).toEqual({ current: 'training-1.db', previous: 'training-2.db', orphan: null });
+
+    // 4. Restore A again: the preview says what would be lost with the kept copy.
+    const p = await target.preview(backupText);
+    if (!p.ok) throw new Error(p.error.message);
+    expect(p.preview.keptForUndo).toEqual({ workouts: 1, newestWorkoutUtc: active.session.startedAt.utc, otherRecords: 1, keptSinceUtc: at(5000).utc, unreadable: false });
+    const checked = await target.check(backupText);
+    expect(checked.ok && checked.preview.keptForUndo?.workouts).toBe(1);
+    expect(await target.restore(backupText, at(6000))).toMatchObject({ ok: true, status: 'restored' });
+    // The kept copy (training-2.db) was deleted, as the preview said; training-3.db was Check's scratch copy.
+    expect(readdirSync(d).filter((f) => f.endsWith('.db')).sort()).toEqual(['fizz-meta.db', 'training-1.db', 'training-4.db']);
+
+    // A kept copy whose data is all in the backup or on the phone loses nothing.
+    const again = await target.preview(backupText);
+    if (!again.ok) throw new Error(again.error.message);
+    expect(again.preview.identical).toBe(true);
+    await target.store.repos.gyms.save(gym(32), null);
+    const after = await target.preview(backupText);
+    if (!after.ok) throw new Error(after.error.message);
+    expect(after.preview.keptForUndo).toMatchObject({ workouts: 0, otherRecords: 0 });
+    await target.close();
+  });
+
   it('says a restore was interrupted only when a restore (not a check) was building a file', async () => {
     const d = dir();
     const real = nodeDatabaseHost(d);

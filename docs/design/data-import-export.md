@@ -266,6 +266,13 @@ At AX1 and above each count table stacks: one block per row, `Workouts` then `Ba
 
 (For a coaching-knowledge restore the alert reads `Replace coaching knowledge? 2 approved rules on this phone aren't in the backup. Your data isn't changed.`) When nothing would be lost (the backup contains everything in the ticked sections, or the phone is empty) there is no alert: the preview's primary is the confirmation.
 
+**What counts as "replaced"** (PM decision on review SP3, 2026-10-09). The preview's warnings and the Step 4 alert count, per section:
+- records on this phone that the backup doesn't have (`3 workouts on this phone aren't in this backup … They'll be replaced.`);
+- records on this phone whose content differs from the backup's copy, such as a workout corrected after the backup was made (`1 workout on this phone differs from the backup's copy, changed since it was made. The backup's version replaces it.`). Content is compared record by record; when the backup is from an older schema it's compared by the version stamps every write bumps;
+- data kept only for Undo. A restore replaces the copy kept for `Undo last restore`, so anything in that copy that is neither on this phone nor in the backup is lost with it (review S2): `The data kept for Undo (what you switched away from on Sat 10 Oct, 18:06) holds 1 workout that isn't on this phone or in this backup. This restore deletes that copy, so it's lost unless saved in another backup.` A copy that can't be read is said to be deleted too. Data is never deleted without the preview saying so.
+
+Any of these makes the alert appear. The preview is stamped with the state it was made against; if the data or the kept copy changes before `Restore` is tapped, the restore is refused, the preview is rebuilt, and Ben confirms again (review S5).
+
 **Step 5: restoring.** `BlockingCover` (proposed component): full screen, `bg.canvas`, no buttons, no tab bar, no Ask pill.
 
 ```

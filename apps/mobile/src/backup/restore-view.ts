@@ -64,37 +64,74 @@ export function buildRestorePreviewView(p: RestorePreview, ctx: WhenContext): Re
   if (b.unfinishedWorkouts + c.unfinishedWorkouts > 0) rows.push({ label: 'Unfinished workouts', backup: n(b.unfinishedWorkouts), phone: n(c.unfinishedWorkouts) });
 
   const made = formatWhen(toMs(p.backup.createdAt.utc), ctx.nowMs, ctx.tz, ctx.locale);
-  const warnings: string[] = [];
-  const only = p.onlyOnPhone;
-  if (only.workouts > 0) {
-    const newest = only.newestWorkoutUtc ? ` (newest: ${formatShortDate(toMs(only.newestWorkoutUtc), ctx.tz, ctx.locale)})` : '';
-    warnings.push(`${plural(only.workouts, 'workout', 'workouts', ctx.locale)} on this phone ${only.workouts === 1 ? 'isn’t' : 'aren’t'} in this backup${newest}. ${only.workouts === 1 ? 'It’ll' : 'They’ll'} be replaced.`);
-  }
-  if (only.otherRecords > 0) {
-    warnings.push(`${plural(only.otherRecords, 'other record', 'other records', ctx.locale)} on this phone (gyms, equipment, check-ins and similar) ${only.otherRecords === 1 ? 'isn’t' : 'aren’t'} in this backup and will be replaced.`);
-  }
+  const lines = replaceLines(p, ctx);
   const notes: string[] = [];
   if (p.needsMigration) notes.push('This backup is from an older Fizz. It’s updated as it’s restored.');
   notes.push('Coach sign-in and API keys aren’t part of backups. Yours stay as they are.');
   notes.push('You can undo this from Data & backup.');
 
-  const lost = only.workouts + only.otherRecords;
   const confirm =
-    lost === 0
+    lines.length === 0
       ? null
       : {
           title: 'Replace your data on this phone?',
-          message: `${only.workouts > 0 ? `${plural(only.workouts, 'workout', 'workouts', ctx.locale)} on this phone ${only.workouts === 1 ? 'isn’t' : 'aren’t'} in the backup from ${made}.` : `Some records on this phone aren’t in the backup from ${made}.`} You can undo this from Data & backup.`,
+          message: `Compared with the backup from ${made}: ${lines.map((l) => l.short).join(' ')} You can undo this from Data & backup.`,
         };
   return {
     made: madeLine(p.backup.createdAt.utc, ctx),
     app: appLine(p.backup.app),
     rows,
-    warnings,
+    warnings: lines.map((l) => l.long),
     notes,
     confirm,
     identical: p.identical,
   };
+}
+
+/**
+ * What a restore replaces (PM decision on review SP3): records on this phone
+ * that the backup doesn't have, records whose content differs from the
+ * backup's, and anything only in the data kept for Undo (review S2), which a
+ * restore deletes. `long` is the preview's warning; `short` goes in the alert.
+ */
+function replaceLines(p: RestorePreview, ctx: WhenContext): { long: string; short: string }[] {
+  if (p.identical) return [];
+  const out: { long: string; short: string }[] = [];
+  const workouts = (n: number) => plural(n, 'workout', 'workouts', ctx.locale);
+  const records = (n: number) => plural(n, 'other record', 'other records', ctx.locale);
+  const isnt = (n: number) => (n === 1 ? 'isn’t' : 'aren’t');
+  const newest = (utc: string | null) => (utc ? ` (newest: ${formatShortDate(toMs(utc), ctx.tz, ctx.locale)})` : '');
+  const only = p.onlyOnPhone;
+  if (only.workouts > 0) {
+    const text = `${workouts(only.workouts)} on this phone ${isnt(only.workouts)} in this backup${newest(only.newestWorkoutUtc)}.`;
+    out.push({ long: `${text} ${only.workouts === 1 ? 'It’ll' : 'They’ll'} be replaced.`, short: text });
+  }
+  if (only.otherRecords > 0) {
+    const text = `${records(only.otherRecords)} on this phone (gyms, equipment, check-ins and similar) ${isnt(only.otherRecords)} in this backup.`;
+    out.push({ long: `${text} ${only.otherRecords === 1 ? 'It’ll' : 'They’ll'} be replaced.`, short: text });
+  }
+  const changed = p.changedOnPhone;
+  if (changed.workouts > 0) {
+    const text = `${workouts(changed.workouts)} on this phone ${changed.workouts === 1 ? 'differs' : 'differ'} from the backup’s copy, changed since it was made${newest(changed.newestWorkoutUtc)}.`;
+    out.push({ long: `${text} The backup’s version replaces ${changed.workouts === 1 ? 'it' : 'them'}.`, short: text });
+  }
+  if (changed.otherRecords > 0) {
+    const text = `${records(changed.otherRecords)} on this phone ${changed.otherRecords === 1 ? 'differs' : 'differ'} from the backup’s copy (a gym, an exercise or similar was changed since).`;
+    out.push({ long: `${text} The backup’s version replaces ${changed.otherRecords === 1 ? 'it' : 'them'}.`, short: text });
+  }
+  const kept = p.keptForUndo;
+  if (kept !== null) {
+    const since = kept.keptSinceUtc ? ` (what you switched away from on ${formatShortDate(toMs(kept.keptSinceUtc), ctx.tz, ctx.locale)}, ${formatTime(toMs(kept.keptSinceUtc), ctx.tz, ctx.locale)})` : '';
+    if (kept.unreadable) {
+      const text = `The data kept for Undo${since} couldn’t be read, so Fizz can’t say what’s in it. This restore deletes it.`;
+      out.push({ long: text, short: text });
+    } else if (kept.workouts + kept.otherRecords > 0) {
+      const parts = [kept.workouts > 0 ? `${workouts(kept.workouts)}${newest(kept.newestWorkoutUtc)}` : null, kept.otherRecords > 0 ? records(kept.otherRecords) : null].filter((x): x is string => x !== null);
+      const text = `The data kept for Undo${since} holds ${parts.join(' and ')} that ${kept.workouts + kept.otherRecords === 1 ? 'isn’t' : 'aren’t'} on this phone or in this backup. This restore deletes that copy, so ${kept.workouts + kept.otherRecords === 1 ? 'it’s' : 'they’re'} lost unless saved in another backup.`;
+      out.push({ long: text, short: text });
+    }
+  }
+  return out;
 }
 
 /** One line per failure (data-import-export §3.3, §5). Every one says nothing changed. */

@@ -11,7 +11,8 @@ import {
   type BackupError,
   type BackupFile,
 } from './backup/backup';
-import type { DatabaseHost, SqlDriver } from './driver';
+import { analyseReplace, type ReplaceCounts } from './backup/replace';
+import type { DatabaseHost, SqlDriver, SqlRow } from './driver';
 import { checkIntegrity } from './integrity';
 import { latestVersion, migrate, MIGRATIONS, readUserVersion, sqlMigration, type Migration } from './migrations';
 import { openStore, type Store } from './store';
@@ -77,16 +78,22 @@ export interface RestorePreview {
   replacesUnfinishedWorkout: boolean;
   /**
    * What is on this phone but not in the backup, so a restore would remove it
-   * (`3 workouts on this phone aren't in this backup`). Records are matched by
-   * primary key; a record in both with different content is replaced, not counted.
+   * (`3 workouts on this phone aren't in this backup`). Matched by primary key.
    */
-  onlyOnPhone: {
-    /** Finished or unfinished workouts (discarded ones aren't counted). */
-    workouts: number;
-    newestWorkoutUtc: string | null;
-    /** Profiles, gyms, equipment, exercises, routines, rules, check-ins and pain flags. */
-    otherRecords: number;
-  };
+  onlyOnPhone: ReplaceCounts;
+  /** On this phone and in the backup with different content: the backup's version replaces it (PM decision on SP3). */
+  changedOnPhone: ReplaceCounts;
+  /**
+   * The data kept for `Undo last restore` is deleted by a restore (review S2):
+   * what in it is neither on this phone now nor in the backup. Null when no
+   * copy is kept.
+   */
+  keptForUndo: (ReplaceCounts & { keptSinceUtc: string | null; unreadable: boolean }) | null;
+  /**
+   * The state this preview was made against (current data and the database
+   * slots). `restore` with a different stamp is refused as stale (review S5).
+   */
+  stamp: string;
 }
 
 export type PreviewOutcome = { ok: true; preview: RestorePreview; file: BackupFile } | { ok: false; error: BackupError };
@@ -120,26 +127,6 @@ class RestoreAbort extends Error {
 }
 
 const describe = (e: unknown): string => (e instanceof Error ? e.message : String(e));
-
-/** Owner data tables whose rows a restore would remove (sessions are counted separately). */
-const OTHER_RECORD_TABLES = ['profiles', 'gyms', 'equipment', 'exercises', 'routines', 'progression_rules', 'check_ins', 'pain_flags'] as const;
-
-function keyOf(row: Record<string, unknown>): string {
-  return typeof row.id === 'string' || typeof row.id === 'number' ? String(row.id) : JSON.stringify(row);
-}
-
-function onlyOnPhone(current: Record<string, readonly Record<string, unknown>[]>, backup: Record<string, readonly Record<string, unknown>[]>): RestorePreview['onlyOnPhone'] {
-  const ids = (t: string) => new Set((backup[t] ?? []).map(keyOf));
-  const inBackup = ids('sessions');
-  const sessions = (current.sessions ?? []).filter((s) => s.status !== 'discarded' && !inBackup.has(keyOf(s)));
-  const started = sessions.map((s) => s.started_at_utc).filter((v): v is string => typeof v === 'string').sort();
-  let otherRecords = 0;
-  for (const t of OTHER_RECORD_TABLES) {
-    const have = ids(t);
-    otherRecords += (current[t] ?? []).filter((r) => !have.has(keyOf(r))).length;
-  }
-  return { workouts: sessions.length, newestWorkoutUtc: started.at(-1) ?? null, otherRecords };
-}
 
 async function quietly(fn: () => Promise<void>): Promise<boolean> {
   try {
@@ -377,20 +364,60 @@ export class DatabaseManager {
     const { file } = parsed;
     const current = await this.current.db.read(async (q) => ({ schemaVersion: await readUserVersion(q), tables: await exportTables(q) }));
     const currentCounts = countBackup(current.tables);
+    const currentHash = contentHash(current.schemaVersion, current.tables);
+    const kept = await this.readKept();
+    const replace = analyseReplace({ current, backup: { schemaVersion: file.schemaVersion, tables: file.tables }, kept: kept === 'none' || kept === 'unreadable' ? null : kept });
+    const keptSinceUtc = this.switched?.atUtc ?? null;
+    const keptForUndo =
+      kept === 'none'
+        ? null
+        : kept === 'unreadable'
+          ? { workouts: 0, newestWorkoutUtc: null, otherRecords: 0, keptSinceUtc, unreadable: true }
+          : replace.keptForUndo === null
+            ? null
+            : { ...replace.keptForUndo, keptSinceUtc, unreadable: false };
     return {
       ok: true,
       file,
       preview: {
         backup: { createdAt: file.createdAt, app: file.app, schemaVersion: file.schemaVersion, counts: countBackup(file.tables) },
         current: { schemaVersion: current.schemaVersion, counts: currentCounts },
-        identical:
-          file.schemaVersion === current.schemaVersion &&
-          contentHash(file.schemaVersion, file.tables) === contentHash(current.schemaVersion, current.tables),
+        identical: file.schemaVersion === current.schemaVersion && contentHash(file.schemaVersion, file.tables) === currentHash,
         needsMigration: file.schemaVersion < latestVersion(this.options.migrations),
         replacesUnfinishedWorkout: currentCounts.unfinishedWorkouts > 0,
-        onlyOnPhone: onlyOnPhone(current.tables, file.tables),
+        onlyOnPhone: replace.onlyOnPhone,
+        changedOnPhone: replace.changedOnPhone,
+        keptForUndo,
+        stamp: this.stampOf(currentHash),
       },
     };
+  }
+
+  /** The state a preview is made against: the current content and which files fill the slots. */
+  private stampOf(currentHash: string): string {
+    return `${this.slots.current}|${this.slots.previous ?? '-'}|${currentHash}`;
+  }
+
+  /**
+   * Read the database kept for `Undo last restore`, if any, without changing
+   * it. An empty file holds nothing; a file that can't be read is reported as
+   * such, so the preview never deletes it without saying so.
+   */
+  private async readKept(): Promise<{ schemaVersion: number; tables: Record<string, SqlRow[]> } | 'none' | 'unreadable'> {
+    const name = this.slots.previous;
+    if (name === null) return 'none';
+    let driver: SqlDriver | null = null;
+    try {
+      driver = await this.options.host.open(name);
+      const schemaVersion = await readUserVersion(driver);
+      if (schemaVersion === 0) return 'none';
+      return { schemaVersion, tables: await exportTables(driver) };
+    } catch {
+      return 'unreadable';
+    } finally {
+      const d = driver;
+      if (d !== null) await quietly(() => d.close());
+    }
   }
 
   /** Close the old store and delete the file that dropped out of the rollback slot. */

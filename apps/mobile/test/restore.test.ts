@@ -108,4 +108,41 @@ describe('restore from a backup on this phone', () => {
     const tampered = await s.restore.check(text.replace('"reps"', '"rEps"'));
     expect(tampered.ok ? null : describeBackupError(tampered.error)).toBe('This backup file is damaged (its checksum doesn’t match). Nothing was changed.');
   });
+
+  it('restore, train, Undo, restore again: the preview and the alert say the kept workouts will be deleted (review S2)', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    const text = await s.restore.readOnPhone(autoFiles()[0] ?? '');
+    if (text === null) throw new Error('no backup');
+    h.clockMs += 86_400_000;
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 62.5, reps: 8 }] }]);
+
+    // 1–2. Restore A, then train a workout on the restored data.
+    expect(await s.restore.restore(text)).toMatchObject({ ok: true, status: 'restored' });
+    h.clockMs += 86_400_000;
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 65, reps: 5 }] }]);
+    // 3. Undo by mistake.
+    expect(await s.restore.undo()).toEqual({ ok: true });
+    // 4. Restore A again: the workout from step 2 is only in the copy kept for Undo.
+    const checked = await s.restore.prepare(text);
+    if (!checked.ok) throw new Error(checked.error.message);
+    expect(checked.preview.keptForUndo).toMatchObject({ workouts: 1, unreadable: false });
+    const view = buildRestorePreviewView(checked.preview, { nowMs: h.clockMs, tz: TZ, locale: 'en-GB' });
+    const kept = view.warnings.find((w) => w.startsWith('The data kept for Undo'));
+    expect(kept).toMatch(/holds 1 workout \(newest: Sat 10 Oct\)(?: and \d+ other records?)? that (?:isn’t|aren’t) on this phone or in this backup\. This restore deletes that copy/);
+    expect(view.confirm?.message).toContain('The data kept for Undo (what you switched away from on Sat 10 Oct');
+  });
+
+  it('with nothing replaced and nothing kept, there is no alert', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    const text = await s.restore.readOnPhone(autoFiles()[0] ?? '');
+    if (text === null) throw new Error('no backup');
+    const checked = await s.restore.prepare(text);
+    if (!checked.ok) throw new Error(checked.error.message);
+    const view = buildRestorePreviewView(checked.preview, { nowMs: h.clockMs, tz: TZ, locale: 'en-GB' });
+    expect(view).toMatchObject({ identical: true, warnings: [], confirm: null });
+  });
 });
