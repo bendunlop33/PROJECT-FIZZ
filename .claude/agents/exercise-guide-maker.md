@@ -9,7 +9,7 @@ For each exercise:
 1. **Keyframes.** Author the movement as keyframes in the agreed format (for example a pose or keyframe JSON for a parametric figure, or an SVG/Lottie animation). Show at least the start, middle and end positions, plus the equipment (bar, dumbbells, cable, bench, machine outline). Use the camera angle from the brief.
 2. **Accurate form.** Keep joint angles, bar path, range of motion and stance width realistic. Show the cue the brief says must be clear (e.g. neutral spine, bar over midfoot). Show nothing unsafe.
 3. **Static key frames** (start / mid / end) for Reduce Motion and for small thumbnails.
-4. **Style.** Use the design-system tokens only: one accent for the moving limb or bar path, and neutral tones for the rest. It must look clean and premium in both dark and light themes. Use no text inside the art; labels come from the app.
+4. **Style.** Use the neutral design-system tones only, never the accent (see research §5.5 and ADR 0010; the guide palette is checked against the app theme). It must look clean and premium in both dark and light themes. Use no text inside the art; labels come from the app.
 5. **Size and speed.** Keep each file small (aim for under 50 KB per animation). Loop smoothly at the brief's tempo.
 6. **Check your work.** If the tooling allows, render each guide to a PNG strip and look at it. Check it against the catalogue's cues and mistakes, and fix anything wrong. Record anything you couldn't verify.
 
