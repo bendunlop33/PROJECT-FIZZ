@@ -264,8 +264,10 @@ export function legPressGeometry(id: string, s: LegPressSpec, travel: number, gr
   ];
   const pr = PLATE_RADIUS[s.plates];
   if (pr > 0) {
-    shapes.push({ kind: 'line', layer: 'mid', a: plateCentre, b: hornBase, width: 0.014, paint: 'implement' });
-    shapes.push({ kind: 'circle', layer: 'mid', c: hornBase, r: pr * 0.8, stroke: 'implement', width: 0.011 });
+    // Plates on the carriage horn: soft disc behind the figure, like barbell plates.
+    shapes.push({ kind: 'line', layer: 'back', a: plateCentre, b: hornBase, width: STROKE.bar, paint: 'implement' });
+    shapes.push({ kind: 'circle', layer: 'back', c: hornBase, r: pr * 0.8, fill: 'frameFill', stroke: 'implement', width: STROKE.edge, opacity: 0.55 });
+    shapes.push({ kind: 'circle', layer: 'back', c: hornBase, r: pr * 0.8 * 0.6, stroke: 'implement', width: STROKE.hair, opacity: 0.35 });
   }
   // Sole on the plate: the foot's "up" points away from the plate (back down the rail).
   const soleDeg = (Math.atan2(-Math.cos(r), -Math.sin(r)) * 180) / Math.PI;

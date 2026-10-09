@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "machine-leg-press",
+  "extends": null,
+  "rig": "adult-v1",
+  "view": "side",
+  "facing": "right",
+  "units": "bodyHeight",
+  "durationMs": 2800,
+  "loop": "cycle",
+  "ground": { "y": 0, "scrollPerCycle": 0 },
+  "props": [
+    { "id": "press", "type": "leg_press", "x": 0.25, "y": 0.661, "railDeg": 45, "seatX": 0, "seatY": 0.3, "seatDeg": 40, "plates": "large" },
+    { "id": "handle", "type": "pad", "x": 0.075, "y": 0.335, "w": 0.06, "h": 0.026 }
+  ],
+  "keyframes": [
+    {
+      "t": 0, "label": "Start", "caption": "Back flat on the pad, knees just short of straight",
+      "root": { "x": 0.0322, "y": 0.3617, "pelvisDeg": -50 },
+      "joints": { "lumbar": 0, "thoracic": 0, "neck": 6 },
+      "props": { "press": { "s": 0.1582 } },
+      "ik": {
+        "footNear": { "prop": "press" },
+        "footFar": { "prop": "press" },
+        "handNear": { "x": 0.07, "y": 0.335, "bend": "cw" },
+        "handFar": { "x": 0.07, "y": 0.335, "bend": "cw" }
+      },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.2857, "label": "Halfway", "caption": "Knees in line with the toes, feet flat",
+      "props": { "press": { "s": 0.0763 } },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.5714, "label": "Bottom", "caption": "Knees about 90°, hips still on the pad",
+      "props": { "press": { "s": 0 } },
+      "holdMs": 200, "ease": "smooth"
+    },
+    { "t": 0.8214, "sameAs": 1, "caption": "Push through the whole foot", "ease": "smooth" },
+    { "t": 1, "sameAs": 0 }
+  ],
+  "overlays": [{ "type": "path", "of": "press", "showIn": ["static"] }],
+  "checks": { "planted": [], "besideProps": ["armNear", "armFar"], "romProfile": "adult-default" },
+  "a11y": {
+    "summary": "Side view of a 45-degree leg press. Reclined with the back and hips flat on the pad and feet flat on the sliding plate. Lower the plate until the knees are bent about 90 degrees with the hips still on the pad, then press back up without locking the knees."
+  },
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+}
