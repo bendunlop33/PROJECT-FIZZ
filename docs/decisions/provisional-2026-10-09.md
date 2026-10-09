@@ -11,3 +11,10 @@ Ben replied "s" to "go + 3 answers". This was read as **go**, with the stated de
    - the RPE-vs-planned trigger refinement (the current trigger rule stays)
    - the watch model
    - anything involving money or accounts
+
+## Added during the night (PM calls from the foundation review)
+- **SP1:** Start workout needs a gym. With no gym, the button is replaced by "Add gym". This changes the spec in today.md.
+- **SP2:** backup rotation never deletes the newest backup that passed its integrity check.
+- **SP3:** until the gym editor exists, a gym saved during first run is shown read-only, so going Back never creates a second gym.
+- **SP4:** "Save a copy to Files" uses a folder picker, pending a device test of iCloud and On My iPhone.
+- **Triceps pushdown:** one exercise with an attachment option (rope or bar), not two separate exercises.
