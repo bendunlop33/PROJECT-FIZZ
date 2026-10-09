@@ -24,16 +24,31 @@ export function measurementSystem(): string | null {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /**
- * Record IDs (UUID v4). Uses the native generator expo-modules-core installs
- * on `globalThis.expo` (Foundation's UUID on iOS). Hermes has no
- * `crypto.randomUUID`.
+ * Record IDs (UUID v4). Prefers the native generator expo-modules-core installs
+ * on `globalThis.expo` (Foundation's UUID on iOS); Hermes has no
+ * `crypto.randomUUID`. If that global is missing (to verify on the device),
+ * falls back to Math.random: IDs only need to be unique for one person's
+ * records, not unpredictable, so this never blocks opening the app.
  */
 export function newUuid(): string {
   const native = (globalThis as { expo?: { uuidv4?: () => string } }).expo?.uuidv4;
-  if (typeof native !== 'function') throw new Error('Native UUID generator is not available in this build');
-  const id = native().toLowerCase();
-  if (!UUID.test(id)) throw new Error(`Native UUID generator returned an unexpected value: ${id}`);
-  return id;
+  if (typeof native === 'function') {
+    const id = native().toLowerCase();
+    if (UUID.test(id)) return id;
+  }
+  return fallbackUuid();
+}
+
+function fallbackUuid(): string {
+  const hex = '0123456789abcdef';
+  let out = '';
+  for (let i = 0; i < 36; i += 1) {
+    if (i === 8 || i === 13 || i === 18 || i === 23) out += '-';
+    else if (i === 14) out += '4';
+    else if (i === 19) out += hex[8 + Math.floor(Math.random() * 4)] ?? '8';
+    else out += hex[Math.floor(Math.random() * 16)] ?? '0';
+  }
+  return out;
 }
 
 export function appInfo(): AppInfo {

@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Alert, View } from 'react-native';
 
 import { toMs } from '@fizz/domain';
@@ -23,8 +23,9 @@ export function WorkoutPlaceholderScreen() {
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
-  const finishOp = useRef(newUuid());
-  const discardOp = useRef(newUuid());
+  // One operation ID per screen visit: a double tap or a retry is the same command.
+  const [finishOp] = useState(newUuid);
+  const [discardOp] = useState(newUuid);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data] = useScreenData((s) => s.sessions.active());
@@ -51,7 +52,7 @@ export function WorkoutPlaceholderScreen() {
     if (busy || active === null) return;
     setBusy(true);
     setError(null);
-    const r = kind === 'finish' ? await services.sessions.finish(active, finishOp.current) : await services.sessions.discard(active, discardOp.current);
+    const r = kind === 'finish' ? await services.sessions.finish(active, finishOp) : await services.sessions.discard(active, discardOp);
     setBusy(false);
     if (!r.ok) {
       setError(kind === 'finish' ? `Couldn’t finish the workout. Nothing was lost; try again. (${r.error.message})` : `Couldn’t discard: ${r.error.message} Nothing was changed.`);

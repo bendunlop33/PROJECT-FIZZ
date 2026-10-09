@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Alert, TextInput, View } from 'react-native';
 
 import { toggleDraftItem, type GymDraft, type GymPresetId } from '@fizz/domain';
@@ -39,7 +39,7 @@ export function GymSetupFlow({
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
-  const gymId = useRef(newUuid()).current;
+  const [gymId] = useState(newUuid);
   const [phase, setPhase] = useState<'start' | 'checklist'>('start');
   const [name, setName] = useState('Main gym');
   const [presetId, setPresetId] = useState<GymPresetId | null>(null);

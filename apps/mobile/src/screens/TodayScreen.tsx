@@ -26,7 +26,7 @@ export function TodayScreen() {
   const changed = useDataChanged();
   const navigation = useNavigation();
   const install = useInstallStatus();
-  const opId = useRef(newUuid());
+  const opId = useRef<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, reload] = useScreenData(async (s) => {
@@ -46,6 +46,7 @@ export function TodayScreen() {
     if (starting) return;
     setStarting(true);
     setError(null);
+    opId.current ??= newUuid();
     const r = await services.sessions.startEmpty({ gymId, opId: opId.current });
     // The button stays disabled for timing.commitGuard so a double tap can't start twice.
     setTimeout(() => {
@@ -55,7 +56,7 @@ export function TodayScreen() {
       setError(r.error.message);
       return;
     }
-    opId.current = newUuid();
+    opId.current = null;
     changed();
     navigation.navigate('Workout');
   }
