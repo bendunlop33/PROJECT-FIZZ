@@ -30,9 +30,10 @@ and modular services so expansion stays possible, but don't build it.
   - `apps/mobile` — screens, audio, permissions, notifications
   - `packages/domain` — sets, units, feasible loads, progression, substitutions
   - `packages/schemas` — schema validation, typed action contracts
+  - `packages/persistence` — SQLite store, migrations, backup/restore
+  - `packages/catalogue` — exercise catalogue, animated guide format and tooling
   - `packages/coach` — context builder, tool registry, proposals/undo
   - `packages/providers` — AI/voice adapters with capability detection
-  - `packages/catalogue` — exercise catalogue and aliases
 - Pin exact package versions when adding them.
 - Distribution: free Apple ID + SideStore with a GitHub Actions-built `.ipa` (ADR 0004). Native config must stay free-provisionable: no push, time-sensitive notifications, Siri, iCloud or Associated Domains entitlements. Live Activity, AlarmKit and HealthKit are runtime-detected capability flags.
 
