@@ -20,3 +20,4 @@ export * from './draw';
 export * from './svg';
 export * from './checks';
 export * from './playback';
+export * from './motion-metrics';

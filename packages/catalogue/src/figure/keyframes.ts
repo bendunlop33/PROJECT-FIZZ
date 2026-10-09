@@ -147,6 +147,10 @@ export function resolveKeyframes(guide: Guide): ResolvedKeyframe[] {
 type Channels = Map<string, number>;
 
 /** Numeric channels of a state (discrete fields such as IK modes stay out). */
+export function flattenState(s: FrameState): ReadonlyMap<string, number> {
+  return flatten(s);
+}
+
 function flatten(s: FrameState): Channels {
   const c: Channels = new Map();
   c.set('root.x', s.root.x);

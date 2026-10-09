@@ -20,7 +20,8 @@
     "catalogue:index": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/build-index.ts",
     "catalogue:validate": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/validate-catalogue.ts",
     "guide:render": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/guide-render.ts",
-    "guide:check": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/guide-check.ts"
+    "guide:check": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/guide-check.ts",
+    "guide:motion": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/guide-motion.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
