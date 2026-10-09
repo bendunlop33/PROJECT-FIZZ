@@ -105,6 +105,9 @@ Profile › Developer › **ChatGPT sign-in test**.
 
 Nothing here can cost money: there is no paid API fallback.
 
+## 15. Exercise guides (8 min): new
+The first build with animated exercise guides. Steps and results table: [guide-playback.md](guide-playback.md).
+
 ## Probe retests (Developer › Capability probe)
 
 Run these after the checklist. They are the open rows from build 7.

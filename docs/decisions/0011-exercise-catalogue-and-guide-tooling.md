@@ -1,6 +1,6 @@
 # 0011: Exercise catalogue format, animated-guide format and Linux guide tooling
 
-**Status:** Proposed, 2026-10-09 (developer; for review). In-app guide playback is **not** decided here (see "Later slice").
+**Status:** Proposed, 2026-10-09 (developer; for review). In-app guide playback is decided in [ADR 0013](0013-in-app-guide-playback.md) (approved by Ben 9 Oct 2026); the "Later slice" section below is kept as the original proposal.
 
 ## Context
 `docs/research/exercise-bank-and-visuals.md` recommends our own catalogue records (§4) and original code-drawn figure guides (§5), with 10 rich examples written in `docs/catalogue/batches/batch-01.md`. Those entries used fields that `packages/schemas` didn't have yet. No validator, loader or guide tooling existed. The catalogue is **Coaching knowledge** (CLAUDE.md rule 10): general content that never says anything about Ben.
