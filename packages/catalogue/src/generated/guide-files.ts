@@ -25,7 +25,7 @@ export const BUNDLED_GUIDE_FILES: readonly BundledGuideFile[] = [
   { key: 'barbell-romanian-deadlift', raw: g3, camera: { cx: 0.088969, cy: 0.49555, size: 1.1111 } },
   { key: 'cable-lat-pulldown', raw: g4, camera: { cx: 0, cy: 0.573, size: 1.294 } },
   { key: 'cable-triceps-pushdown', raw: g5, camera: { cx: 0.144831, cy: 0.58, size: 1.28 } },
-  { key: 'dumbbell-bulgarian-split-squat', raw: g6, camera: { cx: -0.304048, cy: 0.480035, size: 1.108071 } },
+  { key: 'dumbbell-bulgarian-split-squat', raw: g6, camera: { cx: -0.297926, cy: 0.476435, size: 1.100871 } },
   { key: 'dumbbell-one-arm-row', raw: g7, camera: { cx: -0.064427, cy: 0.336316, size: 0.910585 } },
   { key: 'machine-leg-press', raw: g8, camera: { cx: 0.158585, cy: 0.526954, size: 1.205909 } },
   { key: 'sled-push', raw: g9, camera: { cx: 0.319274, cy: 0.396343, size: 1.509252 } },

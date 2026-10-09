@@ -8,6 +8,7 @@
   "units": "bodyHeight",
   "durationMs": 2800,
   "loop": "cycle",
+  "motion": "phases",
   "ground": { "y": 0, "scrollPerCycle": 0 },
   "props": [
     { "id": "bench", "type": "bench", "x": -0.735, "length": 0.45, "height": 0.25 },
@@ -17,7 +18,7 @@
   "keyframes": [
     {
       "t": 0, "label": "Start", "caption": "Tall split stance, back foot laces-down on the bench",
-      "root": { "x": -0.12, "y": 0.513, "pelvisDeg": 10 },
+      "root": { "x": -0.1203, "y": 0.5058, "pelvisDeg": 10 },
       "joints": { "lumbar": 0, "thoracic": 0, "neck": -6, "shoulderNear": 10, "elbowNear": 3, "shoulderFar": 10, "elbowFar": 3 },
       "ik": {
         "footNear": { "x": 0, "y": 0, "planted": true },
@@ -26,18 +27,18 @@
       "ease": "smooth"
     },
     {
-      "t": 0.2857, "label": "Halfway", "caption": "Hips straight down, front heel down",
-      "root": { "x": -0.132, "y": 0.415, "pelvisDeg": 15 },
-      "joints": { "neck": -10, "shoulderNear": 15, "shoulderFar": 15 },
+      "t": 0.2591, "pass": true, "label": "Halfway", "caption": "Hips straight down, front heel down",
+      "root": { "x": -0.1141, "y": 0.4421, "pelvisDeg": 13.6 },
+      "joints": { "neck": -10, "shoulderNear": 13.6, "shoulderFar": 13.6 },
       "ease": "smooth"
     },
     {
       "t": 0.5714, "label": "Bottom", "caption": "Front thigh about level, back knee just off the floor",
-      "root": { "x": -0.144, "y": 0.308, "pelvisDeg": 20 },
+      "root": { "x": -0.1315, "y": 0.3036, "pelvisDeg": 20 },
       "joints": { "neck": -14, "shoulderNear": 20, "shoulderFar": 20 },
       "holdMs": 200, "ease": "smooth"
     },
-    { "t": 0.8214, "sameAs": 1, "caption": "Drive through the front foot", "ease": "smooth" },
+    { "t": 0.838, "sameAs": 1, "caption": "Drive through the front foot", "ease": "smooth" },
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "dbNear", "showIn": ["static"] }],
