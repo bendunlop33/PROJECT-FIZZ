@@ -7,9 +7,9 @@ import { toMs } from '@fizz/domain';
 
 import { newUuid } from '../../device/runtime';
 import { formatTime } from '../../format/dates';
-import { formatCount, plural } from '../../format/numbers';
+import { plural } from '../../format/numbers';
 import type { CommitResult } from '../../import/import-service';
-import { longDate, progressView } from '../../import/views';
+import { progressView, writeFailedLine } from '../../import/views';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -59,7 +59,7 @@ export function ImportRunScreen() {
       case 'write_failed':
         setPhase({
           kind: 'failed',
-          text: `Couldn’t save workout ${formatCount(r.written + 1)} (${longDate(r.date)}): ${r.message}. ${plural(r.written, 'workout is', 'workouts are')} in. Nothing was half-saved.`,
+          text: writeFailedLine(r),
           jobId: r.jobId,
           retry: true,
         });

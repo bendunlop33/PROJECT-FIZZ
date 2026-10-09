@@ -4,7 +4,9 @@ import { NBSP } from '@fizz/domain';
 
 import type { ImportDraft } from '../src/import/import-service';
 import {
+  barWeightEntry,
   bodyweightOptions,
+  importedNotListedLine,
   importedSetLines,
   introView,
   namesView,
@@ -21,6 +23,7 @@ import {
   undoAlert,
   undoneToast,
   workoutRows,
+  writeFailedLine,
 } from '../src/import/views';
 import type { AppServices } from '../src/services/app-services';
 import { createHarness, setUpGym, type Harness } from './harness';
@@ -120,6 +123,9 @@ describe('import preview wording', () => {
     d = await step(d, { kind: 'per_hand', answer: 'each' });
     d = await step(d, { kind: 'total', answer: 'plates_only' });
     d = await step(d, { kind: 'bodyweight', key: 'pull up', answer: 'split' });
+    // Once chosen, the answer stays visible even if the values stop spanning zero (review r2 N5).
+    const oneWay = { ...d.analysis, bodyweight: d.analysis.bodyweight.map((q) => ({ ...q, min: 5, mixed: false })) };
+    expect(bodyweightOptions(oneWay, 'pull up')?.options.map((o) => [o.value, o.selected])).toEqual([['added', false], ['assistance', false], ['split', true]]);
     const ready = previewView(d, 'en-GB');
     expect(ready.questions.map((q) => q.line.text)).toEqual([
       'Exercise names: 2 checked',
@@ -234,7 +240,7 @@ describe('importing, results, past imports and undo wording', () => {
     const one = await s.imports.importedRows(jobId, '2026-09-01');
     if (!one) throw new Error('no rows');
     expect(one.rows.map((r) => importedSetLines(one.job, r, 'en-GB')).map((l) => ({ ...l, title: plain(l.title) }))).toEqual([
-      { title: 'Lat pulldown · 45 kg stack × 10', source: 'Imported from FitNotes on Thu 8 Oct 2026 · row 2', original: 'Original: Lat Pulldown · 45.0 kgs · 10 reps' },
+      { title: 'Lat pulldown · imported as 45 kg stack × 10', source: 'Imported from FitNotes on Thu 8 Oct 2026 · row 2', original: 'Original: Lat Pulldown · 45.0 kgs · 10 reps' },
     ]);
     expect((await s.imports.importedRows(jobId, '2026-09-02'))?.rows).toEqual([]);
   });
@@ -264,6 +270,41 @@ describe('importing, results, past imports and undo wording', () => {
     expect(v.primary).toEqual({ label: 'Continue import', enabled: true });
     // Every workout in but not marked finished (closed right at the end; review B1).
     expect(pausedLine({ written: 2, total: 2 })).toBe('Import not finished. All 2 workouts are in your history; Continue import finishes it.');
+    // The same file again while it's unfinished: Continue said once; a running import isn't called paused (review r2 N1).
+    const job = paused?.job;
+    if (!job) throw new Error('no job');
+    expect(openErrorView({ kind: 'same_file', job, written: 2, state: 'paused' }, 'en-GB')?.text).toBe('You started importing this file on Thu 8 Oct. Import not finished. All 2 workouts are in your history. Continue that import instead.');
+    expect(openErrorView({ kind: 'same_file', job, written: 1, state: 'running' }, 'en-GB')?.text).toBe('You started importing this file on Thu 8 Oct. It’s importing now: 1 of 2 workouts in.');
     expect(progressView(180, 412)).toEqual({ text: '180 of 412 workouts', fraction: 180 / 412 });
+  });
+});
+
+describe('import wording without a database', () => {
+  it('a cleared bar weight warns and goes back to the weight still in use (review r2 S1)', () => {
+    const olympic = { value: 20, unit: 'kg' as const, missing: null };
+    // Cleared while editing: says what's still added.
+    expect(barWeightEntry('', olympic)).toEqual({ save: null, endText: '20', warning: `Enter a bar weight above 0. Until you do, 20${NBSP}kg is added.` });
+    expect(barWeightEntry('0', olympic)).toMatchObject({ save: null, endText: '20' });
+    expect(barWeightEntry('abc', olympic)).toMatchObject({ save: null, endText: '20' });
+    // A new weight is saved; the same weight isn't saved again.
+    expect(barWeightEntry('15', olympic)).toEqual({ save: 15, endText: '15', warning: null });
+    expect(barWeightEntry('7,5', olympic)).toEqual({ save: 7.5, endText: '7,5', warning: null });
+    expect(barWeightEntry('20', olympic)).toEqual({ save: null, endText: '20', warning: null });
+    // An EZ bar has no default: an empty field shows what's missing, and nothing is invented.
+    const ez = { value: null, unit: 'kg' as const, missing: 'Enter your EZ bar’s weight in kg. Plates-only sets on it can’t be imported without it.' };
+    expect(barWeightEntry('', ez)).toEqual({ save: null, endText: '', warning: ez.missing });
+    expect(barWeightEntry('0', ez)).toEqual({ save: null, endText: '0', warning: 'Enter a bar weight above 0.' });
+    expect(barWeightEntry('10', ez)).toEqual({ save: 10, endText: '10', warning: null });
+  });
+
+  it('Past workouts says imported workouts are left out (review r2 B1)', () => {
+    expect(importedNotListedLine(1)).toBe('1 workout imported from FitNotes isn’t listed: imported workouts can’t be repeated yet. They’re in Data & backup, under Past imports.');
+    expect(importedNotListedLine(412)).toBe('412 workouts imported from FitNotes aren’t listed: imported workouts can’t be repeated yet. They’re in Data & backup, under Past imports.');
+  });
+
+  it('a workout whose save wasn’t confirmed is never called failed (review r2 N4)', () => {
+    expect(writeFailedLine({ written: 1, date: '2026-09-03', message: 'disk full' }, 'en-GB')).toBe(
+      'Workout 2 (Thu 3 Sept 2026) may not have saved: disk full. 1 workout is in before it. Each workout saves whole or not at all; Try again checks and carries on.',
+    );
   });
 });

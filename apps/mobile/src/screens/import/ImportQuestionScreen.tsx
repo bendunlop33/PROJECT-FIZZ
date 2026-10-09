@@ -4,11 +4,10 @@ import { TextInput, View } from 'react-native';
 
 import type { AnswerChange } from '@fizz/domain';
 
-import { bodyweightOptions, longDate, perHandOptions, totalOptions, type BarWeightView, type OptionView } from '../../import/views';
+import { barWeightEntry, bodyweightOptions, longDate, perHandOptions, totalOptions, type BarWeightView, type OptionView } from '../../import/views';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { parseNumber } from '../../ui/number-text';
 import { AppText, ChecklistRow, ChoiceCard, Group, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
 
 /**
@@ -183,12 +182,16 @@ export function ImportQuestionScreen() {
   );
 }
 
-/** One bar's weight in one unit (review S1: the Olympic bar, an EZ bar and a trap bar each have their own). An EZ or trap bar starts empty. */
+/**
+ * One bar's weight in one unit (review S1: the Olympic bar, an EZ bar and a
+ * trap bar each have their own). An EZ or trap bar starts empty. A cleared
+ * field warns while it's edited and shows the weight still in use once
+ * editing ends (review r2 S1; `barWeightEntry`).
+ */
 function BarWeightField({ field, onSave }: { field: BarWeightView; onSave: (v: number) => void }) {
   const theme = useTheme();
   const [text, setText] = useState(field.value === null ? '' : String(field.value));
-  const parsed = parseNumber(text);
-  const invalid = text.trim() !== '' && (parsed === null || parsed <= 0);
+  const entry = barWeightEntry(text, field);
   return (
     <View style={{ gap: theme.space['1'] }}>
       <AppText variant="label" color="text.secondary">
@@ -198,14 +201,15 @@ function BarWeightField({ field, onSave }: { field: BarWeightView; onSave: (v: n
         value={text}
         onChangeText={setText}
         onEndEditing={() => {
-          if (parsed !== null && parsed > 0 && parsed !== field.value) onSave(parsed);
+          if (entry.save !== null) onSave(entry.save);
+          setText(entry.endText);
         }}
         keyboardType="decimal-pad"
         accessibilityLabel={field.label}
         maxFontSizeMultiplier={theme.type.body.maxFontSizeMultiplier}
         style={{ minHeight: 52, paddingHorizontal: theme.space['3'], borderRadius: theme.radius.sm, borderWidth: 1, borderColor: theme.colors['border.control'], backgroundColor: theme.colors['bg.raised'], color: theme.colors['text.primary'], fontSize: theme.type.body.fontSize }}
       />
-      {invalid ? <AppText variant="callout" color="status.warning">Enter a bar weight above 0.</AppText> : field.missing !== null ? <AppText variant="callout" color="status.warning">{field.missing}</AppText> : null}
+      {entry.warning !== null ? <AppText variant="callout" color="status.warning">{entry.warning}</AppText> : null}
     </View>
   );
 }

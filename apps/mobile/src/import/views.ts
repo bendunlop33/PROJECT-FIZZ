@@ -19,6 +19,7 @@ import {
 import type { CustomExerciseKind, FitNotesVariant, ImportBarKind, ImportJob, ImportRow, ImportRowResult, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
 
 import { formatCount, plural } from '../format/numbers';
+import { parseNumber } from '../ui/number-text';
 import type { ImportBlock, ImportDraft, ImportedSetProvenance, OpenResult, PastImport } from './import-service';
 
 /**
@@ -90,10 +91,15 @@ export function blockLine(b: ImportBlock, time: string): string {
   return `Finish or discard your workout first (${b.title}, started ${time}).`;
 }
 
-export function pausedLine(p: Pick<PastImport, 'written' | 'total'>): string {
+/** Where an unfinished import stopped, with no call to action. */
+function stoppedAt(p: Pick<PastImport, 'written' | 'total'>): string {
   // Every workout is in but the last step didn't finish (closed or failed right at the end; review B1).
-  if (p.written >= p.total) return `Import not finished. All ${plural(p.total, 'workout is', 'workouts are')} in your history; Continue import finishes it.`;
+  if (p.written >= p.total) return `Import not finished. All ${plural(p.total, 'workout is', 'workouts are')} in your history.`;
   return `Import paused at ${formatCount(p.written)} of ${plural(p.total, 'workout', 'workouts')}. The ${formatCount(p.written)} ${p.written === 1 ? 'is' : 'are'} in your history.`;
+}
+
+export function pausedLine(p: Pick<PastImport, 'written' | 'total'>): string {
+  return p.written >= p.total ? `${stoppedAt(p).slice(0, -1)}; Continue import finishes it.` : stoppedAt(p);
 }
 
 /**
@@ -103,6 +109,15 @@ export function pausedLine(p: Pick<PastImport, 'written' | 'total'>): string {
  */
 export function importedNotListedLine(n: number): string {
   return `${plural(n, 'workout', 'workouts')} imported from FitNotes ${n === 1 ? 'isn’t' : 'aren’t'} listed: imported workouts can’t be repeated yet. They’re in Data & backup, under Past imports.`;
+}
+
+/**
+ * A workout's write didn't report success (§3.4; review r2 N4). Its
+ * transaction may still have committed, so this never says it failed:
+ * each workout saves whole or not at all, and `Try again` checks.
+ */
+export function writeFailedLine(r: { written: number; date: string; message: string }, locale?: string): string {
+  return `Workout ${formatCount(r.written + 1)} (${longDate(r.date, locale)}) may not have saved: ${r.message}. ${plural(r.written, 'workout is', 'workouts are')} in before it. Each workout saves whole or not at all; Try again checks and carries on.`;
 }
 
 export function introView(input: { block: ImportBlock | null; blockTime: string; paused: PastImport | null }): IntroView {
@@ -132,10 +147,17 @@ export function openErrorView(r: OpenResult, locale?: string): OpenErrorView | n
     case 'unknown_header':
       return { text: 'GymSmarter doesn’t recognise this file’s columns yet. Nothing was guessed.', firstLine: r.firstLine, sameFileJobId: null };
     case 'same_file':
-      // Its import isn't finished: say where it stopped and point to Continue (review N1).
-      if (r.state === 'paused' || r.state === 'running') {
+      // Its import isn't finished: say where it stopped and point to Continue once (review N1, r2 N1).
+      if (r.state === 'paused') {
         return {
-          text: `You started importing this file on ${shortDateOf(r.job.startedAt.utc, r.job.startedAt.tz, locale)}. ${pausedLine({ written: r.written, total: r.job.counts.workouts })} Continue that import instead.`,
+          text: `You started importing this file on ${shortDateOf(r.job.startedAt.utc, r.job.startedAt.tz, locale)}. ${stoppedAt({ written: r.written, total: r.job.counts.workouts })} Continue that import instead.`,
+          firstLine: null,
+          sameFileJobId: r.job.id,
+        };
+      }
+      if (r.state === 'running') {
+        return {
+          text: `You started importing this file on ${shortDateOf(r.job.startedAt.utc, r.job.startedAt.tz, locale)}. It’s importing now: ${formatCount(r.written)} of ${plural(r.job.counts.workouts, 'workout', 'workouts')} in.`,
           firstLine: null,
           sameFileJobId: r.job.id,
         };
@@ -499,6 +521,30 @@ export interface BarWeightView {
   missing: string | null;
 }
 
+export interface BarWeightEntry {
+  /** Save this when editing ends: a weight above 0 that differs from the stored one. */
+  save: number | null;
+  /**
+   * What the field shows once editing ends. Blank or unreadable text goes
+   * back to the stored weight, so the field never hides the weight that is
+   * still added to plates-only rows (review r2 S1).
+   */
+  endText: string;
+  /** Under the field while it's edited (and under an empty field a plates-only answer needs). */
+  warning: string | null;
+}
+
+/** The bar weight field's rules (review r2 S1), so the screen only renders them. */
+export function barWeightEntry(text: string, field: Pick<BarWeightView, 'value' | 'unit' | 'missing'>): BarWeightEntry {
+  const parsed = parseNumber(text);
+  if (parsed !== null && parsed > 0) return { save: parsed === field.value ? null : parsed, endText: text, warning: null };
+  const blank = text.trim() === '';
+  if (field.value !== null) {
+    return { save: null, endText: String(field.value), warning: `Enter a bar weight above 0. Until you do, ${formatNumber(field.value)}${NBSP}${field.unit} is added.` };
+  }
+  return { save: null, endText: text, warning: blank ? field.missing : 'Enter a bar weight above 0.' };
+}
+
 /**
  * The barbell question (§2.5 step 3b). One bar weight per bar kind and unit
  * (review S1): the Olympic bar's is always shown (20 kg / 45 lb, editable);
@@ -558,8 +604,11 @@ export function bodyweightOptions(a: ImportAnalysis, key: string): { title: stri
       selected: q.answer === 'assistance',
     },
   ];
+  // Offered while the values span zero, and kept once chosen so the chosen answer is always visible (review r2 N5).
   if (q.mixed) {
     options.push({ value: 'split', label: 'Negative = assistance, positive = added', detail: `${formatNumber(q.min)} is read as ${formatNumber(-q.min)} assistance; ${formatNumber(q.max)} as ${formatNumber(q.max)} added`, selected: q.answer === 'split' });
+  } else if (q.answer === 'split') {
+    options.push({ value: 'split', label: 'Negative = assistance, positive = added', detail: 'Each value is read by its sign', selected: true });
   }
   return {
     title: `${q.name} weights`,
@@ -680,7 +729,8 @@ export function importedWorkouts(rows: readonly ImportRow[], locale?: string): {
  */
 export function importedSetLines(job: ImportJob, row: ImportRow, locale?: string): { title: string; source: string; original: string } {
   const p = provenanceLines({ fileName: job.fileName, importedAt: job.startedAt, variant: job.variant, row, header: job.header }, locale);
+  // The set as it came in, labelled so: a set corrected in the app since isn't shown here (review r2 N3).
   const set = row.imported;
-  const title = set ? `${set.exerciseName} · ${mappedSetText(set)}` : row.exerciseName;
+  const title = set ? `${set.exerciseName} · imported as ${mappedSetText(set)}` : row.exerciseName;
   return { title, source: row.detail ? `${p.source} · ${row.detail}` : p.source, original: p.original };
 }

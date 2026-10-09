@@ -10,6 +10,7 @@ import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useRelaunch, useScreenData, useServices } from '../../shell/context';
 import { formatShortDate, formatWhen } from '../../format/dates';
 import { formatCount, plural } from '../../format/numbers';
+import { pausedLine } from '../../import/views';
 import { useTheme } from '../../theme';
 import { AppText, Card, DomainLabel, Group, Row, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
 import { BlockingCover } from './BlockingCover';
@@ -201,7 +202,7 @@ export function DataBackupScreen() {
         <Row
           title="Import from FitNotes"
           icon="square.and.arrow.down"
-          subtitle={blocked ? `Finish or discard your workout first (${blocked.title})` : pausedImport ? `Import paused at ${String(pausedImport.written)} of ${String(pausedImport.total)} workouts` : 'From a FitNotes CSV export. You see everything before it’s saved.'}
+          subtitle={blocked ? `Finish or discard your workout first (${blocked.title})` : pausedImport ? pausedLine(pausedImport) : 'From a FitNotes CSV export. You see everything before it’s saved.'}
           onPress={() => {
             navigation.navigate('ImportIntro');
           }}

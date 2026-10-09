@@ -9,9 +9,10 @@ import { AppText, Group, Row, Screen, StatusLine, TextButton } from '../../ui';
 const PAGE = 100;
 
 /**
- * One workout an import brought in (check 24; review S2): every set as it is
- * in the app, with the file, row number and original FitNotes values under
- * it. Read-only; names and comments are data, shown as text (rule 8).
+ * One workout an import brought in (check 24; review S2): every set as it
+ * came in (`imported as …`; a later correction in the app isn't shown here,
+ * review r2 N3), with the file, row number and original FitNotes values
+ * under it. Read-only; names and comments are data, shown as text (rule 8).
  */
 export function ImportedWorkoutScreen() {
   const navigation = useNavigation();
