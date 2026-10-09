@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "dumbbell-bulgarian-split-squat",
+  "format": "fizz-figure-guide@1",
+  "rig": "adult-v1",
+  "view": "side",
+  "durationMs": 2800,
+  "keyframes": 5,
+  "renderFps": 30,
+  "frames": 84,
+  "guideBytes": 2576,
+  "attribution": "Original figure animation made for Fizz; no third-party media.",
+  "reviewStatus": "draft",
+  "check": {
+    "status": "pass",
+    "failed": []
+  }
+}

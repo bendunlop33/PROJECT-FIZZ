@@ -97,8 +97,20 @@ export function barbellShapes(id: string, c: Vec, plates: keyof typeof PLATE_RAD
   return { id, shapes, colliders: [], solidBottoms: r > 0 ? [c.y - r] : [] };
 }
 
-export function dumbbellShapes(id: string, c: Vec, size: keyof typeof DUMBBELL_RADIUS): PropGeometry {
+export function dumbbellShapes(id: string, c: Vec, size: keyof typeof DUMBBELL_RADIUS, seen: 'end' | 'side' = 'end'): PropGeometry {
   const r = DUMBBELL_RADIUS[size];
+  if (seen === 'side') {
+    // Handle across the picture through the hand, a head at each end (rounded blocks).
+    const half = 0.055;
+    const w = r * 0.8;
+    const shapes: Shape[] = [{ kind: 'line', layer: 'front', a: v(c.x - half, c.y), b: v(c.x + half, c.y), width: 0.012, paint: 'implement' }];
+    for (const sx of [-1, 1]) {
+      const x0 = c.x + sx * half;
+      const x1 = c.x + sx * (half + w);
+      shapes.push({ kind: 'capsule', layer: 'front', a: v((x0 + x1) / 2, c.y - r + w / 2), b: v((x0 + x1) / 2, c.y + r - w / 2), ra: w / 2, rb: w / 2, paint: 'implement', outline: 'background' });
+    }
+    return { id, shapes, colliders: [], solidBottoms: [c.y - r] };
+  }
   return {
     id,
     shapes: [
@@ -147,8 +159,24 @@ export function benchShapes(id: string, s: BenchSpec, groundY: number): PropGeom
 export interface CableStackSpec {
   x: number;
   pulleyY: number;
-  handle: 'bar' | 'rope' | 'stirrup';
+  /** null: the cable ends on another prop (no handle drawn). */
+  handle: 'bar' | 'rope' | 'stirrup' | null;
   restLength: number | null;
+  column: boolean;
+}
+
+/** A fixed padded block or roller, drawn as a rounded rectangle. */
+export function padShapes(id: string, s: { x: number; y: number; w: number; h: number; front?: boolean | undefined }): PropGeometry {
+  const r = Math.min(s.w, s.h) / 2;
+  const horizontal = s.w >= s.h;
+  const a = horizontal ? v(s.x - s.w / 2 + r, s.y) : v(s.x, s.y - s.h / 2 + r);
+  const b = horizontal ? v(s.x + s.w / 2 - r, s.y) : v(s.x, s.y + s.h / 2 - r);
+  return {
+    id,
+    shapes: [{ kind: 'capsule', layer: s.front === true ? 'front' : 'mid', a, b, ra: r, rb: r, paint: 'frameFill', outline: 'frame' }],
+    colliders: [],
+    solidBottoms: [],
+  };
 }
 
 /** Column, pulley, weight stack (lifted by the extra cable length) and the cable to the hand. */
@@ -161,16 +189,29 @@ export function cableStackShapes(id: string, s: CableStackSpec, hand: Vec, groun
   const stackBottom = groundY + 0.05 + lift;
   const stack = [v(s.x - w / 2 + 0.012, stackBottom), v(s.x + w / 2 - 0.012, stackBottom), v(s.x + w / 2 - 0.012, stackBottom + 0.22), v(s.x - w / 2 + 0.012, stackBottom + 0.22)];
   const shapes: Shape[] = [
-    { kind: 'poly', layer: 'back', points: column, fill: 'frameFill', stroke: 'frame', width: 0.006 },
-    { kind: 'poly', layer: 'back', points: stack, fill: 'frame' },
-    { kind: 'circle', layer: 'back', c: pulley, r: 0.022, fill: 'frameFill', stroke: 'frame', width: 0.006 },
-    { kind: 'line', layer: 'mid', a: pulley, b: hand, width: 0.005, paint: 'cable' },
+    ...(s.column
+      ? ([
+          { kind: 'poly', layer: 'back', points: column, fill: 'frameFill', stroke: 'frame', width: STROKE.edge },
+          { kind: 'poly', layer: 'back', points: stack, fill: 'frame' },
+        ] satisfies Shape[])
+      : []),
+    { kind: 'circle', layer: 'back', c: pulley, r: 0.022, fill: 'frameFill', stroke: 'frame', width: STROKE.edge },
+    { kind: 'line', layer: 'mid', a: pulley, b: hand, width: STROKE.hair, paint: 'cable' },
   ];
   if (s.handle === 'rope') {
-    shapes.push({ kind: 'line', layer: 'front', a: hand, b: add(hand, v(0, -0.06)), width: 0.012, paint: 'implement' });
+    // Clip a short way up the cable, rope strand down through the fist, knotted tail below it.
+    const toPulley = scale(v(pulley.x - hand.x, pulley.y - hand.y), 1 / Math.max(1e-9, cableLen));
+    const clip = add(hand, scale(toPulley, Math.min(0.06, cableLen)));
+    const tail = add(hand, v(0, -0.035));
+    const cable = shapes[shapes.length - 1];
+    if (cable?.kind === 'line') shapes[shapes.length - 1] = { ...cable, b: clip };
+    shapes.push({ kind: 'line', layer: 'mid', a: clip, b: hand, width: 0.011, paint: 'implement' });
+    shapes.push({ kind: 'line', layer: 'front', a: hand, b: tail, width: 0.011, paint: 'implement' });
+    shapes.push({ kind: 'circle', layer: 'front', c: tail, r: 0.011, fill: 'implement' });
+    shapes.push({ kind: 'circle', layer: 'mid', c: clip, r: 0.008, fill: 'implement' });
   } else if (s.handle === 'bar') {
     shapes.push({ kind: 'circle', layer: 'front', c: hand, r: 0.016, fill: 'implement' });
-  } else {
+  } else if (s.handle === 'stirrup') {
     shapes.push({ kind: 'circle', layer: 'front', c: hand, r: 0.03, stroke: 'implement', width: 0.008 });
   }
   return { id, shapes, colliders: [], solidBottoms: [] };
@@ -223,8 +264,10 @@ export function legPressGeometry(id: string, s: LegPressSpec, travel: number, gr
   ];
   const pr = PLATE_RADIUS[s.plates];
   if (pr > 0) {
-    shapes.push({ kind: 'line', layer: 'mid', a: plateCentre, b: hornBase, width: 0.014, paint: 'implement' });
-    shapes.push({ kind: 'circle', layer: 'mid', c: hornBase, r: pr * 0.8, stroke: 'implement', width: 0.011 });
+    // Plates on the carriage horn: soft disc behind the figure, like barbell plates.
+    shapes.push({ kind: 'line', layer: 'back', a: plateCentre, b: hornBase, width: STROKE.bar, paint: 'implement' });
+    shapes.push({ kind: 'circle', layer: 'back', c: hornBase, r: pr * 0.8, fill: 'frameFill', stroke: 'implement', width: STROKE.edge, opacity: 0.55 });
+    shapes.push({ kind: 'circle', layer: 'back', c: hornBase, r: pr * 0.8 * 0.6, stroke: 'implement', width: STROKE.hair, opacity: 0.35 });
   }
   // Sole on the plate: the foot's "up" points away from the plate (back down the rail).
   const soleDeg = (Math.atan2(-Math.cos(r), -Math.sin(r)) * 180) / Math.PI;
@@ -238,6 +281,7 @@ export interface PushSledSpec {
   x: number;
   gripY: number;
   plates: keyof typeof PLATE_RADIUS;
+  poleDeg?: number | undefined;
 }
 
 /** Floor sled seen from the side: low body, a pole rising back towards the athlete, plates stacked flat. */
@@ -245,10 +289,13 @@ export function pushSledGeometry(id: string, s: PushSledSpec, groundY: number): 
   const h = 0.1;
   const body = [v(s.x, groundY), v(s.x + 0.4, groundY), v(s.x + 0.37, groundY + h), v(s.x + 0.03, groundY + h)];
   const poleBase = v(s.x + 0.06, groundY + h);
-  const grip = add(poleBase, scale(fromUp(-24), (s.gripY - poleBase.y) / Math.cos(rad(24))));
+  const lean = s.poleDeg ?? 24;
+  const grip = add(poleBase, scale(fromUp(-lean), (s.gripY - poleBase.y) / Math.cos(rad(lean))));
+  // The pole carries on a little above the hands.
+  const poleTop = add(grip, scale(fromUp(-lean), 0.07));
   const shapes: Shape[] = [
     { kind: 'poly', layer: 'mid', points: body, fill: 'frameFill', stroke: 'implement', width: 0.009 },
-    { kind: 'line', layer: 'mid', a: poleBase, b: grip, width: 0.016, paint: 'implement' },
+    { kind: 'line', layer: 'mid', a: poleBase, b: poleTop, width: 0.016, paint: 'implement' },
     { kind: 'line', layer: 'mid', a: v(s.x + 0.26, groundY + h), b: v(s.x + 0.26, groundY + h + 0.12), width: 0.014, paint: 'implement' },
   ];
   const n = { none: 0, small: 1, medium: 2, large: 3 }[s.plates];

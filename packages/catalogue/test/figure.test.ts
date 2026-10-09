@@ -210,6 +210,58 @@ describe('props', () => {
     expect(failedFor(lying(0.2))).toContain('no-penetration');
   });
 
+  it('a palm contact lays the hand flat on its target; a side-on dumbbell shows two heads', () => {
+    const g = baseGuide({
+      props: [{ id: 'db', type: 'dumbbell', size: 'medium', seen: 'side', anchor: { kind: 'hand', hand: 'near' } }],
+      keyframes: [
+        {
+          t: 0, label: 'Start', caption: 'Brace', root: { x: 0, y: 0.52, pelvisDeg: 72 },
+          ik: { handFar: { x: 0.3, y: 0.25, contact: 'palm', bend: 'cw' } },
+        },
+        { t: 1, sameAs: 0 },
+      ],
+    });
+    const p = poseAt(prepareGuide(g), 0);
+    const far = p.hands.find((h) => h.limb === 'handFar');
+    expect(far?.reached).toBe(true);
+    expect(dist(far?.actual ?? v(9, 9), v(0.3, 0.25))).toBeLessThan(1e-9);
+    // The wrist sits behind and above the palm contact.
+    expect(p.points.wristFar?.x).toBeLessThan(0.3);
+    expect(p.points.wristFar?.y).toBeGreaterThan(0.25);
+    const heads = p.shapes.filter((s) => s.kind === 'capsule' && s.layer === 'front' && s.paint === 'implement');
+    expect(heads).toHaveLength(2);
+  });
+
+  it('front-view seated legs: short thighs, full shanks, foreshortened angles not ROM-checked; cable can end on a bar', () => {
+    const g = baseGuide({
+      view: 'front',
+      projection: { legNear: 0.2, legFar: 0.2, shankNear: 1, shankFar: 1 },
+      props: [
+        { id: 'bar', type: 'barbell', plates: 'none', anchor: { kind: 'keyframed' } },
+        { id: 'cable', type: 'cable_stack', x: 0, pulleyY: 1.1, hand: 'near', handle: 'bar', attach: 'bar', column: false },
+        { id: 'pad', type: 'pad', x: 0, y: 0.35, w: 0.4, h: 0.05, front: true },
+      ],
+      keyframes: [
+        {
+          t: 0, label: 'Start', caption: 'Sit', root: { x: 0, y: 0.31, pelvisDeg: 0 }, props: { bar: { x: 0, y: 0.9 } },
+          ik: { footNear: { x: 0.125, y: 0, planted: true, bend: 'ccw' }, footFar: { x: -0.125, y: 0, planted: true, bend: 'ccw' } },
+        },
+        { t: 1, sameAs: 0 },
+      ],
+      checks: { planted: ['footNear', 'footFar'], romProfile: 'adult-default' },
+    });
+    const p = poseAt(prepareGuide(g), 0);
+    expect(dist(p.points.hipNear ?? v(0, 0), p.points.kneeNear ?? v(0, 0))).toBeCloseTo(ADULT_V1.thigh * 0.2, 6);
+    expect(dist(p.points.kneeNear ?? v(0, 0), p.points.ankleNear ?? v(0, 0))).toBeCloseTo(ADULT_V1.shank, 6);
+    expect(p.unchecked).toEqual(expect.arrayContaining(['hipNear', 'kneeNear', 'hipFar', 'kneeFar']));
+    const cable = p.shapes.find((s) => s.kind === 'line' && s.paint === 'cable');
+    expect(cable?.kind === 'line' && cable.b).toEqual(v(0, 0.9));
+    expect(p.shapes.some((s) => s.kind === 'poly' && s.fill === 'frame')).toBe(false);
+    const rom = checkGuide({ raw: g, bytes: 1000, dirKey: 'test-guide', entry: null }).items.find((i) => i.id === 'rom');
+    expect(rom?.ok).toBe(true);
+    expect(rom?.detail).toContain('not checked where foreshortened');
+  });
+
   it('keyframe projection overrides the guide value and interpolates', () => {
     const g = baseGuide({
       projection: { armNear: 1 },
@@ -335,6 +387,19 @@ describe('guide checks', () => {
     expect(failed({ ...squatRaw(), keyframes: relabelled })).toEqual(['key-positions']);
     const open = keys.map((k, i) => (i === keys.length - 1 ? { t: 1, root: { y: 0.45 } } : k));
     expect(failed({ ...squatRaw(), keyframes: open })).toContain('loop-continuity');
+  });
+
+  it('romSkip excludes only the named angles and reports the reason', () => {
+    const keys = structuredClone(squatRaw().keyframes) as { ik?: Record<string, unknown>; joints?: Record<string, number> }[];
+    if (keys[0]?.ik) keys[0].ik.footNear = null;
+    if (keys[0]?.joints) Object.assign(keys[0].joints, { hipNear: 0, kneeNear: -30 });
+    const checks = { ...(squatRaw().checks as object), romSkip: { angles: ['kneeNear'], reason: 'test reason' } };
+    const r = checkGuide({ raw: { ...squatRaw(), keyframes: keys, checks }, bytes: 2000, dirKey: 'barbell-back-squat', entry: squatEntry() });
+    const rom = r.items.find((i) => i.id === 'rom');
+    expect(rom?.ok).toBe(true);
+    expect(rom?.detail).toContain('test reason');
+    const other = { ...checks, romSkip: { angles: ['kneeFar'], reason: 'test reason' } };
+    expect(failed({ ...squatRaw(), keyframes: keys, checks: other })).toContain('rom');
   });
 
   it('catches bar drift, unreachable planted feet and hyperextension', () => {

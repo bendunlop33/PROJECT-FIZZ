@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "sled-push",
+  "extends": null,
+  "rig": "adult-v1",
+  "view": "side",
+  "facing": "right",
+  "units": "bodyHeight",
+  "durationMs": 2100,
+  "loop": "cycle",
+  "ground": { "y": 0, "scrollPerCycle": 0.55 },
+  "props": [
+    { "id": "sled", "type": "push_sled", "x": 0.5739, "gripY": 0.555, "poleDeg": 8, "plates": "medium" }
+  ],
+  "keyframes": [
+    {
+      "t": 0, "label": "Near-leg drive", "caption": "Long straight body line, push off the ball of the foot",
+      "root": { "x": 0, "y": 0.456, "pelvisDeg": 45 },
+      "joints": { "lumbar": 0, "thoracic": 0, "neck": 0 },
+      "ik": {
+        "footNear": { "x": -0.275, "y": 0, "planted": true, "pivot": "ball", "soleDeg": 40 },
+        "footFar": { "x": 0, "y": 0, "planted": true, "pivot": "ball", "soleDeg": 25 },
+        "handNear": { "prop": "sled", "bend": "cw" },
+        "handFar": { "prop": "sled", "bend": "cw" }
+      },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.25, "label": "Switch", "caption": "Feet pass under the hips, hips stay low",
+      "ik": {
+        "footNear": { "x": -0.13, "y": 0.06, "planted": false, "soleDeg": 35 },
+        "footFar": { "planted": true, "soleDeg": 32 }
+      },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.5, "label": "Far-leg drive", "caption": "Other leg drives, arms stay fixed",
+      "ik": {
+        "footNear": { "x": 0, "y": 0, "planted": true, "soleDeg": 25 },
+        "footFar": { "planted": true, "soleDeg": 40 }
+      },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.75, "label": "Switch", "caption": "Short, quick steps",
+      "ik": {
+        "footNear": { "planted": true, "soleDeg": 32 },
+        "footFar": { "x": -0.13, "y": 0.06, "planted": false, "soleDeg": 35 }
+      },
+      "ease": "smooth"
+    },
+    { "t": 1, "sameAs": 0 }
+  ],
+  "checks": { "planted": ["footNear", "footFar"], "romProfile": "adult-default" },
+  "a11y": {
+    "summary": "Side view, facing right, pushing a loaded sled. Body leans about 45 degrees in a straight line from the driving foot to the head, hands on the poles at chest height with arms nearly straight. Short steps push the floor back off the balls of the feet while the hips stay low and level."
+  },
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+}

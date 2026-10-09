@@ -29,6 +29,7 @@ import {
   dumbbellShapes,
   frontBarbellShapes,
   legPressGeometry,
+  padShapes,
   pushSledGeometry,
   type Collider,
   type LegPressContact,
@@ -38,6 +39,9 @@ import {
 import { ADULT_V1, type AngleName } from './rig';
 
 const R = ADULT_V1;
+
+/** Below this projection factor a segment's projected joint angles aren't range-of-motion checked. */
+export const UNCHECKED_PROJECTION = 0.5;
 
 export interface FootContact {
   limb: 'footNear' | 'footFar';
@@ -69,6 +73,12 @@ export interface Pose {
   points: Record<string, Vec>;
   angles: Partial<Record<AngleName, number>>;
   outOfPlane: AngleName[];
+  /**
+   * Angles of segments foreshortened below `UNCHECKED_PROJECTION`: their
+   * projected angle says nothing about the real joint (a seated thigh seen
+   * from the front), so the ROM check skips them and says so.
+   */
+  unchecked: AngleName[];
   shapes: Shape[];
   head: { c: Vec; r: number };
   feet: FootContact[];
@@ -178,6 +188,7 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     neck: s.joints.neck,
   };
   const outOfPlane: AngleName[] = [];
+  const unchecked: AngleName[] = [];
   const addGeometry = (g: PropGeometry): void => {
     shapes.push(...g.shapes);
     colliders.push(...g.colliders);
@@ -218,6 +229,9 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
       case 'cable_stack':
         later.push(p);
         break;
+      case 'pad':
+        addGeometry(padShapes(p.id, p));
+        break;
     }
   }
 
@@ -242,9 +256,11 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     const sign = sideSign(side);
     const limb = `foot${side}` as const;
     const hipPt = side === 'Near' ? trunk.hipNear : trunk.hipFar;
-    const k = proj[`leg${side}`] ?? 1;
-    const thighL = R.thigh * k;
-    const shankL = R.shank * k;
+    const kt = proj[`leg${side}`] ?? 1;
+    const ks = proj[`shank${side}`] ?? kt;
+    const k = Math.min(kt, ks);
+    const thighL = R.thigh * kt;
+    const shankL = R.shank * ks;
     const target: FootTarget | null = s.ik[limb];
     let knee: Vec;
     let ankle: Vec;
@@ -289,6 +305,8 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     angles[`hip${side}`] = view === 'side' ? wrapDeg(aThigh + lean) : sign * wrapDeg(aThigh);
     angles[`knee${side}`] = k < 1 ? Math.abs(kneeAngle) : kneeAngle;
     if (k < 1) outOfPlane.push(`knee${side}`);
+    if (kt < UNCHECKED_PROJECTION) unchecked.push(`hip${side}`, `knee${side}`);
+    else if (ks < UNCHECKED_PROJECTION) unchecked.push(`knee${side}`);
     angles[`ankle${side}`] = view === 'side' ? wrapDeg(angleFromDown(u) - aShank - 90) : 0;
     const heel = view === 'side' ? inFoot(ankle, u, n, R.foot.heel, -R.foot.ankleHeight) : add(ankle, v(-0.03 * sign, -R.foot.ankleHeight));
     const ball = view === 'side' ? inFoot(ankle, u, n, R.foot.ball, -R.foot.ankleHeight) : ankle;
@@ -312,7 +330,10 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
       const heelTop = inFoot(ankle, u, n, R.foot.heel + 0.012, -R.foot.ankleHeight + rr.foot);
       const ballTop = inFoot(ankle, u, n, R.foot.ball, -R.foot.ankleHeight + rr.foot * 0.85);
       const toeDir = scale(sub(toe, ball), 1 / Math.max(1e-9, dist(toe, ball)));
-      const toeTop = add(add(toe, scale(toeDir, -rr.foot * 0.5)), scale(perpCcw(toeDir), Math.sign(toeDir.x || 1) * rr.foot * 0.7));
+      // Round the toes towards the top of the foot (its own "up", so a laces-down foot works too).
+      const toeUp = perpCcw(toeDir);
+      const toeSide = toeUp.x * n.x + toeUp.y * n.y >= 0 ? 1 : -1;
+      const toeTop = add(add(toe, scale(toeDir, -rr.foot * 0.5)), scale(toeUp, toeSide * rr.foot * 0.7));
       shapes.push(limbCap(ballTop, toeTop, rr.foot * 0.85, rr.foot * 0.7));
       shapes.push(limbCap(heelTop, ballTop, rr.foot, rr.foot * 0.85));
       shapes.push(limbCap(ankle, heelTop, rr.shankAnkle, rr.foot));
@@ -336,7 +357,18 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     let elbow: Vec;
     let wrist: Vec;
     let grip: Vec;
-    if (target !== null) {
+    let palm = false;
+    if (target !== null && target.contact === 'palm' && view === 'side') {
+      // Flat hand: solve the arm to the wrist, then lay the hand forward along the surface.
+      palm = true;
+      const wanted = v(target.x, target.y);
+      const wristWanted = add(wanted, v(-R.palm.back, R.palm.up));
+      const sol = solveTwoBoneIk(shoulder, wristWanted, upperL, foreL, flipBend(target.bend ?? 'cw', side));
+      elbow = sol.mid;
+      wrist = sol.end;
+      grip = add(wrist, v(R.palm.back, -R.palm.up));
+      hands.push({ limb, prop: target.prop, wanted, actual: grip, reached: sol.reached });
+    } else if (target !== null) {
       const propPt = target.prop === null ? undefined : gripPoint(guide, target.prop, propPoints, side);
       const wanted = propPt ?? v(target.x, target.y);
       const bend = target.bend ?? (view === 'side' ? 'ccw' : 'cw');
@@ -359,6 +391,8 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     angles[`shoulder${side}`] = view === 'side' ? wrapDeg(aUpper + thoraxLean) : sign * wrapDeg(aUpper);
     angles[`elbow${side}`] = k < 1 ? Math.abs(elbowAngle) : elbowAngle;
     if (k < 1) outOfPlane.push(`elbow${side}`);
+    if (ku < UNCHECKED_PROJECTION) unchecked.push(`shoulder${side}`, `elbow${side}`);
+    else if (kf < UNCHECKED_PROJECTION) unchecked.push(`elbow${side}`);
     angles[`wrist${side}`] = target === null ? s.joints[`wrist${side}`] : 0;
     points[`shoulder${side}`] = shoulder;
     points[`elbow${side}`] = elbow;
@@ -368,11 +402,13 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     const paint = layer === 'far' ? 'farBody' : 'nearBody';
     const rr = R.radius;
     const gripDir = scale(sub(grip, wrist), 1 / Math.max(1e-9, dist(grip, wrist)));
-    const handEnd = add(grip, scale(gripDir, (R.hand - R.grip) * kf));
+    // A flat hand runs along the surface (fingers forward), just above the palm contact.
+    const handEnd = palm ? add(grip, v(R.hand - R.palm.back, R.radius.hand * 0.9)) : add(grip, scale(gripDir, (R.hand - R.grip) * kf));
+    const handStart = palm ? v(wrist.x, grip.y + R.radius.hand) : wrist;
     const group = `arm${side}`;
     shapes.push({ kind: 'capsule', layer, a: shoulder, b: elbow, ra: rr.upperArmShoulder, rb: rr.upperArmElbow, paint, outline: 'background', group });
     shapes.push({ kind: 'capsule', layer, a: elbow, b: wrist, ra: rr.forearmElbow, rb: rr.forearmWrist, paint, outline: 'background', group });
-    shapes.push({ kind: 'capsule', layer, a: wrist, b: handEnd, ra: rr.hand, rb: rr.hand * 0.9, paint, outline: 'background', group });
+    shapes.push({ kind: 'capsule', layer, a: handStart, b: handEnd, ra: rr.hand, rb: rr.hand * 0.9, paint, outline: 'background', group });
   }
 
   // 4. Props that hang from the hands, and the cable.
@@ -381,16 +417,17 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
       const c = points[p.anchor.hand === 'near' ? 'gripNear' : 'gripFar'];
       if (c !== undefined) {
         propPoints[p.id] = c;
-        addGeometry(dumbbellShapes(p.id, c, p.size));
+        addGeometry(dumbbellShapes(p.id, c, p.size, p.seen ?? 'end'));
       }
     } else if (p.type === 'barbell' && p.anchor.kind === 'hand') {
       const c = points[p.anchor.hand === 'near' ? 'gripNear' : 'gripFar'];
       if (c !== undefined) propPoints[p.id] = c;
     } else if (p.type === 'cable_stack') {
-      const hand = points[p.hand === 'near' ? 'gripNear' : 'gripFar'];
-      if (hand !== undefined) {
-        propPoints[p.id] = hand;
-        addGeometry(cableStackShapes(p.id, { x: p.x, pulleyY: p.pulleyY, handle: p.handle, restLength: p.restLength ?? null }, hand, groundY));
+      const end = p.attach === undefined ? points[p.hand === 'near' ? 'gripNear' : 'gripFar'] : propPoints[p.attach];
+      if (end !== undefined) {
+        propPoints[p.id] = end;
+        const spec = { x: p.x, pulleyY: p.pulleyY, handle: p.attach === undefined ? p.handle : null, restLength: p.restLength ?? null, column: p.column ?? true };
+        addGeometry(cableStackShapes(p.id, spec, end, groundY));
       }
     }
   }
@@ -398,7 +435,7 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     const c = propPoints[p.id];
     if (c === undefined) continue;
     if (p.type === 'barbell') addGeometry(view === 'front' ? frontBarbellShapes(p.id, c, p.plates) : barbellShapes(p.id, c, p.plates));
-    if (p.type === 'dumbbell' && p.anchor.kind !== 'hand') addGeometry(dumbbellShapes(p.id, c, p.size));
+    if (p.type === 'dumbbell' && p.anchor.kind !== 'hand') addGeometry(dumbbellShapes(p.id, c, p.size, p.seen ?? 'end'));
   }
 
   // 5. Trunk, neck and head (drawn between the far and near limbs).
@@ -426,6 +463,7 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     points,
     angles,
     outOfPlane,
+    unchecked,
     shapes,
     head,
     feet,

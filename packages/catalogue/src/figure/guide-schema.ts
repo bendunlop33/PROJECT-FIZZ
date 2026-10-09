@@ -8,7 +8,7 @@ import { CatalogueKeySchema } from '@fizz/schemas';
 import { z } from 'zod';
 import { GuideViewSchema } from '../entry-schema';
 import { EASES } from './math';
-import { JOINT_NAMES, RIG_ID, ROM_PROFILE_NAMES } from './rig';
+import { ANGLE_NAMES, JOINT_NAMES, RIG_ID, ROM_PROFILE_NAMES } from './rig';
 
 const num = z.number();
 const coord = num.min(-3).max(3);
@@ -49,7 +49,17 @@ export const PropSchema = z.discriminatedUnion('type', [
     /** Front view only: hands hold the bar this far either side of its centre (default 0.24 H). */
     gripHalfWidth: num.min(0.05).max(0.5).optional(),
   }),
-  z.strictObject({ ...base, type: z.literal('dumbbell'), size: z.enum(['small', 'medium', 'large']), anchor: AnchorSchema }),
+  z.strictObject({
+    ...base,
+    type: z.literal('dumbbell'),
+    size: z.enum(['small', 'medium', 'large']),
+    anchor: AnchorSchema,
+    /**
+     * `end` (default): handle pointing at the camera, seen as one disc.
+     * `side`: handle across the picture (a neutral grip seen from the side), both heads visible.
+     */
+    seen: z.enum(['end', 'side']).optional(),
+  }),
   z.strictObject({
     ...base,
     type: z.literal('bench'),
@@ -72,6 +82,20 @@ export const PropSchema = z.discriminatedUnion('type', [
     handle: z.enum(['bar', 'rope', 'stirrup']),
     /** Cable length at which the stack rests; longer cable lifts the stack. */
     restLength: num.min(0).max(3).optional(),
+    /** Run the cable to another prop's centre (a pulldown bar) instead of the hand; no handle is drawn. */
+    attach: propId.optional(),
+    /** Draw the column and weight stack (default true); false leaves the pulley and cable. */
+    column: z.boolean().optional(),
+  }),
+  z.strictObject({
+    ...base,
+    type: z.literal('pad'),
+    /** A fixed padded block or roller (thigh pad, seat back) centred on x, y; drawn in front of the body when `front`. */
+    x: coord,
+    y: coord,
+    w: num.min(0.02).max(1.2),
+    h: num.min(0.02).max(1.2),
+    front: z.boolean().optional(),
   }),
   z.strictObject({
     ...base,
@@ -93,6 +117,8 @@ export const PropSchema = z.discriminatedUnion('type', [
     x: coord,
     /** Grip height on the poles. */
     gripY: num.min(0.3).max(1.2),
+    /** Pole lean back towards the athlete, degrees from vertical (default 24; HYROX-style uprights ~8). */
+    poleDeg: num.min(0).max(40).optional(),
     plates: z.enum(['none', 'small', 'medium', 'large']),
   }),
 ]);
@@ -120,6 +146,12 @@ export const HandIkSchema = z.strictObject({
   /** Hold a prop's grip point instead of a fixed point. */
   prop: propId.optional(),
   bend: BendSchema.optional(),
+  /**
+   * `grip` (default): the target is the middle of a closed hand.
+   * `palm` (side view): the target is where the palm presses on a surface;
+   * the hand lies flat, fingers forward (a hand braced on a bench).
+   */
+  contact: z.enum(['grip', 'palm']).optional(),
 });
 export type HandIk = z.infer<typeof HandIkSchema>;
 
@@ -139,9 +171,12 @@ export const ProjectionSchema = z.strictObject({
   forearmFar: projection.optional(),
   legNear: projection.optional(),
   legFar: projection.optional(),
+  /** Shank (and foot) only; defaults to the leg value. A seated thigh points at the camera, the shank doesn't. */
+  shankNear: projection.optional(),
+  shankFar: projection.optional(),
 });
 export type Projection = z.infer<typeof ProjectionSchema>;
-export const PROJECTION_KEYS = ['armNear', 'armFar', 'forearmNear', 'forearmFar', 'legNear', 'legFar'] as const;
+export const PROJECTION_KEYS = ['armNear', 'armFar', 'forearmNear', 'forearmFar', 'legNear', 'legFar', 'shankNear', 'shankFar'] as const;
 
 export const KeyframeSchema = z.strictObject({
   t: num.min(0).max(1),
@@ -207,6 +242,13 @@ export const GuideSchema = z
        * They skip the prop-penetration test only; the floor test still applies.
        */
       besideProps: z.array(z.enum(LIMB_GROUPS)).max(4).optional(),
+      /**
+       * Angles the rig can't range-check for this movement, with the reason
+       * (shown in the check output). E.g. a laces-down rear foot on a bench:
+       * the rig's ankle angle is measured on the sole line, which lies near
+       * in line with the shin although the real plantarflexion is ~50°.
+       */
+      romSkip: z.strictObject({ angles: z.array(z.enum(ANGLE_NAMES)).min(1).max(4), reason: text(160) }).optional(),
       romProfile: z.enum(ROM_PROFILE_NAMES),
     }),
     a11y: z.strictObject({ summary: text(400) }),
