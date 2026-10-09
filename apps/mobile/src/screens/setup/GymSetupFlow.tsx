@@ -184,7 +184,7 @@ export function GymSetupFlow({
           <ChoiceCard key={p.id} title={p.title} subtitle={p.subtitle} selected={presetId === p.id} onPress={() => { choose(p.id); }} />
         ))}
       </View>
-      {onSkip ? <TextButton label="Skip for now: loads won’t be checked against equipment" tone="secondary" onPress={onSkip} /> : null}
+      {onSkip ? <TextButton label="Skip for now: you’ll add a gym before your first workout" tone="secondary" onPress={onSkip} /> : null}
       {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
     </StepFrame>
   );
