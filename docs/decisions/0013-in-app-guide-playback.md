@@ -35,6 +35,9 @@ If Skia or Reanimated fails on the device (build, signing, smoothness or battery
 - **Bake order (N1).** Every bake draws frame 0 without the trace first, so the Reduce Motion still view no longer opens empty while ~85 trace samples are taken.
 - **Reach (S2).** Nine of the ten guides can be opened in the app; sled push has no exercise row (distance sets aren't supported yet). Ben reviews all ten on the guide review web page.
 
+## Amendment 2026-10-09: guides v2 ([ADR 0014](0014-guides-v2-muscle-highlight-and-figure-drawing.md))
+Guides gain one non-neutral colour, `color.guide.muscle`, for muscle regions only (Ben's request), a `shade` alias, contoured v2 drawing with detail tiers, and a legend and `What not to do` card on How to. The bake cache key now includes canvas size, muscles, emphasis and Increase Contrast.
+
 ## Consequences
 - Adding or editing a guide now also means `npm run catalogue:index` (or `guide:check <id>` without `--verify`, which refreshes the index). `npm run check` fails otherwise.
 - **Needs a real iPhone:** smoothness, battery while resting on the How to screen, legibility at 240 pt, Reduce Motion, VoiceOver, light/dark, how long the first bake takes on Hermes, and the `.ipa` size and build time.
