@@ -1,5 +1,7 @@
 # Concurrent training: strength + endurance (incl. HYROX)
 
+> **Status 2026-10-09: library only.** Ben approved [playbook v1](playbook-v1.md) and said "stop with hyrox, it should be more adaptable depending on what the goal is / how training is being run". C1, C2 + C3 and C5 are now playbook rules 11, 12 and 13, and they apply only under the playbook's endurance switch. C4 isn't in v1. C7 and §5 (HYROX) are library examples, used only if Ben names a HYROX race as an event. §5's "Inference for Ben" and "The coach should ask which is primary" are **superseded** by rule G: the coach asks what any event is, when it is, what it demands and whether it's the priority. Where this file and the playbook differ, the playbook wins.
+
 *Training-researcher survey for Ben. All sources checked 2026-10-08. Not medical advice.*
 
 **Summary**
@@ -69,4 +71,4 @@
 
 **Expert opinion / commercial:** Athletica (a brief competitor) markets running planned around leg fatigue from strength, plus station-specific intensity. <https://www.athletica.ai/sports/hyrox>. Official partner programmes are covered in `programmes.md`.
 
-**Inference for Ben:** if Ben's priority is HYROX performance, the evidence says running volume and aerobic fitness come first. Keep heavy strength at maintenance-to-moderate volume (2 sessions/week), add strength-endurance and station practice, and use C1–C3 to protect the key run sessions. If his priority is strength with HYROX as a side goal, flip the emphasis and accept slower race progress. The coach should ask which is primary, not assume.
+*(Superseded 2026-10-09 by playbook rule G; kept for the record.)* **Inference for Ben:** if Ben's priority is HYROX performance, the evidence says running volume and aerobic fitness come first. Keep heavy strength at maintenance-to-moderate volume (2 sessions/week), add strength-endurance and station practice, and use C1–C3 to protect the key run sessions. If his priority is strength with HYROX as a side goal, flip the emphasis and accept slower race progress. The coach should ask which is primary, not assume.
