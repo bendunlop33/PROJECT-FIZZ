@@ -37,5 +37,18 @@
       "level": "soft",
       "shown": true
     }
+  ],
+  "faintGroups": [
+    "chest",
+    "abs",
+    "obliques",
+    "lowerBack",
+    "lats",
+    "upperBack",
+    "deltoid",
+    "frontArm",
+    "triceps",
+    "forearm",
+    "calves"
   ]
 }

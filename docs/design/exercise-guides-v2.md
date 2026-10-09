@@ -493,7 +493,7 @@ If Ben prefers the front view, the guide keeps `camera: "front"` and the text li
 
 **As drawn (9 Oct 2026, provisional):** `seenFrom: "back"`. The lats are one wing each side (`trunk.face … ±c0.3>0.6`, sweeping from the waist out to the armpit), with the upper back and rear shoulders soft. The thigh pad sits behind the body. The bottom bar position is the upper chest (0.588 H, just below the top of the shoulders), so from behind the upper back hides the bar and only its ends show; at neck height it could read as a behind-the-neck pull, which the brief forbids. At the bottom the upper arm (0.83) and forearm (0.68) are foreshortened, because the elbows go back and the hands sit forward at the chest; in-plane arms would fold the elbows down to the waist. To go back to the front view, drop `seenFrom`; the rest of the pose (bar to the upper chest, foreshortened arms at the bottom) is right from the front too.
 
-### 4.11 Muscle definition (all groups) (specified, not built; Ben picks the mode, B8)
+### 4.11 Muscle definition (all groups) (built 9 Oct 2026; the app draws `neutral` until Ben picks the mode, B8)
 
 > Ben, 9 Oct 2026, on the v2 guides: "can we add more definition to the actual muscle groups so you can see it even when they are not being used (faint colour)"
 
@@ -562,20 +562,22 @@ The notation and geometry are §4.4's. `= §4.5` means the same region the highl
 |---|---|---|---|---|
 | `chest` | chest, upper_chest | = §4.5 `chest` | thorax.face 0.55–0.85 ±c0.5 w0.42 (leaves a breastbone groove) | — |
 | `abs` | abs, core | = §4.5 `abs` | = §4.5 `abs` | — |
-| `obliques` | obliques, core | trunk.face 0.65–2.05 c+0.05 w0.4 | trunk.lat 1.05–2.2 d0.35 | = §4.5 `obliques` |
+| `obliques` | obliques, core | trunk.face 0.65–2.05 c+0.03 w0.35 | trunk.lat 1.05–2.2 d0.35 | = §4.5 `obliques` |
 | `lowerBack` | spinal_erectors; back view also core | trunk.back 0.85–1.9 d0.38 | — | trunk.face 0.85–1.9 ±c0.24 w0.2 (leaves a spine groove) |
-| `lats` | lats | trunk.back 1.98–2.56 d0.55 | thorax.lat 0.30–0.58 d0.25 | trunk.face 1.95–2.72 ±c0.42>0.62 w0.3>0.45 |
+| `lats` | lats | trunk.back 1.98–2.56 d0.55 | thorax.lat 0.30–0.58 d0.25 | trunk.face 1.95–2.72 ±c0.42>0.64 w0.3>0.4 |
 | `upperBack` | upper_back, traps | thorax.back 0.64–1.0 d0.45 (shoulder blade and trap slope) | = §4.5 `traps` (the slope only) | = §4.5 `traps` |
-| `glutes` | glutes, abductors | = §4.5 `glutes` | — | pelvis.face −0.65–0.8 ±c0.5 w0.48 (leaves the cleft) |
+| `glutes` | glutes, abductors | = §4.5 `glutes` | — | pelvis.face −0.65–0.8 ±c0.5 w0.44 (leaves the cleft) |
 | `outerHip` | abductors | — (part of `glutes`) | = §4.5 `abductors` | — (part of `glutes`) |
 | `deltoid` | front_delts, side_delts, rear_delts | upperArm.face −0.12–0.32 c0 w0.9 | upperArm.face −0.10–0.32 c0 w0.9 | upperArm.face −0.10–0.32 c0 w0.9 |
-| `frontArm` | biceps, brachialis | upperArm.front 0.38–0.88 d0.75 | upperArm.face 0.38–0.88 c−0.1 w0.6 | — |
-| `triceps` | triceps | upperArm.back 0.36–0.86 d0.8 | — | upperArm.face 0.36–0.86 c0 w0.75 |
+| `frontArm` | biceps, brachialis | upperArm.front 0.38–0.88 d0.7 | upperArm.face 0.38–0.88 c−0.1 w0.6 | — |
+| `triceps` | triceps | upperArm.back 0.36–0.86 d0.74 | — | upperArm.face 0.36–0.86 c0 w0.75 |
 | `forearm` | forearms, grip | = §4.5 `forearms` | = §4.5 `forearms` | = §4.5 `forearms` |
-| `quads` | quads | thigh.front 0.05–0.92 d0.9 | thigh.face 0.05–0.90 c+0.15 w0.62 | — |
-| `hamstrings` | hamstrings | thigh.back 0.08–0.88 d0.85 | — | thigh.face 0.10–0.88 c+0.1 w0.62 |
+| `quads` | quads | thigh.front 0.05–0.92 d0.86 | thigh.face 0.05–0.90 c+0.15 w0.62 | — |
+| `hamstrings` | hamstrings | thigh.back 0.08–0.88 d0.8 | — | thigh.face 0.10–0.88 c+0.1 w0.62 |
 | `adductors` | adductors | — | thigh.med 0.02–0.55 d0.4 | thigh.med 0.02–0.45 d0.3 |
 | `calves` | calves | = §4.5 `calves` | = §4.5 `calves` (two edge bands) | = §4.5 `calves` |
+
+**As built (9 Oct 2026):** seven cells were tuned on the renders, within the ±15%, so every groove is at least the 0.006 H target at every 30 fps frame of the 10 guides: side-view `obliques` (c+0.05 w0.4 → c+0.03 w0.35), `frontArm` (d0.75 → d0.7), `triceps` (d0.8 → d0.74), `quads` (d0.9 → d0.86) and `hamstrings` (d0.85 → d0.8); back-view `glutes` (w0.48 → w0.44) and `lats` (c…>0.62 w…>0.45 → c…>0.64 w…>0.4). **Folded joints:** no fixed map keeps a groove where an elbow or knee folds tight (the squat's bar hold, the bench and pulldown bottoms, a deep squat), because the forearm or calf then lies across the upper arm or thigh. So a faint limb shape stops short of the limb's other segments, by the groove, the way the shading bands already do (ADR 0015). The cut point is found by bisection, so it moves smoothly and the shape shrinks rather than popping. Straight limbs are unchanged. `guide:check` lists where a shape folds or fades away mid-cycle.
 
 That is 14 groups from the side, 12 from the front and 11 from behind. Every one of the 23 vocabulary muscles appears in some `Replaced by` list. The head, the neck (apart from the back-view trap shape, as in §4.5), hands, feet and the front of the shin stay body tone. No vocabulary muscle sits there, and a plain shin reads as bone, which is right.
 
@@ -725,7 +727,7 @@ interface FrameOpsOptions {
 - **`frameOps` defaults to `'off'`,** so existing callers, tests and the SVG/Skia match are unchanged until a caller opts in.
 - **App:** `MUSCLE_DEFINITION` in `apps/mobile/src/guide/player-model.ts`, beside `MUSCLE_PULSE`, set to `'neutral'` (recommended) until Ben decides B8. There is no in-app setting, as with the pulse. The bake cache key gains the effective mode.
 - **`guide:render`:** `--definition=off|neutral|tint` (default: the app's value) for `preview.png` and `--frames`, and `--definition-compact` for the thumbnail sheet. It always writes **`preview-definition.png`**: the key positions at 240pt in three pairs of rows (off, neutral and tint, each dark and light) at 3×, plus the first key position at 400pt in each mode. The 10 guides are re-rendered and stay `Draft`.
-- **Web review page:** a segmented control `Muscle definition: Off · Neutral (recommended) · Violet tint` that applies to every guide on the page, plus a `Thumbnails too` checkbox (`definitionCompact`). It changes only the review render, never the app.
+- **Web review page:** a segmented control `Muscle definition: Off · Neutral (recommended) · Violet tint` that applies to every guide on the page, plus a `Thumbnails too` checkbox (`definitionCompact`). It changes only the review render, never the app. **Not built (9 Oct 2026):** the repo has no web review page yet, so `preview-definition.png` is the side-by-side comparison for B8; `renderFrameBody` takes the same `definition` option, ready for the page when it exists.
 
 #### 4.11.10 Data needed
 

@@ -9,6 +9,9 @@ import { AppText } from '../ui';
 /** Swatch diameter (design-system `guide.legendSwatch`). */
 const SWATCH = 12;
 
+/** `Not shown` and the tint definition line are notes, in `text.secondary`, with no swatch (§9.58). */
+const secondary = (line: LegendLine): boolean => line.kind === 'notShown' || line.kind === 'definition';
+
 /** ● strong: filled. ◐ soft: the hue at the soft opacity inside a 1 pt ring, so it differs in shape as well as tone. */
 function Swatch({ kind }: { kind: 'most' | 'also' }) {
   const theme = useTheme();
@@ -28,9 +31,10 @@ function Swatch({ kind }: { kind: 'most' | 'also' }) {
 
 /**
  * `MuscleFocusLegend` (design-system §9.58, guides v2 §5.3): `Feel it most:`,
- * `Also works:` and `Not shown from this side:`. The text always names the
- * muscles, so the colour on the figure is never the only signal. Each line is
- * one VoiceOver element; swatches are decorative. Not tappable.
+ * `Also works:`, `Faint violet:` (tint definition only, §4.11.8) and
+ * `Not shown from this side:`. The text always names the muscles, so the
+ * colour on the figure is never the only signal. Each line is one VoiceOver
+ * element; swatches are decorative. Not tappable.
  */
 export function MuscleFocusLegend({ lines }: { lines: readonly LegendLine[] }) {
   const theme = useTheme();
@@ -41,9 +45,9 @@ export function MuscleFocusLegend({ lines }: { lines: readonly LegendLine[] }) {
       {lines.map((line) => (
         <View key={line.kind} accessible accessibilityLabel={line.accessibilityLabel} style={{ flexDirection: 'row', gap: theme.space['2'] }}>
           {/* Lines keep one indent when any line has a swatch, so the text aligns. */}
-          {line.swatch && line.kind !== 'notShown' ? <Swatch kind={line.kind} /> : anySwatch ? <View style={{ width: SWATCH }} /> : null}
-          <AppText variant="callout" color={line.kind === 'notShown' ? 'text.secondary' : 'text.primary'} style={{ flex: 1 }}>
-            <AppText variant="callout" color={line.kind === 'notShown' ? 'text.secondary' : 'text.primary'} style={{ fontWeight: '600' }}>
+          {line.swatch && (line.kind === 'most' || line.kind === 'also') ? <Swatch kind={line.kind} /> : anySwatch ? <View style={{ width: SWATCH }} /> : null}
+          <AppText variant="callout" color={secondary(line) ? 'text.secondary' : 'text.primary'} style={{ flex: 1 }}>
+            <AppText variant="callout" color={secondary(line) ? 'text.secondary' : 'text.primary'} style={{ fontWeight: '600' }}>
               {line.label}
             </AppText>
             {` ${line.list}`}

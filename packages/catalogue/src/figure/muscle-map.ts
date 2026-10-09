@@ -22,6 +22,7 @@
  */
 import type { Muscle } from '../vocab';
 import { MUSCLES } from '../vocab';
+import type { DetailTier } from './draw';
 import type { GuideFocus, RegionAdjust } from './guide-schema';
 import { SEGMENT_NAMES, type SegmentName } from './profiles';
 
@@ -267,4 +268,149 @@ export function resolveFocus(muscles: MuscleInput, focus: GuideFocus | undefined
 /** The focus view of a guide: side, or front/back for a front-view guide. */
 export function focusViewOf(guide: { view: 'side' | 'front'; seenFrom?: 'front' | 'back' | undefined }): FocusView {
   return guide.view === 'side' ? 'side' : (guide.seenFrom ?? 'front');
+}
+
+/*
+ * Muscle definition (guides v2 §4.11): one faint, always-visible shape for
+ * every muscle group the view can show, so the figure reads as a body with
+ * muscles and the coloured groups read as "these ones". Anatomy only: faint
+ * makes no claim about effort (rule 6).
+ */
+
+/** `off` draws today's figure; `neutral` (recommended) a faint body tone; `tint` faint violet (B8). */
+export type MuscleDefinition = 'off' | 'neutral' | 'tint';
+
+/**
+ * The mode the app ships until Ben decides B8 (`neutral`, recommended), and
+ * what `guide:render` draws by default. The app's `MUSCLE_DEFINITION` must
+ * equal it (a test checks), so the previews show what the phone shows.
+ */
+export const DEFAULT_MUSCLE_DEFINITION: MuscleDefinition = 'neutral';
+
+export const MUSCLE_DEFINITIONS = ['off', 'neutral', 'tint'] as const satisfies readonly MuscleDefinition[];
+
+/** The 16 definition groups (§4.11.3): muscle groups a gym-goer would point to, one calm shape each. */
+export const DEFINITION_GROUPS = [
+  'chest',
+  'abs',
+  'obliques',
+  'lowerBack',
+  'lats',
+  'upperBack',
+  'glutes',
+  'outerHip',
+  'deltoid',
+  'frontArm',
+  'triceps',
+  'forearm',
+  'quads',
+  'hamstrings',
+  'adductors',
+  'calves',
+] as const;
+export type DefinitionGroup = (typeof DEFINITION_GROUPS)[number];
+
+interface DefinitionRow extends Row {
+  /** A group isn't drawn faint while any of these muscles is coloured in the view, or hidden by the guide (§4.11.5). */
+  replacedBy: readonly Muscle[];
+  /** Muscles that replace it in one view only (lower back: `core` from behind, where core is the erectors and obliques). */
+  replacedByIn?: Partial<Record<FocusView, readonly Muscle[]>>;
+}
+
+/**
+ * §4.11.3, as written in the spec (`null` = no group in that view). Cells
+ * marked `= §4.5` there reuse the highlight's own text, so they can't drift.
+ * The others are trimmed or deepened so neighbouring groups sit side by side
+ * with a narrow groove of body tone (`DEFINITION_GROOVE`), never overlapping
+ * within a body group. Sub-parts (`upper_chest`, `brachialis`) and composites
+ * (`core`, `grip`) have no group of their own: they'd put two tones on one muscle.
+ */
+export const DEFINITION_TEXT: Record<DefinitionGroup, DefinitionRow> = {
+  chest: { replacedBy: ['chest', 'upper_chest'], side: MAP_TEXT.chest.side, front: ['thorax.face 0.55–0.85 ±c0.5 w0.42'], back: null },
+  abs: { replacedBy: ['abs', 'core'], side: MAP_TEXT.abs.side, front: MAP_TEXT.abs.front, back: null },
+  obliques: { replacedBy: ['obliques', 'core'], side: ['trunk.face 0.65–2.05 c+0.03 w0.35'], front: ['trunk.lat 1.05–2.2 d0.35'], back: MAP_TEXT.obliques.back },
+  lowerBack: { replacedBy: ['spinal_erectors'], replacedByIn: { back: ['core'] }, side: ['trunk.back 0.85–1.9 d0.38'], front: null, back: ['trunk.face 0.85–1.9 ±c0.24 w0.2'] },
+  lats: { replacedBy: ['lats'], side: ['trunk.back 1.98–2.56 d0.55'], front: ['thorax.lat 0.30–0.58 d0.25'], back: ['trunk.face 1.95–2.72 ±c0.42>0.64 w0.3>0.4'] },
+  upperBack: { replacedBy: ['upper_back', 'traps'], side: ['thorax.back 0.64–1.0 d0.45'], front: MAP_TEXT.traps.front, back: MAP_TEXT.traps.back },
+  glutes: { replacedBy: ['glutes', 'abductors'], side: MAP_TEXT.glutes.side, front: null, back: ['pelvis.face -0.65–0.8 ±c0.5 w0.44'] },
+  outerHip: { replacedBy: ['abductors'], side: null, front: MAP_TEXT.abductors.front, back: null },
+  deltoid: {
+    replacedBy: ['front_delts', 'side_delts', 'rear_delts'],
+    side: ['upperArm.face -0.12–0.32 c0 w0.9'],
+    front: ['upperArm.face -0.10–0.32 c0 w0.9'],
+    back: ['upperArm.face -0.10–0.32 c0 w0.9'],
+  },
+  frontArm: { replacedBy: ['biceps', 'brachialis'], side: ['upperArm.front 0.38–0.88 d0.7'], front: ['upperArm.face 0.38–0.88 c-0.1 w0.6'], back: null },
+  triceps: { replacedBy: ['triceps'], side: ['upperArm.back 0.36–0.86 d0.74'], front: null, back: ['upperArm.face 0.36–0.86 c0 w0.75'] },
+  forearm: { replacedBy: ['forearms', 'grip'], side: MAP_TEXT.forearms.side, front: MAP_TEXT.forearms.front, back: MAP_TEXT.forearms.back },
+  quads: { replacedBy: ['quads'], side: ['thigh.front 0.05–0.92 d0.86'], front: ['thigh.face 0.05–0.90 c+0.15 w0.62'], back: null },
+  hamstrings: { replacedBy: ['hamstrings'], side: ['thigh.back 0.08–0.88 d0.8'], front: null, back: ['thigh.face 0.10–0.88 c+0.1 w0.62'] },
+  adductors: { replacedBy: ['adductors'], side: null, front: ['thigh.med 0.02–0.55 d0.4'], back: ['thigh.med 0.02–0.45 d0.3'] },
+  calves: { replacedBy: ['calves'], side: MAP_TEXT.calves.side, front: MAP_TEXT.calves.front, back: MAP_TEXT.calves.back },
+};
+
+export interface DefinitionEntry {
+  replacedBy: readonly Muscle[];
+  replacedByIn: Partial<Record<FocusView, readonly Muscle[]>>;
+  side: readonly RegionSpec[] | null;
+  front: readonly RegionSpec[] | null;
+  back: readonly RegionSpec[] | null;
+}
+
+/** §4.11.3 as typed regions, parsed with the highlight's own `parseRegion`. A test fails on an unparsable cell. */
+export const DEFINITION_MAP: Record<DefinitionGroup, DefinitionEntry> = Object.fromEntries(
+  DEFINITION_GROUPS.map((g) => {
+    const row = DEFINITION_TEXT[g];
+    return [g, { replacedBy: row.replacedBy, replacedByIn: row.replacedByIn ?? {}, side: parseCell(row.side), front: parseCell(row.front), back: parseCell(row.back) }];
+  }),
+) as Record<DefinitionGroup, DefinitionEntry>;
+
+/** Muscles that take a group's place in a view (§4.11.5). */
+export function definitionReplacedBy(group: DefinitionGroup, view: FocusView): readonly Muscle[] {
+  const row = DEFINITION_MAP[group];
+  return [...row.replacedBy, ...(row.replacedByIn[view] ?? [])];
+}
+
+/**
+ * The faint groups of a view (§4.11.5): every group the view can show, minus
+ * those a coloured muscle replaces (a group is faint or coloured, never both)
+ * and those whose muscles the guide hides (`focus.hide`; a faint shape there
+ * would contradict the `Not shown` line). `focus` null: no entry, so nothing
+ * is coloured and every group the view can show is faint.
+ */
+export function definitionGroupsFor(view: FocusView, focus: Pick<ResolvedFocus, 'drawn'> | null, hidden: readonly string[] = []): DefinitionGroup[] {
+  const taken = new Set<string>([...(focus?.drawn ?? []), ...hidden]);
+  return DEFINITION_GROUPS.filter((g) => DEFINITION_MAP[g][view] !== null && !definitionReplacedBy(g, view).some((m) => taken.has(m)));
+}
+
+/** What decides the mode actually drawn (§4.11.9). */
+export interface DefinitionContext {
+  tier: DetailTier;
+  /** Review only: draw definition at the S tier too. */
+  definitionCompact?: boolean;
+  increaseContrast?: boolean;
+  differentiateWithoutColor?: boolean;
+  /** The catalogue entry was read and lists at least one muscle. */
+  hasMuscles: boolean;
+}
+
+/**
+ * The one place the fallback rules live (§4.11.5, §4.11.7): nothing at the S
+ * tier unless `definitionCompact`; `tint` draws nothing without the entry (no
+ * violet without a source), and draws as `neutral` under Increase Contrast
+ * or Differentiate Without Color. `frameOps` and the legend both use it.
+ */
+export function effectiveDefinition(mode: MuscleDefinition, ctx: DefinitionContext): MuscleDefinition {
+  if (mode === 'off') return 'off';
+  if (ctx.tier === 'compact' && ctx.definitionCompact !== true) return 'off';
+  if (mode === 'tint') {
+    if (!ctx.hasMuscles) return 'off';
+    if (ctx.increaseContrast === true || ctx.differentiateWithoutColor === true) return 'neutral';
+  }
+  return mode;
+}
+
+/** Whether a caller's muscles include at least one vocabulary muscle (an entry that was read and lists some). */
+export function hasListedMuscles(muscles: MuscleInput | null | undefined): boolean {
+  return muscles != null && known([...muscles.primary, ...muscles.secondary]).length > 0;
 }

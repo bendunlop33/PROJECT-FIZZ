@@ -22,5 +22,20 @@
       "level": "strong",
       "shown": true
     }
+  ],
+  "faintGroups": [
+    "chest",
+    "abs",
+    "obliques",
+    "lowerBack",
+    "lats",
+    "upperBack",
+    "glutes",
+    "deltoid",
+    "frontArm",
+    "forearm",
+    "quads",
+    "hamstrings",
+    "calves"
   ]
 }

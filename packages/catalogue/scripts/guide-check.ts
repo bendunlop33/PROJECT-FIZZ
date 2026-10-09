@@ -39,6 +39,7 @@ function metaOf(id: string, bytes: number, report: GuideCheckReport): GuideMeta 
     reviewStatus: g.review.status,
     check: { status: report.ok ? 'pass' : 'fail', failed: report.items.filter((i) => !i.ok).map((i) => i.id), warnings: report.items.filter((i) => i.ok && i.warn === true).map((i) => i.id) },
     focus: report.focus,
+    faintGroups: report.faintGroups,
   };
 }
 

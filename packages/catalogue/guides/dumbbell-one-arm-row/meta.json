@@ -47,5 +47,16 @@
       "level": "soft",
       "shown": true
     }
+  ],
+  "faintGroups": [
+    "chest",
+    "abs",
+    "obliques",
+    "lowerBack",
+    "glutes",
+    "triceps",
+    "quads",
+    "hamstrings",
+    "calves"
   ]
 }

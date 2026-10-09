@@ -14,7 +14,9 @@
   "check": {
     "status": "pass",
     "failed": [],
-    "warnings": []
+    "warnings": [
+      "definition"
+    ]
   },
   "focus": [
     {
@@ -42,5 +44,15 @@
       "level": "soft",
       "shown": true
     }
+  ],
+  "faintGroups": [
+    "obliques",
+    "lowerBack",
+    "glutes",
+    "triceps",
+    "forearm",
+    "hamstrings",
+    "adductors",
+    "calves"
   ]
 }

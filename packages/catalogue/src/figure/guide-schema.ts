@@ -461,5 +461,7 @@ export const GuideMetaSchema = z.strictObject({
   }),
   /** Muscle focus table (guides v2 §4.8): each listed muscle, its level and whether this view shows it. */
   focus: z.array(z.strictObject({ muscle: z.string(), level: z.enum(['strong', 'soft']), shown: z.boolean() })).optional(),
+  /** Muscle groups drawn faint with muscle definition on (guides v2 §4.11.5). */
+  faintGroups: z.array(z.string()).optional(),
 });
 export type GuideMeta = z.infer<typeof GuideMetaSchema>;

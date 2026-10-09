@@ -12,6 +12,12 @@
  *   for muscle regions only (Ben's request of 9 Oct 2026; ADR 0014). Violet,
  *   because every other hue already means something (accent, done, warning,
  *   pain, danger). The same values in every look.
+ *
+ * Muscle definition (guides v2 §4.11, design-system §2.3) adds two opaque,
+ * derived paints, never new colour values: `faintNeutral` (`color.guide.definition`,
+ * an alias of `text.primary`, over `nearBody`) and `faintTint` (`guide.muscle`
+ * at 0.18 over `nearBody`). Pre-composited, so faint shapes are drawn at
+ * opacity 1 and never stack.
  */
 import type { Paint } from './props';
 
@@ -23,6 +29,9 @@ export type GuideTokens = Record<GuideTokenName, string>;
 export type GuideStyle = Record<Paint, string>;
 export type GuideScheme = 'dark' | 'light';
 
+/** Paints worked out per scheme rather than one fixed alias each. */
+type DerivedPaint = 'shade' | 'muscle' | 'faintNeutral' | 'faintTint';
+
 /** The neutral paints: one alias each, the same in both schemes (research §5.5). */
 export const GUIDE_PAINT_TOKENS = {
   background: 'bg.surface',
@@ -33,13 +42,25 @@ export const GUIDE_PAINT_TOKENS = {
   cable: 'text.tertiary',
   frame: 'border.control',
   frameFill: 'bg.raised',
-} as const satisfies Record<Exclude<Paint, 'shade' | 'muscle'>, GuideTokenName>;
+} as const satisfies Record<Exclude<Paint, DerivedPaint>, GuideTokenName>;
 
 /** `color.guide.shade`: the darkest neutral in each scheme (guides v2 §4.2). */
 export const GUIDE_SHADE_TOKEN = { dark: 'bg.canvas', light: 'text.primary' } as const satisfies Record<GuideScheme, GuideTokenName>;
 
 /** `color.guide.muscle` (guides v2 §4.2, GV2): a dedicated violet, the same in look A and look D. */
 export const GUIDE_MUSCLE_COLOR = { dark: '#7A4AF0', light: '#9B7BF7' } as const satisfies Record<GuideScheme, string>;
+
+/** `color.guide.definition` (guides v2 §4.11.2): the neutral furthest from the canvas, so faint shapes move the body tone away from it. */
+export const GUIDE_DEFINITION_TOKEN = 'text.primary' as const satisfies GuideTokenName;
+
+/**
+ * Faint muscle-definition opacity over `nearBody` (design-system
+ * `guide.definitionOpacity`, `guide.definitionTintOpacity`).
+ */
+export const DEFINITION_OPACITY = {
+  neutral: { dark: 0.25, light: 0.18 },
+  tint: { dark: 0.18, light: 0.18 },
+} as const satisfies Record<'neutral' | 'tint', Record<GuideScheme, number>>;
 
 /** Muscle opacities (guides v2 §4.3, design-system `guide.muscleSoftOpacity`). */
 export const MUSCLE_OPACITY = {
@@ -50,7 +71,8 @@ export const MUSCLE_OPACITY = {
   pulse: { strong: [0.8, 1], soft: [0.36, 0.5] },
 } as const;
 
-function luminance(hex: string): number {
+/** WCAG 2 relative luminance of a `#RRGGBB` colour (0 black … 1 white). */
+export function relativeLuminance(hex: string): number {
   const m = /^#([0-9a-f]{6})$/i.exec(hex);
   if (!m?.[1]) return 0;
   const n = parseInt(m[1], 16);
@@ -63,8 +85,8 @@ function luminance(hex: string): number {
 
 /** WCAG 2 contrast ratio of two `#RRGGBB` colours. */
 export function contrastRatio(a: string, b: string): number {
-  const la = luminance(a);
-  const lb = luminance(b);
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
@@ -78,14 +100,17 @@ export function compositeOver(top: string, alpha: number, bottom: string): strin
 
 /** Dark or light, from the canvas colour (so callers that only have tokens get the right muscle hue). */
 export function schemeOfTokens(tokens: Pick<GuideTokens, 'bg.surface'>): GuideScheme {
-  return luminance(tokens['bg.surface']) < 0.2 ? 'dark' : 'light';
+  return relativeLuminance(tokens['bg.surface']) < 0.2 ? 'dark' : 'light';
 }
 
 export function guideStyleFromTokens(tokens: GuideTokens, scheme: GuideScheme = schemeOfTokens(tokens)): GuideStyle {
   const out = {} as GuideStyle;
-  for (const [paint, token] of Object.entries(GUIDE_PAINT_TOKENS) as [Exclude<Paint, 'shade' | 'muscle'>, GuideTokenName][]) out[paint] = tokens[token];
+  for (const [paint, token] of Object.entries(GUIDE_PAINT_TOKENS) as [Exclude<Paint, DerivedPaint>, GuideTokenName][]) out[paint] = tokens[token];
   out.shade = tokens[GUIDE_SHADE_TOKEN[scheme]];
   out.muscle = GUIDE_MUSCLE_COLOR[scheme];
+  // Opaque composites from the live theme (§4.11.6): drawn at opacity 1, so overlapping faint shapes never stack.
+  out.faintNeutral = compositeOver(tokens[GUIDE_DEFINITION_TOKEN], DEFINITION_OPACITY.neutral[scheme], out.nearBody);
+  out.faintTint = compositeOver(out.muscle, DEFINITION_OPACITY.tint[scheme], out.nearBody);
   return out;
 }
 

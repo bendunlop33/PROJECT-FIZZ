@@ -12,7 +12,8 @@ import { poseAt, prepareGuide, type Pose, type PreparedGuide } from './pose';
 import { ROM_PROFILES, type AngleName } from './rig';
 import { BODY_GROUPS, groupContours } from './body';
 import { contactVelocity, poseContinuity } from './motion-metrics';
-import { adjustProblems, focusViewOf, MUSCLE_REGION_MAP, parseRegion, resolveFocus, type MuscleLevel } from './muscle-map';
+import { adjustProblems, DEFINITION_GROUPS, DEFINITION_MAP, definitionGroupsFor, focusViewOf, MUSCLE_REGION_MAP, parseRegion, resolveFocus, type DefinitionGroup, type MuscleLevel } from './muscle-map';
+import { DEFINITION_GROOVE, DEFINITION_GROOVE_FLOOR, definitionShapes, narrowestDefinitionGroove, type DefinitionGroove } from './regions';
 
 export const CHECK_FPS = 30;
 export const LIMITS = {
@@ -47,6 +48,7 @@ export const CHECK_IDS = [
   'key-positions',
   'focus',
   'outline-contact',
+  'definition',
 ] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
@@ -82,6 +84,8 @@ export interface GuideCheckReport {
   frames: number;
   /** Muscle focus table (empty without a rich entry). */
   focus: FocusRow[];
+  /** Muscle groups drawn faint with muscle definition on (guides v2 §4.11.5), in `DEFINITION_GROUPS` order. */
+  faintGroups: DefinitionGroup[];
 }
 
 const r4 = (n: number): string => n.toFixed(4);
@@ -403,17 +407,50 @@ function checkOutlineContact(guide: Guide, poses: readonly Pose[]): CheckItem {
     : { id: 'outline-contact', ok: true, detail: `v2 outline stays out of the floor and props (max ${r4(worst.depth)} H)` };
 }
 
+/**
+ * Report-only (guides v2 §4.11): which groups the guide draws faint with
+ * muscle definition on; the narrowest groove between two faint shapes of one
+ * body group over the whole cycle, with every group of the view drawn (the
+ * no-entry case, a superset of any guide's); warns under the 0.004 H floor
+ * and when a faint shape appears or disappears mid-cycle (a foreshortened
+ * limb fading out, or a tight fold), so the guide-maker can look for a pop.
+ */
+function checkDefinition(guide: Guide, entry: CatalogueEntry | null, poses: readonly Pose[]): { item: CheckItem; faint: DefinitionGroup[] } {
+  const view = focusViewOf(guide);
+  const focus = entry === null ? null : resolveFocus({ primary: entry.primaryMuscles, secondary: entry.secondaryMuscles }, guide.focus, view);
+  const faint = definitionGroupsFor(view, focus, guide.focus?.hide ?? []);
+  const all = DEFINITION_GROUPS.filter((g) => DEFINITION_MAP[g][view] !== null);
+  let worst: (DefinitionGroove & { t: number }) | null = null;
+  const seen = new Map<string, number>();
+  // Every other frame (15 fps) plus the key frames: enough to find the narrowest groove and a shape that comes and goes.
+  const keyTimes = new Set(prepareGuide(guide).keys.map((k) => k.t));
+  const sampled = poses.filter((p, i) => i % 2 === 0 || keyTimes.has(p.t));
+  for (const p of sampled) {
+    const shapes = definitionShapes(p.body, all);
+    const g = narrowestDefinitionGroove(shapes);
+    if (g !== null && (worst === null || g.gap < worst.gap)) worst = { ...g, t: p.t };
+    for (const key of new Set(shapes.filter((sh) => faint.includes(sh.definition)).map((sh) => `${sh.definition} (${sh.group})`))) seen.set(key, (seen.get(key) ?? 0) + 1);
+  }
+  const pops = [...seen.entries()].filter(([, n]) => n < sampled.length).map(([k]) => k);
+  const groove = worst === null ? 'no two shapes share a body group' : `narrowest groove ${r4(worst.gap)} H (${worst.a}/${worst.b}, ${worst.group}, t=${worst.t.toFixed(3)}; target ${DEFINITION_GROOVE}, floor ${DEFINITION_GROOVE_FLOOR})`;
+  const narrow = worst !== null && worst.gap < DEFINITION_GROOVE_FLOOR;
+  const warn = narrow || pops.length > 0;
+  const detail = `${view} view, faint: ${faint.join(' · ') || 'none'}; ${groove}${pops.length > 0 ? `; fold or fade away mid-cycle (check for a pop): ${pops.join(', ')}` : ''}`;
+  return { item: { id: 'definition', ok: true, ...(warn ? { warn: true } : {}), detail }, faint };
+}
+
 export function checkGuide(input: GuideCheckInput): GuideCheckReport {
   const parsed = GuideSchema.safeParse(input.raw);
   if (!parsed.success) {
     const detail = parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
-    return { ok: false, guide: null, frames: 0, focus: [], items: [{ id: 'schema', ok: false, detail }] };
+    return { ok: false, guide: null, frames: 0, focus: [], faintGroups: [], items: [{ id: 'schema', ok: false, detail }] };
   }
   const guide = parsed.data;
   const prepared = prepareGuide(guide);
   const times = sampleTimes(guide, prepared.keys, CHECK_FPS);
   const poses = times.map((t) => poseAt(prepared, t));
   const focus = checkFocus(guide, input.entry);
+  const definition = checkDefinition(guide, input.entry, poses);
   const items: CheckItem[] = [
     { id: 'schema', ok: true, detail: 'guide.json matches format v1' },
     checkExercise(guide, input.dirKey, input.entry),
@@ -436,6 +473,7 @@ export function checkGuide(input: GuideCheckInput): GuideCheckReport {
     checkKeyPositions(prepared, input.entry),
     focus.item,
     checkOutlineContact(guide, poses),
+    definition.item,
   ];
-  return { ok: items.every((i) => i.ok), items, guide, frames: poses.length, focus: focus.rows };
+  return { ok: items.every((i) => i.ok), items, guide, frames: poses.length, focus: focus.rows, faintGroups: definition.faint };
 }

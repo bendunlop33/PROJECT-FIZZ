@@ -4,14 +4,21 @@
  * segment coordinates, so it moves with the pose and stays inside the
  * segment's own outline by construction. Pure.
  */
-import { add, pointInPolygon, scale, sub, v, type Vec } from './math';
-import { chainOutline, frameAt, handContours, segmentPoint, trunkSegments, widthsAt, type BodyGroup, type BodySegment, type FigureBody } from './body';
+import { add, bounds, dist, pointInPolygon, pointSegmentDistance, polygonGap, scale, sub, v, type Vec } from './math';
+import { chainOutline, edgeCurve, frameAt, handContours, segmentPoint, trunkSegments, widthsAt, type BodyGroup, type BodySegment, type FigureBody } from './body';
 import { profileRange, type SegmentName } from './profiles';
-import type { MuscleLevel, RegionSpec, ResolvedFocus } from './muscle-map';
+import { DEFINITION_MAP, type DefinitionGroup, type FocusView, type MuscleLevel, type RegionSpec, type ResolvedFocus } from './muscle-map';
 import { counterClockwise, signedArea } from './paths';
 
 /** Muscle regions stay this far inside the silhouette (design-system `guide.muscleInset`). */
 export const MUSCLE_INSET = 0.0035;
+/**
+ * Plain body tone between two faint definition shapes of one body group
+ * (design-system `guide.definitionGroove`, guides v2 §4.11.3): the target, in H
+ * (about 1.2 pt at 240 pt), and the floor the tests and `guide:check` hold.
+ */
+export const DEFINITION_GROOVE = 0.006;
+export const DEFINITION_GROOVE_FLOOR = 0.004;
 /** Samples along a region's length (§4.4). */
 const REGION_SAMPLES = 12;
 
@@ -90,37 +97,52 @@ function across(base: RegionBase, s: number, off: number): Vec {
 /** Samples along a region: 12 per unit of `s`, at least 12 (a trunk-chain region spans up to 3.7 units). */
 const samplesFor = (s0: number, s1: number): number => Math.max(REGION_SAMPLES, Math.ceil(REGION_SAMPLES * (s1 - s0)));
 
-/** Edge band (§4.4): along one edge, tapering to the edge at both ends like a muscle belly. */
-function edgeBand(base: RegionBase, x: 1 | -1, s0: number, s1: number, d: number): Vec[] {
-  const ss = sampleRange(s0, s1, samplesFor(s0, s1));
-  const outer = ss.map((s) => {
-    const w = base.widths(s);
-    return across(base, s, x > 0 ? w.front - MUSCLE_INSET : -(w.back - MUSCLE_INSET));
-  });
-  const inner = ss.map((s) => {
+/** A region's cross-section at `s` for a taper value: its two boundary points (edge band: edge, inner; lens: upper, lower). */
+type Section = (s: number, t: number) => readonly [Vec, Vec];
+
+/** Edge band cross-section (§4.4): the edge (inset), and a point `d × half-width × taper` in from it. */
+function edgeSection(base: RegionBase, x: 1 | -1, d: number): Section {
+  return (s, t) => {
     const w = base.widths(s);
     const half = x > 0 ? w.front : w.back;
-    const depth = d * half * taper(s, s0, s1);
-    return across(base, s, x * Math.max(0, half - MUSCLE_INSET - depth));
-  });
-  return [...outer, ...inner.reverse()];
+    const outer = across(base, s, x > 0 ? w.front - MUSCLE_INSET : -(w.back - MUSCLE_INSET));
+    const depth = d * half * t;
+    return [outer, across(base, s, x * Math.max(0, half - MUSCLE_INSET - depth))];
+  };
 }
 
-/** Face lens (§4.4): centred at `c` across the segment, `w` of its full width (each may run from one value at s0 to another at s1). */
-function faceLens(base: RegionBase, s0: number, s1: number, c: readonly [number, number], w: readonly [number, number]): Vec[] {
-  const ss = sampleRange(s0, s1, samplesFor(s0, s1));
-  const upper: Vec[] = [];
-  const lower: Vec[] = [];
-  for (const s of ss) {
+/** Face lens cross-section (§4.4): centred at `c`, `w` of the full width (each may run from one value at s0 to another at s1). */
+function lensSection(base: RegionBase, s0: number, s1: number, c: readonly [number, number], w: readonly [number, number]): Section {
+  return (s, t) => {
     const wd = base.widths(s);
     const k = (s - s0) / (s1 - s0);
     const ck = c[0] + (c[1] - c[0]) * k;
     const centre = ck >= 0 ? ck * wd.front : ck * wd.back;
-    const half = ((w[0] + (w[1] - w[0]) * k) * (wd.front + wd.back)) / 2 * taper(s, s0, s1);
-    upper.push(across(base, s, centre + half));
-    lower.push(across(base, s, centre - half));
-  }
-  return [...upper, ...lower.reverse()];
+    const half = ((w[0] + (w[1] - w[0]) * k) * (wd.front + wd.back)) / 2 * t;
+    return [across(base, s, centre + half), across(base, s, centre - half)];
+  };
+}
+
+/**
+ * A region swept along `s0–s1`, tapering at both ends like a muscle belly.
+ * `span` (definition shapes at a folded joint) keeps it to a sub-range: it
+ * then tapers to nothing at the new ends too, and never grows past the full shape.
+ */
+function sweep(section: Section, s0: number, s1: number, span?: readonly [number, number]): Vec[] {
+  const [a, b] = span ?? [s0, s1];
+  const ss = sampleRange(a, b, samplesFor(a, b));
+  const pairs = ss.map((s) => section(s, span === undefined ? taper(s, s0, s1) : Math.min(taper(s, s0, s1), taper(s, a, b))));
+  return [...pairs.map((p) => p[0]), ...pairs.map((p) => p[1]).reverse()];
+}
+
+/** Edge band (§4.4): along one edge, tapering to the edge at both ends like a muscle belly. */
+function edgeBand(base: RegionBase, x: 1 | -1, s0: number, s1: number, d: number, span?: readonly [number, number]): Vec[] {
+  return sweep(edgeSection(base, x, d), s0, s1, span);
+}
+
+/** Face lens (§4.4): centred at `c` across the segment, `w` of its full width (each may run from one value at s0 to another at s1). */
+function faceLens(base: RegionBase, s0: number, s1: number, c: readonly [number, number], w: readonly [number, number], span?: readonly [number, number]): Vec[] {
+  return sweep(lensSection(base, s0, s1, c, w), s0, s1, span);
 }
 
 /** A polygon shrunk by `d` along its vertex normals (small insets of near-convex shapes). */
@@ -158,46 +180,180 @@ function groupOf(body: FigureBody, seg: BodySegment): RegionGroup {
 /**
  * One region spec on one base → contours. `trunk` is true for trunk segments
  * and the trunk chain: there a mirrored pair, or a front/back-view lat/med
- * band, gives two contours (one each side of the body).
+ * band, gives two contours (one each side of the body). `span` limits a limb
+ * region to part of its range (definition shapes at a folded joint).
  */
-function specContours(base: RegionBase, trunk: boolean, spec: Exclude<RegionSpec, { kind: 'hand' }>): Vec[][] {
+function specContours(base: RegionBase, trunk: boolean, spec: Exclude<RegionSpec, { kind: 'hand' }>, span?: readonly [number, number]): Vec[][] {
   const [s0, s1] = spec.s;
   if (spec.kind === 'edge') {
     const x = spec.surface === 'front' || spec.surface === 'lat' ? 1 : -1;
     // Front/back views: a trunk segment's lateral edge is both sides of the body.
     if (trunk && (spec.surface === 'lat' || spec.surface === 'med')) return [edgeBand(base, 1, s0, s1, spec.d), edgeBand(base, -1, s0, s1, spec.d)];
-    return [edgeBand(base, x, s0, s1, spec.d)];
+    return [edgeBand(base, x, s0, s1, spec.d, span)];
   }
-  const out = [faceLens(base, s0, s1, spec.c, spec.w)];
+  const out = [faceLens(base, s0, s1, spec.c, spec.w, span)];
   if (spec.mirror && trunk && spec.c.some((x) => x !== 0)) out.push(faceLens(base, s0, s1, [-spec.c[0], -spec.c[1]], spec.w));
+  return out;
+}
+
+/** A limb region's cross-section (for the fold test); limb regions are one band or lens, never mirrored. */
+function limbSection(base: RegionBase, spec: Exclude<RegionSpec, { kind: 'hand' }>): Section {
+  if (spec.kind === 'edge') return edgeSection(base, spec.surface === 'front' || spec.surface === 'lat' ? 1 : -1, spec.d);
+  return lensSection(base, spec.s[0], spec.s[1], spec.c, spec.w);
+}
+
+/**
+ * What a neighbouring segment of the same limb must keep clear of at a fold:
+ * `seg`'s outline without its end caps, and without a groove-wide strip at
+ * the joint it shares with that neighbour (`shared`). Faint shapes never
+ * reach into that strip, and leaving it out means a straight joint cuts
+ * nothing: shapes change only where the limb really folds.
+ */
+function foldOutline(seg: BodySegment, shared: 'start' | 'end' | null): Vec[] {
+  const [lo, hi] = profileRange(seg.profile);
+  const strip = DEFINITION_GROOVE / Math.max(seg.length, 1e-9);
+  const from = shared === 'start' ? Math.max(lo, strip) : lo;
+  const to = shared === 'end' ? Math.min(hi, 1 - strip) : hi;
+  return [...edgeCurve(seg, 1, from, to), ...edgeCurve(seg, -1, from, to).reverse()];
+}
+
+/** Which end of `other` joins `seg` (the elbow is the upper arm's end and the forearm's start), if either. */
+function sharedEnd(other: BodySegment, seg: BodySegment): 'start' | 'end' | null {
+  if (dist(other.j1, seg.j0) < 1e-9) return 'end';
+  if (dist(other.j0, seg.j1) < 1e-9) return 'start';
+  return null;
+}
+
+/** A polygon with its bounds, for repeated nearness tests. */
+interface Occluder {
+  poly: Vec[];
+  box: ReturnType<typeof bounds>;
+}
+
+/** `p` lies inside the occluder or within `d` of its edge. */
+function nearOccluder(p: Vec, o: Occluder, d: number): boolean {
+  const { box, poly } = o;
+  if (p.x < box.minX - d || p.x > box.maxX + d || p.y < box.minY - d || p.y > box.maxY + d) return false;
+  if (pointInPolygon(p, poly)) return true;
+  return poly.some((a, i) => pointSegmentDistance(p, a, poly[(i + 1) % poly.length] ?? a) < d);
+}
+
+/** A definition shape shorter than this share of its range is dropped (it has tapered to a sliver by then). */
+const MIN_DEFINITION_SHARE = 0.04;
+/** First-pass samples of the fold test (the cut is then refined by bisection, so it still moves smoothly). */
+const DEFINITION_CLEAR_STEPS = 24;
+
+/** A region spec drawn on one frame's body: its contours, draw-order group and projection fade. */
+interface SpecShape {
+  group: RegionGroup;
+  contour: Vec[];
+  alpha: number;
+}
+
+/**
+ * Contours of one region spec on the given limb sides (§4.4). Trunk-chain
+ * regions are one shape drawn with the trunk; limb regions repeat on each
+ * side and fade out as their segment turns towards the camera.
+ */
+function specShapes(body: FigureBody, spec: RegionSpec, sides: readonly ('Near' | 'Far')[], chain: RegionBase | null): SpecShape[] {
+  const out: SpecShape[] = [];
+  if (spec.kind === 'hand') {
+    for (const hand of body.hands) {
+      if (!sides.includes(hand.side)) continue;
+      const forearm = body.segments.find((s) => s.name === 'forearm' && s.side === hand.side);
+      const alpha = forearm === undefined ? 1 : projectionFade(forearm.projection);
+      if (alpha <= 0) continue;
+      for (const c of handContours(hand, body.view)) out.push({ group: hand.group, contour: insetPolygon(counterClockwise(c), MUSCLE_INSET), alpha });
+    }
+    return out;
+  }
+  if (spec.seg === 'trunk') {
+    // The whole trunk as one shape; drawn with the trunk (under the near leg), like the abs and lower back it carries.
+    if (chain !== null) for (const contour of specContours(chain, true, spec)) out.push({ group: 'trunk', contour, alpha: 1 });
+    return out;
+  }
+  for (const seg of segmentsFor(body, spec.seg, sides)) {
+    const alpha = projectionFade(seg.projection);
+    if (alpha <= 0) continue;
+    for (const contour of specContours(segmentBase(seg), seg.side === null, spec)) out.push({ group: groupOf(body, seg), contour, alpha });
+  }
   return out;
 }
 
 /** Every muscle region for this frame, grouped for draw order. Regions on far side-view limbs never appear. */
 export function regionShapes(body: FigureBody, focus: ResolvedFocus): RegionShape[] {
   const sides = limbSides(body, focus);
-  const out: RegionShape[] = [];
   const chain = chainBase(trunkSegments(body));
-  for (const r of focus.regions) {
-    if (r.spec.kind === 'hand') {
-      for (const hand of body.hands) {
-        if (!sides.includes(hand.side)) continue;
-        const forearm = body.segments.find((s) => s.name === 'forearm' && s.side === hand.side);
-        const alpha = forearm === undefined ? 1 : projectionFade(forearm.projection);
-        if (alpha <= 0) continue;
-        for (const c of handContours(hand, body.view)) out.push({ group: hand.group, level: r.level, contour: insetPolygon(counterClockwise(c), MUSCLE_INSET), alpha });
+  return focus.regions.flatMap((r) => specShapes(body, r.spec, sides, chain).map((sh) => ({ ...sh, level: r.level })));
+}
+
+/** One faint muscle-definition shape (guides v2 §4.11). */
+export interface DefinitionShape {
+  definition: DefinitionGroup;
+  group: RegionGroup;
+  contour: Vec[];
+  /** 0–1, the segment's `projectionFade` (trunk shapes are always 1). */
+  alpha: number;
+}
+
+/** The focus view a body is drawn in. */
+export const bodyFocusView = (body: FigureBody): FocusView => (body.view === 'side' ? 'side' : body.seenFrom);
+
+/**
+ * Faint shapes of the given definition groups for this frame (§4.11.3,
+ * §4.11.5), built like the muscle regions. Side view: near limbs and the
+ * trunk only (far limbs stay flat). Front and back views: both sides,
+ * whatever `focus.side` says, because definition is anatomy.
+ */
+export function definitionShapes(body: FigureBody, groups: readonly DefinitionGroup[]): DefinitionShape[] {
+  const view = bodyFocusView(body);
+  const sides: ('Near' | 'Far')[] = body.view === 'side' ? ['Near'] : ['Near', 'Far'];
+  const chain = chainBase(trunkSegments(body));
+  const out: DefinitionShape[] = [];
+  const outlines = new Map<string, Occluder>();
+  const outlineOf = (other: BodySegment, seg: BodySegment): Occluder => {
+    const shared = sharedEnd(other, seg);
+    const key = `${other.name}|${other.side ?? ''}|${shared ?? ''}`;
+    let o = outlines.get(key);
+    if (o === undefined) {
+      const poly = foldOutline(other, shared);
+      o = { poly, box: bounds(poly) };
+      outlines.set(key, o);
+    }
+    return o;
+  };
+  for (const g of groups) {
+    for (const spec of DEFINITION_MAP[g][view] ?? []) {
+      if (spec.kind === 'hand' || spec.seg === 'trunk') {
+        for (const sh of specShapes(body, spec, sides, chain)) out.push({ definition: g, ...sh });
+        continue;
       }
-      continue;
-    }
-    if (r.spec.seg === 'trunk') {
-      // The whole trunk as one shape; drawn with the trunk (under the near leg), like the abs and lower back it carries.
-      if (chain !== null) for (const contour of specContours(chain, true, r.spec)) out.push({ group: 'trunk', level: r.level, contour, alpha: 1 });
-      continue;
-    }
-    for (const seg of segmentsFor(body, r.spec.seg, sides)) {
-      const alpha = projectionFade(seg.projection);
-      if (alpha <= 0) continue;
-      for (const contour of specContours(segmentBase(seg), seg.side === null, r.spec)) out.push({ group: groupOf(body, seg), level: r.level, contour, alpha });
+      for (const seg of segmentsFor(body, spec.seg, sides)) {
+        const alpha = projectionFade(seg.projection);
+        if (alpha <= 0) continue;
+        const base = segmentBase(seg);
+        const trunk = seg.side === null;
+        let contours = specContours(base, trunk, spec);
+        // Limb shapes stop short of the limb's other segments, so a folded elbow or knee keeps a groove (§4.11.3),
+        // like the shading bands (ADR 0015). Straight limbs (the whole shape already clear) are unchanged.
+        const box = bounds(contours.flat());
+        const groove = DEFINITION_GROOVE;
+        const near = trunk
+          ? []
+          : body.segments
+              .filter((o) => o !== seg && o.group === seg.group)
+              .map((o) => outlineOf(o, seg))
+              .filter((o) => !(o.box.minX > box.maxX + groove || box.minX > o.box.maxX + groove || o.box.minY > box.maxY + groove || box.minY > o.box.maxY + groove));
+        if (near.length > 0) {
+          const section = limbSection(base, spec);
+          const [s0, s1] = spec.s;
+          const blocked = (s: number): boolean => section(s, taper(s, s0, s1)).some((p) => near.some((o) => nearOccluder(p, o, groove)));
+          const range = clearRange(s0, s1, blocked, MIN_DEFINITION_SHARE, DEFINITION_CLEAR_STEPS);
+          if (range === null) continue;
+          if (range[0] > s0 || range[1] < s1) contours = specContours(base, trunk, spec, range);
+        }
+        for (const contour of contours) out.push({ definition: g, group: groupOf(body, seg), contour, alpha });
+      }
     }
   }
   return out;
@@ -290,8 +446,8 @@ const MIN_BAND_SHARE = 0.15;
  * refined by bisection (so a cut moves smoothly from frame to frame), or
  * null if that stretch is too short to draw.
  */
-function clearRange(s0: number, s1: number, blocked: (s: number) => boolean): [number, number] | null {
-  const ss = sampleRange(s0, s1, CLEAR_STEPS + 1);
+function clearRange(s0: number, s1: number, blocked: (s: number) => boolean, minShare = MIN_BAND_SHARE, steps = CLEAR_STEPS): [number, number] | null {
+  const ss = sampleRange(s0, s1, steps + 1);
   const free = ss.map((s) => !blocked(s));
   if (free.every((f) => f)) return [s0, s1];
   let best: [number, number] | null = null;
@@ -318,7 +474,7 @@ function clearRange(s0: number, s1: number, blocked: (s: number) => boolean): [n
   };
   const a = best[0] > 0 ? refine(ss[best[0]] ?? s0, ss[best[0] - 1] ?? s0) : s0;
   const b = best[1] < ss.length - 1 ? refine(ss[best[1]] ?? s1, ss[best[1] + 1] ?? s1) : s1;
-  return b - a >= MIN_BAND_SHARE * (s1 - s0) ? [a, b] : null;
+  return b - a >= minShare * (s1 - s0) ? [a, b] : null;
 }
 
 /** A point of an anatomical line: segment, position along it, and `x` across it (+1 front/lateral edge … −1 back/medial). */
@@ -401,4 +557,40 @@ export function anatomyLines(body: FigureBody): LineShape[] {
     }
   }
   return out;
+}
+
+/** The narrowest groove between two faint shapes of one body group in a frame (side-view pelvis shapes belong to the trunk). */
+export interface DefinitionGroove {
+  /** H; 0 when they overlap. */
+  gap: number;
+  a: DefinitionGroup;
+  b: DefinitionGroup;
+  group: BodyGroup;
+}
+
+/**
+ * Within each body group (the trunk, one leg, one arm), the closest pair of
+ * faint shapes (§4.11.3: never overlapping, at least `DEFINITION_GROOVE`
+ * apart). Shapes in different body groups may overlap: the nearer one is
+ * drawn in front, and faint fills are opaque. Null with fewer than two shapes.
+ */
+export function narrowestDefinitionGroove(shapes: readonly DefinitionShape[]): DefinitionGroove | null {
+  let best: DefinitionGroove | null = null;
+  const bodyGroup = (g: RegionGroup): BodyGroup => (g === 'pelvis' ? 'trunk' : g);
+  const boxes = shapes.map((sh) => bounds(sh.contour));
+  for (let i = 0; i < shapes.length; i += 1) {
+    for (let j = i + 1; j < shapes.length; j += 1) {
+      const a = shapes[i] as DefinitionShape;
+      const b = shapes[j] as DefinitionShape;
+      if (bodyGroup(a.group) !== bodyGroup(b.group)) continue;
+      // The boxes' gap is a lower bound: a pair that can't beat the narrowest so far is skipped.
+      const ba = boxes[i] as ReturnType<typeof bounds>;
+      const bb = boxes[j] as ReturnType<typeof bounds>;
+      const bound = Math.hypot(Math.max(0, ba.minX - bb.maxX, bb.minX - ba.maxX), Math.max(0, ba.minY - bb.maxY, bb.minY - ba.maxY));
+      if (best !== null && bound >= best.gap) continue;
+      const gap = polygonGap(a.contour, b.contour);
+      if (best === null || gap < best.gap) best = { gap, a: a.definition, b: b.definition, group: bodyGroup(a.group) };
+    }
+  }
+  return best;
 }

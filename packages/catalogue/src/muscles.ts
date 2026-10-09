@@ -8,7 +8,7 @@
  */
 import type { CatalogueEntry } from './entry-schema';
 import type { Guide } from './figure/guide-schema';
-import { focusViewOf, resolveFocus, type FocusView } from './figure/muscle-map';
+import { focusViewOf, resolveFocus, type FocusView, type MuscleDefinition } from './figure/muscle-map';
 import type { Muscle } from './vocab';
 
 /** Plain phrase and gym term (null when they are the same word). */
@@ -116,7 +116,8 @@ export function muscleFocusFor(entry: Pick<CatalogueEntry, 'primaryMuscles' | 's
 
 /** One legend line (§5.3, design-system §9.58). */
 export interface LegendLine {
-  kind: 'most' | 'also' | 'notShown';
+  /** `definition`: the tint-only line for faint violet muscle groups (§4.11.8). */
+  kind: 'most' | 'also' | 'definition' | 'notShown';
   label: string;
   list: string;
   /** Show the ● / ◐ swatch: at least one muscle on this line is drawn. Never for `notShown`. */
@@ -132,11 +133,19 @@ const NOT_SHOWN_LABEL: Record<FocusView, string> = {
 };
 
 /**
- * `Feel it most:` (every primary) / `Also works:` (every secondary) /
- * `Not shown from this side:` (the listed muscles not coloured, which also
- * stay on their own line); empty when the entry lists no muscles.
+ * Muscle definition's tint-only legend line (guides v2 §4.11.8). Faint groups
+ * are "other muscles", never inactive, unused or resting: the catalogue
+ * doesn't say how much they work (rule 6). Neutral definition has no line.
  */
-export function muscleLegend(focus: MuscleFocus, opts: { notShown?: boolean } = {}): LegendLine[] {
+export const DEFINITION_TINT_LEGEND = { label: 'Faint violet:', list: 'other muscles, for reference' } as const;
+
+/**
+ * `Feel it most:` (every primary) / `Also works:` (every secondary) /
+ * `Faint violet:` (only while `tint` definition is drawn; pass the effective
+ * mode) / `Not shown from this side:` (the listed muscles not coloured, which
+ * also stay on their own line); empty when the entry lists no muscles.
+ */
+export function muscleLegend(focus: MuscleFocus, opts: { notShown?: boolean; definition?: MuscleDefinition } = {}): LegendLine[] {
   const lines: LegendLine[] = [];
   const drawn = new Set(focus.drawn);
   if (focus.strong.length > 0) {
@@ -144,6 +153,11 @@ export function muscleLegend(focus: MuscleFocus, opts: { notShown?: boolean } = 
   }
   if (focus.soft.length > 0) {
     lines.push({ kind: 'also', label: 'Also works:', list: formatMuscleList(focus.soft), swatch: focus.soft.some((m) => drawn.has(m)), accessibilityLabel: `Also works: ${spokenMuscleList(focus.soft)}.` });
+  }
+  // Tint draws only with a guide and the entry's muscles, so the line never explains violet that isn't there.
+  if (opts.definition === 'tint' && focus.view !== null && lines.length > 0) {
+    const { label, list } = DEFINITION_TINT_LEGEND;
+    lines.push({ kind: 'definition', label, list, swatch: false, accessibilityLabel: `${label} ${list}.` });
   }
   if (opts.notShown !== false && focus.view !== null && focus.notShown.length > 0) {
     const label = NOT_SHOWN_LABEL[focus.view];

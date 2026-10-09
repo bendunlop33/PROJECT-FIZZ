@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { GUIDE_MUSCLE_COLOR, GUIDE_PAINT_TOKENS, GUIDE_SHADE_TOKEN } from '@fizz/catalogue/figure';
+import { GUIDE_DEFINITION_TOKEN, GUIDE_MUSCLE_COLOR, GUIDE_PAINT_TOKENS, GUIDE_SHADE_TOKEN } from '@fizz/catalogue/figure';
 
 import {
   BASE_COLOR_TOKENS,
@@ -33,9 +33,10 @@ function referencedTokens(): string[] {
 /**
  * `color.guide.<paint>` colours, resolved from the live theme by
  * `guideStyleFromTokens` (ADR 0013): the neutral aliases, plus guides v2's
- * scheme-dependent `shade` alias and the `muscle` hue (ADR 0014).
+ * scheme-dependent `shade` alias, the `muscle` hue (ADR 0014) and the
+ * `definition` alias of muscle definition (guides v2 §4.11).
  */
-const GUIDE_ALIASES = new Set([...Object.keys(GUIDE_PAINT_TOKENS), 'shade', 'muscle'].map((p) => `color.guide.${p}`));
+const GUIDE_ALIASES = new Set([...Object.keys(GUIDE_PAINT_TOKENS), 'shade', 'muscle', 'definition'].map((p) => `color.guide.${p}`));
 
 /**
  * Named in design-system.md but specified, not built. Remove each entry when
@@ -82,6 +83,12 @@ describe('theme tokens', () => {
     expect(text).toContain(`| \`color.guide.muscle\` | \`${GUIDE_MUSCLE_COLOR.dark}\` | \`${GUIDE_MUSCLE_COLOR.light}\` |`);
     const names = new Set(tokenNames(CURRENT_DIRECTION));
     for (const alias of Object.values(GUIDE_SHADE_TOKEN)) expect(names.has(`color.${alias}`), alias).toBe(true);
+  });
+
+  it('documents the muscle-definition alias as the catalogue resolves it (design-system §2.3, guides v2 §4.11)', () => {
+    const text = readFileSync(DESIGN_SYSTEM, 'utf8');
+    expect(text).toContain(`| \`color.guide.definition\` (v2.1) | \`color.${GUIDE_DEFINITION_TOKEN}\` (both schemes) |`);
+    expect(new Set(tokenNames(CURRENT_DIRECTION)).has(`color.${GUIDE_DEFINITION_TOKEN}`)).toBe(true);
   });
 
   it.each(directions.map((d) => [d.id, d] as const))('direction %s has a value for every colour in both schemes', (_id, direction) => {

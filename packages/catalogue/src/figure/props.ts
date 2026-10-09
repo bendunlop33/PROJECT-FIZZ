@@ -10,8 +10,11 @@ import { roundedRect, ribbonOutline } from './paths';
  * Paints map to design tokens in `style.ts` (never the accent or a status
  * colour). `shade` is the darkest neutral at partial opacity; `muscle` is the
  * one non-neutral paint, for muscle regions only (guides v2 §4.2).
+ * `faintNeutral` and `faintTint` are the opaque muscle-definition fills
+ * (§4.11), derived from the tokens by `guideStyleFromTokens`; only the body
+ * drawing uses them, never a prop.
  */
-export type Paint = 'implement' | 'frame' | 'frameFill' | 'trace' | 'cable' | 'nearBody' | 'farBody' | 'background' | 'shade' | 'muscle';
+export type Paint = 'implement' | 'frame' | 'frameFill' | 'trace' | 'cable' | 'nearBody' | 'farBody' | 'background' | 'shade' | 'muscle' | 'faintNeutral' | 'faintTint';
 
 /** Draw order, back to front. */
 export const LAYERS = ['back', 'far', 'mid', 'body', 'near', 'front'] as const;

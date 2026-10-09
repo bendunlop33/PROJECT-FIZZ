@@ -87,6 +87,55 @@ export function pointInPolygon(p: Vec, poly: readonly Vec[]): boolean {
   return inside;
 }
 
+/**
+ * Gap between two closed polygons: 0 when they touch or overlap (an edge
+ * crosses, or one has a vertex inside the other), otherwise the shortest
+ * vertex-to-edge distance. Used for the muscle-definition grooves (guides v2 §4.11.3).
+ */
+export function polygonGap(a: readonly Vec[], b: readonly Vec[]): number {
+  if (a.length < 3 || b.length < 3) return Infinity;
+  if (a.some((p) => pointInPolygon(p, b)) || b.some((p) => pointInPolygon(p, a))) return 0;
+  let best = Infinity;
+  for (let i = 0; i < a.length; i += 1) {
+    const a0 = a[i] as Vec;
+    const a1 = a[(i + 1) % a.length] as Vec;
+    for (let j = 0; j < b.length; j += 1) {
+      const b0 = b[j] as Vec;
+      const b1 = b[(j + 1) % b.length] as Vec;
+      const d1 = (a1.x - a0.x) * (b0.y - a0.y) - (a1.y - a0.y) * (b0.x - a0.x);
+      const d2 = (a1.x - a0.x) * (b1.y - a0.y) - (a1.y - a0.y) * (b1.x - a0.x);
+      const d3 = (b1.x - b0.x) * (a0.y - b0.y) - (b1.y - b0.y) * (a0.x - b0.x);
+      const d4 = (b1.x - b0.x) * (a1.y - b0.y) - (b1.y - b0.y) * (a1.x - b0.x);
+      if (d1 * d2 < 0 && d3 * d4 < 0) return 0;
+      best = Math.min(best, pointSegmentDistance(a0, b0, b1), pointSegmentDistance(b0, a0, a1));
+    }
+  }
+  return best;
+}
+
+/** Axis-aligned bounds of a point list. */
+export function bounds(pts: readonly Vec[]): { minX: number; minY: number; maxX: number; maxY: number } {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+/** Whether two closed polygons come within `d` of each other (or overlap). Cheaper than `polygonGap` when they are far apart. */
+export function polygonsWithin(a: readonly Vec[], b: readonly Vec[], d: number): boolean {
+  const ba = bounds(a);
+  const bb = bounds(b);
+  if (ba.minX > bb.maxX + d || bb.minX > ba.maxX + d || ba.minY > bb.maxY + d || bb.minY > ba.maxY + d) return false;
+  return polygonGap(a, b) < d;
+}
+
 /** Depth of `p` inside a polygon (distance to the nearest edge), or 0 when outside. */
 export function penetrationDepth(p: Vec, poly: readonly Vec[]): number {
   if (!pointInPolygon(p, poly)) return 0;

@@ -47,5 +47,14 @@
       "level": "soft",
       "shown": true
     }
+  ],
+  "faintGroups": [
+    "chest",
+    "lowerBack",
+    "lats",
+    "upperBack",
+    "deltoid",
+    "frontArm",
+    "forearm"
   ]
 }

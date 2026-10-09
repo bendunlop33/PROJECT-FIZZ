@@ -14,12 +14,12 @@
  * draws them its own way (`GUIDE_CORNER_FRACTION`).
  */
 import { BODY_GROUPS, groupContours, groupStrokeContours, soleBand, type BodyGroup } from './body';
-import { add, dist, scale, sub, v, type Vec } from './math';
-import { focusViewOf, resolveFocus, type MuscleInput, type MuscleLevel } from './muscle-map';
+import { add, dist, polygonsWithin, scale, sub, v, type Vec } from './math';
+import { definitionGroupsFor, effectiveDefinition, focusViewOf, hasListedMuscles, resolveFocus, type MuscleDefinition, type MuscleInput, type MuscleLevel } from './muscle-map';
 import { counterClockwise } from './paths';
 import type { Pose } from './pose';
 import { STROKE, type Layer, type Paint, type Shape } from './props';
-import { anatomyLines, regionShapes, shadeBands, type RegionGroup } from './regions';
+import { anatomyLines, definitionShapes, regionShapes, shadeBands, type RegionGroup } from './regions';
 import { MUSCLE_OPACITY } from './style';
 
 /** Square camera in world units. */
@@ -69,6 +69,17 @@ export interface FrameOpsOptions {
   increaseContrast?: boolean;
   /** iOS Differentiate Without Color: strong regions get a 1 pt outline (§4.3). */
   differentiateWithoutColor?: boolean;
+  /**
+   * Muscle definition (§4.11): a faint, steady shape for every muscle group
+   * the view can show. Default `'off'`, so frames are exactly as before until
+   * a caller opts in; the app uses `MUSCLE_DEFINITION`. The mode drawn is
+   * `effectiveDefinition(...)`: M/L tier only, `tint` falls back to `neutral`
+   * under Increase Contrast or Differentiate Without Color and to `off`
+   * without the entry's muscles.
+   */
+  definition?: MuscleDefinition;
+  /** Review only: draw definition at the S tier too (thumbnail comparison). Default false. */
+  definitionCompact?: boolean;
 }
 
 export interface GradientStop {
@@ -226,10 +237,15 @@ function layerOps(shapes: readonly Shape[], c: Ctx): DrawOp[] {
   return out.filter((x): x is DrawOp => x !== null);
 }
 
-/** Muscle opacity for a level (§4.3, §4.9): steady unless a pulse value is given (never under Increase Contrast). */
-export function muscleOpacity(level: MuscleLevel, opts: Pick<FrameOpsOptions, 'pulse' | 'increaseContrast'>): number {
+/**
+ * Muscle opacity for a level (§4.3, §4.9): steady unless a pulse value is
+ * given (never under Increase Contrast). With `tint` definition, soft stays
+ * steady at 0.45: at its pulse low it would sit only ~1.17:1 from faint
+ * violet (§4.11.7). Pass the effective definition mode.
+ */
+export function muscleOpacity(level: MuscleLevel, opts: Pick<FrameOpsOptions, 'pulse' | 'increaseContrast' | 'definition'>): number {
   if (opts.increaseContrast === true) return level === 'strong' ? MUSCLE_OPACITY.strong : MUSCLE_OPACITY.softIncreaseContrast;
-  if (opts.pulse === undefined) return level === 'strong' ? MUSCLE_OPACITY.strong : MUSCLE_OPACITY.soft;
+  if (opts.pulse === undefined || (level === 'soft' && opts.definition === 'tint')) return level === 'strong' ? MUSCLE_OPACITY.strong : MUSCLE_OPACITY.soft;
   const w = Math.min(1, Math.max(0, opts.pulse));
   const [lo, hi] = MUSCLE_OPACITY.pulse[level];
   return lo + (hi - lo) * w;
@@ -273,13 +289,40 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
   const cs = (g: BodyGroup): Vec[][] => contours.get(g) ?? [];
   const halo = (g: BodyGroup): DrawOp => pathOp(cs(g), { smooth: true, fill: 'background', stroke: 'background', width: 2 * c.sw(STROKE.halo, 'halo'), join: 'round' });
 
-  const focus = opts.muscles ? resolveFocus(opts.muscles, pose.focus ?? undefined, focusViewOf({ view: body.view, seenFrom: body.seenFrom })) : null;
+  const view = focusViewOf({ view: body.view, seenFrom: body.seenFrom });
+  const focus = opts.muscles ? resolveFocus(opts.muscles, pose.focus ?? undefined, view) : null;
   const regions = focus ? regionShapes(body, focus) : [];
+  // Muscle definition (§4.11): faint shapes for the groups the colour doesn't take, one opaque op per region group.
+  const definition = effectiveDefinition(opts.definition ?? 'off', {
+    tier,
+    definitionCompact: opts.definitionCompact === true,
+    increaseContrast: ic,
+    differentiateWithoutColor: opts.differentiateWithoutColor === true,
+    hasMuscles: hasListedMuscles(opts.muscles),
+  });
+  const faint = definition === 'off' ? [] : definitionShapes(body, definitionGroupsFor(view, focus, pose.focus?.hide ?? []));
+  const faintOps = (g: RegionGroup): void => {
+    // Opaque composite at opacity 1 (fading only with a foreshortened segment): overlaps never stack, and it never pulses.
+    for (const [alpha, fs] of byAlpha(faint.filter((f) => f.group === g).map((f) => ({ alpha: f.alpha, points: project(f.contour) })))) {
+      ops.push(pathOp(fs, { smooth: true, fill: definition === 'tint' ? 'faintTint' : 'faintNeutral', opacity: alpha }));
+    }
+  };
+  // What a region could otherwise stack on: faint shapes (any group) and, for strong, soft regions.
+  const faintWorld = faint.map((f) => f.contour);
+  const softWorld = regions.filter((r) => r.level === 'soft').map((r) => r.contour);
+  const overlapsAny = (cs: readonly Vec[][], others: readonly Vec[][]): boolean => cs.some((c) => others.some((o) => polygonsWithin(c, o, 1e-9)));
   const regionOps = (g: RegionGroup): void => {
     for (const level of ['soft', 'strong'] as const) {
       // One op per level (merged, so overlapping regions never stack), split only while a segment fades with its projection.
-      for (const [alpha, rs] of byAlpha(regions.filter((r) => r.group === g && r.level === level).map((r) => ({ alpha: r.alpha, points: project(r.contour) })))) {
-        ops.push(pathOp(rs, { smooth: true, fill: 'muscle', opacity: muscleOpacity(level, opts) * alpha }));
+      for (const [alpha, world] of byAlpha(regions.filter((r) => r.group === g && r.level === level).map((r) => ({ alpha: r.alpha, points: r.contour })))) {
+        const rs = world.map(project);
+        const opacity = muscleOpacity(level, { ...opts, definition }) * alpha;
+        // With definition on, a translucent region that would sit on a faint shape, or strong on soft during the pulse (review
+        // N3), gets an opaque body-tone underlay of its own path: one paint per pixel (§4.11.6). Elsewhere (an opaque region,
+        // or nothing beneath) it would change only the anti-aliased edge, and hide the trunk's lines under side-view pelvis regions.
+        const underlay = definition !== 'off' && opacity < 1 && (overlapsAny(world, faintWorld) || (level === 'strong' && overlapsAny(world, softWorld)));
+        if (underlay) ops.push(pathOp(rs, { smooth: true, fill: 'nearBody', opacity: alpha }));
+        ops.push(pathOp(rs, { smooth: true, fill: 'muscle', opacity }));
         // Differentiate Without Color: strong regions also get a 1 pt outline in text.primary at 0.6.
         if (level === 'strong' && opts.differentiateWithoutColor === true) ops.push(pathOp(rs, { smooth: true, stroke: 'implement', width: ptPx, join: 'round', opacity: 0.6 * alpha }));
       }
@@ -310,6 +353,7 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
     if (shapes.length === 0) return;
     if (!outlineDone) outline(g);
     ops.push(pathOp(shapes, { smooth: true, fill: 'nearBody' }));
+    faintOps(g);
     regionOps(g);
     if (shading) {
       for (const band of shadeBands(body, g)) {
@@ -356,8 +400,11 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
   if (!legsFirst) for (const g of legs) if (cs(g).length > 0) outline(g);
   drawGroup('trunk');
   if (!legsFirst) for (const g of legs) drawGroup(g, true);
-  // Pelvis regions after the near leg, so the thigh doesn't cut the glutes in half (§3.11 step 8).
-  if (side) regionOps('pelvis');
+  // Pelvis regions after the near leg, so the thigh doesn't cut the glutes in half (§3.11 step 8); faint glutes first.
+  if (side) {
+    faintOps('pelvis');
+    regionOps('pelvis');
+  }
   for (const g of arms) drawGroup(g);
   emitLayer('body');
   emitLayer('near');
