@@ -1,0 +1,238 @@
+/**
+ * Prop geometry: flat shapes in world units, the points bodies hold or stand
+ * on, and the solid shapes the checks test for penetration.
+ */
+import type { GuideProp } from './guide-schema';
+import { add, fromUp, rad, scale, v, type Vec } from './math';
+
+/** Paints map to design tokens in `style.ts` (never the accent). */
+export type Paint = 'implement' | 'frame' | 'frameFill' | 'trace' | 'cable' | 'nearBody' | 'farBody' | 'background';
+
+/** Draw order, back to front. */
+export const LAYERS = ['back', 'far', 'mid', 'body', 'near', 'front'] as const;
+export type Layer = (typeof LAYERS)[number];
+
+export type Shape =
+  | { kind: 'line'; layer: Layer; a: Vec; b: Vec; width: number; paint: Paint; dash?: readonly number[] }
+  | { kind: 'circle'; layer: Layer; c: Vec; r: number; fill?: Paint; stroke?: Paint; width?: number }
+  | { kind: 'poly'; layer: Layer; points: readonly Vec[]; fill?: Paint; stroke?: Paint; width?: number }
+  /** Tapered capsule (two radii); `outline` knocks it out from shapes behind. */
+  | { kind: 'capsule'; layer: Layer; a: Vec; b: Vec; ra: number; rb: number; paint: Paint; outline?: Paint };
+
+export interface Collider {
+  propId: string;
+  /** Closed polygon the body must not enter. */
+  polygon: readonly Vec[];
+}
+
+export interface PropGeometry {
+  id: string;
+  shapes: Shape[];
+  colliders: Collider[];
+  /** Lowest point of round solids (plates, dumbbell heads, sled) for the floor check. */
+  solidBottoms: number[];
+}
+
+export const PLATE_RADIUS = { none: 0, small: 0.075, medium: 0.1, large: 0.126 } as const;
+const DUMBBELL_RADIUS = { small: 0.032, medium: 0.042, large: 0.052 } as const;
+
+/** Rectangle from a base line `a`→`b` with thickness `t` on the CCW side. */
+function slab(a: Vec, b: Vec, t: number): Vec[] {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const l = Math.hypot(dx, dy) || 1;
+  const n = v((-dy / l) * t, (dx / l) * t);
+  return [a, b, add(b, n), add(a, n)];
+}
+
+/** Front view: the bar runs across the picture with plates seen edge-on at each end. */
+export function frontBarbellShapes(id: string, c: Vec, plates: keyof typeof PLATE_RADIUS): PropGeometry {
+  const r = PLATE_RADIUS[plates];
+  const half = r > 0 ? 0.36 : 0.32;
+  const shapes: Shape[] = [{ kind: 'line', layer: 'front', a: v(c.x - half, c.y), b: v(c.x + half, c.y), width: 0.014, paint: 'implement' }];
+  if (r > 0) {
+    for (const sx of [-1, 1]) {
+      const x0 = c.x + sx * 0.3;
+      const x1 = c.x + sx * 0.335;
+      shapes.push({ kind: 'poly', layer: 'front', points: [v(x0, c.y - r), v(x1, c.y - r), v(x1, c.y + r), v(x0, c.y + r)], fill: 'implement' });
+    }
+  }
+  return { id, shapes, colliders: [], solidBottoms: r > 0 ? [c.y - r] : [] };
+}
+
+export function barbellShapes(id: string, c: Vec, plates: keyof typeof PLATE_RADIUS): PropGeometry {
+  const r = PLATE_RADIUS[plates];
+  const shapes: Shape[] = [];
+  if (r > 0) {
+    shapes.push({ kind: 'circle', layer: 'front', c, r, stroke: 'implement', width: 0.013 });
+    shapes.push({ kind: 'circle', layer: 'front', c, r: r * 0.62, stroke: 'implement', width: 0.004 });
+  }
+  shapes.push({ kind: 'circle', layer: 'front', c, r: 0.021, fill: 'implement' });
+  return { id, shapes, colliders: [], solidBottoms: r > 0 ? [c.y - r] : [] };
+}
+
+export function dumbbellShapes(id: string, c: Vec, size: keyof typeof DUMBBELL_RADIUS): PropGeometry {
+  const r = DUMBBELL_RADIUS[size];
+  return {
+    id,
+    shapes: [
+      { kind: 'circle', layer: 'front', c, r, fill: 'implement' },
+      { kind: 'circle', layer: 'front', c, r: r * 0.45, fill: 'background' },
+    ],
+    colliders: [],
+    solidBottoms: [c.y - r],
+  };
+}
+
+export interface BenchSpec {
+  x: number;
+  length: number;
+  height: number;
+  angleDeg: number;
+}
+
+export function benchShapes(id: string, s: BenchSpec, groundY: number): PropGeometry {
+  const pad = 0.045;
+  const top = groundY + s.height;
+  const shapes: Shape[] = [];
+  const colliders: Collider[] = [];
+  const seatLen = s.angleDeg > 0 ? Math.min(0.26, s.length * 0.4) : s.length;
+  const seat = [v(s.x, top - pad), v(s.x + seatLen, top - pad), v(s.x + seatLen, top), v(s.x, top)];
+  shapes.push({ kind: 'poly', layer: 'mid', points: seat, fill: 'frameFill', stroke: 'frame', width: 0.006 });
+  colliders.push({ propId: id, polygon: seat });
+  if (s.angleDeg > 0) {
+    const a = rad(s.angleDeg);
+    const start = v(s.x + seatLen, top - pad);
+    const end = add(start, v(Math.cos(a) * (s.length - seatLen), Math.sin(a) * (s.length - seatLen)));
+    const back = slab(start, end, pad);
+    shapes.push({ kind: 'poly', layer: 'mid', points: back, fill: 'frameFill', stroke: 'frame', width: 0.006 });
+    colliders.push({ propId: id, polygon: back });
+    shapes.push({ kind: 'line', layer: 'back', a: v(end.x - 0.02, groundY), b: v(end.x - 0.02, end.y - 0.02), width: 0.014, paint: 'frame' });
+  }
+  const legL = s.x + 0.06;
+  const legR = s.x + (s.angleDeg > 0 ? seatLen : s.length) - 0.06;
+  for (const x of [legL, legR]) {
+    shapes.push({ kind: 'line', layer: 'back', a: v(x, groundY), b: v(x, top - pad), width: 0.014, paint: 'frame' });
+  }
+  shapes.push({ kind: 'line', layer: 'back', a: v(legL - 0.05, groundY + 0.004), b: v(legR + 0.05, groundY + 0.004), width: 0.01, paint: 'frame' });
+  return { id, shapes, colliders, solidBottoms: [] };
+}
+
+export interface CableStackSpec {
+  x: number;
+  pulleyY: number;
+  handle: 'bar' | 'rope' | 'stirrup';
+  restLength: number | null;
+}
+
+/** Column, pulley, weight stack (lifted by the extra cable length) and the cable to the hand. */
+export function cableStackShapes(id: string, s: CableStackSpec, hand: Vec, groundY: number): PropGeometry {
+  const w = 0.075;
+  const pulley = v(s.x, s.pulleyY);
+  const cableLen = Math.hypot(hand.x - pulley.x, hand.y - pulley.y);
+  const lift = s.restLength === null ? 0 : Math.max(0, Math.min(0.3, cableLen - s.restLength));
+  const column = [v(s.x - w / 2, groundY), v(s.x + w / 2, groundY), v(s.x + w / 2, s.pulleyY + 0.04), v(s.x - w / 2, s.pulleyY + 0.04)];
+  const stackBottom = groundY + 0.05 + lift;
+  const stack = [v(s.x - w / 2 + 0.012, stackBottom), v(s.x + w / 2 - 0.012, stackBottom), v(s.x + w / 2 - 0.012, stackBottom + 0.22), v(s.x - w / 2 + 0.012, stackBottom + 0.22)];
+  const shapes: Shape[] = [
+    { kind: 'poly', layer: 'back', points: column, fill: 'frameFill', stroke: 'frame', width: 0.006 },
+    { kind: 'poly', layer: 'back', points: stack, fill: 'frame' },
+    { kind: 'circle', layer: 'back', c: pulley, r: 0.022, fill: 'frameFill', stroke: 'frame', width: 0.006 },
+    { kind: 'line', layer: 'mid', a: pulley, b: hand, width: 0.005, paint: 'cable' },
+  ];
+  if (s.handle === 'rope') {
+    shapes.push({ kind: 'line', layer: 'front', a: hand, b: add(hand, v(0, -0.06)), width: 0.012, paint: 'implement' });
+  } else if (s.handle === 'bar') {
+    shapes.push({ kind: 'circle', layer: 'front', c: hand, r: 0.016, fill: 'implement' });
+  } else {
+    shapes.push({ kind: 'circle', layer: 'front', c: hand, r: 0.03, stroke: 'implement', width: 0.008 });
+  }
+  return { id, shapes, colliders: [], solidBottoms: [] };
+}
+
+export interface LegPressSpec {
+  x: number;
+  y: number;
+  railDeg: number;
+  seatX: number;
+  seatY: number;
+  seatDeg: number;
+  plates: keyof typeof PLATE_RADIUS;
+}
+
+export interface LegPressContact {
+  /** Foot-plate centre (the sole contact point). */
+  point: Vec;
+  /** Sole angle that puts the sole flat on the plate. */
+  soleDeg: number;
+}
+
+/** Leg press: a carriage that slides `travel` along the rail. Feet go flat on its plate. */
+export function legPressGeometry(id: string, s: LegPressSpec, travel: number, groundY: number): { geometry: PropGeometry; contact: LegPressContact } {
+  const r = rad(s.railDeg);
+  const rail = v(Math.cos(r), Math.sin(r));
+  const along = v(-Math.sin(r), Math.cos(r));
+  const plateCentre = add(v(s.x, s.y), scale(rail, travel));
+  const plateA = add(plateCentre, scale(along, -0.16));
+  const plateB = add(plateCentre, scale(along, 0.16));
+  const plate = slab(plateA, plateB, -0.03);
+  const railStart = add(v(s.x, s.y), scale(rail, -0.05));
+  const railEnd = add(v(s.x, s.y), scale(rail, 0.55));
+  const sr = rad(s.seatDeg);
+  const seatBase = v(s.seatX, s.seatY);
+  const backEnd = add(seatBase, v(-Math.cos(sr) * 0.42, Math.sin(sr) * 0.42));
+  const seatEnd = add(seatBase, v(0.2, 0));
+  const back = slab(backEnd, seatBase, -0.05);
+  const seat = slab(seatBase, seatEnd, -0.05);
+  const hornBase = add(plateCentre, scale(rail, 0.07));
+  const shapes: Shape[] = [
+    { kind: 'line', layer: 'back', a: railStart, b: railEnd, width: 0.02, paint: 'frame' },
+    { kind: 'line', layer: 'back', a: v(railStart.x, groundY), b: railStart, width: 0.016, paint: 'frame' },
+    { kind: 'line', layer: 'back', a: v(railEnd.x, groundY), b: railEnd, width: 0.016, paint: 'frame' },
+    { kind: 'line', layer: 'back', a: v(Math.min(backEnd.x, railStart.x) - 0.05, groundY + 0.005), b: v(railEnd.x + 0.05, groundY + 0.005), width: 0.01, paint: 'frame' },
+    { kind: 'line', layer: 'back', a: v(seatBase.x, groundY), b: seatBase, width: 0.016, paint: 'frame' },
+    { kind: 'poly', layer: 'mid', points: back, fill: 'frameFill', stroke: 'frame', width: 0.006 },
+    { kind: 'poly', layer: 'mid', points: seat, fill: 'frameFill', stroke: 'frame', width: 0.006 },
+    { kind: 'poly', layer: 'mid', points: plate, fill: 'frameFill', stroke: 'implement', width: 0.008 },
+  ];
+  const pr = PLATE_RADIUS[s.plates];
+  if (pr > 0) {
+    shapes.push({ kind: 'line', layer: 'mid', a: plateCentre, b: hornBase, width: 0.014, paint: 'implement' });
+    shapes.push({ kind: 'circle', layer: 'mid', c: hornBase, r: pr * 0.8, stroke: 'implement', width: 0.011 });
+  }
+  // Sole on the plate: the foot's "up" points away from the plate (back down the rail).
+  const soleDeg = (Math.atan2(-Math.cos(r), -Math.sin(r)) * 180) / Math.PI;
+  return {
+    geometry: { id, shapes, colliders: [{ propId: id, polygon: back }, { propId: id, polygon: seat }], solidBottoms: [] },
+    contact: { point: plateCentre, soleDeg },
+  };
+}
+
+export interface PushSledSpec {
+  x: number;
+  gripY: number;
+  plates: keyof typeof PLATE_RADIUS;
+}
+
+/** Floor sled seen from the side: low body, a pole rising back towards the athlete, plates stacked flat. */
+export function pushSledGeometry(id: string, s: PushSledSpec, groundY: number): { geometry: PropGeometry; grip: Vec } {
+  const h = 0.1;
+  const body = [v(s.x, groundY), v(s.x + 0.4, groundY), v(s.x + 0.37, groundY + h), v(s.x + 0.03, groundY + h)];
+  const poleBase = v(s.x + 0.06, groundY + h);
+  const grip = add(poleBase, scale(fromUp(-24), (s.gripY - poleBase.y) / Math.cos(rad(24))));
+  const shapes: Shape[] = [
+    { kind: 'poly', layer: 'mid', points: body, fill: 'frameFill', stroke: 'implement', width: 0.009 },
+    { kind: 'line', layer: 'mid', a: poleBase, b: grip, width: 0.016, paint: 'implement' },
+    { kind: 'line', layer: 'mid', a: v(s.x + 0.26, groundY + h), b: v(s.x + 0.26, groundY + h + 0.12), width: 0.014, paint: 'implement' },
+  ];
+  const n = { none: 0, small: 1, medium: 2, large: 3 }[s.plates];
+  for (let i = 0; i < n; i += 1) {
+    const y = groundY + h + 0.012 + i * 0.026;
+    shapes.push({ kind: 'line', layer: 'mid', a: v(s.x + 0.14, y), b: v(s.x + 0.38, y), width: 0.02, paint: 'implement' });
+  }
+  return { geometry: { id, shapes, colliders: [], solidBottoms: [groundY] }, grip };
+}
+
+export function propsOfType<T extends GuideProp['type']>(props: readonly GuideProp[], type: T): Extract<GuideProp, { type: T }>[] {
+  return props.filter((p): p is Extract<GuideProp, { type: T }> => p.type === type);
+}
