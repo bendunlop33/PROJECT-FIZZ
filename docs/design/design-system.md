@@ -197,7 +197,7 @@ The composites are what `compositeOver(source, opacity, nearBody)` gives. They a
 Rules:
 - **Strong > soft > faint, always.** The tests assert the order and the floors above in both looks and schemes. Neutral faint must also lie further from `bg.surface` in luminance than the body, while violet lies nearer, so the two can't be confused at any size.
 - **Faint carries no meaning beyond "a muscle is here".** It isn't a level of effort, so the legend doesn't explain it in `neutral` mode. Copy never calls these groups "inactive", "unused", "not used" or "resting" (rule 6).
-- **One paint per pixel.** The faint fill is opaque (the composite at opacity 1), and every muscle-region op is drawn over an opaque `nearBody` underlay of its own path. Nothing stacks.
+- **One paint per pixel.** The faint fill is opaque (the composite at opacity 1), and a translucent muscle region that would sit on a faint shape (or strong on soft during the pulse) is drawn over an opaque `nearBody` underlay of its own path. Nothing stacks.
 - **Grooves, not lines.** Neighbouring faint shapes are separated by plain body tone at least `guide.definitionGroove` wide. Faint shapes are never stroked or outlined, so the Differentiate Without Color outline stays unique to strong regions.
 - **Faint never pulses** and is the same in every frame. In `tint` mode the soft level also stays steady at 0.45, because its pulse low (0.36) would sit only about 1.17:1 from faint violet.
 - **`tint` falls back to `neutral`** under Increase Contrast and Differentiate Without Color, and draws nothing without the catalogue entry (no violet without a source). `neutral` is drawn whenever the figure is, at the M/L tier.
