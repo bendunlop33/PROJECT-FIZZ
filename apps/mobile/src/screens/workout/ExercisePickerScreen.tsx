@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { EQUIPMENT_WORD } from '@fizz/domain';
+import { EQUIPMENT_WORD, pickerEquipmentLabel } from '@fizz/domain';
 
 import { newUuid } from '../../device/runtime';
 import type { RootStackParams } from '../../navigation/types';
@@ -129,13 +129,7 @@ export function ExercisePickerScreen() {
               <Row
                 key={p.exercise.id}
                 title={p.exercise.name}
-                subtitle={
-                  p.equipment.length === 0
-                    ? p.exercise.compatibleEquipment.length === 0
-                      ? 'No equipment needed'
-                      : 'Not at this gym · loads won’t be checked'
-                    : p.equipment.map((e) => e.name).join(' · ')
-                }
+                subtitle={pickerEquipmentLabel(p.exercise, p.equipment)}
                 secondLine={recent.includes(p.exercise.id) && query.trim() === '' ? 'Recent' : null}
                 onPress={() => {
                   choose(p);

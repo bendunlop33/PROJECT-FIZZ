@@ -17,6 +17,7 @@ import {
   plannedSetsFromTargets,
   repeatPreviewLines,
   unspecifiedPain,
+  equipmentForExercise,
   searchExercises,
   shouldAskCheckIn,
   toIso,
@@ -76,7 +77,7 @@ const RECENT_WINDOW_MS = 3 * 60 * 60 * 1000;
 
 export interface PickerExercise {
   exercise: Exercise;
-  /** Compatible equipment at this workout's gym. Empty = none needed or none there (loads not checked). */
+  /** Compatible equipment at this workout's gym. Empty = none needed (bodyweight) or none there (loads not checked). */
   equipment: Pick<EquipmentInstance, 'id' | 'name' | 'kind'>[];
 }
 
@@ -406,10 +407,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async pickerExercises(sessionId: string, query: string): Promise<PickerExercise[]> {
       const aggregate = await repos().sessions.get(sessionId);
       const all = (await repos().exercises.list()).filter((e) => e.measurement === 'reps');
-      const snapshot = aggregate?.session.equipmentSnapshot.filter((e) => e.availability === 'available') ?? [];
+      const snapshot = aggregate?.session.equipmentSnapshot ?? [];
+      // Bodyweight exercises never need (or get) a gym item: there's no load to check.
       return searchExercises(all, query).map((exercise) => ({
         exercise,
-        equipment: snapshot.filter((e) => exercise.compatibleEquipment.includes(e.kind)).map((e) => ({ id: e.id, name: e.name, kind: e.kind })),
+        equipment: equipmentForExercise(exercise, snapshot).map((e) => ({ id: e.id, name: e.name, kind: e.kind })),
       }));
     },
 
