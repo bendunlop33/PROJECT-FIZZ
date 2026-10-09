@@ -19,6 +19,8 @@
 
 > **Revision 2026-10-09 (exercise guides, [ADR 0013](../decisions/0013-in-app-guide-playback.md); approved by Ben 9 Oct 2026).** Principle 5 gains the one exception to "motion stays quiet": the exercise guide (research brief change 3). Added guide colour **aliases** (§2.3, no new colour values, never `accent`), guide timing values (§6), the `ExerciseGuide` component (§9.57), an accessibility checklist line (§10) and an index row (§11). The screen is specified in [exercise-library.md](exercise-library.md) §8. **The app is now called GymSmarter.** New copy uses that name; "Fizz" in older specs means GymSmarter. Identifiers containing "fizz" are unchanged (decisions/README.md). **Gap to note, not fixed here:** the code's default look is Direction D (provisional-2026-10-09.md, decision 1), whose colour values live in `apps/mobile/src/theme/tokens.ts` and research, not in §2. Until §2 records them, this file is not yet the single source for the default look's values; token *names* and roles still match.
 
+> **Revision 2026-10-09 (exercise guides v2, [exercise-guides-v2.md](exercise-guides-v2.md); specified, not built).** **Per Ben's request of 9 Oct 2026** ("showing different bits of the body which it should focus on e.g. muscle groups you should feel it in the most"), guides may colour the muscles the exercise works. Principle 5 now allows **one new colour value**, `color.guide.muscle` (violet, `#7A4AF0` dark / `#9B7BF7` light, the same in every look). It is used only for muscle regions in the guide canvas and in the legend swatches. It is never `accent` or a status colour, and it is never the only signal, because the muscles are always listed in text. Also added: the `color.guide.shade` alias (§2.3), guide drawing dimensions (§4.2), guide emphasis timing (§6), changes to `ExerciseGuide` (§9.57) and new components `MuscleFocusLegend` (§9.58), `AvoidList` (§9.59) and `GuideFullScreen` (§9.60), an accessibility line (§10) and index rows (§11). This is the only non-neutral, non-accent hue in the system, and principle 6 (one accent) is unchanged.
+
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
 Context: one person uses the app on an iPhone, one-handed, mid-workout, with sweaty fingers and headphones, often in bright or dim gym light. Every choice below favours speed, legibility and calm over decoration.
@@ -34,7 +36,8 @@ Context: one person uses the app on an iPhone, one-handed, mid-workout, with swe
 5. **Motion stays quiet.** There are no animated dashboards, progress rings, confetti or shimmer skeletons. Transitions are at most 200 ms and are removed under Reduce Motion.
    **The one exception is the exercise guide** (`ExerciseGuide`, §9.57; approved 9 Oct 2026). A looping movement demonstration is allowed, but only:
    - **on the How to screen**, which Ben opens himself (exercise-library.md §8). It never appears in rows, the Log card, the rest screen, Today, the Live Activity or a notification;
-   - **in neutral tones only**, using the guide colour aliases (§2.3). Never `accent` or a status colour, no colour-highlighted muscles and no text in the art;
+   - **in neutral tones, plus one muscle-highlight hue**, using the guide colour tokens (§2.3). The single exception to "neutral only" is `color.guide.muscle`, for the muscles the exercise works (strong = primary, soft = secondary). It was added **per Ben's request of 9 Oct 2026** (exercise-guides-v2.md). It is never `accent` or a status colour, the muscles are always listed in text beside the canvas, and there is no text in the art;
+   - **with at most one subtle emphasis**: strong muscle regions may rise from 0.80 to 1.0 opacity during the loaded phase of each rep (`guide.musclePulse`). It is baked into the frames, and it is off under Reduce Motion, in stills, when paused and under Increase Contrast;
    - **briefly**: at the guide's own tempo, autoplay stops after `guide.autoplayPasses` (3 reps) and holds the start position with `Replay`. `Pause` is always visible while it moves;
    - **if Reduce Motion is off.** With Reduce Motion on, Ben sees still key positions with `Previous` / `Next` and an opt-in `Play animation`. Turning Reduce Motion on stops a running animation at once, and turning it off never starts one;
    - **while on screen**: it pauses whenever it is off-screen (scrolled out of view, covered or closed, app in the background, phone locked);
@@ -147,11 +150,29 @@ Guides use **aliases** of six neutral tokens, and nothing else. There are no new
 | `color.guide.frameFill` | `color.bg.raised` | Pads, seat and bench fills. Decorative only |
 | `color.guide.trace` | `color.text.tertiary` | Static bar-path trace and floor line (dashed) |
 | `color.guide.cable` | `color.text.tertiary` | Cable lines |
+| `color.guide.shade` (v2) | `color.bg.canvas` (dark) / `color.text.primary` (light) | Soft shading gradients, outline contours and anatomical lines on the near body, always at partial opacity (exercise-guides-v2.md §3.7–3.8). The darkest neutral in each scheme |
+
+**Muscle highlight (v2; per Ben's request of 9 Oct 2026).** This is the one guide colour that isn't an alias.
+
+| Token | Dark | Light | Use |
+|---|---|---|---|
+| `color.guide.muscle` | `#7A4AF0` | `#9B7BF7` | Muscle regions on the figure (strong = primary muscles at 1.0; soft = secondary at `guide.muscleSoftOpacity`), and the legend swatches in `MuscleFocusLegend` (§9.58). The same values in look A (Navy) and look D (Premium) |
+
+| Pair (hand-calculated; re-check) | Dark D / A | Light D / A | Floor |
+|---|---|---|---|
+| `guide.muscle` on `bg.surface` | ~3.5:1 / ~3.2:1 | ~3.2:1 / ~3.2:1 | ≥ 3:1 |
+| `guide.muscle` vs `guide.nearBody` | ~2.3:1 / ~2.5:1 | ~2.5:1 / ~2.3:1 | ≥ 2:1 plus hue difference |
+| soft (0.45 over `nearBody`) vs `nearBody` | ~1.5:1 | ~1.5:1 | ≥ 1.4:1 |
+
+Why violet: blue is look A's accent, green is `done`, amber is `warning` and pain, and red is `danger`. On a body, red or orange would read as "pain here" (rule 9). Violet is the only hue that is free in both looks.
 
 Rules:
-- Working muscles are never colour-highlighted; the header's `Main muscles:` text carries that meaning (principle 3).
-- Nothing in a guide may use `accent`, `status.*` or chart aliases. The accent stays reserved for the single primary action and the active set (principle 6).
+- **Muscle colour is never the only signal.** `Feel it most:` / `Also works:` text (`MuscleFocusLegend`) always lists the same muscles, and muscles the view can't show are named in a `Not shown from this side:` line (principle 3).
+- `guide.muscle` is used **only** inside the guide canvas and in `MuscleFocusLegend` swatches. It never appears in rows, filters, charts, Progress, buttons or status. It isn't a second accent.
+- Muscle regions are inset 0.0035 H inside the body silhouette, so the figure's outer edge stays in `nearBody` at full contrast. Far-side limbs are never coloured.
+- Nothing in a guide may use `accent`, `status.*` or chart aliases. The accent stays reserved for the single primary action and the active set (principle 6). (`Full screen` is an app control outside the canvas, so it may use `accent` like any text button.)
 - Labels and captions are app text under the canvas, never drawn into the art. They can then scale with Dynamic Type and be read by VoiceOver.
+- Code: `GUIDE_PAINT_TOKENS` gains `muscle` → `guide.muscle` and `shade` → `guide.shade`. The existing test that no guide paint resolves to `accent` or `status.*` still applies, plus a contrast-floor test for the table above.
 
 ---
 
@@ -230,6 +251,23 @@ Layout:
 
 Charts never animate their drawing, values or axes. Changing a chip redraws at once.
 
+### 4.2 Guide drawing dimensions (revision 2026-10-09, guides v2)
+
+Geometry is in body heights (H) inside the figure code (`STROKE`, `ADULT_V1_PROFILES`; exercise-guides-v2.md §3). These are the screen-facing values.
+
+| Token | Value | Use |
+|---|---|---|
+| `guide.canvasMax` | 400 | Largest card canvas, in pt. The canvas fills the player card's width (was 360 with inner padding) |
+| `guide.canvasMin` | 200 | Smallest card canvas, in pt |
+| `guide.tierSmallBelow` | 160 | Canvases under 160pt draw the S tier (no shading, contours or equipment detail; v1 halos) |
+| `guide.strokeFloor.S` | halo 1.25 · edge 1.0 · hair 0.75 | Minimum stroke widths in pt at the S tier |
+| `guide.strokeFloor.ML` | halo 1.0 · edge 0.75 · contour 0.75 · hair 0.75 | Minimum stroke widths in pt at the M/L tier |
+| `guide.muscleInset` | 0.0035 H | Muscle regions stay this far inside the silhouette |
+| `guide.muscleSoftOpacity` | 0.45 (0.60 under Increase Contrast) | Secondary muscles |
+| `guide.shadeMaxOpacity` | 0.26 (side) · 0.18 (front/back edges) | Peak shading at an edge facing away from the light |
+| `guide.fullScreenMinHeight` | 280 | Full screen canvas never shrinks below this at AX sizes |
+| `guide.legendSwatch` | 12 | `MuscleFocusLegend` swatch diameter, in pt |
+
 ---
 
 ## 5. Touch targets
@@ -282,6 +320,7 @@ Rules:
 | `guide.autoplayPasses` | 3. An exercise guide plays this many reps (one pass is one rep; for a ping-pong guide, forwards and back), then holds the start position with `Replay`. Code: `MAX_AUTOPLAY_PASSES`. Provisional, confirm on device (exercise-library.md §8.8) |
 | `guide.repDuration` | 2–6 s per rep, set by each guide (`durationMs`), checked by `guide:check`. Guides keep their own tempo; no global speed-up |
 | `guide.frameRate` | 30 frames per second of guide time, drawn on the UI thread. It is never a reason to raise the timer's once-a-second update |
+| `guide.musclePulse` | On (recommended, Ben to confirm, exercise-guides-v2.md §4.9). During a guide's `focus.workPhase`, strong muscles go 0.80 → 1.0 and soft 0.36 → 0.50, with 120 ms smoothstep ramps in guide time, baked into the frames. Steady (1.0 / 0.45) under Reduce Motion, Increase Contrast, in stills, the Finished frame and guides without `workPhase`. Off = steady everywhere |
 | `haptic.commit` | Success notification haptic |
 | `haptic.undo` | Light impact |
 | `haptic.step` | Selection change (steppers, keypad) |
@@ -827,13 +866,23 @@ Each component has one name and one definition here. The owning spec says where 
 
 #### Exercise guide (revision 2026-10-09; owner: exercise-library.md §8)
 
-**9.57 `ExerciseGuide`** (code: `GuidePlayer`). A square canvas inside a `Card`, 200–360pt (`min(360, content width − 2 × space.4)`), centred, drawn only in the §2.3 aliases. Above it, a `Tag` reading `Draft guide` until Ben approves the guide. Below it, the controls, built from `SecondaryButton`s (`flexBasis` 140, wrapping, ≥ 44pt tall, `space.3` apart):
+**9.57 `ExerciseGuide`** (code: `GuidePlayer`). A square canvas inside a `Card`, 200–360pt (`min(360, content width − 2 × space.4)`), centred, drawn only in the §2.3 aliases. **v2 (specified, not built; exercise-guides-v2.md):** the canvas fills the card's width (200–`guide.canvasMax` 400pt, no inner padding); the figure has an anatomical silhouette, coloured muscle regions in `guide.muscle`, soft shading and contours at the M/L tier (§4.2); the tag row gains a `⤢ Full screen` text button (top right, 44pt, opens `GuideFullScreen` §9.60); `MuscleFocusLegend` (§9.58) sits under the controls; the canvas VoiceOver label ends `Highlighted muscles are listed below.` Above it, a `Tag` reading `Draft guide` until Ben approves the guide. Below it, the controls, built from `SecondaryButton`s (`flexBasis` 140, wrapping, ≥ 44pt tall, `space.3` apart):
 - *Animating:* one play control whose label is what a tap will do: `Pause` (`pause.fill`) · `Play` (`play.fill`) · `Replay` (`arrow.counterclockwise`). It is joined by `Key positions` (`rectangle.split.3x1`) when the guide has labelled key positions (exercise-library.md §8.9 P2, built).
 - *Key positions (still):* `1 of 3 · Start` (`type.headline`, tabular) and its caption (`type.callout`, `text.secondary`), `Previous` (`chevron.left`) and `Next` (`chevron.right`), disabled at the ends, then a secondary-tone text button `Play animation` (`play`).
 - Motion follows the principle 5 exception. The canvas itself isn't tappable (no scrub, no tap-to-pause), so a stray touch can't change it.
 - VoiceOver: the canvas is one image with a fixed label, `Exercise guide for <name>. <a11y.summary>` (the same for the still view; P4), so it isn't re-announced while it moves. The still view's text is one element (`Key position 1 of 3, Start. <caption>`), announced after each Previous/Next.
 - Loading: the first frame shows at once, and the rest are prepared in ≤ 8 ms slices so the JS thread never stalls. No spinner or shimmer.
 - Errors are never drawn in the canvas. The screen shows a `StatusLine` instead (exercise-library.md §8.4).
+
+**9.58 `MuscleFocusLegend`** (guides v2; owner: exercise-guides-v2.md §5.3). Up to three lines in the player card under the controls, padding `space.4`, `space.2` between lines, `type.callout`:
+- `● Feel it most:` + primary muscles. ● is a 12pt filled circle in `guide.muscle`.
+- `◐ Also works:` + secondary muscles (line absent if none). ◐ is a 12pt circle filled with `guide.muscle` at 0.45 and a 1pt `guide.muscle` ring, so it differs from ● in shape as well as tone.
+- `Not shown from this side:` / `from the front:` / `from behind:` + short names, in `text.secondary`, with no swatch.
+- The label word is semibold `text.primary` and the list is `text.primary`. Names come from `musclePlainLabel` (plain words, then the gym term in brackets). Lines wrap and are never truncated. Swatches show only when at least one muscle on that line is drawn, and they are hidden from VoiceOver. Each line is one VoiceOver element. Without a guide, the lines appear without swatches.
+
+**9.59 `AvoidList`** (guides v2; owner: exercise-guides-v2.md §5.1). The `What not to do` card: card frame (§9.48) without a status icon on line 1, because it's reference, not status. Heading `What not to do` (`type.headline`), then each `cues.faults` item: `xmark` (16pt, `text.secondary`, hidden from VoiceOver) + `type.body` `text.primary`, `space.2` between items, wrapping. **No status colour** (`status.warning` stays for pain and problems). Placed directly under the player card. It replaces the `Common mistakes` section.
+
+**9.60 `GuideFullScreen`** (guides v2; owner: exercise-guides-v2.md §2.2). A `fullScreen` modal on `bg.canvas`, portrait. Header: exercise name `type.title2` + `Done` (`xmark` + word, 44pt). A **portrait canvas** (screen width − 2 × `space.4`; height = the space left above the legend and controls, aspect between 1:1 and 3:4 width:height, min `guide.fullScreenMinHeight`), camera refitted for that aspect, M/L tier. Below it, a compact `MuscleFocusLegend` (strong and soft lines only), then the same controls as `ExerciseGuide`. It takes over the player state and hands it back on close. The canvas has no gestures. Same motion rules as principle 5.
 
 #### Sound asset
 
@@ -854,6 +903,7 @@ Each component has one name and one definition here. The owning spec says where 
 - (Consolidation) Every durability statement uses one of the three phrases in §7.1, and every screen that mixes the two data domains labels them with `DomainLabel` (§9.53).
 - (Consolidation) Any figure in money says `estimate` when the app worked it out.
 - (Revision 2026-10-09) Anything that moves on its own for more than 5 s has a visible `Pause` and stops by itself. Under Reduce Motion it doesn't move at all until Ben asks, and off-screen it doesn't move. Today only `ExerciseGuide` (§9.57) does this; anything else that wants to needs its own exception in principle 5.
+- (Revision 2026-10-09, guides v2) Coloured muscle regions in a guide are always matched by text that names the same muscles (`MuscleFocusLegend`), including the muscles the view can't show. With Differentiate Without Color on, strong regions also get an outline.
 
 ---
 
@@ -881,4 +931,7 @@ Use the canonical name in new specs. Aliases are kept so older specs stay readab
 | `timing.coachTimeout` | §6 | `timing.coachFirstToken` (coach-sheet, voice) |
 | `timing.offPhoneReminder` | §6 | `timing.backupOverdue` (data-import-export; retired) |
 | `ExerciseGuide` | §9.57, §2.3 | `GuidePlayer` (code), "guide player", "animated guide" (research §5.4) |
+| `MuscleFocusLegend` | §9.58 | "Feel it in" line, "Feel it here" (guides v2) |
+| `AvoidList` | §9.59 | "Avoid block", `What not to do` card; replaces How to `Common mistakes` |
+| `GuideFullScreen` | §9.60 | "full-screen guide", "large player" |
 | `CheckInScale`, `CheckInSheet`, `CheckInLine` | §9.54–9.56 | Replace the Today readiness chips (`Normal` / `Tired` / `Sore`), which had no component name (revision 2026-10-09) |

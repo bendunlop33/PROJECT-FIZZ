@@ -4,6 +4,8 @@
 
 > **Revision 2026-10-09 (exercise guides, [ADR 0013](../decisions/0013-in-app-guide-playback.md)).** Ben approved in-app guide playback on 9 Oct 2026, and the developer has built it. This revision brings the spec in line with the build. **EL8 is replaced**: rich catalogue entries now get an original, code-drawn animated guide plus cues. New **§8 Guide (How to screen)** documents the screen as built and lists the developer's own calls, marked *provisional, confirm on device*, with the designer's view on each. §1 now lists How to as a third screen. §2.4 Exercise detail gains a `How to ›` row (specified here, not built yet). Design-system principle 5 gains the guide motion exception, with guide colour aliases (§2.3) and `ExerciseGuide` (§9.57). The app is now called **GymSmarter**, and new copy uses that name. "Fizz" in older specs means GymSmarter.
 
+> **Revision 2026-10-09 (guides v2, [exercise-guides-v2.md](exercise-guides-v2.md); specified, not built).** Ben reviewed the 10 guides and asked for more detail, the muscles to feel highlighted, and what NOT to do as text. §8 now has **§8.11 Guides v2**, and the as-built sections note where v2 changes them. Summary: an anatomical figure; muscle regions in one violet hue (`guide.muscle`, the neutral-only exception **per Ben's request of 9 Oct 2026**); `Feel it most:` / `Also works:` lines in the player card (replacing the header's `Main muscles:`); a `What not to do` card directly under the player (replacing `Common mistakes`); a `Full screen` view; and higher-quality rendering.
+
 Status: v0.1 draft, 8 Oct 2026. Brief §1 ("exercise search"), §4 (`getCompatibleExercises`, `rankSubstitutions`), §6 (`Exercise` / `ExerciseAlias`), §12 Page 2. Schema: `packages/schemas/src/exercise.ts` (`movementPattern`, `primaryMuscles`, `measurement`, `laterality`, `compatibleEquipment`, `defaultLoadConvention`, `defaultRestS`). Tokens: [design-system.md](design-system.md).
 
 One component, four modes. The same search, rows and filters are used everywhere so Ben learns them once.
@@ -442,6 +444,8 @@ Presentation: a full-height iOS modal (`presentation: 'modal'`, page sheet) over
 
 Regions, top to bottom: fixed header (title, main muscles, `Done`) · scroll view: **player card** (`Draft guide` tag, square canvas, controls) · notice line (if any) · `Key positions` · `Setup` · `How to do it` · `Common mistakes`.
 
+> **v2 changes this order** (exercise-guides-v2.md §2.1): header (title, `Done`; the muscles line moves) · player card (`Draft guide` tag + `⤢ Full screen`, canvas filling the card width, controls, `MuscleFocusLegend`) · **`What not to do`** card (replaces `Common mistakes`) · `Key positions` · `Setup` · `How to do it` · `Safety` (if P1 is approved). The wireframes below show v1 as built.
+
 Animating (default):
 
 ```
@@ -524,7 +528,7 @@ Sizing: canvas = `min(360, screen width − 2 × screenMargin − 2 × space.4)`
 | Offline / AI unavailable / coach offline | No change | Everything is bundled. No network, ever |
 | Workout resting (opened mid-rest) | No change on this screen. The rest countdown keeps running underneath, and rest-end alerts (haptic, sound, spoken cue, notification) fire as usual | This screen shows no timer (see §8.9 P3) |
 | Workout paused | No change | — |
-| Light / dark switch | Recolours live from the neutral guide aliases | Never `accent` |
+| Light / dark switch | Recolours live from the neutral guide aliases | Never `accent`. v2 adds the muscle hue `guide.muscle` (exercise-guides-v2.md §8 lists the v2 states) |
 
 Transitions:
 
@@ -559,11 +563,11 @@ All text here is reference (Coaching knowledge). There are no loads, targets or 
 | Entry: workout `⋯` | `How to` |
 | Entry: picker `ⓘ` (VoiceOver) | `How to do Back squat` |
 | Entry: Exercise detail (not built) | `How to` with value `Guide` · `Guide · Draft` · `Cues` |
-| Header | Exercise name · `Main muscles: Quads · Glutes` (muscle filter-group words) · `Done` |
+| Header | Exercise name · `Main muscles: Quads · Glutes` (muscle filter-group words) · `Done`. **v2:** the muscles line is replaced by `Feel it most:` / `Also works:` / `Not shown from this side:` in the player card, with plain names (exercise-guides-v2.md §5.3) |
 | Tag | `Draft guide` |
 | Play control | `Pause` (`pause.fill`) · `Play` (`play.fill`) · `Replay` (`arrow.counterclockwise`) |
 | Still view | `Key positions` (`rectangle.split.3x1`; hint `Shows the key positions one at a time, without animation.`) · `1 of 3 · Start` + caption · `Previous` · `Next` · `Play animation` |
-| Sections | `Key positions` (rows `1 Start` + caption) · `Setup` · `How to do it` · `Common mistakes` |
+| Sections | `Key positions` (rows `1 Start` + caption) · `Setup` · `How to do it` · `Common mistakes`. **v2:** `Common mistakes` becomes the `What not to do` card under the player, with items rewritten as `Don't …` |
 | Notices (`StatusLine`, `info.circle`) | `The animated guide for Back squat couldn’t be read. The cues below still apply.` · `Couldn’t read the how-to for Back squat.` · `No how-to for Back squat yet.` |
 | VoiceOver: canvas (one image, fixed label, so it isn't re-announced while it moves) | `Exercise guide for Back squat. Side view. Bar on upper back. Squat down until hips are just below knees, then stand up.` (the guide's `a11y.summary`) |
 | VoiceOver: still view | `Key position 1 of 3, Start. Stand tall, brace.` (also announced after `Previous`, `Next` and `Key positions`, since focus stays on the button) |
@@ -617,16 +621,31 @@ All pure, in `apps/mobile/src/guide/` and `@fizz/catalogue`. The screen never re
 6. The animation stops when scrolled out of view, when the app is backgrounded and when the phone is locked; it resumes when visible again. The rest alert still arrives on time (G4).
 7. With Reduce Motion on, nothing moves on open; `1 of n · <label>` and its caption show; `Previous`/`Next` step; `Play animation` plays only when tapped. Turning Reduce Motion on mid-play stops it at once (G7).
 8. VoiceOver reads the canvas once as one image with the guide's summary, and isn't re-announced while it moves; key positions and every cue section are reachable by swiping (G8).
-9. No pixel of the guide uses `accent` or any status colour, and there's no text in the art, in both looks and both schemes (G6; covered by a unit test on `GUIDE_PAINT_TOKENS`).
+9. No pixel of the guide uses `accent` or any status colour, and there's no text in the art, in both looks and both schemes (G6; covered by a unit test on `GUIDE_PAINT_TOKENS`). **v2:** the only non-neutral paint allowed is `guide.muscle`, on muscle regions (exercise-guides-v2.md §12, check 4).
 10. `Draft guide` shows for every guide whose `review.status` isn't `approved`.
 11. A corrupted `guide.json` shows the notice and the cues, and the app doesn't crash; a corrupted entry shows `Couldn’t read the how-to for …`.
 12. In Airplane mode with no AI configured, How to and the animation work fully (G10).
 13. At AX3 on a 375pt phone, the control buttons stack without truncation, and the canvas stays at least 200pt.
 14. The guide never appears in a row, the Log card, the rest screen, Today, the Live Activity or a notification, and plays no sound.
 
+### 8.11 Guides v2 (specified 9 Oct 2026, not built)
+
+Full spec: [exercise-guides-v2.md](exercise-guides-v2.md). It comes from Ben's review of the 10 guides. What changes on How to:
+
+| Area | v1 (built) | v2 |
+|---|---|---|
+| Figure | Capsule limbs, circle head, flat neutral fill | Anatomical silhouette from per-segment profiles (deltoid cap, chest, upper back, glutes, thigh and calf shape, forearm taper), shaped hands and shoe-like feet, soft shading and a few contour lines at sizes ≥ 160pt. Still original, with no face and no text (v2 §3) |
+| Muscles | Text only, in the header (`Main muscles: Quads · Glutes`) | Regions on the figure in one violet hue, `guide.muscle`: strong = `primaryMuscles`, soft = `secondaryMuscles`. Optional subtle emphasis during the loaded phase, never under Reduce Motion. **The neutral-only exception is per Ben's request of 9 Oct 2026.** Text in the player card: `Feel it most:` / `Also works:` / `Not shown from this side:` with plain names (v2 §4, §5.3) |
+| Faults | `Common mistakes`, last section | `What not to do` card directly under the player. Catalogue `cues.faults` rewritten as `Don't …` (exercise-researcher) (v2 §5) |
+| Size | Canvas 200–360pt with card padding | Canvas fills the card (to 400pt), plus a `Full screen` view with a portrait canvas (v2 §2.2) |
+| Rendering | 1× review sheet, polygon outlines | 3× review sheet and thumbnail sheet, smooth Bézier outlines, stroke floors, two detail tiers (v2 §7) |
+| Entry points, motion rules, offline, silence | — | Unchanged |
+
+Proposals in §8.9 still stand. P2 (`Key positions` button name) and P4 (mode-neutral VoiceOver label) are used in the v2 copy. P1 (`Safety`) moves to after `How to do it`, because `Common mistakes` no longer closes the screen.
+
 ## Proposed design-system additions
 
-No new colours or timing tokens.
+No new colours or timing tokens for the library itself. (Guides v2 adds `color.guide.muscle`, `color.guide.shade`, `guide.musclePulse`, the §4.2 guide dimensions and `MuscleFocusLegend` / `AvoidList` / `GuideFullScreen` in design-system.md.)
 
 | Component | Spec |
 |---|---|
@@ -641,7 +660,8 @@ No new colours or timing tokens.
 
 - [active-workout.md](active-workout.md) §2.10, §4.4: `Add exercise`, `Swap exercise`, `Machine busy` (EL4 proposes changing the swap step), `How to` (§8)
 - [ADR 0013](../decisions/0013-in-app-guide-playback.md), [device-tests/guide-playback.md](../device-tests/guide-playback.md), [research/exercise-bank-and-visuals.md](../research/exercise-bank-and-visuals.md) §5.5–5.7: guide playback, the device test and the guide rules
-- [design-system.md](design-system.md) principle 5, §2.3, §9.57: guide motion exception, colours and `ExerciseGuide`
+- [design-system.md](design-system.md) principle 5, §2.3, §9.57: guide motion exception, colours and `ExerciseGuide`; §4.2, §9.58–9.60 for guides v2
+- [exercise-guides-v2.md](exercise-guides-v2.md): detailed figure, muscle focus, `What not to do`, Full screen
 - [coach-adjustments.md](coach-adjustments.md) CA2: coach-initiated swaps keep the Apply card
 - [routines.md](routines.md): `＋ Add exercise`, `Replace`, `Swap ›`, Plan hub 🔍
 - [change-review.md](change-review.md): `Change Push A too ›` and coach swap proposals
