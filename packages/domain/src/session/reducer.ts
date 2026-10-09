@@ -941,16 +941,26 @@ function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise
     transitionRestS: null,
     progressionRuleId: null,
   };
-  const set: WorkoutSet = {
-    id: cmd.newSetId,
+  const plan = cmd.plan ?? [{ id: cmd.newSetId, setType: 'working' as const, planned: { load: null, reps: null, durationS: null, rpe: null, rir: null } }];
+  if (plan[0]?.id !== cmd.newSetId) return fail('invalid_values', 'The first planned set must use the new set ID.');
+  const planIds = new Set(plan.map((p) => p.id));
+  if (planIds.size !== plan.length || state.sets.some((s) => planIds.has(s.id))) return fail('invalid_values', 'That set ID is already used.');
+  for (const p of plan) {
+    const load = p.planned.load;
+    if (load !== null && (load.convention !== ex.loadConvention || load.unit !== ex.unit)) {
+      return fail('invalid_values', `A planned load must be in ${ex.unit} (${ex.loadConvention}); convert explicitly first.`);
+    }
+  }
+  const added: WorkoutSet[] = plan.map((p, index) => ({
+    id: p.id,
     sessionId: state.session.id,
     sessionExerciseId: ex.id,
-    index: 0,
-    setType: 'working',
+    index,
+    setType: p.setType,
     status: 'pending',
     side: cmd.exercise.laterality === 'unilateral' ? 'both' : null,
     pairedWithSetId: null,
-    planned: { load: null, reps: null, durationS: null, rpe: null, rir: null },
+    planned: p.planned,
     rest: cmd.rest,
     actual: null,
     draft: null,
@@ -960,13 +970,13 @@ function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise
     flags: [],
     edited: false,
     version: 1,
-  };
+  }));
   const events: SessionEvent[] = [
     { type: 'ExerciseAdded', sessionExerciseId: ex.id },
-    { type: 'SetAdded', setId: set.id, sessionExerciseId: ex.id },
+    ...added.map((s): SessionEvent => ({ type: 'SetAdded', setId: s.id, sessionExerciseId: ex.id })),
   ];
-  const activeSetId = activateIfIdle(state, set.id, events);
-  const next = { ...state, exercises: [...state.exercises, ex], sets: [...state.sets, set] };
+  const activeSetId = activateIfIdle(state, cmd.newSetId, events);
+  const next = { ...state, exercises: [...state.exercises, ex], sets: [...state.sets, ...added] };
   return { ok: true, state: bumpVersion(next, activeSetId), events };
 }
 

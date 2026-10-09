@@ -128,7 +128,9 @@ export function targetText(planned: PlannedSet, o: { convention: LoadConvention;
   if (planned.reps !== null) parts.push(`${repRangeText(planned.reps)}${NBSP}reps${o.perSide ? `${NBSP}per side` : ''}`);
   if (planned.durationS !== null) parts.push(formatDuration(planned.durationS));
   if (parts.length === 0) return null;
-  return `Target ${parts.join(' · ')}`;
+  // Rule 3: a suggested target says where it came from.
+  const word = planned.source === 'built_in_rule' ? 'Target (built-in rule)' : planned.source === 'repeat' ? 'Target (as last time)' : 'Target';
+  return `${word} ${parts.join(' · ')}`;
 }
 
 /** Short target for list rows: `Target 100 kg × 6–8`. */

@@ -27,6 +27,16 @@ export const SetValuesSchema = z.object({
 });
 export type SetValues = z.infer<typeof SetValuesSchema>;
 
+/**
+ * Where a planned target came from, so the set card can say so (rule 3:
+ * every suggestion is recorded with its reason). Absent = a routine template
+ * or none (sessions written before this field existed).
+ * - `built_in_rule`: the built-in progression rule's Next time (ADR 0006 fallback).
+ * - `repeat`: copied from a past workout's actual result (routines.md RT4).
+ */
+export const PlannedSourceSchema = z.enum(['built_in_rule', 'repeat']);
+export type PlannedSource = z.infer<typeof PlannedSourceSchema>;
+
 /** Planned (target) values, retained separately from the actual result. */
 export const PlannedSetSchema = z.object({
   load: LoadSchema.nullable(),
@@ -34,6 +44,7 @@ export const PlannedSetSchema = z.object({
   durationS: DurationSecondsSchema.nullable(),
   rpe: RpeSchema.nullable(),
   rir: RirSchema.nullable(),
+  source: PlannedSourceSchema.optional(),
 });
 export type PlannedSet = z.infer<typeof PlannedSetSchema>;
 

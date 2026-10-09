@@ -41,3 +41,17 @@ Slice 2 builds Today → check-in → Active set → Rest → Summary on the fou
 - The "Starter exercises" section above said IDs were `deriveId('catalogue:<key>')`. That differed from ADR 0011's catalogue IDs, so wiring the catalogue would have split every exercise's history and pain flags. **Superseded:** there is one scheme for catalogue exercises, ADR 0011's `Exercise.id = UUIDv5(key, FIZZ_CATALOGUE_NAMESPACE)` (`catalogueExerciseId`). Its implementation moved to `@fizz/domain` (`catalogue-id.ts`); `@fizz/catalogue` re-exports it, so the app and the catalogue can't drift.
 - Starter keys now follow the catalogue's (`barbell-bent-over-row`, `dumbbell-seated-shoulder-press`, `machine-seated-leg-curl`, `machine-assisted-pull-up`, `machine-assisted-dip`, `dumbbell-incline-bench-press`), and starters carry `catalogueKey`, `mechanic` and `family`. A test checks that every starter the catalogue has is the same exercise there (ID, name, laterality, equipment, convention, mechanic, family, pattern).
 - No migration: nothing real was logged on the earlier build. At launch, pre-amendment starter rows that no workout or pain flag refers to are removed so nothing shows twice; referenced ones are kept as history.
+
+## Amendment 2 (2026-10-09, slice 3): built-in default rule by exercise category (*provisional, Ben to confirm*)
+
+Replaces the single "8–12 reps, RPE 9" default above, which would have cut the load on Ben's 5-rep barbell work (review SP1, critic T2).
+
+| Category (`ruleCategory`) | Which exercises | Built-in rule |
+|---|---|---|
+| `main_barbell` | Done on a barbell (or `total` load with a barbell-compatible exercise) and a main strength lift: family `squat`, `front_squat`, `bench_press`, `deadlift`, `overhead_press`, `row`; with no family, the squat, horizontal/vertical push or horizontal pull pattern | Double progression, 3–6 reps, progress only at RPE ≤ 8.5, rep cap 8 at a ceiling |
+| `compound` | Every other compound (Romanian deadlift, hip thrust, dumbbell presses, pulldowns, leg press, split squats, pull-ups…) | Double progression, 6–10 reps, RPE ≤ 9, cap 12 |
+| `isolation` | `mechanic: isolation`, or a single-joint pattern when the mechanic is unknown; also any exercise with no catalogue info | Double progression, 8–12 reps, RPE ≤ 9, cap 15 |
+
+- All: increment 2.5 kg / 5 lb rounded to the equipment, 10 % reduction after 2 missed sessions, working sets = the sets actually done. The rule's name says it's built-in, which category, and *provisional* (e.g. `Double progression, 3–6 reps up to RPE 8.5 (built-in default for a main barbell lift, provisional)`). The PM brief named "other compounds 6–10" without an RPE; RPE 9 (the old default) is assumed.
+- **Next time is the next plan** (review S3, PM decision): `nextTargetsFor` (domain) is the one function behind the Summary's `Next time` and the sets planned when that exercise is next added (`Target (built-in rule) …`, `PlannedSet.source = 'built_in_rule'`). It is recomputed from history rather than stored, so a later correction (brief scenario 5) changes the next plan too and nothing goes stale. This differs from "store a per-exercise next target" in the PM note; the result is the same targets with no stale copies.
+- **Pain with no movement chosen** (review SP3, PM decision): holds every exercise's targets for that workout (its Summary and anything added during it), and so the next plan that Summary produced. A flagged movement still holds only that movement, until Ben clears it.

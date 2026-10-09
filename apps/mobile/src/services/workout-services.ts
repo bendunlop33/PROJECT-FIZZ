@@ -12,6 +12,9 @@ import {
   localWeekBounds,
   newCheckIn,
   newPainFlag,
+  nextTargetsFor,
+  plannedSetsFromTargets,
+  unspecifiedPain,
   searchExercises,
   shouldAskCheckIn,
   toIso,
@@ -37,10 +40,12 @@ import type {
   Exercise,
   PainArea,
   PainFlag,
+  PlannedSet,
   ProgressionRule,
   SessionAggregate,
   SessionCheckIn,
   SessionCommand,
+  SetType,
   UserProfile,
   ZonedTimestamp,
 } from '@fizz/schemas';
@@ -209,6 +214,41 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return ctx.store().listExerciseHistory(ownerId, exerciseId);
   }
 
+  /** The check-in on a workout, for "pain mentioned, no movement chosen" (PM SP3). */
+  async function sessionCheckIn(a: SessionAggregate | null): Promise<CheckIn | null> {
+    return a?.session.checkIn?.kind === 'answered' ? repos().checkIns.get(a.session.checkIn.checkInId) : null;
+  }
+
+  async function planFor(p: UserProfile, req: { sessionId: string; exerciseId: string; equipmentId: string | null }): Promise<{ setType: SetType; planned: PlannedSet }[] | null> {
+    const [aggregate, exercise] = await Promise.all([repos().sessions.get(req.sessionId), repos().exercises.get(req.exerciseId)]);
+    if (!aggregate || !exercise || exercise.measurement !== 'reps') return null;
+    const equipment = req.equipmentId === null ? null : (aggregate.session.equipmentSnapshot.find((e) => e.id === req.equipmentId) ?? null);
+    const unit = equipment?.unit ?? p.preferredUnit;
+    const convention = equipment?.loadConvention ?? exercise.defaultLoadConvention;
+    const history = await historyFor(p.id, exercise.id);
+    const previous = lastComparableSession(history, { equipmentId: equipment?.id ?? null, unit, loadConvention: convention });
+    if (!previous) return null;
+    const source = history.find((h) => h.performedAtUtc === previous.performedAtUtc && h.equipmentId === (equipment?.id ?? null));
+    const now = unspecifiedPain(await sessionCheckIn(aggregate));
+    const then = source ? unspecifiedPain(await sessionCheckIn(await repos().sessions.get(source.sessionId))) : { active: false, reportedAtUtc: null };
+    const { result } = nextTargetsFor({
+      ownerId: p.id,
+      exerciseId: exercise.id,
+      exerciseName: exercise.name,
+      measurement: exercise.measurement,
+      unit,
+      convention,
+      equipment,
+      exercise,
+      rule: null,
+      workingSets: previous.sets.filter((s) => s.values.reps !== null).length,
+      history,
+      painFlags: await repos().painFlags.listActive(p.id),
+      sessionPain: now.active ? now : then,
+    });
+    return plannedSetsFromTargets(result);
+  }
+
   const workout = {
     /**
      * `startWorkout(…, opts.checkIn)` for an empty workout (no routines yet).
@@ -288,10 +328,27 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       return ids.slice(0, limit);
     },
 
+    /**
+     * Add an exercise. Its sets are planned from the built-in rule's next
+     * targets for this exercise and equipment (the same result the last
+     * Summary showed, labelled `Target (built-in rule)`; review S3), or one
+     * empty set when there's no comparable history.
+     */
     async addExercise(req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string }): Promise<CommandOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
-      return ctx.afterCommand(await domain().addExercise(req.sessionId, { ownerId: p.id, exerciseId: req.exerciseId, equipmentId: req.equipmentId, opId: req.opId, at: ctx.now() }));
+      const plan = await planFor(p, req).catch(() => null);
+      return ctx.afterCommand(
+        await domain().addExercise(req.sessionId, {
+          ownerId: p.id,
+          exerciseId: req.exerciseId,
+          equipmentId: req.equipmentId,
+          opId: req.opId,
+          at: ctx.now(),
+          plan,
+          exerciseRestS: p.exerciseRestS?.[req.exerciseId] ?? null,
+        }),
+      );
     },
 
     async summary(sessionId: string): Promise<WorkoutSummary | null> {
@@ -301,8 +358,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const gym = await repos().gyms.get(aggregate.session.gymId);
       const history: Record<string, HistorySession[]> = {};
       const rules: Record<string, ProgressionRule> = {};
+      const exerciseInfo: Record<string, Exercise> = {};
       for (const ex of aggregate.exercises) {
         history[ex.exerciseId] ??= await historyFor(p.id, ex.exerciseId);
+        if (!(ex.exerciseId in exerciseInfo)) {
+          const info = await repos().exercises.get(ex.exerciseId);
+          if (info) exerciseInfo[ex.exerciseId] = info;
+        }
         if (ex.progressionRuleId !== null && !(ex.progressionRuleId in rules)) {
           const r = await repos().progressionRules.get(ex.progressionRuleId);
           if (r) rules[r.id] = r;
@@ -318,6 +380,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         painFlags: await repos().painFlags.listActive(p.id),
         checkIn: ci,
         coach: 'not_connected',
+        exerciseInfo,
       });
     },
   };

@@ -68,7 +68,7 @@ describe('buildWorkoutSummary', () => {
     expect(sum.exercises.map((e) => [e.name, e.setsText, plain(e.results)])).toEqual([['Bench press', '3 sets', '60×12 · 60×12 · 60×12']]);
     expect(sum.nextTime?.sourceTag).toBe('Built-in rule (coach not connected)');
     expect(sum.nextTime?.rows.map((r) => [r.kind, plain(r.target), r.decision, r.ruleName])).toEqual([
-      ['change', 'Target 62.5 kg × 8–12', 'increase_load', 'Double progression, 8–12 reps (built-in default)'],
+      ['change', 'Target 62.5 kg × 8–12', 'increase_load', 'Double progression, 8–12 reps up to RPE 9 (built-in default for an accessory lift, provisional)'],
     ]);
     expect(sum.nextTime?.rows[0]?.summary).toContain('Increase to 62.5');
   });
@@ -94,18 +94,25 @@ describe('buildWorkoutSummary', () => {
     expect(sum.nextTime?.rows.map((r) => [r.kind, r.decision, plain(r.target)])).toEqual([['pain', 'halted_pain', 'Same target: 60 kg × 8–12']]);
   });
 
-  it('shows the check-in as given and never lets it change Next time (check 19, 24)', () => {
+  it('shows the check-in as given; score and reasons never change Next time, but pain with no movement holds it (check 19, 24; PM SP3)', () => {
     const s = finish(logAll(workout(BENCH, bar, 3), [1, 2, 3].map(() => values(kg(60), 12)), 0), 600);
-    const low = newCheckIn({ id: id(42), ownerId: OWNER, opId: 'c', score: 1, reasons: ['pain', 'tired'], note: 'Baby was up at 3', at: at(-60), localDate: '2026-10-08' });
+    const low = newCheckIn({ id: id(42), ownerId: OWNER, opId: 'c', score: 1, reasons: ['tired'], note: 'Baby was up at 3', at: at(-60), localDate: '2026-10-08' });
     const high = { ...low, score: 5 as const, reasons: [] };
     const a = buildWorkoutSummary(input(s, [lastWeek], { checkIn: low }));
-    expect(a.checkIn).toEqual({ checkInId: id(42), scoreText: '1 of 5', reasons: 'Tired · Pain', note: 'Baby was up at 3', painNotFlagged: true });
+    expect(a.checkIn).toEqual({ checkInId: id(42), scoreText: '1 of 5', reasons: 'Tired', note: 'Baby was up at 3', painNotFlagged: false });
     const b = buildWorkoutSummary(input(s, [lastWeek], { checkIn: high }));
     const c = buildWorkoutSummary(input(s, [lastWeek], { checkIn: null }));
     expect(a.nextTime).toEqual(b.nextTime);
     expect(b.nextTime).toEqual(c.nextTime);
     expect(c.checkIn).toBeNull();
     expect(buildWorkoutSummary(input(s, [lastWeek], { checkIn: { ...low, deletedAtUtc: at(5).utc } })).checkIn).toBeNull();
+    // Pain with no movement chosen: no increases for any exercise of this workout.
+    const pain = { ...low, reasons: ['pain' as const, 'tired' as const] };
+    const d = buildWorkoutSummary(input(s, [lastWeek], { checkIn: pain }));
+    expect(d.checkIn?.painNotFlagged).toBe(true);
+    expect(d.nextTime?.rows.map((r) => [r.kind, r.decision, plain(r.target)])).toEqual([['pain', 'halted_pain', 'Same target: 60 kg × 8–12']]);
+    // With the movement flagged instead, only that flag holds (here: the same exercise).
+    expect(buildWorkoutSummary(input(s, [lastWeek], { checkIn: { ...pain, painFlagIds: [id(9)] } })).nextTime).toEqual(c.nextTime);
   });
 
   it('a first, complete session lists nothing: Same targets next time', () => {

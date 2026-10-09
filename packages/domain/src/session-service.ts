@@ -8,7 +8,7 @@ import {
   type ZonedTimestamp,
 } from '@fizz/schemas';
 import type { Repositories, SaveResult } from './ports';
-import { buildAddExerciseCommand, startWorkout, type StartWarning } from './session/create';
+import { buildAddExerciseCommand, startWorkout, type AddExerciseInput, type StartWarning } from './session/create';
 import { recoverSession, type RecoveryResult } from './session/recovery';
 import { reduceSession, type SessionError, type SessionEvent } from './session/reducer';
 
@@ -139,7 +139,15 @@ export function createSessionService(repos: Repositories, newId: () => string) {
    */
   async function addExercise(
     sessionId: string,
-    req: { ownerId: string; exerciseId: string; equipmentId: string | null; opId: string; at: ZonedTimestamp },
+    req: {
+      ownerId: string;
+      exerciseId: string;
+      equipmentId: string | null;
+      opId: string;
+      at: ZonedTimestamp;
+      plan?: AddExerciseInput['plan'] | undefined;
+      exerciseRestS?: number | null | undefined;
+    },
   ): Promise<CommandOutcome> {
     const owner = await repos.profiles.get(req.ownerId);
     if (!owner) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };

@@ -4,10 +4,12 @@ import type {
   Exercise,
   Load,
   LoadConvention,
+  PlannedSet,
   Routine,
   SessionAggregate,
   SessionCheckIn,
   SessionExercise,
+  SetType,
   UserProfile,
   WorkoutSet,
   WeightUnit,
@@ -250,6 +252,10 @@ export interface AddExerciseInput {
   equipmentId: string | null;
   at: ZonedTimestamp;
   newId: () => string;
+  /** Planned sets (e.g. `plannedSetsFromTargets`); absent = one empty working set. */
+  plan?: readonly { setType: SetType; planned: PlannedSet }[] | null | undefined;
+  /** Ben's own default rest for this exercise (Your data), before the catalogue's. */
+  exerciseRestS?: number | null | undefined;
 }
 
 /**
@@ -260,12 +266,15 @@ export interface AddExerciseInput {
  */
 export function buildAddExerciseCommand(input: AddExerciseInput): CommandOf<'add_exercise'> {
   const { exercise } = input;
+  const newSetId = input.newId();
+  const plan = input.plan && input.plan.length > 0 ? input.plan.map((p, i) => ({ id: i === 0 ? newSetId : input.newId(), setType: p.setType, planned: p.planned })) : null;
   return {
     type: 'add_exercise',
     at: input.at,
     opId: input.opId,
     newSessionExerciseId: input.newId(),
-    newSetId: input.newId(),
+    newSetId,
+    ...(plan ? { plan } : {}),
     exercise: {
       exerciseId: exercise.id,
       name: exercise.name,
@@ -281,7 +290,7 @@ export function buildAddExerciseCommand(input: AddExerciseInput): CommandOf<'add
       exerciseName: exercise.name,
       setOverrideS: null,
       routineSetTypePreset: null,
-      exerciseDefaultS: exercise.defaultRestS ?? null,
+      exerciseDefaultS: input.exerciseRestS ?? exercise.defaultRestS ?? null,
       globalDefault: input.owner.defaultRest,
     }),
   };

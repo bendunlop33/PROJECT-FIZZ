@@ -15,6 +15,12 @@ export const UserProfileSchema = RecordMetaSchema.extend({
   restPresets: z.array(RestSettingSchema.required({ presetName: true })).max(20),
   effortScale: z.enum(['rpe', 'rir', 'off']),
   /**
+   * Ben's own rest default per exercise ID (`Rest after` → this exercise,
+   * rest-state §2.4). Resolution step 3, before the catalogue's default.
+   * Your data: the catalogue row is shared knowledge and never edited.
+   */
+  exerciseRestS: z.record(z.string().min(1).max(64), z.int().min(0).max(3600)).optional(),
+  /**
    * First-run progress (onboarding.md §3.1), so a force-close resumes at the
    * first unfinished step. Absent on profiles written before it existed; a
    * restored profile without it resumes setup where that backup left it.

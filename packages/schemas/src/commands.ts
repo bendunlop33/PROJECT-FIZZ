@@ -9,7 +9,7 @@ import {
 } from './common';
 import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
-import { ResolvedRestSchema, SetSideSchema, SetValuesSchema } from './session';
+import { PlannedSetSchema, ResolvedRestSchema, SetSideSchema, SetValuesSchema } from './session';
 
 /**
  * Typed commands for the active-session state machine. Every mutating command
@@ -205,6 +205,17 @@ export const AddExerciseCommandSchema = z.object({
   unit: WeightUnitSchema,
   /** Rest after the new set, resolved by the service. */
   rest: ResolvedRestSchema,
+  /**
+   * Planned sets (e.g. the built-in rule's Next time, review workout-loop S3).
+   * The first item's `id` must be `newSetId`. Absent = one empty working set.
+   * Loads must be in the exercise's unit and convention; the service plans
+   * them from the equipment, so they are achievable and never above its max.
+   */
+  plan: z
+    .array(z.object({ id: IdSchema, setType: SetTypeSchema, planned: PlannedSetSchema }))
+    .min(1)
+    .max(20)
+    .optional(),
 });
 
 /** Delete a set (pending, skipped or logged). Kept as an audited tombstone. */

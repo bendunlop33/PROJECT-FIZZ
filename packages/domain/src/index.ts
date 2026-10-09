@@ -24,3 +24,5 @@ export * from './checkin';
 export * from './display';
 export * from './starter-exercises';
 export * from './catalogue-id';
+export * from './default-rule';
+export * from './next-target';

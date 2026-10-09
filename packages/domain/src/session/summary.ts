@@ -1,9 +1,10 @@
-import type { CheckIn, EquipmentInstance, PainFlag, ProgressionRule, SessionAggregate, SessionExercise, WeightUnit, WorkoutSet } from '@fizz/schemas';
-import { painMentionedNotFlagged, painStatusFor, reasonsText, scoreText } from '../checkin';
+import type { CheckIn, EquipmentInstance, PainFlag, ProgressionRule, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
+import { painMentionedNotFlagged, reasonsText, scoreText } from '../checkin';
+import type { RuleExerciseInfo } from '../default-rule';
+import { nextTargetsFor, unspecifiedPain } from '../next-target';
 import { formatMinutes, loadText, NBSP, repRangeText, valuesText } from '../display';
 import { loadDirection } from '../equipment';
-import { calculateNextTargets, type HistorySession, type NextTargets } from '../progression';
-import { deriveId } from '../stable';
+import type { HistorySession, NextTargets } from '../progression';
 import { toIso, toMs } from '../time';
 import { lastComparableSession } from './active-view';
 import { getActiveDurationMs } from './view';
@@ -15,36 +16,6 @@ import { summariseVolume } from './volume';
  * and `Next time` from `calculateNextTargets`, every row tagged with its
  * source. The check-in is never read by the rules (check 24).
  */
-
-/**
- * The built-in fallback rule for an exercise with no rule of its own (every
- * exercise added to an empty workout in this build): double progression,
- * 8–12 reps, up to RPE 9, over the working sets done in this session.
- * PROVISIONAL: the brief names double progression but no default range; Ben
- * to confirm (reported as an open item). Loads always come from the
- * equipment (rounded, never above its max).
- */
-export function builtInDefaultRule(ownerId: string, unit: WeightUnit, workingSets: number): ProgressionRule {
-  return {
-    id: deriveId(`builtin-rule:double-8-12:${unit}`),
-    ownerId,
-    version: 1,
-    createdAtUtc: '2026-10-09T00:00:00.000Z',
-    updatedAtUtc: '2026-10-09T00:00:00.000Z',
-    name: 'Double progression, 8–12 reps (built-in default)',
-    method: 'double_progression',
-    repRange: { min: 8, max: 12 },
-    workingSets: Math.min(10, Math.max(1, workingSets)),
-    maxRpeToProgress: 9,
-    minRirToProgress: null,
-    ceilingRepCap: 15,
-    loadIncrement: unit === 'kg' ? { value: 2.5, unit: 'kg' } : { value: 5, unit: 'lb' },
-    startingLoad: null,
-    failuresBeforeReduce: 2,
-    reducePercent: 10,
-    maxLoadJump: null,
-  };
-}
 
 export type CoachStatus = 'not_connected';
 
@@ -64,6 +35,8 @@ export interface SummaryInput {
   painFlags: readonly PainFlag[];
   checkIn: CheckIn | null;
   coach: CoachStatus;
+  /** Catalogue info by exercise ID, for the built-in rule's category (ADR 0010 amendment 2). Missing = accessory range. */
+  exerciseInfo?: Readonly<Record<string, RuleExerciseInfo>>;
 }
 
 export interface NextTimeRow {
@@ -230,16 +203,20 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     const own = liveSets.filter((x) => x.sessionExerciseId === ex.id && x.setType === 'working');
     if (own.length === 0 || !completed.some((x) => x.sessionExerciseId === ex.id)) continue;
     const eq = equipmentOf(state, ex);
-    const rule = (ex.progressionRuleId !== null ? input.rules[ex.progressionRuleId] : undefined) ?? builtInDefaultRule(s.ownerId, ex.unit, own.length);
-    const result = calculateNextTargets({
+    const { result, rule } = nextTargetsFor({
+      ownerId: s.ownerId,
+      exerciseId: ex.exerciseId,
       exerciseName: ex.exerciseName,
       measurement: ex.measurement,
-      history: input.history[ex.exerciseId] ?? [],
-      rule,
-      equipment: eq,
       unit: ex.unit,
       convention: ex.loadConvention,
-      pain: painStatusFor(input.painFlags, ex.exerciseId),
+      equipment: eq,
+      exercise: input.exerciseInfo?.[ex.exerciseId] ?? null,
+      rule: (ex.progressionRuleId !== null ? input.rules[ex.progressionRuleId] : undefined) ?? null,
+      workingSets: own.length,
+      history: input.history[ex.exerciseId] ?? [],
+      painFlags: input.painFlags,
+      sessionPain: unspecifiedPain(input.checkIn),
     });
     const kind = listedKind(result);
     if (kind === null) continue;
