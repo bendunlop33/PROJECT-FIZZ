@@ -148,10 +148,13 @@ export function ExercisePickerScreen() {
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`How to do ${p.exercise.name}`}
+                      // While an add is saving, How to would be popped with the picker when it closes (review N3).
+                      disabled={busy}
+                      accessibilityState={{ disabled: busy }}
                       onPress={() => {
                         navigation.navigate('HowTo', { catalogueKey: howTo, name: p.exercise.name });
                       }}
-                      style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', marginRight: theme.space['2'], opacity: pressed ? 0.6 : 1 })}
+                      style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', marginRight: theme.space['2'], opacity: busy ? 0.4 : pressed ? 0.6 : 1 })}
                     >
                       <Icon name="info.circle" color="text.secondary" size={22} />
                     </Pressable>
