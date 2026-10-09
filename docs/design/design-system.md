@@ -828,10 +828,10 @@ Each component has one name and one definition here. The owning spec says where 
 #### Exercise guide (revision 2026-10-09; owner: exercise-library.md §8)
 
 **9.57 `ExerciseGuide`** (code: `GuidePlayer`). A square canvas inside a `Card`, 200–360pt (`min(360, content width − 2 × space.4)`), centred, drawn only in the §2.3 aliases. Above it, a `Tag` reading `Draft guide` until Ben approves the guide. Below it, the controls, built from `SecondaryButton`s (`flexBasis` 140, wrapping, ≥ 44pt tall, `space.3` apart):
-- *Animating:* one play control whose label is what a tap will do: `Pause` (`pause.fill`) · `Play` (`play.fill`) · `Replay` (`arrow.counterclockwise`). It is joined by `Key frames` (`rectangle.split.3x1`) when the guide has labelled key positions. exercise-library.md §8.9 P2 proposes renaming it `Key positions`.
+- *Animating:* one play control whose label is what a tap will do: `Pause` (`pause.fill`) · `Play` (`play.fill`) · `Replay` (`arrow.counterclockwise`). It is joined by `Key positions` (`rectangle.split.3x1`) when the guide has labelled key positions (exercise-library.md §8.9 P2, built).
 - *Key positions (still):* `1 of 3 · Start` (`type.headline`, tabular) and its caption (`type.callout`, `text.secondary`), `Previous` (`chevron.left`) and `Next` (`chevron.right`), disabled at the ends, then a secondary-tone text button `Play animation` (`play`).
 - Motion follows the principle 5 exception. The canvas itself isn't tappable (no scrub, no tap-to-pause), so a stray touch can't change it.
-- VoiceOver: the canvas is one image with a fixed label, `Animated guide for <name>. <a11y.summary>`, so it isn't re-announced while it moves. The still view's text is one element (`Key frame 1 of 3, Start. <caption>`).
+- VoiceOver: the canvas is one image with a fixed label, `Exercise guide for <name>. <a11y.summary>` (the same for the still view; P4), so it isn't re-announced while it moves. The still view's text is one element (`Key position 1 of 3, Start. <caption>`), announced after each Previous/Next.
 - Loading: the first frame shows at once, and the rest are prepared in ≤ 8 ms slices so the JS thread never stalls. No spinner or shimmer.
 - Errors are never drawn in the canvas. The screen shows a `StatusLine` instead (exercise-library.md §8.4).
 

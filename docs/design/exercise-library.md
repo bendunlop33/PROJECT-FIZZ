@@ -434,6 +434,8 @@ Everything shown is **Coaching knowledge** (rule 10): the bundled catalogue entr
 
 The guide is never shown inside a row, the Log card, the rest screen, Today, the Live Activity or a notification.
 
+**Reach (review S2, 2026-10-09):** 10 guides are bundled, but only **nine** can be opened in the app. Sled push has no exercise row: it isn't a starter exercise, and its catalogue entry records distance, which sets can't log yet (`toExerciseRow` refuses it). So neither `ⓘ` nor `⋯ › How to` can reach it. Ben reviews all ten guides on the guide review web page instead. No extra catalogue browsing is built for this; sled push becomes reachable when distance sets or the Browse detail (§2.4) land.
+
 Presentation: a full-height iOS modal (`presentation: 'modal'`, page sheet) over the screen it was opened from. Swiping down or tapping `Done` closes it. The workout underneath keeps running: the rest deadline, the layered rest alerts and any spoken cues behave exactly as they would without the modal.
 
 ### 8.3 Layout
@@ -456,7 +458,7 @@ Animating (default):
 │ │   │      no text in the art)   │   │ │ in the art. One VoiceOver image
 │ │   │                            │   │ │
 │ │   └────────────────────────────┘   │ │
-│ │ [ ❚❚ Pause      ] [ ▥ Key frames  ]│ │ SecondaryButtons, wrap at AX
+│ │ [ ❚❚ Pause      ] [ ▥ Key positions]│ │ SecondaryButtons, wrap at AX
 │ └────────────────────────────────────┘ │
 │ Key positions                          │ section header
 │ 1 Start                                │ type.headline, tabular number
@@ -480,10 +482,10 @@ After 3 reps (autoplay finished, holding the start position):
 
 ```
 │ │   │   start position (first frame) │   │ │
-│ │ [ ↺ Replay      ] [ ▥ Key frames  ]│ │
+│ │ [ ↺ Replay      ] [ ▥ Key positions]│ │
 ```
 
-Key positions view (the default with Reduce Motion on, or after `Key frames`):
+Key positions view (the default with Reduce Motion on, or after `Key positions`). A guide with no labelled key positions shows its first frame still with only `Play animation` (P6):
 
 ```
 │ │ [Draft guide]                      │ │
@@ -530,7 +532,7 @@ Transitions:
 open ─► (Reduce Motion?) ─no──► Playing ─3 passes─► Finished ─Replay─► Playing
             │                    │  ▲ └─Pause─► Paused ─Play─┘
             │                    │  └──── visible again ◄── Off-screen (auto)
-            │                    └─Key frames / Reduce Motion on─► Key positions
+            │                    └─Key positions / Reduce Motion on─► Key positions
             └─yes─► Key positions ─Previous/Next─► Key positions
                          └─Play animation─► Playing (from the first frame)
 any ─Done / swipe down─► back to the workout or picker, unchanged
@@ -539,7 +541,7 @@ any ─Done / swipe down─► back to the workout or picker, unchanged
 ### 8.5 Interactions
 
 - **Play control** (one button that changes label): `Pause` ↔ `Play`, or `Replay` after autoplay finishes. It is always shown while animating, so the moving content can always be stopped (WCAG 2.2.2).
-- **`Key frames`** (shown only when the guide has labelled key positions) switches to the still view on position 1. **`Previous` / `Next`** step through positions; they are disabled, not hidden, at the ends. **`Play animation`** goes back to animating from the first frame.
+- **`Key positions`** (shown only when the guide has labelled key positions) switches to the still view on position 1. **`Previous` / `Next`** step through positions; they are disabled, not hidden, at the ends. **`Play animation`** goes back to animating from the first frame.
 - **Scroll:** the cues scroll under the fixed header. Once the player scrolls out of view it pauses itself.
 - **Close:** `Done` (top right, `xmark` icon plus the word) or the system swipe-down. Ben returns to the exact workout state: same active set, same draft values, same Log label. From the picker he returns with his query and filters kept, and a row tap still adds in one tap.
 - **No gestures on the canvas.** It isn't tappable, so a sweaty brush can't start, stop or scrub it.
@@ -560,11 +562,11 @@ All text here is reference (Coaching knowledge). There are no loads, targets or 
 | Header | Exercise name · `Main muscles: Quads · Glutes` (muscle filter-group words) · `Done` |
 | Tag | `Draft guide` |
 | Play control | `Pause` (`pause.fill`) · `Play` (`play.fill`) · `Replay` (`arrow.counterclockwise`) |
-| Still view | `Key frames` (`rectangle.split.3x1`; hint `Shows the key positions one at a time, without animation.`) · `1 of 3 · Start` + caption · `Previous` · `Next` · `Play animation` |
+| Still view | `Key positions` (`rectangle.split.3x1`; hint `Shows the key positions one at a time, without animation.`) · `1 of 3 · Start` + caption · `Previous` · `Next` · `Play animation` |
 | Sections | `Key positions` (rows `1 Start` + caption) · `Setup` · `How to do it` · `Common mistakes` |
 | Notices (`StatusLine`, `info.circle`) | `The animated guide for Back squat couldn’t be read. The cues below still apply.` · `Couldn’t read the how-to for Back squat.` · `No how-to for Back squat yet.` |
-| VoiceOver: canvas (one image, fixed label, so it isn't re-announced while it moves) | `Animated guide for Back squat. Side view. Bar on upper back. Squat down until hips are just below knees, then stand up.` (the guide's `a11y.summary`) |
-| VoiceOver: still view | `Key frame 1 of 3, Start. Stand tall, brace.` |
+| VoiceOver: canvas (one image, fixed label, so it isn't re-announced while it moves) | `Exercise guide for Back squat. Side view. Bar on upper back. Squat down until hips are just below knees, then stand up.` (the guide's `a11y.summary`) |
+| VoiceOver: still view | `Key position 1 of 3, Start. Stand tall, brace.` (also announced after `Previous`, `Next` and `Key positions`, since focus stays on the button) |
 | VoiceOver: key position rows | `1, Start. Stand tall, brace.` |
 
 No spoken cues. Captions and cues follow the catalogue copy rules: imperative, at most 60 characters, plain words.
@@ -592,6 +594,8 @@ All pure, in `apps/mobile/src/guide/` and `@fizz/catalogue`. The screen never re
 | `Stop if` and variations not shown | How to shows the guide, key positions, setup, execution and common mistakes only | **Variations: agree** to leave them out. A reference screen that can add or swap exercises would be a second, unreviewed path into the workout, and the Swap sheet (§2.5) already covers alternatives. **`Stop if` and safety notes: disagree.** I'd add them (P1 below). They are the most safety-relevant text in a rich entry, they are short, static and offline, and the catalogue rules already forbid naming conditions or diagnosing (rule 9) |
 
 ### 8.9 Proposed changes to what was built (not built; for Ben and the developer)
+
+**Status 2026-10-09:** the PM approved P1, P2, P4, P5, P6 and P7 for Ben, and they are now **built** (§8.3–§8.6 updated for P2, P4 and P6 wording; not yet on a device). P3 is **deferred** until device feedback. Also built after review S1: if the player can't load or fails while drawing, How to drops it and shows `The animated guide couldn’t be shown. The cues below still apply.` above the cues; the workout underneath is unaffected.
 
 | # | Change | Why |
 |---|---|---|
