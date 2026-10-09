@@ -9,7 +9,8 @@ export type ProfileStackParams = {
 };
 
 export type TabParams = {
-  Today: undefined;
+  /** `toast`: a one-off message after returning from the check-in (e.g. Skip workout). */
+  Today: { toast?: string } | undefined;
   Progress: undefined;
   Profile: NavigatorScreenParams<ProfileStackParams> | undefined;
 };
@@ -17,10 +18,20 @@ export type TabParams = {
 export type RootStackParams = {
   Setup: undefined;
   Tabs: NavigatorScreenParams<TabParams> | undefined;
-  /** Placeholder until the next slice builds Active set / Rest / Summary. */
-  Workout: undefined;
+  /** Active workout (set, rest). `toast` after a start with a check-in (check-in.md §2.6). */
+  Workout: { toast?: WorkoutToastParam } | undefined;
+  /** Pre-workout check-in sheet: before a start, or editing a saved one. */
+  CheckIn: { mode: 'start'; gymId: string } | { mode: 'edit'; checkInId: string };
+  ExercisePicker: { sessionId: string };
+  EditSet: { sessionId: string; setId: string };
+  Summary: { sessionId: string };
   AddGym: undefined;
 };
+
+export type WorkoutToastParam =
+  | { kind: 'check_in'; text: string; checkInId: string }
+  | { kind: 'pain'; text: string; flagIds: string[] }
+  | { kind: 'info'; text: string };
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace

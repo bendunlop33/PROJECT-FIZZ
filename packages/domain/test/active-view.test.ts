@@ -4,6 +4,7 @@ import type { EquipmentInstance, Exercise, SessionAggregate } from '@fizz/schema
 import {
   buildActiveSetView,
   buildAddExerciseCommand,
+  buildSetEditView,
   lastComparableSession,
   NBSP,
   startWorkout,
@@ -236,5 +237,19 @@ describe('last comparable session (prefill and the Last line)', () => {
     expect(f.draft).toEqual(values(kg(95), 8));
     expect(plain(f.previous?.text)).toBe('95 kg × 8');
     expect(plain(f.logLabel)).toBe('Log 95 kg × 8');
+  });
+});
+
+describe('buildSetEditView (correction sheet)', () => {
+  it('uses the same achievable-load steps and only opens on logged sets', () => {
+    const s = emptyWith(exercise(218, 'Bench press'), barbell());
+    const setId = s.session.activeSetId ?? '';
+    expect(buildSetEditView(s, setId, null)).toBeNull();
+    const logged = apply(s, logCmd(setId, values(kg(100), 8), 5));
+    const v = buildSetEditView(logged, setId, null);
+    expect(v).toMatchObject({ setNumber: 1, changed: false, loadField: { up: { value: 102.5 }, down: { value: 97.5 } }, reps: { up: { value: 9 } } });
+    const edited = buildSetEditView(logged, setId, values(kg(100), 7));
+    expect(edited?.changed).toBe(true);
+    expect(plain(edited?.text)).toBe('100 kg × 7');
   });
 });

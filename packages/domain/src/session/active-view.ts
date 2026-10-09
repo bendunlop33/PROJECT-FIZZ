@@ -458,3 +458,48 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     lastCompletedAtUtc: last,
   };
 }
+
+export interface SetEditView {
+  setId: string;
+  setVersion: number;
+  exerciseName: string;
+  setNumber: number;
+  completedAtUtc: string | null;
+  values: SetValues;
+  loadField: LoadField | null;
+  reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
+  /** `100 kg × 8` for the values as edited. */
+  text: string;
+  changed: boolean;
+}
+
+/**
+ * The correction sheet for a logged set (active-workout §4.4): the same
+ * equipment-aware steppers as the set card. `correct_set` saves it; the rest
+ * timer is never touched (invariant 5).
+ */
+export function buildSetEditView(state: SessionAggregate, setId: string, edits: SetValues | null): SetEditView | null {
+  const set = state.sets.find((s) => s.id === setId);
+  if (!set || set.status !== 'completed' || !set.actual) return null;
+  const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
+  if (!ex) return null;
+  const eq = equipmentOf(state, ex);
+  const values = edits ?? set.actual;
+  const label = loadFieldLabel(ex.loadConvention, eq);
+  const loadValue = values.load === null || values.load.convention === 'bodyweight' ? null : values.load.value;
+  return {
+    setId: set.id,
+    setVersion: set.version,
+    exerciseName: ex.exerciseName,
+    setNumber: exerciseSets(state, ex.id).findIndex((s) => s.id === set.id) + 1,
+    completedAtUtc: set.completedAt?.utc ?? null,
+    values,
+    loadField:
+      label === null
+        ? null
+        : { label, unitText: loadFieldUnit(ex.unit, ex.loadConvention), value: loadValue, assisted: loadDirection(ex.loadConvention) === 'assistance', ...loadSteps(loadValue, ex, eq) },
+    reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
+    text: valuesText(values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
+    changed: JSON.stringify(values) !== JSON.stringify(set.actual),
+  };
+}
