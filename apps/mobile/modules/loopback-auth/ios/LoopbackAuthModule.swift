@@ -39,6 +39,8 @@ public class LoopbackAuthModule: Module {
   private static let unusedCallbackScheme = "fizz-loopback-unused"
   private static let maxRequestBytes = 16 * 1024
   private static let maxLogEntries = 100
+  /// A listener that never becomes ready (stuck in .waiting) fails the start instead of hanging (review S7).
+  private static let startTimeoutSeconds: Double = 10
 
   private var listener: NWListener?
   private var listenerPort: UInt16 = 0
@@ -145,12 +147,26 @@ public class LoopbackAuthModule: Module {
       if fallbackToAny && requested != .any {
         listen(port: 0, fallbackToAny: false, promise: promise)
       } else {
-        promise?.reject("ERR_LISTENER", "Could not listen on 127.0.0.1: \(error.localizedDescription)")
+        failStart(promise, message: "Could not listen on 127.0.0.1: \(error.localizedDescription)")
       }
       return
     }
 
     var settled = false
+    // Never leave startListener (or a re-listen during sign-in) pending forever.
+    let startTimeout = DispatchWorkItem { [weak self, weak newListener] in
+      guard let self, !settled else { return }
+      settled = true
+      self.record("error", "listener did not become ready within \(Int(LoopbackAuthModule.startTimeoutSeconds)) s")
+      if let newListener {
+        newListener.cancel()
+        if self.listener === newListener {
+          self.listener = nil
+        }
+      }
+      self.failStart(promise, message: "The loopback listener didn't start in time")
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + LoopbackAuthModule.startTimeoutSeconds, execute: startTimeout)
     newListener.stateUpdateHandler = { [weak self, weak newListener] state in
       guard let self, let newListener else { return }
       switch state {
@@ -158,6 +174,7 @@ public class LoopbackAuthModule: Module {
         let actual = newListener.port?.rawValue ?? 0
         self.listenerPort = actual
         self.record("ready", "listening on 127.0.0.1:\(actual)")
+        startTimeout.cancel()
         if !settled {
           settled = true
           promise?.resolve(["port": Int(actual)])
@@ -172,10 +189,11 @@ public class LoopbackAuthModule: Module {
         }
         if !settled {
           settled = true
+          startTimeout.cancel()
           if fallbackToAny && requested != .any {
             self.listen(port: 0, fallbackToAny: false, promise: promise)
           } else {
-            promise?.reject("ERR_LISTENER", "Could not listen on 127.0.0.1: \(error.localizedDescription)")
+            self.failStart(promise, message: "Could not listen on 127.0.0.1: \(error.localizedDescription)")
           }
         } else if self.pendingAuth != nil {
           self.relistenDuringSignIn()
@@ -191,6 +209,17 @@ public class LoopbackAuthModule: Module {
     }
     listener = newListener
     newListener.start(queue: .main)
+  }
+
+  /// A start that can't succeed: reject startListener, or, for the re-listen
+  /// during sign-in (no promise), end the sign-in now instead of waiting for
+  /// the 5-minute timeout (review S7).
+  private func failStart(_ promise: Promise?, message: String) {
+    if let promise {
+      promise.reject("ERR_LISTENER", message)
+    } else if pendingAuth != nil {
+      finishAuth(["outcome": "error", "message": "The loopback listener stopped during sign-in"])
+    }
   }
 
   /// The redirect URI's port is fixed for this attempt: re-listen on it once.

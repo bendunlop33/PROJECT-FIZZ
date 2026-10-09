@@ -85,28 +85,35 @@ export interface RefreshOutcome {
 }
 
 /**
- * Serializes refreshes: concurrent callers share one in-flight refresh, so
- * a rotating refresh token is never sent twice (`refresh_token_reused`).
+ * Serializes refreshes per vault: concurrent callers, even through separate
+ * instances, share one in-flight refresh, so a rotating refresh token is
+ * never sent twice (`refresh_token_reused`).
  * After a confirmed-unusable refresh token the tokens are deleted (the
  * registration stays); network and 5xx failures keep them.
  */
-export class TokenRefresher {
-  private inFlight: Promise<Result<RefreshOutcome, ProviderFailure>> | null = null;
+/**
+ * One in-flight refresh per vault (review S7), shared by every
+ * `TokenRefresher` on that vault, so parallel callers (models, Responses,
+ * Refresh now, later the coach) never send a rotated refresh token twice.
+ */
+const inFlightByVault = new WeakMap<ChatGptVault, Promise<Result<RefreshOutcome, ProviderFailure>>>();
 
+export class TokenRefresher {
   constructor(
     private readonly vault: ChatGptVault,
     private readonly options: TokenCallOptions,
   ) {}
 
-  /** A usable access token, refreshing first if it is near expiry (or if `force`). */
+  /** A usable access token, refreshing first if it is near expiry (or if `force`). Joins a refresh already running on this vault. */
   async ensureFresh(force = false): Promise<Result<RefreshOutcome, ProviderFailure>> {
-    if (this.inFlight !== null) return this.inFlight;
+    const running = inFlightByVault.get(this.vault);
+    if (running !== undefined) return running;
     const run = this.run(force);
-    this.inFlight = run;
+    inFlightByVault.set(this.vault, run);
     try {
       return await run;
     } finally {
-      this.inFlight = null;
+      if (inFlightByVault.get(this.vault) === run) inFlightByVault.delete(this.vault);
     }
   }
 

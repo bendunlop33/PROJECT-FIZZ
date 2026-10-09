@@ -37,3 +37,9 @@ Facts re-checked against the official pages on 2026-10-09, beyond the research n
 - If S1 fails on the device, the design's "ChatGPT sign-in doesn't work on iPhone yet" state applies (AC4) and the module can be deleted. Option C (sign in on another computer and transfer) needs its own decision (AC4: Ben has a Windows laptop).
 - Open before the coach uses this route: JWKS signature verification; the product Coach connection UI (first-use notice, Manage usage, model choice, `getAiCapabilities`); whether top-level function tools work or must be grouped in namespaces (the preview page mentions namespaces; S3 tests it).
 - Unknowns only the device can settle: whether the sheet's browser can reach the app's 127.0.0.1 listener; whether OpenAI grants `chatgpt.tokens.use.direct` to this registration and Ben's plan; whether port 1455 binds; whether iOS shows a Local Network prompt; behaviour when switching apps mid-sign-in; the real models list and latency; refresh after an hour (S4).
+
+## Amendment (2026-10-09, review slice-3-and-s1 S7)
+- Refreshes are serialised **per vault**, not per `TokenRefresher` instance: every refresher on the same vault joins one in-flight refresh, so parallel callers never send a rotated refresh token twice.
+- Tokens granted but not kept (scope missing, a different account) are revoked straight away; the step says whether revocation was confirmed.
+- The listener start can't hang: the Swift module fails `startListener` after 10 s if the listener never becomes ready (e.g. stuck in `.waiting`), and the orchestrator stops waiting after 15 s and stops the listener. A failed re-listen during sign-in ends the attempt at once (`The loopback listener stopped during sign-in`) instead of waiting for the 5-minute timeout. The Swift changes are first compiled by macOS CI.
+- Still open before the coach uses this route: JWKS signature verification.

@@ -173,6 +173,9 @@ describe('runSignInTest', () => {
     expect(urlsCalled(w)).not.toContain(OPENAI_MODELS_URL);
     expect(urlsCalled(w)).not.toContain(OPENAI_RESPONSES_URL);
     expect(run.outcome).toBe('not_connected');
+    // The grant that isn't kept is revoked (review S7).
+    expect(w.calls.find((c) => c.url.endsWith('/oauth/revoke'))?.form).toEqual({ token: 'REFRESH-SECRET-1', token_type_hint: 'refresh_token', client_id: 'oaiapp_ISSUED123' });
+    expect(run.steps.find((s) => s.id === 'scopes')?.details).toContain('The granted refresh token was revoked.');
   });
 
   it('cancel in the sheet stores nothing, makes no token call and stops the listener', async () => {
@@ -203,6 +206,26 @@ describe('runSignInTest', () => {
   it('a listener that cannot bind fails the listener step', async () => {
     const run = await runSignInTest(world({ loopback: { startError: 'Address already in use' } }).ports);
     expect(run.steps.find((s) => s.id === 'listener')).toMatchObject({ status: 'fail', summary: 'Listener could not start: Address already in use' });
+  });
+
+  it('a listener that never becomes ready fails the step after the start timeout and is stopped (review S7)', async () => {
+    const w = world();
+    let stopped = 0;
+    w.ports.loopback = {
+      unavailableReason: () => null,
+      startListener: () => new Promise(() => undefined),
+      openAuthSession: () => Promise.resolve({ kind: 'cancelled' }),
+      stopListener: () => {
+        stopped += 1;
+        return Promise.resolve();
+      },
+      listenerLog: () => [],
+    };
+    const run = await runSignInTest(w.ports, { listenerStartTimeoutMs: 20 });
+    expect(run.steps.find((s) => s.id === 'listener')).toMatchObject({ status: 'fail', summary: "Listener didn't start in time" });
+    expect(statusOf(run.steps).browser).toBe('skipped');
+    expect(stopped).toBe(1);
+    expect(w.calls).toHaveLength(0);
   });
 
   it('a forged callback (wrong state) is rejected before any token call', async () => {
@@ -252,6 +275,18 @@ describe('runSignInTest', () => {
     const run = await runSignInTest(w.ports);
     expect(statusOf(run.steps).id_token).toBe('fail');
     expect(w.vault.tokens).toBe(oldTokens);
+    // The other account's new grant is revoked, never the saved one (review S7).
+    const revokes = w.calls.filter((c) => c.url.endsWith('/oauth/revoke'));
+    expect(revokes.map((c) => c.form.token)).toEqual(['REFRESH-SECRET-1']);
+    expect(run.steps.find((s) => s.id === 'id_token')?.details).toContain('The granted refresh token was revoked.');
+  });
+
+  it('a revocation that fails is said plainly and never blocks the result', async () => {
+    const w = world({ scope: 'openid profile email offline_access', routes: { 'https://auth.openai.com/api/accounts/oauth/revoke': () => Promise.reject(new Error('offline')) } });
+    const run = await runSignInTest(w.ports);
+    expect(statusOf(run.steps).scopes).toBe('fail');
+    expect(run.steps.find((s) => s.id === 'scopes')?.details.some((d) => d.startsWith("Revoking the granted refresh token wasn't confirmed"))).toBe(true);
+    expect(w.vault.tokens).toBeNull();
   });
 
   it('the export has every step, masks the email and contains no token, code or state', async () => {

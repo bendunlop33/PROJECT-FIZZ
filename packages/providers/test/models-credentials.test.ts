@@ -131,6 +131,22 @@ describe('TokenRefresher', () => {
     expect(a).toEqual(c);
   });
 
+  it('separate refreshers on one vault (models, Responses, Refresh now) share one refresh (review S7)', async () => {
+    const clock = new FakeClock(1_999_000);
+    const vault = new MemoryVault();
+    vault.tokens = serializeTokens(tokens());
+    const { fetch, calls } = fakeFetch({ [OPENAI_TOKEN_ENDPOINT]: () => jsonResponse(200, rotated) });
+    const make = () => new TokenRefresher(vault, { fetch, nowMs: clock.now });
+    const [a, b, c] = await Promise.all([make().ensureFresh(), make().ensureFresh(true), make().ensureFresh(true)]);
+    expect(calls.filter((x) => x.form.grant_type === 'refresh_token')).toHaveLength(1);
+    expect(a).toEqual(b);
+    expect(a).toEqual(c);
+    // Another vault isn't blocked by this one.
+    const other = new MemoryVault();
+    other.tokens = serializeTokens(tokens());
+    expect(await new TokenRefresher(other, { fetch, nowMs: clock.now }).ensureFresh(true)).toMatchObject({ ok: true, value: { refreshed: true } });
+  });
+
   it('after a restart, the next refresh sends the rotated token, never the old one', async () => {
     const clock = new FakeClock(1_999_000);
     const vault = new MemoryVault();

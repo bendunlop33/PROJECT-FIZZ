@@ -153,11 +153,15 @@ export interface SignInTestRun {
 export interface RunOptions {
   /** Sheet + listener limit (design `timing.signInTimeout`, 5 min). */
   signInTimeoutMs?: number;
+  /** Limit for the listener to start (default `LISTENER_START_TIMEOUT_MS`). */
+  listenerStartTimeoutMs?: number;
   preferredModel?: string | null;
   onStep?: (step: StepResult) => void;
 }
 
 export const SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000;
+/** startListener must settle by then (a listener stuck in .waiting never does; review S7). Above the native 10 s limit. */
+export const LISTENER_START_TIMEOUT_MS = 15 * 1000;
 
 const TEST_PROMPT = 'Reply with OK';
 const TEST_INSTRUCTIONS = 'This is a connection test. Reply with exactly: OK';
@@ -210,8 +214,13 @@ export async function runSignInTest(ports: SignInTestPorts, options: RunOptions 
     }
     let port: number;
     try {
-      port = (await ports.loopback.startListener(CALLBACK_PATH, PREFERRED_CALLBACK_PORT)).port;
+      port = (await withTimeout(ports.loopback.startListener(CALLBACK_PATH, PREFERRED_CALLBACK_PORT), options.listenerStartTimeoutMs ?? LISTENER_START_TIMEOUT_MS)).port;
     } catch (e) {
+      if (e instanceof StartTimeout) {
+        await ports.loopback.stopListener().catch(() => undefined);
+        recorder.end('listener', 'fail', "Listener didn't start in time", ['It never became ready on 127.0.0.1; it was stopped. Try again.']);
+        return finish();
+      }
       recorder.end('listener', 'fail', `Listener could not start: ${errorText(e)}`, []);
       return finish();
     }
@@ -291,7 +300,8 @@ export async function runSignInTest(ports: SignInTestPorts, options: RunOptions 
         return finish();
       }
       if (registration.subject !== null && registration.subject !== claims.value.subject) {
-        recorder.end('id_token', 'fail', 'Signed in as a different ChatGPT account than the saved registration; nothing replaced', []);
+        const revoked = await revokeDiscarded(tokens, ports);
+        recorder.end('id_token', 'fail', 'Signed in as a different ChatGPT account than the saved registration; nothing replaced', [revoked]);
         return finish();
       }
       recorder.pass('id_token', `Signed in as ${claims.value.email === null ? '(no email claim)' : claims.value.email}`, [
@@ -302,11 +312,12 @@ export async function runSignInTest(ports: SignInTestPorts, options: RunOptions 
       // 8. Scopes: without plan usage, store nothing and stop.
       recorder.start('scopes');
       if (!hasPlanUsageScope(tokens.scopes)) {
+        const revoked = await revokeDiscarded(tokens, ports);
         recorder.end(
           'scopes',
           'fail',
           "Signed in, but ChatGPT didn't allow coach replies for this app.",
-          [`Granted: ${tokens.scopes.join(' ') || '(none listed)'}`, 'No tokens were stored.'],
+          [`Granted: ${tokens.scopes.join(' ') || '(none listed)'}`, 'No tokens were stored.', revoked],
           failure('scope_missing', `${PLAN_USAGE_SCOPE} was not granted`),
         );
         return finish();
@@ -359,6 +370,42 @@ export async function runSignInTest(ports: SignInTestPorts, options: RunOptions 
     if (running !== undefined) recorder.end(running.id, 'fail', `Unexpected error: ${errorText(e)}`, []);
     return finish();
   }
+}
+
+/**
+ * Tokens that were granted but won't be kept (missing scope, another
+ * account) are revoked, so no live refresh token stays granted (review S7).
+ * Returns a step detail line; never throws and never includes a token.
+ */
+async function revokeDiscarded(tokens: ChatGptTokenSet, ports: Pick<SignInTestPorts, 'fetch' | 'nowMs'>): Promise<string> {
+  if (tokens.refreshToken === null) return 'No refresh token was granted, so there was nothing to revoke.';
+  try {
+    const r = await revokeRefreshToken(tokens, { fetch: ports.fetch, nowMs: ports.nowMs });
+    return r.confirmed ? 'The granted refresh token was revoked.' : `Revoking the granted refresh token wasn't confirmed (${r.failure?.message ?? 'unknown'}). You can disconnect Fizz in ChatGPT Settings.`;
+  } catch (e) {
+    return `Revoking the granted refresh token failed (${errorText(e)}). You can disconnect Fizz in ChatGPT Settings.`;
+  }
+}
+
+class StartTimeout extends Error {}
+
+/** Rejects with `StartTimeout` if `p` hasn't settled within `ms`. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new StartTimeout('timeout'));
+    }, ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(timer);
+        reject(e instanceof Error ? e : new Error(String(e)));
+      },
+    );
+  });
 }
 
 async function exchangeStep(recorder: StepRecorder, ports: SignInTestPorts, attempt: AuthAttempt, code: string, clientId: string): Promise<ChatGptTokenSet | null> {
