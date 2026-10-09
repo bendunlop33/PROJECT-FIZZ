@@ -270,3 +270,137 @@ The preview says `1 workout … isn't in this backup`, meaning the old phone dat
   - The spec should say whether both count as "something would be replaced", which triggers the alert.
 - **SP4. Restore from Welcome (OB3, onboarding check 10)** is still `Not in this build`. The ADR 0004 recovery path ("new app, restore") therefore means setting up a profile and gym first, which the restore then replaces (`N other records … will be replaced`). This works for the trial run, but the spec says restore comes before setup. Either confirm the deferral or build the Welcome entry before relying on it.
 - **SP5. kg↔lb in Repeat.** Repeat converts loads across units, with a note. Decide whether that is wanted, or whether the load should be dropped.
+
+---
+
+# Re-review: fix commits `5c9c17a..5ef92a4`, catalogue batch 02, starter alignment
+
+**Verdict: CHANGES NEEDED** (one blocker, R1: on a fresh install, the restore preview reports records that don't exist as changed or lost)
+
+Reviewed on `claude/gracious-knuth-joxqpw` at `959a6fe` (the merge of `5ef92a4`). That covers:
+- the fix commits for B1, S1–S7 and SP2–SP5, including the PM decisions in the commit messages and in the spec edits (`data-import-export.md` §2.3 and §3.3, `onboarding.md` §4.5, `routines.md` §2.4);
+- catalogue batch 02 (`6e4f5df`);
+- the starter/catalogue alignment (`163bbdb`, `1fef0a4`).
+
+## What I ran
+
+| Check | Result |
+|---|---|
+| `npm run check` | Clean. 71 test files, 880 tests passing (up from 850). Catalogue validate: 133 valid, 0 errors, 1 warning (`barbell-landmine-press` uses `added` on a barbell), 9 notes (distance entries skipped by the loader). Guide check: 10/10 pass |
+| `expo export --platform ios` (scratchpad) | The Hermes bundle builds (1337 modules, 4 MB). Export deleted |
+| `expo prebuild --platform ios --no-install --clean` on a scratch copy, then `check-entitlements --prebuild` | OK. Both `.entitlements` files still hold only `com.apple.security.application-groups`. There is no `UIBackgroundModes` and no `NSLocalNetworkUsageDescription`. ATS has `NSAllowsArbitraryLoads=false`. Scratch copy deleted |
+| Scratch probes on the real-SQLite harness (outside the repo, deleted) | Confirmed R1 and R2 below. The same-phone S2 sequence counts correctly (`kept: 1 workout, 0 other records`) |
+
+## The original findings
+
+| Finding | Status | Evidence |
+|---|---|---|
+| **B1** Repeat at a gym without the equipment | **Fixed** | `repeat.ts:98-141`: when `eq === null && sourceEq !== null`, every `targetLoad` is null and the reps are kept. The note now reads `No Olympic bar here: no load target (last time 102.5 kg × 8).` and "Kept as done" is gone. Tests: domain `repeat.test.ts` (the hotel dumbbell-only case asserts `planned.load === null`, the reps, `equipmentId === null` and all sets `pending`); app `repeat.test.ts` (end to end, through `start` and the focus card) |
+| **SP5** kg↔lb in Repeat | **Fixed as decided** | A load is converted only through `roundToAvailableLoad(…,'easier')` against today's equipment. It's dropped when it would be clamped up to the minimum (or, on an assistance machine, down to the maximum). With no equipment, a load in another unit is dropped with a note. All four cases are tested, including logging an lb load afterwards |
+| **S1** Today depends on a year of decodes | **Fixed** | `listRepeatableIds` uses `LIMIT/OFFSET`; `candidates` decodes only those rows, skipping and counting failures. `repeat.last()` never throws, Today's loader also has `.catch(() => null)`, and the week read uses `listFinishedBetweenReadable`. Past workouts shows the count. Test: `unreadable-records.test.ts` (Today's loader resolves, Start works, `unreadable: 1`, and the limit holds) |
+| **S2** Second restore deletes the switched-away data | **Fixed** | `readKept` + `analyseReplace` count what is only in the Undo copy. An unreadable copy is reported, never dropped silently. The warning and the alert both say so. Tests: persistence and app sequences (restore → train → Undo → restore again). My probe of the same sequence gives exact counts. **But see R1 for a fresh install** |
+| **SP3** "Replaced" includes changed records | **Fixed as decided** | Records are compared by content at the same schema version and by version stamps across versions. Tested in `backup.test.ts` |
+| **S3** Stuck `BlockingCover` on an I/O throw | **Fixed** | `build()` and `rollback()` now open the file and write the slots inside `try`. `exclusiveSafe` turns any throw into `restore_failed`, and the service and both screens catch too. The new file is removed even when the meta write fails (`owned`/`recorded`). Tests: ENOSPC on open, meta write failing and the earlier file not opening. Each returns a value, leaves the slots and data unchanged, and a relaunch leaves nothing behind. Undo errors now use `describeBackupError` |
+| **S4** One-tap Clear on the Summary | **Fixed** | The confirm wording is shared (`pain-clear.ts`), and the toast offers Undo. `undoClear` restores the flag as a new version, and only if the version still matches (stale and double-tap Undo are refused). Tested at the service level. The UI itself isn't unit-tested, which is normal for this repo |
+| **S5** Stale restore preview | **Fixed** | `stamp = current|previous|contentHash`. A mismatch gives `preview_stale`, nothing switches, and the screen rebuilds the preview with `Your data changed since this preview` and asks for confirmation again. `restore(text, stamp)` requires the stamp at the type level. Tests: persistence and app (a workout logged after the preview is refused, then the restore succeeds after a fresh confirm) |
+| **S6 / SP2** Undo blocked by a restored unfinished workout | **Fixed as decided** | `undoBlock` exempts a workout whose `startedAt` and `lastActivityAt` are both at or before the last switch. Tests cover allowed when untouched, blocked once continued, Switch back, and blocked by a workout started after the restore. No data is at risk: Undo swaps files, so the workout stays in the kept copy |
+| **S7** S1 spike hardening | **Fixed** (JWKS stays open, as recorded) | There is one in-flight refresh per vault, keyed by a `WeakMap` on the vault. `keychainVault` is a module singleton, so it really is shared. Discarded grants are revoked on both the scope path and the different-account path. Swift: a failed re-listen ends the sign-in, and a 10 s start timeout cancels the listener. JS has a 15 s timeout and stops the listener. Tests cover the shared refresh, the revoke on the scope path and the hung start. The different-account revoke has no test (nit) |
+| **SP4** Restore from Welcome | **Built, but see R1 and R2** | |
+| Nits: re-listen failure, hang on start, raw undo error text | Fixed | |
+
+## Blocking
+
+### R1. On a fresh install, the restore preview reports changed and "lost" records that don't exist. The Welcome restore then shows the "Replace your data?" alert on an empty phone
+`packages/persistence/src/backup/replace.ts:31, :45-75, :131`; seeding is in `apps/mobile/src/services/app-services.ts:136` (run at every launch from `startup.ts:65`)
+
+**What happens.**
+- Every launch seeds the 29 starter exercises: ownerless Coaching-knowledge rows whose `createdAtUtc`/`updatedAtUtc` are the time of the **first launch on that install**.
+- `analyseReplace` counts `exercises` among the "other records" and compares the whole row. Across schema versions it compares `version`/`updated_at_utc`, which also differ.
+- So, against a backup from any other install, all 29 starter rows "differ". The rows from before `163bbdb` also differ in name, pattern and muscles.
+
+**Probe 1.** I made a backup on a harness started 1 Sept, then restored it from Welcome on a fresh harness started 9 Oct. The result:
+- `changedOnPhone.otherRecords = 29`;
+- the warning `29 other records on this phone differ from the backup's copy (a gym, an exercise or similar was changed since). The backup's version replaces them.`;
+- `confirm = "Replace your data on this phone?"`.
+
+This contradicts onboarding §4.5 / the SP4 decision ("nothing is replaced, so there's no alert") and the commit message.
+
+**Probe 2.** After that Welcome restore, I prepared a restore of an older backup from the same old phone. The preview says `The data kept for Undo … holds 29 other records that aren't on this phone or in this backup. This restore deletes that copy, so they're lost unless saved in another backup.` Nothing personal is in that copy. It is the empty install's own starter list, which is reseeded at every launch anyway.
+
+**Why the test passes.** `welcome-restore.test.ts:51` asserts `confirm === null`, but both harnesses default to the same clock (`harness.ts:36`, `2026-10-08T17:00Z`) and the same `idGen(1)` (`harness.ts:44`). So the "other phone" seeds identical starter rows, and the scenario that matters (a reinstall on another day, which is the ADR 0004 recovery path) is never tested.
+
+**Why it blocks.** No data is lost; the error is in the cautious direction. But this is the data-safety UI that S2/SP3 were built to make trustworthy:
+- It states false facts ("changed since", "lost") on the exact path the Welcome entry exists for.
+- After any Welcome restore, every later restore repeats a false loss warning.
+- An alert that cries wolf teaches Ben to tap through the one that matters.
+- It also counts Coaching knowledge as "your data on this phone", against rule 10.
+
+**Fix.**
+- Limit the replace analysis (`onlyOnPhone`, `changedOnPhone`, `keptForUndo`) to owner-scoped rows. For `exercises`, that means `owner_id IS NOT NULL`, or exclude `source = 'catalogue'`. Ownerless catalogue/starter rows are Coaching knowledge and are reseeded at launch.
+- Alternatively, compare ownerless rows without their timestamps. Owner-scoped only is simpler and matches rule 10.
+- Make the Welcome test realistic: build the "other phone" with `createHarness('2026-09-01T08:00:00.000Z')` and a distinct ID generator. Assert no warning and no alert. Then assert no false "kept for Undo" warning on a later restore.
+
+## Should fix
+
+### R2. Back from the Welcome restore's `Done` step leaves Ben in first-run setup over his restored data
+`apps/mobile/src/navigation/AppNavigator.tsx:180` (`headerShown: true`, no `gestureEnabled: false`/`beforeRemove`); `RestoreScreen.tsx:183-196`
+
+**What happens.**
+- After the switch, the `done` step has a header Back button and the swipe-back gesture. Back pops to `SetupScreen`, which is still on its in-memory Welcome step, while the services already read the restored database.
+- If Ben taps through setup again:
+  - `saveUnits` overwrites the restored profile's unit. My probe went from kg to lb, and `saveUnits` returned ok.
+  - `saveGym` is no longer guarded by `inSetup`, because `skipAfterRestore` already set `completedAtUtc`, so it adds a second gym. On the device the IDs are UUIDs; in the harness the shared `idGen` collided and the save failed instead.
+  - `onDone` switches to Tabs without the relaunch, so cold-start recovery (an unfinished workout from the backup, rest alerts) doesn't run.
+
+**What still holds.** Nothing is lost.
+
+**Fix.**
+- On the `done` and `restoring` steps, hide the back button and disable the gesture, or make Back call `relaunch`. The relaunch then lands on Today, because the restored profile is marked set up.
+- Optionally, have `SetupScreen` re-read `setup.getState()` on focus.
+
+### R3. A force-close between the switch and `skipAfterRestore` resumes setup mid-way
+`RestoreScreen.tsx:130`
+
+**What happens.** For a backup saved part-way through setup, a kill in that window relaunches at the `gym`/`data` step with the restored profile instead of Today. This is benign: the profile and gym are kept, and finishing setup works. But it isn't the "skips setup" the SP4 decision describes.
+
+**Fix.** Mark the profile set up as part of the restore's own post-switch step, or have `startApp` treat "restored from Welcome" (the last switch reason plus no `completedAtUtc`) as done.
+
+## Nits
+
+**Repeat**
+- `missingEquipmentNote` (`repeat.ts:211`) picks the "top" set by the largest `load.value`. On an assistance machine that is the *easiest* set. It also compares values across units and conventions. Use the working set with the fewest reps, or the last working set.
+
+**Catalogue batch 02 (not wired into the app yet; only the starter keys are seeded)**
+- `ez-bar-curl`, `ez-bar-skull-crusher` and `trap-bar-deadlift` are `barbell` kind. Once wired, `pickEquipment`/`startWorkout` would plan plates on the gym's Olympic bar, which is the wrong bar weight (rule 4). They need their own kind, or a bar-weight choice, before wiring.
+- `barbell-landmine-press` uses `added` on `barbell`. The validator warns about it. The session convention comes from the equipment (`create.ts:155`), so this only matters with no equipment.
+- Floor exercises (push-up, squat, plank, dead bug, burpee, glute bridge and others) list `bodyweight_station`:
+  - At a gym without one, the picker labels them `Not at this gym · loads won't be checked`.
+  - At a gym with a `Pull-up bar`, push-up attaches to the pull-up bar.
+  - `163bbdb` brings this to the starter Push-up on fresh installs (it was `[]`).
+  - Consider `compatibleEquipment: []` for floor work, or a picker rule that treats `bodyweight` as needing nothing.
+
+**Starter alignment**
+- Existing phones keep the old starter rows (`Leg curl`, `shoulder_abduction`, …) and fresh installs get the new ones. `movementPattern` is a free string and nothing in the domain reads it except `ruleCategory`. I checked: no starter's rule category changes. So this is cosmetic, but it feeds R1.
+
+**S7**
+- There is no test that the different-account path revokes.
+
+**Earlier nits still open**
+- The pain `Clear` chain on the set card has no `catch`.
+- `Rest after` has no Undo.
+- The morning checklist has no S1 rows.
+- The gym editor keeps the numbers on a unit switch, and `minLoad` still can't be edited.
+
+## Tests
+
+The new tests are meaningful regression tests for B1, S1–S7, SP2, SP3 and SP5. Each would fail on the old code. The gaps:
+- **Cross-install restore (R1).** The shared harness clock and ID generator hide it, so add a test with distinct clocks and IDs.
+- **Back from `Done` on Welcome (R2).** This is navigation, so cover it with a device checklist row if there's no component test.
+
+## Spec issues
+
+- **RS1. What a restore "replaces" (data-import-export §2.3, the SP3 definition).**
+  - The definition counts "other records … (gyms, equipment, check-ins and similar)" without saying whether Coaching knowledge counts. Ownerless starter and catalogue rows are Coaching knowledge, and they are reseeded at every launch.
+  - Rule 10 says the two kinds of data stay separate in backup/restore and UI.
+  - The spec should say the preview counts **Your data** only, which is R1's fix. Once the catalogue is wired, it should also say how a restore treats Coaching-knowledge rows the backup lacks or has older versions of: keep the newer bundled ones, or let the backup's copy win.
+- **RS2. Welcome restore exits (onboarding §4.5).** The spec doesn't say what Back does after the switch (R2). Suggested wording: after a restore, the only exits are `Done` (relaunch) and `Undo restore`.
