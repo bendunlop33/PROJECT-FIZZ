@@ -1,6 +1,6 @@
 # Building the app file (.ipa)
 
-This guide covers how to get a new copy of the app built in the cloud, and how to download it so SideStore can install it. Installing with SideStore is covered in `docs/guides/sidestore-windows.md` §4.
+The app is called **GymSmarter** (its name on the home screen and in SideStore). This guide covers how to get a new copy of the app built in the cloud, and how to download it so SideStore can install it. Installing with SideStore is covered in `docs/guides/sidestore-windows.md` §4.
 
 You don't need a Mac. GitHub builds the app on one of its Macs and gives you a single file ending in `.ipa`.
 
@@ -34,8 +34,8 @@ Developers can also start a build by pushing a tag that starts with `ios-v` (for
 ## 2. Download the .ipa
 
 1. Open the finished run. It shows a green tick.
-2. At the top there's a short summary with the version, the build number and the **Bundle ID**.
-3. Scroll to **Artifacts** and tap the file, for example `Fizz-0.1.0-build12.ipa`.
+2. At the top there's a short summary with the name on the home screen (GymSmarter), the version, the build number and the **Bundle ID**.
+3. Scroll to **Artifacts** and tap the file, for example `GymSmarter-0.1.0-build12.ipa`.
 
 It downloads as a plain `.ipa`, not a zip. The build is set up to upload the file unzipped, so on the iPhone you'll find it straight away in **Files > Downloads**.
 
@@ -54,6 +54,8 @@ iOS knows the app by its **Bundle ID**, currently `com.projectfizz.fizz`, togeth
   - don't install the app with a different tool (iloader, Sideloadly, AltStore) without a backup first.
 
 **Before the first install,** check you're happy with `com.projectfizz.fizz`. After that it's permanent.
+
+The "fizz" in the Bundle ID is the project's old working name and stays on purpose. You never see it: the name under the icon is GymSmarter, and changing that name is safe (it doesn't change the app's identity or your data). Builds made before the rename show as "Fizz"; installing a GymSmarter build over the top just renames the same app.
 
 ## 4. If a build fails
 
@@ -86,7 +88,7 @@ Most rows explain what to do. These need you to do something:
 - **Ducking:** start music in another app first.
 - **Live Activity, then App Group:** run Live Activity first and lock the phone to look for the countdown. Then run App Group. It checks that the app and the Lock Screen extension both found the same shared App Group, including the renamed one SideStore uses. If SideStore asks whether to keep the app's extensions, keep them: without the extension there is no Lock Screen countdown.
 - **Spoken cue while locked:** only in builds made with the background-audio experiment. Tap Run and lock the phone within 10 seconds. The cue plays 30 seconds after you tap Run.
-- **AlarmKit:** tap **Request permission** and answer the iOS prompt. iOS only asks once; to change your answer later, go to Settings > Fizz. No alarm is set yet.
+- **AlarmKit:** tap **Request permission** and answer the iOS prompt. iOS only asks once; to change your answer later, go to Settings > GymSmarter. No alarm is set yet.
 - **Audio events:** nothing to run. While the probe screen is open, it records interruptions such as calls, Siri or AirPods disconnecting.
 
 **Retest after build 7.** The next build changes these rows:

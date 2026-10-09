@@ -1,5 +1,7 @@
 # Installing and looking after the app with SideStore (Windows laptop + iPhone 17)
 
+The app is called **GymSmarter**. "The app" below means GymSmarter.
+
 For Ben. Written 2026-10-08 by the researcher agent. Every source was checked on 2026-10-08. Nothing was downloaded, signed up for or signed in to while writing this.
 
 ## Summary
@@ -90,11 +92,11 @@ For Ben. Written 2026-10-08 by the researcher agent. Every source was checked on
 
 ### Getting the `.ipa` onto the phone
 
-The app is built by GitHub Actions and attached to each build run as an "artifact".
+The app, **GymSmarter**, is built by GitHub Actions and attached to each build run as an "artifact", a file named like `GymSmarter-0.1.0-build12.ipa`.
 
 **Option A: on the phone (easiest)**
 1. In Safari, sign in to GitHub. The repo is private, so you need read access. [Doc] https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts
-2. Open the repo's **Actions** tab, then the latest successful build. Under **Artifacts**, tap the app artifact to download it.
+2. Open the repo's **Actions** tab, then the latest successful build. Under **Artifacts**, tap `GymSmarter-<version>-build<N>.ipa` to download it.
 3. If it arrives as a `.zip`, open **Files > Downloads** and tap the zip to expand it. You should now have a file ending in `.ipa`.
    - Artifacts have traditionally been zipped. Since Feb 2026, GitHub can serve them unzipped if the workflow is set up that way, which a developer change can do. [Doc] https://github.blog/changelog/2026-02-26-github-actions-now-supports-uploading-and-downloading-non-zipped-artifacts/
 4. Artifacts are kept for **90 days** by default, so install or save the file before then. [Doc] GitHub page above.
@@ -115,7 +117,7 @@ The app is built by GitHub Actions and attached to each build run as an "artifac
    - [Release notes] SideStore 0.6.3+ supports installing IPAs from My Apps and lets you customise the App ID there. https://github.com/SideStore/SideStore/releases/tag/0.6.3
    - **Leave the App ID as the default.** Changing it creates a different app.
 3. Wait for the install to finish. If it seems stuck near the end, go to the Home Screen and let it finish. [Doc] https://docs.sidestore.io/docs/troubleshooting
-4. Open the app once to check it starts.
+4. Open **GymSmarter** once to check it starts. (Builds made before the rename show as "Fizz". Installing a GymSmarter build over the top just renames the same app; your data stays.)
 
 ### Installing an update without losing data
 
@@ -133,7 +135,7 @@ The app is built by GitHub Actions and attached to each build run as an "artifac
 **How to refresh (about 1 minute, at home on Wi-Fi):**
 1. Connect **LocalDevVPN**.
 2. Open SideStore and go to **My Apps**.
-3. Tap the day counter on **SideStore**, then on **the app** (or use "Refresh All" if your build has it).
+3. Tap the day counter on **SideStore**, then on **GymSmarter** (or use "Refresh All" if your build has it).
 4. Check that both counters show 7 days.
 
 [Doc] https://docs.sidestore.io/docs/installation/install, https://docs.sidestore.io/docs/faq

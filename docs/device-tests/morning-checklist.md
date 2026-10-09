@@ -6,6 +6,7 @@ How to report: copy the results table at the bottom, put **P** (pass), **F** (fa
 
 Before you start:
 - Install **over the top** with SideStore. Never delete the app (that starts an empty one).
+- The app is now called **GymSmarter** (the file is `GymSmarter-<version>-build<N>.ipa`). If an older build is installed as "Fizz", installing this one over the top just renames it: same app, same data.
 - Have some music playing for the cue steps if you like; it isn't required.
 - Test workouts are real records (sessions are never deleted). That's fine: step 11 shows how to go back with a restore.
 
@@ -13,7 +14,7 @@ Before you start:
 
 ## 1. Open and first run (1 min)
 
-1.1 Open Fizz. It should open in under a couple of seconds with no "Opening your training data" screen, or with it only briefly.
+1.1 Open GymSmarter. It should open in under a couple of seconds with no "Opening your training data" screen, or with it only briefly.
 1.2 If this is a fresh install: choose **kg**, pick **Commercial gym**, name it, **Save gym**, read the data explainer, **Go to Today**.
 1.3 Profile › **App status**: note the build number and the SQLite version (must be 3.37 or newer).
 
@@ -43,12 +44,12 @@ Before you start:
 
 5.1 During the rest, tap **−30 s** until it reaches zero once: you should feel **one** rest-end haptic. (Then log another set to start a fresh rest.)
 5.2 Lock the phone. At the end of the rest a notification arrives on the lock screen (*Rest done*, next set). Exactly one.
-5.3 Start another rest, tap **⌄** to minimise to **Today**, and wait: the **banner and sound** appear while Fizz is open on Today (new), and the Today card says *Rest over · ready for next set*.
+5.3 Start another rest, tap **⌄** to minimise to **Today**, and wait: the **banner and sound** appear while GymSmarter is open on Today (new), and the Today card says *Rest over · ready for next set*.
 
 ## 6. Force-close mid-rest (1 min)
 
-6.1 Start a rest (Log a set). Swipe Fizz away from the app switcher.
-6.2 Reopen after ~10 s: Fizz opens straight into the workout with *Workout restored. Nothing was lost.* and the countdown about 10 s lower. Only one notification is pending (lock the phone to the end of rest if you want to confirm).
+6.1 Start a rest (Log a set). Swipe GymSmarter away from the app switcher.
+6.2 Reopen after ~10 s: GymSmarter opens straight into the workout with *Workout restored. Nothing was lost.* and the countdown about 10 s lower. Only one notification is pending (lock the phone to the end of rest if you want to confirm).
 
 ## 7. Finish and Summary (1 min)
 
@@ -66,7 +67,7 @@ Before you start:
 ## 9. Backup (1 min)
 
 9.1 Profile › **Data & backup**: *Backed up on this phone · <time>* (an automatic backup runs after Finish).
-9.2 **Save a copy to Files** › pick a folder in **iCloud Drive** (e.g. make *Fizz backups*) › **Open**. You see *Copy saved to Files · iCloud Drive › …*. Check the file exists in the Files app.
+9.2 **Save a copy to Files** › pick a folder in **iCloud Drive** (e.g. make *GymSmarter backups*) › **Open**. You see *Copy saved to Files · iCloud Drive › …*. Check the file exists in the Files app.
 
 ## 10. Check a backup (30 s) — new
 
@@ -78,11 +79,11 @@ Before you start:
 11.1 Log one more quick workout (one set) and finish it, so the phone has something the Files copy doesn't.
 11.2 Data & backup › **Restore from a backup** › **Choose another file…** › the Files copy from 9.2.
 11.3 The preview says *Checked: complete, no damaged records*, shows **Backup / This phone** counts and *1 workout on this phone isn't in this backup … It'll be replaced.* Tap **Restore** → confirm.
-11.4 A full-screen *Restoring your data* cover shows briefly, then *Restored*. **Done** reopens Fizz on Today; the extra workout is gone.
-11.5 Data & backup › **Undo last restore** › confirm. Fizz reopens with the extra workout back. The row now reads *Switch back to the restored backup*.
+11.4 A full-screen *Restoring your data* cover shows briefly, then *Restored*. **Done** reopens GymSmarter on Today; the extra workout is gone.
+11.5 Data & backup › **Undo last restore** › confirm. GymSmarter reopens with the extra workout back. The row now reads *Switch back to the restored backup*.
 11.6 With a workout in progress, **Restore from a backup** is greyed out with *Finish or discard your workout first*.
 11.7 The full SideStore trial run (install the next build over the top, let one weekly refresh lapse, refresh, restore) is in `docs/guides/sidestore-windows.md` §8; tick **Mark as done** in Data & backup when you've done it.
-11.8 Optional, only when you next reinstall Fizz (deleting the app deletes the backups on this phone, so have the Files copy from 9.2 first): on Welcome tap **Restore from a backup** › **Choose another file…**. The preview shows no warnings and Restore asks for no confirmation. On *Restored* there is no Back button and swiping from the left edge does nothing. **Done** opens Today, not setup.
+11.8 Optional, only when you next reinstall GymSmarter (deleting the app deletes the backups on this phone, so have the Files copy from 9.2 first): on Welcome tap **Restore from a backup** › **Choose another file…**. The preview shows no warnings and Restore asks for no confirmation. On *Restored* there is no Back button and swiping from the left edge does nothing. **Done** opens Today, not setup.
 
 ## 12. Pain flags (30 s) — new
 
