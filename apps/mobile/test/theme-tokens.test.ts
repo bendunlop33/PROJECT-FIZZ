@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { GUIDE_PAINT_TOKENS } from '@fizz/catalogue/figure';
+
 import {
   BASE_COLOR_TOKENS,
   CHART_COLOR_ALIASES,
@@ -28,6 +30,9 @@ function referencedTokens(): string[] {
   return [...new Set([...text.matchAll(re)].map((m) => m[1] ?? ''))].filter((t) => t !== '' && !RETIRED.has(t)).sort();
 }
 
+/** `color.guide.<paint>` aliases, resolved from the live theme by `guideStyleFromTokens` (ADR 0013). */
+const GUIDE_ALIASES = new Set(Object.keys(GUIDE_PAINT_TOKENS).map((p) => `color.guide.${p}`));
+
 const directions: ThemeDirection[] = Object.values(THEME_DIRECTIONS);
 
 describe('theme tokens', () => {
@@ -38,8 +43,17 @@ describe('theme tokens', () => {
   it.each(directions.map((d) => [d.id, d] as const))('direction %s implements every token named in design-system.md', (_id, direction) => {
     const names = new Set(tokenNames(direction));
     // `chart.line` etc. are written as shorthand for the colour alias `color.chart.line`.
-    const missing = referencedTokens().filter((t) => !names.has(t) && !(t.startsWith('chart.') && names.has(`color.${t}`)));
+    // `color.guide.*` (design-system §2.3) live in @fizz/catalogue's GUIDE_PAINT_TOKENS, checked below.
+    const missing = referencedTokens().filter((t) => !names.has(t) && !(t.startsWith('chart.') && names.has(`color.${t}`)) && !GUIDE_ALIASES.has(t));
     expect(missing).toEqual([]);
+  });
+
+  it('documents every guide colour alias as the catalogue resolves it (design-system §2.3)', () => {
+    const text = readFileSync(DESIGN_SYSTEM, 'utf8');
+    const documented = Object.fromEntries([...text.matchAll(/^\| `color\.guide\.(\w+)` \| `color\.([\w.]+)` \|/gm)].map((m) => [m[1] ?? '', m[2] ?? '']));
+    expect(documented).toEqual(GUIDE_PAINT_TOKENS);
+    const names = new Set(tokenNames(CURRENT_DIRECTION));
+    for (const alias of Object.values(GUIDE_PAINT_TOKENS)) expect(names.has(`color.${alias}`), alias).toBe(true);
   });
 
   it.each(directions.map((d) => [d.id, d] as const))('direction %s has a value for every colour in both schemes', (_id, direction) => {
