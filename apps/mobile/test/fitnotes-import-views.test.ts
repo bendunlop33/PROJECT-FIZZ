@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { NBSP } from '@fizz/domain';
+import { equipmentInName, nameKey, NBSP } from '@fizz/domain';
 
 import type { ImportDraft } from '../src/import/import-service';
 import {
@@ -205,6 +205,7 @@ describe('import preview wording', () => {
           key: 'zottman curl',
           title: 'Zottman Curl',
           conversion: `14${NBSP}kg → not answered yet`,
+          remembered: null,
           choices: [
             { value: 'one', label: 'One dumbbell', selected: false },
             { value: 'each', label: 'Each', selected: false },
@@ -220,6 +221,12 @@ describe('import preview wording', () => {
       ['Dumbbell Bench Press', '60 kg → not answered yet', ['Same']],
       ['One-Arm DB Row', '30 kg → 30 kg (one dumbbell)', ['One dumbbell']],
       ['Goblet Squats', '24 kg → 24 kg (one dumbbell)', ['One dumbbell']],
+    ]);
+    // A pair: same as the group, each, or both together. One dumbbell: as written or halved, two choices (review r4 N4).
+    expect(before?.rows?.rows.map((r) => r.choices.map((c) => c.label))).toEqual([
+      ['Same', 'Each', 'Both together'],
+      ['One dumbbell', 'Both together'],
+      ['One dumbbell', 'Both together'],
     ]);
 
     // "Both together" for the pair: the one-arm row and the goblet squat stay as written; the new exercise still waits.
@@ -239,6 +246,13 @@ describe('import preview wording', () => {
     // Ben says he rowed with two dumbbells and wrote the pair: only then is the row halved.
     d = await step(d, { kind: 'per_hand_override', key: 'one-arm db row', answer: 'both' });
     expect(known(perHandOptions(d.analysis, 'en-GB'))?.[1]).toEqual(['One-Arm DB Row', '30 kg → 15 kg each', ['Both together']]);
+    // An answer the usual choices don't offer (from an earlier import that read it differently) is still shown, selected.
+    d = await step(d, { kind: 'per_hand_override', key: 'one-arm db row', answer: 'each' });
+    expect(perHandOptions(d.analysis, 'en-GB')?.rows?.rows[1]?.choices.map((c) => [c.label, c.selected])).toEqual([
+      ['One dumbbell', false],
+      ['Both together', false],
+      ['Each', true],
+    ]);
     d = await step(d, { kind: 'per_hand_override', key: 'one-arm db row', answer: null });
 
     const r = await s.imports.commit(d.draftId, d.mappingVersion, 'op-dumbbells');
@@ -252,6 +266,177 @@ describe('import preview wording', () => {
     ]);
     // Ben's answers are kept with the import.
     expect(job?.job.answers).toMatchObject({ perHand: 'both', perHandOverrides: { 'zottman curl': 'one' } });
+  });
+
+  /** FitNotes' default names (and two common variants), one set each on 1 Sep. */
+  type Row = readonly [name: string, kg: number, reps: number];
+  const DEFAULTS: readonly Row[] = [
+    ['One-Arm Standing Dumbbell Press', 22, 8],
+    ['Dumbbell Concentration Curl', 14, 10],
+    ['Seated Dumbbell Press', 40, 8],
+    ['Flat Dumbbell Bench Press', 60, 8],
+    ['Incline Dumbbell Bench Press', 50, 8],
+    ['Flat Dumbbell Fly', 28, 10],
+    ['Incline Dumbbell Fly', 24, 10],
+    ['Arnold Dumbbell Press', 32, 8],
+    ['Lateral Dumbbell Raise', 16, 12],
+    ['Seated Dumbbell Lateral Raise', 14, 12],
+    ['Front Dumbbell Raise', 16, 10],
+    ['Rear Delt Dumbbell Raise', 12, 12],
+    ['Dumbbell Curl', 24, 10],
+    ['Dumbbell Hammer Curl', 28, 10],
+    ['Dumbbell Preacher Curl', 20, 10],
+    ['Seated Incline Dumbbell Curl', 20, 10],
+    ['Dumbbell Overhead Triceps Extension', 24, 10],
+    ['Dumbbell Skullcrusher', 20, 10],
+    ['Lying Dumbbell Triceps Extension', 20, 10],
+    ['Dumbbell Row', 30, 10],
+    ['Dumbbell Squat', 40, 10],
+    ['Dumbbell Shrug', 60, 12],
+    ['Flat Barbell Bench Press', 100, 5],
+    ['Barbell Shrug', 100, 10],
+    ['Machine Shrug', 80, 10],
+    ['EZ-Bar Skullcrusher', 30, 10],
+    ['Lateral Machine Raise', 30, 12],
+    ['Smith Machine Close Grip Bench Press', 60, 8],
+    ['Barbell Calf Raise', 80, 12],
+  ];
+  const fileOf = (rows: readonly Row[], date = '2026-09-01') => [B2, ...rows.map(([n, w, r]) => `${date},${n},Other,${String(w)},kgs,${String(r)},,,,`)].join('\n');
+
+  it('FitNotes’ default names against the real catalogue: no suggestion contradicts an equipment word in the name (review r4 S3)', async () => {
+    const d = await open(fileOf(DEFAULTS));
+    const by = new Map(d.analysis.names.map((n) => [n.name, n]));
+    const exercise = (id: string | null) => (id === null ? null : s.imports.candidate(d.draftId, id));
+    for (const [name] of DEFAULTS) {
+      const n = by.get(name);
+      const named = equipmentInName(name);
+      const c = exercise(n?.match.exerciseId ?? null);
+      if (!c || !named) continue;
+      expect(
+        c.compatibleEquipment.some((k) => named.has(k)),
+        `${name} → ${c.name} (${c.compatibleEquipment.join(', ')})`,
+      ).toBe(true);
+    }
+    const shown = (name: string) => {
+      const n = by.get(name);
+      return [n?.match.status, exercise(n?.match.exerciseId ?? null)?.name ?? null];
+    };
+    expect(shown('Flat Dumbbell Bench Press')).toEqual(['matched', 'Dumbbell bench press']);
+    expect(shown('One-Arm Standing Dumbbell Press')).toEqual(['matched', 'One-arm dumbbell shoulder press']);
+    expect(shown('Dumbbell Concentration Curl')).toEqual(['matched', 'Dumbbell concentration curl']);
+    expect(shown('Flat Barbell Bench Press')).toEqual(['check', 'Bench press']);
+    expect(shown('EZ-Bar Skullcrusher')).toEqual(['check', 'Skull crusher']);
+    // Never the EZ-bar skull crusher, the dumbbell shrug or the dumbbell raise for these: nothing, or one with the right equipment.
+    expect(shown('Dumbbell Skullcrusher')).toEqual(['no_match', null]);
+    expect(shown('Barbell Shrug')).toEqual(['no_match', null]);
+    expect(shown('Machine Shrug')).toEqual(['no_match', null]);
+    expect(shown('Barbell Calf Raise')).toEqual(['no_match', null]);
+    expect(shown('Lateral Machine Raise')).toEqual(['check', 'Cable lateral raise']);
+    expect(shown('Smith Machine Close Grip Bench Press')).toEqual(['check', 'Smith machine bench press']);
+  });
+
+  it('FitNotes’ one-dumbbell defaults are never halved by "Both dumbbells together"; names that don’t say are asked (review r4 S1)', async () => {
+    let d = await open(
+      fileOf([
+        ['One-Arm Standing Dumbbell Press', 22, 8],
+        ['Dumbbell Concentration Curl', 14, 10],
+        ['Seated Dumbbell Press', 40, 8],
+        ['Flat Dumbbell Bench Press', 60, 8],
+        ['Dumbbell Row', 30, 10],
+        ['Dumbbell Squat', 40, 10],
+      ]),
+    );
+    // Use this on the one Check (Dumbbell Squat → Goblet squat), then "Both together" for the pairs.
+    for (const n of d.analysis.names.filter((x) => x.needsAnswer && x.match.exerciseId)) d = await step(d, { kind: 'name', key: n.key, answer: { kind: 'exercise', exerciseId: n.match.exerciseId ?? '' } });
+    d = await step(d, { kind: 'per_hand', answer: 'both' });
+    const q = perHandOptions(d.analysis, 'en-GB');
+    // `Dumbbell Row` is a name of the one-arm row and `Dumbbell Squat` was suggested as the goblet squat, but neither says one: asked, nothing selected.
+    expect(q?.ask?.rows.map((r) => [r.title, plain(r.conversion), r.choices.filter((c) => c.selected).length])).toEqual([
+      ['Dumbbell Row', '30 kg → not answered yet', 0],
+      ['Dumbbell Squat', '40 kg → not answered yet', 0],
+    ]);
+    expect(q?.rows?.rows.map((r) => [r.title, plain(r.conversion)])).toEqual([
+      ['One-Arm Standing Dumbbell Press', '22 kg → 22 kg (one dumbbell)'],
+      ['Dumbbell Concentration Curl', '14 kg → 14 kg (one dumbbell)'],
+      ['Seated Dumbbell Press', '40 kg → 20 kg each'],
+      ['Flat Dumbbell Bench Press', '60 kg → 30 kg each'],
+    ]);
+    expect(q?.rows?.note).toBe('2 exercises use one dumbbell, so their weights are imported as written.');
+
+    // Ben maps the one-arm press to the two-dumbbell standing press himself (Choose…): still asked, never halved.
+    const pair = s.imports.searchExercises(d.draftId, 'standing dumbbell shoulder').find((c) => c.name === 'Standing dumbbell shoulder press');
+    d = await step(d, { kind: 'name', key: nameKey('One-Arm Standing Dumbbell Press'), answer: { kind: 'exercise', exerciseId: pair?.exerciseId ?? '' } });
+    expect(perHandOptions(d.analysis, 'en-GB')?.ask?.rows.map((r) => [r.title, plain(r.conversion)])).toEqual([
+      ['One-Arm Standing Dumbbell Press', '22 kg → not answered yet'],
+      ['Dumbbell Row', '30 kg → not answered yet'],
+      ['Dumbbell Squat', '40 kg → not answered yet'],
+    ]);
+    d = await step(d, { kind: 'per_hand_override', key: nameKey('One-Arm Standing Dumbbell Press'), answer: 'one' });
+    d = await step(d, { kind: 'per_hand_override', key: nameKey('Dumbbell Row'), answer: 'one' });
+    d = await step(d, { kind: 'per_hand_override', key: nameKey('Dumbbell Squat'), answer: 'both' });
+    const r = await s.imports.commit(d.draftId, d.mappingVersion, 'op-defaults');
+    if (!r.ok) throw new Error(r.reason);
+    const job = await s.imports.importedRows(r.jobId, '2026-09-01');
+    expect(job?.rows.map((x) => [x.exerciseName, x.imported?.exerciseName, x.imported?.load?.value])).toEqual([
+      ['One-Arm Standing Dumbbell Press', 'Standing dumbbell shoulder press', 22],
+      ['Dumbbell Concentration Curl', 'Dumbbell concentration curl', 14],
+      ['Seated Dumbbell Press', 'Dumbbell shoulder press', 20],
+      ['Flat Dumbbell Bench Press', 'Dumbbell bench press', 30],
+      ['Dumbbell Row', 'One-arm dumbbell row', 30],
+      ['Dumbbell Squat', 'Goblet squat', 20],
+    ]);
+  });
+
+  it('Ben’s dumbbell answer for an exercise is remembered with its name and filled in for a newer export (review r4 S2)', async () => {
+    const ONE_ARM = nameKey('One-Arm Standing Dumbbell Press');
+    const first: readonly Row[] = [
+      ['One-Arm Standing Dumbbell Press', 22, 8],
+      ['Zottman Curl', 14, 10],
+      ['Seated Dumbbell Press', 40, 8],
+    ];
+    let d = await open(fileOf(first));
+    // The review's path: Ben maps the one-arm press to the pair press, answers one dumbbell for it and the new Zottman curl, and "both" for the rest.
+    const pair = s.imports.searchExercises(d.draftId, 'standing dumbbell shoulder').find((c) => c.name === 'Standing dumbbell shoulder press');
+    d = await step(d, { kind: 'name', key: ONE_ARM, answer: { kind: 'exercise', exerciseId: pair?.exerciseId ?? '' } });
+    d = await step(d, { kind: 'name', key: 'zottman curl', answer: { kind: 'new', equipment: 'dumbbells' } });
+    d = await step(d, { kind: 'per_hand', answer: 'both' });
+    d = await step(d, { kind: 'per_hand_override', key: ONE_ARM, answer: 'one' });
+    d = await step(d, { kind: 'per_hand_override', key: 'zottman curl', answer: 'one' });
+    const r1 = await s.imports.commit(d.draftId, d.mappingVersion, 'op-first');
+    if (!r1.ok) throw new Error(r1.reason);
+
+    // A month later: a newer export with the same names and one more workout.
+    const newer: readonly Row[] = [
+      ['One-Arm Standing Dumbbell Press', 24, 8],
+      ['Zottman Curl', 16, 10],
+      ['Seated Dumbbell Press', 42, 8],
+    ];
+    const withoutHeader = (text: string) => text.split('\n').slice(1).join('\n');
+    let n = await open(`${fileOf(first)}\n${withoutHeader(fileOf(newer, '2026-10-08'))}`);
+    expect(n.analysis.names.map((x) => [x.name, x.match.status, x.match.via])).toEqual([
+      ['One-Arm Standing Dumbbell Press', 'matched', 'alias'],
+      ['Seated Dumbbell Press', 'matched', 'name'],
+      ['Zottman Curl', 'matched', 'alias'],
+    ]);
+    // Filled in from last time and labelled; the group answer is still asked (never pre-selected, DX6).
+    const q = perHandOptions(n.analysis, 'en-GB');
+    expect(q?.ask?.rows.map((x) => [x.title, plain(x.conversion), x.remembered, x.choices.filter((c) => c.selected).map((c) => c.label)])).toEqual([
+      ['One-Arm Standing Dumbbell Press', '24 kg → 24 kg (one dumbbell)', 'Your answer last time', ['One dumbbell']],
+      ['Zottman Curl', '16 kg → 16 kg (one dumbbell)', 'Your answer last time', ['One dumbbell']],
+    ]);
+    expect(q?.options.map((o) => o.selected)).toEqual([false, false]);
+    expect(previewView(n, 'en-GB').questions.map((x) => x.line.text)).toEqual(['Dumbbell weights: each or both?']);
+    n = await step(n, { kind: 'per_hand', answer: 'both' });
+    const r2 = await s.imports.commit(n.draftId, n.mappingVersion, 'op-second');
+    if (!r2.ok) throw new Error(r2.reason);
+    const later = await s.imports.importedRows(r2.jobId, '2026-10-08');
+    expect(later?.rows.map((x) => [x.exerciseName, x.imported?.load?.value])).toEqual([
+      ['One-Arm Standing Dumbbell Press', 24],
+      ['Zottman Curl', 16],
+      ['Seated Dumbbell Press', 21],
+    ]);
+    // The import records the answers it used.
+    expect(later?.job.answers.perHandOverrides).toEqual({ [ONE_ARM]: 'one', 'zottman curl': 'one' });
   });
 
   it('copies the original row as written', () => {

@@ -14,7 +14,9 @@ import { AppText, ChecklistRow, ChoiceCard, Group, Screen, SectionHeader, Status
  * One import question (data-import-export §2.5 steps 3b–3c): dumbbell and
  * barbell conventions (one answer for the group, per-exercise overrides;
  * dumbbells: each exercise shows what it will import as, and one-dumbbell
- * or unknown exercises are never read by the group answer, review r3 S1),
+ * or unknown exercises are never read by the group answer, review r3 S1;
+ * Ben's answer for an exercise in an earlier import is filled in and says
+ * so, review r4 S2),
  * a bodyweight exercise with weights, the weight unit for rows with both
  * columns, effort ratings in comments, dates already in GymSmarter, and the
  * gym. Convention questions start with nothing selected (DX6). Each change
@@ -70,6 +72,11 @@ export function ImportQuestionScreen() {
             <AppText variant="callout" color="text.secondary">
               {r.conversion}
             </AppText>
+            {r.remembered ? (
+              <AppText variant="callout" color="text.secondary">
+                {r.remembered}
+              </AppText>
+            ) : null}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
               {r.choices.map((c) => (
                 <TextButton key={c.label} label={c.selected ? `✓ ${c.label}` : c.label} tone={c.selected ? 'accent' : 'secondary'} onPress={() => void answer({ kind: 'per_hand_override', key: r.key, answer: c.value })} />

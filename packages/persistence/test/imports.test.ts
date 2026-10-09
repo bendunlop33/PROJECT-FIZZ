@@ -119,6 +119,34 @@ describe('import jobs and rows', () => {
     expect(await store.repos.imports.createJob({ ...second.job, operationId: 'commit-2' }, second.rows, { ...extras, newId: idGen(60_000) })).toEqual({ ok: false, error: 'another_import_running' });
   });
 
+  it('remembers Ben’s dumbbell answer with the name: kept when an import says nothing, cleared by null, versioned (review r4 S2)', async () => {
+    const ROW = candidates.find((c) => c.name === 'One-arm dumbbell row')?.exerciseId ?? '';
+    const target = { kind: 'exercise' as const, exerciseId: ROW };
+    const alias = () => store.repos.imports.aliases(OWNER).then((list) => list.find((a) => a.nameKey === 'one arm db row'));
+    // One import after another: each finishes before the next starts (one unfinished import at a time).
+    const commit = async (n: number, aliases: { name: string; nameKey: string; target: typeof target; perHand?: 'one' | 'each' | 'both' | null }[]) => {
+      const { job, rows } = planned(id(9100 + n));
+      const ok = await store.repos.imports.createJob({ ...job, operationId: `commit-${String(n)}` }, rows, { exercises: [], aliases, at: AT, newId: idGen(70_000 + n * 100) });
+      expect(ok).toMatchObject({ ok: true });
+      expect(await store.repos.imports.finishJob(job.id, 1, LATER)).toMatchObject({ ok: true });
+      return job.id;
+    };
+    const first = await commit(1, [{ name: 'One Arm DB Row', nameKey: 'one arm db row', target, perHand: 'one' }]);
+    expect(await alias()).toMatchObject({ target, perHand: 'one', version: 1, jobId: first });
+    // A newer import that maps the name again but says nothing about its dumbbells keeps the answer, unchanged.
+    await commit(2, [{ name: 'One Arm DB Row', nameKey: 'one arm db row', target }]);
+    expect(await alias()).toMatchObject({ perHand: 'one', version: 1, jobId: first });
+    // A different answer updates it (version + 1).
+    const third = await commit(3, [{ name: 'One Arm DB Row', nameKey: 'one arm db row', target, perHand: 'both' }]);
+    expect(await alias()).toMatchObject({ perHand: 'both', version: 2, jobId: third });
+    // Cleared: the name is still remembered, the dumbbell answer isn't.
+    await commit(4, [{ name: 'One Arm DB Row', nameKey: 'one arm db row', target, perHand: null }]);
+    const cleared = await alias();
+    expect(cleared).toMatchObject({ target, version: 3 });
+    expect(cleared?.perHand).toBeUndefined();
+    expect((await checkIntegrity(store.db)).ok).toBe(true);
+  });
+
   it('source rows are append-only at the database level', async () => {
     const { job } = await importAll(store);
     await expect(store.db.write((tx) => tx.run("UPDATE import_rows SET result = 'unreadable' WHERE job_id = ?", [job.id]))).rejects.toThrow('append-only');

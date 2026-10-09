@@ -261,6 +261,13 @@ export const ExerciseAliasSchema = RecordMetaSchema.extend({
   name: z.string().min(1).max(4000),
   nameKey: NameKeySchema,
   target: AliasTargetSchema,
+  /**
+   * Ben's own answer for this name's dumbbell weights (one dumbbell, each,
+   * both together), so a newer export reads them the same way. The next
+   * preview starts with it, labelled as his answer last time (review r4 S2).
+   * Absent when he gave none for this exercise (the group answer isn't kept).
+   */
+  perHand: PerHandReadingSchema.optional(),
   /** The import that taught it. */
   jobId: IdSchema,
 });

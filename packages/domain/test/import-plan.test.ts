@@ -13,6 +13,7 @@ import {
   newExercisesToCreate,
   parseFitNotesCsv,
   planImportRows,
+  startingAnswers,
   toHistorySessions,
   type ImportContext,
   type MatchCandidate,
@@ -390,6 +391,114 @@ describe('import preview: questions before anything is saved', () => {
     const a = analyseImport(parsed(`${A1}2026-10-01,Treadmill,Cardio,,,5,km,0:25:00\n`), ctx(), DEFAULT_ANSWERS);
     expect(a.questionsOpen).toBe(0);
     expect(a.ready).toBe(false);
+  });
+});
+
+describe('FitNotes default one-dumbbell names (review r4)', () => {
+  const loads = (a: ReturnType<typeof analyseImport>) => a.fates.map((f) => (f.result === 'imported' ? f.set.load?.value : f.result === 'pending' ? `pending:${f.reason}` : f.result));
+  /** The two-dumbbell standing press, as in the catalogue (the press the one-arm name's words suggest). */
+  const standing: MatchCandidate = {
+    exerciseId: '00000000-0000-4000-8000-00000000e2c1',
+    name: 'Standing dumbbell shoulder press',
+    aliases: ['Standing dumbbell press', 'Standing DB press'],
+    catalogueKey: 'dumbbell-standing-shoulder-press',
+    laterality: 'bilateral',
+    defaultLoadConvention: 'per_hand',
+    compatibleEquipment: ['dumbbells'],
+    implements: 2,
+  };
+  const withStanding = (over: Partial<ImportContext> = {}) => ctx({ candidates: [...CANDIDATES, standing], ...over });
+  const FILE = `${A1}2026-09-01,One-Arm Standing Dumbbell Press,Shoulders,22,8,,,\n2026-09-01,Dumbbell Concentration Curl,Biceps,14,10,,,\n2026-09-01,Seated Dumbbell Press,Shoulders,40,8,,,\n`;
+  const ONE_ARM = nameKey('One-Arm Standing Dumbbell Press');
+  const CONC = nameKey('Dumbbell Concentration Curl');
+  const SEATED = nameKey('Seated Dumbbell Press');
+
+  it('S1: a one-arm or concentration name taken as a two-dumbbell exercise by its words is asked, never halved by "Both together"', () => {
+    const p = parsed(FILE);
+    const first = analyseImport(p, withStanding(), DEFAULT_ANSWERS);
+    // The words suggest the pair exercises (as the review's probe found); Ben taps Use this on each.
+    expect(first.names.map((n) => [n.name, n.match.status, n.match.exerciseId])).toEqual(
+      expect.arrayContaining([
+        ['One-Arm Standing Dumbbell Press', 'check', standing.exerciseId],
+        ['Dumbbell Concentration Curl', 'check', idOf('Dumbbell curl')],
+      ]),
+    );
+    const names = { ...useSuggestions(first), [SEATED]: { kind: 'exercise' as const, exerciseId: idOf('Dumbbell shoulder press') } };
+    const both = analyseImport(p, withStanding(), answers({ names, perHand: 'both' }));
+    expect(both.perHand?.exercises.map((e) => [e.name, e.implements, e.reading])).toEqual([
+      ['One-Arm Standing Dumbbell Press', null, null],
+      ['Dumbbell Concentration Curl', null, null],
+      ['Seated Dumbbell Press', 2, 'both'],
+    ]);
+    expect(both.perHand).toMatchObject({ pairs: 1, needsGroup: false, needsCount: 2, open: true });
+    expect(loads(both)).toEqual(['pending:per_hand', 'pending:per_hand', 20]);
+    expect(both.ready).toBe(false);
+    // Answered as one dumbbell: imported as written, next to the halved pair.
+    const one = analyseImport(p, withStanding(), answers({ names, perHand: 'both', perHandOverrides: { [ONE_ARM]: 'one', [CONC]: 'one' } }));
+    expect(loads(one)).toEqual([22, 14, 20]);
+    expect(one.ready).toBe(true);
+  });
+
+  it('S2: Ben’s dumbbell answer is remembered with the name and filled in next time, labelled; the group answer never reaches it', () => {
+    const names = { [ONE_ARM]: { kind: 'exercise' as const, exerciseId: standing.exerciseId }, [CONC]: { kind: 'exercise' as const, exerciseId: idOf('Dumbbell curl') }, [SEATED]: { kind: 'exercise' as const, exerciseId: idOf('Dumbbell shoulder press') } };
+    const p1 = parsed(FILE);
+    const a1 = analyseImport(p1, withStanding(), answers({ names, perHand: 'both', perHandOverrides: { [ONE_ARM]: 'one', [CONC]: 'one' } }));
+    // Saved with each name: the per-exercise answers only (the seated press took the group answer).
+    expect(aliasesToSave(a1)).toEqual([
+      { key: CONC, name: 'Dumbbell Concentration Curl', target: { kind: 'exercise', exerciseId: idOf('Dumbbell curl') }, perHand: 'one' },
+      { key: ONE_ARM, name: 'One-Arm Standing Dumbbell Press', target: { kind: 'exercise', exerciseId: standing.exerciseId }, perHand: 'one' },
+      { key: SEATED, name: 'Seated Dumbbell Press', target: { kind: 'exercise', exerciseId: idOf('Dumbbell shoulder press') } },
+    ]);
+
+    // A month later, a newer export: the names come back through the saved aliases, the answers with them.
+    const later = withStanding({
+      aliases: new Map(aliasesToSave(a1).map((x) => [x.key, x.target])),
+      perHandAnswers: new Map([
+        [ONE_ARM, 'one'],
+        [CONC, 'one'],
+      ]),
+    });
+    const p2 = parsed(`${A1}2026-10-08,One-Arm Standing Dumbbell Press,Shoulders,24,8,,,\n2026-10-08,Dumbbell Concentration Curl,Biceps,16,10,,,\n2026-10-08,Seated Dumbbell Press,Shoulders,42,8,,,\n`);
+    const start = startingAnswers(p2.rows, later, null);
+    expect(start).toEqual({ ...DEFAULT_ANSWERS, perHandOverrides: { [ONE_ARM]: 'one', [CONC]: 'one' } });
+    const a2 = analyseImport(p2, later, start);
+    expect(a2.names.map((n) => [n.name, n.match.status, n.match.via])).toEqual([
+      ['Dumbbell Concentration Curl', 'matched', 'alias'],
+      ['One-Arm Standing Dumbbell Press', 'matched', 'alias'],
+      ['Seated Dumbbell Press', 'matched', 'alias'],
+    ]);
+    expect(a2.perHand?.exercises.map((e) => [e.name, e.override, e.remembered, e.reading])).toEqual([
+      ['One-Arm Standing Dumbbell Press', 'one', 'one', 'one'],
+      ['Dumbbell Concentration Curl', 'one', 'one', 'one'],
+      ['Seated Dumbbell Press', null, null, null],
+    ]);
+    // Only the pair waits for the group answer (DX6: it is still never pre-selected). "Both" again: 24 stays 24.
+    expect(a2.perHand).toMatchObject({ needsGroup: true, needsCount: 0 });
+    expect(loads(analyseImport(p2, later, { ...start, perHand: 'both' }))).toEqual([24, 16, 21]);
+    // Unchanged answers are saved again as they are; one Ben clears is forgotten (null), not kept.
+    const cleared = analyseImport(p2, later, { ...start, perHand: 'both', perHandOverrides: { [ONE_ARM]: 'one' } });
+    expect(aliasesToSave(cleared).map((x) => [x.key, x.perHand])).toEqual([
+      [CONC, null],
+      [ONE_ARM, 'one'],
+    ]);
+  });
+
+  it('N2: the same file opened again starts from that import’s answers (not its names or a gym that is gone); remembered dumbbell answers win', () => {
+    const p = parsed(FILE);
+    const earlier: ImportAnswers = {
+      ...DEFAULT_ANSWERS,
+      names: { [ONE_ARM]: { kind: 'exercise', exerciseId: standing.exerciseId } },
+      perHand: 'both',
+      perHandOverrides: { [ONE_ARM]: 'each' },
+      total: 'plates_only',
+      existingDates: 'import',
+      gymId: '00000000-0000-4000-8000-0000000009a1',
+    };
+    const start = startingAnswers(p.rows, { perHandAnswers: new Map([[ONE_ARM, 'one']]) }, { answers: earlier, gymIds: new Set() });
+    expect(start).toEqual({ ...earlier, names: {}, gymId: null, perHandOverrides: { [ONE_ARM]: 'one' } });
+    const kept = startingAnswers(p.rows, {}, { answers: earlier, gymIds: new Set(['00000000-0000-4000-8000-0000000009a1']) });
+    expect(kept.gymId).toBe('00000000-0000-4000-8000-0000000009a1');
+    expect(startingAnswers(p.rows, {}, null)).toEqual(DEFAULT_ANSWERS);
   });
 });
 

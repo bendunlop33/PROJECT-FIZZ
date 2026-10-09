@@ -348,7 +348,7 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
       ? {
           icon: 'info.circle',
           tone: 'info',
-          text: `You imported this file on ${shortDateOf(before.startedAt.utc, before.startedAt.tz, locale)}. Workouts from it that are still in GymSmarter are skipped; dates that aren’t in GymSmarter now are offered again.`,
+          text: `You imported this file on ${shortDateOf(before.startedAt.utc, before.startedAt.tz, locale)}. Workouts from it that are still in GymSmarter are skipped; dates that aren’t in GymSmarter now are offered again, with your answers from then filled in.`,
         }
       : null,
     detection: `${appLabel(d.variant)} · ${unitsLabel(a.units)}`,
@@ -530,6 +530,8 @@ export interface PerHandRowView {
   title: string;
   /** What its newest weight imports as: `60 kg → 30 kg each`, `30 kg → 30 kg (one dumbbell)` (review r3 S1). */
   conversion: string;
+  /** `Your answer last time` while the choice is the one Ben gave for this name in an earlier import (review r4 S2). */
+  remembered: string | null;
   choices: PerHandChoice[];
 }
 
@@ -559,15 +561,21 @@ export function perHandConversion(e: Pick<PerHandExercise, 'reading' | 'sample'>
   return `${from} → ${weightText(s.imported, s.unit)}${e.reading === 'one' ? ' (one dumbbell)' : ' each'}`;
 }
 
+const READING_LABEL: Record<PerHandReading, string> = { one: 'One dumbbell', each: 'Each', both: 'Both together' };
+
 function perHandRow(e: PerHandExercise): PerHandRowView {
   const pick = (value: PerHandReading | null, label: string): PerHandChoice => ({ value, label, selected: e.override === value });
   const choices =
     e.implements === 2
       ? [pick(null, 'Same'), pick('each', 'Each'), pick('both', 'Both together')]
       : e.implements === 1
-        ? [pick(null, 'One dumbbell'), pick('each', 'Each'), pick('both', 'Both together')]
+        ? // One dumbbell: the only real choice is as written or halved (review r4 N4).
+          [{ value: null, label: 'One dumbbell', selected: e.override === null || e.override === 'one' }, pick('both', 'Both together')]
         : [pick('one', 'One dumbbell'), pick('each', 'Each'), pick('both', 'Both together')];
-  return { key: e.key, title: e.name, conversion: perHandConversion(e), choices };
+  // An answer these choices don't offer (remembered from an import that read the exercise differently) stays visible and selected.
+  if (e.override !== null && !choices.some((c) => c.selected)) choices.push(pick(e.override, READING_LABEL[e.override]));
+  const remembered = e.remembered !== null && e.override === e.remembered ? 'Your answer last time' : null;
+  return { key: e.key, title: e.name, conversion: perHandConversion(e), remembered, choices };
 }
 
 /**

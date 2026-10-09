@@ -66,6 +66,13 @@ export interface ImportContext {
   candidates: readonly MatchCandidate[];
   /** Ben's saved answers from earlier imports, by name key. */
   aliases: ReadonlyMap<string, AliasTarget>;
+  /**
+   * Ben's own dumbbell answer for a name in an earlier import (`one` /
+   * `each` / `both`), remembered with the name (review r4 S2). A new
+   * preview starts with it filled in (`startingAnswers`) and shows it as his
+   * answer last time.
+   */
+  perHandAnswers?: ReadonlyMap<string, PerHandReading>;
   /** Local dates that have a workout logged in the app (not imported). */
   appDates: ReadonlySet<string>;
   /** Local dates that came in with an earlier import still in effect. */
@@ -154,6 +161,8 @@ export interface PerHandExercise {
   /** One dumbbell or two (`implementsFor`). Null: not known, so it is asked on its own. */
   implements: ImplementCount | null;
   override: PerHandReading | null;
+  /** Ben's answer for this name in an earlier import (review r4 S2); null when there is none. */
+  remembered: PerHandReading | null;
   /** How its values are read now (`perHandReading`). Null: still to answer. */
   reading: PerHandReading | null;
   /** Its newest weight in the file, and that weight per dumbbell under `reading` (null while unanswered). */
@@ -386,7 +395,12 @@ function negative(value: number): string {
 }
 
 /** The dumbbell question from the rows still to import (review r3 S1). */
-function perHandQuestion(live: readonly FitNotesRow[], resolved: (r: FitNotesRow) => ResolvedExercise | null, answers: ImportAnswers): PerHandQuestion | null {
+function perHandQuestion(
+  live: readonly FitNotesRow[],
+  resolved: (r: FitNotesRow) => ResolvedExercise | null,
+  answers: ImportAnswers,
+  remembered: ReadonlyMap<string, PerHandReading>,
+): PerHandQuestion | null {
   const members = new Map<string, PerHandExercise>();
   const sampleDates = new Map<string, string>();
   let example: ExampleSet | null = null;
@@ -399,7 +413,17 @@ function perHandQuestion(live: readonly FitNotesRow[], resolved: (r: FitNotesRow
     let m = members.get(key);
     if (!m) {
       const override = answers.perHandOverrides[key] ?? null;
-      m = { key, name: r.exercise, exerciseName: ex.name, sets: 0, implements: ex.implements, override, reading: perHandReading(ex.implements, override, answers.perHand), sample: null };
+      m = {
+        key,
+        name: r.exercise,
+        exerciseName: ex.name,
+        sets: 0,
+        implements: ex.implements,
+        override,
+        remembered: remembered.get(key) ?? null,
+        reading: perHandReading(ex.implements, override, answers.perHand),
+        sample: null,
+      };
       members.set(key, m);
     }
     m.sets += 1;
@@ -481,7 +505,7 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     const exercises = [...members.values()];
     return { exercises, answer: groupAnswer, example, open: exercises.some((e) => e.override === null && groupAnswer === null) };
   };
-  const perHand = perHandQuestion(live, resolved, answers);
+  const perHand = perHandQuestion(live, resolved, answers, ctx.perHandAnswers ?? new Map());
   // Barbell question: `total` exercises on a bar. Each bar kind has its own weight (review S1).
   const onBar = (ex: ResolvedExercise) => ex.convention === 'total' && ex.bar !== 'none';
   const totalGroup = groupOf<TotalAnswer>(onBar, answers.total, answers.totalOverrides);
@@ -793,15 +817,67 @@ export function planImportRows(
   });
 }
 
-/** Names Ben answered, to remember for the next import (`ExerciseAlias`, §2.5 step 3a). */
-export function aliasesToSave(analysis: ImportAnalysis): { key: string; name: string; target: AliasTarget }[] {
-  const out: { key: string; name: string; target: AliasTarget }[] = [];
+/**
+ * A name to remember (`ExerciseAlias`). `perHand`: Ben's own dumbbell
+ * answer for the name to store with it; `null` clears an earlier one he
+ * took back; absent leaves what is stored (review r4 S2).
+ */
+export interface AliasSave {
+  key: string;
+  name: string;
+  target: AliasTarget;
+  perHand?: PerHandReading | null;
+}
+
+/**
+ * Names Ben answered, to remember for the next import (`ExerciseAlias`,
+ * §2.5 step 3a), and his own answer for an exercise's dumbbells, kept with
+ * its name so a newer export reads it the same way (review r4 S2). Only an
+ * answer for that exercise is kept; the group answer isn't.
+ */
+export function aliasesToSave(analysis: ImportAnalysis): AliasSave[] {
+  const dumbbells = new Map((analysis.perHand?.exercises ?? []).map((e) => [e.key, e]));
+  const out: AliasSave[] = [];
   for (const n of analysis.names) {
-    if (!n.answer) continue;
-    if (n.resolution.kind === 'skip') out.push({ key: n.key, name: n.name, target: { kind: 'skip' } });
-    else if (n.resolution.kind === 'exercise') out.push({ key: n.key, name: n.name, target: { kind: 'exercise', exerciseId: n.resolution.exercise.exerciseId } });
+    const e = dumbbells.get(n.key);
+    // Asked about this import: his answer, or null when he cleared the one remembered from last time.
+    const perHand = e === undefined ? undefined : (e.override ?? (e.remembered === null ? undefined : null));
+    if (n.resolution.kind === 'skip') {
+      if (n.answer) out.push({ key: n.key, name: n.name, target: { kind: 'skip' } });
+      continue;
+    }
+    if (n.resolution.kind !== 'exercise' || (!n.answer && perHand === undefined)) continue;
+    const target: AliasTarget = { kind: 'exercise', exerciseId: n.resolution.exercise.exerciseId };
+    out.push(perHand === undefined ? { key: n.key, name: n.name, target } : { key: n.key, name: n.name, target, perHand });
   }
   return out;
+}
+
+/**
+ * The answers a new preview starts from (review r4 S2, N2). Load
+ * conventions are never pre-answered (DX6), except with Ben's own answers:
+ * - this same file's import (opened again after an undo): its answers,
+ *   except names (remembered as aliases) and a gym that is gone;
+ * - each name's dumbbell answer from the latest import that had it
+ *   (`perHandAnswers`), shown as his answer last time.
+ */
+export function startingAnswers(
+  rows: readonly FitNotesRow[],
+  ctx: Pick<ImportContext, 'perHandAnswers'>,
+  earlier: { answers: ImportAnswers; gymIds: ReadonlySet<string> } | null,
+): ImportAnswers {
+  const base: ImportAnswers = earlier
+    ? { ...earlier.answers, names: {}, gymId: earlier.answers.gymId !== null && earlier.gymIds.has(earlier.answers.gymId) ? earlier.answers.gymId : null }
+    : DEFAULT_ANSWERS;
+  const remembered = ctx.perHandAnswers ?? new Map<string, PerHandReading>();
+  const overrides: Record<string, PerHandReading> = { ...base.perHandOverrides };
+  for (const r of rows) {
+    if (r.rowClass !== 'strength') continue;
+    const key = nameKey(r.exercise);
+    const answer = remembered.get(key);
+    if (answer !== undefined) overrides[key] = answer;
+  }
+  return { ...base, perHandOverrides: overrides };
 }
 
 /** Custom exercises `Add new` makes, for names with at least one imported set. */

@@ -8,6 +8,7 @@ import {
   type ExerciseAlias,
   type ImportJob,
   type ImportRow,
+  type PerHandReading,
   type SessionAggregate,
   type ZonedTimestamp,
 } from '@fizz/schemas';
@@ -97,6 +98,8 @@ export interface AliasToSave {
   name: string;
   nameKey: string;
   target: AliasTarget;
+  /** Ben's dumbbell answer for the name; null clears a stored one; absent keeps what is stored (review r4 S2). */
+  perHand?: PerHandReading | null;
 }
 
 export class SqliteImports {
@@ -276,28 +279,32 @@ async function readJob(q: SqlExecutor, jobId: string): Promise<ImportJob | null>
   return row ? decodeDocument(IMPORT_JOB_SPEC, row) : null;
 }
 
-/** One remembered name per owner, source and key: added, or updated (version + 1) when the answer changed. */
+/**
+ * One remembered name per owner, source and key: added, or updated (version
+ * + 1) when the answer changed. Its dumbbell answer is kept unless this
+ * import gave or cleared one (review r4 S2).
+ */
 async function upsertAlias(tx: SqlExecutor, job: ImportJob, a: AliasToSave, at: ZonedTimestamp, newId: () => string): Promise<void> {
   const row = await tx.getFirst('SELECT * FROM exercise_aliases WHERE owner_id = ? AND source = ? AND name_key = ?', [job.ownerId, 'fitnotes', a.nameKey]);
-  if (!row) {
-    const alias: ExerciseAlias = {
-      id: newId(),
-      ownerId: job.ownerId,
-      version: 1,
-      createdAtUtc: at.utc,
-      updatedAtUtc: at.utc,
-      source: 'fitnotes',
-      name: a.name,
-      nameKey: a.nameKey,
-      target: a.target,
-      jobId: job.id,
-    };
-    const saved = await saveDocumentIn(tx, EXERCISE_ALIAS_SPEC, alias, null);
-    if (!saved.ok) throw new Error('Alias conflict');
-    return;
-  }
-  const current = decodeDocument(EXERCISE_ALIAS_SPEC, row);
-  if (stableStringify(current.target) === stableStringify(a.target)) return;
-  const saved = await saveDocumentIn(tx, EXERCISE_ALIAS_SPEC, { ...current, name: a.name, target: a.target, jobId: job.id, version: current.version + 1, updatedAtUtc: at.utc }, current.version);
+  const current = row ? decodeDocument(EXERCISE_ALIAS_SPEC, row) : null;
+  const perHand = (a.perHand === undefined ? current?.perHand : a.perHand) ?? null;
+  if (current && stableStringify(current.target) === stableStringify(a.target) && perHand === (current.perHand ?? null)) return;
+  const next: ExerciseAlias = current
+    ? { ...current, name: a.name, target: a.target, jobId: job.id, version: current.version + 1, updatedAtUtc: at.utc }
+    : {
+        id: newId(),
+        ownerId: job.ownerId,
+        version: 1,
+        createdAtUtc: at.utc,
+        updatedAtUtc: at.utc,
+        source: 'fitnotes',
+        name: a.name,
+        nameKey: a.nameKey,
+        target: a.target,
+        jobId: job.id,
+      };
+  if (perHand === null) delete next.perHand;
+  else next.perHand = perHand;
+  const saved = await saveDocumentIn(tx, EXERCISE_ALIAS_SPEC, next, current ? current.version : null);
   if (!saved.ok) throw new Error('Alias conflict');
 }

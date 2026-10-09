@@ -6,7 +6,6 @@ import {
   buildImportedSession,
   catalogueExerciseId,
   conventionForKind,
-  DEFAULT_ANSWERS,
   importResultsCsv,
   localDateOf,
   newExercisesToCreate,
@@ -14,6 +13,7 @@ import {
   planImportRows,
   searchCandidates,
   stableStringify,
+  startingAnswers,
   toMs,
   type AnswerChange,
   type FitNotesRow,
@@ -31,6 +31,7 @@ import {
   type ImportAnswers,
   type ImportJob,
   type ImportRow,
+  type PerHandReading,
   type SessionAggregate,
   type UserProfile,
   type WeightUnit,
@@ -266,21 +267,25 @@ export function createImportService(deps: ImportServiceDeps) {
   async function loadContext(ownerId: string, defaultUnit: WeightUnit, rows: readonly FitNotesRow[]) {
     const at = deps.now();
     const built = buildCandidates(await repos().exercises.list(), entries(), ownerId, at.utc);
-    const aliases = new Map((await repos().imports.aliases(ownerId)).map((a) => [a.nameKey, a.target]));
+    const stored = await repos().imports.aliases(ownerId);
+    const aliases = new Map(stored.map((a) => [a.nameKey, a.target]));
+    // Ben's own dumbbell answer per name from earlier imports (review r4 S2).
+    const perHandAnswers = new Map(stored.flatMap((a): [string, PerHandReading][] => (a.perHand ? [[a.nameKey, a.perHand]] : [])));
     const appDates = await repos().imports.appDates(ownerId);
     const importedDates = await repos().imports.importedDates(ownerId);
     const gyms = await gymsOf(ownerId);
-    const ctx: ImportContext = { ownerId, candidates: built.candidates, aliases, appDates, importedDates, defaultUnit };
+    const ctx: ImportContext = { ownerId, candidates: built.candidates, aliases, perHandAnswers, appDates, importedDates, defaultUnit };
     const fileDates = new Set(rows.map((r) => r.date).filter((d): d is string => d !== null));
     const stamp = stableStringify({
       defaultUnit,
       gyms: gyms.map((g) => g.id).sort(),
       candidates: built.candidates.map((c) => [c.exerciseId, c.name, c.defaultLoadConvention, [...c.compatibleEquipment].sort(), c.implements]),
       aliases: [...aliases.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
+      perHandAnswers: [...perHandAnswers.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
       appDates: [...appDates].filter((d) => fileDates.has(d)).sort(),
       importedDates: [...importedDates.entries()].filter(([d]) => fileDates.has(d)).map(([d, e]) => [d, e.jobId]).sort(),
     });
-    return { ctx, stamp, candidates: built.candidates, catalogueRows: built.catalogueRows };
+    return { ctx, stamp, candidates: built.candidates, catalogueRows: built.catalogueRows, gymIds: new Set(gyms.map((g) => g.id)) };
   }
 
   async function view(d: Draft): Promise<ImportDraft> {
@@ -451,6 +456,8 @@ export function createImportService(deps: ImportServiceDeps) {
         return { kind: 'same_file', job: earlier.job, written: earlier.written, state: earlier.state };
       }
       const id = deps.newId();
+      // Ben's own answers fill in: this file's earlier import, and each name's dumbbell answer last time (review r4 S2, N2).
+      const answers = startingAnswers(parsed.rows, loaded.ctx, earlier ? { answers: earlier.job.answers, gymIds: loaded.gymIds } : null);
       const d: Draft = {
         id,
         ownerId: p.id,
@@ -467,9 +474,9 @@ export function createImportService(deps: ImportServiceDeps) {
         committing: null,
         candidates: loaded.candidates,
         catalogueRows: loaded.catalogueRows,
-        answers: DEFAULT_ANSWERS,
+        answers,
         mappingVersion: 1,
-        analysis: analyseImport(parsed, loaded.ctx, DEFAULT_ANSWERS),
+        analysis: analyseImport(parsed, loaded.ctx, answers),
       };
       drafts.set(id, d);
       return { kind: 'preview', draft: await view(d) };
@@ -722,7 +729,7 @@ export function createImportService(deps: ImportServiceDeps) {
       ),
       ...[...d.catalogueRows.values()].filter((e) => used.has(e.id)),
     ];
-    const aliases: AliasToSave[] = aliasesToSave(a).map((x) => ({ name: x.name.slice(0, 4000), nameKey: x.key, target: x.target }));
+    const aliases: AliasToSave[] = aliasesToSave(a).map((x) => ({ name: x.name.slice(0, 4000), nameKey: x.key, target: x.target, ...(x.perHand === undefined ? {} : { perHand: x.perHand }) }));
     const created = await repos().imports.createJob(job, rows, { exercises, aliases, at, newId: deps.newId });
     if (!created.ok) {
       const running = await repos().imports.committingJob(d.ownerId);
