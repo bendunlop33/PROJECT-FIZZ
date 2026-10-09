@@ -56,10 +56,15 @@ function offsetMs(ms: number, tz: string): number {
 
 /** The UTC instant of local midnight starting `localDate` (`YYYY-MM-DD`) in `tz`. */
 export function localMidnightUtcMs(localDate: string, tz: string): number {
+  return localHourUtcMs(localDate, 0, tz);
+}
+
+/** The UTC instant of `hour`:00 local time on `localDate` in `tz` (a skipped hour resolves to the instant just after the clock change). */
+export function localHourUtcMs(localDate: string, hour: number, tz: string): number {
   const [y, m, d] = localDate.split('-').map(Number);
   if (y === undefined || m === undefined || d === undefined || Number.isNaN(y + m + d)) throw new RangeError(`Bad date ${localDate}`);
   // eslint-disable-next-line no-restricted-globals -- arithmetic on calendar fields, not a clock read
-  const naive = Date.UTC(y, m - 1, d);
+  const naive = Date.UTC(y, m - 1, d, hour);
   // Two passes settle DST transitions (the offset at the guess can differ from the offset at the answer).
   let guess = naive - offsetMs(naive, tz);
   guess = naive - offsetMs(guess, tz);

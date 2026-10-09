@@ -30,3 +30,4 @@ export * from './next-target';
 export * from './gym-editor';
 export * from './session/repeat';
 export * from './touches';
+export * from './import';
