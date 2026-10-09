@@ -1,3 +1,5 @@
+import { DETAIL_TIER_MIN_PT, effectiveDefinition, hasListedMuscles, type MuscleDefinition, type MuscleInput } from '@fizz/catalogue/figure';
+
 /**
  * Guide player state (ADR 0013). Pure: the component dispatches actions and
  * asks `isRunning` whether the UI-thread clock should tick.
@@ -121,4 +123,36 @@ export const MUSCLE_PULSE = true;
  */
 export function musclePulseOn(opts: { setting: boolean; reduceMotion: boolean; increaseContrast: boolean; hasWorkPhase: boolean; hasMuscles: boolean }): boolean {
   return opts.setting && !opts.reduceMotion && !opts.increaseContrast && opts.hasWorkPhase && opts.hasMuscles;
+}
+
+/**
+ * Design-system `guide.muscleDefinition` (guides v2 §4.11, decision B8): a
+ * faint, steady shape for every muscle group the view can show. `neutral`
+ * (a faint tone of the body), as the spec recommends, until Ben picks
+ * `neutral`, `tint` or `off` on the review sheet and on device (G18). No
+ * in-app setting, as with the pulse. Must equal the catalogue's
+ * `DEFAULT_MUSCLE_DEFINITION` (what `guide:render` previews); a test checks.
+ */
+export const MUSCLE_DEFINITION: MuscleDefinition = 'neutral';
+
+/**
+ * The definition mode a canvas actually draws (`effectiveDefinition`): none
+ * below the M/L tier, `tint` as `neutral` under Increase Contrast or
+ * Differentiate Without Color, `tint` off without the entry's muscles. The
+ * bake cache key and the legend both use it, so they always agree.
+ */
+export function guideDefinition(opts: {
+  setting: MuscleDefinition;
+  /** Canvas size in points. */
+  pt: number;
+  increaseContrast: boolean;
+  differentiateWithoutColor: boolean;
+  muscles: MuscleInput | null;
+}): MuscleDefinition {
+  return effectiveDefinition(opts.setting, {
+    tier: opts.pt < DETAIL_TIER_MIN_PT ? 'compact' : 'full',
+    increaseContrast: opts.increaseContrast,
+    differentiateWithoutColor: opts.differentiateWithoutColor,
+    hasMuscles: hasListedMuscles(opts.muscles),
+  });
 }

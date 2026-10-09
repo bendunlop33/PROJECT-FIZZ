@@ -7,7 +7,8 @@
  * the vector picture at device scale, never through a bitmap). The canvas
  * size in points still picks the detail tier and stroke floors (guides v2
  * §3.10). A few bakes are cached for the app session, keyed by guide, kind,
- * colours, size, muscles, emphasis and Increase Contrast (a change re-bakes).
+ * colours, size, muscles, emphasis, Increase Contrast and the muscle
+ * definition mode drawn (a change re-bakes).
  *
  * No Skia call may run at module load (review S1): this module is required
  * lazily with the player, and every Skia call happens inside a bake task,
@@ -26,6 +27,7 @@ import {
   type DrawOp,
   type GuideStyle,
   type KeyFrameStop,
+  type MuscleDefinition,
   type MuscleInput,
   type Vec,
 } from '@fizz/catalogue/figure';
@@ -101,6 +103,8 @@ export interface BakeConfig {
   /** Work-phase emphasis in the animation frames (`musclePulseOn`); stills are always steady. */
   pulse: boolean;
   increaseContrast: boolean;
+  /** Muscle definition as drawn on this canvas (`guideDefinition`, guides v2 §4.11); faint shapes are the same in every frame. */
+  definition: MuscleDefinition;
 }
 
 /**
@@ -121,7 +125,7 @@ export interface BakePlan {
 
 export function bakeTasks(loaded: LoadedGuide, kind: BakeKind, stops: readonly KeyFrameStop[], style: GuideStyle, out: SkPicture[], config: BakeConfig): BakePlan {
   const { prepared, camera } = loaded;
-  const steady: BakeOptions = { pt: config.pt, muscles: config.muscles, increaseContrast: config.increaseContrast };
+  const steady: BakeOptions = { pt: config.pt, muscles: config.muscles, increaseContrast: config.increaseContrast, definition: config.definition };
   const pulse = kind === 'animation' && config.pulse;
   const optsAt = (t: number): BakeOptions => {
     const w = pulse ? workIntensityAt(prepared, t) : null;
@@ -173,7 +177,7 @@ const cache = new Map<string, CachedBake>();
 
 export function bakeKey(guideKey: string, kind: BakeKind, style: GuideStyle, config: BakeConfig): string {
   const muscles = config.muscles === null ? '-' : `${config.muscles.primary.join('+')}/${config.muscles.secondary.join('+')}`;
-  return `${guideKey}|${kind}|${Object.values(style).join(',')}|${String(Math.round(config.pt))}|${muscles}|${config.pulse ? 'pulse' : 'steady'}|${config.increaseContrast ? 'ic' : ''}`;
+  return `${guideKey}|${kind}|${Object.values(style).join(',')}|${String(Math.round(config.pt))}|${muscles}|${config.pulse ? 'pulse' : 'steady'}|${config.increaseContrast ? 'ic' : ''}|def:${config.definition}`;
 }
 
 export function cachedBake(key: string): CachedBake | undefined {

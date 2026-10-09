@@ -79,7 +79,9 @@ export function HowToScreen() {
   const focused = useIsFocused();
   const { width } = useWindowDimensions();
   const { catalogueKey, name } = useRoute<RouteProp<RootStackParams, 'HowTo'>>().params;
-  const view = useMemo(() => buildHowToView({ name, catalogueKey }, bundledHowToSources()), [name, catalogueKey]);
+  const increaseContrast = theme.a11y.increaseContrast;
+  // The legend's tint line (guides v2 §4.11.8) follows what the card draws; the app ships `neutral`, which has none.
+  const view = useMemo(() => buildHowToView({ name, catalogueKey }, bundledHowToSources(), { increaseContrast }), [name, catalogueKey, increaseContrast]);
   const player = view.guide === null ? null : loadGuidePlayer();
   const [playerThrew, setPlayerThrew] = useState(false);
   const onPlayerError = useCallback(() => {

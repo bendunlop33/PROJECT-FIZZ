@@ -16,7 +16,9 @@ import {
   type LegendLine,
   type LoadedGuide,
 } from '@fizz/catalogue';
-import { keyFrameStops, type KeyFrameStop, type MuscleInput } from '@fizz/catalogue/figure';
+import { keyFrameStops, type KeyFrameStop, type MuscleDefinition, type MuscleInput } from '@fizz/catalogue/figure';
+
+import { guideDefinition, MUSCLE_DEFINITION } from './player-model';
 
 export interface HowToSources {
   catalogue: LazyCatalogue;
@@ -94,11 +96,14 @@ export interface HowToView {
   title: string;
   guide: HowToGuide | null;
   /**
-   * `Feel it most:` / `Also works:` / `Not shown from this side:` (guides v2
-   * §5.3). Shown in the player card, or under the header without a player
-   * (then without swatches). Empty when the entry lists no muscles or can't be read.
+   * `Feel it most:` / `Also works:` / `Faint violet:` (tint definition only) /
+   * `Not shown from this side:` (guides v2 §5.3, §4.11.8). Shown in the
+   * player card, or under the header without a player (then without swatches
+   * or the tint line). Empty when the entry lists no muscles or can't be read.
    */
   legend: LegendLine[];
+  /** The tint definition line's text while the card draws faint violet groups, else null (guides v2 §4.11.8). */
+  definitionNote: string | null;
   setup: readonly string[];
   execution: readonly string[];
   /** `What not to do`: the entry's faults in catalogue order (guides v2 §5.1; replaces Common mistakes). */
@@ -113,7 +118,17 @@ export interface HowToView {
   notice: string | null;
 }
 
-export function buildHowToView(input: { name: string; catalogueKey: string | null }, src: HowToSources): HowToView {
+/** How the card is drawn, for the legend: the app's definition setting and the accessibility settings that change it. */
+export interface HowToDisplay {
+  definition?: MuscleDefinition;
+  increaseContrast?: boolean;
+  differentiateWithoutColor?: boolean;
+}
+
+/** The How to card's canvas is at least 200 pt (`MIN_GUIDE_SIZE`): always the M/L tier, where definition draws. */
+const CARD_PT = 200;
+
+export function buildHowToView(input: { name: string; catalogueKey: string | null }, src: HowToSources, display: HowToDisplay = {}): HowToView {
   const key = input.catalogueKey;
   const entryLoad = key === null ? null : src.catalogue.entry(key);
   const entry = entryLoad?.ok === true ? entryLoad.entry : null;
@@ -149,10 +164,24 @@ export function buildHowToView(input: { name: string; catalogueKey: string | nul
   // Text shown without the player: the key positions (from the guide) and the entry's cues.
   const textDraft = (guide !== null && guide.draftLabel !== null && guide.stops.length > 0) || (rich !== null && rich.review.status !== 'approved');
 
+  // The legend's tint line follows what the card draws (`guideDefinition`, the same rule as the bake).
+  const definition = guide
+    ? guideDefinition({
+        setting: display.definition ?? MUSCLE_DEFINITION,
+        pt: CARD_PT,
+        increaseContrast: display.increaseContrast === true,
+        differentiateWithoutColor: display.differentiateWithoutColor === true,
+        muscles: guide.muscles,
+      })
+    : 'off';
+  const legend = focus === null ? [] : muscleLegend(focus, { definition });
+  const definitionLine = legend.find((l) => l.kind === 'definition');
+
   return {
     title,
     guide,
-    legend: focus === null ? [] : muscleLegend(focus),
+    legend,
+    definitionNote: definitionLine ? `${definitionLine.label} ${definitionLine.list}` : null,
     setup: rich?.cues.setup ?? [],
     execution: rich?.cues.execution ?? [],
     avoid: rich?.cues.faults ?? [],
@@ -185,7 +214,8 @@ export interface HowToLayout {
  */
 export function howToLayout(view: HowToView, playerFailed: boolean): HowToLayout {
   const notices = view.notice === null ? [] : [view.notice];
-  const standaloneLegend = view.legend.map((l) => ({ ...l, swatch: false }));
+  // Without the player nothing is coloured: no swatches, and no faint-violet line.
+  const standaloneLegend = view.legend.filter((l) => l.kind !== 'definition').map((l) => ({ ...l, swatch: false }));
   if (view.guide === null) return { showPlayer: false, standaloneLegend, notices, textDraftLabel: view.textDraftLabel };
   if (!playerFailed) return { showPlayer: true, standaloneLegend: [], notices, textDraftLabel: null };
   const stops = view.guide.stops.length > 0;

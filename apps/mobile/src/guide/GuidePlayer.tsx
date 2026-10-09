@@ -13,8 +13,10 @@ import { bakeKey, bakeTasks, cachedBake, storeBake, type BakeConfig, type BakeKi
 import { advanceClock, frameIndexAt } from './clock';
 import type { HowToGuide } from './how-to';
 import {
+  guideDefinition,
   initialPlayerState,
   isRunning,
+  MUSCLE_DEFINITION,
   MUSCLE_PULSE,
   musclePulseOn,
   playControlLabel,
@@ -167,7 +169,9 @@ export function GuidePlayer({ guide, size, visible, footer }: Props) {
   // Guides v2: muscle colour from the entry, sized for this canvas; the emphasis only in animation (never Reduce Motion or Increase Contrast).
   const increaseContrast = theme.a11y.increaseContrast;
   const pulse = musclePulseOn({ setting: MUSCLE_PULSE, reduceMotion, increaseContrast, hasWorkPhase: guide.hasWorkPhase, hasMuscles: guide.muscles !== null });
-  const animConfig = useMemo<BakeConfig>(() => ({ pt: size, muscles: guide.muscles, pulse, increaseContrast }), [size, guide.muscles, pulse, increaseContrast]);
+  // Muscle definition (guides v2 §4.11): steady faint groups. React Native doesn't expose Differentiate Without Color, so it reads false.
+  const definition = guideDefinition({ setting: MUSCLE_DEFINITION, pt: size, increaseContrast, differentiateWithoutColor: false, muscles: guide.muscles });
+  const animConfig = useMemo<BakeConfig>(() => ({ pt: size, muscles: guide.muscles, pulse, increaseContrast, definition }), [size, guide.muscles, pulse, increaseContrast, definition]);
   const stillConfig = useMemo<BakeConfig>(() => ({ ...animConfig, pulse: false }), [animConfig]);
 
   const { baked: anim, failure: animFailure } = useBakedPictures(loaded, state.mode === 'animate' ? 'animation' : null, stops, style, animConfig);

@@ -56,7 +56,7 @@ function guide(key: string): LoadedGuide {
 }
 
 const style = guideStyleFromTokens(DIRECTION_D_GUIDE_TOKENS.dark);
-const steady: Bake.BakeConfig = { pt: 350, muscles: { primary: ['quads', 'glutes'], secondary: ['hamstrings'] }, pulse: false, increaseContrast: false };
+const steady: Bake.BakeConfig = { pt: 350, muscles: { primary: ['quads', 'glutes'], secondary: ['hamstrings'] }, pulse: false, increaseContrast: false, definition: 'neutral' };
 
 describe('bake plan', () => {
   it('still view: position 1 is drawn first, before the trace samples, then redrawn with the trace (review N1)', () => {
@@ -101,15 +101,32 @@ describe('bake plan', () => {
     expect(bake.bakeTasks(squat, 'steps', keyFrameStops(squat.prepared), style, [], { ...steady, pulse: true }).steadyPoster).toBeNull();
   });
 
-  it('the cache key changes with size, muscles, emphasis and Increase Contrast', () => {
+  it('the cache key changes with size, muscles, emphasis, Increase Contrast and the definition mode drawn', () => {
     const keys = new Set([
       bake.bakeKey('k', 'animation', style, steady),
       bake.bakeKey('k', 'animation', style, { ...steady, pt: 240 }),
       bake.bakeKey('k', 'animation', style, { ...steady, muscles: null }),
       bake.bakeKey('k', 'animation', style, { ...steady, pulse: true }),
       bake.bakeKey('k', 'animation', style, { ...steady, increaseContrast: true }),
+      bake.bakeKey('k', 'animation', style, { ...steady, definition: 'off' }),
+      bake.bakeKey('k', 'animation', style, { ...steady, definition: 'tint' }),
     ]);
-    expect(keys.size).toBe(5);
+    expect(keys.size).toBe(7);
+  });
+
+  it('bakes the faint groups into every frame (muscle definition, guides v2 §4.11)', () => {
+    const squat = guide('barbell-back-squat');
+    const draws = (definition: Bake.BakeConfig['definition']) => {
+      const out: FakePicture[] = [];
+      for (const task of bake.bakeTasks(squat, 'steps', keyFrameStops(squat.prepared), style, out as never[], { ...steady, definition }).tasks) task();
+      return out.map((p) => p.draws);
+    };
+    const off = draws('off');
+    const neutral = draws('neutral');
+    expect(neutral).toHaveLength(off.length);
+    neutral.forEach((n, i) => {
+      expect(n).toBeGreaterThan(off[i] ?? 0);
+    });
   });
 
   it('a guide with no labelled positions still bakes one still frame (P6)', () => {
