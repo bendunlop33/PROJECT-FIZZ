@@ -11,7 +11,7 @@ import { dist, penetrationDepth, lerpVec, v, type Vec } from './math';
 import { poseAt, prepareGuide, type Pose, type PreparedGuide } from './pose';
 import { ROM_PROFILES, type AngleName } from './rig';
 import { BODY_GROUPS, groupContours } from './body';
-import { poseContinuity } from './motion-metrics';
+import { contactVelocity, poseContinuity } from './motion-metrics';
 import { adjustProblems, focusViewOf, MUSCLE_REGION_MAP, parseRegion, resolveFocus, type MuscleLevel } from './muscle-map';
 
 export const CHECK_FPS = 30;
@@ -40,6 +40,7 @@ export const CHECK_IDS = [
   'hand-contact',
   'loop-continuity',
   'pose-continuity',
+  'contact-velocity',
   'duration',
   'file-size',
   'captions',
@@ -270,6 +271,24 @@ function checkPoseContinuity(prepared: PreparedGuide): CheckItem {
     : { id: 'pose-continuity', ok: false, detail: `Pose jumps: ${m.where}` };
 }
 
+/**
+ * A foot keeps its velocity where it lifts off or lands (ADR 0015, C2). Hard
+ * once the guide sets `ground.matchFloorSpeed`; before that a jump is a
+ * warning, because removing it needs that rule and a re-posed stride together.
+ */
+function checkContactVelocity(prepared: PreparedGuide): CheckItem {
+  const m = contactVelocity(prepared);
+  if (m.value === null) return { id: 'contact-velocity', ok: true, detail: 'No foot lifts off or lands' };
+  if (m.ok) return { id: 'contact-velocity', ok: true, detail: `Feet lift off and land without a velocity jump (max ${m.value.toFixed(3)} H/s)` };
+  if (prepared.guide.ground.matchFloorSpeed === true) return { id: 'contact-velocity', ok: false, detail: `Velocity jump: ${m.where}` };
+  return {
+    id: 'contact-velocity',
+    ok: true,
+    warn: true,
+    detail: `Velocity jump: ${m.where}; the foot stops dead where it meets the moving floor (fix: ground.matchFloorSpeed with toe-off reach ≤ 0.97)`,
+  };
+}
+
 function checkKeyTimes(guide: Guide, prepared: PreparedGuide): CheckItem {
   const ks = prepared.keys;
   const first = ks[0];
@@ -406,6 +425,7 @@ export function checkGuide(input: GuideCheckInput): GuideCheckReport {
     checkHands(poses),
     checkLoop(prepared),
     checkPoseContinuity(prepared),
+    checkContactVelocity(prepared),
     {
       id: 'duration',
       ok: guide.durationMs >= LIMITS.minDurationMs && guide.durationMs <= LIMITS.maxDurationMs,

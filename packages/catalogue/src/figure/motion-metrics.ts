@@ -427,11 +427,19 @@ export function contactVelocity(prepared: PreparedGuide): MotionMetric {
   return metric('C2', 'contact-velocity', 'hard', `≤ ${MOTION_LIMITS.contactVelocity} H/s`, w, (x) => `${f(x)} H/s`);
 }
 
-/** C4 `overshoot`: every channel stays within its bracketing key values (plus 0.5% of its cycle range). */
+/**
+ * C4 `overshoot`: every channel stays within its bracketing key values (plus
+ * 0.5% of its cycle range). Exempt: a foot's x next to a lift-off or
+ * touch-down under `ground.matchFloorSpeed`, which reaches past the contact
+ * point on purpose so the foot meets the floor moving with it.
+ */
 export function channelOvershoot(prepared: PreparedGuide, n: number = MOTION_SAMPLES): MotionMetric {
   const { guide, keys } = prepared;
   const w = higher();
   const flat = keys.map((k) => flattenState(k.state));
+  const changes = guide.ground.matchFloorSpeed === true ? contactChanges(prepared) : [];
+  const exempt = (name: string, ta: number, tb: number): boolean =>
+    changes.some((c) => name === `ik.${c.limb}.x` && (Math.abs(c.t - ta) < 1e-9 || Math.abs(c.t - tb) < 1e-9 || (c.t === 0 && Math.abs(tb - 1) < 1e-9)));
   const range = new Map<string, number>();
   for (const name of flat[0]?.keys() ?? []) {
     const vs = flat.map((c) => c.get(name)).filter((x): x is number => x !== undefined);
@@ -449,7 +457,7 @@ export function channelOvershoot(prepared: PreparedGuide, n: number = MOTION_SAM
         const va = flat[i]?.get(name);
         const vb = flat[i + 1]?.get(name);
         const r = range.get(name) ?? 0;
-        if (va === undefined || vb === undefined || !(r > 1e-9)) continue;
+        if (va === undefined || vb === undefined || !(r > 1e-9) || exempt(name, a.t, b.t)) continue;
         const over = Math.max(0, x - Math.max(va, vb), Math.min(va, vb) - x) / r;
         w.add(over, `${name} t=${f(t)}`, over <= MOTION_LIMITS.overshoot);
       }

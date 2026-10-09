@@ -254,7 +254,18 @@ export const GuideSchema = z
     units: z.literal('bodyHeight'),
     durationMs: z.int().min(500).max(20_000),
     loop: z.enum(['cycle', 'pingpong']),
-    ground: z.strictObject({ y: num.min(-0.5).max(0.5), scrollPerCycle: num.min(0).max(3) }),
+    ground: z.strictObject({
+      y: num.min(-0.5).max(0.5),
+      scrollPerCycle: num.min(0).max(3),
+      /**
+       * Scrolling floors only: a foot leaves and lands on the floor at the
+       * floor's speed (no velocity jump at lift-off or touch-down; ADR 0015).
+       * Off by default: on its own it drives a near-straight trailing leg to
+       * full reach, so a guide turns it on together with a stride that keeps
+       * toe-off reach at or below 0.97 (`guide:motion` S3).
+       */
+      matchFloorSpeed: z.boolean().optional(),
+    }),
     /** Shortens limbs that point partly towards the camera (1 = in the picture plane). Keyframes may override it. */
     projection: ProjectionSchema.optional(),
     /**
@@ -318,6 +329,9 @@ export const GuideSchema = z
       if (!known.has(o.of)) ctx.addIssue({ code: 'custom', message: `Unknown prop ${o.of}`, path: ['overlays'] });
     }
     if (g.seenFrom !== undefined && g.view !== 'front') ctx.addIssue({ code: 'custom', message: 'seenFrom is for front-view guides only', path: ['seenFrom'] });
+    if (g.ground.matchFloorSpeed === true && g.ground.scrollPerCycle === 0) {
+      ctx.addIssue({ code: 'custom', message: 'matchFloorSpeed is for scrolling floors only', path: ['ground', 'matchFloorSpeed'] });
+    }
     const phases = g.focus?.workPhase ?? [];
     phases.forEach((ph, i) => {
       const prev = phases[i - 1];
