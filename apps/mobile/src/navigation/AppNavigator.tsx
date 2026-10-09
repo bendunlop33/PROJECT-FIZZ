@@ -27,6 +27,7 @@ import { TodayScreen } from '../screens/TodayScreen';
 import { CheckInScreen } from '../screens/workout/CheckInScreen';
 import { EditSetScreen } from '../screens/workout/EditSetScreen';
 import { ExercisePickerScreen } from '../screens/workout/ExercisePickerScreen';
+import { HowToScreen } from '../screens/workout/HowToScreen';
 import { SummaryScreen } from '../screens/workout/SummaryScreen';
 import { WorkoutScreen } from '../screens/workout/WorkoutScreen';
 import type { SetupStep } from '../services/setup';
@@ -152,6 +153,7 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
                 options={{ presentation: 'formSheet', sheetAllowedDetents: [0.55, 1.0], sheetGrabberVisible: true, contentStyle: { backgroundColor: theme.colors['bg.surface'] } }}
               />
               <RootStack.Screen name="ExercisePicker" component={ExercisePickerScreen} options={{ presentation: 'modal' }} />
+              <RootStack.Screen name="HowTo" component={HowToScreen} options={{ presentation: 'modal' }} />
               <RootStack.Screen
                 name="EditSet"
                 component={EditSetScreen}

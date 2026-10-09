@@ -35,6 +35,8 @@ export type RootStackParams = {
   /** `repeatOf`: start by repeating that finished workout (routines.md RT4). */
   CheckIn: { mode: 'start'; gymId: string; repeatOf?: string } | { mode: 'edit'; checkInId: string };
   ExercisePicker: { sessionId: string };
+  /** How to (ADR 0013): guide, cues and mistakes for a catalogue exercise. Opened only when it has a how-to. */
+  HowTo: { catalogueKey: string; name: string };
   EditSet: { sessionId: string; setId: string };
   Summary: { sessionId: string };
   AddGym: undefined;

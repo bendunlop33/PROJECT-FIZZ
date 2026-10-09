@@ -12,6 +12,7 @@ import { nowMs as clockNow } from '../../clock';
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatTime } from '../../format/dates';
+import { bundledHowToSources, howToKeyForExerciseId } from '../../guide/how-to';
 import { popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
 import type { ActiveWorkoutData } from '../../services/workout-services';
@@ -350,8 +351,16 @@ export function WorkoutScreen() {
   }
 
   function exerciseMenu(f: FocusView) {
-    const options = ['Add set', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel'];
-    ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options, destructiveButtonIndex: [2, 3], cancelButtonIndex: 4 }, (i) => {
+    // `How to` leads when the exercise has a guide or cues (ADR 0013); the other indexes shift by one.
+    const howToKey = howToKeyForExerciseId(f.exerciseId, bundledHowToSources());
+    const shift = howToKey === null ? 0 : 1;
+    const options = [...(howToKey === null ? [] : ['How to']), 'Add set', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel'];
+    ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options, destructiveButtonIndex: [2 + shift, 3 + shift], cancelButtonIndex: 4 + shift }, (picked) => {
+      if (howToKey !== null && picked === 0) {
+        navigation.navigate('HowTo', { catalogueKey: howToKey, name: f.exerciseName });
+        return;
+      }
+      const i = picked - shift;
       if (i === 0) void addSet(f.sessionExerciseId);
       if (i === 1) navigation.navigate('ExercisePicker', { sessionId: session.id });
       if (i === 2) {

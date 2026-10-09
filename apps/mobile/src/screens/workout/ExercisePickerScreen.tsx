@@ -1,20 +1,22 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { ScrollView, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EQUIPMENT_WORD, pickerEquipmentLabel } from '@fizz/domain';
 
 import { newUuid } from '../../device/runtime';
+import { bundledHowToSources, hasHowTo } from '../../guide/how-to';
 import type { RootStackParams } from '../../navigation/types';
 import type { PickerExercise } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Group, Row, StatusLine, TextButton } from '../../ui';
+import { AppText, Group, Icon, Row, StatusLine, TextButton } from '../../ui';
 
 /**
  * Exercise picker (active-workout §2.10): a minimal search over the starter
  * exercise list in the database (the rich catalogue isn't wired yet).
+ * Exercises with a guide or cues get an ⓘ button that opens How to.
  * Choosing one calls `addExercise` once (opId per choice). When the gym has
  * more than one compatible item, Ben picks which; with none, the exercise is
  * added without equipment and loads aren't checked.
@@ -125,18 +127,38 @@ export function ExercisePickerScreen() {
           </AppText>
         ) : (
           <Group>
-            {ordered.map((p) => (
-              <Row
-                key={p.exercise.id}
-                title={p.exercise.name}
-                subtitle={pickerEquipmentLabel(p.exercise, p.equipment)}
-                secondLine={recent.includes(p.exercise.id) && query.trim() === '' ? 'Recent' : null}
-                onPress={() => {
-                  choose(p);
-                }}
-                disabled={busy}
-              />
-            ))}
+            {ordered.map((p) => {
+              const key = p.exercise.catalogueKey ?? null;
+              const howTo = key !== null && hasHowTo(key, bundledHowToSources()) ? key : null;
+              return (
+                <View key={p.exercise.id} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={{ flex: 1 }}>
+                    <Row
+                      title={p.exercise.name}
+                      subtitle={pickerEquipmentLabel(p.exercise, p.equipment)}
+                      secondLine={recent.includes(p.exercise.id) && query.trim() === '' ? 'Recent' : null}
+                      onPress={() => {
+                        choose(p);
+                      }}
+                      disabled={busy}
+                    />
+                  </View>
+                  {/* A separate 44 pt button, so tapping the row still adds the exercise in one tap (ADR 0013). */}
+                  {howTo !== null ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`How to do ${p.exercise.name}`}
+                      onPress={() => {
+                        navigation.navigate('HowTo', { catalogueKey: howTo, name: p.exercise.name });
+                      }}
+                      style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', marginRight: theme.space['2'], opacity: pressed ? 0.6 : 1 })}
+                    >
+                      <Icon name="info.circle" color="text.secondary" size={22} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              );
+            })}
           </Group>
         )}
       </ScrollView>
