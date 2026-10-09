@@ -393,10 +393,16 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
     const tables = { ...file.tables };
     delete tables.check_ins;
     delete tables.pain_flags;
+    // …and nothing from schema 3 (imports).
+    delete tables.import_jobs;
+    delete tables.import_rows;
+    delete tables.exercise_aliases;
     tables.sessions = (tables.sessions ?? []).map((row) => {
       const copy = { ...row };
       delete copy.check_in;
       delete copy.check_in_id;
+      delete copy.import_job_id;
+      delete copy.local_date;
       return copy;
     });
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));

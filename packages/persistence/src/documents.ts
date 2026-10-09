@@ -67,7 +67,8 @@ export interface DocumentTable {
   decode(row: SqlRow): unknown;
 }
 
-const erase = <T extends Versioned>(spec: DocumentSpec<T>): DocumentTable => ({
+/** A document spec as a type-erased table for whole-database checks. */
+export const erase = <T extends Versioned>(spec: DocumentSpec<T>): DocumentTable => ({
   table: spec.table,
   decode: (row) => decodeDocument(spec, row),
 });

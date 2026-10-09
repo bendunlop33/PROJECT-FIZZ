@@ -10,6 +10,7 @@ import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useRelaunch, useScreenData, useServices } from '../../shell/context';
 import { formatShortDate, formatWhen } from '../../format/dates';
 import { formatCount, plural } from '../../format/numbers';
+import { pausedLine } from '../../import/views';
 import { useTheme } from '../../theme';
 import { AppText, Card, DomainLabel, Group, Row, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
 import { BlockingCover } from './BlockingCover';
@@ -21,8 +22,8 @@ const TONE = { done: 'done', info: 'info', warning: 'warning', progress: 'progre
  * Data & backup hub (data-import-export.md §2.1), the parts in this build:
  * the two-line status card, `Save a copy to Files`, `Back up on this phone
  * now`, the copies on this phone, the trial-run line, the quiet 30-day
- * reminder, Restore, Check a backup and Undo last restore. Import, export and
- * delete are listed honestly as not in this build.
+ * reminder, Restore, Check a backup and Undo last restore, FitNotes import
+ * and Past imports. Export and delete are listed honestly as not in this build.
  */
 export function DataBackupScreen() {
   const theme = useTheme();
@@ -35,8 +36,8 @@ export function DataBackupScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParams>>();
   const relaunch = useRelaunch();
   const [data] = useScreenData(async (s) => {
-    const [status, counts, blocked, undoBlocked] = await Promise.all([s.backups.getStatus(), s.yourData.counts(), s.restore.blockedBy(), s.restore.undoBlockedBy()]);
-    return { status, counts, blocked, undoBlocked, rollback: s.restore.rollbackTarget() };
+    const [status, counts, blocked, undoBlocked, imports] = await Promise.all([s.backups.getStatus(), s.yourData.counts(), s.restore.blockedBy(), s.restore.undoBlockedBy(), s.imports.list()]);
+    return { status, counts, blocked, undoBlocked, imports, rollback: s.restore.rollbackTarget() };
   });
   const now = services.now();
 
@@ -51,7 +52,8 @@ export function DataBackupScreen() {
   }
 
   if (data.state !== 'ready') return <Screen>{null}</Screen>;
-  const { status, counts, blocked, undoBlocked, rollback } = data.value;
+  const { status, counts, blocked, undoBlocked, imports, rollback } = data.value;
+  const pausedImport = imports.find((p) => p.state === 'paused') ?? null;
   const undoRow = rollbackRowView(rollback, { nowMs: toMs(now.utc), tz: now.tz });
 
   function undoRestore() {
@@ -195,9 +197,27 @@ export function DataBackupScreen() {
       {undoError ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={undoError} /> : null}
       <BlockingCover visible={undoing} title="Switching back…" lines={[{ text: undoRow?.subtitle ?? 'Switching databases', done: false }]} />
 
-      <SectionHeader title="Import and export" />
+      <SectionHeader title="Import" />
       <Group>
-        <Row title="Import from FitNotes" subtitle="Not in this build yet" disabled />
+        <Row
+          title="Import from FitNotes"
+          icon="square.and.arrow.down"
+          subtitle={blocked ? `Finish or discard your workout first (${blocked.title})` : pausedImport ? pausedLine(pausedImport) : 'From a FitNotes CSV export. You see everything before it’s saved.'}
+          onPress={() => {
+            navigation.navigate('ImportIntro');
+          }}
+        />
+        <Row
+          title={`Past imports (${String(imports.length)})`}
+          icon="clock.arrow.circlepath"
+          onPress={() => {
+            navigation.navigate('PastImports');
+          }}
+        />
+      </Group>
+
+      <SectionHeader title="Export" />
+      <Group>
         <Row title="Export" subtitle="Not in this build yet" disabled />
       </Group>
     </Screen>

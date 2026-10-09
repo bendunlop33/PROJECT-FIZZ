@@ -3,6 +3,7 @@ import { useNavigation } from '@react-navigation/native';
 import { toMs } from '@fizz/domain';
 
 import { formatShortDate } from '../../format/dates';
+import { importedNotListedLine } from '../../import/views';
 import { plural } from '../../format/numbers';
 import { useScreenData, useServices } from '../../shell/context';
 import { AppText, Group, Row, Screen, StatusLine, TextButton } from '../../ui';
@@ -11,6 +12,8 @@ import { AppText, Group, Row, Screen, StatusLine, TextButton } from '../../ui';
  * `Start from a past workout`: a lightweight stand-in for routines
  * (critic-pass-1 #1, T9). Pick any finished workout to repeat its sets as
  * targets. Nothing starts until `Start workout` on the next screen.
+ * Imported FitNotes workouts aren't listed (no equipment checked their
+ * loads; P-I3 open, review r2 B1), and the screen says so.
  */
 export function PastWorkoutsScreen() {
   const navigation = useNavigation();
@@ -38,8 +41,11 @@ export function PastWorkoutsScreen() {
           detail="Your other workouts are fine. Check all data in Data & backup for details."
         />
       ) : null}
+      {data.value.importedNotListed > 0 ? (
+        <StatusLine icon="info.circle" tone="info" text={importedNotListedLine(data.value.importedNotListed)} />
+      ) : null}
       {data.value.rows.length === 0 ? (
-        <AppText variant="body">No finished workouts yet.</AppText>
+        <AppText variant="body">{data.value.importedNotListed > 0 ? 'No workouts logged in the app yet.' : 'No finished workouts yet.'}</AppText>
       ) : (
         <Group>
           {data.value.rows.map((c) => (

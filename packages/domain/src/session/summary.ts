@@ -8,7 +8,7 @@ import type { HistorySession, NextTargets } from '../progression';
 import { toIso, toMs } from '../time';
 import { lastComparableSession } from './active-view';
 import { summaryHighlight } from '../touches';
-import { getActiveDurationMs } from './view';
+import { dateOnlyOf, workoutDurationMs } from './view';
 import { summariseVolume } from './volume';
 
 /**
@@ -38,6 +38,8 @@ export interface SummaryInput {
   coach: CoachStatus;
   /** Catalogue info by exercise ID, for the built-in rule's category (ADR 0010 amendment 2). Missing = accessory range. */
   exerciseInfo?: Readonly<Record<string, RuleExerciseInfo>>;
+  /** Gym names by ID, to name the compared workout's own gym (review r2 B1). A gym missing here isn't named. */
+  gymNames?: Readonly<Record<string, string>>;
 }
 
 export interface NextTimeRow {
@@ -60,9 +62,16 @@ export interface WorkoutSummary {
   startedAtUtc: string;
   endedAtUtc: string | null;
   tz: string;
+  /**
+   * `YYYY-MM-DD` for a workout with no time of day (imported from FitNotes):
+   * show this date only, with no time range, no active time and no `Edit
+   * times` (rule 6; review B2). Null for a workout logged in the app.
+   */
+  dateOnly: string | null;
   gymName: string | null;
   timingEdited: { start: boolean; end: boolean };
-  facts: { activeMs: number; activeText: string; exercisesDone: number; exercisesTotal: number; workingSets: number; skippedSets: number; warmupSets: number };
+  /** `activeMs`/`activeText` are null for a date-only workout (no times to measure). */
+  facts: { activeMs: number | null; activeText: string | null; exercisesDone: number; exercisesTotal: number; workingSets: number; skippedSets: number; warmupSets: number };
   checkIn: { checkInId: string; scoreText: string; reasons: string | null; note: string | null; painNotFlagged: boolean } | null;
   comparison:
     | { kind: 'compared'; exerciseName: string; todayText: string; lastText: string; lastAtUtc: string; why: string }
@@ -112,6 +121,17 @@ function nextTargetText(t: NextTargets, ex: SessionExercise, eq: EquipmentInstan
   return held ? `Same target: ${body}` : `Target ${body}`;
 }
 
+/**
+ * Where the compared workout was, never assumed to be today's gym (review r2
+ * B1): its own gym's name, `, gym not recorded`, or nothing when the name
+ * isn't known.
+ */
+function comparedGymText(comparedGymId: string | null, todayGymId: string | null, input: Pick<SummaryInput, 'gymName' | 'gymNames'>): string {
+  if (comparedGymId === null) return ', gym not recorded';
+  const name = input.gymNames?.[comparedGymId] ?? (comparedGymId === todayGymId ? input.gymName : null);
+  return name ? ` at ${name}` : '';
+}
+
 /** Whether the rule's result belongs under `Next time` (workout-summary §2): changed, held for a listed reason, no load, or pain. */
 function listedKind(t: NextTargets): NextTimeRow['kind'] | null {
   switch (t.decision) {
@@ -147,7 +167,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   const skippedSets = liveSets.filter((x) => x.status === 'skipped' && isWork(x)).length;
   const exercisesWithSets = exercises.filter((e) => liveSets.some((x) => x.sessionExerciseId === e.id));
   const exercisesDone = exercisesWithSets.filter((e) => completed.some((x) => x.sessionExerciseId === e.id)).length;
-  const activeMs = getActiveDurationMs(state, nowMs);
+  const activeMs = workoutDurationMs(state, nowMs);
 
   const exerciseRows = exercisesWithSets.map((ex) => {
     const eq = equipmentOf(state, ex);
@@ -169,9 +189,14 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     };
   });
 
+  // An imported (FitNotes) workout is a history record: no comparison, highlight or `Next time`.
+  // Imported history isn't comparable while P-I3 is open (ADR 0016; review r2 B1), and a
+  // `Next time` read from it would say "Same targets next time" about an old FitNotes date.
+  const imported = s.source === 'import';
+
   // Comparison: the first exercise in order with working sets today and comparable history.
   let comparison: WorkoutSummary['comparison'] = null;
-  for (const ex of exercises) {
+  for (const ex of imported ? [] : exercises) {
     const todaySets = completed.filter((x) => x.sessionExerciseId === ex.id && isWork(x));
     if (todaySets.length === 0) continue;
     const eq = equipmentOf(state, ex);
@@ -188,22 +213,25 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
           todayText: valuesText(today, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
           lastText: valuesText(last, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
           lastAtUtc: prev.performedAtUtc,
-          why: `Same ${eq ? eq.name : 'set-up'}${input.gymName ? ` at ${input.gymName}` : ''}, working sets`,
+          why: `Same ${eq ? eq.name : 'set-up'}${comparedGymText(prev.gymId, s.gymId, input)}, working sets`,
         };
         break;
       }
     }
     if (comparison === null) {
+      const logged = others.filter((h) => !h.imported);
       comparison =
-        others.length > 0
+        logged.length > 0
           ? { kind: 'not_comparable', text: `Last ${ex.exerciseName} was with different equipment or units. Not compared.` }
-          : { kind: 'first_time', text: `First time logging ${ex.exerciseName}${eq ? ` with ${eq.name}` : ''}${input.gymName ? ` at ${input.gymName}` : ''}. Nothing to compare yet.` };
+          : others.length > 0
+            ? { kind: 'not_comparable', text: `Earlier ${ex.exerciseName} sets were imported from FitNotes. Not compared.` }
+            : { kind: 'first_time', text: `First time logging ${ex.exerciseName}${eq ? ` with ${eq.name}` : ''}${input.gymName ? ` at ${input.gymName}` : ''}. Nothing to compare yet.` };
     }
   }
 
   // Next time: the built-in rule (no coach in this build).
   const rows: NextTimeRow[] = [];
-  for (const ex of exercises) {
+  for (const ex of imported ? [] : exercises) {
     const own = liveSets.filter((x) => x.sessionExerciseId === ex.id && x.setType === 'working');
     if (own.length === 0 || !completed.some((x) => x.sessionExerciseId === ex.id)) continue;
     const eq = equipmentOf(state, ex);
@@ -248,12 +276,13 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     startedAtUtc: s.startedAt.utc,
     endedAtUtc: s.endedAt?.utc ?? null,
     tz: s.startedAt.tz,
+    dateOnly: dateOnlyOf(s),
     gymName: input.gymName,
     timingEdited: {
       start: state.timingAudit.some((e) => e.field === 'startedAt'),
       end: state.timingAudit.some((e) => e.field === 'endedAt'),
     },
-    facts: { activeMs, activeText: formatMinutes(activeMs), exercisesDone, exercisesTotal: exercisesWithSets.length, workingSets, skippedSets, warmupSets },
+    facts: { activeMs, activeText: activeMs === null ? null : formatMinutes(activeMs), exercisesDone, exercisesTotal: exercisesWithSets.length, workingSets, skippedSets, warmupSets },
     checkIn: ci
       ? {
           checkInId: ci.id,
@@ -266,11 +295,11 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     comparison: workingSets === 0 ? null : comparison,
     exercises: exerciseRows,
     nextTime:
-      workingSets === 0
+      workingSets === 0 || imported
         ? null
         : { sourceTag: BUILT_IN_SOURCE_TAG[input.coach], rows, emptyText: rows.length === 0 ? 'No target changes. Same targets next time.' : null },
     empty: workingSets === 0,
-    highlight: workingSets === 0 ? null : summaryHighlight(state, input.history),
+    highlight: workingSets === 0 || imported ? null : summaryHighlight(state, input.history),
     timingBounds: {
       startLatestUtc: firstDone ?? (s.endedAt?.utc ?? nowIso),
       endEarliestUtc: lastDone ?? s.startedAt.utc,

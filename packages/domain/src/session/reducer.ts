@@ -341,7 +341,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   } else if (!exerciseHasMore && ex.transitionRestS !== null) {
     rest = { kind: 'transition', seconds: ex.transitionRestS, source: null };
   } else {
-    rest = { kind: 'rest', seconds: set.rest.seconds, source: set.rest.source };
+    rest = { kind: 'rest', seconds: set.rest.seconds, source: set.rest.source === 'not_recorded' ? null : set.rest.source };
   }
 
   if (rest.seconds > 0) {
@@ -1244,8 +1244,17 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
     const allowed =
       state.session.status === 'finished' && (command.type === 'correct_set' || command.type === 'update_session_timing');
     if (!allowed) {
-      const message = state.session.status === 'finished' ? 'This workout is finished.' : 'This workout was discarded.';
+      const message =
+        state.session.status === 'finished'
+          ? 'This workout is finished.'
+          : state.session.status === 'reverted'
+            ? 'This workout was hidden when its import was undone.'
+            : 'This workout was discarded.';
       return { ok: false, error: { code: 'session_finished', message }, state, events: [] };
+    }
+    // Imported workouts have a date and no time (FitNotes files carry none); there is no time to correct.
+    if (command.type === 'update_session_timing' && state.session.localDate !== undefined) {
+      return { ok: false, error: { code: 'session_finished', message: 'This imported workout has a date only, so there are no times to edit.' }, state, events: [] };
     }
   }
 

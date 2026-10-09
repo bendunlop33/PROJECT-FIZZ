@@ -2,6 +2,7 @@ import type { SqlDriver, SqlExecutor } from './driver';
 import { SchemaTooNewError } from './errors';
 import { MIGRATION_0001 } from './schema/0001-initial';
 import { MIGRATION_0002 } from './schema/0002-check-ins';
+import { MIGRATION_0003 } from './schema/0003-imports';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -19,7 +20,11 @@ export function sqlMigration(version: number, name: string, sql: string): Migrat
 }
 
 /** The app's migrations, in order. The last one's `version` is the current schema version. */
-export const MIGRATIONS: readonly Migration[] = [sqlMigration(1, 'initial', MIGRATION_0001), sqlMigration(2, 'check-ins', MIGRATION_0002)];
+export const MIGRATIONS: readonly Migration[] = [
+  sqlMigration(1, 'initial', MIGRATION_0001),
+  sqlMigration(2, 'check-ins', MIGRATION_0002),
+  sqlMigration(3, 'imports', MIGRATION_0003),
+];
 
 export function latestVersion(migrations: readonly Migration[] = MIGRATIONS): number {
   return migrations.at(-1)?.version ?? 0;

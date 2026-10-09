@@ -41,6 +41,8 @@ describe('built-in default rule by category', () => {
       sessionId: id(700 + w),
       performedAtUtc: at(-(2 - w) * 7 * 86_400).utc,
       equipmentId: bar.id,
+      gymId: null,
+      imported: false,
       sets: [1, 2, 3, 4, 5].map(() => ({ setType: 'working' as const, side: null, load: kg(100), reps: 5, rpe: 8, rir: null })),
     }));
     const pain = { active: false, reportedAtUtc: null };
@@ -58,7 +60,7 @@ describe('next targets for an added exercise (review S3)', () => {
   const pulldown = starterExercises('x').find((e) => e.name === 'Lat pulldown');
   if (!pulldown) throw new Error('fixture');
   const st = stack();
-  const hist: HistorySession = { sessionId: id(710), performedAtUtc: at(-86_400).utc, equipmentId: st.id, sets: [1, 2, 3].map(() => ({ setType: 'working' as const, side: null, load: kg(40, 'stack'), reps: 10, rpe: 8, rir: null })) };
+  const hist: HistorySession = { sessionId: id(710), performedAtUtc: at(-86_400).utc, equipmentId: st.id, gymId: null, imported: false, sets: [1, 2, 3].map(() => ({ setType: 'working' as const, side: null, load: kg(40, 'stack'), reps: 10, rpe: 8, rir: null })) };
   const req = {
     ownerId: OWNER,
     exerciseId: pulldown.id,
@@ -95,7 +97,7 @@ describe('next targets for an added exercise (review S3)', () => {
     const db = dumbbells();
     const press = starterExercises('x').find((e) => e.name === 'Dumbbell bench press');
     const top = Math.max(...(db.kind === 'dumbbells' ? db.loads : [0]));
-    const h2: HistorySession = { sessionId: id(711), performedAtUtc: at(-86_400).utc, equipmentId: db.id, sets: [1, 2].map(() => ({ setType: 'working' as const, side: null, load: kg(top, 'per_hand'), reps: 10, rpe: 7, rir: null })) };
+    const h2: HistorySession = { sessionId: id(711), performedAtUtc: at(-86_400).utc, equipmentId: db.id, gymId: null, imported: false, sets: [1, 2].map(() => ({ setType: 'working' as const, side: null, load: kg(top, 'per_hand'), reps: 10, rpe: 7, rir: null })) };
     const plan = plannedSetsFromTargets(nextTargetsFor({ ...req, exerciseId: press?.id ?? '', exerciseName: 'Dumbbell bench press', convention: 'per_hand', equipment: db, exercise: press ?? null, history: [h2] }).result);
     expect(plan?.every((p) => (p.planned.load?.value ?? 0) <= top)).toBe(true);
   });

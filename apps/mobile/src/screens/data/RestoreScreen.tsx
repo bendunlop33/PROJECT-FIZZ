@@ -7,7 +7,7 @@ import { toMs } from '@fizz/domain';
 
 import { haptic } from '../../device/haptics';
 import { pickBackupFile } from '../../device/files';
-import { buildCheckResultView, buildRestorePreviewView, describeBackupError, restoreBackAllowed, type CheckResultView, type RestorePreviewView } from '../../backup/restore-view';
+import { backupReasonLabel, buildCheckResultView, buildRestorePreviewView, describeBackupError, restoreBackAllowed, type CheckResultView, type RestorePreviewView } from '../../backup/restore-view';
 import { formatShortDate, formatTime, formatWhen } from '../../format/dates';
 import { plural } from '../../format/numbers';
 import type { ProfileStackParams } from '../../navigation/types';
@@ -331,7 +331,7 @@ export function RestoreScreen(props: { mode?: 'restore' | 'check'; fromWelcome?:
                 <Row
                   key={c.fileName}
                   title={formatWhen(toMs(c.createdAtUtc), ctx.nowMs, now.tz)}
-                  subtitle={`${c.reason === 'manual' ? 'Saved by you' : 'After a workout'} · ${plural(c.finishedWorkouts, 'workout', 'workouts')}${c.integrityOk ? '' : ' · damaged records'}`}
+                  subtitle={`${backupReasonLabel(c.reason)} · ${plural(c.finishedWorkouts, 'workout', 'workouts')}${c.integrityOk ? '' : ' · damaged records'}`}
                   disabled={blockedForRestore}
                   onPress={() => void examine(formatWhen(toMs(c.createdAtUtc), ctx.nowMs, now.tz), () => services.restore.readOnPhone(c.fileName))}
                 />

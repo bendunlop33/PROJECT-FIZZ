@@ -30,12 +30,12 @@ export interface ReplaceCounts {
   /** Finished or unfinished workouts. */
   workouts: number;
   newestWorkoutUtc: string | null;
-  /** Profiles, gyms, equipment, custom exercises, routines, rules, check-ins and pain flags (Your data only). */
+  /** Profiles, gyms, equipment, custom exercises, routines, rules, check-ins, pain flags, import jobs and remembered names (Your data only). */
   otherRecords: number;
 }
 
 /** Owner data tables whose rows a restore can replace (workouts are counted separately). */
-export const OTHER_RECORD_TABLES = ['profiles', 'gyms', 'equipment', 'exercises', 'routines', 'progression_rules', 'check_ins', 'pain_flags'] as const;
+export const OTHER_RECORD_TABLES = ['profiles', 'gyms', 'equipment', 'exercises', 'routines', 'progression_rules', 'check_ins', 'pain_flags', 'import_jobs', 'exercise_aliases'] as const;
 
 export type CompareMode = 'content' | 'stamp';
 
@@ -74,7 +74,8 @@ function fingerprints(tables: Tables, mode: CompareMode): Fingerprints {
   }
   const workouts = new Map<string, { print: string; startedAtUtc: string | null }>();
   for (const s of tables.sessions ?? []) {
-    if (s.status === 'discarded') continue;
+    // Discarded and reverted (undone import) workouts are hidden everywhere, so a restore doesn't count them.
+    if (s.status === 'discarded' || s.status === 'reverted') continue;
     const id = keyOf(s);
     const print =
       mode === 'content'

@@ -57,6 +57,8 @@ function sessionRow(a: SessionAggregate): Record<string, SqlValue> {
     last_activity_at_utc: s.lastActivityAtUtc,
     check_in: s.checkIn === null ? null : JSON.stringify(s.checkIn),
     check_in_id: s.checkIn?.kind === 'answered' ? s.checkIn.checkInId : null,
+    import_job_id: s.importJobId ?? null,
+    local_date: s.localDate ?? null,
   };
 }
 
@@ -186,6 +188,9 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       startOperationId: s.start_operation_id,
       status: s.status,
       source: s.source,
+      // Absent rather than null (optional fields); a wrong type still fails validation.
+      ...(s.import_job_id === null || s.import_job_id === undefined ? {} : { importJobId: s.import_job_id }),
+      ...(s.local_date === null || s.local_date === undefined ? {} : { localDate: s.local_date }),
       startedAt: { utc: s.started_at_utc, tz: s.started_at_tz },
       endedAt: zoned(s.ended_at_utc, s.ended_at_tz),
       version: s.version,
@@ -385,7 +390,8 @@ async function upsertChildren<T extends { id: string }>(
   }
 }
 
-async function writeAggregate(tx: SqlExecutor, a: SessionAggregate): Promise<void> {
+/** Write a validated aggregate inside the caller's transaction (append-only checks included). */
+export async function writeAggregate(tx: SqlExecutor, a: SessionAggregate): Promise<void> {
   const sid = a.session.id;
   const sessionUpdate = await upsert(
     tx,
@@ -576,19 +582,34 @@ export class SqliteSessions implements SessionRepository {
    * IDs of finished sessions with at least one completed set, newest first
    * (Repeat candidates, review S1). Reads no aggregates, so one undecodable
    * record never stops the list; callers decode each ID and skip failures.
+   * Imported (FitNotes) workouts aren't repeatable while P-I3 is open: their
+   * loads were never checked on any equipment (review r2 B1).
    */
   listRepeatableIds(ownerId: string, limit: number, offset = 0): Promise<string[]> {
     return this.db.read(async (q) =>
       (
         await q.getAll<{ id: string }>(
           `SELECT s.id AS id FROM sessions s
-           WHERE s.owner_id = ? AND s.status = 'finished'
+           WHERE s.owner_id = ? AND s.status = 'finished' AND s.source = 'manual'
              AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')
            ORDER BY s.started_at_utc DESC, s.id DESC LIMIT ? OFFSET ?`,
           [ownerId, limit, offset],
         )
       ).map((r) => r.id),
     );
+  }
+
+  /** Finished imported workouts with a completed set: the ones `listRepeatableIds` leaves out (review r2 B1). */
+  countImportedFinished(ownerId: string): Promise<number> {
+    return this.db.read(async (q) => {
+      const row = await q.getFirst<{ n: number }>(
+        `SELECT count(*) AS n FROM sessions s
+         WHERE s.owner_id = ? AND s.status = 'finished' AND s.source = 'import'
+           AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')`,
+        [ownerId],
+      );
+      return row?.n ?? 0;
+    });
   }
 
   /** IDs of every stored session (for integrity checks). */

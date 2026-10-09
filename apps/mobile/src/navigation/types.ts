@@ -15,7 +15,29 @@ export type ProfileStackParams = {
   EquipmentEditor: { gymId: string; equipmentId: string; kind: EquipmentKind; isNew: boolean };
   /** Spike S1 (Developer). */
   ChatGptSignInTest: undefined;
+  /** FitNotes import (data-import-export §2.5): intro, file pick and file errors. */
+  ImportIntro: undefined;
+  /** The preview (§2.5 step 3). The draft lives in the import service until commit. */
+  ImportPreview: { draftId: string };
+  /** Check exercise names (§2.5 step 3a). */
+  ImportNames: { draftId: string };
+  /** `Choose…` an exercise, or `Add new` (equipment type) for one source name. */
+  ImportChoose: { draftId: string; key: string; name: string; mode: 'choose' | 'new' };
+  /** One question screen (§2.5 steps 3b–3c). */
+  ImportQuestion: { draftId: string; question: ImportQuestionKind; key?: string };
+  /** One preview workout (§2.5 step 3d) or one `Will be skipped` list. */
+  ImportRows: { draftId: string; date?: string; skip?: ImportSkipKey };
+  /** Confirm, back up, import (§2.5 step 4), or continue a paused import. */
+  ImportRun: { draftId: string; mappingVersion: number; workouts: number } | { jobId: string };
+  /** Results of one import, with Undo (§2.5 step 5). */
+  ImportResults: { jobId: string };
+  /** One imported workout's sets, each with its source file, row and original values (check 24). */
+  ImportedWorkout: { jobId: string; date: string };
+  PastImports: undefined;
 };
+
+export type ImportQuestionKind = 'per_hand' | 'total' | 'bodyweight' | 'unit' | 'effort' | 'dates' | 'gym';
+export type ImportSkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise';
 
 export type TabParams = {
   /** `toast`: a one-off message after returning from the check-in (e.g. Skip workout). */

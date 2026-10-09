@@ -6,4 +6,5 @@ export * from './profile';
 export * from './session';
 export * from './checkin';
 export * from './commands';
+export * from './import';
 export * from './validate';

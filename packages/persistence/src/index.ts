@@ -5,6 +5,7 @@ export * from './migrations';
 export * from './sql';
 export * from './documents';
 export * from './sessions';
+export * from './imports';
 export * from './store';
 export * from './integrity';
 export * from './backup/sha256';

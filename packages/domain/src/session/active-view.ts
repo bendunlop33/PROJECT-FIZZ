@@ -28,7 +28,10 @@ import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, t
 
 /** The last comparable session of one exercise (same equipment instance, unit and convention). */
 export interface PreviousSession {
+  sessionId: string;
   performedAtUtc: string;
+  /** The compared workout's own gym (null: not recorded), so nothing claims it was at today's gym. */
+  gymId: string | null;
   /** Working-order sets as logged, for prefill and the `Last (…)` line. */
   sets: ComparableSet[];
 }
@@ -37,17 +40,21 @@ export interface PreviousSession {
  * Pick the most recent history session that is like-for-like with this
  * session exercise: same equipment instance, and every load in the same unit
  * and convention (history in another unit or convention is never offered).
+ * Imported (FitNotes) history is never offered while P-I3 is open, even when
+ * neither side has equipment (review r2 B1).
  */
 export function lastComparableSession(history: readonly HistorySession[], ex: Pick<SessionExercise, 'equipmentId' | 'unit' | 'loadConvention'>): PreviousSession | null {
   const sorted = [...history].sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
   for (const h of sorted) {
-    if (h.equipmentId !== ex.equipmentId) continue;
+    if (h.imported || h.equipmentId !== ex.equipmentId) continue;
     const sets = h.sets.filter((s) => s.setType !== 'warmup');
     if (sets.length === 0) continue;
     const alike = sets.every((s) => s.load === null || s.load.convention === 'bodyweight' || (s.load.unit === ex.unit && s.load.convention === ex.loadConvention));
     if (!alike) continue;
     return {
+      sessionId: h.sessionId,
       performedAtUtc: h.performedAtUtc,
+      gymId: h.gymId,
       sets: sets.map((s, index) => ({ index, values: { load: s.load, reps: s.reps, durationS: null, rpe: s.rpe, rir: s.rir } })),
     };
   }

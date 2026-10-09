@@ -49,6 +49,18 @@ export type CatalogueMeasurement = z.infer<typeof CatalogueMeasurementSchema>;
 export const LateralitySchema = z.enum(['bilateral', 'unilateral']);
 export type Laterality = z.infer<typeof LateralitySchema>;
 
+/**
+ * How many dumbbells or kettlebells a `per_hand` exercise is done with
+ * (catalogue `implements`; FitNotes import review r3 S1). `1`: one-arm rows,
+ * goblet squats, pullovers; a value written for one is that implement's
+ * weight. `2`: presses, curls, split squats with one in each hand. Laterality
+ * can't tell these apart (a one-arm row and a split squat are both
+ * unilateral), so it is recorded on its own, and left out where an exercise
+ * is commonly done either way.
+ */
+export const ImplementCountSchema = z.union([z.literal(1), z.literal(2)]);
+export type ImplementCount = z.infer<typeof ImplementCountSchema>;
+
 export const MechanicSchema = z.enum(['compound', 'isolation']);
 export type Mechanic = z.infer<typeof MechanicSchema>;
 

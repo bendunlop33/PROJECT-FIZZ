@@ -14,6 +14,16 @@ import { DataBackupScreen } from '../screens/data/DataBackupScreen';
 import { EquipmentEditorScreen } from '../screens/gym/EquipmentEditorScreen';
 import { GymDetailScreen } from '../screens/gym/GymDetailScreen';
 import { RestoreScreen } from '../screens/data/RestoreScreen';
+import { ImportChooseScreen } from '../screens/import/ImportChooseScreen';
+import { ImportedWorkoutScreen } from '../screens/import/ImportedWorkoutScreen';
+import { ImportIntroScreen } from '../screens/import/ImportIntroScreen';
+import { ImportNamesScreen } from '../screens/import/ImportNamesScreen';
+import { ImportPreviewScreen } from '../screens/import/ImportPreviewScreen';
+import { ImportQuestionScreen } from '../screens/import/ImportQuestionScreen';
+import { ImportResultsScreen } from '../screens/import/ImportResultsScreen';
+import { ImportRowsScreen } from '../screens/import/ImportRowsScreen';
+import { ImportRunScreen } from '../screens/import/ImportRunScreen';
+import { PastImportsScreen } from '../screens/import/PastImportsScreen';
 import { AppStatusScreen } from '../screens/profile/AppStatusScreen';
 import { ChatGptSignInTestScreen } from '../screens/profile/ChatGptSignInTestScreen';
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
@@ -34,7 +44,7 @@ import type { SetupStep } from '../services/setup';
 import { useTheme } from '../theme';
 import type { SymbolName } from '../ui';
 import { initialRootState } from './initial-state';
-import type { ProfileStackParams, RootStackParams, TabParams } from './types';
+import type { ImportQuestionKind, ProfileStackParams, RootStackParams, TabParams } from './types';
 
 /**
  * How to is required on first open, not at launch (review S1): it keeps the
@@ -86,12 +96,32 @@ function ProfileNavigator() {
         component={RestoreScreen}
         options={({ route }) => ({ title: route.params.mode === 'restore' ? 'Restore from a backup' : 'Check a backup' })}
       />
+      <ProfileStack.Screen name="ImportIntro" component={ImportIntroScreen} options={{ title: 'Import from FitNotes' }} />
+      <ProfileStack.Screen name="ImportPreview" component={ImportPreviewScreen} options={{ title: 'FitNotes import' }} />
+      <ProfileStack.Screen name="ImportNames" component={ImportNamesScreen} options={{ title: 'Check exercise names' }} />
+      <ProfileStack.Screen name="ImportChoose" component={ImportChooseScreen} options={({ route }) => ({ title: route.params.mode === 'new' ? 'Add new exercise' : 'Choose exercise' })} />
+      <ProfileStack.Screen name="ImportQuestion" component={ImportQuestionScreen} options={({ route }) => ({ title: IMPORT_QUESTION_TITLES[route.params.question] })} />
+      <ProfileStack.Screen name="ImportRows" component={ImportRowsScreen} options={{ title: 'Rows' }} />
+      <ProfileStack.Screen name="ImportRun" component={ImportRunScreen} options={{ title: 'Import' }} />
+      <ProfileStack.Screen name="ImportResults" component={ImportResultsScreen} options={{ title: 'Import results' }} />
+      <ProfileStack.Screen name="ImportedWorkout" component={ImportedWorkoutScreen} options={{ title: 'Imported workout' }} />
+      <ProfileStack.Screen name="PastImports" component={PastImportsScreen} options={{ title: 'Past imports' }} />
       <ProfileStack.Screen name="Developer" component={DeveloperScreen} options={{ title: 'Developer' }} />
       <ProfileStack.Screen name="CapabilityProbe" component={ProbeRoute} options={{ headerShown: false }} />
       <ProfileStack.Screen name="ChatGptSignInTest" component={ChatGptSignInTestScreen} options={{ title: 'ChatGPT sign-in test' }} />
     </ProfileStack.Navigator>
   );
 }
+
+const IMPORT_QUESTION_TITLES: Record<ImportQuestionKind, string> = {
+  per_hand: 'Dumbbell weights',
+  total: 'Barbell weights',
+  bodyweight: 'Bodyweight exercise',
+  unit: 'Weight unit',
+  effort: 'Effort ratings',
+  dates: 'Dates already in GymSmarter',
+  gym: 'Where were these workouts?',
+};
 
 const TAB_ICONS: Record<keyof TabParams, [SymbolName, SymbolName]> = {
   Today: ['sun.max', 'sun.max.fill'],

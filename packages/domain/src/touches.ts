@@ -108,7 +108,8 @@ export function summaryHighlight(state: SessionAggregate, history: Readonly<Reco
       .filter((s) => s.unit === ex.unit && s.convention === ex.loadConvention);
     if (today.length === 0) continue;
     const before = (history[ex.exerciseId] ?? [])
-      .filter((h) => h.sessionId !== state.session.id && h.equipmentId === ex.equipmentId && toMs(h.performedAtUtc) < startedMs)
+      // Imported history isn't comparable while P-I3 is open (review r2 B1).
+      .filter((h) => !h.imported && h.sessionId !== state.session.id && h.equipmentId === ex.equipmentId && toMs(h.performedAtUtc) < startedMs)
       .map((h) => h.sets.filter((s) => s.setType !== 'warmup' && s.load !== null && s.reps !== null && s.load.unit === ex.unit && s.load.convention === ex.loadConvention))
       .filter((sets) => sets.length > 0);
     if (before.length === 0) continue;

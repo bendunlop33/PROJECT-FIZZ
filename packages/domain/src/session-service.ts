@@ -112,12 +112,13 @@ export function createSessionService(repos: Repositories, newId: () => string) {
    * `startWorkoutFromSession` (routines.md §4.6): a new session whose targets
    * are a finished session's actuals. Idempotent by `opId`, one active
    * session at a time, like `start`. `preview: true` builds it without saving.
+   * An imported workout is refused (`imported_not_repeatable`; review r2 B1).
    */
   async function startFromSession(
     req: StartRequest & { sourceSessionId: string; preview?: boolean },
   ): Promise<
     | { ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; notCopied: RepeatOutput['notCopied']; duplicate: boolean }
-    | { ok: false; error: ServiceError | { code: 'nothing_to_repeat'; message: string } }
+    | { ok: false; error: ServiceError | { code: 'nothing_to_repeat'; message: string } | { code: 'imported_not_repeatable'; message: string } }
   > {
     if (!req.preview) {
       const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
@@ -132,6 +133,11 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     if (!owner) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
     if (!source || source.session.ownerId !== req.ownerId || source.session.status !== 'finished') {
       return { ok: false, error: { code: 'not_found', message: 'That workout wasn’t found.' } };
+    }
+    // An imported (FitNotes) workout has no equipment to check its loads on, and P-I3 is open:
+    // it's never repeated, so nothing unchecked becomes today's target (rule 4; review r2 B1).
+    if (source.session.source === 'import') {
+      return { ok: false, error: { code: 'imported_not_repeatable', message: 'Workouts imported from FitNotes can’t be repeated yet.' } };
     }
     const exercises = new Map<string, Exercise>();
     for (const ex of source.exercises) {

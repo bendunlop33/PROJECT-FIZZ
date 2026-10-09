@@ -29,6 +29,7 @@ import type { EquipmentInstance, Exercise, Gym, SessionAggregate, SessionCommand
 import type { RestAlertController } from '../alerts/rest-alerts';
 import { createBackupService, type BackupFileStore, type TextFile } from '../backup/backup-service';
 import { createRestoreService } from '../backup/restore-service';
+import { createImportService } from '../import/import-service';
 import { createGymServices } from './gym-services';
 import { createWorkoutServices } from './workout-services';
 import { bumpProfile, newProfile, setupStep, type SetupStep } from './setup';
@@ -332,9 +333,23 @@ export function createAppServices(deps: AppServicesDeps) {
   /** Gyms and equipment (Your data): the minimal gym editor. */
   const gyms = createGymServices({ repos, now: deps.now, profile: getProfile });
 
+  /** FitNotes import (Your data): preview, answers, commit, Undo import, past imports. */
+  const imports = createImportService({
+    store: () => deps.manager.store,
+    now: deps.now,
+    newId: deps.newId,
+    profile: getProfile,
+    activeWorkout: () => sessions.active(),
+    backUpOnPhone: async (reason) => {
+      const r = await backups.backUpOnPhone(reason);
+      return r.ok ? { ok: true } : { ok: false, error: r.error };
+    },
+  });
+
   return {
     ...loop,
     gyms,
+    imports,
     yourData,
     coachingKnowledge,
     setup,

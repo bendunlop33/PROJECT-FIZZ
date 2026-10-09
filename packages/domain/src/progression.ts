@@ -43,6 +43,16 @@ export interface HistorySession {
   sessionId: string;
   performedAtUtc: string;
   equipmentId: string | null;
+  /** The workout's gym; null when it wasn't recorded (an imported workout). */
+  gymId: string | null;
+  /**
+   * Imported from FitNotes. Until P-I3 is decided (ADR 0016), imported
+   * history is never comparable: it doesn't feed `Last`, targets, the summary
+   * comparison or a highlight, whatever its equipment (review r2 B1). It
+   * isn't enough that it has no equipment: an exercise with no equipment on
+   * either side would otherwise match it.
+   */
+  imported: boolean;
   sets: readonly HistorySet[];
 }
 
@@ -244,7 +254,8 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
   const out: SessionEval[] = [];
   let excluded = 0;
 
-  for (const s of [...input.history].sort(byRecency)) {
+  // Imported history isn't comparable (P-I3 open; review r2 B1): left out before anything is counted.
+  for (const s of input.history.filter((h) => !h.imported).sort(byRecency)) {
     const counted = s.sets.filter((x) => types.includes(x.setType) && x.reps !== null);
     const mismatched = counted.some(
       (x) =>

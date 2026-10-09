@@ -14,8 +14,11 @@ import { memoryDriver, schemaDump } from './helpers';
 const TABLES = [
   'check_ins',
   'equipment',
+  'exercise_aliases',
   'exercises',
   'gyms',
+  'import_jobs',
+  'import_rows',
   'pain_flags',
   'processed_operations',
   'profiles',

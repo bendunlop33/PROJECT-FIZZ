@@ -86,23 +86,28 @@ export interface RepeatCandidate {
   title: string;
   startedAtUtc: string;
   tz: string;
-  gymId: string;
+  gymId: string | null;
   gymName: string;
   exerciseNames: string[];
   sets: number;
 }
 
-/** Past workouts for Repeat; `unreadable` counts records skipped because they failed to decode. */
+/**
+ * Past workouts for Repeat; `unreadable` counts records skipped because they
+ * failed to decode. Imported (FitNotes) workouts are never candidates while
+ * P-I3 is open (review r2 B1); `importedNotListed` says how many were left out.
+ */
 export interface RepeatCandidates {
   rows: RepeatCandidate[];
   unreadable: number;
+  importedNotListed: number;
 }
 
 export interface RepeatPreview {
   exercises: { exerciseName: string; equipmentName: string | null; line: string }[];
   notes: { exerciseName: string; text: string }[];
   notCopied: { exerciseName: string; skipped: number }[];
-  sourceGymId: string;
+  sourceGymId: string | null;
   sourceStartedAtUtc: string;
   tz: string;
 }
@@ -299,9 +304,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const history = await historyFor(p.id, exercise.id);
     const previous = lastComparableSession(history, { equipmentId: equipment?.id ?? null, unit, loadConvention: convention });
     if (!previous) return null;
-    const source = history.find((h) => h.performedAtUtc === previous.performedAtUtc && h.equipmentId === (equipment?.id ?? null));
     const now = unspecifiedPain(await sessionCheckIn(aggregate));
-    const then = source ? unspecifiedPain(await sessionCheckIn(await repos().sessions.get(source.sessionId))) : { active: false, reportedAtUtc: null };
+    const then = unspecifiedPain(await sessionCheckIn(await repos().sessions.get(previous.sessionId)));
     const { result } = nextTargetsFor({
       ownerId: p.id,
       exerciseId: exercise.id,
@@ -339,7 +343,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (req.repeatOf) {
         // Repeat a past workout (routines.md RT4): its actuals become today's targets.
         const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.repeatOf });
-        if (!r.ok) return { ok: false, error: r.error.code === 'nothing_to_repeat' ? { code: 'not_found', message: r.error.message } : r.error };
+        if (!r.ok) {
+          const e = r.error;
+          if (e.code === 'nothing_to_repeat' || e.code === 'imported_not_repeatable') return { ok: false, error: { code: 'not_found', message: e.message } };
+          return { ok: false, error: e };
+        }
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate };
       }
       return domain().start({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn });
@@ -351,7 +359,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (!p) return null;
       const aggregate = sessionId ? await repos().sessions.get(sessionId) : await repos().sessions.getActive(p.id);
       if (!aggregate) return null;
-      const gym = await repos().gyms.get(aggregate.session.gymId);
+      const gym = aggregate.session.gymId === null ? null : await repos().gyms.get(aggregate.session.gymId);
       const previous: Record<string, PreviousSession | null> = {};
       const byExercise = new Map<string, HistorySession[]>();
       for (const ex of aggregate.exercises) {
@@ -454,7 +462,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const p = await ctx.profile();
       const aggregate = await repos().sessions.get(sessionId);
       if (!p || !aggregate) return null;
-      const gym = await repos().gyms.get(aggregate.session.gymId);
+      const gym = aggregate.session.gymId === null ? null : await repos().gyms.get(aggregate.session.gymId);
       const history: Record<string, HistorySession[]> = {};
       const rules: Record<string, ProgressionRule> = {};
       const exerciseInfo: Record<string, Exercise> = {};
@@ -470,6 +478,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         }
       }
       const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId) : null;
+      // The compared workout is named by its own gym, never assumed to be this one (review r2 B1).
+      const gymNames = Object.fromEntries((await repos().gyms.listByOwner(p.id).catch(() => [])).map((g) => [g.id, g.name]));
       return buildWorkoutSummary({
         aggregate,
         nowMs: toMs(ctx.now().utc),
@@ -480,6 +490,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         checkIn: ci,
         coach: 'not_connected',
         exerciseInfo,
+        gymNames,
       });
     },
   };
@@ -489,10 +500,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * `Start from a past workout`: the newest `limit` finished workouts with
      * logged sets, newest first (review S1). Only those rows are decoded; a
      * record that fails to decode is skipped and counted, never thrown.
+     * Imported (FitNotes) workouts are left out and counted: their loads
+     * were never checked on any equipment, and P-I3 is open (review r2 B1).
      */
-    async candidates(limit = 30): Promise<RepeatCandidates> {
+    async candidates(limit = 30, opts: { countImported?: boolean } = {}): Promise<RepeatCandidates> {
       const p = await ctx.profile();
-      if (!p) return { rows: [], unreadable: 0 };
+      if (!p) return { rows: [], unreadable: 0, importedNotListed: 0 };
       const gyms = new Map<string, string>();
       const rows: RepeatCandidate[] = [];
       let unreadable = 0;
@@ -508,21 +521,33 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
             unreadable += 1;
             continue;
           }
-          if (!a) continue;
+          if (!a || a.session.source === 'import') continue;
           const done = a.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null);
           if (done.length === 0) continue;
-          if (!gyms.has(a.session.gymId)) gyms.set(a.session.gymId, (await repos().gyms.get(a.session.gymId).catch(() => null))?.name ?? 'Gym');
+          const gymId = a.session.gymId;
+          if (gymId !== null && !gyms.has(gymId)) gyms.set(gymId, (await repos().gyms.get(gymId).catch(() => null))?.name ?? 'Gym');
           const names = [...a.exercises].sort((x, y) => x.order - y.order).filter((e) => done.some((s) => s.sessionExerciseId === e.id)).map((e) => e.exerciseName);
-          rows.push({ sessionId: a.session.id, title: a.session.routineName ?? 'Workout', startedAtUtc: a.session.startedAt.utc, tz: a.session.startedAt.tz, gymId: a.session.gymId, gymName: gyms.get(a.session.gymId) ?? 'Gym', exerciseNames: names, sets: done.length });
+          rows.push({
+            sessionId: a.session.id,
+            title: a.session.routineName ?? 'Workout',
+            startedAtUtc: a.session.startedAt.utc,
+            tz: a.session.startedAt.tz,
+            gymId,
+            gymName: gymId === null ? 'Gym not recorded' : (gyms.get(gymId) ?? 'Gym'),
+            exerciseNames: names,
+            sets: done.length,
+          });
         }
       }
-      return { rows, unreadable };
+      // Only `Start from a past workout` shows this count; Today's row doesn't read it (review r3 N4).
+      const importedNotListed = opts.countImported === false ? 0 : await repos().sessions.countImportedFinished(p.id).catch(() => 0);
+      return { rows, unreadable, importedNotListed };
     },
 
     /** Today's `Repeat last workout` row: the newest readable candidate, or null. Never throws (review S1). */
     async last(): Promise<RepeatCandidate | null> {
       try {
-        return (await repeat.candidates(1)).rows[0] ?? null;
+        return (await repeat.candidates(1, { countImported: false })).rows[0] ?? null;
       } catch {
         return null;
       }
