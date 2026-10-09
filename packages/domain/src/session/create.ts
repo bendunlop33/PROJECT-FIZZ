@@ -41,7 +41,12 @@ export type StartWarning =
       kind: 'target_dropped';
       setTemplateId: string;
       requested: Load;
-      reason: 'convention_mismatch' | 'unit_not_convertible' | 'no_achievable_loads';
+      /**
+       * `equipment_not_in_gym`: the routine names equipment this gym doesn't
+       * have (or has retired), so there's nothing to check the load on (rule 4;
+       * the same rule as Repeat, review slice-3 B1).
+       */
+      reason: 'convention_mismatch' | 'unit_not_convertible' | 'no_achievable_loads' | 'equipment_not_in_gym';
     };
 
 export type PlannedLoadResult =
@@ -127,7 +132,9 @@ export interface StartWorkoutOutput {
  * normalised to the session exercise's unit and convention by
  * `planTemplateLoad` (rounded toward easier, never above the max); every
  * change is reported so the original template target stays visible.
- * Missing equipment does not block logging; it is reported as a warning.
+ * Missing equipment does not block logging; it is reported as a warning, and
+ * that exercise's load targets are dropped (reps kept): a load is never
+ * planned without equipment to check it on (rule 4; competitor-failure pack (g)).
  */
 export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
   const sessionId = input.newId();
@@ -144,10 +151,12 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
       return;
     }
     let equipment: EquipmentInstance | null = null;
+    let equipmentMissing = false;
     if (rex.equipmentId !== null) {
       equipment = equipmentById.get(rex.equipmentId) ?? null;
       if (!equipment || equipment.availability === 'retired') {
         equipment = null;
+        equipmentMissing = true;
         warnings.push({ kind: 'equipment_not_in_gym', routineExerciseId: rex.id, equipmentId: rex.equipmentId });
       }
     }
@@ -171,7 +180,12 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
     });
 
     rex.setTemplates.forEach((tpl, index) => {
-      const planned = planTemplateLoad(tpl.id, tpl.targetLoad, { unit, convention: loadConvention, equipment });
+      const checked = planTemplateLoad(tpl.id, tpl.targetLoad, { unit, convention: loadConvention, equipment });
+      // Without its equipment the load would be kept unchecked: drop it, keep the reps.
+      const planned: PlannedLoadResult =
+        equipmentMissing && tpl.targetLoad !== null && checked.load !== null && checked.load.convention !== 'bodyweight'
+          ? { load: null, warning: { kind: 'target_dropped', setTemplateId: tpl.id, requested: tpl.targetLoad, reason: 'equipment_not_in_gym' } }
+          : checked;
       if (planned.warning) warnings.push(planned.warning);
       sets.push({
         id: input.newId(),
