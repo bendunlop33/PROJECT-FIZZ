@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { catalogueExerciseId, nameKey } from '@fizz/domain';
+import { catalogueExerciseId, nameKey, starterExercises } from '@fizz/domain';
+import { idGen, profile, richFinishedSession } from '@fizz/domain/testing';
+import { openStore } from '@fizz/persistence';
+import { openNodeDriver } from '@fizz/persistence/node';
+import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
-import type { ImportDraft } from '../src/import/import-service';
+import { createImportService, type ImportDraft } from '../src/import/import-service';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -295,5 +299,37 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(await s.imports.open({ name: 'x.csv', text: 'Workout,Exercise Name,Set Order\n' })).toEqual({ kind: 'unknown_header', firstLine: 'Workout,Exercise Name,Set Order' });
     expect(await s.imports.open({ name: 'x.csv', text: 'Date,Body Weight\n' })).toMatchObject({ kind: 'body_tracker' });
     expect(nameKey('Lat Pulldown')).toBe('lat pulldown');
+  });
+});
+
+describe('FitNotes import: a workout started mid-import', () => {
+  it('pauses before the next workout (DX4); Continue finishes once the workout is done', async () => {
+    const store = await openStore(openNodeDriver(':memory:'));
+    const owner = profile();
+    await store.repos.profiles.save(owner, null);
+    for (const e of starterExercises('2026-10-08T17:00:00.000Z')) await store.repos.exercises.save(e, null);
+    let active: SessionAggregate | null = null;
+    const svc = createImportService({
+      store: () => store,
+      now: () => ({ utc: '2026-10-08T17:00:00.000Z', tz: 'Europe/London' }),
+      newId: idGen(70_000),
+      profile: () => Promise.resolve(owner),
+      activeWorkout: () => Promise.resolve(active),
+      backUpOnPhone: () => Promise.resolve({ ok: true }),
+      catalogue: () => [],
+    });
+    const text = [A1, '2026-09-01,Lat pulldown,Back,40,10,,,', '2026-09-02,Lat pulldown,Back,42.5,10,,,', '2026-09-03,Lat pulldown,Back,45,10,,,'].join('\n');
+    const opened = await svc.open({ name: 'f.csv', text });
+    if (opened.kind !== 'preview') throw new Error(opened.kind);
+    const r = await svc.commit(opened.draft.draftId, opened.draft.mappingVersion, 'op-1', {
+      onProgress: (n) => {
+        if (n === 1) active = richFinishedSession();
+      },
+    });
+    expect(r).toMatchObject({ ok: true, status: 'stopped', written: 1, total: 3 });
+    expect(await svc.resume(r.ok ? r.jobId : '')).toMatchObject({ ok: false, reason: 'workout_unfinished' });
+    active = null;
+    expect(await svc.resume(r.ok ? r.jobId : '')).toMatchObject({ ok: true, status: 'finished', written: 3 });
+    await store.close();
   });
 });

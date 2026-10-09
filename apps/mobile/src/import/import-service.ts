@@ -276,6 +276,8 @@ export function createImportService(deps: ImportServiceDeps) {
       for (const date of dates) {
         if (done.has(date)) continue;
         if (hooks.shouldStop?.()) return { ok: true, jobId: job.id, status: 'stopped', written, total };
+        // A workout started meanwhile (another tab): pause rather than change the history it reads (DX4).
+        if (await block()) return { ok: true, jobId: job.id, status: 'stopped', written, total };
         const aggregate = buildImportedSession({
           ownerId: job.ownerId,
           jobId: job.id,
@@ -526,7 +528,7 @@ export function createImportService(deps: ImportServiceDeps) {
         ),
         ...[...d.catalogueRows.values()].filter((e) => used.has(e.id)),
       ];
-      const aliases: AliasToSave[] = aliasesToSave(a).map((x) => ({ name: x.name, nameKey: x.key, target: x.target }));
+      const aliases: AliasToSave[] = aliasesToSave(a).map((x) => ({ name: x.name.slice(0, 4000), nameKey: x.key, target: x.target }));
       const created = await repos().imports.createJob(job, rows, { exercises, aliases, at, newId: deps.newId });
       if (!created.ok) {
         const running = await repos().imports.committingJob(d.ownerId);
