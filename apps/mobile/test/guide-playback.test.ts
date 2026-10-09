@@ -209,7 +209,7 @@ describe('how-to view (catalogue → screen)', () => {
     expect(v.guide?.stops.map((s) => s.label)).toEqual(['Start', 'Halfway', 'Bottom']);
     expect(v.setup).toHaveLength(4);
     expect(v.execution[0]).toBe('Breathe in, brace, then sit down');
-    expect(v.mistakes).toContain('Knees caving inward');
+    expect(v.mistakes).toContain("Don't let your knees cave inward");
     expect(v.notice).toBeNull();
   });
 

@@ -33,6 +33,13 @@ function referencedTokens(): string[] {
 /** `color.guide.<paint>` aliases, resolved from the live theme by `guideStyleFromTokens` (ADR 0013). */
 const GUIDE_ALIASES = new Set(Object.keys(GUIDE_PAINT_TOKENS).map((p) => `color.guide.${p}`));
 
+/**
+ * Named in design-system.md but specified, not built: guides v2
+ * (exercise-guides-v2.md, 9 Oct 2026). Remove each entry when the code adds
+ * it; the test below fails once it exists, so this list can't go stale.
+ */
+const SPECIFIED_NOT_BUILT = new Set(['color.guide.muscle', 'color.guide.shade']);
+
 const directions: ThemeDirection[] = Object.values(THEME_DIRECTIONS);
 
 describe('theme tokens', () => {
@@ -44,8 +51,17 @@ describe('theme tokens', () => {
     const names = new Set(tokenNames(direction));
     // `chart.line` etc. are written as shorthand for the colour alias `color.chart.line`.
     // `color.guide.*` (design-system §2.3) live in @fizz/catalogue's GUIDE_PAINT_TOKENS, checked below.
-    const missing = referencedTokens().filter((t) => !names.has(t) && !(t.startsWith('chart.') && names.has(`color.${t}`)) && !GUIDE_ALIASES.has(t));
+    const missing = referencedTokens().filter((t) => !names.has(t) && !(t.startsWith('chart.') && names.has(`color.${t}`)) && !GUIDE_ALIASES.has(t) && !SPECIFIED_NOT_BUILT.has(t));
     expect(missing).toEqual([]);
+  });
+
+  it('lists only tokens that really are specified and not yet built', () => {
+    const referenced = new Set(referencedTokens());
+    const implemented = new Set([...tokenNames(CURRENT_DIRECTION), ...GUIDE_ALIASES]);
+    for (const t of SPECIFIED_NOT_BUILT) {
+      expect(referenced.has(t), `${t} is no longer in design-system.md`).toBe(true);
+      expect(implemented.has(t), `${t} is built now: remove it from SPECIFIED_NOT_BUILT`).toBe(false);
+    }
   });
 
   it('documents every guide colour alias as the catalogue resolves it (design-system §2.3)', () => {
