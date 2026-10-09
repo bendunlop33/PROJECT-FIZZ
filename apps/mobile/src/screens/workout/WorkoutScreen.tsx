@@ -36,6 +36,7 @@ import {
   type SymbolName,
 } from '../../ui';
 import { createAfterDismiss } from '../../workout/after-dismiss';
+import { exerciseMenu } from '../../workout/exercise-menu';
 import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
@@ -350,20 +351,15 @@ export function WorkoutScreen() {
     setToast(null);
   }
 
-  function exerciseMenu(f: FocusView) {
-    // `How to` leads when the exercise has a guide or cues (ADR 0013); the other indexes shift by one.
+  function openExerciseMenu(f: FocusView) {
     const howToKey = howToKeyForExerciseId(f.exerciseId, bundledHowToSources());
-    const shift = howToKey === null ? 0 : 1;
-    const options = [...(howToKey === null ? [] : ['How to']), 'Add set', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel'];
-    ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options, destructiveButtonIndex: [2 + shift, 3 + shift], cancelButtonIndex: 4 + shift }, (picked) => {
-      if (howToKey !== null && picked === 0) {
-        navigation.navigate('HowTo', { catalogueKey: howToKey, name: f.exerciseName });
-        return;
-      }
-      const i = picked - shift;
-      if (i === 0) void addSet(f.sessionExerciseId);
-      if (i === 1) navigation.navigate('ExercisePicker', { sessionId: session.id });
-      if (i === 2) {
+    const menu = exerciseMenu(howToKey !== null);
+    ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
+      const action = menu.actionAt(picked);
+      if (action === 'how_to' && howToKey !== null) navigation.navigate('HowTo', { catalogueKey: howToKey, name: f.exerciseName });
+      if (action === 'add_set') void addSet(f.sessionExerciseId);
+      if (action === 'add_exercise') navigation.navigate('ExercisePicker', { sessionId: session.id });
+      if (action === 'delete_set') {
         Alert.alert(`Delete set ${String(f.setNumber)}?`, 'It’s removed from this workout. The edit log keeps a record.', [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -377,7 +373,7 @@ export function WorkoutScreen() {
           },
         ]);
       }
-      if (i === 3) {
+      if (action === 'skip_exercise') {
         const pending = view?.exercises.find((e) => e.sessionExerciseId === f.sessionExerciseId)?.pendingSets ?? 0;
         Alert.alert(`Skip the ${String(pending)} remaining ${pending === 1 ? 'set' : 'sets'} of ${f.exerciseName}?`, 'Logged sets are kept.', [
           { text: 'Cancel', style: 'cancel' },
@@ -568,7 +564,7 @@ export function WorkoutScreen() {
                 icon="ellipsis.circle"
                 label={`${focus.exerciseName} menu`}
                 onPress={() => {
-                  exerciseMenu(focus);
+                  openExerciseMenu(focus);
                 }}
               />
             </View>
