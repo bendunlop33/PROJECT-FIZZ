@@ -28,6 +28,14 @@ This is research §5.3, with these additions and changes found while building:
 - The rig `adult-v1` is TypeScript (`src/figure/rig.ts`), not `_rig/adult-v1.json`, because the app needs it as code. Templates (`extends`) are deferred, and only `null` is accepted.
 - `meta.json` is written by `guide:check` (exercise, format, rig, frames, size, attribution, review and check status). It isn't shipped. `npm run check` runs `guide:check --all --verify`, which fails on a stale meta.json.
 
+### Format additions while authoring batch-01 (2026-10-09)
+All optional and backwards compatible (format stays v1); each has a test.
+- **Keyframe `projection`** overrides the guide value and interpolates, for limbs that swing towards the camera mid-movement (bench-press upper arm, overhead-press elbows). `projection.shankNear/Far` lets a seated thigh point at the camera while the shank stays in plane (front-view pulldown).
+- **Unchecked foreshortened angles:** a segment projected below 0.5 has no meaningful 2D angle, so ROM skips it and the check output names it.
+- **`checks.besideProps`** (limbs passing beside a bench or pad, outside its width) skip only the prop-penetration test. **`checks.romSkip {angles, reason}`** skips named angles with a printed reason (used once: a laces-down rear foot, whose sole-line ankle the rig can't express).
+- **Hand `contact: palm`** lays a flat hand on a surface (one-arm row support hand). **Dumbbell `seen: side`** draws a neutral grip seen from the side. **`pad`** prop (thigh roller, handle). **`cable_stack.attach`/`column`** run the cable to a bar centre and optionally hide the column; the rope handle is drawn as clip, strand and knotted tail. **`push_sled.poleDeg`** for upright poles.
+- **Style:** side-view plates (barbell and leg press) are a soft disc and thin ring *behind* the body, so the head, arms and grip read at thumbnail size; the bar end stays in front. Each limb is one capsule group drawn halos-then-fills (no seams at joints). Stroke weights come from shared `STROKE` constants. The drawn hand ends at the knuckles (0.058 H). Still neutral tokens only, never the accent.
+
 ### Tooling (dev-only, runs on Linux)
 - Everything in `src/figure` is pure TypeScript: interpolation, two-bone IK, pose, props, SVG strings and checks. There are no React or native imports, so the same code can feed the app later.
 - Scripts run on Node 22's built-in type stripping, plus a 30-line resolve hook (`scripts/ts-hooks.ts`) for extensionless imports and JSON. This adds no `tsx` or bundler dependency.
@@ -42,7 +50,7 @@ Playing guides in the app needs native modules: `@shopify/react-native-skia` 2.6
 ## Still open
 - Segment lengths follow the Drillis & Contini fractions as reproduced in Winter. **They were not re-checked against the book** (research §10 item 5).
 - ROM limits apply to projected 2D angles and are wider than anatomical limits. They catch hyperextension and broken spines, not subtle form faults: Ben's review is still the gate.
-- Only `barbell-back-squat` is authored. The other props (bench, cable stack, leg press, push sled, dumbbell and the front-view bar) are exercised by synthetic test guides and a visual sanity render, not yet against their briefs.
+- All 10 batch-01 guides are authored and pass `guide:check`; every one is still `draft` until Ben approves its preview.
 - Research brief changes 1–6 (narrow brief §157, the motion exception, the Credits screen, etc.) still need Ben's approval.
 - The `exercise-guide-maker` agent definition says "one accent for the moving limb or bar path". This conflicts with research §5.5 and this ADR (never accent). The agent file should be corrected.
 
