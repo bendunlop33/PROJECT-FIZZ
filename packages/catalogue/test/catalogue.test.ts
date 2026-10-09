@@ -135,6 +135,24 @@ describe('catalogue entry schema', () => {
     expect(validate(CatalogueEntrySchema, { ...squat, review: { status: 'draft', benApprovedOn: '2026-10-09' } }).ok).toBe(false);
     expect(validate(CatalogueEntrySchema, { ...squat, review: { status: 'approved', benApprovedOn: '2026-10-09' } }).ok).toBe(true);
   });
+
+  it('implements (one or two dumbbells) is 1 or 2, and only on per-hand exercises (FitNotes import review r3 S1)', () => {
+    expect(validate(CatalogueEntrySchema, basic({ implements: 1 })).ok).toBe(true);
+    expect(validate(CatalogueEntrySchema, basic({ implements: 2 })).ok).toBe(true);
+    expect(validate(CatalogueEntrySchema, basic({ implements: 3 })).ok).toBe(false);
+    expect(validate(CatalogueEntrySchema, basic({ implements: 1, defaultLoadConvention: 'total', compatibleEquipment: ['kettlebell'] })).ok).toBe(false);
+  });
+
+  it('records one-dumbbell exercises apart from pairs, and leaves either-way exercises unset', () => {
+    const count = (key: string) => entry(key).implements ?? null;
+    // One dumbbell or kettlebell: a value written for these is that one implement's weight.
+    for (const key of ['dumbbell-one-arm-row', 'dumbbell-goblet-squat', 'dumbbell-pullover', 'dumbbell-triceps-kickback', 'dumbbell-three-point-row', 'kettlebell-press']) expect(count(key), key).toBe(1);
+    // One in each hand, including unilateral leg work (laterality can't tell these from a one-arm row).
+    for (const key of ['dumbbell-bench-press', 'dumbbell-curl', 'dumbbell-lateral-raise', 'dumbbell-bulgarian-split-squat', 'dumbbell-walking-lunge']) expect(count(key), key).toBe(2);
+    // Commonly done either way: an importer asks.
+    expect(count('dumbbell-single-leg-romanian-deadlift')).toBeNull();
+    for (const e of bundledCatalogue().catalogue.entries) if (e.implements !== undefined) expect(e.defaultLoadConvention, e.key).toBe('per_hand');
+  });
 });
 
 describe('validateCatalogueFiles', () => {

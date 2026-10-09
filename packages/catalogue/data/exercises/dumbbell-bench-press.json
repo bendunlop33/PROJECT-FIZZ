@@ -14,6 +14,7 @@
   "defaultLoadConvention": "per_hand",
   "measurement": "reps",
   "laterality": "bilateral",
+  "implements": 2,
   "defaultRestS": 120,
   "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
   "review": { "status": "draft", "benApprovedOn": null }

@@ -11,6 +11,7 @@ import {
   CatalogueKeySchema,
   CatalogueMeasurementSchema,
   EquipmentKindSchema,
+  ImplementCountSchema,
   LateralitySchema,
   LoadConventionSchema,
   MechanicSchema,
@@ -80,6 +81,12 @@ const basicFields = {
   defaultLoadConvention: LoadConventionSchema,
   measurement: CatalogueMeasurementSchema,
   laterality: LateralitySchema,
+  /**
+   * `per_hand` exercises only: done with one dumbbell or kettlebell, or two
+   * (`ImplementCount`). Absent when the exercise is commonly done either way
+   * (a single-leg RDL), so an importer asks rather than assumes.
+   */
+  implements: ImplementCountSchema.optional(),
   defaultRestS: z.int().min(0).max(900).optional(),
   provenance: ProvenanceSchema,
 };
@@ -202,6 +209,9 @@ export const CatalogueEntrySchema = z
     }
     if (e.aliases.some((a) => a.toLowerCase() === e.name.toLowerCase())) {
       ctx.addIssue({ code: 'custom', message: 'An alias repeats the name', path: ['aliases'] });
+    }
+    if (e.implements !== undefined && e.defaultLoadConvention !== 'per_hand') {
+      ctx.addIssue({ code: 'custom', message: 'implements is only for per_hand (dumbbell or kettlebell) exercises', path: ['implements'] });
     }
   });
 

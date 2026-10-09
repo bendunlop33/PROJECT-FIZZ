@@ -14,6 +14,7 @@
   "defaultLoadConvention": "per_hand",
   "measurement": "reps",
   "laterality": "unilateral",
+  "implements": 1,
   "defaultRestS": 90,
   "provenance": {
     "source": "fizz",
