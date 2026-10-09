@@ -66,7 +66,16 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+      # Install scripts must stay enabled (never --ignore-scripts): Skia's postinstall
+      # copies its prebuilt xcframeworks into node_modules/@shopify/react-native-skia/libs,
+      # and its podspec fails without them (ADR 0013).
       - run: npm ci
+      - name: Skia iOS libraries present
+        run: |
+          if [ ! -d node_modules/@shopify/react-native-skia/libs/ios/libskia.xcframework ]; then
+            echo "::error::Skia's prebuilt iOS libraries are missing from node_modules/@shopify/react-native-skia/libs/ios. Its postinstall didn't run (are npm install scripts disabled?). pod install would fail later."
+            exit 1
+          fi
       - run: npm run check
       - name: Expo prebuild (config only)
         working-directory: apps/mobile
@@ -101,7 +110,16 @@ jobs:
           sudo xcode-select -s "$XCODE_APP/Contents/Developer"
           xcodebuild -version
 
+      # Install scripts must stay enabled (never --ignore-scripts): Skia's postinstall
+      # copies its prebuilt xcframeworks into node_modules/@shopify/react-native-skia/libs,
+      # and its podspec fails without them (ADR 0013).
       - run: npm ci
+      - name: Skia iOS libraries present
+        run: |
+          if [ ! -d node_modules/@shopify/react-native-skia/libs/ios/libskia.xcframework ]; then
+            echo "::error::Skia's prebuilt iOS libraries are missing from node_modules/@shopify/react-native-skia/libs/ios. Its postinstall didn't run (are npm install scripts disabled?). pod install would fail later."
+            exit 1
+          fi
 
       - name: Expo prebuild (iOS)
         working-directory: apps/mobile
@@ -212,8 +230,14 @@ jobs:
           # Named after what Ben sees (DISPLAY_NAME in app-identity.mts), e.g.
           # GymSmarter-0.1.0-build42.ipa. IOS_PROJECT stays the internal Xcode name.
           # Fails here if the CFBundleDisplayName override didn't reach the app.
-          DISPLAY_NAME="$(plutil -extract CFBundleDisplayName raw "$APP/Info.plist")"
-          IPA_NAME="$DISPLAY_NAME-$VERSION-build$FIZZ_BUILD_NUMBER.ipa"
+          DISPLAY_NAME="$(plutil -extract CFBundleDisplayName raw "$APP/Info.plist")" || {
+            echo "::error::CFBundleDisplayName is missing from $APP/Info.plist (DISPLAY_NAME in apps/mobile/app-identity.mts didn't reach the build)."
+            exit 1
+          }
+          # File and artifact names take only safe characters (a name with / : or " would break upload-artifact).
+          FILE_NAME="$(printf '%s' "$DISPLAY_NAME" | tr -cd 'A-Za-z0-9._-')"
+          [ -n "$FILE_NAME" ] || FILE_NAME="$IOS_PROJECT"
+          IPA_NAME="$FILE_NAME-$VERSION-build$FIZZ_BUILD_NUMBER.ipa"
           STAGE="$RUNNER_TEMP/ipa"
           mkdir -p "$STAGE/Payload"
           cp -R "$APP" "$STAGE/Payload/"

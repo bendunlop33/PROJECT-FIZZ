@@ -58,7 +58,19 @@ describe('app name (approved 9 Oct 2026)', () => {
     const workflow = readFileSync(join(import.meta.dirname, '../../../.github/workflows/ios-ipa.yml'), 'utf8');
     expect(workflow).toMatch(new RegExp(`^  IOS_PROJECT: ${IOS_PROJECT_NAME}$`, 'm'));
     expect(workflow).toContain('-workspace "$IOS_PROJECT.xcworkspace"');
-    expect(workflow).toContain('DISPLAY_NAME="$(plutil -extract CFBundleDisplayName raw "$APP/Info.plist")"');
-    expect(workflow).toContain('IPA_NAME="$DISPLAY_NAME-$VERSION-build$FIZZ_BUILD_NUMBER.ipa"');
+    expect(workflow).toContain('DISPLAY_NAME="$(plutil -extract CFBundleDisplayName raw "$APP/Info.plist")" || {');
+    expect(workflow).toContain('echo "::error::CFBundleDisplayName is missing from $APP/Info.plist');
+    // Review R4: the file and artifact name keeps only safe characters.
+    expect(workflow).toContain(`FILE_NAME="$(printf '%s' "$DISPLAY_NAME" | tr -cd 'A-Za-z0-9._-')"`);
+    expect(workflow).toContain('IPA_NAME="$FILE_NAME-$VERSION-build$FIZZ_BUILD_NUMBER.ipa"');
+  });
+
+  it('keeps npm install scripts on in both CI jobs and checks Skia\'s iOS libraries early (review N11)', () => {
+    const workflow = readFileSync(join(import.meta.dirname, '../../../.github/workflows/ios-ipa.yml'), 'utf8');
+    const commands = workflow.split('\n').filter((l) => !l.trim().startsWith('#'));
+    expect(commands.filter((l) => l.includes('ignore-scripts'))).toEqual([]);
+    expect(workflow.match(/^ {6}- run: npm ci$/gm)).toHaveLength(2);
+    expect(workflow.match(/# Install scripts must stay enabled \(never --ignore-scripts\)/g)).toHaveLength(2);
+    expect(workflow.match(/node_modules\/@shopify\/react-native-skia\/libs\/ios\/libskia\.xcframework/g)).toHaveLength(2);
   });
 });
