@@ -1,10 +1,21 @@
 import type { Database } from './database';
-import { DOCUMENT_TABLES } from './documents';
+import { DOCUMENT_TABLES, erase, type DocumentTable } from './documents';
 import type { SqlExecutor } from './driver';
 import { CorruptDataError } from './errors';
 import { latestVersion, readUserVersion } from './migrations';
+import { decodeImportRow, EXERCISE_ALIAS_SPEC, IMPORT_JOB_SPEC } from './imports';
 import { readAggregate } from './sessions';
 import { ident, rowId } from './sql';
+
+/** Every document table, the import ones included. */
+const ALL_DOCUMENTS: readonly DocumentTable[] = [...DOCUMENT_TABLES, erase(IMPORT_JOB_SPEC), erase(EXERCISE_ALIAS_SPEC)];
+
+/** Import rows checked per queue turn by `checkIntegrity`. */
+const ROW_CHUNK = 2000;
+
+function rowLabel(row: { job_id?: unknown; row_number?: unknown }): string {
+  return `${String(row.job_id)}#${String(row.row_number)}`;
+}
 
 export interface IntegrityIssue {
   /** `sqlite` for engine-level problems, otherwise the table. */
@@ -47,7 +58,7 @@ export async function checkIntegrityWith(q: SqlExecutor, expectedVersion: number
   }
   if (schemaVersion !== expectedVersion) return { ok: false, schemaVersion, issues, checked };
 
-  for (const spec of DOCUMENT_TABLES) {
+  for (const spec of ALL_DOCUMENTS) {
     const rows = await q.getAll(`SELECT * FROM ${ident(spec.table)} ORDER BY id`);
     checked[spec.table] = rows.length;
     for (const row of rows) {
@@ -56,6 +67,15 @@ export async function checkIntegrityWith(q: SqlExecutor, expectedVersion: number
       } catch (e) {
         issues.push({ table: spec.table, id: rowId(row.id), message: describe(e) });
       }
+    }
+  }
+  const importRows = await q.getAll('SELECT * FROM import_rows ORDER BY job_id, row_number');
+  checked.import_rows = importRows.length;
+  for (const row of importRows) {
+    try {
+      decodeImportRow(row);
+    } catch (e) {
+      issues.push({ table: 'import_rows', id: rowLabel(row), message: describe(e) });
     }
   }
   const sessions = await q.getAll<{ id: string }>('SELECT id FROM sessions ORDER BY id');
@@ -94,7 +114,7 @@ export async function checkIntegrity(db: Database, expectedVersion: number = lat
   });
   if (schemaVersion !== expectedVersion) return { ok: false, schemaVersion, issues, checked };
 
-  for (const spec of DOCUMENT_TABLES) {
+  for (const spec of ALL_DOCUMENTS) {
     await db.read(async (q) => {
       const rows = await q.getAll(`SELECT * FROM ${ident(spec.table)} ORDER BY id`);
       checked[spec.table] = rows.length;
@@ -103,6 +123,20 @@ export async function checkIntegrity(db: Database, expectedVersion: number = lat
           spec.decode(row);
         } catch (e) {
           issues.push({ table: spec.table, id: rowId(row.id), message: describe(e) });
+        }
+      }
+    });
+  }
+  const rowCount = await db.read(async (q) => (await q.getFirst<{ n: number }>('SELECT count(*) AS n FROM import_rows'))?.n ?? 0);
+  checked.import_rows = rowCount;
+  for (let offset = 0; offset < rowCount; offset += ROW_CHUNK) {
+    await db.read(async (q) => {
+      const rows = await q.getAll('SELECT * FROM import_rows ORDER BY job_id, row_number LIMIT ? OFFSET ?', [ROW_CHUNK, offset]);
+      for (const row of rows) {
+        try {
+          decodeImportRow(row);
+        } catch (e) {
+          issues.push({ table: 'import_rows', id: rowLabel(row), message: describe(e) });
         }
       }
     });

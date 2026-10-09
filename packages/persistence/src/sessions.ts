@@ -57,6 +57,8 @@ function sessionRow(a: SessionAggregate): Record<string, SqlValue> {
     last_activity_at_utc: s.lastActivityAtUtc,
     check_in: s.checkIn === null ? null : JSON.stringify(s.checkIn),
     check_in_id: s.checkIn?.kind === 'answered' ? s.checkIn.checkInId : null,
+    import_job_id: s.importJobId ?? null,
+    local_date: s.localDate ?? null,
   };
 }
 
@@ -186,6 +188,9 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       startOperationId: s.start_operation_id,
       status: s.status,
       source: s.source,
+      // Absent rather than null (optional fields); a wrong type still fails validation.
+      ...(s.import_job_id === null || s.import_job_id === undefined ? {} : { importJobId: s.import_job_id }),
+      ...(s.local_date === null || s.local_date === undefined ? {} : { localDate: s.local_date }),
       startedAt: { utc: s.started_at_utc, tz: s.started_at_tz },
       endedAt: zoned(s.ended_at_utc, s.ended_at_tz),
       version: s.version,
@@ -385,7 +390,8 @@ async function upsertChildren<T extends { id: string }>(
   }
 }
 
-async function writeAggregate(tx: SqlExecutor, a: SessionAggregate): Promise<void> {
+/** Write a validated aggregate inside the caller's transaction (append-only checks included). */
+export async function writeAggregate(tx: SqlExecutor, a: SessionAggregate): Promise<void> {
   const sid = a.session.id;
   const sessionUpdate = await upsert(
     tx,

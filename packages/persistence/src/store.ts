@@ -14,6 +14,7 @@ import {
 } from './documents';
 import type { SqlDriver } from './driver';
 import { migrate, MIGRATIONS, type Migration, type MigrationReport } from './migrations';
+import { SqliteImports } from './imports';
 import { SqliteSessions } from './sessions';
 
 export interface SqliteRepositories extends Repositories {
@@ -22,6 +23,7 @@ export interface SqliteRepositories extends Repositories {
   sessions: SqliteSessions;
   checkIns: SqliteCheckIns;
   painFlags: SqlitePainFlags;
+  imports: SqliteImports;
 }
 
 export function createSqliteRepositories(db: Database): SqliteRepositories {
@@ -35,6 +37,7 @@ export function createSqliteRepositories(db: Database): SqliteRepositories {
     sessions: new SqliteSessions(db),
     checkIns: new SqliteCheckIns(db),
     painFlags: new SqlitePainFlags(db),
+    imports: new SqliteImports(db),
   };
 }
 
