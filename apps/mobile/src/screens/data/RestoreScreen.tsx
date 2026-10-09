@@ -38,7 +38,7 @@ type Step =
  *
  * This build restores the whole file; per-section restore (DX11) is deferred
  * (critic-pass-1 §3.1). Also opened from Welcome before setup (onboarding
- * OB3, `fromWelcome`): restored data with a profile then skips setup. Restore and Undo are refused during an unfinished
+ * OB3, `fromWelcome`): restored data with a profile then skips setup at the relaunch. Restore and Undo are refused during an unfinished
  * workout (DX4); Check never changes anything.
  */
 export function RestoreScreen(props: { mode?: 'restore' | 'check'; fromWelcome?: boolean } = {}) {
@@ -132,8 +132,7 @@ export function RestoreScreen(props: { mode?: 'restore' | 'check'; fromWelcome?:
       );
       return;
     }
-    // Restored from Welcome: data with a profile skips setup (PM decision on SP4); a failure here only means setup shows.
-    if (fromWelcome) await services.setup.skipAfterRestore().catch(() => undefined);
+    // Restored data with a profile skips setup: worked out at launch from the data, so Done's relaunch (or any later one) lands on Today (SP4; review R3).
     haptic('commit');
     const c = r.preview.backup.counts;
     setStep({ kind: 'done', view, counts: `${plural(c.finishedWorkouts, 'workout', 'workouts')} · ${plural(c.loggedSets, 'set', 'sets')} · ${plural(c.gyms, 'gym', 'gyms')}` });

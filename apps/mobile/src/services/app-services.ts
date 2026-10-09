@@ -222,16 +222,26 @@ export function createAppServices(deps: AppServicesDeps) {
     },
 
     /**
-     * After `Restore from a backup` on Welcome (onboarding OB3, check 10; PM
-     * decision on SP4): restored data with a profile skips setup, so a backup
-     * saved part-way through setup is marked set up rather than asked again.
-     * With no profile in the restored data, Welcome shows as before.
+     * Restored data with a profile skips setup (onboarding OB3, check 10; PM
+     * decision on SP4): a backup saved part-way through setup is marked set
+     * up rather than asked again. With no profile in the restored data,
+     * Welcome shows as before.
+     *
+     * Derived from the data at every launch (review R3), not run by the
+     * restore screen after the switch, so a force-close between the switch
+     * and `Done` can't resume setup mid-way. It applies when the last database
+     * switch was a restore and the profile came with it (created before the
+     * switch) but isn't marked set up. A profile created after the restore
+     * (setup run on top of a backup without one) is left to finish setup.
      */
-    async skipAfterRestore(): Promise<{ hasProfile: boolean }> {
+    async skipAfterRestore(): Promise<{ skipped: boolean }> {
+      const last = deps.manager.rollbackTarget.last;
+      if (last?.reason !== 'restore') return { skipped: false };
       const profile = await getProfile();
-      if (!profile) return { hasProfile: false };
+      if (!profile || profile.setup === undefined || profile.setup.completedAtUtc !== undefined) return { skipped: false };
+      if (toMs(profile.createdAtUtc) >= toMs(last.atUtc)) return { skipped: false };
       const r = await setup.complete();
-      return { hasProfile: r.ok };
+      return { skipped: r.ok };
     },
 
     /** Ready → `Go to Today`. */

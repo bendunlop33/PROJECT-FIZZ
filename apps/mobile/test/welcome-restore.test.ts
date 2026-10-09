@@ -72,7 +72,6 @@ describe('Restore from a backup on Welcome', () => {
     expect(view.warnings).toEqual([]);
     expect(view.confirm).toBeNull();
     expect(await s.restore.restore(latest, view.stamp)).toMatchObject({ ok: true, status: 'restored' });
-    expect(await s.setup.skipAfterRestore()).toEqual({ hasProfile: true });
     // Done relaunches: no setup step shows.
     await h.forceClose();
     launched = await h.launch();
@@ -91,18 +90,40 @@ describe('Restore from a backup on Welcome', () => {
     expect(later.preview.onlyOnPhone).toMatchObject({ workouts: 1, otherRecords: 0 });
   });
 
-  it('a backup saved part-way through setup also skips setup; its gym is kept', async () => {
+  it('a backup saved part-way through setup also skips setup, even after a force-close straight after the switch (review R3)', async () => {
     const { latest: text } = await backupsFromAnotherPhone(false);
     const h = harness();
     const { services: s } = await h.launch();
     const checked = await s.restore.prepare(text);
     if (!checked.ok) throw new Error(checked.error.message);
     expect(await s.restore.restore(text, checked.preview.stamp)).toMatchObject({ ok: true });
-    expect(await s.setup.skipAfterRestore()).toEqual({ hasProfile: true });
+    // Killed before Done: nothing else ran after the switch. The launch works it out from the data.
     await h.forceClose();
     const again = await h.launch();
     expect(again.setup.step).toBe('done');
+    expect(again.setup.profile?.setup?.completedAtUtc).toBe(h.now().utc);
     expect((await again.services.yourData.gyms()).map((g) => g.name)).toEqual(['Main Gym']);
+    // Once marked, later launches change nothing.
+    expect(await again.services.setup.skipAfterRestore()).toEqual({ skipped: false });
+  });
+
+  it('a profile made on this phone after restoring a backup without one finishes setup as usual', async () => {
+    const empty = harness('2026-09-01T08:00:00.000Z', 500_000);
+    const { services: e } = await empty.launch();
+    const text = await backUp(empty, e);
+    const h = harness();
+    const { services: s } = await h.launch();
+    const checked = await s.restore.prepare(text);
+    if (!checked.ok) throw new Error(checked.error.message);
+    expect(await s.restore.restore(text, checked.preview.stamp)).toMatchObject({ ok: true });
+    await h.forceClose();
+    let launched = await h.launch();
+    expect(launched.setup.step).toBe('welcome');
+    // Setup on top of the restored (profile-less) data, killed after step 1.
+    expect(await launched.services.setup.saveUnits('kg')).toEqual({ ok: true });
+    await h.forceClose();
+    launched = await h.launch();
+    expect(launched.setup.step).toBe('gym');
   });
 
   it('cancelling changes nothing: Welcome shows again', async () => {
@@ -110,7 +131,7 @@ describe('Restore from a backup on Welcome', () => {
     const { services: s } = await h.launch();
     // Opening the restore screen reads only; choosing nothing writes nothing.
     await s.restore.copiesOnPhone();
-    expect(await s.setup.skipAfterRestore()).toEqual({ hasProfile: false });
+    expect(await s.setup.skipAfterRestore()).toEqual({ skipped: false });
     await h.forceClose();
     expect((await h.launch()).setup.step).toBe('welcome');
   });

@@ -63,6 +63,8 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     const services = createAppServices({ ...deps, manager });
     // Coaching knowledge: the starter exercise list (only missing IDs are added).
     await services.coachingKnowledge.ensureStarterExercises().catch(() => 0);
+    // Restored data with a profile skips setup, even after a force-close straight after the switch (SP4; review R3).
+    await services.setup.skipAfterRestore().catch(() => null);
     const setup = await services.setup.getState();
     let recovery: RecoveryResult | null = null;
     let recoveryError: string | null = null;
