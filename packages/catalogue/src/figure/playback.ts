@@ -42,16 +42,28 @@ export function keyFrameStops(prepared: PreparedGuide): KeyFrameStop[] {
   return out;
 }
 
+/** Which prop paths are overlaid in `mode`, and the times to sample them at (one cycle). */
+export interface OverlayPlan {
+  propId: string;
+  times: number[];
+}
+
+export function overlayPlans(prepared: PreparedGuide, mode: 'static' | 'animated', fps = PLAYBACK_FPS): OverlayPlan[] {
+  const { guide, keys } = prepared;
+  const wanted = (guide.overlays ?? []).filter((o) => o.showIn.includes(mode));
+  if (wanted.length === 0) return [];
+  const times = sampleTimes(guide, keys, fps);
+  return wanted.map((o) => ({ propId: o.of, times }));
+}
+
+/** One sample of an overlay path (the app samples in small slices so the UI never stalls). */
+export function overlayPoint(prepared: PreparedGuide, propId: string, t: number): Vec | undefined {
+  return poseAt(prepared, t).propPoints[propId];
+}
+
 /** Paths of the props overlaid in `mode` (e.g. the bar path on the static key frames), sampled over one cycle. */
 export function overlayTraces(prepared: PreparedGuide, mode: 'static' | 'animated', fps = PLAYBACK_FPS): Vec[][] {
-  const { guide, keys } = prepared;
-  const times = sampleTimes(guide, keys, fps);
-  const out: Vec[][] = [];
-  for (const o of guide.overlays ?? []) {
-    if (!o.showIn.includes(mode)) continue;
-    out.push(times.map((t) => poseAt(prepared, t).propPoints[o.of]).filter((p): p is Vec => p !== undefined));
-  }
-  return out;
+  return overlayPlans(prepared, mode, fps).map((plan) => plan.times.map((t) => overlayPoint(prepared, plan.propId, t)).filter((p): p is Vec => p !== undefined));
 }
 
 /**
