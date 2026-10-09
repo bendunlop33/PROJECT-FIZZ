@@ -200,6 +200,8 @@ export type SkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 
 
 export interface PreviewView {
   fileName: string;
+  /** This file was imported before, but some of its dates aren't in the app now (review r3 S2). */
+  notice: Line | null;
   detection: string;
   rowsLine: string;
   willImport: { line1: string; line2: string };
@@ -339,8 +341,16 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
         ? { label: `Import ${plural(a.counts.workouts, 'workout', 'workouts')}`, enabled: true }
         : { label: 'Nothing to import', enabled: false };
 
+  const before = d.importedBefore;
   return {
     fileName: d.fileName,
+    notice: before
+      ? {
+          icon: 'info.circle',
+          tone: 'info',
+          text: `You imported this file on ${shortDateOf(before.startedAt.utc, before.startedAt.tz, locale)}. Workouts from it that are still in GymSmarter are skipped; dates that aren’t in GymSmarter now are offered again.`,
+        }
+      : null,
     detection: `${appLabel(d.variant)} · ${unitsLabel(a.units)}`,
     rowsLine: `${plural(a.rowCount, 'row', 'rows')}${range}`,
     willImport: { line1: `${plural(a.counts.workouts, 'workout', 'workouts')} · ${plural(a.counts.sets, 'set', 'sets')}`, line2: plural(a.counts.exercises, 'exercise', 'exercises') },

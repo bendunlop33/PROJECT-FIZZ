@@ -97,6 +97,7 @@ export function ImportPreviewScreen() {
         />
       }
     >
+      {v.notice ? <StatusLine icon={v.notice.icon} tone={v.notice.tone} text={v.notice.text} /> : null}
       <Card>
         <AppText variant="headline">{v.fileName}</AppText>
         <AppText variant="callout" color="text.secondary">

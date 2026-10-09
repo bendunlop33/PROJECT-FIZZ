@@ -89,15 +89,23 @@ export interface ImportDraft {
   /** Zone the dates are read in (the phone's now). */
   tz: string;
   gyms: Pick<Gym, 'id' | 'name'>[];
+  /**
+   * This same file was imported before and that import is still in effect,
+   * but some of its dates aren't in the app now (an import or workout that
+   * covered them was undone or discarded since), so they're offered again
+   * (review r3 S2).
+   */
+  importedBefore: { startedAt: ZonedTimestamp } | null;
 }
 
 export type OpenResult =
   | { kind: 'empty' | 'not_csv' | 'fitnotes_backup' | 'no_profile' }
   | { kind: 'body_tracker' | 'unknown_header'; firstLine: string }
   /**
-   * The same file came in before (and wasn't undone): nothing new to import
-   * (check 21). `state` says whether that import is finished, or still
-   * unfinished (`paused`/`running`: continue it instead; review N1).
+   * The same file came in before (and wasn't undone). `state` says whether
+   * that import is finished, or still unfinished (`paused`/`running`:
+   * continue it instead; review N1). A finished one is returned only when
+   * the file has nothing new to import (check 21; review r3 S2).
    */
   | { kind: 'same_file'; job: ImportJob; written: number; state: JobState }
   | { kind: 'preview'; draft: ImportDraft };
@@ -164,6 +172,11 @@ export function provenanceOf(job: ImportJob, row: ImportRow): ImportedSetProvena
   return { fileName: job.fileName, importedAt: job.startedAt, variant: job.variant, row, header: job.header };
 }
 
+/** Nothing would be imported or is waiting for an answer: every date the file could bring in is already in the app. */
+function nothingNew(a: ImportAnalysis): boolean {
+  return a.counts.byResult.imported === 0 && a.counts.byResult.pending === 0;
+}
+
 /** Catalogue and app exercises a name can map to (rule 10: the catalogue is Coaching knowledge, read-only here). */
 export function buildCandidates(
   dbExercises: readonly Exercise[],
@@ -215,6 +228,8 @@ interface Draft {
   rows: FitNotesRow[];
   tz: string;
   defaultUnit: WeightUnit;
+  /** The finished import of this same file, when the file has dates to offer again (review r3 S2). */
+  importedBefore: ImportJob | null;
   ctx: ImportContext;
   /** What the preview was checked against (rule 5). */
   ctxStamp: string;
@@ -279,6 +294,7 @@ export function createImportService(deps: ImportServiceDeps) {
       analysis: d.analysis,
       tz: d.tz,
       gyms: await gymsOf(d.ownerId),
+      importedBefore: d.importedBefore ? { startedAt: d.importedBefore.startedAt } : null,
     };
   }
 
@@ -424,11 +440,16 @@ export function createImportService(deps: ImportServiceDeps) {
       }
       const checksum = sha256Hex(file.text);
       const found = (await repos().imports.listJobs(p.id)).find((j) => j.checksum === checksum && j.status !== 'reverted');
-      if (found) {
-        const earlier = await pastImport(await settle(found));
+      const earlier = found ? await pastImport(await settle(found)) : null;
+      // Its import isn't finished: point to it (review N1).
+      if (earlier && earlier.state !== 'finished') return { kind: 'same_file', job: earlier.job, written: earlier.written, state: earlier.state };
+      const loaded = await loadContext(p.id, p.preferredUnit, parsed.rows);
+      // "Nothing new to import" only while it's true (review r3 S2): read with the answers Ben gave
+      // last time, against what is in the app now, the file brings nothing in. A date that import
+      // skipped because another import or a workout covered it, since undone or discarded, is offered again.
+      if (earlier && nothingNew(analyseImport(parsed, loaded.ctx, earlier.job.answers))) {
         return { kind: 'same_file', job: earlier.job, written: earlier.written, state: earlier.state };
       }
-      const loaded = await loadContext(p.id, p.preferredUnit, parsed.rows);
       const id = deps.newId();
       const d: Draft = {
         id,
@@ -440,6 +461,7 @@ export function createImportService(deps: ImportServiceDeps) {
         rows: parsed.rows,
         tz: at.tz,
         defaultUnit: p.preferredUnit,
+        importedBefore: earlier?.job ?? null,
         ctx: loaded.ctx,
         ctxStamp: loaded.stamp,
         committing: null,

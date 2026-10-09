@@ -8,7 +8,7 @@ import type { SessionAggregate, UserProfile } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import { createImportService, type ImportDraft, type ImportServiceDeps } from '../src/import/import-service';
-import { introView, resultsView } from '../src/import/views';
+import { introView, previewView, resultsView } from '../src/import/views';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -144,6 +144,40 @@ describe('FitNotes import: preview, answers, commit', () => {
     const again = await s.imports.open({ name: 'renamed.csv', text: FILE_1 });
     expect(again).toMatchObject({ kind: 'same_file', job: { id: jobId }, written: 3 });
     expect(await s.yourData.counts()).toEqual(counts);
+  });
+
+  it('after an older import is undone, the newer file offers the dates it skipped again, not "Nothing new" (review r3 S2)', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    // a.csv has 1, 3 and 5 Sep; b.csv (a newer export) adds 20 Sep, so it skipped the three.
+    const a = await importFile(s, FILE_1, 'op-a');
+    const b = await importFile(s, FILE_2, 'op-b');
+    expect(b.draft.analysis.counts.workouts).toBe(1);
+    // While a.csv is in effect, b.csv really has nothing new.
+    expect(await s.imports.open({ name: 'b.csv', text: FILE_2 })).toMatchObject({ kind: 'same_file', job: { id: b.jobId } });
+
+    const aJob = await s.imports.job(a.jobId);
+    expect(await s.imports.revert(a.jobId, aJob?.job.version ?? 0, 'undo-a')).toMatchObject({ ok: true, workouts: 3 });
+    expect(await s.yourData.counts()).toMatchObject({ finishedWorkouts: 1 });
+
+    const reopened = await s.imports.open({ name: 'b.csv', text: FILE_2 });
+    if (reopened.kind !== 'preview') throw new Error(`expected a preview, got ${reopened.kind}`);
+    const bJob = await s.imports.job(b.jobId);
+    expect(reopened.draft.importedBefore).toEqual({ startedAt: bJob?.job.startedAt });
+    expect(previewView(reopened.draft, 'en-GB').notice).toEqual({
+      icon: 'info.circle',
+      tone: 'info',
+      text: 'You imported this file on Thu 8 Oct. Workouts from it that are still in GymSmarter are skipped; dates that aren’t in GymSmarter now are offered again.',
+    });
+    // 20 Sep is still in (from b.csv) and skipped; the three dates a.csv brought are offered again.
+    expect(reopened.draft.analysis.alreadyImported).toMatchObject({ dates: 1, imports: [{ jobId: b.jobId, dates: 1 }] });
+    expect(reopened.draft.analysis.workouts.map((w) => w.date)).toEqual(['2026-09-05', '2026-09-03', '2026-09-01']);
+
+    // Brought back; now the file really has nothing new, and nothing is duplicated (brief scenario 6).
+    const answered = await answerAll(s, reopened.draft);
+    expect(await s.imports.commit(answered.draftId, answered.mappingVersion, 'op-b2')).toMatchObject({ ok: true, written: 3 });
+    expect(await s.yourData.counts()).toMatchObject({ finishedWorkouts: 4, loggedSets: 8 });
+    expect(await s.imports.open({ name: 'b.csv', text: FILE_2 })).toMatchObject({ kind: 'same_file' });
   });
 
   it('a newer export skips what came in before and never overwrites a set corrected in the app (check 21)', async () => {
