@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "dumbbell-one-arm-row",
+  "format": "fizz-figure-guide@1",
+  "rig": "adult-v1",
+  "view": "side",
+  "durationMs": 2700,
+  "keyframes": 5,
+  "renderFps": 30,
+  "frames": 81,
+  "guideBytes": 2111,
+  "attribution": "Original figure animation made for Fizz; no third-party media.",
+  "reviewStatus": "draft",
+  "check": {
+    "status": "pass",
+    "failed": []
+  }
+}
