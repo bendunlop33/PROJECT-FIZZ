@@ -702,3 +702,8 @@ Only summaries and short quotes are used here. Paywalled or paid sources:
 - programme books (*5/3/1 Forever*, *Juggernaut Method 2.0*, RP).
 
 Ben can add his own copies to the app library.
+
+## Decisions by Ben, 9 Oct 2026 (evening)
+- **D21:** (A), the coach's next-session targets are the default, with reason and one-tap Undo, limited to small changes (load, reps, sets on the same exercises). Structural changes stay proposals and are raised only when Ben asks for variety or something changed. See ADR 0006 amendment 2.
+- **D19:** the next workout follows what Ben last trained (rotation by last session), not fixed weekdays.
+- **All other open decisions (D1–D18, D20, D22):** the proposed defaults are approved.
