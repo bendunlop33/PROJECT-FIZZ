@@ -164,17 +164,23 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               <RootStack.Screen name="Repeat" component={RepeatScreen} options={{ headerShown: true, title: 'Repeat' }} />
             </>
           ) : (
-            <RootStack.Screen name="Setup">
-              {() => (
-                <SetupScreen
-                  initialStep={setupStep === 'done' ? 'welcome' : setupStep}
-                  initialUnit={setupUnit}
-                  onDone={() => {
-                    setSetupDone(true);
-                  }}
-                />
-              )}
-            </RootStack.Screen>
+            <>
+              <RootStack.Screen name="Setup">
+                {() => (
+                  <SetupScreen
+                    initialStep={setupStep === 'done' ? 'welcome' : setupStep}
+                    initialUnit={setupUnit}
+                    onDone={() => {
+                      setSetupDone(true);
+                    }}
+                  />
+                )}
+              </RootStack.Screen>
+              {/* Restore before setup (onboarding OB3); Done relaunches, and restored data with a profile skips setup. */}
+              <RootStack.Screen name="WelcomeRestore" options={{ headerShown: true, title: 'Restore from a backup' }}>
+                {() => <RestoreScreen mode="restore" fromWelcome />}
+              </RootStack.Screen>
+            </>
           )}
         </RootStack.Navigator>
       </NavigationContainer>

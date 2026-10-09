@@ -410,6 +410,8 @@ There's no "Skip the backup?" alert and no `Not backed up yet` warning on Ready 
 ### 4.5 Restore from Welcome
 `Restore from a backup` opens the restore flow in [data-import-export.md](data-import-export.md) §2.3 (choose a file, check, preview by section with counts and the "replaces" warning, then Restore). Onboarding doesn't define that UI. It only defines the entry and the two exits in §3.1.
 
+(PM decision on review SP4, 2026-10-09.) Built in this form: the empty phone skips the `Save a copy to Files first` offer, and nothing is replaced, so there's no alert. After `Done` the app relaunches; if the restored data has a profile, setup is skipped, even when the backup was saved part-way through setup (it's marked set up, and the gym editor covers anything missing). If the restored data has no profile, Welcome shows again.
+
 ### 4.6 Permission priming (in context, never up front)
 
 No system permission prompt appears during onboarding. Each permission is asked once, at the moment its feature is first used, with a one-line explanation **before** the system prompt. If Ben says no, the feature shows an honest off state and a way to iOS Settings; nothing else breaks.

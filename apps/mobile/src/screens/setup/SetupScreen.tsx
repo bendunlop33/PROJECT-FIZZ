@@ -1,3 +1,4 @@
+import { useNavigation } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
@@ -9,7 +10,7 @@ import { formatClock } from '../../format/numbers';
 import type { SetupStep } from '../../services/setup';
 import { DEFAULT_REST_PRESETS, unitFromMeasurementSystem } from '../../services/setup';
 import { useTheme } from '../../theme';
-import { AppText, ChoiceCard, Group, PrimaryButton, Row, StatusLine } from '../../ui';
+import { AppText, ChoiceCard, Group, PrimaryButton, Row, StatusLine, TextButton } from '../../ui';
 import { SaveCopyToFiles } from '../data/SaveCopyToFiles';
 import { GymSetupFlow, type SavedGymSummary } from './GymSetupFlow';
 import { StepFrame } from './StepFrame';
@@ -27,13 +28,15 @@ const REST_LINE = DEFAULT_REST_PRESETS.map((p) => formatClock(p.seconds)).join('
  * First run, Essentials only (onboarding.md §2.1–2.6): Welcome → How you log
  * → Your gym → How your data is kept → Ready → Today. No permission prompts.
  * Each step writes on Continue, so a force-close resumes at the right step.
- * Not in this build: editing rest presets here, the optional About-your-
- * training and coach steps, and Restore from Welcome.
+ * Welcome's `Restore from a backup` opens the restore flow before any setup
+ * (onboarding OB3). Not in this build: editing rest presets here, and the
+ * optional About-your-training and coach steps.
  */
 export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep: Exclude<SetupStep, 'done'>; initialUnit: WeightUnit | null; onDone: () => void }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
+  const navigation = useNavigation();
   const [step, setStep] = useState<Step>(initialStep);
   const [unit, setUnit] = useState<WeightUnit>(initialUnit ?? unitFromMeasurementSystem(measurementSystem()));
   const [gym, setGym] = useState<SavedGymSummary | 'skipped' | null>(null);
@@ -91,7 +94,12 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
                   setStep('units');
                 }}
               />
-              <Row title="Restore from a backup" subtitle="Not in this build yet" disabled />
+              <TextButton
+                label="Restore from a backup"
+                onPress={() => {
+                  navigation.navigate('WelcomeRestore');
+                }}
+              />
             </>
           }
         >

@@ -36,15 +36,19 @@ type Step =
  * data, normal cold-start logic) with `Undo restore`.
  *
  * This build restores the whole file; per-section restore (DX11) is deferred
- * (critic-pass-1 §3.1). Restore and Undo are refused during an unfinished
+ * (critic-pass-1 §3.1). Also opened from Welcome before setup (onboarding
+ * OB3, `fromWelcome`): restored data with a profile then skips setup. Restore and Undo are refused during an unfinished
  * workout (DX4); Check never changes anything.
  */
-export function RestoreScreen() {
+export function RestoreScreen(props: { mode?: 'restore' | 'check'; fromWelcome?: boolean } = {}) {
   const theme = useTheme();
   const services = useServices();
   const relaunch = useRelaunch();
   const navigation = useNavigation();
-  const { mode } = useRoute<RouteProp<ProfileStackParams, 'Restore'>>().params;
+  const routeParams = useRoute<RouteProp<ProfileStackParams, 'Restore'>>().params as ProfileStackParams['Restore'] | undefined;
+  const mode = props.mode ?? routeParams?.mode ?? 'restore';
+  // From Welcome (onboarding OB3) the phone has no data yet: nothing to save first.
+  const fromWelcome = props.fromWelcome === true;
   const [step, setStep] = useState<Step>({ kind: 'choose' });
   const [data] = useScreenData(async (s) => {
     const [copies, blocked, status] = await Promise.all([s.restore.copiesOnPhone(), s.restore.blockedBy(), s.backups.getStatus()]);
@@ -59,7 +63,7 @@ export function RestoreScreen() {
   const blockedForRestore = isRestore && blocked !== null;
   const newestGood = copies.find((c) => c.integrityOk)?.createdAtUtc ?? null;
   const lastCopy = status.offPhone.lastCopy;
-  const needsCopyFirst = isRestore && (lastCopy === null || lastCopy.atUtc < (status.onPhone.lastSuccess?.createdAtUtc ?? ''));
+  const needsCopyFirst = isRestore && !fromWelcome && (lastCopy === null || lastCopy.atUtc < (status.onPhone.lastSuccess?.createdAtUtc ?? ''));
 
   async function examine(label: string, read: () => Promise<string | null>) {
     try {
@@ -122,6 +126,8 @@ export function RestoreScreen() {
       );
       return;
     }
+    // Restored from Welcome: data with a profile skips setup (PM decision on SP4); a failure here only means setup shows.
+    if (fromWelcome) await services.setup.skipAfterRestore().catch(() => undefined);
     haptic('commit');
     const c = r.preview.backup.counts;
     setStep({ kind: 'done', view, counts: `${plural(c.finishedWorkouts, 'workout', 'workouts')} · ${plural(c.loggedSets, 'set', 'sets')} · ${plural(c.gyms, 'gym', 'gyms')}` });

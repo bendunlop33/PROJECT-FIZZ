@@ -221,6 +221,19 @@ export function createAppServices(deps: AppServicesDeps) {
       return updateProfile({ setup: { ...profile.setup, gymStep: 'skipped' } });
     },
 
+    /**
+     * After `Restore from a backup` on Welcome (onboarding OB3, check 10; PM
+     * decision on SP4): restored data with a profile skips setup, so a backup
+     * saved part-way through setup is marked set up rather than asked again.
+     * With no profile in the restored data, Welcome shows as before.
+     */
+    async skipAfterRestore(): Promise<{ hasProfile: boolean }> {
+      const profile = await getProfile();
+      if (!profile) return { hasProfile: false };
+      const r = await setup.complete();
+      return { hasProfile: r.ok };
+    },
+
     /** Ready → `Go to Today`. */
     async complete(): Promise<SetupWriteResult> {
       const profile = await getProfile();

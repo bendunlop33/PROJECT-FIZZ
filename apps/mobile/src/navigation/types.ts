@@ -26,6 +26,8 @@ export type TabParams = {
 
 export type RootStackParams = {
   Setup: undefined;
+  /** Welcome › Restore from a backup, before any setup (onboarding OB3, check 10). */
+  WelcomeRestore: undefined;
   Tabs: NavigatorScreenParams<TabParams> | undefined;
   /** Active workout (set, rest). `toast` after a start with a check-in (check-in.md §2.6). */
   Workout: { toast?: WorkoutToastParam } | undefined;
