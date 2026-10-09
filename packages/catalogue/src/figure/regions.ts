@@ -4,9 +4,8 @@
  * segment coordinates, so it moves with the pose and stays inside the
  * segment's own outline by construction. Pure.
  */
-import { add, scale, sub, v, type Vec } from './math';
-import { frameAt, handContours, segmentPoint, trunkSegments, widthsAt, type BodyGroup, type BodySegment, type FigureBody } from './body';
-import { UNCHECKED_PROJECTION } from './pose';
+import { add, pointInPolygon, scale, sub, v, type Vec } from './math';
+import { chainOutline, frameAt, handContours, segmentPoint, trunkSegments, widthsAt, type BodyGroup, type BodySegment, type FigureBody } from './body';
 import { profileRange, type SegmentName } from './profiles';
 import type { MuscleLevel, RegionSpec, ResolvedFocus } from './muscle-map';
 import { counterClockwise, signedArea } from './paths';
@@ -23,6 +22,19 @@ export interface RegionShape {
   group: RegionGroup;
   level: MuscleLevel;
   contour: Vec[];
+  /** 0–1: fades out as its segment turns towards the camera (`projectionFade`). */
+  alpha: number;
+}
+
+/**
+ * How much of a segment's muscle colour and anatomical lines show at a
+ * projection factor: none at 0.4 or below, all at 0.6 or above, smooth in
+ * between. They used to vanish at 0.5 and blink as a limb swung past it
+ * (ADR 0015); the ROM check still uses `UNCHECKED_PROJECTION`.
+ */
+export function projectionFade(projection: number): number {
+  const x = Math.min(1, Math.max(0, (projection - 0.4) / 0.2));
+  return x * x * (3 - 2 * x);
 }
 
 const taper = (s: number, s0: number, s1: number): number => Math.max(0, Math.sin((Math.PI * (s - s0)) / (s1 - s0))) ** 0.6;
@@ -171,19 +183,21 @@ export function regionShapes(body: FigureBody, focus: ResolvedFocus): RegionShap
       for (const hand of body.hands) {
         if (!sides.includes(hand.side)) continue;
         const forearm = body.segments.find((s) => s.name === 'forearm' && s.side === hand.side);
-        if (forearm !== undefined && forearm.projection < UNCHECKED_PROJECTION) continue;
-        for (const c of handContours(hand, body.view)) out.push({ group: hand.group, level: r.level, contour: insetPolygon(counterClockwise(c), MUSCLE_INSET) });
+        const alpha = forearm === undefined ? 1 : projectionFade(forearm.projection);
+        if (alpha <= 0) continue;
+        for (const c of handContours(hand, body.view)) out.push({ group: hand.group, level: r.level, contour: insetPolygon(counterClockwise(c), MUSCLE_INSET), alpha });
       }
       continue;
     }
     if (r.spec.seg === 'trunk') {
       // The whole trunk as one shape; drawn with the trunk (under the near leg), like the abs and lower back it carries.
-      if (chain !== null) for (const contour of specContours(chain, true, r.spec)) out.push({ group: 'trunk', level: r.level, contour });
+      if (chain !== null) for (const contour of specContours(chain, true, r.spec)) out.push({ group: 'trunk', level: r.level, contour, alpha: 1 });
       continue;
     }
     for (const seg of segmentsFor(body, r.spec.seg, sides)) {
-      if (seg.projection < UNCHECKED_PROJECTION) continue;
-      for (const contour of specContours(segmentBase(seg), seg.side === null, r.spec)) out.push({ group: groupOf(body, seg), level: r.level, contour });
+      const alpha = projectionFade(seg.projection);
+      if (alpha <= 0) continue;
+      for (const contour of specContours(segmentBase(seg), seg.side === null, r.spec)) out.push({ group: groupOf(body, seg), level: r.level, contour, alpha });
     }
   }
   return out;
@@ -197,6 +211,8 @@ export const LIGHT: Vec = (() => {
 
 export interface ShadeBand {
   group: BodyGroup;
+  /** The limb segment it shades (null for the trunk chain). */
+  segment: SegmentName | null;
   contour: Vec[];
   from: Vec;
   to: Vec;
@@ -227,21 +243,25 @@ const BAND_FADE = 0.2;
  */
 export function shadeBands(body: FigureBody, group: BodyGroup): ShadeBand[] {
   const out: ShadeBand[] = [];
-  const band = (base: RegionBase, s0: number, s1: number, samples: number): void => {
+  /** `occluders`: the limb's other segments; each edge's band stops where its edge runs into one (no ghost edge at a crease). */
+  const band = (base: RegionBase, segment: SegmentName | null, s0: number, s1: number, samples: number, occluders: readonly (readonly Vec[])[] = []): void => {
     const mid = (s0 + s1) / 2;
-    const fade = (s: number): number => {
-      const k = Math.min(s - s0, s1 - s) / ((s1 - s0) * BAND_FADE);
-      const t = Math.min(1, Math.max(0, k));
-      return t * t * (3 - 2 * t);
-    };
     for (const x of [1, -1] as const) {
       const nE = scale(base.frame(mid).n, x);
       const opacity = body.view === 'side' ? 0.26 * Math.min(1, Math.max(0, 0.2 - (nE.x * LIGHT.x + nE.y * LIGHT.y))) : 0.18;
       if (opacity < 0.01) continue;
-      const ss = sampleRange(s0, s1, samples);
+      const range = clearRange(s0, s1, (s) => occluders.some((poly) => pointInPolygon(basePoint(base, s, x), poly)));
+      if (range === null) continue;
+      const [a, b] = range;
+      const fade = (s: number): number => {
+        const k = Math.min(s - a, b - s) / ((b - a) * BAND_FADE);
+        const t = Math.min(1, Math.max(0, k));
+        return t * t * (3 - 2 * t);
+      };
+      const ss = sampleRange(a, b, samples);
       const edge = ss.map((s) => basePoint(base, s, x));
       const inner = ss.map((s) => basePoint(base, s, x * (1 - BAND_DEPTH * fade(s))));
-      out.push({ group, contour: [...edge, ...inner.reverse()], from: basePoint(base, mid, x), to: basePoint(base, mid, x * (1 - BAND_DEPTH)), opacity });
+      out.push({ group, segment, contour: [...edge, ...inner.reverse()], from: basePoint(base, mid, x), to: basePoint(base, mid, x * (1 - BAND_DEPTH)), opacity });
     }
   };
   if (group === 'trunk') {
@@ -249,15 +269,56 @@ export function shadeBands(body: FigureBody, group: BodyGroup): ShadeBand[] {
     const base = chainBase(chain);
     const first = chain[0];
     const last = chain[chain.length - 1];
-    if (base !== null && first !== undefined && last !== undefined) band(base, profileRange(first.profile)[0], chain.length - 1 + profileRange(last.profile)[1], 24);
+    if (base !== null && first !== undefined && last !== undefined) band(base, null, profileRange(first.profile)[0], chain.length - 1 + profileRange(last.profile)[1], 24);
     return out;
   }
-  for (const seg of body.segments) {
-    if (seg.group !== group) continue;
+  const limb = body.segments.filter((seg) => seg.group === group);
+  for (const seg of limb) {
     const [, hi] = profileRange(seg.profile);
-    band(segmentBase(seg), 0, hi, 10);
+    band(segmentBase(seg), seg.name, 0, hi, 10, limb.filter((o) => o !== seg).map((o) => chainOutline([o])));
   }
   return out;
+}
+
+/** Fine steps used to find where a band's edge enters a neighbouring segment. */
+const CLEAR_STEPS = 48;
+/** A band shorter than this share of its segment range is dropped rather than drawn as a sliver. */
+const MIN_BAND_SHARE = 0.15;
+
+/**
+ * The longest stretch of [s0, s1] where `blocked` is false, with its ends
+ * refined by bisection (so a cut moves smoothly from frame to frame), or
+ * null if that stretch is too short to draw.
+ */
+function clearRange(s0: number, s1: number, blocked: (s: number) => boolean): [number, number] | null {
+  const ss = sampleRange(s0, s1, CLEAR_STEPS + 1);
+  const free = ss.map((s) => !blocked(s));
+  if (free.every((f) => f)) return [s0, s1];
+  let best: [number, number] | null = null;
+  for (let i = 0; i < ss.length; ) {
+    if (free[i] !== true) {
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j + 1 < ss.length && free[j + 1] === true) j += 1;
+    if (best === null || j - i > best[1] - best[0]) best = [i, j];
+    i = j + 1;
+  }
+  if (best === null) return null;
+  const refine = (inside: number, outside: number): number => {
+    let lo = inside;
+    let hi = outside;
+    for (let k = 0; k < 10; k += 1) {
+      const m = (lo + hi) / 2;
+      if (blocked(m)) hi = m;
+      else lo = m;
+    }
+    return lo;
+  };
+  const a = best[0] > 0 ? refine(ss[best[0]] ?? s0, ss[best[0] - 1] ?? s0) : s0;
+  const b = best[1] < ss.length - 1 ? refine(ss[best[1]] ?? s1, ss[best[1] + 1] ?? s1) : s1;
+  return b - a >= MIN_BAND_SHARE * (s1 - s0) ? [a, b] : null;
 }
 
 /** A point of an anatomical line: segment, position along it, and `x` across it (+1 front/lateral edge … −1 back/medial). */
@@ -309,6 +370,8 @@ export const ANATOMY_LINES: Record<'side' | 'front' | 'back', readonly AnatomyLi
 export interface LineShape {
   group: BodyGroup;
   points: Vec[];
+  /** 0–1, the faintest of its segments' `projectionFade`. */
+  alpha: number;
 }
 
 /** Anatomical lines for the drawn limbs (near only in a side view) and the trunk. */
@@ -323,18 +386,18 @@ export function anatomyLines(body: FigureBody): LineShape[] {
     for (const inst of instances) {
       const pts: Vec[] = [];
       let group: BodyGroup = 'trunk';
-      let hidden = false;
+      let alpha = 1;
       for (const lp of line.points) {
         const seg = body.segments.find((s) => s.name === lp.seg && s.side === inst.side);
         if (seg === undefined) {
-          hidden = true;
+          alpha = 0;
           break;
         }
-        if (seg.projection < UNCHECKED_PROJECTION) hidden = true;
+        alpha = Math.min(alpha, projectionFade(seg.projection));
         group = seg.group;
         pts.push(segmentPoint(seg, lp.s, lp.x * inst.flip, MUSCLE_INSET));
       }
-      if (!hidden) out.push({ group, points: pts });
+      if (alpha > 0) out.push({ group, points: pts, alpha });
     }
   }
   return out;

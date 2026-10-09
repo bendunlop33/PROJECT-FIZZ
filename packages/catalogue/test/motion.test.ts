@@ -2,8 +2,17 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  chainOutline,
   checkGuide,
   countHumps,
+  fitCamera,
+  frameOps,
+  pointInPolygon,
+  projectionFade,
+  regionShapes,
+  resolveFocus,
+  shadeBands,
+  type DrawOp,
   dist,
   effectiveProjection,
   flattenState,
@@ -492,5 +501,84 @@ describe('hang barbell anchor (E4)', () => {
     expect(GuideSchema.safeParse(keyed).success).toBe(false);
     const front = { ...rdlHanging(), view: 'front' };
     expect(GuideSchema.safeParse(front).success).toBe(false);
+  });
+});
+
+describe('drawing seams (ADR 0015, V1–V3)', () => {
+  const isPath = (o: DrawOp): o is Extract<DrawOp, { kind: 'path' }> => o.kind === 'path';
+
+  it('the near leg is outlined under the trunk, so the thigh joins the hip without a seam line', () => {
+    const p = prepareGuide(committed('barbell-back-squat'));
+    const camera = fitCamera(p);
+    const ops = frameOps(poseAt(p, 0.5), { px: 240, camera }).filter(isPath);
+    const fills = ops.map((o, i) => (o.fill === 'nearBody' ? i : -1)).filter((i) => i >= 0);
+    const [trunkFill, legFill] = fills;
+    const contours = ops.map((o, i) => (o.stroke === 'shade' && o.width > 1 && o.fill === null && o.gradient === null ? i : -1)).filter((i) => i >= 0);
+    // Leg contour, trunk contour, trunk fill, … leg fill (no contour right before it), arm contours, arm fill.
+    expect(contours.filter((i) => i < (trunkFill ?? 0)).length).toBe(2);
+    expect(contours.some((i) => i > (trunkFill ?? 0) && i < (legFill ?? 0))).toBe(false);
+  });
+
+  it('arm segments are stroked as open paths without their proximal cap; hands stay closed', () => {
+    const p = prepareGuide(committed('dumbbell-one-arm-row'));
+    const ops = frameOps(poseAt(p, 0.2), { px: 240, camera: fitCamera(p) }).filter(isPath);
+    // The outline contour is the 0.5-opacity shade stroke (anatomical lines are 0.35).
+    const contour = ops.filter((o) => o.stroke === 'shade' && o.opacity === 0.5 && o.fill === null);
+    const open = contour.filter((o) => !o.closed);
+    expect(open).toHaveLength(1);
+    expect(open[0]?.contours).toHaveLength(2);
+    const seg = poseAt(p, 0.2).body.segments.find((x) => x.name === 'upperArm' && x.side === 'Near');
+    if (seg === undefined) throw new Error('no upper arm');
+    // Open path = closed outline minus the 3-point proximal cap.
+    expect(open[0]?.contours[0]?.length).toBe(chainOutline([seg]).length - 3);
+    // The fist (and thumb) outline stays closed.
+    expect(contour.some((o) => o.closed && o.contours.length >= 1)).toBe(true);
+  });
+
+  it('limb shade bands stop where their edge runs into the other segment of the limb (no ghost edge at a bent knee)', () => {
+    for (const id of ['barbell-back-squat', 'machine-leg-press', 'cable-lat-pulldown']) {
+      const p = prepareGuide(committed(id));
+      for (const t of [0, 0.25, 0.5, 0.75]) {
+        const body = poseAt(p, t).body;
+        for (const group of ['legNear', 'armNear'] as const) {
+          const limb = body.segments.filter((x) => x.group === group);
+          for (const band of shadeBands(body, group)) {
+            const edge = band.contour.slice(0, band.contour.length / 2);
+            for (const other of limb.filter((x) => x.name !== band.segment)) {
+              const poly = chainOutline([other]);
+              // The cut is refined to ~0.1% of the segment, so allow the very end point to touch the neighbour.
+              for (const q of edge.slice(0, -1).slice(1)) expect(pointInPolygon(q, poly), `${id} t=${t} ${band.segment ?? ''} in ${other.name}`).toBe(false);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('muscle colour fades with a segment turning towards the camera instead of blinking at 0.5', () => {
+    expect(projectionFade(0.4)).toBe(0);
+    expect(projectionFade(0.5)).toBeCloseTo(0.5, 12);
+    expect(projectionFade(0.6)).toBe(1);
+    expect(projectionFade(1)).toBe(1);
+    const p = prepareGuide(committed('barbell-overhead-press'));
+    const entry = CatalogueEntrySchema.parse(JSON.parse(readFileSync(join(import.meta.dirname, '..', 'data', 'exercises', 'barbell-overhead-press.json'), 'utf8')));
+    const muscles = { primary: entry.primaryMuscles, secondary: entry.secondaryMuscles };
+    const focus = resolveFocus(muscles, p.guide.focus, 'side');
+    // Sweep the press: an arm region's alpha changes by small steps, never 0 → 1 between neighbouring samples.
+    let prev: number | null = null;
+    let biggest = 0;
+    for (let i = 0; i <= 400; i += 1) {
+      const pose = poseAt(p, i / 400);
+      const arm = regionShapes(pose.body, focus).filter((r) => r.group === 'armNear');
+      const alpha = arm.length === 0 ? 0 : Math.max(...arm.map((r) => r.alpha));
+      if (prev !== null) biggest = Math.max(biggest, Math.abs(alpha - prev));
+      prev = alpha;
+    }
+    expect(biggest).toBeLessThan(0.2);
+    // Faded regions are drawn at muscle opacity × alpha.
+    const t = p.keys[1]?.t ?? 0.2;
+    const ops = frameOps(poseAt(p, t), { px: 240, camera: fitCamera(p), muscles }).filter(isPath);
+    const alphas = regionShapes(poseAt(p, t).body, focus).map((r) => r.alpha);
+    if (alphas.some((a) => a < 1)) expect(ops.some((o) => o.fill === 'muscle' && o.opacity < 0.45)).toBe(true);
   });
 });

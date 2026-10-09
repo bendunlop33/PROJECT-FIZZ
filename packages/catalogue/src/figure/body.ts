@@ -184,6 +184,23 @@ function capPoints(c: Vec, nrm: Vec, dir: Vec, halfWidth: number, depth: number,
  * `capDepth` flattens a cap (0–1 of its half-width); limbs use round caps.
  */
 export function chainOutline(chain: readonly BodySegment[], caps: { start: number; end: number } = { start: 1, end: 1 }): Vec[] {
+  const parts = chainParts(chain, caps);
+  return parts === null ? [] : [...parts.front, ...parts.endCap, ...parts.back, ...parts.startCap];
+}
+
+/**
+ * A limb segment's outline without its proximal cap, as an open path: along
+ * the front edge, round the distal cap, back along the back edge. The M/L
+ * contour strokes arm segments with it, so no line is drawn across the
+ * shoulder or inside the elbow where the segment joins its parent (ADR 0015).
+ */
+export function openSegmentOutline(seg: BodySegment): Vec[] {
+  const parts = chainParts([seg], { start: 1, end: 1 });
+  return parts === null ? [] : [...parts.front, ...parts.endCap, ...parts.back];
+}
+
+/** The pieces of `chainOutline`: front edge (proximal → distal), end cap, back edge (distal → proximal), start cap. */
+function chainParts(chain: readonly BodySegment[], caps: { start: number; end: number }): { front: Vec[]; endCap: Vec[]; back: Vec[]; startCap: Vec[] } | null {
   const front: Vec[] = [];
   const back: Vec[] = [];
   chain.forEach((seg, i) => {
@@ -197,7 +214,7 @@ export function chainOutline(chain: readonly BodySegment[], caps: { start: numbe
   });
   const first = chain[0];
   const last = chain[chain.length - 1];
-  if (first === undefined || last === undefined) return [];
+  if (first === undefined || last === undefined) return null;
   const [s0] = profileRange(first.profile);
   const [, s1] = profileRange(last.profile);
   const endF = widthsAt(last, s1);
@@ -208,12 +225,12 @@ export function chainOutline(chain: readonly BodySegment[], caps: { start: numbe
   const startFrame = frameAt(first, s0);
   const startC = add(startFrame.p, scale(startFrame.n, (startF.front - startF.back) / 2));
   const startHalf = (startF.front + startF.back) / 2;
-  return [
-    ...front,
-    ...capPoints(endC, endFrame.n, last.u, endHalf, endHalf * caps.end, 1),
-    ...back.reverse(),
-    ...capPoints(startC, startFrame.n, scale(first.u, -1), startHalf, startHalf * caps.start, -1),
-  ];
+  return {
+    front,
+    endCap: capPoints(endC, endFrame.n, last.u, endHalf, endHalf * caps.end, 1),
+    back: back.reverse(),
+    startCap: capPoints(startC, startFrame.n, scale(first.u, -1), startHalf, startHalf * caps.start, -1),
+  };
 }
 
 /** One edge of a segment between `from` and `to` (x = +1 front, −1 back), shifted inwards by `inset`. */
@@ -335,6 +352,21 @@ export function groupContours(body: FigureBody, group: BodyGroup): Vec[][] {
 }
 
 export const BODY_GROUPS: readonly BodyGroup[] = ['trunk', 'legNear', 'legFar', 'armNear', 'armFar'];
+
+/**
+ * What the M/L outline contour strokes for a group: closed contours, except
+ * arm segments, which are open (`openSegmentOutline`) so the arm joins the
+ * shoulder and the forearm joins the upper arm without a stroked seam. The
+ * arm's edges over the torso are real occlusion edges and keep their line.
+ */
+export function groupStrokeContours(body: FigureBody, group: BodyGroup): { open: Vec[][]; closed: Vec[][] } {
+  if (group !== 'armNear' && group !== 'armFar') return { open: [], closed: groupContours(body, group) };
+  const open: Vec[][] = [];
+  for (const seg of body.segments) if (seg.group === group) open.push(openSegmentOutline(seg));
+  const closed: Vec[][] = [];
+  for (const h of body.hands) if (h.group === group) closed.push(...handContours(h, body.view));
+  return { open, closed };
+}
 
 /** Every outline point of the figure (bounds, collision reports). */
 export function bodyOutlinePoints(body: FigureBody): Vec[] {

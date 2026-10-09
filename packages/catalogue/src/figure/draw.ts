@@ -13,7 +13,7 @@
  * The background and its rounded-corner clip are not ops: each renderer
  * draws them its own way (`GUIDE_CORNER_FRACTION`).
  */
-import { BODY_GROUPS, groupContours, soleBand, type BodyGroup } from './body';
+import { BODY_GROUPS, groupContours, groupStrokeContours, soleBand, type BodyGroup } from './body';
 import { add, dist, scale, sub, v, type Vec } from './math';
 import { focusViewOf, resolveFocus, type MuscleInput, type MuscleLevel } from './muscle-map';
 import { counterClockwise } from './paths';
@@ -235,6 +235,13 @@ export function muscleOpacity(level: MuscleLevel, opts: Pick<FrameOpsOptions, 'p
   return lo + (hi - lo) * w;
 }
 
+/** Contours grouped by alpha, fully opaque first (almost always the only group). */
+function byAlpha(items: readonly { alpha: number; points: Vec[] }[]): [number, Vec[][]][] {
+  const groups = new Map<number, Vec[][]>();
+  for (const it of items) groups.set(it.alpha, [...(groups.get(it.alpha) ?? []), it.points]);
+  return [...groups.entries()].sort((a, b) => b[0] - a[0]);
+}
+
 /** Every op for one frame, back to front (guides v2 §3.11). */
 export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
   const { px, camera } = opts;
@@ -270,22 +277,38 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
   const regions = focus ? regionShapes(body, focus) : [];
   const regionOps = (g: RegionGroup): void => {
     for (const level of ['soft', 'strong'] as const) {
-      const rs = regions.filter((r) => r.group === g && r.level === level).map((r) => project(r.contour));
-      if (rs.length === 0) continue;
-      ops.push(pathOp(rs, { smooth: true, fill: 'muscle', opacity: muscleOpacity(level, opts) }));
-      // Differentiate Without Color: strong regions also get a 1 pt outline in text.primary at 0.6.
-      if (level === 'strong' && opts.differentiateWithoutColor === true) ops.push(pathOp(rs, { smooth: true, stroke: 'implement', width: ptPx, join: 'round', opacity: 0.6 }));
+      // One op per level (merged, so overlapping regions never stack), split only while a segment fades with its projection.
+      for (const [alpha, rs] of byAlpha(regions.filter((r) => r.group === g && r.level === level).map((r) => ({ alpha: r.alpha, points: project(r.contour) })))) {
+        ops.push(pathOp(rs, { smooth: true, fill: 'muscle', opacity: muscleOpacity(level, opts) * alpha }));
+        // Differentiate Without Color: strong regions also get a 1 pt outline in text.primary at 0.6.
+        if (level === 'strong' && opts.differentiateWithoutColor === true) ops.push(pathOp(rs, { smooth: true, stroke: 'implement', width: ptPx, join: 'round', opacity: 0.6 * alpha }));
+      }
     }
   };
   const lines = full ? anatomyLines(body) : [];
 
-  const drawGroup = (g: BodyGroup): void => {
+  /**
+   * M/L outline contour, stroked under the fill so only its outer half shows.
+   * Arm segments are open paths without their proximal cap (no seam across
+   * the shoulder or inside the elbow; ADR 0015).
+   */
+  const contourOps = (g: BodyGroup): void => {
+    const width = 2 * c.sw(STROKE.contour, 'contour');
+    const opacity = ic ? 0.7 : 0.5;
+    const strokes = groupStrokeContours(body, g);
+    if (strokes.closed.length > 0) ops.push(pathOp(strokes.closed.map(project), { smooth: true, stroke: 'shade', width, join: 'round', opacity }));
+    if (strokes.open.length > 0) ops.push(pathOp(strokes.open.map((pts) => pts.map(c.P)), { closed: false, smooth: true, stroke: 'shade', width, join: 'round', opacity }));
+  };
+  /** The limb's own separation: S-tier halo or M/L contour. Legs drawn after the trunk emit it before the trunk instead. */
+  const outline = (g: BodyGroup): void => {
+    if (!full && g !== 'trunk') ops.push(halo(g));
+    if (full) contourOps(g);
+  };
+
+  const drawGroup = (g: BodyGroup, outlineDone = false): void => {
     const shapes = cs(g);
     if (shapes.length === 0) return;
-    // S tier keeps v1 separation: each limb knocks out what's behind it with a halo.
-    if (!full && g !== 'trunk') ops.push(halo(g));
-    // M/L: the outline contour is stroked under the fill, so only its outer half shows and joints show no seams.
-    if (full) ops.push(pathOp(shapes, { smooth: true, stroke: 'shade', width: 2 * c.sw(STROKE.contour, 'contour'), join: 'round', opacity: ic ? 0.7 : 0.5 }));
+    if (!outlineDone) outline(g);
     ops.push(pathOp(shapes, { smooth: true, fill: 'nearBody' }));
     regionOps(g);
     if (shading) {
@@ -301,8 +324,9 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
       const soles = body.feet.filter((f) => f.group === g).map((f) => project(soleBand(f, body.view)));
       if (soles.length > 0) ops.push(pathOp(soles, { fill: 'shade', opacity: 0.35 }));
     }
-    const gl = lines.filter((l) => l.group === g).map((l) => l.points.map(c.P));
-    if (gl.length > 0) ops.push(pathOp(gl, { closed: false, smooth: true, stroke: 'shade', width: c.sw(STROKE.hair, 'hair'), join: 'round', cap: 'round', opacity: ic ? 0.5 : 0.35 }));
+    for (const [alpha, gl] of byAlpha(lines.filter((l) => l.group === g).map((l) => ({ alpha: l.alpha, points: l.points.map(c.P) })))) {
+      ops.push(pathOp(gl, { closed: false, smooth: true, stroke: 'shade', width: c.sw(STROKE.hair, 'hair'), join: 'round', cap: 'round', opacity: (ic ? 0.5 : 0.35) * alpha }));
+    }
   };
 
   emitLayer('back');
@@ -327,8 +351,11 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
   emitLayer('mid');
   // M/L: near-limb halos go under the trunk, so near limbs stand clear of the far side and props but not of their own body.
   if (full) for (const g of [...(legsFirst ? [] : legs), ...arms]) if (cs(g).length > 0) ops.push(halo(g));
+  // Legs drawn over the trunk put their outline (S: halo, M/L: contour) under it too: the trunk fill hides the part
+  // inside the pelvis, so the thigh joins the hip without a seam line, and the outline outside the trunk stays (ADR 0015).
+  if (!legsFirst) for (const g of legs) if (cs(g).length > 0) outline(g);
   drawGroup('trunk');
-  if (!legsFirst) for (const g of legs) drawGroup(g);
+  if (!legsFirst) for (const g of legs) drawGroup(g, true);
   // Pelvis regions after the near leg, so the thigh doesn't cut the glutes in half (§3.11 step 8).
   if (side) regionOps('pelvis');
   for (const g of arms) drawGroup(g);
