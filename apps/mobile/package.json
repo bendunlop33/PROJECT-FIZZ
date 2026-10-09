@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@expo/ui": "57.0.22",
+    "@fizz/catalogue": "0.1.0",
     "@fizz/domain": "0.1.0",
     "@fizz/persistence": "0.1.0",
     "@fizz/providers": "0.1.0",
@@ -19,6 +20,7 @@
     "@react-navigation/bottom-tabs": "7.20.0",
     "@react-navigation/native": "7.5.0",
     "@react-navigation/native-stack": "7.20.0",
+    "@shopify/react-native-skia": "2.6.2",
     "expo": "57.0.27",
     "expo-application": "57.0.3",
     "expo-constants": "57.0.21",
@@ -36,8 +38,10 @@
     "expo-widgets": "57.0.23",
     "react": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "5.7.0",
     "react-native-screens": "4.26.2",
+    "react-native-worklets": "0.10.1",
     "zod": "4.6.5"
   },
   "devDependencies": {
