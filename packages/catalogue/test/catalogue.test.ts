@@ -146,11 +146,11 @@ describe('catalogue entry schema', () => {
   it('records one-dumbbell exercises apart from pairs, and leaves either-way exercises unset', () => {
     const count = (key: string) => entry(key).implements ?? null;
     // One dumbbell or kettlebell: a value written for these is that one implement's weight.
-    for (const key of ['dumbbell-one-arm-row', 'dumbbell-goblet-squat', 'dumbbell-pullover', 'dumbbell-triceps-kickback', 'dumbbell-three-point-row', 'kettlebell-press']) expect(count(key), key).toBe(1);
+    for (const key of ['dumbbell-one-arm-row', 'dumbbell-goblet-squat', 'dumbbell-pullover', 'dumbbell-three-point-row', 'kettlebell-press', 'dumbbell-concentration-curl', 'dumbbell-one-arm-shoulder-press']) expect(count(key), key).toBe(1);
     // One in each hand, including unilateral leg work (laterality can't tell these from a one-arm row).
     for (const key of ['dumbbell-bench-press', 'dumbbell-curl', 'dumbbell-lateral-raise', 'dumbbell-bulgarian-split-squat', 'dumbbell-walking-lunge']) expect(count(key), key).toBe(2);
-    // Commonly done either way: an importer asks.
-    expect(count('dumbbell-single-leg-romanian-deadlift')).toBeNull();
+    // Commonly done either way: an importer asks (a kickback with one arm or both; a step-up or lunge with a pair or one in a goblet hold; review r4 N3).
+    for (const key of ['dumbbell-single-leg-romanian-deadlift', 'dumbbell-triceps-kickback', 'dumbbell-step-up', 'dumbbell-reverse-lunge']) expect(count(key), key).toBeNull();
     for (const e of bundledCatalogue().catalogue.entries) if (e.implements !== undefined) expect(e.defaultLoadConvention, e.key).toBe('per_hand');
   });
 });

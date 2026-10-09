@@ -3,7 +3,7 @@
   "key": "dumbbell-bench-press",
   "tier": "basic",
   "name": "Dumbbell bench press",
-  "aliases": ["DB bench press", "DB bench", "Flat dumbbell press", "Flat DB press", "Dumbbell chest press"],
+  "aliases": ["DB bench press", "DB bench", "Flat dumbbell bench press", "Flat dumbbell press", "Flat DB press", "Dumbbell chest press"],
   "family": "bench_press",
   "movementPattern": "horizontal_push",
   "mechanic": "compound",

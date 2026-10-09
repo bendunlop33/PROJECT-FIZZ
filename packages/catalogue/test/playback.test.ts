@@ -197,7 +197,7 @@ describe('lazy catalogue', () => {
 
   it('agrees with the full loader for every bundled entry', () => {
     const lazy = lazyBundledCatalogue();
-    expect(lazy.keys.size).toBe(133);
+    expect(lazy.keys.size).toBe(135);
     const squatEntry = lazy.entry('barbell-back-squat');
     expect(squatEntry.ok && squatEntry.entry.name).toBe('Back squat');
     expect(lazy.entry('barbell-back-squat')).toBe(squatEntry);
