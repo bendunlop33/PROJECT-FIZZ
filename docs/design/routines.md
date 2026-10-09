@@ -269,6 +269,8 @@ Opened from the quick-start row. If several workouts finished in the last 14 day
 
 - Set rows tap → the same set template sheet (load is Fixed from the actual; Ben can change it).
 - Different gym today: each load goes through the same start-time check. Rows show `Rounded down from 37.5 kg each: Hotel Gym's rack stops at 25 kg each.` or `No load target: the 6 Oct load was on a machine.` (convention mismatch, never converted).
+- No equipment of that kind here (review B1, 2026-10-09): the load target is dropped and the reps kept, with `No Barbell and plates here: no load target (last time 100 kg × 5).` A load is never planned without equipment to check it on, and nothing says "kept as done".
+- kg↔lb (PM decision on review SP5, 2026-10-09): a load is converted only when the converted value rounds **toward easier** to a load today's equipment can make (`Rounded from 22.5 kg each to 45 lb each to match this gym.`). If the easiest load here is harder than last time's, or there's no equipment to check a converted load on, the load is dropped with a note.
 - Rest after each set: the rest that set used on 6 Oct is **not** copied; the routine's presets (or the defaults) apply, with `Rest after` shown per exercise.
 
 ## 3. States

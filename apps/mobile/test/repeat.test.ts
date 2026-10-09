@@ -44,4 +44,28 @@ describe('repeat a past workout', () => {
     // One workout at a time.
     expect(await s.workout.start({ ...req, opId: 'repeat-2' })).toMatchObject({ ok: false, error: { code: 'session_already_active' } });
   });
+
+  it('hotel gym with only dumbbells: Repeat plans no barbell load, keeps reps, and says so (review B1)', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const benchDay = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 100, reps: 5 }] }]);
+    const hotelId = h.ids();
+    expect(await s.setup.saveGym({ gymId: hotelId, name: 'Hotel Gym', draft: s.coachingKnowledge.buildGymDraft('home_dumbbells', 'kg') })).toEqual({ ok: true });
+    const hotelKinds = (await s.yourData.equipment(hotelId)).map((e) => e.kind);
+    expect(hotelKinds).not.toContain('barbell');
+
+    h.clockMs += 86_400_000;
+    const preview = await s.repeat.preview(benchDay, hotelId);
+    expect(preview?.notes.map((n) => plain(n.text))).toEqual(['No Barbell and plates here: no load target (last time 100 kg × 5).']);
+    expect(preview?.notes.some((n) => n.text.includes('Kept as done'))).toBe(false);
+
+    const started = await s.workout.start({ gymId: hotelId, opId: 'repeat-hotel', checkIn: null, repeatOf: benchDay });
+    if (!started.ok) throw new Error(started.error.message);
+    const sets = started.aggregate.sets;
+    expect(sets.map((x) => [x.status, x.planned.load, x.planned.reps])).toEqual([['pending', null, { min: 5, max: 5 }]]);
+    const data = await s.workout.load();
+    if (!data) throw new Error('no workout');
+    const v = s.workout.view(data, h.clockMs, null);
+    expect(plain(v.focus?.target)).not.toContain('100 kg');
+  });
 });
