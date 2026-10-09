@@ -43,14 +43,14 @@
       "shown": true
     },
     {
-      "muscle": "grip",
-      "level": "soft",
-      "shown": true
-    },
-    {
       "muscle": "core",
       "level": "soft",
       "shown": false
+    },
+    {
+      "muscle": "grip",
+      "level": "soft",
+      "shown": true
     }
   ]
 }

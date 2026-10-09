@@ -234,7 +234,7 @@ describe('muscle focus (§4)', () => {
     'barbell-romanian-deadlift': ['adductors'],
     'machine-leg-press': ['adductors'],
     // The hanging arm covers the front of the trunk, so the guide hides core (focus.hide) rather than draw slivers either side of it.
-    'dumbbell-bulgarian-split-squat': ['core', 'adductors'],
+    'dumbbell-bulgarian-split-squat': ['adductors', 'core'],
     // Seen from behind (B3, provisional): the arm flexors face away from the camera.
     'cable-lat-pulldown': ['biceps', 'brachialis'],
     'barbell-bench-press': [],
@@ -244,21 +244,24 @@ describe('muscle focus (§4)', () => {
     'sled-push': [],
   };
 
-  it.each(Object.keys(NOT_SHOWN))('%s: strong = primary, soft = secondary (minus hidden), Not shown per the coverage table (§12.1 #2)', (key) => {
+  it.each(Object.keys(NOT_SHOWN))('%s: strong = primary, soft = secondary (hidden ones included), Not shown per the coverage table (§12.1 #2)', (key) => {
     const e = entry(key);
     const g = loaded(key).guide;
-    const hidden = new Set<string>(g.focus?.hide ?? []);
     const f = muscleFocusFor(e, g);
-    expect(f.strong).toEqual(e.primaryMuscles.filter((m) => !hidden.has(m)));
-    expect(f.soft).toEqual(e.secondaryMuscles.filter((m) => !hidden.has(m)));
+    expect(f.strong).toEqual(e.primaryMuscles);
+    expect(f.soft).toEqual(e.secondaryMuscles);
     expect(f.notShown).toEqual(NOT_SHOWN[key]);
+    for (const m of g.focus?.hide ?? []) expect(f.notShown).toContain(m);
     expect([...f.drawn, ...f.notShown].sort()).toEqual([...e.primaryMuscles, ...e.secondaryMuscles].sort());
   });
 
-  it('grip is drawn soft even when primary; hidden muscles move to Not shown; overrides never add an unlisted muscle', () => {
+  it('grip is drawn soft even when primary; a hidden muscle stays in its list and is also Not shown; overrides never add an unlisted muscle', () => {
     const r = resolveFocus({ primary: ['grip', 'quads'], secondary: ['glutes'] }, { hide: ['glutes'], add: [{ muscle: 'lats', region: 'thorax.back 0.1–0.7 d0.5' }] }, 'side');
     expect(r.regions.filter((x) => x.muscle === 'grip').every((x) => x.level === 'soft')).toBe(true);
     expect(r.regions.filter((x) => x.muscle === 'quads').every((x) => x.level === 'strong')).toBe(true);
+    expect(r.strong).toEqual(['grip', 'quads']);
+    expect(r.soft).toEqual(['glutes']);
+    expect(r.drawn).toEqual(['grip', 'quads']);
     expect(r.notShown).toEqual(['glutes']);
     expect(r.regions.some((x) => x.muscle === 'lats' || x.muscle === 'glutes')).toBe(false);
     // Unknown names from a caller are ignored, not drawn.
@@ -347,11 +350,37 @@ describe('legend text (§5.3)', () => {
     expect(squat[0]?.accessibilityLabel).toBe('Feel it most: front of thighs, quads, and glutes.');
     const pulldown = muscleLegend(muscleFocusFor(entry('cable-lat-pulldown'), loaded('cable-lat-pulldown').guide));
     expect(pulldown[2]).toMatchObject({ label: 'Not shown from behind:', list: 'front of upper arms' });
+    // The split-squat guide hides core (focus.hide): it stays under Also works and is named under Not shown too (§4.7).
+    const split = muscleLegend(muscleFocusFor(entry('dumbbell-bulgarian-split-squat'), loaded('dumbbell-bulgarian-split-squat').guide));
+    expect(split.map((l) => `${l.label} ${l.list}`)).toEqual([
+      'Feel it most: Front of thighs (quads), glutes',
+      'Also works: Inner thighs (adductors), back of thighs (hamstrings), outer hips (abductors), core, grip',
+      'Not shown from this side: inner thighs, core',
+    ]);
+    expect(split.map((l) => l.swatch)).toEqual([true, true, false]);
+    expect(split[1]?.accessibilityLabel).toBe('Also works: inner thighs, adductors, back of thighs, hamstrings, outer hips, abductors, core, and grip.');
     // No guide: the lines without swatches, and no Not shown line.
     const noGuide = muscleLegend(muscleFocusFor(entry('barbell-back-squat'), null));
     expect(noGuide.map((l) => [l.kind, l.swatch])).toEqual([
       ['most', false],
       ['also', false],
+    ]);
+  });
+
+  it('a hidden secondary muscle keeps its Also works line; the swatch shows only if a muscle on the line is drawn (§4.7)', () => {
+    const e = { primaryMuscles: ['quads'] as Muscle[], secondaryMuscles: ['core'] as Muscle[] };
+    const legend = muscleLegend(muscleFocusFor(e, { view: 'side', focus: { hide: ['core'] } }));
+    expect(legend.map((l) => [l.kind, l.list, l.swatch])).toEqual([
+      ['most', 'Front of thighs (quads)', true],
+      ['also', 'Core', false],
+      ['notShown', 'core', false],
+    ]);
+    // Hiding the only primary as well: both lines stay, neither has a swatch.
+    const allHidden = muscleLegend(muscleFocusFor(e, { view: 'side', focus: { hide: ['quads', 'core'] } }));
+    expect(allHidden.map((l) => [l.kind, l.list, l.swatch])).toEqual([
+      ['most', 'Front of thighs (quads)', false],
+      ['also', 'Core', false],
+      ['notShown', 'front of thighs, core', false],
     ]);
   });
 });

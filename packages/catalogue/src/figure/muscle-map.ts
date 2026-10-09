@@ -211,13 +211,13 @@ export interface ResolvedFocus {
   view: FocusView;
   /** Which limbs carry colour. */
   side: 'near' | 'far' | 'both';
-  /** The entry's primary muscles (minus hidden ones), as listed. */
+  /** The entry's primary muscles, as listed, drawn or not (§4.7: the text always names them). */
   strong: Muscle[];
-  /** The entry's secondary muscles (minus hidden ones), as listed. */
+  /** The entry's secondary muscles, as listed, drawn or not. */
   soft: Muscle[];
   /** Listed muscles with at least one region in this view. */
   drawn: Muscle[];
-  /** Listed muscles the view can't show, or the guide hides (§4.7). */
+  /** Listed muscles not coloured: the view can't show them, or the guide hides them (§4.7), in listed order. */
   notShown: Muscle[];
   regions: FocusRegion[];
 }
@@ -225,9 +225,10 @@ export interface ResolvedFocus {
 const known = (xs: readonly string[]): Muscle[] => [...new Set(xs.filter((x): x is Muscle => (MUSCLES as readonly string[]).includes(x)))];
 
 /**
- * Applies §4.3–4.8: strong = primary, soft = secondary (minus hidden), `grip`
- * drawn at soft at most, the `core` expansion (already in the map), the
- * guide's `adjust`/`add` overrides, and which muscles can't be shown.
+ * Applies §4.3–4.8: strong = primary, soft = secondary (every listed muscle
+ * stays in its list, §4.7), `grip` drawn at soft at most, the `core` expansion
+ * (already in the map), the guide's `hide`/`adjust`/`add` overrides, and which
+ * muscles aren't coloured (`notShown`: no region in this view, or hidden).
  * Overrides naming a muscle the entry doesn't list are ignored here (and fail
  * `guide:check`), so the figure never shows a muscle the text doesn't name.
  */
@@ -235,13 +236,15 @@ export function resolveFocus(muscles: MuscleInput, focus: GuideFocus | undefined
   const primary = known(muscles.primary);
   const secondary = known(muscles.secondary).filter((m) => !primary.includes(m));
   const hidden = new Set<Muscle>(focus?.hide ?? []);
-  const strong = primary.filter((m) => !hidden.has(m));
-  const soft = secondary.filter((m) => !hidden.has(m));
   const regions: FocusRegion[] = [];
   const drawn: Muscle[] = [];
-  const notShown: Muscle[] = [...primary, ...secondary].filter((m) => hidden.has(m));
-  for (const m of [...strong, ...soft]) {
-    const level: MuscleLevel = strong.includes(m) && m !== 'grip' ? 'strong' : 'soft';
+  const notShown: Muscle[] = [];
+  for (const m of [...primary, ...secondary]) {
+    if (hidden.has(m)) {
+      notShown.push(m);
+      continue;
+    }
+    const level: MuscleLevel = primary.includes(m) && m !== 'grip' ? 'strong' : 'soft';
     const mapped = [...(MUSCLE_REGION_MAP[m][view] ?? [])];
     const adj = focus?.adjust?.[m];
     const first = mapped[0];
@@ -258,7 +261,7 @@ export function resolveFocus(muscles: MuscleInput, focus: GuideFocus | undefined
     }
   }
   const side = focus?.side ?? (view === 'side' ? 'near' : 'both');
-  return { view, side, strong, soft, drawn, notShown, regions };
+  return { view, side, strong: primary, soft: secondary, drawn, notShown, regions };
 }
 
 /** The focus view of a guide: side, or front/back for a front-view guide. */

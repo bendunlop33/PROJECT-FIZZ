@@ -229,6 +229,15 @@ describe('how-to view (catalogue → screen)', () => {
     expect(v.notice).toBeNull();
   });
 
+  it('a muscle the guide hides stays in its legend line and is also named under Not shown (guides v2 §4.7)', () => {
+    const v = buildHowToView({ name: 'Bulgarian split squat', catalogueKey: 'dumbbell-bulgarian-split-squat' }, src);
+    expect(v.legend.map((l) => [l.kind, l.list, l.swatch])).toEqual([
+      ['most', 'Front of thighs (quads), glutes', true],
+      ['also', 'Inner thighs (adductors), back of thighs (hamstrings), outer hips (abductors), core, grip', true],
+      ['notShown', 'inner thighs, core', false],
+    ]);
+  });
+
   it('shows the entry\'s safety notes and when to stop the set (P1)', () => {
     const v = buildHowToView({ name: 'Back squat', catalogueKey: 'barbell-back-squat' }, src);
     expect(v.safety.notes[0]).toMatch(/safety arms/);

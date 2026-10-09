@@ -84,13 +84,13 @@ export function spokenMuscleList(ms: readonly Muscle[], opts: { short?: boolean 
 export interface MuscleFocus {
   /** The guide's view (null: no guide, nothing drawn). */
   view: FocusView | null;
-  /** Primary muscles as listed (minus any the guide hides). */
+  /** Primary muscles as listed, drawn or not (`Feel it most`). */
   strong: Muscle[];
-  /** Secondary muscles as listed (minus any the guide hides). */
+  /** Secondary muscles as listed, drawn or not (`Also works`). */
   soft: Muscle[];
   /** Listed muscles coloured on the figure. */
   drawn: Muscle[];
-  /** Listed muscles the view can't show, or the guide hides. */
+  /** Listed muscles not coloured: the view can't show them, or the guide hides them. Also stay in `strong`/`soft`. */
   notShown: Muscle[];
   side: 'near' | 'far' | 'both';
   workPhase: readonly { from: number; to: number }[] | null;
@@ -99,7 +99,9 @@ export interface MuscleFocus {
 /**
  * The muscle focus of an entry and its guide (§4.1, §11). The muscles come
  * from the catalogue entry only; the guide decides what its view can show.
- * Without a guide nothing is drawn and every muscle is still listed.
+ * Every listed muscle stays in its text list (§4.7), drawn or not; the ones
+ * not coloured are also in `notShown`. Without a guide nothing is drawn and
+ * every muscle is still listed.
  */
 export function muscleFocusFor(entry: Pick<CatalogueEntry, 'primaryMuscles' | 'secondaryMuscles'>, guide: Pick<Guide, 'view' | 'seenFrom' | 'focus'> | null): MuscleFocus {
   const muscles = { primary: entry.primaryMuscles, secondary: entry.secondaryMuscles };
@@ -129,7 +131,11 @@ const NOT_SHOWN_LABEL: Record<FocusView, string> = {
   back: 'Not shown from behind:',
 };
 
-/** `Feel it most:` / `Also works:` / `Not shown from this side:` lines; empty when the entry lists no muscles. */
+/**
+ * `Feel it most:` (every primary) / `Also works:` (every secondary) /
+ * `Not shown from this side:` (the listed muscles not coloured, which also
+ * stay on their own line); empty when the entry lists no muscles.
+ */
 export function muscleLegend(focus: MuscleFocus, opts: { notShown?: boolean } = {}): LegendLine[] {
   const lines: LegendLine[] = [];
   const drawn = new Set(focus.drawn);

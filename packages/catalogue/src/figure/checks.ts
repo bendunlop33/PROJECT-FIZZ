@@ -333,10 +333,8 @@ function checkFocus(guide: Guide, entry: CatalogueEntry | null): { item: CheckIt
     if (parseRegion(a.region) === null) problems.push(`add ${a.muscle}: can't read region "${a.region}"`);
   }
   const resolved = resolveFocus({ primary: entry.primaryMuscles, secondary: entry.secondaryMuscles }, f, view);
+  // strong/soft hold every listed muscle, hidden ones included (§4.7).
   const rows: FocusRow[] = [...resolved.strong.map((m) => ({ m, level: 'strong' as const })), ...resolved.soft.map((m) => ({ m, level: 'soft' as const }))].map(({ m, level }) => ({ muscle: m, level, shown: resolved.drawn.includes(m) }));
-  for (const m of [...entry.primaryMuscles, ...entry.secondaryMuscles]) {
-    if (!rows.some((r) => r.muscle === m)) rows.push({ muscle: m, level: entry.primaryMuscles.includes(m) ? 'strong' : 'soft', shown: false });
-  }
   const table = rows.map((r) => `${r.muscle} ${r.level}${r.shown ? '' : ' (not shown)'}`).join(' · ');
   if (problems.length > 0) return { item: { id: 'focus', ok: false, detail: problems.join('; ') }, rows };
   const unilateralFront = guide.view === 'front' && entry.laterality === 'unilateral' && f?.side === undefined;
