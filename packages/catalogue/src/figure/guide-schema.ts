@@ -117,6 +117,8 @@ export const PropSchema = z.discriminatedUnion('type', [
     x: coord,
     /** Grip height on the poles. */
     gripY: num.min(0.3).max(1.2),
+    /** Pole lean back towards the athlete, degrees from vertical (default 24; HYROX-style uprights ~8). */
+    poleDeg: num.min(0).max(40).optional(),
     plates: z.enum(['none', 'small', 'medium', 'large']),
   }),
 ]);

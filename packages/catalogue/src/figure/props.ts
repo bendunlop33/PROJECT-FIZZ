@@ -281,6 +281,7 @@ export interface PushSledSpec {
   x: number;
   gripY: number;
   plates: keyof typeof PLATE_RADIUS;
+  poleDeg?: number | undefined;
 }
 
 /** Floor sled seen from the side: low body, a pole rising back towards the athlete, plates stacked flat. */
@@ -288,10 +289,13 @@ export function pushSledGeometry(id: string, s: PushSledSpec, groundY: number): 
   const h = 0.1;
   const body = [v(s.x, groundY), v(s.x + 0.4, groundY), v(s.x + 0.37, groundY + h), v(s.x + 0.03, groundY + h)];
   const poleBase = v(s.x + 0.06, groundY + h);
-  const grip = add(poleBase, scale(fromUp(-24), (s.gripY - poleBase.y) / Math.cos(rad(24))));
+  const lean = s.poleDeg ?? 24;
+  const grip = add(poleBase, scale(fromUp(-lean), (s.gripY - poleBase.y) / Math.cos(rad(lean))));
+  // The pole carries on a little above the hands.
+  const poleTop = add(grip, scale(fromUp(-lean), 0.07));
   const shapes: Shape[] = [
     { kind: 'poly', layer: 'mid', points: body, fill: 'frameFill', stroke: 'implement', width: 0.009 },
-    { kind: 'line', layer: 'mid', a: poleBase, b: grip, width: 0.016, paint: 'implement' },
+    { kind: 'line', layer: 'mid', a: poleBase, b: poleTop, width: 0.016, paint: 'implement' },
     { kind: 'line', layer: 'mid', a: v(s.x + 0.26, groundY + h), b: v(s.x + 0.26, groundY + h + 0.12), width: 0.014, paint: 'implement' },
   ];
   const n = { none: 0, small: 1, medium: 2, large: 3 }[s.plates];
