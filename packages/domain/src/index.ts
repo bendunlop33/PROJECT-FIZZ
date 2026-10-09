@@ -35,6 +35,7 @@ export * from './session/duration';
 export * from './session/first-run';
 export * from './step-card';
 export * from './target-provenance';
+export * from './session/target-why';
 export * from './touches';
 export * from './import';
 export * from './session/lift-highlight';

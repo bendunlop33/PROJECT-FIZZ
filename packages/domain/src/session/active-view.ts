@@ -128,6 +128,8 @@ export interface FocusView {
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
   duration: { value: number | null } | null;
   target: string | null;
+  /** The target line carries `Why?` (active-workout §2.12): every set with a target; `explainTarget` fills the panel. */
+  hasExplanation: boolean;
   painFlagged: boolean;
   offProfileWarning: string | null;
   side: { kind: 'choice'; value: SetSide } | { kind: 'fixed'; value: 'left' | 'right' } | null;
@@ -382,6 +384,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
     duration: ex.measurement === 'duration' ? { value: values.durationS } : null,
     target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral }),
+    hasExplanation: set.planned.load !== null || set.planned.reps !== null || set.planned.durationS !== null,
     painFlagged: input.painFlagged.has(ex.exerciseId),
     offProfileWarning,
     side,
