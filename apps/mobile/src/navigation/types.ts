@@ -1,4 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
+import type { EquipmentKind } from '@fizz/schemas';
 
 export type ProfileStackParams = {
   ProfileHome: undefined;
@@ -9,6 +10,9 @@ export type ProfileStackParams = {
   PainFlags: undefined;
   /** Restore from a backup, or Check a backup (data-import-export §2.3–2.4). */
   Restore: { mode: 'restore' | 'check' };
+  GymDetail: { gymId: string };
+  /** `equipmentId` is chosen once per visit (a new item's ID too), so Save is idempotent. */
+  EquipmentEditor: { gymId: string; equipmentId: string; kind: EquipmentKind; isNew: boolean };
 };
 
 export type TabParams = {

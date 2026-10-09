@@ -11,6 +11,8 @@ import type { WeightUnit } from '@fizz/schemas';
 import { AddGymScreen } from '../screens/AddGymScreen';
 import { CapabilityProbeScreen } from '../screens/CapabilityProbeScreen';
 import { DataBackupScreen } from '../screens/data/DataBackupScreen';
+import { EquipmentEditorScreen } from '../screens/gym/EquipmentEditorScreen';
+import { GymDetailScreen } from '../screens/gym/GymDetailScreen';
 import { RestoreScreen } from '../screens/data/RestoreScreen';
 import { AppStatusScreen } from '../screens/profile/AppStatusScreen';
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
@@ -62,6 +64,8 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="DataBackup" component={DataBackupScreen} options={{ title: 'Data & backup' }} />
       <ProfileStack.Screen name="AppStatus" component={AppStatusScreen} options={{ title: 'App status' }} />
       <ProfileStack.Screen name="PainFlags" component={PainFlagsScreen} options={{ title: 'Pain flags' }} />
+      <ProfileStack.Screen name="GymDetail" component={GymDetailScreen} options={{ title: 'Gym' }} />
+      <ProfileStack.Screen name="EquipmentEditor" component={EquipmentEditorScreen} options={{ title: 'Equipment' }} />
       <ProfileStack.Screen
         name="Restore"
         component={RestoreScreen}

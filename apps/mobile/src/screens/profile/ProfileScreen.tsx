@@ -21,12 +21,13 @@ import { useProbeResults } from './useProbeResults';
  */
 export function ProfileScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParams>>();
+  const rootNavigation = useNavigation();
   const services = useServices();
   const install = useInstallStatus();
   const probe = useProbeResults();
   const [data, reload] = useScreenData(async (s) => {
-    const [backup, banners, pain] = await Promise.all([s.backups.getStatus(), loadBanners(s, install), s.pain.active()]);
-    return { backup, banners, pain };
+    const [backup, banners, pain, gyms] = await Promise.all([s.backups.getStatus(), loadBanners(s, install), s.pain.active(), s.gyms.list()]);
+    return { backup, banners, pain, gyms };
   });
   useEffect(() => {
     reload();
@@ -49,6 +50,28 @@ export function ProfileScreen() {
           secondLine={data.state === 'ready' ? data.value.backup.offPhone.line.text : null}
           onPress={() => {
             navigation.navigate('DataBackup');
+          }}
+        />
+      </Group>
+
+      <SectionHeader title="Gyms" />
+      <Group>
+        {(data.state === 'ready' ? data.value.gyms : []).map((g) => (
+          <Row
+            key={g.gym.id}
+            title={g.gym.name}
+            icon="building.2"
+            subtitle={`${g.gym.isDefault ? 'Default · ' : ''}${String(g.items)} ${g.items === 1 ? 'item' : 'items'}${g.unchecked > 0 ? ` · ${String(g.unchecked)} not checked` : ''}`}
+            onPress={() => {
+              navigation.navigate('GymDetail', { gymId: g.gym.id });
+            }}
+          />
+        ))}
+        <Row
+          title="Add gym"
+          icon="plus"
+          onPress={() => {
+            rootNavigation.navigate('AddGym');
           }}
         />
       </Group>

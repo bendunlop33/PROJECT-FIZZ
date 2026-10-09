@@ -270,9 +270,11 @@ export function TodayScreen() {
               {formatShortDate(toMs(zoned.utc), zoned.tz)}
             </AppText>
             <LinkLine
-              accessibilityLabel={gym ? `Gym: ${gym.name}` : 'Add gym'}
+              accessibilityLabel={gym ? `Gym: ${gym.name}. Opens its equipment.` : 'Add gym'}
               onPress={() => {
                 if (!gym) navigation.navigate('AddGym');
+                // The gym's equipment, to check or correct it (gym editor).
+                else navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'GymDetail', params: { gymId: gym.id }, initial: false } });
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], paddingHorizontal: theme.space['3'], minHeight: theme.target.min.height, borderRadius: theme.radius.pill, backgroundColor: theme.colors['bg.raised'] }}>
