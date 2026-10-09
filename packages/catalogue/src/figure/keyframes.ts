@@ -146,6 +146,29 @@ export function resolveKeyframes(guide: Guide): ResolvedKeyframe[] {
 
 type Channels = Map<string, number>;
 
+/**
+ * Every projection factor as `pose.ts` reads it: a missing arm or leg is 1,
+ * a missing forearm follows its arm and a missing shank its leg. Each key
+ * emits all eight as channels, so a value set on only some keys blends in
+ * instead of snapping at the next key that sets it (the key poses don't change).
+ */
+export function effectiveProjection(p: Projection): Record<(typeof PROJECTION_KEYS)[number], number> {
+  const armNear = p.armNear ?? 1;
+  const armFar = p.armFar ?? 1;
+  const legNear = p.legNear ?? 1;
+  const legFar = p.legFar ?? 1;
+  return {
+    armNear,
+    armFar,
+    forearmNear: p.forearmNear ?? armNear,
+    forearmFar: p.forearmFar ?? armFar,
+    legNear,
+    legFar,
+    shankNear: p.shankNear ?? legNear,
+    shankFar: p.shankFar ?? legFar,
+  };
+}
+
 /** Numeric channels of a state (discrete fields such as IK modes stay out). */
 export function flattenState(s: FrameState): ReadonlyMap<string, number> {
   return flatten(s);
@@ -175,10 +198,8 @@ function flatten(s: FrameState): Channels {
     c.set(`props.${id}.y`, p.y);
     c.set(`props.${id}.s`, p.s);
   }
-  for (const key of PROJECTION_KEYS) {
-    const value = s.proj[key];
-    if (value !== undefined) c.set(`proj.${key}`, value);
-  }
+  const proj = effectiveProjection(s.proj);
+  for (const key of PROJECTION_KEYS) c.set(`proj.${key}`, proj[key]);
   return c;
 }
 

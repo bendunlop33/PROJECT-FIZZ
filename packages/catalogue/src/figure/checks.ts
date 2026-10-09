@@ -11,6 +11,7 @@ import { dist, penetrationDepth, lerpVec, v, type Vec } from './math';
 import { poseAt, prepareGuide, type Pose, type PreparedGuide } from './pose';
 import { ROM_PROFILES, type AngleName } from './rig';
 import { BODY_GROUPS, groupContours } from './body';
+import { poseContinuity } from './motion-metrics';
 import { adjustProblems, focusViewOf, MUSCLE_REGION_MAP, parseRegion, resolveFocus, type MuscleLevel } from './muscle-map';
 
 export const CHECK_FPS = 30;
@@ -38,6 +39,7 @@ export const CHECK_IDS = [
   'no-penetration',
   'hand-contact',
   'loop-continuity',
+  'pose-continuity',
   'duration',
   'file-size',
   'captions',
@@ -234,28 +236,38 @@ function checkHands(poses: readonly Pose[]): CheckItem {
 function checkLoop(prepared: PreparedGuide): CheckItem {
   if (prepared.guide.loop === 'pingpong') return { id: 'loop-continuity', ok: true, detail: 'Ping-pong loops are continuous by construction' };
   const a = poseAt(prepared, 0);
-  const b = poseAt(prepared, 1);
   let worst = 0;
   let where = '';
-  for (const [name, p] of Object.entries(a.points)) {
-    const q = b.points[name];
-    if (q === undefined) continue;
-    const d = dist(p, q);
-    if (d > worst) {
-      worst = d;
-      where = name;
+  // t = 1 is the last keyframe exactly; 1 − ε is the last frame actually drawn before the loop restarts.
+  for (const b of [poseAt(prepared, 1), poseAt(prepared, 1 - 1e-6)]) {
+    for (const [name, p] of Object.entries(a.points)) {
+      const q = b.points[name];
+      if (q === undefined) continue;
+      const d = dist(p, q);
+      if (d > worst) {
+        worst = d;
+        where = name;
+      }
     }
-  }
-  for (const [id, p] of Object.entries(a.propPoints)) {
-    const q = b.propPoints[id];
-    if (q !== undefined && dist(p, q) > worst) {
-      worst = dist(p, q);
-      where = id;
+    for (const [id, p] of Object.entries(a.propPoints)) {
+      const q = b.propPoints[id];
+      if (q !== undefined && dist(p, q) > worst) {
+        worst = dist(p, q);
+        where = id;
+      }
     }
   }
   return worst <= LIMITS.loopTolerance
     ? { id: 'loop-continuity', ok: true, detail: `First and last poses match (max ${r4(worst)} H)` }
     : { id: 'loop-continuity', ok: false, detail: `Loop jumps: ${where} moves ${r4(worst)} H between t=1 and t=0` };
+}
+
+/** No point jumps at a key, a hold end or the loop seam (ADR 0015, C1). */
+function checkPoseContinuity(prepared: PreparedGuide): CheckItem {
+  const m = poseContinuity(prepared);
+  return m.ok
+    ? { id: 'pose-continuity', ok: true, detail: `Nothing jumps at a key, hold end or the loop seam (max ${r4(m.value ?? 0)} H ≤ ${LIMITS.loopTolerance})` }
+    : { id: 'pose-continuity', ok: false, detail: `Pose jumps: ${m.where}` };
 }
 
 function checkKeyTimes(guide: Guide, prepared: PreparedGuide): CheckItem {
@@ -393,6 +405,7 @@ export function checkGuide(input: GuideCheckInput): GuideCheckReport {
     checkPenetration(guide, poses),
     checkHands(poses),
     checkLoop(prepared),
+    checkPoseContinuity(prepared),
     {
       id: 'duration',
       ok: guide.durationMs >= LIMITS.minDurationMs && guide.durationMs <= LIMITS.maxDurationMs,

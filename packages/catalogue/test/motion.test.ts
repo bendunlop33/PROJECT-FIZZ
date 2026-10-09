@@ -1,6 +1,43 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { countHumps, measureMotion, motionPhases, poseContinuity, prepareGuide, reversal } from '../src/figure/index';
+import {
+  countHumps,
+  dist,
+  effectiveProjection,
+  flattenState,
+  GuideSchema,
+  measureMotion,
+  motionPhases,
+  poseAt,
+  poseContinuity,
+  prepareGuide,
+  reversal,
+  stateAt,
+  type Guide,
+  type PreparedGuide,
+} from '../src/figure/index';
 import { baseGuide } from './figure-helpers';
+
+const GUIDES = join(import.meta.dirname, '..', 'guides');
+const GUIDE_IDS = readdirSync(GUIDES)
+  .filter((d) => !d.startsWith('_') && existsSync(join(GUIDES, d, 'guide.json')))
+  .sort();
+const committed = (id: string): Guide => GuideSchema.parse(JSON.parse(readFileSync(join(GUIDES, id, 'guide.json'), 'utf8')));
+
+/** Largest distance between the same points (and prop points) of two poses. */
+function poseGap(a: ReturnType<typeof poseAt>, b: ReturnType<typeof poseAt>): number {
+  let worst = 0;
+  for (const [n, p] of Object.entries(a.points)) {
+    const q = b.points[n];
+    if (q !== undefined) worst = Math.max(worst, dist(p, q));
+  }
+  for (const [n, p] of Object.entries(a.propPoints)) {
+    const q = b.propPoints[n];
+    if (q !== undefined) worst = Math.max(worst, dist(p, q));
+  }
+  return worst;
+}
 
 /** A squat-like test guide: Start → Halfway → Bottom (hold) → Halfway → Start, all `smooth`. */
 function repGuide(extra: Record<string, unknown> = {}, keyExtra: Record<number, Record<string, unknown>> = {}) {
@@ -60,5 +97,53 @@ describe('motion metrics on a guide', () => {
     const c1 = poseContinuity(prepareGuide(g));
     expect(c1.ok).toBe(false);
     expect(c1.value).toBeGreaterThan(0.002);
+  });
+});
+
+describe('projection channels at every key (E1)', () => {
+  it('every resolved key of every guide flattens to the same eight projection channels', () => {
+    for (const id of GUIDE_IDS) {
+      const p = prepareGuide(committed(id));
+      for (const k of p.keys) {
+        const proj = [...flattenState(k.state).keys()].filter((c) => c.startsWith('proj.')).sort();
+        expect(proj, `${id} key ${k.index}`).toEqual(['proj.armFar', 'proj.armNear', 'proj.forearmFar', 'proj.forearmNear', 'proj.legFar', 'proj.legNear', 'proj.shankFar', 'proj.shankNear']);
+      }
+    }
+  });
+
+  it('effective values are what the pose already used: filling them changes no key pose', () => {
+    for (const id of GUIDE_IDS) {
+      const p = prepareGuide(committed(id));
+      const filled: PreparedGuide = { guide: p.guide, keys: p.keys.map((k) => ({ ...k, state: { ...k.state, proj: effectiveProjection(k.state.proj) } })) };
+      for (const k of p.keys) expect(poseGap(poseAt(p, k.t), poseAt(filled, k.t)), `${id} key ${k.index}`).toBe(0);
+    }
+  });
+
+  it('a forearm projection set on one key blends in from the keys that leave it to the arm', () => {
+    const g = baseGuide({
+      projection: { armNear: 0.9 },
+      keyframes: [
+        { t: 0, label: 'Start', caption: 'a', root: { x: 0, y: 0.5, pelvisDeg: 0 }, joints: { shoulderNear: 20, elbowNear: 10 }, ease: 'smooth' },
+        { t: 0.5, label: 'Mid', caption: 'b', joints: { shoulderNear: 80, elbowNear: 60 }, projection: { forearmNear: 0.5 }, ease: 'smooth' },
+        { t: 1, sameAs: 0 },
+      ],
+    });
+    const p = prepareGuide(g);
+    expect(stateAt(g, p.keys, 0.25).proj.forearmNear).toBeGreaterThan(0.5);
+    expect(stateAt(g, p.keys, 0.25).proj.forearmNear).toBeLessThan(0.9);
+    // Before E1 the forearm stayed 0.5 after the key and snapped to 0.9 at the seam.
+    expect(stateAt(g, p.keys, 0.75).proj.forearmNear).toBeGreaterThan(0.5);
+    expect(poseContinuity(p).ok).toBe(true);
+  });
+
+  it('no committed guide jumps at a key, hold end or the loop seam', () => {
+    for (const id of GUIDE_IDS) {
+      const p = prepareGuide(committed(id));
+      expect(poseContinuity(p).value ?? 0, id).toBeLessThanOrEqual(0.002);
+      for (const k of p.keys) {
+        if (k.t <= 0 || k.t >= 1) continue;
+        expect(poseGap(poseAt(p, k.t - 1e-6), poseAt(p, k.t + 1e-6)), `${id} key ${k.index}`).toBeLessThan(0.002);
+      }
+    }
   });
 });
