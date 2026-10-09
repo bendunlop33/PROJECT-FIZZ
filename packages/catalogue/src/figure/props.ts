@@ -159,8 +159,24 @@ export function benchShapes(id: string, s: BenchSpec, groundY: number): PropGeom
 export interface CableStackSpec {
   x: number;
   pulleyY: number;
-  handle: 'bar' | 'rope' | 'stirrup';
+  /** null: the cable ends on another prop (no handle drawn). */
+  handle: 'bar' | 'rope' | 'stirrup' | null;
   restLength: number | null;
+  column: boolean;
+}
+
+/** A fixed padded block or roller, drawn as a rounded rectangle. */
+export function padShapes(id: string, s: { x: number; y: number; w: number; h: number; front?: boolean | undefined }): PropGeometry {
+  const r = Math.min(s.w, s.h) / 2;
+  const horizontal = s.w >= s.h;
+  const a = horizontal ? v(s.x - s.w / 2 + r, s.y) : v(s.x, s.y - s.h / 2 + r);
+  const b = horizontal ? v(s.x + s.w / 2 - r, s.y) : v(s.x, s.y + s.h / 2 - r);
+  return {
+    id,
+    shapes: [{ kind: 'capsule', layer: s.front === true ? 'front' : 'mid', a, b, ra: r, rb: r, paint: 'frameFill', outline: 'frame' }],
+    colliders: [],
+    solidBottoms: [],
+  };
 }
 
 /** Column, pulley, weight stack (lifted by the extra cable length) and the cable to the hand. */
@@ -173,16 +189,29 @@ export function cableStackShapes(id: string, s: CableStackSpec, hand: Vec, groun
   const stackBottom = groundY + 0.05 + lift;
   const stack = [v(s.x - w / 2 + 0.012, stackBottom), v(s.x + w / 2 - 0.012, stackBottom), v(s.x + w / 2 - 0.012, stackBottom + 0.22), v(s.x - w / 2 + 0.012, stackBottom + 0.22)];
   const shapes: Shape[] = [
-    { kind: 'poly', layer: 'back', points: column, fill: 'frameFill', stroke: 'frame', width: 0.006 },
-    { kind: 'poly', layer: 'back', points: stack, fill: 'frame' },
-    { kind: 'circle', layer: 'back', c: pulley, r: 0.022, fill: 'frameFill', stroke: 'frame', width: 0.006 },
-    { kind: 'line', layer: 'mid', a: pulley, b: hand, width: 0.005, paint: 'cable' },
+    ...(s.column
+      ? ([
+          { kind: 'poly', layer: 'back', points: column, fill: 'frameFill', stroke: 'frame', width: STROKE.edge },
+          { kind: 'poly', layer: 'back', points: stack, fill: 'frame' },
+        ] satisfies Shape[])
+      : []),
+    { kind: 'circle', layer: 'back', c: pulley, r: 0.022, fill: 'frameFill', stroke: 'frame', width: STROKE.edge },
+    { kind: 'line', layer: 'mid', a: pulley, b: hand, width: STROKE.hair, paint: 'cable' },
   ];
   if (s.handle === 'rope') {
-    shapes.push({ kind: 'line', layer: 'front', a: hand, b: add(hand, v(0, -0.06)), width: 0.012, paint: 'implement' });
+    // Clip a short way up the cable, rope strand down through the fist, knotted tail below it.
+    const toPulley = scale(v(pulley.x - hand.x, pulley.y - hand.y), 1 / Math.max(1e-9, cableLen));
+    const clip = add(hand, scale(toPulley, Math.min(0.06, cableLen)));
+    const tail = add(hand, v(0, -0.035));
+    const cable = shapes[shapes.length - 1];
+    if (cable?.kind === 'line') shapes[shapes.length - 1] = { ...cable, b: clip };
+    shapes.push({ kind: 'line', layer: 'mid', a: clip, b: hand, width: 0.011, paint: 'implement' });
+    shapes.push({ kind: 'line', layer: 'front', a: hand, b: tail, width: 0.011, paint: 'implement' });
+    shapes.push({ kind: 'circle', layer: 'front', c: tail, r: 0.011, fill: 'implement' });
+    shapes.push({ kind: 'circle', layer: 'mid', c: clip, r: 0.008, fill: 'implement' });
   } else if (s.handle === 'bar') {
     shapes.push({ kind: 'circle', layer: 'front', c: hand, r: 0.016, fill: 'implement' });
-  } else {
+  } else if (s.handle === 'stirrup') {
     shapes.push({ kind: 'circle', layer: 'front', c: hand, r: 0.03, stroke: 'implement', width: 0.008 });
   }
   return { id, shapes, colliders: [], solidBottoms: [] };

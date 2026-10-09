@@ -85,15 +85,26 @@ const SEGMENTS: [string, string, LimbGroup | null][] = [
 function checkRom(guide: Guide, poses: readonly Pose[]): CheckItem {
   const limits = ROM_PROFILES[guide.checks.romProfile][guide.view];
   let worst: { name: AngleName; value: number; t: number; over: number } | null = null;
+  const skipped = new Set<AngleName>();
   for (const p of poses) {
     for (const [name, value] of Object.entries(p.angles) as [AngleName, number][]) {
+      if (p.unchecked.includes(name)) {
+        skipped.add(name);
+        continue;
+      }
       const lim = limits[name];
       const over = Math.max(lim.min - value, value - lim.max);
       if (over > LIMITS.romSlackDeg && (worst === null || over > worst.over)) worst = { name, value, t: p.t, over };
     }
   }
   return worst === null
-    ? { id: 'rom', ok: true, detail: `All joint angles inside ${guide.checks.romProfile} (${guide.view} view)` }
+    ? {
+        id: 'rom',
+        ok: true,
+        detail:
+          `All joint angles inside ${guide.checks.romProfile} (${guide.view} view)` +
+          (skipped.size > 0 ? `; not checked where foreshortened: ${[...skipped].join(', ')}` : ''),
+      }
     : { id: 'rom', ok: false, detail: `${worst.name} = ${worst.value.toFixed(1)}° at t=${worst.t.toFixed(3)} (limit ${limits[worst.name].min}…${limits[worst.name].max})` };
 }
 

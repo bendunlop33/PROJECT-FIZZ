@@ -232,6 +232,36 @@ describe('props', () => {
     expect(heads).toHaveLength(2);
   });
 
+  it('front-view seated legs: short thighs, full shanks, foreshortened angles not ROM-checked; cable can end on a bar', () => {
+    const g = baseGuide({
+      view: 'front',
+      projection: { legNear: 0.2, legFar: 0.2, shankNear: 1, shankFar: 1 },
+      props: [
+        { id: 'bar', type: 'barbell', plates: 'none', anchor: { kind: 'keyframed' } },
+        { id: 'cable', type: 'cable_stack', x: 0, pulleyY: 1.1, hand: 'near', handle: 'bar', attach: 'bar', column: false },
+        { id: 'pad', type: 'pad', x: 0, y: 0.35, w: 0.4, h: 0.05, front: true },
+      ],
+      keyframes: [
+        {
+          t: 0, label: 'Start', caption: 'Sit', root: { x: 0, y: 0.31, pelvisDeg: 0 }, props: { bar: { x: 0, y: 0.9 } },
+          ik: { footNear: { x: 0.125, y: 0, planted: true, bend: 'ccw' }, footFar: { x: -0.125, y: 0, planted: true, bend: 'ccw' } },
+        },
+        { t: 1, sameAs: 0 },
+      ],
+      checks: { planted: ['footNear', 'footFar'], romProfile: 'adult-default' },
+    });
+    const p = poseAt(prepareGuide(g), 0);
+    expect(dist(p.points.hipNear ?? v(0, 0), p.points.kneeNear ?? v(0, 0))).toBeCloseTo(ADULT_V1.thigh * 0.2, 6);
+    expect(dist(p.points.kneeNear ?? v(0, 0), p.points.ankleNear ?? v(0, 0))).toBeCloseTo(ADULT_V1.shank, 6);
+    expect(p.unchecked).toEqual(expect.arrayContaining(['hipNear', 'kneeNear', 'hipFar', 'kneeFar']));
+    const cable = p.shapes.find((s) => s.kind === 'line' && s.paint === 'cable');
+    expect(cable?.kind === 'line' && cable.b).toEqual(v(0, 0.9));
+    expect(p.shapes.some((s) => s.kind === 'poly' && s.fill === 'frame')).toBe(false);
+    const rom = checkGuide({ raw: g, bytes: 1000, dirKey: 'test-guide', entry: null }).items.find((i) => i.id === 'rom');
+    expect(rom?.ok).toBe(true);
+    expect(rom?.detail).toContain('not checked where foreshortened');
+  });
+
   it('keyframe projection overrides the guide value and interpolates', () => {
     const g = baseGuide({
       projection: { armNear: 1 },

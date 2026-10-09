@@ -82,6 +82,20 @@ export const PropSchema = z.discriminatedUnion('type', [
     handle: z.enum(['bar', 'rope', 'stirrup']),
     /** Cable length at which the stack rests; longer cable lifts the stack. */
     restLength: num.min(0).max(3).optional(),
+    /** Run the cable to another prop's centre (a pulldown bar) instead of the hand; no handle is drawn. */
+    attach: propId.optional(),
+    /** Draw the column and weight stack (default true); false leaves the pulley and cable. */
+    column: z.boolean().optional(),
+  }),
+  z.strictObject({
+    ...base,
+    type: z.literal('pad'),
+    /** A fixed padded block or roller (thigh pad, seat back) centred on x, y; drawn in front of the body when `front`. */
+    x: coord,
+    y: coord,
+    w: num.min(0.02).max(1.2),
+    h: num.min(0.02).max(1.2),
+    front: z.boolean().optional(),
   }),
   z.strictObject({
     ...base,
@@ -155,9 +169,12 @@ export const ProjectionSchema = z.strictObject({
   forearmFar: projection.optional(),
   legNear: projection.optional(),
   legFar: projection.optional(),
+  /** Shank (and foot) only; defaults to the leg value. A seated thigh points at the camera, the shank doesn't. */
+  shankNear: projection.optional(),
+  shankFar: projection.optional(),
 });
 export type Projection = z.infer<typeof ProjectionSchema>;
-export const PROJECTION_KEYS = ['armNear', 'armFar', 'forearmNear', 'forearmFar', 'legNear', 'legFar'] as const;
+export const PROJECTION_KEYS = ['armNear', 'armFar', 'forearmNear', 'forearmFar', 'legNear', 'legFar', 'shankNear', 'shankFar'] as const;
 
 export const KeyframeSchema = z.strictObject({
   t: num.min(0).max(1),

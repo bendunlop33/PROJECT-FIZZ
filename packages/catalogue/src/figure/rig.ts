@@ -39,7 +39,8 @@ export const ADULT_V1 = {
   forearm: 0.146,
   /** Wrist to the middle of the grip (where an implement is held). */
   grip: 0.045,
-  hand: 0.07,
+  /** Wrist to the knuckles (drawing only): a fist ends just past the grip point. */
+  hand: 0.058,
   /** A flat hand (palm contact): wrist above and behind the middle of the palm. */
   palm: { back: 0.035, up: 0.02 },
   /** Foot, in the foot frame (origin = ankle joint, +u = towards the toes, +v = up). */
