@@ -8,16 +8,16 @@
   "units": "bodyHeight",
   "durationMs": 3000,
   "loop": "cycle",
+  "motion": "phases",
   "ground": { "y": 0, "scrollPerCycle": 0 },
   "props": [
-    { "id": "bar", "type": "barbell", "plates": "large", "anchor": { "kind": "keyframed" } }
+    { "id": "bar", "type": "barbell", "plates": "large", "anchor": { "kind": "hang", "x": 0.035, "elbowDeg": 13 } }
   ],
   "keyframes": [
     {
       "t": 0, "label": "Start", "caption": "Stand tall, soft knees, bar against the thighs",
       "root": { "x": -0.0406, "y": 0.5241, "pelvisDeg": 0 },
       "joints": { "lumbar": 0, "thoracic": 0, "neck": 0 },
-      "props": { "bar": { "x": 0.035, "y": 0.4426 } },
       "ik": {
         "footNear": { "x": 0, "y": 0, "planted": true },
         "footFar": { "x": -0.012, "y": 0, "planted": true },
@@ -26,25 +26,23 @@
       },
       "ease": "smooth"
     },
-    { "t": 0.1333, "root": { "x": -0.0491, "y": 0.5224, "pelvisDeg": 24 }, "joints": { "neck": -2 }, "props": { "bar": { "y": 0.4084 } }, "ease": "smooth" },
+    { "t": 0.1641, "pass": true, "root": { "x": -0.0499, "y": 0.5218, "pelvisDeg": 22.9 }, "joints": { "neck": -1.6 }, "ease": "smooth" },
     {
-      "t": 0.2667, "label": "Knee level", "caption": "Hips back, bar slides down the thighs",
+      "t": 0.268, "pass": true, "label": "Knee level", "caption": "Hips back, bar slides down the thighs",
       "root": { "x": -0.0698, "y": 0.5189, "pelvisDeg": 48 },
       "joints": { "neck": -3 },
-      "props": { "bar": { "y": 0.3467 } },
       "ease": "smooth"
     },
-    { "t": 0.4, "root": { "x": -0.0956, "y": 0.5137, "pelvisDeg": 59 }, "joints": { "neck": -4 }, "props": { "bar": { "y": 0.2975 } }, "ease": "smooth" },
+    { "t": 0.3489, "pass": true, "root": { "x": -0.0856, "y": 0.5155, "pelvisDeg": 60.9 }, "joints": { "neck": -4.3 }, "ease": "smooth" },
     {
       "t": 0.5333, "label": "Bottom", "caption": "Back flat, bar just below the knees",
       "root": { "x": -0.0983, "y": 0.5124, "pelvisDeg": 70 },
       "joints": { "neck": -5 },
-      "props": { "bar": { "y": 0.2526 } },
       "holdMs": 200, "ease": "smooth"
     },
-    { "t": 0.7, "sameAs": 3, "ease": "smooth" },
-    { "t": 0.8, "sameAs": 2, "caption": "Drive the hips forward to stand", "ease": "smooth" },
-    { "t": 0.9, "sameAs": 1, "ease": "smooth" },
+    { "t": 0.7383, "sameAs": 3, "ease": "smooth" },
+    { "t": 0.7989, "sameAs": 2, "caption": "Drive the hips forward to stand", "ease": "smooth" },
+    { "t": 0.8769, "sameAs": 1, "ease": "smooth" },
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],

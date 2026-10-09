@@ -462,6 +462,23 @@ describe('phase timing schema rules', () => {
   });
 });
 
+/**
+ * The committed RDL with its bar keyframed separately again (how it was before E4): the bar sits
+ * exactly where the hang anchor puts it at every authored key, and is interpolated on its own in between.
+ */
+function rdlKeyframedBar(): Guide {
+  const raw = JSON.parse(readFileSync(join(GUIDES, 'barbell-romanian-deadlift', 'guide.json'), 'utf8')) as { props: Record<string, unknown>[]; keyframes: { sameAs?: number; props?: Record<string, unknown> }[] };
+  const hanging = prepareGuide(GuideSchema.parse(raw));
+  for (const p of raw.props) if (p.id === 'bar') p.anchor = { kind: 'keyframed' };
+  raw.keyframes.forEach((k, i) => {
+    const key = hanging.keys[i];
+    if (k.sameAs !== undefined || key === undefined) return;
+    const bar = poseAt(hanging, key.t).propPoints.bar;
+    if (bar !== undefined) k.props = { ...k.props, bar: { x: bar.x, y: bar.y } };
+  });
+  return GuideSchema.parse(raw);
+}
+
 /** The committed RDL with its bar on a `hang` anchor (plan §4.4) instead of keyframed positions. */
 function rdlHanging(elbowDeg = 13): Record<string, unknown> {
   const raw = JSON.parse(readFileSync(join(GUIDES, 'barbell-romanian-deadlift', 'guide.json'), 'utf8')) as { props: Record<string, unknown>[]; keyframes: { props?: Record<string, unknown> }[] };
@@ -488,7 +505,7 @@ describe('hang barbell anchor (E4)', () => {
   });
 
   it('removes the arm wobble of a separately keyframed bar', () => {
-    const before = measureMotion(prepareGuide(committed('barbell-romanian-deadlift')), { n: 600 }).metrics.find((m) => m.id === 'J2.any');
+    const before = measureMotion(prepareGuide(rdlKeyframedBar()), { n: 600 }).metrics.find((m) => m.id === 'J2.any');
     const after = measureMotion(prepareGuide(GuideSchema.parse(rdlHanging())), { n: 600 }).metrics.find((m) => m.id === 'J2.any');
     expect(before?.value ?? 0).toBeGreaterThan(2);
     expect(after?.value ?? 1).toBeLessThan(0.5);
