@@ -183,6 +183,8 @@ function StartCheckIn({ gymId }: { gymId: string }) {
   const [reasons, setReasons] = useState<CheckInReason[]>([]);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  /** Pain flagged before the ill step: its toast (with Undo) is kept for the start (review S7). */
+  const [painToast, setPainToast] = useState<WorkoutToastParam | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [painPicked, setPainPicked] = useState<Exercise[]>([]);
   const [painArea, setPainArea] = useState<PainArea | null>(null);
@@ -261,12 +263,13 @@ function StartCheckIn({ gymId }: { gymId: string }) {
   async function afterPain(flagged: { flagIds: string[]; names: string[]; checkIn: CheckIn } | null) {
     const current = flagged?.checkIn ?? record;
     if (current === null) return;
+    const toast: WorkoutToastParam = flagged ? { kind: 'pain', text: `Pain noted for ${flagged.names.join(', ')}`, flagIds: flagged.flagIds } : savedToast(current);
     if (reasons.includes('ill')) {
       setRecord(current);
+      setPainToast(flagged ? toast : null);
       setStep('ill');
       return;
     }
-    const toast: WorkoutToastParam = flagged ? { kind: 'pain', text: `Pain noted for ${flagged.names.join(', ')}`, flagIds: flagged.flagIds } : savedToast(current);
     await start({ kind: 'answered', checkInId: current.id }, toast);
   }
 
@@ -429,7 +432,7 @@ function StartCheckIn({ gymId }: { gymId: string }) {
                 label="Train anyway"
                 disabled={busy}
                 onPress={() => {
-                  if (record) void start({ kind: 'answered', checkInId: record.id }, savedToast(record));
+                  if (record) void start({ kind: 'answered', checkInId: record.id }, painToast ?? savedToast(record));
                 }}
               />
             </>
