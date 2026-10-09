@@ -45,14 +45,15 @@ export function TodayScreen() {
   const [finishVisible, setFinishVisible] = useState(false);
   const [afterDismiss] = useState(() => createAfterDismiss());
   const [data, reload] = useScreenData(async (s) => {
-    const [gym, view, banners, active, unlinked] = await Promise.all([
+    const [gym, view, banners, active, unlinked, recent] = await Promise.all([
       s.yourData.currentGym(),
       s.today.view(),
       loadBanners(s, install),
       s.sessions.active(),
       s.checkIns.unlinked(),
+      s.repeat.candidates(1),
     ]);
-    return { gym, view, banners, active, unlinked };
+    return { gym, view, banners, active, unlinked, last: recent[0] ?? null };
   });
 
   useEffect(() => {
@@ -155,7 +156,28 @@ export function TodayScreen() {
       </View>
     );
   }
-  const { gym, view, banners, active, unlinked } = data.value;
+  const { gym, view, banners, active, unlinked, last } = data.value;
+  // Repeat last workout / Start from a past workout (routines.md RT4): the stand-in for routines.
+  const repeatRows =
+    gym && last ? (
+      <View style={{ gap: theme.space['2'] }}>
+        <SecondaryButton
+          label="Repeat last workout"
+          icon="arrow.clockwise"
+          accessibilityHint={`${last.exerciseNames.join(', ')}, ${formatShortDate(toMs(last.startedAtUtc), last.tz)}`}
+          onPress={() => {
+            navigation.navigate('Repeat', { sessionId: last.sessionId });
+          }}
+        />
+        <AppText variant="callout" color="text.secondary" numeric>{`${last.exerciseNames.slice(0, 3).join(', ')}${last.exerciseNames.length > 3 ? ` +${String(last.exerciseNames.length - 3)}` : ''} · ${formatShortDate(toMs(last.startedAtUtc), last.tz)} · ${String(last.sets)} ${last.sets === 1 ? 'set' : 'sets'}`}</AppText>
+        <TextButton
+          label="Start from a past workout"
+          onPress={() => {
+            navigation.navigate('PastWorkouts');
+          }}
+        />
+      </View>
+    ) : null;
   const zoned = services.now();
   const main = view?.main ?? { kind: 'no_plan' as const };
 
@@ -233,6 +255,7 @@ export function TodayScreen() {
               }}
             />
             {gym ? <SecondaryButton label="Start another workout" onPress={() => void start(gym.id)} /> : null}
+            {repeatRows}
           </Card>
         );
       case 'no_plan':
@@ -254,9 +277,7 @@ export function TodayScreen() {
                 </AppText>
               </>
             )}
-            <AppText variant="callout" color="text.secondary">
-              Routines and plans come in a later build.
-            </AppText>
+            {repeatRows}
           </Card>
         );
     }

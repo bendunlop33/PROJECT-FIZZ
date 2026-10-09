@@ -1,0 +1,52 @@
+import { useNavigation } from '@react-navigation/native';
+
+import { toMs } from '@fizz/domain';
+
+import { formatShortDate } from '../../format/dates';
+import { plural } from '../../format/numbers';
+import { useScreenData, useServices } from '../../shell/context';
+import { AppText, Group, Row, Screen, StatusLine, TextButton } from '../../ui';
+
+/**
+ * `Start from a past workout`: a lightweight stand-in for routines
+ * (critic-pass-1 #1, T9). Pick any finished workout to repeat its sets as
+ * targets. Nothing starts until `Start workout` on the next screen.
+ */
+export function PastWorkoutsScreen() {
+  const navigation = useNavigation();
+  const services = useServices();
+  const [data, reload] = useScreenData((s) => s.repeat.candidates());
+  if (data.state === 'loading') return <Screen>{null}</Screen>;
+  if (data.state === 'error') {
+    return (
+      <Screen>
+        <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t read past workouts." detail={data.message} action={<TextButton label="Try again" onPress={reload} />} />
+      </Screen>
+    );
+  }
+  const tz = services.now().tz;
+  return (
+    <Screen>
+      <AppText variant="callout" color="text.secondary">
+        Pick a workout to do again. Its sets become today’s targets; nothing is marked done.
+      </AppText>
+      {data.value.length === 0 ? (
+        <AppText variant="body">No finished workouts yet.</AppText>
+      ) : (
+        <Group>
+          {data.value.map((c) => (
+            <Row
+              key={c.sessionId}
+              title={`${formatShortDate(toMs(c.startedAtUtc), c.tz || tz)} · ${c.title}`}
+              subtitle={c.exerciseNames.join(', ')}
+              secondLine={`${c.gymName} · ${plural(c.sets, 'set', 'sets')}`}
+              onPress={() => {
+                navigation.navigate('Repeat', { sessionId: c.sessionId });
+              }}
+            />
+          ))}
+        </Group>
+      )}
+    </Screen>
+  );
+}

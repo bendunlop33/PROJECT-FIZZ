@@ -19,6 +19,8 @@ import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ProgressScreen } from '../screens/ProgressScreen';
+import { PastWorkoutsScreen } from '../screens/repeat/PastWorkoutsScreen';
+import { RepeatScreen } from '../screens/repeat/RepeatScreen';
 import { SetupScreen } from '../screens/setup/SetupScreen';
 import { TodayScreen } from '../screens/TodayScreen';
 import { CheckInScreen } from '../screens/workout/CheckInScreen';
@@ -156,6 +158,8 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               {/* No back navigation into a finished workout; corrections go through Edit (workout-summary §2). */}
               <RootStack.Screen name="Summary" component={SummaryScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
               <RootStack.Screen name="AddGym" component={AddGymScreen} options={{ presentation: 'modal' }} />
+              <RootStack.Screen name="PastWorkouts" component={PastWorkoutsScreen} options={{ headerShown: true, title: 'Past workouts' }} />
+              <RootStack.Screen name="Repeat" component={RepeatScreen} options={{ headerShown: true, title: 'Repeat' }} />
             </>
           ) : (
             <RootStack.Screen name="Setup">

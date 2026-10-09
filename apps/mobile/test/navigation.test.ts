@@ -1,7 +1,7 @@
 import { StackRouter, type StackNavigationState, type ParamListBase } from '@react-navigation/routers';
 import { describe, expect, it } from 'vitest';
 
-import { popToTabs, popToToday, replaceWithSummary } from '../src/navigation/actions';
+import { openStartedWorkout, popToTabs, popToToday, replaceWithSummary } from '../src/navigation/actions';
 import { initialRootState } from '../src/navigation/initial-state';
 
 describe('root stack at launch (review S5)', () => {
@@ -69,5 +69,23 @@ describe('root stack after Finish, Done and Discard (review B1)', () => {
     expect(names(s)).toEqual(['Tabs']);
     // What the old code did: navigate from above Tabs pushes another Tabs.
     expect(names(apply(apply(start(), navigate('Summary', { sessionId: 'x' })), navigate('Tabs', { screen: 'Today' })))).toEqual(['Tabs', 'Summary', 'Tabs']);
+  });
+});
+
+describe('starting from a sheet or a pushed screen', () => {
+  const router = StackRouter({});
+  const routeNames = ['Tabs', 'Workout', 'CheckIn', 'Summary', 'PastWorkouts', 'Repeat'];
+  const options = { routeNames, routeParamList: {}, routeGetIdList: {} };
+  it('check-in from Repeat → Start leaves exactly [Tabs, Workout]', () => {
+    let s = router.getInitialState(options);
+    for (const name of ['PastWorkouts', 'Repeat', 'CheckIn']) {
+      const next = router.getStateForAction(s, { type: 'NAVIGATE', payload: { name, params: {} } }, options);
+      if (!next) throw new Error(name);
+      s = next as typeof s;
+    }
+    const reset = openStartedWorkout({ toast: { kind: 'info', text: 'x' } });
+    const after = router.getStateForAction(s, reset as unknown as Parameters<typeof router.getStateForAction>[1], options);
+    expect(after?.routes.map((r) => r.name)).toEqual(['Tabs', 'Workout']);
+    expect(after?.index).toBe(1);
   });
 });

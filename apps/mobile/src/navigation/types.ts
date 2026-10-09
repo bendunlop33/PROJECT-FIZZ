@@ -28,11 +28,16 @@ export type RootStackParams = {
   /** Active workout (set, rest). `toast` after a start with a check-in (check-in.md §2.6). */
   Workout: { toast?: WorkoutToastParam } | undefined;
   /** Pre-workout check-in sheet: before a start, or editing a saved one. */
-  CheckIn: { mode: 'start'; gymId: string } | { mode: 'edit'; checkInId: string };
+  /** `repeatOf`: start by repeating that finished workout (routines.md RT4). */
+  CheckIn: { mode: 'start'; gymId: string; repeatOf?: string } | { mode: 'edit'; checkInId: string };
   ExercisePicker: { sessionId: string };
   EditSet: { sessionId: string; setId: string };
   Summary: { sessionId: string };
   AddGym: undefined;
+  /** `Start from a past workout` list. */
+  PastWorkouts: undefined;
+  /** Repeat a finished workout (routines.md §2.4). */
+  Repeat: { sessionId: string };
 };
 
 export type WorkoutToastParam =

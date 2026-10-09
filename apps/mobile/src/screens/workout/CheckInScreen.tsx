@@ -17,7 +17,7 @@ import { CHECK_IN_NOTE_MAX, type CheckIn, type CheckInReason, type CheckInScore,
 
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
-import { popToToday } from '../../navigation/actions';
+import { openStartedWorkout, popToToday } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -35,7 +35,7 @@ const SCORES: readonly CheckInScore[] = [1, 2, 3, 4, 5];
  */
 export function CheckInScreen() {
   const route = useRoute<RouteProp<RootStackParams, 'CheckIn'>>();
-  return route.params.mode === 'start' ? <StartCheckIn gymId={route.params.gymId} /> : <EditCheckIn checkInId={route.params.checkInId} />;
+  return route.params.mode === 'start' ? <StartCheckIn gymId={route.params.gymId} repeatOf={route.params.repeatOf ?? null} /> : <EditCheckIn checkInId={route.params.checkInId} />;
 }
 
 function Sheet({ title, lead, children, bar, onBack, backLabel }: { title: string; lead?: string; children?: React.ReactNode; bar: React.ReactNode; onBack?: () => void; backLabel?: string }) {
@@ -167,7 +167,7 @@ function ReasonsEditor({ reasons, setReasons, note, setNote, noteRef }: { reason
   );
 }
 
-function StartCheckIn({ gymId }: { gymId: string }) {
+function StartCheckIn({ gymId, repeatOf }: { gymId: string; repeatOf: string | null }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
@@ -206,15 +206,14 @@ function StartCheckIn({ gymId }: { gymId: string }) {
 
   async function start(checkIn: SessionCheckIn, toast: WorkoutToastParam | null) {
     setBusy(true);
-    const r = await services.workout.start({ gymId, opId: startOp, checkIn });
+    const r = await services.workout.start({ gymId, opId: startOp, checkIn, repeatOf });
     setBusy(false);
     if (!r.ok) {
       setError(r.error.code === 'session_already_active' ? 'A workout is already in progress. Resume it from Today.' : r.error.message);
       return;
     }
     changed();
-    navigation.goBack();
-    navigation.navigate('Workout', toast ? { toast } : undefined);
+    navigation.dispatch(openStartedWorkout(toast ? { toast } : undefined));
   }
 
   const savedToast = (c: CheckIn): WorkoutToastParam => ({ kind: 'check_in', text: `Check-in saved · ${scoreText(c.score)}`, checkInId: c.id });
