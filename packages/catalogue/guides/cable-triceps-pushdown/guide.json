@@ -8,6 +8,7 @@
   "units": "bodyHeight",
   "durationMs": 2600,
   "loop": "cycle",
+  "motion": "phases",
   "ground": { "y": 0, "scrollPerCycle": 0 },
   "props": [
     { "id": "cable", "type": "cable_stack", "x": 0.35, "pulleyY": 1.12, "hand": "near", "handle": "rope", "restLength": 0.45 }
@@ -24,7 +25,7 @@
       "ease": "smooth"
     },
     {
-      "t": 0.1731, "label": "Halfway", "caption": "Only the forearms move",
+      "t": 0.1755, "pass": true, "label": "Halfway", "caption": "Only the forearms move",
       "joints": { "elbowNear": 55, "elbowFar": 55 },
       "ease": "smooth"
     },
@@ -33,7 +34,7 @@
       "joints": { "elbowNear": 3, "elbowFar": 3 },
       "holdMs": 300, "ease": "smooth"
     },
-    { "t": 0.7308, "sameAs": 1, "caption": "Let the hands rise slowly", "ease": "smooth" },
+    { "t": 0.7271, "sameAs": 1, "caption": "Let the hands rise slowly", "ease": "smooth" },
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "cable", "showIn": ["static"] }],
