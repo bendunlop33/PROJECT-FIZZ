@@ -12,7 +12,9 @@ import type { BackupRecord } from './manifest';
  * Linux against real SQLite files.
  *
  * - Restore and Undo restore are refused while a workout is unfinished (DX4):
- *   both replace the history that workout reads.
+ *   both replace the history that workout reads. Exception (PM decision on
+ *   SP2): Undo is allowed when the unfinished workout came in with the
+ *   restored data and hasn't been touched since.
  * - Before the switch, pending backups finish and the rest alert is
  *   cancelled; afterwards the app relaunches its services from the new
  *   database (normal cold-start logic, flow §4.2).
@@ -66,6 +68,21 @@ export function createRestoreService(deps: RestoreServiceDeps) {
     return { title: a.session.routineName ?? 'Workout', startedAtUtc: a.session.startedAt.utc, tz: a.session.startedAt.tz };
   }
 
+  /**
+   * Undo restore is blocked by an unfinished workout only when Ben started or
+   * continued it after the last switch (PM decision on SP2, review S6). One
+   * that came in with the restored data and hasn't been touched since doesn't
+   * block: Undo swaps databases, so it stays in the restored copy.
+   */
+  async function undoBlock(): Promise<RestoreBlock | null> {
+    const a = await deps.activeWorkout().catch(() => null);
+    if (!a) return null;
+    const last = deps.manager.rollbackTarget.last;
+    const cameWithSwitch = last !== null && a.session.startedAt.utc <= last.atUtc && a.session.lastActivityAtUtc <= last.atUtc;
+    if (cameWithSwitch) return null;
+    return { title: a.session.routineName ?? 'Workout', startedAtUtc: a.session.startedAt.utc, tz: a.session.startedAt.tz };
+  }
+
   /** Cancel anything scheduled from the data being replaced (§4.2), then wait for backups. */
   async function quiesce(): Promise<void> {
     if (deps.restAlerts) await deps.restAlerts.reconcile(null, toMs(deps.now().utc)).catch(() => undefined);
@@ -73,8 +90,11 @@ export function createRestoreService(deps: RestoreServiceDeps) {
   }
 
   return {
-    /** Restore and Undo are unavailable while a workout is unfinished (DX4). Check is always available. */
+    /** Restore is unavailable while a workout is unfinished (DX4). Check is always available. */
     blockedBy: block,
+
+    /** Undo restore: blocked only by a workout started or continued since the last switch (S6). */
+    undoBlockedBy: undoBlock,
 
     copiesOnPhone: () => deps.copiesOnPhone(),
 
@@ -115,7 +135,7 @@ export function createRestoreService(deps: RestoreServiceDeps) {
 
     async undo(): Promise<UndoResult> {
       try {
-        const b = await block();
+        const b = await undoBlock();
         if (b) return { ok: false, reason: 'workout_unfinished', block: b };
         await quiesce();
         const r = await deps.manager.rollback(deps.now());

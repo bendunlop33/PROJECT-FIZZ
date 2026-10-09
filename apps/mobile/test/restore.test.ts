@@ -222,3 +222,67 @@ describe('a stale restore preview (review S5)', () => {
     expect((await s.yourData.counts()).finishedWorkouts).toBe(1);
   });
 });
+
+describe('Undo restore with an unfinished workout from the backup (review S6, PM decision on SP2)', () => {
+  it('is allowed while that workout is untouched; blocked once Ben continues it', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    // A manual backup made during a workout (allowed).
+    h.clockMs += 86_400_000;
+    const started = await s.workout.start({ gymId, opId: 'during', checkIn: null });
+    if (!started.ok) throw new Error(started.error.message);
+    const bench = (await s.coachingKnowledge.exercises()).find((e) => e.name === 'Bench press');
+    await s.workout.addExercise({ sessionId: started.aggregate.session.id, exerciseId: bench?.id ?? '', equipmentId: null, opId: 'add-during' });
+    const made = await s.backups.backUpOnPhone('manual');
+    if (!made.ok) throw new Error(made.error);
+    const text = await s.restore.readOnPhone(made.record.fileName);
+    if (text === null) throw new Error('no backup');
+    // Finish it, so Restore isn't blocked.
+    h.clockMs += 600_000;
+    const active = await s.sessions.active();
+    if (!active) throw new Error('no workout');
+    expect(await s.sessions.finish(active, 'finish-during')).toMatchObject({ ok: true });
+
+    h.clockMs += 600_000;
+    expect(await s.restore.restore(text, await stampFor(s, text))).toMatchObject({ ok: true, status: 'restored' });
+    // The restored data has the unfinished workout from the backup.
+    expect((await s.sessions.active())?.session.id).toBe(started.aggregate.session.id);
+    expect(await s.restore.blockedBy()).not.toBeNull();
+    expect(await s.restore.undoBlockedBy()).toBeNull();
+    h.clockMs += 60_000;
+    expect(await s.restore.undo()).toEqual({ ok: true });
+    expect(await s.sessions.active()).toBeNull();
+
+    // Switch back to the restored data: the workout is still untouched, so Undo is still allowed.
+    h.clockMs += 60_000;
+    expect(await s.restore.undo()).toEqual({ ok: true });
+    const restoredActive = await s.sessions.active();
+    if (!restoredActive) throw new Error('no restored workout');
+    expect(await s.restore.undoBlockedBy()).toBeNull();
+
+    // Ben continues it: now it's a live workout, and Undo is blocked as before (DX4).
+    h.clockMs += 60_000;
+    const set = restoredActive.sets[0];
+    if (!set) throw new Error('no set');
+    const logged = await s.workout.dispatch(restoredActive.session.id, { type: 'log_set', at: h.now(), opId: 'continue', setId: set.id, values: { load: { value: 60, unit: 'kg', convention: 'total' }, reps: 8, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
+    expect(logged.ok).toBe(true);
+    expect(await s.restore.undoBlockedBy()).toMatchObject({ title: 'Workout' });
+    expect(await s.restore.undo()).toMatchObject({ ok: false, reason: 'workout_unfinished' });
+  });
+
+  it('a workout started after the restore blocks Undo', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    const text = await s.restore.readOnPhone(autoFiles()[0] ?? '');
+    if (text === null) throw new Error('no backup');
+    h.clockMs += 60_000;
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    expect(await s.restore.restore(text, await stampFor(s, text))).toMatchObject({ ok: true });
+    h.clockMs += 60_000;
+    expect((await s.workout.start({ gymId, opId: 'after', checkIn: null })).ok).toBe(true);
+    expect(await s.restore.undo()).toMatchObject({ ok: false, reason: 'workout_unfinished' });
+  });
+});
+

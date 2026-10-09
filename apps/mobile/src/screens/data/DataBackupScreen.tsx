@@ -35,8 +35,8 @@ export function DataBackupScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParams>>();
   const relaunch = useRelaunch();
   const [data] = useScreenData(async (s) => {
-    const [status, counts, blocked] = await Promise.all([s.backups.getStatus(), s.yourData.counts(), s.restore.blockedBy()]);
-    return { status, counts, blocked, rollback: s.restore.rollbackTarget() };
+    const [status, counts, blocked, undoBlocked] = await Promise.all([s.backups.getStatus(), s.yourData.counts(), s.restore.blockedBy(), s.restore.undoBlockedBy()]);
+    return { status, counts, blocked, undoBlocked, rollback: s.restore.rollbackTarget() };
   });
   const now = services.now();
 
@@ -51,7 +51,7 @@ export function DataBackupScreen() {
   }
 
   if (data.state !== 'ready') return <Screen>{null}</Screen>;
-  const { status, counts, blocked, rollback } = data.value;
+  const { status, counts, blocked, undoBlocked, rollback } = data.value;
   const undoRow = rollbackRowView(rollback, { nowMs: toMs(now.utc), tz: now.tz });
 
   function undoRestore() {
@@ -183,7 +183,14 @@ export function DataBackupScreen() {
             navigation.navigate('Restore', { mode: 'check' });
           }}
         />
-        {undoRow ? <Row title={undoRow.title} subtitle={undoRow.subtitle} disabled={blocked !== null || undoing} onPress={undoRestore} /> : null}
+        {undoRow ? (
+          <Row
+            title={undoRow.title}
+            subtitle={undoBlocked ? `Finish or discard your workout first (${undoBlocked.title})` : blocked ? `${undoRow.subtitle}. The unfinished workout came with the restored data and stays in it.` : undoRow.subtitle}
+            disabled={undoBlocked !== null || undoing}
+            onPress={undoRestore}
+          />
+        ) : null}
       </Group>
       {undoError ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={undoError} /> : null}
       <BlockingCover visible={undoing} title="Switching back…" lines={[{ text: undoRow?.subtitle ?? 'Switching databases', done: false }]} />

@@ -772,6 +772,7 @@ Durability wording is exactly design-system §7.1. The off-phone file is written
 | Interrupted (app killed) | Next launch, before anything else: `A restore was interrupted. Your data is as it was before.` (StatusBanner, once) | Today |
 | Done | §2.3 step 6 | `Done` → Today with fresh services; normal cold-start logic runs (flow §4.2) |
 | Undo restore available | `Undo last restore` row with `Brings back your data from before Thu 8 Oct, 19:20` | Rollback |
+| Undo with an unfinished workout from the backup | (PM decision on review SP2, 2026-10-09.) Undo stays available when the only unfinished workout came in with the restored data and hasn't been touched since the switch; the row adds `The unfinished workout came with the restored data and stays in it.` A workout started or continued after the switch blocks Undo as DX4 says (`Finish or discard your workout first (Push A)`) | Rollback |
 | After undo | Row reads `Switch back to the restored backup` (rollback swaps; ADR 0005) | Rollback again |
 
 ### 3.4 FitNotes import
