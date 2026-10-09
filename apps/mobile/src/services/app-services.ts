@@ -1,6 +1,7 @@
 import {
   buildPresetDraft,
   createSessionService,
+  LEGACY_STARTER_IDS,
   listGymPresets,
   materialiseGymDraft,
   starterExercises,
@@ -121,6 +122,14 @@ export function createAppServices(deps: AppServicesDeps) {
      */
     ensureStarterExercises: (): Promise<number> =>
       deps.manager.store.db.write(async (tx) => {
+        // Pre-B2 starter rows (another ID scheme) that nothing refers to are removed, so nothing shows twice.
+        for (const legacy of LEGACY_STARTER_IDS) {
+          const used = await tx.getFirst(
+            'SELECT 1 AS used FROM session_exercises WHERE exercise_id = ? UNION ALL SELECT 1 FROM pain_flags WHERE exercise_id = ? LIMIT 1',
+            [legacy, legacy],
+          );
+          if (!used) await tx.run('DELETE FROM exercises WHERE id = ? AND owner_id IS NULL', [legacy]);
+        }
         const have = new Set((await listDocuments(tx, EXERCISE_SPEC)).map((e) => e.id));
         let added = 0;
         for (const e of starterExercises(deps.now().utc)) {

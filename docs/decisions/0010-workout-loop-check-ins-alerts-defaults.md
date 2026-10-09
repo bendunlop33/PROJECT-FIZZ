@@ -35,3 +35,9 @@ Slice 2 builds Today → check-in → Active set → Rest → Summary on the fou
 - A new cloud build is needed (expo-haptics, plus react-native-screens/expo-symbols from ADR 0008).
 - Device checks still needed: formSheet check-in sheet and swipe-down, rest notification at the deadline while locked and force-closed, no banner while in the app, haptics, the number pad's Done bar, ActionSheet menus.
 - Not built: Overview (`All`) table, custom keypad, timed exercises, rest preset editor, check-in settings, delete/undo of check-ins, `Choose movements` from the summary, routines and the weekly plan (so no planned card or Reschedule), Live Activity.
+
+## Amendment 1 (2026-10-09, slice 3): one exercise ID scheme (review workout-loop B2, SP5)
+
+- The "Starter exercises" section above said IDs were `deriveId('catalogue:<key>')`. That differed from ADR 0011's catalogue IDs, so wiring the catalogue would have split every exercise's history and pain flags. **Superseded:** there is one scheme for catalogue exercises, ADR 0011's `Exercise.id = UUIDv5(key, FIZZ_CATALOGUE_NAMESPACE)` (`catalogueExerciseId`). Its implementation moved to `@fizz/domain` (`catalogue-id.ts`); `@fizz/catalogue` re-exports it, so the app and the catalogue can't drift.
+- Starter keys now follow the catalogue's (`barbell-bent-over-row`, `dumbbell-seated-shoulder-press`, `machine-seated-leg-curl`, `machine-assisted-pull-up`, `machine-assisted-dip`, `dumbbell-incline-bench-press`), and starters carry `catalogueKey`, `mechanic` and `family`. A test checks that every starter the catalogue has is the same exercise there (ID, name, laterality, equipment, convention, mechanic, family, pattern).
+- No migration: nothing real was logged on the earlier build. At launch, pre-amendment starter rows that no workout or pain flag refers to are removed so nothing shows twice; referenced ones are kept as history.

@@ -11,6 +11,7 @@
   },
   "sideEffects": false,
   "dependencies": {
+    "@fizz/domain": "0.1.0",
     "@fizz/schemas": "0.1.0",
     "zod": "4.6.5"
   },

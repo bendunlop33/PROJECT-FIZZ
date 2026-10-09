@@ -23,3 +23,4 @@ export * from './calendar';
 export * from './checkin';
 export * from './display';
 export * from './starter-exercises';
+export * from './catalogue-id';

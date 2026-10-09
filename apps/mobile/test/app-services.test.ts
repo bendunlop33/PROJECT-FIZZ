@@ -329,3 +329,25 @@ describe('Your data and Coaching knowledge are separate (rule 10)', () => {
     expect(JSON.stringify(draft)).not.toMatch(/ownerId|gymId/);
   });
 });
+
+describe('starter exercises after the ID scheme change (review B2)', () => {
+  it('removes unreferenced pre-B2 starter rows at launch and keeps referenced ones', async () => {
+    const { services: s } = await ready();
+    const { LEGACY_STARTER_IDS, starterExercises } = await import('@fizz/domain');
+    const legacy = starterExercises('2026-10-08T00:00:00.000Z').slice(0, 2).map((e, i) => ({ ...e, id: LEGACY_STARTER_IDS[i] ?? '' }));
+    await s.close();
+    const current = (await ready()).services;
+    const names = current.developer.databaseNames().current;
+    await current.close();
+    const db = new DatabaseSync(join(dir, names));
+    for (const e of legacy) db.prepare('INSERT INTO exercises (id, owner_id, version, updated_at_utc, data) VALUES (?, NULL, 1, ?, ?)').run(e.id, e.updatedAtUtc, JSON.stringify(e));
+    // The second legacy row is used by a pain flag, so it stays.
+    db.prepare("INSERT INTO pain_flags (id, owner_id, exercise_id, status, version, updated_at_utc, data) VALUES ('p1', 'o', ?, 'cleared', 1, '2026-10-08T00:00:00.000Z', '{}')").run(legacy[1]?.id ?? '');
+    db.close();
+    const again = (await ready()).services;
+    const ids = (await again.coachingKnowledge.exercises()).map((e) => e.id);
+    expect(ids).not.toContain(legacy[0]?.id);
+    expect(ids).toContain(legacy[1]?.id);
+    expect(ids.filter((id) => !LEGACY_STARTER_IDS.includes(id))).toHaveLength(starterExercises('x').length);
+  });
+});
