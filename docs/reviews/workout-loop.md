@@ -178,3 +178,25 @@ Fix:
 - **SP3. Pain with no movement (CI8).** Without a coach, `Pain` + `Not now` blocks nothing, and `Choose movements ›` isn't built. The only path left is the next check-in. Until the Pain flags screen exists, consider holding every increase in that session's Next time. That is the safe direction, and it matches CI8's session-wide block for the coach.
 - **SP4. Foreground rest alerts.** lock-screen-and-alerts §4.3 ("never shown as a banner; the in-app cue is the alert") assumes the cue is app-wide. Say so explicitly, or allow the banner when the workout screen isn't visible (S1).
 - **SP5. One ID scheme for catalogue exercises.** ADR 0010 and ADR 0011 describe different exercise ID schemes. Record one (B2).
+
+---
+
+## Re-review of the fixes (9 Oct 2026, `811c3c3..30103be`)
+
+**Verdict for the fixes: done, with one regression.** The regression is a new Today failure on unreadable records; it is tracked as S1 in `slice-3-and-s1.md`. Other open items from slice 3 are in that file.
+
+| Item | Status | Evidence |
+|---|---|---|
+| B1 Done/Discard push a second Today | Fixed | `navigation/actions.ts` sends `POP_TO Tabs` for Done, Discard, `Go to Today` and Summary → Data & backup, `RESET [Tabs, Workout]` after a start from the check-in or Repeat, and `REPLACE` for Finish → Summary. `navigation.test.ts` runs the real `StackRouter`: Start → Finish → Done → Start, Discard (same `Tabs` key), check-in → Start/Skip, and Repeat → check-in → Start. The remaining `navigate('Tabs', …)` calls are made from inside Tabs (Today, BannerList), so they don't push. |
+| B2 Starter IDs differ from the catalogue | Fixed | `catalogueExerciseId` moved to `@fizz/domain` (pure TS) and is re-exported by the catalogue. Starters use the catalogue's keys. `starter-ids.test.ts` checks that ID, name, laterality, equipment, convention, mechanic, family and pattern match for every starter the catalogue has. Unreferenced legacy rows are removed at launch; referenced ones are kept. ADR 0010 amendment 1. |
+| S1 Silent rest end while minimised | Fixed (device check pending) | The notification handler hides the banner only while the Workout screen is focused (`presentation.ts`, set from `useFocusEffect`, tested). The Today card reads `Rest over · ready for next set` after the deadline. |
+| S2 Blank Workout/Summary on a load failure | Fixed, with a regression | Workout and Summary show an error with `Try again` and `Go to Today`/`Done`. `load()` and `planFor` catch history failures per exercise. An unreadable unfinished workout isn't auto-opened, and Today offers `Restore from a backup` (tested in `unreadable-records.test.ts`). **Regression:** Today's new `repeat.candidates(1)` decodes a year of finished sessions and throws on one bad record, so Today itself fails (probe confirmed). See slice-3 S1. |
+| S3 Next time never used | Fixed | `nextTargetsFor` is shared by the Summary and `addExercise`, and planned sets carry `source: 'built_in_rule'` (`next-target-prefill.test.ts`). Recomputed, not stored (ADR 0010 amendment 2). |
+| S4 Check-in note cut off | Fixed | `numberOfLines` removed from the Summary note. |
+| S5 Field vs stepper | Fixed | `nextFieldText` keeps partial typing but follows `±` (`number-text.test.ts`). The equipment editor uses the same rule. |
+| S6 `−30 s` to zero: no cue | Fixed | `restEndCueKey` finds `RestEnded{expired}` in a command result, and each key plays once (`presentation.test.ts`). |
+| S7 Pain flags can't be cleared | Fixed, with a gap | Profile › Pain flags (with confirm), Clear on the set card (with confirm), Summary `Choose movements`, and Pain → Ill keeps the pain toast with its Undo. **Gap:** Summary's per-flag `Clear` has no confirm or Undo. See slice-3 S4. |
+| S8 Sheet detents, navigating mid-dismiss | Addressed (device check pending) | The check-in actions scroll with the content. Finish → Summary runs from the Modal's `onDismiss`, with a 700 ms fallback (`after-dismiss.test.ts`), on both Workout and Today. |
+| N6 Edited times use the phone's zone | Fixed | `EditTimesSheet` uses the session's `tz`. |
+| SP1 / SP3 / SP5 | Addressed (provisional) | Defaults by category: main barbell 3–6 at RPE 8.5, compound 6–10, isolation 8–12. Unspecified pain holds every increase for that workout. One ID scheme. All recorded in ADR 0010 amendments 1–2 and `provisional-2026-10-09.md`; the defaults await Ben's confirmation. |
+| N1–N5, N7–N12 | Not in this pass | Still open unless listed above. The navigation part of N12 is now covered. |
