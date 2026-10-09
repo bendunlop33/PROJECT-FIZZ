@@ -87,6 +87,31 @@ describe('file names and rotation plan', () => {
     const list = [rec(1, 'automatic'), rec(2, 'manual'), rec(3, 'automatic'), rec(4, 'automatic'), rec(5, 'automatic', 'not-ours.json')];
     expect(planRotation(list, 2, 'x').map((r) => r.fileName)).toEqual(['fizz-backup-2026-10-11-1200-auto.json']);
   });
+
+  it('never deletes the newest backup that passed its integrity check (review B2, SP2)', () => {
+    const rec = (day: number, integrityOk: boolean): BackupRecord => ({
+      fileName: `fizz-backup-2026-11-${String(day).padStart(2, '0')}-1200-auto.json`,
+      kind: 'automatic',
+      reason: 'workout_finished',
+      createdAtUtc: `2026-11-${String(day).padStart(2, '0')}T12:00:00.000Z`,
+      tz: TZ,
+      sha256: '0'.repeat(64),
+      textLength: 1,
+      finishedWorkouts: day,
+      loggedSets: 0,
+      exercises: 0,
+      integrityOk,
+      integrityIssues: integrityOk ? 0 : 1,
+    });
+    // One good backup, then 15 damaged ones (e.g. a schema tightened in a later build).
+    const list = [rec(1, true), ...Array.from({ length: 15 }, (_, i) => rec(i + 2, false))];
+    const doomed = planRotation(list, 14, rec(16, false).fileName).map((r) => r.fileName);
+    expect(doomed).not.toContain(rec(1, true).fileName);
+    expect(doomed).toEqual([rec(2, false).fileName]);
+    // Once a newer good backup exists, the old good one rotates normally.
+    const healed = [...list, rec(17, true)];
+    expect(planRotation(healed, 14, rec(17, true).fileName).map((r) => r.fileName)).toEqual([rec(3, false).fileName, rec(2, false).fileName, rec(1, true).fileName]);
+  });
 });
 
 describe('backup service', () => {

@@ -118,11 +118,13 @@ export function backupFileName(ms: number, tz: string, kind: BackupRecord['kind'
 /**
  * Which automatic files to delete after a new one was written and checked:
  * the oldest beyond `keep`. Manual files, files not written by Fizz and the
- * file just written are never on the list.
+ * file just written are never on the list, and neither is the newest backup
+ * that passed its integrity check (PM decision SP2): if every newer backup is
+ * damaged, the last restorable one stays.
  */
 export function planRotation(files: readonly BackupRecord[], keep: number, justWritten: string): BackupRecord[] {
-  const automatic = files
-    .filter((f) => f.kind === 'automatic' && AUTOMATIC_NAME.test(f.fileName))
-    .sort((a, b) => (a.createdAtUtc < b.createdAtUtc ? 1 : a.createdAtUtc > b.createdAtUtc ? -1 : 0));
-  return automatic.slice(keep).filter((f) => f.fileName !== justWritten);
+  const newestFirst = (a: BackupRecord, b: BackupRecord) => (a.createdAtUtc < b.createdAtUtc ? 1 : a.createdAtUtc > b.createdAtUtc ? -1 : 0);
+  const newestGood = [...files].filter((f) => f.integrityOk).sort(newestFirst)[0]?.fileName ?? null;
+  const automatic = files.filter((f) => f.kind === 'automatic' && AUTOMATIC_NAME.test(f.fileName)).sort(newestFirst);
+  return automatic.slice(keep).filter((f) => f.fileName !== justWritten && f.fileName !== newestGood);
 }
