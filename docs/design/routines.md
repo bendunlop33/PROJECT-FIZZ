@@ -2,6 +2,8 @@
 
 > **Revision 2026-10-08 (consolidation).** The routine source tag (`Coach` / `Ben` / `Imported`) is the canonical `SourceTag` (design-system §9.28); `RoutineRow`, `SetTemplateRow`, `ReorderRow` and `PlanSegmentControl` are merged into design-system (§9.35, §9.37 area); the row's `Start` is a `SecondaryButton` (§9.2a). Routines are **Your data**; a routine that uses an exercise missing from this phone's coaching knowledge (after a one-section restore) shows `Exercise missing` (data-import-export.md §2.3).
 
+> **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** A routine row's `Start`, `Empty workout` and `Repeat last workout` → `Start workout` go through the same check-in gate as Today ([check-in.md](check-in.md) §2.1): with a check-in due, the `CheckInSheet` appears before the session is created, and `startWorkout` / `startWorkoutFromSession` take `opts.checkIn`. With check-ins off or not due, nothing changes.
+
 Status: v0.1 draft, 8 Oct 2026. Brief §1 (Routines and plan), §6 (`Routine` / `RoutineExercise`), §7 (`startWorkout`), §12 Page 2. Schemas: `packages/schemas/src/routine.ts` (`SetTemplate`, `RoutineExercise.restBySetType`, `restOverrideS`, `supersetGroup`, `transitionRestS`). Tokens: [design-system.md](design-system.md). Entry from [today.md](today.md). Coach-made routines: [workout-builder.md](workout-builder.md) (WB1, WB8, WB9).
 
 Routines are **prepared once, outside the logging loop**. Nothing here runs between sets. The only routine action inside a workout is the session snapshot taken at Start.

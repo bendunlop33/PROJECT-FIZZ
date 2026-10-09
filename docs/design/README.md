@@ -1,6 +1,6 @@
 # Design
 
-Written by the `designer` agent. Last consolidated 8 Oct 2026.
+Written by the `designer` agent. Last consolidated 8 Oct 2026. Added 9 Oct 2026: `check-in.md` (brief v0.9), with revision notes in the specs it touches.
 
 - **Tokens and components:** `design-system.md` is the only source. If a screen needs a value that isn't there, add it there first. Old component names still used in some specs are listed as aliases in design-system §11.
 - **Open questions for Ben and gaps for the developer:** `open-decisions.md` (one deduplicated list).
@@ -12,7 +12,7 @@ Everything Fizz stores belongs to one of two domains (approved by Ben, 8 Oct 202
 
 | Domain | What's in it | Where Ben manages it |
 |---|---|---|
-| **Your data** (about Ben, owner-scoped) | Profile, goals and week; workout history; coach memories; pain flags; gyms and equipment; routines and plans; conversations; settings; his guide files | Profile, Plan, Progress; Data & backup → backup, restore, `Export: My data`, `Delete my data (keep coaching knowledge)` |
+| **Your data** (about Ben, owner-scoped) | Profile, goals and week; workout history; pre-workout check-ins; coach memories; pain flags; gyms and equipment; routines and plans; conversations; settings; his guide files | Profile, Plan, Progress; Data & backup → backup, restore, `Export: My data`, `Delete my data (keep coaching knowledge)` |
 | **Coaching knowledge** (general, nothing about Ben) | Approved playbook rules with evidence and sources; research candidate rules; the guide library's index and excerpt metadata; the exercise catalogue and aliases; default presets | Guides & playbook; Data & backup → backup, restore, `Export: Coaching knowledge only`, `Reset coaching knowledge` |
 
 Credentials (ChatGPT sign-in, API keys) are in the Keychain, in neither domain, and never in a backup or export. A general training rule said in chat goes to the playbook as a candidate, never into memory (coach-memory.md CM9). Backups hold both domains in two sections that restore independently (data-import-export.md DX11).
@@ -35,6 +35,7 @@ Credentials (ChatGPT sign-in, API keys) are in the Keychain, in neither domain, 
 |---|---|
 | `flow-first-milestone.md` | End-to-end state machine (Today → set → rest → summary), persistence and force-close recovery, how optional layers attach, brief proposals P1–P12, dependency status (`DEP-*`) |
 | `today.md` | Today tab: what to train now and where; Start or Resume as the single primary |
+| `check-in.md` | Pre-workout check-in on Start (1–5, Skip): "What's up?" reasons, pain-flag and feeling-ill steps, the coach's lighter-session offer, how check-ins are shown, settings, voice (added 9 Oct; replaces the Today readiness chips) |
 | `active-workout.md` | Focused set card and Overview table: one-tap Log, keypad, supersets, timed and unilateral sets, pain flag note, finish sheet |
 | `rest-state.md` | Rest timer inside the workout: presets, adjust/skip, background behaviour, spoken cue modes and scripts |
 | `workout-summary.md` | Post-workout facts, comparisons, `Next time` targets (coach or built-in rule), backup line |
@@ -85,7 +86,8 @@ Credentials (ChatGPT sign-in, API keys) are in the Keychain, in neither domain, 
      │                        │                                             │
   LOGGING LOOP            COACH (optional layer; never blocks logging)   SET-UP & DATA
   flow-first-milestone ◄── coach-adjustments ── change-review            onboarding
-    today                  coach-sheet ── coach-memory                    profile-and-settings (hub)
+    today ── check-in ───► coach-adjustments, coach-memory               profile-and-settings (hub)
+                           coach-sheet ── coach-memory
     active-workout ◄────── voice            coaching-playbook               ├ gym-editor
     rest-state ◄────────── lock-screen-and-alerts                           ├ ai-connection
     workout-summary        ai-connection (connection, keys, voice out)      ├ coach-memory, coaching-playbook
@@ -114,6 +116,7 @@ Single owners of shared things (other specs link here rather than redefine):
 | Banner priority, durability wording, App status | system-states.md |
 | Equipment and achievable-load editing | gym-editor.md |
 | Exercise picker and substitutions | exercise-library.md |
+| Pre-workout check-in: when it's asked, its record, settings, offer conditions, spoken grammar | check-in.md |
 
 ## Research dependencies
 

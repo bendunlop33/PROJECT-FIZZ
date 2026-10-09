@@ -7,6 +7,8 @@
 > - Microphone-denied wording aligned with active-workout.md and system-states.md: `Voice isn't available: microphone is off in iOS Settings.`
 > - "Remember …" with a general training rule goes to the playbook as a candidate, not to memory (coach-memory.md CM9).
 
+> **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** Spoken check-ins: with the check-in sheet open, or after "start my workout" on Today, `parseVoiceCommand` hands the utterance to the new pure `parseCheckInUtterance` (grammar, clarifications and outcomes in [check-in.md](check-in.md) §4.5). "Feeling a 3, tired" saves score 3 + `Tired` with no AI and no network. Words are never turned into a number ("feeling great" asks `What number, 1 to 5?`), and a bare "sore" asks the CM6 question. Talk sits in the sheet's bottom bar and uses the same strip, timings and Undo rules (the in-workout toast carries `Change`). After the first set is logged, check-in phrases are not parsed as a check-in. Changed: §4.3, §6, checks 22–24.
+
 Status: v0.1 draft, 8 Oct 2026. The single spec for voice **input** and coach **speech**, covering brief §3, §12 (spoken set companion), validation scenarios in §10, CHANGELOG v0.2 (on-device first, deterministic `parseSpokenSet`) and v0.6 (Apple voices for cues; Apple or opt-in OpenAI voice for coach replies; en-GB on-device recognition), CLAUDE.md rules 1, 3, 5, 7 and 8, and [device probe build 7](../device-tests/2026-10-08-probe-build7.md). Scripted cue wording and cue modes stay in [rest-state.md](rest-state.md) §5; the inline voice strip's placement stays in [active-workout.md](active-workout.md) §2.5. This file defines what happens inside them. Tokens: [design-system.md](design-system.md).
 
 Voice is **another way to do the same things**. It uses the same services, operation IDs, guards and Undo as taps. With no network and no AI, simple set logging and workout commands still work by voice (rule 1).
@@ -304,7 +306,10 @@ A clarification is tied to the session version. If a set is logged by tap, the a
 | "machine's busy" | `setTemporaryAvailability` for the active exercise's equipment; a swap needs the coach | "Marked busy for today." |
 | "my shoulder hurts on this" | `classifyPainMention` → `setPainFlag` (coach-memory §4.2) | "Pain noted for overhead press. No increases until you clear it." |
 | "yes" / "adjust" / "no thanks" | Answers the **visible** offer or the latest awaiting card only (brief §3) | per coach-adjustments §5.3 |
-| "start my workout" (Today) | Start the planned routine (today.md §4) | "Starting Push A." |
+| "start my workout" (Today) | Start the planned routine (today.md §4). With a check-in due, opens the check-in sheet (2026-10-09) | "Starting Push A." |
+| "start my workout, feeling a 3, tired" (Today, 2026-10-09) | Start + check-in in one go; the sheet appears only for the pain or ill step (check-in.md §4.5) | "Starting Push A." |
+| "feeling a 3", "I'm a 2, slept badly", "4" (check-in sheet open, 2026-10-09) | `parseCheckInUtterance` → same as tapping the score and reasons | "Got it. 3, tired." |
+| "train anyway" / "skip workout" / "reschedule" (check-in ill step, 2026-10-09) | The matching button; Reschedule opens the move picker, the day is tapped | "Skipped. Say undo to put it back." (skip only) |
 
 Everything else goes to the coach (if connected) as a turn with `modality: 'voice'` and the transcript.
 
@@ -412,6 +417,7 @@ Existing (brief §3, §7, §12; coach-adjustments §6): `startVoiceSession(sessi
 | Function | Contract |
 |---|---|
 | `parseVoiceCommand(transcript, context)` → `{command, args} \| null` | **Pure, `packages/domain`, unit-tested** grammar for §4.3. Runs before `parseSpokenSet` for command words; never calls the model |
+| `parseCheckInUtterance(transcript, locale, ctx)` (2026-10-09) | **Pure, unit-tested.** Called by `parseVoiceCommand` when `ctx.checkInOpen` or after a start command. Result union and word lists in check-in.md §4.5 and §6. Uses `classifyPainMention` for pain words |
 | `getVoiceCapabilities()` | `{micPermission, speechPermission, onDeviceSupported, locale, serverRecognitionAllowed, ttsVoices[], route: {input, output}}` from the native module; feeds `getAiCapabilities.speechIn` |
 | `resolveClarification(turnId, choice, sessionVersion)` | Commits the chosen candidate with the turn's opId; rejects if the version moved (`Not saved`) |
 | (folded) `saveVoiceSettings(patch, opId)` with `{talkMode, phoneMicWithHeadphones, doneShortcut, listenDuringRest, serverRecognition, speakVoiceReplies, locale}` | Profile settings; canonical name in profile-and-settings.md §6 (was `setVoicePreferences`) |
@@ -443,6 +449,9 @@ Run on Ben's iPhone, en-GB locale (probe build 7 used en-US; re-run that probe w
 19. "Start it" on a coach-built draft and "use my API key" do nothing and give the tap instruction (VO9).
 20. Every strip state has an icon or word as well as colour; the red `Mic on` dot always comes with the words; `Log …` stays visible and tappable in every strip state at 375pt and AX3.
 21. Voice "undo" says what it undid and follows the same version guard as the tap Undo (`Can't undo: set 2 changed…` when rejected).
+22. (2026-10-09) Airplane mode, check-in sheet open: "feeling a 3, tired" saves score 3 and `Tired` and starts the workout; the strip shows `Heard: "…"`. "Feeling great" and "feeling a 7" ask for a number; "a bit sore" asks `Sore like after training, or pain?`; nothing is saved until answered.
+23. (2026-10-09) "Start my workout, feeling a 4" on Today creates one session with a linked check-in of 4 and no sheet.
+24. (2026-10-09) After a set has been logged, "feeling a 2" creates no check-in.
 
 ## Proposed design-system additions
 

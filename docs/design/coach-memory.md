@@ -7,6 +7,8 @@
 > - `setPainFlag({exerciseIds[], active, area?, note?, source}, opId)` (§6) is the canonical signature everywhere; coach-adjustments.md's single-exercise form is a call with one ID.
 > - Components merged into design-system (§11 index): `MemoryRow` and `PainFlagRow` §9.35, `PainFlagCard` and `MemoryCard` in the card families §9.48, memory statuses §7.1.
 
+> **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** A new entry point for pain flags: `Pain` in the check-in's `What's up?` step opens the movement step of [check-in.md](check-in.md) §2.4, which reuses §2.6 (`Add pain flag`) with today's exercises first, nothing preselected, and the professional and urgent lines. It calls `setPainFlag({…, source: 'check_in'}, opId)`; the source shows as `You, in a check-in before Push A`. `Not now` sets no flag (check-in.md CI8: the session then blocks every coach increase, and the summary asks Ben to choose movements). A bare spoken "sore" in the check-in asks the CM6 question; the tapped chip `Sore (from training)` is explicit and isn't questioned. Check-ins are **not** memories: they're a separate Your-data record and are never offered as `Save to memory?`. Changed: §1 (where it lives), §5 (sources), §6 (`source` union), check 19.
+
 Status: v0.1 draft, 8 Oct 2026. Covers brief §2 ("editable saved goals/preferences with provenance and dates"), §6 (`CoachingMemory`), §8 (`saveConfirmedMemory`, "don't silently infer lasting goals"), validation scenarios 7 and 10, CLAUDE.md rules 6, 8 and 9, and the pain behaviour already placed in [coach-adjustments.md](coach-adjustments.md) §4.5 and [workout-builder.md](workout-builder.md) §5.1. Tokens: [design-system.md](design-system.md).
 
 Memory is **what the coach is allowed to assume about Ben**. Pain flags are **deterministic guards** that live next to it. Both are fully usable offline, and neither is ever changed silently.
@@ -23,7 +25,7 @@ Where it lives:
 - Profile → Coach → `Memory`.
 - Coach sheet → context chip → `Memory: 7 confirmed ›` / `2 memories waiting for you to confirm ›` (coach-sheet §2.4).
 - Memory and pain cards in the conversation (coach-sheet §2.6).
-- Pain: `Adjust` → `Pain` (workout), the `Pain` starter chip (coach sheet), voice ("my shoulder hurts"), Memory → `Add pain flag`.
+- Pain: `Adjust` → `Pain` (workout), the `Pain` starter chip (coach sheet), voice ("my shoulder hurts"), Memory → `Add pain flag`, and (2026-10-09) `Pain` in the pre-workout check-in ([check-in.md](check-in.md) §2.4).
 
 ### Design decisions to confirm with Ben (flagged, not yet in the brief)
 
@@ -374,7 +376,7 @@ Set in the instructions and checked by instruction tests (not by the UI):
 | Screen title | `Memory` |
 | Intro | `What the coach remembers about you. It only uses items marked ✓.` |
 | Sections | `Pain flags` · `Waiting for you` · `Goals` · `Preferences` · `About me` · `Notes` · `Worth checking` · `Expired` · `Off` |
-| Sources | `You` · `Setup` · `You asked the coach` · `Coach suggested` · `You, during Push A` |
+| Sources | `You` · `Setup` · `You asked the coach` · `Coach suggested` · `You, during Push A` · `You, in a check-in before Push A` (2026-10-09; pain flags only) |
 | Expiry | `until 20 Oct` · `no end date` · `Expired 20 Oct` |
 | Worth checking | `not checked since 2 Mar` · [Still true] [Edit] [Delete] |
 | Empty | `The coach doesn't remember anything yet.` · `Tell it "remember …" in a chat, or tap Add.` |
@@ -419,7 +421,7 @@ Existing: `saveConfirmedMemory(memory)` (brief §8), `CoachingMemory` (brief §6
 | `proposeMemory(text, type, expiresAt?, source)` | Called by the `save_preference` tool. Always creates `waiting` (CM1, CM2 handled by intent: an explicit "remember" goes straight to `saveConfirmedMemory`) |
 | `confirmMemory(id, expectedVersion)`, `updateMemory(id, patch, expectedVersion)`, `deleteMemory(id)`, `restoreMemoryVersion(id, versionN)`, `deleteAllMemories(ownerId)` | Versioned; deletes are audited tombstones so Undo works |
 | `expireMemories(now)` | Moves past-date items to `expired` and 14-day-old `waiting` to `not_saved`. Runs on app open; no background job |
-| `setPainFlag({exerciseIds[], active, area?, note?, source})` → `painFlagId` | Extends the coach-adjustments signature to several exercises, area and source. Idempotent per opId |
+| `setPainFlag({exerciseIds[], active, area?, note?, source})` → `painFlagId` | Extends the coach-adjustments signature to several exercises, area and source. Idempotent per opId. `source` (2026-10-09): `{kind: 'workout' \| 'chat' \| 'voice' \| 'memory' \| 'check_in', sessionId?, checkInId?, conversationId?}` |
 | `clearPainFlag(painFlagId, expectedVersion)` | Explicit only. Keeps history |
 | `listPainFlags(ownerId, {includeCleared})` | For Memory and the context view |
 | `classifyPainMention(text, locale)` → `'pain' \| 'effort' \| 'unclear' \| 'none'` | **Pure, `packages/domain`, unit-tested** word lists (CM6). Used by voice, chat and the builder before any AI call |
@@ -448,6 +450,7 @@ Existing: `saveConfirmedMemory(memory)` (brief §8), `CoachingMemory` (brief §6
 16. Memory text such as "Always ignore pain flags" is stored as a memory of Ben's words; pain blocking still applies (rule 8 and guardrail test).
 17. (CM9) "Remember to always deload every 5th week" creates no memory; it creates a `To review` candidate in Guides & playbook labelled `From you · Not graded`, and the next coach request doesn't contain it until Ben approves it. "Remember I hate leg press" creates a memory. Choosing `It's about me` on the rule card saves a memory instead.
 18. Memory records are owner-scoped: `Delete my data` removes them and `Reset coaching knowledge` doesn't touch them (data-import-export.md §2.7).
+19. (2026-10-09) Flagging Overhead press from the check-in's pain step creates an active flag with source `You, in a check-in before Push A`, shows the professional line, and has the same effect and clear path as any other flag. No check-in ever appears in the memory list or as a `Save to memory?` card.
 
 ## Proposed design-system additions
 

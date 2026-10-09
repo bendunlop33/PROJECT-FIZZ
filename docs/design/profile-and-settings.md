@@ -10,6 +10,8 @@
 > - **Coach** section gains `Guides & playbook` ([coaching-playbook.md](coaching-playbook.md)); `What the coach remembers` opens [coach-memory.md](coach-memory.md).
 > - A `ResumeBar` (design-system §9.29) sits above the tab bar here while a workout is unfinished (progress.md PG5).
 
+> **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** New Training row **`Check-in`** and screen (§2.4a) for [check-in.md](check-in.md): on/off, every workout or selected days, the "What's up?" threshold (default 3 or lower), the coach-offer threshold (default 2 or lower, or `Never`) and `Also when I pick Tired or Poor sleep`. Saves on change (`saveCheckInSettings`). The coach can't change these (§4.3). Changed: §2.1, §2.4a (new), §4.2, §4.3, §5, §6, check 19.
+
 Status: v0.1 draft, 8 Oct 2026. Tokens: [design-system.md](design-system.md). Gyms: [gym-editor.md](gym-editor.md). First-run values: [onboarding.md](onboarding.md). Coach connection, keys, usage and reply voice: [ai-connection.md](ai-connection.md). Memory and pain flags: [coach-memory.md](coach-memory.md). Backup, restore, import, export, delete and reset: [data-import-export.md](data-import-export.md). Rest-alert layers: [lock-screen-and-alerts.md](lock-screen-and-alerts.md). App status: [system-states.md](system-states.md). This file places their entry rows and status lines.
 
 ## 1. Purpose
@@ -45,6 +47,9 @@ Profile is the third tab. It's an iOS grouped list on `bg.canvas`, with `Setting
 │ │ 1 active: Bench press              │ │
 │ │ Logging                          › │ │
 │ │ kg · RPE after the set             │ │
+│ │ Check-in                         › │ │ §2.4a (2026-10-09)
+│ │ Every workout · asks what's up at  │ │
+│ │ 3 or lower                         │ │
 │ │ Rest presets                     › │ │
 │ │ 1:00 · 1:30 · 3:00                 │ │
 │ └────────────────────────────────────┘ │
@@ -170,6 +175,10 @@ Empty: `No pain flags. Flag a movement here, or tap Pain in a workout.`
 │ planned time as done. You can undo.    │
 └────────────────────────────────────────┘
 ```
+
+### 2.4a Check-in (revision 2026-10-09)
+
+Owned by [check-in.md](check-in.md) §2.8 (wireframe, rules and copy); placed here as a Training row. Rows: switch `Ask how I'm feeling before a workout` (default on) with `One tap before you start. Skip any time.`; `When` radio `Every workout` (default) / `Only on these days` + weekday `ParamChip`s; `Ask "What's up?" when I pick` radio `4 or lower` / `3 or lower` (default) / `2 or lower` / `1 only` / `Never`; `Coach offers a lighter session when I pick` radio `3 or lower` / `2 or lower` (default) / `1 only` / `Never`; switch `Also when I pick Tired or Poor sleep` (default on); explainer `The coach only offers. Nothing changes until you tap Adjust. Without the coach, your check-in is saved and your plan stays the same.`; footer `Check-ins are part of your data. Fizz never turns them into a score.` With the switch off, the other rows are hidden. Root row subtitle: `Every workout · asks what's up at 3 or lower` / `Mon, Wed, Fri · asks what's up at 3 or lower` / `Off`.
 
 ### 2.5 Rest presets
 
@@ -564,6 +573,7 @@ The fallback is per reply and automatic **only towards the free Apple voice**. I
 | Weights in | New equipment and new exercises only. Nothing is converted |
 | Auto-save timed sets | From the next work timer |
 | Coach offers and thresholds | From the next logged or corrected set (`evaluateCoachTrigger` reads them) |
+| Check-in settings (2026-10-09) | From the next Start. A workout in progress keeps its check-in and any offer already shown |
 | Goals, week, limitations | Next coach turn or workout build |
 | Pain flag set or cleared | Immediately; the domain re-checks pending coach changes |
 | Appearance | Immediately |
@@ -571,7 +581,7 @@ The fallback is per reply and automatic **only towards the free Apple voice**. I
 
 ### 4.3 Voice and coach
 - In a workout, Ben can say "quiet mode", "set cues" or "conversation mode" (through the coach or the cue-mode menu). That's the only setting voice can change.
-- The coach's tool registry has no tool that writes credentials, spend limits, permissions, thresholds, pain-flag clearing, backups or deletion. Asking it gets a link: `You can change that in Profile → Voice & alerts ›`.
+- The coach's tool registry has no tool that writes credentials, spend limits, permissions, thresholds (including check-in settings, 2026-10-09), pain-flag clearing, backups or deletion. Asking it gets a link: `You can change that in Profile → Voice & alerts ›`.
 - No spoken cues play on Profile except `Play a sample`.
 
 ### 4.4 Permissions
@@ -591,7 +601,8 @@ Profile is the place to see and fix every permission. Each row shows `Allowed`, 
 | Attention | From system-states.md §5 (e.g. `Refresh Fizz in SideStore by Sat` [How ›], `Last backup on this phone didn't save`). No off-phone backup wording here |
 | Data row | `Data & backup` · `Backed up on this phone · 19:05` · `Saved on this phone` · `Copy saved to Files · 8 Oct` · `No copy off this phone yet` · `No copy off this phone since 8 Sep` |
 | Coach rows (added) | `Guides & playbook` (`9 rules approved · 5 to review`) · `What the coach remembers` (`7 confirmed · 2 waiting`) |
-| Training rows | `Goals & schedule` · `Pain flags` (`1 active: Bench press` / `None`) · `Logging` (`kg · RPE after the set`) · `Rest presets` (`1:00 · 1:30 · 3:00`) |
+| Training rows | `Goals & schedule` · `Pain flags` (`1 active: Bench press` / `None`) · `Logging` (`kg · RPE after the set`) · `Check-in` (`Every workout · asks what's up at 3 or lower` / `Off`; 2026-10-09) · `Rest presets` (`1:00 · 1:30 · 3:00`) |
+| Check-in screen (2026-10-09) | As check-in.md §2.8 and §5.3 |
 | Goals screen | `Main focus` · `Also matters` · `Specific goal` · `Lifting regularly` · `Training days` · `Usual session length` · `Notes` · `Not set` · footer `The coach reads these. It can suggest changes in chat, but they only appear here after you confirm them.` |
 | Provenance | `Set in setup, 8 Oct` · `Changed by you, 12 Oct` · `From coach chat, 14 Oct · you confirmed` |
 | Pain flags | `Loads don't go up on these movements until you clear them. This isn't a diagnosis.` · `since 8 Oct` · `Clear` · `Flag a movement` · empty `No pain flags. Flag a movement here, or tap Pain in a workout.` · toast `Pain flag cleared for Bench press. Loads can go up again.` [Undo] |
@@ -636,6 +647,7 @@ Proposed new:
 | `getUserProfile()` / `saveUserProfile(patch, expectedVersion, opId)` | Units, effort scale, effort timing (proposed field `effortPrompt: 'after' \| 'before'`), auto-save timed sets, rest presets, appearance |
 | `getTrainingGoals()` / `saveTrainingGoals(…, source)` / `saveAvailability(…)` | Shared with onboarding.md §6; returns provenance per value |
 | `getCoachTriggerThresholds()` / `saveCoachTriggerThresholds({enabled, rpeHigh, repsShort, rpeLow, rirHigh, rirLow}, opId)` | Coach offers screen; read by `evaluateCoachTrigger` |
+| `getCheckInSettings(ownerId)` / `saveCheckInSettings(patch, expectedVersion, opId)` (2026-10-09) | Check-in screen; `CheckInSettings` shape in check-in.md §6. Read by `shouldAskCheckIn` and `evaluateCheckInOffer` |
 | `getVoiceSettings()` / `saveVoiceSettings(patch, opId)` | **Canonical** (absorbs voice.md's `setVoicePreferences`). Cue mode and options, Talking options (`talkMode`, `phoneMicWithHeadphones`, `doneShortcut`, `listenDuringRest`, `serverRecognition`, `speakVoiceReplies`, `locale`), voices, rate, volume, ducking, timer sound, haptic switches, loud-alert mode and threshold |
 | `listSpeechVoices()` → `{id, name, locale, quality: 'premium' \| 'enhanced' \| 'default' \| 'personal'}[]` | audio-coach module; includes Personal Voice when authorised |
 | `requestPersonalVoiceAccess()` | Personal Voice authorisation |
@@ -669,6 +681,7 @@ Proposed new:
 16. The recognition language row offers `Use English (UK)` when the phone's region is UK and recognition is English (US).
 17. Every row is at least 44pt (52pt for setting rows), all text is at least 16pt at the default size, values wrap under labels at AX1+, every status has an icon and a word, and numbers (times, money, counts) use tabular numerals.
 18. Nothing on this tab animates beyond standard navigation and switches.
+19. (2026-10-09) The `Check-in` screen saves each change at once; turning it off makes the next `Start workout` open the workout in one tap; choosing `Only on these days` with Mon/Wed/Fri means Tuesday's Start shows no sheet; the coach-offer `Never` option stops the lighter-session offer while check-ins are still recorded.
 
 ## 8. Proposals for Ben (brief changes)
 

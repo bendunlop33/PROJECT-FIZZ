@@ -8,6 +8,8 @@
 
 > **Revision 2026-10-08 (consolidation).** Added `PainFlagNote` under the target line of any exercise with an active pain flag (§2.1, §5; design-system §9.50; coach-memory.md). The pain-flag undo path now points to the canonical Pain flags list (coach-memory.md §2.7). The voice strip (§2.5) is specified in voice.md; a voice-logged set carries its Undo in the strip instead of the undo toast (voice.md VO4). `Swap exercise` is pending Ben's call on exercise-library.md EL4 (§4.4). The banner slot follows system-states.md §2.2: nothing about backups, signing, builds, permissions or alert layers ever appears here.
 
+> **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** Places [check-in.md](check-in.md) on this screen; behaviour is specified there. (1) The check-in normally happens on Today before the session exists, so this screen is unchanged for it. (2) **Resume / auto-open of a session with no set ever committed and an unanswered check-in** shows the `CheckInSheet` over this screen once; after any set is committed it never appears (never mid-workout). (3) After a check-in, the toast slot shows `✓ Check-in saved · 2 of 5` [Change]. (4) **Check-in offer:** with a low check-in and the coach reachable, the first set card's coach slot shows `Want a lighter session today?` / `You said 2 of 5 · …` [No thanks] [Adjust] **in Ready, before any set is logged** (an exception to "offers only while Resting", check-in.md CI5; never spoken). `Adjust` runs the normal Ben-accepted path for all of today's pending sets, with no increases allowed. Offline: one outcome line `Check-in saved. Coach offline, so today's plan is unchanged.` Changed: §3 (three rows), §4.7, §6, checks 33–35. The Log loop gains no taps.
+
 Status: v0.1 draft, 8 Oct 2026. Flow and state machine: [flow-first-milestone.md](flow-first-milestone.md). Rest behaviour: [rest-state.md](rest-state.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -330,6 +332,9 @@ When the template's load can't be honoured on this gym's equipment (ADR 0003 B1)
 | AI unavailable | No change to logging | per state | Talk button `Offline` / `Ask`. Coach sheet explains (§4.7) |
 | Voice unavailable, text available | — | — | Talk button shows `Ask` (text bubble). Tapping opens the coach sheet |
 | Coach offer | Coach slot: `That looked hard. Adjust remaining sets?` [No thanks] [Adjust] (Resting only, after a deterministic trigger) | unchanged | Nothing changes until `Adjust`. Never a modal; never spoken outside Resting. coach-adjustments §2.3 |
+| Check-in offer (2026-10-09) | First set card, Ready, no set logged yet: coach slot `Want a lighter session today?` · `You said 2 of 5 · Tired, Poor sleep` [No thanks] [Adjust] | unchanged | Stays through the first exercise until answered or replaced by a set offer; never spoken. check-in.md §4.4 |
+| Check-in, coach offline (2026-10-09) | Coach slot: `Check-in saved. Coach offline, so today's plan is unchanged.` | unchanged | Hides on the first Log. No line when the coach isn't connected at all |
+| Check-in sheet over the workout (2026-10-09) | Resume or auto-open of a session with no set ever committed and `checkIn: pending` | Behind the sheet | Shown once; `Skip` or swipe-down returns to this screen. Never after a set has been committed. check-in.md §3 |
 | Coach working | Coach slot: `Coach is working on sets 3–4 · Nothing has changed yet.` [Cancel] | unchanged, usable | Rest keeps running. A Log first wins; the result is re-sent once or dropped, never applied to a done set (coach-adjustments §4.3) |
 | Coach adjusted (Ben asked or accepted an offer) | Coach slot: `CoachAdjustmentBanner` `Coach adjusted sets 3–4` · `100 → 95 kg × 8 · <reason>` [Undo]; changed sets show `Coach target` | `Log <new values>`, guarded 1 s if the label changed | Applied at once. Guard notes (rounded, capped, pain) shown in the banner |
 | Coach blocked / no change / failed / timed out | Coach slot: one outcome line, e.g. `Not increasing: you flagged shoulder pain. Sets unchanged.` | unchanged | No Undo, because nothing changed |
@@ -428,6 +433,7 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
   - Ben asks (voice "that was a grind", coach-sheet text, or `Adjust` → reason chip): the result applies at once and shows the `CoachAdjustmentBanner` with Undo in the coach slot.
   - A deterministic trigger fires (RPE ≥ 9.5, reps short by ≥ 2, RPE ≤ 6 on a working set): a one-line offer in the rest card. Nothing changes until Ben taps `Adjust`.
   - The coach sheet never opens by itself, and an adjustment never opens a sheet.
+  - (2026-10-09) A low pre-workout check-in may put a lighter-session offer in the first set card's coach slot before any set is logged ([check-in.md](check-in.md) §4.4). `Adjust` calls `requestCoachAdjustment(…, {origin: 'check_in_offer', checkInId, intent: 'lighter_session'}, …)`; the validator drops any increase. Everything after that (pending, banner, Undo, CA7) is the normal path.
 - **Other coach suggestions** (exercise swaps, gym changes) still appear only as an inline `ChangeReviewCard`. `Apply` calls `confirmProposal(proposalId, sessionVersion)` → `applyCoachProposal`, followed by a toast `Remaining sets updated for today` [Undo], and the cue `Remaining sets updated for today.`
 
 ### 4.8 Finish
@@ -536,6 +542,7 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
   - `validateCoachProposal`, `confirmProposal`, `applyCoachProposal`, `getDecisionEvidence`
   - Coach adjustments (coach-adjustments §6): from `buildActiveSetView`, per set `target.source` (`plan | rule | coach`), `target.planned` and `adjustmentActionId`, and per session `coachRequest`, `coachOffer`, `lastAdjustment`; plus `evaluateCoachTrigger`, `recordTriggerResponse`, `requestCoachAdjustment`, `cancelCoachTurn`, `setPainFlag` (proposed new)
 - Proposed new: `saveSetDraft`, `setActiveSet`, `endRestTimer`.
+- Check-in (2026-10-09, check-in.md §6): `buildActiveSetView` adds `session.checkIn` (`answered` / `skipped` / `not_asked` / `pending`) and `coachOffer.kind: 'check_in_low'` with its fact; `setSessionCheckIn` (Resume case), `evaluateCheckInOffer`, `recordTriggerResponse`.
 
 ## 7. Acceptance checks
 
@@ -571,4 +578,7 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
 30. Coach-changed pending sets show `Coach target` + `Plan was …` (Focus) and `C` (Overview); done sets show only actual values; VoiceOver reads both target values.
 31. When an adjustment changes the active set's Log label, a Log tap within 1 s is ignored; at all other times Log responds at once.
 32. With a pain flag on Bench press, its set card shows `⚠ Pain flag: no increases` under the target in Ready and Resting, Overview shows `⚠ Pain` on the header, tapping it opens that flag, and Log behaves exactly as without it. Setting the flag with `Adjust` → `Pain` makes the note appear at once; clearing it removes the note.
+33. (2026-10-09) After a check-in of 2 with the coach connected, the first set card shows the check-in offer in its coach slot; `Log` is visible and logs in one tap with the offer still on screen. No AI call is made until `Adjust`.
+34. (2026-10-09) Once any set has been committed in a session, nothing on this screen (Resume, relaunch, voice) shows the check-in sheet.
+35. (2026-10-09) Note for check 29: the only coach offer outside the rest card is the check-in offer before the first set; it is never spoken.
 The full coach-adjustment checks are in [coach-adjustments.md](coach-adjustments.md) §7.

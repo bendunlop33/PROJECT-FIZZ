@@ -1,6 +1,6 @@
 # Open decisions
 
-Status: consolidated 8 Oct 2026 from every design spec's decision tables (OB, PS, GE, CS, CM, AC, VO, PB, RT, EL, WP, CR, CA, WB, PG, DX, P-B, P-I, P-L, P-S, X) and the open items in ADRs 0003–0007. Each question appears once. Part 1 is for Ben; Part 2 is technical detail.
+Status: consolidated 8 Oct 2026 from every design spec's decision tables (OB, PS, GE, CS, CM, AC, VO, PB, RT, EL, WP, CR, CA, WB, PG, DX, P-B, P-I, P-L, P-S, X) and the open items in ADRs 0003–0007. Each question appears once. Part 1 is for Ben; Part 2 is technical detail. **Updated 9 Oct 2026** with the pre-workout check-in's decisions (CI1–CI14, [check-in.md](check-in.md) §0): B15–B18 below, the rest in section B under "Check-in".
 
 **Already decided today, not repeated below:** data is split into **Your data** and **Coaching knowledge**; backups are kept **in the app by default** and a copy off the phone is optional. Both were approved by Ben and relayed by the product manager. They are applied in every spec (README.md explains them). The brief/CHANGELOG entries and an ADR 0004 wording update for these belong to the product manager (see Part 2, "For the product manager").
 
@@ -28,6 +28,10 @@ These are genuinely your preference. Each has a recommendation, but there's no s
 | B12 | **Custom exercises you create:** treat them as Coaching knowledge (like the exercise list), never removed by `Reset coaching knowledge` while your workouts or routines use them? | Yes | exercise-library; data-import-export §2.7 |
 | B13 | **"Speak while locked"** (Fizz keeps a silent audio session so it can say "Ready" with the phone locked; uses more battery): offer it as an opt-in setting if the device test works? | Decide after the test; if it works, opt-in and off by default | lock-screen-and-alerts §2.4, P-L8; ADR 0007 |
 | B14 | **Rest between left and right sides** of a one-sided exercise: full set rest, a short transition, or none? | Decide after trying it; until then full set rest | ADR 0003 follow-up 3; routines RT8 |
+| B15 | **Check-in as a sheet on Start, or inline on the first set?** The sheet costs one tap every workout (a score or Skip). The inline version costs nothing (logging the first set just skips it) but crowds the set card and can't hold the pain and illness steps | The sheet, as you approved; revisit after two weeks of real use. Turning check-ins off or choosing days removes the tap | check-in CI2; today; flow-first-milestone check 1 |
+| B16 | **Where the "lighter session?" offer appears after a low check-in:** on the first set card before you log anything (never spoken, ignorable), or as a last question in the check-in sheet (one more tap each time)? | On the first set card | check-in CI5; coach-adjustments §2.3 (the one exception to "offers only during rest") |
+| B17 | **You pick Pain in the check-in but don't say which movement:** no flag is set, the coach can't raise anything in that workout, and the summary asks you to choose movements. OK, or should it insist on a movement before you start? | As described: don't insist | check-in CI8; coach-memory CM4; rule 9 |
+| B18 | **What the coach sees of your check-ins:** only today's, during today's workout and its summary. Should it also see the last 4 weeks (as raw entries, never a score) so it can notice patterns, e.g. "third rough session in a row"? | Today's only for now (your brief said "never combined with other metrics") | check-in CI10; coach-sheet context view; progress week review |
 
 ### B. Recommended defaults: approve in bulk
 
@@ -51,6 +55,12 @@ Each line is a sensible default the specs already use. Approving this section in
 - AI connection: the coach route is a setting you pick, never an automatic fallback (AC1); the "you're using your ChatGPT plan" notice appears once at sign-in, never mid-workout (AC5); the model is chosen explicitly and never swapped silently (AC6); if ChatGPT sign-in can't work on iPhone, the API key is offered and the laptop workaround isn't built (AC4).
 - Coach-built workouts: drafts are separate from routines (WB1); loads are rounded down and capped (WB3); missing or pain-flagged exercises are swapped or removed and flagged, never auto-substituted for pain (WB4); duration is always the app's estimate (WB5); 60 s build timeout (WB6); voice can ask but not start (WB7); editing a coach routine makes it yours (WB8); unused drafts kept 14 days (WB9); during a workout a new build can only be saved (WB10).
 - Change review: four scopes shown in words (today / one date / from now on / programme) (CR1); narrowest scope by default (CR2); all-or-nothing apply (CR3); any change elsewhere makes a suggestion out of date (CR4); overlapping suggestions are marked (CR5); a spoken "yes" only applies narrow changes (CR6); `Not now` keeps it for 30 days (CR7); suggestions expire on clear rules (CR8).
+
+**Check-in** (added 9 Oct 2026; [check-in.md](check-in.md))
+- The check-in comes before the workout is created, so skipping or rescheduling leaves nothing to discard (CI1). Swiping the sheet away means "not now": back to Today, nothing started; only `Skip` carries on without a check-in (CI3). Your score is saved at the first tap, and a check-in that didn't lead to a workout is reused if you start within 2 hours (CI4).
+- `Adjust` on the lighter-session offer counts as yes, changes only today's remaining sets, and can never raise anything (CI6). With the coach offline you get one honest line and no change; with no coach set up, nothing (CI7).
+- Voice takes numbers only ("feeling great" asks for a number), and a bare "sore" asks "soreness or pain?" (CI9). Progress shows check-ins as you gave them, with counts but no average or line (CI11). The feeling-ill step is fixed app text with three equal buttons, shown once (CI12). You can change or delete a check-in later; that never changes sets, adjustments or targets (CI13).
+- Check-ins replace the Today readiness chips; the brief's `ReadinessEntry` becomes a self-reported `CheckIn` with no wearable data in it (CI14).
 
 **Plan and library**
 - Routines and the week live in one `Plan` screen with `Week` and `Routines` (RT1); each routine row has a `Start` button (RT2); loads default to `Auto` (coach or built-in rule), with Fixed and "% of top set" available (RT3); "Repeat last workout" copies what you did as targets, with nothing marked done (RT4); routines show who made them (RT5); an optional `AMRAP` flag that never triggers effort offers (RT6); "counts as heavy legs" is automatic with an override (RT7).
@@ -111,19 +121,21 @@ These can't be decided on paper. Each has a fallback that already works.
 | ADR 0003 S1, S3, R4, follow-up 3 | B (data and system); follow-up 3 → B14 |
 | ADR 0005 #1–#3 | P-B1 (B), B2, developer (damaged backups) |
 | ADR 0007 bundle ID, audio rule, background audio, App Group route | B1, B (data and system), B13, C |
+| CI1, CI3, CI4, CI6, CI7, CI9, CI11–CI14 (check-in, 9 Oct) | B (check-in). CI2 → B15; CI5 → B16; CI8 → B17; CI10 → B18 |
 
 ### For the product manager
 
 - **Brief / CHANGELOG entries** are needed for the two approvals applied today (data domains; backups in the app by default) and for any items Ben approves above that change the brief: B6 (WB2 vs brief §7), B11 (build order), CR1 (proposal scopes), P-S1 ("sync pending" wording), ADR 0003 S1/S3/R4.
 - **ADR 0004** says backups go to Files "before any real workout is logged". The approved default is now "in the app, off-phone optional". The trial run in ADR 0004 still needs one copy saved to Files first, and the ADR wording should be updated by its owner. This design doesn't edit ADRs.
 - **CLAUDE.md** describes the agent table and rules only; nothing here conflicts with it. Rule 1 (no network, no AI) and rule 7 (no silent paid route) are satisfied in every spec.
+- **Brief text for the check-in (9 Oct).** CHANGELOG v0.9 records the approval, but the brief body still describes readiness: §1 (Today: "quick readiness check"), §6 (`ReadinessEntry`: "user-reported sleep/soreness/energy **and any sourced wearable metrics**") and §12 Page 1 ("Optional readiness: One tap: Normal / Tired / Sore"). Proposed wording: Today "pre-workout check-in on Start (1–5, Skip)"; §6 `CheckIn` "self-reported 1–5 rating, reasons and note before a workout; never combined with device data or turned into a score" (wearable values, if ever imported, are a separate record); §12 Page 1 row replaced by a pointer to the check-in. Proposal P11 in flow-first-milestone §7 is marked superseded by v0.9.
 
 ### For the developer
 
 #### 1. Two data domains (approved; applies everywhere)
 
 - **Separate storage.** Personal records and coaching-knowledge records live in separate tables (or a clear namespace such as `personal_*` / `knowledge_*`) so a restore, export, delete or reset can touch one without the other.
-- **Owner ID on every personal record** (`ownerId`, the stable owner ID from CLAUDE.md scope): profile, goals, availability, sessions and sets, audits, memories, pain flags and `PainFlagEvent`s, gyms and equipment, routines, scheduled sessions, planned endurance, conversations and messages, settings (voice, triggers, appearance, rest presets), import jobs, proposals and action records, guide files and their extracted text. Knowledge records carry no owner ID: playbook rules and their approval records, research bundle versions, guide index metadata, exercise catalogue, aliases, custom exercise definitions (B12), default presets.
+- **Owner ID on every personal record** (`ownerId`, the stable owner ID from CLAUDE.md scope): profile, goals, availability, sessions and sets, check-ins and check-in settings (9 Oct), audits, memories, pain flags and `PainFlagEvent`s, gyms and equipment, routines, scheduled sessions, planned endurance, conversations and messages, settings (voice, triggers, appearance, rest presets), import jobs, proposals and action records, guide files and their extracted text. Knowledge records carry no owner ID: playbook rules and their approval records, research bundle versions, guide index metadata, exercise catalogue, aliases, custom exercise definitions (B12), default presets.
 - **Cross-domain references are by stable ID only.** Personal records point at exercise and rule IDs; sessions already snapshot the exercise (ADR 0003 M4), so history survives a knowledge reset or restore. Routines and plans that reference a missing exercise must show `Exercise missing`, never fail to load. `resetCoachingKnowledge` must keep custom exercises that personal records reference.
 - **Approval records.** Who approved which rule version, and when, is stored with the rule (knowledge), not as a personal record; PB2 treats it as the approval record.
 - **Guide text placement (question for the developer).** Ben's guide files are personal; the index (titles, headings, pages, status) is knowledge. Decide where extracted section **text** lives: recommendation is personal (it is Ben's licensed content), with the knowledge index pointing at it by ID. `Reset coaching knowledge` rebuilds the index from the files.
@@ -157,6 +169,7 @@ These can't be decided on paper. Each has a fallback that already works.
 | Import | Import jobs with source rows, `mappingVersion`, session status `reverted`, `ExerciseAlias.source = 'fitnotes'`, per-set provenance (file, row, original values) | data-import-export §6 |
 | System | `buildSystemStatus`, `getInstallStatus`, `DatabaseManager.open()` result union, `scheduleRefreshReminder`, `buildStatusReport`; **open:** how to "set aside" a damaged unfinished workout so a new one can start (P-S5) | system-states §7 |
 | Backups | Damaged records: backups can be created but restore is refused, never "skip damaged" (ADR 0005 #3) | data-import-export §3.3 |
+| Check-in (9 Oct) | `CheckIn` record (score, reasons, note, UTC + tz, input provenance, session link, outcome, pain flag IDs, history), `session.checkIn` union, `CheckInSettings`; `startWorkout` / `startWorkoutFromDraft` / `startWorkoutFromSession` take `opts.checkIn` and link it in the same transaction; `shouldAskCheckIn`, `evaluateCheckInOffer`, `summariseCheckIns`, `parseCheckInUtterance` are pure domain functions; `requestCoachAdjustment` origin `check_in_offer`; guard kinds `lighter_no_increase`, `pain_unspecified`; `setPainFlag` source `check_in`. `calculateNextTargets` must not read check-ins | check-in §6 |
 
 #### 4. Canonical function names (use these; old names are withdrawn)
 
@@ -177,7 +190,8 @@ These can't be decided on paper. Each has a fallback that already works.
 | `timing.coachTimeout` | `timing.coachFirstToken` | design-system §6 |
 | `timing.offPhoneReminder` | `timing.backupOverdue` | design-system §6 |
 | `Proposal.kind = 'update_template'` | `'adjust_template'` | change-review §6 |
+| `recordCheckIn`, `updateCheckIn`, `deleteCheckIn`, `setCheckInOutcome`, `getCheckInHistory` (9 Oct) | `recordReadiness` (withdrawn); brief `ReadinessEntry` → `CheckIn` | check-in §6 |
 
 #### 5. Domain constants (data, not design tokens)
 
-Memory suggestion expiry 14 days (CM3); "worth checking" after 6 months (CM7); cleared pain flags stay in coach context 4 weeks; coach drafts kept 14 days (WB9); `Not now` proposals kept 30 days (CR7); trend gap 21 days (`TREND_GAP_DAYS`, PG12); records need 3 earlier sessions (PG10); estimated 1RM 1–10 reps (PG11); heavy-legs thresholds (WP4, stored with rule C3); coach trigger defaults RPE ≥ 9.5, reps short ≥ 2, RPE ≤ 6 (ADR 0006); automatic backups kept 14; off-phone reminder 30 days.
+Memory suggestion expiry 14 days (CM3); "worth checking" after 6 months (CM7); cleared pain flags stay in coach context 4 weeks; coach drafts kept 14 days (WB9); `Not now` proposals kept 30 days (CR7); trend gap 21 days (`TREND_GAP_DAYS`, PG12); records need 3 earlier sessions (PG10); estimated 1RM 1–10 reps (PG11); heavy-legs thresholds (WP4, stored with rule C3); coach trigger defaults RPE ≥ 9.5, reps short ≥ 2, RPE ≤ 6 (ADR 0006); automatic backups kept 14; off-phone reminder 30 days; check-in defaults (9 Oct): asked every workout, "What's up?" at 3 or lower, lighter-session offer at 2 or lower or with Tired / Poor sleep, note ≤ 280 characters (the 2 h reuse window is `timing.checkInReuse`).

@@ -2,6 +2,8 @@
 
 > **Revision 2026-10-08 (consolidation).** `setPainFlag` uses the canonical multi-exercise signature from [coach-memory.md](coach-memory.md) §6; pain flags are cleared from the canonical Pain flags list (coach-memory.md §2.7) and shown on the set card as `PainFlagNote`. The Coach offers settings screen is profile-and-settings.md §2.7. CA2 (swaps keep the Apply card) now has a pending alternative for swaps Ben picks himself (exercise-library.md EL4, open-decisions.md). Proposal kinds, scopes and the generic review UI are in [change-review.md](change-review.md); `Why?` uses the evidence frame in [coach-sheet.md](coach-sheet.md) §4.6.
 
+> **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** A fourth way in: **path B′, check-in offer** ([check-in.md](check-in.md) §4.4). A low pre-workout check-in (score at or below the setting, default 2, or `Tired` / `Poor sleep`) makes `evaluateCheckInOffer` (pure, no AI) show `Want a lighter session today?` / `You said 2 of 5 · …` [No thanks] [Adjust] in the **first set card's coach slot, in Ready, before any set is logged**: the one exception to §2.3's "only in the rest card" (CI5). It is never spoken. `Adjust` counts as Ben accepting (CA1) and sends `requestCoachAdjustment(…, {origin: 'check_in_offer', checkInId, intent: 'lighter_session'}, …)` for all of today's pending sets. Two new deterministic guards: `lighter_no_increase` (a lighter-session result can't raise anything) and `pain_unspecified` (Ben picked `Pain` in the check-in without choosing movements: no increases anywhere in that session). Offline after a low check-in: one outcome line, no adjustment; the built-in rules ignore check-ins. Changed: §1 table, §2.3, §2.6, §6, checks 22–25.
+
 Status: v0.1 draft, 8 Oct 2026. This is the **single spec** for coach-led progression ([ADR 0006](../decisions/0006-coach-led-progression.md), CLAUDE.md rule 3, brief CHANGELOG v0.4). Other specs link here instead of repeating it:
 - [active-workout.md](active-workout.md): where Adjust sits on the set card, coach target markers, Log guard
 - [rest-state.md](rest-state.md): the offer line and adjustment banner in the rest card, cues
@@ -22,6 +24,7 @@ There are three ways in:
 |---|---|---|---|
 | **A. Ben asks** | Voice ("that was a grind", "too easy"), text in the coach sheet, or the `Adjust` control | The coach answers briefly. Today's remaining sets change **at once**. A banner shows the change with one-tap Undo | Voice: 0 (Talk + speech). Control: 2 (`Adjust` → a reason chip) |
 | **B. Coach offers** | A deterministic trigger in `packages/domain` (RPE ≥ 9.5, reps short by ≥ 2, RPE ≤ 6 on a working set) | One line in the rest card: `That looked hard. Adjust remaining sets?` [No thanks] [Adjust]. **Nothing changes, and no AI call is made, until Ben taps Adjust.** Then it continues as path A | 1 (`Adjust`), or 0 if ignored |
+| **B′. Check-in offer** (2026-10-09) | A low pre-workout check-in ([check-in.md](check-in.md) §4.4), checked by `evaluateCheckInOffer` in `packages/domain` | One line in the first set card's coach slot before any set is logged: `Want a lighter session today?` [No thanks] [Adjust]. **No AI call until Adjust**; then path A for all of today's pending sets, with no increases allowed | 1 (`Adjust`), or 0 if ignored |
 | **C. Next session** | Finishing the workout (one coach call per workout, together with the coach note) | `Next time` shows the coach's proposal next to the built-in rule's target, with before/after, reasoning, Apply and Undo | 1 per Apply |
 
 The single primary action on the workout screen stays **`Log …`**. Every control in this spec is secondary. The single primary on the summary stays **`Done`**.
@@ -98,7 +101,7 @@ At AX1 and larger, the chips wrap to two rows of two.
 
 ### 2.3 Coach offer line (path B)
 
-Only in the rest card (Resting). Never in Ready, because Ben may be mid-set.
+Only in the rest card (Resting). Never in Ready, because Ben may be mid-set. **Exception (2026-10-09):** the check-in offer (path B′) sits in the first set card's coach slot in Ready before any set is logged, is never spoken, and expires when the first exercise's last set is logged or a set offer replaces it (check-in.md CI5).
 
 ```
 │ That looked hard. Adjust remaining sets?│ type.callout, text.primary
@@ -147,6 +150,8 @@ The rest timer keeps running. The draft fields and `Log …` stay live. `TalkBut
 | No achievable load | No load on the equipment is near the coach's value, or the equipment can't make any load | Outcome line: `Couldn't use the coach's load: 31 kg each isn't possible on this rack. Sets unchanged.` |
 | Completed set named | The coach tried to change a set that's already done | Those changes are dropped silently from the apply (never applied), and `Why?` lists them as `Not changed: set 2 is already done.` |
 | No change | The coach advises keeping the plan | Outcome line: `Coach kept sets 3–4 as planned.` + reason. No Undo |
+| Lighter, no increase (2026-10-09) | A check-in lighter-session request (`intent: 'lighter_session'`) came back with an increase | That change is dropped; the rest apply. Guard note: `No increases in a lighter session.` |
+| Pain, movement unknown (2026-10-09) | The session's check-in has `Pain` with no flagged movement (check-in.md CI8) | Every increase in that session is dropped. Guard note: `Not increasing anything today: you mentioned pain.` All dropped: outcome line with the same text and `Sets unchanged.` |
 
 Guard notes are produced by `validateCoachProposal`, not by the model or the UI.
 
@@ -347,7 +352,9 @@ Existing (brief §7–8, ADR 0006):
 |---|---|
 | `evaluateCoachTrigger(set, target, thresholds)` → `{triggerId, kind: 'rpe_high' \| 'reps_short' \| 'rpe_low', fact}` or `null` | ADR 0006 trigger checks in `packages/domain`; pure, unit-tested |
 | `recordTriggerResponse(triggerId, 'shown' \| 'accepted' \| 'dismissed' \| 'expired')` | Enforces CA4 and keeps evidence for later review |
-| `requestCoachAdjustment(sessionId, request, baseVersion, opId)` | Wraps `runCoachTurn` for `adjust_pending_sets`, with `origin: 'ben_request' \| 'trigger_offer'` |
+| `requestCoachAdjustment(sessionId, request, baseVersion, opId)` | Wraps `runCoachTurn` for `adjust_pending_sets`, with `origin: 'ben_request' \| 'trigger_offer' \| 'check_in_offer'` (2026-10-09; the last carries `checkInId` and `intent: 'lighter_session'`) |
+| `evaluateCheckInOffer(checkIn, settings)` → `{triggerId, kind: 'check_in_low', fact}` or `null` (2026-10-09) | Pure, `packages/domain`; check-in.md §4.4 and §6 |
+| Guard note kinds `lighter_no_increase`, `pain_unspecified` (2026-10-09) | Added to `validateCoachProposal`'s guard-note union |
 | `cancelCoachTurn(turnId)` | Cancel and Log-while-pending |
 | `setPainFlag(exerciseId, active, note?)` → superseded by coach-memory.md §6 `setPainFlag({exerciseIds[], active, area?, note?, source}, opId)` | `PainStatus` exists in the domain; the UI needs a write path (and `PainFlagEvent` history, progress.md PG13) |
 | `Proposal.origin`, `Proposal.guardNotes`, `ActionRecord.reason` + `evidenceRefs` (already in the brief) | Banner, `Why?` and rule 3's "recorded with its reason" |
@@ -375,3 +382,7 @@ Existing (brief §7–8, ADR 0006):
 19. With the coach offline, tapping `Adjust` shows `Coach offline. Your sets are unchanged…` and only `Pain`; `Pain` still records the flag.
 20. Every applied adjustment has a stored reason, evidence refs and guard notes, visible in `Why?` (`getDecisionEvidence`).
 21. Coach UI is never colour-only: the `Coach` tag has text, the banner has an icon and text, the offer is text.
+22. (2026-10-09) A check-in of 2 shows the check-in offer before the first set; no AI call is made until `Adjust`; nothing is spoken.
+23. (2026-10-09) `Adjust` on the check-in offer changes only pending sets of today's session (template unchanged); a test reply that raises one set has that change dropped with `No increases in a lighter session.`
+24. (2026-10-09) With `Pain` picked in the check-in and no movement flagged, any coach increase in that session is dropped with `Not increasing anything today: you mentioned pain.`
+25. (2026-10-09) The check-in offer and a set-trigger offer never show together; the set offer replaces the check-in offer, which is then recorded as `expired`.

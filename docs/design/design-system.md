@@ -15,6 +15,8 @@
 > - **Status vocabularies added to §7**: capability, backup, schedule, proposal/action, memory and import-match statuses, with one icon per meaning (e.g. every warning-level state uses `exclamationmark.triangle` + `status.warning`; `Not working` no longer uses `xmark.octagon`).
 > - Added `SecondaryButton` and `DangerTextButton` (§9.2a, §9.2b), money format (§3), `type.liveCountdown` (§3), Live Activity colour mirror and app icon / launch tokens (§2.2). **No new colour values; one accent kept.**
 
+> **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** For [check-in.md](check-in.md): new timing token `timing.checkInReuse` (§6); check-ins listed under Your data (§7.2); `UndoToast` may carry `Change` instead of `Undo` for a check-in (§9.10); `CoachOfferLine` may also sit in the first set card's coach slot in Ready for the check-in offer (§9.14); `TrendChart` gains a `pointsOnly` variant for self-reported 1–5 ratings (§9.23); new components `CheckInScale` (§9.54), `CheckInSheet` (§9.55) and `CheckInLine` (§9.56); index rows (§11). The readiness chips they replace had no component of their own. **No new colour values; one accent kept.** Check-in values are never shown as a score, ring, gauge or colour scale.
+
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
 Context: one person uses the app on an iPhone, one-handed, mid-workout, with sweaty fingers and headphones, often in bright or dim gym light. Every choice below favours speed, legibility and calm over decoration.
@@ -243,6 +245,7 @@ Rules:
 | `timing.ttsFallback` | 3 s to first OpenAI audio; after that the reply is spoken in the Apple voice |
 | `timing.loudModeMinRest` | 2:00. Default threshold for `Loud rest alerts: Long rests only`; editable in Voice & alerts |
 | `timing.stillRunningReminder` | 60 min after the last set (optional `still running` notification, off by default) |
+| `timing.checkInReuse` | 2 h. A check-in not yet linked to a workout (sheet swiped away, app closed mid-sheet, `Train anyway` later) is used by the next Start within this window without asking again (check-in.md CI4) |
 | `timing.offPhoneReminder` | 30 days without a `Copy saved to Files`. Then a quiet, dismissible row appears in Data & backup and on the Profile `Data & backup` row. Never a banner, never during a workout, and Ben can switch the reminder off. (Replaces data-import-export's `timing.backupOverdue`, which no longer applies now that automatic backups stay on the phone) |
 | `timing.expiryNotice` | 72 h before signing expiry: info banner on Today |
 | `timing.expiryUrgent` | 24 h before signing expiry: warning banner with the time |
@@ -346,7 +349,7 @@ Everything the app stores belongs to exactly one of two domains. Screens, backup
 
 | Domain | UI name | Icon | What's in it |
 |---|---|---|---|
-| Personal (owner-scoped) | `Your data` | `person.crop.circle` | Profile, goals, availability, workout history, coach memories about Ben, pain flags, his gyms and equipment, his routines and plans, conversations, his settings (including his rest presets), his guide **files** |
+| Personal (owner-scoped) | `Your data` | `person.crop.circle` | Profile, goals, availability, workout history, pre-workout check-ins (revision 2026-10-09), coach memories about Ben, pain flags, his gyms and equipment, his routines and plans, conversations, his settings (including his rest presets), his guide **files** |
 | General | `Coaching knowledge` | `books.vertical` | Approved playbook rules with evidence and sources, research candidate rules, the guide library's index and excerpt metadata, the exercise catalogue and aliases (including custom exercise definitions, see open-decisions.md), default presets (gym presets, example rest presets) |
 
 - **Credentials** (ChatGPT tokens, API keys) live in the Keychain and belong to neither domain. They are never in a backup or export.
@@ -489,6 +492,7 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 - It stays for `timing.undoToast`. A new toast replaces the old one, and the replaced action can still be undone from its row.
 - VoiceOver announces it politely and keeps it until it is dismissed.
 - A set logged **by voice** shows its Undo in the `VoiceStrip` (§9.38) instead of this toast (voice.md VO4). There is one Undo per action, next to the words it undoes.
+- (Revision 2026-10-09, check-in.) A saved check-in's toast carries `Change` instead of `Undo` (`✓ Check-in saved · 2 of 5` [Change]); same frame, timing and placement. `Change` reopens the check-in, because removing it outright would lose what Ben said.
 
 ### 9.11 Change-review card (`ChangeReviewCard`)
 
@@ -539,7 +543,7 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 - VoiceOver: "Adjust remaining sets, button". Offline: "Adjust remaining sets. Coach offline."
 
 ### 9.14 Coach offer line (`CoachOfferLine`)
-- Lives only in the rest card's coach slot. No card border, no fill, no icon animation.
+- Lives only in the rest card's coach slot. No card border, no fill, no icon animation. **Exception (revision 2026-10-09, check-in.md CI5):** the check-in's lighter-session offer sits in the coach slot of the first set card in Ready, before any set is logged. It is never spoken.
 - Anatomy: line 1 question (`type.callout`, `text.primary`), line 2 trigger fact (`type.callout`, `text.secondary`, tabular numerals), row of two text buttons with `target.workout` hit areas: `No thanks` (left, `text.secondary`) and `Adjust` (right, `accent`). Gap ≥ `space.8` between them.
 - Never a modal, never auto-focused, never announced as an alert. VoiceOver announces it politely once: "That looked hard. Adjust remaining sets? RPE 10 on set 2."
 
@@ -593,6 +597,7 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 - Selection: tap anywhere in the plot selects the nearest point by date (the plot is the hit area); drag scrubs with `haptic.step`. Selected point uses `chart.selected` ring + a 1pt guide line.
 - VoiceOver: the chart is one adjustable element; its label is the summary, swipe up/down moves between points and reads each. A visible `Show as table` button always sits under the panel.
 - No animation on load, on chip changes or on selection.
+- **`pointsOnly` variant** (revision 2026-10-09, check-in.md §2.7): for self-reported 1–5 ratings only. Points (`chart.point`) with **no connecting line**, no band, no average and no marker lane. The y-axis is fixed at 1–5 with the end words on the axis (`1 rough`, `5 great`); x-axis as normal. The heading says `(your own rating)`. Selection, `Show as table` and VoiceOver work as above; the VoiceOver summary lists counts per value, never a mean.
 
 ### 9.24 Chart marker (`ChartMarker`)
 
@@ -777,6 +782,17 @@ Each component has one name and one definition here. The owning spec says where 
 
 **9.53 `DomainLabel`** (revision: data domains, §7.2). A `SettingsSectionHeader` with a leading icon that names the domain: `person.crop.circle` + `Your data`, `books.vertical` + `Coaching knowledge`. Used wherever both domains appear together: Data & backup, the backup and restore previews, export and delete, the coach's `What the coach can see` view, App status. Never colour-coded; the word carries the meaning.
 
+#### Check-in (revision 2026-10-09; owner: check-in.md)
+
+**9.54 `CheckInScale`.** Five equal buttons `1`–`5` in one row, `space.2` apart, filling the content width (≈ 65pt each at 390pt, ≈ 62pt at 375pt), **64pt tall** (above `target.workout`). Each: `bg.raised`, 1pt `border.control`, `radius.md`, digit in `type.keypad` (`text.primary`, tabular, max 1.5×, so five always fit in one row at AX3). Under the row, two end labels in `type.label` `text.secondary`: `1 = rough` (leading) and `5 = great` (trailing); at AX1+ they stack on two lines.
+- States: default; pressed (`accent.subtle` fill); chosen (`accent.subtle` fill, 2pt `accent` border, `checkmark` glyph under the digit). Never accent-filled, so the screen's only accent-filled button is still its `PrimaryButton`. No colour scale across the numbers (1 is not red, 5 is not green).
+- Tapping selects on touch-up inside only; a drag across the row selects nothing. `haptic.step` on selection.
+- VoiceOver: five buttons, "1 of 5, rough", "2 of 5", "3 of 5", "4 of 5", "5 of 5, great"; the row's label is "How are you feeling today, 1 to 5". Hardware keys `1`–`5` select.
+
+**9.55 `CheckInSheet`.** A system sheet with a grabber, presented over Today (or over Active workout in the Resume case). Detents: a content-fit compact detent for the score step (≈ 330pt at default text size), medium for `What's up?`, large for the pain step, with the keyboard open, and at AX1+. Content uses the `OnboardingFrame` rules (§9.46) without its top bar: title `type.title2`, one `type.callout` `text.secondary` line, content, then a fixed bottom bar with `TalkButton` (52 × 52, hidden without voice input) and the step's action (`SecondaryButton` `Skip` on the score step; `PrimaryButton` `Done` / `Flag n movements` on later steps). A secondary text action (`Skip`, `Not now`) sits above-left of the bar, ≥ `space.8` from the primary. The bar sits on the keyboard when it is open. Steps swap content in place (cross-fade ≤ `timing.fast`, none under Reduce Motion). Swipe-down = "not now" (check-in.md CI3). An in-sheet `VoiceStrip` (§9.38) appears above the bar while voice is in use.
+
+**9.56 `CheckInLine`.** How a recorded check-in is shown (summary, past workout, edit entry points). Line 1 `How you said you felt: 2 of 5` (`type.body`, tabular) with a trailing `chevron.right`; line 2 reasons joined by ` · ` (`type.callout`, `text.secondary`); line 3 the note in quotes (`type.callout`, `text.secondary`, max 2 lines, tail ellipsis). No icon colour, no fill, no gauge or bar. Whole line is a ≥ 44pt button that opens the edit sheet. VoiceOver: "How you said you felt before this workout: 2 of 5. Tired, poor sleep. Note: Baby was up at 3."
+
 #### Sound asset
 
 `sound.restEnd` is the file `rest-end.caf` (≤ 2 s), used by both the in-app chime and the rest-end notification sound.
@@ -792,7 +808,7 @@ Each component has one name and one definition here. The owning spec says where 
 - When a Bluetooth keyboard is connected, Return in the reps field acts like `Done`. Cmd+Return logs the set.
 - Status is always conveyed by icon or text as well as colour (§7).
 - Every chart has a VoiceOver summary sentence, point-by-point adjustable navigation and a visible `Show as table` alternative (§9.23, §9.27). Charts carry one series, so no colour legend is ever needed.
-- Every chart and progress value says whether it is an actual result, a target or an estimate.
+- Every chart and progress value says whether it is an actual result, a target or an estimate. (Revision 2026-10-09) A check-in value says it is Ben's own rating (`How you said you felt`, `your own rating`) and is never called a score, readiness or recovery.
 - (Consolidation) Every durability statement uses one of the three phrases in §7.1, and every screen that mixes the two data domains labels them with `DomainLabel` (§9.53).
 - (Consolidation) Any figure in money says `estimate` when the app worked it out.
 
@@ -821,3 +837,4 @@ Use the canonical name in new specs. Aliases are kept so older specs stay readab
 | `DangerTextButton` | §9.2b | "danger text", "status.danger text button" |
 | `timing.coachTimeout` | §6 | `timing.coachFirstToken` (coach-sheet, voice) |
 | `timing.offPhoneReminder` | §6 | `timing.backupOverdue` (data-import-export; retired) |
+| `CheckInScale`, `CheckInSheet`, `CheckInLine` | §9.54–9.56 | Replace the Today readiness chips (`Normal` / `Tired` / `Sore`), which had no component name (revision 2026-10-09) |

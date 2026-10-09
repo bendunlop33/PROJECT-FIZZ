@@ -1,5 +1,7 @@
 # Workout builder (coach-made workouts and, later, programmes)
 
+> **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** `Start now` runs its pre-start check first; when that passes and a check-in is due, the `CheckInSheet` appears before `startWorkoutFromDraft(…, opts.checkIn)` ([check-in.md](check-in.md) §2.1). A low check-in never rebuilds the draft by itself; the coach's lighter-session offer, if any, appears on the first set card like any other workout. Check-ins are not sent to the builder (CI10).
+
 Status: v0.1 draft, 8 Oct 2026. Feature approved in brief CHANGELOG v0.5. Builds on [ADR 0006](../decisions/0006-coach-led-progression.md) and [coach-adjustments.md](coach-adjustments.md) (guard notes, source tags, honest failure lines). Tokens: [design-system.md](design-system.md). Entry from [today.md](today.md).
 
 The builder sits **outside the logging loop**. It adds nothing to Active workout, Rest or Summary, and it never runs while Ben is between sets unless he asks for it. Everything it makes is a **draft** until Ben taps Start now or Save as routine.

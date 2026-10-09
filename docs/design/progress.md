@@ -2,6 +2,8 @@
 
 > **Revision 2026-10-08 (consolidation).** PG20 now uses change-review.md's `update_template` kind name (plus `deload_week`). PG6's 10–20 guide band is a playbook rule (Coaching knowledge) that Ben approves in Guides & playbook; its on/off and min/max live with that rule rather than under a separate "Profile → Progress" screen. `SourceTag` (§9.28) is now the canonical tag for every source and provenance label. `Clear…` on the pain status line opens the canonical Pain flags list (coach-memory.md §2.7).
 
+> **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** New home card **`How you said you felt`** after `Sets per muscle` and before `Week review` (PG2 order extended), and a detail screen with a `pointsOnly` chart on a fixed 1–5 axis plus a table and list ([check-in.md](check-in.md) §2.7, CI11). Check-ins are shown raw with plain counts: no average, no line through the points, no overlay on exercise charts, not in the week review's facts (CI10), and never called readiness or recovery. Past workouts show the `CheckInLine` like the summary. Changed: PG2, §1, §2.1, §2.2 (region 5a), §2.6, §3.1, §4.1, §5.1, §6.1, §7 focus order, checks 44–47.
+
 Status: v0.1 draft, 8 Oct 2026. Brief §1 (Progress tab) and §12 "Page 6: Progress". Tokens and components: [design-system.md](design-system.md) (chart tokens §2.1 and §4.1, components §9.21–9.30). Related: [workout-summary.md](workout-summary.md) (the past-workout view and Edit workout reuse it), [coach-adjustments.md](coach-adjustments.md) (coach markers, proposals, Undo), [today.md](today.md) (gets only the compact version), [training-guides/evidence-core.md](../training-guides/evidence-core.md) (E1, E2, E5, E11, E13).
 
 Progress is **not** part of the logging loop. Nothing here is needed to train, nothing here needs a network, and nothing here interrupts a workout. The only AI-dependent part is the weekly review, and it degrades to plain facts.
@@ -15,7 +17,7 @@ Progress is **not** part of the logging loop. Nothing here is needed to train, n
 | # | Brief says / implies | This spec proposes | Reason |
 |---|---|---|---|
 | PG1 | Calendar is a separate place that "opens saved workouts" | Calendar is the second segment of the Progress tab (`Overview` · `Calendar`), not a fourth tab or a pushed screen | Keeps three tabs (brief §1). One tap from anywhere in Progress. Past workouts and correction live in one predictable spot |
-| PG2 | Default to weekly consistency and pinned trends | Fixed order: This week → Lifts you follow → Sets per muscle → Week review → Recent records → Endurance → All exercises. **The order never changes with the data** | Ben learns where things are. Facts sit above the coach's interpretation (same principle as the summary: "saved first, interpreted second") |
+| PG2 | Default to weekly consistency and pinned trends | Fixed order: This week → Lifts you follow → Sets per muscle → How you said you felt (2026-10-09) → Week review → Recent records → Endurance → All exercises. **The order never changes with the data** | Ben learns where things are. Facts sit above the coach's interpretation (same principle as the summary: "saved first, interpreted second") |
 | PG3 | (none) | No week switcher on the home screen. Home always shows the current week. Past weeks are one tap away (the `This week` card → Calendar; the `Sets per muscle` card → its detail screen with ‹ ›) | One date context per screen. A switcher that silently changes some cards but not others (pinned lifts aren't weekly) causes misreading |
 | PG4 | Volume/muscle breakdown "only when useful data exists" | Sets per muscle is shown once ≥ 1 week of tagged working sets exists, with the 10–20 guide band (see 0.2) | Requested for this slice and grounded in E1/E2 |
 | PG5 | (none) | A `ResumeBar` sits above the tab bar on Progress (and should on Profile) while a workout is unfinished and < 6 h old | Keeps "one tap to resume" true from every tab. Today's Resume card only covers the Today tab |
@@ -54,9 +56,10 @@ Progress answers **"Am I getting stronger and training consistently, by the numb
 | Calendar | What did I do on a given day, and is it recorded correctly? | Open a past workout → `Edit` |
 | Past workout | Exactly what was logged, and what did it lead to? | `Edit` (nav bar) |
 | Week review (card on home) | What happened last week, in three facts, and is one change worth making? | `Apply` on the single proposal, if there is one |
+| How you said you felt (card + detail, 2026-10-09) | What did I say before each workout? | Open an entry → its workout |
 | Endurance (later) | What endurance work was imported, by source? | Open a sport's activity list |
 
-It never shows a recovery, readiness, fitness, fatigue or "form" score, a percentage grade, a ring or an animated dashboard. Every value says whether it is an **actual result**, a **target** or an **estimate**.
+It never shows a recovery, readiness, fitness, fatigue or "form" score, a percentage grade, a ring or an animated dashboard. Every value says whether it is an **actual result**, a **target** or an **estimate**, or (check-ins, 2026-10-09) **Ben's own rating**, shown as given.
 
 ---
 
@@ -71,6 +74,7 @@ Tab: Progress
  │   ├─ Lift row ─────────────────────► Exercise detail ─► point/row ─► Past workout ─► Edit workout
  │   ├─ Lifts you follow · Edit ──────► Pin editor (sheet)
  │   ├─ Sets per muscle card ─────────► Sets per muscle (week ‹ ›) ─► How this is counted (sheet)
+ │   ├─ How you said you felt card ───► Check-in detail (chart / table / list) ─► Past workout
  │   ├─ Week review · Why? / Apply ───► evidence sheet / inline Apply, Undo
  │   ├─ Recent records row ───────────► Exercise detail (that series, point selected)
  │   ├─ Endurance card (later) ───────► Endurance activities
@@ -90,6 +94,7 @@ Regions, top to bottom:
 3. **This week.** Card heading `This week · 5–11 Oct ›`. Line 1: `2 of 4 planned sessions done` (or `3 workouts this week` with no plan). A static `WeekStrip` (Mon–Sun). Line: `11 of 14 planned sessions in the last 4 weeks`. Optional streak line. A deload-tagged week adds a `Deload week` text tag. The whole card is one tap target → Calendar.
 4. **Lifts you follow.** Heading with an `Edit` text button. Up to three `TrendRow`s (pinned series): name + equipment context, `Sparkline` (12 weeks), latest actual top set with date, change since the start of the window. Empty slots show suggestions (§2.4).
 5. **Sets per muscle · this week.** Heading `›`. Subtitle with the method in one line. Up to six `VolumeBandRow`s in a fixed body order (only muscles with ≥ 1 counted set in the last 4 weeks), then `Show all (11)`.
+5a. **How you said you felt (2026-10-09).** Heading `How you said you felt ›`; line `Before each workout · 1 = rough, 5 = great`; up to four most recent check-ins as given (`Thu 8 Oct  2 · Tired, Poor sleep`, with `· skipped` / `· rescheduled` / `· no workout` when no workout followed); one count line `9 check-ins in the last 4 weeks · 3 at 3 or lower` (the threshold is Ben's "What's up?" setting). Whole card → detail ([check-in.md](check-in.md) §2.7). Absent when there are no check-ins and check-ins are off; with check-ins on and none yet: `No check-ins yet. You're asked when you start a workout.` No chart on the home card.
 6. **Week review.** One card for the most recent completed week (§2.7).
 7. **Recent records.** Heading `Recent records · last 30 days`. Up to three rows, newest first, then `Show all (5)`. If there are none: one text line, no frame.
 8. **Endurance (imported).** Only when imported activities exist in the last 12 weeks (§2.8). Otherwise absent: no heading, no frame.
@@ -376,7 +381,7 @@ Past days with a planned-but-not-logged session show `○` too; their day list r
 
 **Past workout** (pushed from a day list row, a chart point, a history row or a record):
 
-It reuses the summary layout (workout-summary §2) in **history mode**: no saved banner, no `Done`, no footer bar.
+It reuses the summary layout (workout-summary §2) in **history mode**: no saved banner, no `Done`, no footer bar. (2026-10-09) The `CheckInLine` sits under the title line when the workout had a check-in, exactly as on the summary.
 
 ```
 ┌────────────────────────────────────────┐
@@ -503,6 +508,9 @@ Never shown: a combined strength + endurance load, training load/stress, readine
 | Helper muscles not available | PG8 not built yet | Subtitle `Hard sets (RPE 6+ or unrated). Helper muscles not counted yet.` |
 | Records: none | No qualifying record in 30 days | `No new records in the last 30 days.` (one line) |
 | Endurance: no data | No imported activities | Section absent |
+| Check-ins: none (2026-10-09) | No check-ins recorded | Check-ins on: `No check-ins yet. You're asked when you start a workout.` Off: card absent |
+| Check-ins: few | 1–2 check-ins | Card lists them; detail shows the list and table, and the chart only from 3 points (`A chart appears after 3 check-ins.`) |
+| Check-ins turned off later | Setting off, history exists | Card still shows history with `Check-ins are off. Turn on in Profile → Check-in.` |
 | Coach states | see §3.4 | Only the review card changes |
 | Offline | No network | No banner. Everything except the coach review is local. Ask pill shows `Offline` |
 | Workout in progress | Unfinished < 6 h | `ResumeBar` shown; data includes only finished workouts (the active one appears after Finish) |
@@ -589,6 +597,7 @@ The swap from built-in facts to the coach's review happens in place with no anim
 | `+ Pin` on a suggestion | `setPinnedLifts` at once; toast `Pinned Back squat` [Undo] | — |
 | `Sets per muscle` heading / row | Opens Sets per muscle, current week; a row tap opens it scrolled and expanded to that muscle | `ⓘ` opens `How this is counted` |
 | `Show all (11)` | Opens Sets per muscle | — |
+| `How you said you felt` card (2026-10-09) | Opens the check-in detail: range chips `4 wk` / `3 mo` / `1 yr` / `All`, `pointsOnly` chart, `Show as table`, list; a list row or point → Past workout (or the edit sheet when no workout followed) | — |
 | Week review `Why? ›` | Evidence sheet (`getDecisionEvidence`): the facts used, with links to the sessions | — |
 | Week review `Apply` | `confirmProposal` → `applyCoachProposal(id, {kind: 'review_apply', expectedVersion})`; card collapses with [Undo] | — |
 | `Undo` | `undoAction(actionId)` while no affected session has started; after that, a compensating proposal (coach-adjustments §4.4) | — |
@@ -676,6 +685,7 @@ Every value is labelled **actual**, **target** or **estimate**. All numbers use 
 | Method line | `Hard sets (RPE 6+ or unrated), helpers count ½ · guide 10–20` · without helpers: `Hard sets (RPE 6+ or unrated). Helper muscles not counted yet.` · guide off: drop `· guide 10–20` | — |
 | Muscle row | `Chest  14 · in 10–20` · `Back  8 · under 10` · `Quads  23 · over 20` · `Triceps  7½ · under 10` | Actual |
 | No muscle data | `Sets per muscle needs muscles on your exercises. 3 exercises have none.` [Set muscles] | — |
+| Check-in card (2026-10-09) | `How you said you felt` · `Before each workout · 1 = rough, 5 = great` · `Thu 8 Oct  2 · Tired, Poor sleep` · `· skipped` · `· rescheduled` · `· no workout` · `9 check-ins in the last 4 weeks · 3 at 3 or lower` · detail strings in check-in.md §5.3 | Ben's own rating |
 | Records heading | `Recent records · last 30 days` | — |
 | Record lines | `Heaviest set: 105 kg × 3 · 1 Oct` / `Before: 102.5 kg × 3 (14 Sep)` · `Most reps at 100 kg: 9 · 5 Oct` / `Before: 8 (24 Sep)` · `Best estimated 1RM: 121 kg (estimate from 105 kg × 5) · 1 Oct` / `Before: 118 kg (estimate, 14 Sep)` · assisted: `Least assistance for 8+ reps: Assist 15 kg · 2 Oct` · bodyweight: `Most reps: 14 · 3 Oct` | Actual; estimates labelled |
 | Records none | `No new records in the last 30 days.` | — |
@@ -810,6 +820,7 @@ Proposed (contracts for the developer; names follow the brief's style):
 | `setWeekTag(ownerId, weekStart, tag: 'deload' \| null, expectedVersion, opId)` | Versioned, undoable |
 | `setExerciseMuscles(exerciseId, primary[], secondary[], expectedVersion)` | Custom exercises only; catalogue entries are fixed |
 | `getEnduranceSummary(ownerId, range)` | Per sport: weekly totals of fields present, `source`, `lastImportAt`. No derived scores |
+| (2026-10-09) `buildProgressHome` adds `checkIns: {recent[0..4], count4w, atOrBelowCount, threshold} \| null`; `getCheckInHistory(ownerId, {fromLocalDate, toLocalDate})`; `summariseCheckIns(items, {atOrBelow})` (counts only) | check-in.md §6. `buildWeeklyReviewFacts` never includes check-ins |
 
 ### 6.2 Metric definitions (domain, unit-tested)
 
@@ -846,7 +857,7 @@ Proposed (contracts for the developer; names follow the brief's style):
 - **Touch targets.** Every row, chip, toggle and calendar cell ≥ 44 × 44. Chart points use the whole plot as the hit area.
 - **Motion.** No animated drawing, no count-up numbers, no transitions on chip changes. Reduce Motion removes the review cross-fade.
 - **Dark/light.** All colours are tokens (design-system §2, §2.1), so both modes switch together. Increase Contrast: gridlines become 2pt `border.control`, band fill gets `border.control` edges at 2pt.
-- **Focus order** (home): title → segments → This week → Lifts → Sets per muscle → Week review → Records → Endurance → All exercises → Ask → ResumeBar → tab bar.
+- **Focus order** (home): title → segments → This week → Lifts → Sets per muscle → How you said you felt → Week review → Records → Endurance → All exercises → Ask → ResumeBar → tab bar.
 
 ---
 
@@ -910,3 +921,9 @@ Proposed (contracts for the developer; names follow the brief's style):
 41. All text is ≥ 16pt at default size and all numbers use tabular numerals; at AX3 nothing scrolls horizontally.
 42. In light mode every chart token switches, and the line, band edges, bars and selected point keep ≥ 3:1 against their background.
 43. No element animates other than standard navigation, sheet and segmented-control transitions.
+
+**Check-ins (2026-10-09)**
+44. The `How you said you felt` card sits between `Sets per muscle` and `Week review` and shows raw check-ins and counts only; no average, percentage or trend word appears anywhere in Progress for check-ins.
+45. The check-in detail chart has a fixed 1–5 axis labelled `1 rough` and `5 great`, points with no connecting line, and `Show as table`; its VoiceOver summary gives counts per value, not a mean.
+46. Exercise charts, records, `This week` and the week review never show or use check-ins (the week-review facts payload has none).
+47. A past workout with a check-in shows the same `CheckInLine` as its summary.

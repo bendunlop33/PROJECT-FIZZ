@@ -8,6 +8,8 @@
 
 > **Revision 2026-10-08 (consolidation).** §5.1 step 3 follows voice.md VO4: a voice-logged set shows `✓ Saved` and its Undo **in the voice strip**; the separate undo toast isn't shown for it. §5.1 now points to voice.md for the full voice path. §2 records where each `DEP-*` stands after device probe build 7 (DEP-NOTIF passed without Time Sensitive, which a free Apple ID can't use; DEP-LIVE failed pending the App Group fix). Fixed a missing line break between rules 5 and 6 in §5. The coach sheet, lock-screen alerts, voice, backups and system states now have their own specs (see README.md).
 
+> **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** [check-in.md](check-in.md) adds an optional step **before** a session exists: Start → `shouldAskCheckIn` → (sheet) → `startWorkout(…, opts.checkIn)`. It is never shown once a set has been logged. With check-ins off or not due, the loop and its tap counts are unchanged; with them due, starting costs one extra tap (a score or `Skip`). Changed: §3.2 (Start row, new Resume-not-yet-started row), §6 (`recordReadiness` withdrawn, check-in functions added), §7 (P11 superseded), §8 (check 1 wording, new checks 21–23). A low check-in can lead to a coach **offer** on the first set card; it uses the existing coach-adjustment rows of §3.2 (`origin: 'check_in_offer'`) and invariant 8 still holds.
+
 Status: v0.1 draft, 8 Oct 2026. Screen specs: [today.md](today.md), [active-workout.md](active-workout.md), [rest-state.md](rest-state.md), [workout-summary.md](workout-summary.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -87,7 +89,8 @@ Research on voice, AI and Live Activity is happening in parallel. Each optional 
 
 | From | Event | Guard | Effects (in order) | To |
 |---|---|---|---|---|
-| No session | Tap `Start workout` | none | `startWorkout(routineId?, gymId, opId)` snapshots the routine and equipment, then `buildActiveSetView` | Ready (Empty if no routine) |
+| No session | Tap `Start workout` | none | `shouldAskCheckIn` (pure, local). If due, the check-in sheet opens and nothing is written until a score, `Skip`, `Done` or `Train anyway`; swipe-down returns to Today with no session (check-in.md §3.1). Then `startWorkout(routineId?, gymId, opId, {checkIn})` snapshots the routine and equipment and links the check-in in the same transaction, then `buildActiveSetView` | Ready (Empty if no routine) |
+| Ready / Paused, no set ever committed, `session.checkIn` is `pending` | `Resume` or cold-launch auto-open (P6) | none | The check-in sheet over Active workout; `setSessionCheckIn` on answer or Skip. Never once a set has been committed | unchanged |
 | Empty | Tap `Add exercise` → pick | none | `addExercise(…)` adds the exercise with one empty working set, which becomes active | Ready (values incomplete) |
 | No session (unfinished exists) | Tap `Resume` | none | `getActiveSession` → `buildActiveSetView` | the persisted state (Ready, Resting or Paused) |
 | Ready | Tap `Log …` / Cmd+Return / voice "log it"* | Draft valid; outside the commit guard | `commitSetAndBeginRest(cmd{opId})`, then cues (§5) | Result saved → Resting, or Ready (when rest is 0, mid-superset, or the final set) |
@@ -232,7 +235,8 @@ From the brief: `buildTodayView`, `startWorkout`, `getActiveSession`, `buildActi
 | `deleteSet(setId, expectedSetVersion, opId)` | Delete set (implemented as `delete_set`; audited tombstone) |
 | `skipExercise(sessionExerciseId, opId)` | Skip exercise (implemented as `skip_exercise`) |
 | `discardWorkout(sessionId, expectedVersion, opId)` | Discard workout (implemented as `discard`) |
-| `recordReadiness(ownerId, localDate, level, note?)` | The Today readiness chips (writes `ReadinessEntry`) |
+| ~~`recordReadiness(ownerId, localDate, level, note?)`~~ | **Withdrawn 2026-10-09**: the readiness chips are replaced by the pre-workout check-in |
+| `shouldAskCheckIn`, `recordCheckIn`, `updateCheckIn`, `setCheckInOutcome`, `setSessionCheckIn`, `evaluateCheckInOffer`, `startWorkout(…, opts.checkIn)` | Pre-workout check-in (writes `CheckIn`, which replaces the brief's `ReadinessEntry`). Contracts in check-in.md §6 |
 | `evaluateCoachTrigger`, `recordTriggerResponse`, `requestCoachAdjustment`, `cancelCoachTurn`, `setPainFlag` | Coach-led progression (ADR 0006). Signatures in coach-adjustments §6 |
 
 ## 7. Brief change proposals (for Ben to approve; not yet in CHANGELOG)
@@ -249,12 +253,12 @@ From the brief: `buildTodayView`, `startWorkout`, `getActiveSession`, `buildActi
 | P8 | Summary: facts plus an optional coach note | Add a "Next time" section showing `calculateNextTargets` output, with the rule named. **Amended by v0.4 (ADR 0006):** with the coach available, rows show the coach's proposal (before built-in rule → after coach, Apply/Undo, source `Coach`); without it, the rule output labelled `Built-in rule (coach offline)` | Answers "what comes next" with or without AI, and always names who decided |
 | P9 | Show the resolved rest preset before the first set | Show `Rest after: 1:30` on every current-set card, and tap it to edit | One line, always correctable, not just before set 1 |
 | P10 | The coach opens as a sheet / collapsible panel | Tap-to-talk uses an inline **voice strip** above the action bar. Typed chat uses the sheet (medium detent) | A sheet hides the Log button. The strip keeps it visible |
-| P11 | Today includes readiness | Readiness only records an entry in this milestone and never changes targets on its own. The coach may suggest changes later | Avoids a hidden adjustment the rules can't explain |
+| P11 | Today includes readiness | Readiness only records an entry in this milestone and never changes targets on its own. The coach may suggest changes later. **Superseded by v0.9 (2026-10-09):** the readiness chips are replaced by the pre-workout check-in ([check-in.md](check-in.md)). The principle stands: the check-in never changes targets on its own and the built-in rules ignore it; a low check-in only lets the coach *offer* a lighter session, applied when Ben taps `Adjust` | Avoids a hidden adjustment the rules can't explain |
 | P12 | Brief §1 lists Ask/Talk as consistent | In the workout, Talk sits bottom-left in the action bar. Elsewhere it is a bottom-trailing `Ask` pill | Thumb reach, and it never covers Start |
 
 ## 8. Acceptance checks (end-to-end, on a real iPhone)
 
-1. Start from Today and complete 3 exercises × 3 sets where every set matches its prefilled values. Count the taps: 1 to start, 1 per set, 2 to finish (`Finish workout` + `Finish`), 1 for `Done`.
+1. Start from Today and complete 3 exercises × 3 sets where every set matches its prefilled values. Count the taps: 1 to start, 1 per set, 2 to finish (`Finish workout` + `Finish`), 1 for `Done`. (2026-10-09) This count is with check-ins off or not due; with a check-in due, starting is 2 taps (Start + a score of 4–5 or `Skip`) and every other count is identical.
 2. Log a set, then double-tap Log within 1 s. Exactly one set is saved.
 3. During rest, force-quit from the app switcher and reopen within 10 s. The app opens on the workout, and the remaining time is correct to within 1 s, not reset.
 4. During rest, force-quit and reopen after the deadline. The app shows `Ready when you are`, with the `Rest ended at hh:mm` banner. There is no late spoken cue and no second notification.
@@ -274,3 +278,6 @@ From the brief: `buildTodayView`, `startWorkout`, `getActiveSession`, `buildActi
 18. Log a set at RPE 10, tap `Adjust` on the offer, and log the next set before the coach answers: that set keeps exactly the values on its Log button, and the coach result changes only sets still pending, or is dropped.
 19. Ask for an adjustment, then force-quit before the answer: on relaunch nothing was applied and the slot reads `Coach request was interrupted. Nothing changed.`
 20. With airplane mode on, `Adjust` shows `Coach offline`, no offer ever appears, and the summary's `Next time` rows are tagged `Built-in rule (coach offline)`.
+21. (2026-10-09) Force-quit with the check-in sheet open: relaunch shows Today with no session (nothing to recover or discard). A score already tapped is reused by the next Start within 2 h.
+22. (2026-10-09) Log one set, undo it, then go to Today and `Resume`: no check-in appears (never mid-workout).
+23. (2026-10-09) Check-in score 1 with the coach offline: the loop runs exactly as with no check-in, and `Next time` targets match a run with no check-in.

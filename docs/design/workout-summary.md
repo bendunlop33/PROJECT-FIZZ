@@ -8,6 +8,8 @@
 
 > **Revision 2026-10-08 (consolidation).** Applied data-import-export.md X2 with the approved "backups in the app by default" wording: one line under the saved banner from `getBackupStatus` (§2 region 1): `Backed up on this phone · 19:05` / `Backing up…` / `⚠ Last backup on this phone didn't save. Open Data & backup ›`. It never mentions off-phone copies, never blocks `Done`, and the automatic backup runs after the summary is shown. `⋯` → `Share / export` stays a per-session export of **Your data** only.
 
+> **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** The session's check-in ([check-in.md](check-in.md)) is shown **as given** in a `CheckInLine` under the title line, above the facts (region 2a): `How you said you felt: 2 of 5`, reasons, the note in quotes. It is not a fact row, is never combined with any number on this screen, and doesn't change `Next time` (the built-in rules ignore it). When Ben picked `Pain` without choosing movements, a `NoteLine` asks him to flag them. The single coach call may read this session's check-in as Ben's words (check-in.md CI10). Changed: §2, §3, §4, §5, §6, checks 23–26.
+
 Status: v0.1 draft, 8 Oct 2026. Flow: [flow-first-milestone.md](flow-first-milestone.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -26,6 +28,7 @@ Regions, top to bottom:
 
 1. **Saved banner.** `✓ Workout saved on this phone`, on the `status.done.subtle` background with the done icon. This is shown only after the local commit. Under it, one `type.callout` `text.secondary` line from `getBackupStatus` (consolidation, X2): `Backing up…` (static icon) → `Backed up on this phone · 19:05`, or `⚠ Last backup on this phone didn't save. Open Data & backup ›` (`status.warning` icon + text). The line updates in place, never delays `Done` and never mentions copies in Files.
 2. **Title block.** The workout name and date, then the gym and the time range.
+2a. **Check-in (2026-10-09, only when answered).** `CheckInLine` (design-system §9.56): `How you said you felt: 2 of 5 ›`, reasons, note. Tap → edit sheet (check-in.md §4.6). If `Pain` was picked with no movement flagged, a `NoteLine` follows: `⚠ You mentioned pain before this workout. Flag the movements that hurt so loads don't go up.` [Choose movements ›]. Absent when skipped or not asked.
 3. **Facts.** These are label–value rows:
    - Active time
    - Exercises
@@ -48,6 +51,8 @@ Regions, top to bottom:
 ├────────────────────────────────────────┤
 │ Push A                             ⋯   │
 │ Thu 8 Oct · Main Gym · 18:02–19:04     │
+│ How you said you felt: 3 of 5        › │ CheckInLine (2026-10-09; what
+│ Tired                                  │ Ben said, only if answered)
 │                                        │
 │ Active time            54 min          │
 │ Exercises              5 of 5          │
@@ -150,6 +155,11 @@ Built-in rule text comes from `calculateNextTargets`. Coach reasons come from th
 | Proposal undone | Undo tapped | Back to the unapplied proposal (before/after, Apply) |
 | Proposal stale | The template or history changed since the proposal was made (e.g. an Edit workout correction) | `Out of date` styling, Apply disabled, [Dismiss]. Rows recompute the built-in rule; the coach is not re-called automatically |
 | Proposal expired | The next session of that routine started without Apply | Status `expired`; shown in history as `Not applied`. The built-in rule's target was used |
+| Check-in answered (2026-10-09) | `session.checkIn.kind = 'answered'` | Region 2a `CheckInLine` with score, reasons and note exactly as given |
+| Check-in skipped / not asked | `skipped` or `not_asked` | No check-in line; nothing says it was skipped |
+| Pain mentioned, not flagged | Check-in has `Pain` and no `painFlagIds` | Region 2a `NoteLine` + [Choose movements ›] until a flag is set from it or the check-in is edited |
+| Lighter session applied | The check-in offer was accepted | The exercise rows' adjustment line reads `Coach adjusted sets 2–6 (lighter session; you said 2 of 5)` |
+| Check-in edited | Changed from the line | The line shows the new values; `Edit history` lists `Check-in 3 → 2`. Nothing else recomputes |
 
 Transitions:
 - Finish commit → Normal.
@@ -161,6 +171,8 @@ Transitions:
 | Element | Action |
 |---|---|
 | `Done` | Returns to Today. Leaving doesn't cancel the coach note: if it's still loading, it attaches to the session and appears in history when ready |
+| `CheckInLine` (2026-10-09) | Opens the check-in edit sheet: same score and reasons, `Save changes`, `Delete check-in` (check-in.md §4.6). `updateCheckIn` / `deleteCheckIn`; never changes sets, adjustments or `Next time` |
+| `Choose movements ›` (2026-10-09) | Pain flag Add sheet (coach-memory §2.6) with this workout's exercises first; `setPainFlag(…, source: 'check_in')` |
 | `Edit workout` | Opens the session in edit mode (Overview table layout). Ben can correct values, set types, add a forgotten set or change start and end times. Every change calls `correctSet` / `updateSessionTiming(sessionId, expectedVersion, {startedAt?, endedAt?})` with an audit, and the original timestamps are kept. Time pickers allow only times that keep every logged set inside the workout and nothing in the future. A skipped timed set that kept a stopped time shows it as `Not logged: 0:38` with a `Log it` action (a correction). Editing doesn't regenerate the plan with AI. Next-time targets are recomputed deterministically |
 | Comparison block | Opens the exercise history in Progress, filtered to the same equipment |
 | Exercise row | Opens that exercise's sets read-only, with an `Edit` button |
@@ -182,6 +194,7 @@ Undo:
 | Saved banner | `Workout saved on this phone` |
 | Backup line | `Backing up…` · `Backed up on this phone · 19:05` · `Last backup on this phone didn't save. Open Data & backup ›` |
 | Title line | `Thu 8 Oct · Main Gym · 18:02–19:04` |
+| Check-in (2026-10-09) | `How you said you felt: 2 of 5` · reasons `Tired · Poor sleep` · note `"Baby was up at 3"` (what Ben said, as given) · pain prompt `You mentioned pain before this workout. Flag the movements that hurt so loads don't go up.` [Choose movements ›] · adjustment line `Coach adjusted sets 2–6 (lighter session; you said 2 of 5)` |
 | Facts labels | `Active time`, `Exercises`, `Working sets`, `Warm-up sets` |
 | Fact values | `54 min`, `5 of 5`, `16 (2 skipped)`, `4` |
 | Comparison heading | `Compared with last time` |
@@ -225,6 +238,7 @@ The summary makes **no personal-best claims** unless the domain confirms that th
 - `calculateNextTargets(history, rule, equipment)` returns the changed targets and an explanation for each, with equipment bounds applied. It is always computed: it is the offline fallback and the "before" value of every coach proposal.
 - `buildWorkoutSummary(sessionId)` also returns `nextTime[]`: `{exerciseId, builtIn, coachStatus: 'unavailable' | 'offline' | 'loading' | 'ready' | 'failed', coachProposal?: {proposalId, after, reason, guardNotes, scope, status}}`, and per exercise `adjustments[]` from the workout (coach-adjustments §6).
 - `correctSet` for edits (timing as above).
+- (2026-10-09) `buildWorkoutSummary` adds `checkIn?: {checkInId, score, reasons, note?, recordedAtUtc}` and `painMentionedNotFlagged`; `updateCheckIn`, `deleteCheckIn`, `setPainFlag` (check-in.md §6). The summary coach turn receives this session's check-in labelled as Ben's words; `calculateNextTargets` never reads it.
 - Optional layers:
   - `getAiCapabilities`
   - `runCoachTurn` with the summary context, attached later
@@ -258,3 +272,7 @@ The summary makes **no personal-best claims** unless the domain confirms that th
 20. Apply → the row collapses with [Undo]; Undo restores the unapplied proposal and the next session's target is the built-in rule's again.
 21. Correcting a set in Edit workout after a coach proposal makes that proposal `Out of date` (Apply disabled); no coach call is made automatically.
 22. An exercise adjusted by the coach mid-workout shows `Coach adjusted sets 3–4 (…)` in its row; its logged values are the actual results, unchanged by the adjustment.
+23. (2026-10-09) A workout with a check-in of 2 (`Tired`, note "Baby was up at 3") shows exactly `How you said you felt: 2 of 5`, `Tired` and the note in quotes under the title line, and no other check-in-derived text or number anywhere on the screen.
+24. (2026-10-09) A skipped check-in leaves no line. `Next time` targets are identical for the same logs with a check-in of 1, of 5, or skipped.
+25. (2026-10-09) Editing the check-in from the line versions it, shows in `Edit history`, and changes nothing else on the summary.
+26. (2026-10-09) `Pain` picked with no movement flagged shows the pain prompt; `Choose movements ›` → flag Bench press sets a flag with source `check_in` and the prompt disappears.
