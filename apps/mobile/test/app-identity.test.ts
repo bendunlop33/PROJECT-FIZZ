@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import config from '../app.config';
+import { displayNameFrom } from '../src/device/display-name';
 import { APP_GROUP_IDENTIFIER, BUNDLE_IDENTIFIER, DISPLAY_NAME, IOS_PROJECT_NAME, WIDGET_EXTENSION_BUNDLE_IDENTIFIER } from '../app-identity.mts';
 
 describe('app identity (ADR 0004)', () => {
@@ -30,6 +31,18 @@ describe('app name (approved 9 Oct 2026)', () => {
     expect(config.name).toBe(IOS_PROJECT_NAME);
     expect(config.ios?.infoPlist?.CFBundleDisplayName).toBe(DISPLAY_NAME);
     expect(config.slug).toBe('fizz');
+  });
+
+  it('gives the running app the same name, from the embedded config (review R1: backup headers)', () => {
+    expect(config.extra?.displayName).toBe(DISPLAY_NAME);
+    expect(displayNameFrom(config.extra, 'Something else')).toBe(DISPLAY_NAME);
+    // Fallbacks: the installed app's own display name, then an honest unknown.
+    expect(displayNameFrom({}, 'GymSmarter')).toBe('GymSmarter');
+    expect(displayNameFrom(undefined, null)).toBe('unknown');
+    expect(displayNameFrom({ displayName: ' ' }, '')).toBe('unknown');
+    // No second hard-coded copy of the name in the app's code.
+    const runtime = readFileSync(join(import.meta.dirname, '../src/device/runtime.ts'), 'utf8');
+    expect(runtime).not.toContain(`'${DISPLAY_NAME}'`);
   });
 
   it('names the app in every permission prompt', () => {

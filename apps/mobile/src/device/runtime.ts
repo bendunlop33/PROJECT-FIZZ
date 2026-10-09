@@ -1,10 +1,12 @@
 import * as Application from 'expo-application';
+import Constants from 'expo-constants';
 import { getCalendars, getLocales } from 'expo-localization';
 
 import type { AppInfo } from '@fizz/persistence';
 import type { ZonedTimestamp } from '@fizz/schemas';
 
 import { isoUtc, nowMs } from '../clock';
+import { displayNameFrom } from './display-name';
 
 /** The phone's IANA time zone (falls back to Intl). */
 export function deviceTimeZone(): string {
@@ -51,9 +53,10 @@ function fallbackUuid(): string {
   return out;
 }
 
+/** Provenance written into backup headers. The name is free text, never used to recognise a backup. */
 export function appInfo(): AppInfo {
   return {
-    name: 'GymSmarter',
+    name: displayNameFrom(Constants.expoConfig?.extra, Application.applicationName),
     version: Application.nativeApplicationVersion ?? '0.0.0',
     build: Application.nativeBuildVersion ?? null,
   };
