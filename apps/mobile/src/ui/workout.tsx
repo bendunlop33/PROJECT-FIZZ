@@ -9,6 +9,7 @@ import { useTheme } from '../theme';
 import { PrimaryButton } from './buttons';
 import { Icon, type SymbolName } from './Icon';
 import { AppText } from './Text';
+import { nextFieldText, parseNumber } from './number-text';
 
 /** Shared keyboard toolbar for number fields (the system decimal pad has no Done key). */
 export const NUMBER_ACCESSORY_ID = 'fizz-number-done';
@@ -67,12 +68,6 @@ function StepButton({ icon, target, onStep, describe }: { icon: SymbolName; targ
   );
 }
 
-function parseNumber(text: string): number | null {
-  const t = text.replace(',', '.').trim();
-  if (t === '') return null;
-  const n = Number(t);
-  return Number.isFinite(n) && n >= 0 ? n : null;
-}
 
 /**
  * `NumberStepper` (design-system §9.4): [−] value [+]. The steps come from the
@@ -103,8 +98,8 @@ export function NumberStepper({
   const [text, setText] = useState(value === null ? '' : String(value));
   const [focused, setFocused] = useState(false);
   useEffect(() => {
-    if (!focused) setText(value === null ? '' : String(value));
-  }, [value, focused]);
+    setText((t) => nextFieldText(t, value));
+  }, [value]);
   const describe = label === 'Assist' ? 'Assistance' : label;
   return (
     <View style={{ flex: 1, minWidth: 150, gap: theme.space['1'] }}>
