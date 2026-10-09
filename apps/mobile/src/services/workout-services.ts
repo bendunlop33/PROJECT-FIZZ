@@ -332,6 +332,27 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
     dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => ctx.afterCommand(await domain().dispatch(sessionId, command)),
 
+    /**
+     * `Rest after` (rest-state §2.4): this set only, or every pending set of
+     * the exercise plus Ben's default for it in future workouts (saved in
+     * his profile, Your data). The running timer is never changed.
+     */
+    async setRestAfter(req: { sessionId: string; setId: string; seconds: number; scope: 'set' | 'exercise'; opId: string; expectedVersion: number }): Promise<CommandOutcome & { defaultSaved?: boolean }> {
+      const r = ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'set_rest_after', at: ctx.now(), opId: req.opId, setId: req.setId, seconds: req.seconds, scope: req.scope, expectedVersion: req.expectedVersion }));
+      if (!r.ok || req.scope !== 'exercise') return r;
+      const ex = r.aggregate.exercises.find((e) => e.id === r.aggregate.sets.find((s) => s.id === req.setId)?.sessionExerciseId);
+      if (!ex) return r;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const p = await ctx.profile();
+        if (!p) break;
+        if (p.exerciseRestS?.[ex.exerciseId] === req.seconds) return { ...r, defaultSaved: true };
+        const next: UserProfile = { ...p, exerciseRestS: { ...(p.exerciseRestS ?? {}), [ex.exerciseId]: req.seconds }, version: p.version + 1, updatedAtUtc: ctx.now().utc };
+        const saved = await repos().profiles.save(next, p.version);
+        if (saved.ok) return { ...r, defaultSaved: true };
+      }
+      return { ...r, defaultSaved: false };
+    },
+
     /** Exercise picker: the exercise list with compatible equipment at this workout's gym. */
     async pickerExercises(sessionId: string, query: string): Promise<PickerExercise[]> {
       const aggregate = await repos().sessions.get(sessionId);

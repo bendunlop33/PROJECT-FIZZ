@@ -121,6 +121,8 @@ export interface FocusView {
   offProfileWarning: string | null;
   side: { kind: 'choice'; value: SetSide } | { kind: 'fixed'; value: 'left' | 'right' } | null;
   restAfterS: number;
+  /** Where the rest came from (`Heavy preset (Bench press, working sets)`), shown only in the Rest after editor. */
+  restSourceLabel: string;
   rows: SetRowView[];
   next: { kind: 'exercise'; name: string; target: string | null } | { kind: 'last_set' } | null;
   /** Null when a value is missing. */
@@ -363,6 +365,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     offProfileWarning,
     side,
     restAfterS: set.rest.seconds,
+    restSourceLabel: set.rest.sourceLabel,
     rows: own.map((s, i) => {
       const { status, text } = rowText(s, ex, eq, s.id === set.id);
       return {

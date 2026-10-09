@@ -218,6 +218,22 @@ export const AddExerciseCommandSchema = z.object({
     .optional(),
 });
 
+/**
+ * `Rest after` editor (rest-state §2.4) for sets not yet done: `set` changes
+ * this set's rest only; `exercise` changes every pending set of its exercise
+ * (the service also saves it as Ben's default for that exercise). Never
+ * changes a completed set or a running timer. Versioned on the session.
+ */
+export const SetRestAfterCommandSchema = z.object({
+  type: z.literal('set_rest_after'),
+  ...base,
+  opId: OperationIdSchema,
+  setId: IdSchema,
+  seconds: DurationSecondsSchema.refine((s) => s <= 3600, { message: 'At most an hour' }),
+  scope: z.enum(['set', 'exercise']),
+  expectedVersion: z.int().min(1),
+});
+
 /** Delete a set (pending, skipped or logged). Kept as an audited tombstone. */
 export const DeleteSetCommandSchema = z.object({
   type: z.literal('delete_set'),
@@ -266,6 +282,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   DeleteSetCommandSchema,
   SkipExerciseCommandSchema,
   DiscardCommandSchema,
+  SetRestAfterCommandSchema,
 ]);
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 export type SessionCommandType = SessionCommand['type'];

@@ -94,6 +94,7 @@ export type SessionEvent =
   | { type: 'SetAdded'; setId: string; sessionExerciseId: string }
   | { type: 'ExerciseAdded'; sessionExerciseId: string }
   | { type: 'SetDeleted'; setId: string }
+  | { type: 'RestPlanChanged'; setIds: string[]; seconds: number }
   | { type: 'SessionTimingUpdated' };
 
 export type ReduceResult =
@@ -1071,6 +1072,24 @@ function handleDiscard(state: SessionAggregate, cmd: CommandOf<'discard'>, nowMs
   return { ok: true, state: next, events };
 }
 
+function handleSetRestAfter(state: SessionAggregate, cmd: CommandOf<'set_rest_after'>): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed since this was opened.');
+  const set = state.sets.find((s) => s.id === cmd.setId);
+  if (!set || set.status === 'deleted') return fail('set_not_found', 'Set not found.');
+  if (set.status !== 'pending') return fail('set_not_pending', 'Rest can only be changed for sets not done yet.');
+  const ex = exerciseOf(state, set);
+  if (!ex) return fail('exercise_not_found', 'Exercise not found in this workout.');
+  const rest =
+    cmd.scope === 'set'
+      ? { seconds: cmd.seconds, source: 'set_override' as const, sourceLabel: 'This set' }
+      : { seconds: cmd.seconds, source: 'exercise_default' as const, sourceLabel: `${ex.exerciseName} default (yours)` };
+  // Only sets not done yet; completed sets and the running timer are never touched.
+  const targets = cmd.scope === 'set' ? [set] : state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status === 'pending');
+  const ids = new Set(targets.map((s) => s.id));
+  const sets = state.sets.map((s) => (ids.has(s.id) ? { ...s, rest, version: s.version + 1 } : s));
+  return { ok: true, state: bumpVersion({ ...state, sets }), events: [{ type: 'RestPlanChanged', setIds: [...ids], seconds: cmd.seconds }] };
+}
+
 function handleSaveDraft(state: SessionAggregate, cmd: CommandOf<'save_draft'>): Handled {
   const set = state.sets.find((s) => s.id === cmd.setId);
   if (!set) return fail('set_not_found', 'Set not found.');
@@ -1116,6 +1135,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleSkipExercise(state, command);
     case 'discard':
       return handleDiscard(state, command, nowMs);
+    case 'set_rest_after':
+      return handleSetRestAfter(state, command);
     case 'tick':
       return { ok: true, state, events: [] };
   }
@@ -1181,6 +1202,7 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
     case 'pause':
     case 'resume':
     case 'save_draft':
+    case 'set_rest_after':
     case 'tick':
       return false;
   }

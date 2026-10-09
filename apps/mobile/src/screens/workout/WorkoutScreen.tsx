@@ -81,6 +81,7 @@ export function WorkoutScreen() {
   const [banners, setBanners] = useState<{ key: string; severity: 'info' | 'warning'; text: string }[]>([]);
   const [finishOpen, setFinishOpen] = useState(false);
   const [timesOpen, setTimesOpen] = useState(false);
+  const [restEditor, setRestEditor] = useState(false);
   const [permission, setPermission] = useState<AlertPermission | 'unknown'>('unknown');
   const [askLater, setAskLater] = useState(false);
   const [restoredDraft, setRestoredDraft] = useState<string | null>(null);
@@ -749,7 +750,17 @@ export function WorkoutScreen() {
               )
             ) : null}
 
-            <AppText variant="callout" color="text.secondary" numeric>{`Rest after: ${formatDuration(focus.restAfterS)}`}</AppText>
+            <LinkLine
+              accessibilityLabel={`Rest after this set: ${formatDuration(focus.restAfterS)}. Tap to change.`}
+              onPress={() => {
+                setRestEditor(true);
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], minHeight: 44 }}>
+                <AppText variant="callout" color="text.secondary" numeric>{`Rest after: ${formatDuration(focus.restAfterS)}`}</AppText>
+                <Icon name="chevron.right" size={14} color="text.tertiary" />
+              </View>
+            </LinkLine>
 
             <View style={{ gap: theme.space['1'] }}>
               {focus.rows.map((r) => (
@@ -808,6 +819,38 @@ export function WorkoutScreen() {
         }}
         onStale={() => void reload()}
       />
+      {focus ? (
+        <RestAfterSheet
+          visible={restEditor}
+          setNumber={focus.setNumber}
+          exerciseName={focus.exerciseName}
+          seconds={focus.restAfterS}
+          sourceLabel={focus.restSourceLabel}
+          onClose={() => {
+            setRestEditor(false);
+          }}
+          onApply={(seconds, scope) => {
+            setRestEditor(false);
+            void services.workout
+              .setRestAfter({ sessionId: session.id, setId: focus.setId, seconds, scope, opId: newUuid(), expectedVersion: session.version })
+              .then((r) => {
+                if (!r.ok) {
+                  showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'The workout changed. Try again.' : `Rest wasn’t changed: ${r.error.message}` });
+                  void reload();
+                  return;
+                }
+                setData({ ...loaded, aggregate: r.aggregate });
+                changed();
+                showToast({
+                  text:
+                    scope === 'set'
+                      ? `Rest after set ${String(focus.setNumber)}: ${formatDuration(seconds)}`
+                      : `${focus.exerciseName}: ${formatDuration(seconds)} rest${r.defaultSaved === false ? '' : ', also next time'}`,
+                });
+              });
+          }}
+        />
+      ) : null}
       <StartTimeSheet
         visible={timesOpen}
         data={loaded}
@@ -942,6 +985,70 @@ function RestCard({ rest, tz, onAdjust, onSkip }: { rest: RestView; tz: string; 
         {button('Skip', 'Skip rest', onSkip)}
       </View>
     </View>
+  );
+}
+
+const REST_CHOICES = [60, 90, 120, 150, 180, 240];
+
+/**
+ * `Rest after` editor (rest-state §2.4) for a set not done yet: this set
+ * only, or every remaining set of the exercise and its default next time.
+ * The rest that's running now is never changed (use −30 s / +30 s for that).
+ */
+function RestAfterSheet({
+  visible,
+  setNumber,
+  exerciseName,
+  seconds,
+  sourceLabel,
+  onClose,
+  onApply,
+}: {
+  visible: boolean;
+  setNumber: number;
+  exerciseName: string;
+  seconds: number;
+  sourceLabel: string;
+  onClose: () => void;
+  onApply: (seconds: number, scope: 'set' | 'exercise') => void;
+}) {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const [value, setValue] = useState(seconds);
+  const [shown, setShown] = useState(false);
+  if (visible !== shown) {
+    setShown(visible);
+    if (visible) setValue(seconds);
+  }
+  const step = (d: number) => {
+    haptic('step');
+    setValue((v) => Math.max(0, Math.min(3600, v + d)));
+  };
+  return (
+    <ModalSheet visible={visible} onClose={onClose}>
+      <ScrollView contentContainerStyle={{ padding: theme.space['4'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }}>
+        <AppText variant="title2" accessibilityRole="header">{`Rest after set ${String(setNumber)}`}</AppText>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.space['4'] }}>
+          <SecondaryButton label="−15 s" onPress={() => { step(-15); }} />
+          <AppText variant="timerDisplay" accessibilityLabel={`Rest ${formatDuration(value)}`}>
+            {formatDuration(value)}
+          </AppText>
+          <SecondaryButton label="+15 s" onPress={() => { step(15); }} />
+        </View>
+        <ChipRow>
+          {REST_CHOICES.map((c) => (
+            <Chip key={c} label={formatDuration(c)} selected={value === c} onPress={() => { setValue(c); }} />
+          ))}
+        </ChipRow>
+        <AppText variant="callout" color="text.secondary">{`From: ${sourceLabel}`}</AppText>
+        <AppText variant="callout" color="text.secondary">
+          A rest that’s running now isn’t changed.
+        </AppText>
+        <SecondaryButton label="This set only" onPress={() => { onApply(value, 'set'); }} />
+        <SecondaryButton label={`All ${exerciseName} sets, and next time`} onPress={() => { onApply(value, 'exercise'); }} />
+        <TextButton label="Cancel" tone="secondary" onPress={onClose} />
+      </ScrollView>
+    </ModalSheet>
   );
 }
 
