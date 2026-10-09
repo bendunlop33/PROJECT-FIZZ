@@ -214,7 +214,8 @@ describe('muscle focus (§4)', () => {
     'barbell-back-squat': ['adductors'],
     'barbell-romanian-deadlift': ['adductors'],
     'machine-leg-press': ['adductors'],
-    'dumbbell-bulgarian-split-squat': ['adductors'],
+    // The hanging arm covers the front of the trunk, so the guide hides core (focus.hide) rather than draw slivers either side of it.
+    'dumbbell-bulgarian-split-squat': ['core', 'adductors'],
     'cable-lat-pulldown': ['upper_back', 'rear_delts'],
     'barbell-bench-press': [],
     'barbell-overhead-press': [],
