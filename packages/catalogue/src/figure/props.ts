@@ -97,8 +97,20 @@ export function barbellShapes(id: string, c: Vec, plates: keyof typeof PLATE_RAD
   return { id, shapes, colliders: [], solidBottoms: r > 0 ? [c.y - r] : [] };
 }
 
-export function dumbbellShapes(id: string, c: Vec, size: keyof typeof DUMBBELL_RADIUS): PropGeometry {
+export function dumbbellShapes(id: string, c: Vec, size: keyof typeof DUMBBELL_RADIUS, seen: 'end' | 'side' = 'end'): PropGeometry {
   const r = DUMBBELL_RADIUS[size];
+  if (seen === 'side') {
+    // Handle across the picture through the hand, a head at each end (rounded blocks).
+    const half = 0.055;
+    const w = r * 0.8;
+    const shapes: Shape[] = [{ kind: 'line', layer: 'front', a: v(c.x - half, c.y), b: v(c.x + half, c.y), width: 0.012, paint: 'implement' }];
+    for (const sx of [-1, 1]) {
+      const x0 = c.x + sx * half;
+      const x1 = c.x + sx * (half + w);
+      shapes.push({ kind: 'capsule', layer: 'front', a: v((x0 + x1) / 2, c.y - r + w / 2), b: v((x0 + x1) / 2, c.y + r - w / 2), ra: w / 2, rb: w / 2, paint: 'implement', outline: 'background' });
+    }
+    return { id, shapes, colliders: [], solidBottoms: [c.y - r] };
+  }
   return {
     id,
     shapes: [

@@ -24,6 +24,7 @@ export interface HandTarget {
   y: number;
   prop: string | null;
   bend: 'ccw' | 'cw' | null;
+  contact: 'grip' | 'palm';
 }
 
 export interface FrameState {
@@ -84,8 +85,8 @@ function mergeFoot(prev: FootTarget | null, k: FootIk, dt: number, scroll: numbe
 }
 
 function mergeHand(prev: HandTarget | null, k: HandIk): HandTarget {
-  const base: HandTarget = prev ?? { x: 0, y: 0, prop: null, bend: null };
-  return { x: k.x ?? base.x, y: k.y ?? base.y, prop: k.prop ?? base.prop, bend: k.bend ?? base.bend };
+  const base: HandTarget = prev ?? { x: 0, y: 0, prop: null, bend: null, contact: 'grip' };
+  return { x: k.x ?? base.x, y: k.y ?? base.y, prop: k.prop ?? base.prop, bend: k.bend ?? base.bend, contact: k.contact ?? base.contact };
 }
 
 export function resolveKeyframes(guide: Guide): ResolvedKeyframe[] {
@@ -205,7 +206,8 @@ const LIMB_OF_CHANNEL = /^ik\.(footNear|footFar|handNear|handFar)\./;
 
 /** Same IK mode at both ends of a segment (otherwise the start's mode and values hold). */
 function sameMode(a: FootTarget | HandTarget | null, b: FootTarget | HandTarget | null): boolean {
-  return a !== null && b !== null && a.prop === b.prop;
+  if (a === null || b === null || a.prop !== b.prop) return false;
+  return !('contact' in a) || !('contact' in b) || a.contact === b.contact;
 }
 
 /** Slope of `channel` on segment i (key i → key i+1), or null if it isn't there. */

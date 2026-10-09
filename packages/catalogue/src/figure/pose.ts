@@ -336,7 +336,18 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     let elbow: Vec;
     let wrist: Vec;
     let grip: Vec;
-    if (target !== null) {
+    let palm = false;
+    if (target !== null && target.contact === 'palm' && view === 'side') {
+      // Flat hand: solve the arm to the wrist, then lay the hand forward along the surface.
+      palm = true;
+      const wanted = v(target.x, target.y);
+      const wristWanted = add(wanted, v(-R.palm.back, R.palm.up));
+      const sol = solveTwoBoneIk(shoulder, wristWanted, upperL, foreL, flipBend(target.bend ?? 'cw', side));
+      elbow = sol.mid;
+      wrist = sol.end;
+      grip = add(wrist, v(R.palm.back, -R.palm.up));
+      hands.push({ limb, prop: target.prop, wanted, actual: grip, reached: sol.reached });
+    } else if (target !== null) {
       const propPt = target.prop === null ? undefined : gripPoint(guide, target.prop, propPoints, side);
       const wanted = propPt ?? v(target.x, target.y);
       const bend = target.bend ?? (view === 'side' ? 'ccw' : 'cw');
@@ -368,11 +379,13 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     const paint = layer === 'far' ? 'farBody' : 'nearBody';
     const rr = R.radius;
     const gripDir = scale(sub(grip, wrist), 1 / Math.max(1e-9, dist(grip, wrist)));
-    const handEnd = add(grip, scale(gripDir, (R.hand - R.grip) * kf));
+    // A flat hand runs along the surface (fingers forward), just above the palm contact.
+    const handEnd = palm ? add(grip, v(R.hand - R.palm.back, R.radius.hand * 0.9)) : add(grip, scale(gripDir, (R.hand - R.grip) * kf));
+    const handStart = palm ? v(wrist.x, grip.y + R.radius.hand) : wrist;
     const group = `arm${side}`;
     shapes.push({ kind: 'capsule', layer, a: shoulder, b: elbow, ra: rr.upperArmShoulder, rb: rr.upperArmElbow, paint, outline: 'background', group });
     shapes.push({ kind: 'capsule', layer, a: elbow, b: wrist, ra: rr.forearmElbow, rb: rr.forearmWrist, paint, outline: 'background', group });
-    shapes.push({ kind: 'capsule', layer, a: wrist, b: handEnd, ra: rr.hand, rb: rr.hand * 0.9, paint, outline: 'background', group });
+    shapes.push({ kind: 'capsule', layer, a: handStart, b: handEnd, ra: rr.hand, rb: rr.hand * 0.9, paint, outline: 'background', group });
   }
 
   // 4. Props that hang from the hands, and the cable.
@@ -381,7 +394,7 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
       const c = points[p.anchor.hand === 'near' ? 'gripNear' : 'gripFar'];
       if (c !== undefined) {
         propPoints[p.id] = c;
-        addGeometry(dumbbellShapes(p.id, c, p.size));
+        addGeometry(dumbbellShapes(p.id, c, p.size, p.seen ?? 'end'));
       }
     } else if (p.type === 'barbell' && p.anchor.kind === 'hand') {
       const c = points[p.anchor.hand === 'near' ? 'gripNear' : 'gripFar'];
@@ -398,7 +411,7 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     const c = propPoints[p.id];
     if (c === undefined) continue;
     if (p.type === 'barbell') addGeometry(view === 'front' ? frontBarbellShapes(p.id, c, p.plates) : barbellShapes(p.id, c, p.plates));
-    if (p.type === 'dumbbell' && p.anchor.kind !== 'hand') addGeometry(dumbbellShapes(p.id, c, p.size));
+    if (p.type === 'dumbbell' && p.anchor.kind !== 'hand') addGeometry(dumbbellShapes(p.id, c, p.size, p.seen ?? 'end'));
   }
 
   // 5. Trunk, neck and head (drawn between the far and near limbs).

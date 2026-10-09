@@ -49,7 +49,17 @@ export const PropSchema = z.discriminatedUnion('type', [
     /** Front view only: hands hold the bar this far either side of its centre (default 0.24 H). */
     gripHalfWidth: num.min(0.05).max(0.5).optional(),
   }),
-  z.strictObject({ ...base, type: z.literal('dumbbell'), size: z.enum(['small', 'medium', 'large']), anchor: AnchorSchema }),
+  z.strictObject({
+    ...base,
+    type: z.literal('dumbbell'),
+    size: z.enum(['small', 'medium', 'large']),
+    anchor: AnchorSchema,
+    /**
+     * `end` (default): handle pointing at the camera, seen as one disc.
+     * `side`: handle across the picture (a neutral grip seen from the side), both heads visible.
+     */
+    seen: z.enum(['end', 'side']).optional(),
+  }),
   z.strictObject({
     ...base,
     type: z.literal('bench'),
@@ -120,6 +130,12 @@ export const HandIkSchema = z.strictObject({
   /** Hold a prop's grip point instead of a fixed point. */
   prop: propId.optional(),
   bend: BendSchema.optional(),
+  /**
+   * `grip` (default): the target is the middle of a closed hand.
+   * `palm` (side view): the target is where the palm presses on a surface;
+   * the hand lies flat, fingers forward (a hand braced on a bench).
+   */
+  contact: z.enum(['grip', 'palm']).optional(),
 });
 export type HandIk = z.infer<typeof HandIkSchema>;
 

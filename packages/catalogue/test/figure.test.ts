@@ -210,6 +210,28 @@ describe('props', () => {
     expect(failedFor(lying(0.2))).toContain('no-penetration');
   });
 
+  it('a palm contact lays the hand flat on its target; a side-on dumbbell shows two heads', () => {
+    const g = baseGuide({
+      props: [{ id: 'db', type: 'dumbbell', size: 'medium', seen: 'side', anchor: { kind: 'hand', hand: 'near' } }],
+      keyframes: [
+        {
+          t: 0, label: 'Start', caption: 'Brace', root: { x: 0, y: 0.52, pelvisDeg: 72 },
+          ik: { handFar: { x: 0.3, y: 0.25, contact: 'palm', bend: 'cw' } },
+        },
+        { t: 1, sameAs: 0 },
+      ],
+    });
+    const p = poseAt(prepareGuide(g), 0);
+    const far = p.hands.find((h) => h.limb === 'handFar');
+    expect(far?.reached).toBe(true);
+    expect(dist(far?.actual ?? v(9, 9), v(0.3, 0.25))).toBeLessThan(1e-9);
+    // The wrist sits behind and above the palm contact.
+    expect(p.points.wristFar?.x).toBeLessThan(0.3);
+    expect(p.points.wristFar?.y).toBeGreaterThan(0.25);
+    const heads = p.shapes.filter((s) => s.kind === 'capsule' && s.layer === 'front' && s.paint === 'implement');
+    expect(heads).toHaveLength(2);
+  });
+
   it('keyframe projection overrides the guide value and interpolates', () => {
     const g = baseGuide({
       projection: { armNear: 1 },
