@@ -43,7 +43,13 @@ function Sheet({ title, lead, children, bar, onBack, backLabel }: { title: strin
   const insets = useSafeAreaInsets();
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
-      <ScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'] }} keyboardShouldPersistTaps="handled">
+      {/*
+        The actions sit right after the content, inside the scroll view, not in
+        a bar pinned to the bottom: UIKit keeps a sheet's content at its largest
+        detent's height, so a pinned bar can be off-screen at the 0.55 detent
+        (review workout-loop S8). Scrolling always reaches them.
+      */}
+      <ScrollView contentContainerStyle={{ padding: theme.space['4'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }} keyboardShouldPersistTaps="handled">
         {onBack ? <TextButton label={backLabel ?? 'Back'} icon="chevron.left" onPress={onBack} /> : null}
         <AppText variant="title2" accessibilityRole="header">
           {title}
@@ -54,18 +60,8 @@ function Sheet({ title, lead, children, bar, onBack, backLabel }: { title: strin
           </AppText>
         ) : null}
         {children}
+        <View style={{ borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], paddingTop: theme.space['4'], gap: theme.space['3'] }}>{bar}</View>
       </ScrollView>
-      <View
-        style={{
-          borderTopWidth: theme.dividerWidth,
-          borderTopColor: theme.colors['border.divider'],
-          padding: theme.space['4'],
-          paddingBottom: theme.space['4'] + insets.bottom,
-          gap: theme.space['3'],
-        }}
-      >
-        {bar}
-      </View>
     </View>
   );
 }
