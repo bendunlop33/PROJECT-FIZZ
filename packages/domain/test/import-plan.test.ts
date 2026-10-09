@@ -258,6 +258,8 @@ describe('import plan: frozen rows and imported workouts', () => {
       ['Dumbbell curl', 'lb', 'per_hand', null],
       ['Leg press', 'kg', 'added', null],
     ]);
+    // FitNotes has no rest: recorded as not recorded, never a 0 s global default (review N6).
+    expect(agg.sets.map((s) => s.rest)).toEqual(agg.sets.map(() => ({ seconds: 0, source: 'not_recorded', sourceLabel: 'Not recorded (imported)' })));
     expect(agg.sets.map((s) => [s.status, s.setType, s.actual?.load?.value, s.actual?.reps])).toEqual([
       ['completed', 'working', 100, 5],
       ['completed', 'working', 30, 10],
@@ -270,6 +272,14 @@ describe('import plan: frozen rows and imported workouts', () => {
     ]);
     const history = toHistorySessions(agg, idOf('Bench press'));
     expect(history).toEqual([{ sessionId: agg.session.id, performedAtUtc: '2026-10-02T11:00:00.000Z', equipmentId: null, sets: [{ setType: 'working', side: null, load: { value: 100, unit: 'kg', convention: 'total' }, reps: 5, rpe: null, rir: null }] }]);
+  });
+
+  it('says when a row’s raw text was cut to fit storage, never silently (review N7)', () => {
+    const long = 'x'.repeat(25_000);
+    const p = parsed(`Date,Exercise,Category,Weight (kgs),Reps,Distance,Distance Unit,Time,Comment\n2026-10-01,Lat pulldown,Back,40,10,,,,${long}\n`);
+    const rows = planImportRows(p, analyseImport(p, ctx(), DEFAULT_ANSWERS), { jobId: JOB, defaultUnit: 'kg' });
+    expect(rows[0]).toMatchObject({ result: 'imported', detail: 'Stored cut to 64 cells of 20,000 characters each' });
+    expect(rows[0]?.cells[8]?.length).toBe(20_000);
   });
 
   it('the ordering anchor is noon local on the date, across a clock change', () => {

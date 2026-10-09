@@ -10,7 +10,8 @@ import { importIds } from './plan';
  * - `finished`, `source: 'import'`, linked to its job, `localDate` = the
  *   FitNotes date. FitNotes has no time of day, so `startedAt` is only an
  *   ordering anchor at 12:00 local on that date in the import's zone, never
- *   shown; there is no end time and no duration (rule 6).
+ *   shown; there is no end time and no duration (rule 6). Today and the
+ *   summary read `localDate` (`dateOnlyOf`) and show the date only.
  * - Sets are completed with the mapped values, as written (never snapped to
  *   equipment; rule 2). No equipment instance is attached (the file doesn't
  *   say which machine or bar was used).
@@ -20,7 +21,8 @@ import { importIds } from './plan';
  *   §3.4; proposed spec change S6 would mark them "not recorded").
  */
 
-export const IMPORTED_REST = { seconds: 0, source: 'global_default', sourceLabel: 'Not recorded (imported)' } as const;
+/** FitNotes files have no rest: `not_recorded`, never a rest of 0 s from the global default (review N6). */
+export const IMPORTED_REST = { seconds: 0, source: 'not_recorded', sourceLabel: 'Not recorded (imported)' } as const;
 
 export interface ImportedSessionInput {
   ownerId: string;

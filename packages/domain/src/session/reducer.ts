@@ -341,7 +341,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   } else if (!exerciseHasMore && ex.transitionRestS !== null) {
     rest = { kind: 'transition', seconds: ex.transitionRestS, source: null };
   } else {
-    rest = { kind: 'rest', seconds: set.rest.seconds, source: set.rest.source };
+    rest = { kind: 'rest', seconds: set.rest.seconds, source: set.rest.source === 'not_recorded' ? null : set.rest.source };
   }
 
   if (rest.seconds > 0) {

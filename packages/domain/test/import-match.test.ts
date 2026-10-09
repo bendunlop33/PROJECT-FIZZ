@@ -55,6 +55,17 @@ describe('name matching', () => {
     expect(nameKey('  Flat   Bench\tPress ')).toBe('flat bench press');
   });
 
+  it('two long names that start alike never share a key, and keys fit the 200-character limit (review N7)', () => {
+    const start = 'Very long exercise name '.repeat(10);
+    const a = nameKey(`${start} variant A`);
+    const b = nameKey(`${start} variant B`);
+    expect(a).not.toBe(b);
+    expect(a.length).toBeLessThanOrEqual(200);
+    expect(b.length).toBeLessThanOrEqual(200);
+    expect(nameKey(`${start} variant A`)).toBe(a);
+    expect(nameKey('x'.repeat(200))).toBe('x'.repeat(200));
+  });
+
   it('Choose… search looks at names and other names', () => {
     expect(searchCandidates(CANDIDATES, 'skull').map((c) => c.name)).toEqual(['EZ-bar skull crusher']);
     expect(searchCandidates(CANDIDATES, 'flat ben').map((c) => c.name)).toEqual(['Bench press']);

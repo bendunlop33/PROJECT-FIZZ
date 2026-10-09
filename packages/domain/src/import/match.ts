@@ -1,4 +1,5 @@
 import type { AliasTarget, ExerciseEquipmentKind, Laterality, LoadConvention } from '@fizz/schemas';
+import { deriveId } from '../stable';
 
 /**
  * Exercise name matching for imports (data-import-export §2.5 step 3a). Pure.
@@ -36,9 +37,15 @@ export interface NameMatch {
   skip: boolean;
 }
 
-/** Matching key for a source name: lower case, single spaces, trimmed, at most 200 characters. */
+/**
+ * Matching key for a source name: lower case, single spaces, trimmed, at
+ * most 200 characters. A longer name keeps its first 163 characters plus a
+ * hash of the whole name, so two long names that start alike never share a
+ * key (review N7).
+ */
 export function nameKey(name: string): string {
-  return name.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 200);
+  const key = name.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+  return key.length <= 200 ? key : `${key.slice(0, 163)}#${deriveId(key)}`;
 }
 
 const SYNONYMS: Readonly<Record<string, readonly string[]>> = {

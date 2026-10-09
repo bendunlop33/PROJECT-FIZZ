@@ -512,6 +512,7 @@ export const importIds = {
 
 const MAX_CELLS = 64;
 const MAX_CELL = 20_000;
+const CUT_NOTE = 'Stored cut to 64 cells of 20,000 characters each';
 
 /**
  * Freeze an analysis into the rows a commit stores (check 24: every source
@@ -549,8 +550,10 @@ export function planImportRows(
       exerciseName: r.exercise.slice(0, 4000),
       cells: r.cells.slice(0, MAX_CELLS).map((c) => c.slice(0, MAX_CELL)),
     };
+    // Storage limits: say so when a row's raw text was cut, never silently (review N7).
+    const cut = r.cells.length > MAX_CELLS || r.cells.some((c) => c.length > MAX_CELL) ? CUT_NOTE : null;
     if (f.result === 'pending') throw new Error('The import still has questions to answer');
-    if (f.result !== 'imported') return { ...base, result: f.result, detail: f.detail.slice(0, 500), sessionId: null, setId: null, imported: null };
+    if (f.result !== 'imported') return { ...base, result: f.result, detail: (cut === null ? f.detail : `${f.detail}. ${cut}`).slice(0, 500), sessionId: null, setId: null, imported: null };
     const date = r.date ?? '';
     const unit = f.set.unit ?? firstUnit.get(`${date}|${f.set.exerciseId}|${f.set.convention}`) ?? ids.defaultUnit;
     const groupKey = `${f.set.exerciseId}|${f.set.convention}|${unit}`;
@@ -581,7 +584,7 @@ export function planImportRows(
       sessionId = importIds.session(jobId, date);
       sessionIds.set(date, sessionId);
     }
-    return { ...base, result: 'imported', detail: null, sessionId, setId: importIds.set(jobId, r.row), imported };
+    return { ...base, result: 'imported', detail: cut, sessionId, setId: importIds.set(jobId, r.row), imported };
   });
 }
 

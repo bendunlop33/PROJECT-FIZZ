@@ -57,10 +57,18 @@ export const RestSourceSchema = z.enum([
 ]);
 export type RestSource = z.infer<typeof RestSourceSchema>;
 
+/**
+ * Where a set's rest came from. `not_recorded`: an imported set whose source
+ * file has no rest at all (FitNotes); its seconds are 0 and mean nothing, so
+ * rest analytics must skip it (review N6). Never used for a rest timer.
+ */
+export const SetRestSourceSchema = z.enum([...RestSourceSchema.options, 'not_recorded']);
+export type SetRestSource = z.infer<typeof SetRestSourceSchema>;
+
 /** Rest duration resolved and snapshotted when the session starts. */
 export const ResolvedRestSchema = z.object({
   seconds: DurationSecondsSchema,
-  source: RestSourceSchema,
+  source: SetRestSourceSchema,
   sourceLabel: z.string().max(200),
 });
 export type ResolvedRest = z.infer<typeof ResolvedRestSchema>;
