@@ -11,3 +11,4 @@ Ben replied "s" to "go + 3 answers". This was read as **go**, with the stated de
    - the RPE-vs-planned trigger refinement (the current trigger rule stays)
    - the watch model
    - anything involving money or accounts
+5. **Needs Ben's provisional OK before it's built (ADR 0010):** in-app playback of exercise guides with `@shopify/react-native-skia` 2.6.2 + `react-native-reanimated` 4.5.1 + `react-native-worklets` 0.10.1 (SDK 57 bundled versions; about 6 MB on iOS; a new cloud `.ipa` build; no entitlements). Fallback: `react-native-svg`. Until then, guides exist only as `guide.json` plus a review `preview.png`, every guide stays `Draft` until Ben approves it, and the catalogue and guide tooling (Linux-only, dev dependencies) are built.
