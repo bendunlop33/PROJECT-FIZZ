@@ -20,11 +20,15 @@ describe('starter exercises match the catalogue', () => {
     }
   });
 
-  it('every starter key that the catalogue has is the same exercise there (ID, name, kind of load)', () => {
+  it('every starter key is in the catalogue', () => {
+    expect(starters.filter((s) => !catalogue.byKey(s.catalogueKey ?? '')).map((s) => s.catalogueKey)).toEqual([]);
+  });
+
+  it('every starter is the same exercise as its catalogue entry, field for field (no drift)', () => {
     let matched = 0;
     for (const s of starters) {
       const entry = catalogue.byKey(s.catalogueKey ?? '');
-      if (!entry) continue;
+      if (!entry) throw new Error(`${s.catalogueKey ?? ''} isn't in the catalogue`);
       matched += 1;
       const row = toExerciseRow(entry, '2026-10-09T00:00:00.000Z');
       if (!row.ok) throw new Error(row.message);
@@ -43,7 +47,7 @@ describe('starter exercises match the catalogue', () => {
         rest: row.exercise.defaultRestS,
       });
     }
-    // The starter list is a subset of the catalogue: the catalogue grows in batches.
-    expect(matched).toBeGreaterThan(0);
+    // The starter list is a subset of the catalogue, not all of it: the catalogue grows in batches.
+    expect(matched).toBe(starters.length);
   });
 });
