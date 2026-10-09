@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "barbell-back-squat",
+  "extends": null,
+  "rig": "adult-v1",
+  "view": "side",
+  "facing": "right",
+  "units": "bodyHeight",
+  "durationMs": 2800,
+  "loop": "cycle",
+  "ground": { "y": 0, "scrollPerCycle": 0 },
+  "projection": { "armNear": 0.8, "armFar": 0.8, "forearmNear": 0.68, "forearmFar": 0.68 },
+  "props": [
+    { "id": "bar", "type": "barbell", "plates": "large", "anchor": { "kind": "segment", "segment": "thorax", "at": 0.97, "front": -0.06 } }
+  ],
+  "keyframes": [
+    {
+      "t": 0, "label": "Start", "caption": "Stand tall and brace, bar over mid-foot",
+      "root": { "x": 0.0627, "y": 0.5238, "pelvisDeg": 6 },
+      "joints": { "lumbar": 0, "thoracic": 0, "neck": -4 },
+      "ik": {
+        "footNear": { "x": 0, "y": 0, "planted": true },
+        "footFar": { "x": -0.012, "y": 0, "planted": true },
+        "handNear": { "prop": "bar" },
+        "handFar": { "prop": "bar" }
+      },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.2857, "label": "Halfway", "caption": "Hips back and down, knees over toes",
+      "root": { "x": -0.0399, "y": 0.4623, "pelvisDeg": 25 },
+      "joints": { "neck": -14 },
+      "ease": "smooth"
+    },
+    {
+      "t": 0.5714, "label": "Bottom", "caption": "Hips just below knees, heels down",
+      "root": { "x": -0.1156, "y": 0.234, "pelvisDeg": 40 },
+      "joints": { "neck": -24 },
+      "holdMs": 200, "ease": "smooth"
+    },
+    { "t": 0.8214, "sameAs": 1, "caption": "Hips and chest rise together", "ease": "smooth" },
+    { "t": 1, "sameAs": 0 }
+  ],
+  "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
+  "checks": { "barDriftMax": 0.03, "barProp": "bar", "planted": ["footNear", "footFar"], "romProfile": "adult-default" },
+  "a11y": {
+    "summary": "Side view, facing right. Bar on the upper back. Sit down and back until the hips are just below the knees, heels flat, then stand up with hips and chest rising together. The bar stays over mid-foot."
+  },
+  "review": { "status": "draft", "renderedWith": "fizz-figure@0.1.0" }
+}
