@@ -168,7 +168,7 @@ export function ImportQuestionScreen() {
             <ChoiceCard key={g.id} title={`All at ${g.name}`} selected={draft.answers.gymId === g.id} onPress={() => void answer({ kind: 'gym', gymId: g.id })} />
           ))}
           <AppText variant="callout" color="text.secondary">
-            Imported sets aren’t linked to a particular machine or bar, so they show in your history but may not appear as “Last” values yet.
+            Imported sets aren’t linked to a particular machine or bar. For now they show in your history but aren’t used as “Last” values or targets, and imported workouts can’t be repeated.
           </AppText>
         </>
       );

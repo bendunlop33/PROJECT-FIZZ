@@ -153,6 +153,15 @@ describe('import jobs and rows', () => {
     expect((await store.repos.imports.importedDates(OWNER)).get('2026-10-01')).toEqual({ jobId: job.id, fileName: job.fileName, startedAtUtc: AT.utc, tz: TZ });
   });
 
+  it('imported workouts are history, never Repeat candidates, and are counted as left out (review r2 B1)', async () => {
+    await importAll(store);
+    expect(await store.repos.sessions.listRepeatableIds(OWNER, 10)).toEqual([]);
+    expect(await store.repos.sessions.countImportedFinished(OWNER)).toBe(2);
+    const history = await store.listExerciseHistory(OWNER, LAT);
+    expect(history.length).toBeGreaterThan(0);
+    expect(history.every((h) => h.imported && h.gymId === null && h.equipmentId === null)).toBe(true);
+  });
+
   it('Undo import hides every workout everywhere, deletes nothing, and is versioned and idempotent (DX7, check 25)', async () => {
     const { job, rows } = await importAll(store);
     const before = await store.db.read(async (q) => ({
@@ -169,6 +178,7 @@ describe('import jobs and rows', () => {
     expect(await store.listExerciseHistory(OWNER, LAT)).toEqual([]);
     expect(await store.countRecords()).toMatchObject({ finishedWorkouts: 0, loggedSets: 0 });
     expect(await store.repos.sessions.listRepeatableIds(OWNER, 10)).toEqual([]);
+    expect(await store.repos.sessions.countImportedFinished(OWNER)).toBe(0);
     expect(await store.repos.sessions.latestFinished(OWNER)).toBeNull();
     const after = await store.db.read(async (q) => ({
       sessions: (await q.getFirst<{ n: number }>('SELECT count(*) AS n FROM sessions'))?.n,

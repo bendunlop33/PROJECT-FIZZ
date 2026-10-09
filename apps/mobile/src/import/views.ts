@@ -96,6 +96,15 @@ export function pausedLine(p: Pick<PastImport, 'written' | 'total'>): string {
   return `Import paused at ${formatCount(p.written)} of ${plural(p.total, 'workout', 'workouts')}. The ${formatCount(p.written)} ${p.written === 1 ? 'is' : 'are'} in your history.`;
 }
 
+/**
+ * `Start from a past workout` with imported workouts left out (review r2
+ * B1): they can't be repeated while P-I3 is open, and the list says so
+ * rather than looking empty.
+ */
+export function importedNotListedLine(n: number): string {
+  return `${plural(n, 'workout', 'workouts')} imported from FitNotes ${n === 1 ? 'isn’t' : 'aren’t'} listed: imported workouts can’t be repeated yet. They’re in Data & backup, under Past imports.`;
+}
+
 export function introView(input: { block: ImportBlock | null; blockTime: string; paused: PastImport | null }): IntroView {
   const paused = input.paused && input.paused.state === 'paused' ? { text: pausedLine(input.paused), jobId: input.paused.job.id, version: input.paused.job.version } : null;
   return {

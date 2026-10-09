@@ -62,6 +62,13 @@ async function answerAll(s: AppServices, d: ImportDraft, opts: { hammerRow?: 'ne
   return draft;
 }
 
+/** The workout an import brought in on `date`. Imported workouts aren't Repeat candidates (review r2 B1), so tests find them here. */
+async function importedSessionId(s: AppServices, jobId: string, date: string): Promise<string> {
+  const id = (await s.imports.importedRows(jobId, date))?.rows.find((r) => r.sessionId !== null)?.sessionId;
+  if (!id) throw new Error(`nothing imported on ${date}`);
+  return id;
+}
+
 async function importFile(s: AppServices, text: string, opId: string): Promise<{ jobId: string; draft: ImportDraft }> {
   const draft = await answerAll(s, await openPreview(s, text));
   const r = await s.imports.commit(draft.draftId, draft.mappingVersion, opId);
@@ -105,16 +112,19 @@ describe('FitNotes import: preview, answers, commit', () => {
     const reasons = (await s.backups.getStatus()).copiesOnPhone.map((c) => c.reason);
     expect(reasons).toEqual(expect.arrayContaining(['before_import', 'after_import']));
 
-    // Past workouts list them, date only, gym not recorded, marked as FitNotes.
-    const past = (await s.repeat.candidates()).rows;
-    expect(past.map((c) => [c.startedAtUtc, c.gymName, c.imported, c.exerciseNames])).toEqual([
-      ['2026-09-05T11:00:00.000Z', 'Gym not recorded', true, ['Lat pulldown', 'Hammer curl']],
-      ['2026-09-03T11:00:00.000Z', 'Gym not recorded', true, ['Lat pulldown', 'Hammer Strength Row']],
-      ['2026-09-01T11:00:00.000Z', 'Gym not recorded', true, ['Bench press', 'Incline dumbbell press']],
+    // In history, date only, gym not recorded, no equipment; never offered for Repeat (P-I3 open; review r2 B1).
+    expect(await s.repeat.candidates()).toEqual({ rows: [], unreadable: 0, importedNotListed: 3 });
+    expect(await s.repeat.last()).toBeNull();
+    const jobId = r.ok ? r.jobId : '';
+    const past = await Promise.all(['2026-09-05', '2026-09-03', '2026-09-01'].map(async (d) => s.workout.load(await importedSessionId(s, jobId, d))));
+    expect(past.map((w) => [w?.aggregate.session.localDate, w?.aggregate.session.gymId, w?.aggregate.session.source, w?.aggregate.exercises.map((e) => [e.exerciseName, e.equipmentId])])).toEqual([
+      ['2026-09-05', null, 'import', [['Lat pulldown', null], ['Hammer curl', null]]],
+      ['2026-09-03', null, 'import', [['Lat pulldown', null], ['Hammer Strength Row', null]]],
+      ['2026-09-01', null, 'import', [['Bench press', null], ['Incline dumbbell press', null]]],
     ]);
 
     // Loads as answered: dumbbells "both together" halved, never converted or snapped.
-    const bench = await s.workout.load(past[2]?.sessionId);
+    const bench = past[2];
     expect(bench?.aggregate.sets.map((x) => [x.actual?.load?.value, x.actual?.load?.convention, x.actual?.reps])).toEqual([
       [60, 'total', 10],
       [80, 'total', 6],
@@ -139,10 +149,9 @@ describe('FitNotes import: preview, answers, commit', () => {
   it('a newer export skips what came in before and never overwrites a set corrected in the app (check 21)', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);
-    await importFile(s, FILE_1, 'op-1');
+    const first = await importFile(s, FILE_1, 'op-1');
     // Ben corrects an imported set in the app.
-    const sept5 = (await s.repeat.candidates()).rows.find((c) => c.startedAtUtc.startsWith('2026-09-05'));
-    const loaded = await s.workout.load(sept5?.sessionId);
+    const loaded = await s.workout.load(await importedSessionId(s, first.jobId, '2026-09-05'));
     const set = loaded?.aggregate.sets[0];
     if (!loaded || !set) throw new Error('no set');
     const fixed = await s.workout.dispatch(loaded.aggregate.session.id, { type: 'correct_set', at: h.now(), opId: 'fix-1', setId: set.id, expectedSetVersion: set.version, patch: { reps: 9 } });
@@ -155,7 +164,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(draft.analysis.counts.workouts).toBe(1);
     const r = await s.imports.commit(draft.draftId, draft.mappingVersion, 'op-2');
     expect(r).toMatchObject({ ok: true, written: 1 });
-    const after = await s.workout.load(sept5?.sessionId);
+    const after = await s.workout.load(loaded.aggregate.session.id);
     expect(after?.aggregate.sets[0]?.actual).toMatchObject({ load: { value: 47.5 }, reps: 9 });
     expect(await s.yourData.counts()).toMatchObject({ finishedWorkouts: 4 });
   });
@@ -236,7 +245,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(undo).toMatchObject({ ok: true, workouts: 3, duplicate: false });
     expect(await s.imports.revert(jobId, job.job.version, 'undo-1')).toMatchObject({ ok: true, duplicate: true });
     expect(await s.yourData.counts()).toMatchObject({ finishedWorkouts: 0, loggedSets: 0 });
-    expect((await s.repeat.candidates()).rows).toEqual([]);
+    expect(await s.repeat.candidates()).toEqual({ rows: [], unreadable: 0, importedNotListed: 0 });
     const after = await s.imports.job(jobId);
     expect(after?.rows.length).toBe(job.rows.length);
     expect(after?.state).toBe('undone');
@@ -311,8 +320,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     const draft = await openPreview(s, text);
     const r = await s.imports.commit(draft.draftId, draft.mappingVersion, 'op-1');
     expect(r.ok).toBe(true);
-    const sid = (await s.repeat.candidates()).rows[0]?.sessionId;
-    const w = await s.workout.load(sid);
+    const w = await s.workout.load(await importedSessionId(s, r.ok ? r.jobId : '', '2026-09-01'));
     expect(w?.aggregate.exercises[0]).toMatchObject({ unit: 'lb', loadConvention: 'stack' });
     expect(w?.aggregate.sets[0]?.actual?.load).toEqual({ value: 100, unit: 'lb', convention: 'stack' });
   });
@@ -323,8 +331,73 @@ describe('FitNotes import: preview, answers, commit', () => {
     const draft = await openPreview(s, [A1, '2026-09-01,Lat Pulldown,Back,45.0,10,,,'].join('\n'));
     const g = await s.imports.answer(draft.draftId, draft.mappingVersion, { kind: 'gym', gymId });
     if (!g.ok) throw new Error(g.reason);
-    expect(await s.imports.commit(g.draft.draftId, g.draft.mappingVersion, 'op-1')).toMatchObject({ ok: true });
-    expect((await s.repeat.candidates()).rows[0]).toMatchObject({ gymId, gymName: 'Main Gym' });
+    const r = await s.imports.commit(g.draft.draftId, g.draft.mappingVersion, 'op-1');
+    expect(r).toMatchObject({ ok: true });
+    const w = await s.workout.load(await importedSessionId(s, r.ok ? r.jobId : '', '2026-09-01'));
+    expect([w?.aggregate.session.gymId, w?.gymName]).toEqual([gymId, 'Main Gym']);
+  });
+
+  it('at a dumbbells-only gym an imported workout is never repeated and FitNotes sets are never Last (rule 4, brief home-gym scenario, review r2 B1)', async () => {
+    const { services: s } = await h.launch();
+    // Dumbbells up to 25 kg each; no bar, no cable stack.
+    const gymId = await setUpGym(h, s, 'home_dumbbells');
+    const text = [A1, '2026-10-01,Dumbbell Bench Press,Chest,40.0,8,,,', '2026-10-01,Flat Barbell Bench Press,Chest,140.0,5,,,', '2026-10-01,Lat Pulldown,Back,90.0,10,,,'].join('\n');
+    let draft = await openPreview(s, text);
+    const step = async (change: Parameters<AppServices['imports']['answer']>[2]) => {
+      const r = await s.imports.answer(draft.draftId, draft.mappingVersion, change);
+      if (!r.ok) throw new Error(r.reason);
+      draft = r.draft;
+    };
+    for (const n of draft.analysis.names.filter((x) => x.needsAnswer)) if (n.match.exerciseId) await step({ kind: 'name', key: n.key, answer: { kind: 'exercise', exerciseId: n.match.exerciseId } });
+    await step({ kind: 'per_hand', answer: 'each' });
+    await step({ kind: 'total', answer: 'total' });
+    const r = await s.imports.commit(draft.draftId, draft.mappingVersion, 'op-1');
+    expect(r).toMatchObject({ ok: true, written: 1 });
+    const importedId = await importedSessionId(s, r.ok ? r.jobId : '', '2026-10-01');
+    const imported = await s.workout.load(importedId);
+    expect(imported?.aggregate.sets.map((x) => [x.actual?.load?.value, x.actual?.load?.convention])).toEqual([[40, 'per_hand'], [140, 'total'], [90, 'stack']]);
+
+    // Not offered: Today's `Repeat last workout` and `Start from a past workout` leave it out and say so.
+    expect(await s.repeat.last()).toBeNull();
+    expect(await s.repeat.candidates()).toEqual({ rows: [], unreadable: 0, importedNotListed: 1 });
+    // Refused when asked for directly too: no preview, no workout, nothing planned at 40 kg each, 140 kg or 90 kg.
+    expect(await s.repeat.preview(importedId, gymId)).toBeNull();
+    const repeated = await s.workout.start({ gymId, opId: 'repeat-imported', checkIn: { kind: 'skipped', atUtc: h.now().utc }, repeatOf: importedId });
+    expect(repeated).toMatchObject({ ok: false, error: { code: 'not_found' } });
+    expect(await s.sessions.active()).toBeNull();
+
+    // A workout logged in the app at this gym, the same exercises (dumbbells here; no bar or stack, so no equipment).
+    h.clockMs += 86_400_000;
+    const sid = await logWorkout(h, s, gymId, [
+      { exercise: 'Dumbbell bench press', sets: [{ load: 20, reps: 10 }] },
+      { exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] },
+      { exercise: 'Lat pulldown', sets: [{ load: 45, reps: 10 }] },
+    ]);
+    const today = await s.workout.load(sid);
+    if (!today) throw new Error('no workout');
+    expect(today.aggregate.exercises.map((e) => [e.exerciseName, e.equipmentId === null])).toEqual([['Dumbbell bench press', false], ['Bench press', true], ['Lat pulldown', true]]);
+    // No `Last` from FitNotes, even where neither side has equipment, and no planned load copied from it.
+    expect(Object.values(today.previous)).toEqual([null, null, null]);
+    expect(today.aggregate.sets.map((x) => x.planned.load?.value ?? null).filter((v) => v === 40 || v === 140 || v === 90)).toEqual([]);
+    // The summary doesn't compare with FitNotes, or claim it was the same set-up at this gym.
+    const sum = await s.workout.summary(sid);
+    expect(sum?.comparison).toEqual({ kind: 'not_comparable', text: 'Earlier Dumbbell bench press sets were imported from FitNotes. Not compared.' });
+    expect(sum?.highlight).toBeNull();
+    expect(JSON.stringify(sum)).not.toMatch(/Same set-up|FitNotes, 1 Oct/);
+    const benchOnly = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    // Next time, the app-logged bench is comparable (same gym, no equipment either side), named by its own gym.
+    const second = await s.workout.summary(benchOnly);
+    expect(second?.comparison).toMatchObject({ kind: 'compared', why: 'Same set-up at Main Gym, working sets' });
+  });
+
+  it('a workout with only FitNotes history for an exercise says so instead of "first time"', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s, 'home_dumbbells');
+    const draft = await openPreview(s, [A1, '2026-10-01,Lat Pulldown,Back,90.0,10,,,'].join('\n'));
+    expect(await s.imports.commit(draft.draftId, draft.mappingVersion, 'op-1')).toMatchObject({ ok: true });
+    h.clockMs += 86_400_000;
+    const sid = await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 45, reps: 10 }] }]);
+    expect((await s.workout.summary(sid))?.comparison).toEqual({ kind: 'not_comparable', text: 'Earlier Lat pulldown sets were imported from FitNotes. Not compared.' });
   });
 
   it('tells file kinds apart by content and stops on an unknown header (DX5, check 16)', async () => {
