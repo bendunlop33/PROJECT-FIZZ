@@ -1,0 +1,460 @@
+import type { EquipmentInstance, Load, SessionAggregate, SessionExercise, SetSide, SetValues, WorkoutSet } from '@fizz/schemas';
+import {
+  EQUIPMENT_WORD,
+  SET_TYPE_BADGE,
+  SET_TYPE_WORD,
+  formatNumber,
+  loadFieldLabel,
+  loadFieldUnit,
+  loadText,
+  targetShort,
+  targetText,
+  valuesText,
+} from '../display';
+import { getAchievableLoads, isLoadAchievable, loadDirection, stepLoad } from '../equipment';
+import type { HistorySession } from '../progression';
+import { toMs } from '../time';
+import { buildExecutionOrder, nextPendingSet } from './order';
+import { latestCommittedSetId } from './reducer';
+import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
+
+/**
+ * `buildActiveSetView` (active-workout.md §6): everything the Active workout
+ * and Rest screens show, derived from committed state plus Ben's unsaved
+ * edits. Pure, so the screen never computes targets, loads or labels itself.
+ * The Log label is built from exactly the values `log_set` will save.
+ */
+
+/** The last comparable session of one exercise (same equipment instance, unit and convention). */
+export interface PreviousSession {
+  performedAtUtc: string;
+  /** Working-order sets as logged, for prefill and the `Last (…)` line. */
+  sets: ComparableSet[];
+}
+
+/**
+ * Pick the most recent history session that is like-for-like with this
+ * session exercise: same equipment instance, and every load in the same unit
+ * and convention (history in another unit or convention is never offered).
+ */
+export function lastComparableSession(history: readonly HistorySession[], ex: Pick<SessionExercise, 'equipmentId' | 'unit' | 'loadConvention'>): PreviousSession | null {
+  const sorted = [...history].sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
+  for (const h of sorted) {
+    if (h.equipmentId !== ex.equipmentId) continue;
+    const sets = h.sets.filter((s) => s.setType !== 'warmup');
+    if (sets.length === 0) continue;
+    const alike = sets.every((s) => s.load === null || s.load.convention === 'bodyweight' || (s.load.unit === ex.unit && s.load.convention === ex.loadConvention));
+    if (!alike) continue;
+    return {
+      performedAtUtc: h.performedAtUtc,
+      sets: sets.map((s, index) => ({ index, values: { load: s.load, reps: s.reps, durationS: null, rpe: s.rpe, rir: s.rir } })),
+    };
+  }
+  return null;
+}
+
+/** Unsaved changes held by the screen (debounced to `save_draft`). */
+export interface DraftEdits {
+  setId: string;
+  values: SetValues;
+  side?: SetSide;
+  /** Set by "copy last time" (`Copied from 1 Oct`). */
+  copied?: boolean;
+}
+
+export interface ActiveViewInput {
+  aggregate: SessionAggregate;
+  nowMs: number;
+  gymName: string | null;
+  /** Keyed by session exercise ID. */
+  previous: Readonly<Record<string, PreviousSession | null>>;
+  /** Exercise IDs with an active pain flag. */
+  painFlagged: ReadonlySet<string>;
+  edits: DraftEdits | null;
+}
+
+export type StepTarget = { enabled: true; value: number; label: string } | { enabled: false; reason: string };
+
+export interface LoadField {
+  label: string;
+  unitText: string;
+  value: number | null;
+  down: StepTarget;
+  up: StepTarget;
+  /** Assisted machines: `+` means more assistance (easier). */
+  assisted: boolean;
+}
+
+export type SetRowStatus = 'done' | 'active' | 'pending' | 'skipped';
+
+export interface SetRowView {
+  setId: string;
+  number: number;
+  /** `W`, `T`, `B`, `D`, `L`, `R` text badges (never colour alone). */
+  badges: string[];
+  status: SetRowStatus;
+  text: string;
+  edited: boolean;
+  version: number;
+}
+
+export interface FocusView {
+  setId: string;
+  setVersion: number;
+  sessionExerciseId: string;
+  exerciseId: string;
+  exerciseName: string;
+  measurement: 'reps' | 'duration';
+  unilateral: boolean;
+  /** `Barbell · Working · Set 2 of 4` (+ ` · per side`). */
+  headerLine: string;
+  setNumber: number;
+  setCount: number;
+  previous: { performedAtUtc: string; text: string; values: SetValues } | null;
+  draft: SetValues;
+  draftSource: DraftSource | 'edited' | 'copied';
+  loadField: LoadField | null;
+  reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
+  duration: { value: number | null } | null;
+  target: string | null;
+  painFlagged: boolean;
+  offProfileWarning: string | null;
+  side: { kind: 'choice'; value: SetSide } | { kind: 'fixed'; value: 'left' | 'right' } | null;
+  restAfterS: number;
+  rows: SetRowView[];
+  next: { kind: 'exercise'; name: string; target: string | null } | { kind: 'last_set' } | null;
+  /** Null when a value is missing. */
+  logLabel: string | null;
+  missing: 'load' | 'reps' | 'time' | null;
+  /** Deterministic per draft, so a retry after a crash commits once. */
+  opId: string;
+  /** Values `log_set` will save (effort is never prefilled). */
+  logValues: SetValues;
+  /** `log_set.side` to send: only for unilateral sets that may change side. */
+  logSide: SetSide | undefined;
+}
+
+export interface JustSavedView {
+  setId: string;
+  setVersion: number;
+  exerciseName: string;
+  setNumber: number;
+  side: SetSide | null;
+  /** `100 kg × 7` (the actual result). */
+  text: string;
+  rpe: number | null;
+  rir: number | null;
+  /** Undo opId: one per log (the set's undo count). */
+  undoOpId: string;
+}
+
+export type RestView =
+  | { kind: 'running'; timerId: string; timerVersion: number; remainingMs: number; deadlineUtc: string; durationS: number }
+  | { kind: 'ended'; timerId: string; endedAtUtc: string | null; restedMs: number; skipped: boolean }
+  | { kind: 'paused'; remainingMs: number };
+
+export type PrimaryAction =
+  | { kind: 'log'; label: string }
+  | { kind: 'disabled'; label: string }
+  | { kind: 'resume'; label: 'Resume' }
+  | { kind: 'add_exercise'; label: 'Add exercise' }
+  | { kind: 'finish'; label: 'Finish workout' }
+  | { kind: 'none'; label: '' };
+
+export interface ActiveSetView {
+  phase: SessionPhase['kind'];
+  title: string;
+  sessionId: string;
+  sessionVersion: number;
+  elapsedMs: number;
+  paused: boolean;
+  focus: FocusView | null;
+  rest: RestView | null;
+  justSaved: JustSavedView | null;
+  primary: PrimaryAction;
+  progress: { done: number; total: number };
+  /** Ordered exercises with their live set count (exercise menu, pain picker). */
+  exercises: { sessionExerciseId: string; exerciseId: string; name: string; pendingSets: number; doneSets: number }[];
+  lastCompletedAtUtc: string | null;
+}
+
+const live = (s: WorkoutSet) => s.status !== 'deleted';
+
+function exerciseSets(state: SessionAggregate, exId: string): WorkoutSet[] {
+  const order = buildExecutionOrder(state.exercises, state.sets);
+  const pos = new Map(order.map((id, i) => [id, i]));
+  return state.sets
+    .filter((s) => s.sessionExerciseId === exId && live(s))
+    .sort((a, b) => (pos.get(a.id) ?? a.index + 1e6) - (pos.get(b.id) ?? b.index + 1e6));
+}
+
+function equipmentOf(state: SessionAggregate, ex: SessionExercise): EquipmentInstance | null {
+  return ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
+}
+
+function sideBadge(set: WorkoutSet): string | null {
+  return set.side === 'left' ? 'L' : set.side === 'right' ? 'R' : null;
+}
+
+function maxText(eq: EquipmentInstance, load: Load): string {
+  const loads = getAchievableLoads(eq).loads;
+  const top = loads[loads.length - 1];
+  return top === undefined ? '' : loadText({ ...load, value: top }, eq.loadConvention, eq);
+}
+
+function stepWord(eq: EquipmentInstance | null): string {
+  if (eq === null) return 'Maximum';
+  switch (eq.kind) {
+    case 'dumbbells':
+      return 'Rack maximum';
+    case 'weight_stack':
+    case 'assisted_stack':
+      return 'Stack maximum';
+    case 'barbell':
+    case 'plate_loaded_machine':
+      return 'Plates maximum';
+    case 'bodyweight_station':
+      return 'Maximum';
+  }
+}
+
+/** Steppers move through achievable loads only (P5, rule 4). Without equipment: 2.5 kg / 5 lb, unchecked. */
+function loadSteps(value: number | null, ex: SessionExercise, eq: EquipmentInstance | null): { down: StepTarget; up: StepTarget } {
+  const unit = ex.unit;
+  const fmt = (v: number) => loadText({ value: v, unit, convention: ex.loadConvention }, ex.loadConvention, eq);
+  if (eq !== null && eq.kind !== 'bodyweight_station') {
+    const loads = getAchievableLoads(eq).loads;
+    if (loads.length === 0) {
+      const reason = `${eq.name} can’t make any load with its current min/max settings. Fix the equipment profile.`;
+      return { down: { enabled: false, reason }, up: { enabled: false, reason } };
+    }
+    if (value === null) {
+      const first = loads[0] ?? 0;
+      return { down: { enabled: false, reason: 'No load entered' }, up: { enabled: true, value: first, label: fmt(first) } };
+    }
+    const up = stepLoad(value, eq, 'increase');
+    const down = stepLoad(value, eq, 'decrease');
+    const top = loads[loads.length - 1] ?? value;
+    const bottom = loads[0] ?? value;
+    return {
+      up: up.ok ? { enabled: true, value: up.value, label: fmt(up.value) } : { enabled: false, reason: `${stepWord(eq)} ${fmt(top)}` },
+      down: down.ok ? { enabled: true, value: down.value, label: fmt(down.value) } : { enabled: false, reason: `Minimum ${fmt(bottom)}` },
+    };
+  }
+  const step = unit === 'kg' ? 2.5 : 5;
+  const v = value ?? 0;
+  const upV = Number(formatNumber(v + step));
+  const downV = Number(formatNumber(v - step));
+  return {
+    up: { enabled: true, value: upV, label: fmt(upV) },
+    down: value === null || downV < 0 ? { enabled: false, reason: 'Minimum 0' } : { enabled: true, value: downV, label: fmt(downV) },
+  };
+}
+
+function repSteps(value: number | null): { down: StepTarget; up: StepTarget } {
+  const v = value ?? 0;
+  return {
+    up: { enabled: true, value: v + 1, label: String(v + 1) },
+    down: value === null || v <= 0 ? { enabled: false, reason: 'Minimum 0' } : { enabled: true, value: v - 1, label: String(v - 1) },
+  };
+}
+
+function rowText(set: WorkoutSet, ex: SessionExercise, eq: EquipmentInstance | null, active: boolean): { status: SetRowStatus; text: string } {
+  if (set.status === 'completed' && set.actual) {
+    const v = valuesText(set.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq });
+    const effort = set.actual.rpe !== null ? `   RPE ${formatNumber(set.actual.rpe)}` : set.actual.rir !== null ? `   RIR ${String(set.actual.rir)}` : '';
+    return { status: 'done', text: `${v}${effort}` };
+  }
+  if (set.status === 'skipped') return { status: 'skipped', text: 'Skipped' };
+  if (active) return { status: 'active', text: 'now' };
+  return { status: 'pending', text: targetShort(set.planned, { convention: ex.loadConvention, equipment: eq }) ?? 'No target' };
+}
+
+function missingFor(values: SetValues, ex: SessionExercise): FocusView['missing'] {
+  if (ex.loadConvention !== 'bodyweight' && values.load === null && ex.loadConvention !== 'added') return 'load';
+  if (ex.measurement === 'reps' && values.reps === null) return 'reps';
+  if (ex.measurement === 'duration' && values.durationS === null) return 'time';
+  return null;
+}
+
+function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
+  const { aggregate: state } = input;
+  const set = state.sets.find((s) => s.id === setId);
+  if (!set || set.status !== 'pending') return null;
+  const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
+  if (!ex) return null;
+  const eq = equipmentOf(state, ex);
+  const prev = input.previous[ex.id] ?? null;
+  const own = exerciseSets(state, ex.id);
+  const setNumber = own.findIndex((s) => s.id === set.id) + 1;
+
+  const edits = input.edits?.setId === set.id ? input.edits : null;
+  const pre = prefillDraft(state, set.id, prev?.sets ?? []);
+  let values: SetValues = edits ? edits.values : pre.values;
+  // Effort is never prefilled; only an explicit chip sets it.
+  values = { ...values, rpe: null, rir: null };
+  // A bodyweight exercise has no load; `added` with nothing entered means none added.
+  if (ex.loadConvention === 'bodyweight') values = { ...values, load: { value: 0, unit: ex.unit, convention: 'bodyweight' } };
+  const draftSource: FocusView['draftSource'] = edits ? (edits.copied ? 'copied' : 'edited') : pre.source;
+
+  const unilateral = ex.laterality === 'unilateral';
+  const fixedSide = set.pairedWithSetId !== null && (set.side === 'left' || set.side === 'right') ? set.side : null;
+  const chosenSide: SetSide | null = unilateral ? (fixedSide ?? edits?.side ?? set.side ?? 'both') : null;
+  const side: FocusView['side'] = !unilateral ? null : fixedSide !== null ? { kind: 'fixed', value: fixedSide } : { kind: 'choice', value: chosenSide ?? 'both' };
+
+  const loadLabel = loadFieldLabel(ex.loadConvention, eq);
+  const loadValue = values.load === null || values.load.convention === 'bodyweight' ? null : values.load.value;
+  const loadField: LoadField | null =
+    loadLabel === null
+      ? null
+      : { label: loadLabel, unitText: loadFieldUnit(ex.unit, ex.loadConvention), value: loadValue, assisted: loadDirection(ex.loadConvention) === 'assistance', ...loadSteps(loadValue, ex, eq) };
+
+  let offProfileWarning: string | null = null;
+  if (eq !== null && values.load !== null && values.load.convention !== 'bodyweight' && !isLoadAchievable(values.load, eq)) {
+    const max = maxText(eq, values.load);
+    offProfileWarning = `${loadText(values.load, ex.loadConvention, eq)} isn’t on ${eq.name}${input.gymName ? ` at ${input.gymName}` : ''}${max === '' ? '' : ` (max ${max})`}. Log it anyway if that’s what you lifted, or update the gym.`;
+  }
+
+  const missing = missingFor(values, ex);
+  const logValues: SetValues = {
+    ...values,
+    load: ex.loadConvention === 'added' && values.load === null ? { value: 0, unit: ex.unit, convention: 'added' } : values.load,
+  };
+  const labelValues = valuesText(logValues, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq, side: chosenSide });
+  const logLabel = missing === null ? `Log ${labelValues}` : null;
+
+  const order = buildExecutionOrder(state.exercises, state.sets);
+  const nextId = nextPendingSet(set.id, state.exercises, state.sets);
+  let next: FocusView['next'] = null;
+  if (nextId === null) next = { kind: 'last_set' };
+  else {
+    const nextSet = state.sets.find((s) => s.id === nextId);
+    const nextEx = nextSet ? state.exercises.find((e) => e.id === nextSet.sessionExerciseId) : undefined;
+    if (nextSet && nextEx && nextEx.id !== ex.id && order.indexOf(nextId) > order.indexOf(set.id)) {
+      next = { kind: 'exercise', name: nextEx.exerciseName, target: targetShort(nextSet.planned, { convention: nextEx.loadConvention, equipment: equipmentOf(state, nextEx) }) };
+    }
+  }
+
+  const prevFirst = prev?.sets.find((c) => c.index === setNumber - 1) ?? prev?.sets[prev.sets.length - 1] ?? null;
+  const headerParts = [eq ? EQUIPMENT_WORD[eq.kind] : null, SET_TYPE_WORD[set.setType], `Set ${String(setNumber)} of ${String(own.length)}`, unilateral ? 'per side' : null];
+
+  return {
+    setId: set.id,
+    setVersion: set.version,
+    sessionExerciseId: ex.id,
+    exerciseId: ex.exerciseId,
+    exerciseName: ex.exerciseName,
+    measurement: ex.measurement,
+    unilateral,
+    headerLine: headerParts.filter((p): p is string => p !== null).join(' · '),
+    setNumber,
+    setCount: own.length,
+    previous:
+      prev && prevFirst
+        ? { performedAtUtc: prev.performedAtUtc, text: valuesText(prevFirst.values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }), values: prevFirst.values }
+        : null,
+    draft: values,
+    draftSource,
+    loadField,
+    reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
+    duration: ex.measurement === 'duration' ? { value: values.durationS } : null,
+    target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral }),
+    painFlagged: input.painFlagged.has(ex.exerciseId),
+    offProfileWarning,
+    side,
+    restAfterS: set.rest.seconds,
+    rows: own.map((s, i) => {
+      const { status, text } = rowText(s, ex, eq, s.id === set.id);
+      return {
+        setId: s.id,
+        number: i + 1,
+        badges: [SET_TYPE_BADGE[s.setType], sideBadge(s)].filter((b): b is string => b !== null),
+        status,
+        text,
+        edited: s.edited,
+        version: s.version,
+      };
+    }),
+    next,
+    logLabel,
+    missing,
+    opId: draftOperationId(set),
+    logValues,
+    logSide: unilateral && fixedSide === null ? (chosenSide ?? 'both') : undefined,
+  };
+}
+
+function buildJustSaved(state: SessionAggregate): JustSavedView | null {
+  const id = latestCommittedSetId(state);
+  const set = id === null ? undefined : state.sets.find((s) => s.id === id);
+  if (!set?.actual) return null;
+  const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
+  if (!ex) return null;
+  const eq = equipmentOf(state, ex);
+  return {
+    setId: set.id,
+    setVersion: set.version,
+    exerciseName: ex.exerciseName,
+    setNumber: exerciseSets(state, ex.id).findIndex((s) => s.id === set.id) + 1,
+    side: set.side,
+    text: valuesText(set.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
+    rpe: set.actual.rpe,
+    rir: set.actual.rir,
+    undoOpId: `undo:${set.id}:${String(set.undoCount)}`,
+  };
+}
+
+export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
+  const { aggregate: state, nowMs } = input;
+  const phase = getSessionPhase(state, nowMs);
+  const session = state.session;
+  const liveSets = state.sets.filter(live);
+  const activeId = session.activeSetId;
+
+  let rest: RestView | null = null;
+  const timer = state.restTimer;
+  if (phase.kind === 'resting' && timer) {
+    rest = { kind: 'running', timerId: timer.id, timerVersion: timer.version, remainingMs: phase.remainingMs, deadlineUtc: timer.deadlineUtc, durationS: timer.durationS };
+  } else if (phase.kind === 'ready' && phase.restEnded) {
+    rest = { kind: 'ended', timerId: phase.restEnded.timerId, endedAtUtc: phase.restEnded.endedAtUtc, restedMs: phase.restEnded.restedMs, skipped: phase.restEnded.skipped };
+  } else if (phase.kind === 'paused' && phase.timerRemainingMs !== null) {
+    rest = { kind: 'paused', remainingMs: phase.timerRemainingMs };
+  }
+
+  const focus = activeId !== null && session.status === 'active' ? buildFocus(input, activeId) : null;
+
+  let primary: PrimaryAction;
+  if (session.status !== 'active') primary = { kind: 'none', label: '' };
+  else if (phase.kind === 'paused') primary = { kind: 'resume', label: 'Resume' };
+  else if (phase.kind === 'empty') primary = { kind: 'add_exercise', label: 'Add exercise' };
+  else if (focus === null) primary = { kind: 'finish', label: 'Finish workout' };
+  else if (focus.logLabel === null) primary = { kind: 'disabled', label: focus.missing === 'load' ? 'Enter load' : focus.missing === 'time' ? 'Enter time' : 'Enter reps' };
+  else primary = { kind: 'log', label: focus.logLabel };
+
+  const completed = liveSets.filter((s) => s.status === 'completed' && s.completedAt);
+  const last = completed.map((s) => s.completedAt?.utc ?? '').sort().at(-1) ?? null;
+
+  return {
+    phase: phase.kind,
+    title: session.routineName ?? 'Workout',
+    sessionId: session.id,
+    sessionVersion: session.version,
+    elapsedMs: getActiveDurationMs(state, nowMs),
+    paused: session.pause !== null,
+    focus,
+    rest,
+    justSaved: buildJustSaved(state),
+    primary,
+    progress: { done: completed.length, total: liveSets.length },
+    exercises: [...state.exercises]
+      .sort((a, b) => a.order - b.order)
+      .map((e) => ({
+        sessionExerciseId: e.id,
+        exerciseId: e.exerciseId,
+        name: e.exerciseName,
+        pendingSets: liveSets.filter((s) => s.sessionExerciseId === e.id && s.status === 'pending').length,
+        doneSets: liveSets.filter((s) => s.sessionExerciseId === e.id && s.status === 'completed').length,
+      })),
+    lastCompletedAtUtc: last,
+  };
+}
