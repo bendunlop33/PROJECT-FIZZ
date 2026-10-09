@@ -19,3 +19,6 @@ Ben replied "s" to "go + 3 answers". This was read as **go**, with the stated de
 - **SP3:** until the gym editor exists, a gym saved during first run is shown read-only, so going Back never creates a second gym.
 - **SP4:** "Save a copy to Files" uses a folder picker, pending a device test of iCloud and On My iPhone.
 - **Triceps pushdown:** one exercise with an attachment option (rope or bar), not two separate exercises.
+- **Next-time targets:** each exercise's built-in-rule target is stored, and pre-fills the next time that exercise is added, labelled "Target (built-in rule)".
+- **Pain with no movement chosen:** blocks increases on every exercise for that session only.
+- **Built-in defaults by exercise category:** big barbell lifts 3–6 reps (RPE up to 8.5); other compounds 6–10; accessories 8–12 (RPE up to 9). This replaces the flat 8–12.
