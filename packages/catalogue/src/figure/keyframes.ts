@@ -8,7 +8,7 @@
  * 0015). IK modes are discrete and taken from the segment start.
  */
 import { PROJECTION_KEYS, type FootIk, type Guide, type HandIk, type IkLimb, type Projection } from './guide-schema';
-import { ease, hermite, lerp, splineSlopes, type Ease } from './math';
+import { ease, hermite, lerp, minimumJerk, splineSlopes, type Ease } from './math';
 import { ADULT_V1, JOINT_NAMES, type JointName } from './rig';
 
 export interface FootTarget {
@@ -46,6 +46,8 @@ export interface ResolvedKeyframe {
   label: string | null;
   caption: string | null;
   ease: Ease;
+  /** `motion: "phases"`: the figure passes through this key without stopping (ADR 0015). */
+  pass: boolean;
   state: FrameState;
 }
 
@@ -139,6 +141,7 @@ export function resolveKeyframes(guide: Guide): ResolvedKeyframe[] {
       label: k.label ?? ref?.label ?? null,
       caption: k.caption ?? ref?.caption ?? null,
       ease: k.ease ?? 'inOutSine',
+      pass: guide.motion === 'phases' && (k.pass ?? ref?.pass ?? false),
       state,
     });
     prevT = k.t;
@@ -326,6 +329,59 @@ function ridePlanted(guide: Guide, a: FrameState, b: FrameState, tc: number, seg
 }
 
 /**
+ * Phases mode (`motion: "phases"`, ADR 0015): the stretch from one stop's hold
+ * end A to the next stop's time B is one movement with progress
+ * u = minimumJerk((t − A)/(B − A)), shared by every channel. Each channel is a
+ * C2 spline in u through the keys of the phase (pass keys sit at u of their
+ * authored time), with natural ends and the monotone guard. Velocity and
+ * acceleration are zero at every stop because du/dt and d²u/dt² are, and
+ * continuous everywhere else.
+ */
+interface PhaseSpan {
+  /** First and last key of the phase (both stops). */
+  from: number;
+  to: number;
+  A: number;
+  B: number;
+  /** Progress at each key of the phase, from 0 at `from` to 1 at `to`. */
+  u: number[];
+}
+
+function phaseSpans(keys: readonly ResolvedKeyframe[]): PhaseSpan[] {
+  const stops = keys.filter((k) => !k.pass).map((k) => k.index);
+  const out: PhaseSpan[] = [];
+  for (let j = 0; j + 1 < stops.length; j += 1) {
+    const from = stops[j] ?? 0;
+    const to = stops[j + 1] ?? 0;
+    const A = keys[from]?.holdEnd ?? 0;
+    const B = keys[to]?.t ?? 1;
+    const u: number[] = [];
+    for (let k = from; k <= to; k += 1) u.push(k === from ? 0 : k === to ? 1 : B > A ? minimumJerk(((keys[k]?.t ?? A) - A) / (B - A)) : 0);
+    out.push({ from, to, A, B, u });
+  }
+  return out;
+}
+
+function phaseKnotSlopes(keys: readonly ResolvedKeyframe[], flat: readonly Channels[], ph: PhaseSpan, channel: string): number[] {
+  const n = ph.to - ph.from + 1;
+  const y = Array.from({ length: n }, (_, j) => flat[ph.from + j]?.get(channel) ?? 0);
+  const usable = (j: number): boolean => segmentUsable(keys, flat, ph.from + j, channel) && (ph.u[j + 1] ?? 0) - (ph.u[j] ?? 0) > 0;
+  const secant = (j: number): number => ((y[j + 1] ?? 0) - (y[j] ?? 0)) / ((ph.u[j + 1] ?? 0) - (ph.u[j] ?? 0));
+  const fixed: (number | null)[] = [];
+  for (let j = 0; j < n; j += 1) {
+    const sides = [j - 1, j].filter((i) => i >= 0 && i < n - 1);
+    if (sides.some((i) => !usable(i))) {
+      fixed.push(0);
+      continue;
+    }
+    const d = sides.map(secant);
+    // Natural ends; a turning or flat interior key stops that channel (the guard in splineSlopes does the rest).
+    fixed.push(d.length === 2 && ((d[0] ?? 0) === 0 || (d[1] ?? 0) === 0 || Math.sign(d[0] ?? 0) !== Math.sign(d[1] ?? 0)) ? 0 : null);
+  }
+  return splineSlopes(ph.u, y, fixed, false);
+}
+
+/**
  * Everything sampling needs that depends only on the keys, built once per
  * resolved keyframe list: flattened channels, knot positions and (lazily,
  * per channel) the slopes at both ends of every segment. `stateAt` runs for
@@ -337,13 +393,15 @@ interface SamplingPlan {
   flat: readonly Channels[];
   /** Knot of each key in moving time (holds removed): segment i spans `keys[i].holdEnd` → `keys[i + 1].t`. */
   x: readonly number[];
+  /** Phases mode: the phase each segment belongs to (null in channel mode). */
+  phaseOf: readonly (PhaseSpan | null)[];
   /** Per channel: [slope at the start of segment 0, at its end, at the start of segment 1, …]. */
   slopes: Map<string, Float64Array>;
 }
 
 const planCache = new WeakMap<readonly ResolvedKeyframe[], SamplingPlan>();
 
-function samplingPlan(keys: readonly ResolvedKeyframe[]): SamplingPlan {
+function samplingPlan(guide: Guide, keys: readonly ResolvedKeyframe[]): SamplingPlan {
   let plan = planCache.get(keys);
   if (plan === undefined) {
     const x: number[] = [];
@@ -352,7 +410,9 @@ function samplingPlan(keys: readonly ResolvedKeyframe[]): SamplingPlan {
       x.push(k.t - held);
       held += k.holdEnd - k.t;
     }
-    plan = { flat: keys.map((k) => flatten(k.state)), x, slopes: new Map() };
+    const phaseOf: (PhaseSpan | null)[] = keys.slice(1).map(() => null);
+    if (guide.motion === 'phases') for (const ph of phaseSpans(keys)) for (let i = ph.from; i < ph.to; i += 1) phaseOf[i] = ph;
+    plan = { flat: keys.map((k) => flatten(k.state)), x, phaseOf, slopes: new Map() };
     planCache.set(keys, plan);
   }
   return plan;
@@ -361,11 +421,22 @@ function samplingPlan(keys: readonly ResolvedKeyframe[]): SamplingPlan {
 function segmentSlopes(guide: Guide, keys: readonly ResolvedKeyframe[], plan: SamplingPlan, channel: string): Float64Array {
   let m = plan.slopes.get(channel);
   if (m === undefined) {
-    const knots = channelKnotSlopes(guide, keys, plan.flat, plan.x, channel);
     m = new Float64Array(2 * Math.max(0, keys.length - 1));
-    for (let i = 0; i + 1 < keys.length; i += 1) {
-      m[2 * i] = knots[i] ?? 0;
-      m[2 * i + 1] = knots[i + 1] ?? 0;
+    if (guide.motion === 'phases') {
+      for (const ph of new Set(plan.phaseOf)) {
+        if (ph === null) continue;
+        const knots = phaseKnotSlopes(keys, plan.flat, ph, channel);
+        for (let i = ph.from; i < ph.to; i += 1) {
+          m[2 * i] = knots[i - ph.from] ?? 0;
+          m[2 * i + 1] = knots[i + 1 - ph.from] ?? 0;
+        }
+      }
+    } else {
+      const knots = channelKnotSlopes(guide, keys, plan.flat, plan.x, channel);
+      for (let i = 0; i + 1 < keys.length; i += 1) {
+        m[2 * i] = knots[i] ?? 0;
+        m[2 * i + 1] = knots[i + 1] ?? 0;
+      }
     }
     plan.slopes.set(channel, m);
   }
@@ -387,9 +458,18 @@ export function stateAt(guide: Guide, keys: readonly ResolvedKeyframe[], t: numb
     ridePlanted(guide, a.state, b.state, tc, a.t, held);
     return held;
   }
-  const span = b.t - a.holdEnd;
-  const s = span <= 0 ? 1 : (tc - a.holdEnd) / span;
-  const plan = samplingPlan(keys);
+  const plan = samplingPlan(guide, keys);
+  const ph = plan.phaseOf[i] ?? null;
+  // Channel mode: Hermite in moving time. Phases mode: Hermite in the phase's minimum-jerk progress.
+  let span = b.t - a.holdEnd;
+  let s = span <= 0 ? 1 : (tc - a.holdEnd) / span;
+  if (ph !== null) {
+    const u0 = ph.u[i - ph.from] ?? 0;
+    const u1 = ph.u[i + 1 - ph.from] ?? 1;
+    const u = ph.B > ph.A ? minimumJerk((tc - ph.A) / (ph.B - ph.A)) : 1;
+    span = u1 - u0;
+    s = span <= 0 ? 1 : (u - u0) / span;
+  }
   const fa = plan.flat[i] ?? new Map<string, number>();
   const fb = plan.flat[i + 1] ?? new Map<string, number>();
   const out: Channels = new Map();
@@ -397,7 +477,7 @@ export function stateAt(guide: Guide, keys: readonly ResolvedKeyframe[], t: numb
     const vb = fb.get(name);
     if (vb === undefined || !segmentUsable(keys, plan.flat, i, name)) {
       out.set(name, va);
-    } else if (a.ease === 'smooth') {
+    } else if (ph !== null || a.ease === 'smooth') {
       const m = segmentSlopes(guide, keys, plan, name);
       out.set(name, hermite(va, vb, m[2 * i] ?? 0, m[2 * i + 1] ?? 0, s, span));
     } else {

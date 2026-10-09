@@ -4,17 +4,18 @@
  * runs the hard ones and the unit tests use them. Every metric samples
  * `poseAt`, so it measures what is drawn, not the keyframe file.
  *
- * A **phase** is one stretch of movement between two stops: the holds, the
- * cycle's ends and keys where the main points turn back. Gait guides (a
- * scrolling floor) use half-strides from `MOTION_CONFIG`. τ is the normalised
- * time within a phase.
+ * A **phase** is one stretch of movement between two stops. In a
+ * `motion: "phases"` guide the stops are its non-pass keys; otherwise they are
+ * the holds, the cycle's ends and keys where the main points turn back. Gait
+ * guides (a scrolling floor) use half-strides from `MOTION_CONFIG`. τ is the
+ * normalised time within a phase.
  *
  * Levels: `hard` metrics are bugs (a pose jump, a contact velocity jump,
  * interpolation overshoot); `quality` metrics are the acceptance thresholds
  * for "one seamless motion"; `warn` metrics are reported only.
  */
 import { flattenState, stateAt } from './keyframes';
-import { dist, type Vec } from './math';
+import { dist, minimumJerkInverse, type Vec } from './math';
 import { playbackTimes, PLAYBACK_FPS } from './playback';
 import { poseAt, type Pose, type PreparedGuide } from './pose';
 import type { AngleName } from './rig';
@@ -170,6 +171,11 @@ function isGait(prepared: PreparedGuide, config: MotionConfig): boolean {
   return config.phases !== undefined || prepared.guide.ground.scrollPerCycle > 0;
 }
 
+/** Is key `k` a pass key (phases mode)? */
+function isPass(prepared: PreparedGuide, k: number): boolean {
+  return prepared.guide.motion === 'phases' && prepared.keys[k]?.pass === true;
+}
+
 /** Concatenated main-point coordinates of a pose. */
 function mainVector(pose: Pose, main: readonly PointRef[]): number[] {
   const out: number[] = [];
@@ -180,10 +186,16 @@ function mainVector(pose: Pose, main: readonly PointRef[]): number[] {
   return out;
 }
 
-/** Keys that end a phase: the ends, holds, and keys where the main points turn back. */
+const vecDist = (a: readonly number[], b: readonly number[]): number => Math.sqrt(a.reduce((s, x, i) => s + (x - (b[i] ?? x)) ** 2, 0));
+
+/**
+ * Keys that end a phase: phases mode uses its non-pass keys; otherwise the
+ * ends, holds, and keys where the main points turn back.
+ */
 export function stopKeys(prepared: PreparedGuide, config: MotionConfig = motionConfig(prepared)): number[] {
   const { keys } = prepared;
   const last = keys.length - 1;
+  if (prepared.guide.motion === 'phases') return keys.filter((k) => !k.pass).map((k) => k.index);
   const vec = keys.map((k) => mainVector(poseAt(prepared, k.t), config.main));
   const stops = [0];
   for (let k = 1; k < last; k += 1) {
@@ -776,20 +788,58 @@ function gaitMetrics(prepared: PreparedGuide, d: Dense): MotionMetric[] {
   ];
 }
 
-/** Every metric for one guide (hard, quality and warnings). */
+/**
+ * Suggested times for pass keys (phases mode): each key's chord-length share
+ * of its phase in main-point space, mapped through the inverse minimum-jerk
+ * progress. Keys at these times make the main points' speed one centred bell.
+ */
+export function suggestPassTimes(prepared: PreparedGuide, config: MotionConfig = motionConfig(prepared)): PassSuggestion[] {
+  if (prepared.guide.motion !== 'phases') return [];
+  const { keys } = prepared;
+  const stops = stopKeys(prepared, config);
+  const out: PassSuggestion[] = [];
+  for (let j = 0; j + 1 < stops.length; j += 1) {
+    const a = stops[j] ?? 0;
+    const b = stops[j + 1] ?? 0;
+    if (b - a < 2) continue;
+    const vec: number[][] = [];
+    for (let k = a; k <= b; k += 1) vec.push(mainVector(poseAt(prepared, keys[k]?.t ?? 0), config.main));
+    const cum = [0];
+    for (let k = 1; k < vec.length; k += 1) cum.push((cum[k - 1] ?? 0) + vecDist(vec[k] ?? [], vec[k - 1] ?? []));
+    const total = cum[cum.length - 1] ?? 0;
+    const A = keys[a]?.holdEnd ?? 0;
+    const B = keys[b]?.t ?? 1;
+    for (let k = a + 1; k < b; k += 1) {
+      const key = keys[k];
+      if (key === undefined || !isPass(prepared, k)) continue;
+      const share = total > 0 ? (cum[k - a] ?? 0) / total : (k - a) / (b - a);
+      out.push({ key: k, label: key.label, t: key.t, suggested: Number((A + (B - A) * minimumJerkInverse(share)).toFixed(4)), share });
+    }
+  }
+  return out;
+}
+
+/** Every metric for one guide (hard, quality and warnings) plus pass-key suggestions. */
 export function measureMotion(prepared: PreparedGuide, opts: { n?: number; config?: MotionConfig } = {}): MotionReport {
   const config = opts.config ?? motionConfig(prepared);
   const n = opts.n ?? MOTION_SAMPLES;
   const gait = isGait(prepared, config);
   const phases = motionPhases(prepared, config);
   const d = sampleDense(prepared, n);
+  const suggestions = suggestPassTimes(prepared, config);
+  const p1 = higher();
+  for (const s of suggestions) {
+    const off = Math.abs(s.suggested - s.t);
+    p1.add(off, `key ${s.key}${s.label ? ` ${s.label}` : ''} (${f(s.t, 4)} → ${f(s.suggested, 4)})`, off <= MOTION_LIMITS.passTiming);
+  }
   const metrics: MotionMetric[] = [
     poseContinuity(prepared),
     contactVelocity(prepared),
     channelOvershoot(prepared, n),
     ...(gait ? gaitMetrics(prepared, d) : [...mainPointMetrics(prepared, d, phases, config), ...jointMetrics(prepared, d, phases, config)]),
+    metric('P1', 'pass-timing', 'warn', `≤ ${MOTION_LIMITS.passTiming} cycle`, p1, (x) => f(x, 4)),
   ];
-  return { exerciseKey: prepared.guide.exerciseKey, motion: 'channels', gait, phases, metrics, suggestions: [] };
+  return { exerciseKey: prepared.guide.exerciseKey, motion: prepared.guide.motion ?? 'channels', gait, phases, metrics, suggestions };
 }
 
 /** Exit status for `guide:motion`: any failed hard or quality metric fails the guide (warnings never do). */

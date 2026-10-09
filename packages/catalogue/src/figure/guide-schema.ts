@@ -239,8 +239,59 @@ export const KeyframeSchema = z.strictObject({
   holdMs: z.int().min(0).max(5000).optional(),
   /** Easing of the segment that starts at this keyframe. */
   ease: z.enum(EASES).optional(),
+  /**
+   * `motion: "phases"` guides only: the figure passes through this pose
+   * without stopping (a mid-movement key such as "Halfway"). Keys without it
+   * are stops. Inherited through `sameAs`; an explicit `false` overrides.
+   * No hold, and no IK mode, prop, contact, bend, pivot or planted change.
+   */
+  pass: z.boolean().optional(),
 });
 export type Keyframe = z.infer<typeof KeyframeSchema>;
+
+const MODE_FIELDS = ['prop', 'contact', 'bend', 'pivot', 'planted'] as const;
+
+/**
+ * The discrete IK state of each keyframe (which limbs have a target and their
+ * prop, contact, bend, pivot and planted flag), carried forward and copied
+ * by `sameAs` as in `resolveKeyframes`, as one comparable string per limb.
+ */
+function ikModes(keyframes: readonly Keyframe[]): Record<IkLimb, string>[] {
+  const out: Record<IkLimb, string>[] = [];
+  let cur: Record<IkLimb, Record<string, unknown> | null> = { footNear: null, footFar: null, handNear: null, handFar: null };
+  const all: (typeof cur)[] = [];
+  keyframes.forEach((k) => {
+    const ref = k.sameAs === undefined ? undefined : all[k.sameAs];
+    if (ref !== undefined) cur = { ...ref };
+    else {
+      cur = { ...cur };
+      for (const limb of IK_LIMBS) {
+        const spec = k.ik?.[limb];
+        if (spec === null) cur[limb] = null;
+        else if (spec !== undefined) {
+          const next: Record<string, unknown> = { ...(cur[limb] ?? {}) };
+          for (const f of MODE_FIELDS) if (f in spec) next[f] = (spec as Record<string, unknown>)[f];
+          cur[limb] = next;
+        }
+      }
+    }
+    all.push(cur);
+    const modes = {} as Record<IkLimb, string>;
+    for (const limb of IK_LIMBS) {
+      const m = cur[limb];
+      modes[limb] = m === null ? 'none' : MODE_FIELDS.map((f) => `${f}=${JSON.stringify(m[f] ?? null)}`).join(',');
+    }
+    out.push(modes);
+  });
+  return out;
+}
+
+/** Each keyframe's `pass` flag after `sameAs` inheritance. */
+export function resolvedPass(keyframes: readonly Keyframe[]): boolean[] {
+  const out: boolean[] = [];
+  keyframes.forEach((k) => out.push(k.pass ?? (k.sameAs === undefined ? false : (out[k.sameAs] ?? false))));
+  return out;
+}
 
 export const GuideSchema = z
   .strictObject({
@@ -276,6 +327,15 @@ export const GuideSchema = z
      */
     seenFrom: z.enum(['front', 'back']).optional(),
     focus: FocusSchema.optional(),
+    /**
+     * Interpolation model (ADR 0015). `channels` (default): each channel is a
+     * C2 spline through its key values. `phases`: the stretch between two
+     * stop keys (keys without `pass`) is one movement: every channel shares
+     * one minimum-jerk progress, so the figure leaves and reaches each stop
+     * with zero velocity and acceleration, and joints stay in step. Pass keys
+     * are timed with `npm run guide:motion -- <id> --suggest`.
+     */
+    motion: z.enum(['channels', 'phases']).optional(),
     /** Fixed square camera; omitted = fitted to every frame. */
     camera: z.strictObject({ cx: coord, cy: coord, size: num.min(0.3).max(4) }).optional(),
     props: z.array(PropSchema).max(8),
@@ -329,6 +389,27 @@ export const GuideSchema = z
       if (!known.has(o.of)) ctx.addIssue({ code: 'custom', message: `Unknown prop ${o.of}`, path: ['overlays'] });
     }
     if (g.seenFrom !== undefined && g.view !== 'front') ctx.addIssue({ code: 'custom', message: 'seenFrom is for front-view guides only', path: ['seenFrom'] });
+    const pass = resolvedPass(g.keyframes);
+    if (g.motion === 'phases') {
+      const modes = ikModes(g.keyframes);
+      if (g.ground.scrollPerCycle !== 0) ctx.addIssue({ code: 'custom', message: 'motion "phases" needs a still floor (scrollPerCycle 0)', path: ['motion'] });
+      g.keyframes.forEach((k, i) => {
+        const at = ['keyframes', i];
+        if (k.ease !== undefined && k.ease !== 'smooth') ctx.addIssue({ code: 'custom', message: 'motion "phases" keyframes use the smooth ease', path: [...at, 'ease'] });
+        if (pass[i] !== true) return;
+        if (i === 0 || i === g.keyframes.length - 1) ctx.addIssue({ code: 'custom', message: 'The first and last keyframes are stops, not pass keys', path: [...at, 'pass'] });
+        if ((k.holdMs ?? 0) > 0) ctx.addIssue({ code: 'custom', message: 'A pass key has no hold', path: [...at, 'holdMs'] });
+        const prev = modes[i - 1];
+        const here = modes[i];
+        for (const limb of IK_LIMBS) {
+          if (prev !== undefined && here !== undefined && prev[limb] !== here[limb]) {
+            ctx.addIssue({ code: 'custom', message: `${limb} changes IK mode at a pass key (change it at a stop)`, path: [...at, 'ik', limb] });
+          }
+        }
+      });
+    } else if (pass.some((x) => x)) {
+      ctx.addIssue({ code: 'custom', message: 'pass keys need motion "phases"', path: ['motion'] });
+    }
     if (g.ground.matchFloorSpeed === true && g.ground.scrollPerCycle === 0) {
       ctx.addIssue({ code: 'custom', message: 'matchFloorSpeed is for scrolling floors only', path: ['ground', 'matchFloorSpeed'] });
     }

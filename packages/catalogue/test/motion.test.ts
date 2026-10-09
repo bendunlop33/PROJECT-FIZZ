@@ -17,6 +17,7 @@ import {
   reversal,
   splineSlopes,
   stateAt,
+  suggestPassTimes,
   type Guide,
   type PreparedGuide,
 } from '../src/figure/index';
@@ -326,3 +327,128 @@ function checkFailures(g: Guide): string[] {
     .items.filter((i) => !i.ok)
     .map((i) => i.id);
 }
+
+/** The test rep in phases mode: Halfway (and its sameAs on the way up) is a pass key. */
+function phaseGuide(keyExtra: Record<number, Record<string, unknown>> = {}, extra: Record<string, unknown> = {}): Guide {
+  return repGuide({ motion: 'phases', ...extra }, { 1: { pass: true }, ...keyExtra });
+}
+
+describe('phase timing (E3, motion "phases")', () => {
+  const g = phaseGuide();
+  const p = prepareGuide(g);
+  const channels = [...flattenState(p.keys[0]?.state ?? stateAt(g, p.keys, 0)).keys()];
+  const stops = [0, 0.5, 0.5 + 200 / 3000, 1];
+
+  it('resolves pass keys through sameAs; an explicit false overrides', () => {
+    expect(p.keys.map((k) => k.pass)).toEqual([false, true, false, true, false]);
+    const off = prepareGuide(phaseGuide({ 3: { pass: false } }));
+    expect(off.keys.map((k) => k.pass)).toEqual([false, true, false, false, false]);
+    // Without motion "phases" nothing is a pass key.
+    expect(prepareGuide(repGuide()).keys.every((k) => !k.pass)).toBe(true);
+  });
+
+  it('every channel leaves and reaches each stop with zero velocity and zero acceleration', () => {
+    for (const t of stops) {
+      for (const name of channels) {
+        for (const side of [-1, 1] as const) {
+          if ((t === 0 && side < 0) || (t === 1 && side > 0)) continue;
+          expect(Math.abs(velocity(g, p, name, t, side)), `${name} v t=${t} ${side}`).toBeLessThan(1e-3);
+          // Peak accelerations here are hundreds of units; at a stop it is ~0 (it grows linearly away from it).
+          expect(Math.abs(acceleration(g, p, name, t, side, 1e-6)), `${name} a t=${t} ${side}`).toBeLessThan(0.5);
+        }
+      }
+    }
+  });
+
+  it('passes through a pass key without stopping: its pose is the key pose, velocity and acceleration are continuous', () => {
+    for (const k of p.keys.filter((x) => x.pass)) {
+      expect(poseGap(poseAt(p, k.t), poseAt({ guide: g, keys: p.keys }, k.t))).toBe(0);
+      expect(flattenState(stateAt(g, p.keys, k.t))).toEqual(flattenState(k.state));
+      const vm = velocity(g, p, 'root.y', k.t, -1);
+      expect(Math.abs(vm)).toBeGreaterThan(0.1);
+      expect(velocity(g, p, 'root.y', k.t, 1)).toBeCloseTo(vm, 2);
+      expect(acceleration(g, p, 'root.y', k.t, 1)).toBeCloseTo(acceleration(g, p, 'root.y', k.t, -1), -1);
+    }
+  });
+
+  it('eases out of a hold: the first frames after it barely move (minimum jerk)', () => {
+    const report = measureMotion(p, { n: 1200 });
+    const byId = (id: string) => report.metrics.find((m) => m.id === id);
+    expect(byId('M4.1')?.value ?? 1).toBeLessThan(0.05);
+    expect(byId('M4.2')?.value ?? 1).toBeLessThan(0.15);
+    expect(byId('M5')?.value ?? 1).toBeLessThan(0.1);
+    expect(byId('C1')?.ok).toBe(true);
+    expect(byId('C4')?.ok).toBe(true);
+  });
+
+  it('re-timed pass keys give each phase one centred speed hump', () => {
+    const raw = phaseGuide();
+    const suggestions = suggestPassTimes(prepareGuide(raw));
+    expect(suggestions.map((x) => x.key)).toEqual([1, 3]);
+    const keys = raw.keyframes.map((k, i) => ({ ...k, t: suggestions.find((x) => x.key === i)?.suggested ?? k.t }));
+    const retimed = GuideSchema.parse({ ...raw, keyframes: keys });
+    const config = { main: [{ point: 'hip' }], primary: [], pairs: [] };
+    const report = measureMotion(prepareGuide(retimed), { n: 1200, config });
+    expect(report.metrics.find((m) => m.id === 'M1')?.value).toBe(1);
+    const m2 = report.metrics.find((m) => m.id === 'M2')?.value ?? 0;
+    expect(m2).toBeGreaterThan(0.35);
+    expect(m2).toBeLessThan(0.65);
+    expect(report.metrics.find((m) => m.id === 'P1')?.ok).toBe(true);
+  });
+
+  it('the loop seam is a still point: nothing moves at t = 0 and t = 1', () => {
+    for (const name of channels) {
+      expect(Math.abs(velocity(g, p, name, 0, 1)), name).toBeLessThan(1e-3);
+      expect(Math.abs(velocity(g, p, name, 1, -1)), name).toBeLessThan(1e-3);
+    }
+    expect(poseGap(poseAt(p, 0), poseAt(p, 1 - 1e-6))).toBeLessThan(1e-6);
+  });
+
+  it('channel mode is unchanged by the format: a guide without motion keeps channel slopes', () => {
+    const c = repGuide();
+    const pc = prepareGuide(c);
+    // Channel mode keeps moving through Halfway at its spline speed; it is not still at t = 0.25.
+    expect(Math.abs(velocity(c, pc, 'root.y', 0.25, 1))).toBeGreaterThan(0.1);
+    expect(c.motion).toBeUndefined();
+  });
+});
+
+describe('phase timing schema rules', () => {
+  const issues = (raw: Record<string, unknown>): string[] => {
+    const r = GuideSchema.safeParse(raw);
+    return r.success ? [] : r.error.issues.map((i) => i.message);
+  };
+  const rawPhases = (keyExtra: Record<number, Record<string, unknown>> = {}, extra: Record<string, unknown> = {}): Record<string, unknown> => {
+    const g = phaseGuide();
+    return { ...g, ...extra, keyframes: g.keyframes.map((k, i) => ({ ...k, ...(keyExtra[i] ?? {}) })) };
+  };
+
+  it('accepts a valid phases guide', () => {
+    expect(issues(rawPhases())).toEqual([]);
+  });
+
+  it('rejects a pass key with a hold, and pass on the first or last key', () => {
+    expect(issues(rawPhases({ 1: { holdMs: 100 } }))).toContain('A pass key has no hold');
+    expect(issues(rawPhases({ 0: { pass: true } }))).toContain('The first and last keyframes are stops, not pass keys');
+    expect(issues(rawPhases({ 4: { pass: true } }))).toContain('The first and last keyframes are stops, not pass keys');
+  });
+
+  it('rejects a scrolling floor, a non-smooth ease and pass keys without motion "phases"', () => {
+    expect(issues(rawPhases({}, { ground: { y: 0, scrollPerCycle: 0.5 } }))).toContain('motion "phases" needs a still floor (scrollPerCycle 0)');
+    expect(issues(rawPhases({ 1: { ease: 'linear' } }))).toContain('motion "phases" keyframes use the smooth ease');
+    expect(issues(rawPhases({}, { motion: 'channels' }))).toContain('pass keys need motion "phases"');
+  });
+
+  it('rejects an IK mode change at a pass key but allows it at a stop', () => {
+    const atPass = issues(rawPhases({ 1: { ik: { handNear: { x: 0.3, y: 0.9 } } } }));
+    expect(atPass.some((m) => m.includes('handNear changes IK mode at a pass key'))).toBe(true);
+    const planted = issues(rawPhases({ 0: { ik: { footNear: { x: 0, y: 0, planted: true } } }, 1: { ik: { footNear: { planted: false } } } }));
+    expect(planted.some((m) => m.includes('footNear changes IK mode at a pass key'))).toBe(true);
+    // Allowed at a stop: the hand target appears at Bottom, stays through the ascent pass key, and goes at the end stop.
+    const g = phaseGuide();
+    const keys = g.keyframes.map((k) => ({ ...k }));
+    keys[2] = { ...keys[2], t: 0.5, ik: { handNear: { x: 0.3, y: 0.9 } } };
+    keys[3] = { t: 0.8, pass: true, root: { x: -0.03, y: 0.46, pelvisDeg: 20 }, joints: { kneeNear: 50, hipNear: 60 }, ease: 'smooth' };
+    expect(issues({ ...g, keyframes: keys })).toEqual([]);
+  });
+});
