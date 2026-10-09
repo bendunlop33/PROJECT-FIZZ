@@ -94,6 +94,16 @@ Before you start:
 
 ---
 
+## 14. ChatGPT sign-in test (3 min): optional but important
+Profile › Developer › **ChatGPT sign-in test**.
+1. Tap **Start sign-in** and sign in with your ChatGPT Pro account in the sheet that opens. If it asks for a 2FA code, switching apps to get it is fine.
+2. Watch the steps fill in. The key ones are **Redirect received**, **Scopes** (it must include plan usage) and **Reply with OK**.
+3. If it stops, note which step failed and its message.
+4. Tap **Export results** and paste them here. Exports never include your tokens.
+5. Optional: tap **Disconnect** when you're done. This revokes the sign-in and deletes it from the phone.
+
+Nothing here can cost money: there is no paid API fallback.
+
 ## Probe retests (Developer › Capability probe)
 
 Run these after the checklist. They are the open rows from build 7.
