@@ -117,14 +117,25 @@ function Launch() {
       );
     case 'open_failed':
       return (
-        <MessageScreen title="Couldn’t open your training data." lines={[outcome.message, 'Restore from a backup isn’t in this build yet.']}>
+        <MessageScreen
+          title="Couldn’t open your training data."
+          lines={[outcome.message, 'Nothing has been changed. Your backups on this phone and in Files are untouched; restoring one needs the data to open first, so try again or contact the developer.']}
+        >
           {retry}
         </MessageScreen>
       );
     case 'ready': {
       const { services, migration, sqliteVersion, setup, recovery } = outcome;
+      const relaunch = () => {
+        void services
+          .close()
+          .catch(() => undefined)
+          .finally(() => {
+            setAttempt((a) => a + 1);
+          });
+      };
       return (
-        <AppProvider services={services} launch={{ migration, sqliteVersion, recovery, restAlerts }}>
+        <AppProvider services={services} launch={{ migration, sqliteVersion, recovery, restAlerts, restoreInterrupted: services.restore.interruptedRestore }} relaunch={relaunch}>
           <ForegroundAlerts services={services} />
           <AppNavigator
             setupStep={setup.step}

@@ -406,3 +406,99 @@ describe('checkIntegrity', () => {
     await m.close();
   });
 });
+
+describe('check a backup (verifyBackup, DX3) and restore bookkeeping', () => {
+  let source: DatabaseManager;
+  let backupText: string;
+  beforeEach(async () => {
+    source = await openManager(dir());
+    await populate(source.store);
+    backupText = (await createBackup(source.store, { at: at(3600), app: APP })).text;
+  });
+  afterEach(async () => {
+    await source.close();
+  });
+  const dbFiles = (d: string) => readdirSync(d).filter((f) => f.endsWith('.db')).sort();
+
+  it('rebuilds the file in a scratch database, reports it restorable, and changes nothing', async () => {
+    const d = dir();
+    const target = await openManager(d);
+    await target.store.repos.profiles.save(profile(), null);
+    const before = await snapshot(target.store);
+    const out = await target.check(backupText);
+    expect(out).toMatchObject({ ok: true, restorable: true, issues: [], preview: { identical: false, backup: { counts: { finishedWorkouts: 1 } } } });
+    expect(await snapshot(target.store)).toEqual(before);
+    expect(target.databaseNames).toEqual({ current: 'training-1.db', previous: null, orphan: null });
+    expect(target.rollbackTarget).toEqual({ available: false, last: null });
+    expect(dbFiles(d)).toEqual(['fizz-meta.db', 'training-1.db']);
+    await target.close();
+  });
+
+  it('reports damaged records as "won\'t restore" without touching anything', async () => {
+    const d = dir();
+    const target = await openManager(d);
+    const file = JSON.parse(backupText) as BackupFile;
+    const row = file.tables.profiles?.[0];
+    if (!row || typeof row.data !== 'string') throw new Error('fixture');
+    row.data = row.data.replace('Pacific/Auckland', 'Mars/Olympus');
+    const out = await target.check(resign(file));
+    expect(out).toMatchObject({ ok: true, restorable: false });
+    if (out.ok) expect(out.issues[0]).toMatchObject({ path: `profiles.${OWNER}` });
+    expect(dbFiles(d)).toEqual(['fizz-meta.db', 'training-1.db']);
+    expect(await target.check(backupText.replace('"reps"', '"rEps"'))).toMatchObject({ ok: false, error: { code: 'checksum_mismatch' } });
+    await target.close();
+  });
+
+  it('a check after a restore keeps the rollback target and the last-switch record', async () => {
+    const d = dir();
+    const target = await openManager(d);
+    await target.store.repos.profiles.save(profile({ effortScale: 'off' }), null);
+    await target.restore(backupText, at(4000));
+    const slots = target.databaseNames;
+    expect(target.rollbackTarget).toEqual({ available: true, last: { atUtc: at(4000).utc, reason: 'restore' } });
+    expect(await target.check(backupText)).toMatchObject({ ok: true, restorable: true, preview: { identical: true } });
+    expect(target.databaseNames).toEqual(slots);
+    await target.rollback(at(4100));
+    expect(target.rollbackTarget).toEqual({ available: true, last: { atUtc: at(4100).utc, reason: 'rollback' } });
+    await target.close();
+    // The record survives a relaunch.
+    const again = await openManager(d);
+    expect(again.rollbackTarget.last).toEqual({ atUtc: at(4100).utc, reason: 'rollback' });
+    expect(again.interruptedRestore).toBe(false);
+    await again.close();
+  });
+
+  it('counts what is only on this phone, so the preview can say what a restore replaces', async () => {
+    const small = await openManager(dir());
+    await small.store.repos.profiles.save(profile({ preferredUnit: 'lb' }), null);
+    const smallBackup = (await createBackup(small.store, { at: at(100), app: APP })).text;
+    await small.close();
+    const p = await source.preview(smallBackup);
+    if (!p.ok) throw new Error(p.error.message);
+    const sessions = await source.store.db.read((q) => q.getAll<{ started_at_utc: string }>("SELECT started_at_utc FROM sessions WHERE status != 'discarded' ORDER BY started_at_utc"));
+    // Gym, 6 equipment, 2 exercises, routine, 2 rules, check-in, pain flag; the profile is in both.
+    expect(p.preview.onlyOnPhone).toEqual({ workouts: 2, newestWorkoutUtc: sessions.at(-1)?.started_at_utc ?? null, otherRecords: 14 });
+    const same = await source.preview(backupText);
+    if (!same.ok) throw new Error(same.error.message);
+    expect(same.preview.onlyOnPhone).toEqual({ workouts: 0, newestWorkoutUtc: null, otherRecords: 0 });
+  });
+
+  it('says a restore was interrupted only when a restore (not a check) was building a file', async () => {
+    const d = dir();
+    const real = nodeDatabaseHost(d);
+    const crashing: DatabaseHost = {
+      open: async (name) => (name === 'training-2.db' ? failingDriver(await real.open(name), (sql) => sql.includes('INSERT INTO "sessions"')) : real.open(name)),
+      remove: () => Promise.reject(new Error('killed')),
+    };
+    const target = await openManager(d, { host: crashing });
+    expect(await target.restore(backupText, at(4000))).toMatchObject({ ok: false });
+    await target.close();
+    const relaunched = await openManager(d);
+    expect(relaunched.interruptedRestore).toBe(true);
+    expect(dbFiles(d)).toEqual(['fizz-meta.db', 'training-1.db']);
+    await relaunched.close();
+    const again = await openManager(d);
+    expect(again.interruptedRestore).toBe(false);
+    await again.close();
+  });
+});

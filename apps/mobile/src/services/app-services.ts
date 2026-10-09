@@ -27,6 +27,7 @@ import type { EquipmentInstance, Exercise, Gym, SessionAggregate, SessionCommand
 
 import type { RestAlertController } from '../alerts/rest-alerts';
 import { createBackupService, type BackupFileStore, type TextFile } from '../backup/backup-service';
+import { createRestoreService } from '../backup/restore-service';
 import { createWorkoutServices } from './workout-services';
 import { bumpProfile, newProfile, setupStep, type SetupStep } from './setup';
 
@@ -275,6 +276,17 @@ export function createAppServices(deps: AppServicesDeps) {
     databaseNames: () => deps.manager.databaseNames,
   };
 
+  /** Restore, Undo restore and Check a backup. Screens relaunch the app after a switch. */
+  const restore = createRestoreService({
+    manager: deps.manager,
+    backupFiles: deps.backupFiles,
+    now: deps.now,
+    activeWorkout: () => sessions.active(),
+    copiesOnPhone: async () => (await backups.getStatus()).copiesOnPhone,
+    backupsIdle: () => backups.whenIdle(),
+    ...(deps.restAlerts ? { restAlerts: deps.restAlerts } : {}),
+  });
+
   const loop = createWorkoutServices({
     repos,
     store: () => deps.manager.store,
@@ -291,6 +303,7 @@ export function createAppServices(deps: AppServicesDeps) {
     setup,
     sessions,
     backups,
+    restore,
     integrity,
     developer,
     /** Close the database (tests, and before a future restore/delete). */

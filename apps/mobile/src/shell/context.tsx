@@ -14,6 +14,8 @@ export interface LaunchInfo {
   /** Cold-start recovery of an unfinished workout (flow §4.2); its notices are shown once. */
   recovery: RecoveryResult | null;
   restAlerts: RestAlertController | null;
+  /** A restore was building a file when Fizz last closed; the data is as it was (shown once on Today). */
+  restoreInterrupted: boolean;
 }
 
 const consumed = new Set<string>();
@@ -30,18 +32,23 @@ interface AppContextValue {
   /** Bumped after any write a screen makes, so other screens reload. */
   version: number;
   changed: () => void;
+  /**
+   * Close the data and start again from the launch sequence (after a restore
+   * or Undo restore: fresh services, normal cold-start logic, flow §4.2).
+   */
+  relaunch: () => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-export function AppProvider({ services, launch, children }: { services: AppServices; launch: LaunchInfo; children: ReactNode }) {
+export function AppProvider({ services, launch, relaunch, children }: { services: AppServices; launch: LaunchInfo; relaunch: () => void; children: ReactNode }) {
   const [version, setVersion] = useState(0);
   const changed = useCallback(() => {
     setVersion((v) => v + 1);
   }, []);
   // A backup starting or finishing changes status lines everywhere.
   useEffect(() => services.backups.subscribe(changed), [services, changed]);
-  return <AppContext.Provider value={{ services, launch, version, changed }}>{children}</AppContext.Provider>;
+  return <AppContext.Provider value={{ services, launch, version, changed, relaunch }}>{children}</AppContext.Provider>;
 }
 
 function useApp(): AppContextValue {
@@ -56,6 +63,11 @@ export function useServices(): AppServices {
 
 export function useLaunchInfo(): LaunchInfo {
   return useApp().launch;
+}
+
+/** Relaunch the app's data layer (after a restore). */
+export function useRelaunch(): () => void {
+  return useApp().relaunch;
 }
 
 /** Call after a write so screens that show the data reload. */

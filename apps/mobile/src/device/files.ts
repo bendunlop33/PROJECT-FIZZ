@@ -118,3 +118,28 @@ export async function pickBackupFolder(): Promise<PickOutcome> {
     },
   };
 }
+
+export type PickedFile = { kind: 'picked'; name: string; text: string } | { kind: 'cancelled' } | { kind: 'failed'; message: string };
+
+/** Backups are well under this; anything bigger isn't a Fizz backup and isn't read into memory. */
+const MAX_BACKUP_BYTES = 200 * 1024 * 1024;
+
+/**
+ * `Choose another file…` (Restore / Check a backup): the system document
+ * picker filtered to JSON. iOS hands back a temporary copy, so the original
+ * in Files is never changed. The text is data, never instructions (rule 8).
+ * Needs a device test (iCloud Drive, On My iPhone, offline).
+ */
+export async function pickBackupFile(): Promise<PickedFile> {
+  try {
+    const picked = await File.pickFileAsync({ mimeTypes: ['application/json', 'public.json', 'text/plain'] });
+    if (picked.canceled) return { kind: 'cancelled' };
+    const file = picked.result;
+    if (file.size > MAX_BACKUP_BYTES) return { kind: 'failed', message: 'That file is too large to be a Fizz backup.' };
+    return { kind: 'picked', name: file.name, text: await file.text() };
+  } catch (e) {
+    const text = e instanceof Error ? e.message : String(e);
+    if (/cancel/i.test(text)) return { kind: 'cancelled' };
+    return { kind: 'failed', message: text };
+  }
+}

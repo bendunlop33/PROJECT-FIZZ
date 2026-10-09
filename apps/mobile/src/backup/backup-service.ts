@@ -338,6 +338,11 @@ export function createBackupService(deps: BackupServiceDeps) {
       });
     },
 
+    /** Resolves once every queued run has finished (a restore never races a backup). */
+    whenIdle(): Promise<void> {
+      return chain.then(() => undefined);
+    },
+
     /** Re-render when a run starts or ends. */
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
