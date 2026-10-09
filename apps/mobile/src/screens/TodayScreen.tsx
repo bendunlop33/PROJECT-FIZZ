@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 
-import { formatDuration, formatMinutes, reasonsText, scoreText, toMs, type TodayMain } from '@fizz/domain';
+import { discardConfirmation, formatDuration, formatMinutes, reasonsText, scoreText, toMs, type TodayMain } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import { nowMs as clockNow } from '../clock';
@@ -367,25 +367,27 @@ export function TodayScreen() {
           onDismissed={afterDismiss.dismissed}
           onDiscard={() => {
             const target = finishFor;
-            const logged = target.sets.filter((x) => x.status === 'completed').length;
-            Alert.alert('Discard this workout?', `${String(logged)} logged ${logged === 1 ? 'set' : 'sets'} will be discarded. This can’t be undone.`, [
+            // One tested rule for every Discard (competitor-failure pack (e)): confirm whenever a set is logged.
+            const ask = discardConfirmation(target);
+            const go = () => {
+              void services.workout.dispatch(target.session.id, { type: 'discard', at: services.now(), opId: newUuid(), expectedVersion: ask.expectedVersion }).then((r) => {
+                setFinishFor(null);
+                if (!r.ok) {
+                  setError(r.error.code === 'stale_version' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}`);
+                  reload();
+                  return;
+                }
+                changed();
+                setToast({ text: 'Workout discarded' });
+              });
+            };
+            if (!ask.required) {
+              go();
+              return;
+            }
+            Alert.alert('Discard this workout?', ask.message, [
               { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Discard',
-                style: 'destructive',
-                onPress: () => {
-                  void services.workout.dispatch(target.session.id, { type: 'discard', at: services.now(), opId: newUuid(), expectedVersion: target.session.version }).then((r) => {
-                    setFinishFor(null);
-                    if (!r.ok) {
-                      setError(r.error.code === 'stale_version' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}`);
-                      reload();
-                      return;
-                    }
-                    changed();
-                    setToast({ text: 'Workout discarded' });
-                  });
-                },
-              },
+              { text: 'Discard', style: 'destructive', onPress: go },
             ]);
           }}
           onStale={reload}

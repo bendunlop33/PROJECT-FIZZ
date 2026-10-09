@@ -29,5 +29,6 @@ export * from './default-rule';
 export * from './next-target';
 export * from './gym-editor';
 export * from './session/repeat';
+export * from './session/discard';
 export * from './touches';
 export * from './import';
