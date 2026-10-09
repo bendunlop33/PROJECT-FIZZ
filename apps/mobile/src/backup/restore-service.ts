@@ -46,6 +46,8 @@ export type CheckFileResult =
 
 export type RestoreResult =
   | { ok: true; status: 'restored' | 'unchanged'; preview: RestorePreview }
+  /** The data changed since the preview (review S5): nothing was switched; `fresh` is the new full check to show and confirm again. */
+  | { ok: false; reason: 'stale'; fresh: CheckFileResult }
   | { ok: false; reason: 'workout_unfinished'; block: RestoreBlock }
   | { ok: false; reason: 'failed'; error: BackupError };
 
@@ -91,12 +93,17 @@ export function createRestoreService(deps: RestoreServiceDeps) {
     /** Step 2–3 of a restore: the same full check, so the preview says `Checked: complete, no damaged records`. */
     prepare: (text: string): Promise<CheckFileResult> => deps.manager.check(text).catch((e: unknown) => ({ ok: false as const, error: failed(e).error })),
 
-    async restore(text: string): Promise<RestoreResult> {
+    /**
+     * `previewStamp` is the `stamp` of the preview Ben confirmed. A restore
+     * never runs against data that changed since (review S5).
+     */
+    async restore(text: string, previewStamp: string): Promise<RestoreResult> {
       try {
         const b = await block();
         if (b) return { ok: false, reason: 'workout_unfinished', block: b };
         await quiesce();
-        const r = await deps.manager.restore(text, deps.now());
+        const r = await deps.manager.restore(text, deps.now(), { expectedStamp: previewStamp });
+        if (!r.ok && r.error.code === 'preview_stale') return { ok: false, reason: 'stale', fresh: await deps.manager.check(text) };
         if (!r.ok) return { ok: false, reason: 'failed', error: r.error };
         return { ok: true, status: r.status, preview: r.preview };
       } catch (e) {

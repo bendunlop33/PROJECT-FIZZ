@@ -329,6 +329,19 @@ describe('createBackup / restore', () => {
       await expectUntouched();
     });
 
+    it('refuses a restore whose preview no longer matches the data (review S5)', async () => {
+      const p = await target.preview(backupText);
+      if (!p.ok) throw new Error(p.error.message);
+      await target.store.repos.gyms.save(gym(51), null);
+      expect(await target.restore(backupText, at(4000), { expectedStamp: p.preview.stamp })).toMatchObject({ ok: false, error: { code: 'preview_stale' } });
+      expect(target.databaseNames).toEqual({ current: 'training-1.db', previous: null, orphan: null });
+      expect(files()).toEqual(['fizz-meta.db', 'training-1.db']);
+      const again = await target.preview(backupText);
+      if (!again.ok) throw new Error(again.error.message);
+      expect(again.preview.stamp).not.toBe(p.preview.stamp);
+      expect(await target.restore(backupText, at(4000), { expectedStamp: again.preview.stamp })).toMatchObject({ ok: true, status: 'restored' });
+    });
+
     it('rollback returns restore_failed, never a rejection, when the earlier file won’t open (review S3)', async () => {
       expect(await target.restore(backupText, at(4000))).toMatchObject({ ok: true, status: 'restored' });
       await target.close();

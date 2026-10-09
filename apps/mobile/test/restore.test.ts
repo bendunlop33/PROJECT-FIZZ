@@ -19,6 +19,13 @@ afterEach(async () => {
   await h.cleanup();
 });
 
+/** The stamp of a fresh preview: what Restore passes back after Ben confirms it. */
+async function stampFor(s: { restore: { prepare: (t: string) => Promise<{ ok: boolean; preview?: { stamp: string } }> } }, text: string): Promise<string> {
+  const p = await s.restore.prepare(text);
+  if (!p.ok || !p.preview) throw new Error('preview failed');
+  return p.preview.stamp;
+}
+
 const autoFiles = () => [...h.backupFiles.keys()].filter((n) => n.endsWith('-auto.json')).sort();
 
 describe('restore from a backup on this phone', () => {
@@ -48,7 +55,7 @@ describe('restore from a backup on this phone', () => {
     expect(view.confirm?.title).toBe('Replace your data on this phone?');
     expect(s.restore.rollbackTarget()).toEqual({ available: false, last: null });
 
-    const restored = await s.restore.restore(text);
+    const restored = await s.restore.restore(text, checked.preview.stamp);
     expect(restored).toMatchObject({ ok: true, status: 'restored' });
     // Services read the new database straight away; the app also relaunches.
     expect((await s.yourData.counts()).finishedWorkouts).toBe(1);
@@ -82,7 +89,7 @@ describe('restore from a backup on this phone', () => {
     expect(started.ok).toBe(true);
 
     expect(await s.restore.blockedBy()).toMatchObject({ title: 'Workout' });
-    expect(await s.restore.restore(text)).toMatchObject({ ok: false, reason: 'workout_unfinished' });
+    expect(await s.restore.restore(text, await stampFor(s, text))).toMatchObject({ ok: false, reason: 'workout_unfinished' });
     expect(await s.restore.undo()).toMatchObject({ ok: false, reason: 'workout_unfinished' });
     const names = s.developer.databaseNames();
     const checked = await s.restore.check(text);
@@ -103,7 +110,7 @@ describe('restore from a backup on this phone', () => {
     const text = await s.restore.readOnPhone(autoFiles()[0] ?? '');
     if (text === null) throw new Error('no backup');
     await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
-    expect(await s.restore.restore(text)).toMatchObject({ ok: true, status: 'restored' });
+    expect(await s.restore.restore(text, await stampFor(s, text))).toMatchObject({ ok: true, status: 'restored' });
     expect(h.pending.size).toBe(0);
 
     const bad = await s.restore.check('{"hello":"world"}');
@@ -122,7 +129,7 @@ describe('restore from a backup on this phone', () => {
     await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 62.5, reps: 8 }] }]);
 
     // 1–2. Restore A, then train a workout on the restored data.
-    expect(await s.restore.restore(text)).toMatchObject({ ok: true, status: 'restored' });
+    expect(await s.restore.restore(text, await stampFor(s, text))).toMatchObject({ ok: true, status: 'restored' });
     h.clockMs += 86_400_000;
     await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 65, reps: 5 }] }]);
     // 3. Undo by mistake.
@@ -162,7 +169,7 @@ describe('I/O errors during Restore and Undo (review S3)', () => {
       copiesOnPhone: () => Promise.resolve([]),
       backupsIdle: () => Promise.resolve(),
     });
-    for (const r of [await svc.restore('{}'), await svc.undo()]) {
+    for (const r of [await svc.restore('{}', 'stamp'), await svc.undo()]) {
       expect(r).toMatchObject({ ok: false, reason: 'failed', error: { code: 'restore_failed' } });
       if (!r.ok && r.reason === 'failed') expect(describeBackupError(r.error)).toBe('Restore didn’t finish: ENOSPC: no space left on device. Your data is as it was.');
     }
@@ -180,5 +187,38 @@ describe('I/O errors during Restore and Undo (review S3)', () => {
       backupsIdle: boom,
     });
     expect(await svc2.undo()).toMatchObject({ ok: false, reason: 'failed' });
+  });
+});
+
+describe('a stale restore preview (review S5)', () => {
+  it('is refused if a workout was logged after the preview; the rebuilt preview asks again', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    const text = await s.restore.readOnPhone(autoFiles()[0] ?? '');
+    if (text === null) throw new Error('no backup');
+    // The preview: nothing would be replaced, so there's no alert.
+    const first = await s.restore.prepare(text);
+    if (!first.ok) throw new Error(first.error.message);
+    const firstView = buildRestorePreviewView(first.preview, { nowMs: h.clockMs, tz: TZ, locale: 'en-GB' });
+    expect(firstView.confirm).toBeNull();
+
+    // Called away: a quick workout from Today, then back to Restore.
+    h.clockMs += 3_600_000;
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 62.5, reps: 5 }] }]);
+    const names = s.developer.databaseNames();
+    const r = await s.restore.restore(text, firstView.stamp);
+    expect(r).toMatchObject({ ok: false, reason: 'stale' });
+    // Nothing was switched; the workout is still here.
+    expect(s.developer.databaseNames()).toEqual(names);
+    expect((await s.yourData.counts()).finishedWorkouts).toBe(2);
+    if (r.ok || r.reason !== 'stale' || !r.fresh.ok) throw new Error('expected a fresh preview');
+    const fresh = buildRestorePreviewView(r.fresh.preview, { nowMs: h.clockMs, tz: TZ, locale: 'en-GB' });
+    expect(fresh.confirm?.title).toBe('Replace your data on this phone?');
+    expect(fresh.stamp).not.toBe(firstView.stamp);
+    expect(describeBackupError({ code: 'preview_stale', message: '' })).toBe('Your data changed since this preview, so nothing was restored. Check the updated preview and confirm again.');
+    // Confirming the rebuilt preview restores.
+    expect(await s.restore.restore(text, fresh.stamp)).toMatchObject({ ok: true, status: 'restored' });
+    expect((await s.yourData.counts()).finishedWorkouts).toBe(1);
   });
 });

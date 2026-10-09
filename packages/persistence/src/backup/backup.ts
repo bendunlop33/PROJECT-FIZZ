@@ -57,7 +57,9 @@ export type BackupErrorCode =
   | 'unexpected_columns'
   | 'restore_failed'
   | 'integrity_failed'
-  | 'nothing_to_roll_back';
+  | 'nothing_to_roll_back'
+  /** The data changed since the restore preview was made (review S5): nothing was switched. */
+  | 'preview_stale';
 
 export interface BackupError {
   code: BackupErrorCode;

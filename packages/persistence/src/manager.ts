@@ -257,12 +257,19 @@ export class DatabaseManager {
    * one meta transaction. The database that was current is kept for `rollback`.
    * Any failure before the switch leaves the current database untouched and
    * removes the half-built file.
+   *
+   * `expectedStamp` is the `stamp` of the preview Ben confirmed. If the data
+   * or the kept copy changed since, nothing is switched and the result is
+   * `preview_stale` (review S5): rule 5, never applied to newer state.
    */
-  restore(text: string, at: ZonedTimestamp): Promise<RestoreOutcome> {
+  restore(text: string, at: ZonedTimestamp, opts: { expectedStamp?: string } = {}): Promise<RestoreOutcome> {
     return this.exclusiveSafe(async (): Promise<RestoreOutcome> => {
       const previewed = await this.previewNow(text);
       if (!previewed.ok) return previewed;
       const { preview, file } = previewed;
+      if (opts.expectedStamp !== undefined && opts.expectedStamp !== preview.stamp) {
+        return { ok: false, error: { code: 'preview_stale', message: 'Your data changed since this preview. Nothing was changed.' } };
+      }
       if (preview.identical) return { ok: true, status: 'unchanged', preview, store: this.current };
 
       const name = this.options.newName();

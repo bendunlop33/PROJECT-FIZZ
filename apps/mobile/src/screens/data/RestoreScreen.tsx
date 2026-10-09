@@ -21,7 +21,8 @@ type Step =
   | { kind: 'checking'; label: string }
   | { kind: 'error'; label: string; text: string }
   | { kind: 'checked'; label: string; view: CheckResultView }
-  | { kind: 'preview'; label: string; text: string; view: RestorePreviewView }
+  /** `changed`: shown after a stale restore was refused and the preview rebuilt (review S5). */
+  | { kind: 'preview'; label: string; text: string; view: RestorePreviewView; changed?: string }
   | { kind: 'restoring'; view: RestorePreviewView }
   | { kind: 'done'; view: RestorePreviewView; counts: string }
   | { kind: 'undoing' };
@@ -104,7 +105,15 @@ export function RestoreScreen() {
   async function restore(text: string, view: RestorePreviewView) {
     setStep({ kind: 'restoring', view });
     // Any throw dismisses the cover with the "didn't finish" state (§3.3; review S3).
-    const r = await services.restore.restore(text).catch((e: unknown) => ({ ok: false as const, reason: 'failed' as const, error: { code: 'restore_failed' as const, message: e instanceof Error ? e.message : String(e) } }));
+    const r = await services.restore.restore(text, view.stamp).catch((e: unknown) => ({ ok: false as const, reason: 'failed' as const, error: { code: 'restore_failed' as const, message: e instanceof Error ? e.message : String(e) } }));
+    if (!r.ok && r.reason === 'stale') {
+      // Never applied to newer state: show the rebuilt preview; Restore (and its alert) must be confirmed again.
+      const fresh = r.fresh;
+      if (!fresh.ok) setStep({ kind: 'error', label: '', text: describeBackupError(fresh.error) });
+      else if (!fresh.restorable) setStep({ kind: 'error', label: '', text: describeBackupError({ code: 'integrity_failed', message: '', issues: fresh.issues }) });
+      else setStep({ kind: 'preview', label: '', text, view: buildRestorePreviewView(fresh.preview, ctx), changed: describeBackupError({ code: 'preview_stale', message: '' }) });
+      return;
+    }
     if (!r.ok) {
       setStep(
         r.reason === 'workout_unfinished'
@@ -206,6 +215,7 @@ export function RestoreScreen() {
             {view.app}
           </AppText>
         </View>
+        {step.kind === 'preview' && step.changed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={step.changed} /> : null}
         <StatusLine icon="checkmark.circle.fill" tone="done" text="Checked: complete, no damaged records" />
         {view.identical ? (
           <AppText variant="body">This backup matches your data on this phone. Nothing to restore.</AppText>

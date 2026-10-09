@@ -32,6 +32,8 @@ export interface RestorePreviewView {
   /** The confirm alert before a restore that replaces something; null = the primary is the confirmation. */
   confirm: { title: string; message: string } | null;
   identical: boolean;
+  /** The state this preview describes; Restore passes it back so a stale preview is never applied (review S5). */
+  stamp: string;
 }
 
 export interface WhenContext {
@@ -85,6 +87,7 @@ export function buildRestorePreviewView(p: RestorePreview, ctx: WhenContext): Re
     notes,
     confirm,
     identical: p.identical,
+    stamp: p.stamp,
   };
 }
 
@@ -152,6 +155,8 @@ export function describeBackupError(e: BackupError): string {
       return 'This backup doesn’t match any Fizz database layout, so it wasn’t read. Nothing was changed.';
     case 'integrity_failed':
       return `This backup has ${plural(e.issues?.length ?? 1, 'damaged record', 'damaged records')}, so it can’t be restored. Nothing was changed.`;
+    case 'preview_stale':
+      return 'Your data changed since this preview, so nothing was restored. Check the updated preview and confirm again.';
     case 'nothing_to_roll_back':
       return 'There’s no earlier data to go back to.';
     case 'restore_failed':
