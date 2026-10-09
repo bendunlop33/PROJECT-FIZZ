@@ -29,6 +29,7 @@ and modular services so expansion stays possible, but don't build it.
 
 - React Native + Expo **SDK 57** (pinned, see ADR 0001) + TypeScript, iOS target; Expo Go is not a release test
 - One custom Swift Expo module owns the iOS audio session (TTS, ducking, interruptions)
+- Exercise guides play with `@shopify/react-native-skia` + `react-native-reanimated` + `react-native-worklets` (approved by Ben 9 Oct 2026, ADR 0013)
 - Local SQLite is the authoritative record; in-process services, no HTTP layer
 - Monorepo, created only as needed:
   - `apps/mobile` — screens, audio, permissions, notifications
