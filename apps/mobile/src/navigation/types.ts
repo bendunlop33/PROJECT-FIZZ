@@ -6,6 +6,8 @@ export type ProfileStackParams = {
   AppStatus: undefined;
   Developer: undefined;
   CapabilityProbe: undefined;
+  /** Spike S1 (Developer). */
+  ChatGptSignInTest: undefined;
 };
 
 export type TabParams = {

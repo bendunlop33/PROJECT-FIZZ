@@ -12,6 +12,7 @@ import { AddGymScreen } from '../screens/AddGymScreen';
 import { CapabilityProbeScreen } from '../screens/CapabilityProbeScreen';
 import { DataBackupScreen } from '../screens/data/DataBackupScreen';
 import { AppStatusScreen } from '../screens/profile/AppStatusScreen';
+import { ChatGptSignInTestScreen } from '../screens/profile/ChatGptSignInTestScreen';
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ProgressScreen } from '../screens/ProgressScreen';
@@ -61,6 +62,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="AppStatus" component={AppStatusScreen} options={{ title: 'App status' }} />
       <ProfileStack.Screen name="Developer" component={DeveloperScreen} options={{ title: 'Developer' }} />
       <ProfileStack.Screen name="CapabilityProbe" component={ProbeRoute} options={{ headerShown: false }} />
+      <ProfileStack.Screen name="ChatGptSignInTest" component={ChatGptSignInTestScreen} options={{ title: 'ChatGPT sign-in test' }} />
     </ProfileStack.Navigator>
   );
 }
