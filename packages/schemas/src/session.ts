@@ -115,6 +115,8 @@ export const TargetBasisSetSchema = z.object({
   setType: SetTypeSchema,
   side: SetSideSchema.nullable(),
   values: SetValuesSchema,
+  /** Ben's exclusion flags on the set then (§2.13): listed under `Not used` in `Why?`. */
+  exclusions: SetExclusionsSchema.optional(),
 });
 export type TargetBasisSet = z.infer<typeof TargetBasisSetSchema>;
 
