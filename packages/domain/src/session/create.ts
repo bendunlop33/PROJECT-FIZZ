@@ -21,7 +21,17 @@ import { resolveRestPreset } from '../rest';
 import { buildExecutionOrder } from './order';
 
 export type StartWarning =
-  | { kind: 'equipment_not_in_gym'; routineExerciseId: string; equipmentId: string }
+  | {
+      kind: 'equipment_not_in_gym';
+      routineExerciseId: string;
+      equipmentId: string;
+      /**
+       * This gym's available item of the same kind used instead (targets are
+       * snapped and capped to it, the same rule as Repeat), or null when this
+       * gym has none and the load targets are dropped.
+       */
+      substituteId: string | null;
+    }
   | { kind: 'exercise_missing'; routineExerciseId: string; exerciseId: string }
   | {
       /** The planned load differs from the template (rounded, bounded, or converted to the equipment's unit). */
@@ -102,6 +112,16 @@ export function planTemplateLoad(
   };
 }
 
+/**
+ * This gym's first available item of the same kind as the routine's named
+ * item, compatible with the exercise: the same fallback Repeat uses
+ * (`pickEquipment` in repeat.ts), so Start and Repeat agree.
+ */
+function sameKindAtGym(named: EquipmentInstance, gym: readonly EquipmentInstance[], exercise: Pick<Exercise, 'compatibleEquipment'>): EquipmentInstance | null {
+  if (!exercise.compatibleEquipment.includes(named.kind)) return null;
+  return gym.find((e) => e.availability === 'available' && e.kind === named.kind && e.id !== named.id) ?? null;
+}
+
 export interface StartWorkoutInput {
   opId: string;
   owner: UserProfile;
@@ -111,6 +131,13 @@ export interface StartWorkoutInput {
   exercises: ReadonlyMap<string, Exercise>;
   /** Confirmed equipment of the selected gym, snapshotted into the session. */
   gymEquipment: readonly EquipmentInstance[];
+  /**
+   * The equipment records the routine names (from any gym), so an item this gym
+   * doesn't have can fall back to this gym's equipment of the same kind
+   * (routines.md §2.2 "Targets will be capped"). Omitted or missing = no
+   * fallback; that exercise's load targets are dropped.
+   */
+  routineEquipment?: ReadonlyMap<string, EquipmentInstance>;
   at: ZonedTimestamp;
   /** Injected ID generator (UUIDs in the app; deterministic in tests). */
   newId: () => string;
@@ -132,9 +159,11 @@ export interface StartWorkoutOutput {
  * normalised to the session exercise's unit and convention by
  * `planTemplateLoad` (rounded toward easier, never above the max); every
  * change is reported so the original template target stays visible.
- * Missing equipment does not block logging; it is reported as a warning, and
- * that exercise's load targets are dropped (reps kept): a load is never
- * planned without equipment to check it on (rule 4; competitor-failure pack (g)).
+ * Missing equipment does not block logging; it is reported as a warning. If
+ * this gym has an available item of the same kind (`routineEquipment` gives the
+ * kind), targets are snapped and capped to it; otherwise that exercise's load
+ * targets are dropped (reps kept): a load is never planned without equipment
+ * to check it on (rule 4; competitor-failure pack (g)).
  */
 export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
   const sessionId = input.newId();
@@ -155,9 +184,10 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
     if (rex.equipmentId !== null) {
       equipment = equipmentById.get(rex.equipmentId) ?? null;
       if (!equipment || equipment.availability === 'retired') {
-        equipment = null;
-        equipmentMissing = true;
-        warnings.push({ kind: 'equipment_not_in_gym', routineExerciseId: rex.id, equipmentId: rex.equipmentId });
+        const named = equipment ?? input.routineEquipment?.get(rex.equipmentId) ?? null;
+        equipment = named === null ? null : sameKindAtGym(named, input.gymEquipment, exercise);
+        equipmentMissing = equipment === null;
+        warnings.push({ kind: 'equipment_not_in_gym', routineExerciseId: rex.id, equipmentId: rex.equipmentId, substituteId: equipment?.id ?? null });
       }
     }
     const sessionExerciseId = input.newId();

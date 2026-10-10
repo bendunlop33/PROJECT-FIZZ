@@ -7,6 +7,8 @@ import {
   buildAddExerciseCommand,
   buildTodayView,
   calculateNextTargets,
+  createMemoryRepositories,
+  createSessionService,
   discardConfirmation,
   formatLoad,
   getAchievableLoads,
@@ -781,6 +783,42 @@ describe('(g) Repeat at a gym without the equipment never keeps an impossible lo
     expect(park.warnings).toContainEqual({ kind: 'target_dropped', setTemplateId: id(15300), requested: kg(102.5), reason: 'equipment_not_in_gym' });
     // Machine numbers too: no stack target without the stack.
     expect(park.warnings).toContainEqual({ kind: 'target_dropped', setTemplateId: id(15302), requested: kg(45, 'stack'), reason: 'equipment_not_in_gym' });
+  });
+
+  it('starting a routine at a gym with the same kind of equipment caps its targets there (routines.md §2.2; review failure-tests M1)', () => {
+    const r = routine(plan.map(([ex, eq, load], i) => routineExercise(1540 + i, { exerciseId: ex.id, equipmentId: eq.id, order: i, setTemplates: [template(15400 + i, { targetLoad: load })] })));
+    const named = new Map(MAIN_GYM.map((e) => [e.id, e]));
+    for (const g of GYMS) {
+      const out = startWorkout({ opId: `start-kind-${g.name}`, owner: profile(), gymId: GYM, routine: r, exercises: catalogue, gymEquipment: g.equipment, routineEquipment: named, at: at(0), newId: idGen(154_000) });
+      expectNoImpossibleLoad(out.aggregate, `Start (same-kind fallback) at a ${g.name}`);
+      expect(out.aggregate.sets.every((x) => x.planned.reps !== null)).toBe(true);
+    }
+    const hotel = startWorkout({ opId: 'start-hotel', owner: profile(), gymId: GYM, routine: r, exercises: catalogue, gymEquipment: [dumbbells({ id: id(1521), loads: [4, 8, 12, 16, 20] })], routineEquipment: named, at: at(0), newId: idGen(155_000) });
+    const press = hotel.aggregate.exercises.find((e) => e.exerciseId === EX.press.id);
+    expect(press?.equipmentId).toBe(id(1521));
+    const pressSet = hotel.aggregate.sets.find((x) => x.sessionExerciseId === press?.id);
+    // 27.5 kg each is capped to the hotel's heaviest pair, not dropped.
+    expect(pressSet?.planned.load).toEqual(kg(20, 'per_hand'));
+    expect(hotel.warnings).toContainEqual({ kind: 'equipment_not_in_gym', routineExerciseId: id(1541), equipmentId: dumbbells().id, substituteId: id(1521) });
+    expect(hotel.warnings).toContainEqual(expect.objectContaining({ kind: 'target_rounded', setTemplateId: id(15401), planned: kg(20, 'per_hand'), bounded: 'max' }));
+    // No same-kind item at the hotel: the bench target is still dropped, never kept unchecked.
+    expect(hotel.warnings).toContainEqual({ kind: 'equipment_not_in_gym', routineExerciseId: id(1540), equipmentId: barbell().id, substituteId: null });
+    expect(hotel.warnings).toContainEqual({ kind: 'target_dropped', setTemplateId: id(15400), requested: kg(102.5), reason: 'equipment_not_in_gym' });
+  });
+
+  it('the session service looks up the routine’s named equipment, so Start caps at the hotel through the app path too', async () => {
+    const repos = createMemoryRepositories();
+    await repos.profiles.save(profile(), null);
+    await repos.exercises.save(EX.press, null);
+    await repos.equipment.save(dumbbells({ gymId: id(1599) }), null);
+    await repos.equipment.save(dumbbells({ id: id(1521), loads: [4, 8, 12, 16, 20] }), null);
+    const r = routine([routineExercise(1550, { exerciseId: EX.press.id, equipmentId: dumbbells().id, order: 0, setTemplates: [template(15500, { targetLoad: kg(27.5, 'per_hand') })] })]);
+    await repos.routines.save(r, null);
+    const svc = createSessionService(repos, idGen(156_000));
+    const out = await svc.start({ ownerId: OWNER, gymId: GYM, routineId: r.id, opId: 'svc-hotel', at: at(0) });
+    if (!out.ok) throw new Error(out.error.message);
+    expect(out.aggregate.exercises[0]?.equipmentId).toBe(id(1521));
+    expect(out.aggregate.sets[0]?.planned.load).toEqual(kg(20, 'per_hand'));
   });
 
   it.todo(
