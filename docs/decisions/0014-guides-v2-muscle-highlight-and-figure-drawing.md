@@ -40,9 +40,26 @@ Measured in Node 22 with `--jitless` (the closest proxy for Hermes we have off d
 | | ms per frame (figure + path text) | per guide, mean / max | path text per frame |
 |---|---|---|---|
 | Before (`9b18f8f`) | 22.8 + 8.9 = 31.7 | 2.59 s / 3.18 s (leg press) | 76.7 KB |
-| After | 10.5 + 3.7 = 14.2 | 1.16 s / 1.41 s (RDL) | 45.3 KB, and fewer distinct paths to parse |
+| After | 10.5 + 3.7 = 14.2 | 1.16 s / 1.41 s (one run; see the repeat runs below) | 45.3 KB, and fewer distinct paths to parse |
 
 What changed, all with byte-identical SVG previews except the whole-number app path text: path data memoised per contour array (a limb's halo and fill share it) and built without temporary vectors; profile slopes once per profile; per-segment memo of `frameAt`/`widthsAt`; exact bounding-box rejects in the arm-edge depth test, the fold/shading occluder tests and `polygonsWithin`; app path text in whole 1/10 000 units under one `scale` (integers print ~3× faster than decimals); one parsed `SkPath` per distinct text, kept across adjacent frames (static props parse once); frames inside a hold reuse the hold's picture. The player now starts on the baked prefix when the measured bake rate says it will stay ahead of playback (`canPlayPrefix`), so the still poster no longer lasts the whole bake.
 
-Still open: Skia's own parse and record time is not in these numbers, and the proxy is not Hermes. G14 (full bake ≤ 1.5 s) needs the number from Ben's iPhone before it is called met.
+**Repeat runs (fix review S1).** One run was not enough: this machine varies by up to ±25 % between runs. `apps/mobile/scripts/guide-bake-bench.ts` (bundle with rolldown, run with `node --jitless`; dev tooling, not in `npm run check`) times every guide with held frames reused, as the player does. Two 5-run sets, per-guide maximum over all 10 runs and the median of the first set:
+
+| Guide | Frames (baked) | Median | Max of 10 runs |
+|---|---|---|---|
+| cable-lat-pulldown | 87 (79) | 1.50 s | 1.75 s |
+| dumbbell-bulgarian-split-squat | 84 (79) | 1.43 s | 1.78 s |
+| barbell-back-squat | 84 (79) | 1.29 s | 1.68 s |
+| barbell-overhead-press | 87 (79) | 1.16 s | 1.56 s |
+| barbell-romanian-deadlift | 90 (85) | 1.20 s | 1.54 s |
+| machine-leg-press | 84 (79) | 1.35 s | 1.51 s |
+| barbell-bench-press | 78 (74) | 1.17 s | 1.43 s |
+| dumbbell-one-arm-row | 81 (73) | 1.07 s | 1.28 s |
+| cable-triceps-pushdown | 78 (70) | 1.11 s | 1.31 s |
+| sled-push | 63 (63) | 0.83 s | 1.01 s |
+
+So **G14 (full bake ≤ 1.5 s) is not met on the proxy**: the slowest guides sit at or over the budget before Skia's parse and record time, at 13–22 ms per frame. The **pulldown** (about 90 draw ops a frame, the heaviest) is the guide to time on Ben's iPhone, and the device run must also time `Skia.Path.MakeFromSVGString` and `createPicture`. Each frame task still overruns the 8 ms slice about 2×. B2 stays open until the device number exists.
+
+**Prefix playback rule (fix review B1; implemented, not yet in the design spec).** A frame is usable only once it is handed to the player, not when it is baked: hand-overs happen at most every 200 ms (`PREFIX_PUBLISH_MS`), at the end of a slice, and need a React render (a 100 ms allowance, `PREFIX_RENDER_MS`, unmeasured on device). Playback starts on a prefix only when, at the measured rate with a 0.75 margin, every later frame reaches the player before the clock shows it, latency included (`canPlayPrefix`); at 15 ms a frame that is about 14 frames (~0.2 s of baking). Once started, every longer prefix is handed over at the throttle without re-checking the rate (`createPrefixPublisher`). If a device is slower than measured mid-bake, the player holds the last baked frame until the next hand-over. A test drives the bake slices, the hand-over throttle, the render delay and the clock together and finds no late frame at 10–25 ms a frame. The design spec (§8, G14) should state this rule and, given it, could measure time to first motion and stall-free playback rather than the full bake; that, and which bake budget stands (G14's 1.5 s or ADR 0017 V6's 2.5 s full / 1.0 s first frame), is for Ben and the designer.
 
