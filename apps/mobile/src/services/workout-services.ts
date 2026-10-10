@@ -3,6 +3,7 @@ import {
   applyCheckInPatch,
   buildActiveSetView,
   buildLiftHighlight,
+  buildPainFlagSheet,
   buildTodayView,
   buildWorkoutSummary,
   defaultStartingPlan,
@@ -19,9 +20,16 @@ import {
   lastComparableSession,
   localDateOf,
   localWeekBounds,
+  mayHurtAccessibility,
+  mayHurtConfirm,
   newCheckIn,
   newPainFlag,
   nextTargetsFor,
+  painFlagCovering,
+  painKeptText,
+  painProfessionalNudge,
+  recordPainFlagReview,
+  undoPainFlagReview,
   plannedSetsFromTargets,
   repeatPreviewLines,
   targetSummaryLines,
@@ -55,6 +63,7 @@ import {
   type CommandOutcome,
   type DraftEdits,
   type HistorySession,
+  type PainFlagSheetView,
   type PreviousSession,
   type RecentCheckIn,
   type StartOutcome,
@@ -134,7 +143,30 @@ export interface PickerExercise {
   exercise: Exercise;
   /** Compatible equipment at this workout's gym. Empty = none needed (bodyweight) or none there (loads not checked). */
   equipment: Pick<EquipmentInstance, 'id' | 'name' | 'kind'>[];
+  /**
+   * `⚠ May hurt` (exercise-library EL9, active-workout §2.14.1): an active
+   * pain flag covers this exercise (never a similar movement, CM5). The row
+   * is never hidden; tapping it asks `confirm` before anything is added.
+   */
+  mayHurt: { flagId: string; accessibilityLabel: string; confirm: ReturnType<typeof mayHurtConfirm> } | null;
 }
+
+/** `Still hurts` (active-workout §2.14.2): versioned and idempotent. Never clears a flag. */
+export type PainReviewWrite =
+  | {
+      ok: true;
+      flag: PainFlag;
+      /** The answer's operation, for Undo. */
+      reviewOpId: string;
+      /** `Pain flag kept · next check 3 Nov`. */
+      kept: string;
+      /** From the second `Still hurts` in a row: the physio-or-doctor line. */
+      nudge: string | null;
+      duplicate: boolean;
+    }
+  | { ok: false; reason: 'not_found' | 'not_active' | 'not_due' | 'stale' | 'failed'; message: string };
+
+export type PainClearWrite = { ok: true; cleared: { id: string; version: number } | null } | { ok: false; stale: boolean; message: string };
 
 export interface RepeatCandidate {
   sessionId: string;
@@ -174,6 +206,8 @@ export interface ActiveWorkoutData {
   gymName: string | null;
   previous: Record<string, PreviousSession | null>;
   painFlagged: Set<string>;
+  /** Active pain flags: the note's `check due` and the rest card's `Still hurts?` (§2.14.2). */
+  painFlags: PainFlag[];
   effortScale: UserProfile['effortScale'];
   checkIn: CheckIn | null;
   /** `Push`, from the exercises, for a workout without a name (audit F5). */
@@ -392,6 +426,117 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async active(): Promise<PainFlag[]> {
       const p = await ctx.profile();
       return p ? repos().painFlags.listActive(p.id) : [];
+    },
+
+    get: (flagId: string): Promise<PainFlag | null> => repos().painFlags.get(flagId),
+
+    /**
+     * `recordPainFlagReview(flagId, 'still_hurts', opId)`: keeps the flag and
+     * moves the next check 14 days on. A retry with the same opId is a
+     * duplicate; an answer against a flag that changed since the screen read
+     * it is refused (stale), never applied to newer state.
+     */
+    async stillHurts(req: { flagId: string; opId: string; expectedVersion: number }): Promise<PainReviewWrite> {
+      const failed = { ok: false as const, reason: 'failed' as const, message: 'Your answer wasn’t saved. Try again.' };
+      try {
+        const at = ctx.now();
+        const nowMs = toMs(at.utc);
+        const done = (flag: PainFlag, duplicate: boolean): PainReviewWrite => ({ ok: true, flag, reviewOpId: req.opId, kept: painKeptText(flag), nudge: painProfessionalNudge(flag, nowMs, at.tz), duplicate });
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const f = await repos().painFlags.get(req.flagId);
+          if (!f) return { ok: false, reason: 'not_found', message: 'That pain flag wasn’t found.' };
+          const r = recordPainFlagReview(f, 'still_hurts', req.opId, at);
+          if (r.kind === 'duplicate') return done(r.flag, true);
+          if (r.kind === 'not_active') return { ok: false, reason: 'not_active', message: `The pain flag on ${f.exerciseName} was cleared.` };
+          if (r.kind === 'not_due') return { ok: false, reason: 'not_due', message: 'Already answered. Showing the latest.' };
+          if (f.version !== req.expectedVersion) return { ok: false, reason: 'stale', message: 'This pain flag changed. Showing the latest.' };
+          const saved = await repos().painFlags.save(r.flag, f.version);
+          if (saved.ok) return done(r.flag, false);
+          // Lost a race: the re-read either finds our own answer (duplicate) or a newer flag (stale).
+        }
+        return { ok: false, reason: 'stale', message: 'This pain flag changed. Showing the latest.' };
+      } catch {
+        return failed;
+      }
+    },
+
+    /** Undo on `Pain flag kept · next check …`: the check is due again exactly as before. */
+    async undoStillHurts(req: { flagId: string; reviewOpId: string; undoOpId: string }): Promise<boolean> {
+      try {
+        const f = await repos().painFlags.get(req.flagId);
+        if (!f) return false;
+        const r = undoPainFlagReview(f, req.reviewOpId, req.undoOpId, ctx.now());
+        if (r.kind === 'duplicate') return true;
+        if (r.kind !== 'undone') return false;
+        return (await repos().painFlags.save(r.flag, f.version)).ok;
+      } catch {
+        return false;
+      }
+    },
+
+    /**
+     * `Clear flag` in the confirmation (§2.14.3): the only way a flag is
+     * cleared. Versioned: a flag changed since the sheet read it isn't
+     * cleared. Clearing a flag that is already cleared is a no-op (a retry).
+     * Nothing else is touched: history, records and the reference stay.
+     */
+    async clearConfirmed(req: { flagId: string; expectedVersion: number }): Promise<PainClearWrite> {
+      try {
+        const f = await repos().painFlags.get(req.flagId);
+        if (!f) return { ok: false, stale: false, message: 'That pain flag wasn’t found.' };
+        if (f.status === 'cleared') return { ok: true, cleared: null };
+        if (f.version !== req.expectedVersion) return { ok: false, stale: true, message: 'This pain flag changed. Showing the latest.' };
+        const next = clearPainFlag(f, ctx.now());
+        const r = await repos().painFlags.save(next, f.version);
+        if (!r.ok) return { ok: false, stale: true, message: 'This pain flag changed. Showing the latest.' };
+        return { ok: true, cleared: { id: next.id, version: next.version } };
+      } catch {
+        return { ok: false, stale: false, message: 'The pain flag wasn’t cleared. Try again.' };
+      }
+    },
+
+    /**
+     * The pain flag sheet (§2.14.4). With a workout exercise, `Before` and
+     * `Since` use its equipment; otherwise the latest workout of the
+     * exercise decides. The workout in progress is never part of history.
+     */
+    async sheet(req: { flagId: string; sessionId?: string | null; sessionExerciseId?: string | null }): Promise<PainFlagSheetView | null> {
+      try {
+        const p = await ctx.profile();
+        const flag = await repos().painFlags.get(req.flagId);
+        if (!p || !flag || flag.ownerId !== p.id) return null;
+        const [exercise, aggregate, history] = await Promise.all([
+          repos().exercises.get(flag.exerciseId),
+          req.sessionId ? repos().sessions.get(req.sessionId).catch(() => null) : Promise.resolve(null),
+          historyFor(p.id, flag.exerciseId).catch(() => [] as HistorySession[]),
+        ]);
+        const ex =
+          aggregate?.exercises.find((e) => e.id === req.sessionExerciseId && e.exerciseId === flag.exerciseId) ??
+          aggregate?.exercises.find((e) => e.exerciseId === flag.exerciseId) ??
+          null;
+        const at = ctx.now();
+        return buildPainFlagSheet({
+          flag,
+          history: history.filter((h) => h.sessionId !== aggregate?.session.id),
+          nowMs: toMs(at.utc),
+          tz: aggregate?.session.startedAt.tz ?? at.tz,
+          exercise: {
+            measurement: ex?.measurement ?? exercise?.measurement ?? 'reps',
+            defaultLoadConvention: ex?.loadConvention ?? exercise?.defaultLoadConvention ?? 'total',
+          },
+          anchor:
+            ex === null || aggregate === null
+              ? null
+              : {
+                  equipmentId: ex.equipmentId,
+                  unit: ex.unit,
+                  loadConvention: ex.loadConvention,
+                  equipment: ex.equipmentId === null ? null : (aggregate.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null),
+                },
+        });
+      } catch {
+        return null;
+      }
     },
   };
 
@@ -701,6 +846,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         gymName: gym?.name ?? null,
         previous,
         painFlagged: new Set(flags.map((f) => f.exerciseId)),
+        painFlags: flags,
         effortScale: p.effortScale,
         checkIn: ci,
         title,
@@ -709,7 +855,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
     /** `buildActiveSetView` over loaded data plus the screen's unsaved edits. */
     view(data: ActiveWorkoutData, nowMs: number, edits: DraftEdits | null): ActiveSetView {
-      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, previous: data.previous, painFlagged: data.painFlagged, edits, title: data.title });
+      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title });
     },
 
     dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => ctx.afterCommand(await domain().dispatch(sessionId, command)),
@@ -749,11 +895,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const extra = opts.withCatalogue && ctx.catalogueExercises ? ctx.catalogueExercises().filter((e) => !have.has(e.id)) : [];
       const all = [...saved, ...extra];
       const snapshot = aggregate?.session.equipmentSnapshot ?? [];
+      // A flag that can't be read never hides or blocks a row: it just isn't tagged.
+      const flags = p ? await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]) : [];
+      const at = ctx.now();
+      const nowMs = toMs(at.utc);
       // Bodyweight exercises never need (or get) a gym item: there's no load to check.
-      return searchExercises(all, query).map((exercise) => ({
-        exercise,
-        equipment: equipmentForExercise(exercise, snapshot).map((e) => ({ id: e.id, name: e.name, kind: e.kind })),
-      }));
+      return searchExercises(all, query).map((exercise) => {
+        const covering = painFlagCovering(flags, exercise.id, nowMs, at.tz);
+        return {
+          exercise,
+          equipment: equipmentForExercise(exercise, snapshot).map((e) => ({ id: e.id, name: e.name, kind: e.kind })),
+          mayHurt: covering ? { flagId: covering.flag.id, accessibilityLabel: mayHurtAccessibility(covering.flag), confirm: mayHurtConfirm({ ...covering.flag, exerciseName: exercise.name }) } : null,
+        };
+      });
     },
 
     /** Recently done exercises first (pain step `Recent`, picker). */
@@ -1090,11 +1244,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const at = ctx.now();
       const nowMs = toMs(at.utc);
       const week = localWeekBounds(nowMs, at.tz);
-      const [active, finished, recent] = await Promise.all([
+      const [active, finished, recent, painFlags] = await Promise.all([
         repos().sessions.getActive(p.id),
         // An unreadable workout this week is left out rather than blocking Today (review S1).
         repos().sessions.listFinishedBetweenReadable(p.id, toIso(week.startMs), toIso(week.endMs)).then((r) => r.sessions),
         recentCheckIns(p.id, nowMs),
+        // Region 4b is rare and optional: a flag read failure never blocks Today.
+        repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]),
       ]);
       // Names for workouts without one (`Push`), from their exercises (audit F5).
       const titles: Record<string, string> = {};
@@ -1110,6 +1266,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         localDateOf: (utc) => localDateOf(toMs(utc), at.tz),
         recentCheckIns: recent.map((r) => ({ ...r, score: r.checkIn.score, reasons: r.checkIn.reasons })),
         weekDates: Array.from({ length: 7 }, (_, i) => addDays(week.mondayLocalDate, i)),
+        painFlags,
+        tz: at.tz,
       });
     },
 
