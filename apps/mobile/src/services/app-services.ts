@@ -229,11 +229,14 @@ export function createAppServices(deps: AppServicesDeps) {
     async useTypicalGym(): Promise<SetupWriteResult & { gymId?: string }> {
       const profile = await getProfile();
       if (!profile) return { ok: false, message: 'Your profile wasn’t found. Start setup again.' };
-      const existing = (await repos().gyms.listByOwner(profile.id)).filter((g) => g.archivedAtUtc === undefined);
+      const all = await repos().gyms.listByOwner(profile.id);
+      const existing = all.filter((g) => g.archivedAtUtc === undefined);
       const current = existing.find((g) => g.isDefault) ?? existing[0];
       if (current) return { ok: true, gymId: current.id };
       const draft = buildPresetDraft('commercial', profile.preferredUnit);
-      const gymId = deriveId(`typical-gym:${profile.id}`);
+      // A new ID per archived gym, so an archived typical gym is never reused (review S5). Still one per double tap.
+      const archived = all.length - existing.length;
+      const gymId = deriveId(archived === 0 ? `typical-gym:${profile.id}` : `typical-gym:${profile.id}:${String(archived)}`);
       const result = materialiseGymDraft(
         { ...draft, items: draft.items.map((i) => ({ ...i, ticked: true })) },
         { name: 'Main gym', ownerId: profile.id, gymId, isDefault: true, atUtc: deps.now().utc, newId: deps.newId },
@@ -241,7 +244,10 @@ export function createAppServices(deps: AppServicesDeps) {
       if (!result.ok) return { ok: false, message: result.issues[0]?.message ?? WRITE_FAILED };
       try {
         const saved = await repos().gyms.createWithEquipment(result.gym, result.equipment);
-        if (!saved.ok && !(await repos().gyms.get(gymId))) return { ok: false, message: WRITE_FAILED };
+        if (!saved.ok) {
+          const there = await repos().gyms.get(gymId);
+          if (!there || there.archivedAtUtc !== undefined) return { ok: false, message: WRITE_FAILED };
+        }
       } catch {
         return { ok: false, message: WRITE_FAILED };
       }
