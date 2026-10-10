@@ -364,5 +364,9 @@ describe('Set exclusions (sets that don\'t count, active-workout §2.13)', () =>
     expect(validate(SessionCommandSchema, { ...correct, patch: { exclusions: ['form'] } }).ok).toBe(false);
     const log = { type: 'log_set', at, opId: 'l', setId: id(5), restTimerId: id(8), values, exclusions: ['technique'] };
     expect(validate(SessionCommandSchema, log).ok).toBe(true);
+    // `pain` only through the correction service, which also flags the movement (AW7, review N3).
+    expect(validate(SessionCommandSchema, { ...log, exclusions: ['pain'] }).ok).toBe(false);
+    expect(validate(SessionCommandSchema, { ...log, exclusions: ['spotted', 'pain'] }).ok).toBe(false);
+    expect(validate(SessionCommandSchema, { ...correct, patch: { exclusions: ['pain'] } }).ok).toBe(true);
   });
 });

@@ -33,10 +33,11 @@ export const LogSetCommandSchema = z.object({
   side: SetSideSchema.optional(),
   /**
    * Log and mark in one go ("100 for 8, spotted", §2.13). Omit or empty = the
-   * set counts. `pain` doesn't set the movement's pain flag here; the service
-   * does that (AW7).
+   * set counts. `pain` is refused here (review N3): a Pain mark must also
+   * flag the movement (AW7, rule 9), which only the correction service does
+   * today. Voice logging adds its own service wrapper before allowing it.
    */
-  exclusions: SetExclusionsSchema.optional(),
+  exclusions: SetExclusionsSchema.refine((xs) => !xs.includes('pain'), { message: 'Mark pain through the correction sheet, which also flags the movement' }).optional(),
   /** ID for the rest timer this commit may start (generated with the draft). */
   restTimerId: IdSchema,
 });
