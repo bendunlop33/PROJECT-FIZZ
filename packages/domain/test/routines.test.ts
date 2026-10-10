@@ -217,6 +217,28 @@ describe('planRoutineStart (start a routine with next-session targets)', () => {
     expect(targetSummaryLines(s).map((l) => plain(l.line))).toEqual(['Target 105 kg × 6–8 · 2 sets', 'Target 50 kg stack × 10–12 · 1 set']);
   });
 
+  it('Why?: a rule target keeps the rule’s provenance (never `Your routine`), with any fit said against the target (review B1.1)', () => {
+    const ruleWhy = { source: 'rule' as const, setAt: at(86_000), routineName: null, requestedLoad: null, basis: null, rule: { name: 'Built-in', decision: 'increase_load' as const, summary: 'Increase to 105 kg for 6–8 reps.', facts: [] }, guardNotes: [] };
+    const withWhy = plan(105, [6, 8]).map((p) => ({ ...p, planned: { ...p.planned, provenance: ruleWhy } }));
+    const out = planRoutineStart({ ...base, gymEquipment: [barbell(), stack()], targets: new Map([[BENCH, withWhy]]) });
+    const bench = setsFor(out.aggregate, BENCH);
+    expect(bench.filter((x) => x.setType !== 'warmup').map((x) => x.planned.provenance)).toEqual([ruleWhy, ruleWhy]);
+    // The routine's own warm-up and rows keep the routine as their source.
+    expect(bench[0]?.planned.provenance?.source).toBe('plan');
+    expect(setsFor(out.aggregate, ROW)[0]?.planned.provenance?.source).toBe('plan');
+
+    // At a lighter gym the rule's 105 kg is capped, and Why? says so against the target.
+    const lighter = barbell({ plates: [{ mass: 20, count: 2 }] });
+    const capped = planRoutineStart({ ...base, opId: 'rs-light', gymEquipment: [lighter, stack()], targets: new Map([[BENCH, withWhy]]) });
+    const set = setsFor(capped.aggregate, BENCH).find((x) => x.setType !== 'warmup');
+    expect(set?.planned.provenance?.source).toBe('rule');
+    expect(set?.planned.provenance?.guardNotes.map(plain)).toEqual(['Capped at 60 kg: the most this bar makes. Target was 105 kg.']);
+
+    // A rule target stored without provenance reads Not recorded, never the routine's words.
+    const bare = planRoutineStart({ ...base, opId: 'rs-bare', gymEquipment: [barbell(), stack()], targets: new Map([[BENCH, plan(105, [6, 8])]]) });
+    expect(setsFor(bare.aggregate, BENCH).filter((x) => x.setType !== 'warmup').map((x) => x.planned.provenance)).toEqual([undefined, undefined]);
+  });
+
   it('an exercise in two slots keeps each slot’s own templates, never the first slot’s targets twice (review S7)', () => {
     const benchSlots = pushA.exercises.filter((e) => e.exerciseId === BENCH);
     const first = benchSlots[0];
