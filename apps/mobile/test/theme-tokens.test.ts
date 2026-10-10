@@ -46,7 +46,7 @@ const GUIDE_ALIASES = new Set([...Object.keys(GUIDE_PAINT_TOKENS), 'shade', 'mus
  * - `color.guide.definition`: guides v2.1 muscle definition (design-system
  *   §2.3, exercise-guides-v2 §4.11), "specified, not built"; Ben picks the mode (B8).
  */
-const SPECIFIED_NOT_BUILT = new Set<string>(['color.guide.definition']);
+const SPECIFIED_NOT_BUILT = new Set<string>([]);
 
 const directions: ThemeDirection[] = Object.values(THEME_DIRECTIONS);
 
