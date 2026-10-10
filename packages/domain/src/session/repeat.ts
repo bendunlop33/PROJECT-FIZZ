@@ -88,7 +88,9 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   // Targets are per exercise: an exercise done in two slots repeats each slot's own numbers (review S7).
   const slots = new Map<string, number>();
   for (const sx of sorted) slots.set(sx.exerciseId, (slots.get(sx.exerciseId) ?? 0) + 1);
-  const targetsFor = (exerciseId: string) => ((slots.get(exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(exerciseId));  // What each template came from: the done set it copies, or the built-in rule's planned set (Start next session),
+  const targetsFor = (exerciseId: string) => ((slots.get(exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(exerciseId));
+
+  // What each template came from: the done set it copies, or the built-in rule's planned set (Start next session),
   // its equipment here, and why its load was dropped (if it was).
   const copied = new Map<string, { from: { kind: 'copy'; set: WorkoutSet } | { kind: 'rule'; planned: PlannedSet }; equipmentId: string | null; eq: EquipmentInstance | null; dropNote: string | null }>();
 

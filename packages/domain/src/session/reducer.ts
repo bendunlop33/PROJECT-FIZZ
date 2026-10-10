@@ -1240,7 +1240,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
     case 'set_rest_after':
       return handleSetRestAfter(state, command);
     case 'rename_session':
-      return handleRenameSession(state, command);    case 'set_finish_by':
+      return handleRenameSession(state, command);
+    case 'set_finish_by':
       return handleSetFinishBy(state, command, nowMs);
     case 'tick':
       return { ok: true, state, events: [] };
