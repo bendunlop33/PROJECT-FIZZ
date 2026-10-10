@@ -2,18 +2,18 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 
-import { formatDuration, formatMinutes, reasonsText, scoreText, toMs, type TodayMain, type WeekDay } from '@fizz/domain';
+import { formatDuration, formatMinutes, reasonsText, scoreText, sparklinePoints, toMs, type LiftHighlight, type TodayMain, type WeekDay } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import { nowMs as clockNow } from '../clock';
 import { newUuid } from '../device/runtime';
-import { formatLongDate, formatShortDate, formatTime } from '../format/dates';
+import { formatDayMonth, formatLongDate, formatShortDate, formatTime } from '../format/dates';
 import type { TabParams } from '../navigation/types';
 import { firstTime, useDataChanged, useLaunchInfo, useScreenData, useServices } from '../shell/context';
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { TIMING, useTheme } from '../theme';
-import { AppText, LinkLine, PrimaryButton, SecondaryButton, StatusLine, TextButton, Toast } from '../ui';
+import { AppText, Eyebrow, HeroHeader, LinkLine, PrimaryButton, RuledSection, SecondaryButton, Sparkline, StatusLine, TextButton, Toast } from '../ui';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
@@ -58,7 +58,9 @@ export function TodayScreen() {
     ]);
     // Never blocks Today or Start (review S1): an unreadable past workout only hides the card.
     const next = gym ? await s.next.preview(gym.id).catch(() => null) : null;
-    return { gym, view, banners, active, unlinked, next };
+    // Decorative history; never blocks Today either.
+    const lift = await s.today.liftHighlight().catch(() => null);
+    return { gym, view, banners, active, unlinked, next, lift };
   });
 
   useEffect(() => {
@@ -180,7 +182,7 @@ export function TodayScreen() {
       </View>
     );
   }
-  const { gym, view, banners, active, unlinked, next } = data.value;
+  const { gym, view, banners, active, unlinked, next, lift } = data.value;
   const zoned = services.now();
   const main = view?.main ?? { kind: 'no_plan' as const };
 
@@ -352,15 +354,14 @@ export function TodayScreen() {
 
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
 
-        <View style={{ borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], paddingTop: theme.space['4'], gap: theme.space['3'] }}>
-          <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
-            This week
-          </AppText>
+        <RuledSection title="This week">
           {view && view.week.days.length === 7 ? <WeekStrip days={view.week.days} /> : null}
           <AppText variant="callout" color="text.secondary" numeric>
             {view?.week.text ?? 'No workouts logged yet this week.'}
           </AppText>
-        </View>
+        </RuledSection>
+
+        {lift && main.kind !== 'resume' && main.kind !== 'stale' ? <LiftCard lift={lift} /> : null}
       </ScrollView>
       {toast ? <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
       {finishFor ? (
@@ -417,25 +418,38 @@ export function TodayScreen() {
 /** D-Today's hero: tracked label, a 40pt title, quiet lines, then the actions. */
 function Hero({ label, title, lines, children }: { label: string; title: string; lines: readonly (string | null)[]; children: ReactNode }) {
   const theme = useTheme();
-  const size = theme.components.heroTitleSize;
   return (
-    <View style={{ gap: theme.space['5'] }}>
-      <View style={{ gap: theme.space['2'] }}>
-        <AppText variant="sectionLabel" color="text.tertiary">
-          {label}
-        </AppText>
-        <AppText variant="title1" accessibilityRole="header" numberOfLines={2} style={{ fontSize: size, lineHeight: Math.round(size * 1.15), letterSpacing: size >= 40 ? -0.8 : 0 }}>
-          {title}
-        </AppText>
-        {lines
-          .filter((l): l is string => l !== null && l !== '')
-          .map((l) => (
-            <AppText key={l} variant="callout" color="text.secondary" numeric>
-              {l}
-            </AppText>
-          ))}
+    <View style={{ gap: theme.space['6'] }}>
+      <HeroHeader eyebrow={label} title={title} lines={lines} />
+      <View style={{ gap: theme.space['4'] }}>{children}</View>
+    </View>
+  );
+}
+
+/** D-Today's lift: `BENCH PRESS`, `100 kg × 8  6 Oct · up from 97.5`, a trend line. Logged sets only (rule 6). */
+function LiftCard({ lift }: { lift: LiftHighlight }) {
+  const theme = useTheme();
+  const when = formatDayMonth(toMs(lift.performedAtUtc), lift.tz);
+  const detail = [when, lift.change].filter(Boolean).join(' · ');
+  return (
+    <View style={{ gap: theme.space['2'] }}>
+      <View accessible accessibilityLabel={`${lift.exerciseName}, last top set ${lift.text}, ${detail}`} style={{ gap: theme.space['2'] }}>
+        <Eyebrow>{lift.exerciseName}</Eyebrow>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', columnGap: theme.space['3'] }}>
+          <AppText variant="title1" numeric style={{ fontSize: 28, lineHeight: 34, fontWeight: '500' }}>
+            {lift.text}
+          </AppText>
+          <AppText variant="callout" color="text.secondary" numeric>
+            {detail}
+          </AppText>
+        </View>
       </View>
-      {children}
+      {lift.points.length >= 2 ? (
+        <Sparkline
+          points={(w) => sparklinePoints(lift.points, w, 40)}
+          height={40}
+        />
+      ) : null}
     </View>
   );
 }
