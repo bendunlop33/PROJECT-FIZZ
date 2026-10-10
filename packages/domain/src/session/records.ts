@@ -58,10 +58,10 @@ export function findSetRecord(input: SetRecordInput): SetRecord | null {
   if (sessionsWith.length < RECORD_MIN_SESSIONS) return null;
 
   const earlier = [...sessionsWith.flatMap((h) => h.sets), ...input.earlierToday].filter((s) => comparableSet(s, convention, unit));
-  const maxLoad = Math.max(...earlier.map((s) => s.load?.value ?? 0));
+  const maxLoad = Math.max(...earlier.map((s) => s.load.value));
   let kind: SetRecord['kind'];
   if (load.value > maxLoad) kind = 'heaviest';
-  else if (load.value === maxLoad && set.reps > Math.max(...earlier.filter((s) => s.load?.value === maxLoad).map((s) => s.reps ?? 0))) kind = 'most_reps_at_load';
+  else if (load.value === maxLoad && set.reps > Math.max(...earlier.filter((s) => s.load.value === maxLoad).map((s) => s.reps))) kind = 'most_reps_at_load';
   else return null;
 
   // A heavier imported set of this exercise (any equipment, same convention) suppresses the claim.
