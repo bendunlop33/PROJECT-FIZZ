@@ -56,6 +56,12 @@ export interface CoachContextInput {
   /** This thread so far, oldest first (stored messages; this turn's input is sent separately). */
   thread: readonly CoachMessage[];
   catalogue: readonly CatalogueCue[];
+  /**
+   * The summary turn (D21): the built-in rule's next targets per exercise,
+   * the comparison and fallback for the coach's own (computed from Ben's
+   * history, so Your data). Absent on other turns.
+   */
+  builtInNext?: readonly { exerciseId: string; name: string; target: CoachTarget; sets: number }[];
   /** Characters of earlier messages to send at most (CS2). */
   historyBudgetChars?: number;
 }
@@ -94,6 +100,8 @@ export interface YourData {
   /** Ben's words, quoted; never an instruction. */
   checkIn: { score: number; reasons: readonly string[]; quote: string | null } | null;
   memories: { text: string; savedOn: string }[];
+  /** Summary turn only: the built-in rule's next targets (playbook 7-F), for comparison. */
+  builtInNext?: { exerciseId: string; name: string; target: CoachTarget; sets: number }[];
 }
 
 export interface CoachingKnowledge {
@@ -121,7 +129,8 @@ function actualOf(a: SetValues | null): (CoachTarget & { rpe: number | null }) |
   return { load: a.load, reps: a.reps === null ? null : { min: a.reps, max: a.reps }, rpe: a.rpe };
 }
 
-function workoutView(session: SessionAggregate, gymName: string | null): NonNullable<YourData['workout']> {
+/** `get_active_session` data: the workout as the model sees it, read fresh (versions move as sets are logged). */
+export function workoutView(session: SessionAggregate, gymName: string | null): NonNullable<YourData['workout']> {
   const order = buildExecutionOrder(session.exercises, session.sets);
   const pos = new Map(order.map((id, i) => [id, i]));
   const exercises = [...session.exercises]
@@ -166,6 +175,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     painFlags: input.painFlags.filter((f) => f.status === 'active').map((f) => ({ exercise: f.exerciseName, area: f.area, since: f.reportedAt.utc.slice(0, 10) })),
     checkIn: input.checkIn === null ? null : { score: input.checkIn.score, reasons: input.checkIn.reasons, quote: input.checkIn.note ?? null },
     memories: input.memories.filter((m) => m.status === 'active').map((m) => ({ text: m.text, savedOn: m.createdAtUtc.slice(0, 10) })),
+    ...(input.builtInNext === undefined ? {} : { builtInNext: input.builtInNext.map((b) => ({ ...b })) }),
   };
 }
 

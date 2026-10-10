@@ -1,4 +1,4 @@
-import { deriveId, validateTodayAdjustment, type AdjustIntent, type ExerciseAdjustmentPlan, type MessagePain } from '@fizz/domain';
+import { deriveId, validateNextSessionTargets, validateTodayAdjustment, type AdjustIntent, type ExerciseAdjustmentPlan, type MessagePain, type NextSessionBasis } from '@fizz/domain';
 import type {
   ActionDetail,
   ActionRecord,
@@ -11,12 +11,14 @@ import type {
   ExerciseTargetChanges,
   GuardNote,
   Memory,
+  NextSessionTargetRecord,
   PainArea,
   PainFlag,
   SessionAggregate,
   ZonedTimestamp,
 } from '@fizz/schemas';
 import { isChangeClaim } from './claims';
+import { workoutView } from './context';
 import { renderActionResult } from './render';
 import { appendContentKeys } from './tool-call';
 
@@ -356,4 +358,154 @@ export async function undoCoachAction(store: UndoStore, input: { ownerId: string
   const result = await store.undo(input.ownerId, record);
   if (result.status === 'not_possible') return { undo: { ...record, status: 'rejected', failure: UNDO_FAILURE[result.reason] }, result };
   return { undo: result.undo, result };
+}
+
+// ---------------------------------------------------------------------------
+// Today's sets through the store (C7): the reducer command and the record in one transaction
+
+/** `TodayTargetsPort` over the coach store's `session_command` write (one SQLite transaction). */
+export function storeTodayTargets(store: Pick<CoachWriteStore, 'commit'>): TodayTargetsPort {
+  return {
+    async apply(input) {
+      const changes = input.plan.flatMap((e) => e.changes.filter((c) => c.before !== null && c.after !== null).map((c) => ({ setId: c.setId, target: c.after ?? { load: null, reps: null } })));
+      const command = {
+        type: 'adjust_pending_targets' as const,
+        at: input.record.createdAt,
+        opId: input.opId,
+        expectedVersion: input.expectedVersion,
+        actionId: input.record.actionId,
+        changes,
+        removeSetIds: input.plan.flatMap((e) => (e.removed === null ? [] : [e.removed.setId])),
+        addSets: input.plan.flatMap((e) => (e.added === null ? [] : [{ newSetId: e.added.setId, copyFromSetId: e.added.copyFromSetId, target: e.added.after }])),
+      };
+      const r = await store.commit(input.ownerId, { kind: 'session_command', action: input.record, sessionId: input.sessionId, command });
+      if (r.status === 'conflict') return { status: 'stale' };
+      return { status: r.status, record: r.action };
+    },
+  };
+}
+
+/** `get_active_session`: the workout read fresh, with set IDs and the version a change must name. */
+export function createSessionReadExecutor(deps: { loadSession(): Promise<SessionAggregate | null>; gymName: string | null }): ToolExecutor {
+  return async (call) => {
+    if (call.tool !== 'get_active_session') throw new TypeError(call.tool);
+    const s = await deps.loadSession();
+    return { kind: 'read', data: s === null ? { workout: null } : { workout: workoutView(s, deps.gymName) } };
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Next-session targets (C8, D21)
+
+export interface NextTargetsDeps {
+  store: CoachWriteStore;
+  /** The finished workout this summary turn is about; the only source the tool may name. */
+  source: SessionAggregate;
+  /** `nextSessionBases` with the built-in rule's plan. */
+  bases: readonly NextSessionBasis[];
+  painFlags(): Promise<readonly PainFlag[]>;
+  gymName: string | null;
+  /** `Push A`, or the workout's title. */
+  workoutLabel: string;
+  /** Ben asked for more sets or volume in this conversation (D1). */
+  benAskedForMoreSets: boolean;
+}
+
+/** One row per source workout and exercise, so a later answer replaces it rather than adding a second. */
+export const nextTargetRowId = (sourceSessionId: string, exerciseId: string): string => deriveId(`next-target:${sourceSessionId}:${exerciseId}`);
+
+/**
+ * `set_next_session_targets`: validated (snap, cap, pain), classified (CA8),
+ * then the small rows saved and the bigger ones kept as proposals, with one
+ * record, in one transaction. A workout started from this source since, or
+ * an edit to it, makes the answer stale (CA10, rule 5).
+ */
+export function createNextTargetsExecutor(deps: NextTargetsDeps): ToolExecutor {
+  return async (call, ctx) => {
+    if (call.tool !== 'set_next_session_targets') throw new TypeError(call.tool);
+    const a = call.args;
+    const label = deps.workoutLabel;
+    const refuse = async (status: 'stale' | 'rejected', failure: string | null, guardNotes: GuardNote[] = []): Promise<ToolResult> => {
+      const detail: ActionDetail = { kind: 'set_next_session_targets', sourceSessionId: deps.source.session.id, workoutLabel: label, rows: [] };
+      const r = await deps.store.commit(ctx.ownerId, { kind: 'record', action: newActionRecord(ctx, detail, { status, failure, guardNotes }) });
+      if (r.status === 'conflict') throw new Error('Could not record the refused next targets');
+      return { kind: 'action', record: r.action, replayed: r.status === 'replayed' };
+    };
+    if (a.sourceSessionId !== deps.source.session.id) return refuse('rejected', 'it named a different workout');
+    if (a.sourceVersion !== deps.source.session.version) return refuse('stale', null);
+    const v = validateNextSessionTargets({ source: deps.source, bases: deps.bases, targets: a.targets, painFlags: await deps.painFlags(), gymName: deps.gymName, ctx: { benAskedForMoreSets: deps.benAskedForMoreSets } });
+    const notes = [...v.rows.flatMap((r) => r.guardNotes.map((n) => ({ ...n, text: `${r.exerciseName}: ${n.text}` }))), ...v.dropped];
+    if (v.rows.length === 0) return refuse('rejected', v.dropped[0]?.text.replace(/\.$/, '').slice(0, 200) ?? 'no change from the built-in rule', notes);
+    const lastSets = (exerciseId: string): number | null => deps.bases.find((b) => b.exercise.exerciseId === exerciseId)?.lastSets ?? null;
+    const detail: ActionDetail = {
+      kind: 'set_next_session_targets',
+      sourceSessionId: deps.source.session.id,
+      workoutLabel: label,
+      rows: v.rows.map((r) => ({
+        exerciseId: r.exerciseId,
+        exerciseName: r.exerciseName,
+        before: r.builtIn,
+        after: r.after,
+        setsBefore: r.builtInSets ?? lastSets(r.exerciseId),
+        setsAfter: r.sets,
+        size: r.size,
+      })),
+    };
+    const anySmall = v.rows.some((r) => r.size === 'small');
+    const reason = v.rows.map((r) => r.reason).find((x) => !isChangeClaim(x)) ?? null;
+    const record = newActionRecord(ctx, detail, {
+      status: anySmall ? 'committed' : 'proposed',
+      reason,
+      guardNotes: notes,
+      entityVersions: [{ entity: 'session', id: deps.source.session.id, before: deps.source.session.version, after: deps.source.session.version }],
+    });
+    const rows: NextSessionTargetRecord[] = v.rows.map((r) => ({
+      id: nextTargetRowId(deps.source.session.id, r.exerciseId),
+      ownerId: ctx.ownerId,
+      version: 1,
+      createdAtUtc: ctx.now.utc,
+      updatedAtUtc: ctx.now.utc,
+      sourceSessionId: deps.source.session.id,
+      sourceVersion: deps.source.session.version,
+      exerciseId: r.exerciseId,
+      exerciseName: r.exerciseName,
+      actionId: record.actionId,
+      target: r.after,
+      sets: r.sets,
+      builtIn: r.builtIn,
+      builtInSets: r.builtInSets,
+      size: r.size,
+      status: r.size === 'small' ? 'saved' : 'proposed',
+      reason: isChangeClaim(r.reason) ? null : r.reason.slice(0, 240),
+      guardNotes: r.guardNotes,
+      pctChange: r.pctChange,
+      usedBySessionId: null,
+    }));
+    const w = await deps.store.commit(ctx.ownerId, { kind: 'next_session_targets', action: record, rows, sourceVersion: deps.source.session.version });
+    if (w.status === 'conflict') return refuse(w.reason === 'stale_version' ? 'stale' : 'rejected', w.reason === 'stale_version' ? null : 'the workout wasn’t found', notes);
+    return { kind: 'action', record: w.action, replayed: w.status === 'replayed' };
+  };
+}
+
+export type NextTargetTap = 'undo' | 'use_coach' | 'apply' | 'not_now';
+
+/**
+ * The record of Ben's tap on a `Next time` row (his own action, author
+ * `ben`): Undo is an undo of the coach's target for that exercise; `Use
+ * coach target` and `Apply` save the coach's target as his choice.
+ */
+export function nextTargetTapRecord(row: NextSessionTargetRecord, tap: NextTargetTap, input: { opId: string; now: ZonedTimestamp }): { status: NextSessionTargetRecord['status']; record: ActionRecord } {
+  const ctx = { turnId: '', opId: input.opId, now: input.now };
+  const label = row.exerciseName;
+  if (tap === 'undo' || tap === 'not_now') {
+    const detail: ActionDetail = { kind: 'undo', undoneActionId: row.actionId, what: `the coach's ${label} target for next time`, restored: [], alreadyLogged: [] };
+    return { status: tap === 'undo' ? (row.status === 'applied' ? 'proposed' : 'undone') : 'not_applied', record: { ...newActionRecord(ctx, detail, { author: 'ben' }), turnId: null } };
+  }
+  const detail: ActionDetail = {
+    kind: 'set_next_session_targets',
+    sourceSessionId: row.sourceSessionId,
+    workoutLabel: label,
+    rows: [{ exerciseId: row.exerciseId, exerciseName: row.exerciseName, before: row.builtIn, after: row.target, setsBefore: row.builtInSets, setsAfter: row.sets, size: 'small' }],
+  };
+  return { status: tap === 'apply' ? 'applied' : 'saved', record: { ...newActionRecord(ctx, detail, { author: 'ben' }), turnId: null } };
 }
