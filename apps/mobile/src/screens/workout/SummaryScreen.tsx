@@ -4,7 +4,10 @@ import { Alert, Modal, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toIso, toMs, type NextTimeRow, type WorkoutSummary } from '@fizz/domain';
+import { readTextCoachState } from '@fizz/providers';
 
+import { coachConnectionPorts } from '../../ai/coach-connection-ports';
+import { summaryCoachView } from '../../ai/coach-connection-view';
 import { nowMs as clockNow } from '../../clock';
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
@@ -21,7 +24,8 @@ import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
  * Workout summary (workout-summary.md). Shown only after `finishWorkout`
  * committed. Facts first; `Next time` from the built-in rule, tagged with
  * its source; the check-in exactly as Ben gave it; the on-phone backup line.
- * No AI in this build: the coach note says so honestly.
+ * The coach has no summary turn in this build (ADR 0018 C8): the tag and the
+ * note follow the real connection state and never claim a coach review.
  */
 export function SummaryScreen() {
   const theme = useTheme();
@@ -43,8 +47,10 @@ export function SummaryScreen() {
     };
   }, [toast]);
   const [data, reload] = useScreenData(async (s) => {
-    const [summary, backup, painFlags] = await Promise.all([s.workout.summary(sessionId), s.backups.getStatus(), s.pain.active()]);
-    return { summary, backup, painFlags };
+    // Keychain + settings file only, no network; a read failure counts as not connected.
+    const coach = summaryCoachView(await readTextCoachState(coachConnectionPorts().ports).catch(() => null));
+    const [summary, backup, painFlags] = await Promise.all([s.workout.summary(sessionId, coach.coach), s.backups.getStatus(), s.pain.active()]);
+    return { summary, backup, painFlags, coachNote: coach.note };
   });
 
   const done = () => {
@@ -75,7 +81,7 @@ export function SummaryScreen() {
       </View>
     );
   }
-  const { summary: sum, backup, painFlags } = data.value;
+  const { summary: sum, backup, painFlags, coachNote } = data.value;
   const flaggedHere = painFlags.filter((f) => sum.exercises.some((e) => e.exerciseId === f.exerciseId));
   const tz = sum.tz;
   const range = `${formatTime(toMs(sum.startedAtUtc), tz)}–${sum.endedAtUtc ? formatTime(toMs(sum.endedAtUtc), tz) : ''}`;
@@ -280,7 +286,7 @@ export function SummaryScreen() {
         <View style={{ gap: theme.space['1'] }}>
           <SectionHeader title="Coach note" />
           <AppText variant="callout" color="text.secondary">
-            Coach not connected. Your workout is saved; a note can be added later.
+            {coachNote}
           </AppText>
         </View>
 

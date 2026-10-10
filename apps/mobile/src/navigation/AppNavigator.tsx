@@ -29,6 +29,7 @@ import { ImportRunScreen } from '../screens/import/ImportRunScreen';
 import { PastImportsScreen } from '../screens/import/PastImportsScreen';
 import { AppStatusScreen } from '../screens/profile/AppStatusScreen';
 import { ChatGptSignInTestScreen } from '../screens/profile/ChatGptSignInTestScreen';
+import { CoachConnectionScreen } from '../screens/profile/CoachConnectionScreen';
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
@@ -114,6 +115,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="DataBackup" component={DataBackupScreen} options={{ title: 'Data & backup' }} />
       <ProfileStack.Screen name="AppStatus" component={AppStatusScreen} options={{ title: 'App status' }} />
       <ProfileStack.Screen name="PainFlags" component={PainFlagsScreen} options={{ title: 'Pain flags' }} />
+      <ProfileStack.Screen name="CoachConnection" component={CoachConnectionScreen} options={{ title: 'Coach connection' }} />
       <ProfileStack.Screen name="GymDetail" component={GymDetailScreen} options={{ title: 'Gym' }} />
       <ProfileStack.Screen name="EquipmentEditor" component={EquipmentEditorScreen} options={{ title: 'Equipment' }} />
       <ProfileStack.Screen
