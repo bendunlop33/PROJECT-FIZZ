@@ -176,9 +176,14 @@ function rulesFor(eq: EquipmentInstance | null, convention: LoadConvention, unit
 }
 
 describe('(b) no target below the empty bar, between dumbbell or stack steps, or at 0, for every equipment kind', () => {
-  it('next targets (built-in rule): every decision, every rule, from loads on, between, below and above the steps', () => {
-    let checked = 0;
-    for (const eq of EQUIPMENT) {
+  // One test per equipment item with its own timeout: the whole matrix is
+  // >5,000 loads and ran past Vitest's 5 s default on a loaded machine
+  // (review failure-tests B1). Tests in a file run in order, so the total is
+  // checked after every item has run.
+  let checked = 0;
+  it.each(EQUIPMENT.map((eq) => [eq.name, eq] as const))(
+    'next targets (built-in rule) on %s: every decision, every rule, from loads on, between, below and above the steps',
+    (_name, eq) => {
       const { unit } = eq;
       const convention = eq.loadConvention;
       for (const v of probeValues(eq)) {
@@ -201,8 +206,11 @@ describe('(b) no target below the empty bar, between dumbbell or stack steps, or
           }
         }
       }
-    }
-    // The matrix really produced loads to check (not just "no load target" everywhere).
+    },
+    30_000,
+  );
+
+  it('the next-targets matrix really produced loads to check (not just "no load target" everywhere)', () => {
     expect(checked).toBeGreaterThan(5_000);
   });
 
