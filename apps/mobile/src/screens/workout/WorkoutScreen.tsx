@@ -275,11 +275,11 @@ export function WorkoutScreen() {
           text: t.text,
           action: 'Undo',
           onAction: () => {
-            // One more versioned correction; a pain flag the same save set is cleared with it.
+            // One more versioned correction; a pain flag the same save set is retracted with it (review B2).
             void services.workout.undoMark({ ...t.undo, opId: `undo:${t.key}` }).then((r) => {
               changed();
               void reload();
-              showToast({ icon: 'info.circle', text: r.ok ? 'Undone' : (r.message ?? 'Undo wasn’t saved. Try again.') });
+              showToast({ icon: 'info.circle', text: r.message ?? (r.ok ? 'Undone' : 'Undo wasn’t saved. Try again.') });
             });
           },
         });
