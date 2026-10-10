@@ -63,7 +63,7 @@ function AvoidList({ items }: { items: readonly string[] }) {
   );
 }
 
-/** The app is in the foreground ('inactive', e.g. the app switcher, counts as not: it may be ended from there). */
+/** The app is in the foreground. The app switcher state counts as not: the app may be ended from there. */
 function useAppIsActive(): boolean {
   const [active, setActive] = useState(AppState.currentState === 'active');
   useEffect(() => {
