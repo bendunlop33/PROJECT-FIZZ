@@ -317,9 +317,21 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
       }
       const after: CoachTarget = { load, reps };
       if (increaseBlock !== null && isIncrease(before, after, ex.loadConvention)) {
-        notes.add(increaseBlock.kind, increaseBlock.text, setIds);
-        blockedOutcomes.push(increaseBlock.outcome);
-        return null;
+        // Keep the part that isn't an increase (review S1): "100 × 6–8 → 95 × 8" under a pain flag keeps the
+        // lighter load and the planned reps, rather than losing the lighter load too.
+        const loadOnly: CoachTarget = { load, reps: before?.reps ?? null };
+        const repsOnly: CoachTarget = { load: before?.load ?? null, reps };
+        const keepLoad = !sameTarget(before, loadOnly) && !isIncrease(before, loadOnly, ex.loadConvention);
+        const keepReps = !sameTarget(before, repsOnly) && !isIncrease(before, repsOnly, ex.loadConvention);
+        if (!keepLoad && !keepReps) {
+          notes.add(increaseBlock.kind, increaseBlock.text, setIds);
+          blockedOutcomes.push(increaseBlock.outcome);
+          return null;
+        }
+        const partial: CoachTarget = { load: keepLoad ? load : (before?.load ?? null), reps: keepReps ? reps : (before?.reps ?? null) };
+        notes.add(increaseBlock.kind, `${increaseBlock.text} ${keepLoad ? 'Reps stay as planned.' : 'Load stays as planned.'}`, setIds);
+        if (keepLoad) for (const n of pending) notes.add(n.kind, n.text, setIds);
+        return partial;
       }
       if (!sameTarget(before, after)) for (const n of pending) notes.add(n.kind, n.text, setIds);
       return after;

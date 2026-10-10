@@ -396,6 +396,31 @@ describe('validateTodayAdjustment: completed sets, versions, pain (rules 2, 5, 9
     expect(r.guardNotes).toContainEqual({ kind: 'pain_blocked', setIds: [setId(1, 3)], text: 'Not increasing Bench press: you flagged pain on it.' });
   });
 
+  it('pain flag: load down with reps up keeps the lighter load and the planned reps (review S1)', () => {
+    const r = applied(
+      validateTodayAdjustment(
+        input([adj(exId(1), { sets: [{ setId: setId(1, 2), target: { load: kg(95), reps: { min: 8, max: 8 } } }] })], {
+          intent: 'too_hard',
+          painFlags: [painFlag(1, 'Bench press', 'shoulder')],
+        }),
+      ),
+    );
+    expect(r.exercises[0]?.changes).toEqual([{ setId: setId(1, 2), setNumber: 3, before: { load: kg(100), reps: { min: 6, max: 8 } }, after: { load: kg(95), reps: { min: 6, max: 8 } } }]);
+    expect(r.guardNotes).toContainEqual({ kind: 'pain_blocked', setIds: [setId(1, 2)], text: 'Not increasing Bench press: you flagged shoulder pain. Reps stay as planned.' });
+  });
+
+  it('pain flag: load up with reps down keeps only the lower reps', () => {
+    const r = applied(
+      validateTodayAdjustment(
+        input([adj(exId(1), { sets: [{ setId: setId(1, 2), target: { load: kg(102.5), reps: { min: 5, max: 6 } } }] })], {
+          painFlags: [painFlag(1, 'Bench press', 'shoulder')],
+        }),
+      ),
+    );
+    expect(r.exercises[0]?.changes[0]?.after).toEqual({ load: kg(100), reps: { min: 5, max: 6 } });
+    expect(r.guardNotes.map((n) => n.text)).toContain('Not increasing Bench press: you flagged shoulder pain. Load stays as planned.');
+  });
+
   it("a cleared flag doesn't block", () => {
     const flag = { ...painFlag(1, 'Bench press'), status: 'cleared' as const };
     const r = validateTodayAdjustment(input([adj(exId(1), { sets: [{ setId: setId(1, 2), target: { load: kg(102.5), reps: null } }] })], { intent: 'too_easy', painFlags: [flag] }));
