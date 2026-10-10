@@ -19,14 +19,14 @@ export interface BundledGuideFile {
 }
 
 export const BUNDLED_GUIDE_FILES: readonly BundledGuideFile[] = [
-  { key: 'barbell-back-squat', raw: g0, camera: { cx: -0.003887, cy: 0.494294, size: 1.108587 } },
+  { key: 'barbell-back-squat', raw: g0, camera: { cx: -0.005257, cy: 0.489297, size: 1.098593 } },
   { key: 'barbell-bench-press', raw: g1, camera: { cx: 0, cy: 0.39425, size: 1.02 } },
   { key: 'barbell-overhead-press', raw: g2, camera: { cx: 0.030736, cy: 0.6485, size: 1.417 } },
-  { key: 'barbell-romanian-deadlift', raw: g3, camera: { cx: 0.089016, cy: 0.49555, size: 1.1111 } },
+  { key: 'barbell-romanian-deadlift', raw: g3, camera: { cx: 0.084484, cy: 0.49055, size: 1.1011 } },
   { key: 'cable-lat-pulldown', raw: g4, camera: { cx: 0, cy: 0.573, size: 1.294 } },
   { key: 'cable-triceps-pushdown', raw: g5, camera: { cx: 0.144831, cy: 0.58, size: 1.28 } },
-  { key: 'dumbbell-bulgarian-split-squat', raw: g6, camera: { cx: -0.297926, cy: 0.476435, size: 1.100871 } },
-  { key: 'dumbbell-one-arm-row', raw: g7, camera: { cx: -0.064427, cy: 0.336316, size: 0.910585 } },
+  { key: 'dumbbell-bulgarian-split-squat', raw: g6, camera: { cx: -0.284771, cy: 0.469298, size: 1.086595 } },
+  { key: 'dumbbell-one-arm-row', raw: g7, camera: { cx: -0.069196, cy: 0.334813, size: 0.901047 } },
   { key: 'machine-leg-press', raw: g8, camera: { cx: 0.137589, cy: 0.526954, size: 1.242639 } },
-  { key: 'sled-push', raw: g9, camera: { cx: 0.32883, cy: 0.396343, size: 1.49014 } },
+  { key: 'sled-push', raw: g9, camera: { cx: 0.334907, cy: 0.392807, size: 1.477987 } },
 ];
