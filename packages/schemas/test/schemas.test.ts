@@ -12,6 +12,7 @@ import {
   RpeSchema,
   SessionCommandSchema,
   SetTemplateSchema,
+  WorkoutSetSchema,
   ZonedTimestampSchema,
   validate,
 } from '../src/index';
@@ -312,5 +313,56 @@ describe('PainFlag reviews (Still hurts?, active-workout §2.14.2)', () => {
   it('needs an operation ID and a zoned time on every review', () => {
     expect(validate(PainFlagSchema, { ...flag, reviews: [{ at, answer: 'still_hurts' }] }).ok).toBe(false);
     expect(validate(PainFlagSchema, { ...flag, reviews: [{ ...review, at: { utc: T } }] }).ok).toBe(false);
+  });
+});
+
+describe('Set exclusions (sets that don\'t count, active-workout §2.13)', () => {
+  const values = { load: { value: 100, unit: 'kg', convention: 'total' }, reps: 8, durationS: null, rpe: 9, rir: null };
+  const done = {
+    id: id(5),
+    sessionId: id(6),
+    sessionExerciseId: id(7),
+    index: 0,
+    setType: 'working',
+    status: 'completed',
+    side: null,
+    pairedWithSetId: null,
+    planned: { load: null, reps: null, durationS: null, rpe: null, rir: null },
+    rest: { seconds: 120, source: 'global_default', sourceLabel: 'Default' },
+    actual: values,
+    draft: null,
+    completedAt: at,
+    completedByOpId: 'log-1',
+    undoCount: 0,
+    flags: [],
+    edited: false,
+    version: 2,
+  };
+
+  it('reads a set saved before exclusions existed (no field): it counts', () => {
+    const r = validate(WorkoutSetSchema, done);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.exclusions).toBeUndefined();
+  });
+
+  it('accepts the four reasons, each at most once', () => {
+    expect(validate(WorkoutSetSchema, { ...done, exclusions: ['spotted', 'pain', 'technique', 'other_equipment'] }).ok).toBe(true);
+    expect(validate(WorkoutSetSchema, { ...done, exclusions: ['spotted', 'spotted'] }).ok).toBe(false);
+    expect(validate(WorkoutSetSchema, { ...done, exclusions: ['assisted'] }).ok).toBe(false);
+  });
+
+  it('only a logged set can carry exclusions', () => {
+    const pending = { ...done, status: 'pending', actual: null, completedAt: null, completedByOpId: null };
+    expect(validate(WorkoutSetSchema, { ...pending, exclusions: [] }).ok).toBe(true);
+    expect(validate(WorkoutSetSchema, { ...pending, exclusions: ['spotted'] }).ok).toBe(false);
+  });
+
+  it('correct_set and log_set take an exclusions list', () => {
+    const correct = { type: 'correct_set', at, opId: 'c', setId: id(5), expectedSetVersion: 2, patch: { exclusions: ['spotted'] } };
+    expect(validate(SessionCommandSchema, correct).ok).toBe(true);
+    expect(validate(SessionCommandSchema, { ...correct, patch: { exclusions: [] } }).ok).toBe(true);
+    expect(validate(SessionCommandSchema, { ...correct, patch: { exclusions: ['form'] } }).ok).toBe(false);
+    const log = { type: 'log_set', at, opId: 'l', setId: id(5), restTimerId: id(8), values, exclusions: ['technique'] };
+    expect(validate(SessionCommandSchema, log).ok).toBe(true);
   });
 });

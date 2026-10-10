@@ -9,7 +9,7 @@ import {
 } from './common';
 import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
-import { PlannedSetSchema, ResolvedRestSchema, SetSideSchema, SetValuesSchema } from './session';
+import { PlannedSetSchema, ResolvedRestSchema, SetExclusionsSchema, SetSideSchema, SetValuesSchema } from './session';
 
 /**
  * Typed commands for the active-session state machine. Every mutating command
@@ -31,6 +31,12 @@ export const LogSetCommandSchema = z.object({
    * set's side (`both` by default). Rejected on bilateral exercises.
    */
   side: SetSideSchema.optional(),
+  /**
+   * Log and mark in one go ("100 for 8, spotted", §2.13). Omit or empty = the
+   * set counts. `pain` doesn't set the movement's pain flag here; the service
+   * does that (AW7).
+   */
+  exclusions: SetExclusionsSchema.optional(),
   /** ID for the rest timer this commit may start (generated with the draft). */
   restTimerId: IdSchema,
 });
@@ -57,7 +63,15 @@ export const CorrectSetCommandSchema = z.object({
   setId: IdSchema,
   /** The set's own version, not the session's. */
   expectedSetVersion: z.int().min(1),
-  patch: SetValuesSchema.partial().extend({ setType: SetTypeSchema.optional(), side: SetSideSchema.optional() }),
+  /**
+   * `exclusions` replaces the set's whole list (§2.13): `[]` clears it. A
+   * patch that only changes exclusions doesn't mark the values `Edited`.
+   */
+  patch: SetValuesSchema.partial().extend({
+    setType: SetTypeSchema.optional(),
+    side: SetSideSchema.optional(),
+    exclusions: SetExclusionsSchema.optional(),
+  }),
 });
 
 /**

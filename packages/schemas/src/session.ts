@@ -64,6 +64,25 @@ export const SetFlagSchema = z.enum(['off_profile_load']);
 export type SetFlag = z.infer<typeof SetFlagSchema>;
 
 /**
+ * Why Ben left a logged set out of records and progress (active-workout.md
+ * §2.13, AW5). Set only by Ben, never inferred. A flagged set stays in the
+ * log and in volume, but isn't used for records, estimated 1RM, progression,
+ * comparisons or coach offers (`isSetCountable`).
+ * - `spotted`: someone helped with reps.
+ * - `pain`: it hurt (also puts a pain flag on the movement, AW7).
+ * - `technique`: form broke (`Form broke`).
+ * - `other_equipment`: not the usual equipment for this exercise's history.
+ */
+export const SetExclusionSchema = z.enum(['spotted', 'pain', 'technique', 'other_equipment']);
+export type SetExclusion = z.infer<typeof SetExclusionSchema>;
+
+/** At most one of each reason. Order isn't meaningful; writers store the canonical order (`normaliseExclusions`). */
+export const SetExclusionsSchema = z
+  .array(SetExclusionSchema)
+  .max(SetExclusionSchema.options.length)
+  .refine((xs) => new Set(xs).size === xs.length, { message: 'Each exclusion reason at most once' });
+
+/**
  * Side of a unilateral set (brief §4: record per side, don't double-count).
  * - `both`: the values are per side and were done on each side ("10 each side").
  * - `left` / `right`: the values are for that side only.
@@ -208,13 +227,22 @@ export const WorkoutSetSchema = z.object({
   /** Number of times a logged result was undone; drives the next draft opId. */
   undoCount: z.int().min(0),
   flags: z.array(SetFlagSchema),
+  /**
+   * Ben's exclusion flags (§2.13): absent or empty = the set counts. Only on
+   * completed sets; changed only by `correct_set` (or `log_set.exclusions`),
+   * so every change is versioned and audited, never silent (AW6).
+   */
+  exclusions: SetExclusionsSchema.optional(),
   edited: z.boolean(),
   version: z.int().min(1),
 }).refine(
   // A result exists exactly when the set is completed (a deleted tombstone may keep either shape).
   (s) => s.status === 'deleted' || (s.status === 'completed') === (s.actual !== null && s.completedAt !== null),
   { message: 'A completed set has an actual result and completion time; other sets have neither', path: ['status'] },
-);
+).refine((s) => s.status === 'completed' || s.status === 'deleted' || (s.exclusions ?? []).length === 0, {
+  message: 'Only a logged set can be left out of records',
+  path: ['exclusions'],
+});
 export type WorkoutSet = z.infer<typeof WorkoutSetSchema>;
 
 export const SessionExerciseSchema = z.object({
@@ -350,6 +378,8 @@ export const SetSnapshotSchema = z.object({
   setType: SetTypeSchema,
   side: SetSideSchema.nullable(),
   actual: SetValuesSchema.nullable(),
+  /** Absent on entries written before exclusions existed, and when none were set (`Set 2 marked: spotted`). */
+  exclusions: SetExclusionsSchema.optional(),
   version: z.int().min(1),
 });
 export type SetSnapshot = z.infer<typeof SetSnapshotSchema>;
