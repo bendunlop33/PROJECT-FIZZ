@@ -6,7 +6,7 @@ import { openStore, type Store } from '../src/index';
 import { openNodeDriver } from '../src/node/index';
 import { memoryDriver, tempDir } from './helpers';
 
-/** `Finish by` (active-workout §2.15.3): schema 5 stores it on the session row. */
+/** `Finish by` (active-workout §2.15.3): schema 4 stores it on the session row. */
 
 async function seed(store: Store): Promise<void> {
   const { repos } = store;
@@ -73,7 +73,7 @@ describe('the finish_by columns', () => {
     await store.close();
   });
 
-  it('round-trip the rich session; NULL (every workout before schema 5) reads as not set', async () => {
+  it('round-trip the rich session; NULL (every workout before schema 4) reads as not set', async () => {
     const rich = richFinishedSession();
     expect(rich.session.finishBy).toBeDefined();
     await store.repos.sessions.save(rich, null);

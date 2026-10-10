@@ -408,12 +408,11 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
       delete copy.check_in_id;
       delete copy.import_job_id;
       delete copy.local_date;
-      // …and nothing from schema 5 (Finish by).
+      // …and nothing from schema 4 (Finish by, set exclusions below).
       delete copy.finish_by_utc;
       delete copy.finish_by_tz;
       return copy;
     });
-    // …and nothing from schema 4 (set exclusions).
     tables.session_sets = (tables.session_sets ?? []).map((row) => {
       const copy = { ...row };
       delete copy.exclusions;
