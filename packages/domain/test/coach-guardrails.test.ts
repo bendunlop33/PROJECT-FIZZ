@@ -587,6 +587,25 @@ describe('classifyPainMention (CM6)', () => {
     ['no pain at all, just tired', 'effort'],
     ["it doesn't hurt", 'none'],
     ['drop the weight for the last two', 'none'],
+    // Review B2: clear pain that used to come back as `none`.
+    ["I can't press without pain", 'pain'],
+    ['never had pain like this', 'pain'],
+    ['not sure, it hurts', 'pain'],
+    ['pulled something in my back', 'pain'],
+    ['sprained ankle', 'pain'],
+    ['my shoulder is killing me', 'pain'],
+    ['felt a pop in my elbow', 'pain'],
+    ['think I strained my hamstring', 'pain'],
+    ['fingers went numb and tingling', 'pain'],
+    ['throbbing in my wrist', 'pain'],
+    ["it didn't hurt until set 3", 'pain'],
+    // Only an immediately preceding negator cancels pain.
+    ['no real pain, just heavy', 'effort'],
+    ["it doesn't really hurt", 'none'],
+    // A negator further back in the same clause is doubt: ask (CM6).
+    ["I don't think it hurts", 'unclear'],
+    ['knee feels a bit uncomfortable', 'unclear'],
+    ["you're killing it", 'none'],
   ] as const)('%s → %s', (text, expected) => {
     expect(classifyPainMention(text)).toBe(expected);
   });
