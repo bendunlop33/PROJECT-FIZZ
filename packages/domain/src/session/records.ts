@@ -73,7 +73,9 @@ export function findSetRecord(input: SetRecordInput): SetRecord | null {
   if (importedHeavier) return null;
 
   const name = input.exerciseName.toLowerCase();
-  if (kind === 'heaviest') return { kind, text: input.gymName ? `Heaviest ${name} set at ${input.gymName} so far` : `Heaviest ${name} set so far` };
+  // With no equipment instance the comparison isn't tied to one gym, so the line doesn't name one (review N5).
+  const gym = input.equipmentId === null ? null : input.gymName;
+  if (kind === 'heaviest') return { kind, text: gym ? `Heaviest ${name} set at ${gym} so far` : `Heaviest ${name} set so far` };
   return { kind, text: `Most reps at ${loadText(load, convention, input.equipment ?? null)} on ${name} so far` };
 }
 

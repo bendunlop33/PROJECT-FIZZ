@@ -35,6 +35,9 @@ describe('findSetRecord', () => {
     expect(RECORD_MIN_SESSIONS).toBe(3);
     expect(findSetRecord(input())).toEqual({ kind: 'heaviest', text: 'Heaviest bench press set at Main gym so far' });
     expect(findSetRecord(input({ gymName: null }))?.text).toBe('Heaviest bench press set so far');
+    // No equipment instance: compared across gyms, so no gym in the words (review N5).
+    const noEq = three.map((h) => ({ ...h, equipmentId: null }));
+    expect(findSetRecord(input({ equipmentId: null, history: noEq }))?.text).toBe('Heaviest bench press set so far');
   });
 
   it('needs at least 3 earlier comparable sessions', () => {
