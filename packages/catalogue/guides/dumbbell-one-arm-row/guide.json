@@ -28,16 +28,16 @@
       "ease": "smooth"
     },
     {
-      "t": 0.1581, "pass": true, "label": "Halfway", "caption": "Elbow leads up and back",
-      "joints": { "shoulderNear": 30, "elbowNear": 60 },
+      "t": 0.143, "pass": true, "label": "Halfway", "caption": "Elbow leads up and back",
+      "joints": { "shoulderNear": 48.3, "elbowNear": 32.9 },
       "ease": "smooth"
     },
     {
       "t": 0.3704, "label": "Top", "caption": "Dumbbell by the lower ribs, chest square",
-      "joints": { "shoulderNear": -22, "elbowNear": 98 },
+      "joints": { "shoulderNear": -10, "elbowNear": 100 },
       "holdMs": 300, "ease": "smooth"
     },
-    { "t": 0.7787, "sameAs": 1, "caption": "Lower slowly to a full hang", "ease": "smooth" },
+    { "t": 0.7998, "sameAs": 1, "caption": "Lower slowly to a full hang", "ease": "smooth" },
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "db", "showIn": ["static"] }],
