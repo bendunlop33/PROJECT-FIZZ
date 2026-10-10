@@ -126,7 +126,7 @@ export interface RepeatCandidates {
 
 export interface RepeatPreview {
   exercises: { exerciseName: string; equipmentName: string | null; line: string }[];
-  notes: { exerciseName: string; text: string }[];
+  notes: { exerciseName: string; text: string; tone: 'info' | 'warning' }[];
   notCopied: { exerciseName: string; skipped: number }[];
   sourceGymId: string | null;
   sourceStartedAtUtc: string;

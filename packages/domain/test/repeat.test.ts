@@ -130,7 +130,7 @@ describe('Repeat across units', () => {
     const set = setsFor(out.aggregate, DB_PRESS)[0];
     expect(set?.planned.load).toBeNull();
     expect(set?.planned.reps).toEqual({ min: 8, max: 8 });
-    expect(out.notes).toContainEqual({ exerciseName: 'DB press', text: 'No load target: last time was 22.5 kg each, and the lightest here is 60 lb each.' });
+    expect(out.notes).toContainEqual({ exerciseName: 'DB press', text: 'No load target: last time was 22.5 kg each, and the lightest here is 60 lb each.', tone: 'warning' });
   });
 
   it('with no equipment to check on, a load in the other unit is dropped (never converted), reps kept', () => {
@@ -138,7 +138,7 @@ describe('Repeat across units', () => {
     const curl = setsFor(out.aggregate, CURL)[0];
     expect(curl?.planned.load).toBeNull();
     expect(curl?.planned.reps).toEqual({ min: 12, max: 12 });
-    expect(out.notes).toContainEqual({ exerciseName: 'Weighted curl', text: "No load target: last time was 10 kg, and there's no equipment here to check a lb load on." });
+    expect(out.notes).toContainEqual({ exerciseName: 'Weighted curl', text: "No load target: last time was 10 kg, and there's no equipment here to check a lb load on.", tone: 'warning' });
     // The session is in lb: Ben enters a load in lb and it logs.
     const set = curl?.id ?? '';
     const r = reduceSession(out.aggregate, logCmd(set, values(lb(25), 12), 86_500));

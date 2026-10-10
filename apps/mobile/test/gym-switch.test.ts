@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { isProposalStale, NBSP } from '@fizz/domain';
+import { isProposalStale, NBSP, repeatPreviewLines } from '@fizz/domain';
 
 import { cardIsStale, logGuardAfterSwitch, onGymChosen, reviewSheetView, switchCardView, switchedToast, undoneToast, type OpenSwitchCard } from '../src/workout/gym-switch-card';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
@@ -163,6 +163,32 @@ describe('gym switch through the services', () => {
     expect(atMain?.notes).toEqual([]);
     expect(atHotel?.notes.map((n) => plain(n.text))).toEqual(['Capped: the most here is 25 kg each. Last time 32.5 kg each.']);
     expect(await s.sessions.active()).toBeNull();
+  });
+
+  it('Start at the gym chosen on the chip gives what its preview showed (check 23); a missing bar is a warning with no load target (check 4)', async () => {
+    const { services: s } = await h.launch();
+    const mainId = await setUpGym(h, s);
+    const hotelId = h.ids();
+    await s.setup.saveGym({ gymId: hotelId, name: 'Hotel · Lisbon', draft: s.coachingKnowledge.buildGymDraft('home_dumbbells', 'kg') });
+    const past = await logWorkout(h, s, mainId, [
+      { exercise: 'Bench press', sets: [{ load: 100, reps: 5 }] },
+      { exercise: 'Dumbbell bench press', sets: [{ load: 32.5, reps: 8 }] },
+    ]);
+    const atHotel = await s.repeat.preview(past, hotelId);
+    if (!atHotel) throw new Error('no preview');
+    const bar = atHotel.notes.find((n) => n.exerciseName === 'Bench press');
+    expect(bar?.tone).toBe('warning');
+    expect(plain(bar?.text)).toMatch(/^No .+ at Hotel · Lisbon: no load target \(last time 100 kg × 5\)\.$/);
+    expect(atHotel.notes.find((n) => n.exerciseName === 'Dumbbell bench press')?.tone).toBe('info');
+    h.clockMs += 86_400_000;
+    const started = await s.workout.start({ gymId: hotelId, opId: 'repeat-at-hotel', checkIn: { kind: 'skipped', atUtc: h.now().utc }, repeatOf: past });
+    if (!started.ok) throw new Error(started.error.message);
+    expect(started.aggregate.session.gymId).toBe(hotelId);
+    expect(repeatPreviewLines(started.aggregate)).toEqual(atHotel.exercises);
+    const bench = started.aggregate.exercises.find((e) => e.exerciseName === 'Bench press');
+    const benchSets = started.aggregate.sets.filter((x) => x.sessionExerciseId === bench?.id);
+    expect(benchSets.map((x) => [x.status, x.planned.load, x.planned.reps])).toEqual([['pending', null, { min: 5, max: 5 }]]);
+    expect(bench?.equipmentId).toBeNull();
   });
 });
 

@@ -56,6 +56,8 @@ export interface RepeatInput {
 export interface RepeatNote {
   exerciseName: string;
   text: string;
+  /** `⚠` for a dropped load target, `ⓘ` for a fact (gym-switch §2.2 note rules). */
+  tone: 'info' | 'warning';
 }
 
 export interface RepeatOutput extends StartWorkoutOutput {
@@ -175,7 +177,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       const text = repeatNoteText(note, slot, input.gymName ?? null);
       if (text === null) continue;
       const key = `${slot.exerciseName}|${text}`;
-      if (!seen.has(key)) notes.push({ exerciseName: slot.exerciseName, text });
+      if (!seen.has(key)) notes.push({ exerciseName: slot.exerciseName, text, tone: note.kind === 'dropped' ? 'warning' : 'info' });
       seen.add(key);
     }
   }
