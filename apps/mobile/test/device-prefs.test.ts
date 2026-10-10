@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_PREFS, parsePrefs, updatePrefs } from '../src/device/prefs';
+import { DEFAULT_PREFS, parsePrefs, settleLoadedPrefs, updatePrefs } from '../src/device/prefs';
 
 describe('device prefs', () => {
   it('guide animations default on, including for files saved before the setting existed', () => {
@@ -20,5 +20,16 @@ describe('device prefs', () => {
     expect(a).toEqual({ themeDirection: 'A', guideAnimations: false });
     expect(updatePrefs(a, { themeDirection: 'D' })).toEqual({ themeDirection: 'D', guideAnimations: false });
     expect(updatePrefs(null, { guideAnimations: false })).toEqual({ themeDirection: null, guideAnimations: false });
+  });
+});
+
+describe('prefs changed before the file loads (review N1)', () => {
+  it('keeps the early change on top of the file and saves the merge', () => {
+    const loaded = { themeDirection: 'D' as const, guideAnimations: true };
+    expect(settleLoadedPrefs(loaded, { guideAnimations: false })).toEqual({ prefs: { themeDirection: 'D', guideAnimations: false }, save: true });
+  });
+  it('with no early change, uses the file as it is and writes nothing', () => {
+    const loaded = { themeDirection: 'A' as const, guideAnimations: false };
+    expect(settleLoadedPrefs(loaded, {})).toEqual({ prefs: loaded, save: false });
   });
 });

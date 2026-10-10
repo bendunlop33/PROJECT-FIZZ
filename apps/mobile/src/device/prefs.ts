@@ -30,6 +30,14 @@ export function updatePrefs(current: DevicePrefs | null, change: Partial<DeviceP
   return { ...(current ?? DEFAULT_PREFS), ...change };
 }
 
+/**
+ * The file has loaded: changes Ben made before it did are kept on top of it
+ * (review N1), and `save` says whether the merged result must be written.
+ */
+export function settleLoadedPrefs(loaded: DevicePrefs, early: Partial<DevicePrefs>): { prefs: DevicePrefs; save: boolean } {
+  return Object.keys(early).length === 0 ? { prefs: loaded, save: false } : { prefs: updatePrefs(loaded, early), save: true };
+}
+
 export async function loadPrefs(file: TextFile): Promise<DevicePrefs> {
   try {
     return parsePrefs(await file.read());

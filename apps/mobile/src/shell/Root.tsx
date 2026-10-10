@@ -10,7 +10,7 @@ import { createRestAlertController } from '../alerts/rest-alerts';
 import { containerBackupFiles, containerTextFile } from '../device/files';
 import { expoDatabaseHost } from '../data/expo-sqlite-host';
 import { DevicePrefsProvider } from '../device/DevicePrefsContext';
-import { DEFAULT_PREFS, loadPrefs, savePrefs, updatePrefs, type DevicePrefs } from '../device/prefs';
+import { DEFAULT_PREFS, loadPrefs, savePrefs, settleLoadedPrefs, updatePrefs, type DevicePrefs } from '../device/prefs';
 import { appInfo, newUuid, nowZoned } from '../device/runtime';
 import { AppNavigator } from '../navigation/AppNavigator';
 import type { AppServices } from '../services/app-services';
@@ -162,17 +162,29 @@ function Themed() {
 export function Root() {
   const prefsFile = useMemo(() => containerTextFile(DEVICE_PREFS), []);
   const [prefs, setPrefs] = useState<DevicePrefs | null>(null);
-  useEffect(() => {
-    void loadPrefs(prefsFile).then(setPrefs);
-  }, [prefsFile]);
   // The latest prefs for `update`, so two quick changes never drop one another.
   const latest = useRef<DevicePrefs | null>(null);
   latest.current = prefs;
+  // Changes made before the file loads: shown at once, then kept on top of the file and saved (review N1).
+  const early = useRef<Partial<DevicePrefs> | null>({});
+  useEffect(() => {
+    void loadPrefs(prefsFile).then((loaded) => {
+      const settled = settleLoadedPrefs(loaded, early.current ?? {});
+      early.current = null;
+      latest.current = settled.prefs;
+      setPrefs(settled.prefs);
+      if (settled.save) void savePrefs(prefsFile, settled.prefs).catch(() => undefined);
+    });
+  }, [prefsFile]);
   const update = useCallback(
     (change: Partial<DevicePrefs>) => {
       const next = updatePrefs(latest.current, change);
       latest.current = next;
       setPrefs(next);
+      if (early.current !== null) {
+        early.current = { ...early.current, ...change };
+        return;
+      }
       void savePrefs(prefsFile, next).catch(() => undefined);
     },
     [prefsFile],
