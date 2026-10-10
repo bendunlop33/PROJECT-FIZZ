@@ -283,3 +283,31 @@ export function thinkingLabel(live: LiveTurn, nowMs: number): string | null {
 }
 
 export type { ReplyItem };
+
+// ---------------------------------------------------------------------------
+// The sheet's context chip and workout bar (coach-sheet §2.1, §2.4)
+
+/** `Sees: Push A (live)`, `Sees: this workout`, `Sees: Today`. */
+export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active: boolean): string {
+  switch (entry.kind) {
+    case 'today':
+      return 'Sees: Today';
+    case 'summary':
+      return `Sees: ${workoutTitle ?? 'this workout'}`;
+    case 'workout':
+      return `Sees: ${workoutTitle ?? 'Workout'}${active ? ' (live)' : ''}`;
+  }
+}
+
+/**
+ * The workout bar (CS3): the rest left or `Ready`; tapping closes the sheet.
+ * It never logs and has no Log label.
+ */
+export function workoutBarText(rest: { kind: 'running' | 'paused'; remainingMs: number } | { kind: 'ended' } | null, paused: boolean): string {
+  if (paused) return 'Paused';
+  if (rest !== null && rest.kind !== 'ended') {
+    const s = Math.max(0, Math.ceil(rest.remainingMs / 1000));
+    return `Rest ${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, '0')}`;
+  }
+  return 'Ready';
+}

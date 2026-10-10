@@ -46,7 +46,7 @@ export interface ConnectionStatusView {
  * isn't shown or used up, so Ben sees it when the coach can actually reply
  * (review S2). Set to true in the build that ships the coach sheet.
  */
-export const COACH_CHAT_IN_BUILD = false;
+export const COACH_CHAT_IN_BUILD = true;
 const NO_COACH_YET = 'The coach chat isn’t in this build yet.';
 
 /** Whether a finished sign-in should show the first-use notice (§2.5). Never in a build without the coach chat. */
@@ -275,28 +275,29 @@ export function profileCoachLine(state: TextCoachState): string {
 }
 
 /**
- * The Summary's coach lines. In this build the coach has no summary turn
- * (ADR 0019 C8), so every target is the built-in rule's and the note says so;
- * nothing pretends a coach reviewed the workout (CLAUDE.md rule 1).
+ * The Summary's coach lines (ADR 0019 C8). Connected: no fixed note; the
+ * summary turn's checked reply is the note, and its targets show on their
+ * rows. Otherwise one short honest line (minimal copy) and the built-in
+ * rule's targets, labelled. Nothing pretends a coach reviewed the workout.
  */
-export function summaryCoachView(state: TextCoachState | null): { coach: CoachStatus; note: string } {
-  if (state === null) return { coach: 'not_connected', note: 'Coach not connected. Your workout is saved; a note can be added later.' };
+export function summaryCoachView(state: TextCoachState | null): { coach: CoachStatus; note: string | null } {
+  if (state === null) return { coach: 'not_connected', note: 'Coach not connected.' };
   switch (state.status) {
     case 'not_connected':
     case 'not_eligible':
     case 'no_scope':
     case 'region':
-      return { coach: 'not_connected', note: 'Coach not connected. Your workout is saved; a note can be added later.' };
+      return { coach: 'not_connected', note: 'Coach not connected.' };
     case 'ok':
-      return { coach: 'connected', note: 'The coach doesn’t review workouts in this build yet. Next time uses the built-in rule.' };
+      return { coach: 'connected', note: null };
     case 'offline':
-      return { coach: 'unavailable', note: 'No connection. Next time uses the built-in rule.' };
+      return { coach: 'unavailable', note: 'Offline.' };
     case 'limit':
-      return { coach: 'unavailable', note: 'ChatGPT usage limit reached. The coach is paused; next time uses the built-in rule.' };
+      return { coach: 'unavailable', note: 'Coach paused.' };
     case 'expired':
-      return { coach: 'unavailable', note: 'ChatGPT disconnected. Sign in again in Profile to use the coach.' };
+      return { coach: 'unavailable', note: 'Coach signed out.' };
     case 'no_model':
     case 'model_gone':
-      return { coach: 'unavailable', note: 'Choose a coach model in Profile → Coach connection.' };
+      return { coach: 'unavailable', note: 'Choose a coach model.' };
   }
 }

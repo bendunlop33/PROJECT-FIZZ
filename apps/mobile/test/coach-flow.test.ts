@@ -176,6 +176,22 @@ describe('C7: in the workout (offer, Adjust, banner, Undo)', () => {
   });
 });
 
+describe('Pain from Adjust or the sheet: deterministic, offline, one flag', () => {
+  it('a repeated opId flags once; an active flag on the movement is kept, not duplicated; no AI call', async () => {
+    const { services: s } = await h.launch();
+    connection = { status: 'not_connected', route: null, email: null, model: null };
+    const req = { exerciseId: '00000000-0000-4000-8000-00000000b001', exerciseName: 'Bench press', opId: 'pain-op-1' };
+    await setUpGym(h, s);
+    const a = await s.pain.flagMovement(req);
+    const b = await s.pain.flagMovement(req);
+    expect(a).toMatchObject({ ok: true });
+    expect(b.ok).toBe(true);
+    expect(await s.pain.flagMovement({ ...req, opId: 'pain-op-2' })).toEqual({ ok: true, flagIds: [] });
+    expect((await s.pain.active()).filter((f) => f.exerciseId === req.exerciseId)).toHaveLength(1);
+    expect(model.requests).toHaveLength(0);
+  });
+});
+
 describe('C8: Summary next-session targets (D21) and routines', () => {
   it('one summary turn saves a small bench change; Next time shows it with Undo; the next session of the routine plans it and marks it used', async () => {
     const { services: s } = await h.launch();
@@ -195,6 +211,8 @@ describe('C8: Summary next-session targets (D21) and routines', () => {
     // Once per workout, even if asked again.
     expect(await s.coach.runSummaryTurn(first)).toBe(turn);
     expect(turn?.status).toBe('completed');
+    // The Summary's coach note is the turn's checked reply, read back from the thread.
+    expect(await s.coach.summaryNote(first)).toBe('All three sets were RPE 10.');
     expect(model.requests[0]?.tools.map((t) => t.name)).toContain('set_next_session_targets');
     const summary = await s.workout.summary(first, 'connected');
     const rows = await s.coach.nextTargets(first);

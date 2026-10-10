@@ -48,12 +48,13 @@ describe('Coach connection status card (ai-connection §2.1, §2.6, §3.1)', () 
     expect(JSON.stringify(v)).not.toMatch(/\d+ coach messages|%/);
   });
 
-  it('a build without the coach chat says so on the connected card and never uses up the first-use notice (review S2)', () => {
-    expect(COACH_CHAT_IN_BUILD).toBe(false);
-    expect(connectionStatusView(state('ok'), null).card.lines).toEqual(['Signed in as ben@example.com', 'Limits are set in ChatGPT.', 'The coach chat isn’t in this build yet.']);
+  it('this build has the coach chat (C6); a build without it would say so and never use up the first-use notice (review S2)', () => {
+    expect(COACH_CHAT_IN_BUILD).toBe(true);
+    expect(connectionStatusView(state('ok'), null).card.lines).toEqual(['Signed in as ben@example.com', 'Limits are set in ChatGPT.']);
+    expect(connectionStatusView(state('ok'), null, false).card.lines).toEqual(['Signed in as ben@example.com', 'Limits are set in ChatGPT.', 'The coach chat isn’t in this build yet.']);
     const connected = { kind: 'connected' as const, email: 'ben@example.com', models: [SOL, LUNA], selected: SOL, modelsFailure: null, firstUse: true };
-    expect(showFirstUseNotice(connected)).toBe(false);
-    expect(showFirstUseNotice(connected, true)).toBe(true);
+    expect(showFirstUseNotice(connected, false)).toBe(false);
+    expect(showFirstUseNotice(connected)).toBe(true);
     expect(showFirstUseNotice({ ...connected, firstUse: false }, true)).toBe(false);
     expect(showFirstUseNotice({ ...connected, models: [] }, true)).toBe(false);
   });
@@ -157,11 +158,12 @@ describe('Profile row and Summary lines', () => {
   });
 
   it('Summary never claims a coach review: tag and note follow the connection (check 1, rule 1)', () => {
-    expect(summaryCoachView(null)).toEqual({ coach: 'not_connected', note: 'Coach not connected. Your workout is saved; a note can be added later.' });
+    expect(summaryCoachView(null)).toEqual({ coach: 'not_connected', note: 'Coach not connected.' });
     expect(summaryCoachView(state('not_connected')).coach).toBe('not_connected');
     expect(summaryCoachView(state('not_eligible')).coach).toBe('not_connected');
-    expect(summaryCoachView(state('ok'))).toEqual({ coach: 'connected', note: 'The coach doesn’t review workouts in this build yet. Next time uses the built-in rule.' });
+    // Connected: the summary turn's checked reply is the note; nothing fixed stands in for it.
+    expect(summaryCoachView(state('ok'))).toEqual({ coach: 'connected', note: null });
     for (const s of ['limit', 'expired', 'model_gone', 'no_model', 'offline'] as const) expect(summaryCoachView(state(s)).coach).toBe('unavailable');
-    for (const s of ALL) expect(summaryCoachView(state(s)).note).not.toMatch(/OAuth|token|API key|paid/i);
+    for (const s of ALL) expect(summaryCoachView(state(s)).note ?? '').not.toMatch(/OAuth|token|API key|paid/i);
   });
 });

@@ -1,6 +1,8 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { EquipmentKind } from '@fizz/schemas';
 
+import type { CoachEntry } from '../coach/coach-service';
+
 export type ProfileStackParams = {
   ProfileHome: undefined;
   DataBackup: undefined;
@@ -73,6 +75,12 @@ export type RootStackParams = {
   PastWorkouts: undefined;
   /** Repeat a finished workout (routines.md §2.4). */
   Repeat: { sessionId: string };
+  /**
+   * The coach sheet (coach-sheet.md, ADR 0019 C6). Opened only by Ben (Ask,
+   * workout `⋯` → Ask the coach, Adjust → Type…, Summary → Ask about this
+   * workout); never by a trigger, timer or reply. `focus`: the field gets focus.
+   */
+  Coach: { entry: CoachEntry; focus?: boolean };
 };
 
 export type WorkoutToastParam =

@@ -5,7 +5,7 @@ import type { ActionRecord, NextSessionTargetRecord } from '@fizz/schemas';
 
 import type { CoachAvailability } from '../src/coach/coach-service';
 import { nextTimeView } from '../src/coach/next-time-view';
-import { applyProgress, cardView, outcomeFor, routeLine, starterChips, startLiveTurn, statusView, thinkingLabel, whyView } from '../src/coach/sheet-view';
+import { applyProgress, cardView, outcomeFor, routeLine, seesLabel, starterChips, startLiveTurn, statusView, thinkingLabel, whyView, workoutBarText } from '../src/coach/sheet-view';
 import { adjustControlView, chipForTrigger, slotView } from '../src/coach/slot-view';
 
 /** View models for the coach sheet, the workout's coach slot and the Summary's Next time (C6–C8). */
@@ -181,5 +181,24 @@ describe('Next time (D21): coach rows over the built-in rule', () => {
     const v = nextTimeView(input([], true));
     expect(v?.status).toBe('Coach reviewing…');
     expect(v?.rows.map((r) => r.tag)).toEqual(['Built-in rule', 'Built-in rule']);
+  });
+});
+
+describe('sheet chrome: context chip and workout bar (CS3, minimal copy)', () => {
+  it('the context chip names what the coach sees', () => {
+    expect(seesLabel({ kind: 'today' }, null, false)).toBe('Sees: Today');
+    expect(seesLabel({ kind: 'workout', sessionId: ID(9) }, 'Push A', true)).toBe('Sees: Push A (live)');
+    expect(seesLabel({ kind: 'workout', sessionId: ID(9) }, null, false)).toBe('Sees: Workout');
+    expect(seesLabel({ kind: 'summary', sessionId: ID(9) }, null, false)).toBe('Sees: this workout');
+  });
+
+  it('the workout bar shows rest left, Ready or Paused, and never a Log label', () => {
+    expect(workoutBarText({ kind: 'running', remainingMs: 83_200 }, false)).toBe('Rest 1:24');
+    expect(workoutBarText({ kind: 'paused', remainingMs: 5_000 }, false)).toBe('Rest 0:05');
+    expect(workoutBarText({ kind: 'running', remainingMs: -400 }, false)).toBe('Rest 0:00');
+    expect(workoutBarText({ kind: 'ended' }, false)).toBe('Ready');
+    expect(workoutBarText(null, false)).toBe('Ready');
+    expect(workoutBarText({ kind: 'running', remainingMs: 60_000 }, true)).toBe('Paused');
+    for (const t of [workoutBarText(null, false), workoutBarText({ kind: 'ended' }, true)]) expect(t).not.toMatch(/log/i);
   });
 });

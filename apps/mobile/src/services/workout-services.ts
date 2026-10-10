@@ -335,6 +335,28 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       }
     },
 
+    /**
+     * `Pain` from the workout's Adjust row or the coach sheet (coach-adjustments
+     * §4.5, coach-memory §2.5): deterministic, offline, no AI. One flag on this
+     * movement, its ID derived from the opId so a double tap flags once; an
+     * active flag already there is kept (never duplicated). Increases stop at once.
+     */
+    async flagMovement(req: { exerciseId: string; exerciseName: string; opId: string }): Promise<{ ok: true; flagIds: string[] } | { ok: false; message: string }> {
+      try {
+        const p = await owner();
+        const live = (await repos().painFlags.listActive(p.id)).find((f) => f.exerciseId === req.exerciseId);
+        if (live) return { ok: true, flagIds: [] };
+        const id = deriveId(`pain:${req.opId}:${req.exerciseId}`);
+        if (await repos().painFlags.get(id)) return { ok: true, flagIds: [id] };
+        const flag = newPainFlag({ id, ownerId: p.id, opId: req.opId, exerciseId: req.exerciseId, exerciseName: req.exerciseName, area: null, source: 'workout', checkInId: null, at: ctx.now() });
+        const saved = await repos().painFlags.save(flag, null);
+        if (!saved.ok && !(await repos().painFlags.get(id))) return { ok: false, message: 'The pain flag wasn’t saved. Try again.' };
+        return { ok: true, flagIds: [id] };
+      } catch {
+        return { ok: false, message: 'The pain flag wasn’t saved. Try again.' };
+      }
+    },
+
     /** Undo on the `Pain noted` toast. Only Ben clears a flag. */
     async clear(flagIds: readonly string[]): Promise<boolean> {
       const at = ctx.now();

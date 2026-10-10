@@ -45,6 +45,7 @@ import {
   type SymbolName,
 } from '../../ui';
 import { CoachSlot } from './CoachSlot';
+import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './WorkoutCoach';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu } from '../../workout/exercise-menu';
 import { shouldCueRestEnd } from '../../workout/cues';
@@ -330,6 +331,24 @@ export function WorkoutScreen() {
     });
   }, [now, data, services]);
 
+  // The coach in the workout (ADR 0019 C7). An applied change reloads the targets and guards Log for
+  // `timing.valueChangeGuard`, so a tap aimed at the old label never saves the new one (§4.3).
+  const coachSessionId = data === 'loading' || data === null ? null : data.aggregate.session.id;
+  const coach = useWorkoutCoach(coachSessionId, () => {
+    void reload();
+    changed();
+    setGuard(true);
+    setTimeout(() => {
+      setGuard(false);
+    }, TIMING.valueChangeGuard);
+  });
+  // An unanswered offer goes when the rest ends (§3.2).
+  const restRunning = data !== 'loading' && data !== null && data.aggregate.restTimer?.status === 'running';
+  const clearOffer = coach.clearOffer;
+  useEffect(() => {
+    if (!restRunning) clearOffer();
+  }, [restRunning, clearOffer]);
+
   if (loadError !== null && (data === 'loading' || data === null)) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top + theme.space['4'], paddingHorizontal: theme.space['4'], gap: theme.space['4'] }}>
@@ -419,6 +438,8 @@ export function WorkoutScreen() {
         .setRecord(session.id, loggedSetId)
         .catch(() => null)
         .then(showRecord);
+    // Path B: a pure check on the logged set, no AI call (coach-adjustments §4.2).
+    coach.afterLog(r.aggregate, loggedSetId);
     setEdits(null);
     setRestoredDraft(null);
     setBanners((b) => b.filter((x) => x.key !== 'write' && x.key !== 'rest-ended'));
@@ -501,6 +522,24 @@ export function WorkoutScreen() {
   }
 
   /**
+   * `Adjust` → `Pain` (coach-adjustments §4.5): the flag is deterministic and
+   * works offline; then, if the coach can answer, it is asked to adjust with
+   * increases blocked. It never diagnoses.
+   */
+  async function painFromAdjust(f: FocusView) {
+    const r = await services.pain.flagMovement({ exerciseId: f.exerciseId, exerciseName: f.exerciseName, opId: newUuid() });
+    if (!r.ok) {
+      showToast({ icon: 'info.circle', text: r.message });
+      return;
+    }
+    haptic('step');
+    changed();
+    void reload();
+    showToast({ icon: 'exclamationmark.triangle', text: `Pain noted · ${f.exerciseName}`, ...(r.flagIds.length > 0 ? { action: 'Undo', onAction: () => void services.pain.clear(r.flagIds).then(() => void reload()) } : {}) });
+    if (coach.availability?.status === 'ok') coach.ask({ kind: 'chip', chip: 'pain' });
+  }
+
+  /**
    * `⋯` (premium-feel §3.2, §10): Pause lives here, not in the header; paused, Resume is the one-tap primary.
    * `Rename workout` isn't offered on an open-ended workout in progress: it's named after Finish (its Summary).
    */
@@ -508,6 +547,7 @@ export function WorkoutScreen() {
     const items: { label: string; run: () => void }[] = [
       { label: session.pause === null ? 'Pause workout' : 'Resume workout', run: () => void pauseOrResume() },
       ...(view?.openEnded ? [] : [{ label: 'Rename workout', run: () => { renameOp.current = newUuid(); setRenameOpen(true); } }]),
+      { label: 'Ask the coach', run: () => { navigation.navigate('Coach', { entry: { kind: 'workout', sessionId: session.id } }); } },
       { label: 'Finish workout', run: () => { setFinishOpen(true); } },
       { label: 'Edit workout times', run: () => { setTimesOpen(true); } },
       { label: 'Discard workout', run: confirmDiscard },
@@ -596,6 +636,7 @@ export function WorkoutScreen() {
     // Changing effort never touches rest (invariant 5).
     const r = await run({ type: 'correct_set', at: services.now(), opId: newUuid(), setId: js.setId, expectedSetVersion: js.setVersion, patch: scale === 'rir' ? { rir: next } : { rpe: next } });
     if (!r.ok) showToast({ icon: 'info.circle', text: 'That set changed. Tap it to edit.' });
+    else coach.afterLog(r.aggregate, js.setId);
   }
 
   async function pauseOrResume() {
@@ -727,7 +768,7 @@ export function WorkoutScreen() {
           </RuledSection>
         ) : null}
         {/* The coach card's place (premium-feel §3.4); takes no space while empty. */}
-        <CoachSlot />
+        <CoachSlot>{coach.slot !== null ? <CoachSlotContent coach={coach} /> : null}</CoachSlot>
       </View>
     ) : null;
 
@@ -773,6 +814,7 @@ export function WorkoutScreen() {
             }}
           />
         ) : null}
+        <AdjustButton coach={coach} />
         <IconButton
           icon="ellipsis"
           label={`${focus.exerciseName} menu`}
@@ -781,6 +823,10 @@ export function WorkoutScreen() {
           }}
         />
       </View>
+
+      <AdjustRow coach={coach} sessionId={session.id} onPain={() => void painFromAdjust(focus)} />
+      {/* In Ready the slot sits under the header; offers only ever show during rest (§2.3). */}
+      {!resting && coach.slot !== null && coach.slot.kind !== 'offer' ? <CoachSlot>{<CoachSlotContent coach={coach} />}</CoachSlot> : null}
 
       {rest?.kind === 'ended' && !resting ? (
         <StatusLine

@@ -358,6 +358,19 @@ export function createCoachService(deps: CoachServiceDeps) {
     /** The summary turn for this workout, if one is running in this app run (the Summary shows `Coach is reviewing…`). */
     summaryRunning: (sessionId: string): Promise<CoachTurnResult | null> | null => summaryRuns.get(sessionId) ?? null,
 
+    /** The summary turn's checked reply for this workout (the Summary's coach note), or null. */
+    async summaryNote(sessionId: string): Promise<string | null> {
+      const threadId = await resolveThread({ kind: 'summary', sessionId });
+      if (threadId === null) return null;
+      const data = await loadThread(threadId);
+      if (data === null) return null;
+      const summaryTurns = new Set([...data.turns.values()].filter((t) => t.kind === 'summary').map((t) => t.id));
+      const msg = [...data.messages].reverse().find((m) => m.body.role === 'coach' && summaryTurns.has(m.turnId));
+      if (msg === undefined || msg.body.role !== 'coach') return null;
+      const text = msg.body.items.flatMap((i) => (i.kind === 'sentence' ? [i.text] : [])).join(' ');
+      return text === '' ? null : text;
+    },
+
     async nextTargets(sessionId: string): Promise<NextSessionTargetRecord[]> {
       const p = await owner();
       return coachStore().listNextTargets(p.id, sessionId);
