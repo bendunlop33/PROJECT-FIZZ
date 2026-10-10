@@ -48,6 +48,7 @@ import {
   type RoutineNameCheck,
   type ActiveSetView,
   type SetRecord,
+  type SetRecordInput,
   type CheckInGate,
   type CheckInPatch,
   type CommandOutcome,
@@ -103,6 +104,25 @@ export type CheckInWrite = { ok: true; checkIn: CheckIn; duplicate: boolean } | 
 const CHECK_IN_WRITE_FAILED = 'Check-in wasn’t saved. Your workout can start as normal.';
 const RECENT_WINDOW_MS = 3 * 60 * 60 * 1000;
 /** Said on the workout when "Start next session" couldn't work out targets (review S2). */
+/** See `recordContext`. */
+export interface RecordContext {
+  setId: string;
+  sessionExerciseId: string;
+  base: Omit<SetRecordInput, 'set' | 'earlierToday'>;
+}
+
+function recordFromContext(context: RecordContext, aggregate: SessionAggregate, setId: string): SetRecord | null | undefined {
+  const set = aggregate.sets.find((s) => s.id === setId);
+  const ex = set ? aggregate.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
+  if (!set || !ex) return null;
+  if (context.setId !== setId || context.sessionExerciseId !== ex.id || context.base.equipmentId !== ex.equipmentId || context.base.convention !== ex.loadConvention) return undefined;
+  if (set.status !== 'completed' || set.actual === null) return null;
+  const earlierToday = aggregate.sets
+    .filter((s) => s.id !== set.id && s.sessionExerciseId === ex.id && s.status === 'completed' && s.actual !== null && (s.completedAt?.utc ?? '') <= (set.completedAt?.utc ?? ''))
+    .map((s) => ({ setType: s.setType, side: s.side, load: s.actual?.load ?? null, reps: s.actual?.reps ?? null, rpe: null, rir: null }));
+  return findSetRecord({ ...context.base, set: { setType: set.setType, load: set.actual.load, reps: set.actual.reps }, earlierToday });
+}
+
 export const TARGETS_UNAVAILABLE = 'Using last time’s numbers.';
 
 /** `notice`: something the workout screen should say once on opening (a toast). */
@@ -597,35 +617,54 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
 
     /**
-     * The heaviest-set line for a set just logged (premium-feel §5.1), or
-     * null. Read after the write; never blocks or fails logging (any error
-     * reads as no record).
+     * What a record check needs that the write doesn't change (premium-feel
+     * §5.1, review S1): the exercise's finished history, gym and equipment.
+     * Read when a set is focused, so the log haptic can be decided right
+     * after the write without any database read. Null: no record possible
+     * or the read failed (never blocks logging).
      */
-    async setRecord(sessionId: string, setId: string): Promise<SetRecord | null> {
+    async recordContext(sessionId: string, setId: string): Promise<RecordContext | null> {
       try {
         const p = await ctx.profile();
         if (!p) return null;
         const aggregate = await repos().sessions.get(sessionId);
         const set = aggregate?.sets.find((s) => s.id === setId);
         const ex = set ? aggregate?.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
-        if (!aggregate || !set || !ex || set.status !== 'completed' || set.actual === null) return null;
+        if (!aggregate || !set || !ex) return null;
         const history = (await historyFor(p.id, ex.exerciseId)).filter((h) => h.sessionId !== aggregate.session.id);
-        const earlierToday = aggregate.sets
-          .filter((s) => s.id !== set.id && s.sessionExerciseId === ex.id && s.status === 'completed' && s.actual !== null && (s.completedAt?.utc ?? '') <= (set.completedAt?.utc ?? ''))
-          .map((s) => ({ setType: s.setType, side: s.side, load: s.actual?.load ?? null, reps: s.actual?.reps ?? null, rpe: null, rir: null }));
         const gym = aggregate.session.gymId === null ? null : await repos().gyms.get(aggregate.session.gymId);
         const equipment = ex.equipmentId === null ? null : (aggregate.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
-        return findSetRecord({
-          exerciseName: ex.exerciseName,
-          gymName: gym?.name ?? null,
-          equipmentId: ex.equipmentId,
-          convention: ex.loadConvention,
-          measurement: ex.measurement,
-          equipment,
-          set: { setType: set.setType, load: set.actual.load, reps: set.actual.reps },
-          earlierToday,
-          history,
-        });
+        return {
+          setId,
+          sessionExerciseId: ex.id,
+          base: { exerciseName: ex.exerciseName, gymName: gym?.name ?? null, equipmentId: ex.equipmentId, convention: ex.loadConvention, measurement: ex.measurement, equipment, history },
+        };
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * The record for a just-logged set from a context read earlier, with no
+     * database read. `undefined`: the context doesn't fit this set any more
+     * (another set, or the exercise's equipment or convention changed), so
+     * the caller reads it again with `setRecord`.
+     */
+    recordOf(context: RecordContext, aggregate: SessionAggregate, setId: string): SetRecord | null | undefined {
+      return recordFromContext(context, aggregate, setId);
+    },
+
+    /**
+     * The heaviest-set line for a set just logged (premium-feel §5.1), or
+     * null. Read after the write; never blocks or fails logging (any error
+     * reads as no record).
+     */
+    async setRecord(sessionId: string, setId: string): Promise<SetRecord | null> {
+      try {
+        const context = await workout.recordContext(sessionId, setId);
+        const aggregate = context === null ? null : await repos().sessions.get(sessionId);
+        if (context === null || !aggregate) return null;
+        return recordFromContext(context, aggregate, setId) ?? null;
       } catch {
         return null;
       }

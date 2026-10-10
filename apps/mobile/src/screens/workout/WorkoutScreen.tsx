@@ -17,7 +17,7 @@ import { formatDayMonth, formatTime } from '../../format/dates';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
-import type { ActiveWorkoutData } from '../../services/workout-services';
+import type { ActiveWorkoutData, RecordContext } from '../../services/workout-services';
 import { NameSheet } from '../routines/NameSheet';
 import { firstTime, useDataChanged, useLaunchInfo, useServices } from '../../shell/context';
 import { logHaptic, swapMotion, TIMING, useTheme } from '../../theme';
@@ -253,6 +253,22 @@ export function WorkoutScreen() {
     setShowNextSet(false);
   }, [view?.focus?.setId]);
 
+  // The record check's history is read when a set is focused, so the log haptic fires right after the write (review S1).
+  const recordContext = useRef<RecordContext | null>(null);
+  const focusSetId = view?.focus?.setId ?? null;
+  const viewSessionId = data === 'loading' || data === null ? null : data.aggregate.session.id;
+  const focusEquipment = view?.focus ? (data !== 'loading' && data !== null ? (data.aggregate.exercises.find((e) => e.id === view.focus?.sessionExerciseId)?.equipmentId ?? null) : null) : null;
+  useEffect(() => {
+    if (focusSetId === null || viewSessionId === null) return;
+    let live = true;
+    void services.workout.recordContext(viewSessionId, focusSetId).then((c) => {
+      if (live) recordContext.current = c;
+    });
+    return () => {
+      live = false;
+    };
+  }, [services, viewSessionId, focusSetId, focusEquipment]);
+
   // A new empty workout opens the exercise picker straight away (audit: Start leads to a usable workout).
   const emptySessionId = view?.phase === 'empty' && view.sessionId ? view.sessionId : null;
   useEffect(() => {
@@ -371,13 +387,18 @@ export function WorkoutScreen() {
     }
     // After the write, never on press-in. A heaviest-set record plays `record` instead of `commit` (premium-feel §5.1).
     const loggedSetId = focus.setId;
-    void services.workout
-      .setRecord(session.id, loggedSetId)
-      .catch(() => null)
-      .then((rec) => {
-        haptic(logHaptic(rec !== null));
-        setRecord(rec === null ? null : { setId: loggedSetId, text: rec.text });
-      });
+    const showRecord = (rec: { text: string } | null) => {
+      haptic(logHaptic(rec !== null));
+      setRecord(rec === null ? null : { setId: loggedSetId, text: rec.text });
+    };
+    const ready = recordContext.current;
+    const quick = ready === null ? undefined : services.workout.recordOf(ready, r.aggregate, loggedSetId);
+    if (quick !== undefined) showRecord(quick);
+    else
+      void services.workout
+        .setRecord(session.id, loggedSetId)
+        .catch(() => null)
+        .then(showRecord);
     setEdits(null);
     setRestoredDraft(null);
     setBanners((b) => b.filter((x) => x.key !== 'write' && x.key !== 'rest-ended'));
