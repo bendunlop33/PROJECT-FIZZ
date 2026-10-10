@@ -4,6 +4,7 @@ import type { HistorySession, HistorySet } from '../progression';
 import { toMs } from '../time';
 import { isSetCountable } from '../exclusions';
 import { convertMass } from '../units';
+import { equipmentOfRow } from './equipment-snapshot';
 
 /**
  * The heaviest-set line (premium-feel §5.1), the app's only "PR". Pure.
@@ -92,6 +93,8 @@ export function findSetRecord(input: SetRecordInput): SetRecord | null {
 export function sessionRecords(input: {
   aggregate: SessionAggregate;
   gymName: string | null;
+  /** Gym names by ID: a part of a workout done at another gym (gym switch) names its own gym. */
+  gymNames?: Readonly<Record<string, string>>;
   /** Finished sessions by exercise ID (this workout is filtered out here). */
   history: Readonly<Record<string, readonly HistorySession[]>>;
 }): string[] {
@@ -105,7 +108,9 @@ export function sessionRecords(input: {
       .sort((a, b) => (a.completedAt?.utc ?? '').localeCompare(b.completedAt?.utc ?? '') || a.index - b.index);
     if (done.length === 0) continue;
     const history = (input.history[ex.exerciseId] ?? []).filter((h) => h.sessionId !== state.session.id && toMs(h.performedAtUtc) < startedMs);
-    const equipment = ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
+    const equipment = equipmentOfRow(state.session.equipmentSnapshot, ex);
+    // Records are per equipment item, so a part at another gym (gym-switch GS6) names that gym.
+    const partGym = equipment !== null && (state.session.gymChanges?.length ?? 0) > 0 ? (input.gymNames?.[equipment.gymId] ?? null) : null;
     const earlierToday: HistorySet[] = [];
     let heaviest: SetRecord | null = null;
     let mostReps: SetRecord | null = null;
@@ -114,7 +119,7 @@ export function sessionRecords(input: {
       if (actual === null) continue;
       const rec = findSetRecord({
         exerciseName: ex.exerciseName,
-        gymName: input.gymName,
+        gymName: partGym ?? input.gymName,
         equipmentId: ex.equipmentId,
         convention: ex.loadConvention,
         measurement: ex.measurement,

@@ -1,33 +1,35 @@
-import type { EquipmentInstance, Exercise, Load, PlannedSet, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, TargetProvenance, WeightUnit, WorkoutSet } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Load, PlannedSet, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, TargetProvenance, WorkoutSet } from '@fizz/schemas';
 import { loadText, NBSP, repRangeText, targetShort } from '../display';
-import { getAchievableLoads, loadDirection, roundToAvailableLoad } from '../equipment';
+import { loadDirection } from '../equipment';
 import { fitProvenance, startWarningNote } from '../target-provenance';
 import { convertMass } from '../units';
-import { startWorkout, type StartWarning, type StartWorkoutInput, type StartWorkoutOutput } from './create';
+import { startWorkoutWithMode, type StartWorkoutInput, type StartWorkoutOutput } from './create';
+import { equipmentOfRow } from './equipment-snapshot';
+import { blockSets, partRootOf, partsOf } from './gym-switch';
 import { setDisplayNumbers } from './order';
+import type { SnapSetResult, SnapSlotResult } from './snap';
 import { GENERIC_WORKOUT_NAME } from './first-run';
+import { repeatNoteText } from './snap-text';
 
 /**
  * `Repeat last workout` / `Start from a past workout` (routines.md RT4, §2.4,
  * §4.6): a new session whose sets are all **pending**, with each done set's
  * **actual** as the new **target** (`Target (as last time)`). Nothing is
  * marked done and progression isn't applied. Skipped and deleted sets aren't
- * copied; a left/right pair copies once. At another gym each load goes
- * through the normal start-time check: rounded toward easier to what this
- * gym can make (never above a max), or dropped with a note when it was on a
- * different kind of equipment (rule 4).
+ * copied; a left/right pair copies once.
  *
- * Equipment missing here (review B1): when the source exercise used
- * equipment and this gym has none of that kind, the load target is dropped
- * and the reps kept, with `No Olympic bar here: no load target (last time
- * 100 kg × 5).` A load is never planned without equipment to check it on.
- *
- * kg↔lb (PM decision, review SP5): a load is converted only when the
- * converted value is an achievable load on today's equipment, rounded toward
- * easier (`planTemplateLoad` with equipment). With no equipment to check it
- * against, a load in another unit is dropped with a note, never converted.
- * Rounding only goes toward easier: when the easiest load here is harder
- * than last time's, the load is dropped with a note instead.
+ * Every load goes through the same fit as a routine Start and a mid-workout
+ * gym switch (`snapPlanToGym`, mode `repeat`; gym-switch GS1), so Repeat has
+ * no equipment rules of its own (review B1 is closed by that shared path):
+ * - the item last time is mapped to this gym's equipment (same item, else
+ *   same kind, else another kind the exercise lists); none here means no
+ *   load target, reps kept: `No Olympic bar at Hotel · Lisbon: no load
+ *   target (last time 100 kg × 5).`;
+ * - loads round toward easier and never above a max; one below the easiest
+ *   load here is dropped, never rounded up;
+ * - kg↔lb (review SP5): converted only through that rounding on today's
+ *   equipment; with no equipment, a load in another unit is dropped.
+ * Repeat never swaps an exercise by itself (gym-switch GS5).
  *
  * `Why?` (active-workout §2.12): each set records the set it was copied
  * from (`planned.provenance`, source `repeat`), with its own fit or drop
@@ -54,11 +56,16 @@ export interface RepeatInput {
   targets?: ReadonlyMap<string, readonly { setType: SetType; planned: PlannedSet }[]>;
   /** The new workout's name; default: the source's. */
   name?: string;
+  /** The gym's name, for notes (`No Olympic bar at Hotel · Lisbon …`); absent = "here". */
+  gymName?: string;
+  lastUsedHere?: StartWorkoutInput['lastUsedHere'];
 }
 
 export interface RepeatNote {
   exerciseName: string;
   text: string;
+  /** `⚠` for a dropped load target, `ⓘ` for a fact (gym-switch §2.2 note rules). */
+  tone: 'info' | 'warning';
 }
 
 export interface RepeatOutput extends StartWorkoutOutput {
@@ -69,39 +76,43 @@ export interface RepeatOutput extends StartWorkoutOutput {
   empty: boolean;
 }
 
-/** Equipment for a repeated exercise at this gym: the same item, else the first available of the same kind. */
-export function pickEquipment(sourceEq: EquipmentInstance | null, gym: readonly EquipmentInstance[], exercise: Pick<Exercise, 'compatibleEquipment'>): EquipmentInstance | null {
-  if (sourceEq === null) return null;
-  const usable = gym.filter((e) => e.availability === 'available');
-  const same = usable.find((e) => e.id === sourceEq.id);
-  if (same) return same;
-  return usable.find((e) => e.kind === sourceEq.kind && exercise.compatibleEquipment.includes(e.kind)) ?? null;
-}
-
 export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   const src = input.source;
-  const notes: RepeatNote[] = [];
   const notCopied: RepeatOutput['notCopied'] = [];
   const exercises = new Map<string, Exercise>();
   const routineExercises: RoutineExercise[] = [];
+  /** The item each copied exercise was done on last time (it may be at another gym). */
+  const knownEquipment = new Map<string, EquipmentInstance>();
   const sorted = [...src.exercises].sort((a, b) => a.order - b.order);
+  // An exercise split across gyms (GS6) is one block of rows: it is copied once,
+  // its parts' done sets in execution order (review B1).
+  const roots = sorted.filter((sx) => partRootOf(src.exercises, sx.id) === sx.id);
   // Targets are per exercise: an exercise done in two slots repeats each slot's own numbers (review S7).
+  // A block split across gyms is one slot, not two.
   const slots = new Map<string, number>();
-  for (const sx of sorted) slots.set(sx.exerciseId, (slots.get(sx.exerciseId) ?? 0) + 1);
+  for (const sx of roots) slots.set(sx.exerciseId, (slots.get(sx.exerciseId) ?? 0) + 1);
   const targetsFor = (exerciseId: string) => ((slots.get(exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(exerciseId));
 
-  // What each template came from: the done set it copies, or the built-in rule's planned set (Start next session),
-  // its equipment here, and why its load was dropped (if it was).
-  const copied = new Map<string, { from: { kind: 'copy'; set: WorkoutSet } | { kind: 'rule'; planned: PlannedSet }; equipmentId: string | null; eq: EquipmentInstance | null; dropNote: string | null }>();
+  // What each template came from: the done set it copies, or the built-in rule's planned set (Start next session).
+  const copied = new Map<string, { kind: 'copy'; set: WorkoutSet } | { kind: 'rule'; planned: PlannedSet }>();
 
-  for (const sx of sorted) {
-    const own = src.sets.filter((s) => s.sessionExerciseId === sx.id).sort((a, b) => a.index - b.index);
+  for (const sx of roots) {
+    const parts = partsOf(src.exercises, sx.id);
+    const own = blockSets(src, sx.id);
     // A left/right pair is one prescribed set: the companion row isn't copied again.
     const done = own.filter((s) => s.status === 'completed' && s.actual !== null && s.pairedWithSetId === null);
     const skipped = own.filter((s) => s.status === 'skipped').length;
     if (skipped > 0) notCopied.push({ exerciseName: sx.exerciseName, skipped });
     if (done.length === 0) continue;
     const known = input.exercises.get(sx.exerciseId);
+    // The item it was last done on: the latest part that had equipment (a part with none,
+    // e.g. bench at a gym with no bar, doesn't unpin the exercise).
+    const sourceEq =
+      [...parts]
+        .reverse()
+        .filter((p) => done.some((d) => d.sessionExerciseId === p.id))
+        .map((p) => equipmentOfRow(src.session.equipmentSnapshot, p))
+        .find((e) => e !== null) ?? null;
     const exercise: Exercise = known ?? {
       id: sx.exerciseId,
       ownerId: null,
@@ -111,25 +122,16 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       primaryMuscles: [],
       measurement: sx.measurement,
       laterality: sx.laterality,
-      compatibleEquipment: [],
+      compatibleEquipment: sourceEq ? [sourceEq.kind] : [],
       defaultLoadConvention: sx.loadConvention,
       version: 1,
       createdAtUtc: src.session.startedAt.utc,
       updatedAtUtc: src.session.startedAt.utc,
     };
     exercises.set(exercise.id, exercise);
-    const sourceEq = sx.equipmentId === null ? null : (src.session.equipmentSnapshot.find((e) => e.id === sx.equipmentId) ?? null);
-    const eq = pickEquipment(sourceEq, input.gymEquipment, { compatibleEquipment: known?.compatibleEquipment ?? (sourceEq ? [sourceEq.kind] : []) });
-    // Equipment that isn't here: keep reps, drop every load (review B1, rule 4).
-    const missingEq = eq === null ? sourceEq : null;
-    const equipmentMissing = missingEq !== null;
-    // No equipment either side: the session is in Ben's unit; another unit can't be checked, so it's dropped.
-    const sessionUnit = eq?.unit ?? input.owner.preferredUnit;
-    const doneWithReps = done.filter((s) => s.actual !== null && (s.actual.reps !== null || s.actual.durationS !== null));
-    if (missingEq !== null) notes.push({ exerciseName: sx.exerciseName, text: missingEquipmentNote(missingEq.name, doneWithReps) });
-    let unitDropped: Load | null = null;
-    let harderDropped: { requested: Load; lightest: Load } | null = null;
+    if (sourceEq) knownEquipment.set(sourceEq.id, sourceEq);
 
+    const doneWithReps = done.filter((s) => s.actual !== null && (s.actual.reps !== null || s.actual.durationS !== null));
     const planned = targetsFor(sx.exerciseId);
     type Source = { setType: SetType; load: Load | null; reps: { min: number; max: number } | null; durationS: number | null; from: { kind: 'copy'; set: WorkoutSet } | { kind: 'rule'; planned: PlannedSet } };
     const sources: Source[] =
@@ -138,26 +140,13 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
         : doneWithReps.flatMap((s) => (s.actual === null ? [] : [{ setType: s.setType, load: s.actual.load, reps: s.actual.reps === null ? null : { min: s.actual.reps, max: s.actual.reps }, durationS: s.actual.durationS, from: { kind: 'copy' as const, set: s } }]));
     const templates: SetTemplate[] = [];
     for (const a of sources) {
-      const fit = fitLoadHere(equipmentMissing ? null : a.load, eq, sessionUnit);
-      if (fit.unitDropped) unitDropped ??= fit.unitDropped;
-      if (fit.harderDropped) harderDropped ??= fit.harderDropped;
-      const targetLoad = fit.load;
-      // Why this set's load was dropped, for `Why?`: said against last time's set, or the built-in rule's target.
-      const was = a.from.kind === 'rule' ? 'the target' : 'last time';
-      const dropNote =
-        missingEq !== null && a.load !== null
-          ? `No load target: no ${missingEq.name} here.`
-          : fit.unitDropped
-            ? `No load target: ${was} was ${loadWord(fit.unitDropped)}, and there’s no equipment here to check a ${sessionUnit} load on.`
-            : fit.harderDropped
-              ? `No load target: ${was} was ${loadWord(fit.harderDropped.requested)}, and the easiest here is ${loadWord(fit.harderDropped.lightest)}.`
-              : null;
       const templateId = input.newId();
-      copied.set(templateId, { from: a.from, equipmentId: sx.equipmentId, eq, dropNote });
+      copied.set(templateId, a.from);
       templates.push({
         id: templateId,
         setType: a.setType,
-        targetLoad,
+        // The intended target (last time's actual, or the rule's next target); the shared fit decides what this gym can make.
+        targetLoad: a.load,
         targetReps: a.reps,
         targetDurationS: a.durationS,
         targetRpe: null,
@@ -165,12 +154,12 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
         restOverrideS: null,
       });
     }
-    notes.push(...droppedNotes(sx.exerciseName, sessionUnit, unitDropped, harderDropped));
     if (templates.length === 0) continue;
     routineExercises.push({
       id: input.newId(),
       exerciseId: exercise.id,
-      equipmentId: eq?.id ?? null,
+      // Pinned to last time's item: `snapPlanToGym` maps it to this gym (GS3).
+      equipmentId: sourceEq?.id ?? null,
       order: routineExercises.length,
       supersetGroup: sx.supersetGroup,
       setTemplates: templates,
@@ -192,43 +181,90 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   // Ben's own per-exercise rest defaults come first (rest-state §2.4).
   const restOwner = input.owner.exerciseRestS ?? {};
   const withRest = new Map([...exercises].map(([k, e]) => [k, restOwner[k] === undefined ? e : { ...e, defaultRestS: restOwner[k] }]));
-  const out = startWorkout({
-    opId: input.opId,
-    owner: input.owner,
-    gymId: input.gymId,
-    routine,
-    exercises: withRest,
-    gymEquipment: input.gymEquipment,
-    at: input.at,
-    newId: input.newId,
-    ...(input.checkIn !== undefined ? { checkIn: input.checkIn } : {}),
-  });
+  const out = startWorkoutWithMode(
+    {
+      opId: input.opId,
+      owner: input.owner,
+      gymId: input.gymId,
+      routine,
+      exercises: withRest,
+      gymEquipment: input.gymEquipment,
+      at: input.at,
+      newId: input.newId,
+      knownEquipment,
+      ...(input.gymName !== undefined ? { gymName: input.gymName } : {}),
+      ...(input.lastUsedHere ? { lastUsedHere: input.lastUsedHere } : {}),
+      ...(input.checkIn !== undefined ? { checkIn: input.checkIn } : {}),
+    },
+    'repeat',
+  );
 
-  // Rounded or dropped loads become plain notes; every target is marked as copied.
-  notes.push(...warningNotes(out.warnings, routineExercises, exercises));
+  // One note per exercise per outcome, in workout order, from fixed wording (gym-switch §5).
+  const notes: RepeatNote[] = [];
+  const seen = new Set<string>();
+  for (const slot of out.snap.slots) {
+    for (const note of slot.notes) {
+      const text = repeatNoteText(note, slot, input.gymName ?? null);
+      if (text === null) continue;
+      const key = `${slot.exerciseName}|${text}`;
+      if (!seen.has(key)) notes.push({ exerciseName: slot.exerciseName, text, tone: note.kind === 'dropped' ? 'warning' : 'info' });
+      seen.add(key);
+    }
+  }
+
+  // `Why?`: each set's provenance, with how the shared fit treated its load here.
   const numbers = setDisplayNumbers(src.exercises, src.sets);
+  const fitOf = new Map<string, { slot: SnapSlotResult; set: SnapSetResult }>();
+  for (const slot of out.snap.slots) for (const set of slot.sets) fitOf.set(set.id, { slot, set });
   const warningOf = new Map(out.warnings.flatMap((w) => (w.kind === 'target_rounded' || w.kind === 'target_dropped' ? [[w.setTemplateId, w] as const] : [])));
   const fromOf = (setId: string) => {
     const templateId = out.setTemplateIds[setId];
-    return templateId === undefined ? undefined : { templateId, entry: copied.get(templateId) };
+    return templateId === undefined ? undefined : { templateId, from: copied.get(templateId) };
+  };
+  /** The equipment note for one set: said against last time's set, or the built-in rule's target. */
+  const fitNote = (templateId: string, was: 'Last time' | 'Target'): string | null => {
+    const fit = fitOf.get(templateId);
+    const w = warningOf.get(templateId);
+    if (fit === undefined || w === undefined) return null;
+    const { slot, set } = fit;
+    const wasLower = was === 'Target' ? 'the target' : 'last time';
+    if (set.outcome === 'dropped' && set.intended !== null) {
+      switch (set.reason) {
+        case 'not_here':
+          return `No load target: no ${slot.sourceEquipment?.name ?? 'equipment for it'} here.`;
+        case 'unit_not_convertible':
+          return `No load target: ${wasLower} was ${loadWord(set.intended)}, and there’s no equipment here to check a ${slot.unit} load on.`;
+        case 'lightest_is_harder':
+          if (set.lightest !== null) return `No load target: ${wasLower} was ${loadWord(set.intended)}, and the easiest here is ${loadWord(set.lightest)}.`;
+          break;
+        case 'convention_mismatch':
+        case 'no_achievable_loads':
+        case 'pain_flag':
+        case undefined:
+          break;
+      }
+    }
+    return startWarningNote(w, slot.equipment, was);
   };
   const provenanceOf = (setId: string): TargetProvenance | null => {
     const found = fromOf(setId);
-    const entry = found?.entry;
-    if (found === undefined || entry === undefined) return null;
-    const w = warningOf.get(found.templateId);
-    const { from } = entry;
+    const from = found?.from;
+    if (found === undefined || from === undefined) return null;
     if (from.kind === 'rule') {
       // A target from the built-in rule (Start next session, review B1.1): its own rule provenance, never `repeat`.
       // Without one it reads `Not recorded`, rather than a made-up explanation.
       const rule = from.planned.provenance;
       if (rule === undefined) return null;
-      const fit = entry.dropNote ?? (w ? startWarningNote(w, entry.eq, 'Target') : null);
+      const fit = fitNote(found.templateId, 'Target');
       return fitProvenance(fit === null ? rule : { ...rule, guardNotes: [...rule.guardNotes, fit] });
     }
     if (from.set.actual === null) return null;
     const number = numbers.get(from.set.id);
-    const notes = [entry.dropNote ?? (w ? startWarningNote(w, entry.eq, 'Last time') : null)].filter((n): n is string => n !== null);
+    const fit = fitNote(found.templateId, 'Last time');
+    // The part of a split exercise this set was done on (gym-switch GS6): its own item and gym.
+    const row = src.exercises.find((e) => e.id === from.set.sessionExerciseId);
+    const switched = (src.session.gymChanges?.length ?? 0) > 0;
+    const rowEq = row === undefined || !switched ? null : equipmentOfRow(src.session.equipmentSnapshot, row);
     return fitProvenance({
       source: 'repeat',
       setAt: input.at,
@@ -238,11 +274,11 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
         sessionId: src.session.id,
         performedAt: src.session.startedAt,
         routineName: src.session.routineName,
-        gymId: src.session.gymId,
-        equipmentId: entry.equipmentId,
+        gymId: rowEq?.gymId ?? src.session.gymId,
+        equipmentId: row?.equipmentId ?? null,
         sets: [{ setId: from.set.id, version: from.set.version, ...(number !== undefined ? { number } : {}), setType: from.set.setType, side: from.set.side, values: from.set.actual }],
       },
-      guardNotes: notes,
+      guardNotes: fit === null ? [] : [fit],
     });
   };
   const aggregate: SessionAggregate = {
@@ -250,7 +286,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     session: { ...out.aggregate.session, routineId: null },
     sets: out.aggregate.sets.map((s) => {
       // The synthetic routine isn't the source: the set Ben did last time is, or the built-in rule's target.
-      const fromRule = fromOf(s.id)?.entry?.from.kind === 'rule';
+      const fromRule = fromOf(s.id)?.from?.kind === 'rule';
       const planned: PlannedSet = { ...s.planned, source: fromRule ? 'built_in_rule' : 'repeat' };
       const provenance = provenanceOf(s.id);
       if (provenance === null) delete planned.provenance;
@@ -258,22 +294,25 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       return { ...s, planned };
     }),
   };
-  return { aggregate, warnings: out.warnings, setTemplateIds: out.setTemplateIds, notes, notCopied, empty: routineExercises.length === 0 };
+  return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, notes, notCopied, empty: routineExercises.length === 0 };
 }
 
 /**
- * `No Olympic bar here: no load target (last time 100 kg × 5).`, said once,
- * about the top set: the hardest working set by its load convention (on an
- * assisted machine the least assistance), compared in one unit. Only sets
- * in the last working set's convention are compared; ties go to the later
- * set.
+ * The names of a workout's exercises with at least one done set, in workout order,
+ * once per exercise: an exercise split across gyms (GS6) is listed once (review B1).
  */
-function missingEquipmentNote(equipmentName: string, done: readonly WorkoutSet[]): string {
-  const top = lastTimeTopSet(done);
-  const a = top?.actual;
-  if (!a?.load) return `No ${equipmentName} here.`;
-  const amount = a.reps !== null ? ` × ${String(a.reps)}` : a.durationS !== null ? ` for ${String(a.durationS)} s` : '';
-  return `No ${equipmentName} here: no load target (last time ${loadWord(a.load)}${amount}).`;
+export function doneExerciseNames(state: SessionAggregate): string[] {
+  const doneRows = new Set(state.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null).map((s) => s.sessionExerciseId));
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const e of [...state.exercises].sort((a, b) => a.order - b.order)) {
+    if (!doneRows.has(e.id)) continue;
+    const root = partRootOf(state.exercises, e.id);
+    if (seen.has(root)) continue;
+    seen.add(root);
+    names.push(e.exerciseName);
+  }
+  return names;
 }
 
 /** The hardest loaded set (working sets first) by convention: most resistance, or least assistance. */
@@ -294,75 +333,12 @@ export function lastTimeTopSet(done: readonly WorkoutSet[]): WorkoutSet | null {
   return top;
 }
 
-function loadWord(l: Load | { value: number; unit: WeightUnit; convention: Load['convention'] }): string {
-  return loadText(l, l.convention).replaceAll(NBSP, ' ');
-}
-
-/**
- * A copied or planned load checked against this gym before it becomes a
- * template (rule 4). Without equipment, a load in another unit is dropped
- * (never converted unchecked). Rounding only goes toward easier: when the
- * easiest load here is harder than the target, the target is dropped.
- */
-export function fitLoadHere(
-  load: Load | null,
-  eq: EquipmentInstance | null,
-  sessionUnit: WeightUnit,
-): { load: Load | null; unitDropped: Load | null; harderDropped: { requested: Load; lightest: Load } | null } {
-  if (load === null) return { load: null, unitDropped: null, harderDropped: null };
-  if (eq === null) return load.unit !== sessionUnit ? { load: null, unitDropped: load, harderDropped: null } : { load, unitDropped: null, harderDropped: null };
-  const r = roundToAvailableLoad(load, eq, 'easier');
-  const direction = getAchievableLoads(eq).direction;
-  if (r.ok && ((direction === 'resistance' && r.bounded === 'min') || (direction === 'assistance' && r.bounded === 'max'))) {
-    return { load: null, unitDropped: null, harderDropped: { requested: load, lightest: r.load } };
-  }
-  return { load, unitDropped: null, harderDropped: null };
-}
-
-/** The notes said when `fitLoadHere` dropped a load. */
-export function droppedNotes(exerciseName: string, sessionUnit: WeightUnit, unitDropped: Load | null, harderDropped: { requested: Load; lightest: Load } | null): RepeatNote[] {
-  const notes: RepeatNote[] = [];
-  if (unitDropped !== null) {
-    notes.push({ exerciseName, text: `No load target: last time was ${loadWord(unitDropped)}, and there's no equipment here to check a ${sessionUnit} load on.` });
-  }
-  if (harderDropped !== null) {
-    notes.push({ exerciseName, text: `No load target: last time was ${loadWord(harderDropped.requested)}, and the easiest here is ${loadWord(harderDropped.lightest)}.` });
-  }
-  return notes;
-}
-
-/** `startWorkout`'s rounding warnings as plain notes, one per exercise and text. */
-export function warningNotes(warnings: readonly StartWarning[], routineExercises: readonly RoutineExercise[], exercises: ReadonlyMap<string, Pick<Exercise, 'name'>>): RepeatNote[] {
-  const notes: RepeatNote[] = [];
-  const nameOfTemplate = new Map<string, string>();
-  for (const rex of routineExercises) for (const t of rex.setTemplates) nameOfTemplate.set(t.id, exercises.get(rex.exerciseId)?.name ?? 'Exercise');
-  const seen = new Set<string>();
-  for (const w of warnings) {
-    if (w.kind !== 'target_rounded' && w.kind !== 'target_dropped') continue;
-    const name = nameOfTemplate.get(w.setTemplateId) ?? 'Exercise';
-    const text =
-      w.kind === 'target_rounded'
-        ? w.bounded === 'max'
-          ? `Rounded down from ${loadWord(w.requested)}: this gym stops at ${loadWord(w.planned)}.`
-          : `Rounded from ${loadWord(w.requested)} to ${loadWord(w.planned)} to match this gym.`
-        : w.reason === 'unit_not_convertible'
-          ? `No load target: ${loadWord(w.requested)} is in another unit.`
-          : w.reason === 'no_achievable_loads'
-            ? `No load target: this gym has no loads set up for ${loadWord(w.requested)}.`
-            : `No load target: the ${loadWord(w.requested)} was on different equipment.`;
-    const key = `${name}|${text}`;
-    if (!seen.has(key)) notes.push({ exerciseName: name, text });
-    seen.add(key);
-  }
-  return notes;
-}
-
 /** One line per exercise for the Repeat preview: `3 sets · Target (as last time) 100 kg × 8, 8, 7`. */
 export function repeatPreviewLines(state: SessionAggregate): { exerciseName: string; equipmentName: string | null; line: string }[] {
   return [...state.exercises]
     .sort((a, b) => a.order - b.order)
     .map((ex) => {
-      const eq = ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
+      const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
       const sets = state.sets.filter((s) => s.sessionExerciseId === ex.id).sort((a, b) => a.index - b.index);
       const parts = sets.map((s) => {
         const load = s.planned.load ? loadText(s.planned.load, ex.loadConvention, eq) : null;
@@ -384,7 +360,7 @@ export function targetSummaryLines(state: SessionAggregate): { exerciseName: str
   return [...state.exercises]
     .sort((a, b) => a.order - b.order)
     .map((ex) => {
-      const eq = ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
+      const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
       const sets = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted' && s.setType !== 'warmup').sort((a, b) => a.index - b.index);
       const n = `${String(sets.length)} ${sets.length === 1 ? 'set' : 'sets'}`;
       // A top set then back-offs reads `Target 100 kg × 3, then 85 kg × 6–8` (review N10): each change of target, in order.
@@ -396,4 +372,8 @@ export function targetSummaryLines(state: SessionAggregate): { exerciseName: str
       const target = texts.length === 0 ? null : texts.map((t, i) => (i === 0 ? t : t.replace(/^Target /, ''))).join(', then ');
       return { exerciseName: ex.exerciseName, line: target === null ? `No target · ${n}` : `${target} · ${n}` };
     });
+}
+
+function loadWord(l: Load): string {
+  return loadText(l, l.convention).replaceAll(NBSP, ' ');
 }

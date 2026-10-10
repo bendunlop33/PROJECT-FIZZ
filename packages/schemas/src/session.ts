@@ -28,6 +28,49 @@ export const SetValuesSchema = z.object({
 });
 export type SetValues = z.infer<typeof SetValuesSchema>;
 
+/**
+ * How a target was fitted to a gym's equipment (gym-switch.md §6.1, ADR 0019).
+ * `restored`: back to the intended target after an earlier fit lowered or
+ * dropped it. `dropped`: no load target (reps and time are kept).
+ */
+export const SnapOutcomeSchema = z.enum(['exact', 'rounded', 'capped', 'converted', 'restored', 'dropped']);
+export type SnapOutcome = z.infer<typeof SnapOutcomeSchema>;
+
+/** Why a load target was dropped. `pain_flag`: an active pain flag stops a load coming back (rule 9). */
+export const SnapReasonSchema = z.enum(['not_here', 'convention_mismatch', 'unit_not_convertible', 'no_achievable_loads', 'lightest_is_harder', 'pain_flag']);
+export type SnapReason = z.infer<typeof SnapReasonSchema>;
+
+/** Which caller of `snapPlanToGym` fitted the target. */
+export const SnapModeSchema = z.enum(['start', 'repeat', 'gym_switch', 'equipment_update']);
+export type SnapMode = z.infer<typeof SnapModeSchema>;
+
+/**
+ * GS-S1: the target as its author set it (`intended`) and how it was fitted
+ * here. Written only by `snapPlanToGym`; never changes who set the target
+ * (`source`). A later fit always starts from `intended`, never from the
+ * fitted load, so switching back restores the plan (gym-switch GS2).
+ * `intendedOn` is the equipment the intended target was made for; it never
+ * changes on a fit. Absent = the load is exactly the intended target on the
+ * row's own equipment.
+ */
+export const PlannedSnapSchema = z
+  .object({
+    intended: LoadSchema.nullable(),
+    intendedOn: z
+      .object({ equipmentId: IdSchema, kind: EquipmentKindSchema, gymId: IdSchema, name: z.string().min(1).max(120) })
+      .nullable(),
+    outcome: SnapOutcomeSchema,
+    reason: SnapReasonSchema.optional(),
+    /** A pain flag kept the load at or below the target it had (rule 9). */
+    painHeld: z.literal(true).optional(),
+    /** The equipment and gym the load was fitted to (null: no equipment). */
+    equipmentId: IdSchema.nullable(),
+    gymId: IdSchema.nullable(),
+    by: SnapModeSchema,
+  })
+  .refine((s) => (s.outcome === 'dropped') === (s.reason !== undefined), { message: 'A dropped target has a reason; other outcomes have none', path: ['reason'] });
+export type PlannedSnap = z.infer<typeof PlannedSnapSchema>;
+
 export const RestSourceSchema = z.enum([
   'set_override',
   'routine_set_type',
@@ -204,6 +247,8 @@ export const PlannedSetSchema = z.object({
   source: PlannedSourceSchema.optional(),
   /** Absent on targets made before `Why?` existed (shown as `Not recorded`). */
   provenance: TargetProvenanceSchema.optional(),
+  /** How the load was fitted to the gym's equipment (GS-S1); absent = as intended. */
+  snap: PlannedSnapSchema.optional(),
 });
 export type PlannedSet = z.infer<typeof PlannedSetSchema>;
 
@@ -265,8 +310,74 @@ export const SessionExerciseSchema = z.object({
   supersetGroup: z.string().min(1).max(8).nullable(),
   transitionRestS: DurationSecondsSchema.nullable(),
   progressionRuleId: IdSchema.nullable(),
+  /**
+   * GS-S3: which version of `equipmentId` in the session's equipment snapshot
+   * this row uses. Absent = the latest entry with that ID. Set only when the
+   * snapshot holds more than one version of the item (`[Use changes today]`).
+   */
+  equipmentVersion: z.int().min(1).optional(),
+  /**
+   * GS-S4: this row holds the sets of `continuesFromId`'s exercise that moved
+   * to other equipment on a gym switch, while the done sets stayed on that
+   * row (gym-switch GS6). Shown as one exercise in parts. Absent = not a continuation.
+   */
+  continuesFromId: IdSchema.optional(),
 });
 export type SessionExercise = z.infer<typeof SessionExerciseSchema>;
+
+/** One pending set as it was before a gym change, for Undo (GS-S2). */
+export const GymChangeSetBeforeSchema = z.object({
+  id: IdSchema,
+  sessionExerciseId: IdSchema,
+  planned: PlannedSetSchema,
+  draft: SetValuesSchema.nullable(),
+});
+export type GymChangeSetBefore = z.infer<typeof GymChangeSetBeforeSchema>;
+
+/**
+ * GS-S2: an append-only record of each gym change in a workout (switch, or
+ * `[Use changes today]` at the same gym) and each Undo of one. `session.gymId`
+ * is the current gym. A change keeps what it replaced (`before`), so Undo
+ * restores it exactly, also after a relaunch, and only while the plan still
+ * has `afterFingerprint` (nothing logged, corrected or changed since).
+ */
+/** Gym changes and Undos one workout can record; the reducer refuses one past it (review N5). */
+export const MAX_GYM_CHANGES = 50;
+
+export const GymChangeSchema = z.object({
+  actionId: z.string().min(1).max(128),
+  opId: OperationIdSchema,
+  kind: z.enum(['change', 'undo']),
+  mode: z.enum(['gym_switch', 'equipment_update']),
+  at: ZonedTimestampSchema,
+  fromGymId: IdSchema.nullable(),
+  toGymId: IdSchema,
+  /** For `undo`: the change it reverted. */
+  undoOf: z.string().min(1).max(128).optional(),
+  afterFingerprint: z.string().min(1).max(64),
+  /** Pending sets whose target or equipment changed. */
+  changedSetIds: z.array(IdSchema).max(200),
+  /** Sets whose edited draft couldn't be set up on the new equipment and was replaced (GS12). */
+  draftsReplaced: z.array(IdSchema).max(200),
+  /**
+   * `change` only: the new gym's equipment list as it was at the change (each item's ID
+   * and version). The snapshot is a union of every visit, so this is what says which
+   * items are at the gym now (review N3). Absent in older records: every snapshot item
+   * of that gym counts.
+   */
+  equipment: z
+    .array(z.object({ id: IdSchema, version: z.int().min(1) }))
+    .max(500)
+    .optional(),
+  /** `change` only: every exercise row and moved set as they were before. */
+  before: z
+    .object({
+      exercises: z.array(SessionExerciseSchema).max(200),
+      sets: z.array(GymChangeSetBeforeSchema).max(200),
+    })
+    .optional(),
+});
+export type GymChange = z.infer<typeof GymChangeSchema>;
 
 export const PauseStateSchema = z.object({
   pausedAtUtc: UtcTimestampSchema,
@@ -292,10 +403,13 @@ export const WorkoutSessionSchema = z.object({
   routineId: IdSchema.nullable(),
   routineName: z.string().max(120).nullable(),
   /**
-   * The gym the workout was done at. Null only for imported workouts whose
+   * The gym the workout was done at (after a mid-workout switch: the current
+   * one; `gymChanges` has the history). Null only for imported workouts whose
    * gym wasn't recorded (data-import-export §2.5 step 3c, `Not recorded`).
    */
   gymId: IdSchema.nullable(),
+  /** GS-S2: every gym change in this workout, in order. Absent = none. */
+  gymChanges: z.array(GymChangeSchema).max(MAX_GYM_CHANGES).optional(),
   /** Operation ID that created the session; makes startWorkout idempotent. */
   startOperationId: OperationIdSchema,
   /**
@@ -322,6 +436,11 @@ export const WorkoutSessionSchema = z.object({
    */
   version: z.int().min(1),
   activeSetId: IdSchema.nullable(),
+  /**
+   * The equipment of every gym this workout used, as saved when it started
+   * or switched. Append-only and unique by `(id, version)` (GS-S3), so a
+   * done set always resolves the equipment it was logged on.
+   */
   equipmentSnapshot: z.array(EquipmentInstanceSchema),
   /** The open pause, if the workout is paused now. */
   pause: PauseStateSchema.nullable(),

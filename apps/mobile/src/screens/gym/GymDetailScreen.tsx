@@ -5,6 +5,7 @@ import { ActionSheetIOS } from 'react-native';
 import { EQUIPMENT_KIND_LABEL, type EditableKind } from '@fizz/domain';
 
 import { newUuid } from '../../device/runtime';
+import { openWorkoutToCheckGym } from '../../navigation/actions';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useScreenData } from '../../shell/context';
 import { AppText, Group, Row, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
@@ -41,7 +42,20 @@ export function GymDetailScreen() {
   return (
     <Screen>
       {inUseByWorkout ? (
-        <StatusLine icon="info.circle" tone="info" text="Your workout in progress uses this gym as it was when you started." detail="Changes apply from the next workout." />
+        <StatusLine
+          icon="info.circle"
+          tone="info"
+          text="Your workout in progress uses this gym as it was when you started."
+          action={
+            <TextButton
+              label="Use changes today"
+              onPress={() => {
+                // Opens `Use updated …` on the workout; nothing changes until Apply (gym-switch §2.3).
+                navigation.dispatch(openWorkoutToCheckGym(gymId, newUuid()));
+              }}
+            />
+          }
+        />
       ) : null}
       <AppText variant="callout" color="text.secondary">
         {`${gym.isDefault ? 'Default gym · ' : ''}Every target and step is limited to what this equipment can make.`}
