@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { checkRoutineName, formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction } from '../../alerts/ask';
@@ -18,6 +18,7 @@ import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
 import type { ActiveWorkoutData } from '../../services/workout-services';
+import { NameSheet } from '../routines/NameSheet';
 import { firstTime, useDataChanged, useLaunchInfo, useServices } from '../../shell/context';
 import { logHaptic, swapMotion, TIMING, useTheme } from '../../theme';
 import {
@@ -92,6 +93,9 @@ export function WorkoutScreen() {
   const [banners, setBanners] = useState<{ key: string; severity: 'info' | 'warning'; text: string }[]>([]);
   const [finishOpen, setFinishOpen] = useState(false);
   const [timesOpen, setTimesOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const renameOp = useRef(newUuid());
+  const [renameAfter] = useState(() => createAfterDismiss());
   const [restEditor, setRestEditor] = useState(false);
   const [hiddenWarmUps, setHiddenWarmUps] = useState<string[]>([]);
   const [permission, setPermission] = useState<AlertPermission | 'unknown'>('unknown');
@@ -455,15 +459,44 @@ export function WorkoutScreen() {
     }
   }
 
-  /** `⋯` (premium-feel §3.2): Pause lives here, not in the header; paused, Resume is the one-tap primary. */
+  /**
+   * `⋯` (premium-feel §3.2, §10): Pause lives here, not in the header; paused, Resume is the one-tap primary.
+   * `Rename workout` isn't offered on an open-ended workout in progress: it's named after Finish (its Summary).
+   */
   function topMenu() {
-    const options = [session.pause === null ? 'Pause workout' : 'Resume workout', 'Finish workout', 'Edit workout times', 'Discard workout', 'Cancel'];
-    ActionSheetIOS.showActionSheetWithOptions({ options, destructiveButtonIndex: 3, cancelButtonIndex: 4 }, (i) => {
-      if (i === 0) void pauseOrResume();
-      if (i === 1) setFinishOpen(true);
-      if (i === 2) setTimesOpen(true);
-      if (i === 3) confirmDiscard();
+    const items: { label: string; run: () => void }[] = [
+      { label: session.pause === null ? 'Pause workout' : 'Resume workout', run: () => void pauseOrResume() },
+      ...(view?.openEnded ? [] : [{ label: 'Rename workout', run: () => { renameOp.current = newUuid(); setRenameOpen(true); } }]),
+      { label: 'Finish workout', run: () => { setFinishOpen(true); } },
+      { label: 'Edit workout times', run: () => { setTimesOpen(true); } },
+      { label: 'Discard workout', run: confirmDiscard },
+    ];
+    const options = [...items.map((x) => x.label), 'Cancel'];
+    ActionSheetIOS.showActionSheetWithOptions({ options, destructiveButtonIndex: items.length - 1, cancelButtonIndex: items.length }, (i) => {
+      items[i]?.run();
     });
+  }
+
+  /** `Rename workout` (premium-feel §2.6): versioned; Undo renames back. The routine keeps its name. */
+  async function renameWorkout(name: string): Promise<string | null> {
+    const before = loaded.aggregate.session.routineName;
+    const r = await run({ type: 'rename_session', at: services.now(), opId: renameOp.current, name, expectedVersion: loaded.aggregate.session.version });
+    if (!r.ok) return r.error.code === 'stale_version' ? 'The workout changed. Check it and try again.' : r.error.message;
+    const version = r.aggregate.session.version;
+    renameAfter.arm(() => {
+      showToast({
+        text: `Renamed to ${name}`,
+        action: 'Undo',
+        onAction: () => {
+          setToast(null);
+          void run({ type: 'rename_session', at: services.now(), opId: newUuid(), name: before, expectedVersion: version }).then((u) => {
+            if (!u.ok) showToast({ icon: 'info.circle', text: `Couldn’t undo: ${u.error.message}` });
+          });
+        },
+      });
+    });
+    setRenameOpen(false);
+    return null;
   }
 
   /** `bell.slash` in the header: iOS Settings once denied, otherwise ask iOS now. */
@@ -1038,6 +1071,18 @@ export function WorkoutScreen() {
           }}
         />
       ) : null}
+      <NameSheet
+        visible={renameOpen}
+        title="Rename workout"
+        buttonLabel="Save name"
+        initialName={view.title}
+        check={(n) => Promise.resolve(checkRoutineName(n, []))}
+        onSubmit={renameWorkout}
+        onClose={() => {
+          setRenameOpen(false);
+        }}
+        onDismissed={renameAfter.dismissed}
+      />
       <StartTimeSheet
         visible={timesOpen}
         data={loaded}

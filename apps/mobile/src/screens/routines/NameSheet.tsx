@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import type { RoutineNameCheck } from '@fizz/domain';
@@ -41,15 +41,18 @@ export function NameSheet({ visible, title, buttonLabel, initialName, detail = n
     setBusy(false);
   }, [visible, initialName]);
 
+  // The latest `check` without re-running on every render (callers pass inline functions).
+  const checkRef = useRef(check);
+  checkRef.current = check;
   useEffect(() => {
     let live = true;
-    void check(name).then((r) => {
+    void checkRef.current(name).then((r) => {
       if (live) setResult(r);
     });
     return () => {
       live = false;
     };
-  }, [name, check]);
+  }, [name]);
 
   const valid = result?.ok === true;
   async function submit() {

@@ -59,6 +59,12 @@ export interface WorkoutSummary {
   sessionId: string;
   sessionVersion: number;
   title: string;
+  /** The name as stored (null: none, the title is worked out); what a rename's Undo goes back to. */
+  storedName: string | null;
+  /** The routine this workout was started from, if any (`Save as routine` is hidden then; premium-feel §6.2). */
+  routineId: string | null;
+  /** `import`: a FitNotes workout; it can't be saved as a routine (its loads were never checked on equipment). */
+  source: 'manual' | 'import';
   startedAtUtc: string;
   endedAtUtc: string | null;
   tz: string;
@@ -273,6 +279,9 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     sessionId: s.id,
     sessionVersion: s.version,
     title: s.routineName ?? 'Workout',
+    storedName: s.routineName,
+    routineId: s.routineId,
+    source: s.source,
     startedAtUtc: s.startedAt.utc,
     endedAtUtc: s.endedAt?.utc ?? null,
     tz: s.startedAt.tz,

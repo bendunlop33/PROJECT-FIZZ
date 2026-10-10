@@ -97,7 +97,7 @@ export type SessionEvent =
   | { type: 'SetDeleted'; setId: string }
   | { type: 'RestPlanChanged'; setIds: string[]; seconds: number }
   | { type: 'SessionTimingUpdated' }
-  | { type: 'SessionRenamed'; name: string };
+  | { type: 'SessionRenamed'; name: string | null };
 
 export type ReduceResult =
   | {
@@ -1123,8 +1123,8 @@ function handleSetRestAfter(state: SessionAggregate, cmd: CommandOf<'set_rest_af
  */
 function handleRenameSession(state: SessionAggregate, cmd: CommandOf<'rename_session'>): Handled {
   if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed; reload.');
-  const name = cmd.name.trim();
-  if (state.session.status === 'active' && isOpenEndedWorkout(state)) {
+  const name = cmd.name === null ? null : cmd.name.trim();
+  if (state.session.status === 'active' && (isOpenEndedWorkout(state) || name === null)) {
     return fail('session_not_finished', 'You can name this workout after you finish it.');
   }
   if (state.session.routineName === name) return { ok: true, state, events: [] };
@@ -1240,7 +1240,7 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
         });
     case 'rename_session':
       // A later rename (or its undo) replaced this name.
-      return state.session.routineName !== command.name.trim();
+      return state.session.routineName !== (command.name === null ? null : command.name.trim());
     case 'finish':
     case 'discard':
     case 'add_exercise':

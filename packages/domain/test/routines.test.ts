@@ -357,7 +357,12 @@ describe('rename_session', () => {
     const open = startWorkout({ opId: 'o', owner: profile(), gymId: GYM, routine: null, exercises, gymEquipment: [], at: at(0), newId: idGen(95_000) }).aggregate;
     expectError(rename(open, 'Push', 'ren-o'), 'session_not_finished');
     const finished = apply(open, { type: 'finish', at: at(60), opId: 'fo', expectedVersion: open.session.version, endedAt: null });
-    expect(rename(finished, 'Push', 'ren-o2').ok).toBe(true);
+    const named = apply(finished, { type: 'rename_session', at: at(70), opId: 'ren-o2', name: 'Push', expectedVersion: finished.session.version });
+    expect(named.session.routineName).toBe('Push');
+    // Undo of naming an unnamed workout clears the name again (finished workouts only).
+    const cleared = apply(named, { type: 'rename_session', at: at(80), opId: 'undo-o2', name: null, expectedVersion: named.session.version });
+    expect(cleared.session.routineName).toBeNull();
+    expectError(reduceSession(startFixture().state, { type: 'rename_session', at: at(90), opId: 'clr', name: null, expectedVersion: 1 }), 'session_not_finished');
   });
 
   it('an empty or over-long name fails validation', async () => {
