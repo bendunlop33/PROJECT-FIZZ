@@ -199,3 +199,83 @@ describe('Undo of a Pain mark retracts the flag it set (review B2)', () => {
     expect(await s.pain.get(second?.id ?? '')).toMatchObject({ status: 'retracted' });
   });
 });
+
+describe('A failed Pain mark, then a retry in the same sheet (review r2 B1)', () => {
+  /** A save that `correct_set` refuses for a non-stale reason (an invalid value), as the sheet sends it. */
+  const badPatch = { exclusions: ['pain' as const], reps: -1 };
+
+  it('the failed save leaves no active flag and no `Before flag` reference', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { sessionId, aggregate } = await benchWorkout(s, gymId);
+    const a = done(aggregate)[0];
+    if (!a) throw new Error('fixture');
+    const r = await s.workout.correctSet({ sessionId, setId: a.id, expectedSetVersion: a.version, patch: badPatch, opId: 'sheet-op' });
+    expect(r).toMatchObject({ ok: false, stale: false });
+    expect(await s.pain.active()).toEqual([]);
+    const set = (await s.workout.load(sessionId))?.aggregate.sets.find((x) => x.id === a.id);
+    expect(set?.exclusions ?? []).toEqual([]);
+    // The next workout adds load as normal, with no pain rows in Why?.
+    const next = await nextBench(s, gymId);
+    const first = next.aggregate.sets[0];
+    const rows = (await s.workout.explainTarget(next.sessionId, first?.id ?? ''))?.rows.map((x) => x.label) ?? [];
+    expect(rows).not.toContain('Pain');
+    expect(rows).not.toContain('Before flag');
+  });
+
+  it('a retry with the same opId sets one active flag, the toast is true, and Undo takes it back', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { sessionId, aggregate } = await benchWorkout(s, gymId);
+    const a = done(aggregate)[0];
+    if (!a) throw new Error('fixture');
+    expect((await s.workout.correctSet({ sessionId, setId: a.id, expectedSetVersion: a.version, patch: badPatch, opId: 'sheet-op' })).ok).toBe(false);
+    const r = await s.workout.correctSet({ sessionId, setId: a.id, expectedSetVersion: a.version, patch: { exclusions: ['pain'] }, opId: 'sheet-op' });
+    expect(r).toMatchObject({ ok: true, toast: 'Set 1: pain · not counted for records · pain flag on Bench press' });
+    if (!r.ok || !r.undo) throw new Error('retry');
+    const active = await s.pain.active();
+    expect(active).toHaveLength(1);
+    expect(active[0]).toMatchObject({ exerciseName: 'Bench press', status: 'active' });
+    expect(r.undo.painFlags).toEqual([{ id: active[0]?.id, version: active[0]?.version }]);
+    expect((await s.workout.load(sessionId))?.aggregate.sets.find((x) => x.id === a.id)?.exclusions).toEqual(['pain']);
+    // A duplicate of the successful retry flags nothing more.
+    await s.workout.correctSet({ sessionId, setId: a.id, expectedSetVersion: a.version, patch: { exclusions: ['pain'] }, opId: 'sheet-op' });
+    expect(await s.pain.active()).toHaveLength(1);
+
+    expect((await s.workout.undoMark({ sessionId, ...r.undo, opId: 'undo-retry' })).ok).toBe(true);
+    expect(await s.pain.active()).toEqual([]);
+  });
+
+  it('a retry that drops Pain leaves no flag', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { sessionId, aggregate } = await benchWorkout(s, gymId);
+    const a = done(aggregate)[0];
+    if (!a) throw new Error('fixture');
+    expect((await s.workout.correctSet({ sessionId, setId: a.id, expectedSetVersion: a.version, patch: badPatch, opId: 'sheet-op' })).ok).toBe(false);
+    const r = await s.workout.correctSet({ sessionId, setId: a.id, expectedSetVersion: a.version, patch: { exclusions: ['spotted'] }, opId: 'sheet-op' });
+    expect(r).toMatchObject({ ok: true, toast: 'Set 1: spotted · not counted for records', undo: { painFlags: [] } });
+    expect(await s.pain.active()).toEqual([]);
+  });
+});
+
+describe('Pain step: a retry never reports a withdrawn flag (review r2 N2)', () => {
+  it('a retry after the step went through flags nothing new, even when Undo retracted the flag', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { sessionId } = await benchWorkout(s, gymId);
+    const ci = await s.checkIns.record({ checkInId: h.ids(), opId: h.ids(), score: 3 });
+    if (!ci.ok) throw new Error('check-in');
+    const exerciseId = (await s.workout.summary(sessionId))?.exercises.find((e) => e.name === 'Bench press')?.exerciseId ?? '';
+    const req = { checkIn: ci.checkIn, exercises: [{ id: exerciseId, name: 'Bench press' }], area: null, opId: 'ci-pain' };
+    const first = await s.pain.flagFromCheckIn(req);
+    if (!first.ok || !first.flags) throw new Error('flag');
+    expect(await s.pain.active()).toHaveLength(1);
+    expect((await s.pain.retract(first.flags, 'undo-ci')).ok).toBe(true);
+    expect(await s.pain.active()).toEqual([]);
+
+    const retry = await s.pain.flagFromCheckIn(req);
+    expect(retry).toMatchObject({ ok: true, duplicate: true, flags: [] });
+    expect(await s.pain.active()).toEqual([]);
+  });
+});

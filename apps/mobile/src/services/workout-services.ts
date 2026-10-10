@@ -312,6 +312,22 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   const repos = () => ctx.repos();
   const domain = () => createSessionService(repos(), ctx.newId);
 
+  /**
+   * The pain flag an op set on a movement, if it is still on (review r2 B1).
+   * IDs are derived from the opId so a retry flags once. A flag of this op
+   * that is no longer active (taken back by a failed save's rollback, an
+   * Undo, or cleared) is never "ours": the next ID in the op's chain is, so
+   * a retry writes a fresh flag instead of pointing at a withdrawn one.
+   */
+  async function opPainFlag(opId: string, exerciseId: string): Promise<{ id: string; flag: PainFlag | null }> {
+    for (let n = 0; n < 64; n += 1) {
+      const id = deriveId(n === 0 ? `pain:${opId}:${exerciseId}` : `pain:${opId}:${exerciseId}:${String(n)}`);
+      const flag = await repos().painFlags.get(id);
+      if (!flag || flag.status === 'active') return { id, flag };
+    }
+    throw new Error('Too many pain flags for one operation.');
+  }
+
   async function owner(): Promise<UserProfile> {
     const p = await ctx.profile();
     if (!p) throw new Error('Owner profile not found.');
@@ -397,12 +413,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       try {
         const p = await owner();
         const at = ctx.now();
+        // The step already went through (a retry after the link): flag nothing new.
+        const linked = await repos().checkIns.get(req.checkIn.id);
+        if (linked?.appliedOps.includes(`${req.opId}:link`)) return { ok: true, checkIn: linked, duplicate: true, flagIds: [], flags: [] };
         const ids: string[] = [];
         const refs: PainFlagRef[] = [];
         for (const ex of req.exercises) {
-          const id = deriveId(`pain:${req.opId}:${ex.id}`);
+          // Only an active flag counts as this op's (review r2 N2).
+          const { id, flag: existing } = await opPainFlag(req.opId, ex.id);
           ids.push(id);
-          const existing = await repos().painFlags.get(id);
           if (existing) {
             refs.push({ id, version: existing.version });
             continue;
@@ -966,6 +985,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       opId: string;
     }): Promise<SetCorrectionWrite> {
       const failed = { ok: false as const, stale: false, message: 'The change wasn’t saved. Try again.' };
+      let created: PainFlagRef | null = null;
       try {
         const p = await owner();
         const aggregate = await repos().sessions.get(req.sessionId);
@@ -976,29 +996,31 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const done = aggregate.processedOps[req.opId] !== undefined;
         if (!done && set.version !== req.expectedSetVersion) return { ok: false, stale: true, message: 'This set changed since it was shown. Showing the latest.' };
         const flags = await repos().painFlags.listActive(p.id);
-        const flagId = deriveId(`pain:${req.opId}:${ex.exerciseId}`);
-        const ours = await repos().painFlags.get(flagId);
+        // Only an active flag of this op is ours (review r2 B1): after a failed save's rollback, a retry flags afresh.
+        const { id: flagId, flag: ours } = done ? { id: '', flag: null } : await opPainFlag(req.opId, ex.exerciseId);
         const covered = painFlagCovering(flags.filter((f) => f.id !== flagId), ex.exerciseId, toMs(at.utc), aggregate.session.startedAt.tz) !== null;
         const setNumber = buildSetEditView(aggregate, set.id, null)?.setNumber ?? set.index + 1;
         const plan = planExclusionMark({ prior: done ? undefined : set.exclusions, next: req.patch.exclusions, painFlagActive: covered, setNumber, exerciseName: ex.exerciseName });
         const painFlags: PainFlagRef[] = [];
-        let created: PainFlagRef | null = null;
-        if (!done && (plan.setsPainFlag || ours)) {
+        // An active flag of this op whose save never landed is a leftover of a
+        // failed attempt whose rollback didn't go through: this attempt owns it.
+        if (!done && ours && !plan.setsPainFlag) await rollBack({ id: flagId, version: ours.version });
+        else if (!done && plan.setsPainFlag) {
           let version = ours?.version ?? 1;
           if (!ours) {
             const flag = newPainFlag({ id: flagId, ownerId: p.id, opId: req.opId, exerciseId: ex.exerciseId, exerciseName: ex.exerciseName, area: null, source: 'workout', checkInId: null, at });
             const saved = await repos().painFlags.save(flag, null);
             const now = saved.ok ? flag : await repos().painFlags.get(flagId);
-            if (!now) return failed;
+            if (now?.status !== 'active') return failed;
             version = now.version;
-            if (saved.ok) created = { id: flagId, version };
           }
-          painFlags.push({ id: flagId, version });
+          created = { id: flagId, version };
+          painFlags.push(created);
         }
         const r = ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'correct_set', at, opId: req.opId, setId: req.setId, expectedSetVersion: req.expectedSetVersion, patch: req.patch }));
         if (!r.ok) {
           // AW7 is one change from Ben's view (review N2): a flag this save just set is taken back when the mark isn't saved.
-          if (created !== null) await pain.retract([created], `${req.opId}:rollback`);
+          if (created !== null) await rollBack(created);
           return { ok: false, stale: r.error.code === 'stale_version', message: r.error.code === 'stale_version' ? 'This set changed since it was shown. Showing the latest.' : r.error.message };
         }
         const after = r.aggregate.sets.find((s) => s.id === req.setId);
@@ -1011,7 +1033,23 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           undo: changedFlags && after ? { setId: req.setId, setVersion: after.version, previous: plan.prior, painFlags } : null,
         };
       } catch {
+        // Review r2 N1: a throw after the flag was written. If the mark didn't
+        // land, take the flag back so "wasn't saved" is true; if it did (the
+        // throw came later), keep the flag and say the change was saved.
+        if (created === null) return failed;
+        try {
+          const latest = await repos().sessions.get(req.sessionId);
+          if (latest?.processedOps[req.opId] !== undefined) return { ok: false, stale: true, message: 'Saved. Showing the latest.' };
+          await rollBack(created);
+        } catch {
+          // The flag stays on: the safe direction for rule 9.
+        }
         return failed;
+      }
+
+      /** AW7 is one change from Ben's view (review N2): a flag this save just set is taken back when the mark isn't saved. */
+      async function rollBack(flag: PainFlagRef): Promise<void> {
+        await pain.retract([flag], `${req.opId}:rollback`);
       }
     },
 
