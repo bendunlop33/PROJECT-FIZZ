@@ -1,5 +1,6 @@
 import type { SessionAggregate } from '@fizz/schemas';
 import type { HistorySession, HistorySet } from './progression';
+import { equipmentOfRow } from './session/equipment-snapshot';
 import { setDisplayNumbers } from './session/order';
 
 /**
@@ -54,11 +55,15 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
     }
     byEquipment.set(ex.equipmentId, bucket);
   }
+  // After a mid-workout switch each item belongs to its own gym (gym-switch GS6), not the workout's last one.
+  const switched = (session.gymChanges ?? []).length > 0;
+  const gymOf = (equipmentId: string | null): string | null =>
+    !switched || equipmentId === null ? session.gymId : (equipmentOfRow(session.equipmentSnapshot, { equipmentId })?.gymId ?? session.gymId);
   return [...byEquipment.entries()].map(([equipmentId, sets]) => ({
     sessionId: session.id,
     performedAtUtc: session.startedAt.utc,
     equipmentId,
-    gymId: session.gymId,
+    gymId: gymOf(equipmentId),
     imported: session.source === 'import',
     sets,
     ...(opts.identity ? { tz: session.startedAt.tz, routineName: session.routineName } : {}),

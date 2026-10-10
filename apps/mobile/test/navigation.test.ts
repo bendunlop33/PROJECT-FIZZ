@@ -1,7 +1,7 @@
 import { StackRouter, type StackNavigationState, type ParamListBase } from '@react-navigation/routers';
 import { describe, expect, it } from 'vitest';
 
-import { openStartedWorkout, popToTabs, popToToday, replaceWithSummary } from '../src/navigation/actions';
+import { openStartedWorkout, openWorkoutToCheckGym, popToTabs, popToToday, replaceWithSummary } from '../src/navigation/actions';
 import { initialRootState } from '../src/navigation/initial-state';
 
 describe('root stack at launch (review S5)', () => {
@@ -76,6 +76,14 @@ describe('root stack after Finish, Done and Discard (review B1)', () => {
     expect(names(s)).toEqual(['Tabs']);
     // What the old code did: navigate from above Tabs pushes another Tabs.
     expect(names(apply(apply(start(), navigate('Summary', { sessionId: 'x' })), navigate('Tabs', { screen: 'Today' })))).toEqual(['Tabs', 'Summary', 'Tabs']);
+  });
+
+  it('[Use changes today] from a gym (under Tabs) opens the minimised workout with its gym card, one Workout only', () => {
+    let s = apply(start(), navigate('Workout'));
+    s = apply(s, goBack);
+    s = apply(s, openWorkoutToCheckGym('gym-1', 'n-1'));
+    expect(names(s)).toEqual(['Tabs', 'Workout']);
+    expect(s.routes[1]?.params).toEqual({ checkGym: { gymId: 'gym-1', nonce: 'n-1' } });
   });
 });
 

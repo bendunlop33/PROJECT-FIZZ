@@ -287,7 +287,7 @@ Repeat uses the same function and the same note wording. The layout is owned by 
 | Offline | No effect. Everything is local (rule 1) |
 | AI unavailable / coach not connected | No effect. The switch never calls the coach; `Why?` uses stored evidence |
 | Voice unavailable | No effect; every voice action has a tap equivalent |
-| Restored after force-close, card open | The card is a stored proposal and comes back. If anything changed, it shows Out of date |
+| Restored after force-close, card open | **Deferred to the coach proposals store (build step 4), ADR 0019.** Until then the card isn't stored and doesn't come back; the switch itself is one transaction (next row). When the store exists: the card is a stored proposal and comes back, and if anything changed it shows Out of date |
 | Force-close during `Switch` | One transaction: after relaunch the workout is either fully switched (chip shows the new gym; the restore banner says `Workout restored. Nothing was lost.`) or not switched at all |
 
 ### 3.3 Transitions
@@ -461,8 +461,10 @@ Rules, in order:
 |---|---|---|
 | GS-S1 | `PlannedSet.snap?: {intended: Load \| null, intendedOn: {equipmentId, kind, gymId} \| null, outcome, reason?, equipmentId: string \| null, gymId: string \| null, by: 'start' \| 'repeat' \| 'gym_switch' \| 'equipment_update'}`. `intendedOn` is the equipment the intended target was made for, and it never changes on a fit. It may instead be stored as `TargetProvenance.fit` (active-workout §6); either way it is written only by `snapPlanToGym` | GS2. Persists active-workout §2.11's dropped-target facts across a relaunch (today they exist only as start warnings). It also feeds `Why?`'s `Equipment` row (active-workout §2.12). It is kept apart from the author because a switch changes the fit, not who set the target |
 | GS-S2 | `WorkoutSession.gymChanges: {atUtc, tz, fromGymId, toGymId, opId, actionId, undoOf?}[]`, append-only. `session.gymId` = the current gym | Summary, history and Undo |
-| GS-S3 | `equipmentSnapshot` is append-only and unique by `(id, version)`. `SessionExercise.equipmentVersion?` (absent = the only entry with that ID) | Finished sets resolve their original equipment, including after `[Use changes today]` re-snapshots the same item |
+| GS-S3 | `equipmentSnapshot` is append-only and unique by `(id, version)`. `SessionExercise.equipmentVersion?` (absent = the **latest** entry with that ID; rows already on an item are pinned to their version when a newer one is appended. As built, ADR 0019) | Finished sets resolve their original equipment, including after `[Use changes today]` re-snapshots the same item |
 | GS-S4 | `SessionExercise.continuesFromId: string \| null` | GS6 continuation rows. Display joins parts into one block and numbers sets across them |
+| GS-S4 (readers) | **Every reader that treats a row as an exercise groups by `continuesFromId` first** (`partRootOf`): the workout screen, Summary, Repeat, Start next session, Past workouts, and later export and progression | Review r1 B1 and r2 B1 came from readers that didn't (as built, ADR 0019) |
+| GS-S4a (pending Ben) | **Next-session targets for a split exercise:** one target per exercise, read from the latest part with done working sets that has equipment, for the block's full set count; the Summary's `Next time` reason says which gym decided. Start fits it to the gym it's started at | Built this way (review r2 B1, reviewer's proposal) so Start and the Summary can't disagree. Alternatives for Ben: the first gym's part, or the part on the equipment of the gym the next session starts at (only known at Start, so the Summary couldn't commit to it) |
 | GS-S5 | `Proposal.kind: 'change_gym'` (already listed in open-decisions Part 2), `author: 'checks'`; command union `change_gym`, `undo_change_gym` | §6.4 |
 
 ### 6.6 Code this replaces (for the developer)
@@ -504,7 +506,7 @@ Fixture "hotel": Main Gym has a 20 kg bar with plates up to 180 kg, dumbbells 2.
 - **gym-editor.md** §2.8, §3.3, §4.6, §4.9, §5, §6, §8 GE7: point here. GE7's card text is corrected by GS4.
 - **active-workout.md**: §2.16 (after a switch), §2.11 `not_here`, §3 rows, §4.2 draft rule 3, §4.7, §4.9, §5, §6 and checks 63–70 point here. `Why?` (§2.12, follow-up 3) reads `planned.snap` for its `Equipment` row.
 - **routines.md** §2.2, §2.4, §3.4, §4.5, §4.6, §6, §7: the same function, the Repeat `GymChip` and `Swap ›`.
-- **workout-summary.md**: the title line shows each gym in order. A held exercise whose pending sets moved to another gym says so.
+- **workout-summary.md**: the title line shows each gym in order. A held exercise whose pending sets moved to another gym says so. `Next time` has one row per exercise, split or not (GS-S4a).
 - **open-decisions.md**: B21 (GS13) for Ben. The Part 2 schema row is GS-S1 to S5.
 - **Follow-ups for other owners (not edited here):** voice.md grammar (GS9, §4.4); rest-state.md §5 (the gym cue only when a target changed); coach-adjustments.md §2.1 slot priority (GS8: the gym card holds the slot; a request in progress is cancelled); change-review.md (`author: 'checks'` cards may use a specific verb, `Switch`, instead of `Apply`); design-system.md §9 (`GymPartDivider` below, when the file is free).
 - **Coach (rule 3, ADR 0006 amendment 2):** a gym switch counts as "something has changed (equipment)". The coach may later raise a structural proposal for future sessions (for example a travel version of Push A), but only as a proposal and never during the set loop. The switch itself never calls the coach.

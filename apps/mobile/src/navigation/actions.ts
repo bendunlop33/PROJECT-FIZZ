@@ -35,6 +35,15 @@ export function openStartedWorkout(params?: RootStackParams['Workout']) {
   return { type: 'RESET', payload: { index: 1, routes: [{ name: 'Tabs' }, { name: 'Workout', ...(params ? { params } : {}) }] } } as const;
 }
 
+/**
+ * `[Use changes today]` on a gym's detail during a workout there (gym-editor
+ * §4.9): to the workout, which opens `Use updated …` for that gym. A plain
+ * navigate (bubbles up to the root stack); nothing changes until `Apply`.
+ */
+export function openWorkoutToCheckGym(gymId: string, nonce: string) {
+  return { type: 'NAVIGATE', payload: { name: 'Workout', params: { checkGym: { gymId, nonce } } } } as const;
+}
+
 /** Replace the Workout with its Summary (after Finish). The only path that plays the finish moment (premium-feel §6). */
 export function replaceWithSummary(sessionId: string) {
   return { type: 'REPLACE', payload: { name: 'Summary', params: { sessionId, justFinished: true } } } as const;

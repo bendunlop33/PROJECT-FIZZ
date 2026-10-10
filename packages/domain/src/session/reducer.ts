@@ -19,6 +19,8 @@ import type {
 } from '@fizz/schemas';
 import { isLoadAchievable } from '../equipment';
 import { normaliseExclusions } from '../exclusions';
+import { currentGymEquipment, equipmentOfRow, rowIsAtCurrentGym } from './equipment-snapshot';
+import { applyChangeGym, applyUndoChangeGym } from './gym-switch';
 import {
   adjustRestTimer,
   createRestTimer,
@@ -55,6 +57,7 @@ export type SessionErrorCode =
   | 'exercise_not_found'
   | 'equipment_not_found'
   | 'equipment_incompatible'
+  | 'gym_change_not_found'
   /** A discard whose `confirmedLoggedSets` doesn't match the logged sets it would discard. */
   | 'discard_unconfirmed';
 
@@ -102,6 +105,8 @@ export type SessionEvent =
   | { type: 'SetDeleted'; setId: string }
   | { type: 'RestPlanChanged'; setIds: string[]; seconds: number }
   | { type: 'SessionTimingUpdated' }
+  /** A gym switch (or `[Use changes today]`) or its Undo. `changedSetIds`: targets that changed. */
+  | { type: 'GymChanged'; actionId: string; fromGymId: string | null; toGymId: string; changedSetIds: string[]; undo: boolean }
   | { type: 'SessionRenamed'; name: string | null }
   | { type: 'FinishByChanged'; finishByUtc: string | null }
   /** A coach adjustment changed (or its Undo restored) pending targets. Cue layers rebuild the rest-end line. */
@@ -148,6 +153,13 @@ export function commandFingerprint(command: SessionCommand): string {
     // service and may change between a failed attempt and its retry.
     return stableStringify({ type: command.type, exerciseId: command.exercise.exerciseId, equipmentId: command.equipmentId });
   }
+  if (command.type === 'change_gym') {
+    // Generated IDs (the action and continuation rows) are not part of the intent.
+    return stableStringify({ ...command, at: undefined, actionId: undefined, slots: command.slots.map((x) => ({ ...x, continuationId: undefined })) });
+  }
+  if (command.type === 'add_set' && command.continuation) {
+    return stableStringify({ ...command, at: undefined, newSetId: undefined, continuation: { ...command.continuation, id: undefined } });
+  }
   return stableStringify({
     ...command,
     at: undefined,
@@ -189,9 +201,9 @@ function exerciseOf(state: SessionAggregate, set: WorkoutSet): SessionExercise |
   return state.exercises.find((e) => e.id === set.sessionExerciseId);
 }
 
+/** The row's own equipment (a done set keeps the item it was logged on, also after a gym switch). */
 function equipmentOf(state: SessionAggregate, ex: SessionExercise): EquipmentInstance | undefined {
-  if (ex.equipmentId === null) return undefined;
-  return state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId);
+  return equipmentOfRow(state.session.equipmentSnapshot, ex) ?? undefined;
 }
 
 function validateValues(values: SetValues, ex: SessionExercise): SessionError | null {
@@ -952,17 +964,44 @@ function handleAddSet(state: SessionAggregate, cmd: CommandOf<'add_set'>): Handl
   if (!template) {
     return fail('set_not_found', `${ex.exerciseName} has no ${cmd.setType ?? ''} set to copy its target and rest from.`);
   }
+  // After a gym switch a set is never added on another gym's equipment (gym-switch §4.3, rule 4).
+  const atCurrentGym = rowIsAtCurrentGym(state.session, ex);
+  if (!atCurrentGym && !cmd.continuation) return fail('equipment_not_found', `${ex.exerciseName}'s equipment isn't at this gym. Add the set from the workout screen.`);
+  let exercises = state.exercises;
+  let rowId = ex.id;
+  let planned = template.planned;
+  let index = last.index + 1;
+  const c = cmd.continuation;
+  if (c && !atCurrentGym) {
+    if (state.exercises.some((e) => e.id === c.id)) return fail('invalid_values', 'That exercise ID is already used.');
+    const eq = c.equipmentId === null ? null : (currentGymEquipment(state.session).find((e) => e.id === c.equipmentId) ?? null);
+    if (c.equipmentId !== null && (!eq || eq.availability !== 'available')) return fail('equipment_not_found', 'That equipment is not at this gym.');
+    if (eq && (eq.unit !== c.unit || eq.loadConvention !== c.loadConvention)) return fail('invalid_values', `Targets on ${eq.name} must be in ${eq.unit} (${eq.loadConvention}).`);
+    const l = c.planned.load;
+    if (l !== null && (l.unit !== c.unit || l.convention !== c.loadConvention || (eq !== null && !isLoadAchievable(l, eq)))) {
+      return fail('invalid_values', 'The new set’s target can’t be made on that equipment.');
+    }
+    const row: SessionExercise = { ...ex, id: c.id, equipmentId: c.equipmentId, unit: c.unit, loadConvention: c.loadConvention, continuesFromId: ex.id };
+    delete row.equipmentVersion;
+    const sorted = [...state.exercises].sort((a, b) => a.order - b.order);
+    const at = sorted.findIndex((e) => e.id === ex.id);
+    sorted.splice(at + 1, 0, row);
+    exercises = sorted.map((e, i) => (e.order === i ? e : { ...e, order: i }));
+    rowId = row.id;
+    planned = c.planned;
+    index = 0;
+  }
   const added: WorkoutSet = {
     id: cmd.newSetId,
     sessionId: state.session.id,
-    sessionExerciseId: ex.id,
-    index: last.index + 1,
+    sessionExerciseId: rowId,
+    index,
     setType: template.setType,
     status: 'pending',
     // A new unilateral set starts as "both sides"; it can be logged per side.
     side: template.side === null ? null : 'both',
     pairedWithSetId: null,
-    planned: template.planned,
+    planned,
     rest: template.rest,
     actual: null,
     draft: null,
@@ -973,9 +1012,9 @@ function handleAddSet(state: SessionAggregate, cmd: CommandOf<'add_set'>): Handl
     edited: false,
     version: 1,
   };
-  const events: SessionEvent[] = [{ type: 'SetAdded', setId: added.id, sessionExerciseId: ex.id }];
+  const events: SessionEvent[] = [{ type: 'SetAdded', setId: added.id, sessionExerciseId: rowId }];
   const activeSetId = activateIfIdle(state, added.id, events);
-  return { ok: true, state: bumpVersion({ ...state, sets: [...state.sets, added] }, activeSetId), events };
+  return { ok: true, state: bumpVersion({ ...state, exercises, sets: [...state.sets, added] }, activeSetId), events };
 }
 
 function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise'>): Handled {
@@ -984,7 +1023,8 @@ function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise
   }
   let equipment: EquipmentInstance | undefined;
   if (cmd.equipmentId !== null) {
-    equipment = state.session.equipmentSnapshot.find((e) => e.id === cmd.equipmentId);
+    // Only the current gym's items (after a switch the snapshot also holds the earlier gym's).
+    equipment = currentGymEquipment(state.session).find((e) => e.id === cmd.equipmentId);
     if (!equipment || equipment.availability === 'retired') {
       return fail('equipment_not_found', 'That equipment is not part of this gym.');
     }
@@ -1214,7 +1254,7 @@ function handleSaveDraft(state: SessionAggregate, cmd: CommandOf<'save_draft'>):
 }
 
 /**
- * `adjust_pending_targets` (ADR 0019 §4): the coach's validated change to
+ * `adjust_pending_targets` (ADR 0020 §4): the coach's validated change to
  * today's pending sets. Version-gated (rule 5); only pending sets change
  * (rule 2); the target each set had is kept in `planned.coach.before`.
  * Drafts are left alone: a set with no saved draft follows its new target,
@@ -1232,13 +1272,25 @@ function handleAdjustPendingTargets(state: SessionAggregate, cmd: CommandOf<'adj
     if (byId.get(id)?.status !== 'pending') return fail('set_not_pending', 'Only sets not done yet can change.');
   }
   if (isWorkLive(state, [...cmd.changes.map((c) => c.setId), ...cmd.removeSetIds])) return fail('work_interval_running', 'Stop the work timer first.');
-  for (const c of cmd.changes) {
+  const targetsToCheck = [...cmd.changes.map((c) => ({ setId: c.setId, target: c.target })), ...cmd.addSets.map((a) => ({ setId: a.copyFromSetId, target: a.target }))];
+  for (const c of targetsToCheck) {
     const set = byId.get(c.setId);
     const ex = set ? exerciseOf(state, set) : undefined;
-    if (!ex) return fail('exercise_not_found', 'Exercise not found in this workout.');
+    if (!set || !ex) return fail('exercise_not_found', 'Exercise not found in this workout.');
     const load = c.target.load;
-    if (load !== null && (load.convention !== ex.loadConvention || load.unit !== ex.unit)) {
+    if (load === null) continue;
+    if (load.convention !== ex.loadConvention || load.unit !== ex.unit) {
       return fail(load.unit !== ex.unit ? 'unit_mismatch' : 'convention_mismatch', `The target doesn't match ${ex.exerciseName}'s ${ex.unit} ${ex.loadConvention} load.`);
+    }
+    // Rule 4, as for a gym switch: the load must be makeable on the row's current item, and an
+    // exercise that had equipment and has none left (or whose item is gone) can't carry one.
+    if (load.convention === 'bodyweight') continue;
+    const eq = equipmentOf(state, ex);
+    if (eq === undefined) {
+      const hadEquipment = ex.equipmentId !== null || (set.planned.snap?.intendedOn?.equipmentId ?? null) !== null;
+      if (hadEquipment) return fail('invalid_values', 'There’s no equipment here to check that load against.');
+    } else if (!isLoadAchievable(load, eq)) {
+      return fail('invalid_values', `That load can’t be made on ${eq.name}.`);
     }
   }
   if (cmd.addSets.some((a) => byId.has(a.newSetId))) return fail('invalid_values', 'That set ID is already used.');
@@ -1352,6 +1404,19 @@ function handleRevertTargetAdjustment(state: SessionAggregate, cmd: CommandOf<'r
   return { ok: true, state: bumpVersion({ ...state, sets, audit }, activeSetId), events };
 }
 
+function handleChangeGym(state: SessionAggregate, cmd: CommandOf<'change_gym'>): Handled {
+  const r = applyChangeGym(state, cmd);
+  if (!r.ok) return fail(r.code, r.message);
+  // Rest, the work timer, pause and the active set are never touched (§4.3 step 6).
+  return { ok: true, state: r.state, events: [{ type: 'GymChanged', actionId: r.entry.actionId, fromGymId: r.entry.fromGymId, toGymId: r.entry.toGymId, changedSetIds: r.entry.changedSetIds, undo: false }] };
+}
+
+function handleUndoChangeGym(state: SessionAggregate, cmd: CommandOf<'undo_change_gym'>): Handled {
+  const r = applyUndoChangeGym(state, cmd);
+  if (!r.ok) return fail(r.code, r.message);
+  return { ok: true, state: r.state, events: [{ type: 'GymChanged', actionId: r.entry.actionId, fromGymId: r.entry.fromGymId, toGymId: r.entry.toGymId, changedSetIds: r.entry.changedSetIds, undo: true }] };
+}
+
 function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: number): Handled {
   switch (command.type) {
     case 'log_set':
@@ -1392,6 +1457,10 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleDiscard(state, command, nowMs);
     case 'set_rest_after':
       return handleSetRestAfter(state, command);
+    case 'change_gym':
+      return handleChangeGym(state, command);
+    case 'undo_change_gym':
+      return handleUndoChangeGym(state, command);
     case 'rename_session':
       return handleRenameSession(state, command);
     case 'set_finish_by':
@@ -1446,6 +1515,11 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
       const created = state.processedOps[command.opId]?.createdIds ?? [];
       return created.some((id) => state.sets.find((s) => s.id === id)?.status === 'deleted');
     }
+    case 'change_gym': {
+      // The switch was undone since.
+      const entry = state.session.gymChanges?.find((c) => c.opId === command.opId && c.kind === 'change');
+      return entry === undefined || (state.session.gymChanges ?? []).some((c) => c.kind === 'undo' && c.undoOf === entry.actionId);
+    }
     case 'update_session_timing':
       // A later timing edit replaced a value this one set.
       return state.timingAudit
@@ -1461,7 +1535,7 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
       // Undone, or every set it set has since been logged or changed again.
       return !state.sets.some((s) => s.planned.coach?.actionId === command.actionId && s.status === 'pending' && s.planned.source === 'coach');
     case 'revert_target_adjustment':
-      return false;
+    case 'undo_change_gym':
     case 'finish':
     case 'discard':
     case 'add_exercise':

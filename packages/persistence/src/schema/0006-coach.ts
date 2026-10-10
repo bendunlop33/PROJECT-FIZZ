@@ -1,10 +1,8 @@
 /**
- * Schema version 5: coach v1 storage (ADR 0019 §9). Frozen once released.
+ * Schema version 6: coach v1 storage (ADR 0020 §9). Frozen once released.
  *
- * **Numbering:** was 4 until main took 4 for the active-set follow-ups
- * (`0004-active-set`); renumbered on merge. `claude/gym-switch` also claims 4,
- * so whichever of it and this merges later renumbers again. Neither touches
- * the other's tables. Nothing here is released yet.
+ * **Numbering:** was 4, then 5; main took 4 (active-set follow-ups) and 5
+ * (gym switch), so coach is 6. It doesn't touch either one's tables.
  *
  * Your data (owner-scoped; rule 10):
  * - `coach_threads`: conversations (documents).
@@ -28,7 +26,7 @@
  * Offers (CA4) are kept in memory per workout in v1; structural proposals
  * are not built yet.
  */
-export const MIGRATION_0005 = `
+export const MIGRATION_0006 = `
 CREATE TABLE coach_threads (
   id TEXT PRIMARY KEY NOT NULL,
   owner_id TEXT NOT NULL,

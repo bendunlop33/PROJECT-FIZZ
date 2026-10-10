@@ -221,10 +221,19 @@ describe('routine provenance (startWorkout)', () => {
     expect(planned?.provenance?.guardNotes.map(plain)).toEqual(['No load target: plan was 30 kg each, a different kind of load, so it isn’t converted.']);
   });
 
-  it('assisted machine: more assistance than it gives is capped at its most', () => {
+  it('assisted machine: more assistance than it gives is dropped, never made harder (shared fit, ADR 0019)', () => {
     const machine = assisted();
     const planned = start({ targetLoad: kg(50, 'assistance') }, machine, id(250));
-    expect(planned?.provenance?.guardNotes.map(plain)).toEqual(['Capped at Assist 40 kg: the most assistance this machine gives. Plan was Assist 50 kg.']);
+    expect(planned?.load).toBeNull();
+    expect(planned?.reps).not.toBeNull();
+    expect(planned?.provenance?.guardNotes.map(plain)).toEqual(['No load target: plan was Assist 50 kg, more assistance than this machine gives.']);
+  });
+
+  it('assisted machine: less assistance than it gives is set to its least (easier), with the note', () => {
+    const machine = assisted();
+    const planned = start({ targetLoad: kg(2.5, 'assistance') }, machine, id(250));
+    expect(planned?.load).toEqual(kg(5, 'assistance'));
+    expect(planned?.provenance?.guardNotes.map(plain)).toEqual(['Set to Assist 5 kg: the least assistance this machine gives. Plan was Assist 2.5 kg.']);
   });
 
   it('a reps-only target records the routine with no load and no note', () => {

@@ -18,6 +18,7 @@ import { isSetCountable, notUsedLine } from '../exclusions';
 import { stepText } from '../target-provenance';
 import { toMs } from '../time';
 import { lastComparableSession } from './active-view';
+import { equipmentOfRow } from './equipment-snapshot';
 
 /**
  * `explainTarget` (active-workout.md §2.12, §6): the `Why?` panel under a set
@@ -302,7 +303,8 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
   if (planned.load === null && planned.reps === null && planned.durationS === null) return null;
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
   if (!ex) return null;
-  const eq = ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
+  // The version of the item this row uses (a gym switch can append a newer one, GS-S3).
+  const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
   const p = planned.provenance;
   const tz = state.session.startedAt.tz;
 
