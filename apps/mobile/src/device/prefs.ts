@@ -2,24 +2,32 @@ import type { TextFile } from '../backup/backup-service';
 
 /**
  * Preferences that belong to this phone, not to Ben's training data, so they
- * are not in backups: currently only the look (Developer → Look). Pure parse.
+ * are not in backups: the look (Developer → Look) and whether exercise guides
+ * animate (Developer → Exercise guide animations). Pure parse.
  */
 export interface DevicePrefs {
   themeDirection: 'A' | 'D' | null;
+  /** False: How to shows the guide's still key positions only, no frame loop (a safe mode). */
+  guideAnimations: boolean;
 }
 
-export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null };
+export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null, guideAnimations: true };
 
 export function parsePrefs(text: string | null): DevicePrefs {
   if (text === null) return DEFAULT_PREFS;
   try {
     const json = JSON.parse(text) as unknown;
     if (typeof json !== 'object' || json === null) return DEFAULT_PREFS;
-    const dir = (json as { themeDirection?: unknown }).themeDirection;
-    return { themeDirection: dir === 'A' || dir === 'D' ? dir : null };
+    const { themeDirection: dir, guideAnimations } = json as { themeDirection?: unknown; guideAnimations?: unknown };
+    return { themeDirection: dir === 'A' || dir === 'D' ? dir : null, guideAnimations: guideAnimations !== false };
   } catch {
     return DEFAULT_PREFS;
   }
+}
+
+/** One change on top of the current preferences (before they load, on top of the defaults). */
+export function updatePrefs(current: DevicePrefs | null, change: Partial<DevicePrefs>): DevicePrefs {
+  return { ...(current ?? DEFAULT_PREFS), ...change };
 }
 
 export async function loadPrefs(file: TextFile): Promise<DevicePrefs> {

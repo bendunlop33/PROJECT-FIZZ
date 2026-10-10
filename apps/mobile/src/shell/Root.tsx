@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -9,7 +9,8 @@ import { clearDeliveredWorkoutAlerts, expoNotifier } from '../alerts/notifier';
 import { createRestAlertController } from '../alerts/rest-alerts';
 import { containerBackupFiles, containerTextFile } from '../device/files';
 import { expoDatabaseHost } from '../data/expo-sqlite-host';
-import { loadPrefs, savePrefs, type DevicePrefs } from '../device/prefs';
+import { DevicePrefsProvider } from '../device/DevicePrefsContext';
+import { DEFAULT_PREFS, loadPrefs, savePrefs, updatePrefs, type DevicePrefs } from '../device/prefs';
 import { appInfo, newUuid, nowZoned } from '../device/runtime';
 import { AppNavigator } from '../navigation/AppNavigator';
 import type { AppServices } from '../services/app-services';
@@ -164,19 +165,32 @@ export function Root() {
   useEffect(() => {
     void loadPrefs(prefsFile).then(setPrefs);
   }, [prefsFile]);
-  const onChangeDirection = useCallback(
-    (id: AvailableDirectionId) => {
-      const next = { themeDirection: id };
+  // The latest prefs for `update`, so two quick changes never drop one another.
+  const latest = useRef<DevicePrefs | null>(null);
+  latest.current = prefs;
+  const update = useCallback(
+    (change: Partial<DevicePrefs>) => {
+      const next = updatePrefs(latest.current, change);
+      latest.current = next;
       setPrefs(next);
       void savePrefs(prefsFile, next).catch(() => undefined);
     },
     [prefsFile],
   );
+  const onChangeDirection = useCallback(
+    (id: AvailableDirectionId) => {
+      update({ themeDirection: id });
+    },
+    [update],
+  );
+  const prefsValue = useMemo(() => ({ prefs: prefs ?? DEFAULT_PREFS, update }), [prefs, update]);
   return (
     <SafeAreaProvider>
-      <ThemeProvider savedDirection={prefs?.themeDirection ?? null} onChangeDirection={onChangeDirection}>
-        <Themed />
-      </ThemeProvider>
+      <DevicePrefsProvider value={prefsValue}>
+        <ThemeProvider savedDirection={prefs?.themeDirection ?? null} onChangeDirection={onChangeDirection}>
+          <Themed />
+        </ThemeProvider>
+      </DevicePrefsProvider>
     </SafeAreaProvider>
   );
 }
