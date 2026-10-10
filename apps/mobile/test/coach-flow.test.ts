@@ -1,0 +1,247 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
+import { NBSP } from '@fizz/domain';
+import type { TextCoachState } from '@fizz/providers';
+
+import { nextTimeView } from '../src/coach/next-time-view';
+import { statusView, threadRows } from '../src/coach/sheet-view';
+import { slotAfterTurn, slotView } from '../src/coach/slot-view';
+import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
+
+/**
+ * Coach C6–C8 through the app services on real SQLite, with a scripted
+ * model in place of the plan route. Nothing here proves the route on the
+ * iPhone (spike S3); it proves what the app does with each answer.
+ */
+
+const plain = (s: string | null | undefined) => (s ?? '').replaceAll(NBSP, ' ');
+
+/** A model whose each step is computed from the request (so it can name real set IDs and versions). */
+class StepModel implements CoachModelPort {
+  readonly requests: ModelRequest[] = [];
+  constructor(private readonly steps: ((req: ModelRequest) => ModelEvent[])[]) {}
+  async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+    this.requests.push(request);
+    const step = this.steps[this.requests.length - 1];
+    const events = step === undefined ? [{ type: 'error' as const, error: 'unavailable' as const }] : step(request);
+    for (const e of events) {
+      await Promise.resolve();
+      yield e;
+    }
+  }
+}
+
+function yourData(req: ModelRequest): { workout: { sessionId: string; version: number; exercises: { sessionExerciseId: string; exerciseId: string; name: string; sets: { setId: string; status: string; target: { load: { value: number; unit: string; convention: string } | null; reps: { min: number; max: number } | null } }[] }[] } } {
+  const block = req.input.find((i) => i.type === 'message' && i.role === 'developer' && i.content.startsWith('YOUR DATA'));
+  if (block?.type !== 'message') throw new Error('no context');
+  return JSON.parse(block.content.slice(block.content.indexOf('\n') + 1)) as ReturnType<typeof yourData>;
+}
+
+const call = (name: string, args: unknown): ModelEvent[] => [{ type: 'tool_call', callId: `c-${name}`, name, arguments: JSON.stringify(args) }, { type: 'completed' }];
+const reply = (message: string): ModelEvent[] => call('reply', { message, offer: null });
+
+const CONNECTED: TextCoachState = { status: 'ok', route: 'chatgpt_plan', email: 'ben@example.com', model: { slug: 'gpt-6.1-sol', displayName: 'GPT-6.1-Sol' } };
+
+let h: Harness;
+let model: StepModel;
+let connection: TextCoachState;
+beforeEach(() => {
+  model = new StepModel([]);
+  connection = CONNECTED;
+  h = createHarness('2026-10-10T07:00:00.000Z', { coach: { model: () => model, connection: () => Promise.resolve(connection) } });
+});
+afterEach(async () => {
+  await h.cleanup();
+});
+
+describe('C6: the sheet’s thread, status and honesty', () => {
+  it('a question gets an answer; the thread reads back Ben’s words and the coach’s checked sentences; a phantom change is dropped', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    model = new StepModel([() => reply('Rest 2–3 minutes on bench. I’ve lowered your squat to 80 kg.')]);
+    expect(await s.coach.resolveThread({ kind: 'today' })).toBeNull();
+    const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'How long should I rest?', spoken: false }, turnId: h.ids() });
+    expect(r.status).toBe('completed');
+    const data = await s.coach.loadThread(r.threadId);
+    if (data === null) throw new Error('no thread');
+    const rows = threadRows(data);
+    expect(rows.map((x) => x.kind)).toEqual(['ben', 'coach', 'note']);
+    expect(rows[1]).toMatchObject({ kind: 'coach', sentences: ['Rest 2–3 minutes on bench.'] });
+    // CS1: reopening within 6 hours finds the same general thread.
+    expect(await s.coach.resolveThread({ kind: 'today' })).toBe(r.threadId);
+    h.clockMs += 7 * 60 * 60 * 1000;
+    expect(await s.coach.resolveThread({ kind: 'today' })).toBeNull();
+  });
+
+  it('honest states: not connected says so in one or two words and blocks Send; after a network failure it reads Offline', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    connection = { status: 'not_connected', route: null, email: null, model: null };
+    expect(statusView(await s.coach.availability())).toMatchObject({ word: 'Not connected', canSend: false, action: { label: 'Connect' } });
+    await expect(s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Hi', spoken: false }, turnId: h.ids() })).rejects.toThrow();
+    connection = CONNECTED;
+    model = new StepModel([() => [{ type: 'error', error: 'network' }]]);
+    const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Hi', spoken: false }, turnId: h.ids() });
+    expect(r).toMatchObject({ status: 'failed', error: 'network', items: [] });
+    expect(statusView(await s.coach.availability()).word).toBe('Offline');
+    const rows = threadRows((await s.coach.loadThread(r.threadId)) ?? (() => { throw new Error('x'); })());
+    // Ben's message was saved before the request; no coach words were made up.
+    expect(rows.map((x) => x.kind)).toEqual(['ben', 'outcome']);
+    expect(rows[1]).toMatchObject({ text: 'Offline. Nothing changed.', retry: true });
+  });
+});
+
+describe('C7: in the workout (offer, Adjust, banner, Undo)', () => {
+  async function secondWorkout() {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }, { load: 60, reps: 8 }] }]);
+    h.clockMs += 2 * 86_400_000;
+    const started = await s.workout.start({ gymId, opId: 'start-2', checkIn: null, nextOf: first });
+    if (!started.ok) throw new Error(started.error.message);
+    return { s, sessionId: started.aggregate.session.id, first };
+  }
+
+  it('RPE 10 on set 1 offers once (no AI call); Adjust → too hard; the slot banner comes from the saved change; Undo restores the plan', async () => {
+    const { s, sessionId } = await secondWorkout();
+    let data = await s.workout.load(sessionId);
+    const sets = (data?.aggregate.sets ?? []).filter((x) => x.setType !== 'warmup').sort((a, b) => a.index - b.index);
+    const [s1, s2, s3] = sets;
+    if (!s1 || !s2 || !s3) throw new Error('fixture');
+    h.clockMs += 60_000;
+    const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: 'log-1', setId: s1.id, values: { load: s1.planned.load, reps: 8, durationS: null, rpe: 10, rir: null }, restTimerId: h.ids() });
+    if (!logged.ok) throw new Error(logged.error.message);
+    const offer = s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: true, pending: false });
+    expect(offer).toMatchObject({ kind: 'rpe_high', fact: 'RPE 10 on set 1', prompt: 'That looked hard. Adjust remaining sets?' });
+    expect(model.requests).toEqual([]);
+    // CA4: the same kind on the same exercise doesn't come back.
+    expect(s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: true, pending: false })).toBeNull();
+    // Offline: no offers at all.
+    expect(s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: false, pending: false })).toBeNull();
+    expect(slotView({ pending: false, adjustment: null, outcome: null, offer })).toMatchObject({ kind: 'offer', fact: 'RPE 10 on set 1' });
+
+    model = new StepModel([
+      (req) => {
+        const w = yourData(req).workout;
+        const ex = w.exercises[0];
+        const pending = ex?.sets.filter((x) => x.status === 'pending') ?? [];
+        const lighter = { value: (pending[0]?.target.load?.value ?? 60) - 2.5, unit: 'kg', convention: 'total' };
+        return call('adjust_pending_sets', { baseVersion: w.version, exercises: [{ sessionExerciseId: ex?.sessionExerciseId, sets: pending.map((x) => ({ setId: x.setId, target: { load: lighter, reps: null } })), addSet: null, removeSetId: null }], reason: 'Set 1 was RPE 10.' });
+      },
+      () => reply('A little lighter should keep you at 8.'),
+    ]);
+    const r = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'chip', chip: 'too_hard' }, turnId: h.ids() });
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('adjust_pending_sets');
+    const after = slotAfterTurn(r);
+    const banner = slotView({ pending: false, adjustment: after.adjustment, outcome: after.outcome, offer: null });
+    expect(banner).toMatchObject({ kind: 'banner', canUndo: true });
+    if (banner?.kind !== 'banner') throw new Error('no banner');
+    expect(plain(banner.title)).toBe('Coach adjusted sets 2–3');
+    data = await s.workout.load(sessionId);
+    const view = data === null ? null : s.workout.view(data, h.clockMs, null);
+    expect(plain(view?.focus?.target)).toMatch(/^Coach target /);
+    expect(plain(view?.focus?.planWas)).toMatch(/^Plan was /);
+    // The done set is untouched.
+    expect(data?.aggregate.sets.find((x) => x.id === s1.id)?.actual).toMatchObject({ rpe: 10, reps: 8 });
+
+    const u = await s.coach.undo(banner.actionId, 'undo-1');
+    expect(u.result.status).toBe('written');
+    const back = await s.workout.load(sessionId);
+    expect(back?.aggregate.sets.find((x) => x.id === s2.id)?.planned).toEqual(s2.planned);
+    expect(back?.aggregate.sets.find((x) => x.id === s3.id)?.planned.source).toBe(s3.planned.source);
+  });
+
+  it('logging 10 normal sets makes no AI call and no offer', async () => {
+    const { s, sessionId } = await secondWorkout();
+    let data = await s.workout.load(sessionId);
+    for (let i = 0; i < 10; i += 1) {
+      const pending = data?.aggregate.sets.find((x) => x.status === 'pending');
+      if (pending === undefined) {
+        const ex = data?.aggregate.exercises[0];
+        if (!ex) break;
+        const added = await s.workout.dispatch(sessionId, { type: 'add_set', at: h.now(), opId: h.ids(), sessionExerciseId: ex.id, newSetId: h.ids(), setType: null });
+        if (!added.ok) throw new Error(added.error.message);
+        data = data === null ? null : { ...data, aggregate: added.aggregate };
+        i -= 1;
+        continue;
+      }
+      h.clockMs += 60_000;
+      const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `n-${String(i)}`, setId: pending.id, values: { load: pending.planned.load, reps: pending.planned.reps?.max ?? 8, durationS: null, rpe: 8, rir: null }, restTimerId: h.ids() });
+      if (!r.ok) throw new Error(r.error.message);
+      expect(s.coach.offerAfterLog({ aggregate: r.aggregate, setId: pending.id, resting: true, coachReachable: true, pending: false })).toBeNull();
+      data = data === null ? null : { ...data, aggregate: r.aggregate };
+    }
+    expect(model.requests).toEqual([]);
+  });
+});
+
+describe('C8: Summary next-session targets (D21) and routines', () => {
+  it('one summary turn saves a small bench change; Next time shows it with Undo; the next session of the routine plans it and marks it used', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }, { load: 60, reps: 6, rpe: 10 }] }]);
+    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' });
+    if (!saved.ok) throw new Error(saved.message);
+    model = new StepModel([
+      (req) => {
+        const w = yourData(req).workout;
+        const ex = w.exercises[0];
+        return call('set_next_session_targets', { sourceSessionId: w.sessionId, sourceVersion: w.version, targets: [{ exerciseId: ex?.exerciseId, target: { load: { value: 57.5, unit: 'kg', convention: 'total' }, reps: null }, sets: null, reason: 'Every set was RPE 10.' }] });
+      },
+      () => reply('All three sets were RPE 10.'),
+    ]);
+    const turn = await s.coach.runSummaryTurn(first);
+    // Once per workout, even if asked again.
+    expect(await s.coach.runSummaryTurn(first)).toBe(turn);
+    expect(turn?.status).toBe('completed');
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('set_next_session_targets');
+    const summary = await s.workout.summary(first, 'connected');
+    const rows = await s.coach.nextTargets(first);
+    const view = nextTimeView({ title: 'Push A', builtIn: summary?.nextTime ?? null, coachRows: rows, availability: await s.coach.availability(), reviewing: false });
+    const bench = view?.rows.find((r) => r.exerciseName === 'Bench press');
+    expect(bench).toMatchObject({ tag: 'Coach', pct: '−4.2%', actions: [{ label: 'Undo', tap: 'undo' }] });
+    expect(plain(bench?.target)).toMatch(/^Target 57\.5 kg × /);
+    expect(bench?.why[0]).toBe('“Every set was RPE 10.”');
+
+    // Routines-aware: the next Push A uses the coach's target.
+    h.clockMs += 2 * 86_400_000;
+    const started = await s.workout.start({ gymId, opId: 'start-push-a', checkIn: null, routineOf: saved.routine.id });
+    if (!started.ok) throw new Error(started.error.message);
+    const work = started.aggregate.sets.filter((x) => x.setType !== 'warmup');
+    expect(work.every((x) => x.planned.source === 'coach' && x.planned.load?.value === 57.5)).toBe(true);
+    await h.settle(s);
+    const used = await s.coach.nextTargets(first);
+    expect(used[0]?.usedBySessionId).toBe(started.aggregate.session.id);
+    const after = nextTimeView({ title: 'Push A', builtIn: summary?.nextTime ?? null, coachRows: used, availability: await s.coach.availability(), reviewing: false });
+    expect(after?.rows.find((r) => r.exerciseName === 'Bench press')).toMatchObject({ actions: [], note: 'Used' });
+  });
+
+  it('Undo on the row puts the built-in rule back for the next session; offline or not connected, the built-in rule is labelled and no call is made', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 8, rpe: 10 }] }]);
+    model = new StepModel([
+      (req) => {
+        const w = yourData(req).workout;
+        return call('set_next_session_targets', { sourceSessionId: w.sessionId, sourceVersion: w.version, targets: [{ exerciseId: w.exercises[0]?.exerciseId, target: { load: { value: 57.5, unit: 'kg', convention: 'total' }, reps: null }, sets: null, reason: 'Heavy.' }] });
+      },
+      () => reply('Ok.'),
+    ]);
+    await s.coach.runSummaryTurn(first);
+    const [row] = await s.coach.nextTargets(first);
+    if (!row) throw new Error('no row');
+    expect(await s.coach.tapNextTarget(row, 'undo', 'tap-undo')).toMatchObject({ status: 'written', row: { status: 'undone' } });
+    const preview = await s.next.preview(gymId);
+    expect(plain(preview?.targets[0]?.line)).not.toContain('57.5');
+
+    connection = { status: 'not_connected', route: null, email: null, model: null };
+    const second = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    const calls = model.requests.length;
+    expect(await s.coach.runSummaryTurn(second)).toBeNull();
+    expect(model.requests.length).toBe(calls);
+    const summary = await s.workout.summary(second, 'not_connected');
+    const view = nextTimeView({ title: 'Workout', builtIn: summary?.nextTime ?? null, coachRows: [], availability: await s.coach.availability(), reviewing: false });
+    expect(view?.rows.every((r) => r.tag === 'Built-in rule (coach not connected)')).toBe(true);
+  });
+});

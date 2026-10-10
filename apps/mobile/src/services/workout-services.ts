@@ -25,6 +25,7 @@ import {
   repeatPreviewLines,
   targetSummaryLines,
   unspecifiedPain,
+  withCoachTargets,
   equipmentForExercise,
   searchExercises,
   shouldAskCheckIn,
@@ -441,6 +442,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * mentioned there holds every load, like `planFor` (rule 9; review B2).
    */
   async function nextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
+    const builtIn = await builtInNextTargetsOf(p, source, today);
+    // D21: the coach's saved next-session targets win where they are still valid; the built-in rule is the fallback.
+    const rows = await ctx.store().repos.coach.listNextTargets(p.id, source.session.id).catch(() => []);
+    if (rows.length === 0) return builtIn;
+    const flags = await repos().painFlags.listActive(p.id);
+    return withCoachTargets(builtIn, rows, source, { flaggedExerciseIds: new Set(flags.map((f) => f.exerciseId)), painToday: unspecifiedPain(today).active });
+  }
+
+  /** The built-in rule's next targets only (playbook 7-F): the comparison and the fallback for the coach's. */
+  async function builtInNextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
     const out = new Map<string, { setType: SetType; planned: PlannedSet }[]>();
     const flags = await repos().painFlags.listActive(p.id);
     const now = unspecifiedPain(today);
@@ -562,6 +573,17 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   const workout = {
     /**
+     * The built-in rule's next targets for a finished workout (the summary
+     * turn's comparison and fallback, D21). Never the coach's own.
+     */
+    async builtInNextTargets(sessionId: string): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]> | null> {
+      const p = await ctx.profile();
+      const source = await repos().sessions.get(sessionId);
+      if (!p || !source) return null;
+      return builtInNextTargetsOf(p, source, null).catch(() => null);
+    },
+
+    /**
      * `startWorkout(…, opts.checkIn)` for an empty workout (no routines yet).
      * A gym is required (PM SP1). An answered check-in is linked in the same
      * write as the session; one already linked to another workout is refused.
@@ -579,12 +601,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (req.routineOf) {
         // A routine (premium-feel §2.6): its structure, with next targets from its last workout, fitted to this gym.
         const today = checkIn?.kind === 'answered' ? await repos().checkIns.get(checkIn.checkInId) : null;
-        const { r, targetsFailed } = await routineStart(p, { routineId: req.routineOf, gymId: req.gymId, opId: req.opId, preview: false, checkIn, today });
+        const { r, targetsFailed, ref } = await routineStart(p, { routineId: req.routineOf, gymId: req.gymId, opId: req.opId, preview: false, checkIn, today });
         if (!r.ok) {
           const e = r.error;
           if (e.code === 'nothing_to_start') return { ok: false, error: { code: 'not_found', message: e.message } };
           return { ok: false, error: e };
         }
+        if (!r.duplicate && ref !== null) void ctx.store().repos.coach.markNextTargetsUsed(p.id, ref.sessionId, r.aggregate.session.id, ctx.now().utc).catch(() => 0);
         const notice = targetsFailed && !r.duplicate ? 'Using saved targets.' : null;
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate, ...(notice !== null ? { notice } : {}) };
       }
@@ -602,6 +625,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           if (e.code === 'nothing_to_repeat' || e.code === 'imported_not_repeatable') return { ok: false, error: { code: 'not_found', message: e.message } };
           return { ok: false, error: e };
         }
+        // The coach's next targets for this source are used now: their Undo buttons go (D21).
+        if (!r.duplicate) void ctx.store().repos.coach.markNextTargetsUsed(p.id, source.session.id, r.aggregate.session.id, ctx.now().utc).catch(() => 0);
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate, ...(targets === null && !r.duplicate ? { notice: TARGETS_UNAVAILABLE } : {}) };
       }
       if (req.repeatOf) {

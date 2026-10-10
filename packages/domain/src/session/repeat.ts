@@ -188,8 +188,11 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     session: { ...out.aggregate.session, routineId: null },
     sets: out.aggregate.sets.map((s) => {
       const exerciseId = out.aggregate.exercises.find((e) => e.id === s.sessionExerciseId)?.exerciseId;
-      const fromRule = exerciseId !== undefined && (targetsFor(exerciseId)?.length ?? 0) > 0;
-      return { ...s, planned: { ...s.planned, source: fromRule ? ('built_in_rule' as const) : ('repeat' as const) } };
+      const given = exerciseId === undefined ? undefined : targetsFor(exerciseId);
+      const fromRule = (given?.length ?? 0) > 0;
+      // A coach target for next time (D21) keeps its source; the rest are the built-in rule's.
+      const fromCoach = fromRule && s.setType !== 'warmup' && (given?.some((g) => g.planned.source === 'coach') ?? false);
+      return { ...s, planned: { ...s.planned, source: fromCoach ? ('coach' as const) : fromRule ? ('built_in_rule' as const) : ('repeat' as const) } };
     }),
   };
   return { aggregate, warnings: out.warnings, notes, notCopied, empty: routineExercises.length === 0 };

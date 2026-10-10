@@ -30,7 +30,11 @@ import {
 } from '@fizz/persistence';
 import type { EquipmentInstance, Exercise, Gym, SessionAggregate, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
+import type { CoachModelPort } from '@fizz/coach';
+import type { TextCoachState } from '@fizz/providers';
+
 import type { RestAlertController } from '../alerts/rest-alerts';
+import { createCoachService } from '../coach/coach-service';
 import { createBackupService, type BackupFileStore, type TextFile } from '../backup/backup-service';
 import { createRestoreService } from '../backup/restore-service';
 import { createImportService } from '../import/import-service';
@@ -67,6 +71,11 @@ export interface AppServicesDeps {
   restAlerts?: RestAlertController;
   /** Bundled catalogue entries (tests inject a small one); defaults to the shipped catalogue. */
   catalogue?: () => readonly CatalogueEntry[];
+  /**
+   * The coach's model and connection (the phone wires the ChatGPT-plan route).
+   * Absent: the coach reads as not connected; nothing else changes (rule 1).
+   */
+  coach?: { model: () => CoachModelPort; connection: () => Promise<TextCoachState> };
 }
 
 export type SetupState = { step: SetupStep; profile: UserProfile | null; gyms: Gym[] };
@@ -395,6 +404,19 @@ export function createAppServices(deps: AppServicesDeps) {
     catalogueExercises,
   });
 
+  /** The coach (ADR 0019 C6–C8): threads, turns, Undo, the summary turn, next-session targets. */
+  const coach = createCoachService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    newId: deps.newId,
+    ...(deps.coach === undefined ? {} : { model: deps.coach.model, connection: deps.coach.connection }),
+    builtInNextTargets: (sessionId) => loop.workout.builtInNextTargets(sessionId),
+    onSessionChanged: (a) => {
+      if (deps.restAlerts) void deps.restAlerts.reconcile(a, toMs(deps.now().utc));
+    },
+  });
+
   /** Gyms and equipment (Your data): the minimal gym editor. */
   const gyms = createGymServices({ repos, now: deps.now, profile: getProfile });
 
@@ -413,6 +435,7 @@ export function createAppServices(deps: AppServicesDeps) {
 
   return {
     ...loop,
+    coach,
     gyms,
     imports,
     yourData,

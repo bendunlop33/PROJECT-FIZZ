@@ -247,6 +247,7 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
   const notes: RepeatNote[] = [];
   const resolved: RoutineExercise[] = [];
   const targeted = new Set<string>();
+  const coachTargeted = new Set<string>();
   const byGym = new Map(input.gymEquipment.map((e) => [e.id, e]));
   // Targets are per exercise, so an exercise in two slots (a heavy and a light bench) can't tell which slot's
   // targets are which: both keep the routine's own templates (review S7).
@@ -267,6 +268,7 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
     const planned = (slots.get(rex.exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(rex.exerciseId);
     const useTargets = planned !== undefined && planned.length > 0;
     if (useTargets) targeted.add(rex.exerciseId);
+    if (useTargets && planned.some((p) => p.planned.source === 'coach')) coachTargeted.add(rex.exerciseId);
     const warmups = useTargets ? rex.setTemplates.filter((t) => t.setType === 'warmup') : [];
     const source: SetTemplate[] = useTargets
       ? [
@@ -325,7 +327,9 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
     sets: out.aggregate.sets.map((s) => {
       const exId = exerciseOf.get(s.sessionExerciseId);
       // Targets from the rule say so; the routine's own templates carry no source (a routine template).
-      return exId !== undefined && targeted.has(exId) && s.setType !== 'warmup' ? { ...s, planned: { ...s.planned, source: 'built_in_rule' as const } } : s;
+      if (exId === undefined || !targeted.has(exId) || s.setType === 'warmup') return s;
+      // A coach target for next time (D21) keeps its source.
+      return { ...s, planned: { ...s.planned, source: coachTargeted.has(exId) ? ('coach' as const) : ('built_in_rule' as const) } };
     }),
   };
   return { aggregate, warnings: out.warnings, notes };

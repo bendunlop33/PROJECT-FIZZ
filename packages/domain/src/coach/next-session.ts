@@ -1,4 +1,4 @@
-import type { CoachTarget, EquipmentInstance, GuardNote, GuardNoteKind, NextSessionTarget, PainFlag, SessionAggregate, SessionExercise } from '@fizz/schemas';
+import type { CoachTarget, EquipmentInstance, GuardNote, GuardNoteKind, NextSessionTarget, NextSessionTargetRecord, PainFlag, PlannedSet, SessionAggregate, SessionExercise, SetType } from '@fizz/schemas';
 import { formatNumber } from '../display';
 import { stepLoad } from '../equipment';
 import { activeFlag, AREA_WORD, isIncrease, sameTarget, snapLoad, validReps } from './adjust';
@@ -212,8 +212,11 @@ export function nextSessionBases(source: SessionAggregate, builtIn: ReadonlyMap<
     if (first === undefined) continue;
     const planned = working.find((s) => s.planned.load !== null || s.planned.reps !== null)?.planned ?? null;
     const top = [...working].sort((a, b) => (b.actual?.load?.value ?? 0) - (a.actual?.load?.value ?? 0))[0] ?? first;
-    const last: CoachTarget =
-      planned !== null ? { load: planned.load, reps: planned.reps } : { load: top.actual?.load ?? null, reps: top.actual?.reps == null ? null : { min: top.actual.reps, max: top.actual.reps } };
+    // Field by field: today's plan where it had one, else what the top set did.
+    const last: CoachTarget = {
+      load: planned?.load ?? top.actual?.load ?? null,
+      reps: planned?.reps ?? (top.actual?.reps == null ? null : { min: top.actual.reps, max: top.actual.reps }),
+    };
     const plan = builtIn.get(ex.exerciseId) ?? null;
     const workingPlan = plan?.filter((p) => p.setType !== 'warmup') ?? [];
     const firstPlan = workingPlan[0];
@@ -224,6 +227,43 @@ export function nextSessionBases(source: SessionAggregate, builtIn: ReadonlyMap<
       lastSets: working.length,
       builtIn: firstPlan === undefined ? null : { target: { load: firstPlan.planned.load, reps: firstPlan.planned.reps }, sets: workingPlan.length },
     });
+  }
+  return out;
+}
+
+type PlanEntry = { setType: SetType; planned: PlannedSet };
+
+/**
+ * `nextTargetsOf` with the coach's saved targets (D21): for each exercise
+ * with a row that is in use (`saved`, or `applied` by Ben), not used yet and
+ * set on the workout as it still is, the working sets take the coach's
+ * target (source `coach`) and count; warm-ups stay as the built-in rule
+ * plans them. Everything else keeps the built-in rule's plan, which is
+ * always the fallback. A pain flag set since, or pain in today's check-in,
+ * means the built-in rule decides (it holds loads; rule 9).
+ */
+export function withCoachTargets(
+  builtIn: ReadonlyMap<string, readonly PlanEntry[]>,
+  rows: readonly NextSessionTargetRecord[],
+  source: SessionAggregate,
+  ctx: { flaggedExerciseIds: ReadonlySet<string>; painToday: boolean },
+): Map<string, PlanEntry[]> {
+  const out = new Map<string, PlanEntry[]>([...builtIn].map(([k, v]) => [k, [...v]]));
+  if (ctx.painToday) return out;
+  for (const row of rows) {
+    if (row.status !== 'saved' && row.status !== 'applied') continue;
+    if (row.usedBySessionId !== null || row.sourceVersion !== source.session.version || row.sourceSessionId !== source.session.id) continue;
+    if (ctx.flaggedExerciseIds.has(row.exerciseId)) continue;
+    const plan = builtIn.get(row.exerciseId) ?? [];
+    const warmups = plan.filter((p) => p.setType === 'warmup');
+    const working = plan.filter((p) => p.setType !== 'warmup');
+    const lastWorking = source.sets.filter((s) => source.exercises.find((e) => e.id === s.sessionExerciseId)?.exerciseId === row.exerciseId && s.setType !== 'warmup' && s.status === 'completed' && s.pairedWithSetId === null);
+    const count = row.sets ?? (working.length > 0 ? working.length : lastWorking.length);
+    if (count < 1) continue;
+    const template = working[0]?.planned ?? lastWorking[0]?.planned ?? null;
+    const setType: SetType = working[0]?.setType ?? lastWorking[0]?.setType ?? 'working';
+    const planned: PlannedSet = { load: row.target.load, reps: row.target.reps, durationS: null, rpe: template?.rpe ?? null, rir: template?.rir ?? null, source: 'coach' };
+    out.set(row.exerciseId, [...warmups, ...Array.from({ length: count }, () => ({ setType, planned }))]);
   }
   return out;
 }
