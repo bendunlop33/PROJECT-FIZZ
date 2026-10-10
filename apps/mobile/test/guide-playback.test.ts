@@ -15,13 +15,19 @@ import { runSliced } from '../src/guide/sliced';
 import { resolveTheme, THEME_DIRECTIONS } from '../src/theme/tokens';
 
 describe('playback clock (UI-thread worklets)', () => {
-  it('loops a cycle at the guide tempo, picking the nearest baked frame', () => {
+  it('loops a cycle at the guide tempo, showing the frame whose interval holds the time', () => {
     // 2800 ms at 30 fps = 84 frames, one every 33.3 ms.
     expect(frameIndexAt(0, 2800, 84, 'cycle')).toBe(0);
     expect(frameIndexAt(1400, 2800, 84, 'cycle')).toBe(42);
-    expect(frameIndexAt(2790, 2800, 84, 'cycle')).toBe(0); // nearer to t = 1 (= t = 0) than to frame 83
+    expect(frameIndexAt(2790, 2800, 84, 'cycle')).toBe(83);
     expect(frameIndexAt(2800 + 1400, 2800, 84, 'cycle')).toBe(42);
-    expect(frameIndexAt(17, 2800, 84, 'cycle')).toBe(1);
+    expect(frameIndexAt(17, 2800, 84, 'cycle')).toBe(0);
+    expect(frameIndexAt(34, 2800, 84, 'cycle')).toBe(1);
+    // Half a 60 Hz refresh ahead: 25 ms + 8.3 ms is past the 33.3 ms boundary.
+    expect(frameIndexAt(25, 2800, 84, 'cycle', 1000 / 60)).toBe(1);
+    expect(frameIndexAt(2795, 2800, 84, 'cycle', 1000 / 60)).toBe(0); // wraps to the first frame
+    // A stall looks ahead at most 25 ms.
+    expect(frameIndexAt(1, 2800, 84, 'cycle', 5000)).toBe(0);
   });
 
   it('plays a ping-pong forwards then backwards over both ends', () => {
@@ -43,6 +49,93 @@ describe('playback clock (UI-thread worklets)', () => {
       expect(i).toBeGreaterThanOrEqual(0);
       expect(i).toBeLessThan(84);
     }
+  });
+
+  it('ping-pong: every frame, both ends included, is shown for one frame interval', () => {
+    const n = 60;
+    const seen = new Map<number, number>();
+    for (let e = 1; e < 4000; e += 1) {
+      const i = frameIndexAt(e, 2000, n + 1, 'pingpong');
+      seen.set(i, (seen.get(i) ?? 0) + 1);
+    }
+    for (let i = 0; i <= n; i += 1) expect(seen.get(i), `frame ${i}`).toBeGreaterThan(0);
+    // Ends shown once per pass (~33 ms), middle frames twice (~67 ms).
+    expect(Math.abs((seen.get(0) ?? 0) - 33)).toBeLessThanOrEqual(1);
+    expect(Math.abs((seen.get(n) ?? 0) - 33)).toBeLessThanOrEqual(1);
+    expect(Math.abs((seen.get(30) ?? 0) - 67)).toBeLessThanOrEqual(1);
+  });
+
+  describe('cadence on a real display (V5, ADR 0017)', () => {
+    // Seeded so a failure reproduces: mulberry32 + Box–Muller.
+    function noise(seed: number): () => number {
+      let a = seed >>> 0;
+      const uniform = (): number => {
+        a = (a + 0x6d2b79f5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return (((t ^ (t >>> 14)) >>> 0) + 1) / 4294967297;
+      };
+      return () => Math.sqrt(-2 * Math.log(uniform())) * Math.cos(2 * Math.PI * uniform());
+    }
+    type Pick = (elapsedMs: number, dtMs: number, durationMs: number, frameCount: number) => number;
+    /** Frames held for a different number of refreshes than refresh rate / 30, over 60 s (the first second skipped). */
+    function offCadence(pick: Pick, hz: number, jitterMs: number, durationMs: number, seed: number): { off: number; total: number } {
+      const gauss = noise(seed);
+      const frameCount = Math.round((durationMs * 30) / 1000);
+      const period = 1000 / hz;
+      const nominal = hz / 30;
+      const t0 = 123456.789;
+      let elapsed = 0;
+      let prev: number | null = null;
+      let shown = -1;
+      let since = 0;
+      let off = 0;
+      let total = 0;
+      for (let j = 0; j < hz * 60; j += 1) {
+        const ts = t0 + j * period + jitterMs * gauss();
+        const dt = prev === null ? null : ts - prev;
+        prev = ts;
+        elapsed = advanceClock(elapsed, dt, durationMs, 'cycle', 1e9).elapsedMs;
+        const f = pick(elapsed, dt ?? 0, durationMs, frameCount);
+        if (f === shown) {
+          since += 1;
+          continue;
+        }
+        if (shown >= 0 && j > hz) {
+          total += 1;
+          if (since !== nominal) off += 1;
+        }
+        shown = f;
+        since = 1;
+      }
+      return { off, total };
+    }
+    const now: Pick = (e, dt, d, n) => frameIndexAt(e, d, n, 'cycle', dt);
+    /** The round-to-nearest clock before V5, kept here to prove the test sees the stutter. */
+    const nearest: Pick = (e, _dt, d, n) => Math.round(((e % d) / d) * n) % n;
+    const durations = [...new Set(BUNDLED_GUIDE_FILES.map((f) => (f.raw as { durationMs: number }).durationMs))];
+    const cases = [60, 120].flatMap((hz) => [0, 0.02, 0.05, 0.2].map((jitterMs) => ({ hz, jitterMs })));
+
+    it('every bundled guide duration is on the 30 fps frame grid', () => {
+      for (const d of durations) expect(Number.isInteger((d * 30) / 1000), `${d} ms`).toBe(true);
+    });
+
+    it('holds every frame for exactly refresh/30 at 60 and 120 Hz with 0–200 µs timestamp jitter', () => {
+      for (const d of durations) {
+        for (const { hz, jitterMs } of cases) {
+          const r = offCadence(now, hz, jitterMs, d, d + hz + Math.round(jitterMs * 1000));
+          expect(r.total, `${d} ms at ${hz} Hz`).toBeGreaterThan(1500);
+          expect(r.off, `${d} ms at ${hz} Hz, jitter ${jitterMs * 1000} µs`).toBe(0);
+        }
+      }
+    });
+
+    it('the old round-to-nearest clock stutters under the same timestamps (the test detects the problem)', () => {
+      let off = 0;
+      for (const d of durations) for (const { hz, jitterMs } of cases) off += offCadence(nearest, hz, jitterMs, d, d + hz + Math.round(jitterMs * 1000)).off;
+      expect(off).toBeGreaterThan(100);
+    });
   });
 
   it('stops autoplay after the allowed passes, back on the first frame', () => {

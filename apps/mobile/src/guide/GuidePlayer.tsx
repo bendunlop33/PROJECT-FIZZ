@@ -195,7 +195,7 @@ export function GuidePlayer({ guide, size, visible, footer }: Props) {
       if (done.value) return;
       const step = advanceClock(elapsed.value, info.timeSincePreviousFrame, durationMs, loop);
       elapsed.value = step.elapsedMs;
-      frame.value = frameIndexAt(step.elapsedMs, durationMs, count, loop);
+      frame.value = frameIndexAt(step.elapsedMs, durationMs, count, loop, info.timeSincePreviousFrame ?? 0);
       if (step.finished) {
         done.value = true;
         scheduleOnRN(onFinished);
