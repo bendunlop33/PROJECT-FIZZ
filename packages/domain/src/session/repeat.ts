@@ -1,5 +1,5 @@
 import type { EquipmentInstance, Exercise, Load, PlannedSet, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, WeightUnit, WorkoutSet } from '@fizz/schemas';
-import { loadText, NBSP, repRangeText } from '../display';
+import { loadText, NBSP, repRangeText, targetShort } from '../display';
 import { getAchievableLoads, loadDirection, roundToAvailableLoad } from '../equipment';
 import { convertMass } from '../units';
 import { startWorkout, type StartWorkoutInput, type StartWorkoutOutput } from './create';
@@ -276,5 +276,24 @@ export function repeatPreviewLines(state: SessionAggregate): { exerciseName: str
         return `${badge}${load ?? ''}${load && reps ? `${NBSP}×${NBSP}` : ''}${reps ?? ''}`.trim();
       });
       return { exerciseName: ex.exerciseName, equipmentName: eq?.name ?? null, line: `${String(sets.length)} ${sets.length === 1 ? 'set' : 'sets'} · ${parts.join(' · ')}` };
+    });
+}
+
+/**
+ * Today's Up next rows (premium-feel §2.3): `Target 100 kg × 6–8 · 3 sets`,
+ * from the planned (already snapped) values the Start would create. The
+ * first working set stands for the exercise; warm-ups aren't counted. The
+ * word `Target` is always there: these are plans, not results.
+ */
+export function targetSummaryLines(state: SessionAggregate): { exerciseName: string; line: string }[] {
+  return [...state.exercises]
+    .sort((a, b) => a.order - b.order)
+    .map((ex) => {
+      const eq = ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
+      const sets = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted' && s.setType !== 'warmup').sort((a, b) => a.index - b.index);
+      const n = `${String(sets.length)} ${sets.length === 1 ? 'set' : 'sets'}`;
+      const first = sets[0];
+      const target = first ? targetShort(first.planned, { convention: ex.loadConvention, equipment: eq }) : null;
+      return { exerciseName: ex.exerciseName, line: target === null ? `No target · ${n}` : `${target} · ${n}` };
     });
 }

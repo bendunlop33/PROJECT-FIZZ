@@ -186,6 +186,9 @@ describe('next session (audit B2)', () => {
     expect(preview?.exercises.map((e) => e.exerciseName)).toEqual(['Bench press', 'Triceps pushdown']);
     // Bench at the top of 3–6 at RPE ≤ 8: the built-in rule adds load (snapped to the bar and plates).
     expect(plain(preview?.exercises[0]?.line)).toBe('3 sets · 62.5 kg × 3–6 · 62.5 kg × 3–6 · 62.5 kg × 3–6');
+    // Today's Up next rows: each starts with `Target` and matches what Start creates (premium-feel acceptance 3).
+    expect(plain(preview?.targets[0]?.line)).toBe('Target 62.5 kg × 3–6 · 3 sets');
+    expect(preview?.targets.every((t) => t.line.startsWith('Target ') || t.line.startsWith('No target'))).toBe(true);
     expect(await s.sessions.active()).toBeNull();
 
     const req = { gymId, opId: 'next-1', checkIn: null, nextOf: first };

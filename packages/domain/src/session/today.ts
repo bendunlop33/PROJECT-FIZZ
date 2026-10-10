@@ -25,6 +25,8 @@ export type TodayMain =
       done: number;
       total: number;
       status: { kind: 'resting'; deadlineUtc: string } | { kind: 'ready' } | { kind: 'paused' } | { kind: 'all_done' } | { kind: 'empty' };
+      /** This workout's exercises with progress (premium-feel §2.3), in workout order. */
+      rows: ResumeRow[];
     }
   | {
       kind: 'stale';
@@ -41,6 +43,45 @@ export type TodayMain =
   /** `activeMs` is null for a date-only (imported) workout: it has no times, so no duration is shown (review B2). */
   | { kind: 'done_today'; sessionId: string; title: string; activeMs: number | null }
   | { kind: 'no_plan' };
+
+/**
+ * One Resume row: `✓ Back squat  3 of 3 sets`. Status is said in words too
+ * (`text`), never by the icon alone. `firstPendingSetId` is where a tap
+ * resumes (null when nothing is left to log).
+ */
+export interface ResumeRow {
+  sessionExerciseId: string;
+  name: string;
+  status: 'done' | 'now' | 'pending' | 'skipped';
+  done: number;
+  total: number;
+  text: string;
+  firstPendingSetId: string | null;
+}
+
+/** Resume rows from the active workout and its current exercise. Pure. */
+export function resumeRows(active: SessionAggregate, currentExerciseId: string | null): ResumeRow[] {
+  return [...active.exercises]
+    .sort((a, b) => a.order - b.order)
+    .map((e) => {
+      const sets = active.sets.filter((s) => s.sessionExerciseId === e.id && s.status !== 'deleted').sort((a, b) => a.index - b.index);
+      const done = sets.filter((s) => s.status === 'completed').length;
+      const pending = sets.filter((s) => s.status === 'pending');
+      const skipped = sets.filter((s) => s.status === 'skipped').length;
+      const status: ResumeRow['status'] =
+        e.id === currentExerciseId && pending.length > 0 ? 'now' : pending.length > 0 ? 'pending' : done === 0 && skipped > 0 ? 'skipped' : done > 0 ? 'done' : 'pending';
+      const total = sets.length - skipped;
+      return {
+        sessionExerciseId: e.id,
+        name: e.exerciseName,
+        status,
+        done,
+        total,
+        text: status === 'skipped' ? 'Skipped' : `${String(done)} of ${String(total)} ${total === 1 ? 'set' : 'sets'}`,
+        firstPendingSetId: pending[0]?.id ?? null,
+      };
+    });
+}
 
 export interface TodayInput {
   nowMs: number;
@@ -149,6 +190,7 @@ export function buildTodayView(input: TodayInput): TodayView {
         done,
         total,
         status,
+        rows: resumeRows(active, v.focus?.sessionExerciseId ?? null),
       };
     }
   } else {

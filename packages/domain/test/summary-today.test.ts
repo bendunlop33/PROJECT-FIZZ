@@ -17,6 +17,7 @@ import {
   toHistorySessions,
   toIso,
   lastComparableSession,
+  resumeRows,
   weekStripLabel,
   weekText,
   type HistorySession,
@@ -226,6 +227,24 @@ describe('buildTodayView', () => {
     const v = buildTodayView({ ...base, nowMs: ms(0), active: done, finishedThisWeek: [done], weekDates: [today] });
     expect(v.week.days[0]).toMatchObject({ trained: true, inProgress: false });
     expect(v.week.text).toBe('1 workout this week');
+  });
+
+  it('resume rows: done / now / pending / skipped, in words, with where a tap resumes (premium-feel §2.3)', () => {
+    let s = workout(BENCH, barbell(), 3);
+    s = logAll(s, [values(kg(60), 10)], 0);
+    const v = buildTodayView({ ...base, nowMs: ms(30), active: s });
+    if (v.main.kind !== 'resume') throw new Error('not resume');
+    expect(v.main.rows).toEqual([
+      { sessionExerciseId: s.exercises[0]?.id, name: 'Bench press', status: 'now', done: 1, total: 3, text: '1 of 3 sets', firstPendingSetId: s.sets.filter((x) => x.status === 'pending').sort((a, b) => a.index - b.index)[0]?.id },
+    ]);
+    // Another exercise's view of the same workout: pending, then all done, then skipped.
+    expect(resumeRows(s, null)[0]?.status).toBe('pending');
+    const allDone = { ...s, sets: s.sets.map((x) => ({ ...x, status: 'completed' as const })) };
+    expect(resumeRows(allDone, null)[0]).toMatchObject({ status: 'done', text: '3 of 3 sets', firstPendingSetId: null });
+    const skipped = { ...s, sets: s.sets.map((x) => ({ ...x, status: 'skipped' as const })) };
+    expect(resumeRows(skipped, null)[0]).toMatchObject({ status: 'skipped', text: 'Skipped' });
+    const deleted = { ...s, sets: s.sets.map((x, i) => (i === 2 ? { ...x, status: 'deleted' as const } : x)) };
+    expect(resumeRows(deleted, null)[0]?.total).toBe(2);
   });
 
   it('resume card: now line, progress and rest status', () => {

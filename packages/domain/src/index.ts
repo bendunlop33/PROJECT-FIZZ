@@ -14,6 +14,7 @@ export * from './session/view';
 export * from './session/active-view';
 export * from './session/summary';
 export * from './session/today';
+export * from './session/records';
 export * from './session/recovery';
 export * from './session/volume';
 export * from './ports';
