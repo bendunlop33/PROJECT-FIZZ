@@ -35,6 +35,18 @@
  *   "grumbling", "funny", "weird") are `unclear`.
  * - "pain-free" / "pain free" is a negated pain word.
  *
+ * Review r4 B2:
+ * - Gym anatomy ("delt", "hammy", "QL", "psoas", "IT band", "hip flexors",
+ *   "core") and conditions ("sciatica", "plantar fasciitis", "slipped disc",
+ *   "shin splints", "broke my toe") are covered. "flexors" is a body part.
+ * - A side stands for the part: "left side is weird", "my left one is
+ *   grumbling".
+ * - A vague word after a state verb with no other subject ("feels off",
+ *   "it's weird"), or after a denied pain word ("Doesn't hurt, just feels
+ *   wrong"), is `unclear`. "aint" is a negator. "Bad shoulder day" is asked
+ *   about. General symptoms ("dizzy", "light headed", "heart racing") are
+ *   `unclear` until Ben/PM settle a fixed safety line (r4 spec issue 2).
+ *
  * A false `pain` only lets the coach consider a flag; a missed one lets
  * progression continue on a movement that hurts. When in doubt the answer
  * leans to `pain` or `unclear`, never `none`.
@@ -51,9 +63,13 @@ const PAIN = [
   'aggravate', 'aggravated', 'aggravating', 'rolled', 'impinge', 'impinged', 'impingement', 'impinging', 'tendinitis',
   'tendonitis', 'tendinopathy', 'bursitis', 'dislocate', 'dislocated', 'dislocation', 'subluxed', 'bruise', 'bruised',
   'bruising', 'cramp', 'cramped', 'cramping', 'buckled', 'wrenched', 'twisted', 'jammed',
+  // Review r4 B2: conditions and injuries named outright.
+  'sciatica', 'sciatic', 'fasciitis', 'herniated', 'herniation', 'hernia', 'prolapsed', 'prolapse', 'fracture', 'fractured',
+  'splints', 'arthritis', 'arthritic', 'gout', 'ruptured', 'rupture', 'pinched', 'crick', 'concussion', 'whiplash', 'tendinosis',
+  'epicondylitis', 'sprung', 'broke', 'broken', 'tear', 'busted',
 ];
 /** Pain only with a body part in the same clause ("sharp pain in my knee", not "feeling sharp today"). */
-const NEEDS_BODY = new Set(['sharp', 'shooting']);
+const NEEDS_BODY = new Set(['sharp', 'shooting', 'broke', 'broken', 'tear', 'busted']);
 /** Multi-word pain phrases, matched on the joined clause. */
 const PAIN_PHRASES = [
   /\bpins and needles\b/,
@@ -61,16 +77,32 @@ const PAIN_PHRASES = [
   /\b(?:acting|playing) up\b/,
   /\bflared? up\b|\bflaring up\b|\bflares up\b/,
   /\bbother(?:s|ed|ing)? (?:my|me)\b/,
+  // Review r4 B2: "slipped disc", "bulging disc", "disc issue" (a "disc" alone may be a plate).
+  /\b(?:slipped|herniated|bulging|bulged|prolapsed|ruptured|degenerated|degenerative|blown) discs?\b|\bdiscs? (?:issue|issues|problem|problems|injury|bulge|herniation|prolapse|thing)\b/,
+  /\b(?:tennis|golfer'?s?) elbow\b|\bfrozen shoulder\b|\bjumper'?s? knee\b|\brunner'?s? knee\b/,
+  /\b(?:felt|feel|feels|heard|think i (?:had|got)|might have had|may have had) (?:a |something )?(?:tear|rip|snap)\b/,
 ];
+/** General symptoms with no named part (review r4 spec issue 2): asked about, never a verdict. */
+const UNCLEAR_PHRASES = [/\b(?:feel|feeling|feels|felt) (?:a bit |bit |really |quite )?(?:sick|faint|unwell|ill|crook|woozy|spaced)\b/];
 const BODY = [
   'shoulder', 'shoulders', 'elbow', 'elbows', 'wrist', 'wrists', 'hand', 'hands', 'finger', 'fingers', 'thumb', 'thumbs',
   'forearm', 'forearms', 'bicep', 'biceps', 'tricep', 'triceps', 'arm', 'arms', 'neck', 'back', 'spine', 'hip', 'hips',
   'groin', 'knee', 'knees', 'ankle', 'ankles', 'foot', 'feet', 'toe', 'toes', 'heel', 'heels', 'achilles', 'shin', 'shins',
   'calf', 'calves', 'hamstring', 'hamstrings', 'quad', 'quads', 'glute', 'glutes', 'chest', 'pec', 'pecs', 'rib', 'ribs',
   'trap', 'traps', 'lat', 'lats', 'si', 'joint', 'joints', 'tendon', 'tendons', 'rotator', 'cuff', 'leg', 'legs', 'head',
+  // Review r4 B2: gym anatomy.
+  'delt', 'delts', 'hammy', 'hammies', 'adductor', 'adductors', 'abductor', 'abductors', 'ql', 'psoas', 'piriformis', 'teres',
+  'scap', 'scaps', 'scapula', 'scapulae', 'collarbone', 'clavicle', 'sternum', 'oblique', 'obliques', 'abs', 'core', 'itband',
+  'tfl', 'rhomboid', 'rhomboids', 'lumbar', 'thoracic', 'flexor', 'flexors', 'pelvis', 'tailbone', 'coccyx', 'sacrum',
+  'jaw', 'thigh', 'thighs', 'butt', 'bum', 'torso', 'kneecap', 'kneecaps', 'patella', 'meniscus', 'acl', 'mcl', 'labrum',
+  'ligament', 'ligaments', 'muscle', 'muscles', 'nerve', 'vertebra', 'vertebrae', 'pinky', 'knuckle', 'knuckles', 'palm', 'palms',
+  'serratus', 'infraspinatus', 'supraspinatus', 'gastroc', 'soleus', 'tibialis', 'shoulderblade', 'shoulderblades', 'heart',
 ];
 /** Words that may sit between "my" and the body part: "my left knee", "my lower back". */
-const BODY_QUALIFIERS = new Set(['left', 'right', 'lower', 'upper', 'mid', 'middle', 'bad', 'dodgy', 'rotator', 'other', 'front', 'rear']);
+const BODY_QUALIFIERS = new Set(['left', 'right', 'lower', 'upper', 'mid', 'middle', 'bad', 'dodgy', 'rotator', 'other', 'front', 'rear', 'hip', 'side', 'inner', 'outer']);
+/** Body words that only count after a side: "left side", "my right one" (review r4 B2). Not "one more set" or "on the side". */
+const SIDE_ONLY = new Set(['side', 'one']);
+const SIDES = new Set(['left', 'right', 'other']);
 /** "my back went", "my knee went on me", "the knee went again". */
 function bodyWent(ws: readonly string[]): number {
   for (const [i, w] of ws.entries()) {
@@ -84,16 +116,21 @@ const POSITIVE = new Set(['good', 'great', 'fine', 'fresh', 'strong', 'solid', '
  * happy", "not 100"): on their own they're too common ("my right knee") to
  * count. Negated, they and `POSITIVE` words are `unclear` (review r3 B2).
  */
-const NEGATABLE_POSITIVE = new Set([...POSITIVE, 'right', 'happy', 'well', 'normal', 'brilliant', 'itself', 'quite', 'hundred', '100', 'cooperating', 'cooperative', 'playing', 'behaving']);
+const NEGATABLE_POSITIVE = new Set([...POSITIVE, 'right', 'happy', 'well', 'normal', 'brilliant', 'itself', 'quite', 'hundred', '100', 'cooperating', 'cooperative', 'playing', 'behaving', 'best']);
 const POSITIVE_NEGATORS = new Set([
   'no', 'not', "doesn't", 'doesnt', "didn't", 'didnt', "isn't", 'isnt', "wasn't", 'wasnt', "don't", 'dont', "aren't", 'arent',
-  "weren't", 'werent', "won't", 'wont', 'never', 'hardly', 'nowhere', 'less', 'far',
+  "weren't", 'werent', "won't", 'wont', 'never', 'hardly', 'nowhere', 'less', 'far', 'aint', "ain't",
 ]);
 /** Things a negated positive may be about that aren't Ben's body: "sleep wasn't great", "bar speed not great". */
 const NON_BODY_SUBJECT = new Set([
   'sleep', 'slept', 'session', 'workout', 'speed', 'form', 'technique', 'food', 'gym', 'music', 'weather', 'energy', 'warmup', 'lift',
   'lifts', 'lifting', 'pump', 'focus', 'motivation', 'mood', 'day', 'week', 'traffic', 'coffee', 'plan', 'app', 'timer', 'rest', 'bar',
   'tempo', 'lockout', 'depth', 'grip', 'setup', 'brace', 'bracing', 'breathing', 'cardio', 'run', 'ride', 'diet', 'work',
+  // Review r4 B2: things that can be "off" or "weird" that aren't Ben.
+  'alarm', 'phone', 'light', 'lights', 'wifi', 'signal', 'watch', 'machine', 'bench', 'cable', 'seat', 'pad', 'handle', 'rack',
+  'equipment', 'gear', 'belt', 'shoes', 'playlist', 'podcast', 'voice', 'screen', 'battery', 'chalk', 'plates', 'plate', 'dumbbell',
+  'dumbbells', 'barbell', 'pulley', 'pin', 'stack', 'camera', 'video', 'audio', 'sound', 'volume', 'display', 'number', 'numbers',
+  'weight', 'weights', 'load', 'maths', 'math', 'count', 'counter', 'clock', 'aircon', 'air', 'heating', 'temperature', 'room',
 ]);
 /** "Felt good apart from my elbow": a positive word that carves out a body part doesn't cancel the fallback. */
 const CARVE_OUT = /\b(?:except|apart from|other than|besides|aside from|bar my|but my|just my|only my|save for|barring)\b/;
@@ -104,6 +141,13 @@ const VAGUE_BODY = new Set([
   'strange', 'odd', 'creaky', 'creaking', 'grinding', 'crunching', 'complaining', 'moaning', 'touchy', 'fragile', 'delicate', 'weak',
   'wobbly', 'giving', 'shot', 'knackered', 'buggered', 'wrecked', 'busted', 'banged', 'dodgey',
 ]);
+/** Vague words that mean "something's wrong" even with no body part, after a state verb or a denied pain word (review r4 B2). */
+const VAGUE_STANDALONE = new Set(['weird', 'off', 'wrong', 'odd', 'funny', 'strange', 'wonky', 'iffy', 'dodgy', 'janky', 'sketchy', 'wrecked', 'busted']);
+/** State verbs before a vague word: "feels off", "it's weird", "felt wrong". */
+const STATE_VERBS = new Set(['feels', 'feel', 'felt', 'feeling', 'is', 'was', 'seems', 'seemed', 'went', 'going', 'gone', 'acting', 'are', 'were', 'getting', 'got']);
+/** "something's up", "something's wrong": a vague report with no named part. */
+const SOMETHING_UP = /\bsomething (?:is |was |feels |felt )?(?:up|wrong|off|not right|weird|funny|odd)\b/;
+
 /**
  * A body part followed by one of these is an exercise, a session or a
  * direction, not Ben's body: "leg press", "chest day", "back to 100",
@@ -114,9 +158,11 @@ const NOT_BODY_FOLLOW = new Set([
   'day', 'days', 'workout', 'workouts', 'session', 'sessions', 'exercise', 'exercises', 'machine', 'stretch', 'stretches',
   'pulldown', 'pulldowns', 'pull', 'pulls', 'fly', 'flys', 'flyes', 'dip', 'dips', 'thrust', 'thrusts', 'bridge', 'bridges',
   'kickback', 'kickbacks', 'work', 'training', 'bench', 'circles', 'swings', 'routine', 'focus', 'pump', 'superset', 'accessory',
-  'accessories', 'abduction', 'adduction', 'flexion', 'flexor', 'flexors', 'hinge', 'hinges', 'openers', 'mobility', 'warmup', 'warm',
+  'accessories', 'abduction', 'adduction', 'flexion', 'hinge', 'plank', 'planks', 'note', 'notes', 'wheel', 'rollout', 'rollouts',
+  'crunch', 'crunches', 'machine', 'circuit', 'finisher', 'stability', 'exercise', 'more', 'set', 'sets', 'rep', 'reps', 'of', 'as', 'than', 'hinges', 'openers', 'mobility', 'warmup', 'warm',
   'to', 'on', 'off', 'in', 'into', 'out', 'up', 'down', 'at', 'for', 'from', 'with', 'over', 'home', 'then', 'me', 'you', 'it', 'them',
   'next', 'first', 'last', 'after', 'before', 'or', 'and', 'tomorrow', 'width', 'grip', 'position', 'placement', 'angle', 'height',
+  'rate', 'rates', 'zone', 'zones',
 ]);
 /** Before a body part, these mean Ben's (or "the") body part, not a figure of speech. */
 const BODY_LEADERS = new Set(['the', 'a', 'my', 'both', 'left', 'right', 'lower', 'upper', 'mid', 'middle', 'other', 'front', 'rear', 'one', 'that', 'this']);
@@ -132,6 +178,9 @@ const UNCLEAR = [
   'niggling', 'uncomfortable', 'discomfort', 'tender', 'clicking', 'clicky',
   // "flared" alone may be technique ("elbows flared"); "flared up" is a phrase below and is pain.
   'flare', 'flared', 'flaring', 'flares',
+  // Review r4 B2: conditions said without a verdict, and general symptoms (asked about; see spec issue 2).
+  'bulging', 'stitch', 'dizzy', 'dizziness', 'lightheaded', 'faint', 'nauseous', 'nausea', 'palpitations', 'headache', 'migraine',
+  'nosebleed', 'breathless',
 ];
 const EFFORT = ['burn', 'burns', 'burning', 'pump', 'pumped', 'grind', 'grindy', 'grinder', 'heavy', 'tired', 'tiring', 'hard', 'exhausted', 'fried', 'gassed', 'cooked'];
 
@@ -139,7 +188,7 @@ const PAIN_SET = new Set(PAIN);
 const BODY_SET = new Set(BODY);
 const UNCLEAR_SET = new Set(UNCLEAR);
 const EFFORT_SET = new Set(EFFORT);
-const NEGATORS = new Set(['no', 'not', "doesn't", 'doesnt', "didn't", 'didnt', "isn't", 'isnt', "wasn't", 'wasnt', "don't", 'dont', 'nothing', 'zero']);
+const NEGATORS = new Set(['no', 'not', "doesn't", 'doesnt', "didn't", 'didnt', "isn't", 'isnt', "wasn't", 'wasnt', "don't", 'dont', 'nothing', 'zero', 'aint', "ain't"]);
 /** Words that may sit between a negator and the pain word without breaking it: "no real pain", "doesn't really hurt". */
 const NEGATION_FILLERS = new Set(['real', 'really', 'any', 'actual', 'much']);
 /** A negator this far back in the same clause makes it a question, not a no ("I don't think it hurts"). */
@@ -155,6 +204,10 @@ function clauses(text: string): string[][] {
     .replace(/\b(?!let's\b)([a-z]+)'s\b/g, '$1 is')
     // "pain-free", "pain free": a negated pain word (review r3 nit).
     .replace(/\b(pain|hurt|injury)[- ]free\b/g, 'no $1')
+    // "IT band", "hip-flexor": one word each (review r4 B2).
+    .replace(/\bi\.?t\.? band\b/g, 'itband')
+    .replace(/\blight[- ]headed\b/g, 'lightheaded')
+    .replace(/\b(hip|knee|shoulder|ankle|wrist|elbow)-/g, '$1 ')
     .split(/[,.;:!?\n]+|\s+(?:but|though|although|however)\s+/)
     .map((c) => c.split(/[^a-z0-9']+/).filter((w) => w.length > 0))
     .filter((c) => c.length > 0);
@@ -181,7 +234,10 @@ function idiom(ws: readonly string[], i: number): boolean {
 }
 
 function bodyPartAt(ws: readonly string[], i: number): boolean {
-  return BODY_SET.has(ws[i] ?? '');
+  const w = ws[i] ?? '';
+  // "left side", "my right one": a side stands for the part (review r4 B2).
+  if (SIDE_ONLY.has(w)) return SIDES.has(ws[i - 1] ?? '');
+  return BODY_SET.has(w);
 }
 
 /** "my knee", "my left knee", "my lower back": a body part Ben owns at index `i`. */
@@ -200,10 +256,12 @@ function ownedAt(ws: readonly string[], i: number): boolean {
 function unownedBodyPartAt(ws: readonly string[], i: number): boolean {
   if (!bodyPartAt(ws, i)) return false;
   const next = ws[i + 1];
-  if (next !== undefined && NOT_BODY_FOLLOW.has(next) && !(next === 'and' && bodyPartAt(ws, i + 2))) return false;
-  // "rotator cuff": "rotator" is part of the name; the cuff decides.
-  if (ws[i] === 'rotator' && next === 'cuff') return false;
   const prev = ws[i - 1];
+  // "Bad shoulder day": a vague word before the part wins over "day" after it (review r4 nit).
+  const vagueBefore = prev !== undefined && VAGUE_BODY.has(prev);
+  if (next !== undefined && NOT_BODY_FOLLOW.has(next) && !vagueBefore && !(next === 'and' && bodyPartAt(ws, i + 2))) return false;
+  // "rotator cuff", "hip flexor stretch": the last word of a compound decides.
+  if (next !== undefined && bodyPartAt(ws, i + 1)) return false;
   if (i === 0 || prev === undefined) return true;
   if (BODY_LEADERS.has(prev) || BODY_QUALIFIERS.has(prev) || VAGUE_BODY.has(prev)) return true;
   return next === undefined || BODY_STATE.has(next);
@@ -215,7 +273,17 @@ function bodyPartMentioned(ws: readonly string[]): boolean {
 }
 
 function anyBodyPart(ws: readonly string[]): boolean {
-  return ws.some((w) => BODY_SET.has(w));
+  return ws.some((_, i) => bodyPartAt(ws, i));
+}
+
+/** "feels off", "it's weird", "just feels wrong": a vague word after a state verb, about nothing that isn't Ben (review r4 B2). */
+function vagueStateAt(ws: readonly string[], i: number): boolean {
+  if (!VAGUE_STANDALONE.has(ws[i] ?? '')) return false;
+  if (ws.some((x) => NON_BODY_SUBJECT.has(x))) return false;
+  // "off the bench", "off to the gym", "off day": a direction or a day, not a state.
+  if ((ws[i] === 'off' || ws[i] === 'busted') && ws[i + 1] !== undefined && !['today', 'again', 'now', 'lately', 'still', 'though', 'tbh', 'mate', 'somehow'].includes(ws[i + 1] ?? '')) return false;
+  for (let j = i - 1; j >= Math.max(0, i - 4); j -= 1) if (STATE_VERBS.has(ws[j] ?? '')) return true;
+  return false;
 }
 
 /** A positive word with a negator just before it ("not great", "isn't happy", "not 100%"). */
@@ -223,7 +291,7 @@ function positiveNegated(ws: readonly string[], i: number): boolean {
   for (let j = i - 1; j >= Math.max(0, i - 3); j -= 1) {
     const w = ws[j] ?? '';
     if (POSITIVE_NEGATORS.has(w)) return true;
-    if (!['a', 'very', 'really', 'quite', 'too', 'that', 'so', 'all', 'feeling', 'feel', 'feels', 'felt', 'is', 'was', 'been', 'being', 'at', 'from', 'great', 'super', 'exactly', 'totally', 'entirely', 'fully', 'completely', 'percent', 'yet'].includes(w)) return false;
+    if (!['a', 'the', 'very', 'really', 'quite', 'too', 'that', 'so', 'all', 'feeling', 'feel', 'feels', 'felt', 'is', 'was', 'been', 'being', 'at', 'from', 'great', 'super', 'exactly', 'totally', 'entirely', 'fully', 'completely', 'percent', 'yet'].includes(w)) return false;
   }
   return false;
 }
@@ -232,9 +300,12 @@ export function classifyPainMention(text: string): PainMention {
   let pain = false;
   let unclear = false;
   let effort = false;
+  // "Doesn't hurt, just feels wrong": a denied pain word followed by a vague one is asked about (review r4 B2).
+  let deniedPain = false;
   for (const ws of clauses(text)) {
     let clauseSignal = false;
     const joined = ws.join(' ');
+    if (SOMETHING_UP.test(joined) || UNCLEAR_PHRASES.some((re) => re.test(joined))) unclear = true;
     for (const re of PAIN_PHRASES) {
       const m = re.exec(joined);
       if (m === null) continue;
@@ -262,6 +333,7 @@ export function classifyPainMention(text: string): PainMention {
         const n = negationOf(ws, i);
         if (n === 'clear') pain = true;
         else if (n === 'doubt') unclear = true;
+        else deniedPain = true;
       } else if (UNCLEAR_SET.has(w)) {
         clauseSignal = true;
         if (negationOf(ws, i) !== 'negated') unclear = true;
@@ -283,6 +355,10 @@ export function classifyPainMention(text: string): PainMention {
           clauseSignal = true;
           if (negationOf(ws, i) !== 'negated') unclear = true;
         }
+      } else if (VAGUE_STANDALONE.has(w) && (vagueStateAt(ws, i) || (deniedPain && !ws.some((x) => NON_BODY_SUBJECT.has(x)))) && negationOf(ws, i) !== 'negated') {
+        // "Feels off", "it's weird", "Doesn't hurt, just off": ask.
+        clauseSignal = true;
+        unclear = true;
       }
     }
     // Review r2 B3, r3 B2: a body part with nothing else said is a question, never `none`.
