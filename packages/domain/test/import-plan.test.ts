@@ -393,11 +393,35 @@ describe('import preview: questions before anything is saved', () => {
     expect(newBarFromName('Trap Bar Jump Squat')).toEqual({ bar: 'trap_bar', known: true });
     expect(newBarFromName('Hex Bar Deadlift')).toEqual({ bar: 'trap_bar', known: true });
     expect(newBarFromName('Barbell Upright Row')).toEqual({ bar: 'barbell', known: true });
-    expect(newBarFromName('Log Press')).toEqual({ bar: 'barbell', known: true });
+    expect(newBarFromName('Log Press')).toEqual({ bar: 'barbell', known: false });
     expect(newBarFromName('Smith Machine Upright Row')).toEqual({ bar: 'barbell', known: false });
     expect(newBarFromName('Dumbbell Thing')).toEqual({ bar: 'barbell', known: false });
     expect(newBarFromName('Barbell or EZ Bar Curl')).toEqual({ bar: 'unknown', known: false });
     expect(newBarFromName('EZ Bar Cable Curl')).toEqual({ bar: 'ez_bar', known: false });
+  });
+
+  it('Add new → Barbell: the group answer reads the bar only when the name says it; every other name is asked (review r6.2 B1)', () => {
+    expect(newBarFromName('BB Upright Row')).toEqual({ bar: 'barbell', known: true });
+    expect(newBarFromName('Olympic Bar Squat')).toEqual({ bar: 'barbell', known: true });
+    const asked = [
+      'E-Z Bar Curl',
+      'Curl Bar Curl',
+      'Hex Deadlift',
+      'Trap Deadlift',
+      'Safety Squat Bar Squat',
+      'SSB Squat',
+      'Cambered Bar Bench Press',
+      'Swiss Bar Press',
+      'Football Bar Press',
+      'Multi Grip Bar Press',
+      'Buffalo Bar Squat',
+      'Axle Press',
+      'Log Press',
+      'Yoke Walk',
+      'Landmine Press',
+      'Zottman Curl',
+    ];
+    for (const n of asked) expect(newBarFromName(n).known, n).toBe(false);
   });
 
   it('Add new on a name over 120 characters: the exercise is still recognised as import-made from its stored name (review r6.1 N4)', () => {

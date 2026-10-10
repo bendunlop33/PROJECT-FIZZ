@@ -430,20 +430,22 @@ function addNewExerciseId(ctx: ImportContext, storedKey: string, key: string, ki
 }
 
 /**
- * The bar of an exercise `Add new` makes as a barbell exercise, from the
- * bar word in the name (source (c); review r6.1 B1):
- * - `EZ Bar …` / `Trap Bar …`: that bar, read by the group answer, with its
- *   own weight asked for "plates only" (never the Olympic bar's);
- * - `Barbell …` or no equipment word at all: the Olympic bar, read by the
- *   group answer (Ben said it's a barbell exercise);
- * - anything else (a Smith machine, two bar kinds, or a word for other
- *   equipment such as `Dumbbell` or `Cable`): asked on its own, with nothing
- *   selected. Two bar kinds can't add a bar weight at all.
+ * The bar of an exercise `Add new` makes as a barbell exercise. The same
+ * rule `Choose…` uses (`barNamed`): the bar is known, so the group answer
+ * reads it, only when the name says it in a word (source (c)):
+ * - `Barbell` / `BB` / `Olympic`: the Olympic bar;
+ * - `EZ Bar …` / `Trap Bar …` / `Hex Bar …`: that bar, with its own weight
+ *   asked for "plates only" (never the Olympic bar's; review r6.1 B1).
+ * Every other name is asked on its own, with nothing selected, and can be
+ * read as "Total": no word (`Log Press`, `Hex Deadlift`, `Safety Squat Bar
+ * Squat`, `E-Z Bar Curl`), a Smith machine, two bar kinds, or a word for
+ * other equipment. `Add new` offers one bar kind, so choosing `Barbell` says
+ * it's a bar exercise, not which bar (review r6.2 B1). Two bar kinds can't
+ * add a bar weight at all.
  */
 export function newBarFromName(name: string): { bar: BarOf; known: boolean } {
   const named = equipmentInName(name);
-  if (named === null) return { bar: 'barbell', known: true };
-  if (named.has('smith')) return { bar: 'barbell', known: false };
+  if (named === null || named.has('smith')) return { bar: 'barbell', known: false };
   const bars = BAR_KINDS.filter((b) => named.has(b));
   if (bars.length > 1) return { bar: 'unknown', known: false };
   const only = bars[0];
@@ -899,8 +901,9 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
         return set('total', { value: plus(value, bar), unit: w.unit, convention: 'total' });
       }
       case 'bodyweight': {
-        // Not asked (every value 0): a stack or plates-added exercise keeps its own convention at 0.
-        if (!askedBodyweight.has(key)) return ex.loadAs === null || value === null || w === null ? set('bodyweight', null) : set(ex.loadAs, { value, unit: w.unit, convention: ex.loadAs });
+        // Not asked (every value 0): bodyweight with no load. On a stack exercise whose name says assisted, 0 is
+        // no assistance (full bodyweight), not nothing lifted, so it is never stored as a 0 stack load (review r6.2 N2).
+        if (!askedBodyweight.has(key)) return set('bodyweight', null);
         const choice = answers.bodyweight[key] ?? null;
         if (choice === null) return { result: 'pending', reason: 'bodyweight' };
         if (w === null || value === null) return set(choice === 'assistance' ? 'assistance' : 'added', null);

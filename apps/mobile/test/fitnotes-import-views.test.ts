@@ -697,7 +697,9 @@ describe('import preview wording', () => {
         const B = `${A}\n${withoutHeader(fileOf([['Zottman Curl', 40, 10]], '2026-09-20'))}`;
         let b = await open(B);
         b = await step(b, { kind: 'name', key: 'zottman curl', answer: { kind: 'new', equipment: 'barbell' } });
-        b = await step(b, { kind: 'total', answer: 'plates_only' });
+        // `Zottman Curl` doesn't say which bar, so it is asked on its own; Ben's own answer adds the bar (review r6.2 B1).
+        expect(b.analysis.total?.exercises.map((e) => [e.name, e.known, e.reading])).toEqual([['Zottman Curl', false, null]]);
+        b = await step(b, { kind: 'total_override', key: 'zottman curl', answer: 'plates_only' });
         const jobB = await commit(b, 'op-b');
         expect(await stored(jobB, ['2026-09-20'])).toEqual(['2026-09-20 60 total']);
         await undo(jobB);

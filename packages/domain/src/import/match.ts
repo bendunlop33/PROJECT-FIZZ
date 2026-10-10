@@ -193,7 +193,7 @@ export type NamedEquipment = ExerciseEquipmentKind | 'smith';
  */
 const EQUIPMENT_WORDS: readonly [RegExp, readonly NamedEquipment[]][] = [
   [/ (dumbbells?|dbs?) /, ['dumbbells']],
-  [/ (barbells?|bb) /, ['barbell']],
+  [/ (barbells?|bb|olympic) /, ['barbell']],
   [/ (ez ?bar|ez) /, ['ez_bar']],
   [/ (trap|hex) ?bar /, ['trap_bar']],
   [/ (kettlebells?|kbs?) /, ['kettlebell']],
@@ -436,8 +436,9 @@ export function implementsFor(sourceName: string, c: MatchCandidate): ImplementC
 /**
  * Whether the bar a `total` exercise uses is known for this source name
  * (PM decision, review r5): the name is one of the exercise's own names
- * (source (a)), or names that bar (`Barbell`, `EZ-Bar`, `Trap Bar`; source
- * (c)). Otherwise "plates only" would add a bar the name never mentioned
+ * (source (a)), or names that bar (`Barbell`, `BB`, `Olympic`, `EZ-Bar`,
+ * `Trap Bar`; source (c)). `newBarFromName` applies the same rule to
+ * `Add new` → Barbell (review r6.2 B1). Otherwise "plates only" would add a bar the name never mentioned
  * (`Log Press` taken as the overhead press), so the barbell group answer
  * doesn't reach it and it is asked on its own. A name that says Smith names
  * a Smith machine's bar, whatever else it says: `Smith Machine Barbell
