@@ -34,6 +34,7 @@ export * from './session/snap';
 export * from './session/snap-text';
 export * from './session/equipment-snapshot';
 export * from './session/gym-switch';
+export * from './session/gym-command';
 export * from './touches';
 export * from './import';
 export * from './session/lift-highlight';
