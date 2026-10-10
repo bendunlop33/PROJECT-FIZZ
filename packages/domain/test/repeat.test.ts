@@ -63,8 +63,8 @@ describe('Repeat last workout (routines.md RT4, check 13)', () => {
     // The stack isn't here: reps kept, no load planned (review B1).
     expect(setsFor(out.aggregate, ROW).map((x) => [x.planned.load, x.planned.reps])).toEqual([[null, { min: 12, max: 12 }]]);
     expect(out.notes.map((n) => [n.exerciseName, n.text])).toEqual([
+      ['Bench press', 'Capped: the most here is 100 kg. Last time 102.5 kg.'],
       ['Cable row', 'No Cable stack here: no load target (last time 50 kg stack × 12).'],
-      ['Bench press', 'Rounded down from 102.5 kg: this gym stops at 100 kg.'],
     ]);
   });
 
@@ -130,7 +130,7 @@ describe('Repeat across units', () => {
     const set = setsFor(out.aggregate, DB_PRESS)[0];
     expect(set?.planned.load).toBeNull();
     expect(set?.planned.reps).toEqual({ min: 8, max: 8 });
-    expect(out.notes).toContainEqual({ exerciseName: 'DB press', text: 'No load target: last time was 22.5 kg each, and the easiest here is 60 lb each.' });
+    expect(out.notes).toContainEqual({ exerciseName: 'DB press', text: 'No load target: last time was 22.5 kg each, and the lightest here is 60 lb each.' });
   });
 
   it('with no equipment to check on, a load in the other unit is dropped (never converted), reps kept', () => {

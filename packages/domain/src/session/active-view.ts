@@ -15,9 +15,12 @@ import { getAchievableLoads, isLoadAchievable, loadDirection, stepLoad } from '.
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import type { HistorySession } from '../progression';
 import { toMs } from '../time';
+import { equipmentOfRow } from './equipment-snapshot';
+import { blockSets, isEmptyPart, partRootOf } from './gym-switch';
 import { buildExecutionOrder, nextPendingSet } from './order';
 import { GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
 import { latestCommittedSetId } from './reducer';
+import { setSnapNote, type NoteLine } from './snap-text';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
 
 /**
@@ -82,6 +85,8 @@ export interface ActiveViewInput {
   edits: DraftEdits | null;
   /** A derived name (`Push`) for a workout without one (audit F5); the stored name wins. */
   title?: string | null;
+  /** Gym names by ID, for a workout that used more than one gym (part dividers, done-set captions). */
+  gymNames?: Readonly<Record<string, string>>;
 }
 
 export type StepTarget = { enabled: true; value: number; label: string } | { enabled: false; reason: string };
@@ -107,6 +112,10 @@ export interface SetRowView {
   text: string;
   edited: boolean;
   version: number;
+  /** A done set from a gym other than the current one: that gym's name (gym-switch §2.5). */
+  gymCaption: string | null;
+  /** `At Hotel · Lisbon`: this set starts a part at another gym (`GymPartDivider` before it). */
+  partStart: string | null;
 }
 
 export interface FocusView {
@@ -128,6 +137,11 @@ export interface FocusView {
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
   duration: { value: number | null } | null;
   target: string | null;
+  /**
+   * `SnapNote` under the target (gym-switch §2.5): only for a capped,
+   * converted or dropped fit, read from `planned.snap` so it survives a relaunch.
+   */
+  snapNote: NoteLine | null;
   painFlagged: boolean;
   offProfileWarning: string | null;
   side: { kind: 'choice'; value: SetSide } | { kind: 'fixed'; value: 'left' | 'right' } | null;
@@ -202,16 +216,20 @@ export interface ActiveSetView {
 
 const live = (s: WorkoutSet) => s.status !== 'deleted';
 
+/** Live sets of the exercise's whole block (all gym parts), so set numbers run across parts. */
 function exerciseSets(state: SessionAggregate, exId: string): WorkoutSet[] {
-  const order = buildExecutionOrder(state.exercises, state.sets);
-  const pos = new Map(order.map((id, i) => [id, i]));
-  return state.sets
-    .filter((s) => s.sessionExerciseId === exId && live(s))
-    .sort((a, b) => (pos.get(a.id) ?? a.index + 1e6) - (pos.get(b.id) ?? b.index + 1e6));
+  return blockSets(state, exId);
 }
 
 function equipmentOf(state: SessionAggregate, ex: SessionExercise): EquipmentInstance | null {
-  return ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
+  return equipmentOfRow(state.session.equipmentSnapshot, ex);
+}
+
+/** The gym a part's sets are planned or done at: its item's gym, else where its targets were fitted. */
+function partGymId(state: SessionAggregate, row: SessionExercise): string | null {
+  const eq = equipmentOf(state, row);
+  if (eq) return eq.gymId;
+  return state.sets.find((s) => s.sessionExerciseId === row.id && s.planned.snap?.gymId)?.planned.snap?.gymId ?? null;
 }
 
 function sideBadge(set: WorkoutSet): string | null {
@@ -352,7 +370,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   else {
     const nextSet = state.sets.find((s) => s.id === nextId);
     const nextEx = nextSet ? state.exercises.find((e) => e.id === nextSet.sessionExerciseId) : undefined;
-    if (nextSet && nextEx && nextEx.id !== ex.id && order.indexOf(nextId) > order.indexOf(set.id)) {
+    // Another part of the same exercise (after a gym switch) isn't a "next exercise".
+    if (nextSet && nextEx && partRootOf(state.exercises, nextEx.id) !== partRootOf(state.exercises, ex.id) && order.indexOf(nextId) > order.indexOf(set.id)) {
       next = { kind: 'exercise', name: nextEx.exerciseName, target: targetShort(nextSet.planned, { convention: nextEx.loadConvention, equipment: equipmentOf(state, nextEx) }), setId: nextId };
     }
   }
@@ -382,6 +401,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
     duration: ex.measurement === 'duration' ? { value: values.durationS } : null,
     target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral }),
+    snapNote: setSnapNote(set.planned.snap, set.planned.load, { gymName: input.gymName, equipment: eq, unit: ex.unit }),
     painFlagged: input.painFlagged.has(ex.exerciseId),
     offProfileWarning,
     side,
@@ -390,7 +410,13 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     plateLine: plateBreakdownLine(logValues.load, eq),
     warmUp: eq !== null && showsWarmUp(state, set.id) ? warmUpText(warmUpRamp(logValues.load ?? set.planned.load, eq), eq) : null,
     rows: own.map((s, i) => {
-      const { status, text } = rowText(s, ex, eq, s.id === set.id);
+      const partRow = state.exercises.find((e) => e.id === s.sessionExerciseId) ?? ex;
+      const { status, text } = rowText(s, partRow, equipmentOf(state, partRow), s.id === set.id);
+      const gymId = partGymId(state, partRow);
+      const prevRowId = own[i - 1]?.sessionExerciseId;
+      const prevRow = prevRowId === undefined ? undefined : state.exercises.find((e) => e.id === prevRowId);
+      const startsPart = prevRow !== undefined && prevRow.id !== partRow.id && gymId !== null && partGymId(state, prevRow) !== gymId;
+      const gymName = gymId === null ? undefined : input.gymNames?.[gymId];
       return {
         setId: s.id,
         number: i + 1,
@@ -399,6 +425,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
         text,
         edited: s.edited,
         version: s.version,
+        gymCaption: status === 'done' && gymId !== null && gymId !== state.session.gymId ? (gymName ?? null) : null,
+        partStart: startsPart && gymName !== undefined ? `At ${gymName}` : null,
       };
     }),
     next,
@@ -475,15 +503,7 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     justSaved: buildJustSaved(state),
     primary,
     progress: { done: completed.length, total: liveSets.length },
-    exercises: [...state.exercises]
-      .sort((a, b) => a.order - b.order)
-      .map((e) => ({
-        sessionExerciseId: e.id,
-        exerciseId: e.exerciseId,
-        name: e.exerciseName,
-        pendingSets: liveSets.filter((s) => s.sessionExerciseId === e.id && s.status === 'pending').length,
-        doneSets: liveSets.filter((s) => s.sessionExerciseId === e.id && s.status === 'completed').length,
-      })),
+    exercises: exerciseEntries(state, liveSets),
     lastCompletedAtUtc: last,
     openEnded: isOpenEndedWorkout(state),
     upNext: focus === null ? null : upNextLine(state, focus),
@@ -494,7 +514,8 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
 function upNextLine(state: SessionAggregate, focus: FocusView): string {
   const lastId = latestCommittedSetId(state);
   const lastSet = lastId === null ? undefined : state.sets.find((s) => s.id === lastId);
-  const sameExercise = lastSet?.sessionExerciseId === focus.sessionExerciseId;
+  // A gym-switch continuation part is the same exercise (gym-switch GS6).
+  const sameExercise = lastSet !== undefined && partRootOf(state.exercises, lastSet.sessionExerciseId) === partRootOf(state.exercises, focus.sessionExerciseId);
   const ex = state.exercises.find((e) => e.id === focus.sessionExerciseId);
   const eq = ex ? equipmentOf(state, ex) : null;
   const set = state.sets.find((s) => s.id === focus.setId);
@@ -502,6 +523,36 @@ function upNextLine(state: SessionAggregate, focus: FocusView): string {
   // `Target (built-in rule) 3–6 reps` → `3–6 reps`: the label stays on the set view.
   const what = target !== null ? target.replace(/^Target (\([^)]*\) )?/, '') : focus.logLabel === null ? null : focus.logLabel.replace(/^Log /, '');
   return [sameExercise ? null : focus.exerciseName, `Set ${String(focus.setNumber)}`, what].filter((p): p is string => p !== null).join(' · ');
+}
+
+/**
+ * One entry per exercise block: an exercise split across gyms (gym-switch
+ * GS6) is one entry, named by the part that has its pending sets (else its
+ * last part). An empty continuation part (after an Undo) is never listed.
+ */
+function exerciseEntries(state: SessionAggregate, liveSets: readonly WorkoutSet[]): ActiveSetView['exercises'] {
+  const out: ActiveSetView['exercises'] = [];
+  const index = new Map<string, number>();
+  for (const e of [...state.exercises].sort((a, b) => a.order - b.order)) {
+    if (isEmptyPart(state, e)) continue;
+    const root = partRootOf(state.exercises, e.id);
+    const pending = liveSets.filter((s) => s.sessionExerciseId === e.id && s.status === 'pending').length;
+    const done = liveSets.filter((s) => s.sessionExerciseId === e.id && s.status === 'completed').length;
+    const at = index.get(root);
+    const prior = at === undefined ? undefined : out[at];
+    if (at === undefined || prior === undefined) {
+      index.set(root, out.length);
+      out.push({ sessionExerciseId: e.id, exerciseId: e.exerciseId, name: e.exerciseName, pendingSets: pending, doneSets: done });
+      continue;
+    }
+    out[at] = {
+      ...prior,
+      sessionExerciseId: pending > 0 || prior.pendingSets === 0 ? e.id : prior.sessionExerciseId,
+      pendingSets: prior.pendingSets + pending,
+      doneSets: prior.doneSets + done,
+    };
+  }
+  return out;
 }
 
 export interface SetEditView {

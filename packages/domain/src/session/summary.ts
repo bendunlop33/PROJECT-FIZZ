@@ -8,6 +8,8 @@ import type { HistorySession, NextTargets } from '../progression';
 import { toIso, toMs } from '../time';
 import { lastComparableSession } from './active-view';
 import { summaryHighlight } from '../touches';
+import { equipmentOfRow } from './equipment-snapshot';
+import { gymRouteIds, partRootOf } from './gym-switch';
 import { dateOnlyOf, workoutDurationMs } from './view';
 import { summariseVolume } from './volume';
 
@@ -92,7 +94,14 @@ export interface WorkoutSummary {
 const isWork = (s: WorkoutSet) => s.setType !== 'warmup';
 
 function equipmentOf(state: SessionAggregate, ex: SessionExercise): EquipmentInstance | null {
-  return ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
+  return equipmentOfRow(state.session.equipmentSnapshot, ex);
+}
+
+/** `Main Gym → Hotel · Lisbon` for a workout that switched gym (workout-summary revision 2026-10-09). */
+function gymLine(state: SessionAggregate, input: Pick<SummaryInput, 'gymName' | 'gymNames'>): string | null {
+  const ids = gymRouteIds(state.session);
+  if (ids.length <= 1) return input.gymName;
+  return ids.map((gymId) => input.gymNames?.[gymId] ?? (gymId === state.session.gymId ? input.gymName : null) ?? 'Gym').join(' → ');
 }
 
 /** The top set: heaviest (or least assisted), then most reps. */
@@ -166,25 +175,46 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   const workingSets = [...volume.values()].reduce((n, v) => n + v.sets, 0);
   const skippedSets = liveSets.filter((x) => x.status === 'skipped' && isWork(x)).length;
   const exercisesWithSets = exercises.filter((e) => liveSets.some((x) => x.sessionExerciseId === e.id));
-  const exercisesDone = exercisesWithSets.filter((e) => completed.some((x) => x.sessionExerciseId === e.id)).length;
+  // Parts of one exercise at two gyms count once.
+  const roots = (list: readonly SessionExercise[]) => new Set(list.map((e) => partRootOf(state.exercises, e.id))).size;
+  const exercisesDone = roots(exercisesWithSets.filter((e) => completed.some((x) => x.sessionExerciseId === e.id)));
   const activeMs = workoutDurationMs(state, nowMs);
 
-  const exerciseRows = exercisesWithSets.map((ex) => {
-    const eq = equipmentOf(state, ex);
-    const own = liveSets.filter((x) => x.sessionExerciseId === ex.id).sort((a, b) => a.index - b.index);
-    const done = own.filter((x) => x.status === 'completed' && x.actual !== null && isWork(x));
-    const v = volume.get(ex.id);
-    const unitNote = ex.loadConvention === 'per_hand' ? ` (${ex.unit} each)` : ex.loadConvention === 'stack' ? ` (${ex.unit} stack)` : ex.laterality === 'unilateral' ? ' (per side)' : '';
-    const n = v?.sets ?? done.length;
-    return {
-      sessionExerciseId: ex.id,
-      exerciseId: ex.exerciseId,
-      name: ex.exerciseName,
-      setsText: `${String(n)} ${n === 1 ? 'set' : 'sets'}${unitNote}`,
-      results: done
+  // An exercise done at two gyms is one row; each part's results name its gym (gym-switch GS6).
+  const multiGym = gymRouteIds(s).length > 1;
+  const blocks = new Map<string, SessionExercise[]>();
+  for (const ex of exercisesWithSets) {
+    const root = partRootOf(state.exercises, ex.id);
+    blocks.set(root, [...(blocks.get(root) ?? []), ex]);
+  }
+  const exerciseRows = [...blocks.values()].map((parts) => {
+    const first = parts[0] as SessionExercise;
+    const partResults: string[] = [];
+    let n = 0;
+    let skipped = 0;
+    for (const ex of parts) {
+      const eq = equipmentOf(state, ex);
+      const own = liveSets.filter((x) => x.sessionExerciseId === ex.id).sort((a, b) => a.index - b.index);
+      const done = own.filter((x) => x.status === 'completed' && x.actual !== null && isWork(x));
+      n += volume.get(ex.id)?.sets ?? done.length;
+      skipped += own.filter((x) => x.status === 'skipped').length;
+      const text = done
         .map((x) => (x.actual ? `${x.side === 'left' ? 'L ' : x.side === 'right' ? 'R ' : ''}${valuesText(x.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq, compact: true })}` : ''))
-        .join(' · '),
-      skipped: own.filter((x) => x.status === 'skipped').length,
+        .join(' · ');
+      if (text === '') continue;
+      const gymId = eq?.gymId ?? null;
+      const gym = multiGym && gymId !== null ? (input.gymNames?.[gymId] ?? (gymId === s.gymId ? input.gymName : null)) : null;
+      partResults.push(gym ? `${text} (${gym})` : text);
+    }
+    const v = parts.length === 1 ? volume.get(first.id) : undefined;
+    const unitNote = first.loadConvention === 'per_hand' ? ` (${first.unit} each)` : first.loadConvention === 'stack' ? ` (${first.unit} stack)` : first.laterality === 'unilateral' ? ' (per side)' : '';
+    return {
+      sessionExerciseId: first.id,
+      exerciseId: first.exerciseId,
+      name: first.exerciseName,
+      setsText: `${String(n)} ${n === 1 ? 'set' : 'sets'}${unitNote}`,
+      results: partResults.join(' · '),
+      skipped,
       sides: v?.bySide && (v.bySide.left.reps !== v.bySide.right.reps) ? `L ${String(v.bySide.left.reps)} reps · R ${String(v.bySide.right.reps)} reps` : null,
     };
   });
@@ -277,12 +307,12 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     endedAtUtc: s.endedAt?.utc ?? null,
     tz: s.startedAt.tz,
     dateOnly: dateOnlyOf(s),
-    gymName: input.gymName,
+    gymName: gymLine(state, input),
     timingEdited: {
       start: state.timingAudit.some((e) => e.field === 'startedAt'),
       end: state.timingAudit.some((e) => e.field === 'endedAt'),
     },
-    facts: { activeMs, activeText: activeMs === null ? null : formatMinutes(activeMs), exercisesDone, exercisesTotal: exercisesWithSets.length, workingSets, skippedSets, warmupSets },
+    facts: { activeMs, activeText: activeMs === null ? null : formatMinutes(activeMs), exercisesDone, exercisesTotal: roots(exercisesWithSets), workingSets, skippedSets, warmupSets },
     checkIn: ci
       ? {
           checkInId: ci.id,

@@ -10,15 +10,18 @@ import type {
   SessionCheckIn,
   SessionExercise,
   SetType,
+  SnapReason,
   UserProfile,
   WorkoutSet,
   WeightUnit,
   ZonedTimestamp,
 } from '@fizz/schemas';
+import { EQUIPMENT_WORD } from '../display';
 import { isLoadAchievable, roundToAvailableLoad } from '../equipment';
 import { convertMassExactly } from '../units';
 import { resolveRestPreset } from '../rest';
 import { buildExecutionOrder } from './order';
+import { plannedSnapOf, snapPlanToGym, type SnapResult, type SnapSlotInput, type SnapSource } from './snap';
 
 export type StartWarning =
   | { kind: 'equipment_not_in_gym'; routineExerciseId: string; equipmentId: string }
@@ -41,7 +44,7 @@ export type StartWarning =
       kind: 'target_dropped';
       setTemplateId: string;
       requested: Load;
-      reason: 'convention_mismatch' | 'unit_not_convertible' | 'no_achievable_loads';
+      reason: SnapReason;
     };
 
 export type PlannedLoadResult =
@@ -114,22 +117,45 @@ export interface StartWorkoutInput {
    * (check-in.md §6 `startWorkout(…, opts.checkIn)`). Omitted = not recorded.
    */
   checkIn?: SessionCheckIn | null;
+  /**
+   * Items a routine may be pinned to that aren't at this gym (the owner's
+   * equipment at other gyms), so the pin can be mapped by kind (gym-switch
+   * GS3). A pin that isn't known at all is mapped by the exercise's kinds.
+   */
+  knownEquipment?: ReadonlyMap<string, EquipmentInstance>;
+  /** The gym's name, for notes. */
+  gymName?: string;
+  /** GS3 step 2: the item an exercise last used at this gym. */
+  lastUsedHere?: (exerciseId: string) => string | null;
 }
 
 export interface StartWorkoutOutput {
   aggregate: SessionAggregate;
   warnings: StartWarning[];
+  /** The shared fit (`snapPlanToGym`, mode `start` or `repeat`); slot IDs are routine exercise IDs, set IDs template IDs. */
+  snap: SnapResult;
+}
+
+function sourceFor(equipment: EquipmentInstance): SnapSource {
+  return { id: equipment.id, kind: equipment.kind, name: equipment.name, gymId: equipment.gymId };
 }
 
 /**
  * Snapshot a routine and the gym's equipment into a new resumable session.
- * Rest durations are resolved and snapshotted per set. Planned loads are
- * normalised to the session exercise's unit and convention by
- * `planTemplateLoad` (rounded toward easier, never above the max); every
- * change is reported so the original template target stays visible.
- * Missing equipment does not block logging; it is reported as a warning.
+ * Rest durations are resolved and snapshotted per set. Every target goes
+ * through `snapPlanToGym` (gym-switch GS1): the pinned item is mapped to this
+ * gym's equipment (same item, else same kind, else another kind the exercise
+ * lists, else none), and each load is rounded toward easier to what that
+ * item can make, never above its max. An equipped plan with no equipment
+ * here gets no load target, reps kept (closes the routine-start gap, §6.6).
+ * Every fit is stored on the set (`planned.snap`) and reported as a warning.
  */
 export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
+  return startWorkoutWithMode(input, 'start');
+}
+
+/** `startWorkout` for Repeat too, so both fit loads by the same code (GS1). */
+export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | 'repeat'): StartWorkoutOutput {
   const sessionId = input.newId();
   const warnings: StartWarning[] = [];
   const equipmentById = new Map(input.gymEquipment.map((e) => [e.id, e]));
@@ -137,23 +163,49 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
   const sets: WorkoutSet[] = [];
 
   const routineExercises = input.routine ? [...input.routine.exercises].sort((a, b) => a.order - b.order) : [];
-  routineExercises.forEach((rex, position) => {
+  const planned = routineExercises.flatMap((rex) => {
     const exercise = input.exercises.get(rex.exerciseId);
     if (!exercise) {
       warnings.push({ kind: 'exercise_missing', routineExerciseId: rex.id, exerciseId: rex.exerciseId });
-      return;
+      return [];
     }
-    let equipment: EquipmentInstance | null = null;
+    return [{ rex, exercise }];
+  });
+
+  const slots: SnapSlotInput[] = planned.map(({ rex, exercise }) => {
+    let source: SnapSource | null = null;
     if (rex.equipmentId !== null) {
-      equipment = equipmentById.get(rex.equipmentId) ?? null;
-      if (!equipment || equipment.availability === 'retired') {
-        equipment = null;
-        warnings.push({ kind: 'equipment_not_in_gym', routineExerciseId: rex.id, equipmentId: rex.equipmentId });
-      }
+      const pinned = equipmentById.get(rex.equipmentId) ?? input.knownEquipment?.get(rex.equipmentId) ?? null;
+      // A pin that can't be resolved anywhere is still a plan for equipment: map it by the exercise's kinds.
+      const kind = pinned?.kind ?? exercise.compatibleEquipment[0];
+      if (pinned) source = sourceFor(pinned);
+      else if (kind !== undefined) source = { id: rex.equipmentId, kind, name: kind in EQUIPMENT_WORD ? EQUIPMENT_WORD[kind as EquipmentInstance['kind']] : 'Equipment', gymId: input.gymId };
     }
+    return {
+      slotId: rex.id,
+      exercise: { id: exercise.id, name: exercise.name, compatibleEquipment: exercise.compatibleEquipment, defaultLoadConvention: exercise.defaultLoadConvention },
+      sourceEquipment: source,
+      unit: input.owner.preferredUnit,
+      convention: exercise.defaultLoadConvention,
+      sets: rex.setTemplates.map((tpl) => ({ id: tpl.id, setType: tpl.setType, intended: tpl.targetLoad, current: null, reps: tpl.targetReps, durationS: tpl.targetDurationS })),
+    };
+  });
+  const snap = snapPlanToGym({
+    mode,
+    slots,
+    gym: { id: input.gymId, name: input.gymName ?? 'this gym', equipment: input.gymEquipment },
+    ...(input.lastUsedHere ? { lastUsedHere: input.lastUsedHere } : {}),
+    ownerUnit: input.owner.preferredUnit,
+  });
+
+  planned.forEach(({ rex, exercise }, position) => {
+    const fit = snap.slots[position];
+    if (!fit) return;
+    if (rex.equipmentId !== null && fit.mapping !== 'same_item') {
+      warnings.push({ kind: 'equipment_not_in_gym', routineExerciseId: rex.id, equipmentId: rex.equipmentId });
+    }
+    const equipment = fit.equipment;
     const sessionExerciseId = input.newId();
-    const loadConvention = equipment?.loadConvention ?? exercise.defaultLoadConvention;
-    const unit = equipment?.unit ?? input.owner.preferredUnit;
     exercises.push({
       id: sessionExerciseId,
       sessionId,
@@ -162,8 +214,8 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
       measurement: exercise.measurement,
       laterality: exercise.laterality,
       equipmentId: equipment?.id ?? null,
-      loadConvention,
-      unit,
+      loadConvention: fit.convention,
+      unit: fit.unit,
       order: position,
       supersetGroup: rex.supersetGroup,
       transitionRestS: rex.transitionRestS,
@@ -171,8 +223,16 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
     });
 
     rex.setTemplates.forEach((tpl, index) => {
-      const planned = planTemplateLoad(tpl.id, tpl.targetLoad, { unit, convention: loadConvention, equipment });
-      if (planned.warning) warnings.push(planned.warning);
+      const result = fit.sets[index];
+      const load = result?.load ?? null;
+      if (result && tpl.targetLoad !== null) {
+        if (result.outcome === 'dropped') {
+          warnings.push({ kind: 'target_dropped', setTemplateId: tpl.id, requested: tpl.targetLoad, reason: result.reason ?? 'no_achievable_loads' });
+        } else if (load !== null && result.outcome !== 'exact') {
+          warnings.push({ kind: 'target_rounded', setTemplateId: tpl.id, requested: tpl.targetLoad, planned: load, bounded: result.bounded, converted: load.unit !== tpl.targetLoad.unit });
+        }
+      }
+      const fitted = result ? plannedSnapOf(result, fit, mode, input.gymId) : null;
       sets.push({
         id: input.newId(),
         sessionId,
@@ -183,11 +243,12 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
         side: exercise.laterality === 'unilateral' ? 'both' : null,
         pairedWithSetId: null,
         planned: {
-          load: planned.load,
+          load,
           reps: tpl.targetReps,
           durationS: tpl.targetDurationS,
           rpe: tpl.targetRpe,
           rir: tpl.targetRir,
+          ...(fitted !== null ? { snap: fitted } : {}),
         },
         rest: resolveRestPreset({
           setType: tpl.setType,
@@ -241,6 +302,7 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
       revision: 1,
     },
     warnings,
+    snap,
   };
 }
 

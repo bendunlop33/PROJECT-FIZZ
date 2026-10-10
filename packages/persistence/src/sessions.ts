@@ -59,6 +59,7 @@ function sessionRow(a: SessionAggregate): Record<string, SqlValue> {
     check_in_id: s.checkIn?.kind === 'answered' ? s.checkIn.checkInId : null,
     import_job_id: s.importJobId ?? null,
     local_date: s.localDate ?? null,
+    gym_changes: s.gymChanges === undefined ? null : JSON.stringify(s.gymChanges),
   };
 }
 
@@ -78,6 +79,8 @@ function exerciseRow(e: SessionExercise, ordinal: number): Record<string, SqlVal
     superset_group: e.supersetGroup,
     transition_rest_s: e.transitionRestS,
     progression_rule_id: e.progressionRuleId,
+    continues_from_id: e.continuesFromId ?? null,
+    equipment_version: e.equipmentVersion ?? null,
   };
 }
 
@@ -191,6 +194,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       // Absent rather than null (optional fields); a wrong type still fails validation.
       ...(s.import_job_id === null || s.import_job_id === undefined ? {} : { importJobId: s.import_job_id }),
       ...(s.local_date === null || s.local_date === undefined ? {} : { localDate: s.local_date }),
+      ...(s.gym_changes === null || s.gym_changes === undefined ? {} : { gymChanges: parseJson(T, id, 'gym_changes', s.gym_changes) }),
       startedAt: { utc: s.started_at_utc, tz: s.started_at_tz },
       endedAt: zoned(s.ended_at_utc, s.ended_at_tz),
       version: s.version,
@@ -215,6 +219,9 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       supersetGroup: e.superset_group,
       transitionRestS: e.transition_rest_s,
       progressionRuleId: e.progression_rule_id,
+      // Absent rather than null (optional fields); a wrong type still fails validation.
+      ...(e.continues_from_id === null || e.continues_from_id === undefined ? {} : { continuesFromId: e.continues_from_id }),
+      ...(e.equipment_version === null || e.equipment_version === undefined ? {} : { equipmentVersion: e.equipment_version }),
     })),
     sets: sets.map((x) => {
       const sid = rowId(x.id);
@@ -332,6 +339,9 @@ function assertReferences(a: SessionAggregate): void {
   const issues: { path: string; message: string }[] = [];
   const exerciseIds = new Set(a.exercises.map((e) => e.id));
   const setIds = new Set(a.sets.map((s) => s.id));
+  a.exercises.forEach((e, i) => {
+    if (e.continuesFromId !== undefined && !exerciseIds.has(e.continuesFromId)) issues.push({ path: `exercises.${i}.continuesFromId`, message: 'No such session exercise' });
+  });
   a.sets.forEach((s, i) => {
     if (!exerciseIds.has(s.sessionExerciseId)) issues.push({ path: `sets.${i}.sessionExerciseId`, message: 'No such session exercise' });
     if (s.pairedWithSetId !== null && !setIds.has(s.pairedWithSetId)) issues.push({ path: `sets.${i}.pairedWithSetId`, message: 'No such set' });

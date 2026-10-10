@@ -403,6 +403,14 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
       delete copy.check_in_id;
       delete copy.import_job_id;
       delete copy.local_date;
+      // …and nothing from schema 4 (gym switch).
+      delete copy.gym_changes;
+      return copy;
+    });
+    tables.session_exercises = (tables.session_exercises ?? []).map((row) => {
+      const copy = { ...row };
+      delete copy.continues_from_id;
+      delete copy.equipment_version;
       return copy;
     });
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));

@@ -93,11 +93,13 @@ describe('startWorkout normalises planned loads (review B1)', () => {
     expect(expectOk(withHistory.result).state.sets[0]?.actual?.load).toEqual(lb(225));
   });
 
-  it('row 2b: no equipment, conversion exact at display precision is converted and reported', () => {
+  it('row 2b: no equipment, a template in another unit is dropped even when it converts exactly (gym-switch §6.1 rule 1, as Repeat; review SP5)', () => {
     const out = start({ ex: BENCH, equipmentId: null, targetLoad: kg(45.359237), gymEquipment: [], preferredUnit: 'lb' });
-    expect(out.aggregate.sets[0]?.planned.load).toEqual(lb(100));
-    expect(out.warnings).toEqual([expect.objectContaining({ kind: 'target_rounded', converted: true, planned: lb(100) })]);
-    expect(expectOk(oneTapLog(out.aggregate).result).state.sets[0]?.status).toBe('completed');
+    expect(out.aggregate.sets[0]?.planned.load).toBeNull();
+    expect(out.warnings).toEqual([{ kind: 'target_dropped', setTemplateId: id(6001), requested: kg(45.359237), reason: 'unit_not_convertible' }]);
+    // Nothing unchecked is planned: Ben enters an lb load and it logs.
+    const withHistory = oneTapLog(out.aggregate, [{ index: 0, values: values(lb(100), 8) }]);
+    expect(expectOk(withHistory.result).state.sets[0]?.actual?.load).toEqual(lb(100));
   });
 
   it('row 3: a total-convention template on a per-hand rack is never converted and never shown unbounded', () => {
@@ -115,11 +117,13 @@ describe('startWorkout normalises planned loads (review B1)', () => {
     expect(expectOk(rightHistory.result).state.sets[0]?.actual?.load).toEqual(kg(22.5, 'per_hand'));
   });
 
-  it('row 4: equipment missing at this gym (hotel gym): a stack template is dropped, not relabelled as total', () => {
+  it('row 4: equipment missing at this gym (hotel gym): the pin maps to another kind the exercise lists, and the stack template is dropped, not relabelled as total (GS3 step 4)', () => {
     const cable = stack();
-    const out = start({ ex: ROW_ANY, equipmentId: cable.id, targetLoad: kg(40, 'stack'), gymEquipment: [barbell()] });
-    expect(out.aggregate.exercises[0]).toMatchObject({ equipmentId: null, loadConvention: 'total', unit: 'kg' });
+    const bar = barbell();
+    const out = start({ ex: ROW_ANY, equipmentId: cable.id, targetLoad: kg(40, 'stack'), gymEquipment: [bar] });
+    expect(out.aggregate.exercises[0]).toMatchObject({ equipmentId: bar.id, loadConvention: 'total', unit: 'kg' });
     expect(out.aggregate.sets[0]?.planned.load).toBeNull();
+    expect(out.aggregate.sets[0]?.planned.snap).toMatchObject({ outcome: 'dropped', reason: 'convention_mismatch', intended: kg(40, 'stack') });
     expect(out.warnings).toEqual([
       expect.objectContaining({ kind: 'equipment_not_in_gym' }),
       { kind: 'target_dropped', setTemplateId: id(6001), requested: kg(40, 'stack'), reason: 'convention_mismatch' },
