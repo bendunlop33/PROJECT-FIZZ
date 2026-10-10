@@ -322,7 +322,7 @@ It opens a half sheet:
 
 - This is a half sheet shown **before** the check-in sheet. Either answer continues the same Start (same op ID), so Start is still one decision away. The first-Start ask happens once in the app's life, so later Starts stay one tap.
 - `Not now` stores `alertsAsk: 'later'`. The sheet never appears again on Start. Profile → Voice & alerts keeps `Allow`.
-- **Honest status on Rest when alerts are off** (denied, or `Not now`): a `bell.slash` glyph (`text.secondary`, 44 pt hit area) sits beside the elapsed time in the header. VoiceOver: `Rest alerts are off. Opens alert settings.` Tapping opens Voice & alerts. It isn't a card, a banner or a link row.
+- **Honest status on Rest when alerts are off** (denied, or `Not now`): a `bell.slash` glyph (`text.secondary`, 44 pt hit area) sits beside the elapsed time in the header. Tapping acts on the permission without leaving the workout (as built, review S6; Ben to confirm): denied → iOS Settings (iOS can't ask again); `Not now` (iOS hasn't asked) → the iOS prompt, and an allowed alert is scheduled for the running rest. VoiceOver says which: `Rest alerts are off. Opens iOS Settings.` / `Rest alerts are off. Asks to allow them.` It isn't a card, a banner or a link row.
 - rest-state.md's `Notifications not allowed` row and onboarding.md §4.6's `Asked when` cell need updating to point here (designer follow-up; Ben approves).
 
 ### 3.6 Next line copy (D6)
@@ -542,7 +542,7 @@ Start notices: `Using saved targets.` · `Using last time’s numbers.`
 | Delete confirm | `Delete Push A?` / `Past workouts keep their name.` / `Cancel` / `Delete` |
 | Rename | `Rename routine` / `Rename workout` · `Save name` |
 | Permission sheet | `Rest alerts` · `Get an alert when rest ends while your phone is locked?` · `Allow` · `Not now` |
-| Alerts off (VoiceOver) | `Rest alerts are off. Opens alert settings.` |
+| Alerts off (VoiceOver) | `Rest alerts are off. Opens iOS Settings.` · `Rest alerts are off. Asks to allow them.` |
 | Rest next | `Next · Set 2 · 60 kg × 3–6` · `Next · Incline dumbbell press · 30 kg each × 8–10` |
 | Rest end | `READY` |
 | Record | `Heaviest bench press set at Main gym so far` · `Most reps at 100 kg on bench press so far` |
@@ -583,7 +583,7 @@ Start notices: `Using saved targets.` · `Using last time’s numbers.`
 6. With 3 routines and Pull A done last, Up next is the routine after Pull A in list order, with `After Pull A on <date>`.
 7. Renaming a workout updates Today, the header and the Summary, and the rename is undoable. Renaming never renames the routine.
 8. On a fresh install, the first `Start workout` shows the Rest alerts sheet once, before any check-in. Both answers continue to the workout. No permission card ever appears on Rest. A second Start shows no sheet.
-9. With alerts denied or `Not now`, Rest shows `bell.slash` in the header with the VoiceOver label in §10, and it opens Voice & alerts.
+9. With alerts denied or `Not now`, Rest shows `bell.slash` in the header with the VoiceOver label in §10; the tap opens iOS Settings when denied, or the iOS prompt after `Not now` (§3.5).
 10. The Rest screen has at most one text link (`Edit next set`). Paused shows no banner. The header has no pause icon, and `Pause workout` is in `⋯`.
 11. The Rest next line includes the target load when the next set has one.
 12. −30 s, +30 s, Skip and the effort chips measure ≥ 52 pt tall. Log measures 60 pt.

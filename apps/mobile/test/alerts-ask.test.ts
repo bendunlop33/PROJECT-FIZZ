@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { alertsOff, alertsOffAction, shouldAskOnStart } from '../src/alerts/ask';
+import { alertsOff, alertsOffAction, alertsOffLabel, shouldAskOnStart } from '../src/alerts/ask';
 import { DEFAULT_PREFS, parsePrefs } from '../src/device/prefs';
 
 /** premium-feel §3.5, acceptance 8 and 9. */
@@ -31,5 +31,13 @@ describe('Rest alerts ask on the first Start', () => {
     expect(parsePrefs(JSON.stringify({ alertsAsk: 'later' })).alertsAsk).toBe('later');
     expect(parsePrefs(JSON.stringify({ alertsAsk: 'answered' })).alertsAsk).toBe('answered');
     expect(parsePrefs(JSON.stringify({ alertsAsk: 'nonsense' })).alertsAsk).toBe('undetermined');
+  });
+});
+
+describe('bell.slash says what its tap does (review S6)', () => {
+  it('denied opens iOS Settings; not asked yet asks', () => {
+    expect(alertsOffLabel('denied')).toBe('Rest alerts are off. Opens iOS Settings.');
+    expect(alertsOffLabel('undetermined')).toBe('Rest alerts are off. Asks to allow them.');
+    expect(alertsOffLabel('unknown')).toBe('Rest alerts are off.');
   });
 });

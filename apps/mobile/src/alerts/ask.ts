@@ -27,3 +27,11 @@ export function alertsOffAction(permission: AlertPermission | 'unknown'): 'open_
   if (permission === 'undetermined') return 'request';
   return 'none';
 }
+
+/** The `bell.slash` VoiceOver label: says what the tap will do in this permission state. */
+export function alertsOffLabel(permission: AlertPermission | 'unknown'): string {
+  const action = alertsOffAction(permission);
+  if (action === 'open_settings') return 'Rest alerts are off. Opens iOS Settings.';
+  if (action === 'request') return 'Rest alerts are off. Asks to allow them.';
+  return 'Rest alerts are off.';
+}

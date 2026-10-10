@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { checkRoutineName, formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
-import { alertsOff, alertsOffAction } from '../../alerts/ask';
+import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
 import { getAlertPermission, requestAlertPermission, type AlertPermission } from '../../alerts/notifier';
 import { restEndCueKey, setWorkoutOnScreen } from '../../alerts/presentation';
 import { nowMs as clockNow } from '../../clock';
@@ -980,7 +980,7 @@ export function WorkoutScreen() {
               {view.paused ? `Paused · ${formatElapsed(view.elapsedMs)}` : formatElapsed(view.elapsedMs)}
             </AppText>
           </View>
-          {alertsOff(permission, prefs.alertsAsk) ? <IconButton icon="bell.slash" tint="text.secondary" label="Rest alerts are off. Opens alert settings." onPress={openAlertSettings} /> : null}
+          {alertsOff(permission, prefs.alertsAsk) ? <IconButton icon="bell.slash" tint="text.secondary" label={alertsOffLabel(permission)} onPress={openAlertSettings} /> : null}
           <IconButton icon="ellipsis.circle" label="Workout menu" onPress={topMenu} />
         </View>
       </View>
