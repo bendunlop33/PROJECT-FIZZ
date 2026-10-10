@@ -3,11 +3,11 @@ import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '../../theme';
-import { AppText, Screen, TextButton } from '../../ui';
+import { HeroHeader, Screen, TextButton } from '../../ui';
 
 /**
- * `OnboardingFrame` (design-system §9.46): top bar with Back, a centred
- * `Step n of m` and an optional Skip; title; one line of explanation;
+ * `OnboardingFrame` (design-system §9.46): top bar with Back and an optional
+ * Skip; `Step n of m` over the title; one line of explanation;
  * scrolling content; a fixed bottom bar with one primary button.
  */
 export function StepFrame({
@@ -31,25 +31,14 @@ export function StepFrame({
   const insets = useSafeAreaInsets();
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingHorizontal: theme.components.screenMargin }}>
-        <View style={{ flex: 1, alignItems: 'flex-start' }}>{onBack ? <TextButton label="Back" icon="chevron.left" onPress={onBack} /> : null}</View>
-        {step ? (
-          <AppText variant="sectionLabel" color="text.tertiary" numeric>
-            {step}
-          </AppText>
-        ) : null}
-        <View style={{ flex: 1, alignItems: 'flex-end' }}>{onSkip ? <TextButton label="Skip" tone="secondary" onPress={onSkip} /> : null}</View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44, paddingHorizontal: theme.components.screenMargin }}>
+        <View>{onBack ? <TextButton label="Back" icon="chevron.left" onPress={onBack} /> : null}</View>
+        <View>{onSkip ? <TextButton label="Skip" tone="secondary" onPress={onSkip} /> : null}</View>
       </View>
       <Screen footer={footer}>
-        <View style={{ gap: theme.space['2'] }}>
-          <AppText variant="title1" accessibilityRole="header">
-            {title}
-          </AppText>
-          {explanation ? (
-            <AppText variant="callout" color="text.secondary">
-              {explanation}
-            </AppText>
-          ) : null}
+        {/* D: `STEP 1 OF 3` as a tracked eyebrow over a large title (D-Today hero). */}
+        <View style={{ paddingTop: theme.space['2'], paddingBottom: theme.space['2'] }}>
+          <HeroHeader size="screen" eyebrow={step} title={title} lines={explanation ? [explanation] : []} />
         </View>
         {children}
       </Screen>
