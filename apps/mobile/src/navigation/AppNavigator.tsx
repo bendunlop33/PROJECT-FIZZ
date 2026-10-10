@@ -210,14 +210,14 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               <RootStack.Screen
                 name="CheckIn"
                 component={CheckInScreen}
-                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.55, 1.0], sheetGrabberVisible: true, contentStyle: { backgroundColor: theme.colors['bg.surface'] } }}
+                options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.surface'] } }}
               />
               <RootStack.Screen name="ExercisePicker" component={ExercisePickerScreen} options={{ presentation: 'modal' }} />
               <RootStack.Screen name="HowTo" getComponent={loadHowToScreen} options={{ presentation: 'modal' }} />
               <RootStack.Screen
                 name="EditSet"
                 component={EditSetScreen}
-                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.7, 1.0], sheetGrabberVisible: true, contentStyle: { backgroundColor: theme.colors['bg.surface'] } }}
+                options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.surface'] } }}
               />
               {/* No back navigation into a finished workout; corrections go through Edit (workout-summary §2). */}
               <RootStack.Screen name="Summary" component={SummaryScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
