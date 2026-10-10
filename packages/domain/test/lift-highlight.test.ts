@@ -96,6 +96,30 @@ describe('buildLiftHighlight', () => {
     expect(h?.change).toBeNull();
   });
 
+  it('a set marked as not counting is never the top set, the change or a trend point (check 45)', () => {
+    const before = finished(0, [{ ex: BENCH, eq: bar, sets: [values(kg(100), 8)] }]);
+    const spotted = finished(10_000, [{ ex: BENCH, eq: bar, sets: [values(kg(105), 8), values(kg(110), 8)] }]);
+    // Ben marks the 110 kg set Spotted: it stays in the log, but not here.
+    const marked: SessionAggregate = { ...spotted, sets: spotted.sets.map((x) => (x.actual?.load?.value === 110 ? { ...x, exclusions: ['spotted' as const] } : x)) };
+    const h = buildLiftHighlight([marked, before]);
+    expect(plain(h?.text)).toBe('105 kg × 8');
+    expect(h?.change).toBe('up from 100');
+    expect(h?.points).toEqual([100, 105]);
+    // Unmarked, the same workout shows the 110.
+    expect(plain(buildLiftHighlight([spotted, before])?.text)).toBe('110 kg × 8');
+  });
+
+  it('a workout whose only sets are marked adds no point and isn’t the latest', () => {
+    const before = finished(0, [{ ex: BENCH, eq: bar, sets: [values(kg(100), 8)] }]);
+    const all = finished(10_000, [{ ex: BENCH, eq: bar, sets: [values(kg(120), 3)] }]);
+    const marked: SessionAggregate = { ...all, sets: all.sets.map((x) => (x.status === 'completed' ? { ...x, exclusions: ['pain' as const] } : x)) };
+    const h = buildLiftHighlight([marked, before]);
+    expect(plain(h?.text)).toBe('100 kg × 8');
+    expect(h?.performedAtUtc).toBe(before.session.startedAt.utc);
+    expect(h?.change).toBeNull();
+    expect(h?.points).toEqual([100]);
+  });
+
   it('ignores active workouts', () => {
     const owner = profile();
     const s = startWorkout({ opId: 'act', owner, gymId: GYM, routine: null, exercises: new Map(), gymEquipment: [bar], at: at(0), newId: idGen(300_000) }).aggregate;

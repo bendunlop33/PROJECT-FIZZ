@@ -15,7 +15,7 @@ import {
 import { SessionCheckInSchema } from './checkin';
 import { LocalDateSchema } from './import';
 import { EquipmentInstanceSchema } from './equipment';
-import { LateralitySchema, MeasurementSchema } from './exercise';
+import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
 
 /** Values a set can hold: used for actual results and drafts alike. */
@@ -27,27 +27,6 @@ export const SetValuesSchema = z.object({
   rir: RirSchema.nullable(),
 });
 export type SetValues = z.infer<typeof SetValuesSchema>;
-
-/**
- * Where a planned target came from, so the set card can say so (rule 3:
- * every suggestion is recorded with its reason). Absent = a routine template
- * or none (sessions written before this field existed).
- * - `built_in_rule`: the built-in progression rule's Next time (ADR 0006 fallback).
- * - `repeat`: copied from a past workout's actual result (routines.md RT4).
- */
-export const PlannedSourceSchema = z.enum(['built_in_rule', 'repeat']);
-export type PlannedSource = z.infer<typeof PlannedSourceSchema>;
-
-/** Planned (target) values, retained separately from the actual result. */
-export const PlannedSetSchema = z.object({
-  load: LoadSchema.nullable(),
-  reps: RepRangeSchema.nullable(),
-  durationS: DurationSecondsSchema.nullable(),
-  rpe: RpeSchema.nullable(),
-  rir: RirSchema.nullable(),
-  source: PlannedSourceSchema.optional(),
-});
-export type PlannedSet = z.infer<typeof PlannedSetSchema>;
 
 export const RestSourceSchema = z.enum([
   'set_override',
@@ -85,6 +64,25 @@ export const SetFlagSchema = z.enum(['off_profile_load']);
 export type SetFlag = z.infer<typeof SetFlagSchema>;
 
 /**
+ * Why Ben left a logged set out of records and progress (active-workout.md
+ * §2.13, AW5). Set only by Ben, never inferred. A flagged set stays in the
+ * log and in volume, but isn't used for records, estimated 1RM, progression,
+ * comparisons or coach offers (`isSetCountable`).
+ * - `spotted`: someone helped with reps.
+ * - `pain`: it hurt (also puts a pain flag on the movement, AW7).
+ * - `technique`: form broke (`Form broke`).
+ * - `other_equipment`: not the usual equipment for this exercise's history.
+ */
+export const SetExclusionSchema = z.enum(['spotted', 'pain', 'technique', 'other_equipment']);
+export type SetExclusion = z.infer<typeof SetExclusionSchema>;
+
+/** At most one of each reason. Order isn't meaningful; writers store the canonical order (`normaliseExclusions`). */
+export const SetExclusionsSchema = z
+  .array(SetExclusionSchema)
+  .max(SetExclusionSchema.options.length)
+  .refine((xs) => new Set(xs).size === xs.length, { message: 'Each exclusion reason at most once' });
+
+/**
  * Side of a unilateral set (brief §4: record per side, don't double-count).
  * - `both`: the values are per side and were done on each side ("10 each side").
  * - `left` / `right`: the values are for that side only.
@@ -92,6 +90,122 @@ export type SetFlag = z.infer<typeof SetFlagSchema>;
  */
 export const SetSideSchema = z.enum(['left', 'right', 'both']);
 export type SetSide = z.infer<typeof SetSideSchema>;
+
+/**
+ * `Why?` on a set target (active-workout.md §2.12, AW3): what produced the
+ * number, written once by whichever path set the target and never
+ * recomputed. Owner-scoped (Your data). All text in here is deterministic app
+ * text; nothing comes from a model.
+ *
+ * Sources written today: `plan` (a routine's template, `startWorkout`),
+ * `rule` (the built-in rule's next targets, `plannedSetsFromTargets`) and
+ * `repeat` (a past workout's actual result, routines.md RT4). The coach,
+ * warm-up, swap and builder sources in the spec are added with the code that
+ * sets those targets.
+ */
+export const TargetSourceSchema = z.enum(['plan', 'rule', 'repeat']);
+export type TargetSource = z.infer<typeof TargetSourceSchema>;
+
+/** A set the target was built from, as it was when the target was made (an **actual** result). */
+export const TargetBasisSetSchema = z.object({
+  /** Absent only when the history row had no ID (never for sets logged in the app). */
+  setId: IdSchema.optional(),
+  /** The set's version then; a later correction bumps it (`Based on 1 Oct before you edited it`). */
+  version: z.int().min(1).optional(),
+  /** The set's number as the card showed it (`Set 4`, warm-ups included); absent on targets stored before it was. */
+  number: z.int().min(1).max(200).optional(),
+  setType: SetTypeSchema,
+  side: SetSideSchema.nullable(),
+  values: SetValuesSchema,
+  /** Ben's exclusion flags on the set then (§2.13): listed under `Not used` in `Why?`. */
+  exclusions: SetExclusionsSchema.optional(),
+});
+export type TargetBasisSet = z.infer<typeof TargetBasisSetSchema>;
+
+/** The past workout a target was built from (`Last time`). */
+export const TargetBasisSchema = z.object({
+  sessionId: IdSchema,
+  performedAt: ZonedTimestampSchema,
+  routineName: z.string().max(120).nullable(),
+  gymId: IdSchema.nullable(),
+  equipmentId: IdSchema.nullable(),
+  sets: z.array(TargetBasisSetSchema).max(60),
+});
+export type TargetBasis = z.infer<typeof TargetBasisSchema>;
+
+/** `calculateNextTargets` decisions, stored with the rule's own words. */
+export const RuleDecisionSchema = z.enum([
+  'insufficient_data',
+  'increase_load',
+  'increase_reps',
+  'hold',
+  'hold_after_miss',
+  'reduce_load',
+  'ceiling_reached',
+  'halted_pain',
+  'no_feasible_load',
+  'unsupported',
+]);
+export type RuleDecision = z.infer<typeof RuleDecisionSchema>;
+
+/** The load change from the basis to the target, measured on the equipment (`buildStepCard`). */
+export const TargetStepSchema = z.object({
+  from: LoadSchema,
+  to: LoadSchema,
+  /** (to − from) / from × 100, one decimal place; null when `from` is 0. */
+  pctChange: z.number().nullable(),
+  /** `to` is the next achievable load after `from` in that direction. */
+  smallest: z.boolean(),
+  equipmentKind: EquipmentKindSchema.nullable(),
+});
+export type TargetStep = z.infer<typeof TargetStepSchema>;
+
+export const TargetProvenanceSchema = z.object({
+  source: TargetSourceSchema,
+  /** When the target was made. */
+  setAt: ZonedTimestampSchema,
+  /** `plan`: the routine's name. */
+  routineName: z.string().max(120).nullable(),
+  /** The load asked for before the equipment fit (template or last time's), if any. */
+  requestedLoad: LoadSchema.nullable(),
+  basis: TargetBasisSchema.nullable(),
+  /** `rule`: the built-in rule's own explanation, as `calculateNextTargets` gave it. */
+  rule: z
+    .object({
+      name: z.string().min(1).max(300),
+      decision: RuleDecisionSchema,
+      summary: z.string().max(600),
+      facts: z.array(z.string().max(600)).max(20),
+    })
+    .optional(),
+  step: TargetStepSchema.optional(),
+  /** Equipment notes made with the target: rounding, caps, conversions, drops. */
+  guardNotes: z.array(z.string().min(1).max(300)).max(10),
+});
+export type TargetProvenance = z.infer<typeof TargetProvenanceSchema>;
+
+/**
+ * Where a planned target came from, so the set card can say so (rule 3:
+ * every suggestion is recorded with its reason). Absent = a routine template
+ * or none (sessions written before this field existed).
+ * - `built_in_rule`: the built-in progression rule's Next time (ADR 0006 fallback).
+ * - `repeat`: copied from a past workout's actual result (routines.md RT4).
+ */
+export const PlannedSourceSchema = z.enum(['built_in_rule', 'repeat']);
+export type PlannedSource = z.infer<typeof PlannedSourceSchema>;
+
+/** Planned (target) values, retained separately from the actual result. */
+export const PlannedSetSchema = z.object({
+  load: LoadSchema.nullable(),
+  reps: RepRangeSchema.nullable(),
+  durationS: DurationSecondsSchema.nullable(),
+  rpe: RpeSchema.nullable(),
+  rir: RirSchema.nullable(),
+  source: PlannedSourceSchema.optional(),
+  /** Absent on targets made before `Why?` existed (shown as `Not recorded`). */
+  provenance: TargetProvenanceSchema.optional(),
+});
+export type PlannedSet = z.infer<typeof PlannedSetSchema>;
 
 export const WorkoutSetSchema = z.object({
   id: IdSchema,
@@ -117,13 +231,22 @@ export const WorkoutSetSchema = z.object({
   /** Number of times a logged result was undone; drives the next draft opId. */
   undoCount: z.int().min(0),
   flags: z.array(SetFlagSchema),
+  /**
+   * Ben's exclusion flags (§2.13): absent or empty = the set counts. Only on
+   * completed sets; changed only by `correct_set` (or `log_set.exclusions`),
+   * so every change is versioned and audited, never silent (AW6).
+   */
+  exclusions: SetExclusionsSchema.optional(),
   edited: z.boolean(),
   version: z.int().min(1),
 }).refine(
   // A result exists exactly when the set is completed (a deleted tombstone may keep either shape).
   (s) => s.status === 'deleted' || (s.status === 'completed') === (s.actual !== null && s.completedAt !== null),
   { message: 'A completed set has an actual result and completion time; other sets have neither', path: ['status'] },
-);
+).refine((s) => s.status === 'completed' || s.status === 'deleted' || (s.exclusions ?? []).length === 0, {
+  message: 'Only a logged set can be left out of records',
+  path: ['exclusions'],
+});
 export type WorkoutSet = z.infer<typeof WorkoutSetSchema>;
 
 export const SessionExerciseSchema = z.object({
@@ -211,6 +334,12 @@ export const WorkoutSessionSchema = z.object({
    * check-ins existed.
    */
   checkIn: SessionCheckInSchema.nullable(),
+  /**
+   * Ben's `Finish by` for today (active-workout §2.15.3, AW12), Your data.
+   * Absent = not set. Changes only the `Time left` wording (and, from build
+   * step 4, whether the coach may offer to shorten); never a set or rest.
+   */
+  finishBy: ZonedTimestampSchema.optional(),
 });
 export type WorkoutSession = z.infer<typeof WorkoutSessionSchema>;
 
@@ -259,6 +388,8 @@ export const SetSnapshotSchema = z.object({
   setType: SetTypeSchema,
   side: SetSideSchema.nullable(),
   actual: SetValuesSchema.nullable(),
+  /** Absent on entries written before exclusions existed, and when none were set (`Set 2 marked: spotted`). */
+  exclusions: SetExclusionsSchema.optional(),
   version: z.int().min(1),
 });
 export type SetSnapshot = z.infer<typeof SetSnapshotSchema>;

@@ -408,6 +408,14 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
       delete copy.check_in_id;
       delete copy.import_job_id;
       delete copy.local_date;
+      // …and nothing from schema 4 (Finish by, set exclusions below).
+      delete copy.finish_by_utc;
+      delete copy.finish_by_tz;
+      return copy;
+    });
+    tables.session_sets = (tables.session_sets ?? []).map((row) => {
+      const copy = { ...row };
+      delete copy.exclusions;
       return copy;
     });
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));

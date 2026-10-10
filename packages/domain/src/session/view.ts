@@ -1,4 +1,4 @@
-import type { Load, SessionAggregate, SessionExercise, SetValues, WorkoutSession, WorkoutSet } from '@fizz/schemas';
+import type { Load, SessionAggregate, SessionExercise, SetExclusion, SetValues, WorkoutSession, WorkoutSet } from '@fizz/schemas';
 import { restOverrunMs, restRemainingMs } from '../rest';
 import { toMs } from '../time';
 
@@ -114,6 +114,8 @@ export type DraftSource = 'draft' | 'target' | 'this_session' | 'last_session' |
 export interface ComparableSet {
   index: number;
   values: SetValues;
+  /** Ben's exclusion flags on that set (§2.13): `Last (1 Oct): 100 kg × 8 · spotted`. Copying still copies the values. */
+  exclusions?: readonly SetExclusion[];
 }
 
 function compatibleLoad(load: Load | null, ex: SessionExercise): Load | null {

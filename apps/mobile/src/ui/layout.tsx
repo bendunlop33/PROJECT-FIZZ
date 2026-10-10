@@ -115,10 +115,12 @@ interface RowProps {
   disabled?: boolean;
   trailing?: ReactNode;
   accessibilityHint?: string;
+  /** A row tag, icon + text (e.g. `⚠ May hurt`, exercise-library §2.1), read after the title. */
+  tag?: { icon: SymbolName; color: ColorToken; text: string; accessibilityLabel: string };
 }
 
 /** `SettingsRow` (§9.31): ≥ 52pt, whole row is the target, chevron when it opens something. */
-export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secondary', onPress, disabled = false, trailing, accessibilityHint }: RowProps) {
+export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secondary', onPress, disabled = false, trailing, accessibilityHint, tag }: RowProps) {
   const theme = useTheme();
   const content = (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], minHeight: 52, paddingVertical: theme.space['3'], paddingHorizontal: theme.space['4'] }}>
@@ -137,6 +139,14 @@ export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secon
             {secondLine}
           </AppText>
         ) : null}
+        {tag ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+            <Icon name={tag.icon} color={tag.color} size={14} />
+            <AppText variant="label" color={tag.color}>
+              {tag.text}
+            </AppText>
+          </View>
+        ) : null}
       </View>
       {trailing}
       {onPress && !disabled ? <Icon name="chevron.right" color="text.tertiary" size={14} /> : null}
@@ -146,7 +156,7 @@ export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secon
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={[title, subtitle, secondLine].filter(Boolean).join(', ')}
+      accessibilityLabel={[title, tag?.accessibilityLabel, subtitle, secondLine].filter(Boolean).join(', ')}
       accessibilityState={{ disabled }}
       {...(accessibilityHint ? { accessibilityHint } : {})}
       disabled={disabled}

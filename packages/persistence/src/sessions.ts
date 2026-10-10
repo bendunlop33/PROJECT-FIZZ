@@ -59,6 +59,8 @@ function sessionRow(a: SessionAggregate): Record<string, SqlValue> {
     check_in_id: s.checkIn?.kind === 'answered' ? s.checkIn.checkInId : null,
     import_job_id: s.importJobId ?? null,
     local_date: s.localDate ?? null,
+    finish_by_utc: s.finishBy?.utc ?? null,
+    finish_by_tz: s.finishBy?.tz ?? null,
   };
 }
 
@@ -110,6 +112,8 @@ function setRow(s: WorkoutSet, ordinal: number): Record<string, SqlValue> {
     completed_by_op_id: s.completedByOpId,
     undo_count: s.undoCount,
     flags: JSON.stringify(s.flags),
+    // §2.13: NULL = the set counts (as for every set saved before schema 4).
+    exclusions: s.exclusions && s.exclusions.length > 0 ? JSON.stringify(s.exclusions) : null,
     edited: int(s.edited),
     version: s.version,
   };
@@ -151,6 +155,9 @@ function timingRow(e: SessionTimingAuditEntry, ordinal: number): Record<string, 
 // aggregate schema then rejects anything wrong. Nothing is coerced or defaulted.
 
 const zoned = (utc: SqlValue | undefined, tz: SqlValue | undefined): unknown => (utc === null && tz === null ? null : { utc, tz });
+
+/** `exclusions` is optional on a set: NULL (every set before schema 4) reads as absent, anything else is validated by the schema. */
+const exclusionsOf = (value: unknown): { exclusions?: unknown } => (value === null ? {} : { exclusions: value });
 
 /** Append-only children must have ordinals 0..n-1; a gap means a lost row. */
 function assertContiguous(table: string, sessionId: string, rows: readonly SqlRow[]): void {
@@ -200,6 +207,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       pauses: pauses.map((p) => ({ startUtc: p.start_utc, endUtc: p.end_utc })),
       lastActivityAtUtc: s.last_activity_at_utc,
       checkIn: parseJsonOrNull(T, id, 'check_in', s.check_in ?? null),
+      ...(s.finish_by_utc === null || s.finish_by_utc === undefined ? {} : { finishBy: { utc: s.finish_by_utc, tz: s.finish_by_tz } }),
     },
     exercises: exercises.map((e) => ({
       id: e.id,
@@ -249,6 +257,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
         completedByOpId: x.completed_by_op_id,
         undoCount: x.undo_count,
         flags: parseJson('session_sets', sid, 'flags', x.flags ?? null),
+        ...exclusionsOf(parseJsonOrNull('session_sets', sid, 'exclusions', x.exclusions ?? null)),
         edited: bool(x.edited ?? null),
         version: x.version,
       };

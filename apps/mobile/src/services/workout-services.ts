@@ -3,6 +3,9 @@ import {
   applyCheckInPatch,
   buildActiveSetView,
   buildLiftHighlight,
+  buildPainFlagSheet,
+  buildSetEditView,
+  planExclusionMark,
   buildTodayView,
   buildWorkoutSummary,
   defaultStartingPlan,
@@ -12,15 +15,24 @@ import {
   muscleSummary,
   clearPainFlag,
   restorePainFlag,
+  retractPainFlag,
   createSessionService,
   deriveId,
   DEFAULT_CHECK_IN_SETTINGS,
+  explainTarget,
   lastComparableSession,
   localDateOf,
   localWeekBounds,
+  mayHurtAccessibility,
+  mayHurtConfirm,
   newCheckIn,
   newPainFlag,
   nextTargetsFor,
+  painFlagCovering,
+  painKeptText,
+  painProfessionalNudge,
+  recordPainFlagReview,
+  undoPainFlagReview,
   plannedSetsFromTargets,
   repeatPreviewLines,
   targetSummaryLines,
@@ -46,6 +58,9 @@ import {
   type FinishedRef,
   type RoutineChange,
   type RoutineNameCheck,
+  buildTimeLeftView,
+  recentPaceSamples,
+  timeLeftSheet,
   type ActiveSetView,
   type SetRecord,
   type SetRecordInput,
@@ -54,11 +69,16 @@ import {
   type CommandOutcome,
   type DraftEdits,
   type HistorySession,
+  type PainFlagSheetView,
   type PreviousSession,
   type RecentCheckIn,
   type StartOutcome,
   type LiftHighlight,
+  type TargetExplanation,
   type TodayView,
+  type PaceSamples,
+  type TimeLeftSheetView,
+  type TimeLeftView,
   type WorkoutSummary,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
@@ -75,7 +95,9 @@ import type {
   SessionAggregate,
   SessionCheckIn,
   SessionCommand,
+  SetExclusion,
   SetType,
+  SetValues,
   UserProfile,
   ZonedTimestamp,
 } from '@fizz/schemas';
@@ -119,20 +141,74 @@ function recordFromContext(context: RecordContext, aggregate: SessionAggregate, 
   if (set.status !== 'completed' || set.actual === null) return null;
   const earlierToday = aggregate.sets
     .filter((s) => s.id !== set.id && s.sessionExerciseId === ex.id && s.status === 'completed' && s.actual !== null && (s.completedAt?.utc ?? '') <= (set.completedAt?.utc ?? ''))
-    .map((s) => ({ setType: s.setType, side: s.side, load: s.actual?.load ?? null, reps: s.actual?.reps ?? null, rpe: null, rir: null }));
-  return findSetRecord({ ...context.base, set: { setType: set.setType, load: set.actual.load, reps: set.actual.reps }, earlierToday });
+    .map((s) => ({ setType: s.setType, side: s.side, load: s.actual?.load ?? null, reps: s.actual?.reps ?? null, rpe: null, rir: null, ...(s.exclusions ? { exclusions: s.exclusions } : {}) }));
+  return findSetRecord({ ...context.base, set: { setType: set.setType, load: set.actual.load, reps: set.actual.reps, ...(set.exclusions ? { exclusions: set.exclusions } : {}) }, earlierToday });
 }
 
 export const TARGETS_UNAVAILABLE = 'Using last time’s numbers.';
 
 /** `notice`: something the workout screen should say once on opening (a toast). */
 export type WorkoutStartOutcome = (Extract<StartOutcome, { ok: true }> & { notice?: string }) | Extract<StartOutcome, { ok: false }>;
+/** How far back to look for Ben's last 5 finished workouts (pace for `Time left`). Older ones fall back to `Default`. */
+const RECENT_PACE_WINDOW_MS = 90 * 86_400_000;
 
 export interface PickerExercise {
   exercise: Exercise;
   /** Compatible equipment at this workout's gym. Empty = none needed (bodyweight) or none there (loads not checked). */
   equipment: Pick<EquipmentInstance, 'id' | 'name' | 'kind'>[];
+  /**
+   * `⚠ May hurt` (exercise-library EL9, active-workout §2.14.1): an active
+   * pain flag covers this exercise (never a similar movement, CM5). The row
+   * is never hidden; tapping it asks `confirm` before anything is added.
+   */
+  mayHurt: { flagId: string; accessibilityLabel: string; confirm: ReturnType<typeof mayHurtConfirm> } | null;
 }
+
+/** `Still hurts` (active-workout §2.14.2): versioned and idempotent. Never clears a flag. */
+export type PainReviewWrite =
+  | {
+      ok: true;
+      flag: PainFlag;
+      /** The answer's operation, for Undo. */
+      reviewOpId: string;
+      /** `Pain flag kept · next check 3 Nov`. */
+      kept: string;
+      /** From the second `Still hurts` in a row: the physio-or-doctor line. */
+      nudge: string | null;
+      duplicate: boolean;
+    }
+  | { ok: false; reason: 'not_found' | 'not_active' | 'not_due' | 'stale' | 'failed'; message: string };
+
+/**
+ * `correctSet` from the correction sheet (active-workout §4.4, §2.13). On
+ * success, `undo` is what the toast's Undo sends back to `undoMark`.
+ */
+export type SetCorrectionWrite =
+  | {
+      ok: true;
+      aggregate: SessionAggregate;
+      duplicate: boolean;
+      /** `Set 2: spotted · not counted for records`; null when the exclusions didn't change. */
+      toast: string | null;
+      /**
+       * Present when the exclusions changed: the flags before, the set version
+       * the mark produced, and any pain flag the same save set, at the version
+       * the save left it (Undo retracts it only if nothing changed it since).
+       */
+      undo: { setId: string; setVersion: number; previous: SetExclusion[]; painFlags: PainFlagRef[] } | null;
+    }
+  | { ok: false; stale: boolean; message: string };
+
+/** A pain flag at the version an action left it: what an Undo may retract. */
+export interface PainFlagRef {
+  id: string;
+  version: number;
+}
+
+/** `retract`: `stale` lists flags that changed since and were left as they are. */
+export type PainRetractWrite = { ok: true; stale: string[] } | { ok: false; message: string };
+
+export type PainClearWrite = { ok: true; cleared: { id: string; version: number } | null } | { ok: false; stale: boolean; message: string };
 
 export interface RepeatCandidate {
   sessionId: string;
@@ -172,10 +248,14 @@ export interface ActiveWorkoutData {
   gymName: string | null;
   previous: Record<string, PreviousSession | null>;
   painFlagged: Set<string>;
+  /** Active pain flags: the note's `check due` and the rest card's `Still hurts?` (§2.14.2). */
+  painFlags: PainFlag[];
   effortScale: UserProfile['effortScale'];
   checkIn: CheckIn | null;
   /** `Push`, from the exercises, for a workout without a name (audit F5). */
   title: string | null;
+  /** Pace samples from Ben's last finished workouts, for `Time left` (active-workout §2.15.2). */
+  recentPace: PaceSamples;
 }
 
 /**
@@ -231,6 +311,22 @@ export type RoutineWrite = { ok: true; routine: Routine; duplicate: boolean } | 
 export function createWorkoutServices(ctx: WorkoutServicesContext) {
   const repos = () => ctx.repos();
   const domain = () => createSessionService(repos(), ctx.newId);
+
+  /**
+   * The pain flag an op set on a movement, if it is still on (review r2 B1).
+   * IDs are derived from the opId so a retry flags once. A flag of this op
+   * that is no longer active (taken back by a failed save's rollback, an
+   * Undo, or cleared) is never "ours": the next ID in the op's chain is, so
+   * a retry writes a fresh flag instead of pointing at a withdrawn one.
+   */
+  async function opPainFlag(opId: string, exerciseId: string): Promise<{ id: string; flag: PainFlag | null }> {
+    for (let n = 0; n < 64; n += 1) {
+      const id = deriveId(n === 0 ? `pain:${opId}:${exerciseId}` : `pain:${opId}:${exerciseId}:${String(n)}`);
+      const flag = await repos().painFlags.get(id);
+      if (!flag || flag.status === 'active') return { id, flag };
+    }
+    throw new Error('Too many pain flags for one operation.');
+  }
 
   async function owner(): Promise<UserProfile> {
     const p = await ctx.profile();
@@ -313,57 +409,63 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * IDs derived from the opId so a retry flags once; then the check-in
      * records them. Flag first, then everything else (CM4).
      */
-    async flagFromCheckIn(req: { checkIn: CheckIn; exercises: Pick<Exercise, 'id' | 'name'>[]; area: PainArea | null; opId: string }): Promise<CheckInWrite & { flagIds?: string[] }> {
+    async flagFromCheckIn(req: { checkIn: CheckIn; exercises: Pick<Exercise, 'id' | 'name'>[]; area: PainArea | null; opId: string }): Promise<CheckInWrite & { flagIds?: string[]; flags?: PainFlagRef[] }> {
       try {
         const p = await owner();
         const at = ctx.now();
+        // The step already went through (a retry after the link): flag nothing new.
+        const linked = await repos().checkIns.get(req.checkIn.id);
+        if (linked?.appliedOps.includes(`${req.opId}:link`)) return { ok: true, checkIn: linked, duplicate: true, flagIds: [], flags: [] };
         const ids: string[] = [];
+        const refs: PainFlagRef[] = [];
         for (const ex of req.exercises) {
-          const id = deriveId(`pain:${req.opId}:${ex.id}`);
+          // Only an active flag counts as this op's (review r2 N2).
+          const { id, flag: existing } = await opPainFlag(req.opId, ex.id);
           ids.push(id);
-          if (await repos().painFlags.get(id)) continue;
+          if (existing) {
+            refs.push({ id, version: existing.version });
+            continue;
+          }
           const flag = newPainFlag({ id, ownerId: p.id, opId: req.opId, exerciseId: ex.id, exerciseName: ex.name, area: req.area, source: 'check_in', checkInId: req.checkIn.id, at });
           const saved = await repos().painFlags.save(flag, null);
-          if (!saved.ok && !(await repos().painFlags.get(id))) return { ok: false, message: 'The pain flag wasn’t saved. Try again.' };
+          const now = saved.ok ? flag : await repos().painFlags.get(id);
+          if (!now) return { ok: false, message: 'The pain flag wasn’t saved. Try again.' };
+          refs.push({ id, version: now.version });
         }
         const updated = await checkIns.update(req.checkIn.id, { painFlagIds: ids }, req.checkIn.version, `${req.opId}:link`);
-        return updated.ok ? { ...updated, flagIds: ids } : updated;
+        return updated.ok ? { ...updated, flagIds: ids, flags: refs } : updated;
       } catch {
         return { ok: false, message: 'The pain flag wasn’t saved. Try again.' };
       }
     },
 
-    /** Undo on the `Pain noted` toast. Only Ben clears a flag. */
-    async clear(flagIds: readonly string[]): Promise<boolean> {
-      const at = ctx.now();
-      for (const id of flagIds) {
-        const f = await repos().painFlags.get(id);
-        if (!f || f.status === 'cleared') continue;
-        const r = await repos().painFlags.save(clearPainFlag(f, at), f.version);
-        if (!r.ok) return false;
-      }
-      return true;
-    },
-
     /**
-     * Clear with Undo (review S4): returns each cleared flag's new version, so
-     * `undoClear` only restores a flag nothing else has changed since.
+     * Undo of a flag Ben just set (the `Pain noted` toast, the exclusion
+     * toast after ticking `Pain`; review B2): a retraction, never a clear, so
+     * no 8-week `Before flag` reference, cleared-flag history or
+     * return-to-load guard comes from it. Versioned: a flag changed since the
+     * action (answered, cleared) is left as it is and reported in `stale`.
+     * A flag already retracted (a retry, a double tap) is a no-op. Clearing
+     * stays `clearConfirmed`.
      */
-    async clearWithUndo(flagIds: readonly string[]): Promise<{ ok: boolean; cleared: { id: string; version: number }[] }> {
+    async retract(flags: readonly PainFlagRef[], opId: string): Promise<PainRetractWrite> {
       const at = ctx.now();
-      const cleared: { id: string; version: number }[] = [];
+      const stale: string[] = [];
       try {
-        for (const id of flagIds) {
-          const f = await repos().painFlags.get(id);
-          if (!f || f.status === 'cleared') continue;
-          const next = clearPainFlag(f, at);
-          const r = await repos().painFlags.save(next, f.version);
-          if (!r.ok) return { ok: false, cleared };
-          cleared.push({ id, version: next.version });
+        for (const ref of flags) {
+          const f = await repos().painFlags.get(ref.id);
+          if (!f) continue;
+          if (f.status === 'retracted') continue;
+          if (f.status !== 'active' || f.version !== ref.version) {
+            stale.push(ref.id);
+            continue;
+          }
+          const r = await repos().painFlags.save(retractPainFlag(f, at, opId), f.version);
+          if (!r.ok) stale.push(ref.id);
         }
-        return { ok: true, cleared };
+        return { ok: true, stale };
       } catch {
-        return { ok: false, cleared };
+        return { ok: false, message: 'Undo wasn’t saved. Try again.' };
       }
     },
 
@@ -391,7 +493,137 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const p = await ctx.profile();
       return p ? repos().painFlags.listActive(p.id) : [];
     },
+
+    get: (flagId: string): Promise<PainFlag | null> => repos().painFlags.get(flagId),
+
+    /**
+     * `recordPainFlagReview(flagId, 'still_hurts', opId)`: keeps the flag and
+     * moves the next check 14 days on. A retry with the same opId is a
+     * duplicate; an answer against a flag that changed since the screen read
+     * it is refused (stale), never applied to newer state.
+     */
+    async stillHurts(req: { flagId: string; opId: string; expectedVersion: number }): Promise<PainReviewWrite> {
+      const failed = { ok: false as const, reason: 'failed' as const, message: 'Your answer wasn’t saved. Try again.' };
+      try {
+        const at = ctx.now();
+        const nowMs = toMs(at.utc);
+        const done = (flag: PainFlag, duplicate: boolean): PainReviewWrite => ({ ok: true, flag, reviewOpId: req.opId, kept: painKeptText(flag), nudge: painProfessionalNudge(flag, nowMs, at.tz), duplicate });
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const f = await repos().painFlags.get(req.flagId);
+          if (!f) return { ok: false, reason: 'not_found', message: 'That pain flag wasn’t found.' };
+          const r = recordPainFlagReview(f, 'still_hurts', req.opId, at);
+          if (r.kind === 'duplicate') return done(r.flag, true);
+          if (r.kind === 'not_active') return { ok: false, reason: 'not_active', message: `The pain flag on ${f.exerciseName} was cleared.` };
+          if (r.kind === 'not_due') return { ok: false, reason: 'not_due', message: 'Already answered. Showing the latest.' };
+          if (f.version !== req.expectedVersion) return { ok: false, reason: 'stale', message: 'This pain flag changed. Showing the latest.' };
+          const saved = await repos().painFlags.save(r.flag, f.version);
+          if (saved.ok) return done(r.flag, false);
+          // Lost a race: the re-read either finds our own answer (duplicate) or a newer flag (stale).
+        }
+        return { ok: false, reason: 'stale', message: 'This pain flag changed. Showing the latest.' };
+      } catch {
+        return failed;
+      }
+    },
+
+    /** Undo on `Pain flag kept · next check …`: the check is due again exactly as before. */
+    async undoStillHurts(req: { flagId: string; reviewOpId: string; undoOpId: string }): Promise<boolean> {
+      try {
+        const f = await repos().painFlags.get(req.flagId);
+        if (!f) return false;
+        const r = undoPainFlagReview(f, req.reviewOpId, req.undoOpId, ctx.now());
+        if (r.kind === 'duplicate') return true;
+        if (r.kind !== 'undone') return false;
+        return (await repos().painFlags.save(r.flag, f.version)).ok;
+      } catch {
+        return false;
+      }
+    },
+
+    /**
+     * `Clear flag` in the confirmation (§2.14.3): the only way a flag is
+     * cleared. Versioned: a flag changed since the sheet read it isn't
+     * cleared. Clearing a flag that is already cleared is a no-op (a retry).
+     * Nothing else is touched: history, records and the reference stay.
+     */
+    async clearConfirmed(req: { flagId: string; expectedVersion: number }): Promise<PainClearWrite> {
+      try {
+        const f = await repos().painFlags.get(req.flagId);
+        if (!f) return { ok: false, stale: false, message: 'That pain flag wasn’t found.' };
+        if (f.status === 'cleared') return { ok: true, cleared: null };
+        if (f.status === 'retracted') return { ok: false, stale: true, message: 'This pain flag changed. Showing the latest.' };
+        if (f.version !== req.expectedVersion) return { ok: false, stale: true, message: 'This pain flag changed. Showing the latest.' };
+        const next = clearPainFlag(f, ctx.now());
+        const r = await repos().painFlags.save(next, f.version);
+        if (!r.ok) return { ok: false, stale: true, message: 'This pain flag changed. Showing the latest.' };
+        return { ok: true, cleared: { id: next.id, version: next.version } };
+      } catch {
+        return { ok: false, stale: false, message: 'The pain flag wasn’t cleared. Try again.' };
+      }
+    },
+
+    /**
+     * The pain flag sheet (§2.14.4). With a workout exercise, `Before` and
+     * `Since` use its equipment; otherwise the latest workout of the
+     * exercise decides. The workout in progress is never part of history.
+     */
+    async sheet(req: { flagId: string; sessionId?: string | null; sessionExerciseId?: string | null }): Promise<PainFlagSheetView | null> {
+      try {
+        const p = await ctx.profile();
+        const flag = await repos().painFlags.get(req.flagId);
+        if (!p || !flag || flag.ownerId !== p.id) return null;
+        const [exercise, aggregate, history] = await Promise.all([
+          repos().exercises.get(flag.exerciseId),
+          req.sessionId ? repos().sessions.get(req.sessionId).catch(() => null) : Promise.resolve(null),
+          historyFor(p.id, flag.exerciseId).catch(() => [] as HistorySession[]),
+        ]);
+        const ex =
+          aggregate?.exercises.find((e) => e.id === req.sessionExerciseId && e.exerciseId === flag.exerciseId) ??
+          aggregate?.exercises.find((e) => e.exerciseId === flag.exerciseId) ??
+          null;
+        const at = ctx.now();
+        return buildPainFlagSheet({
+          flag,
+          history: history.filter((h) => h.sessionId !== aggregate?.session.id),
+          nowMs: toMs(at.utc),
+          tz: aggregate?.session.startedAt.tz ?? at.tz,
+          exercise: {
+            measurement: ex?.measurement ?? exercise?.measurement ?? 'reps',
+            defaultLoadConvention: ex?.loadConvention ?? exercise?.defaultLoadConvention ?? 'total',
+          },
+          anchor:
+            ex === null || aggregate === null
+              ? null
+              : {
+                  equipmentId: ex.equipmentId,
+                  unit: ex.unit,
+                  loadConvention: ex.loadConvention,
+                  equipment: ex.equipmentId === null ? null : (aggregate.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null),
+                },
+        });
+      } catch {
+        return null;
+      }
+    },
   };
+
+  /**
+   * Pace samples from the last finished workouts (§2.15.2). Finished workouts
+   * don't change during a workout, so they're read once per active session.
+   * A read failure never blocks logging: the estimate falls back to `Default`.
+   */
+  let paceCache: { key: string; samples: PaceSamples } | null = null;
+  async function recentPace(ownerId: string, sessionId: string, nowMs: number): Promise<PaceSamples> {
+    if (paceCache?.key === sessionId) return paceCache.samples;
+    try {
+      const r = await repos().sessions.listFinishedBetweenReadable(ownerId, toIso(nowMs - RECENT_PACE_WINDOW_MS), toIso(nowMs + 1));
+      const samples = recentPaceSamples(r.sessions.filter((a) => a.session.id !== sessionId));
+      paceCache = { key: sessionId, samples };
+      return samples;
+    } catch {
+      return { set: [], changeover: [] };
+    }
+  }
 
   async function historyFor(ownerId: string, exerciseId: string): Promise<HistorySession[]> {
     return ctx.store().listExerciseHistory(ownerId, exerciseId);
@@ -411,7 +643,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const history = await historyFor(p.id, exercise.id);
     const previous = lastComparableSession(history, { equipmentId: equipment?.id ?? null, unit, loadConvention: convention });
     // No history: three working sets in the built-in rep range, no load (audit B1).
-    if (!previous) return defaultStartingPlan(exercise, equipment?.kind ?? null, convention);
+    if (!previous) return defaultStartingPlan(exercise, equipment?.kind ?? null, convention, undefined, { at: ctx.now() });
     const now = unspecifiedPain(await sessionCheckIn(aggregate));
     const then = unspecifiedPain(await sessionCheckIn(await repos().sessions.get(previous.sessionId)));
     const { result } = nextTargetsFor({
@@ -429,7 +661,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       painFlags: await repos().painFlags.listActive(p.id),
       sessionPain: now.active ? now : then,
     });
-    return plannedSetsFromTargets(result) ?? defaultStartingPlan(exercise, equipment?.kind ?? null, convention, Math.max(1, previous.sets.length));
+    // Each planned set records what produced it, for `Why?` (active-workout §2.12, AW3).
+    return plannedSetsFromTargets(result, { history, equipment, at: ctx.now() }) ?? defaultStartingPlan(exercise, equipment?.kind ?? null, convention, Math.max(1, previous.sets.length), { at: ctx.now(), decision: result.decision });
   }
 
   /**
@@ -450,6 +683,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (done.length === 0) continue;
       const exercise = await repos().exercises.get(sx.exerciseId);
       const equipment = sx.equipmentId === null ? null : (source.session.equipmentSnapshot.find((e) => e.id === sx.equipmentId) ?? null);
+      const history = await historyFor(p.id, sx.exerciseId);
       const { result } = nextTargetsFor({
         ownerId: p.id,
         exerciseId: sx.exerciseId,
@@ -461,11 +695,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         exercise,
         rule: null,
         workingSets: done.length,
-        history: await historyFor(p.id, sx.exerciseId),
+        history,
         painFlags: flags,
         sessionPain,
       });
-      const plan = plannedSetsFromTargets(result);
+      // Rule provenance on each set, so `Why?` explains a progressed target as the rule's, never as a repeat (review B1.1).
+      const plan = plannedSetsFromTargets(result, { history, equipment, at: ctx.now() });
       if (plan) out.set(sx.exerciseId, plan);
     }
     return out;
@@ -691,23 +926,154 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const flags = await repos().painFlags.listActive(p.id);
       const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId) : null;
       const title = storedName(aggregate) === null && aggregate.exercises.length > 0 ? (await titleFor(aggregate.exercises.map((e) => e.exerciseId))).title : null;
+      const pace = await recentPace(p.id, aggregate.session.id, toMs(ctx.now().utc));
       return {
         aggregate,
         gymName: gym?.name ?? null,
         previous,
         painFlagged: new Set(flags.map((f) => f.exerciseId)),
+        painFlags: flags,
         effortScale: p.effortScale,
         checkIn: ci,
         title,
+        recentPace: pace,
       };
     },
 
     /** `buildActiveSetView` over loaded data plus the screen's unsaved edits. */
     view(data: ActiveWorkoutData, nowMs: number, edits: DraftEdits | null): ActiveSetView {
-      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, previous: data.previous, painFlagged: data.painFlagged, edits, title: data.title });
+      // `Time left` has one source on this screen: `timeLeft` below, on its own minute clock (review N4).
+      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false });
     },
 
+    /**
+     * `TimeLeftLine` and the `Time left` sheet (§2.15). The screen calls this
+     * with a clock that moves only on events and once a minute, so the line
+     * never ticks like a countdown.
+     */
+    timeLeft(data: ActiveWorkoutData, nowMs: number): { view: TimeLeftView; sheet: TimeLeftSheetView } | null {
+      const view = buildTimeLeftView(data.aggregate, nowMs, data.recentPace);
+      return view === null ? null : { view, sheet: timeLeftSheet(view.estimate, data.aggregate, nowMs, data.aggregate.session.startedAt.tz) };
+    },
+
+    /** `Finish by` (§2.15.3): today only; null = `Not set`. Changes only the line's wording. */
+    setFinishBy: async (req: { sessionId: string; finishByUtc: string | null; tz: string; expectedVersion: number; opId: string }): Promise<CommandOutcome> =>
+      ctx.afterCommand(
+        await domain().dispatch(req.sessionId, {
+          type: 'set_finish_by',
+          at: ctx.now(),
+          opId: req.opId,
+          finishBy: req.finishByUtc === null ? null : { utc: req.finishByUtc, tz: req.tz },
+          expectedVersion: req.expectedVersion,
+        }),
+      ),
+
     dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => ctx.afterCommand(await domain().dispatch(sessionId, command)),
+
+    /**
+     * `Save changes` in the correction sheet: values and exclusion chips in
+     * one versioned `correct_set` (§2.13, AW6). Ticking `Pain` when no flag
+     * covers the movement sets one first (AW7, source `workout`, ID derived
+     * from the opId so a retry flags once). A stale set version is refused
+     * before anything is written.
+     */
+    async correctSet(req: {
+      sessionId: string;
+      setId: string;
+      expectedSetVersion: number;
+      patch: Partial<SetValues> & { exclusions?: SetExclusion[] };
+      opId: string;
+    }): Promise<SetCorrectionWrite> {
+      const failed = { ok: false as const, stale: false, message: 'The change wasn’t saved. Try again.' };
+      let created: PainFlagRef | null = null;
+      try {
+        const p = await owner();
+        const aggregate = await repos().sessions.get(req.sessionId);
+        const set = aggregate?.sets.find((s) => s.id === req.setId);
+        const ex = aggregate?.exercises.find((e) => e.id === set?.sessionExerciseId);
+        if (!aggregate || !set || !ex) return { ok: false, stale: true, message: 'This set isn’t logged any more.' };
+        const at = ctx.now();
+        const done = aggregate.processedOps[req.opId] !== undefined;
+        if (!done && set.version !== req.expectedSetVersion) return { ok: false, stale: true, message: 'This set changed since it was shown. Showing the latest.' };
+        const flags = await repos().painFlags.listActive(p.id);
+        // Only an active flag of this op is ours (review r2 B1): after a failed save's rollback, a retry flags afresh.
+        const { id: flagId, flag: ours } = done ? { id: '', flag: null } : await opPainFlag(req.opId, ex.exerciseId);
+        const covered = painFlagCovering(flags.filter((f) => f.id !== flagId), ex.exerciseId, toMs(at.utc), aggregate.session.startedAt.tz) !== null;
+        const setNumber = buildSetEditView(aggregate, set.id, null)?.setNumber ?? set.index + 1;
+        const plan = planExclusionMark({ prior: done ? undefined : set.exclusions, next: req.patch.exclusions, painFlagActive: covered, setNumber, exerciseName: ex.exerciseName });
+        const painFlags: PainFlagRef[] = [];
+        // An active flag of this op whose save never landed is a leftover of a
+        // failed attempt whose rollback didn't go through: this attempt owns it.
+        if (!done && ours && !plan.setsPainFlag) await rollBack({ id: flagId, version: ours.version });
+        else if (!done && plan.setsPainFlag) {
+          let version = ours?.version ?? 1;
+          if (!ours) {
+            const flag = newPainFlag({ id: flagId, ownerId: p.id, opId: req.opId, exerciseId: ex.exerciseId, exerciseName: ex.exerciseName, area: null, source: 'workout', checkInId: null, at });
+            const saved = await repos().painFlags.save(flag, null);
+            const now = saved.ok ? flag : await repos().painFlags.get(flagId);
+            if (now?.status !== 'active') return failed;
+            version = now.version;
+          }
+          created = { id: flagId, version };
+          painFlags.push(created);
+        }
+        const r = ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'correct_set', at, opId: req.opId, setId: req.setId, expectedSetVersion: req.expectedSetVersion, patch: req.patch }));
+        if (!r.ok) {
+          // AW7 is one change from Ben's view (review N2): a flag this save just set is taken back when the mark isn't saved.
+          if (created !== null) await rollBack(created);
+          return { ok: false, stale: r.error.code === 'stale_version', message: r.error.code === 'stale_version' ? 'This set changed since it was shown. Showing the latest.' : r.error.message };
+        }
+        const after = r.aggregate.sets.find((s) => s.id === req.setId);
+        const changedFlags = plan.toast !== null && !r.duplicate;
+        return {
+          ok: true,
+          aggregate: r.aggregate,
+          duplicate: r.duplicate,
+          toast: r.duplicate ? null : plan.toast,
+          undo: changedFlags && after ? { setId: req.setId, setVersion: after.version, previous: plan.prior, painFlags } : null,
+        };
+      } catch {
+        // Review r2 N1: a throw after the flag was written. If the mark didn't
+        // land, take the flag back so "wasn't saved" is true; if it did (the
+        // throw came later), keep the flag and say the change was saved.
+        if (created === null) return failed;
+        try {
+          const latest = await repos().sessions.get(req.sessionId);
+          if (latest?.processedOps[req.opId] !== undefined) return { ok: false, stale: true, message: 'Saved. Showing the latest.' };
+          await rollBack(created);
+        } catch {
+          // The flag stays on: the safe direction for rule 9.
+        }
+        return failed;
+      }
+
+      /** AW7 is one change from Ben's view (review N2): a flag this save just set is taken back when the mark isn't saved. */
+      async function rollBack(flag: PainFlagRef): Promise<void> {
+        await pain.retract([flag], `${req.opId}:rollback`);
+      }
+    },
+
+    /**
+     * Undo on the exclusion toast: put the flags back as they were, as one
+     * more versioned correction (kept in `Edit history`), and retract a pain
+     * flag that the same save set (review B2: as if it never existed, not a
+     * clear). Refused when the set changed since; a flag changed since the
+     * save is kept, and the message says so.
+     */
+    async undoMark(req: { sessionId: string; setId: string; setVersion: number; previous: SetExclusion[]; painFlags: PainFlagRef[]; opId: string }): Promise<{ ok: boolean; message: string | null }> {
+      try {
+        const r = ctx.afterCommand(
+          await domain().dispatch(req.sessionId, { type: 'correct_set', at: ctx.now(), opId: req.opId, setId: req.setId, expectedSetVersion: req.setVersion, patch: { exclusions: req.previous } }),
+        );
+        if (!r.ok) return { ok: false, message: r.error.code === 'stale_version' ? 'Can’t undo: this set changed. Tap it to edit.' : r.error.message };
+        if (req.painFlags.length === 0) return { ok: true, message: null };
+        const retracted = await pain.retract(req.painFlags, `${req.opId}:pain`);
+        if (!retracted.ok) return { ok: false, message: 'Set undone. The pain flag wasn’t removed. Try again.' };
+        return { ok: true, message: retracted.stale.length > 0 ? 'Set undone. Pain flag kept: it changed since.' : null };
+      } catch {
+        return { ok: false, message: 'Undo wasn’t saved. Try again.' };
+      }
+    },
 
     /**
      * `Rest after` (rest-state §2.4): this set only, or every pending set of
@@ -744,11 +1110,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const extra = opts.withCatalogue && ctx.catalogueExercises ? ctx.catalogueExercises().filter((e) => !have.has(e.id)) : [];
       const all = [...saved, ...extra];
       const snapshot = aggregate?.session.equipmentSnapshot ?? [];
+      // A flag that can't be read never hides or blocks a row: it just isn't tagged.
+      const flags = p ? await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]) : [];
+      const at = ctx.now();
+      const nowMs = toMs(at.utc);
       // Bodyweight exercises never need (or get) a gym item: there's no load to check.
-      return searchExercises(all, query).map((exercise) => ({
-        exercise,
-        equipment: equipmentForExercise(exercise, snapshot).map((e) => ({ id: e.id, name: e.name, kind: e.kind })),
-      }));
+      return searchExercises(all, query).map((exercise) => {
+        const covering = painFlagCovering(flags, exercise.id, nowMs, at.tz);
+        return {
+          exercise,
+          equipment: equipmentForExercise(exercise, snapshot).map((e) => ({ id: e.id, name: e.name, kind: e.kind })),
+          mayHurt: covering ? { flagId: covering.flag.id, accessibilityLabel: mayHurtAccessibility(covering.flag), confirm: mayHurtConfirm({ ...covering.flag, exerciseName: exercise.name }) } : null,
+        };
+      });
     },
 
     /** Recently done exercises first (pain step `Recent`, picker). */
@@ -792,6 +1166,43 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           exerciseRestS: p.exerciseRestS?.[req.exerciseId] ?? null,
         }),
       );
+    },
+
+    /**
+     * `Why?` on a set target (active-workout §2.12): reads the provenance
+     * stored with the target, the pain flags on the movement and the basis
+     * workout as it is now. Local reads only: no rule runs, no coach, no
+     * network, and nothing is written. Null when the set has no target or
+     * the workout can't be read; a basis that can't be read is treated as
+     * not found (no `edited` claim either way).
+     */
+    async explainTarget(sessionId: string, setId: string): Promise<TargetExplanation | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const aggregate = await repos().sessions.get(sessionId);
+        const set = aggregate?.sets.find((x) => x.id === setId);
+        const ex = aggregate?.exercises.find((e) => e.id === set?.sessionExerciseId);
+        if (!aggregate || !set || !ex) return null;
+        const basisId = set.planned.provenance?.basis?.sessionId ?? null;
+        const [basisNow, gyms, flags, history] = await Promise.all([
+          basisId === null ? null : repos().sessions.get(basisId).catch(() => null),
+          repos().gyms.listByOwner(p.id).catch(() => []),
+          repos().painFlags.listByOwner(p.id).catch(() => [] as PainFlag[]),
+          historyFor(p.id, ex.exerciseId).catch(() => [] as HistorySession[]),
+        ]);
+        return explainTarget({
+          aggregate,
+          setId,
+          nowMs: toMs(ctx.now().utc),
+          basisNow,
+          gymNames: Object.fromEntries(gyms.map((g) => [g.id, g.name])),
+          painFlags: flags.filter((f) => f.exerciseId === ex.exerciseId),
+          history: history.filter((h) => h.sessionId !== aggregate.session.id),
+        });
+      } catch {
+        return null;
+      }
     },
 
     async summary(sessionId: string): Promise<WorkoutSummary | null> {
@@ -1048,11 +1459,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const at = ctx.now();
       const nowMs = toMs(at.utc);
       const week = localWeekBounds(nowMs, at.tz);
-      const [active, finished, recent] = await Promise.all([
+      const [active, finished, recent, painFlags] = await Promise.all([
         repos().sessions.getActive(p.id),
         // An unreadable workout this week is left out rather than blocking Today (review S1).
         repos().sessions.listFinishedBetweenReadable(p.id, toIso(week.startMs), toIso(week.endMs)).then((r) => r.sessions),
         recentCheckIns(p.id, nowMs),
+        // Region 4b is rare and optional: a flag read failure never blocks Today.
+        repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]),
       ]);
       // Names for workouts without one (`Push`), from their exercises (audit F5).
       const titles: Record<string, string> = {};
@@ -1068,6 +1481,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         localDateOf: (utc) => localDateOf(toMs(utc), at.tz),
         recentCheckIns: recent.map((r) => ({ ...r, score: r.checkIn.score, reasons: r.checkIn.reasons })),
         weekDates: Array.from({ length: 7 }, (_, i) => addDays(week.mondayLocalDate, i)),
+        painFlags,
+        tz: at.tz,
+        ...(active ? { recentPace: await recentPace(p.id, active.session.id, nowMs) } : {}),
       });
     },
 

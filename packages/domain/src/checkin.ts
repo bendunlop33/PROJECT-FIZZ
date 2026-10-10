@@ -328,16 +328,29 @@ export function newPainFlag(input: NewPainFlagInput): PainFlag {
 
 /** Only Ben clears a flag (CM4); never cleared automatically. */
 export function clearPainFlag(flag: PainFlag, at: ZonedTimestamp): PainFlag {
-  if (flag.status === 'cleared') return flag;
+  if (flag.status !== 'active') return flag;
   return { ...flag, status: 'cleared', clearedAtUtc: at.utc, updatedAtUtc: at.utc, version: flag.version + 1 };
+}
+
+/**
+ * Undo of a flag Ben just set (the `Pain noted` toast, the exclusion toast
+ * after ticking `Pain`; review B2): a retraction, not a clear. The flag
+ * reads as if it never existed: no 8-week `Before flag` reference, no
+ * cleared-flag history, no return-to-load guard. Only an active flag can be
+ * retracted; the result is a new version, kept for the audit.
+ */
+export function retractPainFlag(flag: PainFlag, at: ZonedTimestamp, opId: string): PainFlag {
+  if (flag.status !== 'active') return flag;
+  return { ...flag, status: 'retracted', clearedAtUtc: null, retracted: { atUtc: at.utc, opId }, updatedAtUtc: at.utc, version: flag.version + 1 };
 }
 
 /**
  * Undo of `clearPainFlag` (the Summary's `Pain flag cleared` toast, review
  * S4): the flag is active again, as a new version, never an edit in place.
+ * A retracted flag stays retracted.
  */
 export function restorePainFlag(flag: PainFlag, at: ZonedTimestamp): PainFlag {
-  if (flag.status === 'active') return flag;
+  if (flag.status !== 'cleared') return flag;
   return { ...flag, status: 'active', clearedAtUtc: null, updatedAtUtc: at.utc, version: flag.version + 1 };
 }
 
