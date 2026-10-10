@@ -1,6 +1,7 @@
 import {
   buildPresetDraft,
   createSessionService,
+  discardCommand,
   LEGACY_STARTER_IDS,
   listGymPresets,
   materialiseGymDraft,
@@ -9,6 +10,7 @@ import {
   type GymDraft,
   type GymPresetId,
   type CommandOutcome,
+  type DiscardConfirmation,
   type RecoveryResult,
   type StartOutcome,
 } from '@fizz/domain';
@@ -288,8 +290,9 @@ export function createAppServices(deps: AppServicesDeps) {
     dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => afterCommand(await domainSessions().dispatch(sessionId, command)),
     finish: (s: SessionAggregate, opId: string): Promise<CommandOutcome> =>
       sessions.dispatch(s.session.id, { type: 'finish', at: deps.now(), opId, expectedVersion: s.session.version, endedAt: null }),
-    discard: (s: SessionAggregate, opId: string): Promise<CommandOutcome> =>
-      sessions.dispatch(s.session.id, { type: 'discard', at: deps.now(), opId, expectedVersion: s.session.version }),
+    /** Discard with the confirmation Ben accepted (`discardConfirmation`); the reducer refuses a mismatch. */
+    discard: (sessionId: string, ask: DiscardConfirmation, opId: string): Promise<CommandOutcome> =>
+      sessions.dispatch(sessionId, discardCommand(ask, { opId, at: deps.now() })),
   };
 
   const integrity = {

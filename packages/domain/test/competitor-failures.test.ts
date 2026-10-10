@@ -9,6 +9,7 @@ import {
   calculateNextTargets,
   createMemoryRepositories,
   createSessionService,
+  discardCommand,
   discardConfirmation,
   formatLoad,
   getAchievableLoads,
@@ -564,7 +565,7 @@ describe('(e) Discard needs a confirmation or Undo (LiftTrack: "no second step")
     const ask = discardConfirmation(s);
     // Logged from the lock screen while the alert was open.
     s = apply(s, logCmd(setOf(s, BENCH, 1).id, values(kg(100), 8), 100));
-    const r = reduceSession(s, { type: 'discard', at: at(110), opId: 'discard-1', expectedVersion: ask.expectedVersion });
+    const r = reduceSession(s, { type: 'discard', at: at(110), opId: 'discard-1', expectedVersion: ask.expectedVersion, confirmedLoggedSets: ask.loggedSets });
     expectError(r, 'stale_version');
     expect(r.state.session.status).toBe('active');
     expect(r.state.sets).toEqual(s.sets);
@@ -597,10 +598,25 @@ describe('(e) Discard needs a confirmation or Undo (LiftTrack: "no second step")
     expect(today(logged).endedAboutUtc).not.toBeNull();
   });
 
+  it('a discard that skipped the confirmation is refused by the reducer itself, whoever sends it (review failure-tests M3)', () => {
+    let s = startFixture().state;
+    s = apply(s, logCmd(setOf(s, BENCH, 0).id, values(kg(60), 10), 10));
+    s = apply(s, logCmd(setOf(s, BENCH, 1).id, values(kg(100), 8), 100));
+    const v = s.session.version;
+    // "Nothing logged" (0), or a confirmation for fewer sets than are now logged: refused, nothing changes.
+    for (const confirmed of [0, 1, 3]) {
+      const r = reduceSession(s, { type: 'discard', at: at(110), opId: `skip-${String(confirmed)}`, expectedVersion: v, confirmedLoggedSets: confirmed });
+      expectError(r, 'discard_unconfirmed');
+      expect(r.state.session.status).toBe('active');
+      expect(r.state.sets).toEqual(s.sets);
+    }
+    expect(expectOk(reduceSession(s, discardCommand(discardConfirmation(s), { opId: 'ok', at: at(120) }))).state.session.status).toBe('discarded');
+  });
+
   it('a confirmed discard keeps every row and its audit (only the workout’s status changes); a repeated tap is a no-op', () => {
     let s = startFixture().state;
     s = apply(s, logCmd(setOf(s, BENCH, 0).id, values(kg(60), 10), 10));
-    const cmd: SessionCommand = { type: 'discard', at: at(20), opId: 'discard-1', expectedVersion: discardConfirmation(s).expectedVersion };
+    const cmd: SessionCommand = discardCommand(discardConfirmation(s), { opId: 'discard-1', at: at(20) });
     const r = expectOk(reduceSession(s, cmd));
     expect(r.state.session.status).toBe('discarded');
     expect(r.state.sets).toEqual(s.sets);

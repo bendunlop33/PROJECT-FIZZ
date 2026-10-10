@@ -50,7 +50,9 @@ export type SessionErrorCode =
   | 'work_interval_not_running'
   | 'exercise_not_found'
   | 'equipment_not_found'
-  | 'equipment_incompatible';
+  | 'equipment_incompatible'
+  /** A discard whose `confirmedLoggedSets` doesn't match the logged sets it would discard. */
+  | 'discard_unconfirmed';
 
 export interface SessionError {
   code: SessionErrorCode;
@@ -1041,6 +1043,15 @@ function handleSkipExercise(state: SessionAggregate, cmd: CommandOf<'skip_exerci
 function handleDiscard(state: SessionAggregate, cmd: CommandOf<'discard'>, nowMs: number): Handled {
   if (state.session.version !== cmd.expectedVersion) {
     return fail('stale_version', 'The workout changed since Discard was opened. Review and try again.');
+  }
+  // Review failure-tests M3: the confirmation is part of the command, so a caller that skips
+  // `discardConfirmation` can't discard logged sets (no Undo for a discard).
+  const logged = state.sets.filter((s) => s.status === 'completed').length;
+  if (cmd.confirmedLoggedSets !== logged) {
+    return fail(
+      'discard_unconfirmed',
+      `${String(logged)} logged ${logged === 1 ? 'set' : 'sets'} would be discarded, but ${String(cmd.confirmedLoggedSets)} ${cmd.confirmedLoggedSets === 1 ? 'was' : 'were'} confirmed. Review and try again.`,
+    );
   }
   const events: SessionEvent[] = [];
   let restTimer = state.restTimer;

@@ -25,7 +25,7 @@ describe('pain flags after the toast', () => {
     const started = await s.workout.start({ gymId, opId: 'w2', checkIn: { kind: 'answered', checkInId: ci.checkIn.id } });
     if (!started.ok) throw new Error('start');
     // Log the second workout through the normal path, then finish it.
-    await s.workout.dispatch(started.aggregate.session.id, { type: 'discard', at: h.now(), opId: 'd', expectedVersion: started.aggregate.session.version });
+    await s.workout.dispatch(started.aggregate.session.id, { type: 'discard', at: h.now(), opId: 'd', expectedVersion: started.aggregate.session.version, confirmedLoggedSets: 0 });
     const second = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [1, 2, 3].map(() => ({ load: 100, reps: 6, rpe: 8 })) }, { exercise: 'Lat pulldown', sets: [1, 2].map(() => ({ load: 40, reps: 10, rpe: 8 })) }]);
     let sum = await s.workout.summary(second);
     expect(sum?.nextTime?.rows.map((r) => [r.exerciseName, r.decision])).toEqual([

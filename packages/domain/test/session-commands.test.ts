@@ -192,8 +192,8 @@ describe('discard', () => {
     const w = setsFor(state, BENCH)[0];
     if (!w) throw new Error('fixture');
     const s = apply(state, logCmd(w.id, values(kg(60), 10), 30));
-    expectError(reduceSession(s, { type: 'discard', at: at(40), opId: 'x', expectedVersion: 1 }), 'stale_version');
-    const r = expectOk(reduceSession(s, { type: 'discard', at: at(40), opId: 'x', expectedVersion: 2 }));
+    expectError(reduceSession(s, { type: 'discard', at: at(40), opId: 'x', expectedVersion: 1, confirmedLoggedSets: 1 }), 'stale_version');
+    const r = expectOk(reduceSession(s, { type: 'discard', at: at(40), opId: 'x', expectedVersion: 2, confirmedLoggedSets: 1 }));
     expect(r.state.session).toMatchObject({ status: 'discarded', endedAt: at(40), activeSetId: null });
     expect(r.state.restTimer?.status).toBe('cancelled');
     expect(r.events.at(-1)).toEqual({ type: 'SessionDiscarded' });
@@ -211,7 +211,7 @@ describe('discard', () => {
     const svc = createSessionService(repos, idGen(41_000));
     const started = await svc.start({ ownerId: OWNER, gymId: GYM, routineId: null, opId: 's', at: at(0) });
     if (!started.ok) throw new Error('start');
-    await svc.dispatch(started.aggregate.session.id, { type: 'discard', at: at(10), opId: 'x', expectedVersion: 1 });
+    await svc.dispatch(started.aggregate.session.id, { type: 'discard', at: at(10), opId: 'x', expectedVersion: 1, confirmedLoggedSets: 0 });
     expect(await svc.recover(OWNER, at(20))).toBeNull();
     const again = await svc.start({ ownerId: OWNER, gymId: GYM, routineId: null, opId: 's2', at: at(30) });
     expect(again.ok).toBe(true);

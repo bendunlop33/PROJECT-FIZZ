@@ -1,4 +1,4 @@
-import type { SessionAggregate } from '@fizz/schemas';
+import type { CommandOf, SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * What `Discard workout` must ask before it calls `discard` (active-workout
@@ -16,6 +16,11 @@ import type { SessionAggregate } from '@fizz/schemas';
 export type DiscardConfirmation =
   | { required: false; loggedSets: 0; expectedVersion: number }
   | { required: true; loggedSets: number; expectedVersion: number; message: string };
+
+/** The `discard` command for a confirmation Ben has accepted (or that needed none). */
+export function discardCommand(ask: DiscardConfirmation, req: { opId: string; at: ZonedTimestamp }): CommandOf<'discard'> {
+  return { type: 'discard', at: req.at, opId: req.opId, expectedVersion: ask.expectedVersion, confirmedLoggedSets: ask.loggedSets };
+}
 
 export function discardConfirmation(state: SessionAggregate): DiscardConfirmation {
   const loggedSets = state.sets.filter((s) => s.status === 'completed').length;

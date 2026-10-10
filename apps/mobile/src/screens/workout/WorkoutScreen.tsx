@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, KeyboardAvoidingView, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { discardConfirmation, formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { discardCommand, discardConfirmation, formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { getAlertPermission, requestAlertPermission, type AlertPermission } from '../../alerts/notifier';
@@ -412,9 +412,9 @@ export function WorkoutScreen() {
     // One tested rule for every Discard (competitor-failure pack (e)): confirm whenever a set is logged.
     const ask = discardConfirmation(loaded.aggregate);
     const go = () => {
-      void run({ type: 'discard', at: services.now(), opId: newUuid(), expectedVersion: ask.expectedVersion }).then((r) => {
+      void run(discardCommand(ask, { opId: newUuid(), at: services.now() })).then((r) => {
         if (!r.ok) {
-          showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}` });
+          showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' || r.error.code === 'discard_unconfirmed' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}` });
           return;
         }
         setFinishOpen(false);

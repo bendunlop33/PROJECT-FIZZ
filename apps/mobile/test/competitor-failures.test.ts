@@ -204,7 +204,7 @@ describe('(e) Discard needs a confirmation or Undo (LiftTrack: "no second step")
     expect(ask).toMatchObject({ required: true, loggedSets: 1 });
     // Logged from the Live Activity while the alert was open.
     await logPlanned(s, sessionId, two);
-    const stale = await s.workout.dispatch(sessionId, { type: 'discard', at: h.now(), opId: h.ids(), expectedVersion: ask.expectedVersion });
+    const stale = await s.workout.dispatch(sessionId, { type: 'discard', at: h.now(), opId: h.ids(), expectedVersion: ask.expectedVersion, confirmedLoggedSets: ask.loggedSets });
     expect(stale).toMatchObject({ ok: false, error: { code: 'stale_version' } });
 
     await h.forceClose();
@@ -216,7 +216,7 @@ describe('(e) Discard needs a confirmation or Undo (LiftTrack: "no second step")
     const confirm = discardConfirmation(await stored(s2, sessionId));
     expect(confirm).toMatchObject({ required: true, loggedSets: 2, message: '2 logged sets will be discarded. This can’t be undone.' });
     const before = await storedSets(s2, sessionId);
-    await dispatch(s2, sessionId, { type: 'discard', at: h.now(), opId: h.ids(), expectedVersion: confirm.expectedVersion });
+    await dispatch(s2, sessionId, { type: 'discard', at: h.now(), opId: h.ids(), expectedVersion: confirm.expectedVersion, confirmedLoggedSets: confirm.loggedSets });
     const after = await stored(s2, sessionId);
     expect(after.session.status).toBe('discarded');
     expect(await storedSets(s2, sessionId)).toEqual(before);
@@ -225,6 +225,26 @@ describe('(e) Discard needs a confirmation or Undo (LiftTrack: "no second step")
 
   // Today's stale card also discards (`Discard (nothing logged)`, no prompt); the domain half checks
   // that buildTodayView offers it only when discardConfirmation says nothing is logged.
+  it('the app services refuse a discard that skipped the confirmation; the workout and its sets are kept', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [1, 2, 3].map(() => ({ load: 100, reps: 6, rpe: 8 })) }]);
+    h.clockMs += 86_400_000;
+    const { sessionId, sets } = await startWith(s, gymId, 'Bench press');
+    const [one] = sets;
+    if (!one) throw new Error('fixture');
+    await logPlanned(s, sessionId, one);
+    const current = await stored(s, sessionId);
+    const before = await storedSets(s, sessionId);
+    const skipped = await s.workout.dispatch(sessionId, { type: 'discard', at: h.now(), opId: h.ids(), expectedVersion: current.session.version, confirmedLoggedSets: 0 });
+    expect(skipped).toMatchObject({ ok: false, error: { code: 'discard_unconfirmed' } });
+    const viaSessions = await s.sessions.discard(sessionId, { required: false, loggedSets: 0, expectedVersion: current.session.version }, h.ids());
+    expect(viaSessions).toMatchObject({ ok: false, error: { code: 'discard_unconfirmed' } });
+    expect((await stored(s, sessionId)).session.status).toBe('active');
+    expect(await storedSets(s, sessionId)).toEqual(before);
+  });
+
+  // The reducer is the guard (above); this is a cheap extra check that each screen shows the prompt.
   it('every screen that discards a workout asks discardConfirmation first (source check)', () => {
     const SRC = join(import.meta.dirname, '../src');
     const files = (dir: string): string[] =>
@@ -233,7 +253,7 @@ describe('(e) Discard needs a confirmation or Undo (LiftTrack: "no second step")
         if (statSync(p).isDirectory()) return files(p);
         return /\.(ts|tsx)$/.test(name) ? [p] : [];
       });
-    const discarding = files(join(SRC, 'screens')).filter((f) => readFileSync(f, 'utf8').includes("type: 'discard'"));
+    const discarding = files(join(SRC, 'screens')).filter((f) => /type: 'discard'|discardCommand\(/.test(readFileSync(f, 'utf8')));
     expect(discarding.map((f) => relative(SRC, f)).sort()).toEqual(['screens/TodayScreen.tsx', 'screens/workout/WorkoutScreen.tsx']);
     for (const f of discarding) expect(readFileSync(f, 'utf8'), relative(SRC, f)).toContain('discardConfirmation(');
   });

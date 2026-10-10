@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 
-import { discardConfirmation, formatDuration, formatMinutes, reasonsText, scoreText, toMs, type TodayMain } from '@fizz/domain';
+import { discardCommand, discardConfirmation, formatDuration, formatMinutes, reasonsText, scoreText, toMs, type TodayMain } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import { nowMs as clockNow } from '../clock';
@@ -123,10 +123,13 @@ export function TodayScreen() {
   }
 
   async function discardEmpty(main: Extract<TodayMain, { kind: 'stale' }>) {
-    const r = await services.workout.dispatch(main.sessionId, { type: 'discard', at: services.now(), opId: newUuid(), expectedVersion: main.sessionVersion });
+    // Offered only when nothing is logged, so 0 logged sets are confirmed; if one was logged
+    // meanwhile, the reducer refuses it (discard_unconfirmed) and Today reloads.
+    const ask = { required: false, loggedSets: 0, expectedVersion: main.sessionVersion } as const;
+    const r = await services.workout.dispatch(main.sessionId, discardCommand(ask, { opId: newUuid(), at: services.now() }));
     if (!r.ok) {
       // Review N8: a stale version reloads rather than failing the same way again.
-      setError(r.error.code === 'stale_version' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}`);
+      setError(r.error.code === 'stale_version' || r.error.code === 'discard_unconfirmed' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}`);
       reload();
       return;
     }
@@ -370,10 +373,10 @@ export function TodayScreen() {
             // One tested rule for every Discard (competitor-failure pack (e)): confirm whenever a set is logged.
             const ask = discardConfirmation(target);
             const go = () => {
-              void services.workout.dispatch(target.session.id, { type: 'discard', at: services.now(), opId: newUuid(), expectedVersion: ask.expectedVersion }).then((r) => {
+              void services.workout.dispatch(target.session.id, discardCommand(ask, { opId: newUuid(), at: services.now() })).then((r) => {
                 setFinishFor(null);
                 if (!r.ok) {
-                  setError(r.error.code === 'stale_version' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}`);
+                  setError(r.error.code === 'stale_version' || r.error.code === 'discard_unconfirmed' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}`);
                   reload();
                   return;
                 }

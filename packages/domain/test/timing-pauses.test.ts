@@ -120,7 +120,7 @@ describe('duration counts only pauses inside the start→end window (review R1, 
   it('discard closes an open pause so the record stays consistent', () => {
     let s = withSetAt(10);
     s = apply(s, { type: 'pause', at: at(20 * MIN), opId: 'p' });
-    const r = expectOk(reduceSession(s, { type: 'discard', at: at(30 * MIN), opId: 'd', expectedVersion: s.session.version }));
+    const r = expectOk(reduceSession(s, { type: 'discard', at: at(30 * MIN), opId: 'd', expectedVersion: s.session.version, confirmedLoggedSets: 1 }));
     expect(r.state.session).toMatchObject({ pause: null, pauses: [{ startUtc: at(20 * MIN).utc, endUtc: at(30 * MIN).utc }] });
   });
 });
