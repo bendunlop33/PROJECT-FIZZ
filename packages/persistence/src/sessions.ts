@@ -59,6 +59,8 @@ function sessionRow(a: SessionAggregate): Record<string, SqlValue> {
     check_in_id: s.checkIn?.kind === 'answered' ? s.checkIn.checkInId : null,
     import_job_id: s.importJobId ?? null,
     local_date: s.localDate ?? null,
+    finish_by_utc: s.finishBy?.utc ?? null,
+    finish_by_tz: s.finishBy?.tz ?? null,
   };
 }
 
@@ -205,6 +207,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       pauses: pauses.map((p) => ({ startUtc: p.start_utc, endUtc: p.end_utc })),
       lastActivityAtUtc: s.last_activity_at_utc,
       checkIn: parseJsonOrNull(T, id, 'check_in', s.check_in ?? null),
+      ...(s.finish_by_utc === null || s.finish_by_utc === undefined ? {} : { finishBy: { utc: s.finish_by_utc, tz: s.finish_by_tz } }),
     },
     exercises: exercises.map((e) => ({
       id: e.id,
