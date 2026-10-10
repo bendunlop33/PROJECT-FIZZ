@@ -29,7 +29,7 @@
       "ease": "smooth"
     },
     {
-      "t": 0.3074, "pass": true, "label": "Halfway", "caption": "Knees in line with the toes, feet flat",
+      "t": 0.3245, "pass": true, "label": "Halfway", "caption": "Knees in line with the toes, feet flat",
       "props": { "press": { "s": 0.0815 } },
       "ease": "smooth"
     },
@@ -38,7 +38,7 @@
       "props": { "press": { "s": 0.03 } },
       "holdMs": 200, "ease": "smooth"
     },
-    { "t": 0.8079, "sameAs": 1, "caption": "Push through the whole foot", "ease": "smooth" },
+    { "t": 0.7972, "sameAs": 1, "caption": "Push through the whole foot", "ease": "smooth" },
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "press", "showIn": ["static"] }],
