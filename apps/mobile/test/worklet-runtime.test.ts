@@ -5,8 +5,8 @@
  * runtime evaluates on its own, with module values only through
  * `this.__closure`, which the generated body destructures. A parameter default
  * can't see the body's bindings, so `maxPasses = MAX_AUTOPLAY_PASSES` threw a
- * ReferenceError on the first frame of every guide; Worklets reports UI-thread
- * errors as fatal, so the app closed. Plain Node tests call the source
+ * ReferenceError on the first frame of every guide; uncaught on the UI thread,
+ * it aborted the release build natively, so the app closed. Plain Node tests call the source
  * functions and never saw it. These tests run the real plugin over every app
  * file with a worklet and check the generated code itself.
  */

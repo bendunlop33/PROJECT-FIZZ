@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  createContainmentScopes,
   createGlobalErrorHandler,
   errorOutcome,
   errorStatusDetail,
   formatErrorReport,
+  GUIDE_CLOSE_NAME,
   MAX_MESSAGE_CHARS,
   MAX_STACK_CHARS,
   parseErrorRecord,
+  parseGuideBreadcrumb,
+  recordFromGuideBreadcrumb,
   toErrorRecord,
+  toGuideBreadcrumb,
   type ErrorContext,
   type ErrorRecord,
 } from '../src/diagnostics/error-record';
@@ -19,18 +22,16 @@ const CTX: ErrorContext = { nowUtc: '2026-10-10T15:00:00.000Z', tz: 'Europe/Lond
 function harness() {
   const saved: ErrorRecord[] = [];
   const passedOn: { error: unknown; isFatal: boolean | undefined }[] = [];
-  const scopes = createContainmentScopes();
   const handler = createGlobalErrorHandler({
     previous: (error, isFatal) => {
       passedOn.push({ error, isFatal });
     },
-    scopes,
     context: () => CTX,
     save: (r) => {
       saved.push(r);
     },
   });
-  return { saved, passedOn, scopes, handler };
+  return { saved, passedOn, handler };
 }
 
 describe('error records', () => {
@@ -49,7 +50,7 @@ describe('error records', () => {
     expect(r.stack?.length).toBe(MAX_STACK_CHARS);
   });
 
-  it('handles thrown non-errors and error-like objects (Worklets forwards plain objects)', () => {
+  it('handles thrown non-errors and error-like objects', () => {
     expect(toErrorRecord('boom', false, null, CTX)).toMatchObject({ name: 'Thrown string', message: 'boom', stack: null });
     expect(toErrorRecord(undefined, false, null, CTX)).toMatchObject({ name: 'Thrown undefined', message: 'undefined' });
     expect(toErrorRecord({ name: 'TypeError', message: 'x is null', stack: 'at worklet' }, true, null, CTX)).toMatchObject({ name: 'TypeError', message: 'x is null', stack: 'at worklet' });
@@ -95,63 +96,76 @@ describe('global error handler', () => {
     expect(h.passedOn).toEqual([{ error: e, isFatal: true }]);
   });
 
-  it('contains a fatal error while the guide scope is open: the fallback runs once, the app stays open', () => {
+  it('never swallows an error: fatal or not, it is recorded then passed on unchanged (review B1)', () => {
     const h = harness();
-    const told: unknown[] = [];
-    const close = h.scopes.open('guide', (e) => told.push(e));
-    const e = new ReferenceError('MAX_AUTOPLAY_PASSES is not defined');
-    h.handler(e, true);
-    h.handler(e, true); // the next frame, before the player unmounts
-    expect(h.passedOn).toEqual([]);
-    expect(told).toEqual([e]);
-    expect(h.saved.map((r) => r.containedBy)).toEqual(['guide', 'guide']);
-    expect(h.saved[0]?.fatal).toBe(true);
-    close();
-    expect(h.scopes.size).toBe(0);
-    h.handler(e, true);
-    expect(h.passedOn).toHaveLength(1);
+    const fatal = new Error('rest alert callback threw');
+    const soft = new Error('soft');
+    h.handler(fatal, true);
+    h.handler(soft, false);
+    h.handler(soft);
+    expect(h.passedOn).toEqual([
+      { error: fatal, isFatal: true },
+      { error: soft, isFatal: false },
+      { error: soft, isFatal: undefined },
+    ]);
+    expect(h.saved.map((r) => [r.fatal, r.containedBy])).toEqual([
+      [true, null],
+      [false, null],
+      [false, null],
+    ]);
   });
 
-  it('a failing fallback or save never turns into a different outcome', () => {
-    const scopes = createContainmentScopes();
-    scopes.open('guide', () => {
-      throw new Error('fallback broke');
-    });
+  it('a failing save still passes the error on', () => {
     const passedOn: unknown[] = [];
     const handler = createGlobalErrorHandler({
       previous: (e) => passedOn.push(e),
-      scopes,
       context: () => CTX,
       save: () => {
         throw new Error('disk full');
       },
     });
+    const e = new Error('x');
     expect(() => {
-      handler(new Error('x'), true);
+      handler(e, true);
     }).not.toThrow();
-    expect(passedOn).toEqual([]);
-  });
-
-  it('the newest scope takes the error; closing one leaves the other', () => {
-    const scopes = createContainmentScopes();
-    const a: unknown[] = [];
-    const b: unknown[] = [];
-    const closeA = scopes.open('a', (e) => a.push(e));
-    const closeB = scopes.open('b', (e) => b.push(e));
-    expect(scopes.take(1)).toBe('b');
-    closeB();
-    closeB(); // idempotent
-    expect(scopes.take(2)).toBe('a');
-    closeA();
-    expect(scopes.take(3)).toBeNull();
-    expect(a).toEqual([2]);
-    expect(b).toEqual([1]);
+    expect(passedOn).toEqual([e]);
   });
 
   it('works without a previous handler', () => {
-    const handler = createGlobalErrorHandler({ previous: null, scopes: createContainmentScopes(), context: () => CTX, save: () => undefined });
+    const handler = createGlobalErrorHandler({ previous: null, context: () => CTX, save: () => undefined });
     expect(() => {
       handler(new Error('x'));
     }).not.toThrow();
+  });
+});
+
+describe('How to breadcrumb (a native close leaves no JS error)', () => {
+  const crumb = toGuideBreadcrumb(CTX);
+
+  it('round-trips and rejects anything else', () => {
+    expect(parseGuideBreadcrumb(JSON.stringify(crumb))).toEqual(crumb);
+    expect(parseGuideBreadcrumb(null)).toBeNull();
+    expect(parseGuideBreadcrumb('{')).toBeNull();
+    expect(parseGuideBreadcrumb('{"v":1,"atUtc":"soon"}')).toBeNull();
+    expect(parseGuideBreadcrumb('{"v":2,"atUtc":"2026-10-10T15:00:00.000Z"}')).toBeNull();
+  });
+
+  it('a leftover breadcrumb with no later JS error becomes a fatal Last error on How to', () => {
+    const r = recordFromGuideBreadcrumb(crumb, null);
+    expect(r).toMatchObject({ name: GUIDE_CLOSE_NAME, fatal: true, containedBy: null, screen: 'HowTo', atUtc: CTX.nowUtc, build: '0.1.0 (84)', stack: null });
+    expect(r === null ? '' : errorOutcome(r)).toBe('The app closed');
+    expect(r?.message).toContain('Exercise guide animations off');
+    // An older error from before How to opened doesn't explain this close.
+    const older = toErrorRecord(new Error('old'), false, null, { ...CTX, nowUtc: '2026-10-09T10:00:00.000Z' });
+    expect(recordFromGuideBreadcrumb(crumb, older)?.name).toBe(GUIDE_CLOSE_NAME);
+    // It survives the file round trip App status reads.
+    expect(r === null ? null : parseErrorRecord(JSON.stringify(r))).toEqual(r);
+  });
+
+  it('a JS error recorded at or after the breadcrumb already explains the close', () => {
+    const later = toErrorRecord(new Error('js fatal'), true, null, { ...CTX, nowUtc: '2026-10-10T15:00:05.000Z' });
+    expect(recordFromGuideBreadcrumb(crumb, later)).toBeNull();
+    expect(recordFromGuideBreadcrumb(crumb, { ...later, atUtc: crumb.atUtc })).toBeNull();
+    expect(recordFromGuideBreadcrumb(null, null)).toBeNull();
   });
 });

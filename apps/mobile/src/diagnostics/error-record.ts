@@ -4,13 +4,18 @@
  * Pure parts, unit-tested in Node; `crash-capture.ts` binds them to React
  * Native's global error handler and a small file in the app's container.
  *
- * - Every JS error that reaches the global handler, fatal or not (including
- *   errors Worklets forwards from the UI thread), is written as the
- *   "last error" before anything else happens, so it survives the app going
- *   down. Profile › App status shows it with a way to copy it.
- * - While a feature that may fail without harm (the How to guide player) has
- *   a containment scope open, an error is reported to that scope and kept
- *   non-fatal: the feature falls back (cues only) instead of the app closing.
+ * - Every JS error that reaches the global handler, fatal or not, is written
+ *   as the "last error" and then passed on to React Native unchanged, so it
+ *   survives the app going down. Profile › App status shows it with a way to
+ *   copy it.
+ * - A feature that catches its own error (the guide player's boundary, a
+ *   guarded load) records it with `containedBy` set: the app stayed open.
+ * - Animation-thread (worklet) errors never reach the JS handler in a release
+ *   build: Worklets 0.10 forwards them only in debug builds (`#ifndef
+ *   NDEBUG`), and in release an uncaught one aborts the app natively. They are
+ *   recorded only when the worklet catches them itself and reports through
+ *   `scheduleOnRN` (ADR 0018). The How to breadcrumb below at least shows that
+ *   the app closed while a guide was playing.
  *
  * Privacy: the record holds the error's name, message and stack, the screen
  * (route name only, never its parameters), the time and the build. Nothing
@@ -30,7 +35,7 @@ export interface ErrorRecord {
   stack: string | null;
   /** What React Native would have done: true closes the app. */
   fatal: boolean;
-  /** A containment scope took it (e.g. `guide`): the app stayed open. */
+  /** The feature that caught it itself (e.g. `guide`, `how-to`): the app stayed open. */
   containedBy: string | null;
   /** Route name when it happened, if known. */
   screen: string | null;
@@ -129,78 +134,77 @@ export function formatErrorReport(r: ErrorRecord): string {
   ].join('\n');
 }
 
-/**
- * Open containment scopes. The newest scope takes an error; it is called at
- * most once (it should unmount whatever failed, which closes the scope).
- */
-export interface ContainmentScopes {
-  /** Open a scope; returns its close function. */
-  open: (id: string, onError: (error: unknown) => void) => () => void;
-  /** Hand an error to the newest open scope: its id, or null if none is open. */
-  take: (error: unknown) => string | null;
-  readonly size: number;
-}
-
-export function createContainmentScopes(): ContainmentScopes {
-  const scopes: { id: string; onError: (error: unknown) => void; told: boolean }[] = [];
-  return {
-    open(id, onError) {
-      const scope = { id, onError, told: false };
-      scopes.push(scope);
-      return () => {
-        const i = scopes.indexOf(scope);
-        if (i >= 0) scopes.splice(i, 1);
-      };
-    },
-    take(error) {
-      const scope = scopes.at(-1);
-      if (scope === undefined) return null;
-      if (!scope.told) {
-        scope.told = true;
-        try {
-          scope.onError(error);
-        } catch {
-          // The fallback itself failing must not turn a contained error into a crash.
-        }
-      }
-      return scope.id;
-    },
-    get size() {
-      return scopes.length;
-    },
-  };
-}
-
 export type GlobalHandler = (error: unknown, isFatal?: boolean) => void;
 
 export interface HandlerDeps {
   /** React Native's handler from before (shows the red box in dev, closes the app on a fatal in release). */
   previous: GlobalHandler | null;
-  scopes: ContainmentScopes;
   context: () => ErrorContext;
   /** Save the record synchronously (the app may be gone right after). Errors are ignored. */
   save: (record: ErrorRecord) => void;
 }
 
 /**
- * The app-wide handler: record, then either contain (a scope is open) or
- * pass on to React Native's own handler unchanged.
+ * The app-wide handler: record, then pass on to React Native's own handler
+ * unchanged. It never swallows an error: a fatal error elsewhere in the app
+ * (a rest alert, a timer, a save) must close the app as React Native
+ * decides, not be hidden behind a feature's fallback (review B1).
  */
 export function createGlobalErrorHandler(deps: HandlerDeps): GlobalHandler {
   return (error, isFatal) => {
-    const fatal = isFatal === true;
-    let containedBy: string | null;
     try {
-      containedBy = deps.scopes.take(error);
-    } catch {
-      containedBy = null;
-    }
-    try {
-      deps.save(toErrorRecord(error, fatal, containedBy, deps.context()));
+      deps.save(toErrorRecord(error, isFatal === true, null, deps.context()));
     } catch {
       // Recording is best effort; it must never change what happens next.
     }
-    if (containedBy !== null) return;
     deps.previous?.(error, isFatal);
   };
+}
+
+/**
+ * "How to was open" breadcrumb (review S1). In a release build an uncaught
+ * error on the animation (UI) thread aborts the app natively, so the JS
+ * handler above never runs and nothing is recorded. The breadcrumb file is
+ * written while the guide player is on screen with the app active, and
+ * removed when it unmounts or the app goes to the background. One still
+ * there at the next launch means the app closed while How to was open.
+ */
+export const GUIDE_OPEN_FILE = 'guide-open.json';
+
+export interface GuideBreadcrumb {
+  v: 1;
+  atUtc: string;
+  tz: string | null;
+  build: string | null;
+}
+
+export function toGuideBreadcrumb(ctx: ErrorContext): GuideBreadcrumb {
+  return { v: 1, atUtc: ctx.nowUtc, tz: ctx.tz, build: ctx.build };
+}
+
+/** The saved breadcrumb, or null if missing or unreadable (never throws). */
+export function parseGuideBreadcrumb(text: string | null): GuideBreadcrumb | null {
+  if (text === null) return null;
+  try {
+    const j = JSON.parse(text) as Record<string, unknown> | null;
+    if (typeof j !== 'object' || j === null || j.v !== 1 || typeof j.atUtc !== 'string') return null;
+    toMs(j.atUtc);
+    return { v: 1, atUtc: j.atUtc, tz: str(j.tz), build: str(j.build) };
+  } catch {
+    return null;
+  }
+}
+
+export const GUIDE_CLOSE_NAME = 'Closed during How to';
+export const GUIDE_CLOSE_MESSAGE =
+  'The app closed while How to was open, and no error reached the app. It was most likely a native or animation-thread crash (or iOS ended the app). Try Profile › Developer › Exercise guide animations off.';
+
+/**
+ * At launch, a leftover breadcrumb as a Last error, unless a JS error was
+ * recorded at or after it (that error already explains the close).
+ */
+export function recordFromGuideBreadcrumb(crumb: GuideBreadcrumb | null, last: ErrorRecord | null): ErrorRecord | null {
+  if (crumb === null) return null;
+  if (last !== null && toMs(last.atUtc) >= toMs(crumb.atUtc)) return null;
+  return { v: 1, name: GUIDE_CLOSE_NAME, message: GUIDE_CLOSE_MESSAGE, stack: null, fatal: true, containedBy: null, screen: 'HowTo', atUtc: crumb.atUtc, tz: crumb.tz, build: crumb.build };
 }

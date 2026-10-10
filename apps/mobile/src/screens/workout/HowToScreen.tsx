@@ -1,9 +1,9 @@
 import { useIsFocused, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, View, useWindowDimensions } from 'react-native';
+import { AppState, ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { openContainment, recordContainedError } from '../../diagnostics/crash-capture';
+import { clearGuideOpen, markGuideOpen, recordContainedError } from '../../diagnostics/crash-capture';
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { GuideBoundary } from '../../guide/GuideBoundary';
 import { MuscleFocusLegend } from '../../guide/MuscleFocusLegend';
@@ -63,6 +63,20 @@ function AvoidList({ items }: { items: readonly string[] }) {
   );
 }
 
+/** The app is in the foreground ('inactive', e.g. the app switcher, counts as not: it may be ended from there). */
+function useAppIsActive(): boolean {
+  const [active, setActive] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      setActive(s === 'active');
+    });
+    return () => {
+      sub.remove();
+    };
+  }, []);
+  return active;
+}
+
 /**
  * How to (ADR 0013, guides v2): the exercise's animated guide with the
  * muscles to feel it in, What not to do, key positions, cues and safety
@@ -97,15 +111,17 @@ export function HowToScreen() {
   useEffect(() => {
     if (player?.ok === false) recordContainedError(player.error, 'guide');
   }, [player]);
-  // While the player is mounted, any JS error (including a UI-thread error Worklets forwards as fatal) falls back to
-  // the cues here instead of closing the app. The global handler records it as Last error (Profile › App status).
-  // A layout effect, so the scope is open before the player's own (passive) effects start baking.
+  // The guide's own JS errors are contained above (GuideBoundary, `onError`, the player's `safely`); its worklets catch
+  // their own (ADR 0018). Nothing else is intercepted: an error elsewhere in the app takes React Native's normal path
+  // (review B1). A native or animation-thread abort can't be caught at all, so while the player is on screen and the
+  // app is active a breadcrumb file says so; one left at the next launch becomes Last error (review S1).
+  const appActive = useAppIsActive();
+  const crumb = playerShown && appActive;
   useLayoutEffect(() => {
-    if (!playerShown) return;
-    return openContainment('guide', () => {
-      setPlayerThrew(true);
-    });
-  }, [playerShown]);
+    if (!crumb) return;
+    markGuideOpen();
+    return clearGuideOpen;
+  }, [crumb]);
 
   // The player pauses once it is scrolled out of sight (battery during rest).
   const playerBottom = useRef(Number.POSITIVE_INFINITY);

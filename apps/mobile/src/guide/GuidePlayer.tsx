@@ -132,7 +132,7 @@ function useBakedPictures(
  */
 function AnimatedArt({ frames, first, frame }: { frames: readonly SkPicture[]; first: SkPicture; frame: SharedValue<number> }) {
   const picture = useDerivedValue(() => {
-    // A throw here is on the UI thread, where Worklets reports it as fatal: hold the poster instead.
+    // A throw here is on the UI thread: uncaught, it aborts a release build natively (ADR 0018). Hold the poster instead.
     try {
       return frames[Math.min(frame.value, frames.length - 1)] ?? first;
     } catch {
@@ -243,7 +243,7 @@ export function GuidePlayer({ guide, size, visible, footer, stillsOnly = false }
     (info: FrameInfo) => {
       'worklet';
       if (done.value) return;
-      // Nothing may escape: Worklets reports a UI-thread throw as fatal and the app closes (build 83).
+      // Nothing may escape: an uncaught UI-thread throw aborts a release build natively, no JS handler runs (ADR 0018).
       // Stop the clock and hand the message to JS, where the player falls back to the cues.
       try {
         const step = advanceClock(elapsed.value, info.timeSincePreviousFrame, durationMs, loop);
