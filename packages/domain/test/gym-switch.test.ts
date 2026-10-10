@@ -15,7 +15,7 @@ import {
   toHistorySessions,
   type GymSwitchProposal,
 } from '../src/index';
-import { at, id, idGen, kg, profile, routine, routineExercise, template, values } from './fixtures';
+import { at, dumbbells, id, idGen, kg, lb, profile, routine, routineExercise, template, values } from './fixtures';
 import {
   BENCH,
   CABLE_ROW,
@@ -455,6 +455,27 @@ describe('Summary and history after a switch (check 24)', () => {
     const incline = sum.exercises.find((e) => e.name === 'Incline DB press');
     expect(plain(incline?.results ?? '')).toBe('32.5×9 (Main Gym) · 20×12 · 20×11 (Hotel · Lisbon)');
     expect(sum.exercises.filter((e) => e.name === 'Incline DB press')).toHaveLength(1);
+  });
+
+  it('a kg→lb switch labels each part with its own unit, never the first part’s (review B2)', () => {
+    const US = id(5);
+    const usRack = dumbbells({ id: id(730), gymId: US, name: 'US dumbbells', unit: 'lb', loads: [10, 20, 30, 40, 50, 60, 70, 80] });
+    let s = benchTwoDone();
+    const incline1 = exerciseSets(s, INCLINE)[0]?.id ?? '';
+    s = apply(s, { type: 'set_active_set', at: at(305), opId: 'go-incline', setId: incline1, expectedVersion: s.session.version });
+    s = apply(s, logCmd(incline1, values(kg(32.5, 'per_hand'), 9), 310));
+    s = switched(s, propose(s, { id: US, equipment: [usRack] }), 320).state;
+    const next = exerciseSets(s, INCLINE).filter((x) => x.status === 'pending');
+    expect(rowOf(s, INCLINE, 1)).toMatchObject({ equipmentId: usRack.id, unit: 'lb' });
+    s = apply(s, logCmd(next[0]?.id ?? '', values(lb(70, 'per_hand'), 10), 500));
+    s = apply(s, { type: 'finish', at: at(900), opId: 'fin-us', expectedVersion: s.session.version, endedAt: null });
+    const sum = buildWorkoutSummary({ aggregate: s, nowMs: Date.parse(at(1000).utc), gymName: 'US Hotel', gymNames: { ...GYM_NAMES, [US]: 'US Hotel' }, history: {}, rules: {}, painFlags: [], checkIn: null, coach: 'not_connected' });
+    const incline = sum.exercises.find((e) => e.name === 'Incline DB press');
+    expect(incline?.setsText).toBe('2 sets');
+    expect(plain(incline?.results ?? '')).toBe('32.5×9 kg each (Main Gym) · 70×10 lb each (US Hotel)');
+    // Same unit across parts: today's text, one shared note.
+    const kgOnly = buildWorkoutSummary({ aggregate: finishedAcrossGyms(), nowMs: Date.parse(at(1000).utc), gymName: 'Hotel · Lisbon', gymNames: GYM_NAMES, history: {}, rules: {}, painFlags: [], checkIn: null, coach: 'not_connected' });
+    expect(kgOnly.exercises.find((e) => e.name === 'Incline DB press')?.setsText).toBe('3 sets (kg each)');
   });
 
   it('history keeps each part with its own equipment and gym, so comparisons never pair the two gyms', () => {

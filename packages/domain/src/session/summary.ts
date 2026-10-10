@@ -1,4 +1,4 @@
-import type { CheckIn, EquipmentInstance, PainFlag, ProgressionRule, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
+import type { CheckIn, EquipmentInstance, Load, PainFlag, ProgressionRule, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
 import { painMentionedNotFlagged, reasonsText, scoreText } from '../checkin';
 import type { RuleExerciseInfo } from '../default-rule';
 import { nextTargetsFor, unspecifiedPain } from '../next-target';
@@ -190,6 +190,11 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   const exerciseRows = [...blocks.values()].map((parts) => {
     const first = parts[0] as SessionExercise;
     const partResults: string[] = [];
+    // The units and conventions logged across the parts. When they differ (a kg→lb or
+    // plates→stack switch), each part says its own, never the first part's (review B2).
+    const blockDone = liveSets.filter((x) => parts.some((p) => p.id === x.sessionExerciseId) && x.status === 'completed' && x.actual !== null && isWork(x));
+    const keys = new Set(blockDone.map((x) => loadKey(x.actual?.load ?? null)).filter((k): k is string => k !== null));
+    const mixed = keys.size > 1;
     let n = 0;
     let skipped = 0;
     for (const ex of parts) {
@@ -198,16 +203,28 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
       const done = own.filter((x) => x.status === 'completed' && x.actual !== null && isWork(x));
       n += volume.get(ex.id)?.sets ?? done.length;
       skipped += own.filter((x) => x.status === 'skipped').length;
-      const text = done
-        .map((x) => (x.actual ? `${x.side === 'left' ? 'L ' : x.side === 'right' ? 'R ' : ''}${valuesText(x.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq, compact: true })}` : ''))
+      const partKeys = new Set(done.map((x) => loadKey(x.actual?.load ?? null)).filter((k): k is string => k !== null));
+      const partLoad = done.find((x) => x.actual?.load && loadKey(x.actual.load) !== null)?.actual?.load ?? null;
+      const partSuffix = mixed && partKeys.size === 1 && partLoad ? compactUnitWords(partLoad) : null;
+      // Mixed, and this part's unit can't be said once: each set says its own load in full.
+      const compact = !mixed || partSuffix !== null || partKeys.size === 0;
+      const body = done
+        .map((x) => (x.actual ? `${x.side === 'left' ? 'L ' : x.side === 'right' ? 'R ' : ''}${valuesText(x.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq, compact })}` : ''))
         .join(' · ');
+      const text = body === '' || partSuffix === null ? body : `${body}${NBSP}${partSuffix}`;
       if (text === '') continue;
       const gymId = eq?.gymId ?? null;
       const gym = multiGym && gymId !== null ? (input.gymNames?.[gymId] ?? (gymId === s.gymId ? input.gymName : null)) : null;
       partResults.push(gym ? `${text} (${gym})` : text);
     }
     const v = parts.length === 1 ? volume.get(first.id) : undefined;
-    const unitNote = first.loadConvention === 'per_hand' ? ` (${first.unit} each)` : first.loadConvention === 'stack' ? ` (${first.unit} stack)` : first.laterality === 'unilateral' ? ' (per side)' : '';
+    // One unit for the whole row: the one logged (else the row's); none when the parts differ.
+    const shared = mixed ? null : (blockDone.find((x) => x.actual?.load && loadKey(x.actual.load) !== null)?.actual?.load ?? null);
+    const unit = shared?.unit ?? first.unit;
+    const convention = shared?.convention ?? first.loadConvention;
+    const unitNote = mixed
+      ? first.laterality === 'unilateral' ? ' (per side)' : ''
+      : convention === 'per_hand' ? ` (${unit} each)` : convention === 'stack' ? ` (${unit} stack)` : first.laterality === 'unilateral' ? ' (per side)' : '';
     return {
       sessionExerciseId: first.id,
       exerciseId: first.exerciseId,
@@ -337,4 +354,24 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     },
     lastCompletedAtUtc: lastDone,
   };
+}
+
+/** `kg|per_hand`; null for no load or bodyweight (nothing to label). */
+function loadKey(load: Load | null): string | null {
+  if (load === null || load.convention === 'bodyweight') return null;
+  return `${load.unit}|${load.convention}`;
+}
+
+/** What follows a part's compact results when parts differ: `kg each`, `lb stack`, `kg`; null = say each load in full. */
+function compactUnitWords(load: Load): string | null {
+  switch (load.convention) {
+    case 'total':
+      return load.unit;
+    case 'per_hand':
+      return `${load.unit}${NBSP}each`;
+    case 'stack':
+      return `${load.unit}${NBSP}stack`;
+    default:
+      return null;
+  }
 }
