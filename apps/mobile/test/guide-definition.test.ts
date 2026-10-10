@@ -144,8 +144,8 @@ describe('How to legend (§4.11.8, D12–D13)', () => {
     for (const a11y of [{ increaseContrast: true }, { differentiateWithoutColor: true }]) {
       expect(buildHowToView(squat, src, { definition: 'tint', ...a11y }).definitionNote).toBeNull();
     }
-    // The player failed: nothing is drawn, so the standalone legend has no faint-violet line.
-    expect(howToLayout(v, true).standaloneLegend.map((l) => l.kind)).toEqual(['most', 'also', 'notShown']);
+    // The player failed: nothing is drawn, so the standalone legend has no faint-violet line and no Not shown line.
+    expect(howToLayout(v, true).standaloneLegend.map((l) => l.kind)).toEqual(['most', 'also']);
   });
 
   it('no copy on How to calls the faint groups inactive, unused or resting (D13)', () => {

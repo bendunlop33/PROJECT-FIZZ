@@ -214,8 +214,9 @@ export interface HowToLayout {
  */
 export function howToLayout(view: HowToView, playerFailed: boolean): HowToLayout {
   const notices = view.notice === null ? [] : [view.notice];
-  // Without the player nothing is coloured: no swatches, and no faint-violet line.
-  const standaloneLegend = view.legend.filter((l) => l.kind !== 'definition').map((l) => ({ ...l, swatch: false }));
+  // Without the player nothing is coloured: no swatches, no faint-violet line, and no `Not shown from this side` line,
+  // since there is no figure and so no side (guides v2 review S4).
+  const standaloneLegend = view.legend.filter((l) => l.kind !== 'definition' && l.kind !== 'notShown').map((l) => ({ ...l, swatch: false }));
   if (view.guide === null) return { showPlayer: false, standaloneLegend, notices, textDraftLabel: view.textDraftLabel };
   if (!playerFailed) return { showPlayer: true, standaloneLegend: [], notices, textDraftLabel: null };
   const stops = view.guide.stops.length > 0;

@@ -934,6 +934,7 @@ v1 states (exercise-library.md §8.4) all still apply. Additions and changes:
 | Entry lists no muscles (custom or incomplete) | No legend and no colour |
 | No guide, rich cues only | Legend lines without swatches under the header; `What not to do` card; the rest of the cues |
 | Guide unreadable, entry readable | v1 notice; legend lines without swatches; `What not to do`; cues |
+| Player failed (Skia or a bake threw) | `The animated guide couldn’t be shown…` notice; `Feel it most` / `Also works` lines without swatches, and **no** `Not shown` or faint-violet line (no figure, so no side; guides v2 review S4); `What not to do`; cues |
 | Entry unreadable, guide readable | Figure with **no muscle colour** (no source of truth); v1 P7 notice; no legend, no card |
 | Faults empty | No `What not to do` card |
 | Faults not yet rewritten | Shown as written, under `What not to do` |

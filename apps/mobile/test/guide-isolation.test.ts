@@ -119,7 +119,9 @@ describe('How to fallback when the player fails', () => {
     const failed = howToLayout(squat, true);
     expect(failed).toMatchObject({ showPlayer: false, notices: ['The animated guide couldn’t be shown. The cues below still apply.'], textDraftLabel: 'Draft' });
     // The legend moves out of the (gone) player card, without swatches: nothing on screen is coloured.
-    expect(failed.standaloneLegend.map((l) => l.kind)).toEqual(['most', 'also', 'notShown']);
+    // `Not shown from this side` goes too: with no figure there is no side (guides v2 review S4).
+    expect(squat.legend.map((l) => l.kind)).toEqual(['most', 'also', 'notShown']);
+    expect(failed.standaloneLegend.map((l) => l.kind)).toEqual(['most', 'also']);
     expect(failed.standaloneLegend.every((l) => !l.swatch)).toBe(true);
   });
 
