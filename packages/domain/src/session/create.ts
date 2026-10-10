@@ -18,6 +18,7 @@ import type {
 import { isLoadAchievable, roundToAvailableLoad } from '../equipment';
 import { convertMassExactly } from '../units';
 import { resolveRestPreset } from '../rest';
+import { planTargetProvenance } from '../target-provenance';
 import { buildExecutionOrder } from './order';
 
 export type StartWarning =
@@ -151,6 +152,8 @@ export interface StartWorkoutInput {
 export interface StartWorkoutOutput {
   aggregate: SessionAggregate;
   warnings: StartWarning[];
+  /** The template each planned set came from (set ID → set template ID). */
+  setTemplateIds: Record<string, string>;
 }
 
 /**
@@ -164,6 +167,8 @@ export interface StartWorkoutOutput {
  * kind), targets are snapped and capped to it; otherwise that exercise's load
  * targets are dropped (reps kept): a load is never planned without equipment
  * to check it on (rule 4; competitor-failure pack (g)).
+ * Every set with a target records where it came from (`planned.provenance`,
+ * source `plan`, with any fit or drop as a guard note) for `Why?`.
  */
 export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
   const sessionId = input.newId();
@@ -171,6 +176,7 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
   const equipmentById = new Map(input.gymEquipment.map((e) => [e.id, e]));
   const exercises: SessionExercise[] = [];
   const sets: WorkoutSet[] = [];
+  const setTemplateIds: Record<string, string> = {};
 
   const routineExercises = input.routine ? [...input.routine.exercises].sort((a, b) => a.order - b.order) : [];
   routineExercises.forEach((rex, position) => {
@@ -217,8 +223,15 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
           ? { load: null, warning: { kind: 'target_dropped', setTemplateId: tpl.id, requested: tpl.targetLoad, reason: 'equipment_not_in_gym' } }
           : checked;
       if (planned.warning) warnings.push(planned.warning);
+      const hasTarget = tpl.targetLoad !== null || tpl.targetReps !== null || tpl.targetDurationS !== null;
+      const provenance =
+        hasTarget && input.routine
+          ? planTargetProvenance({ routineName: input.routine.name, at: input.at, requested: tpl.targetLoad, warning: planned.warning, equipment })
+          : null;
+      const setId = input.newId();
+      setTemplateIds[setId] = tpl.id;
       sets.push({
-        id: input.newId(),
+        id: setId,
         sessionId,
         sessionExerciseId,
         index,
@@ -232,6 +245,7 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
           durationS: tpl.targetDurationS,
           rpe: tpl.targetRpe,
           rir: tpl.targetRir,
+          ...(provenance !== null ? { provenance } : {}),
         },
         rest: resolveRestPreset({
           setType: tpl.setType,
@@ -285,6 +299,7 @@ export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
       revision: 1,
     },
     warnings,
+    setTemplateIds,
   };
 }
 

@@ -79,10 +79,26 @@ export function addDays(localDate: string, days: number): string {
   return `${String(t.getUTCFullYear()).padStart(4, '0')}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
 }
 
+/** Whole calendar days from `from` to `to` (`YYYY-MM-DD`; negative when `to` is earlier). Zone-free. */
+export function daysBetween(from: string, to: string): number {
+  const utc = (date: string) => {
+    const [y, m, d] = date.split('-').map(Number);
+    // eslint-disable-next-line no-restricted-globals -- arithmetic on calendar fields, not a clock read
+    return Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1);
+  };
+  return Math.round((utc(to) - utc(from)) / 86_400_000);
+}
+
 /** Monday–Sunday week containing `ms` in `tz`, as UTC bounds [start, end). */
 export function localWeekBounds(ms: number, tz: string): { startMs: number; endMs: number; mondayLocalDate: string } {
   const today = localDateOf(ms, tz);
   const back = WEEKDAYS.indexOf(weekdayOf(ms, tz));
   const monday = addDays(today, -back);
   return { startMs: localMidnightUtcMs(monday, tz), endMs: localMidnightUtcMs(addDays(monday, 7), tz), mondayLocalDate: monday };
+}
+
+/** `19:40`: the 24-hour local clock time of an instant in `tz` (design-system §3 times). */
+export function clockText(ms: number, tz: string): string {
+  const p = parts(ms, tz);
+  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
 }

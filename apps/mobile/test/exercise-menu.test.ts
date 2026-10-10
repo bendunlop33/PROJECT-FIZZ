@@ -20,6 +20,14 @@ describe('exercise ⋯ menu', () => {
     expect(m.options[m.cancelButtonIndex]).toBe('Cancel');
   });
 
+  it('with a coach change on the set: Undo coach change sits under How to, not red, and the rows below keep their actions', () => {
+    const m = exerciseMenu(true, true);
+    expect(m.options).toEqual(['How to', 'Undo coach change', 'Add set', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
+    expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['how_to', 'undo_coach', 'add_set', 'add_exercise', 'delete_set', 'skip_exercise', null]);
+    expect(m.destructiveButtonIndex.map((i) => m.options[i])).toEqual(['Delete this set', 'Skip exercise']);
+    expect(exerciseMenu(false, true).actionAt(0)).toBe('undo_coach');
+  });
+
   it('the bottom rows sit the same distance from the thumb in both shapes', () => {
     const a = exerciseMenu(false).options;
     const b = exerciseMenu(true).options;

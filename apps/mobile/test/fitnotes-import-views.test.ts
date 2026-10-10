@@ -783,7 +783,7 @@ describe('import preview wording', () => {
   it('explains every file it can’t preview', () => {
     expect(openErrorView({ kind: 'empty' })?.text).toBe('This file is empty.');
     expect(openErrorView({ kind: 'not_csv' })?.text).toBe('This isn’t a CSV file.');
-    expect(openErrorView({ kind: 'fitnotes_backup' })?.text).toBe('This looks like a FitNotes backup, not a CSV export. Export a CSV from FitNotes and choose that.');
+    expect(openErrorView({ kind: 'fitnotes_backup' })?.text).toBe('This is a FitNotes backup, not a CSV. In FitNotes, export a CSV and choose that.');
     expect(openErrorView({ kind: 'unknown_header', firstLine: 'a,b' })).toEqual({ text: 'GymSmarter doesn’t recognise this file’s columns yet. Nothing was guessed.', firstLine: 'a,b', sameFileJobId: null });
     expect(openErrorView({ kind: 'body_tracker', firstLine: 'Date,Weight' })?.text).toBe('This looks like a FitNotes Body Tracker export. Choose the Workout Data export.');
   });

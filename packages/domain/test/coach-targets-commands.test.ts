@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, type SessionAggregate, type SessionCommand } from '@fizz/schemas';
-import { buildActiveSetView, reduceSession } from '../src/index';
+import { buildActiveSetView, explainTarget, reduceSession } from '../src/index';
 import { at, id, kg, lb, values } from './fixtures';
 import { apply, BENCH, expectError, expectOk, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
@@ -102,5 +102,30 @@ describe('revert_target_adjustment (Undo)', () => {
     // Reverting the newer one goes back to the older coach target, with its own provenance.
     const back = expectOk(reduceSession(s, revert({ opId: 'undo:3', actionId: id(77_002) }))).state;
     expect(back.sets.find((x) => x.id === b2.id)?.planned).toMatchObject({ load: kg(95), source: 'coach', coach: { actionId: ACTION } });
+  });
+});
+
+describe('Why? on a coach target (active-workout §2.12, ADR 0019 §4)', () => {
+  it('today’s change: set by the coach, its reason in quotes, Last time kept; Undo puts back the old target and its Why? exactly', () => {
+    const s = startFixture().state;
+    const { b2 } = bench(s);
+    const r = expectOk(reduceSession(s, adjust(s, { reason: 'Set 1 was RPE 10.', changes: [{ setId: b2.id, target: { load: kg(95), reps: null } }] })));
+    const planned = r.state.sets.find((x) => x.id === b2.id)?.planned;
+    expect(planned?.provenance).toMatchObject({ source: 'coach', coach: { actionId: ACTION, scope: 'today', reason: 'Set 1 was RPE 10.' }, basis: s.sets.find((x) => x.id === b2.id)?.planned.provenance?.basis ?? null });
+    expect(SessionAggregateSchema.safeParse(r.state).success).toBe(true);
+    const why = explainTarget({ aggregate: r.state, setId: b2.id, nowMs: 400_000, basisNow: null, gymNames: {}, painFlags: [], history: [] });
+    expect(why?.rows.find((x) => x.key === 'set_by')?.lines[0]).toMatch(/^Coach · /);
+    expect(why?.rows.find((x) => x.key === 'reason')?.lines).toEqual(['“Set 1 was RPE 10.”']);
+    const back = expectOk(reduceSession(r.state, revert()));
+    expect(back.state.sets.find((x) => x.id === b2.id)?.planned).toEqual(s.sets.find((x) => x.id === b2.id)?.planned);
+  });
+
+  it('no reason given: no Reason row, never a made-up one', () => {
+    const s = startFixture().state;
+    const { b2 } = bench(s);
+    const r = expectOk(reduceSession(s, adjust(s, { changes: [{ setId: b2.id, target: { load: kg(95), reps: null } }] })));
+    const why = explainTarget({ aggregate: r.state, setId: b2.id, nowMs: 400_000, basisNow: null, gymNames: {}, painFlags: [], history: [] });
+    expect(why?.rows.some((x) => x.key === 'reason')).toBe(false);
+    expect(why?.recorded).toBe(true);
   });
 });

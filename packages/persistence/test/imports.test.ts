@@ -319,7 +319,7 @@ describe('schema 3 migration (sessions rebuilt)', () => {
       await tx.run('INSERT INTO session_pauses (session_id, ordinal, start_utc, end_utc) VALUES (?, 0, ?, ?)', [s.id, s.startedAt.utc, s.startedAt.utc]);
     });
     const report = await migrate(driver);
-    expect(report).toMatchObject({ from: 2, to: latestVersion(), applied: [3, 4] });
+    expect(report).toMatchObject({ from: 2, to: latestVersion(), applied: MIGRATIONS.slice(2).map((m) => m.version) });
     expect(await driver.getAll('PRAGMA foreign_key_check')).toEqual([]);
     expect(await driver.getFirst('SELECT id, status, gym_id, revision, import_job_id, local_date FROM sessions')).toEqual({ id: s.id, status: 'finished', gym_id: s.gymId, revision: 9, import_job_id: null, local_date: null });
     expect(await driver.getFirst('SELECT count(*) AS n FROM session_pauses')).toEqual({ n: 1 });

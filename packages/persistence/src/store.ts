@@ -87,7 +87,7 @@ export async function openStore(driver: SqlDriver, options: OpenStoreOptions = {
     async listExerciseHistory(ownerId, exerciseId) {
       const sessions = await repos.sessions.listFinishedWithExercise(ownerId, exerciseId);
       return sessions
-        .flatMap((a) => toHistorySessions(a, exerciseId))
+        .flatMap((a) => toHistorySessions(a, exerciseId, { identity: true }))
         .sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
     },
     countRecords: () =>

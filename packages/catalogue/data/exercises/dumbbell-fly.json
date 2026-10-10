@@ -3,7 +3,7 @@
   "key": "dumbbell-fly",
   "tier": "basic",
   "name": "Dumbbell fly",
-  "aliases": ["Dumbbell flye", "DB fly", "Flat dumbbell fly", "Chest fly", "Dumbbell chest fly"],
+  "aliases": ["Dumbbell flye", "DB fly", "Flat dumbbell fly", "Dumbbell chest fly"],
   "family": "chest_fly",
   "movementPattern": "horizontal_push",
   "mechanic": "isolation",

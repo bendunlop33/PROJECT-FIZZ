@@ -184,10 +184,16 @@ describe('Pain from Adjust or the sheet: deterministic, offline, one flag', () =
     await setUpGym(h, s);
     const a = await s.pain.flagMovement(req);
     const b = await s.pain.flagMovement(req);
-    expect(a).toMatchObject({ ok: true });
-    expect(b.ok).toBe(true);
-    expect(await s.pain.flagMovement({ ...req, opId: 'pain-op-2' })).toEqual({ ok: true, flagIds: [] });
+    expect(a.ok && a.flags).toHaveLength(1);
+    // The same tap again finds its own flag: Undo can still take it back.
+    expect(b).toEqual(a);
+    if (!a.ok) throw new Error('not flagged');
+    expect(await s.pain.flagMovement({ ...req, opId: 'pain-op-2' })).toEqual({ ok: true, flags: [] });
     expect((await s.pain.active()).filter((f) => f.exerciseId === req.exerciseId)).toHaveLength(1);
+    // Undo retracts it (not a clear); flagging again later is a new flag.
+    expect(await s.pain.retract(a.flags, 'undo-1')).toEqual({ ok: true, stale: [] });
+    expect((await s.pain.active()).some((f) => f.exerciseId === req.exerciseId)).toBe(false);
+    expect((await s.pain.flagMovement({ ...req, opId: 'pain-op-3' })).ok).toBe(true);
     expect(model.requests).toHaveLength(0);
   });
 });
@@ -228,6 +234,11 @@ describe('C8: Summary next-session targets (D21) and routines', () => {
     if (!started.ok) throw new Error(started.error.message);
     const work = started.aggregate.sets.filter((x) => x.setType !== 'warmup');
     expect(work.every((x) => x.planned.source === 'coach' && x.planned.load?.value === 57.5)).toBe(true);
+    // Why? on the set: set by the coach after the workout it reviewed, its reason in quotes.
+    expect(work[0]?.planned.provenance).toMatchObject({ source: 'coach', coach: { scope: 'next_session', reason: 'Every set was RPE 10.' } });
+    const why = await s.workout.explainTarget(started.aggregate.session.id, work[0]?.id ?? '');
+    expect(why?.rows.find((r) => r.key === 'reason')?.lines).toEqual(['“Every set was RPE 10.”']);
+    expect(plain(why?.rows.find((r) => r.key === 'set_by')?.lines[0])).toBe('Coach · after your 10 Oct workout');
     await h.settle(s);
     const used = await s.coach.nextTargets(first);
     expect(used[0]?.usedBySessionId).toBe(started.aggregate.session.id);

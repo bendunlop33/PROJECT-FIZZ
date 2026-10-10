@@ -1,8 +1,10 @@
-import type { EquipmentInstance, Exercise, Load, PlannedSet, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, WeightUnit, WorkoutSet } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Load, PlannedSet, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, TargetProvenance, WeightUnit, WorkoutSet } from '@fizz/schemas';
 import { loadText, NBSP, repRangeText, targetShort } from '../display';
 import { getAchievableLoads, loadDirection, roundToAvailableLoad } from '../equipment';
+import { fitProvenance, startWarningNote } from '../target-provenance';
 import { convertMass } from '../units';
 import { startWorkout, type StartWarning, type StartWorkoutInput, type StartWorkoutOutput } from './create';
+import { setDisplayNumbers } from './order';
 import { GENERIC_WORKOUT_NAME } from './first-run';
 
 /**
@@ -26,6 +28,10 @@ import { GENERIC_WORKOUT_NAME } from './first-run';
  * against, a load in another unit is dropped with a note, never converted.
  * Rounding only goes toward easier: when the easiest load here is harder
  * than last time's, the load is dropped with a note instead.
+ *
+ * `Why?` (active-workout §2.12): each set records the set it was copied
+ * from (`planned.provenance`, source `repeat`), with its own fit or drop
+ * note, so the card can say where the number came from.
  */
 
 export interface RepeatInput {
@@ -84,6 +90,10 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   for (const sx of sorted) slots.set(sx.exerciseId, (slots.get(sx.exerciseId) ?? 0) + 1);
   const targetsFor = (exerciseId: string) => ((slots.get(exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(exerciseId));
 
+  // What each template came from: the done set it copies, or the built-in rule's planned set (Start next session),
+  // its equipment here, and why its load was dropped (if it was).
+  const copied = new Map<string, { from: { kind: 'copy'; set: WorkoutSet } | { kind: 'rule'; planned: PlannedSet }; equipmentId: string | null; eq: EquipmentInstance | null; dropNote: string | null }>();
+
   for (const sx of sorted) {
     const own = src.sets.filter((s) => s.sessionExerciseId === sx.id).sort((a, b) => a.index - b.index);
     // A left/right pair is one prescribed set: the companion row isn't copied again.
@@ -121,18 +131,31 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     let harderDropped: { requested: Load; lightest: Load } | null = null;
 
     const planned = targetsFor(sx.exerciseId);
-    const sources: { setType: SetType; load: Load | null; reps: { min: number; max: number } | null; durationS: number | null }[] =
+    type Source = { setType: SetType; load: Load | null; reps: { min: number; max: number } | null; durationS: number | null; from: { kind: 'copy'; set: WorkoutSet } | { kind: 'rule'; planned: PlannedSet } };
+    const sources: Source[] =
       planned && planned.length > 0
-        ? planned.map((p) => ({ setType: p.setType, load: p.planned.load, reps: p.planned.reps, durationS: p.planned.durationS }))
-        : doneWithReps.flatMap((s) => (s.actual === null ? [] : [{ setType: s.setType, load: s.actual.load, reps: s.actual.reps === null ? null : { min: s.actual.reps, max: s.actual.reps }, durationS: s.actual.durationS }]));
+        ? planned.map((p) => ({ setType: p.setType, load: p.planned.load, reps: p.planned.reps, durationS: p.planned.durationS, from: { kind: 'rule' as const, planned: p.planned } }))
+        : doneWithReps.flatMap((s) => (s.actual === null ? [] : [{ setType: s.setType, load: s.actual.load, reps: s.actual.reps === null ? null : { min: s.actual.reps, max: s.actual.reps }, durationS: s.actual.durationS, from: { kind: 'copy' as const, set: s } }]));
     const templates: SetTemplate[] = [];
     for (const a of sources) {
       const fit = fitLoadHere(equipmentMissing ? null : a.load, eq, sessionUnit);
       if (fit.unitDropped) unitDropped ??= fit.unitDropped;
       if (fit.harderDropped) harderDropped ??= fit.harderDropped;
       const targetLoad = fit.load;
+      // Why this set's load was dropped, for `Why?`: said against last time's set, or the built-in rule's target.
+      const was = a.from.kind === 'rule' ? 'the target' : 'last time';
+      const dropNote =
+        missingEq !== null && a.load !== null
+          ? `No load target: no ${missingEq.name} here.`
+          : fit.unitDropped
+            ? `No load target: ${was} was ${loadWord(fit.unitDropped)}, and there’s no equipment here to check a ${sessionUnit} load on.`
+            : fit.harderDropped
+              ? `No load target: ${was} was ${loadWord(fit.harderDropped.requested)}, and the easiest here is ${loadWord(fit.harderDropped.lightest)}.`
+              : null;
+      const templateId = input.newId();
+      copied.set(templateId, { from: a.from, equipmentId: sx.equipmentId, eq, dropNote });
       templates.push({
-        id: input.newId(),
+        id: templateId,
         setType: a.setType,
         targetLoad,
         targetReps: a.reps,
@@ -183,19 +206,61 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
 
   // Rounded or dropped loads become plain notes; every target is marked as copied.
   notes.push(...warningNotes(out.warnings, routineExercises, exercises));
+  const numbers = setDisplayNumbers(src.exercises, src.sets);
+  const warningOf = new Map(out.warnings.flatMap((w) => (w.kind === 'target_rounded' || w.kind === 'target_dropped' ? [[w.setTemplateId, w] as const] : [])));
+  const fromOf = (setId: string) => {
+    const templateId = out.setTemplateIds[setId];
+    return templateId === undefined ? undefined : { templateId, entry: copied.get(templateId) };
+  };
+  const provenanceOf = (setId: string): TargetProvenance | null => {
+    const found = fromOf(setId);
+    const entry = found?.entry;
+    if (found === undefined || entry === undefined) return null;
+    const w = warningOf.get(found.templateId);
+    const { from } = entry;
+    if (from.kind === 'rule') {
+      // A target from the built-in rule (Start next session, review B1.1): its own rule provenance, never `repeat`.
+      // Without one it reads `Not recorded`, rather than a made-up explanation.
+      const rule = from.planned.provenance;
+      if (rule === undefined) return null;
+      const fit = entry.dropNote ?? (w ? startWarningNote(w, entry.eq, 'Target') : null);
+      return fitProvenance(fit === null ? rule : { ...rule, guardNotes: [...rule.guardNotes, fit] });
+    }
+    if (from.set.actual === null) return null;
+    const number = numbers.get(from.set.id);
+    const notes = [entry.dropNote ?? (w ? startWarningNote(w, entry.eq, 'Last time') : null)].filter((n): n is string => n !== null);
+    return fitProvenance({
+      source: 'repeat',
+      setAt: input.at,
+      routineName: src.session.routineName,
+      requestedLoad: from.set.actual.load,
+      basis: {
+        sessionId: src.session.id,
+        performedAt: src.session.startedAt,
+        routineName: src.session.routineName,
+        gymId: src.session.gymId,
+        equipmentId: entry.equipmentId,
+        sets: [{ setId: from.set.id, version: from.set.version, ...(number !== undefined ? { number } : {}), setType: from.set.setType, side: from.set.side, values: from.set.actual }],
+      },
+      guardNotes: notes,
+    });
+  };
   const aggregate: SessionAggregate = {
     ...out.aggregate,
     session: { ...out.aggregate.session, routineId: null },
     sets: out.aggregate.sets.map((s) => {
-      const exerciseId = out.aggregate.exercises.find((e) => e.id === s.sessionExerciseId)?.exerciseId;
-      const given = exerciseId === undefined ? undefined : targetsFor(exerciseId);
-      const fromRule = (given?.length ?? 0) > 0;
-      // A coach target for next time (D21) keeps its source; the rest are the built-in rule's.
-      const fromCoach = fromRule && s.setType !== 'warmup' && (given?.some((g) => g.planned.source === 'coach') ?? false);
-      return { ...s, planned: { ...s.planned, source: fromCoach ? ('coach' as const) : fromRule ? ('built_in_rule' as const) : ('repeat' as const) } };
+      // The synthetic routine isn't the source: the set Ben did last time is, or the built-in rule's target.
+      const from = fromOf(s.id)?.entry?.from;
+      // A coach target for next time (D21) keeps its source and its own `Why?`.
+      const source = from?.kind === 'rule' ? (from.planned.source === 'coach' ? 'coach' : 'built_in_rule') : 'repeat';
+      const planned: PlannedSet = { ...s.planned, source };
+      const provenance = provenanceOf(s.id);
+      if (provenance === null) delete planned.provenance;
+      else planned.provenance = provenance;
+      return { ...s, planned };
     }),
   };
-  return { aggregate, warnings: out.warnings, notes, notCopied, empty: routineExercises.length === 0 };
+  return { aggregate, warnings: out.warnings, setTemplateIds: out.setTemplateIds, notes, notCopied, empty: routineExercises.length === 0 };
 }
 
 /**

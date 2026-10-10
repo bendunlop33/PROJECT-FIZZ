@@ -1,4 +1,5 @@
 import type { CheckIn, EquipmentInstance, PainFlag, ProgressionRule, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
+import { isSetCountable, notComparedText, withExclusionWords } from '../exclusions';
 import { painMentionedNotFlagged, reasonsText, scoreText } from '../checkin';
 import type { RuleExerciseInfo } from '../default-rule';
 import { nextTargetsFor, unspecifiedPain } from '../next-target';
@@ -202,7 +203,8 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
       name: ex.exerciseName,
       setsText: `${String(n)} ${n === 1 ? 'set' : 'sets'}${unitNote}`,
       results: done
-        .map((x) => (x.actual ? `${x.side === 'left' ? 'L ' : x.side === 'right' ? 'R ' : ''}${valuesText(x.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq, compact: true })}` : ''))
+        // §2.13: a flagged set is listed with its words (`100 × 8 · spotted`); it still counts in sets and volume (AW8).
+        .map((x) => (x.actual ? withExclusionWords(`${x.side === 'left' ? 'L ' : x.side === 'right' ? 'R ' : ''}${valuesText(x.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq, compact: true })}`, x.exclusions) : ''))
         .join(' · '),
       skipped: own.filter((x) => x.status === 'skipped').length,
       sides: v?.bySide && (v.bySide.left.reps !== v.bySide.right.reps) ? `L ${String(v.bySide.left.reps)} reps · R ${String(v.bySide.right.reps)} reps` : null,
@@ -223,9 +225,22 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     const others = (input.history[ex.exerciseId] ?? []).filter((h) => h.sessionId !== s.id && toMs(h.performedAtUtc) < toMs(s.startedAt.utc));
     const prev = lastComparableSession(others, ex);
     const direction = loadDirection(ex.loadConvention);
-    const today = topOf(todaySets.map((x) => x.actual).filter((a): a is NonNullable<typeof a> => a !== null), direction);
+    // §2.13: compare the best set Ben didn't leave out, on both sides.
+    const today = topOf(todaySets.filter((x) => isSetCountable(x, 'comparison')).map((x) => x.actual).filter((a): a is NonNullable<typeof a> => a !== null), direction);
+    if (prev && today === null) {
+      const top = topOf(todaySets.map((x) => ({ load: x.actual?.load ?? null, reps: x.actual?.reps ?? null, exclusions: x.exclusions })), direction);
+      // Like the other not-compared cases: a later exercise that does compare still wins.
+      comparison ??= { kind: 'not_comparable', text: notComparedText(top?.exclusions) };
+      continue;
+    }
     if (prev && today) {
-      const last = topOf(prev.sets.map((c) => c.values), direction);
+      const countedPrev = prev.sets.filter((c) => isSetCountable(c, 'comparison'));
+      if (countedPrev.length === 0) {
+        const top = topOf(prev.sets.map((c) => ({ ...c.values, exclusions: c.exclusions })), direction);
+        comparison ??= { kind: 'not_comparable', text: notComparedText(top?.exclusions) };
+        continue;
+      }
+      const last = topOf(countedPrev.map((c) => c.values), direction);
       if (last) {
         comparison = {
           kind: 'compared',

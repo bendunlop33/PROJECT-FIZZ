@@ -6,10 +6,13 @@ import {
   ExerciseSchema,
   MeasurementSchema,
   LoadSchema,
+  PainFlagSchema,
+  PlannedSetSchema,
   ProgressionRuleSchema,
   RpeSchema,
   SessionCommandSchema,
   SetTemplateSchema,
+  WorkoutSetSchema,
   ZonedTimestampSchema,
   validate,
 } from '../src/index';
@@ -232,5 +235,138 @@ describe('Exercise (ADR 0010 additive fields)', () => {
     expect(validate(CatalogueKeySchema, 'barbell-back-squat').ok).toBe(true);
     expect(validate(CatalogueKeySchema, 'Barbell Back Squat').ok).toBe(false);
     expect(validate(CatalogueKeySchema, 'barbell--squat').ok).toBe(false);
+  });
+});
+
+describe('PlannedSet provenance (Why?, active-workout §2.12)', () => {
+  const kg = (value: number) => ({ value, unit: 'kg', convention: 'total' });
+  const planned = { load: kg(102.5), reps: { min: 3, max: 6 }, durationS: null, rpe: null, rir: null, source: 'built_in_rule' };
+  const provenance = {
+    source: 'rule',
+    setAt: at,
+    routineName: null,
+    requestedLoad: null,
+    basis: {
+      sessionId: id(10),
+      performedAt: at,
+      routineName: 'Push A',
+      gymId: id(11),
+      equipmentId: id(12),
+      sets: [{ setId: id(13), version: 1, setType: 'working', side: null, values: { load: kg(100), reps: 6, durationS: null, rpe: 8, rir: null } }],
+    },
+    rule: { name: 'Double progression', decision: 'increase_load', summary: 'Increase to 102.5 kg for 3–6 reps.', facts: [] },
+    step: { from: kg(100), to: kg(102.5), pctChange: 2.5, smallest: true, equipmentKind: 'barbell' },
+    guardNotes: [],
+  };
+
+  it('is optional, so targets stored before it existed still read', () => {
+    expect(validate(PlannedSetSchema, planned).ok).toBe(true);
+  });
+
+  it('round-trips a stored provenance unchanged', () => {
+    const r = validate(PlannedSetSchema, { ...planned, provenance });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.provenance).toEqual(provenance);
+  });
+
+  it('rejects an unknown source or decision, and a basis load without its unit', () => {
+    expect(validate(PlannedSetSchema, { ...planned, provenance: { ...provenance, source: 'coach_guess' } }).ok).toBe(false);
+    expect(validate(PlannedSetSchema, { ...planned, provenance: { ...provenance, rule: { ...provenance.rule, decision: 'vibes' } } }).ok).toBe(false);
+    const noUnit = { ...provenance.basis, sets: [{ ...provenance.basis.sets[0], values: { load: { value: 100, convention: 'total' }, reps: 6, durationS: null, rpe: null, rir: null } }] };
+    expect(validate(PlannedSetSchema, { ...planned, provenance: { ...provenance, basis: noUnit } }).ok).toBe(false);
+  });
+});
+
+describe('PainFlag reviews (Still hurts?, active-workout §2.14.2)', () => {
+  const flag = {
+    ...meta,
+    exerciseId: id(20),
+    exerciseName: 'Overhead press',
+    area: 'shoulder',
+    source: 'check_in',
+    checkInId: id(21),
+    reportedAt: at,
+    status: 'active',
+    clearedAtUtc: null,
+    createdByOpId: 'pain-op',
+  };
+  const review = { at, answer: 'still_hurts', opId: 'review-1' };
+
+  it('reads a flag saved before reviews existed (no field at all)', () => {
+    const r = validate(PainFlagSchema, flag);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.reviews).toBeUndefined();
+  });
+
+  it('round-trips reviews, including one that was undone', () => {
+    const reviews = [review, { ...review, opId: 'review-2', undone: { atUtc: T, opId: 'undo-2' } }];
+    const r = validate(PainFlagSchema, { ...flag, reviews });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.reviews).toEqual(reviews);
+  });
+
+  it('records only `still_hurts`: a review is never a way to clear a flag', () => {
+    expect(validate(PainFlagSchema, { ...flag, reviews: [{ ...review, answer: 'better' }] }).ok).toBe(false);
+    expect(validate(PainFlagSchema, { ...flag, reviews: [{ ...review, answer: 'cleared' }] }).ok).toBe(false);
+  });
+
+  it('needs an operation ID and a zoned time on every review', () => {
+    expect(validate(PainFlagSchema, { ...flag, reviews: [{ at, answer: 'still_hurts' }] }).ok).toBe(false);
+    expect(validate(PainFlagSchema, { ...flag, reviews: [{ ...review, at: { utc: T } }] }).ok).toBe(false);
+  });
+});
+
+describe('Set exclusions (sets that don\'t count, active-workout §2.13)', () => {
+  const values = { load: { value: 100, unit: 'kg', convention: 'total' }, reps: 8, durationS: null, rpe: 9, rir: null };
+  const done = {
+    id: id(5),
+    sessionId: id(6),
+    sessionExerciseId: id(7),
+    index: 0,
+    setType: 'working',
+    status: 'completed',
+    side: null,
+    pairedWithSetId: null,
+    planned: { load: null, reps: null, durationS: null, rpe: null, rir: null },
+    rest: { seconds: 120, source: 'global_default', sourceLabel: 'Default' },
+    actual: values,
+    draft: null,
+    completedAt: at,
+    completedByOpId: 'log-1',
+    undoCount: 0,
+    flags: [],
+    edited: false,
+    version: 2,
+  };
+
+  it('reads a set saved before exclusions existed (no field): it counts', () => {
+    const r = validate(WorkoutSetSchema, done);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.exclusions).toBeUndefined();
+  });
+
+  it('accepts the four reasons, each at most once', () => {
+    expect(validate(WorkoutSetSchema, { ...done, exclusions: ['spotted', 'pain', 'technique', 'other_equipment'] }).ok).toBe(true);
+    expect(validate(WorkoutSetSchema, { ...done, exclusions: ['spotted', 'spotted'] }).ok).toBe(false);
+    expect(validate(WorkoutSetSchema, { ...done, exclusions: ['assisted'] }).ok).toBe(false);
+  });
+
+  it('only a logged set can carry exclusions', () => {
+    const pending = { ...done, status: 'pending', actual: null, completedAt: null, completedByOpId: null };
+    expect(validate(WorkoutSetSchema, { ...pending, exclusions: [] }).ok).toBe(true);
+    expect(validate(WorkoutSetSchema, { ...pending, exclusions: ['spotted'] }).ok).toBe(false);
+  });
+
+  it('correct_set and log_set take an exclusions list', () => {
+    const correct = { type: 'correct_set', at, opId: 'c', setId: id(5), expectedSetVersion: 2, patch: { exclusions: ['spotted'] } };
+    expect(validate(SessionCommandSchema, correct).ok).toBe(true);
+    expect(validate(SessionCommandSchema, { ...correct, patch: { exclusions: [] } }).ok).toBe(true);
+    expect(validate(SessionCommandSchema, { ...correct, patch: { exclusions: ['form'] } }).ok).toBe(false);
+    const log = { type: 'log_set', at, opId: 'l', setId: id(5), restTimerId: id(8), values, exclusions: ['technique'] };
+    expect(validate(SessionCommandSchema, log).ok).toBe(true);
+    // `pain` only through the correction service, which also flags the movement (AW7, review N3).
+    expect(validate(SessionCommandSchema, { ...log, exclusions: ['pain'] }).ok).toBe(false);
+    expect(validate(SessionCommandSchema, { ...log, exclusions: ['spotted', 'pain'] }).ok).toBe(false);
+    expect(validate(SessionCommandSchema, { ...correct, patch: { exclusions: ['pain'] } }).ok).toBe(true);
   });
 });

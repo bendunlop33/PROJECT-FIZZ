@@ -34,7 +34,8 @@ import { FinishSheet } from './workout/FinishSheet';
  * the rotation (premium-feel §2.6, D19); with a past workout it starts the
  * next session at the Summary's targets (B2); otherwise an empty workout
  * that opens the exercise picker. `Your routines` lists saved routines; a
- * row opens the routine sheet. The weekly plan comes later. No AI, no network.
+ * row opens the routine sheet. The rare pain flag check (region 4b) opens the
+ * pain flag sheet. The weekly plan comes later. No AI, no network.
  */
 
 /** What a Start begins: an empty workout, the next session of a past one, or a routine. */
@@ -335,7 +336,7 @@ export function TodayScreen() {
                   ? 'Add an exercise to start'
                   : 'Ready for next set';
         return (
-          <Hero label={`In progress · started ${formatTime(toMs(main.startedAtUtc), zoned.tz)}`} title={main.title} lines={[main.now, `${String(main.done)} of ${String(main.total)} sets done · ${status}`]}>
+          <Hero label={`In progress · started ${formatTime(toMs(main.startedAtUtc), zoned.tz)}`} title={main.title} lines={[main.now, `${String(main.done)} of ${String(main.total)} sets done · ${status}`, main.timeLeft]}>
             <PrimaryButton
               label="Resume"
               onPress={() => {
@@ -505,6 +506,26 @@ export function TodayScreen() {
             <AppText variant="callout" color="text.secondary" numeric>
               {`Check-in saved at ${formatTime(toMs(unlinked.recordedAt.utc), zoned.tz)}: ${scoreText(unlinked.score)}${unlinked.reasons.length ? ` · ${reasonsText(unlinked.reasons)}` : ''}. It’ll be used when you start.`}
             </AppText>
+          </LinkLine>
+        ) : null}
+
+        {/* Region 4b (today.md, rare): a pain flag's two-weekly check. Quiet, not a banner, never a notification. */}
+        {view?.painCheck ? (
+          <LinkLine
+            accessibilityLabel={view.painCheck.accessibilityLabel}
+            onPress={() => {
+              const pc = view.painCheck;
+              if (pc?.kind === 'one') navigation.navigate('PainFlag', { flagId: pc.flagId });
+              else navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'PainFlags', initial: false } });
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: theme.target.min.height }}>
+              <Icon name="exclamationmark.triangle" color="status.warning" size={16} />
+              <AppText variant="callout" style={{ flex: 1 }}>
+                {view.painCheck.text}
+              </AppText>
+              <Icon name="chevron.right" size={14} color="text.tertiary" />
+            </View>
           </LinkLine>
         ) : null}
 

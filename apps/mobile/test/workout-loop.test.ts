@@ -174,9 +174,13 @@ describe('check-in before the session exists (check-in.md)', () => {
     if (!started.ok) throw new Error(started.error.message);
     const loaded = await s.workout.load();
     expect(loaded?.painFlagged.has(bench.id)).toBe(true);
-    // Undo on the pain toast clears it.
-    expect(await s.pain.clear(flagged.flagIds ?? [])).toBe(true);
+    // Undo on the pain toast retracts it (review B2): as if it was never set, not a clear.
+    expect(flagged.flags).toEqual([{ id: flagged.flagIds?.[0], version: 1 }]);
+    expect(await s.pain.retract(flagged.flags ?? [], 'undo-pain-toast')).toEqual({ ok: true, stale: [] });
     expect(await s.pain.active()).toEqual([]);
+    expect(await s.pain.get(flagged.flagIds?.[0] ?? '')).toMatchObject({ status: 'retracted', clearedAtUtc: null, retracted: { opId: 'undo-pain-toast' } });
+    // A double tap is a no-op.
+    expect(await s.pain.retract(flagged.flags ?? [], 'undo-pain-toast-2')).toEqual({ ok: true, stale: [] });
   });
 });
 

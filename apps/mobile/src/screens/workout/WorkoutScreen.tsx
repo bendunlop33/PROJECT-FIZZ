@@ -1,9 +1,9 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActionSheetIOS, Alert, AppState, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
+import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, discardCommand, discardConfirmation, formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { checkRoutineName, discardCommand, discardConfirmation, formatDuration, formatElapsed, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -38,6 +38,7 @@ import {
   SecondaryButton,
   FadeIn,
   StatusLine,
+  Tag,
   TEXT_PRESSED_OPACITY,
   TextButton,
   TimerNumeral,
@@ -51,8 +52,11 @@ import { exerciseMenu } from '../../workout/exercise-menu';
 import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
-import { painClearConfirm } from '../../workout/pain-clear';
+import { TargetWhyLink, TargetWhyPanel } from './TargetWhyPanel';
+import { TimeLeftLine, TimeLeftSheet } from './TimeLeftSheet';
+import { answerStillHurts, confirmClearFlag, type PainToast } from '../../workout/pain-actions';
 import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../workout/rest-fold';
+import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 
 /**
  * Active workout: focused set card, rest, summary hand-off
@@ -105,6 +109,15 @@ export function WorkoutScreen() {
   const [restoredDraft, setRestoredDraft] = useState<string | null>(null);
   /** The heaviest-set line for the set just logged (premium-feel §5.1), shown under the saved line. */
   const [record, setRecord] = useState<{ setId: string; text: string } | null>(null);
+  // `Why?` on the target line (active-workout §2.12): one panel at most, hidden while the keypad is open.
+  const [why, setWhy] = useState<WhyPanel>(null);
+  const [keypadOpen, setKeypadOpen] = useState(false);
+  // `Time left` (§2.15.1): its own clock moves on events (any new data) and once a minute, never every second.
+  const [timeLeftNow, setTimeLeftNow] = useState(clockNow);
+  const [timeLeftOpen, setTimeLeftOpen] = useState(false);
+  const whyEvent = useCallback((e: WhyEvent) => {
+    setWhy((cur) => whyPanelReducer(cur, e));
+  }, []);
   const played = useRef(new Set<string>());
   const [afterDismiss] = useState(() => createAfterDismiss());
   const tickedFor = useRef<string | null>(null);
@@ -167,6 +180,20 @@ export function WorkoutScreen() {
   }, [reload]);
 
   useEffect(() => {
+    const shown = Keyboard.addListener('keyboardWillShow', () => {
+      setKeypadOpen(true);
+      whyEvent({ kind: 'keypad_opened' });
+    });
+    const hidden = Keyboard.addListener('keyboardWillHide', () => {
+      setKeypadOpen(false);
+    });
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, [whyEvent]);
+
+  useEffect(() => {
     void getAlertPermission()
       .then(setPermission)
       .catch(() => {
@@ -205,8 +232,14 @@ export function WorkoutScreen() {
       }, 4000);
     }
     const handed = route.params?.toast;
-    if (handed && firstTime(`toast:${sid}:${handed.kind}:${handed.text}`)) showHanded(handed);
+    if (handed && handed.kind !== 'exclusion' && firstTime(`toast:${sid}:${handed.kind}:${handed.text}`)) showHanded(handed);
   }, [data === 'loading' || data === null ? null : data.aggregate.session.id]);
+
+  // The correction sheet hands its exclusion toast back on return (§2.13); each save shows once.
+  const handedExclusion = route.params?.toast?.kind === 'exclusion' ? route.params.toast : null;
+  useEffect(() => {
+    if (handedExclusion && firstTime(`toast:exclusion:${handedExclusion.key}`)) showHanded(handedExclusion);
+  }, [handedExclusion?.key]);
 
   function showHanded(t: WorkoutToastParam) {
     switch (t.kind) {
@@ -225,16 +258,32 @@ export function WorkoutScreen() {
           text: t.text,
           action: 'Undo',
           onAction: () => {
-            void services.pain.clear(t.flagIds).then(() => {
+            // A retraction, not a clear: as if the flag was never set (review B2). Versioned; a second tap is a no-op.
+            void services.pain.retract(t.flags, newUuid()).then((r) => {
               changed();
               void reload();
-              showToast({ icon: 'info.circle', text: 'Pain flag removed' });
+              showToast({ icon: 'info.circle', text: !r.ok ? r.message : r.stale.length > 0 ? 'Pain flag kept: it changed since' : 'Pain flag removed' });
             });
           },
         });
         break;
       case 'info':
         showToast({ icon: 'info.circle', text: t.text });
+        break;
+      case 'exclusion':
+        showToast({
+          icon: 'info.circle',
+          text: t.text,
+          action: 'Undo',
+          onAction: () => {
+            // One more versioned correction; a pain flag the same save set is retracted with it (review B2).
+            void services.workout.undoMark({ ...t.undo, opId: `undo:${t.key}` }).then((r) => {
+              changed();
+              void reload();
+              showToast({ icon: 'info.circle', text: r.message ?? (r.ok ? 'Undone' : 'Undo wasn’t saved. Try again.') });
+            });
+          },
+        });
         break;
     }
   }
@@ -246,6 +295,19 @@ export function WorkoutScreen() {
   useEffect(() => {
     if (hasView) drawn.current = true;
   }, [hasView]);
+
+  useEffect(() => {
+    setTimeLeftNow(clockNow());
+  }, [data]);
+  useEffect(() => {
+    const t = setInterval(() => {
+      setTimeLeftNow(clockNow());
+    }, TIME_LEFT.refreshMs);
+    return () => {
+      clearInterval(t);
+    };
+  }, []);
+  const timeLeft = useMemo(() => (data === 'loading' || data === null ? null : services.workout.timeLeft(data, timeLeftNow)), [services, data, timeLeftNow]);
 
   // Edits belong to one set; when the active set changes, they are dropped (they were saved as a draft).
   useEffect(() => {
@@ -301,6 +363,11 @@ export function WorkoutScreen() {
       clearTimeout(t);
     };
   }, [emptySessionId, navigation]);
+
+  // So does an open `Why?` panel: another active set closes it.
+  useEffect(() => {
+    whyEvent({ kind: 'active_set', setId: view?.focus?.setId ?? null });
+  }, [view?.focus?.setId, whyEvent]);
 
   // Debounced draft save (300 ms): unsaved edits survive a force-close without counting as results.
   useEffect(() => {
@@ -441,6 +508,7 @@ export function WorkoutScreen() {
     // Path B: a pure check on the logged set, no AI call (coach-adjustments §4.2).
     coach.afterLog(r.aggregate, loggedSetId);
     setEdits(null);
+    whyEvent({ kind: 'logged' });
     setRestoredDraft(null);
     setBanners((b) => b.filter((x) => x.key !== 'write' && x.key !== 'rest-ended'));
     setGuard(true);
@@ -456,6 +524,32 @@ export function WorkoutScreen() {
         if (saved) void undo(saved.id, `undo:${saved.id}:${String(saved.undoCount)}`, focus.setNumber);
       },
     });
+  }
+
+  /** `Why?` / `Hide`: a local read through the service; nothing is computed or written here. */
+  function toggleWhy(f: FocusView) {
+    const opening = why?.setId !== f.setId;
+    whyEvent({ kind: 'toggle', setId: f.setId });
+    if (!opening) return;
+    void services.workout
+      .explainTarget(session.id, f.setId)
+      .catch(() => null)
+      .then((explanation) => {
+        whyEvent({ kind: 'loaded', setId: f.setId, explanation });
+      });
+  }
+
+  /** The pain flag sheet over the workout (§2.14.4); swiping down returns to the same set and draft. */
+  function openPainFlag(flagId: string, sessionExerciseId?: string) {
+    if (flagId === '') return;
+    navigation.navigate('PainFlag', { flagId, sessionId: session.id, ...(sessionExerciseId ? { sessionExerciseId } : {}) });
+  }
+
+  /** Outcomes of `Still hurts` / `Clear flag` in the rest card, as the usual toast. */
+  function painOutcome(t: PainToast) {
+    changed();
+    void reload();
+    showToast({ icon: t.icon, text: t.detail ? `${t.text}. ${t.detail}` : t.text, ...(t.action && t.onAction ? { action: t.action, onAction: t.onAction } : {}) });
   }
 
   async function undo(setId: string, opId: string, setNumber: number) {
@@ -475,10 +569,11 @@ export function WorkoutScreen() {
 
   function openExerciseMenu(f: FocusView) {
     const howTo = howToRouteFor(f, bundledHowToSources());
-    const menu = exerciseMenu(howTo !== null);
+    const menu = exerciseMenu(howTo !== null, f.coachActionId !== null);
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
+      if (action === 'undo_coach' && f.coachActionId !== null) coach.undo(f.coachActionId);
       if (action === 'add_set') void addSet(f.sessionExerciseId);
       if (action === 'add_exercise') navigation.navigate('ExercisePicker', { sessionId: session.id });
       if (action === 'delete_set') {
@@ -535,7 +630,8 @@ export function WorkoutScreen() {
     haptic('step');
     changed();
     void reload();
-    showToast({ icon: 'exclamationmark.triangle', text: `Pain noted · ${f.exerciseName}`, ...(r.flagIds.length > 0 ? { action: 'Undo', onAction: () => void services.pain.clear(r.flagIds).then(() => void reload()) } : {}) });
+    // Undo takes back this tap's flag (a retraction, not a clear); an older flag isn't this tap's.
+    showToast({ icon: 'exclamationmark.triangle', text: `Pain noted · ${f.exerciseName}`, ...(r.flags.length > 0 ? { action: 'Undo', onAction: () => void services.pain.retract(r.flags, newUuid()).then(() => void reload()) } : {}) });
     if (coach.availability?.status === 'ok') coach.ask({ kind: 'chip', chip: 'pain' });
   }
 
@@ -765,6 +861,23 @@ export function WorkoutScreen() {
             {savedLine}
             {recordLine}
             {effortBlock}
+            {view.painReview && view.painReview.afterSetId === view.justSaved.setId ? (
+              <PainReviewLine
+                question={view.painReview.question}
+                fact={view.painReview.fact}
+                onStillHurts={() => {
+                  const r = view.painReview;
+                  if (r) void answerStillHurts(services, r.flagId, r.flagVersion, painOutcome);
+                }}
+                onBetter={() => {
+                  const r = view.painReview;
+                  if (!r) return;
+                  void services.pain.get(r.flagId).then((flag) => {
+                    if (flag) confirmClearFlag(services, flag, painOutcome);
+                  });
+                }}
+              />
+            ) : null}
           </RuledSection>
         ) : null}
         {/* The coach card's place (premium-feel §3.4); takes no space while empty. */}
@@ -887,20 +1000,45 @@ export function WorkoutScreen() {
             />
           ) : null}
         </View>
-        {/* `Target 100 kg · 6–8 reps · Rest after 3:00`: tap to change the rest after this set. */}
-        <LinkLine
-          accessibilityLabel={`${focus.target ?? 'No target for this set'}. Rest after this set: ${formatDuration(focus.restAfterS)}. Tap to change the rest.`}
-          onPress={() => {
-            setRestEditor(true);
-          }}
-        >
+        {/* `Target 100 kg · 6–8 reps · Rest after 3:00`: tap to change the rest after this set. `Why?` ends the line (§2.12). */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+          <View style={{ flex: 1 }}>
+            <LinkLine
+              accessibilityLabel={`${focus.target ?? 'No target for this set'}. Rest after this set: ${formatDuration(focus.restAfterS)}. Tap to change the rest.`}
+              onPress={() => {
+                setRestEditor(true);
+              }}
+            >
+              <AppText variant="callout" color="text.secondary" numeric>
+                {`${focus.target ?? 'No target'} · Rest after `}
+                <AppText variant="callout" numeric style={{ textDecorationLine: 'underline', textDecorationColor: theme.colors['border.control'] }}>
+                  {formatDuration(focus.restAfterS)}
+                </AppText>
+              </AppText>
+            </LinkLine>
+          </View>
+          {focus.hasExplanation && !keypadOpen ? (
+            <TargetWhyLink
+              open={why?.setId === focus.setId}
+              onPress={() => {
+                toggleWhy(focus);
+              }}
+            />
+          ) : null}
+        </View>
+        {focus.planWas !== null ? (
           <AppText variant="callout" color="text.secondary" numeric>
-            {`${focus.target ?? 'No target'} · Rest after `}
-            <AppText variant="callout" numeric style={{ textDecorationLine: 'underline', textDecorationColor: theme.colors['border.control'] }}>
-              {formatDuration(focus.restAfterS)}
-            </AppText>
+            {focus.planWas}
           </AppText>
-        </LinkLine>
+        ) : null}
+        {why !== null && why.setId === focus.setId && !keypadOpen ? (
+          <TargetWhyPanel
+            panel={why}
+            onPainFlag={(flagId) => {
+              openPainFlag(flagId, focus.sessionExerciseId);
+            }}
+          />
+        ) : null}
         {focus.plateLine ? (
           <AppText variant="callout" color="text.tertiary" numeric accessibilityLabel={`Plates: ${focus.plateLine}`}>
             {focus.plateLine}
@@ -916,35 +1054,22 @@ export function WorkoutScreen() {
           </AppText>
         ) : null}
         {focus.offProfileWarning ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={focus.offProfileWarning} /> : null}
-        {focus.painFlagged ? (
-          <StatusLine
-            icon="exclamationmark.triangle"
-            tone="warning"
-            text="Pain flag: no increases"
-            action={
-              <TextButton
-                label="Clear"
-                onPress={() => {
-                  // Only Ben clears a flag (rule 9); targets already planned stay as they are.
-                  Alert.alert(painClearConfirm(focus.exerciseName).title, painClearConfirm(focus.exerciseName).message, [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Clear',
-                      onPress: () => {
-                        void services.pain
-                          .active()
-                          .then((flags) => services.pain.clear(flags.filter((f) => f.exerciseId === focus.exerciseId).map((f) => f.id)))
-                          .then(() => {
-                            changed();
-                            void reload();
-                          });
-                      },
-                    },
-                  ]);
-                }}
-              />
-            }
-          />
+        {focus.painFlag ? (
+          // `PainFlagNote` (§2.14.4): opens the pain flag sheet; it never blocks or changes Log.
+          <LinkLine
+            accessibilityLabel={focus.painFlag.accessibilityLabel}
+            onPress={() => {
+              openPainFlag(focus.painFlag?.flagId ?? '', focus.sessionExerciseId);
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: 44 }}>
+              <Icon name="exclamationmark.triangle" color="status.warning" size={16} />
+              <AppText variant="callout" color="text.secondary" style={{ flex: 1 }}>
+                {focus.painFlag.text}
+              </AppText>
+              <Icon name="chevron.right" size={14} color="text.tertiary" />
+            </View>
+          </LinkLine>
         ) : null}
         {focus.side ? (
           focus.side.kind === 'fixed' ? (
@@ -979,6 +1104,8 @@ export function WorkoutScreen() {
             text={r.text}
             edited={r.edited}
             last={i === focus.rows.length - 1}
+            exclusionTag={r.exclusionTag}
+            exclusionAccessibility={r.exclusionAccessibility}
             onPress={() => {
               if (r.status === 'done') navigation.navigate('EditSet', { sessionId: session.id, setId: r.setId });
               if (r.status === 'pending') void run({ type: 'set_active_set', at: services.now(), opId: newUuid(), setId: r.setId, expectedVersion: session.version });
@@ -1007,6 +1134,15 @@ export function WorkoutScreen() {
             }}
           />
         )}
+        {/* The card's last line (AW11): an estimate, never in the top bar; hidden with the keypad. */}
+        {timeLeft && !keypadOpen ? (
+          <TimeLeftLine
+            view={timeLeft.view}
+            onPress={() => {
+              setTimeLeftOpen(true);
+            }}
+          />
+        ) : null}
       </View>
     </View>
   ) : null;
@@ -1174,7 +1310,26 @@ export function WorkoutScreen() {
         onClose={() => {
           setRenameOpen(false);
         }}
-        onDismissed={renameAfter.dismissed}
+        onDismissed={renameAfter.dismissed}      />
+      <TimeLeftSheet
+        visible={timeLeftOpen}
+        view={timeLeft?.view ?? null}
+        sheet={timeLeft?.sheet ?? null}
+        nowMs={timeLeftNow}
+        tz={tz}
+        onClose={() => {
+          setTimeLeftOpen(false);
+        }}
+        onFinishBy={async (finishByUtc) => {
+          const r = await services.workout.setFinishBy({ sessionId: session.id, finishByUtc, tz, expectedVersion: session.version, opId: newUuid() });
+          if (!r.ok) {
+            void reload();
+            return r.error.code === 'stale_version' ? 'The workout changed. Try again.' : r.error.message;
+          }
+          setData({ ...loaded, aggregate: r.aggregate });
+          changed();
+          return null;
+        }}
       />
       <StartTimeSheet
         visible={timesOpen}
@@ -1193,8 +1348,28 @@ export function WorkoutScreen() {
   );
 }
 
-function IconButton({ icon, label, onPress, tint = 'text.primary' }: { icon: SymbolName; label: string; onPress: () => void; tint?: 'text.primary' | 'text.secondary' }) {
+/**
+ * `PainReviewLine` (active-workout §2.14.2) in the rest card's coach slot:
+ * quiet text buttons, ≥ 52 pt and `space.8` apart. Never spoken, never a
+ * banner; it isn't the coach and uses no AI. No answer keeps the check due.
+ */
+function PainReviewLine({ question, fact, onStillHurts, onBetter }: { question: string; fact: string; onStillHurts: () => void; onBetter: () => void }) {
   const theme = useTheme();
+  return (
+    <View style={{ gap: theme.space['1'] }}>
+      <AppText variant="body">{question}</AppText>
+      <AppText variant="callout" color="text.secondary" numeric>
+        {fact}
+      </AppText>
+      <View style={{ flexDirection: 'row', gap: theme.space['8'], minHeight: theme.target.workout.height, alignItems: 'center' }}>
+        <TextButton label="Still hurts" onPress={onStillHurts} />
+        <TextButton label="Better…" onPress={onBetter} />
+      </View>
+    </View>
+  );
+}
+
+function IconButton({ icon, label, onPress, tint = 'text.primary' }: { icon: SymbolName; label: string; onPress: () => void; tint?: 'text.primary' | 'text.secondary' }) {  const theme = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -1235,6 +1410,8 @@ function SetRowLine({
   text,
   edited,
   last,
+  exclusionTag,
+  exclusionAccessibility,
   onPress,
 }: {
   status: 'done' | 'active' | 'pending' | 'skipped';
@@ -1243,6 +1420,9 @@ function SetRowLine({
   text: string;
   edited: boolean;
   last: boolean;
+  /** `Spotted` (§2.13): a colourless `Tag`, never hidden. */
+  exclusionTag: string | null;
+  exclusionAccessibility: string | null;
   onPress: () => void;
 }) {
   const theme = useTheme();
@@ -1269,7 +1449,7 @@ function SetRowLine({
   return (
     <Pressable
       accessibilityRole={tappable ? 'button' : 'text'}
-      accessibilityLabel={`Set ${String(number)}${badges.length ? ` ${badges.join(' ')}` : ''}, ${STATUS_WORD[status]}, ${text}${edited ? ', edited' : ''}`}
+      accessibilityLabel={`Set ${String(number)}${badges.length ? ` ${badges.join(' ')}` : ''}, ${STATUS_WORD[status]}, ${text}${edited ? ', edited' : ''}${exclusionAccessibility ? `. ${exclusionAccessibility}` : ''}`}
       accessibilityHint={status === 'done' ? 'Edit or delete this set' : status === 'pending' ? 'Make this the current set' : undefined}
       disabled={!tappable}
       onPress={onPress}
@@ -1301,6 +1481,7 @@ function SetRowLine({
           {effort.trim()}
         </AppText>
       ) : null}
+      {exclusionTag ? <Tag text={exclusionTag} /> : null}
       {edited ? <Icon name="pencil" size={14} color="text.tertiary" /> : null}
     </Pressable>
   );

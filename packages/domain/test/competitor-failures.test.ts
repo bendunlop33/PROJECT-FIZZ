@@ -799,6 +799,9 @@ describe('(g) Repeat at a gym without the equipment never keeps an impossible lo
     expect(park.warnings).toContainEqual({ kind: 'target_dropped', setTemplateId: id(15300), requested: kg(102.5), reason: 'equipment_not_in_gym' });
     // Machine numbers too: no stack target without the stack.
     expect(park.warnings).toContainEqual({ kind: 'target_dropped', setTemplateId: id(15302), requested: kg(45, 'stack'), reason: 'equipment_not_in_gym' });
+    // Why? says why the load was dropped (active-set provenance + this pack).
+    const dropped = park.aggregate.sets.find((x) => x.planned.load === null && x.planned.provenance?.guardNotes.some((n) => n.includes('nothing of that kind')) === true);
+    expect(dropped, 'a dropped set explains itself').toBeDefined();
   });
 
   it('starting a routine at a gym with the same kind of equipment caps its targets there (routines.md §2.2; review failure-tests M1)', () => {

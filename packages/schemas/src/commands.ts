@@ -11,7 +11,7 @@ import {
 } from './common';
 import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
-import { PlannedSetSchema, ResolvedRestSchema, SetSideSchema, SetValuesSchema } from './session';
+import { PlannedSetSchema, ResolvedRestSchema, SetExclusionsSchema, SetSideSchema, SetValuesSchema } from './session';
 
 /**
  * Typed commands for the active-session state machine. Every mutating command
@@ -33,6 +33,13 @@ export const LogSetCommandSchema = z.object({
    * set's side (`both` by default). Rejected on bilateral exercises.
    */
   side: SetSideSchema.optional(),
+  /**
+   * Log and mark in one go ("100 for 8, spotted", §2.13). Omit or empty = the
+   * set counts. `pain` is refused here (review N3): a Pain mark must also
+   * flag the movement (AW7, rule 9), which only the correction service does
+   * today. Voice logging adds its own service wrapper before allowing it.
+   */
+  exclusions: SetExclusionsSchema.refine((xs) => !xs.includes('pain'), { message: 'Mark pain through the correction sheet, which also flags the movement' }).optional(),
   /** ID for the rest timer this commit may start (generated with the draft). */
   restTimerId: IdSchema,
 });
@@ -59,7 +66,15 @@ export const CorrectSetCommandSchema = z.object({
   setId: IdSchema,
   /** The set's own version, not the session's. */
   expectedSetVersion: z.int().min(1),
-  patch: SetValuesSchema.partial().extend({ setType: SetTypeSchema.optional(), side: SetSideSchema.optional() }),
+  /**
+   * `exclusions` replaces the set's whole list (§2.13): `[]` clears it. A
+   * patch that only changes exclusions doesn't mark the values `Edited`.
+   */
+  patch: SetValuesSchema.partial().extend({
+    setType: SetTypeSchema.optional(),
+    side: SetSideSchema.optional(),
+    exclusions: SetExclusionsSchema.optional(),
+  }),
 });
 
 /**
@@ -236,6 +251,19 @@ export const SetRestAfterCommandSchema = z.object({
   expectedVersion: z.int().min(1),
 });
 
+/**
+ * `Finish by` in the `Time left` sheet (active-workout §2.15.3,
+ * `setSessionFinishBy`): today only, or null for `Not set`. Changes no set,
+ * load or rest; versioned on the session so a stale sheet is refused.
+ */
+export const SetFinishByCommandSchema = z.object({
+  type: z.literal('set_finish_by'),
+  ...base,
+  opId: OperationIdSchema,
+  finishBy: ZonedTimestampSchema.nullable(),
+  expectedVersion: z.int().min(1),
+});
+
 /** Delete a set (pending, skipped or logged). Kept as an audited tombstone. */
 export const DeleteSetCommandSchema = z.object({
   type: z.literal('delete_set'),
@@ -305,6 +333,8 @@ export const AdjustPendingTargetsCommandSchema = z.object({
   opId: OperationIdSchema,
   expectedVersion: z.int().min(1),
   actionId: IdSchema,
+  /** The coach's reason from the action record, kept on each changed target's `Why?` (in quotes). */
+  reason: z.string().max(600).nullable().optional(),
   changes: z.array(z.object({ setId: IdSchema, target: TargetValuesSchema })).max(40),
   removeSetIds: z.array(IdSchema).max(12),
   /** New pending sets, copying type and rest from `copyFromSetId`. IDs derive from the opId, so a replay adds the same rows. */
@@ -349,6 +379,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   DiscardCommandSchema,
   SetRestAfterCommandSchema,
   RenameSessionCommandSchema,
+  SetFinishByCommandSchema,
   AdjustPendingTargetsCommandSchema,
   RevertTargetAdjustmentCommandSchema,
 ]);

@@ -2,6 +2,7 @@ import type { CheckIn, EquipmentInstance, LoadConvention, Measurement, PainFlag,
 import { painMentionedNotFlagged, painStatusFor } from './checkin';
 import { builtInDefaultRule, ruleCategory, type RuleExerciseInfo } from './default-rule';
 import { calculateNextTargets, type HistorySession, type NextTargets, type PainStatus } from './progression';
+import { ruleTargetProvenance, type RuleProvenanceInput } from './target-provenance';
 
 /**
  * One place that decides an exercise's next targets with the built-in rule,
@@ -62,11 +63,24 @@ const PLANNABLE = new Set<NextTargets['decision']>(['increase_load', 'increase_r
  * Planned sets for an exercise being added, from its next targets. Null when
  * the rule has nothing to say (no history, unsupported, no feasible load):
  * the exercise then starts with one empty set, as before.
+ *
+ * With `why` (the history and equipment the targets were worked out from),
+ * each set also records its provenance for `Why?` (active-workout §2.12):
+ * the basis workout, the rule's own words and the equipment step, stored
+ * now so the card never re-runs the rule to explain it.
  */
-export function plannedSetsFromTargets(t: NextTargets): { setType: SetType; planned: PlannedSet }[] | null {
+export function plannedSetsFromTargets(t: NextTargets, why?: Omit<RuleProvenanceInput, 'result'>): { setType: SetType; planned: PlannedSet }[] | null {
   if (!PLANNABLE.has(t.decision) || t.sets.length === 0 || t.loadFeasibility === 'infeasible') return null;
   return t.sets.map((s) => ({
     setType: s.setType,
-    planned: { load: s.load, reps: s.reps, durationS: null, rpe: null, rir: null, source: 'built_in_rule' as const },
+    planned: {
+      load: s.load,
+      reps: s.reps,
+      durationS: null,
+      rpe: null,
+      rir: null,
+      source: 'built_in_rule' as const,
+      ...(why ? { provenance: ruleTargetProvenance({ ...why, result: t }, s) } : {}),
+    },
   }));
 }

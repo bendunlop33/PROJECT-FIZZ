@@ -1,5 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
-import type { EquipmentKind } from '@fizz/schemas';
+import type { EquipmentKind, SetExclusion } from '@fizz/schemas';
 
 import type { CoachEntry } from '../coach/coach-service';
 
@@ -70,6 +70,11 @@ export type RootStackParams = {
   /** `back`: opened from history (Progress), so Done goes back there rather than to Today. */
   /** `justFinished`: reached by Finish itself; any other visit (Today, Progress) is static. */
   Summary: { sessionId: string; back?: boolean; justFinished?: boolean };
+  /**
+   * Pain flag sheet (active-workout §2.14.4). From a set card, the workout
+   * exercise makes `Before` / `Since` use its equipment.
+   */
+  PainFlag: { flagId: string; sessionId?: string; sessionExerciseId?: string };
   AddGym: undefined;
   /** `Start from a past workout` list. */
   PastWorkouts: undefined;
@@ -85,8 +90,20 @@ export type RootStackParams = {
 
 export type WorkoutToastParam =
   | { kind: 'check_in'; text: string; checkInId: string }
-  | { kind: 'pain'; text: string; flagIds: string[] }
-  | { kind: 'info'; text: string };
+  /** `Pain noted` [Undo]: the flags just set, at the version that set them; Undo retracts them (review B2). */
+  | { kind: 'pain'; text: string; flags: { id: string; version: number }[] }
+  | { kind: 'info'; text: string }
+  /**
+   * Back from the correction sheet after the exclusion chips changed
+   * (active-workout §2.13): `Set 2: spotted · not counted for records`
+   * [Undo]. `key` is the save's opId, so each save shows once.
+   */
+  | {
+      kind: 'exclusion';
+      key: string;
+      text: string;
+      undo: { sessionId: string; setId: string; setVersion: number; previous: SetExclusion[]; painFlags: { id: string; version: number }[] };
+    };
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace

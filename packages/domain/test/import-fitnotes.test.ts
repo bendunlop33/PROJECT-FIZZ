@@ -81,6 +81,9 @@ describe('FitNotes header detection (DX5: anything else stops)', () => {
 
   it('tells a backup, a zip, a binary, an empty file and a Body Tracker export apart', () => {
     expect(detectFitNotesFile('SQLite format 3\u0000\u0010\u0000...')).toEqual({ kind: 'fitnotes_backup' });
+    // A FitNotes 2 (iPhone) Realm database, as read as text (header bytes from a real default.realm).
+    expect(detectFitNotesFile('\uFFFD\u0005\u0000\u0000\u0000\u0000\u0000\uFFFD\uFFFD\r\u0000\u0000\u0000\u0000\u0000T-DB\u0018\u0018\u0000\u0000')).toEqual({ kind: 'fitnotes_backup' });
+    expect(detectFitNotesFile('Date,Exercise,T-DB')).not.toEqual({ kind: 'fitnotes_backup' });
     expect(detectFitNotesFile('PK\u0003\u0004rest')).toEqual({ kind: 'not_csv' });
     expect(detectFitNotesFile('abc\u0000def')).toEqual({ kind: 'not_csv' });
     expect(detectFitNotesFile('')).toEqual({ kind: 'empty' });

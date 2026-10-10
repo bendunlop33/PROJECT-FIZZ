@@ -1,4 +1,4 @@
-import type { CoachTarget, EquipmentInstance, GuardNote, GuardNoteKind, NextSessionTarget, NextSessionTargetRecord, PainFlag, PlannedSet, SessionAggregate, SessionExercise, SetType } from '@fizz/schemas';
+import type { CoachTarget, EquipmentInstance, GuardNote, GuardNoteKind, NextSessionTarget, NextSessionTargetRecord, PainFlag, PlannedSet, SessionAggregate, SessionExercise, SetType, TargetProvenance } from '@fizz/schemas';
 import { formatNumber } from '../display';
 import { stepLoad } from '../equipment';
 import { activeFlag, AREA_WORD, isIncrease, sameTarget, snapLoad, validReps } from './adjust';
@@ -262,7 +262,17 @@ export function withCoachTargets(
     if (count < 1) continue;
     const template = working[0]?.planned ?? lastWorking[0]?.planned ?? null;
     const setType: SetType = working[0]?.setType ?? lastWorking[0]?.setType ?? 'working';
-    const planned: PlannedSet = { load: row.target.load, reps: row.target.reps, durationS: null, rpe: template?.rpe ?? null, rir: template?.rir ?? null, source: 'coach' };
+    // `Why?` (§2.12): set by the coach after that workout, its reason in quotes, the rule's `Last time` kept.
+    const provenance: TargetProvenance = {
+      source: 'coach',
+      setAt: { utc: row.createdAtUtc, tz: source.session.startedAt.tz },
+      routineName: source.session.routineName,
+      requestedLoad: row.target.load,
+      basis: working[0]?.planned.provenance?.basis ?? null,
+      coach: { actionId: row.actionId, scope: 'next_session', reason: row.reason },
+      guardNotes: row.guardNotes.map((n) => n.text).slice(0, 10),
+    };
+    const planned: PlannedSet = { load: row.target.load, reps: row.target.reps, durationS: null, rpe: template?.rpe ?? null, rir: template?.rir ?? null, source: 'coach', provenance };
     out.set(row.exerciseId, [...warmups, ...Array.from({ length: count }, () => ({ setType, planned }))]);
   }
   return out;

@@ -1,6 +1,7 @@
 import type {
   EquipmentInstance,
   Exercise,
+  Load,
   PlannedSet,
   RestSetting,
   Routine,
@@ -8,8 +9,11 @@ import type {
   SessionAggregate,
   SetTemplate,
   SetType,
+  TargetProvenance,
   ZonedTimestamp,
 } from '@fizz/schemas';
+import { loadText } from '../display';
+import { fitProvenance, startWarningNote } from '../target-provenance';
 import { toMs } from '../time';
 import { startWorkout, type StartWorkoutInput, type StartWorkoutOutput } from './create';
 import { droppedNotes, fitLoadHere, pickEquipment, warningNotes, type RepeatNote } from './repeat';
@@ -247,12 +251,14 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
   const notes: RepeatNote[] = [];
   const resolved: RoutineExercise[] = [];
   const targeted = new Set<string>();
-  const coachTargeted = new Set<string>();
   const byGym = new Map(input.gymEquipment.map((e) => [e.id, e]));
   // Targets are per exercise, so an exercise in two slots (a heavy and a light bench) can't tell which slot's
   // targets are which: both keep the routine's own templates (review S7).
   const slots = new Map<string, number>();
   for (const rex of input.routine.exercises) slots.set(rex.exerciseId, (slots.get(rex.exerciseId) ?? 0) + 1);
+  // Templates made from the built-in rule's targets: the rule's planned set, the equipment here, and why a load was dropped.
+  // `Why?` then explains them as the rule's, never as the routine's own numbers (review B1.1).
+  const ruleOf = new Map<string, { planned: PlannedSet; eq: EquipmentInstance | null; dropNote: string | null }>();
   for (const rex of [...input.routine.exercises].sort((a, b) => a.order - b.order)) {
     const exercise = input.exercises.get(rex.exerciseId);
     const name = exercise?.name ?? 'Exercise';
@@ -268,21 +274,25 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
     const planned = (slots.get(rex.exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(rex.exerciseId);
     const useTargets = planned !== undefined && planned.length > 0;
     if (useTargets) targeted.add(rex.exerciseId);
-    if (useTargets && planned.some((p) => p.planned.source === 'coach')) coachTargeted.add(rex.exerciseId);
     const warmups = useTargets ? rex.setTemplates.filter((t) => t.setType === 'warmup') : [];
+    const fromRule = new Map<string, PlannedSet>();
     const source: SetTemplate[] = useTargets
       ? [
           ...warmups,
-          ...planned.map((p) => ({
-            id: input.newId(),
-            setType: p.setType,
-            targetLoad: p.planned.load,
-            targetReps: p.planned.reps,
-            targetDurationS: p.planned.durationS,
-            targetRpe: p.planned.rpe,
-            targetRir: p.planned.rir,
-            restOverrideS: null,
-          })),
+          ...planned.map((p) => {
+            const id = input.newId();
+            fromRule.set(id, p.planned);
+            return {
+              id,
+              setType: p.setType,
+              targetLoad: p.planned.load,
+              targetReps: p.planned.reps,
+              targetDurationS: p.planned.durationS,
+              targetRpe: p.planned.rpe,
+              targetRir: p.planned.rir,
+              restOverrideS: null,
+            };
+          }),
         ]
       : rex.setTemplates;
     let unitDropped: Parameters<typeof droppedNotes>[2] = null;
@@ -293,7 +303,10 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
         const fit = fitLoadHere(missing !== null ? null : t.targetLoad, eq, sessionUnit);
         unitDropped ??= fit.unitDropped;
         harderDropped ??= fit.harderDropped;
-        return { ...t, id: input.newId(), targetLoad: fit.load };
+        const id = input.newId();
+        const rulePlanned = fromRule.get(t.id);
+        if (rulePlanned !== undefined) ruleOf.set(id, { planned: rulePlanned, eq, dropNote: ruleDropNote(missing, t.targetLoad, fit, eq, sessionUnit) });
+        return { ...t, id, targetLoad: fit.load };
       });
     if (missing !== null && source.some((t) => t.targetLoad !== null)) notes.push({ exerciseName: name, text: `No ${missing} here: no load target.` });
     notes.push(...droppedNotes(name, sessionUnit, unitDropped, harderDropped));
@@ -321,6 +334,17 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
     if (w.kind === 'exercise_missing') notes.push({ exerciseName: 'Exercise', text: 'An exercise in this routine is no longer in your list, so it was left out.' });
   }
   const exerciseOf = new Map(out.aggregate.exercises.map((e) => [e.id, e.exerciseId]));
+  const warningOf = new Map(out.warnings.flatMap((w) => (w.kind === 'target_rounded' || w.kind === 'target_dropped' ? [[w.setTemplateId, w] as const] : [])));
+  /** The rule's own provenance plus how it was fitted here; null when it wasn't stored (`Why?` then says `Not recorded`). */
+  const ruleProvenance = (setId: string): TargetProvenance | null => {
+    const templateId = out.setTemplateIds[setId];
+    const from = templateId === undefined ? undefined : ruleOf.get(templateId);
+    const rule = from?.planned.provenance;
+    if (from === undefined || templateId === undefined || rule === undefined) return null;
+    const w = warningOf.get(templateId);
+    const fit = from.dropNote ?? (w ? startWarningNote(w, from.eq, 'Target') : null);
+    return fitProvenance(fit === null ? rule : { ...rule, guardNotes: [...rule.guardNotes, fit] });
+  };
   const aggregate: SessionAggregate = {
     ...out.aggregate,
     session: { ...out.aggregate.session, routineId: input.routine.id, routineName: input.routine.name },
@@ -328,9 +352,24 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
       const exId = exerciseOf.get(s.sessionExerciseId);
       // Targets from the rule say so; the routine's own templates carry no source (a routine template).
       if (exId === undefined || !targeted.has(exId) || s.setType === 'warmup') return s;
-      // A coach target for next time (D21) keeps its source.
-      return { ...s, planned: { ...s.planned, source: coachTargeted.has(exId) ? ('coach' as const) : ('built_in_rule' as const) } };
+      // A coach target for next time (D21) keeps its source and its own `Why?`.
+      const templateId = out.setTemplateIds[s.id];
+      const fromCoach = templateId !== undefined && ruleOf.get(templateId)?.planned.source === 'coach';
+      const plannedSet: PlannedSet = { ...s.planned, source: fromCoach ? 'coach' : 'built_in_rule' };
+      const provenance = ruleProvenance(s.id);
+      if (provenance === null) delete plannedSet.provenance;
+      else plannedSet.provenance = provenance;
+      return { ...s, planned: plannedSet };
     }),
   };
-  return { aggregate, warnings: out.warnings, notes };
+  return { aggregate, warnings: out.warnings, setTemplateIds: out.setTemplateIds, notes };
+}
+
+/** Why a rule target's load was dropped at this gym, said against the target (`Why?` Equipment row). */
+function ruleDropNote(missing: string | null, requested: Load | null, fit: ReturnType<typeof fitLoadHere>, eq: EquipmentInstance | null, sessionUnit: string): string | null {
+  const word = (l: Load) => loadText(l, l.convention, eq);
+  if (missing !== null && requested !== null) return `No load target: no ${missing} here.`;
+  if (fit.unitDropped) return `No load target: the target was ${word(fit.unitDropped)}, and there’s no equipment here to check a ${sessionUnit} load on.`;
+  if (fit.harderDropped) return `No load target: the target was ${word(fit.harderDropped.requested)}, and the easiest here is ${word(fit.harderDropped.lightest)}.`;
+  return null;
 }

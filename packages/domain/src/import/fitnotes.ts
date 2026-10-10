@@ -67,6 +67,8 @@ function sameCells(a: readonly string[], b: readonly string[]): boolean {
  */
 export function detectFitNotesFile(text: string): FileKind {
   if (text.startsWith('SQLite format 3\u0000')) return { kind: 'fitnotes_backup' };
+  // FitNotes 2 (iPhone) keeps its data in a Realm file (`default.realm`): `T-DB` at byte 16.
+  if (text.slice(0, 64).includes('T-DB') && text.slice(0, 64).includes('\u0000')) return { kind: 'fitnotes_backup' };
   if (text.startsWith('PK\u0003\u0004')) return { kind: 'not_csv' };
   const t = normaliseText(text);
   if (t.trim() === '') return { kind: 'empty' };

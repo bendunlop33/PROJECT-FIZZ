@@ -374,6 +374,7 @@ export function storeTodayTargets(store: Pick<CoachWriteStore, 'commit'>): Today
         opId: input.opId,
         expectedVersion: input.expectedVersion,
         actionId: input.record.actionId,
+        reason: input.record.reason,
         changes,
         removeSetIds: input.plan.flatMap((e) => (e.removed === null ? [] : [e.removed.setId])),
         addSets: input.plan.flatMap((e) => (e.added === null ? [] : [{ newSetId: e.added.setId, copyFromSetId: e.added.copyFromSetId, target: e.added.after }])),
