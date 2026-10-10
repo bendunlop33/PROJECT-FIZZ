@@ -213,6 +213,17 @@ describe('buildTodayView', () => {
     expect(weekStripLabel(both.week.days)).toBe('This week: 1 day trained, today in progress');
   });
 
+  it('a forgotten workout from an earlier week is not "in progress" this week (review S8)', () => {
+    const later = 9 * 86_400;
+    const today = local(at(later).utc);
+    const weekDates = ['x-1', 'x-2', 'x-3', today, 'x-5', 'x-6', 'x-7'];
+    const s = logAll(workout(BENCH, barbell(), 3), [values(kg(60), 10)], 0);
+    const v = buildTodayView({ ...base, nowMs: ms(later), active: s, weekDates });
+    expect(v.main.kind).toBe('stale');
+    expect(v.week.text).toBe('No workouts yet this week.');
+    expect(v.week.days.some((d) => d.inProgress)).toBe(false);
+  });
+
   it('weekText: every row of the §2.5 table', () => {
     expect(weekText(0, null)).toBe('No workouts yet this week.');
     expect(weekText(0, 'Full body')).toBe('Full body in progress');

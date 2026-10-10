@@ -202,8 +202,11 @@ export function buildTodayView(input: TodayInput): TodayView {
   }
 
   const count = input.finishedThisWeek.length;
-  const live = active && active.session.status === 'active' ? active : null;
-  const activeLocalDate = live ? input.localDateOf(live.session.startedAt.utc) : null;
+  // A forgotten workout from an earlier week isn't "in progress" this week (review S8); one Ben can resume always is.
+  const open = active && active.session.status === 'active' ? active : null;
+  const openDate = open ? input.localDateOf(open.session.startedAt.utc) : null;
+  const live = open !== null && (main.kind === 'resume' || (openDate !== null && (input.weekDates ?? []).includes(openDate))) ? open : null;
+  const activeLocalDate = live ? openDate : null;
   const text = weekText(count, live ? titleOf(live) : null);
   const trainedDates = new Set(input.finishedThisWeek.map((a) => dateOnlyOf(a.session) ?? input.localDateOf(a.session.startedAt.utc)));
   const days = (input.weekDates ?? []).map((d, i) => ({
