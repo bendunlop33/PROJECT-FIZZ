@@ -230,7 +230,8 @@ describe('(b) no target below the empty bar, between dumbbell or stack steps, or
     const conventions: LoadConvention[] = ['total', 'per_hand', 'stack', 'assistance', 'added'];
     for (const convention of conventions) {
       for (const unit of ['kg', 'lb'] as const) {
-        for (const v of [1, 2.5, 5, 10, 20, 45, 100]) {
+        // 0 too (review failure-tests M2): a logged 0 is never planned again as 0 kg each / assist 0 kg.
+        for (const v of [0, 1, 2.5, 5, 10, 20, 45, 100]) {
           for (const shape of historyShapes(null, unit, convention, v)) {
             for (const { name, rule } of rulesFor(null, convention, unit)) {
               const t = calculateNextTargets({ exerciseName: 'Lift', measurement: 'reps', history: shape.h, rule, equipment: null, unit, convention, pain: { active: false, reportedAtUtc: null } });
