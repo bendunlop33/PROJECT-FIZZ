@@ -527,9 +527,17 @@ export function applyChangeGym(state: SessionAggregate, cmd: CommandOf<'change_g
       if (eq.unit !== slot.unit || eq.loadConvention !== slot.loadConvention) return bad('invalid_values', `Targets on ${eq.name} must be in ${eq.unit} (${eq.loadConvention}).`);
     }
     equipmentFor.set(slot.sessionExerciseId, eq);
+    // An exercise that had equipment and has none here can't carry a load target: nothing here
+    // can check it (rule 4; review M1). `snapPlanToGym` drops those loads; so must any other caller.
+    const row = state.exercises.find((e) => e.id === slot.sessionExerciseId);
     for (const item of slot.sets) {
       const l = item.load;
       if (l === null) continue;
+      if (eq === null && l.convention !== 'bodyweight') {
+        const set = state.sets.find((s) => s.id === item.setId);
+        const hadEquipment = (row?.equipmentId ?? null) !== null || (set?.planned.snap?.intendedOn?.equipmentId ?? null) !== null;
+        if (hadEquipment) return bad('invalid_values', 'There’s no equipment here to check that load against.');
+      }
       if (l.unit !== slot.unit || l.convention !== slot.loadConvention) return bad('invalid_values', 'A target is in the wrong unit or convention for its equipment.');
       if (eq !== null && !isLoadAchievable(l, eq)) return bad('invalid_values', `${loadWords(l)} can’t be made on ${eq.name}.`);
     }
@@ -655,6 +663,19 @@ export function applyUndoChangeGym(state: SessionAggregate, cmd: CommandOf<'undo
 
 // ---------------------------------------------------------------------------
 // Helpers for the service layer (pure)
+
+/**
+ * Whether an unsaved entry still fits its set's equipment now (GS12; review M3): after a
+ * switch, an edit the new gym can't make is replaced by the new target, like a stored draft.
+ */
+export function editFitsCurrentEquipment(state: SessionAggregate, setId: string, values: SetValues): boolean {
+  const set = state.sets.find((s) => s.id === setId);
+  const row = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
+  if (!set || !row) return true;
+  const eq = equipmentOfRow(state.session.equipmentSnapshot, row);
+  const gone = row.equipmentId === null && (set.planned.snap?.intendedOn?.equipmentId ?? null) !== null;
+  return draftFits(values, eq, row.unit, row.loadConvention, gone);
+}
 
 /** GS3 step 2: the item an exercise last used at this gym (logged in the app, not imported). */
 export function lastUsedAtGym(history: readonly HistorySession[], gymId: string): string | null {

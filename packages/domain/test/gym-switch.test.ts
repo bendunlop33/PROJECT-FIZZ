@@ -5,6 +5,8 @@ import {
   buildActiveSetView,
   buildWorkoutSummary,
   doneExerciseNames,
+  editFitsCurrentEquipment,
+  partRootOf,
   gymRouteIds,
   isProposalStale,
   latestUndoableGymChange,
@@ -523,5 +525,60 @@ describe('Summary and history after a switch (check 24)', () => {
     const u = apply(sw, { type: 'undo_change_gym', at: at(330), opId: 'u', actionId: c?.actionId ?? '', expectedFingerprint: c?.afterFingerprint ?? '' });
     expect(gymRouteIds(u.session)).toEqual([MAIN]);
     expect(gymRouteIds(sw.session)).toEqual([MAIN, HOTEL]);
+  });
+});
+
+describe('Rule 4 in the reducer itself, and unsaved edits (review M1, M3)', () => {
+  it('rejects a load target on an exercise that had equipment and has none at the new gym', () => {
+    const s = benchTwoDone();
+    const cmd = switchCmd(propose(s, hotel), 320, 'forged');
+    const benchRow = rowOf(s, BENCH, 0)?.id;
+    const forged = {
+      ...cmd,
+      slots: cmd.slots.map((slot) => (slot.sessionExerciseId === benchRow ? { ...slot, equipmentId: null, sets: slot.sets.map((x) => ({ ...x, load: kg(100) })) } : slot)),
+    };
+    expectError(reduceSession(s, forged), 'invalid_values');
+    // The real command (no load there) is accepted.
+    expect(reduceSession(s, cmd).ok).toBe(true);
+  });
+
+  it('an edit the new gym can’t make no longer fits; one it can still fits', () => {
+    const s = benchTwoDone();
+    const after = switched(s, propose(s, hotel)).state;
+    const incline = exerciseSets(after, INCLINE)[0]?.id ?? '';
+    const bench = exerciseSets(after, BENCH).find((x) => x.status === 'pending')?.id ?? '';
+    const v = (load: ReturnType<typeof kg> | null) => ({ load, reps: 8, durationS: null, rpe: null, rir: null });
+    expect(editFitsCurrentEquipment(after, incline, v(kg(32.5, 'per_hand')))).toBe(false);
+    expect(editFitsCurrentEquipment(after, incline, v(kg(17.5, 'per_hand')))).toBe(true);
+    expect(editFitsCurrentEquipment(after, incline, v(lb(40, 'per_hand')))).toBe(false);
+    // Bench lost its bar: no load can be checked, reps alone are fine.
+    expect(editFitsCurrentEquipment(after, bench, v(kg(100)))).toBe(false);
+    expect(editFitsCurrentEquipment(after, bench, v(null))).toBe(true);
+  });
+});
+
+describe('Main → Hotel → Home → Main (review: double switch)', () => {
+  it('continuation chains stay one block per exercise, the route names each gym, and the Summary lists each exercise once', () => {
+    let s = benchTwoDone();
+    s = switched(s, propose(s, hotel), 320, 'sw-1').state;
+    const inc = () => exerciseSets(s, INCLINE).filter((x) => x.status === 'pending');
+    s = apply(s, { type: 'set_active_set', at: at(330), opId: 'act-1', setId: inc()[0]?.id ?? '', expectedVersion: s.session.version });
+    s = apply(s, logCmd(inc()[0]?.id ?? '', values(kg(20, 'per_hand'), 12), 400));
+    s = switched(s, propose(s, { id: HOME, equipment: HOME_EQ }), 450, 'sw-2').state;
+    s = apply(s, logCmd(inc()[0]?.id ?? '', values(kg(30, 'per_hand'), 9), 600));
+    s = switched(s, propose(s, main), 650, 'sw-3').state;
+    s = apply(s, logCmd(inc()[0]?.id ?? '', values(kg(32.5, 'per_hand'), 8), 800));
+    expect(gymRouteIds(s.session)).toEqual([MAIN, HOTEL, HOME, MAIN]);
+    const rows = s.exercises.filter((e) => e.exerciseId === INCLINE);
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    const roots = new Set(rows.map((r) => partRootOf(s.exercises, r.id)));
+    expect(roots.size).toBe(1);
+    const done = apply(s, { type: 'finish', at: at(900), opId: 'fin-3', expectedVersion: s.session.version, endedAt: null });
+    expect(doneExerciseNames(done)).toEqual(['Bench press', 'Incline DB press']);
+    const sum = buildWorkoutSummary({ aggregate: done, nowMs: Date.parse(at(1000).utc), gymName: 'Main Gym', gymNames: GYM_NAMES, history: {}, rules: {}, painFlags: [], checkIn: null, coach: 'not_connected' });
+    expect(sum.exercises.filter((e) => e.name === 'Incline DB press')).toHaveLength(1);
+    expect(plain(sum.exercises.find((e) => e.name === 'Incline DB press')?.results ?? '')).toBe('20×12 (Hotel · Lisbon) · 30×9 (Home) · 32.5×8 (Main Gym)');
+    const rep = startWorkoutFromSession({ opId: 'rep-3', owner: profile(), gymId: MAIN, gymName: 'Main Gym', source: done, exercises: EXERCISES, gymEquipment: MAIN_EQ, at: at(90_000), newId: idGen(82_000) });
+    expect(rep.aggregate.exercises.filter((e) => e.exerciseId === INCLINE)).toHaveLength(1);
   });
 });
