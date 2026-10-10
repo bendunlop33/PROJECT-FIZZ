@@ -279,7 +279,8 @@ describe('the loop: add exercise, log, rest, force-close, finish, summary', () =
     expect(sum?.facts).toMatchObject({ workingSets: 2, exercisesDone: 1 });
     expect(sum?.nextTime?.sourceTag).toBe('Built-in rule (coach not connected)');
     expect(plain(sum?.exercises[0]?.results)).toBe('60×8 · 60×6');
-    expect((await s.today.view())?.main).toMatchObject({ kind: 'done_today', title: 'Workout' });
+    // Named from what was in it (audit F5).
+    expect((await s.today.view())?.main).toMatchObject({ kind: 'done_today', title: 'Push' });
     expect((await s.today.view())?.week.text).toBe('1 workout this week');
 
     // Edit times on the summary: end earlier (audited), refused before the last set.

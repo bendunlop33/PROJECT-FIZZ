@@ -38,7 +38,24 @@ export function CheckInScreen() {
   return route.params.mode === 'start' ? <StartCheckIn gymId={route.params.gymId} repeatOf={route.params.repeatOf ?? null} nextOf={route.params.nextOf ?? null} /> : <EditCheckIn checkInId={route.params.checkInId} />;
 }
 
-function Sheet({ title, lead, children, bar, onBack, backLabel }: { title: string; lead?: string; children?: React.ReactNode; bar: React.ReactNode; onBack?: () => void; backLabel?: string }) {
+function Sheet({
+  title,
+  lead,
+  children,
+  bar,
+  onBack,
+  backLabel,
+  barFirst = false,
+}: {
+  title: string;
+  lead?: string;
+  children?: React.ReactNode;
+  bar: React.ReactNode;
+  onBack?: () => void;
+  backLabel?: string;
+  /** Actions straight under the title, so they are visible at the 0.55 detent above a long list (audit F1). */
+  barFirst?: boolean;
+}) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
@@ -59,8 +76,9 @@ function Sheet({ title, lead, children, bar, onBack, backLabel }: { title: strin
             {lead}
           </AppText>
         ) : null}
+        {barFirst ? <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['3'] }}>{bar}</View> : null}
         {children}
-        <View style={{ borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], paddingTop: theme.space['4'], gap: theme.space['3'] }}>{bar}</View>
+        {barFirst ? null : <View style={{ borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], paddingTop: theme.space['4'], gap: theme.space['3'] }}>{bar}</View>}
       </ScrollView>
     </View>
   );
@@ -342,6 +360,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf }: { gymId: string; repeatOf: st
             setStep('score');
           }}
           backLabel={score === null ? 'Back' : scoreText(score)}
+          barFirst
           bar={
             <>
               <TextButton
@@ -352,7 +371,9 @@ function StartCheckIn({ gymId, repeatOf, nextOf }: { gymId: string; repeatOf: st
                   if (record) void start({ kind: 'answered', checkInId: record.id }, savedToast(record));
                 }}
               />
-              <PrimaryButton label="Done" busy={busy} onPress={() => void done()} />
+              <View style={{ flex: 1 }}>
+                <PrimaryButton label="Done" busy={busy} onPress={() => void done()} />
+              </View>
             </>
           }
         >

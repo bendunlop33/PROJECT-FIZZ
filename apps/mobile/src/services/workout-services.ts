@@ -586,7 +586,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId) : null;
       // The compared workout is named by its own gym, never assumed to be this one (review r2 B1).
       const gymNames = Object.fromEntries((await repos().gyms.listByOwner(p.id).catch(() => [])).map((g) => [g.id, g.name]));
-      return buildWorkoutSummary({
+      const summary = buildWorkoutSummary({
         aggregate,
         nowMs: toMs(ctx.now().utc),
         gymName: gym?.name ?? null,
@@ -598,6 +598,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         exerciseInfo,
         gymNames,
       });
+      // An open-ended workout is named from what was in it (`Push`), never a routine it wasn't (audit F5).
+      return aggregate.session.routineName === null && aggregate.exercises.length > 0 ? { ...summary, title: deriveWorkoutTitle(Object.values(exerciseInfo)) } : summary;
     },
   };
 
@@ -717,8 +719,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         repos().sessions.listFinishedBetweenReadable(p.id, toIso(week.startMs), toIso(week.endMs)).then((r) => r.sessions),
         recentCheckIns(p.id, nowMs),
       ]);
+      // Names for workouts without one (`Push`), from their exercises (audit F5).
+      const titles: Record<string, string> = {};
+      for (const a of [...(active ? [active] : []), ...finished]) {
+        if (a.session.routineName === null && a.exercises.length > 0) titles[a.session.id] = (await titleFor(a.exercises.map((e) => e.exerciseId))).title;
+      }
       return buildTodayView({
         nowMs,
+        titles,
         active,
         finishedThisWeek: finished,
         todayLocalDate: localDateOf(nowMs, at.tz),

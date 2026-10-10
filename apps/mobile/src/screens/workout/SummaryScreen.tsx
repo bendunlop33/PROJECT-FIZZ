@@ -85,10 +85,24 @@ export function SummaryScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + theme.space['4'], paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'], gap: theme.space['5'] }}>
-        <View style={{ backgroundColor: theme.colors['status.done.subtle'], borderRadius: theme.radius.md, padding: theme.space['3'], gap: theme.space['1'] }} accessibilityRole="summary">
+        {/* D: a quiet hero (label, large title, facts), then the saved line; no tinted block. */}
+        <View style={{ gap: theme.space['2'] }}>
+          <AppText variant="sectionLabel" color="text.tertiary">
+            Workout done
+          </AppText>
+          <AppText variant="title1" accessibilityRole="header" numberOfLines={2} style={{ fontSize: theme.components.heroTitleSize, lineHeight: Math.round(theme.components.heroTitleSize * 1.15) }}>
+            {sum.title}
+          </AppText>
+          <AppText variant="callout" color="text.secondary" numeric>
+            {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}
+            {(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), sum.gymName, 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`]).filter(Boolean).join(' · ')}
+          </AppText>
+        </View>
+
+        <View style={{ gap: theme.space['1'] }} accessibilityRole="summary">
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-            <Icon name="checkmark.circle.fill" color="status.done" />
-            <AppText variant="headline">Workout saved on this phone</AppText>
+            <Icon name="checkmark.circle" color="status.done" size={18} />
+            <AppText variant="callout">Saved on this phone</AppText>
           </View>
           {failed ? (
             <LinkLine
@@ -109,19 +123,9 @@ export function SummaryScreen() {
           )}
         </View>
 
-        <View style={{ gap: theme.space['1'] }}>
-          <AppText variant="title2" accessibilityRole="header">
-            {sum.title}
-          </AppText>
-          <AppText variant="callout" color="text.secondary" numeric>
-            {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}
-            {(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), sum.gymName, 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`]).filter(Boolean).join(' · ')}
-          </AppText>
-        </View>
-
         {sum.highlight ? (
           <View style={{ gap: theme.space['1'], borderTopWidth: theme.dividerWidth, borderBottomWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'], paddingVertical: theme.space['3'] }}>
-            <AppText variant="label" color="text.secondary">
+            <AppText variant="sectionLabel" color="text.tertiary">
               Today
             </AppText>
             <AppText variant="title2" numeric>
