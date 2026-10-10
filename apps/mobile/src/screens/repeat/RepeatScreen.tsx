@@ -56,6 +56,15 @@ export function RepeatScreen() {
     setTimeout(() => {
       setBusy(false);
     }, TIMING.commitGuard);
+    try {
+      await startNow();
+    } catch (e) {
+      // Never a silent failure (audit F9); the same opId makes a retry safe.
+      setError(`Couldn’t start the workout: ${e instanceof Error ? e.message : String(e)}. Try again.`);
+    }
+  }
+
+  async function startNow() {
     const gate = await services.checkIns.gate();
     if (gate.kind === 'ask') {
       navigation.navigate('CheckIn', { mode: 'start', gymId: gym.id, repeatOf: sessionId });

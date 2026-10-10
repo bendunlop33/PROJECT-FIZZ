@@ -1,4 +1,5 @@
 import {
+  addDays,
   applyCheckInPatch,
   buildActiveSetView,
   buildTodayView,
@@ -723,6 +724,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         todayLocalDate: localDateOf(nowMs, at.tz),
         localDateOf: (utc) => localDateOf(toMs(utc), at.tz),
         recentCheckIns: recent.map((r) => ({ ...r, score: r.checkIn.score, reasons: r.checkIn.reasons })),
+        weekDates: Array.from({ length: 7 }, (_, i) => addDays(week.mondayLocalDate, i)),
       });
     },
   };

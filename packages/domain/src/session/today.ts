@@ -50,11 +50,21 @@ export interface TodayInput {
   todayLocalDate: string;
   localDateOf: (utc: string) => string;
   recentCheckIns: readonly (RecentCheckIn & Pick<CheckIn, 'score' | 'reasons'>)[];
+  /** Local `YYYY-MM-DD` of Monday…Sunday this week, for the dot strip (D-Today). */
+  weekDates?: readonly string[];
+}
+
+/** One day of This week's strip: trained (filled), today (ringed), or neither. Never a plan we don't have. */
+export interface WeekDay {
+  letter: string;
+  localDate: string;
+  trained: boolean;
+  today: boolean;
 }
 
 export interface TodayView {
   main: TodayMain;
-  week: { count: number; text: string };
+  week: { count: number; text: string; days: WeekDay[] };
   unlinkedCheckIn: (RecentCheckIn & Pick<CheckIn, 'score' | 'reasons'>) | null;
 }
 
@@ -121,5 +131,7 @@ export function buildTodayView(input: TodayInput): TodayView {
 
   const count = input.finishedThisWeek.length;
   const text = count === 0 ? 'No workouts logged yet this week.' : count === 1 ? '1 workout this week' : `${String(count)} workouts this week`;
-  return { main, week: { count, text }, unlinkedCheckIn: reusableCheckIn(input.recentCheckIns, nowMs) };
+  const trainedDates = new Set(input.finishedThisWeek.map((a) => dateOnlyOf(a.session) ?? input.localDateOf(a.session.startedAt.utc)));
+  const days = (input.weekDates ?? []).map((d, i) => ({ letter: 'MTWTFSS'[i] ?? '', localDate: d, trained: trainedDates.has(d), today: d === input.todayLocalDate }));
+  return { main, week: { count, text, days }, unlinkedCheckIn: reusableCheckIn(input.recentCheckIns, nowMs) };
 }

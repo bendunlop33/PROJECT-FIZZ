@@ -35,7 +35,7 @@ const SCORES: readonly CheckInScore[] = [1, 2, 3, 4, 5];
  */
 export function CheckInScreen() {
   const route = useRoute<RouteProp<RootStackParams, 'CheckIn'>>();
-  return route.params.mode === 'start' ? <StartCheckIn gymId={route.params.gymId} repeatOf={route.params.repeatOf ?? null} /> : <EditCheckIn checkInId={route.params.checkInId} />;
+  return route.params.mode === 'start' ? <StartCheckIn gymId={route.params.gymId} repeatOf={route.params.repeatOf ?? null} nextOf={route.params.nextOf ?? null} /> : <EditCheckIn checkInId={route.params.checkInId} />;
 }
 
 function Sheet({ title, lead, children, bar, onBack, backLabel }: { title: string; lead?: string; children?: React.ReactNode; bar: React.ReactNode; onBack?: () => void; backLabel?: string }) {
@@ -167,7 +167,7 @@ function ReasonsEditor({ reasons, setReasons, note, setNote, noteRef }: { reason
   );
 }
 
-function StartCheckIn({ gymId, repeatOf }: { gymId: string; repeatOf: string | null }) {
+function StartCheckIn({ gymId, repeatOf, nextOf }: { gymId: string; repeatOf: string | null; nextOf: string | null }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
@@ -206,7 +206,15 @@ function StartCheckIn({ gymId, repeatOf }: { gymId: string; repeatOf: string | n
 
   async function start(checkIn: SessionCheckIn, toast: WorkoutToastParam | null) {
     setBusy(true);
-    const r = await services.workout.start({ gymId, opId: startOp, checkIn, repeatOf });
+    let r: Awaited<ReturnType<typeof services.workout.start>>;
+    try {
+      r = await services.workout.start({ gymId, opId: startOp, checkIn, repeatOf, nextOf });
+    } catch (e) {
+      // Never a stuck sheet (audit F9): say so; the same opId makes a retry safe.
+      setBusy(false);
+      setError(`Couldn’t start the workout: ${e instanceof Error ? e.message : String(e)}. Try again.`);
+      return;
+    }
     setBusy(false);
     if (!r.ok) {
       setError(r.error.code === 'session_already_active' ? 'A workout is already in progress. Resume it from Today.' : r.error.message);

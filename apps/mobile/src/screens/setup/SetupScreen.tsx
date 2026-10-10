@@ -201,10 +201,15 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
             setStep('units');
           }}
           onSkip={() =>
+            // Audit B4: "skip" still leaves a usable gym, a typical one marked not checked.
             void run(
-              () => services.setup.skipGym(),
+              () => services.setup.useTypicalGym(),
               () => {
-                setGym('skipped');
+                void (async () => {
+                  const current = await services.yourData.currentGym();
+                  const items = current ? await services.yourData.equipment(current.id) : [];
+                  setGym(current === null ? 'skipped' : { name: current.name, items: items.length, notChecked: items.filter((i) => i.detailsSource === 'preset').length });
+                })();
                 setStep('data');
               },
             )

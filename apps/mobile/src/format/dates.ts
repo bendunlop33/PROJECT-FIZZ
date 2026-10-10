@@ -54,3 +54,9 @@ export function formatWhen(ms: number, nowMs: number, tz: string, locale?: strin
   const time = formatTime(ms, tz, locale);
   return localDateKey(ms, tz) === localDateKey(nowMs, tz) ? time : `${formatShortDate(ms, tz, locale)}, ${time}`;
 }
+
+/** `Thursday 8 October` (Today's header; shown in tracked caps). */
+export function formatLongDate(ms: number, tz: string, locale?: string): string {
+  const p = parts(ms, tz, locale, { weekday: 'long', day: 'numeric', month: 'long' });
+  return `${p.weekday ?? ''} ${p.day ?? ''} ${p.month ?? ''}`.trim();
+}

@@ -132,7 +132,7 @@ export function GymSetupFlow({
           ))}
         </Group>
         <AppText variant="callout" color="text.secondary">
-          You can check the numbers at the gym. Until then they’re marked “not checked”. Editing each item’s numbers comes with the gym editor.
+          You can check the numbers at the gym in Profile › your gym. Until then they’re marked “not checked”.
         </AppText>
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
       </StepFrame>
@@ -184,7 +184,14 @@ export function GymSetupFlow({
           <ChoiceCard key={p.id} title={p.title} subtitle={p.subtitle} selected={presetId === p.id} onPress={() => { choose(p.id); }} />
         ))}
       </View>
-      {onSkip ? <TextButton label="Skip for now: you’ll add a gym before your first workout" tone="secondary" onPress={onSkip} /> : null}
+      {onSkip ? (
+        <View style={{ gap: theme.space['1'] }}>
+          <TextButton label="Skip: use a typical gym for now" tone="secondary" onPress={onSkip} />
+          <AppText variant="callout" color="text.tertiary">
+            Barbell, dumbbells, cables and machines with typical weights, marked “not checked”. Edit it any time in Profile.
+          </AppText>
+        </View>
+      ) : null}
       {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
     </StepFrame>
   );
