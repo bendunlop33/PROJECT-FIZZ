@@ -1,4 +1,6 @@
-import type { AliasTarget, AliasUse, ExerciseAlias, ImportBarKind, PerHandReading, TotalAnswer } from '@fizz/schemas';
+import type { AliasTarget, AliasUse, ExerciseAlias, PerHandReading, RememberedTotal } from '@fizz/schemas';
+
+export type { RememberedTotal } from '@fizz/schemas';
 
 /**
  * What Ben's earlier imports still say about a source name (review r5 S2).
@@ -12,12 +14,6 @@ import type { AliasTarget, AliasUse, ExerciseAlias, ImportBarKind, PerHandReadin
  * or are asked again with nothing selected when there is none (DX6).
  * Nothing is deleted.
  */
-
-/** Ben's own barbell answer for one exercise: total as written or plates only, and the bar he chose when he changed it. */
-export interface RememberedTotal {
-  reading: TotalAnswer;
-  bar?: ImportBarKind;
-}
 
 export interface RememberedAnswer {
   target: AliasTarget;
@@ -46,7 +42,7 @@ export function rememberedAnswer(alias: Pick<ExerciseAlias, 'target' | 'perHand'
   const newestFirst = [...live].reverse();
   const said = newestFirst.find((u) => u.perHand !== undefined);
   const total = newestFirst.find((u) => u.total !== undefined)?.total ?? null;
-  return { target: last.target, perHand: said?.perHand ?? null, total: total === null ? null : { reading: total.reading, ...(total.bar === undefined ? {} : { bar: total.bar }) } };
+  return { target: last.target, perHand: said?.perHand ?? null, total };
 }
 
 /** Every remembered name, dumbbell and barbell answer in effect, by name key (`ImportContext.aliases` / `perHandAnswers` / `totalAnswers`). */

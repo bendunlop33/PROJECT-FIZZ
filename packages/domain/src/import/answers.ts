@@ -14,7 +14,7 @@ export type AnswerChange =
   | { kind: 'total'; answer: GroupTotalAnswer }
   /** One exercise: total as written, or plates only (its bar's weight added); null goes back to the group answer. */
   | { kind: 'total_override'; key: string; answer: TotalAnswer | null }
-  /** The bar one exercise's "plates only" adds; null goes back to the matched exercise's own bar. */
+  /** The bar one exercise's "plates only" adds; null goes back to the matched exercise's own bar. Only for an exercise answered "plates only" (review r8 S2). */
   | { kind: 'total_bar'; key: string; bar: ImportBarKind | null }
   /** A bar's weight for `plates_only` values (each bar kind has its own; review S1). */
   | { kind: 'bar_weight'; bar: ImportBarKind; unit: WeightUnit; value: number }
@@ -47,7 +47,8 @@ export function applyAnswerChange(a: ImportAnswers, c: AnswerChange): ImportAnsw
     case 'total':
       return { ...a, total: c.answer };
     case 'total_override':
-      return { ...a, totalOverrides: setOrClear(a.totalOverrides, c.key, c.answer) };
+      // A bar is only ever chosen for "plates only": any other answer drops it, so it can't change the exercise `Add new` makes or be remembered (review r8 S2).
+      return { ...a, totalOverrides: setOrClear(a.totalOverrides, c.key, c.answer), totalBars: c.answer === 'plates_only' ? (a.totalBars ?? {}) : without(a.totalBars ?? {}, c.key) };
     case 'total_bar':
       return { ...a, totalBars: setOrClear(a.totalBars ?? {}, c.key, c.bar) };
     case 'bar_weight':

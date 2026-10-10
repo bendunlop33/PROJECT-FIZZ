@@ -188,7 +188,16 @@ export interface TotalExercise {
   name: string;
   /** The app's exercise it maps to. */
   exerciseName: string;
+  exerciseId: string;
   sets: number;
+  /**
+   * Units its sets are written in (a FitNotes 2 row with both columns
+   * filled counts as both until Ben picks one): the bar weights a
+   * plates-only answer depends on (review r8 B1).
+   */
+  units: WeightUnit[];
+  /** The weight of `bar` in effect in each of `units` (absent while not entered): what a plates-only answer adds, remembered with it. */
+  barWeights: { kg?: number; lb?: number };
   /** The matched exercise's own bar, from its equipment (`unknown`: none, or more than one, recorded). */
   exerciseBar: Exclude<BarOf, 'none'>;
   /** The bar "plates only" adds: Ben's choice, else the exercise's own. `unknown`: he has to choose one before plates only can be read. */
@@ -197,8 +206,15 @@ export interface TotalExercise {
   barChosen: boolean;
   /** Ben's answer for this exercise; null: the group answer reads it. */
   override: TotalAnswer | null;
-  /** Ben's answer for this name in an earlier import still in effect; null when there is none. */
+  /** Ben's answer for this name in an earlier import still in effect, as given then; null when there is none. */
   remembered: RememberedTotal | null;
+  /**
+   * The remembered answer is exactly what this import would do: the same
+   * exercise, the same bar and that bar's same weight in each unit (or one
+   * still to be entered) (`rememberedTotalFits`; review r8 B1, B2). Only
+   * then is it filled in or labelled `Your answer last time`.
+   */
+  rememberedFits: boolean;
   /** How its values are read now (`totalReading`). Null: still to answer. */
   reading: TotalAnswer | null;
   /**
@@ -404,9 +420,13 @@ const CUSTOM_KINDS = Object.keys(CONVENTION_BY_KIND) as CustomExerciseKind[];
  * can't live on in the exercise, and an import still in effect that mapped
  * another name to it keeps reading it its way (review r6 B1).
  */
-export function customExerciseIdFor(ownerId: string, key: string, kind: CustomExerciseKind): string {
-  return deriveId(`custom-exercise:${ownerId}:fitnotes:${key}:${kind}`);
+export function customExerciseIdFor(ownerId: string, key: string, kind: CustomExerciseKind, bar: ImportBarKind = 'barbell'): string {
+  // An EZ- or trap-bar exercise `Add new` makes (Ben's plates-only bar) is another exercise from the Olympic one: an import never changes an exercise (review r8 S2).
+  const made = kind === 'barbell' && bar !== 'barbell' ? `${kind}:${bar}` : kind;
+  return deriveId(`custom-exercise:${ownerId}:fitnotes:${key}:${made}`);
 }
+
+const OTHER_BARS: readonly ImportBarKind[] = ['ez_bar', 'trap_bar'];
 
 /** The one ID per name that builds before review r6 gave `Add new`'s exercise, whatever its equipment. Recognised, never written. */
 export function legacyCustomExerciseIdFor(ownerId: string, key: string): string {
@@ -421,7 +441,11 @@ export function legacyCustomExerciseIdFor(ownerId: string, key: string): string 
 export function isImportMadeExercise(ownerId: string, e: { id: string; name: string; source: string }): boolean {
   if (e.source !== 'custom') return false;
   const key = nameKey(e.name);
-  return e.id === legacyCustomExerciseIdFor(ownerId, key) || CUSTOM_KINDS.some((k) => e.id === customExerciseIdFor(ownerId, key, k));
+  return (
+    e.id === legacyCustomExerciseIdFor(ownerId, key) ||
+    CUSTOM_KINDS.some((k) => e.id === customExerciseIdFor(ownerId, key, k)) ||
+    OTHER_BARS.some((b) => e.id === customExerciseIdFor(ownerId, key, 'barbell', b))
+  );
 }
 
 /**
@@ -430,11 +454,12 @@ export function isImportMadeExercise(ownerId: string, e: { id: string; name: str
  * the old ID when it is still exactly that equipment, so its history stays
  * together. Either way it is never changed (review r6 B1).
  */
-function addNewExerciseId(ctx: ImportContext, storedKey: string, key: string, kind: CustomExerciseKind, byId: ReadonlyMap<string, MatchCandidate>): string {
+function addNewExerciseId(ctx: ImportContext, storedKey: string, key: string, kind: CustomExerciseKind, made: ExerciseEquipmentKind, byId: ReadonlyMap<string, MatchCandidate>): string {
   const legacy = byId.get(legacyCustomExerciseIdFor(ctx.ownerId, key));
-  const same = legacy?.importMade === true && legacy.defaultLoadConvention === CONVENTION_BY_KIND[kind] && legacy.compatibleEquipment.length === 1 && legacy.compatibleEquipment[0] === kind;
+  const same = legacy?.importMade === true && legacy.defaultLoadConvention === CONVENTION_BY_KIND[kind] && legacy.compatibleEquipment.length === 1 && legacy.compatibleEquipment[0] === made;
+  const bar: ImportBarKind = made === 'ez_bar' || made === 'trap_bar' ? made : 'barbell';
   // Keyed on the name as stored (at most 120 characters), so the exercise is recognised as import-made from its name (review r6.1 N4).
-  return same ? legacy.exerciseId : customExerciseIdFor(ctx.ownerId, storedKey, kind);
+  return same ? legacy.exerciseId : customExerciseIdFor(ctx.ownerId, storedKey, kind, bar);
 }
 
 /**
@@ -493,13 +518,14 @@ function resolveName(
         return fromCandidate(answer.exerciseId);
       case 'new': {
         const stored = name.slice(0, 120);
-        // A new barbell exercise is made with the Olympic bar, or the bar Ben chose for it on the barbell question; never one read from the name (PM decision after review r7).
+        // A new barbell exercise is made with the Olympic bar, or the bar Ben chose for its "plates only" answer on the barbell question
+        // (`chosenBar` is only passed then; review r8 S2); never one read from the name (PM decision after review r7).
         const bar: BarOf = answer.equipment === 'barbell' ? 'barbell' : 'none';
-        const made = answer.equipment === 'barbell' ? (chosenBar ?? 'barbell') : answer.equipment;
+        const made: ExerciseEquipmentKind = answer.equipment === 'barbell' ? (chosenBar ?? 'barbell') : answer.equipment;
         return {
           kind: 'exercise',
           exercise: withAssistWord(name, {
-            exerciseId: addNewExerciseId(ctx, nameKey(stored), key, answer.equipment, byId),
+            exerciseId: addNewExerciseId(ctx, nameKey(stored), key, answer.equipment, made, byId),
             name: stored,
             laterality: 'bilateral',
             convention: CONVENTION_BY_KIND[answer.equipment],
@@ -584,8 +610,35 @@ function enteredWeight(row: FitNotesRow, answers: ImportAnswers): { value: numbe
 }
 
 /** A bar's weight per unit: the Olympic bar has the spec's editable default; EZ and trap bars have none until Ben enters one. */
-function barWeightOf(bar: ImportBarKind, answers: ImportAnswers): { kg: number | null; lb: number | null } {
+function barWeightOf(bar: ImportBarKind, answers: Pick<ImportAnswers, 'barWeight' | 'otherBarWeight'>): { kg: number | null; lb: number | null } {
   return bar === 'barbell' ? answers.barWeight : answers.otherBarWeight[bar];
+}
+
+/**
+ * Whether Ben's remembered barbell answer for a name is exactly what this
+ * import would do with it (review r8 B1, B2). Pure.
+ * - It must be for the exercise the name maps to now (a remembered answer
+ *   never follows the name to another exercise), and records from before
+ *   the exercise was kept never fit.
+ * - "Total as written" adds nothing, so that is all.
+ * - "Plates only" must add the same bar: the one Ben chose then, or the
+ *   exercise's own bar when that is still the one it was read with.
+ * - And that bar's weight in effect now, in every unit the exercise's sets
+ *   are written in, must be the one it was read with then, or still be
+ *   empty (an EZ or trap bar's weight is then asked before anything is
+ *   imported). A kg answer never fills in a 45 lb default it never saw.
+ */
+export function rememberedTotalFits(
+  r: RememberedTotal,
+  now: { exerciseId: string; exerciseBar: Exclude<BarOf, 'none'>; units: readonly WeightUnit[] },
+  answers: Pick<ImportAnswers, 'barWeight' | 'otherBarWeight'>,
+): boolean {
+  if (r.exerciseId === undefined || r.exerciseId !== now.exerciseId) return false;
+  if (r.reading === 'total') return true;
+  if (r.bar === undefined) return false;
+  if (r.barChosen !== true && r.bar !== now.exerciseBar) return false;
+  const weight = barWeightOf(r.bar, answers);
+  return now.units.every((u) => weight[u] === null || weight[u] === r.barWeight?.[u]);
 }
 
 function negative(value: number): string {
@@ -675,18 +728,23 @@ function totalQuestion(
         key,
         name: r.exercise,
         exerciseName: ex.name,
+        exerciseId: ex.exerciseId,
         sets: 0,
+        units: [],
+        barWeights: {},
         exerciseBar: ex.bar,
         bar: platesOnlyBar(ex, key, answers),
         barChosen: answers.totalBars?.[key] !== undefined,
         override,
         remembered: remembered.get(key) ?? null,
+        rememberedFits: false,
         reading: totalReading(override, answers.total),
         sample: null,
       };
       members.set(key, m);
     }
     m.sets += 1;
+    for (const u of entered ? [entered.unit] : r.bothColumns ? (['kg', 'lb'] as const) : []) if (!m.units.includes(u)) m.units.push(u);
     const bar = m.bar === 'unknown' ? null : m.bar;
     // Each bar's weight per unit, and whether plates-only rows need it (review S1).
     if (bar !== null && entered) {
@@ -708,6 +766,17 @@ function totalQuestion(
   }
   if (members.size === 0) return null;
   const exercises = [...members.values()];
+  for (const m of exercises) {
+    m.units.sort();
+    if (m.bar !== 'unknown') {
+      const weight = barWeightOf(m.bar, answers);
+      for (const u of m.units) {
+        const w = weight[u];
+        if (w !== null) m.barWeights[u] = w;
+      }
+    }
+    m.rememberedFits = m.remembered !== null && rememberedTotalFits(m.remembered, m, answers);
+  }
   const bars: BarWeightQuestion[] = BAR_KINDS.flatMap((bar) => {
     const use = barUse.get(bar);
     if (!use) return [];
@@ -771,7 +840,9 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     if (!n) {
       const match = matchIn(ctx, key, r.exercise);
       const answer = answers.names[key] ?? null;
-      const resolution = resolveName(key, r.exercise, match, answer, ctx, byId, answers.totalBars?.[key] ?? null);
+      // The bar Ben chose shapes the exercise `Add new` makes only when he answered it "plates only" (review r8 S2).
+      const chosenBar = answers.totalOverrides[key] === 'plates_only' ? (answers.totalBars?.[key] ?? null) : null;
+      const resolution = resolveName(key, r.exercise, match, answer, ctx, byId, chosenBar);
       n = { key, name: r.exercise, sets: 0, match, answer, resolution, needsAnswer: resolution.kind === 'open' };
       nameRows.set(key, n);
     }
@@ -1136,6 +1207,12 @@ export interface AliasSave {
   total?: RememberedTotal | null;
 }
 
+/** One exercise's barbell answer as it is remembered (review r8 B1, B2). */
+function rememberedTotalOf(e: TotalExercise, reading: TotalAnswer): RememberedTotal {
+  if (reading === 'total' || e.bar === 'unknown') return { reading, exerciseId: e.exerciseId };
+  return { reading, exerciseId: e.exerciseId, bar: e.bar, barChosen: e.barChosen, barWeight: { ...e.barWeights } };
+}
+
 /**
  * Names Ben answered, to remember for the next import (`ExerciseAlias`,
  * §2.5 step 3a), and his own answer for an exercise's dumbbells, kept with
@@ -1154,9 +1231,9 @@ export function aliasesToSave(analysis: ImportAnalysis): AliasSave[] {
     // Asked about this import: his answer, or null when he cleared the one remembered from last time.
     const perHand = e === undefined ? undefined : (e.override ?? (e.remembered === null ? undefined : null));
     const b = barbells.get(n.key);
-    // The same for his barbell answer, with the bar when he chose one (PM decision after review r7).
+    // The same for his barbell answer, kept exactly: the exercise, and for plates only the bar it added and that bar's weight (review r8 B1, B2).
     const total: RememberedTotal | null | undefined =
-      b === undefined ? undefined : b.override !== null ? { reading: b.override, ...(b.barChosen && b.bar !== 'unknown' ? { bar: b.bar } : {}) } : b.remembered === null ? undefined : null;
+      b === undefined ? undefined : b.override !== null ? rememberedTotalOf(b, b.override) : b.remembered === null ? undefined : null;
     const used = n.answer === null && n.match.via === 'alias' && n.sets > 0;
     if (n.resolution.kind === 'skip') {
       if (n.answer || used) out.push({ key: n.key, name: n.name, target: { kind: 'skip' } });
@@ -1177,13 +1254,18 @@ export function aliasesToSave(analysis: ImportAnalysis): AliasSave[] {
  *   again because some of its dates aren't in the app now): its answers,
  *   except names (remembered as aliases) and a gym that is gone;
  * - each name's dumbbell answer from the newest import still in effect
- *   that had it (`perHandAnswers`), shown as his answer last time.
+ *   that had it (`perHandAnswers`), shown as his answer last time;
+ * - each name's barbell answer likewise (`totalAnswers`), but only when it
+ *   is exactly what this import would do with it: the same exercise, bar
+ *   and bar weight (`rememberedTotalFits`; review r8 B1, B2). Otherwise
+ *   the exercise is asked with nothing selected, and the earlier answer is
+ *   shown as information only.
  * An undone import's answers are never among them (review r6 N4), and a
  * preview rebuilt against changed data starts from here again (r6 S1).
  */
 export function startingAnswers(
-  rows: readonly FitNotesRow[],
-  ctx: Pick<ImportContext, 'perHandAnswers' | 'totalAnswers'>,
+  input: { variant: FitNotesVariant; rows: readonly FitNotesRow[] },
+  ctx: ImportContext,
   earlier: { answers: ImportAnswers; gymIds: ReadonlySet<string> } | null,
 ): ImportAnswers {
   const base: ImportAnswers = earlier
@@ -1196,22 +1278,25 @@ export function startingAnswers(
       }
     : DEFAULT_ANSWERS;
   const remembered = ctx.perHandAnswers ?? new Map<string, PerHandReading>();
-  const rememberedTotals = ctx.totalAnswers ?? new Map<string, RememberedTotal>();
   const overrides: Record<string, PerHandReading> = { ...base.perHandOverrides };
-  const totalOverrides: Record<string, TotalAnswer> = { ...base.totalOverrides };
-  const totalBars: Record<string, ImportBarKind> = { ...base.totalBars };
-  for (const r of rows) {
+  for (const r of input.rows) {
     if (r.rowClass !== 'strength') continue;
     const key = nameKey(r.exercise);
     const answer = remembered.get(key);
     if (answer !== undefined) overrides[key] = answer;
-    const total = rememberedTotals.get(key);
-    if (total !== undefined) {
-      totalOverrides[key] = total.reading;
-      if (total.bar !== undefined) totalBars[key] = total.bar;
-    }
   }
-  return { ...base, perHandOverrides: overrides, totalOverrides, totalBars };
+  const start: ImportAnswers = { ...base, perHandOverrides: overrides, totalOverrides: { ...base.totalOverrides }, totalBars: { ...base.totalBars } };
+  if ((ctx.totalAnswers?.size ?? 0) === 0) return start;
+  // Each barbell exercise as this import reads it before any barbell answer is filled in: which exercise, bar, units and bar weights.
+  const totalOverrides: Record<string, TotalAnswer> = { ...start.totalOverrides };
+  const totalBars: Record<string, ImportBarKind> = { ...start.totalBars };
+  for (const e of analyseImport(input, ctx, start).total?.exercises ?? []) {
+    const r = e.remembered;
+    if (r === null || !e.rememberedFits) continue;
+    totalOverrides[e.key] = r.reading;
+    if (r.reading === 'plates_only' && r.barChosen === true && r.bar !== undefined && r.bar !== e.exerciseBar) totalBars[e.key] = r.bar;
+  }
+  return { ...start, totalOverrides, totalBars };
 }
 
 /** Custom exercises `Add new` makes, for names with at least one imported set. */

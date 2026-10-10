@@ -275,6 +275,26 @@ export type AliasTarget = z.infer<typeof AliasTargetSchema>;
 export const ALIAS_USES_MAX = 100;
 
 /**
+ * Ben's own barbell answer for one exercise, as remembered on its name's
+ * alias (PM decision after review r7). Exact (review r8 B1, B2): the
+ * exercise it was given for, and for "plates only" the bar it actually
+ * added (`barChosen`: Ben changed it from the exercise's own) and that
+ * bar's weight per unit the exercise's sets were written in. A later
+ * import fills it in only when the name resolves to the same exercise and
+ * bar and the bar weight in effect is the same (or still to be entered).
+ * Records written by the review r8 build lack `exerciseId` and are shown,
+ * never filled in.
+ */
+export const RememberedTotalSchema = z.object({
+  reading: TotalAnswerSchema,
+  exerciseId: IdSchema.optional(),
+  bar: ImportBarKindSchema.optional(),
+  barChosen: z.boolean().optional(),
+  barWeight: z.object({ kg: z.number().positive().max(BAR_WEIGHT_MAX.kg).optional(), lb: z.number().positive().max(BAR_WEIGHT_MAX.lb).optional() }).optional(),
+});
+export type RememberedTotal = z.infer<typeof RememberedTotalSchema>;
+
+/**
  * One import's answer for a name (review r5 S2): the exercise (or Skip) it
  * used and, when that import asked about the name's dumbbells, Ben's answer
  * (`null`: he cleared it; absent: that import didn't ask).
@@ -286,10 +306,9 @@ export const AliasUseSchema = z.object({
   /**
    * Ben's own barbell answer for the name when that import asked (`null`:
    * he gave none, clearing one remembered; absent: that import didn't ask).
-   * `bar`: the bar he chose for "plates only", when he changed it from the
-   * exercise's own (PM decision after review r7).
+   * See `RememberedTotalSchema` (PM decision after review r7; review r8 B1, B2).
    */
-  total: z.object({ reading: TotalAnswerSchema, bar: ImportBarKindSchema.optional() }).nullable().optional(),
+  total: RememberedTotalSchema.nullable().optional(),
 });
 export type AliasUse = z.infer<typeof AliasUseSchema>;
 

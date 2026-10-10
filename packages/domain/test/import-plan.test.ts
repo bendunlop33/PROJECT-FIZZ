@@ -594,7 +594,7 @@ describe('FitNotes default one-dumbbell names (review r4)', () => {
       ]),
     });
     const p2 = parsed(`${A1}2026-10-08,One-Arm Standing Dumbbell Press,Shoulders,24,8,,,\n2026-10-08,Dumbbell Concentration Curl,Biceps,16,10,,,\n2026-10-08,Seated Dumbbell Press,Shoulders,42,8,,,\n`);
-    const start = startingAnswers(p2.rows, later, null);
+    const start = startingAnswers(p2, later, null);
     expect(start).toEqual({ ...DEFAULT_ANSWERS, perHandOverrides: { [ONE_ARM]: 'one', [CONC]: 'one' } });
     const a2 = analyseImport(p2, later, start);
     expect(a2.names.map((n) => [n.name, n.match.status, n.match.via])).toEqual([
@@ -632,34 +632,136 @@ describe('FitNotes default one-dumbbell names (review r4)', () => {
       existingDates: 'import',
       gymId: '00000000-0000-4000-8000-0000000009a1',
     };
-    const start = startingAnswers(p.rows, { perHandAnswers: new Map([[ONE_ARM, 'one']]) }, { answers: earlier, gymIds: new Set() });
+    const start = startingAnswers(p, withStanding({ perHandAnswers: new Map([[ONE_ARM, 'one']]) }), { answers: earlier, gymIds: new Set() });
     // A group "plates only" (stored before the PM decision after review r7) is never carried over: no group answer adds a bar.
     expect(start).toEqual({ ...earlier, names: {}, gymId: null, total: null, perHandOverrides: { [ONE_ARM]: 'one' }, totalBars: {} });
-    const kept = startingAnswers(p.rows, {}, { answers: earlier, gymIds: new Set(['00000000-0000-4000-8000-0000000009a1']) });
+    const kept = startingAnswers(p, withStanding(), { answers: earlier, gymIds: new Set(['00000000-0000-4000-8000-0000000009a1']) });
     expect(kept.gymId).toBe('00000000-0000-4000-8000-0000000009a1');
-    expect(startingAnswers(p.rows, {}, null)).toEqual(DEFAULT_ANSWERS);
+    expect(startingAnswers(p, withStanding(), null)).toEqual(DEFAULT_ANSWERS);
   });
 
-  it('Ben’s barbell answer for a name is remembered: filled in next time with the bar he chose, and cleared when he takes it back (PM decision after review r7)', () => {
+  it('Ben’s barbell answer for a name is remembered exactly: exercise, bar he chose and its weight; cleared when he takes it back (PM decision after review r7; review r8)', () => {
     const p = parsed(`${A1}2026-10-01,Log Press,Shoulders,60,5,,,\n2026-10-01,Bench press,Chest,80,5,,,\n`);
     const names = { [nameKey('Log Press')]: { kind: 'new' as const, equipment: 'barbell' as const } };
+    const trap = { ez_bar: { kg: null, lb: null }, trap_bar: { kg: 25, lb: null } };
     // This import: plates only on the trap bar for the log press (his answer), the bench by the group answer.
-    const first = analyseImport(p, ctx(), answers({ names, total: 'total', totalOverrides: { 'log press': 'plates_only' }, totalBars: { 'log press': 'trap_bar' }, otherBarWeight: { ez_bar: { kg: null, lb: null }, trap_bar: { kg: 25, lb: null } } }));
+    const first = analyseImport(p, ctx(), answers({ names, total: 'total', totalOverrides: { 'log press': 'plates_only' }, totalBars: { 'log press': 'trap_bar' }, otherBarWeight: trap }));
     expect(first.fates.map((f) => (f.result === 'imported' ? f.set.load?.value : f.result))).toEqual([85, 80]);
+    // Add new makes it a trap-bar exercise of its own (its own ID: an exercise is never changed; review r8 S2).
+    const made = customExerciseIdFor(OWNER, 'log press', 'barbell', 'trap_bar');
+    expect(made).not.toBe(customExerciseIdFor(OWNER, 'log press', 'barbell'));
+    expect(newExercisesToCreate(first).map((e) => [e.exerciseId, e.equipment])).toEqual([[made, ['trap_bar']]]);
     const saved = aliasesToSave(first);
-    expect(saved.map((x) => [x.key, x.total])).toEqual([['log press', { reading: 'plates_only', bar: 'trap_bar' }]]);
-    // Next time: filled in and shown as his answer last time; the bench (no answer of its own) is not.
-    const remembered = new Map([['log press', { reading: 'plates_only' as const, bar: 'trap_bar' as const }]]);
-    const start = startingAnswers(p.rows, { totalAnswers: remembered }, null);
-    expect(start).toMatchObject({ total: null, totalOverrides: { 'log press': 'plates_only' }, totalBars: { 'log press': 'trap_bar' } });
-    const next = analyseImport(p, ctx({ totalAnswers: remembered }), { ...start, names });
-    expect(next.total?.exercises.map((e) => [e.name, e.override, e.bar, e.barChosen, e.remembered])).toEqual([
-      ['Log Press', 'plates_only', 'trap_bar', true, { reading: 'plates_only', bar: 'trap_bar' }],
-      ['Bench press', null, 'barbell', false, null],
+    expect(saved.map((x) => [x.key, x.total])).toEqual([['log press', { reading: 'plates_only', exerciseId: made, bar: 'trap_bar', barChosen: true, barWeight: { kg: 25 } }]]);
+    // Next time, through the alias to the trap-bar exercise it made: filled in, labelled; its trap-bar weight is still asked (empty).
+    const madeCandidate: MatchCandidate = { exerciseId: made, name: 'Log Press', aliases: [], catalogueKey: null, laterality: 'bilateral', defaultLoadConvention: 'total', compatibleEquipment: ['trap_bar'], implements: null, importMade: true };
+    const remembered = new Map(saved.flatMap((x) => (x.total ? [[x.key, x.total] as const] : [])));
+    const later = ctx({ candidates: [...CANDIDATES, madeCandidate], aliases: new Map(saved.map((x) => [x.key, x.target])), totalAnswers: remembered });
+    const start = startingAnswers(p, later, null);
+    expect(start).toMatchObject({ total: null, totalOverrides: { 'log press': 'plates_only' }, totalBars: {} });
+    const next = analyseImport(p, later, start);
+    expect(next.total?.exercises.map((e) => [e.name, e.override, e.bar, e.rememberedFits])).toEqual([
+      ['Log Press', 'plates_only', 'trap_bar', true],
+      ['Bench press', null, 'barbell', false],
     ]);
+    expect(next.total?.missingBarWeight).toBe(true);
     // Taken back (back to the group answer): remembered as cleared.
-    const back = analyseImport(p, ctx({ totalAnswers: remembered }), { ...start, names, total: 'total', totalOverrides: {} });
+    const back = analyseImport(p, later, { ...start, total: 'total', totalOverrides: {} });
     expect(aliasesToSave(back).map((x) => [x.key, x.total])).toEqual([['log press', null]]);
+  });
+});
+
+describe('review r8: a remembered "plates only" is filled in only when it is exact', () => {
+  const BENCH = idOf('Bench press');
+  const thing = (unit: 'kg' | 'lb', value = 60, date = '2026-10-01') =>
+    parsed(`${unit === 'kg' ? A1 : A1.replace('kgs', 'lbs')}${date},Thing,Chest,${String(value)},5,,,\n`);
+  const benchAnswer = (bar: number, unit: 'kg' | 'lb' = 'kg') => ({ reading: 'plates_only' as const, exerciseId: BENCH, bar: 'barbell' as const, barChosen: false, barWeight: { [unit]: bar } });
+  const loads = (a: ReturnType<typeof analyseImport>) => a.fates.map((f) => (f.result === 'imported' ? f.set.load?.value : f.result === 'pending' ? `pending:${f.reason}` : f.result));
+  const toBench = (over: Partial<ImportContext> = {}) => ctx({ aliases: new Map([['thing', { kind: 'exercise', exerciseId: BENCH }]]), ...over });
+
+  it('B1: import A with a 15 kg bar stores 60 as 75; import B of a later file (bar 20 kg by default) is not filled in, nothing is stored unasked', () => {
+    const a = analyseImport(thing('kg'), toBench(), answers({ total: 'total', totalOverrides: { thing: 'plates_only' }, barWeight: { kg: 15, lb: 45 } }));
+    expect(loads(a)).toEqual([75]);
+    const saved = aliasesToSave(a).find((x) => x.key === 'thing')?.total;
+    expect(saved).toEqual(benchAnswer(15));
+    const later = toBench({ totalAnswers: new Map([['thing', saved ?? benchAnswer(15)]]) });
+    const b = thing('kg', 60, '2026-10-08');
+    const start = startingAnswers(b, later, null);
+    expect(start.totalOverrides).toEqual({});
+    const analysis = analyseImport(b, later, start);
+    expect(analysis.total?.exercises.map((e) => [e.override, e.reading, e.rememberedFits])).toEqual([[null, null, false]]);
+    expect(analysis.ready).toBe(false);
+    expect(loads(analysis)).toEqual(['pending:total']);
+    // With the bar weight he used then, it fits: shown (and filled in when it is that at the start).
+    expect(analyseImport(b, later, { ...start, barWeight: { kg: 15, lb: 45 } }).total?.exercises[0]?.rememberedFits).toBe(true);
+    const earlier = { answers: { ...DEFAULT_ANSWERS, barWeight: { kg: 15, lb: 45 } }, gymIds: new Set<string>() };
+    const sameBar = startingAnswers(b, later, earlier);
+    expect(sameBar.totalOverrides).toEqual({ thing: 'plates_only' });
+    expect(loads(analyseImport(b, later, sameBar))).toEqual([75]);
+  });
+
+  it('B1: in kg and in lb, the same bar weight is filled in and stores the same value as last time', () => {
+    for (const [unit, bar] of [['kg', 20], ['lb', 45]] as const) {
+      const later = toBench({ totalAnswers: new Map([['thing', benchAnswer(bar, unit)]]) });
+      const b = thing(unit, 100);
+      const start = startingAnswers(b, later, null);
+      expect(start.totalOverrides, unit).toEqual({ thing: 'plates_only' });
+      expect(loads(analyseImport(b, later, start)), unit).toEqual([100 + bar]);
+    }
+  });
+
+  it('B1: a kg answer is never filled in for an lb file (the 45 lb default was never confirmed), nor an lb answer for a kg file', () => {
+    for (const [given, file] of [['kg', 'lb'], ['lb', 'kg']] as const) {
+      const later = toBench({ totalAnswers: new Map([['thing', benchAnswer(given === 'kg' ? 20 : 45, given)]]) });
+      const b = thing(file);
+      const start = startingAnswers(b, later, null);
+      expect(start.totalOverrides, `${given} → ${file}`).toEqual({});
+      expect(loads(analyseImport(b, later, start)), `${given} → ${file}`).toEqual(['pending:total']);
+    }
+  });
+
+  it('B2: a remembered plates only never follows the name to another exercise or bar', () => {
+    const skull = idOf('EZ-bar skull crusher');
+    // The name now maps to the EZ-bar skull crusher (remapped in a later import, with nothing said about its barbell weights).
+    const later = ctx({ aliases: new Map([['thing', { kind: 'exercise', exerciseId: skull }]]), totalAnswers: new Map([['thing', benchAnswer(20)]]), defaultUnit: 'kg' });
+    const b = thing('kg');
+    const start = startingAnswers(b, later, null);
+    expect(start.totalOverrides).toEqual({});
+    expect(start.totalBars).toEqual({});
+    const withEz = analyseImport(b, later, { ...start, otherBarWeight: { ez_bar: { kg: 10, lb: null }, trap_bar: { kg: null, lb: null } } });
+    expect(withEz.total?.exercises.map((e) => [e.exerciseName, e.bar, e.override, e.rememberedFits])).toEqual([['EZ-bar skull crusher', 'ez_bar', null, false]]);
+    expect(loads(withEz)).toEqual(['pending:total']);
+    // Choose… to another Olympic-bar exercise: also not filled in (it was Ben's answer for the bench press).
+    const squat = analyseImport(b, toBench({ totalAnswers: new Map([['thing', benchAnswer(20)]]) }), answers({ names: { thing: { kind: 'exercise', exerciseId: idOf('Back squat') } } }));
+    expect(squat.total?.exercises[0]?.rememberedFits).toBe(false);
+  });
+
+  it('B2: the matched exercise’s own bar changed since (a catalogue update): not filled in', () => {
+    const changed = CANDIDATES.map((c) => (c.exerciseId === BENCH ? { ...c, compatibleEquipment: ['trap_bar' as const] } : c));
+    const later = toBench({ candidates: changed, totalAnswers: new Map([['thing', benchAnswer(20)]]) });
+    expect(startingAnswers(thing('kg'), later, null).totalOverrides).toEqual({});
+  });
+
+  it('a bar Ben chose last time is filled in with it, and a record without its exercise (review r8 build) never is', () => {
+    const chosen = { reading: 'plates_only' as const, exerciseId: BENCH, bar: 'ez_bar' as const, barChosen: true, barWeight: { kg: 10 } };
+    const later = toBench({ totalAnswers: new Map([['thing', chosen]]) });
+    const start = startingAnswers(thing('kg'), later, null);
+    expect(start).toMatchObject({ totalOverrides: { thing: 'plates_only' }, totalBars: { thing: 'ez_bar' } });
+    // Its EZ-bar weight is empty in a new preview, so it is asked before anything is imported.
+    expect(loads(analyseImport(thing('kg'), later, start))).toEqual(['pending:total']);
+    expect(loads(analyseImport(thing('kg'), later, { ...start, otherBarWeight: { ez_bar: { kg: 10, lb: null }, trap_bar: { kg: null, lb: null } } }))).toEqual([70]);
+    const legacy = toBench({ totalAnswers: new Map([['thing', { reading: 'plates_only' as const }]]) });
+    expect(startingAnswers(thing('kg'), legacy, null).totalOverrides).toEqual({});
+  });
+
+  it('S2: a bar chosen and then "Total as written" is dropped: it is never remembered and never shapes the exercise Add new makes', () => {
+    const p = thing('kg');
+    const names = { thing: { kind: 'new' as const, equipment: 'barbell' as const } };
+    // Even if a total-as-written answer arrives with a bar (an old job), the exercise made is the Olympic one.
+    const a = analyseImport(p, ctx(), answers({ names, totalOverrides: { thing: 'total' }, totalBars: { thing: 'ez_bar' } }));
+    expect(newExercisesToCreate(a).map((e) => [e.exerciseId, e.equipment])).toEqual([[customExerciseIdFor(OWNER, 'thing', 'barbell'), ['barbell']]]);
+    expect(aliasesToSave(a).find((x) => x.key === 'thing')?.total).toEqual({ reading: 'total', exerciseId: customExerciseIdFor(OWNER, 'thing', 'barbell') });
+    expect(isImportMadeExercise(OWNER, { id: customExerciseIdFor(OWNER, 'thing', 'barbell', 'ez_bar'), name: 'Thing', source: 'custom' })).toBe(true);
   });
 });
 

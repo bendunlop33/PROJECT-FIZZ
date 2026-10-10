@@ -7,12 +7,11 @@ import {
   type AliasTarget,
   type Exercise,
   type ExerciseAlias,
-  type ImportBarKind,
+  type RememberedTotal,
   type ImportJob,
   type ImportRow,
   type PerHandReading,
   type SessionAggregate,
-  type TotalAnswer,
   type ZonedTimestamp,
 } from '@fizz/schemas';
 import { aliasUses, localDateOf, toMs, type EarlierImport } from '@fizz/domain';
@@ -107,8 +106,8 @@ export interface AliasToSave {
   target: AliasTarget;
   /** Ben's dumbbell answer for the name; null clears a stored one; absent: this import didn't ask (review r4 S2). */
   perHand?: PerHandReading | null;
-  /** Ben's barbell answer for the name (and the bar he chose); null: he gave none this time; absent: this import didn't ask (PM decision after review r7). */
-  total?: { reading: TotalAnswer; bar?: ImportBarKind } | null;
+  /** Ben's barbell answer for the name, kept exactly (exercise, bar, bar weight; review r8); null: he gave none this time; absent: this import didn't ask (PM decision after review r7). */
+  total?: RememberedTotal | null;
 }
 
 export class SqliteImports {
