@@ -342,7 +342,7 @@ function ridePlanted(guide: Guide, a: FrameState, b: FrameState, tc: number, seg
  * 0017, E5). Projection channels are the exception: they keep a plain stop at
  * a turning pass key (see `keepsAccelerationThroughTurns`).
  */
-interface PhaseSpan {
+export interface PhaseSpan {
   /** First and last key of the phase (both stops). */
   from: number;
   to: number;
@@ -352,7 +352,8 @@ interface PhaseSpan {
   u: number[];
 }
 
-function phaseSpans(keys: readonly ResolvedKeyframe[]): PhaseSpan[] {
+/** The phases of a `motion: "phases"` guide: stop to stop, with each key's minimum-jerk progress. */
+export function phaseSpans(keys: readonly ResolvedKeyframe[]): PhaseSpan[] {
   const stops = keys.filter((k) => !k.pass).map((k) => k.index);
   const out: PhaseSpan[] = [];
   for (let j = 0; j + 1 < stops.length; j += 1) {

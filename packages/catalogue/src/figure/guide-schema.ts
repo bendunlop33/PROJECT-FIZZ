@@ -343,6 +343,15 @@ export const GuideSchema = z
      * are timed with `npm run guide:motion -- <id> --suggest`.
      */
     motion: z.enum(['channels', 'phases']).optional(),
+    /**
+     * A joint that drives a root channel (ADR 0017, E6). Only
+     * `{ joint: "kneeNear", solves: "root.y" }`, for `motion: "phases"`
+     * side-view guides whose near foot is planted on the floor at every key:
+     * the near knee's flexion follows the phase's minimum-jerk progress and
+     * the hip height is solved from it, so a straight-knee stop eases in
+     * instead of snapping. Key poses are unchanged.
+     */
+    drive: z.strictObject({ joint: z.enum(['kneeNear']), solves: z.enum(['root.y']) }).optional(),
     /** Fixed square camera; omitted = fitted to every frame. */
     camera: z.strictObject({ cx: coord, cy: coord, size: num.min(0.3).max(4) }).optional(),
     props: z.array(PropSchema).max(8),
@@ -423,6 +432,14 @@ export const GuideSchema = z
       });
     } else if (pass.some((x) => x)) {
       ctx.addIssue({ code: 'custom', message: 'pass keys need motion "phases"', path: ['motion'] });
+    }
+    if (g.drive !== undefined) {
+      if (g.motion !== 'phases' || g.view !== 'side') ctx.addIssue({ code: 'custom', message: 'drive is for motion "phases" side-view guides', path: ['drive'] });
+      ikModes(g.keyframes).forEach((m, i) => {
+        if (!m.footNear.includes('planted=true') || !m.footNear.includes('prop=null')) {
+          ctx.addIssue({ code: 'custom', message: 'drive needs footNear planted on the floor (IK, no prop) at every keyframe', path: ['keyframes', i, 'ik', 'footNear'] });
+        }
+      });
     }
     if (g.ground.matchFloorSpeed === true && g.ground.scrollPerCycle === 0) {
       ctx.addIssue({ code: 'custom', message: 'matchFloorSpeed is for scrolling floors only', path: ['ground', 'matchFloorSpeed'] });

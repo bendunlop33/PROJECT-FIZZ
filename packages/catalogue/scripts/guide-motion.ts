@@ -12,7 +12,8 @@
  *   guides (`<dir>/<id>/guide.json`) measured the same way.
  * - `--guides`: measure the guides in another folder (`<dir>/<id>/guide.json`) instead of the catalogue's, e.g. a
  *   candidate written by the authoring solver, compared with `--compare=packages/catalogue/guides`.
- * - `--suggest`: chord-length times for pass keys (phases-mode guides).
+ * - `--suggest`: chord-length times for pass keys (phases-mode guides) and,
+ *   for `drive` guides, the pass-key root.y on the driver's line (D1).
  * - Per-guide allowances (a declared excursion, a relaxed limit) print under the metric they changed, with the reason.
  */
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -109,6 +110,11 @@ for (const id of ids) {
     if (report.suggestions.length === 0) log('  (no pass keys to re-time: add "motion": "phases" and "pass": true on mid keys first)');
     for (const s of report.suggestions) {
       log(`  pass key ${s.key}${s.label === null ? '' : ` ${s.label}`}: t ${s.t.toFixed(4)} → ${s.suggested.toFixed(4)} (chord ${s.share.toFixed(2)})`);
+    }
+    // Drive guides (E6): the root.y that puts each pass key's knee on its phase's stop-to-stop line (D1).
+    for (const d of report.drive) {
+      const y = d.suggestedRootY === null ? 'no solution' : d.suggestedRootY.toFixed(4);
+      log(`  drive key ${d.key}${d.label === null ? '' : ` ${d.label}`}: knee ${d.theta.toFixed(2)}° (line ${d.line.toFixed(2)}°), root.y ${d.rootY.toFixed(4)} → ${y}`);
     }
   }
 }

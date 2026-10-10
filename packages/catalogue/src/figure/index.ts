@@ -13,6 +13,7 @@ export * from './regions';
 export * from './guide-schema';
 export * from './ik';
 export * from './keyframes';
+export * from './drive';
 export * from './props';
 export * from './pose';
 export * from './style';

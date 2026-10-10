@@ -20,6 +20,7 @@
  */
 import { chainTrunk, HEAD, makeSegment, type BodyFoot, type BodyHand, type BodySegment, type FigureBody } from './body';
 import type { Guide, GuideFocus, GuideProp } from './guide-schema';
+import { applyDrive } from './drive';
 import { solveTwoBoneIk } from './ik';
 import { effectiveProjection, resolveKeyframes, stateAt, type FootTarget, type FrameState, type HandTarget, type ResolvedKeyframe } from './keyframes';
 import { add, angleFromDown, dist, fromDown, fromUp, perpCcw, rad, scale, sub, v, wrapDeg, type Vec } from './math';
@@ -191,9 +192,20 @@ function footFrame(soleDeg: number): { u: Vec; n: Vec } {
 
 const inFoot = (ankle: Vec, u: Vec, n: Vec, a: number, b: number): Vec => add(add(ankle, scale(u, a)), scale(n, b));
 
+/**
+ * The state `poseAt` draws at t: `stateAt` plus the guide's joint drive, if it
+ * has one (ADR 0017, E6). Anything that measures what is drawn samples this,
+ * never bare `stateAt`.
+ */
+export function drivenStateAt(prepared: PreparedGuide, t: number): FrameState {
+  const s = stateAt(prepared.guide, prepared.keys, t);
+  applyDrive(prepared.guide, prepared.keys, s, t);
+  return s;
+}
+
 export function poseAt(prepared: PreparedGuide, t: number): Pose {
-  const { guide, keys } = prepared;
-  const s = stateAt(guide, keys, t);
+  const { guide } = prepared;
+  const s = drivenStateAt(prepared, t);
   const view = guide.view;
   const groundY = guide.ground.y;
   const trunk = solveTrunk(s, view);

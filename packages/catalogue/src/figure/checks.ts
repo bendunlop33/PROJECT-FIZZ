@@ -11,7 +11,7 @@ import { dist, penetrationDepth, lerpVec, v, type Vec } from './math';
 import { poseAt, prepareGuide, type Pose, type PreparedGuide } from './pose';
 import { ROM_PROFILES, type AngleName } from './rig';
 import { BODY_GROUPS, groupContours } from './body';
-import { contactVelocity, poseContinuity, seamVelocity } from './motion-metrics';
+import { contactVelocity, driveMetrics, poseContinuity, seamVelocity } from './motion-metrics';
 import { PLAYBACK_FPS } from './playback';
 import { adjustProblems, DEFINITION_GROUPS, DEFINITION_MAP, definitionGroupsFor, focusViewOf, MUSCLE_REGION_MAP, parseRegion, resolveFocus, type DefinitionGroup, type MuscleLevel } from './muscle-map';
 import { DEFINITION_GROOVE, DEFINITION_GROOVE_FLOOR, definitionShapes, narrowestDefinitionGroove, type DefinitionGroove } from './regions';
@@ -44,6 +44,7 @@ export const CHECK_IDS = [
   'pose-continuity',
   'contact-velocity',
   'seam-velocity',
+  'drive',
   'duration',
   'duration-grid',
   'file-size',
@@ -305,6 +306,16 @@ function checkSeamVelocity(prepared: PreparedGuide): CheckItem {
     : { id: 'seam-velocity', ok: false, detail: `Velocity step: ${m.where}` };
 }
 
+/** A `drive` guide has a hip height for every frame (ADR 0017, E6: no drive-miss). */
+function checkDrive(prepared: PreparedGuide): CheckItem {
+  if (prepared.guide.drive === undefined) return { id: 'drive', ok: true, detail: 'No joint drive' };
+  const miss = driveMetrics(prepared).find((m) => m.id === 'D2');
+  const { joint, solves } = prepared.guide.drive;
+  return miss?.ok === true
+    ? { id: 'drive', ok: true, detail: `${joint} drives ${solves} on every sampled frame` }
+    : { id: 'drive', ok: false, detail: `${joint} can't set ${solves}: ${miss?.where ?? 'unknown'}` };
+}
+
 /**
  * The app bakes at `PLAYBACK_FPS` and shows each frame for a whole number of
  * screen refreshes only if the cycle is a whole number of frames (ADR 0017,
@@ -492,6 +503,7 @@ export function checkGuide(input: GuideCheckInput): GuideCheckReport {
     checkPoseContinuity(prepared),
     checkContactVelocity(prepared),
     checkSeamVelocity(prepared),
+    checkDrive(prepared),
     {
       id: 'duration',
       ok: guide.durationMs >= LIMITS.minDurationMs && guide.durationMs <= LIMITS.maxDurationMs,

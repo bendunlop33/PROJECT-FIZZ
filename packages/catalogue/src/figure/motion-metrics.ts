@@ -23,10 +23,11 @@
  * the report carries the reason, so a relaxed gate shows in every report.
  * Hard limits can't be relaxed.
  */
+import { applyDrive, driveKeyLines, drivePlan, type DriveKeyLine } from './drive';
 import { flattenState, stateAt } from './keyframes';
 import { dist, minimumJerkInverse, type Vec } from './math';
 import { playbackTimes, PLAYBACK_FPS } from './playback';
-import { poseAt, type Pose, type PreparedGuide } from './pose';
+import { drivenStateAt, poseAt, type Pose, type PreparedGuide } from './pose';
 import type { AngleName } from './rig';
 
 export type PointRef = { point: string } | { prop: string };
@@ -153,11 +154,13 @@ export const MOTION_LIMITS = {
   trackOmega: 20,
   /** J6 only looks at IK joints that move at least this much in a phase. */
   reachMovingDeg: 1,
+  /** D1 (drive guides): a pass key's driver angle off its phase's stop-to-stop line in u, degrees. */
+  driveLineDeg: 0.5,
 } as const;
 
 type NumericLimit = { [K in keyof typeof MOTION_LIMITS]: (typeof MOTION_LIMITS)[K] extends number ? K : never }[keyof typeof MOTION_LIMITS];
 /** Limits a guide's `allowance` may relax: quality limits only (hard ones are bugs). */
-export type AllowanceLimit = Exclude<NumericLimit, 'continuity' | 'contactVelocity' | 'overshoot' | 'seamVelocity' | 'humpProminence' | 'movingDeg' | 'trackSpeed' | 'trackOmega' | 'reachMovingDeg' | 'endWindow'>;
+export type AllowanceLimit = Exclude<NumericLimit, 'continuity' | 'contactVelocity' | 'overshoot' | 'seamVelocity' | 'driveLineDeg' | 'humpProminence' | 'movingDeg' | 'trackSpeed' | 'trackOmega' | 'reachMovingDeg' | 'endWindow'>;
 /** `MOTION_LIMITS` with a guide's allowance applied. */
 export type MotionLimits = { [K in keyof typeof MOTION_LIMITS]: (typeof MOTION_LIMITS)[K] extends number ? number : (typeof MOTION_LIMITS)[K] };
 
@@ -231,6 +234,8 @@ export interface MotionReport {
   phases: MotionPhase[];
   metrics: MotionMetric[];
   suggestions: PassSuggestion[];
+  /** Drive guides: each pass key's driver angle against its stop-to-stop line, and the root.y that puts it there (`--suggest`). */
+  drive: DriveKeyLine[];
 }
 
 /** Dense sampling per cycle for the continuous metrics. */
@@ -544,7 +549,7 @@ export function channelOvershoot(prepared: PreparedGuide, n: number = MOTION_SAM
     for (let s = Math.ceil(a.holdEnd * n); s / n < b.t; s += 1) {
       const t = s / n;
       if (t <= a.holdEnd) continue;
-      const state = flattenState(stateAt(guide, keys, t));
+      const state = flattenState(drivenStateAt(prepared, t));
       for (const [name, x] of state) {
         const va = flat[i]?.get(name);
         const vb = flat[i + 1]?.get(name);
@@ -934,6 +939,40 @@ export function seamVelocity(prepared: PreparedGuide, limit: number = MOTION_LIM
   return metric('C6', 'seam-velocity', 'hard', `≤ ${limit} H/s`, w, (x) => `${f(x, 4)} H/s`);
 }
 
+/**
+ * Drive guides (ADR 0017, E6). D1 `drive-line` (hard): every pass key's
+ * driver angle within 0.5° of the straight line from its phase's first stop
+ * to its last in u (the measured best shape; `--suggest` prints the root.y
+ * that puts a key there). `drive-miss` (hard): no sampled frame where the
+ * hip height has no solution. n/a for guides without `drive`.
+ */
+export function driveMetrics(prepared: PreparedGuide, n: number = MOTION_SAMPLES): MotionMetric[] {
+  const { guide, keys } = prepared;
+  const plan = drivePlan(guide, keys);
+  const d1 = higher();
+  const miss = higher();
+  if (plan !== null) {
+    for (const k of driveKeyLines(guide, keys)) {
+      const off = Math.abs(k.theta - k.line);
+      d1.add(off, `key ${k.key}${k.label ? ` ${k.label}` : ''} t=${f(k.t, 4)}: ${f(k.theta, 2)}° vs line ${f(k.line, 2)}° (root.y ${f(k.rootY, 4)} → ${k.suggestedRootY === null ? 'none' : f(k.suggestedRootY, 4)})`, off <= MOTION_LIMITS.driveLineDeg);
+    }
+    let count = 0;
+    let first = -1;
+    for (let i = 0; i <= n; i += 1) {
+      const t = i / n;
+      if (applyDrive(guide, keys, stateAt(guide, keys, t), t) === 'miss') {
+        count += 1;
+        if (first < 0) first = t;
+      }
+    }
+    miss.add(count, count === 0 ? 'every sampled frame' : `${count} of ${n + 1} samples, first t=${f(first, 4)}`, count === 0);
+  }
+  return [
+    metric('D1', 'drive-line', 'hard', `≤ ${MOTION_LIMITS.driveLineDeg}°`, d1, (x) => `${f(x, 2)}°`),
+    metric('D2', 'drive-miss', 'hard', '= 0 frames', miss, (x) => f(x, 0)),
+  ];
+}
+
 /** Points whose velocity vector M7v and M8 follow (plan §5.2). */
 export const TRACKED_POINTS = ['hip', 'head', 'c7', 'shoulderNear', 'kneeNear', 'kneeFar', 'ankleNear', 'ankleFar', 'elbowNear', 'elbowFar', 'wristNear', 'wristFar'] as const;
 
@@ -1138,11 +1177,12 @@ export function measureMotion(prepared: PreparedGuide, opts: MeasureOptions = {}
     seamVelocity(prepared),
     ...(gait ? gaitMetrics(prepared, d, L, fps) : [...mainPointMetrics(prepared, d, phases, config, L, fps), ...(joints?.metrics ?? [])]),
     ...velocityStepMetrics(baked, phases, L, frameLevel),
-    ...ikJointMetrics(baked, phases, L, frameLevel, new Set()),
+    ...ikJointMetrics(baked, phases, L, frameLevel, new Set(drivePlan(prepared.guide, prepared.keys) === null ? [] : [prepared.guide.drive?.joint ?? 'kneeNear'])),
+    ...driveMetrics(prepared, n),
     metric('P1', 'pass-timing', 'warn', `≤ ${L.passTiming} cycle`, p1, (x) => f(x, 4)),
   ];
   annotateAllowances(metrics, config, joints?.excused ?? []);
-  return { exerciseKey: prepared.guide.exerciseKey, motion: prepared.guide.motion ?? 'channels', gait, fps, phases, metrics, suggestions };
+  return { exerciseKey: prepared.guide.exerciseKey, motion: prepared.guide.motion ?? 'channels', gait, fps, phases, metrics, suggestions, drive: driveKeyLines(prepared.guide, prepared.keys) };
 }
 
 /** Attach the guide's relaxed limits and declared excursions (with their reasons) to the metrics they changed. */
