@@ -165,13 +165,46 @@ describe('sled push: the trailing knee folds into the swing (problem 4)', () => 
     const k0 = poseAt(p, 0).angles.kneeNear ?? 0;
     let min = k0;
     for (let i = 0; i <= 100; i += 1) min = Math.min(min, poseAt(p, i / 1000).angles.kneeNear ?? 0);
-    // Was 5.4° of extension over 75 ms after toe-off.
-    expect(k0 - min).toBeLessThan(2.5);
+    // Was 5.4° of extension over 75 ms after toe-off, then 1.9° (round 3); now none (motion and definition review).
+    expect(k0 - min).toBeLessThan(0.1);
     const r = measureMotion(p, { n: 1200 });
     expect(r.metrics.find((m) => m.id === 'M7v')?.ok).toBe(true);
     expect(r.metrics.find((m) => m.id === 'M8')?.ok).toBe(true);
     expect(r.metrics.find((m) => m.id === 'C2')?.ok).toBe(true);
     expect(r.metrics.find((m) => m.id === 'S1')?.ok).toBe(true);
+  });
+});
+
+describe('sled push: the drive knee extends in one sweep and turns at toe-off (motion and definition review)', () => {
+  const p = prepareGuide(committed('sled-push'));
+  const D = p.guide.durationMs / 1000;
+  const N = 600;
+  const knee = (t: number): number => poseAt(p, ((t % 1) + 1) % 1).angles.kneeNear ?? NaN;
+  /** Flexion speed (°/s, negative while extending) at t. */
+  const speed = (t: number): number => ((knee(t + 0.5 / N) - knee(t - 0.5 / N)) * N) / D;
+
+  it('stance (touch-down 0.5 → toe-off 1.0): extension speed rises to one peak, then falls to zero at toe-off', () => {
+    const ext = Array.from({ length: N / 2 + 1 }, (_, i) => -speed(0.5 + i / N));
+    const peak = ext.indexOf(Math.max(...ext));
+    expect(peak).toBeGreaterThan(0);
+    expect(peak).toBeLessThan(ext.length - 1);
+    // One hump: never slows by more than 1 °/s before the peak, never speeds up again after it (was a dip to 29 °/s and a second rise to 64 at toe-off).
+    for (let i = 1; i <= peak; i += 1) expect(ext[i] ?? 0).toBeGreaterThan((ext[i - 1] ?? 0) - 1);
+    for (let i = peak + 1; i < ext.length; i += 1) expect(ext[i] ?? 0).toBeLessThan((ext[i - 1] ?? 0) + 1);
+    expect(Math.abs(ext[ext.length - 1] ?? 9)).toBeLessThan(2);
+  });
+
+  it('swing: the knee flexes from toe-off in one sweep, without extending first', () => {
+    const flex = Array.from({ length: Math.round(0.2 * N) }, (_, i) => speed(i / N));
+    expect(flex.slice(1).every((w) => w > -0.5)).toBe(true);
+    const peak = flex.indexOf(Math.max(...flex));
+    for (let i = 1; i <= peak; i += 1) expect(flex[i] ?? 0).toBeGreaterThan((flex[i - 1] ?? 0) - 1);
+  });
+
+  it('keeps the gait gates and improves the knee jerk (J5 3.02 → 2.2)', () => {
+    const r = measureMotion(p, { n: 1200 });
+    for (const id of ['C1', 'C2', 'C4', 'C6', 'S1', 'S2', 'S3', 'M7v', 'M8']) expect(r.metrics.find((m) => m.id === id)?.ok, id).toBe(true);
+    expect(r.metrics.find((m) => m.id === 'J5')?.value ?? 9).toBeLessThan(2.5);
   });
 });
 
