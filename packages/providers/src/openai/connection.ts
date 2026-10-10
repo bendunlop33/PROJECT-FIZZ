@@ -11,6 +11,8 @@
  * Rules kept here:
  * - ChatGPT plan only. There is no API-key route, so no error can switch to a
  *   paid route (CLAUDE.md rule 7; ADR 0018 §8 "No paid route in v1").
+ * - The ID token's RS256 signature is checked against OpenAI's JWKS before
+ *   the identity is trusted or tokens are stored (ADR 0012 open item).
  * - No scope → nothing stored (tokens revoked), status `no_scope`.
  * - `not_eligible` is remembered and stops further calls until Ben taps
  *   something; nothing retries or loops OAuth (acceptance 5).
@@ -25,6 +27,7 @@ import { createAuthAttempt, newHostId, parseCallback, type ChatGptRegistration }
 import { CALLBACK_PATH, PREFERRED_CALLBACK_PORT } from './constants';
 import { TokenRefresher, parseRegistration, parseTokens, serializeRegistration, serializeTokens, type ChatGptVault } from './credentials';
 import { failure, type FailureKind, type ProviderFailure } from './errors';
+import { verifyIdTokenSignature } from './jwks';
 import { listModels, type ModelOption } from './models';
 import { SIGN_IN_TIMEOUT_MS, disconnect as disconnectTokens, revokeDiscarded, type LoopbackPort } from './sign-in-test';
 import { exchangeCode, hasPlanUsageScope, validateIdTokenClaims, type ChatGptTokenSet } from './tokens';
@@ -346,6 +349,12 @@ export async function connectChatGpt(ports: ConnectionPorts, options: ConnectOpt
       if (tokens.idToken === null) return { kind: 'failed', failure: failure('id_token_invalid', 'No ID token in the token response') };
       const claims = validateIdTokenClaims(tokens.idToken, { clientId: callback.value.clientId, nonce: attempt.nonce, nowMs: ports.nowMs() });
       if (!claims.ok) return { kind: 'failed', failure: claims.error };
+      // RS256 against OpenAI's JWKS before the identity is trusted or anything is stored (ADR 0012, review S5).
+      const signed = await verifyIdTokenSignature(tokens.idToken, { fetch: ports.fetch, nowMs: ports.nowMs, crypto: ports.crypto });
+      if (!signed.ok) {
+        await revokeDiscarded(tokens, ports);
+        return { kind: 'failed', failure: signed.error };
+      }
       if (registration.subject !== null && registration.subject !== claims.value.subject) {
         await revokeDiscarded(tokens, ports);
         return { kind: 'different_account' };

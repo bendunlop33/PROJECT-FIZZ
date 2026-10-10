@@ -31,7 +31,7 @@ import {
   type ConnectionPorts,
   type SettingsStore,
 } from '../src';
-import { FakeClock, FakeLoopback, MemoryVault, callbackFor, fakeFetch, jsonResponse, makeJwt, nodeCrypto, type Handler } from './helpers';
+import { FakeClock, FakeLoopback, MemoryVault, TEST_DISCOVERY, TEST_JWKS, TEST_JWKS_URL, callbackFor, fakeFetch, jsonResponse, makeJwt, nodeCrypto, type Handler } from './helpers';
 
 const FULL_SCOPE = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
 const MODELS = {
@@ -74,7 +74,8 @@ function world(opts: { browser?: (url: string) => AuthSessionOutcome; scope?: st
           })
         : jsonResponse(400, { error: 'invalid_grant' }),
     [OPENAI_MODELS_URL]: opts.models ?? (() => jsonResponse(200, MODELS)),
-    'https://auth.openai.com/.well-known': () => jsonResponse(200, { revocation_endpoint: 'https://auth.openai.com/api/accounts/oauth/revoke' }),
+    'https://auth.openai.com/.well-known/openid-configuration': () => jsonResponse(200, TEST_DISCOVERY),
+    [TEST_JWKS_URL]: () => jsonResponse(200, TEST_JWKS),
     'https://auth.openai.com/api/accounts/oauth/revoke': () => jsonResponse(200, ''),
   });
   const ports: ConnectionPorts = { fetch, crypto: nodeCrypto, loopback, vault, settings, nowMs: clock.now, newUuid: () => '123e4567-e89b-42d3-a456-426614174000' };
@@ -118,6 +119,20 @@ describe('connectChatGpt (ai-connection §2.3–2.5)', () => {
     expect(s).toMatchObject({ modelSlug: 'gpt-6-astra', modelName: 'GPT-6-Astra' });
     if (r.kind !== 'connected') throw new Error('expected connected');
     expect((await readTextCoachState(w.ports, { listedModels: r.models })).status).toBe('model_gone');
+  });
+
+  it('an ID token that fails the JWKS signature check is not trusted: nothing stored, grant revoked (review S5)', async () => {
+    const w = world();
+    // Discovery that lists no JWKS: the check can't pass, so the sign-in fails honestly.
+    const { fetch } = fakeFetch({
+      'https://auth.openai.com/.well-known/openid-configuration': () => jsonResponse(200, { revocation_endpoint: 'https://auth.openai.com/api/accounts/oauth/revoke' }),
+    });
+    const ports = { ...w.ports, fetch: (url: string, init: Parameters<typeof fetch>[1]) => (url.includes('.well-known') ? fetch(url, init) : w.ports.fetch(url, init)) };
+    const r = await connectChatGpt(ports);
+    expect(r).toMatchObject({ kind: 'failed', failure: { kind: 'protocol', message: 'Discovery document has no usable jwks_uri' } });
+    expect(w.vault.tokens).toBeNull();
+    expect(parseRegistration(w.vault.registration)?.subject).toBeNull();
+    expect(w.calls.some((c) => c.url.includes('/oauth/revoke'))).toBe(true);
   });
 
   it('without chatgpt.tokens.use.direct stores no tokens and revokes the grant', async () => {

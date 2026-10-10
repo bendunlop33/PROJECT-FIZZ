@@ -3,6 +3,7 @@ export * from './openai/constants';
 export * from './openai/errors';
 export * from './openai/authorize';
 export * from './openai/tokens';
+export * from './openai/jwks';
 export * from './openai/sse';
 export * from './openai/responses';
 export * from './openai/models';
