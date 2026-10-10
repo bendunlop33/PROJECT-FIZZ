@@ -91,7 +91,7 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
     for (const a of actions) cited.add(a.actionId);
 
     if (tokens.plainText.length > 0 && /[\p{L}\p{N}]/u.test(tokens.plainText)) {
-      const check = checkReplyClaims(tokens.plainText, ledger);
+      const check = checkReplyClaims(tokens.plainText, ledger, cited);
       if (check.keep) {
         for (const seg of tokens.segments) {
           if (seg.kind === 'text') {

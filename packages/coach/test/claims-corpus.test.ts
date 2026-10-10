@@ -114,6 +114,54 @@ const CLAIMS: readonly string[] = [
   'All updated.',
   'Everything’s changed.',
   'Pec deck takes over from cable fly.',
+  // Review r2 B1: forms the r1 fix still kept with nothing saved.
+  'Bench is down to 95 and not 100.',
+  'Sets 3 and 4 are now 95 kg not 100.',
+  'Sets 3 and 4 are now 95 kg, not 100.',
+  'Sets 3 and 4 should now show 95 kg.',
+  'You should now see 95 kg on sets 3 and 4.',
+  'Sets 3 and 4 will now show 95 kg.',
+  'Your screen should now read 95 kg.',
+  'Bench now sits at 95.',
+  'Bench is sitting at 95 for the rest.',
+  'The rest of your sets read 95 kg.',
+  'Your app shows 95 for sets 3 and 4.',
+  'You are doing 95 for the rest.',
+  'You’re doing 95 for the last two.',
+  'You’re lifting 95 kg from here.',
+  'Bench: 95 kg for sets 3 and 4.',
+  '95 kg for sets 3 and 4 from here.',
+  '95 for the rest, not 100.',
+  'Squat: 120 kg next time.',
+  'Pec deck in, cable fly out.',
+  'No more cable fly, pec deck from next time.',
+  'Cable fly out, pec deck in.',
+  'Got that in memory.',
+  'I won’t forget that.',
+  'I will not forget that.',
+  'That’s in your memory now.',
+  'Memorised.',
+  'It’s 95 for the rest now, not 100.',
+  'Not 100 any more: 95 for the last two.',
+  // The value-statement backstop: phrasings no verb list names (review r2 B1, structural rule).
+  'The app has 95 for sets 3 and 4.',
+  'Sets 3 and 4 have 95 on them now.',
+  'You have 95 kg for the rest.',
+  'You’ve got 95 for the last two.',
+  'That leaves you at 95 for the rest.',
+  'Last two sets at 95 kg.',
+  'Bench, 95 kg, sets 3 and 4.',
+  'Down to 95 for the rest.',
+  'Up to 102.5 next time.',
+  'Sticking with 95 for the rest.',
+  'That makes it 95 for the rest.',
+  'Pec deck instead of cable fly from next time.',
+  'Pec deck it is.',
+  'I’ve got that down.',
+  'You’ll see 95 on the card.',
+  'Your sets are now lighter, not heavier.',
+  'Bench isn’t 100 any more, it’s 95.',
+  'Sets 3 & 4 → 95 kg.',
 ];
 
 /** Suggestions, questions and facts. Keeping them is right; hiding them is a (reported) false hide. */
@@ -169,6 +217,34 @@ const NOT_CLAIMS: readonly string[] = [
   'Set 3 is next.',
   'Is bench down to 95 on your sheet?',
   'If bench is down to 95, the bar should move faster.',
+  // Review r2 B1 near-misses: negations, questions and advice the wider rules must still keep.
+  'Are you doing 95 for the rest?',
+  'You should see progress in a few weeks.',
+  'Your best on bench is 100 kg, not 105.',
+  'I won’t change anything unless you ask.',
+  'Nothing is different yet.',
+  'No more than 3 sets of this one, ideally.',
+  'Count me in.',
+  'Should 95 feel easier, we can talk about going up.',
+  'Your log shows 100 kg × 8 last week.',
+  'I can’t see any pain flags.',
+  'Want 95 for sets 3 and 4?',
+  'Sets 3 and 4 are still 100 kg.',
+  'Aim for 95 kg on the last two.',
+  'Set 2 was 100 kg × 8.',
+  'You hit 100 kg for 8 on set 2.',
+  'Rest 3 minutes before the last two.',
+  'The 20 kg bar plus a 20 on each side makes 60 kg.',
+  'If set 3 slows down, 95 kg for the last two is fine.',
+  'Your target for set 3 stays at 100 kg.',
+  'You managed 100 kg for all 4 sets.',
+  'The last two sets are where the work happens.',
+  'Most people use 2.5 kg jumps.',
+  'Your dumbbells go up in 2 kg steps.',
+  'The machine maxes out at 100 kg.',
+  // Known false hides (reported): explaining today's plan reads like a stated target.
+  'Set 3 is at 100 because you hit 8 reps last week.',
+  'Sets 3 and 4 are planned at 100 kg.',
 ];
 
 const EMPTY = ledger([]);
@@ -259,9 +335,21 @@ describe('claims against a ledger', () => {
     expect(checkReplyClaims('Bench is down to 95.', ledger([stale]))).toMatchObject({ keep: false, reason: 'not_committed' });
   });
 
+  it('a generic name word still names its exercise (review r2 B1)', () => {
+    const a = benchAdjust();
+    expect(checkReplyClaims('Incline is 95 for the rest.', ledger([a]))).toMatchObject({ keep: false, reason: 'mismatch' });
+    expect(checkReplyClaims('Bench is back to 95 for the rest.', ledger([a])).keep).toBe(true);
+    expect(checkReplyClaims('Sets 3 and 4 are now 95 kg, not 100.', ledger([a])).keep).toBe(true);
+    expect(checkReplyClaims('Bench: 95 kg for sets 3 and 4.', ledger([a])).keep).toBe(true);
+    expect(checkReplyClaims('Overhead: 95 kg for sets 3 and 4.', ledger([a])).keep).toBe(false);
+  });
+
   it('an earlier action read through get_recent_actions backs a claim about it (CC5, check 16)', () => {
     const earlier = benchAdjust({ turnId: 'turn-0' });
-    expect(checkReplyClaims('I lowered bench press earlier because set 2 was RPE 10.', ledger([['e1', earlier, 'earlier']])).keep).toBe(true);
+    // Only with its token cited in the sentence (review r2 S2): free text alone can't lean on an earlier read.
+    expect(checkReplyClaims('I lowered bench press earlier because set 2 was RPE 10.', ledger([['e1', earlier, 'earlier']]), new Set([earlier.actionId])).keep).toBe(true);
+    expect(checkReplyClaims('I lowered bench press earlier because set 2 was RPE 10.', ledger([['e1', earlier, 'earlier']])).keep).toBe(false);
+    expect(checkReplyClaims('I lowered sets 3–4.', ledger([['e1', earlier, 'earlier']]))).toMatchObject({ keep: false, reason: 'no_action' });
     expect(checkReplyClaims('I lowered bench press earlier because set 2 was RPE 10.', EMPTY).keep).toBe(false);
   });
 

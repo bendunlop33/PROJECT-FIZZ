@@ -132,3 +132,19 @@ describe('reply pipeline with a fake model (coach-contract checks 2–5)', () =>
     expect(model.offeredTools()).toEqual([['get_active_session']]);
   });
 });
+
+describe('earlier actions need their token (CC5, review r2 S2)', () => {
+  it('free text about an earlier action is kept only when its token is cited in the sentence', () => {
+    const earlier = benchAdjust({ turnId: 'turn-0' });
+    const withEarlier: TurnLedger = { turnId: 'turn-1', entries: [{ ref: 'e1', record: earlier, origin: 'earlier' }], knownExerciseNames: ['Bench press'] };
+    const cited = createReplyFilter({ ledger: () => withEarlier, surface: 'sheet' });
+    const shown = [...cited.push('I lowered bench press earlier [[e1]] because set 2 was RPE 10. '), ...cited.end(true)];
+    expect(shown.some((i) => i.kind === 'sentence' && i.text.startsWith('I lowered bench press earlier'))).toBe(true);
+    expect(cited.hiddenLines).toEqual([]);
+
+    const uncited = createReplyFilter({ ledger: () => withEarlier, surface: 'sheet' });
+    const shown2 = [...uncited.push('I lowered bench press earlier because set 2 was RPE 10. '), ...uncited.end(true)];
+    expect(shown2.filter((i) => i.kind === 'sentence')).toEqual([]);
+    expect(uncited.hiddenLines).toMatchObject([{ reason: 'no_action' }]);
+  });
+});
