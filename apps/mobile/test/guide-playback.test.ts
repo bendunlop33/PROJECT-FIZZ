@@ -9,7 +9,7 @@ import { bakeFrame, GUIDE_MUSCLE_COLOR, GUIDE_TOKEN_NAMES, guideStyleFromTokens,
 import { advanceClock, frameIndexAt, MAX_AUTOPLAY_PASSES, passMs } from '../src/guide/clock';
 import { opPathData, PATH_UNITS, planOp, rgba } from '../src/guide/draw-plan';
 import { BUNDLED_GUIDE_FILES } from '../../../packages/catalogue/src/generated/guide-files';
-import { buildHowToView, bundledHowToSources, DRAFT_GUIDE_LABEL, guideDraftLabel, hasHowTo, howToKeyForExerciseId, howToLayout, type HowToSources } from '../src/guide/how-to';
+import { buildHowToView, bundledHowToSources, DRAFT_GUIDE_LABEL, guideDraftLabel, hasHowTo, howToKeyForExerciseId, howToLayout, howToRouteFor, type HowToSources } from '../src/guide/how-to';
 import { initialPlayerState, isRunning, MUSCLE_PULSE, musclePulseOn, playControlLabel, playerReducer, stepAccessibilityLabel, stepAnnouncement, stepPosition, type PlayerAction, type PlayerState } from '../src/guide/player-model';
 import { canPlayPrefix, createPrefixPublisher, PREFIX_MARGIN, PREFIX_PUBLISH_MS, PREFIX_RENDER_MS, prefixLatencyMs, runSliced } from '../src/guide/sliced';
 import { resolveTheme, THEME_DIRECTIONS } from '../src/theme/tokens';
@@ -417,6 +417,14 @@ describe('how-to view (catalogue → screen)', () => {
     const basic = [...src.catalogue.keys].find((k) => src.catalogue.tierHint(k) === 'basic') ?? '';
     expect(howToKeyForExerciseId(catalogueExerciseId(basic), src)).toBeNull();
     expect(howToKeyForExerciseId('00000000-0000-4000-8000-000000000000', src)).toBeNull();
+  });
+
+  it('the header link, ⋯ menu and rest link share one route: shown only with a how-to, same params (review N3)', () => {
+    const squat = { exerciseId: catalogueExerciseId('barbell-back-squat'), exerciseName: 'Back Squat (my gym)' };
+    expect(howToRouteFor(squat, src)).toEqual({ catalogueKey: 'barbell-back-squat', name: 'Back Squat (my gym)' });
+    const basic = [...src.catalogue.keys].find((k) => src.catalogue.tierHint(k) === 'basic') ?? '';
+    expect(howToRouteFor({ exerciseId: catalogueExerciseId(basic), exerciseName: 'Basic' }, src)).toBeNull();
+    expect(howToRouteFor({ exerciseId: '00000000-0000-4000-8000-000000000000', exerciseName: 'Custom' }, src)).toBeNull();
   });
 });
 

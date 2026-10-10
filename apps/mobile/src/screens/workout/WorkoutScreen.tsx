@@ -12,7 +12,7 @@ import { nowMs as clockNow } from '../../clock';
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatTime } from '../../format/dates';
-import { bundledHowToSources, howToKeyForExerciseId } from '../../guide/how-to';
+import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
 import type { ActiveWorkoutData } from '../../services/workout-services';
@@ -387,11 +387,11 @@ export function WorkoutScreen() {
   }
 
   function openExerciseMenu(f: FocusView) {
-    const howToKey = howToKeyForExerciseId(f.exerciseId, bundledHowToSources());
-    const menu = exerciseMenu(howToKey !== null);
+    const howTo = howToRouteFor(f, bundledHowToSources());
+    const menu = exerciseMenu(howTo !== null);
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
-      if (action === 'how_to' && howToKey !== null) navigation.navigate('HowTo', { catalogueKey: howToKey, name: f.exerciseName });
+      if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
       if (action === 'add_set') void addSet(f.sessionExerciseId);
       if (action === 'add_exercise') navigation.navigate('ExercisePicker', { sessionId: session.id });
       if (action === 'delete_set') {
@@ -651,14 +651,14 @@ export function WorkoutScreen() {
           )}
         </View>
         {/* Visible How to next to the name when there's a guide (Ben found it only in the ⋯ menu or on the rest screen). */}
-        {howToKeyForExerciseId(focus.exerciseId, bundledHowToSources()) !== null ? (
+        {howToRouteFor(focus, bundledHowToSources()) !== null ? (
           <TextButton
             label="How to"
             tone="secondary"
             accessibilityHint={`Shows how to do ${focus.exerciseName}.`}
             onPress={() => {
-              const key = howToKeyForExerciseId(focus.exerciseId, bundledHowToSources());
-              if (key !== null) navigation.navigate('HowTo', { catalogueKey: key, name: focus.exerciseName });
+              const howTo = howToRouteFor(focus, bundledHowToSources());
+              if (howTo !== null) navigation.navigate('HowTo', howTo);
             }}
           />
         ) : null}
@@ -902,13 +902,13 @@ export function WorkoutScreen() {
                   setShowNextSet(true);
                 }}
               />
-              {howToKeyForExerciseId(focus.exerciseId, bundledHowToSources()) !== null ? (
+              {howToRouteFor(focus, bundledHowToSources()) !== null ? (
                 <TextButton
                   label={`How to ${focus.exerciseName.toLowerCase()}`}
                   tone="secondary"
                   onPress={() => {
-                    const key = howToKeyForExerciseId(focus.exerciseId, bundledHowToSources());
-                    if (key !== null) navigation.navigate('HowTo', { catalogueKey: key, name: focus.exerciseName });
+                    const howTo = howToRouteFor(focus, bundledHowToSources());
+                    if (howTo !== null) navigation.navigate('HowTo', howTo);
                   }}
                 />
               ) : null}
