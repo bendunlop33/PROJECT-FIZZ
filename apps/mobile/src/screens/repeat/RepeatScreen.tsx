@@ -153,6 +153,9 @@ export function RepeatScreen() {
           if (g.id === gym.id) return;
           // Re-check only: nothing is started or saved (GS10).
           setChosenGymId(g.id);
+          // A start at another gym is another operation: a retry of a failed start at the
+          // old gym must not return that gym's workout (review N4).
+          startOp.current = newUuid();
           reload();
         }}
         onClose={() => {
