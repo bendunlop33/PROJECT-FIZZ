@@ -7,6 +7,7 @@ import {
   functionToolDefinitions,
   listCoachCapabilities,
   parseToolCall,
+  personalPlaybookText,
   toolOpId,
   appendContentKeys,
   chipRequest,
@@ -173,6 +174,33 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('Go ahead'), acceptedOffer: true }))).toContain('adjust_pending_sets');
   });
 
+  it('a remark never opens adjust_pending_sets (review r4 B1, rule 3)', () => {
+    for (const q of [
+      "It wasn't too heavy",
+      'Not too heavy',
+      'Set 3 was too heavy?',
+      'Way too early for this',
+      'Increase in pain on set 3',
+      'Update on my shoulder, feels fine',
+      'Change the music',
+      'Delete that last message',
+      'Add a rule: never squat after deadlifts',
+      'Can you lower it? Actually no, leave it.',
+    ]) {
+      const r = buildTurnRegistry(gate({ kind: 'workout', benRequest: classifyBenRequest(q) }));
+      expect(r.tools.map((t) => t.name), q).not.toContain('adjust_pending_sets');
+      expect(r.withheld, q).toContainEqual({ name: 'adjust_pending_sets', reason: 'needs_request' });
+    }
+    // The spec's playbook example opens the playbook queue only (review r4 S2).
+    const playbook = names(gate({ kind: 'workout', benRequest: classifyBenRequest('Add a rule: never squat after deadlifts') }));
+    expect(playbook).toContain('add_playbook_candidate');
+    expect(playbook).not.toContain('save_memory');
+    // A real report or request still opens it.
+    for (const q of ['Set 3 was too heavy', 'Lighter please', 'Bring it down to 95']) {
+      expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest(q) })), q).toContain('adjust_pending_sets');
+    }
+  });
+
   it('memory requests and memory questions never open the playbook queue (review r3 S1, rule 10)', () => {
     for (const text of ['Remember that my left knee is dodgy on lunges', 'Remember that time I hit 100?', 'remember when I did 100 for 8?']) {
       expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest(text) }))).not.toContain('add_playbook_candidate');
@@ -190,6 +218,30 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     }
     for (const text of ['Deload every 6 weeks', 'Pause reps build strength off the chest', 'Stop progressing a movement when it causes pain', 'Add a set when RPE is below 7 for two sessions']) {
       expect(parseToolCall('t1', 'add_playbook_candidate', JSON.stringify({ text, statedBy: 'coach' }), reg).ok).toBe(true);
+    }
+  });
+
+  it('third-person and particular-body facts are refused too (review r4 S2, rule 10)', () => {
+    for (const text of [
+      'The left knee is dodgy on lunges',
+      'Avoid deep lunges with a dodgy left knee',
+      'He trains before work',
+      'The owner trains fasted',
+      'She prefers dumbbells',
+      'His shoulder flares up on dips',
+      'Go lighter on the bad shoulder',
+      'Skip lunges because of the right knee',
+    ]) {
+      expect(personalPlaybookText(text), text).toBe(true);
+    }
+    for (const text of [
+      'Keep the knee tracking over the toes',
+      'Stop progressing a movement when the shoulder hurts',
+      'A painful joint is a reason to hold the load',
+      'Brace before each rep',
+      'Left and right sides should be trained evenly',
+    ]) {
+      expect(personalPlaybookText(text), text).toBe(false);
     }
   });
 

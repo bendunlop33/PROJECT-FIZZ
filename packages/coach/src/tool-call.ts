@@ -137,10 +137,26 @@ const OWNED_BODY =
  * lunges", "Ben trains before work", "your knee hurts on lunges") belongs in
  * Your data, so the call is refused rather than trusting the model's
  * reading of the tool description. A refusal only costs a rephrase.
+ * Third-person facts ("He trains before work", "The left knee is dodgy on
+ * lunges") are refused too (review r4 S2).
  */
+const BODY_WORD =
+  '(?:shoulders?|elbows?|wrists?|hands?|fingers?|knees?|ankles?|hips?|back|neck|spine|groin|feet|foot|achilles|hamstrings?|quads?|calf|calves|glutes?|chest|pecs?|ribs?|traps?|lats?|biceps?|triceps?|forearms?|shins?|heels?|toes?|delts?|hip flexors?)';
+/**
+ * A particular body part rather than a general one (review r4 S2): a side
+ * ("the left knee", "a dodgy right shoulder") or a state word that describes
+ * one person's joint ("a dodgy knee", "the bad shoulder"). General rules talk
+ * about "the knee" or "a painful joint", which stay allowed.
+ */
+const PARTICULAR_BODY = new RegExp(
+  `\\b(?:(?:the|a|an|his|her|their) )?(?:(?:left|right)\\b(?: \\w+)? ${BODY_WORD}|(?:dodgy|bad|gammy|dicky|wonky|iffy|cranky|grumpy|niggly|old|injured|operated|repaired|reconstructed) (?:(?:left|right|lower|upper) )?${BODY_WORD})\\b`,
+);
+/** A third-person subject that can only mean one person: "He trains before work", "The owner trains fasted". */
+const THIRD_PERSON = /\b(?:he|him|his|she|her|hers|himself|herself|the (?:owner|user|athlete in question|client)|this (?:user|owner|lifter|athlete|client))\b/;
+
 export function personalPlaybookText(text: string): boolean {
   const t = text.toLowerCase().replace(/[‘’]/g, "'");
-  return OWNER_WORDS.test(t) || OWNED_BODY.test(t);
+  return OWNER_WORDS.test(t) || OWNED_BODY.test(t) || PARTICULAR_BODY.test(t) || THIRD_PERSON.test(t);
 }
 
 export function parseToolCall(turnId: string, name: string, rawArguments: string, registry: TurnRegistry): ParsedToolCall {
