@@ -108,6 +108,17 @@ describe('connectChatGpt (ai-connection §2.3–2.5)', () => {
     expect(r).toMatchObject({ kind: 'connected', selected: { slug: 'gpt-6-luna' }, firstUse: false });
   });
 
+  it('signing in again never switches a chosen model that is no longer listed: the coach reads model_gone (AC6, review B3)', async () => {
+    const w = world();
+    w.settings.text = serializeConnectionSettings({ ...DEFAULT_CONNECTION_SETTINGS, modelSlug: 'gpt-6-astra', modelName: 'GPT-6-Astra', firstUseSeen: true });
+    const r = await connectChatGpt(w.ports);
+    expect(r).toMatchObject({ kind: 'connected', selected: null, firstUse: false });
+    const s = await loadConnectionSettings(w.settings);
+    expect(s).toMatchObject({ modelSlug: 'gpt-6-astra', modelName: 'GPT-6-Astra' });
+    if (r.kind !== 'connected') throw new Error('expected connected');
+    expect((await readTextCoachState(w.ports, { listedModels: r.models })).status).toBe('model_gone');
+  });
+
   it('without chatgpt.tokens.use.direct stores no tokens and revokes the grant', async () => {
     const w = world({ scope: 'openid profile email offline_access' });
     expect(await connectChatGpt(w.ports)).toEqual({ kind: 'no_scope' });
@@ -234,13 +245,14 @@ describe('settings, failures and models', () => {
     expect((await loadConnectionSettings(s)).modelSlug).toBe('gpt-6-luna');
   });
 
-  it('preselects the earlier choice, then the tested model, then the first', () => {
+  it('preselects the earlier choice; on a first connection the tested model, then the first; never a silent switch (AC6)', () => {
     const list = [
       { slug: 'a', displayName: 'A' },
       { slug: TESTED_MODEL_SLUG, displayName: 'Sol' },
     ];
     expect(preselectModel(list, 'a')?.slug).toBe('a');
-    expect(preselectModel(list, 'gone')?.slug).toBe(TESTED_MODEL_SLUG);
+    expect(preselectModel(list, 'gone')).toBeNull();
+    expect(preselectModel(list, null)?.slug).toBe(TESTED_MODEL_SLUG);
     expect(preselectModel([{ slug: 'b', displayName: 'B' }], null)?.slug).toBe('b');
     expect(preselectModel([], null)).toBeNull();
   });

@@ -220,9 +220,15 @@ export async function selectModel(store: SettingsStore, listed: readonly ModelOp
   return ok(found);
 }
 
-/** AC6 preselection: Ben's earlier choice if still listed, else the tested model if listed, else the first. */
+/**
+ * AC6 preselection. First connection (no earlier choice): the tested model if
+ * listed, else the first. With an earlier choice: that model if still listed,
+ * else null. The coach then reads `model_gone` and pauses with `Choose
+ * model`; another model is never picked silently (review B3).
+ */
 export function preselectModel(listed: readonly ModelOption[], previousSlug: string | null): ModelOption | null {
-  return listed.find((m) => m.slug === previousSlug) ?? listed.find((m) => m.slug === TESTED_MODEL_SLUG) ?? listed[0] ?? null;
+  if (previousSlug !== null) return listed.find((m) => m.slug === previousSlug) ?? null;
+  return listed.find((m) => m.slug === TESTED_MODEL_SLUG) ?? listed[0] ?? null;
 }
 
 // ---------- Models ----------
@@ -363,7 +369,8 @@ export async function connectChatGpt(ports: ConnectionPorts, options: ConnectOpt
       }
       const models = listed.value.models;
       const selected = preselectModel(models, settings.modelSlug);
-      settings = await updateSettings(ports.settings, (s) => ({ ...s, modelSlug: selected?.slug ?? null, modelName: selected?.displayName ?? null }));
+      // Only a first connection writes a choice; an earlier choice that's no longer listed is kept so the state reads `model_gone`.
+      if (selected !== null) settings = await updateSettings(ports.settings, (s) => (s.modelSlug === null ? { ...s, modelSlug: selected.slug, modelName: selected.displayName } : s));
       return { kind: 'connected', email, models, selected, modelsFailure: null, firstUse: !settings.firstUseSeen };
     } finally {
       await ports.loopback.stopListener().catch(() => undefined);
