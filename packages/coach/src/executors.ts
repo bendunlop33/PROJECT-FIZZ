@@ -31,11 +31,10 @@ import { appendContentKeys } from './tool-call';
  *
  * A tool with no executor in this build is withheld from the turn (it is
  * never offered to the model), so the coach can't call something the app
- * can't do. In this build that is: `set_next_session_targets` and
- * `propose_next_workout_change` (C8), the history / equipment / built-in
- * rule reads until the app wires their ports, and `adjust_pending_sets`
- * until the session's `adjust_pending_targets` command exists (needs
- * `claude/active-set`); `createAdjustExecutor` is ready for that port.
+ * can't do. In this build that is `propose_next_workout_change` (structural
+ * proposals) and the history / equipment / built-in rule reads until the
+ * app wires their ports. `adjust_pending_sets` (workout turns) and
+ * `set_next_session_targets` (the summary turn) are wired by the app.
  */
 
 export type ToolResult =
