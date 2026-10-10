@@ -8,6 +8,7 @@ import {
   listCoachCapabilities,
   parseToolCall,
   toolOpId,
+  appendContentKeys,
   chipRequest,
   classifyBenRequest,
   UnsafeRegistryError,
@@ -207,6 +208,38 @@ describe('parseToolCall', () => {
     expect(a.opId).toBe(b.opId);
     expect(a.opId.length).toBeLessThanOrEqual(128);
     expect(toolOpId('t2', 'adjust_pending_sets', a.call.args)).not.toBe(a.opId);
+  });
+
+  it('a reworded retry of an append tool is the same operation; content keys catch a new turn (review S4)', () => {
+    const reg = buildTurnRegistry(gate({ kind: 'workout', benRequest: ASKED, benPainWords: true }));
+    const pain1 = parseToolCall('t1', 'set_pain_flag', JSON.stringify({ exerciseIds: [id(2), id(1)], area: 'shoulder', quote: 'my shoulder hurts' }), reg);
+    const pain2 = parseToolCall('t1', 'set_pain_flag', JSON.stringify({ exerciseIds: [id(1), id(2)], area: 'shoulder', quote: 'shoulder is hurting' }), reg);
+    const mem1 = parseToolCall('t1', 'save_memory', JSON.stringify({ text: 'Trains before work.', quote: 'I train before work' }), reg);
+    const mem2 = parseToolCall('t1', 'save_memory', JSON.stringify({ text: ' trains  before work', quote: 'remember I train early' }), reg);
+    const pb1 = parseToolCall('t1', 'add_playbook_candidate', JSON.stringify({ text: 'Deload every 6 weeks', statedBy: 'ben' }), reg);
+    const pb2 = parseToolCall('t1', 'add_playbook_candidate', JSON.stringify({ text: 'Deload every 6 weeks.', statedBy: 'ben' }), reg);
+    if (!pain1.ok || !pain2.ok || !mem1.ok || !mem2.ok || !pb1.ok || !pb2.ok) throw new Error('fixture');
+    expect(pain1.opId).toBe(pain2.opId);
+    expect(mem1.opId).toBe(mem2.opId);
+    expect(pb1.opId).toBe(pb2.opId);
+    // A Try again is a new turn: a different opId, but the same content keys for the store to dedupe on.
+    const again = parseToolCall('t2', 'save_memory', JSON.stringify({ text: 'Trains before work', quote: 'x' }), reg);
+    if (!again.ok) throw new Error('fixture');
+    expect(again.opId).not.toBe(mem1.opId);
+    expect(appendContentKeys(again.call)).toEqual(appendContentKeys(mem1.call));
+    expect(appendContentKeys(pain1.call)).toEqual([`pain_flag:${id(1)}`, `pain_flag:${id(2)}`]);
+    // A different memory is a different item.
+    const other = parseToolCall('t1', 'save_memory', JSON.stringify({ text: 'Hates lunges', quote: 'x' }), reg);
+    if (!other.ok) throw new Error('fixture');
+    expect(other.opId).not.toBe(mem1.opId);
+    expect(appendContentKeys(other.call)).not.toEqual(appendContentKeys(mem1.call));
+  });
+
+  it('a reworded reason on adjust_pending_sets is the same operation', () => {
+    const a = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify(args), workout);
+    const b = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify({ ...args, reason: 'Set 2 was a grind at RPE 10.' }), workout);
+    if (!a.ok || !b.ok) throw new Error('fixture');
+    expect(a.opId).toBe(b.opId);
   });
 
   it('drops smuggled fields and lists them (CC10: a programme inside another tool)', () => {
