@@ -9,7 +9,9 @@
     ".": "./src/index.ts",
     "./testing": "./test/fake-model.ts"
   },
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/registry.ts"
+  ],
   "dependencies": {
     "@fizz/domain": "0.1.0",
     "@fizz/schemas": "0.1.0",

@@ -355,6 +355,16 @@ describe('validateTodayAdjustment: completed sets, versions, pain (rules 2, 5, 9
     if (r.status === 'unchanged') expect(r.outcome).toBe('Not changed: set 1 is already done. Nothing changed.');
   });
 
+  it('removing a deleted set names it by position, never "set 0" (review nit)', () => {
+    const w = workout();
+    const target = w.sets.find((x) => x.id === setId(1, 3));
+    if (!target) throw new Error('fixture');
+    target.status = 'deleted';
+    const r = validateTodayAdjustment(input([adj(exId(1), { removeSetId: setId(1, 3) })], { aggregate: w }));
+    expect(r.status).toBe('unchanged');
+    if (r.status === 'unchanged') expect(r.outcome).toBe("Not changed: set 4 isn't pending. Nothing changed.");
+  });
+
   it('rejects a call made on an older session version as stale', () => {
     const r = validateTodayAdjustment(input([adj(exId(1), { sets: [{ setId: setId(1, 2), target: { load: kg(95), reps: null } }] })], { baseVersion: 6 }));
     expect(r).toEqual({ status: 'stale', outcome: 'Your workout moved on before the coach answered. Nothing changed.', guardNotes: [] });

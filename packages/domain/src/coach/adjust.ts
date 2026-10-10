@@ -372,7 +372,8 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
       } else if (set.status === 'completed') {
         notes.add('completed_set_dropped', `Not changed: set ${String(numberOf(set.id))} is already done.`, [set.id]);
       } else if (set.status !== 'pending') {
-        notes.add('not_pending', `Not changed: set ${String(numberOf(set.id))} isn't pending.`, [set.id]);
+        const n = numberOf(set.id);
+        notes.add('not_pending', `Not changed: set ${String(n > 0 ? n : set.index + 1)} isn't pending.`, [set.id]);
       } else {
         removed = { setId: set.id, setNumber: numberOf(set.id), before: targetOf(set) };
         touched.push(set.id);
