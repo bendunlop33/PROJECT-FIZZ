@@ -468,7 +468,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         // Targets that can't be worked out repeat last time's numbers, and the workout says so (review S2).
         const targets = await nextTargetsOf(p, source, today).catch(() => null);
         // No derived name (`Push`) is stored as if Ben chose it; titles are worked out when shown (review S3).
-        const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.nextOf, targets: targets ?? new Map(), name: storedName(source) ?? GENERIC_WORKOUT_NAME });
+        // Same history mapping as Today's preview, so Start gives what the card showed (gym-switch GS3).
+        const lastUsedHere = await lastUsedFor(p.id, source.exercises.map((e) => e.exerciseId), req.gymId);
+        const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.nextOf, targets: targets ?? new Map(), name: storedName(source) ?? GENERIC_WORKOUT_NAME, lastUsedHere });
         if (!r.ok) {
           const e = r.error;
           if (e.code === 'nothing_to_repeat' || e.code === 'imported_not_repeatable') return { ok: false, error: { code: 'not_found', message: e.message } };
@@ -839,7 +841,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const source = await repos().sessions.get(last.sessionId);
         if (!source) return null;
         const targets = await nextTargetsOf(p, source);
-        const r = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview-next:${last.sessionId}`, at: ctx.now(), sourceSessionId: last.sessionId, preview: true, targets });
+        const lastUsedHere = await lastUsedFor(p.id, source.exercises.map((e) => e.exerciseId), gymId);
+        const r = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview-next:${last.sessionId}`, at: ctx.now(), sourceSessionId: last.sessionId, preview: true, targets, lastUsedHere });
         if (!r.ok) return null;
         const derived = await titleFor(source.exercises.map((e) => e.exerciseId));
         return {

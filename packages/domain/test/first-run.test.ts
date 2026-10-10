@@ -172,6 +172,21 @@ describe('next session from the last workout (audit B2)', () => {
     expect(load?.unit).toBe('lb');
     expect(load === null || load === undefined ? 0 : load.value).toBeLessThanOrEqual(lb(225).value);
   });
+
+  it('next session at a gym without the bar: no load target, reps kept, still labelled built-in rule (gym-switch GS1, B1)', () => {
+    const source = finishedBench();
+    const targets = new Map([[BENCH, [{ setType: 'working' as const, planned: { load: kg(102.5), reps: { min: 6, max: 8 }, durationS: null, rpe: null, rir: null } }]]]);
+    const rack = dumbbells({ id: '00000000-0000-4000-8000-0000000009c3', loads: [10, 12.5, 15, 17.5, 20] });
+    const out = startWorkoutFromSession({ opId: 'next-4', owner: profile(), gymId: GYM, source, exercises: fixtureExercises, gymEquipment: [rack], at: at(86_400), newId: idGen(45_000), targets, gymName: 'Hotel · Lisbon' });
+    const set = setsFor(out.aggregate, BENCH)[0];
+    expect(set?.planned.load).toBeNull();
+    expect(set?.planned.reps).toEqual({ min: 6, max: 8 });
+    expect(set?.planned.source).toBe('built_in_rule');
+    expect(set?.planned.snap?.reason).toBe('not_here');
+    expect(set?.planned.snap?.intended).toEqual(kg(102.5));
+    expect(set?.status).toBe('pending');
+    expect(out.notes.map((n) => n.text).join(' ')).toContain('no load target');
+  });
 });
 
 describe('workout titles and muscle summary (audit F5)', () => {
