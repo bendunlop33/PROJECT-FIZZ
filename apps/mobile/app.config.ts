@@ -53,7 +53,8 @@ const config: ExpoConfig = {
   version: '0.1.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
-  userInterfaceStyle: 'automatic',
+  // D (the default look) is dark only (first-run audit B3): system alerts, sheets and the keyboard match it.
+  userInterfaceStyle: 'dark',
   platforms: ['ios'],
   ios: {
     bundleIdentifier: BUNDLE_IDENTIFIER,

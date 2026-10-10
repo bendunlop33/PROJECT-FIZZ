@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -21,7 +21,7 @@ import { openStartedWorkout, popToToday } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChipRow, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton } from '../../ui';
+import { AppText, Chip, ChipRow, Eyebrow, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton, TextField } from '../../ui';
 
 type Step = 'score' | 'reasons' | 'pain' | 'ill';
 const SCORES: readonly CheckInScore[] = [1, 2, 3, 4, 5];
@@ -35,10 +35,27 @@ const SCORES: readonly CheckInScore[] = [1, 2, 3, 4, 5];
  */
 export function CheckInScreen() {
   const route = useRoute<RouteProp<RootStackParams, 'CheckIn'>>();
-  return route.params.mode === 'start' ? <StartCheckIn gymId={route.params.gymId} repeatOf={route.params.repeatOf ?? null} /> : <EditCheckIn checkInId={route.params.checkInId} />;
+  return route.params.mode === 'start' ? <StartCheckIn gymId={route.params.gymId} repeatOf={route.params.repeatOf ?? null} nextOf={route.params.nextOf ?? null} /> : <EditCheckIn checkInId={route.params.checkInId} />;
 }
 
-function Sheet({ title, lead, children, bar, onBack, backLabel }: { title: string; lead?: string; children?: React.ReactNode; bar: React.ReactNode; onBack?: () => void; backLabel?: string }) {
+function Sheet({
+  title,
+  lead,
+  children,
+  bar,
+  onBack,
+  backLabel,
+  barFirst = false,
+}: {
+  title: string;
+  lead?: string;
+  children?: React.ReactNode;
+  bar: React.ReactNode;
+  onBack?: () => void;
+  backLabel?: string;
+  /** Actions straight under the title, so they are visible at the 0.55 detent above a long list (audit F1). */
+  barFirst?: boolean;
+}) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
@@ -49,18 +66,25 @@ function Sheet({ title, lead, children, bar, onBack, backLabel }: { title: strin
         detent's height, so a pinned bar can be off-screen at the 0.55 detent
         (review workout-loop S8). Scrolling always reaches them.
       */}
-      <ScrollView contentContainerStyle={{ padding: theme.space['4'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['5'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }}
+        keyboardShouldPersistTaps="handled"
+      >
         {onBack ? <TextButton label={backLabel ?? 'Back'} icon="chevron.left" onPress={onBack} /> : null}
-        <AppText variant="title2" accessibilityRole="header">
-          {title}
-        </AppText>
+        <View style={{ gap: theme.space['2'] }}>
+          <Eyebrow>Check-in</Eyebrow>
+          <AppText variant="title2" accessibilityRole="header">
+            {title}
+          </AppText>
+        </View>
         {lead ? (
           <AppText variant="callout" color="text.secondary">
             {lead}
           </AppText>
         ) : null}
+        {barFirst ? <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['3'] }}>{bar}</View> : null}
         {children}
-        <View style={{ borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], paddingTop: theme.space['4'], gap: theme.space['3'] }}>{bar}</View>
+        {barFirst ? null : <View style={{ borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], paddingTop: theme.space['4'], gap: theme.space['3'] }}>{bar}</View>}
       </ScrollView>
     </View>
   );
@@ -68,6 +92,7 @@ function Sheet({ title, lead, children, bar, onBack, backLabel }: { title: strin
 
 function ScoreRow({ chosen, onPick }: { chosen: CheckInScore | null; onPick: (s: CheckInScore) => void }) {
   const theme = useTheme();
+  const d = theme.components.cardBorderWidth === 0;
   return (
     <View accessibilityLabel="How are you feeling today, 1 to 5" style={{ gap: theme.space['1'] }}>
       <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
@@ -83,28 +108,47 @@ function ScoreRow({ chosen, onPick }: { chosen: CheckInScore | null; onPick: (s:
                 haptic('step');
                 onPick(n);
               }}
-              style={({ pressed }) => ({
-                flex: 1,
-                height: 64,
-                borderRadius: theme.radius.md,
-                borderWidth: selected ? 2 : 1,
-                borderColor: selected ? theme.colors.accent : theme.colors['border.control'],
-                backgroundColor: selected || pressed ? theme.colors['accent.subtle'] : theme.colors['bg.raised'],
-                alignItems: 'center',
-                justifyContent: 'center',
-              })}
+              style={({ pressed }) =>
+                d
+                  ? {
+                      // D (D-Rest effort pills): a full accent pill with a check when chosen.
+                      flex: 1,
+                      height: 64,
+                      borderRadius: theme.radius.pill,
+                      borderWidth: selected ? 0 : 1,
+                      borderColor: theme.colors['border.divider'],
+                      backgroundColor: selected ? theme.colors.accent : pressed ? theme.colors['bg.raised'] : theme.colors['bg.canvas'],
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexDirection: 'row',
+                      gap: 2,
+                    }
+                  : {
+                      flex: 1,
+                      height: 64,
+                      borderRadius: theme.radius.md,
+                      borderWidth: selected ? 2 : 1,
+                      borderColor: selected ? theme.colors.accent : theme.colors['border.control'],
+                      backgroundColor: selected || pressed ? theme.colors['accent.subtle'] : theme.colors['bg.raised'],
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }
+              }
             >
-              <AppText variant="keypad">{String(n)}</AppText>
-              {selected ? <Icon name="checkmark" color="accent" size={14} /> : null}
+              {d && selected ? <Icon name="checkmark" color="on.accent" size={14} /> : null}
+              <AppText variant="keypad" color={d && selected ? 'on.accent' : 'text.primary'} style={d ? { fontWeight: '300' } : undefined}>
+                {String(n)}
+              </AppText>
+              {!d && selected ? <Icon name="checkmark" color="accent" size={14} /> : null}
             </Pressable>
           );
         })}
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <AppText variant="label" color="text.secondary">
+        <AppText variant="callout" color="text.tertiary">
           1 = rough
         </AppText>
-        <AppText variant="label" color="text.secondary">
+        <AppText variant="callout" color="text.tertiary">
           5 = great
         </AppText>
       </View>
@@ -132,32 +176,20 @@ function ReasonsEditor({ reasons, setReasons, note, setNote, noteRef }: { reason
       </ChipRow>
       {reasons.includes('pain') ? <StatusLine icon="info.circle" tone="info" text="Next you’ll choose which movements hurt." /> : null}
       <View style={{ gap: theme.space['1'] }}>
-        <AppText variant="label">Note (optional)</AppText>
-        <TextInput
+        <Eyebrow>Note (optional)</Eyebrow>
+        <TextField
           ref={noteRef}
           value={note}
           onChangeText={(t) => {
             setNote(t.slice(0, CHECK_IN_NOTE_MAX));
           }}
           placeholder={reasons.includes('other') ? 'What else?' : 'Anything else?'}
-          placeholderTextColor={theme.colors['text.tertiary']}
           multiline
           maxLength={CHECK_IN_NOTE_MAX}
           returnKeyType="done"
           submitBehavior="blurAndSubmit"
           accessibilityLabel="Note, optional"
-          maxFontSizeMultiplier={theme.type.body.maxFontSizeMultiplier}
-          style={{
-            minHeight: 52,
-            maxHeight: 110,
-            padding: theme.space['3'],
-            borderRadius: theme.radius.sm,
-            borderWidth: 1,
-            borderColor: theme.colors['border.control'],
-            backgroundColor: theme.colors['bg.raised'],
-            color: theme.colors['text.primary'],
-            fontSize: theme.type.body.fontSize,
-          }}
+          style={{ maxHeight: 110 }}
         />
         {note.length >= 240 ? (
           <AppText variant="label" color="text.secondary" numeric>{`${String(note.length)} of ${String(CHECK_IN_NOTE_MAX)}`}</AppText>
@@ -167,8 +199,7 @@ function ReasonsEditor({ reasons, setReasons, note, setNote, noteRef }: { reason
   );
 }
 
-function StartCheckIn({ gymId, repeatOf }: { gymId: string; repeatOf: string | null }) {
-  const theme = useTheme();
+function StartCheckIn({ gymId, repeatOf, nextOf }: { gymId: string; repeatOf: string | null; nextOf: string | null }) {
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
@@ -206,14 +237,25 @@ function StartCheckIn({ gymId, repeatOf }: { gymId: string; repeatOf: string | n
 
   async function start(checkIn: SessionCheckIn, toast: WorkoutToastParam | null) {
     setBusy(true);
-    const r = await services.workout.start({ gymId, opId: startOp, checkIn, repeatOf });
+    let r: Awaited<ReturnType<typeof services.workout.start>>;
+    try {
+      r = await services.workout.start({ gymId, opId: startOp, checkIn, repeatOf, nextOf });
+    } catch (e) {
+      // Never a stuck sheet (audit F9): say so; the same opId makes a retry safe.
+      setBusy(false);
+      setError(`Couldn’t start the workout: ${e instanceof Error ? e.message : String(e)}. Try again.`);
+      return;
+    }
     setBusy(false);
     if (!r.ok) {
       setError(r.error.code === 'session_already_active' ? 'A workout is already in progress. Resume it from Today.' : r.error.message);
       return;
     }
     changed();
-    navigation.dispatch(openStartedWorkout(toast ? { toast } : undefined));
+    // A start notice (targets not worked out; review S2) rides on the check-in toast, or is its own.
+    const notice = r.notice ?? null;
+    const shown: WorkoutToastParam | null = notice === null ? toast : toast ? { ...toast, text: `${toast.text}. ${notice}` } : { kind: 'info', text: notice };
+    navigation.dispatch(openStartedWorkout(shown ? { toast: shown } : undefined));
   }
 
   const savedToast = (c: CheckIn): WorkoutToastParam => ({ kind: 'check_in', text: `Check-in saved · ${scoreText(c.score)}`, checkInId: c.id });
@@ -334,6 +376,7 @@ function StartCheckIn({ gymId, repeatOf }: { gymId: string; repeatOf: string | n
             setStep('score');
           }}
           backLabel={score === null ? 'Back' : scoreText(score)}
+          barFirst
           bar={
             <>
               <TextButton
@@ -344,7 +387,9 @@ function StartCheckIn({ gymId, repeatOf }: { gymId: string; repeatOf: string | n
                   if (record) void start({ kind: 'answered', checkInId: record.id }, savedToast(record));
                 }}
               />
-              <PrimaryButton label="Done" busy={busy} onPress={() => void done()} />
+              <View style={{ flex: 1 }}>
+                <PrimaryButton label="Done" busy={busy} onPress={() => void done()} />
+              </View>
             </>
           }
         >
@@ -374,15 +419,8 @@ function StartCheckIn({ gymId, repeatOf }: { gymId: string; repeatOf: string | n
             </>
           }
         >
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search exercises"
-            placeholderTextColor={theme.colors['text.tertiary']}
-            accessibilityLabel="Search exercises"
-            style={{ minHeight: 52, paddingHorizontal: theme.space['3'], borderRadius: theme.radius.sm, borderWidth: 1, borderColor: theme.colors['border.control'], backgroundColor: theme.colors['bg.raised'], color: theme.colors['text.primary'], fontSize: theme.type.body.fontSize }}
-          />
-          {query.trim() === '' && recentIds.length > 0 ? <AppText variant="label">Recent</AppText> : null}
+          <TextField value={query} onChangeText={setQuery} placeholder="Search exercises" accessibilityLabel="Search exercises" />
+          {query.trim() === '' && recentIds.length > 0 ? <Eyebrow>Recent</Eyebrow> : null}
           <ChipRow>
             {painList.map((e) => (
               <Chip
@@ -395,7 +433,7 @@ function StartCheckIn({ gymId, repeatOf }: { gymId: string; repeatOf: string | n
               />
             ))}
           </ChipRow>
-          <AppText variant="label">Where? (optional)</AppText>
+          <Eyebrow>Where? (optional)</Eyebrow>
           <ChipRow>
             {PAIN_AREAS.map((a) => (
               <Chip

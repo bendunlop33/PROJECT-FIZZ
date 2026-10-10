@@ -16,6 +16,7 @@ import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touc
 import type { HistorySession } from '../progression';
 import { toMs } from '../time';
 import { buildExecutionOrder, nextPendingSet } from './order';
+import { GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
 import { latestCommittedSetId } from './reducer';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
 
@@ -79,6 +80,8 @@ export interface ActiveViewInput {
   /** Exercise IDs with an active pain flag. */
   painFlagged: ReadonlySet<string>;
   edits: DraftEdits | null;
+  /** A derived name (`Push`) for a workout without one (audit F5); the stored name wins. */
+  title?: string | null;
 }
 
 export type StepTarget = { enabled: true; value: number; label: string } | { enabled: false; reason: string };
@@ -114,7 +117,7 @@ export interface FocusView {
   exerciseName: string;
   measurement: 'reps' | 'duration';
   unilateral: boolean;
-  /** `Barbell · Working · Set 2 of 4` (+ ` · per side`). */
+  /** `Barbell · Set 2 of 4`, `Barbell · Warm-up · Set 1 of 4` (+ ` · per side`). */
   headerLine: string;
   setNumber: number;
   setCount: number;
@@ -136,7 +139,7 @@ export interface FocusView {
   /** Built-in warm-up ramp suggestion on the first barbell exercise's first working set; labelled and skippable. */
   warmUp: string | null;
   rows: SetRowView[];
-  next: { kind: 'exercise'; name: string; target: string | null } | { kind: 'last_set' } | null;
+  next: { kind: 'exercise'; name: string; target: string | null; setId: string } | { kind: 'last_set' } | null;
   /** Null when a value is missing. */
   logLabel: string | null;
   missing: 'load' | 'reps' | 'time' | null;
@@ -169,7 +172,8 @@ export type RestView =
 
 export type PrimaryAction =
   | { kind: 'log'; label: string }
-  | { kind: 'disabled'; label: string }
+  /** A value is missing: the button focuses that field (audit F2), it never logs. */
+  | { kind: 'enter'; label: string; field: 'load' | 'reps' | 'time' }
   | { kind: 'resume'; label: 'Resume' }
   | { kind: 'add_exercise'; label: 'Add exercise' }
   | { kind: 'finish'; label: 'Finish workout' }
@@ -190,6 +194,10 @@ export interface ActiveSetView {
   /** Ordered exercises with their live set count (exercise menu, pain picker). */
   exercises: { sessionExerciseId: string; exerciseId: string; name: string; pendingSets: number; doneSets: number }[];
   lastCompletedAtUtc: string | null;
+  /** Built as Ben goes (no routine or plan): all done offers `Add exercise`, not Finish (audit B1). */
+  openEnded: boolean;
+  /** `Set 3 · 100 kg × 6–8` (or `Incline dumbbell press · Set 1 · …`) for the Rest state's Next line. */
+  upNext: string | null;
 }
 
 const live = (s: WorkoutSet) => s.status !== 'deleted';
@@ -345,12 +353,13 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     const nextSet = state.sets.find((s) => s.id === nextId);
     const nextEx = nextSet ? state.exercises.find((e) => e.id === nextSet.sessionExerciseId) : undefined;
     if (nextSet && nextEx && nextEx.id !== ex.id && order.indexOf(nextId) > order.indexOf(set.id)) {
-      next = { kind: 'exercise', name: nextEx.exerciseName, target: targetShort(nextSet.planned, { convention: nextEx.loadConvention, equipment: equipmentOf(state, nextEx) }) };
+      next = { kind: 'exercise', name: nextEx.exerciseName, target: targetShort(nextSet.planned, { convention: nextEx.loadConvention, equipment: equipmentOf(state, nextEx) }), setId: nextId };
     }
   }
 
   const prevFirst = prev?.sets.find((c) => c.index === setNumber - 1) ?? prev?.sets[prev.sets.length - 1] ?? null;
-  const headerParts = [eq ? EQUIPMENT_WORD[eq.kind] : null, SET_TYPE_WORD[set.setType], `Set ${String(setNumber)} of ${String(own.length)}`, unilateral ? 'per side' : null];
+  // `Working` is the usual case, so only other set types are named (D-ActiveSet: `Barbell · Set 2 of 4`).
+  const headerParts = [eq ? EQUIPMENT_WORD[eq.kind] : null, set.setType === 'working' ? null : SET_TYPE_WORD[set.setType], `Set ${String(setNumber)} of ${String(own.length)}`, unilateral ? 'per side' : null];
 
   return {
     setId: set.id,
@@ -444,8 +453,11 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
   if (session.status !== 'active') primary = { kind: 'none', label: '' };
   else if (phase.kind === 'paused') primary = { kind: 'resume', label: 'Resume' };
   else if (phase.kind === 'empty') primary = { kind: 'add_exercise', label: 'Add exercise' };
-  else if (focus === null) primary = { kind: 'finish', label: 'Finish workout' };
-  else if (focus.logLabel === null) primary = { kind: 'disabled', label: focus.missing === 'load' ? 'Enter load' : focus.missing === 'time' ? 'Enter time' : 'Enter reps' };
+  else if (focus === null) primary = isOpenEndedWorkout(state) ? { kind: 'add_exercise', label: 'Add exercise' } : { kind: 'finish', label: 'Finish workout' };
+  else if (focus.logLabel === null) {
+    const field = focus.missing ?? 'reps';
+    primary = { kind: 'enter', field, label: field === 'load' ? 'Enter load' : field === 'time' ? 'Enter time' : 'Enter reps' };
+  }
   else primary = { kind: 'log', label: focus.logLabel };
 
   const completed = liveSets.filter((s) => s.status === 'completed' && s.completedAt);
@@ -453,7 +465,7 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
 
   return {
     phase: phase.kind,
-    title: session.routineName ?? 'Workout',
+    title: storedWorkoutName(session) ?? input.title ?? GENERIC_WORKOUT_NAME,
     sessionId: session.id,
     sessionVersion: session.version,
     elapsedMs: getActiveDurationMs(state, nowMs),
@@ -473,7 +485,23 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
         doneSets: liveSets.filter((s) => s.sessionExerciseId === e.id && s.status === 'completed').length,
       })),
     lastCompletedAtUtc: last,
+    openEnded: isOpenEndedWorkout(state),
+    upNext: focus === null ? null : upNextLine(state, focus),
   };
+}
+
+/** The Rest state's `Next · Set 3 · 100 kg × 6–8` (D-Rest). The exercise is named when it changes. */
+function upNextLine(state: SessionAggregate, focus: FocusView): string {
+  const lastId = latestCommittedSetId(state);
+  const lastSet = lastId === null ? undefined : state.sets.find((s) => s.id === lastId);
+  const sameExercise = lastSet?.sessionExerciseId === focus.sessionExerciseId;
+  const ex = state.exercises.find((e) => e.id === focus.sessionExerciseId);
+  const eq = ex ? equipmentOf(state, ex) : null;
+  const set = state.sets.find((s) => s.id === focus.setId);
+  const target = set && ex ? targetShort(set.planned, { convention: ex.loadConvention, equipment: eq }) : null;
+  // `Target (built-in rule) 3–6 reps` → `3–6 reps`: the label stays on the set view.
+  const what = target !== null ? target.replace(/^Target (\([^)]*\) )?/, '') : focus.logLabel === null ? null : focus.logLabel.replace(/^Log /, '');
+  return [sameExercise ? null : focus.exerciseName, `Set ${String(focus.setNumber)}`, what].filter((p): p is string => p !== null).join(' · ');
 }
 
 export interface SetEditView {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, TextInput, View } from 'react-native';
+import { Alert, View } from 'react-native';
 
 import { toggleDraftItem, type GymDraft, type GymPresetId } from '@fizz/domain';
 import type { WeightUnit } from '@fizz/schemas';
@@ -7,7 +7,7 @@ import type { WeightUnit } from '@fizz/schemas';
 import { useDataChanged, useServices } from '../../shell/context';
 import { newUuid } from '../../device/runtime';
 import { useTheme } from '../../theme';
-import { AppText, ChecklistRow, ChoiceCard, Group, PrimaryButton, StatusLine, TextButton } from '../../ui';
+import { AppText, ChecklistRow, ChoiceCard, Eyebrow, Group, PrimaryButton, StatusLine, TextButton, TextField } from '../../ui';
 import { StepFrame } from './StepFrame';
 
 export interface SavedGymSummary {
@@ -42,7 +42,8 @@ export function GymSetupFlow({
   const [gymId] = useState(newUuid);
   const [phase, setPhase] = useState<'start' | 'checklist'>('start');
   const [name, setName] = useState('Main gym');
-  const [presetId, setPresetId] = useState<GymPresetId | null>(null);
+  // The most common case is preselected, so Continue works at once (first-run audit: install to first set fast).
+  const [presetId, setPresetId] = useState<GymPresetId | null>('commercial');
   const [draft, setDraft] = useState<GymDraft | null>(null);
   const [edited, setEdited] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -132,7 +133,7 @@ export function GymSetupFlow({
           ))}
         </Group>
         <AppText variant="callout" color="text.secondary">
-          You can check the numbers at the gym. Until then they’re marked “not checked”. Editing each item’s numbers comes with the gym editor.
+          You can check the numbers at the gym in Profile › your gym. Until then they’re marked “not checked”.
         </AppText>
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
       </StepFrame>
@@ -155,27 +156,17 @@ export function GymSetupFlow({
       }
     >
       <View style={{ gap: theme.space['2'] }}>
-        <AppText variant="label" color="text.secondary" nativeID="gym-name-label">
-          Gym name
-        </AppText>
-        <TextInput
+        <View nativeID="gym-name-label">
+          <Eyebrow>Gym name</Eyebrow>
+        </View>
+        <TextField
           value={name}
           onChangeText={setName}
           accessibilityLabel="Gym name"
           accessibilityLabelledBy="gym-name-label"
           returnKeyType="done"
           maxLength={120}
-          maxFontSizeMultiplier={theme.type.body.maxFontSizeMultiplier}
-          style={{
-            minHeight: 52,
-            paddingHorizontal: theme.space['3'],
-            borderRadius: theme.radius.sm,
-            borderWidth: nameEmpty ? 2 : 1,
-            borderColor: nameEmpty ? theme.colors['status.warning'] : theme.colors['border.control'],
-            backgroundColor: theme.colors['bg.raised'],
-            color: theme.colors['text.primary'],
-            fontSize: theme.type.body.fontSize,
-          }}
+          style={nameEmpty ? { borderWidth: 2, borderColor: theme.colors['status.warning'] } : undefined}
         />
         {nameEmpty ? <StatusLine icon="exclamationmark.triangle" tone="warning" text="Give the gym a name" /> : null}
       </View>
@@ -184,7 +175,14 @@ export function GymSetupFlow({
           <ChoiceCard key={p.id} title={p.title} subtitle={p.subtitle} selected={presetId === p.id} onPress={() => { choose(p.id); }} />
         ))}
       </View>
-      {onSkip ? <TextButton label="Skip for now: you’ll add a gym before your first workout" tone="secondary" onPress={onSkip} /> : null}
+      {onSkip ? (
+        <View style={{ gap: theme.space['1'] }}>
+          <TextButton label="Skip: use a typical gym for now" tone="secondary" onPress={onSkip} />
+          <AppText variant="callout" color="text.tertiary">
+            Barbell, dumbbells, cables and machines with typical weights, marked “not checked”. Edit it any time in Profile.
+          </AppText>
+        </View>
+      ) : null}
       {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
     </StepFrame>
   );

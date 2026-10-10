@@ -1,5 +1,5 @@
-import { Children, Fragment, isValidElement, type ReactNode } from 'react';
-import { Pressable, ScrollView, View, type ViewStyle } from 'react-native';
+import { Children, Fragment, isValidElement, useState, type ReactNode, type Ref } from 'react';
+import { Pressable, ScrollView, TextInput, View, type TextInputProps, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme, type ColorToken } from '../theme';
@@ -35,10 +35,10 @@ export function BottomBar({ children }: { children: ReactNode }) {
   return (
     <View
       style={{
-        backgroundColor: theme.colors['bg.surface'],
-        borderTopWidth: theme.dividerWidth,
+        backgroundColor: theme.components.barOnCanvas ? theme.colors['bg.canvas'] : theme.colors['bg.surface'],
+        borderTopWidth: theme.components.barOnCanvas ? 0 : theme.dividerWidth,
         borderTopColor: theme.colors['border.divider'],
-        paddingHorizontal: theme.space['4'],
+        paddingHorizontal: theme.components.barOnCanvas ? theme.space['5'] : theme.space['4'],
         paddingTop: theme.space['3'],
         paddingBottom: theme.space['3'] + insets.bottom,
         gap: theme.space['2'],
@@ -57,9 +57,9 @@ export function Card({ children, style }: { children: ReactNode; style?: ViewSty
       style={[
         {
           backgroundColor: theme.colors['bg.surface'],
-          borderWidth: 1,
+          borderWidth: theme.components.cardBorderWidth,
           borderColor: theme.colors['border.control'],
-          borderRadius: theme.radius.md,
+          borderRadius: theme.components.cardBorderWidth === 0 ? theme.radius.lg : theme.radius.md,
           padding: theme.space['4'],
           gap: theme.space['3'],
         },
@@ -77,7 +77,7 @@ export function SectionHeader({ title, icon }: { title: string; icon?: SymbolNam
   return (
     <View accessibilityRole="header" style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], marginTop: theme.space['2'] }}>
       {icon ? <Icon name={icon} size={18} /> : null}
-      <AppText variant="sectionLabel" color="text.secondary">
+      <AppText variant="sectionLabel" color={theme.type.sectionLabel.uppercase ? 'text.tertiary' : 'text.secondary'}>
         {title}
       </AppText>
     </View>
@@ -94,7 +94,7 @@ export function Group({ children }: { children: ReactNode }) {
   const theme = useTheme();
   const items = Children.toArray(children).filter(isValidElement);
   return (
-    <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, overflow: 'hidden' }}>
+    <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.components.cardBorderWidth === 0 ? theme.radius.lg : theme.radius.md, overflow: 'hidden' }}>
       {items.map((child, i) => (
         <Fragment key={child.key ?? i}>
           {i > 0 ? <View style={{ height: theme.dividerWidth, backgroundColor: theme.colors['border.divider'], marginLeft: theme.space['4'] }} /> : null}
@@ -204,9 +204,9 @@ export function Banner({ severity, text, action }: { severity: 'info' | 'warning
         gap: theme.space['3'],
         minHeight: theme.target.min.height,
         padding: theme.space['3'],
-        borderRadius: theme.radius.md,
+        borderRadius: theme.components.cardBorderWidth === 0 ? theme.radius.lg : theme.radius.md,
         backgroundColor: warning ? theme.colors['status.warning.subtle'] : theme.colors['bg.surface'],
-        borderWidth: warning ? 0 : 1,
+        borderWidth: warning ? 0 : theme.components.cardBorderWidth,
         borderColor: theme.colors['border.control'],
       }}
     >
@@ -231,9 +231,9 @@ export function ChoiceCard({ title, subtitle, selected, onPress }: { title: stri
       style={{
         minHeight: 60,
         padding: theme.space['4'],
-        borderRadius: theme.radius.md,
+        borderRadius: theme.components.cardBorderWidth === 0 ? theme.radius.lg : theme.radius.md,
         borderWidth: selected ? theme.components.selectedBorderWidth : 1,
-        borderColor: selected ? theme.colors.accent : theme.colors['border.control'],
+        borderColor: selected ? theme.colors.accent : theme.components.cardBorderWidth === 0 ? theme.colors['border.divider'] : theme.colors['border.control'],
         backgroundColor: selected ? theme.colors['accent.subtle'] : theme.colors['bg.surface'],
         flexDirection: 'row',
         alignItems: 'center',
@@ -331,5 +331,198 @@ export function MessageScreen({ title, lines, children }: { title: string; lines
       ))}
       {children}
     </View>
+  );
+}
+
+/** A tracked-caps label (`TODAY`, `LOAD`, `REST`; D) or the look's section label. */
+export function Eyebrow({ children, color = 'text.tertiary', align }: { children: string; color?: ColorToken; align?: 'center' }) {
+  return (
+    <AppText variant="sectionLabel" color={color} {...(align ? { align } : {})}>
+      {children}
+    </AppText>
+  );
+}
+
+/**
+ * The D hero (D-Today `TODAY / Push A / Chest · Shoulders`): eyebrow, a large
+ * semibold title, then quiet lines. `size` `hero` is the 40pt Today title;
+ * `screen` is the 30pt screen title.
+ */
+export function HeroHeader({ eyebrow, title, lines = [], size = 'hero' }: { eyebrow?: string | null; title: string; lines?: readonly (string | null | undefined)[]; size?: 'hero' | 'screen' }) {
+  const theme = useTheme();
+  const px = size === 'hero' ? theme.components.heroTitleSize : theme.type.title1.fontSize;
+  return (
+    <View style={{ gap: theme.space['2'] }}>
+      {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
+      <AppText
+        variant="title1"
+        accessibilityRole="header"
+        numberOfLines={3}
+        style={{ fontSize: px, lineHeight: Math.round(px * 1.15), letterSpacing: px >= 40 ? -0.8 : theme.type.title1.letterSpacing }}
+      >
+        {title}
+      </AppText>
+      {lines
+        .filter((l): l is string => typeof l === 'string' && l !== '')
+        .map((l) => (
+          <AppText key={l} variant="callout" color="text.secondary" numeric>
+            {l}
+          </AppText>
+        ))}
+    </View>
+  );
+}
+
+/** A section opened by a hairline and an eyebrow (D-Today `THIS WEEK`, D-Rest saved/effort block). */
+export function RuledSection({ title, children, gap = '3' }: { title?: string | null; children: ReactNode; gap?: '2' | '3' | '4' }) {
+  const theme = useTheme();
+  return (
+    <View style={{ borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], paddingTop: theme.space['4'], gap: theme.space[gap] }}>
+      {title ? (
+        <View accessibilityRole="header">
+          <Eyebrow>{title}</Eyebrow>
+        </View>
+      ) : null}
+      {children}
+    </View>
+  );
+}
+
+/**
+ * Large-numeral stat tiles (D: the LOAD / REPS tile look) in a wrapping grid,
+ * two per row. Each tile reads as one VoiceOver element: `Active time, 52 min`.
+ */
+export function StatGrid({ items }: { items: readonly { label: string; value: string; unit?: string | null }[] }) {
+  const theme = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['3'] }}>
+      {items.map((it) => (
+        <View
+          key={it.label}
+          accessible
+          accessibilityLabel={`${it.label}, ${it.value}${it.unit ? ` ${it.unit}` : ''}`}
+          style={{
+            flexGrow: 1,
+            flexBasis: '40%',
+            backgroundColor: theme.colors['bg.surface'],
+            borderWidth: theme.components.cardBorderWidth,
+            borderColor: theme.colors['border.control'],
+            borderRadius: theme.components.cardBorderWidth === 0 ? theme.radius.lg : theme.radius.md,
+            paddingVertical: theme.space['4'],
+            paddingHorizontal: theme.space['4'],
+            gap: theme.space['1'],
+          }}
+        >
+          <Eyebrow>{it.label}</Eyebrow>
+          <AppText variant="title1" numeric style={{ fontWeight: '500', fontVariant: ['tabular-nums'] }}>
+            {it.value}
+            {it.unit ? (
+              <AppText variant="body" color="text.secondary">
+                {` ${it.unit}`}
+              </AppText>
+            ) : null}
+          </AppText>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * A quiet trend line (D-Today under the lift): `border.control` segments with
+ * the newest point marked in the accent. Decorative; the words beside it
+ * carry the meaning, so it is hidden from VoiceOver.
+ */
+export function Sparkline({ points, height = 40 }: { points: readonly { x: number; y: number }[] | ((width: number) => readonly { x: number; y: number }[]); height?: number }) {
+  const theme = useTheme();
+  const [width, setWidth] = useState(0);
+  const pts = typeof points === 'function' ? (width > 0 ? points(width) : []) : points;
+  const stroke = 1.5;
+  const dot = 7;
+  return (
+    <View
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      accessibilityElementsHidden
+      onLayout={(e) => {
+        setWidth(Math.round(e.nativeEvent.layout.width) - dot);
+      }}
+      style={{ height, width: '100%' }}
+    >
+      {pts.slice(1).map((p, i) => {
+        const a = pts[i];
+        if (!a) return null;
+        const dx = p.x - a.x;
+        const dy = p.y - a.y;
+        const len = Math.hypot(dx, dy);
+        return (
+          <View
+            key={String(i)}
+            style={{
+              position: 'absolute',
+              left: (a.x + p.x) / 2 - len / 2,
+              top: (a.y + p.y) / 2 - stroke / 2,
+              width: len,
+              height: stroke,
+              backgroundColor: theme.colors['border.control'],
+              transform: [{ rotate: `${String(Math.atan2(dy, dx))}rad` }],
+            }}
+          />
+        );
+      })}
+      {pts.length > 0 ? (
+        <View
+          style={{
+            position: 'absolute',
+            left: (pts.at(-1)?.x ?? 0) - dot / 2,
+            top: (pts.at(-1)?.y ?? 0) - dot / 2,
+            width: dot,
+            height: dot,
+            borderRadius: dot / 2,
+            backgroundColor: theme.colors.accent,
+          }}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * A text field in the look (D: a borderless `bg.raised` block, radius 14, a
+ * hairline when focused; A: the bordered field). Extra props go to TextInput.
+ */
+export function TextField({ style, onFocus, onBlur, ref, ...rest }: TextInputProps & { ref?: Ref<TextInput> }) {
+  const theme = useTheme();
+  const [focused, setFocused] = useState(false);
+  const d = theme.components.cardBorderWidth === 0;
+  return (
+    <TextInput
+      ref={ref}
+      placeholderTextColor={theme.colors['text.tertiary']}
+      maxFontSizeMultiplier={theme.type.body.maxFontSizeMultiplier}
+      onFocus={(e) => {
+        setFocused(true);
+        onFocus?.(e);
+      }}
+      onBlur={(e) => {
+        setFocused(false);
+        onBlur?.(e);
+      }}
+      {...rest}
+      style={[
+        {
+          minHeight: 52,
+          paddingHorizontal: theme.space['4'],
+          paddingVertical: theme.space['3'],
+          borderRadius: d ? theme.radius.md : theme.radius.sm,
+          borderWidth: d ? (focused ? 1 : 0) : focused ? 2 : 1,
+          borderColor: d ? theme.colors['border.control'] : focused ? theme.colors.accent : theme.colors['border.control'],
+          backgroundColor: theme.colors['bg.raised'],
+          color: theme.colors['text.primary'],
+          fontSize: theme.type.body.fontSize,
+        },
+        style,
+      ]}
+    />
   );
 }

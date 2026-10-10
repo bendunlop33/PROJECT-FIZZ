@@ -10,7 +10,7 @@ import { formatClock } from '../../format/numbers';
 import type { SetupStep } from '../../services/setup';
 import { DEFAULT_REST_PRESETS, unitFromMeasurementSystem } from '../../services/setup';
 import { useTheme } from '../../theme';
-import { AppText, ChoiceCard, Group, PrimaryButton, Row, StatusLine, TextButton } from '../../ui';
+import { AppText, ChoiceCard, Eyebrow, Group, PrimaryButton, Row, StatusLine, TextButton } from '../../ui';
 import { SaveCopyToFiles } from '../data/SaveCopyToFiles';
 import { GymSetupFlow, type SavedGymSummary } from './GymSetupFlow';
 import { StepFrame } from './StepFrame';
@@ -103,10 +103,30 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
             </>
           }
         >
-          <View style={{ gap: theme.space['2'] }}>
-            <AppText variant="body">You’ll set:</AppText>
-            {['Units and rest times', 'Your gym’s equipment', 'How your data is kept'].map((t, i) => (
-              <AppText key={t} variant="body" numeric>{`${String(i + 1)}  ${t}`}</AppText>
+          <View>
+            <View style={{ marginBottom: theme.space['2'] }}>
+              <Eyebrow>You’ll set</Eyebrow>
+            </View>
+            {['Units and rest times', 'Your gym’s equipment', 'How your data is kept'].map((t, i, all) => (
+              <View
+                key={t}
+                accessible
+                accessibilityLabel={`${String(i + 1)}. ${t}`}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: theme.space['3'],
+                  minHeight: 52,
+                  borderTopWidth: theme.dividerWidth,
+                  borderBottomWidth: i === all.length - 1 ? theme.dividerWidth : 0,
+                  borderColor: theme.colors['border.divider'],
+                }}
+              >
+                <AppText variant="body" color="text.tertiary" numeric style={{ minWidth: 18 }}>
+                  {String(i + 1)}
+                </AppText>
+                <AppText variant="body">{t}</AppText>
+              </View>
             ))}
           </View>
           <AppText variant="callout" color="text.secondary">
@@ -140,7 +160,7 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
           }
         >
           <View style={{ gap: theme.space['2'] }}>
-            <AppText variant="headline">Weights in</AppText>
+            <Eyebrow>Weights in</Eyebrow>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }} accessibilityRole="radiogroup">
               <View style={{ flexGrow: 1, flexBasis: 150 }}>
                 <ChoiceCard title="Kilograms (kg)" selected={unit === 'kg'} onPress={() => { setUnit('kg'); }} />
@@ -154,7 +174,7 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
             </AppText>
           </View>
           <View style={{ gap: theme.space['2'] }}>
-            <AppText variant="headline">Rest times</AppText>
+            <Eyebrow>Rest times</Eyebrow>
             <AppText variant="callout" color="text.secondary">
               Starting points, not advice.
             </AppText>
@@ -201,10 +221,15 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
             setStep('units');
           }}
           onSkip={() =>
+            // Audit B4: "skip" still leaves a usable gym, a typical one marked not checked.
             void run(
-              () => services.setup.skipGym(),
+              () => services.setup.useTypicalGym(),
               () => {
-                setGym('skipped');
+                void (async () => {
+                  const current = await services.yourData.currentGym();
+                  const items = current ? await services.yourData.equipment(current.id) : [];
+                  setGym(current === null ? 'skipped' : { name: current.name, items: items.length, notChecked: items.filter((i) => i.detailsSource === 'preset').length });
+                })();
                 setStep('data');
               },
             )

@@ -56,7 +56,9 @@ describe('empty workout (review M4)', () => {
     expect(r.events.map((e) => e.type)).toEqual(['ExerciseAdded', 'SetAdded', 'ActiveSetChanged']);
 
     s = apply(s, logCmd(first.id, values(kg(60), 10), 60));
-    expect(getSessionPhase(s, ms(61))).toEqual({ kind: 'all_done' });
+    // Open-ended workout: the last set so far still starts the rest (audit B1); all done once it ends.
+    expect(getSessionPhase(s, ms(61))).toMatchObject({ kind: 'resting', nextSetId: null });
+    expect(getSessionPhase(s, ms(60 + 121))).toEqual({ kind: 'all_done' });
 
     const sx = s.exercises[0]?.id ?? '';
     s = apply(s, { type: 'add_set', at: at(70), opId: 'add-set', sessionExerciseId: sx, newSetId: id(31_000), setType: null });

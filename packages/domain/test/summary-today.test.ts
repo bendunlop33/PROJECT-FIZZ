@@ -171,7 +171,25 @@ describe('buildTodayView', () => {
     const done = finish(logAll(workout(BENCH, barbell(), 1, -7200), [values(kg(60), 10)], -7200), -6000);
     const v = buildTodayView({ ...base, nowMs: ms(0), active: null, finishedThisWeek: [done] });
     expect(v.main).toMatchObject({ kind: 'done_today', title: 'Workout' });
-    expect(v.week).toEqual({ count: 1, text: '1 workout this week' });
+    expect(v.week).toEqual({ count: 1, text: '1 workout this week', days: [] });
+  });
+
+  it('This week strip: a dot per day, trained and today marked; a derived name for an unnamed workout', () => {
+    const done = finish(logAll(workout(BENCH, barbell(), 1, -7200), [values(kg(60), 10)], -7200), -6000);
+    const today = local(at(0).utc);
+    const dayBefore = local(at(-86_400).utc);
+    const weekDates = [dayBefore, today, 'x-3', 'x-4', 'x-5', 'x-6', 'x-7'];
+    const v = buildTodayView({ ...base, nowMs: ms(0), active: null, finishedThisWeek: [done], weekDates, titles: { [done.session.id]: 'Push' } });
+    expect(v.week.days.map((d) => [d.letter, d.trained, d.today])).toEqual([
+      ['M', false, false],
+      ['T', true, true],
+      ['W', false, false],
+      ['T', false, false],
+      ['F', false, false],
+      ['S', false, false],
+      ['S', false, false],
+    ]);
+    expect(v.main).toMatchObject({ kind: 'done_today', title: 'Push' });
   });
 
   it('resume card: now line, progress and rest status', () => {

@@ -15,6 +15,7 @@ import {
   TYPE_TOKENS,
   directionById,
   resolveTheme,
+  schemeFor,
   tokenNames,
   type ThemeDirection,
 } from '../src/theme/tokens';
@@ -99,9 +100,14 @@ describe('theme tokens', () => {
     }
   });
 
-  it('keeps every text token at 16pt or more (design-system §3)', () => {
+  it('keeps every text token at 16pt or more (design-system §3), except D’s tracked caps labels (approved mockups)', () => {
     for (const direction of directions) {
-      for (const name of TYPE_TOKENS) expect(direction.type[name].size, `${direction.id} ${name}`).toBeGreaterThanOrEqual(16);
+      for (const name of TYPE_TOKENS) {
+        const t = direction.type[name];
+        // D's `TODAY` / `LOAD` / `REST` labels are 12pt tracked caps in Ben's approved D mockups; they still scale with Dynamic Type.
+        const min = t.uppercase === true ? 12 : 16;
+        expect(t.size, `${direction.id} ${name}`).toBeGreaterThanOrEqual(min);
+      }
     }
   });
 
@@ -141,6 +147,11 @@ describe('theme tokens', () => {
 });
 
 describe('Direction D (Premium)', () => {
+  it('is dark only (audit B3); A follows the system', () => {
+    expect(['light', 'dark', null].map((sys) => schemeFor('D', sys))).toEqual(['dark', 'dark', 'dark']);
+    expect(['light', 'dark', null].map((sys) => schemeFor('A', sys))).toEqual(['light', 'dark', 'dark']);
+  });
+
   it('is the default look; A is still selectable', () => {
     expect(CURRENT_DIRECTION.id).toBe('D');
     expect(directionById('A').id).toBe('A');
@@ -159,12 +170,15 @@ describe('Direction D (Premium)', () => {
     }
   });
 
-  it('answers its own risks: chevron links, pill buttons, Semibold titles, tracked caps labels', () => {
-    expect(PREMIUM_DIRECTION.components.linkAffordance).toBe('chevron');
+  it('answers its own risks: underlined links, pill buttons, Semibold titles, tracked caps labels', () => {
+    expect(PREMIUM_DIRECTION.components.linkAffordance).toBe('underline');
     expect(PREMIUM_DIRECTION.components.primaryButtonRadius).toBe('pill');
     expect(PREMIUM_DIRECTION.type.title1.weight).toBe('600');
     const label = resolveTheme(PREMIUM_DIRECTION, 'light').type.sectionLabel;
-    expect(label).toMatchObject({ fontSize: 16, fontWeight: '600', uppercase: true, letterSpacing: 1 });
+    // Approved D mockups (9 Oct): 12pt, tracked 1.4.
+    expect(label).toMatchObject({ fontSize: 12, fontWeight: '600', uppercase: true, letterSpacing: 1.4 });
+    expect(PREMIUM_DIRECTION.type.timerDisplay).toMatchObject({ size: 88, weight: '300' });
+    expect(PREMIUM_DIRECTION.radius.lg).toBe(20);
     expect(resolveTheme(NAVY_DIRECTION, 'light').type.sectionLabel.uppercase).toBe(false);
   });
 });

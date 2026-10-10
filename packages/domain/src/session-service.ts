@@ -10,7 +10,7 @@ import {
 import type { Repositories, SaveResult } from './ports';
 import { buildAddExerciseCommand, startWorkout, type AddExerciseInput, type StartWarning } from './session/create';
 import { recoverSession, type RecoveryResult } from './session/recovery';
-import { startWorkoutFromSession, type RepeatNote, type RepeatOutput } from './session/repeat';
+import { startWorkoutFromSession, type RepeatInput, type RepeatNote, type RepeatOutput } from './session/repeat';
 import { reduceSession, type SessionError, type SessionEvent } from './session/reducer';
 
 export type ServiceError =
@@ -115,7 +115,13 @@ export function createSessionService(repos: Repositories, newId: () => string) {
    * An imported workout is refused (`imported_not_repeatable`; review r2 B1).
    */
   async function startFromSession(
-    req: StartRequest & { sourceSessionId: string; preview?: boolean },
+    req: StartRequest & {
+      sourceSessionId: string;
+      preview?: boolean;
+      /** "Start next session" (audit B2): next targets per exercise ID, and a name. */
+      targets?: RepeatInput['targets'];
+      name?: string;
+    },
   ): Promise<
     | { ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; notCopied: RepeatOutput['notCopied']; duplicate: boolean }
     | { ok: false; error: ServiceError | { code: 'nothing_to_repeat'; message: string } | { code: 'imported_not_repeatable'; message: string } }
@@ -154,6 +160,8 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       at: req.at,
       newId,
       checkIn: req.checkIn ?? null,
+      ...(req.targets ? { targets: req.targets } : {}),
+      ...(req.name !== undefined ? { name: req.name } : {}),
     });
     if (out.empty) return { ok: false, error: { code: 'nothing_to_repeat', message: 'That workout has no logged sets to repeat.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false };

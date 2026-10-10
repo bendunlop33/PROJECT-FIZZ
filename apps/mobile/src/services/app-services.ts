@@ -1,6 +1,7 @@
 import {
   buildPresetDraft,
   createSessionService,
+  deriveId,
   LEGACY_STARTER_IDS,
   listGymPresets,
   materialiseGymDraft,
@@ -12,6 +13,7 @@ import {
   type RecoveryResult,
   type StartOutcome,
 } from '@fizz/domain';
+import { bundledCatalogue, toExerciseRow, type CatalogueEntry } from '@fizz/catalogue';
 import {
   checkIntegrity,
   EXERCISE_SPEC,
@@ -61,6 +63,8 @@ export interface AppServicesDeps {
   locale?: string;
   /** Rest-end alerts (phone binding); absent in tests that don't need it. */
   restAlerts?: RestAlertController;
+  /** Bundled catalogue entries (tests inject a small one); defaults to the shipped catalogue. */
+  catalogue?: () => readonly CatalogueEntry[];
 }
 
 export type SetupState = { step: SetupStep; profile: UserProfile | null; gyms: Gym[] };
@@ -214,6 +218,46 @@ export function createAppServices(deps: AppServicesDeps) {
       return { ok: true };
     },
 
+    /**
+     * `Use a typical gym for now` (audit B4): a "Main gym" from the
+     * commercial preset with every item ticked and marked not checked, so a
+     * first workout can start straight away (loads are snapped to typical
+     * equipment and can be corrected in the gym editor). The ID is derived
+     * from the owner, so a double tap or a retry creates one gym. With a gym
+     * already saved this does nothing.
+     */
+    async useTypicalGym(): Promise<SetupWriteResult & { gymId?: string }> {
+      const profile = await getProfile();
+      if (!profile) return { ok: false, message: 'Your profile wasn’t found. Start setup again.' };
+      const all = await repos().gyms.listByOwner(profile.id);
+      const existing = all.filter((g) => g.archivedAtUtc === undefined);
+      const current = existing.find((g) => g.isDefault) ?? existing[0];
+      if (current) return { ok: true, gymId: current.id };
+      const draft = buildPresetDraft('commercial', profile.preferredUnit);
+      // A new ID per archived gym, so an archived typical gym is never reused (review S5). Still one per double tap.
+      const archived = all.length - existing.length;
+      const gymId = deriveId(archived === 0 ? `typical-gym:${profile.id}` : `typical-gym:${profile.id}:${String(archived)}`);
+      const result = materialiseGymDraft(
+        { ...draft, items: draft.items.map((i) => ({ ...i, ticked: true })) },
+        { name: 'Main gym', ownerId: profile.id, gymId, isDefault: true, atUtc: deps.now().utc, newId: deps.newId },
+      );
+      if (!result.ok) return { ok: false, message: result.issues[0]?.message ?? WRITE_FAILED };
+      try {
+        const saved = await repos().gyms.createWithEquipment(result.gym, result.equipment);
+        if (!saved.ok) {
+          const there = await repos().gyms.get(gymId);
+          if (!there || there.archivedAtUtc !== undefined) return { ok: false, message: WRITE_FAILED };
+        }
+      } catch {
+        return { ok: false, message: WRITE_FAILED };
+      }
+      if (profile.setup !== undefined && profile.setup.completedAtUtc === undefined && profile.setup.gymStep !== 'saved') {
+        const r = await updateProfile({ setup: { ...profile.setup, gymStep: 'saved' } });
+        if (!r.ok) return r;
+      }
+      return { ok: true, gymId };
+    },
+
     async skipGym(): Promise<SetupWriteResult> {
       const profile = await getProfile();
       if (!profile) return { ok: false, message: 'Your profile wasn’t found. Start setup again.' };
@@ -321,6 +365,23 @@ export function createAppServices(deps: AppServicesDeps) {
     ...(deps.restAlerts ? { restAlerts: deps.restAlerts } : {}),
   });
 
+  /**
+   * The bundled exercise catalogue as exercise rows (Coaching knowledge),
+   * read on first use (the picker's second pass), never at launch. A row is
+   * saved only when Ben adds that exercise (audit F4).
+   */
+  let catalogueRows: Exercise[] | null = null;
+  const catalogueExercises = (): readonly Exercise[] => {
+    if (catalogueRows === null) {
+      const at = '2026-10-10T00:00:00.000Z';
+      catalogueRows = (deps.catalogue ? deps.catalogue() : bundledCatalogue().catalogue.entries).flatMap((entry) => {
+        const row = toExerciseRow(entry, at);
+        return row.ok && row.exercise.measurement === 'reps' ? [row.exercise] : [];
+      });
+    }
+    return catalogueRows;
+  };
+
   const loop = createWorkoutServices({
     repos,
     store: () => deps.manager.store,
@@ -328,6 +389,7 @@ export function createAppServices(deps: AppServicesDeps) {
     newId: deps.newId,
     profile: getProfile,
     afterCommand,
+    catalogueExercises,
   });
 
   /** Gyms and equipment (Your data): the minimal gym editor. */

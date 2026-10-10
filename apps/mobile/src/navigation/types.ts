@@ -54,13 +54,14 @@ export type RootStackParams = {
   /** Active workout (set, rest). `toast` after a start with a check-in (check-in.md §2.6). */
   Workout: { toast?: WorkoutToastParam } | undefined;
   /** Pre-workout check-in sheet: before a start, or editing a saved one. */
-  /** `repeatOf`: start by repeating that finished workout (routines.md RT4). */
-  CheckIn: { mode: 'start'; gymId: string; repeatOf?: string } | { mode: 'edit'; checkInId: string };
+  /** `repeatOf`: start by repeating that finished workout (routines.md RT4). `nextOf`: its next session, with next targets (audit B2). */
+  CheckIn: { mode: 'start'; gymId: string; repeatOf?: string; nextOf?: string } | { mode: 'edit'; checkInId: string };
   ExercisePicker: { sessionId: string };
   /** How to (ADR 0013): guide, cues and mistakes for a catalogue exercise. Opened only when it has a how-to. */
   HowTo: { catalogueKey: string; name: string };
   EditSet: { sessionId: string; setId: string };
-  Summary: { sessionId: string };
+  /** `back`: opened from history (Progress), so Done goes back there rather than to Today. */
+  Summary: { sessionId: string; back?: boolean };
   AddGym: undefined;
   /** `Start from a past workout` list. */
   PastWorkouts: undefined;

@@ -2,6 +2,7 @@ import type { CheckIn, SessionAggregate } from '@fizz/schemas';
 import { reusableCheckIn, type RecentCheckIn } from '../checkin';
 import { toIso, toMs } from '../time';
 import { buildActiveSetView } from './active-view';
+import { GENERIC_WORKOUT_NAME, storedWorkoutName } from './first-run';
 import { STALE_SESSION_MS } from './recovery';
 import { dateOnlyOf, workoutDurationMs } from './view';
 
@@ -50,11 +51,23 @@ export interface TodayInput {
   todayLocalDate: string;
   localDateOf: (utc: string) => string;
   recentCheckIns: readonly (RecentCheckIn & Pick<CheckIn, 'score' | 'reasons'>)[];
+  /** Local `YYYY-MM-DD` of Monday…Sunday this week, for the dot strip (D-Today). */
+  weekDates?: readonly string[];
+  /** Derived names (`Push`) by session ID, for workouts without a stored name (audit F5). */
+  titles?: Readonly<Record<string, string>>;
+}
+
+/** One day of This week's strip: trained (filled), today (ringed), or neither. Never a plan we don't have. */
+export interface WeekDay {
+  letter: string;
+  localDate: string;
+  trained: boolean;
+  today: boolean;
 }
 
 export interface TodayView {
   main: TodayMain;
-  week: { count: number; text: string };
+  week: { count: number; text: string; days: WeekDay[] };
   unlinkedCheckIn: (RecentCheckIn & Pick<CheckIn, 'score' | 'reasons'>) | null;
 }
 
@@ -70,6 +83,7 @@ function lastSetUtc(a: SessionAggregate): string | null {
 
 export function buildTodayView(input: TodayInput): TodayView {
   const { nowMs, active } = input;
+  const titleOf = (a: SessionAggregate): string => storedWorkoutName(a.session) ?? input.titles?.[a.session.id] ?? GENERIC_WORKOUT_NAME;
   let main: TodayMain = { kind: 'no_plan' };
   if (active && active.session.status === 'active') {
     const done = active.sets.filter((s) => s.status === 'completed').length;
@@ -81,7 +95,7 @@ export function buildTodayView(input: TodayInput): TodayView {
         kind: 'stale',
         sessionId: active.session.id,
         sessionVersion: active.session.version,
-        title: active.session.routineName ?? 'Workout',
+        title: titleOf(active),
         startedAtUtc: active.session.startedAt.utc,
         done,
         total,
@@ -89,7 +103,7 @@ export function buildTodayView(input: TodayInput): TodayView {
         endedAboutUtc: last === null ? null : toIso(Math.min(nowMs, toMs(last) + FORGOTTEN_FINISH_PAD_MS)),
       };
     } else {
-      const v = buildActiveSetView({ aggregate: active, nowMs, gymName: null, previous: {}, painFlagged: new Set(), edits: null });
+      const v = buildActiveSetView({ aggregate: active, nowMs, gymName: null, previous: {}, painFlagged: new Set(), edits: null, title: titleOf(active) });
       const status: Extract<TodayMain, { kind: 'resume' }>['status'] =
         v.phase === 'resting' && v.rest?.kind === 'running'
           ? { kind: 'resting', deadlineUtc: v.rest.deadlineUtc }
@@ -116,10 +130,12 @@ export function buildTodayView(input: TodayInput): TodayView {
     const today = [...input.finishedThisWeek]
       .filter((a) => (dateOnlyOf(a.session) ?? input.localDateOf(a.session.startedAt.utc)) === input.todayLocalDate)
       .sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc))[0];
-    if (today) main = { kind: 'done_today', sessionId: today.session.id, title: today.session.routineName ?? 'Workout', activeMs: workoutDurationMs(today, nowMs) };
+    if (today) main = { kind: 'done_today', sessionId: today.session.id, title: titleOf(today), activeMs: workoutDurationMs(today, nowMs) };
   }
 
   const count = input.finishedThisWeek.length;
   const text = count === 0 ? 'No workouts logged yet this week.' : count === 1 ? '1 workout this week' : `${String(count)} workouts this week`;
-  return { main, week: { count, text }, unlinkedCheckIn: reusableCheckIn(input.recentCheckIns, nowMs) };
+  const trainedDates = new Set(input.finishedThisWeek.map((a) => dateOnlyOf(a.session) ?? input.localDateOf(a.session.startedAt.utc)));
+  const days = (input.weekDates ?? []).map((d, i) => ({ letter: 'MTWTFSS'[i] ?? '', localDate: d, trained: trainedDates.has(d), today: d === input.todayLocalDate }));
+  return { main, week: { count, text, days }, unlinkedCheckIn: reusableCheckIn(input.recentCheckIns, nowMs) };
 }

@@ -47,18 +47,51 @@ export function PrimaryButton({ label, onPress, disabled = false, busy = false, 
   );
 }
 
-/** design-system §9.2a: outlined, never accent-filled. */
-export function SecondaryButton({ label, onPress, disabled = false, icon, accessibilityHint }: ButtonProps & { icon?: SymbolName }) {
+/** design-system §9.2a: outlined, never accent-filled. D: a transparent outline pill (D-Rest). */
+export function SecondaryButton({ label, onPress, disabled = false, icon, accessibilityHint, accessibilityLabel, grow = false }: ButtonProps & { icon?: SymbolName; accessibilityLabel?: string; grow?: boolean }) {
   const theme = useTheme();
+  if (theme.components.secondaryButton === 'outline_pill') {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityState={{ disabled }}
+        {...(accessibilityHint ? { accessibilityHint } : {})}
+        disabled={disabled}
+        onPress={onPress}
+        style={({ pressed }) => ({
+          ...(grow ? { flex: 1 } : {}),
+          minHeight: 48,
+          borderRadius: theme.radius.pill,
+          borderWidth: 1,
+          borderColor: theme.colors['border.control'],
+          backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'row',
+          gap: theme.space['2'],
+          paddingHorizontal: theme.space['5'],
+          paddingVertical: theme.space['2'],
+          opacity: disabled ? 0.45 : 1,
+        })}
+      >
+        {icon ? <Icon name={icon} color="text.primary" size={16} /> : null}
+        <AppText variant="label" align="center">
+          {label}
+        </AppText>
+      </Pressable>
+    );
+  }
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled }}
       {...(accessibilityHint ? { accessibilityHint } : {})}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
+        ...(grow ? { flex: 1 } : {}),
         minHeight: theme.target.min.height,
         borderRadius: theme.radius.md,
         borderWidth: 1,
@@ -87,6 +120,29 @@ export function SecondaryButton({ label, onPress, disabled = false, icon, access
  */
 export function TextButton({ label, onPress, disabled = false, icon, tone = 'accent', accessibilityHint }: ButtonProps & { icon?: SymbolName; tone?: 'accent' | 'secondary' }) {
   const theme = useTheme();
+  if (theme.components.linkAffordance === 'underline') {
+    // D (D-Today): a 16pt underlined link; the underline, not colour, says it's tappable.
+    const tint = disabled ? 'text.tertiary' : tone === 'accent' ? 'text.primary' : 'text.secondary';
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ disabled }}
+        {...(accessibilityHint ? { accessibilityHint } : {})}
+        disabled={disabled}
+        onPress={onPress}
+        hitSlop={4}
+        style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+          {icon ? <Icon name={icon} color={tint} size={16} /> : null}
+          <AppText variant="callout" color={tint} style={{ textDecorationLine: 'underline', textDecorationColor: theme.colors['border.control'] }}>
+            {label}
+          </AppText>
+        </View>
+      </Pressable>
+    );
+  }
   const color = disabled ? 'text.secondary' : tone === 'accent' ? 'accent' : 'text.secondary';
   const showChevron = icon === undefined && theme.components.linkAffordance === 'chevron';
   return (

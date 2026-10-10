@@ -108,3 +108,45 @@ export function searchExercises<T extends Pick<Exercise, 'name'>>(list: readonly
     return words.every((w) => nameWords.some((n) => n.startsWith(w)));
   });
 }
+
+/** The common lifts (the starter list), in the order the picker shows them first. */
+export const COMMON_EXERCISE_IDS: readonly string[] = S.map((s) => starterExerciseId(s.key));
+
+export interface PickerSection<T> {
+  title: 'Recent' | 'Common lifts' | 'All exercises' | 'Matches';
+  items: T[];
+}
+
+/**
+ * The exercise picker's list (audit F4): with no query, recently done
+ * exercises, then the common lifts, then everything else A–Z, each shown
+ * once. With a query, every match A–Z. Pure.
+ */
+export function pickerSections<T extends { exercise: Pick<Exercise, 'id' | 'name'> }>(list: readonly T[], query: string, recentIds: readonly string[]): PickerSection<T>[] {
+  const matched = searchExercises(
+    list.map((p) => ({ name: p.exercise.name, p })),
+    query,
+  ).map((x) => x.p);
+  if (query.trim() !== '') return matched.length === 0 ? [] : [{ title: 'Matches', items: matched }];
+  const byId = new Map(matched.map((p) => [p.exercise.id, p]));
+  const seen = new Set<string>();
+  const take = (ids: readonly string[]): T[] => {
+    const out: T[] = [];
+    for (const id of ids) {
+      const p = byId.get(id);
+      if (p && !seen.has(id)) {
+        seen.add(id);
+        out.push(p);
+      }
+    }
+    return out;
+  };
+  const recent = take(recentIds);
+  const common = take(COMMON_EXERCISE_IDS);
+  const rest = matched.filter((p) => !seen.has(p.exercise.id));
+  const sections: PickerSection<T>[] = [];
+  if (recent.length > 0) sections.push({ title: 'Recent', items: recent });
+  if (common.length > 0) sections.push({ title: 'Common lifts', items: common });
+  if (rest.length > 0) sections.push({ title: 'All exercises', items: rest });
+  return sections;
+}

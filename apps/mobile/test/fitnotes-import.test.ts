@@ -302,7 +302,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     const r = await s.imports.commit(draft.draftId, draft.mappingVersion, 'op-1');
     expect(r).toMatchObject({ ok: true, status: 'finished' });
     const today = await s.today.view();
-    expect(today?.main).toMatchObject({ kind: 'done_today', title: 'Workout', activeMs: null });
+    expect(today?.main).toMatchObject({ kind: 'done_today', title: 'Pull', activeMs: null });
     const sid = today?.main.kind === 'done_today' ? today.main.sessionId : '';
     const sum = await s.workout.summary(sid);
     expect(sum).toMatchObject({ dateOnly: '2026-10-08', endedAtUtc: null, facts: { activeMs: null, activeText: null, workingSets: 1 } });

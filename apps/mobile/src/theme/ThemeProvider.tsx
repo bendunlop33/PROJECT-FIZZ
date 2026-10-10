@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, useColorScheme } from 'react-native';
 
-import { DEFAULT_A11Y, directionById, resolveTheme, type AccessibilityPrefs, type AvailableDirectionId, type ResolvedTheme } from './tokens';
+import { DEFAULT_A11Y, directionById, resolveTheme, schemeFor, type AccessibilityPrefs, type AvailableDirectionId, type ResolvedTheme } from './tokens';
 
 interface ThemeContextValue {
   theme: ResolvedTheme;
@@ -55,16 +55,16 @@ interface Props {
 }
 
 /**
- * Follows the system light/dark setting and Dynamic Type (text scales through
+ * Follows the system light/dark setting (A only; D is always dark) and Dynamic Type (text scales through
  * React Native's font scaling, capped per token). The look (A or D) is a
  * device preference; D is the default.
  */
 export function ThemeProvider({ savedDirection, onChangeDirection, children }: Props) {
   const system = useColorScheme();
-  const scheme = system === 'light' ? 'light' : 'dark'; // dark is the default (design-system §2)
   const a11y = useAccessibilityPrefs();
   const [override, setOverride] = useState<AvailableDirectionId | null>(null);
   const direction = directionById(override ?? savedDirection);
+  const scheme = schemeFor(direction.id, system);
   const directionId = direction.id === 'A' ? 'A' : 'D';
   const value = useMemo<ThemeContextValue>(
     () => ({
