@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, View } from 'react-native';
+import { Modal, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toIso } from '@fizz/domain';
@@ -10,7 +10,7 @@ import { newUuid } from '../../device/runtime';
 import { formatTime } from '../../format/dates';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, DangerTextButton, PrimaryButton, StatusLine, TextButton } from '../../ui';
+import { AppText, DangerTextButton, Eyebrow, PrimaryButton, SecondaryButton, StatusLine, TextButton } from '../../ui';
 import { finishModel, stepTime } from '../../workout/finish';
 
 /**
@@ -89,37 +89,26 @@ export function FinishSheet({
   }
 
   const timeButton = (label: string, minutes: number) => (
-    <Pressable
+    <SecondaryButton
       key={label}
-      accessibilityRole="button"
+      grow
+      label={label}
       accessibilityLabel={`${minutes < 0 ? 'Earlier' : 'Later'} by ${String(Math.abs(minutes))} minutes`}
       onPress={() => {
         setEndMs((v) => stepTime(v, minutes, model.minEndMs, model.maxEndMs));
       }}
-      style={({ pressed }) => ({
-        minWidth: theme.target.workout.width,
-        minHeight: theme.target.workout.height,
-        borderRadius: theme.radius.sm,
-        borderWidth: 1,
-        borderColor: theme.colors['border.control'],
-        backgroundColor: pressed ? theme.colors['accent.subtle'] : theme.colors['bg.raised'],
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingHorizontal: theme.space['2'],
-      })}
-    >
-      <AppText variant="label" numeric>
-        {label}
-      </AppText>
-    </Pressable>
+    />
   );
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose} {...(onDismissed ? { onDismiss: onDismissed } : {})}>
-      <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'], padding: theme.space['4'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }}>
-        <AppText variant="title2" accessibilityRole="header">
-          Finish workout?
-        </AppText>
+      <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'], paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['5'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }}>
+        <View style={{ gap: theme.space['2'] }}>
+          <Eyebrow>Finish</Eyebrow>
+          <AppText variant="title2" accessibilityRole="header">
+            Finish workout?
+          </AppText>
+        </View>
         {model.nothingLogged ? (
           <AppText variant="body">Nothing logged yet.</AppText>
         ) : (
@@ -129,10 +118,8 @@ export function FinishSheet({
         )}
         {!model.nothingLogged ? (
           <View style={{ gap: theme.space['2'] }}>
-            <AppText variant="label" color="text.secondary">
-              Ended at
-            </AppText>
-            <AppText variant="title2" numeric accessibilityLiveRegion="polite">
+            <Eyebrow>Ended at</Eyebrow>
+            <AppText variant="title1" numeric accessibilityLiveRegion="polite" maxFontSizeMultiplier={1.6} style={{ fontWeight: '300', fontSize: 40, lineHeight: 46 }}>
               {`${formatTime(endMs, tz)}${Math.abs(endMs - now) < 60_000 ? ' (now)' : model.forgotten && endMs === model.defaultEndMs ? ' (last set + 3 min)' : ''}`}
             </AppText>
             <View style={{ flexDirection: 'row', gap: theme.space['2'], flexWrap: 'wrap' }}>

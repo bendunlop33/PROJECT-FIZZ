@@ -25,10 +25,13 @@ import {
   Card,
   Chip,
   ChipRow,
+  Eyebrow,
+  HeroHeader,
   Icon,
   LinkLine,
   NumberAccessory,
   NumberStepper,
+  RuledSection,
   SecondaryButton,
   StatusLine,
   TextButton,
@@ -519,9 +522,7 @@ export function WorkoutScreen() {
   const effortBlock =
     view.justSaved && effortScale !== 'off' ? (
       <View style={{ gap: theme.space['3'] }}>
-        <AppText variant="sectionLabel" color="text.tertiary">
-          {effortScale === 'rir' ? 'Reps in reserve' : 'Effort'}
-        </AppText>
+        <Eyebrow>{effortScale === 'rir' ? 'Reps in reserve' : 'Effort'}</Eyebrow>
         <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
           {(effortScale === 'rir' ? EFFORT_RIR : EFFORT_RPE).map((n) => (
             <Chip
@@ -594,17 +595,17 @@ export function WorkoutScreen() {
           }}
         />
         {view.justSaved ? (
-          <View style={{ borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], paddingTop: theme.space['4'], gap: theme.space['3'] }}>
+          <RuledSection>
             {savedLine}
             {effortBlock}
-          </View>
+          </RuledSection>
         ) : null}
         {alertAsk}
       </View>
     ) : null;
 
   const setEditor = focus ? (
-    <View style={{ gap: theme.space['5'] }}>
+    <View style={{ gap: theme.space['5'], flexGrow: 1 }}>
       {/* Exercise header: name, then `Barbell · Set 2 of 4 · Last 1 Oct: 100 kg × 8` (tap Last to copy it). */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['2'] }}>
         <View style={{ flex: 1, gap: theme.space['1'] }}>
@@ -781,9 +782,9 @@ export function WorkoutScreen() {
       </View>
 
       <View>
-        <AppText variant="sectionLabel" color="text.tertiary" style={{ marginBottom: theme.space['2'] }}>
-          Sets
-        </AppText>
+        <View style={{ marginBottom: theme.space['2'] }}>
+          <Eyebrow>Sets</Eyebrow>
+        </View>
         {focus.rows.map((r, i) => (
           <SetRowLine
             key={r.setId}
@@ -801,25 +802,27 @@ export function WorkoutScreen() {
         ))}
       </View>
 
-      {/* `Next Incline dumbbell press ›`, or `Add exercise ›` when this is the last one (audit F3). */}
-      {focus.next?.kind === 'exercise' ? (
-        <NextRow
-          label="Next"
-          text={focus.next.name}
-          onPress={() => {
-            const next = focus.next;
-            if (next?.kind === 'exercise') void run({ type: 'set_active_set', at: services.now(), opId: newUuid(), setId: next.setId, expectedVersion: session.version });
-          }}
-        />
-      ) : (
-        <NextRow
-          label={focus.next?.kind === 'last_set' && !view.openEnded ? 'Last set ·' : 'Then'}
-          text="Add exercise"
-          onPress={() => {
-            navigation.navigate('ExercisePicker', { sessionId: session.id });
-          }}
-        />
-      )}
+      {/* `Next Incline dumbbell press ›` pinned to the bottom of the content, or `Add exercise ›` when this is the last one (audit F3). */}
+      <View style={{ marginTop: 'auto' }}>
+        {focus.next?.kind === 'exercise' ? (
+          <NextRow
+            label="Next"
+            text={focus.next.name}
+            onPress={() => {
+              const next = focus.next;
+              if (next?.kind === 'exercise') void run({ type: 'set_active_set', at: services.now(), opId: newUuid(), setId: next.setId, expectedVersion: session.version });
+            }}
+          />
+        ) : (
+          <NextRow
+            label={focus.next?.kind === 'last_set' && !view.openEnded ? 'Last set ·' : 'Then'}
+            text="Add exercise"
+            onPress={() => {
+              navigation.navigate('ExercisePicker', { sessionId: session.id });
+            }}
+          />
+        )}
+      </View>
     </View>
   ) : null;
 
@@ -844,20 +847,15 @@ export function WorkoutScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: theme.space['5'], paddingTop: theme.space['3'], gap: theme.space['5'], paddingBottom: theme.space['8'] }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: theme.space['5'], paddingTop: theme.space['3'], gap: theme.space['5'], paddingBottom: theme.space['4'] }} keyboardShouldPersistTaps="handled">
         {view.paused ? <Banner severity="warning" text="Workout paused. Timers are stopped." /> : null}
         {banners.map((b) => (
           <Banner key={b.key} severity={b.severity} text={b.text} />
         ))}
 
         {view.phase === 'empty' ? (
-          <View style={{ gap: theme.space['2'], paddingTop: theme.space['4'] }}>
-            <AppText variant="title1" accessibilityRole="header">
-              Add your first exercise
-            </AppText>
-            <AppText variant="callout" color="text.secondary">
-              Common lifts are at the top. Each one starts with 3 sets; add or remove sets as you go.
-            </AppText>
+          <View style={{ paddingTop: theme.space['4'] }}>
+            <HeroHeader size="screen" eyebrow="Empty workout" title="Add your first exercise" lines={['Common lifts are at the top. Each one starts with 3 sets; add or remove sets as you go.']} />
           </View>
         ) : null}
 
@@ -1116,30 +1114,7 @@ function RestPanel({ rest, upNext, onAdjust, onSkip }: { rest: RestView; upNext:
   const theme = useTheme();
   if (rest.kind === 'ended') return null;
   const paused = rest.kind === 'paused';
-  const pill = (label: string, a11y: string, onPress: () => void) => (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={a11y}
-      accessibilityState={{ disabled: paused }}
-      disabled={paused}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flex: 1,
-        minHeight: 48,
-        borderRadius: theme.radius.pill,
-        borderWidth: 1,
-        borderColor: theme.colors['border.control'],
-        backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent',
-        alignItems: 'center',
-        justifyContent: 'center',
-        opacity: paused ? 0.4 : 1,
-      })}
-    >
-      <AppText variant="label" numeric>
-        {label}
-      </AppText>
-    </Pressable>
-  );
+  const pill = (label: string, a11y: string, onPress: () => void) => <SecondaryButton grow label={label} accessibilityLabel={a11y} disabled={paused} onPress={onPress} />;
   return (
     <View style={{ gap: theme.space['5'] }}>
       <View style={{ alignItems: 'center', gap: theme.space['1'], paddingTop: theme.space['4'] }}>
@@ -1208,8 +1183,11 @@ function RestAfterSheet({
   };
   return (
     <ModalSheet visible={visible} onClose={onClose}>
-      <ScrollView contentContainerStyle={{ padding: theme.space['4'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }}>
-        <AppText variant="title2" accessibilityRole="header">{`Rest after set ${String(setNumber)}`}</AppText>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['5'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }}>
+        <View style={{ gap: theme.space['2'] }}>
+          <Eyebrow>{exerciseName}</Eyebrow>
+          <AppText variant="title2" accessibilityRole="header">{`Rest after set ${String(setNumber)}`}</AppText>
+        </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.space['4'] }}>
           <SecondaryButton label="−15 s" onPress={() => { step(-15); }} />
           <AppText variant="timerDisplay" accessibilityLabel={`Rest ${formatDuration(value)}`}>
