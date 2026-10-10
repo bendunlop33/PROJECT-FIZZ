@@ -345,6 +345,21 @@ export function SummaryScreen() {
             <Comparison c={sum.comparison} tz={tz} />
           </FadeIn>
         ) : null}
+        {sum.records.length > 0 ? (
+          // Heaviest-set lines (premium-feel §5.1), in the Comparison region; static, no badge or colour.
+          <FadeIn motion={follow(1)}>
+            <View style={{ gap: theme.space['2'] }}>
+              {sum.records.map((r) => (
+                <View key={r} accessible accessibilityLabel={r} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+                  <Icon name="star" color="text.secondary" size={16} />
+                  <AppText variant="callout" style={{ flex: 1 }}>
+                    {r}
+                  </AppText>
+                </View>
+              ))}
+            </View>
+          </FadeIn>
+        ) : null}
 
         {sum.exercises.length > 0 ? (
           <View>

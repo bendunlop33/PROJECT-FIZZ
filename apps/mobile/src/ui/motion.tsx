@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, Easing, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 
-import { MOTION, pressFeedback, timerGlyphs, type FadeRise, type PressKind, useTheme } from '../theme';
+import { MOTION, pressFeedback, recordPulse, timerGlyphs, type FadeRise, type PressKind, useTheme } from '../theme';
 
 /**
  * Motion primitives (premium-feel.md §4). React Native's `Animated` with the
@@ -178,4 +178,35 @@ export function RevealOnce({ durationMs, size, background, children }: { duratio
 /** A label that fades in after a delay (Summary title in the finish moment). */
 export function DelayedFade({ delayMs, durationMs, children }: { delayMs: number; durationMs: number; children: ReactNode }) {
   return <FadeIn motion={durationMs > 0 ? { durationMs, delayMs, risePt: 0 } : null}>{children}</FadeIn>;
+}
+
+/**
+ * `motion.recordPulse`: its child scales 1 → 1.06 → 1 once, on mount. None
+ * under Reduce Motion (and turning it on mid-way snaps back to 1).
+ * Decorative: the words beside it carry the meaning.
+ */
+export function PulseOnce({ children }: { children: ReactNode }) {
+  const theme = useTheme();
+  const [scale] = useState(() => new Animated.Value(1));
+  useEffect(() => {
+    const p = recordPulse(theme.a11y.reduceMotion);
+    if (p === null) return;
+    const half = p.durationMs / 2;
+    const a = Animated.sequence([
+      Animated.timing(scale, { toValue: p.scale, duration: half, easing: EASE_OUT, useNativeDriver: true }),
+      Animated.timing(scale, { toValue: 1, duration: half, easing: EASE_IN_OUT, useNativeDriver: true }),
+    ]);
+    a.start();
+    return () => {
+      a.stop();
+    };
+    // Plays once per mount.
+  }, []);
+  useEffect(() => {
+    if (theme.a11y.reduceMotion) {
+      scale.stopAnimation();
+      scale.setValue(1);
+    }
+  }, [theme.a11y.reduceMotion, scale]);
+  return <Animated.View style={{ transform: [{ scale }] }}>{children}</Animated.View>;
 }

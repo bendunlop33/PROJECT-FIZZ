@@ -370,7 +370,7 @@ Rules:
 
 - The timer updates once per second with no tick sound. Only the glyphs that changed cross-fade (`motion.digit`); tabular numerals keep every glyph in place. It never shows a progress ring.
 
-**Motion tokens (revision 2026-10-10, premium-feel.md §4.1).** Proposed; Ben to approve. All at or under 200 ms except `motion.finish` (exception 1 to principle 5, once per workout). Driven by React Native's `Animated` with the native driver (no app worklets, ADR 0018). Every motion is removed or reduced under Reduce Motion (premium-feel.md §4.5) and never delays a write.
+**Motion tokens (revision 2026-10-10, premium-feel.md §4.1).** Proposed; Ben to approve. All at or under 200 ms except `motion.finish` (exception 1 to principle 5, once per workout) and `motion.recordPulse` (exception 3, once per record). Driven by React Native's `Animated` with the native driver (no app worklets, ADR 0018). Every motion is removed or reduced under Reduce Motion (premium-feel.md §4.5) and never delays a write.
 
 | Token | Value |
 |---|---|
@@ -384,6 +384,7 @@ Rules:
 | `motion.digit` | 140 ms opacity cross-fade per changed glyph (rest numeral). Reduce Motion: instant |
 | `motion.screenFade` | 200 ms: Workout → Summary, and every slide under Reduce Motion |
 | `motion.finish` | 420 ms check reveal, then a 200 ms title fade after 120 ms. Static under Reduce Motion. `Done` works from the first frame |
+| `motion.recordPulse` | 1 → 1.06 → 1 scale on the record line's star, 300 ms, once per record (exception 3 to principle 5). None under Reduce Motion |
 - With Reduce Motion on, replace slides with cross-fades or nothing.
 - Each haptic has its own on/off switch in Profile → Voice & alerts. Haptics, timer sound and voice volume are separate settings.
 

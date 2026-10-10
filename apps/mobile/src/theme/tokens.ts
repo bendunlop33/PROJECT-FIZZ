@@ -437,8 +437,9 @@ export const HAPTICS = {
 /**
  * design-system §6 motion (premium-feel.md §4.1). Durations in ms, distances
  * in pt. Everything here stays at or under 200 ms except `finish`, the one
- * marked exception (Ben to approve, premium-feel §13). `restRing` and
- * `recordPulse` from the spec aren't built in this pass.
+ * marked exception (Ben to approve, premium-feel §13), and `recordPulse`
+ * (exception 3, 300 ms, once per record). `restRing` isn't built (it's off
+ * by default in the spec).
  */
 export const MOTION = {
   pressIn: { durationMs: 80 },
@@ -451,6 +452,7 @@ export const MOTION = {
   digit: { durationMs: 140 },
   screenFade: { durationMs: 200 },
   finish: { strokeMs: 420, titleFadeMs: 200, titleDelayMs: 120 },
+  recordPulse: { durationMs: 300, scale: 1.06 },
 } as const;
 export type MotionToken = keyof typeof MOTION;
 export type HapticToken = keyof typeof HAPTICS;

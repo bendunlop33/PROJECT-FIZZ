@@ -372,3 +372,28 @@ describe('imported history is never comparable while P-I3 is open (review r2 B1)
     expect(notRecorded.comparison?.kind === 'compared' ? plain(notRecorded.comparison.why) : null).toBe('Same Olympic bar, gym not recorded, working sets');
   });
 });
+
+describe('Summary record lines (premium-feel §5.1, review S3)', () => {
+  const eq = barbell();
+  const past = (load: number, day: number): SessionAggregate => finish(logAll(workout(BENCH, eq, 1, day * 86_400, `p${String(day)}`), [values(kg(load), 5)], day * 86_400), day * 86_400 + 600);
+  const history = [past(60, -3), past(62.5, -2), past(65, -1)].flatMap((s) => toHistorySessions(s, BENCH.id));
+
+  it('one line per exercise: the heaviest set wins over a later most-reps set', () => {
+    const today = finish(logAll(workout(BENCH, eq, 3), [values(kg(65), 5), values(kg(67.5), 5), values(kg(67.5), 6)], 0), 1_000);
+    const sum = buildWorkoutSummary(input(today, history));
+    expect(sum.records).toEqual(['Heaviest bench press set at Main Gym so far']);
+  });
+
+  it('most reps at the heaviest load when nothing heavier', () => {
+    const today = finish(logAll(workout(BENCH, eq, 1), [values(kg(65), 7)], 0), 1_000);
+    expect(buildWorkoutSummary(input(today, history)).records.map(plain)).toEqual(['Most reps at 65 kg on bench press so far']);
+  });
+
+  it('none before 3 earlier sessions, and later workouts never count against an old Summary', () => {
+    const today = finish(logAll(workout(BENCH, eq, 1), [values(kg(70), 5)], 0), 1_000);
+    expect(buildWorkoutSummary(input(today, history.slice(1))).records).toEqual([]);
+    // A heavier workout after this one doesn't take this one's record away.
+    const later = toHistorySessions(past(80, 2), BENCH.id);
+    expect(buildWorkoutSummary(input(today, [...history, ...later])).records).toHaveLength(1);
+  });
+});

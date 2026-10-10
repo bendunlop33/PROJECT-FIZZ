@@ -33,6 +33,7 @@ import {
   LinkLine,
   NumberAccessory,
   NumberStepper,
+  PulseOnce,
   RuledSection,
   SecondaryButton,
   FadeIn,
@@ -674,7 +675,9 @@ export function WorkoutScreen() {
   const recordLine =
     record !== null && view.justSaved?.setId === record.setId ? (
       <View accessible accessibilityLabel={record.text} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-        <Icon name="star" color="text.secondary" size={16} />
+        <PulseOnce key={record.setId}>
+          <Icon name="star" color="text.secondary" size={16} />
+        </PulseOnce>
         <AppText variant="callout" style={{ flex: 1 }}>
           {record.text}
         </AppText>

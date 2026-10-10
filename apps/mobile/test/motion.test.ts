@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { finishMotion, listEnterMotion, logHaptic, pressFeedback, rowsToAnimate, screenAnimation, shouldPlayFinish, swapMotion, timerGlyphs } from '../src/theme/motion';
+import { finishMotion, listEnterMotion, logHaptic, pressFeedback, recordPulse, rowsToAnimate, screenAnimation, shouldPlayFinish, swapMotion, timerGlyphs } from '../src/theme/motion';
 import { HAPTICS, MOTION, tokenNames } from '../src/theme/tokens';
 
 /** premium-feel.md §4–§6: what each motion becomes, with and without Reduce Motion. */
@@ -68,9 +68,16 @@ describe('motion', () => {
     expect(HAPTICS.finish).toBeDefined();
   });
 
-  it('only the finish token is over 200 ms (design-system principle 5 exception, Ben to approve)', () => {
+  it('only the marked exceptions (finish, recordPulse) are over 200 ms (principle 5, Ben to approve)', () => {
     const over = Object.entries(MOTION).filter(([, v]) => Object.entries(v).some(([k, n]) => k.endsWith('Ms') && typeof n === 'number' && n > 200));
-    expect(over.map(([k]) => k)).toEqual(['finish']);
+    expect(over.map(([k]) => k)).toEqual(['finish', 'recordPulse']);
     expect(tokenNames()).toContain('motion.swap');
+  });
+});
+
+describe('record pulse (motion.recordPulse, exception 3)', () => {
+  it('1 → 1.06 → 1 over 300 ms; none under Reduce Motion', () => {
+    expect(recordPulse(false)).toEqual({ durationMs: 300, scale: 1.06 });
+    expect(recordPulse(true)).toBeNull();
   });
 });

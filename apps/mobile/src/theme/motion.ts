@@ -81,6 +81,11 @@ export function finishMotion(reduceMotion: boolean): { strokeMs: number; titleFa
   return reduceMotion ? { strokeMs: 0, titleFadeMs: 0, titleDelayMs: 0 } : { ...MOTION.finish };
 }
 
+/** The record line's icon pulse (`motion.recordPulse`, exception 3): once, none under Reduce Motion. */
+export function recordPulse(reduceMotion: boolean): { durationMs: number; scale: number } | null {
+  return reduceMotion ? null : { ...MOTION.recordPulse };
+}
+
 export type StackAnimation = 'default' | 'fade' | 'slide_from_bottom' | 'none';
 
 /** Screen transitions (§4.2). Under Reduce Motion every slide becomes a fade. */

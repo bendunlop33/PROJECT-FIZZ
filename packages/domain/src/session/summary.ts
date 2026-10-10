@@ -8,6 +8,7 @@ import type { HistorySession, NextTargets } from '../progression';
 import { toIso, toMs } from '../time';
 import { lastComparableSession } from './active-view';
 import { summaryHighlight } from '../touches';
+import { sessionRecords } from './records';
 import { dateOnlyOf, workoutDurationMs } from './view';
 import { summariseVolume } from './volume';
 
@@ -90,6 +91,8 @@ export interface WorkoutSummary {
   empty: boolean;
   /** One like-for-like highlight (`Heaviest Bench press set on Olympic bar: 102.5 kg × 6`), or null. Never invented. */
   highlight: string | null;
+  /** Heaviest-set lines (premium-feel §5.1), one per exercise at most; shown in the Comparison region. */
+  records: string[];
   /** Bounds for `Edit times` (`update_session_timing`). */
   timingBounds: { startLatestUtc: string; endEarliestUtc: string; endLatestUtc: string };
   lastCompletedAtUtc: string | null;
@@ -309,6 +312,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
         : { sourceTag: BUILT_IN_SOURCE_TAG[input.coach], rows, emptyText: rows.length === 0 ? 'No target changes. Same targets next time.' : null },
     empty: workingSets === 0,
     highlight: workingSets === 0 || imported ? null : summaryHighlight(state, input.history),
+    records: workingSets === 0 || imported ? [] : sessionRecords({ aggregate: state, gymName: input.gymName, history: input.history }),
     timingBounds: {
       startLatestUtc: firstDone ?? (s.endedAt?.utc ?? nowIso),
       endEarliestUtc: lastDone ?? s.startedAt.utc,
