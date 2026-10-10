@@ -8,7 +8,7 @@ import {
   UtcTimestampSchema,
   ZonedTimestampSchema,
 } from './common';
-import { PainAreaSchema } from './checkin';
+import { PainAreaSchema, type PainFlag } from './checkin';
 
 /**
  * Coach v1 contracts (ADR 0019 §2, coach-contract.md §6). Tool arguments are
@@ -533,3 +533,31 @@ export const PlaybookCandidateSchema = z.object({
   createdByActionId: IdSchema,
 });
 export type PlaybookCandidate = z.infer<typeof PlaybookCandidateSchema>;
+
+// ---------------------------------------------------------------------------
+// Store contract (implemented by `@fizz/persistence`, used by `@fizz/coach`)
+
+/**
+ * One coach write: the `ActionRecord` and the change it describes, committed
+ * in one transaction. Idempotent on the record's `opId`, and for the append
+ * kinds on the content (an active memory with the same key, an open playbook
+ * candidate with the same text, an active flag on the same exercise).
+ */
+export type CoachWrite =
+  /** A record with no other change: a proposal, or a rejected / stale / failed outcome. */
+  | { kind: 'record'; action: ActionRecord }
+  | { kind: 'save_memory'; action: ActionRecord; memory: Memory }
+  | { kind: 'forget_memory'; action: ActionRecord; memoryId: string; expectedVersion: number; atUtc: string }
+  | { kind: 'pain_flags'; action: ActionRecord; flags: readonly PainFlag[] }
+  | { kind: 'playbook_candidate'; action: ActionRecord; candidate: PlaybookCandidate };
+
+export type CoachWriteResult =
+  | { status: 'written'; action: ActionRecord }
+  /** Nothing new was written: the same opId, or the same live content, already exists. */
+  | { status: 'replayed'; action: ActionRecord }
+  /** Nothing was written; the caller records the outcome as its own `rejected` / `stale` record. */
+  | { status: 'conflict'; reason: 'stale_version' | 'missing' | 'already_exists' };
+
+export type CoachUndoResult =
+  | { status: 'written' | 'replayed'; undo: ActionRecord; target: ActionRecord }
+  | { status: 'not_possible'; reason: 'missing' | 'not_committed' | 'already_undone' | 'changed_since' | 'unsupported' };

@@ -3,6 +3,7 @@ import { SchemaTooNewError } from './errors';
 import { MIGRATION_0001 } from './schema/0001-initial';
 import { MIGRATION_0002 } from './schema/0002-check-ins';
 import { MIGRATION_0003 } from './schema/0003-imports';
+import { MIGRATION_0004 } from './schema/0004-coach';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -24,6 +25,7 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(1, 'initial', MIGRATION_0001),
   sqlMigration(2, 'check-ins', MIGRATION_0002),
   sqlMigration(3, 'imports', MIGRATION_0003),
+  sqlMigration(4, 'coach', MIGRATION_0004),
 ];
 
 export function latestVersion(migrations: readonly Migration[] = MIGRATIONS): number {
