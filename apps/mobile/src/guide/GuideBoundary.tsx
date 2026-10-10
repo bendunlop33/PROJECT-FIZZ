@@ -14,8 +14,10 @@ interface State {
  * Contains a guide player failure (review S1): Skia or the bake throwing must
  * never take down How to, let alone the workout under it. Renders nothing once
  * failed; the screen shows the cues with an honest notice instead
- * (`howToLayout`). Errors on the UI thread or in native code can't be caught
- * here; those stay a device-test risk (ADR 0013).
+ * (`howToLayout`). The player rethrows its UI-thread clock errors in render
+ * so they land here; anything else on JS while How to's player is mounted is
+ * caught by the crash-capture containment scope. Native crashes can't be
+ * caught; Developer › Exercise guide animations off is the safe mode.
  */
 export class GuideBoundary extends Component<Props, State> {
   override state: State = { failed: false };

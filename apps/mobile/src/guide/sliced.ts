@@ -42,12 +42,31 @@ export function runSliced(tasks: readonly (() => void)[], opts: SlicedOptions): 
       return true;
     } catch (e) {
       stopped = true;
-      opts.onError(e);
+      try {
+        opts.onError(e);
+      } catch {
+        // onError itself threw: nothing safe is left to tell.
+      }
       return false;
     }
   };
+  /** `onDone` and `onProgress` run from timers too: a throw there stops the run and goes to `onError`, never escapes. */
+  const callback = (fn: () => void) => {
+    try {
+      fn();
+    } catch (e) {
+      stopped = true;
+      unschedule?.();
+      unschedule = null;
+      try {
+        opts.onError(e);
+      } catch {
+        // onError itself threw: nothing safe is left to tell.
+      }
+    }
+  };
   const finish = () => {
-    if (!stopped) opts.onDone();
+    if (!stopped) callback(opts.onDone);
   };
   const slice = () => {
     unschedule = null;
@@ -58,7 +77,12 @@ export function runSliced(tasks: readonly (() => void)[], opts: SlicedOptions): 
     } while (next < tasks.length && opts.now() - start < opts.budgetMs);
     if (next < tasks.length) {
       unschedule = opts.schedule(slice);
-      opts.onProgress?.(next);
+      const progress = opts.onProgress;
+      if (progress) {
+        callback(() => {
+          progress(next);
+        });
+      }
     } else finish();
   };
   while (next < Math.min(opts.firstSync, tasks.length)) {

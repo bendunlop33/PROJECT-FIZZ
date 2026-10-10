@@ -1,8 +1,10 @@
 import { useIsFocused, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { openContainment, recordContainedError } from '../../diagnostics/crash-capture';
+import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { GuideBoundary } from '../../guide/GuideBoundary';
 import { MuscleFocusLegend } from '../../guide/MuscleFocusLegend';
 import { buildHowToView, bundledHowToSources, howToLayout } from '../../guide/how-to';
@@ -82,13 +84,28 @@ export function HowToScreen() {
   const increaseContrast = theme.a11y.increaseContrast;
   // The legend's tint line (guides v2 §4.11.8) follows what the card draws; the app ships `neutral`, which has none.
   const view = useMemo(() => buildHowToView({ name, catalogueKey }, bundledHowToSources(), { increaseContrast }), [name, catalogueKey, increaseContrast]);
+  const stillsOnly = !useDevicePrefs().prefs.guideAnimations;
   const player = view.guide === null ? null : loadGuidePlayer();
   const [playerThrew, setPlayerThrew] = useState(false);
-  const onPlayerError = useCallback(() => {
+  const onPlayerError = useCallback((error: unknown) => {
+    recordContainedError(error, 'guide');
     setPlayerThrew(true);
   }, []);
-  const layout = howToLayout(view, playerThrew || player?.ok === false);
+  const layout = howToLayout(view, playerThrew || player?.ok === false, { stillsOnly });
   const Player = layout.showPlayer && player?.ok === true ? player.value : null;
+  const playerShown = Player !== null;
+  useEffect(() => {
+    if (player?.ok === false) recordContainedError(player.error, 'guide');
+  }, [player]);
+  // While the player is mounted, any JS error (including a UI-thread error Worklets forwards as fatal) falls back to
+  // the cues here instead of closing the app. The global handler records it as Last error (Profile › App status).
+  // A layout effect, so the scope is open before the player's own (passive) effects start baking.
+  useLayoutEffect(() => {
+    if (!playerShown) return;
+    return openContainment('guide', () => {
+      setPlayerThrew(true);
+    });
+  }, [playerShown]);
 
   // The player pauses once it is scrolled out of sight (battery during rest).
   const playerBottom = useRef(Number.POSITIVE_INFINITY);
@@ -133,7 +150,7 @@ export function HowToScreen() {
             <Card style={{ paddingHorizontal: 0, overflow: 'hidden', alignItems: 'center' }}>
               <View style={{ width: '100%' }}>
                 <GuideBoundary onError={onPlayerError}>
-                  <Player guide={view.guide} size={size} visible={focused && !scrolledAway} footer={<MuscleFocusLegend lines={view.legend} />} />
+                  <Player guide={view.guide} size={size} visible={focused && !scrolledAway} stillsOnly={stillsOnly} footer={<MuscleFocusLegend lines={view.legend} />} />
                 </GuideBoundary>
               </View>
             </Card>

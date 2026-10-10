@@ -160,6 +160,16 @@ describe('playback clock (UI-thread worklets)', () => {
 });
 
 describe('player state', () => {
+  it('stills only (Developer: animations off) starts on the key positions and never enters the animation', () => {
+    const s = initialPlayerState(false, 3, true);
+    expect(s).toMatchObject({ mode: 'steps', step: 0, stillsOnly: true });
+    expect(playerReducer(s, { type: 'show_animation' })).toBe(s);
+    expect(playerReducer(s, { type: 'reduce_motion', on: false })).toBe(s);
+    expect(isRunning({ ...s, mode: 'animate' }, { visible: true, appActive: true, framesReady: true })).toBe(false);
+    expect(initialPlayerState(false, 0, true)).toMatchObject({ mode: 'steps', stepCount: 0 });
+    expect(initialPlayerState(false, 3)).toMatchObject({ mode: 'animate', stillsOnly: false });
+  });
+
   const run = (s: PlayerState, ...actions: PlayerAction[]) => actions.reduce(playerReducer, s);
   const env = { visible: true, appActive: true, framesReady: true };
 
@@ -596,6 +606,56 @@ describe('sliced baking', () => {
     expect(errors).toEqual([boom]);
     expect(done).toBe(false);
     expect(h.pending()).toBe(0);
+  });
+
+  it('a throw in onProgress or onDone (timer callbacks) goes to onError and stops the run, never escapes (How to crash audit)', () => {
+    const h = harness();
+    const errors: unknown[] = [];
+    let ran = 0;
+    const tasks = Array.from({ length: 10 }, () => () => {
+      ran += 1;
+      h.advance(3);
+    });
+    const boom = new Error('setState after unmount');
+    runSliced(tasks, {
+      budgetMs: 8,
+      firstSync: 1,
+      now: h.now,
+      schedule: h.schedule,
+      onDone: () => {
+        throw new Error('should never finish');
+      },
+      onError: (e) => errors.push(e),
+      onProgress: () => {
+        throw boom;
+      },
+    });
+    expect(() => {
+      while (h.flush());
+    }).not.toThrow();
+    expect(errors).toEqual([boom]);
+    expect(ran).toBe(4);
+    expect(h.pending()).toBe(0);
+
+    const h2 = harness();
+    const errors2: unknown[] = [];
+    runSliced([() => undefined, () => undefined], {
+      budgetMs: 8,
+      firstSync: 1,
+      now: h2.now,
+      schedule: h2.schedule,
+      onDone: () => {
+        throw boom;
+      },
+      onError: (e) => {
+        errors2.push(e);
+        throw new Error('onError broke too');
+      },
+    });
+    expect(() => {
+      while (h2.flush());
+    }).not.toThrow();
+    expect(errors2).toEqual([boom]);
   });
 
   it('a throw while drawing the poster (synchronously) is reported, not thrown, and schedules nothing', () => {
