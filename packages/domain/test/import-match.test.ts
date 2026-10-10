@@ -163,6 +163,62 @@ describe('machines, assisted machines and the Smith machine (review r5 S3)', () 
     expect(matchName('Smith Squat', [...list, smithSquat], none)).toMatchObject({ status: 'matched', exerciseId: smithSquat.exerciseId });
     expect(matchName('Smith Machine Squats', [...list, smithSquat], none)).toMatchObject({ status: 'check', exerciseId: smithSquat.exerciseId });
   });
+
+  it('a Smith name that also says Barbell is never a free-barbell exercise, and never gets the Olympic bar from its word (review r6 B2)', () => {
+    const smithSquat = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000e5', name: 'Smith machine squat', aliases: ['Smith squat'], compatibleEquipment: ['plate_loaded_machine'], defaultLoadConvention: 'added', implements: null });
+    const withSmith = [...list, smithSquat];
+    const free = new Set(['Back squat', 'Bench press', 'Incline bench press', 'Barbell row', 'Deadlift'].map(idOf));
+    // The review's names: a Smith exercise or nothing, never a free-barbell one.
+    const names = [
+      'Smith Machine Barbell Squat',
+      'Barbell Smith Squat',
+      'Barbell Squat (Smith)',
+      'Smith Machine Squat (Barbell)',
+      'BB Smith Squat',
+      'Smith Barbell Bench Press',
+      'Smith Machine Bench Press (Barbell)',
+      'Barbell Bench Press (Smith Machine)',
+      'Smith Machine Incline Barbell Press',
+      'Smith Machine Barbell Row',
+      'Smith Barbell Row',
+      'Smith Machine Deadlift (Barbell)',
+    ];
+    for (const n of names) {
+      const m = matchName(n, withSmith, none);
+      expect(m.exerciseId === null || !free.has(m.exerciseId), `${n} → ${String(m.exerciseId)}`).toBe(true);
+    }
+    expect(matchName('Smith Machine Barbell Squat', withSmith, none)).toMatchObject({ status: 'check', exerciseId: smithSquat.exerciseId });
+    expect(matchName('Smith Barbell Bench Press', withSmith, none)).toMatchObject({ status: 'check', exerciseId: smithBench.exerciseId });
+    expect(matchName('Smith Machine Barbell Row', withSmith, none)).toMatchObject({ status: 'no_match', exerciseId: null });
+    // Chosen by Ben as the free back squat (`Choose…`), the bar still isn't known from the name: asked on its own.
+    const backSquat = CANDIDATES.find((c) => c.name === 'Back squat') as MatchCandidate;
+    for (const n of names) expect(barNamed(n, backSquat, 'barbell'), n).toBe(false);
+    expect(barNamed('Barbell Squat', backSquat, 'barbell')).toBe(true);
+    // The same other name on a Smith and a free exercise: a Smith name goes to the Smith one, never the free one (equipment alone can't tell them apart here).
+    const freeTwin = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000e6', name: 'Barbell squat', aliases: ['Smith barbell squat'], compatibleEquipment: ['barbell'], defaultLoadConvention: 'total', implements: null });
+    const smithTwin = { ...smithSquat, aliases: ['Smith barbell squat'] };
+    expect(matchName('Smith Barbell Squat', [freeTwin, smithTwin], none)).toMatchObject({ status: 'check', exerciseId: smithTwin.exerciseId, via: 'name' });
+  });
+
+  it('a name that says assisted is only an assisted or bodyweight exercise, even when it says Machine (review r6 B3)', () => {
+    const lat = CANDIDATES.find((c) => c.name === 'Lat pulldown') as MatchCandidate;
+    const row = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000e7', name: 'Chest-supported machine row', aliases: ['Seated row machine'], compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack', implements: null });
+    const withRow = [...list, row];
+    const loads = new Set([machinePress.exerciseId, row.exerciseId, lat.exerciseId, idOf('Seated cable row')]);
+    for (const n of ['Assisted Shoulder Press Machine', 'Assisted Seated Row Machine', 'Assisted Lat Pull Machine', 'Assisted Lat Pulldown Machine', 'Machine Assisted Row']) {
+      const m = matchName(n, withRow, none);
+      const c = withRow.find((x) => x.exerciseId === m.exerciseId);
+      expect(m.exerciseId === null || !loads.has(m.exerciseId), `${n} → ${String(c?.name)}`).toBe(true);
+      expect(c === undefined || c.defaultLoadConvention === 'assistance' || c.defaultLoadConvention === 'bodyweight', `${n} → ${String(c?.name)}`).toBe(true);
+    }
+    // A stack exercise an earlier `Add new` made from an assisted name is never suggested for it either.
+    const made = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000e8', name: 'Assisted Chin Up Machine', aliases: [], catalogueKey: null, compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack', implements: null, importMade: true });
+    expect(matchName('Assisted Chin Up Machine', [...list, made], none).exerciseId).not.toBe(made.exerciseId);
+    // Realistic assisted names still reach the assisted exercises.
+    expect(matchName('Assisted Pull Up Machine', list, none)).toMatchObject({ exerciseId: idOf('Assisted pull-up') });
+    expect(matchName('Assisted Dip Machine', list, none)).toMatchObject({ status: 'matched', exerciseId: assistedDip.exerciseId });
+    expect(matchName('Band Assisted Pull Up', list, none).exerciseId).toBe(idOf('Assisted pull-up'));
+  });
 });
 
 describe('suggestions and one-arm / two-arm words (review r5 N1)', () => {
@@ -202,6 +258,9 @@ describe('one dumbbell or two, from the name (review r4 S1)', () => {
     // One dumbbell can be held in both hands: `Two-hand` says nothing about the count.
     for (const n of ['Two-hand overhead dumbbell extension', 'Dumbbell Bench Press', 'Seated Dumbbell Press', 'Dumbbell Side Bend']) expect(implementCue(n), n).toBeNull();
     expect(implementCue('Single-Arm Alternating Press')).toBe('unclear');
+    // An alternate grip says nothing about the count (review r6 N3).
+    for (const n of ['Alternate Grip Dumbbell Row', 'Alt Grip DB Row', 'Alternating-Grip Dumbbell Shrug']) expect(implementCue(n), n).toBeNull();
+    expect(implementCue('Alternating Dumbbell Curl (Neutral Grip)')).toBe(2);
   });
 
   it('a one-arm or concentration name never takes a two-dumbbell exercise’s count, however it was mapped', () => {
