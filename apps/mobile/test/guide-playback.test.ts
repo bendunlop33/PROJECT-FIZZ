@@ -11,7 +11,7 @@ import { opPathData, PATH_UNITS, planOp, rgba } from '../src/guide/draw-plan';
 import { BUNDLED_GUIDE_FILES } from '../../../packages/catalogue/src/generated/guide-files';
 import { buildHowToView, bundledHowToSources, DRAFT_GUIDE_LABEL, guideDraftLabel, hasHowTo, howToKeyForExerciseId, howToLayout, type HowToSources } from '../src/guide/how-to';
 import { initialPlayerState, isRunning, MUSCLE_PULSE, musclePulseOn, playControlLabel, playerReducer, stepAccessibilityLabel, stepAnnouncement, stepPosition, type PlayerAction, type PlayerState } from '../src/guide/player-model';
-import { runSliced } from '../src/guide/sliced';
+import { canPlayPrefix, runSliced } from '../src/guide/sliced';
 import { resolveTheme, THEME_DIRECTIONS } from '../src/theme/tokens';
 
 describe('playback clock (UI-thread worklets)', () => {
@@ -547,6 +547,17 @@ describe('sliced baking', () => {
     expect(done).toBe(1);
   });
 
+  it('reports progress after each slice that leaves work, not after the last', () => {
+    const h = harness();
+    const progress: number[] = [];
+    const tasks = Array.from({ length: 10 }, () => () => {
+      h.advance(3);
+    });
+    runSliced(tasks, { budgetMs: 8, firstSync: 1, now: h.now, schedule: h.schedule, onDone: () => undefined, onError: unexpected, onProgress: (n) => progress.push(n) });
+    while (h.flush());
+    expect(progress).toEqual([4, 7]);
+  });
+
   it('cancel stops further work and never reports done', () => {
     const h = harness();
     let ran = 0;
@@ -616,5 +627,38 @@ describe('sliced baking', () => {
     runSliced([() => undefined], { budgetMs: 8, firstSync: 1, now: h.now, schedule: h.schedule, onDone: () => (done += 1), onError: unexpected });
     expect(done).toBe(2);
     expect(h.pending()).toBe(0);
+  });
+});
+
+describe('playing a baked prefix (guides review B2)', () => {
+  // A 2.8 s cycle at 30 fps: 84 frames, 33.3 ms apart.
+  const total = 84;
+  const frameIntervalMs = 2800 / 84;
+
+  it('a bake faster than playback can start on the first frames', () => {
+    expect(canPlayPrefix({ ready: 1, total, msPerFrame: 15, frameIntervalMs })).toBe(true);
+    expect(canPlayPrefix({ ready: 2, total, msPerFrame: 20, frameIntervalMs })).toBe(true);
+  });
+
+  it('a bake slower than playback waits until the rest will be ready in time', () => {
+    // 50 ms a frame: 83 frames left would take 4.15 s, playback reaches the end in 2.77 s.
+    expect(canPlayPrefix({ ready: 1, total, msPerFrame: 50, frameIntervalMs })).toBe(false);
+    expect(canPlayPrefix({ ready: 30, total, msPerFrame: 50, frameIntervalMs })).toBe(false);
+    expect(canPlayPrefix({ ready: 50, total, msPerFrame: 50, frameIntervalMs })).toBe(true);
+  });
+
+  it('every later frame is ready before playback reaches it whenever it says yes (with the margin to spare)', () => {
+    for (const msPerFrame of [5, 15, 25, 33, 40, 60, 90]) {
+      for (let ready = 0; ready <= total; ready += 1) {
+        if (!canPlayPrefix({ ready, total, msPerFrame, frameIntervalMs })) continue;
+        for (let j = ready; j < total; j += 1) expect((j - ready + 1) * msPerFrame).toBeLessThanOrEqual(0.75 * j * frameIntervalMs + 1e-9);
+      }
+    }
+  });
+
+  it('nothing baked is never playable; a finished bake always is', () => {
+    expect(canPlayPrefix({ ready: 0, total, msPerFrame: 1, frameIntervalMs })).toBe(false);
+    expect(canPlayPrefix({ ready: total, total, msPerFrame: 1000, frameIntervalMs })).toBe(true);
+    expect(canPlayPrefix({ ready: 3, total, msPerFrame: Number.NaN, frameIntervalMs })).toBe(false);
   });
 });

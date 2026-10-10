@@ -5,7 +5,7 @@ import { useDerivedValue, useFrameCallback, useSharedValue, type FrameInfo, type
 import { scheduleOnRN } from 'react-native-worklets';
 
 import type { LoadedGuide } from '@fizz/catalogue';
-import { GUIDE_CORNER_FRACTION, GUIDE_TOKEN_NAMES, guideStyleFromTokens, type GuideStyle, type GuideTokens, type KeyFrameStop } from '@fizz/catalogue/figure';
+import { GUIDE_CORNER_FRACTION, GUIDE_TOKEN_NAMES, guideStyleFromTokens, playbackTimes, type GuideStyle, type GuideTokens, type KeyFrameStop } from '@fizz/catalogue/figure';
 
 import { useTheme } from '../theme';
 import { AppText, SecondaryButton, Tag, TextButton } from '../ui';
@@ -26,10 +26,12 @@ import {
   stepPosition,
   type PlayerAction,
 } from './player-model';
-import { runSliced } from './sliced';
+import { canPlayPrefix, runSliced } from './sliced';
 
 /** Longest stretch of baking before the JS thread yields (one 120 Hz frame is ~8 ms). */
 const BAKE_BUDGET_MS = 8;
+/** While a playable animation is still baking, hand the player its longer prefix at most this often (each hand-over re-renders). */
+const PREFIX_PUBLISH_MS = 200;
 
 interface Baked {
   key: string;
@@ -37,6 +39,10 @@ interface Baked {
   done: boolean;
   /** Index of the steady Finished poster (animation with emphasis), else null. */
   steadyPoster: number | null;
+  /** Frames the finished bake will have. */
+  total: number;
+  /** Still baking, but `pictures` is a prefix playback can start on (`canPlayPrefix`). */
+  playable: boolean;
 }
 
 /** A bake that threw (review S1); the player rethrows it in render so `GuideBoundary` takes over. */
@@ -65,7 +71,7 @@ function useBakedPictures(
     if (key === null || kind === null) return;
     const hit = cachedBake(key);
     if (hit) {
-      setBaked({ key, pictures: hit.pictures, done: true, steadyPoster: hit.steadyPoster });
+      setBaked({ key, pictures: hit.pictures, done: true, steadyPoster: hit.steadyPoster, total: hit.steadyPoster ?? hit.pictures.length, playable: true });
       return;
     }
     const out: SkPicture[] = [];
@@ -80,6 +86,13 @@ function useBakedPictures(
       return;
     }
     const progress = { finished: false };
+    const total = plan.frameCount;
+    const started = performance.now();
+    let published = -Infinity;
+    // The animation's first pass plays frames in order, so it can start on a baked prefix when the bake will keep ahead
+    // (guides review B2). One frame interval of playback: a cycle shows n frames per duration, a ping-pong n − 1 each way.
+    const intervals = loaded.guide.loop === 'pingpong' ? playbackTimes(loaded.guide).length - 1 : playbackTimes(loaded.guide).length;
+    const frameIntervalMs = loaded.guide.durationMs / Math.max(1, intervals);
     const run = runSliced(plan.tasks, {
       budgetMs: BAKE_BUDGET_MS,
       // Draw the first frame before yielding, so the canvas is never empty (poster; review N1).
@@ -94,12 +107,22 @@ function useBakedPictures(
       onDone: () => {
         progress.finished = true;
         storeBake(key, { pictures: out, steadyPoster: plan.steadyPoster });
-        setBaked({ key, pictures: out, done: true, steadyPoster: plan.steadyPoster });
+        setBaked({ key, pictures: out, done: true, steadyPoster: plan.steadyPoster, total, playable: true });
+      },
+      onProgress: (run) => {
+        if (kind !== 'animation') return;
+        const now = performance.now();
+        if (now - published < PREFIX_PUBLISH_MS) return;
+        const ready = plan.framesDone(run);
+        const msPerFrame = (now - started) / Math.max(1, run);
+        if (!canPlayPrefix({ ready, total, msPerFrame, frameIntervalMs })) return;
+        published = now;
+        setBaked({ key, pictures: out.slice(0, ready), done: false, steadyPoster: null, total, playable: true });
       },
       onError: fail,
     });
     // Show the poster while the rest bakes (unless it all finished synchronously; review N2).
-    if (!progress.finished && out.length > 0) setBaked({ key, pictures: out.slice(), done: false, steadyPoster: null });
+    if (!progress.finished && out.length > 0) setBaked({ key, pictures: out.slice(), done: false, steadyPoster: null, total, playable: false });
     return run.cancel;
   }, [key, kind, loaded, stops, style, config]);
   return {
@@ -108,9 +131,12 @@ function useBakedPictures(
   };
 }
 
-/** The picture for the clock's current frame, swapped on the UI thread (no React render per frame). */
+/**
+ * The picture for the clock's current frame, swapped on the UI thread (no React render per frame). While the bake is
+ * still extending `frames` (a playable prefix), a clock that gets ahead holds the last baked frame, never a gap.
+ */
 function AnimatedArt({ frames, first, frame }: { frames: readonly SkPicture[]; first: SkPicture; frame: SharedValue<number> }) {
-  const picture = useDerivedValue(() => frames[frame.value] ?? first, [frames, first]);
+  const picture = useDerivedValue(() => frames[Math.min(frame.value, frames.length - 1)] ?? first, [frames, first]);
   return <Picture picture={picture} />;
 }
 
@@ -176,8 +202,12 @@ export function GuidePlayer({ guide, size, visible, footer }: Props) {
 
   const { baked: anim, failure: animFailure } = useBakedPictures(loaded, state.mode === 'animate' ? 'animation' : null, stops, style, animConfig);
   const { baked: still, failure: stillFailure } = useBakedPictures(loaded, state.mode === 'steps' ? 'steps' : null, stops, style, stillConfig);
-  // The steady poster (if any) sits after the frames; it is shown only when the passes are finished.
-  const frames = anim?.done === true ? (anim.steadyPoster === null ? anim.pictures : anim.pictures.slice(0, anim.steadyPoster)) : null;
+  // The steady poster (if any) sits after the frames; it is shown only when the passes are finished. Playback starts on
+  // a baked prefix when the bake will stay ahead of it (`canPlayPrefix`), else once every frame is ready.
+  const frames = useMemo(
+    () => (anim === null || !anim.playable ? null : anim.done && anim.steadyPoster !== null ? anim.pictures.slice(0, anim.steadyPoster) : anim.pictures),
+    [anim],
+  );
   const steadyPoster = anim?.done === true && anim.steadyPoster !== null ? (anim.pictures[anim.steadyPoster] ?? null) : null;
 
   // UI-thread clock: elapsed time → frame index → picture.
@@ -185,7 +215,8 @@ export function GuidePlayer({ guide, size, visible, footer }: Props) {
   const frame = useSharedValue(0);
   const done = useSharedValue(false);
   const { durationMs, loop } = loaded.guide;
-  const count = frames?.length ?? 0;
+  // The clock runs over the whole cycle even while the tail is still baking.
+  const count = frames === null ? 0 : (anim?.total ?? frames.length);
   const onFinished = useCallback(() => {
     dispatch({ type: 'finished' });
   }, []);

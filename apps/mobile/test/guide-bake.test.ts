@@ -165,6 +165,39 @@ describe('bake plan', () => {
     expect(parsed.length).toBeLessThan(texts.length);
   });
 
+  it('framesDone: which frames are final after k tasks (the player may start on that prefix)', () => {
+    const squat = guide('barbell-back-squat');
+    const frames = playbackTimes(squat.prepared.guide).length;
+    const anim = bake.bakeTasks(squat, 'animation', [], style, [], { ...steady, pulse: true });
+    expect(anim.frameCount).toBe(frames);
+    expect(anim.framesDone(1)).toBe(1);
+    expect(anim.framesDone(10)).toBe(10);
+    // The steady poster task after the frames isn't a frame.
+    expect(anim.framesDone(anim.tasks.length)).toBe(frames);
+    // Steps with a trace: the trace-less poster and the samples come first, so nothing is final until they're done.
+    const stops = keyFrameStops(squat.prepared);
+    const steps = bake.bakeTasks(squat, 'steps', stops, style, [], steady);
+    const before = steps.tasks.length - stops.length;
+    expect(before).toBeGreaterThan(1);
+    expect(steps.framesDone(before)).toBe(0);
+    expect(steps.framesDone(before + 1)).toBe(1);
+    expect(steps.framesDone(steps.tasks.length)).toBe(stops.length);
+  });
+
+  it('frames inside a hold reuse the picture of the hold\'s first frame (same emphasis only)', async () => {
+    const { heldFrames } = await import('@fizz/catalogue/figure');
+    const pulldown = guide('cable-lat-pulldown');
+    const times = playbackTimes(pulldown.prepared.guide);
+    const held = heldFrames(pulldown.prepared, times);
+    expect(held.some((j) => j >= 0)).toBe(true);
+    const out: FakePicture[] = [];
+    for (const task of bake.bakeTasks(pulldown, 'animation', [], style, out as never[], steady).tasks) task();
+    held.forEach((j, i) => {
+      if (j >= 0) expect(out[i]).toBe(out[j]);
+      else expect(out.indexOf(out[i] as FakePicture)).toBe(i);
+    });
+  });
+
   it('a guide with no labelled positions still bakes one still frame (P6)', () => {
     const squat = guide('barbell-back-squat');
     const out: FakePicture[] = [];

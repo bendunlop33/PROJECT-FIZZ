@@ -19,6 +19,7 @@ import { PaintStyle, Skia, StrokeCap, StrokeJoin, TileMode, createPicture, type 
 import type { LoadedGuide } from '@fizz/catalogue';
 import {
   bakeFrame,
+  heldFrames,
   overlayPlans,
   overlayPoint,
   playbackTimes,
@@ -154,6 +155,10 @@ export interface BakePlan {
    * Finished state (guides v2 §8: the poster holds steady colour). Otherwise null.
    */
   steadyPoster: number | null;
+  /** Frames the bake makes (animation: the playback frames; steps: the positions). */
+  frameCount: number;
+  /** Frames 0…k−1 final in `out` once this many tasks have run (a frame drawn before its trace isn't final). */
+  framesDone: (tasksRun: number) => number;
 }
 
 export function bakeTasks(loaded: LoadedGuide, kind: BakeKind, stops: readonly KeyFrameStop[], style: GuideStyle, out: SkPicture[], config: BakeConfig): BakePlan {
@@ -187,8 +192,17 @@ export function bakeTasks(loaded: LoadedGuide, kind: BakeKind, stops: readonly K
       });
     }
   }
+  // A frame inside a hold shows the same pose as the hold's first frame: reuse that picture (with the same emphasis).
+  const held = kind === 'animation' ? heldFrames(prepared, times) : times.map(() => -1);
+  const intensity = (t: number): number | null => (pulse ? workIntensityAt(prepared, t) : null);
   times.forEach((t, i) => {
     tasks.push(() => {
+      const j = held[i] ?? -1;
+      const same = j >= 0 ? out[j] : undefined;
+      if (same !== undefined && intensity(t) === intensity(times[j] ?? t)) {
+        out[i] = same;
+        return;
+      }
       out[i] = recordOps(bakeFrame(prepared, camera, t, trace, optsAt(t)), style, paints, paths);
     });
   });
@@ -198,7 +212,9 @@ export function bakeTasks(loaded: LoadedGuide, kind: BakeKind, stops: readonly K
       out[at] = recordOps(bakeFrame(prepared, camera, first, trace, steady), style, paints, paths);
     });
   }
-  return { tasks, firstSync: 1, steadyPoster: pulse ? times.length : null };
+  // Before the frames: the trace-less poster and the trace samples, if any.
+  const before = plan ? 1 + plan.times.length : 0;
+  return { tasks, firstSync: 1, steadyPoster: pulse ? times.length : null, frameCount: times.length, framesDone: (run) => Math.max(0, Math.min(times.length, run - before)) };
 }
 
 const CACHE_SIZE = 4;
