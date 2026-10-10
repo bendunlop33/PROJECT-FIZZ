@@ -52,6 +52,20 @@ function legGuide(topY: number, extra: Record<string, unknown> = {}, pass?: Reco
 
 /** The committed squat with `drive` turned on (data unchanged). */
 const drivenSquat = (): Guide => GuideSchema.parse({ ...rawOf('barbell-back-squat'), drive: DRIVE });
+
+type RawKey = { label?: string; sameAs?: number; root?: { y: number } };
+/** The committed squat cut down to its labelled keys (one pass key per phase), so each pass key can be put on its line. */
+function labelledSquat(): { keyframes: RawKey[] } {
+  const raw = structuredClone(rawOf('barbell-back-squat')) as { keyframes: RawKey[] };
+  const all = raw.keyframes;
+  const keep = all.map((_, i) => i).filter((i) => all[i]?.label !== undefined || all[all[i]?.sameAs ?? -1]?.label !== undefined);
+  raw.keyframes = keep.map((i) => {
+    const k: RawKey = { ...all[i] };
+    if (k.sameAs !== undefined) k.sameAs = keep.indexOf(k.sameAs);
+    return k;
+  });
+  return raw;
+}
 const config: MotionConfig = { main: [{ point: 'hip' }], primary: [], pairs: [] };
 
 describe('drive: schema', () => {
@@ -161,11 +175,11 @@ describe('drive: what it fixes and what it checks', () => {
   });
 
   it('D1: a pass key off its stop-to-stop driver line fails; the suggested root.y puts it on the line', () => {
-    const p = prepareGuide(drivenSquat());
+    const raw = labelledSquat();
+    const p = prepareGuide(GuideSchema.parse({ ...raw, drive: DRIVE }));
     const r = measureMotion(p, { n: 600 });
     expect(r.metrics.find((m) => m.id === 'D1')?.ok).toBe(false);
     expect(r.drive.length).toBe(2);
-    const raw = rawOf('barbell-back-squat') as { keyframes: { root?: { y: number } }[] };
     const key = r.drive[0];
     const y = key?.suggestedRootY;
     expect(typeof y).toBe('number');

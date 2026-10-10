@@ -109,7 +109,7 @@ describe('key-frame stops (the Reduce Motion frames)', () => {
       [3, 'Bottom'],
     ]);
     expect(stops[2]?.caption).toBe('Hips just below knees, heels down');
-    expect(stops.map((s) => s.t)).toEqual([0, 0.1958, 0.5714]);
+    expect(stops.map((s) => s.t)).toEqual([0, 0.2424, 0.5714]);
   });
 
   it('match the catalogue entry key positions for every bundled guide', () => {

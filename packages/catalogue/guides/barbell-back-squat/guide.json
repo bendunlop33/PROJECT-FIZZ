@@ -21,25 +21,29 @@
       "joints": { "lumbar": 0, "thoracic": 0, "neck": -4 },
       "ik": {
         "footNear": { "x": 0, "y": 0, "planted": true },
-        "footFar": { "x": -0.012, "y": 0, "planted": true },
+        "footFar": { "x": -0.006, "y": 0, "planted": true },
         "handNear": { "prop": "bar" },
         "handFar": { "prop": "bar" }
       },
       "ease": "smooth"
     },
+    { "t": 0.1866, "pass": true, "root": { "x": -0.0084, "y": 0.4952, "pelvisDeg": 19.1 }, "joints": { "neck": -11.7 }, "ease": "smooth" },
     {
-      "t": 0.1958, "pass": true, "label": "Halfway", "caption": "Hips back and down, knees over toes",
-      "root": { "x": -0.0282, "y": 0.4628, "pelvisDeg": 22.8 },
-      "joints": { "neck": -14 },
+      "t": 0.2424, "pass": true, "label": "Halfway", "caption": "Hips back and down, knees over toes",
+      "root": { "x": -0.0488, "y": 0.4506, "pelvisDeg": 26.7 },
+      "joints": { "neck": -16.2 },
       "ease": "smooth"
     },
+    { "t": 0.366, "pass": true, "root": { "x": -0.1035, "y": 0.3346, "pelvisDeg": 37.5 }, "joints": { "neck": -22.6 }, "ease": "smooth" },
     {
       "t": 0.5714, "label": "Bottom", "caption": "Hips just below knees, heels down",
       "root": { "x": -0.1151, "y": 0.2372, "pelvisDeg": 39.9 },
       "joints": { "neck": -24 },
       "holdMs": 200, "ease": "smooth"
     },
-    { "t": 0.8776, "sameAs": 1, "caption": "Hips and chest rise together", "ease": "smooth" },
+    { "t": 0.7712, "sameAs": 3, "ease": "smooth" },
+    { "t": 0.8485, "sameAs": 2, "caption": "Hips and chest rise together", "ease": "smooth" },
+    { "t": 0.8833, "sameAs": 1, "ease": "smooth" },
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
