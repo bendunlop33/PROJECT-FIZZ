@@ -1,10 +1,11 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 
-import { formatDuration, formatMinutes, reasonsText, scoreText, sparklinePoints, toMs, type LiftHighlight, type TodayMain, type WeekDay } from '@fizz/domain';
+import { formatDuration, formatMinutes, reasonsText, scoreText, sparklinePoints, toMs, weekStripLabel, type LiftHighlight, type ResumeRow, type TodayMain, type WeekDay } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
+import { useStartAlertsAsk } from '../alerts/AlertsAskSheet';
 import { nowMs as clockNow } from '../clock';
 import { newUuid } from '../device/runtime';
 import { formatDayMonth, formatLongDate, formatShortDate, formatTime } from '../format/dates';
@@ -12,8 +13,8 @@ import type { TabParams } from '../navigation/types';
 import { firstTime, useDataChanged, useLaunchInfo, useScreenData, useServices } from '../shell/context';
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
-import { TIMING, useTheme } from '../theme';
-import { AppText, Eyebrow, HeroHeader, LinkLine, PrimaryButton, RuledSection, SecondaryButton, Sparkline, StatusLine, TextButton, Toast } from '../ui';
+import { listEnterMotion, TIMING, useTheme } from '../theme';
+import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, Sparkline, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
@@ -48,6 +49,7 @@ export function TodayScreen() {
   const [finishFor, setFinishFor] = useState<SessionAggregate | null>(null);
   const [finishVisible, setFinishVisible] = useState(false);
   const [afterDismiss] = useState(() => createAfterDismiss());
+  const alertsAsk = useStartAlertsAsk();
   const [data, reload] = useScreenData(async (s) => {
     const [gym, view, banners, active, unlinked] = await Promise.all([
       s.yourData.currentGym(),
@@ -113,6 +115,8 @@ export function TodayScreen() {
         gymId = made.gymId;
         changed();
       }
+      // First Start ever: the one-time Rest alerts question, before the check-in; either answer continues (premium-feel §3.5).
+      await alertsAsk.ensureAsked();
       const gate = await services.checkIns.gate();
       if (gate.kind === 'ask') {
         navigation.navigate('CheckIn', { mode: 'start', gymId, ...(nextOf !== null ? { nextOf } : {}) });
@@ -149,6 +153,16 @@ export function TodayScreen() {
       setError(`Couldn’t start the workout: ${e instanceof Error ? e.message : String(e)}. Try again.`);
       reload();
     }
+  }
+
+  /** Resume on a chosen exercise: make its first unlogged set current, then open the workout. */
+  async function resumeOn(row: ResumeRow) {
+    const current = data.state === 'ready' ? data.value.active : null;
+    if (row.firstPendingSetId !== null && current && row.status !== 'now') {
+      const r = await services.workout.dispatch(current.session.id, { type: 'set_active_set', at: services.now(), opId: newUuid(), setId: row.firstPendingSetId, expectedVersion: current.session.version });
+      if (r.ok) changed();
+    }
+    navigation.navigate('Workout');
   }
 
   async function discardEmpty(main: Extract<TodayMain, { kind: 'stale' }>) {
@@ -213,6 +227,18 @@ export function TodayScreen() {
                 navigation.navigate('Workout');
               }}
             />
+            {/* This workout's exercises: done / now / pending, in words (premium-feel §2.3). Tap one to resume on it. */}
+            <DetailList
+              rows={main.rows.map((r) => ({
+                key: r.sessionExerciseId,
+                title: r.name,
+                detail: r.text,
+                status: r.status,
+                onPress: () => {
+                  void resumeOn(r);
+                },
+              }))}
+            />
           </Hero>
         );
       }
@@ -270,15 +296,16 @@ export function TodayScreen() {
               title={next.title}
               lines={[
                 [next.muscles, `${String(exerciseCount)} ${exerciseCount === 1 ? 'exercise' : 'exercises'} · ${String(next.sets)} sets`].filter(Boolean).join(' · '),
-                `${next.exercises.slice(0, 4).map((e) => e.exerciseName).join(', ')}${exerciseCount > 4 ? ` +${String(exerciseCount - 4)}` : ''}`,
                 `From ${formatShortDate(toMs(next.sourceStartedAtUtc), next.tz)}, with next targets (built-in rule)`,
               ]}
             >
               <PrimaryButton label="Start workout" busy={starting} onPress={() => void start(next.sourceSessionId)} />
+              {/* What Start creates, already fitted to this gym; each line says `Target` (premium-feel §2.3). */}
+              <DetailList rows={next.targets.map((t, i) => ({ key: `${String(i)}:${t.exerciseName}`, title: t.exerciseName, detail: t.line }))} />
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
                 <TextButton label="Empty workout" onPress={() => void start(null)} />
                 <TextButton
-                  label="Other past workout"
+                  label="Past workouts"
                   onPress={() => {
                     navigation.navigate('PastWorkouts');
                   }}
@@ -362,12 +389,14 @@ export function TodayScreen() {
         <RuledSection title="This week">
           {view && view.week.days.length === 7 ? <WeekStrip days={view.week.days} /> : null}
           <AppText variant="callout" color="text.secondary" numeric>
-            {view?.week.text ?? 'No workouts logged yet this week.'}
+            {view?.week.text ?? 'No workouts yet this week.'}
           </AppText>
         </RuledSection>
 
-        {lift && main.kind !== 'resume' && main.kind !== 'stale' ? <LiftCard lift={lift} /> : null}
+        {/* Shown in every state but Stale and First workout (premium-feel §2.1). */}
+        {lift && main.kind !== 'stale' ? <LiftCard lift={lift} /> : null}
       </ScrollView>
+      {alertsAsk.sheet}
       {toast ? <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
       {finishFor ? (
         <FinishSheet
@@ -459,29 +488,118 @@ function LiftCard({ lift }: { lift: LiftHighlight }) {
   );
 }
 
-/** This week (D-Today): a dot per day; filled = trained, ringed = today. The line below carries the count in words. */
+/** This week (D-Today): a dot per day; filled = trained, ring with a centre = in progress, ringed = today. The line below says it in words. */
 function WeekStrip({ days }: { days: readonly WeekDay[] }) {
   const theme = useTheme();
-  const trained = days.filter((d) => d.trained).length;
   return (
-    <View accessible accessibilityLabel={`${String(trained)} ${trained === 1 ? 'day' : 'days'} trained this week`} style={{ flexDirection: 'row' }}>
+    <View accessible accessibilityLabel={weekStripLabel(days)} style={{ flexDirection: 'row' }}>
       {days.map((d) => (
         <View key={d.localDate} style={{ flex: 1, alignItems: 'center', gap: theme.space['2'] }}>
           <AppText variant="sectionLabel" color={d.today ? 'text.primary' : 'text.tertiary'} style={{ letterSpacing: 0 }}>
             {d.letter}
           </AppText>
+          {/* Done = filled; in progress = ring with a 4 pt centre; today with nothing = ring (premium-feel §2.5). */}
           <View
             style={{
               width: 10,
               height: 10,
               borderRadius: 5,
               backgroundColor: d.trained ? theme.colors.accent : 'transparent',
-              borderWidth: d.trained ? 0 : d.today ? 1.5 : 0,
+              borderWidth: d.trained ? 0 : d.inProgress || d.today ? 1.5 : 0,
               borderColor: theme.colors.accent,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {d.inProgress && !d.trained ? <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: theme.colors.accent }} /> : null}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const ROW_ICON: Record<ResumeRow['status'], { icon: SymbolName; color: 'status.done' | 'accent' | 'text.tertiary' }> = {
+  done: { icon: 'checkmark.circle.fill', color: 'status.done' },
+  now: { icon: 'arrowtriangle.right.fill', color: 'accent' },
+  pending: { icon: 'circle', color: 'text.tertiary' },
+  skipped: { icon: 'slash.circle', color: 'text.tertiary' },
+};
+const ROW_WORD: Record<ResumeRow['status'], string> = { done: 'Done', now: 'Now', pending: 'Not started', skipped: 'Skipped' };
+const DETAIL_CAP = 5;
+
+interface DetailRow {
+  key: string;
+  title: string;
+  detail: string;
+  status?: ResumeRow['status'];
+  onPress?: () => void;
+}
+
+/**
+ * The hero's detail list (premium-feel §2.3): Up next targets (two lines,
+ * not tappable) or Resume progress (one line with a status icon and words,
+ * ≥ 52 pt, tappable). At most 5, then `+2 more` expands in place; only the
+ * rows that appear then fade in (`motion.listEnter`).
+ */
+function DetailList({ rows }: { rows: readonly DetailRow[] }) {
+  const theme = useTheme();
+  const [expanded, setExpanded] = useState(false);
+  if (rows.length === 0) return null;
+  const shown = expanded ? rows : rows.slice(0, DETAIL_CAP);
+  const hidden = rows.length - shown.length;
+  return (
+    <View>
+      {shown.map((r, i) => {
+        const added = i >= DETAIL_CAP;
+        const body =
+          r.status !== undefined ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${r.title}, ${ROW_WORD[r.status]}, ${r.detail}`}
+              accessibilityHint="Resumes the workout on this exercise"
+              onPress={r.onPress}
+              style={({ pressed }) => ({
+                minHeight: theme.target.workout.height,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: theme.space['3'],
+                backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent',
+              })}
+            >
+              <Icon name={ROW_ICON[r.status].icon} color={ROW_ICON[r.status].color} size={16} />
+              <AppText variant="body" numberOfLines={2} color={r.status === 'pending' || r.status === 'skipped' ? 'text.secondary' : 'text.primary'} style={{ flex: 1, fontWeight: r.status === 'now' ? '600' : '400' }}>
+                {r.title}
+              </AppText>
+              <AppText variant="callout" color="text.secondary" numeric>
+                {r.detail}
+              </AppText>
+            </Pressable>
+          ) : (
+            <View accessible accessibilityLabel={`${r.title}. ${r.detail}`} style={{ minHeight: theme.target.min.height, justifyContent: 'center', paddingVertical: theme.space['1'] }}>
+              <AppText variant="body">{r.title}</AppText>
+              <AppText variant="callout" color="text.secondary" numeric>
+                {r.detail}
+              </AppText>
+            </View>
+          );
+        return (
+          <FadeIn key={r.key} motion={added ? listEnterMotion(i - DETAIL_CAP, theme.a11y.reduceMotion) : null}>
+            {body}
+          </FadeIn>
+        );
+      })}
+      {hidden > 0 ? (
+        <View style={{ alignSelf: 'flex-start' }}>
+          <TextButton
+            label={`+${String(hidden)} more`}
+            tone="secondary"
+            onPress={() => {
+              setExpanded(true);
             }}
           />
         </View>
-      ))}
+      ) : null}
     </View>
   );
 }
