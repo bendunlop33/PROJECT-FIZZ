@@ -13,7 +13,7 @@ import { popToTabs, popToToday } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { firstTime, useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, BottomBar, Card, Chip, ChecklistRow, ChipRow, Icon, LinkLine, PrimaryButton, SecondaryButton, SectionHeader, StatusLine, Tag, TextButton, Toast } from '../../ui';
+import { AppText, BottomBar, Card, Chip, ChecklistRow, ChipRow, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, SectionHeader, StatGrid, StatusLine, Tag, TextButton, Toast } from '../../ui';
 import { stepTime } from '../../workout/finish';
 import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
 
@@ -87,18 +87,12 @@ export function SummaryScreen() {
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + theme.space['4'], paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'], gap: theme.space['5'] }}>
         {/* D: a quiet hero (label, large title, facts), then the saved line; no tinted block. */}
-        <View style={{ gap: theme.space['2'] }}>
-          <AppText variant="sectionLabel" color="text.tertiary">
-            Workout done
-          </AppText>
-          <AppText variant="title1" accessibilityRole="header" numberOfLines={2} style={{ fontSize: theme.components.heroTitleSize, lineHeight: Math.round(theme.components.heroTitleSize * 1.15) }}>
-            {sum.title}
-          </AppText>
-          <AppText variant="callout" color="text.secondary" numeric>
-            {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}
-            {(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), sum.gymName, 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`]).filter(Boolean).join(' · ')}
-          </AppText>
-        </View>
+        {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}
+        <HeroHeader
+          eyebrow="Workout done"
+          title={sum.title}
+          lines={[(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), sum.gymName, 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`]).filter(Boolean).join(' · ')]}
+        />
 
         <View style={{ gap: theme.space['1'] }} accessibilityRole="summary">
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
@@ -125,14 +119,11 @@ export function SummaryScreen() {
         </View>
 
         {sum.highlight ? (
-          <View style={{ gap: theme.space['1'], borderTopWidth: theme.dividerWidth, borderBottomWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'], paddingVertical: theme.space['3'] }}>
-            <AppText variant="sectionLabel" color="text.tertiary">
-              Today
-            </AppText>
-            <AppText variant="title2" numeric>
+          <RuledSection title="Today" gap="2">
+            <AppText variant="title1" numeric style={{ fontSize: 28, lineHeight: 34, fontWeight: '500' }}>
               {sum.highlight}
             </AppText>
-          </View>
+          </RuledSection>
         ) : null}
 
         {sum.checkIn ? (
@@ -221,20 +212,33 @@ export function SummaryScreen() {
           />
         ))}
 
-        <View style={{ gap: theme.space['2'] }}>
-          {sum.facts.activeText !== null ? <Fact label="Active time" value={sum.facts.activeText} /> : null}
-          <Fact label="Exercises" value={`${String(sum.facts.exercisesDone)} of ${String(sum.facts.exercisesTotal)}`} />
-          <Fact label="Working sets" value={`${String(sum.facts.workingSets)}${sum.facts.skippedSets > 0 ? ` (${String(sum.facts.skippedSets)} skipped)` : ''}`} />
-          {sum.facts.warmupSets > 0 ? <Fact label="Warm-up sets" value={String(sum.facts.warmupSets)} /> : null}
-        </View>
+        {/* D: large light numerals on calm tiles. */}
+        <StatGrid
+          items={[
+            ...(sum.facts.activeText !== null ? [{ label: 'Active time', value: sum.facts.activeText }] : []),
+            { label: 'Exercises', value: `${String(sum.facts.exercisesDone)}/${String(sum.facts.exercisesTotal)}` },
+            { label: 'Working sets', value: String(sum.facts.workingSets), unit: sum.facts.skippedSets > 0 ? `(${String(sum.facts.skippedSets)} skipped)` : null },
+            ...(sum.facts.warmupSets > 0 ? [{ label: 'Warm-up sets', value: String(sum.facts.warmupSets) }] : []),
+          ]}
+        />
 
         {sum.comparison ? <Comparison c={sum.comparison} tz={tz} /> : null}
 
         {sum.exercises.length > 0 ? (
-          <View style={{ gap: theme.space['2'] }}>
+          <View>
             <SectionHeader title="Exercises" />
-            {sum.exercises.map((e) => (
-              <View key={e.sessionExerciseId} style={{ gap: 2 }}>
+            {sum.exercises.map((e, i) => (
+              <View
+                key={e.sessionExerciseId}
+                style={{
+                  gap: 2,
+                  paddingVertical: theme.space['3'],
+                  borderTopWidth: theme.dividerWidth,
+                  borderBottomWidth: i === sum.exercises.length - 1 ? theme.dividerWidth : 0,
+                  borderColor: theme.colors['border.divider'],
+                  marginTop: i === 0 ? theme.space['2'] : 0,
+                }}
+              >
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: theme.space['2'] }}>
                   <AppText variant="headline" style={{ flex: 1 }}>
                     {e.name}
