@@ -12,8 +12,8 @@ import { formatCalendarDate, formatDayMonth, formatShortDate, formatTime } from 
 import { popToTabs, popToToday } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { firstTime, useDataChanged, useScreenData, useServices } from '../../shell/context';
-import { TIMING, useTheme } from '../../theme';
-import { AppText, BottomBar, Card, Chip, ChecklistRow, ChipRow, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, SectionHeader, StatGrid, StatusLine, Tag, TextButton, Toast } from '../../ui';
+import { finishMotion, listEnterMotion, shouldPlayFinish, TIMING, useTheme } from '../../theme';
+import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, Chip, ChecklistRow, ChipRow, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, SectionHeader, StatGrid, StatusLine, Tag, TextButton, Toast } from '../../ui';
 import { stepTime } from '../../workout/finish';
 import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
 
@@ -52,12 +52,26 @@ export function SummaryScreen() {
     else navigation.dispatch(popToToday());
   };
 
-  // One success haptic when a just-finished workout's summary first shows (critic #10).
+  // The finish moment (premium-feel §6): one `haptic.finish` when a just-finished workout's summary
+  // first shows, after the commit. Never on a later visit (`back`), never for a discard (no summary).
   const endedUtc = data.state === 'ready' ? (data.value.summary?.endedAtUtc ?? null) : null;
+  const [justFinished] = useState(() => !back);
+  const [playedFinish] = useState(() => new Set<string>());
   useEffect(() => {
     if (endedUtc === null) return;
-    if (clockNow() - toMs(endedUtc) < 5 * 60_000 && firstTime(`summary-success:${sessionId}`)) haptic('commit');
-  }, [endedUtc, sessionId]);
+    const fresh = justFinished && clockNow() - toMs(endedUtc) < 5 * 60_000;
+    if (shouldPlayFinish({ sessionStatus: 'finished', justFinished: fresh, played: playedFinish, sessionId }) && firstTime(`summary-success:${sessionId}`)) {
+      playedFinish.add(sessionId);
+      haptic('finish');
+    }
+  }, [endedUtc, sessionId, justFinished, playedFinish]);
+  // The check draws and the title fades only for the moment itself; a later visit is static.
+  const finish = finishMotion(theme.a11y.reduceMotion || !justFinished);
+  /** Facts and rows follow the title (`motion.listEnter`), only in the finish moment itself. */
+  const follow = (i: number) => {
+    const m = finish.strokeMs > 0 ? listEnterMotion(i, theme.a11y.reduceMotion) : null;
+    return m === null ? null : { ...m, delayMs: m.delayMs + finish.titleDelayMs + finish.titleFadeMs };
+  };
 
   if (data.state === 'loading') return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
   if (data.state === 'error' || data.value.summary === null) {
@@ -86,18 +100,13 @@ export function SummaryScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + theme.space['4'], paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'], gap: theme.space['5'] }}>
-        {/* D: a quiet hero (label, large title, facts), then the saved line; no tinted block. */}
-        {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}
-        <HeroHeader
-          eyebrow="Workout done"
-          title={sum.title}
-          lines={[(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), sum.gymName, 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`]).filter(Boolean).join(' · ')]}
-        />
-
+        {/* The finish moment (premium-feel §6): the saved check draws once, then the title fades in. Done works from the first frame. */}
         <View style={{ gap: theme.space['1'] }} accessibilityRole="summary">
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-            <Icon name="checkmark.circle" color="status.done" size={18} />
-            <AppText variant="callout">Saved on this phone</AppText>
+            <RevealOnce durationMs={finish.strokeMs} size={20} background={theme.colors['bg.canvas']}>
+              <Icon name="checkmark.circle.fill" color="status.done" size={20} />
+            </RevealOnce>
+            <AppText variant="callout">Workout saved on this phone</AppText>
           </View>
           {failed ? (
             <LinkLine
@@ -117,6 +126,16 @@ export function SummaryScreen() {
             </AppText>
           )}
         </View>
+
+        {/* D: a quiet hero (label, large title, facts); no tinted block. */}
+        {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}
+        <DelayedFade delayMs={finish.titleDelayMs} durationMs={finish.titleFadeMs}>
+          <HeroHeader
+            eyebrow="Workout done"
+            title={sum.title}
+            lines={[(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), sum.gymName, 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`]).filter(Boolean).join(' · ')]}
+          />
+        </DelayedFade>
 
         {sum.highlight ? (
           <RuledSection title="Today" gap="2">
@@ -213,6 +232,7 @@ export function SummaryScreen() {
         ))}
 
         {/* D: large light numerals on calm tiles. */}
+        <FadeIn motion={follow(0)}>
         <StatGrid
           items={[
             ...(sum.facts.activeText !== null ? [{ label: 'Active time', value: sum.facts.activeText }] : []),
@@ -221,8 +241,13 @@ export function SummaryScreen() {
             ...(sum.facts.warmupSets > 0 ? [{ label: 'Warm-up sets', value: String(sum.facts.warmupSets) }] : []),
           ]}
         />
+        </FadeIn>
 
-        {sum.comparison ? <Comparison c={sum.comparison} tz={tz} /> : null}
+        {sum.comparison ? (
+          <FadeIn motion={follow(1)}>
+            <Comparison c={sum.comparison} tz={tz} />
+          </FadeIn>
+        ) : null}
 
         {sum.exercises.length > 0 ? (
           <View>
