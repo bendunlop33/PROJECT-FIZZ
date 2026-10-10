@@ -2,6 +2,13 @@
  * Guide playback clock (ADR 0013). These run on the UI thread inside a
  * Reanimated frame callback, so each is a worklet; they are also plain pure
  * functions, unit-tested in Node (the directive is just a string there).
+ *
+ * No parameter default may name a module value: the worklets plugin hands
+ * module values to the UI runtime through `this.__closure`, destructured in
+ * the body, which a default can't see. `maxPasses = MAX_AUTOPLAY_PASSES` was a
+ * ReferenceError on the first frame, reported as fatal, and closed the app
+ * (build 83). Optional parameters are resolved in the body instead;
+ * `worklet-runtime.test.ts` runs the generated code to catch a repeat.
  */
 
 /**
@@ -39,10 +46,11 @@ const MAX_LOOKAHEAD_DT_MS = 50;
  * A ping-pong plays frames 0…n−1 forwards and n…1 backwards, each for one
  * frame interval, so the turn at either end is not held twice.
  */
-export function frameIndexAt(elapsedMs: number, durationMs: number, frameCount: number, loop: GuideLoop, dtMs: number = 0): number {
+export function frameIndexAt(elapsedMs: number, durationMs: number, frameCount: number, loop: GuideLoop, dtMs?: number): number {
   'worklet';
+  const dt = dtMs ?? 0;
   if (frameCount <= 1 || durationMs <= 0 || !(elapsedMs > 0)) return 0;
-  const ahead = dtMs > 0 ? Math.min(dtMs, MAX_LOOKAHEAD_DT_MS) / 2 : 0;
+  const ahead = dt > 0 ? Math.min(dt, MAX_LOOKAHEAD_DT_MS) / 2 : 0;
   const e = elapsedMs + ahead;
   if (loop === 'pingpong') {
     const n = frameCount - 1;
@@ -65,10 +73,11 @@ export interface ClockStep {
  * (null on the first frame after starting or resuming, so a pause never
  * jumps). Very long gaps (a dropped second) advance at most 100 ms.
  */
-export function advanceClock(elapsedMs: number, dtMs: number | null, durationMs: number, loop: GuideLoop, maxPasses: number = MAX_AUTOPLAY_PASSES): ClockStep {
+export function advanceClock(elapsedMs: number, dtMs: number | null, durationMs: number, loop: GuideLoop, maxPasses?: number): ClockStep {
   'worklet';
+  const passes = maxPasses ?? MAX_AUTOPLAY_PASSES;
   const dt = dtMs === null || !(dtMs > 0) ? 0 : Math.min(dtMs, 100);
   const next = elapsedMs + dt;
-  if (next >= passMs(durationMs, loop) * maxPasses) return { elapsedMs: 0, finished: true };
+  if (next >= passMs(durationMs, loop) * passes) return { elapsedMs: 0, finished: true };
   return { elapsedMs: next, finished: false };
 }
