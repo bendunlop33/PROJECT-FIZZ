@@ -1,14 +1,16 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActionSheetIOS, Alert, AppState, KeyboardAvoidingView, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
+import { ActionSheetIOS, Alert, AppState, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
+import { alertsOff, alertsOffAction } from '../../alerts/ask';
 import { getAlertPermission, requestAlertPermission, type AlertPermission } from '../../alerts/notifier';
 import { restEndCueKey, setWorkoutOnScreen } from '../../alerts/presentation';
 import { nowMs as clockNow } from '../../clock';
+import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatTime } from '../../format/dates';
@@ -17,12 +19,11 @@ import { popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
 import type { ActiveWorkoutData } from '../../services/workout-services';
 import { firstTime, useDataChanged, useLaunchInfo, useServices } from '../../shell/context';
-import { TIMING, useTheme } from '../../theme';
+import { logHaptic, swapMotion, TIMING, useTheme } from '../../theme';
 import {
   ActionBar,
   AppText,
   Banner,
-  Card,
   Chip,
   ChipRow,
   Eyebrow,
@@ -33,11 +34,15 @@ import {
   NumberStepper,
   RuledSection,
   SecondaryButton,
+  FadeIn,
   StatusLine,
+  TEXT_PRESSED_OPACITY,
   TextButton,
+  TimerNumeral,
   Toast,
   type SymbolName,
 } from '../../ui';
+import { CoachSlot } from './CoachSlot';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu } from '../../workout/exercise-menu';
 import { shouldCueRestEnd } from '../../workout/cues';
@@ -90,8 +95,10 @@ export function WorkoutScreen() {
   const [restEditor, setRestEditor] = useState(false);
   const [hiddenWarmUps, setHiddenWarmUps] = useState<string[]>([]);
   const [permission, setPermission] = useState<AlertPermission | 'unknown'>('unknown');
-  const [askLater, setAskLater] = useState(false);
+  const { prefs } = useDevicePrefs();
   const [restoredDraft, setRestoredDraft] = useState<string | null>(null);
+  /** The heaviest-set line for the set just logged (premium-feel §5.1), shown under the saved line. */
+  const [record, setRecord] = useState<{ setId: string; text: string } | null>(null);
   const played = useRef(new Set<string>());
   const [afterDismiss] = useState(() => createAfterDismiss());
   const tickedFor = useRef<string | null>(null);
@@ -227,6 +234,12 @@ export function WorkoutScreen() {
   }
 
   const view = useMemo(() => (data === 'loading' || data === null ? null : services.workout.view(data, now, edits)), [services, data, now, edits]);
+  /** False until the workout first draws: nothing animates on screen entry (premium-feel §4.3). */
+  const drawn = useRef(false);
+  const hasView = view !== null;
+  useEffect(() => {
+    if (hasView) drawn.current = true;
+  }, [hasView]);
 
   // Edits belong to one set; when the active set changes, they are dropped (they were saved as a draft).
   useEffect(() => {
@@ -352,7 +365,15 @@ export function WorkoutScreen() {
       setBanners((b) => [...b.filter((x) => x.key !== 'write'), { key: 'write', severity: 'warning', text: r.error.code === 'write_failed' ? 'Couldn’t save this set. Your entry is still here.' : r.error.message }]);
       return;
     }
-    haptic('commit');
+    // After the write, never on press-in. A heaviest-set record plays `record` instead of `commit` (premium-feel §5.1).
+    const loggedSetId = focus.setId;
+    void services.workout
+      .setRecord(session.id, loggedSetId)
+      .catch(() => null)
+      .then((rec) => {
+        haptic(logHaptic(rec !== null));
+        setRecord(rec === null ? null : { setId: loggedSetId, text: rec.text });
+      });
     setEdits(null);
     setRestoredDraft(null);
     setBanners((b) => b.filter((x) => x.key !== 'write' && x.key !== 'rest-ended'));
@@ -434,13 +455,30 @@ export function WorkoutScreen() {
     }
   }
 
+  /** `⋯` (premium-feel §3.2): Pause lives here, not in the header; paused, Resume is the one-tap primary. */
   function topMenu() {
-    const options = ['Finish workout', 'Edit workout times', 'Discard workout', 'Cancel'];
-    ActionSheetIOS.showActionSheetWithOptions({ options, destructiveButtonIndex: 2, cancelButtonIndex: 3 }, (i) => {
-      if (i === 0) setFinishOpen(true);
-      if (i === 1) setTimesOpen(true);
-      if (i === 2) confirmDiscard();
+    const options = [session.pause === null ? 'Pause workout' : 'Resume workout', 'Finish workout', 'Edit workout times', 'Discard workout', 'Cancel'];
+    ActionSheetIOS.showActionSheetWithOptions({ options, destructiveButtonIndex: 3, cancelButtonIndex: 4 }, (i) => {
+      if (i === 0) void pauseOrResume();
+      if (i === 1) setFinishOpen(true);
+      if (i === 2) setTimesOpen(true);
+      if (i === 3) confirmDiscard();
     });
+  }
+
+  /** `bell.slash` in the header: iOS Settings once denied, otherwise ask iOS now. */
+  function openAlertSettings() {
+    const action = alertsOffAction(permission);
+    if (action === 'open_settings') void Linking.openSettings();
+    if (action === 'request') {
+      void requestAlertPermission()
+        .then((p) => {
+          setPermission(p);
+          // Schedule this rest's alert now that it's allowed.
+          if (p === 'granted') void launch.restAlerts?.reconcile(loaded.aggregate, clockNow());
+        })
+        .catch(() => undefined);
+    }
   }
 
   function confirmDiscard() {
@@ -479,6 +517,7 @@ export function WorkoutScreen() {
     const scale = loaded.effortScale;
     const current = scale === 'rir' ? js.rir : js.rpe;
     const next = current === value ? null : value;
+    haptic('step');
     // Changing effort never touches rest (invariant 5).
     const r = await run({ type: 'correct_set', at: services.now(), opId: newUuid(), setId: js.setId, expectedSetVersion: js.setVersion, patch: scale === 'rir' ? { rir: next } : { rpe: next } });
     if (!r.ok) showToast({ icon: 'info.circle', text: 'That set changed. Tap it to edit.' });
@@ -554,6 +593,16 @@ export function WorkoutScreen() {
       </View>
     ) : null;
 
+  const recordLine =
+    record !== null && view.justSaved?.setId === record.setId ? (
+      <View accessible accessibilityLabel={record.text} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+        <Icon name="star" color="text.secondary" size={16} />
+        <AppText variant="callout" style={{ flex: 1 }}>
+          {record.text}
+        </AppText>
+      </View>
+    ) : null;
+
   const savedLine = view.justSaved ? (
     <AppText variant="callout" color="text.secondary" numeric>
       {`${view.justSaved.exerciseName === focus?.exerciseName || focus === null ? '' : `${view.justSaved.exerciseName} · `}Set ${String(view.justSaved.setNumber)}${view.justSaved.side === 'left' ? ' (left)' : view.justSaved.side === 'right' ? ' (right)' : ''} saved · `}
@@ -562,32 +611,6 @@ export function WorkoutScreen() {
       </AppText>
     </AppText>
   ) : null;
-
-  const alertAsk =
-    permission === 'undetermined' && !askLater ? (
-      <Card>
-        <AppText variant="callout">Get an alert when rest ends while your phone is locked?</AppText>
-        <View style={{ flexDirection: 'row', gap: theme.space['6'] }}>
-          <TextButton
-            label="Not now"
-            tone="secondary"
-            onPress={() => {
-              setAskLater(true);
-            }}
-          />
-          <TextButton
-            label="Allow"
-            onPress={() => {
-              void requestAlertPermission().then((p) => {
-                setPermission(p);
-                // Schedule this rest's alert now that it's allowed.
-                void launch.restAlerts?.reconcile(loaded.aggregate, clockNow());
-              });
-            }}
-          />
-        </View>
-      </Card>
-    ) : null;
 
   const restPanel =
     resting ? (
@@ -607,16 +630,21 @@ export function WorkoutScreen() {
             });
           }}
           onSkip={() => {
-            if (rest.kind === 'running') void run({ type: 'skip_rest', at: services.now(), opId: `skip:${rest.timerId}:${String(rest.timerVersion)}`, timerId: rest.timerId });
+            if (rest.kind !== 'running') return;
+            void run({ type: 'skip_rest', at: services.now(), opId: `skip:${rest.timerId}:${String(rest.timerVersion)}`, timerId: rest.timerId }).then((r) => {
+              if (r.ok) haptic('undo');
+            });
           }}
         />
         {view.justSaved ? (
           <RuledSection>
             {savedLine}
+            {recordLine}
             {effortBlock}
           </RuledSection>
         ) : null}
-        {alertAsk}
+        {/* The coach card's place (premium-feel §3.4); takes no space while empty. */}
+        <CoachSlot />
       </View>
     ) : null;
 
@@ -870,16 +898,18 @@ export function WorkoutScreen() {
               {view.paused ? `Paused · ${formatElapsed(view.elapsedMs)}` : formatElapsed(view.elapsedMs)}
             </AppText>
           </View>
-          <IconButton icon={view.paused ? 'play.fill' : 'pause'} label={view.paused ? 'Resume workout' : 'Pause workout'} onPress={() => void pauseOrResume()} />
+          {alertsOff(permission, prefs.alertsAsk) ? <IconButton icon="bell.slash" tint="text.secondary" label="Rest alerts are off. Opens alert settings." onPress={openAlertSettings} /> : null}
           <IconButton icon="ellipsis.circle" label="Workout menu" onPress={topMenu} />
         </View>
       </View>
 
       <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: theme.space['5'], paddingTop: theme.space['3'], gap: theme.space['5'], paddingBottom: theme.space['4'] }} keyboardShouldPersistTaps="handled">
-        {view.paused ? <Banner severity="warning" text="Workout paused. Timers are stopped." /> : null}
-        {banners.map((b) => (
-          <Banner key={b.key} severity={b.severity} text={b.text} />
-        ))}
+        {/* Paused: the header pill and `REST · PAUSED` say it, no banner (§3.2). During rest only a failed write shows (§3.1). */}
+        {banners
+          .filter((b) => !resting || b.key === 'write')
+          .map((b) => (
+            <Banner key={b.key} severity={b.severity} text={b.text} />
+          ))}
 
         {view.phase === 'empty' ? (
           <View style={{ paddingTop: theme.space['4'] }}>
@@ -887,36 +917,34 @@ export function WorkoutScreen() {
           </View>
         ) : null}
 
-        {restPanel}
+        {restPanel ? (
+          <SwapIn swapKey="rest" animate={drawn.current} style={{ gap: theme.space['5'] }}>
+            {restPanel}
+          </SwapIn>
+        ) : null}
 
         {/* During rest the next set waits below its own toggle (D-Rest is rest-first, audit F8). */}
         {resting && focus ? (
           editorShown({ resting, hasFocus: true, showNextSet }) ? (
             setEditor
           ) : (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 24 }}>
+            // One fixed secondary link (premium-feel §3.3, D8). How to is in the next set's header and its ⋯ menu.
+            <View style={{ marginTop: 'auto' }}>
               <TextButton
-                label={`Edit ${focus.exerciseName === view.justSaved?.exerciseName ? 'the next set' : focus.exerciseName}`}
+                label="Edit next set"
                 tone="secondary"
                 onPress={() => {
                   setShowNextSet(true);
                 }}
               />
-              {howToRouteFor(focus, bundledHowToSources()) !== null ? (
-                <TextButton
-                  label={`How to ${focus.exerciseName.toLowerCase()}`}
-                  tone="secondary"
-                  onPress={() => {
-                    const howTo = howToRouteFor(focus, bundledHowToSources());
-                    if (howTo !== null) navigation.navigate('HowTo', howTo);
-                  }}
-                />
-              ) : null}
             </View>
           )
-        ) : (
-          setEditor
-        )}
+        ) : setEditor ? (
+          // Rest → Ready: the editor fades in (motion.swap); never on the first draw.
+          <SwapIn swapKey={`ready:${focus?.setId ?? ''}`} animate={drawn.current} style={{ flexGrow: 1 }}>
+            {setEditor}
+          </SwapIn>
+        ) : null}
 
         {focus === null && view.phase !== 'empty' ? (
           <View style={{ gap: theme.space['4'] }}>
@@ -955,7 +983,7 @@ export function WorkoutScreen() {
         ) : null}
       </ScrollView>
 
-      {toast ? <Toast {...(toast.icon ? { icon: toast.icon } : {})} text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
+      {toast ? <Toast key={toast.id} {...(toast.icon ? { icon: toast.icon } : {})} text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
       {/* No Talk button until voice exists (critic T3): no dead control in the best thumb spot. */}
       <ActionBar primary={primary} guard={guard} />
 
@@ -1027,17 +1055,31 @@ export function WorkoutScreen() {
   );
 }
 
-function IconButton({ icon, label, onPress }: { icon: SymbolName; label: string; onPress: () => void }) {
+function IconButton({ icon, label, onPress, tint = 'text.primary' }: { icon: SymbolName; label: string; onPress: () => void; tint?: 'text.primary' | 'text.secondary' }) {
   const theme = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
-      style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+      style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
     >
-      <Icon name={icon} color="text.primary" size={20} />
+      <Icon name={icon} color={tint} size={20} />
     </Pressable>
+  );
+}
+
+/**
+ * Rest ↔ Ready (`motion.swap`): content fades in with a small rise when it
+ * replaces the other state. Nothing animates on the screen's first draw, and
+ * the swap never waits on or delays a write.
+ */
+function SwapIn({ swapKey, animate, style, children }: { swapKey: string; animate: boolean; style?: { gap?: number; flexGrow?: number }; children: React.ReactNode }) {
+  const theme = useTheme();
+  return (
+    <FadeIn key={swapKey} motion={animate ? swapMotion(theme.a11y.reduceMotion) : null} easing="inOut" style={style}>
+      {children}
+    </FadeIn>
   );
 }
 
@@ -1134,7 +1176,7 @@ function NextRow({ label, text, onPress }: { label: string; text: string; onPres
       accessibilityRole="button"
       accessibilityLabel={`${label} ${text}`}
       onPress={onPress}
-      style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', opacity: pressed ? 0.6 : 1 })}
+      style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
     >
       <AppText variant="callout" numberOfLines={1} style={{ flex: 1 }}>
         <AppText variant="callout" color="text.tertiary">{`${label} `}</AppText>
@@ -1152,21 +1194,45 @@ function NextRow({ label, text, onPress }: { label: string; text: string; onPres
  */
 function RestPanel({ rest, upNext, onAdjust, onSkip }: { rest: RestView; upNext: string | null; onAdjust: (deltaS: number) => void; onSkip: () => void }) {
   const theme = useTheme();
+  const shownS = rest.kind === 'ended' ? 0 : Math.ceil(rest.remainingMs / 1000);
+  const prevS = useRef(shownS);
+  // A jump of more than a second is ±30 s (or a return to the app): the whole numeral cross-fades once.
+  const whole = Math.abs(prevS.current - shownS) > 1;
+  useEffect(() => {
+    prevS.current = shownS;
+  }, [shownS]);
   if (rest.kind === 'ended') return null;
   const paused = rest.kind === 'paused';
+  // `Next · Set 2 · 60 kg × 3–6`: the target values in text.primary (premium-feel §8).
+  const nextParts = upNext === null ? null : upNext.split(' · ');
+  const nextLead = nextParts && nextParts.length > 2 ? `${nextParts.slice(0, -1).join(' · ')} · ` : null;
+  const nextValue = nextParts && nextParts.length > 2 ? (nextParts.at(-1) ?? '') : null;
   const pill = (label: string, a11y: string, onPress: () => void) => <SecondaryButton grow label={label} accessibilityLabel={a11y} disabled={paused} onPress={onPress} />;
   return (
     <View style={{ gap: theme.space['5'] }}>
-      <View style={{ alignItems: 'center', gap: theme.space['1'], paddingTop: theme.space['4'] }}>
+      {/* 26 pt above `REST` with the scroll padding (D-Rest). */}
+      <View style={{ alignItems: 'center', gap: theme.space['1'], paddingTop: theme.space['3'] + 2 }}>
         <AppText variant="sectionLabel" color={paused ? 'status.warning' : 'text.tertiary'}>
           {paused ? 'Rest · paused' : 'Rest'}
         </AppText>
-        <AppText variant="timerDisplay" align="center" accessibilityLabel={`Rest, ${formatDuration(rest.remainingMs / 1000)} left`}>
-          {formatDuration(Math.ceil(rest.remainingMs / 1000))}
-        </AppText>
+        <TimerNumeral
+          text={formatDuration(shownS)}
+          whole={whole}
+          color={paused ? 'text.tertiary' : 'text.primary'}
+          accessibilityLabel={`Rest${paused ? ', paused' : ''}, ${formatDuration(rest.remainingMs / 1000)} left`}
+        />
         {upNext ? (
-          <AppText variant="callout" color="text.secondary" numeric align="center">
-            {upNext}
+          <AppText variant="callout" color="text.secondary" numeric align="center" accessibilityLabel={`Next set target: ${upNext.replace(/^Next · /, "")}`}>
+            {nextLead !== null && nextValue !== null ? (
+              <>
+                {nextLead}
+                <AppText variant="callout" numeric>
+                  {nextValue}
+                </AppText>
+              </>
+            ) : (
+              upNext
+            )}
           </AppText>
         ) : null}
       </View>

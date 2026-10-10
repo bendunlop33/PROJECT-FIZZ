@@ -23,6 +23,7 @@ import {
   nextTargetsFor,
   plannedSetsFromTargets,
   repeatPreviewLines,
+  targetSummaryLines,
   unspecifiedPain,
   equipmentForExercise,
   searchExercises,
@@ -30,7 +31,9 @@ import {
   toIso,
   toMs,
   weekdayOf,
+  findSetRecord,
   type ActiveSetView,
+  type SetRecord,
   type CheckInGate,
   type CheckInPatch,
   type CommandOutcome,
@@ -148,6 +151,8 @@ export interface NextSessionPreview {
   /** `Chest · Shoulders · Triceps`. */
   muscles: string | null;
   exercises: { exerciseName: string; line: string }[];
+  /** `Target 100 kg × 6–8 · 3 sets` per exercise, from what Start would create (premium-feel §2.3). */
+  targets: { exerciseName: string; line: string }[];
   sets: number;
   sourceStartedAtUtc: string;
   tz: string;
@@ -454,6 +459,41 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       return domain().start({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn });
     },
 
+    /**
+     * The heaviest-set line for a set just logged (premium-feel §5.1), or
+     * null. Read after the write; never blocks or fails logging (any error
+     * reads as no record).
+     */
+    async setRecord(sessionId: string, setId: string): Promise<SetRecord | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const aggregate = await repos().sessions.get(sessionId);
+        const set = aggregate?.sets.find((s) => s.id === setId);
+        const ex = set ? aggregate?.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
+        if (!aggregate || !set || !ex || set.status !== 'completed' || set.actual === null) return null;
+        const history = (await historyFor(p.id, ex.exerciseId)).filter((h) => h.sessionId !== aggregate.session.id);
+        const earlierToday = aggregate.sets
+          .filter((s) => s.id !== set.id && s.sessionExerciseId === ex.id && s.status === 'completed' && s.actual !== null && (s.completedAt?.utc ?? '') <= (set.completedAt?.utc ?? ''))
+          .map((s) => ({ setType: s.setType, side: s.side, load: s.actual?.load ?? null, reps: s.actual?.reps ?? null, rpe: null, rir: null }));
+        const gym = aggregate.session.gymId === null ? null : await repos().gyms.get(aggregate.session.gymId);
+        const equipment = ex.equipmentId === null ? null : (aggregate.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
+        return findSetRecord({
+          exerciseName: ex.exerciseName,
+          gymName: gym?.name ?? null,
+          equipmentId: ex.equipmentId,
+          convention: ex.loadConvention,
+          measurement: ex.measurement,
+          equipment,
+          set: { setType: set.setType, load: set.actual.load, reps: set.actual.reps },
+          earlierToday,
+          history,
+        });
+      } catch {
+        return null;
+      }
+    },
+
     /** Everything the Active workout screen needs, read once per change. */
     async load(sessionId?: string): Promise<ActiveWorkoutData | null> {
       const p = await ctx.profile();
@@ -710,6 +750,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           title: storedName(source) ?? derived.title,
           muscles: derived.muscles,
           exercises: repeatPreviewLines(r.aggregate).map((l) => ({ exerciseName: l.exerciseName, line: l.line })),
+          targets: targetSummaryLines(r.aggregate),
           sets: r.aggregate.sets.length,
           sourceStartedAtUtc: source.session.startedAt.utc,
           tz: source.session.startedAt.tz,
