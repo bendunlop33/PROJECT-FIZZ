@@ -178,8 +178,11 @@ describe('declared excursions (J2) and allowances', () => {
 
   it('an allowance relaxes a quality limit for one guide and says so; it changes nothing else', () => {
     const p = prepareGuide(committed('cable-lat-pulldown'));
-    const base = MOTION_CONFIG['cable-lat-pulldown'] as MotionConfig;
-    const strict = measureMotion(p, { n: 600 });
+    // The committed config carries the allowance (plan r2 §2.4 (b)); measure without it, then with it.
+    expect(MOTION_CONFIG['cable-lat-pulldown']?.allowance?.limits).toEqual({ syncMs: 300, syncGap: 0.35 });
+    const committedConfig = MOTION_CONFIG['cable-lat-pulldown'] as MotionConfig;
+    const base: MotionConfig = { main: committedConfig.main, primary: committedConfig.primary, pairs: committedConfig.pairs };
+    const strict = measureMotion(p, { n: 600, config: base });
     expect(byId(strict, 'J3.gap')?.ok).toBe(false);
     const relaxed = measureMotion(p, { n: 600, config: { ...base, allowance: { limits: { syncMs: 300, syncGap: 0.35 }, why: 'front-view IK with a vertical bar' } } });
     expect(byId(relaxed, 'J3.gap')?.ok).toBe(true);

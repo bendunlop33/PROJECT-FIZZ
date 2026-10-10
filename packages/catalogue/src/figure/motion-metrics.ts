@@ -75,7 +75,18 @@ export const MOTION_CONFIG: Readonly<Record<string, MotionConfig>> = {
     excursions: { pelvis: { maxDeg: 6, why: 'lean back to clear the face (catalogue cue)' } },
   },
   'barbell-romanian-deadlift': { main: [prop('bar'), pt('hip')], primary: ['pelvis', 'hipNear'], pairs: [] },
-  'cable-lat-pulldown': { main: [prop('bar')], primary: ['shoulderNear', 'elbowNear'], pairs: [['shoulderNear', 'elbowNear']] },
+  'cable-lat-pulldown': {
+    main: [prop('bar')],
+    primary: ['shoulderNear', 'elbowNear'],
+    pairs: [['shoulderNear', 'elbowNear']],
+    // Plan r2 §2.4 option (b), the default until Ben picks: in this front view the hands ride a bar that moves
+    // straight down at a fixed grip, so both angles follow bar.y on one shared progress and the elbow leads the
+    // shoulder whatever the timing (the brief's Halfway has the elbow 46% and the shoulder 38% of the way).
+    allowance: {
+      limits: { syncMs: 300, syncGap: 0.35 },
+      why: 'front-view IK with a vertical bar: the elbow leads the shoulder by geometry, not timing (default until Ben picks a pose)',
+    },
+  },
   'cable-triceps-pushdown': { main: [pt('gripNear')], primary: ['elbowNear'], pairs: [] },
   'dumbbell-bulgarian-split-squat': {
     // The hip only (plan r2 §2.5 fallback, pending Ben): with the hips dropping straight down, the front thigh
