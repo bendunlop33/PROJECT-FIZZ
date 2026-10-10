@@ -68,9 +68,10 @@ export interface Glyph {
  * Under Reduce Motion nothing fades.
  */
 export function timerGlyphs(prev: string | null, next: string, o: { reduceMotion: boolean; whole?: boolean }): Glyph[] {
-  const chars = [...next];
+  // Timer text is digits and a colon only, so plain code units are the glyphs.
+  const chars = next.split("");
   if (o.reduceMotion || prev === null) return chars.map((char) => ({ char, changed: false }));
-  const before = [...prev];
+  const before = prev.split("");
   if (o.whole === true || before.length !== chars.length) return chars.map((char) => ({ char, changed: prev !== next }));
   return chars.map((char, i) => ({ char, changed: before[i] !== char }));
 }
