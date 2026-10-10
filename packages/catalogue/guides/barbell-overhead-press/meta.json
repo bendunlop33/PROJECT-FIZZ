@@ -15,7 +15,8 @@
     "status": "pass",
     "failed": [],
     "warnings": [
-      "definition"
+      "definition",
+      "target-legible"
     ]
   },
   "focus": [
