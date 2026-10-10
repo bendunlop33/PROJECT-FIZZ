@@ -65,6 +65,30 @@ import { EXERCISE_WORD, TRAINING_NOUN } from './vocab';
  * recognised. A labelled line's content is data, not a directive. Reminders
  * ("Remember to bring chalk", "Don't forget to stretch") aren't memories.
  *
+ * Review r5 B3: a difficulty or failed-rep report about another day ("Missed
+ * a rep on Tuesday", "Couldn't do the last rep last week") isn't a report
+ * about today's set; a report whose subject turns out to be something else
+ * ("That was brutal, the traffic") isn't either. `if`/`unless` anywhere in
+ * the sentence makes it a condition ("Add weight next time if it moves
+ * well"), except a polite "if that's OK". Tempo and technique cues ("Lower
+ * the weight under control", "Lower it to your chest"), rest times
+ * ("Increase the rest to 3 minutes", "Add 30s rest"), the bar and the rack
+ * ("Remove the bar from the rack") and set-type nouns ("Drop set on the last
+ * one was fun") aren't set changes. A retraction after the last request,
+ * in any clause ("I want it lighter but leave it", "Lower it. Never mind,
+ * keep it", "Lower it. Don't"), takes the whole message back.
+ *
+ * Review r5 S1: plate talk ("Strip a plate", "Throw another 5 on"), easing
+ * off ("Back it off a bit", "Dial it back", "Tone it down"), removing a set
+ * ("Kill the last set", "Get rid of set 4", "Can we not do set 4"), "8 reps
+ * instead", "Push me harder", and the rule 3 signals said in words ("RPE
+ * 10", "0 RIR", "Barely got the last rep", "Had 5 more in the tank", "Felt
+ * like a warmup") are recognised. Progression holds ("Hold bench where it
+ * is", "Same weight next time", "Don't increase it next time") are their
+ * own kind, `hold`, which opens no tool: next-session targets are written
+ * only in the summary turn, which has `set_next_session_targets` anyway.
+ * "Rule: …" and "Remember, …" are labelled lines.
+ *
  * Which kinds open which tools is `REQUEST_KINDS_BY_TOOL` in `registry.ts`.
  *
  * A bare "yes" / "do it" is not classified here: accepting a coach offer is
@@ -74,7 +98,7 @@ import { EXERCISE_WORD, TRAINING_NOUN } from './vocab';
 
 export type BenChip = 'too_hard' | 'too_easy' | 'pain' | 'lighter_session';
 
-export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook';
+export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold';
 
 export type BenRequest = { source: 'chip'; chip: BenChip } | { source: 'words'; kinds: readonly BenRequestKind[] };
 
@@ -116,7 +140,23 @@ const SETS_AT = new RegExp(
 /** "Two more reps on the last set", "One fewer set next time". */
 const MORE_REPS = new RegExp(`^(?:one|two|three|a couple|a few|\\d+) (?:more|fewer|less|extra) (?:reps?|sets?)(?: of \\w+(?: \\w+)?)? ${SCOPE}${SIGN_OFF}$`);
 /** "Another set please", "Extra set", "An extra set of curls". A bare "One more set" is a countdown, so it needs "please". */
-const ANOTHER_SET = new RegExp(`^(?:another|an extra|extra|one extra)(?: \\w+)? set(?: of [a-z ]+| on [a-z ]+| for [a-z ]+)?${SIGN_OFF}$|^one more set(?: of [a-z ]+)? (?:please|pls)${SIGN_OFF}$`);
+const SET_OF_EXERCISE = `(?: (?:of|on|for) (?:the |my |some )?(?:\\w+ ){0,2}${EXERCISE_WORD})?`;
+/** Review r5 B3: "of …" must be an exercise, so "Extra set of eyes would help" isn't a request. */
+const ANOTHER_SET = new RegExp(`^(?:another|an extra|extra|one extra)(?: \\w+)? set${SET_OF_EXERCISE}${SIGN_OFF}$|^one more set${SET_OF_EXERCISE} (?:please|pls)${SIGN_OFF}$`);
+/** Review r5 S1: plate talk, easing off, removing a set, reps instead, "push me harder". */
+const PLAIN_TALK: readonly RegExp[] = [
+  /^strip (?:off )?(?:a|one|two|the|\d+(?:\.\d+)?s?|that|another)(?: \w+)? plates?\b|^strip (?:it|the bar|them) (?:down|back)\b/,
+  /^(?:pull|take|knock|whip|rip|slide) (?:a|one|two|the|another|\d+(?:\.\d+)?s?)(?: \w+)? plates? off\b|^(?:pull|take|knock|whip|slide) (?:off )?(?:a|one|two|\d+) plates?\b/,
+  /^(?:throw|stick|slap|chuck|pop|put|whack|bang|add|load|slide) (?:on )?(?:(?:another|an extra|a|one|two)(?: \d+(?:\.\d+)?)?|\d+(?:\.\d+)?)(?: ?(?:kg|kgs|kilos|lb|lbs|pounds|s))?(?: (?:plates?|more))? (?:on|each side|a side|per side|either side|on each side|on either side)\b/,
+  /^load (?:it|them|the bar|bar|up|it up|the bar up|them up)(?: up)? to \d/,
+  /^back (?:it|them|that|the weight|the load|things) (?:off|down)\b|^back off (?:to \d|a bit|a little|a touch|a tad|slightly|\d|on (?:the|my) (?:weight|load))/,
+  /^dial (?:it|them|that|things|the weight|the load)(?: \w+)? (?:back|down|up)\b|^dial (?:back|down) (?:the|a bit|a little|a touch|it)\b/,
+  /^tone (?:it|them|that|things|the weight|the load) down\b/,
+  new RegExp(`^(?:kill|lose|nix|bin|axe|chop|scratch|cross off|get rid of|do without|ditch) (?:the |my |that |this )?(?:last |final |next |extra |fourth |fifth |third |second |remaining |\\d+(?:st|nd|rd|th) )?(?:sets?(?: \\d+)?|one)(?: (?:of|on|for) (?:the |my )?(?:\\w+ )?${EXERCISE_WORD})?(?:$|\\b(?! (?:was|is|felt|went)\\b))`),
+  /^not do (?:sets? \d+|the (?:last|final|next|extra) (?:set|one))\b/,
+  /^\d+ reps?(?: (?:instead|please|pls|then|for (?:the rest|the last \w+|the next \w+|sets? \d+)|on (?:the )?(?:last|next|rest)\b.*|next (?:set|time)))+$/,
+  /^push me (?:harder|more|a bit more|a bit harder)\b/,
+];
 /**
  * Verbs that are also nouns or fillers. Each needs an object or a value after
  * it: "set it to 95", "up the weight", "make it lighter", "go 95", "take 5
@@ -144,6 +184,7 @@ const WEAK_DIRECTIVES: readonly RegExp[] = [
   SETS_AT,
   MORE_REPS,
   ANOTHER_SET,
+  ...PLAIN_TALK,
 ];
 const POLITE = /^(?:(?:please|pls|just|ok|okay|right|so|and|then|also|actually|yeah|yes|cool|fine|sure|alright|hey|oh|hmm|um|erm|coach),? )*/;
 const STRONG = new RegExp(`^(?:${STRONG_VERBS})\\b`);
@@ -169,6 +210,8 @@ const SWAP_OBJECT = new RegExp(
 );
 const VARIETY = /\b(?:something (?:else|different|other than)|mix (?:it|things) up|switch (?:it|things) up|change (?:it|things) up|some variety|more variety|a bit of variety|change (?:the|my) (?:routine|split|programme|program|exercises?|order)|different exercises?|new exercises?)\b/;
 const FED_UP = new RegExp(`\\b(?:bored|sick|tired|fed up) (?:of|with) (?:(?:the|my|this|these|those|doing|all|the same|same) )*(?:(?:\\w+ ){0,2}${EX}\\b|routine|split|programme|program|plan|workouts?|sessions?|exercises?|same (?:old )?\\w+|(?:it|this|these|them|that)$)`);
+/** "Do dumbbells instead", "use the machine instead" (review r5 S1). */
+const DO_INSTEAD = new RegExp(`^(?:do|use|go with|try|let me do|give me) (?:the |some |a |an )?(?:\\w+ ){0,2}${EXERCISE_WORD} instead\\b`);
 const INSTEAD_OF = new RegExp(`\\binstead of (?:the |my )?(?:\\w+ ){0,2}${EX}\\b`);
 /**
  * Ben wants something remembered or forgotten. "Remember when …?" is a
@@ -181,20 +224,20 @@ const MEMORY =
 const REMINDER = /^(?:please )?(?:remember|don'?t forget) (?:my|the|your|to)\b(?!.*\b(?:is|are|was|were|hurts?|gets?|has|have|had|can'?t|cannot|doesn'?t|don'?t|isn'?t|likes?|hates?|prefers?|trains?|works?|always|never)\b)/;
 /** A question asking for the coach's view, not for a change: "should I…", "why is…", "what do you think". */
 const ADVICE_QUESTION =
-  /^(?:why|what|whats|what's|how|hows|how's|when|where|which|who|whose|is|are|was|were|do(?! \d)|does|did|should|shall i|shall we|am i|have i|has|any idea|wonder|i wonder|do you think|would it|would that|is it worth)\b/;
+  /^(?:why|what|whats|what's|how|hows|how's|when|where|which|who|whose|is|are|was|were|do(?= (?:you|i|we|they|it|these|those|people|u|ya)\b)|does|did|should|shall i|shall we|am i|have i|has|any idea|wonder|i wonder|do you think|would it|would that|is it worth)\b/;
 /** "Would you lower it if you were me?", "what would you change?": asking for the coach's view (review r3 B1). */
 const OPINION_QUESTION = /\bwould (?:you|we|it)\b.*\bif\b|\bwhat would (?:you|we)\b|\bif you were me\b|\bin my (?:shoes|position)\b|\byour (?:view|opinion|take)\b/;
 /** Ben asks for a general rule for the playbook (rule 10, review r3 S1, r4 S2). */
 const PLAYBOOK =
   /\b(?:add|put|save|make|write|note) (?:(?:a|this|that|it|another|one more) (?:new )?(?:general )?(?:rule|principle)\b|(?:that|this|it) (?:in|into|to|as) (?:the |my )?(?:playbook|a (?:general )?rule)|(?:a )?(?:general )?(?:rule|principle) (?:to|in|into) (?:the |my )?playbook)|\bas a (?:general )?rule\b|\b(?:to|in|into) (?:the |my )?playbook\b|^(?:new|general) rule\b/;
 /** A labelled line: what follows the colon is content, not a directive ("Add a rule: drop the weight when …"). */
-const LABEL = /^(?:(?:please|ok|okay|hey|coach),? )*(add (?:a|this|that|another|one more) (?:new )?(?:general )?(?:rule|principle)|(?:new|general) (?:rule|principle)|playbook|for the playbook|remember|note|note to self|memory)\s*:\s*/;
+const LABEL = /^(?:(?:please|ok|okay|hey|coach),? )*(add (?:a|this|that|another|one more) (?:new )?(?:general )?(?:rule|principle)|(?:new|general) (?:rule|principle)|rule|principle|playbook|for the playbook|remember|note|note to self|memory)\s*:\s*|^(?:(?:please|ok|okay|hey|coach),? )*(remember|note to self)\s*,\s*(?=(?:i|my|i'm|im|i've|ive|i'd|i'll)\b)/;
 const NEGATORS = /\b(?:not|no|never|don'?t|doesn'?t|didn'?t|isn'?t|wasn'?t|aren'?t|weren'?t|won'?t|wouldn'?t|shouldn'?t|hardly|without|dont|doesnt|didnt|isnt|wasnt|arent|werent|wont|aint|ain'?t|nah|nope)\b/;
 /** How many words back a negator cancels a structural phrase: "I'm not bored of", "don't change my routine". */
 const NEGATION_WINDOW = 3;
 /** A closing sentence that takes the request back: "Actually no, leave it", "never mind". */
 const RETRACTION =
-  /^(?:(?:actually|wait|hmm|oh|on second thought|on second thoughts|scratch that|no|nah|nope|sorry|ignore that)[, ]*)*(?:no|nah|nope|never ?mind|nvm|scratch that|forget (?:it|that)|leave it(?: as (?:it is|is))?|keep it(?: as (?:it is|is))?|cancel (?:it|that)|don'?t bother|ignore (?:that|me)|as you were|it'?s fine|it is fine)$/;
+  /^(?:(?:actually|wait|hmm+|oh|um+|erm|ah|on second thoughts?|scratch that|no|nah|nope|sorry|ignore that|never ?mind|nvm|ok|okay|then|just)[, ]*)*(?:no|nah|nope|never ?mind|nvm|scratch that|forget (?:it|that|i said (?:that|anything|it))|(?:no )?(?:leave|keep) (?:it|them|that|everything)(?: (?:as (?:it is|is|it was|they are|they were|planned)|how (?:it|they) (?:is|was|are|were)|alone|be|the same|as before|for now))?|cancel(?: (?:it|that))?|don'?t(?: (?:bother|worry|do (?:it|that|anything)|change (?:it|that|anything)|touch (?:it|that)))?|do not|no (?:don'?t|wait|change)|not (?:now|yet|today)|maybe not|hold off|hang on|ignore (?:that|me|what i said)|as you were|it is fine|it'?s fine|all good|stop|on second thoughts?)$/;
 
 // ---------------------------------------------------------------------------
 // Difficulty (coach-adjustments §4.1, review r4 B1)
@@ -216,6 +259,27 @@ const SET_OBJECT = '(?:(?:the|my|that|this|all|all the|the last|my last|a|an|one
 const FAILED = new RegExp(
   `^(?:i |just |i just )?(?:(?:couldn'?t|could not|didn'?t|did not|failed to) (?:${LIFT_VERB}|make|grind out)(?:$| ${SET_OBJECT}| (?:at|on) (?:rep|set) \\d)|(?:couldn'?t|could not|didn'?t|did not) (?:finish|get|grind out) (?:it|them)(?: (?:up|out))?$|failed (?:on |at )?${SET_OBJECT}|failed$|missed ${SET_OBJECT}|missed (?:a |the |one |two |\\d+ )?reps?\\b|bailed (?:on )?${SET_OBJECT})`,
 );
+
+/** Another day: a report about it isn't about today's set (review r5 B3). */
+const PAST_DAY =
+  /\b(?:last (?:week|time|session|night|month|workout|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday|push|pull|legs|upper|lower)|yesterday|ago|the other day|used to|previously|before today|on (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)|this (?:morning|week) at|earlier this week)\b/;
+/** The rule 3 signals said in words (review r5 S1): "RPE 10", "0 RIR", "barely got it", "had 5 more in the tank". */
+const SIGNAL_SUBJECT = '(?:(?:that|it|this|(?:(?:that|this|the|my) )?(?:last |final )?(?:one|set|rep)|set \\d+|(?:\\w+ )?(?:bench|squat|deadlift|press|row|curl)) (?:was|felt like|felt|is|was like|was an?|felt like an?) )?';
+const SIGNAL_WORDS: readonly RegExp[] = [
+  new RegExp(`^${SIGNAL_SUBJECT}(?:an? )?(?:rpe|@) ?(?:9\\.5|10|[1-6](?:\\.5)?)(?: (?:for sure|easy|honestly|tbh|mate))?$`),
+  new RegExp(`^${SIGNAL_SUBJECT}(?:0|zero|no) (?:rir|reps? (?:in reserve|left|in the tank))$|^${SIGNAL_SUBJECT}(?:rir )?(?:[4-9]|five|six) (?:rir)$`),
+  /^(?:i )?(?:only )?(?:barely|just about|only just|scarcely) (?:got|made|finished|managed|squeezed out|ground out|hit|completed|locked out|moved)(?: (?:it|that|them|this|through|up|out|(?:the |that |my |all )?(?:last |final )?(?:rep|reps|set|one|lockout|lift|bar|weight|\d+))\b|$)/,
+  /^(?:i )?(?:almost|nearly|very nearly|so nearly|close to) (?:failed|missed|dropped it|bailed|didn'?t (?:get|make|finish) it|died|lost it)(?:$| (?:it|that|them|(?:the |that |my )?(?:last |final )?(?:rep|reps|set|one|lift|lockout)|on (?:the )?(?:last )?(?:rep|set|one)|at the (?:end|top|bottom)|\d+)\b)/,
+  /^(?:i )?(?:had|have|got|still had|easily had)(?: (?:at least|easily|like|about|maybe))? (?:\d+|a few|a couple|loads|plenty|heaps|two|three|four|five|several|lots)(?: more)?(?: reps?)?(?: left)? in (?:the|my) tank\b|^(?:i )?could have (?:done|gone|hit|got) (?:\d+|a few|a couple|loads|plenty|heaps|two|three|four|five) more\b/,
+  /^(?:(?:that|it|this|that set|set \d+) )?(?:felt|was) like (?:a |my )?warm ?-?ups?\b|^(?:that|it) was nothing$/,
+];
+/** "That was brutal, the traffic": the next clause names what the report was about, and it isn't the set. */
+function aboutSomethingElse(next: string | null): boolean {
+  if (next === null) return false;
+  const n = next.replace(POLITE, '');
+  if (!/^(?:the|my|this|that|what a|all (?:the|that)|bloody|stupid|those|these) \w+/.test(n)) return false;
+  return !new RegExp(`\\b(?:${TRAINING_NOUN}|${EXERCISE_WORD}|one|last|rep|reps|lockout|grind|set)\\b`).test(n);
+}
 
 const TRAILING_ADVERB = /(?:^|\s+)(?:way|far|much|a bit|a little|bit|slightly|a touch|a tad|just|definitely|really|probably|honestly|kinda|kind of|still|a lot|bloody|so|super)$/;
 
@@ -269,7 +333,11 @@ function difficultyIn(clause: Clause): boolean {
   const c = clause.text.replace(POLITE, '');
   if (c.length === 0 || clause.endsQuestion || isOpinionQuestion(c)) return false;
   if (/\b(?:if|unless|whether|in case|when|whenever|once|might|may|could be|would be)\b/.test(c)) return false;
-  return tooReport(c) || grindReport(c) || FAILED.test(c);
+  // Review r5 B3: another day, or something other than the set ("Drop sets are brutal" is about drop sets in general).
+  if (PAST_DAY.test(clause.sentence) || aboutSomethingElse(clause.next)) return false;
+  if (/^(?:drop|top|back-?off|warm-?up|cluster|myo|rest-?pause) ?sets are\b|^supersets are\b/.test(c)) return false;
+  if (tooReport(c) || grindReport(c) || FAILED.test(c)) return true;
+  return !NEGATORS.test(c.split(' ').slice(0, 2).join(' ')) && SIGNAL_WORDS.some((re) => re.test(c));
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +354,10 @@ interface Clause {
   conditional: boolean;
   /** Content after a label ("Add a rule: …", "Remember: …"): data, never a directive. */
   label: 'playbook' | 'memory' | null;
+  /** The whole sentence the clause came from. */
+  sentence: string;
+  /** The next clause of the same sentence, if any. */
+  next: string | null;
 }
 
 /** `knee's` → `knee is`, so "Lower back's a bit tight" reads as a remark (review r3 B1). Keeps "let's". */
@@ -306,28 +378,36 @@ function lower(text: string): string {
 
 function sentencesOf(text: string): { sentence: string; question: boolean }[] {
   const out: { sentence: string; question: boolean }[] = [];
-  for (const m of lower(text).matchAll(/[^.!?;\n]+[.!?;\n]*/g)) {
-    const sentence = m[0];
+  // A decimal point isn't a sentence end: "Stick 2.5 on each side" (review r5 S1).
+  for (const m of lower(text).replace(/(\d)\.(\d)/g, '$1\u2024$2').matchAll(/[^.!?;\n]+[.!?;\n]*/g)) {
+    const sentence = m[0].replace(/\u2024/g, '.');
     out.push({ sentence: sentence.replace(/[.!?;\n]+$/, '').replace(/\s+/g, ' ').trim(), question: /\?/.test(sentence) });
   }
   return out.filter((s) => s.sentence.length > 0);
 }
+
+/** "if that's OK", "if you can", "if you don't mind": politeness, not a condition. */
+const POLITE_IF = /\bif (?:that is|that'?s|it is|it'?s|you) (?:ok|okay|alright|fine|possible|cool|can|could|would|don'?t mind|do not mind|please)\b|\bif possible\b|\bif you can\b|\bif poss\b/g;
 
 function normalise(text: string): Clause[] {
   const out: Clause[] = [];
   for (const { sentence, question } of sentencesOf(text)) {
     const label = LABEL.exec(sentence);
     if (label !== null) {
-      const kind = /rule|principle|playbook/.test(label[1] ?? '') ? 'playbook' : 'memory';
-      out.push({ text: sentence.replace(/\s*:\s*/, ' '), question, endsQuestion: question, first: true, label: kind, conditional: false });
+      const kind = /rule|principle|playbook/.test(label[1] ?? label[2] ?? '') ? 'playbook' : 'memory';
+      out.push({ text: sentence.replace(/\s*[:,]\s*/, ' '), question, endsQuestion: question, first: true, label: kind, conditional: false, sentence, next: null });
       continue;
     }
     const parts = sentence
       .split(/:\s*|,\s*|\s+-\s+|\s+(?:and|but|so|then)\s+(?=(?:please |can |could |just )?(?:[a-z]+)\b)/)
       .map((c) => c.replace(/\s+/g, ' ').trim())
       .filter((c) => c.length > 0);
-    const conditional = /^(?:(?:and|so|but|ok|okay) )?(?:if|when|whenever|unless|in case|once)\b/.test(sentence);
-    parts.forEach((p, i) => out.push({ text: p, question, endsQuestion: question && i === parts.length - 1, first: i === 0, label: null, conditional }));
+    // Review r5 B3: "if"/"unless" anywhere makes it a condition, except a polite "if that's OK".
+    const unpolite = sentence.replace(POLITE_IF, ' ');
+    const conditional = /^(?:(?:and|so|but|ok|okay) )?(?:if|when|whenever|unless|in case|once)\b/.test(sentence) || /\b(?:if|unless|provided|as long as)\b/.test(unpolite);
+    parts.forEach((p, i) =>
+      out.push({ text: p, question, endsQuestion: question && i === parts.length - 1, first: i === 0, label: null, conditional, sentence, next: parts[i + 1] ?? null }),
+    );
   }
   return out;
 }
@@ -345,6 +425,8 @@ function isOpinionQuestion(clause: string): boolean {
  */
 function hasTrainingObject(rest: string): boolean {
   if (rest === '' || /^(?:in|of|on|for|about|with)\b/.test(rest)) return false;
+  // Review r5 B3: the bar and the rack, not a load ("Remove the bar from the rack first").
+  if (/^(?:the |my |that )?(?:bar|barbell|dumbbells?|plates?|collars?|clips?|pins?|safeties|safety bars?|bench) (?:from|off|out of|onto|into|on to|on the (?:floor|ground|pins|safeties|rack|stand)|down (?:on|onto)|back (?:in|on|to)|to the (?:rack|floor|side|stand))\b/.test(rest)) return false;
   if (PRONOUN_OBJECT.test(rest) || PARTICLE.test(rest)) return true;
   if (/^(?:to |by |back to |down to |up to )?\d/.test(rest)) return true;
   if (/^me\b/.test(rest)) return new RegExp(`\\b(?:${VALUE_WORDS}|to \\d|at \\d)\\b`).test(rest.slice(2));
@@ -357,9 +439,26 @@ function hasTrainingObject(rest: string): boolean {
 }
 
 /** An imperative at the start of the clause, with a training object (review r4 B1). */
+/** Rest and timer lengths aren't set targets (review r5 B3): "Increase the rest to 3 minutes", "Add 30s rest". */
+const REST_TIME = /\b(?:rest|break|breaks|timer|recovery|breather)\b/;
+const DURATION = /\b\d+(?:\.\d+)? ?(?:s|sec|secs|seconds?|m|mins?|minutes?)\b|\b(?:a|one|two|three|another|half a|an extra|extra) (?:minute|min|second|sec)s?\b|\b(?:longer|shorter|more|less)\b.*\b(?:rest|break|breather)\b/;
+/** Tempo and technique cues (review r5 B3): "Lower the weight under control", "Lower it to your chest". */
+const TECHNIQUE_CUE =
+  /\b(?:under control|slowly|slow|with control|controlled|on the way down|eccentric|tempo|to (?:your|my|the) (?:chest|sternum|floor|ground|knees?|shins?|hips?|thighs?|nipples?|belly|face|chin|forehead|collarbone|bottom|top)|for (?:\d+|one|two|three|four|five) (?:seconds|secs|count)|(?:till|until) (?:it|you|the bar)|(?:a|the) (?:bit )?(?:slower|faster))\b/;
+/** Set-type nouns with a linking verb further on: "Drop set on the last one was fun" (review r5 B3). */
+const SET_TYPE_NOUN = /^(?:drop|top|back-?off|warm-?up|working|cluster|myo|rest-?pause) ?sets?\b(?! \d)|^supersets?\b/;
+
+/** Moving a seat, pad or pin, or the bench's angle, with no number: equipment set-up, not a load ("Raise the bench a notch"). */
+const EQUIPMENT_SETTING =
+  /^(?:raise|lower|drop|adjust|move|bump|change)(?: up| down)? (?:the |my )(?:bench|seat|pad|pads|pin|handle|handles|rack|safeties|safety bars?|hooks|j-?hooks|cable|pulley|backrest|back rest|footplate|incline)(?: (?:angle|height|position|seat|back|setting|incline))?(?: (?:a notch|a bit|a little|up|down|one|two|a hole|one hole|a click|a setting|a step|higher|lower|slightly|please|to (?:flat|incline|decline|\d+ degrees?)))*$/;
+
 function isDirective(clause: string): boolean {
   const c = clause.replace(POLITE, '');
   if (c.length === 0 || isOpinionQuestion(c)) return false;
+  if (REST_TIME.test(c) && DURATION.test(c)) return false;
+  if (/^(?:lower|raise|drop|bring|ease|control|take)\b/.test(c) && TECHNIQUE_CUE.test(c)) return false;
+  if (SET_TYPE_NOUN.test(c)) return false;
+  if (EQUIPMENT_SETTING.test(c)) return false;
   // "set 3 was fine", "drop sets are fun", "up next is squat", "plan looks good", "scale says 80".
   if (new RegExp(`^\\w+(?: \\w+){0,2} ${LINKING}\\b`).test(c) && !/\b(?:to|at) \d/.test(c)) return false;
   if (STRONG.test(c)) {
@@ -395,7 +494,7 @@ function structuralIn(clause: string): boolean {
     // "switch to 95" is a load change.
     if (!/^(?:(?:it|them|that|back) )?(?:to |for )?\d/.test(rest) && SWAP_OBJECT.test(rest)) return true;
   }
-  for (const re of [VARIETY, FED_UP, INSTEAD_OF]) {
+  for (const re of [VARIETY, FED_UP, INSTEAD_OF, DO_INSTEAD]) {
     const m = re.exec(clause);
     if (m !== null && !negatedBefore(clause, m.index)) return true;
   }
@@ -404,23 +503,31 @@ function structuralIn(clause: string): boolean {
 
 /** Variety on its own ("I'm bored of incline press", "mix it up") is a request; a swap needs to be asked. */
 function selfStandingStructural(clause: string): boolean {
-  for (const re of [VARIETY, FED_UP]) {
+  for (const re of [VARIETY, FED_UP, DO_INSTEAD]) {
     const m = re.exec(clause);
     if (m !== null && !negatedBefore(clause, m.index)) return true;
   }
   return false;
 }
 
+/**
+ * Progression holds (review r5 S1): "Hold bench where it is", "Same weight
+ * next time", "Don't increase it next time", "Stop progressing bench". A
+ * negated increase is the request here, so these are matched before the
+ * negation checks that cancel other kinds.
+ */
+const HOLD: readonly RegExp[] = [
+  new RegExp(`^(?:hold|keep|leave) (?:the |my )?(?:it|them|that|this|everything|(?:\\w+ )?${EXERCISE_WORD}|(?:the )?(?:weight|load)s?(?: on \\w+)?) (?:where (?:it is|they are)|as (?:it is|is)|the same|steady|there|at \\d+(?:\\.\\d+)?(?: ?(?:kg|kgs|lb|lbs))?) (?:next (?:time|session|week)|for (?:now|a (?:while|bit|few weeks?))|from now on)\\b|^(?:hold|keep) (?:the |my )?(?:\\w+ )?${EXERCISE_WORD} (?:where it is|as is|steady)$`),
+  /^(?:same|the same) (?:weight|load|numbers|target|targets)(?: (?:and reps|again))? (?:next (?:time|session|week)|again next (?:time|session))\b/,
+  /^(?:don'?t|do not|no) (?:increase|progress|raise|add weight to|bump|up|go up on|put up)(?: (?:it|them|that|the weight|the load|\w+))? next (?:time|session|week)\b|^no (?:increase|increases|progression|jump) (?:next (?:time|session|week)|on \w+)\b/,
+  new RegExp(`^(?:stop|pause|hold off) (?:progressing|increasing|adding weight to|bumping|on progressing) (?:the |my )?(?:it|them|this|that|(?:\\w+ )?${EXERCISE_WORD})\\b`),
+];
+
 /** Classify Ben's own words (typed or spoken). Returns null when they don't ask for a change. */
 export function classifyBenRequest(text: string): BenRequest | null {
-  const sentences = sentencesOf(text);
   const whole = lower(text).trim();
   const all = normalise(text);
   const kinds: BenRequestKind[] = [];
-  // "Can you lower it? Actually no, leave it.": the last sentence takes the change back (review r4 nit).
-  const last = sentences[sentences.length - 1];
-  const retracted = sentences.length > 1 && last !== undefined && RETRACTION.test(last.sentence.replace(/,/g, '').trim());
-  if (retracted) return null;
   const clauses = all.map((c) => c.text);
   // "Remember that time I hit 100?" is a question (review r3 S1); "Remember to bring chalk" is a reminder (r4 S2).
   if (all.some((c) => (c.label === 'memory' || (MEMORY.test(c.text) && !REMINDER.test(c.text))) && !c.question)) kinds.push('memory');
@@ -451,7 +558,17 @@ export function classifyBenRequest(text: string): BenRequest | null {
   if (askingClauses.some((c) => !structuralIn(c))) kinds.push('change');
   // "Is 95 too light?" asks for a view; "too easy, what next?" reports how it went.
   if (!isOpinionQuestion(clauses[0] ?? '') && open.some(difficultyIn)) kinds.push('difficulty');
-  return kinds.length === 0 ? null : { source: 'words', kinds };
+  if (open.some((c) => !c.question && HOLD.some((re) => re.test(c.text.replace(POLITE, ''))))) kinds.push('hold');
+  if (kinds.length === 0) return null;
+  // Review r5 B3: a retraction in any clause after the last request takes it back ("I want it lighter
+  // but leave it", "Lower it. Never mind, keep it", "Lower it. Don't"). A new request after a
+  // retraction still counts ("Lower it. Actually no, raise it").
+  let lastRequest = -1;
+  all.forEach((c, i) => {
+    if (c.label !== null || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, '')))) lastRequest = i;
+  });
+  if (all.slice(lastRequest + 1).some((c) => RETRACTION.test(c.text.replace(/,/g, '').trim()))) return null;
+  return { source: 'words', kinds };
 }
 
 /** A chip tap is always Ben's own request for today's sets (CA1). */

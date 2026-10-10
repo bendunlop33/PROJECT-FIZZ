@@ -314,3 +314,144 @@ describe('classifyBenRequest (the ben_request gate; review S3)', () => {
     expect(requestHas(chipRequest('too_easy'), 'memory')).toBe(false);
   });
 });
+
+describe('review r5 B3: remarks, other days, cues and retractions open nothing (rule 3)', () => {
+  it.each([
+    // The review's rows.
+    'Missed a rep on Tuesday, today was fine',
+    "Couldn't do the last rep last week but today flew up",
+    'That was brutal, the traffic',
+    'Drop set on the last one was fun',
+    'Extra set of eyes would help',
+    'Lower the weight under control',
+    'Remove the bar from the rack first',
+    'Increase the rest to 3 minutes',
+    'Add 30s rest',
+    'Add weight next time if it moves well',
+    'I want it lighter but leave it',
+    'Lower it. Hmm actually leave it as it was',
+    'Lower it. Never mind, keep it',
+    "Lower it. Don't",
+    // Developer's adversarial rows.
+    'Failed that rep yesterday',
+    'Missed reps last session but fine now',
+    'Last week, missed two reps',
+    'Too heavy on Monday',
+    'Had loads in the tank yesterday',
+    'Felt like a warmup last week',
+    'RPE 10 last week',
+    'Was that RPE 10?',
+    'RPE 10 means failure',
+    'That was brutal, the weather',
+    'That was a grind, the whole day',
+    'Drop sets are brutal',
+    'Supersets are fun',
+    'Lower it to your chest',
+    'Lower slowly on the way down',
+    'Lower it slowly',
+    'Raise it until lockout',
+    'Drop the bar on the floor',
+    'Put the bar back on the rack',
+    'Raise the bench a notch',
+    'Lower the seat',
+    'Add a minute of rest',
+    'Increase rest between sets to 2 min',
+    'Drop the timer to 90 seconds',
+    'More rest please',
+    'Unless it feels bad, add 5 kg',
+    'Bump it up if the bar speed is good',
+    'Add weight next time unless I say otherwise',
+    "Drop it. No wait, don't",
+    'Lower sets 3 and 4. Actually, no.',
+    'Lower it, actually no',
+    'Can you lower it? Nah leave it',
+    "Lower it. Don't bother",
+    'I want more weight. Actually forget it',
+    'Take a plate off. Nah, leave it',
+    'Barely got the bus',
+    'Almost failed my driving test',
+    'Could have done more cardio',
+    'Kill the music',
+    'Lose the attitude',
+    'Get rid of the timer',
+    'Back off mate',
+    'Push me a message',
+    '8 reps last time',
+    'Throw the towel on the bench',
+    'Load the dishwasher',
+    'Increase the volume to 10',
+    'Can we not talk about it',
+  ])('null: %s', (text) => {
+    expect(classifyBenRequest(text)).toBeNull();
+  });
+
+  it('a new request after a retraction still counts', () => {
+    expect(classifyBenRequest('Lower it. Actually no, raise it')).toEqual({ source: 'words', kinds: ['change'] });
+    expect(classifyBenRequest('Lower it. Actually no, drop it to 90')).toEqual({ source: 'words', kinds: ['change'] });
+    expect(classifyBenRequest('Lower it, keep it at 8 reps')).toEqual({ source: 'words', kinds: ['change'] });
+  });
+
+  it('a polite "if that\'s OK" is not a condition', () => {
+    expect(classifyBenRequest("Drop the last set if that's ok")).toEqual({ source: 'words', kinds: ['change'] });
+    expect(classifyBenRequest("Drop it to 95, if that's ok")).toEqual({ source: 'words', kinds: ['change'] });
+  });
+});
+
+describe('review r5 S1: clear requests and the rule 3 signals in words', () => {
+  it.each([
+    ['Strip a plate', 'change'],
+    ['Pull a plate off', 'change'],
+    ['Take a plate off each side', 'change'],
+    ['Throw another 5 on', 'change'],
+    ['Stick 2.5 on each side', 'change'],
+    ['Pop another 2.5 on each side', 'change'],
+    ['Load it up to 100', 'change'],
+    ['Back it off a bit', 'change'],
+    ['Back off to 90', 'change'],
+    ['Dial it back', 'change'],
+    ['Tone it down', 'change'],
+    ['Kill the last set', 'change'],
+    ['Lose the last set', 'change'],
+    ['Get rid of set 4', 'change'],
+    ['Nix set 4', 'change'],
+    ['Ditch the last set', 'change'],
+    ['Can we not do set 4', 'change'],
+    ['8 reps instead', 'change'],
+    ['Push me harder', 'change'],
+    ['Do dumbbells instead', 'structural'],
+    ['Hold bench where it is', 'hold'],
+    ['Same weight next time', 'hold'],
+    ['Same weight again next time', 'hold'],
+    ["Don't increase it next time", 'hold'],
+    ["Don't progress squat next session", 'hold'],
+    ['No increase next time', 'hold'],
+    ['Keep bench at 100 next time', 'hold'],
+    ['Stop progressing bench', 'hold'],
+    ['Rule: no deadlifts after squats', 'playbook'],
+    ['Rule: deload every 6 weeks', 'playbook'],
+    ['Remember, I hate lunges', 'memory'],
+    ['Remember, my knee is dodgy', 'memory'],
+    ['RPE 10', 'difficulty'],
+    ['That was RPE 10', 'difficulty'],
+    ['Set 3 was RPE 10', 'difficulty'],
+    ['That last set was RPE 9.5', 'difficulty'],
+    ['0 RIR', 'difficulty'],
+    ['Barely got the last rep', 'difficulty'],
+    ['Only just got it', 'difficulty'],
+    ['Almost failed', 'difficulty'],
+    ['Nearly failed the last rep', 'difficulty'],
+    ['Had 5 more in the tank', 'difficulty'],
+    ['Easily had 3 more in the tank', 'difficulty'],
+    ['Could have done 5 more', 'difficulty'],
+    ['Felt like a warmup', 'difficulty'],
+    ['Lower the bench to 90', 'change'],
+    ['Raise bench to 102.5', 'change'],
+  ] as const)('%s → %s', (text, kind) => {
+    const r = classifyBenRequest(text);
+    expect(r?.source === 'words' ? r.kinds : null).toContain(kind);
+  });
+
+  it('a hold opens no tool by itself (next-session targets are written only in the summary turn)', () => {
+    expect(classifyBenRequest('Same weight next time')).toEqual({ source: 'words', kinds: ['hold'] });
+  });
+});

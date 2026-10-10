@@ -186,6 +186,17 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
       'Delete that last message',
       'Add a rule: never squat after deadlifts',
       'Can you lower it? Actually no, leave it.',
+      // Review r5 B3.
+      'Missed a rep on Tuesday, today was fine',
+      "Couldn't do the last rep last week but…",
+      'Drop set on the last one was fun',
+      'Lower the weight under control',
+      'Increase the rest to 3 minutes',
+      'I want it lighter but leave it',
+      'Lower it. Never mind, keep it',
+      "Lower it. Don't",
+      // A hold is for next time: it never opens today's sets.
+      'Same weight next time',
     ]) {
       const r = buildTurnRegistry(gate({ kind: 'workout', benRequest: classifyBenRequest(q) }));
       expect(r.tools.map((t) => t.name), q).not.toContain('adjust_pending_sets');
@@ -218,6 +229,23 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     }
     for (const text of ['Deload every 6 weeks', 'Pause reps build strength off the chest', 'Stop progressing a movement when it causes pain', 'Add a set when RPE is below 7 for two sessions']) {
       expect(parseToolCall('t1', 'add_playbook_candidate', JSON.stringify({ text, statedBy: 'coach' }), reg).ok).toBe(true);
+    }
+  });
+
+  it('a bare third-person verb or "owner" is a personal fact (review r5 S3, rule 10)', () => {
+    for (const text of ['Trains fasted before work', 'Owner prefers machines', 'User likes high reps', 'Usually lifts at 6am', 'Prefers dumbbells', 'Hates lunges', 'Has a dodgy knee']) {
+      expect(personalPlaybookText(text), text).toBe(true);
+    }
+    for (const text of ['Deload every 6 weeks', 'Squats before deadlifts', 'Rest 3 minutes between heavy sets', 'Pause reps build strength off the chest']) {
+      expect(personalPlaybookText(text), text).toBe(false);
+    }
+  });
+
+  it('a message with an increase and a pain mention opens both tools; the validator blocks the increase (review r5 B4)', () => {
+    // The registry opens both; `validateTodayAdjustment` gets `messagePain` and drops the increase
+    // (tested in packages/domain coach-guardrails). This pins the gate side of that contract.
+    for (const q of ['Way too easy, but my knee hurts', "Bump it up, shoulder's niggly", 'Add 5 kg to squat, my knee is sore']) {
+      expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest(q) })), q).toContain('adjust_pending_sets');
     }
   });
 

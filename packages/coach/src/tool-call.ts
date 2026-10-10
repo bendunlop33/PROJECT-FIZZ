@@ -153,10 +153,20 @@ const PARTICULAR_BODY = new RegExp(
 );
 /** A third-person subject that can only mean one person: "He trains before work", "The owner trains fasted". */
 const THIRD_PERSON = /\b(?:he|him|his|she|her|hers|himself|herself|the (?:owner|user|athlete in question|client)|this (?:user|owner|lifter|athlete|client))\b/;
+/** "Owner prefers machines", "user trains fasted": the owner or user, with or without "the" (review r5 S3). */
+const OWNER_NOUN = /\b(?:owner|owner's|user|user's|client|client's)\b/;
+/**
+ * A sentence that starts with a third-person verb has a dropped subject:
+ * "Trains fasted before work", "Prefers machines", "Usually lifts at 6"
+ * (review r5 S3). General rules start with an imperative ("Deload every 6
+ * weeks") or a noun ("Pause reps build strength").
+ */
+const BARE_THIRD_PERSON_VERB =
+  /^(?:(?:usually|always|often|never|sometimes|normally|mostly|generally|typically|still|also|now|only|rarely) )?(?:trains|prefers|likes|loves|hates|dislikes|enjoys|avoids|has|had|works|lifts|gets|struggles|runs|finds|wants|needs|does|doesn't|doesnt|feels|sleeps|eats|lives|uses|tends|can't|cant|cannot|is|was|isn't|isnt|wasn't|wasnt|goes|walks|cycles|swims|plays|rides|wakes|commutes|sits|stands|travels|fasts|drinks|takes|tolerates|responds|recovers|reacts|gets|misses|skips|manages|suffers|injured|tore|broke|had|reports|says|said|mentioned|wanted|asked|prefers)\b/;
 
 export function personalPlaybookText(text: string): boolean {
-  const t = text.toLowerCase().replace(/[‘’]/g, "'");
-  return OWNER_WORDS.test(t) || OWNED_BODY.test(t) || PARTICULAR_BODY.test(t) || THIRD_PERSON.test(t);
+  const t = text.toLowerCase().replace(/[‘’]/g, "'").trim();
+  return OWNER_WORDS.test(t) || OWNED_BODY.test(t) || PARTICULAR_BODY.test(t) || THIRD_PERSON.test(t) || OWNER_NOUN.test(t) || BARE_THIRD_PERSON_VERB.test(t);
 }
 
 export function parseToolCall(turnId: string, name: string, rawArguments: string, registry: TurnRegistry): ParsedToolCall {
