@@ -174,10 +174,22 @@ export async function loadConnectionSettings(store: SettingsStore): Promise<Coac
   }
 }
 
-async function updateSettings(store: SettingsStore, change: (s: CoachConnectionSettings) => CoachConnectionSettings): Promise<CoachConnectionSettings> {
-  const next = change(await loadConnectionSettings(store));
-  await store.save(serializeConnectionSettings(next));
-  return next;
+/** One update chain per settings store, so two read-modify-writes can't interleave and lose a change (review S6). */
+const updateChains = new WeakMap<SettingsStore, Promise<unknown>>();
+
+function updateSettings(store: SettingsStore, change: (s: CoachConnectionSettings) => CoachConnectionSettings): Promise<CoachConnectionSettings> {
+  const run = async (): Promise<CoachConnectionSettings> => {
+    const next = change(await loadConnectionSettings(store));
+    await store.save(serializeConnectionSettings(next));
+    return next;
+  };
+  const previous = updateChains.get(store) ?? Promise.resolve();
+  const result = previous.then(run, run);
+  updateChains.set(
+    store,
+    result.catch(() => undefined),
+  );
+  return result;
 }
 
 /** Reads the state without any network call (Keychain + settings file). */

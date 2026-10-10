@@ -11,6 +11,7 @@ import {
   disconnectChatGpt,
   failure,
   loadConnectionSettings,
+  markFirstUseSeen,
   parseConnectionSettings,
   parseQuery,
   parseRegistration,
@@ -235,6 +236,19 @@ describe('settings, failures and models', () => {
     expect((await loadConnectionSettings(s)).lastFailure).toEqual({ kind: 'usage_limit', atMs: 5 });
     await clearProviderFailure(s);
     expect((await loadConnectionSettings(s)).lastFailure).toBeNull();
+  });
+
+  it('concurrent settings updates are serialised: neither change is lost (review S6)', async () => {
+    let text: string | null = null;
+    // A slow store: each read and write yields, so unserialised updates would interleave.
+    const tick = () => new Promise((r) => setTimeout(r, 1));
+    const slow: SettingsStore = {
+      load: async () => { await tick(); return text; },
+      save: async (t) => { await tick(); text = t; },
+    };
+    const listed = [{ slug: 'gpt-6-luna', displayName: 'GPT-6-Luna' }];
+    await Promise.all([recordProviderFailure(slow, failure('usage_limit', 'x'), 5), selectModel(slow, listed, 'gpt-6-luna'), markFirstUseSeen(slow)]);
+    expect(await loadConnectionSettings(slow)).toMatchObject({ modelSlug: 'gpt-6-luna', firstUseSeen: true, lastFailure: { kind: 'usage_limit', atMs: 5 } });
   });
 
   it('selectModel accepts only a listed model', async () => {
