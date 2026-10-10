@@ -428,7 +428,31 @@ export const HAPTICS = {
   undo: 'impactLight',
   step: 'selection',
   restEnd: 'notificationWarning',
+  /** Heaviest-set line (premium-feel §5): medium then light, 90 ms apart. Replaces `commit` for that log. */
+  record: 'impactMediumThenLight',
+  /** Summary shown after a successful Finish; never on discard (premium-feel §5). */
+  finish: 'notificationSuccess',
 } as const;
+
+/**
+ * design-system §6 motion (premium-feel.md §4.1). Durations in ms, distances
+ * in pt. Everything here stays at or under 200 ms except `finish`, the one
+ * marked exception (Ben to approve, premium-feel §13). `restRing` and
+ * `recordPulse` from the spec aren't built in this pass.
+ */
+export const MOTION = {
+  pressIn: { durationMs: 80 },
+  pressOut: { durationMs: 160 },
+  'pressScale.primary': { scale: 0.97 },
+  'pressScale.pill': { scale: 0.95 },
+  'pressOpacity.text': { opacity: 0.55 },
+  swap: { durationMs: 180, risePt: 8, reducedDurationMs: 150 },
+  listEnter: { durationMs: 160, risePt: 6, staggerMs: 35, maxStaggered: 6 },
+  digit: { durationMs: 140 },
+  screenFade: { durationMs: 200 },
+  finish: { strokeMs: 420, titleFadeMs: 200, titleDelayMs: 120 },
+} as const;
+export type MotionToken = keyof typeof MOTION;
 export type HapticToken = keyof typeof HAPTICS;
 
 /** design-system §6 and §9 (sound asset). */
@@ -455,6 +479,7 @@ export function tokenNames(direction: ThemeDirection = CURRENT_DIRECTION): strin
     ...Object.keys(outsideMirrors(direction)),
     ...Object.keys(TIMING).map((t) => `timing.${t}`),
     ...Object.keys(HAPTICS).map((t) => `haptic.${t}`),
+    ...Object.keys(MOTION).map((t) => `motion.${t}`),
     ...Object.keys(SOUNDS).map((t) => `sound.${t}`),
   ];
 }
