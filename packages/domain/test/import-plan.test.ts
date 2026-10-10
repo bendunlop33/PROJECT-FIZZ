@@ -12,6 +12,7 @@ import {
   importIds,
   importResultsCsv,
   nameKey,
+  newBarFromName,
   newExercisesToCreate,
   parseFitNotesCsv,
   planImportRows,
@@ -223,7 +224,7 @@ describe('import preview: questions before anything is saved', () => {
     // -20 is an assisted set and +10 a weighted one: the usual FitNotes habit.
     const p = parsed(`${A1}2026-10-01,Pull-up,Back,0,10,,,\n2026-10-02,Pull-up,Back,10,6,,,\n2026-10-03,Pull-up,Back,-20,8,,,\n2026-10-03,Push-up,Chest,0,20,,,\n`);
     const a = analyseImport(p, ctx(), DEFAULT_ANSWERS);
-    expect(a.bodyweight).toEqual([{ key: 'pull-up', name: 'Pull-up', exerciseName: 'Pull-up', sets: 3, min: -20, max: 10, mixed: true, answer: null }]);
+    expect(a.bodyweight).toEqual([{ key: 'pull-up', name: 'Pull-up', exerciseName: 'Pull-up', sets: 3, min: -20, max: 10, mixed: true, loadAs: null, answer: null }]);
     expect(a.questionsOpen).toBe(1);
     const fates = (x: ReturnType<typeof analyseImport>) => x.fates.map((f) => (f.result === 'imported' ? [f.set.convention, f.set.load?.value ?? null] : f.result === 'pending' ? 'pending' : f.detail));
     // Added: the negative (assisted) set can't be read this way.
@@ -386,6 +387,27 @@ describe('import preview: questions before anything is saved', () => {
     expect(aliasesToSave(skipped)).toEqual([{ key: 'mystery machine', name: 'Mystery Machine', target: { kind: 'skip' } }]);
   });
 
+  it('Add new → Barbell takes the bar from the name: EZ or trap bar from its word, the Olympic bar only for Barbell or no word, else asked (review r6.1 B1)', () => {
+    expect(newBarFromName('EZ Bar Upright Row')).toEqual({ bar: 'ez_bar', known: true });
+    expect(newBarFromName('Upright Row (EZ-Bar)')).toEqual({ bar: 'ez_bar', known: true });
+    expect(newBarFromName('Trap Bar Jump Squat')).toEqual({ bar: 'trap_bar', known: true });
+    expect(newBarFromName('Hex Bar Deadlift')).toEqual({ bar: 'trap_bar', known: true });
+    expect(newBarFromName('Barbell Upright Row')).toEqual({ bar: 'barbell', known: true });
+    expect(newBarFromName('Log Press')).toEqual({ bar: 'barbell', known: true });
+    expect(newBarFromName('Smith Machine Upright Row')).toEqual({ bar: 'barbell', known: false });
+    expect(newBarFromName('Dumbbell Thing')).toEqual({ bar: 'barbell', known: false });
+    expect(newBarFromName('Barbell or EZ Bar Curl')).toEqual({ bar: 'unknown', known: false });
+    expect(newBarFromName('EZ Bar Cable Curl')).toEqual({ bar: 'ez_bar', known: false });
+  });
+
+  it('Add new on a name over 120 characters: the exercise is still recognised as import-made from its stored name (review r6.1 N4)', () => {
+    const long = `Very Long Machine ${'x'.repeat(130)}`;
+    const a = analyseImport(parsed(`${A1}2026-10-01,${long},Back,40,10,,,\n`), ctx(), answers({ names: { [nameKey(long)]: { kind: 'new', equipment: 'weight_stack' } } }));
+    const [made] = newExercisesToCreate(a);
+    expect(made?.name.length).toBe(120);
+    expect(made && isImportMadeExercise(OWNER, { id: made.exerciseId, name: made.name, source: 'custom' })).toBe(true);
+  });
+
   it('Add new makes one custom exercise per name and equipment, with the convention of the equipment Ben picked', () => {
     const p = parsed(`${A1}2026-10-01,Hammer Strength Row,Back,40,10,,,\n2026-10-02,Hammer Strength Row,Back,50,8,,,\n`);
     const a = analyseImport(p, ctx(), answers({ names: { 'hammer strength row': { kind: 'new', equipment: 'plate_loaded_machine' } } }));
@@ -393,7 +415,7 @@ describe('import preview: questions before anything is saved', () => {
     expect(a.ready).toBe(true);
     expect(a.fates[0]).toMatchObject({ result: 'imported', set: { exerciseId: id, exerciseName: 'Hammer Strength Row', convention: 'added', load: { value: 40, convention: 'added' } } });
     expect(newExercisesToCreate(a)).toEqual([
-      { exerciseId: id, name: 'Hammer Strength Row', laterality: 'bilateral', convention: 'added', bar: 'none', barKnown: true, implements: null, equipment: ['plate_loaded_machine'], newKind: 'plate_loaded_machine' },
+      { exerciseId: id, name: 'Hammer Strength Row', laterality: 'bilateral', convention: 'added', bar: 'none', barKnown: true, implements: null, equipment: ['plate_loaded_machine'], newKind: 'plate_loaded_machine', loadAs: null },
     ]);
     expect(aliasesToSave(a)).toEqual([{ key: 'hammer strength row', name: 'Hammer Strength Row', target: { kind: 'exercise', exerciseId: id } }]);
   });

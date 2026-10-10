@@ -23,7 +23,7 @@ import { deriveId } from '../stable';
 import { fromScaled, toScaled } from '../units';
 import { effortFromComment } from './effort';
 import type { FitNotesRow } from './fitnotes';
-import { barNamed, implementsFor, matchName, nameKey, saysSmith, type MatchCandidate, type NameMatch } from './match';
+import { barNamed, equipmentInName, implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
 
 /**
  * The FitNotes import preview and plan (data-import-export §2.5, §3.4, §4.3).
@@ -133,6 +133,12 @@ export interface ResolvedExercise {
   equipment: readonly ExerciseEquipmentKind[];
   /** `Add new`: a custom exercise created when the import commits. */
   newKind: CustomExerciseKind | null;
+  /**
+   * A weight-stack or plates-added exercise whose source name says assisted:
+   * `convention` is `bodyweight` so how the values read is asked, and an
+   * "added" answer is stored as this convention (review r6.1 S1). Else null.
+   */
+  loadAs: 'stack' | 'added' | null;
 }
 
 export type NameResolution = { kind: 'exercise'; exercise: ResolvedExercise } | { kind: 'skip' } | { kind: 'open' };
@@ -289,6 +295,8 @@ export interface BodyweightQuestion {
   max: number;
   /** Both negative and positive values: `split` is offered, and `assistance` can't read the positive ones (review B3). */
   mixed: boolean;
+  /** A weight-stack or plates-added exercise whose name says assisted: "added" means that load (review r6.1 S1). */
+  loadAs: 'stack' | 'added' | null;
   answer: BodyweightAnswer | null;
 }
 
@@ -414,10 +422,48 @@ export function isImportMadeExercise(ownerId: string, e: { id: string; name: str
  * the old ID when it is still exactly that equipment, so its history stays
  * together. Either way it is never changed (review r6 B1).
  */
-function addNewExerciseId(ctx: ImportContext, key: string, kind: CustomExerciseKind, byId: ReadonlyMap<string, MatchCandidate>): string {
+function addNewExerciseId(ctx: ImportContext, storedKey: string, key: string, kind: CustomExerciseKind, byId: ReadonlyMap<string, MatchCandidate>): string {
   const legacy = byId.get(legacyCustomExerciseIdFor(ctx.ownerId, key));
   const same = legacy?.importMade === true && legacy.defaultLoadConvention === CONVENTION_BY_KIND[kind] && legacy.compatibleEquipment.length === 1 && legacy.compatibleEquipment[0] === kind;
-  return same ? legacy.exerciseId : customExerciseIdFor(ctx.ownerId, key, kind);
+  // Keyed on the name as stored (at most 120 characters), so the exercise is recognised as import-made from its name (review r6.1 N4).
+  return same ? legacy.exerciseId : customExerciseIdFor(ctx.ownerId, storedKey, kind);
+}
+
+/**
+ * The bar of an exercise `Add new` makes as a barbell exercise, from the
+ * bar word in the name (source (c); review r6.1 B1):
+ * - `EZ Bar …` / `Trap Bar …`: that bar, read by the group answer, with its
+ *   own weight asked for "plates only" (never the Olympic bar's);
+ * - `Barbell …` or no equipment word at all: the Olympic bar, read by the
+ *   group answer (Ben said it's a barbell exercise);
+ * - anything else (a Smith machine, two bar kinds, or a word for other
+ *   equipment such as `Dumbbell` or `Cable`): asked on its own, with nothing
+ *   selected. Two bar kinds can't add a bar weight at all.
+ */
+export function newBarFromName(name: string): { bar: BarOf; known: boolean } {
+  const named = equipmentInName(name);
+  if (named === null) return { bar: 'barbell', known: true };
+  if (named.has('smith')) return { bar: 'barbell', known: false };
+  const bars = BAR_KINDS.filter((b) => named.has(b));
+  if (bars.length > 1) return { bar: 'unknown', known: false };
+  const only = bars[0];
+  if (only === undefined) return { bar: 'barbell', known: false };
+  // Other equipment named alongside the bar (`Barbell Cable …`) contradicts it: asked on its own.
+  return { bar: only, known: named.size === 1 };
+}
+
+/**
+ * A name that says assisted mapped to a weight-stack or plates-added
+ * exercise (`Choose…` or `Add new`): Ben's choice gives the exercise, the
+ * name's word says the number is help. The two disagree on the sign, so how
+ * the values read is asked like a bodyweight exercise's, with nothing
+ * selected; a "load" answer is stored as the exercise's own convention
+ * (review r6.1 S1).
+ */
+function withAssistWord(name: string, ex: ResolvedExercise): ResolvedExercise {
+  if (ex.convention !== 'stack' && ex.convention !== 'added') return ex;
+  if (equipmentInName(name)?.has('assisted_stack') !== true) return ex;
+  return { ...ex, convention: 'bodyweight', loadAs: ex.convention };
 }
 
 export function conventionForKind(kind: CustomExerciseKind): LoadConvention {
@@ -438,7 +484,7 @@ function resolveName(
     const bar = barOf(c.compatibleEquipment);
     return {
       kind: 'exercise',
-      exercise: {
+      exercise: withAssistWord(name, {
         exerciseId: c.exerciseId,
         name: c.name,
         laterality: c.laterality,
@@ -450,7 +496,8 @@ function resolveName(
         implements: implementsFor(name, c),
         equipment: c.compatibleEquipment,
         newKind: null,
-      },
+        loadAs: null,
+      }),
     };
   };
   if (answer) {
@@ -459,24 +506,27 @@ function resolveName(
         return { kind: 'skip' };
       case 'exercise':
         return fromCandidate(answer.exerciseId);
-      case 'new':
+      case 'new': {
+        const stored = name.slice(0, 120);
+        const { bar, known } = answer.equipment === 'barbell' ? newBarFromName(name) : { bar: 'none' as const, known: true };
         return {
           kind: 'exercise',
-          exercise: {
-            exerciseId: addNewExerciseId(ctx, key, answer.equipment, byId),
-            name: name.slice(0, 120),
+          exercise: withAssistWord(name, {
+            exerciseId: addNewExerciseId(ctx, nameKey(stored), key, answer.equipment, byId),
+            name: stored,
             laterality: 'bilateral',
             convention: CONVENTION_BY_KIND[answer.equipment],
-            bar: answer.equipment === 'barbell' ? 'barbell' : 'none',
-            // Ben said it's a barbell exercise: the group answer reads it. Unless the name says Smith: a
-            // Smith machine's bar isn't the Olympic bar, so it is asked on its own (review r6 B2).
-            barKnown: answer.equipment !== 'barbell' || !saysSmith(name),
+            bar,
+            barKnown: known,
             // A new dumbbell exercise: one or two isn't known, so it is asked (review r3 S1).
             implements: null,
-            equipment: [answer.equipment],
+            // The exercise is made with the bar the name says (an EZ-bar name gets the EZ bar; review r6.1 B1).
+            equipment: bar === 'ez_bar' || bar === 'trap_bar' ? [bar] : [answer.equipment],
             newKind: answer.equipment,
-          },
+            loadAs: null,
+          }),
         };
+      }
     }
   }
   if (match.status !== 'matched') return { kind: 'open' };
@@ -731,21 +781,32 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
   // Barbell question: `total` exercises on a bar. Each bar kind has its own weight (review S1).
   const total = totalQuestion(live, resolved, answers);
 
+  // Each name's range of values over every strength row of it in the file, dates skipped as already
+  // imported included: the file is the evidence of how Ben writes the sign, so the same rows read the
+  // same way whatever was imported before (review r6.1 S2).
+  const fileRange = new Map<string, { min: number; max: number }>();
+  for (const r of strength) {
+    const w = enteredWeight(r, answers) ?? (r.bothColumns ? { value: r.bothColumns.kg, unit: 'kg' as const } : null);
+    if (!w) continue;
+    const key = nameKey(r.exercise);
+    const range = fileRange.get(key) ?? { min: w.value, max: w.value };
+    fileRange.set(key, { min: Math.min(range.min, w.value), max: Math.max(range.max, w.value) });
+  }
+  const spansZero = (key: string): boolean => {
+    const range = fileRange.get(key);
+    return range !== undefined && range.min < 0 && range.max > 0;
+  };
+
   const bwMap = new Map<string, BodyweightQuestion>();
   for (const r of live) {
     const ex = resolved(r);
     if (ex?.convention !== 'bodyweight') continue;
-    const w = enteredWeight(r, answers) ?? (r.bothColumns ? { value: r.bothColumns.kg, unit: 'kg' as const } : null);
     const key = nameKey(r.exercise);
     const q = bwMap.get(key);
-    const value = w?.value ?? 0;
-    if (q) {
-      q.sets += 1;
-      q.min = Math.min(q.min, value);
-      q.max = Math.max(q.max, value);
-      q.mixed = q.min < 0 && q.max > 0;
-    } else {
-      bwMap.set(key, { key, name: r.exercise, exerciseName: ex.name, sets: 1, min: value, max: value, mixed: false, answer: answers.bodyweight[key] ?? null });
+    if (q) q.sets += 1;
+    else {
+      const range = fileRange.get(key) ?? { min: 0, max: 0 };
+      bwMap.set(key, { key, name: r.exercise, exerciseName: ex.name, sets: 1, min: range.min, max: range.max, mixed: spansZero(key), loadAs: ex.loadAs, answer: answers.bodyweight[key] ?? null });
     }
   }
   // Asked only when the file has a weight other than 0 for that exercise.
@@ -754,24 +815,15 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
 
   const machines = new Map<string, MachineExercise>();
   const barless = new Map<string, { key: string; name: string; exerciseName: string }>();
-  // Assisted machines: the range of each one's values, so a positive value among negative ones isn't read as assistance (review r6 S3).
-  const assistRange = new Map<string, { min: number; max: number }>();
   for (const r of live) {
     const ex = resolved(r);
     if (!ex) continue;
     const key = nameKey(r.exercise);
     if (['stack', 'added', 'assistance'].includes(ex.convention) && !machines.has(key)) machines.set(key, { key, name: r.exercise, exerciseName: ex.name, convention: ex.convention, sample: null, mixed: false });
     if (ex.convention === 'total' && ex.bar === 'none' && !barless.has(key)) barless.set(key, { key, name: r.exercise, exerciseName: ex.name });
-    const w = ex.convention === 'assistance' ? enteredWeight(r, answers) : null;
-    if (w) {
-      const range = assistRange.get(key) ?? { min: w.value, max: w.value };
-      assistRange.set(key, { min: Math.min(range.min, w.value), max: Math.max(range.max, w.value) });
-    }
   }
-  const assistMixed = (key: string): boolean => {
-    const range = assistRange.get(key);
-    return range !== undefined && range.min < 0 && range.max > 0;
-  };
+  // Assisted machines: a positive value among negative ones in the file isn't read as assistance (review r6 S3, r6.1 S2).
+  const assistMixed = spansZero;
   /** An assisted machine's value as assistance: negative or the number on the machine, never a positive one among negatives. Null: can't be read. */
   const assistanceOf = (key: string, value: number): number | null => (value > 0 && assistMixed(key) ? null : Math.abs(value));
   const sampleDates = new Map<string, string>();
@@ -847,13 +899,16 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
         return set('total', { value: plus(value, bar), unit: w.unit, convention: 'total' });
       }
       case 'bodyweight': {
-        if (!askedBodyweight.has(key)) return set('bodyweight', null);
+        // Not asked (every value 0): a stack or plates-added exercise keeps its own convention at 0.
+        if (!askedBodyweight.has(key)) return ex.loadAs === null || value === null || w === null ? set('bodyweight', null) : set(ex.loadAs, { value, unit: w.unit, convention: ex.loadAs });
         const choice = answers.bodyweight[key] ?? null;
         if (choice === null) return { result: 'pending', reason: 'bodyweight' };
         if (w === null || value === null) return set(choice === 'assistance' ? 'assistance' : 'added', null);
+        // A stack or plates-added exercise whose name says assisted (review r6.1 S1): a load is its own convention.
+        const load = ex.loadAs ?? 'added';
         if (choice === 'added') {
-          if (value < 0) return { result: 'unreadable', detail: `Negative weight (${String(value)}), but you said weight is added` };
-          return set('added', { value, unit: w.unit, convention: 'added' });
+          if (value < 0) return { result: 'unreadable', detail: `Negative weight (${String(value)}), but you said ${ex.loadAs === 'stack' ? 'it’s the weight on the stack' : 'weight is added'}` };
+          return set(load, { value, unit: w.unit, convention: load });
         }
         if (choice === 'assistance') {
           // Assistance is written as a negative weight or as the number on the machine. When the
@@ -863,8 +918,8 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
           }
           return set('assistance', { value: Math.abs(value), unit: w.unit, convention: 'assistance' });
         }
-        // `split`: negative = assistance, positive (or 0) = weight added.
-        return value < 0 ? set('assistance', { value: Math.abs(value), unit: w.unit, convention: 'assistance' }) : set('added', { value, unit: w.unit, convention: 'added' });
+        // `split`: negative = assistance, positive (or 0) = weight added (or on the stack).
+        return value < 0 ? set('assistance', { value: Math.abs(value), unit: w.unit, convention: 'assistance' }) : set(load, { value, unit: w.unit, convention: load });
       }
       case 'stack':
       case 'added': {
