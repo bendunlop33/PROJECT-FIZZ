@@ -23,7 +23,7 @@ import { at, call, id, kg, memoryStore, OWNER, ports, reply, request, SESSION, w
  * targets (D21) with per-row taps and the CA10 stale rule.
  */
 
-const nb = (s: string): string => s.replace(/ /g, ' ');
+const nb = (s: string): string => s.replace(/\u00a0/g, ' ');
 const BENCH_EX = id(10);
 const BENCH_ID = id(1010);
 const DB_ID = id(1020);
