@@ -33,3 +33,7 @@ export * from './session/first-run';
 export * from './touches';
 export * from './import';
 export * from './session/lift-highlight';
+export * from './coach/trigger';
+export * from './coach/adjust';
+export * from './coach/signals';
+export * from './coach/pain-words';
