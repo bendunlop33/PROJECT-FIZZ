@@ -973,8 +973,11 @@ export function driveMetrics(prepared: PreparedGuide, n: number = MOTION_SAMPLES
   const miss = higher();
   if (plan !== null) {
     for (const k of driveKeyLines(guide, keys)) {
+      // Leg drive: the knee and shin are free per key (`line` is the key's own knee; J3 checks the pair stays in step).
       const off = Math.abs(k.theta - k.line);
-      d1.add(off, `key ${k.key}${k.label ? ` ${k.label}` : ''} t=${f(k.t, 4)}: ${f(k.theta, 2)}° vs line ${f(k.line, 2)}° (root.y ${f(k.rootY, 4)} → ${k.suggestedRootY === null ? 'none' : f(k.suggestedRootY, 4)})`, off <= MOTION_LIMITS.driveLineDeg);
+      const shin = k.phi === null || k.phiLine === null ? '' : `, shin ${f(k.phi, 2)}° (in step ${f(k.phiLine, 2)}°)`;
+      const to = k.suggestedRootY === null ? 'none' : k.suggestedRootX === null ? `root.y ${f(k.suggestedRootY, 4)}` : `root ${f(k.suggestedRootX, 4)}, ${f(k.suggestedRootY, 4)}`;
+      d1.add(off, `key ${k.key}${k.label ? ` ${k.label}` : ''} t=${f(k.t, 4)}: knee ${f(k.theta, 2)}° vs line ${f(k.line, 2)}°${shin} (→ ${to})`, off <= MOTION_LIMITS.driveLineDeg);
     }
     let count = 0;
     let first = -1;
@@ -1197,7 +1200,7 @@ export function measureMotion(prepared: PreparedGuide, opts: MeasureOptions = {}
     seamVelocity(prepared),
     ...(gait ? gaitMetrics(prepared, d, L, fps) : [...mainPointMetrics(prepared, d, phases, config, L, fps), ...(joints?.metrics ?? [])]),
     ...velocityStepMetrics(baked, phases, L, frameLevel),
-    ...ikJointMetrics(baked, phases, L, frameLevel, new Set(drivePlan(prepared.guide, prepared.keys) === null ? [] : [prepared.guide.drive?.joint ?? 'kneeNear'])),
+    ...ikJointMetrics(baked, phases, L, frameLevel, new Set<AngleName>(drivePlan(prepared.guide, prepared.keys) === null ? [] : ['kneeNear'])),
     ...driveMetrics(prepared, n),
     metric('P1', 'pass-timing', 'warn', `≤ ${L.passTiming} cycle`, p1, (x) => f(x, 4)),
   ];

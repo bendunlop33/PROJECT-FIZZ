@@ -53,12 +53,13 @@ function legGuide(topY: number, extra: Record<string, unknown> = {}, pass?: Reco
 /** The committed squat with `drive` turned on (data unchanged). */
 const drivenSquat = (): Guide => GuideSchema.parse({ ...rawOf('barbell-back-squat'), drive: DRIVE });
 
-type RawKey = { label?: string; sameAs?: number; root?: { y: number } };
-/** The committed squat cut down to its labelled keys (one pass key per phase), so each pass key can be put on its line. */
+type RawKey = { label?: string; caption?: string; sameAs?: number; root?: { y: number } };
+/** The committed squat cut down to its labelled and captioned keys (one pass key per phase), so each pass key can be put on its line. */
 function labelledSquat(): { keyframes: RawKey[] } {
   const raw = structuredClone(rawOf('barbell-back-squat')) as { keyframes: RawKey[] };
   const all = raw.keyframes;
-  const keep = all.map((_, i) => i).filter((i) => all[i]?.label !== undefined || all[all[i]?.sameAs ?? -1]?.label !== undefined);
+  // Labelled keys, their copies, and the ascent's captioned pass key (its own pose since the leg-drive squat).
+  const keep = all.map((_, i) => i).filter((i) => all[i]?.label !== undefined || all[i]?.caption !== undefined || all[all[i]?.sameAs ?? -1]?.label !== undefined);
   raw.keyframes = keep.map((i) => {
     const k: RawKey = { ...all[i] };
     if (k.sameAs !== undefined) k.sameAs = keep.indexOf(k.sameAs);
@@ -122,7 +123,7 @@ describe('drive: sampling', () => {
   });
 
   it('guides without drive are untouched: drivenStateAt is stateAt on all committed guides', () => {
-    for (const id of GUIDE_IDS) {
+    for (const id of GUIDE_IDS.filter((g) => rawOf(g).drive === undefined)) {
       const p = prepareGuide(GuideSchema.parse(rawOf(id)));
       expect(drivePlan(p.guide, p.keys), id).toBeNull();
       for (let i = 0; i <= 40; i += 1) expect([...flattenState(drivenStateAt(p, i / 40))], `${id} t=${i / 40}`).toStrictEqual([...flattenState(stateAt(p.guide, p.keys, i / 40))]);
@@ -180,19 +181,21 @@ describe('drive: what it fixes and what it checks', () => {
     const r = measureMotion(p, { n: 600 });
     expect(r.metrics.find((m) => m.id === 'D1')?.ok).toBe(false);
     expect(r.drive.length).toBe(2);
-    const key = r.drive[0];
-    const y = key?.suggestedRootY;
-    expect(typeof y).toBe('number');
     const fixed = structuredClone(raw);
-    const k1 = fixed.keyframes[key?.key ?? 1];
-    if (k1?.root !== undefined) k1.root.y = y ?? 0;
+    // Each phase's pass key (the ascent's is its own pose, not a copy of the descent's).
+    for (const key of r.drive) {
+      const y = key.suggestedRootY;
+      expect(typeof y).toBe('number');
+      const k = fixed.keyframes[key.key];
+      if (k?.root !== undefined) k.root.y = y ?? 0;
+    }
     const g = GuideSchema.parse({ ...fixed, drive: DRIVE });
     const lines = driveKeyLines(g, prepareGuide(g).keys);
     // The suggestion is rounded to 0.0001 H, a few hundredths of a degree.
     for (const l of lines) expect(Math.abs(l.theta - l.line)).toBeLessThan(0.05);
     expect(measureMotion(prepareGuide(g), { n: 600 }).metrics.find((m) => m.id === 'D1')?.ok).toBe(true);
     // Guides without drive: D1 and D2 don't apply.
-    const plain = measureMotion(prepareGuide(GuideSchema.parse(rawOf('barbell-back-squat'))), { n: 300 });
+    const plain = measureMotion(prepareGuide(GuideSchema.parse({ ...rawOf('barbell-back-squat'), drive: undefined })), { n: 300 });
     expect(plain.metrics.find((m) => m.id === 'D1')?.where).toBe('n/a');
     expect(plain.drive).toEqual([]);
   });

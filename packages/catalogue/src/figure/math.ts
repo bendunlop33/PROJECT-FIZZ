@@ -29,6 +29,9 @@ export const fromUp = (angleDeg: number): Vec => ({ x: Math.sin(rad(angleDeg)), 
 /** Inverse of `fromDown`: the from-down angle of a direction, in (-180, 180]. */
 export const angleFromDown = (d: Vec): number => deg(Math.atan2(d.x, -d.y));
 
+/** Inverse of `fromUp`: the from-up angle of a direction, in (-180, 180]. */
+export const angleFromUp = (d: Vec): number => deg(Math.atan2(d.x, d.y));
+
 /** Wrap to (-180, 180]. */
 export function wrapDeg(a: number): number {
   let r = a % 360;

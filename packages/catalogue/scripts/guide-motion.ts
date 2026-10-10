@@ -114,6 +114,11 @@ for (const id of ids) {
     // Drive guides (E6): the root.y that puts each pass key's knee on its phase's stop-to-stop line (D1).
     for (const d of report.drive) {
       const y = d.suggestedRootY === null ? 'no solution' : d.suggestedRootY.toFixed(4);
+      if (d.phi !== null && d.phiLine !== null) {
+        const x = d.suggestedRootX === null ? 'no solution' : d.suggestedRootX.toFixed(4);
+        log(`  drive key ${d.key}${d.label === null ? '' : ` ${d.label}`}: knee ${d.theta.toFixed(2)}°, shin ${d.phi.toFixed(2)}° (in step: ${d.phiLine.toFixed(2)}°), root ${d.rootX.toFixed(4)}, ${d.rootY.toFixed(4)} → ${x}, ${y}`);
+        continue;
+      }
       log(`  drive key ${d.key}${d.label === null ? '' : ` ${d.label}`}: knee ${d.theta.toFixed(2)}° (line ${d.line.toFixed(2)}°), root.y ${d.rootY.toFixed(4)} → ${y}`);
     }
   }

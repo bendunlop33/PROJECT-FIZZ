@@ -26,12 +26,29 @@
  * hip-to-ankle distance is shorter than their horizontal gap) keeps the
  * Cartesian height and counts as a `drive-miss` (a hard check failure).
  *
+ * Leg drive (E7, `"drive": { "joint": "legNear", "solves": "root.xy" }`):
+ * the same idea one joint further down. With the hip as a Cartesian channel
+ * the shin angle is an uncontrolled by-product of the root's x and y splines,
+ * so the knee point can stall and back up mid-descent while the hips still
+ * move (the squat's knee stall). Here the near shin angle φ (ankle → knee,
+ * from vertical, forward positive) and the knee flexion θ are each one C2
+ * spline in the phase's minimum-jerk progress, and the hip comes from forward
+ * kinematics up from the planted ankle: knee = W + shank·fromUp(φ), hip =
+ * knee + thigh·fromUp(φ − θ). Each joint is then one monotone Hermite per
+ * segment, so neither can stall or turn back between keys whatever the hip
+ * does; pass keys shape a shared progress (front-loaded for a squat, so the
+ * bar starts down promptly) and J1–J3 check one hump per joint and that the
+ * shin and knee stay in step. The pelvis and everything else keep their own
+ * splines, and key poses are still exact. There is always a solution, so no
+ * drive-miss.
+ *
  * Pure: `pose.ts` applies it (`drivenStateAt`), `guide:check` and
  * `guide:motion` measure it. The plan is cached per resolved key list.
  */
 import { effectiveProjection, phaseSpans, type FootTarget, type FrameState, type PhaseSpan, type ResolvedKeyframe } from './keyframes';
 import type { Guide } from './guide-schema';
-import { deg, hermite, minimumJerk, phaseTurnSlopes, rad, splineSlopes, v, type Vec } from './math';
+import { solveTwoBoneIk } from './ik';
+import { angleFromUp, deg, fromUp, hermite, minimumJerk, phaseTurnSlopes, rad, splineSlopes, v, type Vec } from './math';
 import { ADULT_V1 } from './rig';
 
 const R = ADULT_V1;
@@ -44,11 +61,14 @@ export interface DrivePhase {
   slopes: number[];
   /** Keys of this phase whose pose the drive can't reproduce (leg over-reached or hip below the ankle). */
   unreachable: number[];
+  /** Leg drive only: near shin angle at each key (degrees from vertical, forward positive) and its slopes. */
+  phi: number[];
+  phiSlopes: number[];
 }
 
 export interface DrivePlan {
-  joint: 'kneeNear';
-  solves: 'root.y';
+  joint: 'kneeNear' | 'legNear';
+  solves: 'root.y' | 'root.xy';
   phases: DrivePhase[];
 }
 
@@ -94,6 +114,29 @@ export function rootYForFlexion(state: FrameState, theta: number, rootX: number 
   return W.y + Math.sqrt(d2 - dx * dx);
 }
 
+/** Near shin angle (degrees from vertical, forward positive) and knee flexion the leg's IK gives in this state; null if out of reach. */
+export function nearShinAndKnee(state: FrameState): { phi: number; theta: number } | null {
+  const foot = state.ik.footNear;
+  const theta = nearKneeFlexion(state);
+  if (foot === null || theta === null) return null;
+  const W = plantedAnkleTarget(foot);
+  const { thigh, shank } = nearLegLengths(state);
+  const knee = solveTwoBoneIk(v(state.root.x, state.root.y), W, thigh, shank, foot.bend ?? 'ccw').mid;
+  return { phi: angleFromUp(v(knee.x - W.x, knee.y - W.y)), theta };
+}
+
+/** Hip position from the planted near ankle by forward kinematics: shin at `phi`, knee flexed `theta` (the thigh leans back by θ from the shin). */
+export function hipFromLeg(state: FrameState, phi: number, theta: number): Vec | null {
+  const foot = state.ik.footNear;
+  if (foot === null) return null;
+  const W = plantedAnkleTarget(foot);
+  const { thigh, shank } = nearLegLengths(state);
+  const sign = (foot.bend ?? 'ccw') === 'ccw' ? 1 : -1;
+  const knee = v(W.x + shank * fromUp(phi).x, W.y + shank * fromUp(phi).y);
+  const th = fromUp(phi - sign * theta);
+  return v(knee.x + thigh * th.x, knee.y + thigh * th.y);
+}
+
 /**
  * Slopes for one phase's driver values, with the channel rules: natural ends,
  * a turning or flat interior knot has slope 0 and stays C2 (E5), the monotone
@@ -126,18 +169,30 @@ export function drivePlan(guide: Guide, keys: readonly ResolvedKeyframe[]): Driv
   if (planCache.has(keys)) return planCache.get(keys) ?? null;
   let plan: DrivePlan | null = null;
   if (guide.drive !== undefined && guide.motion === 'phases' && guide.view === 'side') {
+    const leg = guide.drive.joint === 'legNear';
     const phases: DrivePhase[] = [];
     for (const span of phaseSpans(keys)) {
       const theta: number[] = [];
+      const phi: number[] = [];
       const unreachable: number[] = [];
       for (let k = span.from; k <= span.to; k += 1) {
         const st = keys[k]?.state;
-        const th = st === undefined ? null : nearKneeFlexion(st);
+        const sk = st === undefined ? null : nearShinAndKnee(st);
         const W = st?.ik.footNear;
-        if (th === null || st === undefined || W == null || st.root.y < plantedAnkleTarget(W).y) unreachable.push(k);
-        theta.push(th ?? 0);
+        if (sk === null || st === undefined || W == null || st.root.y < plantedAnkleTarget(W).y) unreachable.push(k);
+        theta.push(sk?.theta ?? 0);
+        phi.push(sk?.phi ?? 0);
       }
-      phases.push({ span, theta, slopes: unreachable.length > 0 ? theta.map(() => 0) : phaseSlopes(span.u, theta), unreachable });
+      const still = (y: number[]): number[] => y.map(() => 0);
+      const ok = unreachable.length === 0;
+      phases.push({
+        span,
+        theta,
+        slopes: ok ? phaseSlopes(span.u, theta) : still(theta),
+        unreachable,
+        phi: leg ? phi : [],
+        phiSlopes: leg && ok ? phaseSlopes(span.u, phi) : leg ? still(phi) : [],
+      });
     }
     plan = { joint: guide.drive.joint, solves: guide.drive.solves, phases };
   }
@@ -145,15 +200,24 @@ export function drivePlan(guide: Guide, keys: readonly ResolvedKeyframe[]): Driv
   return plan;
 }
 
-/** Driver flexion at normalised time t inside a phase (A < t < B), from its spline in u. */
-export function driverFlexion(ph: DrivePhase, t: number): number {
+function phaseSpline(ph: DrivePhase, y: readonly number[], m: readonly number[], t: number): number {
   const { A, B, u: knots } = ph.span;
   const u = B > A ? minimumJerk((t - A) / (B - A)) : 1;
   let i = 0;
   while (i < knots.length - 2 && (knots[i + 1] ?? 1) <= u) i += 1;
   const u0 = knots[i] ?? 0;
   const h = (knots[i + 1] ?? 1) - u0;
-  return hermite(ph.theta[i] ?? 0, ph.theta[i + 1] ?? 0, ph.slopes[i] ?? 0, ph.slopes[i + 1] ?? 0, h > 0 ? (u - u0) / h : 1, h);
+  return hermite(y[i] ?? 0, y[i + 1] ?? 0, m[i] ?? 0, m[i + 1] ?? 0, h > 0 ? (u - u0) / h : 1, h);
+}
+
+/** Driver flexion at normalised time t inside a phase (A < t < B), from its spline in u. */
+export function driverFlexion(ph: DrivePhase, t: number): number {
+  return phaseSpline(ph, ph.theta, ph.slopes, t);
+}
+
+/** Leg drive: the near shin angle at normalised time t inside a phase, from its spline in u. */
+export function driverShin(ph: DrivePhase, t: number): number {
+  return phaseSpline(ph, ph.phi, ph.phiSlopes, t);
 }
 
 /**
@@ -169,6 +233,13 @@ export function applyDrive(guide: Guide, keys: readonly ResolvedKeyframe[], stat
   // Exactly the key pose at a key time (stateAt already returns it bit for bit).
   for (let k = ph.span.from; k <= ph.span.to; k += 1) if (keys[k]?.t === t) return 'off';
   if (ph.unreachable.length > 0) return 'miss';
+  if (plan.joint === 'legNear') {
+    const hip = hipFromLeg(state, driverShin(ph, t), driverFlexion(ph, t));
+    if (hip === null) return 'miss';
+    state.root.x = hip.x;
+    state.root.y = hip.y;
+    return 'driven';
+  }
   const y = rootYForFlexion(state, driverFlexion(ph, t));
   if (y === null) return 'miss';
   state.root.y = y;
@@ -186,14 +257,22 @@ export interface DriveKeyLine {
   /** Authored root.y and the root.y that puts the key on the line (null if there is none). */
   rootY: number;
   suggestedRootY: number | null;
+  /** Leg drive: the shin angle at the key and at the knee's share of its travel (in step), the authored root.x and the one the key's knee and shin give (null for the knee drive). */
+  phi: number | null;
+  phiLine: number | null;
+  rootX: number;
+  suggestedRootX: number | null;
 }
 
 /**
- * For drive guides: every pass key's knee flexion against the straight line
+ * For knee-drive guides: every pass key's knee flexion against the straight line
  * from its phase's first stop to its last in u. Keys on the line make the
  * driver exactly linear in u (a C2 spline through collinear knots is that
  * line), the best-measured shape (plan §1.2); `suggestedRootY` puts the key
- * there without moving root.x or the pelvis.
+ * there without moving root.x or the pelvis. Leg-drive guides (E7): knee and
+ * shin are free per key (J3 checks the pair stays in step; `phiLine` is the
+ * shin at the knee's share, for reference) and `suggestedRootX`/`Y` is the
+ * hip the key's knee and shin give.
  */
 export function driveKeyLines(guide: Guide, keys: readonly ResolvedKeyframe[]): DriveKeyLine[] {
   const plan = drivePlan(guide, keys);
@@ -206,9 +285,27 @@ export function driveKeyLines(guide: Guide, keys: readonly ResolvedKeyframe[]): 
     for (let j = 1; j < n - 1; j += 1) {
       const key = keys[ph.span.from + j];
       if (key === undefined || !key.pass) continue;
-      const line = a + (b - a) * (ph.span.u[j] ?? 0);
+      const uj = ph.span.u[j] ?? 0;
+      const line = a + (b - a) * uj;
+      const base = { key: key.index, label: key.label, t: key.t, theta: ph.theta[j] ?? 0, line, rootY: key.state.root.y, rootX: key.state.root.x };
+      if (plan.joint === 'legNear') {
+        // Leg drive: knee and shin are free per key (J3 keeps them in step); `phiLine` is the shin at the knee's share, for reference.
+        const theta = ph.theta[j] ?? 0;
+        const share = b !== a ? (theta - a) / (b - a) : uj;
+        const phiLine = (ph.phi[0] ?? 0) + ((ph.phi[n - 1] ?? 0) - (ph.phi[0] ?? 0)) * share;
+        const hip = hipFromLeg(key.state, ph.phi[j] ?? 0, theta);
+        out.push({
+          ...base,
+          line: theta,
+          phi: ph.phi[j] ?? 0,
+          phiLine,
+          suggestedRootY: hip === null ? null : Number(hip.y.toFixed(4)),
+          suggestedRootX: hip === null ? null : Number(hip.x.toFixed(4)),
+        });
+        continue;
+      }
       const y = rootYForFlexion(key.state, line);
-      out.push({ key: key.index, label: key.label, t: key.t, theta: ph.theta[j] ?? 0, line, rootY: key.state.root.y, suggestedRootY: y === null ? null : Number(y.toFixed(4)) });
+      out.push({ ...base, phi: null, phiLine: null, suggestedRootY: y === null ? null : Number(y.toFixed(4)), suggestedRootX: null });
     }
   }
   return out;

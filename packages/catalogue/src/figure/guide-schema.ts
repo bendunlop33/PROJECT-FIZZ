@@ -350,8 +350,16 @@ export const GuideSchema = z
      * the near knee's flexion follows the phase's minimum-jerk progress and
      * the hip height is solved from it, so a straight-knee stop eases in
      * instead of snapping. Key poses are unchanged.
+     * `{ joint: "legNear", solves: "root.xy" }` (E7) drives the whole hip
+     * position from the near shin angle and knee flexion (forward kinematics
+     * from the planted ankle), so each leg joint follows one spline.
      */
-    drive: z.strictObject({ joint: z.enum(['kneeNear']), solves: z.enum(['root.y']) }).optional(),
+    drive: z
+      .union([
+        z.strictObject({ joint: z.literal('kneeNear'), solves: z.literal('root.y') }),
+        z.strictObject({ joint: z.literal('legNear'), solves: z.literal('root.xy') }),
+      ])
+      .optional(),
     /** Fixed square camera; omitted = fitted to every frame. */
     camera: z.strictObject({ cx: coord, cy: coord, size: num.min(0.3).max(4) }).optional(),
     props: z.array(PropSchema).max(8),
