@@ -26,12 +26,10 @@ import {
   stepPosition,
   type PlayerAction,
 } from './player-model';
-import { canPlayPrefix, runSliced } from './sliced';
+import { createPrefixPublisher, runSliced } from './sliced';
 
 /** Longest stretch of baking before the JS thread yields (one 120 Hz frame is ~8 ms). */
 const BAKE_BUDGET_MS = 8;
-/** While a playable animation is still baking, hand the player its longer prefix at most this often (each hand-over re-renders). */
-const PREFIX_PUBLISH_MS = 200;
 
 interface Baked {
   key: string;
@@ -41,7 +39,7 @@ interface Baked {
   steadyPoster: number | null;
   /** Frames the finished bake will have. */
   total: number;
-  /** Still baking, but `pictures` is a prefix playback can start on (`canPlayPrefix`). */
+  /** Still baking, but `pictures` is a prefix playback can start on (`canPlayPrefix`, handed over by `createPrefixPublisher`). */
   playable: boolean;
 }
 
@@ -54,7 +52,8 @@ interface BakeFailure {
 /**
  * Pictures for one guide and kind, baked in slices on the JS thread. Both
  * kinds show their first frame at once (poster); the animation plays once
- * every frame is ready. `kind: null` bakes nothing (the other view is showing). Every
+ * every frame is ready, or earlier on a baked prefix when the bake will stay
+ * ahead of playback including the hand-over delay (`canPlayPrefix`). `kind: null` bakes nothing (the other view is showing). Every
  * Skia call happens inside a task, so a throw is reported, never fatal.
  */
 function useBakedPictures(
@@ -88,11 +87,11 @@ function useBakedPictures(
     const progress = { finished: false };
     const total = plan.frameCount;
     const started = performance.now();
-    let published = -Infinity;
     // The animation's first pass plays frames in order, so it can start on a baked prefix when the bake will keep ahead
     // (guides review B2). One frame interval of playback: a cycle shows n frames per duration, a ping-pong n − 1 each way.
     const intervals = loaded.guide.loop === 'pingpong' ? playbackTimes(loaded.guide).length - 1 : playbackTimes(loaded.guide).length;
     const frameIntervalMs = loaded.guide.durationMs / Math.max(1, intervals);
+    const publisher = createPrefixPublisher({ total, frameIntervalMs, budgetMs: BAKE_BUDGET_MS, startedAt: started });
     const run = runSliced(plan.tasks, {
       budgetMs: BAKE_BUDGET_MS,
       // Draw the first frame before yielding, so the canvas is never empty (poster; review N1).
@@ -111,12 +110,8 @@ function useBakedPictures(
       },
       onProgress: (run) => {
         if (kind !== 'animation') return;
-        const now = performance.now();
-        if (now - published < PREFIX_PUBLISH_MS) return;
         const ready = plan.framesDone(run);
-        const msPerFrame = (now - started) / Math.max(1, run);
-        if (!canPlayPrefix({ ready, total, msPerFrame, frameIntervalMs })) return;
-        published = now;
+        if (!publisher.offer(performance.now(), ready)) return;
         setBaked({ key, pictures: out.slice(0, ready), done: false, steadyPoster: null, total, playable: true });
       },
       onError: fail,

@@ -75,24 +75,90 @@ export function runSliced(tasks: readonly (() => void)[], opts: SlicedOptions): 
   };
 }
 
-/** Safety margin on the bake-rate projection: playback starts only if the bake would finish with a quarter of the time to spare. */
+/** Safety margin on the bake-rate projection: playback starts only if the bake would keep ahead with a quarter of the time to spare. */
 export const PREFIX_MARGIN = 0.75;
 
+/** While a playable animation is still baking, the player gets its longer prefix at most this often (each hand-over re-renders). */
+export const PREFIX_PUBLISH_MS = 200;
+
+/** Allowance for a hand-over to reach the UI thread: a React render plus a new derived-value mapper (not measured on device yet). */
+export const PREFIX_RENDER_MS = 100;
+
+export interface PrefixTiming {
+  /** Frames the finished bake will have. */
+  total: number;
+  /** Playback time between frames. */
+  frameIntervalMs: number;
+  /** Slice budget of the bake (`runSliced`'s `budgetMs`). */
+  budgetMs: number;
+  publishMs?: number;
+  renderMs?: number;
+  margin?: number;
+}
+
 /**
- * Whether playback can start on the frames baked so far (guides review B2):
- * true when, at the bake's measured rate, every later frame will be ready
- * before playback reaches it. Frame j (≥ `ready`) is ready after
- * (j − ready + 1) × msPerFrame and shown after j × frameIntervalMs; the
- * condition is linear in j, so checking the first and last frame covers all.
- * If the device turns out slower than measured, the player holds the last
- * baked frame rather than show a gap.
+ * Worst case from a frame being baked to the player having it (guides fix
+ * review B1): the next hand-over is up to `publishMs` away, `onProgress` runs
+ * only at the end of a slice (up to the budget plus one task overrun), and the
+ * hand-over then needs a render.
  */
-export function canPlayPrefix(p: { ready: number; total: number; msPerFrame: number; frameIntervalMs: number; margin?: number }): boolean {
+export function prefixLatencyMs(p: { msPerFrame: number; budgetMs: number; publishMs?: number; renderMs?: number }): number {
+  return (p.publishMs ?? PREFIX_PUBLISH_MS) + p.budgetMs + p.msPerFrame + (p.renderMs ?? PREFIX_RENDER_MS);
+}
+
+/**
+ * Whether playback can start on the frames baked so far (guides review B2,
+ * fix review B1): true when, at the bake's measured rate, every later frame
+ * reaches the player before playback shows it. Frame j (≥ `ready`) reaches the
+ * player by (j − ready + 1) × msPerFrame + latency and is shown at
+ * j × frameIntervalMs after playback starts (never before now); the condition
+ * is linear in j, so checking the first and last frame covers all. A frame is
+ * usable only once handed over, not when baked, hence the latency term.
+ */
+export function canPlayPrefix(p: PrefixTiming & { ready: number; msPerFrame: number }): boolean {
   const { ready, total, msPerFrame, frameIntervalMs } = p;
   const margin = p.margin ?? PREFIX_MARGIN;
   if (total <= 0 || ready >= total) return ready > 0 || total <= 0;
   if (ready < 1 || !(msPerFrame >= 0) || !(frameIntervalMs > 0)) return false;
-  const first = msPerFrame <= margin * ready * frameIntervalMs;
-  const last = (total - ready) * msPerFrame <= margin * (total - 1) * frameIntervalMs;
+  const latency = prefixLatencyMs(p);
+  const first = msPerFrame + latency <= margin * ready * frameIntervalMs;
+  const last = (total - ready) * msPerFrame + latency <= margin * (total - 1) * frameIntervalMs;
   return first && last;
+}
+
+export interface PrefixPublisher {
+  /**
+   * Called after a bake slice: whether to hand the player the `ready` frames
+   * now. Until playback starts this is `canPlayPrefix` (re-checked at every
+   * slice, so the start isn't delayed by the throttle); once it has started,
+   * every longer prefix is handed over at the throttle, never re-checked, so
+   * baked frames are never withheld.
+   */
+  offer: (now: number, ready: number) => boolean;
+  readonly started: boolean;
+}
+
+export function createPrefixPublisher(timing: PrefixTiming & { startedAt: number }): PrefixPublisher {
+  const publishMs = timing.publishMs ?? PREFIX_PUBLISH_MS;
+  let started = false;
+  let published = -Infinity;
+  let handed = 0;
+  return {
+    offer: (now, ready) => {
+      if (ready <= handed) return false;
+      if (started) {
+        if (now - published < publishMs) return false;
+      } else {
+        const msPerFrame = (now - timing.startedAt) / Math.max(1, ready);
+        if (!canPlayPrefix({ ...timing, ready, msPerFrame })) return false;
+        started = true;
+      }
+      published = now;
+      handed = ready;
+      return true;
+    },
+    get started() {
+      return started;
+    },
+  };
 }

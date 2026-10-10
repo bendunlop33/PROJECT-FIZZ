@@ -11,7 +11,7 @@ import { opPathData, PATH_UNITS, planOp, rgba } from '../src/guide/draw-plan';
 import { BUNDLED_GUIDE_FILES } from '../../../packages/catalogue/src/generated/guide-files';
 import { buildHowToView, bundledHowToSources, DRAFT_GUIDE_LABEL, guideDraftLabel, hasHowTo, howToKeyForExerciseId, howToLayout, type HowToSources } from '../src/guide/how-to';
 import { initialPlayerState, isRunning, MUSCLE_PULSE, musclePulseOn, playControlLabel, playerReducer, stepAccessibilityLabel, stepAnnouncement, stepPosition, type PlayerAction, type PlayerState } from '../src/guide/player-model';
-import { canPlayPrefix, runSliced } from '../src/guide/sliced';
+import { canPlayPrefix, createPrefixPublisher, PREFIX_MARGIN, PREFIX_PUBLISH_MS, PREFIX_RENDER_MS, prefixLatencyMs, runSliced } from '../src/guide/sliced';
 import { resolveTheme, THEME_DIRECTIONS } from '../src/theme/tokens';
 
 describe('playback clock (UI-thread worklets)', () => {
@@ -215,7 +215,7 @@ describe('player state', () => {
     expect(isRunning(replay, env)).toBe(true);
   });
 
-  it('only runs on screen, in the foreground, with every frame baked', () => {
+  it('only runs on screen, in the foreground, with playable frames (every frame baked, or a prefix that stays ahead)', () => {
     const s = initialPlayerState(false, 3);
     expect(isRunning(s, env)).toBe(true);
     expect(isRunning(s, { ...env, visible: false })).toBe(false);
@@ -630,35 +630,154 @@ describe('sliced baking', () => {
   });
 });
 
-describe('playing a baked prefix (guides review B2)', () => {
+describe('playing a baked prefix (guides review B2, fix review B1)', () => {
   // A 2.8 s cycle at 30 fps: 84 frames, 33.3 ms apart.
   const total = 84;
   const frameIntervalMs = 2800 / 84;
+  const budgetMs = 8;
+  const timing = { total, frameIntervalMs, budgetMs };
 
-  it('a bake faster than playback can start on the first frames', () => {
-    expect(canPlayPrefix({ ready: 1, total, msPerFrame: 15, frameIntervalMs })).toBe(true);
-    expect(canPlayPrefix({ ready: 2, total, msPerFrame: 20, frameIntervalMs })).toBe(true);
+  it('never starts on the first one or two frames: the prefix must cover the hand-over delay', () => {
+    // The old rule started at ready 1–2 and froze ~170 ms waiting for the next hand-over (fix review B1).
+    expect(canPlayPrefix({ ...timing, ready: 1, msPerFrame: 15 })).toBe(false);
+    expect(canPlayPrefix({ ...timing, ready: 2, msPerFrame: 20 })).toBe(false);
+    // 15 ms a frame: (15 + 323) ≤ 0.75 × ready × 33.3 needs 14 frames.
+    expect(canPlayPrefix({ ...timing, ready: 13, msPerFrame: 15 })).toBe(false);
+    expect(canPlayPrefix({ ...timing, ready: 14, msPerFrame: 15 })).toBe(true);
   });
 
   it('a bake slower than playback waits until the rest will be ready in time', () => {
     // 50 ms a frame: 83 frames left would take 4.15 s, playback reaches the end in 2.77 s.
-    expect(canPlayPrefix({ ready: 1, total, msPerFrame: 50, frameIntervalMs })).toBe(false);
-    expect(canPlayPrefix({ ready: 30, total, msPerFrame: 50, frameIntervalMs })).toBe(false);
-    expect(canPlayPrefix({ ready: 50, total, msPerFrame: 50, frameIntervalMs })).toBe(true);
+    expect(canPlayPrefix({ ...timing, ready: 1, msPerFrame: 50 })).toBe(false);
+    expect(canPlayPrefix({ ...timing, ready: 30, msPerFrame: 50 })).toBe(false);
+    expect(canPlayPrefix({ ...timing, ready: 60, msPerFrame: 50 })).toBe(true);
   });
 
-  it('every later frame is ready before playback reaches it whenever it says yes (with the margin to spare)', () => {
+  it('whenever it says yes, every later frame reaches the player (bake + hand-over) before playback shows it, with the margin to spare', () => {
     for (const msPerFrame of [5, 15, 25, 33, 40, 60, 90]) {
+      const latency = prefixLatencyMs({ msPerFrame, budgetMs });
       for (let ready = 0; ready <= total; ready += 1) {
-        if (!canPlayPrefix({ ready, total, msPerFrame, frameIntervalMs })) continue;
-        for (let j = ready; j < total; j += 1) expect((j - ready + 1) * msPerFrame).toBeLessThanOrEqual(0.75 * j * frameIntervalMs + 1e-9);
+        if (!canPlayPrefix({ ...timing, ready, msPerFrame })) continue;
+        for (let j = ready; j < total; j += 1) expect((j - ready + 1) * msPerFrame + latency).toBeLessThanOrEqual(PREFIX_MARGIN * j * frameIntervalMs + 1e-9);
       }
     }
   });
 
   it('nothing baked is never playable; a finished bake always is', () => {
-    expect(canPlayPrefix({ ready: 0, total, msPerFrame: 1, frameIntervalMs })).toBe(false);
-    expect(canPlayPrefix({ ready: total, total, msPerFrame: 1000, frameIntervalMs })).toBe(true);
-    expect(canPlayPrefix({ ready: 3, total, msPerFrame: Number.NaN, frameIntervalMs })).toBe(false);
+    expect(canPlayPrefix({ ...timing, ready: 0, msPerFrame: 1 })).toBe(false);
+    expect(canPlayPrefix({ ...timing, ready: total, msPerFrame: 1000 })).toBe(true);
+    expect(canPlayPrefix({ ...timing, ready: 30, msPerFrame: Number.NaN })).toBe(false);
+  });
+
+  it('once playback has started, every longer prefix is handed over at the throttle even if the bake slows down', () => {
+    const p = createPrefixPublisher({ ...timing, startedAt: 0 });
+    expect(p.offer(150, 15)).toBe(true); // 10 ms a frame: starts
+    expect(p.started).toBe(true);
+    expect(p.offer(150 + PREFIX_PUBLISH_MS - 1, 16)).toBe(false); // throttled
+    // Now 200 ms a frame on average: the start check would fail, but baked frames are never withheld.
+    expect(canPlayPrefix({ ...timing, ready: 20, msPerFrame: 200 })).toBe(false);
+    expect(p.offer(4000, 20)).toBe(true);
+    expect(p.offer(4500, 20)).toBe(false); // nothing new
+  });
+
+  /**
+   * Bake slices, the hand-over throttle, render delay and the playback clock together. Every task costs `msPerFrame`
+   * (±20 % jitter), setTimeout(0) between slices costs `gapMs`, a hand-over reaches the player `PREFIX_RENDER_MS`
+   * after it is published (the first one at once: the earliest possible start is the worst case), and the clock ticks
+   * at `refreshMs` from the first hand-over. Returns every first-pass display tick that wants a frame the player
+   * doesn't have yet.
+   */
+  function simulate(o: { frames: number; durationMs: number; loop: 'cycle' | 'pingpong'; msPerFrame: number; refreshMs: number; gapMs?: number; offer?: (now: number, ready: number) => boolean }) {
+    const interval = o.durationMs / (o.loop === 'pingpong' ? o.frames - 1 : o.frames);
+    const publisher = createPrefixPublisher({ total: o.frames, frameIntervalMs: interval, budgetMs, startedAt: 0 });
+    const offer = o.offer ?? publisher.offer;
+    let now = 0;
+    let seed = 7;
+    const jitter = () => {
+      seed = (seed * 16807) % 2147483647;
+      return 0.8 + 0.4 * (seed / 2147483647);
+    };
+    const queue: (() => void)[] = [];
+    const handovers: { at: number; frames: number }[] = [];
+    let done = false;
+    const tasks = Array.from({ length: o.frames }, () => () => {
+      now += o.msPerFrame * jitter();
+    });
+    runSliced(tasks, {
+      budgetMs,
+      firstSync: 1,
+      now: () => now,
+      schedule: (fn) => {
+        queue.push(fn);
+        return () => undefined;
+      },
+      onProgress: (ready) => {
+        if (!offer(now, ready)) return;
+        handovers.push({ at: handovers.length === 0 ? now : now + PREFIX_RENDER_MS, frames: ready });
+      },
+      onDone: () => {
+        done = true;
+        handovers.push({ at: handovers.length === 0 ? now : now + PREFIX_RENDER_MS, frames: o.frames });
+      },
+      onError: (e) => {
+        throw e;
+      },
+    });
+    while (queue.length > 0) {
+      now += o.gapMs ?? 4;
+      queue.shift()?.();
+    }
+    expect(done).toBe(true);
+    const start = handovers[0]?.at ?? 0;
+    const late: { t: number; frame: number; have: number }[] = [];
+    let elapsed = 0;
+    let dt: number | null = null;
+    while (elapsed < o.durationMs) {
+      const t = start + elapsed;
+      const frame = frameIndexAt(elapsed, o.durationMs, o.frames, o.loop, dt ?? 0);
+      const have = Math.max(0, ...handovers.filter((h) => h.at <= t).map((h) => h.frames));
+      if (frame >= have) late.push({ t, frame, have });
+      dt = o.refreshMs;
+      elapsed = advanceClock(elapsed, dt, o.durationMs, o.loop).elapsedMs;
+    }
+    return { late, startedEarly: handovers.length > 1, bakeMs: now, start };
+  }
+
+  it('bake, hand-over and clock together: no frame is ever shown late at 10–25 ms a frame (60 and 120 Hz, cycle and ping-pong)', () => {
+    for (const shape of [
+      { frames: 84, durationMs: 2800, loop: 'cycle' as const },
+      { frames: 63, durationMs: 2100, loop: 'pingpong' as const },
+    ]) {
+      for (const msPerFrame of [10, 12.5, 15, 17.5, 20, 22.5, 25]) {
+        for (const refreshMs of [1000 / 60, 1000 / 120]) {
+          const r = simulate({ ...shape, msPerFrame, refreshMs });
+          expect(r.late, `${shape.loop} ${msPerFrame} ms/frame ${refreshMs.toFixed(1)} ms refresh`).toEqual([]);
+          // And the prefix is worth having: motion starts well before the bake ends.
+          expect(r.startedEarly).toBe(true);
+          expect(r.start).toBeLessThan(r.bakeMs / 2);
+        }
+      }
+    }
+  });
+
+  it('a bake slower than playback (40–60 ms a frame) waits for the full bake or a long prefix, and still never shows a frame late', () => {
+    for (const msPerFrame of [40, 50, 60]) {
+      expect(simulate({ frames: 84, durationMs: 2800, loop: 'cycle', msPerFrame, refreshMs: 1000 / 60 }).late).toEqual([]);
+    }
+  });
+
+  it('the simulation detects the stall: the old start rule (ready the moment baked) shows frames late', () => {
+    let published = -Infinity;
+    let started = false;
+    const old = (now: number, ready: number) => {
+      if (now - published < PREFIX_PUBLISH_MS) return false;
+      if (!started && !canPlayPrefix({ ...timing, ready, msPerFrame: now / ready, publishMs: 0, renderMs: 0, budgetMs: 0 })) return false;
+      // canPlayPrefix with no latency still adds msPerFrame once; the old rule was looser still, so this is generous to it.
+      started = true;
+      published = now;
+      return true;
+    };
+    const r = simulate({ frames: 84, durationMs: 2800, loop: 'cycle', msPerFrame: 15, refreshMs: 1000 / 60, offer: old });
+    expect(r.late.length).toBeGreaterThan(0);
   });
 });
