@@ -35,10 +35,10 @@ export function BottomBar({ children }: { children: ReactNode }) {
   return (
     <View
       style={{
-        backgroundColor: theme.colors['bg.surface'],
-        borderTopWidth: theme.dividerWidth,
+        backgroundColor: theme.components.barOnCanvas ? theme.colors['bg.canvas'] : theme.colors['bg.surface'],
+        borderTopWidth: theme.components.barOnCanvas ? 0 : theme.dividerWidth,
         borderTopColor: theme.colors['border.divider'],
-        paddingHorizontal: theme.space['4'],
+        paddingHorizontal: theme.components.barOnCanvas ? theme.space['5'] : theme.space['4'],
         paddingTop: theme.space['3'],
         paddingBottom: theme.space['3'] + insets.bottom,
         gap: theme.space['2'],
@@ -57,9 +57,9 @@ export function Card({ children, style }: { children: ReactNode; style?: ViewSty
       style={[
         {
           backgroundColor: theme.colors['bg.surface'],
-          borderWidth: 1,
+          borderWidth: theme.components.cardBorderWidth,
           borderColor: theme.colors['border.control'],
-          borderRadius: theme.radius.md,
+          borderRadius: theme.components.cardBorderWidth === 0 ? theme.radius.lg : theme.radius.md,
           padding: theme.space['4'],
           gap: theme.space['3'],
         },
@@ -77,7 +77,7 @@ export function SectionHeader({ title, icon }: { title: string; icon?: SymbolNam
   return (
     <View accessibilityRole="header" style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], marginTop: theme.space['2'] }}>
       {icon ? <Icon name={icon} size={18} /> : null}
-      <AppText variant="sectionLabel" color="text.secondary">
+      <AppText variant="sectionLabel" color={theme.type.sectionLabel.uppercase ? 'text.tertiary' : 'text.secondary'}>
         {title}
       </AppText>
     </View>
@@ -94,7 +94,7 @@ export function Group({ children }: { children: ReactNode }) {
   const theme = useTheme();
   const items = Children.toArray(children).filter(isValidElement);
   return (
-    <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, overflow: 'hidden' }}>
+    <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.components.cardBorderWidth === 0 ? theme.radius.lg : theme.radius.md, overflow: 'hidden' }}>
       {items.map((child, i) => (
         <Fragment key={child.key ?? i}>
           {i > 0 ? <View style={{ height: theme.dividerWidth, backgroundColor: theme.colors['border.divider'], marginLeft: theme.space['4'] }} /> : null}
@@ -204,9 +204,9 @@ export function Banner({ severity, text, action }: { severity: 'info' | 'warning
         gap: theme.space['3'],
         minHeight: theme.target.min.height,
         padding: theme.space['3'],
-        borderRadius: theme.radius.md,
+        borderRadius: theme.components.cardBorderWidth === 0 ? theme.radius.lg : theme.radius.md,
         backgroundColor: warning ? theme.colors['status.warning.subtle'] : theme.colors['bg.surface'],
-        borderWidth: warning ? 0 : 1,
+        borderWidth: warning ? 0 : theme.components.cardBorderWidth,
         borderColor: theme.colors['border.control'],
       }}
     >
@@ -231,9 +231,9 @@ export function ChoiceCard({ title, subtitle, selected, onPress }: { title: stri
       style={{
         minHeight: 60,
         padding: theme.space['4'],
-        borderRadius: theme.radius.md,
+        borderRadius: theme.components.cardBorderWidth === 0 ? theme.radius.lg : theme.radius.md,
         borderWidth: selected ? theme.components.selectedBorderWidth : 1,
-        borderColor: selected ? theme.colors.accent : theme.colors['border.control'],
+        borderColor: selected ? theme.colors.accent : theme.components.cardBorderWidth === 0 ? theme.colors['border.divider'] : theme.colors['border.control'],
         backgroundColor: selected ? theme.colors['accent.subtle'] : theme.colors['bg.surface'],
         flexDirection: 'row',
         alignItems: 'center',

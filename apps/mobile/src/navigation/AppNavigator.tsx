@@ -42,7 +42,7 @@ import { SummaryScreen } from '../screens/workout/SummaryScreen';
 import { WorkoutScreen } from '../screens/workout/WorkoutScreen';
 import type { SetupStep } from '../services/setup';
 import { useTheme } from '../theme';
-import type { SymbolName } from '../ui';
+import { AppText, type SymbolName } from '../ui';
 import { initialRootState } from './initial-state';
 import type { ImportQuestionKind, ProfileStackParams, RootStackParams, TabParams } from './types';
 
@@ -133,14 +133,33 @@ function TabsNavigator() {
   const theme = useTheme();
   return (
     <TabNav.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: theme.colors.accent,
-        tabBarInactiveTintColor: theme.colors['text.secondary'],
-        tabBarStyle: { backgroundColor: theme.colors['bg.surface'], borderTopColor: theme.colors['border.divider'], borderTopWidth: theme.dividerWidth },
-        // The selected tab also changes shape (filled symbol), never colour alone.
-        tabBarIcon: ({ focused, color, size }) => <SymbolView name={TAB_ICONS[route.name][focused ? 1 : 0]} tintColor={color} size={size} accessible={false} />,
-      })}
+      screenOptions={({ route }) =>
+        theme.components.barOnCanvas
+          ? {
+              // D (D-Today mockup): text-only tracked caps on the canvas, a hairline above.
+              // The selected tab is also Semibold, never colour alone.
+              headerShown: false,
+              tabBarActiveTintColor: theme.colors['text.primary'],
+              tabBarInactiveTintColor: theme.colors['text.tertiary'],
+              tabBarStyle: { backgroundColor: theme.colors['bg.canvas'], borderTopColor: theme.colors['border.divider'], borderTopWidth: theme.dividerWidth },
+              tabBarIconStyle: { display: 'none' },
+              tabBarIcon: () => null,
+              tabBarItemStyle: { justifyContent: 'center' },
+              tabBarLabel: ({ focused, color }) => (
+                <AppText variant="label" maxFontSizeMultiplier={1.4} style={{ color, fontSize: 11, lineHeight: 14, letterSpacing: 1, textTransform: 'uppercase', fontWeight: focused ? '600' : '400' }}>
+                  {route.name}
+                </AppText>
+              ),
+            }
+          : {
+              headerShown: false,
+              tabBarActiveTintColor: theme.colors.accent,
+              tabBarInactiveTintColor: theme.colors['text.secondary'],
+              tabBarStyle: { backgroundColor: theme.colors['bg.surface'], borderTopColor: theme.colors['border.divider'], borderTopWidth: theme.dividerWidth },
+              // The selected tab also changes shape (filled symbol), never colour alone.
+              tabBarIcon: ({ focused, color, size }) => <SymbolView name={TAB_ICONS[route.name][focused ? 1 : 0]} tintColor={color} size={size} accessible={false} />,
+            }
+      }
     >
       <TabNav.Screen name="Today" component={TodayScreen} />
       <TabNav.Screen name="Progress" component={ProgressScreen} />

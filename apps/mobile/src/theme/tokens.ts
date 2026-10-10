@@ -61,7 +61,7 @@ export type ChartColorToken = keyof typeof CHART_COLOR_ALIASES;
 
 export type ColorToken = BaseColorToken | ChartColorToken;
 
-export type FontWeight = '400' | '500' | '600' | '700';
+export type FontWeight = '300' | '400' | '500' | '600' | '700';
 
 /** iOS text style a token scales with (Dynamic Type). */
 export type IosTextStyle = 'largeTitle' | 'title1' | 'title2' | 'headline' | 'body' | 'callout' | 'system';
@@ -134,11 +134,12 @@ export interface ComponentShapes {
   primaryButtonRadius: RadiusToken;
   /**
    * How text links and text buttons show they're tappable. `chevron`: always
-   * add a trailing chevron or an icon, because in D the accent is almost the
-   * same as body text (risk 1). A uses its blue accent, so colour plus the
+   * add a trailing chevron or an icon. `underline`: D's approved mockups
+   * underline links (the accent is almost the same as body text, risk 1, so
+   * colour alone never says it). A uses its blue accent, so colour plus the
    * spec's own chevrons is enough.
    */
-  linkAffordance: 'colour' | 'chevron';
+  linkAffordance: 'colour' | 'chevron' | 'underline';
   /**
    * Extra border on selected chips and cards (D risk 3: `accent.subtle` is
    * close to `bg.raised`). Selected chips show a check icon in every look.
@@ -146,6 +147,17 @@ export interface ComponentShapes {
   selectedBorderWidth: number;
   /** Side margin on non-workout screens (D: 20, workout screens keep space.4). */
   screenMargin: number;
+  /**
+   * Cards and grouped surfaces: D's are borderless `bg.surface` blocks
+   * (D-Today/D-ActiveSet mockups); A keeps a 1pt `border.control` frame.
+   */
+  cardBorderWidth: number;
+  /** Secondary buttons: D uses a transparent outline pill (D-Rest), A a filled rounded rectangle. */
+  secondaryButton: 'outline_pill' | 'filled';
+  /** Bottom bars (ActionBar, BottomBar): D sits on the canvas with no top rule; A on `bg.surface` with a divider. */
+  barOnCanvas: boolean;
+  /** Large page title on Today (D: 40pt routine name). */
+  heroTitleSize: number;
 }
 
 /** Everything that defines a look. Swap the whole object to change the look. */
@@ -165,7 +177,7 @@ export interface ThemeDirection {
 export const NAVY_DIRECTION: ThemeDirection = {
   id: 'A',
   name: 'Navy',
-  components: { primaryButtonRadius: 'md', linkAffordance: 'colour', selectedBorderWidth: 2, screenMargin: 16 },
+  components: { primaryButtonRadius: 'md', linkAffordance: 'colour', selectedBorderWidth: 2, screenMargin: 16, cardBorderWidth: 1, secondaryButton: 'filled', barOnCanvas: false, heroTitleSize: 28 },
   colors: {
     dark: {
       'bg.canvas': '#0F1620',
@@ -270,12 +282,19 @@ const STATUS_LIGHT = {
  * §6.5). Warm near-black and porcelain, SF Pro only (no bundled serif yet),
  * Semibold titles, tracked-caps section labels, pill primary buttons.
  * Contrast figures are the researcher's hand calculation; re-check on device.
+ *
+ * Type, radius and component shapes follow Ben's approved D mockups
+ * (D-Today, D-ActiveSet, D-Rest, 9 Oct 2026), which differ from
+ * design-system.md's D values: 12pt tracked labels in `text.tertiary`, an
+ * 88/300 rest numeral, 38/500 load, 30pt titles, 20pt card radius,
+ * borderless cards and outline-pill secondary buttons (first-run audit §3).
+ * design-system.md still needs updating to match.
  */
 export const PREMIUM_DIRECTION: ThemeDirection = {
   ...NAVY_DIRECTION,
   id: 'D',
   name: 'Premium',
-  components: { primaryButtonRadius: 'pill', linkAffordance: 'chevron', selectedBorderWidth: 2, screenMargin: 20 },
+  components: { primaryButtonRadius: 'pill', linkAffordance: 'underline', selectedBorderWidth: 2, screenMargin: 20, cardBorderWidth: 0, secondaryButton: 'outline_pill', barOnCanvas: true, heroTitleSize: 40 },
   colors: {
     dark: {
       'bg.canvas': '#0D0C0B',
@@ -312,10 +331,16 @@ export const PREMIUM_DIRECTION: ThemeDirection = {
   },
   type: {
     ...NAVY_DIRECTION.type,
-    // Semibold rather than Bold (research §6.5).
-    title1: { ...NAVY_DIRECTION.type.title1, weight: '600' },
-    sectionLabel: { size: 16, lineHeight: 20, weight: '600', tabular: 'never', textStyle: 'callout', maxScale: 3, uppercase: true, letterSpacing: 1 },
+    // D-Rest: a large light numeral.
+    timerDisplay: { size: 88, lineHeight: 92, weight: '300', tabular: 'always', textStyle: 'largeTitle', maxScale: 1.4, letterSpacing: -2 },
+    // D-ActiveSet LOAD/REPS tiles.
+    loadDisplay: { size: 38, lineHeight: 44, weight: '500', tabular: 'always', textStyle: 'largeTitle', maxScale: 1.8, letterSpacing: -0.5 },
+    // Semibold rather than Bold (research §6.5); 30pt exercise name (D-ActiveSet).
+    title1: { size: 30, lineHeight: 36, weight: '600', tabular: 'never', textStyle: 'title1', maxScale: 2.5, letterSpacing: -0.4 },
+    // Tracked caps labels (`TODAY`, `LOAD`, `REST`): 12pt in the mockups, still scaled by Dynamic Type.
+    sectionLabel: { size: 12, lineHeight: 16, weight: '600', tabular: 'never', textStyle: 'callout', maxScale: 3, uppercase: true, letterSpacing: 1.4 },
   },
+  radius: { sm: 8, md: 14, lg: 20, pill: 999 },
 };
 
 /** Every look that has values. B and C (and D-Clay) are added as further objects. */
@@ -331,6 +356,16 @@ export const CURRENT_DIRECTION: ThemeDirection = THEME_DIRECTIONS[DEFAULT_DIRECT
 
 export function directionById(id: string | null | undefined): ThemeDirection {
   return id === 'A' || id === 'D' ? THEME_DIRECTIONS[id] : CURRENT_DIRECTION;
+}
+
+/**
+ * D is dark only: Ben approved it as dark mockups, and its light variant was
+ * never reviewed (first-run audit B3). A follows the system; dark is the
+ * default (design-system §2).
+ */
+export function schemeFor(directionId: string, system: string | null | undefined): ColorScheme {
+  if (directionId === 'D') return 'dark';
+  return system === 'light' ? 'light' : 'dark';
 }
 
 /** design-system §2.2: values mirrored where `theme.ts` can't be imported. */
@@ -463,7 +498,7 @@ export interface ResolvedTheme {
   a11y: AccessibilityPrefs;
 }
 
-const NEXT_WEIGHT: Record<FontWeight, FontWeight> = { '400': '500', '500': '600', '600': '700', '700': '700' };
+const NEXT_WEIGHT: Record<FontWeight, FontWeight> = { '300': '400', '400': '500', '500': '600', '600': '700', '700': '700' };
 
 /** Resolve one direction for one scheme and the current accessibility settings. Pure. */
 export function resolveTheme(direction: ThemeDirection, scheme: ColorScheme, a11y: AccessibilityPrefs = DEFAULT_A11Y): ResolvedTheme {

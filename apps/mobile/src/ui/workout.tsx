@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode, type Ref } from 'react';
 import { InputAccessoryView, Keyboard, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -34,6 +34,41 @@ export function NumberAccessory() {
         </Pressable>
       </View>
     </InputAccessoryView>
+  );
+}
+
+/** D tile − / +: a light glyph with a full 44 × 52 pt target. */
+function TileStep({ glyph, target, onStep, describe }: { glyph: string; target: StepTarget; onStep: (v: number) => void; describe: string }) {
+  const theme = useTheme();
+  const enabled = target.enabled;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={enabled ? `${describe} to ${target.label}` : describe}
+      accessibilityState={{ disabled: !enabled }}
+      {...(!enabled ? { accessibilityHint: target.reason } : {})}
+      disabled={!enabled}
+      hitSlop={6}
+      onPress={() => {
+        if (target.enabled) {
+          haptic('step');
+          onStep(target.value);
+        }
+      }}
+      style={({ pressed }) => ({
+        width: theme.target.min.width,
+        height: theme.target.workout.height,
+        borderRadius: theme.radius.pill,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent',
+        opacity: enabled ? 1 : 0.35,
+      })}
+    >
+      <AppText variant="title2" color="text.tertiary" style={{ fontWeight: '400' }} maxFontSizeMultiplier={1.4}>
+        {glyph}
+      </AppText>
+    </Pressable>
   );
 }
 
@@ -83,6 +118,8 @@ export function NumberStepper({
   onChange,
   warning = false,
   hint,
+  inputRef,
+  flex = 1,
 }: {
   label: string;
   unit: string | null;
@@ -93,6 +130,10 @@ export function NumberStepper({
   onChange: (v: number | null) => void;
   warning?: boolean;
   hint?: string | null;
+  /** So `Enter load` can focus the empty field (audit F2). */
+  inputRef?: Ref<TextInput>;
+  /** Share of the row (D-ActiveSet: LOAD 1.4, REPS 1). */
+  flex?: number;
 }) {
   const theme = useTheme();
   const [text, setText] = useState(value === null ? '' : String(value));
@@ -101,13 +142,88 @@ export function NumberStepper({
     setText((t) => nextFieldText(t, value));
   }, [value]);
   const describe = label === 'Assist' ? 'Assistance' : label;
+  const decrease = label === 'Assist' ? 'Less assistance (harder)' : `Decrease ${describe.toLowerCase()}`;
+  const increase = label === 'Assist' ? 'More assistance (easier)' : `Increase ${describe.toLowerCase()}`;
+  const input = (
+    <TextInput
+      ref={inputRef}
+      value={text}
+      onChangeText={(t) => {
+        setText(t);
+        onChange(parseNumber(t));
+      }}
+      onFocus={() => {
+        setFocused(true);
+      }}
+      onBlur={() => {
+        setFocused(false);
+      }}
+      keyboardType={decimals ? 'decimal-pad' : 'number-pad'}
+      inputAccessoryViewID={NUMBER_ACCESSORY_ID}
+      selectTextOnFocus
+      accessibilityLabel={`${label}${unit ? `, ${unit}` : ''}`}
+      {...(hint ? { accessibilityHint: hint } : {})}
+      placeholder="—"
+      placeholderTextColor={theme.colors['text.tertiary']}
+      maxFontSizeMultiplier={theme.type.loadDisplay.maxFontSizeMultiplier}
+      style={{
+        minWidth: 36,
+        textAlign: 'center',
+        fontSize: theme.type.loadDisplay.fontSize,
+        fontWeight: theme.type.loadDisplay.fontWeight,
+        letterSpacing: theme.type.loadDisplay.letterSpacing,
+        fontVariant: ['tabular-nums'],
+        color: theme.colors['text.primary'],
+        paddingVertical: 0,
+      }}
+    />
+  );
+  if (theme.components.cardBorderWidth === 0) {
+    // D-ActiveSet: a borderless tile with a tracked label, − value unit +.
+    return (
+      <View style={{ flex, minWidth: 0, gap: theme.space['1'] }}>
+        <View
+          style={{
+            backgroundColor: theme.colors['bg.surface'],
+            borderRadius: theme.radius.lg,
+            borderWidth: focused || warning ? 1.5 : 0,
+            borderColor: warning ? theme.colors['status.warning'] : theme.colors['border.control'],
+            paddingVertical: theme.space['4'],
+            paddingHorizontal: theme.space['2'],
+            gap: theme.space['2'],
+          }}
+        >
+          <AppText variant="sectionLabel" color="text.tertiary" style={{ paddingHorizontal: theme.space['2'] }}>
+            {label}
+          </AppText>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} />
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', flexShrink: 1 }}>
+              {input}
+              {unit ? (
+                <AppText variant="body" color="text.secondary" style={{ fontSize: 18 }} maxFontSizeMultiplier={1.4}>
+                  {` ${unit}`}
+                </AppText>
+              ) : null}
+            </View>
+            <TileStep glyph="+" target={up} onStep={onChange} describe={increase} />
+          </View>
+        </View>
+        {!up.enabled && value !== null ? (
+          <AppText variant="callout" color="text.secondary" numeric>
+            {up.reason}
+          </AppText>
+        ) : null}
+      </View>
+    );
+  }
   return (
     <View style={{ flex: 1, minWidth: 150, gap: theme.space['1'] }}>
       <AppText variant="label" color="text.secondary">
         {label}
       </AppText>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-        <StepButton icon="minus" target={down} onStep={onChange} describe={label === 'Assist' ? 'Less assistance (harder)' : `Decrease ${describe.toLowerCase()}`} />
+        <StepButton icon="minus" target={down} onStep={onChange} describe={decrease} />
         <View
           style={{
             flex: 1,
@@ -122,43 +238,14 @@ export function NumberStepper({
             paddingHorizontal: theme.space['2'],
           }}
         >
-          <TextInput
-            value={text}
-            onChangeText={(t) => {
-              setText(t);
-              onChange(parseNumber(t));
-            }}
-            onFocus={() => {
-              setFocused(true);
-            }}
-            onBlur={() => {
-              setFocused(false);
-            }}
-            keyboardType={decimals ? 'decimal-pad' : 'number-pad'}
-            inputAccessoryViewID={NUMBER_ACCESSORY_ID}
-            selectTextOnFocus
-            accessibilityLabel={`${label}${unit ? `, ${unit}` : ''}`}
-            {...(hint ? { accessibilityHint: hint } : {})}
-            placeholder="—"
-            placeholderTextColor={theme.colors['text.tertiary']}
-            maxFontSizeMultiplier={theme.type.loadDisplay.maxFontSizeMultiplier}
-            style={{
-              minWidth: 40,
-              textAlign: 'center',
-              fontSize: theme.type.loadDisplay.fontSize,
-              fontWeight: theme.type.loadDisplay.fontWeight,
-              fontVariant: ['tabular-nums'],
-              color: theme.colors['text.primary'],
-              paddingVertical: 0,
-            }}
-          />
+          {input}
           {unit ? (
             <AppText variant="label" color="text.secondary">
               {` ${unit}`}
             </AppText>
           ) : null}
         </View>
-        <StepButton icon="plus" target={up} onStep={onChange} describe={label === 'Assist' ? 'More assistance (easier)' : `Increase ${describe.toLowerCase()}`} />
+        <StepButton icon="plus" target={up} onStep={onChange} describe={increase} />
       </View>
       {!up.enabled && value !== null ? (
         <AppText variant="callout" color="text.secondary" numeric>
@@ -170,30 +257,50 @@ export function NumberStepper({
 }
 
 /** `ParamChip` (§9.17): selected shows a check icon as well as the fill. */
-export function Chip({ label, selected, onPress, accessibilityLabel }: { label: string; selected: boolean; onPress: () => void; accessibilityLabel?: string }) {
+export function Chip({ label, selected, onPress, accessibilityLabel, grow = false }: { label: string; selected: boolean; onPress: () => void; accessibilityLabel?: string; grow?: boolean }) {
   const theme = useTheme();
+  const filled = theme.components.cardBorderWidth === 0;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected }}
       accessibilityLabel={accessibilityLabel ?? label}
       onPress={onPress}
-      style={({ pressed }) => ({
-        minHeight: theme.target.workout.height,
-        minWidth: theme.target.workout.width,
-        paddingHorizontal: theme.space['3'],
-        borderRadius: theme.radius.pill,
-        borderWidth: selected ? theme.components.selectedBorderWidth : 1,
-        borderColor: selected ? theme.colors.accent : theme.colors['border.control'],
-        backgroundColor: selected || pressed ? theme.colors['accent.subtle'] : theme.colors['bg.raised'],
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: theme.space['1'],
-      })}
+      style={({ pressed }) =>
+        filled
+          ? {
+              // D-Rest: selected is a full accent pill with a check; others sit on the surface.
+              flex: grow ? 1 : undefined,
+              minHeight: 48,
+              minWidth: theme.target.min.width,
+              paddingHorizontal: theme.space['3'],
+              borderRadius: theme.radius.pill,
+              borderWidth: selected ? 0 : 1,
+              borderColor: theme.colors['border.divider'],
+              backgroundColor: selected ? (pressed ? theme.colors['accent.pressed'] : theme.colors.accent) : pressed ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: theme.space['1'],
+            }
+          : {
+              flex: grow ? 1 : undefined,
+              minHeight: theme.target.workout.height,
+              minWidth: theme.target.workout.width,
+              paddingHorizontal: theme.space['3'],
+              borderRadius: theme.radius.pill,
+              borderWidth: selected ? theme.components.selectedBorderWidth : 1,
+              borderColor: selected ? theme.colors.accent : theme.colors['border.control'],
+              backgroundColor: selected || pressed ? theme.colors['accent.subtle'] : theme.colors['bg.raised'],
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: theme.space['1'],
+            }
+      }
     >
-      {selected ? <Icon name="checkmark" color="accent" size={16} /> : null}
-      <AppText variant="label" numeric>
+      {selected ? <Icon name="checkmark" color={filled ? 'on.accent' : 'accent'} size={14} /> : null}
+      <AppText variant="label" numeric color={filled && selected ? 'on.accent' : 'text.primary'} style={filled && selected ? { fontWeight: '600' } : undefined}>
         {label}
       </AppText>
     </Pressable>
@@ -246,13 +353,13 @@ export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; p
       style={{
         flexDirection: 'row',
         alignItems: 'center',
-        gap: theme.space['2'],
-        backgroundColor: theme.colors['bg.surface'],
-        borderTopWidth: theme.dividerWidth,
+        gap: theme.space['3'],
+        backgroundColor: theme.components.barOnCanvas ? theme.colors['bg.canvas'] : theme.colors['bg.surface'],
+        borderTopWidth: theme.components.barOnCanvas ? 0 : theme.dividerWidth,
         borderTopColor: theme.colors['border.divider'],
-        paddingHorizontal: theme.space['4'],
+        paddingHorizontal: theme.components.barOnCanvas ? theme.space['5'] : theme.space['4'],
         paddingTop: theme.space['3'],
-        paddingBottom: theme.space['3'] + insets.bottom,
+        paddingBottom: theme.space['3'] + Math.max(insets.bottom, theme.components.barOnCanvas ? theme.space['4'] : 0),
       }}
     >
       {talk}
