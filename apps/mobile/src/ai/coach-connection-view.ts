@@ -9,6 +9,8 @@
  * - No `This week: N coach messages` line: no coach messages are stored yet,
  *   so there is nothing true to count.
  * - Copy says GymSmarter where the spec says Fizz (renamed 9 Oct).
+ * - Until the coach chat ships (`COACH_CHAT_IN_BUILD`), the connected card
+ *   says it isn't in this build and the first-use notice is held back.
  */
 
 import type { CoachStatus } from '@fizz/domain';
@@ -38,13 +40,27 @@ export interface ConnectionStatusView {
   showDisconnect: boolean;
 }
 
+/**
+ * This build has the connection but no coach chat (ADR 0018: C3/C4 not built).
+ * While false, the connected card says so and the once-ever first-use notice
+ * isn't shown or used up, so Ben sees it when the coach can actually reply
+ * (review S2). Set to true in the build that ships the coach sheet.
+ */
+export const COACH_CHAT_IN_BUILD = false;
+const NO_COACH_YET = 'The coach chat isn’t in this build yet.';
+
+/** Whether a finished sign-in should show the first-use notice (§2.5). Never in a build without the coach chat. */
+export function showFirstUseNotice(outcome: Extract<ConnectOutcome, { kind: 'connected' }>, coachChatInBuild: boolean = COACH_CHAT_IN_BUILD): boolean {
+  return coachChatInBuild && outcome.firstUse && outcome.models.length > 0;
+}
+
 const NOT_CONNECTED_BODY = 'Logging, targets, rest timers and built-in progression work without the coach.';
 
 /**
  * The status screen (§2.1 / §2.6 and the §3.1 rows). `signInUnavailable` is
  * the reason when this build has no loopback module.
  */
-export function connectionStatusView(state: TextCoachState, signInUnavailable: string | null): ConnectionStatusView {
+export function connectionStatusView(state: TextCoachState, signInUnavailable: string | null, coachChatInBuild: boolean = COACH_CHAT_IN_BUILD): ConnectionStatusView {
   const modelName = state.model?.displayName ?? null;
   const signedIn = state.email === null ? [] : [`Signed in as ${state.email}`];
   const base = { modelRow: null, pitch: null, links: [], showDisconnect: true };
@@ -70,7 +86,7 @@ export function connectionStatusView(state: TextCoachState, signInUnavailable: s
     case 'offline':
       return {
         ...base,
-        card: { icon: 'checkmark.circle.fill', tone: 'done', title: 'Connected · ChatGPT plan', lines: [...signedIn, 'Limits are set in ChatGPT.'] },
+        card: { icon: 'checkmark.circle.fill', tone: 'done', title: 'Connected · ChatGPT plan', lines: [...signedIn, 'Limits are set in ChatGPT.', ...(coachChatInBuild ? [] : [NO_COACH_YET])] },
         modelRow: `Model: ${modelName ?? 'not chosen'}`,
         primary: null,
         links: [manage],
@@ -136,7 +152,7 @@ export const EXPLAINER = {
     'Voice isn’t included.',
     'GymSmarter can’t see your ChatGPT chats or memory.',
     'Your workouts stay on this phone. The coach sends the parts it needs to OpenAI to reply.',
-    'In ChatGPT’s settings, keep paying with credits after limits turned off for this app.',
+    'In ChatGPT’s settings, leave using credits after limits switched off for this app, so the coach stops at your plan’s limit.',
   ],
   footnote: 'A ChatGPT sign-in page opens next. If you need a code from another app, have it ready first.',
   primary: 'Continue with ChatGPT',

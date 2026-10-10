@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { failure, type TextCoachState, type TextCoachStatus } from '@fizz/providers';
 
 import {
+  COACH_CHAT_IN_BUILD,
   EXPLAINER,
   MANAGE_USAGE_URL,
   checkingView,
@@ -10,6 +11,7 @@ import {
   connectionStatusView,
   modelChoiceRows,
   profileCoachLine,
+  showFirstUseNotice,
   summaryCoachView,
 } from '../src/ai/coach-connection-view';
 
@@ -38,12 +40,27 @@ describe('Coach connection status card (ai-connection §2.1, §2.6, §3.1)', () 
   });
 
   it('connected: account, model row, limits line, Manage usage and Disconnect; no quota or message count', () => {
-    const v = connectionStatusView(state('ok'), null);
+    const v = connectionStatusView(state('ok'), null, true);
     expect(v.card).toMatchObject({ icon: 'checkmark.circle.fill', tone: 'done', title: 'Connected · ChatGPT plan', lines: ['Signed in as ben@example.com', 'Limits are set in ChatGPT.'] });
     expect(v.modelRow).toBe('Model: GPT-6.1-Sol');
     expect(v.links).toEqual([{ label: 'Manage usage', action: 'manage_usage' }]);
     expect(v.showDisconnect).toBe(true);
     expect(JSON.stringify(v)).not.toMatch(/\d+ coach messages|%/);
+  });
+
+  it('a build without the coach chat says so on the connected card and never uses up the first-use notice (review S2)', () => {
+    expect(COACH_CHAT_IN_BUILD).toBe(false);
+    expect(connectionStatusView(state('ok'), null).card.lines).toEqual(['Signed in as ben@example.com', 'Limits are set in ChatGPT.', 'The coach chat isn’t in this build yet.']);
+    const connected = { kind: 'connected' as const, email: 'ben@example.com', models: [SOL, LUNA], selected: SOL, modelsFailure: null, firstUse: true };
+    expect(showFirstUseNotice(connected)).toBe(false);
+    expect(showFirstUseNotice(connected, true)).toBe(true);
+    expect(showFirstUseNotice({ ...connected, firstUse: false }, true)).toBe(false);
+    expect(showFirstUseNotice({ ...connected, models: [] }, true)).toBe(false);
+  });
+
+  it('the explainer never reads as an instruction to keep paying (rule 7)', () => {
+    expect(JSON.stringify(EXPLAINER)).not.toMatch(/keep paying/i);
+    expect(EXPLAINER.bullets).toContain('In ChatGPT’s settings, leave using credits after limits switched off for this app, so the coach stops at your plan’s limit.');
   });
 
   it('limit: Manage usage is the primary; only Ben’s Check again lifts the pause; no reset time (check 6)', () => {

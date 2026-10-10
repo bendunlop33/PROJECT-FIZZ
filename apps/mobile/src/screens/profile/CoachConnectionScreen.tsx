@@ -24,6 +24,7 @@ import {
   connectNotice,
   connectionStatusView,
   modelChoiceRows,
+  showFirstUseNotice,
   type ConnectNotice,
   type ConnectionAction,
 } from '../../ai/coach-connection-view';
@@ -108,7 +109,8 @@ export function CoachConnectionScreen() {
       if (outcome.kind === 'connected') {
         setModels(outcome.models.length > 0 ? outcome.models : null);
         await reload(outcome.models.length > 0 ? outcome.models : null);
-        setFlow(outcome.firstUse && outcome.models.length > 0 ? { kind: 'first_use' } : { kind: 'status' });
+        // The once-ever notice waits for a build with the coach chat (review S2); it is never used up here.
+        setFlow(showFirstUseNotice(outcome) ? { kind: 'first_use' } : { kind: 'status' });
       } else {
         await reload(null);
         setFlow({ kind: 'status' });

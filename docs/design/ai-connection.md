@@ -88,9 +88,10 @@ The button label follows OpenAI's UI guidelines. It's a plain `PrimaryButton`; n
 │ • Your workouts stay on this phone.    │
 │   The coach sends the parts it needs   │
 │   to OpenAI to reply.                  │
-│ • In ChatGPT's settings, keep paying   │
-│   with credits after limits turned     │
-│   off for this app.                    │
+│ • In ChatGPT's settings, leave using   │
+│   credits after limits switched off    │
+│   for this app, so the coach stops at  │
+│   your plan's limit.                   │
 │                                        │
 │ A ChatGPT sign-in page opens next. If  │ text.secondary
 │ you need a code from another app, have │
