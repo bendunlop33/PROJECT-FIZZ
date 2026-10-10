@@ -93,6 +93,12 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       if (ex) exercises.set(ex.id, ex);
     }
     const gymEquipment = await repos.equipment.listByGym(req.gymId);
+    const routineEquipment = new Map<string, EquipmentInstance>();
+    for (const rex of routine?.exercises ?? []) {
+      if (rex.equipmentId === null || routineEquipment.has(rex.equipmentId)) continue;
+      const eq = await repos.equipment.get(rex.equipmentId);
+      if (eq) routineEquipment.set(eq.id, eq);
+    }
     const { aggregate, warnings } = startWorkout({
       opId: req.opId,
       owner,
@@ -100,6 +106,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       routine,
       exercises,
       gymEquipment,
+      routineEquipment,
       at: req.at,
       newId,
       checkIn: req.checkIn ?? null,

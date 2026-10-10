@@ -369,7 +369,7 @@ describe('rename_session', () => {
     expect(r.ok && r.state.session.routineName).toBe('Heavy push');
     expect(r.ok && r.state.session.routineId).toBe(done.session.routineId);
     let d = startFixture().state;
-    d = apply(d, { type: 'discard', at: at(5), opId: 'disc', expectedVersion: d.session.version });
+    d = apply(d, { type: 'discard', at: at(5), opId: 'disc', confirmedLoggedSets: 0, expectedVersion: d.session.version });
     expectError(rename(d, 'X', 'ren-d'), 'session_finished');
   });
 

@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native';
 
-import { formatDuration, formatMinutes, reasonsText, scoreText, sparklinePoints, toMs, weekStripLabel, type LiftHighlight, type ResumeRow, type TodayMain, type WeekDay } from '@fizz/domain';
+import { discardCommand, discardConfirmation, formatDuration, formatMinutes, reasonsText, scoreText, sparklinePoints, toMs, weekStripLabel, type LiftHighlight, type ResumeRow, type TodayMain, type WeekDay } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import { useStartAlertsAsk } from '../alerts/AlertsAskSheet';
@@ -276,10 +276,13 @@ export function TodayScreen() {
   }
 
   async function discardEmpty(main: Extract<TodayMain, { kind: 'stale' }>) {
-    const r = await services.workout.dispatch(main.sessionId, { type: 'discard', at: services.now(), opId: newUuid(), expectedVersion: main.sessionVersion });
+    // Offered only when nothing is logged, so 0 logged sets are confirmed; if one was logged
+    // meanwhile, the reducer refuses it (discard_unconfirmed) and Today reloads.
+    const ask = { required: false, loggedSets: 0, expectedVersion: main.sessionVersion } as const;
+    const r = await services.workout.dispatch(main.sessionId, discardCommand(ask, { opId: newUuid(), at: services.now() }));
     if (!r.ok) {
       // Review N8: a stale version reloads rather than failing the same way again.
-      setError(r.error.code === 'stale_version' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}`);
+      setError(r.error.code === 'stale_version' || r.error.code === 'discard_unconfirmed' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}`);
       reload();
       return;
     }
@@ -607,30 +610,32 @@ export function TodayScreen() {
           onDismissed={afterDismiss.dismissed}
           onDiscard={() => {
             const target = finishFor;
-            const logged = target.sets.filter((x) => x.status === 'completed').length;
-            Alert.alert('Discard this workout?', `${String(logged)} logged ${logged === 1 ? 'set' : 'sets'} will be discarded. This can’t be undone.`, [
+            // One tested rule for every Discard (competitor-failure pack (e)): confirm whenever a set is logged.
+            const ask = discardConfirmation(target);
+            const go = () => {
+              void services.workout.dispatch(target.session.id, discardCommand(ask, { opId: newUuid(), at: services.now() })).then((r) => {
+                if (!r.ok) {
+                  setFinishFor(null);
+                  setError(r.error.code === 'stale_version' || r.error.code === 'discard_unconfirmed' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}`);
+                  reload();
+                  return;
+                }
+                // Close the sheet first; the toast shows once it has gone (review S8).
+                afterDismiss.arm(() => {
+                  setFinishFor(null);
+                  setToast({ text: 'Workout discarded' });
+                });
+                setFinishVisible(false);
+                changed();
+              });
+            };
+            if (!ask.required) {
+              go();
+              return;
+            }
+            Alert.alert('Discard this workout?', ask.message, [
               { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Discard',
-                style: 'destructive',
-                onPress: () => {
-                  void services.workout.dispatch(target.session.id, { type: 'discard', at: services.now(), opId: newUuid(), expectedVersion: target.session.version }).then((r) => {
-                    if (!r.ok) {
-                      setFinishFor(null);
-                      setError(r.error.code === 'stale_version' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}`);
-                      reload();
-                      return;
-                    }
-                    // Close the sheet first; the toast shows once it has gone (review S8).
-                    afterDismiss.arm(() => {
-                      setFinishFor(null);
-                      setToast({ text: 'Workout discarded' });
-                    });
-                    setFinishVisible(false);
-                    changed();
-                  });
-                },
-              },
+              { text: 'Discard', style: 'destructive', onPress: go },
             ]);
           }}
           onStale={reload}

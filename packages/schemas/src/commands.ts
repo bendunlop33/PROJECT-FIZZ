@@ -254,12 +254,17 @@ export const SkipExerciseCommandSchema = z.object({
 /**
  * Discard the workout. The UI confirms first when any set is logged
  * (active-workout §4.9); `expectedVersion` makes a stale confirmation fail.
+ * `confirmedLoggedSets` is the number of logged sets Ben was told would be
+ * discarded (0 when nothing was logged and no prompt was shown). The reducer
+ * refuses the discard unless it matches, so no caller can discard logged sets
+ * without going through the confirmation (review failure-tests M3).
  */
 export const DiscardCommandSchema = z.object({
   type: z.literal('discard'),
   ...base,
   opId: OperationIdSchema,
   expectedVersion: z.int().min(1),
+  confirmedLoggedSets: z.int().min(0),
 });
 
 /**

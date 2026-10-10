@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toIso, toMs } from '@fizz/domain';
+import { discardConfirmation, toIso, toMs } from '@fizz/domain';
 import { idGen } from '@fizz/domain/testing';
 import type { ZonedTimestamp } from '@fizz/schemas';
 
@@ -239,7 +239,7 @@ describe('workouts and recovery', () => {
     const s3 = (await ready()).services;
     const active = await s3.sessions.active();
     if (!active) throw new Error('no active');
-    await s3.sessions.discard(active, 'discard-2');
+    await s3.sessions.discard(active.session.id, discardConfirmation(active), 'discard-2');
     await closeAll();
     await ready().then((o) => idle(o.services));
     expect([...backupFiles.keys()].some((n) => n.endsWith('-auto.json'))).toBe(true);

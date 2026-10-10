@@ -319,7 +319,16 @@ function harder(a: number, b: number, d: LoadDirection): boolean {
  */
 function feasibleHold(ctx: Ctx, value: number | null): number | null {
   const eq = ctx.input.equipment;
-  if (value === null || eq === null) return value;
+  if (value === null) return null;
+  if (eq === null) {
+    // Review failure-tests M2: with no equipment profile there is nothing to snap to, so a
+    // logged 0 would be planned as "0 kg each" or "assist 0 kg". Only `added` has a real zero.
+    if (toScaled(value) <= 0 && ctx.convention !== 'added') {
+      pushFact(ctx, `Last load was ${formatLoad({ value, unit: ctx.unit, convention: ctx.convention })}, which isn't a load to plan; enter your load.`);
+      return null;
+    }
+    return value;
+  }
   const load = { value, unit: ctx.unit, convention: ctx.convention };
   if (isLoadAchievable(load, eq)) return value;
   const r = roundToAvailableLoad(load, eq, 'easier');
@@ -335,7 +344,8 @@ function feasibleHold(ctx: Ctx, value: number | null): number | null {
 type Step =
   | { kind: 'load'; value: number }
   | { kind: 'at_max' }
-  | { kind: 'no_assistance_left' }
+  /** Assisted: none left (`next` false), or, with no machine profile, the next step would leave none (`next` true). */
+  | { kind: 'no_assistance_left'; next: boolean }
   | { kind: 'jump_too_big'; next: number; maxJump: number }
   | { kind: 'no_loads' };
 
@@ -345,7 +355,10 @@ function nextHarderLoad(ctx: Ctx, current: number): Step {
   const desired = ctx.direction === 'resistance' ? current + inc : Math.max(0, current - inc);
   const eq = ctx.input.equipment;
   if (eq === null) {
-    if (!harder(desired, current, ctx.direction)) return { kind: 'no_assistance_left' };
+    if (!harder(desired, current, ctx.direction)) return { kind: 'no_assistance_left', next: false };
+    // Competitor-failure pack (b): never "assist 0 kg". With no machine profile there's no
+    // smaller step to check, so the assistance is held and reps progress instead (as at the max).
+    if (ctx.direction === 'assistance' && toScaled(desired) <= 0) return { kind: 'no_assistance_left', next: true };
     return { kind: 'load', value: desired };
   }
   const loads = getAchievableLoads(eq).loads;
@@ -552,7 +565,7 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
         return repStep((target) => `${target} is ${where} load available on ${eqName}`);
       }
       case 'no_assistance_left':
-        return repStep(() => 'there is no assistance left to remove');
+        return repStep(() => (step.next ? 'the next step would leave no assistance' : 'there is no assistance left to remove'));
       case 'jump_too_big':
         return repStep(
           () =>
