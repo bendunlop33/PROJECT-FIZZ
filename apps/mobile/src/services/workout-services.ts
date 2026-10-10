@@ -27,7 +27,9 @@ import {
   localWeekBounds,
   newCheckIn,
   newPainFlag,
+  nextTargetBlocks,
   nextTargetsFor,
+  nextTargetsForBlock,
   plannedSetsFromTargets,
   repeatPreviewLines,
   unspecifiedPain,
@@ -406,27 +408,18 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const flags = await repos().painFlags.listActive(p.id);
     const now = unspecifiedPain(today);
     const sessionPain = now.active ? now : unspecifiedPain(await sessionCheckIn(source));
-    for (const sx of source.exercises) {
+    // One entry per exercise block: a split exercise reads its deciding part with the
+    // block's set count, the same as the Summary's `Next time` (review r2 B1).
+    for (const block of nextTargetBlocks(source)) {
+      const sx = block.decider;
       if (out.has(sx.exerciseId) || sx.measurement !== 'reps') continue;
-      const done = source.sets.filter((s) => s.sessionExerciseId === sx.id && s.status === 'completed' && s.pairedWithSetId === null && s.setType !== 'warmup');
-      if (done.length === 0) continue;
       const exercise = await repos().exercises.get(sx.exerciseId);
-      const equipment = sx.equipmentId === null ? null : (source.session.equipmentSnapshot.find((e) => e.id === sx.equipmentId) ?? null);
-      const { result } = nextTargetsFor({
-        ownerId: p.id,
-        exerciseId: sx.exerciseId,
-        exerciseName: sx.exerciseName,
-        measurement: sx.measurement,
-        unit: sx.unit,
-        convention: sx.loadConvention,
-        equipment,
-        exercise,
-        rule: null,
-        workingSets: done.length,
-        history: await historyFor(p.id, sx.exerciseId),
-        painFlags: flags,
-        sessionPain,
-      });
+      // The reason line isn't shown at Start (the Summary shows it), so no gym name is needed.
+      const { result } = nextTargetsForBlock(
+        block,
+        { ownerId: p.id, sessionId: source.session.id, count: 'done', exercise, rule: null, history: await historyFor(p.id, sx.exerciseId), painFlags: flags, sessionPain },
+        null,
+      );
       const plan = plannedSetsFromTargets(result);
       if (plan) out.set(sx.exerciseId, plan);
     }

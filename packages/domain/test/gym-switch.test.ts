@@ -11,6 +11,8 @@ import {
   gymRouteIds,
   isProposalStale,
   latestUndoableGymChange,
+  nextTargetBlocks,
+  nextTargetsForBlock,
   planFingerprint,
   reduceSession,
   startWorkout,
@@ -439,15 +441,15 @@ describe('One code path: Repeat and the switch fit alike (check 3), routine Star
 });
 
 describe('Summary and history after a switch (check 24)', () => {
-  function finishedAcrossGyms(): SessionAggregate {
+  function finishedAcrossGyms(mainReps = 9, lastReps = 11): SessionAggregate {
     let s = benchTwoDone();
     const incline1 = exerciseSets(s, INCLINE)[0]?.id ?? '';
     s = apply(s, { type: 'set_active_set', at: at(305), opId: 'go-incline', setId: incline1, expectedVersion: s.session.version });
-    s = apply(s, logCmd(incline1, values(kg(32.5, 'per_hand'), 9), 310));
+    s = apply(s, logCmd(incline1, values(kg(32.5, 'per_hand'), mainReps), 310));
     s = switched(s, propose(s, hotel), 320).state;
     const next = exerciseSets(s, INCLINE).filter((x) => x.status === 'pending');
     s = apply(s, logCmd(next[0]?.id ?? '', values(kg(20, 'per_hand'), 12), 500));
-    s = apply(s, logCmd(next[1]?.id ?? '', values(kg(20, 'per_hand'), 11), 700));
+    s = apply(s, logCmd(next[1]?.id ?? '', values(kg(20, 'per_hand'), lastReps), 700));
     return apply(s, { type: 'finish', at: at(900), opId: 'fin-x', expectedVersion: s.session.version, endedAt: null });
   }
 
@@ -503,6 +505,50 @@ describe('Summary and history after a switch (check 24)', () => {
       [20, 11],
     ]);
     expect(doneExerciseNames(done)).toEqual(['Bench press', 'Incline DB press']);
+  });
+
+  it('next-session targets read a split exercise as one block: the latest part with equipment, the block’s set count (review r2 B1)', () => {
+    const done = finishedAcrossGyms();
+    const blocks = nextTargetBlocks(done);
+    const incline = blocks.filter((b) => b.root.exerciseId === INCLINE);
+    expect(incline).toHaveLength(1);
+    expect(incline[0]).toMatchObject({ root: { id: rowOf(done, INCLINE, 0)?.id }, decider: { id: rowOf(done, INCLINE, 1)?.id }, workingSets: 3, prescribedSets: 3, split: true });
+    expect(incline[0]?.equipment?.id).toBe(hotelRack.id);
+    // Bench: 2 done at Main, its moved sets never done: Main decides, not split.
+    const bench = blocks.find((b) => b.root.exerciseId === BENCH);
+    expect(bench).toMatchObject({ decider: { id: rowOf(done, BENCH, 0)?.id }, workingSets: 2, split: false });
+    expect(bench?.equipment?.id).toBe(mainBar.id);
+  });
+
+  it('the Summary’s Next time shows one row for a split exercise, from the Hotel part, saying so (review r2 B1)', () => {
+    // The reviewer's case: Main 32.5×12, Hotel 20×12, 20×12. Per row this gave two rows (35 kg and 20 kg × 13).
+    const done = finishedAcrossGyms(12, 12);
+    const sum = buildWorkoutSummary({ aggregate: done, nowMs: Date.parse(at(1000).utc), gymName: 'Hotel · Lisbon', gymNames: GYM_NAMES, history: { [INCLINE]: toHistorySessions(done, INCLINE) }, rules: {}, painFlags: [], checkIn: null, coach: 'not_connected' });
+    const rows = sum.nextTime?.rows.filter((r) => r.exerciseId === INCLINE) ?? [];
+    expect(rows.map((r) => [r.exerciseName, plain(r.target), r.decision])).toEqual([['Incline DB press', 'Target 20 kg each × 13', 'increase_reps']]);
+    expect(rows[0]?.facts[0]).toBe('Done at more than one gym: target from your Hotel · Lisbon sets, for all 3 sets.');
+    // The Main part of the same workout isn't "an earlier session left out", and 3 of 3 sets were done.
+    expect(rows[0]?.facts.some((f) => /left out|Only \d+ of/.test(f))).toBe(false);
+  });
+
+  it('a split block holds the deciding part to the sets left after the other parts, and targets the block’s set count (review r2 B1)', () => {
+    const done = finishedAcrossGyms(12, 12);
+    const block = nextTargetBlocks(done).find((b) => b.root.exerciseId === INCLINE);
+    if (!block) throw new Error('no block');
+    const req = { ownerId: 'o', sessionId: done.session.id, exercise: null, rule: null, history: toHistorySessions(done, INCLINE), painFlags: [], sessionPain: { active: false, reportedAtUtc: null } };
+    const start = nextTargetsForBlock(block, { ...req, count: 'done' }, 'Hotel · Lisbon').result;
+    expect(start.sets.map((x) => [x.setType, x.load?.value, x.reps])).toEqual(Array.from({ length: 3 }, () => ['working', 20, { min: 13, max: 13 }]));
+    // One Hotel set short (12, 11): held, still 3 sets; no "only 2 of 3".
+    const short = finishedAcrossGyms(12, 11);
+    const b2 = nextTargetBlocks(short).find((b) => b.root.exerciseId === INCLINE);
+    if (!b2) throw new Error('no block');
+    const held = nextTargetsForBlock(b2, { ...req, sessionId: short.session.id, history: toHistorySessions(short, INCLINE), count: 'done' }, null).result;
+    expect(held.decision).toBe('hold');
+    expect(held.sets).toHaveLength(3);
+    expect(held.explanation.facts[0]).toBe('Done at more than one gym: target from the last gym\'s sets, for all 3 sets.');
+    // Not split: exactly the row's own rule call.
+    const bench = nextTargetBlocks(done).find((b) => b.root.exerciseId === BENCH);
+    expect(bench?.split).toBe(false);
   });
 
   it('Start next session of a switched workout applies the targets once per exercise (review B1)', () => {

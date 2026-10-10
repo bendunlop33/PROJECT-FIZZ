@@ -1,7 +1,7 @@
 import type { CheckIn, EquipmentInstance, Load, PainFlag, ProgressionRule, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
 import { painMentionedNotFlagged, reasonsText, scoreText } from '../checkin';
 import type { RuleExerciseInfo } from '../default-rule';
-import { nextTargetsFor, unspecifiedPain } from '../next-target';
+import { unspecifiedPain } from '../next-target';
 import { formatMinutes, loadText, NBSP, repRangeText, valuesText } from '../display';
 import { loadDirection } from '../equipment';
 import type { HistorySession, NextTargets } from '../progression';
@@ -9,7 +9,7 @@ import { toIso, toMs } from '../time';
 import { lastComparableSession } from './active-view';
 import { summaryHighlight } from '../touches';
 import { equipmentOfRow } from './equipment-snapshot';
-import { gymRouteIds, partRootOf } from './gym-switch';
+import { gymRouteIds, nextTargetBlocks, nextTargetsForBlock, partRootOf } from './gym-switch';
 import { dateOnlyOf, workoutDurationMs } from './view';
 import { summariseVolume } from './volume';
 
@@ -276,32 +276,34 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     }
   }
 
-  // Next time: the built-in rule (no coach in this build).
+  // Next time: the built-in rule (no coach in this build). One row per exercise block:
+  // an exercise split across gyms is read from one deciding part, with the block's
+  // set count, the same as Start next session (`nextTargetsForBlock`; review r2 B1).
   const rows: NextTimeRow[] = [];
-  for (const ex of imported ? [] : exercises) {
-    const own = liveSets.filter((x) => x.sessionExerciseId === ex.id && x.setType === 'working');
-    if (own.length === 0 || !completed.some((x) => x.sessionExerciseId === ex.id)) continue;
-    const eq = equipmentOf(state, ex);
-    const { result, rule } = nextTargetsFor({
-      ownerId: s.ownerId,
-      exerciseId: ex.exerciseId,
-      exerciseName: ex.exerciseName,
-      measurement: ex.measurement,
-      unit: ex.unit,
-      convention: ex.loadConvention,
-      equipment: eq,
-      exercise: input.exerciseInfo?.[ex.exerciseId] ?? null,
-      rule: (ex.progressionRuleId !== null ? input.rules[ex.progressionRuleId] : undefined) ?? null,
-      workingSets: own.length,
-      history: input.history[ex.exerciseId] ?? [],
-      painFlags: input.painFlags,
-      sessionPain: unspecifiedPain(input.checkIn),
-    });
+  for (const block of imported ? [] : nextTargetBlocks(state)) {
+    if (block.prescribedSets === 0) continue;
+    const ex = block.decider;
+    const eq = block.equipment;
+    const gymId = eq?.gymId ?? null;
+    const { result, rule } = nextTargetsForBlock(
+      block,
+      {
+        ownerId: s.ownerId,
+        sessionId: s.id,
+        count: 'prescribed',
+        exercise: input.exerciseInfo?.[ex.exerciseId] ?? null,
+        rule: (block.root.progressionRuleId !== null ? input.rules[block.root.progressionRuleId] : undefined) ?? null,
+        history: input.history[ex.exerciseId] ?? [],
+        painFlags: input.painFlags,
+        sessionPain: unspecifiedPain(input.checkIn),
+      },
+      gymId === null ? null : (input.gymNames?.[gymId] ?? (gymId === s.gymId ? input.gymName : null)),
+    );
     const kind = listedKind(result);
     if (kind === null) continue;
     rows.push({
       exerciseId: ex.exerciseId,
-      exerciseName: ex.exerciseName,
+      exerciseName: block.root.exerciseName,
       kind,
       target: nextTargetText(result, ex, eq, kind !== 'change'),
       summary: result.explanation.summary,

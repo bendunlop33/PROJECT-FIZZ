@@ -7,6 +7,7 @@ import type {
   GymChangeSetBefore,
   Load,
   PlannedSet,
+  ProgressionRule,
   SessionAggregate,
   SessionExercise,
   SetValues,
@@ -18,7 +19,8 @@ import { MAX_GYM_CHANGES } from '@fizz/schemas';
 import { formatNumber, repRangeText } from '../display';
 import { isLoadAchievable } from '../equipment';
 import { equipmentRowLine } from '../gym-editor';
-import type { HistorySession } from '../progression';
+import { nextTargetsFor, type NextTargetRequest } from '../next-target';
+import type { HistorySession, NextTargets } from '../progression';
 import { toMs } from '../time';
 import { deriveId, stableStringify } from '../stable';
 import { toScaled } from '../units';
@@ -73,6 +75,116 @@ export function blockSets(state: SessionAggregate, rowId: string): WorkoutSet[] 
       .filter((s) => s.sessionExerciseId === p.id && s.status !== 'deleted')
       .sort((a, b) => (pos.get(a.id) ?? a.index + 1e6) - (pos.get(b.id) ?? b.index + 1e6)),
   );
+}
+
+/** A done set that counts toward next-session targets: completed with a result, not a warm-up, a left/right pair once. */
+export function isDoneWorkingSet(s: WorkoutSet): boolean {
+  return s.status === 'completed' && s.actual !== null && s.pairedWithSetId === null && s.setType !== 'warmup';
+}
+
+/**
+ * One exercise block for next-session targets (gym-switch §6.5, review r2 B1).
+ * Start next session and the Summary's `Next time` both read it through
+ * `nextTargetsForBlock`, so they can't disagree about a split exercise.
+ */
+export interface NextTargetBlock {
+  /** The block's first row (name, order, rule). */
+  root: SessionExercise;
+  /**
+   * The part whose equipment, unit and convention the rule reads: the latest
+   * part with done working sets that has equipment, else the latest part with
+   * done working sets. Same choice as Repeat's source item (`repeat.ts`).
+   */
+  decider: SessionExercise;
+  /** The decider's item, version-exact (GS-S3); null when it had none. */
+  equipment: EquipmentInstance | null;
+  /** Done working sets across the whole block: what Start next session builds. */
+  workingSets: number;
+  /**
+   * Live sets of type `working` across the block, done or not: what the
+   * Summary's rule reads, so a skipped set holds the target (workout-summary §2).
+   */
+  prescribedSets: number;
+  /**
+   * Done working sets on parts with other equipment than the decider's. Those
+   * sets count toward the block, but the rule can't compare their loads, so
+   * the decider's part is held to the rest (`nextTargetsForBlock`).
+   */
+  otherPartsDone: number;
+  /** More than one part has done working sets. */
+  split: boolean;
+}
+
+/** Every exercise block with at least one done working set, in workout order. */
+export function nextTargetBlocks(state: Pick<SessionAggregate, 'session' | 'exercises' | 'sets'>): NextTargetBlock[] {
+  const sorted = [...state.exercises].sort((a, b) => a.order - b.order);
+  const out: NextTargetBlock[] = [];
+  for (const root of sorted.filter((e) => partRootOf(state.exercises, e.id) === e.id)) {
+    const parts = partsOf(state.exercises, root.id);
+    const done = parts.map((part) => ({ part, n: state.sets.filter((s) => s.sessionExerciseId === part.id && isDoneWorkingSet(s)).length })).filter((x) => x.n > 0);
+    const latest = done.at(-1);
+    if (!latest) continue;
+    const withEq = [...done]
+      .reverse()
+      .map((x) => ({ part: x.part, eq: equipmentOfRow(state.session.equipmentSnapshot, x.part) }))
+      .find((x) => x.eq !== null);
+    const decider = withEq?.part ?? latest.part;
+    out.push({
+      root,
+      decider,
+      equipment: withEq?.eq ?? null,
+      workingSets: done.reduce((n, x) => n + x.n, 0),
+      prescribedSets: parts.reduce((n, p) => n + state.sets.filter((s) => s.sessionExerciseId === p.id && s.status !== 'deleted' && s.setType === 'working').length, 0),
+      // History groups a workout's sets by item, so parts on the decider's item are the decider's.
+      otherPartsDone: done.filter((x) => x.part.equipmentId !== decider.equipmentId).reduce((n, x) => n + x.n, 0),
+      split: done.length > 1,
+    });
+  }
+  return out;
+}
+
+export type NextTargetBlockRequest = Omit<NextTargetRequest, 'exerciseId' | 'exerciseName' | 'measurement' | 'unit' | 'convention' | 'equipment' | 'workingSets'> & {
+  /** The finished workout the block is from: its other parts are left out of the history. */
+  sessionId: string;
+  /** `done`: Start next session (done sets). `prescribed`: the Summary (a skipped set holds). */
+  count: 'done' | 'prescribed';
+};
+
+/**
+ * Next targets for one exercise block (review r2 B1). Not split: exactly
+ * `nextTargetsFor` on the row. Split across gyms: the rule reads the deciding
+ * part on its own item (loads at another gym aren't comparable), that part is
+ * held to the sets the block still needed after the other parts, and the
+ * targets are for the block's full set count. The reason says which gym
+ * decided.
+ */
+export function nextTargetsForBlock(block: NextTargetBlock, req: NextTargetBlockRequest, gymName: string | null): { result: NextTargets; rule: ProgressionRule } {
+  const ex = block.decider;
+  const total = req.count === 'done' ? block.workingSets : block.prescribedSets;
+  const base = { ...req, exerciseId: ex.exerciseId, exerciseName: ex.exerciseName, measurement: ex.measurement, unit: ex.unit, convention: ex.loadConvention, equipment: block.equipment };
+  if (!block.split) return nextTargetsFor({ ...base, workingSets: total });
+  const own = (n: number) => Math.max(1, n - block.otherPartsDone);
+  // This workout's other parts are on other items: not "an earlier session left out".
+  const history = req.history.filter((h) => h.sessionId !== req.sessionId || h.equipmentId === ex.equipmentId);
+  const given = req.rule;
+  const rule = given?.method === 'double_progression' ? { ...given, workingSets: own(given.workingSets) } : given;
+  const r = nextTargetsFor({ ...base, history, rule, workingSets: own(total) });
+  const full = given?.method === 'double_progression' ? given.workingSets : given === null ? total : null;
+  const working = r.result.sets.filter((x) => x.setType === 'working');
+  const first = working[0];
+  const sets = full !== null && first && working.length === r.result.sets.length ? Array.from({ length: full }, () => ({ ...first })) : r.result.sets;
+  const fact = splitDeciderFact(block, gymName);
+  return {
+    rule: given ?? r.rule,
+    result: { ...r.result, sets, explanation: { ...r.result.explanation, facts: fact ? [fact, ...r.result.explanation.facts] : r.result.explanation.facts } },
+  };
+}
+
+/** The `Next time` reason line for a split block (review r2 B1); null when the block isn't split. */
+export function splitDeciderFact(block: NextTargetBlock, gymName: string | null): string | null {
+  if (!block.split) return null;
+  const all = `all ${String(block.workingSets)} sets`;
+  return gymName ? `Done at more than one gym: target from your ${gymName} sets, for ${all}.` : `Done at more than one gym: target from the last gym's sets, for ${all}.`;
 }
 
 /** A continuation row whose sets all moved back (after an Undo): nothing to show. */

@@ -206,6 +206,74 @@ describe('gym switch through the services', () => {
   });
 });
 
+describe('next session after a split exercise (review r2 B1)', () => {
+  it('1 set at Main, 2 at Hotel: Today’s card and Start next session build 3 sets, and the Summary has one Next time row', async () => {
+    const { services: s } = await h.launch();
+    const mainId = await setUpGym(h, s);
+    const hotelId = h.ids();
+    expect(await s.setup.saveGym({ gymId: hotelId, name: 'Hotel · Lisbon', draft: s.coachingKnowledge.buildGymDraft('home_dumbbells', 'kg') })).toEqual({ ok: true });
+    const started = await s.workout.start({ gymId: mainId, opId: 'split-start', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!started.ok) throw new Error(started.error.message);
+    const sessionId = started.aggregate.session.id;
+    const pick = (await s.workout.pickerExercises(sessionId, 'Dumbbell bench press')).find((x) => x.exercise.name === 'Dumbbell bench press');
+    if (!pick) throw new Error('no exercise');
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: h.ids() });
+    if (!added.ok) throw new Error(added.error.message);
+    const row = added.aggregate.exercises.at(-1);
+    if (!row) throw new Error('no row');
+    let own = added.aggregate.sets.filter((x) => x.sessionExerciseId === row.id);
+    for (let i = own.length; i < 3; i += 1) {
+      const r = await s.workout.dispatch(sessionId, { type: 'add_set', at: h.now(), opId: h.ids(), sessionExerciseId: row.id, newSetId: h.ids(), setType: null });
+      if (!r.ok) throw new Error(r.error.message);
+      own = r.aggregate.sets.filter((x) => x.sessionExerciseId === row.id);
+    }
+    for (const extra of own.slice(3)) await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: h.ids(), setId: extra.id, expectedSetVersion: extra.version });
+    const log = async (setId: string, load: number, reps: number) => {
+      h.clockMs += 60_000;
+      const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log:${setId}`, setId, values: { load: { value: load, unit: 'kg', convention: 'per_hand' }, reps, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
+      if (!r.ok) throw new Error(r.error.message);
+      return r.aggregate;
+    };
+    const first = [...own].sort((a, b) => a.index - b.index)[0];
+    await log(first?.id ?? '', 32.5, 9);
+    const p = await s.gymSwitch.propose(sessionId, hotelId);
+    if (!p) throw new Error('no proposal');
+    const applied = await s.gymSwitch.apply(p, 'split-switch');
+    if (!applied.ok) throw new Error(applied.error.message);
+    const cont = applied.aggregate.exercises.find((e) => e.continuesFromId === row.id);
+    const moved = applied.aggregate.sets.filter((x) => x.sessionExerciseId === cont?.id && x.status === 'pending').sort((a, b) => a.index - b.index);
+    expect(moved).toHaveLength(2);
+    await log(moved[0]?.id ?? '', 20, 12);
+    const last = await log(moved[1]?.id ?? '', 20, 11);
+    h.clockMs += 60_000;
+    const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: 'split-fin', expectedVersion: last.session.version, endedAt: null });
+    if (!fin.ok) throw new Error(fin.error.message);
+    await h.settle(s);
+
+    const sum = await s.workout.summary(sessionId);
+    const rows = sum?.nextTime?.rows.filter((r) => r.exerciseName === 'Dumbbell bench press') ?? [];
+    // One row, from the Hotel part (the latest with equipment; spec §6.5), saying so. Its
+    // other part isn't called "an earlier session left out", and 3 of 3 sets were done.
+    expect(rows.map((r) => [r.kind, plain(r.target), r.decision])).toEqual([['change', 'Target 22.5 kg each × 6–10', 'increase_load']]);
+    expect(rows[0]?.facts[0]).toBe('Done at more than one gym: target from your Hotel · Lisbon sets, for all 3 sets.');
+    expect(rows[0]?.facts.some((f) => /left out|Only \d+ of/.test(f))).toBe(false);
+
+    h.clockMs += 2 * 86_400_000;
+    const preview = await s.next.preview(mainId);
+    expect(preview?.exercises.map((e) => e.exerciseName)).toEqual(['Dumbbell bench press']);
+    expect(plain(preview?.exercises[0]?.line)).toBe('3 sets · 22.5 kg each × 6–10 · 22.5 kg each × 6–10 · 22.5 kg each × 6–10');
+    const next = await s.workout.start({ gymId: mainId, opId: 'split-next', checkIn: null, nextOf: sessionId });
+    if (!next.ok) throw new Error(next.error.message);
+    const exRows = next.aggregate.exercises.filter((e) => e.exerciseName === 'Dumbbell bench press');
+    expect(exRows).toHaveLength(1);
+    const sets = next.aggregate.sets.filter((x) => x.sessionExerciseId === exRows[0]?.id);
+    expect(sets).toHaveLength(3);
+    expect(sets.every((x) => x.planned.source === 'built_in_rule')).toBe(true);
+    expect(sets.map((x) => [x.planned.load?.value, x.planned.reps])).toEqual(Array.from({ length: 3 }, () => [22.5, { min: 6, max: 10 }]));
+    expect(repeatPreviewLines(next.aggregate).map((l) => l.line)).toEqual(preview?.exercises.map((e) => e.line));
+  });
+});
+
 describe('the switch card on screen (gym-switch §2.2–§3.3)', () => {
   it('Ready: Checks · Today only, Not now and Switch; Applying disables both; a write error offers Try again with the same opId', async () => {
     const { s, hotelId, sessionId } = await setUp();
