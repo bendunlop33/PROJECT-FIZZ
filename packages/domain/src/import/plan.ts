@@ -1093,11 +1093,15 @@ export function aliasesToSave(analysis: ImportAnalysis): AliasSave[] {
 
 /**
  * The answers a new preview starts from (review r4 S2, N2). Load
- * conventions are never pre-answered (DX6), except with Ben's own answers:
- * - this same file's import (opened again after an undo): its answers,
+ * conventions are never pre-answered (DX6), except with Ben's own answers
+ * still in effect:
+ * - this same file's import, finished and not undone (the file is opened
+ *   again because some of its dates aren't in the app now): its answers,
  *   except names (remembered as aliases) and a gym that is gone;
- * - each name's dumbbell answer from the latest import that had it
- *   (`perHandAnswers`), shown as his answer last time.
+ * - each name's dumbbell answer from the newest import still in effect
+ *   that had it (`perHandAnswers`), shown as his answer last time.
+ * An undone import's answers are never among them (review r6 N4), and a
+ * preview rebuilt against changed data starts from here again (r6 S1).
  */
 export function startingAnswers(
   rows: readonly FitNotesRow[],
