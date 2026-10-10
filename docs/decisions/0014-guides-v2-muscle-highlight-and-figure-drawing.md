@@ -27,8 +27,22 @@ Ben reviewed the 10 animated guides on 9 Oct 2026 and asked for more detailed fi
   - with a 25% per-channel threshold, worst 0.0069% of pixels differ (v1 on the same method: 0.0017%);
   - with a 10% threshold, worst 0.25% (v1: 0.10%).
   All the differences are anti-aliasing on thin straight strokes (the dashed floor, plate edges) and shift with sub-pixel alignment. None are on the new curves or gradients. ADR 0013's "0.004%" didn't record its threshold.
-- **Draw ops per frame**: 32–73 at M/L, under the 220 budget (tested). Bake time on Hermes is unmeasured (G14).
+- **Draw ops per frame**: 32–73 at M/L, under the 220 budget (tested). Bake time on Hermes is unmeasured (G14); see the 10 Oct 2026 bake-cost note below for the Node no-JIT proxy.
 - **Differentiate Without Color** can't be read from React Native without a native module, so the app passes `false`. `frameOps` supports it (a 1 pt outline on strong regions).
 - **Not built yet:** Full screen (§2.2, §9.60, with a non-square camera); the pixel-mask visible-area warning (§4.7); the optional rack prop (B7); the back-view pulldown (B3).
 - The `exercise-guide-maker` agent definition still says "one accent for the moving limb or bar path". It should say: neutral aliases plus `guide.muscle` for muscle regions only, never `accent`. Agent configuration is left to the product manager.
 - **Update, 9 Oct 2026 (guide-maker):** the split-squat rear foot now rests on the bench pad (no outline-contact warning) and the pulldown hips sit 0.007 H higher, so no guide reports an outline overlap. The pulldown is drawn from behind (`seenFrom: "back"`) as a provisional call for Ben (B3). Trunk muscles and trunk shading are drawn along the whole trunk chain, so they read as one shape rather than a bead per segment (spec §4.4–4.5).
+
+## Bake cost (10 Oct 2026, guides motion and definition review B2)
+
+Measured in Node 22 with `--jitless` (the closest proxy for Hermes we have off device): every guide × every playback frame at 348 pt, entry muscles, definition `neutral`, `bakeFrame` plus the app's path text, bundled with rolldown. Same machine before and after.
+
+| | ms per frame (figure + path text) | per guide, mean / max | path text per frame |
+|---|---|---|---|
+| Before (`9b18f8f`) | 22.8 + 8.9 = 31.7 | 2.59 s / 3.18 s (leg press) | 76.7 KB |
+| After | 10.5 + 3.7 = 14.2 | 1.16 s / 1.41 s (RDL) | 45.3 KB, and fewer distinct paths to parse |
+
+What changed, all with byte-identical SVG previews except the whole-number app path text: path data memoised per contour array (a limb's halo and fill share it) and built without temporary vectors; profile slopes once per profile; per-segment memo of `frameAt`/`widthsAt`; exact bounding-box rejects in the arm-edge depth test, the fold/shading occluder tests and `polygonsWithin`; app path text in whole 1/10 000 units under one `scale` (integers print ~3× faster than decimals); one parsed `SkPath` per distinct text, kept across adjacent frames (static props parse once); frames inside a hold reuse the hold's picture. The player now starts on the baked prefix when the measured bake rate says it will stay ahead of playback (`canPlayPrefix`), so the still poster no longer lasts the whole bake.
+
+Still open: Skia's own parse and record time is not in these numbers, and the proxy is not Hermes. G14 (full bake ≤ 1.5 s) needs the number from Ben's iPhone before it is called met.
+

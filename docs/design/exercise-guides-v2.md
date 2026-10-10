@@ -332,7 +332,7 @@ There are two tiers on purpose: one simple cut, and every in-app player size get
 
 Front view: floor → back props → mid props → trunk (fill, regions, shading, lines) → both legs → both arms → front props.
 
-Back view (`seenFrom: "back"`): floor → back props → **both legs** → mid props → trunk → both arms → front props. From behind, the buttocks and the seat are nearer the camera than the legs, so the legs go first. A front-view barbell is drawn with the mid props in a back view: it is held in front of the body, so the head and trunk hide its middle and the hands grip over it.
+Back view (`seenFrom: "back"`): floor → back props → **both legs** → mid props → **bar-path trace** → trunk → both arms → front props. The trace goes with the mid props, under the trunk and head, for the same reason as the bar: its path is on the far side of the body, so a trace drawn on top would show a behind-the-neck path (guides v2 review B1). From behind, the buttocks and the seat are nearer the camera than the legs, so the legs go first. A front-view barbell is drawn with the mid props in a back view: it is held in front of the body, so the head and trunk hide its middle and the hands grip over it.
 
 **Muscle definition (§4.11.6).** In every order above, a group's faint shapes go straight after its fill and before its muscle regions, and each muscle-region op sits on a `nearBody` underlay of its own path. In the side view, the faint glutes go with the pelvis regions (step 8).
 
