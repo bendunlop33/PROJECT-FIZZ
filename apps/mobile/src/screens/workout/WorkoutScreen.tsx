@@ -650,6 +650,18 @@ export function WorkoutScreen() {
             </AppText>
           )}
         </View>
+        {/* Visible How to next to the name when there's a guide (Ben found it only in the ⋯ menu or on the rest screen). */}
+        {howToKeyForExerciseId(focus.exerciseId, bundledHowToSources()) !== null ? (
+          <TextButton
+            label="How to"
+            tone="secondary"
+            accessibilityHint={`Shows how to do ${focus.exerciseName}.`}
+            onPress={() => {
+              const key = howToKeyForExerciseId(focus.exerciseId, bundledHowToSources());
+              if (key !== null) navigation.navigate('HowTo', { catalogueKey: key, name: focus.exerciseName });
+            }}
+          />
+        ) : null}
         <IconButton
           icon="ellipsis"
           label={`${focus.exerciseName} menu`}
