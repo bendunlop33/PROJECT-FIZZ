@@ -38,7 +38,7 @@
     {
       "t": 0.549, "label": "Chest touch", "caption": "Touch the lower chest, forearms vertical",
       "props": { "bar": { "x": -0.08, "y": 0.392 } },
-      "projection": { "armNear": 0.615, "armFar": 0.615, "forearmNear": 0.745, "forearmFar": 0.745 },
+      "projection": { "armNear": 0.575, "armFar": 0.575, "forearmNear": 0.68, "forearmFar": 0.68 },
       "holdMs": 150, "ease": "smooth"
     },
     { "t": 0.8106, "sameAs": 1, "caption": "Press up and back over the shoulders", "ease": "smooth" },
