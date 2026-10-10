@@ -7,7 +7,7 @@ import { formatShortDate } from '../../format/dates';
 import type { RoutinePreview, RoutineRow } from '../../services/workout-services';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, Icon, PrimaryButton, StatusLine, Tag, TextButton } from '../../ui';
+import { AppText, BottomCard, Icon, PrimaryButton, StatusLine, Tag, TextButton, TEXT_PRESSED_OPACITY } from '../../ui';
 
 /**
  * The routine sheet (premium-feel §2.6): name and `⋯` (Rename · Delete), when
@@ -86,7 +86,7 @@ export function RoutineSheet({
           onPress={() => {
             menu(row);
           }}
-          style={({ pressed }) => ({ minWidth: theme.target.min.width, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+          style={({ pressed }) => ({ minWidth: theme.target.min.width, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
         >
           <Icon name="ellipsis" color="text.secondary" size={20} />
         </Pressable>
