@@ -137,6 +137,8 @@ export interface RepeatCandidates {
 }
 
 export interface RepeatPreview {
+  /** The workout's name (or the derived title, `Push`), prefilled in `Save as routine`. */
+  title: string;
   exercises: { exerciseName: string; equipmentName: string | null; line: string }[];
   notes: { exerciseName: string; text: string }[];
   notCopied: { exerciseName: string; skipped: number }[];
@@ -858,7 +860,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (!r.ok) return null;
       const source = await repos().sessions.get(sourceSessionId);
       if (!source) return null;
-      return { exercises: repeatPreviewLines(r.aggregate), notes: r.notes, notCopied: r.notCopied, sourceGymId: source.session.gymId, sourceStartedAtUtc: source.session.startedAt.utc, tz: source.session.startedAt.tz };
+      const title = storedName(source) ?? (await titleFor(source.exercises.map((e) => e.exerciseId)).catch(() => ({ title: GENERIC_WORKOUT_NAME }))).title;
+      return { title, exercises: repeatPreviewLines(r.aggregate), notes: r.notes, notCopied: r.notCopied, sourceGymId: source.session.gymId, sourceStartedAtUtc: source.session.startedAt.utc, tz: source.session.startedAt.tz };
     },
   };
 

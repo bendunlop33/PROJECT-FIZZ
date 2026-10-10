@@ -12,6 +12,8 @@ import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Card, PrimaryButton, Screen, StatusLine, TextButton } from '../../ui';
+import { createAfterDismiss } from '../../workout/after-dismiss';
+import { NameSheet } from '../routines/NameSheet';
 
 /**
  * Repeat a workout (routines.md §2.4): the targets the new workout will have
@@ -29,10 +31,15 @@ export function RepeatScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const alertsAsk = useStartAlertsAsk();
+  // `Save as routine` (routines.md §4.6, premium-feel §2.6): one opId per sheet opening.
+  const [saveOpen, setSaveOpen] = useState(false);
+  const saveOp = useRef(newUuid());
+  const [saveAfter] = useState(() => createAfterDismiss());
+  const [saved, setSaved] = useState<{ id: string; name: string; version: number } | null>(null);
   const [data, reload] = useScreenData(async (s) => {
     const gym = await s.yourData.currentGym();
-    const [preview, active] = await Promise.all([gym ? s.repeat.preview(sessionId, gym.id) : Promise.resolve(null), s.sessions.active()]);
-    return { gym, preview, active };
+    const [preview, active, routines] = await Promise.all([gym ? s.repeat.preview(sessionId, gym.id) : Promise.resolve(null), s.sessions.active(), s.routines.list().catch(() => [])]);
+    return { gym, preview, active, savedAs: routines.find((r) => r.createdFromSessionId === sessionId) ?? null };
   });
   if (data.state === 'loading') return <Screen>{null}</Screen>;
   if (data.state === 'error' || data.value.preview === null || data.value.gym === null) {
@@ -48,7 +55,20 @@ export function RepeatScreen() {
       </Screen>
     );
   }
-  const { gym, preview, active } = data.value;
+  const { gym, preview, active, savedAs } = data.value;
+
+  async function saveRoutine(name: string): Promise<string | null> {
+    const r = await services.routines.saveFromSession({ sessionId, name, opId: saveOp.current });
+    if (!r.ok) return r.message;
+    const made = r.routine;
+    saveAfter.arm(() => {
+      setSaved({ id: made.id, name: made.name, version: made.version });
+    });
+    setSaveOpen(false);
+    changed();
+    reload();
+    return null;
+  }
   const day = formatDayMonth(toMs(preview.sourceStartedAtUtc), preview.tz);
 
   async function start() {
@@ -127,8 +147,52 @@ export function RepeatScreen() {
           {`Not copied: ${preview.notCopied.map((n) => `${String(n.skipped)} skipped ${n.skipped === 1 ? 'set' : 'sets'} (${n.exerciseName})`).join(', ')}`}
         </AppText>
       ) : null}
+      {saved ? (
+        <StatusLine
+          icon="checkmark.circle.fill"
+          tone="done"
+          text={`Saved routine ${saved.name}`}
+          action={
+            <TextButton
+              label="Undo"
+              onPress={() => {
+                const s = saved;
+                setSaved(null);
+                void services.routines.remove({ routineId: s.id, expectedVersion: s.version, opId: newUuid() }).then((u) => {
+                  if (!u.ok) setError(u.message);
+                  changed();
+                  reload();
+                });
+              }}
+            />
+          }
+        />
+      ) : savedAs === null ? (
+        <View style={{ alignSelf: 'flex-start' }}>
+          <TextButton
+            label="Save as routine"
+            onPress={() => {
+              saveOp.current = newUuid();
+              setSaveOpen(true);
+            }}
+          />
+        </View>
+      ) : null}
       {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
       {alertsAsk.sheet}
+      <NameSheet
+        visible={saveOpen}
+        title="Save as routine"
+        buttonLabel="Save routine"
+        initialName={preview.title}
+        detail={`${String(preview.exercises.length)} ${preview.exercises.length === 1 ? 'exercise' : 'exercises'}. Targets start from what you did on ${day}.`}
+        check={(n) => services.routines.checkName(n)}
+        onSubmit={saveRoutine}
+        onClose={() => {
+          setSaveOpen(false);
+        }}
+        onDismissed={saveAfter.dismissed}
+      />
     </Screen>
   );
 }
