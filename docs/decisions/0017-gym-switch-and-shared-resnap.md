@@ -30,10 +30,19 @@ Ben approved competitor follow-up 6 (CHANGELOG 2026-10-09): a mid-workout gym sw
 - After a switch, `add_exercise` accepts only the current gym's items, and `add_set` on an exercise whose row is on another gym's item needs a continuation built by the service (else `equipment_not_found`).
 - History buckets a switched workout's sets by their own item's gym; the summary's gym line reads `Main Gym → Hotel · Lisbon` and an exercise done at both gyms is one row with each part's gym.
 
+### In the app (2026-10-10)
+- Workout screen: a `GymChip` in the status row opens `Gym for this workout`; choosing another gym shows the card in the coach slot (under the rest timer while resting, under the target lines otherwise); choosing the current gym dismisses it. `Switch` (or the review sheet's for 5+ lines) applies with one opId per card, so `Try again` after a write error is the same command. The toast's `Undo` restores exactly or, when refused, shows the `Switch back to …` card. When `Switch` changes the Log label, Log ignores taps for `timing.valueChangeGuard`. The card's states come from `apps/mobile/src/workout/gym-switch-card.ts` (pure, tested on real proposals).
+- Set card: `SnapNote` under the target, `GymPartDivider` and done-set gym captions in the set list; `Add set` goes through the service, so it lands on the current gym's item.
+- Repeat: `Checked for [gym ▾]` re-checks the preview and starts nothing; `Start` uses that gym. Dropped-load notes are warnings. `Start next session` uses the same history mapping as its preview.
+- Gym detail during a workout there: `[Use changes today]` opens `Use updated …` on the workout.
+- Past workouts and the Summary read `Main Gym → Hotel · Lisbon`.
+- `parseGymCommand` / `gymCommandStrip` (GS9) are built and tested but not called: there is no voice yet.
+
 ## Not built (needs something that doesn't exist yet)
-- **GS5 swaps:** there is no `rankSubstitutions` or Swap sheet in the app. A `not_here` exercise gets no load target and the card says `Enter your own load, or skip it after switching.` instead of offering `Swap ›`.
-- **GS8 coach slot, GS9 voice:** no coach or voice in the app yet. The card sits where the coach slot will be; voice grammar stays a follow-up for voice.md.
-- `validateRoutineForGym` (routines aren't wired), `Why?` (follow-up 3, another branch), the `Check ›` / `Add equipment ›` card actions, the stored card across force-close, `Machine busy` (not built).
+- **GS5 swaps:** there is no `rankSubstitutions` or Swap sheet in the app. A `not_here` exercise gets no load target and the card says `Enter your own load, or skip it after switching.` instead of offering `Swap ›`; Repeat's preview has no `Swap ›` either.
+- **GS8 coach slot:** no coach in the app yet, so nothing to hold or cancel. The card sits where the coach slot will be.
+- `validateRoutineForGym` (routines aren't wired), `Why?` (follow-up 3, another branch), the `Check ›` / `Add equipment ›` card actions, the stored card across force-close, `Machine busy`, Overview (not built). The computing state shows at once rather than after 300 ms.
+- **Not run on an iPhone.** Every check above ran on Linux (domain, SQLite on Node, services with the fake expo-sqlite, typecheck of the screens). The screens need a device pass: the 3-tap path, VoiceOver labels, AX3 on a 375pt screen and the 1 s Log guard (checks 14, 20, 25).
 
 ## Consequences
 - One function and one property test guard every path a load target reaches a set by. A future swap or coach adjustment after a switch must fit through it too.
