@@ -68,7 +68,8 @@ describe('review r6.1 B1, as decided after review r7: Add new → Barbell never 
 
       // Every name is read by the group answer as written; each row shows the Olympic bar of the exercise Add new makes, nothing selected.
       const rows = totalOptions(d.analysis, 'en-GB')?.platesOnly.rows ?? [];
-      expect(rows.map((r) => [r.title, r.bars.find((b) => b.selected)?.label, r.choices.some((c) => c.selected)])).toEqual(all.map((n) => [n, 'Olympic bar', false]));
+      // The bar buttons appear only once Plates only is selected (review r8 S2).
+      expect(rows.map((r) => [r.title, r.barLine, r.bars.length, r.choices.some((c) => c.selected)])).toEqual(all.map((n) => [n, 'Bar: Olympic bar (from ' + n + ')', 0, false]));
       expect(d.analysis.ready).toBe(true);
 
       // Ben chooses plates only for the EZ and trap names, and their bars.

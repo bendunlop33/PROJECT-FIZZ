@@ -73,6 +73,15 @@ export function ImportRunScreen() {
           retry: true,
         });
         return;
+      case 'outdated_answers':
+        // Paused by an earlier build that read barbell weights as plates only for every exercise at once (review r8 S3).
+        setPhase({
+          kind: 'failed',
+          text: `This import was paused by an earlier version of GymSmarter that added a bar weight to every barbell exercise from one answer. It won’t be continued. ${plural(r.written, 'workout is', 'workouts are')} in; undo it in Past imports, then import the file again.`,
+          jobId: r.jobId,
+          retry: false,
+        });
+        return;
       case 'stale':
         Alert.alert('The preview changed', 'Something changed since the preview (an answer, a workout or another import). Check the preview again before importing.', [{ text: 'OK', onPress: () => { navigation.goBack(); } }]);
         return;

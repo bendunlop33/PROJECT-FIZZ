@@ -134,6 +134,13 @@ export type WriteResult =
 
 export type CommitResult =
   | WriteResult
+  /**
+   * A paused import whose answers include a group "plates only" (stored by a
+   * build before the PM decision after review r7): its stored rows add a bar
+   * Ben never answered for each exercise, so it is never continued. Undo it
+   * and import the file again (review r8 S3).
+   */
+  | { ok: false; reason: 'outdated_answers'; jobId: string; written: number; total: number }
   | { ok: false; reason: 'stale'; draft: ImportDraft }
   | { ok: false; reason: 'not_found' | 'not_ready' }
   | { ok: false; reason: 'workout_unfinished'; block: ImportBlock }
@@ -259,6 +266,11 @@ function loadAsOf(a: ImportAnalysis, key: string): string {
   return q === undefined ? 'none' : (q.loadAs ?? 'bodyweight');
 }
 
+/** The bar a name's "plates only" adds in this analysis, or `none` when it isn't on the barbell question (review r8 S1). */
+function platesOnlyBarOf(a: ImportAnalysis, key: string): string {
+  return a.total?.exercises.find((x) => x.key === key)?.bar ?? 'none';
+}
+
 export function createImportService(deps: ImportServiceDeps) {
   const drafts = new Map<string, Draft>();
   /** One write loop per job in this app run; a second caller joins it (review N2). */
@@ -312,8 +324,8 @@ export function createImportService(deps: ImportServiceDeps) {
    * because the data changed, so an answer from an import undone in the
    * meantime is never kept (review r6 S1).
    */
-  function startFrom(rows: readonly FitNotesRow[], loaded: { ctx: ImportContext; gymIds: ReadonlySet<string> }, earlier: ImportJob | null): ImportAnswers {
-    return startingAnswers(rows, loaded.ctx, earlier ? { answers: earlier.answers, gymIds: loaded.gymIds } : null);
+  function startFrom(input: { variant: FitNotesVariant; rows: readonly FitNotesRow[] }, loaded: { ctx: ImportContext; gymIds: ReadonlySet<string> }, earlier: ImportJob | null): ImportAnswers {
+    return startingAnswers(input, loaded.ctx, earlier ? { answers: earlier.answers, gymIds: loaded.gymIds } : null);
   }
 
   async function view(d: Draft): Promise<ImportDraft> {
@@ -485,7 +497,7 @@ export function createImportService(deps: ImportServiceDeps) {
       }
       const id = deps.newId();
       // Ben's own answers fill in: this file's earlier import, and each name's dumbbell and barbell answers last time (review r4 S2, N2).
-      const answers = startFrom(parsed.rows, loaded, earlier?.job ?? null);
+      const answers = startFrom(parsed, loaded, earlier?.job ?? null);
       const d: Draft = {
         id,
         ownerId: p.id,
@@ -530,6 +542,10 @@ export function createImportService(deps: ImportServiceDeps) {
       if (change.kind === 'total' && (change.answer as string) !== 'total') {
         return { ok: false, reason: 'invalid', message: 'Plates only is chosen for each exercise, not for the group', draft: await view(d) };
       }
+      // A bar is only chosen for an exercise answered "plates only": it never changes anything else (review r8 S2).
+      if (change.kind === 'total_bar' && change.bar !== null && d.answers.totalOverrides[change.key] !== 'plates_only') {
+        return { ok: false, reason: 'invalid', message: 'Choose Plates only for this exercise first', draft: await view(d) };
+      }
       const next = validate(ImportAnswersSchema, applyAnswerChange(d.answers, change));
       if (!next.ok) return { ok: false, reason: 'invalid', message: next.issues[0]?.message ?? 'That answer isn’t valid', draft: await view(d) };
       const picked = change.kind === 'name' && change.answer?.kind === 'exercise' ? change.answer.exerciseId : null;
@@ -540,6 +556,7 @@ export function createImportService(deps: ImportServiceDeps) {
         return { ok: false, reason: 'invalid', message: 'That gym isn’t one of yours', draft: await view(d) };
       }
       const before = change.kind === 'name' ? loadAsOf(d.analysis, change.key) : undefined;
+      const barBefore = change.kind === 'name' ? platesOnlyBarOf(d.analysis, change.key) : undefined;
       d.answers = next.value;
       d.changes.push(change);
       d.mappingVersion += 1;
@@ -548,6 +565,14 @@ export function createImportService(deps: ImportServiceDeps) {
       // answer, so a question Ben never saw isn't answered for him. Recorded as a change, so a replay does the same (review r6.2 N4).
       if (change.kind === 'name' && d.answers.bodyweight[change.key] !== undefined && loadAsOf(d.analysis, change.key) !== before) {
         const clear: AnswerChange = { kind: 'bodyweight', key: change.key, answer: null };
+        d.answers = applyAnswerChange(d.answers, clear);
+        d.changes.push(clear);
+        d.analysis = analyseImport({ variant: d.variant, rows: d.rows }, d.ctx, d.answers);
+      }
+      // The same for a "plates only" answer: given when one bar (or exercise) was shown, it never adds another one Ben
+      // didn't see. It is cleared, recorded as a change, and the exercise is asked again (review r8 S1).
+      if (change.kind === 'name' && d.answers.totalOverrides[change.key] === 'plates_only' && platesOnlyBarOf(d.analysis, change.key) !== barBefore) {
+        const clear: AnswerChange = { kind: 'total_override', key: change.key, answer: null };
         d.answers = applyAnswerChange(d.answers, clear);
         d.changes.push(clear);
         d.analysis = analyseImport({ variant: d.variant, rows: d.rows }, d.ctx, d.answers);
@@ -620,6 +645,11 @@ export function createImportService(deps: ImportServiceDeps) {
       if (existing) return existing;
       const b = await block();
       if (b) return { ok: false, reason: 'workout_unfinished', block: b };
+      // Its stored rows were planned with a group "plates only": never written now (review r8 S3). One whose workouts are all in only needs finishing.
+      if (job.status === 'committing' && job.answers.total === 'plates_only') {
+        const written = await writtenCount(jobId);
+        if (written < job.counts.workouts) return { ok: false, reason: 'outdated_answers', jobId, written, total: job.counts.workouts };
+      }
       return writeWorkouts(job, hooks);
     },
 
@@ -704,7 +734,7 @@ export function createImportService(deps: ImportServiceDeps) {
       // Start again from Ben's answers in effect now (an import undone since teaches nothing), then his answers in this preview (review r6 S1).
       const earlier = (await repos().imports.listJobs(d.ownerId)).find((j) => j.checksum === d.checksum && j.status === 'committed') ?? null;
       d.importedBefore = earlier;
-      const start = startFrom(d.rows, fresh, earlier);
+      const start = startFrom({ variant: d.variant, rows: d.rows }, fresh, earlier);
       // The same checks `answer()` makes: an answer naming an exercise or gym that is gone is dropped, so its question is open again (review r6.1 N1).
       const gymIds = new Set((await gymsOf(d.ownerId)).map((g) => g.id));
       const exerciseIds = new Set(d.candidates.map((c) => c.exerciseId));
@@ -778,7 +808,7 @@ export function createImportService(deps: ImportServiceDeps) {
           catalogueKey: null,
           measurement: 'reps',
           laterality: n.laterality,
-          // `Add new` → Barbell: the Olympic bar, or the bar Ben chose for it on the barbell question (never one read from the name; PM decision after review r7).
+          // `Add new` → Barbell: the Olympic bar, or the bar Ben chose for its "plates only" answer (never one read from the name; PM decision after review r7, review r8 S2).
           compatibleEquipment: n.newKind === null ? [] : [...n.equipment],
           defaultLoadConvention: n.newKind === null ? n.convention : conventionForKind(n.newKind),
           version: 1,

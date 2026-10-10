@@ -106,11 +106,13 @@ export function ImportQuestionScreen() {
             <AppText variant="callout" color="text.secondary">
               {r.barLine}
             </AppText>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
-              {r.bars.map((b) => (
-                <TextButton key={b.label} label={b.selected ? `✓ ${b.label}` : b.label} tone={b.selected ? 'accent' : 'secondary'} onPress={() => void answer({ kind: 'total_bar', key: r.key, bar: b.value })} />
-              ))}
-            </View>
+            {r.bars.length > 0 ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+                {r.bars.map((b) => (
+                  <TextButton key={b.label} label={b.selected ? `✓ ${b.label}` : b.label} tone={b.selected ? 'accent' : 'secondary'} onPress={() => void answer({ kind: 'total_bar', key: r.key, bar: b.value })} />
+                ))}
+              </View>
+            ) : null}
             <AppText variant="callout" color="text.secondary">
               {r.conversion}
             </AppText>
@@ -120,6 +122,11 @@ export function ImportQuestionScreen() {
             {r.remembered ? (
               <AppText variant="callout" color="text.secondary">
                 {r.remembered}
+              </AppText>
+            ) : null}
+            {r.lastTime ? (
+              <AppText variant="callout" color="text.secondary">
+                {r.lastTime}
               </AppText>
             ) : null}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>

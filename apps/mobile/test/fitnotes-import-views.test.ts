@@ -120,7 +120,8 @@ describe('import preview wording', () => {
       [
         'Flat Barbell Bench Press',
         'Bar: Olympic bar (from Bench press)',
-        [['Olympic bar', true], ['EZ bar', false], ['Trap bar', false]],
+        // The bar buttons appear once Plates only is selected (review r8 S2).
+        [],
         'If plates only: 100 kg → 120 kg total (plates + 20 kg bar)',
         'Now: 100 kg → not answered yet',
         [['Total as written', false], ['Plates only', false]],

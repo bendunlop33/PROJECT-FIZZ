@@ -17,6 +17,7 @@ import {
   type NameRow,
   type PerHandExercise,
   type PerHandQuestion,
+  type RememberedTotal,
   type RowFate,
   type TotalExercise,
   type TotalQuestion,
@@ -738,14 +739,20 @@ export interface TotalRowView {
   title: string;
   /** The bar "plates only" would add and where it comes from: `Bar: Olympic bar (from Bench Press)`, `Bar: EZ bar (your choice)`. */
   barLine: string;
-  /** Olympic / EZ / trap bar, the one in use selected (it is the exercise's own unless Ben changed it). */
+  /** Olympic / EZ / trap bar, the one in use selected (it is the exercise's own unless Ben changed it). Empty until `Plates only` is selected (review r8 S2). */
   bars: TotalBarChoice[];
   /** What its newest weight imports as under "plates only": `If plates only: 60 kg → 80 kg total (plates + 20 kg bar)`. */
   conversion: string;
   /** What it imports as now: `Now: 60 kg → 60 kg total as written`, `Now: not answered yet`. */
   now: string;
-  /** `Your answer last time` when the answer is the one remembered from an import still in effect. */
+  /** `Your answer last time` when the answer is the one remembered from an import still in effect, and exactly what it does now (review r8 B1, B2). */
   remembered: string | null;
+  /**
+   * Information only, when Ben's answer last time isn't filled in because
+   * it wouldn't do the same now (another exercise, bar or bar weight):
+   * `Last time: plates only + 15 kg Olympic bar. Not filled in: the bar or its weight is different now.` (review r8 B1, B2).
+   */
+  lastTime: string | null;
   /** Total as written / Plates only. Nothing pre-selected (DX6). */
   choices: TotalChoice[];
 }
@@ -789,15 +796,27 @@ export function totalConversion(e: Pick<TotalExercise, 'reading' | 'sample' | 'b
   return platesOnlyConversion(e);
 }
 
+/** Ben's barbell answer last time, when it isn't filled in now (review r8 B1, B2). */
+function lastTimeLine(r: RememberedTotal, e: Pick<TotalExercise, 'exerciseId'>): string {
+  const weights = r.barWeight === undefined ? [] : (['kg', 'lb'] as const).flatMap((u) => (r.barWeight?.[u] === undefined ? [] : [weightText(r.barWeight[u], u)]));
+  const answer =
+    r.reading === 'total' ? 'total as written' : r.bar === undefined ? 'plates only' : `plates only + ${weights.length > 0 ? `${weights.join(' / ')} ` : ''}${BAR_LABEL[r.bar]}`;
+  const why = r.exerciseId !== undefined && r.exerciseId !== e.exerciseId ? 'it was for another exercise' : r.exerciseId === undefined ? 'answer again to be sure' : 'the bar or its weight is different now';
+  return `Last time: ${answer}. Not filled in: ${why}.`;
+}
+
 function totalRow(e: TotalExercise): TotalRowView {
   const pick = (value: TotalAnswer, label: string): TotalChoice => ({ value, label, selected: e.override === value });
   const barLine =
     e.bar === 'unknown'
       ? `Bar: not recorded for ${e.exerciseName}. Choose one for plates only.`
       : `Bar: ${BAR_LABEL[e.bar]} (${e.barChosen ? 'your choice' : `from ${e.exerciseName}`})`;
-  const bars = BAR_KINDS.map((b): TotalBarChoice => ({ value: b === e.exerciseBar ? null : b, label: BAR_LABEL[b], selected: e.bar === b }));
+  // The bar only matters for plates only: it is chosen once that is selected (review r8 S2).
+  const bars = e.override === 'plates_only' ? BAR_KINDS.map((b): TotalBarChoice => ({ value: b === e.exerciseBar ? null : b, label: BAR_LABEL[b], selected: e.bar === b })) : [];
   const r = e.remembered;
-  const remembered = r !== null && e.override === r.reading && (r.bar === undefined ? !e.barChosen : e.barChosen && e.bar === r.bar) ? 'Your answer last time' : null;
+  const same = r !== null && e.rememberedFits && e.override === r.reading && (r.reading === 'total' || e.bar === r.bar);
+  const remembered = same ? 'Your answer last time' : null;
+  const lastTime = r !== null && !same && !e.rememberedFits ? lastTimeLine(r, e) : null;
   return {
     key: e.key,
     title: e.name,
@@ -806,6 +825,7 @@ function totalRow(e: TotalExercise): TotalRowView {
     conversion: `If plates only: ${platesOnlyConversion(e)}`,
     now: `Now: ${totalConversion(e)}`,
     remembered,
+    lastTime,
     choices: [pick('total', 'Total as written'), pick('plates_only', 'Plates only')],
   };
 }
