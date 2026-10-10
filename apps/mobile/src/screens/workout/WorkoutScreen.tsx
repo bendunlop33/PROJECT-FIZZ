@@ -44,6 +44,7 @@ import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
 import { painClearConfirm } from '../../workout/pain-clear';
+import { editorShown, enterAction, isResting, type EntryField } from '../../workout/rest-fold';
 
 /**
  * Active workout: focused set card, rest, summary hand-off
@@ -98,6 +99,18 @@ export function WorkoutScreen() {
   const repsRef = useRef<TextInput>(null);
   /** During rest the next set is folded away (D-Rest); this opens it. Reset when the set changes. */
   const [showNextSet, setShowNextSet] = useState(false);
+  /** A field to focus once the editor is drawn (`Enter load` during rest opens it first). A fresh object per tap. */
+  const [focusRequest, setFocusRequest] = useState<{ field: EntryField } | null>(null);
+  useEffect(() => {
+    if (focusRequest === null) return;
+    const id = requestAnimationFrame(() => {
+      (focusRequest.field === 'load' ? loadRef : repsRef).current?.focus();
+      setFocusRequest(null);
+    });
+    return () => {
+      cancelAnimationFrame(id);
+    };
+  }, [focusRequest, showNextSet]);
 
   const reload = useCallback(async () => {
     try {
@@ -487,7 +500,10 @@ export function WorkoutScreen() {
         return {
           label: view.primary.label,
           onPress: () => {
-            (field === 'load' ? loadRef : repsRef).current?.focus();
+            // During rest the editor is folded away: open it, then focus once it's drawn (review B1).
+            const a = enterAction(field, { resting: isResting(view.rest), hasFocus: view.focus !== null, showNextSet });
+            if (a.unfold) setShowNextSet(true);
+            setFocusRequest({ field: a.focus });
           },
         };
       }
@@ -863,7 +879,7 @@ export function WorkoutScreen() {
 
         {/* During rest the next set waits below its own toggle (D-Rest is rest-first, audit F8). */}
         {resting && focus ? (
-          showNextSet ? (
+          editorShown({ resting, hasFocus: true, showNextSet }) ? (
             setEditor
           ) : (
             <TextButton
