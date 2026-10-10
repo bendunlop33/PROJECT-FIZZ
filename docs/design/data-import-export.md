@@ -12,6 +12,16 @@ Sources: brief §5 (data foundation), §7 (`previewFitNotesImport`, `commitImpor
 
 > **Revision 2026-10-09 (import from any app, designer).** Ben asked for history import from any format, read by the coach (CHANGELOG 2026-10-09, item 4). New **§9** designs it on top of the FitNotes importer, which stays the deterministic, offline path. The coach reads a file's *layout*, never its numbers; code checks it on every row; anything the file doesn't state is asked, with nothing pre-selected; then the FitNotes preview, commit and Undo run unchanged. Confirmed layouts are saved and reused offline. Changed elsewhere in this file: DX5 (now §9 AI1), the hub's Import rows (§2.1), the intro (§2.5 step 1 → §9.2.1), §3.4's unknown-header state, §4.3, §6, check 16 and P-I1. Research: [ai-import.md](../research/ai-import.md). Only Ben's direction is approved; §9.0's decisions and §9.8's questions are for him.
 
+> **Revision 10 Oct 2026 (§9 v0.2, designer).** §9 now matches the approved direction "AI interprets, code transforms":
+> - **The coach proposes a typed parser spec and never writes rows on any path.** Coach-transcribed note lines are removed.
+> - **Every coach reading that changes a stored value is a `Check` Ben confirms.**
+> - **Only column names and 30 sample rows are sent**, stated in one line.
+> - **Undo import takes back a layout it saved.**
+> - **The copy follows the minimal-copy convention.**
+> - **Three open questions remain.**
+>
+> Nothing outside §9 changed.
+
 **Why this matters more than usual.** Fizz is signed with a free Apple ID through SideStore. Deleting the app, or re-signing it with another Apple ID or tool, installs a separate app with an empty database (ADR 0004). Backups on the phone protect against a damaged database or a bad restore, but not against that. Only a copy saved to Files (off the phone) survives it. Fizz says which kind Ben has, every time, and offers a one-tap copy to Files before the moments when it matters (§4.1a), without nagging.
 
 | Part | Milestone |
@@ -1071,219 +1081,241 @@ General
 
 ## 9. Import from any app (AI)
 
-Added 9 Oct 2026 (designer). Ben: "can we leverage AI to interpret historic data so that it can then be transformed into a format that works with the app? … it can come from any format" (CHANGELOG 2026-10-09, item 4). Research: [ai-import.md](../research/ai-import.md) (fact-checked 9 Oct). Builds on ADR 0016 and review r4 (SP1–SP3). Coach routes and failure wording: [ai-connection.md](ai-connection.md) §3 and [system-states.md](system-states.md) §3.2. Binding rules: CLAUDE.md 1, 5, 6, 7, 8, 10.
+Status: **v0.2, 10 Oct 2026 (designer).** Replaces the 9 Oct draft of this section. Ben's direction (CHANGELOG 2026-10-09, item 4): use AI to interpret history from any format and turn it into GymSmarter's format, instead of hand-written per-app import rules. Research: [ai-import.md](../research/ai-import.md). Builds on [ADR 0016](../decisions/0016-fitnotes-import.md). Binding: CLAUDE.md rules 1, 2, 4, 5, 6, 7, 8, 10 and the minimal-copy convention. Coach route states: [ai-connection.md](ai-connection.md) §3, [system-states.md](system-states.md) §3.2.
 
-**How it works.** The coach reads a new file's **layout**, never its numbers. It sees the column names, a summary of each column made on the phone, and 30 rows with notes hidden. It returns a typed layout: which column is what, the date format, and how cells like `3x8` are written. GymSmarter checks that layout on every row and shows Ben worked examples. Anything the file doesn't state for certain is a question with nothing pre-selected: unit, dumbbells, bar, assistance, what `3x8` means, day/month order, and whether these are workouts done or a plan. After that, the FitNotes preview, commit and Undo run unchanged. A layout Ben confirms is saved, so the next file in that layout imports with no coach and no network.
+> **Changed from the 9 Oct draft.**
+> 1. **The coach never produces set rows on any path.** The notes path no longer has the coach copy lines into sets. Notes are read only through line patterns that code applies (AI2).
+> 2. **Every coach reading that changes a stored value is a `Check`.** This covers a column's role, a set-type marker and a notes pattern. Ben confirms each one, exactly like a suggested exercise name. Only a word in the file or Ben's answer fills one in (AI3).
+> 3. **Less is sent.** The request carries the column names and up to 30 sample rows. Column summaries are no longer sent (AI8).
+> 4. **Copy follows the minimal-copy convention.** No lead paragraphs. Consent is one line.
+> 5. **`Undo this import` also takes back a layout that the import saved.** This works like remembered names (AI12).
+> 6. **Three questions for Ben.** Everything else is decided here or passed to the PM (§9.8).
 
-**What "any format" can and can't mean.** AI replaces the per-app column rules. It can't replace the checks or the questions above: no export format records dumbbell or bar conventions, several don't record the unit (research §6), and guessing them would invent data (rule 6). v1 reads text files only: CSV, TSV, semicolon-separated, multi-section CSV (JEFIT), `.txt`, `.md` and pasted text. Not `.xlsx`, PDFs, photos or app databases.
+### How it works
 
-**Never-guess principle (ADR 0016, extended).** Anything that changes a stored value comes only from:
-- an exact catalogue name or alias match;
-- an explicit answer from Ben, including one saved in a layout he confirmed;
-- an explicit word in the file that code has found: a header token such as `(kg)`, a column whose every value is a unit word, or a name word such as `Assisted`.
+```text
+file or pasted text ─► detect (code, on the phone, no network)
+  ├─ FitNotes header ─────────────── built-in parser ─────────────────────┐
+  ├─ saved layout, same columns ──── applyImportSpec (offline) ───────────┤
+  ├─ saved layout, changed columns ─ ask about new columns (offline) ─────┤
+  └─ new layout ─► consent ─► coach proposes a spec (one request)         │
+                   ─► validateImportSpec (code, every row)                │
+                   ─► Ben confirms each Check and answers questions       │
+                   ─► applyImportSpec (code) ─────────────────────────────┤
+                                                                          ▼
+                    SourceSetRow[]  (raw cells or line, row, evidence)
+                                                                          ▼
+   analyseImport ─► ImportAnalysis ─► the FitNotes preview and questions (§2.5)
+   ─► commitImport (one transaction per workout, idempotent) ─► Results ─► Undo this import
+```
 
-The coach's layout carries **no load-convention fields at all**. A missing word proves nothing.
+1. **The coach proposes a parser plan. It never writes rows.**
+   - Its only output is an `ImportMappingSpecV1` (or `NotesPatternSpecV1` for notes), in a closed vocabulary (§9.6): column references, a layout kind, a date format, cell notations and marker readings. The spec has no field for a set, a load value or a load convention.
+   - Pure code (`applyImportSpec`, `packages/domain/src/import`) turns the file into `SourceSetRow[]`.
+   - From `analyseImport` onwards, everything is the FitNotes importer unchanged: the same `ImportAnalysis`, questions, commit, results and Undo.
+   - The coach also returns its own reading of 3–5 sample rows. These readings are used only to test its spec, then thrown away.
+2. **Evidence rule.** This is ADR 0016's PM principle, applied to every source. No stored value may differ from the source unless it comes from one of these:
+   - **(a)** an exact catalogue name or alias match;
+   - **(b)** an explicit answer from Ben, given in this import or saved in a layout he confirmed whose import is still in effect;
+   - **(c)** an explicit word in the source that code has found:
+     - a header token such as `(kg)`;
+     - a column where every value is a unit word;
+     - a name word such as `Assisted`;
+     - a header that names a role.
+
+   A coach suggestion is none of these. It is a `Check` until Ben confirms it. A missing word proves nothing.
+3. **Anything the file doesn't state is asked, with nothing selected.** That covers:
+   - the unit;
+   - whether the file is workouts done or a plan;
+   - what cell notation like `3x8` means;
+   - day/month order;
+   - the year, when note headings leave it out;
+   - each set-type marker;
+   - the dumbbell, bar and bodyweight questions (§2.5 step 3b).
+4. **The file is data, never instructions (rule 8).**
+   - It goes to the model as one JSON-encoded user message, never in the instructions.
+   - The request has one forced, emit-only function. It has no other tools, no web search and no Your data.
+   - Code validates every value that comes back.
+   - Nothing the model writes is ever shown on screen.
+5. **The request is kept small.**
+   - Tables: the column names and up to 30 rows chosen by code. Free-text cells are replaced by `[text, 42 chars]`.
+   - Notes: up to 120 lines.
+   - Nothing else is sent.
+6. **Offline and without AI (rule 1).**
+   - FitNotes files and saved layouts import with no network and no AI.
+   - A new layout shows `Needs the coach` and stops. There is no fake parse and no queue.
+
+v1 reads text only: CSV, TSV, semicolon-separated files, multi-section CSV (JEFIT), `.txt`, `.md` and pasted text. It does not read `.xlsx`, PDFs, photos or app databases.
 
 ### 9.0 Decisions
 
-AI1–AI6 are the research's proposed spec changes, designed here. The rest are new.
-
 | # | Decision | Why |
 |---|---|---|
-| AI1 | (Replaces DX5.) A file with unknown columns offers `Read with the coach` when the coach is usable, and stops honestly when it isn't. There's no mapping grid: Ben can change one column's role, from a fixed list, while seeing worked examples. The unit is never a column role; it's a separate question or a checked word in the file | Ben's direction. Keeps DX5's protection against kg/lb misreads |
-| AI2 | `What is this file?` (`Workouts I did` / `A plan or template`) is always asked, with nothing pre-selected, unless a saved layout holds Ben's answer. A plan imports nothing | Targets read as results would invent history (rule 6). Liftosaur's `Required …` columns and spreadsheet templates are the likely cases |
-| AI3 | One question per cell notation (`3x8`, `100x5`, `12/10/8`), each option rendered from a real row of the file | Notation changes stored values |
-| AI4 | Workouts are identified by the layout's `Which workout` column, else one per start time, else one per date. **Start times with no time zone are stored as written, marked `time zone not recorded`**, and shown as `18:02 (as in the file)`. Nothing is asked. Workout length isn't imported yet. **Needs a domain decision** on the storage shape | CLAUDE.md asks for UTC plus zone. A zone would be a guess, and asking about it for every file adds taps for little value |
-| AI5 | Duplicates use the FitNotes rules for every source. Dates that came in with any import still in effect are always skipped; that also stops an app's export re-importing history it got from another app. Dates with a workout logged in GymSmarter are a question, defaulting to skip. Within one file, several workouts a day are fine | One rule across sources. A Hevy export can contain Ben's imported Strong history |
-| AI6 | Provenance says who read each set. `Layout suggested by the coach` means code read the row with a layout Ben checked. `Read by the coach` means the coach copied it from notes and Ben ticked it. Both add the file, row or line and the original text | Rule 6 labelling |
-| AI7 | **Consent shows exactly what is sent.** `See exactly what's sent` shows the literal request text: the file data and GymSmarter's fixed instructions. The request carries that text byte for byte (hash-stamped). If anything changes, Ben sees it again before sending | Ben must know what leaves the phone (rules 7 and 8) |
-| AI8 | The import uses the coach's chosen route (ai-connection AC1). Limits and errors pause it; nothing switches route on its own. The API-key route shows an estimate and runs `checkPersonalSpendCap` before sending | Rule 7 |
-| AI9 | Reading a table never sends notes or comments. Free-text columns go as `[text, 42 chars]`, and their summary has no example values. Ben can hide more columns, but can't reveal a text column on this path | Privacy by default (research F23). Keeps the promise short and true |
-| AI10 | **Saved import layouts** are Your data. A layout is used only on an exact column match. A file with added or missing columns is asked about offline. Anything new in the data, such as a new marker, unit word or negative weights, is asked and never absorbed. Ben's earlier answers come back labelled `Your answer last time`: that's his data, not a pre-selection (review r4 SP2) | Offline reuse without silent drift |
-| AI11 | **Notes:** one consent covers the text Ben chose. Patterns he confirms are read on the phone; only lines no pattern reads go to the coach, in parts. Sets the coach copied line by line start **unticked**, and `Select all` is one tap | Free text is where numbers and notation get misread. Same pattern as reviewing RPE in comments |
-| AI12 | **Values to check**, for every new source, and proposed for FitNotes too (§9.8 Q8): impossible values are unreadable; a load more than double, or less than half, the same exercise's previous workout in the file is a question (`Import as written` / `Skip`) | A jump of about 2.2× is the usual sign of a kg/lb mix-up (research §1) |
-| AI13 | `Ask the coach to suggest matches` on the names screen is optional, works for FitNotes imports too, and sends only the unmatched names and the exercise list. Suggestions are `Check`, never `Matched`. They must be real exercises, must not contradict an equipment or one-arm word in the name, and show the dumbbell count (`two dumbbells`) | Applies review r4 S1, S3 and SP3 to the coach |
-| AI14 | No text written by the model appears on any screen. Screens show file text (quoted, plain), GymSmarter's own copy, and readings rendered by code from the layout | Rule 8: a file can't talk to Ben through the review screen |
-| AI15 | Import requests are outside the coach. They get no tools except the one that carries the layout, and no Your data. Nothing goes into chats or memory. The coach and voice still can't start an import (DX10) | Rules 8 and 10 |
-| AI16 | Import, including the coach's reading, waits for an unfinished workout to end (DX4) | One rule. These screens are never used mid-workout |
-| AI17 | No "set up the columns yourself" path in v1. A file the coach can't read, or that Ben won't send, stops with `Share first line` for the developer | DX5's concern. Listed as a question for Ben (§9.8 Q5) |
+| AI1 | (Replaces DX5.) **New tables.** When the coach is usable, a table with unknown columns offers `Read with the coach`. When it isn't, the screen shows `Needs the coach` and stops. There is no free mapping grid: Ben changes one column's role at a time, from a fixed list, while seeing worked examples. The unit is never inferred. It comes from a header token, a column of unit words, or Ben's answer | Ben's direction. Keeps DX5's protection against kg/lb mix-ups |
+| AI2 | **The coach writes no rows.** For tables it returns a mapping spec. For notes it picks line patterns from a closed list (§9.2.8). Lines that no confirmed pattern reads are listed as `Not read`; the coach never copies them into sets. Ben can edit the text, and code reads it again on the phone | The AI proposes; code applies the plan and validates every row. A number the model copied is the model's value, not the file's |
+| AI3 | **Coach suggestions are `Check`s.** Some roles produce stored values: date, start time, which workout, exercise, load, unit column, reps, sets and reps, one set, all sets, set type and RPE. Such a role is filled in only when the header names it, or when Ben confirms it. A header names a role when it matches code's word list, exactly one column matches, and the header has no target word. A coach-suggested role shows `Check` with `Use this` / `Change…`. The same applies to marker meanings and notes patterns. `Notes` and `Not imported` apply without a tap, because they change no stored value and the raw cells are kept anyway | Evidence rule (b) and (c). The same pattern as exercise names (ADR 0016) |
+| AI4 | **Done or planned.** `What is this file?` (`Workouts I did` / `A plan or template`) is asked with nothing selected, unless a saved layout holds Ben's answer. A plan imports nothing. A column with a target word (`Target`, `Required`, `Planned`, `Goal`, `%1RM`) can never take a result role | Reading targets as results would invent history (rule 6) |
+| AI5 | **Notation and dates.** One question for each cell notation and each marker, with every option rendered from real rows. Day/month order is asked unless a date with a first field above 12 settles it | Each changes stored values |
+| AI6 | **Workout identity and time zones.** A workout is identified by the `Which workout` column, else one per start time, else one per date. Times with no time zone are stored as written with `zone: null` and shown as `18:02 (as in the file)`. Nothing is asked. Workout length isn't imported. **Domain decision for the PM:** the storage shape for local times with no zone (CLAUDE.md asks for UTC plus zone) | A time zone would be a guess |
+| AI7 | **Duplicates** follow the FitNotes rules for every source. Dates that came in with any import still in effect are always skipped. Dates with a workout logged in the app are a question that defaults to skip. Several workouts on one day within a file are fine | A Hevy export can contain Strong history Ben already imported |
+| AI8 | **What's sent.** The column names and up to 30 rows chosen by code. Columns that code classes as free text are masked. Ben can hide more columns but can never unmask a text column. The consent screen says this in **one line**. `See what's sent` shows the literal request text, and the request is that text byte for byte (checked by hash) | Rules 7 and 8, and minimal copy |
+| AI9 | **Outside the coach.** Import requests are not coach turns (`runCoachTurn`) and have no tool registry, context builder, memory or chat. Neither the coach nor voice can start, answer or commit an import (DX10) | Rules 8 and 10 |
+| AI10 | **Route.** The import uses the coach's current route. A limit or an error stops it, and nothing switches route on its own. On the API-key route the screen shows an estimate, and `checkPersonalSpendCap` runs before anything is sent | Rule 7 |
+| AI11 | **No model text on screen.** Screens show only file text (plain, quoted), GymSmarter's fixed copy and readings that code renders. A spec that fails shows code's reasons, from a fixed list | Rule 8. A file can't talk to Ben through the review screen |
+| AI12 | **Saved import layouts** are Your data. A layout is used only when the columns match exactly (cells, delimiter, section markers). Added or missing columns are asked about, offline. Anything new in the data is asked about, never absorbed: a new marker, a new unit word, negative weights. Ben's earlier answers show as `Your answer last time`: they are his data, not a pre-selection. A layout is saved when the import commits. **`Undo this import` takes it back** unless another import still in effect used it | Offline reuse without silent drift. The same rule as remembered names (ADR 0016, r5 S2) |
+| AI13 | **Values to check** (new sources). Hard limits make a row unreadable: more than 1,000 reps; over 1,500 kg or 3,000 lb; before 2000; after today. A load more than double, or under half, the same exercise's load in the previous workout in the file is a question, with nothing selected: `Import as written` / `Skip` | A jump of about 2.2× is the usual sign of a kg/lb mix-up |
+| AI14 | **`Ask the coach to suggest matches`.** An optional button on the names screen, for any source. It sends only the unmatched names and the exercise list. Results are `Check`s. Code drops unknown IDs, and any suggestion that contradicts an equipment, Smith, assist or arm-count word in the name (the ADR 0016 matcher rules). A suggestion gives the exercise only | ADR 0016 PM decision |
+| AI15 | Import waits while a workout is unfinished (DX4) | One rule |
+| AI16 | **No manual setup offline in v1.** Columns can't be set up by hand without the coach. A file the coach can't read stops with `Share first line` | DX5's concern. Revisit with a real file |
 
 ### 9.1 Purpose
 
 | Surface | Question it answers | Single primary action |
 |---|---|---|
-| Import history (replaces the FitNotes intro) | "Can GymSmarter read my history, and does it need the coach?" | `Choose file` |
-| New file layout | "What will be sent to read this file, and where?" | `Read with the coach` |
-| Reading the layout | "Is it working, and can I stop it?" | None (`Stop`) |
+| Import history (replaces the FitNotes intro) | "Can GymSmarter read this, and does it need the coach?" | `Choose file` |
+| New file layout | "What leaves the phone to read this file?" | `Read with the coach` |
+| Reading the layout | "Is it working?" | None (`Stop`) |
 | Check the layout | "Is every column read the right way?" | `Use this layout` |
 | Changed columns | "What are this file's new columns?" | `Continue` |
-| Paste text | "Which text do I want to bring in?" | `Continue` |
-| Read your notes | "What exactly will be sent, and how much?" | `Send to the coach` |
-| Check your notes | "Did my notes come out right?" | `Continue` |
-| Saved import layouts | "Which layouts import without the coach?" | None (a list) |
+| Paste text | "Which text do I bring in?" | `Continue` |
+| Read your notes | "What leaves the phone to read my notes?" | `Read with the coach` |
+| Check your notes | "Did my notes read right?" | `Continue` |
+| Saved import layouts | "Which layouts import offline?" | None (a list) |
 
-After `Use this layout` or `Continue`, every source goes to the shared preview (§2.5 step 3 with §9.2.6's additions), then commit, results and Undo. These screens are never shown during a workout.
+After `Use this layout` or `Continue`, every source goes to the shared preview: §2.5 step 3, with the additions in §9.2.6. Commit, results and Undo follow. None of these screens appears during a workout.
 
 ### 9.2 Layout
 
-Design width 390pt; checked at 375 and 430. Counts, dates, loads and money are tabular. Rows are at least `target.min`; primary buttons are `target.primary` in the fixed footer, which sits above the keyboard when one is open. Raw file text uses `type.source` (§9.9).
+- Design width is 390pt, checked at 375 and 430.
+- Counts, dates, loads and money use tabular numerals.
+- Rows are at least `target.min`.
+- The primary button is `target.primary` in the fixed footer, which sits above the keyboard when one is open.
+- Raw file text uses `type.source` (§9.9).
+- Nothing animates.
 
 #### 9.2.0 Flow
 
 ```text
 Data & backup › Import history ─Choose file / Paste text─► detect (code, on the phone)
- ├─ FitNotes CSV ─────────────────────────────────────────────────────────► Preview (§2.5)
- ├─ saved layout, same columns ─────────────────────────── offline ───────► Preview
- ├─ saved layout, changed columns ─► Changed columns ───── offline ───────► Preview
+ ├─ FitNotes CSV ──────────────────────────────────────────────────────► Preview (§2.5)
+ ├─ saved layout, same columns ───────────────────────── offline ──────► Preview
+ ├─ saved layout, changed columns ─► Changed columns ─── offline ──────► Preview
  ├─ new table ─► New file layout ─Read with the coach─► Reading ─► Check the layout ─► Preview
- ├─ notes / text ─► Read your notes ─Send─► Reading parts ─► Check your notes ─────► Preview
- └─ can't read (.xlsx, PDF, photo, app backup, empty) ─► message, Choose another file
+ ├─ notes ─► Read your notes ─Read with the coach─► Reading ─► Check your notes ──► Preview
+ └─ can't read (.xlsx, PDF, photo, app backup, empty) ─► one line, Choose another file
 Preview ─Import n workouts─► safeguard (§4.1a) · backup ─► Importing ─► Results (Undo this import)
 ```
 
 #### 9.2.1 Import history
 
-From Data & backup (`Import history`) or onboarding's Ready screen (`Import training history`).
+Opened from Data & backup (`Import history`) or from onboarding's Ready screen (`Import training history`).
 
 ```
 ┌────────────────────────────────────────┐
 │ ‹ Back         Import history          │
 ├────────────────────────────────────────┤
-│ Bring in workouts from another app, a  │
-│ spreadsheet or your notes. You'll see  │
-│ what will be imported before anything  │
-│ is saved.                              │
-│                                        │
-│ Works offline                          │ SettingsSectionHeader
-│ ✓ FitNotes and FitNotes 2 CSV files    │
-│ ✓ Layouts you've saved (2)           › │ → §9.2.9; hidden when none
+│ Offline                                │ SettingsSectionHeader
+│ ✓ FitNotes CSV                         │
+│ ✓ Saved layouts (2)                  › │ → §9.2.9; hidden when none
 │                                        │
 │ Needs the coach                        │
 │ ⓘ Other apps and spreadsheets (CSV)    │
-│ ⓘ Workout notes and pasted text        │
-│ Coach: ChatGPT plan · connected        │ coach line, §9.3.2
+│ ⓘ Notes and pasted text                │
+│ ✓ Coach: ChatGPT plan                  │ coach line, §9.3.2
 │                                        │
-│ For a spreadsheet, export one sheet as │
-│ CSV first.                             │
 ├────────────────────────────────────────┤
-│ Paste text                             │ text button, above-left
+│ Paste text                             │ text button
 │ [            Choose file             ] │ PrimaryButton
 └────────────────────────────────────────┘
 ```
 
-- The `Works offline` and `Needs the coach` lines are facts, not buttons (except `Layouts you've saved`).
-- The coach line's variants are in §9.3.2. When the coach isn't usable, the line says so and both offline lines stay ticked: `Coach not connected. FitNotes and saved layouts still work.` `Connect ›`.
-- With an unfinished workout: `Finish or discard your workout first (Push A).` and both actions are disabled (AI16).
+- The section rows are facts, not buttons. The exception is `Saved layouts`.
+- The coach line shows the coach's state with an icon and one word or phrase (§9.3.2), for example `⊘ Coach: offline` or `⊘ Coach: not connected` with `Connect ›`. The `Offline` rows stay ticked in every state.
+- With an unfinished workout, the screen shows `Finish or discard your workout first.` and both actions are disabled (AI15).
 
 #### 9.2.2 New file layout (consent)
 
-Shown when the file is a table that isn't FitNotes and matches no saved layout.
+Shown when the file is a table that isn't FitNotes and doesn't match any saved layout. **The send line is the whole consent:** one line saying what goes and where. The detail sits behind `See what's sent`.
 
 ```
 ┌────────────────────────────────────────┐
 │ Cancel        New file layout          │
 ├────────────────────────────────────────┤
 │ strong_workouts.csv                    │
-│ Table · 13 columns · 4,212 rows        │
+│ 13 columns · 4,212 rows                │
 │                                        │
-│ GymSmarter doesn't know this layout    │
-│ yet. The coach can read the column     │
-│ names and a few rows and suggest how   │
-│ to read it. GymSmarter checks that on  │
-│ every row, and you confirm it before   │
-│ anything is saved.                     │
+│ ↑ Sends column names and 30 sample     │ SendLine (§9.9)
+│   rows, notes hidden, to ChatGPT.      │
+│ See what's sent                      › │ → §9.2.3
 │                                        │
-│ ┌────────────────────────────────────┐ │
-│ │ ↑ What's sent                      │ │ ConsentCard (§9.9)
-│ │ • The 13 column names              │ │
-│ │ • A summary of each column, made   │ │
-│ │   on this phone                    │ │
-│ │ • 30 rows, with notes hidden       │ │
-│ │ Not sent: the other rows, notes,   │ │
-│ │ your history, memories, pain flags │ │
-│ │ or gyms.                           │ │
-│ │ See exactly what's sent          › │ │ → §9.2.3
-│ └────────────────────────────────────┘ │
-│ Sent to ChatGPT, using your plan.      │ RouteLine
-│ OpenAI handles it under your account's │
-│ terms.                                 │
 ├────────────────────────────────────────┤
 │ [        Read with the coach         ] │
 └────────────────────────────────────────┘
 ```
 
-API-key route: the two route lines read `Sent to OpenAI with your API key (paid). About $0.05 (estimate).` and `This month: $1.42 of $5.00.` The estimate includes an allowance for reasoning tokens and is never shown without the word `estimate`.
+- **API-key route.** The send line reads `↑ Sends column names and 30 sample rows, notes hidden, to OpenAI (your API key). About $0.05, estimate.` The estimate allows for reasoning tokens, and the word `estimate` always appears with it.
+- **Estimate over what's left of the cap.** The screen adds `⊘ Over your $5.00 monthly cap` and `Change cap ›`, and the primary is disabled.
+- **Hidden columns.** When Ben has hidden columns, the line says so: `…30 sample rows, notes and 2 columns hidden…`.
 
-When the coach isn't usable, the same screen has no `Read with the coach`, no consent card and nothing sent:
+**Coach not usable.** The screen has no send line and no `Read with the coach`, and nothing is sent:
 
 ```
 ┌────────────────────────────────────────┐
 │ ‹ Back        New file layout          │
 ├────────────────────────────────────────┤
 │ strong_workouts.csv                    │
-│ Table · 13 columns · 4,212 rows        │
+│ 13 columns · 4,212 rows                │
 │                                        │
-│ ⊘ Reading a new layout needs the coach │ StatusCard
-│ The coach isn't connected. Nothing was │
-│ sent.                                  │
-│ FitNotes files and layouts you've      │
-│ saved import without it.               │
-│ Connect the coach ›                    │
+│ ⊘ Needs the coach · offline            │ StatusCard; reason word §9.3.2
 │                                        │
-│ First line of the file                 │
+│ First line                             │
 │ ┌────────────────────────────────────┐ │
 │ │ "Workout #";"Date";"Workout Name"; │ │ type.source, max 3 lines
 │ │ "Duration (sec)";"Exercise Name";… │ │
 │ └────────────────────────────────────┘ │
-│ Share first line                       │ for the developer
+│ Share first line                       │ text button
 ├────────────────────────────────────────┤
 │ [         Choose another file        ] │
 └────────────────────────────────────────┘
 ```
 
-The card's wording for each reason is in §9.3.2.
+When there's a fix for the reason, a link sits under the status: `Connect the coach ›`, `Sign in ›` or `Change cap ›` (§9.3.2).
 
-#### 9.2.3 See exactly what's sent
+#### 9.2.3 See what's sent
 
-Large-detent sheet. The text box is the literal request content (AI7), not a description of it.
+A large-detent sheet. The box holds the literal request content (AI8), not a description of it.
 
 ```
 ┌────────────────────────────────────────┐
 │ What's sent                       Done │
 ├────────────────────────────────────────┤
-│ This is the exact text GymSmarter      │
-│ sends. Nothing else is added.          │
-│                                        │
-│ Example values                         │
-│ "Workout #" · numbers          [ On ]  │ switch per column
-│ "Date" · dates                 [ On ]  │
-│ "Exercise Name" · short text   [ On ]  │
-│ "Notes" · notes              ⊘ Hidden  │ never sent
-│ "Workout Notes" · notes      ⊘ Hidden  │
+│ Columns                                │
+│ "Workout #"                    [ On ]  │ switch per column
+│ "Date"                         [ On ]  │
+│ "Exercise Name"                [ On ]  │
+│ "Notes"                      ⊘ Hidden  │ notes: can't be switched on
+│ "Workout Notes"              ⊘ Hidden  │
 │ …                                      │
-│ Off: only the column name and counts   │
-│ are sent.                              │
 │                                        │
-│ Your file, as sent                     │
+│ Exactly as sent                        │
 │ ┌────────────────────────────────────┐ │ SentPreview (§9.9)
-│ │ 13 columns, separated by ";"       │ │
-│ │ 1 "Workout #": 4,212 filled, 412   │ │
-│ │   different, numbers 1 to 412      │ │
-│ │ …                                  │ │
-│ │ Row 2: "1";"2025-03-04 18:02:11";  │ │
-│ │ "Push";"3600";"Bench Press         │ │
-│ │ (Barbell)";"1";"100";"8";"";       │ │
-│ │ "[text, 42 chars]";…               │ │
+│ │ {"kind":"gymsmarter_import_sample",│ │
+│ │ "v":1,"delimiter":";","header":[   │ │
+│ │ "Workout #","Date",…],"rows":[{    │ │
+│ │ "line":2,"cells":["1","2025-03-04  │ │
+│ │ 18:02:11","Push","3600","Bench     │ │
+│ │ Press (Barbell)","1","100","8","", │ │
+│ │ "[text, 42 chars]",…]},…]}         │ │
 │ └────────────────────────────────────┘ │
 │ 6,812 characters                       │
 │                                        │
-│ GymSmarter's instructions            › │ fixed, the same every time
+│ Instructions                         › │ fixed text, read-only
 └────────────────────────────────────────┘
 ```
 
-- Code decides a column's kind (numbers, dates, short text, notes) from its values. Notes columns can't be switched on (AI9).
-- Switching a column off changes the box and the count at once, and the consent card's third bullet becomes `30 rows, with notes and 2 more columns hidden`.
-- `GymSmarter's instructions` opens the fixed instruction text, read-only. It says the file is data, not instructions, and lists the allowed answers.
+- **Column kinds.** Code decides each column's kind from its values. A column counts as free text (`Notes`) when any value is longer than 40 characters, or when more than half of its filled values are unique and contain spaces. Its cells are always sent as `[text, n chars]`.
+- **Switching a column off.** The column's cells are sent as `[hidden]`. The box, the character count and the send line update at once. A hidden column may leave the coach unable to suggest that column's role; Ben then sets the role himself (§9.2.5).
+- **`Instructions`** opens the fixed instruction text, read-only. It is a versioned constant and the same every time.
 
 #### 9.2.4 Reading the layout
 
@@ -1293,42 +1325,43 @@ Large-detent sheet. The text box is the literal request content (AI7), not a des
 ├────────────────────────────────────────┤
 │ strong_workouts.csv                    │
 │                                        │
-│ ✓ Column summary made on this phone    │ StepRow
-│ ✓ Sent to ChatGPT · 6,812 characters   │
+│ ✓ Sent · 6,812 characters              │ StepRow
 │ … Waiting for the coach                │
-│ ○ Checking it on all 4,212 rows        │
+│ ○ Checking every row                   │
 │                                        │
-│ Keep GymSmarter open. If it closes,    │
-│ nothing is imported and you can try    │
-│ again.                                 │
+│ Keep the app open.                     │ text.secondary
 │                                        │
 │ Stop                                   │ text button
 └────────────────────────────────────────┘
 ```
 
-When the checks refuse the layout, the screen shows code's reasons and nothing else:
+When the checks refuse the spec, the screen shows code's reasons, from the fixed list in §9.5, and nothing else:
 
 ```
-│ ⚠ The coach's layout didn't pass the   │ StatusCard, status.warning
-│   checks, so it wasn't used            │
+│ ⚠ Layout didn't pass the checks        │ StatusCard, status.warning
 │ • It names a column "Weight" that      │ NoteLines from validateImportSpec
 │   isn't in the file.                   │
-│ • With it, 61% of rows can be read.    │
-│   95% is needed.                       │
-│ Nothing was imported.                  │
+│ • 61% of rows can be read. 95% is      │
+│   needed.                              │
 │ [            Try again             ]   │ SecondaryButton
 ├────────────────────────────────────────┤
 │ [         Choose another file        ] │
 ```
 
-The checks (research §2.4) are:
-- the schema;
-- every column it names exists at that position;
-- every unit word it points to is in the file, and consistent across all rows;
-- its own reading of 3–5 sample rows matches what code gets from its layout;
-- a trial run reads at least 95% of rows.
+The checks (`validateImportSpec`, pure, all deterministic):
+1. **Schema.** The spec passes the `packages/schemas` validator. Strict mode on the wire is a second guard, never the only one.
+2. **Columns.** Every `ColumnRef` equals the header cell at its index, and no column has two roles, except notes.
+3. **Unit evidence.**
+   - A `header_token` must be a whole word in that header cell.
+   - For a `unit_column`, every non-empty value in the **whole file** must be one of `kg`, `kgs`, `lb` or `lbs`, in any case. Code maps them; the model doesn't.
+4. **Markers.** Every marker cell the spec names exists among that column's values.
+5. **Dates.** The format parses every non-empty date cell. When no first field is above 12, `DD/MM` and `MM/DD` become `day_month_unknown`, which is a question. Month names must be English.
+6. **Decimal comma.** Accepted only when the delimiter isn't `,` and no numeric cell has three digits after the comma. Otherwise those cells are unreadable.
+7. **Self-check.** Applying the spec to the model's 3–5 sample rows gives exactly the model's own readings.
+8. **Dry run.** At least 95% of data rows read. Rows that fail the hard limits (AI13) count as read but unreadable.
+9. **Result roles.** No result role sits on a column with a target word (AI4).
 
-Failures are written by code from a fixed list (§9.5).
+Any failure refuses the whole spec. Nothing is half-applied.
 
 #### 9.2.5 Check the layout
 
@@ -1339,146 +1372,142 @@ Example: a spreadsheet with no unit in it.
 │ Cancel        Check the layout         │
 ├────────────────────────────────────────┤
 │ Training log.csv                       │
-│ Layout suggested by the coach.         │ SourceTag (Coach)
-│ GymSmarter checked it on every row.    │
-│ ✓ 1,186 of 1,204 rows can be read      │
-│ ⓘ 18 rows can't be read              › │
+│ ✓ 1,186 of 1,204 rows read             │
+│ ⓘ 18 rows not read                   › │
 │                                        │
-│ Needs your answer (3)                  │
+│ Needs your answer (4)                  │
 │ ⚠ What is this file?                 › │ SettingsRow, question variant
 │ ⚠ Weight unit                        › │
 │ ⚠ What "3x8" means                   › │
 │                                        │
-│ How rows are read                      │ WorkedExample × 3–5 (§9.9)
+│ Columns                                │ ColumnRoleRow (§9.9)
+│ "Date"         Workout date          ✓ │ named by the header
+│                Day first               │ settled by "21/11/2025"
+│ "Exercise"     Exercise              ✓ │
+│ "Weight"       Load                  ✓ │
+│ "Sets x Reps"  Sets and reps   ? Check │ coach's suggestion
+│ [ Use this ]  [ Change… ]              │
+│ "Notes"        Notes                 › │
+│                                        │
+│ Rows                                   │ WorkedExample × 3–5 (§9.9)
 │ Row 2                                  │
-│ 03/11/2025 · Bench · 100 · 3x8 ·       │ file text, type.source
-│ [note]                                 │
-│ → Mon 3 Nov 2025 · Bench · 100 ? ·     │ reading, rendered by code
-│   3x8 ?                                │
+│ 03/11/2025 · Bench · 100 · 3x8 · [note]│ file text, type.source
+│ → 3 Nov 2025 · Bench · 100 ? · 3x8 ?   │ code's reading
 │ Row 415                                │
 │ 21/11/2025 · Squat · 140 · 5x5         │
-│ → Fri 21 Nov 2025 · Squat · 140 ? ·    │
-│   5x5 ?                                │
-│ ? fills in when you answer.            │
-│                                        │
-│ Columns (5)                            │ ColumnRoleRow (§9.9)
-│ "Date"           Workout date        › │
-│   Day first: "21/11/2025" can only be  │
-│   21 November.                         │
-│ "Exercise"       Exercise            › │
-│ "Weight"         Load                › │
-│ "Sets x Reps"    Sets and reps       › │
-│ "Notes"          Kept as notes       › │
+│ → 21 Nov 2025 · Squat · 140 ? · 5x5 ?  │
 ├────────────────────────────────────────┤
-│ [  Answer 3 questions to continue    ] │ disabled
+│ [   Answer 4 questions to continue   ] │ disabled
 └────────────────────────────────────────┘
 ```
 
-Once answered, the examples read `→ Mon 3 Nov 2025 · Bench · 3 sets × 8 reps at 100 kg` and the primary becomes `Use this layout` (accent).
+Once everything is answered, the examples read `→ 3 Nov 2025 · Bench · 3 sets × 8 reps at 100 kg` and the primary becomes `Use this layout`.
 
-- **Worked examples** are 3–5 rows chosen by code to cover different patterns: a warm-up marker, a row with RPE, a second workout on one day, a row that can't be read. They're always the file's text, then code's reading.
-- **Column roles are a proposal; the properties the file doesn't state are questions.** The coach's roles are shown as already chosen because Ben checks them against the worked examples, and the code checks back them up. Unit, notation, day/month order, plan or done, and markers it couldn't read are questions with nothing selected.
-- **Unit with evidence** isn't asked. It shows as a fact on the load column, e.g. `"Weight (kg)"  Load · kg, from the column name`, with `Not right? ›`, which opens the unit question with nothing selected.
+- **The count.** `Needs your answer` counts the questions plus the columns and markers still on `Check`. The primary's number is the same.
+- **Column states, by source:**
 
-**Column role sheet** (tap a column). A fixed list; at most one column per role, except notes.
+  | State | When | Shown |
+  |---|---|---|
+  | `✓` | The header names the role (AI3: code's word list, one column, no target word) | Role, with evidence on tap |
+  | `? Check` | The role is the coach's suggestion | `Use this` / `Change…`. Nothing is applied until Ben taps |
+  | `✓` + `You` | Ben chose or confirmed the role | `SourceTag` `You` |
+  | (no mark) | `Notes` or `Not imported` | Applies without a tap |
+
+- **Unit from evidence** isn't asked. It shows on the load column (`"Weight (kg)"  Load · kg  ✓`). A tap shows `From the column name` and `Not right? ›`. That link opens the unit question with nothing selected.
+- **Worked examples.** Code chooses 3–5 rows that cover different patterns: a marker, an RPE value, a second workout on one day, a row that can't be read. Each shows the file's text, then code's reading. `?` marks a value still waiting for an answer.
+
+**Column role sheet** (`Change…`, or a tap on a column). A fixed list. Each role can be held by only one column, except `Notes`.
 
 ```
 ┌────────────────────────────────────────┐
-│ Column "Sets x Reps"              Done │
+│ "Sets x Reps"                     Done │
 ├────────────────────────────────────────┤
-│ In your file: 3x8, 5x5, 4x10, 3x12 …   │ file text
-│ 1,204 rows filled                      │
+│ 3x8, 5x5, 4x10, 3x12 …                 │ file text
+│ 1,204 rows                             │
 │                                        │
-│ This column holds                      │
 │ ( ) Workout date                       │
-│ ( ) Start time, or date and time       │
+│ ( ) Start time                         │
 │ ( ) Which workout                      │
 │ ( ) Exercise                           │
 │ ( ) Load                               │
-│ ( ) Weight unit (kg or lb in each row) │
+│ ( ) Weight unit                        │
 │ ( ) Reps                               │
-│ (•) Sets and reps (like 3x8)           │ the current reading
-│ ( ) One set (like 100x8)               │
-│ ( ) All sets (like 100x5, 100x5)       │
-│ ( ) Set number or set type             │
-│ ( ) Effort (RPE)                       │
+│ ( ) Sets and reps (3x8)    Suggested   │ coach's suggestion, not selected
+│ ( ) One set (100x8)                    │
+│ ( ) All sets (100x5, 100x5)            │
+│ ( ) Set number or type                 │
+│ ( ) RPE                                │
 │ ( ) Notes                              │
 │ ( ) Not imported                       │
-│                                        │
-│ Suggested by the coach: Sets and reps  │
 └────────────────────────────────────────┘
 ```
 
-- Choosing a role another column has moves that column to `Not imported` and says so: `"Reps" is now Not imported.` [Undo].
-- `Weight unit` is refused unless every value in the column is a unit word: `Not every value in "Notes" is kg or lb.`
-- Every change re-runs the checks, the examples and the counts. Changes are Ben's, so the column's `SourceTag` reads `You`.
+- A `Check` column has nothing selected. A confirmed column has its role selected.
+- Choosing a role another column already holds moves that column to `Not imported`, and a toast says `"Reps" → Not imported` with [Undo].
+- `Weight unit` is refused unless every value in the column is a unit word: `Not every value is kg or lb.`
+- A result role on a column with a target word is refused: `Target column. Not imported as results.`
+- Every change re-runs the dry run, the examples and the counts. While that runs, the count line reads `Checking…` and the primary is disabled.
 
-**Layout questions** (each one appears only when the file needs it):
+**Layout questions.** Each appears only when the file needs it. Nothing is selected.
 
 ```
 │ What is this file?                     │
-│ GymSmarter imports workouts you did.   │
-│ Plans and templates aren't imported.   │
 │ ( ) Workouts I did                     │
 │ ( ) A plan or template                 │
-│ Columns named like targets: "Target    │ only when present (code's word list)
-│ reps", "%1RM". They're never imported  │
-│ as results.                            │
+│ Target columns: "Target reps", "%1RM"  │ only when present
 ```
 
 ```
 │ Weight unit                            │
-│ The file doesn't say whether weights   │
-│ are kg or lb.                          │
-│ Values in your file: 2.5 to 180        │
+│ Values: 2.5 to 180                     │
 │ ( ) kg                                 │
 │ ( ) lb                                 │
-│ Weights are stored as written, in the  │
-│ unit you choose. Nothing is converted. │
 ```
 
 ```
 │ What "3x8" means                       │
-│ 1,204 rows. Row 2: "3x8", weight 100.  │
-│ ( ) 3 sets of 8 reps                   │
+│ Row 2: "3x8", weight 100               │
+│ ( ) 3 sets of 8                        │
 │     → 100 × 8, 100 × 8, 100 × 8        │
-│ ( ) 8 sets of 3 reps                   │
+│ ( ) 8 sets of 3                        │
 │     → 8 sets of 100 × 3                │
 ```
 
 ```
 │ Dates like "03/04/2025"                │
-│ No date in the file has a day above    │
-│ 12, so the order isn't clear.          │
 │ ( ) Day first: 3 Apr 2025              │
-│     Dates run 2 Jan – 12 Nov 2025      │
+│     2 Jan – 12 Nov 2025                │
 │ ( ) Month first: 4 Mar 2025            │
-│     Dates run 1 Feb – 11 Dec 2025      │
+│     1 Feb – 11 Dec 2025                │
 ```
 
 ```
 │ Markers in "Set Order"                 │
-│ "W"   212 rows   Warm-up            ▾  │ the coach's reading
-│ "D"    18 rows   Drop set           ▾  │
-│ "F"     6 rows   ⚠ Not answered     ▾  │ no reading: asked
-│ Choices: Warm-up · Working set · Drop  │
-│ set · To failure · Not a set (skip)    │
+│ "W" · 212 rows · Warm-up?    ? Check   │ coach's suggestion
+│ [ Use this ]  [ Change… ]              │
+│ "D" · 18 rows · Drop set?    ? Check   │
+│ [ Use this ]  [ Change… ]              │
+│ "F" · 6 rows                 ⚠         │ no suggestion: asked
+│ [ Choose… ]                            │
+│ Choices: Warm-up · Working set ·       │
+│ Drop set · To failure · Not a set      │
 ```
 
-A `Weight unit` question also appears when a row has values in both a kg and an lb column (`Which one did you enter?`), as for FitNotes 2 (§2.5 step 3c). An `Effort (RPE)` column is imported as RPE only for values from 1 to 10; others are kept as written in the row's original.
+- **Both kg and lb columns filled in a row:** the `Weight unit` question appears as `Which one did you enter?`, the same as for FitNotes 2 (§2.5 step 3c).
+- **RPE.** An `RPE` column sets RPE only for values from 1 to 10 in half steps. Other values stay in the row's original.
+- **Set types.** A `Warm-up`, `Drop set` or `To failure` marker gives the set that type, where the domain has it. Otherwise the set is a working set and the marker stays in the original. `Not a set` rows are skipped and listed.
 
 #### 9.2.6 Preview (shared), additions for these sources
 
-Same screen as §2.5 step 3. The title becomes `Import preview` for every source. New lines are marked.
+This is the same screen as §2.5 step 3, built from the same `ImportAnalysis`. The title becomes `Import preview` for every source. New lines are marked.
 
 ```
 ┌────────────────────────────────────────┐
 │ Cancel          Import preview         │
 ├────────────────────────────────────────┤
 │ strong_workouts.csv                    │
-│ Layout suggested by the coach, checked │ new: layout line
-│ by you                                 │
-│ Weights in kg, from the column name    │ new: unit with its source
+│ Coach layout · checked by you          │ new: SourceTag (§9.9)
+│ kg · from the column name              │ new: unit and its source
 │ 4,212 rows · 4 Mar 2025 – 1 Oct 2026   │
 │                                        │
 │ Will import                            │
@@ -1489,186 +1518,145 @@ Same screen as §2.5 step 3. The title becomes `Import preview` for every source
 │ ⚠ 6 exercise names to check          › │
 │ ⚠ Dumbbell weights: each or both?    › │
 │ ⚠ Pull-up weights: added or assist?  › │
-│ ⚠ 3 values to check                  › │ new (AI12)
+│ ⚠ 3 values to check                  › │ new (AI13)
 │                                        │
 │ Will be skipped                        │
-│ ⓘ 40 cardio rows (not imported yet)  › │
+│ ⓘ 40 cardio rows                     › │
 │ ⓘ 32 rows can't be read              › │
-│ ⓘ 212 dates came in with your        › │ AI5
-│   FitNotes import on Thu 8 Oct         │
+│ ⓘ 212 dates from your FitNotes import› │ AI7
 │                                        │
 │ Kept as written                        │
-│ ⓘ Start times as in the file. It has   │ new (AI4)
-│   no time zone.                        │
-│ ⓘ 88 notes, kept with their sets     › │
+│ ⓘ Times as in the file (no time zone)  │ new (AI6)
+│ ⓘ 88 notes                           › │
 │ Gym: Not recorded                    › │
 │                                        │
-│ Save this layout             [ On ]    │ new (AI10)
+│ Save layout                    [ On ]  │ new (AI12)
 │ Name: strong_workouts                › │
-│ Next time, files with these 13 columns │
-│ import without the coach.              │
 │                                        │
 │ Workouts (186)                         │
-│ Wed 1 Oct 2026 · 18:02 · Push ·      › │
+│ Wed 1 Oct 2026 · 18:02 · Push        › │
 │ 5 exercises · 18 sets                  │
 ├────────────────────────────────────────┤
 │ [    Answer 4 questions to import    ] │
 └────────────────────────────────────────┘
 ```
 
-- **Values to check** (AI12). Hard limits make a row unreadable, with the reason: more than 1,000 reps; more than 1,500 kg or 3,000 lb; a date before 2000; a date after today (a plan, not a workout). The soft check compares each workout's heaviest working set of an exercise with the previous workout's in the file. A load more than double, or less than half, is listed:
+- **Values to check** (AI13). The soft check compares the heaviest working set of each exercise in each workout with the same exercise in the previous workout in the file. Nothing is selected, and the primary waits until every row is answered.
 
   ```
   │ Values to check (3)                    │
-  │ Each is in your file as written. Check │
-  │ it before importing.                   │
   │                                        │
   │ Bench Press (Barbell) · 12 Jun 2025    │
-  │ 225 × 5. The workout before: 100 × 5.  │ file values, no ratio shown
+  │ 225 × 5 · before: 100 × 5              │ file values; no ratio shown
   │ ( ) Import as written                  │
   │ ( ) Skip these 5 sets                  │
   │ …                                      │
-  │ Import all as written                  │ text button
+  │ Import all as written                  │ text button: answers every row
   ```
-- **Dumbbells, bars and bodyweight** are the §2.5 step 3b screens, unchanged. A name word found by code is shown as the source, e.g. `Pull Up (Assisted): assistance, from the word "Assisted"`. Every exercise's conversion shows before commit, as ADR 0016 difference 20 does.
-- **Exercise names** (§2.5 step 3a) gain one optional button under the unmatched names (AI13):
+- **Dumbbells, bars and bodyweight** use the §2.5 step 3b screens, unchanged, for every source.
+  - When code finds a word in a name, it shows the word as the source: `Pull Up (Assisted): assistance · from "Assisted"`.
+  - Every exercise's conversion shows before commit (ADR 0016, difference 20).
+- **Exercise names** (§2.5 step 3a) get one optional button under the unmatched names (AI14):
 
   ```
   │ 6 names have no match.                 │
   │ [ Ask the coach to suggest matches ]   │ SecondaryButton
-  │ Sends these 6 names and GymSmarter's   │
-  │ exercise list. Nothing else.           │
+  │ ↑ Sends these 6 names and the exercise │ SendLine
+  │   list.                                │
   │                                        │
   │ Flat DB Press                 96 sets  │
-  │ ? Dumbbell bench press (two dumbbells) │ MatchStatus "Check"
-  │   Check · suggested by the coach       │ SourceTag (Coach)
+  │ ? Dumbbell bench press        Check    │ MatchStatus "Check"
+  │   Coach suggestion                     │ SourceTag
   │ [ Use this ]  [ Choose… ]  [ Add new ] │
   ```
-  With the coach unavailable, the button is replaced by the one-line reason (`Coach not connected.`), and the rest of the screen works as before.
-- **Save this layout** is on by default and visible. It's saved only when the import commits, and it stays if the import is later undone (like remembered names). `Name ›` opens a one-field sheet with `Save` above the keyboard. The default name is the file name without its extension.
+  When the coach isn't usable, the button and send line become one status line (`⊘ Coach: offline`). Everything else on the screen works as before. A suggested exercise's dumbbell count and bar are asked as usual: the suggestion gives the exercise only.
+- **Save layout** is on by default and visible.
+  - It saves only when the import commits.
+  - `Name ›` opens a one-field sheet with `Save` above the keyboard. The default name is the file name without its extension.
+  - `Why?` beside the switch shows `Files with these columns import offline next time.`
 
 #### 9.2.7 Saved layouts in use
 
-**Same columns.** No coach and no network. The preview's layout line reads:
+**Same columns.** No coach, no network and no consent. The preview's source lines read:
 
 ```
 │ strong_workouts_nov.csv                │
-│ Layout: strong_workouts · saved 9 Oct  │ SourceTag (Saved layout)
-│ Read on this phone. Nothing was sent.  │
-│ Weights in kg, from the column name    │
+│ Layout: strong_workouts · offline      │ SourceTag (Saved layout)
+│ kg · from the column name              │
 ```
 
-Ben's answers from the layout show as answered rows, labelled: `✓ What it is: Workouts I did · your answer last time`. They're changeable until commit. Questions the layout can't answer (new exercise names, their conventions, new markers, values to check) are asked as usual.
+- Ben's answers from the layout show as answered rows, for example `✓ What it is: Workouts I did · Your answer last time`. They can be changed until commit.
+- These are asked as usual: new exercise names and their conventions, new markers, new unit words, values to check, and negative weights for an exercise the layout hasn't seen with negative weights.
 
-**Changed columns.** All the columns holding date, exercise, load and reps are there by exact name, and others were added or removed.
+**Changed columns.** Every column the layout uses for date, exercise, load and reps is present under its exact name. Other columns were added or removed.
 
 ```
 ┌────────────────────────────────────────┐
 │ Cancel        Changed columns          │
 ├────────────────────────────────────────┤
 │ strong_workouts_nov.csv                │
-│ Matches your layout "strong_workouts", │
-│ with 1 new column.                     │
+│ Layout "strong_workouts" + 1 new column│
 │                                        │
-│ New column "Rest Timer (sec)"          │
-│ In your file: 60, 90, 120 …            │
-│ 3,880 rows filled                      │
-│ This column holds                      │
-│ ( ) Not imported                       │ nothing pre-selected
+│ "Rest Timer (sec)"                     │
+│ 60, 90, 120 … · 3,880 rows             │ file text
+│ ( ) Not imported                       │ nothing selected
 │ ( ) Notes                              │
 │ ( ) Something else…                    │ full role list
 │                                        │
-│ Read the whole file with the coach   › │ optional
+│ Read with the coach instead          › │ optional; consent as §9.2.2
 ├────────────────────────────────────────┤
 │ [             Continue               ] │ disabled until answered
 └────────────────────────────────────────┘
 ```
 
-A removed optional column is a line, not a question: `The column "RPE" isn't in this file. Effort won't be imported from it.` If a column for date, exercise, load or reps is missing, the file is a new layout (§9.2.2). At commit, the layout learns the new columns (a new version); older files with the old columns still match.
+- **A removed optional column** is a line, not a question: `"RPE" isn't in this file.`
+- **A missing date, exercise, load or reps column** makes the file a new layout (§9.2.2).
+- **At commit** the layout gains the new columns as a new version. Older files with the old columns still match.
 
 #### 9.2.8 Notes and pasted text
 
-**Paste text.** Full-screen editor. Pasting uses the iOS edit menu, so no clipboard module is needed.
+Notes follow the same rule as tables: **the coach picks patterns, and code reads every line** (AI2). Patterns come from a closed list (§9.6, `LinePattern`). The coach can only say which pattern fits which example lines. Lines that no confirmed pattern reads are listed. They are never copied by the coach.
+
+**Paste text.** A full-screen editor. Pasting uses the iOS edit menu, so no clipboard module is needed.
 
 ```
 ┌────────────────────────────────────────┐
 │ Cancel           Paste text            │
 ├────────────────────────────────────────┤
-│ Paste your workout notes.              │
 │ ┌────────────────────────────────────┐ │
 │ │ Mon 6 Oct                          │ │ multi-line field, type.body
-│ │ Bench 3x5 @ 100                    │ │
+│ │ Bench 3x5 @ 100                    │ │ placeholder: "Paste your notes"
 │ │ Squat 100x5, 105x5, 110x3          │ │
 │ │ …                                  │ │
 │ └────────────────────────────────────┘ │
-│ 38,214 characters · 1,120 lines        │
+│ 1,120 lines                            │
 ├────────────────────────────────────────┤ sits on the keyboard
 │ [             Continue               ] │
 └────────────────────────────────────────┘
 ```
 
-A `.txt` or `.md` file (for example a note exported from Notes as Markdown) that isn't a table comes straight to the next screen.
+A `.txt` or `.md` file that isn't a table comes straight to the next screen. An example is a note exported from Notes as Markdown.
 
-**Read your notes (consent).**
+**Read your notes (consent).** This is a single request.
 
 ```
 ┌────────────────────────────────────────┐
 │ Cancel        Read your notes          │
 ├────────────────────────────────────────┤
 │ Pasted text · 1,120 lines              │
-│ 412 lines have numbers                 │
-│ Dates found: 2 Mar 2024 – 1 Oct 2026   │ only when code found date headings
+│ 412 lines with numbers                 │
 │                                        │
-│ Send                                   │
-│ (•) All of it · 38,214 characters      │
-│ ( ) Only some dates…                   │ date range picker
+│ ↑ Sends 120 sample lines to ChatGPT.   │ SendLine
+│ See what's sent                      › │
 │                                        │
-│ ┌────────────────────────────────────┐ │
-│ │ ↑ What's sent                      │ │ ConsentCard
-│ │ The text you chose: about 38,000   │ │
-│ │ characters, in up to 14 requests,  │ │
-│ │ one at a time.                     │ │
-│ │ Not sent: your history, memories,  │ │
-│ │ pain flags or gyms.                │ │
-│ │ See exactly what's sent          › │ │
-│ └────────────────────────────────────┘ │
-│ Sent to ChatGPT, using your plan.      │
-│ OpenAI handles it under your account's │
-│ terms. If you let apps use ChatGPT     │
-│ credits after plan limits, OpenAI may  │
-│ use them. GymSmarter can't see that    │
-│ setting.                               │
-│                                        │
-│ The coach copies each set with the     │
-│ line it came from. GymSmarter drops    │
-│ any number that isn't in that line.    │
 ├────────────────────────────────────────┤
-│ [         Send to the coach          ] │
+│ [        Read with the coach         ] │
 └────────────────────────────────────────┘
 ```
 
-- `Up to 14 requests` is the most it can take. The first request sends up to 120 lines to find the patterns. Lines those patterns read are then read on the phone, so fewer parts are usually sent. The finished screen says what was actually sent: `Sent 6,200 characters in 3 requests.`
-- On the API-key route, the route lines read `Sent to OpenAI with your API key (paid). Up to about $1.20 (estimate).` The cap is checked before each request, and the import pauses at the cap.
-
-**Reading parts.** `ProgressLine` with a count; no animation.
-
-```
-┌────────────────────────────────────────┐
-│ Reading your notes                     │
-├────────────────────────────────────────┤
-│ 5 of 14 parts                          │
-│ ▓▓▓▓▓▓░░░░░░░░░░░░                     │
-│ Parts already read are kept on this    │
-│ phone and aren't sent again.           │
-│                                        │
-│ Keep GymSmarter open. If it closes,    │
-│ you can carry on from here.            │
-│                                        │
-│ Stop                                   │
-└────────────────────────────────────────┘
-```
-
-Paused (Stop, limit, offline, closed): `Paused at 5 of 14 parts: <reason>.` · `Nothing more is sent until you tap Continue. 9 parts left.` [Continue] [Cancel import].
+- **The sample.** Code chooses it: lines with digits, spread evenly through the text, plus every distinct date-heading shape. With fewer than 120 such lines, the line reads `Sends 64 lines…`.
+- **API-key route:** `↑ Sends 120 sample lines to OpenAI (your API key). About $0.03, estimate.`
+- **Unavailable:** the same pattern as §9.2.2. The screen shows `⊘ Needs the coach · <reason>`, has no send line, and its primary is `Choose another file`.
 
 **Check your notes.**
 
@@ -1677,73 +1665,55 @@ Paused (Stop, limit, offline, closed): `Paused at 5 of 14 parts: <reason>.` · `
 │ Cancel        Check your notes         │
 ├────────────────────────────────────────┤
 │ 412 lines with numbers                 │
-│ ✓ 371 read with patterns you confirm   │
-│ ⓘ 29 read by the coach, line by line › │ → ticks, below
-│ ⓘ 12 not read                        › │
-│ ⓘ 4 sets dropped: a number isn't in  › │
-│   its line                             │
+│ ✓ 371 read                             │
+│ ⓘ 41 not read                        › │ → list, Edit text
 │                                        │
-│ Needs your answer (4)                  │
-│ ⚠ What are these notes?              › │ AI2 wording for notes
+│ Needs your answer (5)                  │
+│ ⚠ What are these notes?              › │ AI4 wording
 │ ⚠ Weight unit (lines without one)    › │
-│ ⚠ What "3x5 @ 100" means             › │ AI3, one per pattern
-│ ⚠ What "100x5" means                 › │
-│                                        │
-│ Patterns                               │
-│ "Bench 3x5 @ 100"        214 lines   › │ file text; tap for examples
-│ "Squat 100x5, 105x5"     131 lines   › │
-│ "12/10/8"                 26 lines   › │
-│ Date headings like "Mon 6 Oct"         │
+│ ⚠ Year for "Mon 2 Mar"               › │ only when headings lack a year
+│ ⚠ "Bench 3x5 @ 100" · 214 lines      › │ pattern question
+│ ⚠ "Squat 100x5, 105x5" · 131 lines   › │
 ├────────────────────────────────────────┤
-│ [  Answer 4 questions to continue    ] │
+│ [  Answer 5 questions to continue    ] │
 └────────────────────────────────────────┘
 ```
 
-- Patterns come from a fixed list (research §2.1 D). The coach only points at lines; code reads the numbers in them, and Ben's notation answer says which number is which.
-- A unit word in a line (`bench 225lbs - 8,8,6`) is that line's unit. Lines without one take Ben's answer.
-- Headings without a year ask once: `Your dates have no year. Which year is "Mon 2 Mar" in?` (year picker, nothing selected). Code counts years forward from there and lists any heading whose weekday doesn't fit.
-- **Read by the coach, line by line** (AI11):
+- **Pattern question.** One per pattern the coach proposed. It is the coach's `Check` and the notation question in one, with nothing selected. Each option is rendered by code from a real line:
 
   ```
-  ┌────────────────────────────────────────┐
-  │ ‹ Back   Read by the coach (29)   Done │
-  ├────────────────────────────────────────┤
-  │ The coach read these lines one by one. │
-  │ Tick the ones it read right. Only      │
-  │ ticked sets are imported.              │
-  │                                        │
-  │ [ ] Line 212 · Mon 6 Oct 2025          │ ChecklistRow
-  │     "bench 100 for 8 then 7"           │ file text
-  │     → Bench · 100 × 8, 100 × 7         │ code-rendered
-  │ [ ] Line 340 · Thu 23 Oct 2025         │
-  │     "rows w/ 30s, 3 sets of 10"        │
-  │     → Rows · 30 × 10 (3 sets)          │
-  │ …                                      │
-  │ Select all (29)                        │ text button
-  └────────────────────────────────────────┘
+  │ "Bench 3x5 @ 100" · 214 lines          │
+  │ Line 14: Bench 3x5 @ 100               │ file text
+  │ ( ) 3 sets of 5 at 100                 │
+  │     → Bench · 100 × 5, 100 × 5, 100 × 5│
+  │ ( ) 5 sets of 3 at 100                 │
+  │     → Bench · 5 sets of 100 × 3        │
+  │ ( ) Don't import these lines           │
+  │ More lines like this ›                 │ up to 10 more, file text
   ```
-  Units on these sets come from the line or Ben's unit answer; conventions come from the usual preview questions.
-- `12 not read` lists each line with its number and text. `4 sets dropped` shows the line and the number that wasn't in it: `Line 455 "Squat 140x5": 145 isn't in this line.` Neither list can be imported from here; both go into the results CSV.
-- `Save this layout` on the preview saves the confirmed patterns and answers as a **Notes** layout. Next time, lines matching them are read offline; other lines still need the coach and a new consent.
+- **Counts.** Lines a pattern reads count as `read` only once its question is answered. Before that they count as `waiting`.
+- **Units in lines.** A unit word in a line (`bench 225lbs - 8,8,6`) is that line's unit, evidence rule (c). Lines without one take Ben's `Weight unit` answer.
+- **Headings with no year.** The question asks once: `Year for "Mon 2 Mar"`, on a year picker with nothing selected. Code counts the years forward from there. Any heading whose weekday doesn't fit is listed as not read.
+- **`41 not read`** lists each line with its number and text, and has `Edit text`. That opens the editor at the first unread line. When Ben is done, code applies the confirmed patterns again, on the phone, with no request.
+- **`Find more patterns`.** A text button on the list. It sends up to 120 of the unread lines as a new request, with its own send line and primary. It is never automatic.
+- **Saved Notes layout.** `Save layout` on the preview saves the confirmed patterns and answers as a Notes layout. Next time, lines that match it are read offline. Other lines still need the coach.
 
 #### 9.2.9 Saved import layouts
 
-Data & backup → Import → `Saved import layouts`, or `Layouts you've saved` on Import history.
+Opened from Data & backup → Import → `Saved import layouts`, or from `Saved layouts` on Import history.
 
 ```
 ┌────────────────────────────────────────┐
 │ ‹ Back    Saved import layouts         │
 ├────────────────────────────────────────┤
 │ 👤 Your data                           │ DomainLabel
-│ Files with these exact columns import  │
-│ without the coach, on this phone.      │
 │                                        │
 │ strong_workouts                      › │
-│ 13 columns · kg · used twice · 1 Oct   │
+│ 13 columns · kg · 2 imports · 1 Oct    │
 │ Training log                         › │
-│ 5 columns · lb · used once · 9 Oct     │
+│ 5 columns · lb · 1 import · 9 Oct      │
 │ My notes                             › │
-│ Notes · 3 patterns · used once         │
+│ Notes · 3 patterns · 1 import          │
 └────────────────────────────────────────┘
 ```
 
@@ -1752,57 +1722,58 @@ Data & backup → Import → `Saved import layouts`, or `Layouts you've saved` o
 │ ‹ Back         strong_workouts         │
 ├────────────────────────────────────────┤
 │ Name                strong_workouts  › │
-│ Suggested by the coach, checked by you │ SourceTag
-│ on Thu 9 Oct 2026                      │
+│ Coach layout · checked by you · 9 Oct  │ SourceTag
 │ Used by 2 imports                    › │ → Past imports, filtered
 │                                        │
-│ Columns (13)                           │
-│ "Workout #"         Which workout      │ read-only
-│ "Date"              Start time (as in  │
-│                     the file)          │
+│ Columns (13)                           │ read-only
+│ "Workout #"         Which workout      │
+│ "Date"              Start time         │
 │ "Exercise Name"     Exercise           │
-│ "Weight (kg)"       Load · kg, from    │
-│                     the column name    │
+│ "Weight (kg)"       Load · kg          │
 │ "Reps"              Reps               │
-│ "Set Order"         Set number · W D F │
-│ "Notes"             Kept as notes      │
+│ "Set Order"         Set number or type │
+│ "Notes"             Notes              │
 │ …                                      │
 │                                        │
 │ Your answers                           │
 │ What it is          Workouts I did   › │
-│ Markers  W warm-up · D drop · F to   › │
-│          failure                       │
-│                                        │
-│ Columns are changed while importing a  │
-│ file, where you can see the result.    │
-│ Changes apply to your next import.     │
+│ "W"                 Warm-up          › │
+│ "D"                 Drop set         › │
+│ "F"                 To failure       › │
 │                                        │
 │ Delete layout                          │ DangerTextButton
 └────────────────────────────────────────┘
 ```
 
-- Answers open their question screen with Ben's current answer marked. A change makes a new layout version and never alters past imports.
-- Column roles aren't edited here, because there's no file to show worked examples from.
-- Empty list: `No saved layouts yet. When you import a file the coach read, you can save its layout.`
+- **Answers.** A tap opens the question screen with Ben's current answer marked. A change makes a new layout version and never alters past imports. Toast: `Saved for next import`.
+- **Column roles can't be edited here**, because there's no file to show worked examples from. They change during an import.
+- **A layout whose imports have all been undone** (AI12) reads `⊘ Not in use: its import was undone`, with `Delete layout`. Detection ignores it.
+- **Empty list:** `No saved layouts.` The hub row is hidden.
 
 #### 9.2.10 Results, Past imports and provenance
 
-- Results (§2.5 step 5) add one line under the source: `Layout saved: strong_workouts` (or `Layout: strong_workouts · saved 9 Oct`). For notes: `Sent 6,200 characters in 3 requests.`
-- The row-by-row CSV gains `line`, `read_by` (`code` / `coach`) and `layout` columns, and the results `skipped_values_to_check`, `not_read` and `dropped_number_not_in_line`.
-- Past imports row: `strong_workouts.csv · Thu 9 Oct · 186 workouts` with a second line, `Layout suggested by the coach · saved as strong_workouts`.
-- Each imported set (§2.5 step 3d, and the results' `Imported workouts`) shows:
+- **Results** (§2.5 step 5) add one line under the source: `Layout saved: strong_workouts`, or `Layout: strong_workouts`.
+- **The row-by-row CSV** gains three columns:
+  - `line`;
+  - `layout`;
+  - `layout_source` (`fitnotes`, `saved_layout`, `coach_layout` or `notes_patterns`).
+
+  It also gains three results: `skipped_value_to_check`, `skipped_not_a_set` and `not_read`.
+- **The Past imports row** reads `strong_workouts.csv · Thu 9 Oct · 186 workouts`. Its second line is the `SourceTag`: `Coach layout`, `Layout: strong_workouts`, `Notes patterns` or `FitNotes`.
+- **Each imported set** shows its provenance in §2.5 step 3d and in the results' `Imported workouts`:
 
   ```
   │ 1  100 kg × 8                          │
-  │    strong_workouts.csv, row 1,204:     │
-  │    Bench Press (Barbell) · 100 · 8     │ text.secondary
-  │    Layout suggested by the coach       │ SourceTag
+  │    strong_workouts.csv · row 1,204     │
+  │    Bench Press (Barbell) · 100 · 8     │ original cells, text.secondary
+  │    Coach layout                        │ SourceTag
   │                                        │
-  │ 1  100 kg × 8                          │
-  │    Your notes, line 212:               │
-  │    "bench 100 for 8 then 7"            │
-  │    Read by the coach · ticked by you   │ SourceTag
+  │ 1  100 kg × 5                          │
+  │    Your notes · line 212               │
+  │    "Bench 3x5 @ 100"                   │ original line
+  │    Notes pattern                       │ SourceTag
   ```
+- **Undo this import** works as in §4.3. When the import saved a layout that no other import still in effect uses, the alert adds one line: `The layout "strong_workouts" goes too.`
 
 ### 9.3 States
 
@@ -1810,284 +1781,446 @@ Data & backup → Import → `Saved import layouts`, or `Layouts you've saved` o
 
 | Result | How code decides | Shows |
 |---|---|---|
-| FitNotes | Header equals one of the 7 known headers (ADR 0016) | §2.5 step 3 |
-| Saved layout | Header cells, delimiter and section markers equal a saved layout's | Preview with `Layout: <name>` (§9.2.7). Nothing sent |
-| Saved layout, changed columns | Same delimiter; the layout's date, exercise, load and reps columns are all present by exact name; other columns added or missing | Changed columns |
-| Saved layout damaged | It fails the schema check (a damaged or edited backup) | `Your saved layout "strong_workouts" can't be used because it's damaged.` Then treated as a new table. It can be deleted in Saved import layouts |
-| New table | One of `,` `;` or tab gives the same number of cells on at least 95% of lines; at least 2 columns and 2 data rows. Also multi-section files (`### … ###` lines) | New file layout |
-| Notes | Not a table, with at least one line that has a digit | Read your notes |
-| Spreadsheet file | `.xlsx` or `.numbers` (zip) | `This is a spreadsheet file. Export the sheet as CSV and choose that.` |
-| PDF or photo | PDF or image file signature | `GymSmarter can't read PDFs or photos yet. Export a CSV, or paste the text.` |
+| FitNotes | The header equals one of the 7 known headers (ADR 0016) | §2.5 step 3 |
+| Saved layout | Header cells, delimiter and section markers equal those of a saved layout still in use | Preview with `Layout: <name> · offline` (§9.2.7) |
+| Saved layout, changed columns | Same delimiter, and the layout's date, exercise, load and reps columns are all present under their exact names. Other columns were added or are missing | Changed columns |
+| Saved layout damaged | The layout fails the schema check (for example a damaged or edited backup) | `⚠ Layout "strong_workouts" is damaged`, then treated as a new table |
+| New table | One of `,`, `;` or tab gives the same number of cells on at least 95% of lines, with at least 2 columns and 2 data rows. Multi-section files (`### … ###` lines) also count | New file layout |
+| Notes | Not a table, and at least one line has a digit | Read your notes |
+| Spreadsheet file | `.xlsx` or `.numbers` (zip) | `Spreadsheet file. Export the sheet as CSV.` |
+| PDF or photo | PDF or image file signature | `Can't read PDFs or photos. Export a CSV or paste the text.` |
 | App backup | SQLite file signature | Unchanged (§3.4) |
-| Nothing to read | Empty, or no line has a digit | `This file has no numbers to import.` |
-| Same file again | SHA-256 matches an import still in effect | Unchanged (§3.4, ADR 0016) |
+| Nothing to read | Empty, or no line has a digit | `No numbers to import.` |
+| Same file again | The SHA-256 matches an import still in effect | Unchanged (§3.4, ADR 0016) |
 
 #### 9.3.2 Coach readiness
 
-Source: `getImportCoachStatus` (§9.6), built on `getAiCapabilities`, `resolveInferenceRoute` and `getConnectivity`. The wording matches system-states.md §3.2. Every unavailable state says nothing was sent, offers the fix, and never switches route.
+The source is `getImportCoachStatus` (§9.6), which composes `getAiCapabilities`, `resolveInferenceRoute` and `getConnectivity`. Reason words match system-states.md §3.2. **No state sends anything, and no state switches route.**
 
-| State | Coach line (Import history) | New file layout / Read your notes | Primary |
+| State | Coach line on Import history | Status on New file layout and Read your notes | Primary |
 |---|---|---|---|
-| Ready, ChatGPT plan | `Coach: ChatGPT plan · connected` | Consent (§9.2.2, §9.2.8) | `Read with the coach` / `Send to the coach` |
-| Ready, API key | `Coach: your API key (paid) · connected` | Consent with estimate and cap line | Same |
-| Not connected (includes ChatGPT sign-in not working on iPhone) | `Coach not connected. FitNotes and saved layouts still work.` `Connect ›` | `⊘ Reading a new layout needs the coach` · `The coach isn't connected. Nothing was sent.` · `Connect the coach ›` | `Choose another file` |
-| Offline | `No connection. FitNotes and saved layouts still work.` | `⚠ No connection` · `Reading a new layout needs the internet. Nothing was sent.` | `Read with the coach`, disabled, caption `Needs internet`. It turns back on when the connection returns; nothing is sent until Ben taps |
-| Signed out or expired | `ChatGPT disconnected. FitNotes and saved layouts still work.` | `⚠ ChatGPT disconnected` · `Sign in again to read new layouts. Nothing was sent.` `Sign in ›` | `Choose another file` |
-| Usage limit reached (429) | `ChatGPT usage limit reached. FitNotes and saved layouts still work.` | `⚠ ChatGPT usage limit reached` · `Nothing was sent. Try again later.` `Manage usage ›`. If a key exists: `Switch coach to your API key (paid) ›` (ai-connection §2.7 confirmation). No reset time | `Choose another file` |
-| Usage unavailable (503) | Unchanged | `ChatGPT usage isn't available right now. Try again later.` | `Try again` |
-| API cap reached | `Coach paused at your $5.00 cap.` | `Paused: you've reached your $5.00 cap for October.` `Change cap ›` | `Choose another file` |
-| Estimate over the cap left | — | `This would go over your $5.00 cap for October.` `Change cap ›` | Disabled |
-| Model unavailable | `Coach paused: model unavailable.` | `The model you chose isn't available any more.` `Choose model ›` | `Choose another file` |
-| Route can't read layouts (capability flag `importLayouts: false`, from spike S3) | `Reading new layouts doesn't work with the ChatGPT plan yet.` | Same line + `FitNotes files and layouts you've saved still import.` | `Choose another file` |
+| Ready, ChatGPT plan | `✓ Coach: ChatGPT plan` | Send line (§9.2.2) | `Read with the coach` |
+| Ready, API key | `✓ Coach: your API key` | Send line with estimate | `Read with the coach` |
+| Not connected | `⊘ Coach: not connected` · `Connect ›` | `⊘ Needs the coach · not connected` · `Connect the coach ›` | `Choose another file` |
+| Offline | `⊘ Coach: offline` | `⊘ Needs the coach · offline` | `Read with the coach`, disabled, re-enabled when the connection returns. Nothing is sent until Ben taps |
+| Signed out or expired | `⊘ Coach: signed out` · `Sign in ›` | `⊘ Needs the coach · signed out` · `Sign in ›` | `Choose another file` |
+| Usage limit reached (429) | `⊘ Coach: usage limit` | `⊘ Needs the coach · usage limit reached` · `Manage usage ›`. No reset time is shown, and nothing offers another route | `Choose another file` |
+| Usage unavailable (503) | `⊘ Coach: unavailable` | `⊘ Needs the coach · try later` | `Try again` |
+| API cap reached | `⊘ Coach: cap reached` | `⊘ Over your $5.00 monthly cap` · `Change cap ›` | `Choose another file` |
+| Estimate over the cap left | (unchanged) | `⊘ Over your $5.00 monthly cap` · `Change cap ›` | Disabled |
+| Model unavailable | `⊘ Coach: model unavailable` | `⊘ Needs the coach · model unavailable` · `Choose model ›` | `Choose another file` |
+| Route can't read layouts (`importLayouts: false`, until spike S3 passes) | `⊘ Layouts: not on ChatGPT plan yet` | `⊘ Needs the coach · not on ChatGPT plan yet` | `Choose another file` |
 
-#### 9.3.3 Reading the layout
+#### 9.3.3 Reading the layout (and notes patterns)
 
 | State | Shows | Next |
 |---|---|---|
-| Sending / waiting / checking | §9.2.4 step rows | Check the layout, or a failure |
-| Stopped by Ben | `Stopped. Nothing was imported.` Any late answer is thrown away | New file layout |
-| Interrupted (app left or closed) | `Reading was interrupted. Nothing was imported.` | `Read with the coach` |
-| Timed out (120 s) | `The coach didn't answer in time. Nothing was imported.` | `Try again` |
-| Limit or error mid-request | As §9.3.2, plus `Nothing was imported.` | As §9.3.2 |
-| No layout returned (refusal, empty, or not exactly one layout) | `The coach didn't return a layout. Nothing was imported.` | `Try again` |
-| Coach found no sets (`unsupported`) | `The coach couldn't find sets in this file. Nothing was imported.` | `Choose another file` |
-| Checks failed | §9.2.4, with code's reasons | `Try again` / `Choose another file` |
-| Done | — | Check the layout |
+| Sending, waiting, checking | The §9.2.4 step rows | Check the layout, or a failure |
+| Stopped by Ben | `Stopped.` A late answer is thrown away | New file layout |
+| Interrupted (app left or closed) | `Interrupted.` | `Read with the coach` |
+| Timed out (adapter, 120 s) | `No answer in time.` | `Try again` |
+| Limit or error mid-request | The §9.3.2 status for that state | As §9.3.2 |
+| No spec returned (a refusal, text only, zero or several function calls, or arguments that don't parse) | `No layout returned.` | `Try again` |
+| Coach found no sets (`unsupported`) | `No sets found in this file.` | `Choose another file` |
+| Checks failed | §9.2.4 with code's reasons | `Try again` / `Choose another file` |
+| Done | (none) | Check the layout |
 
-`Try again` never runs on its own; each attempt is Ben's tap and sends the same text he saw. A layout that arrived before an interruption is kept by its sample hash and reused rather than sent for again.
+- **`Try again` never runs on its own.** Each attempt is Ben's tap and sends exactly the text he can see in §9.2.3.
+- **A spec that arrived before an interruption is kept** under its operation ID and sample hash. Opening the file again reuses it rather than sending again.
+- **Nothing is imported in any of these states.** Only `commitImport` writes workouts.
 
-#### 9.3.4 Check the layout
-
-| State | Shows | Primary |
-|---|---|---|
-| Needs answers | §9.2.5 | Disabled `Answer 3 questions to continue` |
-| Rechecking | After a role change or answer, the counts line reads `Checking…` (static) until the dry run returns | Disabled |
-| Too few rows | `With this layout, 61% of rows can be read. 95% is needed.` | Disabled. Ben changes a role back, or reads with the coach again |
-| Role refused | Inline under the role list, e.g. `Not every value in "Notes" is kg or lb.` | Unchanged |
-| A plan or template | `GymSmarter imports workouts you did. Nothing will be imported from this file.` | `Choose another file` |
-| Ready | Examples complete, no `?` | `Use this layout` |
-
-#### 9.3.5 Notes
+#### 9.3.4 Check the layout and Check your notes
 
 | State | Shows | Primary |
 |---|---|---|
-| Ready to send | §9.2.8 consent | `Send to the coach` |
-| Reading | `5 of 14 parts` | None (`Stop`) |
-| Paused: stopped / limit / offline / closed / cap | `Paused at 5 of 14 parts: <reason>.` · `Nothing more is sent until you tap Continue. 9 parts left.` | `Continue` (disabled offline) + text button `Cancel import` |
-| A part failed (timeout, no answer) | `Part 6 couldn't be read: <reason>. Parts 1–5 are kept.` | `Try part 6 again` |
-| Finished | `Sent 6,200 characters in 3 requests.` | → Check your notes |
-| Needs answers / ticks | §9.2.8 | Disabled until answered. Unticked sets don't block; they're simply not imported |
+| Needs answers or Checks | §9.2.5 / §9.2.8 | Disabled `Answer 4 questions to continue` |
+| Rechecking | The count line reads `Checking…` (static) | Disabled |
+| Too few rows | `61% of rows read. 95% needed.` | Disabled. Ben changes a role, or uses `Read with the coach again` |
+| Role refused | Inline under the role list | Unchanged |
+| A plan or template | `Plans aren't imported.` | `Choose another file` |
+| Ready | Examples complete, with no `?` | `Use this layout` / `Continue` |
 
-#### 9.3.6 Saved import layouts
+#### 9.3.5 Saved import layouts
 
 | State | Shows |
 |---|---|
-| None | Empty line (§9.2.9); the hub row is hidden |
-| List / detail | §9.2.9 |
-| Damaged | Row reads `⚠ Can't be used: damaged` with `Delete layout` |
-| Deleted | Toast `Layout deleted` [Undo] (5 s) |
-| Renamed / answer changed | Toast `Saved. Applies to your next import.` |
+| None | `No saved layouts.` The hub row is hidden |
+| List and detail | §9.2.9 |
+| Damaged | The row reads `⚠ Damaged`, with `Delete layout` |
+| Not in use (its imports were undone) | `⊘ Not in use: its import was undone` |
+| Deleted | Toast `Layout deleted` with [Undo] (5 s) |
+| Renamed, or an answer changed | Toast `Saved for next import` |
 
-#### 9.3.7 Transitions
+#### 9.3.6 Transitions
 
 ```text
-Import history ─file─► detect ─┬─ FitNotes ─────────────────────────────┐
-                               ├─ saved layout ─────────────────────────┤
-                               ├─ changed columns ─answer─► ────────────┤
-                               ├─ new table ─► New file layout          │
-                               │     ├─ coach unusable ─► honest stop   │
-                               │     └─ Read ─► Reading ─┬─ fail ─► Try again ─► Reading
-                               │                         └─ ok ─► Check the layout ─Use─┤
-                               └─ notes ─► consent ─Send─► parts ⇄ paused               │
-                                                     └─ done ─► Check your notes ─────┤
-                                                                                        ▼
-         Preview (questions) ─Import─► safeguard ─► backup ─► Importing ⇄ paused ─► Results ─Undo─► Reverted
-                                                     on commit: save layout (if on)
+Import history ─file/paste─► detect ─┬─ FitNotes ─────────────────────────────┐
+                                     ├─ saved layout ─────────────────────────┤
+                                     ├─ changed columns ─answer─────────────► ┤
+                                     ├─ new table ─► New file layout          │
+                                     │    ├─ coach unusable ─► Needs the coach (stop)
+                                     │    └─ Read ─► Reading ─┬─ fail ─► Try again (tap)
+                                     │                        └─ ok ─► Check the layout ─Use─┤
+                                     └─ notes ─► Read your notes ─Read─► Reading            │
+                                                     └─ ok ─► Check your notes ─Continue────┤
+                                                                                            ▼
+   Preview ─Import─► safeguard ─► backup ─► Importing ⇄ paused ─► Results ─Undo─► Reverted
+                                    commit also saves the layout (if on), in the same transaction as the job
 ```
 
 ### 9.4 Interactions
 
-- **Choose file** → system picker (CSV, TSV, plain text, Markdown). The file is copied to the cache and detected on the phone. Nothing leaves the phone before a consent screen's primary is tapped.
-- **Paste text** → editor. `Continue` is enabled once the text has a digit. The field has a size limit, set after measuring on the phone. Over it: `This is too long to paste. Save it as a file and choose that.`
-- **See exactly what's sent** → sheet. Column switches change the text and count at once, and `Done` returns to the consent screen with its bullets updated. If the text changes after Ben has seen it, the next `Read` sends the new text: what's sent always equals the sheet's current text (AI7).
-- **Read with the coach** → one request with an operation ID, carrying the sample hash. `Stop` cancels it and throws away any late answer.
-- **Check the layout** → each question opens its screen, and `Done` returns with `✓` and the answer. Tapping a column opens the role sheet; a role change re-runs the checks and shows `Undo` for one tap. Every change bumps `layoutVersion`; a stale write is refused (rule 5).
-- **Use this layout** → `confirmImportLayout` → the shared preview, which is built from the layout's `SourceSetRow`s. `Back` from the preview returns to Check the layout with its answers kept.
-- **Preview** → as §4.3. Answers and the layout version are both in the commit's staleness stamp. `Save this layout` and its name can be changed until commit.
-- **Notes** → `Send to the coach` sends parts one at a time. `Stop` asks `Stop reading? 5 parts are read and kept. Nothing more is sent.` [Keep reading] [Stop]. `Continue` sends only the parts left. Ticks toggle on tap; `Select all (29)` / `Clear all`.
-- **Ask the coach to suggest matches** → one request with the unmatched names and the exercise list (Coaching knowledge). Suggestions arrive as `Check` rows. Suggestions that name an unknown exercise, or contradict an equipment or one-arm word, are dropped by code without comment.
-- **Saved import layouts** → rename (one-field sheet, `Save` above the keyboard), change an answer (its question screen), `Delete layout` → alert → toast with `Undo`.
-- **Commit, stop, resume, Undo this import**: unchanged (§4.3). Operation IDs are `<operationId>:<workoutKey>`, so the same file with the same layout version gives the same IDs (rule 5).
-- **Keyboard:** only the paste editor, layout name and search fields. The footer primary sits on the keyboard.
-- **Voice:** none. The coach can explain these screens in chat but can't start, answer or commit an import (DX10, AI15).
-- **Backgrounding:** leaving the app during a request may cut it (iOS). The layout path then shows `Reading was interrupted`; notes pause and keep finished parts.
+- **Choose file** opens the system picker (CSV, TSV, plain text, Markdown). The file is copied to the cache and detected on the phone. Nothing leaves the phone until Ben taps a consent screen's primary.
+- **Paste text** opens the editor. `Continue` is enabled once the text has a digit. The size limit is set after measuring on the phone. Over the limit: `Too long to paste. Save it as a file.`
+- **See what's sent** opens the sheet. Column switches change the text, the count and the send line at once. What's sent is always the sheet's current text, checked by hash (AI8).
+- **Read with the coach** sends one request with an operation ID and the sample hash. `Stop` cancels the request and throws away any late answer.
+- **Check the layout:**
+  - each question opens its screen, and `Done` returns with `✓` and the answer;
+  - `Use this` confirms a `Check` with one tap, and `Change…` opens the role sheet;
+  - every change bumps `layoutVersion`, and a stale write is refused (rule 5).
+- **Use this layout** calls `confirmImportLayout`, which runs `applyImportSpec` over every row and opens the shared preview. `Back` from the preview returns to Check the layout with its answers kept.
+- **Preview** works as in §4.3. The commit's staleness stamp holds the answers (`mappingVersion`) and the layout (`layoutRef`, `layoutVersion`, `specHash`). `Save layout` and its name can be changed until commit.
+- **Notes.** Pattern questions answer on tap. `Edit text` and its return re-read the text on the phone. `Find more patterns` is a separate, explicit request.
+- **Ask the coach to suggest matches** sends one request with the unmatched names and the exercise list, which is Coaching knowledge. Suggestions arrive as `Check` rows. Code silently drops any invalid ones (AI14).
+- **Saved import layouts:**
+  - rename through a one-field sheet, with `Save` above the keyboard;
+  - change an answer on its question screen;
+  - `Delete layout` opens an alert, then a toast with `Undo`.
+- **Commit, stop, resume and Undo this import** are unchanged (§4.3). Idempotency is described in §9.6.
+- **Keyboard:** used only by the paste editor, the layout name and search fields. The footer primary sits on the keyboard.
+- **Voice:** none. The coach can explain these screens in chat but can't start, answer or commit an import (AI9).
+- **Backgrounding:** iOS may cut a request when Ben leaves the app. The screen then shows `Interrupted.` and nothing is imported.
 
 | Action | Undo |
 |---|---|
-| Column role change | `Undo` on the line, or change it back |
-| Layout answer | Change before `Use this layout` or before commit |
-| Coach-read set ticked | Untick before commit |
-| Import | `Undo this import` (revert, unchanged) |
-| Layout saved | Delete it in Saved import layouts |
+| Column role change, or a `Check` confirmed | Toast `Undo`, or change it again before `Use this layout` |
+| Layout or pattern answer | Change it before commit |
+| Import | `Undo this import` (revert). It also takes back a layout saved by this import that no other import still in effect uses |
 | Layout deleted | Toast `Undo` |
-| Layout renamed or answer changed | Change it again |
-| Sending to the coach | None: it can't be unsent. That's why consent comes first, shows the exact text, and is the only way to send |
+| Layout renamed, or an answer changed | Change it again |
+| Sending to the coach | None: a request can't be unsent. That is why it needs a consent tap, and why the exact text is one tap away |
 
 ### 9.5 Copy
+
+Minimal-copy convention: values and actions, no lead text, no rule explanations. Anything longer sits behind `Why?`.
 
 | Element | Text |
 |---|---|
 | Hub rows | `Import history` · `Saved import layouts (2)` · `Past imports (1)` |
-| Import history | Title `Import history` · `Bring in workouts from another app, a spreadsheet or your notes. You'll see what will be imported before anything is saved.` · `Works offline` · `FitNotes and FitNotes 2 CSV files` · `Layouts you've saved (2)` · `Needs the coach` · `Other apps and spreadsheets (CSV)` · `Workout notes and pasted text` · `For a spreadsheet, export one sheet as CSV first.` · `Paste text` · `Choose file` |
-| Coach line | `Coach: ChatGPT plan · connected` · `Coach: your API key (paid) · connected` · `Coach not connected. FitNotes and saved layouts still work.` · `No connection. FitNotes and saved layouts still work.` · `ChatGPT disconnected. FitNotes and saved layouts still work.` · `ChatGPT usage limit reached. FitNotes and saved layouts still work.` · `Coach paused at your $5.00 cap.` · `Coach paused: model unavailable.` · `Reading new layouts doesn't work with the ChatGPT plan yet.` · `Connect ›` |
-| New file layout | Title `New file layout` · `Table · 13 columns · 4,212 rows` · `GymSmarter doesn't know this layout yet. The coach can read the column names and a few rows and suggest how to read it. GymSmarter checks that on every row, and you confirm it before anything is saved.` |
-| Consent (table) | `What's sent` · `The 13 column names` · `A summary of each column, made on this phone` · `30 rows, with notes hidden` · `30 rows, with notes and 2 more columns hidden` · `Not sent: the other rows, notes, your history, memories, pain flags or gyms.` · `See exactly what's sent` · `Sent to ChatGPT, using your plan.` · `OpenAI handles it under your account's terms.` · `Sent to OpenAI with your API key (paid). About $0.05 (estimate).` · `This month: $1.42 of $5.00.` · primary `Read with the coach` |
-| What's sent sheet | `What's sent` · `This is the exact text GymSmarter sends. Nothing else is added.` · `Example values` · `numbers` / `dates` / `short text` / `notes` · `Hidden` · `Off: only the column name and counts are sent.` · `Your file, as sent` · `6,812 characters` · `GymSmarter's instructions` |
-| Unavailable | `Reading a new layout needs the coach` · `The coach isn't connected. Nothing was sent.` · `FitNotes files and layouts you've saved import without it.` · `Connect the coach` · `No connection` · `Reading a new layout needs the internet. Nothing was sent.` · `Needs internet` · `ChatGPT disconnected` · `Sign in again to read new layouts. Nothing was sent.` · `Sign in` · `ChatGPT usage limit reached` · `Nothing was sent. Try again later.` · `Manage usage` · `Switch coach to your API key (paid)` · `ChatGPT usage isn't available right now. Try again later.` · `Paused: you've reached your $5.00 cap for October.` · `This would go over your $5.00 cap for October.` · `Change cap` · `The model you chose isn't available any more.` · `Choose model` · `First line of the file` · `Share first line` · `Choose another file` |
-| Reading | `Reading the layout` · `Column summary made on this phone` · `Sent to ChatGPT · 6,812 characters` · `Waiting for the coach` · `Checking it on all 4,212 rows` · `Keep GymSmarter open. If it closes, nothing is imported and you can try again.` · `Stop` |
-| Reading failures | `Stopped. Nothing was imported.` · `Reading was interrupted. Nothing was imported.` · `The coach didn't answer in time. Nothing was imported.` · `The coach didn't return a layout. Nothing was imported.` · `The coach couldn't find sets in this file. Nothing was imported.` · `The coach's layout didn't pass the checks, so it wasn't used` · `Try again` |
-| Check reasons (code, fixed list) | `It names a column "<name>" that isn't in the file.` · `It uses the column "<name>" for two things.` · `It points to "<word>" as the unit, but that isn't in the column name.` · `It says "<name>" holds units, but not every value is kg or lb.` · `It reads row <n> as <reading>, but its own layout gives <reading>.` · `With it, 61% of rows can be read. 95% is needed.` · `Its marker "<token>" isn't in the file.` · `Its answer wasn't in the expected form.` |
-| Check the layout | Title `Check the layout` · `Layout suggested by the coach.` · `GymSmarter checked it on every row.` · `1,186 of 1,204 rows can be read` · `18 rows can't be read` · `How rows are read` · `Row 2` · `? fills in when you answer.` · `Columns (5)` · `Day first: "21/11/2025" can only be 21 November.` · `Load · kg, from the column name` · `Not right?` · `Checking…` · primary `Answer 3 questions to continue` / `Use this layout` |
-| Roles | `This column holds` · `Workout date` · `Start time, or date and time` · `Which workout` · `Exercise` · `Load` · `Weight unit (kg or lb in each row)` · `Reps` · `Sets and reps (like 3x8)` · `One set (like 100x8)` · `All sets (like 100x5, 100x5)` · `Set number or set type` · `Effort (RPE)` · `Notes` · `Kept as notes` · `Not imported` · `Suggested by the coach: <role>` · `"Reps" is now Not imported.` · `Not every value in "<name>" is kg or lb.` · `In your file:` · `1,204 rows filled` |
-| Layout questions | `What is this file?` · `GymSmarter imports workouts you did. Plans and templates aren't imported.` · `Workouts I did` · `A plan or template` · `Columns named like targets: "Target reps", "%1RM". They're never imported as results.` · `GymSmarter imports workouts you did. Nothing will be imported from this file.` · `Weight unit` · `The file doesn't say whether weights are kg or lb.` · `Values in your file: 2.5 to 180` · `Weights are stored as written, in the unit you choose. Nothing is converted.` · `Rows have values in both the kg and lb columns. Which one did you enter?` · `What "3x8" means` · `3 sets of 8 reps` · `8 sets of 3 reps` · `Dates like "03/04/2025"` · `No date in the file has a day above 12, so the order isn't clear.` · `Day first: 3 Apr 2025` · `Month first: 4 Mar 2025` · `Dates run 2 Jan – 12 Nov 2025` · `Markers in "Set Order"` · `Warm-up` · `Working set` · `Drop set` · `To failure` · `Not a set (skip)` · `Not answered` |
-| Preview additions | Title `Import preview` · `Layout suggested by the coach, checked by you` · `Layout: strong_workouts · saved 9 Oct` · `Read on this phone. Nothing was sent.` · `Weights in kg, from the column name` · `Weights in kg, your answer` · `3 values to check` · `212 dates came in with your FitNotes import on Thu 8 Oct` · `Start times as in the file. It has no time zone.` · `18:02 (as in the file)` · `Save this layout` · `Name: strong_workouts` · `Next time, files with these 13 columns import without the coach.` · `your answer last time` |
-| Values to check | `Values to check (3)` · `Each is in your file as written. Check it before importing.` · `225 × 5. The workout before: 100 × 5.` · `Import as written` · `Skip these 5 sets` · `Import all as written` · unreadable reasons `More than 1,000 reps` · `Over 1,500 kg` / `Over 3,000 lb` · `Before 2000` · `After today: a plan, not a workout` |
-| Names | `6 names have no match.` · `Ask the coach to suggest matches` · `Sends these 6 names and GymSmarter's exercise list. Nothing else.` · `Check · suggested by the coach` · `(two dumbbells)` / `(one dumbbell)` · `Pull Up (Assisted): assistance, from the word "Assisted"` |
-| Changed columns | Title `Changed columns` · `Matches your layout "strong_workouts", with 1 new column.` · `New column "Rest Timer (sec)"` · `Something else…` · `Read the whole file with the coach` · `The column "RPE" isn't in this file. Effort won't be imported from it.` · `Your saved layout "strong_workouts" can't be used because it's damaged.` |
-| Paste text | Title `Paste text` · `Paste your workout notes.` · `38,214 characters · 1,120 lines` · `This is too long to paste. Save it as a file and choose that.` · `Continue` |
-| Notes consent | Title `Read your notes` · `412 lines have numbers` · `Dates found: 2 Mar 2024 – 1 Oct 2026` · `Send` · `All of it · 38,214 characters` · `Only some dates…` · `The text you chose: about 38,000 characters, in up to 14 requests, one at a time.` · `Not sent: your history, memories, pain flags or gyms.` · `If you let apps use ChatGPT credits after plan limits, OpenAI may use them. GymSmarter can't see that setting.` · `The coach copies each set with the line it came from. GymSmarter drops any number that isn't in that line.` · `Up to about $1.20 (estimate).` · primary `Send to the coach` |
-| Notes reading | `Reading your notes` · `5 of 14 parts` · `Parts already read are kept on this phone and aren't sent again.` · `Keep GymSmarter open. If it closes, you can carry on from here.` · `Paused at 5 of 14 parts: <reason>.` · `Nothing more is sent until you tap Continue. 9 parts left.` · `Continue` · `Cancel import` · `Stop reading? 5 parts are read and kept. Nothing more is sent.` [Keep reading] [Stop] · `Part 6 couldn't be read: <reason>. Parts 1–5 are kept.` · `Try part 6 again` · `Sent 6,200 characters in 3 requests.` |
-| Check your notes | Title `Check your notes` · `412 lines with numbers` · `371 read with patterns you confirm` · `29 read by the coach, line by line` · `12 not read` · `4 sets dropped: a number isn't in its line` · `What are these notes?` · `Workouts I did` / `A plan or template` · `Weight unit (lines without one)` · `What "3x5 @ 100" means` · `Patterns` · `Date headings like "Mon 6 Oct"` · `Your dates have no year. Which year is "Mon 2 Mar" in?` · `Line 455 "Squat 140x5": 145 isn't in this line.` |
-| Ticks | Title `Read by the coach (29)` · `The coach read these lines one by one. Tick the ones it read right. Only ticked sets are imported.` · `Line 212 · Mon 6 Oct 2025` · `Select all (29)` · `Clear all` |
-| Saved layouts | Title `Saved import layouts` · `Files with these exact columns import without the coach, on this phone.` · `13 columns · kg · used twice · 1 Oct` · `Notes · 3 patterns · used once` · `Suggested by the coach, checked by you on Thu 9 Oct 2026` · `Used by 2 imports` · `Your answers` · `Columns are changed while importing a file, where you can see the result. Changes apply to your next import.` · `Delete layout` · `No saved layouts yet. When you import a file the coach read, you can save its layout.` · `Can't be used: damaged` · toasts `Layout deleted` [Undo] · `Saved. Applies to your next import.` |
-| Delete layout alert | `Delete "strong_workouts"?` / `Workouts you imported with it stay. Next time, a file with these columns needs the coach again.` [Cancel] [Delete] |
-| Results and provenance | `Layout saved: strong_workouts` · `Layout suggested by the coach · saved as strong_workouts` · `strong_workouts.csv, row 1,204:` · `Layout suggested by the coach` · `Your notes, line 212:` · `Read by the coach · ticked by you` |
-| Detection messages | `This is a spreadsheet file. Export the sheet as CSV and choose that.` · `GymSmarter can't read PDFs or photos yet. Export a CSV, or paste the text.` · `This file has no numbers to import.` |
-| Onboarding | `Import training history` · `FitNotes, other apps, spreadsheets or notes` |
+| Import history | Title `Import history` · sections `Offline` / `Needs the coach` · `FitNotes CSV` · `Saved layouts (2)` · `Other apps and spreadsheets (CSV)` · `Notes and pasted text` · `Paste text` · `Choose file` · `Finish or discard your workout first.` |
+| Coach line | `✓ Coach: ChatGPT plan` · `✓ Coach: your API key` · `⊘ Coach: not connected` · `⊘ Coach: offline` · `⊘ Coach: signed out` · `⊘ Coach: usage limit` · `⊘ Coach: unavailable` · `⊘ Coach: cap reached` · `⊘ Coach: model unavailable` · `⊘ Layouts: not on ChatGPT plan yet` · `Connect ›` · `Sign in ›` |
+| New file layout | Title `New file layout` · `13 columns · 4,212 rows` · send line `↑ Sends column names and 30 sample rows, notes hidden, to ChatGPT.` · API key `↑ Sends column names and 30 sample rows, notes hidden, to OpenAI (your API key). About $0.05, estimate.` · hidden columns `…30 sample rows, notes and 2 columns hidden…` · `See what's sent` · primary `Read with the coach` |
+| Needs the coach | `⊘ Needs the coach · <reason>`, where the reason is one of `offline` / `not connected` / `signed out` / `usage limit reached` / `try later` / `model unavailable` / `not on ChatGPT plan yet` · `⊘ Over your $5.00 monthly cap` · links `Connect the coach ›` / `Sign in ›` / `Manage usage ›` / `Change cap ›` / `Choose model ›` · `First line` · `Share first line` · `Choose another file` |
+| What's sent sheet | Title `What's sent` · `Columns` · `Hidden` · `Exactly as sent` · `6,812 characters` · `Instructions` |
+| Reading | Title `Reading the layout` / `Reading your notes` · `Sent · 6,812 characters` · `Waiting for the coach` · `Checking every row` · `Keep the app open.` · `Stop` |
+| Reading results | `Stopped.` · `Interrupted.` · `No answer in time.` · `No layout returned.` · `No sets found in this file.` · `⚠ Layout didn't pass the checks` · `Try again` · `Read with the coach again` |
+| Check reasons (code, fixed list) | `It names a column "<name>" that isn't in the file.` · `It uses "<name>" for two things.` · `"<word>" isn't in the column name.` · `Not every value in "<name>" is kg or lb.` · `Its marker "<token>" isn't in the file.` · `Its dates don't fit "<cell>" (row <n>).` · `Its reading of row <n> doesn't match its layout.` · `61% of rows can be read. 95% is needed.` · `It puts results in a target column, "<name>".` · `Its answer wasn't in the expected form.` |
+| Check the layout | Title `Check the layout` · `1,186 of 1,204 rows read` · `18 rows not read` · `Needs your answer (4)` · `Columns` · `Check` · `Use this` · `Change…` · `Day first` · `From the column name` · `Not right?` · `Rows` · `Row 2` · `Checking…` · primary `Answer 4 questions to continue` / `Use this layout` |
+| Roles | `Workout date` · `Start time` · `Which workout` · `Exercise` · `Load` · `Weight unit` · `Reps` · `Sets and reps (3x8)` · `One set (100x8)` · `All sets (100x5, 100x5)` · `Set number or type` · `RPE` · `Notes` · `Not imported` · `Suggested` · toast `"Reps" → Not imported` [Undo] · `Not every value is kg or lb.` · `Target column. Not imported as results.` |
+| Layout questions | `What is this file?` · `Workouts I did` · `A plan or template` · `Target columns: "<name>", "<name>"` · `Plans aren't imported.` · `Weight unit` · `Values: 2.5 to 180` · `kg` / `lb` · `Which one did you enter?` · `What "3x8" means` · `3 sets of 8` · `8 sets of 3` · `Dates like "03/04/2025"` · `Day first: 3 Apr 2025` · `Month first: 4 Mar 2025` · `Markers in "Set Order"` · `Warm-up` · `Working set` · `Drop set` · `To failure` · `Not a set` · `Choose…` |
+| Preview additions | Title `Import preview` · `Coach layout · checked by you` · `Layout: strong_workouts · offline` · `kg · from the column name` · `kg · your answer` · `3 values to check` · `212 dates from your FitNotes import` · `Times as in the file (no time zone)` · `18:02 (as in the file)` · `Save layout` · `Name: strong_workouts` · `Why?` → `Files with these columns import offline next time.` · `Your answer last time` |
+| Values to check | `Values to check (3)` · `225 × 5 · before: 100 × 5` · `Import as written` · `Skip these 5 sets` · `Import all as written` · unreadable reasons `Over 1,000 reps` · `Over 1,500 kg` / `Over 3,000 lb` · `Before 2000` · `After today` |
+| Names | `6 names have no match.` · `Ask the coach to suggest matches` · `↑ Sends these 6 names and the exercise list.` · `Coach suggestion` · `Pull Up (Assisted): assistance · from "Assisted"` |
+| Changed columns | Title `Changed columns` · `Layout "strong_workouts" + 1 new column` · `Something else…` · `Read with the coach instead` · `"RPE" isn't in this file.` · `⚠ Layout "strong_workouts" is damaged` |
+| Paste text | Title `Paste text` · placeholder `Paste your notes` · `1,120 lines` · `Too long to paste. Save it as a file.` · `Continue` |
+| Notes | Title `Read your notes` · `412 lines with numbers` · `↑ Sends 120 sample lines to ChatGPT.` · `↑ Sends 120 sample lines to OpenAI (your API key). About $0.03, estimate.` · Title `Check your notes` · `371 read` · `41 not read` · `waiting` · `What are these notes?` · `Weight unit (lines without one)` · `Year for "Mon 2 Mar"` · `"Bench 3x5 @ 100" · 214 lines` · `3 sets of 5 at 100` · `5 sets of 3 at 100` · `Don't import these lines` · `More lines like this` · `Edit text` · `Find more patterns` |
+| Saved layouts | Title `Saved import layouts` · `13 columns · kg · 2 imports · 1 Oct` · `Notes · 3 patterns · 1 import` · `Coach layout · checked by you · 9 Oct` · `Used by 2 imports` · `Your answers` · `Delete layout` · `No saved layouts.` · `⚠ Damaged` · `⊘ Not in use: its import was undone` · toasts `Layout deleted` [Undo] · `Saved for next import` |
+| Delete layout alert | `Delete "strong_workouts"?` / `Imported workouts stay.` [Cancel] [Delete] |
+| Results and provenance | `Layout saved: strong_workouts` · `Layout: strong_workouts` · `strong_workouts.csv · row 1,204` · `Your notes · line 212` · tags `Coach layout` / `Notes pattern` / `Layout: <name>` / `FitNotes` · Undo alert extra line `The layout "strong_workouts" goes too.` |
+| Detection | `Spreadsheet file. Export the sheet as CSV.` · `Can't read PDFs or photos. Export a CSV or paste the text.` · `No numbers to import.` |
+| Onboarding | `Import training history` |
+| `Why?` texts (behind info taps only) | Send line: `Only these rows go. Notes are replaced by their length. Nothing else from GymSmarter is sent.` · `Check`: `The coach suggested this. Nothing uses it until you tap Use this.` · Values to check: `A big jump is often a kg/lb mix-up.` · ChatGPT plan: `OpenAI handles it under your account's terms.` |
 
-Spoken cues: none. Targets and actuals: everything on these screens is a recorded actual from the file. Target-like columns are named only to say they aren't imported.
+Spoken cues: none. **Targets and actuals:** every value on these screens is a recorded result from the file, shown as written. Target-like columns appear only to say they aren't imported.
+
+**Removed from the 9 Oct copy:** every lead paragraph, `Nothing was sent.` and `Nothing was imported.` after each status line (the acceptance checks enforce both), `Weights are stored as written…`, the multi-line consent card, and the explanation on the notes consent.
 
 ### 9.6 Data needed
 
-Existing, unchanged: `updateImportMapping`, `commitImport(jobId, mappingVersion, operationId)` (its staleness stamp gains the layout's `profileId@version` and spec hash), `revertImport`, `listImportJobs`, `getImportJob`, `getActiveSession`, `getAiCapabilities(userId)`, `resolveInferenceRoute(userId, 'text')`, `checkPersonalSpendCap(requestId, estimate)`, `recordPersonalApiUsage(requestId, actualUsage)`, `getConnectivity()`, and the domain's `analyseImport` and `planImportRows` (they take `SourceSetRow[]` instead of `FitNotesRow[]`).
+**Where the code lives.** Pure parts are in `packages/domain/src/import`: detection, sampling, `validateImportSpec`, `applyImportSpec`, `applyNotesPatterns`, and the existing `analyseImport` and `planImportRows`. Schemas are in `packages/schemas`. The model request is in `packages/coach/src/import-reader.ts`, which is **not** in the tool registry, has no context builder and no memory (AI9), and calls `packages/providers`. Orchestration is in `apps/mobile/src/import/import-service.ts`.
 
-New contracts, for the developer (research §2.3, §7 and brief change 2):
+**Existing, unchanged:**
+- `updateImportMapping`, `revertImport`, `listImportJobs`, `getImportJob`, `getActiveSession`;
+- `getAiCapabilities(userId)`, `resolveInferenceRoute(userId, 'text')`, `getConnectivity()`;
+- `checkPersonalSpendCap(requestId, estimate)`, `recordPersonalApiUsage(requestId, actualUsage)`.
+
+**Changed:**
+- **`analyseImport` and `planImportRows`** take `{source: ImportSourceRef; rows: SourceSetRow[]}` instead of `{variant; rows: FitNotesRow[]}`. Workouts are grouped by `workoutKey` instead of by date. A row whose `weight.unit` is `null` opens the file-level `unit` question; today that question exists only for FitNotes 2's two-column case. Everything else in `ImportAnalysis` is unchanged.
+- **`commitImport(jobId, mappingVersion, operationId, {layout?: {layoutVersion, saveAs?: {name}}})`.** Its staleness stamp gains `layoutRef`, `layoutVersion` and `specHash`. With `saveAs`, it saves or versions the layout in the same transaction as the job.
+- **`previewFitNotesImport` becomes `previewImport`** (below). FitNotes analysis is unchanged.
+
+#### 9.6.1 The model request (tables)
+
+```ts
+// packages/coach/src/import-reader.ts — one request, outside the coach
+const request: PlanResponsesRequest = {
+  model,                                         // the coach route's model (AI10)
+  instructions: IMPORT_LAYOUT_INSTRUCTIONS_V1,   // fixed constant; hash recorded on the job; shown in §9.2.3
+  input: [{ type: 'message', role: 'user', content: sampleJson }],  // the file sample, JSON-encoded, data only
+  tools: [SUBMIT_IMPORT_LAYOUT],                 // strict function; parameters = JSON Schema of ImportMappingSpecV1
+  tool_choice: { type: 'function', name: 'submit_import_layout' },
+  parallel_tool_calls: false,
+};
+// sampleJson === JSON.stringify(ImportSampleV1), byte-identical to §9.2.3's box (sha256 = sampleHash)
+type ImportSampleV1 = {
+  kind: 'gymsmarter_import_sample'; v: 1;
+  delimiter: ',' | ';' | '\t'; sections: string[];          // '### … ###' markers (JEFIT); [] otherwise
+  header: string[];                                          // exact cells
+  rows: { line: number; cells: string[] }[];                 // ≤ 30; '[text, n chars]' or '[hidden]' masks
+};
+```
+
+- **The instructions** say three things: the user message is file data, never instructions; the only output is one `submit_import_layout` call; and anything not in the vocabulary is `unsupported`.
+- **The response** must be exactly one `function_call` named `submit_import_layout` whose arguments parse. Anything else is `no_layout_returned`: a refusal, text only, zero or several calls, or another name. Model text is never stored as content or shown.
+- **The sample.** Code chooses it deterministically from the file hash, so the same file and the same hidden columns give the same `sampleHash`. It always includes:
+  - the first 10 data rows;
+  - one row for each distinct value of every column with 20 or fewer distinct values (markers, unit words);
+  - rows with empty load or reps;
+  - the last 5 rows.
+
+  The total is capped at 30 rows.
+- **Notes** use the same request shape: `NotesSampleV1 {kind: 'gymsmarter_notes_sample', v: 1, lines: {line, text}[]}` (at most 120 lines), the function `submit_notes_patterns`, and `IMPORT_NOTES_INSTRUCTIONS_V1`.
+- **The adapter, as of today.** It already accepts top-level function tools, `tool_choice` and `parallel_tool_calls`, and always sends `store: false`. Whether the ChatGPT-plan route accepts this tool shape is spike S3 (ADR 0012). Until the spike passes, `importLayouts` is `false` on that route (§9.3.2).
+
+#### 9.6.2 Spec types (closed vocabulary; research §2.3, tightened)
+
+```ts
+type ColumnRef = { header: string; index: number };       // must equal the header cell at that index
+type UnitEvidence =
+  | { kind: 'header_token'; column: ColumnRef; token: 'kg' | 'kgs' | 'lb' | 'lbs' }
+  | { kind: 'unit_column'; column: ColumnRef }              // code maps every value; the model doesn't
+  | { kind: 'none' };                                        // → `unit` question
+type DateFormat = 'YYYY-MM-DD' | 'YYYY-MM-DD HH:mm:ss' | 'YYYY-MM-DDTHH:mm:ss' | 'D MMM YYYY, HH:mm'
+  | 'unix_seconds' | 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'day_month_unknown';
+type CellNotation = 'load_x_reps' | 'reps_x_load' | 'sets_x_reps' | 'sets_x_reps_at_load' | 'reps_list' | 'unknown';
+type Layout =
+  | { kind: 'row_per_set'; setOrder: ColumnRef | null }
+  | { kind: 'row_per_exercise_packed'; sets: ColumnRef; notation: CellNotation }   // "100x5,100x5"
+  | { kind: 'wide_set_columns'; setColumns: ColumnRef[]; notation: CellNotation }  // Set 1, Set 2…
+  | { kind: 'sections_joined'; sessionsMarker: string; logsMarker: string;
+      joinKey: { sessions: ColumnRef; logs: ColumnRef } };                         // JEFIT
+type MarkerMeaning = 'warmup' | 'working' | 'drop' | 'failure' | 'not_a_set';
+
+interface ImportMappingSpecV1 {
+  specVersion: 1;
+  file: { delimiter: ',' | ';' | '\t'; headerLine: number; decimal: '.' | ',' };
+  layout: Layout;
+  workoutKey: ColumnRef[];                     // [] → start time, else date (AI6)
+  date: { column: ColumnRef; format: DateFormat };
+  exercise: ColumnRef;
+  load: { column: ColumnRef; unit: UnitEvidence } | null;
+  reps: ColumnRef | null;
+  setType: { column: ColumnRef; values: { cell: string; meaning: MarkerMeaning | null }[] } | null;
+  rpe: ColumnRef | null;
+  notes: ColumnRef[];
+  unmapped: ColumnRef[];
+  selfCheck: { line: number; date: string; exercise: string; load: number | null; reps: number | null }[]; // 3–5
+  unsupported: null | 'no_set_rows' | 'layout_outside_vocabulary';
+}
+// No load-convention, record-kind, unit-conversion or set fields exist. `notation` 'sets_x_reps*'
+// and every marker `meaning` and every role are Checks (AI3) until Ben confirms them.
+
+type LinePattern =                               // notes; closed list
+  | 'name_sets_x_reps_at_load'                   // Bench 3x5 @ 100
+  | 'name_load_x_reps_list'                      // Squat 100x5, 105x5, 110x3
+  | 'name_load_unit_dash_reps_list'              // bench 225lbs - 8,8,6
+  | 'name_then_reps_slash_list'                  // Bench 100 / 12/10/8
+  | 'name_sets_x_reps';                          // Pull-ups 3x8
+interface NotesPatternSpecV1 {
+  specVersion: 1;
+  dateHeading: { shape: 'D MMM' | 'D MMM YYYY' | 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD' | 'weekday D MMM'; exampleLines: number[] } | null;
+  patterns: { pattern: LinePattern; exampleLines: number[] }[];  // each must read all its example lines
+  unsupported: null | 'no_set_lines';
+}
+```
+
+`SourceSetRow` generalises `FitNotesRow`. FitNotes rows convert one to one.
+
+```ts
+interface SourceSetRow {
+  source: { jobId: string; row: number | null; line: number; cells: string[] | null; text: string | null }; // raw, as written
+  layoutRef: { kind: 'fitnotes'; variant: FitNotesVariant } | { kind: 'saved'; profileId: string; version: number }
+           | { kind: 'coach'; specHash: string } | { kind: 'notes'; specHash: string; profileId: string | null };
+  date: string | null; startLocal: string | null; zone: string | null;      // null zone = not recorded (AI6)
+  workoutKey: string;                                                        // deterministic from the row
+  exercise: string;
+  weight: { value: number; unit: WeightUnit | null } | null;                // null unit → asked
+  bothColumns: { kg: number; lb: number } | null;
+  reps: number | null; setIndex: number | null;
+  setType: MarkerMeaning | null; rpe: number | null; comment: string;
+  rowClass: RowClass; problem: string | null;
+  evidence: { field: 'unit' | 'role' | 'marker' | 'notation'; source: 'header_word' | 'unit_cell' | 'line_word' | 'ben' | 'saved_layout' }[];
+}
+```
+
+#### 9.6.3 Functions
 
 | Function | Purpose |
 |---|---|
-| `previewImport(source: {kind: 'file', uri} \| {kind: 'text', text}, operationId)` → `{jobId, detection}`. `detection` is one of `{kind: 'fitnotes', variant}`, `{kind: 'saved_layout', profileId, version}`, `{kind: 'saved_layout_changed', profileId, version, added: ColumnRef[], missing: ColumnRef[]}`, `{kind: 'new_table', delimiter, columns: ColumnRef[], rowCount, firstLine}`, `{kind: 'notes', chars, lines, numberLines, dateRange?}`, or `{kind: 'not_readable', reason: 'empty' \| 'binary' \| 'spreadsheet_file' \| 'pdf_or_image' \| 'app_backup' \| 'no_numbers'}` | Replaces `previewFitNotesImport` (FitNotes analysis unchanged). Detection runs on the phone with no network |
-| `getImportCoachStatus(ownerId)` → `{route: 'chatgpt_plan' \| 'api_key' \| null, state: 'ready' \| 'not_connected' \| 'offline' \| 'signed_out' \| 'limit' \| 'unavailable' \| 'cap_reached' \| 'model_unavailable' \| 'route_cannot_read_layouts', capLeftUsd?}` | §9.3.2. Composes existing capability, route and connectivity calls; never picks another route |
-| `buildImportSample(jobId, {hiddenColumns: number[]})` → `{sampleHash, dataText, instructionsText, chars, columns: {ref: ColumnRef, kind: 'number' \| 'date' \| 'short_text' \| 'notes', sendValues: boolean}[], estimateUsd?}` | The literal request text for §9.2.3. Notes columns never send values |
-| `proposeImportMapping(jobId, sampleHash, operationId)` → `{status: 'proposed', layoutVersion} \| {status: 'rejected', reasons: SpecCheckFailure[]} \| {status: 'unavailable', reason} \| {status: 'failed', reason: 'timeout' \| 'no_layout_returned' \| 'interrupted' \| 'provider_error'}` | Sends exactly `dataText` (hash checked) with one forced output function and no other tools. A completed response without exactly one layout is `no_layout_returned`. Runs `validateImportSpec` before returning `proposed` |
-| `validateImportSpec(spec: ImportMappingSpecV1, fileText)` → `{ok: true, dryRun: {readRows, totalRows, unreadable[]}, workedExamples: {row, cells[], reading}[]} \| {ok: false, failures: SpecCheckFailure[]}` | Pure (`packages/domain`). The checks in §9.2.4. `ImportMappingSpecV1` is the research §2.3 sketch: closed vocabulary, **no convention fields** |
-| `getLayoutReview(jobId)` → `{layoutVersion, columns: {ref, role, detail?, source: 'coach' \| 'ben' \| 'saved_layout'}[], unit: {kind: 'header_token' \| 'unit_column' \| 'answer' \| 'ask', …}, dryRun, workedExamples, questions: LayoutQuestion[]}` | Drives §9.2.5. `LayoutQuestion` is one of `record_kind`, `unit`, `both_unit_columns`, `date_order`, `year_missing`, `notation{pattern}`, `marker{column, token}` or `new_column{ref}` |
-| `updateImportLayout(jobId, change: {kind: 'role', column, role} \| {kind: 'answer', question, answer}, expectedLayoutVersion)` → new `layoutVersion` and review | Stale versions rejected |
-| `confirmImportLayout(jobId, expectedLayoutVersion)` → the existing preview analysis | Applies the layout to every row, producing `SourceSetRow[]` |
-| `startTextImport(jobId, {range?}, operationId)` / `continueTextImport(jobId, operationId)` / `getTextImportProgress(jobId)` → `{partsDone, partsTotal, charsSent, requestsSent, state: 'reading' \| 'paused' \| 'done', pauseReason?}` | Notes parts, one request at a time. Finished parts are cached with the job and never re-sent |
-| `getNotesReview(jobId)` / `setCoachReadSets(jobId, tickedIds[], expectedVersion)` | §9.2.8. Every coach-read item carries `{line, quote}`. Code drops any number not in `quote` and lists lines with digits that produced nothing |
-| `suggestExerciseNames(jobId, names[], operationId)` → `{suggestions: {sourceName, exerciseId}[]}` | AI13. Validated against the candidates; contradictions dropped |
-| `listImportProfiles(ownerId)` / `getImportProfile(id)` / `renameImportProfile(id, name, expectedVersion)` / `updateImportProfileAnswer(id, question, answer, expectedVersion)` / `deleteImportProfile(id, expectedVersion)` / `undoDeleteImportProfile(id)` | Saved import layouts. Owner-scoped **Your data**: in the backup's Your data section and the `Full data (JSON)` export, removed by `Delete my data`, never in `Coaching knowledge only` |
-| `commitImport(…, {saveLayout?: {name}})` | Saves or updates the layout in the same transaction as the job (`saveImportProfile` in research §7) |
+| `previewImport(source: {kind: 'file', uri} \| {kind: 'text', text}, operationId)` → `{jobId, detection}` | `detection` is one of: `fitnotes{variant}`; `saved_layout{profileId, version}`; `saved_layout_changed{profileId, version, added, missing}`; `new_table{delimiter, columns, rowCount, firstLine}`; `notes{lines, numberLines}`; `not_readable{reason: 'empty' \| 'spreadsheet_file' \| 'pdf_or_image' \| 'app_backup' \| 'no_numbers' \| 'binary'}`. Runs on the phone with no network |
+| `getImportCoachStatus(ownerId)` → `{route: 'chatgpt_plan' \| 'api_key' \| null, state: 'ready' \| 'not_connected' \| 'offline' \| 'signed_out' \| 'limit' \| 'unavailable' \| 'cap_reached' \| 'model_unavailable' \| 'route_cannot_read_layouts', capLeftUsd?}` | §9.3.2. Composes the existing calls and never picks another route |
+| `buildImportSample(jobId, {hiddenColumns: number[]})` → `{sampleHash, sampleJson, instructionsText, chars, columns: {ref, kind: 'number' \| 'date' \| 'short_text' \| 'notes', hidden: boolean}[], estimateUsd?}` | The literal request text for §9.2.3 (pure) |
+| `proposeImportMapping(jobId, sampleHash, operationId)` → `{status: 'proposed', layoutVersion} \| {status: 'rejected', reasons: SpecCheckFailure[]} \| {status: 'unavailable', reason} \| {status: 'failed', reason: 'timeout' \| 'no_layout_returned' \| 'interrupted' \| 'provider_error'}` | Sends exactly the stored `sampleJson` and refuses on a hash mismatch. Runs `validateImportSpec` before returning `proposed`. Idempotent on `operationId`: a repeat returns the stored result and doesn't send again |
+| `validateImportSpec(spec, fileText)` → `{ok: true, dryRun: {readRows, totalRows, unreadable[]}, workedExamples[]} \| {ok: false, failures: SpecCheckFailure[]}` | Pure. The §9.2.4 checks |
+| `applyImportSpec(spec, confirmations, fileText)` → `SourceSetRow[]` | Pure and deterministic: the same inputs give the same rows. A role or marker still on `Check` makes its rows `pending`, never read |
+| `getLayoutReview(jobId)` → `{layoutVersion, columns: {ref, role, state: 'named' \| 'check' \| 'ben' \| 'saved'}[], unit, dryRun, workedExamples, questions: LayoutQuestion[]}` | Drives §9.2.5. `LayoutQuestion` is one of: `record_kind`, `unit`, `both_unit_columns`, `date_order`, `notation{column}`, `marker{column, token}`, `new_column{ref}` |
+| `updateImportLayout(jobId, change: {kind: 'role', column, role} \| {kind: 'confirm', column} \| {kind: 'answer', question, answer}, expectedLayoutVersion)` → new `layoutVersion` and review | Stale versions are rejected (rule 5) |
+| `confirmImportLayout(jobId, expectedLayoutVersion)` → `ImportAnalysis` | Refused while any `Check` or layout question is open. Runs `applyImportSpec` then `analyseImport` |
+| `proposeNotesPatterns(jobId, sampleHash, operationId)` / `applyNotesPatterns(spec, answers, text)` → `SourceSetRow[]` + `notRead: {line, text}[]` / `getNotesReview(jobId)` | §9.2.8. Code reads every number. A pattern that fails one of its own example lines is dropped |
+| `suggestExerciseNames(jobId, names[], operationId)` → `{suggestions: {sourceName, exerciseId}[]}` | AI14. Suggestions are validated against candidates and the matcher's contradiction rules |
+| `listImportProfiles(ownerId)` / `getImportProfile(id)` / `renameImportProfile(id, name, expectedVersion)` / `updateImportProfileAnswer(id, question, answer, expectedVersion)` / `deleteImportProfile(id, expectedVersion)` / `undoDeleteImportProfile(id)` | Saved layouts (AI12) |
 
-`SourceSetRow` generalises `FitNotesRow`: `{source: {jobId, row?, line, cells? \| quote?}, readBy: 'code' \| 'coach', date, startLocal?, zone: null, workoutKey, exercise, weight, bothColumns, reps, setIndex?, setType?, rpe?, notes, rowClass, problem, evidence[]}`. Everything from `analyseImport` on is unchanged.
+#### 9.6.4 Storage, idempotency and provenance
+
+- **`import_profiles` (new; Your data, owner-scoped):**
+  - fields: `id`, `version`, `name`, `kind` (`table` / `notes`), `fingerprint` (exact header cells, delimiter, section markers), the spec, Ben's confirmations and answers, the values seen per column (markers, unit words, sign of each exercise's weights), and `uses[]` (job IDs);
+  - provenance: `proposedBy: 'coach'`, model, route, `specHash`, created and confirmed times (UTC + zone);
+  - **in use** only while one of its `uses` is an import still in effect (AI12, mirroring `rememberedAnswers`);
+  - backed up in the Your data section, included in the `Full data (JSON)` export, removed by `Delete my data`, and absent from `Coaching knowledge only` (rule 10);
+  - a loaded profile that fails the schema is never used.
+- **`import_jobs` gains:**
+  - `layoutRef`, `layoutVersion` and `specHash`;
+  - `sampleJson`, the exact text sent (Your data);
+  - `sampleHash` and `instructionsHash`;
+  - `route`, `model` and the request `operationId`;
+  - per-column `state` (`named` / `check` / `ben`);
+  - `requestsSent` and `charsSent`.
+
+  `import_rows` stays append-only, holding each row's raw cells or line, its result and the set it became.
+- **Idempotency (rule 5):**
+  - Every request carries an `operationId`, and repeats return the stored result.
+  - Every layout change bumps `layoutVersion`, and every answer bumps `mappingVersion`. Stale writes are refused.
+  - At commit, the context is re-read as ADR 0016 describes. If it changed, the preview is rebuilt and Ben confirms again.
+  - Workout writes are `<operationId>:<workoutKey>`, with deterministic session and set IDs. The same file, layout version and answers give the same IDs. A force-close and `Continue import` finish with exactly the planned workouts.
+  - The same file (SHA-256) with an import still in effect follows §3.4.
+- **Provenance (rule 6):**
+  - Every set keeps the file name, SHA-256, row or line, and the raw cells or line text.
+  - It also keeps the layout reference and version, and where each value-changing reading came from (`evidence[]`).
+  - Values are never converted between kg and lb, and never snapped to equipment (rules 2 and 4: history is recorded as written).
+- **Imported text stays data (rule 8).** Exercise names, notes and comments reach the coach later only as quoted data. They never become memories, pain flags (coach-contract §6.1, `set_pain_flag`) or playbook candidates (rule 10).
 
 ### 9.7 Acceptance checks
 
 Numbering continues from §7.
 
-Unavailable and offline (rule 1)
-34. With the coach not connected, offline, signed out or over its limit, choosing a new-layout file shows the matching §9.3.2 state, and a network spy records **no request**. In airplane mode, a FitNotes file and a saved-layout file both import end to end.
-35. A `subscription_sharing_usage_limit_exceeded` mid-request leaves nothing imported and shows no reset time. No request goes to the API-key route, and the coach's route setting is unchanged (rule 7).
-36. With `importLayouts: false` (spike S3 not passed), the AI path says so and FitNotes and saved layouts still work.
+**No AI, offline (rule 1)**
+34. With the coach not connected, offline, signed out, at its limit, or with `importLayouts: false`:
+    - choosing a new-layout file shows `Needs the coach · <reason>`;
+    - a network spy records **no request**.
 
-Consent and what's sent (rules 7, 8, 10)
-37. The request's file content is byte-identical to the `Your file, as sent` text on screen. Changing a column switch changes both.
-38. A fixture with unique marker strings in every notes column: no marker appears anywhere in the layout request, including the column summaries.
-39. The request contains no Your data: a search for the test owner's memory, pain-flag, gym and history strings finds nothing. It carries exactly one function tool, forced, and no web search or other tool.
-40. On the API-key route, the estimate is labelled `estimate`, and a refusal by `checkPersonalSpendCap` blocks the request before it is sent.
+    In airplane mode, a FitNotes file and a saved-layout file both import end to end.
+35. A `subscription_sharing_usage_limit_exceeded` arriving mid-request:
+    - leaves nothing imported;
+    - shows no reset time;
+    - sends no request on the API-key route;
+    - leaves the coach's route setting unchanged (rule 7).
 
-Never guess (rule 6)
-41. A file with no unit word asks `Weight unit` with nothing selected, whatever the coach's layout says. A layout pointing at a unit word that isn't in the header, or a "unit column" with one non-unit value, is refused.
-42. The layout schema has no convention fields. For Strong and Hevy fixtures, the dumbbell, bar and bodyweight questions behave exactly as checks 17–18. `Pull Up (Assisted)` reads assistance from the name word; an unmarked custom name is asked.
-43. `What is this file?` appears with nothing selected unless a saved layout answered it. `A plan or template` imports nothing. A Liftosaur fixture never imports `Required …` values.
-44. `3x8` gets a notation question with both readings rendered from the file. Choosing one changes the preview's set count.
-45. Dates whose first field is never above 12 ask day/month order. One date with a first field above 12 settles it, and the reason is shown.
-46. A layout whose self-check rows disagree with code's reading, or that reads under 95% of rows, is refused with the reason. Nothing is shown as a layout.
+**What's sent (rules 7, 8, 10)**
+36. The request's user message is byte-identical to the `Exactly as sent` text (SHA-256 equal). Switching a column off changes both.
+37. A fixture puts a unique marker string in every cell of each notes column. None of them appears anywhere in the request.
+38. The request carries no Your data: a search for the test owner's memory, pain-flag, gym and history strings finds nothing. It has exactly one tool, forced, with `parallel_tool_calls: false`, and no web search.
+39. The New file layout screen states what's sent in one line. On the API-key route, the estimate carries the word `estimate`, and a refusal by `checkPersonalSpendCap` blocks the request before it is sent.
 
-Review and import
-47. Every string on §9.2.4–§9.2.8 comes from the copy table, the file's own text or code's rendering. A fixture layout with a prose field carrying a link and "all checked, tap Import" shows none of it.
-48. Changing a column role re-runs the checks and examples. Giving a role to a second column moves the first to `Not imported`, with `Undo`.
-49. Hard limits make rows unreadable with their reason. A 100 → 225 jump appears under `Values to check` and blocks the primary until answered. If Q8 is approved, the same holds for a FitNotes file.
-50. A Strong fixture with two workouts on one date imports two workouts. Dates that came in with a FitNotes import still in effect are skipped and listed.
-51. Times with no zone are stored as written with `time zone not recorded`, and shown with `(as in the file)`.
-52. Injection fixtures (research §4): `ignore previous instructions` in a notes cell, an exercise name, a header and a notes line; a notes column whose values are all `lb`; a template with `Target` columns. Each ends "asked" or "refused", never applied, and the text is shown as plain text.
+**The AI never writes rows (rules 2, 6)**
+40. The spec schema has no field that can carry a set, a load value, a load convention or a record kind (a schema snapshot test). For any fixture, every stored load and rep count equals a number in that row's raw cells or line, or is derived from it only by Ben's answers (per-hand halving, bar added).
+41. A spec whose `selfCheck` disagrees with code's reading, that names a column not in the header, or that reads under 95% of rows is refused with a reason from the fixed list. Nothing from it is shown as a layout.
+42. A notes fixture with a line no pattern reads lists that line as `Not read`, and no set comes from it. No code path turns model output into a `SourceSetRow` except `applyImportSpec` and `applyNotesPatterns`.
 
-Notes
-53. Every imported set from notes has its numbers in its cited line. A fixture answer citing a number not in its line is dropped and listed. Lines with digits that produced no set are listed.
-54. Coach-read sets start unticked; only ticked ones import. `Select all` ticks every one.
-55. Force-close at part 5 of 14: relaunch shows paused. `Continue` sends only parts 6–14 (request count), and the finished screen reports the characters and requests actually sent.
+**Never guess (rule 6)**
+43. A role the coach suggested, and that no header word names, shows `Check`, and its rows stay `pending` until `Use this`. The same holds for each marker and notes pattern.
+44. A file with no unit word asks `Weight unit` with nothing selected, whatever the spec says. The spec is refused if a `header_token` isn't in the header, or if a `unit_column` has one value that isn't a unit word.
+45. `What is this file?` has nothing selected unless a saved layout still in use answered it. `A plan or template` imports nothing. In a Liftosaur fixture, no `Required …` value is stored.
+46. A `3x8` cell gets a notation question, with both readings rendered from the file, and the answer changes the set count. Dates whose first field is never above 12 ask day/month order.
+47. For Strong and Hevy fixtures, the dumbbell, bar and bodyweight questions behave exactly as checks 17–18. `Pull Up (Assisted)` reads as assistance from the name word, and an unmarked custom name is asked.
 
-Saved layouts (rules 5, 10)
-56. After a commit with `Save this layout` on, a second file with identical columns imports in airplane mode with no request. Its preview labels earlier answers `your answer last time`, still shows every exercise's conversion, and asks about new markers and new exercise names.
-57. A file with one extra column asks only about that column, offline. A file missing its load column is treated as a new layout.
-58. The same file with the same layout version gives the same operation IDs (golden test). Killing at 180 of 412 and continuing gives exactly 412.
-59. Saved layouts are in the backup's Your data section and the full JSON export, are removed by `Delete my data`, and are absent from `Coaching knowledge only`. A damaged layout in a restored backup isn't used, and Ben is told.
-60. Deleting a layout leaves its imports untouched and offers `Undo`. The next file with those columns goes to `New file layout`.
+**Injection (rule 8)**
+48. These fixtures each end as "asked" or "refused", never as applied:
+    - `ignore previous instructions` in a notes cell, an exercise name, a header and a notes line;
+    - a notes column whose values are all `lb`;
+    - a template with `Target` columns.
+49. A fixture spec carrying a link and "all checked, tap Import" in its string fields shows none of that text: every string on §9.2.2–§9.2.10 comes from the copy table, the file's own text or code's rendering.
 
-General
-61. Import, including reading with the coach, is unavailable while a workout is unfinished.
-62. Provenance on each set reads `Layout suggested by the coach` or `Read by the coach · ticked by you`, with file, row or line, and the original text.
-63. All counts, dates and money are tabular. Text is at least 16pt. Every status has an icon and text. Every screen works at AX3 with the primary visible, and worked examples wrap without truncating numbers.
+**Review, commit and Undo (rules 2, 5)**
+50. Changing a role re-runs the checks and examples. Giving a role to a second column moves the first to `Not imported`, with `Undo`.
+51. Hard limits make rows unreadable with their reason. A jump from 100 to 225 appears under `Values to check` and blocks the primary until answered.
+52. A Strong fixture with two workouts on one date imports two workouts. Dates from a FitNotes import still in effect are skipped and listed. Times with no zone are stored with `zone: null` and shown with `(as in the file)`.
+53. A golden test: the same file with the same layout version and answers gives the same operation IDs. Killing the app at 180 of 412 and continuing gives exactly 412. A commit with a stale `layoutVersion` is refused.
+54. `Undo this import` reverts every workout the import added and deletes nothing. A layout that only this import used reads `Not in use`, and the next file with those columns goes to New file layout.
 
-### 9.8 Proposed changes and questions for Ben
+**Saved layouts (rules 5, 10)**
+55. After a commit with `Save layout` on, a second file with identical columns imports in airplane mode with no request. Its preview:
+    - labels earlier answers `Your answer last time`;
+    - shows every exercise's conversion;
+    - asks about new markers, new names and negative weights not seen before.
+56. A file with one extra column asks only about that column, offline. A file missing its load column is a new layout.
+57. Layouts are in the backup's Your data section and the full JSON export, are removed by `Delete my data`, and are absent from `Coaching knowledge only`. A damaged layout in a restored backup isn't used, and Ben is told.
 
-**Questions for Ben** (the first one blocks the build):
+**General**
+58. Import, including the coach request, is unavailable while a workout is unfinished.
+59. Each imported set shows its file, row or line, original text and `SourceTag`.
+60. Presentation:
+    - counts, dates and money are tabular;
+    - text is at least 16pt;
+    - every status has an icon and text;
+    - every screen works at AX3 with the primary visible;
+    - worked examples wrap without truncating numbers;
+    - no new screen has a lead paragraph (copy review against the minimal-copy convention).
+
+### 9.8 Questions for Ben and proposals
+
+#### Open questions for Ben
+
+The first question blocks the build.
 
 | # | Question | Designer's recommendation |
 |---|---|---|
-| Q1 | Which histories do you actually have besides FitNotes: other apps (which), spreadsheets, Notes? | Build only the paths you need, in the order in "Build order" above |
-| Q2 | Times with no time zone in Strong and Hevy files: store them as written, marked `time zone not recorded`, or ask for a zone each time? (AI4; needs a domain decision too) | Store as written; no question |
-| Q3 | Is it OK that column names, a summary of each column and 30 rows (notes hidden) go to ChatGPT? OpenAI doesn't say how long plan-route data is kept or whether it's used for training | Yes, with the consent screen as designed |
-| Q4 | A file that is a plan or template: import nothing (v1), or later turn it into routines? | Nothing in v1 |
-| Q5 | If the coach can't read a file, or you'd rather not send it, should you be able to set its columns yourself, offline? (AI17) | Not in v1. Revisit if a real file needs it |
-| Q6 | Sets the coach copied from notes line by line: start unticked (as designed) or ticked? | Unticked |
-| Q7 | If the ChatGPT plan can't read layouts (spike S3), may import use your API key for that one request, with its cost shown, without switching the coach's route? | Yes, as a one-off with the cost confirmation (this would amend AI8) |
-| Q8 | `Values to check` (a load more than double or less than half the workout before): should FitNotes imports get it too? | Yes |
+| Q1 | Which histories do you actually have besides FitNotes? Other apps (which ones), spreadsheets, Notes? | Build only the paths you need: tables first, notes only if you have notes |
+| Q2 | Is it OK to send column names and 30 sample rows (notes hidden), or 120 note lines, to ChatGPT? OpenAI doesn't publish how long it keeps ChatGPT-plan requests, or whether it trains on them | Yes, with the one-line send line and `See what's sent` |
+| Q3 | If the ChatGPT plan can't carry the layout request (spike S3), may that one request use your API key, with its cost shown and confirmed, without changing the coach's route? | Yes, as a one-off per file (would amend AI10). Otherwise new layouts wait for S3 |
 
-**Brief changes.** The research's proposed brief changes 1–6 stand, and this design follows them: §5 wording, the §7 functions (as §9.6 names them), the §8 statement that import calls are outside the coach's tools, the §11 dependencies, "any text-based format", and an ADR when built. One flag: Ben's "we don't need import rules" holds for per-app column rules only. The value checks and the unit and convention questions stay (rule 6).
+#### Decided here (previously questions in the 9 Oct draft)
 
-**Changes to this spec and ADR 0016** (for the PM to accept):
-- AI1–AI17 above. DX5 and P-I1 are superseded.
-- Review r4 spec issues:
-  - **SP2:** carry Ben's earlier per-exercise answers forward, labelled `your answer last time`, for FitNotes as well as layouts (AI10).
-  - **SP3:** a suggestion never contradicts an equipment or one-arm word in the name, and every `Check` line shows the dumbbell count (AI13). This applies to the word matcher too.
-- AI12 would add `Values to check` to the FitNotes path (Q8).
+- Times with no zone are stored as written, with no question (AI6).
+- Plans and templates import nothing in v1 (AI4).
+- There is no offline manual column setup in v1 (AI16).
+- The ticked-sets question is gone, because the coach no longer copies lines (AI2).
 
-**Cross-spec proposals** (not edited here):
-- **X4 (ai-connection.md §2.6):** the weekly usage line counts import requests separately, e.g. `This week: 42 coach messages, 3 import requests from this phone`.
-- **X5 (design-system.md):** merge §9.9's `type.source`, `ConsentCard`, `SentPreview`, `WorkedExample`, `ColumnRoleRow` and the new `SourceTag` kinds when its owner is free.
-- **X6 (system-states.md §3.2):** add the `route_cannot_read_layouts` capability state to App status as `Reading new file layouts`, with `Working` only after a dated test (spike S3).
-- **Applied here:** onboarding.md (Ready row `Import training history`) and profile-and-settings.md §2.8 (import and saved layouts named under Data & backup).
+#### For the PM (proposals, not questions for Ben)
+
+- **Domain decision (AI6):** the storage shape for local times with no zone (`startLocal` + `zone: null`) against CLAUDE.md's "UTC with the timezone". It is also needed by `session.ts`'s anchor logic.
+- **Values to check for FitNotes (AI13):** the hard limits already apply. Adding the 2× soft check to FitNotes would be an ADR 0016 change.
+- **Brief changes.** The research's proposed brief changes 1–6 stand (§5 wording, §7 functions as §9.6 names them, §8 "import calls are outside the coach's tools", §11 dependencies, "any text-based format", an ADR when built), with one amendment: change 1's "Free-text logs are read in chunks… every number must appear in its cited line" becomes "Free-text logs are read by line patterns the coach proposes and code applies. The coach never copies sets" (AI2). Also flag that Ben's "no import rules" holds for per-app column rules only. Value checks and the unit and convention questions stay (rule 6).
+- **Spec and ADR 0016:**
+  - AI1–AI16 supersede DX5 and P-I1.
+  - Review r4 SP2 (`Your answer last time` for FitNotes as well) is adopted.
+  - So is SP3: no suggestion contradicts an equipment or arm-count word (AI14).
+- **Cross-spec proposals** (not edited here):
+  - **X4** (ai-connection.md §2.6): the usage line counts import requests separately.
+  - **X5** (design-system.md): merge §9.9.
+  - **X6** (system-states.md §3.2): add `Reading new layouts` to App status, shown as working only after a dated S3 test.
 
 **Dependencies** (research §9):
-- the plan-route tool shape and whether `strict` is enforced (spike S3, ADR 0012);
-- plan-route retention and training terms;
-- what a refusal under a forced `tool_choice` looks like;
+- spike S3, which covers the plan-route tool shape, whether `strict` is enforced, and what a refusal under a forced `tool_choice` looks like;
 - latency against the adapter's 120 s timeout;
-- real Hevy and Strong exports, if Ben has them.
+- plan-route retention terms (Q2);
+- real exports from Ben (Q1).
 
 ### 9.9 Components and tokens used here (local until merged, X5)
 
-Existing components used: `StatusCard`, `NoteLine`, `StepRow`, `ProgressLine`, `ChecklistRow`, `SettingsRow` (question and radio variants), `SettingsSectionHeader`, `DomainLabel`, `SourceTag`, `RouteLine`, `UndoToast`, `PrimaryButton`, `SecondaryButton`, `DangerTextButton`, and the match statuses (design-system §7.1).
+**Existing components used:**
+- `StatusCard`, `NoteLine`, `StepRow`, `SettingsRow` (question and radio variants), `SettingsSectionHeader`;
+- `DomainLabel`, `SourceTag`, `UndoToast`;
+- `PrimaryButton`, `SecondaryButton`, `DangerTextButton`;
+- the match statuses (design-system §7.1).
 
 | Name | Spec |
 |---|---|
-| `type.source` | SF Mono, 16 / 22, regular, scales with Callout, max 3×. **Only for raw file text**: first lines, `SentPreview`, worked-example source lines and quoted notes lines. Wraps; never truncates numbers. VoiceOver reads it as text, not character by character |
-| `ConsentCard` | Card frame (design-system §9.48). Line 1: `arrow.up.circle` + `What's sent` (`type.headline`). Bullets in `type.callout`, then a `Not sent:` line in `text.secondary`, then a `SettingsRow` link `See exactly what's sent ›`. No buttons of its own: the screen's primary is the consent. Never `accent` except the link. VoiceOver reads it as one group, "What's sent", then the bullets |
-| `SentPreview` | `bg.raised`, 1pt `border.control`, `radius.sm`, padding `space.3`, `type.source`, selectable, scrolls inside the sheet (no fixed height at AX sizes). Character count below in `type.label` `text.secondary`, tabular |
-| `WorkedExample` | Line 1: `Row 2` / `Line 212` (`type.label`, tabular). Line 2: the file's cells joined with ` · ` in `type.source` `text.secondary`. Line 3: `→` + code's reading in `type.callout` `text.primary`, tabular. `?` marks a value waiting for an answer and is read as "waiting for your answer". `→` is read as "reads as". `space.3` between examples |
-| `ColumnRoleRow` | `SettingsRow` (≥ 52pt): the column name in quotes (file text, `type.body`) and the role (`type.callout` `text.secondary`), stacked at AX1+. An optional evidence line (`Load · kg, from the column name`) in `type.callout`, an optional `SourceTag` (`Coach` / `You` / `Saved layout`), and `chevron.right`. The whole row is one button |
-| `SourceTag` kinds (add to design-system §9.28) | Data provenance: `Layout suggested by the coach` (`text.bubble`), `Read by the coach` (`text.bubble`), `Saved layout` (`square.and.arrow.down`), `your answer last time` (`person`). Never `accent`, never colour-only |
+| `type.source` | SF Mono, 16 / 22, regular, scales with Callout, max 3×. **Only for raw file text**: first lines, `SentPreview`, worked-example source lines and quoted note lines. It wraps and never truncates numbers. VoiceOver reads it as text, not character by character |
+| `SendLine` (replaces the 9 Oct `ConsentCard`) | One `NoteLine`: `arrow.up.circle` + one sentence in `type.callout` `text.primary`, naming what's sent and where (plus the estimate on the API-key route). Below it, a `SettingsRow` link `See what's sent ›`. No buttons of its own: the screen's primary is the consent. Never `accent`. VoiceOver reads it as "Sends …", then the link |
+| `SentPreview` | `bg.raised`, 1pt `border.control`, `radius.sm`, padding `space.3`, `type.source`, selectable. It scrolls inside the sheet, with no fixed height at AX sizes. The character count sits below in `type.label` `text.secondary`, tabular |
+| `WorkedExample` | Line 1: `Row 2` / `Line 212` (`type.label`, tabular). Line 2: the file's cells joined with ` · ` in `type.source` `text.secondary`. Line 3: `→` + code's reading in `type.callout` `text.primary`, tabular. `?` marks a value waiting for an answer and is read as "waiting for your answer"; `→` is read as "reads as". `space.3` between examples |
+| `ColumnRoleRow` | `SettingsRow` (≥ 52pt) holding the column name in quotes (file text, `type.body`) and the role (`type.callout` `text.secondary`), stacked at AX1+. A trailing state shows icon + word: `✓` (`checkmark.circle.fill` `status.done`); `Check` (`questionmark.circle` `status.warning`, the same as the match status); or none for `Notes` / `Not imported`. In the `Check` state, `Use this` (`SecondaryButton`, ≥ 44pt) and `Change…` (text button) sit beneath |
+| `SourceTag` kinds (add to design-system §9.28) | `Coach layout` (`text.bubble`), `Coach suggestion` (`text.bubble`), `Notes pattern` (`text.alignleft`), `Layout: <name>` (`square.and.arrow.down`), `Your answer last time` (`person`), `You` (`person`). Never `accent`, never colour alone |
 
 No new colour, spacing, motion or timing tokens. Nothing on these screens animates.
 
