@@ -12,6 +12,7 @@ import {
   type FitNotesRow,
   type ImportAnalysis,
   type LoadContext,
+  type MachineExercise,
   type MatchCandidate,
   type NameRow,
   type PerHandExercise,
@@ -312,6 +313,14 @@ function skippedExerciseSets(a: ImportAnalysis): number {
   return a.counts.byResult.skipped_exercise;
 }
 
+/** `Assisted Dip (−30 kg → 30 kg assistance)`; `; positive values can’t be read` when its values are both negative and positive (review r6 S3, N2). */
+export function assistedText(m: MachineExercise): string {
+  const parts: string[] = [];
+  if (m.sample) parts.push(`${signedWeightText(m.sample.value, m.sample.unit)} → ${weightText(m.sample.imported, m.sample.unit)} assistance`);
+  if (m.mixed) parts.push('positive values can’t be read');
+  return parts.length === 0 ? m.name : `${m.name} (${parts.join('; ')})`;
+}
+
 export function previewView(d: ImportDraft, locale?: string): PreviewView {
   const a = d.analysis;
   const r = a.counts.byResult;
@@ -342,8 +351,8 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
   else if (!variantHasComments(d.variant)) kept.push(info('No comments in this file (FitNotes export without comments)'));
   kept.push(info('FitNotes files have no times. These workouts show the date only.'));
   if (a.machines.length > 0) {
-    // Assistance reads the number the other way round (more is easier): name those exercises (review r5 S3).
-    const assisted = a.machines.filter((m) => m.convention === 'assistance').map((m) => m.name);
+    // Assistance reads the number the other way round (more is easier): name those exercises (review r5 S3), each with what it imports as (review r6 N2).
+    const assisted = a.machines.filter((m) => m.convention === 'assistance').map(assistedText);
     kept.push(info('Machines: imported as stack readings, plates added or assistance, by exercise', assisted.length === 0 ? undefined : `Read as assistance (more weight is easier): ${assisted.join(', ')}`));
   }
   if (a.barless.length > 0) kept.push(info(`Kettlebell and other no-bar weights imported as written (${a.barless.map((b) => b.name).join(', ')})`));
@@ -575,6 +584,11 @@ export interface PerHandView {
 
 function weightText(value: number, unit: WeightUnit): string {
   return `${formatNumber(value)}${NBSP}${unit}`;
+}
+
+/** A weight as written, with a real minus sign when negative (`−30 kg`). */
+function signedWeightText(value: number, unit: WeightUnit): string {
+  return value < 0 ? `−${weightText(-value, unit)}` : weightText(value, unit);
 }
 
 /** `60 kg → 30 kg each`; `30 kg → 30 kg (one dumbbell)`; `24 kg → 24 kg (one kettlebell)`; `14 kg → not answered yet`. */

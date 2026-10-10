@@ -68,7 +68,7 @@ describe('import preview: questions before anything is saved', () => {
     // `Flat Barbell Bench Press` names its bar: the barbell group answer reads it.
     expect(named.total).toMatchObject({ answer: null, open: true, grouped: 1, needsGroup: true, needsOwn: 0, bars: [{ bar: 'barbell', units: ['kg'], weight: { kg: 20, lb: 45 }, needed: false, missing: [] }], missingBarWeight: false });
     expect(named.bodyweight).toEqual([]); // Pull-up rows are all 0: nothing to ask
-    expect(named.machines).toEqual([{ key: 'lat pulldown (pulley)', name: 'Lat Pulldown (Pulley)', exerciseName: 'Lat pulldown', convention: 'stack' }]);
+    expect(named.machines).toEqual([{ key: 'lat pulldown (pulley)', name: 'Lat Pulldown (Pulley)', exerciseName: 'Lat pulldown', convention: 'stack', sample: null, mixed: false }]);
     expect(named.questionsOpen).toBe(2);
     expect(named.ready).toBe(false);
 
@@ -658,6 +658,25 @@ describe('a word suggestion gives the exercise only (PM decision, review r5)', (
       ['Triceps Dip Machine', 'stack'],
       ['Assisted Dips', 'assistance'],
     ]);
+  });
+
+  it('r6 S3: an assisted exercise’s positive values among negative ones are never read as assistance; each shows what it imports as (r6 N2)', () => {
+    const p = parsed(`${A1}2026-09-01,Assisted Dip,Arms,-30,8,,,\n2026-09-02,Assisted Dip,Arms,10,5,,,\n2026-09-02,Assisted Pull Up,Back,40,8,,,\n2026-09-03,Assisted Pull Up,Back,35,8,,,\n`);
+    const a = analyseImport(p, ctx(), answers({ names: useAll(p) }));
+    expect(a.fates.map((f) => (f.result === 'imported' ? f.set.load : f.result === 'unreadable' ? f.detail : f.result))).toEqual([
+      { value: 30, unit: 'kg', convention: 'assistance' },
+      'Positive weight (10) on an assisted exercise whose other values are negative, so it may be weight added; not read as assistance',
+      { value: 40, unit: 'kg', convention: 'assistance' },
+      { value: 35, unit: 'kg', convention: 'assistance' },
+    ]);
+    expect(a.machines.map((m) => [m.name, m.convention, m.sample, m.mixed])).toEqual([
+      ['Assisted Dip', 'assistance', { value: -30, unit: 'kg', imported: 30 }, true],
+      ['Assisted Pull Up', 'assistance', { value: 35, unit: 'kg', imported: 35 }, false],
+    ]);
+    expect(a.ready).toBe(true);
+    // All negative: each is that much assistance.
+    const neg = analyseImport(parsed(`${A1}2026-09-01,Assisted Dip,Arms,-30,8,,,\n2026-09-02,Assisted Dip,Arms,-25,5,,,\n2026-09-02,Assisted Dip,Arms,0,5,,,\n`), ctx(), DEFAULT_ANSWERS);
+    expect(neg.fates.map((f) => (f.result === 'imported' ? f.set.load?.value : f.result))).toEqual([30, 25, 0]);
   });
 
   it('N4: the dumbbell group question counts and shows only pairs it reads: not one with its own answer', () => {

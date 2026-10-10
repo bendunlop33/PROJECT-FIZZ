@@ -248,6 +248,24 @@ export interface TotalQuestion {
   open: boolean;
 }
 
+/**
+ * A machine exercise (weight stack, plates added or assisted): read by the
+ * exercise, not asked (§2.5 step 3b). For an assisted machine, its newest
+ * readable value and what it imports as, since a negative weight is stored
+ * as that much assistance (review r6 N2); and whether its values are both
+ * negative and positive, so the positive ones can't be read (review r6 S3).
+ */
+export interface MachineExercise {
+  key: string;
+  name: string;
+  exerciseName: string;
+  convention: LoadConvention;
+  /** `assistance` only: the newest readable set as written and as imported; null when none can be read. */
+  sample: { value: number; unit: WeightUnit; imported: number } | null;
+  /** `assistance` only: values both negative and positive. */
+  mixed: boolean;
+}
+
 export interface BodyweightQuestion {
   key: string;
   name: string;
@@ -317,7 +335,7 @@ export interface ImportAnalysis {
   unit: { rows: number; answer: WeightUnit | null } | null;
   effort: { mode: 'notes_only' | 'review'; candidates: EffortCandidate[] };
   /** Exercises whose convention follows the exercise (stack, plates added, assisted): shown as text, not asked. */
-  machines: { key: string; name: string; exerciseName: string; convention: LoadConvention }[];
+  machines: MachineExercise[];
   /** `total` exercises with no bar (kettlebell, medicine ball, sandbag): imported as written, not asked. */
   barless: { key: string; name: string; exerciseName: string }[];
   /** Rows with a comment (kept with each set as the original). */
@@ -717,14 +735,41 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
   const bodyweight = [...bwMap.values()].filter((q) => q.min !== 0 || q.max !== 0);
   const askedBodyweight = new Set(bodyweight.map((q) => q.key));
 
-  const machines = new Map<string, { key: string; name: string; exerciseName: string; convention: LoadConvention }>();
+  const machines = new Map<string, MachineExercise>();
   const barless = new Map<string, { key: string; name: string; exerciseName: string }>();
+  // Assisted machines: the range of each one's values, so a positive value among negative ones isn't read as assistance (review r6 S3).
+  const assistRange = new Map<string, { min: number; max: number }>();
   for (const r of live) {
     const ex = resolved(r);
     if (!ex) continue;
     const key = nameKey(r.exercise);
-    if (['stack', 'added', 'assistance'].includes(ex.convention) && !machines.has(key)) machines.set(key, { key, name: r.exercise, exerciseName: ex.name, convention: ex.convention });
+    if (['stack', 'added', 'assistance'].includes(ex.convention) && !machines.has(key)) machines.set(key, { key, name: r.exercise, exerciseName: ex.name, convention: ex.convention, sample: null, mixed: false });
     if (ex.convention === 'total' && ex.bar === 'none' && !barless.has(key)) barless.set(key, { key, name: r.exercise, exerciseName: ex.name });
+    const w = ex.convention === 'assistance' ? enteredWeight(r, answers) : null;
+    if (w) {
+      const range = assistRange.get(key) ?? { min: w.value, max: w.value };
+      assistRange.set(key, { min: Math.min(range.min, w.value), max: Math.max(range.max, w.value) });
+    }
+  }
+  const assistMixed = (key: string): boolean => {
+    const range = assistRange.get(key);
+    return range !== undefined && range.min < 0 && range.max > 0;
+  };
+  /** An assisted machine's value as assistance: negative or the number on the machine, never a positive one among negatives. Null: can't be read. */
+  const assistanceOf = (key: string, value: number): number | null => (value > 0 && assistMixed(key) ? null : Math.abs(value));
+  const sampleDates = new Map<string, string>();
+  for (const r of live) {
+    const m = machines.get(nameKey(r.exercise));
+    if (m?.convention !== 'assistance' || r.reps === null) continue;
+    m.mixed = assistMixed(m.key);
+    const w = enteredWeight(r, answers);
+    const imported = w ? assistanceOf(m.key, w.value) : null;
+    const date = r.date ?? '';
+    // The newest readable set (first in the file on that date).
+    if (w && imported !== null && (m.sample === null || date > (sampleDates.get(m.key) ?? ''))) {
+      m.sample = { value: w.value, unit: w.unit, imported };
+      sampleDates.set(m.key, date);
+    }
   }
 
   const checked = new Set(answers.effort.rows);
@@ -812,7 +857,10 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
       }
       case 'assistance': {
         if (w === null || value === null) return set('assistance', null);
-        return set('assistance', { value: Math.abs(value), unit: w.unit, convention: 'assistance' });
+        // Assistance written as negative numbers: a positive one among them most likely means weight added. Never flipped (review r6 S3).
+        const assistance = assistanceOf(key, value);
+        if (assistance === null) return { result: 'unreadable', detail: `Positive weight (${String(value)}) on an assisted exercise whose other values are negative, so it may be weight added; not read as assistance` };
+        return set('assistance', { value: assistance, unit: w.unit, convention: 'assistance' });
       }
     }
   });

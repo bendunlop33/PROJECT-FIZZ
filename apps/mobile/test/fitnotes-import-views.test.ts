@@ -355,9 +355,23 @@ describe('import preview wording', () => {
     expect(shown('Assisted Dip')).toEqual(['matched', 'Assisted dip']);
     // A name that says two arms is never the one-arm row (review r5 N1).
     expect(shown('Two-Arm Dumbbell Row')[1]).not.toBe('One-arm dumbbell row');
-    // The machines line names what is read as assistance.
+    // The machines line names what is read as assistance, with what it imports as (review r6 N2).
     const machines = previewView(d, 'en-GB').kept.find((l) => l.text.startsWith('Machines:'));
-    expect(machines?.detail).toBe('Read as assistance (more weight is easier): Assisted Dip');
+    expect(plain(machines?.detail)).toBe('Read as assistance (more weight is easier): Assisted Dip (30 kg → 30 kg assistance)');
+  });
+
+  it('an assisted machine written as negative numbers shows its conversion; a positive value among them can’t be read (review r6 S3, N2)', async () => {
+    let d = await open([B2, '2026-09-01,Assisted Dip,Arms,-30.0,kgs,8,,,,', '2026-09-02,Assisted Dip,Arms,10.0,kgs,5,,,,', '2026-09-02,Assisted Pull Up,Back,-45.0,lbs,8,,,,'].join('\n'));
+    for (const n of d.analysis.names.filter((x) => x.needsAnswer && x.match.exerciseId)) d = await step(d, { kind: 'name', key: n.key, answer: { kind: 'exercise', exerciseId: n.match.exerciseId ?? '' } });
+    const v = previewView(d, 'en-GB');
+    expect(plain(v.kept.find((l) => l.text.startsWith('Machines:'))?.detail)).toBe(
+      'Read as assistance (more weight is easier): Assisted Dip (−30 kg → 30 kg assistance; positive values can’t be read), Assisted Pull Up (−45 lb → 45 lb assistance)',
+    );
+    expect(v.skipped.find((x) => x.key === 'unreadable')?.line.text).toBe('1 row can’t be read');
+    const r = await s.imports.commit(d.draftId, d.mappingVersion, 'op-assisted');
+    if (!r.ok) throw new Error(r.reason);
+    const rows = (await s.imports.job(r.jobId))?.rows ?? [];
+    expect(rows.map((x) => (x.imported?.load ? `${String(x.imported.load.value)} ${x.imported.load.unit} ${x.imported.load.convention}` : x.result))).toEqual(['30 kg assistance', 'unreadable', '45 lb assistance']);
   });
 
   it('FitNotes’ one-dumbbell defaults are never halved by "Both dumbbells together"; names that don’t say are asked (review r4 S1)', async () => {
