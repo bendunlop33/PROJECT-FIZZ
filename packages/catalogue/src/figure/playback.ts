@@ -77,6 +77,34 @@ export function playbackTimes(guide: PreparedGuide['guide'], fps = PLAYBACK_FPS)
   return Array.from({ length: count }, (_, i) => i / n);
 }
 
+/**
+ * For each time, the index of an earlier time that shows exactly the same
+ * pose, or −1: on a still floor every frame inside one key's hold is that key
+ * (the bake reuses its picture instead of drawing it again; guides review B2).
+ * A scrolling floor moves during a hold, so nothing is shared there.
+ */
+export function heldFrames(prepared: PreparedGuide, times: readonly number[]): number[] {
+  if (prepared.guide.ground.scrollPerCycle !== 0) return times.map(() => -1);
+  const keys = prepared.keys;
+  const keyOf = (t: number): number => {
+    const tc = Math.min(1, Math.max(0, t));
+    let i = 0;
+    while (i < keys.length - 1 && (keys[i + 1]?.t ?? Infinity) <= tc) i += 1;
+    const k = keys[i];
+    // The last key has no segment after it: its pose holds at and after its time, whatever its hold.
+    return k !== undefined && (i === keys.length - 1 || tc <= k.holdEnd) ? i : -1;
+  };
+  const firstAt = new Map<number, number>();
+  return times.map((t, idx) => {
+    const k = keyOf(t);
+    if (k < 0) return -1;
+    const seen = firstAt.get(k);
+    if (seen !== undefined) return seen;
+    firstAt.set(k, idx);
+    return -1;
+  });
+}
+
 /** `frameOps` options for a bake (the camera, size and trace come from the bake itself). */
 export type BakeOptions = Omit<FrameOpsOptions, 'px' | 'camera' | 'trace'>;
 

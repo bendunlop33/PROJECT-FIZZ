@@ -74,7 +74,7 @@ export function catmullRom(points: readonly Vec[], closed: boolean): { start: Ve
  */
 export function pathData(contours: readonly (readonly Vec[])[], closed: boolean, smooth: boolean, digits = 2): string {
   const m = 10 ** digits;
-  return memoPathData(contours, closed, smooth, `d${String(digits)}`, (n) => String(Math.round(n * m) / m));
+  return memoPathData(contours, closed, smooth, `d${String(digits)}`, (n) => String(Math.round(n * m) / m), 0);
 }
 
 /**
@@ -85,19 +85,20 @@ export function pathData(contours: readonly (readonly Vec[])[], closed: boolean,
  * (guides review B2).
  */
 export function pathDataScaled(contours: readonly (readonly Vec[])[], closed: boolean, smooth: boolean, unitsPer: number): string {
-  return memoPathData(contours, closed, smooth, `i${String(unitsPer)}`, (n) => String(Math.round(n * unitsPer)));
+  return memoPathData(contours, closed, smooth, `i${String(unitsPer)}`, (n) => String(Math.round(n * unitsPer)), unitsPer);
 }
 
 /** Path data by contour array (ops are immutable once built, so the array identity is a safe key). */
 const pathMemo = new WeakMap<readonly (readonly Vec[])[], Map<string, string>>();
 
-function memoPathData(contours: readonly (readonly Vec[])[], closed: boolean, smooth: boolean, format: string, f: (n: number) => string): string {
+/** `f` formats one number; `ints` > 0 says it is `String(Math.round(n * ints))`, which the cubic loop inlines (no call per number). */
+function memoPathData(contours: readonly (readonly Vec[])[], closed: boolean, smooth: boolean, format: string, f: (n: number) => string, ints: number): string {
   // Ops of one frame share contour arrays (a limb's halo and fill pass the same one), so each curve is built once.
   const key = `${closed ? 'c' : 'o'}${smooth ? 's' : 'l'}${format}`;
   let memo = pathMemo.get(contours);
   const hit = memo?.get(key);
   if (hit !== undefined) return hit;
-  const out = buildPathData(contours, closed, smooth, f);
+  const out = buildPathData(contours, closed, smooth, f, ints);
   if (memo === undefined) {
     memo = new Map();
     pathMemo.set(contours, memo);
@@ -111,7 +112,7 @@ function memoPathData(contours: readonly (readonly Vec[])[], closed: boolean, sm
  * same order, so the same doubles): the bake builds ~50 of these per frame
  * and the temporary vectors were most of their cost.
  */
-function buildPathData(contours: readonly (readonly Vec[])[], closed: boolean, smooth: boolean, f: (n: number) => string): string {
+function buildPathData(contours: readonly (readonly Vec[])[], closed: boolean, smooth: boolean, f: (n: number) => string, ints: number): string {
   let out = '';
   for (const c of contours) {
     if (c.length === 0) continue;
@@ -166,7 +167,11 @@ function buildPathData(contours: readonly (readonly Vec[])[], closed: boolean, s
             c2y = (p1.y * a + p3.y * b + p2.y * k) * inv;
           }
         }
-        out += `C${f(c1x)} ${f(c1y)} ${f(c2x)} ${f(c2y)} ${f(p2.x)} ${f(p2.y)}`;
+        const u = ints;
+        out +=
+          u > 0
+            ? `C${Math.round(c1x * u)} ${Math.round(c1y * u)} ${Math.round(c2x * u)} ${Math.round(c2y * u)} ${Math.round(p2.x * u)} ${Math.round(p2.y * u)}`
+            : `C${f(c1x)} ${f(c1y)} ${f(c2x)} ${f(c2y)} ${f(p2.x)} ${f(p2.y)}`;
       }
       if (closed) out += 'Z';
     } else {

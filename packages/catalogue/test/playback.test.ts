@@ -8,6 +8,7 @@ import {
   fitCamera,
   frameOps,
   guideStyleFromTokens,
+  heldFrames,
   keyFrameStops,
   overlayTraces,
   playbackTimes,
@@ -120,6 +121,29 @@ describe('frame ops (shared by the SVG preview and the app player)', () => {
     const at = ops.findIndex((o) => o.kind === 'path' && !o.closed && o.stroke === 'trace');
     const lastBody = ops.reduce((m, o, i) => (o.kind === 'path' && o.fill === 'nearBody' ? i : m), -1);
     expect(at).toBeGreaterThan(lastBody);
+  });
+
+  it('heldFrames: a frame marked as a repeat draws exactly the ops of the frame it repeats (every guide)', () => {
+    let repeats = 0;
+    for (const key of bundledGuides().keys) {
+      const g = bundledGuides().load(key);
+      if (!g.ok) continue;
+      const { prepared, camera } = g.value;
+      const times = playbackTimes(prepared.guide);
+      const held = heldFrames(prepared, times);
+      expect(held).toHaveLength(times.length);
+      const opts = { pt: 348, muscles: { primary: ['quads', 'lats'], secondary: ['core'] }, definition: 'neutral' } as const;
+      held.forEach((j, i) => {
+        if (j < 0) return;
+        repeats += 1;
+        expect(j).toBeLessThan(i);
+        expect(held[j]).toBe(-1);
+        expect(JSON.stringify(bakeFrame(prepared, camera, times[i] ?? NaN, undefined, opts))).toBe(JSON.stringify(bakeFrame(prepared, camera, times[j] ?? NaN, undefined, opts)));
+      });
+      if (prepared.guide.ground.scrollPerCycle !== 0) expect(held.every((j) => j === -1)).toBe(true);
+    }
+    // Holds exist on the rep guides, so the rule does save work.
+    expect(repeats).toBeGreaterThan(20);
   });
 
   it('uses only guide paints, never an accent', () => {
