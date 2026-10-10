@@ -231,6 +231,12 @@ describe('planRoutineStart (start a routine with next-session targets)', () => {
     expect(loads.flat().some(([v]) => v === 105)).toBe(false);
   });
 
+  it('a top set then back-offs: the preview line names both targets (review N10)', () => {
+    const targets = new Map([[BENCH, [...plan(105, [3, 3], 1, 'top'), ...plan(90, [6, 8], 2, 'backoff')]]]);
+    const out = planRoutineStart({ ...base, gymEquipment: [barbell(), stack()], targets });
+    expect(plain(targetSummaryLines(out.aggregate)[0]?.line ?? '')).toBe('Target 105 kg × 3, then 90 kg × 6–8 · 3 sets');
+  });
+
   it('never above the equipment’s max: rounded down, with a note', () => {
     const small = barbell({ plates: [{ mass: 20, count: 2 }] });
     const out = planRoutineStart({ ...base, gymEquipment: [small, stack()], targets: new Map([[BENCH, plan(105, [6, 8])]]) });

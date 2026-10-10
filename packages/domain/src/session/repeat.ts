@@ -321,8 +321,13 @@ export function targetSummaryLines(state: SessionAggregate): { exerciseName: str
       const eq = ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
       const sets = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted' && s.setType !== 'warmup').sort((a, b) => a.index - b.index);
       const n = `${String(sets.length)} ${sets.length === 1 ? 'set' : 'sets'}`;
-      const first = sets[0];
-      const target = first ? targetShort(first.planned, { convention: ex.loadConvention, equipment: eq }) : null;
+      // A top set then back-offs reads `Target 100 kg × 3, then 85 kg × 6–8` (review N10): each change of target, in order.
+      const texts: string[] = [];
+      for (const s of sets) {
+        const t = targetShort(s.planned, { convention: ex.loadConvention, equipment: eq });
+        if (t !== null && texts.at(-1) !== t) texts.push(t);
+      }
+      const target = texts.length === 0 ? null : texts.map((t, i) => (i === 0 ? t : t.replace(/^Target /, ''))).join(', then ');
       return { exerciseName: ex.exerciseName, line: target === null ? `No target · ${n}` : `${target} · ${n}` };
     });
 }
