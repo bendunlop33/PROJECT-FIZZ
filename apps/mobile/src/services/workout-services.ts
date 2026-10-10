@@ -141,8 +141,8 @@ function recordFromContext(context: RecordContext, aggregate: SessionAggregate, 
   if (set.status !== 'completed' || set.actual === null) return null;
   const earlierToday = aggregate.sets
     .filter((s) => s.id !== set.id && s.sessionExerciseId === ex.id && s.status === 'completed' && s.actual !== null && (s.completedAt?.utc ?? '') <= (set.completedAt?.utc ?? ''))
-    .map((s) => ({ setType: s.setType, side: s.side, load: s.actual?.load ?? null, reps: s.actual?.reps ?? null, rpe: null, rir: null }));
-  return findSetRecord({ ...context.base, set: { setType: set.setType, load: set.actual.load, reps: set.actual.reps }, earlierToday });
+    .map((s) => ({ setType: s.setType, side: s.side, load: s.actual?.load ?? null, reps: s.actual?.reps ?? null, rpe: null, rir: null, ...(s.exclusions ? { exclusions: s.exclusions } : {}) }));
+  return findSetRecord({ ...context.base, set: { setType: set.setType, load: set.actual.load, reps: set.actual.reps, ...(set.exclusions ? { exclusions: set.exclusions } : {}) }, earlierToday });
 }
 
 export const TARGETS_UNAVAILABLE = 'Using last time’s numbers.';

@@ -258,7 +258,7 @@ export interface EstimateOptions {
 }
 
 /**
- * `estimateTimeLeft` (§2.15.2, the spec's `estimateTimeLeft` for
+ * `estimateTimeLeft` (§2.15.2, the spec's `estimateRemainingDuration` for
  * the workout in progress; `duration.ts` has the lighter one for a workout
  * not started yet, Up next and the routine sheet). Per pending set: Ben's per-set
  * figure (plus the planned duration of a timed set), the planned rest after

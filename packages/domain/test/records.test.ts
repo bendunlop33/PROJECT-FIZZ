@@ -40,6 +40,19 @@ describe('findSetRecord', () => {
     expect(findSetRecord(input({ equipmentId: null, history: noEq }))?.text).toBe('Heaviest bench press set so far');
   });
 
+  it('sets marked as not counting are never a record nor the bar for one (active-workout §2.13, check 45)', () => {
+    // The set itself, marked spotted when logged.
+    expect(findSetRecord(input({ set: { setType: 'working', load: kg(100), reps: 6, exclusions: ['spotted'] } }))).toBeNull();
+    // A spotted 110 kg in history doesn't stop 100 kg being the heaviest counted set.
+    const spottedHeavy = [...three, session(4, [{ ...set(kg(110), 8), exclusions: ['spotted'] }, set(kg(95), 8)])];
+    expect(findSetRecord(input({ history: spottedHeavy }))?.kind).toBe('heaviest');
+    // …nor does one marked earlier today.
+    expect(findSetRecord(input({ earlierToday: [{ ...set(kg(105), 5), exclusions: ['technique'] }] }))?.kind).toBe('heaviest');
+    // A session whose only sets are marked doesn't count towards the 3.
+    const twoPlusMarked = [...three.slice(0, 2), session(4, [{ ...set(kg(50), 8), exclusions: ['pain'] }])];
+    expect(findSetRecord(input({ history: twoPlusMarked }))).toBeNull();
+  });
+
   it('needs at least 3 earlier comparable sessions', () => {
     expect(findSetRecord(input({ history: three.slice(0, 2) }))).toBeNull();
     // A session on other equipment, imported, or with only warm-ups doesn't count towards the 3.

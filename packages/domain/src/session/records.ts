@@ -2,6 +2,7 @@ import type { Load, LoadConvention, SessionAggregate, SetType } from '@fizz/sche
 import { loadText, type LoadContext } from '../display';
 import type { HistorySession, HistorySet } from '../progression';
 import { toMs } from '../time';
+import { isSetCountable } from '../exclusions';
 import { convertMass } from '../units';
 
 /**
@@ -15,7 +16,9 @@ import { convertMass } from '../units';
  * and bodyweight movements are passed over (heavier isn't better there), and
  * nothing is computed from an estimate. Imported history isn't comparable
  * (ADR 0016), but a heavier imported set of the same exercise suppresses the
- * claim rather than contradict it.
+ * claim rather than contradict it. A set Ben marked as not counting
+ * (`Spotted`, `Pain`, …, active-workout §2.13) is never a record and never
+ * the bar a record is measured against (check 45).
  */
 
 export const RECORD_MIN_SESSIONS = 3;
@@ -33,7 +36,7 @@ export interface SetRecordInput {
   measurement: string;
   equipment?: LoadContext;
   /** The set just logged. */
-  set: { setType: SetType; load: Load | null; reps: number | null };
+  set: { setType: SetType; load: Load | null; reps: number | null; exclusions?: HistorySet['exclusions'] };
   /** Earlier sets of this exercise in the same workout, logged before this one. */
   earlierToday: readonly HistorySet[];
   /** Finished sessions with this exercise, excluding the current workout. */
@@ -43,13 +46,13 @@ export interface SetRecordInput {
 const WORKING_GROUP: ReadonlySet<SetType> = new Set(['working', 'top', 'backoff']);
 
 function comparableSet(s: HistorySet, convention: LoadConvention, unit: Load['unit']): s is HistorySet & { load: Load; reps: number } {
-  return WORKING_GROUP.has(s.setType) && s.load !== null && s.reps !== null && s.load.convention === convention && s.load.unit === unit;
+  return WORKING_GROUP.has(s.setType) && isSetCountable(s, 'record') && s.load !== null && s.reps !== null && s.load.convention === convention && s.load.unit === unit;
 }
 
 export function findSetRecord(input: SetRecordInput): SetRecord | null {
   const { set, convention } = input;
   if (input.measurement !== 'reps' || convention === 'assistance' || convention === 'bodyweight') return null;
-  if (!WORKING_GROUP.has(set.setType) || set.load === null || set.reps === null || set.reps <= 0) return null;
+  if (!WORKING_GROUP.has(set.setType) || !isSetCountable(set, 'record') || set.load === null || set.reps === null || set.reps <= 0) return null;
   if (set.load.convention !== convention) return null;
   const load = set.load;
   const unit = load.unit;
@@ -69,7 +72,7 @@ export function findSetRecord(input: SetRecordInput): SetRecord | null {
   const importedHeavier = input.history
     .filter((h) => h.imported)
     .flatMap((h) => h.sets)
-    .some((s) => s.load !== null && s.load.convention === convention && WORKING_GROUP.has(s.setType) && convertMass(s.load, unit).value > load.value + 1e-9);
+    .some((s) => s.load !== null && s.load.convention === convention && WORKING_GROUP.has(s.setType) && isSetCountable(s, 'record') && convertMass(s.load, unit).value > load.value + 1e-9);
   if (importedHeavier) return null;
 
   const name = input.exerciseName.toLowerCase();
@@ -116,13 +119,13 @@ export function sessionRecords(input: {
         convention: ex.loadConvention,
         measurement: ex.measurement,
         equipment,
-        set: { setType: s.setType, load: actual.load, reps: actual.reps },
+        set: { setType: s.setType, load: actual.load, reps: actual.reps, ...(s.exclusions ? { exclusions: s.exclusions } : {}) },
         earlierToday,
         history,
       });
       if (rec?.kind === 'heaviest') heaviest = rec;
       else if (rec !== null) mostReps = rec;
-      earlierToday.push({ setType: s.setType, side: s.side, load: actual.load, reps: actual.reps, rpe: null, rir: null });
+      earlierToday.push({ setType: s.setType, side: s.side, load: actual.load, reps: actual.reps, rpe: null, rir: null, ...(s.exclusions ? { exclusions: s.exclusions } : {}) });
     }
     const shown = heaviest ?? mostReps;
     if (shown !== null) out.push(shown.text);
