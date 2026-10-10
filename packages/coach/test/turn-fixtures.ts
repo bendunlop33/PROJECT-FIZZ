@@ -193,3 +193,11 @@ export function request(over: Partial<CoachTurnRequest> & Pick<CoachTurnRequest,
 export const words = (text: string) => ({ kind: 'words' as const, text, spoken: false });
 
 export type { ActionRecord };
+
+/** A reply whose arguments stream in small pieces before the complete call (the real route's shape). */
+export function streamedReply(message: string, offer: 'adjust_today' | null = null, size = 6): ModelEvent[] {
+  const args = JSON.stringify({ message, offer });
+  const out: ModelEvent[] = [];
+  for (let i = 0; i < args.length; i += size) out.push({ type: 'tool_call_delta', name: 'reply', delta: args.slice(i, i + size) });
+  return [...out, call('reply', { message, offer }, 'c-reply'), { type: 'completed' }];
+}

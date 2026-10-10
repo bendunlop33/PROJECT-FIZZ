@@ -155,6 +155,13 @@ export interface StreamFailure extends ProviderFailure {
  */
 export type StreamProgress =
   | { type: 'text_delta'; delta: string }
+  /**
+   * A piece of a function call's arguments as they stream
+   * (`response.function_call_arguments.delta`), with the function's name from
+   * its `response.output_item.added`. Lets the coach show a structured reply's
+   * message sentence by sentence while it arrives (ADR 0019 C6).
+   */
+  | { type: 'function_call_delta'; itemId: string; name: string; delta: string }
   | { type: 'function_call'; call: FunctionCallOut }
   | { type: 'event'; eventType: string };
 
@@ -278,10 +285,12 @@ interface Accumulator {
   requestId: string | null;
   firstTokenMs: number | null;
   eventCount: number;
+  /** Function names by output item ID, from `response.output_item.added`. */
+  callNames: Map<string, string>;
 }
 
 function newAccumulator(): Accumulator {
-  return { text: '', responseId: null, model: null, usage: null, functionCalls: [], requestId: null, firstTokenMs: null, eventCount: 0 };
+  return { text: '', responseId: null, model: null, usage: null, functionCalls: [], requestId: null, firstTokenMs: null, eventCount: 0, callNames: new Map() };
 }
 
 /** Applies one event. Returns 'done', a failure, or null to keep reading. */
@@ -298,7 +307,11 @@ function applyEvent(
   acc.eventCount += 1;
   const type = stringField(json, 'type') ?? ev.event ?? '';
   const response = objectField(json, 'response');
-  if (type !== 'response.output_text.delta' && !(type === 'response.output_item.done' && stringField(objectField(json, 'item'), 'type') === 'function_call')) {
+  if (
+    type !== 'response.output_text.delta' &&
+    type !== 'response.function_call_arguments.delta' &&
+    !(type === 'response.output_item.done' && stringField(objectField(json, 'item'), 'type') === 'function_call')
+  ) {
     onEvent?.({ type: 'event', eventType: type });
   }
   if (response !== undefined) {
@@ -314,6 +327,19 @@ function applyEvent(
         onTextDelta?.(delta);
         onEvent?.({ type: 'text_delta', delta });
       }
+      return null;
+    }
+    case 'response.output_item.added': {
+      const item = objectField(json, 'item');
+      const id = stringField(item, 'id');
+      const name = stringField(item, 'name');
+      if (stringField(item, 'type') === 'function_call' && id !== undefined && name !== undefined) acc.callNames.set(id, name);
+      return null;
+    }
+    case 'response.function_call_arguments.delta': {
+      const itemId = stringField(json, 'item_id') ?? '';
+      const delta = stringField(json, 'delta') ?? '';
+      if (delta !== '') onEvent?.({ type: 'function_call_delta', itemId, name: acc.callNames.get(itemId) ?? '', delta });
       return null;
     }
     case 'response.output_item.done': {

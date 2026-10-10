@@ -131,7 +131,9 @@ describe('streamResponse', () => {
         streamResponseOf([
           sse([
             { type: 'response.created', response: { id: 'resp_1' } },
-            { type: 'response.function_call_arguments.delta', delta: '{"mess' },
+            { type: 'response.output_item.added', item: { type: 'function_call', id: 'fc_1', call_id: 'c1', name: 'reply', arguments: '' } },
+            { type: 'response.function_call_arguments.delta', item_id: 'fc_1', delta: '{"mess' },
+            { type: 'response.function_call_arguments.delta', item_id: 'fc_unknown', delta: 'x' },
             { type: 'response.output_item.done', item: { type: 'function_call', call_id: 'c1', name: 'reply', arguments: '{"message":"Hi","offer":null}' } },
             { type: 'response.output_text.delta', delta: 'stray' },
             completed,
@@ -143,7 +145,10 @@ describe('streamResponse', () => {
     expect(r.ok).toBe(true);
     expect(seen).toEqual([
       { type: 'event', eventType: 'response.created' },
-      { type: 'event', eventType: 'response.function_call_arguments.delta' },
+      { type: 'event', eventType: 'response.output_item.added' },
+      // Argument pieces carry the function's name from its `output_item.added` (C6 streams the reply's message).
+      { type: 'function_call_delta', itemId: 'fc_1', name: 'reply', delta: '{"mess' },
+      { type: 'function_call_delta', itemId: 'fc_unknown', name: '', delta: 'x' },
       { type: 'function_call', call: { callId: 'c1', name: 'reply', arguments: '{"message":"Hi","offer":null}' } },
       { type: 'text_delta', delta: 'stray' },
       { type: 'event', eventType: 'response.completed' },

@@ -23,6 +23,7 @@ import type { CoachModelPort, ModelErrorKind, ModelEvent, ModelInputItem } from 
 import { buildTurnRegistry, type TurnGate, type TurnRegistry } from './registry';
 import { createReplyFilter, toHiddenLines, type ReplyItem } from './reply';
 import { parseReply, replyToolDefinition } from './reply-tool';
+import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
 import { chipRequest, classifyBenRequest, requestHas, type BenRequest } from './request';
 import { parseToolCall } from './tool-call';
@@ -93,7 +94,21 @@ export interface CoachTurnRequest {
   /** Exercise IDs Ben named in his words (for `messagePain`); the caller matches names to the session. */
   namedExerciseIds?: readonly string[];
   signal?: AbortSignal;
+  /**
+   * Live progress for the sheet (C6): each tool line and card as it is
+   * committed, and each checked reply item as its sentence finishes. Only
+   * what the result will also contain; nothing here is shown that the saved
+   * message won't have.
+   */
+  onProgress?: (progress: CoachTurnProgress) => void;
 }
+
+export type CoachTurnProgress =
+  /** The first stream event of any kind arrived (the sheet leaves `Thinking`). */
+  | { kind: 'first_event' }
+  | { kind: 'tool'; line: ToolLogLine }
+  | { kind: 'card'; card: CoachCard }
+  | { kind: 'item'; item: ReplyItem };
 
 export interface CoachCard {
   record: ActionRecord;
@@ -225,7 +240,13 @@ type StepOutcome =
   | { kind: 'error'; error: ModelErrorKind };
 
 /** One model call, with the first-event and stall timeouts and Stop. */
-async function runStep(model: CoachModelPort, request: Parameters<CoachModelPort['stream']>[0], timing: CoachTiming, outer: AbortSignal | undefined): Promise<StepOutcome> {
+async function runStep(
+  model: CoachModelPort,
+  request: Parameters<CoachModelPort['stream']>[0],
+  timing: CoachTiming,
+  outer: AbortSignal | undefined,
+  hooks: { onFirstEvent?: () => void; onReplyDelta?: (delta: string) => void } = {},
+): Promise<StepOutcome> {
   const controller = new AbortController();
   const onOuter = (): void => {
     controller.abort();
@@ -264,10 +285,14 @@ async function runStep(model: CoachModelPort, request: Parameters<CoachModelPort
       }
       if (next === 'cancelled' || controller.signal.aborted) return { kind: 'error', error: 'cancelled' };
       if (next.done === true) break;
+      if (first) hooks.onFirstEvent?.();
       first = false;
       const e: ModelEvent = next.value;
       if (e.type === 'text_delta') text += e.delta;
-      else if (e.type === 'tool_call') {
+      else if (e.type === 'tool_call_delta') {
+        // Only the first call of a step counts (no parallel calls); a reply streams its message.
+        if (call === null && e.name === COACH_REPLY_TOOL_NAME) hooks.onReplyDelta?.(e.delta);
+      } else if (e.type === 'tool_call') {
         if (call === null) call = { callId: e.callId, name: e.name, arguments: e.arguments };
         else extraCalls += 1;
       } else if (e.type === 'error') return { kind: 'error', error: e.error };
@@ -372,12 +397,42 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   let error: CoachTurnError | null = null;
   let refCount = 0;
 
+  // The backstop, created up front so a streamed reply is checked sentence by sentence as it arrives.
+  // The reply is always the last step, so every action it could cite is already in the ledger.
+  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange });
+  const items: ReplyItem[] = [];
+  const emit = (fresh: readonly ReplyItem[]): void => {
+    for (const item of fresh) {
+      items.push(item);
+      req.onProgress?.({ kind: 'item', item });
+    }
+  };
+  let firstEventSeen = false;
+  const onFirstEvent = (): void => {
+    if (firstEventSeen) return;
+    firstEventSeen = true;
+    req.onProgress?.({ kind: 'first_event' });
+  };
+  const logLine = (line: ToolLogLine): void => {
+    toolLog.push(line);
+    req.onProgress?.({ kind: 'tool', line });
+  };
+  let replyStream = new ReplyMessageStream();
+
   for (let step = 0; ; step += 1) {
     if (step >= MAX_MODEL_STEPS) {
       error = 'too_many_steps';
       break;
     }
-    const out = await runStep(ports.model, { model: req.model, instructions: COACH_INSTRUCTIONS, input, tools, toolChoice: 'required', parallelToolCalls: false }, timing, req.signal);
+    replyStream = new ReplyMessageStream();
+    const stream = replyStream;
+    const out = await runStep(ports.model, { model: req.model, instructions: COACH_INSTRUCTIONS, input, tools, toolChoice: 'required', parallelToolCalls: false }, timing, req.signal, {
+      onFirstEvent,
+      onReplyDelta: (delta) => {
+        const fresh = stream.push(delta);
+        if (fresh !== '') emit(filter.push(fresh));
+      },
+    });
     if (out.kind === 'error') {
       error = out.error;
       break;
@@ -391,7 +446,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       message = out.text;
       break;
     }
-    if (out.extraCalls > 0) toolLog.push({ tool: out.name, outcome: 'not_allowed', text: 'Only one call at a time; the others were ignored.', actionId: null });
+    if (out.extraCalls > 0) logLine({ tool: out.name, outcome: 'not_allowed', text: 'Only one call at a time; the others were ignored.', actionId: null });
     if (out.name === COACH_REPLY_TOOL_NAME) {
       const parsed = parseReply(out.arguments, req.kind);
       if (!parsed.ok) {
@@ -407,7 +462,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     input.push({ type: 'function_call', callId: out.callId, name: out.name, arguments: out.arguments });
     const parsed = parseToolCall(req.turnId, out.name, out.arguments, registry);
     if (!parsed.ok) {
-      toolLog.push({ tool: out.name, outcome: parsed.error, text: parsed.line, actionId: null });
+      logLine({ tool: out.name, outcome: parsed.error, text: parsed.line, actionId: null });
       input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: parsed.error, line: parsed.line }) });
       continue;
     }
@@ -416,7 +471,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     const result = await executor(parsed.call, { ...callCtx, opId: parsed.opId });
     let ref: string | null = null;
     if (result.kind === 'read') {
-      toolLog.push({ tool: parsed.call.tool, outcome: 'read', text: TOOL_READ_LINE[parsed.call.tool] ?? 'Read', actionId: null });
+      logLine({ tool: parsed.call.tool, outcome: 'read', text: TOOL_READ_LINE[parsed.call.tool] ?? 'Read', actionId: null });
       for (const [i, r] of (result.earlier ?? []).entries()) {
         if (!entries.some((e) => e.record.actionId === r.actionId)) entries.push({ ref: `e${String(i + 1)}`, record: r, origin: 'earlier' });
       }
@@ -427,19 +482,26 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
         ref = `a${String(refCount)}`;
         entries.push({ ref, record: result.record, origin: 'this_turn' });
       } else ref = already.ref;
-      toolLog.push({
+      logLine({
         tool: parsed.call.tool,
         outcome: result.replayed ? 'replayed' : result.record.status,
         text: renderActionResult(result.record, 'sheet').text,
         actionId: result.record.actionId,
       });
+      if (already === undefined) req.onProgress?.({ kind: 'card', card: { record: result.record, rendered: renderActionResult(result.record, req.surface) } });
     }
     input.push({ type: 'function_call_output', callId: out.callId, output: toolOutput(result, ref) });
   }
 
-  // The reply, through the backstop.
-  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange });
-  const items: ReplyItem[] = message === null ? [] : [...filter.push(message), ...filter.end(true)];
+  // The rest of the reply, through the same backstop. What already streamed is never sent twice.
+  if (message !== null) {
+    const streamed = replyStream.streamed;
+    emit(filter.push(message.startsWith(streamed) ? message.slice(streamed.length) : ''));
+    emit(filter.end(true));
+  } else if (replyStream.streamed !== '') {
+    // Cut off mid-reply (Stop, stall): the finished sentences stay; an unfinished one is never padded.
+    emit(filter.end(false));
+  }
   const cancelled = error === 'cancelled';
   const status: CoachTurnStatus = error === null ? 'completed' : cancelled ? 'cancelled' : 'failed';
   const thisTurn = entries.filter((e) => e.origin === 'this_turn').map((e) => e.record);

@@ -46,6 +46,12 @@ export type ModelErrorKind =
 export type ModelEvent =
   /** Free text outside any function. Never shown as is (see turn.ts). */
   | { type: 'text_delta'; delta: string }
+  /**
+   * A piece of a function call's arguments while they stream. Only the
+   * `reply` function's are used, to show its message sentence by sentence
+   * (C6); a registry tool runs only on its complete `tool_call`.
+   */
+  | { type: 'tool_call_delta'; name: string; delta: string }
   | { type: 'tool_call'; callId: string; name: string; arguments: string }
   | { type: 'completed' }
   | { type: 'error'; error: ModelErrorKind; detail?: string };

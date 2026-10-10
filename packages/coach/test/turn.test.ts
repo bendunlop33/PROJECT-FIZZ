@@ -6,7 +6,8 @@ import { createAdjustExecutor, createStoreExecutors, undoCoachAction, type Coach
 import { COACH_TOOLS } from '../src/registry';
 import { recoverCoachTurns, runCoachTurn, isBareAccept, gateFor } from '../src/turn';
 import { chunked, ScriptedCoachModel } from './fake-model';
-import { at, call, FakeTodayTargets, HangingModel, id, kg, memoryStore, OWNER, ports, reply, request, SESSION, words, workout } from './turn-fixtures';
+import { at, call, FakeTodayTargets, HangingModel, id, kg, memoryStore, OWNER, ports, reply, request, SESSION, streamedReply, words, workout } from './turn-fixtures';
+import type { CoachTurnProgress } from '../src/turn';
 
 const nb = (s: string): string => s.replace(/\u00a0/g, ' ');
 const BENCH_EX = id(10);
@@ -46,6 +47,45 @@ describe('runCoachTurn: structured replies (PM decision 10 Oct)', () => {
     expect(req).toMatchObject({ toolChoice: 'required', parallelToolCalls: false });
     expect(req?.tools.map((t) => t.name)).toContain('reply');
     expect(new Set(req?.tools.map((t) => t.strict))).toEqual(new Set([true]));
+  });
+
+  it('C6: a streamed reply shows each checked sentence as it finishes; the saved message has the same items, once', async () => {
+    const s = await store();
+    const seen: CoachTurnProgress[] = [];
+    const model = new ScriptedCoachModel([streamedReply('Rest 2–3 minutes. I’ve lowered sets 3–4 to 95 kg. Then go again.')]);
+    const r = await runCoachTurn(request({ input: words('How long should I rest?'), onProgress: (p) => seen.push(p) }), ports(s, model, storeExecutors(s)));
+    expect(seen[0]).toEqual({ kind: 'first_event' });
+    const streamedItems = seen.flatMap((p) => (p.kind === 'item' && p.item.kind === 'sentence' ? [p.item.text] : []));
+    // The phantom change is dropped while streaming too (backstop per sentence).
+    expect(streamedItems).toEqual(['Rest 2–3 minutes.', 'Then go again.']);
+    expect(sentences(r)).toEqual(streamedItems);
+    const coach = (await s.repos.coach.listMessages(r.threadId)).find((m) => m.body.role === 'coach');
+    expect(coach?.body.role === 'coach' ? coach.body.items : null).toEqual([
+      { kind: 'sentence', text: 'Rest 2–3 minutes.' },
+      { kind: 'sentence', text: 'Then go again.' },
+    ]);
+  });
+
+  it('C6: Stop mid-reply keeps the finished sentences and never pads the unfinished one', async () => {
+    const s = await store();
+    const stop = new AbortController();
+    const args = JSON.stringify({ message: 'Rest 3 minutes. Then go aga', offer: null });
+    const model = new HangingModel(null);
+    const pieces = [{ type: 'tool_call_delta' as const, name: 'reply', delta: args }];
+    const scripted = {
+      requests: [] as unknown[],
+      async *stream(req: Parameters<HangingModel['stream']>[0]) {
+        for (const p of pieces) yield p;
+        yield* model.stream(req);
+      },
+    };
+    const running = runCoachTurn(request({ input: words('Rest?'), signal: stop.signal }), { ...ports(s, scripted, storeExecutors(s)), timing: { firstEventMs: 10_000, stallMs: 10_000 } });
+    setTimeout(() => {
+      stop.abort();
+    }, 20);
+    const r = await running;
+    expect(r.status).toBe('cancelled');
+    expect(sentences(r)).toEqual(['Rest 3 minutes.']);
   });
 
   it('contract check 2: a phantom change in the message is dropped; no card, no change; Why? keeps it', async () => {

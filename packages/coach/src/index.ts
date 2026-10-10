@@ -10,6 +10,7 @@ export * from './tokens';
 export * from './reply';
 export * from './model-port';
 export * from './reply-tool';
+export * from './reply-stream';
 export * from './context';
 export * from './executors';
 export * from './turn';
