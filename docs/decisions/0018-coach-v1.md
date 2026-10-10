@@ -102,3 +102,11 @@ Each slice ends with `npm run check` passing and a small set of commits; slices 
 - Several spec features wait for later slices or later ADRs (§10). The specs stay as the target. The developer will record the v1 cuts in the specs' revision notes once Ben approves them.
 - New storage and a backup format bump; a new cloud build; possibly one new Expo module (`expo-network`).
 - Risks: function tools on the plan route are unproven until C0; latency with tools may exceed the 20 s first-answer time; the claim-check corpus may hide too many harmless sentences (the false-hide rate is reported, not hidden).
+
+## Build log
+**10 Oct, slice C1 and the pure parts of C2** (developer). Built and unit-tested; nothing is wired to the app or a real model yet, so nothing here counts as working on the device.
+- `packages/schemas/src/coach.ts`: strict tool-argument schemas, `ActionRecord`, `GuardNote`, `HiddenLine`.
+- `packages/domain/src/coach/`: `evaluateCoachTrigger` + `shouldShowCoachOffer`, `validateTodayAdjustment`, `getStructuralChangeSignals`, `classifyPainMention`.
+- `packages/coach`: registry and gate, `parseToolCall` (+ opIds), strict function-tool JSON Schemas, `renderActionResult`, `checkReplyClaims` with its corpus, sentence buffer, `[[ref]]` tokens, reply filter, `CoachModelPort` and a scripted fake.
+- Not yet built from C2 (wait for `claude/active-set`): `classifyNextSessionChange` (needs `buildStepCard`) and the `adjust_pending_targets` / `revert_target_adjustment` reducer commands (touch `TargetSource`, which that branch changes).
+- Choices to confirm: `add_playbook_candidate` uses `needs: ben_request` as coach-contract §6.1 says (this ADR's table says `none`); a load change on an exercise with no equipment is refused (rule 4 can't be checked), while its reps can still change; a kg request on lb equipment is converted with a visible guard note; the schema has no AMRAP flag, so a planned RPE 10 / RIR 0 set counts as all-out for rule T.

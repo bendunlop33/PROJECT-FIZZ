@@ -65,7 +65,11 @@ const reason = z.string().min(1).max(240);
 /** A short quote of Ben's own words from this turn. Checked by the gate, never trusted alone. */
 const quote = z.string().min(1).max(400);
 
-/** A target the coach asks for. Unit and convention are always explicit. */
+/**
+ * A set target. Unit and convention are always explicit. In tool arguments a
+ * null field means "keep the current value"; in action records it means the
+ * set has no target for that field.
+ */
 export const CoachTargetSchema = z.strictObject({
   load: LoadSchema.nullable(),
   reps: RepRangeSchema.nullable(),
