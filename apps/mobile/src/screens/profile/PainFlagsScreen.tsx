@@ -7,7 +7,7 @@ import type { PainArea } from '@fizz/schemas';
 import { nowMs as clockNow } from '../../clock';
 import { formatShortDate } from '../../format/dates';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
-import { AppText, Group, Row, Screen, StatusLine, TextButton, Toast } from '../../ui';
+import { Group, Row, Screen, StatusLine, TextButton, Toast } from '../../ui';
 import { confirmClearFlag, type PainToast } from '../../workout/pain-actions';
 
 const AREA: Record<PainArea, string> = { shoulder: 'Shoulder', elbow: 'Elbow', wrist: 'Wrist', neck: 'Neck', back: 'Back', hip: 'Hip', knee: 'Knee', ankle: 'Ankle', other: 'Other' };
@@ -42,12 +42,9 @@ export function PainFlagsScreen() {
   };
   return (
     <Screen>
-      <AppText variant="callout" color="text.secondary">
-        While a movement is flagged, its targets don’t go up. Clear a flag when you’re ready to progress it again.
-      </AppText>
       {toast ? <Toast icon={toast.icon} text={toast.text} {...(toast.action && toast.onAction ? { action: toast.action, onAction: toast.onAction } : {})} /> : null}
       {flags.length === 0 ? (
-        <StatusLine icon="checkmark.circle.fill" tone="done" text="No pain flags" detail="Progression runs as normal." />
+        <StatusLine icon="checkmark.circle.fill" tone="done" text="No pain flags" />
       ) : (
         <Group>
           {flags.map((f) => (

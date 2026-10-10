@@ -36,7 +36,6 @@ export const EXCLUSION_WORD: Readonly<Record<SetExclusion, string>> = {
 };
 
 export const EXCLUSION_HEADING = 'Leave out of records and progress';
-export const EXCLUSION_NOTE = 'Still counts in your log and volume.';
 
 /** Anything that may carry exclusions (a `WorkoutSet`, a `HistorySet`, a basis set). */
 export interface MaybeExcluded {
@@ -136,9 +135,12 @@ export function exclusionToast(setNumber: number, before: readonly SetExclusion[
   return `Set ${String(setNumber)}: ${wordList(now)} · not counted for records`;
 }
 
-/** Under the chips when `Pain` is selected (AW7). The screen draws the warning icon. */
+/**
+ * Under the chips when `Pain` is selected (AW7): the side effect, said in the
+ * fewest words (CLAUDE.md minimal copy). The screen draws the warning icon.
+ */
 export function exclusionPainLine(exerciseName: string): string {
-  return `This also puts a pain flag on ${exerciseName}: no increases until you clear it.`;
+  return `Also flags ${exerciseName} for pain`;
 }
 
 /** The built-in rule's hold when every counted set of the latest session was left out: `No counted sets on 8 Oct (all left out); holding.` */

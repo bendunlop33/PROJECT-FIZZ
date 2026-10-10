@@ -380,7 +380,6 @@ export interface TimeLeftSheetView {
   changeoverSource: string | null;
   soFar: string;
   finishBy: string;
-  footnote: string;
 }
 
 function shortDuration(seconds: number): string {
@@ -404,7 +403,6 @@ export function timeLeftSheet(e: TimeLeftEstimate, state: SessionAggregate, nowM
     changeoverSource,
     soFar: `${formatElapsed(getActiveDurationMs(state, nowMs))} active`,
     finishBy: e.finishBy === null ? 'Not set' : clockText(toMs(e.finishBy), tz),
-    footnote: 'This is an estimate from your pace and rest settings. It doesn’t change your sets.',
   };
 }
 

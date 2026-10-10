@@ -77,7 +77,7 @@ describe('exclusion words', () => {
     expect(exclusionToast(2, [], ['spotted'])).toBe('Set 2: spotted · not counted for records');
     expect(exclusionToast(2, ['spotted'], [])).toBe('Set 2 counts for records again');
     expect(exclusionToast(2, ['spotted'], ['spotted'])).toBeNull();
-    expect(exclusionPainLine('Bench press')).toBe('This also puts a pain flag on Bench press: no increases until you clear it.');
+    expect(exclusionPainLine('Bench press')).toBe('Also flags Bench press for pain');
     expect(notComparedText(['spotted'])).toBe('Not compared: the only top set was spotted.');
   });
 });

@@ -157,10 +157,6 @@ export function TimeLeftSheet({
                 {current !== null ? <TextButton label="Not set" tone="secondary" onPress={() => void save(null)} /> : null}
                 {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
               </View>
-
-              <AppText variant="callout" color="text.secondary">
-                {sheet.footnote}
-              </AppText>
             </>
           )}
         </ScrollView>

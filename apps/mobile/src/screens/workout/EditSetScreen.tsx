@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { buildSetEditView, EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_NOTE, EXCLUSION_ORDER, toMs } from '@fizz/domain';
+import { buildSetEditView, EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
 import type { SessionAggregate, SetExclusion, SetValues } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
@@ -181,9 +181,6 @@ export function EditSetScreen() {
             ))}
           </ChipRow>
           {view.painLine ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={view.painLine} /> : null}
-          <AppText variant="callout" color="text.secondary">
-            {EXCLUSION_NOTE}
-          </AppText>
         </View>
         <AppText variant="callout" color="text.secondary" numeric>{`Saved as: ${view.text}`}</AppText>
         {error ? <StatusLine icon="info.circle" tone="info" text={error} /> : null}
