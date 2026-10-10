@@ -56,7 +56,8 @@ export function switchCardView(card: OpenSwitchCard, aggregate: SessionAggregate
       lead: null,
       notChanged: [],
       wasSuggested: c.lines.length > 0,
-      lines: c.lines.slice(0, 1),
+      // The suggested lines stay, muted (design-system §9.11's stale variant; review N1).
+      lines: c.lines.slice(0, c.visibleLines),
       unchanged: null,
       summary: null,
       unchecked: null,
@@ -91,10 +92,63 @@ export function switchCardView(card: OpenSwitchCard, aggregate: SessionAggregate
   };
 }
 
-/** The review sheet (§2.4): every line, with `Switch` as its primary. */
-export function reviewSheetView(card: OpenSwitchCard): { title: string; tags: string[]; notChanged: string[]; lines: ChangeLine[]; unchanged: string | null; action: string } {
+export interface ReviewSheetView {
+  title: string;
+  tags: string[] | null;
+  /** The same Out of date / write error line as the card (§3.1); null when ready. */
+  status: SwitchCardView['status'];
+  notChanged: string[];
+  wasSuggested: boolean;
+  /** Every line (the sheet is where all of them are read). */
+  lines: ChangeLine[];
+  muted: boolean;
+  unchanged: string | null;
+  /** The text button, left: `Not now` (dismisses the card, as on the card) or `Dismiss` when stale. */
+  secondary: { id: CardButton; label: string; disabled?: boolean };
+  /** The sheet's PrimaryButton: `Switch`, `Switching…`, `Try again` or `Check again`. */
+  primary: { id: CardButton; label: string; disabled?: boolean };
+}
+
+/**
+ * The review sheet (§2.4) for 5 or more change lines, where `Switch` lives. It reads the
+ * same state as the card (`switchCardView`), so Out of date and a write error show here
+ * too and `Switch` never fails silently (review B3).
+ */
+export function reviewSheetView(card: OpenSwitchCard, aggregate: SessionAggregate): ReviewSheetView {
   const c = card.proposal.card;
-  return { title: c.title, tags: [c.author, c.scope], notChanged: c.notChanged, lines: c.lines, unchanged: c.unchanged, action: card.status === 'applying' ? 'Switching…' : c.action };
+  const v = switchCardView(card, aggregate);
+  const stale = v.status !== null && v.buttons.some((b) => b.id === 'check_again');
+  const primary: ReviewSheetView['primary'] = stale
+    ? { id: 'check_again', label: 'Check again' }
+    : card.status === 'error'
+      ? { id: 'try_again', label: 'Try again' }
+      : { id: 'switch', label: card.status === 'applying' ? 'Switching…' : c.action, disabled: card.status === 'applying' };
+  const secondary: ReviewSheetView['secondary'] = stale ? { id: 'dismiss', label: 'Dismiss' } : { id: 'not_now', label: 'Not now', disabled: card.status === 'applying' };
+  return {
+    title: c.title,
+    tags: v.tags,
+    status: v.status,
+    notChanged: stale ? [] : c.notChanged,
+    wasSuggested: v.wasSuggested,
+    lines: c.lines,
+    muted: v.muted,
+    unchanged: stale ? null : c.unchanged,
+    secondary,
+    primary,
+  };
+}
+
+/** What a card button does to the review sheet: it closes unless the tap is `Switch`/`Try again` (which close it on success). */
+export function sheetClosesOn(id: CardButton): boolean {
+  return id !== 'switch' && id !== 'try_again' && id !== 'review';
+}
+
+/**
+ * §4.2, review M2: while `Switch` is being written and the workout reloaded, Log ignores taps,
+ * so a tap can't log the pre-switch target on a set that now belongs to the new gym.
+ */
+export function logBlockedBySwitch(card: OpenSwitchCard | null): boolean {
+  return card?.status === 'applying';
 }
 
 /** §5 toasts after `Switch`. */

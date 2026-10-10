@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, KeyboardAvoidingView, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { editFitsCurrentEquipment, formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { getAlertPermission, requestAlertPermission, type AlertPermission } from '../../alerts/notifier';
@@ -44,7 +44,7 @@ import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
 import { GymChip, GymPartDivider, GymReviewSheet, GymSwitchCard, GymSwitcherSheet, SnapNote } from './GymSwitch';
-import { logGuardAfterSwitch, onGymChosen, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
+import { logBlockedBySwitch, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
 import { painClearConfirm } from '../../workout/pain-clear';
 import { editorShown, enterAction, isResting, type EntryField } from '../../workout/rest-fold';
 
@@ -356,7 +356,7 @@ export function WorkoutScreen() {
   }
 
   async function log() {
-    if (!focus || guard || busy || focus.logLabel === null) return;
+    if (!focus || guard || busy || logBlockedBySwitch(switchCard) || focus.logLabel === null) return;
     setBusy(true);
     const cmd: SessionCommand = {
       type: 'log_set',
@@ -480,6 +480,7 @@ export function WorkoutScreen() {
     try {
       const p = await services.gymSwitch.propose(session.id, gymId);
       // A new card replaces an open one (§3.1 Replaced); a new opId per card.
+      setReviewOpen(false);
       setSwitchCard(p ? { proposal: p, opId: newUuid(), status: 'ready' } : null);
       if (!p) showToast({ icon: 'info.circle', text: 'Couldn’t check that gym. Nothing changed.' });
     } catch {
@@ -514,12 +515,15 @@ export function WorkoutScreen() {
       void reload();
       return;
     }
+    // GS12 (review M3): an unsaved edit the new equipment can't make is replaced by the new
+    // target. Checked against the reducer's result, not the card, since the edit may be newer.
+    const replaced = r.aggregate.session.gymChanges?.at(-1)?.draftsReplaced ?? [];
+    if (edits !== null && (replaced.includes(edits.setId) || !editFitsCurrentEquipment(r.aggregate, edits.setId, edits.values))) setEdits(null);
+    changed();
+    // The card stays `applying` (Log blocked, review M2) until the reloaded workout is shown.
+    const fresh = await reload();
     setSwitchCard(null);
     setReviewOpen(false);
-    // GS12: an unsaved edit the new equipment can't make is replaced by the new target.
-    if (edits !== null && card.proposal.draftsToReplace.includes(edits.setId)) setEdits(null);
-    changed();
-    const fresh = await reload();
     const after = fresh ? services.workout.view(fresh, clockNow(), null).primary.label : labelBefore;
     if (logGuardAfterSwitch(labelBefore, after)) {
       setGuard(true);
@@ -552,6 +556,7 @@ export function WorkoutScreen() {
   function onCardButton(id: CardButton) {
     const card = switchCard;
     if (!card) return;
+    if (sheetClosesOn(id)) setReviewOpen(false);
     switch (id) {
       case 'not_now':
       case 'dismiss':
@@ -1111,7 +1116,7 @@ export function WorkoutScreen() {
 
       {toast ? <Toast {...(toast.icon ? { icon: toast.icon } : {})} text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
       {/* No Talk button until voice exists (critic T3): no dead control in the best thumb spot. */}
-      <ActionBar primary={primary} guard={guard} />
+      <ActionBar primary={primary} guard={guard || logBlockedBySwitch(switchCard)} />
 
       <FinishSheet
         aggregate={loaded.aggregate}
@@ -1174,9 +1179,8 @@ export function WorkoutScreen() {
       />
       <GymReviewSheet
         card={reviewOpen ? switchCard : null}
-        onSwitch={() => {
-          if (switchCard) void applySwitch(switchCard);
-        }}
+        aggregate={loaded.aggregate}
+        onButton={onCardButton}
         onClose={() => {
           setReviewOpen(false);
         }}

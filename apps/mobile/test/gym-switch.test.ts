@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { isProposalStale, NBSP, repeatPreviewLines } from '@fizz/domain';
 
-import { cardIsStale, logGuardAfterSwitch, onGymChosen, reviewSheetView, switchCardView, switchedToast, undoneToast, type OpenSwitchCard } from '../src/workout/gym-switch-card';
+import { cardIsStale, logBlockedBySwitch, logGuardAfterSwitch, onGymChosen, reviewSheetView, sheetClosesOn, switchCardView, switchedToast, undoneToast, type OpenSwitchCard } from '../src/workout/gym-switch-card';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -283,7 +283,45 @@ describe('the switch card on screen (gym-switch §2.2–§3.3)', () => {
     const v = switchCardView(card, data.aggregate);
     expect(v.lines).toHaveLength(3);
     expect(v.buttons.map((b) => b.id)).toEqual(['not_now', 'review']);
-    expect(reviewSheetView(card).lines).toHaveLength(6);
-    expect(reviewSheetView(card).action).toBe('Switch');
+    const sheet = reviewSheetView(card, data.aggregate);
+    expect(sheet.lines).toHaveLength(6);
+    expect(sheet.primary).toEqual({ id: 'switch', label: 'Switch', disabled: false });
+    expect(sheet.secondary).toEqual({ id: 'not_now', label: 'Not now', disabled: false });
+    expect(sheet.status).toBeNull();
+    // Applying: both disabled; Log is blocked until the reloaded workout shows (review M2).
+    expect(reviewSheetView({ ...card, status: 'applying' }, data.aggregate).primary).toEqual({ id: 'switch', label: 'Switching…', disabled: true });
+    expect(logBlockedBySwitch({ ...card, status: 'applying' })).toBe(true);
+    expect(logBlockedBySwitch(card)).toBe(false);
+    expect(logBlockedBySwitch(null)).toBe(false);
+  });
+
+  it('the review sheet shows a write error with Try again, and Out of date with Check again instead of Switch (review B3)', async () => {
+    const { s, hotelId, sessionId } = await setUp();
+    const p = await s.gymSwitch.propose(sessionId, hotelId);
+    const data = await s.workout.load(sessionId);
+    if (!p || !data) throw new Error('no proposal');
+    const many = { ...p, card: { ...p.card, lines: [...p.card.lines, ...p.card.lines, ...p.card.lines], visibleLines: 3, reviewLabel: 'Review all 6 changes ›' } };
+    const card: OpenSwitchCard = { proposal: many, opId: 'op-4', status: 'ready' };
+    const failed = reviewSheetView({ ...card, status: 'error' }, data.aggregate);
+    expect(failed.status).toEqual({ tone: 'warning', text: 'Couldn’t switch gym. Nothing changed.' });
+    expect(failed.primary).toEqual({ id: 'try_again', label: 'Try again' });
+    // A set logged while the sheet is open makes it Out of date: no Switch on the sheet.
+    const v = s.workout.view(data, h.clockMs, null);
+    h.clockMs += 60_000;
+    const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: v.focus?.opId ?? '', setId: v.focus?.setId ?? '', values: v.focus?.logValues ?? { load: null, reps: 8, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
+    if (!logged.ok) throw new Error(logged.error.message);
+    const stale = reviewSheetView(card, logged.aggregate);
+    expect(stale.status?.text).toBe('Out of date. Your workout changed since this was checked.');
+    expect(stale.primary).toEqual({ id: 'check_again', label: 'Check again' });
+    expect(stale.secondary).toEqual({ id: 'dismiss', label: 'Dismiss' });
+    expect(stale.tags).toBeNull();
+    expect(stale.muted).toBe(true);
+    expect([stale.primary.id, stale.secondary.id]).not.toContain('switch');
+    // Dismiss, Not now and Check again close the sheet; Switch and Try again close it on success.
+    expect(sheetClosesOn('dismiss')).toBe(true);
+    expect(sheetClosesOn('not_now')).toBe(true);
+    expect(sheetClosesOn('check_again')).toBe(true);
+    expect(sheetClosesOn('switch')).toBe(false);
+    expect(sheetClosesOn('try_again')).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 
 import type { ChangeLine, NoteLine } from '@fizz/domain';
+import type { SessionAggregate } from '@fizz/schemas';
 
 import type { GymChoice } from '../../services/workout-services';
 import { useTheme } from '../../theme';
@@ -223,10 +224,14 @@ export function GymSwitchCard({ view, onButton }: { view: SwitchCardView; onButt
   );
 }
 
-/** The review sheet (§2.4) for 5 or more change lines; `Switch` is its primary. Large detent, Log one swipe away. */
-export function GymReviewSheet({ card, onSwitch, onClose }: { card: OpenSwitchCard | null; onSwitch: () => void; onClose: () => void }) {
+/**
+ * The review sheet (§2.4) for 5 or more change lines; its primary is `Switch`, or `Try
+ * again` / `Check again` in the error and Out of date states (§3.1, review B3). Large
+ * detent, Log one swipe away. `Close` keeps the card; `Not now` dismisses it, as on the card.
+ */
+export function GymReviewSheet({ card, aggregate, onButton, onClose }: { card: OpenSwitchCard | null; aggregate: SessionAggregate; onButton: (id: CardButton) => void; onClose: () => void }) {
   const theme = useTheme();
-  const v = card ? reviewSheetView(card) : null;
+  const v = card ? reviewSheetView(card, aggregate) : null;
   return (
     <Modal visible={v !== null} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
@@ -238,10 +243,13 @@ export function GymReviewSheet({ card, onSwitch, onClose }: { card: OpenSwitchCa
         </View>
         {v ? (
           <ScrollView contentContainerStyle={{ paddingHorizontal: theme.space['4'], gap: theme.space['3'], paddingBottom: theme.space['6'] }}>
-            <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-              <Tag icon="checkmark.seal" text={v.tags[0] ?? 'Checks'} />
-              <Tag icon="calendar" text={v.tags[1] ?? 'Today only'} />
-            </View>
+            {v.tags ? (
+              <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
+                <Tag icon="checkmark.seal" text={v.tags[0] ?? 'Checks'} />
+                <Tag icon="calendar" text={v.tags[1] ?? 'Today only'} />
+              </View>
+            ) : null}
+            {v.status ? <SnapNote note={{ tone: v.status.tone, text: v.status.text }} /> : null}
             {v.notChanged.map((t) => (
               <AppText key={t} variant="callout">
                 {t}
@@ -250,9 +258,15 @@ export function GymReviewSheet({ card, onSwitch, onClose }: { card: OpenSwitchCa
             <AppText variant="label" color="text.secondary">
               All values are targets.
             </AppText>
-            <AppText variant="headline">{`Changes (${String(v.lines.length)})`}</AppText>
+            {v.wasSuggested ? (
+              <AppText variant="callout" color="text.secondary">
+                Was suggested:
+              </AppText>
+            ) : (
+              <AppText variant="headline">{`Changes (${String(v.lines.length)})`}</AppText>
+            )}
             {v.lines.map((l, i) => (
-              <Line key={`${l.exerciseName}:${l.setsLabel}:${String(i)}`} line={l} muted={false} />
+              <Line key={`${l.exerciseName}:${l.setsLabel}:${String(i)}`} line={l} muted={v.muted} />
             ))}
             {v.unchanged ? (
               <AppText variant="callout" color="text.secondary">
@@ -261,10 +275,25 @@ export function GymReviewSheet({ card, onSwitch, onClose }: { card: OpenSwitchCa
             ) : null}
           </ScrollView>
         ) : null}
-        <View style={{ padding: theme.space['4'], gap: theme.space['2'] }}>
-          <TextButton label="Not now" tone="secondary" onPress={onClose} />
-          <PrimaryButton label={v?.action ?? 'Switch'} disabled={card?.status === 'applying'} onPress={onSwitch} />
-        </View>
+        {v ? (
+          <View style={{ padding: theme.space['4'], gap: theme.space['2'] }}>
+            <TextButton
+              label={v.secondary.label}
+              tone="secondary"
+              {...(v.secondary.disabled !== undefined ? { disabled: v.secondary.disabled } : {})}
+              onPress={() => {
+                onButton(v.secondary.id);
+              }}
+            />
+            <PrimaryButton
+              label={v.primary.label}
+              {...(v.primary.disabled !== undefined ? { disabled: v.primary.disabled } : {})}
+              onPress={() => {
+                onButton(v.primary.id);
+              }}
+            />
+          </View>
+        ) : null}
       </View>
     </Modal>
   );

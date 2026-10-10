@@ -371,7 +371,9 @@ function compactUnitWords(load: Load): string | null {
       return `${load.unit}${NBSP}each`;
     case 'stack':
       return `${load.unit}${NBSP}stack`;
-    default:
+    case 'added':
+    case 'assistance':
+    case 'bodyweight':
       return null;
   }
 }
