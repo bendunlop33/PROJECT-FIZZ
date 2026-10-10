@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActionSheetIOS, Alert, AppState, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
+import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { checkRoutineName, formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
@@ -50,8 +50,10 @@ import { exerciseMenu } from '../../workout/exercise-menu';
 import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
+import { TargetWhyLink, TargetWhyPanel } from './TargetWhyPanel';
 import { painClearConfirm } from '../../workout/pain-clear';
 import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../workout/rest-fold';
+import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 
 /**
  * Active workout: focused set card, rest, summary hand-off
@@ -104,6 +106,12 @@ export function WorkoutScreen() {
   const [restoredDraft, setRestoredDraft] = useState<string | null>(null);
   /** The heaviest-set line for the set just logged (premium-feel §5.1), shown under the saved line. */
   const [record, setRecord] = useState<{ setId: string; text: string } | null>(null);
+  // `Why?` on the target line (active-workout §2.12): one panel at most, hidden while the keypad is open.
+  const [why, setWhy] = useState<WhyPanel>(null);
+  const [keypadOpen, setKeypadOpen] = useState(false);
+  const whyEvent = useCallback((e: WhyEvent) => {
+    setWhy((cur) => whyPanelReducer(cur, e));
+  }, []);
   const played = useRef(new Set<string>());
   const [afterDismiss] = useState(() => createAfterDismiss());
   const tickedFor = useRef<string | null>(null);
@@ -164,6 +172,20 @@ export function WorkoutScreen() {
       sub.remove();
     };
   }, [reload]);
+
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardWillShow', () => {
+      setKeypadOpen(true);
+      whyEvent({ kind: 'keypad_opened' });
+    });
+    const hidden = Keyboard.addListener('keyboardWillHide', () => {
+      setKeypadOpen(false);
+    });
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, [whyEvent]);
 
   useEffect(() => {
     void getAlertPermission()
@@ -301,6 +323,11 @@ export function WorkoutScreen() {
     };
   }, [emptySessionId, navigation]);
 
+  // So does an open `Why?` panel: another active set closes it.
+  useEffect(() => {
+    whyEvent({ kind: 'active_set', setId: view?.focus?.setId ?? null });
+  }, [view?.focus?.setId, whyEvent]);
+
   // Debounced draft save (300 ms): unsaved edits survive a force-close without counting as results.
   useEffect(() => {
     if (!edits || data === 'loading' || data === null) return;
@@ -420,6 +447,7 @@ export function WorkoutScreen() {
         .catch(() => null)
         .then(showRecord);
     setEdits(null);
+    whyEvent({ kind: 'logged' });
     setRestoredDraft(null);
     setBanners((b) => b.filter((x) => x.key !== 'write' && x.key !== 'rest-ended'));
     setGuard(true);
@@ -435,6 +463,19 @@ export function WorkoutScreen() {
         if (saved) void undo(saved.id, `undo:${saved.id}:${String(saved.undoCount)}`, focus.setNumber);
       },
     });
+  }
+
+  /** `Why?` / `Hide`: a local read through the service; nothing is computed or written here. */
+  function toggleWhy(f: FocusView) {
+    const opening = why?.setId !== f.setId;
+    whyEvent({ kind: 'toggle', setId: f.setId });
+    if (!opening) return;
+    void services.workout
+      .explainTarget(session.id, f.setId)
+      .catch(() => null)
+      .then((explanation) => {
+        whyEvent({ kind: 'loaded', setId: f.setId, explanation });
+      });
   }
 
   async function undo(setId: string, opId: string, setNumber: number) {
@@ -840,20 +881,33 @@ export function WorkoutScreen() {
             />
           ) : null}
         </View>
-        {/* `Target 100 kg · 6–8 reps · Rest after 3:00`: tap to change the rest after this set. */}
-        <LinkLine
-          accessibilityLabel={`${focus.target ?? 'No target for this set'}. Rest after this set: ${formatDuration(focus.restAfterS)}. Tap to change the rest.`}
-          onPress={() => {
-            setRestEditor(true);
-          }}
-        >
-          <AppText variant="callout" color="text.secondary" numeric>
-            {`${focus.target ?? 'No target'} · Rest after `}
-            <AppText variant="callout" numeric style={{ textDecorationLine: 'underline', textDecorationColor: theme.colors['border.control'] }}>
-              {formatDuration(focus.restAfterS)}
-            </AppText>
-          </AppText>
-        </LinkLine>
+        {/* `Target 100 kg · 6–8 reps · Rest after 3:00`: tap to change the rest after this set. `Why?` ends the line (§2.12). */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+          <View style={{ flex: 1 }}>
+            <LinkLine
+              accessibilityLabel={`${focus.target ?? 'No target for this set'}. Rest after this set: ${formatDuration(focus.restAfterS)}. Tap to change the rest.`}
+              onPress={() => {
+                setRestEditor(true);
+              }}
+            >
+              <AppText variant="callout" color="text.secondary" numeric>
+                {`${focus.target ?? 'No target'} · Rest after `}
+                <AppText variant="callout" numeric style={{ textDecorationLine: 'underline', textDecorationColor: theme.colors['border.control'] }}>
+                  {formatDuration(focus.restAfterS)}
+                </AppText>
+              </AppText>
+            </LinkLine>
+          </View>
+          {focus.hasExplanation && !keypadOpen ? (
+            <TargetWhyLink
+              open={why?.setId === focus.setId}
+              onPress={() => {
+                toggleWhy(focus);
+              }}
+            />
+          ) : null}
+        </View>
+        {why !== null && why.setId === focus.setId && !keypadOpen ? <TargetWhyPanel panel={why} /> : null}
         {focus.plateLine ? (
           <AppText variant="callout" color="text.tertiary" numeric accessibilityLabel={`Plates: ${focus.plateLine}`}>
             {focus.plateLine}
