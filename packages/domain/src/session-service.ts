@@ -9,7 +9,7 @@ import {
   type ZonedTimestamp,
 } from '@fizz/schemas';
 import type { Repositories, SaveResult } from './ports';
-import { buildAddExerciseCommand, startWorkout, type AddExerciseInput, type StartWarning } from './session/create';
+import { buildAddExerciseCommand, startWorkout, type AddExerciseInput, type SetFit, type StartWarning } from './session/create';
 import { recoverSession, type RecoveryResult } from './session/recovery';
 import { startWorkoutFromSession, type RepeatInput, type RepeatNote, type RepeatOutput } from './session/repeat';
 import { isDeleted, planRoutineStart, type RoutineStartInput } from './session/routines';
@@ -132,12 +132,12 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       name?: string;
     },
   ): Promise<
-    | { ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; notCopied: RepeatOutput['notCopied']; duplicate: boolean }
+    | { ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; notCopied: RepeatOutput['notCopied']; duplicate: boolean; fits: Record<string, SetFit> }
     | { ok: false; error: ServiceError | { code: 'nothing_to_repeat'; message: string } | { code: 'imported_not_repeatable'; message: string } }
   > {
     if (!req.preview) {
       const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
-      if (existing) return { ok: true, aggregate: existing, notes: [], notCopied: [], duplicate: true };
+      if (existing) return { ok: true, aggregate: existing, notes: [], notCopied: [], duplicate: true, fits: {} };
       const active = await repos.sessions.getActive(req.ownerId);
       if (active) {
         return { ok: false, error: { code: 'session_already_active', message: 'Finish or resume the unfinished workout first.', sessionId: active.session.id } };
@@ -173,11 +173,11 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       ...(req.name !== undefined ? { name: req.name } : {}),
     });
     if (out.empty) return { ok: false, error: { code: 'nothing_to_repeat', message: 'That workout has no logged sets to repeat.' } };
-    if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false };
+    if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false, fits: out.fits };
     const saved = await trySave(() => repos.sessions.save(out.aggregate, null));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: { code: 'write_conflict', message: 'Could not create the session.' } };
-    return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false };
+    return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false, fits: out.fits };
   }
 
   /**
@@ -188,10 +188,10 @@ export function createSessionService(repos: Repositories, newId: () => string) {
    */
   async function startRoutine(
     req: Omit<StartRequest, 'routineId'> & { routineId: string; preview?: boolean; targets?: RoutineStartInput['targets'] },
-  ): Promise<{ ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; duplicate: boolean } | { ok: false; error: ServiceError | { code: 'nothing_to_start'; message: string } }> {
+  ): Promise<{ ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; duplicate: boolean; fits: Record<string, SetFit> } | { ok: false; error: ServiceError | { code: 'nothing_to_start'; message: string } }> {
     if (!req.preview) {
       const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
-      if (existing) return { ok: true, aggregate: existing, notes: [], duplicate: true };
+      if (existing) return { ok: true, aggregate: existing, notes: [], duplicate: true, fits: {} };
       const active = await repos.sessions.getActive(req.ownerId);
       if (active) {
         return { ok: false, error: { code: 'session_already_active', message: 'Finish or resume the unfinished workout first.', sessionId: active.session.id } };
@@ -223,11 +223,11 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       ...(req.targets ? { targets: req.targets } : {}),
     });
     if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This routine has no exercises to start.' } };
-    if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false };
+    if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false, fits: out.fits };
     const saved = await trySave(() => repos.sessions.save(out.aggregate, null));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: { code: 'write_conflict', message: 'Could not create the session.' } };
-    return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false };
+    return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false, fits: out.fits };
   }
 
   async function dispatch(sessionId: string, rawCommand: unknown): Promise<CommandOutcome> {

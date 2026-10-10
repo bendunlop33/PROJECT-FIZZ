@@ -3,7 +3,7 @@ import { loadText, NBSP, repRangeText, targetShort } from '../display';
 import { getAchievableLoads, loadDirection, roundToAvailableLoad } from '../equipment';
 import { fitProvenance, startWarningNote } from '../target-provenance';
 import { convertMass } from '../units';
-import { startWorkout, type StartWarning, type StartWorkoutInput, type StartWorkoutOutput } from './create';
+import { setFitsOf, startWorkout, type SetFit, type StartWarning, type StartWorkoutInput, type StartWorkoutOutput } from './create';
 import { setDisplayNumbers } from './order';
 import { GENERIC_WORKOUT_NAME } from './first-run';
 
@@ -63,6 +63,8 @@ export interface RepeatNote {
 
 export interface RepeatOutput extends StartWorkoutOutput {
   notes: RepeatNote[];
+  /** How each set's load was fitted to this gym (rounded or dropped), by set ID (workout overview). */
+  fits: Record<string, SetFit>;
   /** `Not copied: 2 skipped sets (Cable fly)`. */
   notCopied: { exerciseName: string; skipped: number }[];
   /** Nothing to copy (no completed sets). */
@@ -93,6 +95,8 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   // What each template came from: the done set it copies, or the built-in rule's planned set (Start next session),
   // its equipment here, and why its load was dropped (if it was).
   const copied = new Map<string, { from: { kind: 'copy'; set: WorkoutSet } | { kind: 'rule'; planned: PlannedSet }; equipmentId: string | null; eq: EquipmentInstance | null; dropNote: string | null }>();
+  // Loads dropped before the start (equipment not here, another unit, easiest too heavy), by template.
+  const droppedByTemplate = new Map<string, SetFit>();
 
   for (const sx of sorted) {
     const own = src.sets.filter((s) => s.sessionExerciseId === sx.id).sort((a, b) => a.index - b.index);
@@ -154,6 +158,9 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
               : null;
       const templateId = input.newId();
       copied.set(templateId, { from: a.from, equipmentId: sx.equipmentId, eq, dropNote });
+      if (missingEq !== null && a.load !== null) droppedByTemplate.set(templateId, { kind: 'dropped', requested: a.load, reason: 'equipment_not_in_gym', missing: missingEq.name });
+      else if (fit.unitDropped) droppedByTemplate.set(templateId, { kind: 'dropped', requested: fit.unitDropped, reason: 'unit_not_convertible', missing: null });
+      else if (fit.harderDropped) droppedByTemplate.set(templateId, { kind: 'dropped', requested: fit.harderDropped.requested, reason: 'easiest_too_heavy', missing: null });
       templates.push({
         id: templateId,
         setType: a.setType,
@@ -258,7 +265,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       return { ...s, planned };
     }),
   };
-  return { aggregate, warnings: out.warnings, setTemplateIds: out.setTemplateIds, notes, notCopied, empty: routineExercises.length === 0 };
+  return { aggregate, warnings: out.warnings, setTemplateIds: out.setTemplateIds, notes, notCopied, empty: routineExercises.length === 0, fits: setFitsOf(out, droppedByTemplate) };
 }
 
 /**

@@ -60,6 +60,40 @@ export type StartWarning =
       reason: 'convention_mismatch' | 'unit_not_convertible' | 'no_achievable_loads' | 'equipment_not_in_gym';
     };
 
+/**
+ * How a planned set's load was fitted to this gym, by set ID (workout-overview
+ * §3.7 info glyph, §4 `NO LOAD`). `rounded`: the load was snapped (rounded
+ * toward easier, capped at a max, or converted). `dropped`: there is no load
+ * target here; `missing` names the equipment this gym lacks, when that's why.
+ * Sets that kept their load exactly have no entry.
+ */
+export type SetFit =
+  | { kind: 'rounded'; requested: Load; planned: Load; bounded: 'min' | 'max' | null; converted: boolean }
+  | {
+      kind: 'dropped';
+      requested: Load;
+      reason: Extract<StartWarning, { kind: 'target_dropped' }>['reason'] | 'easiest_too_heavy';
+      missing: string | null;
+    };
+
+/**
+ * Per-set fits from a start's warnings (by template) plus the drops the caller
+ * made before `startWorkout` (by template), keyed by the new set IDs.
+ */
+export function setFitsOf(out: Pick<StartWorkoutOutput, 'warnings' | 'setTemplateIds'>, droppedByTemplate: ReadonlyMap<string, SetFit> = new Map()): Record<string, SetFit> {
+  const byTemplate = new Map<string, SetFit>(droppedByTemplate);
+  for (const w of out.warnings) {
+    if (w.kind === 'target_rounded') byTemplate.set(w.setTemplateId, { kind: 'rounded', requested: w.requested, planned: w.planned, bounded: w.bounded, converted: w.converted });
+    if (w.kind === 'target_dropped' && !byTemplate.has(w.setTemplateId)) byTemplate.set(w.setTemplateId, { kind: 'dropped', requested: w.requested, reason: w.reason, missing: null });
+  }
+  const fits: Record<string, SetFit> = {};
+  for (const [setId, templateId] of Object.entries(out.setTemplateIds)) {
+    const fit = byTemplate.get(templateId);
+    if (fit) fits[setId] = fit;
+  }
+  return fits;
+}
+
 export type PlannedLoadResult =
   | { load: Load | null; warning: null }
   | { load: Load | null; warning: Extract<StartWarning, { kind: 'target_rounded' | 'target_dropped' }> };

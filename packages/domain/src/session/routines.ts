@@ -15,7 +15,7 @@ import type {
 import { loadText } from '../display';
 import { fitProvenance, startWarningNote } from '../target-provenance';
 import { toMs } from '../time';
-import { startWorkout, type StartWorkoutInput, type StartWorkoutOutput } from './create';
+import { setFitsOf, startWorkout, type SetFit, type StartWorkoutInput, type StartWorkoutOutput } from './create';
 import { droppedNotes, fitLoadHere, pickEquipment, warningNotes, type RepeatNote } from './repeat';
 
 /**
@@ -235,6 +235,8 @@ export interface RoutineStartInput {
 
 export interface RoutineStartOutput extends StartWorkoutOutput {
   notes: RepeatNote[];
+  /** How each set's load was fitted to this gym (rounded or dropped), by set ID (workout overview). */
+  fits: Record<string, SetFit>;
 }
 
 /**
@@ -259,6 +261,8 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
   // Templates made from the built-in rule's targets: the rule's planned set, the equipment here, and why a load was dropped.
   // `Why?` then explains them as the rule's, never as the routine's own numbers (review B1.1).
   const ruleOf = new Map<string, { planned: PlannedSet; eq: EquipmentInstance | null; dropNote: string | null }>();
+  // Loads dropped before the start (equipment not here, another unit, easiest too heavy), by template.
+  const droppedByTemplate = new Map<string, SetFit>();
   for (const rex of [...input.routine.exercises].sort((a, b) => a.order - b.order)) {
     const exercise = input.exercises.get(rex.exerciseId);
     const name = exercise?.name ?? 'Exercise';
@@ -304,6 +308,9 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
         unitDropped ??= fit.unitDropped;
         harderDropped ??= fit.harderDropped;
         const id = input.newId();
+        if (missing !== null && t.targetLoad !== null && t.targetLoad.convention !== 'bodyweight') droppedByTemplate.set(id, { kind: 'dropped', requested: t.targetLoad, reason: 'equipment_not_in_gym', missing });
+        else if (fit.unitDropped) droppedByTemplate.set(id, { kind: 'dropped', requested: fit.unitDropped, reason: 'unit_not_convertible', missing: null });
+        else if (fit.harderDropped) droppedByTemplate.set(id, { kind: 'dropped', requested: fit.harderDropped.requested, reason: 'easiest_too_heavy', missing: null });
         const rulePlanned = fromRule.get(t.id);
         if (rulePlanned !== undefined) ruleOf.set(id, { planned: rulePlanned, eq, dropNote: ruleDropNote(missing, t.targetLoad, fit, eq, sessionUnit) });
         return { ...t, id, targetLoad: fit.load };
@@ -359,7 +366,7 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
       return { ...s, planned: plannedSet };
     }),
   };
-  return { aggregate, warnings: out.warnings, setTemplateIds: out.setTemplateIds, notes };
+  return { aggregate, warnings: out.warnings, setTemplateIds: out.setTemplateIds, notes, fits: setFitsOf(out, droppedByTemplate) };
 }
 
 /** Why a rule target's load was dropped at this gym, said against the target (`Why?` Equipment row). */

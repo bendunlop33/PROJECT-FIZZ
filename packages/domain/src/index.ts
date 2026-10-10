@@ -44,3 +44,4 @@ export * from './session/pain-sheet';
 export * from './touches';
 export * from './import';
 export * from './session/lift-highlight';
+export * from './session/overview';
