@@ -1,0 +1,235 @@
+import { describe, expect, it } from 'vitest';
+import { COACH_TOOL_ARGS, CoachToolNameSchema } from '@fizz/schemas';
+import {
+  assertRegistrySafe,
+  buildTurnRegistry,
+  COACH_TOOLS,
+  functionToolDefinitions,
+  listCoachCapabilities,
+  parseToolCall,
+  toolOpId,
+  UnsafeRegistryError,
+  type ToolDeclaration,
+  type TurnGate,
+} from '../src/index';
+import { id } from './records';
+
+const gate = (over: Partial<TurnGate> = {}): TurnGate => ({
+  kind: 'general',
+  benRequest: false,
+  acceptedOffer: false,
+  benPainWords: false,
+  benStructuralRequest: false,
+  structuralSignals: [],
+  ...over,
+});
+
+const names = (g: TurnGate): string[] => buildTurnRegistry(g).tools.map((t) => t.name);
+
+describe('registry safety (coach-contract check 1, CC6)', () => {
+  it('every tool has an allowed effect and declared writes', () => {
+    expect(() => {
+      assertRegistrySafe(COACH_TOOLS);
+    }).not.toThrow();
+    for (const t of COACH_TOOLS) expect(['read', 'append', 'versioned_update', 'propose']).toContain(t.effect);
+  });
+
+  it('every v1 tool name is declared exactly once and has an argument schema', () => {
+    expect(COACH_TOOLS.map((t) => t.name).sort()).toEqual([...CoachToolNameSchema.options].sort());
+    for (const t of COACH_TOOLS) expect(COACH_TOOL_ARGS[t.name]).toBeDefined();
+  });
+
+  it('a stub delete_workout, an overwrite effect or an unlabelled write fails', () => {
+    const base = COACH_TOOLS.find((t) => t.name === 'save_memory');
+    if (!base) throw new Error('fixture');
+    const bad: ToolDeclaration[] = [
+      { ...base, name: 'delete_workout' as ToolDeclaration['name'] },
+      { ...base, effect: 'overwrite' as ToolDeclaration['effect'] },
+      { ...base, effect: 'delete' as ToolDeclaration['effect'] },
+      { ...base, plainLabel: null },
+      { ...base, effect: 'versioned_update', writes: ['pain_flag'] },
+      { ...base, effect: 'read' },
+      { ...COACH_TOOLS.find((t) => t.structural) ?? base, needs: 'none' },
+    ];
+    for (const b of bad) {
+      expect(() => {
+        assertRegistrySafe([b]);
+      }).toThrow(UnsafeRegistryError);
+    }
+    expect(() => {
+      assertRegistrySafe([base, base]);
+    }).toThrow(/Duplicate/);
+  });
+
+  it('no versioned update can write a finished session or a done set', () => {
+    for (const t of COACH_TOOLS.filter((x) => x.effect === 'versioned_update')) {
+      for (const w of t.writes) expect(['pending_set_target', 'next_session_target', 'memory']).toContain(w);
+    }
+  });
+});
+
+describe('buildTurnRegistry (CC10, summary closed list)', () => {
+  it('a plain question gets the reads only', () => {
+    expect(names(gate())).toEqual(['get_active_session', 'get_recent_training', 'get_gym_equipment', 'get_progression_targets', 'get_recent_actions']);
+  });
+
+  it("today's sets need Ben's request or an accepted offer, and only in a workout", () => {
+    expect(names(gate({ kind: 'workout' }))).not.toContain('adjust_pending_sets');
+    expect(names(gate({ kind: 'workout', benRequest: true }))).toContain('adjust_pending_sets');
+    expect(names(gate({ kind: 'workout', acceptedOffer: true }))).toContain('adjust_pending_sets');
+    expect(names(gate({ kind: 'general', benRequest: true }))).not.toContain('adjust_pending_sets');
+    // An accepted offer is not a request for anything else.
+    expect(names(gate({ kind: 'workout', acceptedOffer: true }))).not.toContain('save_memory');
+  });
+
+  it('the summary turn is a closed list: reads, next-session targets, structural only when gated (check 17)', () => {
+    const summary = names(gate({ kind: 'summary' }));
+    expect(summary).toEqual(['get_active_session', 'get_recent_training', 'get_gym_equipment', 'get_progression_targets', 'get_recent_actions', 'set_next_session_targets']);
+    const withSignal = names(gate({ kind: 'summary', structuralSignals: ['pain_flag'] }));
+    expect(withSignal).toContain('propose_next_workout_change');
+    // Even a request in the summary turn can't reach memory, pain or today's sets.
+    const asked = names(gate({ kind: 'summary', benRequest: true, benPainWords: true }));
+    expect(asked).not.toEqual(expect.arrayContaining(['save_memory']));
+    expect(asked).not.toContain('set_pain_flag');
+    expect(asked).not.toContain('adjust_pending_sets');
+  });
+
+  it('every structural tool is absent with no request and no signal, in every turn kind (check 17)', () => {
+    const structural = COACH_TOOLS.filter((t) => t.structural).map((t) => t.name);
+    expect(structural.length).toBeGreaterThan(0);
+    for (const kind of ['general', 'workout', 'summary'] as const) {
+      const r = buildTurnRegistry(gate({ kind, benRequest: true }));
+      for (const name of structural) {
+        expect(r.tools.map((t) => t.name)).not.toContain(name);
+        expect(r.withheld).toContainEqual({ name, reason: 'needs_request_or_signal' });
+      }
+      for (const name of structural) expect(names(gate({ kind, benStructuralRequest: true }))).toContain(name);
+    }
+  });
+
+  it("set_pain_flag needs Ben's own pain words this turn (check 19)", () => {
+    expect(names(gate({ benRequest: true }))).not.toContain('set_pain_flag');
+    expect(names(gate({ benPainWords: true }))).toContain('set_pain_flag');
+  });
+});
+
+describe('listCoachCapabilities (check 11)', () => {
+  it('matches the registry (snapshot)', () => {
+    expect(listCoachCapabilities()).toMatchInlineSnapshot(`
+      {
+        "intro": "The coach only says something changed when the app has saved that change. You can undo every change it makes.",
+        "sections": [
+          {
+            "rows": [
+              "Change today's remaining sets",
+              "Turn a pain flag on",
+              "Save a memory",
+              "Forget a memory",
+              "Add a general training rule to your playbook to review",
+            ],
+            "section": "when_you_ask",
+            "title": "When you ask",
+          },
+          {
+            "rows": [
+              "Small changes to next time's load, reps and sets, shown on the summary with Undo",
+            ],
+            "section": "after_workout",
+            "title": "After each workout",
+          },
+          {
+            "rows": [
+              "Swapping, adding, removing or reordering exercises in your next workout",
+            ],
+            "section": "suggest_only",
+            "title": "Only as a suggestion you apply",
+          },
+          {
+            "rows": [
+              "Delete or rewrite a workout, a set, an import or a check-in",
+              "Clear a pain flag",
+              "Change settings, your AI connection, backups or playbook approvals",
+            ],
+            "section": "never",
+            "title": "Never",
+          },
+        ],
+      }
+    `);
+  });
+
+  it('every write tool appears as a row', () => {
+    const rows = listCoachCapabilities().sections.flatMap((s) => s.rows);
+    for (const t of COACH_TOOLS.filter((x) => x.effect !== 'read')) expect(rows).toContain(t.plainLabel);
+  });
+});
+
+describe('parseToolCall', () => {
+  const workout = buildTurnRegistry(gate({ kind: 'workout', benRequest: true }));
+  const args = {
+    baseVersion: 7,
+    exercises: [{ sessionExerciseId: id(10), sets: [{ setId: id(13), target: { load: { value: 95, unit: 'kg', convention: 'total' }, reps: null } }], addSet: null, removeSetId: null }],
+    reason: 'Set 2 was RPE 10.',
+  };
+
+  it('refuses a tool that is not in this turn (Not allowed: delete_set, check 7)', () => {
+    expect(parseToolCall('t1', 'delete_set', '{}', workout)).toEqual({ ok: false, error: 'not_allowed', line: 'Not allowed: delete_set' });
+    const general = buildTurnRegistry(gate());
+    expect(parseToolCall('t1', 'adjust_pending_sets', JSON.stringify(args), general)).toMatchObject({ ok: false, error: 'not_allowed' });
+  });
+
+  it('parses a valid call into the typed union with a replay-stable opId (check 6)', () => {
+    const a = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify(args), workout);
+    const b = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify({ reason: args.reason, exercises: args.exercises, baseVersion: 7 }), workout);
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(a.call.tool).toBe('adjust_pending_sets');
+    expect(a.opId).toBe(b.opId);
+    expect(a.opId.length).toBeLessThanOrEqual(128);
+    expect(toolOpId('t2', 'adjust_pending_sets', a.call.args)).not.toBe(a.opId);
+  });
+
+  it('drops smuggled fields and lists them (CC10: a programme inside another tool)', () => {
+    const smuggled = { ...args, programme: { name: '5/3/1' }, exercises: [{ ...args.exercises[0], swapTo: id(99) }] };
+    const r = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify(smuggled), workout);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.dropped.sort()).toEqual(['exercises.0.swapTo', 'programme']);
+    expect(JSON.stringify(r.call.args)).not.toMatch(/programme|swapTo/);
+  });
+
+  it('rejects bad JSON and bad values', () => {
+    expect(parseToolCall('t1', 'adjust_pending_sets', '{not json', workout)).toMatchObject({ ok: false, error: 'invalid_args' });
+    expect(parseToolCall('t1', 'adjust_pending_sets', JSON.stringify({ ...args, baseVersion: 0 }), workout)).toMatchObject({ ok: false, error: 'invalid_args' });
+    const noUnit = { ...args, exercises: [{ ...args.exercises[0], sets: [{ setId: id(13), target: { load: { value: 95 }, reps: null } }] }] };
+    expect(parseToolCall('t1', 'adjust_pending_sets', JSON.stringify(noUnit), workout)).toMatchObject({ ok: false, error: 'invalid_args' });
+  });
+});
+
+describe('strict function-tool definitions', () => {
+  type Node = Record<string, unknown>;
+  function walk(node: unknown, visit: (n: Node, path: string) => void, path = '$'): void {
+    if (Array.isArray(node)) node.forEach((n, i) => { walk(n, visit, `${path}[${String(i)}]`); });
+    else if (node !== null && typeof node === 'object') {
+      visit(node as Node, path);
+      for (const [k, v] of Object.entries(node)) walk(v, visit, `${path}.${k}`);
+    }
+  }
+
+  it('every tool schema is closed, fully required, and avoids unsupported keywords', () => {
+    const defs = functionToolDefinitions(COACH_TOOLS);
+    expect(defs).toHaveLength(COACH_TOOLS.length);
+    for (const d of defs) {
+      expect(d.strict).toBe(true);
+      walk(d.parameters, (n, path) => {
+        expect(n).not.toHaveProperty('oneOf');
+        expect(n).not.toHaveProperty('minLength');
+        expect(n).not.toHaveProperty('$schema');
+        if (n.type === 'object') {
+          expect(n.additionalProperties, `${d.name} ${path}`).toBe(false);
+          expect([...(n.required as string[])].sort(), `${d.name} ${path}`).toEqual(Object.keys(n.properties as object).sort());
+        }
+      });
+    }
+  });
+});

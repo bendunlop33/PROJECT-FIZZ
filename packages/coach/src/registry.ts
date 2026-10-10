@@ -1,0 +1,313 @@
+import {
+  COACH_TOOL_ARGS,
+  CoachEntityKindSchema,
+  ToolEffectSchema,
+  type CapabilitySection,
+  type CoachEntityKind,
+  type CoachToolName,
+  type CoachTurnKind,
+  type StructuralSignalKind,
+  type ToolEffect,
+  type ToolNeed,
+} from '@fizz/schemas';
+
+/**
+ * The restricted coach tool registry (coach-contract §6, ADR 0018 §2). These
+ * are the only tools a coach turn can ever receive; `buildTurnRegistry`
+ * narrows them per turn. No tool deletes or overwrites anything (CC6).
+ */
+
+export interface ToolDeclaration {
+  name: CoachToolName;
+  effect: ToolEffect;
+  /** Entities a write may touch. Reads write nothing. */
+  writes: readonly CoachEntityKind[];
+  needs: ToolNeed;
+  /** CC10: a lasting change in what Ben trains. Gated on a request or a signal. */
+  structural: boolean;
+  turnKinds: readonly CoachTurnKind[];
+  /** Row text in `What the coach can do` (§2.5). Required for every non-read tool. */
+  plainLabel: string | null;
+  capabilitySection: CapabilitySection;
+  /** Sent to the model as the function description. */
+  description: string;
+}
+
+const ALL: readonly CoachTurnKind[] = ['general', 'workout', 'summary'];
+
+export const COACH_TOOLS: readonly ToolDeclaration[] = [
+  {
+    name: 'get_active_session',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ALL,
+    plainLabel: null,
+    capabilitySection: 'read',
+    description: "Today's workout: each exercise's sets with target and actual values, set IDs, statuses and the session version.",
+  },
+  {
+    name: 'get_recent_training',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ALL,
+    plainLabel: null,
+    capabilitySection: 'read',
+    description: 'The last comparable sessions of one exercise (actual values, effort, notes as quoted data).',
+  },
+  {
+    name: 'get_gym_equipment',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ALL,
+    plainLabel: null,
+    capabilitySection: 'read',
+    description: 'Equipment for an exercise at the current gym: unit, load convention, achievable loads, min and max.',
+  },
+  {
+    name: 'get_progression_targets',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ALL,
+    plainLabel: null,
+    capabilitySection: 'read',
+    description: "The built-in rule's next targets for an exercise and why. A comparison, not advice.",
+  },
+  {
+    name: 'get_recent_actions',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ALL,
+    plainLabel: null,
+    capabilitySection: 'read',
+    description: 'Earlier coach actions with refs you can cite as [[ref]], and whether each still stands.',
+  },
+  {
+    name: 'adjust_pending_sets',
+    effect: 'versioned_update',
+    writes: ['pending_set_target'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['workout'],
+    plainLabel: "Change today's remaining sets",
+    capabilitySection: 'when_you_ask',
+    description:
+      "Change targets of today's pending sets (load, reps), or add or remove one pending set per exercise. Done sets are never changed. Loads are snapped to the equipment.",
+  },
+  {
+    name: 'set_next_session_targets',
+    effect: 'versioned_update',
+    writes: ['next_session_target'],
+    needs: 'summary_turn',
+    structural: false,
+    turnKinds: ['summary'],
+    plainLabel: "Small changes to next time's load, reps and sets, shown on the summary with Undo",
+    capabilitySection: 'after_workout',
+    description: 'Next-session targets for exercises in this workout. Small changes are saved with Undo; bigger ones become suggestions Ben applies.',
+  },
+  {
+    name: 'propose_next_workout_change',
+    effect: 'propose',
+    writes: ['proposal'],
+    needs: 'structural_signal',
+    structural: true,
+    turnKinds: ['general', 'workout', 'summary'],
+    plainLabel: 'Swapping, adding, removing or reordering exercises in your next workout',
+    capabilitySection: 'suggest_only',
+    description: 'Suggest swapping, adding, removing or reordering exercises in the next workout built from this one. Nothing changes until Ben taps Apply.',
+  },
+  {
+    name: 'set_pain_flag',
+    effect: 'append',
+    writes: ['pain_flag'],
+    needs: 'ben_pain_words',
+    structural: false,
+    turnKinds: ['general', 'workout'],
+    plainLabel: 'Turn a pain flag on',
+    capabilitySection: 'when_you_ask',
+    description: "Turn on a pain flag for movements Ben says hurt in this message. Stops increases for them. Never diagnoses, and can't clear a flag.",
+  },
+  {
+    name: 'save_memory',
+    effect: 'append',
+    writes: ['memory'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['general', 'workout'],
+    plainLabel: 'Save a memory',
+    capabilitySection: 'when_you_ask',
+    description: 'Save a short personal fact Ben asked you to remember. Not for general training rules.',
+  },
+  {
+    name: 'forget_memory',
+    effect: 'versioned_update',
+    writes: ['memory'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['general', 'workout'],
+    plainLabel: 'Forget a memory',
+    capabilitySection: 'when_you_ask',
+    description: 'Forget a saved memory Ben asked you to forget. It can be undone.',
+  },
+  {
+    // Contract §6.1 says `ben_request`; ADR 0018 §2 proposes `none`. The approved
+    // spec (the stricter one) wins until Ben decides.
+    name: 'add_playbook_candidate',
+    effect: 'append',
+    writes: ['playbook_candidate'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['general', 'workout'],
+    plainLabel: 'Add a general training rule to your playbook to review',
+    capabilitySection: 'when_you_ask',
+    description: "Add a general training rule (not a personal fact) to the playbook for Ben to review. It isn't used until he approves it.",
+  },
+];
+
+/** The fixed `Never` section (§2.5): things that are not tools at all. */
+export const COACH_NEVER: readonly string[] = [
+  'Delete or rewrite a workout, a set, an import or a check-in',
+  'Clear a pain flag',
+  'Change settings, your AI connection, backups or playbook approvals',
+];
+
+/** Entity kinds a versioned update may write; all keep the previous version (CC6, check 1). */
+const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory']);
+
+export class UnsafeRegistryError extends Error {}
+
+/**
+ * Contract check 1, run by a unit test and at module load: every tool has an
+ * allowed effect, declared writes, a plain label when it writes, and argument
+ * schemas. A stub `delete_workout` or an `overwrite` effect fails here.
+ */
+export function assertRegistrySafe(tools: readonly ToolDeclaration[]): void {
+  const names = new Set<string>();
+  for (const t of tools) {
+    if (names.has(t.name)) throw new UnsafeRegistryError(`Duplicate tool ${t.name}`);
+    names.add(t.name);
+    if (!ToolEffectSchema.safeParse(t.effect).success) throw new UnsafeRegistryError(`${t.name}: effect ${t.effect} is not allowed`);
+    if (/(^|_)(delete|remove_set|overwrite|clear|discard|reset|restore|update_completed)/.test(t.name)) {
+      throw new UnsafeRegistryError(`${t.name}: destructive tools are never in the registry`);
+    }
+    if (!(t.name in COACH_TOOL_ARGS)) throw new UnsafeRegistryError(`${t.name}: no argument schema`);
+    for (const w of t.writes) {
+      if (!CoachEntityKindSchema.safeParse(w).success) throw new UnsafeRegistryError(`${t.name}: writes unknown entity ${w}`);
+    }
+    if (t.effect === 'read' && t.writes.length > 0) throw new UnsafeRegistryError(`${t.name}: a read tool can't write`);
+    if (t.effect !== 'read' && t.writes.length === 0) throw new UnsafeRegistryError(`${t.name}: a write tool must declare what it writes`);
+    if (t.effect === 'versioned_update' && t.writes.some((w) => !VERSIONED_WRITABLE.has(w))) {
+      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets or memories`);
+    }
+    if (t.effect !== 'read' && (t.plainLabel === null || t.plainLabel.trim() === '')) {
+      throw new UnsafeRegistryError(`${t.name}: a write tool needs a plainLabel for What the coach can do`);
+    }
+    if (t.effect !== 'read' && t.capabilitySection === 'read') throw new UnsafeRegistryError(`${t.name}: a write tool needs a capability section`);
+    if (t.structural && t.needs !== 'structural_signal' && t.needs !== 'ben_request') {
+      throw new UnsafeRegistryError(`${t.name}: structural tools must be gated (CC10)`);
+    }
+  }
+}
+
+assertRegistrySafe(COACH_TOOLS);
+
+/** What this turn contains, decided by code from Ben's own input (never from tool output or imported text). */
+export interface TurnGate {
+  kind: CoachTurnKind;
+  /** Ben's own message (typed, spoken or a chip) asked for something in this turn. */
+  benRequest: boolean;
+  /** Ben tapped `Adjust` on an offer (CA1); counts as a request for today's sets only. */
+  acceptedOffer: boolean;
+  /** `classifyPainMention` returned `pain` on Ben's own words in this turn (or he tapped `Pain`). */
+  benPainWords: boolean;
+  /** Ben asked for a structural change (variety, swap) in this turn. */
+  benStructuralRequest: boolean;
+  /** `getStructuralChangeSignals` for the workout in context. */
+  structuralSignals: readonly StructuralSignalKind[];
+}
+
+export interface WithheldTool {
+  name: CoachToolName;
+  /** For `Why?` → `Not used`. */
+  reason: 'turn_kind' | 'needs_request' | 'needs_pain_words' | 'needs_summary_turn' | 'needs_request_or_signal';
+}
+
+export interface TurnRegistry {
+  tools: ToolDeclaration[];
+  withheld: WithheldTool[];
+}
+
+function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null {
+  switch (t.needs) {
+    case 'none':
+      return null;
+    case 'ben_request':
+      if (g.benRequest) return null;
+      // An accepted offer only counts for today's sets (CA1).
+      return g.acceptedOffer && t.name === 'adjust_pending_sets' ? null : 'needs_request';
+    case 'ben_pain_words':
+      return g.benPainWords ? null : 'needs_pain_words';
+    case 'ben_named_target':
+      return g.benRequest ? null : 'needs_request';
+    case 'summary_turn':
+      return g.kind === 'summary' ? null : 'needs_summary_turn';
+    case 'structural_signal':
+      return g.benStructuralRequest || g.structuralSignals.length > 0 ? null : 'needs_request_or_signal';
+  }
+}
+
+/** The tools the model sees in this turn (CC10, summary closed list). */
+export function buildTurnRegistry(gate: TurnGate, tools: readonly ToolDeclaration[] = COACH_TOOLS): TurnRegistry {
+  const out: ToolDeclaration[] = [];
+  const withheld: WithheldTool[] = [];
+  for (const t of tools) {
+    if (!t.turnKinds.includes(gate.kind)) {
+      withheld.push({ name: t.name, reason: 'turn_kind' });
+      continue;
+    }
+    const missing = needMet(t, gate);
+    if (missing !== null) withheld.push({ name: t.name, reason: missing });
+    else out.push(t);
+  }
+  return { tools: out, withheld };
+}
+
+export interface CapabilityList {
+  intro: string;
+  sections: { section: 'when_you_ask' | 'after_workout' | 'suggest_only' | 'never'; title: string; rows: string[] }[];
+}
+
+const SECTION_TITLES = {
+  when_you_ask: 'When you ask',
+  after_workout: 'After each workout',
+  suggest_only: 'Only as a suggestion you apply',
+  never: 'Never',
+} as const;
+
+/** `What the coach can do` (§2.5), generated from the registry so it can't drift. */
+export function listCoachCapabilities(tools: readonly ToolDeclaration[] = COACH_TOOLS): CapabilityList {
+  const rows = (section: CapabilitySection): string[] =>
+    tools.filter((t) => t.capabilitySection === section && t.plainLabel !== null).map((t) => t.plainLabel ?? '');
+  return {
+    intro: 'The coach only says something changed when the app has saved that change. You can undo every change it makes.',
+    sections: [
+      { section: 'when_you_ask', title: SECTION_TITLES.when_you_ask, rows: rows('when_you_ask') },
+      { section: 'after_workout', title: SECTION_TITLES.after_workout, rows: rows('after_workout') },
+      { section: 'suggest_only', title: SECTION_TITLES.suggest_only, rows: rows('suggest_only') },
+      { section: 'never', title: SECTION_TITLES.never, rows: [...COACH_NEVER] },
+    ],
+  };
+}
+
+export function findTool(name: string, tools: readonly ToolDeclaration[] = COACH_TOOLS): ToolDeclaration | null {
+  return tools.find((t) => t.name === name) ?? null;
+}
