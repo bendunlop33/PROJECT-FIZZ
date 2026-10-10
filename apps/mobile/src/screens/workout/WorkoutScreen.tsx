@@ -257,10 +257,11 @@ export function WorkoutScreen() {
           text: t.text,
           action: 'Undo',
           onAction: () => {
-            void services.pain.clear(t.flagIds).then(() => {
+            // A retraction, not a clear: as if the flag was never set (review B2). Versioned; a second tap is a no-op.
+            void services.pain.retract(t.flags, newUuid()).then((r) => {
               changed();
               void reload();
-              showToast({ icon: 'info.circle', text: 'Pain flag removed' });
+              showToast({ icon: 'info.circle', text: !r.ok ? r.message : r.stale.length > 0 ? 'Pain flag kept: it changed since' : 'Pain flag removed' });
             });
           },
         });

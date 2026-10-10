@@ -120,9 +120,19 @@ export const PainFlagSchema = RecordMetaSchema.extend({
   source: z.enum(['check_in', 'workout']),
   checkInId: IdSchema.nullable(),
   reportedAt: ZonedTimestampSchema,
-  status: z.enum(['active', 'cleared']),
+  /**
+   * `retracted` (review B2, 2026-10-10): Ben took a flag back with Undo
+   * right after setting it (a mistaken `Pain` tick or check-in answer). It
+   * is as if the flag never existed: not active, never a `Before flag`
+   * reference, not listed, and never a return-to-load guard. Kept as a
+   * document (never deleted) for the audit; it can't become active again.
+   * `cleared` is only ever Ben's explicit `Clear flag`.
+   */
+  status: z.enum(['active', 'cleared', 'retracted']),
   clearedAtUtc: UtcTimestampSchema.nullable(),
   createdByOpId: OperationIdSchema,
+  /** When and by which operation the flag was retracted; present only on `retracted` flags. */
+  retracted: z.object({ atUtc: UtcTimestampSchema, opId: OperationIdSchema }).optional(),
   /**
    * `Still hurts?` answers, oldest first (2026-10-09). Absent on flags saved
    * before the check existed, which read as never checked. Bounded: one a

@@ -13,6 +13,7 @@ import {
   newPainFlag,
   painStatusFor,
   plannedSetsFromTargets,
+  retractPainFlag,
   startWorkout,
   startWorkoutFromSession,
   toHistorySessions,
@@ -304,6 +305,12 @@ describe('explainTarget: pain flags (Pain and Before flag rows)', () => {
     expect(rowsOf(in7).map((r) => r[0])).toEqual(['Set by', 'Last time', 'Reason', 'Before flag']);
     const in9 = explain(now, { basisNow: post, history: h, painFlags: [cleared], nowMs: ms(4 * DAY + 9 * WEEK) });
     expect(rowsOf(in9).map((r) => r[0])).toEqual(['Set by', 'Last time', 'Reason']);
+  });
+
+  it('a retracted flag (Undo right after setting it, review B2) is never Pain or Before flag', () => {
+    const retracted = retractPainFlag(on, at(4 * DAY), 'undo-1');
+    const soon = explain(now, { basisNow: post, history: h, painFlags: [retracted], nowMs: ms(4 * DAY + 60) });
+    expect(rowsOf(soon).map((r) => r[0])).toEqual(['Set by', 'Last time', 'Reason']);
   });
 
   it('a flag with no area, and a flag on another movement', () => {

@@ -113,7 +113,7 @@ describe('Why? through the services', () => {
     ]);
     expect(rowsOf(on)[2]?.[1]).toMatch(/^Progression for Bench press is paused because pain was reported/);
 
-    await s.pain.clear(flagged.ok ? (flagged.flagIds ?? []) : []);
+    for (const f of flagged.ok ? (flagged.flags ?? []) : []) await s.pain.clearConfirmed({ flagId: f.id, expectedVersion: f.version });
     const off = await s.workout.explainTarget(sessionId, setId);
     expect(rowsOf(off).map((r) => r[0])).toEqual(['Set by', 'Last time', 'Reason', 'Before flag']);
   });

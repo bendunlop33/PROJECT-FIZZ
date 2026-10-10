@@ -80,7 +80,8 @@ export type RootStackParams = {
 
 export type WorkoutToastParam =
   | { kind: 'check_in'; text: string; checkInId: string }
-  | { kind: 'pain'; text: string; flagIds: string[] }
+  /** `Pain noted` [Undo]: the flags just set, at the version that set them; Undo retracts them (review B2). */
+  | { kind: 'pain'; text: string; flags: { id: string; version: number }[] }
   | { kind: 'info'; text: string }
   /**
    * Back from the correction sheet after the exclusion chips changed
@@ -91,7 +92,7 @@ export type WorkoutToastParam =
       kind: 'exclusion';
       key: string;
       text: string;
-      undo: { sessionId: string; setId: string; setVersion: number; previous: SetExclusion[]; painFlagIds: string[] };
+      undo: { sessionId: string; setId: string; setVersion: number; previous: SetExclusion[]; painFlags: { id: string; version: number }[] };
     };
 
 declare global {

@@ -57,7 +57,7 @@ describe('correctSet with exclusion chips (§2.13, AW6)', () => {
     const r = await s.workout.correctSet({ sessionId, setId: third.id, expectedSetVersion: third.version, patch: { exclusions: ['spotted'] }, opId: 'mark-1' });
     expect(r).toMatchObject({ ok: true, duplicate: false, toast: 'Set 3: spotted · not counted for records' });
     if (!r.ok) throw new Error('mark');
-    expect(r.undo).toEqual({ setId: third.id, setVersion: third.version + 1, previous: [], painFlagIds: [] });
+    expect(r.undo).toEqual({ setId: third.id, setVersion: third.version + 1, previous: [], painFlags: [] });
     // A retry of the same tap is a duplicate with no second toast.
     expect(await s.workout.correctSet({ sessionId, setId: third.id, expectedSetVersion: third.version, patch: { exclusions: ['spotted'] }, opId: 'mark-1' })).toMatchObject({ ok: true, duplicate: true, toast: null, undo: null });
 
@@ -113,7 +113,7 @@ describe('correctSet with exclusion chips (§2.13, AW6)', () => {
 });
 
 describe('`Pain` also flags the movement (AW7)', () => {
-  it('sets one workout-sourced flag (idempotent); Undo clears it with the mark; unticking never clears a flag', async () => {
+  it('sets one workout-sourced flag (idempotent); Undo retracts it with the mark; unticking never clears a flag', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     const { sessionId, aggregate } = await benchWorkout(s, gymId);
@@ -126,14 +126,14 @@ describe('`Pain` also flags the movement (AW7)', () => {
     const flags = await s.pain.active();
     expect(flags).toHaveLength(1);
     expect(flags[0]).toMatchObject({ exerciseName: 'Bench press', source: 'workout', area: null, checkInId: null, status: 'active' });
-    expect(r.undo.painFlagIds).toEqual([flags[0]?.id]);
+    expect(r.undo.painFlags).toEqual([{ id: flags[0]?.id, version: 1 }]);
     // Retry: still one flag.
     await s.workout.correctSet({ sessionId, setId: a.id, expectedSetVersion: a.version, patch: { exclusions: ['pain'] }, opId: 'pain-1' });
     expect(await s.pain.active()).toHaveLength(1);
 
     // A second set marked Pain while the flag is on: no new flag.
     const r2 = await s.workout.correctSet({ sessionId, setId: b.id, expectedSetVersion: b.version, patch: { exclusions: ['pain'] }, opId: 'pain-2' });
-    expect(r2).toMatchObject({ ok: true, toast: 'Set 2: pain · not counted for records', undo: { painFlagIds: [] } });
+    expect(r2).toMatchObject({ ok: true, toast: 'Set 2: pain · not counted for records', undo: { painFlags: [] } });
     expect(await s.pain.active()).toHaveLength(1);
 
     // Unticking Pain on set 2 leaves the movement's flag alone (only `Clear flag` clears it).
@@ -144,5 +144,58 @@ describe('`Pain` also flags the movement (AW7)', () => {
     // Undo on the first toast: the mark and the flag it set both go.
     expect((await s.workout.undoMark({ sessionId, ...r.undo, opId: 'undo-pain-1' })).ok).toBe(true);
     expect(await s.pain.active()).toEqual([]);
+  });
+});
+
+describe('Undo of a Pain mark retracts the flag it set (review B2)', () => {
+  it('as if it was never set: no Pain or Before flag in Why?, not listed, no reference in the sheet', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { sessionId, aggregate } = await benchWorkout(s, gymId);
+    const a = done(aggregate)[0];
+    if (!a) throw new Error('fixture');
+    const r = await s.workout.correctSet({ sessionId, setId: a.id, expectedSetVersion: a.version, patch: { exclusions: ['pain'] }, opId: 'oops-pain' });
+    if (!r.ok || !r.undo) throw new Error('mark');
+    const flagId = r.undo.painFlags[0]?.id ?? '';
+    h.clockMs += 2_000;
+    expect(await s.workout.undoMark({ sessionId, ...r.undo, opId: 'undo-oops' })).toEqual({ ok: true, message: null });
+
+    const flag = await s.pain.get(flagId);
+    expect(flag).toMatchObject({ status: 'retracted', clearedAtUtc: null, version: 2, retracted: { opId: 'undo-oops:pain' } });
+    expect(await s.pain.active()).toEqual([]);
+    // The withdrawn flag's sheet (a stale link) shows no reference period.
+    expect(await s.pain.sheet({ flagId })).toMatchObject({ active: false, effect: 'Undone.', before: null, sinceFlag: null });
+
+    // Next workout: the target goes up as normal, and Why? never mentions the withdrawn flag.
+    const next = await nextBench(s, gymId);
+    const set = next.aggregate.sets[0];
+    const rows = (await s.workout.explainTarget(next.sessionId, set?.id ?? ''))?.rows.map((x) => x.label) ?? [];
+    expect(rows).not.toContain('Pain');
+    expect(rows).not.toContain('Before flag');
+    expect(set?.planned.load?.value).toBeGreaterThan(100);
+  });
+
+  it('versioned against the flag the mark produced: a flag changed since is kept, and Ben is told', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { sessionId, aggregate } = await benchWorkout(s, gymId);
+    const a = done(aggregate)[0];
+    if (!a) throw new Error('fixture');
+    const r = await s.workout.correctSet({ sessionId, setId: a.id, expectedSetVersion: a.version, patch: { exclusions: ['pain'] }, opId: 'pain-kept' });
+    if (!r.ok || !r.undo) throw new Error('mark');
+    const flagId = r.undo.painFlags[0]?.id ?? '';
+    // Ben clears it through the confirmation before tapping Undo on the old toast.
+    expect(await s.pain.clearConfirmed({ flagId, expectedVersion: 1 })).toMatchObject({ ok: true });
+    expect(await s.workout.undoMark({ sessionId, ...r.undo, opId: 'undo-late' })).toEqual({ ok: true, message: 'Set undone. Pain flag kept: it changed since.' });
+    expect(await s.pain.get(flagId)).toMatchObject({ status: 'cleared', version: 2 });
+    // A retracted flag can't be cleared or restored afterwards.
+    const r2 = await s.workout.correctSet({ sessionId, setId: done(aggregate)[1]?.id ?? '', expectedSetVersion: done(aggregate)[1]?.version ?? 0, patch: { exclusions: ['pain'] }, opId: 'pain-again' });
+    if (!r2.ok || !r2.undo) throw new Error('mark 2');
+    const second = r2.undo.painFlags[0];
+    expect(second).toEqual({ id: expect.any(String) as string, version: 1 });
+    expect(await s.workout.undoMark({ sessionId, ...r2.undo, opId: 'undo-2' })).toEqual({ ok: true, message: null });
+    expect(await s.pain.clearConfirmed({ flagId: second?.id ?? '', expectedVersion: 2 })).toMatchObject({ ok: false, stale: true });
+    expect(await s.pain.undoClear([{ id: second?.id ?? '', version: 2 }])).toBe(false);
+    expect(await s.pain.get(second?.id ?? '')).toMatchObject({ status: 'retracted' });
   });
 });

@@ -301,10 +301,10 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
     else await start({ kind: 'answered', checkInId: saved.id }, savedToast(saved));
   }
 
-  async function afterPain(flagged: { flagIds: string[]; names: string[]; checkIn: CheckIn } | null) {
+  async function afterPain(flagged: { flags: { id: string; version: number }[]; names: string[]; checkIn: CheckIn } | null) {
     const current = flagged?.checkIn ?? record;
     if (current === null) return;
-    const toast: WorkoutToastParam = flagged ? { kind: 'pain', text: `Pain noted for ${flagged.names.join(', ')}`, flagIds: flagged.flagIds } : savedToast(current);
+    const toast: WorkoutToastParam = flagged ? { kind: 'pain', text: `Pain noted for ${flagged.names.join(', ')}`, flags: flagged.flags } : savedToast(current);
     if (reasons.includes('ill')) {
       setRecord(current);
       setPainToast(flagged ? toast : null);
@@ -324,7 +324,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
       return;
     }
     changed();
-    await afterPain({ flagIds: r.flagIds ?? [], names: painPicked.map((e) => e.name), checkIn: r.checkIn });
+    await afterPain({ flags: r.flags ?? [], names: painPicked.map((e) => e.name), checkIn: r.checkIn });
   }
 
   async function skipWorkout() {

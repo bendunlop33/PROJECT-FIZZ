@@ -15,6 +15,7 @@ import {
   muscleSummary,
   clearPainFlag,
   restorePainFlag,
+  retractPainFlag,
   createSessionService,
   deriveId,
   DEFAULT_CHECK_IN_SETTINGS,
@@ -189,10 +190,23 @@ export type SetCorrectionWrite =
       duplicate: boolean;
       /** `Set 2: spotted · not counted for records`; null when the exclusions didn't change. */
       toast: string | null;
-      /** Present when the exclusions changed: the flags before, and the set version the mark produced. */
-      undo: { setId: string; setVersion: number; previous: SetExclusion[]; painFlagIds: string[] } | null;
+      /**
+       * Present when the exclusions changed: the flags before, the set version
+       * the mark produced, and any pain flag the same save set, at the version
+       * the save left it (Undo retracts it only if nothing changed it since).
+       */
+      undo: { setId: string; setVersion: number; previous: SetExclusion[]; painFlags: PainFlagRef[] } | null;
     }
   | { ok: false; stale: boolean; message: string };
+
+/** A pain flag at the version an action left it: what an Undo may retract. */
+export interface PainFlagRef {
+  id: string;
+  version: number;
+}
+
+/** `retract`: `stale` lists flags that changed since and were left as they are. */
+export type PainRetractWrite = { ok: true; stale: string[] } | { ok: false; message: string };
 
 export type PainClearWrite = { ok: true; cleared: { id: string; version: number } | null } | { ok: false; stale: boolean; message: string };
 
@@ -379,57 +393,60 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * IDs derived from the opId so a retry flags once; then the check-in
      * records them. Flag first, then everything else (CM4).
      */
-    async flagFromCheckIn(req: { checkIn: CheckIn; exercises: Pick<Exercise, 'id' | 'name'>[]; area: PainArea | null; opId: string }): Promise<CheckInWrite & { flagIds?: string[] }> {
+    async flagFromCheckIn(req: { checkIn: CheckIn; exercises: Pick<Exercise, 'id' | 'name'>[]; area: PainArea | null; opId: string }): Promise<CheckInWrite & { flagIds?: string[]; flags?: PainFlagRef[] }> {
       try {
         const p = await owner();
         const at = ctx.now();
         const ids: string[] = [];
+        const refs: PainFlagRef[] = [];
         for (const ex of req.exercises) {
           const id = deriveId(`pain:${req.opId}:${ex.id}`);
           ids.push(id);
-          if (await repos().painFlags.get(id)) continue;
+          const existing = await repos().painFlags.get(id);
+          if (existing) {
+            refs.push({ id, version: existing.version });
+            continue;
+          }
           const flag = newPainFlag({ id, ownerId: p.id, opId: req.opId, exerciseId: ex.id, exerciseName: ex.name, area: req.area, source: 'check_in', checkInId: req.checkIn.id, at });
           const saved = await repos().painFlags.save(flag, null);
-          if (!saved.ok && !(await repos().painFlags.get(id))) return { ok: false, message: 'The pain flag wasn’t saved. Try again.' };
+          const now = saved.ok ? flag : await repos().painFlags.get(id);
+          if (!now) return { ok: false, message: 'The pain flag wasn’t saved. Try again.' };
+          refs.push({ id, version: now.version });
         }
         const updated = await checkIns.update(req.checkIn.id, { painFlagIds: ids }, req.checkIn.version, `${req.opId}:link`);
-        return updated.ok ? { ...updated, flagIds: ids } : updated;
+        return updated.ok ? { ...updated, flagIds: ids, flags: refs } : updated;
       } catch {
         return { ok: false, message: 'The pain flag wasn’t saved. Try again.' };
       }
     },
 
-    /** Undo on the `Pain noted` toast. Only Ben clears a flag. */
-    async clear(flagIds: readonly string[]): Promise<boolean> {
-      const at = ctx.now();
-      for (const id of flagIds) {
-        const f = await repos().painFlags.get(id);
-        if (!f || f.status === 'cleared') continue;
-        const r = await repos().painFlags.save(clearPainFlag(f, at), f.version);
-        if (!r.ok) return false;
-      }
-      return true;
-    },
-
     /**
-     * Clear with Undo (review S4): returns each cleared flag's new version, so
-     * `undoClear` only restores a flag nothing else has changed since.
+     * Undo of a flag Ben just set (the `Pain noted` toast, the exclusion
+     * toast after ticking `Pain`; review B2): a retraction, never a clear, so
+     * no 8-week `Before flag` reference, cleared-flag history or
+     * return-to-load guard comes from it. Versioned: a flag changed since the
+     * action (answered, cleared) is left as it is and reported in `stale`.
+     * A flag already retracted (a retry, a double tap) is a no-op. Clearing
+     * stays `clearConfirmed`.
      */
-    async clearWithUndo(flagIds: readonly string[]): Promise<{ ok: boolean; cleared: { id: string; version: number }[] }> {
+    async retract(flags: readonly PainFlagRef[], opId: string): Promise<PainRetractWrite> {
       const at = ctx.now();
-      const cleared: { id: string; version: number }[] = [];
+      const stale: string[] = [];
       try {
-        for (const id of flagIds) {
-          const f = await repos().painFlags.get(id);
-          if (!f || f.status === 'cleared') continue;
-          const next = clearPainFlag(f, at);
-          const r = await repos().painFlags.save(next, f.version);
-          if (!r.ok) return { ok: false, cleared };
-          cleared.push({ id, version: next.version });
+        for (const ref of flags) {
+          const f = await repos().painFlags.get(ref.id);
+          if (!f) continue;
+          if (f.status === 'retracted') continue;
+          if (f.status !== 'active' || f.version !== ref.version) {
+            stale.push(ref.id);
+            continue;
+          }
+          const r = await repos().painFlags.save(retractPainFlag(f, at, opId), f.version);
+          if (!r.ok) stale.push(ref.id);
         }
-        return { ok: true, cleared };
+        return { ok: true, stale };
       } catch {
-        return { ok: false, cleared };
+        return { ok: false, message: 'Undo wasn’t saved. Try again.' };
       }
     },
 
@@ -515,6 +532,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const f = await repos().painFlags.get(req.flagId);
         if (!f) return { ok: false, stale: false, message: 'That pain flag wasn’t found.' };
         if (f.status === 'cleared') return { ok: true, cleared: null };
+        if (f.status === 'retracted') return { ok: false, stale: true, message: 'This pain flag changed. Showing the latest.' };
         if (f.version !== req.expectedVersion) return { ok: false, stale: true, message: 'This pain flag changed. Showing the latest.' };
         const next = clearPainFlag(f, ctx.now());
         const r = await repos().painFlags.save(next, f.version);
@@ -962,17 +980,26 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const covered = painFlagCovering(flags.filter((f) => f.id !== flagId), ex.exerciseId, toMs(at.utc), aggregate.session.startedAt.tz) !== null;
         const setNumber = buildSetEditView(aggregate, set.id, null)?.setNumber ?? set.index + 1;
         const plan = planExclusionMark({ prior: done ? undefined : set.exclusions, next: req.patch.exclusions, painFlagActive: covered, setNumber, exerciseName: ex.exerciseName });
-        const painFlagIds: string[] = [];
+        const painFlags: PainFlagRef[] = [];
+        let created: PainFlagRef | null = null;
         if (!done && (plan.setsPainFlag || ours)) {
+          let version = ours?.version ?? 1;
           if (!ours) {
             const flag = newPainFlag({ id: flagId, ownerId: p.id, opId: req.opId, exerciseId: ex.exerciseId, exerciseName: ex.exerciseName, area: null, source: 'workout', checkInId: null, at });
             const saved = await repos().painFlags.save(flag, null);
-            if (!saved.ok && !(await repos().painFlags.get(flagId))) return failed;
+            const now = saved.ok ? flag : await repos().painFlags.get(flagId);
+            if (!now) return failed;
+            version = now.version;
+            if (saved.ok) created = { id: flagId, version };
           }
-          painFlagIds.push(flagId);
+          painFlags.push({ id: flagId, version });
         }
         const r = ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'correct_set', at, opId: req.opId, setId: req.setId, expectedSetVersion: req.expectedSetVersion, patch: req.patch }));
-        if (!r.ok) return { ok: false, stale: r.error.code === 'stale_version', message: r.error.code === 'stale_version' ? 'This set changed since it was shown. Showing the latest.' : r.error.message };
+        if (!r.ok) {
+          // AW7 is one change from Ben's view (review N2): a flag this save just set is taken back when the mark isn't saved.
+          if (created !== null) await pain.retract([created], `${req.opId}:rollback`);
+          return { ok: false, stale: r.error.code === 'stale_version', message: r.error.code === 'stale_version' ? 'This set changed since it was shown. Showing the latest.' : r.error.message };
+        }
         const after = r.aggregate.sets.find((s) => s.id === req.setId);
         const changedFlags = plan.toast !== null && !r.duplicate;
         return {
@@ -980,7 +1007,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           aggregate: r.aggregate,
           duplicate: r.duplicate,
           toast: r.duplicate ? null : plan.toast,
-          undo: changedFlags && after ? { setId: req.setId, setVersion: after.version, previous: plan.prior, painFlagIds } : null,
+          undo: changedFlags && after ? { setId: req.setId, setVersion: after.version, previous: plan.prior, painFlags } : null,
         };
       } catch {
         return failed;
@@ -989,17 +1016,21 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
     /**
      * Undo on the exclusion toast: put the flags back as they were, as one
-     * more versioned correction (kept in `Edit history`), and clear a pain
-     * flag that the same save set. Refused when the set changed since.
+     * more versioned correction (kept in `Edit history`), and retract a pain
+     * flag that the same save set (review B2: as if it never existed, not a
+     * clear). Refused when the set changed since; a flag changed since the
+     * save is kept, and the message says so.
      */
-    async undoMark(req: { sessionId: string; setId: string; setVersion: number; previous: SetExclusion[]; painFlagIds: string[]; opId: string }): Promise<{ ok: boolean; message: string | null }> {
+    async undoMark(req: { sessionId: string; setId: string; setVersion: number; previous: SetExclusion[]; painFlags: PainFlagRef[]; opId: string }): Promise<{ ok: boolean; message: string | null }> {
       try {
         const r = ctx.afterCommand(
           await domain().dispatch(req.sessionId, { type: 'correct_set', at: ctx.now(), opId: req.opId, setId: req.setId, expectedSetVersion: req.setVersion, patch: { exclusions: req.previous } }),
         );
         if (!r.ok) return { ok: false, message: r.error.code === 'stale_version' ? 'Can’t undo: this set changed. Tap it to edit.' : r.error.message };
-        if (req.painFlagIds.length > 0) await pain.clear(req.painFlagIds);
-        return { ok: true, message: null };
+        if (req.painFlags.length === 0) return { ok: true, message: null };
+        const retracted = await pain.retract(req.painFlags, `${req.opId}:pain`);
+        if (!retracted.ok) return { ok: false, message: 'Set undone. The pain flag wasn’t removed. Try again.' };
+        return { ok: true, message: retracted.stale.length > 0 ? 'Set undone. Pain flag kept: it changed since.' : null };
       } catch {
         return { ok: false, message: 'Undo wasn’t saved. Try again.' };
       }

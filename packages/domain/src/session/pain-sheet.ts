@@ -87,9 +87,10 @@ export function buildPainFlagSheet(input: PainFlagSheetInput): PainFlagSheetView
   const ex = { measurement: input.exercise.measurement, loadConvention: basis?.loadConvention ?? input.exercise.defaultLoadConvention };
   const line = (h: HistorySession) => `${dayMonthText(h.performedAtUtc, h.tz ?? tz)} · ${historySetsText(h, ex, equipment)}`;
 
-  const before = basis === null ? null : painReference(history, flag, basis);
+  // A retracted flag (Undo right after setting it) never had a reference period (review B2).
+  const before = basis === null || flag.status === 'retracted' ? null : painReference(history, flag, basis);
   const flaggedAt = toMs(flag.reportedAt.utc);
-  const since = basis === null ? null : lastComparableHistory(history.filter((h) => toMs(h.performedAtUtc) >= flaggedAt), basis);
+  const since = basis === null || flag.status === 'retracted' ? null : lastComparableHistory(history.filter((h) => toMs(h.performedAtUtc) >= flaggedAt), basis);
 
   return {
     flagId: flag.id,
@@ -99,7 +100,7 @@ export function buildPainFlagSheet(input: PainFlagSheetInput): PainFlagSheetView
     active,
     heading: painFlagHeading(flag),
     since: painFlagSinceText(flag, nowMs, tz),
-    effect: active ? PAIN_NO_INCREASES : flag.clearedAtUtc === null ? 'Cleared.' : `Cleared ${dayMonthText(flag.clearedAtUtc, tz)}.`,
+    effect: active ? PAIN_NO_INCREASES : flag.status === 'retracted' ? 'Undone.' : flag.clearedAtUtc === null ? 'Cleared.' : `Cleared ${dayMonthText(flag.clearedAtUtc, tz)}.`,
     checkDue: isPainCheckDue(flag, nowMs, tz),
     before: before === null ? null : line(before),
     sinceFlag: since === null ? null : line(since),
