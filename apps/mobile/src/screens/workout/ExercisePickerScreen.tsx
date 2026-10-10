@@ -12,6 +12,7 @@ import type { PickerExercise } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Group, Icon, Row, SectionHeader, StatusLine, TextButton } from '../../ui';
+import { pickerEmptyText, type PickerLoad } from '../../workout/picker-empty';
 
 /**
  * Exercise picker (active-workout §2.10): recent, then the common lifts,
@@ -38,6 +39,7 @@ export function ExercisePickerScreen() {
   const [opIds] = useState(() => new Map<string, string>());
 
   const [withCatalogue, setWithCatalogue] = useState(false);
+  const [load, setLoad] = useState<PickerLoad>('loading');
   useEffect(() => {
     let alive = true;
     void services.workout
@@ -46,16 +48,26 @@ export function ExercisePickerScreen() {
         if (!alive) return;
         setList(l);
         if (!withCatalogue) setWithCatalogue(true);
+        else setLoad('ready');
       })
       .catch(() => {
-        // The saved list is still shown; the catalogue just isn't added.
+        if (!alive) return;
+        // Saved list failed: still try the whole catalogue. Catalogue failed: the saved list
+        // (if any) is still shown, and an empty list says so rather than "Loading" (review S4).
+        if (!withCatalogue) setWithCatalogue(true);
+        else setLoad((cur) => (cur === 'loading' ? 'failed' : cur));
       });
     return () => {
       alive = false;
     };
   }, [services, sessionId, withCatalogue]);
   useEffect(() => {
-    void services.workout.recentExerciseIds().then(setRecent);
+    services.workout
+      .recentExerciseIds()
+      .then(setRecent)
+      .catch(() => {
+        // No recent list; the picker still works.
+      });
   }, [services]);
 
   async function add(p: PickerExercise, equipmentId: string | null) {
@@ -131,7 +143,7 @@ export function ExercisePickerScreen() {
           </Group>
         ) : sections.length === 0 ? (
           <AppText variant="callout" color="text.secondary">
-            {withCatalogue ? `No exercise matches “${query.trim()}”. Try a shorter word, like “press” or “row”.` : 'Loading exercises…'}
+            {pickerEmptyText(load === 'failed' && list.length > 0 ? 'ready' : load, query)}
           </AppText>
         ) : (
           sections.map((section) => (
