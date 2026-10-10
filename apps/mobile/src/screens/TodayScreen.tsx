@@ -187,7 +187,13 @@ export function TodayScreen() {
   async function resumeOn(row: ResumeRow) {
     const current = data.state === 'ready' ? data.value.active : null;
     if (row.firstPendingSetId !== null && current && row.status !== 'now') {
-      const r = await services.workout.dispatch(current.session.id, { type: 'set_active_set', at: services.now(), opId: newUuid(), setId: row.firstPendingSetId, expectedVersion: current.session.version });
+      const go = (version: number) => services.workout.dispatch(current.session.id, { type: 'set_active_set', at: services.now(), opId: newUuid(), setId: row.firstPendingSetId ?? '', expectedVersion: version });
+      let r = await go(current.session.version);
+      // The workout moved on since Today read it (a rest ended, a tick): read it again and retry once (review N4).
+      if (!r.ok && r.error.code === 'stale_version') {
+        const fresh = await services.workout.load(current.session.id).catch(() => null);
+        if (fresh && fresh.aggregate.sets.some((x) => x.id === row.firstPendingSetId && x.status === 'pending')) r = await go(fresh.aggregate.session.version);
+      }
       if (r.ok) changed();
     }
     navigation.navigate('Workout');
