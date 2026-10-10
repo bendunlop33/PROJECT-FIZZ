@@ -26,14 +26,14 @@
       },
       "ease": "smooth"
     },
-    { "t": 0.1641, "pass": true, "root": { "x": -0.0499, "y": 0.5218, "pelvisDeg": 22.9 }, "joints": { "neck": -1.6 }, "ease": "smooth" },
+    { "t": 0.1641, "pass": true, "root": { "x": -0.0499, "y": 0.5223, "pelvisDeg": 22.9 }, "joints": { "neck": -1.6 }, "ease": "smooth" },
     {
       "t": 0.268, "pass": true, "label": "Knee level", "caption": "Hips back, bar slides down the thighs",
-      "root": { "x": -0.0698, "y": 0.5189, "pelvisDeg": 48 },
+      "root": { "x": -0.0698, "y": 0.5186, "pelvisDeg": 48 },
       "joints": { "neck": -3 },
       "ease": "smooth"
     },
-    { "t": 0.3489, "pass": true, "root": { "x": -0.0856, "y": 0.5155, "pelvisDeg": 60.9 }, "joints": { "neck": -4.3 }, "ease": "smooth" },
+    { "t": 0.3489, "pass": true, "root": { "x": -0.0856, "y": 0.5154, "pelvisDeg": 60.9 }, "joints": { "neck": -4.3 }, "ease": "smooth" },
     {
       "t": 0.5333, "label": "Bottom", "caption": "Back flat, bar just below the knees",
       "root": { "x": -0.0983, "y": 0.5124, "pelvisDeg": 70 },

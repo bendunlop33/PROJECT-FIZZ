@@ -74,7 +74,8 @@ export const MOTION_CONFIG: Readonly<Record<string, MotionConfig>> = {
     pairs: [['shoulderNear', 'elbowNear']],
     excursions: { pelvis: { maxDeg: 6, why: 'lean back to clear the face (catalogue cue)' } },
   },
-  'barbell-romanian-deadlift': { main: [prop('bar'), pt('hip')], primary: ['pelvis', 'hipNear'], pairs: [] },
+  // The soft knee is primary too (round 4): it bends a constant 15° → 20° in step with the hinge, never stopping mid-way.
+  'barbell-romanian-deadlift': { main: [prop('bar'), pt('hip')], primary: ['pelvis', 'hipNear', 'kneeNear'], pairs: [] },
   'cable-lat-pulldown': {
     main: [prop('bar')],
     primary: ['shoulderNear', 'elbowNear'],
