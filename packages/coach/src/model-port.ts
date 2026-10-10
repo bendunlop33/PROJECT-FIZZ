@@ -53,6 +53,11 @@ export type ModelEvent =
    */
   | { type: 'tool_call_delta'; name: string; delta: string }
   | { type: 'tool_call'; callId: string; name: string; arguments: string }
+  /**
+   * Any other stream event (`response.created`, `in_progress`, …). Counts
+   * for the first-event and stall timeouts (ADR 0019 §7) and nothing else.
+   */
+  | { type: 'heartbeat' }
   | { type: 'completed' }
   | { type: 'error'; error: ModelErrorKind; detail?: string };
 

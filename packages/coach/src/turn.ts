@@ -288,6 +288,7 @@ async function runStep(
       if (first) hooks.onFirstEvent?.();
       first = false;
       const e: ModelEvent = next.value;
+      if (e.type === 'heartbeat') continue;
       if (e.type === 'text_delta') text += e.delta;
       else if (e.type === 'tool_call_delta') {
         // Only the first call of a step counts (no parallel calls); a reply streams its message.
