@@ -1,5 +1,7 @@
 # Profile and settings
 
+> **Revision 2026-10-09 (import from any app).** §2.8 now names the Data & backup import rows (`Import history`, `Saved import layouts`, `Past imports`; data-import-export.md §9) and says saved import layouts are Your data. No new Profile row or setting.
+
 > **Revision 2026-10-09 (playbook v1 review fixes).**
 > - **Other training** entries have an effort (`Hard or long` / `Easy`) for every type, not just `Other`. Only hard, long or key entries turn the endurance switch on. Different efforts on different days are separate entries, e.g. `Easy run · Tue` and `Long run · Sat · Hard · Key`.
 > - **Out of date means out of date.** Changing goal, days a week, session length, usual days, experience or other training marks open plan suggestions `Out of date`. Proposals record those versions and `confirmProposal` rejects them (playbook guardrail 5; coaching-playbook §6). Check 21 now has a contract behind it.
@@ -465,6 +467,8 @@ One row, `Data & backup`, opening [data-import-export.md](data-import-export.md)
 - line 2, off this phone: `Copy saved to Files · 8 Oct` / `No copy off this phone yet` / quiet reminder `ⓘ No copy off this phone since 8 Sep` (after 30 days, only if the reminder is on).
 
 Behind the row, the hub groups everything by the two data domains (`Your data`, `Coaching knowledge`): backups (two sections, independent restore), export (`My data` / `Coaching knowledge only`), and `Delete my data (keep coaching knowledge)` / `Reset coaching knowledge`. Profile adds no data actions of its own.
+
+(Revised 9 Oct, import from any app.) The hub's Import group is `Import history` (FitNotes, saved layouts, other apps, spreadsheets and notes), `Saved import layouts` and `Past imports` (data-import-export.md §9). Saved import layouts are **Your data**: they're backed up, exported and deleted with it. Reading a new file layout uses the coach's route as set in Coach connection (ai-connection.md AC1); Profile has no separate import route or setting.
 
 ### 2.9 Appearance
 

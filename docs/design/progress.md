@@ -4,6 +4,8 @@
 
 > **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** New home card **`How you said you felt`** after `Sets per muscle` and before `Week review` (PG2 order extended), and a detail screen with a `pointsOnly` chart on a fixed 1–5 axis plus a table and list ([check-in.md](check-in.md) §2.7, CI11). Check-ins are shown raw with plain counts: no average, no line through the points, no overlay on exercise charts, not in the week review's facts (CI10), and never called readiness or recovery. Past workouts show the `CheckInLine` like the summary. Changed: PG2, §1, §2.1, §2.2 (region 5a), §2.6, §3.1, §4.1, §5.1, §6.1, §7 focus order, checks 44–47.
 
+> **Revision 2026-10-09 (competitor follow-ups 8 and 9; approved by Ben, CHANGELOG 2026-10-09).** (1) **Sets that don't count** (PG21; [active-workout.md](active-workout.md) §2.13): sets Ben marked `Spotted`, `Pain`, `Form broke` or `Other equipment` are left out of top sets, records, estimated 1RM and every "best" or "change" value, and say so wherever they're listed (`100×8 (spotted)`; a session with only flagged sets gets a `Not counted` marker instead of a point). They still count in `Sets per muscle` and volume, because the work was done (AW8). (2) **Pre-flag reference** (PG22): clearing a pain flag resets nothing. The chart keeps the flag span, records from before stay, and the exercise detail shows `Before the pain flag (6 Oct): 55 kg × 6` for 8 weeks after clearing. (3) The pain status line shows `check due` and opens the pain flag sheet (PG23). All local. Changed: §0.2 (PG21–PG23), §2.3 region 2, §2.5 (How this is counted), §3.2, §5.2, §5.3, §6.1, §6.2, checks 48–54.
+
 Status: v0.1 draft, 8 Oct 2026. Brief §1 (Progress tab) and §12 "Page 6: Progress". Tokens and components: [design-system.md](design-system.md) (chart tokens §2.1 and §4.1, components §9.21–9.30). Related: [workout-summary.md](workout-summary.md) (the past-workout view and Edit workout reuse it), [coach-adjustments.md](coach-adjustments.md) (coach markers, proposals, Undo), [today.md](today.md) (gets only the compact version), [training-guides/evidence-core.md](../training-guides/evidence-core.md) (E1, E2, E5, E11, E13).
 
 Progress is **not** part of the logging loop. Nothing here is needed to train, nothing here needs a network, and nothing here interrupts a workout. The only AI-dependent part is the weekly review, and it degrades to plain facts.
@@ -40,6 +42,9 @@ Progress is **not** part of the logging loop. Nothing here is needed to train, n
 | PG17 | **Weekly streak** | Counts consecutive **weeks** with ≥ 1 finished workout; hidden below 2; never a "lost streak" message; can be hidden in Profile | Daily streaks punish rest days. A weekly count is factual and forgiving |
 | PG18 | **Weekly review: when** | One coach call per completed week, made the first time Progress is opened (foreground, coach reachable) on or after Monday. Never in the background, never on a timer | Matches the summary's "one call, retry on next open" pattern; ADR 0006 "not constantly" |
 | PG19 | **Weekly review: numbers are checked** | Every number in a coach observation must appear in the deterministic facts payload; an observation that fails is replaced by a built-in fact | "Factual observations" has to be enforceable, not a prompt hope |
+| PG21 | (2026-10-09) **Sets Ben marked as not counting** (`Spotted`, `Pain`, `Form broke`, `Other equipment`; active-workout §2.13) | Left out of `Top set`, `Reps at load`, `Est. 1RM`, `Best set`, `Longest hold`, records, `Change` and the `Lifts you follow` latest value. **Counted** in `Volume`, `Sets per muscle`, working-set counts and `This week`. Every list shows the words (`100×8 (spotted)`). A session whose sets are all flagged has no point; the marker lane shows `Not counted` and the table row reads `— Not counted (spotted)` | Records and estimates are claims about strength, so a spotted rep mustn't feed them (rule 6). Volume is work done, so it stays (AW8). Alternative: leave flagged sets out of volume too |
+| PG22 | (2026-10-09) **Pain flags never reset history** | Clearing a flag deletes and hides nothing. The `Pain` span stays on charts; records set before the flag stay records. For `timing.painReferenceWindow` (8 weeks) after clearing, exercise detail shows the last comparable session before the flag as `Before the pain flag (6 Oct)`, as a reference line in the selection panel's range summary, never a target | Item 8: pre-injury history stays the reference. Any return towards it is a coach proposal later (active-workout §2.14.3) |
+| PG23 | (2026-10-09) **Pain status line** | Adds `· check due` when the two-weekly check is due; tapping the line opens the pain flag sheet (active-workout §2.14.4) instead of the Pain flags list | One place to answer the check, from wherever Ben sees the flag |
 | PG20 | **Review proposal kinds** | `Proposal.kind` uses change-review.md's `'update_template'` (future sets/reps/loads of a routine exercise; consolidation: replaces the `'adjust_template'` name proposed here) and adds `'deload_week'`; scope always `future_template` | The brief §8 union lacks them |
 
 ---
@@ -185,7 +190,7 @@ Pushed from a `TrendRow`, a record, the exercise list, the summary's comparison 
 Regions:
 
 1. **Nav bar.** Back, exercise name (`type.headline`), trailing `Pin` / `Pinned` text button (`pin` / `pin.fill` icon + word).
-2. **Pain status line (conditional).** `⚠ Pain flag on since 2 Oct. No increases for this movement.` (`StatusBanner`, warning). `Clear…` opens Profile → Pain flags (clearing stays explicit there).
+2. **Pain status line (conditional).** `⚠ Pain flag on since 2 Oct. No increases for this movement.` (`StatusBanner`, warning). `Clear…` opens Profile → Pain flags (clearing stays explicit there). (2026-10-09, PG23) When the two-weekly check is due the line adds `· check due`, and tapping the line opens the pain flag sheet (active-workout.md §2.14.4). (PG22) For 8 weeks after the flag is cleared, the line is replaced by an info line: `Pain flag cleared 14 Oct. Before the flag (6 Oct): 55 kg × 6.` (`info.circle`, `text.secondary`; actual values), which goes away by itself after 8 weeks.
 3. **Series picker.** A menu button showing the selected series: `Main Gym · barbell · kg ▾`. The menu lists each series with its session count (`Main Gym · barbell · 24 sessions`, `Hotel Gym · barbell · 3`, `Imported (FitNotes) · kg · 40`), grouped by gym, plus a last option `All equipment (list only)`. Default: the pinned series, else the series used most in the last 12 weeks.
 4. **Metric chips** (`ParamChip`, single select, wrap): `Top set` · `Reps at load` · `Est. 1RM` · `Volume`. Unavailable metrics for the convention are hidden (§6.3). `Reps at load` adds a load chip row: `At 100 kg ▾`.
 5. **Range chips:** `3 mo` · `6 mo` · `1 yr` · `All`. Default `6 mo`.
@@ -340,7 +345,7 @@ Contributor lines show the arithmetic: `Bench press  4 sets × ½ = 2` under Tri
 **How this is counted** (sheet, plain text, scrollable):
 
 > **Hard sets per muscle**
-> We count completed working sets (not warm-ups) that you rated RPE 6 or harder (RIR 4 or fewer). Sets with no rating are counted too, and shown separately. Sets rated easier than RPE 6 aren't counted.
+> We count completed working sets (not warm-ups) that you rated RPE 6 or harder (RIR 4 or fewer). Sets with no rating are counted too, and shown separately. Sets rated easier than RPE 6 aren't counted. Sets you marked spotted, painful, with form breaking or on other equipment still count here, because you did the work; they're only left out of records and estimates.
 > A set counts 1 for the muscles an exercise mainly trains and ½ for helper muscles. For example, a bench press set counts 1 for chest and ½ for triceps and front delts. A left and right set of a single-arm exercise count as one set.
 > **The 10–20 guide** comes from research on muscle growth: about 10 or more hard sets a week per muscle is well supported, and benefits continue past 20 with smaller returns. Fewer than 10 is fine for maintenance, for strength-focused training, or for muscles that aren't a priority. It's a guide, not a target.
 > Sources: Schoenfeld et al. 2017; Pelland et al. 2026; ACSM 2026 position stand. Evidence: strong for the 10+ dose; the upper end is less certain.
@@ -532,6 +537,9 @@ Never shown: a combined strength + endurance load, training load/stress, readine
 | Table view | `Show as table` | §2.3.3 |
 | Corrected data | A set in range was corrected | Points use corrected values; the session row and table note `Edited`; marker lane `✎` |
 | Imported series | Unmapped FitNotes data | Picker label `Imported (FitNotes) · kg`; rows tagged `Imported (FitNotes)`; original values visible in Past workout → `Edit history` / source fields |
+| Sets marked as not counting (2026-10-09, PG21) | A session in range has flagged sets | The point uses the best **unflagged** set. History rows show `100×8 (spotted)`; table notes `1 set not counted (spotted)`. If every set that day is flagged: no point, marker lane `Not counted` (icon `minus.circle` + word), table row `— Not counted (spotted)`. VoiceOver for the point: "… 1 set not counted, spotted." |
+| Pain flag cleared, reference window (2026-10-09, PG22) | Flag cleared in the last 8 weeks | Region 2 info line `Pain flag cleared 14 Oct. Before the flag (6 Oct): 55 kg × 6.`; the `Pain` span stays on the chart; the range summary adds `Before the flag  55 kg × 6 · 2 Oct` (actual) |
+| Pain flag check due (2026-10-09, PG23) | The flag's two-weekly check is due | Region 2 line ends `· check due`; tapping it opens the pain flag sheet |
 
 ### 3.3 Calendar and past workout
 
@@ -700,7 +708,8 @@ Every value is labelled **actual**, **target** or **estimate**. All numbers use 
 | Element | Text | Kind |
 |---|---|---|
 | Pin | `Pin` / `Pinned` · `Replace which lift?` · toasts `Pinned Bench press` / `Unpinned Bench press` [Undo] | — |
-| Pain line | `Pain flag on since 2 Oct. No increases for this movement.` `Clear…` | — |
+| Pain line | `Pain flag on since 2 Oct. No increases for this movement.` `Clear…` · (2026-10-09) suffix `· check due` · after clearing: `Pain flag cleared 14 Oct. Before the flag (6 Oct): 55 kg × 6.` | Actual (reference only) |
+| Not counted (2026-10-09) | Marker `Not counted` · history row `100×8 (spotted)` · `100×8 (form broke)` · `100×8 (pain)` · `100×8 (other equipment)` · table note `1 set not counted (spotted)` · `— Not counted (spotted)` · range summary `Before the flag  55 kg × 6 · 2 Oct` | Actual |
 | Series | `Main Gym · barbell · kg` · `Hotel Gym · barbell · kg` · `Imported (FitNotes) · kg` · `All equipment (list only)` · counts `24 sessions` | — |
 | List-only note | `Different equipment isn't combined in a chart. Choose one to see a chart.` | — |
 | Metric chips | `Top set` · `Reps at load` · `Est. 1RM` · `Volume` · bodyweight: `Best set` · timed: `Longest hold` · load row `At 100 kg` | — |
@@ -724,6 +733,7 @@ Every value is labelled **actual**, **target** or **estimate**. All numbers use 
 | Title / week | `Sets per muscle` · `Week of 5 Oct (this week)` · `Week of 28 Sep` |
 | Contributor | `Bench press  4 sets × 1 = 4` · `Bench press  4 sets × ½ = 2` |
 | Unrated | `4 of these sets had no effort rating and were counted.` |
+| Marked sets (2026-10-09) | `2 sets you marked (spotted) are counted here, but not in records.` (shown only when the week has any) |
 | Not counted | `9 warm-up sets · 1 set rated under RPE 6` · `Cable crunch: no muscles set (3 sets)` · `Set muscles ›` |
 | Link | `How this is counted ›` (sheet text in §2.5) |
 
@@ -821,21 +831,22 @@ Proposed (contracts for the developer; names follow the brief's style):
 | `setExerciseMuscles(exerciseId, primary[], secondary[], expectedVersion)` | Custom exercises only; catalogue entries are fixed |
 | `getEnduranceSummary(ownerId, range)` | Per sport: weekly totals of fields present, `source`, `lastImportAt`. No derived scores |
 | (2026-10-09) `buildProgressHome` adds `checkIns: {recent[0..4], count4w, atOrBelowCount, threshold} \| null`; `getCheckInHistory(ownerId, {fromLocalDate, toLocalDate})`; `summariseCheckIns(items, {atOrBelow})` (counts only) | check-in.md §6. `buildWeeklyReviewFacts` never includes check-ins |
+| (2026-10-09, PG21–PG23) `isSetCountable(set, purpose)` (active-workout.md §6) used by `getExerciseTrend`, `getPersonalRecords` and `estimateOneRepMax` callers; `ChartMarker.kind` adds `'not_counted'`; points carry `excludedSets: [{setId, reasons[]}]`; `getWeeklyMuscleVolume` adds `markedCounted` (count of flagged sets it included); `getPainReference(flagId)` and `getPainFlagChecksDue` for the pain line | `buildWeeklyReviewFacts` labels flagged sets with their words and never uses them for a "best" fact |
 
 ### 6.2 Metric definitions (domain, unit-tested)
 
 | Metric | Definition |
 |---|---|
-| Top set | Per session, the completed non-warm-up set with the highest difficulty (`compareDifficulty`: more load, or less assistance), ties → more reps. Value = load; display `load × reps` |
-| Reps at load | Per session, the most reps in one completed non-warm-up set at exactly the chosen load |
-| Est. 1RM | Per session, the highest Epley estimate `load × (1 + reps / 30)` (reps = 1 → load) over eligible sets (PG11). Display rounded to 0.5 kg / 1 lb with `≈` |
+| Top set | Per session, the completed non-warm-up set **not marked as not counting** (PG21) with the highest difficulty (`compareDifficulty`: more load, or less assistance), ties → more reps. Value = load; display `load × reps` |
+| Reps at load | Per session, the most reps in one completed non-warm-up, unmarked set at exactly the chosen load |
+| Est. 1RM | Per session, the highest Epley estimate `load × (1 + reps / 30)` (reps = 1 → load) over eligible sets (PG11), never a marked set (PG21). Display rounded to 0.5 kg / 1 lb with `≈` |
 | Volume | Σ load × reps over completed non-warm-up sets. Unilateral: the busier side (as `summariseVolume`) |
 | Best set / Longest hold | Bodyweight: most reps in one set. Timed: longest completed duration |
 | Change | Latest point vs the first point in the range: load difference; if equal, rep difference. Words `Up` / `Down` / `Same`; assisted reads as assistance |
-| Hard set | Completed, non-warm-up, RPE ≥ 6 or RIR ≤ 4, or unrated (PG7). Deleted and skipped sets never count |
+| Hard set | Completed, non-warm-up, RPE ≥ 6 or RIR ≤ 4, or unrated (PG7). Deleted and skipped sets never count. Sets marked as not counting (PG21) **do** count here (AW8) |
 | Muscle count | 1 per primary muscle, ½ per secondary muscle; a left + right pair counts once |
 | Gap | ≥ `TREND_GAP_DAYS` (21) between consecutive sessions of a series |
-| Record | Strictly better than every earlier session in the same series, with ≥ 3 earlier sessions |
+| Record | Strictly better than every earlier session in the same series, with ≥ 3 earlier sessions. Only unmarked sets can set or hold a record (PG21); marking a record set later recomputes the record. Records from before a pain flag stay records after it's cleared (PG22) |
 
 ### 6.3 Metric availability by load convention
 
@@ -927,3 +938,12 @@ Proposed (contracts for the developer; names follow the brief's style):
 45. The check-in detail chart has a fixed 1–5 axis labelled `1 rough` and `5 great`, points with no connecting line, and `Show as table`; its VoiceOver summary gives counts per value, not a mean.
 46. Exercise charts, records, `This week` and the week review never show or use check-ins (the week-review facts payload has none).
 47. A past workout with a check-in shows the same `CheckInLine` as its summary.
+
+**Sets that don't count and pain flags (2026-10-09)**
+48. A session's 105 kg × 3 set marked `Spotted`: the `Top set` point, `Best in range`, `Recent records` and `Est. 1RM` use the next unmarked set, and the history row reads `105×3 (spotted)`. Unmarking it restores the point and the record (recomputed, nothing stored).
+49. A session where every set is marked has no chart point, shows `Not counted` in the marker lane and `— Not counted (spotted)` in the table, and VoiceOver says so.
+50. The same marked sets still count in `Sets per muscle` and `Volume`; the detail screen shows `2 sets you marked (spotted) are counted here, but not in records.`
+51. With an active flag whose check is due, the pain line ends `· check due`, and tapping it opens the pain flag sheet. No Progress screen ever clears a flag without the confirmation.
+52. Clearing a flag on 14 Oct leaves every pre-flag point, record and the `Pain` span on the chart unchanged, and shows `Pain flag cleared 14 Oct. Before the flag (6 Oct): 55 kg × 6.` until 9 Dec, then nothing.
+53. The `Before the flag` value is labelled as an actual result and is never offered as a target or a button that sets one.
+54. With airplane mode on and no AI, all of checks 48–53 behave the same.

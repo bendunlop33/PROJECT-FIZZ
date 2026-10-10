@@ -23,6 +23,11 @@
 
 > **Revision 2026-10-09 (muscle definition, [exercise-guides-v2.md](exercise-guides-v2.md) §4.11; built 9 Oct 2026, the app draws `neutral`; Ben picks the mode, B8).** **Per Ben's request of 9 Oct 2026** ("more definition to the actual muscle groups so you can see it even when they are not being used (faint colour)"), guides may draw one faint shape for every muscle group the view can show. Added: the alias `color.guide.definition` (§2.3; `text.primary`, **no new colour value**), the definition composites and contrast table (§2.3), the tokens `guide.definitionOpacity`, `guide.definitionTintOpacity` and `guide.definitionGroove` (§4.2), the `guide.muscleDefinition` setting (§6), a tint-only legend line (§9.58) and an accessibility clause (§10). The recommended mode is `neutral`. `tint` (`guide.muscle` at 0.18) is specified so Ben can compare. One accent kept.
 
+> **Revision 2026-10-09 (coaching playbook v1, approved by Ben 9 Oct; [playbook-v1.md](../training-guides/playbook-v1.md)).** For goal-adaptive rules in [onboarding.md](onboarding.md), [profile-and-settings.md](profile-and-settings.md) §2.2, [coaching-playbook.md](coaching-playbook.md), [weekly-plan.md](weekly-plan.md) and [workout-builder.md](workout-builder.md):
+> - **Statuses (§7.1):** new schedule status `Usual`; new playbook rule statuses `Approved by you … · playbook review` and `Removed`.
+> - **Components:** a compact `ParamChip` size for digit and weekday chips (§9.17); the value-provenance tag `Default` (§9.28); new `TrainingContextCard` (§9.61), `RuleActivityTag` (§9.62), `ParameterRow` (§9.63) and `StepCardList` (§9.64); index rows (§11).
+> - **No new colour, type, spacing or timing values; one accent kept.** On/off-now tags and percentages never use status colours, because "off" isn't a warning and a percentage isn't good or bad.
+
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
 Context: one person uses the app on an iPhone, one-handed, mid-workout, with sweaty fingers and headphones, often in bright or dim gym light. Every choice below favours speed, legibility and calm over decoration.
@@ -440,11 +445,11 @@ One icon per meaning across the app. Every status shows its word; VoiceOver read
 | `Undone` | `arrow.uturn.backward` | `text.secondary` |
 | `Couldn't apply` | `xmark.octagon` | `status.danger` (write failures only) |
 
-**Schedule statuses** (weekly-plan.md): `Planned` `circle` `text.tertiary` · `Done` `checkmark.circle.fill` `status.done` · `In progress` `arrowtriangle.right.fill` `accent` · `Missed` `exclamationmark.circle` `status.warning` · `Skipped` `slash.circle` `text.tertiary` · `Not confirmed` `questionmark.circle` `text.secondary` · `Didn't happen` `xmark.circle` `text.secondary`. `Fixed` (`lock.fill`) and `Key` (`flag.fill`) are `Tag`s (§9.28), never `accent`.
+**Schedule statuses** (weekly-plan.md): `Planned` `circle` `text.tertiary` · `Done` `checkmark.circle.fill` `status.done` · `In progress` `arrowtriangle.right.fill` `accent` · `Missed` `exclamationmark.circle` `status.warning` · `Skipped` `slash.circle` `text.tertiary` · `Not confirmed` `questionmark.circle` `text.secondary` · `Didn't happen` `xmark.circle` `text.secondary` · (9 Oct) `Usual` `circle.dotted` `text.secondary` (usual other training from Profile, not a planned session; never counted, never `Missed`). `Fixed` (`lock.fill`) and `Key` (`flag.fill`) are `Tag`s (§9.28), never `accent`.
 
 **Memory statuses** (coach-memory.md): `Confirmed` `checkmark.circle` `status.done` · `Temporary` `clock` `text.secondary` · `Waiting for you` `questionmark.circle` `text.secondary` · `Worth checking` `checkmark.circle` + `not checked since <date>` · `Expired` `clock.badge.xmark` `text.tertiary` · `Off` `pause.circle` `text.tertiary`.
 
-**Playbook rule statuses** (coaching-playbook.md): `To review` `questionmark.circle` · `Approved 8 Oct` `checkmark.circle.fill` · `Edited by you` `pencil` · `Updated in research` `arrow.triangle.2.circlepath` · `Rejected` `xmark.circle`. Grades are `EvidenceGradeTag`s with no colour coding.
+**Playbook rule statuses** (coaching-playbook.md): `To review` `questionmark.circle` · `Approved 8 Oct` `checkmark.circle.fill` · `Edited by you` `pencil` · `Updated in research` `arrow.triangle.2.circlepath` · `Rejected` `xmark.circle` · (9 Oct) `Approved by you 9 Oct · playbook review` `checkmark.circle.fill` · `Removed 9 Oct` `minus.circle` `text.tertiary` (withdrawn by a playbook version, read-only). Grades are `EvidenceGradeTag`s with no colour coding. Whether an approved rule is **on now** is a separate `RuleActivityTag` (§9.62), not a status.
 
 **Import match statuses** (data-import-export.md): `Matched` `checkmark.circle.fill` `status.done` · `Check` `questionmark.circle` `status.warning` · `No match` `xmark.circle` `text.secondary` · `Skipped` `slash.circle` `text.tertiary`.
 
@@ -671,6 +676,7 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 - Same frame as the Adjust reason chips: 52pt tall, `radius.sm`, `bg.raised`, 1pt `border.control`, label `type.label` in `text.primary`.
 - Selected: `accent.subtle` fill + `checkmark` icon before the label (never colour alone). Single-select groups allow deselecting by tapping again.
 - Chips wrap; at AX1+ one per row. VoiceOver: "45 minutes, selected, length".
+- **Compact size** (revision 2026-10-09; onboarding, Goals & schedule, check-in days): for single-character or short-word chips in a fixed set (`1`–`7`, `Mon`–`Sun`). Height 52; width = (content width − 6 × `space.1`) ÷ 7, never below 44 (≈ 45.6pt at 375pt wide, ≈ 47.7pt at 390pt), so seven fit in one row. Label centred, tabular for digits. The selected state keeps its `checkmark`, drawn above the label (12pt) so it fits. At AX1+, or whenever a label doesn't fit, they wrap by row (as many per row as fit at 44pt or more), never one per row. VoiceOver: "3 days a week, selected" / "Tuesday, selected, usual days".
 
 ### 9.18 Draft exercise row (`DraftExerciseRow`, workout builder)
 - `bg.surface`, `radius.md`, padding `space.3`, rows separated by `border.divider`. Lines: name + equipment (`type.headline`), set scheme, `Target …` load, `Last …` (actual, `text.secondary`), optional `Built-in rule …` (`text.secondary`), optional guard note, `Rest m:ss`. All numbers tabular.
@@ -744,7 +750,7 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 | Target source | `Coach` · `Built-in rule` · `Built-in rule (coach offline)` · `Built-in rule (coach unavailable)` · `Fixed` | `text.bubble` (Coach); none otherwise |
 | Author of a routine, proposal or rule | `Coach` · `Ben` · `Checks` · `Imported` · `From the research` · `From your guide` | `text.bubble` · `person` · `checkmark.shield` · `square.and.arrow.down` · `books.vertical` · `book.closed` |
 | Data provenance | `Your logs` · `FitNotes import` · `Garmin file, imported 3 Oct` · `Built-in summary` | `iphone` · `square.and.arrow.down` · `gearshape` |
-| Value provenance (how trustworthy a stored value is) | `Typical values, not checked` · `Checked by you` · `Set in setup, 8 Oct` · `Changed by you, 12 Oct` · `From coach chat, 14 Oct · you confirmed` | `questionmark.circle` · `checkmark` · none |
+| Value provenance (how trustworthy a stored value is) | `Typical values, not checked` · `Checked by you` · `Set in setup, 8 Oct` · `Changed by you, 12 Oct` · `From coach chat, 14 Oct · you confirmed` · (9 Oct) `Default` (a playbook number from the research, coaching-playbook PB14) | `questionmark.circle` · `checkmark` · none · `books.vertical` (Default) |
 
 Other `Tag` uses (same frame, different meaning; not sources):
 - `EvidenceGradeTag`: the grade words exactly as the research writes them (`Weak + Practice`, `Not graded`). No colour by grade.
@@ -919,6 +925,33 @@ Each component has one name and one definition here. The owning spec says where 
 
 **9.60 `GuideFullScreen`** (guides v2; owner: exercise-guides-v2.md §2.2). A `fullScreen` modal on `bg.canvas`, portrait. Header: exercise name `type.title2` + `Done` (`xmark` + word, 44pt). A **portrait canvas** (screen width − 2 × `space.4`; height = the space left above the legend and controls, aspect between 1:1 and 3:4 width:height, min `guide.fullScreenMinHeight`), camera refitted for that aspect, M/L tier. Below it, a compact `MuscleFocusLegend` (strong and soft lines only), then the same controls as `ExerciseGuide`. It takes over the player state and hands it back on close. The canvas has no gestures. Same motion rules as principle 5.
 
+#### Goal-adaptive playbook (revision 2026-10-09; owner: coaching-playbook.md)
+
+**9.61 `TrainingContextCard`.** What the coach works from (`resolveTrainingContext`), always under a `Your data` `DomainLabel` when it sits next to Coaching knowledge. Two variants:
+- *Compact:* a `SettingsRow` (§9.31) with leading `person.crop.circle` (`text.secondary`), title (`Applied to you` on the Playbook tab; `Coach uses:` inline on Goals & schedule), and a value line in `type.callout` `text.secondary`. The value line joins the main focus, days a week, session length and other training with ` · ` (`Strength · 3 days · 60 min · running Tue, Sat (Sat key)`), wraps to at most 3 lines and never truncates numbers. It ends in `chevron.right` and the whole row is one ≥ 52pt target.
+- *Full* (the `Applied to you` screen): grouped `SettingsRow`s (`Goal`, `How you train`, `Other training`), each value with a `SourceTag` second line where the value is stored, and a `RuleActivityTag` on the `Endurance rules 11–13` row. Derived figures (set budget, phase by date, logged days a week) are `type.callout` `text.secondary` lines that start with `about` or `By date:` / `Your logs:`, so they read as worked out, not as settings.
+- Missing values read `Not set` in `text.secondary`, never a placeholder number. VoiceOver reads each row as "label, value, source".
+
+**9.62 `RuleActivityTag`.** On the `Tag` frame (§9.28), shows whether an approved rule applies right now and why. It's separate from approval status.
+
+| State | Icon | Words |
+|---|---|---|
+| On | `checkmark.circle` | `On now` / `On now: <reason>` |
+| Off | `circle` | `Off now: <reason>` |
+| Coach-offline rule, coach connected | `circle` | `Not in use: coach connected` |
+| Coach-offline rule, coach offline | `gearshape` | `In use: coach offline` |
+
+`text.secondary` text and icon for every state, never `accent` and never status colours ("off" isn't a warning). The reason is one short clause, worked out by code. At AX1+ the tag wraps under the status on its own line. VoiceOver reads "Rule on now, Strength is your focus".
+
+**9.63 `ParameterRow`.** A `SettingsRow` for a playbook default. Title `type.body` (`Time per working set`). Trailing value `type.body` tabular (`3:00`, `10%`, `48 h`), then a `SourceTag` (`Default` or `Changed by you`), then `chevron.right`. Tapping it opens the defaults editor sheet (coaching-playbook §2.2b): a `NumberStepper` (§9.4) or wheel, the line `Default: … (from the research)`, a `Reset to default` text button and `Save` (`PrimaryButton`, above the keyboard). Out-of-range values are refused inline with the allowed range. It never edits a guardrail value.
+
+**9.64 `StepCardList`.** Next achievable loads, from `buildStepCard` (code only). One row per exercise, ≥ 52pt:
+- line 1: exercise name · equipment (`type.headline`);
+- line 2: `now → next` in the equipment's convention, then the change (`100 → 102.5 kg · +2.5%`), in `type.body`, tabular, one decimal place for %;
+- an optional line 3: `info.circle` + `type.callout` `text.secondary` (`Over 10%: reps first`, `At this machine's max`).
+
+The % is never coloured: a bigger step isn't shown as bad. Rows aren't tappable on the playbook detail; in `Why?` sheets they can open the exercise history. VoiceOver: "Lateral raise, dumbbells, 10 to 12 kilograms each, up 20 percent, over 10 percent, reps first".
+
 #### Sound asset
 
 `sound.restEnd` is the file `rest-end.caf` (≤ 2 s), used by both the in-app chime and the rest-end notification sound.
@@ -970,3 +1003,7 @@ Use the canonical name in new specs. Aliases are kept so older specs stay readab
 | `AvoidList` | §9.59 | "Avoid block", `What not to do` card; replaces How to `Common mistakes` |
 | `GuideFullScreen` | §9.60 | "full-screen guide", "large player" |
 | `CheckInScale`, `CheckInSheet`, `CheckInLine` | §9.54–9.56 | Replace the Today readiness chips (`Normal` / `Tired` / `Sore`), which had no component name (revision 2026-10-09) |
+| `TrainingContextCard` | §9.61 | "Coach uses" line (profile), "Applied to you" (playbook), "Your training context" (revision 2026-10-09) |
+| `RuleActivityTag` | §9.62 | "on/off-now tag", "Applies now" (revision 2026-10-09) |
+| `ParameterRow` | §9.63 | "Defaults" rows, "default value row" (revision 2026-10-09) |
+| `StepCardList` | §9.64 | "Next steps at <gym>", "step card" display (revision 2026-10-09) |

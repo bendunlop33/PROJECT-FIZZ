@@ -1,5 +1,7 @@
 # Onboarding (first-run setup)
 
+> **Revision 2026-10-09 (import from any app).** The Ready screen's optional row is now `Import training history` (`FitNotes, other apps, spreadsheets or notes`) and opens `Import history` ([data-import-export.md](data-import-export.md) §9.2.1). During onboarding the coach is usually not connected yet. That screen says so and that FitNotes files still import offline, so this row never pushes Ben to connect the coach. Changed: §2.6 wireframe, §3.4, §5 Ready optional, cross-links.
+
 > **Revision 2026-10-09 (playbook v1 review fixes).**
 > - **Effort for every other-training type.** Each chosen type gets `Hard or long` / `Easy` (optional), not just `Other`. Only hard, long or key entries turn the endurance switch on, so an easy jog or a yoga class changes nothing. `Classes or HIIT` and `Team or court sport` start on `Hard or long`, and Ben can change it.
 > - **Missing values are named, not filled in.** Skipping days a week means weekly sets aren't worked out until Ben gives them; the coach asks when he asks it to plan. Skipping session length means plans assume 60 min, labelled `(assumed)`. Skipping experience means the lowest start cap, labelled. The "rule defaults" wording is gone.
@@ -240,7 +242,9 @@ A short explainer, nothing to set. Approved by Ben (relayed by the product manag
 │ │ Not connected. Logging works       │ │
 │ │ without it.                        │ │
 │ ├────────────────────────────────────┤ │
-│ │ Import FitNotes history        ›   │ │ → data-import-export §2.5
+│ │ Import training history        ›   │ │ → data-import-export §9.2.1
+│ │ FitNotes, other apps, spreadsheets │ │ (revised 9 Oct)
+│ │ or notes                           │ │
 │ └────────────────────────────────────┘ │
 ├────────────────────────────────────────┤
 │ [            Go to Today             ] │
@@ -490,7 +494,7 @@ Welcome ─Set up─► Step 1 ─► Step 2 (start) ─► Step 2 (checklist) �
    │                          └─Skip for now──────────────────────────────►┘          │
    └─Restore from a backup─► restore (data-import-export §2.3) ─ok─► Today            ├─► About you (4) ─► Ready
                                                 └─cancel/fail─► Welcome               ├─► Connect coach ─► Ready
-                                                                                      └─► Import FitNotes (data-import-export) ─► Ready
+                                                                                      └─► Import history (data-import-export §9) ─► Ready
 ```
 
 `Back` on any step returns to the previous step with its saved values. Going back over a saved gym edits that gym (`updateGym`), it never creates a second one.
@@ -582,7 +586,7 @@ None. Voice isn't set up during onboarding and no microphone is opened.
 | Step 3 option | `Save a copy to Files now` · result `Copy saved to Files · <location>` · `iCloud uploads it when you're back online.` · failure `Couldn't save the copy: <reason>. Your data on this phone is fine.` |
 | Ready title | `You're ready to log` |
 | Ready lines | `Units: kg · Rest 1:00 / 1:30 / 3:00` · `Main gym · 6 items (3 not checked)` · `Saved on this phone · backups run after each workout` (+ `Copy saved to Files` when one was made) / `No gym yet` |
-| Ready optional | `About your training` (`About 1 minute. Sets your goal and week for the coach and builder.`; done: `Strength · 3 days a week · 60 min` or `Saved`) · `Connect the coach` (`Not connected. Logging works without it.`) · `Import FitNotes history` |
+| Ready optional | `About your training` (`About 1 minute. Sets your goal and week for the coach and builder.`; done: `Strength · 3 days a week · 60 min` or `Saved`) · `Connect the coach` (`Not connected. Logging works without it.`) · `Import training history` (`FitNotes, other apps, spreadsheets or notes`; revised 9 Oct) |
 | Ready primary | `Go to Today` |
 | Goal (revised 9 Oct) | `What's your main goal?` · `The coach sets reps, sets and rest from this. Change it any time.` · `Strength` / `Lift heavier on the main lifts` · `Muscle` / `Build muscle size` · `General fitness` / `Health, ability and habit` · `Maintain` / `Keep what you have, less time` · `Support other training` / `Lifting that helps your running, cycling, classes or sport` · `Also matters (optional)` · `Strength` `Muscle` `General fitness` `Endurance` · `Working towards something? (optional)` · placeholder `e.g. 10k run, 140 kg squat` · `Date (optional)` · `Add date` · `The coach asks what it involves when you plan for it.` · `Pick a date from today on.` |
 | How you train (revised 9 Oct) | `How do you train?` · `Your weekly sets start from this, not from a fixed number.` · `Days a week you lift` · `1` … `7` · `Usual session length` · `30 min` … `90 min` · `Days you can usually train (optional)` · `It changes week to week` · `How long have you lifted regularly? (optional)` · `Under 1 year` `1–3 years` `Over 3 years` · warning `3 days a week, but only 2 days picked. Add a day or clear them.` · disabled primary `Check your days` |
@@ -679,6 +683,6 @@ No new colour, type, spacing or timing tokens.
 - [workout-builder.md](workout-builder.md) §3.1: reads session length, days a week and goal.
 - [coaching-playbook.md](coaching-playbook.md) §2.1a: `Applied to you`, which shows how these answers are used. The rules are in [playbook-v1.md](../training-guides/playbook-v1.md) (rules 1, G, 11–13 and the "Inputs the coach uses" table).
 - [ai-connection.md](ai-connection.md): ChatGPT-plan sign-in and API-key routes behind §2.8.
-- [data-import-export.md](data-import-export.md): restore flow (§2.3), `Save a copy to Files` (§2.2), FitNotes import (§2.5), backup status and safeguards (§3.1, §4.1a).
+- [data-import-export.md](data-import-export.md): restore flow (§2.3), `Save a copy to Files` (§2.2), FitNotes import (§2.5), import from any app (§9), backup status and safeguards (§3.1, §4.1a).
 - [coach-memory.md](coach-memory.md): Pain flags list and clearing; `setPainFlag` signature.
 - ADR 0004 (backup before real data, signing-tool risk), ADR 0005 (backup format, restore steps), ADR 0006 (built-in rules work with no coach).

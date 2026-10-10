@@ -2,6 +2,8 @@
 
 > **Revision 2026-10-08 (consolidation).** Proposed components are merged into design-system.md: `SettingsRow` §9.31, `LoadChip`, `CountStepper`, `RangeBuilder` §9.37 area, `LoadPreview` and its warning `NoteLine` §9.43, `ChecklistRow` / `ChoiceCard` §9.33–9.34, icons §9.52; `ProvenanceTag` is now `SourceTag` (value provenance, §9.28). Data domains (design-system §7.2): Ben's gyms and equipment are **Your data**; the gym presets they start from (`listGymPresets`) are **Coaching knowledge**.
 
+> **Revision 2026-10-09 (gym switch finalised, competitor follow-up 6 approved by Ben).** The mid-workout switch (GE7) and the rules that fit any plan to a gym now live in [gym-switch.md](gym-switch.md), which is the single owner. That includes Repeat at another gym (review B1) and routine Start. This file keeps the switcher sheet and the entry points. Corrections to the earlier §2.8: a pending exercise with no equipment here gets **no load target, with the reps kept**, never "Kept as planned, loads not checked" (rule 4; gym-switch GS4). The card has no `[Skip it]`, which would have made the card itself go out of date. Targets are fitted from the **intended** target, so switching back, or `[Use changes today]` after fixing a wrong max, restores capped loads (GS2; review SP1). Changed: §2.8, §3.3, §4.6, §4.9, §5, §6, §7 checks 9–11 and 18, §8 GE7.
+
 Status: v0.1 draft, 8 Oct 2026. Tokens: [design-system.md](design-system.md). Entry points: [profile-and-settings.md](profile-and-settings.md) (Gyms section), [today.md](today.md) and [active-workout.md](active-workout.md) (gym chip, `Machine busy`, `[Update gym]`), [onboarding.md](onboarding.md) (first gym).
 
 ## 1. Purpose
@@ -316,37 +318,37 @@ Defined in today.md §4 (list, check on the selected gym, `Add gym`, `Edit gyms`
 
 ### 2.8 Switching gym mid-workout (proposal)
 
-Choosing another gym during a workout calls `setActiveGym(gymId, sessionId)` and closes the sheet. The result is an inline `ChangeReviewCard` (design-system §9.11) in the workout's coach slot (active-workout.md §3, `Gym switched mid-session` row). This spec defines what goes **into** the card:
+**Specified in [gym-switch.md](gym-switch.md) (revision 2026-10-09).** In short: choosing another gym during a workout calls `setActiveGym(gymId, sessionId)` and closes the sheet. An inline `ChangeReviewCard` authored `Checks` appears in the workout's coach slot:
 
 ```
 ┌──────────────────────────────────────┐
-│ Switch to Hotel · Lisbon · Today only│
-│ Completed sets stay as they are.     │
-│                                      │
-│ Bench press (3 sets left)            │
-│   Swap → DB bench press              │
-│   Target 30 kg each × 8–10           │
-│   No barbell here.                   │
-│ Incline DB press                     │
-│   Target 30 → 20 kg each × 8–10      │
-│   Rack stops at 20 kg.               │
-│ Cable row                            │
-│   No match here. Kept as planned,    │
-│   loads not checked.  [Skip it]      │
-│ Lateral raise · no change            │
-│                                      │
+│ [✓ Checks] Switch to Hotel · Lisbon  │
+│ [▦ Today only]                       │
+│ 2 logged sets stay as they are.      │
+│ ✎ Bench press · sets 3–4             │
+│   → DB bench press                   │
+│   Target 22.5 kg each × 6–8          │
+│   ⓘ No Olympic bar here.             │
+│ ✎ Incline DB press · sets 1–3        │
+│   Target 32.5 → 20 kg each × 8–10    │
+│   ⓘ Capped: the most here is 20 kg   │
+│     each.                            │
+│ ✎ Cable row · sets 1–3               │
+│   Target 50 kg stack × 12            │
+│   → 12 reps, no load target          │
+│   ⚠ No Cable station here. Swap or   │
+│     skip it after switching.         │
+│ No change: Lateral raise.            │
 │ Why? ›                               │
 │ [ Not now ]          [ Switch ]      │
 └──────────────────────────────────────┘
 ```
 
-Rules (deterministic, from the domain, not the model):
-- **Completed sets are never listed and never change.** They keep their original gym and equipment snapshot (brief §4, §10 hotel scenario).
-- Each pending exercise gets exactly one line: `no change`, a re-snapped target (`roundToAvailableLoad(…, 'easier')`, so a switch never makes a target heavier), a swap from `rankSubstitutions(exerciseId, gymId, intent)`, or `No match here` with [Skip it] (Ben confirms the skip as usual).
-- A re-snapped target capped by the new equipment says why (`Rack stops at 20 kg.`). Loads in another convention are never converted (`Plan says 60 kg total. These are dumbbells, so it isn't converted.`, matching active-workout.md §2.11).
-- **The session's gym changes only on `Switch`.** `Not now` keeps the old gym and its chip. The card goes stale like any proposal (`Out of date`) if a set is logged, corrected or undone before `Switch`.
-- After `Switch`: toast `Switched to Hotel · Lisbon. Remaining sets updated for today.` [Undo]; cue (Set cues mode) `Remaining sets updated for today.` (rest-state.md §5).
-- Rest timer, drafts Ben edited, and the elapsed clock are untouched.
+- **Finished sets are never listed and never change.** They keep their original gym and equipment (gym-switch GS6).
+- Every pending target is fitted by `snapPlanToGym`, the same function Repeat and routine Start use (gym-switch GS1). It rounds toward easier from the **intended** target, never goes past a max, and never makes a target harder than intended.
+- **No equipment here** means no load target, with the reps kept (GS4). There's no `[Skip it]` in the card: skipping or swapping happens on the set card afterwards (`Swap ›`, exercise `⋯`).
+- **The session's gym changes only on `Switch`** (GE7). `Not now` keeps the old gym. The card goes `Out of date` when the sets it changes change (GS7).
+- After `Switch`: toast `Switched to Hotel · Lisbon. Remaining sets updated for today.` [Undo]. Rest timer, elapsed clock and achievable drafts are untouched (GS12).
 
 ## 3. States
 
@@ -384,14 +386,16 @@ Rules (deterministic, from the domain, not the model):
 
 ### 3.3 Mid-workout switch
 
+The full state table and transitions are in [gym-switch.md](gym-switch.md) §3. In summary:
+
 | State | Display |
 |---|---|
-| Computing | Card: static `ellipsis` + `Checking Hotel · Lisbon's equipment…` (local, normally < 100 ms) |
-| Proposal ready | §2.8 |
-| Nothing changes | Card collapses to one line: `Hotel · Lisbon has everything for your remaining sets. Switch?` [Not now] [Switch] |
-| Stale | `Out of date. Your workout changed since this was checked.` Switch disabled; [Check again] [Dismiss] |
+| Computing | After 300 ms only: static `ellipsis` + `Checking Hotel · Lisbon's equipment…` (local, normally under 100 ms) |
+| Proposal ready | §2.8. With 5 or more change lines: 3 lines + `Review all N changes ›`, and `Switch` on the review sheet |
+| Nothing changes | `Home has everything for your 9 remaining sets. Targets stay as they are.` [Not now] [Switch] |
+| Out of date | `Out of date. Your workout changed since this was checked.` `Switch` hidden; [Dismiss] [Check again] |
 | Applied | Toast with [Undo]; gym chip shows the new gym |
-| Undo rejected | A set was logged after the switch: `undoAction` returns a compensating proposal (`Switch back to Main gym for the remaining sets?`) as a new card, never a silent revert |
+| Undo refused | Something changed after the switch: the toast says `Can't undo: your workout changed since the switch.` and a `Switch back to Main Gym` card appears, built by the same function. Never a silent revert |
 
 ## 4. Interactions
 
@@ -428,8 +432,9 @@ Rules (deterministic, from the domain, not the model):
 
 ### 4.6 Switching gym
 - Before a workout (Today): choosing a gym only selects it (today.md §4).
-- During a workout: §2.8. `Switch` calls `confirmProposal(proposalId, sessionVersion)` → `applyCoachProposal`; this is the same path as other review cards, so stale proposals are refused (rule 5).
+- During a workout: §2.8 and [gym-switch.md](gym-switch.md) §4. `Switch` calls `confirmProposal(proposalId, targetVersions)` → `applyCoachProposal` → `change_gym`. This is the same path as other review cards, so out-of-date proposals are refused (rule 5).
 - `+ New travel gym` in a workout: §2.6 → `Save and switch` saves the gym, then runs the same `setActiveGym` proposal. It doesn't switch until `Switch` is tapped on the card.
+- Voice "I'm at Home" / "switch gym to Home" opens the same card without the coach. Voice can confirm only a card that changes no target (gym-switch GS9).
 
 ### 4.7 Removing and deleting equipment
 - An item used by any logged set can't be deleted, only `Removed from this gym` (retired). Copy: `Bench press history uses this bar, so it's kept as removed rather than deleted.`
@@ -443,8 +448,8 @@ Rules (deterministic, from the domain, not the model):
 
 ### 4.9 Editing the current gym during a workout
 - The workout uses the equipment snapshot taken at start (brief §4, `getEquipmentSnapshot`). Saving changes doesn't alter today's targets by itself.
-- The banner action [Use changes today] calls `setActiveGym(sameGymId, sessionId)`, which re-snapshots and returns the same kind of proposal as §2.8, titled `Updated Main gym · Today only`.
-- `[Update gym]` from the workout (active-workout.md §2.11, §4.3) opens the editor for that exact item as a sheet; after `Save`, the sheet closes and the same proposal appears in the workout.
+- The banner action [Use changes today] calls `setActiveGym(sameGymId, sessionId)`, which re-snapshots and returns the same kind of proposal as §2.8, titled `Use updated Main Gym` with the button `Apply` (gym-switch §2.3). Because targets are fitted from the intended target, a target capped by a wrongly low max goes back to the planned load once the max is fixed (review SP1). Raising a max never raises a target above what was planned.
+- `[Update gym]` from the workout (active-workout.md §2.11, §4.3) opens the editor for that exact item as a sheet. After `Save`, the sheet closes and the same proposal appears in the workout.
 
 ## 5. Copy
 
@@ -473,8 +478,8 @@ Rules (deterministic, from the domain, not the model):
 | Confirms | `Archive Main gym? It's hidden from the gym list. Past workouts keep it.` · `Choose another default gym first.` · `Delete Home? It hasn't been used in a workout. This can't be undone.` · `Discard changes to Dumbbells?` · `Bench press history uses this bar, so it's kept as removed rather than deleted.` |
 | Duplicate | `Main gym copy` · `Copied Main gym. History isn't shared between the two.` [Undo] |
 | Switcher | `Gym for this workout` / `Choose gym` · `(current)` · `New travel gym` · `Add gym` · `Edit gyms` |
-| Switch card | `Switch to Hotel · Lisbon · Today only` · `Completed sets stay as they are.` · `no change` · `No barbell here.` · `Rack stops at 20 kg.` · `No match here. Kept as planned, loads not checked.` [Skip it] · `Hotel · Lisbon has everything for your remaining sets. Switch?` · `Checking Hotel · Lisbon's equipment…` · actions `Not now` / `Switch` |
-| Switch result | `Switched to Hotel · Lisbon. Remaining sets updated for today.` [Undo] · spoken (Set cues): "Remaining sets updated for today." |
+| Switch card | Owned by [gym-switch.md](gym-switch.md) §5. Main strings: `Switch to Hotel · Lisbon` · `Today only` · `2 logged sets stay as they are.` · `No change: Lateral raise.` · `ⓘ No Olympic bar here.` · `ⓘ Capped: the most here is 20 kg each.` · `→ 12 reps, no load target` · `⚠ No Cable station here. Swap or skip it after switching.` · `Home has everything for your 9 remaining sets. Targets stay as they are.` · `Checking Hotel · Lisbon's equipment…` · actions `Not now` / `Switch` (same gym: `Use updated Main Gym` / `Apply`) |
+| Switch result | `Switched to Hotel · Lisbon. Remaining sets updated for today.` [Undo] · `Switched to Home. No targets changed.` [Undo] · spoken (Set cues), only when a target changed: "Remaining sets updated for today." |
 | Coach link | `Edit Main gym ›` |
 
 All loads in this file are **equipment capabilities**, not targets or results. The only targets shown are in the switch card, and they're labelled `Target`.
@@ -484,6 +489,7 @@ All loads in this file are **equipment capabilities**, not targets or results. T
 Existing (brief §4, §7; `packages/domain/src/equipment.ts`):
 - `createGym(profile)`, `updateGym(id, patch)`, `addEquipment(gymId, equipment)`, `updateEquipment(id, patch)` (versioned; invalidates affected future recommendations).
 - `setActiveGym(gymId, sessionId?)` → proposal for pending sets; `getEquipmentSnapshot(gymId, date)`; `setTemporaryAvailability(sessionId, equipmentId, status)`.
+- (2026-10-09) `snapPlanToGym` (new, pure; contract and invariant in [gym-switch.md](gym-switch.md) §6.1), the reducer command `change_gym` / `undo_change_gym`, and schema proposals GS-S1–S5 (gym-switch §6.5).
 - `getCompatibleExercises(gymId, constraints)` (the `Used for` picker and the `No match` check), `rankSubstitutions(exerciseId, gymId, intent)`.
 - `getAchievableLoads`, `roundToAvailableLoad` (policy `easier` on switch), `buildPlateSetup`, `stepLoad`.
 - `confirmProposal(proposalId, sessionVersion)`, `applyCoachProposal`, `undoAction(actionId)`, `getDecisionEvidence` for `Why?`.
@@ -514,16 +520,17 @@ Proposed new:
 6. A plate-loaded machine never shows a total resistance or a converted free-weight number anywhere in the editor or preview.
 7. `Max` below the bar weight, or min above max, disables `Save` with the validator's text; nothing is written.
 8. An item with logged kg sets can't be switched to lb; [Add as new] creates a separate instance with no shared history.
-9. **Hotel switch mid-workout** (brief §10): with 2 of 4 bench sets logged at Main gym, switching to a dumbbell-only travel gym shows a card where the 2 logged sets aren't listed; after `Switch` they still show their original values, gym and equipment in Overview and history. Remaining targets never exceed the travel rack's max.
+9. **Hotel switch mid-workout** (brief §10): with 2 of 4 bench sets logged at Main gym, switching to a dumbbell-only travel gym shows a card where the 2 logged sets aren't listed; after `Switch` they still show their original values, gym and equipment in Overview and history. Remaining targets never exceed the travel rack's max. A pending exercise with no equipment there has no load target, with its reps kept, and the card has no `Skip it` (gym-switch checks 1 and 4).
 10. `Not now` on the switch card leaves the gym chip and every target unchanged. Logging a set before tapping `Switch` makes the card `Out of date` and `Switch` can't apply it, by tap or voice.
-11. `Undo` right after a switch restores the old gym and pending targets. After a set is logged at the new gym, Undo offers a `Switch back…` card instead of reverting.
+11. `Undo` right after a switch restores the old gym and pending targets. After a set is logged at the new gym, Undo offers a `Switch back…` card instead of reverting. Switching back restores the planned loads (gym-switch check 6).
+11a. (2026-10-09) The full switch, Repeat and routine-Start checks are [gym-switch.md](gym-switch.md) §7 checks 1–25.
 12. `Machine busy` in a workout shows `Busy today (this workout only)` in the gym detail; the next workout at that gym has the item available. The saved gym's version doesn't change.
 13. `Out of order` keeps the item out of new workouts' snapshots and swaps until `Fixed`; it's still listed in the gym.
 14. Duplicating a gym creates new IDs for every item; editing the copy's dumbbells doesn't change the original; history for the original's items doesn't appear under the copy's items.
 15. A travel gym with `Use until Sun 18 Oct` is preselected on Today until then, is archived (not deleted) on 19 Oct, and its workouts still show its name.
 16. During a workout, a dumbbell-and-bench travel gym (range edited to 20 kg) is created and switched to in **5 taps**, not counting typing: gym chip, `+ New travel gym`, the range's `to` field, `Save and switch`, `Switch`.
 17. Saying "this gym has no cable machine" never changes the saved gym; the reply links to the editor.
-18. Saving equipment during a workout at that gym doesn't change today's targets until [Use changes today] → `Switch`.
+18. Saving equipment during a workout at that gym doesn't change today's targets until [Use changes today] → `Apply`. Correcting a wrongly low max then restores targets that were capped by it, never above the plan (gym-switch check 7).
 19. Every control is at least 44 × 44, all text is at least 16pt, all loads use tabular numerals, the `Save` button stays visible above the keypad at 375pt and AX3, and every status (not checked, out of order, busy, removed, missing chip) has an icon or text as well as colour.
 20. The editor works fully in airplane mode with no coach connected.
 
@@ -537,7 +544,7 @@ Proposed new:
 | GE4 | `availability: 'available' \| 'out_of_order' \| 'retired'` with `since` and `note` | Brief §4 separates "busy/broken today" from "missing". A machine broken for weeks is neither: it's on the gym but unusable until fixed |
 | GE5 | `Gym.kind: 'regular' \| 'travel'` and `useUntil?`; travel gyms auto-archive the day after | Brief §1 asks for a temporary travel setup. Archiving keeps history honest and the list short |
 | GE6 | An item's unit can't change once it has logged sets; add it as new equipment instead | Keeps history comparable (design-system §8: never convert silently) |
-| GE7 | A mid-workout gym switch is applied only on `Switch`; `Not now` keeps the old gym | Today.md and active-workout.md say the switch "returns a proposal"; this makes explicit that the session's gym is part of the proposal |
+| GE7 | A mid-workout gym switch is applied only on `Switch`; `Not now` keeps the old gym | Today.md and active-workout.md say the switch "returns a proposal"; this makes explicit that the session's gym is part of the proposal. **Finalised 2026-10-09** in [gym-switch.md](gym-switch.md) (GS1–GS13), after Ben approved competitor follow-up 6 |
 | GE8 (open) | How to log added weight on bodyweight stations (dip belt): `BW + 10 kg` exists in design-system §8 but no schema field or equipment source | Needs a domain decision before the editor can offer it |
 | GE9 (later) | Optional "same equipment as…" grouping across gyms for shared history | Brief §4 allows explicit grouping. Not needed for the first slice; duplicates stay separate |
 
@@ -559,6 +566,7 @@ No new colour, type, spacing or timing tokens. The `ChangeReviewCard` (§9.11) i
 ## Cross-links
 
 - [design-system.md](design-system.md): `ChangeReviewCard` §9.11, `GymChip` §9.7, `NumberStepper` §9.4, `WorkoutKeypad` §9.5, `StatusBanner` §9.12, `UndoToast` §9.10, load display conventions §8.
+- [gym-switch.md](gym-switch.md): the mid-workout switch card, `snapPlanToGym` (shared with Repeat and routine Start), Undo and switch back.
 - [today.md](today.md) §4: gym switcher sheet, No gym banner.
 - [active-workout.md](active-workout.md): `Gym switched mid-session` and proposal states (§3), equipment-aware input and `[Update gym]` (§4.3, §2.11), `Machine busy` (§4.4).
 - [rest-state.md](rest-state.md) §5: "Remaining sets updated for today." cue.

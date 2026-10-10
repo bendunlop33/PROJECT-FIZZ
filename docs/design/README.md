@@ -39,6 +39,7 @@ Credentials (ChatGPT sign-in, API keys) are in the Keychain, in neither domain, 
 | `today.md` | Today tab: what to train now and where; Start or Resume as the single primary |
 | `check-in.md` | Pre-workout check-in on Start (1–5, Skip): "What's up?" reasons, pain-flag and feeling-ill steps, the coach's lighter-session offer, how check-ins are shown, settings, voice (added 9 Oct; replaces the Today readiness chips) |
 | `active-workout.md` | Focused set card and Overview table: one-tap Log, keypad, supersets, timed and unilateral sets, pain flag note, finish sheet |
+| `gym-switch.md` | Mid-workout gym switch (card, Undo, switch back) and `snapPlanToGym`, the one function that fits any plan to a gym's equipment: routine Start, Repeat, the switch and `[Use changes today]` (added 9 Oct; closes review B1 by design) |
 | `rest-state.md` | Rest timer inside the workout: presets, adjust/skip, background behaviour, spoken cue modes and scripts |
 | `workout-summary.md` | Post-workout facts, comparisons, `Next time` targets (coach or built-in rule), backup line |
 | `lock-screen-and-alerts.md` | Lock-screen Live Activity, rest-end notifications, loud alerts (AlarmKit), speak-while-locked experiment, alert arbitration and Test rest alert |
@@ -117,6 +118,7 @@ Single owners of shared things (other specs link here rather than redefine):
 | Backup status (`getBackupStatus`), restore, import, export, delete/reset | data-import-export.md |
 | Banner priority, durability wording, App status | system-states.md |
 | Equipment and achievable-load editing | gym-editor.md |
+| Fitting a plan to a gym (start, Repeat, mid-workout switch); `snapPlanToGym` | gym-switch.md |
 | Exercise picker and substitutions | exercise-library.md |
 | Pre-workout check-in: when it's asked, its record, settings, offer conditions, spoken grammar | check-in.md |
 

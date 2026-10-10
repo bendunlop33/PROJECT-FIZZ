@@ -6,10 +6,19 @@
 
 > **Revision 2026-10-09 (playbook v1 review fixes).** §4.6 now says plainly that the built-in rule (playbook 7-F, equipment-aware, no added sets) sets next-session targets in two cases: when the coach is unavailable, and when the coach is connected but Ben doesn't apply its proposal. Whether the coach's target should apply instead is playbook D21, for Ben; it would need CLAUDE.md rule 3 and ADR 0006 changed. The trigger thresholds in §1 path B and §4.7 still read as fixed numbers. They follow rule T's planned-effort conditions once built (listed in open-decisions.md "Playbook v1 follow-ups"). Changed: §4.6, §6.
 
+> **Revision 2026-10-09 (Ben's decision D21, CLAUDE.md rule 3, ADR 0006 amendment 2; competitor follow-up 7).** Path C changes: **the coach's next-session targets are now the default.**
+> - After the single post-workout coach call, its **small** changes (load, reps or sets on the same exercises) are saved for the next session of that routine without a tap, shown on the Summary with the reason, the built-in rule's value for comparison and one-tap `Undo`. "Small" is defined in code (new **CA8**). Bigger changes, stall resets (playbook rule 8) and deloads (rule 10) still come as proposals with Apply.
+> - **The built-in rule (playbook 7-F) is the labelled fallback** when the coach is unavailable, gives no target for an exercise, or Ben undoes the coach's target.
+> - **Structural changes** (swapping, adding or removing exercises, order, rotation, templates) are proposals, raised only when Ben asks (for example for variety) or a deterministic signal says something changed: goal, schedule, equipment or pain (new **CA9**).
+> - A coach answer that arrives after Ben has left the Summary still applies, until that routine's next session starts (new **CA10**).
+> - Every change line (banner, card, row, spoken cue) is app text from the saved action, and coach text that claims an unsaved change is hidden: [coach-contract.md](coach-contract.md).
+> - Changed: §1 table and decisions (CA8–CA10), §4.6, §5.3, §6, checks 26–33.
+
 Status: v0.1 draft, 8 Oct 2026. This is the **single spec** for coach-led progression ([ADR 0006](../decisions/0006-coach-led-progression.md), CLAUDE.md rule 3, brief CHANGELOG v0.4). Other specs link here instead of repeating it:
 - [active-workout.md](active-workout.md): where Adjust sits on the set card, coach target markers, Log guard
 - [rest-state.md](rest-state.md): the offer line and adjustment banner in the rest card, cues
-- [workout-summary.md](workout-summary.md): `Next time` with `Coach` vs `Built-in rule` sources
+- [workout-summary.md](workout-summary.md): `Next time` with `Coach` vs `Built-in rule` sources; since D21 the coach's small changes are saved by default there
+- [coach-contract.md](coach-contract.md): how every change line is rendered from the saved action, the claim check, and the tool registry (no tool can destroy history)
 - [flow-first-milestone.md](flow-first-milestone.md): state machine rows, events, invariants
 - [today.md](today.md): the "coach suggestions to review" hint
 - [design-system.md](design-system.md): `AdjustControl`, `CoachOfferLine`, `CoachAdjustmentBanner`, `TargetSourceTag`, new timing tokens
@@ -27,7 +36,7 @@ There are three ways in:
 | **A. Ben asks** | Voice ("that was a grind", "too easy"), text in the coach sheet, or the `Adjust` control | The coach answers briefly. Today's remaining sets change **at once**. A banner shows the change with one-tap Undo | Voice: 0 (Talk + speech). Control: 2 (`Adjust` → a reason chip) |
 | **B. Coach offers** | A deterministic trigger in `packages/domain` (RPE ≥ 9.5, reps short by ≥ 2, RPE ≤ 6 on a working set) | One line in the rest card: `That looked hard. Adjust remaining sets?` [No thanks] [Adjust]. **Nothing changes, and no AI call is made, until Ben taps Adjust.** Then it continues as path A | 1 (`Adjust`), or 0 if ignored |
 | **B′. Check-in offer** (2026-10-09) | A low pre-workout check-in ([check-in.md](check-in.md) §4.4), checked by `evaluateCheckInOffer` in `packages/domain` | One line in the first set card's coach slot before any set is logged: `Want a lighter session today?` [No thanks] [Adjust]. **No AI call until Adjust**; then path A for all of today's pending sets, with no increases allowed | 1 (`Adjust`), or 0 if ignored |
-| **C. Next session** | Finishing the workout (one coach call per workout, together with the coach note) | `Next time` shows the coach's proposal next to the built-in rule's target, with before/after, reasoning, Apply and Undo | 1 per Apply |
+| **C. Next session** (revised 9 Oct, D21) | Finishing the workout (one coach call per workout, together with the coach note) | The coach's **small** changes (CA8) are saved for the next session of that routine without a tap. `Next time` shows each with its reason, `Built-in rule would be …`, `Why?` and `Undo`. Bigger changes are proposals with Apply. Structural changes appear only with a request or signal (CA9) | 0 (1 to Undo) |
 
 The single primary action on the workout screen stays **`Log …`**. Every control in this spec is secondary. The single primary on the summary stays **`Done`**.
 
@@ -42,6 +51,9 @@ The single primary action on the workout screen stays **`Log …`**. Every contr
 | CA5 | Triggers never fire on **warm-up or drop sets**. "Reps short" is counted from the **bottom** of a rep range (target 6–8, did 4 → short by 2) | A short warm-up or drop set is normal. The bottom of the range is the least the plan asked for |
 | CA6 | With the coach offline, **no in-session adjustment is offered** (the brief's deterministic `evaluateSessionAdjustment` isn't used). Ben edits the next set's numbers directly. | ADR 0006 defines the built-in fallback only for next-session targets. Ben may want an offline in-session rule later; that would need a brief change |
 | CA7 | If Ben logs while the coach is still working, the request is **re-sent once** with the new state (if any set it covers is still pending), otherwise dropped | "Recompute or discard" from the brief; a single retry keeps cost and confusion bounded |
+| CA8 | (9 Oct, D21) **What counts as a "small" next-session change** is decided by code: `classifyNextSessionChange(before, after, stepCard, context)`. A coach target is `small` only if it keeps the same routine, exercises and order, and: the load stays or moves **one achievable step** up or down from the last target on that equipment (`buildStepCard`); the rep target moves by **at most 2** at either end; the set count changes by **at most 1**, and **+1 only when Ben has asked** for more sets or volume (playbook D1); effort targets and rest don't change. Anything else is `bigger` and comes as a `CoachTargetProposal` with Apply, except an added set Ben didn't ask for, which is dropped and listed in `Why?` (D1: extra sets only when he asks). Stall resets (rule 8) and deloads (rule 10) are always `bigger`, which keeps those approved rules' "propose" wording true. A set whose load Ben pinned as `Fixed` in the routine (routines RT3) is never changed by default; a coach change to it is `bigger`. A pain flag still blocks every increase | D21 says "small adjustments only". A definition the reviewer can test stops "small" drifting with the model. One step can be large on coarse dumbbells (10 → 12 kg, +20%); every row shows its %, so Ben sees it. **Alternative for Ben:** any load, rep or set change on the same exercises applies by default |
+| CA9 | (9 Oct, D21) **Structural changes need a request or a signal.** `getStructuralChangeSignals(ownerId, routineId, sessionId)` (pure) returns any of: `variety_request` (Ben asked for variety or new exercises for this routine, in chat or by voice, not yet answered), `goal_changed` (goal version differs from the routine's), `schedule_changed` (days a week or session length changed), `equipment_changed` (the routine's gym equipment version changed, or this workout switched gym), `pain_flag` (a flag set on one of its movements since the routine's version). Without a request or signal the coach doesn't receive the structural proposal tools (coach-contract CC10) and the validator drops any structural item. With one, the Summary shows at most one `ChangeReviewCard` (`Because: …`, scope `Push A from now on`, Apply, Undo) | CLAUDE.md rule 3: structural changes are raised only when Ben asks or something changed. A gate makes "only" testable |
+| CA10 | (9 Oct, D21) **A late coach answer still applies.** If the coach answers after Ben tapped `Done`, or after coming back online, its small changes are saved then, as long as that routine's next session hasn't started; otherwise they're dropped as stale (rule 5). They show in that workout's summary in history (with Undo until the next session starts) and in the next workout's `Why?` (`Set by  Coach · after Push A, 8 Oct`). A one-line Today hint for late answers is a suggested today.md follow-up |  D21 makes the coach the default. Dropping a late answer would let the built-in rule win just because Ben was quick |
 
 ## 2. Layout
 
@@ -259,14 +271,20 @@ Voice "undo" undoes the most recent action of any kind (a set log or an adjustme
 - The coach is then asked to adjust with increases blocked. It can lower or hold, suggest stopping the exercise (as a `Skip exercise` suggestion that Ben confirms) or suggest a swap (`ChangeReviewCard`). It never diagnoses.
 - Copy: `Pain noted for Bench press. No increases for this movement until you clear it.` Offline: `Pain noted for Bench press. Coach offline, so your sets are unchanged. Change them directly or skip the exercise.`
 
-### 4.6 Next session (path C)
+### 4.6 Next session (path C; revised 9 Oct for D21)
 
 Specified in [workout-summary.md](workout-summary.md) §2 and §3. In short:
-- After `finishWorkout` commits, **one** coach turn (`runCoachTurn` with summary context) returns the coach note and `future_template` proposals.
-- `Next time` shows each changed exercise with **before** = the built-in rule's target (what happens if Ben does nothing) and **after** = the coach's target, both labelled, plus the coach's reason, guard notes, `Why?`, `Not now` and `Apply`.
-- If the coach is offline, not connected or fails: the built-in rule's targets show with the label `Built-in rule (coach offline)` (or `Built-in rule (coach unavailable)` on errors).
-- Unapplied proposals expire when the next session of that routine starts. The built-in rule's targets then apply.
-- (Revision 2026-10-09, playbook v1 review fixes) **The built-in rule is playbook rule 7-F**: equipment-aware, smallest achievable step, reps first when that step is over ~10% or at the equipment max, then hold, never an added set. Every target shows its % change. It is used in two cases: the coach is unavailable, **and** the coach is connected but Ben didn't apply its proposal (`Not now`, or the proposal expired). The second case follows CLAUDE.md rule 3 (future-session changes are always proposals). Playbook **D21** asks Ben whether the coach's target should apply instead, with visible change and Undo. That would need CLAUDE.md rule 3 and ADR 0006 changed, so until Ben decides, the behaviour above stands and the playbook screen says so (`In use: when no coach target is applied`).
+1. After `finishWorkout` commits, **one** coach turn (`runCoachTurn` with summary context) returns the coach note and next-session targets for the routine just done. The turn gets `set_next_session_targets`, and the structural proposal tools only with a request or signal (CA9).
+2. `validateCoachProposal` applies the guardrails: snap to achievable loads, cap at the equipment max, pain blocks, completed sets untouched, version checks. Then `classifyNextSessionChange` (CA8) splits the result.
+3. **Small changes are saved at once**: `applyCoachProposal(id, {kind: 'default_next_session', expectedVersion, opId})`, one transaction and one `actionId` for the workout, each exercise undoable on its own. No tap.
+4. **Bigger changes** (CA8) become `CoachTargetProposal`s with `Not now` / `Apply`. The built-in rule's target stays in use for that exercise until Ben applies.
+5. Each saved row shows the target and its % change, the coach's reason, guard notes, `Built-in rule would be …`, `Why?` and `Undo`. `Undo` puts the built-in rule's target back for that exercise; `Use coach target` puts the coach's back.
+6. **The built-in rule (playbook 7-F)** sets the target when the coach is offline, not connected or fails (`Built-in rule (coach offline)` / `(coach unavailable)`), when the coach gives no target for an exercise (`Built-in rule`), and after Ben's Undo. It is always computed, as the fallback and the comparison value. It is equipment-aware: smallest achievable step, reps first when that step is over ~10% or at the max, then hold, never an added set.
+7. **Structural changes** appear only with a request or signal (CA9), as one `ChangeReviewCard` (scope `Push A from now on`, Apply, Undo; change-review.md). They expire when the routine next starts (change-review CR8).
+8. **Undo window:** on the Summary until that routine's next session starts. After that, the set card's `Why?` → `Use built-in rule` (active-workout AW4) changes that day's pending sets.
+9. Late answers: CA10. Change lines on every surface come from the saved action, not the model's words (coach-contract.md CC1).
+
+"Next session" means the next time this routine comes up. With the rotation (weekly-plan WP14) that's when the rotation reaches it again, or when Ben starts it himself.
 
 ### 4.7 Settings (Profile → Coach)
 
@@ -336,17 +354,19 @@ The coach's reason is **one sentence, at most 90 characters**, plain, no praise,
 
 Scripted lines come from `buildSetCue(event, sessionVersion)`. Nothing is spoken in Quiet mode. Nothing unrequested is spoken outside Resting.
 
+(9 Oct, coach honesty contract) The coach's spoken sentence is checked before it's spoken: a sentence that claims a change with no saved action this turn is never spoken, and a voice turn then says "Nothing was changed." instead ([coach-contract.md](coach-contract.md) CC3, CC8). The scripted change line is always the rendered one. Next-session targets saved on the Summary are never spoken.
+
 ## 6. Data needed
 
 Existing (brief §7–8, ADR 0006):
 - `getAiCapabilities(userId)`: whether `Adjust`, offers and coach targets are available now.
 - `buildCoachContext`, `classifyCoachIntent`, `runCoachTurn(turnId, input, modality)`.
 - `validateCoachProposal(proposal, context)`: returns `{valid, stale, changes, guardNotes[]}` where a guard note is `{kind: 'snapped' | 'capped' | 'pain_blocked' | 'no_achievable_load' | 'completed_set_dropped', setIds, from?, to?, detail}`. Uses `getAchievableLoads` / `roundToAvailableLoad` and the pain flag (`PainStatus`).
-- `applyCoachProposal(id, confirmation)`: `confirmation` adds `{kind: 'ben_request' | 'offer_accepted' | 'review_apply', expectedVersion}`.
+- `applyCoachProposal(id, confirmation)`: `confirmation` adds `{kind: 'ben_request' | 'offer_accepted' | 'review_apply' | 'default_next_session', expectedVersion}`. (9 Oct, D21) `default_next_session` is accepted only from the summary turn, only for changes `classifyNextSessionChange` marks `small`, and only while that routine's next session hasn't started.
 - `undoAction(actionId)`, `getDecisionEvidence(actionId)`.
 - `buildActiveSetView(sessionId)`: adds, per set, `target.source: 'plan' | 'rule' | 'coach'`, `target.planned` (the pre-adjustment target), `adjustmentActionId`; and at session level `coachRequest {turnId, status, coveredSetIds}`, `coachOffer {triggerId, kind, fact, setId}`, `lastAdjustment {actionId, summary, reason, guardNotes}`.
-- `calculateNextTargets(history, rule, equipment)`: the built-in "before" value, the offline fallback, and (until playbook D21 is decided) the target used when no coach proposal is applied. It implements playbook rule 7-F (review fixes, §4.6).
-- `buildWorkoutSummary(sessionId)`: `nextTime[]` with `builtIn`, `coachProposal?`, `coachStatus`.
+- `calculateNextTargets(history, rule, equipment)`: the built-in comparison value on every coach row, and the target used when the coach is offline, gives no target, or Ben undoes the coach's target (D21). It implements playbook rule 7-F (§4.6).
+- `buildWorkoutSummary(sessionId)`: `nextTime[]` with `builtIn`, `coachStatus`, `coachTarget?` (saved by default) and `coachProposal?` (bigger changes), plus `structuralProposal?` (workout-summary §6).
 - `buildSetCue`, `cancelObsoleteCues`.
 
 **Proposed new (contracts to add; flagged for the developer and Ben):**
@@ -361,6 +381,10 @@ Existing (brief §7–8, ADR 0006):
 | `cancelCoachTurn(turnId)` | Cancel and Log-while-pending |
 | `setPainFlag(exerciseId, active, note?)` → superseded by coach-memory.md §6 `setPainFlag({exerciseIds[], active, area?, note?, source}, opId)` | `PainStatus` exists in the domain; the UI needs a write path (and `PainFlagEvent` history, progress.md PG13) |
 | `Proposal.origin`, `Proposal.guardNotes`, `ActionRecord.reason` + `evidenceRefs` (already in the brief) | Banner, `Why?` and rule 3's "recorded with its reason" |
+| `classifyNextSessionChange(before, after, stepCard, context)` → `{size: 'small' \| 'bigger', reasons[]}` (9 Oct, D21) | **Pure, `packages/domain`, unit-tested.** CA8's rules. `context` carries whether Ben asked for more sets or volume (D1) and whether the change is a rule 8 reset or a rule 10 deload |
+| `getStructuralChangeSignals(ownerId, routineId, sessionId)` → `[{kind: 'variety_request' \| 'goal_changed' \| 'schedule_changed' \| 'equipment_changed' \| 'pain_flag', fact, at, ref}]` (9 Oct, D21) | **Pure.** CA9. Reads the request log (`classifyCoachIntent` intent `request_variety`), `resolveTrainingContext().versions` against the routine's base context, equipment versions, `session.gymChanges` and pain flags. Its `fact` is the app text after `Because:` |
+| `undoAction(actionId, {exerciseId?})` / `reapplyCoachTarget(actionId, exerciseId, expectedVersion, opId)` (9 Oct, D21) | Per-exercise Undo of the summary's single action, and Ben's own `Use coach target` (saved at once, with Undo). Both only until that routine's next session starts |
+| `set_next_session_targets` tool, `renderActionResult`, `checkReplyClaims` | [coach-contract.md](coach-contract.md) §6 |
 
 ## 7. Acceptance checks
 
@@ -389,3 +413,11 @@ Existing (brief §7–8, ADR 0006):
 23. (2026-10-09) `Adjust` on the check-in offer changes only pending sets of today's session (template unchanged); a test reply that raises one set has that change dropped with `No increases in a lighter session.`
 24. (2026-10-09) With `Pain` picked in the check-in and no movement flagged, any coach increase in that session is dropped with `Not increasing anything today: you mentioned pain.`
 25. (2026-10-09) The check-in offer and a set-trigger offer never show together; the set offer replaces the check-in offer, which is then recorded as `expired`.
+26. (9 Oct, D21) Finish a workout with the coach connected: exactly one coach call is made, and its small changes are saved with no tap. Starting that routine next time plans the coach's targets, and the set card's `Why?` row `Set by` reads `Coach · after Push A, 8 Oct` (active-workout §2.12).
+27. (9 Oct, CA8) Unit tests for `classifyNextSessionChange`: 100 → 97.5 kg on a 2.5 kg-step bar is `small`; 100 → 90 kg is `bigger`; 10 → 12 kg dumbbells (the next step, +20%) is `small` and shows `+20%`; 8–10 → 8–12 reps is `small`; 8–10 → 12–15 is `bigger`; 4 → 3 sets is `small`; 3 → 4 sets is `small` only when Ben asked for more sets, otherwise dropped (D1); a rule 8 reset and a rule 10 deload are `bigger`; any change to exercise, order or rest is `bigger`; any change to a `Fixed` load is `bigger`.
+28. (9 Oct) A `bigger` coach target is never saved without Apply: the next session uses the built-in rule's target until Ben taps Apply.
+29. (9 Oct) With a pain flag on Overhead press, no coach increase for it is saved, by default or by Apply.
+30. (9 Oct, CA9) With no request and no signal, the summary turn's tool list has no structural proposal tool, and no structural card appears. After Ben says "give me some variety on Push A" (or a pain flag, a goal or days change, or a gym switch in the workout), one card can appear with the matching `Because:` line.
+31. (9 Oct, CA10) Tap `Done` while the coach is still working: the answer's small changes are saved when it arrives, appear in that summary in history with Undo, and are dropped if Push A has started again first.
+32. (9 Oct) `Undo` on one row restores the built-in rule's target for that exercise only; the other coach targets stay. `Use coach target` restores the coach's. After the next Push A starts, neither button is offered on the summary.
+33. (9 Oct, coach-contract) Every number in a saved row, banner or spoken cue equals the saved `ActionRecord`'s value; the model's raw numbers appear only in `Why?`.

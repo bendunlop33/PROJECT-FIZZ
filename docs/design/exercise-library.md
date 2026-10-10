@@ -6,6 +6,8 @@
 
 > **Revision 2026-10-09 (guides v2, [exercise-guides-v2.md](exercise-guides-v2.md); specified, not built).** Ben reviewed the 10 guides and asked for more detail, the muscles to feel highlighted, and what NOT to do as text. §8 now has **§8.11 Guides v2**, and the as-built sections note where v2 changes them. Summary: an anatomical figure; muscle regions in one violet hue (`guide.muscle`, the neutral-only exception **per Ben's request of 9 Oct 2026**); `Feel it most:` / `Also works:` lines in the player card (replacing the header's `Main muscles:`); a `What not to do` card directly under the player (replacing `Common mistakes`); a `Full screen` view; and higher-quality rendering.
 
+> **Revision 2026-10-09 (pain-flag UX, competitor follow-up 8; approved by Ben, CHANGELOG 2026-10-09).** A pain-flagged exercise is now tagged **`⚠ May hurt`** (was `⚠ Pain flagged`), and adding it asks first: `Overhead press may hurt` [Add anyway] [Choose another] (EL9). This applies in Pick one and in the workout's Swap sheet. Pick several (the routine editor) shows an inline line on tick instead of an alert. Only exercises the flag covers are tagged; similar movements aren't (coach-memory CM5). Rows are never hidden. Everything is local and works offline. The rest of the pain UX (the two-weekly `Still hurts?` check, the pre-flag reference) is in [active-workout.md](active-workout.md) §2.14. Changed: §1 (EL9), §2.1, §2.2, §2.5, §3, §4.2, §5, §6, §7 (check 4 revised; checks 17–20), design-system additions.
+
 Status: v0.1 draft, 8 Oct 2026. Brief §1 ("exercise search"), §4 (`getCompatibleExercises`, `rankSubstitutions`), §6 (`Exercise` / `ExerciseAlias`), §12 Page 2. Schema: `packages/schemas/src/exercise.ts` (`movementPattern`, `primaryMuscles`, `measurement`, `laterality`, `compatibleEquipment`, `defaultLoadConvention`, `defaultRestS`). Tokens: [design-system.md](design-system.md).
 
 One component, four modes. The same search, rows and filters are used everywhere so Ben learns them once.
@@ -14,7 +16,7 @@ One component, four modes. The same search, rows and filters are used everywhere
 
 | Mode | Opened from | Question it answers | Primary action |
 |---|---|---|---|
-| **Pick one** | Active workout `Add exercise` (empty card, All-done card, Overview `+ Add exercise`) | "Which exercise am I doing next?" | Tap a row (adds it at once, one tap) |
+| **Pick one** | Active workout `Add exercise` (empty card, All-done card, Overview `+ Add exercise`) | "Which exercise am I doing next?" | Tap a row (adds it at once, one tap; a `May hurt` row asks first, EL9) |
 | **Pick several** | Routine editor `＋ Add exercise` | "Which exercises go in this routine?" | `Add 3 exercises` |
 | **Swap** | Active workout exercise `⋯` → `Swap exercise` or `Machine busy`; routine editor `⋯` → `Replace`; routine detail `Swap ›` | "What can I do instead, here, and how different is it?" | Tap a substitute row |
 | **Browse** | Plan hub 🔍 (routines.md RT1) | "What do I know about this exercise?" | Tap a row (opens Detail) |
@@ -32,6 +34,7 @@ Plus three screens: **Exercise detail** (browse), **Custom exercise** (create/ed
 | EL5 | Substitution reasons are **deterministic text from `rankSubstitutions`**, never model text. No numeric score is shown | No invented scores (rule 6). The coach can quote the same reasons via `get_substitutions` |
 | EL6 | With a **pain flag** on the exercise being swapped, the list shows a warning, and same-movement rows say so. For **today's** session, a substitute that shares the flagged movement pattern also gets increases blocked | Rule 9 says pain stops progression "for that movement". This is the conservative reading. **Needs Ben's confirmation** |
 | EL7 | Sled push/pull and similar default to the `added` convention with the note `Plates loaded. Not the true resistance.` | concurrent-training.md flag (C7); brief §4: plate maths doesn't prove sled resistance |
+| EL9 | (2026-10-09) **A pain-flagged exercise is tagged `May hurt` and asks before it's added** in Pick one and the workout's Swap sheet (an action sheet: `Add anyway` / `Choose another`). Pick several shows an inline line on tick, with no alert. Only exercises the flag covers are tagged | Approved item 8 (competitor landscape). One extra tap only on a flagged row, which is rare, and it's the moment a flag matters. Tagging similar movements would mean the app deciding which joints are involved (CM5, rule 9). The routine editor is a draft that can be undone, so an alert there would only add friction |
 | EL8 | **Rich catalogue entries show an original animated guide and cues on a `How to` screen (§8). Basic entries show none.** Guides are drawn in code from the shared figure rig (ADR 0011, 0013), bundled, and work offline. There is no filmed, third-party or AI-generated media | **Approved by Ben, 9 Oct 2026** (replaces "No images or videos in the library"). A guide opens only when Ben asks for it, so it never adds a tap or any motion to the logging loop. The brief §157 wording ("defer large exercise-media libraries") still needs the matching change (research brief change 1) |
 
 ## 2. Layout
@@ -94,7 +97,21 @@ Row rules (`ExerciseRow`, 52pt min):
 - `ⓘ` How to button (revision 2026-10-09, built, provisional; §8.8): `info.circle` in `text.secondary`, 44 × 44. It is shown only for exercises with a guide or rich cues. It sits immediately left of `🕘`, `space.2` apart, so history stays at the trailing edge. It opens How to over the picker. The row tap still adds the exercise in one tap. VoiceOver: "How to do Bench press". At AX1+ the name wraps; the two buttons never push numbers or units into truncation.
 - Line 2: `Matches "<alias>"` (only on alias hits), the equipment kinds this gym has for it, `per side` (unilateral), `Time` (timed).
 - Line 3 (or end of line 2): `Last <actual> · <date>` from the most recent comparable set **at this gym**; `Last at Hotel Gym: …` if only elsewhere; `No history`.
-- Tags, as icon + text: `⚠ Busy today` (`status.warning`), `⊘ Not at Main Gym` (`text.secondary`), `Custom`, `⚠ Pain flagged` (`status.warning`).
+- Tags, as icon + text: `⚠ Busy today` (`status.warning`), `⊘ Not at Main Gym` (`text.secondary`), `Custom`, `⚠ May hurt` (`status.warning`; revision 2026-10-09, was `⚠ Pain flagged`). `May hurt` appears only on exercises an active pain flag covers, never on similar movements, and the row is never hidden. VoiceOver: "May hurt: you flagged shoulder pain on it."
+- (2026-10-09, EL9) **Tapping a `May hurt` row asks first** (system action sheet), instead of adding at once:
+
+```
+┌────────────────────────────────────────┐
+│ Overhead press may hurt                │
+│ You flagged shoulder pain on it on     │
+│ 6 Oct. Loads won't go up while the     │
+│ flag is on.                            │
+│ [ Add anyway ]                         │
+│ [ Choose another ]                     │ cancel role
+└────────────────────────────────────────┘
+```
+
+  `Add anyway` → `addExercise` as usual, and the workout card shows the `PainFlagNote`. `Choose another` (or swiping down) returns to the picker with the query and filters kept, and adds nothing. With no area on the flag, the second line reads `You flagged pain on it on 6 Oct.` The confirm never says the exercise is safe or unsafe, and never suggests a cause.
 
 ### 2.2 Pick several (routine editor; pushed screen)
 
@@ -110,6 +127,8 @@ Same as §2.1, but rows have a leading checkbox (`circle` / `checkmark.circle.fi
 ```
 
 Exercises are added in the order they were ticked, each with one working set (`Auto × 8–10`, or `0:45` for timed) and the type presets. `At <gym>` uses the routine's default gym (routines.md).
+
+(2026-10-09, EL9) Ticking a `⚠ May hurt` row selects it with no alert, and adds one line under the row: `⚠ May hurt: you flagged shoulder pain on 6 Oct. Loads won't go up while the flag is on.` (`type.callout`, `status.warning` icon, `text.secondary` text). The routine draft can still be cancelled or edited, so nothing is asked twice.
 
 ### 2.3 Filter sheets (medium detent)
 
@@ -197,6 +216,7 @@ Opened in an active workout as a sheet (large detent, so the Log button is one s
 - Order comes from `rankSubstitutions(exerciseId, gymId, intent)`. Up to 2 `✓` reasons and 1 `≠` difference per row; the rest under the row's `More ›`.
 - Intents: `Closest match` (movement, then muscles, then Ben's history), `Same muscles` (muscles first; for hypertrophy goals), `Different equipment` (excludes the current equipment kind; preselected when opened from `Machine busy`, with the header `Cable stack 2 is busy today.`).
 - **Pain flag** (EL6): a warning line above the list, `⚠ You flagged pain on Bench press. Exercises with the same movement may load the same area.` Same-movement rows add `⚠ Same movement as the one you flagged`. No row is described as safe or recommended for pain.
+- (2026-10-09, EL9) A substitute that **itself** has an active pain flag shows `⚠ May hurt`, and choosing it asks the same `… may hurt` question (§2.1) before the swap applies. `Choose another` keeps the Swap sheet open.
 
 #### After choosing, in an active workout (EL4)
 
@@ -273,7 +293,9 @@ Edit mode: once a set is logged with the exercise, `Equipment`, `How the load is
 | No results | `No match for "landmine twst".` + `＋ Create "landmine twst" as a new exercise` + `Clear filters` (if any are on) | Never an empty white sheet |
 | No gym selected | Chip reads `Any gym` and is disabled; caption `No gym selected, so equipment isn't checked.` [Add gym] | Rows show no availability tags |
 | Busy equipment | Rows using it show `⚠ Busy today`; still selectable (Ben may wait) | `setTemporaryAvailability` |
-| Pain flagged | Row tag `⚠ Pain flagged`; Swap header warning (EL6) | Never hidden |
+| Pain flagged (revised 2026-10-09) | Row tag `⚠ May hurt`; Swap header warning (EL6) | Never hidden |
+| Adding a flagged exercise (2026-10-09) | Action sheet `<Exercise> may hurt` [Add anyway] [Choose another] (Pick one, Swap); inline line on tick (Pick several) | EL9. Nothing is added until `Add anyway` |
+| Flag cleared while the picker is open | The tag disappears on the next search update | Local |
 | Swap: nothing suitable | `Nothing at Main Gym matches Bench press's movement.` + `Search all exercises ›` + (workout) `Skip exercise` link | Never a fake match |
 | Swap: exercise already in today's workout | Row shows `Already in this workout` and moves to the end | Avoids a duplicate block |
 | Swap applied (workout) | §2.5 collapsed slot with Undo | — |
@@ -310,6 +332,8 @@ Transitions (Pick one, active workout):
 | Browse | Exercise detail | History sheet |
 
 A row whose equipment isn't at this gym (with `At <gym>` off) asks before adding in Pick one: `Main Gym has no cable station. Add Cable fly anyway?` [Add] [Cancel]. The added exercise then has no equipment and shows `no load target` in the workout.
+
+(2026-10-09, EL9) A `⚠ May hurt` row asks first in Pick one and Swap (§2.1): `Add anyway` adds or swaps (one extra tap, on flagged rows only); `Choose another` adds nothing. If a row is both not at this gym and flagged, one sheet asks both: `Overhead press may hurt, and Main Gym has no landmine. Add anyway?`. Voice "add overhead press" in a workout asks the same question in the voice strip ([Add anyway] [Cancel]); it never adds a flagged exercise without that answer.
 
 ### 4.3 History sheet (medium detent)
 
@@ -353,7 +377,8 @@ A row whose equipment isn't at this gym (with `At <gym>` off) asks before adding
 | Search | Placeholder `Search exercises` · `Matches "RDL"` · `No match for "landmine twst".` · `＋ Create "landmine twst" as a new exercise` |
 | Sections | `Recent` · `All exercises` · `12 more not at Main Gym. Show ›` |
 | Chips | `At Main Gym` · `Any gym` · `Muscle` · `Movement` · `Equipment` · `Movement: Vertical pull` · `Muscle: 2` · `Clear` · `Done` |
-| Row | `Last 100 kg × 8 · 6 Oct` · `Last at Hotel Gym: 60 kg × 10 · 12 Sep` · `No history` · `per side` · `Time` · `Busy today` · `Not at Main Gym` · `Custom` · `Pain flagged` · `Already in this workout` |
+| Row | `Last 100 kg × 8 · 6 Oct` · `Last at Hotel Gym: 60 kg × 10 · 12 Sep` · `No history` · `per side` · `Time` · `Busy today` · `Not at Main Gym` · `Custom` · `May hurt` (2026-10-09; was `Pain flagged`) · `Already in this workout` |
+| May hurt (2026-10-09) | Confirm `Overhead press may hurt` / `You flagged shoulder pain on it on 6 Oct. Loads won't go up while the flag is on.` (no area: `You flagged pain on it on 6 Oct.`) [Add anyway] [Choose another] · combined `Overhead press may hurt, and Main Gym has no landmine. Add anyway?` · Pick several line `May hurt: you flagged shoulder pain on 6 Oct. Loads won't go up while the flag is on.` · VoiceOver tag "May hurt: you flagged shoulder pain on it." |
 | Pick several | `Selected: Bench press, Cable fly` · primary `Add 2 exercises` / `Add exercise` / disabled `Select exercises` |
 | No gym | `No gym selected, so equipment isn't checked.` [Add gym] |
 | Not at gym confirm | `Main Gym has no cable station. Add Cable fly anyway?` [Add] [Cancel] |
@@ -387,7 +412,7 @@ Existing (brief §4, §7; schemas; active-workout §6):
 
 | Function | Contract |
 |---|---|
-| `searchExercises(ownerId, query, filters)` | **Pure over the catalogue + aliases.** `filters = {gymId?, availableOnly, muscles[], movements[], equipmentKinds[], includeHidden}`. Returns rows `{exercise, matchedAlias?, availability: 'available' \| 'busy' \| 'not_at_gym' \| 'unknown', lastActual?, painFlagged}` and `hiddenByGymCount`. Ranking per EL1 |
+| `searchExercises(ownerId, query, filters)` | **Pure over the catalogue + aliases.** `filters = {gymId?, availableOnly, muscles[], movements[], equipmentKinds[], includeHidden}`. Returns rows `{exercise, matchedAlias?, availability: 'available' \| 'busy' \| 'not_at_gym' \| 'unknown', lastActual?, painFlag?: {flagId, area?, since}}` (2026-10-09: was the boolean `painFlagged`; the confirm needs the area and date) and `hiddenByGymCount`. `painFlag` is set only when an **active** flag covers that exercise. Ranking per EL1 |
 | `listRecentExercises(ownerId, limit)` | Last used, newest first |
 | `findSimilarExercises(ownerId, name)` | For the custom form's duplicate note |
 | `createCustomExercise(input, opId)` / `updateCustomExercise(id, patch, expectedVersion)` | Validates convention vs equipment (table §2.6); rejects changes to locked fields with `field_locked` (EL3) |
@@ -401,7 +426,7 @@ Existing (brief §4, §7; schemas; active-workout §6):
 1. In a workout, `Add exercise` → typing `rdl` → tapping `Romanian deadlift` adds it and makes it active: **one tap after typing**, no extra confirmation.
 2. Searching `RDL`, `rdl` or `romanain deadlift` (one typo) finds Romanian deadlift; the alias hit shows `Matches "RDL"`.
 3. With `At Main Gym` on at a gym without a cable station, no cable exercise is listed and the hidden count line shows the right number; `Show ›` reveals them tagged `Not at Main Gym`.
-4. Busy equipment is tagged `Busy today` and still selectable; pain-flagged exercises are tagged and never hidden.
+4. Busy equipment is tagged `Busy today` and still selectable; pain-flagged exercises are tagged `May hurt` (revised 2026-10-09) and never hidden.
 5. Every `Last …` value is an actual from the same gym and equipment, or labelled with the other gym. No value is converted between conventions or units.
 6. With airplane mode on and no AI, search, filters, history, custom exercises and Ben-initiated swaps all work.
 7. Creating `Landmine press` with Barbell offers only `Total on the bar` and `Plates added`; Dumbbells offers only `Each dumbbell`; Plate-loaded shows the `Not the true resistance` note.
@@ -414,6 +439,10 @@ Existing (brief §4, §7; schemas; active-workout §6):
 14. The history sheet groups by gym and equipment and never merges a Smith machine with a free barbell.
 15. At AX3 in Pick several, `Add 2 exercises` is fully visible above the keyboard at 375pt width; rows stack without truncating numbers or units.
 16. Every gesture has a button equivalent; every tag and reason has text or an icon as well as colour, in dark and light modes.
+17. (2026-10-09, EL9) With a shoulder flag on Overhead press, its Pick one row shows `⚠ May hurt`; tapping it shows `Overhead press may hurt` with the flag's area and date. `Choose another` adds nothing and keeps the query; `Add anyway` adds it, and the workout card shows `⚠ Pain flag: no increases`. Unflagged exercises still add in one tap.
+18. (2026-10-09) Lateral raise (a similar movement that Ben didn't flag) shows no `May hurt` tag and adds in one tap.
+19. (2026-10-09) In Swap, a flagged substitute asks the same question before the swap applies; in Pick several, ticking a flagged row shows the inline line and no alert.
+20. (2026-10-09) The confirm text never contains "safe", "unsafe", a condition name or a cause; it works with airplane mode on and no AI.
 
 ## 8. Guide (How to screen)
 
@@ -652,7 +681,7 @@ No new colours or timing tokens for the library itself. (Guides v2 adds `color.g
 | `SearchField` | 52pt tall, `bg.raised`, 1pt `border.control`, `radius.sm`; `magnifyingglass` icon, `type.body` text, `xmark.circle.fill` clear (44 × 44 hit), optional `mic` button (44 × 44) on the right, separated by `space.2`. Hides the mic when `DEP-STT` is unavailable |
 | `FilterChip` | `ParamChip` (§9.17) plus a trailing `chevron.down` and, when active, the choice text (`Movement: Vertical pull`). A toggle chip (`At Main Gym`) uses the `checkmark` selected state |
 | `ExerciseRow` | 52pt min, `bg.surface`, padding `space.3`. Line 1 `type.headline`; lines 2–3 `type.callout` `text.secondary`, numbers tabular. Optional leading checkbox (Pick several). Trailing history button 44 × 44 (`clock.arrow.circlepath`). Stacks at AX1+ |
-| `AvailabilityTag` | Inline icon + word, `type.label`: `⚠ Busy today` / `⚠ Pain flagged` (`status.warning`), `⊘ Not at Main Gym` (`slash.circle`, `text.secondary`), `Custom` (`text.secondary`). Never colour alone |
+| `AvailabilityTag` | Inline icon + word, `type.label`: `⚠ Busy today` / `⚠ May hurt` (2026-10-09, was `⚠ Pain flagged`; `status.warning`), `⊘ Not at Main Gym` (`slash.circle`, `text.secondary`), `Custom` (`text.secondary`). Never colour alone. **To merge into design-system.md §9.28** when its current edit lands (active-workout.md §9) |
 | `SubstituteRow` | `ExerciseRow` plus up to 2 reason lines (`checkmark` icon, `text.primary`) and 1 difference line (`notequal` icon, `text.secondary`), `type.callout`; `More ›` when there are more |
 | `SwapSlotLine` | Collapsed swap result in the coach slot: `checkmark.circle.fill` (`status.done`) + line 1 `type.headline`, line 2 targets (`type.callout`), row `Change … too ›` (left, `accent`) and `Undo` (right) with `target.workout` hit areas ≥ `space.8` apart. Same frame as `CoachAdjustmentBanner` without the coach icon |
 
