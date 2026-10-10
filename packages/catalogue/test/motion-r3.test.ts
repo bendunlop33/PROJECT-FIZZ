@@ -359,6 +359,7 @@ describe('drawing (problems 9–12, 16)', () => {
       .filter((x) => x.level === 'strong')
       .reduce((a, x) => a + Math.abs(signedArea(x.contour)), 0);
     expect(area * k * k).toBeGreaterThan(15);
-  });
+    // Checks every committed guide: CPU-bound, ~6 s under a full parallel `npm run check`, so not the 5 s default.
+  }, 60_000);
 
 });

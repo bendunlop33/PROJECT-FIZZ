@@ -9,17 +9,29 @@ export interface DevicePrefs {
   themeDirection: 'A' | 'D' | null;
   /** False: How to shows the guide's still key positions only, no frame loop (a safe mode). */
   guideAnimations: boolean;
+  /**
+   * The in-app Rest alerts question (premium-feel §3.5), asked once on the
+   * first Start: not yet, `Not now`, or answered (Allow → the iOS prompt).
+   * Per phone, since notification permission is per phone.
+   */
+  alertsAsk: AlertsAsk;
 }
 
-export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null, guideAnimations: true };
+export type AlertsAsk = 'undetermined' | 'later' | 'answered';
+
+export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null, guideAnimations: true, alertsAsk: 'undetermined' };
 
 export function parsePrefs(text: string | null): DevicePrefs {
   if (text === null) return DEFAULT_PREFS;
   try {
     const json = JSON.parse(text) as unknown;
     if (typeof json !== 'object' || json === null) return DEFAULT_PREFS;
-    const { themeDirection: dir, guideAnimations } = json as { themeDirection?: unknown; guideAnimations?: unknown };
-    return { themeDirection: dir === 'A' || dir === 'D' ? dir : null, guideAnimations: guideAnimations !== false };
+    const { themeDirection: dir, guideAnimations, alertsAsk } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown };
+    return {
+      themeDirection: dir === 'A' || dir === 'D' ? dir : null,
+      guideAnimations: guideAnimations !== false,
+      alertsAsk: alertsAsk === 'later' || alertsAsk === 'answered' ? alertsAsk : 'undetermined',
+    };
   } catch {
     return DEFAULT_PREFS;
   }

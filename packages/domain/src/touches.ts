@@ -1,5 +1,6 @@
 import type { EquipmentInstance, Load, SessionAggregate, SessionExercise } from '@fizz/schemas';
 import { formatNumber, NBSP } from './display';
+import { isSetCountable } from './exclusions';
 import { buildPlateSetup, roundToAvailableLoad } from './equipment';
 import type { HistorySession } from './progression';
 import { toMs } from './time';
@@ -103,14 +104,15 @@ export function summaryHighlight(state: SessionAggregate, history: Readonly<Reco
   for (const ex of exercises) {
     if (ex.loadConvention === 'bodyweight' || ex.loadConvention === 'assistance' || ex.measurement !== 'reps') continue;
     const today = state.sets
-      .filter((s) => s.sessionExerciseId === ex.id && s.status === 'completed' && s.setType !== 'warmup' && s.actual?.load && s.actual.reps !== null)
+      // A record: sets Ben left out (§2.13) never count, today or before.
+      .filter((s) => s.sessionExerciseId === ex.id && s.status === 'completed' && s.setType !== 'warmup' && isSetCountable(s, 'record') && s.actual?.load && s.actual.reps !== null)
       .map((s) => ({ load: s.actual?.load?.value ?? 0, reps: s.actual?.reps ?? 0, unit: s.actual?.load?.unit, convention: s.actual?.load?.convention }))
       .filter((s) => s.unit === ex.unit && s.convention === ex.loadConvention);
     if (today.length === 0) continue;
     const before = (history[ex.exerciseId] ?? [])
       // Imported history isn't comparable while P-I3 is open (review r2 B1).
       .filter((h) => !h.imported && h.sessionId !== state.session.id && h.equipmentId === ex.equipmentId && toMs(h.performedAtUtc) < startedMs)
-      .map((h) => h.sets.filter((s) => s.setType !== 'warmup' && s.load !== null && s.reps !== null && s.load.unit === ex.unit && s.load.convention === ex.loadConvention))
+      .map((h) => h.sets.filter((s) => s.setType !== 'warmup' && isSetCountable(s, 'record') && s.load !== null && s.reps !== null && s.load.unit === ex.unit && s.load.convention === ex.loadConvention))
       .filter((sets) => sets.length > 0);
     if (before.length === 0) continue;
     const prevSets = before.flat();

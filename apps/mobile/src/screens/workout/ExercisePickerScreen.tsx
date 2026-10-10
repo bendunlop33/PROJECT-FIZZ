@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActionSheetIOS, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EQUIPMENT_WORD, pickerEquipmentLabel, pickerSections } from '@fizz/domain';
@@ -11,7 +11,7 @@ import type { RootStackParams } from '../../navigation/types';
 import type { PickerExercise } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Group, Icon, Row, SectionHeader, StatusLine, TextButton } from '../../ui';
+import { AppText, Group, Icon, Row, SectionHeader, StatusLine, TextButton, TEXT_PRESSED_OPACITY } from '../../ui';
 import { pickerEmptyText, type PickerLoad } from '../../workout/picker-empty';
 
 /**
@@ -21,7 +21,9 @@ import { pickerEmptyText, type PickerLoad } from '../../workout/picker-empty';
  * Exercises with a guide or cues get an ⓘ button that opens How to.
  * Choosing one calls `addExercise` once (opId per choice). When the gym has
  * more than one compatible item, Ben picks which; with none, the exercise is
- * added without equipment and loads aren't checked.
+ * added without equipment and loads aren't checked. An exercise with an
+ * active pain flag is tagged `⚠ May hurt` and asks before it's added (EL9);
+ * the row is never hidden and similar movements are never tagged.
  */
 export function ExercisePickerScreen() {
   const theme = useTheme();
@@ -87,7 +89,22 @@ export function ExercisePickerScreen() {
     navigation.goBack();
   }
 
+  /**
+   * A `May hurt` row asks first (EL9, active-workout §2.14.1): `Add anyway`
+   * goes on as normal, `Choose another` adds nothing and keeps the query.
+   */
   function choose(p: PickerExercise) {
+    const flag = p.mayHurt;
+    if (flag === null) {
+      chooseEquipment(p);
+      return;
+    }
+    ActionSheetIOS.showActionSheetWithOptions({ title: flag.confirm.title, message: flag.confirm.message, options: [flag.confirm.confirm, flag.confirm.cancel], cancelButtonIndex: 1 }, (i) => {
+      if (i === 0) chooseEquipment(p);
+    });
+  }
+
+  function chooseEquipment(p: PickerExercise) {
     const only = p.equipment[0];
     if (p.equipment.length <= 1) {
       void add(p, only?.id ?? null);
@@ -159,6 +176,7 @@ export function ExercisePickerScreen() {
                         <Row
                           title={p.exercise.name}
                           subtitle={pickerEquipmentLabel(p.exercise, p.equipment)}
+                          {...(p.mayHurt ? { tag: { icon: 'exclamationmark.triangle', color: 'status.warning', text: 'May hurt', accessibilityLabel: p.mayHurt.accessibilityLabel } as const } : {})}
                           onPress={() => {
                             choose(p);
                           }}
@@ -176,7 +194,7 @@ export function ExercisePickerScreen() {
                           onPress={() => {
                             navigation.navigate('HowTo', { catalogueKey: howTo, name: p.exercise.name });
                           }}
-                          style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', marginRight: theme.space['2'], opacity: busy ? 0.4 : pressed ? 0.6 : 1 })}
+                          style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', marginRight: theme.space['2'], opacity: busy ? 0.4 : pressed ? TEXT_PRESSED_OPACITY : 1 })}
                         >
                           <Icon name="info.circle" color="text.secondary" size={22} />
                         </Pressable>

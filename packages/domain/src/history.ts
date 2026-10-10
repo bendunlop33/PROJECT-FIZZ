@@ -1,6 +1,7 @@
 import type { SessionAggregate } from '@fizz/schemas';
 import type { HistorySession, HistorySet } from './progression';
 import { equipmentOfRow } from './session/equipment-snapshot';
+import { setDisplayNumbers } from './session/order';
 
 /**
  * Progression history for one exercise from a stored session (third-review
@@ -19,14 +20,18 @@ import { equipmentOfRow } from './session/equipment-snapshot';
  * - `performedAtUtc` is the session's (possibly corrected) start time.
  * - `gymId` is the session's gym (null: not recorded); `imported` marks a
  *   FitNotes workout, which is never comparable history (review r2 B1).
+ * - `identity: true` also keeps each set's ID and version and the session's
+ *   zone and routine name, so a target made from this history can record its
+ *   basis for `Why?` (active-workout §2.12) and spot later edits.
  */
-export function toHistorySessions(aggregate: SessionAggregate, exerciseId: string): HistorySession[] {
+export function toHistorySessions(aggregate: SessionAggregate, exerciseId: string, opts: { identity?: boolean } = {}): HistorySession[] {
   const { session } = aggregate;
   if (session.status !== 'finished') return [];
   const exercises = aggregate.exercises
     .filter((e) => e.exerciseId === exerciseId)
     .sort((a, b) => a.order - b.order);
   const byEquipment = new Map<string | null, HistorySet[]>();
+  const numbers = opts.identity ? setDisplayNumbers(aggregate.exercises, aggregate.sets) : null;
   for (const ex of exercises) {
     const sets = aggregate.sets
       .filter((s) => s.sessionExerciseId === ex.id && s.status === 'completed' && s.actual !== null)
@@ -34,6 +39,7 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
     const bucket = byEquipment.get(ex.equipmentId) ?? [];
     for (const s of sets) {
       if (s.actual === null) continue;
+      const number = numbers?.get(s.id);
       bucket.push({
         setType: s.setType,
         side: s.side,
@@ -41,6 +47,10 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
         reps: s.actual.reps,
         rpe: s.actual.rpe,
         rir: s.actual.rir,
+        // §2.13: flags travel with the set; consumers decide with `isSetCountable`.
+        ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}),
+        ...(opts.identity ? { setId: s.id, version: s.version } : {}),
+        ...(number !== undefined ? { number } : {}),
       });
     }
     byEquipment.set(ex.equipmentId, bucket);
@@ -56,5 +66,6 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
     gymId: gymOf(equipmentId),
     imported: session.source === 'import',
     sets,
+    ...(opts.identity ? { tz: session.startedAt.tz, routineName: session.routineName } : {}),
   }));
 }

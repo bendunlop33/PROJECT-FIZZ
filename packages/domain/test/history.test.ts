@@ -88,7 +88,7 @@ describe('toHistorySessions (third-review follow-up 5)', () => {
     s = log(s, a.id, 9, 60, 'both');
     expect(toHistorySessions(s, SPLIT_SQUAT.id)).toEqual([]);
     expect(toHistorySessions(finish(s, 100), 'not-this-exercise')).toEqual([]);
-    const discarded = apply(s, { type: 'discard', at: at(100), opId: 'disc', expectedVersion: s.session.version });
+    const discarded = apply(s, { type: 'discard', at: at(100), opId: 'disc', expectedVersion: s.session.version, confirmedLoggedSets: 1 });
     expect(toHistorySessions(discarded, SPLIT_SQUAT.id)).toEqual([]);
 
     const done = finish(s, 100);

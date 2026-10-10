@@ -1,5 +1,6 @@
 import type { SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
 import { formatNumber, valuesText } from '../display';
+import { isSetCountable } from '../exclusions';
 import { toMs } from '../time';
 
 /**
@@ -16,6 +17,8 @@ import { toMs } from '../time';
  *   first, at most `maxPoints`. Imported workouts are left out: they aren't
  *   comparable history yet (ADR 0016).
  * - `change` compares the newest top set with the one before it.
+ * - Sets Ben marked as not counting (`Spotted`, `Pain`, …, active-workout
+ *   §2.13) are never a top set, a change or a trend point (check 45).
  */
 export interface LiftHighlight {
   exerciseId: string;
@@ -32,7 +35,7 @@ export interface LiftHighlight {
 
 export const LIFT_HIGHLIGHT_MAX_POINTS = 7;
 
-const isWorking = (s: WorkoutSet) => s.setType !== 'warmup' && s.status === 'completed' && s.actual !== null;
+const isWorking = (s: WorkoutSet) => s.setType !== 'warmup' && s.status === 'completed' && s.actual !== null && isSetCountable(s, 'record') && isSetCountable(s, 'comparison');
 
 function weightedTop(a: SessionAggregate, ex: SessionExercise): { load: number; reps: number; set: WorkoutSet } | null {
   let best: { load: number; reps: number; set: WorkoutSet } | null = null;
@@ -54,10 +57,11 @@ export function buildLiftHighlight(sessions: readonly SessionAggregate[], maxPoi
   const logged = sessions
     .filter((a) => a.session.status === 'finished' && a.session.source !== 'import')
     .sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
-  const newest = logged[0];
+  // The newest workout with a counted weighted set: one whose sets were all marked as not counting is passed over.
+  const liftOf = (a: SessionAggregate) => [...a.exercises].sort((x, y) => x.order - y.order).find((ex) => eligible(ex) && weightedTop(a, ex) !== null);
+  const newest = logged.find((a) => liftOf(a) !== undefined);
   if (!newest) return null;
-
-  const lift = [...newest.exercises].sort((a, b) => a.order - b.order).find((ex) => eligible(ex) && weightedTop(newest, ex) !== null);
+  const lift = liftOf(newest);
   if (!lift) return null;
 
   const series: { load: number; reps: number; set: WorkoutSet; session: SessionAggregate }[] = [];

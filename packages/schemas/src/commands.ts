@@ -11,7 +11,7 @@ import {
 import { EquipmentInstanceSchema } from './equipment';
 import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
-import { PlannedSetSchema, PlannedSnapSchema, ResolvedRestSchema, SetSideSchema, SetValuesSchema } from './session';
+import { PlannedSetSchema, PlannedSnapSchema, ResolvedRestSchema, SetExclusionsSchema, SetSideSchema, SetValuesSchema } from './session';
 
 /**
  * Typed commands for the active-session state machine. Every mutating command
@@ -33,6 +33,13 @@ export const LogSetCommandSchema = z.object({
    * set's side (`both` by default). Rejected on bilateral exercises.
    */
   side: SetSideSchema.optional(),
+  /**
+   * Log and mark in one go ("100 for 8, spotted", §2.13). Omit or empty = the
+   * set counts. `pain` is refused here (review N3): a Pain mark must also
+   * flag the movement (AW7, rule 9), which only the correction service does
+   * today. Voice logging adds its own service wrapper before allowing it.
+   */
+  exclusions: SetExclusionsSchema.refine((xs) => !xs.includes('pain'), { message: 'Mark pain through the correction sheet, which also flags the movement' }).optional(),
   /** ID for the rest timer this commit may start (generated with the draft). */
   restTimerId: IdSchema,
 });
@@ -59,7 +66,15 @@ export const CorrectSetCommandSchema = z.object({
   setId: IdSchema,
   /** The set's own version, not the session's. */
   expectedSetVersion: z.int().min(1),
-  patch: SetValuesSchema.partial().extend({ setType: SetTypeSchema.optional(), side: SetSideSchema.optional() }),
+  /**
+   * `exclusions` replaces the set's whole list (§2.13): `[]` clears it. A
+   * patch that only changes exclusions doesn't mark the values `Edited`.
+   */
+  patch: SetValuesSchema.partial().extend({
+    setType: SetTypeSchema.optional(),
+    side: SetSideSchema.optional(),
+    exclusions: SetExclusionsSchema.optional(),
+  }),
 });
 
 /**
@@ -251,6 +266,19 @@ export const SetRestAfterCommandSchema = z.object({
   expectedVersion: z.int().min(1),
 });
 
+/**
+ * `Finish by` in the `Time left` sheet (active-workout §2.15.3,
+ * `setSessionFinishBy`): today only, or null for `Not set`. Changes no set,
+ * load or rest; versioned on the session so a stale sheet is refused.
+ */
+export const SetFinishByCommandSchema = z.object({
+  type: z.literal('set_finish_by'),
+  ...base,
+  opId: OperationIdSchema,
+  finishBy: ZonedTimestampSchema.nullable(),
+  expectedVersion: z.int().min(1),
+});
+
 /** Delete a set (pending, skipped or logged). Kept as an audited tombstone. */
 export const DeleteSetCommandSchema = z.object({
   type: z.literal('delete_set'),
@@ -271,11 +299,36 @@ export const SkipExerciseCommandSchema = z.object({
 /**
  * Discard the workout. The UI confirms first when any set is logged
  * (active-workout §4.9); `expectedVersion` makes a stale confirmation fail.
+ * `confirmedLoggedSets` is the number of logged sets Ben was told would be
+ * discarded (0 when nothing was logged and no prompt was shown). The reducer
+ * refuses the discard unless it matches, so no caller can discard logged sets
+ * without going through the confirmation (review failure-tests M3).
  */
 export const DiscardCommandSchema = z.object({
   type: z.literal('discard'),
   ...base,
   opId: OperationIdSchema,
+  expectedVersion: z.int().min(1),
+  confirmedLoggedSets: z.int().min(0),
+});
+
+/**
+ * Rename the workout (premium-feel §2.6). Allowed while it's active and after
+ * it's finished; versioned on the session, so a stale rename is rejected.
+ * The routine a workout came from is never renamed by this. Undo is another
+ * `rename_session` back to the previous name (null when it had none).
+ */
+export const RenameSessionCommandSchema = z.object({
+  type: z.literal('rename_session'),
+  ...base,
+  opId: OperationIdSchema,
+  /** Null clears a finished workout's name (Undo of naming an unnamed one); its title is then worked out when shown. */
+  name: z
+    .string()
+    .trim()
+    .min(1, { message: 'Give it a name' })
+    .max(120, { message: 'Keep it under 120 characters' })
+    .nullable(),
   expectedVersion: z.int().min(1),
 });
 
@@ -350,6 +403,8 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   SkipExerciseCommandSchema,
   DiscardCommandSchema,
   SetRestAfterCommandSchema,
+  RenameSessionCommandSchema,
+  SetFinishByCommandSchema,
   ChangeGymCommandSchema,
   UndoChangeGymCommandSchema,
 ]);

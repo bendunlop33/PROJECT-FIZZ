@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readdirSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createSessionService, newCheckIn, newPainFlag, stableStringify } from '@fizz/domain';
+import { createSessionService, newCheckIn, newPainFlag, reduceSession, stableStringify } from '@fizz/domain';
 import {
   assisted,
   at,
@@ -11,6 +11,7 @@ import {
   dumbbells,
   exercise,
   gym,
+  hotelFixture,
   id,
   idGen,
   kg,
@@ -90,7 +91,11 @@ async function populate(store: Store): Promise<void> {
   }
   await repos.exercises.save(SPLIT_SQUAT, null);
   await repos.exercises.save(exercise(241, 'Custom press', { ownerId: OWNER, source: 'custom' }), null);
-  await repos.routines.save(routine([routineExercise(700, { exerciseId: SPLIT_SQUAT.id, restBySetType: { working: { seconds: 120 } } })]), null);
+  // Saved from a finished workout (premium-feel §2.6): the new optional fields round-trip too.
+  await repos.routines.save(
+    { ...routine([routineExercise(700, { exerciseId: SPLIT_SQUAT.id, restBySetType: { working: { seconds: 120 } } })]), createdFromSessionId: richFinishedSession().session.id, deletedAtUtc: null, lastOpId: 'save-routine-op' },
+    null,
+  );
   await repos.progressionRules.save(doubleProgression(), null);
   await repos.progressionRules.save(topSetBackoff(), null);
   await repos.sessions.save(richFinishedSession(), null);
@@ -156,6 +161,7 @@ describe('createBackup / restore', () => {
     const richId = richFinishedSession().session.id;
     expect(await target.store.repos.sessions.get(richId)).toEqual(await source.store.repos.sessions.get(richId));
     expect(await target.store.repos.equipment.listByGym(barbell().gymId)).toEqual(await source.store.repos.equipment.listByGym(barbell().gymId));
+    expect(await target.store.repos.routines.get(id(300))).toMatchObject({ createdFromSessionId: richId, deletedAtUtc: null, lastOpId: 'save-routine-op' });
     expect((await checkIntegrity(target.store.db)).ok).toBe(true);
 
     // The restored database is live: the unfinished workout resumes, and an operation
@@ -403,7 +409,10 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
       delete copy.check_in_id;
       delete copy.import_job_id;
       delete copy.local_date;
-      // …and nothing from schema 4 (gym switch).
+      // …and nothing from schema 4 (Finish by, set exclusions below)…
+      delete copy.finish_by_utc;
+      delete copy.finish_by_tz;
+      // …or schema 5 (gym switch).
       delete copy.gym_changes;
       return copy;
     });
@@ -411,6 +420,11 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
       const copy = { ...row };
       delete copy.continues_from_id;
       delete copy.equipment_version;
+      return copy;
+    });
+    tables.session_sets = (tables.session_sets ?? []).map((row) => {
+      const copy = { ...row };
+      delete copy.exclusions;
       return copy;
     });
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
@@ -457,6 +471,88 @@ describe('restoring a backup from an older schema version', () => {
     expect(await old.restore(newerBackup.text, at(400))).toMatchObject({ ok: false, error: { code: 'schema_too_new' } });
     await old.close();
     await newer.close();
+  });
+});
+
+describe('merged schema: active-set (4) and gym switch (5)', () => {
+  /** A switched workout with Ben's exclusion on a logged set and a `Finish by`: every field the two migrations added. */
+  function switchedWithFlags() {
+    const { BENCH, HOTEL, HOTEL_EQ, exerciseSets, propose, pushA, switchCmd } = hotelFixture;
+    const ok = (r: ReturnType<typeof reduceSession>) => {
+      if (!r.ok) throw new Error(r.error.message);
+      return r.state;
+    };
+    let s = pushA();
+    const bench = exerciseSets(s, BENCH);
+    s = ok(reduceSession(s, logCmd(bench[0]?.id ?? '', values(kg(100), 8), 60)));
+    s = ok(reduceSession(s, switchCmd(propose(s, { id: HOTEL, equipment: HOTEL_EQ }), 320)));
+    const done = s.sets.find((x) => x.id === bench[0]?.id);
+    s = ok(reduceSession(s, { type: 'correct_set', at: at(330), opId: 'mark-spotted', setId: done?.id ?? '', expectedSetVersion: done?.version ?? 1, patch: { exclusions: ['spotted'] } }));
+    s = ok(reduceSession(s, { type: 'set_finish_by', at: at(340), opId: 'finish-by', finishBy: at(4000), expectedVersion: s.session.version }));
+    return s;
+  }
+
+  it('a backup from build 91 (schema 4: exclusions, Finish by) restores into schema 5 and migrates forward', async () => {
+    const src = await openManager(dir());
+    await populate(src.store);
+    // A schema-4 workout: an exclusion on a logged set and a `Finish by`, no gym change.
+    const { BENCH, exerciseSets, pushA } = hotelFixture;
+    const ok = (r: ReturnType<typeof reduceSession>) => {
+      if (!r.ok) throw new Error(r.error.message);
+      return r.state;
+    };
+    let w = pushA();
+    const first = exerciseSets(w, BENCH)[0];
+    w = ok(reduceSession(w, logCmd(first?.id ?? '', values(kg(100), 8), 60)));
+    w = ok(reduceSession(w, { type: 'finish', at: at(90), opId: 'fin-v4', expectedVersion: w.session.version, endedAt: null }));
+    const done = w.sets.find((x) => x.id === first?.id);
+    w = ok(reduceSession(w, { type: 'correct_set', at: at(100), opId: 'mark-v4', setId: done?.id ?? '', expectedSetVersion: done?.version ?? 1, patch: { exclusions: ['pain'] } }));
+    await src.store.repos.sessions.save(w, null);
+    const made = await createBackup(src.store, { at: at(200), app: APP });
+    await src.close();
+    // Build 91 had no gym-switch columns.
+    const file = JSON.parse(made.text) as BackupFile;
+    const tables = { ...file.tables };
+    tables.sessions = (tables.sessions ?? []).map((row) => {
+      const copy = { ...row };
+      delete copy.gym_changes;
+      return copy;
+    });
+    tables.session_exercises = (tables.session_exercises ?? []).map((row) => {
+      const copy = { ...row };
+      delete copy.continues_from_id;
+      delete copy.equipment_version;
+      return copy;
+    });
+    const v4 = resign({ ...file, schemaVersion: 4, tables });
+
+    const current = await openManager(dir());
+    expect(await current.restore(v4, at(300))).toMatchObject({ ok: true, status: 'restored', preview: { needsMigration: true } });
+    expect(await current.store.db.read((q) => readUserVersion(q))).toBe(5);
+    const read = await current.store.repos.sessions.get(w.session.id);
+    expect(read).toEqual(w);
+    expect(read?.sets.find((x) => x.id === first?.id)?.exclusions).toEqual(['pain']);
+    expect(read?.session.gymChanges).toBeUndefined();
+    expect((await checkIntegrity(current.store.db)).ok).toBe(true);
+    await current.close();
+  });
+
+  it('a backup at schema 5 round-trips a switched workout with exclusions and Finish by', async () => {
+    const source = await openManager(dir());
+    await source.store.repos.profiles.save(profile(), null);
+    const s = switchedWithFlags();
+    expect(s.session.gymChanges).toHaveLength(1);
+    expect(s.session.finishBy).toBeDefined();
+    expect(s.sets.some((x) => x.exclusions?.includes('spotted'))).toBe(true);
+    await source.store.repos.sessions.save(s, null);
+    const backup = await createBackup(source.store, { at: at(500), app: APP });
+    expect(backup.schemaVersion).toBe(5);
+    const target = await openManager(dir());
+    expect(await target.restore(backup.text, at(600))).toMatchObject({ ok: true, status: 'restored' });
+    expect(await target.store.repos.sessions.get(s.session.id)).toEqual(s);
+    expect((await checkIntegrity(target.store.db)).ok).toBe(true);
+    await source.close();
+    await target.close();
   });
 });
 

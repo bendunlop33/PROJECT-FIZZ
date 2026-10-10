@@ -24,3 +24,6 @@ Newer builds include: the core flow with no dead ends and the dark Direction D s
 
 ## Update (10 Oct, evening): How to crash fix
 Root cause: the guide's animation clock threw on its first frame on the iPhone's UI thread (a default parameter the worklets compiler can't see), which closes a release app. Fixed and tested against the compiled worklet code. New: How to link next to the exercise name and on the rest screen; Profile › App status › Last error; Profile › Developer › Exercise guide animations (turn off for stills-only safe mode).
+
+## Update (10 Oct, night): premium feel + FitNotes
+Calmer rest screen, richer Today with routines (Save as routine on Summary, Up next rotation), press feedback, digit fades, haptics after saves, finish moment; FitNotes import with bar weight only per exercise. Alerts are now asked once on your first Start.

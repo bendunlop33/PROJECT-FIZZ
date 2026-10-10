@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { editorShown, enterAction, isResting } from '../src/workout/rest-fold';
+import { editorShown, editorSlot, enterAction, isResting, READY_HOLD_MS, readyHoldUntil } from '../src/workout/rest-fold';
 import { createHarness, type Harness } from './harness';
 
 /** The rest-screen fold (review B1, S6): `Enter load` always reaches a drawn field. */
@@ -32,6 +32,50 @@ describe('rest fold (pure)', () => {
         const a = enterAction('load', input);
         expect(editorShown({ ...input, showNextSet: showNextSet || a.unfold })).toBe(true);
       }
+  });
+});
+
+describe('editor slot across the rest end (premium-feel review B1)', () => {
+  it('editor opened during rest keeps the same key when the rest ends, and does not animate', () => {
+    const during = editorSlot({ resting: true, hasFocus: true, showNextSet: true, setId: 's2', drawn: true });
+    const after = editorSlot({ resting: false, hasFocus: true, showNextSet: true, setId: 's2', drawn: true });
+    expect(during).toEqual({ kind: 'editor', key: 'editor:s2', animateOnMount: false });
+    expect(after.kind).toBe('editor');
+    if (during.kind === 'editor' && after.kind === 'editor') expect(after.key).toBe(during.key);
+  });
+
+  it('folded during rest: the link, then the editor fades in when the rest ends', () => {
+    expect(editorSlot({ resting: true, hasFocus: true, showNextSet: false, setId: 's2', drawn: true })).toEqual({ kind: 'link' });
+    expect(editorSlot({ resting: false, hasFocus: true, showNextSet: false, setId: 's2', drawn: true })).toEqual({ kind: 'editor', key: 'editor:s2', animateOnMount: true });
+  });
+
+  it('never animates on the first draw; nothing without a set', () => {
+    expect(editorSlot({ resting: false, hasFocus: true, showNextSet: false, setId: 's1', drawn: false })).toEqual({ kind: 'editor', key: 'editor:s1', animateOnMount: false });
+    expect(editorSlot({ resting: false, hasFocus: false, showNextSet: false, setId: null, drawn: true })).toEqual({ kind: 'none' });
+  });
+});
+
+describe('Rest end → READY hold (premium-feel §4.3, review S2)', () => {
+  const deadline = Date.UTC(2026, 9, 10, 7, 2, 0);
+  const running = { kind: 'running' as const, timerId: 't1', deadlineUtc: new Date(deadline).toISOString() };
+  const ended = { kind: 'ended' as const, timerId: 't1', skipped: false };
+
+  it('holds READY for 600 ms when the rest reaches its end on screen', () => {
+    expect(readyHoldUntil(running, ended, deadline + 300)).toBe(deadline + 300 + READY_HOLD_MS);
+  });
+
+  it('no hold for Skip, another timer, a return to the app later, or no transition', () => {
+    expect(readyHoldUntil(running, { ...ended, skipped: true }, deadline - 20_000)).toBeNull();
+    expect(readyHoldUntil(running, { ...ended, timerId: 't2' }, deadline)).toBeNull();
+    expect(readyHoldUntil(running, ended, deadline + 60_000)).toBeNull();
+    expect(readyHoldUntil(ended, ended, deadline)).toBeNull();
+    expect(readyHoldUntil(null, ended, deadline)).toBeNull();
+  });
+
+  it('during the hold an open editor keeps its key; the folded one swaps in after', () => {
+    // The screen treats the hold as rest on screen, so the slot is the same as during rest.
+    expect(editorSlot({ resting: true, hasFocus: true, showNextSet: false, setId: 's2', drawn: true })).toEqual({ kind: 'link' });
+    expect(editorSlot({ resting: true, hasFocus: true, showNextSet: true, setId: 's2', drawn: true })).toMatchObject({ key: 'editor:s2', animateOnMount: false });
   });
 });
 

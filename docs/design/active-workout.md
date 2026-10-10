@@ -1181,6 +1181,30 @@ These files are owned elsewhere or were outside this task. Each item states what
 - **training-researcher:** a playbook candidate rule for returning to load after a pain flag is cleared (how fast, how far, evidence grade). Until Ben approves one, AW10's validator block stands.
 - **lock-screen-and-alerts.md:** time left isn't on the Live Activity in this version; a later option.
 
+### 8.3 Build status and open items (developer, 2026-10-10, `claude/active-set` review fixes)
+
+Not built yet (review N6), so these checks are partial until they are:
+
+- Overview `Why?` and the time-left line at the end of Overview (there is no Overview view yet).
+- An `Edit history` UI using `exclusionAuditLines` (check 49 is partial: the words show on the card, toast, summary and `Why?`).
+- `isSetCountable` purposes `trigger` and `e1rm`: no coach offers or estimated 1RM exist yet; both already return "not counted" for a flagged set.
+- The `History ›` footer in the `Why?` panel.
+- `Use built-in rule` / `Undo this change` in `Why?` (coach targets, build step 4).
+- `Finish by` uses a ±5 min stepper, not the wheel in §2.15.3 (works; designer to confirm).
+
+Implemented differently from this spec, for the designer and Ben to confirm:
+
+- **Undo of a flag Ben just set is a retraction, not a clear** (review B2 / S2). The `Pain noted` toast and the exclusion toast's Undo mark the flag `retracted`: as if it never existed (no `Before flag` reference, not listed, no return-to-load guard, can't be cleared or restored). It's versioned against the flag the action produced; a flag changed since is kept and Ben is told (`Set undone. Pain flag kept: it changed since.`). `Clear flag` with the AW10 confirmation stays the only clear.
+- **Minimal copy** (CLAUDE.md, 10 Oct; review S1): the Time left sheet footnote, `Still counts in your log and volume.` and the Profile › Pain flags lead text are not shown; the Pain chip line is `Also flags Bench press for pain`. §5 still lists the old strings and needs the designer's revision.
+- **Next-session targets from the built-in rule** keep rule provenance (`Built-in rule · after …`), not Repeat; the no-history starting plan records `Starting plan: 3 sets of 3–6 reps. You choose the load.` (review B1.1).
+- **Records and the Today lift highlight** (added on the base branch) read `isSetCountable`: a marked set is never a record, a top set or a trend point (check 45).
+- **Two estimators of §2.15.2**: `duration.ts` (Up next and the routine sheet, a workout not started yet) and `time-left.ts` (`estimateTimeLeft`: the workout in progress, with pause, range and `Finish by`). They were built in parallel and differ slightly (rounding under a minute, pause handling). Follow-up: fold `duration.ts` into `estimateTimeLeft` so there is one rule.
+- **Schema**: exclusions, `Finish by` and the `retracted` pain flag status are one migration (schema 4). `claude/gym-switch` also has an unreleased migration 4. **Gate (review r2 N3):** no `.ipa` from either branch until whichever merges second has renumbered its migration and a backup taken at the merged schema restores. Migration 4 rebuilds `pain_flags` (drop and rename); any later migration that adds a foreign key or trigger on that table must come after it. **Merged 10 Oct:** gym switch merged second and is now migration 5 (ADR 0019); a schema-4 backup restores and migrates to 5, and a schema-5 backup of a switched workout with exclusions and `Finish by` round-trips (`packages/persistence/test/backup.test.ts`). The gate's real-device part (a backup taken on Ben's phone restoring) still needs a device pass.
+- **Merging with `claude/coach`** (review r2 N4): `PainFlag.status` gains `retracted`. Coach code that reads `status === 'cleared'` as "not active" must use `status !== 'active'`, and must use the retraction-aware `clearPainFlag` / `restorePainFlag`.
+- **AW7 "in the same commit"** (review r2 S3): services have no transaction across `painFlags` and `sessions`, so `correctSet` writes the flag, then `correct_set`, and takes the flag back (retracts it) if the mark doesn't land, including when the write throws. Only an *active* flag of the save's opId counts as that save's, so a retry after a failed save writes a fresh flag rather than pointing at a withdrawn one (review r2 B1). A cross-repository transaction would remove the compensation; it needs an ADR (persistence contract change) and is not built.
+
+Open question for Ben (review S3): a pain flag set mid-workout leaves today's already-planned targets as they are (`Flagged after this target was set, so the target wasn't changed.`). Rule 9 says a pain mention stops progression for that movement. Should setting a flag offer (or apply, with Undo) "hold today's remaining sets at the last done load"? Not built until Ben decides.
+
 ## 9. Tokens and components to merge into design-system.md (revision 2026-10-09)
 
 design-system.md is being edited by another agent, so these are specified here. **No new colour values; one accent kept.** All of them use existing tokens.

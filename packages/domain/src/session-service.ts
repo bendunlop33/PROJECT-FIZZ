@@ -12,6 +12,7 @@ import type { Repositories, SaveResult } from './ports';
 import { buildAddExerciseCommand, startWorkout, type AddExerciseInput, type StartWarning } from './session/create';
 import { recoverSession, type RecoveryResult } from './session/recovery';
 import { startWorkoutFromSession, type RepeatInput, type RepeatNote, type RepeatOutput } from './session/repeat';
+import { isDeleted, planRoutineStart, type RoutineStartInput } from './session/routines';
 import { reduceSession, type SessionError, type SessionEvent } from './session/reducer';
 
 export type ServiceError =
@@ -94,12 +95,12 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       if (ex) exercises.set(ex.id, ex);
     }
     const gymEquipment = await repos.equipment.listByGym(req.gymId);
-    // A routine pinned to an item at another gym is mapped by that item's kind (gym-switch GS3).
-    const knownEquipment = new Map<string, EquipmentInstance>();
+    // The items a routine is pinned to, from any gym: one not here is mapped by its kind (gym-switch GS3).
+    const routineEquipment = new Map<string, EquipmentInstance>();
     for (const rex of routine?.exercises ?? []) {
-      if (rex.equipmentId === null || gymEquipment.some((e) => e.id === rex.equipmentId)) continue;
-      const pinned = await repos.equipment.get(rex.equipmentId);
-      if (pinned) knownEquipment.set(pinned.id, pinned);
+      if (rex.equipmentId === null || routineEquipment.has(rex.equipmentId)) continue;
+      const eq = await repos.equipment.get(rex.equipmentId);
+      if (eq) routineEquipment.set(eq.id, eq);
     }
     const gym = await repos.gyms.get(req.gymId);
     const { aggregate, warnings } = startWorkout({
@@ -109,10 +110,10 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       routine,
       exercises,
       gymEquipment,
+      routineEquipment,
       at: req.at,
       newId,
       checkIn: req.checkIn ?? null,
-      knownEquipment,
       ...(gym ? { gymName: gym.name } : {}),
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     });
@@ -188,6 +189,56 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false };
   }
 
+  /**
+   * Start a routine (premium-feel §2.6): its structure, with `targets` (next
+   * targets from its last workout) where given, checked on this gym's
+   * equipment. Idempotent by `opId`; one active session at a time.
+   * `preview: true` builds it without saving (the routine sheet, Today).
+   */
+  async function startRoutine(
+    req: Omit<StartRequest, 'routineId'> & { routineId: string; preview?: boolean; targets?: RoutineStartInput['targets'] },
+  ): Promise<{ ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; duplicate: boolean } | { ok: false; error: ServiceError | { code: 'nothing_to_start'; message: string } }> {
+    if (!req.preview) {
+      const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
+      if (existing) return { ok: true, aggregate: existing, notes: [], duplicate: true };
+      const active = await repos.sessions.getActive(req.ownerId);
+      if (active) {
+        return { ok: false, error: { code: 'session_already_active', message: 'Finish or resume the unfinished workout first.', sessionId: active.session.id } };
+      }
+    }
+    const owner = await repos.profiles.get(req.ownerId);
+    if (!owner) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
+    const routine = await repos.routines.get(req.routineId);
+    if (!routine || routine.ownerId !== req.ownerId || isDeleted(routine)) return { ok: false, error: { code: 'not_found', message: 'That routine wasn’t found.' } };
+    const exercises = new Map<string, Exercise>();
+    for (const rex of routine.exercises) {
+      const ex = await repos.exercises.get(rex.exerciseId);
+      if (ex) exercises.set(ex.id, ex);
+    }
+    // Ben's other gyms: to find the same kind of equipment here when the routine's item is elsewhere.
+    const knownEquipment = new Map<string, EquipmentInstance>();
+    for (const g of await repos.gyms.listByOwner(req.ownerId)) for (const e of await repos.equipment.listByGym(g.id)) knownEquipment.set(e.id, e);
+    const out = planRoutineStart({
+      opId: req.opId,
+      owner,
+      gymId: req.gymId,
+      routine,
+      exercises,
+      gymEquipment: await repos.equipment.listByGym(req.gymId),
+      knownEquipment,
+      at: req.at,
+      newId,
+      checkIn: req.checkIn ?? null,
+      ...(req.targets ? { targets: req.targets } : {}),
+    });
+    if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This routine has no exercises to start.' } };
+    if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false };
+    const saved = await trySave(() => repos.sessions.save(out.aggregate, null));
+    if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
+    if (!saved.ok) return { ok: false, error: { code: 'write_conflict', message: 'Could not create the session.' } };
+    return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false };
+  }
+
   async function dispatch(sessionId: string, rawCommand: unknown): Promise<CommandOutcome> {
     const parsed = validate(SessionCommandSchema, rawCommand);
     if (!parsed.ok) {
@@ -252,7 +303,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     return result;
   }
 
-  return { start, startFromSession, dispatch, addExercise, recover };
+  return { start, startFromSession, startRoutine, dispatch, addExercise, recover };
 }
 
 export type SessionService = ReturnType<typeof createSessionService>;

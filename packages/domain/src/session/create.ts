@@ -20,11 +20,22 @@ import { EQUIPMENT_WORD } from '../display';
 import { isLoadAchievable, roundToAvailableLoad } from '../equipment';
 import { convertMassExactly } from '../units';
 import { resolveRestPreset } from '../rest';
+import { planTargetProvenance } from '../target-provenance';
 import { buildExecutionOrder } from './order';
 import { plannedSnapOf, snapPlanToGym, type SnapResult, type SnapSlotInput, type SnapSource } from './snap';
 
 export type StartWarning =
-  | { kind: 'equipment_not_in_gym'; routineExerciseId: string; equipmentId: string }
+  | {
+      kind: 'equipment_not_in_gym';
+      routineExerciseId: string;
+      equipmentId: string;
+      /**
+       * This gym's available item of the same kind used instead (targets are
+       * snapped and capped to it, the same rule as Repeat), or null when this
+       * gym has none and the load targets are dropped.
+       */
+      substituteId: string | null;
+    }
   | { kind: 'exercise_missing'; routineExerciseId: string; exerciseId: string }
   | {
       /** The planned load differs from the template (rounded, bounded, or converted to the equipment's unit). */
@@ -44,8 +55,23 @@ export type StartWarning =
       kind: 'target_dropped';
       setTemplateId: string;
       requested: Load;
-      reason: SnapReason;
+      /**
+       * `equipment_not_in_gym`: the routine names equipment this gym doesn't
+       * have (or has retired) and nothing here can stand in for it, so
+       * there's nothing to check the load on (rule 4; the same rule as
+       * Repeat, review slice-3 B1). The other reasons are `snapPlanToGym`'s.
+       */
+      reason: StartDropReason;
     };
+
+/** Why a start (or Repeat) target was dropped: `snapPlanToGym`'s reasons, with `not_here` named for the routine's item. */
+export type StartDropReason = Exclude<SnapReason, 'not_here'> | 'equipment_not_in_gym';
+
+/** The fit's drop reason as a start warning reports it. */
+export function startDropReason(reason: SnapReason | undefined): StartDropReason {
+  if (reason === undefined) return 'no_achievable_loads';
+  return reason === 'not_here' ? 'equipment_not_in_gym' : reason;
+}
 
 export type PlannedLoadResult =
   | { load: Load | null; warning: null }
@@ -109,6 +135,13 @@ export interface StartWorkoutInput {
   exercises: ReadonlyMap<string, Exercise>;
   /** Confirmed equipment of the selected gym, snapshotted into the session. */
   gymEquipment: readonly EquipmentInstance[];
+  /**
+   * The equipment records the routine names (from any gym), so an item this gym
+   * doesn't have is mapped to this gym's equipment by kind (`snapPlanToGym`
+   * GS3; routines.md §2.2 "Targets will be capped"). Looked up before
+   * `knownEquipment`; a pin found in neither is mapped by the exercise's kinds.
+   */
+  routineEquipment?: ReadonlyMap<string, EquipmentInstance>;
   at: ZonedTimestamp;
   /** Injected ID generator (UUIDs in the app; deterministic in tests). */
   newId: () => string;
@@ -134,6 +167,8 @@ export interface StartWorkoutOutput {
   warnings: StartWarning[];
   /** The shared fit (`snapPlanToGym`, mode `start` or `repeat`); slot IDs are routine exercise IDs, set IDs template IDs. */
   snap: SnapResult;
+  /** The template each planned set came from (set ID → set template ID). */
+  setTemplateIds: Record<string, string>;
 }
 
 function sourceFor(equipment: EquipmentInstance): SnapSource {
@@ -149,6 +184,8 @@ function sourceFor(equipment: EquipmentInstance): SnapSource {
  * item can make, never above its max. An equipped plan with no equipment
  * here gets no load target, reps kept (closes the routine-start gap, §6.6).
  * Every fit is stored on the set (`planned.snap`) and reported as a warning.
+ * Every set with a target records where it came from (`planned.provenance`,
+ * source `plan`, with any fit or drop as a guard note) for `Why?`.
  */
 export function startWorkout(input: StartWorkoutInput): StartWorkoutOutput {
   return startWorkoutWithMode(input, 'start');
@@ -161,6 +198,7 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
   const equipmentById = new Map(input.gymEquipment.map((e) => [e.id, e]));
   const exercises: SessionExercise[] = [];
   const sets: WorkoutSet[] = [];
+  const setTemplateIds: Record<string, string> = {};
 
   const routineExercises = input.routine ? [...input.routine.exercises].sort((a, b) => a.order - b.order) : [];
   const planned = routineExercises.flatMap((rex) => {
@@ -175,7 +213,7 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
   const slots: SnapSlotInput[] = planned.map(({ rex, exercise }) => {
     let source: SnapSource | null = null;
     if (rex.equipmentId !== null) {
-      const pinned = equipmentById.get(rex.equipmentId) ?? input.knownEquipment?.get(rex.equipmentId) ?? null;
+      const pinned = equipmentById.get(rex.equipmentId) ?? input.routineEquipment?.get(rex.equipmentId) ?? input.knownEquipment?.get(rex.equipmentId) ?? null;
       // A pin that can't be resolved anywhere is still a plan for equipment: map it by the exercise's kinds.
       const kind = pinned?.kind ?? exercise.compatibleEquipment[0];
       if (pinned) source = sourceFor(pinned);
@@ -202,7 +240,7 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
     const fit = snap.slots[position];
     if (!fit) return;
     if (rex.equipmentId !== null && fit.mapping !== 'same_item') {
-      warnings.push({ kind: 'equipment_not_in_gym', routineExerciseId: rex.id, equipmentId: rex.equipmentId });
+      warnings.push({ kind: 'equipment_not_in_gym', routineExerciseId: rex.id, equipmentId: rex.equipmentId, substituteId: fit.equipment?.id ?? null });
     }
     const equipment = fit.equipment;
     const sessionExerciseId = input.newId();
@@ -225,16 +263,25 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
     rex.setTemplates.forEach((tpl, index) => {
       const result = fit.sets[index];
       const load = result?.load ?? null;
+      let warning: Extract<StartWarning, { kind: 'target_rounded' | 'target_dropped' }> | null = null;
       if (result && tpl.targetLoad !== null) {
         if (result.outcome === 'dropped') {
-          warnings.push({ kind: 'target_dropped', setTemplateId: tpl.id, requested: tpl.targetLoad, reason: result.reason ?? 'no_achievable_loads' });
+          warning = { kind: 'target_dropped', setTemplateId: tpl.id, requested: tpl.targetLoad, reason: startDropReason(result.reason) };
         } else if (load !== null && result.outcome !== 'exact') {
-          warnings.push({ kind: 'target_rounded', setTemplateId: tpl.id, requested: tpl.targetLoad, planned: load, bounded: result.bounded, converted: load.unit !== tpl.targetLoad.unit });
+          warning = { kind: 'target_rounded', setTemplateId: tpl.id, requested: tpl.targetLoad, planned: load, bounded: result.bounded, converted: load.unit !== tpl.targetLoad.unit };
         }
       }
+      if (warning) warnings.push(warning);
       const fitted = result ? plannedSnapOf(result, fit, mode, input.gymId) : null;
+      const hasTarget = tpl.targetLoad !== null || tpl.targetReps !== null || tpl.targetDurationS !== null;
+      const provenance =
+        hasTarget && input.routine
+          ? planTargetProvenance({ routineName: input.routine.name, at: input.at, requested: tpl.targetLoad, warning, equipment })
+          : null;
+      const setId = input.newId();
+      setTemplateIds[setId] = tpl.id;
       sets.push({
-        id: input.newId(),
+        id: setId,
         sessionId,
         sessionExerciseId,
         index,
@@ -249,6 +296,7 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
           rpe: tpl.targetRpe,
           rir: tpl.targetRir,
           ...(fitted !== null ? { snap: fitted } : {}),
+          ...(provenance !== null ? { provenance } : {}),
         },
         rest: resolveRestPreset({
           setType: tpl.setType,
@@ -303,6 +351,7 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
     },
     warnings,
     snap,
+    setTemplateIds,
   };
 }
 

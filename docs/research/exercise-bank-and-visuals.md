@@ -138,7 +138,7 @@ Basic tier (all ~250–400 entries):
 - `copiedFields` lists any field text taken from a licensed source (e.g. `["aliases[1]"]`). If it is non-empty, the source's licence and author must be present and CREDITS.md must cover them.
 - `family` groups variants (`squat`, `bench_press`, `row`, `sled`) for substitutions and guide templates.
 - `requiresStation` (optional): `rack`, `bench`, `incline_bench`, `pullup_bar`, `dip_station`, `cable_column`, `specific_machine`, `sled_track`, `wall_target`. It is used by `getCompatibleExercises` [Inference].
-- `implements` (optional, `per_hand` entries only; added by ADR 0016): `1` when the exercise is done with one dumbbell or kettlebell (one-arm row, goblet squat, pullover), `2` with one in each hand (presses, curls, split squats). Leave it out when the exercise is commonly done either way (single-leg RDL); the FitNotes import then asks. `laterality` can't stand in for it: a one-arm row and a split squat are both unilateral.
+- `implements` (optional, `per_hand` entries only; added by ADR 0016): `1` when the exercise is done with one dumbbell or kettlebell (one-arm row, goblet squat, pullover), `2` with one in each hand (presses, curls, split squats). Leave it out when the exercise is commonly done either way (single-leg RDL, triceps kickback, step-up, reverse lunge); the FitNotes import then asks. The import also asks when the imported name's own words disagree with it (`One-Arm …` on a two-dumbbell entry; ADR 0016). `laterality` can't stand in for it: a one-arm row and a split squat are both unilateral.
 
 Rich tier adds:
 

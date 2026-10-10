@@ -1,5 +1,5 @@
 /**
- * Schema version 4 (mid-workout gym switch, gym-switch.md §6.5, ADR 0019).
+ * Schema version 5 (mid-workout gym switch, gym-switch.md §6.5, ADR 0019).
  * Frozen once released.
  *
  * - `sessions.gym_changes`: the workout's gym changes and their Undo records
@@ -14,7 +14,7 @@
  * Planned targets keep how they were fitted inside the existing `planned`
  * JSON (`planned.snap`, GS-S1), so no column is needed for it.
  */
-export const MIGRATION_0004 = `
+export const MIGRATION_0005 = `
 ALTER TABLE sessions ADD COLUMN gym_changes TEXT CHECK (gym_changes IS NULL OR json_valid(gym_changes));
 ALTER TABLE session_exercises ADD COLUMN continues_from_id TEXT REFERENCES session_exercises (id);
 ALTER TABLE session_exercises ADD COLUMN equipment_version INTEGER CHECK (equipment_version IS NULL OR equipment_version >= 1);

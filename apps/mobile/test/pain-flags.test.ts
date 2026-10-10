@@ -25,7 +25,7 @@ describe('pain flags after the toast', () => {
     const started = await s.workout.start({ gymId, opId: 'w2', checkIn: { kind: 'answered', checkInId: ci.checkIn.id } });
     if (!started.ok) throw new Error('start');
     // Log the second workout through the normal path, then finish it.
-    await s.workout.dispatch(started.aggregate.session.id, { type: 'discard', at: h.now(), opId: 'd', expectedVersion: started.aggregate.session.version });
+    await s.workout.dispatch(started.aggregate.session.id, { type: 'discard', at: h.now(), opId: 'd', expectedVersion: started.aggregate.session.version, confirmedLoggedSets: 0 });
     const second = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [1, 2, 3].map(() => ({ load: 100, reps: 6, rpe: 8 })) }, { exercise: 'Lat pulldown', sets: [1, 2].map(() => ({ load: 40, reps: 10, rpe: 8 })) }]);
     let sum = await s.workout.summary(second);
     expect(sum?.nextTime?.rows.map((r) => [r.exerciseName, r.decision])).toEqual([
@@ -45,7 +45,7 @@ describe('pain flags after the toast', () => {
     expect((await s.pain.active()).map((f) => f.exerciseName)).toEqual(['Bench press']);
 
     // Profile → Pain flags → Clear.
-    expect(await s.pain.clear((await s.pain.active()).map((f) => f.id))).toBe(true);
+    for (const f of await s.pain.active()) expect(await s.pain.clearConfirmed({ flagId: f.id, expectedVersion: f.version })).toMatchObject({ ok: true });
     expect(await s.pain.active()).toEqual([]);
     sum = await s.workout.summary(second);
     expect(sum?.nextTime?.rows.find((r) => r.exerciseName === 'Bench press')?.decision).toBe('increase_load');
@@ -67,35 +67,43 @@ describe('Summary Clear on a pain flag (review S4, rule 9)', () => {
     return { s, sessionId, flagId };
   }
 
-  it('uses the same confirm wording as the set card and Profile', () => {
-    expect(painClearConfirm('Bench press')).toEqual({ title: 'Clear the pain flag for Bench press?', message: 'Its targets can go up again from the next workout.', confirm: 'Clear' });
-    expect(painClearedToast('Bench press')).toEqual({ text: 'Pain flag cleared for Bench press. Next time can go up again.', action: 'Undo' });
+  it('uses the same confirm wording as the pain flag sheet and Profile (AW10)', () => {
+    const flag = { exerciseName: 'Bench press', reportedAt: { utc: '2026-10-06T09:00:00.000Z', tz: 'Europe/London' } };
+    expect(painClearConfirm(flag)).toEqual({
+      title: 'Clear the pain flag on Bench press?',
+      message: 'Loads, reps and sets can go up again, starting from your recent sets. Your sets from before 6\u00a0Oct stay in your history as the reference.',
+      confirm: 'Clear flag',
+      cancel: 'Keep it',
+    });
+    expect(painClearedToast('Bench press')).toEqual({ text: 'Pain flag cleared for Bench press', action: 'Undo' });
   });
 
   it('Clear then Undo puts the flag back as a new version, and Next time holds again', async () => {
     const { s, sessionId, flagId } = await flagBench();
     const decision = async () => (await s.workout.summary(sessionId))?.nextTime?.rows.find((r) => r.exerciseName === 'Bench press')?.decision;
     expect(await decision()).toBe('halted_pain');
-    const cleared = await s.pain.clearWithUndo([flagId]);
-    expect(cleared).toEqual({ ok: true, cleared: [{ id: flagId, version: 2 }] });
+    const cleared = await s.pain.clearConfirmed({ flagId, expectedVersion: 1 });
+    expect(cleared).toEqual({ ok: true, cleared: { id: flagId, version: 2 } });
+    if (!cleared.ok || !cleared.cleared) throw new Error('clear');
     expect(await decision()).toBe('increase_load');
-    expect(await s.pain.undoClear(cleared.cleared)).toBe(true);
+    expect(await s.pain.undoClear([cleared.cleared])).toBe(true);
     const back = await s.pain.active();
     expect(back.map((f) => [f.id, f.status, f.version, f.clearedAtUtc])).toEqual([[flagId, 'active', 3, null]]);
     expect(await decision()).toBe('halted_pain');
     // A second Undo (double tap) changes nothing.
-    expect(await s.pain.undoClear(cleared.cleared)).toBe(false);
+    expect(await s.pain.undoClear([cleared.cleared])).toBe(false);
     expect((await s.pain.active()).map((f) => f.version)).toEqual([3]);
   });
 
   it('Undo never overwrites a flag that changed after the clear (stale)', async () => {
     const { s, flagId } = await flagBench();
-    const cleared = await s.pain.clearWithUndo([flagId]);
+    const cleared = await s.pain.clearConfirmed({ flagId, expectedVersion: 1 });
+    if (!cleared.ok || !cleared.cleared) throw new Error('clear');
     // The flag moves on after the clear: Undo, then cleared again from Profile (version 4).
-    expect(await s.pain.undoClear(cleared.cleared)).toBe(true);
-    expect(await s.pain.clear([flagId])).toBe(true);
+    expect(await s.pain.undoClear([cleared.cleared])).toBe(true);
+    expect(await s.pain.clearConfirmed({ flagId, expectedVersion: 3 })).toMatchObject({ ok: true });
     // The first toast's Undo is now stale: the flag stays cleared.
-    expect(await s.pain.undoClear(cleared.cleared)).toBe(false);
+    expect(await s.pain.undoClear([cleared.cleared])).toBe(false);
     expect(await s.pain.active()).toEqual([]);
   });
 });

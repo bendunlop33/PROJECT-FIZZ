@@ -1,4 +1,5 @@
 import type { CheckIn, EquipmentInstance, Load, PainFlag, ProgressionRule, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
+import { isSetCountable, notComparedText, withExclusionWords } from '../exclusions';
 import { painMentionedNotFlagged, reasonsText, scoreText } from '../checkin';
 import type { RuleExerciseInfo } from '../default-rule';
 import { unspecifiedPain } from '../next-target';
@@ -10,6 +11,7 @@ import { lastComparableSession } from './active-view';
 import { summaryHighlight } from '../touches';
 import { equipmentOfRow } from './equipment-snapshot';
 import { gymRouteIds, nextTargetBlocks, nextTargetsForBlock, partRootOf } from './gym-switch';
+import { sessionRecords } from './records';
 import { dateOnlyOf, workoutDurationMs } from './view';
 import { summariseVolume } from './volume';
 
@@ -61,6 +63,12 @@ export interface WorkoutSummary {
   sessionId: string;
   sessionVersion: number;
   title: string;
+  /** The name as stored (null: none, the title is worked out); what a rename's Undo goes back to. */
+  storedName: string | null;
+  /** The routine this workout was started from, if any (`Save as routine` is hidden then; premium-feel §6.2). */
+  routineId: string | null;
+  /** `import`: a FitNotes workout; it can't be saved as a routine (its loads were never checked on equipment). */
+  source: 'manual' | 'import';
   startedAtUtc: string;
   endedAtUtc: string | null;
   tz: string;
@@ -86,6 +94,8 @@ export interface WorkoutSummary {
   empty: boolean;
   /** One like-for-like highlight (`Heaviest Bench press set on Olympic bar: 102.5 kg × 6`), or null. Never invented. */
   highlight: string | null;
+  /** Heaviest-set lines (premium-feel §5.1), one per exercise at most; shown in the Comparison region. */
+  records: string[];
   /** Bounds for `Edit times` (`update_session_timing`). */
   timingBounds: { startLatestUtc: string; endEarliestUtc: string; endLatestUtc: string };
   lastCompletedAtUtc: string | null;
@@ -209,7 +219,8 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
       // Mixed, and this part's unit can't be said once: each set says its own load in full.
       const compact = !mixed || partSuffix !== null || partKeys.size === 0;
       const body = done
-        .map((x) => (x.actual ? `${x.side === 'left' ? 'L ' : x.side === 'right' ? 'R ' : ''}${valuesText(x.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq, compact })}` : ''))
+        // §2.13: a flagged set is listed with its words (`100 × 8 · spotted`); it still counts in sets and volume (AW8).
+        .map((x) => (x.actual ? withExclusionWords(`${x.side === 'left' ? 'L ' : x.side === 'right' ? 'R ' : ''}${valuesText(x.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq, compact })}`, x.exclusions) : ''))
         .join(' · ');
       const text = body === '' || partSuffix === null ? body : `${body}${NBSP}${partSuffix}`;
       if (text === '') continue;
@@ -250,9 +261,22 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     const others = (input.history[ex.exerciseId] ?? []).filter((h) => h.sessionId !== s.id && toMs(h.performedAtUtc) < toMs(s.startedAt.utc));
     const prev = lastComparableSession(others, ex);
     const direction = loadDirection(ex.loadConvention);
-    const today = topOf(todaySets.map((x) => x.actual).filter((a): a is NonNullable<typeof a> => a !== null), direction);
+    // §2.13: compare the best set Ben didn't leave out, on both sides.
+    const today = topOf(todaySets.filter((x) => isSetCountable(x, 'comparison')).map((x) => x.actual).filter((a): a is NonNullable<typeof a> => a !== null), direction);
+    if (prev && today === null) {
+      const top = topOf(todaySets.map((x) => ({ load: x.actual?.load ?? null, reps: x.actual?.reps ?? null, exclusions: x.exclusions })), direction);
+      // Like the other not-compared cases: a later exercise that does compare still wins.
+      comparison ??= { kind: 'not_comparable', text: notComparedText(top?.exclusions) };
+      continue;
+    }
     if (prev && today) {
-      const last = topOf(prev.sets.map((c) => c.values), direction);
+      const countedPrev = prev.sets.filter((c) => isSetCountable(c, 'comparison'));
+      if (countedPrev.length === 0) {
+        const top = topOf(prev.sets.map((c) => ({ ...c.values, exclusions: c.exclusions })), direction);
+        comparison ??= { kind: 'not_comparable', text: notComparedText(top?.exclusions) };
+        continue;
+      }
+      const last = topOf(countedPrev.map((c) => c.values), direction);
       if (last) {
         comparison = {
           kind: 'compared',
@@ -322,6 +346,9 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     sessionId: s.id,
     sessionVersion: s.version,
     title: s.routineName ?? 'Workout',
+    storedName: s.routineName,
+    routineId: s.routineId,
+    source: s.source,
     startedAtUtc: s.startedAt.utc,
     endedAtUtc: s.endedAt?.utc ?? null,
     tz: s.startedAt.tz,
@@ -349,6 +376,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
         : { sourceTag: BUILT_IN_SOURCE_TAG[input.coach], rows, emptyText: rows.length === 0 ? 'No target changes. Same targets next time.' : null },
     empty: workingSets === 0,
     highlight: workingSets === 0 || imported ? null : summaryHighlight(state, input.history),
+    records: workingSets === 0 || imported ? [] : sessionRecords({ aggregate: state, gymName: input.gymName, ...(input.gymNames ? { gymNames: input.gymNames } : {}), history: input.history }),
     timingBounds: {
       startLatestUtc: firstDone ?? (s.endedAt?.utc ?? nowIso),
       endEarliestUtc: lastDone ?? s.startedAt.utc,

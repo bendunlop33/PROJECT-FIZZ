@@ -68,6 +68,23 @@ export function buildExecutionOrder(
 }
 
 /**
+ * Each live set's number as the set card, toast and correction sheet show it
+ * (`Set 4`): its place among its exercise's live sets, warm-ups included, in
+ * execution order. `Why?` stores it with a basis set so `Not used` names the
+ * same set later (review N1).
+ */
+export function setDisplayNumbers(exercises: readonly SessionExercise[], sets: readonly WorkoutSet[]): Map<string, number> {
+  const order = buildExecutionOrder(exercises, sets);
+  const pos = new Map(order.map((id, i) => [id, i]));
+  const out = new Map<string, number>();
+  for (const ex of exercises) {
+    const own = sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted').sort((a, b) => (pos.get(a.id) ?? a.index + 1e6) - (pos.get(b.id) ?? b.index + 1e6));
+    own.forEach((s, i) => out.set(s.id, i + 1));
+  }
+  return out;
+}
+
+/**
  * For a superset set: true when no later member of the group still has a
  * pending set in the same round. An other-side row is in its partner's round.
  * Plain exercises are always at a round end.

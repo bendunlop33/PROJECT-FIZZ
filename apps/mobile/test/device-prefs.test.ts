@@ -6,7 +6,7 @@ describe('device prefs', () => {
   it('guide animations default on, including for files saved before the setting existed', () => {
     expect(DEFAULT_PREFS.guideAnimations).toBe(true);
     expect(parsePrefs(null).guideAnimations).toBe(true);
-    expect(parsePrefs('{"themeDirection":"A"}')).toEqual({ themeDirection: 'A', guideAnimations: true });
+    expect(parsePrefs('{"themeDirection":"A"}')).toEqual({ themeDirection: 'A', guideAnimations: true, alertsAsk: 'undetermined' });
     expect(parsePrefs('garbage')).toEqual(DEFAULT_PREFS);
   });
 
@@ -16,20 +16,20 @@ describe('device prefs', () => {
   });
 
   it('a change keeps the other preferences', () => {
-    const a = updatePrefs({ themeDirection: 'A', guideAnimations: true }, { guideAnimations: false });
-    expect(a).toEqual({ themeDirection: 'A', guideAnimations: false });
-    expect(updatePrefs(a, { themeDirection: 'D' })).toEqual({ themeDirection: 'D', guideAnimations: false });
-    expect(updatePrefs(null, { guideAnimations: false })).toEqual({ themeDirection: null, guideAnimations: false });
+    const a = updatePrefs({ themeDirection: 'A', guideAnimations: true, alertsAsk: 'later' }, { guideAnimations: false });
+    expect(a).toEqual({ themeDirection: 'A', guideAnimations: false, alertsAsk: 'later' });
+    expect(updatePrefs(a, { themeDirection: 'D' })).toEqual({ themeDirection: 'D', guideAnimations: false, alertsAsk: 'later' });
+    expect(updatePrefs(null, { guideAnimations: false })).toEqual({ themeDirection: null, guideAnimations: false, alertsAsk: 'undetermined' });
   });
 });
 
 describe('prefs changed before the file loads (review N1)', () => {
   it('keeps the early change on top of the file and saves the merge', () => {
-    const loaded = { themeDirection: 'D' as const, guideAnimations: true };
-    expect(settleLoadedPrefs(loaded, { guideAnimations: false })).toEqual({ prefs: { themeDirection: 'D', guideAnimations: false }, save: true });
+    const loaded = { themeDirection: 'D' as const, guideAnimations: true, alertsAsk: 'undetermined' as const };
+    expect(settleLoadedPrefs(loaded, { guideAnimations: false })).toEqual({ prefs: { themeDirection: 'D', guideAnimations: false, alertsAsk: 'undetermined' }, save: true });
   });
   it('with no early change, uses the file as it is and writes nothing', () => {
-    const loaded = { themeDirection: 'A' as const, guideAnimations: false };
+    const loaded = { themeDirection: 'A' as const, guideAnimations: false, alertsAsk: 'answered' as const };
     expect(settleLoadedPrefs(loaded, {})).toEqual({ prefs: loaded, save: false });
   });
 });

@@ -26,6 +26,7 @@ import { deriveId, stableStringify } from '../stable';
 import { toScaled } from '../units';
 import { appendToSnapshot, currentGymEquipment, equipmentOfRow, rowIsAtCurrentGym } from './equipment-snapshot';
 import { buildExecutionOrder } from './order';
+import { refitProvenance } from '../target-provenance';
 import { intendedOf, plannedSnapOf, snapPlanToGym, sourceOf, type SnapResult, type SnapSlotInput, type SnapSlotResult } from './snap';
 import { cardNoteText, loadWords, type NoteLine } from './snap-text';
 
@@ -718,6 +719,10 @@ export function applyChangeGym(state: SessionAggregate, cmd: CommandOf<'change_g
     const planned: PlannedSet = { ...s.planned, load: item.load };
     if (item.snap === null) delete planned.snap;
     else planned.snap = item.snap;
+    // `Why?` explains the new fit, not the old equipment's (Undo restores the old provenance with `before`).
+    const provenance = refitProvenance(s.planned.provenance, planned, eq);
+    if (provenance === undefined) delete planned.provenance;
+    else planned.provenance = provenance;
     if (!sameLoad(item.load, s.planned.load)) changedSetIds.push(s.id);
     let draft = s.draft;
     const hadEquipment = state.exercises.find((e) => e.id === s.sessionExerciseId)?.equipmentId != null;
@@ -874,5 +879,8 @@ export function buildAddSetContinuation(
   const fit = plannedSnapOf(fitted, slot, 'gym_switch', state.session.gymId);
   if (fit === null) delete planned.snap;
   else planned.snap = fit;
+  const provenance = refitProvenance(template.planned.provenance, planned, slot.equipment);
+  if (provenance === undefined) delete planned.provenance;
+  else planned.provenance = provenance;
   return { id: ctx.newId(), equipmentId: slot.equipment?.id ?? null, unit: slot.unit, loadConvention: slot.convention, planned };
 }

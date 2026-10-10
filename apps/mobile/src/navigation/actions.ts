@@ -44,7 +44,7 @@ export function openWorkoutToCheckGym(gymId: string, nonce: string) {
   return { type: 'NAVIGATE', payload: { name: 'Workout', params: { checkGym: { gymId, nonce } } } } as const;
 }
 
-/** Replace the Workout with its Summary (after Finish). */
+/** Replace the Workout with its Summary (after Finish). The only path that plays the finish moment (premium-feel §6). */
 export function replaceWithSummary(sessionId: string) {
-  return { type: 'REPLACE', payload: { name: 'Summary', params: { sessionId } } } as const;
+  return { type: 'REPLACE', payload: { name: 'Summary', params: { sessionId, justFinished: true } } } as const;
 }

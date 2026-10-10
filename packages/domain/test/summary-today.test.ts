@@ -17,6 +17,9 @@ import {
   toHistorySessions,
   toIso,
   lastComparableSession,
+  resumeRows,
+  weekStripLabel,
+  weekText,
   type HistorySession,
   type SummaryInput,
 } from '../src/index';
@@ -167,7 +170,7 @@ describe('buildTodayView', () => {
   const base = { todayLocalDate: local(at(0).utc), localDateOf: local, recentCheckIns: [], finishedThisWeek: [] as SessionAggregate[] };
 
   it('no workout: Nothing planned; the week line counts finished workouts', () => {
-    expect(buildTodayView({ ...base, nowMs: ms(0), active: null })).toMatchObject({ main: { kind: 'no_plan' }, week: { count: 0, text: 'No workouts logged yet this week.' } });
+    expect(buildTodayView({ ...base, nowMs: ms(0), active: null })).toMatchObject({ main: { kind: 'no_plan' }, week: { count: 0, text: 'No workouts yet this week.' } });
     const done = finish(logAll(workout(BENCH, barbell(), 1, -7200), [values(kg(60), 10)], -7200), -6000);
     const v = buildTodayView({ ...base, nowMs: ms(0), active: null, finishedThisWeek: [done] });
     expect(v.main).toMatchObject({ kind: 'done_today', title: 'Workout' });
@@ -190,6 +193,69 @@ describe('buildTodayView', () => {
       ['S', false, false],
     ]);
     expect(v.main).toMatchObject({ kind: 'done_today', title: 'Push' });
+  });
+
+  it('week line: a workout in progress is never "no workouts" (premium-feel §2.5, device bug D1)', () => {
+    const today = local(at(0).utc);
+    const weekDates = ['x-1', 'x-2', 'x-3', 'x-4', 'x-5', today, 'x-7'];
+    const s = logAll(workout(BENCH, barbell(), 3), [values(kg(60), 10)], 0);
+    const v = buildTodayView({ ...base, nowMs: ms(30), active: s, weekDates });
+    expect(v.week.count).toBe(0);
+    expect(v.week.text).toBe('Workout in progress');
+    expect(v.week.text).not.toMatch(/No workouts/);
+    expect(v.week.days.map((d) => [d.trained, d.inProgress, d.today])[5]).toEqual([false, true, true]);
+    expect(weekStripLabel(v.week.days)).toBe('This week: 0 days trained, today in progress');
+
+    const done = finish(logAll(workout(BENCH, barbell(), 1, -7200), [values(kg(60), 10)], -7200), -6000);
+    const both = buildTodayView({ ...base, nowMs: ms(30), active: s, finishedThisWeek: [done], weekDates, titles: { [s.session.id]: 'Full body' } });
+    expect(both.week.text).toBe('1 done · Full body in progress');
+    expect(both.week.days[5]).toMatchObject({ trained: true, inProgress: true, today: true });
+    expect(weekStripLabel(both.week.days)).toBe('This week: 1 day trained, today in progress');
+  });
+
+  it('a forgotten workout from an earlier week is not "in progress" this week (review S8)', () => {
+    const later = 9 * 86_400;
+    const today = local(at(later).utc);
+    const weekDates = ['x-1', 'x-2', 'x-3', today, 'x-5', 'x-6', 'x-7'];
+    const s = logAll(workout(BENCH, barbell(), 3), [values(kg(60), 10)], 0);
+    const v = buildTodayView({ ...base, nowMs: ms(later), active: s, weekDates });
+    expect(v.main.kind).toBe('stale');
+    expect(v.week.text).toBe('No workouts yet this week.');
+    expect(v.week.days.some((d) => d.inProgress)).toBe(false);
+  });
+
+  it('weekText: every row of the §2.5 table', () => {
+    expect(weekText(0, null)).toBe('No workouts yet this week.');
+    expect(weekText(0, 'Full body')).toBe('Full body in progress');
+    expect(weekText(1, null)).toBe('1 workout this week');
+    expect(weekText(3, null)).toBe('3 workouts this week');
+    expect(weekText(2, 'Push A')).toBe('2 done · Push A in progress');
+  });
+
+  it('a finished session is not in progress', () => {
+    const today = local(at(0).utc);
+    const done = finish(logAll(workout(BENCH, barbell(), 1, -7200), [values(kg(60), 10)], -7200), -6000);
+    const v = buildTodayView({ ...base, nowMs: ms(0), active: done, finishedThisWeek: [done], weekDates: [today] });
+    expect(v.week.days[0]).toMatchObject({ trained: true, inProgress: false });
+    expect(v.week.text).toBe('1 workout this week');
+  });
+
+  it('resume rows: done / now / pending / skipped, in words, with where a tap resumes (premium-feel §2.3)', () => {
+    let s = workout(BENCH, barbell(), 3);
+    s = logAll(s, [values(kg(60), 10)], 0);
+    const v = buildTodayView({ ...base, nowMs: ms(30), active: s });
+    if (v.main.kind !== 'resume') throw new Error('not resume');
+    expect(v.main.rows).toEqual([
+      { sessionExerciseId: s.exercises[0]?.id, name: 'Bench press', status: 'now', done: 1, total: 3, text: '1 of 3 sets', firstPendingSetId: s.sets.filter((x) => x.status === 'pending').sort((a, b) => a.index - b.index)[0]?.id },
+    ]);
+    // Another exercise's view of the same workout: pending, then all done, then skipped.
+    expect(resumeRows(s, null)[0]?.status).toBe('pending');
+    const allDone = { ...s, sets: s.sets.map((x) => ({ ...x, status: 'completed' as const })) };
+    expect(resumeRows(allDone, null)[0]).toMatchObject({ status: 'done', text: '3 of 3 sets', firstPendingSetId: null });
+    const skipped = { ...s, sets: s.sets.map((x) => ({ ...x, status: 'skipped' as const })) };
+    expect(resumeRows(skipped, null)[0]).toMatchObject({ status: 'skipped', text: 'Skipped' });
+    const deleted = { ...s, sets: s.sets.map((x, i) => (i === 2 ? { ...x, status: 'deleted' as const } : x)) };
+    expect(resumeRows(deleted, null)[0]?.total).toBe(2);
   });
 
   it('resume card: now line, progress and rest status', () => {
@@ -315,5 +381,30 @@ describe('imported history is never comparable while P-I3 is open (review r2 B1)
     // Not recorded: said so.
     const notRecorded = buildWorkoutSummary(input(s, [{ ...elsewhere, gymId: null }]));
     expect(notRecorded.comparison?.kind === 'compared' ? plain(notRecorded.comparison.why) : null).toBe('Same Olympic bar, gym not recorded, working sets');
+  });
+});
+
+describe('Summary record lines (premium-feel §5.1, review S3)', () => {
+  const eq = barbell();
+  const past = (load: number, day: number): SessionAggregate => finish(logAll(workout(BENCH, eq, 1, day * 86_400, `p${String(day)}`), [values(kg(load), 5)], day * 86_400), day * 86_400 + 600);
+  const history = [past(60, -3), past(62.5, -2), past(65, -1)].flatMap((s) => toHistorySessions(s, BENCH.id));
+
+  it('one line per exercise: the heaviest set wins over a later most-reps set', () => {
+    const today = finish(logAll(workout(BENCH, eq, 3), [values(kg(65), 5), values(kg(67.5), 5), values(kg(67.5), 6)], 0), 1_000);
+    const sum = buildWorkoutSummary(input(today, history));
+    expect(sum.records).toEqual(['Heaviest bench press set at Main Gym so far']);
+  });
+
+  it('most reps at the heaviest load when nothing heavier', () => {
+    const today = finish(logAll(workout(BENCH, eq, 1), [values(kg(65), 7)], 0), 1_000);
+    expect(buildWorkoutSummary(input(today, history)).records.map(plain)).toEqual(['Most reps at 65 kg on bench press so far']);
+  });
+
+  it('none before 3 earlier sessions, and later workouts never count against an old Summary', () => {
+    const today = finish(logAll(workout(BENCH, eq, 1), [values(kg(70), 5)], 0), 1_000);
+    expect(buildWorkoutSummary(input(today, history.slice(1))).records).toEqual([]);
+    // A heavier workout after this one doesn't take this one's record away.
+    const later = toHistorySessions(past(80, 2), BENCH.id);
+    expect(buildWorkoutSummary(input(today, [...history, ...later])).records).toHaveLength(1);
   });
 });

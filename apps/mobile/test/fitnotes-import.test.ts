@@ -169,17 +169,38 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(previewView(reopened.draft, 'en-GB').notice).toEqual({
       icon: 'info.circle',
       tone: 'info',
-      text: 'You imported this file on Thu 8 Oct. Workouts from it that are still in GymSmarter are skipped; dates that aren’t in GymSmarter now are offered again.',
+      text: 'You imported this file on Thu 8 Oct. Workouts from it that are still in GymSmarter are skipped; dates that aren’t in GymSmarter now are offered again, with your answers from then filled in.',
     });
     // 20 Sep is still in (from b.csv) and skipped; the three dates a.csv brought are offered again.
     expect(reopened.draft.analysis.alreadyImported).toMatchObject({ dates: 1, imports: [{ jobId: b.jobId, dates: 1 }] });
     expect(reopened.draft.analysis.workouts.map((w) => w.date)).toEqual(['2026-09-05', '2026-09-03', '2026-09-01']);
+    // b.csv's own import had nothing to ask: its (empty) answers are where the preview starts (review r4 N2).
+    expect(reopened.draft.answers).toEqual({ ...bJob?.job.answers, names: {} });
 
     // Brought back; now the file really has nothing new, and nothing is duplicated (brief scenario 6).
     const answered = await answerAll(s, reopened.draft);
     expect(await s.imports.commit(answered.draftId, answered.mappingVersion, 'op-b2')).toMatchObject({ ok: true, written: 3 });
     expect(await s.yourData.counts()).toMatchObject({ finishedWorkouts: 4, loggedSets: 8 });
     expect(await s.imports.open({ name: 'b.csv', text: FILE_2 })).toMatchObject({ kind: 'same_file' });
+  });
+
+  it('the same file opened again after an undo starts from the answers its import used (review r4 N2)', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    // x.csv brought in 3 Sep; a.csv then skipped it, answering the dumbbell and barbell questions for its other dates.
+    const x = await importFile(s, [A1, '2026-09-03,Lat Pulldown,Back,45.0,10,,,'].join('\n'), 'op-x');
+    const a = await importFile(s, FILE_1, 'op-a');
+    expect(a.draft.answers).toMatchObject({ perHand: 'both', total: 'total' });
+    const xJob = await s.imports.job(x.jobId);
+    expect(await s.imports.revert(x.jobId, xJob?.job.version ?? 0, 'undo-x')).toMatchObject({ ok: true });
+
+    const reopened = await openPreview(s, FILE_1);
+    expect(reopened.importedBefore).not.toBeNull();
+    expect(reopened.answers).toMatchObject({ names: {}, perHand: 'both', total: 'total' });
+    expect(reopened.analysis.workouts.map((w) => w.date)).toEqual(['2026-09-03']);
+    // Only what that import never asked is open: a name whose sets were all on the skipped date.
+    expect(reopened.analysis.names.filter((n) => n.needsAnswer && n.sets > 0).map((n) => n.name)).toEqual(['Hammer Strength Row']);
+    expect(reopened.analysis.questionsOpen).toBe(1);
   });
 
   it('a newer export skips what came in before and never overwrites a set corrected in the app (check 21)', async () => {
@@ -290,8 +311,17 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(reopened.kind).toBe('preview');
     if (reopened.kind !== 'preview') return;
     expect(reopened.draft.analysis.alreadyImported.dates).toBe(0);
-    // Its names are remembered (aliases are kept after an undo).
-    expect(reopened.draft.analysis.names.filter((n) => n.needsAnswer)).toEqual([]);
+    // What the undone import taught isn't: its `Use this` and `Add new` names are asked again (suggested, never
+    // Matched), and the custom exercise it made is only a suggestion (review r5 S2).
+    expect(reopened.draft.analysis.names.map((n) => [n.name, n.match.status, n.match.via, n.needsAnswer])).toEqual([
+      ['Flat Barbell Bench Press', 'check', 'words', true],
+      ['Hammer Strength Row', 'check', 'words', true],
+      ['Lat Pulldown', 'matched', 'name', false],
+      ['Hammer Curl', 'matched', 'name', false],
+      ['Incline DB Press', 'matched', 'name', false],
+    ]);
+    const made = reopened.draft.analysis.names.find((n) => n.name === 'Hammer Strength Row')?.match.exerciseId ?? '';
+    expect(s.imports.candidate(reopened.draft.draftId, made)).toMatchObject({ name: 'Hammer Strength Row', catalogueKey: null, importMade: true });
   });
 
   it('a FitNotes workout dated today shows no time and no duration on Today or its summary (rule 6, review B2)', async () => {

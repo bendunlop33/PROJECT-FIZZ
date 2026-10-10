@@ -1,6 +1,7 @@
 import type {
   EquipmentInstance,
   Load,
+  SetExclusion,
   LoadConvention,
   Measurement,
   ProgressionRule,
@@ -18,6 +19,7 @@ import {
   roundToAvailableLoad,
   type LoadDirection,
 } from './equipment';
+import { allLeftOutFact, isSetCountable } from './exclusions';
 import { toMs } from './time';
 import { convertMass, convertMassExactly, fromScaled, toScaled } from './units';
 
@@ -32,6 +34,17 @@ export interface HistorySet {
   reps: number | null;
   rpe: Rpe | null;
   rir: Rir | null;
+  /** The stored set and its version (sets logged in the app), so `Why?` can tell when it was edited later. */
+  setId?: string;
+  version?: number;
+  /** The set's number as the card showed it (`Set 4`, warm-ups included), for `Why?` `Not used`. */
+  number?: number;
+  /**
+   * Ben's exclusion flags (active-workout §2.13). A flagged set is left out
+   * of progression, comparisons and records (`isSetCountable`), but it is
+   * still history: it shows with its words wherever it appears.
+   */
+  exclusions?: readonly SetExclusion[];
 }
 
 /**
@@ -54,6 +67,9 @@ export interface HistorySession {
    */
   imported: boolean;
   sets: readonly HistorySet[];
+  /** The workout's time zone and routine name, for `Why?` (`after Push A, 1 Oct`). */
+  tz?: string;
+  routineName?: string | null;
 }
 
 /** Active pain flag for this movement. Set and cleared explicitly by the user. */
@@ -140,6 +156,8 @@ interface SessionEval {
   unpairable: boolean;
   /** Completed sets of other types (e.g. back-offs when no top set was logged). */
   otherSets: number;
+  /** Sets of the counted type Ben left out of progress (§2.13); not in `loggedSets`. */
+  leftOut: number;
   /** Easiest counted load (lowest resistance / most assistance); null for bodyweight or no sets. */
   load: number | null;
   minReps: number;
@@ -256,7 +274,11 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
 
   // Imported history isn't comparable (P-I3 open; review r2 B1): left out before anything is counted.
   for (const s of input.history.filter((h) => !h.imported).sort(byRecency)) {
-    const counted = s.sets.filter((x) => types.includes(x.setType) && x.reps !== null);
+    const typed = s.sets.filter((x) => types.includes(x.setType) && x.reps !== null);
+    // §2.13: a set Ben marked (spotted, pain, form broke, other equipment) is
+    // left out here, including the unit check (a flagged set on other
+    // equipment doesn't make the session incomparable).
+    const counted = typed.filter((x) => isSetCountable(x, 'progression'));
     const mismatched = counted.some(
       (x) =>
         x.load !== null &&
@@ -287,7 +309,8 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
       sessionId: s.sessionId,
       performedAtUtc: s.performedAtUtc,
       loggedSets: counted.length,
-      otherSets: s.sets.length - counted.length,
+      otherSets: s.sets.length - typed.length,
+      leftOut: typed.length - counted.length,
       prescribedDone: sided ? both.length + Math.min(left.length, right.length) : counted.length,
       sides: sided ? { left: evalSide([...both, ...left], criteria), right: evalSide([...both, ...right], criteria) } : null,
       unpairable,
@@ -319,7 +342,16 @@ function harder(a: number, b: number, d: LoadDirection): boolean {
  */
 function feasibleHold(ctx: Ctx, value: number | null): number | null {
   const eq = ctx.input.equipment;
-  if (value === null || eq === null) return value;
+  if (value === null) return null;
+  if (eq === null) {
+    // Review failure-tests M2: with no equipment profile there is nothing to snap to, so a
+    // logged 0 would be planned as "0 kg each" or "assist 0 kg". Only `added` has a real zero.
+    if (toScaled(value) <= 0 && ctx.convention !== 'added') {
+      pushFact(ctx, `Last load was ${formatLoad({ value, unit: ctx.unit, convention: ctx.convention })}, which isn't a load to plan; enter your load.`);
+      return null;
+    }
+    return value;
+  }
   const load = { value, unit: ctx.unit, convention: ctx.convention };
   if (isLoadAchievable(load, eq)) return value;
   const r = roundToAvailableLoad(load, eq, 'easier');
@@ -335,7 +367,8 @@ function feasibleHold(ctx: Ctx, value: number | null): number | null {
 type Step =
   | { kind: 'load'; value: number }
   | { kind: 'at_max' }
-  | { kind: 'no_assistance_left' }
+  /** Assisted: none left (`next` false), or, with no machine profile, the next step would leave none (`next` true). */
+  | { kind: 'no_assistance_left'; next: boolean }
   | { kind: 'jump_too_big'; next: number; maxJump: number }
   | { kind: 'no_loads' };
 
@@ -345,7 +378,10 @@ function nextHarderLoad(ctx: Ctx, current: number): Step {
   const desired = ctx.direction === 'resistance' ? current + inc : Math.max(0, current - inc);
   const eq = ctx.input.equipment;
   if (eq === null) {
-    if (!harder(desired, current, ctx.direction)) return { kind: 'no_assistance_left' };
+    if (!harder(desired, current, ctx.direction)) return { kind: 'no_assistance_left', next: false };
+    // Competitor-failure pack (b): never "assist 0 kg". With no machine profile there's no
+    // smaller step to check, so the assistance is held and reps progress instead (as at the max).
+    if (ctx.direction === 'assistance' && toScaled(desired) <= 0) return { kind: 'no_assistance_left', next: true };
     return { kind: 'load', value: desired };
   }
   const loads = getAchievableLoads(eq).loads;
@@ -461,7 +497,9 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
 
   const required = requiredSets(rule);
   const when = day(latest.performedAtUtc);
-  if (latest.loggedSets === 0) {
+  if (latest.loggedSets === 0 && latest.leftOut > 0) {
+    pushFact(ctx, allLeftOutFact(when));
+  } else if (latest.loggedSets === 0) {
     // Review minor 7: say "no top set" when back-off (or other) sets were logged.
     const why = latest.otherSets === 0 ? 'all skipped' : rule.method === 'double_progression' ? 'only other set types' : 'no top set';
     pushFact(ctx, `No ${countedLabel(rule, 2)} were logged on ${when} (${why}); holding.`);
@@ -476,9 +514,12 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
       `${lead} of ${required} ${countedLabel(rule, required)} had both sides logged on ${when} (left ${left.sets}, right ${right.sets}${behind}); holding.`,
     );
   } else if (latest.prescribedDone < required) {
+    const verb = latest.prescribedDone === 1 ? 'was' : 'were';
     pushFact(
       ctx,
-      `Only ${latest.prescribedDone} of ${required} ${countedLabel(rule, required)} ${latest.prescribedDone === 1 ? 'was' : 'were'} logged on ${when}; holding.`,
+      latest.leftOut > 0
+        ? `Only ${latest.prescribedDone} of ${required} ${countedLabel(rule, required)} counted on ${when} (${latest.leftOut} left out); holding.`
+        : `Only ${latest.prescribedDone} of ${required} ${countedLabel(rule, required)} ${verb} logged on ${when}; holding.`,
     );
   }
   if (!reference) {
@@ -552,7 +593,7 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
         return repStep((target) => `${target} is ${where} load available on ${eqName}`);
       }
       case 'no_assistance_left':
-        return repStep(() => 'there is no assistance left to remove');
+        return repStep(() => (step.next ? 'the next step would leave no assistance' : 'there is no assistance left to remove'));
       case 'jump_too_big':
         return repStep(
           () =>
