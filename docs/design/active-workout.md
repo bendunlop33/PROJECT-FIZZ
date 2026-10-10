@@ -1181,6 +1181,26 @@ These files are owned elsewhere or were outside this task. Each item states what
 - **training-researcher:** a playbook candidate rule for returning to load after a pain flag is cleared (how fast, how far, evidence grade). Until Ben approves one, AW10's validator block stands.
 - **lock-screen-and-alerts.md:** time left isn't on the Live Activity in this version; a later option.
 
+### 8.3 Build status and open items (developer, 2026-10-10, `claude/active-set` review fixes)
+
+Not built yet (review N6), so these checks are partial until they are:
+
+- Overview `Why?` and the time-left line at the end of Overview (there is no Overview view yet).
+- An `Edit history` UI using `exclusionAuditLines` (check 49 is partial: the words show on the card, toast, summary and `Why?`).
+- `isSetCountable` purposes `trigger` and `e1rm`: no coach offers or estimated 1RM exist yet; both already return "not counted" for a flagged set.
+- The `History ›` footer in the `Why?` panel.
+- `Use built-in rule` / `Undo this change` in `Why?` (coach targets, build step 4).
+- `Finish by` uses a ±5 min stepper, not the wheel in §2.15.3 (works; designer to confirm).
+
+Implemented differently from this spec, for the designer and Ben to confirm:
+
+- **Undo of a flag Ben just set is a retraction, not a clear** (review B2 / S2). The `Pain noted` toast and the exclusion toast's Undo mark the flag `retracted`: as if it never existed (no `Before flag` reference, not listed, no return-to-load guard, can't be cleared or restored). It's versioned against the flag the action produced; a flag changed since is kept and Ben is told (`Set undone. Pain flag kept: it changed since.`). `Clear flag` with the AW10 confirmation stays the only clear.
+- **Minimal copy** (CLAUDE.md, 10 Oct; review S1): the Time left sheet footnote, `Still counts in your log and volume.` and the Profile › Pain flags lead text are not shown; the Pain chip line is `Also flags Bench press for pain`. §5 still lists the old strings and needs the designer's revision.
+- **Next-session targets from the built-in rule** keep rule provenance (`Built-in rule · after …`), not Repeat; the no-history starting plan records `Starting plan: 3 sets of 3–6 reps. You choose the load.` (review B1.1).
+- **Schema**: exclusions, `Finish by` and the `retracted` pain flag status are one migration (schema 4). `claude/gym-switch` also has an unreleased migration 4: whichever branch merges second renumbers its migration before any build reaches Ben's phone.
+
+Open question for Ben (review S3): a pain flag set mid-workout leaves today's already-planned targets as they are (`Flagged after this target was set, so the target wasn't changed.`). Rule 9 says a pain mention stops progression for that movement. Should setting a flag offer (or apply, with Undo) "hold today's remaining sets at the last done load"? Not built until Ben decides.
+
 ## 9. Tokens and components to merge into design-system.md (revision 2026-10-09)
 
 design-system.md is being edited by another agent, so these are specified here. **No new colour values; one accent kept.** All of them use existing tokens.
