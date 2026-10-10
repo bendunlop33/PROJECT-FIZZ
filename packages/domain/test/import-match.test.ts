@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AliasTarget } from '@fizz/schemas';
-import { barNamed, barWordsIn, equipmentContradicts, equipmentInName, implementCue, implementsFor, matchName, nameKey, namesExercise, nameTokens, searchCandidates, type MatchCandidate } from '../src';
+import { equipmentContradicts, equipmentInName, implementCue, implementsFor, matchName, nameKey, namesExercise, nameTokens, searchCandidates, type MatchCandidate } from '../src';
 import { CANDIDATES, idOf } from './import-fixtures';
 
 /** Exercise name matching (data-import-export §2.5 step 3a). */
@@ -190,10 +190,6 @@ describe('machines, assisted machines and the Smith machine (review r5 S3)', () 
     expect(matchName('Smith Machine Barbell Squat', withSmith, none)).toMatchObject({ status: 'check', exerciseId: smithSquat.exerciseId });
     expect(matchName('Smith Barbell Bench Press', withSmith, none)).toMatchObject({ status: 'check', exerciseId: smithBench.exerciseId });
     expect(matchName('Smith Machine Barbell Row', withSmith, none)).toMatchObject({ status: 'no_match', exerciseId: null });
-    // Chosen by Ben as the free back squat (`Choose…`), the bar still isn't known from the name: asked on its own.
-    const backSquat = CANDIDATES.find((c) => c.name === 'Back squat') as MatchCandidate;
-    for (const n of names) expect(barNamed(n, backSquat, 'barbell'), n).toBe(false);
-    expect(barNamed('Barbell Squat', backSquat, 'barbell')).toBe(true);
     // The same other name on a Smith and a free exercise: a Smith name goes to the Smith one, never the free one (equipment alone can't tell them apart here).
     const freeTwin = candidate({ exerciseId: '00000000-0000-4000-8000-0000000000e6', name: 'Barbell squat', aliases: ['Smith barbell squat'], compatibleEquipment: ['barbell'], defaultLoadConvention: 'total', implements: null });
     const smithTwin = { ...smithSquat, aliases: ['Smith barbell squat'] };
@@ -294,42 +290,19 @@ describe('one dumbbell or two, from the name (review r4 S1)', () => {
     const mine = { ...made, exerciseId: '00000000-0000-4000-8000-0000000000f4', importMade: false };
     expect(namesExercise('Zottman Curl', made)).toBe(false);
     expect(namesExercise('Zottman Curl', mine)).toBe(true);
-    // Suggested, never Matched, by its name; its bar isn't known from the name either.
+    // Suggested, never Matched, by its name.
     expect(matchName('Zottman Curl', [...CANDIDATES, made], none)).toMatchObject({ status: 'check', exerciseId: made.exerciseId, via: 'words' });
-    expect(barNamed('Zottman Curl', made, 'barbell')).toBe(false);
-    expect(barNamed('Barbell Zottman Curl', made, 'barbell')).toBe(true);
     // Through the remembered answer while its import is in effect.
     expect(matchName('Zottman Curl', [...CANDIDATES, made], new Map([[nameKey('Zottman Curl'), { kind: 'exercise', exerciseId: made.exerciseId }]]))).toMatchObject({ status: 'matched', via: 'alias' });
   });
 
-  it('a bar is known from the exercise’s own name or a bar word, never from a suggestion (PM decision, review r5)', () => {
-    const bench = CANDIDATES.find((c) => c.name === 'Bench press') as MatchCandidate;
-    const ez = CANDIDATES.find((c) => c.name === 'EZ-bar skull crusher') as MatchCandidate;
-    expect(barNamed('Bench Press', bench, 'barbell')).toBe(true);
-    expect(barNamed('Flat Bench', bench, 'barbell')).toBe(true);
-    expect(barNamed('Flat Barbell Bench Press', bench, 'barbell')).toBe(true);
-    expect(barNamed('Log Press', bench, 'barbell')).toBe(false);
-    expect(barNamed('Decline Bench Press', bench, 'barbell')).toBe(false);
-    expect(barNamed('EZ-Bar Skullcrusher', ez, 'ez_bar')).toBe(true);
-    expect(barNamed('Skullcrusher', ez, 'ez_bar')).toBe(false);
-  });
-
-  it('`Hex/Trap/EZ Barbell` names that bar only; two bar kinds name no bar for Choose… or Use this (review r7 B1, B2)', () => {
+  it('`Hex/Trap/EZ Barbell` is read as that bar’s equipment word, for suggestions only (review r7 B1; PM decision after r7: words never add a bar)', () => {
     const kinds = (name: string) => [...(equipmentInName(name) ?? [])].sort();
     expect(kinds('Hex Barbell Deadlift')).toEqual(['trap_bar']);
     expect(kinds('Trap Barbell Shrug')).toEqual(['trap_bar']);
     expect(kinds('EZ Barbell Curl')).toEqual(['ez_bar']);
     expect(kinds('Barbell EZ Curl')).toEqual(['barbell', 'ez_bar']);
     expect(kinds('Olympic Hex Bar Deadlift')).toEqual(['barbell', 'trap_bar']);
-    const bench = CANDIDATES.find((c) => c.name === 'Bench press') as MatchCandidate;
-    const ez = CANDIDATES.find((c) => c.name === 'EZ-bar skull crusher') as MatchCandidate;
-    for (const n of ['Hex Barbell Deadlift', 'Trap Barbell Shrug', 'EZ Barbell Curl', 'Close Grip EZ Barbell Bench', 'Barbell EZ Curl', 'Olympic EZ Bar Curl', 'Olympic Hex Bar Deadlift', 'Barbell Hex Bar Deadlift', 'Barbell Trap Bar Deadlift', 'Barbell Cable Curl'])
-      expect(barNamed(n, bench, 'barbell'), n).toBe(false);
-    expect(barNamed('EZ Barbell Skullcrusher', ez, 'ez_bar')).toBe(true);
-    expect(barNamed('Olympic EZ Bar Skullcrusher', ez, 'ez_bar')).toBe(false);
-    expect(barWordsIn('Hex Barbell Deadlift')).toEqual({ kind: 'one', bar: 'trap_bar' });
-    expect(barWordsIn('Barbell Hex Bar Deadlift')).toEqual({ kind: 'unclear', bar: null });
-    expect(barWordsIn('Log Press')).toEqual({ kind: 'none' });
   });
 
   it('one dumbbell only when the name says so, or is the catalogue’s own name for it', () => {

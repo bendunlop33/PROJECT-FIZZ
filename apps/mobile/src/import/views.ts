@@ -25,6 +25,7 @@ import {
   BAR_WEIGHT_MAX,
   type CustomExerciseKind,
   type FitNotesVariant,
+  type GroupTotalAnswer,
   type ImportBarKind,
   type ImportJob,
   type ImportRow,
@@ -238,8 +239,11 @@ const BODYWEIGHT_WORD = { added: 'weight added to bodyweight', assistance: 'assi
 /** `Bar weight` / `EZ-bar weight` / `Trap-bar weight` (each bar has its own weight; review S1). */
 export const BAR_WORD: Record<ImportBarKind, string> = { barbell: 'Bar', ez_bar: 'EZ-bar', trap_bar: 'Trap-bar' };
 const BAR_NAME: Record<ImportBarKind, string> = { barbell: 'bar', ez_bar: 'EZ bar', trap_bar: 'trap bar' };
+/** The bar choices on a plates-only row (PM decision after review r7). */
+const BAR_LABEL: Record<ImportBarKind, string> = { barbell: 'Olympic bar', ez_bar: 'EZ bar', trap_bar: 'Trap bar' };
+const BAR_KINDS: readonly ImportBarKind[] = ['barbell', 'ez_bar', 'trap_bar'];
 
-const TOTAL_WORD: Record<TotalAnswer, string> = { total: 'total, including the bar', plates_only: 'plates only + bar' };
+const TOTAL_WORD: Record<TotalAnswer, string> = { total: 'total as written', plates_only: 'plates only + bar' };
 
 export function questionRows(a: ImportAnalysis): QuestionRow[] {
   const out: QuestionRow[] = [];
@@ -264,9 +268,9 @@ export function questionRows(a: ImportAnalysis): QuestionRow[] {
     const missingBar = q.bars.find((b) => b.missing.length > 0);
     out.push(
       q.needsGroup
-        ? warn('Barbell weights: total or plates only?')
-        : q.needsOwn > 0
-          ? warn(`${plural(q.needsOwn, 'barbell exercise', 'barbell exercises')}: total or plates only?`)
+        ? warn('Barbell weights: total as written, or plates only?')
+        : q.needsBar > 0
+          ? warn(`${plural(q.needsBar, 'plates-only exercise', 'plates-only exercises')}: which bar?`)
           : missingBar
             ? warn(`${BAR_WORD[missingBar.bar]} weight needed for “plates only”`)
             : { key: { kind: 'total' }, answered: true, line: { icon: 'checkmark.circle.fill', tone: 'done', text: `Barbell: ${totalSummary(q)}` } },
@@ -301,7 +305,7 @@ function perHandSummary(q: PerHandQuestion): string {
   return counts.map((c) => `${formatCount(c.n)} ${READING_WORD[c.r]}`).join(' · ');
 }
 
-/** `total, including the bar`, or by reading when they differ: `2 total, including the bar · 1 plates only + bar`. */
+/** `total as written`, or by reading when they differ: `2 total as written · 1 plates only + bar`. */
 function totalSummary(q: TotalQuestion): string {
   const counts = (['total', 'plates_only'] as const).map((r) => ({ r, n: q.exercises.filter((e) => e.reading === r).length })).filter((c) => c.n > 0);
   const only = counts.length === 1 ? counts[0] : undefined;
@@ -716,8 +720,14 @@ export function barWeightEntry(text: string, field: Pick<BarWeightView, 'value' 
 }
 
 export interface TotalChoice {
-  /** Null: back to the group answer. */
-  value: TotalAnswer | null;
+  value: TotalAnswer;
+  label: string;
+  selected: boolean;
+}
+
+export interface TotalBarChoice {
+  /** The answer to save: null goes back to the exercise's own bar. */
+  value: ImportBarKind | null;
   label: string;
   selected: boolean;
 }
@@ -726,53 +736,89 @@ export interface TotalRowView {
   key: string;
   /** The FitNotes name. */
   title: string;
-  /** What its newest weight imports as: `100 kg → 120 kg (plates + 20 kg bar)`, `100 kg → 100 kg total`. */
+  /** The bar "plates only" would add and where it comes from: `Bar: Olympic bar (from Bench Press)`, `Bar: EZ bar (your choice)`. */
+  barLine: string;
+  /** Olympic / EZ / trap bar, the one in use selected (it is the exercise's own unless Ben changed it). */
+  bars: TotalBarChoice[];
+  /** What its newest weight imports as under "plates only": `If plates only: 60 kg → 80 kg total (plates + 20 kg bar)`. */
   conversion: string;
+  /** What it imports as now: `Now: 60 kg → 60 kg total as written`, `Now: not answered yet`. */
+  now: string;
+  /** `Your answer last time` when the answer is the one remembered from an import still in effect. */
+  remembered: string | null;
+  /** Total as written / Plates only. Nothing pre-selected (DX6). */
   choices: TotalChoice[];
 }
 
 export interface TotalView {
   title: string;
   lead: string;
-  /** The group question, for exercises whose bar is known; null when there are none. */
+  /** The group question, for exercises with no answer of their own; null when there are none. */
   question: string | null;
-  options: OptionView<TotalAnswer>[];
+  /** Only `Total as written`: no group answer adds a bar weight (PM decision after review r7). */
+  options: OptionView<GroupTotalAnswer>[];
   example: string | null;
   barWeights: BarWeightView[];
-  /** Exercises whose name doesn't establish the bar: each needs its own answer, with none pre-selected (PM decision, review r5). */
-  ask: { title: string; lead: string; rows: TotalRowView[] } | null;
-  /** Every other exercise with what it will import as, and a way to change it. */
-  rows: { title: string; rows: TotalRowView[] } | null;
+  /** Every barbell exercise, to choose "plates only" for one at a time, each with its bar and conversion. */
+  platesOnly: { title: string; lead: string; rows: TotalRowView[] };
 }
 
 /**
- * `100 kg → 100 kg total`; `100 kg → 120 kg (plates + 20 kg bar)`;
- * `30 kg → EZ-bar weight needed`; `100 kg → not answered yet`.
+ * Under "plates only": `60 kg → 80 kg total (plates + 20 kg bar)`;
+ * `30 kg → EZ-bar weight needed`; `100 kg → choose the bar`.
+ */
+export function platesOnlyConversion(e: Pick<TotalExercise, 'sample' | 'bar'>): string {
+  const s = e.sample;
+  if (!s) return 'No weight to show';
+  const from = weightText(s.value, s.unit);
+  if (e.bar === 'unknown') return `${from} → choose the bar`;
+  if (s.barWeight === null || s.platesOnly === null) return `${from} → ${BAR_WORD[e.bar]} weight needed`;
+  return `${from} → ${weightText(s.platesOnly, s.unit)} total (plates + ${weightText(s.barWeight, s.unit)} ${BAR_NAME[e.bar]})`;
+}
+
+/**
+ * What one exercise imports as now: `100 kg → 100 kg total as written`;
+ * `100 kg → 120 kg total (plates + 20 kg bar)`; `100 kg → not answered yet`.
  */
 export function totalConversion(e: Pick<TotalExercise, 'reading' | 'sample' | 'bar'>): string {
   const s = e.sample;
   if (!s) return 'No weight to show';
   const from = weightText(s.value, s.unit);
   if (e.reading === null) return `${from} → not answered yet`;
-  if (e.reading === 'total') return `${from} → ${from} total`;
-  if (e.bar === 'unknown') return `${from} → can’t be read: which bar it uses isn’t recorded`;
-  if (s.barWeight === null || s.imported === null) return `${from} → ${BAR_WORD[e.bar]} weight needed`;
-  return `${from} → ${weightText(s.imported, s.unit)} (plates + ${weightText(s.barWeight, s.unit)} ${BAR_NAME[e.bar]})`;
+  if (e.reading === 'total') return `${from} → ${from} total as written`;
+  return platesOnlyConversion(e);
 }
 
 function totalRow(e: TotalExercise): TotalRowView {
-  const pick = (value: TotalAnswer | null, label: string): TotalChoice => ({ value, label, selected: e.override === value });
-  const choices = e.known ? [pick(null, 'Same'), pick('total', 'Total'), pick('plates_only', 'Plates only')] : [pick('total', 'Total'), pick('plates_only', 'Plates only')];
-  return { key: e.key, title: e.name, conversion: totalConversion(e), choices };
+  const pick = (value: TotalAnswer, label: string): TotalChoice => ({ value, label, selected: e.override === value });
+  const barLine =
+    e.bar === 'unknown'
+      ? `Bar: not recorded for ${e.exerciseName}. Choose one for plates only.`
+      : `Bar: ${BAR_LABEL[e.bar]} (${e.barChosen ? 'your choice' : `from ${e.exerciseName}`})`;
+  const bars = BAR_KINDS.map((b): TotalBarChoice => ({ value: b === e.exerciseBar ? null : b, label: BAR_LABEL[b], selected: e.bar === b }));
+  const r = e.remembered;
+  const remembered = r !== null && e.override === r.reading && (r.bar === undefined ? !e.barChosen : e.barChosen && e.bar === r.bar) ? 'Your answer last time' : null;
+  return {
+    key: e.key,
+    title: e.name,
+    barLine,
+    bars,
+    conversion: `If plates only: ${platesOnlyConversion(e)}`,
+    now: `Now: ${totalConversion(e)}`,
+    remembered,
+    choices: [pick('total', 'Total as written'), pick('plates_only', 'Plates only')],
+  };
 }
 
 /**
- * The barbell question (§2.5 step 3b). One bar weight per bar kind and unit
- * (review S1): the Olympic bar's is always shown (20 kg / 45 lb, editable);
- * an EZ or trap bar's only once a plates-only answer needs it, and it starts
- * empty. The group answer reads exercises whose bar is known; any other is
- * asked on its own (PM decision, review r5). Every exercise shows what it
- * will import as before the import.
+ * The barbell question (§2.5 step 3b; PM decision after review r7). The
+ * group answer is only `Total as written`: nothing is added. "Plates only"
+ * is chosen one exercise at a time, from a list that shows each exercise's
+ * bar (the matched exercise's own, changeable) and what it imports as, with
+ * nothing pre-selected. One bar weight per bar kind and unit (review S1):
+ * the Olympic bar's is shown whenever an exercise uses it (20 kg / 45 lb,
+ * editable); an EZ or trap bar's once a plates-only answer needs it, and it
+ * starts empty.
  */
 export function totalOptions(a: ImportAnalysis, locale?: string): TotalView | null {
   const q = a.total;
@@ -792,41 +838,19 @@ export function totalOptions(a: ImportAnalysis, locale?: string): TotalView | nu
         }),
       ),
     );
-  const unknown = q.exercises.filter((e) => !e.known);
-  const known = q.exercises.filter((e) => e.known);
-  // A lone exercise read by the group answer is fully shown by the options above it, which give its conversion (review r6 S2).
-  const lone = known.length === 1 && known[0]?.override === null;
   const unit = ex?.unit ?? 'kg';
-  const each = q.bars.length > 1 ? 'each bar’s own weight below is added' : null;
-  const platesOnly =
-    ex && ex.bar !== 'unknown' && ex.barWeight !== null && ex.platesOnly !== null
-      ? `Imported as ${formatNumber(ex.platesOnly)}${NBSP}${unit} (${v} + ${weightText(ex.barWeight, unit)} ${BAR_NAME[ex.bar]})${each === null ? '' : `; ${each}`}`
-      : each === null
-        ? `The ${ex && ex.bar !== 'unknown' ? BAR_NAME[ex.bar] : 'bar'} weight below is added`
-        : 'Each bar’s own weight below is added';
   return {
     title: 'Barbell weights',
-    lead: 'FitNotes doesn’t record whether a barbell weight includes the bar.',
+    lead: 'FitNotes doesn’t record whether a barbell weight includes the bar. Weights are imported as written unless you choose “Plates only” for an exercise below.',
     question: q.grouped === 0 ? null : `For ${q.grouped === 1 ? 'this exercise' : `these ${String(q.grouped)} exercises`}, “${v}” means:`,
-    options:
-      q.grouped === 0
-        ? []
-        : [
-            { value: 'total', label: 'Total, including the bar', detail: `Imported as ${v}${NBSP}${unit}`, selected: q.answer === 'total' },
-            { value: 'plates_only', label: 'Plates only (bar not counted)', detail: platesOnly, selected: q.answer === 'plates_only' },
-          ],
+    options: q.grouped === 0 ? [] : [{ value: 'total', label: 'Total as written', detail: `Nothing added: imported as ${v}${NBSP}${unit}`, selected: q.answer === 'total' }],
     example: ex ? `Example from your file (${dayMonthYear(ex.date, locale)}): ${ex.name}  ${v}${NBSP}×${NBSP}${String(ex.reps)}` : null,
     barWeights,
-    ask:
-      unknown.length === 0
-        ? null
-        : {
-            title: 'Total or plates only?',
-            // Matched by its words only: the bar isn't known, so the group answer never adds one (PM decision, review r5).
-            lead: `${unknown.length === 1 ? 'This name doesn’t' : 'These names don’t'} name the bar${q.grouped > 0 ? `, so the answer above isn’t used for ${unknown.length === 1 ? 'it' : 'them'}` : ''}. Choose for each.`,
-            rows: unknown.map(totalRow),
-          },
-    rows: known.length === 0 || lone ? null : { title: q.grouped > 0 ? 'Different for some?' : 'Each exercise', rows: known.map(totalRow) },
+    platesOnly: {
+      title: 'Plates only (bar not counted)?',
+      lead: 'Choose “Plates only” for any exercise whose weights don’t include the bar. Check the bar: its weight is added.',
+      rows: q.exercises.map(totalRow),
+    },
   };
 }
 

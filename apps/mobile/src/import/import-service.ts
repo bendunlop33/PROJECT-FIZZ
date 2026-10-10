@@ -283,13 +283,13 @@ export function createImportService(deps: ImportServiceDeps) {
   async function loadContext(ownerId: string, defaultUnit: WeightUnit, rows: readonly FitNotesRow[]) {
     const at = deps.now();
     const built = buildCandidates(await repos().exercises.list(), entries(), ownerId, at.utc);
-    // Ben's names and dumbbell answers from earlier imports still in effect: an undone import's are ignored (review r4 S2, r5 S2).
+    // Ben's names, dumbbell and barbell answers from earlier imports still in effect: an undone import's are ignored (review r4 S2, r5 S2).
     const undone = new Set((await repos().imports.listJobs(ownerId)).filter((j) => j.status === 'reverted').map((j) => j.id));
-    const { aliases, perHandAnswers } = rememberedAnswers(await repos().imports.aliases(ownerId), undone);
+    const { aliases, perHandAnswers, totalAnswers } = rememberedAnswers(await repos().imports.aliases(ownerId), undone);
     const appDates = await repos().imports.appDates(ownerId);
     const importedDates = await repos().imports.importedDates(ownerId);
     const gyms = await gymsOf(ownerId);
-    const ctx: ImportContext = { ownerId, candidates: built.candidates, aliases, perHandAnswers, appDates, importedDates, defaultUnit };
+    const ctx: ImportContext = { ownerId, candidates: built.candidates, aliases, perHandAnswers, totalAnswers, appDates, importedDates, defaultUnit };
     const fileDates = new Set(rows.map((r) => r.date).filter((d): d is string => d !== null));
     const stamp = stableStringify({
       defaultUnit,
@@ -297,6 +297,7 @@ export function createImportService(deps: ImportServiceDeps) {
       candidates: built.candidates.map((c) => [c.exerciseId, c.name, c.defaultLoadConvention, [...c.compatibleEquipment].sort(), c.implements, c.importMade === true]),
       aliases: [...aliases.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
       perHandAnswers: [...perHandAnswers.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
+      totalAnswers: [...totalAnswers.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
       appDates: [...appDates].filter((d) => fileDates.has(d)).sort(),
       importedDates: [...importedDates.entries()].filter(([d]) => fileDates.has(d)).map(([d, e]) => [d, e.jobId]).sort(),
     });
@@ -306,7 +307,7 @@ export function createImportService(deps: ImportServiceDeps) {
   /**
    * The answers a preview starts from: only Ben's own answers still in
    * effect, from this same file's import (when it is finished and not
-   * undone) and each name's dumbbell answer from the newest import in effect
+   * undone) and each name's dumbbell and barbell answers from the newest import in effect
    * (review r4 S2, N2). Read at open, and again when the preview is rebuilt
    * because the data changed, so an answer from an import undone in the
    * meantime is never kept (review r6 S1).
@@ -483,7 +484,7 @@ export function createImportService(deps: ImportServiceDeps) {
         return { kind: 'same_file', job: earlier.job, written: earlier.written, state: earlier.state };
       }
       const id = deps.newId();
-      // Ben's own answers fill in: this file's earlier import, and each name's dumbbell answer last time (review r4 S2, N2).
+      // Ben's own answers fill in: this file's earlier import, and each name's dumbbell and barbell answers last time (review r4 S2, N2).
       const answers = startFrom(parsed.rows, loaded, earlier?.job ?? null);
       const d: Draft = {
         id,
@@ -525,6 +526,10 @@ export function createImportService(deps: ImportServiceDeps) {
       const d = drafts.get(draftId);
       if (!d) return { ok: false, reason: 'not_found' };
       if (d.mappingVersion !== expectedMappingVersion) return { ok: false, reason: 'stale', draft: await view(d) };
+      // No group answer adds a bar weight: "plates only" is only ever one exercise's answer (PM decision after review r7).
+      if (change.kind === 'total' && (change.answer as string) !== 'total') {
+        return { ok: false, reason: 'invalid', message: 'Plates only is chosen for each exercise, not for the group', draft: await view(d) };
+      }
       const next = validate(ImportAnswersSchema, applyAnswerChange(d.answers, change));
       if (!next.ok) return { ok: false, reason: 'invalid', message: next.issues[0]?.message ?? 'That answer isn’t valid', draft: await view(d) };
       const picked = change.kind === 'name' && change.answer?.kind === 'exercise' ? change.answer.exerciseId : null;
@@ -773,7 +778,7 @@ export function createImportService(deps: ImportServiceDeps) {
           catalogueKey: null,
           measurement: 'reps',
           laterality: n.laterality,
-          // The bar the name says (an EZ-bar name gets the EZ bar; review r6.1 B1).
+          // `Add new` → Barbell: the Olympic bar, or the bar Ben chose for it on the barbell question (never one read from the name; PM decision after review r7).
           compatibleEquipment: n.newKind === null ? [] : [...n.equipment],
           defaultLoadConvention: n.newKind === null ? n.convention : conventionForKind(n.newKind),
           version: 1,
@@ -783,7 +788,13 @@ export function createImportService(deps: ImportServiceDeps) {
       ),
       ...[...d.catalogueRows.values()].filter((e) => used.has(e.id)),
     ];
-    const aliases: AliasToSave[] = aliasesToSave(a).map((x) => ({ name: x.name.slice(0, 4000), nameKey: x.key, target: x.target, ...(x.perHand === undefined ? {} : { perHand: x.perHand }) }));
+    const aliases: AliasToSave[] = aliasesToSave(a).map((x) => ({
+      name: x.name.slice(0, 4000),
+      nameKey: x.key,
+      target: x.target,
+      ...(x.perHand === undefined ? {} : { perHand: x.perHand }),
+      ...(x.total === undefined ? {} : { total: x.total }),
+    }));
     const created = await repos().imports.createJob(job, rows, { exercises, aliases, at, newId: deps.newId });
     if (!created.ok) {
       const running = await repos().imports.committingJob(d.ownerId);

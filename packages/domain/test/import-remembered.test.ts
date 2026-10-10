@@ -29,11 +29,11 @@ describe('remembered answers (review r5 S2)', () => {
         { jobId: C, target: curl },
       ],
     };
-    expect(rememberedAnswer(alias, new Set())).toEqual({ target: curl, perHand: 'both' });
+    expect(rememberedAnswer(alias, new Set())).toEqual({ target: curl, perHand: 'both', total: null });
     // B undone: its "both" is taken back; A's "one" applies again (C said nothing about the dumbbells).
-    expect(rememberedAnswer(alias, new Set([B]))).toEqual({ target: curl, perHand: 'one' });
+    expect(rememberedAnswer(alias, new Set([B]))).toEqual({ target: curl, perHand: 'one', total: null });
     // B and C undone: A's exercise and answer.
-    expect(rememberedAnswer(alias, new Set([B, C]))).toEqual({ target: row, perHand: 'one' });
+    expect(rememberedAnswer(alias, new Set([B, C]))).toEqual({ target: row, perHand: 'one', total: null });
     // Every import that taught it undone: nothing remembered, so the name is matched or asked again (DX6).
     expect(rememberedAnswer(alias, new Set([A, B, C]))).toBeNull();
   });
@@ -48,8 +48,8 @@ describe('remembered answers (review r5 S2)', () => {
         { jobId: B, target: row, perHand: null },
       ],
     };
-    expect(rememberedAnswer(alias, new Set())).toEqual({ target: row, perHand: null });
-    expect(rememberedAnswer(alias, new Set([B]))).toEqual({ target: row, perHand: 'one' });
+    expect(rememberedAnswer(alias, new Set())).toEqual({ target: row, perHand: null, total: null });
+    expect(rememberedAnswer(alias, new Set([B]))).toEqual({ target: row, perHand: 'one', total: null });
   });
 
   it('builds the context’s names and dumbbell answers, leaving out what undone imports taught', () => {
@@ -67,5 +67,23 @@ describe('remembered answers (review r5 S2)', () => {
     const undoneA = rememberedAnswers(stored, new Set([A]));
     expect([...undoneA.aliases.keys()]).toEqual(['zottman curl', 'zumba']);
     expect([...undoneA.perHandAnswers]).toEqual([['zottman curl', 'both']]);
+  });
+
+  it('Ben’s barbell answer (and the bar he chose) is remembered the same way; an undone import’s is taken back (PM decision after review r7)', () => {
+    const alias: Stored = {
+      nameKey: 'log press',
+      target: row,
+      jobId: C,
+      uses: [
+        { jobId: A, target: row, total: { reading: 'plates_only', bar: 'trap_bar' } },
+        { jobId: B, target: row, total: { reading: 'total' } },
+        { jobId: C, target: row },
+      ],
+    };
+    expect(rememberedAnswer(alias, new Set())).toEqual({ target: row, perHand: null, total: { reading: 'total' } });
+    expect(rememberedAnswer(alias, new Set([B]))).toEqual({ target: row, perHand: null, total: { reading: 'plates_only', bar: 'trap_bar' } });
+    expect([...rememberedAnswers([alias], new Set([A, B])).totalAnswers]).toEqual([]);
+    const cleared: Stored = { ...alias, uses: [...(alias.uses ?? []), { jobId: '00000000-0000-4000-8000-00000000a004', target: row, total: null }] };
+    expect(rememberedAnswer(cleared, new Set())?.total).toBeNull();
   });
 });

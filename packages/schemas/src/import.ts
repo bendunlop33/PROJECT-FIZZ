@@ -88,9 +88,22 @@ export type PerHandAnswer = z.infer<typeof PerHandAnswerSchema>;
 export const PerHandReadingSchema = z.enum(['one', 'each', 'both']);
 export type PerHandReading = z.infer<typeof PerHandReadingSchema>;
 
-/** Barbell: `"100"` is the total including the bar, or the plates only. */
+/**
+ * Barbell, one exercise's answer: `"100"` is the total as written, or the
+ * plates only (its bar's weight is added). `plates_only` is only ever an
+ * answer for one exercise, never the group's (PM decision after review r7).
+ */
 export const TotalAnswerSchema = z.enum(['total', 'plates_only']);
 export type TotalAnswer = z.infer<typeof TotalAnswerSchema>;
+
+/**
+ * Barbell, the group answer: only `total` ("Total as written", nothing
+ * added). No group answer ever adds a bar weight (PM decision after review
+ * r7). Jobs stored before then may hold `plates_only` here: it is kept as
+ * stored and read as not answered.
+ */
+export const GroupTotalAnswerSchema = z.literal('total');
+export type GroupTotalAnswer = z.infer<typeof GroupTotalAnswerSchema>;
 
 /**
  * A bodyweight exercise with a weight: added to bodyweight, or assistance
@@ -127,8 +140,16 @@ export const ImportAnswersSchema = z.object({
   perHand: PerHandAnswerSchema.nullable(),
   /** Per exercise (by name key): wins over the group answer and the catalogue's count. */
   perHandOverrides: z.record(NameKeySchema, PerHandReadingSchema),
+  /** The group answer. `plates_only` only in jobs stored before the PM decision after review r7; read as not answered. */
   total: TotalAnswerSchema.nullable(),
+  /** Per exercise (by name key): `total` or `plates_only`. The only way a bar weight is ever added. */
   totalOverrides: z.record(NameKeySchema, TotalAnswerSchema),
+  /**
+   * Per exercise (by name key): the bar "plates only" adds, when Ben changed
+   * it from the matched exercise's own bar. Absent in jobs stored before the
+   * PM decision after review r7.
+   */
+  totalBars: z.record(NameKeySchema, ImportBarKindSchema).optional(),
   /** Olympic bar weight added to `plates_only` values, per unit (never converted between kg and lb). Default 20 kg / 45 lb, shown and editable. */
   barWeight: z.object({ kg: z.number().positive().max(BAR_WEIGHT_MAX.kg), lb: z.number().positive().max(BAR_WEIGHT_MAX.lb) }),
   /**
@@ -262,6 +283,13 @@ export const AliasUseSchema = z.object({
   jobId: IdSchema,
   target: AliasTargetSchema,
   perHand: PerHandReadingSchema.nullable().optional(),
+  /**
+   * Ben's own barbell answer for the name when that import asked (`null`:
+   * he gave none, clearing one remembered; absent: that import didn't ask).
+   * `bar`: the bar he chose for "plates only", when he changed it from the
+   * exercise's own (PM decision after review r7).
+   */
+  total: z.object({ reading: TotalAnswerSchema, bar: ImportBarKindSchema.optional() }).nullable().optional(),
 });
 export type AliasUse = z.infer<typeof AliasUseSchema>;
 

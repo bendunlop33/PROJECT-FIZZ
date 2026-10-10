@@ -1,4 +1,4 @@
-import type { AliasTarget, ExerciseEquipmentKind, ImplementCount, ImportBarKind, Laterality, LoadConvention } from '@fizz/schemas';
+import type { AliasTarget, ExerciseEquipmentKind, ImplementCount, Laterality, LoadConvention } from '@fizz/schemas';
 import { deriveId } from '../stable';
 
 /**
@@ -234,29 +234,6 @@ export function equipmentInName(name: string): ReadonlySet<NamedEquipment> | nul
   return kinds.size === 0 ? null : kinds;
 }
 
-const IMPORT_BAR_KINDS: readonly ImportBarKind[] = ['barbell', 'ez_bar', 'trap_bar'];
-
-/**
- * What a name's own words say about its bar (source (c)), the one rule both
- * `Choose…` / `Use this` (`barNamed`) and `Add new` → Barbell
- * (`newBarFromName`) read (review r7 B2):
- * - `none`: no bar word (`Log Press`, `Hex Deadlift`);
- * - a bar kind: the name says exactly that one bar and no other equipment;
- * - `unclear`: Smith, two bar kinds (`EZ Barbell … ` is one; `Olympic EZ Bar
- *   Curl`, `Barbell Hex Bar Deadlift` are two), or a bar alongside other
- *   equipment (`EZ Bar Cable Curl`). `bar` is the one bar kind it says, if any.
- */
-export function barWordsIn(name: string): { kind: 'none' } | { kind: 'one'; bar: ImportBarKind } | { kind: 'unclear'; bar: ImportBarKind | null } {
-  const named = equipmentInName(name);
-  if (named === null) return { kind: 'none' };
-  const bars = IMPORT_BAR_KINDS.filter((b) => named.has(b));
-  const only = bars.length === 1 ? (bars[0] ?? null) : null;
-  if (named.has('smith')) return { kind: 'unclear', bar: null };
-  if (bars.length === 0) return { kind: 'none' };
-  if (only === null) return { kind: 'unclear', bar: null };
-  return named.size === 1 ? { kind: 'one', bar: only } : { kind: 'unclear', bar: only };
-}
-
 /**
  * What the matcher reads from a candidate's own names, worked out once per
  * candidate object (candidates are read-only), so a preview re-analysed
@@ -465,26 +442,6 @@ export function implementsFor(sourceName: string, c: MatchCandidate): ImplementC
   const cue = implementCue(sourceName);
   if (cue !== null) return cue === c.implements ? c.implements : null;
   return namesExercise(sourceName, c) && wordsOf(c).cues[0] === null ? c.implements : null;
-}
-
-/**
- * Whether the bar a `total` exercise uses is known for this source name
- * (PM decision, review r5): the name is one of the exercise's own names
- * (source (a)), or names that bar (`Barbell`, `BB`, `Olympic`, `EZ-Bar`,
- * `Trap Bar`; source (c)), and only when it says exactly one bar kind and
- * no other equipment (`barWordsIn`, review r7 B2: `EZ Barbell Curl` chosen
- * as the barbell curl is asked). `newBarFromName` reads the same
- * `barWordsIn` for `Add new` → Barbell (review r6.2 B1). Otherwise "plates only" would add a bar the name never mentioned
- * (`Log Press` taken as the overhead press), so the barbell group answer
- * doesn't reach it and it is asked on its own. A name that says Smith names
- * a Smith machine's bar, whatever else it says: `Smith Machine Barbell
- * Squat` chosen as the back squat never gets the Olympic bar's weight from
- * the group answer (review r6 B2).
- */
-export function barNamed(sourceName: string, c: MatchCandidate, bar: ImportBarKind): boolean {
-  if (namesExercise(sourceName, c)) return true;
-  const words = barWordsIn(sourceName);
-  return words.kind === 'one' && words.bar === bar;
 }
 
 /** The name says Smith (a Smith machine, whose bar isn't the Olympic bar; review r6 B2). */

@@ -99,7 +99,7 @@ describe('import preview wording', () => {
     d = await step(d, { kind: 'name', key: 'flat barbell bench press', answer: { kind: 'exercise', exerciseId: names.rows[0]?.suggestionId ?? '' } });
     d = await step(d, { kind: 'name', key: 'mystery machine', answer: { kind: 'skip' } });
     const v = previewView(d, 'en-GB');
-    expect(v.questions.map((q) => q.line.text)).toEqual(['Exercise names: 2 checked', 'Dumbbell weights: each or both?', 'Barbell weights: total or plates only?', 'Pull Up weights: added or assist?']);
+    expect(v.questions.map((q) => q.line.text)).toEqual(['Exercise names: 2 checked', 'Dumbbell weights: each or both?', 'Barbell weights: total as written, or plates only?', 'Pull Up weights: added or assist?']);
     expect(v.primary).toEqual({ label: 'Answer 3 questions to import', enabled: false });
 
     const ph = perHandOptions(d.analysis, 'en-GB');
@@ -111,14 +111,22 @@ describe('import preview wording', () => {
       ['Both dumbbells together', 'Imported as 25 lb each', false],
     ]);
     expect(plain(ph?.example)).toBe('Example from your file (1 Sept 2026): Incline DB Press  50 × 10');
-    expect(totalOptions(d.analysis)?.options.every((o) => !o.selected)).toBe(true);
-    // A lone barbell exercise: no per-exercise list, so the options give its conversion (review r6 S2).
-    expect([totalOptions(d.analysis)?.ask, totalOptions(d.analysis)?.rows]).toEqual([null, null]);
-    expect(totalOptions(d.analysis)?.options.map((o) => [o.label, plain(o.detail)])).toEqual([
-      ['Total, including the bar', 'Imported as 100 kg'],
-      ['Plates only (bar not counted)', 'Imported as 120 kg (100 + 20 kg bar)'],
+    const tq = totalOptions(d.analysis);
+    expect(tq?.options.every((o) => !o.selected)).toBe(true);
+    // The group answer is only "Total as written": nothing added (PM decision after review r7).
+    expect(tq?.options.map((o) => [o.value, o.label, plain(o.detail)])).toEqual([['total', 'Total as written', 'Nothing added: imported as 100 kg']]);
+    // Plates only is chosen per exercise: its bar (the matched exercise's own) and its conversion, nothing selected.
+    expect(tq?.platesOnly.rows.map((r) => [r.title, r.barLine, r.bars.map((b) => [b.label, b.selected]), plain(r.conversion), plain(r.now), r.choices.map((c) => [c.label, c.selected])])).toEqual([
+      [
+        'Flat Barbell Bench Press',
+        'Bar: Olympic bar (from Bench press)',
+        [['Olympic bar', true], ['EZ bar', false], ['Trap bar', false]],
+        'If plates only: 100 kg → 120 kg total (plates + 20 kg bar)',
+        'Now: 100 kg → not answered yet',
+        [['Total as written', false], ['Plates only', false]],
+      ],
     ]);
-    expect(totalOptions(d.analysis)?.barWeights).toEqual([{ bar: 'barbell', unit: 'kg', value: 20, label: 'Bar weight (kg), added to “plates only” values', missing: null }]);
+    expect(tq?.barWeights).toEqual([{ bar: 'barbell', unit: 'kg', value: 20, label: 'Bar weight (kg), added to “plates only” values', missing: null }]);
     // -20 and 10 under one exercise: a third answer reads each by its sign (review B3).
     const bw = bodyweightOptions(d.analysis, 'pull up');
     expect(bw?.range).toBe('Values in your file: -20 to 10, some negative');
@@ -129,7 +137,7 @@ describe('import preview wording', () => {
     ]);
 
     d = await step(d, { kind: 'per_hand', answer: 'each' });
-    d = await step(d, { kind: 'total', answer: 'plates_only' });
+    d = await step(d, { kind: 'total_override', key: 'flat barbell bench press', answer: 'plates_only' });
     d = await step(d, { kind: 'bodyweight', key: 'pull up', answer: 'split' });
     // Once chosen, the answer stays visible even if the values stop spanning zero (review r2 N5).
     const oneWay = { ...d.analysis, bodyweight: d.analysis.bodyweight.map((q) => ({ ...q, min: 5, mixed: false })) };
@@ -160,9 +168,13 @@ describe('import preview wording', () => {
 
   it('EZ and trap bars ask for their own weight; the Olympic bar’s 20 kg is never added to them (review S1)', async () => {
     let d = await open([B2, '2026-09-01,Bench press,Chest,60.0,kgs,5,,,,', '2026-09-01,EZ-bar skull crusher,Arms,20.0,kgs,10,,,,', '2026-09-01,Kettlebell swing,Legs,24.0,kgs,15,,,,'].join('\n'));
-    d = await step(d, { kind: 'total', answer: 'plates_only' });
+    d = await step(d, { kind: 'total_override', key: 'bench press', answer: 'plates_only' });
+    d = await step(d, { kind: 'total_override', key: 'ez-bar skull crusher', answer: 'plates_only' });
     const q = totalOptions(d.analysis);
-    expect(plain(q?.options.find((o) => o.value === 'plates_only')?.detail)).toBe('Imported as 80 kg (60 + 20 kg bar); each bar’s own weight below is added');
+    expect(q?.platesOnly.rows.map((r) => [r.barLine, plain(r.now)])).toEqual([
+      ['Bar: Olympic bar (from Bench press)', 'Now: 60 kg → 80 kg total (plates + 20 kg bar)'],
+      ['Bar: EZ bar (from Skull crusher)', 'Now: 20 kg → EZ-bar weight needed'],
+    ]);
     expect(q?.barWeights).toEqual([
       { bar: 'barbell', unit: 'kg', value: 20, label: 'Bar weight (kg), added to “plates only” values', missing: null },
       { bar: 'ez_bar', unit: 'kg', value: null, label: 'EZ-bar weight (kg), added to “plates only” values', missing: 'Enter your EZ bar’s weight in kg. Plates-only sets on it can’t be imported without it.' },
@@ -182,31 +194,47 @@ describe('import preview wording', () => {
     ]);
   });
 
-  it('barbell: an exercise suggested by its words with no bar word is asked on its own; each shows what it imports as (PM decision, review r5)', async () => {
+  it('barbell: the group answer only reads weights as written; plates only is chosen per exercise with its bar, changeable (PM decision after review r7)', async () => {
     let d = await open([B2, '2026-09-01,Flat Barbell Bench Press,Chest,100.0,kgs,5,,,,', '2026-09-01,Stiff-Legged Deadlift,Legs,80.0,kgs,8,,,,', '2026-09-01,Deadlift,Back,140.0,kgs,3,,,,'].join('\n'));
     for (const n of d.analysis.names.filter((x) => x.needsAnswer && x.match.exerciseId)) d = await step(d, { kind: 'name', key: n.key, answer: { kind: 'exercise', exerciseId: n.match.exerciseId ?? '' } });
-    const rows = (q: ReturnType<typeof totalOptions>, which: 'ask' | 'rows') => q?.[which]?.rows.map((r) => [r.title, plain(r.conversion), r.choices.filter((c) => c.selected).map((c) => c.label)]);
+    const rows = (q: ReturnType<typeof totalOptions>) => q?.platesOnly.rows.map((r) => [r.title, plain(r.conversion), plain(r.now), r.choices.filter((c) => c.selected).map((c) => c.label)]);
     let q = totalOptions(d.analysis, 'en-GB');
-    expect(q?.question).toBe('For these 2 exercises, “100” means:');
-    expect(q?.ask).toMatchObject({ title: 'Total or plates only?', lead: 'This name doesn’t name the bar, so the answer above isn’t used for it. Choose for each.' });
-    expect(rows(q, 'ask')).toEqual([['Stiff-Legged Deadlift', '80 kg → not answered yet', []]]);
-    expect(previewView(d, 'en-GB').questions.map((x) => x.line.text)).toEqual(['Exercise names: 2 checked', 'Barbell weights: total or plates only?']);
-
-    d = await step(d, { kind: 'total', answer: 'plates_only' });
-    q = totalOptions(d.analysis, 'en-GB');
-    expect(rows(q, 'rows')).toEqual([
-      ['Flat Barbell Bench Press', '100 kg → 120 kg (plates + 20 kg bar)', ['Same']],
-      ['Deadlift', '140 kg → 160 kg (plates + 20 kg bar)', ['Same']],
+    // Every exercise, whatever its name says, is read by the group answer until Ben answers it on its own.
+    expect(q?.question).toBe('For these 3 exercises, “100” means:');
+    expect(q?.platesOnly).toMatchObject({ title: 'Plates only (bar not counted)?' });
+    expect(rows(q)).toEqual([
+      ['Flat Barbell Bench Press', 'If plates only: 100 kg → 120 kg total (plates + 20 kg bar)', 'Now: 100 kg → not answered yet', []],
+      ['Stiff-Legged Deadlift', 'If plates only: 80 kg → 100 kg total (plates + 20 kg bar)', 'Now: 80 kg → not answered yet', []],
+      ['Deadlift', 'If plates only: 140 kg → 160 kg total (plates + 20 kg bar)', 'Now: 140 kg → not answered yet', []],
     ]);
-    // The group answer never reaches the suggested one.
-    expect(rows(q, 'ask')).toEqual([['Stiff-Legged Deadlift', '80 kg → not answered yet', []]]);
-    expect(previewView(d, 'en-GB').questions.map((x) => x.line.text)).toEqual(['Exercise names: 2 checked', '1 barbell exercise: total or plates only?']);
+    expect(previewView(d, 'en-GB').questions.map((x) => x.line.text)).toEqual(['Exercise names: 2 checked', 'Barbell weights: total as written, or plates only?']);
 
-    d = await step(d, { kind: 'total_override', key: nameKey('Stiff-Legged Deadlift'), answer: 'total' });
-    expect(rows(totalOptions(d.analysis, 'en-GB'), 'ask')).toEqual([['Stiff-Legged Deadlift', '80 kg → 80 kg total', ['Total']]]);
+    // A group "plates only" is refused: it is only ever one exercise's answer.
+    const refused = await s.imports.answer(d.draftId, d.mappingVersion, { kind: 'total', answer: 'plates_only' as 'total' });
+    expect(refused).toMatchObject({ ok: false, reason: 'invalid', message: 'Plates only is chosen for each exercise, not for the group' });
+
+    d = await step(d, { kind: 'total', answer: 'total' });
+    d = await step(d, { kind: 'total_override', key: nameKey('Stiff-Legged Deadlift'), answer: 'plates_only' });
+    q = totalOptions(d.analysis, 'en-GB');
+    expect(rows(q)).toEqual([
+      ['Flat Barbell Bench Press', 'If plates only: 100 kg → 120 kg total (plates + 20 kg bar)', 'Now: 100 kg → 100 kg total as written', []],
+      ['Stiff-Legged Deadlift', 'If plates only: 80 kg → 100 kg total (plates + 20 kg bar)', 'Now: 80 kg → 100 kg total (plates + 20 kg bar)', ['Plates only']],
+      ['Deadlift', 'If plates only: 140 kg → 160 kg total (plates + 20 kg bar)', 'Now: 140 kg → 140 kg total as written', []],
+    ]);
+    // Ben changes its bar to the trap bar: its weight is asked for, then added.
+    d = await step(d, { kind: 'total_bar', key: nameKey('Stiff-Legged Deadlift'), bar: 'trap_bar' });
+    q = totalOptions(d.analysis, 'en-GB');
+    expect([q?.platesOnly.rows[1]?.barLine, plain(q?.platesOnly.rows[1]?.now)]).toEqual(['Bar: Trap bar (your choice)', 'Now: 80 kg → Trap-bar weight needed']);
+    expect(q?.platesOnly.rows[1]?.bars.map((b) => [b.label, b.value, b.selected])).toEqual([['Olympic bar', null, false], ['EZ bar', 'ez_bar', false], ['Trap bar', 'trap_bar', true]]);
+    expect(previewView(d, 'en-GB').questions.map((x) => x.line.text)).toEqual(['Exercise names: 2 checked', 'Trap-bar weight needed for “plates only”']);
+    d = await step(d, { kind: 'bar_weight', bar: 'trap_bar', unit: 'kg', value: 25 });
     const ready = previewView(d, 'en-GB');
-    expect(ready.questions.map((x) => x.line.text)).toEqual(['Exercise names: 2 checked', 'Barbell: 1 total, including the bar · 2 plates only + bar']);
+    expect(ready.questions.map((x) => x.line.text)).toEqual(['Exercise names: 2 checked', 'Barbell: 2 total as written · 1 plates only + bar']);
     expect(ready.primary).toEqual({ label: 'Import 1 workout', enabled: true });
+    expect(s.imports.previewRows(d.draftId, '2026-09-01').map((r) => (r.fate.result === 'imported' ? r.fate.set.load?.value : r.fate.result))).toEqual([100, 105, 140]);
+    // Back to its own bar.
+    d = await step(d, { kind: 'total_bar', key: nameKey('Stiff-Legged Deadlift'), bar: null });
+    expect(totalOptions(d.analysis, 'en-GB')?.platesOnly.rows[1]?.barLine).toMatch(/^Bar: Olympic bar \(from /);
   });
 
   it('dumbbells: one-dumbbell exercises are never halved, unknown ones are asked, and each shows what it imports as (review r3 S1)', async () => {
@@ -697,8 +725,8 @@ describe('import preview wording', () => {
         const B = `${A}\n${withoutHeader(fileOf([['Zottman Curl', 40, 10]], '2026-09-20'))}`;
         let b = await open(B);
         b = await step(b, { kind: 'name', key: 'zottman curl', answer: { kind: 'new', equipment: 'barbell' } });
-        // `Zottman Curl` doesn't say which bar, so it is asked on its own; Ben's own answer adds the bar (review r6.2 B1).
-        expect(b.analysis.total?.exercises.map((e) => [e.name, e.known, e.reading])).toEqual([['Zottman Curl', false, null]]);
+        // Nothing is added until Ben answers it on its own (PM decision after review r7).
+        expect(b.analysis.total?.exercises.map((e) => [e.name, e.bar, e.reading])).toEqual([['Zottman Curl', 'barbell', null]]);
         b = await step(b, { kind: 'total_override', key: 'zottman curl', answer: 'plates_only' });
         const jobB = await commit(b, 'op-b');
         expect(await stored(jobB, ['2026-09-20'])).toEqual(['2026-09-20 60 total']);

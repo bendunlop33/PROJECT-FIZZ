@@ -7,10 +7,12 @@ import {
   type AliasTarget,
   type Exercise,
   type ExerciseAlias,
+  type ImportBarKind,
   type ImportJob,
   type ImportRow,
   type PerHandReading,
   type SessionAggregate,
+  type TotalAnswer,
   type ZonedTimestamp,
 } from '@fizz/schemas';
 import { aliasUses, localDateOf, toMs, type EarlierImport } from '@fizz/domain';
@@ -105,6 +107,8 @@ export interface AliasToSave {
   target: AliasTarget;
   /** Ben's dumbbell answer for the name; null clears a stored one; absent: this import didn't ask (review r4 S2). */
   perHand?: PerHandReading | null;
+  /** Ben's barbell answer for the name (and the bar he chose); null: he gave none this time; absent: this import didn't ask (PM decision after review r7). */
+  total?: { reading: TotalAnswer; bar?: ImportBarKind } | null;
 }
 
 export class SqliteImports {
@@ -300,7 +304,7 @@ async function saveImportExercise(tx: SqlExecutor, e: Exercise): Promise<void> {
 /**
  * One remembered name per owner, source and key, versioned (version + 1 on
  * every import that answers or uses it). Each import adds its use (its
- * target and, when it asked, the dumbbell answer), so Undo import can ignore
+ * target and, when it asked, the dumbbell and barbell answers), so Undo import can ignore
  * exactly what that import taught (review r5 S2). `target` / `perHand` /
  * `jobId` record the last write; the dumbbell answer is kept there unless
  * this import gave or cleared one (review r4 S2).
@@ -309,7 +313,7 @@ async function upsertAlias(tx: SqlExecutor, job: ImportJob, a: AliasToSave, at: 
   const row = await tx.getFirst('SELECT * FROM exercise_aliases WHERE owner_id = ? AND source = ? AND name_key = ?', [job.ownerId, 'fitnotes', a.nameKey]);
   const current = row ? decodeDocument(EXERCISE_ALIAS_SPEC, row) : null;
   const perHand = (a.perHand === undefined ? current?.perHand : a.perHand) ?? null;
-  const use = { jobId: job.id, target: a.target, ...(a.perHand === undefined ? {} : { perHand: a.perHand }) };
+  const use = { jobId: job.id, target: a.target, ...(a.perHand === undefined ? {} : { perHand: a.perHand }), ...(a.total === undefined ? {} : { total: a.total }) };
   const uses = [...(current ? aliasUses(current) : []).filter((u) => u.jobId !== job.id), use].slice(-ALIAS_USES_MAX);
   const next: ExerciseAlias = current
     ? { ...current, name: a.name, target: a.target, jobId: job.id, uses, version: current.version + 1, updatedAtUtc: at.utc }

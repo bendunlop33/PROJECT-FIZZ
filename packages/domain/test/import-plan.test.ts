@@ -12,7 +12,6 @@ import {
   importIds,
   importResultsCsv,
   nameKey,
-  newBarFromName,
   newExercisesToCreate,
   parseFitNotesCsv,
   planImportRows,
@@ -47,6 +46,8 @@ const answers = (over: Partial<ImportAnswers> = {}): ImportAnswers => ({ ...DEFA
 const useSuggestions = (a: ReturnType<typeof analyseImport>): ImportAnswers['names'] =>
   Object.fromEntries(a.names.filter((n) => n.needsAnswer && n.match.exerciseId).map((n) => [n.key, { kind: 'exercise' as const, exerciseId: n.match.exerciseId ?? '' }]));
 const A1 = 'Date,Exercise,Category,Weight (kgs),Reps,Distance,Distance Unit,Time\n';
+/** "Plates only", answered for each barbell exercise on its own: the only way a bar weight is added (PM decision after review r7). */
+const platesFor = (a: ReturnType<typeof analyseImport>): ImportAnswers['totalOverrides'] => Object.fromEntries((a.total?.exercises ?? []).map((e) => [e.key, 'plates_only' as const]));
 
 describe('import preview: questions before anything is saved', () => {
   it('asks about names first, then each load convention, with nothing pre-selected (DX6, check 17)', () => {
@@ -66,8 +67,8 @@ describe('import preview: questions before anything is saved', () => {
     const named = analyseImport(p, ctx(), answers({ names: useSuggestions(first) }));
     // `Use this` gives the exercise only: `Incline DB Press` isn't one of the incline press's own names and says neither one arm nor two, so its dumbbells are asked on their own, never by the group answer (PM decision, review r5).
     expect(named.perHand).toMatchObject({ answer: null, open: true, pairs: 0, example: null, needsGroup: false, needsCount: 1 });
-    // `Flat Barbell Bench Press` names its bar: the barbell group answer reads it.
-    expect(named.total).toMatchObject({ answer: null, open: true, grouped: 1, needsGroup: true, needsOwn: 0, bars: [{ bar: 'barbell', units: ['kg'], weight: { kg: 20, lb: 45 }, needed: false, missing: [] }], missingBarWeight: false });
+    // The barbell group answer (only "Total as written") reads every bar exercise with no answer of its own.
+    expect(named.total).toMatchObject({ answer: null, open: true, grouped: 1, needsGroup: true, needsBar: 0, bars: [{ bar: 'barbell', units: ['kg'], weight: { kg: 20, lb: 45 }, needed: false, missing: [] }], missingBarWeight: false });
     expect(named.bodyweight).toEqual([]); // Pull-up rows are all 0: nothing to ask
     expect(named.machines).toEqual([{ key: 'lat pulldown (pulley)', name: 'Lat Pulldown (Pulley)', exerciseName: 'Lat pulldown', convention: 'stack', sample: null, mixed: false }]);
     expect(named.questionsOpen).toBe(2);
@@ -207,7 +208,8 @@ describe('import preview: questions before anything is saved', () => {
   it('"Plates only" adds the bar weight in the row’s own unit; lb stays lb (check 19)', () => {
     const p = parsed('A1-lb.synthetic.csv');
     const first = analyseImport(p, ctx(), DEFAULT_ANSWERS);
-    const a = analyseImport(p, ctx(), answers({ names: useSuggestions(first), total: 'plates_only', perHand: 'each' }));
+    const named = analyseImport(p, ctx(), answers({ names: useSuggestions(first), perHand: 'each' }));
+    const a = analyseImport(p, ctx(), answers({ names: useSuggestions(first), totalOverrides: platesFor(named), perHand: 'each' }));
     expect(a.ready).toBe(true);
     expect(a.total?.bars.map((b) => [b.bar, b.units, b.needed])).toEqual([['barbell', ['lb'], true]]);
     expect(a.fates.map((f) => (f.result === 'imported' ? f.set.load : null))).toEqual([
@@ -216,7 +218,7 @@ describe('import preview: questions before anything is saved', () => {
       { value: 25, unit: 'lb', convention: 'per_hand' },
       { value: 220, unit: 'lb', convention: 'total' },
     ]);
-    const kgBar = analyseImport(parsed(`${A1}2026-10-01,Bench press,Chest,60,5,,,\n`), ctx(), answers({ total: 'plates_only', barWeight: { kg: 15, lb: 45 } }));
+    const kgBar = analyseImport(parsed(`${A1}2026-10-01,Bench press,Chest,60,5,,,\n`), ctx(), answers({ totalOverrides: { 'bench press': 'plates_only' }, barWeight: { kg: 15, lb: 45 } }));
     expect(kgBar.fates[0]).toMatchObject({ result: 'imported', set: { load: { value: 75, unit: 'kg' } } });
   });
 
@@ -297,22 +299,23 @@ describe('import preview: questions before anything is saved', () => {
     expect(asked.barless).toEqual([{ key: 'kettlebell swing', name: 'Kettlebell swing', exerciseName: 'Kettlebell swing' }]);
     expect(loads(asked)[3]).toBe(24);
 
-    // Plates only: the Olympic bar's 20 kg is added to the bench only; EZ and trap bars wait for their own weight.
-    const plates = analyseImport(p, c, answers({ total: 'plates_only' }));
+    // Plates only, for each: the Olympic bar's 20 kg is added to the bench only; EZ and trap bars wait for their own weight,
+    // and the exercise with no bar recorded waits for Ben to choose one (PM decision after review r7).
+    const plates = analyseImport(p, c, answers({ totalOverrides: platesFor(asked) }));
     expect(plates.total?.bars).toEqual([
       { bar: 'barbell', units: ['kg'], weight: { kg: 20, lb: 45 }, needed: true, missing: [] },
       { bar: 'ez_bar', units: ['kg'], weight: { kg: null, lb: null }, needed: true, missing: ['kg'] },
       { bar: 'trap_bar', units: ['kg'], weight: { kg: null, lb: null }, needed: true, missing: ['kg'] },
     ]);
-    expect(plates.total?.open).toBe(true);
+    expect(plates.total).toMatchObject({ open: true, needsBar: 1 });
     expect(plates.ready).toBe(false);
-    expect(loads(plates)).toEqual([80, 'pending total', 'pending total', 24, 'Plates only (40), but which bar Mystery bar lift uses isn’t recorded, so no bar weight can be added']);
+    expect(loads(plates)).toEqual([80, 'pending total', 'pending total', 24, 'pending total']);
 
-    // With their weights entered, each bar adds its own.
-    const entered = analyseImport(p, c, answers({ total: 'plates_only', otherBarWeight: { ez_bar: { kg: 7.5, lb: null }, trap_bar: { kg: 25, lb: null } } }));
-    expect(entered.total?.missingBarWeight).toBe(false);
+    // With their weights entered and a bar chosen for the mystery lift, each bar adds its own.
+    const entered = analyseImport(p, c, answers({ totalOverrides: platesFor(asked), totalBars: { 'mystery bar lift': 'trap_bar' }, otherBarWeight: { ez_bar: { kg: 7.5, lb: null }, trap_bar: { kg: 25, lb: null } } }));
+    expect(entered.total).toMatchObject({ missingBarWeight: false, needsBar: 0 });
     expect(entered.ready).toBe(true);
-    expect(loads(entered).slice(0, 4)).toEqual([80, 27.5, 125, 24]);
+    expect(loads(entered)).toEqual([80, 27.5, 125, 24, 65]);
 
     // "Total" for everything needs no bar weight at all.
     const totals = analyseImport(p, c, answers({ total: 'total' }));
@@ -387,48 +390,67 @@ describe('import preview: questions before anything is saved', () => {
     expect(aliasesToSave(skipped)).toEqual([{ key: 'mystery machine', name: 'Mystery Machine', target: { kind: 'skip' } }]);
   });
 
-  it('Add new → Barbell takes the bar from the name: EZ or trap bar from its word, the Olympic bar only for Barbell or no word, else asked (review r6.1 B1)', () => {
-    expect(newBarFromName('EZ Bar Upright Row')).toEqual({ bar: 'ez_bar', known: true });
-    expect(newBarFromName('Upright Row (EZ-Bar)')).toEqual({ bar: 'ez_bar', known: true });
-    expect(newBarFromName('Trap Bar Jump Squat')).toEqual({ bar: 'trap_bar', known: true });
-    expect(newBarFromName('Hex Bar Deadlift')).toEqual({ bar: 'trap_bar', known: true });
-    expect(newBarFromName('Barbell Upright Row')).toEqual({ bar: 'barbell', known: true });
-    expect(newBarFromName('Log Press')).toEqual({ bar: 'barbell', known: false });
-    expect(newBarFromName('Smith Machine Upright Row')).toEqual({ bar: 'barbell', known: false });
-    expect(newBarFromName('Dumbbell Thing')).toEqual({ bar: 'barbell', known: false });
-    expect(newBarFromName('Barbell or EZ Bar Curl')).toEqual({ bar: 'unknown', known: false });
-    expect(newBarFromName('EZ Bar Cable Curl')).toEqual({ bar: 'ez_bar', known: false });
-  });
-
-  it('Add new → Barbell: the group answer reads the bar only when the name says it; every other name is asked (review r6.2 B1)', () => {
-    expect(newBarFromName('BB Upright Row')).toEqual({ bar: 'barbell', known: true });
-    expect(newBarFromName('Olympic Bar Squat')).toEqual({ bar: 'barbell', known: true });
-    const asked = [
-      'E-Z Bar Curl',
-      'Curl Bar Curl',
-      'Hex Deadlift',
-      'Trap Deadlift',
-      'Safety Squat Bar Squat',
-      'SSB Squat',
-      'Cambered Bar Bench Press',
-      'Swiss Bar Press',
-      'Football Bar Press',
-      'Multi Grip Bar Press',
-      'Buffalo Bar Squat',
-      'Axle Press',
+  describe('Add new → Barbell: no word in a name decides that a bar is added, or which (PM decision after review r7)', () => {
+    const NAMES = [
+      'EZ Bar Upright Row',
+      'Upright Row (EZ-Bar)',
+      'Trap Bar Jump Squat',
+      'Hex Bar Deadlift',
+      'Hex Barbell Deadlift',
+      'Trap Barbell Shrug',
+      'EZ Barbell Curl',
+      'Barbell EZ Curl',
+      'Olympic EZ Bar Curl',
+      'Olympic Hex Bar Deadlift',
+      'Barbell Trap Bar Deadlift',
+      'Barbell Upright Row',
+      'BB Upright Row',
+      'Olympic Bar Squat',
       'Log Press',
-      'Yoke Walk',
-      'Landmine Press',
-      'Zottman Curl',
+      'Safety Squat Bar Squat',
+      'E-Z Bar Curl',
+      'Smith Machine Upright Row',
     ];
-    for (const n of asked) expect(newBarFromName(n).known, n).toBe(false);
-  });
+    for (const unit of ['kg', 'lb'] as const) {
+      it(`every name, in ${unit}: the group answer imports it as written; nothing is added without its own answer`, () => {
+        const header = unit === 'kg' ? A1 : A1.replace('kgs', 'lbs');
+        const p = parsed(`${header}${NAMES.map((n) => `2026-10-01,${n},Arms,60,5,,,\n`).join('')}`);
+        const names = Object.fromEntries(NAMES.map((n) => [nameKey(n), { kind: 'new' as const, equipment: 'barbell' as const }]));
+        const open = analyseImport(p, ctx(), answers({ names }));
+        // Every one is on the barbell question, read by the group answer, its bar the Olympic bar of the exercise Add new makes.
+        expect(open.total?.exercises.map((e) => [e.name, e.exerciseBar, e.bar, e.barChosen, e.reading])).toEqual(NAMES.map((n) => [n, 'barbell', 'barbell', false, null]));
+        expect(open.total).toMatchObject({ grouped: NAMES.length, needsGroup: true, needsBar: 0 });
+        // The group answer: total as written, nothing added.
+        const total = analyseImport(p, ctx(), answers({ names, total: 'total' }));
+        expect(total.ready).toBe(true);
+        expect(total.fates.map((f) => (f.result === 'imported' ? f.set.load : f.result))).toEqual(NAMES.map(() => ({ value: 60, unit, convention: 'total' })));
+        expect(newExercisesToCreate(total).map((e) => e.equipment)).toEqual(NAMES.map(() => ['barbell']));
+        // A group "plates only" stored before the decision is read as not answered, never as adding a bar.
+        const legacy = analyseImport(p, ctx(), answers({ names, total: 'plates_only' }));
+        expect(legacy.total).toMatchObject({ answer: null, needsGroup: true });
+        expect(legacy.fates.every((f) => f.result === 'pending')).toBe(true);
+      });
+    }
 
-  it('Add new → Barbell: `Hex/Trap/EZ Barbell` is that bar; two bar kinds are asked (review r7 B1, B2)', () => {
-    expect(newBarFromName('Hex Barbell Deadlift')).toEqual({ bar: 'trap_bar', known: true });
-    expect(newBarFromName('Trap Barbell Shrug')).toEqual({ bar: 'trap_bar', known: true });
-    expect(newBarFromName('EZ Barbell Curl')).toEqual({ bar: 'ez_bar', known: true });
-    for (const n of ['Barbell EZ Curl', 'Olympic EZ Bar Curl', 'Olympic Hex Bar Deadlift', 'Barbell Trap Bar Deadlift']) expect(newBarFromName(n), n).toEqual({ bar: 'unknown', known: false });
+    it('plates only, one exercise at a time: the Olympic bar shown, changeable; the exercise is made with the bar Ben chose', () => {
+      const p = parsed(`${A1}2026-10-01,EZ Bar Upright Row,Arms,30,10,,,\n2026-10-01,Log Press,Shoulders,60,5,,,\n`);
+      const names = { [nameKey('EZ Bar Upright Row')]: { kind: 'new' as const, equipment: 'barbell' as const }, [nameKey('Log Press')]: { kind: 'new' as const, equipment: 'barbell' as const } };
+      const olympic = analyseImport(p, ctx(), answers({ names, total: 'total', totalOverrides: { [nameKey('EZ Bar Upright Row')]: 'plates_only' } }));
+      expect(olympic.total?.exercises.map((e) => [e.name, e.bar, e.reading, e.sample])).toEqual([
+        ['EZ Bar Upright Row', 'barbell', 'plates_only', { value: 30, unit: 'kg', imported: 50, barWeight: 20, platesOnly: 50 }],
+        ['Log Press', 'barbell', 'total', { value: 60, unit: 'kg', imported: 60, barWeight: 20, platesOnly: 80 }],
+      ]);
+      const ez = analyseImport(p, ctx(), answers({ names, total: 'total', totalOverrides: { [nameKey('EZ Bar Upright Row')]: 'plates_only' }, totalBars: { [nameKey('EZ Bar Upright Row')]: 'ez_bar' } }));
+      expect(ez.total?.exercises[0]).toMatchObject({ exerciseBar: 'barbell', bar: 'ez_bar', barChosen: true });
+      // The EZ bar has no default weight: the row waits for it.
+      expect(ez.fates[0]).toEqual({ result: 'pending', reason: 'total' });
+      const entered = analyseImport(p, ctx(), answers({ names, total: 'total', totalOverrides: { [nameKey('EZ Bar Upright Row')]: 'plates_only' }, totalBars: { [nameKey('EZ Bar Upright Row')]: 'ez_bar' }, otherBarWeight: { ez_bar: { kg: 8, lb: null }, trap_bar: { kg: null, lb: null } } }));
+      expect(entered.fates.map((f) => (f.result === 'imported' ? f.set.load?.value : f.result))).toEqual([38, 60]);
+      expect(newExercisesToCreate(entered).map((e) => [e.name, e.equipment])).toEqual([
+        ['EZ Bar Upright Row', ['ez_bar']],
+        ['Log Press', ['barbell']],
+      ]);
+    });
   });
 
   it('Add new on a name over 120 characters: the exercise is still recognised as import-made from its stored name (review r6.1 N4)', () => {
@@ -446,7 +468,7 @@ describe('import preview: questions before anything is saved', () => {
     expect(a.ready).toBe(true);
     expect(a.fates[0]).toMatchObject({ result: 'imported', set: { exerciseId: id, exerciseName: 'Hammer Strength Row', convention: 'added', load: { value: 40, convention: 'added' } } });
     expect(newExercisesToCreate(a)).toEqual([
-      { exerciseId: id, name: 'Hammer Strength Row', laterality: 'bilateral', convention: 'added', bar: 'none', barKnown: true, implements: null, equipment: ['plate_loaded_machine'], newKind: 'plate_loaded_machine', loadAs: null },
+      { exerciseId: id, name: 'Hammer Strength Row', laterality: 'bilateral', convention: 'added', bar: 'none', implements: null, equipment: ['plate_loaded_machine'], newKind: 'plate_loaded_machine', loadAs: null },
     ]);
     expect(aliasesToSave(a)).toEqual([{ key: 'hammer strength row', name: 'Hammer Strength Row', target: { kind: 'exercise', exerciseId: id } }]);
   });
@@ -485,21 +507,17 @@ describe('import preview: questions before anything is saved', () => {
     expect(idFor('barbell')).toBe(customExerciseIdFor(OWNER, key, 'barbell'));
   });
 
-  it('Add new barbell for a name that says Smith: its bar isn’t the Olympic bar, so it is asked on its own (review r6 B2)', () => {
+  it('Add new barbell for a name that says Smith or Barbell: the group answer imports both as written; only its own answer adds a bar (PM decision after review r7)', () => {
     const p = parsed(`${A1}2026-10-01,Smith Machine Barbell Shrug,Back,60,10,,,\n2026-10-01,Barbell Zottman Curl,Arms,30,10,,,\n`);
-    const a = analyseImport(
-      p,
-      ctx(),
-      answers({ names: { 'smith machine barbell shrug': { kind: 'new', equipment: 'barbell' }, 'barbell zottman curl': { kind: 'new', equipment: 'barbell' } }, total: 'plates_only' }),
-    );
-    expect(a.total?.exercises.map((e) => [e.name, e.known, e.reading, e.sample?.imported])).toEqual([
-      ['Smith Machine Barbell Shrug', false, null, null],
-      ['Barbell Zottman Curl', true, 'plates_only', 50],
+    const names = { 'smith machine barbell shrug': { kind: 'new' as const, equipment: 'barbell' as const }, 'barbell zottman curl': { kind: 'new' as const, equipment: 'barbell' as const } };
+    const a = analyseImport(p, ctx(), answers({ names, total: 'total' }));
+    expect(a.total?.exercises.map((e) => [e.name, e.reading, e.sample?.imported, e.sample?.platesOnly])).toEqual([
+      ['Smith Machine Barbell Shrug', 'total', 60, 80],
+      ['Barbell Zottman Curl', 'total', 30, 50],
     ]);
-    expect(a.fates[0]).toEqual({ result: 'pending', reason: 'total' });
-    // Ben's own answer for it reads it.
-    const own = analyseImport(p, ctx(), answers({ names: { 'smith machine barbell shrug': { kind: 'new', equipment: 'barbell' }, 'barbell zottman curl': { kind: 'new', equipment: 'barbell' } }, total: 'plates_only', totalOverrides: { 'smith machine barbell shrug': 'total' } }));
-    expect(own.fates[0]).toMatchObject({ result: 'imported', set: { load: { value: 60, convention: 'total' } } });
+    // Ben's own answer for one exercise is the only thing that adds its bar.
+    const own = analyseImport(p, ctx(), answers({ names, total: 'total', totalOverrides: { 'barbell zottman curl': 'plates_only' } }));
+    expect(own.fates.map((f) => (f.result === 'imported' ? f.set.load?.value : f.result))).toEqual([60, 50]);
   });
 
   it('a file with nothing importable is never ready', () => {
@@ -615,10 +633,33 @@ describe('FitNotes default one-dumbbell names (review r4)', () => {
       gymId: '00000000-0000-4000-8000-0000000009a1',
     };
     const start = startingAnswers(p.rows, { perHandAnswers: new Map([[ONE_ARM, 'one']]) }, { answers: earlier, gymIds: new Set() });
-    expect(start).toEqual({ ...earlier, names: {}, gymId: null, perHandOverrides: { [ONE_ARM]: 'one' } });
+    // A group "plates only" (stored before the PM decision after review r7) is never carried over: no group answer adds a bar.
+    expect(start).toEqual({ ...earlier, names: {}, gymId: null, total: null, perHandOverrides: { [ONE_ARM]: 'one' }, totalBars: {} });
     const kept = startingAnswers(p.rows, {}, { answers: earlier, gymIds: new Set(['00000000-0000-4000-8000-0000000009a1']) });
     expect(kept.gymId).toBe('00000000-0000-4000-8000-0000000009a1');
     expect(startingAnswers(p.rows, {}, null)).toEqual(DEFAULT_ANSWERS);
+  });
+
+  it('Ben’s barbell answer for a name is remembered: filled in next time with the bar he chose, and cleared when he takes it back (PM decision after review r7)', () => {
+    const p = parsed(`${A1}2026-10-01,Log Press,Shoulders,60,5,,,\n2026-10-01,Bench press,Chest,80,5,,,\n`);
+    const names = { [nameKey('Log Press')]: { kind: 'new' as const, equipment: 'barbell' as const } };
+    // This import: plates only on the trap bar for the log press (his answer), the bench by the group answer.
+    const first = analyseImport(p, ctx(), answers({ names, total: 'total', totalOverrides: { 'log press': 'plates_only' }, totalBars: { 'log press': 'trap_bar' }, otherBarWeight: { ez_bar: { kg: null, lb: null }, trap_bar: { kg: 25, lb: null } } }));
+    expect(first.fates.map((f) => (f.result === 'imported' ? f.set.load?.value : f.result))).toEqual([85, 80]);
+    const saved = aliasesToSave(first);
+    expect(saved.map((x) => [x.key, x.total])).toEqual([['log press', { reading: 'plates_only', bar: 'trap_bar' }]]);
+    // Next time: filled in and shown as his answer last time; the bench (no answer of its own) is not.
+    const remembered = new Map([['log press', { reading: 'plates_only' as const, bar: 'trap_bar' as const }]]);
+    const start = startingAnswers(p.rows, { totalAnswers: remembered }, null);
+    expect(start).toMatchObject({ total: null, totalOverrides: { 'log press': 'plates_only' }, totalBars: { 'log press': 'trap_bar' } });
+    const next = analyseImport(p, ctx({ totalAnswers: remembered }), { ...start, names });
+    expect(next.total?.exercises.map((e) => [e.name, e.override, e.bar, e.barChosen, e.remembered])).toEqual([
+      ['Log Press', 'plates_only', 'trap_bar', true, { reading: 'plates_only', bar: 'trap_bar' }],
+      ['Bench press', null, 'barbell', false, null],
+    ]);
+    // Taken back (back to the group answer): remembered as cleared.
+    const back = analyseImport(p, ctx({ totalAnswers: remembered }), { ...start, names, total: 'total', totalOverrides: {} });
+    expect(aliasesToSave(back).map((x) => [x.key, x.total])).toEqual([['log press', null]]);
   });
 });
 
@@ -665,7 +706,7 @@ describe('a word suggestion gives the exercise only (PM decision, review r5)', (
     expect(loads(a)).toEqual([10, 'pending:per_hand']);
   });
 
-  it('a bar is added by the group answer only when the name establishes it; a suggested bar exercise is asked on its own with what it imports as', () => {
+  it('the group answer never adds a bar, whatever the name; plates only is Ben’s answer for one exercise, with what it imports as (PM decision after review r7)', () => {
     const p = parsed(`${A1}2026-09-01,Decline Bench Press,Chest,60,8,,,\n2026-09-01,Flat Barbell Bench Press,Chest,80,5,,,\n2026-09-02,Flat Bench,Chest,70,5,,,\n`);
     const first = analyseImport(p, ctx(), DEFAULT_ANSWERS);
     expect(first.names.map((n) => [n.name, n.match.status])).toEqual([
@@ -674,25 +715,26 @@ describe('a word suggestion gives the exercise only (PM decision, review r5)', (
       ['Flat Bench', 'matched'],
     ]);
     const names = useAll(p);
-    const plates = analyseImport(p, ctx(), answers({ names, total: 'plates_only' }));
-    // `Decline Bench Press` says no bar and isn't the bench press's own name: asked, nothing selected.
-    expect(plates.total?.exercises.map((e) => [e.name, e.known, e.override, e.reading, e.sample])).toEqual([
-      ['Decline Bench Press', false, null, null, { value: 60, unit: 'kg', imported: null, barWeight: 20 }],
-      ['Flat Barbell Bench Press', true, null, 'plates_only', { value: 80, unit: 'kg', imported: 100, barWeight: 20 }],
-      ['Flat Bench', true, null, 'plates_only', { value: 70, unit: 'kg', imported: 90, barWeight: 20 }],
+    const open = analyseImport(p, ctx(), answers({ names }));
+    // Every exercise waits for the group answer; each shows the bar it would add (the bench press's own) and its plates-only value.
+    expect(open.total?.exercises.map((e) => [e.name, e.bar, e.override, e.reading, e.sample])).toEqual([
+      ['Decline Bench Press', 'barbell', null, null, { value: 60, unit: 'kg', imported: null, barWeight: 20, platesOnly: 80 }],
+      ['Flat Barbell Bench Press', 'barbell', null, null, { value: 80, unit: 'kg', imported: null, barWeight: 20, platesOnly: 100 }],
+      ['Flat Bench', 'barbell', null, null, { value: 70, unit: 'kg', imported: null, barWeight: 20, platesOnly: 90 }],
     ]);
-    expect(plates.total).toMatchObject({ grouped: 2, needsGroup: false, needsOwn: 1, open: true, example: { name: 'Flat Bench', value: 70 } });
-    expect(loads(plates)).toEqual(['pending:total', 100, 90]);
-    // With no group answer, the group waits and the suggested one is still asked on its own.
-    expect(analyseImport(p, ctx(), answers({ names })).total).toMatchObject({ needsGroup: true, needsOwn: 1 });
-    // Ben's own answer (source (b)) reads it.
-    expect(loads(analyseImport(p, ctx(), answers({ names, total: 'plates_only', totalOverrides: { [nameKey('Decline Bench Press')]: 'plates_only' } })))).toEqual([80, 100, 90]);
-    const own = analyseImport(p, ctx(), answers({ names, total: 'plates_only', totalOverrides: { [nameKey('Decline Bench Press')]: 'total' } }));
-    expect(loads(own)).toEqual([60, 100, 90]);
+    expect(open.total).toMatchObject({ grouped: 3, needsGroup: true, needsBar: 0, open: true, example: { name: 'Flat Bench', value: 70 } });
+    expect(loads(open)).toEqual(['pending:total', 'pending:total', 'pending:total']);
+    // Total as written: nothing added, even to names that say Barbell or are the exercise's own name.
+    const total = analyseImport(p, ctx(), answers({ names, total: 'total' }));
+    expect(loads(total)).toEqual([60, 80, 70]);
+    expect(total.ready).toBe(true);
+    // Ben's own answer (source (b)) for one exercise adds its bar.
+    const own = analyseImport(p, ctx(), answers({ names, total: 'total', totalOverrides: { [nameKey('Decline Bench Press')]: 'plates_only' } }));
+    expect(loads(own)).toEqual([80, 80, 70]);
     expect(own.ready).toBe(true);
     // An exercise with its own answer is neither counted nor the example for the group (review r5 N4).
     const overridden = analyseImport(p, ctx(), answers({ names, totalOverrides: { [nameKey('Flat Bench')]: 'total' } }));
-    expect(overridden.total).toMatchObject({ grouped: 1, example: { name: 'Flat Barbell Bench Press', value: 80 } });
+    expect(overridden.total).toMatchObject({ grouped: 2, example: { name: 'Decline Bench Press', value: 60 } });
   });
 
   it('S3: a weight-stack dip machine is never read as assistance; a name that says assisted is', () => {

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { equipmentContradicts, nameKey, NBSP } from '@fizz/domain';
-import type { ImportBarKind, Load, WeightUnit } from '@fizz/schemas';
+import type { Load, WeightUnit } from '@fizz/schemas';
 
 import type { ImportDraft } from '../src/import/import-service';
 import { perHandOptions, totalOptions } from '../src/import/views';
@@ -37,8 +37,6 @@ const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 const ownName = (name: string, c: { name: string; aliases: readonly string[] }) => [c.name, ...c.aliases].some((x) => norm(x) === norm(name));
 /** (c) Words that say two dumbbells. */
 const pairWord = (name: string) => /\b(two[- ]?arms?|alternating|alternate|alt|double)\b/i.test(name);
-/** (c) Words that name the bar. */
-const BAR_WORD: Record<ImportBarKind, RegExp> = { barbell: /\b(barbells?|bb)\b/i, ez_bar: /\bez\b|\bez[- ]?bar\b/i, trap_bar: /\b(trap|hex)[- ]?bar\b/i };
 /** (c) Words that say the machine assists. */
 const assistWord = (name: string) => /\b(assist|assisted|assistance|gravitron|counter[- ]?weight(ed)?)\b/i.test(name);
 /** (c) The word Smith: a Smith machine, whose bar isn't the Olympic bar. */
@@ -67,9 +65,8 @@ async function step(d: ImportDraft, change: Parameters<AppServices['imports']['a
 }
 
 interface Outcome {
-  /** Names asked one by one, by question. */
+  /** Names asked one by one on the dumbbell question. */
   askedPerHand: string[];
-  askedTotal: string[];
   /** FitNotes name → stored load. */
   stored: Map<string, Load | null>;
   /** FitNotes name → what the dumbbell or barbell screen showed it imports as. */
@@ -79,9 +76,10 @@ interface Outcome {
 /**
  * Ben at his most trusting: every `Check` accepted with `Use this`; a `No
  * match` with a dumbbell or barbell word added as new with that equipment,
- * any other skipped; "Both dumbbells together" and "Plates only" for the
- * groups. What is then still asked is answered as written ("One dumbbell",
- * "Total"), and each bodyweight exercise as weight added.
+ * any other skipped; "Both dumbbells together" and the barbell group's only
+ * answer, "Total as written" (no group answer adds a bar: PM decision after
+ * review r7). What is then still asked is answered as written ("One
+ * dumbbell"), and each bodyweight exercise as weight added.
  */
 async function importAll(
   unit: WeightUnit,
@@ -101,8 +99,7 @@ async function importAll(
     } else d = await step(d, { kind: 'name', key: n.key, answer: { kind: 'skip' } });
   }
   if (d.analysis.perHand) d = await step(d, { kind: 'per_hand', answer: 'both' });
-  if (d.analysis.total) d = await step(d, { kind: 'total', answer: 'plates_only' });
-  for (const b of d.analysis.total?.bars ?? []) for (const u of b.missing) d = await step(d, { kind: 'bar_weight', bar: b.bar, unit: u, value: u === 'kg' ? 10 : 22 });
+  if (d.analysis.total) d = await step(d, { kind: 'total', answer: 'total' });
   for (const q of d.analysis.bodyweight) {
     d = await step(d, { kind: 'bodyweight', key: q.key, answer: 'added' });
     answered.add(q.name);
@@ -112,18 +109,13 @@ async function importAll(
   const ph = perHandOptions(d.analysis, 'en-GB');
   const askedPerHand = ph?.ask?.rows.filter((r) => r.choices.every((c) => !c.selected)).map((r) => r.title) ?? [];
   for (const r of ph?.ask?.rows ?? []) expect(plain(r.conversion), r.title).toMatch(/→ not answered yet$/);
-  const tq = totalOptions(d.analysis, 'en-GB');
-  const askedTotal = tq?.ask?.rows.map((r) => r.title) ?? [];
-  for (const r of tq?.ask?.rows ?? []) {
+  // Every barbell exercise is on the plates-only list with nothing selected, read as written by the group answer.
+  for (const r of totalOptions(d.analysis, 'en-GB')?.platesOnly.rows ?? []) {
     expect(r.choices.some((c) => c.selected), r.title).toBe(false);
-    expect(plain(r.conversion), r.title).toMatch(/→ not answered yet$/);
+    expect(plain(r.now), r.title).toMatch(/ total as written$/);
   }
   for (const n of askedPerHand) {
     d = await step(d, { kind: 'per_hand_override', key: nameKey(n), answer: 'one' });
-    answered.add(n);
-  }
-  for (const n of askedTotal) {
-    d = await step(d, { kind: 'total_override', key: nameKey(n), answer: 'total' });
     answered.add(n);
   }
   expect(d.analysis.ready).toBe(true);
@@ -144,15 +136,14 @@ async function importAll(
   const rows = (await s.imports.importedRows(r.jobId, DATE))?.rows ?? [];
   const stored = new Map(rows.flatMap((x) => (x.imported ? [[x.exerciseName, x.imported.load] as const] : [])));
   for (const x of rows.filter((y) => y.imported)) expect(x.imported?.unit, x.exerciseName).toBe(unit);
-  return { askedPerHand, askedTotal, stored, shown, answered, added, exerciseOf };
+  return { askedPerHand, stored, shown, answered, added, exerciseOf };
 }
 
 describe('FitNotes’ default names: nothing stored differs from the file without a source for it (PM decision, review r5)', () => {
   for (const unit of ['kg', 'lb'] as const) {
     it(`in ${unit}: every change is from the exercise’s own name, a word in the name, or Ben’s own answer; each shown before commit`, async () => {
-      const { askedPerHand, askedTotal, stored, shown, answered, added, exerciseOf } = await importAll(unit);
+      const { askedPerHand, stored, shown, answered, exerciseOf } = await importAll(unit);
       const halved: string[] = [];
-      const barAdded: string[] = [];
       const assisted: string[] = [];
       DEFAULTS.forEach((name, i) => {
         if (!stored.has(name)) return; // skipped (no match, cardio) or unreadable: nothing stored
@@ -178,46 +169,12 @@ describe('FitNotes’ default names: nothing stored differs from the file withou
           expect(own || pairWord(name), why).toBe(true);
           return;
         }
-        if (load.convention === 'total') {
-          // An exercise `Add new` made is a barbell one by Ben's answer; a catalogue one's bar is its equipment.
-          const bar = added.get(name) === 'barbell' ? 'barbell' : (['barbell', 'ez_bar', 'trap_bar'] as const).find((b) => c?.compatibleEquipment.includes(b));
-          expect(bar, why).toBeDefined();
-          const weight = bar === 'barbell' ? (unit === 'kg' ? 20 : 45) : unit === 'kg' ? 10 : 22;
-          expect(load.value, why).toBe(raw + weight);
-          barAdded.push(name);
-          expect(own || (bar !== undefined && BAR_WORD[bar].test(name)) || added.get(name) === 'barbell', why).toBe(true);
-          return;
-        }
+        // No bar is ever added here: only Ben's answer for one exercise adds one (PM decision after review r7).
         expect.fail(`changed without a source: ${why}`);
       });
 
       // Not vacuous: the sources do change values, and the rest are asked with nothing selected.
       expect(halved.sort()).toEqual(['Arnold Dumbbell Press', 'Dumbbell Curl', 'Dumbbell Hammer Curl', 'Flat Dumbbell Bench Press', 'Flat Dumbbell Fly', 'Incline Dumbbell Bench Press', 'Seated Dumbbell Press']);
-      expect(barAdded.sort()).toEqual([
-        'Barbell Calf Raise',
-        'Barbell Curl',
-        'Barbell Front Squat',
-        'Barbell Glute Bridge',
-        'Barbell Row',
-        'Barbell Shrug',
-        'Barbell Squat',
-        'Behind The Neck Barbell Press',
-        'Close Grip Barbell Bench Press',
-        'Deadlift',
-        'Decline Barbell Bench Press',
-        'EZ-Bar Curl',
-        'EZ-Bar Preacher Curl',
-        'EZ-Bar Skullcrusher',
-        'Flat Barbell Bench Press',
-        'Good Morning',
-        'Incline Barbell Bench Press',
-        'Lying Triceps Extension',
-        'Overhead Press',
-        'Pendlay Row',
-        'Push Press',
-        'Romanian Deadlift',
-        'Sumo Deadlift',
-      ]);
       expect(assisted).toEqual([]);
       // The dumbbell defaults whose count the name doesn't establish: asked, never halved by the group answer (review r5 S1).
       expect(askedPerHand.sort()).toEqual([
@@ -231,8 +188,8 @@ describe('FitNotes’ default names: nothing stored differs from the file withou
         'Seated Incline Dumbbell Curl',
         'Walking',
       ]);
-      // Bar exercises suggested by their words, with no bar word: asked, no bar added by the group answer.
-      expect(askedTotal.sort()).toEqual(['Stiff-Legged Deadlift']);
+      // Every barbell default was read as written: the names that say Barbell, BB or EZ-Bar, and the exercises' own names, included.
+      for (const n of ['Flat Barbell Bench Press', 'EZ-Bar Curl', 'Deadlift', 'Stiff-Legged Deadlift', 'Barbell Squat']) expect(stored.get(n), n).toMatchObject({ value: rawOf(DEFAULTS.indexOf(n)), convention: 'total' });
       // One-dumbbell defaults read as written.
       for (const n of ['One-Arm Standing Dumbbell Press', 'Dumbbell Concentration Curl', 'Dumbbell Overhead Triceps Extension']) expect(stored.get(n)?.value, n).toBe(rawOf(DEFAULTS.indexOf(n)));
     });

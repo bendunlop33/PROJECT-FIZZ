@@ -1,4 +1,4 @@
-import type { BodyweightAnswer, ImportAnswers, ImportBarKind, NameAnswer, PerHandAnswer, PerHandReading, TotalAnswer, WeightUnit } from '@fizz/schemas';
+import type { BodyweightAnswer, GroupTotalAnswer, ImportAnswers, ImportBarKind, NameAnswer, PerHandAnswer, PerHandReading, TotalAnswer, WeightUnit } from '@fizz/schemas';
 
 /**
  * One change to the import answers (data-import-export §2.5 steps 3a–3c).
@@ -10,8 +10,12 @@ export type AnswerChange =
   | { kind: 'per_hand'; answer: PerHandAnswer }
   /** One exercise's reading (`one` / `each` / `both`); null goes back to the default (review r3 S1). */
   | { kind: 'per_hand_override'; key: string; answer: PerHandReading | null }
-  | { kind: 'total'; answer: TotalAnswer }
+  /** The barbell group answer: only "Total as written". No group answer adds a bar weight (PM decision after review r7). */
+  | { kind: 'total'; answer: GroupTotalAnswer }
+  /** One exercise: total as written, or plates only (its bar's weight added); null goes back to the group answer. */
   | { kind: 'total_override'; key: string; answer: TotalAnswer | null }
+  /** The bar one exercise's "plates only" adds; null goes back to the matched exercise's own bar. */
+  | { kind: 'total_bar'; key: string; bar: ImportBarKind | null }
   /** A bar's weight for `plates_only` values (each bar kind has its own; review S1). */
   | { kind: 'bar_weight'; bar: ImportBarKind; unit: WeightUnit; value: number }
   /** null clears it: the question is open again (a re-mapped name whose question changed meaning; review r6.2 N4). */
@@ -44,6 +48,8 @@ export function applyAnswerChange(a: ImportAnswers, c: AnswerChange): ImportAnsw
       return { ...a, total: c.answer };
     case 'total_override':
       return { ...a, totalOverrides: setOrClear(a.totalOverrides, c.key, c.answer) };
+    case 'total_bar':
+      return { ...a, totalBars: setOrClear(a.totalBars ?? {}, c.key, c.bar) };
     case 'bar_weight':
       return c.bar === 'barbell'
         ? { ...a, barWeight: { ...a.barWeight, [c.unit]: c.value } }

@@ -4,6 +4,7 @@ import type {
   CustomExerciseKind,
   ExerciseEquipmentKind,
   FitNotesVariant,
+  GroupTotalAnswer,
   ImportAnswers,
   ImportBarKind,
   ImplementCount,
@@ -23,7 +24,8 @@ import { deriveId } from '../stable';
 import { fromScaled, toScaled } from '../units';
 import { effortFromComment } from './effort';
 import type { FitNotesRow } from './fitnotes';
-import { barNamed, barWordsIn, equipmentInName, implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
+import { equipmentInName, implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
+import type { RememberedTotal } from './remembered';
 
 /**
  * The FitNotes import preview and plan (data-import-export §2.5, §3.4, §4.3).
@@ -40,9 +42,13 @@ import { barNamed, barWordsIn, equipmentInName, implementsFor, matchName, nameKe
  * decision, review r5): (a) the name is one of the exercise's own names,
  * (b) Ben's own answer, in this import or remembered from one still in
  * effect, or (c) a word in the name. A word suggestion, even after `Use
- * this`, gives the exercise only: an exercise whose dumbbell count or bar
- * isn't known that way never takes a group answer and is asked on its own,
- * with nothing selected, showing what it will import as.
+ * this`, gives the exercise only: an exercise whose dumbbell count isn't
+ * known that way never takes a group answer and is asked on its own, with
+ * nothing selected, showing what it will import as.
+ *
+ * A bar weight is only ever added by Ben's answer for that one exercise
+ * (PM decision after review r7): the barbell group answer is only "Total as
+ * written", and no word in a name ever decides that a bar is added or which.
  */
 
 export const DEFAULT_ANSWERS: ImportAnswers = {
@@ -51,6 +57,7 @@ export const DEFAULT_ANSWERS: ImportAnswers = {
   perHandOverrides: {},
   total: null,
   totalOverrides: {},
+  totalBars: {},
   barWeight: { kg: 20, lb: 45 },
   otherBarWeight: { ez_bar: { kg: null, lb: null }, trap_bar: { kg: null, lb: null } },
   bodyweight: {},
@@ -81,6 +88,13 @@ export interface ImportContext {
    * answer last time.
    */
   perHandAnswers?: ReadonlyMap<string, PerHandReading>;
+  /**
+   * Ben's own barbell answer for a name in an earlier import still in effect
+   * (total or plates only, and the bar he chose): filled in by
+   * `startingAnswers` and shown as his answer last time (PM decision after
+   * review r7).
+   */
+  totalAnswers?: ReadonlyMap<string, RememberedTotal>;
   /** Local dates that have a workout logged in the app (not imported). */
   appDates: ReadonlySet<string>;
   /** Local dates that came in with an earlier import still in effect. */
@@ -95,7 +109,7 @@ export interface ImportContext {
  * - `none`: no bar at all (kettlebell, medicine ball, sandbag). The value is
  *   the total as written and the barbell question doesn't ask about it;
  * - `unknown`: no bar kind, or more than one, recorded for the exercise.
- *   Asked, but a plates-only value can't have a bar weight added (unreadable).
+ *   Asked; a plates-only answer waits until Ben chooses the bar.
  */
 export type BarOf = ImportBarKind | 'none' | 'unknown';
 
@@ -114,15 +128,13 @@ export interface ResolvedExercise {
   name: string;
   laterality: Laterality;
   convention: LoadConvention;
-  /** Which bar a `plates_only` value adds (only read for `total`). */
-  bar: BarOf;
   /**
-   * `total` on a bar: the bar is known from the name (`barNamed`: one of the
-   * exercise's own names, or a bar word) or from Ben's `Add new` answer, so
-   * the barbell group answer reads it. False: asked on its own (PM decision,
-   * review r5). Always true off a bar (nothing can be added).
+   * The exercise's own bar, from its equipment (only read for `total`):
+   * what a `plates_only` answer adds unless Ben chooses another bar for it
+   * (`ImportAnswers.totalBars`). Never read from the source name (PM
+   * decision after review r7).
    */
-  barKnown: boolean;
+  bar: BarOf;
   /**
    * `per_hand`: one dumbbell or two, only from the exercise's own name or a
    * word in the source name (`implementsFor`); null when not known (asked;
@@ -166,20 +178,10 @@ export interface ExampleSet {
 }
 
 /**
- * The barbell group's example set, with what "plates only" imports it as,
- * so the conversion is shown even when the group reads a single exercise
- * (review r6 S2).
+ * One exercise on the barbell question (PM decision after review r7). The
+ * group answer only ever reads it as the total as written; "plates only" is
+ * Ben's answer for this exercise alone, with the bar shown and changeable.
  */
-export interface TotalExample extends ExampleSet {
-  /** The bar "plates only" adds (`unknown`: none can be added). */
-  bar: Exclude<BarOf, 'none'>;
-  /** That bar's weight in the set's unit; null when none can be added or it isn't entered yet. */
-  barWeight: number | null;
-  /** The value under "plates only"; null when no bar weight can be added. */
-  platesOnly: number | null;
-}
-
-/** One exercise on the barbell question (PM decision, review r5). */
 export interface TotalExercise {
   key: string;
   /** As first written in the file. */
@@ -187,20 +189,25 @@ export interface TotalExercise {
   /** The app's exercise it maps to. */
   exerciseName: string;
   sets: number;
-  /** The bar "plates only" adds (`unknown`: none can be added). */
+  /** The matched exercise's own bar, from its equipment (`unknown`: none, or more than one, recorded). */
+  exerciseBar: Exclude<BarOf, 'none'>;
+  /** The bar "plates only" adds: Ben's choice, else the exercise's own. `unknown`: he has to choose one before plates only can be read. */
   bar: Exclude<BarOf, 'none'>;
-  /** The bar is known (`ResolvedExercise.barKnown`): the group answer reads it. Otherwise it is asked on its own. */
-  known: boolean;
+  /** Ben chose the bar (`ImportAnswers.totalBars`). */
+  barChosen: boolean;
+  /** Ben's answer for this exercise; null: the group answer reads it. */
   override: TotalAnswer | null;
+  /** Ben's answer for this name in an earlier import still in effect; null when there is none. */
+  remembered: RememberedTotal | null;
   /** How its values are read now (`totalReading`). Null: still to answer. */
   reading: TotalAnswer | null;
   /**
-   * Its newest weight in the file and what it imports as under `reading`:
-   * `imported` is null while unanswered, while the bar's weight is missing,
-   * or when no bar can be added (`bar: 'unknown'`); `barWeight` is the
-   * weight added for plates only.
+   * Its newest weight in the file: `platesOnly` is what it imports as under
+   * "plates only" (null while the bar or its weight is missing), `imported`
+   * what it imports as under `reading` (null while unanswered or while
+   * plates only can't be read yet); `barWeight` is the bar's weight added.
    */
-  sample: { value: number; unit: WeightUnit; imported: number | null; barWeight: number | null } | null;
+  sample: { value: number; unit: WeightUnit; imported: number | null; barWeight: number | null; platesOnly: number | null } | null;
 }
 
 /** One exercise on the dumbbell question (review r3 S1). */
@@ -246,23 +253,24 @@ export interface PerHandQuestion {
 }
 
 /**
- * Barbell weights (§2.5 step 3b; PM decision, review r5). The group answer
- * (total / plates only) reads exercises whose bar is known; any other bar
- * exercise is asked on its own with no default (DX6). Every exercise shows
- * what it will import as.
+ * Barbell weights (§2.5 step 3b; PM decision after review r7). The group
+ * answer is only "Total as written" (nothing added) and reads every
+ * exercise with no answer of its own. "Plates only" is chosen per exercise,
+ * from a list that shows each one's bar (changeable) and conversion, with
+ * nothing pre-selected (DX6).
  */
 export interface TotalQuestion {
   exercises: TotalExercise[];
-  /** The group answer, for exercises whose bar is known and with no answer of their own. */
-  answer: TotalAnswer | null;
-  /** Exercises the group answer reads (the group question is shown only when there is one). */
+  /** The group answer (`total` only; a `plates_only` stored before the PM decision after review r7 reads as null). */
+  answer: GroupTotalAnswer | null;
+  /** Exercises the group answer reads: no answer of their own. */
   grouped: number;
-  /** The newest set of an exercise the group answer reads, with its plates-only value. */
-  example: TotalExample | null;
+  /** The newest set of an exercise the group answer reads. */
+  example: ExampleSet | null;
   /** An exercise the group answer reads waits for it. */
   needsGroup: boolean;
-  /** Exercises whose bar isn't known, with no answer yet. */
-  needsOwn: number;
+  /** Exercises answered "plates only" whose bar isn't known and that Ben hasn't chosen one for. */
+  needsBar: number;
   bars: BarWeightQuestion[];
   missingBarWeight: boolean;
   open: boolean;
@@ -430,29 +438,6 @@ function addNewExerciseId(ctx: ImportContext, storedKey: string, key: string, ki
 }
 
 /**
- * The bar of an exercise `Add new` makes as a barbell exercise. The same
- * rule `Choose…` uses (`barNamed`): the bar is known, so the group answer
- * reads it, only when the name says it in a word (source (c)):
- * - `Barbell` / `BB` / `Olympic`: the Olympic bar;
- * - `EZ Bar …` / `Trap Bar …` / `Hex Bar …`: that bar, with its own weight
- *   asked for "plates only" (never the Olympic bar's; review r6.1 B1).
- * Every other name is asked on its own, with nothing selected, and can be
- * read as "Total": no word (`Log Press`, `Hex Deadlift`, `Safety Squat Bar
- * Squat`, `E-Z Bar Curl`), a Smith machine, two bar kinds, or a word for
- * other equipment. `Add new` offers one bar kind, so choosing `Barbell` says
- * it's a bar exercise, not which bar (review r6.2 B1). Two bar kinds can't
- * add a bar weight at all.
- */
-export function newBarFromName(name: string): { bar: BarOf; known: boolean } {
-  const words = barWordsIn(name);
-  if (words.kind === 'one') return { bar: words.bar, known: true };
-  if (words.kind === 'none') return { bar: 'barbell', known: false };
-  // Two bar kinds can't add a bar weight; Smith or other equipment alongside one bar (`Barbell Cable …`) is asked on its own.
-  if (equipmentInName(name)?.has('smith') === true) return { bar: 'barbell', known: false };
-  return { bar: words.bar ?? 'unknown', known: false };
-}
-
-/**
  * A name that says assisted mapped to a weight-stack or plates-added
  * exercise (`Choose…` or `Add new`): Ben's choice gives the exercise, the
  * name's word says the number is help. The two disagree on the sign, so how
@@ -477,6 +462,7 @@ function resolveName(
   answer: NameAnswer | null,
   ctx: ImportContext,
   byId: ReadonlyMap<string, MatchCandidate>,
+  chosenBar: ImportBarKind | null,
 ): NameResolution {
   const fromCandidate = (id: string | null): NameResolution => {
     const c = id === null ? undefined : byId.get(id);
@@ -489,9 +475,8 @@ function resolveName(
         name: c.name,
         laterality: c.laterality,
         convention: c.defaultLoadConvention,
+        // The exercise's own bar; never one read from the source name (PM decision after review r7).
         bar,
-        // A bar the name doesn't establish is never added by the group answer (PM decision, review r5).
-        barKnown: bar === 'none' || bar === 'unknown' || barNamed(name, c, bar),
         // Only the exercise's own name or a word in the source name gives the count; a suggestion never does (review r4 S1, r5 S1).
         implements: implementsFor(name, c),
         equipment: c.compatibleEquipment,
@@ -508,7 +493,9 @@ function resolveName(
         return fromCandidate(answer.exerciseId);
       case 'new': {
         const stored = name.slice(0, 120);
-        const { bar, known } = answer.equipment === 'barbell' ? newBarFromName(name) : { bar: 'none' as const, known: true };
+        // A new barbell exercise is made with the Olympic bar, or the bar Ben chose for it on the barbell question; never one read from the name (PM decision after review r7).
+        const bar: BarOf = answer.equipment === 'barbell' ? 'barbell' : 'none';
+        const made = answer.equipment === 'barbell' ? (chosenBar ?? 'barbell') : answer.equipment;
         return {
           kind: 'exercise',
           exercise: withAssistWord(name, {
@@ -517,11 +504,9 @@ function resolveName(
             laterality: 'bilateral',
             convention: CONVENTION_BY_KIND[answer.equipment],
             bar,
-            barKnown: known,
             // A new dumbbell exercise: one or two isn't known, so it is asked (review r3 S1).
             implements: null,
-            // The exercise is made with the bar the name says (an EZ-bar name gets the EZ bar; review r6.1 B1).
-            equipment: bar === 'ez_bar' || bar === 'trap_bar' ? [bar] : [answer.equipment],
+            equipment: [made],
             newKind: answer.equipment,
             loadAs: null,
           }),
@@ -558,13 +543,26 @@ export function perHandValue(value: number, reading: PerHandReading): number {
 }
 
 /**
- * How one bar exercise's values are read (PM decision, review r5): Ben's
- * own answer for it; else the group answer when its bar is known; else
- * null until Ben answers it.
+ * How one bar exercise's values are read (PM decision after review r7):
+ * Ben's own answer for it; else the group answer, which is only ever
+ * "total as written" (a group `plates_only` stored before then reads as
+ * not answered); else null until Ben answers.
  */
-export function totalReading(known: boolean, override: TotalAnswer | null, group: TotalAnswer | null): TotalAnswer | null {
+export function totalReading(override: TotalAnswer | null, group: TotalAnswer | null): TotalAnswer | null {
   if (override !== null) return override;
-  return known ? group : null;
+  return groupTotal(group);
+}
+
+/** The group answer as read now: only `total` (PM decision after review r7). */
+export function groupTotal(group: TotalAnswer | null): GroupTotalAnswer | null {
+  return group === 'total' ? 'total' : null;
+}
+
+/** The bar a plates-only value of this exercise adds: the one Ben chose for it, else the exercise's own. */
+export function platesOnlyBar(ex: Pick<ResolvedExercise, 'bar'>, key: string, answers: Pick<ImportAnswers, 'totalBars'>): Exclude<BarOf, 'none'> {
+  const chosen = answers.totalBars?.[key];
+  if (chosen !== undefined) return chosen;
+  return ex.bar === 'none' ? 'unknown' : ex.bar;
 }
 
 /** What the copy calls an exercise's implement: kettlebell only when it uses a kettlebell and no dumbbells. */
@@ -652,12 +650,17 @@ function perHandQuestion(
   };
 }
 
-/** The barbell question from the rows still to import (PM decision, review r5). */
-function totalQuestion(live: readonly FitNotesRow[], resolved: (r: FitNotesRow) => ResolvedExercise | null, answers: ImportAnswers): TotalQuestion | null {
+/** The barbell question from the rows still to import (PM decision after review r7). */
+function totalQuestion(
+  live: readonly FitNotesRow[],
+  resolved: (r: FitNotesRow) => ResolvedExercise | null,
+  answers: ImportAnswers,
+  remembered: ReadonlyMap<string, RememberedTotal>,
+): TotalQuestion | null {
   const members = new Map<string, TotalExercise>();
   const sampleDates = new Map<string, string>();
   const barUse = new Map<ImportBarKind, { units: Set<WeightUnit>; needed: Set<WeightUnit> }>();
-  let example: TotalExample | null = null;
+  let example: ExampleSet | null = null;
   for (const r of live) {
     const ex = resolved(r);
     if (ex?.convention !== 'total' || ex.bar === 'none') continue;
@@ -668,11 +671,23 @@ function totalQuestion(live: readonly FitNotesRow[], resolved: (r: FitNotesRow) 
     let m = members.get(key);
     if (!m) {
       const override = answers.totalOverrides[key] ?? null;
-      m = { key, name: r.exercise, exerciseName: ex.name, sets: 0, bar: ex.bar, known: ex.barKnown, override, reading: totalReading(ex.barKnown, override, answers.total), sample: null };
+      m = {
+        key,
+        name: r.exercise,
+        exerciseName: ex.name,
+        sets: 0,
+        exerciseBar: ex.bar,
+        bar: platesOnlyBar(ex, key, answers),
+        barChosen: answers.totalBars?.[key] !== undefined,
+        override,
+        remembered: remembered.get(key) ?? null,
+        reading: totalReading(override, answers.total),
+        sample: null,
+      };
       members.set(key, m);
     }
     m.sets += 1;
-    const bar = ex.bar === 'unknown' ? null : ex.bar;
+    const bar = m.bar === 'unknown' ? null : m.bar;
     // Each bar's weight per unit, and whether plates-only rows need it (review S1).
     if (bar !== null && entered) {
       const use = barUse.get(bar) ?? { units: new Set<WeightUnit>(), needed: new Set<WeightUnit>() };
@@ -681,17 +696,15 @@ function totalQuestion(live: readonly FitNotesRow[], resolved: (r: FitNotesRow) 
       barUse.set(bar, use);
     }
     const date = r.date ?? '';
-    // The newest readable set (first in the file on that date), with what it imports as.
+    // The newest readable set (first in the file on that date), with what it imports as either way.
     if (r.reps !== null && w.value >= 0 && (m.sample === null || date > (sampleDates.get(key) ?? ''))) {
       const barWeight = bar === null ? null : barWeightOf(bar, answers)[w.unit];
-      const imported = m.reading === 'total' ? w.value : m.reading === 'plates_only' && barWeight !== null ? plus(w.value, barWeight) : null;
-      m.sample = { value: w.value, unit: w.unit, imported, barWeight };
+      const platesOnly = barWeight === null ? null : plus(w.value, barWeight);
+      const imported = m.reading === 'total' ? w.value : m.reading === 'plates_only' ? platesOnly : null;
+      m.sample = { value: w.value, unit: w.unit, imported, barWeight, platesOnly };
       sampleDates.set(key, date);
     }
-    if (m.known && m.override === null && r.reps !== null && (example === null || date > example.date)) {
-      const barWeight = bar === null ? null : barWeightOf(bar, answers)[w.unit];
-      example = { name: r.exercise, date, value: w.value, unit: w.unit, reps: r.reps, bar: m.bar, barWeight, platesOnly: barWeight === null || w.value < 0 ? null : plus(w.value, barWeight) };
-    }
+    if (m.override === null && r.reps !== null && (example === null || date > example.date)) example = { name: r.exercise, date, value: w.value, unit: w.unit, reps: r.reps };
   }
   if (members.size === 0) return null;
   const exercises = [...members.values()];
@@ -703,18 +716,18 @@ function totalQuestion(live: readonly FitNotesRow[], resolved: (r: FitNotesRow) 
     return [{ bar, units: [...use.units].sort(), weight, needed: use.needed.size > 0, missing }];
   });
   const missingBarWeight = bars.some((b) => b.missing.length > 0);
-  const needsGroup = exercises.some((e) => e.reading === null && e.known);
-  const needsOwn = exercises.filter((e) => e.reading === null && !e.known).length;
+  const needsGroup = exercises.some((e) => e.reading === null);
+  const needsBar = exercises.filter((e) => e.reading === 'plates_only' && e.bar === 'unknown').length;
   return {
     exercises,
-    answer: answers.total,
-    grouped: exercises.filter((e) => e.known && e.override === null).length,
+    answer: groupTotal(answers.total),
+    grouped: exercises.filter((e) => e.override === null).length,
     example,
     needsGroup,
-    needsOwn,
+    needsBar,
     bars,
     missingBarWeight,
-    open: needsGroup || needsOwn > 0 || missingBarWeight,
+    open: needsGroup || needsBar > 0 || missingBarWeight,
   };
 }
 
@@ -758,7 +771,7 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     if (!n) {
       const match = matchIn(ctx, key, r.exercise);
       const answer = answers.names[key] ?? null;
-      const resolution = resolveName(key, r.exercise, match, answer, ctx, byId);
+      const resolution = resolveName(key, r.exercise, match, answer, ctx, byId, answers.totalBars?.[key] ?? null);
       n = { key, name: r.exercise, sets: 0, match, answer, resolution, needsAnswer: resolution.kind === 'open' };
       nameRows.set(key, n);
     }
@@ -779,7 +792,7 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
   // Group questions (dumbbells, barbell) and per-exercise bodyweight questions.
   const perHand = perHandQuestion(live, resolved, answers, ctx.perHandAnswers ?? new Map());
   // Barbell question: `total` exercises on a bar. Each bar kind has its own weight (review S1).
-  const total = totalQuestion(live, resolved, answers);
+  const total = totalQuestion(live, resolved, answers, ctx.totalAnswers ?? new Map());
 
   // Each name's range of values over every strength row of it in the file, dates skipped as already
   // imported included: the file is the evidence of how Ben writes the sign, so the same rows read the
@@ -888,13 +901,15 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
         if (w === null || value === null) return set('total', null);
         // No bar (a kettlebell): the value is the total as written; nothing to ask.
         if (ex.bar === 'none') return value < 0 ? { result: 'unreadable', detail: negative(value) } : set('total', { value, unit: w.unit, convention: 'total' });
-        // The group answer reads it only when its bar is known (PM decision, review r5).
-        const choice = totalReading(ex.barKnown, answers.totalOverrides[key] ?? null, answers.total);
+        // The group answer is only ever "total as written"; a bar is added only by Ben's answer for this exercise (PM decision after review r7).
+        const choice = totalReading(answers.totalOverrides[key] ?? null, answers.total);
         if (choice === null) return { result: 'pending', reason: 'total' };
         if (value < 0) return { result: 'unreadable', detail: negative(value) };
         if (choice === 'total') return set('total', { value, unit: w.unit, convention: 'total' });
-        if (ex.bar === 'unknown') return { result: 'unreadable', detail: `Plates only (${String(value)}), but which bar ${ex.name} uses isn’t recorded, so no bar weight can be added` };
-        const bar = barWeightOf(ex.bar, answers)[w.unit];
+        // Plates only: the bar Ben chose, else the exercise's own; none recorded waits for him to choose one.
+        const barKind = platesOnlyBar(ex, key, answers);
+        if (barKind === 'unknown') return { result: 'pending', reason: 'total' };
+        const bar = barWeightOf(barKind, answers)[w.unit];
         if (bar === null) return { result: 'pending', reason: 'total' };
         return set('total', { value: plus(value, bar), unit: w.unit, convention: 'total' });
       }
@@ -1117,6 +1132,8 @@ export interface AliasSave {
   name: string;
   target: AliasTarget;
   perHand?: PerHandReading | null;
+  /** Ben's barbell answer for the name, as `perHand` (PM decision after review r7). */
+  total?: RememberedTotal | null;
 }
 
 /**
@@ -1130,19 +1147,24 @@ export interface AliasSave {
  */
 export function aliasesToSave(analysis: ImportAnalysis): AliasSave[] {
   const dumbbells = new Map((analysis.perHand?.exercises ?? []).map((e) => [e.key, e]));
+  const barbells = new Map((analysis.total?.exercises ?? []).map((e) => [e.key, e]));
   const out: AliasSave[] = [];
   for (const n of analysis.names) {
     const e = dumbbells.get(n.key);
     // Asked about this import: his answer, or null when he cleared the one remembered from last time.
     const perHand = e === undefined ? undefined : (e.override ?? (e.remembered === null ? undefined : null));
+    const b = barbells.get(n.key);
+    // The same for his barbell answer, with the bar when he chose one (PM decision after review r7).
+    const total: RememberedTotal | null | undefined =
+      b === undefined ? undefined : b.override !== null ? { reading: b.override, ...(b.barChosen && b.bar !== 'unknown' ? { bar: b.bar } : {}) } : b.remembered === null ? undefined : null;
     const used = n.answer === null && n.match.via === 'alias' && n.sets > 0;
     if (n.resolution.kind === 'skip') {
       if (n.answer || used) out.push({ key: n.key, name: n.name, target: { kind: 'skip' } });
       continue;
     }
-    if (n.resolution.kind !== 'exercise' || (!n.answer && !used && perHand === undefined)) continue;
+    if (n.resolution.kind !== 'exercise' || (!n.answer && !used && perHand === undefined && total === undefined)) continue;
     const target: AliasTarget = { kind: 'exercise', exerciseId: n.resolution.exercise.exerciseId };
-    out.push(perHand === undefined ? { key: n.key, name: n.name, target } : { key: n.key, name: n.name, target, perHand });
+    out.push({ key: n.key, name: n.name, target, ...(perHand === undefined ? {} : { perHand }), ...(total === undefined ? {} : { total }) });
   }
   return out;
 }
@@ -1161,21 +1183,35 @@ export function aliasesToSave(analysis: ImportAnalysis): AliasSave[] {
  */
 export function startingAnswers(
   rows: readonly FitNotesRow[],
-  ctx: Pick<ImportContext, 'perHandAnswers'>,
+  ctx: Pick<ImportContext, 'perHandAnswers' | 'totalAnswers'>,
   earlier: { answers: ImportAnswers; gymIds: ReadonlySet<string> } | null,
 ): ImportAnswers {
   const base: ImportAnswers = earlier
-    ? { ...earlier.answers, names: {}, gymId: earlier.answers.gymId !== null && earlier.gymIds.has(earlier.answers.gymId) ? earlier.answers.gymId : null }
+    ? {
+        ...earlier.answers,
+        names: {},
+        gymId: earlier.answers.gymId !== null && earlier.gymIds.has(earlier.answers.gymId) ? earlier.answers.gymId : null,
+        // A group "plates only" from before the PM decision after review r7 is never carried over: no group answer adds a bar.
+        total: groupTotal(earlier.answers.total),
+      }
     : DEFAULT_ANSWERS;
   const remembered = ctx.perHandAnswers ?? new Map<string, PerHandReading>();
+  const rememberedTotals = ctx.totalAnswers ?? new Map<string, RememberedTotal>();
   const overrides: Record<string, PerHandReading> = { ...base.perHandOverrides };
+  const totalOverrides: Record<string, TotalAnswer> = { ...base.totalOverrides };
+  const totalBars: Record<string, ImportBarKind> = { ...base.totalBars };
   for (const r of rows) {
     if (r.rowClass !== 'strength') continue;
     const key = nameKey(r.exercise);
     const answer = remembered.get(key);
     if (answer !== undefined) overrides[key] = answer;
+    const total = rememberedTotals.get(key);
+    if (total !== undefined) {
+      totalOverrides[key] = total.reading;
+      if (total.bar !== undefined) totalBars[key] = total.bar;
+    }
   }
-  return { ...base, perHandOverrides: overrides };
+  return { ...base, perHandOverrides: overrides, totalOverrides, totalBars };
 }
 
 /** Custom exercises `Add new` makes, for names with at least one imported set. */

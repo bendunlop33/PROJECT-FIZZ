@@ -125,7 +125,10 @@ describe('import jobs and rows', () => {
     const target = { kind: 'exercise' as const, exerciseId: ROW };
     const alias = () => store.repos.imports.aliases(OWNER).then((list) => list.find((a) => a.nameKey === 'one arm db row'));
     // One import after another: each finishes before the next starts (one unfinished import at a time).
-    const commit = async (n: number, aliases: { name: string; nameKey: string; target: typeof target; perHand?: 'one' | 'each' | 'both' | null }[]) => {
+    const commit = async (
+      n: number,
+      aliases: { name: string; nameKey: string; target: typeof target; perHand?: 'one' | 'each' | 'both' | null; total?: { reading: 'total' | 'plates_only'; bar?: 'barbell' | 'ez_bar' | 'trap_bar' } | null }[],
+    ) => {
       const { job, rows } = planned(id(9100 + n));
       const extras = { exercises: [], aliases, at: AT, newId: idGen(70_000 + n * 100) };
       expect(await store.repos.imports.createJob({ ...job, operationId: `commit-${String(n)}` }, rows, extras)).toMatchObject({ ok: true, duplicate: false });
@@ -154,8 +157,14 @@ describe('import jobs and rows', () => {
       { jobId: third, target, perHand: 'both' },
       { jobId: fourth, target, perHand: null },
     ]);
-    expect(rememberedAnswer(cleared as ExerciseAlias, new Set([fourth]))).toEqual({ target, perHand: 'both' });
-    expect(rememberedAnswer(cleared as ExerciseAlias, new Set([third, fourth]))).toEqual({ target, perHand: 'one' });
+    expect(rememberedAnswer(cleared as ExerciseAlias, new Set([fourth]))).toEqual({ target, perHand: 'both', total: null });
+    expect(rememberedAnswer(cleared as ExerciseAlias, new Set([third, fourth]))).toEqual({ target, perHand: 'one', total: null });
+    // A barbell answer with the bar Ben chose is kept with the use the same way (PM decision after review r7).
+    const fifth = await commit(5, [{ name: 'One Arm DB Row', nameKey: 'one arm db row', target, total: { reading: 'plates_only', bar: 'trap_bar' } }]);
+    const withTotal = await alias();
+    expect(withTotal?.uses?.at(-1)).toEqual({ jobId: fifth, target, total: { reading: 'plates_only', bar: 'trap_bar' } });
+    expect(rememberedAnswer(withTotal as ExerciseAlias, new Set())).toEqual({ target, perHand: null, total: { reading: 'plates_only', bar: 'trap_bar' } });
+    expect(rememberedAnswer(withTotal as ExerciseAlias, new Set([fifth]))?.total).toBeNull();
     expect((await checkIntegrity(store.db)).ok).toBe(true);
   });
 

@@ -14,9 +14,11 @@ import { AppText, ChecklistRow, ChoiceCard, Group, Screen, SectionHeader, Status
  * One import question (data-import-export §2.5 steps 3b–3c): dumbbell and
  * barbell conventions (one answer for the group, per-exercise overrides;
  * each exercise shows what it will import as; one-dumbbell exercises, and
- * exercises whose count or bar the name doesn't establish, are never read
- * by the group answer, review r3 S1, r5; Ben's answer for an exercise in an
- * earlier import is filled in and says so, review r4 S2),
+ * exercises whose count the name doesn't establish, are never read by the
+ * group answer, review r3 S1, r5; the barbell group answer is only "Total
+ * as written" and "Plates only" is chosen per exercise with its bar shown,
+ * PM decision after review r7; Ben's answer for an exercise in an earlier
+ * import is filled in and says so, review r4 S2),
  * a bodyweight exercise with weights, the weight unit for rows with both
  * columns, effort ratings in comments, dates already in GymSmarter, and the
  * gym. Convention questions start with nothing selected (DX6). Each change
@@ -97,18 +99,46 @@ export function ImportQuestionScreen() {
     case 'total': {
       const q = totalOptions(a);
       if (q) {
-        const row = (r: TotalRowView) => exerciseRow(r, (i) => ({ kind: 'total_override', key: r.key, answer: r.choices[i]?.value ?? null }));
+        // One exercise: its bar (changeable), what plates only would import as, what it imports as now, and Total as written / Plates only.
+        const row = (r: TotalRowView) => (
+          <View key={r.key} style={{ gap: theme.space['1'] }}>
+            <AppText variant="body">{r.title}</AppText>
+            <AppText variant="callout" color="text.secondary">
+              {r.barLine}
+            </AppText>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+              {r.bars.map((b) => (
+                <TextButton key={b.label} label={b.selected ? `✓ ${b.label}` : b.label} tone={b.selected ? 'accent' : 'secondary'} onPress={() => void answer({ kind: 'total_bar', key: r.key, bar: b.value })} />
+              ))}
+            </View>
+            <AppText variant="callout" color="text.secondary">
+              {r.conversion}
+            </AppText>
+            <AppText variant="callout" color="text.secondary">
+              {r.now}
+            </AppText>
+            {r.remembered ? (
+              <AppText variant="callout" color="text.secondary">
+                {r.remembered}
+              </AppText>
+            ) : null}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+              {r.choices.map((c) => (
+                <TextButton key={c.label} label={c.selected ? `✓ ${c.label}` : c.label} tone={c.selected ? 'accent' : 'secondary'} onPress={() => void answer({ kind: 'total_override', key: r.key, answer: c.value })} />
+              ))}
+            </View>
+          </View>
+        );
         body = (
           <>
             <AppText variant="body">{q.lead}</AppText>
             {q.question ? <AppText variant="headline">{q.question}</AppText> : null}
             {options(q.options, (v) => ({ kind: 'total', answer: v }))}
+            {q.example ? <AppText variant="callout" color="text.secondary">{q.example}</AppText> : null}
+            {section(q.platesOnly.title, q.platesOnly.lead, q.platesOnly.rows.map(row))}
             {q.barWeights.map((b) => (
               <BarWeightField key={`${b.bar}-${b.unit}`} field={b} onSave={(value) => void answer({ kind: 'bar_weight', bar: b.bar, unit: b.unit, value })} />
             ))}
-            {q.example ? <AppText variant="callout" color="text.secondary">{q.example}</AppText> : null}
-            {q.ask ? section(q.ask.title, q.ask.lead, q.ask.rows.map(row)) : null}
-            {q.rows ? section(q.rows.title, null, q.rows.rows.map(row)) : null}
           </>
         );
       }
