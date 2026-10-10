@@ -2,6 +2,7 @@ import type { CheckIn, SessionAggregate } from '@fizz/schemas';
 import { reusableCheckIn, type RecentCheckIn } from '../checkin';
 import { toIso, toMs } from '../time';
 import { buildActiveSetView } from './active-view';
+import { GENERIC_WORKOUT_NAME, storedWorkoutName } from './first-run';
 import { STALE_SESSION_MS } from './recovery';
 import { dateOnlyOf, workoutDurationMs } from './view';
 
@@ -82,7 +83,7 @@ function lastSetUtc(a: SessionAggregate): string | null {
 
 export function buildTodayView(input: TodayInput): TodayView {
   const { nowMs, active } = input;
-  const titleOf = (a: SessionAggregate): string => a.session.routineName ?? input.titles?.[a.session.id] ?? 'Workout';
+  const titleOf = (a: SessionAggregate): string => storedWorkoutName(a.session) ?? input.titles?.[a.session.id] ?? GENERIC_WORKOUT_NAME;
   let main: TodayMain = { kind: 'no_plan' };
   if (active && active.session.status === 'active') {
     const done = active.sets.filter((s) => s.status === 'completed').length;

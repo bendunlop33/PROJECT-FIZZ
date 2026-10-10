@@ -252,7 +252,10 @@ function StartCheckIn({ gymId, repeatOf, nextOf }: { gymId: string; repeatOf: st
       return;
     }
     changed();
-    navigation.dispatch(openStartedWorkout(toast ? { toast } : undefined));
+    // A start notice (targets not worked out; review S2) rides on the check-in toast, or is its own.
+    const notice = r.notice ?? null;
+    const shown: WorkoutToastParam | null = notice === null ? toast : toast ? { ...toast, text: `${toast.text}. ${notice}` } : { kind: 'info', text: notice };
+    navigation.dispatch(openStartedWorkout(shown ? { toast: shown } : undefined));
   }
 
   const savedToast = (c: CheckIn): WorkoutToastParam => ({ kind: 'check_in', text: `Check-in saved · ${scoreText(c.score)}`, checkInId: c.id });

@@ -1,6 +1,11 @@
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { COMMON_EXERCISE_IDS, NBSP, pickerSections } from '@fizz/domain';
+
+import { TARGETS_UNAVAILABLE } from '../src/services/workout-services';
 
 import { createHarness, logWorkout, type Harness } from './harness';
 
@@ -36,6 +41,24 @@ describe('first run: install to first set', () => {
     await s.setup.complete();
     expect((await s.setup.useTypicalGym()).gymId).toBe(a.ok ? a.gymId : '');
     expect(await s.yourData.gyms()).toHaveLength(1);
+  });
+
+  it('an archived typical gym is never reused: Start makes a fresh one (review S5)', async () => {
+    let { services: s } = await h.launch();
+    await s.setup.saveUnits('kg');
+    const first = await s.setup.useTypicalGym();
+    if (!first.ok || first.gymId === undefined) throw new Error('gym');
+    const file = s.developer.databaseNames().current;
+    await h.forceClose();
+    const db = new DatabaseSync(join(h.dir, file));
+    db.prepare("UPDATE gyms SET data = json_set(data, '$.archivedAtUtc', '2026-10-10T07:30:00.000Z') WHERE id = ?").run(first.gymId);
+    db.close();
+    s = (await h.launch()).services;
+    const [a, b] = await Promise.all([s.setup.useTypicalGym(), s.setup.useTypicalGym()]);
+    if (!a.ok || !b.ok) throw new Error('typical gym');
+    expect(a.gymId).toBe(b.gymId);
+    expect(a.gymId).not.toBe(first.gymId);
+    expect((await s.yourData.gyms()).map((g) => g.id)).toEqual([a.gymId]);
   });
 
   it('lb phone: the typical gym is in lb (45 lb bar), never converted', async () => {
@@ -170,11 +193,59 @@ describe('next session (audit B2)', () => {
     expect(a.ok && b.ok && b.duplicate && a.aggregate.session.id === b.aggregate.session.id).toBe(true);
     const data = await s.workout.load();
     if (!data) throw new Error('no workout');
-    expect(data.aggregate.session.routineName).toBe('Push');
+    // The derived title is shown, not stored as if Ben named it (review S3).
+    expect(data.aggregate.session.routineName).toBe('Workout');
+    expect((await s.today.view())?.main).toMatchObject({ title: 'Push' });
     const v = s.workout.view(data, h.clockMs, null);
     expect(v.title).toBe('Push');
     expect(v.openEnded).toBe(false);
     expect(plain(v.focus?.target)).toBe('Target (built-in rule) 62.5 kg · 3–6 reps');
     expect(plain(v.primary.label)).toBe('Log 62.5 kg × 6');
+  });
+
+  it('pain in today’s check-in (no movement chosen) holds next-session loads (rule 9; review B2)', async () => {
+    const { services: s } = await h.launch();
+    await s.setup.saveUnits('kg');
+    const gym = await s.setup.useTypicalGym();
+    await s.setup.complete();
+    const gymId = gym.ok ? (gym.gymId ?? '') : '';
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 6, rpe: 7 }, { load: 60, reps: 6, rpe: 7 }, { load: 60, reps: 6, rpe: 8 }] }]);
+    h.clockMs += 2 * 86_400_000;
+    // Without pain the rule would add load (see above). Today: pain, then `Not now` on the movement step.
+    const ci = await s.checkIns.record({ checkInId: h.ids(), opId: h.ids(), score: 2 });
+    if (!ci.ok) throw new Error('check-in');
+    const upd = await s.checkIns.update(ci.checkIn.id, { reasons: ['pain'] }, ci.checkIn.version, h.ids());
+    if (!upd.ok) throw new Error('reasons');
+    const r = await s.workout.start({ gymId, opId: 'next-pain', checkIn: { kind: 'answered', checkInId: ci.checkIn.id }, nextOf: first });
+    if (!r.ok) throw new Error(r.error.message);
+    expect(r.notice).toBeUndefined();
+    expect(r.aggregate.sets.map((x) => x.planned.load?.value)).toEqual([60, 60, 60]);
+    const data = await s.workout.load();
+    if (!data) throw new Error('no workout');
+    expect(plain(s.workout.view(data, h.clockMs, null).focus?.target)).toBe('Target (built-in rule) 60 kg · 3–6 reps');
+  });
+
+  it('targets that can’t be worked out repeat last time and say so (review S2)', async () => {
+    let { services: s } = await h.launch();
+    await s.setup.saveUnits('kg');
+    const gym = await s.setup.useTypicalGym();
+    await s.setup.complete();
+    const gymId = gym.ok ? (gym.gymId ?? '') : '';
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 6, rpe: 7 }, { load: 60, reps: 6, rpe: 7 }] }]);
+    // A pain-flag record that fails to decode: the rule can't run, the workout still starts.
+    const file = s.developer.databaseNames().current;
+    await h.forceClose();
+    const db = new DatabaseSync(join(h.dir, file));
+    db.prepare("INSERT INTO pain_flags (id, owner_id, exercise_id, status, version, updated_at_utc, data) SELECT 'bad-flag', id, 'x', 'active', 1, '2026-10-10T07:00:00.000Z', '{}' FROM profiles LIMIT 1").run();
+    db.close();
+    s = (await h.launch()).services;
+    h.clockMs += 86_400_000;
+    const r = await s.workout.start({ gymId, opId: 'next-fail', checkIn: null, nextOf: first });
+    if (!r.ok) throw new Error(r.error.message);
+    expect(r.notice).toBe(TARGETS_UNAVAILABLE);
+    expect(r.aggregate.sets.map((x) => [x.planned.load?.value, x.planned.source])).toEqual([
+      [60, 'repeat'],
+      [60, 'repeat'],
+    ]);
   });
 });

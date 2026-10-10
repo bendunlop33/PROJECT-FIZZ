@@ -135,12 +135,16 @@ export function TodayScreen() {
       }
       startOps.current.delete(key);
       changed();
+      const notice = r.notice ?? null;
       if (gate.kind === 'reuse') {
         const ci = await services.checkIns.get(gate.checkInId);
-        navigation.navigate('Workout', ci ? { toast: { kind: 'check_in', text: `Using your check-in from ${formatTime(toMs(ci.recordedAt.utc), ci.recordedAt.tz)} · ${scoreText(ci.score)}`, checkInId: ci.id } } : undefined);
-        return;
+        if (ci) {
+          const text = `Using your check-in from ${formatTime(toMs(ci.recordedAt.utc), ci.recordedAt.tz)} · ${scoreText(ci.score)}`;
+          navigation.navigate('Workout', { toast: { kind: 'check_in', text: notice === null ? text : `${text}. ${notice}`, checkInId: ci.id } });
+          return;
+        }
       }
-      navigation.navigate('Workout');
+      navigation.navigate('Workout', notice === null ? undefined : { toast: { kind: 'info', text: notice } });
     } catch (e) {
       setError(`Couldn’t start the workout: ${e instanceof Error ? e.message : String(e)}. Try again.`);
       reload();
@@ -251,7 +255,8 @@ export function TodayScreen() {
               }}
             />
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
-              {next ? <TextButton label={`Start ${next.title} again`} onPress={() => void start(next.sourceSessionId)} /> : null}
+              {/* Next targets from today's workout, not a repeat of it (review S1). */}
+              {next ? <TextButton label="Start next session" onPress={() => void start(next.sourceSessionId)} /> : null}
               <TextButton label="Empty workout" onPress={() => void start(null)} />
             </View>
           </Hero>

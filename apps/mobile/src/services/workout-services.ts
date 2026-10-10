@@ -7,6 +7,8 @@ import {
   buildWorkoutSummary,
   defaultStartingPlan,
   deriveWorkoutTitle,
+  GENERIC_WORKOUT_NAME,
+  storedWorkoutName,
   muscleSummary,
   clearPainFlag,
   restorePainFlag,
@@ -82,6 +84,11 @@ export type CheckInWrite = { ok: true; checkIn: CheckIn; duplicate: boolean } | 
 
 const CHECK_IN_WRITE_FAILED = 'Check-in wasn’t saved. Your workout can start as normal.';
 const RECENT_WINDOW_MS = 3 * 60 * 60 * 1000;
+/** Said on the workout when "Start next session" couldn't work out targets (review S2). */
+export const TARGETS_UNAVAILABLE = 'Couldn’t work out next targets, so these are last time’s numbers.';
+
+/** `notice`: something the workout screen should say once on opening (a toast). */
+export type WorkoutStartOutcome = (Extract<StartOutcome, { ok: true }> & { notice?: string }) | Extract<StartOutcome, { ok: false }>;
 
 export interface PickerExercise {
   exercise: Exercise;
@@ -354,11 +361,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * Next targets for every exercise of a finished workout, on the equipment
    * it was done with (the gym check happens when the workout is built).
    * Exercises the rule can't plan are left out, so they repeat as last time.
+   * `today`: the check-in answered for the workout being started; pain
+   * mentioned there holds every load, like `planFor` (rule 9; review B2).
    */
-  async function nextTargetsOf(p: UserProfile, source: SessionAggregate): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
+  async function nextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
     const out = new Map<string, { setType: SetType; planned: PlannedSet }[]>();
     const flags = await repos().painFlags.listActive(p.id);
-    const sessionPain = unspecifiedPain(await sessionCheckIn(source));
+    const now = unspecifiedPain(today);
+    const sessionPain = now.active ? now : unspecifiedPain(await sessionCheckIn(source));
     for (const sx of source.exercises) {
       if (out.has(sx.exerciseId) || sx.measurement !== 'reps') continue;
       const done = source.sets.filter((s) => s.sessionExerciseId === sx.id && s.status === 'completed' && s.pairedWithSetId === null && s.setType !== 'warmup');
@@ -397,7 +407,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** The source's own name, unless it's the generic `Workout`. */
-  const storedName = (a: SessionAggregate): string | null => (a.session.routineName !== null && a.session.routineName !== 'Workout' ? a.session.routineName : null);
+  const storedName = (a: SessionAggregate): string | null => storedWorkoutName(a.session);
 
   const workout = {
     /**
@@ -405,7 +415,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * A gym is required (PM SP1). An answered check-in is linked in the same
      * write as the session; one already linked to another workout is refused.
      */
-    async start(req: { gymId: string; opId: string; checkIn: SessionCheckIn | null; repeatOf?: string | null; nextOf?: string | null }): Promise<StartOutcome> {
+    async start(req: { gymId: string; opId: string; checkIn: SessionCheckIn | null; repeatOf?: string | null; nextOf?: string | null }): Promise<WorkoutStartOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
       let checkIn = req.checkIn;
@@ -419,15 +429,17 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         // "Start next session" (audit B2): last workout's exercises with the built-in rule's next targets.
         const source = await repos().sessions.get(req.nextOf);
         if (!source) return { ok: false, error: { code: 'not_found', message: 'That workout wasn’t found.' } };
-        const targets = await nextTargetsOf(p, source).catch(() => new Map<string, { setType: SetType; planned: PlannedSet }[]>());
-        const name = storedName(source) ?? (await titleFor(source.exercises.map((e) => e.exerciseId))).title;
-        const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.nextOf, targets, name });
+        const today = checkIn?.kind === 'answered' ? await repos().checkIns.get(checkIn.checkInId) : null;
+        // Targets that can't be worked out repeat last time's numbers, and the workout says so (review S2).
+        const targets = await nextTargetsOf(p, source, today).catch(() => null);
+        // No derived name (`Push`) is stored as if Ben chose it; titles are worked out when shown (review S3).
+        const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.nextOf, targets: targets ?? new Map(), name: storedName(source) ?? GENERIC_WORKOUT_NAME });
         if (!r.ok) {
           const e = r.error;
           if (e.code === 'nothing_to_repeat' || e.code === 'imported_not_repeatable') return { ok: false, error: { code: 'not_found', message: e.message } };
           return { ok: false, error: e };
         }
-        return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate };
+        return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate, ...(targets === null && !r.duplicate ? { notice: TARGETS_UNAVAILABLE } : {}) };
       }
       if (req.repeatOf) {
         // Repeat a past workout (routines.md RT4): its actuals become today's targets.
@@ -462,7 +474,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       }
       const flags = await repos().painFlags.listActive(p.id);
       const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId) : null;
-      const title = aggregate.session.routineName === null && aggregate.exercises.length > 0 ? (await titleFor(aggregate.exercises.map((e) => e.exerciseId))).title : null;
+      const title = storedName(aggregate) === null && aggregate.exercises.length > 0 ? (await titleFor(aggregate.exercises.map((e) => e.exerciseId))).title : null;
       return {
         aggregate,
         gymName: gym?.name ?? null,
@@ -601,7 +613,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         gymNames,
       });
       // An open-ended workout is named from what was in it (`Push`), never a routine it wasn't (audit F5).
-      return aggregate.session.routineName === null && aggregate.exercises.length > 0 ? { ...summary, title: deriveWorkoutTitle(Object.values(exerciseInfo)) } : summary;
+      return storedName(aggregate) === null && aggregate.exercises.length > 0 ? { ...summary, title: deriveWorkoutTitle(Object.values(exerciseInfo)) } : summary;
     },
   };
 
@@ -639,7 +651,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           const names = [...a.exercises].sort((x, y) => x.order - y.order).filter((e) => done.some((s) => s.sessionExerciseId === e.id)).map((e) => e.exerciseName);
           rows.push({
             sessionId: a.session.id,
-            title: a.session.routineName ?? (await titleFor(a.exercises.map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title,
+            title: storedName(a) ?? (await titleFor(a.exercises.map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title,
             startedAtUtc: a.session.startedAt.utc,
             tz: a.session.startedAt.tz,
             gymId,
@@ -724,7 +736,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       // Names for workouts without one (`Push`), from their exercises (audit F5).
       const titles: Record<string, string> = {};
       for (const a of [...(active ? [active] : []), ...finished]) {
-        if (a.session.routineName === null && a.exercises.length > 0) titles[a.session.id] = (await titleFor(a.exercises.map((e) => e.exerciseId))).title;
+        if (storedName(a) === null && a.exercises.length > 0) titles[a.session.id] = (await titleFor(a.exercises.map((e) => e.exerciseId))).title;
       }
       return buildTodayView({
         nowMs,

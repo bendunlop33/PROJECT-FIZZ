@@ -15,6 +15,18 @@ export function isOpenEndedWorkout(state: Pick<SessionAggregate, 'session'>): bo
   return state.session.routineId === null && state.session.routineName === null;
 }
 
+/** The placeholder name of a workout Ben didn't name (a repeat or next session of an unnamed one). */
+export const GENERIC_WORKOUT_NAME = 'Workout';
+
+/**
+ * The name Ben gave a workout (its routine's), or null when it has none:
+ * no name, or the generic `Workout`. Screens then show a derived title
+ * (`Push`) worked out when shown, never stored as if Ben chose it (review S3).
+ */
+export function storedWorkoutName(session: Pick<SessionAggregate['session'], 'routineName'>): string | null {
+  return session.routineName !== null && session.routineName !== GENERIC_WORKOUT_NAME ? session.routineName : null;
+}
+
 /** Working sets planned for an exercise with no comparable history (audit B1). */
 export const DEFAULT_WORKING_SETS = 3;
 

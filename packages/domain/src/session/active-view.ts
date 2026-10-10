@@ -16,7 +16,7 @@ import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touc
 import type { HistorySession } from '../progression';
 import { toMs } from '../time';
 import { buildExecutionOrder, nextPendingSet } from './order';
-import { isOpenEndedWorkout } from './first-run';
+import { GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
 import { latestCommittedSetId } from './reducer';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
 
@@ -465,7 +465,7 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
 
   return {
     phase: phase.kind,
-    title: session.routineName ?? input.title ?? 'Workout',
+    title: storedWorkoutName(session) ?? input.title ?? GENERIC_WORKOUT_NAME,
     sessionId: session.id,
     sessionVersion: session.version,
     elapsedMs: getActiveDurationMs(state, nowMs),

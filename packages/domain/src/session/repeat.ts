@@ -3,6 +3,7 @@ import { loadText, NBSP, repRangeText } from '../display';
 import { getAchievableLoads, loadDirection, roundToAvailableLoad } from '../equipment';
 import { convertMass } from '../units';
 import { startWorkout, type StartWorkoutInput, type StartWorkoutOutput } from './create';
+import { GENERIC_WORKOUT_NAME } from './first-run';
 
 /**
  * `Repeat last workout` / `Start from a past workout` (routines.md RT4, §2.4,
@@ -173,7 +174,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     version: 1,
     createdAtUtc: input.at.utc,
     updatedAtUtc: input.at.utc,
-    name: input.name ?? src.session.routineName ?? 'Workout',
+    name: input.name ?? src.session.routineName ?? GENERIC_WORKOUT_NAME,
     exercises: routineExercises,
   };
   // Ben's own per-exercise rest defaults come first (rest-state §2.4).
