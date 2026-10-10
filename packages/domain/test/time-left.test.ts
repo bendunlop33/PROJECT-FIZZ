@@ -186,6 +186,17 @@ describe('estimateTimeLeft (active-workout §2.15.2)', () => {
     expect(timeLeftSheet(b, s, ms(60 + 3600), TZ).endsLine).toBeNull();
   });
 
+  it('while paused, overByMinutes counts from the real clock, not the moment of the pause', () => {
+    let s = twoExercises();
+    s = apply(s, { type: 'set_finish_by', at: at(0), opId: 'fb', finishBy: at(45 * 60), expectedVersion: s.session.version });
+    s = apply(s, { type: 'pause', at: at(60), opId: 'p' });
+    expect(est(s, 60).overByMinutes).toBeNull();
+    // An hour into the pause, the same 20 minutes of work would end well past 19:45.
+    const late = est(s, 60 + 3600);
+    expect(late.seconds).toBe(est(s, 60).seconds);
+    expect(late.overByMinutes).toBeGreaterThanOrEqual(35);
+  });
+
   it('standing around makes the end time move later honestly', () => {
     const s = twoExercises();
     const a = est(s, 0);

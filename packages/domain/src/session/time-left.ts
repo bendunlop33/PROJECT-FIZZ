@@ -305,8 +305,10 @@ export function estimateTimeLeft(state: SessionAggregate, opts: EstimateOptions)
   const finishBy = opts.finishByUtc !== undefined ? opts.finishByUtc : (state.session.finishBy?.utc ?? null);
   let overByMinutes: number | null = null;
   if (finishBy !== null) {
-    const over = roundTimeLeftMinutes((endMs - toMs(finishBy)) / 1000);
-    overByMinutes = endMs > toMs(finishBy) && over > 0 ? over : null;
+    // Against the real clock even while paused: the remaining work is frozen, the time it would end at isn't (review nit).
+    const realEndMs = opts.nowMs + seconds * 1000;
+    const over = roundTimeLeftMinutes((realEndMs - toMs(finishBy)) / 1000);
+    overByMinutes = realEndMs > toMs(finishBy) && over > 0 ? over : null;
   }
   return {
     seconds,
