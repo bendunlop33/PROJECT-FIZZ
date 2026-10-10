@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { isProposalStale, NBSP, repeatPreviewLines } from '@fizz/domain';
+import { gymSwitchRefusal, isProposalStale, NBSP, repeatPreviewLines } from '@fizz/domain';
 
-import { cardIsStale, logBlockedBySwitch, logGuardAfterSwitch, onGymChosen, reviewSheetView, sheetClosesOn, switchCardView, switchedToast, undoneToast, type OpenSwitchCard } from '../src/workout/gym-switch-card';
+import { afterSwitchRefused, cardIsStale, logBlockedBySwitch, logGuardAfterSwitch, onGymChosen, reviewSheetView, sheetClosesOn, switchCardView, switchedToast, undoneToast, type OpenSwitchCard } from '../src/workout/gym-switch-card';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -295,6 +295,35 @@ describe('the switch card on screen (gym-switch §2.2–§3.3)', () => {
     const failed = switchCardView({ ...card, status: 'error' }, data.aggregate);
     expect(failed.status).toEqual({ tone: 'warning', text: 'Couldn’t switch gym. Nothing changed.' });
     expect(failed.buttons.at(-1)).toEqual({ id: 'try_again', label: 'Try again' });
+  });
+
+  it('a refusal other than a write error or Out of date closes the card and says why; the cap is refused before a card (review r2 M1)', async () => {
+    const { s, mainId, hotelId, sessionId } = await setUp();
+    // 24 switch + Undo pairs: 48 records. One more switch makes 49, and its way back can't fit with an Undo.
+    for (let i = 0; i < 24; i += 1) {
+      const p = await s.gymSwitch.propose(sessionId, hotelId);
+      if (!p) throw new Error('no proposal');
+      const a = await s.gymSwitch.apply(p, `cap-${String(i)}`);
+      if (!a.ok) throw new Error(a.error.message);
+      const u = await s.gymSwitch.undo(sessionId, `cap-u-${String(i)}`);
+      if (!u.ok) throw new Error(u.message);
+    }
+    const p = await s.gymSwitch.propose(sessionId, hotelId);
+    if (!p) throw new Error('no proposal');
+    const a = await s.gymSwitch.apply(p, 'cap-last');
+    if (!a.ok) throw new Error(a.error.message);
+    const back = await s.gymSwitch.propose(sessionId, mainId);
+    if (!back) throw new Error('no proposal');
+    const card: OpenSwitchCard = { proposal: back, opId: 'cap-back', status: 'applying' };
+    const r = await s.gymSwitch.apply(back, card.opId);
+    if (r.ok) throw new Error('expected a refusal');
+    expect(r.error.code).toBe('invalid_values');
+    expect(afterSwitchRefused(card, r.error)).toEqual({ card: null, toast: 'Couldn’t switch gym. This workout has changed gym too many times. Finish it and start a new one at this gym.' });
+    // The screen checks this before building a card, so Ben never sees a Switch that can't work.
+    expect(gymSwitchRefusal((await s.workout.load(sessionId))?.aggregate.session ?? a.aggregate.session)).toBe('This workout has changed gym too many times. Finish it and start a new one at this gym.');
+    // A write error keeps the card for Try again; Out of date keeps it for the reload to show.
+    expect(afterSwitchRefused(card, { code: 'write_failed', message: 'disk' })).toEqual({ card: { ...card, status: 'error' }, toast: null });
+    expect(afterSwitchRefused(card, { code: 'stale_version', message: 'x' })).toEqual({ card: { ...card, status: 'ready' }, toast: null });
   });
 
   it('Out of date after a set is logged: Switch hidden, Dismiss and Check again; tapping another set or editing a draft does not', async () => {

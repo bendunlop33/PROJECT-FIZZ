@@ -604,6 +604,15 @@ function sameEquipment(row: SessionExercise, snapshot: readonly EquipmentInstanc
   return row.unit === slot.unit && row.loadConvention === slot.loadConvention && (current?.id ?? null) === (eq?.id ?? null) && (current?.version ?? null) === (eq?.version ?? null);
 }
 
+/**
+ * Why no gym change can be made on this workout at all, before any card is
+ * built (review r2 M1); null when one can. A change and its Undo are two
+ * records, so one that couldn't be undone is refused (review N5).
+ */
+export function gymSwitchRefusal(session: Pick<SessionAggregate['session'], 'gymChanges'>): string | null {
+  return (session.gymChanges?.length ?? 0) + 2 > MAX_GYM_CHANGES ? 'This workout has changed gym too many times. Finish it and start a new one at this gym.' : null;
+}
+
 /** gym-switch §4.3 as one state change. Rejects stale or unachievable input (rules 4 and 5). */
 export function applyChangeGym(state: SessionAggregate, cmd: CommandOf<'change_gym'>): GymApply {
   const session = state.session;
@@ -613,8 +622,8 @@ export function applyChangeGym(state: SessionAggregate, cmd: CommandOf<'change_g
     return bad('stale_version', 'Out of date. Your workout changed since this was checked.');
   }
   if (cmd.snapshot.some((e) => e.gymId !== cmd.toGymId)) return bad('invalid_values', 'That equipment belongs to another gym.');
-  // A change and its Undo are two records; refuse one that couldn't be undone (review N5).
-  if ((session.gymChanges?.length ?? 0) + 2 > MAX_GYM_CHANGES) return bad('invalid_values', 'This workout has changed gym too many times. Finish it and start a new one at this gym.');
+  const refusal = gymSwitchRefusal(session);
+  if (refusal !== null) return bad('invalid_values', refusal);
 
   const excluded = excludedFromSwitch(state);
   const pending = state.sets.filter((s) => s.status === 'pending' && !excluded.has(s.id));

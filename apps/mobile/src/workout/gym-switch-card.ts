@@ -151,6 +151,19 @@ export function logBlockedBySwitch(card: OpenSwitchCard | null): boolean {
   return card?.status === 'applying';
 }
 
+/**
+ * What the card does when `Switch` (or `Try again`) is refused (review r2 M1).
+ * A write error keeps it for `Try again` with the same opId; an out-of-date
+ * card stays and the reload shows it Out of date. Any other refusal (the
+ * change cap, rule 4, another gym's equipment) can't be fixed by tapping
+ * again: the card closes and Ben is told why, never a silent no-op.
+ */
+export function afterSwitchRefused(card: OpenSwitchCard, error: { code: string; message: string }): { card: OpenSwitchCard | null; toast: string | null } {
+  if (error.code === 'write_failed') return { card: { ...card, status: 'error' }, toast: null };
+  if (error.code === 'stale_version') return { card: { ...card, status: 'ready' }, toast: null };
+  return { card: null, toast: `Couldn’t switch gym. ${error.message}` };
+}
+
 /** §5 toasts after `Switch`. */
 export function switchedToast(p: GymSwitchProposal): string {
   if (p.mode === 'equipment_update') return p.card.changesTargets ? `Using updated ${p.toGymName}. Remaining sets updated for today.` : `Using updated ${p.toGymName}. No targets changed.`;

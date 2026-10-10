@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, KeyboardAvoidingView, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { editFitsCurrentEquipment, formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { editFitsCurrentEquipment, formatDuration, gymSwitchRefusal, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { getAlertPermission, requestAlertPermission, type AlertPermission } from '../../alerts/notifier';
@@ -44,7 +44,7 @@ import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
 import { GymChip, GymPartDivider, GymReviewSheet, GymSwitchCard, GymSwitcherSheet, SnapNote } from './GymSwitch';
-import { logBlockedBySwitch, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
+import { afterSwitchRefused, logBlockedBySwitch, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
 import { painClearConfirm } from '../../workout/pain-clear';
 import { editorShown, enterAction, isResting, type EntryField } from '../../workout/rest-fold';
 
@@ -237,6 +237,11 @@ export function WorkoutScreen() {
   const checkGym = route.params?.checkGym;
   useEffect(() => {
     if (data === 'loading' || data === null || !checkGym || !firstTime(`checkGym:${checkGym.nonce}`)) return;
+    const refusal = gymSwitchRefusal(data.aggregate.session);
+    if (refusal !== null) {
+      showToast({ icon: 'info.circle', text: `Couldn’t use the changes. ${refusal}` });
+      return;
+    }
     void services.gymSwitch
       .propose(data.aggregate.session.id, checkGym.gymId)
       .then((p) => {
@@ -476,6 +481,14 @@ export function WorkoutScreen() {
   }
 
   async function proposeGym(gymId: string, gymName: string) {
+    // The change cap is known before any card is built: say so instead of a card whose Switch can't work (review r2 M1).
+    const refusal = gymSwitchRefusal(session);
+    if (refusal !== null) {
+      setReviewOpen(false);
+      setSwitchCard(null);
+      showToast({ icon: 'info.circle', text: `Couldn’t switch gym. ${refusal}` });
+      return;
+    }
     setCheckingGym(gymName);
     try {
       const p = await services.gymSwitch.propose(session.id, gymId);
@@ -510,8 +523,11 @@ export function WorkoutScreen() {
       r = { ok: false, error: { code: 'write_failed', message: e instanceof Error ? e.message : String(e) } };
     }
     if (!r.ok) {
-      // A write error keeps the card for `Try again` (same opId); anything else shows it Out of date.
-      setSwitchCard({ ...card, status: r.error.code === 'write_failed' ? 'error' : 'ready' });
+      // Write error: `Try again` (same opId). Out of date: the reload shows it. Anything else: closed, and said (review r2 M1).
+      const next = afterSwitchRefused(card, r.error);
+      setSwitchCard(next.card);
+      if (next.card === null) setReviewOpen(false);
+      if (next.toast !== null) showToast({ icon: 'info.circle', text: next.toast });
       void reload();
       return;
     }
