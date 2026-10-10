@@ -48,18 +48,19 @@ export function PrimaryButton({ label, onPress, disabled = false, busy = false, 
 }
 
 /** design-system §9.2a: outlined, never accent-filled. D: a transparent outline pill (D-Rest). */
-export function SecondaryButton({ label, onPress, disabled = false, icon, accessibilityHint }: ButtonProps & { icon?: SymbolName }) {
+export function SecondaryButton({ label, onPress, disabled = false, icon, accessibilityHint, accessibilityLabel, grow = false }: ButtonProps & { icon?: SymbolName; accessibilityLabel?: string; grow?: boolean }) {
   const theme = useTheme();
   if (theme.components.secondaryButton === 'outline_pill') {
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={label}
+        accessibilityLabel={accessibilityLabel ?? label}
         accessibilityState={{ disabled }}
         {...(accessibilityHint ? { accessibilityHint } : {})}
         disabled={disabled}
         onPress={onPress}
         style={({ pressed }) => ({
+          ...(grow ? { flex: 1 } : {}),
           minHeight: 48,
           borderRadius: theme.radius.pill,
           borderWidth: 1,
@@ -84,12 +85,13 @@ export function SecondaryButton({ label, onPress, disabled = false, icon, access
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled }}
       {...(accessibilityHint ? { accessibilityHint } : {})}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
+        ...(grow ? { flex: 1 } : {}),
         minHeight: theme.target.min.height,
         borderRadius: theme.radius.md,
         borderWidth: 1,
