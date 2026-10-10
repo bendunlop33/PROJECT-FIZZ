@@ -239,6 +239,24 @@ describe('parseToolCall', () => {
     expect(toolOpId('t2', 'adjust_pending_sets', a.call.args)).not.toBe(a.opId);
   });
 
+  it('a same-turn repeat with the same semantic fields is a replay; a real second change gets its own opId (review r2 S3, ADR 0019 §5)', () => {
+    const summary = buildTurnRegistry(gate({ kind: 'summary' }));
+    const t = (value: number, reason: string) => ({ exerciseId: id(1), target: { load: { value, unit: 'kg', convention: 'total' }, reps: { min: 6, max: 8 } }, sets: null, reason });
+    const first = parseToolCall('t1', 'set_next_session_targets', JSON.stringify({ sourceSessionId: id(5), sourceVersion: 12, targets: [t(97.5, 'Set 2 was RPE 10.')] }), summary);
+    // Same targets and sourceVersion, different wording: the same operation, so one record, not two.
+    const again = parseToolCall('t1', 'set_next_session_targets', JSON.stringify({ sourceSessionId: id(5), sourceVersion: 12, targets: [t(97.5, 'Keeping it a touch lighter.')] }), summary);
+    // A different target is a different operation even with the same sourceVersion.
+    const other = parseToolCall('t1', 'set_next_session_targets', JSON.stringify({ sourceSessionId: id(5), sourceVersion: 12, targets: [t(95, 'Set 2 was RPE 10.')] }), summary);
+    if (!first.ok || !again.ok || !other.ok) throw new Error('fixture');
+    expect(again.opId).toBe(first.opId);
+    expect(other.opId).not.toBe(first.opId);
+    // adjust_pending_sets: an apply bumps the session version, so the same sets asked again after it is a new operation.
+    const afterApply = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify({ ...args, baseVersion: 8 }), workout);
+    const before = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify(args), workout);
+    if (!afterApply.ok || !before.ok) throw new Error('fixture');
+    expect(afterApply.opId).not.toBe(before.opId);
+  });
+
   it('a reworded retry of an append tool is the same operation; content keys catch a new turn (review S4)', () => {
     const reg = buildTurnRegistry(gate({ kind: 'workout', benRequest: { source: 'words', kinds: ['change', 'memory'] }, benPainWords: true }));
     const pain1 = parseToolCall('t1', 'set_pain_flag', JSON.stringify({ exerciseIds: [id(2), id(1)], area: 'shoulder', quote: 'my shoulder hurts' }), reg);
