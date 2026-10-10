@@ -96,3 +96,9 @@ export function localWeekBounds(ms: number, tz: string): { startMs: number; endM
   const monday = addDays(today, -back);
   return { startMs: localMidnightUtcMs(monday, tz), endMs: localMidnightUtcMs(addDays(monday, 7), tz), mondayLocalDate: monday };
 }
+
+/** `19:40`: the 24-hour local clock time of an instant in `tz` (design-system §3 times). */
+export function clockText(ms: number, tz: string): string {
+  const p = parts(ms, tz);
+  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
+}
