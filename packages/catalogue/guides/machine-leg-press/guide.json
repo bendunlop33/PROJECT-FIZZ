@@ -11,15 +11,15 @@
   "motion": "phases",
   "ground": { "y": 0, "scrollPerCycle": 0 },
   "props": [
-    { "id": "press", "type": "leg_press", "x": 0.25, "y": 0.661, "railDeg": 45, "seatX": 0, "seatY": 0.3, "seatDeg": 40, "plates": "large" },
+    { "id": "press", "type": "leg_press", "x": 0.25, "y": 0.661, "railDeg": 45, "seatX": 0, "seatY": 0.3, "seatDeg": 30, "plates": "large" },
     { "id": "handle", "type": "pad", "x": 0.075, "y": 0.335, "w": 0.06, "h": 0.026 }
   ],
   "keyframes": [
     {
       "t": 0, "label": "Start", "caption": "Back flat on the pad, knees just short of straight",
-      "root": { "x": 0.0322, "y": 0.3617, "pelvisDeg": -50 },
+      "root": { "x": 0.0322, "y": 0.3617, "pelvisDeg": -60 },
       "joints": { "lumbar": 0, "thoracic": 0, "neck": 6 },
-      "props": { "press": { "s": 0.154 } },
+      "props": { "press": { "s": 0.15 } },
       "ik": {
         "footNear": { "prop": "press" },
         "footFar": { "prop": "press" },
@@ -30,12 +30,12 @@
     },
     {
       "t": 0.3074, "pass": true, "label": "Halfway", "caption": "Knees in line with the toes, feet flat",
-      "props": { "press": { "s": 0.0763 } },
+      "props": { "press": { "s": 0.0815 } },
       "ease": "smooth"
     },
     {
       "t": 0.5714, "label": "Bottom", "caption": "Knees about 90°, hips still on the pad",
-      "props": { "press": { "s": 0 } },
+      "props": { "press": { "s": 0.03 } },
       "holdMs": 200, "ease": "smooth"
     },
     { "t": 0.8079, "sameAs": 1, "caption": "Push through the whole foot", "ease": "smooth" },
