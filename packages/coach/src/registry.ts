@@ -258,16 +258,18 @@ export interface TurnRegistry {
  * `ben_request` open on no request kind at all, so a new tool fails closed
  * until it is mapped.
  *
- * `add_playbook_candidate` opens on `memory`: Ben asking the coach to
- * remember or note something, which turns out to be a general training rule,
- * goes to the playbook rather than personal memory (CLAUDE.md rule 10).
+ * `add_playbook_candidate` opens only on `playbook` ("add a rule …", "as a
+ * general rule …", "put that in the playbook"), never on a memory request:
+ * "remember that my left knee is dodgy on lunges" is Your data and can't
+ * reach the Coaching knowledge queue (CLAUDE.md rule 10, review r3 S1). The
+ * candidate text is also checked by `personalPlaybookText` in `tool-call.ts`.
  * Its `needs` is still unsettled in ADR 0019 (Ben/PM decision).
  */
 export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRequestKind[]>> = {
   adjust_pending_sets: ['change', 'difficulty'],
   save_memory: ['memory'],
   forget_memory: ['memory'],
-  add_playbook_candidate: ['memory'],
+  add_playbook_candidate: ['playbook'],
 };
 
 function requestOpens(t: ToolDeclaration, r: BenRequest | null): boolean {

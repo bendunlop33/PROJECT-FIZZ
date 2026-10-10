@@ -22,6 +22,7 @@ const ASKED: BenRequest = { source: 'words', kinds: ['change'] };
 const STRUCTURAL: BenRequest = { source: 'words', kinds: ['structural'] };
 const MEMORY: BenRequest = { source: 'words', kinds: ['memory'] };
 const DIFFICULTY: BenRequest = { source: 'words', kinds: ['difficulty'] };
+const PLAYBOOK: BenRequest = { source: 'words', kinds: ['playbook'] };
 
 const gate = (over: Partial<TurnGate> = {}): TurnGate => ({
   kind: 'general',
@@ -132,7 +133,11 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
 
   it('the request kind limits which tools open (review r2 B2)', () => {
     const memory = names(gate({ kind: 'workout', benRequest: MEMORY }));
-    expect(memory).toEqual(expect.arrayContaining(['save_memory', 'forget_memory', 'add_playbook_candidate']));
+    expect(memory).toEqual(expect.arrayContaining(['save_memory', 'forget_memory']));
+    // Review r3 S1: a memory request never opens the playbook queue (rule 10).
+    expect(memory).not.toContain('add_playbook_candidate');
+    expect(names(gate({ kind: 'workout', benRequest: PLAYBOOK }))).toContain('add_playbook_candidate');
+    expect(names(gate({ kind: 'workout', benRequest: PLAYBOOK }))).not.toContain('save_memory');
     expect(memory).not.toContain('adjust_pending_sets');
     const change = names(gate({ kind: 'workout', benRequest: ASKED }));
     expect(change).toContain('adjust_pending_sets');
@@ -155,6 +160,37 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
       expect(r.withheld).toContainEqual({ name: 'adjust_pending_sets', reason: 'needs_request' });
     }
     expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('remember that I train before work') }))).not.toContain('adjust_pending_sets');
+  });
+
+  it('a question about an offer never opens adjust_pending_sets (review r3 B1, rule 3)', () => {
+    for (const q of ['Why would you lower sets 3 and 4?', 'What would you change?', 'Would you lower it if you were me?', 'why would we drop the weight', 'Lower sets 3 and 4?']) {
+      const r = buildTurnRegistry(gate({ kind: 'workout', benRequest: classifyBenRequest(q) }));
+      expect(r.tools.map((t) => t.name)).not.toContain('adjust_pending_sets');
+      expect(r.withheld).toContainEqual({ name: 'adjust_pending_sets', reason: 'needs_request' });
+    }
+    // A bare "Go ahead" opens it only through the turn engine's acceptedOffer gate.
+    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('Go ahead') }))).not.toContain('adjust_pending_sets');
+    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('Go ahead'), acceptedOffer: true }))).toContain('adjust_pending_sets');
+  });
+
+  it('memory requests and memory questions never open the playbook queue (review r3 S1, rule 10)', () => {
+    for (const text of ['Remember that my left knee is dodgy on lunges', 'Remember that time I hit 100?', 'remember when I did 100 for 8?']) {
+      expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest(text) }))).not.toContain('add_playbook_candidate');
+    }
+    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('Remember that time I hit 100?') }))).not.toContain('save_memory');
+    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('add this as a general rule: pause reps build strength') }))).toContain('add_playbook_candidate');
+  });
+
+  it('a playbook candidate about Ben is refused, a general rule is accepted (review r3 S1, rule 10)', () => {
+    const reg = buildTurnRegistry(gate({ kind: 'workout', benRequest: PLAYBOOK }));
+    for (const text of ['My left knee is dodgy on lunges', 'Ben trains before work', "I'm weaker after night shifts", 'Avoid lunges for your knee', 'Go lighter when your left shoulder flares up']) {
+      const r = parseToolCall('t1', 'add_playbook_candidate', JSON.stringify({ text, statedBy: 'ben' }), reg);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.line).toMatch(/not a general rule/);
+    }
+    for (const text of ['Deload every 6 weeks', 'Pause reps build strength off the chest', 'Stop progressing a movement when it causes pain', 'Add a set when RPE is below 7 for two sessions']) {
+      expect(parseToolCall('t1', 'add_playbook_candidate', JSON.stringify({ text, statedBy: 'coach' }), reg).ok).toBe(true);
+    }
   });
 
   it("set_pain_flag needs Ben's own pain words this turn (check 19)", () => {
@@ -258,7 +294,7 @@ describe('parseToolCall', () => {
   });
 
   it('a reworded retry of an append tool is the same operation; content keys catch a new turn (review S4)', () => {
-    const reg = buildTurnRegistry(gate({ kind: 'workout', benRequest: { source: 'words', kinds: ['change', 'memory'] }, benPainWords: true }));
+    const reg = buildTurnRegistry(gate({ kind: 'workout', benRequest: { source: 'words', kinds: ['change', 'memory', 'playbook'] }, benPainWords: true }));
     const pain1 = parseToolCall('t1', 'set_pain_flag', JSON.stringify({ exerciseIds: [id(2), id(1)], area: 'shoulder', quote: 'my shoulder hurts' }), reg);
     const pain2 = parseToolCall('t1', 'set_pain_flag', JSON.stringify({ exerciseIds: [id(1), id(2)], area: 'shoulder', quote: 'shoulder is hurting' }), reg);
     const mem1 = parseToolCall('t1', 'save_memory', JSON.stringify({ text: 'Trains before work.', quote: 'I train before work' }), reg);

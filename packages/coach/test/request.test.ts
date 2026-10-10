@@ -38,6 +38,21 @@ describe('classifyBenRequest (the ben_request gate; review S3)', () => {
     ['switch to 95 for the rest', 'change'],
     ["don't change my routine, just lower the weight", 'change'],
     ['remember that pause reps build strength', 'memory'],
+    // Review r3 B1: real requests still count after the anchoring.
+    ['could you lower it?', 'change'],
+    ['Hey coach, drop the last set', 'change'],
+    ['drop me to 95', 'change'],
+    ['bump me up', 'change'],
+    ['I need more weight', 'change'],
+    ['I want one more set', 'change'],
+    ['I want less weight on the last set', 'change'],
+    ['go ahead and drop it to 95', 'change'],
+    ['Sure, lower it to 95', 'change'],
+    ["that's too much", 'difficulty'],
+    ['Remember that my left knee is dodgy on lunges', 'memory'],
+    // Review r3 S1: the playbook is its own kind.
+    ['add this as a general rule: pause reps build strength', 'playbook'],
+    ['put that in the playbook', 'playbook'],
   ] as const)('%s → %s', (text, kind) => {
     expect(classifyBenRequest(text)).toEqual({ source: 'words', kinds: [kind] });
   });
@@ -80,6 +95,56 @@ describe('classifyBenRequest (the ben_request gate; review S3)', () => {
     'go over the plan again',
     'I need a minute',
     'move on to the next exercise',
+    // Review r3 B1: questions asking for the coach's view.
+    'Why would you lower sets 3 and 4?',
+    'What would you change?',
+    'Would you lower it if you were me?',
+    'why would we drop the weight',
+    'Change nothing',
+    // Wants with no training object.
+    'I need more sleep',
+    'I want another coffee',
+    'I would like more detail',
+    'I want more cues',
+    'I need less talking',
+    // `'s` attached to the noun.
+    "Lower back's a bit tight",
+    "Cut's going well, down 2 kg",
+    // A strong verb as a label, noun or with a person object.
+    'Update: my shoulder feels fine',
+    'Scale says 80 kg today',
+    'Add me as a friend lol',
+    'Remove? no keep it',
+    // A bare acceptance belongs to acceptedOffer, not here.
+    'Go ahead',
+    'yes go ahead',
+    // Review r3 nit: "too much" needs a training subject.
+    'Too much coffee this morning',
+    // Review r3 S1: a remember question isn't a memory request.
+    'Remember that time I hit 100?',
+    // Adversarial: more questions and non-requests.
+    'Drop it?',
+    'Lower sets 3 and 4?',
+    'Add a set?',
+    'swap it?',
+    'why not drop it to 95?',
+    'what if we dropped it?',
+    'how about 95 for the rest?',
+    'what about the last two at 95?',
+    "what's your take, lower it?",
+    'Can you not lower it',
+    "Let's not change anything",
+    'Let’s leave it',
+    'Lower? Nah',
+    "Don't add anything",
+    'Would it be better to drop the weight?',
+    'Do you think I should cut set 4?',
+    'I wonder if I should drop it',
+    "I don't want it in the playbook",
+    'is it a good rule to add sets?',
+    "Raise's a strange word",
+    'Switch was broken at the gym',
+    'Delete key is sticking on my phone',
   ])('not a request: %s', (text) => {
     expect(classifyBenRequest(text)).toBeNull();
   });

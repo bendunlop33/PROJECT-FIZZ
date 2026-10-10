@@ -124,6 +124,25 @@ function parseArgs(schema: z.ZodType, value: unknown): { ok: true; value: unknow
   return { ok: false, issues: ['too many unknown fields'] };
 }
 
+/** Words that tie a text to Ben himself: first person or his name. */
+const OWNER_WORDS = /\b(?:i|i'm|im|i've|ive|i'd|i'll|me|my|mine|myself|ben|ben's|bens)\b/;
+/** "your knee", "your left shoulder": a body part that belongs to someone, so a personal fact. */
+const OWNED_BODY =
+  /\byour (?:(?:left|right|lower|upper|bad|dodgy) )?(?:shoulders?|elbows?|wrists?|hands?|fingers?|knees?|ankles?|hips?|back|neck|spine|groin|feet|foot|achilles|hamstrings?|quads?|calf|calves|glutes?|chest|pecs?|ribs?|traps?|lats?|biceps?|triceps?|forearms?|shins?|heels?|toes?)\b/;
+
+/**
+ * Is this playbook candidate really a personal fact? (CLAUDE.md rule 10,
+ * review r3 S1.) The playbook holds general training rules (Coaching
+ * knowledge); anything about Ben himself ("my left knee is dodgy on
+ * lunges", "Ben trains before work", "your knee hurts on lunges") belongs in
+ * Your data, so the call is refused rather than trusting the model's
+ * reading of the tool description. A refusal only costs a rephrase.
+ */
+export function personalPlaybookText(text: string): boolean {
+  const t = text.toLowerCase().replace(/[‘’]/g, "'");
+  return OWNER_WORDS.test(t) || OWNED_BODY.test(t);
+}
+
 export function parseToolCall(turnId: string, name: string, rawArguments: string, registry: TurnRegistry): ParsedToolCall {
   const decl = registry.tools.find((t) => t.name === name);
   if (decl === undefined) return { ok: false, error: 'not_allowed', line: `Not allowed: ${name}` };
@@ -139,5 +158,13 @@ export function parseToolCall(turnId: string, name: string, rawArguments: string
     return { ok: false, error: 'invalid_args', line: `Couldn't read the coach's request for ${name}. Nothing changed.`, issues: parsed.issues };
   }
   const call = { tool: decl.name, args: parsed.value } as CoachToolCall;
+  if (call.tool === 'add_playbook_candidate' && personalPlaybookText(call.args.text)) {
+    return {
+      ok: false,
+      error: 'invalid_args',
+      line: "That's about you, not a general rule, so it wasn't added to the playbook. Nothing changed.",
+      issues: ['text: personal fact, not a general rule (rule 10)'],
+    };
+  }
   return { ok: true, call, opId: toolOpId(turnId, decl.name, semanticArgs(call)), dropped: parsed.dropped };
 }
