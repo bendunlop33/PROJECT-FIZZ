@@ -159,7 +159,7 @@ describe('import jobs and rows', () => {
     expect((await checkIntegrity(store.db)).ok).toBe(true);
   });
 
-  it('`Add new` again for a name an earlier import made with other equipment: Ben’s new answer wins, versioned (review r5 S2)', async () => {
+  it('an import never changes an exercise that is already stored, whatever it says (review r6 B1)', async () => {
     const custom = (equipment: 'dumbbells' | 'barbell', at: string): Exercise => ({
       id: id(8800),
       ownerId: OWNER,
@@ -185,8 +185,9 @@ describe('import jobs and rows', () => {
     // The same answer again changes nothing.
     await commit(2, custom('dumbbells', LATER.utc));
     expect(await store.repos.exercises.get(id(8800))).toMatchObject({ version: 1, defaultLoadConvention: 'per_hand' });
+    // Other equipment under the same ID (never sent by the importer, which gives each equipment its own ID): still unchanged.
     await commit(3, custom('barbell', LATER.utc));
-    expect(await store.repos.exercises.get(id(8800))).toMatchObject({ version: 2, compatibleEquipment: ['barbell'], defaultLoadConvention: 'total', createdAtUtc: AT.utc });
+    expect(await store.repos.exercises.get(id(8800))).toMatchObject({ version: 1, compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand', updatedAtUtc: AT.utc });
     expect((await checkIntegrity(store.db)).ok).toBe(true);
   });
 

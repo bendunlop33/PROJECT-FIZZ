@@ -6,10 +6,9 @@ import {
   buildImportedSession,
   catalogueExerciseId,
   conventionForKind,
-  customExerciseIdFor,
   importResultsCsv,
+  isImportMadeExercise,
   localDateOf,
-  nameKey,
   newExercisesToCreate,
   parseFitNotesCsv,
   planImportRows,
@@ -195,8 +194,8 @@ export function buildCandidates(
     exercises.set(e.id, e);
     // One dumbbell or two comes from the catalogue entry; a custom exercise has none, so it is asked (review r3 S1).
     const entry = e.catalogueKey ? byKey.get(e.catalogueKey) : undefined;
-    // Made by an earlier import's `Add new` for this very name: reached through that import's answer while it is in effect, never by its name (review r5 S2).
-    const importMade = e.source === 'custom' && e.id === customExerciseIdFor(ownerId, nameKey(e.name));
+    // Made by an earlier import's `Add new` for this very name (any equipment): reached through that import's answer while it is in effect, never by its name (review r5 S2, r6 B1).
+    const importMade = isImportMadeExercise(ownerId, e);
     candidates.push({
       exerciseId: e.id,
       name: e.name,

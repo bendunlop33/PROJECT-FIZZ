@@ -13,7 +13,7 @@ import {
   type SessionAggregate,
   type ZonedTimestamp,
 } from '@fizz/schemas';
-import { aliasUses, localDateOf, stableStringify, toMs, type EarlierImport } from '@fizz/domain';
+import { aliasUses, localDateOf, toMs, type EarlierImport } from '@fizz/domain';
 import type { Database } from './database';
 import { EXERCISE_SPEC, listDocuments, saveDocumentIn, decodeDocument, type DocumentSpec } from './documents';
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
@@ -33,7 +33,8 @@ import { writeAggregate } from './sessions';
  *   history, Progress, "Last" values and targets) and nothing is deleted (DX7).
  *   What the import taught (its names and dumbbell answers) stays recorded as
  *   that import's use of each alias, and readers ignore it from then on
- *   (`rememberedAnswer`; review r5 S2).
+ *   (`rememberedAnswer`; review r5 S2). An import never changes an exercise,
+ *   so there is nothing of the kind to undo (review r6 B1).
  * - Every write is versioned; a stale `expectedVersion` is refused (rule 5).
  */
 
@@ -190,9 +191,10 @@ export class SqliteImports {
 
   /**
    * Start a commit: the job, every source row, the custom exercises `Add
-   * new` makes (and catalogue exercises the rows use that aren't stored yet),
-   * and the remembered names, in one transaction. Idempotent by job ID and
-   * operation ID: the same call again is a `duplicate` and changes nothing.
+   * new` makes (and catalogue exercises the rows use that aren't stored yet;
+   * an exercise already stored is never changed), and the remembered names,
+   * in one transaction. Idempotent by job ID and operation ID: the same call
+   * again is a `duplicate` and changes nothing.
    */
   createJob(job: ImportJob, rows: readonly ImportRow[], extras: { exercises: readonly Exercise[]; aliases: readonly AliasToSave[]; at: ZonedTimestamp; newId: () => string }): Promise<CreateJobOutcome> {
     return this.db.write(async (tx) => {
@@ -209,7 +211,7 @@ export class SqliteImports {
         if (r.jobId !== job.id) throw new Error(`Row ${String(r.row)} belongs to another job`);
         await insert(tx, 'import_rows', rowRecord(checkWrite(ImportRowSchema, r, 'import_rows', `${r.jobId}#${String(r.row)}`)));
       }
-      for (const e of extras.exercises) await saveImportExercise(tx, e, extras.at);
+      for (const e of extras.exercises) await saveImportExercise(tx, e);
       for (const a of extras.aliases) await upsertAlias(tx, job, a, extras.at, extras.newId);
       return { ok: true, duplicate: false };
     });
@@ -282,22 +284,16 @@ async function readJob(q: SqlExecutor, jobId: string): Promise<ImportJob | null>
 
 /**
  * An exercise the import uses: a catalogue exercise or `Add new`'s custom
- * one, saved when it isn't stored yet. `Add new` again for a name whose
- * custom exercise an earlier (since undone) import made with other
- * equipment: Ben's answer now wins (version + 1), so a later import that
- * remembers this answer reads the exercise his way (review r5 S2).
+ * one, saved when it isn't stored yet. An exercise that is already stored
+ * is never changed by an import (review r6 B1): `Add new` with other
+ * equipment is another exercise (`customExerciseIdFor` per equipment), so
+ * nothing an undone import answered lives on in an exercise, and an import
+ * still in effect that mapped a name to it keeps reading it its way.
  */
-async function saveImportExercise(tx: SqlExecutor, e: Exercise, at: ZonedTimestamp): Promise<void> {
-  const row = await tx.getFirst('SELECT * FROM exercises WHERE id = ?', [e.id]);
-  if (!row) {
-    await saveDocumentIn(tx, EXERCISE_SPEC, e, null);
-    return;
-  }
-  const have = decodeDocument(EXERCISE_SPEC, row);
-  if (e.source !== 'custom' || have.source !== 'custom' || have.ownerId !== e.ownerId) return;
-  if (have.defaultLoadConvention === e.defaultLoadConvention && stableStringify(have.compatibleEquipment) === stableStringify(e.compatibleEquipment)) return;
-  const next: Exercise = { ...have, compatibleEquipment: e.compatibleEquipment, defaultLoadConvention: e.defaultLoadConvention, version: have.version + 1, updatedAtUtc: at.utc };
-  const saved = await saveDocumentIn(tx, EXERCISE_SPEC, next, have.version);
+async function saveImportExercise(tx: SqlExecutor, e: Exercise): Promise<void> {
+  const row = await tx.getFirst('SELECT id FROM exercises WHERE id = ?', [e.id]);
+  if (row) return;
+  const saved = await saveDocumentIn(tx, EXERCISE_SPEC, e, null);
   if (!saved.ok) throw new Error('Exercise conflict');
 }
 

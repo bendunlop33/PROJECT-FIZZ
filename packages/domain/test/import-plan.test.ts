@@ -6,6 +6,8 @@ import {
   anchorUtcFor,
   buildImportedSession,
   customExerciseIdFor,
+  isImportMadeExercise,
+  legacyCustomExerciseIdFor,
   DEFAULT_ANSWERS,
   importIds,
   importResultsCsv,
@@ -384,16 +386,67 @@ describe('import preview: questions before anything is saved', () => {
     expect(aliasesToSave(skipped)).toEqual([{ key: 'mystery machine', name: 'Mystery Machine', target: { kind: 'skip' } }]);
   });
 
-  it('Add new makes one custom exercise per name, with the convention of the equipment Ben picked', () => {
+  it('Add new makes one custom exercise per name and equipment, with the convention of the equipment Ben picked', () => {
     const p = parsed(`${A1}2026-10-01,Hammer Strength Row,Back,40,10,,,\n2026-10-02,Hammer Strength Row,Back,50,8,,,\n`);
     const a = analyseImport(p, ctx(), answers({ names: { 'hammer strength row': { kind: 'new', equipment: 'plate_loaded_machine' } } }));
-    const id = customExerciseIdFor(OWNER, 'hammer strength row');
+    const id = customExerciseIdFor(OWNER, 'hammer strength row', 'plate_loaded_machine');
     expect(a.ready).toBe(true);
     expect(a.fates[0]).toMatchObject({ result: 'imported', set: { exerciseId: id, exerciseName: 'Hammer Strength Row', convention: 'added', load: { value: 40, convention: 'added' } } });
     expect(newExercisesToCreate(a)).toEqual([
       { exerciseId: id, name: 'Hammer Strength Row', laterality: 'bilateral', convention: 'added', bar: 'none', barKnown: true, implements: null, equipment: ['plate_loaded_machine'], newKind: 'plate_loaded_machine' },
     ]);
     expect(aliasesToSave(a)).toEqual([{ key: 'hammer strength row', name: 'Hammer Strength Row', target: { kind: 'exercise', exerciseId: id } }]);
+  });
+
+  it('Add new with other equipment is another exercise: the one an earlier answer made is never changed (review r6 B1)', () => {
+    const p = parsed(`${A1}2026-10-01,Pull Up Machine,Back,-30,8,,,\n`);
+    const key = 'pull up machine';
+    const stackId = customExerciseIdFor(OWNER, key, 'weight_stack');
+    const assistId = customExerciseIdFor(OWNER, key, 'assisted_stack');
+    expect(new Set((['barbell', 'dumbbells', 'weight_stack', 'plate_loaded_machine', 'assisted_stack', 'bodyweight_station'] as const).map((k) => customExerciseIdFor(OWNER, key, k))).size).toBe(6);
+    // An earlier import made the stack exercise; the name now says nothing about it (that import was undone).
+    const made: MatchCandidate = { exerciseId: stackId, name: 'Pull Up Machine', aliases: [], catalogueKey: null, laterality: 'bilateral', defaultLoadConvention: 'stack', compatibleEquipment: ['weight_stack'], implements: null, importMade: true };
+    const c = ctx({ candidates: [...CANDIDATES, made] });
+    const a = analyseImport(p, c, answers({ names: { [key]: { kind: 'new', equipment: 'assisted_stack' } } }));
+    expect(a.fates[0]).toMatchObject({ result: 'imported', set: { exerciseId: assistId, convention: 'assistance', load: { value: 30, convention: 'assistance' } } });
+    expect(newExercisesToCreate(a).map((e) => [e.exerciseId, e.newKind])).toEqual([[assistId, 'assisted_stack']]);
+    // Both are an import's own: never matched by their name.
+    expect(isImportMadeExercise(OWNER, { id: stackId, name: 'Pull Up Machine', source: 'custom' })).toBe(true);
+    expect(isImportMadeExercise(OWNER, { id: assistId, name: 'pull up  MACHINE', source: 'custom' })).toBe(true);
+    expect(isImportMadeExercise(OWNER, { id: legacyCustomExerciseIdFor(OWNER, key), name: 'Pull Up Machine', source: 'custom' })).toBe(true);
+    expect(isImportMadeExercise(OWNER, { id: '00000000-0000-4000-8000-0000000000aa', name: 'Pull Up Machine', source: 'custom' })).toBe(false);
+    expect(isImportMadeExercise(OWNER, { id: stackId, name: 'Pull Up Machine', source: 'catalogue' })).toBe(false);
+  });
+
+  it('Add new reuses an exercise an earlier build made for the name only when it is exactly that equipment (review r6 B1)', () => {
+    const p = parsed(`${A1}2026-10-01,Zottman Curl,Arms,16,10,,,\n`);
+    const key = 'zottman curl';
+    const legacy: MatchCandidate = { exerciseId: legacyCustomExerciseIdFor(OWNER, key), name: 'Zottman Curl', aliases: [], catalogueKey: null, laterality: 'bilateral', defaultLoadConvention: 'per_hand', compatibleEquipment: ['dumbbells'], implements: null, importMade: true };
+    const c = ctx({ candidates: [...CANDIDATES, legacy] });
+    const idFor = (equipment: 'dumbbells' | 'barbell') => {
+      const a = analyseImport(p, c, answers({ names: { [key]: { kind: 'new', equipment } } }));
+      const r = a.names[0]?.resolution;
+      return r?.kind === 'exercise' ? r.exercise.exerciseId : null;
+    };
+    expect(idFor('dumbbells')).toBe(legacy.exerciseId);
+    expect(idFor('barbell')).toBe(customExerciseIdFor(OWNER, key, 'barbell'));
+  });
+
+  it('Add new barbell for a name that says Smith: its bar isn’t the Olympic bar, so it is asked on its own (review r6 B2)', () => {
+    const p = parsed(`${A1}2026-10-01,Smith Machine Barbell Shrug,Back,60,10,,,\n2026-10-01,Barbell Zottman Curl,Arms,30,10,,,\n`);
+    const a = analyseImport(
+      p,
+      ctx(),
+      answers({ names: { 'smith machine barbell shrug': { kind: 'new', equipment: 'barbell' }, 'barbell zottman curl': { kind: 'new', equipment: 'barbell' } }, total: 'plates_only' }),
+    );
+    expect(a.total?.exercises.map((e) => [e.name, e.known, e.reading, e.sample?.imported])).toEqual([
+      ['Smith Machine Barbell Shrug', false, null, null],
+      ['Barbell Zottman Curl', true, 'plates_only', 50],
+    ]);
+    expect(a.fates[0]).toEqual({ result: 'pending', reason: 'total' });
+    // Ben's own answer for it reads it.
+    const own = analyseImport(p, ctx(), answers({ names: { 'smith machine barbell shrug': { kind: 'new', equipment: 'barbell' }, 'barbell zottman curl': { kind: 'new', equipment: 'barbell' } }, total: 'plates_only', totalOverrides: { 'smith machine barbell shrug': 'total' } }));
+    expect(own.fates[0]).toMatchObject({ result: 'imported', set: { load: { value: 60, convention: 'total' } } });
   });
 
   it('a file with nothing importable is never ready', () => {

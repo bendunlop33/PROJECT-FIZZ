@@ -586,6 +586,111 @@ describe('import preview wording', () => {
       // 1 Sep (the undone import's date) is offered again; 1 Oct (the second import's) is skipped.
       expect(c.analysis.workouts.map((w) => w.date)).toEqual(['2026-10-08', '2026-09-01']);
     });
+
+    describe('`Add new` equipment: an import never changes an exercise, so Undo import leaves nothing behind (review r6 B1)', () => {
+      /** What a job stored, by date: `value convention`, or the row's result. */
+      const stored = async (jobId: string, dates: readonly string[]) => {
+        const out: string[] = [];
+        for (const date of dates) {
+          const rows = (await s.imports.job(jobId))?.rows.filter((r) => r.localDate === date) ?? [];
+          for (const r of rows) out.push(r.imported?.load ? `${date} ${String(r.imported.load.value)} ${r.imported.load.convention}` : `${date} ${r.result}`);
+        }
+        return out;
+      };
+      const exerciseOf = (d: ImportDraft, name: string) => {
+        const n = d.analysis.names.find((x) => x.name === name);
+        return n?.resolution.kind === 'exercise' ? n.resolution.exercise : null;
+      };
+
+      it('stack, then assisted, then undo: a name an import still in effect mapped to the stack exercise keeps reading as a stack (the review’s six steps)', async () => {
+        // 1. `Pull Up Machine` has no match: Ben adds it as a weight stack.
+        let a = await open(fileOf([['Pull Up Machine', 40, 10]], '2026-09-01'));
+        expect(names(a)).toEqual([['Pull Up Machine', 'no_match', null, true]]);
+        a = await step(a, { kind: 'name', key: 'pull up machine', answer: { kind: 'new', equipment: 'weight_stack' } });
+        const jobA = await commit(a, 'op-a');
+        expect(await stored(jobA, ['2026-09-01'])).toEqual(['2026-09-01 40 stack']);
+        const stack = exerciseOf(a, 'Pull Up Machine')?.exerciseId ?? '';
+
+        // 2. `Pullup Mach` is suggested as it; Ben chooses it.
+        let a2 = await open(fileOf([['Pullup Mach', 45, 10]], '2026-09-05'));
+        expect(names(a2)).toEqual([['Pullup Mach', 'check', 'words', true]]);
+        a2 = await step(a2, { kind: 'name', key: 'pullup mach', answer: { kind: 'exercise', exerciseId: stack } });
+        const jobA2 = await commit(a2, 'op-a2');
+        expect(await stored(jobA2, ['2026-09-05'])).toEqual(['2026-09-05 45 stack']);
+
+        // 3. Ben undoes the first import.
+        await undo(jobA);
+
+        // 4. `Pull Up Machine` is now only a suggestion; Ben adds it as an assisted machine.
+        let b = await open(fileOf([['Pull Up Machine', -30, 8]], '2026-09-10'));
+        expect(names(b)).toEqual([['Pull Up Machine', 'check', 'words', true]]);
+        b = await step(b, { kind: 'name', key: 'pull up machine', answer: { kind: 'new', equipment: 'assisted_stack' } });
+        const assisted = exerciseOf(b, 'Pull Up Machine')?.exerciseId ?? '';
+        expect(assisted).not.toBe(stack);
+        const jobB = await commit(b, 'op-b');
+        expect(await stored(jobB, ['2026-09-10'])).toEqual(['2026-09-10 30 assistance']);
+
+        // 5. Ben undoes that too.
+        await undo(jobB);
+
+        // 6. A newer export: `Pullup Mach` is matched through the second import, still in effect, which read it as a stack.
+        const c = await open(fileOf([['Pullup Mach', 45, 10]], '2026-09-05').concat('\n', withoutHeader(fileOf([['Pullup Mach', -20, 8]], '2026-09-20')), '\n', withoutHeader(fileOf([['Pullup Mach', 50, 8]], '2026-09-21'))));
+        expect(names(c)).toEqual([['Pullup Mach', 'matched', 'alias', false]]);
+        expect(exerciseOf(c, 'Pullup Mach')).toMatchObject({ exerciseId: stack, convention: 'stack' });
+        expect(s.imports.candidate(c.draftId, stack)).toMatchObject({ defaultLoadConvention: 'stack', compatibleEquipment: ['weight_stack'] });
+        expect(c.analysis.machines.map((m) => [m.name, m.convention])).toEqual([['Pullup Mach', 'stack']]);
+        const jobC = await commit(c, 'op-c');
+        // Never assistance: the −20 can't be read as a stack weight; 50 is 50 kg on the stack.
+        expect(await stored(jobC, ['2026-09-05', '2026-09-20', '2026-09-21'])).toEqual(['2026-09-05 skipped_duplicate', '2026-09-20 unreadable', '2026-09-21 50 stack']);
+      });
+
+      it('assisted, then stack, then undo: the assisted exercise stays assisted (the mirror case)', async () => {
+        let a = await open(fileOf([['Pull Up Machine', -30, 8]], '2026-09-01'));
+        a = await step(a, { kind: 'name', key: 'pull up machine', answer: { kind: 'new', equipment: 'assisted_stack' } });
+        const jobA = await commit(a, 'op-a');
+        const assisted = exerciseOf(a, 'Pull Up Machine')?.exerciseId ?? '';
+        let a2 = await open(fileOf([['Pullup Mach', -25, 8]], '2026-09-05'));
+        a2 = await step(a2, { kind: 'name', key: 'pullup mach', answer: { kind: 'exercise', exerciseId: assisted } });
+        await commit(a2, 'op-a2');
+        await undo(jobA);
+
+        let b = await open(fileOf([['Pull Up Machine', 40, 10]], '2026-09-10'));
+        b = await step(b, { kind: 'name', key: 'pull up machine', answer: { kind: 'new', equipment: 'weight_stack' } });
+        const jobB = await commit(b, 'op-b');
+        expect(await stored(jobB, ['2026-09-10'])).toEqual(['2026-09-10 40 stack']);
+        await undo(jobB);
+
+        const c = await open(fileOf([['Pullup Mach', -20, 8]], '2026-09-20').concat('\n', withoutHeader(fileOf([['Pullup Mach', -15, 8]], '2026-09-21'))));
+        expect(names(c)).toEqual([['Pullup Mach', 'matched', 'alias', false]]);
+        expect(s.imports.candidate(c.draftId, assisted)).toMatchObject({ defaultLoadConvention: 'assistance', compatibleEquipment: ['assisted_stack'] });
+        const jobC = await commit(c, 'op-c');
+        expect(await stored(jobC, ['2026-09-20', '2026-09-21'])).toEqual(['2026-09-20 20 assistance', '2026-09-21 15 assistance']);
+      });
+
+      it('dumbbells, then barbell, then undo: the remembered dumbbell answer applies again and no bar is added', async () => {
+        const A = fileOf([['Zottman Curl', 16, 10]]);
+        let a = await open(A);
+        a = await step(a, { kind: 'name', key: 'zottman curl', answer: { kind: 'new', equipment: 'dumbbells' } });
+        a = await step(a, { kind: 'per_hand_override', key: 'zottman curl', answer: 'one' });
+        await commit(a, 'op-a');
+
+        const B = `${A}\n${withoutHeader(fileOf([['Zottman Curl', 40, 10]], '2026-09-20'))}`;
+        let b = await open(B);
+        b = await step(b, { kind: 'name', key: 'zottman curl', answer: { kind: 'new', equipment: 'barbell' } });
+        b = await step(b, { kind: 'total', answer: 'plates_only' });
+        const jobB = await commit(b, 'op-b');
+        expect(await stored(jobB, ['2026-09-20'])).toEqual(['2026-09-20 60 total']);
+        await undo(jobB);
+
+        let again = await open(B);
+        expect(names(again)).toEqual([['Zottman Curl', 'matched', 'alias', false]]);
+        expect(again.analysis.total).toBeNull();
+        expect(asked(again)).toEqual([['Zottman Curl', '40 kg → 40 kg (one dumbbell)', 'Your answer last time', ['One dumbbell']]]);
+        again = await step(again, { kind: 'existing_dates', answer: 'skip' });
+        const jobC = await commit(again, 'op-c');
+        expect(await stored(jobC, ['2026-09-20'])).toEqual(['2026-09-20 40 per_hand']);
+      });
+    });
   });
 
   it('copies the original row as written', () => {

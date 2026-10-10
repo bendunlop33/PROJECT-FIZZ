@@ -23,7 +23,7 @@ import { deriveId } from '../stable';
 import { fromScaled, toScaled } from '../units';
 import { effortFromComment } from './effort';
 import type { FitNotesRow } from './fitnotes';
-import { barNamed, implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
+import { barNamed, implementsFor, matchName, nameKey, saysSmith, type MatchCandidate, type NameMatch } from './match';
 
 /**
  * The FitNotes import preview and plan (data-import-export §2.5, §3.4, §4.3).
@@ -346,9 +346,46 @@ const CONVENTION_BY_KIND: Readonly<Record<CustomExerciseKind, LoadConvention>> =
   bodyweight_station: 'bodyweight',
 };
 
-/** Stable ID of the custom exercise `Add new` makes for a source name, so a retried or repeated import reuses it. */
-export function customExerciseIdFor(ownerId: string, key: string): string {
+const CUSTOM_KINDS = Object.keys(CONVENTION_BY_KIND) as CustomExerciseKind[];
+
+/**
+ * Stable ID of the custom exercise `Add new` makes for a source name and
+ * equipment, so a retried or repeated import with the same answer reuses
+ * it. Each equipment gets its own exercise: an import never changes an
+ * exercise that already exists, so an answer that Undo import takes back
+ * can't live on in the exercise, and an import still in effect that mapped
+ * another name to it keeps reading it its way (review r6 B1).
+ */
+export function customExerciseIdFor(ownerId: string, key: string, kind: CustomExerciseKind): string {
+  return deriveId(`custom-exercise:${ownerId}:fitnotes:${key}:${kind}`);
+}
+
+/** The one ID per name that builds before review r6 gave `Add new`'s exercise, whatever its equipment. Recognised, never written. */
+export function legacyCustomExerciseIdFor(ownerId: string, key: string): string {
   return deriveId(`custom-exercise:${ownerId}:fitnotes:${key}`);
+}
+
+/**
+ * A custom exercise an import's `Add new` made from its own name (either ID
+ * scheme): its name is that import's answer, not knowledge of its own
+ * (`MatchCandidate.importMade`; review r5 S2).
+ */
+export function isImportMadeExercise(ownerId: string, e: { id: string; name: string; source: string }): boolean {
+  if (e.source !== 'custom') return false;
+  const key = nameKey(e.name);
+  return e.id === legacyCustomExerciseIdFor(ownerId, key) || CUSTOM_KINDS.some((k) => e.id === customExerciseIdFor(ownerId, key, k));
+}
+
+/**
+ * The exercise `Add new` with this equipment maps a name to: its own
+ * (`customExerciseIdFor`), or one an earlier build made for the name under
+ * the old ID when it is still exactly that equipment, so its history stays
+ * together. Either way it is never changed (review r6 B1).
+ */
+function addNewExerciseId(ctx: ImportContext, key: string, kind: CustomExerciseKind, byId: ReadonlyMap<string, MatchCandidate>): string {
+  const legacy = byId.get(legacyCustomExerciseIdFor(ctx.ownerId, key));
+  const same = legacy?.importMade === true && legacy.defaultLoadConvention === CONVENTION_BY_KIND[kind] && legacy.compatibleEquipment.length === 1 && legacy.compatibleEquipment[0] === kind;
+  return same ? legacy.exerciseId : customExerciseIdFor(ctx.ownerId, key, kind);
 }
 
 export function conventionForKind(kind: CustomExerciseKind): LoadConvention {
@@ -394,13 +431,14 @@ function resolveName(
         return {
           kind: 'exercise',
           exercise: {
-            exerciseId: customExerciseIdFor(ctx.ownerId, key),
+            exerciseId: addNewExerciseId(ctx, key, answer.equipment, byId),
             name: name.slice(0, 120),
             laterality: 'bilateral',
             convention: CONVENTION_BY_KIND[answer.equipment],
             bar: answer.equipment === 'barbell' ? 'barbell' : 'none',
-            // Ben said it's a barbell exercise: the group answer reads it.
-            barKnown: true,
+            // Ben said it's a barbell exercise: the group answer reads it. Unless the name says Smith: a
+            // Smith machine's bar isn't the Olympic bar, so it is asked on its own (review r6 B2).
+            barKnown: answer.equipment !== 'barbell' || !saysSmith(name),
             // A new dumbbell exercise: one or two isn't known, so it is asked (review r3 S1).
             implements: null,
             equipment: [answer.equipment],
