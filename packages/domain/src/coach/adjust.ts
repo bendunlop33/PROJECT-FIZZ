@@ -17,6 +17,7 @@ import type {
 import { formatNumber, loadText } from '../display';
 import { compareDifficulty, loadDirection, roundToAvailableLoad, type RoundingPolicy } from '../equipment';
 import { buildExecutionOrder } from '../session/order';
+import { equipmentOfRow } from '../session/equipment-snapshot';
 import { deriveId } from '../stable';
 import { convertMass } from '../units';
 import type { PainMention } from './pain-words';
@@ -110,7 +111,8 @@ function liveSetsInOrder(state: SessionAggregate, sessionExerciseId: string): Wo
 }
 
 function equipmentOf(state: SessionAggregate, ex: SessionExercise): EquipmentInstance | null {
-  return ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
+  // The row's own entry (after a gym switch the snapshot holds more than one gym's items).
+  return equipmentOfRow(state.session.equipmentSnapshot, ex);
 }
 
 function policyFor(intent: AdjustIntent): RoundingPolicy {

@@ -2,6 +2,8 @@ import type { CoachTarget, EquipmentInstance, GuardNote, GuardNoteKind, NextSess
 import { formatNumber } from '../display';
 import { stepLoad } from '../equipment';
 import { activeFlag, AREA_WORD, isIncrease, sameTarget, snapLoad, validReps } from './adjust';
+import { equipmentOfRow } from '../session/equipment-snapshot';
+import { nextTargetBlocks } from '../session/gym-switch';
 
 /**
  * Next-session targets from the coach (ADR 0020 §4–5, playbook D21,
@@ -205,7 +207,10 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
  */
 export function nextSessionBases(source: SessionAggregate, builtIn: ReadonlyMap<string, readonly { setType: string; planned: { load: CoachTarget['load']; reps: CoachTarget['reps'] } }[]>): NextSessionBasis[] {
   const out: NextSessionBasis[] = [];
-  for (const ex of source.exercises) {
+  // One basis per exercise block: an exercise split across gyms (gym-switch GS6) reads its
+  // deciding part, on that part's item, the same as the built-in rule's `Next time`.
+  for (const block of nextTargetBlocks(source)) {
+    const ex = block.decider;
     if (ex.measurement !== 'reps' || out.some((b) => b.exercise.exerciseId === ex.exerciseId)) continue;
     const working = source.sets.filter((s) => s.sessionExerciseId === ex.id && s.setType !== 'warmup' && s.pairedWithSetId === null && s.status === 'completed');
     const first = working[0];
@@ -222,9 +227,9 @@ export function nextSessionBases(source: SessionAggregate, builtIn: ReadonlyMap<
     const firstPlan = workingPlan[0];
     out.push({
       exercise: ex,
-      equipment: ex.equipmentId === null ? null : (source.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null),
+      equipment: block.equipment ?? equipmentOfRow(source.session.equipmentSnapshot, ex),
       last,
-      lastSets: working.length,
+      lastSets: block.workingSets,
       builtIn: firstPlan === undefined ? null : { target: { load: firstPlan.planned.load, reps: firstPlan.planned.reps }, sets: workingPlan.length },
     });
   }
