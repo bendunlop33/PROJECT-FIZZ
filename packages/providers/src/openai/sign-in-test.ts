@@ -377,7 +377,7 @@ export async function runSignInTest(ports: SignInTestPorts, options: RunOptions 
  * account) are revoked, so no live refresh token stays granted (review S7).
  * Returns a step detail line; never throws and never includes a token.
  */
-async function revokeDiscarded(tokens: ChatGptTokenSet, ports: Pick<SignInTestPorts, 'fetch' | 'nowMs'>): Promise<string> {
+export async function revokeDiscarded(tokens: ChatGptTokenSet, ports: Pick<SignInTestPorts, 'fetch' | 'nowMs'>): Promise<string> {
   if (tokens.refreshToken === null) return 'No refresh token was granted, so there was nothing to revoke.';
   try {
     const r = await revokeRefreshToken(tokens, { fetch: ports.fetch, nowMs: ports.nowMs });
