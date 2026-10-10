@@ -882,13 +882,25 @@ export function WorkoutScreen() {
           editorShown({ resting, hasFocus: true, showNextSet }) ? (
             setEditor
           ) : (
-            <TextButton
-              label={`Edit ${focus.exerciseName === view.justSaved?.exerciseName ? 'the next set' : focus.exerciseName}`}
-              tone="secondary"
-              onPress={() => {
-                setShowNextSet(true);
-              }}
-            />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 24 }}>
+              <TextButton
+                label={`Edit ${focus.exerciseName === view.justSaved?.exerciseName ? 'the next set' : focus.exerciseName}`}
+                tone="secondary"
+                onPress={() => {
+                  setShowNextSet(true);
+                }}
+              />
+              {howToKeyForExerciseId(focus.exerciseId, bundledHowToSources()) !== null ? (
+                <TextButton
+                  label={`How to ${focus.exerciseName.toLowerCase()}`}
+                  tone="secondary"
+                  onPress={() => {
+                    const key = howToKeyForExerciseId(focus.exerciseId, bundledHowToSources());
+                    if (key !== null) navigation.navigate('HowTo', { catalogueKey: key, name: focus.exerciseName });
+                  }}
+                />
+              ) : null}
+            </View>
           )
         ) : (
           setEditor
