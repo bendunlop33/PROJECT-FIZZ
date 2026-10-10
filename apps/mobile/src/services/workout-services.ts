@@ -923,7 +923,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
     /** `buildActiveSetView` over loaded data plus the screen's unsaved edits. */
     view(data: ActiveWorkoutData, nowMs: number, edits: DraftEdits | null): ActiveSetView {
-      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, recentPace: data.recentPace });
+      // `Time left` has one source on this screen: `timeLeft` below, on its own minute clock (review N4).
+      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false });
     },
 
     /**

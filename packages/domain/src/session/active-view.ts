@@ -97,6 +97,13 @@ export interface ActiveViewInput {
   title?: string | null;
   /** Pace samples from Ben's last finished workouts, for `Time left` (§2.15.2). Omitted = none. */
   recentPace?: PaceSamples;
+  /**
+   * False skips `timeLeft` (null). The workout screen reads `Time left` from
+   * its own once-a-minute clock (`services.workout.timeLeft`), so its 1 s view
+   * doesn't estimate it again and throw it away (review N4). Default true
+   * (Today's Resume card).
+   */
+  withTimeLeft?: boolean;
 }
 
 /** `TimeLeftLine` (§2.15.1): an estimate, never a countdown; null when hidden. */
@@ -607,7 +614,7 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     lastCompletedAtUtc: last,
     openEnded: isOpenEndedWorkout(state),
     upNext: focus === null ? null : upNextLine(state, focus),
-    timeLeft: buildTimeLeftView(state, nowMs, input.recentPace),
+    timeLeft: input.withTimeLeft === false ? null : buildTimeLeftView(state, nowMs, input.recentPace),
     finishByUtc: session.finishBy?.utc ?? null,
   };
 }

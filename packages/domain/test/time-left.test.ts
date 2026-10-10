@@ -300,6 +300,13 @@ describe('buildActiveSetView carries the time left (§2.15.1)', () => {
     expect(v.timeLeft?.line.text).toBe(t('About 20 min left · on track for 19:45'));
   });
 
+  it('withTimeLeft: false skips the estimate (the workout screen reads it once a minute instead, review N4)', () => {
+    const s = twoExercises();
+    const v = buildActiveSetView({ aggregate: s, nowMs: ms(0), gymName: null, previous: {}, painFlagged: new Set(), edits: null, withTimeLeft: false });
+    expect(v.timeLeft).toBeNull();
+    expect(v.focus).not.toBeNull();
+  });
+
   it('hidden once all sets are done', () => {
     let s = twoExercises(1, 1);
     const [b1] = setsFor(s, BENCH);
