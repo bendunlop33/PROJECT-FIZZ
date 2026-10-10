@@ -41,10 +41,13 @@ function strictify(node: Json): Json {
   return out;
 }
 
+/** A Zod object as a strict-mode JSON Schema (see above). */
+export function strictJsonSchema(schema: z.ZodType): Record<string, unknown> {
+  return strictify(z.toJSONSchema(schema, { io: 'input', unrepresentable: 'throw' }) as Json) as Record<string, unknown>;
+}
+
 export function functionToolDefinition(tool: ToolDeclaration): FunctionToolDefinition {
-  const schema = z.toJSONSchema(COACH_TOOL_ARGS[tool.name], { io: 'input', unrepresentable: 'throw' }) as Json;
-  const parameters = strictify(schema) as Record<string, unknown>;
-  return { type: 'function', name: tool.name, description: tool.description, strict: true, parameters };
+  return { type: 'function', name: tool.name, description: tool.description, strict: true, parameters: strictJsonSchema(COACH_TOOL_ARGS[tool.name]) };
 }
 
 export function functionToolDefinitions(tools: readonly ToolDeclaration[]): FunctionToolDefinition[] {

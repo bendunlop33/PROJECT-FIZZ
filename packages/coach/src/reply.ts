@@ -3,24 +3,27 @@ import type { HiddenLine } from '@fizz/schemas';
 import { checkReplyClaims, isChangeClaim, type TurnLedger } from './claims';
 import { normaliseForClaims } from './text';
 import { EXERCISE_WORD } from './vocab';
-import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
+import { type RenderSurface, type RenderedAction } from './render';
 import { SentenceBuffer, splitSentences } from './sentences';
 import { resolveActionTokens } from './tokens';
 
 /**
- * The honesty pipeline for one coach reply (coach-contract CC1–CC9): streamed
- * text → finished sentences → tokens rendered from saved records → claim
- * check → shown, replaced or hidden. Nothing reaches the screen or the
- * speaker without passing through here.
+ * The backstop for the coach's `message` (coach-contract CC3–CC9, PM
+ * decision 10 Oct 2026). Honesty is structural: the model's words arrive
+ * only as the `reply` function's `message` (reply-tool.ts), and every change
+ * Ben sees is a card rendered from a committed `ActionRecord` by the turn
+ * engine, never from these sentences. This filter is the backstop on top:
+ * message text → finished sentences → `[[ref]]` tokens rendered from saved
+ * records → claim check → shown or dropped. A sentence that still talks as
+ * if it made a change is dropped whole (never rewritten), and listed in
+ * `Why?` → `Not shown`.
  */
 
 export type ReplyItem =
   /** A model sentence that passed the check (token-free text). */
   | { kind: 'sentence'; text: string }
   /** App text for a `[[ref]]` the coach cited. */
-  | { kind: 'action_line'; ref: string; actionId: string; rendered: RenderedAction }
-  /** A claim whose numbers differed from the saved ones, replaced by the rendered line (CC4). */
-  | { kind: 'replaced'; actionId: string; rendered: RenderedAction };
+  | { kind: 'action_line'; ref: string; actionId: string; rendered: RenderedAction };
 
 export interface HiddenLineDraft {
   sentence: string;
@@ -71,8 +74,11 @@ export function claimNoteFor(ledger: TurnLedger, hiddenCount: number, surface: R
   return { text: `Only the changes shown here were made. ${linesSaid(hiddenCount)}`, spoken: null };
 }
 
-/** The fixed line for review r4 spec issue 1, option (a). */
-export const NO_CHANGE_SAVED_LINE = 'No change was saved in this reply.';
+/**
+ * The fixed no-change line (review r4 spec issue 1, option a). Minimal copy
+ * (CLAUDE.md, Ben 10 Oct): the shortest true statement.
+ */
+export const NO_CHANGE_SAVED_LINE = 'No change made.';
 
 /**
  * Training content or acknowledgement words. With no live change this turn,
@@ -120,18 +126,48 @@ export function needsNoChangeLine(replyText: string, ledger: TurnLedger, context
   return ledger.knownExerciseNames.some((n) => t.includes(n.toLowerCase()));
 }
 
+/** Any card at all this turn (committed, proposed or not done): the card already says what happened. */
+function anyCardThisTurn(ledger: TurnLedger): boolean {
+  return ledger.entries.some((e) => e.origin === 'this_turn');
+}
+
+/**
+ * The structural no-change line (PM decision 10 Oct 2026). Ben's own words
+ * or chip asked for a change (`classifyBenRequest` / `chipRequest`), the turn
+ * produced no card at all, and the reply says something other than
+ * questions (emoji included): `No change made.` It reads no phrase list, so
+ * an unrecognised acknowledgement ("Boom.", "👍") can't stand in for a card.
+ */
+export function needsStructuralNoChangeLine(replyText: string, ledger: TurnLedger, benAskedForChange: boolean): boolean {
+  if (!benAskedForChange || anyCardThisTurn(ledger)) return false;
+  return splitSentences(replyText).some((s) => s.trim().length > 0 && !isPureQuestion(s));
+}
+
+/**
+ * When the fixed line shows:
+ * - `structural` (default): `needsStructuralNoChangeLine`.
+ * - `topic`: the r5 phrase-based rule (`needsNoChangeLine`), kept so Ben/PM
+ *   can compare; it adds the line to any reply with training words.
+ * - `off`: claim check only (tests of the claim check on its own).
+ */
+/** `Why?` → `Not shown` for a sentence that restated a saved change in its own words. */
+export const CARD_ONLY_DETAIL = 'Changes show on their cards, not in the reply.';
+
+export type NoChangeLineMode = 'structural' | 'topic' | 'off';
+
 export interface ReplyFilterOptions {
   /** The ledger as it is now; read again for every sentence, since tools commit during the turn. */
   ledger: () => TurnLedger;
   surface: RenderSurface;
+  /** Default `structural`. */
+  noChangeLine?: NoChangeLineMode;
   /**
-   * Review r4 spec issue 1, option (a); on by default since review r5 B1c
-   * (pending Ben/PM sign-off, see ADR 0019). `note()` returns `No change was
-   * saved in this reply.` when no live change was saved this turn and the
-   * reply makes a statement with training content, even if no sentence was
-   * hidden. Pass `false` only in tests of the claim check on its own.
+   * Default true: a sentence that states a change is kept only when it cites
+   * that change's `[[ref]]` and matches it. False restores the r1–r6
+   * behaviour (any committed change this turn can back a claim), for
+   * tests of the ledger matching.
    */
-  noChangeLine?: boolean;
+  claimsNeedToken?: boolean;
   /** See `NoChangeLineContext.benAskedForChange`. */
   benAskedForChange?: boolean;
 }
@@ -154,7 +190,12 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
     for (const a of actions) cited.add(a.actionId);
 
     if (tokens.plainText.length > 0 && /[\p{L}\p{N}]/u.test(tokens.plainText)) {
-      const check = checkReplyClaims(tokens.plainText, ledger, cited);
+      // Structural (PM decision 10 Oct): the card is how a change is shown, so the message may
+      // describe a change only in a sentence that cites that change's token. Every other
+      // change-shaped sentence is checked against an empty ledger, i.e. dropped, whatever this
+      // turn saved ("Also sorted your knee." beside a real bench change, review r6 B1).
+      const claimLedger = options.claimsNeedToken === false ? ledger : { ...ledger, entries: ledger.entries.filter((e) => cited.has(e.record.actionId)) };
+      const check = checkReplyClaims(tokens.plainText, claimLedger, cited);
       if (check.keep) {
         for (const seg of tokens.segments) {
           if (seg.kind === 'text') {
@@ -166,16 +207,12 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
         }
         return out;
       }
-      if (check.reason === 'numbers_differ' && check.replaceWith !== null) {
-        if (!cited.has(check.replaceWith)) {
-          const entry = ledger.entries.find((e) => e.record.actionId === check.replaceWith);
-          if (entry) out.push({ kind: 'replaced', actionId: entry.record.actionId, rendered: renderActionResult(entry.record, options.surface, { earlier: entry.origin === 'earlier' }) });
-        }
-        // Replaced, not hidden from Ben: the model's own sentence is still listed in Why? (CC9).
-        hidden.push({ sentence: tokens.plainText, reason: 'numbers_differ', detail: check.detail });
-      } else {
-        hidden.push({ sentence: tokens.plainText, reason: check.reason, detail: check.detail });
-      }
+      // Dropped whole, whatever the reason; a wrong number is never rewritten into the model's sentence.
+      // The card shows the saved values. The sentence stays in Why? (CC9), with the most specific reason:
+      // what the whole ledger says about it, or that it restated a saved change without citing it.
+      const full = claimLedger === ledger ? check : checkReplyClaims(tokens.plainText, ledger, cited);
+      if (full.keep) hidden.push({ sentence: tokens.plainText, reason: 'mismatch', detail: CARD_ONLY_DETAIL });
+      else hidden.push({ sentence: tokens.plainText, reason: full.reason, detail: full.detail });
     }
     // App lines for cited actions are always true, so they show even when the words around them were hidden.
     for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
@@ -193,13 +230,16 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
       return hidden;
     },
     note() {
-      // A replaced number is shown correctly, so it needs no note (§3 `Number mismatch`).
-      const count = hidden.filter((h) => h.reason !== 'numbers_differ').length;
-      const note = claimNoteFor(options.ledger(), count, options.surface);
-      if (note === null && options.noChangeLine !== false && needsNoChangeLine(said.join(' '), options.ledger(), { benAskedForChange: options.benAskedForChange === true })) {
-        return { text: NO_CHANGE_SAVED_LINE, spoken: null };
-      }
-      return note;
+      const note = claimNoteFor(options.ledger(), hidden.length, options.surface);
+      if (note !== null) return note;
+      const mode = options.noChangeLine ?? 'structural';
+      const text = said.join(' ');
+      const asked = options.benAskedForChange === true;
+      const line =
+        mode === 'structural'
+          ? needsStructuralNoChangeLine(text, options.ledger(), asked)
+          : mode === 'topic' && needsNoChangeLine(text, options.ledger(), { benAskedForChange: asked });
+      return line ? { text: NO_CHANGE_SAVED_LINE, spoken: null } : null;
     },
   };
 }

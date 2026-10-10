@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ActionRecord } from '@fizz/schemas';
 import type { TurnLedger } from '../src/claims';
-import { createReplyFilter, needsNoChangeLine, NO_CHANGE_SAVED_LINE, toHiddenLines, type ReplyItem } from '../src/reply';
+import { createReplyFilter, needsNoChangeLine, needsStructuralNoChangeLine, NO_CHANGE_SAVED_LINE, toHiddenLines, type ReplyItem } from '../src/reply';
 import { splitSentences } from '../src/sentences';
 import { resolveActionTokens } from '../src/tokens';
 import { chunked, ScriptedCoachModel } from './fake-model';
@@ -76,16 +76,16 @@ describe('reply pipeline with a fake model (coach-contract checks 2–5)', () =>
     expect(stored[0]).toMatchObject({ turnId: 'turn-1', reason: 'no_action' });
   });
 
-  it('check 3: the saved 97.5 kg replaces the model’s 98 kg; 98 appears only in Why?', async () => {
+  it('check 3: a sentence with the model’s 98 kg is dropped whole (the card shows the saved 97.5 kg); 98 appears only in Why?', async () => {
     const saved = benchAdjust({}, tgt(kg(97.5), 8));
     const model = new ScriptedCoachModel([
       [{ type: 'tool_call', callId: 'a1', name: 'adjust_pending_sets', arguments: '{}' }, ...chunked('Set 2 was RPE 10. I’ve lowered sets 3–4 to 98 kg.'), { type: 'completed' }],
     ]);
     const { shown, hidden, note } = await play(model, { a1: saved });
-    expect(texts(shown)).toEqual(['Set 2 was RPE 10.', '[app] Changed sets 3–4 to 97.5 kg × 8 (targets).']);
+    expect(texts(shown)).toEqual(['Set 2 was RPE 10.']);
     expect(texts(shown).join(' ')).not.toContain('98');
     expect(hidden[0]).toMatchObject({ reason: 'numbers_differ', detail: 'The saved load is 97.5 kg; the reply said 98 kg.' });
-    expect(note).toBeNull();
+    expect(note?.text).toBe('Only the changes shown here were made. One line said otherwise and is hidden.');
   });
 
   it('check 4: a stale result with "Changed" shows only the outcome line', async () => {
@@ -105,6 +105,13 @@ describe('reply pipeline with a fake model (coach-contract checks 2–5)', () =>
     const { shown, hidden } = await play(model, { p1: proposal });
     expect(texts(shown)).toEqual(['[app] Suggested for your next Push A: Cable fly → Pec deck. Not applied.']);
     expect(hidden[0]?.reason).toBe('not_committed');
+  });
+
+  it('a true claim in its own words, with no token, is dropped too: the card is the only change line', async () => {
+    const model = new ScriptedCoachModel([[{ type: 'tool_call', callId: 'a1', name: 'adjust_pending_sets', arguments: '{}' }, ...chunked('I’ve lowered sets 3–4 to 95 kg. Set 2 was RPE 10.'), { type: 'completed' }]]);
+    const { shown, hidden } = await play(model, { a1: benchAdjust() });
+    expect(texts(shown)).toEqual(['Set 2 was RPE 10.']);
+    expect(hidden).toEqual([{ sentence: 'I’ve lowered sets 3–4 to 95 kg.', reason: 'mismatch', detail: 'Changes show on their cards, not in the reply.' }]);
   });
 
   it('a kept claim with a token shows the coach sentence and the app line', async () => {
@@ -149,7 +156,7 @@ describe('earlier actions need their token (CC5, review r2 S2)', () => {
   });
 });
 
-describe('the fixed "No change was saved" line (review r4 spec issue 1 option a; on by default since review r5 B1c)', () => {
+describe('the fixed no-change line: phrase-based `topic` mode (review r4 spec issue 1 option a, r5 B1c), kept for comparison', () => {
   const names = ['Bench press', 'Overhead press', 'Cable fly', 'Pec deck'];
   const empty = ledger([], names);
 
@@ -225,23 +232,70 @@ describe('the fixed "No change was saved" line (review r4 spec issue 1 option a;
     expect(f.note()?.text).toBe('Nothing was changed. One line said otherwise and is hidden.');
   });
 
-  it('the filter adds the line by default; off only when asked', () => {
+  it('topic mode adds the line to training talk; off adds nothing', () => {
     const current = (): TurnLedger => ({ turnId: 'turn-1', entries: [], knownExerciseNames: names });
-    const on = createReplyFilter({ ledger: current, surface: 'sheet' });
+    const on = createReplyFilter({ ledger: current, surface: 'sheet', noChangeLine: 'topic' });
     on.push('Cable fly is a good finisher. ');
     on.end(true);
     expect(on.note()).toEqual({ text: NO_CHANGE_SAVED_LINE, spoken: null });
-    const off = createReplyFilter({ ledger: current, surface: 'sheet', noChangeLine: false });
-    off.push('Cable fly is a good finisher. ');
+    const off = createReplyFilter({ ledger: current, surface: 'sheet', noChangeLine: 'off', benAskedForChange: true });
+    off.push('Sure thing. ');
     off.end(true);
     expect(off.note()).toBeNull();
+  });
+});
+
+describe('the structural no-change line (PM decision 10 Oct: default)', () => {
+  const names = ['Bench press', 'Overhead press', 'Cable fly', 'Pec deck'];
+  const empty = ledger([], names);
+
+  it('shows only when Ben asked for a change and the turn has no card; reads no phrase list', () => {
+    for (const t of ['Boom.', 'Voilà.', 'All yours.', 'Easy.', 'Nice one, that’s you.', '👍', '✅', 'Sure thing.', 'Lighter now, better?']) {
+      expect(needsStructuralNoChangeLine(t, empty, true), t).toBe(t === 'Lighter now, better?' ? false : true);
+    }
+    expect(needsStructuralNoChangeLine('Which sets?', empty, true)).toBe(false);
+    // Not asked: no line, whatever the words; the claim check is the backstop.
+    expect(needsStructuralNoChangeLine('Cable fly is a good finisher.', empty, false)).toBe(false);
+    // Any card this turn says what happened, even a stale one.
+    expect(needsStructuralNoChangeLine('Sure thing.', ledger([benchAdjust()], names), true)).toBe(false);
+    expect(needsStructuralNoChangeLine('Sure thing.', ledger([benchAdjust({ status: 'stale', failure: null })], names), true)).toBe(false);
+  });
+
+  it('is the filter default: training talk without a request gets no line; a request with no card does, emoji included', () => {
+    const current = (): TurnLedger => ({ turnId: 'turn-1', entries: [], knownExerciseNames: names });
     const chat = createReplyFilter({ ledger: current, surface: 'sheet' });
-    chat.push('Nice work today. ');
+    chat.push('Cable fly is a good finisher. ');
     chat.end(true);
     expect(chat.note()).toBeNull();
     const asked = createReplyFilter({ ledger: current, surface: 'sheet', benAskedForChange: true });
-    asked.push('Sure thing. ');
+    asked.push('👍');
     asked.end(true);
-    expect(asked.note()).toEqual({ text: NO_CHANGE_SAVED_LINE, spoken: null });
+    expect(asked.note()).toEqual({ text: 'No change made.', spoken: null });
+  });
+
+  it.each([
+    'Sets 3 and 4 are 95, the knee flag stays.',
+    'Done, and next Push A will start at 95.',
+    'I dropped sets 3 and 4 to 95 and cut set 4.',
+    'Sets 3 and 4 are 95 for 8, plus a back-off set.',
+    'Sets 3 and 4 are 95 and AMRAP.',
+    'Sets 3 and 4 are 95 with a 3 second pause.',
+    'Your last three sets are 95.',
+    'All four sets are 95.',
+    'Sets 3 and 4 are 95 — and set 2 too.',
+    'Raised sets 3 and 4 to 95.',
+    'Bumped sets 3 and 4 up to 95.',
+    'Sets 3 and 4 are heavier now.',
+    'Sets 3 and 4 are 95, 10 lighter.',
+    'Sets 3 and 4 are 95, down from 105.',
+    'Sets 3 and 4 are 95, same reps.',
+    'Undone, still 95 for set 4.',
+    'Both sets back to 100.',
+    'Undone, you’re back on 100 for 8.',
+  ])('review r6 B1a/B1b: beside a real change, an uncited change sentence is dropped: %s', (t) => {
+    const f = createReplyFilter({ ledger: () => ledger([benchAdjust()], names), surface: 'sheet' });
+    const shown = [...f.push(`${t} `), ...f.end(true)];
+    expect(shown).toEqual([]);
+    expect(f.hiddenLines).toHaveLength(1);
   });
 });

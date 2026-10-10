@@ -1,4 +1,5 @@
 import {
+  COACH_REPLY_TOOL_NAME,
   COACH_TOOL_ARGS,
   CoachEntityKindSchema,
   ToolEffectSchema,
@@ -195,6 +196,7 @@ export function assertRegistrySafe(tools: readonly ToolDeclaration[]): void {
   const names = new Set<string>();
   for (const t of tools) {
     if (names.has(t.name)) throw new UnsafeRegistryError(`Duplicate tool ${t.name}`);
+    if ((t.name as string) === COACH_REPLY_TOOL_NAME) throw new UnsafeRegistryError(`${t.name}: the reply function is not a registry tool`);
     names.add(t.name);
     if (!ToolEffectSchema.safeParse(t.effect).success) throw new UnsafeRegistryError(`${t.name}: effect ${t.effect} is not allowed`);
     if (/(^|_)(delete|remove_set|overwrite|clear|discard|reset|restore|update_completed)/.test(t.name)) {

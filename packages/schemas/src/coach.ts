@@ -3,6 +3,7 @@ import {
   IdSchema,
   LoadSchema,
   OperationIdSchema,
+  RecordMetaSchema,
   RepRangeSchema,
   UtcTimestampSchema,
   ZonedTimestampSchema,
@@ -378,3 +379,157 @@ export const HiddenLineSchema = z.object({
   atUtc: UtcTimestampSchema,
 });
 export type HiddenLine = z.infer<typeof HiddenLineSchema>;
+
+// ---------------------------------------------------------------------------
+// The coach's structured reply (PM decision 10 Oct: honesty is structural)
+
+/**
+ * The only way a model step can end a turn: a strict function call whose
+ * arguments are this object. `message` is advice, explanation or a question,
+ * never a report of a change; every change Ben sees is a card rendered from
+ * the committed `ActionRecord`. `offer` marks a coach-raised offer to adjust
+ * today's remaining sets (CLAUDE.md rule 3: it waits for Ben's accept), so
+ * the engine knows structurally, not from the words, that a bare "yes" next
+ * accepts it.
+ */
+export const COACH_REPLY_TOOL_NAME = 'reply';
+
+export const CoachOfferKindSchema = z.enum(['adjust_today']);
+export type CoachOfferKind = z.infer<typeof CoachOfferKindSchema>;
+
+export const CoachReplySchema = z.strictObject({
+  message: z.string().max(4000),
+  offer: CoachOfferKindSchema.nullable(),
+});
+export type CoachReply = z.infer<typeof CoachReplySchema>;
+
+// ---------------------------------------------------------------------------
+// Coach storage (ADR 0019 §9; all Your data except playbook candidates)
+
+/** A conversation. Owner-scoped; v1 keeps every thread. */
+export const CoachThreadSchema = RecordMetaSchema.extend({
+  /** The workout the thread was opened from, if any. */
+  sessionId: IdSchema.nullable(),
+  /** The thread list's title: the first words of Ben's first message (app text). */
+  title: z.string().min(1).max(80),
+});
+export type CoachThread = z.infer<typeof CoachThreadSchema>;
+
+export const CoachTurnStatusSchema = z.enum(['running', 'completed', 'interrupted', 'failed', 'cancelled']);
+export type CoachTurnStatus = z.infer<typeof CoachTurnStatusSchema>;
+
+export const CoachTurnErrorSchema = z.enum([
+  'usage_limit',
+  'not_eligible',
+  'auth_expired',
+  'model_gone',
+  'unavailable',
+  'network',
+  'timeout',
+  'cancelled',
+  'no_reply',
+  'too_many_steps',
+]);
+export type CoachTurnError = z.infer<typeof CoachTurnErrorSchema>;
+
+/** One line of the turn's tool log (`ToolSummaryLine`, `Why?` → `Not used`). App text. */
+export const ToolLogLineSchema = z.object({
+  tool: z.string().min(1).max(80),
+  outcome: z.enum(['read', 'committed', 'proposed', 'rejected', 'stale', 'failed', 'not_allowed', 'invalid_args', 'replayed']),
+  text: z.string().min(1).max(300),
+  actionId: IdSchema.nullable(),
+});
+export type ToolLogLine = z.infer<typeof ToolLogLineSchema>;
+
+/**
+ * One request to the coach and what came of it. A turn still `running` at
+ * launch was cut off by a force-close and becomes `interrupted` (restart
+ * recovery); its committed actions are in `coach_actions` either way.
+ */
+export const CoachTurnSchema = RecordMetaSchema.extend({
+  threadId: IdSchema,
+  kind: CoachTurnKindSchema,
+  status: CoachTurnStatusSchema,
+  error: CoachTurnErrorSchema.nullable(),
+  model: z.string().min(1).max(120),
+  /** `buildCoachContext().contextHash`, so `What the coach can see` can show what was sent. */
+  contextHash: z.string().min(1).max(128),
+  startedAt: ZonedTimestampSchema,
+  endedAtUtc: UtcTimestampSchema.nullable(),
+  toolLog: z.array(ToolLogLineSchema).max(40),
+});
+export type CoachTurn = z.infer<typeof CoachTurnSchema>;
+
+/** Ben's words (or chip) in a turn, saved before the request is sent. */
+export const BenInputSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('words'), text: z.string().min(1).max(4000), spoken: z.boolean() }),
+  z.object({ kind: z.literal('chip'), chip: z.enum(['too_hard', 'too_easy', 'pain', 'lighter_session']) }),
+  z.object({ kind: z.literal('accept_offer'), offer: CoachOfferKindSchema }),
+  /** The post-workout summary turn: no words from Ben (ADR 0019 C8). */
+  z.object({ kind: z.literal('summary') }),
+]);
+export type BenInput = z.infer<typeof BenInputSchema>;
+
+/** What a coach message shows, in order. Every change line is rendered from a saved record at display time. */
+export const CoachShownItemSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('sentence'), text: z.string().min(1).max(2000) }),
+  /** A `[[ref]]` the coach cited; rendered from the record when shown. */
+  z.object({ kind: z.literal('action_line'), actionId: IdSchema }),
+]);
+export type CoachShownItem = z.infer<typeof CoachShownItemSchema>;
+
+/** Append-only. A coach message holds only what passed the checks; hidden lines are kept beside it (CC9). */
+export const CoachMessageSchema = z.object({
+  id: IdSchema,
+  ownerId: IdSchema,
+  threadId: IdSchema,
+  turnId: IdSchema,
+  /** Order within the thread. */
+  ordinal: z.int().min(0),
+  createdAt: ZonedTimestampSchema,
+  body: z.discriminatedUnion('role', [
+    z.object({ role: z.literal('ben'), input: BenInputSchema }),
+    z.object({
+      role: z.literal('coach'),
+      items: z.array(CoachShownItemSchema).max(200),
+      /** Cards: every action this turn committed or proposed, rendered from the record. */
+      actionIds: z.array(IdSchema).max(40),
+      /** `ClaimCheckNote` or the fixed no-change line (app text). */
+      note: z.string().min(1).max(300).nullable(),
+      offer: CoachOfferKindSchema.nullable(),
+      hiddenLines: z.array(HiddenLineSchema).max(200),
+      /** False when the reply was cut off (Stop, stall, force-close): no sentence is padded. */
+      complete: z.boolean(),
+    }),
+  ]),
+});
+export type CoachMessage = z.infer<typeof CoachMessageSchema>;
+
+/** A personal fact Ben asked the coach to remember (coach-memory, v1 subset). Your data. */
+export const MemorySchema = RecordMetaSchema.extend({
+  text: z.string().min(1).max(200),
+  /** `appendContentKeys`: a live memory with the same key is the same memory. */
+  contentKey: z.string().min(1).max(160),
+  status: z.enum(['active', 'forgotten']),
+  /** Ben's words that asked for it (quoted data). */
+  quote: z.string().min(1).max(400),
+  createdByActionId: IdSchema,
+});
+export type Memory = z.infer<typeof MemorySchema>;
+
+/**
+ * A general training rule waiting for Ben's review. Coaching knowledge: no
+ * owner, never in Your data, never used by the coach until approved (CM9).
+ */
+export const PlaybookCandidateSchema = z.object({
+  id: IdSchema,
+  version: z.int().min(1),
+  createdAtUtc: UtcTimestampSchema,
+  updatedAtUtc: UtcTimestampSchema,
+  text: z.string().min(1).max(400),
+  contentKey: z.string().min(1).max(160),
+  statedBy: z.enum(['ben', 'coach']),
+  status: z.enum(['to_review', 'withdrawn']),
+  createdByActionId: IdSchema,
+});
+export type PlaybookCandidate = z.infer<typeof PlaybookCandidateSchema>;

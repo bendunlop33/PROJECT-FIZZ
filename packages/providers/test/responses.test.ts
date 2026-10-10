@@ -55,6 +55,20 @@ describe('plan request body', () => {
     expect(body.parallel_tool_calls).toBe(false);
   });
 
+  it('carries the coach’s structured reply shape: strict functions forced with tool_choice "required"; text.format is not sent (ADR 0019, PM decision 10 Oct)', () => {
+    const reply = {
+      type: 'function' as const,
+      name: 'reply',
+      description: 'Your reply',
+      strict: true,
+      parameters: { type: 'object', properties: { message: { type: 'string' }, offer: { anyOf: [{ type: 'string', enum: ['adjust_today'] }, { type: 'null' }] } }, required: ['message', 'offer'], additionalProperties: false },
+    };
+    const body = buildPlanRequestBody({ ...request, tools: [reply], tool_choice: 'required', parallel_tool_calls: false });
+    expect(body).toMatchObject({ tool_choice: 'required', parallel_tool_calls: false, tools: [{ name: 'reply', strict: true }] });
+    // The plan docs neither allow nor forbid `text`; the guard keeps it out until a device test says otherwise.
+    expect(planRequestProblems({ ...request, text: { format: { type: 'json_schema' } } } as unknown as PlanResponsesRequest)).toContain('unknown field "text"');
+  });
+
   it.each(['temperature', 'max_output_tokens', 'previous_response_id', 'top_p', 'metadata', 'user', 'truncation', 'background'])(
     'rejects %s even when a caller casts around the type',
     (field) => {
@@ -108,6 +122,32 @@ describe('streamResponse', () => {
         firstTokenMs: 250,
       },
     });
+  });
+
+  it('reports every event as it arrives, function calls as soon as their item is done', async () => {
+    const clock = new FakeClock();
+    const { fetch } = fakeFetch({
+      [OPENAI_RESPONSES_URL]: () =>
+        streamResponseOf([
+          sse([
+            { type: 'response.created', response: { id: 'resp_1' } },
+            { type: 'response.function_call_arguments.delta', delta: '{"mess' },
+            { type: 'response.output_item.done', item: { type: 'function_call', call_id: 'c1', name: 'reply', arguments: '{"message":"Hi","offer":null}' } },
+            { type: 'response.output_text.delta', delta: 'stray' },
+            completed,
+          ]),
+        ]),
+    });
+    const seen: unknown[] = [];
+    const r = await streamResponse(request, { fetch, accessToken: 'AT', nowMs: clock.now, onEvent: (e) => seen.push(e) });
+    expect(r.ok).toBe(true);
+    expect(seen).toEqual([
+      { type: 'event', eventType: 'response.created' },
+      { type: 'event', eventType: 'response.function_call_arguments.delta' },
+      { type: 'function_call', call: { callId: 'c1', name: 'reply', arguments: '{"message":"Hi","offer":null}' } },
+      { type: 'text_delta', delta: 'stray' },
+      { type: 'event', eventType: 'response.completed' },
+    ]);
   });
 
   it('maps a usage-limit response.failed that arrives mid-stream, keeping the partial text', async () => {

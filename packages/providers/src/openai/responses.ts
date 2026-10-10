@@ -147,12 +147,25 @@ export interface StreamFailure extends ProviderFailure {
   totalMs: number;
 }
 
+/**
+ * Progress while a response streams, for the coach's turn loop: the
+ * first-event timeout counts from the request to the first event of any
+ * kind (ADR 0019 §7), and a function call is handed over as soon as its item
+ * is done, so a tool can run before the stream ends.
+ */
+export type StreamProgress =
+  | { type: 'text_delta'; delta: string }
+  | { type: 'function_call'; call: FunctionCallOut }
+  | { type: 'event'; eventType: string };
+
 export interface StreamOptions {
   fetch: FetchLike;
   accessToken: string;
   nowMs: () => number;
   /** Called for each text delta (live display). */
   onTextDelta?: (delta: string) => void;
+  /** Called for every parsed stream event (see `StreamProgress`). */
+  onEvent?: (progress: StreamProgress) => void;
   /** Whole-call limit, including streaming. */
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -205,7 +218,7 @@ export async function streamResponse(request: PlanResponsesRequest, options: Str
     const parser = createSseParser();
     const handle = (events: SseEvent[]): ProviderFailure | 'done' | null => {
       for (const ev of events) {
-        const outcome = applyEvent(acc, ev, () => options.nowMs() - started, options.onTextDelta);
+        const outcome = applyEvent(acc, ev, () => options.nowMs() - started, options.onTextDelta, options.onEvent);
         if (outcome !== null) return outcome;
       }
       return null;
@@ -272,13 +285,22 @@ function newAccumulator(): Accumulator {
 }
 
 /** Applies one event. Returns 'done', a failure, or null to keep reading. */
-function applyEvent(acc: Accumulator, ev: SseEvent, elapsedMs: () => number, onTextDelta?: (delta: string) => void): ProviderFailure | 'done' | null {
+function applyEvent(
+  acc: Accumulator,
+  ev: SseEvent,
+  elapsedMs: () => number,
+  onTextDelta?: (delta: string) => void,
+  onEvent?: (progress: StreamProgress) => void,
+): ProviderFailure | 'done' | null {
   if (ev.data === '[DONE]') return null;
   const json = parseJsonObject(ev.data);
   if (json === null) return null;
   acc.eventCount += 1;
   const type = stringField(json, 'type') ?? ev.event ?? '';
   const response = objectField(json, 'response');
+  if (type !== 'response.output_text.delta' && !(type === 'response.output_item.done' && stringField(objectField(json, 'item'), 'type') === 'function_call')) {
+    onEvent?.({ type: 'event', eventType: type });
+  }
   if (response !== undefined) {
     acc.responseId = stringField(response, 'id') ?? acc.responseId;
     acc.model = stringField(response, 'model') ?? acc.model;
@@ -290,17 +312,16 @@ function applyEvent(acc: Accumulator, ev: SseEvent, elapsedMs: () => number, onT
         if (acc.firstTokenMs === null) acc.firstTokenMs = elapsedMs();
         acc.text += delta;
         onTextDelta?.(delta);
+        onEvent?.({ type: 'text_delta', delta });
       }
       return null;
     }
     case 'response.output_item.done': {
       const item = objectField(json, 'item');
       if (stringField(item, 'type') === 'function_call') {
-        acc.functionCalls.push({
-          callId: stringField(item, 'call_id') ?? '',
-          name: stringField(item, 'name') ?? '',
-          arguments: stringField(item, 'arguments') ?? '',
-        });
+        const call = { callId: stringField(item, 'call_id') ?? '', name: stringField(item, 'name') ?? '', arguments: stringField(item, 'arguments') ?? '' };
+        acc.functionCalls.push(call);
+        onEvent?.({ type: 'function_call', call });
       }
       return null;
     }

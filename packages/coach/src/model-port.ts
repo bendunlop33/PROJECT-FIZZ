@@ -16,7 +16,14 @@ export interface ModelRequest {
   model: string;
   instructions: string;
   input: readonly ModelInputItem[];
+  /** This turn's registry tools plus the `reply` function (reply-tool.ts). */
   tools: readonly FunctionToolDefinition[];
+  /**
+   * `required`: every step calls exactly one function, either a registry
+   * tool or `reply`; the model has no free-text channel (PM decision 10 Oct).
+   * Optional only so older test requests stay valid.
+   */
+  toolChoice?: 'required';
   /** Always false: the coach makes one call at a time so each write is checked in order. */
   parallelToolCalls: false;
   signal?: AbortSignal;
@@ -37,6 +44,7 @@ export type ModelErrorKind =
   | 'cancelled';
 
 export type ModelEvent =
+  /** Free text outside any function. Never shown as is (see turn.ts). */
   | { type: 'text_delta'; delta: string }
   | { type: 'tool_call'; callId: string; name: string; arguments: string }
   | { type: 'completed' }
