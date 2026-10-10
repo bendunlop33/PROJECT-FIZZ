@@ -13,7 +13,12 @@ import type * as Bake from '../src/guide/bake';
 
 interface FakePicture {
   draws: number;
+  /** canvas.scale calls, in order. */
+  scales: [number, number][];
 }
+
+/** Path texts Skia was asked to parse. */
+const parsed: string[] = [];
 
 let bake: typeof Bake;
 
@@ -24,7 +29,12 @@ beforeAll(async () => {
       XYWHRect: () => ({}),
       Paint: paint,
       Color: (c: string) => c,
-      Path: { MakeFromSVGString: () => ({}) },
+      Path: {
+        MakeFromSVGString: (s: string) => {
+          parsed.push(s);
+          return {};
+        },
+      },
       PathEffect: { MakeDash: () => ({}) },
       Shader: { MakeLinearGradient: () => ({}) },
       Point: (x: number, y: number) => ({ x, y }),
@@ -34,11 +44,14 @@ beforeAll(async () => {
     StrokeCap: { Round: 0, Butt: 1 },
     StrokeJoin: { Round: 0, Miter: 1 },
     createPicture: (draw: (canvas: unknown) => void): FakePicture => {
-      const pic = { draws: 0 };
+      const pic: FakePicture = { draws: 0, scales: [] };
       const count = () => {
         pic.draws += 1;
       };
-      draw({ drawLine: count, drawCircle: count, drawPath: count, saveLayer: () => undefined, restore: () => undefined });
+      const scale = (x: number, y: number) => {
+        if (pic.draws === 0) pic.scales.push([x, y]);
+      };
+      draw({ drawLine: count, drawCircle: count, drawPath: count, saveLayer: () => undefined, restore: () => undefined, scale });
       return pic;
     },
   }));
@@ -127,6 +140,29 @@ describe('bake plan', () => {
     neutral.forEach((n, i) => {
       expect(n).toBeGreaterThan(off[i] ?? 0);
     });
+  });
+
+  it('records in whole path units under one scale, and parses each path text once per frame (review B2)', async () => {
+    const { PATH_UNITS, opPathData } = await import('../src/guide/draw-plan');
+    const { bakeFrame } = await import('@fizz/catalogue/figure');
+    const squat = guide('barbell-back-squat');
+    const out: FakePicture[] = [];
+    const plan = bake.bakeTasks(squat, 'animation', [], style, out as never[], steady);
+    parsed.length = 0;
+    plan.tasks[0]?.();
+    expect(out[0]?.scales).toEqual([[1 / PATH_UNITS, 1 / PATH_UNITS]]);
+    // Path text is whole numbers only.
+    expect(parsed.length).toBeGreaterThan(10);
+    for (const d of parsed) expect(d).not.toMatch(/\d\.\d/);
+    // A limb's halo and its fill share one parsed path: fewer parses than path ops, one per distinct text.
+    const ops = bakeFrame(squat.prepared, squat.camera, playbackTimes(squat.prepared.guide)[0] ?? 0, [], { pt: steady.pt, muscles: steady.muscles, definition: steady.definition });
+    const texts = ops.flatMap((o) => (o.kind === 'path' ? [opPathData(o)] : []));
+    expect(parsed).toHaveLength(new Set(texts).size);
+    expect(parsed.length).toBeLessThan(texts.length);
+    // The next frame reuses paths that didn't change (props that don't move).
+    parsed.length = 0;
+    plan.tasks[1]?.();
+    expect(parsed.length).toBeLessThan(texts.length);
   });
 
   it('a guide with no labelled positions still bakes one still frame (P6)', () => {

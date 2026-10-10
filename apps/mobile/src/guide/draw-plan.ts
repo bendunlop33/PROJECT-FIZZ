@@ -4,7 +4,16 @@
  * plan with Skia. Mirrors SVG: `opacity` applies to fill and stroke together
  * (a layer when both are drawn), stroke caps default to butt and joins to miter.
  */
-import { pathData, type DrawOp, type GuideStyle, type Vec } from '@fizz/catalogue/figure';
+import { pathDataScaled, type DrawOp, type GuideStyle, type Vec } from '@fizz/catalogue/figure';
+
+/**
+ * Bake units per unit-size coordinate. Path text is whole numbers in these
+ * units (0.1 px on a 1000 px canvas): integers print about 3× faster than
+ * decimals and parse from ~40% less text (guides review B2). The picture is
+ * recorded with one `scale(1 / PATH_UNITS)`, so every other length in the plan
+ * (stroke widths, dashes, gradient ends, lines and circles) is in these units too.
+ */
+export const PATH_UNITS = 10000;
 
 export interface StrokeSpec {
   width: number;
@@ -37,22 +46,26 @@ export interface OpPlan {
   steps: PlanStep[];
 }
 
-export function planOp(op: DrawOp, style: GuideStyle): OpPlan {
+/** `units`: multiply lengths by this (the bake passes `PATH_UNITS`; 1 gives the op's own unit-size numbers). */
+export function planOp(op: DrawOp, style: GuideStyle, units = 1): OpPlan {
+  const u = units;
+  const at = (p: Vec): Vec => (u === 1 ? p : { x: p.x * u, y: p.y * u });
+  const dashOf = (d: readonly number[] | null): readonly number[] | null => (d === null || u === 1 ? d : d.map((x) => x * u));
   const steps: { draw: 'fill' | 'stroke'; color: string; stroke?: StrokeSpec; gradient?: GradientSpec }[] = [];
   switch (op.kind) {
     case 'line':
-      steps.push({ draw: 'stroke', color: style[op.paint], stroke: { width: op.width, join: 'miter', cap: op.cap, dash: op.dash } });
+      steps.push({ draw: 'stroke', color: style[op.paint], stroke: { width: op.width * u, join: 'miter', cap: op.cap, dash: dashOf(op.dash) } });
       break;
     case 'circle':
       if (op.fill) steps.push({ draw: 'fill', color: style[op.fill] });
-      if (op.stroke) steps.push({ draw: 'stroke', color: style[op.stroke], stroke: { width: op.width, join: 'miter', cap: 'butt', dash: null } });
+      if (op.stroke) steps.push({ draw: 'stroke', color: style[op.stroke], stroke: { width: op.width * u, join: 'miter', cap: 'butt', dash: null } });
       break;
     case 'path':
       if (op.gradient) {
         const g = op.gradient;
-        steps.push({ draw: 'fill', color: style[g.stops[0]?.paint ?? 'shade'], gradient: { from: g.from, to: g.to, colors: g.stops.map((st) => rgba(style[st.paint], st.opacity)), positions: g.stops.map((st) => st.at) } });
+        steps.push({ draw: 'fill', color: style[g.stops[0]?.paint ?? 'shade'], gradient: { from: at(g.from), to: at(g.to), colors: g.stops.map((st) => rgba(style[st.paint], st.opacity)), positions: g.stops.map((st) => st.at) } });
       } else if (op.fill) steps.push({ draw: 'fill', color: style[op.fill] });
-      if (op.stroke) steps.push({ draw: 'stroke', color: style[op.stroke], stroke: { width: op.width, join: op.join ?? 'miter', cap: op.cap ?? 'butt', dash: op.dash } });
+      if (op.stroke) steps.push({ draw: 'stroke', color: style[op.stroke], stroke: { width: op.width * u, join: op.join ?? 'miter', cap: op.cap ?? 'butt', dash: dashOf(op.dash) } });
       break;
   }
   const opacity = op.opacity;
@@ -69,10 +82,11 @@ export function planOp(op: DrawOp, style: GuideStyle): OpPlan {
 }
 
 /**
- * SVG path data for a path op in unit coordinates (Skia parses it in one
- * call): the catalogue's own `pathData`, so smooth outlines are the same
- * cubic Béziers the SVG preview draws (guides v2 §7.2).
+ * SVG path data for a path op in `PATH_UNITS` (Skia parses it in one call):
+ * the catalogue's own path builder, so smooth outlines are the same cubic
+ * Béziers the SVG preview draws (guides v2 §7.2). Ops sharing a contour array
+ * (a limb's halo and fill) share the text, and the bake parses it once.
  */
 export function opPathData(op: Extract<DrawOp, { kind: 'path' }>): string {
-  return pathData(op.contours, op.closed, op.smooth, 5);
+  return pathDataScaled(op.contours, op.closed, op.smooth, PATH_UNITS);
 }

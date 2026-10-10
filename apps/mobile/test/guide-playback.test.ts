@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { bundledGuides, catalogueExerciseId, createGuideLibrary, createLazyCatalogue } from '@fizz/catalogue';
-import { bakeFrame, GUIDE_MUSCLE_COLOR, GUIDE_TOKEN_NAMES, guideStyleFromTokens, type DrawOp, type GuideTokens } from '@fizz/catalogue/figure';
+import { bakeFrame, GUIDE_MUSCLE_COLOR, GUIDE_TOKEN_NAMES, guideStyleFromTokens, pathData, type DrawOp, type GuideTokens } from '@fizz/catalogue/figure';
 
 import { advanceClock, frameIndexAt, MAX_AUTOPLAY_PASSES, passMs } from '../src/guide/clock';
-import { opPathData, planOp, rgba } from '../src/guide/draw-plan';
+import { opPathData, PATH_UNITS, planOp, rgba } from '../src/guide/draw-plan';
 import { BUNDLED_GUIDE_FILES } from '../../../packages/catalogue/src/generated/guide-files';
 import { buildHowToView, bundledHowToSources, DRAFT_GUIDE_LABEL, guideDraftLabel, hasHowTo, howToKeyForExerciseId, howToLayout, type HowToSources } from '../src/guide/how-to';
 import { initialPlayerState, isRunning, MUSCLE_PULSE, musclePulseOn, playControlLabel, playerReducer, stepAccessibilityLabel, stepAnnouncement, stepPosition, type PlayerAction, type PlayerState } from '../src/guide/player-model';
@@ -433,13 +433,35 @@ describe('Skia draw plan', () => {
     expect(planOp(halo, style)).toMatchObject({ layerAlpha: null, steps: [{ draw: 'fill', color: '#000001' }, { draw: 'stroke', stroke: { join: 'round', cap: 'butt' } }] });
   });
 
-  it('writes compact SVG path data for Skia: polylines, smooth cubics and several contours', () => {
+  it('writes compact SVG path data for Skia in whole PATH_UNITS: polylines, smooth cubics and several contours', () => {
     const path = (contours: { x: number; y: number }[][], closed: boolean, smooth: boolean): Extract<DrawOp, { kind: 'path' }> => ({ kind: 'path', contours, closed, smooth, fill: 'nearBody', gradient: null, stroke: null, width: 0, join: null, cap: null, dash: null, opacity: 1 });
-    expect(opPathData(path([[{ x: 0.123456789, y: 1 }, { x: 0.5, y: 0.25 }]], true, false))).toBe('M0.12346 1L0.5 0.25Z');
-    expect(opPathData(path([[{ x: 0, y: 0 }, { x: 1, y: 1 }]], false, false))).toBe('M0 0L1 1');
+    expect(PATH_UNITS).toBe(10000);
+    expect(opPathData(path([[{ x: 0.123456789, y: 1 }, { x: 0.5, y: 0.25 }]], true, false))).toBe('M1235 10000L5000 2500Z');
+    expect(opPathData(path([[{ x: 0, y: 0 }, { x: 1, y: 1 }]], false, false))).toBe('M0 0L10000 10000');
     const square = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
     expect(opPathData(path([square], true, true))).toMatch(/^M0 0C.*Z$/);
     expect(opPathData(path([square, square], true, false)).match(/M/g)).toHaveLength(2);
+    // The same cubics as the SVG preview's path data, only in other units (to within the rounding of each).
+    const blob = [{ x: 0.1, y: 0.2 }, { x: 0.43, y: 0.18 }, { x: 0.61, y: 0.44 }, { x: 0.38, y: 0.71 }, { x: 0.12, y: 0.52 }];
+    const nums = (d: string): number[] => (d.match(/-?\d+(\.\d+)?/g) ?? []).map(Number);
+    const svg = nums(pathData([blob], true, true, 6));
+    const app = nums(opPathData(path([blob], true, true)));
+    expect(app).toHaveLength(svg.length);
+    app.forEach((n, i) => {
+      expect(Math.abs(n / PATH_UNITS - (svg[i] ?? NaN))).toBeLessThanOrEqual(0.5 / PATH_UNITS + 1e-6);
+    });
+  });
+
+  it('scales every other length of the plan by the bake units (the picture is recorded under scale(1 / units))', () => {
+    const floor: DrawOp = { kind: 'line', a: { x: 0, y: 0.9 }, b: { x: 1, y: 0.9 }, width: 0.004, paint: 'trace', cap: 'butt', dash: [0.03, 0.02], opacity: 1 };
+    const [step] = planOp(floor, style, 100).steps;
+    expect(step?.draw === 'stroke' && step.stroke.width).toBeCloseTo(0.4, 12);
+    expect(step?.draw === 'stroke' && step.stroke.dash).toEqual([3, 2]);
+    const band: DrawOp = { kind: 'path', contours: [], closed: true, smooth: false, fill: null, gradient: { from: { x: 0.1, y: 0.2 }, to: { x: 0.3, y: 0.4 }, stops: [{ at: 0, paint: 'shade', opacity: 0.26 }] }, stroke: 'shade', width: 0.01, join: 'round', cap: null, dash: null, opacity: 1 };
+    const [fill, stroke] = planOp(band, style, 100).steps;
+    expect(fill?.draw === 'fill' && fill.gradient?.from).toEqual({ x: 10, y: 20 });
+    expect(fill?.draw === 'fill' && fill.gradient?.to).toEqual({ x: 30, y: 40 });
+    expect(stroke?.draw === 'stroke' && stroke.stroke.width).toBe(1);
   });
 
   it('turns a shading gradient into one fill with per-stop rgba colours', () => {

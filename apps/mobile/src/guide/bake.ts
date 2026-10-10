@@ -14,7 +14,7 @@
  * lazily with the player, and every Skia call happens inside a bake task,
  * where a throw is caught and the How to screen falls back to the cues.
  */
-import { PaintStyle, Skia, StrokeCap, StrokeJoin, TileMode, createPicture, type SkPaint, type SkPicture } from '@shopify/react-native-skia';
+import { PaintStyle, Skia, StrokeCap, StrokeJoin, TileMode, createPicture, type SkPaint, type SkPath, type SkPicture } from '@shopify/react-native-skia';
 
 import type { LoadedGuide } from '@fizz/catalogue';
 import {
@@ -32,7 +32,7 @@ import {
   type Vec,
 } from '@fizz/catalogue/figure';
 
-import { opPathData, planOp, type PlanStep } from './draw-plan';
+import { opPathData, PATH_UNITS, planOp, type PlanStep } from './draw-plan';
 
 /** The recorded area in unit coordinates (with a margin for strokes at the edge). */
 function unitBounds() {
@@ -70,21 +70,54 @@ function paintFor(step: PlanStep, cache: Map<string, SkPaint>): SkPaint {
   return paint;
 }
 
-/** One frame's ops as a picture in unit coordinates. */
-export function recordOps(ops: readonly DrawOp[], style: GuideStyle, paints: Map<string, SkPaint>): SkPicture {
+/**
+ * Parsed paths of the frame being recorded and the one before: a limb's halo
+ * and fill share one path, and props that don't move are parsed once per
+ * bake rather than once per frame. Two generations, so memory stays at about
+ * two frames' paths.
+ */
+export interface PathCache {
+  prev: Map<string, SkPath | null>;
+  cur: Map<string, SkPath | null>;
+}
+
+export function newPathCache(): PathCache {
+  return { prev: new Map(), cur: new Map() };
+}
+
+function pathFor(text: string, cache: PathCache): SkPath | null {
+  const hit = cache.cur.get(text) ?? cache.prev.get(text);
+  if (hit !== undefined) {
+    cache.cur.set(text, hit);
+    return hit;
+  }
+  const path = Skia.Path.MakeFromSVGString(text);
+  cache.cur.set(text, path);
+  return path;
+}
+
+/**
+ * One frame's ops as a picture in unit coordinates. The ops are drawn in
+ * `PATH_UNITS` (whole-number path text) under one `scale(1 / PATH_UNITS)`.
+ */
+export function recordOps(ops: readonly DrawOp[], style: GuideStyle, paints: Map<string, SkPaint>, paths: PathCache = newPathCache()): SkPicture {
+  paths.prev = paths.cur;
+  paths.cur = new Map();
+  const u = PATH_UNITS;
   return createPicture((canvas) => {
+    canvas.scale(1 / u, 1 / u);
     for (const op of ops) {
-      const plan = planOp(op, style);
+      const plan = planOp(op, style, u);
       if (plan.layerAlpha !== null) {
         const layer = Skia.Paint();
         layer.setAlphaf(plan.layerAlpha);
         canvas.saveLayer(layer);
       }
-      const path = op.kind === 'path' ? Skia.Path.MakeFromSVGString(opPathData(op)) : null;
+      const path = op.kind === 'path' ? pathFor(opPathData(op), paths) : null;
       for (const step of plan.steps) {
         const paint = paintFor(step, paints);
-        if (op.kind === 'line') canvas.drawLine(op.a.x, op.a.y, op.b.x, op.b.y, paint);
-        else if (op.kind === 'circle') canvas.drawCircle(op.c.x, op.c.y, op.r, paint);
+        if (op.kind === 'line') canvas.drawLine(op.a.x * u, op.a.y * u, op.b.x * u, op.b.y * u, paint);
+        else if (op.kind === 'circle') canvas.drawCircle(op.c.x * u, op.c.y * u, op.r * u, paint);
         else if (path) canvas.drawPath(path, paint);
       }
       if (plan.layerAlpha !== null) canvas.restore();
@@ -132,6 +165,7 @@ export function bakeTasks(loaded: LoadedGuide, kind: BakeKind, stops: readonly K
     return w === null ? steady : { ...steady, pulse: w };
   };
   const paints = new Map<string, SkPaint>();
+  const paths = newPathCache();
   const mode = kind === 'animation' ? 'animated' : 'static';
   const times = kind === 'animation' ? playbackTimes(prepared.guide) : stops.length > 0 ? stops.map((s) => s.t) : [0];
   const first = times[0] ?? 0;
@@ -144,7 +178,7 @@ export function bakeTasks(loaded: LoadedGuide, kind: BakeKind, stops: readonly K
     // the canvas is never empty while they're taken (review N1); it's redrawn
     // with the trace below.
     tasks.push(() => {
-      out[0] = recordOps(bakeFrame(prepared, camera, first, [], optsAt(first)), style, paints);
+      out[0] = recordOps(bakeFrame(prepared, camera, first, [], optsAt(first)), style, paints, paths);
     });
     for (const t of plan.times) {
       tasks.push(() => {
@@ -155,13 +189,13 @@ export function bakeTasks(loaded: LoadedGuide, kind: BakeKind, stops: readonly K
   }
   times.forEach((t, i) => {
     tasks.push(() => {
-      out[i] = recordOps(bakeFrame(prepared, camera, t, trace, optsAt(t)), style, paints);
+      out[i] = recordOps(bakeFrame(prepared, camera, t, trace, optsAt(t)), style, paints, paths);
     });
   });
   if (pulse) {
     const at = times.length;
     tasks.push(() => {
-      out[at] = recordOps(bakeFrame(prepared, camera, first, trace, steady), style, paints);
+      out[at] = recordOps(bakeFrame(prepared, camera, first, trace, steady), style, paints, paths);
     });
   }
   return { tasks, firstSync: 1, steadyPoster: pulse ? times.length : null };
