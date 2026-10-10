@@ -498,7 +498,10 @@ function upNextLine(state: SessionAggregate, focus: FocusView): string {
   const ex = state.exercises.find((e) => e.id === focus.sessionExerciseId);
   const eq = ex ? equipmentOf(state, ex) : null;
   const set = state.sets.find((s) => s.id === focus.setId);
-  const target = set && ex ? targetShort(set.planned, { convention: ex.loadConvention, equipment: eq }) : null;
+  // No planned load (an exercise added with no history) but a carried load to log: the line names
+  // that load with the planned reps, so the next line says what will be lifted (premium-feel §3.6, D6).
+  const planned = set && set.planned.load === null && focus.draft.load !== null && (set.planned.reps !== null || set.planned.durationS !== null) ? { ...set.planned, load: focus.draft.load } : set?.planned;
+  const target = planned && ex ? targetShort(planned, { convention: ex.loadConvention, equipment: eq }) : null;
   // `Target (built-in rule) 3–6 reps` → `3–6 reps`: the label stays on the set view.
   const what = target !== null ? target.replace(/^Target (\([^)]*\) )?/, '') : focus.logLabel === null ? null : focus.logLabel.replace(/^Log /, '');
   return [sameExercise ? null : focus.exerciseName, `Set ${String(focus.setNumber)}`, what].filter((p): p is string => p !== null).join(' · ');

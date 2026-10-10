@@ -79,10 +79,26 @@ describe('open-ended workout: rest after every set, Add exercise when all done (
     expect(s.restTimer).toMatchObject({ status: 'running', durationS: 180 });
     const v1 = view(s, 40);
     expect(v1.phase).toBe('resting');
-    expect(plain(v1.upNext)).toBe('Set 2 · 3–6 reps');
+    expect(plain(v1.upNext)).toBe('Set 2 · 60 kg × 3–6');
     expect(v1.focus?.setId).toBe(sets[1]?.id);
     expect(v1.focus?.draft.load).toEqual(kg(60));
     expect(plain(v1.focus?.logLabel)).toBe('Log 60 kg × 6');
+  });
+
+  it('Rest next line names the load to lift: per-hand dumbbells and lb keep their convention and unit (premium-feel §3.6)', () => {
+    let s = openWorkoutWith(CURL_EX, dumbbells());
+    s = apply(s, logCmd(setsFor(s, CURL_EX.id)[0]?.id ?? '', values(kg(12.5, 'per_hand'), 10), 30));
+    expect(plain(view(s, 40).upNext)).toBe('Set 2 · 12.5 kg each × 8–12');
+
+    let p = openWorkoutWith(BENCH_EX, barbell({ unit: 'lb', barMass: 45, plates: [{ mass: 45, count: 4 }, { mass: 5, count: 2 }] }), 'lb');
+    p = apply(p, logCmd(setsFor(p, BENCH_EX.id)[0]?.id ?? '', values(lb(135), 5), 30));
+    expect(plain(view(p, 40).upNext)).toBe('Set 2 · 135 lb × 3–6');
+
+    // Assisted: the line keeps the assistance wording, never a bare number that reads as added load.
+    const PULL = exercise(503, 'Assisted pull-up', { movementPattern: 'vertical_pull', primaryMuscles: ['lats'], compatibleEquipment: ['assisted_stack'], defaultLoadConvention: 'assistance', mechanic: 'compound' });
+    let a = openWorkoutWith(PULL, assisted());
+    a = apply(a, logCmd(setsFor(a, PULL.id)[0]?.id ?? '', values(kg(30, 'assistance'), 8), 30));
+    expect(plain(view(a, 40).upNext)).toMatch(/^Set 2 · Assist 30 kg × /);
   });
 
   it('the last set so far still starts the rest; the primary is Add exercise, and Finish cancels the rest', () => {

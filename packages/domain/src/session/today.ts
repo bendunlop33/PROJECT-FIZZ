@@ -57,12 +57,38 @@ export interface TodayInput {
   titles?: Readonly<Record<string, string>>;
 }
 
-/** One day of This week's strip: trained (filled), today (ringed), or neither. Never a plan we don't have. */
+/**
+ * One day of This week's strip: trained (filled), in progress (ring with a
+ * centre), today (ringed), or neither. Never a plan we don't have.
+ * A day can be both trained and in progress (premium-feel.md §2.5).
+ */
 export interface WeekDay {
   letter: string;
   localDate: string;
   trained: boolean;
+  inProgress: boolean;
   today: boolean;
+}
+
+/**
+ * This week's line (premium-feel.md §2.5). An active workout is never "none":
+ * the bug Ben saw on device was a workout in progress reading as no workouts.
+ */
+export function weekText(finishedCount: number, activeTitle: string | null): string {
+  if (activeTitle !== null) {
+    return finishedCount === 0 ? `${activeTitle} in progress` : `${String(finishedCount)} done · ${activeTitle} in progress`;
+  }
+  if (finishedCount === 0) return 'No workouts yet this week.';
+  return finishedCount === 1 ? '1 workout this week' : `${String(finishedCount)} workouts this week`;
+}
+
+/** VoiceOver label for the strip: `This week: 2 days trained, today in progress`. */
+export function weekStripLabel(days: readonly WeekDay[]): string {
+  const trained = days.filter((d) => d.trained).length;
+  const parts = [trained === 1 ? '1 day trained' : `${String(trained)} days trained`];
+  const live = days.find((d) => d.inProgress);
+  if (live) parts.push(live.today ? 'today in progress' : 'a workout in progress');
+  return `This week: ${parts.join(', ')}`;
 }
 
 export interface TodayView {
@@ -134,8 +160,16 @@ export function buildTodayView(input: TodayInput): TodayView {
   }
 
   const count = input.finishedThisWeek.length;
-  const text = count === 0 ? 'No workouts logged yet this week.' : count === 1 ? '1 workout this week' : `${String(count)} workouts this week`;
+  const live = active && active.session.status === 'active' ? active : null;
+  const activeLocalDate = live ? input.localDateOf(live.session.startedAt.utc) : null;
+  const text = weekText(count, live ? titleOf(live) : null);
   const trainedDates = new Set(input.finishedThisWeek.map((a) => dateOnlyOf(a.session) ?? input.localDateOf(a.session.startedAt.utc)));
-  const days = (input.weekDates ?? []).map((d, i) => ({ letter: 'MTWTFSS'[i] ?? '', localDate: d, trained: trainedDates.has(d), today: d === input.todayLocalDate }));
+  const days = (input.weekDates ?? []).map((d, i) => ({
+    letter: 'MTWTFSS'[i] ?? '',
+    localDate: d,
+    trained: trainedDates.has(d),
+    inProgress: d === activeLocalDate,
+    today: d === input.todayLocalDate,
+  }));
   return { main, week: { count, text, days }, unlinkedCheckIn: reusableCheckIn(input.recentCheckIns, nowMs) };
 }

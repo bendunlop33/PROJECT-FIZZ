@@ -120,7 +120,7 @@ describe('first run: install to first set', () => {
     if (!data) throw new Error('no workout');
     v = s.workout.view(data, h.clockMs, null);
     expect(v.rest).toMatchObject({ kind: 'running', remainingMs: 160_000 });
-    expect(plain(v.upNext)).toBe('Set 2 · 3–6 reps');
+    expect(plain(v.upNext)).toBe('Set 2 · 60 kg × 3–6');
     expect(plain(v.primary.label)).toBe('Log 60 kg × 6');
 
     // Sets 2 and 3: the last one so far still rests, and the primary adds the next exercise.

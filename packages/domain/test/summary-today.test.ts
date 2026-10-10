@@ -17,6 +17,8 @@ import {
   toHistorySessions,
   toIso,
   lastComparableSession,
+  weekStripLabel,
+  weekText,
   type HistorySession,
   type SummaryInput,
 } from '../src/index';
@@ -167,7 +169,7 @@ describe('buildTodayView', () => {
   const base = { todayLocalDate: local(at(0).utc), localDateOf: local, recentCheckIns: [], finishedThisWeek: [] as SessionAggregate[] };
 
   it('no workout: Nothing planned; the week line counts finished workouts', () => {
-    expect(buildTodayView({ ...base, nowMs: ms(0), active: null })).toMatchObject({ main: { kind: 'no_plan' }, week: { count: 0, text: 'No workouts logged yet this week.' } });
+    expect(buildTodayView({ ...base, nowMs: ms(0), active: null })).toMatchObject({ main: { kind: 'no_plan' }, week: { count: 0, text: 'No workouts yet this week.' } });
     const done = finish(logAll(workout(BENCH, barbell(), 1, -7200), [values(kg(60), 10)], -7200), -6000);
     const v = buildTodayView({ ...base, nowMs: ms(0), active: null, finishedThisWeek: [done] });
     expect(v.main).toMatchObject({ kind: 'done_today', title: 'Workout' });
@@ -190,6 +192,40 @@ describe('buildTodayView', () => {
       ['S', false, false],
     ]);
     expect(v.main).toMatchObject({ kind: 'done_today', title: 'Push' });
+  });
+
+  it('week line: a workout in progress is never "no workouts" (premium-feel §2.5, device bug D1)', () => {
+    const today = local(at(0).utc);
+    const weekDates = ['x-1', 'x-2', 'x-3', 'x-4', 'x-5', today, 'x-7'];
+    const s = logAll(workout(BENCH, barbell(), 3), [values(kg(60), 10)], 0);
+    const v = buildTodayView({ ...base, nowMs: ms(30), active: s, weekDates });
+    expect(v.week.count).toBe(0);
+    expect(v.week.text).toBe('Workout in progress');
+    expect(v.week.text).not.toMatch(/No workouts/);
+    expect(v.week.days.map((d) => [d.trained, d.inProgress, d.today])[5]).toEqual([false, true, true]);
+    expect(weekStripLabel(v.week.days)).toBe('This week: 0 days trained, today in progress');
+
+    const done = finish(logAll(workout(BENCH, barbell(), 1, -7200), [values(kg(60), 10)], -7200), -6000);
+    const both = buildTodayView({ ...base, nowMs: ms(30), active: s, finishedThisWeek: [done], weekDates, titles: { [s.session.id]: 'Full body' } });
+    expect(both.week.text).toBe('1 done · Full body in progress');
+    expect(both.week.days[5]).toMatchObject({ trained: true, inProgress: true, today: true });
+    expect(weekStripLabel(both.week.days)).toBe('This week: 1 day trained, today in progress');
+  });
+
+  it('weekText: every row of the §2.5 table', () => {
+    expect(weekText(0, null)).toBe('No workouts yet this week.');
+    expect(weekText(0, 'Full body')).toBe('Full body in progress');
+    expect(weekText(1, null)).toBe('1 workout this week');
+    expect(weekText(3, null)).toBe('3 workouts this week');
+    expect(weekText(2, 'Push A')).toBe('2 done · Push A in progress');
+  });
+
+  it('a finished session is not in progress', () => {
+    const today = local(at(0).utc);
+    const done = finish(logAll(workout(BENCH, barbell(), 1, -7200), [values(kg(60), 10)], -7200), -6000);
+    const v = buildTodayView({ ...base, nowMs: ms(0), active: done, finishedThisWeek: [done], weekDates: [today] });
+    expect(v.week.days[0]).toMatchObject({ trained: true, inProgress: false });
+    expect(v.week.text).toBe('1 workout this week');
   });
 
   it('resume card: now line, progress and rest status', () => {
