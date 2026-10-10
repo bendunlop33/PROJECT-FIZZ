@@ -174,7 +174,14 @@ interface Mention {
   names: string[];
   all: boolean;
 }
-type SetOp = 'change' | 'remove_set' | 'add_set';
+/** `set_type`: an AMRAP, drop set or failure set. `adjust_pending_sets` can't change set types, so it never matches. */
+type SetOp = 'change' | 'remove_set' | 'add_set' | 'set_type';
+/**
+ * How a number was said (review r5 B1a): `value` is a target now ("95 for
+ * the rest"); `previous` is the old one ("from 100", "not 100", "instead of
+ * 100"); `delta` is a difference ("took 5 off", "2 more reps").
+ */
+type NumberRole = 'value' | 'previous' | 'delta';
 
 interface Claim {
   kinds: Set<ClaimKind>;
@@ -182,8 +189,11 @@ interface Claim {
   setNumbers: number[];
   /** Alias words found, each mapped to the names it could mean. */
   exerciseMentions: Mention[];
-  loads: { value: number; unit: 'kg' | 'lb' }[];
-  bareNumbers: number[];
+  loads: { value: number; unit: 'kg' | 'lb'; role: NumberRole }[];
+  bareNumbers: { value: number; role: NumberRole }[];
+  /** A load convention the reply named ("per side", "each dumbbell", "on the stack"); null when none. */
+  convention: Load['convention'] | 'per_side' | null;
+  conventionText: string | null;
   unverifiable: boolean;
   /** "All your sets are 95 now": every set, which a ledger of changed sets can't confirm (review r4 B3). */
   allSets: boolean;
@@ -298,6 +308,8 @@ const WILL_VALUE = /\b(?:will (?:now )?be|you will (?:now )?(?:be (?:doing|lifti
 const PRESENT_STATE: readonly RegExp[] = [
   /\b(?:is|are|goes|go|comes|come|drops|moves|jumps) (?:now )?(?:down |up )?to \d/,
   /\b(?:is|are) (?:now )?(?:down|up) to\b/,
+  // Review r5: "All your lifts are down 5".
+  /\b(?:is|are) (?:now )?(?:down|up) (?:by )?\d/,
   /\b(?:is|are) (?:now )?(?:at |on )?\d/,
   /\b(?:you|we) are (?:now )?(?:at|on) \d/,
   /\b(?:is|are) (?:now )?(?:out|in|gone|off)(?: (?:for|of|instead|next|from|today|now)\b|$)/,
@@ -410,7 +422,7 @@ function presentStateClaim(clause: string, sentence: string): boolean {
   if (OFFER_TAIL.test(sentence)) return false;
   const words = clause.split(' ');
   if (words.some((w) => SUGGESTIVE.has(w))) return false;
-  return !/\b(?:when|once|after|until)\b/.test(clause);
+  return !/\b(?:when|once|until)\b|\bafter (?!this\b|that\b|here\b|now\b)/.test(clause);
 }
 
 // ---------------------------------------------------------------------------
@@ -472,6 +484,59 @@ function r4FormClaim(words: readonly string[], clause: string, sentence: string)
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Review r5 B1b: forms the r4 lists still kept with nothing saved. The lists
+// can't promise recall; `needsNoChangeLine` in `reply.ts` is the backstop.
+
+const UNDO_R5 = /\bback (?:at|on|to) \d|^(?:it is |that is |they are |we are |you are )?(?:all )?(?:now )?same as (?:before|it was|they were)(?: now)?$|^as you were$|\bundo (?:worked|went through|is done|done|complete|stuck)\b|\bback to (?:normal|how it was|the original|where it was|the old|what it was)\b/;
+/** "Losing set 4", "Killed set 4", "Bye bye set 4", "Four sets becomes three", "Only three sets today". */
+const REMOVE_R5 =
+  /\b(?:losing|lose|killed|killing|lost|bye bye|goodbye|so long|ditching|binning|nuking|nuked|zapping|skipping|skipped|scratching|dropping|cutting) (?:the |your )?(?:sets? [\d_]+|(?:last|final|extra|\w+th) sets?)\b|\b\d+ sets? (?:becomes?|turns? into|is now|are now|goes to|go to|now|down to|drops? to) \d+\b|\b\d+ sets? (?:today |now )?instead of \d+\b|\bonly \d+ sets?\b(?! (?:to go|left)\b)/;
+const ADD_R5 = /\b(?:tacked|tacking|tack|stuck|bolted|bolting|chucked|chucking|tagged|tagging|threw|throwing|whacked|slapped|added) (?:on )?(?:a|an|one|another|an extra)(?: \w+)? set\b/;
+/** "AMRAP on the last set", "Last set to failure", "Drop set on the end". */
+const SET_TYPE_R5 = /\b(?:amrap|to failure|drop ?set|rest-?pause|myo ?reps?|cluster(?: set)?|failure set)\b.*\b(?:on|for) (?:the )?(?:last|final|end|sets? [\d_]+)\b|\b(?:last|final) set (?:to|is|as|goes to) (?:failure|an? amrap|amrap)\b|\b(?:drop ?set|amrap|failure set) (?:on|at) the end\b/;
+/** "Two sets at 95 to go", "Rest of bench at 95", "Hack squat at 95 now", "Bench stays 95 next session". */
+const VALUE_R5 = /\bsets? (?:at|@) \d+(?:\.\d+)?(?: \w+)? (?:to go|left|remaining)\b|^(?:the )?rest of (?:the |your )?\w+(?: \w+)? (?:at|@|on) \d|\bat \d+(?:\.\d+)?(?: (?:kgs?|lbs?|kilos?|pounds?))? now\b|\b(?:stays?|staying|holds?|holding|sticks?|sticking|remains?) (?:at |on )?\d+(?:\.\d+)?(?: (?:kgs?|lbs?|kilos?|pounds?))? (?:next|for next|from now|going forward)\b|\bnext (?:session|time|week|workout)\b.*\b(?:stays?|holds?|remains?|sticks?) (?:at |on )?\d/;
+/** "Pec deck in for cable fly", "Pec deck for cable fly next time", "Cable fly → pec deck", "Pec deck > cable fly from now" (CC10). */
+const STRUCT_R5: readonly RegExp[] = [
+  new RegExp(`^(?:[a-z]+ ){0,2}${EX}(?: [a-z]+)? (?:is )?in for (?:the |your )?(?:[a-z]+ ){0,2}${EX}\\b`),
+  new RegExp(`^(?:[a-z]+ ){0,2}${EX}(?: [a-z]+)? for (?:the |your )?(?:[a-z]+ ){0,2}${EX}\\b.*\\b(?:next (?:time|session|week|workout|push|pull|legs)|from now(?: on)?|going forward|from here)\\b`),
+  new RegExp(`(?:[a-z]+ ){0,2}${EX}(?: [a-z]+)? ?(?:→|->|=>|>|⇒|➔) ?(?:[a-z]+ ){0,2}${EX}\\b`),
+  /\b(?:won'?t|will not|wont|never) (?:show up|appear|feature|come up|be (?:in|on|back)|turn up|pop up)\b.*\bagain\b|\b(?:won'?t|will not|wont|never) see (?:[a-z]+ ){1,3}again\b/,
+];
+/** "Same for squat", "Squat got the same treatment", "Incline as well": the last change, claimed for another exercise. */
+const SAME_FOR_R5: readonly RegExp[] = [
+  new RegExp(`^(?:and |also |plus |oh and )?(?:the )?same (?:for|with|goes for|on|applies to) (?:the |your )?(?:[a-z]+ ){0,2}${EX}\\b`),
+  /\b(?:got|gets|had|has|getting) the same (?:treatment|change|drop|cut|bump|deal|thing)\b/,
+  new RegExp(`^(?:and |also |plus |oh and )?(?:the |your )?(?:[a-z]+ ){0,2}${EX}(?: [a-z]+)? (?:too|as well|also)$`),
+  /\brest (?:at|@) \d/,
+];
+
+/** "Shoulder flag's up", "OHP won't go up for now", "I'll keep OHP where it is". */
+const PAIN_R5 =
+  /\bflags? (?:is |are )?(?:now )?(?:up|raised|in place|live|in)\b|\b(?:will not|won't|wont|not going to|isn't going to|is not going to) (?:go up|progress|increase|move up|climb)\b.*\b(?:for now|for a while|for the time being|until|till|this week|next time|for a bit)\b|\b(?:i will|we will|i am going to|we are going to|i have|we have) (?:keep|hold|leave|park|freeze|pause|lock) [a-z ]{1,30}? (?:where (?:it|they) (?:is|are)|as (?:it|they) (?:is|are)|as is|steady|flat|there|alone|on hold|at \d+(?:\.\d+)?)\b/;
+/** "Locked OHP at 50": past tense sentence-initial with a value. */
+const LOCKED_R5 = /^(?:locked|pinned|fixed|parked|capped|held|kept|left) (?:in )?(?:[a-z]+ ){1,3}(?:at|to|on) \d/;
+/** "I know you train before work now", "I've got that", "Got that", "Playbook has it now". */
+const MEMORY_R5 =
+  /^i (?:now )?know (?:that )?(?:you|your)\b.*\bnow$|^(?:i have |i've |we have )?got (?:that|this)(?: down| noted| saved)?$|^i have got (?:it|that|this)$|\bplaybook (?:has|holds|contains|includes|now has) (?:it|that|this|those)\b|\b(?:it is|that is|they are) (?:now )?in (?:the|your|my) (?:playbook|memory|notes|book|head)\b|^(?:filed|noted|logged|saved|stored|remembered)(?: away| that| it)?$/;
+/** Bare acknowledgements that read as "saved": "In it goes", "On the card now", "Banked". */
+const GENERIC_R5 =
+  /^(?:(?:ok|okay|right|great|sure|alright|cool|perfect|yes|yep|yeah|nice|boom|bang|there|and)\s*)*(?:in (?:it|they|that) goes?|on (?:the|your) card(?: now)?|locked and loaded|in the bank|banked|booked in|all in|all locked in|in the system|in the app|on file|on there now|it is on there|that is on there|it is in|that is in|it is on|that is on|it is live|that is live|live now|that is live now|good to go|ready to go|you are good to go|you are ready|all good to go|you are sorted|you are all sorted|you are on)$/;
+
+function r5FormClaim(words: readonly string[], clause: string, sentence: string): boolean {
+  if (isQuestion(sentence) || OFFER_TAIL.test(sentence)) return false;
+  if (/^(?:if|when|once|unless)\b/.test(sentence) || /\b(?:if|unless)\b/.test(clause)) return false;
+  if (words.some((w) => SUGGESTIVE.has(w))) return false;
+  if (GENERIC_R5.test(clause) || MEMORY_R5.test(clause)) return true;
+  const first = words.find((w) => !INTERJECTIONS.has(w)) ?? '';
+  // "Rest of bench at 95" and "Drop set on the end" state the plan; "Rest 3 minutes" and "Drop the weight" are advice.
+  const statesPlan = (first === 'rest' && /\brest of\b/.test(clause)) || (first === 'drop' && /^(?:\w+ )*?drop ?sets?\b/.test(clause));
+  if (IMPERATIVE_START.has(first) && first !== 'back' && first !== 'keep' && !statesPlan) return false;
+  if (HISTORICAL.test(sentence) && !/\bnow\b/.test(clause)) return false;
+  return [UNDO_R5, REMOVE_R5, ADD_R5, SET_TYPE_R5, VALUE_R5, PAIN_R5, LOCKED_R5, ...SAME_FOR_R5, ...STRUCT_R5].some((re) => matchesUnnegated(re, clause) || (re === STRUCT_R5[3] && re.test(clause)));
+}
+
 function hasClaimTrigger(words: readonly string[], clause: string, sentence: string): boolean {
   for (let i = 0; i < words.length; i += 1) {
     const w = words[i] ?? '';
@@ -517,6 +582,7 @@ function hasClaimTrigger(words: readonly string[], clause: string, sentence: str
   if (verblessClaim(clause, sentence)) return true;
   if (WILL_VALUE.test(clause) && valueSubClauses(clause).some((sub) => matchesUnnegated(WILL_VALUE, sub) && !/\b(?:would|could|should|might|may|if)\b/.test(sub.slice(0, firstValueIndex(sub))))) return true;
   if (r4FormClaim(words, clause, sentence)) return true;
+  if (r5FormClaim(words, clause, sentence)) return true;
   return valueStatement(words, clause, sentence);
 }
 
@@ -577,7 +643,7 @@ function subClauseStatesValue(sub: string): boolean {
   if (beforeWords.some((w) => SUGGESTIVE.has(w)) || UNCHANGED_OR_PAST.test(before)) return false;
   // "95 on the bar" is a target; "the bar is 20 kg" is a fact.
   const facts = sub.replace(/\b(?:on|onto|off) the bar\b/g, ' ');
-  if (HISTORICAL.test(sub) || STATE_FACT_SUBJECT.test(facts) || GENERAL_FACT.test(sub)) return false;
+  if (HISTORICAL.test(sub) || STATE_FACT_SUBJECT.test(facts) || GENERAL_FACT.test(sub.replace(/\bon the (?:stack|pin)\b/g, ' '))) return false;
   // Ben's own past ("you logged 100 kg × 8") is history, not a change.
   if (/\byou (?:\w+ed|did|hit|lifted|got|went|had|made|ran)\b|\byou have (?:\w+ed|done|hit|lifted|gone|had|made|run)\b/.test(before)) return false;
   return true;
@@ -621,7 +687,7 @@ function clausesOf(normalised: string): string[] {
 // ---------------------------------------------------------------------------
 // What a claim is about
 
-const NEXT_WORDS = /\b(?:next (?:time|session|workout|week|push|pull|legs|day)|for next|from now on|going forward|in future|future sessions?|next \w+ day)\b/;
+const NEXT_WORDS = /\b(?:next (?:time|session|workout|week|push|pull|legs|day)|for next|from now on|going forward|in future|future sessions?|next \w+ day|rest of the week|later this week|this week|from (?:tomorrow|next))\b/;
 const TODAY_WORDS = /\b(?:today|this session|this workout|remaining|rest of|last two|last 2|sets? \d)/;
 const MEMORY_WORDS = /\b(?:remember(?:ed)?|memory|memories|noted|note|(?:keep|bear|hold|carry) (?:that|this|it|those|these) in mind|stored|memori[sz]ed|jotted|got (?:that|it|this) down|on (?:the|my) radar)\b/;
 const FORGET_WORDS = /\b(?:forgot|forgotten|forget|forgetting)\b|\blet (?:that|it|this|those) go\b|\b(?:gone from|out of|off|removed from|deleted from) (?:my |the |your )?memor(?:y|ies)\b|\b(?:wiped|erased|cleared|deleted|removed|scrubbed|binned|dropped|ditched)\b.*\b(?:memory|memories|note|notes)\b/;
@@ -629,7 +695,7 @@ const FORGET_WORDS = /\b(?:forgot|forgotten|forget|forgetting)\b|\blet (?:that|i
 const NOT_FORGET = /\b(?:will not|won't|wont|shall not|never|not going to|not gonna) forget\b/;
 const PAIN_WORDS = /\b(?:flag(?:ged)?|pain flag|flagging)\b/;
 const PLAYBOOK_WORDS = /\bplaybook\b|\brule\b/;
-const UNDO_WORDS = /\b(?:undid|undone|undo|undoing|revert(?:ed|ing)?|restor(?:ed|e|ing)|revers(?:ed|e|ing)|rewound|rewind|rolled (?:it |them |that |those |everything )?back|put (?:it |them |that )?back|back to|back (?:how|as|the way) (?:it|they|things) (?:was|were))\b/;
+const UNDO_WORDS = /\bback (?:at|on) \d|\bsame as (?:before|it was|they were)\b|^as you were$|\bundo (?:worked|went through|is done|done|complete)\b|\bback to (?:normal|how it was|the original|where it was|the old|what it was)\b|\b(?:undid|undone|undo|undoing|revert(?:ed|ing)?|restor(?:ed|e|ing)|revers(?:ed|e|ing)|rewound|rewind|rolled (?:it |them |that |those |everything )?back|put (?:it |them |that )?back|back to|back (?:how|as|the way) (?:it|they|things) (?:was|were))\b/;
 const STRUCT_VERBS = /\b(?:swap(?:ped|ping|s)?|switch(?:ed|ing|es)?|replac(?:ed|es?|ing)|substitut(?:ed|es?|ing)|sub(?:bed|bing|s)?|reorder(?:ed|ing|s)?|rearrang(?:ed|es?|ing)|slot(?:ted|s)?|takes over from|comes in for|stands in for)\b/;
 /** "Cable fly is out", "pec deck is in for cable fly": an exercise entering or leaving the plan (CC10). */
 const IN_OUT = /\b(?:is|are) (?:now )?(?:out|in)(?: (?:for|of|instead|next|from|today|now)\b|$)/;
@@ -657,6 +723,9 @@ function aliasesOf(name: string): string[] {
 /** Movement words that, matching no known name, name an exercise outside the session (review r4 B3). */
 const UNKNOWN_MOVEMENT_WORDS = new Set(['fly', 'row', 'curl', 'squat', 'deadlift', 'pulldown', 'extension', 'lunge', 'deck', 'thrust', 'shrug', 'pushdown', 'dip']);
 /** "All your sets", "every set": a claim about sets the ledger can't confirm (review r4 B3). */
+/** The whole session or every exercise (review r5 B1b). */
+const ALL_SESSION =
+  /\b(?:(?:every|each) (?:single )?|all (?:of )?(?:your |the |today's |todays )?)(?:exercises?|lifts?|movements?)\b|\ball (?:of )?today\b|\b(?:the |your )?(?:whole|entire|full) (?:session|workout|day)\b|\bacross the board\b|\b(?:the )?rest of (?:today|the (?:session|workout|day)|your (?:session|workout|day))\b|\b(?:all|every) (?:of )?(?:your |the )?(?:weights|loads|targets)\b/;
 const ALL_SETS = /\b(?:all (?:of )?(?:your |the |my )?sets|every set|each set|all of them|all your (?:sets|work)|every single set)\b/;
 
 /** Does a word of an exercise name match a generic word (after singular and synonyms)? */
@@ -721,25 +790,53 @@ function setNumbersIn(clause: string): number[] {
   return out;
 }
 
-function numbersIn(clause: string): { loads: Claim['loads']; bare: number[]; unverifiable: boolean } {
-  let rest = clause;
+/** Words just before a number that make it the old value. */
+const PREVIOUS_BEFORE = /\b(?:from|not|instead of|rather than|was|were|previously|used to be|down from|up from|off from|over)\s*$/;
+/** Words around a number that make it a difference: "took 5 off", "by 5", "5 lighter", "2 more reps". */
+const DELTA_BEFORE = /\b(?:by|took|take|taken|taking|knocked|knock|knocking|shaved|shave|dropped|drop|trimmed|added|add|adding|plus|minus|another|extra|an extra|coming|came|went|gone|down|up|off)\s*$/;
+const DELTA_AFTER = /^\s*(?:(?:kgs?|lbs?|kilos?|kilograms?|pounds?)\s+)?(?:off|less|lighter|heavier|more|fewer|down|up|on|extra)\b/;
+
+function roleOf(clause: string, index: number, length: number): NumberRole {
+  const before = clause.slice(0, index);
+  const after = clause.slice(index + length);
+  if (PREVIOUS_BEFORE.test(before)) return 'previous';
+  if (DELTA_AFTER.test(after) || DELTA_BEFORE.test(before)) return 'delta';
+  return 'value';
+}
+
+/** "per side", "a side", "each dumbbell", "on the stack", "of assistance": the convention a reply named (review r5 B1a). */
+function conventionIn(clause: string): { convention: Claim['convention']; text: string | null } {
+  const m = /\b(?:per|a|each|on each|either) side\b|\b(?:per|a|each|in each) (?:hand|arm|dumbbell|db|bell)\b|\bper dumbbell\b|\b(?:on the )?stack\b|\bof (?:assistance|help)\b|\bassist(?:ance|ed)?\b|\b(?:added|extra) (?:weight|load)\b|\bon the belt\b|\bon (?:a|the) (?:dip )?belt\b|\b(?:in )?total\b|\ball in\b/.exec(clause);
+  if (m === null) return { convention: null, text: null };
+  const w = m[0];
+  if (/side/.test(w)) return { convention: 'per_side', text: w };
+  if (/hand|arm|dumbbell|db|bell/.test(w)) return { convention: 'per_hand', text: w };
+  if (/stack/.test(w)) return { convention: 'stack', text: w };
+  if (/assist|help/.test(w)) return { convention: 'assistance', text: w };
+  if (/added|extra|belt/.test(w)) return { convention: 'added', text: w };
+  return { convention: 'total', text: w };
+}
+
+function numbersIn(clause: string): { loads: Claim['loads']; bare: Claim['bareNumbers']; unverifiable: boolean } {
   const loads: Claim['loads'] = [];
-  rest = rest.replace(/\b(\d+(?:\.\d+)?) (kgs?|kilos?|kilograms?|lbs?|pounds?)\b/g, (_m, n: string, u: string) => {
-    loads.push({ value: Number(n), unit: u.startsWith('k') ? 'kg' : 'lb' });
-    return ' ';
-  });
   let unverifiable = false;
-  rest = rest.replace(/\b(\d+(?:\.\d+)?) ?(?:%|percent|per cent)/g, () => {
+  // Mask rather than delete, so each number keeps its position for `roleOf`.
+  const blank = (m: string): string => ' '.repeat(m.length);
+  let rest = clause.replace(/\b(\d+(?:\.\d+)?) (kgs?|kilos?|kilograms?|lbs?|pounds?)\b/g, (m: string, n: string, u: string, at: number) => {
+    loads.push({ value: Number(n), unit: u.startsWith('k') ? 'kg' : 'lb', role: roleOf(clause, at, m.length) });
+    return blank(m);
+  });
+  rest = rest.replace(/\b(\d+(?:\.\d+)?) ?(?:%|percent|per cent)/g, (m: string) => {
     unverifiable = true;
-    return ' ';
+    return blank(m);
   });
   rest = rest
-    .replace(/\bsets? [\d_]+\b/g, ' ')
-    .replace(/\b(?:last|final|first|next|remaining|other|those|these|both|the) \d+\b/g, ' ')
-    .replace(/\b(?:rpe|rir|@) ?\d+(?:\.\d+)?\b/g, ' ')
-    .replace(/\b\d{1,2}:\d{2}\b/g, ' ')
-    .replace(/\b(?:set|rep|round) (?:\d+) of (?:\d+)\b/g, ' ');
-  const bare = [...rest.matchAll(/\b\d+(?:\.\d+)?\b/g)].map((m) => Number(m[0]));
+    .replace(/\bsets? [\d_]+\b/g, blank)
+    .replace(/\b(?:last|final|first|next|remaining|other|those|these|both|the) \d+\b/g, blank)
+    .replace(/\b(?:rpe|rir|@) ?\d+(?:\.\d+)?\b/g, blank)
+    .replace(/\b\d{1,2}:\d{2}\b/g, blank)
+    .replace(/\b(?:set|rep|round) (?:\d+) of (?:\d+)\b/g, blank);
+  const bare = [...rest.matchAll(/\b\d+(?:\.\d+)?\b/g)].map((m) => ({ value: Number(m[0]), role: roleOf(clause, m.index, m[0].length) }));
   return { loads, bare, unverifiable };
 }
 
@@ -756,7 +853,7 @@ function kindsOf(clause: string, sentence: string): { kinds: Set<ClaimKind>; op:
   if (UNDO_WORDS.test(clause)) kinds.add('undo');
   // "Next session, bench will be 97.5": the scope may sit in another clause of the sentence.
   const next = NEXT_WORDS.test(clause) || (NEXT_WORDS.test(sentence) && !TODAY_WORDS.test(clause));
-  const aboutValues = /\b(?:weight|load|kg|lb|kilos|pounds|reps?|to \d)\b/.test(clause);
+  const aboutValues = /\b(?:weight|load|kg|lb|kilos|pounds|reps?|to \d+(?:\.\d+)?)\b/.test(clause);
   // Adding or removing something that isn't a set is an exercise change: structural, never a set target (CC10).
   const structural =
     STRUCT_VERBS.test(clause) ||
@@ -767,7 +864,8 @@ function kindsOf(clause: string, sentence: string): { kinds: Set<ClaimKind>; op:
     (BARE_INSTEAD.test(clause) && !hasSetWord && !aboutValues) ||
     (NO_MORE.test(clause) && !hasSetWord && !aboutValues) ||
     (BARE_FROM_NEXT.test(clause) && NO_MORE.test(sentence)) ||
-    STRUCT_R4.some((re) => re.test(clause));
+    STRUCT_R4.some((re) => re.test(clause)) ||
+    STRUCT_R5.some((re) => re.test(clause));
   if (structural) kinds.add('propose_next_workout_change');
   // "Pec deck next time" may be a swap or a target for an exercise already there.
   if (EX_NEXT.test(clause) && !hasSetWord) kinds.add('propose_next_workout_change');
@@ -777,22 +875,32 @@ function kindsOf(clause: string, sentence: string): { kinds: Set<ClaimKind>; op:
     op = /\badd(?:ed|ing)?\b/.test(clause) ? 'add_set' : 'remove_set';
   }
   // "No set 4 today", "Extra set on the end" (review r4 B3).
-  if (NO_SET.test(clause)) op = 'remove_set';
+  if (PAIN_R5.test(clause)) kinds.add('set_pain_flag');
+  if (MEMORY_R5.test(clause)) kinds.add('save_memory');
+  if (GENERIC_R5.test(clause)) return { kinds: new Set<ClaimKind>(['any']), op };
+  if (SET_TYPE.test(clause) || SET_TYPE_R5.test(clause)) op = 'set_type';
+  else if (REMOVE_R5.test(clause)) op = 'remove_set';
+  else if (ADD_R5.test(clause)) op = 'add_set';
+  else if (NO_SET.test(clause)) op = 'remove_set';
   else if (EXTRA_SET.test(clause)) op = 'add_set';
   if (/\bpain\b/.test(clause) && (MEMORY_WORDS.test(clause) || PAIN_WORDS.test(clause))) kinds.add('set_pain_flag');
   if (LOG_WORDS.test(clause) && !MEMORY_WORDS.test(clause)) kinds.add('log_set');
   const meta: readonly ClaimKind[] = ['set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate', 'log_set'];
   const onlyMeta = kinds.size > 0 && [...kinds].every((k) => meta.includes(k));
   if (!onlyMeta && !structural) kinds.add(next ? 'set_next_session_targets' : 'adjust_pending_sets');
-  if (kinds.has('undo')) kinds.add('adjust_pending_sets');
   return { kinds, op };
 }
 
 function parseClaim(clause: string, sentence: string, names: readonly string[], structuralLine = false): Claim {
   const { kinds, op } = structuralLine ? { kinds: new Set<ClaimKind>(['propose_next_workout_change']), op: 'change' as const } : kindsOf(clause, sentence);
   const { loads, bare, unverifiable } = numbersIn(clause);
-  const allSets = ALL_SETS.test(clause) && !/\b(?:remaining|rest|left|last|other)\b/.test(clause);
-  return { kinds, op, setNumbers: setNumbersIn(clause), exerciseMentions: exerciseMentions(clause, names), loads, bareNumbers: bare, unverifiable, allSets };
+  const { convention, text: conventionText } = conventionIn(clause);
+  const allSets =
+    (ALL_SETS.test(clause) && !/\b(?:remaining|rest|left|last|other)\b/.test(clause)) ||
+    // Review r5 B1b: "Everything's 95 now", "Every exercise is lighter", "Whole session is lighter".
+    ALL_SESSION.test(clause) ||
+    (/\beverything\b/.test(clause) && /\d|\b(?:lighter|heavier|easier|harder|less|more|down|up)\b/.test(clause));
+  return { kinds, op, setNumbers: setNumbersIn(clause), exerciseMentions: exerciseMentions(clause, names), loads, bareNumbers: bare, convention, conventionText, unverifiable, allSets };
 }
 
 // ---------------------------------------------------------------------------
@@ -803,12 +911,18 @@ interface RecordFacts {
   changedSets: Set<number>;
   removedSets: Set<number>;
   addedSets: Set<number>;
+  /** Loads as they are now (the `after` side). Review r5 B1a: the old value is never a match. */
   loads: Load[];
+  /** Numbers as they are now: after-loads, after-reps, set numbers, sets after. */
   numbers: Set<string>;
+  /** Values that were replaced (the `before` side): only match a number said as the old one ("from 100", "not 100"). */
+  previous: Set<string>;
+  /** Differences between before and after ("took 5 off", "2 more reps"): only match a number said as a change. */
+  deltas: Set<string>;
   primaryLoad: Load | null;
 }
 
-function addTarget(f: RecordFacts, t: CoachTarget | null): void {
+function addAfter(f: RecordFacts, t: CoachTarget | null): void {
   if (t === null) return;
   if (t.load !== null) {
     f.loads.push(t.load);
@@ -820,8 +934,34 @@ function addTarget(f: RecordFacts, t: CoachTarget | null): void {
   }
 }
 
+function addBefore(f: RecordFacts, before: CoachTarget | null, after: CoachTarget | null): void {
+  if (before === null) return;
+  if (before.load !== null) {
+    f.previous.add(formatNumber(before.load.value));
+    if (after?.load && after.load.unit === before.load.unit) f.deltas.add(formatNumber(Math.abs(after.load.value - before.load.value)));
+  }
+  if (before.reps !== null) {
+    f.previous.add(String(before.reps.min));
+    f.previous.add(String(before.reps.max));
+    if (after?.reps) {
+      f.deltas.add(String(Math.abs(after.reps.min - before.reps.min)));
+      f.deltas.add(String(Math.abs(after.reps.max - before.reps.max)));
+    }
+  }
+}
+
 function factsOf(record: ActionRecord): RecordFacts {
-  const f: RecordFacts = { names: new Set(), changedSets: new Set(), removedSets: new Set(), addedSets: new Set(), loads: [], numbers: new Set(), primaryLoad: null };
+  const f: RecordFacts = {
+    names: new Set(),
+    changedSets: new Set(),
+    removedSets: new Set(),
+    addedSets: new Set(),
+    loads: [],
+    numbers: new Set(),
+    previous: new Set(),
+    deltas: new Set(),
+    primaryLoad: null,
+  };
   const d = record.detail;
   switch (d.kind) {
     case 'adjust_pending_sets':
@@ -832,8 +972,8 @@ function factsOf(record: ActionRecord): RecordFacts {
           if (c.after === null) f.removedSets.add(c.setNumber);
           else if (c.before === null) f.addedSets.add(c.setNumber);
           else f.changedSets.add(c.setNumber);
-          addTarget(f, c.before);
-          addTarget(f, c.after);
+          addAfter(f, c.after);
+          addBefore(f, c.before, c.after);
           if (f.primaryLoad === null && c.after?.load) f.primaryLoad = c.after.load;
         }
       }
@@ -844,8 +984,9 @@ function factsOf(record: ActionRecord): RecordFacts {
         for (const c of ex.changes) {
           f.changedSets.add(c.setNumber);
           f.numbers.add(String(c.setNumber));
-          addTarget(f, c.before);
-          addTarget(f, c.after);
+          // `after` is the value the undo restored, so it is what's on the card now.
+          addAfter(f, c.after);
+          addBefore(f, c.before, c.after);
           if (f.primaryLoad === null && c.after?.load) f.primaryLoad = c.after.load;
         }
       }
@@ -854,10 +995,13 @@ function factsOf(record: ActionRecord): RecordFacts {
       for (const r of d.rows) {
         if (record.status === 'committed' && r.size !== 'small') continue;
         f.names.add(r.exerciseName.toLowerCase());
-        addTarget(f, r.before);
-        addTarget(f, r.after);
+        addAfter(f, r.after);
+        addBefore(f, r.before, r.after);
         if (r.setsAfter !== null) f.numbers.add(String(r.setsAfter));
-        if (r.setsBefore !== null) f.numbers.add(String(r.setsBefore));
+        if (r.setsBefore !== null) {
+          f.previous.add(String(r.setsBefore));
+          if (r.setsAfter !== null) f.deltas.add(String(Math.abs(r.setsAfter - r.setsBefore)));
+        }
         if (f.primaryLoad === null && r.after.load) f.primaryLoad = r.after.load;
       }
       break;
@@ -878,6 +1022,10 @@ function liveCommitted(e: LedgerEntry): boolean {
 }
 
 function kindMatches(claim: Claim, record: ActionRecord): boolean {
+  // Review r5 B1: an undo said with no value ("Rolled back", "As you were") is backed only by a saved
+  // undo, never by the change it claims to have undone (still live when the undo went stale). With a
+  // value ("Bench is back to 95", "Back at 100") the value is checked against what the card shows now.
+  if (claim.kinds.has('undo') && record.detail.kind !== 'undo' && claim.loads.length === 0 && claim.bareNumbers.length === 0) return false;
   return claim.kinds.has('any') || claim.kinds.has(record.detail.kind);
 }
 
@@ -900,6 +1048,7 @@ function entitiesMatch(claim: Claim, record: ActionRecord, f: RecordFacts): Enti
       return { ok: false, detail: `It said every set; only ${setNumbersText(changed)} changed.` };
     }
     const pool = claim.op === 'remove_set' ? f.removedSets : claim.op === 'add_set' ? f.addedSets : record.detail.kind === 'undo' ? f.changedSets : new Set([...f.changedSets, ...f.addedSets]);
+    if (claim.op === 'set_type') return { ok: false, detail: "It said a set's type changed; set types can't be changed by the coach." };
     if ((claim.op === 'remove_set' || claim.op === 'add_set') && pool.size === 0) {
       return { ok: false, detail: claim.op === 'remove_set' ? 'It said a set was removed; none was.' : 'It said a set was added; none was.' };
     }
@@ -912,16 +1061,46 @@ function entitiesMatch(claim: Claim, record: ActionRecord, f: RecordFacts): Enti
   return { ok: true };
 }
 
+function conventionWord(c: Load['convention']): string {
+  switch (c) {
+    case 'per_hand':
+      return 'per dumbbell';
+    case 'stack':
+      return 'on the stack';
+    case 'assistance':
+      return 'of assistance';
+    case 'added':
+      return 'added';
+    case 'total':
+      return 'total';
+    case 'bodyweight':
+      return 'bodyweight';
+  }
+}
+
 function numbersMatch(claim: Claim, f: RecordFacts): { ok: true } | { ok: false; detail: string } {
   const said = (n: number, unit?: string): string => `${formatNumber(n)}${unit ? ` ${unit}` : ''}`;
   const saved = f.primaryLoad ? `${formatNumber(f.primaryLoad.value)} ${f.primaryLoad.unit}` : 'different';
+  /** A number said as the old value or as a difference may match those; anything else must be the value now (review r5 B1a). */
+  const fits = (n: number, role: NumberRole): boolean => {
+    const k = formatNumber(n);
+    if (f.numbers.has(k)) return role !== 'previous' || f.previous.has(k);
+    if (role === 'previous') return f.previous.has(k);
+    if (role === 'delta') return f.deltas.has(k);
+    return false;
+  };
   for (const l of claim.loads) {
-    if (!f.loads.some((x) => x.unit === l.unit && formatNumber(x.value) === formatNumber(l.value))) {
+    const unitOk = f.loads.some((x) => x.unit === l.unit) || (f.loads.length === 0 && l.role !== 'value');
+    if (!unitOk || !fits(l.value, l.role)) {
       return { ok: false, detail: `The saved load is ${saved}; the reply said ${said(l.value, l.unit)}.` };
     }
   }
   for (const n of claim.bareNumbers) {
-    if (!f.numbers.has(formatNumber(n))) return { ok: false, detail: `The saved values don't include ${said(n)}, which the reply said.` };
+    if (!fits(n.value, n.role)) return { ok: false, detail: `The saved values don't include ${said(n.value)}, which the reply said.` };
+  }
+  // Review r5 B1a: "95 per side" when 95 kg is the total tells Ben to load the wrong bar.
+  if (claim.convention !== null && f.primaryLoad !== null && claim.convention !== f.primaryLoad.convention) {
+    return { ok: false, detail: `The saved load is ${saved} ${conventionWord(f.primaryLoad.convention)}; the reply said ${claim.conventionText ?? 'a different convention'}.` };
   }
   if (claim.unverifiable) return { ok: false, detail: 'The reply gave a percentage; the saved change is shown instead.' };
   return { ok: true };
@@ -1001,6 +1180,12 @@ export function checkReplyClaims(sentence: string, ledger: TurnLedger, citedActi
     const result = checkClaim(parseClaim(normalised.replace(/[.?!]+$/, ''), normalised, names, true), ledger, citedActionIds);
     return result.keep ? { keep: true, claim: true, matchedActionIds: result.matchedActionIds } : result;
   }
+  // Review r5 B1: "Bench is still 100" after bench was lowered this turn contradicts the card.
+  const contradiction = contradictsLiveChange(normalised, ledger, names);
+  if (contradiction !== null) {
+    const live = ledger.entries.find((e) => e.origin === 'this_turn' && liveCommitted(e) && (e.record.detail.kind === 'adjust_pending_sets' || e.record.detail.kind === 'set_next_session_targets'));
+    return { keep: false, reason: 'numbers_differ', detail: contradiction, replaceWith: live?.record.actionId ?? null };
+  }
   // "Sets 3 and 4: 95 kg." states targets in the app's own format: treated as a claim about those sets.
   const listed = SET_VALUE_LINE.test(normalised) || exerciseValueLine(normalised);
   for (const clause of clausesOf(normalised)) {
@@ -1020,6 +1205,37 @@ export function checkReplyClaims(sentence: string, ledger: TurnLedger, citedActi
     matched.push(...result.matchedActionIds);
   }
   return { keep: true, claim: anyClaim, matchedActionIds: [...new Set(matched)] };
+}
+
+/**
+ * "Bench is still 100", "Sets 3 and 4 are unchanged", "I've left sets 3 and 4
+ * alone": a statement that something did NOT change. Kept when nothing about
+ * it changed; hidden when the live ledger changed that set or exercise this
+ * turn (review r5 B1), since it contradicts the card.
+ */
+const UNCHANGED_CLAIM =
+  /\b(?:still|unchanged|untouched|as planned|as they were|as it was|same as before|stays?|staying|remains?|left (?:[a-z_0-9 ]{1,30} )?(?:alone|as (?:is|they were|it was))|(?:have |has )?not (?:changed|touched)|(?:haven't|hasn't|didn't|did not) (?:change|touch))\b/;
+
+function contradictsLiveChange(normalised: string, ledger: TurnLedger, names: readonly string[]): string | null {
+  if (isQuestion(normalised) || OFFER_TAIL.test(normalised) || /\b(?:if|unless|would|could|should|might|may)\b/.test(normalised)) return null;
+  for (const clause of clausesOf(normalised)) {
+    if (!UNCHANGED_CLAIM.test(clause) || HISTORICAL.test(clause)) continue;
+    const sets = setNumbersIn(clause);
+    const mentions = exerciseMentions(clause, names);
+    for (const e of ledger.entries) {
+      if (e.origin !== 'this_turn' || !liveCommitted(e)) continue;
+      const kind = e.record.detail.kind;
+      if (kind !== 'adjust_pending_sets' && kind !== 'set_next_session_targets') continue;
+      const nextScope = NEXT_WORDS.test(clause);
+      if ((kind === 'set_next_session_targets') !== nextScope) continue;
+      const f = factsOf(e.record);
+      const changed = new Set([...f.changedSets, ...f.removedSets, ...f.addedSets]);
+      const setHit = sets.some((n) => changed.has(n));
+      const nameHit = mentions.some((m) => m.names.some((n) => f.names.has(n)));
+      if (setHit || (nameHit && sets.length === 0)) return `It said that was unchanged; the saved change is shown instead.`;
+    }
+  }
+  return null;
 }
 
 /** Exposed for the corpus test's report: does this sentence read as a claim at all? */

@@ -320,6 +320,65 @@ const CLAIMS: readonly string[] = [
   'Memory updated.',
   'Next time you’ll have 4 sets of bench.',
   'Down a plate for the rest of today.',
+  // Review r5 B1b: the reviewer's sentences kept with nothing saved.
+  'Back at 100.',
+  'You’re back on 100.',
+  'Same as before now.',
+  'As you were.',
+  'Undo worked.',
+  'Losing set 4.',
+  'Killed set 4.',
+  'Lost set 4.',
+  'Bye bye set 4.',
+  'Four sets becomes three.',
+  'Three sets today instead of four.',
+  'Only three sets today.',
+  'Tacked a set on.',
+  'Tacking on a set.',
+  'Two sets at 95 to go.',
+  'Rest of bench at 95.',
+  'AMRAP on the last set.',
+  'Last set to failure.',
+  'Drop set on the end.',
+  'Pec deck in for cable fly.',
+  'Pec deck for cable fly next time.',
+  'Cable fly → pec deck.',
+  'Pec deck > cable fly from now.',
+  'Shoulder flag’s up.',
+  'OHP won’t go up for now.',
+  'I’ll keep OHP where it is.',
+  'Locked OHP at 50.',
+  'Lunges won’t show up again.',
+  'You won’t see lunges again.',
+  'I know you train before work now.',
+  'I’ve got that.',
+  'Got that.',
+  'Playbook has it now.',
+  'In it goes.',
+  'On the card now.',
+  'Locked and loaded.',
+  'In the bank.',
+  'Banked.',
+  '95 it is.',
+  '95 from here.',
+  'You’re on 95 for the rest.',
+  'Next week: 102.5.',
+  'Next session you’re at 102.5.',
+  'Coming off 5 for the last two.',
+  'Your card shows 95 now.',
+  // Review r5: the developer's own fresh phrasings.
+  'Same for squat.',
+  'Squat got the same treatment.',
+  'Incline as well.',
+  'Everything after this is 95.',
+  'All your lifts are down 5.',
+  'Rest of today is lighter.',
+  'Hack squat at 95 now.',
+  'Bench stays 95 next session.',
+  'Bench is 95 for the rest of the week.',
+  'Sets 3 and 4 have 95 on the stack.',
+  'Good to go.',
+  'Filed away.',
 ];
 
 /** Suggestions, questions and facts. Keeping them is right; hiding them is a (reported) false hide. */
@@ -465,6 +524,11 @@ const NOT_CLAIMS: readonly string[] = [
   // Known false hides (reported): explaining today's plan reads like a stated target.
   'Set 3 is at 100 because you hit 8 reps last week.',
   'Sets 3 and 4 are planned at 100 kg.',
+  // Review r5: advice and facts that stay.
+  'Brace hard and drive through the floor.',
+  'Most people use 2.5 kg jumps.',
+  'Should I lower set 5 as well?',
+  'Good luck with the rest.',
 ];
 
 const EMPTY = ledger([]);
@@ -696,5 +760,136 @@ describe('claims against a ledger', () => {
     expect(checkReplyClaims('Next session, bench press will be 97.5 kg for 6–8.', ledger([next])).keep).toBe(true);
     expect(checkReplyClaims('Next session, overhead press will be 40 kg.', ledger([next])).keep).toBe(false);
     expect(checkReplyClaims('I’ve lowered sets 3–4.', ledger([next])).keep).toBe(false);
+  });
+});
+
+describe('review r5 B1: numbers, conventions and undo against a live ledger', () => {
+  // Bench sets 3 and 4: 100 kg × 6–8 → 95 kg × 8.
+  const LIVE = (): ReturnType<typeof ledger> => ledger([benchAdjust()]);
+
+  it.each([
+    'Sets 3 and 4 are 100 now.',
+    'Bench is 100 for the rest.',
+    'Sets 3 and 4 now 95 x 6.',
+    'Lowered sets 3 and 4 to 95 for 6.',
+    'Sets 3 and 4 are 100 kg now.',
+    'Sets 3 and 4 are 95 for 6 to 8.',
+    'Sets 3 and 4 at 100.',
+    'Last two at 100.',
+    'Your next two sets are 100.',
+    'Sets 3 and 4 now read 100.',
+    'Your card shows 100 for sets 3 and 4.',
+    '100 it is for the rest.',
+    'Took 10 off sets 3 and 4.',
+    'Sets 3 and 4 are 210 pounds now.',
+  ])('the old value, wrong reps or a wrong delta is replaced by the saved line: %s', (s) => {
+    expect(checkReplyClaims(s, LIVE())).toMatchObject({ keep: false, reason: 'numbers_differ' });
+  });
+
+  it.each(['Sets 3 and 4 are 95 per side.', 'Sets 3 and 4 are 95 kg a side.', 'Sets 3 and 4 are 95 on each side.', 'Bench is 95 per hand now.', 'Dumbbells are 95 each now.'])(
+    'a load convention the saved change doesn’t have is replaced: %s',
+    (s) => {
+      expect(checkReplyClaims(s, LIVE()).keep).toBe(false);
+    },
+  );
+
+  it('the per-side detail names the saved convention', () => {
+    expect(checkReplyClaims('Sets 3 and 4 are 95 per side.', LIVE())).toMatchObject({ reason: 'numbers_differ', detail: 'The saved load is 95 kg total; the reply said per side.' });
+  });
+
+  it.each([
+    'Sets 3 and 4 are 95 now.',
+    'Took 5 off sets 3 and 4.',
+    'Knocked 5 kg off the last two.',
+    '5 lighter for the last two.',
+    'Lowered sets 3 and 4 to 95 for 8.',
+    'Sets 3 and 4 are now 95 kg, not 100.',
+    'Dropped sets 3 and 4 from 100 to 95.',
+    'I lowered sets 3 and 4 from 100 to 95.',
+    'Sets 3 and 4 are 95 kg now, down from 100.',
+    'Sets 3 and 4 are now 95 kg total.',
+    'Sets 3 and 4 are 95 kg on the bar.',
+    'Bench is 95 for the rest.',
+    'Sets 3–4: 95 kg × 8.',
+  ])('a true statement of the change is kept: %s', (s) => {
+    expect(checkReplyClaims(s, LIVE()).keep).toBe(true);
+  });
+
+  it.each([
+    'Hack squat at 95 now.',
+    'Every exercise is lighter now.',
+    'All of today is lighter.',
+    'Whole session is lighter now.',
+    'Everything’s 95 now.',
+    'Rest of today is lighter.',
+    'All your lifts are down 5.',
+    'Bench stays 95 next session.',
+    'Bench is 95 for the rest of the week.',
+    'Next time bench is 95.',
+    'Leg press is 95 now.',
+    'Same for squat.',
+    'Squat got the same treatment.',
+    'And incline too.',
+    'Everything after this is 95.',
+    'Set 2 is 95 now.',
+    'Sets 3 and 4 have 95 on the stack.',
+    'AMRAP on the last set.',
+    'Last set is an AMRAP.',
+  ])('a claim beyond a bench-only change is hidden: %s', (s) => {
+    expect(checkReplyClaims(s, LIVE()).keep).toBe(false);
+  });
+
+  it.each(['Bench is still 100 for the rest.', 'Bench stays at 100.', 'Sets 3 and 4 are unchanged.', 'I’ve left sets 3 and 4 alone.', 'Still 100 for sets 3 and 4.'])(
+    '"unchanged" about a set that changed this turn contradicts the card: %s',
+    (s) => {
+      expect(checkReplyClaims(s, LIVE())).toMatchObject({ keep: false, reason: 'numbers_differ' });
+      // With nothing changed it is simply true.
+      expect(checkReplyClaims(s, EMPTY).keep).toBe(true);
+    },
+  );
+
+  it('the r4 failure scenario: a stale undo leaves the change live, so "Back at 100." is never kept', () => {
+    const a = benchAdjust();
+    const undo = (status: 'committed' | 'stale') =>
+      record(
+        {
+          kind: 'undo',
+          undoneActionId: a.actionId,
+          what: 'the change to sets 3–4',
+          restored: [{ sessionExerciseId: id(10), exerciseName: 'Bench press', changes: [{ setId: id(13), setNumber: 3, before: tgt(kg(95), 8), after: tgt(kg(100), 6, 8) }] }],
+          alreadyLogged: [],
+        },
+        { status },
+      );
+    for (const s of ['Back at 100.', 'You’re back on 100.', 'Rolled back.', 'As you were.', 'Back to 100.']) {
+      expect(checkReplyClaims(s, ledger([a, undo('stale')])).keep, s).toBe(false);
+      expect(checkReplyClaims(s, ledger([a])).keep, s).toBe(false);
+    }
+    // A committed undo backs them.
+    for (const s of ['Back at 100.', 'Rolled back.', 'Back to 100.']) expect(checkReplyClaims(s, ledger([undo('committed')])).keep, s).toBe(true);
+    // ...but not the old value.
+    expect(checkReplyClaims('Back at 95.', ledger([undo('committed')])).keep).toBe(false);
+  });
+
+  it('a set-type claim is never backed: the coach can’t change set types', () => {
+    expect(checkReplyClaims('Last set to failure.', LIVE())).toMatchObject({ keep: false, reason: 'mismatch' });
+  });
+
+  it('a set-count claim needs a removed or added set', () => {
+    for (const s of ['Four sets becomes three.', 'Only three sets today.', 'Killed set 4.', 'Tacked a set on.']) {
+      expect(checkReplyClaims(s, LIVE()).keep, s).toBe(false);
+    }
+    const removed = record({
+      kind: 'adjust_pending_sets',
+      sessionId: id(1),
+      exercises: [{ sessionExerciseId: id(10), exerciseName: 'Bench press', changes: [{ setId: id(14), setNumber: 4, before: tgt(kg(100), 6, 8), after: null }] }],
+    });
+    expect(checkReplyClaims('Killed set 4.', ledger([removed])).keep).toBe(true);
+  });
+
+  it('lb loads: the old lb value is replaced, the new one kept', () => {
+    const a = benchAdjust({}, tgt(lb(205), 8));
+    expect(checkReplyClaims('Sets 3 and 4 are 205 pounds now.', ledger([a])).keep).toBe(true);
+    expect(checkReplyClaims('Sets 3 and 4 are 100 kg now.', ledger([a])).keep).toBe(false);
   });
 });

@@ -149,11 +149,11 @@ describe('earlier actions need their token (CC5, review r2 S2)', () => {
   });
 });
 
-describe('the fixed "No change was saved" line (review r4 spec issue 1, option a; off until approved)', () => {
+describe('the fixed "No change was saved" line (review r4 spec issue 1 option a; on by default since review r5 B1c)', () => {
   const names = ['Bench press', 'Overhead press', 'Cable fly', 'Pec deck'];
+  const empty = ledger([], names);
 
   it('needsNoChangeLine: a reply about a change with nothing saved', () => {
-    const empty = ledger([], names);
     // Phrasings the claim lists may not know still get the line.
     for (const t of ['Rolled back.', 'Pec deck next time.', 'Lighter for the last two.', 'OHP is sorted.', 'Gone from memory.', 'Your shoulder is on my list.', 'Cable fly gets a breather.']) {
       expect(needsNoChangeLine(t, empty), t).toBe(true);
@@ -167,19 +167,81 @@ describe('the fixed "No change was saved" line (review r4 spec issue 1, option a
     expect(needsNoChangeLine('Rolled back.', ledger([benchAdjust({ status: 'stale', failure: null })], names))).toBe(true);
   });
 
-  it('the filter adds the line only when switched on', () => {
+  it.each([
+    'Back at 100.',
+    'You’re back on 100.',
+    '95 it is.',
+    '95 from here.',
+    'You’re on 95 for the rest.',
+    'Next week: 102.5.',
+    'Next session you’re at 102.5.',
+    'Coming off 5 for the last two.',
+    'Your card shows 95 now.',
+    'I know you train before work now.',
+    'Got that.',
+    'Banked.',
+    'In it goes.',
+    'On the card now.',
+    'Locked and loaded.',
+    'In the bank.',
+    'Same as before now.',
+    'As you were.',
+    'All done!',
+    'Sure thing, 95.',
+    'Yep.  Squat next.',
+  ])('bare numbers and generic acknowledgements get the line (review r5 B1c): %s', (t) => {
+    expect(needsNoChangeLine(t, empty)).toBe(true);
+  });
+
+  it('a reply that is only questions gets no line; a tag question is a statement', () => {
+    expect(needsNoChangeLine('Want me to drop sets 3 and 4 to 95?', empty)).toBe(false);
+    expect(needsNoChangeLine('Sore or pain?', empty)).toBe(false);
+    expect(needsNoChangeLine('95 for the rest, yeah?', empty)).toBe(true);
+    expect(needsNoChangeLine('Want me to adjust? It was RPE 10.', empty)).toBe(true);
+  });
+
+  it('when Ben asked for a change, any statement gets the line if nothing was saved', () => {
+    expect(needsNoChangeLine('Sure thing.', empty)).toBe(false);
+    expect(needsNoChangeLine('Sure thing.', empty, { benAskedForChange: true })).toBe(true);
+    expect(needsNoChangeLine('Which sets?', empty, { benAskedForChange: true })).toBe(false);
+  });
+
+  it('the r4 failure scenario: a stale undo, then "Back at 100." — the sentence is hidden and the note says nothing changed', () => {
+    const a = benchAdjust({ turnId: 'turn-0' });
+    const undo = record(
+      {
+        kind: 'undo',
+        undoneActionId: a.actionId,
+        what: 'the change to sets 3–4',
+        restored: [{ sessionExerciseId: id(10), exerciseName: 'Bench press', changes: [{ setId: id(13), setNumber: 3, before: tgt(kg(95), 8), after: tgt(kg(100), 6, 8) }] }],
+        alreadyLogged: [],
+      },
+      { status: 'stale' },
+    );
+    const current = (): TurnLedger => ({ turnId: 'turn-1', entries: [{ ref: 'u1', record: undo, origin: 'this_turn' }], knownExerciseNames: names });
+    const f = createReplyFilter({ ledger: current, surface: 'sheet' });
+    const shown = [...f.push('Back at 100. '), ...f.end(true)];
+    expect(shown.filter((i) => i.kind === 'sentence')).toEqual([]);
+    expect(f.note()?.text).toBe('Nothing was changed. One line said otherwise and is hidden.');
+  });
+
+  it('the filter adds the line by default; off only when asked', () => {
     const current = (): TurnLedger => ({ turnId: 'turn-1', entries: [], knownExerciseNames: names });
-    const off = createReplyFilter({ ledger: current, surface: 'sheet' });
-    off.push('Cable fly is a good finisher. ');
-    off.end(true);
-    expect(off.note()).toBeNull();
-    const on = createReplyFilter({ ledger: current, surface: 'sheet', noChangeLine: true });
+    const on = createReplyFilter({ ledger: current, surface: 'sheet' });
     on.push('Cable fly is a good finisher. ');
     on.end(true);
     expect(on.note()).toEqual({ text: NO_CHANGE_SAVED_LINE, spoken: null });
-    const chat = createReplyFilter({ ledger: current, surface: 'sheet', noChangeLine: true });
+    const off = createReplyFilter({ ledger: current, surface: 'sheet', noChangeLine: false });
+    off.push('Cable fly is a good finisher. ');
+    off.end(true);
+    expect(off.note()).toBeNull();
+    const chat = createReplyFilter({ ledger: current, surface: 'sheet' });
     chat.push('Nice work today. ');
     chat.end(true);
     expect(chat.note()).toBeNull();
+    const asked = createReplyFilter({ ledger: current, surface: 'sheet', benAskedForChange: true });
+    asked.push('Sure thing. ');
+    asked.end(true);
+    expect(asked.note()).toEqual({ text: NO_CHANGE_SAVED_LINE, spoken: null });
   });
 });

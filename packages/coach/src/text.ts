@@ -88,6 +88,8 @@ const CONTRACTIONS: [RegExp, string][] = [
   [/\b(it|that|this|everything|everything's|what|there|set \d+|weight|load)'s been\b/g, '$1 has been'],
   [/\b(\w+)'s been\b/g, '$1 has been'],
   [/\b([a-z0-9]+)'s (now|done|sorted|set|all set|lower|lighter|heavier|updated|changed|in|out|at|on|off|locked|flagged|saved|gone|down|up|back)\b/g, '$1 is $2'],
+  // "Everything's 95 now", "bench's 95" (review r5 B1b).
+  [/\b([a-z0-9]+)'s (?=\d)/g, '$1 is '],
   [/\bit's\b/g, 'it is'],
   [/\bthat's\b/g, 'that is'],
   [/\bthere's\b/g, 'there is'],

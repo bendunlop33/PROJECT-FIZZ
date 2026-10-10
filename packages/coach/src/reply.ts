@@ -1,10 +1,10 @@
 import { setNumbersText } from '@fizz/domain';
 import type { HiddenLine } from '@fizz/schemas';
-import { checkReplyClaims, type TurnLedger } from './claims';
+import { checkReplyClaims, isChangeClaim, type TurnLedger } from './claims';
 import { normaliseForClaims } from './text';
 import { EXERCISE_WORD } from './vocab';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
-import { SentenceBuffer } from './sentences';
+import { SentenceBuffer, splitSentences } from './sentences';
 import { resolveActionTokens } from './tokens';
 
 /**
@@ -75,24 +75,48 @@ export function claimNoteFor(ledger: TurnLedger, hiddenCount: number, surface: R
 export const NO_CHANGE_SAVED_LINE = 'No change was saved in this reply.';
 
 /**
- * Words that make a reply "about a change": a load, a set or rep count, an
- * exercise, a memory, a flag or an undo (review r4 spec issue 1, option (a)).
+ * Training content or acknowledgement words. With no live change this turn,
+ * any of these in a statement gets the fixed line (review r4 spec issue 1,
+ * widened in review r5 B1c): loads, sets, reps, exercises, the card or plan,
+ * next time, undo forms, memories, flags and bare acknowledgements ("Got
+ * that.", "Banked.", "In it goes.", "On the card now.").
  */
 const CHANGE_TOPIC = new RegExp(
-  `\\b(?:\\d+(?:\\.\\d+)? ?(?:kgs?|lbs?|kilos?|pounds?)|sets?|reps?|weights?|loads?|plates?|lighter|heavier|memory|memories|remember(?:ed)?|forgot(?:ten)?|noted|flag(?:ged|s)?|undo(?:ne)?|undid|revert(?:ed)?|rolled back|back to|playbook|rule|next time|swap(?:ped)?|saved|stored|logged|changed|updated|adjusted|applied|on (?:my|the|your) list|on file|${EXERCISE_WORD})\\b`,
+  `\\b(?:kgs?|lbs?|kilos?|pounds?|sets?|reps?|weights?|loads?|plates?|targets?|lighter|heavier|easier|harder|memory|memories|remember(?:ed)?|forgot(?:ten)?|noted|note|flag(?:ged|s)?|undo(?:ne)?|undid|revert(?:ed)?|rolled back|reversed|back (?:to|at|on)|as (?:you were|before|it was)|same as before|playbook|rules?|next (?:time|session|week|workout)|from now on|going forward|swap(?:ped)?|saved|stored|logged|changed|updated|adjusted|applied|card|plan|programme|program|routine|schedule|on (?:my|the|your) list|on file|filed|banked|bank|booked|locked|loaded|sorted|handled|done|dealt with|taken care of|on it|will do|got (?:that|this|it)|in (?:it|they|that) goes?|all in|good to go|ready to go|know (?:you|that you|your)|progress(?:ion|ing)?|increas(?:e|es|ed|ing)|decreas(?:e|es|ed|ing)|hold(?:ing)?|on hold|paused|amrap|failure|drop ?sets?|${EXERCISE_WORD})\\b`,
 );
+/** A statement with a tag ("95 for the rest, yeah?") isn't a question. */
+const TAG_QUESTION = /,?\s*(?:yeah|yep|yes|right|ok|okay|eh|innit|correct|alright|no|got it|cool|done|ya|yup)\s*\?+\s*$/i;
+
+function isPureQuestion(sentence: string): boolean {
+  return /\?\s*$/.test(sentence) && !TAG_QUESTION.test(sentence);
+}
+
+export interface NoChangeLineContext {
+  /**
+   * Ben's own message (or chip) in this turn asked for a change
+   * (`classifyBenRequest` / `chipRequest` returned a request). Any reply
+   * that isn't only questions then gets the line when nothing was saved.
+   */
+  benAskedForChange?: boolean;
+}
 
 /**
- * Review r4 spec issue 1, option (a), pending Ben/PM approval: with no live
- * committed change this turn, a reply that talks about loads, sets, reps,
- * exercises, memories, flags or undo gets the fixed line, whatever its
- * sentences say. It doesn't depend on recognising each phrasing, so a claim
- * the word lists miss is still contradicted on screen. Pure.
+ * Review r4 spec issue 1, option (a), widened and inverted for review r5
+ * B1c. With no live committed change this turn, a reply gets the fixed line
+ * unless it is only questions or has no training content at all. It doesn't
+ * depend on recognising each phrasing, so a claim the word lists miss ("Back
+ * at 100.", "Banked.", "95 it is.") is still contradicted on screen. The line
+ * is always true when it shows (nothing was saved), so a false show costs
+ * only a line of noise; a false miss lets a phantom change stand. Pure.
  */
-export function needsNoChangeLine(replyText: string, ledger: TurnLedger): boolean {
+export function needsNoChangeLine(replyText: string, ledger: TurnLedger, context: NoChangeLineContext = {}): boolean {
   if (liveThisTurn(ledger).length > 0) return false;
-  const t = normaliseForClaims(replyText);
-  if (CHANGE_TOPIC.test(t)) return true;
+  const statements = splitSentences(replyText).filter((s) => /[\p{L}\p{N}]/u.test(s) && !isPureQuestion(s));
+  if (statements.length === 0) return false;
+  if (context.benAskedForChange === true) return true;
+  const t = normaliseForClaims(statements.join(' '));
+  if (/\d/.test(t) || CHANGE_TOPIC.test(t)) return true;
+  if (statements.some((s) => isChangeClaim(s))) return true;
   return ledger.knownExerciseNames.some((n) => t.includes(n.toLowerCase()));
 }
 
@@ -101,12 +125,15 @@ export interface ReplyFilterOptions {
   ledger: () => TurnLedger;
   surface: RenderSurface;
   /**
-   * Review r4 spec issue 1, option (a). Off until Ben/PM approve it: when on,
-   * `note()` returns `No change was saved in this reply.` for a reply about a
-   * change in a turn with no live committed action, even if no sentence was
-   * hidden.
+   * Review r4 spec issue 1, option (a); on by default since review r5 B1c
+   * (pending Ben/PM sign-off, see ADR 0019). `note()` returns `No change was
+   * saved in this reply.` when no live change was saved this turn and the
+   * reply makes a statement with training content, even if no sentence was
+   * hidden. Pass `false` only in tests of the claim check on its own.
    */
   noChangeLine?: boolean;
+  /** See `NoChangeLineContext.benAskedForChange`. */
+  benAskedForChange?: boolean;
 }
 
 export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
@@ -169,7 +196,7 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
       // A replaced number is shown correctly, so it needs no note (§3 `Number mismatch`).
       const count = hidden.filter((h) => h.reason !== 'numbers_differ').length;
       const note = claimNoteFor(options.ledger(), count, options.surface);
-      if (note === null && options.noChangeLine === true && needsNoChangeLine(said.join(' '), options.ledger())) {
+      if (note === null && options.noChangeLine !== false && needsNoChangeLine(said.join(' '), options.ledger(), { benAskedForChange: options.benAskedForChange === true })) {
         return { text: NO_CHANGE_SAVED_LINE, spoken: null };
       }
       return note;
