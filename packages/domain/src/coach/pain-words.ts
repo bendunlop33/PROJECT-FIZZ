@@ -472,3 +472,27 @@ export function classifyPainMention(text: string): PainMention {
   if (effort) return 'effort';
   return 'none';
 }
+
+/**
+ * Which of the workout's exercises Ben's words name, for rule 9's
+ * `messagePain` (a pain or unclear mention blocks increases on the named
+ * movements only, and on every movement when none is named).
+ *
+ * Conservative by design (coach review B2):
+ * - only a whole exercise name counts (`romanian deadlift`, plural allowed),
+ *   never a lone word of it, so "back" never names Back squat;
+ * - when the words name a body part, nothing is named: a body part can't be
+ *   mapped to the movements that load it, so every increase is blocked.
+ */
+export function exercisesNamedForPain(text: string, exercises: readonly { exerciseId: string; exerciseName: string }[]): string[] {
+  if (painBodyPart(text) !== null) return [];
+  const norm = (s: string): string => ` ${s.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim()} `;
+  const said = norm(text);
+  const out: string[] = [];
+  for (const ex of exercises) {
+    const name = norm(ex.exerciseName).trim();
+    if (name.length === 0) continue;
+    if (said.includes(` ${name} `) || said.includes(` ${name}s `) || said.includes(` ${name}es `)) out.push(ex.exerciseId);
+  }
+  return [...new Set(out)];
+}

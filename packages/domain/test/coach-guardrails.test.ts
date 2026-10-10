@@ -16,6 +16,7 @@ import type {
 import {
   classifyPainMention,
   painBodyPart,
+  exercisesNamedForPain,
   evaluateCoachTrigger,
   getAchievableLoads,
   getStructuralChangeSignals,
@@ -966,6 +967,43 @@ describe('validateTodayAdjustment: pain in the same message blocks increases (re
   it('a saved flag still wins over the message note for its own movement', () => {
     const r = validateTodayAdjustment(input(raiseBench, { intent: 'too_easy', painFlags: [painFlag(1, 'Bench press')], messagePain: said('my knee hurts') }));
     expect(r).toMatchObject({ status: 'unchanged', outcome: 'Not increasing: you flagged shoulder pain. Sets unchanged.' });
+  });
+});
+
+describe('exercisesNamedForPain: only whole names narrow the pain block (coach review B2, rule 9)', () => {
+  const ex = (n: number, name: string) => ({ exerciseId: id(n), exerciseName: name });
+  const workoutExercises = [ex(1, 'Back squat'), ex(2, 'Romanian deadlift'), ex(3, 'Chest-supported row'), ex(4, 'Cable fly'), ex(5, 'Calf raise'), ex(6, 'Shoulder press'), ex(7, 'Bench press')];
+  const said = (text: string): NonNullable<TodayAdjustmentInput['messagePain']> => ({ mention: classifyPainMention(text), exerciseIds: exercisesNamedForPain(text, workoutExercises), bodyPart: painBodyPart(text) });
+
+  it.each([
+    "back's a bit sore, add 5 to the deadlifts",
+    'chest is tight, more on flyes',
+    'calf is cramping, heavier squats',
+    "shoulder's niggly, bump the shoulder press",
+    'my back hurts, add 5 to back squat',
+  ])('%s → nothing named, so every increase is blocked', (text) => {
+    expect(exercisesNamedForPain(text, workoutExercises)).toEqual([]);
+    expect(['pain', 'unclear']).toContain(classifyPainMention(text));
+  });
+
+  it('a body-part word alone never names an exercise that starts with it', () => {
+    expect(exercisesNamedForPain('back is fine, add 5', workoutExercises)).toEqual([]);
+    expect(exercisesNamedForPain('more on chest today', workoutExercises)).toEqual([]);
+  });
+
+  it('a whole name with no body part narrows to that movement (plural allowed)', () => {
+    expect(exercisesNamedForPain('bench press hurts, add 5 to the romanian deadlifts', workoutExercises)).toEqual([id(2), id(7)]);
+    expect(exercisesNamedForPain('Bench press is hurting', workoutExercises)).toEqual([id(7)]);
+  });
+
+  it('"back\'s a bit sore, add 5 to the deadlifts": the RDL increase is blocked', () => {
+    const agg = workout();
+    const rdl = agg.exercises[0];
+    if (!rdl) throw new Error('fixture');
+    const named = exercisesNamedForPain("back's a bit sore, add 5 to the deadlifts", [{ exerciseId: rdl.exerciseId, exerciseName: 'Romanian deadlift' }, { exerciseId: id(999), exerciseName: 'Back squat' }]);
+    expect(named).toEqual([]);
+    const r = validateTodayAdjustment(input([adj(exId(1), { sets: [{ setId: setId(1, 2), target: { load: kg(102.5), reps: null } }] })], { intent: 'general', messagePain: said("back's a bit sore, add 5 to the deadlifts") }));
+    expect(r.status).toBe('unchanged');
   });
 });
 

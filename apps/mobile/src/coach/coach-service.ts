@@ -31,6 +31,7 @@ import {
 import {
   DEFAULT_COACH_TRIGGER_THRESHOLDS,
   evaluateCoachTrigger,
+  exercisesNamedForPain,
   nextSessionBases,
   shouldShowCoachOffer,
   toMs,
@@ -98,15 +99,7 @@ const GENERAL_REUSE_MS = 6 * 60 * 60 * 1000;
 
 /** Exercise IDs Ben named in his words, matched to the workout's exercises (for rule 9's `messagePain`). */
 export function namedExercises(text: string, session: SessionAggregate | null): string[] {
-  if (session === null) return [];
-  const said = ` ${text.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ')} `;
-  const out: string[] = [];
-  for (const ex of session.exercises) {
-    const name = ex.exerciseName.toLowerCase();
-    const first = name.split(/\s+/)[0] ?? '';
-    if (said.includes(` ${name} `) || (first.length >= 4 && said.includes(` ${first} `))) out.push(ex.exerciseId);
-  }
-  return [...new Set(out)];
+  return session === null ? [] : exercisesNamedForPain(text, session.exercises);
 }
 
 export function createCoachService(deps: CoachServiceDeps) {
