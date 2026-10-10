@@ -23,6 +23,8 @@ const { parse } = require('@babel/parser') as { parse: (code: string, opts?: Rec
 const SRC = join(import.meta.dirname, '../src');
 /** Every app source file with a worklet directive (keep in step with `grep -rl "'worklet'" apps/mobile/src`). */
 const WORKLET_FILES = ['guide/clock.ts', 'guide/GuidePlayer.tsx'];
+/** Files whose worklets are only helpers called inside another worklet's try (the runtime never runs them directly). */
+const HELPER_ONLY_FILES = ['guide/clock.ts'];
 
 function transform(file: string, commonjs: boolean): string {
   const source = readFileSync(join(SRC, file), 'utf8');
@@ -141,5 +143,81 @@ describe('worklets as the UI runtime evaluates them', () => {
     expect(advanceClock(0, null, 1000, 'pingpong')).toEqual({ elapsedMs: 0, finished: false });
     expect(frameIndexAt(500, 1000, 30, 'cycle', 16)).toBe(15);
     expect(frameIndexAt(500, 1000, 30, 'cycle')).toBe(15);
+  });
+
+  /**
+   * In a release build an uncaught worklet throw aborts the app natively (Worklets 0.10 forwards it to JS only in
+   * debug builds), so each app worklet's try/catch is the only net on the UI thread (ADR 0018, review S3).
+   */
+  for (const file of WORKLET_FILES.filter((f) => !HELPER_ONLY_FILES.includes(f))) {
+    it(`${file}: every worklet wraps its whole body in try/catch (after the closure and a \`done\` guard)`, () => {
+      const codes = workletCodes(transform(file, false));
+      expect(codes.length).toBeGreaterThan(0);
+      for (const code of codes) {
+        const fn = (parse(`(${code})`).program.body[0] as { expression: Node }).expression;
+        let rest = (fn.body as { body: Node[] }).body;
+        if (rest[0]?.type === 'VariableDeclaration') rest = rest.slice(1);
+        if (rest[0]?.type === 'IfStatement' && (rest[0].consequent as Node).type === 'ReturnStatement' && rest[0].alternate === null) rest = rest.slice(1);
+        expect(
+          rest.map((n) => n.type),
+          code,
+        ).toEqual(['TryStatement']);
+        expect((rest[0] as Node).handler, code).not.toBeNull();
+      }
+    });
+  }
+
+  it('the frame callback, run from its generated code, stops and reports a throw to JS instead of letting it escape', () => {
+    const tickCode = workletCodes(transform('guide/GuidePlayer.tsx', false)).find((c) => c.includes('onClockError'));
+    if (tickCode === undefined) throw new Error('tick worklet not found');
+    const scheduled: unknown[][] = [];
+    const onClockError = () => undefined;
+    const onFinished = () => undefined;
+    const run = (advanceClock: (...a: unknown[]) => unknown) => {
+      const closure = {
+        done: { value: false },
+        elapsed: { value: 0 },
+        frame: { value: 0 },
+        durationMs: 1000,
+        loop: 'cycle',
+        count: 30,
+        advanceClock,
+        frameIndexAt: () => 3,
+        scheduleOnRN: (...args: unknown[]) => scheduled.push(args),
+        onFinished,
+        onClockError,
+      };
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval -- the generated worklet code, isolated from module scope
+      const fn = (new Function(`return (${tickCode})`) as () => (info: unknown) => void)();
+      const call = () => {
+        fn.call({ __closure: closure }, { timeSincePreviousFrame: 16 });
+      };
+      return { closure, call };
+    };
+
+    const ok = run(() => ({ elapsedMs: 16, finished: false }));
+    ok.call();
+    expect(ok.closure.frame.value).toBe(3);
+    expect(ok.closure.done.value).toBe(false);
+    expect(scheduled).toEqual([]);
+
+    const bad = run(() => {
+      throw new ReferenceError('MAX_AUTOPLAY_PASSES is not defined');
+    });
+    expect(bad.call).not.toThrow();
+    expect(bad.closure.done.value).toBe(true);
+    expect(scheduled).toEqual([[onClockError, 'ReferenceError: MAX_AUTOPLAY_PASSES is not defined']]);
+    bad.call(); // stopped: the next frame does nothing
+    expect(scheduled).toHaveLength(1);
+
+    // Even a failing hand-off to JS stays on the UI thread.
+    const worst = run(() => {
+      throw new Error('x');
+    });
+    worst.closure.scheduleOnRN = () => {
+      throw new Error('no JS');
+    };
+    expect(worst.call).not.toThrow();
+    expect(worst.closure.done.value).toBe(true);
   });
 });
