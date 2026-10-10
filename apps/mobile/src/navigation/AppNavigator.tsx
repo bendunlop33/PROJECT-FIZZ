@@ -1,5 +1,5 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { DarkTheme, DefaultTheme, NavigationContainer, type Theme as NavTheme } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, NavigationContainer, useNavigation, useNavigationContainerRef, type Theme as NavTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SymbolView } from 'expo-symbols';
 import { useMemo, useState } from 'react';
@@ -7,6 +7,9 @@ import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { WeightUnit } from '@fizz/schemas';
+
+import { recordContainedError, setCurrentScreen } from '../diagnostics/crash-capture';
+import { createGuardedLoader } from '../guide/guarded-load';
 
 import { AddGymScreen } from '../screens/AddGymScreen';
 import { CapabilityProbeScreen } from '../screens/CapabilityProbeScreen';
@@ -42,7 +45,7 @@ import { SummaryScreen } from '../screens/workout/SummaryScreen';
 import { WorkoutScreen } from '../screens/workout/WorkoutScreen';
 import type { SetupStep } from '../services/setup';
 import { useTheme } from '../theme';
-import { AppText, type SymbolName } from '../ui';
+import { AppText, MessageScreen, PrimaryButton, type SymbolName } from '../ui';
 import { initialRootState } from './initial-state';
 import type { ImportQuestionKind, ProfileStackParams, RootStackParams, TabParams } from './types';
 
@@ -52,9 +55,31 @@ import type { ImportQuestionKind, ProfileStackParams, RootStackParams, TabParams
  * force-close recovery path. Skia itself is loaded later still, behind a guard
  * (`guide/load-player.ts`).
  */
-function loadHowToScreen(): typeof HowToScreen {
+const howToModule = createGuardedLoader(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate lazy load
   return (require('../screens/workout/HowToScreen') as { HowToScreen: typeof HowToScreen }).HowToScreen;
+});
+
+/** How to's module failed to load: say so, never close the app (React Navigation calls `getComponent` while rendering). */
+function HowToUnavailable() {
+  const navigation = useNavigation();
+  return (
+    <MessageScreen title="How to couldn’t open" lines={['Something in this build failed to load it. Your workout is untouched.', 'Profile › App status › Last error has the details.']}>
+      <PrimaryButton
+        label="Done"
+        onPress={() => {
+          navigation.goBack();
+        }}
+      />
+    </MessageScreen>
+  );
+}
+
+function loadHowToScreen(): typeof HowToScreen {
+  const loaded = howToModule();
+  if (loaded.ok) return loaded.value;
+  recordContainedError(loaded.error, 'how-to');
+  return HowToUnavailable;
 }
 
 const RootStack = createNativeStackNavigator<RootStackParams>();
@@ -181,6 +206,11 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
   const [setupDone, setSetupDone] = useState(setupStep === 'done');
   // Computed once: the launch stack (review S5). Later changes navigate normally.
   const [initialState] = useState(() => initialRootState(setupStep === 'done', openWorkout));
+  // Crash capture records which screen an error happened on (route name only).
+  const navRef = useNavigationContainerRef<RootStackParams>();
+  const reportScreen = () => {
+    setCurrentScreen(navRef.getCurrentRoute()?.name ?? null);
+  };
   const navTheme = useMemo<NavTheme>(() => {
     const base = theme.scheme === 'dark' ? DarkTheme : DefaultTheme;
     return {
@@ -200,7 +230,7 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
-      <NavigationContainer theme={navTheme} initialState={initialState}>
+      <NavigationContainer ref={navRef} theme={navTheme} initialState={initialState} onReady={reportScreen} onStateChange={reportScreen}>
         <RootStack.Navigator screenOptions={{ ...options, headerShown: false }}>
           {setupDone ? (
             <>
