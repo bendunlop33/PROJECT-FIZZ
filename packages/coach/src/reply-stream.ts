@@ -1,6 +1,6 @@
 /**
  * Reading the `reply` function's `message` while its arguments stream (ADR
- * 0019 C6, coach-sheet §3 `Streaming`). The arguments arrive as pieces of a
+ * 0020 C6, coach-sheet §3 `Streaming`). The arguments arrive as pieces of a
  * JSON object (`{"message":"Set 2 was…","offer":null}`); this returns the
  * decoded part of `message` received so far, so the sheet can show each
  * finished sentence as it arrives instead of waiting for the whole reply.

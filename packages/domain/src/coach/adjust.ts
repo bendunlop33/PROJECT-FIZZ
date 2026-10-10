@@ -22,7 +22,7 @@ import { convertMass } from '../units';
 import type { PainMention } from './pain-words';
 
 /**
- * `validateTodayAdjustment` (ADR 0019 §4, coach-adjustments §2.6): the
+ * `validateTodayAdjustment` (ADR 0020 §4, coach-adjustments §2.6): the
  * deterministic guardrail between the coach's `adjust_pending_sets` call and
  * today's pending sets. Pure. The model can't override any of it:
  * - the call must be for the session version it read (rule 5);

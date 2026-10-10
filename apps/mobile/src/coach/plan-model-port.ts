@@ -1,5 +1,5 @@
 /**
- * The real `CoachModelPort` (ADR 0019 §7, slice C5): the coach's model calls
+ * The real `CoachModelPort` (ADR 0020 §7, slice C5): the coach's model calls
  * over the ChatGPT-plan Responses route, with the same Keychain tokens,
  * refresher and streaming client as the S1 test that passed on Ben's iPhone.
  *

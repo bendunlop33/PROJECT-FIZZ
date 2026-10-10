@@ -1,5 +1,5 @@
 /**
- * The workout's coach slot (coach-adjustments §2.1–2.6, ADR 0019 C7). Pure.
+ * The workout's coach slot (coach-adjustments §2.1–2.6, ADR 0020 C7). Pure.
  * One item at most; priority pending > applied banner > outcome line >
  * offer. Every value line comes from a saved `ActionRecord`
  * (`renderActionResult(…, 'slot')`), never from the model's words. Minimal

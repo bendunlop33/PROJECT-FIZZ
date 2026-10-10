@@ -117,7 +117,7 @@ export const PainFlagSchema = RecordMetaSchema.extend({
   /** Snapshot, so the flag still reads well if the catalogue changes. */
   exerciseName: z.string().min(1).max(120),
   area: PainAreaSchema.nullable(),
-  /** `coach`: set by the coach's `set_pain_flag` from Ben's own words in a turn (ADR 0019). */
+  /** `coach`: set by the coach's `set_pain_flag` from Ben's own words in a turn (ADR 0020). */
   source: z.enum(['check_in', 'workout', 'coach']),
   checkInId: IdSchema.nullable(),
   reportedAt: ZonedTimestampSchema,

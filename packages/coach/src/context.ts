@@ -4,7 +4,7 @@ import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
 
 /**
- * `buildCoachContext` and `describeCoachContext` (ADR 0019 §6, slice C4).
+ * `buildCoachContext` and `describeCoachContext` (ADR 0020 §6, slice C4).
  *
  * Two domains, kept apart in code, on the wire and on screen (CLAUDE.md rule
  * 10): **Your data** (this owner's workout, gym, pain flags, check-in,
@@ -185,7 +185,7 @@ export function buildCoachingKnowledge(catalogue: readonly CatalogueCue[]): Coac
     playbook: {
       version: `v1 (${PLAYBOOK_V1.approved})`,
       rules: PLAYBOOK_V1.rules
-        // 7-F is code, not advice (ADR 0019 §6).
+        // 7-F is code, not advice (ADR 0020 §6).
         .filter((r) => r.use !== 'code_only')
         .map((r) => ({ id: r.id, rule: r.short, appliesWhen: r.appliesWhen, grade: r.grade, status: r.use === 'in_use' ? 'in use' : (r.note ?? 'not in use') })),
     },

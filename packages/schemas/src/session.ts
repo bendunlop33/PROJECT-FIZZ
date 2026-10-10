@@ -144,7 +144,7 @@ export type SetSide = z.infer<typeof SetSideSchema>;
  * `rule` (the built-in rule's next targets, `plannedSetsFromTargets`),
  * `repeat` (a past workout's actual result, routines.md RT4) and `coach`
  * (a coach adjustment of today's sets or the coach's next-session target,
- * ADR 0019 §4). The coach's own reason is the one model-written text here:
+ * ADR 0020 §4). The coach's own reason is the one model-written text here:
  * it is shown in quotes as the coach's words, never as app text. The
  * warm-up, swap and builder sources in the spec are added with the code
  * that sets those targets.
@@ -244,14 +244,14 @@ export type TargetProvenance = z.infer<typeof TargetProvenanceSchema>;
  * or none (sessions written before this field existed).
  * - `built_in_rule`: the built-in progression rule's Next time (ADR 0006 fallback).
  * - `repeat`: copied from a past workout's actual result (routines.md RT4).
- * - `coach`: a coach adjustment or the coach's next-session target (ADR 0019 §4).
+ * - `coach`: a coach adjustment or the coach's next-session target (ADR 0020 §4).
  */
 export const PlannedSourceSchema = z.enum(['built_in_rule', 'repeat', 'coach']);
 export type PlannedSource = z.infer<typeof PlannedSourceSchema>;
 
 /**
  * Planned (target) values, retained separately from the actual result.
- * `source: 'coach'` (ADR 0019 §4): a coach adjustment set this pending
+ * `source: 'coach'` (ADR 0020 §4): a coach adjustment set this pending
  * target; `coach` names the action and keeps the whole target it replaced,
  * for `Plan was …` and for Undo, which puts exactly that back.
  */

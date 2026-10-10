@@ -90,7 +90,7 @@ describe('Coach connection status card (ai-connection §2.1, §2.6, §3.1)', () 
     expect(connectionStatusView(state('region'), null).card.title).toBe('ChatGPT plan use in other apps isn’t available in your region.');
   });
 
-  it('never offers a paid route in any state (rule 7; ADR 0019 §8)', () => {
+  it('never offers a paid route in any state (rule 7; ADR 0020 §8)', () => {
     for (const s of ALL) {
       const text = JSON.stringify(connectionStatusView(state(s), null));
       expect(text).not.toMatch(/API key|paid|\$/i);

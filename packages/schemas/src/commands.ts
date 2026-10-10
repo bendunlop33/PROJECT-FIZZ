@@ -337,7 +337,7 @@ export const RenameSessionCommandSchema = z.object({
 const TargetValuesSchema = z.object({ load: LoadSchema.nullable(), reps: RepRangeSchema.nullable() });
 
 /**
- * A coach adjustment of today's pending sets (ADR 0019 §4, coach-adjustments
+ * A coach adjustment of today's pending sets (ADR 0020 §4, coach-adjustments
  * path A), already checked by `validateTodayAdjustment`. Pending sets only;
  * `expectedVersion` rejects it if the workout moved on (rule 5). Each
  * changed set gets `planned.source: 'coach'` and keeps the target it

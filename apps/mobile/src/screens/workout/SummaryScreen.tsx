@@ -27,7 +27,7 @@ import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
  * Workout summary (workout-summary.md). Shown only after `finishWorkout`
  * committed. Facts first; `Next time` from the built-in rule, tagged with
  * its source; the check-in exactly as Ben gave it; the on-phone backup line.
- * The coach has no summary turn in this build (ADR 0019 C8): the tag and the
+ * The coach has no summary turn in this build (ADR 0020 C8): the tag and the
  * note follow the real connection state and never claim a coach review.
  */
 export function SummaryScreen() {

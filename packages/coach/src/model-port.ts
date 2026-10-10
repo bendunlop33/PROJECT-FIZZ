@@ -1,7 +1,7 @@
 import type { FunctionToolDefinition } from './function-tools';
 
 /**
- * The coach's view of a model provider (ADR 0019 §7). The real port (slice C5)
+ * The coach's view of a model provider (ADR 0020 §7). The real port (slice C5)
  * wraps `streamResponse` and the token refresher from `@fizz/providers`; tests
  * use the scripted fake in `@fizz/coach/testing`. The coach package never
  * imports a network client.
@@ -55,7 +55,7 @@ export type ModelEvent =
   | { type: 'tool_call'; callId: string; name: string; arguments: string }
   /**
    * Any other stream event (`response.created`, `in_progress`, …). Counts
-   * for the first-event and stall timeouts (ADR 0019 §7) and nothing else.
+   * for the first-event and stall timeouts (ADR 0020 §7) and nothing else.
    */
   | { type: 'heartbeat' }
   | { type: 'completed' }

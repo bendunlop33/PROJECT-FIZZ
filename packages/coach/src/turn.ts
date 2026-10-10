@@ -29,7 +29,7 @@ import { chipRequest, classifyBenRequest, requestHas, type BenRequest } from './
 import { parseToolCall } from './tool-call';
 
 /**
- * `runCoachTurn` (ADR 0019 §7, slice C4): one request to the coach, end to
+ * `runCoachTurn` (ADR 0020 §7, slice C4): one request to the coach, end to
  * end, against an injected model port (a scripted fake in tests; the real
  * Responses adapter in C5).
  *
@@ -569,7 +569,7 @@ async function replayedResult(turn: CoachTurn, ports: CoachTurnPorts, surface: R
   };
 }
 
-/** Shown on a turn that a force-close cut off (ADR 0019 §7). */
+/** Shown on a turn that a force-close cut off (ADR 0020 §7). */
 export const INTERRUPTED_TURN_NOTE = 'Interrupted. Anything applied is shown above.';
 
 export interface InterruptedTurn {

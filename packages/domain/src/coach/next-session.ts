@@ -4,7 +4,7 @@ import { stepLoad } from '../equipment';
 import { activeFlag, AREA_WORD, isIncrease, sameTarget, snapLoad, validReps } from './adjust';
 
 /**
- * Next-session targets from the coach (ADR 0019 §4–5, playbook D21,
+ * Next-session targets from the coach (ADR 0020 §4–5, playbook D21,
  * coach-adjustments CA8). Pure. The model's numbers are only a request:
  * - every load is snapped to the source workout's equipment and capped at
  *   its max, in its own unit and convention (rule 4);

@@ -2,7 +2,7 @@ import type { EquipmentInstance, PainFlag, SessionAggregate, StructuralSignalKin
 import { toMs } from '../time';
 
 /**
- * `getStructuralChangeSignals` (coach-adjustments CA9, ADR 0019 §3): the
+ * `getStructuralChangeSignals` (coach-adjustments CA9, ADR 0020 §3): the
  * deterministic gate for structural proposals. Without a request or a signal,
  * the coach never sees `propose_next_workout_change` (coach-contract CC10).
  *

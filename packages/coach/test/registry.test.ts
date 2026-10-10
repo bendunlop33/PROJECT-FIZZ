@@ -355,7 +355,7 @@ describe('parseToolCall', () => {
     expect(toolOpId('t2', 'adjust_pending_sets', a.call.args)).not.toBe(a.opId);
   });
 
-  it('a same-turn repeat with the same semantic fields is a replay; a real second change gets its own opId (review r2 S3, ADR 0019 §5)', () => {
+  it('a same-turn repeat with the same semantic fields is a replay; a real second change gets its own opId (review r2 S3, ADR 0020 §5)', () => {
     const summary = buildTurnRegistry(gate({ kind: 'summary' }));
     const t = (value: number, reason: string) => ({ exerciseId: id(1), target: { load: { value, unit: 'kg', convention: 'total' }, reps: { min: 6, max: 8 } }, sets: null, reason });
     const first = parseToolCall('t1', 'set_next_session_targets', JSON.stringify({ sourceSessionId: id(5), sourceVersion: 12, targets: [t(97.5, 'Set 2 was RPE 10.')] }), summary);

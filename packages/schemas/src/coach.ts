@@ -12,7 +12,7 @@ import { PainAreaSchema, type PainFlag } from './checkin';
 import type { SessionCommand } from './commands';
 
 /**
- * Coach v1 contracts (ADR 0019 §2, coach-contract.md §6). Tool arguments are
+ * Coach v1 contracts (ADR 0020 §2, coach-contract.md §6). Tool arguments are
  * the shapes the model must send; action records are what the app saved. The
  * app renders every change line from an `ActionRecord`, never from model text.
  *
@@ -61,7 +61,7 @@ export const CapabilitySectionSchema = z.enum(['read', 'when_you_ask', 'after_wo
 export type CapabilitySection = z.infer<typeof CapabilitySectionSchema>;
 
 // ---------------------------------------------------------------------------
-// Tool arguments (v1 subset of coach-contract §6.1, ADR 0019 §2)
+// Tool arguments (v1 subset of coach-contract §6.1, ADR 0020 §2)
 
 const reason = z.string().min(1).max(240);
 /** A short quote of Ben's own words from this turn. Checked by the gate, never trusted alone. */
@@ -405,7 +405,7 @@ export const CoachReplySchema = z.strictObject({
 export type CoachReply = z.infer<typeof CoachReplySchema>;
 
 // ---------------------------------------------------------------------------
-// Coach storage (ADR 0019 §9; all Your data except playbook candidates)
+// Coach storage (ADR 0020 §9; all Your data except playbook candidates)
 
 /** A conversation. Owner-scoped; v1 keeps every thread. */
 export const CoachThreadSchema = RecordMetaSchema.extend({
@@ -466,7 +466,7 @@ export const BenInputSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('words'), text: z.string().min(1).max(4000), spoken: z.boolean() }),
   z.object({ kind: z.literal('chip'), chip: z.enum(['too_hard', 'too_easy', 'pain', 'lighter_session']) }),
   z.object({ kind: z.literal('accept_offer'), offer: CoachOfferKindSchema }),
-  /** The post-workout summary turn: no words from Ben (ADR 0019 C8). */
+  /** The post-workout summary turn: no words from Ben (ADR 0020 C8). */
   z.object({ kind: z.literal('summary') }),
 ]);
 export type BenInput = z.infer<typeof BenInputSchema>;
@@ -536,7 +536,7 @@ export const PlaybookCandidateSchema = z.object({
 export type PlaybookCandidate = z.infer<typeof PlaybookCandidateSchema>;
 
 /**
- * One exercise's coach target for the next session of a workout (ADR 0019
+ * One exercise's coach target for the next session of a workout (ADR 0020
  * §5, D21, coach-adjustments CA8/CA10). Your data. One row per source
  * workout and exercise; the action that set it is the audit.
  * - `saved`: a small change, used by default (`nextTargetsOf` prefers it).

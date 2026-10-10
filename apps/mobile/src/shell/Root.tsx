@@ -78,7 +78,7 @@ function Launch() {
       newId: newUuid,
       app: appInfo(),
       restAlerts,
-      // The coach over the ChatGPT-plan route (ADR 0019 C5); the same Keychain items and fetch as the connection screen.
+      // The coach over the ChatGPT-plan route (ADR 0020 C5); the same Keychain items and fetch as the connection screen.
       coach: {
         model: () => {
           const { ports } = coachConnectionPorts();

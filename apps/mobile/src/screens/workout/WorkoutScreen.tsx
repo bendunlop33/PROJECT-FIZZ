@@ -424,7 +424,7 @@ export function WorkoutScreen() {
     });
   }, [now, data, services]);
 
-  // The coach in the workout (ADR 0019 C7). An applied change reloads the targets and guards Log for
+  // The coach in the workout (ADR 0020 C7). An applied change reloads the targets and guards Log for
   // `timing.valueChangeGuard`, so a tap aimed at the old label never saves the new one (§4.3).
   const coachSessionId = data === 'loading' || data === null ? null : data.aggregate.session.id;
   const coach = useWorkoutCoach(coachSessionId, () => {

@@ -1,5 +1,5 @@
 /**
- * Device wiring for the product Coach connection (ADR 0019 C5). The same
+ * Device wiring for the product Coach connection (ADR 0020 C5). The same
  * Keychain items, fetch, crypto and loopback module as the S1 test that
  * passed on Ben's iPhone, so a sign-in from either screen is the same
  * connection. Model choice and pauses live in a small non-secret file in the

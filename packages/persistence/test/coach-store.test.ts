@@ -104,7 +104,7 @@ afterEach(async () => {
   dirs = [];
 });
 
-describe('coach turns and messages (ADR 0019 C3)', () => {
+describe('coach turns and messages (ADR 0020 C3)', () => {
   it("saves Ben's message with the turn before any request; a repeated start changes nothing", async () => {
     const s = await store();
     const first = await s.repos.coach.startTurn({ thread: thread(), newThread: true, turn: turn(), benMessage: benMessage() });

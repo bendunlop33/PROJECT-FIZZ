@@ -1,5 +1,5 @@
 /**
- * The coach in the app (ADR 0019 C6–C8): threads, turns, Undo, the summary
+ * The coach in the app (ADR 0020 C6–C8): threads, turns, Undo, the summary
  * turn and next-session targets, over `@fizz/coach` and the coach store.
  * In-process and local; the only network call is the model port, and
  * nothing in the workout loop waits for it (rule 1).

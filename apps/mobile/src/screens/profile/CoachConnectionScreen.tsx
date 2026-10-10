@@ -33,7 +33,7 @@ import { TIMING, useTheme } from '../../theme';
 import { AppText, Card, ChoiceCard, DangerTextButton, PrimaryButton, Row, Screen, SecondaryButton, SectionHeader, StatusLine, TextButton, Toast } from '../../ui';
 
 /**
- * Profile → Coach connection (ai-connection.md §2.1–2.6, ADR 0019 C5).
+ * Profile → Coach connection (ai-connection.md §2.1–2.6, ADR 0020 C5).
  * ChatGPT plan only in v1. All decisions are in @fizz/providers
  * (`connectChatGpt`, `textCoachState`) and `coach-connection-view`; this
  * screen renders them and calls the services on Ben's taps.

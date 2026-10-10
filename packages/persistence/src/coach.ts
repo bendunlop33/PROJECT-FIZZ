@@ -28,7 +28,7 @@ import type { SqlExecutor, SqlRow } from './driver';
 import { checkRead, checkWrite, insert, mismatch, parseJson, rowId } from './sql';
 
 /**
- * Coach v1 storage (ADR 0019 §9, slice C3). Every coach write is an
+ * Coach v1 storage (ADR 0020 §9, slice C3). Every coach write is an
  * `ActionRecord` committed in the same transaction as the change it
  * describes, so a force-close leaves both or neither. Writes are idempotent
  * on the record's `opId` (rule 5) and, for the append kinds, on their
@@ -200,7 +200,7 @@ export class SqliteCoachStore {
   // ---------- Threads, turns, messages ----------
 
   /**
-   * Save Ben's message before the request is sent (ADR 0019 §7), with the
+   * Save Ben's message before the request is sent (ADR 0020 §7), with the
    * thread when it is new and the turn as `running`. Idempotent by turn ID.
    */
   startTurn(input: { thread: CoachThread; newThread: boolean; turn: CoachTurn; benMessage: Omit<CoachMessage, 'ordinal'> }): Promise<{ turn: CoachTurn; benMessage: CoachMessage; replayed: boolean }> {
@@ -263,7 +263,7 @@ export class SqliteCoachStore {
   }
 
   /**
-   * Restart recovery (ADR 0019 §7, coach-contract check 8): a turn still
+   * Restart recovery (ADR 0020 §7, coach-contract check 8): a turn still
    * `running` when the app starts was cut off by a force-close. It becomes
    * `interrupted`; its committed actions are already saved and show their
    * cards once; nothing is re-sent or padded.

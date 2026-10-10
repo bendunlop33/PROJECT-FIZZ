@@ -33,7 +33,7 @@ function input(over: Partial<CoachContextInput> = {}): CoachContextInput {
   };
 }
 
-describe('the playbook bundle (ADR 0019 §6)', () => {
+describe('the playbook bundle (ADR 0020 §6)', () => {
   it('matches the approved playbook Markdown (regenerate with scripts/playbook-bundle.ts --write)', () => {
     const fromMd = buildPlaybookBundle(readFileSync(PLAYBOOK_MD, 'utf8'));
     expect(JSON.parse(readFileSync(PLAYBOOK_JSON, 'utf8'))).toEqual(fromMd);

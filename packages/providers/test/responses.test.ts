@@ -55,7 +55,7 @@ describe('plan request body', () => {
     expect(body.parallel_tool_calls).toBe(false);
   });
 
-  it('carries the coach’s structured reply shape: strict functions forced with tool_choice "required"; text.format is not sent (ADR 0019, PM decision 10 Oct)', () => {
+  it('carries the coach’s structured reply shape: strict functions forced with tool_choice "required"; text.format is not sent (ADR 0020, PM decision 10 Oct)', () => {
     const reply = {
       type: 'function' as const,
       name: 'reply',

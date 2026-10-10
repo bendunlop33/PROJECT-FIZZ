@@ -1,6 +1,6 @@
 /**
  * Builds `packages/coach/data/playbook-v1.json`, the versioned bundle of the
- * approved playbook rules the coach is sent (ADR 0019 §6), from the rules
+ * approved playbook rules the coach is sent (ADR 0020 §6), from the rules
  * table in `docs/training-guides/playbook-v1.md`. A unit test re-parses the
  * Markdown and fails when the bundle drifts from it.
  *
@@ -38,7 +38,7 @@ function plain(cell: string): string {
     .trim();
 }
 
-/** Rules 11–13 need the endurance switch, and v1 has no endurance data (ADR 0019 §6). */
+/** Rules 11–13 need the endurance switch, and v1 has no endurance data (ADR 0020 §6). */
 const NOT_IN_USE: Record<string, string> = {
   '11': 'not in use: no endurance training logged',
   '12': 'not in use: no endurance training logged',

@@ -1,6 +1,6 @@
 /**
  * The Summary's `Next time` with the coach (workout-summary §2 region 6,
- * D21, ADR 0019 C8). Pure. The built-in rule's rows (`buildWorkoutSummary`)
+ * D21, ADR 0020 C8). Pure. The built-in rule's rows (`buildWorkoutSummary`)
  * are the fallback; a coach row replaces its exercise's row while the
  * coach's target is in use. Small changes are already saved: the row shows
  * the target and its %, `Why?` (the coach's reason, checks and the built-in

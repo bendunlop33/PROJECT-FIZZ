@@ -14,7 +14,7 @@ import {
 import { isStructuralRequest, requestHas, type BenRequest, type BenRequestKind } from './request';
 
 /**
- * The restricted coach tool registry (coach-contract §6, ADR 0019 §2). These
+ * The restricted coach tool registry (coach-contract §6, ADR 0020 §2). These
  * are the only tools a coach turn can ever receive; `buildTurnRegistry`
  * narrows them per turn. No tool deletes or overwrites anything (CC6).
  */
@@ -161,7 +161,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     description: 'Forget a saved memory Ben asked you to forget. It can be undone.',
   },
   {
-    // Contract §6.1 says `ben_request`; ADR 0019 §2 proposes `none`. The approved
+    // Contract §6.1 says `ben_request`; ADR 0020 §2 proposes `none`. The approved
     // spec (the stricter one) wins until Ben decides.
     name: 'add_playbook_candidate',
     effect: 'append',
@@ -265,7 +265,7 @@ export interface TurnRegistry {
  * "remember that my left knee is dodgy on lunges" is Your data and can't
  * reach the Coaching knowledge queue (CLAUDE.md rule 10, review r3 S1). The
  * candidate text is also checked by `personalPlaybookText` in `tool-call.ts`.
- * Its `needs` is still unsettled in ADR 0019 (Ben/PM decision).
+ * Its `needs` is still unsettled in ADR 0020 (Ben/PM decision).
  */
 export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRequestKind[]>> = {
   adjust_pending_sets: ['change', 'difficulty'],

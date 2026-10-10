@@ -150,7 +150,7 @@ export interface StreamFailure extends ProviderFailure {
 /**
  * Progress while a response streams, for the coach's turn loop: the
  * first-event timeout counts from the request to the first event of any
- * kind (ADR 0019 §7), and a function call is handed over as soon as its item
+ * kind (ADR 0020 §7), and a function call is handed over as soon as its item
  * is done, so a tool can run before the stream ends.
  */
 export type StreamProgress =
@@ -159,7 +159,7 @@ export type StreamProgress =
    * A piece of a function call's arguments as they stream
    * (`response.function_call_arguments.delta`), with the function's name from
    * its `response.output_item.added`. Lets the coach show a structured reply's
-   * message sentence by sentence while it arrives (ADR 0019 C6).
+   * message sentence by sentence while it arrives (ADR 0020 C6).
    */
   | { type: 'function_call_delta'; itemId: string; name: string; delta: string }
   | { type: 'function_call'; call: FunctionCallOut }

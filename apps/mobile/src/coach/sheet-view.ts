@@ -1,5 +1,5 @@
 /**
- * View models for the coach sheet (coach-sheet.md, ADR 0019 C6). Pure: the
+ * View models for the coach sheet (coach-sheet.md, ADR 0020 C6). Pure: the
  * screen renders these and calls the coach service; it never decides
  * wording or what a card says. Minimal copy (CLAUDE.md, 10 Oct): states are
  * one or two words, and any explanation sits behind `Why?`.

@@ -1,5 +1,5 @@
 /**
- * Product "Coach connection" (ai-connection.md §2.1–2.6, §3.1, ADR 0019 §8,
+ * Product "Coach connection" (ai-connection.md §2.1–2.6, §3.1, ADR 0020 §8,
  * slice C5): connect the ChatGPT plan, choose a model, read an honest status.
  *
  * Built from the same pieces as the S1 sign-in test that passed on Ben's
@@ -10,7 +10,7 @@
  *
  * Rules kept here:
  * - ChatGPT plan only. There is no API-key route, so no error can switch to a
- *   paid route (CLAUDE.md rule 7; ADR 0019 §8 "No paid route in v1").
+ *   paid route (CLAUDE.md rule 7; ADR 0020 §8 "No paid route in v1").
  * - The ID token's RS256 signature is checked against OpenAI's JWKS before
  *   the identity is trusted or tokens are stored (ADR 0012 open item).
  * - No scope → nothing stored (tokens revoked), status `no_scope`.

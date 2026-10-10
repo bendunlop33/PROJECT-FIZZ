@@ -16,7 +16,7 @@ import { AppText, Chip, Icon, TextButton } from '../../ui';
 import { WhyPanel } from '../coach/CoachCard';
 
 /**
- * The coach in the workout (coach-adjustments §2, ADR 0019 C7): `Adjust`
+ * The coach in the workout (coach-adjustments §2, ADR 0020 C7): `Adjust`
  * with its chips, the trigger offer during rest, pending, the applied
  * banner from the saved record with Undo, and one-line outcomes. Nothing
  * here adds a tap to the Log loop or waits on the network; Log never waits

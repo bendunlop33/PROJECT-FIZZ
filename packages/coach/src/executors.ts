@@ -23,7 +23,7 @@ import { renderActionResult } from './render';
 import { appendContentKeys } from './tool-call';
 
 /**
- * Tool executors (ADR 0019 §2, §5; slice C4). Each one turns a parsed,
+ * Tool executors (ADR 0020 §2, §5; slice C4). Each one turns a parsed,
  * gated tool call into either read data or an `ActionRecord` committed with
  * its change through the store, in one transaction, idempotent on the opId.
  * Deterministic code decides every number: `validateTodayAdjustment` snaps,

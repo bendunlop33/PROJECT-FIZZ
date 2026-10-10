@@ -34,7 +34,7 @@ import { AppText, Chip, DomainLabel, Icon, TextButton, TextField } from '../../u
 import { CoachCard } from './CoachCard';
 
 /**
- * The coach sheet (coach-sheet.md, ADR 0019 C6). A side door: it never opens
+ * The coach sheet (coach-sheet.md, ADR 0020 C6). A side door: it never opens
  * itself, and nothing in the workout waits for it. Every change shows as a
  * card from the saved record with Undo; the coach's words are only advice.
  * The typed text stays in the field when the coach can't answer, and nothing

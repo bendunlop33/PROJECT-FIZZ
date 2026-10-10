@@ -52,7 +52,7 @@ async function collect(it: AsyncIterable<ModelEvent>): Promise<ModelEvent[]> {
   return out;
 }
 
-describe('plan model port (ADR 0019 C5, unproven on the device until S3)', () => {
+describe('plan model port (ADR 0020 C5, unproven on the device until S3)', () => {
   it('sends a plan-safe request (call_id, forced tool choice, no parallel calls) and streams heartbeats, reply pieces and the call', async () => {
     const { fetch, calls } = fakeFetch({
       [OPENAI_RESPONSES_URL]: () =>

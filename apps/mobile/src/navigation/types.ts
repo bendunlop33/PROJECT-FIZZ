@@ -17,7 +17,7 @@ export type ProfileStackParams = {
   EquipmentEditor: { gymId: string; equipmentId: string; kind: EquipmentKind; isNew: boolean };
   /** Spike S1 (Developer). */
   ChatGptSignInTest: undefined;
-  /** Profile → Coach connection (ai-connection.md, ADR 0019 C5). */
+  /** Profile → Coach connection (ai-connection.md, ADR 0020 C5). */
   CoachConnection: undefined;
   /** FitNotes import (data-import-export §2.5): intro, file pick and file errors. */
   ImportIntro: undefined;
@@ -82,7 +82,7 @@ export type RootStackParams = {
   /** Repeat a finished workout (routines.md §2.4). */
   Repeat: { sessionId: string };
   /**
-   * The coach sheet (coach-sheet.md, ADR 0019 C6). Opened only by Ben (Ask,
+   * The coach sheet (coach-sheet.md, ADR 0020 C6). Opened only by Ben (Ask,
    * workout `⋯` → Ask the coach, Adjust → Type…, Summary → Ask about this
    * workout); never by a trigger, timer or reply. `focus`: the field gets focus.
    */

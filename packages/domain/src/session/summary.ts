@@ -28,7 +28,7 @@ import { summariseVolume } from './volume';
  * - `unavailable`: a route exists but is paused (limit, signed out, no model)
  *   or offline.
  * - `connected`: the coach is connected, but this build has no summary turn
- *   yet (ADR 0019 C8), so the built-in rule still sets every target and the
+ *   yet (ADR 0020 C8), so the built-in rule still sets every target and the
  *   tag names it plainly.
  */
 export type CoachStatus = 'not_connected' | 'unavailable' | 'connected';

@@ -404,7 +404,7 @@ export function createAppServices(deps: AppServicesDeps) {
     catalogueExercises,
   });
 
-  /** The coach (ADR 0019 C6–C8): threads, turns, Undo, the summary turn, next-session targets. */
+  /** The coach (ADR 0020 C6–C8): threads, turns, Undo, the summary turn, next-session targets. */
   const coach = createCoachService({
     store: () => deps.manager.store,
     profile: getProfile,

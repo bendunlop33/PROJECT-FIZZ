@@ -5,7 +5,7 @@ import { at, id, kg, lb, values } from './fixtures';
 import { apply, BENCH, expectError, expectOk, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
 /**
- * `adjust_pending_targets` / `revert_target_adjustment` (ADR 0019 §4, C7):
+ * `adjust_pending_targets` / `revert_target_adjustment` (ADR 0020 §4, C7):
  * the coach's validated change to today's pending sets, and its Undo.
  */
 
@@ -105,7 +105,7 @@ describe('revert_target_adjustment (Undo)', () => {
   });
 });
 
-describe('Why? on a coach target (active-workout §2.12, ADR 0019 §4)', () => {
+describe('Why? on a coach target (active-workout §2.12, ADR 0020 §4)', () => {
   it('today’s change: set by the coach, its reason in quotes, Last time kept; Undo puts back the old target and its Why? exactly', () => {
     const s = startFixture().state;
     const { b2 } = bench(s);
