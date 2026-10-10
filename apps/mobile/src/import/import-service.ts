@@ -685,6 +685,14 @@ export function createImportService(deps: ImportServiceDeps) {
       const earlier = (await repos().imports.listJobs(d.ownerId)).find((j) => j.checksum === d.checksum && j.status === 'committed') ?? null;
       d.importedBefore = earlier;
       const start = startFrom(d.rows, fresh, earlier);
+      // The same checks `answer()` makes: an answer naming an exercise or gym that is gone is dropped, so its question is open again (review r6.1 N1).
+      const gymIds = new Set((await gymsOf(d.ownerId)).map((g) => g.id));
+      const exerciseIds = new Set(d.candidates.map((c) => c.exerciseId));
+      d.changes = d.changes.filter((c) => {
+        if (c.kind === 'name' && c.answer?.kind === 'exercise') return exerciseIds.has(c.answer.exerciseId);
+        if (c.kind === 'gym' && c.gymId !== null) return gymIds.has(c.gymId);
+        return true;
+      });
       const replayed = validate(ImportAnswersSchema, d.changes.reduce(applyAnswerChange, start));
       d.answers = replayed.ok ? replayed.value : start;
       if (!replayed.ok) d.changes = [];
@@ -750,7 +758,8 @@ export function createImportService(deps: ImportServiceDeps) {
           catalogueKey: null,
           measurement: 'reps',
           laterality: n.laterality,
-          compatibleEquipment: n.newKind === null ? [] : [n.newKind],
+          // The bar the name says (an EZ-bar name gets the EZ bar; review r6.1 B1).
+          compatibleEquipment: n.newKind === null ? [] : [...n.equipment],
           defaultLoadConvention: n.newKind === null ? n.convention : conventionForKind(n.newKind),
           version: 1,
           createdAtUtc: at.utc,

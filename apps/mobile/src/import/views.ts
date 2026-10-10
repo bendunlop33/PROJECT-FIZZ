@@ -279,7 +279,7 @@ export function questionRows(a: ImportAnalysis): QuestionRow[] {
         : {
             key: { kind: 'bodyweight', key: q.key },
             answered: true,
-            line: { icon: 'checkmark.circle.fill', tone: 'done', text: `${q.name}: ${BODYWEIGHT_WORD[q.answer]}` },
+            line: { icon: 'checkmark.circle.fill', tone: 'done', text: `${q.name}: ${q.answer === 'added' && q.loadAs === 'stack' ? 'weight on the stack' : q.answer === 'added' && q.loadAs === 'added' ? 'plates added' : BODYWEIGHT_WORD[q.answer]}` },
           },
     );
   }
@@ -841,7 +841,13 @@ export function bodyweightOptions(a: ImportAnalysis, key: string): { title: stri
   if (!q) return null;
   const neg = q.min < 0 ? `, ${q.max <= 0 ? 'all' : 'some'} negative` : ', none negative';
   const options: OptionView<'added' | 'assistance' | 'split'>[] = [
-    { value: 'added', label: 'Weight added to bodyweight', detail: q.min < 0 ? 'Negative values can’t be read this way' : 'Every value is weight added', selected: q.answer === 'added' },
+    // A stack or plates-added exercise whose name says assisted: "added" is that load (review r6.1 S1).
+    {
+      value: 'added',
+      label: q.loadAs === 'stack' ? 'Weight on the stack' : q.loadAs === 'added' ? 'Plates added' : 'Weight added to bodyweight',
+      detail: q.min < 0 ? 'Negative values can’t be read this way' : q.loadAs === 'stack' ? 'Every value is the weight lifted on the stack' : 'Every value is weight added',
+      selected: q.answer === 'added',
+    },
     {
       value: 'assistance',
       label: 'Assistance from a machine',
