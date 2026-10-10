@@ -244,7 +244,7 @@ export interface TurnGate {
 export interface WithheldTool {
   name: CoachToolName;
   /** For `Why?` → `Not used`. */
-  reason: 'turn_kind' | 'needs_request' | 'needs_pain_words' | 'needs_summary_turn' | 'needs_request_or_signal';
+  reason: 'turn_kind' | 'needs_request' | 'needs_pain_words' | 'needs_summary_turn' | 'needs_request_or_signal' | 'not_in_build';
 }
 
 export interface TurnRegistry {
