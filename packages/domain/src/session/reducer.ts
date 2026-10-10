@@ -9,6 +9,7 @@ import type {
   SessionAggregate,
   SessionCommand,
   SessionExercise,
+  SetExclusion,
   SetFlag,
   SetSide,
   SetSnapshot,
@@ -16,6 +17,7 @@ import type {
   WorkoutSet,
 } from '@fizz/schemas';
 import { isLoadAchievable } from '../equipment';
+import { normaliseExclusions } from '../exclusions';
 import {
   adjustRestTimer,
   createRestTimer,
@@ -150,7 +152,27 @@ export function commandFingerprint(command: SessionCommand): string {
 }
 
 function snapshot(set: WorkoutSet): SetSnapshot {
-  return { status: set.status, setType: set.setType, side: set.side, actual: set.actual, version: set.version };
+  const exclusions = normaliseExclusions(set.exclusions);
+  return {
+    status: set.status,
+    setType: set.setType,
+    side: set.side,
+    actual: set.actual,
+    ...(exclusions.length > 0 ? { exclusions } : {}),
+    version: set.version,
+  };
+}
+
+/**
+ * The set with these exclusion flags (§2.13). Stored in the canonical order;
+ * none = the field is absent, exactly like a set saved before flags existed,
+ * so a reload compares equal.
+ */
+function withExclusions(set: WorkoutSet, xs: readonly SetExclusion[] | undefined): WorkoutSet {
+  const n = normaliseExclusions(xs);
+  const next: WorkoutSet = { ...set, exclusions: n };
+  if (n.length === 0) delete next.exclusions;
+  return next;
 }
 
 function replaceSet(sets: readonly WorkoutSet[], next: WorkoutSet): WorkoutSet[] {
@@ -289,17 +311,21 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'ended_early', timerVersion: restTimer.version, lateByMs: 0 });
   }
 
-  const completed: WorkoutSet = {
-    ...set,
-    status: 'completed',
-    side: cmd.side ?? set.side,
-    actual: cmd.values,
-    draft: null,
-    completedAt: cmd.at,
-    completedByOpId: cmd.opId,
-    flags: flagsFor(cmd.values, state, ex),
-    version: set.version + 1,
-  };
+  // "100 for 8, spotted" logs and marks in one commit (§2.13).
+  const completed: WorkoutSet = withExclusions(
+    {
+      ...set,
+      status: 'completed',
+      side: cmd.side ?? set.side,
+      actual: cmd.values,
+      draft: null,
+      completedAt: cmd.at,
+      completedByOpId: cmd.opId,
+      flags: flagsFor(cmd.values, state, ex),
+      version: set.version + 1,
+    },
+    cmd.exclusions,
+  );
   let sets = replaceSet(state.sets, completed);
   events.push({ type: 'SetCommitted', setId: set.id, opId: cmd.opId });
 
@@ -462,26 +488,34 @@ function handleCorrectSet(state: SessionAggregate, cmd: CommandOf<'correct_set'>
   }
   const ex = exerciseOf(state, set);
   if (!ex) return fail('set_not_found', 'Exercise for this set not found.');
-  const { setType, side, ...valuePatch } = cmd.patch;
+  const { setType, side, exclusions, ...valuePatch } = cmd.patch;
   const badSide = checkSide(side, ex);
   if (badSide) return { ok: false, error: badSide };
   const actual: SetValues = { ...set.actual };
+  let valuesTouched = setType !== undefined || side !== undefined;
   for (const key of Object.keys(valuePatch) as (keyof SetValues)[]) {
     const v = valuePatch[key];
-    if (v !== undefined) Object.assign(actual, { [key]: v });
+    if (v === undefined) continue;
+    Object.assign(actual, { [key]: v });
+    valuesTouched = true;
   }
   const invalid = validateValues(actual, ex);
   if (invalid) return { ok: false, error: invalid };
 
-  const corrected: WorkoutSet = {
-    ...set,
-    actual,
-    setType: setType ?? set.setType,
-    side: side ?? set.side,
-    flags: flagsFor(actual, state, ex),
-    edited: true,
-    version: set.version + 1,
-  };
+  // §2.13: exclusions replace the whole list. Marking a set changes no
+  // values, so on its own it doesn't add the `Edited` tag; its words show instead.
+  const corrected: WorkoutSet = withExclusions(
+    {
+      ...set,
+      actual,
+      setType: setType ?? set.setType,
+      side: side ?? set.side,
+      flags: flagsFor(actual, state, ex),
+      edited: set.edited || valuesTouched,
+      version: set.version + 1,
+    },
+    exclusions === undefined ? set.exclusions : exclusions,
+  );
   const audit = [
     ...state.audit,
     {
@@ -535,8 +569,9 @@ function handleUndoLog(state: SessionAggregate, cmd: CommandOf<'undo_log'>, nowM
   }
   // Restore the side the set had before this log (e.g. `both` before "Left").
   const logged = [...state.audit].reverse().find((e) => e.kind === 'logged' && e.setId === set.id && e.opId === set.completedByOpId);
+  // A pending set carries no exclusions: undoing the log removes them with it.
   const restored: WorkoutSet = {
-    ...set,
+    ...withExclusions(set, []),
     side: logged?.before?.side ?? set.side,
     status: 'pending',
     draft: set.actual,
