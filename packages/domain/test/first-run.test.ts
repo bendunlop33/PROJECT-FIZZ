@@ -176,6 +176,24 @@ describe('next session from the last workout (audit B2)', () => {
     ]);
   });
 
+  it('an exercise done in two slots repeats each slot’s own numbers, not one slot’s targets twice (review S7)', () => {
+    const source = finishedBench();
+    const first = source.exercises.find((e) => e.exerciseId === BENCH);
+    if (!first) throw new Error('no bench');
+    const second = { ...first, id: '00000000-0000-4000-8000-0000000009d1', order: source.exercises.length };
+    const extra = source.sets
+      .filter((x) => x.sessionExerciseId === first.id && x.status === 'completed' && x.setType !== 'warmup')
+      .map((x, i) => ({ ...x, id: `00000000-0000-4000-8000-00000000${String(9e3 + i)}`, sessionExerciseId: second.id, actual: x.actual && { ...x.actual, load: kg(70), reps: 12 } }));
+    const twoSlots: SessionAggregate = { ...source, exercises: [...source.exercises, second], sets: [...source.sets, ...extra] };
+    const targets = new Map([[BENCH, [{ setType: 'working' as const, planned: { load: kg(102.5), reps: { min: 6, max: 8 }, durationS: null, rpe: null, rir: null, source: 'built_in_rule' as const } }]]]);
+    const out = startWorkoutFromSession({ opId: 'next-dup', owner: profile(), gymId: GYM, source: twoSlots, exercises: fixtureExercises, gymEquipment: [barbell()], at: at(86_400), newId: idGen(45_000), targets });
+    const slots = out.aggregate.exercises.filter((e) => e.exerciseId === BENCH);
+    expect(slots).toHaveLength(2);
+    const working = (exId: string) => out.aggregate.sets.filter((x) => x.sessionExerciseId === exId && x.setType !== 'warmup').map((x) => [x.planned.load?.value, x.planned.source]);
+    expect(working(slots[0]?.id ?? '')).toEqual([[100, 'repeat'], [100, 'repeat']]);
+    expect(working(slots[1]?.id ?? '')).toEqual([[70, 'repeat'], [70, 'repeat']]);
+  });
+
   it('targets still go through this gym: rounded toward easier and never above its max; lb stays lb', () => {
     const source = finishedBench();
     const small = barbell({ id: '00000000-0000-4000-8000-0000000009c1', plates: [{ mass: 20, count: 2 }] });

@@ -79,6 +79,10 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   const exercises = new Map<string, Exercise>();
   const routineExercises: RoutineExercise[] = [];
   const sorted = [...src.exercises].sort((a, b) => a.order - b.order);
+  // Targets are per exercise: an exercise done in two slots repeats each slot's own numbers (review S7).
+  const slots = new Map<string, number>();
+  for (const sx of sorted) slots.set(sx.exerciseId, (slots.get(sx.exerciseId) ?? 0) + 1);
+  const targetsFor = (exerciseId: string) => ((slots.get(exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(exerciseId));
 
   for (const sx of sorted) {
     const own = src.sets.filter((s) => s.sessionExerciseId === sx.id).sort((a, b) => a.index - b.index);
@@ -116,7 +120,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     let unitDropped: Load | null = null;
     let harderDropped: { requested: Load; lightest: Load } | null = null;
 
-    const planned = input.targets?.get(sx.exerciseId);
+    const planned = targetsFor(sx.exerciseId);
     const sources: { setType: SetType; load: Load | null; reps: { min: number; max: number } | null; durationS: number | null }[] =
       planned && planned.length > 0
         ? planned.map((p) => ({ setType: p.setType, load: p.planned.load, reps: p.planned.reps, durationS: p.planned.durationS }))
@@ -184,7 +188,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     session: { ...out.aggregate.session, routineId: null },
     sets: out.aggregate.sets.map((s) => {
       const exerciseId = out.aggregate.exercises.find((e) => e.id === s.sessionExerciseId)?.exerciseId;
-      const fromRule = exerciseId !== undefined && (input.targets?.get(exerciseId)?.length ?? 0) > 0;
+      const fromRule = exerciseId !== undefined && (targetsFor(exerciseId)?.length ?? 0) > 0;
       return { ...s, planned: { ...s.planned, source: fromRule ? ('built_in_rule' as const) : ('repeat' as const) } };
     }),
   };
