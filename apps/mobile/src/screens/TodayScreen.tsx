@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native';
 
 import { formatDuration, formatMinutes, reasonsText, scoreText, sparklinePoints, toMs, weekStripLabel, type LiftHighlight, type ResumeRow, type TodayMain, type WeekDay } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
@@ -14,7 +14,10 @@ import { firstTime, useDataChanged, useLaunchInfo, useScreenData, useServices } 
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
+import type { NextSessionPreview, RoutineRow } from '../services/workout-services';
 import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, Sparkline, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
+import { NameSheet } from './routines/NameSheet';
+import { RoutineSheet } from './routines/RoutineSheet';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
@@ -25,11 +28,23 @@ import { FinishSheet } from './workout/FinishSheet';
  * the rare unlinked check-in line, and This week.
  *
  * First-run audit: `Start workout` always works. With no gym it first saves
- * a typical one (marked not checked, B4); with a past workout it starts the
+ * a typical one (marked not checked, B4); with routines it starts the next in
+ * the rotation (premium-feel §2.6, D19); with a past workout it starts the
  * next session at the Summary's targets (B2); otherwise an empty workout
- * that opens the exercise picker. Routines and the weekly plan come later.
- * No AI, no network.
+ * that opens the exercise picker. `Your routines` lists saved routines; a
+ * row opens the routine sheet. The weekly plan comes later. No AI, no network.
  */
+
+/** What a Start begins: an empty workout, the next session of a past one, or a routine. */
+type StartIntent = { kind: 'empty' } | { kind: 'next'; sessionId: string } | { kind: 'routine'; routineId: string };
+
+/** Up next's Start: the routine when Up next is one, else the last workout's next session. */
+function upNextIntent(next: NextSessionPreview): StartIntent {
+  if (next.routine) return { kind: 'routine', routineId: next.routine.id };
+  return next.sourceSessionId === null ? { kind: 'empty' } : { kind: 'next', sessionId: next.sourceSessionId };
+}
+
+const ROUTINE_CAP = 4;
 export function TodayScreen() {
   const theme = useTheme();
   const services = useServices();
@@ -50,6 +65,16 @@ export function TodayScreen() {
   const [finishVisible, setFinishVisible] = useState(false);
   const [afterDismiss] = useState(() => createAfterDismiss());
   const alertsAsk = useStartAlertsAsk();
+  // Routine sheet, name sheet (rename) and their after-close steps.
+  const [sheetRow, setSheetRow] = useState<RoutineRow | null>(null);
+  const [sheetVisible, setSheetVisible] = useState(false);
+  const [renameRow, setRenameRow] = useState<RoutineRow | null>(null);
+  const [renameVisible, setRenameVisible] = useState(false);
+  const [sheetAfter] = useState(() => createAfterDismiss());
+  const [renameAfter] = useState(() => createAfterDismiss());
+  const [allRoutines, setAllRoutines] = useState(false);
+  // One opId per rename intent (sheet open), so a double tap saves once.
+  const renameOp = useRef<string>(newUuid());
   const [data, reload] = useScreenData(async (s) => {
     const [gym, view, banners, active, unlinked] = await Promise.all([
       s.yourData.currentGym(),
@@ -62,7 +87,8 @@ export function TodayScreen() {
     const next = gym ? await s.next.preview(gym.id).catch(() => null) : null;
     // Decorative history; never blocks Today either.
     const lift = await s.today.liftHighlight().catch(() => null);
-    return { gym, view, banners, active, unlinked, next, lift };
+    const routines = await s.routines.list().catch(() => [] as RoutineRow[]);
+    return { gym, view, banners, active, unlinked, next, lift, routines };
   });
 
   useEffect(() => {
@@ -95,8 +121,10 @@ export function TodayScreen() {
     };
   }, [toast]);
 
-  /** Start: next session (`nextOf`) or an empty workout. Never leaves a dead button (audit F9). */
-  async function start(nextOf: string | null) {
+  /** Start: a routine, the next session (`nextOf`) or an empty workout. Never leaves a dead button (audit F9). */
+  async function start(intent: StartIntent) {
+    const nextOf = intent.kind === 'next' ? intent.sessionId : null;
+    const routineOf = intent.kind === 'routine' ? intent.routineId : null;
     if (starting) return;
     setStarting(true);
     setError(null);
@@ -119,10 +147,10 @@ export function TodayScreen() {
       await alertsAsk.ensureAsked();
       const gate = await services.checkIns.gate();
       if (gate.kind === 'ask') {
-        navigation.navigate('CheckIn', { mode: 'start', gymId, ...(nextOf !== null ? { nextOf } : {}) });
+        navigation.navigate('CheckIn', { mode: 'start', gymId, ...(nextOf !== null ? { nextOf } : {}), ...(routineOf !== null ? { routineOf } : {}) });
         return;
       }
-      const key = nextOf ?? 'empty';
+      const key = routineOf !== null ? `routine:${routineOf}` : (nextOf ?? 'empty');
       const opId = startOps.current.get(key) ?? newUuid();
       startOps.current.set(key, opId);
       const checkIn =
@@ -131,7 +159,7 @@ export function TodayScreen() {
           : gate.reason === 'off' || gate.reason === 'not_a_check_in_day'
             ? ({ kind: 'not_asked', reason: gate.reason } as const)
             : null;
-      const r = await services.workout.start({ gymId, opId, checkIn, nextOf });
+      const r = await services.workout.start({ gymId, opId, checkIn, nextOf, routineOf });
       if (!r.ok) {
         setError(r.error.code === 'session_already_active' ? 'A workout is already in progress. Resume it above.' : r.error.message);
         reload();
@@ -163,6 +191,82 @@ export function TodayScreen() {
       if (r.ok) changed();
     }
     navigation.navigate('Workout');
+  }
+
+  function openRoutine(row: RoutineRow) {
+    setSheetRow(row);
+    setSheetVisible(true);
+  }
+
+  /** Close the routine sheet, then run `then` once it has gone (so the next sheet or screen presents cleanly). */
+  function closeSheetThen(then: () => void) {
+    sheetAfter.arm(then);
+    setSheetVisible(false);
+  }
+
+  function askRename(row: RoutineRow) {
+    renameOp.current = newUuid();
+    setRenameRow(row);
+    setRenameVisible(true);
+  }
+
+  async function saveRename(row: RoutineRow, name: string): Promise<string | null> {
+    const r = await services.routines.rename({ routineId: row.id, name, expectedVersion: row.version, opId: renameOp.current });
+    if (!r.ok) {
+      if (r.stale) reload();
+      return r.message;
+    }
+    const before = row.name;
+    const saved = r.routine;
+    renameAfter.arm(() => {
+      setRenameRow(null);
+      setToast({
+        text: `Renamed to ${saved.name}`,
+        action: 'Undo',
+        onAction: () => {
+          void services.routines.rename({ routineId: saved.id, name: before, expectedVersion: saved.version, opId: newUuid() }).then((u) => {
+            if (!u.ok) setError(u.message);
+            changed();
+            setToast(null);
+          });
+        },
+      });
+    });
+    setRenameVisible(false);
+    changed();
+    return null;
+  }
+
+  function confirmDelete(row: RoutineRow) {
+    Alert.alert(`Delete ${row.name}?`, 'Past workouts keep their name.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          void services.routines.remove({ routineId: row.id, expectedVersion: row.version, opId: newUuid() }).then((r) => {
+            if (!r.ok) {
+              setError(r.message);
+              reload();
+              return;
+            }
+            const gone = r.routine;
+            changed();
+            setToast({
+              text: `Deleted ${gone.name}`,
+              action: 'Undo',
+              onAction: () => {
+                void services.routines.restore({ routineId: gone.id, expectedVersion: gone.version, opId: newUuid() }).then((u) => {
+                  if (!u.ok) setError(u.message);
+                  changed();
+                  setToast(null);
+                });
+              },
+            });
+          });
+        },
+      },
+    ]);
   }
 
   async function discardEmpty(main: Extract<TodayMain, { kind: 'stale' }>) {
@@ -200,7 +304,7 @@ export function TodayScreen() {
       </View>
     );
   }
-  const { gym, view, banners, active, unlinked, next, lift } = data.value;
+  const { gym, view, banners, active, unlinked, next, lift, routines } = data.value;
   const zoned = services.now();
   const main = view?.main ?? { kind: 'no_plan' as const };
 
@@ -281,29 +385,35 @@ export function TodayScreen() {
               }}
             />
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
-              {/* Next targets from today's workout, not a repeat of it (review S1). */}
-              {next ? <TextButton label="Start next session" onPress={() => void start(next.sourceSessionId)} /> : null}
-              <TextButton label="Empty workout" onPress={() => void start(null)} />
+              {/* A second workout: a routine row below, or an empty one (premium-feel §2.4). With no routines yet,
+                  the next session of today's workout stays one tap (review S1). */}
+              {next && routines.length === 0 ? <TextButton label="Start next session" onPress={() => void start(upNextIntent(next))} /> : null}
+              <TextButton label="Empty workout" onPress={() => void start({ kind: 'empty' })} />
             </View>
           </Hero>
         );
       case 'no_plan':
         if (next) {
           const exerciseCount = next.exercises.length;
+          const basis =
+            next.routine?.basis.kind === 'only'
+              ? 'Your only routine'
+              : next.routine?.basis.kind === 'after'
+                ? `After ${next.routine.basis.routineName} on ${formatShortDate(toMs(next.routine.basis.atUtc), next.routine.basis.tz)}`
+                : next.sourceStartedAtUtc !== null
+                  ? `From ${formatShortDate(toMs(next.sourceStartedAtUtc), next.tz)}, with next targets (built-in rule)`
+                  : null;
           return (
             <Hero
               label="Up next"
               title={next.title}
-              lines={[
-                [next.muscles, `${String(exerciseCount)} ${exerciseCount === 1 ? 'exercise' : 'exercises'} · ${String(next.sets)} sets`].filter(Boolean).join(' · '),
-                `From ${formatShortDate(toMs(next.sourceStartedAtUtc), next.tz)}, with next targets (built-in rule)`,
-              ]}
+              lines={[[next.muscles, `${String(exerciseCount)} ${exerciseCount === 1 ? 'exercise' : 'exercises'} · ${String(next.sets)} sets`].filter(Boolean).join(' · '), basis]}
             >
-              <PrimaryButton label="Start workout" busy={starting} onPress={() => void start(next.sourceSessionId)} />
+              <PrimaryButton label="Start workout" busy={starting} onPress={() => void start(upNextIntent(next))} />
               {/* What Start creates, already fitted to this gym; each line says `Target` (premium-feel §2.3). */}
               <DetailList rows={next.targets.map((t, i) => ({ key: `${String(i)}:${t.exerciseName}`, title: t.exerciseName, detail: t.line }))} />
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
-                <TextButton label="Empty workout" onPress={() => void start(null)} />
+                <TextButton label="Empty workout" onPress={() => void start({ kind: 'empty' })} />
                 <TextButton
                   label="Past workouts"
                   onPress={() => {
@@ -316,12 +426,17 @@ export function TodayScreen() {
         }
         return (
           <Hero label="Today" title="First workout" lines={['Pick an exercise and log your first set. Common lifts are at the top.']}>
-            <PrimaryButton label="Start workout" busy={starting} onPress={() => void start(null)} />
+            <PrimaryButton label="Start workout" busy={starting} onPress={() => void start({ kind: 'empty' })} />
             {gym ? null : (
               <AppText variant="callout" color="text.secondary">
                 Uses a typical gym (barbell, dumbbells, cables, machines) until you check its equipment in Profile.
               </AppText>
             )}
+            {routines.length === 0 ? (
+              <AppText variant="callout" color="text.secondary">
+                After your first workout you can save it as a routine and start it from here.
+              </AppText>
+            ) : null}
           </Hero>
         );
     }
@@ -386,6 +501,41 @@ export function TodayScreen() {
 
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
 
+        {/* Your routines (premium-feel §2.1 region 6): hidden while a workout is in progress and when there are none. */}
+        {routines.length > 0 && main.kind !== 'resume' && main.kind !== 'stale' ? (
+          <RuledSection title="Your routines" gap="2">
+            {(allRoutines ? routines : routines.slice(0, ROUTINE_CAP)).map((r, i) => (
+              <FadeIn key={r.id} motion={i >= ROUTINE_CAP ? listEnterMotion(i - ROUTINE_CAP, theme.a11y.reduceMotion) : null}>
+                <RoutineListRow
+                  row={r}
+                  tz={zoned.tz}
+                  onPress={() => {
+                    openRoutine(r);
+                  }}
+                  onLongPress={() => {
+                    ActionSheetIOS.showActionSheetWithOptions({ title: r.name, options: ['Rename', 'Delete', 'Cancel'], destructiveButtonIndex: 1, cancelButtonIndex: 2 }, (k) => {
+                      if (k === 0) askRename(r);
+                      if (k === 1) confirmDelete(r);
+                    });
+                  }}
+                />
+              </FadeIn>
+            ))}
+            {routines.length > ROUTINE_CAP && !allRoutines ? (
+              <View style={{ alignSelf: 'flex-start' }}>
+                <TextButton
+                  label="All routines"
+                  icon="chevron.right"
+                  tone="secondary"
+                  onPress={() => {
+                    setAllRoutines(true);
+                  }}
+                />
+              </View>
+            ) : null}
+          </RuledSection>
+        ) : null}
+
         <RuledSection title="This week">
           {view && view.week.days.length === 7 ? <WeekStrip days={view.week.days} /> : null}
           <AppText variant="callout" color="text.secondary" numeric>
@@ -397,6 +547,43 @@ export function TodayScreen() {
         {lift && main.kind !== 'stale' ? <LiftCard lift={lift} /> : null}
       </ScrollView>
       {alertsAsk.sheet}
+      <RoutineSheet
+        row={sheetRow}
+        gymId={gym?.id ?? null}
+        visible={sheetVisible}
+        starting={starting}
+        onStart={(r) => {
+          closeSheetThen(() => void start({ kind: 'routine', routineId: r.id }));
+        }}
+        onRename={(r) => {
+          closeSheetThen(() => {
+            askRename(r);
+          });
+        }}
+        onDelete={(r) => {
+          closeSheetThen(() => {
+            confirmDelete(r);
+          });
+        }}
+        onClose={() => {
+          setSheetVisible(false);
+        }}
+        onDismissed={sheetAfter.dismissed}
+      />
+      {renameRow ? (
+        <NameSheet
+          visible={renameVisible}
+          title="Rename routine"
+          buttonLabel="Save name"
+          initialName={renameRow.name}
+          check={(n) => services.routines.checkName(n, renameRow.id)}
+          onSubmit={(n) => saveRename(renameRow, n)}
+          onClose={() => {
+            setRenameVisible(false);
+          }}
+          onDismissed={renameAfter.dismissed}
+        />
+      ) : null}
       {toast ? <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
       {finishFor ? (
         <FinishSheet
@@ -601,5 +788,36 @@ function DetailList({ rows }: { rows: readonly DetailRow[] }) {
         </View>
       ) : null}
     </View>
+  );
+}
+
+/** A `Your routines` row (≥ 52 pt): name, then `5 exercises · 6 Oct` or `5 exercises · not done yet`, and a chevron. */
+function RoutineListRow({ row, tz, onPress, onLongPress }: { row: RoutineRow; tz: string; onPress: () => void; onLongPress: () => void }) {
+  const theme = useTheme();
+  const count = `${String(row.exercises)} ${row.exercises === 1 ? 'exercise' : 'exercises'}`;
+  const when = row.lastDone ? formatDayMonth(toMs(row.lastDone.atUtc), row.lastDone.tz || tz) : 'not done yet';
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${row.name}, ${count}, ${row.lastDone ? `last done ${when}` : 'not done yet'}`}
+      accessibilityHint="Opens the routine. Touch and hold to rename or delete."
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={({ pressed }) => ({
+        minHeight: theme.target.workout.height,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.space['3'],
+        backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent',
+      })}
+    >
+      <AppText variant="body" numberOfLines={2} style={{ flex: 1 }}>
+        {row.name}
+      </AppText>
+      <AppText variant="callout" color="text.secondary" numeric>
+        {`${count} · ${when}`}
+      </AppText>
+      <Icon name="chevron.right" color="text.tertiary" size={14} />
+    </Pressable>
   );
 }
