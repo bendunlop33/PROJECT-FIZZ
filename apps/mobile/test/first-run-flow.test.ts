@@ -151,6 +151,12 @@ describe('next session (audit B2)', () => {
     const benchNext = summary?.nextTime?.rows.find((e) => e.exerciseName === 'Bench press');
     expect(plain(benchNext?.target)).toBe('Target 62.5 kg × 3–6');
 
+    // D-Today's lift highlight: the first weighted lift's top set, from the stored workout.
+    const lift = await s.today.liftHighlight();
+    expect(lift?.exerciseName).toBe('Bench press');
+    expect(plain(lift?.text)).toBe('60 kg × 6');
+    expect(lift?.points).toEqual([60]);
+
     h.clockMs += 2 * 86_400_000;
     const preview = await s.next.preview(gymId);
     expect(preview).toMatchObject({ sourceSessionId: first, title: 'Push', muscles: 'Chest · Triceps' });

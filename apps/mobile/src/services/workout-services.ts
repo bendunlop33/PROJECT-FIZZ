@@ -2,6 +2,7 @@ import {
   addDays,
   applyCheckInPatch,
   buildActiveSetView,
+  buildLiftHighlight,
   buildTodayView,
   buildWorkoutSummary,
   defaultStartingPlan,
@@ -36,6 +37,7 @@ import {
   type PreviousSession,
   type RecentCheckIn,
   type StartOutcome,
+  type LiftHighlight,
   type TodayView,
   type WorkoutSummary,
 } from '@fizz/domain';
@@ -734,6 +736,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         recentCheckIns: recent.map((r) => ({ ...r, score: r.checkIn.score, reasons: r.checkIn.reasons })),
         weekDates: Array.from({ length: 7 }, (_, i) => addDays(week.mondayLocalDate, i)),
       });
+    },
+
+    /**
+     * D-Today's lift highlight: the main lift's last top set and its recent
+     * trend, from logged workouts in the last 120 days. Unreadable workouts
+     * are left out; never blocks Today.
+     */
+    async liftHighlight(): Promise<LiftHighlight | null> {
+      const p = await ctx.profile();
+      if (!p) return null;
+      const nowMs = toMs(ctx.now().utc);
+      const { sessions } = await repos().sessions.listFinishedBetweenReadable(p.id, toIso(nowMs - 120 * 86_400_000), toIso(nowMs + 1));
+      return buildLiftHighlight(sessions);
     },
   };
 
