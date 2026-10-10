@@ -6,7 +6,7 @@
   "view": "side",
   "facing": "right",
   "units": "bodyHeight",
-  "durationMs": 2550,
+  "durationMs": 2600,
   "loop": "cycle",
   "motion": "phases",
   "ground": { "y": 0, "scrollPerCycle": 0 },
