@@ -130,7 +130,7 @@ export async function verifyJwtSignature(jwt: string, keys: readonly RsaPublicKe
   for (const key of candidates) {
     if (await verifyRs256(input, signature, key, crypto)) return ok(undefined);
   }
-  return err(failure('id_token_invalid', 'ID token signature does not match OpenAI’s signing key'));
+  return err(failure('id_token_invalid', 'ID token signature does not match OpenAI’s signing key. The sign-in couldn’t be verified, so nothing was saved'));
 }
 
 /** Reads `jwks_uri` from discovery, then the JWKS. Only https URLs on auth.openai.com are followed. */
@@ -154,6 +154,12 @@ export async function fetchOpenAiJwks(options: TokenCallOptions): Promise<Result
  */
 export async function verifyIdTokenSignature(idToken: string, options: TokenCallOptions & { crypto: Pick<CryptoPort, 'sha256'> }): Promise<Result<void, ProviderFailure>> {
   const keys = await fetchOpenAiJwks(options);
-  if (!keys.ok) return keys;
+  if (!keys.ok) {
+    // Review r2 S1: being offline isn't "your token is invalid". Keep the
+    // transport kind (network/timeout → retry later) and say what failed.
+    const offline = keys.error.kind === 'network' || keys.error.kind === 'timeout';
+    const next = offline ? 'try again when you’re online' : 'try again later';
+    return err({ ...keys.error, message: `Couldn’t fetch OpenAI’s signing keys to check the sign-in (${keys.error.message}). Nothing was saved; ${next}.` });
+  }
   return verifyJwtSignature(idToken, keys.value, options.crypto);
 }

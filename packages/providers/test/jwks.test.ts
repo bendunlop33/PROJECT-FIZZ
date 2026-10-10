@@ -58,4 +58,24 @@ describe('ID token RS256 check against the JWKS (ADR 0012, review S5)', () => {
     const down = fakeFetch({ [OPENAI_DISCOVERY_URL]: () => textResponse(503, '') });
     expect(await fetchOpenAiJwks({ fetch: down.fetch, nowMs })).toMatchObject({ ok: false });
   });
+
+  it('offline or unreachable keys read differently from a signature mismatch (review r2 S1)', async () => {
+    const offline = fakeFetch({});
+    const r = await verifyIdTokenSignature(makeJwt(CLAIMS), { fetch: offline.fetch, nowMs, crypto: nodeCrypto });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.kind).not.toBe('id_token_invalid');
+    expect(r.error.message).toMatch(/^Couldn’t fetch OpenAI’s signing keys to check the sign-in \(.*\)\. Nothing was saved; try again when you’re online\.$/);
+
+    const down = fakeFetch({ [OPENAI_DISCOVERY_URL]: () => textResponse(503, '') });
+    const d = await verifyIdTokenSignature(makeJwt(CLAIMS), { fetch: down.fetch, nowMs, crypto: nodeCrypto });
+    expect(d).toMatchObject({ ok: false, error: { kind: 'protocol' } });
+
+    const good = fakeFetch({ [OPENAI_DISCOVERY_URL]: () => jsonResponse(200, TEST_DISCOVERY), [TEST_JWKS_URL]: () => jsonResponse(200, TEST_JWKS) });
+    const stranger = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const bad = await verifyIdTokenSignature(makeJwt(CLAIMS, { privateKey: stranger.privateKey }), { fetch: good.fetch, nowMs, crypto: nodeCrypto });
+    expect(bad).toMatchObject({ ok: false, error: { kind: 'id_token_invalid' } });
+    if (bad.ok) return;
+    expect(bad.error.message).toMatch(/^ID token signature does not match/);
+  });
 });

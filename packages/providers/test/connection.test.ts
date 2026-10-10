@@ -129,7 +129,7 @@ describe('connectChatGpt (ai-connection §2.3–2.5)', () => {
     });
     const ports = { ...w.ports, fetch: (url: string, init: Parameters<typeof fetch>[1]) => (url.includes('.well-known') ? fetch(url, init) : w.ports.fetch(url, init)) };
     const r = await connectChatGpt(ports);
-    expect(r).toMatchObject({ kind: 'failed', failure: { kind: 'protocol', message: 'Discovery document has no usable jwks_uri' } });
+    expect(r).toMatchObject({ kind: 'failed', failure: { kind: 'protocol', message: 'Couldn’t fetch OpenAI’s signing keys to check the sign-in (Discovery document has no usable jwks_uri). Nothing was saved; try again later.' } });
     expect(w.vault.tokens).toBeNull();
     expect(parseRegistration(w.vault.registration)?.subject).toBeNull();
     expect(w.calls.some((c) => c.url.includes('/oauth/revoke'))).toBe(true);
