@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { checkRoutineName, discardCommand, discardConfirmation, formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -556,11 +556,12 @@ export function WorkoutScreen() {
   }
 
   function confirmDiscard() {
-    const logged = view?.progress.done ?? 0;
+    // One tested rule for every Discard (competitor-failure pack (e)): confirm whenever a set is logged.
+    const ask = discardConfirmation(loaded.aggregate);
     const go = () => {
-      void run({ type: 'discard', at: services.now(), opId: newUuid(), expectedVersion: loaded.aggregate.session.version }).then((r) => {
+      void run(discardCommand(ask, { opId: newUuid(), at: services.now() })).then((r) => {
         if (!r.ok) {
-          showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}` });
+          showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' || r.error.code === 'discard_unconfirmed' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}` });
           return;
         }
         // From inside the Finish sheet: leave only once it has closed (review S8, audit F9).
@@ -575,11 +576,11 @@ export function WorkoutScreen() {
       });
     };
     // Nothing logged: discard at once (today.md §4: no Undo, nothing was logged).
-    if (logged === 0) {
+    if (!ask.required) {
       go();
       return;
     }
-    Alert.alert(`Discard ${view?.title ?? 'this workout'}?`, `${String(logged)} logged ${logged === 1 ? 'set' : 'sets'} will be discarded. This can’t be undone.`, [
+    Alert.alert(`Discard ${view?.title ?? 'this workout'}?`, ask.message, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Discard', style: 'destructive', onPress: go },
     ]);
