@@ -10,6 +10,7 @@ import {
   type ToolEffect,
   type ToolNeed,
 } from '@fizz/schemas';
+import { isStructuralRequest, type BenRequest } from './request';
 
 /**
  * The restricted coach tool registry (coach-contract §6, ADR 0018 §2). These
@@ -223,14 +224,17 @@ assertRegistrySafe(COACH_TOOLS);
 /** What this turn contains, decided by code from Ben's own input (never from tool output or imported text). */
 export interface TurnGate {
   kind: CoachTurnKind;
-  /** Ben's own message (typed, spoken or a chip) asked for something in this turn. */
-  benRequest: boolean;
+  /**
+   * Ben's own message (typed, spoken) or chip in this turn, classified as a
+   * request by `classifyBenRequest` / `chipRequest`. Null when he only asked a
+   * question or said something else: "Ben sent a message" is not a request
+   * (review S3, rule 3). Never set from tool output or imported text.
+   */
+  benRequest: BenRequest | null;
   /** Ben tapped `Adjust` on an offer (CA1); counts as a request for today's sets only. */
   acceptedOffer: boolean;
   /** `classifyPainMention` returned `pain` on Ben's own words in this turn (or he tapped `Pain`). */
   benPainWords: boolean;
-  /** Ben asked for a structural change (variety, swap) in this turn. */
-  benStructuralRequest: boolean;
   /** `getStructuralChangeSignals` for the workout in context. */
   structuralSignals: readonly StructuralSignalKind[];
 }
@@ -251,17 +255,17 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
     case 'none':
       return null;
     case 'ben_request':
-      if (g.benRequest) return null;
+      if (g.benRequest !== null) return null;
       // An accepted offer only counts for today's sets (CA1).
       return g.acceptedOffer && t.name === 'adjust_pending_sets' ? null : 'needs_request';
     case 'ben_pain_words':
       return g.benPainWords ? null : 'needs_pain_words';
     case 'ben_named_target':
-      return g.benRequest ? null : 'needs_request';
+      return g.benRequest !== null ? null : 'needs_request';
     case 'summary_turn':
       return g.kind === 'summary' ? null : 'needs_summary_turn';
     case 'structural_signal':
-      return g.benStructuralRequest || g.structuralSignals.length > 0 ? null : 'needs_request_or_signal';
+      return isStructuralRequest(g.benRequest) || g.structuralSignals.length > 0 ? null : 'needs_request_or_signal';
   }
 }
 

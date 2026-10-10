@@ -8,18 +8,23 @@ import {
   listCoachCapabilities,
   parseToolCall,
   toolOpId,
+  chipRequest,
+  classifyBenRequest,
   UnsafeRegistryError,
+  type BenRequest,
   type ToolDeclaration,
   type TurnGate,
 } from '../src/index';
 import { id } from './records';
 
+const ASKED: BenRequest = { source: 'words', kind: 'change' };
+const STRUCTURAL: BenRequest = { source: 'words', kind: 'structural' };
+
 const gate = (over: Partial<TurnGate> = {}): TurnGate => ({
   kind: 'general',
-  benRequest: false,
+  benRequest: null,
   acceptedOffer: false,
   benPainWords: false,
-  benStructuralRequest: false,
   structuralSignals: [],
   ...over,
 });
@@ -75,9 +80,9 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
 
   it("today's sets need Ben's request or an accepted offer, and only in a workout", () => {
     expect(names(gate({ kind: 'workout' }))).not.toContain('adjust_pending_sets');
-    expect(names(gate({ kind: 'workout', benRequest: true }))).toContain('adjust_pending_sets');
+    expect(names(gate({ kind: 'workout', benRequest: ASKED }))).toContain('adjust_pending_sets');
     expect(names(gate({ kind: 'workout', acceptedOffer: true }))).toContain('adjust_pending_sets');
-    expect(names(gate({ kind: 'general', benRequest: true }))).not.toContain('adjust_pending_sets');
+    expect(names(gate({ kind: 'general', benRequest: ASKED }))).not.toContain('adjust_pending_sets');
     // An accepted offer is not a request for anything else.
     expect(names(gate({ kind: 'workout', acceptedOffer: true }))).not.toContain('save_memory');
   });
@@ -88,7 +93,7 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     const withSignal = names(gate({ kind: 'summary', structuralSignals: ['pain_flag'] }));
     expect(withSignal).toContain('propose_next_workout_change');
     // Even a request in the summary turn can't reach memory, pain or today's sets.
-    const asked = names(gate({ kind: 'summary', benRequest: true, benPainWords: true }));
+    const asked = names(gate({ kind: 'summary', benRequest: ASKED, benPainWords: true }));
     expect(asked).not.toEqual(expect.arrayContaining(['save_memory']));
     expect(asked).not.toContain('set_pain_flag');
     expect(asked).not.toContain('adjust_pending_sets');
@@ -98,17 +103,32 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     const structural = COACH_TOOLS.filter((t) => t.structural).map((t) => t.name);
     expect(structural.length).toBeGreaterThan(0);
     for (const kind of ['general', 'workout', 'summary'] as const) {
-      const r = buildTurnRegistry(gate({ kind, benRequest: true }));
+      const r = buildTurnRegistry(gate({ kind, benRequest: ASKED }));
       for (const name of structural) {
         expect(r.tools.map((t) => t.name)).not.toContain(name);
         expect(r.withheld).toContainEqual({ name, reason: 'needs_request_or_signal' });
       }
-      for (const name of structural) expect(names(gate({ kind, benStructuralRequest: true }))).toContain(name);
+      for (const name of structural) expect(names(gate({ kind, benRequest: STRUCTURAL }))).toContain(name);
     }
   });
 
+  it('a plain question is not a request: it never unlocks today’s sets (review S3, rule 3)', () => {
+    for (const q of ['why is set 3 at 100?', 'should I drop the weight?', 'what do you think of my bench?', 'how many sets are left?', 'is 95 too light?']) {
+      expect(classifyBenRequest(q)).toBeNull();
+      expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest(q) }))).not.toContain('adjust_pending_sets');
+    }
+    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('drop the weight for the last two') }))).toContain('adjust_pending_sets');
+    expect(names(gate({ kind: 'workout', benRequest: chipRequest('too_hard') }))).toContain('adjust_pending_sets');
+  });
+
+  it('a non-structural request never unlocks structural tools (CC10)', () => {
+    const r = buildTurnRegistry(gate({ kind: 'summary', benRequest: classifyBenRequest('lower bench next time') }));
+    expect(r.tools.some((t) => t.structural)).toBe(false);
+    expect(buildTurnRegistry(gate({ kind: 'summary', benRequest: classifyBenRequest('swap cable fly for something else next time') })).tools.some((t) => t.structural)).toBe(true);
+  });
+
   it("set_pain_flag needs Ben's own pain words this turn (check 19)", () => {
-    expect(names(gate({ benRequest: true }))).not.toContain('set_pain_flag');
+    expect(names(gate({ benRequest: ASKED }))).not.toContain('set_pain_flag');
     expect(names(gate({ benPainWords: true }))).toContain('set_pain_flag');
   });
 });
@@ -165,7 +185,7 @@ describe('listCoachCapabilities (check 11)', () => {
 });
 
 describe('parseToolCall', () => {
-  const workout = buildTurnRegistry(gate({ kind: 'workout', benRequest: true }));
+  const workout = buildTurnRegistry(gate({ kind: 'workout', benRequest: ASKED }));
   const args = {
     baseVersion: 7,
     exercises: [{ sessionExerciseId: id(10), sets: [{ setId: id(13), target: { load: { value: 95, unit: 'kg', convention: 'total' }, reps: null } }], addSet: null, removeSetId: null }],

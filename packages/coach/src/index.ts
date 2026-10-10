@@ -1,4 +1,5 @@
 export * from './registry';
+export * from './request';
 export * from './tool-call';
 export * from './function-tools';
 export * from './render';
