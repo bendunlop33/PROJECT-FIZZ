@@ -354,7 +354,13 @@ function signedDepth(p: Vec, occ: Occluders, cap: number): number {
     if (p.x < o.minX - cap || p.x > o.maxX + cap || p.y < o.minY - cap || p.y > o.maxY + cap) continue;
     if (!inside && p.x >= o.minX && p.x <= o.maxX && p.y >= o.minY && p.y <= o.maxY && pointInPolygon(p, o.pts)) inside = true;
     const n = o.pts.length;
-    for (let i = 0; i < n; i += 1) d = Math.min(d, pointSegmentDistance(p, o.pts[i] as Vec, o.pts[(i + 1) % n] as Vec));
+    for (let i = 0; i < n; i += 1) {
+      const a = o.pts[i] as Vec;
+      const b = o.pts[(i + 1) % n] as Vec;
+      // An edge wholly more than `d` away on one axis can't lower the minimum (exact; most edges stop here).
+      if ((a.x < p.x - d && b.x < p.x - d) || (a.x > p.x + d && b.x > p.x + d) || (a.y < p.y - d && b.y < p.y - d) || (a.y > p.y + d && b.y > p.y + d)) continue;
+      d = Math.min(d, pointSegmentDistance(p, a, b));
+    }
   }
   return inside ? -d : d;
 }

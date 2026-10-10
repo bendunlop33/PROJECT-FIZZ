@@ -126,8 +126,31 @@ export function chainTrunk(segments: BodySegment[]): void {
 
 const BLEND = 0.25;
 
+/**
+ * Per-segment memo of `frameAt` and `widthsAt` by `s`: one frame's outline,
+ * regions, shading and lines sample the same stations many times (the bake's
+ * single largest cost, guides review B2). Segments are built per frame and
+ * not changed once their trunk chain is joined (`chainTrunk`, before any
+ * drawing), and callers never mutate the results.
+ */
+const frameMemo = new WeakMap<BodySegment, Map<number, { p: Vec; n: Vec }>>();
+const widthMemo = new WeakMap<BodySegment, Map<number, { front: number; back: number }>>();
+
 /** Axis point and front normal at `s` (the normal blends to the chain bisectors near trunk joints). */
 export function frameAt(seg: BodySegment, s: number): { p: Vec; n: Vec } {
+  let memo = frameMemo.get(seg);
+  if (memo === undefined) {
+    memo = new Map();
+    frameMemo.set(seg, memo);
+  }
+  const hit = memo.get(s);
+  if (hit !== undefined) return hit;
+  const out = frameAtUncached(seg, s);
+  memo.set(s, out);
+  return out;
+}
+
+function frameAtUncached(seg: BodySegment, s: number): { p: Vec; n: Vec } {
   const p = add(seg.j0, scale(seg.u, s * seg.length));
   let n = seg.n;
   if (s < BLEND && seg.nStart !== seg.n) n = unit(add(scale(seg.nStart, 1 - smoothstep(Math.max(0, s) / BLEND)), scale(seg.n, smoothstep(Math.max(0, s) / BLEND))));
@@ -139,8 +162,17 @@ export function frameAt(seg: BodySegment, s: number): { p: Vec; n: Vec } {
 }
 
 export function widthsAt(seg: BodySegment, s: number): { front: number; back: number } {
+  let memo = widthMemo.get(seg);
+  if (memo === undefined) {
+    memo = new Map();
+    widthMemo.set(seg, memo);
+  }
+  const hit = memo.get(s);
+  if (hit !== undefined) return hit;
   const w = profileAt(seg.profile, s);
-  return { front: w.front * seg.widthScale, back: w.back * seg.widthScale };
+  const out = { front: w.front * seg.widthScale, back: w.back * seg.widthScale };
+  memo.set(s, out);
+  return out;
 }
 
 /**

@@ -55,8 +55,39 @@ export const ADULT_V1_PROFILES: Record<'side' | 'frontBack', Record<SegmentName,
 /** Far-side limbs in a side view are drawn slightly narrower (a perspective cue, §3.2). */
 export const FAR_PROFILE_SCALE = 0.96;
 
+type Pick = (st: Station) => number;
+const pickFront: Pick = (x) => x.front;
+const pickBack: Pick = (x) => x.back;
+
+/** Interval i's end slopes (m0, m1) for one edge: they depend only on the profile, so they're worked out once per profile. */
+function intervalSlopes(profile: Profile, pick: Pick): Float64Array {
+  const n = profile.length;
+  const out = new Float64Array(Math.max(0, n - 1) * 2);
+  const slope = (p: Station | undefined, q: Station | undefined): number | null => (p === undefined || q === undefined ? null : (pick(q) - pick(p)) / (q.s - p.s));
+  for (let i = 0; i + 1 < n; i += 1) {
+    const a = profile[i] as Station;
+    const b = profile[i + 1] as Station;
+    const h = b.s - a.s;
+    const prev = profile[i - 1];
+    const next = profile[i + 2];
+    const sAB = slope(a, b);
+    out[2 * i] = monotoneSlope(slope(prev, a), sAB, prev === undefined ? h : a.s - prev.s, h);
+    out[2 * i + 1] = monotoneSlope(sAB, slope(b, next), h, next === undefined ? h : next.s - b.s);
+  }
+  return out;
+}
+const slopeCache = new WeakMap<Profile, { front: Float64Array; back: Float64Array }>();
+function slopesOf(profile: Profile): { front: Float64Array; back: Float64Array } {
+  let hit = slopeCache.get(profile);
+  if (hit === undefined) {
+    hit = { front: intervalSlopes(profile, pickFront), back: intervalSlopes(profile, pickBack) };
+    slopeCache.set(profile, hit);
+  }
+  return hit;
+}
+
 /** Width at `s` by monotone cubic between stations (no kinks, no overshoot); clamped outside the stations. */
-function interp(profile: Profile, s: number, pick: (st: Station) => number): number {
+function interp(profile: Profile, s: number, pick: Pick, slopes: Float64Array): number {
   const n = profile.length;
   const first = profile[0];
   const last = profile[n - 1];
@@ -69,17 +100,12 @@ function interp(profile: Profile, s: number, pick: (st: Station) => number): num
   const b = profile[i + 1];
   if (a === undefined || b === undefined) return pick(last);
   const h = b.s - a.s;
-  const slope = (p: Station | undefined, q: Station | undefined): number | null => (p === undefined || q === undefined ? null : (pick(q) - pick(p)) / (q.s - p.s));
-  const prev = profile[i - 1];
-  const next = profile[i + 2];
-  const sAB = slope(a, b);
-  const m0 = monotoneSlope(slope(prev, a), sAB, prev === undefined ? h : a.s - prev.s, h);
-  const m1 = monotoneSlope(sAB, slope(b, next), h, next === undefined ? h : next.s - b.s);
-  return hermite(pick(a), pick(b), m0, m1, (s - a.s) / h, h);
+  return hermite(pick(a), pick(b), slopes[2 * i] ?? 0, slopes[2 * i + 1] ?? 0, (s - a.s) / h, h);
 }
 
 export function profileAt(profile: Profile, s: number): { front: number; back: number } {
-  return { front: interp(profile, s, (x) => x.front), back: interp(profile, s, (x) => x.back) };
+  const slopes = slopesOf(profile);
+  return { front: interp(profile, s, pickFront, slopes.front), back: interp(profile, s, pickBack, slopes.back) };
 }
 
 export function profileRange(profile: Profile): [number, number] {

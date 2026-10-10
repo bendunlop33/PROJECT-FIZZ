@@ -73,11 +73,13 @@ export function ease(name: Exclude<Ease, 'smooth'>, s: number): number {
 
 /** Shortest distance from point `p` to segment `a`–`b`. */
 export function pointSegmentDistance(p: Vec, a: Vec, b: Vec): number {
-  const ab = sub(b, a);
-  const l2 = ab.x * ab.x + ab.y * ab.y;
-  if (l2 === 0) return dist(p, a);
-  const s = clamp(((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / l2, 0, 1);
-  return dist(p, lerpVec(a, b, s));
+  // The same arithmetic as dist(p, lerpVec(a, b, clamp(…))), without the temporary vectors (it runs per stroke point per frame).
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const l2 = abx * abx + aby * aby;
+  if (l2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  const s = Math.min(1, Math.max(0, ((p.x - a.x) * abx + (p.y - a.y) * aby) / l2));
+  return Math.hypot(p.x - (a.x + (b.x - a.x) * s), p.y - (a.y + (b.y - a.y) * s));
 }
 
 /** Point-in-convex-or-simple-polygon test (even-odd rule). */
@@ -138,7 +140,31 @@ export function polygonsWithin(a: readonly Vec[], b: readonly Vec[], d: number):
   const ba = bounds(a);
   const bb = bounds(b);
   if (ba.minX > bb.maxX + d || bb.minX > ba.maxX + d || ba.minY > bb.maxY + d || bb.minY > ba.maxY + d) return false;
-  return polygonGap(a, b) < d;
+  if (a.length < 3 || b.length < 3) return false;
+  // Exactly `polygonGap(a, b) < d`, stopping at the first witness and skipping edge pairs whose boxes are `d` or more apart.
+  const inBox = (p: Vec, bx: typeof ba): boolean => p.x >= bx.minX && p.x <= bx.maxX && p.y >= bx.minY && p.y <= bx.maxY;
+  if (a.some((p) => inBox(p, bb) && pointInPolygon(p, b)) || b.some((p) => inBox(p, ba) && pointInPolygon(p, a))) return true;
+  for (let i = 0; i < a.length; i += 1) {
+    const a0 = a[i] as Vec;
+    const a1 = a[(i + 1) % a.length] as Vec;
+    const aMinX = Math.min(a0.x, a1.x);
+    const aMaxX = Math.max(a0.x, a1.x);
+    const aMinY = Math.min(a0.y, a1.y);
+    const aMaxY = Math.max(a0.y, a1.y);
+    if (aMinX >= bb.maxX + d || bb.minX >= aMaxX + d || aMinY >= bb.maxY + d || bb.minY >= aMaxY + d) continue;
+    for (let j = 0; j < b.length; j += 1) {
+      const b0 = b[j] as Vec;
+      const b1 = b[(j + 1) % b.length] as Vec;
+      if (aMinX >= Math.max(b0.x, b1.x) + d || Math.min(b0.x, b1.x) >= aMaxX + d || aMinY >= Math.max(b0.y, b1.y) + d || Math.min(b0.y, b1.y) >= aMaxY + d) continue;
+      const d1 = (a1.x - a0.x) * (b0.y - a0.y) - (a1.y - a0.y) * (b0.x - a0.x);
+      const d2 = (a1.x - a0.x) * (b1.y - a0.y) - (a1.y - a0.y) * (b1.x - a0.x);
+      const d3 = (b1.x - b0.x) * (a0.y - b0.y) - (b1.y - b0.y) * (a0.x - b0.x);
+      const d4 = (b1.x - b0.x) * (a1.y - b0.y) - (b1.y - b0.y) * (a1.x - b0.x);
+      if (d1 * d2 < 0 && d3 * d4 < 0) return true;
+      if (pointSegmentDistance(a0, b0, b1) < d || pointSegmentDistance(b0, a0, a1) < d) return true;
+    }
+  }
+  return false;
 }
 
 /** Depth of `p` inside a polygon (distance to the nearest edge), or 0 when outside. */

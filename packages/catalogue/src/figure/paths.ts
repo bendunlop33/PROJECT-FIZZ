@@ -70,24 +70,114 @@ export function catmullRom(points: readonly Vec[], closed: boolean): { start: Ve
 /**
  * SVG path data for one or more contours (each a separate subpath, so
  * overlapping contours of one op fill as a union under the nonzero rule).
- * `digits` is the decimal precision (2 for pixel SVG, 5 for unit-size Skia).
+ * `digits` is the decimal precision (2 for pixel SVG).
  */
 export function pathData(contours: readonly (readonly Vec[])[], closed: boolean, smooth: boolean, digits = 2): string {
   const m = 10 ** digits;
-  const f = (n: number): string => String(Math.round(n * m) / m);
-  const pt = (p: Vec): string => `${f(p.x)} ${f(p.y)}`;
-  const parts: string[] = [];
+  return memoPathData(contours, closed, smooth, `d${String(digits)}`, (n) => String(Math.round(n * m) / m));
+}
+
+/**
+ * The same path as whole numbers in units of 1/`unitsPer` (the app's Skia
+ * bake: unit-size ops at `unitsPer` 10 000, i.e. 0.1 px on a 1000 px canvas,
+ * then scaled back by the path's transform). Integers print about 3× faster
+ * than decimals on an interpreter and the text is ~40% shorter to parse
+ * (guides review B2).
+ */
+export function pathDataScaled(contours: readonly (readonly Vec[])[], closed: boolean, smooth: boolean, unitsPer: number): string {
+  return memoPathData(contours, closed, smooth, `i${String(unitsPer)}`, (n) => String(Math.round(n * unitsPer)));
+}
+
+/** Path data by contour array (ops are immutable once built, so the array identity is a safe key). */
+const pathMemo = new WeakMap<readonly (readonly Vec[])[], Map<string, string>>();
+
+function memoPathData(contours: readonly (readonly Vec[])[], closed: boolean, smooth: boolean, format: string, f: (n: number) => string): string {
+  // Ops of one frame share contour arrays (a limb's halo and fill pass the same one), so each curve is built once.
+  const key = `${closed ? 'c' : 'o'}${smooth ? 's' : 'l'}${format}`;
+  let memo = pathMemo.get(contours);
+  const hit = memo?.get(key);
+  if (hit !== undefined) return hit;
+  const out = buildPathData(contours, closed, smooth, f);
+  if (memo === undefined) {
+    memo = new Map();
+    pathMemo.set(contours, memo);
+  }
+  memo.set(key, out);
+  return out;
+}
+
+/**
+ * `catmullRom` + `span` written out on numbers (the same arithmetic in the
+ * same order, so the same doubles): the bake builds ~50 of these per frame
+ * and the temporary vectors were most of their cost.
+ */
+function buildPathData(contours: readonly (readonly Vec[])[], closed: boolean, smooth: boolean, f: (n: number) => string): string {
+  let out = '';
   for (const c of contours) {
     if (c.length === 0) continue;
     if (smooth && c.length > 2) {
-      const curve = catmullRom(c, closed);
-      if (curve === null) continue;
-      parts.push(`M${pt(curve.start)}${curve.spans.map((s) => `C${pt(s.c1)} ${pt(s.c2)} ${pt(s.to)}`).join('')}${closed ? 'Z' : ''}`);
+      const pts = dedupe(c, closed);
+      const n = pts.length;
+      const first = pts[0];
+      if (first === undefined) continue;
+      const at = (i: number): Vec => (closed ? (pts[((i % n) + n) % n] ?? first) : (pts[Math.max(0, Math.min(n - 1, i))] ?? first));
+      out += `M${f(first.x)} ${f(first.y)}`;
+      const count = closed ? n : n - 1;
+      for (let i = 0; i < count; i += 1) {
+        const p0 = at(i - 1);
+        const p1 = at(i);
+        const p2 = at(i + 1);
+        const p3 = at(i + 2);
+        const d1 = Math.hypot(p0.x - p1.x, p0.y - p1.y) ** ALPHA;
+        const d2 = Math.hypot(p1.x - p2.x, p1.y - p2.y) ** ALPHA;
+        const d3 = Math.hypot(p2.x - p3.x, p2.y - p3.y) ** ALPHA;
+        let c1x: number;
+        let c1y: number;
+        let c2x: number;
+        let c2y: number;
+        if (d2 < 1e-12) {
+          c1x = p1.x;
+          c1y = p1.y;
+          c2x = p2.x;
+          c2y = p2.y;
+        } else {
+          const tx = (p2.x - p1.x) * (1 / 3);
+          const ty = (p2.y - p1.y) * (1 / 3);
+          if (d1 < 1e-12) {
+            c1x = p1.x + tx;
+            c1y = p1.y + ty;
+          } else {
+            const a = d1 * d1;
+            const b = -d2 * d2;
+            const k = 2 * d1 * d1 + 3 * d1 * d2 + d2 * d2;
+            const inv = 1 / (3 * d1 * (d1 + d2));
+            c1x = (p2.x * a + p0.x * b + p1.x * k) * inv;
+            c1y = (p2.y * a + p0.y * b + p1.y * k) * inv;
+          }
+          if (d3 < 1e-12) {
+            c2x = p2.x - tx;
+            c2y = p2.y - ty;
+          } else {
+            const a = d3 * d3;
+            const b = -d2 * d2;
+            const k = 2 * d3 * d3 + 3 * d3 * d2 + d2 * d2;
+            const inv = 1 / (3 * d3 * (d3 + d2));
+            c2x = (p1.x * a + p3.x * b + p2.x * k) * inv;
+            c2y = (p1.y * a + p3.y * b + p2.y * k) * inv;
+          }
+        }
+        out += `C${f(c1x)} ${f(c1y)} ${f(c2x)} ${f(c2y)} ${f(p2.x)} ${f(p2.y)}`;
+      }
+      if (closed) out += 'Z';
     } else {
-      parts.push(c.map((p, i) => `${i === 0 ? 'M' : 'L'}${pt(p)}`).join('') + (closed ? 'Z' : ''));
+      for (let i = 0; i < c.length; i += 1) {
+        const p = c[i] as Vec;
+        out += `${i === 0 ? 'M' : 'L'}${f(p.x)} ${f(p.y)}`;
+      }
+      if (closed) out += 'Z';
     }
   }
-  return parts.join('');
+  return out;
 }
 
 /** Signed area (positive = counter-clockwise with y up, clockwise on a y-down screen). */

@@ -284,7 +284,15 @@ function nearOccluder(p: Vec, o: Occluder, d: number): boolean {
   const { box, poly } = o;
   if (p.x < box.minX - d || p.x > box.maxX + d || p.y < box.minY - d || p.y > box.maxY + d) return false;
   if (pointInPolygon(p, poly)) return true;
-  return poly.some((a, i) => pointSegmentDistance(p, a, poly[(i + 1) % poly.length] ?? a) < d);
+  const n = poly.length;
+  for (let i = 0; i < n; i += 1) {
+    const a = poly[i] as Vec;
+    const b = poly[(i + 1) % n] ?? a;
+    // An edge wholly `d` or more away on one axis can't be within `d` (exact; skips most edges).
+    if ((a.x <= p.x - d && b.x <= p.x - d) || (a.x >= p.x + d && b.x >= p.x + d) || (a.y <= p.y - d && b.y <= p.y - d) || (a.y >= p.y + d && b.y >= p.y + d)) continue;
+    if (pointSegmentDistance(p, a, b) < d) return true;
+  }
+  return false;
 }
 
 /** A limb shape cut shorter than this share of its range is dropped (it has tapered to a sliver by then). */
@@ -462,11 +470,18 @@ export function shadeBands(body: FigureBody, group: BodyGroup): ShadeBand[] {
   /** `occluders`: the limb's other segments; each edge's band stops where its edge runs into one (no ghost edge at a crease). */
   const band = (base: RegionBase, segment: SegmentName | null, s0: number, s1: number, samples: number, occluders: readonly (readonly Vec[])[] = []): void => {
     const mid = (s0 + s1) / 2;
+    const boxes = occluders.map((poly) => ({ poly, box: bounds(poly) }));
     for (const x of [1, -1] as const) {
       const nE = scale(base.frame(mid).n, x);
       const opacity = body.view === 'side' ? 0.26 * Math.min(1, Math.max(0, 0.2 - (nE.x * LIGHT.x + nE.y * LIGHT.y))) : 0.18;
       if (opacity < 0.01) continue;
-      const range = clearRange(s0, s1, (s) => occluders.some((poly) => pointInPolygon(basePoint(base, s, x), poly)));
+      const range: [number, number] | null =
+        boxes.length === 0
+          ? [s0, s1]
+          : clearRange(s0, s1, (s) => {
+              const q = basePoint(base, s, x);
+              return boxes.some((o) => q.x >= o.box.minX && q.x <= o.box.maxX && q.y >= o.box.minY && q.y <= o.box.maxY && pointInPolygon(q, o.poly));
+            });
       if (range === null) continue;
       const [a, b] = range;
       const fade = (s: number): number => {
