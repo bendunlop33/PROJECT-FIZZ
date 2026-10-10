@@ -21,7 +21,7 @@ export interface BundledGuideFile {
 export const BUNDLED_GUIDE_FILES: readonly BundledGuideFile[] = [
   { key: 'barbell-back-squat', raw: g0, camera: { cx: -0.000493, cy: 0.494294, size: 1.108587 } },
   { key: 'barbell-bench-press', raw: g1, camera: { cx: 0, cy: 0.39425, size: 1.02 } },
-  { key: 'barbell-overhead-press', raw: g2, camera: { cx: 0.030736, cy: 0.65, size: 1.42 } },
+  { key: 'barbell-overhead-press', raw: g2, camera: { cx: 0.030736, cy: 0.6485, size: 1.417 } },
   { key: 'barbell-romanian-deadlift', raw: g3, camera: { cx: 0.089016, cy: 0.49555, size: 1.1111 } },
   { key: 'cable-lat-pulldown', raw: g4, camera: { cx: 0, cy: 0.573, size: 1.294 } },
   { key: 'cable-triceps-pushdown', raw: g5, camera: { cx: 0.144831, cy: 0.58, size: 1.28 } },

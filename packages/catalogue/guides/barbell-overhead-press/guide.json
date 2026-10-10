@@ -16,9 +16,9 @@
   "keyframes": [
     {
       "t": 0, "label": "Start", "caption": "Bar on the front shoulders, glutes tight",
-      "root": { "x": -0.035, "y": 0.5282, "pelvisDeg": 0 },
+      "root": { "x": -0.035, "y": 0.5252, "pelvisDeg": 0 },
       "joints": { "lumbar": 0, "thoracic": 0, "neck": 0 },
-      "props": { "bar": { "x": 0.04, "y": 0.83 } },
+      "props": { "bar": { "x": 0.04, "y": 0.827 } },
       "projection": { "armNear": 0.95, "armFar": 0.95, "forearmNear": 0.95, "forearmFar": 0.95 },
       "ik": {
         "footNear": { "x": 0, "y": 0, "planted": true },
@@ -30,15 +30,15 @@
     },
     {
       "t": 0.1763, "pass": true, "label": "Forehead", "caption": "Head back, bar straight up past the face",
-      "root": { "x": -0.02, "y": 0.529, "pelvisDeg": -5 },
-      "props": { "bar": { "y": 0.955 } },
+      "root": { "x": -0.02, "y": 0.526, "pelvisDeg": -5 },
+      "props": { "bar": { "y": 0.952 } },
       "projection": { "armNear": 0.52, "armFar": 0.52, "forearmNear": 0.97, "forearmFar": 0.97 },
       "ease": "smooth"
     },
     {
       "t": 0.4138, "label": "Lockout", "caption": "Arms straight, head through, bar over mid-foot",
-      "root": { "x": 0.016, "y": 0.5291, "pelvisDeg": 0 },
-      "props": { "bar": { "y": 1.174 } },
+      "root": { "x": 0.016, "y": 0.5261, "pelvisDeg": 0 },
+      "props": { "bar": { "y": 1.171 } },
       "projection": { "armNear": 0.95, "armFar": 0.95, "forearmNear": 0.95, "forearmFar": 0.95 },
       "holdMs": 300, "ease": "smooth"
     },
