@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ActionRecord } from '@fizz/schemas';
 import type { TurnLedger } from '../src/claims';
-import { createReplyFilter, toHiddenLines, type ReplyItem } from '../src/reply';
+import { createReplyFilter, needsNoChangeLine, NO_CHANGE_SAVED_LINE, toHiddenLines, type ReplyItem } from '../src/reply';
 import { splitSentences } from '../src/sentences';
 import { resolveActionTokens } from '../src/tokens';
 import { chunked, ScriptedCoachModel } from './fake-model';
@@ -146,5 +146,40 @@ describe('earlier actions need their token (CC5, review r2 S2)', () => {
     const shown2 = [...uncited.push('I lowered bench press earlier because set 2 was RPE 10. '), ...uncited.end(true)];
     expect(shown2.filter((i) => i.kind === 'sentence')).toEqual([]);
     expect(uncited.hiddenLines).toMatchObject([{ reason: 'no_action' }]);
+  });
+});
+
+describe('the fixed "No change was saved" line (review r4 spec issue 1, option a; off until approved)', () => {
+  const names = ['Bench press', 'Overhead press', 'Cable fly', 'Pec deck'];
+
+  it('needsNoChangeLine: a reply about a change with nothing saved', () => {
+    const empty = ledger([], names);
+    // Phrasings the claim lists may not know still get the line.
+    for (const t of ['Rolled back.', 'Pec deck next time.', 'Lighter for the last two.', 'OHP is sorted.', 'Gone from memory.', 'Your shoulder is on my list.', 'Cable fly gets a breather.']) {
+      expect(needsNoChangeLine(t, empty), t).toBe(true);
+    }
+    for (const t of ['Nice work.', 'Rest up and breathe.', 'Good question, here is why.']) {
+      expect(needsNoChangeLine(t, empty), t).toBe(false);
+    }
+    // A live change this turn: the claim check, not the fixed line, decides.
+    expect(needsNoChangeLine('Lighter for the last two.', ledger([benchAdjust()], names))).toBe(false);
+    // A stale or undone change doesn't count as saved.
+    expect(needsNoChangeLine('Rolled back.', ledger([benchAdjust({ status: 'stale', failure: null })], names))).toBe(true);
+  });
+
+  it('the filter adds the line only when switched on', () => {
+    const current = (): TurnLedger => ({ turnId: 'turn-1', entries: [], knownExerciseNames: names });
+    const off = createReplyFilter({ ledger: current, surface: 'sheet' });
+    off.push('Cable fly is a good finisher. ');
+    off.end(true);
+    expect(off.note()).toBeNull();
+    const on = createReplyFilter({ ledger: current, surface: 'sheet', noChangeLine: true });
+    on.push('Cable fly is a good finisher. ');
+    on.end(true);
+    expect(on.note()).toEqual({ text: NO_CHANGE_SAVED_LINE, spoken: null });
+    const chat = createReplyFilter({ ledger: current, surface: 'sheet', noChangeLine: true });
+    chat.push('Nice work today. ');
+    chat.end(true);
+    expect(chat.note()).toBeNull();
   });
 });

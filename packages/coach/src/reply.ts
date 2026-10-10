@@ -1,6 +1,8 @@
 import { setNumbersText } from '@fizz/domain';
 import type { HiddenLine } from '@fizz/schemas';
 import { checkReplyClaims, type TurnLedger } from './claims';
+import { normaliseForClaims } from './text';
+import { EXERCISE_WORD } from './vocab';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
 import { SentenceBuffer } from './sentences';
 import { resolveActionTokens } from './tokens';
@@ -69,18 +71,52 @@ export function claimNoteFor(ledger: TurnLedger, hiddenCount: number, surface: R
   return { text: `Only the changes shown here were made. ${linesSaid(hiddenCount)}`, spoken: null };
 }
 
+/** The fixed line for review r4 spec issue 1, option (a). */
+export const NO_CHANGE_SAVED_LINE = 'No change was saved in this reply.';
+
+/**
+ * Words that make a reply "about a change": a load, a set or rep count, an
+ * exercise, a memory, a flag or an undo (review r4 spec issue 1, option (a)).
+ */
+const CHANGE_TOPIC = new RegExp(
+  `\\b(?:\\d+(?:\\.\\d+)? ?(?:kgs?|lbs?|kilos?|pounds?)|sets?|reps?|weights?|loads?|plates?|lighter|heavier|memory|memories|remember(?:ed)?|forgot(?:ten)?|noted|flag(?:ged|s)?|undo(?:ne)?|undid|revert(?:ed)?|rolled back|back to|playbook|rule|next time|swap(?:ped)?|saved|stored|logged|changed|updated|adjusted|applied|on (?:my|the|your) list|on file|${EXERCISE_WORD})\\b`,
+);
+
+/**
+ * Review r4 spec issue 1, option (a), pending Ben/PM approval: with no live
+ * committed change this turn, a reply that talks about loads, sets, reps,
+ * exercises, memories, flags or undo gets the fixed line, whatever its
+ * sentences say. It doesn't depend on recognising each phrasing, so a claim
+ * the word lists miss is still contradicted on screen. Pure.
+ */
+export function needsNoChangeLine(replyText: string, ledger: TurnLedger): boolean {
+  if (liveThisTurn(ledger).length > 0) return false;
+  const t = normaliseForClaims(replyText);
+  if (CHANGE_TOPIC.test(t)) return true;
+  return ledger.knownExerciseNames.some((n) => t.includes(n.toLowerCase()));
+}
+
 export interface ReplyFilterOptions {
   /** The ledger as it is now; read again for every sentence, since tools commit during the turn. */
   ledger: () => TurnLedger;
   surface: RenderSurface;
+  /**
+   * Review r4 spec issue 1, option (a). Off until Ben/PM approve it: when on,
+   * `note()` returns `No change was saved in this reply.` for a reply about a
+   * change in a turn with no live committed action, even if no sentence was
+   * hidden.
+   */
+  noChangeLine?: boolean;
 }
 
 export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
   const buffer = new SentenceBuffer();
   const hidden: HiddenLineDraft[] = [];
+  const said: string[] = [];
 
   const process = (sentence: string): ReplyItem[] => {
     const ledger = options.ledger();
+    said.push(sentence);
     const tokens = resolveActionTokens(sentence, ledger, options.surface);
     for (const ref of tokens.unknownRefs) {
       hidden.push({ sentence, reason: 'unknown_token', detail: `It cited a change (${ref}) that wasn't saved.` });
@@ -132,7 +168,11 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
     note() {
       // A replaced number is shown correctly, so it needs no note (§3 `Number mismatch`).
       const count = hidden.filter((h) => h.reason !== 'numbers_differ').length;
-      return claimNoteFor(options.ledger(), count, options.surface);
+      const note = claimNoteFor(options.ledger(), count, options.surface);
+      if (note === null && options.noChangeLine === true && needsNoChangeLine(said.join(' '), options.ledger())) {
+        return { text: NO_CHANGE_SAVED_LINE, spoken: null };
+      }
+      return note;
     },
   };
 }

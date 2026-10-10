@@ -229,6 +229,97 @@ const CLAIMS: readonly string[] = [
   'Can do.',
   'You got it.',
   'Copy that.',
+  // Review r4 B3: load with no number.
+  'Lighter for the last two.',
+  'Bench lighter for the rest.',
+  'Your last two are a touch lighter.',
+  'Easier sets from here.',
+  'Easier from here on.',
+  'Bench goes up a notch next time.',
+  // Undo.
+  'Back to 100.',
+  'Rolled back.',
+  'Reversed.',
+  'Back how it was.',
+  // Sets.
+  'Extra set on the end for you.',
+  'One more set of curls on the card.',
+  'Last set scratched.',
+  'No set 4 today.',
+  'Two sets left at 95.',
+  'Last two: 95.',
+  'Last set is an AMRAP.',
+  'Bench gets a fourth set next time.',
+  // Structural (CC10).
+  'Pec deck next time.',
+  'Next time: pec deck.',
+  'Your next Push A has pec deck instead of cable fly.',
+  'Pec deck takes over next time.',
+  'Pec deck replacing cable fly.',
+  'Pec deck goes where cable fly was.',
+  'Squats lead next time.',
+  'Squat kicks off next session.',
+  'Cable fly retired.',
+  'Cable fly gets a rest next week.',
+  // Progression holds.
+  'OHP’s on ice for now.',
+  'Overhead press is off the table for now.',
+  'Leaving overhead press alone for now.',
+  'I won’t push overhead press for now.',
+  'No more overhead pressing till the shoulder settles.',
+  'Overhead press stays at 50 until your shoulder settles.',
+  // Memory.
+  'I’ve let that go.',
+  'Gone from memory.',
+  // Generic.
+  'Boom done.',
+  'Handled.',
+  'Squared away.',
+  'Say no more.',
+  'Your plan now reflects that.',
+  // Adversarial (r4): the same ideas in other words.
+  'Heavier from here on.',
+  'A notch lighter for the rest.',
+  'Squat’s back to 120.',
+  'Everything’s back how it was.',
+  'Bonus set for you on bench.',
+  'No set 3 or 4 today.',
+  'Next session: pec deck.',
+  'Pec deck subbing for cable fly next time.',
+  'Deadlift leads next session.',
+  'RDL’s on ice till your back settles.',
+  'Done and done.',
+  'Job done.',
+  'Your card now reflects the change.',
+  'That change is live.',
+  'All fixed up.',
+  'No fourth set today.',
+  'Squat now leads Push A.',
+  'Your shoulder’s on my list.',
+  'I’ll keep OHP light until it settles.',
+  'Holding off on OHP.',
+  'OHP stays put while your shoulder settles.',
+  'Back where we started.',
+  'Rewound that.',
+  'Put it back how it was.',
+  'Down a plate for the rest.',
+  'One plate less on the last two.',
+  'Easy does it from here: 95.',
+  'Your remaining bench sets went down.',
+  'Ok, 95.',
+  'Knocked it back to 95.',
+  'Sets 3 and 4 trimmed to 95.',
+  'You’re lighter for the last two now.',
+  'The last two come down to 95.',
+  'Swapped in pec deck.',
+  'Pec deck’s in for next time.',
+  'Curls are gone next week.',
+  'Set 4’s off the card.',
+  'Reverted to 100.',
+  'Playbook updated.',
+  'Memory updated.',
+  'Next time you’ll have 4 sets of bench.',
+  'Down a plate for the rest of today.',
 ];
 
 /** Suggestions, questions and facts. Keeping them is right; hiding them is a (reported) false hide. */
@@ -328,6 +419,45 @@ const NOT_CLAIMS: readonly string[] = [
   'Got it, here’s why.',
   'Cue: chest up, not out.',
   'Tip: slow down, not up.',
+  // Review r4 B3 near-misses: the new forms must still keep advice, questions, feelings and history.
+  'Go lighter for the last two.',
+  'Lighter for the last two might help.',
+  'Want it lighter for the last two?',
+  'The last two felt easier.',
+  'Set 3 was lighter than set 2.',
+  'Back to 100 next week if it moves well.',
+  'You can undo it from the card.',
+  'Pec deck next time?',
+  'Maybe pec deck next time.',
+  'Try pec deck next time.',
+  'An extra set might help.',
+  'Your fourth set was strong.',
+  'No set 4 today?',
+  'Don’t push overhead press for now.',
+  'If your shoulder hurts, leave overhead press alone.',
+  'That’s off the table unless you ask.',
+  'Your plan reflects your goal.',
+  'Handled well, that set.',
+  'All good.',
+  'Let it go, the next set is what counts.',
+  'Easier said than done.',
+  'Heavier next time if this moves well.',
+  'Next time: focus on bar speed.',
+  'A bonus set is optional.',
+  'Three sessions in a row, nice work.',
+  'Nice work on the rows today.',
+  'Last time you went a notch heavier.',
+  'It will feel easier from here.',
+  'Rest: 3 minutes.',
+  'Last week, 92.5.',
+  'Your squat went up 10 kg since August.',
+  'You went up a plate last week.',
+  'Keep your elbows tucked until lockout.',
+  'Hold off on the coffee before bed.',
+  'Your knee stays put over your foot.',
+  'I’ll keep it simple.',
+  'Fixed weights are fine too.',
+  'Squats now? Sure, after bench.',
   'Squat felt fast today, nice.',
   'Last week you did 100 for 8, so 95 is conservative.',
   'The 95 you did last week moved well.',
@@ -467,6 +597,63 @@ describe('claims against a ledger', () => {
     // A stale adjustment never backs "Expect …" (the r3 failure scenario).
     expect(checkReplyClaims('Expect sets 3 and 4 at 95 kg.', ledger([benchAdjust({ status: 'stale', failure: null })]))).toMatchObject({ keep: false, reason: 'not_committed' });
     expect(checkReplyClaims('Expect sets 3 and 4 at 95 kg.', ledger([benchAdjust()])).keep).toBe(true);
+  });
+
+  it('the r4 forms are kept when the matching change was saved (review r4 B3)', () => {
+    const a = benchAdjust();
+    expect(checkReplyClaims('Lighter for the last two.', ledger([a])).keep).toBe(true);
+    expect(checkReplyClaims('Bench lighter for the rest.', ledger([a])).keep).toBe(true);
+    const undo = record({
+      kind: 'undo',
+      undoneActionId: a.actionId,
+      what: 'the change to sets 3–4',
+      restored: [{ sessionExerciseId: id(10), exerciseName: 'Bench press', changes: [{ setId: id(13), setNumber: 3, before: tgt(kg(95), 8), after: tgt(kg(100), 6, 8) }] }],
+      alreadyLogged: [],
+    });
+    expect(checkReplyClaims('Rolled back.', ledger([undo])).keep).toBe(true);
+    expect(checkReplyClaims('Back to 100.', ledger([undo])).keep).toBe(true);
+    // The r4 failure scenario: an undo that went stale backs nothing.
+    expect(checkReplyClaims('Rolled back.', ledger([{ ...undo, status: 'stale' }]))).toMatchObject({ keep: false });
+    expect(checkReplyClaims('Rolled back.', EMPTY)).toMatchObject({ keep: false, reason: 'no_action' });
+    const added = record({
+      kind: 'adjust_pending_sets',
+      sessionId: id(1),
+      exercises: [{ sessionExerciseId: id(10), exerciseName: 'Bench press', changes: [{ setId: id(15), setNumber: 5, before: null, after: tgt(kg(90), 8) }] }],
+    });
+    expect(checkReplyClaims('Extra set on the end for you.', ledger([added])).keep).toBe(true);
+    expect(checkReplyClaims('Extra set on the end for you.', ledger([a]))).toMatchObject({ keep: false, reason: 'mismatch' });
+    const removed = record({
+      kind: 'adjust_pending_sets',
+      sessionId: id(1),
+      exercises: [{ sessionExerciseId: id(10), exerciseName: 'Bench press', changes: [{ setId: id(14), setNumber: 4, before: tgt(kg(100), 6, 8), after: null }] }],
+    });
+    expect(checkReplyClaims('No set 4 today.', ledger([removed])).keep).toBe(true);
+    expect(checkReplyClaims('No set 4 today.', ledger([a]))).toMatchObject({ keep: false });
+    const pain = record({ kind: 'set_pain_flag', flagIds: [id(50)], exerciseNames: ['Overhead press'], area: 'shoulder' });
+    expect(checkReplyClaims('OHP’s on ice for now.', ledger([pain])).keep).toBe(true);
+    expect(checkReplyClaims('OHP’s on ice for now.', ledger([a])).keep).toBe(false);
+    const forget = record({ kind: 'forget_memory', memoryId: id(61), text: 'Hates lunges' });
+    expect(checkReplyClaims('I’ve let that go.', ledger([forget])).keep).toBe(true);
+    expect(checkReplyClaims('I’ve let that go.', ledger([a])).keep).toBe(false);
+  });
+
+  it('abbreviations, exercises outside the session and "every set" are checked against the ledger (review r4 B3)', () => {
+    const a = benchAdjust();
+    for (const s of ['OHP is 95 for the rest', 'RDL is 95 for the rest', 'Lat pulldown is 95 for the rest', 'Leg press is 95 for the rest', 'Hack squat is 95 for the rest']) {
+      expect(checkReplyClaims(s, ledger([a])), s).toMatchObject({ keep: false, reason: 'mismatch' });
+    }
+    expect(checkReplyClaims('All your sets are 95 now', ledger([a]))).toMatchObject({ keep: false, reason: 'mismatch', detail: 'It said every set; only sets 3–4 changed.' });
+    expect(checkReplyClaims('Every set is 95 now', ledger([a]))).toMatchObject({ keep: false, reason: 'mismatch' });
+    // The remaining sets are what changed, so "the rest" still matches.
+    expect(checkReplyClaims('All your remaining sets are 95 now', ledger([a])).keep).toBe(true);
+    // An abbreviation of the changed exercise matches it.
+    const ohp = record({
+      kind: 'adjust_pending_sets',
+      sessionId: id(1),
+      exercises: [{ sessionExerciseId: id(11), exerciseName: 'Overhead press', changes: [{ setId: id(23), setNumber: 3, before: tgt(kg(50), 8), after: tgt(kg(45), 8) }] }],
+    });
+    expect(checkReplyClaims('OHP is 45 for the rest', ledger([ohp])).keep).toBe(true);
+    expect(checkReplyClaims('Bench is 45 for the rest', ledger([ohp])).keep).toBe(false);
   });
 
   it('an earlier action read through get_recent_actions backs a claim about it (CC5, check 16)', () => {
