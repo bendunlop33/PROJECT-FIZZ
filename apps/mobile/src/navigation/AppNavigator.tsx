@@ -31,6 +31,7 @@ import { AppStatusScreen } from '../screens/profile/AppStatusScreen';
 import { ChatGptSignInTestScreen } from '../screens/profile/ChatGptSignInTestScreen';
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
+import { PainFlagSheet } from '../screens/workout/PainFlagSheet';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ProgressScreen } from '../screens/ProgressScreen';
 import { PastWorkoutsScreen } from '../screens/repeat/PastWorkoutsScreen';
@@ -249,6 +250,12 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
                 name="EditSet"
                 component={EditSetScreen}
                 options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.surface'] } }}
+              />
+              {/* Medium detent; the workout keeps running underneath (active-workout §2.14.4). */}
+              <RootStack.Screen
+                name="PainFlag"
+                component={PainFlagSheet}
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.55, 1.0], sheetGrabberVisible: true, contentStyle: { backgroundColor: theme.colors['bg.surface'] } }}
               />
               {/* No back navigation into a finished workout; corrections go through Edit (workout-summary §2). */}
               {/* Workout → Summary replaces with a 200 ms fade (motion.screenFade). */}

@@ -51,7 +51,7 @@ import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
 import { TargetWhyLink, TargetWhyPanel } from './TargetWhyPanel';
-import { painClearConfirm } from '../../workout/pain-clear';
+import { answerStillHurts, confirmClearFlag, type PainToast } from '../../workout/pain-actions';
 import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../workout/rest-fold';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 
@@ -478,6 +478,19 @@ export function WorkoutScreen() {
       });
   }
 
+  /** The pain flag sheet over the workout (§2.14.4); swiping down returns to the same set and draft. */
+  function openPainFlag(flagId: string, sessionExerciseId?: string) {
+    if (flagId === '') return;
+    navigation.navigate('PainFlag', { flagId, sessionId: session.id, ...(sessionExerciseId ? { sessionExerciseId } : {}) });
+  }
+
+  /** Outcomes of `Still hurts` / `Clear flag` in the rest card, as the usual toast. */
+  function painOutcome(t: PainToast) {
+    changed();
+    void reload();
+    showToast({ icon: t.icon, text: t.detail ? `${t.text}. ${t.detail}` : t.text, ...(t.action && t.onAction ? { action: t.action, onAction: t.onAction } : {}) });
+  }
+
   async function undo(setId: string, opId: string, setNumber: number) {
     const fresh = await services.workout.load(session.id);
     const set = fresh?.aggregate.sets.find((s) => s.id === setId);
@@ -764,6 +777,23 @@ export function WorkoutScreen() {
             {savedLine}
             {recordLine}
             {effortBlock}
+            {view.painReview && view.painReview.afterSetId === view.justSaved.setId ? (
+              <PainReviewLine
+                question={view.painReview.question}
+                fact={view.painReview.fact}
+                onStillHurts={() => {
+                  const r = view.painReview;
+                  if (r) void answerStillHurts(services, r.flagId, r.flagVersion, painOutcome);
+                }}
+                onBetter={() => {
+                  const r = view.painReview;
+                  if (!r) return;
+                  void services.pain.get(r.flagId).then((flag) => {
+                    if (flag) confirmClearFlag(services, flag, painOutcome);
+                  });
+                }}
+              />
+            ) : null}
           </RuledSection>
         ) : null}
         {/* The coach card's place (premium-feel §3.4); takes no space while empty. */}
@@ -907,7 +937,14 @@ export function WorkoutScreen() {
             />
           ) : null}
         </View>
-        {why !== null && why.setId === focus.setId && !keypadOpen ? <TargetWhyPanel panel={why} /> : null}
+        {why !== null && why.setId === focus.setId && !keypadOpen ? (
+          <TargetWhyPanel
+            panel={why}
+            onPainFlag={(flagId) => {
+              openPainFlag(flagId, focus.sessionExerciseId);
+            }}
+          />
+        ) : null}
         {focus.plateLine ? (
           <AppText variant="callout" color="text.tertiary" numeric accessibilityLabel={`Plates: ${focus.plateLine}`}>
             {focus.plateLine}
@@ -923,35 +960,22 @@ export function WorkoutScreen() {
           </AppText>
         ) : null}
         {focus.offProfileWarning ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={focus.offProfileWarning} /> : null}
-        {focus.painFlagged ? (
-          <StatusLine
-            icon="exclamationmark.triangle"
-            tone="warning"
-            text="Pain flag: no increases"
-            action={
-              <TextButton
-                label="Clear"
-                onPress={() => {
-                  // Only Ben clears a flag (rule 9); targets already planned stay as they are.
-                  Alert.alert(painClearConfirm(focus.exerciseName).title, painClearConfirm(focus.exerciseName).message, [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Clear',
-                      onPress: () => {
-                        void services.pain
-                          .active()
-                          .then((flags) => services.pain.clear(flags.filter((f) => f.exerciseId === focus.exerciseId).map((f) => f.id)))
-                          .then(() => {
-                            changed();
-                            void reload();
-                          });
-                      },
-                    },
-                  ]);
-                }}
-              />
-            }
-          />
+        {focus.painFlag ? (
+          // `PainFlagNote` (§2.14.4): opens the pain flag sheet; it never blocks or changes Log.
+          <LinkLine
+            accessibilityLabel={focus.painFlag.accessibilityLabel}
+            onPress={() => {
+              openPainFlag(focus.painFlag?.flagId ?? '', focus.sessionExerciseId);
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: 44 }}>
+              <Icon name="exclamationmark.triangle" color="status.warning" size={16} />
+              <AppText variant="callout" color="text.secondary" style={{ flex: 1 }}>
+                {focus.painFlag.text}
+              </AppText>
+              <Icon name="chevron.right" size={14} color="text.tertiary" />
+            </View>
+          </LinkLine>
         ) : null}
         {focus.side ? (
           focus.side.kind === 'fixed' ? (
@@ -1200,8 +1224,28 @@ export function WorkoutScreen() {
   );
 }
 
-function IconButton({ icon, label, onPress, tint = 'text.primary' }: { icon: SymbolName; label: string; onPress: () => void; tint?: 'text.primary' | 'text.secondary' }) {
+/**
+ * `PainReviewLine` (active-workout §2.14.2) in the rest card's coach slot:
+ * quiet text buttons, ≥ 52 pt and `space.8` apart. Never spoken, never a
+ * banner; it isn't the coach and uses no AI. No answer keeps the check due.
+ */
+function PainReviewLine({ question, fact, onStillHurts, onBetter }: { question: string; fact: string; onStillHurts: () => void; onBetter: () => void }) {
   const theme = useTheme();
+  return (
+    <View style={{ gap: theme.space['1'] }}>
+      <AppText variant="body">{question}</AppText>
+      <AppText variant="callout" color="text.secondary" numeric>
+        {fact}
+      </AppText>
+      <View style={{ flexDirection: 'row', gap: theme.space['8'], minHeight: theme.target.workout.height, alignItems: 'center' }}>
+        <TextButton label="Still hurts" onPress={onStillHurts} />
+        <TextButton label="Better…" onPress={onBetter} />
+      </View>
+    </View>
+  );
+}
+
+function IconButton({ icon, label, onPress, tint = 'text.primary' }: { icon: SymbolName; label: string; onPress: () => void; tint?: 'text.primary' | 'text.secondary' }) {  const theme = useTheme();
   return (
     <Pressable
       accessibilityRole="button"

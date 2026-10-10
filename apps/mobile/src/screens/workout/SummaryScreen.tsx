@@ -294,13 +294,14 @@ export function SummaryScreen() {
                 label="Clear"
                 onPress={() => {
                   // Same confirm as the set card and Profile, plus Undo here (rule 9, review S4).
-                  const c = painClearConfirm(f.exerciseName);
+                  const c = painClearConfirm(f);
                   Alert.alert(c.title, c.message, [
-                    { text: 'Cancel', style: 'cancel' },
+                    { text: c.cancel, style: 'cancel' },
                     {
                       text: c.confirm,
                       onPress: () => {
-                        void services.pain.clearWithUndo([f.id]).then((r) => {
+                        void services.pain.clearConfirmed({ flagId: f.id, expectedVersion: f.version }).then((w) => {
+                          const r = w.ok ? { ok: true, cleared: w.cleared ? [w.cleared] : [] } : { ok: false, cleared: [] };
                           changed();
                           if (!r.ok) {
                             setToast({ text: 'The pain flag wasn’t cleared. Try again.' });

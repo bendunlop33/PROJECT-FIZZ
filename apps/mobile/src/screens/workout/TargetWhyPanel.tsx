@@ -37,7 +37,7 @@ export function TargetWhyLink({ open, onPress }: { open: boolean; onPress: () =>
   );
 }
 
-export function TargetWhyPanel({ panel }: { panel: Exclude<WhyPanel, null> }) {
+export function TargetWhyPanel({ panel, onPainFlag }: { panel: Exclude<WhyPanel, null>; onPainFlag?: (flagId: string) => void }) {
   const theme = useTheme();
   const { fontScale } = useWindowDimensions();
   // AX sizes: the label sits above its value instead of beside it.
@@ -66,7 +66,7 @@ export function TargetWhyPanel({ panel }: { panel: Exclude<WhyPanel, null> }) {
   return (
     <View style={box}>
       {rows.map((row, i) => (
-        <Row key={row.key} row={row} stacked={stacked} innerRef={i === 0 ? first : undefined} />
+        <Row key={row.key} row={row} stacked={stacked} innerRef={i === 0 ? first : undefined} onPainFlag={onPainFlag} />
       ))}
       {basisEdited ? (
         <View accessible accessibilityLabel={basisEdited} style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'flex-start' }}>
@@ -80,7 +80,31 @@ export function TargetWhyPanel({ panel }: { panel: Exclude<WhyPanel, null> }) {
   );
 }
 
-function Row({ row, stacked, innerRef }: { row: WhyRow; stacked: boolean; innerRef?: RefObject<View | null> | undefined }) {
+function Row({ row, stacked, innerRef, onPainFlag }: { row: WhyRow; stacked: boolean; innerRef?: RefObject<View | null> | undefined; onPainFlag?: ((flagId: string) => void) | undefined }) {
+  const theme = useTheme();
+  const link = row.link;
+  if (!link || !onPainFlag) return <RowBody row={row} stacked={stacked} innerRef={innerRef} />;
+  // `Check due ›` on the `Pain` row (§2.14.2) opens the pain flag sheet: a separate button after the row's text.
+  return (
+    <View style={{ gap: 2 }}>
+      <RowBody row={row} stacked={stacked} innerRef={innerRef} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Pain flag check due. Opens the pain flag."
+        onPress={() => {
+          onPainFlag(link.flagId);
+        }}
+        style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', alignSelf: 'flex-start', marginLeft: stacked ? 0 : LABEL_WIDTH + theme.space['2'], opacity: pressed ? 0.6 : 1 })}
+      >
+        <AppText variant="callout" color="accent">
+          {link.label}
+        </AppText>
+      </Pressable>
+    </View>
+  );
+}
+
+function RowBody({ row, stacked, innerRef }: { row: WhyRow; stacked: boolean; innerRef?: RefObject<View | null> | undefined }) {
   const theme = useTheme();
   return (
     <View ref={innerRef} accessible accessibilityLabel={whyRowAccessibilityLabel(row)} style={{ flexDirection: stacked ? 'column' : 'row', gap: stacked ? 2 : theme.space['2'] }}>

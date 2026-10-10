@@ -67,9 +67,15 @@ describe('Summary Clear on a pain flag (review S4, rule 9)', () => {
     return { s, sessionId, flagId };
   }
 
-  it('uses the same confirm wording as the set card and Profile', () => {
-    expect(painClearConfirm('Bench press')).toEqual({ title: 'Clear the pain flag for Bench press?', message: 'Its targets can go up again from the next workout.', confirm: 'Clear' });
-    expect(painClearedToast('Bench press')).toEqual({ text: 'Pain flag cleared for Bench press. Next time can go up again.', action: 'Undo' });
+  it('uses the same confirm wording as the pain flag sheet and Profile (AW10)', () => {
+    const flag = { exerciseName: 'Bench press', reportedAt: { utc: '2026-10-06T09:00:00.000Z', tz: 'Europe/London' } };
+    expect(painClearConfirm(flag)).toEqual({
+      title: 'Clear the pain flag on Bench press?',
+      message: 'Loads, reps and sets can go up again, starting from your recent sets. Your sets from before 6\u00a0Oct stay in your history as the reference.',
+      confirm: 'Clear flag',
+      cancel: 'Keep it',
+    });
+    expect(painClearedToast('Bench press')).toEqual({ text: 'Pain flag cleared for Bench press', action: 'Undo' });
   });
 
   it('Clear then Undo puts the flag back as a new version, and Next time holds again', async () => {

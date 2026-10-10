@@ -66,6 +66,11 @@ export type RootStackParams = {
   /** `back`: opened from history (Progress), so Done goes back there rather than to Today. */
   /** `justFinished`: reached by Finish itself; any other visit (Today, Progress) is static. */
   Summary: { sessionId: string; back?: boolean; justFinished?: boolean };
+  /**
+   * Pain flag sheet (active-workout §2.14.4). From a set card, the workout
+   * exercise makes `Before` / `Since` use its equipment.
+   */
+  PainFlag: { flagId: string; sessionId?: string; sessionExerciseId?: string };
   AddGym: undefined;
   /** `Start from a past workout` list. */
   PastWorkouts: undefined;
