@@ -6,6 +6,7 @@ import {
   ExerciseSchema,
   MeasurementSchema,
   LoadSchema,
+  PainFlagSchema,
   PlannedSetSchema,
   ProgressionRuleSchema,
   RpeSchema,
@@ -272,5 +273,44 @@ describe('PlannedSet provenance (Why?, active-workout §2.12)', () => {
     expect(validate(PlannedSetSchema, { ...planned, provenance: { ...provenance, rule: { ...provenance.rule, decision: 'vibes' } } }).ok).toBe(false);
     const noUnit = { ...provenance.basis, sets: [{ ...provenance.basis.sets[0], values: { load: { value: 100, convention: 'total' }, reps: 6, durationS: null, rpe: null, rir: null } }] };
     expect(validate(PlannedSetSchema, { ...planned, provenance: { ...provenance, basis: noUnit } }).ok).toBe(false);
+  });
+});
+
+describe('PainFlag reviews (Still hurts?, active-workout §2.14.2)', () => {
+  const flag = {
+    ...meta,
+    exerciseId: id(20),
+    exerciseName: 'Overhead press',
+    area: 'shoulder',
+    source: 'check_in',
+    checkInId: id(21),
+    reportedAt: at,
+    status: 'active',
+    clearedAtUtc: null,
+    createdByOpId: 'pain-op',
+  };
+  const review = { at, answer: 'still_hurts', opId: 'review-1' };
+
+  it('reads a flag saved before reviews existed (no field at all)', () => {
+    const r = validate(PainFlagSchema, flag);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.reviews).toBeUndefined();
+  });
+
+  it('round-trips reviews, including one that was undone', () => {
+    const reviews = [review, { ...review, opId: 'review-2', undone: { atUtc: T, opId: 'undo-2' } }];
+    const r = validate(PainFlagSchema, { ...flag, reviews });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.reviews).toEqual(reviews);
+  });
+
+  it('records only `still_hurts`: a review is never a way to clear a flag', () => {
+    expect(validate(PainFlagSchema, { ...flag, reviews: [{ ...review, answer: 'better' }] }).ok).toBe(false);
+    expect(validate(PainFlagSchema, { ...flag, reviews: [{ ...review, answer: 'cleared' }] }).ok).toBe(false);
+  });
+
+  it('needs an operation ID and a zoned time on every review', () => {
+    expect(validate(PainFlagSchema, { ...flag, reviews: [{ at, answer: 'still_hurts' }] }).ok).toBe(false);
+    expect(validate(PainFlagSchema, { ...flag, reviews: [{ ...review, at: { utc: T } }] }).ok).toBe(false);
   });
 });

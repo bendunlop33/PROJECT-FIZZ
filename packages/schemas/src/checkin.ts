@@ -97,6 +97,21 @@ export type CheckInSettings = z.infer<typeof CheckInSettingsSchema>;
 export const PainAreaSchema = z.enum(['shoulder', 'elbow', 'wrist', 'neck', 'back', 'hip', 'knee', 'ankle', 'other']);
 export type PainArea = z.infer<typeof PainAreaSchema>;
 
+/**
+ * One answer to the two-weekly `Still hurts?` check (active-workout.md
+ * §2.14.2). Only `still_hurts` is recorded: `Better…` leads to the clear
+ * confirmation instead, and no answer records nothing. A review never clears
+ * a flag. Undo marks it `undone` (kept for the audit); it is never deleted.
+ */
+export const PainFlagReviewSchema = z.object({
+  at: ZonedTimestampSchema,
+  answer: z.enum(['still_hurts']),
+  /** The operation that recorded it: a retry with the same ID is a no-op. */
+  opId: OperationIdSchema,
+  undone: z.object({ atUtc: UtcTimestampSchema, opId: OperationIdSchema }).optional(),
+});
+export type PainFlagReview = z.infer<typeof PainFlagReviewSchema>;
+
 export const PainFlagSchema = RecordMetaSchema.extend({
   exerciseId: IdSchema,
   /** Snapshot, so the flag still reads well if the catalogue changes. */
@@ -108,5 +123,11 @@ export const PainFlagSchema = RecordMetaSchema.extend({
   status: z.enum(['active', 'cleared']),
   clearedAtUtc: UtcTimestampSchema.nullable(),
   createdByOpId: OperationIdSchema,
+  /**
+   * `Still hurts?` answers, oldest first (2026-10-09). Absent on flags saved
+   * before the check existed, which read as never checked. Bounded: one a
+   * fortnight is about 26 a year.
+   */
+  reviews: z.array(PainFlagReviewSchema).max(200).optional(),
 });
 export type PainFlag = z.infer<typeof PainFlagSchema>;
