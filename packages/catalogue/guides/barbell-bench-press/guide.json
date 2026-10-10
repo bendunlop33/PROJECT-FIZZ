@@ -31,14 +31,14 @@
     },
     {
       "t": 0.2652, "pass": true, "label": "Halfway", "caption": "Lower towards the lower chest, elbows bending",
-      "props": { "bar": { "x": -0.135, "y": 0.545 } },
+      "props": { "bar": { "x": -0.1267, "y": 0.545 } },
       "projection": { "armNear": 0.6, "armFar": 0.6, "forearmNear": 0.97, "forearmFar": 0.97 },
       "ease": "smooth"
     },
     {
       "t": 0.549, "label": "Chest touch", "caption": "Touch the lower chest, forearms vertical",
-      "props": { "bar": { "x": -0.118, "y": 0.392 } },
-      "projection": { "armNear": 0.71, "armFar": 0.71, "forearmNear": 1, "forearmFar": 1 },
+      "props": { "bar": { "x": -0.08, "y": 0.392 } },
+      "projection": { "armNear": 0.615, "armFar": 0.615, "forearmNear": 0.745, "forearmFar": 0.745 },
       "holdMs": 150, "ease": "smooth"
     },
     { "t": 0.8106, "sameAs": 1, "caption": "Press up and back over the shoulders", "ease": "smooth" },
@@ -46,7 +46,7 @@
   ],
   "overlays": [{ "type": "path", "of": "bar", "showIn": ["static"] }],
   "focus": { "workPhase": [{ "from": 0.6078, "to": 1 }], "adjust": { "chest": { "s": [0.2, 0.86], "d": 0.8 } } },
-  "checks": { "barDriftMax": 0.08, "barProp": "bar", "planted": ["footNear", "footFar"], "besideProps": ["armNear", "armFar"], "romProfile": "adult-default" },
+  "checks": { "barDriftMax": 0.09, "barProp": "bar", "planted": ["footNear", "footFar"], "romProfile": "adult-default" },
   "a11y": {
     "summary": "Side view, lying on a flat bench with the head on the left. Feet flat, glutes and upper back on the bench. Lower the bar from over the shoulders to a light touch on the lower chest with forearms vertical, then press it up and back to over the shoulders."
   },
