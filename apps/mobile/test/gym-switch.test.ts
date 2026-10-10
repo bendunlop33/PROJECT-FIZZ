@@ -133,6 +133,20 @@ describe('gym switch through the services', () => {
     expect((await s.workout.load(sessionId))?.aggregate.session.gymId).toBe(hotelId);
   });
 
+  it('a switched workout reads Main Gym → Hotel · Lisbon in its Summary and Past workouts (check 24)', async () => {
+    const { s, hotelId, sessionId } = await setUp();
+    const p = await s.gymSwitch.propose(sessionId, hotelId);
+    if (!p) throw new Error('no proposal');
+    const applied = await s.gymSwitch.apply(p, 'switch-route');
+    if (!applied.ok) throw new Error(applied.error.message);
+    h.clockMs += 60_000;
+    const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: 'fin-route', expectedVersion: applied.aggregate.session.version, endedAt: null });
+    if (!fin.ok) throw new Error(fin.error.message);
+    expect((await s.workout.summary(sessionId))?.gymName).toBe('Main Gym → Hotel · Lisbon');
+    const row = (await s.repeat.candidates()).rows.find((r) => r.sessionId === sessionId);
+    expect(row?.gymName).toBe('Main Gym → Hotel · Lisbon');
+  });
+
   it('Add set on bench (all done at Main) goes on Hotel’s equipment with no barbell target', async () => {
     const { s, hotelId, sessionId } = await setUp();
     const data = await s.workout.load(sessionId);

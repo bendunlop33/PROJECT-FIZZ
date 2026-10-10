@@ -5,6 +5,7 @@ import {
   buildLiftHighlight,
   buildAddSetContinuation,
   buildGymSwitchProposal,
+  gymRouteIds,
   changeGymCommand,
   currentGymEquipment,
   lastUsedAtGym,
@@ -785,7 +786,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           const done = a.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null);
           if (done.length === 0) continue;
           const gymId = a.session.gymId;
-          if (gymId !== null && !gyms.has(gymId)) gyms.set(gymId, (await repos().gyms.get(gymId).catch(() => null))?.name ?? 'Gym');
+          // A workout that switched gym is listed as `Main Gym → Hotel · Lisbon` (gym-switch check 24).
+          const route = gymRouteIds(a.session);
+          for (const g of route) if (!gyms.has(g)) gyms.set(g, (await repos().gyms.get(g).catch(() => null))?.name ?? 'Gym');
           const names = [...a.exercises].sort((x, y) => x.order - y.order).filter((e) => done.some((s) => s.sessionExerciseId === e.id)).map((e) => e.exerciseName);
           rows.push({
             sessionId: a.session.id,
@@ -793,7 +796,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
             startedAtUtc: a.session.startedAt.utc,
             tz: a.session.startedAt.tz,
             gymId,
-            gymName: gymId === null ? 'Gym not recorded' : (gyms.get(gymId) ?? 'Gym'),
+            gymName: route.length === 0 ? 'Gym not recorded' : route.map((g) => gyms.get(g) ?? 'Gym').join(' → '),
             exerciseNames: names,
             sets: done.length,
           });
