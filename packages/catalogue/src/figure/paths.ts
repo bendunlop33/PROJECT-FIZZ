@@ -91,6 +91,24 @@ export function pathData(contours: readonly (readonly Vec[])[], closed: boolean,
 }
 
 /** Signed area (positive = counter-clockwise with y up, clockwise on a y-down screen). */
+/** Convex hull (Andrew's monotone chain), counter-clockwise in y-up coordinates. */
+export function convexHull(points: readonly Vec[]): Vec[] {
+  const pts = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  if (pts.length < 3) return pts;
+  const cross = (o: Vec, a: Vec, b: Vec): number => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: Vec[] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2] as Vec, lower[lower.length - 1] as Vec, p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: Vec[] = [];
+  for (const p of [...pts].reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2] as Vec, upper[upper.length - 1] as Vec, p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
 export function signedArea(points: readonly Vec[]): number {
   let a = 0;
   for (let i = 0; i < points.length; i += 1) {

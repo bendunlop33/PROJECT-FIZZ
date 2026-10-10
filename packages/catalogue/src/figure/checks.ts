@@ -14,7 +14,10 @@ import { BODY_GROUPS, groupContours } from './body';
 import { contactVelocity, driveMetrics, poseContinuity, seamVelocity } from './motion-metrics';
 import { PLAYBACK_FPS } from './playback';
 import { adjustProblems, DEFINITION_GROUPS, DEFINITION_MAP, definitionGroupsFor, focusViewOf, MUSCLE_REGION_MAP, parseRegion, resolveFocus, type DefinitionGroup, type MuscleLevel } from './muscle-map';
-import { DEFINITION_GROOVE, DEFINITION_GROOVE_FLOOR, definitionShapes, narrowestDefinitionGroove, type DefinitionGroove } from './regions';
+import { DEFINITION_GROOVE, DEFINITION_GROOVE_FLOOR, definitionShapes, narrowestDefinitionGroove, regionShapes, type DefinitionGroove } from './regions';
+import { signedArea } from './paths';
+import { fitCamera } from './svg';
+import { COMPACT_REFERENCE_PT } from './draw';
 
 export const CHECK_FPS = 30;
 export const LIMITS = {
@@ -29,6 +32,8 @@ export const LIMITS = {
   maxBytes: 8 * 1024,
   /** v2 outline overlap reported (not failed) above this (guides v2 §3.2). */
   outlineTolerance: 0.005,
+  /** `target-legible`: strong (primary) muscle colour on a labelled key frame at the 115 pt thumbnail, pt² (about 3.2 × 3.2 pt). */
+  targetAreaPt2: 10,
 } as const;
 
 export const CHECK_IDS = [
@@ -53,6 +58,7 @@ export const CHECK_IDS = [
   'focus',
   'outline-contact',
   'definition',
+  'target-legible',
 ] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
@@ -478,6 +484,34 @@ function checkDefinition(guide: Guide, entry: CatalogueEntry | null, poses: read
   return { item: { id: 'definition', ok: true, ...(warn ? { warn: true } : {}), detail }, faint };
 }
 
+/**
+ * The primary muscles must read at thumbnail size: the strong colour's area
+ * on the labelled key frames (the thumbnail strip), drawn at 115 pt with the
+ * guide's fitted camera. Fails when even the best key is under
+ * `targetAreaPt2` (a sliver nobody sees, as the triceps were); warns when a
+ * key is (a limb turned towards the camera fades its colour, which is right).
+ */
+function checkTargetLegible(prepared: PreparedGuide, entry: CatalogueEntry | null): CheckItem {
+  if (entry === null) return { id: 'target-legible', ok: true, detail: 'No entry, no muscle colour' };
+  const { guide, keys } = prepared;
+  const focus = resolveFocus({ primary: entry.primaryMuscles, secondary: entry.secondaryMuscles }, guide.focus, focusViewOf(guide));
+  if (focus.strong.length === 0) return { id: 'target-legible', ok: true, detail: 'No primary muscle drawn in this view' };
+  const camera = fitCamera(prepared);
+  const k = COMPACT_REFERENCE_PT / camera.size;
+  const areas = keys
+    .filter((key) => key.label !== null && key.t < 1)
+    .map((key) => {
+      const strong = regionShapes(poseAt(prepared, key.t).body, focus).filter((r) => r.level === 'strong');
+      return { label: key.label ?? '', pt2: strong.reduce((a, r) => a + Math.abs(signedArea(r.contour)) * r.alpha, 0) * k * k };
+    });
+  const best = Math.max(0, ...areas.map((a) => a.pt2));
+  const min = LIMITS.targetAreaPt2;
+  const small = areas.filter((a) => a.pt2 < min);
+  const list = areas.map((a) => `${a.label} ${a.pt2.toFixed(0)}`).join(', ');
+  const detail = `${focus.strong.join(' + ')} at ${COMPACT_REFERENCE_PT} pt: ${list} pt² (floor ${min})`;
+  return { id: 'target-legible', ok: best >= min, ...(small.length > 0 ? { warn: true } : {}), detail };
+}
+
 export function checkGuide(input: GuideCheckInput): GuideCheckReport {
   const parsed = GuideSchema.safeParse(input.raw);
   if (!parsed.success) {
@@ -516,6 +550,7 @@ export function checkGuide(input: GuideCheckInput): GuideCheckReport {
     focus.item,
     checkOutlineContact(guide, poses),
     definition.item,
+    checkTargetLegible(prepared, input.entry),
   ];
   return { ok: items.every((i) => i.ok), items, guide, frames: poses.length, focus: focus.rows, faintGroups: definition.faint };
 }

@@ -9,6 +9,7 @@ import { chainOutline, edgeCurve, frameAt, handContours, segmentPoint, trunkSegm
 import { profileRange, type SegmentName } from './profiles';
 import { DEFINITION_FOLDS, DEFINITION_MAP, type DefinitionGroup, type FocusView, type MuscleLevel, type RegionEnds, type RegionSpec, type ResolvedFocus } from './muscle-map';
 import { counterClockwise, signedArea } from './paths';
+import type { Muscle } from '../vocab';
 
 /** Muscle regions stay this far inside the silhouette (design-system `guide.muscleInset`). */
 export const MUSCLE_INSET = 0.0035;
@@ -28,6 +29,8 @@ export type RegionGroup = BodyGroup | 'pelvis';
 export interface RegionShape {
   group: RegionGroup;
   level: MuscleLevel;
+  /** The muscle the region colours. */
+  muscle: Muscle;
   contour: Vec[];
   /** 0–1: fades out as its segment turns towards the camera (`projectionFade`). */
   alpha: number;
@@ -380,7 +383,7 @@ export function regionShapes(body: FigureBody, focus: ResolvedFocus): RegionShap
   const sides = limbSides(body, focus);
   const chain = chainBase(trunkSegments(body));
   const clip = foldClipper(body);
-  return focus.regions.flatMap((r) => specShapes(body, r.spec, sides, chain, clip).map((sh) => ({ ...sh, level: r.level })));
+  return focus.regions.flatMap((r) => specShapes(body, r.spec, sides, chain, clip).map((sh) => ({ ...sh, level: r.level, muscle: r.muscle })));
 }
 
 /** One faint muscle-definition shape (guides v2 §4.11). */
@@ -564,7 +567,6 @@ export const ANATOMY_LINES: Record<'side' | 'front' | 'back', readonly AnatomyLi
     { name: 'gluteFold', limb: false, points: [D('pelvis', -0.6, 0.95), D('pelvis', -0.65, 0.7), D('pelvis', -0.55, 0.55)] },
     { name: 'kneecap', limb: true, points: [P('thigh', 0.95, 0.88), P('thigh', 1, 0.55), P('shank', 0.06, 0.88)] },
     { name: 'calf', limb: true, points: [D('shank', 0.15, 0.85), D('shank', 0.4, 0.75), D('shank', 0.62, 1)] },
-    { name: 'iliacCrest', limb: false, points: [D('pelvis', 0.6, 0.15), D('pelvis', 0.65, 0.5), D('pelvis', 0.55, 0.85)] },
   ],
   front: [
     { name: 'deltoid', limb: true, points: [P('upperArm', 0.35, 0.9), P('upperArm', 0.33, 0), P('upperArm', 0.25, -0.9)] },
@@ -587,6 +589,26 @@ export interface LineShape {
   alpha: number;
 }
 
+/** Knee flexion (degrees) of one leg from its thigh and shank axes; 0 without both. */
+function kneeFlexion(body: FigureBody, side: 'Near' | 'Far' | null): number {
+  const thigh = body.segments.find((s) => s.name === 'thigh' && s.side === side);
+  const shank = body.segments.find((s) => s.name === 'shank' && s.side === side);
+  if (thigh === undefined || shank === undefined) return 0;
+  const c = thigh.u.x * shank.u.x + thigh.u.y * shank.u.y;
+  return (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI;
+}
+
+/**
+ * The kneecap line fades out between 55° and 70° of knee flexion: past that
+ * the thigh and shank outlines round the knee and the short stroke across
+ * them reads as a kink (review of 10 Oct 2026).
+ */
+export function kneecapFade(body: FigureBody, side: 'Near' | 'Far' | null): number {
+  const x = Math.min(1, Math.max(0, (kneeFlexion(body, side) - KNEECAP_FADE_DEG[0]) / (KNEECAP_FADE_DEG[1] - KNEECAP_FADE_DEG[0])));
+  return 1 - x * x * (3 - 2 * x);
+}
+export const KNEECAP_FADE_DEG = [55, 70] as const;
+
 /** Anatomical lines for the drawn limbs (near only in a side view) and the trunk. */
 export function anatomyLines(body: FigureBody): LineShape[] {
   const key = body.view === 'side' ? 'side' : body.seenFrom;
@@ -607,6 +629,7 @@ export function anatomyLines(body: FigureBody): LineShape[] {
           break;
         }
         alpha = Math.min(alpha, projectionFade(seg.projection));
+        if (line.name === 'kneecap') alpha = Math.min(alpha, kneecapFade(body, inst.side));
         group = seg.group;
         pts.push(segmentPoint(seg, lp.s, lp.x * inst.flip, MUSCLE_INSET));
       }

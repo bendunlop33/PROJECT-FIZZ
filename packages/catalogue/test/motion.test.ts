@@ -280,13 +280,15 @@ function sledWithoutStance(): Guide {
 function sledWithStance(stride: boolean): Guide {
   const raw = JSON.parse(readFileSync(join(GUIDES, 'sled-push', 'guide.json'), 'utf8')) as { ground: Record<string, unknown>; keyframes: { ik?: Record<string, Record<string, unknown>> }[] };
   raw.ground.matchFloorSpeed = true;
-  const ik = (k: number, limb: string): Record<string, unknown> => raw.keyframes[k]?.ik?.[limb] ?? {};
+  // The four labelled keys by time (pass-through keys sit between them).
+  const at = (t: number): number => (raw.keyframes as { t?: number }[]).findIndex((k) => k.t === t);
+  const ik = (t: number, limb: string): Record<string, unknown> => raw.keyframes[at(t)]?.ik?.[limb] ?? {};
   if (stride) {
     ik(0, 'footNear').x = -0.235;
     ik(0, 'footFar').x = 0.04;
-    ik(1, 'footNear').x = -0.09;
-    ik(2, 'footNear').x = 0.04;
-    ik(3, 'footFar').x = -0.09;
+    ik(0.25, 'footNear').x = -0.09;
+    ik(0.5, 'footNear').x = 0.04;
+    ik(0.75, 'footFar').x = -0.09;
   }
   return GuideSchema.parse(raw);
 }
@@ -549,12 +551,20 @@ describe('drawing seams (ADR 0015, V1–V3)', () => {
     // The outline contour is the 0.5-opacity shade stroke (anatomical lines are 0.35).
     const contour = ops.filter((o) => o.stroke === 'shade' && o.opacity === 0.5 && o.fill === null);
     const open = contour.filter((o) => !o.closed);
+    // The full-strength middle of each arm segment's open stroke; the ends fade in their own, fainter ops.
     expect(open).toHaveLength(1);
     expect(open[0]?.contours).toHaveLength(2);
+    const faded = ops.filter((o) => o.stroke === 'shade' && !o.closed && o.fill === null && o.opacity < 0.5 && o.width === open[0]?.width);
+    expect(faded.length).toBe(3);
     const seg = poseAt(p, 0.2).body.segments.find((x) => x.name === 'upperArm' && x.side === 'Near');
     if (seg === undefined) throw new Error('no upper arm');
-    // Open path = closed outline minus the 3-point proximal cap.
-    expect(open[0]?.contours[0]?.length).toBe(chainOutline([seg]).length - 3);
+    // Open path = closed outline minus the 3-point proximal cap, cut into a full middle and three fading pieces per end.
+    const pieces = [...faded.flatMap((o) => o.contours), ...(open[0]?.contours ?? [])].filter((c) => c.length > 0);
+    const proximal = chainOutline([seg]).length - 3;
+    // Every piece shares its cut point with the next one: 7 pieces, 6 cut points, each counted twice.
+    const upperArmPieces = pieces.length / 2;
+    expect(upperArmPieces).toBe(7);
+    expect(proximal).toBeGreaterThan(10);
     // The fist (and thumb) outline stays closed.
     expect(contour.some((o) => o.closed && o.contours.length >= 1)).toBe(true);
   });

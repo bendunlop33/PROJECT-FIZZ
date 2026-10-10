@@ -11,7 +11,7 @@
  * mirrors them.
  */
 import { add, dist, lerp, perpCcw, scale, sub, v, type Vec } from './math';
-import { ellipsePoints, ribbonOutline } from './paths';
+import { convexHull, ellipsePoints, ribbonOutline } from './paths';
 import { ADULT_V1_PROFILES, FAR_PROFILE_SCALE, profileAt, profileRange, type Profile, type SegmentName } from './profiles';
 
 export type BodySide = 'Near' | 'Far';
@@ -345,6 +345,8 @@ export function groupContours(body: FigureBody, group: BodyGroup): Vec[][] {
     return [trunkOutline(body), ...(neck ? [chainOutline([neck])] : []), headContour(body)];
   }
   const out: Vec[][] = [];
+  const fillet = group === 'legNear' ? hipFillet(body) : null;
+  if (fillet !== null) out.push(fillet);
   for (const seg of body.segments) if (seg.group === group) out.push(chainOutline([seg]));
   for (const f of body.feet) if (f.group === group) out.push(footContour(f, body.view));
   for (const h of body.hands) if (h.group === group) out.push(...handContours(h, body.view));
@@ -352,6 +354,35 @@ export function groupContours(body: FigureBody, group: BodyGroup): Vec[][] {
 }
 
 export const BODY_GROUPS: readonly BodyGroup[] = ['trunk', 'legNear', 'legFar', 'armNear', 'armFar'];
+
+/** Hip fillet reach: buttock outline within this distance of the hip joint, and the thigh's back edge over this share of its length. */
+const FILLET_RADIUS = 0.16;
+const FILLET_THIGH_S = 0.35;
+
+/**
+ * Side view: a convex patch from the buttock's back outline to the top of the
+ * near thigh's back edge, drawn with the near leg, so the glute blends into
+ * the thigh instead of meeting it with a notch (review of 10 Oct 2026). Its
+ * outline is the leg's, so the silhouette stroke runs round it without a
+ * seam. Null in front/back views or without a near thigh.
+ */
+export function hipFillet(body: FigureBody): Vec[] | null {
+  if (body.view !== 'side') return null;
+  const thigh = body.segments.find((s) => s.name === 'thigh' && s.side === 'Near');
+  const pelvis = body.segments.find((s) => s.name === 'pelvis');
+  if (thigh === undefined || pelvis === undefined) return null;
+  const hip = thigh.j0;
+  // Behind the pelvis axis (its front normal points the other way) and near the hip joint.
+  const buttock = trunkOutline(body).filter((p) => dist(p, hip) < FILLET_RADIUS && dot(sub(p, hip), pelvis.n) < 0);
+  if (buttock.length < 2) return null;
+  const back = edgeCurveOf(thigh, -1, 0, FILLET_THIGH_S);
+  return convexHull([...buttock, ...back, hip]);
+}
+
+/** `edgeCurve` without the forward reference (defined below). */
+function edgeCurveOf(seg: BodySegment, x: 1 | -1, from: number, to: number): Vec[] {
+  return sampleS(seg.profile, from, to).map((s) => segmentPoint(seg, s, x));
+}
 
 /**
  * What the M/L outline contour strokes for a group: closed contours, except

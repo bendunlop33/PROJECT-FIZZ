@@ -260,7 +260,9 @@ Trunk (half-width from the midline, the same both sides). This replaces the curr
 | Near limb over its own trunk, or over the other near limb | `background` halo, which draws a gap line at the hip and shoulder | **No gap.** The near-limb halos are drawn *before* the trunk fill (new layer `nearHalo`), so the trunk paints over them. The limb then shows its **contour line** (§3.8), so the body reads as one figure with clear edges |
 | Far limbs | `farBody` flat | `farBody` flat, widths × 0.96, no shading, no contours, no muscle colour |
 
-At the **S tier** (thumbnails), v1 separation stays: halos everywhere and no contour lines. At that size a gap line reads better than a hairline.
+At the **S tier** (thumbnails), v1 separation stays for the legs and far limbs: `background` halos and no contour lines. **Arms over the body** get a thin `shade` edge instead (0.6pt visible at 115pt, scaling with the size, at most 1pt; opacity 0.6, 0.85 under Increase Contrast), open at the shoulder like the M/L contour. The `background` halo there read as a hole cut through the chest at thumbnail size, a white loop in the light theme (review of 10 Oct 2026).
+
+**Joint seams (as built 10 Oct 2026):** an arm's open occlusion stroke (S edge and M/L contour) fades out over its last 0.05 H at both ends, where it meets the shoulder and the elbow, in three steps (0.7, 0.45, 0.2 of its opacity), so it stops softly instead of ending in a tick across the deltoid. In a side view the near leg also carries a **hip fillet**: the convex hull of the buttock's back outline (within 0.16 H of the hip) and the top 35% of the thigh's back edge, drawn and outlined with the leg, so the glute blends into the thigh without a notch.
 
 ### 3.7 Soft shading (M/L tier; on by default, Ben to confirm on the v2 previews)
 
@@ -274,7 +276,7 @@ At the **S tier** (thumbnails), v1 separation stays: halos everywhere and no con
 ### 3.8 Contour and anatomical lines (M/L tier)
 
 - **Outline contour:** every near limb group and the trunk is stroked along its outline. `shade` paint, opacity 0.5, width `STROKE.contour` (0.0035 H, floor 0.75pt), round joins.
-- **Anatomical lines:** short open curves defined in segment coordinates, so they move with the pose. `shade` paint, opacity 0.35, width `STROKE.hair` (floor 0.75pt), round caps. At most 8 per figure. Each is given as (segment, start `(s, depth)`, mid, end), where depth runs from 0 at the front edge to 1 at the back edge in the side view:
+- **Anatomical lines** (the side-view iliac crest was dropped on 10 Oct 2026: across the waist it read as a belt):** short open curves defined in segment coordinates, so they move with the pose. `shade` paint, opacity 0.35, width `STROKE.hair` (floor 0.75pt), round caps. At most 8 per figure. Each is given as (segment, start `(s, depth)`, mid, end), where depth runs from 0 at the front edge to 1 at the back edge in the side view:
 
 | Line | Side view | Front view (`camera: front`) | Back view (`camera: back`) |
 |---|---|---|---|
@@ -284,9 +286,8 @@ At the **S tier** (thumbnails), v1 separation stays: halos everywhere and no con
 | Spine groove | — | — | lumbar and thorax midline, s 0 → thorax s 0.85 |
 | Abs midline | — | lumbar and thorax midline, lumbar s 0 → thorax s 0.40 | — |
 | Glute fold | pelvis (−0.60, 0.95) → (−0.65, 0.7) → (−0.55, 0.55) | — | pelvis s −0.60, from the midline to 0.8 half-width |
-| Kneecap | thigh s 0.97 → shank s 0.05, front, arc 0.012 deep | thigh s 0.95 → shank s 0.05, oval 0.022 × 0.03 | — |
+| Kneecap (fades out between 55° and 70° of knee flexion: past that the short stroke across the rounded knee read as a kink) | thigh s 0.97 → shank s 0.05, front, arc 0.012 deep | thigh s 0.95 → shank s 0.05, oval 0.022 × 0.03 | — |
 | Calf border | shank (0.15, 0.85) → (0.40, 0.75) → (0.62, 1) | — | shank, centre line s 0.10 → 0.45 |
-| Iliac crest | pelvis (0.60, 0.15) → (0.65, 0.5) → (0.55, 0.85) | — | — |
 | Collarbone | — | thorax s 0.96, from the neck to the shoulder | — |
 
 ### 3.9 Equipment detail (M/L tier; the S tier keeps the v1 shapes)
@@ -308,7 +309,7 @@ Frames are recorded per **detail tier**, and the bake cache key gains the tier. 
 
 | Tier | Canvas (shorter side) | Draws | Stroke floors |
 |---|---|---|---|
-| **S** | < 160pt (3-up thumbnails, review strips) | v2 silhouettes (profiles, hands, feet), muscle colour (strong and soft), v1 halos, v1 prop shapes. No muscle definition (§4.11.5) | halo 1.25pt · edge 1.0pt · hair 0.75pt |
+| **S** | < 160pt (3-up thumbnails, review strips) | v2 silhouettes (profiles, hands, feet), muscle colour (strong and soft; no forearm or grip tint, §4.3), v1 halos (arms over the body: a thin shade edge, §3.6), v1 prop shapes. No muscle definition (§4.11.5) | halo 1.25pt · edge 1.0pt · hair 0.75pt · arm edge 0.6pt at 115pt |
 | **M/L** | ≥ 160pt (player 200–400pt, full screen) | Everything: silhouettes, muscle definition (§4.11), muscle colour, shading, contour and anatomical lines, equipment detail, v2 separation (§3.6) | halo 1.0pt · edge 0.75pt · contour 0.75pt · hair 0.75pt |
 
 There are two tiers on purpose: one simple cut, and every in-app player size gets full detail. The bake for the M/L tier is used for every size in that range. Skia pictures are vector, so they scale without loss.
@@ -322,7 +323,7 @@ There are two tiers on purpose: one simple cut, and every in-app player size get
 5. **`nearHalo`**: halos of the near limbs (new layer)
 6. Trunk, neck and head fill (`nearBody`) → trunk muscle regions **except the pelvis** → trunk shading → trunk contour and anatomical lines
 7. Near leg: fill → muscle regions → shading → contours
-8. **Pelvis regions** (glutes, abductors). They are drawn after the near leg, so the thigh doesn't cut the glute region in half
+8. **Pelvis regions** (glutes, abductors). They are drawn after the near leg, so the thigh doesn't cut the glute region in half. The pelvis's *faint* shapes (§4.11) go with the near leg instead, after its fill and before its colour, so a faint hip shape never cuts the quads into islands
 9. Near arm: fill → muscle regions → shading → contours
 10. Bar-path trace (static, as now)
 11. `front` props (bar dot, dumbbells, handles)
@@ -380,6 +381,8 @@ Back view (`seenFrom: "back"`): floor → back props → **both legs** → mid p
 
 - Where regions overlap (e.g. `chest` strong and `upper_chest` soft), the higher level wins. Each pixel gets one muscle paint, never stacked opacity: regions of one level are merged into one path per segment before filling, and each level's path is drawn over an opaque `nearBody` underlay of the same path (§4.11.6). The underlay also stops strong at 0.80 stacking on soft during the pulse (review N3).
 - `grip` is **capped at soft** even when it's primary. Hands are small and sit on the implement, so a strong hand would pull the eye to the bar.
+- **Supporting colour must read as a shape (10 Oct 2026):** `forearms` and `grip` tints are drawn only from 240pt up (below that they are spots on the hands), and a soft region under 6 pt² at the drawn size is left out.
+- **Legibility check:** `guide:check` `target-legible` measures the strong colour on each labelled key frame at 115pt with the guide's camera. It fails when even the best key is under 10 pt² and warns when any key is (a limb turned towards the camera fades its colour, which is right).
 - **Differentiate Without Color** (iOS setting): strong regions also get a 1pt `text.primary` outline at 0.6 opacity. The legend text is unchanged.
 
 ### 4.4 Region geometry
@@ -410,7 +413,7 @@ Notation: `segment.surface s0–s1 d` (edge band) or `segment.face s0–s1 c w` 
 | `chest` | thorax.front 0.42–0.86 d0.55 | thorax.face 0.50–0.88 ±c0.45 w0.55 | — |
 | `core` | trunk.front 0.4–2.4 d0.75: one deep band for abs and obliques together (two overlapping soft shapes read as blotches) | = `abs` + `obliques` | = `spinal_erectors` + `obliques` |
 | `forearms` | forearm.face 0–0.65 c0 w0.8 | forearm.face 0–0.6 c0 w0.8 | forearm.face 0–0.6 c0 w0.8 |
-| `front_delts` | upperArm.front −0.10–0.35 d0.7 | upperArm.face −0.10–0.35 c−0.3 w0.6 | — |
+| `front_delts` | upperArm.front −0.12–0.45 d0.9 (was −0.10–0.35 d0.7: 3–7 pt² at 115pt, under the legibility floor, §4.3) | upperArm.face −0.10–0.35 c−0.3 w0.6 | — |
 | `glutes` | pelvis.back −0.65–0.75 d0.7 | — | pelvis.face −0.65–0.8 ±c0.45 w0.6 |
 | `grip` (soft max) | hand.full + forearm.front 0–0.45 d0.5 | hand.full + forearm.face 0–0.4 c0 w0.6 | hand.full + forearm.face 0–0.4 c0 w0.6 |
 | `hamstrings` | thigh.back 0.08–0.88 d0.65 | — | thigh.face 0.10–0.88 c0 w0.7 |
@@ -421,7 +424,7 @@ Notation: `segment.surface s0–s1 d` (edge band) or `segment.face s0–s1 c w` 
 | `side_delts` | upperArm.face −0.12–0.40 c0 w0.7 | upperArm.lat −0.12–0.35 d0.6 | upperArm.lat −0.12–0.35 d0.6 |
 | `spinal_erectors` | trunk.back 0.6–2.4 d0.4 | — | trunk.face 0.6–2.4 ±c0.2 w0.22 |
 | `traps` | thorax.back 0.72–1 d0.55 (the slope into the neck; a separate neck piece pinched off into a second bead) | thorax.face 0.90–1.0 ±c0.55 w0.5 (the slope from the neck to the shoulder) | thorax.face 0.55–1.0 c0 w0.7, narrowing to w0.3 at s 0.55 + neck.face 0–0.5 c0 w0.6 |
-| `triceps` | upperArm.back 0.12–0.85 d0.7 | — | upperArm.face 0.10–0.85 c0 w0.75 |
+| `triceps` | upperArm.back 0.08–0.90 d1 (the whole back half of the upper arm; d0.7 was a sliver at thumbnail size, review of 10 Oct 2026) | — | upperArm.face 0.10–0.85 c0 w0.75 |
 | `upper_back` | thorax.back 0.58–0.95 d0.45 | — | thorax.face 0.55–0.95 c0 w0.5 |
 | `upper_chest` | thorax.front 0.70–0.92 d0.45 | thorax.face 0.72–0.92 ±c0.45 w0.5 | — |
 

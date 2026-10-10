@@ -94,7 +94,8 @@ describe('figure drawing v2', () => {
     const pose = poseAt(loaded('barbell-back-squat').prepared, 0);
     const foot = pose.body.feet.find((f) => f.side === 'Near');
     expect(foot).toBeDefined();
-    const shoe = groupContours(pose.body, 'legNear')[2] ?? [];
+    // Hip fillet, thigh, shank, shoe.
+    const shoe = groupContours(pose.body, 'legNear')[3] ?? [];
     expect(Math.min(...shoe.map((q) => q.y))).toBeCloseTo(0, 3);
     expect(pose.body.head.rx).toBeCloseTo(0.056, 6);
     expect(pose.body.head.ry).toBeCloseTo(0.063, 6);
@@ -113,7 +114,7 @@ describe('figure drawing v2', () => {
     expect(regions.some((r) => r.group === 'legNear')).toBe(true);
   });
 
-  it('M/L tier: contour under the fill, shading gradients and anatomical lines; S tier: v1 halos, none of those', () => {
+  it('M/L tier: contour under the fill, shading gradients and anatomical lines; S tier: leg halos and a thin arm edge, none of those', () => {
     const { prepared, camera } = loaded('barbell-back-squat');
     const pose = poseAt(prepared, 0.4);
     const full = frameOps(pose, { px: 240, camera, muscles: musclesOf('barbell-back-squat') });
@@ -121,13 +122,18 @@ describe('figure drawing v2', () => {
     const isPath = (o: DrawOp): o is Extract<DrawOp, { kind: 'path' }> => o.kind === 'path';
     expect(full.filter(isPath).some((o) => o.gradient !== null)).toBe(true);
     expect(full.filter(isPath).some((o) => o.stroke === 'shade' && !o.closed)).toBe(true);
-    expect(compact.filter(isPath).some((o) => o.gradient !== null || o.stroke === 'shade')).toBe(false);
-    // S keeps the halo right before the near arm, and the near leg's under the trunk (no seam at the hip, ADR 0015);
+    expect(compact.filter(isPath).some((o) => o.gradient !== null)).toBe(false);
+    // S: the only shade strokes are the near arm's occlusion edge (no contours or anatomical lines), at most 0.6 pt visible at 115 pt.
+    const compactShade = compact.filter(isPath).filter((o) => o.stroke === 'shade');
+    expect(compactShade.length).toBeGreaterThan(0);
+    expect(compactShade.every((o) => o.width <= 2 * 0.6 + 1e-9)).toBe(true);
+    // S keeps the near leg's halo under the trunk (no seam at the hip, ADR 0015) and no background halo after the
+    // trunk fill: the arm over the body is a shade edge, not a hole cut through it (review of 10 Oct 2026).
     // M/L puts near halos before the trunk fill.
     const haloIdx = (ops: DrawOp[]) => ops.map((o, i) => (isPath(o) && o.fill === 'background' && o.stroke === 'background' ? i : -1)).filter((i) => i >= 0);
     const trunkFill = (ops: DrawOp[]) => ops.findIndex((o) => isPath(o) && o.fill === 'nearBody');
     expect(haloIdx(full).filter((i) => i > trunkFill(full))).toEqual([]);
-    expect(haloIdx(compact).filter((i) => i > trunkFill(compact)).length).toBe(1);
+    expect(haloIdx(compact).filter((i) => i > trunkFill(compact)).length).toBe(0);
     // Both tiers carry the muscle colour (§3.10).
     expect(compact.some((o) => isPath(o) && o.fill === 'muscle')).toBe(true);
     // shading: false drops only the gradients.

@@ -16,7 +16,8 @@
 import { BODY_GROUPS, groupContours, groupStrokeContours, soleBand, type BodyGroup } from './body';
 import { add, dist, polygonsWithin, scale, sub, v, type Vec } from './math';
 import { definitionGroupsFor, effectiveDefinition, focusViewOf, hasListedMuscles, resolveFocus, type MuscleDefinition, type MuscleInput, type MuscleLevel } from './muscle-map';
-import { counterClockwise } from './paths';
+import { counterClockwise, signedArea } from './paths';
+import type { Muscle } from '../vocab';
 import type { Pose } from './pose';
 import { STROKE, type Layer, type Paint, type Shape } from './props';
 import { anatomyLines, definitionShapes, regionShapes, shadeBands, type RegionGroup } from './regions';
@@ -34,6 +35,17 @@ export type DetailTier = 'compact' | 'full';
 
 /** Canvases narrower than this (in points) draw the S tier (design-system `guide.tierSmallBelow`). */
 export const DETAIL_TIER_MIN_PT = 160;
+
+/** S tier: visible width of the arm's occlusion edge at `COMPACT_REFERENCE_PT` (exercise-guides-v2 §3.6), points. */
+export const COMPACT_ARM_EDGE_PT = 0.6;
+/** The thumbnail size `COMPACT_ARM_EDGE_PT` is set for (Today and the library list, 115 pt). */
+export const COMPACT_REFERENCE_PT = 115;
+
+/** Forearm and grip supporting tints only from this drawn size up (below it they are spots on the hands), points. */
+export const SUPPORT_DETAIL_MIN_PT = 240;
+/** A supporting (soft) region smaller than this at the drawn size is left out, pt². */
+export const SUPPORT_MIN_AREA_PT2 = 6;
+const SMALL_SUPPORT: ReadonlySet<Muscle> = new Set<Muscle>(['grip', 'forearms']);
 
 /** Minimum stroke widths in points at the drawn size (design-system `guide.strokeFloor.*`). */
 export const STROKE_FLOORS_PT = {
@@ -251,6 +263,58 @@ export function muscleOpacity(level: MuscleLevel, opts: Pick<FrameOpsOptions, 'p
   return lo + (hi - lo) * w;
 }
 
+/** Length over which an open limb stroke fades at each end (about one upper-arm width), H. */
+export const TAPER_LENGTH = 0.05;
+/** Opacity of the end pieces of a tapered stroke, from the inside out. */
+const TAPER_STEPS = [0.7, 0.45, 0.2] as const;
+
+/** Cut a polyline at arc length `d` from its start: [head, tail] (the cut point is in both). */
+function cutAt(pts: readonly Vec[], d: number): [Vec[], Vec[]] {
+  let run = 0;
+  for (let i = 1; i < pts.length; i += 1) {
+    const a = pts[i - 1] as Vec;
+    const b = pts[i] as Vec;
+    const l = dist(a, b);
+    if (run + l >= d && l > 0) {
+      const m = add(a, scale(sub(b, a), (d - run) / l));
+      return [[...pts.slice(0, i), m], [m, ...pts.slice(i)]];
+    }
+    run += l;
+  }
+  return [[...pts], [pts[pts.length - 1] as Vec]];
+}
+
+/**
+ * An open stroke as pieces with opacity: full in the middle, fading in
+ * `TAPER_STEPS` over `fade` (output units) at each end. Strokes shorter than
+ * three fades are left whole.
+ */
+export function taperedPieces(pts: readonly Vec[], fade: number): { alpha: number; points: Vec[] }[] {
+  let total = 0;
+  for (let i = 1; i < pts.length; i += 1) total += dist(pts[i - 1] as Vec, pts[i] as Vec);
+  if (pts.length < 2 || total < 3 * fade || fade <= 0) return [{ alpha: 1, points: [...pts] }];
+  const step = fade / TAPER_STEPS.length;
+  const out: { alpha: number; points: Vec[] }[] = [];
+  let rest: Vec[] = [...pts];
+  // Start: faintest first.
+  for (let i = TAPER_STEPS.length - 1; i >= 0; i -= 1) {
+    const [head, tail] = cutAt(rest, step);
+    out.push({ alpha: TAPER_STEPS[i] ?? 1, points: head });
+    rest = tail;
+  }
+  // End: cut the same from the far end.
+  const reversed = [...rest].reverse();
+  let restR = reversed;
+  const ends: { alpha: number; points: Vec[] }[] = [];
+  for (let i = TAPER_STEPS.length - 1; i >= 0; i -= 1) {
+    const [head, tail] = cutAt(restR, step);
+    ends.push({ alpha: TAPER_STEPS[i] ?? 1, points: head.reverse() });
+    restR = tail;
+  }
+  out.push({ alpha: 1, points: restR.reverse() });
+  return [...out, ...ends.reverse()];
+}
+
 /** Contours grouped by alpha, fully opaque first (almost always the only group). */
 function byAlpha(items: readonly { alpha: number; points: Vec[] }[]): [number, Vec[][]][] {
   const groups = new Map<number, Vec[][]>();
@@ -291,7 +355,12 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
 
   const view = focusViewOf({ view: body.view, seenFrom: body.seenFrom });
   const focus = opts.muscles ? resolveFocus(opts.muscles, pose.focus ?? undefined, view) : null;
-  const regions = focus ? regionShapes(body, focus) : [];
+  // Supporting colour that can't read as an anatomical shape is left out (§4.3): forearm and grip tints below
+  // `SUPPORT_DETAIL_MIN_PT` (spots on the hands), and any soft region under `SUPPORT_MIN_AREA_PT2` at the drawn size.
+  const ptPerH = k / ptPx;
+  const regions = (focus ? regionShapes(body, focus) : []).filter(
+    (r) => r.level === 'strong' || ((pt >= SUPPORT_DETAIL_MIN_PT || !SMALL_SUPPORT.has(r.muscle)) && Math.abs(signedArea(r.contour)) * ptPerH * ptPerH * r.alpha >= SUPPORT_MIN_AREA_PT2),
+  );
   // Muscle definition (§4.11): faint shapes for the groups the colour doesn't take, one opaque op per region group.
   const definition = effectiveDefinition(opts.definition ?? 'off', {
     tier,
@@ -341,20 +410,48 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
     const opacity = ic ? 0.7 : 0.5;
     const strokes = groupStrokeContours(body, g);
     if (strokes.closed.length > 0) ops.push(pathOp(strokes.closed.map(project), { smooth: true, stroke: 'shade', width, join: 'round', opacity }));
-    if (strokes.open.length > 0) ops.push(pathOp(strokes.open.map((pts) => pts.map(c.P)), { closed: false, smooth: true, stroke: 'shade', width, join: 'round', opacity }));
+    openStrokeOps(strokes.open, width, opacity, null);
   };
-  /** The limb's own separation: S-tier halo or M/L contour. Legs drawn after the trunk emit it before the trunk instead. */
+  /**
+   * Open limb strokes (an arm's occlusion edge) fade out over their last
+   * `TAPER_LENGTH` at both ends, where the segment joins its parent, in
+   * `TAPER_STEPS` pieces: the edge stops softly at the shoulder and inside the
+   * elbow instead of ending in a hard tick that crosses the deltoid line.
+   */
+  const openStrokeOps = (open: readonly Vec[][], width: number, opacity: number, cap: 'round' | null): void => {
+    const pieces: { alpha: number; points: Vec[] }[] = [];
+    for (const pts of open) pieces.push(...taperedPieces(pts.map(c.P), TAPER_LENGTH * k));
+    for (const [alpha, ps] of byAlpha(pieces)) ops.push(pathOp(ps, { closed: false, smooth: true, stroke: 'shade', width, join: 'round', cap, opacity: opacity * alpha }));
+  };
+  /**
+   * S tier, arms: the occlusion edge where an arm crosses the body, as a thin
+   * body-shade stroke under the arm (only its outer half shows), open at the
+   * shoulder like the M/L contour. A background-colour halo here read as a
+   * hole cut through the body at thumbnail size (light theme: a white loop).
+   * Width scales with the drawn size: 0.6 pt visible at 115 pt, at most 1 pt.
+   */
+  const compactArmEdge = (g: BodyGroup): void => {
+    const width = 2 * Math.min(1, COMPACT_ARM_EDGE_PT * (pt / COMPACT_REFERENCE_PT)) * ptPx;
+    const strokes = groupStrokeContours(body, g);
+    const opacity = ic ? 0.85 : 0.6;
+    if (strokes.closed.length > 0) ops.push(pathOp(strokes.closed.map(project), { smooth: true, stroke: 'shade', width, join: 'round', opacity }));
+    openStrokeOps(strokes.open, width, opacity, 'round');
+  };
+  /** The limb's own separation: S-tier halo (arms: a thin shade edge) or M/L contour. Legs drawn after the trunk emit it before the trunk instead. */
   const outline = (g: BodyGroup): void => {
-    if (!full && g !== 'trunk') ops.push(halo(g));
+    if (!full && (g === 'armNear' || g === 'armFar')) compactArmEdge(g);
+    else if (!full && g !== 'trunk') ops.push(halo(g));
     if (full) contourOps(g);
   };
 
-  const drawGroup = (g: BodyGroup, outlineDone = false): void => {
+  const drawGroup = (g: BodyGroup, outlineDone = false, faintAlso: readonly RegionGroup[] = []): void => {
     const shapes = cs(g);
     if (shapes.length === 0) return;
     if (!outlineDone) outline(g);
     ops.push(pathOp(shapes, { smooth: true, fill: 'nearBody' }));
     faintOps(g);
+    // Faint shapes drawn over this group (the side-view pelvis over the near thigh) go under its colour, never across it.
+    for (const f of faintAlso) faintOps(f);
     regionOps(g);
     if (shading) {
       for (const band of shadeBands(body, g)) {
@@ -400,10 +497,12 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
   // inside the pelvis, so the thigh joins the hip without a seam line, and the outline outside the trunk stays (ADR 0015).
   if (!legsFirst) for (const g of legs) if (cs(g).length > 0) outline(g);
   drawGroup('trunk');
-  if (!legsFirst) for (const g of legs) drawGroup(g, true);
-  // Pelvis regions after the near leg, so the thigh doesn't cut the glutes in half (§3.11 step 8); faint glutes first.
+  // Side view: the faint pelvis shapes go with the near leg, after its fill and before its colour, so a faint glute or
+  // hip shape never cuts the quads into islands; the pelvis colour still goes after the leg, so the thigh doesn't cut
+  // the glutes in half (§3.11 step 8).
+  if (!legsFirst) for (const g of legs) drawGroup(g, true, side && g === 'legNear' ? ['pelvis'] : []);
   if (side) {
-    faintOps('pelvis');
+    if (legs.every((g) => cs(g).length === 0)) faintOps('pelvis');
     regionOps('pelvis');
   }
   for (const g of arms) drawGroup(g);

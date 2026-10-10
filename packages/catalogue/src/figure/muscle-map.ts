@@ -121,7 +121,7 @@ const MAP_TEXT: Record<Exclude<Muscle, 'core'>, Row> = {
   calves: { side: ['shank.back 0.08–0.62 d0.7'], front: ['shank.med 0.10–0.50 d0.3', 'shank.lat 0.10–0.45 d0.25'], back: ['shank.face 0.05–0.65 c0 w0.85'] },
   chest: { side: ['thorax.front 0.42–0.86 d0.55'], front: ['thorax.face 0.50–0.88 ±c0.45 w0.55'], back: null },
   forearms: { side: ['forearm.face 0–0.65 c0 w0.8'], front: ['forearm.face 0–0.6 c0 w0.8'], back: ['forearm.face 0–0.6 c0 w0.8'] },
-  front_delts: { side: ['upperArm.front -0.10–0.35 d0.7'], front: ['upperArm.face -0.10–0.35 c-0.3 w0.6'], back: null },
+  front_delts: { side: ['upperArm.front -0.12–0.45 d0.9'], front: ['upperArm.face -0.10–0.35 c-0.3 w0.6'], back: null },
   glutes: { side: ['pelvis.back -0.65–0.75 d0.7'], front: null, back: ['pelvis.face -0.65–0.8 ±c0.45 w0.6'] },
   grip: {
     side: ['hand.full', 'forearm.front 0–0.45 d0.5'],
@@ -144,7 +144,7 @@ const MAP_TEXT: Record<Exclude<Muscle, 'core'>, Row> = {
     front: ['thorax.face 0.90–1.0 ±c0.55 w0.5'],
     back: ['thorax.face 0.55–1.0 c0 w0.3>0.7', 'neck.face 0–0.5 c0 w0.6'],
   },
-  triceps: { side: ['upperArm.back 0.12–0.85 d0.7'], front: null, back: ['upperArm.face 0.10–0.85 c0 w0.75'] },
+  triceps: { side: ['upperArm.back 0.08–0.9 d1'], front: null, back: ['upperArm.face 0.10–0.85 c0 w0.75'] },
   upper_back: { side: ['thorax.back 0.58–0.95 d0.45'], front: null, back: ['thorax.face 0.55–0.95 c0 w0.5'] },
   upper_chest: { side: ['thorax.front 0.70–0.92 d0.45'], front: ['thorax.face 0.72–0.92 ±c0.45 w0.5'], back: null },
 };
