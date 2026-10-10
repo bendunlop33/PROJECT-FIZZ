@@ -133,6 +133,22 @@ describe('startWorkout normalises planned loads (review B1)', () => {
     if (!result.ok) expect(result.error.code).toBe('invalid_values');
   });
 
+  it('a pin found nowhere, on an exercise that lists no equipment kinds: the load is dropped, reps kept, with a Why? note (review S2, rule 4)', () => {
+    const NO_KINDS = exercise(214, 'Mystery press', { compatibleEquipment: [], defaultLoadConvention: 'total' });
+    const out = start({ ex: NO_KINDS, equipmentId: id(4242), targetLoad: kg(137.3), gymEquipment: [barbell()] });
+    const set = out.aggregate.sets[0];
+    expect(out.aggregate.exercises[0]?.equipmentId).toBeNull();
+    expect(set?.planned.load).toBeNull();
+    expect(set?.planned.reps).toEqual({ min: 8, max: 8 });
+    // Not kept as an intended target either: no gym could ever check it, so a later switch can't restore it unchecked.
+    expect(set?.planned.snap).toBeUndefined();
+    expect(out.warnings).toEqual([
+      { kind: 'equipment_not_in_gym', routineExerciseId: id(600), equipmentId: id(4242), substituteId: null },
+      { kind: 'target_dropped', setTemplateId: id(6001), requested: kg(137.3), reason: 'equipment_not_in_gym' },
+    ]);
+    expect(set?.planned.provenance?.guardNotes.map((n) => n.replaceAll('\u00a0', ' '))).toEqual(['No load target: plan was 137.3 kg, and this gym has nothing of that kind to check it on.']);
+  });
+
   it('every planned load matches its session exercise unit and convention across mixed inputs', () => {
     const rack = dumbbells({ unit: 'lb', loads: [10, 20, 30, 40, 50] });
     const cases: [Exercise, string | null, Load][] = [

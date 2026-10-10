@@ -210,6 +210,13 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
     return [{ rex, exercise }];
   });
 
+  /**
+   * Slots pinned to an item found nowhere, on an exercise that lists no
+   * equipment kinds: nothing anywhere can check their loads, so the load
+   * targets are dropped (reps kept) rather than kept unchecked (rule 4,
+   * review S2). They aren't kept as intended either: no gym could restore them.
+   */
+  const unresolvable = new Set<string>();
   const slots: SnapSlotInput[] = planned.map(({ rex, exercise }) => {
     let source: SnapSource | null = null;
     if (rex.equipmentId !== null) {
@@ -218,14 +225,16 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
       const kind = pinned?.kind ?? exercise.compatibleEquipment[0];
       if (pinned) source = sourceFor(pinned);
       else if (kind !== undefined) source = { id: rex.equipmentId, kind, name: kind in EQUIPMENT_WORD ? EQUIPMENT_WORD[kind as EquipmentInstance['kind']] : 'Equipment', gymId: input.gymId };
+      else unresolvable.add(rex.id);
     }
+    const unchecked = unresolvable.has(rex.id);
     return {
       slotId: rex.id,
       exercise: { id: exercise.id, name: exercise.name, compatibleEquipment: exercise.compatibleEquipment, defaultLoadConvention: exercise.defaultLoadConvention },
       sourceEquipment: source,
       unit: input.owner.preferredUnit,
       convention: exercise.defaultLoadConvention,
-      sets: rex.setTemplates.map((tpl) => ({ id: tpl.id, setType: tpl.setType, intended: tpl.targetLoad, current: null, reps: tpl.targetReps, durationS: tpl.targetDurationS })),
+      sets: rex.setTemplates.map((tpl) => ({ id: tpl.id, setType: tpl.setType, intended: unchecked ? null : tpl.targetLoad, current: null, reps: tpl.targetReps, durationS: tpl.targetDurationS })),
     };
   });
   const snap = snapPlanToGym({
@@ -265,7 +274,9 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
       const load = result?.load ?? null;
       let warning: Extract<StartWarning, { kind: 'target_rounded' | 'target_dropped' }> | null = null;
       if (result && tpl.targetLoad !== null) {
-        if (result.outcome === 'dropped') {
+        if (unresolvable.has(rex.id)) {
+          warning = { kind: 'target_dropped', setTemplateId: tpl.id, requested: tpl.targetLoad, reason: 'equipment_not_in_gym' };
+        } else if (result.outcome === 'dropped') {
           warning = { kind: 'target_dropped', setTemplateId: tpl.id, requested: tpl.targetLoad, reason: startDropReason(result.reason) };
         } else if (load !== null && result.outcome !== 'exact') {
           warning = { kind: 'target_rounded', setTemplateId: tpl.id, requested: tpl.targetLoad, planned: load, bounded: result.bounded, converted: load.unit !== tpl.targetLoad.unit };
