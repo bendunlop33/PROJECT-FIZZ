@@ -18,7 +18,7 @@
       "root": { "x": 0, "y": 0.456, "pelvisDeg": 45 },
       "joints": { "lumbar": 0, "thoracic": 0, "neck": 0 },
       "ik": {
-        "footNear": { "x": -0.275, "y": 0, "planted": true, "pivot": "ball", "soleDeg": 62.58 },
+        "footNear": { "x": -0.275, "y": 0, "planted": true, "pivot": "ball", "soleDeg": 55 },
         "footFar": { "x": 0, "y": 0, "planted": true, "pivot": "ball", "soleDeg": 25 },
         "handNear": { "prop": "sled", "bend": "cw" },
         "handFar": { "prop": "sled", "bend": "cw" }
@@ -28,35 +28,35 @@
     {
       "t": 0.25, "label": "Switch", "caption": "Feet pass under the hips, hips stay low",
       "ik": {
-        "footNear": { "x": -0.1737, "y": 0.0201, "planted": false, "soleDeg": 70.56 },
-        "footFar": { "planted": true, "soleDeg": 36.95 }
+        "footNear": { "x": -0.185, "y": 0.045, "planted": false, "soleDeg": 65.9 },
+        "footFar": { "planted": true, "soleDeg": 32 }
       },
       "ease": "smooth"
     },
     {
-      "t": 0.363,
-      "ik": { "footNear": { "x": -0.0344, "y": 0.0423, "planted": false, "soleDeg": 37.17 }, "footFar": { "planted": true, "soleDeg": 47.58 } },
+      "t": 0.365,
+      "ik": { "footNear": { "x": -0.0516, "y": 0.0252, "planted": false, "soleDeg": 47.9 }, "footFar": { "planted": true, "soleDeg": 35.1 } },
       "ease": "smooth"
     },
     {
       "t": 0.5, "label": "Far-leg drive", "caption": "Other leg drives, arms stay fixed",
       "ik": {
         "footNear": { "x": 0, "y": 0, "planted": true, "soleDeg": 25 },
-        "footFar": { "planted": true, "soleDeg": 62.58 }
+        "footFar": { "planted": true, "soleDeg": 55 }
       },
       "ease": "smooth"
     },
     {
       "t": 0.75, "label": "Switch", "caption": "Short, quick steps",
       "ik": {
-        "footNear": { "planted": true, "soleDeg": 36.95 },
-        "footFar": { "x": -0.1737, "y": 0.0201, "planted": false, "soleDeg": 70.56 }
+        "footNear": { "planted": true, "soleDeg": 32 },
+        "footFar": { "x": -0.185, "y": 0.045, "planted": false, "soleDeg": 65.9 }
       },
       "ease": "smooth"
     },
     {
-      "t": 0.863,
-      "ik": { "footNear": { "planted": true, "soleDeg": 47.58 }, "footFar": { "x": -0.0344, "y": 0.0423, "planted": false, "soleDeg": 37.17 } },
+      "t": 0.865,
+      "ik": { "footNear": { "planted": true, "soleDeg": 35.1 }, "footFar": { "x": -0.0516, "y": 0.0252, "planted": false, "soleDeg": 47.9 } },
       "ease": "smooth"
     },
     { "t": 1, "sameAs": 0 }
