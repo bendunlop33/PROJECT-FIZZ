@@ -4,6 +4,7 @@ import { SessionAggregateSchema } from '@fizz/schemas';
 import {
   buildActiveSetView,
   buildWorkoutSummary,
+  doneExerciseNames,
   gymRouteIds,
   isProposalStale,
   latestUndoableGymChange,
@@ -462,6 +463,35 @@ describe('Summary and history after a switch (check 24)', () => {
     expect(h.map((x) => [x.equipmentId, x.gymId, x.sets.map((y) => y.load?.value)])).toEqual([
       [mainRack.id, MAIN, [32.5]],
       [hotelRack.id, HOTEL, [20, 20]],
+    ]);
+  });
+
+  it('Repeat of a switched workout copies the split exercise once, its sets in order (review B1)', () => {
+    const done = finishedAcrossGyms();
+    const r = startWorkoutFromSession({ opId: 'rep-b1', owner: profile(), gymId: MAIN, gymName: 'Main Gym', source: done, exercises: EXERCISES, gymEquipment: MAIN_EQ, at: at(90_000), newId: idGen(80_000) });
+    const rows = r.aggregate.exercises.filter((e) => e.exerciseId === INCLINE);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.equipmentId).toBe(mainRack.id);
+    const sets = r.aggregate.sets.filter((x) => x.sessionExerciseId === rows[0]?.id).sort((a, b) => a.index - b.index);
+    expect(sets.map((x) => [x.planned.load?.value, x.planned.reps?.min])).toEqual([
+      [32.5, 9],
+      [20, 12],
+      [20, 11],
+    ]);
+    expect(doneExerciseNames(done)).toEqual(['Bench press', 'Incline DB press']);
+  });
+
+  it('Start next session of a switched workout applies the targets once per exercise (review B1)', () => {
+    const done = finishedAcrossGyms();
+    const t = { setType: 'working' as const, planned: { load: kg(35, 'per_hand'), reps: { min: 8, max: 10 }, durationS: null, rpe: null, rir: null } };
+    const r = startWorkoutFromSession({ opId: 'next-b1', owner: profile(), gymId: MAIN, gymName: 'Main Gym', source: done, exercises: EXERCISES, gymEquipment: MAIN_EQ, at: at(90_000), newId: idGen(81_000), targets: new Map([[INCLINE, [t, t, t]]]) });
+    const rows = r.aggregate.exercises.filter((e) => e.exerciseId === INCLINE);
+    expect(rows).toHaveLength(1);
+    const sets = r.aggregate.sets.filter((x) => x.sessionExerciseId === rows[0]?.id);
+    expect(sets.map((x) => [x.planned.load?.value, x.planned.source])).toEqual([
+      [35, 'built_in_rule'],
+      [35, 'built_in_rule'],
+      [35, 'built_in_rule'],
     ]);
   });
 

@@ -6,6 +6,7 @@ import {
   buildAddSetContinuation,
   buildGymSwitchProposal,
   gymRouteIds,
+  doneExerciseNames,
   changeGymCommand,
   currentGymEquipment,
   lastUsedAtGym,
@@ -789,7 +790,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           // A workout that switched gym is listed as `Main Gym → Hotel · Lisbon` (gym-switch check 24).
           const route = gymRouteIds(a.session);
           for (const g of route) if (!gyms.has(g)) gyms.set(g, (await repos().gyms.get(g).catch(() => null))?.name ?? 'Gym');
-          const names = [...a.exercises].sort((x, y) => x.order - y.order).filter((e) => done.some((s) => s.sessionExerciseId === e.id)).map((e) => e.exerciseName);
+          // An exercise done at two gyms is listed once (review B1).
+          const names = doneExerciseNames(a);
           rows.push({
             sessionId: a.session.id,
             title: storedName(a) ?? (await titleFor(a.exercises.map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title,

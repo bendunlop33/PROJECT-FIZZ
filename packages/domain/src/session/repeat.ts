@@ -4,6 +4,7 @@ import { loadDirection } from '../equipment';
 import { convertMass } from '../units';
 import { startWorkoutWithMode, type StartWorkoutInput, type StartWorkoutOutput } from './create';
 import { equipmentOfRow } from './equipment-snapshot';
+import { blockSets, partRootOf, partsOf } from './gym-switch';
 import { GENERIC_WORKOUT_NAME } from './first-run';
 import { repeatNoteText } from './snap-text';
 
@@ -76,16 +77,27 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   /** The item each copied exercise was done on last time (it may be at another gym). */
   const knownEquipment = new Map<string, EquipmentInstance>();
   const sorted = [...src.exercises].sort((a, b) => a.order - b.order);
+  // An exercise split across gyms (GS6) is one block of rows: it is copied once,
+  // its parts' done sets in execution order (review B1).
+  const roots = sorted.filter((sx) => partRootOf(src.exercises, sx.id) === sx.id);
 
-  for (const sx of sorted) {
-    const own = src.sets.filter((s) => s.sessionExerciseId === sx.id).sort((a, b) => a.index - b.index);
+  for (const sx of roots) {
+    const parts = partsOf(src.exercises, sx.id);
+    const own = blockSets(src, sx.id);
     // A left/right pair is one prescribed set: the companion row isn't copied again.
     const done = own.filter((s) => s.status === 'completed' && s.actual !== null && s.pairedWithSetId === null);
     const skipped = own.filter((s) => s.status === 'skipped').length;
     if (skipped > 0) notCopied.push({ exerciseName: sx.exerciseName, skipped });
     if (done.length === 0) continue;
     const known = input.exercises.get(sx.exerciseId);
-    const sourceEq = equipmentOfRow(src.session.equipmentSnapshot, sx);
+    // The item it was last done on: the latest part that had equipment (a part with none,
+    // e.g. bench at a gym with no bar, doesn't unpin the exercise).
+    const sourceEq =
+      [...parts]
+        .reverse()
+        .filter((p) => done.some((d) => d.sessionExerciseId === p.id))
+        .map((p) => equipmentOfRow(src.session.equipmentSnapshot, p))
+        .find((e) => e !== null) ?? null;
     const exercise: Exercise = known ?? {
       id: sx.exerciseId,
       ownerId: null,
@@ -191,6 +203,24 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     }),
   };
   return { aggregate, warnings: out.warnings, snap: out.snap, notes, notCopied, empty: routineExercises.length === 0 };
+}
+
+/**
+ * The names of a workout's exercises with at least one done set, in workout order,
+ * once per exercise: an exercise split across gyms (GS6) is listed once (review B1).
+ */
+export function doneExerciseNames(state: SessionAggregate): string[] {
+  const doneRows = new Set(state.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null).map((s) => s.sessionExerciseId));
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const e of [...state.exercises].sort((a, b) => a.order - b.order)) {
+    if (!doneRows.has(e.id)) continue;
+    const root = partRootOf(state.exercises, e.id);
+    if (seen.has(root)) continue;
+    seen.add(root);
+    names.push(e.exerciseName);
+  }
+  return names;
 }
 
 /** The hardest loaded set (working sets first) by convention: most resistance, or least assistance. */
