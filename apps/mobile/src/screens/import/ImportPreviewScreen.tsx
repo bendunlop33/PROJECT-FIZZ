@@ -166,7 +166,7 @@ export function ImportPreviewScreen() {
       <SectionHeader title="Kept as written" />
       <Group>
         {v.kept.map((k) => (
-          <Row key={k.text} title={k.text} icon="info.circle" />
+          <Row key={k.text} title={k.text} subtitle={k.detail ?? null} icon="info.circle" />
         ))}
         {v.effortReview ? (
           <Row

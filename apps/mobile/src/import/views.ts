@@ -794,8 +794,16 @@ export function totalOptions(a: ImportAnalysis, locale?: string): TotalView | nu
     );
   const unknown = q.exercises.filter((e) => !e.known);
   const known = q.exercises.filter((e) => e.known);
-  // A lone exercise read by the group answer is fully shown by the options above it.
+  // A lone exercise read by the group answer is fully shown by the options above it, which give its conversion (review r6 S2).
   const lone = known.length === 1 && known[0]?.override === null;
+  const unit = ex?.unit ?? 'kg';
+  const each = q.bars.length > 1 ? 'each bar’s own weight below is added' : null;
+  const platesOnly =
+    ex && ex.bar !== 'unknown' && ex.barWeight !== null && ex.platesOnly !== null
+      ? `Imported as ${formatNumber(ex.platesOnly)}${NBSP}${unit} (${v} + ${weightText(ex.barWeight, unit)} ${BAR_NAME[ex.bar]})${each === null ? '' : `; ${each}`}`
+      : each === null
+        ? `The ${ex && ex.bar !== 'unknown' ? BAR_NAME[ex.bar] : 'bar'} weight below is added`
+        : 'Each bar’s own weight below is added';
   return {
     title: 'Barbell weights',
     lead: 'FitNotes doesn’t record whether a barbell weight includes the bar.',
@@ -804,8 +812,8 @@ export function totalOptions(a: ImportAnalysis, locale?: string): TotalView | nu
       q.grouped === 0
         ? []
         : [
-            { value: 'total', label: 'Total, including the bar', detail: `Imported as ${v}${NBSP}${ex?.unit ?? 'kg'}`, selected: q.answer === 'total' },
-            { value: 'plates_only', label: 'Plates only (bar not counted)', detail: q.bars.length > 1 ? 'Each bar’s own weight below is added' : 'The bar weight below is added', selected: q.answer === 'plates_only' },
+            { value: 'total', label: 'Total, including the bar', detail: `Imported as ${v}${NBSP}${unit}`, selected: q.answer === 'total' },
+            { value: 'plates_only', label: 'Plates only (bar not counted)', detail: platesOnly, selected: q.answer === 'plates_only' },
           ],
     example: ex ? `Example from your file (${dayMonthYear(ex.date, locale)}): ${ex.name}  ${v}${NBSP}×${NBSP}${String(ex.reps)}` : null,
     barWeights,

@@ -159,6 +159,20 @@ export interface ExampleSet {
   reps: number;
 }
 
+/**
+ * The barbell group's example set, with what "plates only" imports it as,
+ * so the conversion is shown even when the group reads a single exercise
+ * (review r6 S2).
+ */
+export interface TotalExample extends ExampleSet {
+  /** The bar "plates only" adds (`unknown`: none can be added). */
+  bar: Exclude<BarOf, 'none'>;
+  /** That bar's weight in the set's unit; null when none can be added or it isn't entered yet. */
+  barWeight: number | null;
+  /** The value under "plates only"; null when no bar weight can be added. */
+  platesOnly: number | null;
+}
+
 /** One exercise on the barbell question (PM decision, review r5). */
 export interface TotalExercise {
   key: string;
@@ -237,8 +251,8 @@ export interface TotalQuestion {
   answer: TotalAnswer | null;
   /** Exercises the group answer reads (the group question is shown only when there is one). */
   grouped: number;
-  /** The newest set of an exercise the group answer reads. */
-  example: ExampleSet | null;
+  /** The newest set of an exercise the group answer reads, with its plates-only value. */
+  example: TotalExample | null;
   /** An exercise the group answer reads waits for it. */
   needsGroup: boolean;
   /** Exercises whose bar isn't known, with no answer yet. */
@@ -593,7 +607,7 @@ function totalQuestion(live: readonly FitNotesRow[], resolved: (r: FitNotesRow) 
   const members = new Map<string, TotalExercise>();
   const sampleDates = new Map<string, string>();
   const barUse = new Map<ImportBarKind, { units: Set<WeightUnit>; needed: Set<WeightUnit> }>();
-  let example: ExampleSet | null = null;
+  let example: TotalExample | null = null;
   for (const r of live) {
     const ex = resolved(r);
     if (ex?.convention !== 'total' || ex.bar === 'none') continue;
@@ -624,7 +638,10 @@ function totalQuestion(live: readonly FitNotesRow[], resolved: (r: FitNotesRow) 
       m.sample = { value: w.value, unit: w.unit, imported, barWeight };
       sampleDates.set(key, date);
     }
-    if (m.known && m.override === null && r.reps !== null && (example === null || date > example.date)) example = { name: r.exercise, date, value: w.value, unit: w.unit, reps: r.reps };
+    if (m.known && m.override === null && r.reps !== null && (example === null || date > example.date)) {
+      const barWeight = bar === null ? null : barWeightOf(bar, answers)[w.unit];
+      example = { name: r.exercise, date, value: w.value, unit: w.unit, reps: r.reps, bar: m.bar, barWeight, platesOnly: barWeight === null || w.value < 0 ? null : plus(w.value, barWeight) };
+    }
   }
   if (members.size === 0) return null;
   const exercises = [...members.values()];

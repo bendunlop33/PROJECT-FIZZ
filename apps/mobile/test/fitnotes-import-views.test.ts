@@ -112,6 +112,12 @@ describe('import preview wording', () => {
     ]);
     expect(plain(ph?.example)).toBe('Example from your file (1 Sept 2026): Incline DB Press  50 × 10');
     expect(totalOptions(d.analysis)?.options.every((o) => !o.selected)).toBe(true);
+    // A lone barbell exercise: no per-exercise list, so the options give its conversion (review r6 S2).
+    expect([totalOptions(d.analysis)?.ask, totalOptions(d.analysis)?.rows]).toEqual([null, null]);
+    expect(totalOptions(d.analysis)?.options.map((o) => [o.label, plain(o.detail)])).toEqual([
+      ['Total, including the bar', 'Imported as 100 kg'],
+      ['Plates only (bar not counted)', 'Imported as 120 kg (100 + 20 kg bar)'],
+    ]);
     expect(totalOptions(d.analysis)?.barWeights).toEqual([{ bar: 'barbell', unit: 'kg', value: 20, label: 'Bar weight (kg), added to “plates only” values', missing: null }]);
     // -20 and 10 under one exercise: a third answer reads each by its sign (review B3).
     const bw = bodyweightOptions(d.analysis, 'pull up');
@@ -156,7 +162,7 @@ describe('import preview wording', () => {
     let d = await open([B2, '2026-09-01,Bench press,Chest,60.0,kgs,5,,,,', '2026-09-01,EZ-bar skull crusher,Arms,20.0,kgs,10,,,,', '2026-09-01,Kettlebell swing,Legs,24.0,kgs,15,,,,'].join('\n'));
     d = await step(d, { kind: 'total', answer: 'plates_only' });
     const q = totalOptions(d.analysis);
-    expect(q?.options.find((o) => o.value === 'plates_only')?.detail).toBe('Each bar’s own weight below is added');
+    expect(plain(q?.options.find((o) => o.value === 'plates_only')?.detail)).toBe('Imported as 80 kg (60 + 20 kg bar); each bar’s own weight below is added');
     expect(q?.barWeights).toEqual([
       { bar: 'barbell', unit: 'kg', value: 20, label: 'Bar weight (kg), added to “plates only” values', missing: null },
       { bar: 'ez_bar', unit: 'kg', value: null, label: 'EZ-bar weight (kg), added to “plates only” values', missing: 'Enter your EZ bar’s weight in kg. Plates-only sets on it can’t be imported without it.' },
