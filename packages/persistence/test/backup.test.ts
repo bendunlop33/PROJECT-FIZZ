@@ -410,6 +410,12 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
       delete copy.local_date;
       return copy;
     });
+    // …and nothing from schema 4 (set exclusions).
+    tables.session_sets = (tables.session_sets ?? []).map((row) => {
+      const copy = { ...row };
+      delete copy.exclusions;
+      return copy;
+    });
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
     const v1 = resign({ ...file, schemaVersion: 1, tables, counts });
 

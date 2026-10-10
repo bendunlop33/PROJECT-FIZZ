@@ -101,6 +101,9 @@ export function richFinishedSession(): SessionAggregate {
   step(logCmd(b.id, values(kg(15, 'per_hand'), 7), 200, 'log-b'));
   const logged = s.sets.find((x) => x.id === b.id);
   step({ type: 'correct_set', at: at(210), opId: 'fix-b', setId: b.id, expectedSetVersion: logged?.version ?? 1, patch: { reps: 8 } });
+  // §2.13: an exclusion mark, so every store and the backup round-trip carry it.
+  const aLogged = s.sets.find((x) => x.id === a.id);
+  step({ type: 'correct_set', at: at(215), opId: 'mark-a', setId: a.id, expectedSetVersion: aLogged?.version ?? 1, patch: { exclusions: ['technique', 'spotted'] } });
   step({ type: 'add_set', at: at(220), opId: 'add-1', sessionExerciseId: s.exercises[0]?.id ?? '', newSetId: id(61_000), setType: null });
   const added = s.sets.find((x) => x.id === id(61_000));
   step({ type: 'delete_set', at: at(230), opId: 'del-1', setId: id(61_000), expectedSetVersion: added?.version ?? 1 });
