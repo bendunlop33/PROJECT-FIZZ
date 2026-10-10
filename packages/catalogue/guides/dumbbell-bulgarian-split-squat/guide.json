@@ -27,7 +27,7 @@
       "ease": "smooth"
     },
     {
-      "t": 0.2591, "pass": true, "label": "Halfway", "caption": "Hips straight down, front heel down",
+      "t": 0.2275, "pass": true, "label": "Halfway", "caption": "Hips straight down, front heel down",
       "root": { "x": -0.1141, "y": 0.4421, "pelvisDeg": 13.6 },
       "joints": { "neck": -10, "shoulderNear": 13.6, "shoulderFar": 13.6 },
       "ease": "smooth"
@@ -38,7 +38,7 @@
       "joints": { "neck": -14, "shoulderNear": 20, "shoulderFar": 20 },
       "holdMs": 200, "ease": "smooth"
     },
-    { "t": 0.838, "sameAs": 1, "caption": "Drive through the front foot", "ease": "smooth" },
+    { "t": 0.8578, "sameAs": 1, "caption": "Drive through the front foot", "ease": "smooth" },
     { "t": 1, "sameAs": 0 }
   ],
   "overlays": [{ "type": "path", "of": "dbNear", "showIn": ["static"] }],
