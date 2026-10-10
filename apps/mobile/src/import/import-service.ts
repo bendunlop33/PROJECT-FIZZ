@@ -243,6 +243,12 @@ interface Draft {
   candidates: MatchCandidate[];
   catalogueRows: Map<string, Exercise>;
   answers: ImportAnswers;
+  /**
+   * Every answer Ben gave in this preview, in order. `answers` is these on
+   * top of the starting answers; a rebuild against changed data starts
+   * again from what is in effect then and replays only these (review r6 S1).
+   */
+  changes: AnswerChange[];
   mappingVersion: number;
   analysis: ImportAnalysis;
 }
@@ -289,6 +295,18 @@ export function createImportService(deps: ImportServiceDeps) {
       importedDates: [...importedDates.entries()].filter(([d]) => fileDates.has(d)).map(([d, e]) => [d, e.jobId]).sort(),
     });
     return { ctx, stamp, candidates: built.candidates, catalogueRows: built.catalogueRows, gymIds: new Set(gyms.map((g) => g.id)) };
+  }
+
+  /**
+   * The answers a preview starts from: only Ben's own answers still in
+   * effect, from this same file's import (when it is finished and not
+   * undone) and each name's dumbbell answer from the newest import in effect
+   * (review r4 S2, N2). Read at open, and again when the preview is rebuilt
+   * because the data changed, so an answer from an import undone in the
+   * meantime is never kept (review r6 S1).
+   */
+  function startFrom(rows: readonly FitNotesRow[], loaded: { ctx: ImportContext; gymIds: ReadonlySet<string> }, earlier: ImportJob | null): ImportAnswers {
+    return startingAnswers(rows, loaded.ctx, earlier ? { answers: earlier.answers, gymIds: loaded.gymIds } : null);
   }
 
   async function view(d: Draft): Promise<ImportDraft> {
@@ -460,7 +478,7 @@ export function createImportService(deps: ImportServiceDeps) {
       }
       const id = deps.newId();
       // Ben's own answers fill in: this file's earlier import, and each name's dumbbell answer last time (review r4 S2, N2).
-      const answers = startingAnswers(parsed.rows, loaded.ctx, earlier ? { answers: earlier.job.answers, gymIds: loaded.gymIds } : null);
+      const answers = startFrom(parsed.rows, loaded, earlier?.job ?? null);
       const d: Draft = {
         id,
         ownerId: p.id,
@@ -478,6 +496,7 @@ export function createImportService(deps: ImportServiceDeps) {
         candidates: loaded.candidates,
         catalogueRows: loaded.catalogueRows,
         answers,
+        changes: [],
         mappingVersion: 1,
         analysis: analyseImport(parsed, loaded.ctx, answers),
       };
@@ -510,6 +529,7 @@ export function createImportService(deps: ImportServiceDeps) {
         return { ok: false, reason: 'invalid', message: 'That gym isn’t one of yours', draft: await view(d) };
       }
       d.answers = next.value;
+      d.changes.push(change);
       d.mappingVersion += 1;
       d.analysis = analyseImport({ variant: d.variant, rows: d.rows }, d.ctx, d.answers);
       return { ok: true, draft: await view(d) };
@@ -661,6 +681,13 @@ export function createImportService(deps: ImportServiceDeps) {
       d.ctxStamp = fresh.stamp;
       d.candidates = fresh.candidates;
       d.catalogueRows = fresh.catalogueRows;
+      // Start again from Ben's answers in effect now (an import undone since teaches nothing), then his answers in this preview (review r6 S1).
+      const earlier = (await repos().imports.listJobs(d.ownerId)).find((j) => j.checksum === d.checksum && j.status === 'committed') ?? null;
+      d.importedBefore = earlier;
+      const start = startFrom(d.rows, fresh, earlier);
+      const replayed = validate(ImportAnswersSchema, d.changes.reduce(applyAnswerChange, start));
+      d.answers = replayed.ok ? replayed.value : start;
+      if (!replayed.ok) d.changes = [];
       d.mappingVersion += 1;
       d.analysis = analyseImport({ variant: d.variant, rows: d.rows }, d.ctx, d.answers);
       return { ok: false, reason: 'stale', draft: await view(d) };

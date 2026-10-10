@@ -705,6 +705,36 @@ describe('import preview wording', () => {
         expect(await stored(jobC, ['2026-09-20'])).toEqual(['2026-09-20 40 per_hand']);
       });
     });
+
+    it('a preview rebuilt after an undo drops the answer that import taught, and keeps the answers Ben gave in this preview (review r6 S1)', async () => {
+      // Import A: `Dumbbell Row` (a name of the one-arm row that doesn't say one arm) is asked; Ben answers "Both together".
+      const A = fileOf([['Dumbbell Row', 20, 10]]);
+      let a = await open(A);
+      expect(asked(a)).toEqual([['Dumbbell Row', '20 kg → not answered yet', null, []]]);
+      a = await step(a, { kind: 'per_hand_override', key: nameKey('Dumbbell Row'), answer: 'both' });
+      const jobA = await commit(a, 'op-a');
+
+      // B's preview opens with that answer filled in and labelled; Ben answers another exercise himself.
+      const B = `${A}\n${withoutHeader(fileOf([['Dumbbell Row', 24, 10], ['Dumbbell Preacher Curl', 18, 10]], '2026-09-20'))}`;
+      let b = await useSuggestions(await open(B));
+      expect(asked(b)).toEqual([
+        ['Dumbbell Row', '24 kg → 12 kg each', 'Your answer last time', ['Both together']],
+        ['Dumbbell Preacher Curl', '18 kg → not answered yet', null, []],
+      ]);
+      b = await step(b, { kind: 'per_hand_override', key: nameKey('Dumbbell Preacher Curl'), answer: 'each' });
+      expect(b.analysis.ready).toBe(true);
+
+      // A is undone meanwhile: the commit is refused as stale, and the rebuilt preview no longer has A's answer.
+      await undo(jobA);
+      const r = await s.imports.commit(b.draftId, b.mappingVersion, 'op-b');
+      if (r.ok || r.reason !== 'stale') throw new Error(`expected stale, got ${r.ok ? 'ok' : r.reason}`);
+      expect(asked(r.draft)).toEqual([
+        ['Dumbbell Row', '24 kg → not answered yet', null, []],
+        ['Dumbbell Preacher Curl', '18 kg → 18 kg each', null, ['Each']],
+      ]);
+      expect(r.draft.analysis.ready).toBe(false);
+      expect(r.draft.answers.perHandOverrides).toEqual({ [nameKey('Dumbbell Preacher Curl')]: 'each' });
+    });
   });
 
   it('copies the original row as written', () => {
