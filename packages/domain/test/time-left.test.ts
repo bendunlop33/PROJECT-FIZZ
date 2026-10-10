@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { SessionAggregate } from '@fizz/schemas';
 import {
   buildActiveSetView,
+  buildTodayView,
   clockText,
+  finishByChoices,
+  localDateOf,
+  stepFinishBy,
   estimateTimeLeft,
   paceSamplesOf,
   percentile,
@@ -306,5 +310,34 @@ describe('buildActiveSetView carries the time left (§2.15.1)', () => {
     const v = view(s, 200);
     expect(v.phase).toBe('all_done');
     expect(v.timeLeft).toBeNull();
+  });
+});
+
+describe('Finish by choices (§2.15.3)', () => {
+  const MIN = 60_000;
+  it('5-minute steps from now + 5 (rounded up) to now + 3 h; starts at the estimated end when not set', () => {
+    const now = ms(7 * 60 + 30); // 19:07:30
+    const c = finishByChoices(now, null, at(25 * 60).utc);
+    expect(clockText(c.firstMs, TZ)).toBe('19:15');
+    expect(clockText(c.lastMs, TZ)).toBe('22:05');
+    expect(clockText(c.initialMs, TZ)).toBe('19:25');
+    expect(stepFinishBy(c.initialMs, -15, c)).toBe(c.firstMs);
+    expect(stepFinishBy(c.initialMs, 5, c)).toBe(c.initialMs + 5 * MIN);
+    expect(stepFinishBy(c.lastMs, 5, c)).toBe(c.lastMs);
+  });
+
+  it('starts at the current choice when one is set', () => {
+    const c = finishByChoices(ms(0), at(45 * 60).utc, at(20 * 60).utc);
+    expect(clockText(c.initialMs, TZ)).toBe('19:45');
+  });
+});
+
+describe("Today's Resume card carries the same line (§2.15.1)", () => {
+  it('shows the estimate with the same recent pace as the workout screen', () => {
+    const s = twoExercises();
+    const recentPace = { set: [60, 60, 60], changeover: [120] };
+    const local = (utc: string) => localDateOf(new Date(utc).getTime(), TZ);
+    const v = buildTodayView({ nowMs: ms(0), active: s, finishedThisWeek: [], todayLocalDate: local(at(0).utc), localDateOf: local, recentCheckIns: [], recentPace });
+    expect(v.main).toMatchObject({ kind: 'resume', timeLeft: t('About 20 min left · ends about 19:20') });
   });
 });

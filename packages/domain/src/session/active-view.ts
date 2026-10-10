@@ -20,7 +20,7 @@ import { toMs } from '../time';
 import { buildExecutionOrder, nextPendingSet } from './order';
 import { GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
 import { latestCommittedSetId } from './reducer';
-import { estimateRemainingDuration, timeLeftLine, type PaceSamples, type TimeLeftEstimate, type TimeLeftLineView } from './time-left';
+import { buildTimeLeftView, type PaceSamples, type TimeLeftEstimate, type TimeLeftLineView } from './time-left';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
 
 /**
@@ -581,7 +581,6 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
   const completed = liveSets.filter((s) => s.status === 'completed' && s.completedAt);
   const justSaved = buildJustSaved(state);
   const last = completed.map((s) => s.completedAt?.utc ?? '').sort().at(-1) ?? null;
-  const estimate = phase.kind === 'all_done' || phase.kind === 'empty' ? null : estimateRemainingDuration(state, { nowMs, ...(input.recentPace ? { recent: input.recentPace } : {}) });
 
   return {
     phase: phase.kind,
@@ -608,7 +607,7 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     lastCompletedAtUtc: last,
     openEnded: isOpenEndedWorkout(state),
     upNext: focus === null ? null : upNextLine(state, focus),
-    timeLeft: estimate === null ? null : { estimate, line: timeLeftLine(estimate, session.startedAt.tz) },
+    timeLeft: buildTimeLeftView(state, nowMs, input.recentPace),
     finishByUtc: session.finishBy?.utc ?? null,
   };
 }

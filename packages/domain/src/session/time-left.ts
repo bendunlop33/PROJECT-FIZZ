@@ -258,7 +258,7 @@ export interface EstimateOptions {
 }
 
 /**
- * `estimateTimeLeft` (§2.15.2, the spec's `estimateRemainingDuration` for
+ * `estimateTimeLeft` (§2.15.2, the spec's `estimateTimeLeft` for
  * the workout in progress; `duration.ts` has the lighter one for a workout
  * not started yet, Up next and the routine sheet). Per pending set: Ben's per-set
  * figure (plus the planned duration of a timed set), the planned rest after
@@ -406,4 +406,30 @@ export function timeLeftSheet(e: TimeLeftEstimate, state: SessionAggregate, nowM
     finishBy: e.finishBy === null ? 'Not set' : clockText(toMs(e.finishBy), tz),
     footnote: 'This is an estimate from your pace and rest settings. It doesn’t change your sets.',
   };
+}
+
+/** `TimeLeftLine` for a workout, or null when hidden (§2.15.1). Shared by the card, Overview and Today. */
+export function buildTimeLeftView(state: SessionAggregate, nowMs: number, recent?: PaceSamples): { estimate: TimeLeftEstimate; line: TimeLeftLineView } | null {
+  const phase = getSessionPhase(state, nowMs);
+  if (phase.kind === 'all_done' || phase.kind === 'empty' || phase.kind === 'finished') return null;
+  const estimate = estimateTimeLeft(state, { nowMs, ...(recent ? { recent } : {}) });
+  return estimate === null ? null : { estimate, line: timeLeftLine(estimate, state.session.startedAt.tz) };
+}
+
+/**
+ * `Finish by` choices (§2.15.3): 5-minute steps from now + 5 min (rounded up
+ * to the next 5) to now + 3 h. `initialMs` is the current choice, or the
+ * estimated end when none is set, kept within the bounds.
+ */
+export function finishByChoices(nowMs: number, current: string | null, estimateEndsAt: string | null): { firstMs: number; lastMs: number; initialMs: number } {
+  const firstMs = Math.ceil((nowMs + FIVE_MIN) / FIVE_MIN) * FIVE_MIN;
+  const lastMs = Math.floor((nowMs + 3 * 3600_000) / FIVE_MIN) * FIVE_MIN;
+  const wanted = current !== null ? toMs(current) : estimateEndsAt !== null ? toMs(estimateEndsAt) : firstMs;
+  const aligned = Math.round(wanted / FIVE_MIN) * FIVE_MIN;
+  return { firstMs, lastMs, initialMs: Math.min(lastMs, Math.max(firstMs, aligned)) };
+}
+
+/** One wheel step of `minutes` (a multiple of 5), kept within the choices. */
+export function stepFinishBy(valueMs: number, minutes: number, choices: { firstMs: number; lastMs: number }): number {
+  return Math.min(choices.lastMs, Math.max(choices.firstMs, valueMs + minutes * 60_000));
 }
