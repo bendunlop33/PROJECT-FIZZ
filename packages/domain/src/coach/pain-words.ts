@@ -47,6 +47,22 @@
  *   about. General symptoms ("dizzy", "light headed", "heart racing") are
  *   `unclear` until Ben/PM settle a fixed safety line (r4 spec issue 2).
  *
+ * Review r5 B2, S2:
+ * - An effort word ("burning", "heavy", "fried", "cooked", "hard to bend")
+ *   next to a joint or tendon ("elbow", "knee", "lower back", "Achilles") is
+ *   `unclear`, never `effort`. It stays `effort` next to a muscle ("quads are
+ *   burning", "legs are fried").
+ * - Exclamations and strain reports are pain: "Ow", "Owww", "Argh", "It
+ *   stings", "Something twanged", "Heard a crack", "Felt something go",
+ *   "Felt a pull", "Felt a click", "Pins & needles". Idioms aren't: "crack
+ *   on", "cracked 100", "snapped a photo", "Pulled 200 today", "Popped
+ *   another plate on".
+ * - "Can't straighten it", "can't grip properly", "can't bend my knee" are
+ *   `unclear`. "Can't lift any more" is effort talk, not a symptom.
+ * - "hasn't", "haven't", "hadn't" negate ("Knee hasn't hurt since Tuesday").
+ *   Pain said about another day ("It hurt last week, fine now") is
+ *   `unclear`, never `pain` and never `none`: CM6 asks.
+ *
  * A false `pain` only lets the coach consider a flag; a missed one lets
  * progression continue on a movement that hurts. When in doubt the answer
  * leans to `pain` or `unclear`, never `none`.
@@ -67,6 +83,9 @@ const PAIN = [
   'sciatica', 'sciatic', 'fasciitis', 'herniated', 'herniation', 'hernia', 'prolapsed', 'prolapse', 'fracture', 'fractured',
   'splints', 'arthritis', 'arthritic', 'gout', 'ruptured', 'rupture', 'pinched', 'crick', 'concussion', 'whiplash', 'tendinosis',
   'epicondylitis', 'sprung', 'broke', 'broken', 'tear', 'busted',
+  // Review r5 B2: exclamations, stings and strain sounds.
+  'ow', 'oww', 'owww', 'owwww', 'ouchie', 'argh', 'aargh', 'arggh', 'arghh', 'sting', 'stings', 'stinging', 'stung',
+  'twang', 'twanged', 'twangs', 'twangy', 'crack', 'cracked', 'snap', 'snapped', 'snapping', 'ping', 'pinged', 'zinger', 'zing', 'zinged',
 ];
 /** Pain only with a body part in the same clause ("sharp pain in my knee", not "feeling sharp today"). */
 const NEEDS_BODY = new Set(['sharp', 'shooting', 'broke', 'broken', 'tear', 'busted']);
@@ -81,9 +100,22 @@ const PAIN_PHRASES = [
   /\b(?:slipped|herniated|bulging|bulged|prolapsed|ruptured|degenerated|degenerative|blown) discs?\b|\bdiscs? (?:issue|issues|problem|problems|injury|bulge|herniation|prolapse|thing)\b/,
   /\b(?:tennis|golfer'?s?) elbow\b|\bfrozen shoulder\b|\bjumper'?s? knee\b|\brunner'?s? knee\b/,
   /\b(?:felt|feel|feels|heard|think i (?:had|got)|might have had|may have had) (?:a |something )?(?:tear|rip|snap)\b/,
+  // Review r5 B2: "felt something go on the last rep", "felt a pull", "something gave", "felt a click".
+  /\b(?:felt|feel|feels|heard|noticed) (?:a |something |some |a bit of a |a little )(?:go|give|gave|went|pull|pop|popped|tear|tore|rip|ripped|twang|twanged|snap|snapped|ping|pinged|click|clicked|crack|cracked|clunk|clunked|shift|shifted|slip|slipped|tweak|twinge|zing|grab|grabbed)\b/,
+  /\b(?:felt|feel|heard) (?:it|that) (?:pop|tear|rip|twang|snap|ping|click|crack|clunk|give|go)\b(?! (?:up|down|well|fine|easy|smooth|smoothly|nicely|great|ok|okay|fast|quick|quickly))/,
+  /\bsomething (?:went|gave|go|give|popped|pinged|snapped|twanged|tore|cracked|clicked|shifted|slipped|pulled)\b/,
+  /\bbit of a (?:twang|pull|ping|tweak|twinge|zing)\b/,
 ];
 /** General symptoms with no named part (review r4 spec issue 2): asked about, never a verdict. */
-const UNCLEAR_PHRASES = [/\b(?:feel|feeling|feels|felt) (?:a bit |bit |really |quite )?(?:sick|faint|unwell|ill|crook|woozy|spaced)\b/];
+const UNCLEAR_PHRASES = [
+  /\b(?:feel|feeling|feels|felt) (?:a bit |bit |really |quite )?(?:sick|faint|unwell|ill|crook|woozy|spaced)\b/,
+  // Review r5 B2: "can't straighten it", "can't grip properly", "can't bend my knee". Not "can't lift any more".
+  /\b(?:can'?t|cannot|cant|unable to) (?:fully |properly |really |quite )?(?:straighten|bend|grip|lift|raise|turn|move|rotate|extend|flex|feel|squeeze|close|open|reach|put weight|weight bear|bear weight|walk|sit|stand|look)\b(?! (?:any ?more|another|more|the (?:bar|weight|load)|it up any ?more|\d))/,
+  /\b(?:hard|painful|hurts|struggling|difficult|tough) to (?:fully |properly )?(?:straighten|bend|turn|rotate|extend|flex|close|open|reach|put weight|bear weight|walk|sit|stand|look|sleep)\b/,
+  /\b(?:burning|tingling|weird|strange|odd|electric|pins) (?:sensation|feeling)\b/,
+  // "burning down my leg", "something running into my arm": radiating, not a muscle working.
+  /\b(?:burning|burns|shooting|tingling|running|radiating|radiates|spreading|goes|going|travels|travelling|traveling) (?:all the way )?(?:down|into|through|up) (?:my|the|his) (?:\w+ )?(?:leg|legs|arm|arms|back|neck|hand|hands|fingers|foot|feet|butt|glute|calf|thigh|shoulder)\b/,
+];
 const BODY = [
   'shoulder', 'shoulders', 'elbow', 'elbows', 'wrist', 'wrists', 'hand', 'hands', 'finger', 'fingers', 'thumb', 'thumbs',
   'forearm', 'forearms', 'bicep', 'biceps', 'tricep', 'triceps', 'arm', 'arms', 'neck', 'back', 'spine', 'hip', 'hips',
@@ -182,13 +214,35 @@ const UNCLEAR = [
   'bulging', 'stitch', 'dizzy', 'dizziness', 'lightheaded', 'faint', 'nauseous', 'nausea', 'palpitations', 'headache', 'migraine',
   'nosebleed', 'breathless',
 ];
+/**
+ * Joints, tendons and the like: an effort word next to one of these is a
+ * question, not effort ("burning in my elbow", "knee is hard to bend";
+ * review r5 B2). Muscles ("quads", "legs", "arms") keep effort words as effort.
+ */
+const JOINTS = new Set([
+  'shoulder', 'shoulders', 'elbow', 'elbows', 'wrist', 'wrists', 'hand', 'hands', 'finger', 'fingers', 'thumb', 'thumbs', 'neck',
+  'back', 'spine', 'hip', 'hips', 'groin', 'knee', 'knees', 'ankle', 'ankles', 'foot', 'feet', 'toe', 'toes', 'heel', 'heels',
+  'achilles', 'joint', 'joints', 'tendon', 'tendons', 'rotator', 'cuff', 'si', 'lumbar', 'thoracic', 'kneecap', 'kneecaps',
+  'patella', 'meniscus', 'acl', 'mcl', 'labrum', 'ligament', 'ligaments', 'nerve', 'vertebra', 'vertebrae', 'jaw', 'collarbone',
+  'clavicle', 'sternum', 'rib', 'ribs', 'chest', 'heart', 'knuckle', 'knuckles', 'pelvis', 'tailbone', 'coccyx', 'sacrum', 'head',
+  'side', 'one', 'itband', 'scap', 'scaps', 'scapula', 'shoulderblade', 'shoulderblades', 'forearm', 'forearms',
+]);
+/** Words that make the past tense explicit: pain on another day is asked about, not assumed (review r5 S2). */
+const PAST_TIME = /\b(?:last (?:week|time|session|night|month|year|workout|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|yesterday|ago|the other day|used to|previously|earlier (?:this|in the) (?:week|month|year)|on (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|since (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|last|then|january|february|march|april|may|june|july|august|september|october|november|december))\b/;
 const EFFORT = ['burn', 'burns', 'burning', 'pump', 'pumped', 'grind', 'grindy', 'grinder', 'heavy', 'tired', 'tiring', 'hard', 'exhausted', 'fried', 'gassed', 'cooked'];
 
-const PAIN_SET = new Set(PAIN);
+/** Drawn-out exclamations: "owwww", "aaargh", "ouchy" (review r5 B2). */
+const EXCLAMATION = /^(?:o+w+|a+r+g+h+|a+r+g+|ou+ch+(?:y|ie)?)$/;
+const PAIN_WORDS = new Set(PAIN);
+const PAIN_SET = { has: (w: string): boolean => PAIN_WORDS.has(w) || EXCLAMATION.test(w) };
 const BODY_SET = new Set(BODY);
 const UNCLEAR_SET = new Set(UNCLEAR);
 const EFFORT_SET = new Set(EFFORT);
-const NEGATORS = new Set(['no', 'not', "doesn't", 'doesnt', "didn't", 'didnt', "isn't", 'isnt', "wasn't", 'wasnt', "don't", 'dont', 'nothing', 'zero', 'aint', "ain't"]);
+const NEGATORS = new Set([
+  'no', 'not', "doesn't", 'doesnt', "didn't", 'didnt', "isn't", 'isnt', "wasn't", 'wasnt', "don't", 'dont', 'nothing', 'zero', 'aint', "ain't",
+  // Review r5 S2.
+  "hasn't", 'hasnt', "haven't", 'havent', "hadn't", 'hadnt', "aren't", 'arent', "weren't", 'werent',
+]);
 /** Words that may sit between a negator and the pain word without breaking it: "no real pain", "doesn't really hurt". */
 const NEGATION_FILLERS = new Set(['real', 'really', 'any', 'actual', 'much']);
 /** A negator this far back in the same clause makes it a question, not a no ("I don't think it hurts"). */
@@ -208,6 +262,8 @@ function clauses(text: string): string[][] {
     .replace(/\bi\.?t\.? band\b/g, 'itband')
     .replace(/\blight[- ]headed\b/g, 'lightheaded')
     .replace(/\b(hip|knee|shoulder|ankle|wrist|elbow)-/g, '$1 ')
+    // "pins & needles" (review r5 B2).
+    .replace(/\s*&\s*/g, ' and ')
     .split(/[,.;:!?\n]+|\s+(?:but|though|although|however)\s+/)
     .map((c) => c.split(/[^a-z0-9']+/).filter((w) => w.length > 0))
     .filter((c) => c.length > 0);
@@ -230,7 +286,21 @@ function negationOf(ws: readonly string[], i: number): Negation {
 function idiom(ws: readonly string[], i: number): boolean {
   if (ws[i] === 'killing' && ws[i + 1] === 'it') return true;
   // "foam rolled my quads" is recovery work, not an injury.
-  return ws[i] === 'rolled' && ws[i - 1] === 'foam';
+  if (ws[i] === 'rolled' && ws[i - 1] === 'foam') return true;
+  const w = ws[i] ?? '';
+  const next = ws[i + 1] ?? '';
+  // Review r5 B2/S2: "let's crack on", "cracked 100", "snapped a photo", "pulled 200 today",
+  // "popped another plate on", "a ping on my phone".
+  if ((w === 'crack' || w === 'cracked') && (next === 'on' || next === 'it' || next === 'open' || /^\d/.test(next) || next === 'a' && /^(?:pb|pr|smile|joke|beer)$/.test(ws[i + 2] ?? ''))) return true;
+  if ((w === 'snap' || w === 'snapped') && (next === 'a' || next === 'some') && /^(?:pic|picture|photo|selfie|video|shot)s?$/.test(ws[i + 2] ?? '')) return true;
+  if (w === 'snapped' && next === 'at') return true;
+  if (w === 'pulled' && (/^\d/.test(next) || ((next === 'a' || next === 'an') && /^(?:pb|pr|single|double|triple|\d.*)$/.test(ws[i + 2] ?? '')))) return true;
+  if ((w === 'ping' || w === 'pinged') && (ws.includes('phone') || ws.includes('message') || ws.includes('text') || ws.includes('notification') || next === 'me' || next === 'you')) return true;
+  if (['pop', 'popped', 'popping'].includes(w) && !anyBodyPart(ws) && ['another', 'a', 'an', 'the', 'some', 'it', 'them', 'on', 'in', 'one', 'two', 'over', 'out', 'round', 'by'].includes(next)) {
+    return ws.some((x) => /^(?:plates?|weights?|kgs?|lbs?|collars?|clips?|pins?|on|in|over|round|by|out|pill|pills|kettle|music|song)$/.test(x));
+  }
+  if ((w === 'sting' || w === 'stung') && next === 'operation') return true;
+  return false;
 }
 
 function bodyPartAt(ws: readonly string[], i: number): boolean {
@@ -296,6 +366,29 @@ function positiveNegated(ws: readonly string[], i: number): boolean {
   return false;
 }
 
+/** A joint or tendon in this clause that reads as Ben's body ("my elbow", "knee is", "lower back"). */
+function jointMentioned(ws: readonly string[]): boolean {
+  return ws.some((w, i) => JOINTS.has(w) && bodyPartAt(ws, i) && (ownedAt(ws, i) || unownedBodyPartAt(ws, i)));
+}
+
+/**
+ * The first body part Ben names that reads as his body ("my left knee" →
+ * `knee`), for the guard note "Not increasing: you mentioned your knee"
+ * (review r5 B4). Null when none is named.
+ */
+export function painBodyPart(text: string): string | null {
+  for (const ws of clauses(text)) {
+    for (const [i, w] of ws.entries()) {
+      if (!bodyPartAt(ws, i) || !(ownedAt(ws, i) || unownedBodyPartAt(ws, i))) continue;
+      if (SIDE_ONLY.has(w)) return `${ws[i - 1] ?? ''} side`.trim();
+      if (w === 'back' && (ws[i - 1] === 'lower' || ws[i - 1] === 'upper')) return `${ws[i - 1] ?? ''} back`;
+      if (w === 'itband') return 'IT band';
+      return w;
+    }
+  }
+  return null;
+}
+
 export function classifyPainMention(text: string): PainMention {
   let pain = false;
   let unclear = false;
@@ -305,6 +398,10 @@ export function classifyPainMention(text: string): PainMention {
   for (const ws of clauses(text)) {
     let clauseSignal = false;
     const joined = ws.join(' ');
+    // Review r5 S2: pain on another day ("It hurt last week") is asked about, not assumed.
+    const pastClause = PAST_TIME.test(joined);
+    const painNow = pain;
+    const joint = jointMentioned(ws);
     if (SOMETHING_UP.test(joined) || UNCLEAR_PHRASES.some((re) => re.test(joined))) unclear = true;
     for (const re of PAIN_PHRASES) {
       const m = re.exec(joined);
@@ -339,7 +436,9 @@ export function classifyPainMention(text: string): PainMention {
         if (negationOf(ws, i) !== 'negated') unclear = true;
       } else if (EFFORT_SET.has(w)) {
         clauseSignal = true;
-        effort = true;
+        // Review r5 B2: "burning in my elbow", "knee is cooked": a joint isn't a muscle working.
+        if (joint && negationOf(ws, i) !== 'negated') unclear = true;
+        else effort = true;
       } else if (NEGATABLE_POSITIVE.has(w) && positiveNegated(ws, i)) {
         // "not great", "isn't happy", "not right": ask (review r3 B2). "Wasn't easy" is effort;
         // "sleep wasn't great" names something other than his body.
@@ -363,6 +462,10 @@ export function classifyPainMention(text: string): PainMention {
     }
     // Review r2 B3, r3 B2: a body part with nothing else said is a question, never `none`.
     if (!clauseSignal && bodyPartMentioned(ws)) unclear = true;
+    if (pastClause && pain && !painNow) {
+      pain = false;
+      unclear = true;
+    }
   }
   if (pain) return 'pain';
   if (unclear) return 'unclear';

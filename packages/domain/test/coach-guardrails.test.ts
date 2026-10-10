@@ -15,6 +15,7 @@ import type {
 } from '@fizz/schemas';
 import {
   classifyPainMention,
+  painBodyPart,
   evaluateCoachTrigger,
   getAchievableLoads,
   getStructuralChangeSignals,
@@ -179,6 +180,7 @@ function input(exercises: ExerciseAdjustment[], over: Partial<TodayAdjustmentInp
     painFlags: over.painFlags ?? [],
     sessionPainUnspecified: over.sessionPainUnspecified ?? false,
     gymName: over.gymName ?? 'Main Gym',
+    messagePain: over.messagePain ?? null,
   };
 }
 
@@ -809,6 +811,161 @@ describe('classifyPainMention (CM6)', () => {
     ['The app is broken', 'none'],
   ] as const)('%s → %s', (text, expected) => {
     expect(classifyPainMention(text)).toBe(expected);
+  });
+});
+
+describe('classifyPainMention: review r5 B2 and S2 (rule 9, CM6)', () => {
+  it.each([
+    // Effort words next to a joint or tendon (the review's rows).
+    'Burning in my elbow',
+    'Burning sensation in my forearm',
+    'Shoulder feels heavy',
+    'Knee is hard to bend',
+    "Elbow's fried",
+    'Lower back is cooked',
+    'Knee is cooked',
+    'Shoulder is gassed',
+    'My back is tired, weird tired',
+    "Can't straighten it",
+    "Can't grip properly",
+    // Developer's adversarial rows.
+    'my chest is burning',
+    'Wrist is burning',
+    'Achilles feels tired',
+    'Neck is fried',
+    'Elbow is hard to straighten',
+    'Elbow burns on the way down',
+    'My shoulder burns',
+    'Knee is a bit tired',
+    'Burning down my leg',
+    "Can't feel my fingers",
+    "Can't bend my elbow fully",
+    'Hard to turn my neck',
+    'My wrist is heavy and achy',
+    'Tweaked my back last week',
+    'My knee hurt yesterday',
+    'It hurt last week, fine now',
+  ])('asked about, never effort or none: %s', (text) => {
+    expect(['pain', 'unclear']).toContain(classifyPainMention(text));
+  });
+
+  it.each([
+    'Felt something go on the last rep',
+    'Something gave on the last rep',
+    'Felt a pull',
+    'Something twanged',
+    'Bit of a twang',
+    'Heard a crack',
+    'Felt a click and then nothing',
+    'Ow',
+    'Owww',
+    'Owwwww',
+    'Argh',
+    'Aaargh',
+    'That stung',
+    'Stings a bit',
+    'It stings',
+    'Pins & needles',
+    'Ouch, my wrist',
+    'Felt something shift in my back',
+    'Felt a twinge',
+    'Something popped',
+    'Heard a pop in my knee',
+    'Felt it pop',
+    'Felt that tear',
+    'Something went in my neck',
+    'Felt a ping in my hammy',
+    'Hammy pinged',
+  ])('pain: %s', (text) => {
+    expect(classifyPainMention(text)).toBe('pain');
+  });
+
+  it.each([
+    ["Knee hasn't hurt since Tuesday", 'none'],
+    // A negator a few words back is a doubt, so CM6 asks (conservative): not `none`.
+    ["Elbow hasn't been painful", 'unclear'],
+    ["Haven't had any pain", 'unclear'],
+    ["Hasn't hurt", 'none'],
+    ['Pulled 200 today', 'none'],
+    ['Pulled 180 for a single', 'none'],
+    ['Popped another plate on', 'none'],
+    ['Popped a plate on each side', 'none'],
+    ["Let's crack on", 'none'],
+    ['Cracked 100 on bench', 'none'],
+    ['Snapped a photo of the rack', 'none'],
+    ['Felt it go up easy', 'none'],
+    ["Can't lift any more", 'none'],
+    ['Ping me when it is my set', 'none'],
+    // Effort next to a muscle stays effort.
+    ['my quads are burning', 'effort'],
+    ['legs are fried', 'effort'],
+    ['Arms are cooked', 'effort'],
+    ['Hamstrings are cooked', 'effort'],
+    ['Calves are burning', 'effort'],
+    ['Back squat felt heavy', 'effort'],
+  ] as const)('%s → %s', (text, expected) => {
+    expect(classifyPainMention(text)).toBe(expected);
+  });
+
+  it('painBodyPart names the part for the guard note', () => {
+    expect(painBodyPart('Way too easy, but my knee hurts')).toBe('knee');
+    expect(painBodyPart("Bump it up, shoulder's niggly")).toBe('shoulder');
+    expect(painBodyPart('my lower back is sore')).toBe('lower back');
+    expect(painBodyPart('my left side is weird')).toBe('left side');
+    expect(painBodyPart('Leg press felt heavy')).toBeNull();
+    expect(painBodyPart('It stings')).toBeNull();
+  });
+});
+
+describe('validateTodayAdjustment: pain in the same message blocks increases (review r5 B4, rule 9)', () => {
+  const said = (text: string, exerciseIds: string[] = []): NonNullable<TodayAdjustmentInput['messagePain']> => ({
+    mention: classifyPainMention(text),
+    exerciseIds,
+    bodyPart: painBodyPart(text),
+  });
+  const raiseBench = [adj(exId(1), { sets: [{ setId: setId(1, 2), target: { load: kg(102.5), reps: null } }] })];
+
+  it('"Way too easy, but my knee hurts": no increase anywhere, with a note naming the knee', () => {
+    const r = validateTodayAdjustment(input(raiseBench, { intent: 'too_easy', messagePain: said('Way too easy, but my knee hurts') }));
+    expect(r).toMatchObject({ status: 'unchanged', outcome: 'Not increasing anything: you mentioned your knee. Sets unchanged.' });
+    expect(r.guardNotes).toContainEqual({ kind: 'pain_unspecified', setIds: [setId(1, 2)], text: 'Not increasing anything: you mentioned your knee.' });
+  });
+
+  it('"Bump it up, shoulder\'s niggly": unclear still blocks until Ben has answered "Sore or pain?"', () => {
+    expect(said("Bump it up, shoulder's niggly").mention).toBe('unclear');
+    const r = validateTodayAdjustment(input(raiseBench, { intent: 'general', messagePain: said("Bump it up, shoulder's niggly") }));
+    expect(r).toMatchObject({ status: 'unchanged', outcome: 'Not increasing anything: you mentioned your shoulder. Sets unchanged.' });
+  });
+
+  it('"Add 5 kg to squat, my knee is sore": the named movement gets no increase', () => {
+    const squatUp = [adj(exId(5), { sets: [{ setId: setId(5, 1), target: { load: lb(235), reps: null } }] })];
+    const named = said('Add 5 kg to squat, my knee is sore', [id(5 + 1000)]);
+    const r = validateTodayAdjustment(input(squatUp, { intent: 'general', messagePain: named }));
+    expect(r).toMatchObject({ status: 'unchanged', outcome: 'Not increasing Squat: you mentioned your knee. Sets unchanged.' });
+    // Another movement isn't blocked when a movement was named.
+    expect(validateTodayAdjustment(input(raiseBench, { intent: 'too_easy', messagePain: named })).status).toBe('apply');
+    // Nothing named: every movement is blocked.
+    expect(validateTodayAdjustment(input(raiseBench, { intent: 'too_easy', messagePain: said('Add 5 kg, my knee is sore') })).status).toBe('unchanged');
+  });
+
+  it('adding a set is an increase and is blocked too; lowering and removing still apply', () => {
+    const pain = said('Way too easy, but my knee hurts');
+    expect(validateTodayAdjustment(input([adj(exId(1), { addSet: { load: kg(90), reps: null } })], { messagePain: pain })).status).toBe('unchanged');
+    const lower = applied(validateTodayAdjustment(input([adj(exId(1), { sets: [{ setId: setId(1, 2), target: { load: kg(95), reps: null } }] })], { messagePain: pain })));
+    expect(lower.exercises[0]?.changes[0]?.after?.load).toEqual(kg(95));
+    expect(applied(validateTodayAdjustment(input([adj(exId(1), { removeSetId: setId(1, 3) })], { messagePain: pain }))).exercises[0]?.removed).not.toBeNull();
+  });
+
+  it('effort or nothing in the message doesn\'t block', () => {
+    for (const text of ['Way too easy', 'my quads are burning, add weight']) {
+      expect(validateTodayAdjustment(input(raiseBench, { intent: 'too_easy', messagePain: said(text) })).status, text).toBe('apply');
+    }
+    expect(validateTodayAdjustment(input(raiseBench, { intent: 'too_easy', messagePain: null })).status).toBe('apply');
+  });
+
+  it('a saved flag still wins over the message note for its own movement', () => {
+    const r = validateTodayAdjustment(input(raiseBench, { intent: 'too_easy', painFlags: [painFlag(1, 'Bench press')], messagePain: said('my knee hurts') }));
+    expect(r).toMatchObject({ status: 'unchanged', outcome: 'Not increasing: you flagged shoulder pain. Sets unchanged.' });
   });
 });
 

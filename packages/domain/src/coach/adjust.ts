@@ -19,6 +19,7 @@ import { compareDifficulty, loadDirection, roundToAvailableLoad, type RoundingPo
 import { buildExecutionOrder } from '../session/order';
 import { deriveId } from '../stable';
 import { convertMass } from '../units';
+import type { PainMention } from './pain-words';
 
 /**
  * `validateTodayAdjustment` (ADR 0019 §4, coach-adjustments §2.6): the
@@ -29,7 +30,9 @@ import { convertMass } from '../units';
  * - every load is snapped to what the session's equipment can make, capped at
  *   its max, in its own unit and convention, never extrapolated (rule 4);
  * - increases are dropped on pain-flagged movements, everywhere when the
- *   check-in said pain without a movement, and in a lighter session (rule 9).
+ *   check-in said pain without a movement, in a lighter session, and when
+ *   Ben's own message in this turn mentions pain or possible pain, before any
+ *   flag exists or he has answered "Sore or pain?" (rule 9, review r5 B4).
  * Guard notes are app text; the model never writes them.
  */
 
@@ -47,6 +50,25 @@ export interface TodayAdjustmentInput {
   sessionPainUnspecified: boolean;
   /** For the cap note (`the most Main Gym's rack goes to`); null reads `this rack`. */
   gymName: string | null;
+  /**
+   * What Ben's own words in this turn said about pain (`classifyPainMention`
+   * and `painBodyPart` on his message). Rule 9 says a pain *mention* stops
+   * progression, not only a saved flag: "Way too easy, but my knee hurts"
+   * must not let the coach raise anything before it flags (review r5 B4).
+   * Null when the turn has no words from Ben (a chip or an accepted offer).
+   */
+  messagePain: MessagePain | null;
+}
+
+export interface MessagePain {
+  mention: PainMention;
+  /**
+   * Catalogue exercise IDs Ben named in the same message. Empty means none
+   * was named, so increases stop on every movement this turn.
+   */
+  exerciseIds: readonly string[];
+  /** The body part he named ("knee"), for the note; null when none. */
+  bodyPart: string | null;
 }
 
 export interface AddedSetPlan {
@@ -232,6 +254,22 @@ function activeFlag(flags: readonly PainFlag[], exerciseId: string): PainFlag | 
   return flags.find((f) => f.exerciseId === exerciseId && f.status === 'active') ?? null;
 }
 
+/**
+ * Review r5 B4: pain or possible pain in Ben's message this turn blocks
+ * increases on the movements he named, or on every movement when he named
+ * none. `unclear` ("sore", "tight", "knee feels off") counts: CM6 asks
+ * "Sore or pain?" first, and nothing goes up until he has answered.
+ */
+function messagePainBlock(m: MessagePain | null, ex: SessionExercise): { kind: GuardNoteKind; text: string; outcome: string } | null {
+  if (m === null || (m.mention !== 'pain' && m.mention !== 'unclear')) return null;
+  const what = m.bodyPart === null ? 'pain' : `your ${m.bodyPart}`;
+  if (m.exerciseIds.length === 0) {
+    return { kind: 'pain_unspecified', text: `Not increasing anything: you mentioned ${what}.`, outcome: `Not increasing anything: you mentioned ${what}. Sets unchanged.` };
+  }
+  if (!m.exerciseIds.includes(ex.exerciseId)) return null;
+  return { kind: 'pain_blocked', text: `Not increasing ${ex.exerciseName}: you mentioned ${what}.`, outcome: `Not increasing ${ex.exerciseName}: you mentioned ${what}. Sets unchanged.` };
+}
+
 class Notes {
   private readonly byKey = new Map<string, GuardNote>();
   add(kind: GuardNoteKind, text: string, setIds: readonly string[]): void {
@@ -276,12 +314,15 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
     const area = flag?.area ? AREA_WORD[flag.area] : '';
     const painPart = flag === null ? null : area ? `Not increasing ${ex.exerciseName}: you flagged ${area} pain.` : `Not increasing ${ex.exerciseName}: you flagged pain on it.`;
     const painAll = flag === null ? null : area ? `Not increasing: you flagged ${area} pain. Sets unchanged.` : `Not increasing: you flagged pain on ${ex.exerciseName}. Sets unchanged.`;
+    const said = messagePainBlock(input.messagePain, ex);
 
     /** Null when increases are allowed; otherwise the guard note kind and texts. */
     const increaseBlock: { kind: GuardNoteKind; text: string; outcome: string } | null =
       painPart !== null && painAll !== null
         ? { kind: 'pain_blocked', text: painPart, outcome: painAll }
-        : input.sessionPainUnspecified
+        : said !== null
+          ? said
+          : input.sessionPainUnspecified
           ? { kind: 'pain_unspecified', text: 'Not increasing anything today: you mentioned pain.', outcome: 'Not increasing anything today: you mentioned pain. Sets unchanged.' }
           : input.intent === 'lighter_session'
             ? { kind: 'lighter_no_increase', text: 'No increases in a lighter session.', outcome: 'No increases in a lighter session. Sets unchanged.' }
