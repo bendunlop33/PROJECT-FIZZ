@@ -50,7 +50,7 @@ import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
 import { painClearConfirm } from '../../workout/pain-clear';
-import { editorShown, enterAction, isResting, type EntryField } from '../../workout/rest-fold';
+import { editorSlot, enterAction, isResting, type EntryField } from '../../workout/rest-fold';
 
 /**
  * Active workout: focused set card, rest, summary hand-off
@@ -602,6 +602,7 @@ export function WorkoutScreen() {
 
   const rest = view.rest;
   const resting = rest !== null && (rest.kind === 'running' || rest.kind === 'paused');
+  const slot = editorSlot({ resting, hasFocus: focus !== null, showNextSet, setId: focus?.setId ?? null, drawn: drawn.current });
   const restored = focus !== null && focus.draftSource === 'draft' && restoredDraft === focus.setId;
   const copied = focus !== null && focus.draftSource === 'copied' && focus.previous ? `Copied from ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}` : null;
   const lastExercise = view.exercises.at(-1) ?? null;
@@ -956,25 +957,22 @@ export function WorkoutScreen() {
           </SwapIn>
         ) : null}
 
-        {/* During rest the next set waits below its own toggle (D-Rest is rest-first, audit F8). */}
-        {resting && focus ? (
-          editorShown({ resting, hasFocus: true, showNextSet }) ? (
-            setEditor
-          ) : (
-            // One fixed secondary link (premium-feel §3.3, D8). How to is in the next set's header and its ⋯ menu.
-            <View style={{ marginTop: 'auto' }}>
-              <TextButton
-                label="Edit next set"
-                tone="secondary"
-                onPress={() => {
-                  setShowNextSet(true);
-                }}
-              />
-            </View>
-          )
-        ) : setEditor ? (
-          // Rest → Ready: the editor fades in (motion.swap); never on the first draw.
-          <SwapIn swapKey={`ready:${focus?.setId ?? ''}`} animate={drawn.current} style={{ flexGrow: 1 }}>
+        {/* During rest the next set waits below its own toggle (D-Rest is rest-first, audit F8). One wrapper keyed
+            by the set either side of the rest end, so an editor opened during rest stays mounted (review B1). */}
+        {slot.kind === 'link' ? (
+          // One fixed secondary link (premium-feel §3.3, D8). How to is in the next set's header and its ⋯ menu.
+          <View style={{ marginTop: 'auto' }}>
+            <TextButton
+              label="Edit next set"
+              tone="secondary"
+              onPress={() => {
+                setShowNextSet(true);
+              }}
+            />
+          </View>
+        ) : slot.kind === 'editor' && setEditor ? (
+          // Rest → Ready: the editor fades in (motion.swap) only when the rest end brings it on screen.
+          <SwapIn swapKey={slot.key} animate={slot.animateOnMount} style={{ flexGrow: 1 }}>
             {setEditor}
           </SwapIn>
         ) : null}

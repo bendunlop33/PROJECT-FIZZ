@@ -34,3 +34,19 @@ export function editorShown(input: FoldInput): boolean {
 export function enterAction(field: EntryField, input: FoldInput): { unfold: boolean; focus: EntryField } {
   return { unfold: input.hasFocus && !editorShown(input), focus: field };
 }
+
+/**
+ * What the slot below the rest panel draws (premium-feel §4.3, review B1).
+ * The editor always goes through one wrapper keyed by its set, so when a rest
+ * ends with the editor already open, React keeps it mounted: the keyboard,
+ * focus and a half-typed `62.` survive. It fades in only when it appears
+ * because the rest ended (`animateOnMount`), never when Ben opens it during
+ * rest and never on the screen's first draw.
+ */
+export type EditorSlot = { kind: 'none' } | { kind: 'link' } | { kind: 'editor'; key: string; animateOnMount: boolean };
+
+export function editorSlot(input: FoldInput & { setId: string | null; drawn: boolean }): EditorSlot {
+  if (!input.hasFocus || input.setId === null) return { kind: 'none' };
+  if (!editorShown(input)) return { kind: 'link' };
+  return { kind: 'editor', key: `editor:${input.setId}`, animateOnMount: input.drawn && !input.resting };
+}
