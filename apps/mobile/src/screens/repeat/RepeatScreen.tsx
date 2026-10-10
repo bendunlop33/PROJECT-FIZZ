@@ -4,6 +4,7 @@ import { View } from 'react-native';
 
 import { scoreText, toMs } from '@fizz/domain';
 
+import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatShortDate, formatTime } from '../../format/dates';
 import { openStartedWorkout } from '../../navigation/actions';
@@ -27,6 +28,7 @@ export function RepeatScreen() {
   const startOp = useRef(newUuid());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const alertsAsk = useStartAlertsAsk();
   const [data, reload] = useScreenData(async (s) => {
     const gym = await s.yourData.currentGym();
     const [preview, active] = await Promise.all([gym ? s.repeat.preview(sessionId, gym.id) : Promise.resolve(null), s.sessions.active()]);
@@ -65,6 +67,8 @@ export function RepeatScreen() {
   }
 
   async function startNow() {
+    // First Start ever: the one-time Rest alerts question, then the same Start (premium-feel §3.5).
+    await alertsAsk.ensureAsked();
     const gate = await services.checkIns.gate();
     if (gate.kind === 'ask') {
       navigation.navigate('CheckIn', { mode: 'start', gymId: gym.id, repeatOf: sessionId });
@@ -124,6 +128,7 @@ export function RepeatScreen() {
         </AppText>
       ) : null}
       {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
+      {alertsAsk.sheet}
     </Screen>
   );
 }
