@@ -27,7 +27,7 @@ const RETIRED = new Set(['timing.coachFirstToken', 'timing.backupOverdue']);
 
 function referencedTokens(): string[] {
   const text = readFileSync(DESIGN_SYSTEM, 'utf8');
-  const re = /`((?:color|type|space|radius|target|timing|haptic|sound|chart|widget|icon|launch)\.[A-Za-z0-9.]+)`/g;
+  const re = /`((?:color|type|space|radius|target|timing|haptic|sound|chart|widget|icon|launch|motion)\.[A-Za-z0-9.]+)`/g;
   return [...new Set([...text.matchAll(re)].map((m) => m[1] ?? ''))].filter((t) => t !== '' && !RETIRED.has(t)).sort();
 }
 

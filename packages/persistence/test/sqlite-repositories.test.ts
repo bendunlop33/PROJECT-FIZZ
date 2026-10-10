@@ -234,6 +234,29 @@ describe('listExerciseHistory', () => {
   });
 });
 
+describe('sessions.listFinishedRefs (rotation, routine last done)', () => {
+  it('lists finished workouts with a logged set, newest first, with their routine; not active or empty ones', async () => {
+    const store = await openStore(memoryDriver());
+    const older = richFinishedSession();
+    let newer = unilateralSession('start-new', idGen(97_000));
+    newer = { ...newer, session: { ...newer.session, startedAt: at(86_400), routineId: id(300) } };
+    newer = apply(newer, logCmd(newer.sets[0]?.id ?? '', values(kg(17.5, 'per_hand'), 9), 86_460, 'n-1', 'left'));
+    newer = apply(newer, { type: 'finish', at: at(86_500), opId: 'fin-n', expectedVersion: newer.session.version, endedAt: null });
+    let empty = unilateralSession('start-empty', idGen(99_000));
+    empty = apply(empty, { type: 'finish', at: at(86_600), opId: 'fin-e', expectedVersion: empty.session.version, endedAt: null });
+    for (const s of [older, newer, empty]) await store.repos.sessions.save(s, null);
+    await store.repos.sessions.save(unilateralSession('start-active', idGen(98_000)), null);
+    const refs = await store.repos.sessions.listFinishedRefs(OWNER, 10);
+    expect(refs.map((r) => [r.sessionId, r.routineId])).toEqual([
+      [newer.session.id, id(300)],
+      [older.session.id, older.session.routineId],
+    ]);
+    expect(refs[0]).toMatchObject({ startedAtUtc: at(86_400).utc, tz: at(0).tz });
+    expect(await store.repos.sessions.listFinishedRefs(OWNER, 1)).toHaveLength(1);
+    await store.close();
+  });
+});
+
 describe('gyms.createWithEquipment (createGymFromDraft)', () => {
   const draftGym = () => {
     const result = materialiseGymDraft(buildPresetDraft('commercial', 'kg'), {

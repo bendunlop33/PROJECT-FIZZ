@@ -90,7 +90,11 @@ async function populate(store: Store): Promise<void> {
   }
   await repos.exercises.save(SPLIT_SQUAT, null);
   await repos.exercises.save(exercise(241, 'Custom press', { ownerId: OWNER, source: 'custom' }), null);
-  await repos.routines.save(routine([routineExercise(700, { exerciseId: SPLIT_SQUAT.id, restBySetType: { working: { seconds: 120 } } })]), null);
+  // Saved from a finished workout (premium-feel §2.6): the new optional fields round-trip too.
+  await repos.routines.save(
+    { ...routine([routineExercise(700, { exerciseId: SPLIT_SQUAT.id, restBySetType: { working: { seconds: 120 } } })]), createdFromSessionId: richFinishedSession().session.id, deletedAtUtc: null, lastOpId: 'save-routine-op' },
+    null,
+  );
   await repos.progressionRules.save(doubleProgression(), null);
   await repos.progressionRules.save(topSetBackoff(), null);
   await repos.sessions.save(richFinishedSession(), null);
@@ -156,6 +160,7 @@ describe('createBackup / restore', () => {
     const richId = richFinishedSession().session.id;
     expect(await target.store.repos.sessions.get(richId)).toEqual(await source.store.repos.sessions.get(richId));
     expect(await target.store.repos.equipment.listByGym(barbell().gymId)).toEqual(await source.store.repos.equipment.listByGym(barbell().gymId));
+    expect(await target.store.repos.routines.get(id(300))).toMatchObject({ createdFromSessionId: richId, deletedAtUtc: null, lastOpId: 'save-routine-op' });
     expect((await checkIntegrity(target.store.db)).ok).toBe(true);
 
     // The restored database is live: the unfinished workout resumes, and an operation

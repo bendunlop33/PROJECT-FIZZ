@@ -1,9 +1,9 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useEffect, useState } from 'react';
-import { Alert, Modal, ScrollView, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { toIso, toMs, type NextTimeRow, type WorkoutSummary } from '@fizz/domain';
+import { checkRoutineName, toIso, toMs, type NextTimeRow, type WorkoutSummary } from '@fizz/domain';
 
 import { nowMs as clockNow } from '../../clock';
 import { haptic } from '../../device/haptics';
@@ -12,9 +12,11 @@ import { formatCalendarDate, formatDayMonth, formatShortDate, formatTime } from 
 import { popToTabs, popToToday } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { firstTime, useDataChanged, useScreenData, useServices } from '../../shell/context';
-import { TIMING, useTheme } from '../../theme';
-import { AppText, BottomBar, Card, Chip, ChecklistRow, ChipRow, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, SectionHeader, StatGrid, StatusLine, Tag, TextButton, Toast } from '../../ui';
+import { finishMotion, listEnterMotion, shouldPlayFinish, TIMING, useTheme } from '../../theme';
+import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, Chip, ChecklistRow, ChipRow, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, SectionHeader, StatGrid, StatusLine, Tag, TextButton, TEXT_PRESSED_OPACITY, Toast } from '../../ui';
 import { stepTime } from '../../workout/finish';
+import { createAfterDismiss } from '../../workout/after-dismiss';
+import { NameSheet } from '../routines/NameSheet';
 import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
 
 /**
@@ -29,7 +31,7 @@ export function SummaryScreen() {
   const services = useServices();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { sessionId, back = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
+  const { sessionId, back = false, justFinished: finishedNow = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
   const [times, setTimes] = useState(false);
   const [choosePain, setChoosePain] = useState(false);
   const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
@@ -43,21 +45,48 @@ export function SummaryScreen() {
     };
   }, [toast]);
   const [data, reload] = useScreenData(async (s) => {
-    const [summary, backup, painFlags] = await Promise.all([s.workout.summary(sessionId), s.backups.getStatus(), s.pain.active()]);
-    return { summary, backup, painFlags };
+    const [summary, backup, painFlags, routines] = await Promise.all([s.workout.summary(sessionId), s.backups.getStatus(), s.pain.active(), s.routines.list().catch(() => [])]);
+    // `Save as routine` is offered once: not for a routine's workout, nor one already saved as a routine.
+    const savedAs = routines.find((r) => r.createdFromSessionId === sessionId) ?? null;
+    return { summary, backup, painFlags, savedAs };
   });
+  // The name sheets (premium-feel §2.6): one opId per sheet opening, so a double tap saves once.
+  const [nameSheet, setNameSheet] = useState<'routine' | 'workout' | null>(null);
+  const [nameVisible, setNameVisible] = useState(false);
+  const nameOp = useRef(newUuid());
+  const [nameAfter] = useState(() => createAfterDismiss());
+  const openName = (kind: 'routine' | 'workout') => {
+    nameOp.current = newUuid();
+    setNameSheet(kind);
+    setNameVisible(true);
+  };
 
   const done = () => {
     if (back && navigation.canGoBack()) navigation.goBack();
     else navigation.dispatch(popToToday());
   };
 
-  // One success haptic when a just-finished workout's summary first shows (critic #10).
+  // The finish moment (premium-feel §6): one `haptic.finish` when a just-finished workout's summary
+  // first shows, after the commit. Only when Finish itself opened it (review B2): a later visit from Today
+  // or Progress is static. Never for a discard (no summary).
   const endedUtc = data.state === 'ready' ? (data.value.summary?.endedAtUtc ?? null) : null;
+  const [justFinished] = useState(() => finishedNow);
+  const [playedFinish] = useState(() => new Set<string>());
   useEffect(() => {
     if (endedUtc === null) return;
-    if (clockNow() - toMs(endedUtc) < 5 * 60_000 && firstTime(`summary-success:${sessionId}`)) haptic('commit');
-  }, [endedUtc, sessionId]);
+    const fresh = justFinished && clockNow() - toMs(endedUtc) < 5 * 60_000;
+    if (shouldPlayFinish({ sessionStatus: 'finished', justFinished: fresh, played: playedFinish, sessionId }) && firstTime(`summary-success:${sessionId}`)) {
+      playedFinish.add(sessionId);
+      haptic('finish');
+    }
+  }, [endedUtc, sessionId, justFinished, playedFinish]);
+  // The check draws and the title fades only for the moment itself; a later visit is static.
+  const finish = finishMotion(theme.a11y.reduceMotion || !justFinished);
+  /** Facts and rows follow the title (`motion.listEnter`), only in the finish moment itself. */
+  const follow = (i: number) => {
+    const m = finish.strokeMs > 0 ? listEnterMotion(i, theme.a11y.reduceMotion) : null;
+    return m === null ? null : { ...m, delayMs: m.delayMs + finish.titleDelayMs + finish.titleFadeMs };
+  };
 
   if (data.state === 'loading') return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
   if (data.state === 'error' || data.value.summary === null) {
@@ -75,7 +104,62 @@ export function SummaryScreen() {
       </View>
     );
   }
-  const { summary: sum, backup, painFlags } = data.value;
+  const { summary: sum, backup, painFlags, savedAs } = data.value;
+  const canSaveRoutine = sum.routineId === null && sum.source === 'manual' && savedAs === null && sum.facts.workingSets + sum.facts.warmupSets > 0;
+
+  async function saveRoutine(name: string): Promise<string | null> {
+    const r = await services.routines.saveFromSession({ sessionId, name, opId: nameOp.current });
+    if (!r.ok) return r.message;
+    const made = r.routine;
+    nameAfter.arm(() => {
+      setNameSheet(null);
+      setToast({
+        text: `Saved routine ${made.name}`,
+        action: 'Undo',
+        onAction: () => {
+          setToast(null);
+          void services.routines.remove({ routineId: made.id, expectedVersion: made.version, opId: newUuid() }).then((u) => {
+            if (!u.ok) setToast({ text: u.message });
+            changed();
+            reload();
+          });
+        },
+      });
+    });
+    setNameVisible(false);
+    changed();
+    reload();
+    return null;
+  }
+
+  async function renameWorkout(name: string): Promise<string | null> {
+    const before = sum.storedName;
+    const r = await services.workout.dispatch(sessionId, { type: 'rename_session', at: services.now(), opId: nameOp.current, name, expectedVersion: sum.sessionVersion });
+    if (!r.ok) {
+      if (r.error.code === 'stale_version') reload();
+      return r.error.code === 'stale_version' ? 'The workout changed. Check it and try again.' : r.error.message;
+    }
+    const version = r.aggregate.session.version;
+    nameAfter.arm(() => {
+      setNameSheet(null);
+      setToast({
+        text: `Renamed to ${name}`,
+        action: 'Undo',
+        onAction: () => {
+          setToast(null);
+          void services.workout.dispatch(sessionId, { type: 'rename_session', at: services.now(), opId: newUuid(), name: before, expectedVersion: version }).then((u) => {
+            if (!u.ok) setToast({ text: `Couldn’t undo: ${u.error.message}` });
+            changed();
+            reload();
+          });
+        },
+      });
+    });
+    setNameVisible(false);
+    changed();
+    reload();
+    return null;
+  }
   const flaggedHere = painFlags.filter((f) => sum.exercises.some((e) => e.exerciseId === f.exerciseId));
   const tz = sum.tz;
   const range = `${formatTime(toMs(sum.startedAtUtc), tz)}–${sum.endedAtUtc ? formatTime(toMs(sum.endedAtUtc), tz) : ''}`;
@@ -86,18 +170,13 @@ export function SummaryScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + theme.space['4'], paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'], gap: theme.space['5'] }}>
-        {/* D: a quiet hero (label, large title, facts), then the saved line; no tinted block. */}
-        {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}
-        <HeroHeader
-          eyebrow="Workout done"
-          title={sum.title}
-          lines={[(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), sum.gymName, 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`]).filter(Boolean).join(' · ')]}
-        />
-
+        {/* The finish moment (premium-feel §6): the saved check draws once, then the title fades in. Done works from the first frame. */}
         <View style={{ gap: theme.space['1'] }} accessibilityRole="summary">
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-            <Icon name="checkmark.circle" color="status.done" size={18} />
-            <AppText variant="callout">Saved on this phone</AppText>
+            <RevealOnce durationMs={finish.strokeMs} size={20} background={theme.colors['bg.canvas']}>
+              <Icon name="checkmark.circle.fill" color="status.done" size={20} />
+            </RevealOnce>
+            <AppText variant="callout">Workout saved on this phone</AppText>
           </View>
           {failed ? (
             <LinkLine
@@ -117,6 +196,43 @@ export function SummaryScreen() {
             </AppText>
           )}
         </View>
+
+        {/* D: a quiet hero (label, large title, facts); no tinted block. */}
+        {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}
+        <DelayedFade delayMs={finish.titleDelayMs} durationMs={finish.titleFadeMs}>
+          <View style={{ gap: theme.space['2'] }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['2'] }}>
+              <View style={{ flex: 1 }}>
+                <HeroHeader
+                  eyebrow="Workout done"
+                  title={sum.title}
+                  lines={[(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), sum.gymName, 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`]).filter(Boolean).join(' · ')]}
+                />
+              </View>
+              {/* Rename (premium-feel §6.2): a 44 pt pencil next to the title; the routine keeps its name. */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Rename workout, ${sum.title}`}
+                onPress={() => {
+                  openName('workout');
+                }}
+                style={({ pressed }) => ({ minWidth: theme.target.min.width, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+              >
+                <Icon name="pencil" color="text.secondary" size={18} />
+              </Pressable>
+            </View>
+            {canSaveRoutine ? (
+              <View style={{ alignSelf: 'flex-start' }}>
+                <TextButton
+                  label="Save as routine"
+                  onPress={() => {
+                    openName('routine');
+                  }}
+                />
+              </View>
+            ) : null}
+          </View>
+        </DelayedFade>
 
         {sum.highlight ? (
           <RuledSection title="Today" gap="2">
@@ -213,6 +329,7 @@ export function SummaryScreen() {
         ))}
 
         {/* D: large light numerals on calm tiles. */}
+        <FadeIn motion={follow(0)}>
         <StatGrid
           items={[
             ...(sum.facts.activeText !== null ? [{ label: 'Active time', value: sum.facts.activeText }] : []),
@@ -221,8 +338,28 @@ export function SummaryScreen() {
             ...(sum.facts.warmupSets > 0 ? [{ label: 'Warm-up sets', value: String(sum.facts.warmupSets) }] : []),
           ]}
         />
+        </FadeIn>
 
-        {sum.comparison ? <Comparison c={sum.comparison} tz={tz} /> : null}
+        {sum.comparison ? (
+          <FadeIn motion={follow(1)}>
+            <Comparison c={sum.comparison} tz={tz} />
+          </FadeIn>
+        ) : null}
+        {sum.records.length > 0 ? (
+          // Heaviest-set lines (premium-feel §5.1), in the Comparison region; static, no badge or colour.
+          <FadeIn motion={follow(1)}>
+            <View style={{ gap: theme.space['2'] }}>
+              {sum.records.map((r) => (
+                <View key={r} accessible accessibilityLabel={r} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+                  <Icon name="star" color="text.secondary" size={16} />
+                  <AppText variant="callout" style={{ flex: 1 }}>
+                    {r}
+                  </AppText>
+                </View>
+              ))}
+            </View>
+          </FadeIn>
+        ) : null}
 
         {sum.exercises.length > 0 ? (
           <View>
@@ -304,6 +441,25 @@ export function SummaryScreen() {
           </View>
         </View>
       </BottomBar>
+      {nameSheet !== null ? (
+        <NameSheet
+          visible={nameVisible}
+          title={nameSheet === 'routine' ? 'Save as routine' : 'Rename workout'}
+          buttonLabel={nameSheet === 'routine' ? 'Save routine' : 'Save name'}
+          initialName={sum.title}
+          detail={
+            nameSheet === 'routine'
+              ? `${String(sum.facts.exercisesDone)} ${sum.facts.exercisesDone === 1 ? 'exercise' : 'exercises'} · ${String(sum.facts.workingSets + sum.facts.warmupSets)} sets`
+              : null
+          }
+          check={nameSheet === 'routine' ? (n) => services.routines.checkName(n) : (n) => Promise.resolve(checkRoutineName(n, []))}
+          onSubmit={nameSheet === 'routine' ? saveRoutine : renameWorkout}
+          onClose={() => {
+            setNameVisible(false);
+          }}
+          onDismissed={nameAfter.dismissed}
+        />
+      ) : null}
       <EditTimesSheet
         summary={sum}
         visible={times}

@@ -79,10 +79,26 @@ describe('open-ended workout: rest after every set, Add exercise when all done (
     expect(s.restTimer).toMatchObject({ status: 'running', durationS: 180 });
     const v1 = view(s, 40);
     expect(v1.phase).toBe('resting');
-    expect(plain(v1.upNext)).toBe('Set 2 · 3–6 reps');
+    expect(plain(v1.upNext)).toBe('Set 2 · 60 kg × 3–6');
     expect(v1.focus?.setId).toBe(sets[1]?.id);
     expect(v1.focus?.draft.load).toEqual(kg(60));
     expect(plain(v1.focus?.logLabel)).toBe('Log 60 kg × 6');
+  });
+
+  it('Rest next line names the load to lift: per-hand dumbbells and lb keep their convention and unit (premium-feel §3.6)', () => {
+    let s = openWorkoutWith(CURL_EX, dumbbells());
+    s = apply(s, logCmd(setsFor(s, CURL_EX.id)[0]?.id ?? '', values(kg(12.5, 'per_hand'), 10), 30));
+    expect(plain(view(s, 40).upNext)).toBe('Set 2 · 12.5 kg each × 8–12');
+
+    let p = openWorkoutWith(BENCH_EX, barbell({ unit: 'lb', barMass: 45, plates: [{ mass: 45, count: 4 }, { mass: 5, count: 2 }] }), 'lb');
+    p = apply(p, logCmd(setsFor(p, BENCH_EX.id)[0]?.id ?? '', values(lb(135), 5), 30));
+    expect(plain(view(p, 40).upNext)).toBe('Set 2 · 135 lb × 3–6');
+
+    // Assisted: the line keeps the assistance wording, never a bare number that reads as added load.
+    const PULL = exercise(503, 'Assisted pull-up', { movementPattern: 'vertical_pull', primaryMuscles: ['lats'], compatibleEquipment: ['assisted_stack'], defaultLoadConvention: 'assistance', mechanic: 'compound' });
+    let a = openWorkoutWith(PULL, assisted());
+    a = apply(a, logCmd(setsFor(a, PULL.id)[0]?.id ?? '', values(kg(30, 'assistance'), 8), 30));
+    expect(plain(view(a, 40).upNext)).toMatch(/^Set 2 · Assist 30 kg × /);
   });
 
   it('the last set so far still starts the rest; the primary is Add exercise, and Finish cancels the rest', () => {
@@ -158,6 +174,24 @@ describe('next session from the last workout (audit B2)', () => {
       [102.5, { min: 6, max: 8 }, 'built_in_rule'],
       [102.5, { min: 6, max: 8 }, 'built_in_rule'],
     ]);
+  });
+
+  it('an exercise done in two slots repeats each slot’s own numbers, not one slot’s targets twice (review S7)', () => {
+    const source = finishedBench();
+    const first = source.exercises.find((e) => e.exerciseId === BENCH);
+    if (!first) throw new Error('no bench');
+    const second = { ...first, id: '00000000-0000-4000-8000-0000000009d1', order: source.exercises.length };
+    const extra = source.sets
+      .filter((x) => x.sessionExerciseId === first.id && x.status === 'completed' && x.setType !== 'warmup')
+      .map((x, i) => ({ ...x, id: `00000000-0000-4000-8000-00000000${String(9e3 + i)}`, sessionExerciseId: second.id, actual: x.actual && { ...x.actual, load: kg(70), reps: 12 } }));
+    const twoSlots: SessionAggregate = { ...source, exercises: [...source.exercises, second], sets: [...source.sets, ...extra] };
+    const targets = new Map([[BENCH, [{ setType: 'working' as const, planned: { load: kg(102.5), reps: { min: 6, max: 8 }, durationS: null, rpe: null, rir: null, source: 'built_in_rule' as const } }]]]);
+    const out = startWorkoutFromSession({ opId: 'next-dup', owner: profile(), gymId: GYM, source: twoSlots, exercises: fixtureExercises, gymEquipment: [barbell()], at: at(86_400), newId: idGen(45_000), targets });
+    const slots = out.aggregate.exercises.filter((e) => e.exerciseId === BENCH);
+    expect(slots).toHaveLength(2);
+    const working = (exId: string) => out.aggregate.sets.filter((x) => x.sessionExerciseId === exId && x.setType !== 'warmup').map((x) => [x.planned.load?.value, x.planned.source]);
+    expect(working(slots[0]?.id ?? '')).toEqual([[100, 'repeat'], [100, 'repeat']]);
+    expect(working(slots[1]?.id ?? '')).toEqual([[70, 'repeat'], [70, 'repeat']]);
   });
 
   it('targets still go through this gym: rounded toward easier and never above its max; lb stays lb', () => {

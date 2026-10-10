@@ -11,7 +11,7 @@ import type { RootStackParams } from '../../navigation/types';
 import type { PickerExercise } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Group, Icon, Row, SectionHeader, StatusLine, TextButton } from '../../ui';
+import { AppText, Group, Icon, Row, SectionHeader, StatusLine, TextButton, TEXT_PRESSED_OPACITY } from '../../ui';
 import { pickerEmptyText, type PickerLoad } from '../../workout/picker-empty';
 
 /**
@@ -176,7 +176,7 @@ export function ExercisePickerScreen() {
                           onPress={() => {
                             navigation.navigate('HowTo', { catalogueKey: howTo, name: p.exercise.name });
                           }}
-                          style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', marginRight: theme.space['2'], opacity: busy ? 0.4 : pressed ? 0.6 : 1 })}
+                          style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', marginRight: theme.space['2'], opacity: busy ? 0.4 : pressed ? TEXT_PRESSED_OPACITY : 1 })}
                         >
                           <Icon name="info.circle" color="text.secondary" size={22} />
                         </Pressable>

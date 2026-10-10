@@ -1,7 +1,8 @@
-import { ActivityIndicator, Pressable, View, type AccessibilityState } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, View, type AccessibilityState } from 'react-native';
 
 import { useTheme } from '../theme';
 import { Icon, type SymbolName } from './Icon';
+import { TEXT_PRESSED_OPACITY, usePressScale } from './motion';
 import { AppText } from './Text';
 
 interface ButtonProps {
@@ -17,9 +18,11 @@ interface ButtonProps {
  */
 export function PrimaryButton({ label, onPress, disabled = false, busy = false, accessibilityHint }: ButtonProps & { busy?: boolean }) {
   const theme = useTheme();
+  const press = usePressScale('primary');
   const inactive = disabled || busy;
   const state: AccessibilityState = { disabled: inactive, busy };
   return (
+    <Animated.View style={press.style}>
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -27,6 +30,8 @@ export function PrimaryButton({ label, onPress, disabled = false, busy = false, 
       {...(accessibilityHint ? { accessibilityHint } : {})}
       disabled={inactive}
       onPress={onPress}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
       style={({ pressed }) => ({
         minHeight: theme.target.primary.height,
         borderRadius: theme.radius[theme.components.primaryButtonRadius],
@@ -44,14 +49,17 @@ export function PrimaryButton({ label, onPress, disabled = false, busy = false, 
         {label}
       </AppText>
     </Pressable>
+    </Animated.View>
   );
 }
 
 /** design-system §9.2a: outlined, never accent-filled. D: a transparent outline pill (D-Rest). */
 export function SecondaryButton({ label, onPress, disabled = false, icon, accessibilityHint, accessibilityLabel, grow = false }: ButtonProps & { icon?: SymbolName; accessibilityLabel?: string; grow?: boolean }) {
   const theme = useTheme();
+  const press = usePressScale('pill');
   if (theme.components.secondaryButton === 'outline_pill') {
     return (
+      <Animated.View style={[grow ? { flex: 1 } : null, press.style]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? label}
@@ -59,9 +67,11 @@ export function SecondaryButton({ label, onPress, disabled = false, icon, access
         {...(accessibilityHint ? { accessibilityHint } : {})}
         disabled={disabled}
         onPress={onPress}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
         style={({ pressed }) => ({
-          ...(grow ? { flex: 1 } : {}),
-          minHeight: 48,
+          // design-system target.workout: 52 pt (premium-feel §8, D7).
+          minHeight: theme.target.workout.height,
           borderRadius: theme.radius.pill,
           borderWidth: 1,
           borderColor: theme.colors['border.control'],
@@ -80,6 +90,7 @@ export function SecondaryButton({ label, onPress, disabled = false, icon, access
           {label}
         </AppText>
       </Pressable>
+      </Animated.View>
     );
   }
   return (
@@ -132,7 +143,7 @@ export function TextButton({ label, onPress, disabled = false, icon, tone = 'acc
         disabled={disabled}
         onPress={onPress}
         hitSlop={4}
-        style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+        style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
           {icon ? <Icon name={icon} color={tint} size={16} /> : null}
@@ -154,7 +165,7 @@ export function TextButton({ label, onPress, disabled = false, icon, tone = 'acc
       disabled={disabled}
       onPress={onPress}
       hitSlop={4}
-      style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+      style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
         {icon ? <Icon name={icon} color={color} size={18} /> : null}
@@ -177,7 +188,7 @@ export function DangerTextButton({ label, onPress, disabled = false }: ButtonPro
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+      style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
     >
       <AppText variant="headline" color={disabled ? 'text.secondary' : 'status.danger'}>
         {label}

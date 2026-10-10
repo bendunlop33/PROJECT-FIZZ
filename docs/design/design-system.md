@@ -364,9 +364,27 @@ Rules:
 | `haptic.undo` | Light impact |
 | `haptic.step` | Selection change (steppers, keypad) |
 | `haptic.restEnd` | Warning notification haptic (one per timer) |
+| `haptic.record` | Medium impact, then light impact 90 ms later. Plays instead of `haptic.commit` when the logged set is a heaviest-set record (premium-feel.md §5.1). Proposed 10 Oct 2026, Ben to approve |
+| `haptic.finish` | Success notification haptic, once, when the Summary first shows after a successful Finish. Never on discard (premium-feel.md §5). Proposed 10 Oct 2026, Ben to approve |
 | `sound.restEnd` | Short single chime. Plays only when cue mode is Quiet and timer sound is on (Profile) |
 
-- The timer updates once per second with no animation or tick sound. It never shows a progress ring.
+- The timer updates once per second with no tick sound. Only the glyphs that changed cross-fade (`motion.digit`); tabular numerals keep every glyph in place. It never shows a progress ring.
+
+**Motion tokens (revision 2026-10-10, premium-feel.md §4.1).** Proposed; Ben to approve. All at or under 200 ms except `motion.finish` (exception 1 to principle 5, once per workout) and `motion.recordPulse` (exception 3, once per record). Driven by React Native's `Animated` with the native driver, chosen to keep worklet risk off the logging screen (ADR 0018 allows guarded worklets; this avoids them). Every motion is removed or reduced under Reduce Motion (premium-feel.md §4.5) and never delays a write.
+
+| Token | Value |
+|---|---|
+| `motion.pressIn` | 80 ms ease-out, press-down of any pressable |
+| `motion.pressOut` | 160 ms ease-out, release |
+| `motion.pressScale.primary` | 0.97 (`PrimaryButton`). No scale under Reduce Motion; the pressed colour still changes |
+| `motion.pressScale.pill` | 0.95 (outline pills, chips). No scale under Reduce Motion |
+| `motion.pressOpacity.text` | 0.55 (text links, icon buttons; no scale) |
+| `motion.swap` | 180 ms ease-in-out fade with an 8 pt rise: Ready ↔ Rest inside Workout. Reduce Motion: 150 ms fade, no rise |
+| `motion.listEnter` | 160 ms fade + 6 pt rise, 35 ms stagger, at most 6 staggered. Only rows added after the first draw. Reduce Motion: at once |
+| `motion.digit` | 140 ms opacity cross-fade per changed glyph (rest numeral). Reduce Motion: instant |
+| `motion.screenFade` | 200 ms: Workout → Summary, and every slide under Reduce Motion |
+| `motion.finish` | 420 ms check reveal, then a 200 ms title fade after 120 ms. Static under Reduce Motion. `Done` works from the first frame |
+| `motion.recordPulse` | 1 → 1.06 → 1 scale on the record line's star, 300 ms, once per record (exception 3 to principle 5). None under Reduce Motion |
 - With Reduce Motion on, replace slides with cross-fades or nothing.
 - Each haptic has its own on/off switch in Profile → Voice & alerts. Haptics, timer sound and voice volume are separate settings.
 

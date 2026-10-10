@@ -23,6 +23,7 @@ import {
   nextTargetsFor,
   plannedSetsFromTargets,
   repeatPreviewLines,
+  targetSummaryLines,
   unspecifiedPain,
   equipmentForExercise,
   searchExercises,
@@ -30,7 +31,24 @@ import {
   toIso,
   toMs,
   weekdayOf,
+  findSetRecord,
+  estimateRemainingDuration,
+  checkRoutineName,
+  deleteRoutine,
+  isFromRoutine,
+  liveRoutines,
+  nextInRotation,
+  renameRoutine,
+  restoreRoutine,
+  routineCounts,
+  routineFromSession,
+  routineLastDone,
+  type FinishedRef,
+  type RoutineChange,
+  type RoutineNameCheck,
   type ActiveSetView,
+  type SetRecord,
+  type SetRecordInput,
   type CheckInGate,
   type CheckInPatch,
   type CommandOutcome,
@@ -53,6 +71,7 @@ import type {
   PainFlag,
   PlannedSet,
   ProgressionRule,
+  Routine,
   SessionAggregate,
   SessionCheckIn,
   SessionCommand,
@@ -85,7 +104,26 @@ export type CheckInWrite = { ok: true; checkIn: CheckIn; duplicate: boolean } | 
 const CHECK_IN_WRITE_FAILED = 'Check-in wasn’t saved. Your workout can start as normal.';
 const RECENT_WINDOW_MS = 3 * 60 * 60 * 1000;
 /** Said on the workout when "Start next session" couldn't work out targets (review S2). */
-export const TARGETS_UNAVAILABLE = 'Couldn’t work out next targets, so these are last time’s numbers.';
+/** See `recordContext`. */
+export interface RecordContext {
+  setId: string;
+  sessionExerciseId: string;
+  base: Omit<SetRecordInput, 'set' | 'earlierToday'>;
+}
+
+function recordFromContext(context: RecordContext, aggregate: SessionAggregate, setId: string): SetRecord | null | undefined {
+  const set = aggregate.sets.find((s) => s.id === setId);
+  const ex = set ? aggregate.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
+  if (!set || !ex) return null;
+  if (context.setId !== setId || context.sessionExerciseId !== ex.id || context.base.equipmentId !== ex.equipmentId || context.base.convention !== ex.loadConvention) return undefined;
+  if (set.status !== 'completed' || set.actual === null) return null;
+  const earlierToday = aggregate.sets
+    .filter((s) => s.id !== set.id && s.sessionExerciseId === ex.id && s.status === 'completed' && s.actual !== null && (s.completedAt?.utc ?? '') <= (set.completedAt?.utc ?? ''))
+    .map((s) => ({ setType: s.setType, side: s.side, load: s.actual?.load ?? null, reps: s.actual?.reps ?? null, rpe: null, rir: null }));
+  return findSetRecord({ ...context.base, set: { setType: set.setType, load: set.actual.load, reps: set.actual.reps }, earlierToday });
+}
+
+export const TARGETS_UNAVAILABLE = 'Using last time’s numbers.';
 
 /** `notice`: something the workout screen should say once on opening (a toast). */
 export type WorkoutStartOutcome = (Extract<StartOutcome, { ok: true }> & { notice?: string }) | Extract<StartOutcome, { ok: false }>;
@@ -119,6 +157,8 @@ export interface RepeatCandidates {
 }
 
 export interface RepeatPreview {
+  /** The workout's name (or the derived title, `Push`), prefilled in `Save as routine`. */
+  title: string;
   exercises: { exerciseName: string; equipmentName: string | null; line: string }[];
   notes: { exerciseName: string; text: string }[];
   notCopied: { exerciseName: string; skipped: number }[];
@@ -143,15 +183,50 @@ export interface ActiveWorkoutData {
  * workout with the built-in rule's next targets (labelled), at this gym.
  */
 export interface NextSessionPreview {
-  sourceSessionId: string;
+  /**
+   * Up next is a routine (premium-feel §2.6, rotation D19): Start starts it.
+   * Null: the last workout's next session (Start uses `sourceSessionId`).
+   */
+  routine: { id: string; basis: { kind: 'after'; routineName: string; atUtc: string; tz: string } | { kind: 'only' } } | null;
+  /** The workout the targets come from; null for a routine not done yet (its own templates). */
+  sourceSessionId: string | null;
   title: string;
   /** `Chest · Shoulders · Triceps`. */
   muscles: string | null;
   exercises: { exerciseName: string; line: string }[];
+  /** `Target 100 kg × 6–8 · 3 sets` per exercise, from what Start would create (premium-feel §2.3). */
+  targets: { exerciseName: string; line: string }[];
   sets: number;
-  sourceStartedAtUtc: string;
+  /** `about 45 min` (`estimateRemainingDuration` on what Start would create; always an estimate). */
+  aboutMinutes: number | null;
+  sourceStartedAtUtc: string | null;
   tz: string;
 }
+
+/** A row of Today's `Your routines` (premium-feel §2.6): `5 exercises · 6 Oct` or `5 exercises · not done yet`. */
+export interface RoutineRow {
+  id: string;
+  name: string;
+  version: number;
+  exercises: number;
+  sets: number;
+  lastDone: { atUtc: string; tz: string } | null;
+  createdFromSessionId: string | null;
+}
+
+/** The routine sheet: what `Start this routine` would create at this gym. Saves nothing. */
+export interface RoutinePreview {
+  routine: RoutineRow;
+  /** `Target 100 kg × 6–8 · 3 sets` per exercise, snapped to this gym. */
+  targets: { exerciseName: string; line: string }[];
+  notes: { exerciseName: string; text: string }[];
+  aboutMinutes: number | null;
+  /** Where the targets come from: the built-in rule (next targets) or the routine as saved. */
+  source: 'built_in_rule' | 'routine';
+  lastDone: { atUtc: string; tz: string; gymName: string | null } | null;
+}
+
+export type RoutineWrite = { ok: true; routine: Routine; duplicate: boolean } | { ok: false; message: string; stale?: boolean };
 
 export function createWorkoutServices(ctx: WorkoutServicesContext) {
   const repos = () => ctx.repos();
@@ -409,13 +484,88 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   /** The source's own name, unless it's the generic `Workout`. */
   const storedName = (a: SessionAggregate): string | null => storedWorkoutName(a.session);
 
+  /** `about N min` for a workout not started yet, at Ben's pace over his last 5 workouts. Null if it can't be read. */
+  async function aboutMinutes(p: UserProfile, a: SessionAggregate): Promise<number | null> {
+    try {
+      const refs = (await repos().sessions.listFinishedRefs(p.id, 5)).map((r) => r.sessionId);
+      const recent: SessionAggregate[] = [];
+      for (const id of refs) {
+        const x = await repos().sessions.get(id).catch(() => null);
+        if (x) recent.push(x);
+      }
+      const m = estimateRemainingDuration(a, { recent }).minutes;
+      return m > 0 ? m : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Enough finished workouts to find each routine's last one; small rows, no decode. */
+  const REF_LIMIT = 400;
+  async function finishedRefs(ownerId: string): Promise<FinishedRef[]> {
+    return repos().sessions.listFinishedRefs(ownerId, REF_LIMIT);
+  }
+
+  async function routineRows(ownerId: string): Promise<{ rows: RoutineRow[]; live: Routine[]; refs: FinishedRef[] }> {
+    const live = liveRoutines(await repos().routines.listByOwner(ownerId));
+    const refs = await finishedRefs(ownerId);
+    const last = routineLastDone(live, refs);
+    const rows = live.map((r) => {
+      const c = routineCounts(r);
+      const done = last.get(r.id) ?? null;
+      return { id: r.id, name: r.name, version: r.version, exercises: c.exercises, sets: c.sets, lastDone: done ? { atUtc: done.startedAtUtc, tz: done.tz } : null, createdFromSessionId: r.createdFromSessionId ?? null };
+    });
+    return { rows, live, refs };
+  }
+
+  /**
+   * A routine's start at this gym: its structure, with next targets from its
+   * most recent finished workout (the same rule as Today's next session).
+   * `today`: the check-in for the workout being started (pain holds loads).
+   * Targets that can't be worked out leave the routine's own templates.
+   */
+  async function routineStart(p: UserProfile, req: { routineId: string; gymId: string; opId: string; preview: boolean; checkIn?: SessionCheckIn | null; today?: CheckIn | null }) {
+    const routine = await repos().routines.get(req.routineId);
+    const ref = routine ? (await finishedRefs(p.id)).find((f) => isFromRoutine(f, routine)) ?? null : null;
+    const source = ref ? await repos().sessions.get(ref.sessionId).catch(() => null) : null;
+    const targets = source ? await nextTargetsOf(p, source, req.today ?? null).catch(() => null) : null;
+    const r = await domain().startRoutine({
+      ownerId: p.id,
+      gymId: req.gymId,
+      routineId: req.routineId,
+      opId: req.opId,
+      at: ctx.now(),
+      preview: req.preview,
+      ...(req.checkIn !== undefined ? { checkIn: req.checkIn } : {}),
+      ...(targets && targets.size > 0 ? { targets } : {}),
+    });
+    return { r, ref, source, targeted: targets !== null && targets.size > 0, targetsFailed: source !== null && targets === null };
+  }
+
+  /** Save one routine change; a conflict re-reads once so a retry after a lost acknowledgement reads as done. */
+  async function writeRoutine(routineId: string, make: (current: Routine) => RoutineChange): Promise<RoutineWrite> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const current = await repos().routines.get(routineId);
+      const p = await ctx.profile();
+      if (!current || !p || current.ownerId !== p.id) return { ok: false, message: 'That routine wasn’t found.' };
+      const c = make(current);
+      if (c.kind === 'duplicate') return { ok: true, routine: c.current, duplicate: true };
+      if (c.kind === 'stale') return { ok: false, message: 'The routine changed. Check it and try again.', stale: true };
+      if (c.kind === 'invalid') return { ok: false, message: c.message };
+      const saved = await repos().routines.save(c.next, c.expectedVersion).catch(() => null);
+      if (saved?.ok) return { ok: true, routine: c.next, duplicate: false };
+      if (saved === null) return { ok: false, message: 'Couldn’t save the routine. Try again.' };
+    }
+    return { ok: false, message: 'The routine changed. Check it and try again.', stale: true };
+  }
+
   const workout = {
     /**
      * `startWorkout(…, opts.checkIn)` for an empty workout (no routines yet).
      * A gym is required (PM SP1). An answered check-in is linked in the same
      * write as the session; one already linked to another workout is refused.
      */
-    async start(req: { gymId: string; opId: string; checkIn: SessionCheckIn | null; repeatOf?: string | null; nextOf?: string | null }): Promise<WorkoutStartOutcome> {
+    async start(req: { gymId: string; opId: string; checkIn: SessionCheckIn | null; repeatOf?: string | null; nextOf?: string | null; routineOf?: string | null }): Promise<WorkoutStartOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
       let checkIn = req.checkIn;
@@ -424,6 +574,18 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const linked = await repos().checkIns.linkedIds([checkIn.checkInId]);
         // Linked to another workout (not this start's retry): start without it rather than block.
         if (linked.has(checkIn.checkInId) && already?.session.checkIn?.kind !== 'answered') checkIn = { kind: 'skipped', atUtc: ctx.now().utc };
+      }
+      if (req.routineOf) {
+        // A routine (premium-feel §2.6): its structure, with next targets from its last workout, fitted to this gym.
+        const today = checkIn?.kind === 'answered' ? await repos().checkIns.get(checkIn.checkInId) : null;
+        const { r, targetsFailed } = await routineStart(p, { routineId: req.routineOf, gymId: req.gymId, opId: req.opId, preview: false, checkIn, today });
+        if (!r.ok) {
+          const e = r.error;
+          if (e.code === 'nothing_to_start') return { ok: false, error: { code: 'not_found', message: e.message } };
+          return { ok: false, error: e };
+        }
+        const notice = targetsFailed && !r.duplicate ? 'Using saved targets.' : null;
+        return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate, ...(notice !== null ? { notice } : {}) };
       }
       if (req.nextOf) {
         // "Start next session" (audit B2): last workout's exercises with the built-in rule's next targets.
@@ -452,6 +614,60 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate };
       }
       return domain().start({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn });
+    },
+
+    /**
+     * What a record check needs that the write doesn't change (premium-feel
+     * §5.1, review S1): the exercise's finished history, gym and equipment.
+     * Read when a set is focused, so the log haptic can be decided right
+     * after the write without any database read. Null: no record possible
+     * or the read failed (never blocks logging).
+     */
+    async recordContext(sessionId: string, setId: string): Promise<RecordContext | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const aggregate = await repos().sessions.get(sessionId);
+        const set = aggregate?.sets.find((s) => s.id === setId);
+        const ex = set ? aggregate?.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
+        if (!aggregate || !set || !ex) return null;
+        const history = (await historyFor(p.id, ex.exerciseId)).filter((h) => h.sessionId !== aggregate.session.id);
+        const gym = aggregate.session.gymId === null ? null : await repos().gyms.get(aggregate.session.gymId);
+        const equipment = ex.equipmentId === null ? null : (aggregate.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
+        return {
+          setId,
+          sessionExerciseId: ex.id,
+          base: { exerciseName: ex.exerciseName, gymName: gym?.name ?? null, equipmentId: ex.equipmentId, convention: ex.loadConvention, measurement: ex.measurement, equipment, history },
+        };
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * The record for a just-logged set from a context read earlier, with no
+     * database read. `undefined`: the context doesn't fit this set any more
+     * (another set, or the exercise's equipment or convention changed), so
+     * the caller reads it again with `setRecord`.
+     */
+    recordOf(context: RecordContext, aggregate: SessionAggregate, setId: string): SetRecord | null | undefined {
+      return recordFromContext(context, aggregate, setId);
+    },
+
+    /**
+     * The heaviest-set line for a set just logged (premium-feel §5.1), or
+     * null. Read after the write; never blocks or fails logging (any error
+     * reads as no record).
+     */
+    async setRecord(sessionId: string, setId: string): Promise<SetRecord | null> {
+      try {
+        const context = await workout.recordContext(sessionId, setId);
+        const aggregate = context === null ? null : await repos().sessions.get(sessionId);
+        if (context === null || !aggregate) return null;
+        return recordFromContext(context, aggregate, setId) ?? null;
+      } catch {
+        return null;
+      }
     },
 
     /** Everything the Active workout screen needs, read once per change. */
@@ -683,7 +899,88 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (!r.ok) return null;
       const source = await repos().sessions.get(sourceSessionId);
       if (!source) return null;
-      return { exercises: repeatPreviewLines(r.aggregate), notes: r.notes, notCopied: r.notCopied, sourceGymId: source.session.gymId, sourceStartedAtUtc: source.session.startedAt.utc, tz: source.session.startedAt.tz };
+      const title = storedName(source) ?? (await titleFor(source.exercises.map((e) => e.exerciseId)).catch(() => ({ title: GENERIC_WORKOUT_NAME }))).title;
+      return { title, exercises: repeatPreviewLines(r.aggregate), notes: r.notes, notCopied: r.notCopied, sourceGymId: source.session.gymId, sourceStartedAtUtc: source.session.startedAt.utc, tz: source.session.startedAt.tz };
+    },
+  };
+
+  const routines = {
+    /** Live routines in list order with `last done` (premium-feel §2.6). Never throws: an unreadable list reads as none. */
+    async list(): Promise<RoutineRow[]> {
+      try {
+        const p = await ctx.profile();
+        return p ? (await routineRows(p.id)).rows : [];
+      } catch {
+        return [];
+      }
+    },
+
+    /** The Save/Rename sheet's name check (empty, too long, a duplicate note). */
+    async checkName(name: string, exceptId: string | null = null): Promise<RoutineNameCheck> {
+      const p = await ctx.profile();
+      const all = p ? await repos().routines.listByOwner(p.id).catch(() => []) : [];
+      return checkRoutineName(name, all, exceptId);
+    },
+
+    /**
+     * `Save as routine` from a finished workout. Idempotent by `opId`: the
+     * routine's ID is derived from it, so a double tap or a retry after a lost
+     * acknowledgement saves one routine. The workout is never changed.
+     */
+    async saveFromSession(req: { sessionId: string; name: string; opId: string }): Promise<RoutineWrite> {
+      const p = await ctx.profile();
+      if (!p) return { ok: false, message: 'Owner profile not found.' };
+      const id = deriveId(`routine:${req.opId}`);
+      const existing = await repos().routines.get(id);
+      if (existing) return existing.lastOpId === req.opId || existing.createdFromSessionId === req.sessionId ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: 'Couldn’t save the routine. Try again.' };
+      const name = checkRoutineName(req.name, []);
+      if (!name.ok) return { ok: false, message: name.message };
+      const source = await repos().sessions.get(req.sessionId).catch(() => null);
+      if (!source || source.session.ownerId !== p.id) return { ok: false, message: 'That workout wasn’t found.' };
+      const routine = routineFromSession({ id, ownerId: p.id, name: name.name, opId: req.opId, source, at: ctx.now(), newId: ctx.newId });
+      if (!routine) return { ok: false, message: source.session.source === 'import' ? 'Workouts imported from FitNotes can’t be saved as routines yet.' : 'This workout has no logged sets to save.' };
+      const saved = await repos().routines.save(routine, null).catch(() => null);
+      if (saved?.ok) return { ok: true, routine, duplicate: false };
+      // The write may have landed before an error: read it back.
+      const again = await repos().routines.get(id).catch(() => null);
+      return again?.lastOpId === req.opId ? { ok: true, routine: again, duplicate: true } : { ok: false, message: 'Couldn’t save the routine. Try again.' };
+    },
+
+    rename(req: { routineId: string; name: string; expectedVersion: number; opId: string }): Promise<RoutineWrite> {
+      return writeRoutine(req.routineId, (r) => renameRoutine(r, req.name, req.expectedVersion, req.opId, ctx.now()));
+    },
+
+    /** Delete (a tombstone): past workouts keep their name; `restore` is its Undo. */
+    remove(req: { routineId: string; expectedVersion: number; opId: string }): Promise<RoutineWrite> {
+      return writeRoutine(req.routineId, (r) => deleteRoutine(r, req.expectedVersion, req.opId, ctx.now()));
+    },
+
+    restore(req: { routineId: string; expectedVersion: number; opId: string }): Promise<RoutineWrite> {
+      return writeRoutine(req.routineId, (r) => restoreRoutine(r, req.expectedVersion, req.opId, ctx.now()));
+    },
+
+    /** The routine sheet at this gym. Saves nothing; null when it can't be built. */
+    async preview(routineId: string, gymId: string): Promise<RoutinePreview | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const { rows } = await routineRows(p.id);
+        const row = rows.find((x) => x.id === routineId);
+        if (!row) return null;
+        const { r, ref, source, targeted } = await routineStart(p, { routineId, gymId, opId: `preview-routine:${routineId}`, preview: true });
+        if (!r.ok) return null;
+        const gymName = source?.session.gymId ? ((await repos().gyms.get(source.session.gymId).catch(() => null))?.name ?? null) : null;
+        return {
+          routine: row,
+          targets: targetSummaryLines(r.aggregate),
+          notes: r.notes,
+          aboutMinutes: await aboutMinutes(p, r.aggregate),
+          source: targeted ? 'built_in_rule' : 'routine',
+          lastDone: ref ? { atUtc: ref.startedAtUtc, tz: ref.tz, gymName } : null,
+        };
+      } catch {
+        return null;
+      }
     },
   };
 
@@ -697,6 +994,27 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       try {
         const p = await ctx.profile();
         if (!p) return null;
+        // Rotation (D19, simplified): the routine after the one done last, when the last workout was a routine's.
+        const { live, refs } = await routineRows(p.id).catch(() => ({ live: [] as Routine[], refs: [] as FinishedRef[] }));
+        const pick = nextInRotation(live, refs[0] ?? null);
+        if (pick.kind === 'routine') {
+          const { r, ref } = await routineStart(p, { routineId: pick.routine.id, gymId, opId: `preview-next-routine:${pick.routine.id}`, preview: true });
+          if (r.ok) {
+            const derived = await titleFor(r.aggregate.exercises.map((e) => e.exerciseId));
+            return {
+              routine: { id: pick.routine.id, basis: pick.basis },
+              sourceSessionId: ref?.sessionId ?? null,
+              title: pick.routine.name,
+              muscles: derived.muscles,
+              exercises: repeatPreviewLines(r.aggregate).map((l) => ({ exerciseName: l.exerciseName, line: l.line })),
+              targets: targetSummaryLines(r.aggregate),
+              sets: r.aggregate.sets.length,
+              aboutMinutes: await aboutMinutes(p, r.aggregate),
+              sourceStartedAtUtc: ref?.startedAtUtc ?? null,
+              tz: ref?.tz ?? ctx.now().tz,
+            };
+          }
+        }
         const last = (await repeat.candidates(1, { countImported: false })).rows[0];
         if (!last) return null;
         const source = await repos().sessions.get(last.sessionId);
@@ -706,11 +1024,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (!r.ok) return null;
         const derived = await titleFor(source.exercises.map((e) => e.exerciseId));
         return {
+          routine: null,
           sourceSessionId: last.sessionId,
           title: storedName(source) ?? derived.title,
           muscles: derived.muscles,
           exercises: repeatPreviewLines(r.aggregate).map((l) => ({ exerciseName: l.exerciseName, line: l.line })),
+          targets: targetSummaryLines(r.aggregate),
           sets: r.aggregate.sets.length,
+          aboutMinutes: await aboutMinutes(p, r.aggregate),
           sourceStartedAtUtc: source.session.startedAt.utc,
           tz: source.session.startedAt.tz,
         };
@@ -764,7 +1085,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
-  return { checkIns, pain, workout, today, repeat, next };
+  return { checkIns, pain, workout, today, repeat, next, routines };
 }
 
 export type WorkoutServices = ReturnType<typeof createWorkoutServices>;

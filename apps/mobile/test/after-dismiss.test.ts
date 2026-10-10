@@ -27,4 +27,17 @@ describe('navigate only after a sheet closes (review S8)', () => {
     a.dismissed();
     expect(runs).toBe(1);
   });
+
+  it('an earlier arm’s fallback never fires a later arm early (review N3)', () => {
+    const timers: (() => void)[] = [];
+    const a = createAfterDismiss(700, (fn) => timers.push(fn));
+    const runs: string[] = [];
+    a.arm(() => runs.push('first'));
+    a.dismissed();
+    a.arm(() => runs.push('second'));
+    timers[0]?.();
+    expect(runs).toEqual(['first']);
+    timers[1]?.();
+    expect(runs).toEqual(['first', 'second']);
+  });
 });

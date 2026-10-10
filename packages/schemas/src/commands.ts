@@ -262,6 +262,26 @@ export const DiscardCommandSchema = z.object({
   expectedVersion: z.int().min(1),
 });
 
+/**
+ * Rename the workout (premium-feel §2.6). Allowed while it's active and after
+ * it's finished; versioned on the session, so a stale rename is rejected.
+ * The routine a workout came from is never renamed by this. Undo is another
+ * `rename_session` back to the previous name (null when it had none).
+ */
+export const RenameSessionCommandSchema = z.object({
+  type: z.literal('rename_session'),
+  ...base,
+  opId: OperationIdSchema,
+  /** Null clears a finished workout's name (Undo of naming an unnamed one); its title is then worked out when shown. */
+  name: z
+    .string()
+    .trim()
+    .min(1, { message: 'Give it a name' })
+    .max(120, { message: 'Keep it under 120 characters' })
+    .nullable(),
+  expectedVersion: z.int().min(1),
+});
+
 export const SessionCommandSchema = z.discriminatedUnion('type', [
   LogSetCommandSchema,
   SaveDraftCommandSchema,
@@ -283,6 +303,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   SkipExerciseCommandSchema,
   DiscardCommandSchema,
   SetRestAfterCommandSchema,
+  RenameSessionCommandSchema,
 ]);
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 export type SessionCommandType = SessionCommand['type'];

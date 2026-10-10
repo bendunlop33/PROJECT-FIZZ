@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode, type Ref } from 'react';
-import { InputAccessoryView, Keyboard, Pressable, TextInput, View } from 'react-native';
+import { Animated, InputAccessoryView, Keyboard, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { StepTarget } from '@fizz/domain';
@@ -8,6 +8,7 @@ import { haptic } from '../device/haptics';
 import { useTheme } from '../theme';
 import { PrimaryButton } from './buttons';
 import { Icon, type SymbolName } from './Icon';
+import { FadeIn, TEXT_PRESSED_OPACITY, usePressScale } from './motion';
 import { AppText } from './Text';
 import { nextFieldText, parseNumber } from './number-text';
 
@@ -262,19 +263,22 @@ export function NumberStepper({
 /** `ParamChip` (§9.17): selected shows a check icon as well as the fill. */
 export function Chip({ label, selected, onPress, accessibilityLabel, grow = false }: { label: string; selected: boolean; onPress: () => void; accessibilityLabel?: string; grow?: boolean }) {
   const theme = useTheme();
+  const press = usePressScale('pill');
   const filled = theme.components.cardBorderWidth === 0;
   return (
+    <Animated.View style={[grow ? { flex: 1 } : null, press.style]}>
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected }}
       accessibilityLabel={accessibilityLabel ?? label}
       onPress={onPress}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
       style={({ pressed }) =>
         filled
           ? {
-              // D-Rest: selected is a full accent pill with a check; others sit on the surface.
-              flex: grow ? 1 : undefined,
-              minHeight: 48,
+              // D-Rest: selected is a full accent pill with a check; others sit on the surface. 52 pt (target.workout, D7).
+              minHeight: theme.target.workout.height,
               minWidth: theme.target.min.width,
               paddingHorizontal: theme.space['3'],
               borderRadius: theme.radius.pill,
@@ -287,7 +291,6 @@ export function Chip({ label, selected, onPress, accessibilityLabel, grow = fals
               gap: theme.space['1'],
             }
           : {
-              flex: grow ? 1 : undefined,
               minHeight: theme.target.workout.height,
               minWidth: theme.target.workout.width,
               paddingHorizontal: theme.space['3'],
@@ -307,6 +310,7 @@ export function Chip({ label, selected, onPress, accessibilityLabel, grow = fals
         {label}
       </AppText>
     </Pressable>
+    </Animated.View>
   );
 }
 
@@ -397,6 +401,8 @@ export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; p
 export function Toast({ icon = 'checkmark.circle.fill', text, action, onAction }: { icon?: SymbolName; text: string; action?: string; onAction?: () => void }) {
   const theme = useTheme();
   return (
+    // Toast in: timing.fast with a small rise; at once under Reduce Motion.
+    <FadeIn motion={theme.a11y.reduceMotion ? null : { durationMs: theme.timing.fast, delayMs: 0, risePt: 6 }}>
     <View
       accessibilityLiveRegion="polite"
       style={{
@@ -426,6 +432,7 @@ export function Toast({ icon = 'checkmark.circle.fill', text, action, onAction }
         </Pressable>
       ) : null}
     </View>
+    </FadeIn>
   );
 }
 
@@ -433,7 +440,7 @@ export function Toast({ icon = 'checkmark.circle.fill', text, action, onAction }
 export function LinkLine({ children, onPress, accessibilityLabel }: { children: ReactNode; onPress: () => void; accessibilityLabel: string }) {
   const theme = useTheme();
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress} style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
+    <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress} style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
       {children}
     </Pressable>
   );

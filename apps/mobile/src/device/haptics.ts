@@ -23,6 +23,22 @@ export function haptic(token: HapticToken): void {
       case 'step':
         run = Haptics.selectionAsync();
         break;
+      case 'record':
+        // Medium, then light 90 ms later (premium-feel §5); the second tap is fire-and-forget too.
+        run = Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).then(
+          () =>
+            new Promise<void>((resolve) => {
+              setTimeout(() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                  .catch(() => undefined)
+                  .finally(resolve);
+              }, 90);
+            }),
+        );
+        break;
+      case 'finish':
+        run = Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        break;
     }
   } catch {
     return;

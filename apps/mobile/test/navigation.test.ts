@@ -32,11 +32,18 @@ describe('root stack after Finish, Done and Discard (review B1)', () => {
   const goBack = { type: 'GO_BACK' } as const;
   const start = () => router.getInitialState(options);
 
+  it('a Summary opened from Today is not the finish moment (review B2)', () => {
+    const s = apply(start(), navigate('Summary', { sessionId: 'session-1' }));
+    expect((s.routes[1]?.params as { justFinished?: boolean } | undefined)?.justFinished).toBeUndefined();
+  });
+
   it('Start → Finish → Done → Start leaves [Tabs] then [Tabs, Workout]', () => {
     let s = apply(start(), navigate('Workout'));
     expect(names(s)).toEqual(['Tabs', 'Workout']);
     s = apply(s, replaceWithSummary('session-1'));
     expect(names(s)).toEqual(['Tabs', 'Summary']);
+    // Only Finish's own replace marks the finish moment (premium-feel review B2).
+    expect(s.routes[1]?.params).toEqual({ sessionId: 'session-1', justFinished: true });
     s = apply(s, popToToday());
     expect(names(s)).toEqual(['Tabs']);
     expect(s.routes[0]?.params).toEqual({ screen: 'Today' });
