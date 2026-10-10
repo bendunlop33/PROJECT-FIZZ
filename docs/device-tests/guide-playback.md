@@ -2,6 +2,8 @@
 
 **About 8 minutes on the iPhone.** It's the first build with Skia and Reanimated in it. Nothing here has run on a phone yet. Every row is "not yet tested" until you mark it. Report the same way as the [morning checklist](morning-checklist.md): put **P**, **F** (with one line) or **–** in each row and paste the table back.
 
+**Re-run in full on the first build after 83.** On build 83 How to closed the app on the first frame, so only G1 ran; see [howto-crash-fix.md](howto-crash-fix.md) first. How to is now also a link next to the exercise name on the active set.
+
 Before you start: install over the top as usual. If the app fails to launch right after installing, mark G1 **F** and stop. That points at a native module and the fallback in ADR 0013 applies.
 
 If How to opens with the line **"The animated guide couldn't be shown. The cues below still apply."** and no figure, the app caught a drawing failure on purpose (the workout is unaffected). Mark G2 **F**, copy that line into the note, and carry on with the cue rows.
