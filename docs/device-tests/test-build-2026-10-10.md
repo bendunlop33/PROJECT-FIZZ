@@ -27,3 +27,11 @@ Root cause: the guide's animation clock threw on its first frame on the iPhone's
 
 ## Update (10 Oct, night): premium feel + FitNotes
 Calmer rest screen, richer Today with routines (Save as routine on Summary, Up next rotation), press feedback, digit fades, haptics after saves, finish moment; FitNotes import with bar weight only per exercise. Alerts are now asked once on your first Start.
+
+## Update (10–11 Oct, late): gym switch, Why?, pain flags
+- **Change gym mid-workout:** tap the gym chip. Remaining targets re-fit to that gym's equipment; logged sets never change; Undo puts it back.
+- **Why?** on a set's target shows where the number came from (last time, the rule, the equipment step).
+- **Pain flags:** exercises you've flagged show `⚠ May hurt` in the picker; a quiet `Still hurts?` check every 2 weeks.
+- **Mark a set** Spotted / Pain / Form broke / Other equipment (edit the set): it's left out of records and progression.
+- **Time left** on the set card: `About 35 min left · ends about 19:40`.
+- FitNotes: a FitNotes iPhone database file now says to export a CSV; "Chest Fly" no longer auto-matches dumbbell fly.
