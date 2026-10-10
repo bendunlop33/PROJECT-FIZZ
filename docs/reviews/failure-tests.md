@@ -1,6 +1,8 @@
 # Review: competitor-failure acceptance pack (opportunity 2) and its fixes
 
-**Verdict: PASS** (no blockers; three should-fix findings, three nits and three spec issues, the first of which needs Ben's decision before the first real workout)
+**Verdict: CHANGES NEEDED** (second pass, 2026-10-10). One blocker: the new (b) matrix test exceeds Vitest's 5 s default timeout during a full `npm run check`, so the gate fails in most runs (B1). The three should-fix findings, three nits and three spec issues from the first pass still stand and have been re-verified. Spec issue SP1 needs Ben's decision before the first real workout.
+
+The first pass (commit `195f1c5`) said PASS with a clean `npm run check`. That run must have been on a quieter machine. The second-pass results are below.
 
 Reviewed: `claude/gracious-knuth-joxqpw..claude/failure-tests` (6 commits, `8edd4ee`..`3cd0aad`):
 - `8edd4ee`: with no machine profile, the built-in rule no longer cuts assistance to 0.
@@ -10,7 +12,16 @@ Reviewed: `claude/gracious-knuth-joxqpw..claude/failure-tests` (6 commits, `8edd
 
 Specs read: CLAUDE.md (rules 2–6, 9, 10), the brief ("Validation before claiming it is better", §10 additional scenarios, §12 targets), `competitor-landscape.md` opportunity 2 and its evidence (LiftTrack, Fitbod, MacroFactor, Hevy, JuggernautAI), `active-workout.md` §2.11, §4.8, §4.9, `today.md` §4, `routines.md` §2.2, §2.4, `workout-summary.md` §3, `exercise-library.md` §4.2, `equipment-aware-progression.md` EQ7, `playbook-v1.md`, and `slice-3-and-s1.md` B1.
 
-## What I ran
+## What I ran (second pass)
+
+| Check | Result |
+|---|---|
+| `npm run check` in the worktree, 3 runs, plus 1 full `vitest run --reporter=verbose` (load average 6–14; other agents share the 4 cores) | **Failed in 3 of 4 runs.** `(b) next targets (built-in rule): every decision…` timed out each time (measured 5.96 s and 6.89 s against the 5 s default). The one clean run was at load average 7. `catalogue/test/definition.test.ts` D11 also timed out once. D11 isn't in this diff, so it's a pre-existing flake (noted, not counted against this branch) |
+| The same (b) test run alone | Passes in 2.8 s, which is already more than half the budget |
+| Scratch probe (temporary test file, deleted afterwards, never committed): 0 kg history, no equipment, `doubleProgression()` | Confirms M2: `hold 0 kg`, `hold_after_miss 0 kg each`, `0 kg stack`, `assist 0 kg` (from every shape) |
+| Re-read M1 and M3 against the code | Both still apply as written. `startWorkout` matches routine equipment only by `rex.equipmentId` (`create.ts:154-161`), while `repeat.ts:56-63` `pickEquipment` falls back to the same kind. `app-services.ts:291-292` `sessions.discard` still has no confirmation |
+
+## What I ran (first pass)
 
 | Check | Result |
 |---|---|
@@ -34,7 +45,18 @@ All scratch copies were outside the repo and have been deleted.
 
 ## Blocking
 
-None.
+### B1. The (b) matrix test exceeds the default 5 s timeout in a full run, so `npm run check` fails in most runs
+
+- **Where:** `packages/domain/test/competitor-failures.test.ts:179-207`. The test has no `timeout` option, and `vitest.config.ts` sets no `testTimeout`.
+- **What happens:**
+  - The test is one `it` covering 17 equipment kinds × about 20 probe values × 6 history shapes × up to 4 rules × 2 pain states, with more than 5,000 loads checked.
+  - Run alone it takes 2.8 s. In a full run (91 files on parallel workers) it took 5.96 s and 6.89 s, and timed out in 3 of 4 runs.
+- **Failure path:** every slice must pass `npm run check` before it is handed off, and the GitHub Actions `.ipa` build (ADR 0004) runs on runners with 2–4 vCPUs. The new pack makes the gate red more often than not. People then learn to re-run until it's green, which hides real failures in the same file. That undercuts the pack's purpose: a test that catches competitor regressions.
+- **Fix (any one; test-only, no domain change):**
+  - Split the matrix with `describe.each(EQUIPMENT)` / `it.each`, one test per equipment item. Each test is then about 0.2 s, and a failure names the equipment.
+  - Or give the test an explicit `{ timeout: 30_000 }`, as `definition.test.ts:252` D6 already does.
+  - Keep the `checked > 5_000` assertion: sum the count across the split tests in an `afterAll`, or assert a per-equipment minimum.
+- Separately (not this branch): D11 in `packages/catalogue/test/definition.test.ts` hit the same timeout once. Raise it with whoever owns the guide work.
 
 ## Should fix
 
