@@ -81,6 +81,47 @@ describe('frame ops (shared by the SVG preview and the app player)', () => {
     expect(bakeFrame(prepared, camera, 0, trace).some(isTrace)).toBe(true);
   });
 
+  it('back view: the trace is drawn under the trunk and head, never over them (guides v2 review B1)', () => {
+    const loaded = bundledGuides().load('cable-lat-pulldown');
+    if (!loaded.ok) throw new Error('pulldown guide should load');
+    const { prepared, camera } = loaded.value;
+    expect(prepared.guide.seenFrom).toBe('back');
+    const [trace] = overlayTraces(prepared, 'static');
+    expect(trace?.length).toBeGreaterThan(1);
+    const isTrace = (o: DrawOp) => o.kind === 'path' && !o.closed && o.stroke === 'trace';
+    for (const stop of keyFrameStops(prepared)) {
+      const ops = bakeFrame(prepared, camera, stop.t, trace);
+      const at = ops.findIndex(isTrace);
+      expect(at).toBeGreaterThan(-1);
+      const t = ops[at];
+      if (t?.kind !== 'path') throw new Error('trace op');
+      const ys = t.contours.flat().map((p) => p.y);
+      const [top, bottom] = [Math.min(...ys), Math.max(...ys)];
+      const x = t.contours.flat()[0]?.x ?? NaN;
+      // Every body fill the trace passes through (trunk, head) comes after it, so the body hides it as it hides the bar.
+      const covering = ops
+        .map((o, i) => ({ o, i }))
+        .filter(({ o }) => {
+          if (o.kind !== 'path' || o.fill !== 'nearBody') return false;
+          const pts = o.contours.flat();
+          const [x0, x1] = [Math.min(...pts.map((p) => p.x)), Math.max(...pts.map((p) => p.x))];
+          const [y0, y1] = [Math.min(...pts.map((p) => p.y)), Math.max(...pts.map((p) => p.y))];
+          return x0 < x && x < x1 && y0 < bottom && top < y1;
+        });
+      expect(covering.length).toBeGreaterThan(0);
+      for (const { i } of covering) expect(i).toBeGreaterThan(at);
+    }
+  });
+
+  it('side view: the trace stays above the body (squat)', () => {
+    const { prepared, camera } = squat();
+    const [trace] = overlayTraces(prepared, 'static');
+    const ops = bakeFrame(prepared, camera, 0, trace);
+    const at = ops.findIndex((o) => o.kind === 'path' && !o.closed && o.stroke === 'trace');
+    const lastBody = ops.reduce((m, o, i) => (o.kind === 'path' && o.fill === 'nearBody' ? i : m), -1);
+    expect(at).toBeGreaterThan(lastBody);
+  });
+
   it('uses only guide paints, never an accent', () => {
     const paints = new Set<string>();
     for (const key of bundledGuides().keys) {

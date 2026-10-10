@@ -687,6 +687,14 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
     }
   }
   emitLayer('mid');
+  const traceOp = (): void => {
+    if (opts.trace && opts.trace.length > 1) {
+      ops.push(pathOp([opts.trace.map(c.P)], { closed: false, stroke: 'trace', width: c.sw(0.005, 'edge'), cap: 'round', dash: [0.012 * k, 0.01 * k] }));
+    }
+  };
+  // Seen from behind, the implement's path is on the far side of the body, like the bar itself: the trace goes with the mid props,
+  // under the trunk and head, so it never reads as a path behind the neck (guides v2 review B1, §3.11).
+  if (legsFirst) traceOp();
   // M/L: near-limb halos go under the trunk, so near limbs stand clear of the far side and props but not of their own body.
   if (full) for (const g of [...(legsFirst ? [] : legs), ...arms]) if (cs(g).length > 0) ops.push(halo(g));
   // Legs drawn over the trunk put their outline (S: halo, M/L: contour) under it too: the trunk fill hides the part
@@ -704,10 +712,8 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
   for (const g of arms) drawGroup(g);
   emitLayer('body');
   emitLayer('near');
-  // The static path overlay sits above the body and below front implements, so it stays visible.
-  if (opts.trace && opts.trace.length > 1) {
-    ops.push(pathOp([opts.trace.map(c.P)], { closed: false, stroke: 'trace', width: c.sw(0.005, 'edge'), cap: 'round', dash: [0.012 * k, 0.01 * k] }));
-  }
+  // Side and front views: the static path overlay sits above the body and below front implements, so it stays visible.
+  if (!legsFirst) traceOp();
   emitLayer('front');
   return ops;
 }
