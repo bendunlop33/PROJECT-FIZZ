@@ -89,4 +89,39 @@ describe('renderActionResult (coach-contract §5.1)', () => {
     expect(nb(renderActionResult(undo, 'sheet').text)).toBe('Undone: the change to sets 3–4. Back to 100 kg × 6–8 (target). Set 3 was already logged.');
     expect(renderActionResult(undo, 'voice').spoken).toBe('Back to 100 kilos for 6 to 8 for set 4.');
   });
+
+  it('spoken undo with different restored targets says each set (review B4)', () => {
+    const undo = record({
+      kind: 'undo',
+      undoneActionId: id(101),
+      what: 'the change to sets 3–4',
+      restored: [
+        {
+          sessionExerciseId: id(10),
+          exerciseName: 'Bench press',
+          changes: [
+            { setId: id(13), setNumber: 3, before: tgt(kg(95), 8), after: tgt(kg(100), 6, 8) },
+            { setId: id(14), setNumber: 4, before: tgt(kg(95), 8), after: tgt(kg(97.5), 6, 8) },
+          ],
+        },
+      ],
+      alreadyLogged: [],
+    });
+    const r = renderActionResult(undo, 'voice');
+    expect(nb(r.text)).toBe('Undone: the change to sets 3–4. Back to the previous targets for sets 3–4.');
+    expect(r.spoken).toBe('Set 3 back to 100 kilos for 6 to 8. Set 4 back to 97 and a half kilos for 6 to 8.');
+    expect(r.spoken).not.toContain('sets 3 and 4');
+  });
+
+  it('spoken changes across several exercises name each exercise', () => {
+    const r = record({
+      kind: 'adjust_pending_sets',
+      sessionId: id(1),
+      exercises: [
+        { sessionExerciseId: id(10), exerciseName: 'Bench press', changes: [{ setId: id(13), setNumber: 3, before: tgt(kg(100), 6, 8), after: tgt(kg(95), 8) }] },
+        { sessionExerciseId: id(11), exerciseName: 'Incline DB press', changes: [{ setId: id(15), setNumber: 2, before: tgt(kg(22.5, 'per_hand'), 10), after: tgt(kg(20, 'per_hand'), 10) }] },
+      ],
+    });
+    expect(renderActionResult(r, 'voice').spoken).toBe('Bench press. Set 3: 95 kilos for 8. Incline DB press. Set 2: 20 kilos each for 10.');
+  });
 });

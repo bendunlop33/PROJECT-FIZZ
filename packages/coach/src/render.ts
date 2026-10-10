@@ -223,6 +223,8 @@ function adjustSpoken(exercises: readonly ExerciseTargetChanges[]): string {
     .map((ex) => {
       const p = partsOf(ex);
       const out: string[] = [];
+      // Across several exercises each part names its exercise, so "Sets 3 and 4" can't be heard as the wrong lift.
+      if (exercises.length > 1) out.push(`${ex.exerciseName}.`);
       const first = p.changed[0];
       if (first !== undefined) {
         if (p.changed.every((c) => sameTarget(c.after, first.after))) out.push(`${spokenSets(p.changed.map((c) => c.setNumber))}: ${spokenTarget(first.after)}.`);
@@ -362,7 +364,16 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
         else if (restored.length > 0) back = ` Back to the previous targets for ${setNumbersText(restored.map((c) => c.setNumber))}.`;
         const logged = d.alreadyLogged.length > 0 ? ` ${capitalise(setNumbersText(d.alreadyLogged))} ${d.alreadyLogged.length === 1 ? 'was' : 'were'} already logged.` : '';
         const text = `Undone: ${d.what}.${back}${logged}`;
-        const spoken = first !== undefined ? `Back to ${spokenTarget(first.after)} for ${spokenSets(restored.map((c) => c.setNumber)).toLowerCase()}.` : speakable(text);
+        // Same branch as the text: one line only when every restored set has the same target (review B4, CC1).
+        let spoken = speakable(text);
+        if (first !== undefined && restored.every((c) => sameTarget(c.after, first.after))) {
+          spoken = `Back to ${spokenTarget(first.after)} for ${spokenSets(restored.map((c) => c.setNumber)).toLowerCase()}.`;
+        } else if (restored.length > 0) {
+          const multi = d.restored.length > 1;
+          spoken = d.restored
+            .flatMap((e) => e.changes.map((c) => `${multi ? `${e.exerciseName} set` : 'Set'} ${String(c.setNumber)} back to ${spokenTarget(c.after)}.`))
+            .join(' ');
+        }
         return make('committed', text, spoken);
       }
       const text = `Couldn't undo: ${failureOr(record, 'it changed since')}.`;
