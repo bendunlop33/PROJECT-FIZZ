@@ -9,7 +9,9 @@
  * wW` (a lens across the segment; `±c` = a mirrored left/right pair on the
  * trunk; `wA>B` = width from A at s0 to B at s1; `cA>B` = centre moving
  * from A to B, e.g. a lat sweeping from the waist out to the armpit), or
- * `hand.full`.
+ * `hand.full`. `blunt0` / `blunt1` end the region in a rounded cap at s0 /
+ * s1 instead of tapering it to a point there (the deltoid's top; the lower
+ * back and lats either side of their groove).
  *
  * `trunk` is the pelvis–lumbar–thorax chain read as one segment, so a muscle
  * that spans the trunk (abs, lower back, lats) is one smooth shape rather
@@ -32,9 +34,12 @@ export type MuscleLevel = 'strong' | 'soft';
 /** A region's base: one body segment, or `trunk` (the pelvis–lumbar–thorax chain as one). */
 export type RegionSeg = SegmentName | 'trunk';
 
+/** Which ends of a region are a rounded cap rather than a taper to a point (`blunt0`, `blunt1`); omitted = both tapered. */
+export type RegionEnds = readonly [boolean, boolean];
+
 export type RegionSpec =
-  | { kind: 'edge'; seg: RegionSeg; surface: 'front' | 'back' | 'lat' | 'med'; s: readonly [number, number]; d: number }
-  | { kind: 'face'; seg: RegionSeg; s: readonly [number, number]; c: readonly [number, number]; w: readonly [number, number]; mirror: boolean }
+  | { kind: 'edge'; seg: RegionSeg; surface: 'front' | 'back' | 'lat' | 'med'; s: readonly [number, number]; d: number; blunt?: RegionEnds }
+  | { kind: 'face'; seg: RegionSeg; s: readonly [number, number]; c: readonly [number, number]; w: readonly [number, number]; mirror: boolean; blunt?: RegionEnds }
   | { kind: 'hand' };
 
 /** Highest `s` a region may reach: a little past a segment's end, or the top of the trunk chain. */
@@ -63,10 +68,15 @@ export function parseRegion(text: string): RegionSpec | null {
   let c: [number, number] | null = null;
   let mirror = false;
   let w: [number, number] | null = null;
+  const blunt: [boolean, boolean] = [false, false];
   for (const tok of tokens.slice(1)) {
     const range = RANGE.exec(tok);
     if (range) {
       s = [Number(range[1]), Number(range[2])];
+    } else if (tok === 'blunt0' || tok === 'blunt1') {
+      const i = tok === 'blunt0' ? 0 : 1;
+      if (blunt[i]) return null;
+      blunt[i] = true;
     } else if (/^d/.test(tok)) {
       d = Number(tok.slice(1));
     } else if (/^±c/.test(tok)) {
@@ -81,13 +91,15 @@ export function parseRegion(text: string): RegionSpec | null {
     }
   }
   if (s === null || !(s[0] < s[1]) || [...s].some((x) => !Number.isFinite(x) || x < -1 || x > regionMaxS(seg))) return null;
+  // Only written when an end is blunt, so plain regions parse exactly as before.
+  const ends = blunt[0] || blunt[1] ? { blunt: [blunt[0], blunt[1]] as const } : {};
   if (surface === 'front' || surface === 'back' || surface === 'lat' || surface === 'med') {
     if (d === null || !(d > 0 && d <= 1) || c !== null || w !== null) return null;
-    return { kind: 'edge', seg, surface, s, d };
+    return { kind: 'edge', seg, surface, s, d, ...ends };
   }
   if (surface === 'face') {
     if (c === null || w === null || d !== null || c.some((x) => !(x >= -1 && x <= 1)) || w.some((x) => !(x > 0 && x <= 1))) return null;
-    return { kind: 'face', seg, s, c, w, mirror };
+    return { kind: 'face', seg, s, c, w, mirror, ...ends };
   }
   return null;
 }
@@ -101,7 +113,7 @@ type Row = { side: Cell; front: Cell; back: Cell };
  * shape (per-segment lenses read as blotches; review of 9 Oct 2026).
  */
 const MAP_TEXT: Record<Exclude<Muscle, 'core'>, Row> = {
-  abductors: { side: ['pelvis.face 0–0.95 c-0.05 w0.5'], front: ['pelvis.lat 0–0.9 d0.35'], back: ['pelvis.lat 0.1–1.0 d0.4'] },
+  abductors: { side: ['pelvis.face 0.08–0.54 c+0.12 w0.42'], front: ['pelvis.lat 0–0.9 d0.35'], back: ['pelvis.lat 0.1–1.0 d0.4'] },
   abs: { side: ['trunk.front 0.3–2.35 d0.45'], front: ['trunk.face 0.4–2.4 c0 w0.42'], back: null },
   adductors: { side: null, front: ['thigh.med 0.02–0.55 d0.55'], back: ['thigh.med 0.02–0.45 d0.5'] },
   biceps: { side: ['upperArm.front 0.30–0.88 d0.6'], front: ['upperArm.face 0.30–0.88 c-0.1 w0.6'], back: null },
@@ -329,16 +341,16 @@ export const DEFINITION_TEXT: Record<DefinitionGroup, DefinitionRow> = {
   chest: { replacedBy: ['chest', 'upper_chest'], side: MAP_TEXT.chest.side, front: ['thorax.face 0.55–0.85 ±c0.5 w0.42'], back: null },
   abs: { replacedBy: ['abs', 'core'], side: MAP_TEXT.abs.side, front: MAP_TEXT.abs.front, back: null },
   obliques: { replacedBy: ['obliques', 'core'], side: ['trunk.face 0.65–2.05 c+0.03 w0.35'], front: ['trunk.lat 1.05–2.2 d0.35'], back: MAP_TEXT.obliques.back },
-  lowerBack: { replacedBy: ['spinal_erectors'], replacedByIn: { back: ['core'] }, side: ['trunk.back 0.85–1.9 d0.38'], front: null, back: ['trunk.face 0.85–1.9 ±c0.24 w0.2'] },
-  lats: { replacedBy: ['lats'], side: ['trunk.back 1.98–2.56 d0.55'], front: ['thorax.lat 0.30–0.58 d0.25'], back: ['trunk.face 1.95–2.72 ±c0.42>0.64 w0.3>0.4'] },
+  lowerBack: { replacedBy: ['spinal_erectors'], replacedByIn: { back: ['core'] }, side: ['trunk.back 0.85–1.9 d0.42 blunt1'], front: null, back: ['trunk.face 0.85–1.9 ±c0.24 w0.2'] },
+  lats: { replacedBy: ['lats'], side: ['trunk.back 1.98–2.56 d0.48 blunt0'], front: ['thorax.lat 0.30–0.58 d0.25'], back: ['trunk.face 1.95–2.72 ±c0.42>0.64 w0.3>0.4'] },
   upperBack: { replacedBy: ['upper_back', 'traps'], side: ['thorax.back 0.64–1.0 d0.45'], front: MAP_TEXT.traps.front, back: MAP_TEXT.traps.back },
   glutes: { replacedBy: ['glutes', 'abductors'], side: MAP_TEXT.glutes.side, front: null, back: ['pelvis.face -0.65–0.8 ±c0.5 w0.44'] },
   outerHip: { replacedBy: ['abductors'], side: null, front: MAP_TEXT.abductors.front, back: null },
   deltoid: {
     replacedBy: ['front_delts', 'side_delts', 'rear_delts'],
-    side: ['upperArm.face -0.12–0.32 c0 w0.9'],
-    front: ['upperArm.face -0.10–0.32 c0 w0.9'],
-    back: ['upperArm.face -0.10–0.32 c0 w0.9'],
+    side: ['upperArm.face -0.02–0.32 c0 w0.9 blunt0'],
+    front: ['upperArm.face -0.02–0.32 c0 w0.9 blunt0'],
+    back: ['upperArm.face -0.02–0.32 c0 w0.9 blunt0'],
   },
   frontArm: { replacedBy: ['biceps', 'brachialis'], side: ['upperArm.front 0.38–0.88 d0.7'], front: ['upperArm.face 0.38–0.88 c-0.1 w0.6'], back: null },
   triceps: { replacedBy: ['triceps'], side: ['upperArm.back 0.36–0.86 d0.74'], front: null, back: ['upperArm.face 0.36–0.86 c0 w0.75'] },
@@ -364,6 +376,32 @@ export const DEFINITION_MAP: Record<DefinitionGroup, DefinitionEntry> = Object.f
     return [g, { replacedBy: row.replacedBy, replacedByIn: row.replacedByIn ?? {}, side: parseCell(row.side), front: parseCell(row.front), back: parseCell(row.back) }];
   }),
 ) as Record<DefinitionGroup, DefinitionEntry>;
+
+/**
+ * Folds (§4.11.3): while every group listed is faint in the view, one shape
+ * stands for them all, drawn as the first group, like `core` does for colour
+ * (§4.5). From the side, a separate obliques lens floated mid-trunk as a
+ * capsule (visual review of 9 Oct 2026), so abs and obliques are one deep
+ * band down the front of the trunk. Each group still counts as faint (and
+ * is still replaced by its own muscles); only the drawing is shared.
+ */
+export const DEFINITION_FOLD_TEXT = [{ view: 'side', groups: ['abs', 'obliques'], region: 'trunk.front 0.3–2.35 d0.75' }] as const satisfies readonly {
+  view: FocusView;
+  groups: readonly DefinitionGroup[];
+  region: string;
+}[];
+
+export interface DefinitionFold {
+  view: FocusView;
+  groups: readonly DefinitionGroup[];
+  region: RegionSpec;
+}
+
+/** The folds, parsed with `parseRegion` (a test fails on an unparsable one). */
+export const DEFINITION_FOLDS: readonly DefinitionFold[] = DEFINITION_FOLD_TEXT.flatMap((f) => {
+  const region = parseRegion(f.region);
+  return region === null ? [] : [{ view: f.view, groups: f.groups, region }];
+});
 
 /** Muscles that take a group's place in a view (§4.11.5). */
 export function definitionReplacedBy(group: DefinitionGroup, view: FocusView): readonly Muscle[] {

@@ -7,7 +7,7 @@
 import { add, bounds, dist, pointInPolygon, pointSegmentDistance, polygonGap, scale, sub, v, type Vec } from './math';
 import { chainOutline, edgeCurve, frameAt, handContours, segmentPoint, trunkSegments, widthsAt, type BodyGroup, type BodySegment, type FigureBody } from './body';
 import { profileRange, type SegmentName } from './profiles';
-import { DEFINITION_MAP, type DefinitionGroup, type FocusView, type MuscleLevel, type RegionSpec, type ResolvedFocus } from './muscle-map';
+import { DEFINITION_FOLDS, DEFINITION_MAP, type DefinitionGroup, type FocusView, type MuscleLevel, type RegionEnds, type RegionSpec, type ResolvedFocus } from './muscle-map';
 import { counterClockwise, signedArea } from './paths';
 
 /** Muscle regions stay this far inside the silhouette (design-system `guide.muscleInset`). */
@@ -123,27 +123,74 @@ function lensSection(base: RegionBase, s0: number, s1: number, c: readonly [numb
   };
 }
 
+/** A region's cross-section with the taper that runs along it (0 at a pointed end, 1 in the belly), plus extra samples for rounded caps. */
+interface Sweep {
+  section: Section;
+  s: readonly [number, number];
+  blunt: RegionEnds;
+  tau: (s: number) => number;
+  extra: readonly number[];
+  /** Length of a rounded cap at `s`, in s units (also used where a fold cuts the shape short). */
+  capAt: (s: number) => number;
+}
+
+/** Quarter ellipse from 0 at a blunt end to 1 one cap length in (`x` in cap lengths). */
+const capRamp = (x: number): number => (x <= 0 ? 0 : x >= 1 ? 1 : Math.sqrt(1 - (1 - x) ** 2));
+/** Where a rounded cap is sampled, in cap lengths from the end (the even samples alone would facet it). */
+const CAP_SAMPLES = [0.03, 0.1, 0.2, 0.35, 0.55, 0.78];
+
 /**
- * A region swept along `s0–s1`, tapering at both ends like a muscle belly.
- * `span` (definition shapes at a folded joint) keeps it to a sub-range: it
- * then tapers to nothing at the new ends too, and never grows past the full shape.
+ * The taper of a region over `s0–s1` (§4.4): `τ(s) = sin(π·(s − s0)/(s1 − s0))^0.6`,
+ * so both ends come to a point like a muscle belly. A **blunt** end (`blunt0`,
+ * `blunt1`) instead keeps the full width up to the middle and rounds off over
+ * one cap length: the shape's half-width there for a lens (about a
+ * semicircle), its depth for an edge band (a quarter circle into the edge).
  */
-function sweep(section: Section, s0: number, s1: number, span?: readonly [number, number]): Vec[] {
+function sweepOf(base: RegionBase, section: Section, s0: number, s1: number, blunt: RegionEnds | undefined, capScale: number): Sweep {
+  const ends: RegionEnds = blunt ?? [false, false];
+  const capAt = (s: number): number => {
+    const [p, q] = section(s, 1);
+    const ds = 1e-3;
+    const hPerS = dist(base.frame(s - ds / 2).p, base.frame(s + ds / 2).p) / ds;
+    return Math.max(1e-6, (dist(p, q) * capScale) / Math.max(hPerS, 1e-9));
+  };
+  if (!ends[0] && !ends[1]) return { section, s: [s0, s1], blunt: ends, tau: (s) => taper(s, s0, s1), extra: [], capAt };
+  const mid = (s0 + s1) / 2;
+  const cap0 = ends[0] ? Math.min(mid - s0, capAt(s0)) : 0;
+  const cap1 = ends[1] ? Math.min(mid - s0, capAt(s1)) : 0;
+  const tau = (s: number): number => (s < mid ? (ends[0] ? capRamp((s - s0) / cap0) : taper(s, s0, s1)) : ends[1] ? capRamp((s1 - s) / cap1) : taper(s, s0, s1));
+  const extra = [...(ends[0] ? CAP_SAMPLES.map((x) => s0 + x * cap0) : []), ...(ends[1] ? CAP_SAMPLES.map((x) => s1 - x * cap1) : [])];
+  return { section, s: [s0, s1], blunt: ends, tau, extra, capAt };
+}
+
+/**
+ * A region swept along its `s0–s1`, tapering (or rounding off, at a blunt
+ * end) like a muscle belly. `span` (a shape cut short at a folded joint)
+ * keeps it to a sub-range, never growing past the full shape: each cut end
+ * is a rounded cap, so two shapes cut at one fold end side by side instead
+ * of in arrowheads. An end that wasn't cut keeps its own shape.
+ */
+function sweep(sw: Sweep, span?: readonly [number, number]): Vec[] {
+  const [s0, s1] = sw.s;
   const [a, b] = span ?? [s0, s1];
-  const ss = sampleRange(a, b, samplesFor(a, b));
-  const pairs = ss.map((s) => section(s, span === undefined ? taper(s, s0, s1) : Math.min(taper(s, s0, s1), taper(s, a, b))));
+  const m = (a + b) / 2;
+  const cutA = span !== undefined && a > s0;
+  const cutB = span !== undefined && b < s1;
+  const capA = cutA ? Math.min(m - a, sw.capAt(a)) : 0;
+  const capB = cutB ? Math.min(m - a, sw.capAt(b)) : 0;
+  const cut = (s: number): number => (s < m ? (cutA ? capRamp((s - a) / capA) : 1) : cutB ? capRamp((b - s) / capB) : 1);
+  const caps = [...(cutA ? CAP_SAMPLES.map((x) => a + x * capA) : []), ...(cutB ? CAP_SAMPLES.map((x) => b - x * capB) : [])];
+  const ss = [...new Set([...sampleRange(a, b, samplesFor(a, b)), ...[...sw.extra, ...caps].filter((s) => s > a && s < b)])].sort((p, q) => p - q);
+  const pairs = ss.map((s) => sw.section(s, Math.min(sw.tau(s), cut(s))));
   return [...pairs.map((p) => p[0]), ...pairs.map((p) => p[1]).reverse()];
 }
 
-/** Edge band (§4.4): along one edge, tapering to the edge at both ends like a muscle belly. */
-function edgeBand(base: RegionBase, x: 1 | -1, s0: number, s1: number, d: number, span?: readonly [number, number]): Vec[] {
-  return sweep(edgeSection(base, x, d), s0, s1, span);
-}
+/** Edge band sweep (§4.4): along one edge, tapering to the edge at both ends like a muscle belly. */
+const edgeSweep = (base: RegionBase, x: 1 | -1, s0: number, s1: number, d: number, blunt?: RegionEnds): Sweep => sweepOf(base, edgeSection(base, x, d), s0, s1, blunt, 0.5);
 
-/** Face lens (§4.4): centred at `c` across the segment, `w` of its full width (each may run from one value at s0 to another at s1). */
-function faceLens(base: RegionBase, s0: number, s1: number, c: readonly [number, number], w: readonly [number, number], span?: readonly [number, number]): Vec[] {
-  return sweep(lensSection(base, s0, s1, c, w), s0, s1, span);
-}
+/** Face lens sweep (§4.4): centred at `c` across the segment, `w` of its full width (each may run from one value at s0 to another at s1). */
+const lensSweep = (base: RegionBase, s0: number, s1: number, c: readonly [number, number], w: readonly [number, number], blunt?: RegionEnds): Sweep =>
+  sweepOf(base, lensSection(base, s0, s1, c, w), s0, s1, blunt, 0.5);
 
 /** A polygon shrunk by `d` along its vertex normals (small insets of near-convex shapes). */
 export function insetPolygon(points: readonly Vec[], d: number): Vec[] {
@@ -186,20 +233,19 @@ function groupOf(body: FigureBody, seg: BodySegment): RegionGroup {
 function specContours(base: RegionBase, trunk: boolean, spec: Exclude<RegionSpec, { kind: 'hand' }>, span?: readonly [number, number]): Vec[][] {
   const [s0, s1] = spec.s;
   if (spec.kind === 'edge') {
-    const x = spec.surface === 'front' || spec.surface === 'lat' ? 1 : -1;
     // Front/back views: a trunk segment's lateral edge is both sides of the body.
-    if (trunk && (spec.surface === 'lat' || spec.surface === 'med')) return [edgeBand(base, 1, s0, s1, spec.d), edgeBand(base, -1, s0, s1, spec.d)];
-    return [edgeBand(base, x, s0, s1, spec.d, span)];
+    if (trunk && (spec.surface === 'lat' || spec.surface === 'med')) return [sweep(edgeSweep(base, 1, s0, s1, spec.d, spec.blunt)), sweep(edgeSweep(base, -1, s0, s1, spec.d, spec.blunt))];
+    return [sweep(limbSweep(base, spec), span)];
   }
-  const out = [faceLens(base, s0, s1, spec.c, spec.w, span)];
-  if (spec.mirror && trunk && spec.c.some((x) => x !== 0)) out.push(faceLens(base, s0, s1, [-spec.c[0], -spec.c[1]], spec.w));
+  const out = [sweep(limbSweep(base, spec), span)];
+  if (spec.mirror && trunk && spec.c.some((x) => x !== 0)) out.push(sweep(lensSweep(base, s0, s1, [-spec.c[0], -spec.c[1]], spec.w, spec.blunt)));
   return out;
 }
 
-/** A limb region's cross-section (for the fold test); limb regions are one band or lens, never mirrored. */
-function limbSection(base: RegionBase, spec: Exclude<RegionSpec, { kind: 'hand' }>): Section {
-  if (spec.kind === 'edge') return edgeSection(base, spec.surface === 'front' || spec.surface === 'lat' ? 1 : -1, spec.d);
-  return lensSection(base, spec.s[0], spec.s[1], spec.c, spec.w);
+/** A region's (first) sweep: its band or lens, for drawing and for the fold test (limb regions are one, never mirrored). */
+function limbSweep(base: RegionBase, spec: Exclude<RegionSpec, { kind: 'hand' }>): Sweep {
+  if (spec.kind === 'edge') return edgeSweep(base, spec.surface === 'front' || spec.surface === 'lat' ? 1 : -1, spec.s[0], spec.s[1], spec.d, spec.blunt);
+  return lensSweep(base, spec.s[0], spec.s[1], spec.c, spec.w, spec.blunt);
 }
 
 /**
@@ -238,10 +284,55 @@ function nearOccluder(p: Vec, o: Occluder, d: number): boolean {
   return poly.some((a, i) => pointSegmentDistance(p, a, poly[(i + 1) % poly.length] ?? a) < d);
 }
 
-/** A definition shape shorter than this share of its range is dropped (it has tapered to a sliver by then). */
+/** A limb shape cut shorter than this share of its range is dropped (it has tapered to a sliver by then). */
 const MIN_DEFINITION_SHARE = 0.04;
 /** First-pass samples of the fold test (the cut is then refined by bisection, so it still moves smoothly). */
 const DEFINITION_CLEAR_STEPS = 24;
+
+type LimbSpec = Exclude<RegionSpec, { kind: 'hand' }>;
+
+/** A limb shape's contours after the fold cut: unchanged, cut short, or null (nothing left). */
+type FoldClip = (seg: BodySegment, spec: LimbSpec, contours: Vec[][]) => Vec[][] | null;
+
+/**
+ * Limb shapes stop short of the limb's other segments, so a folded elbow or
+ * knee keeps a groove of body tone between the shapes either side of it
+ * (§4.11.3), like the shading bands (ADR 0015). Straight limbs (the whole
+ * shape already clear) are unchanged. The cut is found by bisection, so it
+ * moves smoothly and a shape shrinks rather than pops. Used for faint shapes
+ * and for muscle regions: two coloured bands meeting in a tight fold made
+ * arrowhead spikes (the one-arm row's elbow; visual review of 9 Oct 2026).
+ */
+function foldClipper(body: FigureBody): FoldClip {
+  const outlines = new Map<string, Occluder>();
+  const outlineOf = (other: BodySegment, seg: BodySegment): Occluder => {
+    const shared = sharedEnd(other, seg);
+    const key = `${other.name}|${other.side ?? ''}|${shared ?? ''}`;
+    let o = outlines.get(key);
+    if (o === undefined) {
+      const poly = foldOutline(other, shared);
+      o = { poly, box: bounds(poly) };
+      outlines.set(key, o);
+    }
+    return o;
+  };
+  return (seg, spec, contours) => {
+    const box = bounds(contours.flat());
+    const groove = DEFINITION_GROOVE;
+    const near = body.segments
+      .filter((o) => o !== seg && o.group === seg.group)
+      .map((o) => outlineOf(o, seg))
+      .filter((o) => !(o.box.minX > box.maxX + groove || box.minX > o.box.maxX + groove || o.box.minY > box.maxY + groove || box.minY > o.box.maxY + groove));
+    if (near.length === 0) return contours;
+    const base = segmentBase(seg);
+    const sw = limbSweep(base, spec);
+    const [s0, s1] = spec.s;
+    const blocked = (s: number): boolean => sw.section(s, sw.tau(s)).some((p) => near.some((o) => nearOccluder(p, o, groove)));
+    const range = clearRange(s0, s1, blocked, MIN_DEFINITION_SHARE, DEFINITION_CLEAR_STEPS);
+    if (range === null) return null;
+    return range[0] > s0 || range[1] < s1 ? specContours(base, false, spec, range) : contours;
+  };
+}
 
 /** A region spec drawn on one frame's body: its contours, draw-order group and projection fade. */
 interface SpecShape {
@@ -253,9 +344,10 @@ interface SpecShape {
 /**
  * Contours of one region spec on the given limb sides (§4.4). Trunk-chain
  * regions are one shape drawn with the trunk; limb regions repeat on each
- * side and fade out as their segment turns towards the camera.
+ * side, fade out as their segment turns towards the camera, and stop short
+ * of the limb's other segments at a fold (`clip`).
  */
-function specShapes(body: FigureBody, spec: RegionSpec, sides: readonly ('Near' | 'Far')[], chain: RegionBase | null): SpecShape[] {
+function specShapes(body: FigureBody, spec: RegionSpec, sides: readonly ('Near' | 'Far')[], chain: RegionBase | null, clip: FoldClip): SpecShape[] {
   const out: SpecShape[] = [];
   if (spec.kind === 'hand') {
     for (const hand of body.hands) {
@@ -275,7 +367,10 @@ function specShapes(body: FigureBody, spec: RegionSpec, sides: readonly ('Near' 
   for (const seg of segmentsFor(body, spec.seg, sides)) {
     const alpha = projectionFade(seg.projection);
     if (alpha <= 0) continue;
-    for (const contour of specContours(segmentBase(seg), seg.side === null, spec)) out.push({ group: groupOf(body, seg), contour, alpha });
+    const trunk = seg.side === null;
+    const all = specContours(segmentBase(seg), trunk, spec);
+    const contours = trunk ? all : clip(seg, spec, all);
+    for (const contour of contours ?? []) out.push({ group: groupOf(body, seg), contour, alpha });
   }
   return out;
 }
@@ -284,7 +379,8 @@ function specShapes(body: FigureBody, spec: RegionSpec, sides: readonly ('Near' 
 export function regionShapes(body: FigureBody, focus: ResolvedFocus): RegionShape[] {
   const sides = limbSides(body, focus);
   const chain = chainBase(trunkSegments(body));
-  return focus.regions.flatMap((r) => specShapes(body, r.spec, sides, chain).map((sh) => ({ ...sh, level: r.level })));
+  const clip = foldClipper(body);
+  return focus.regions.flatMap((r) => specShapes(body, r.spec, sides, chain, clip).map((sh) => ({ ...sh, level: r.level })));
 }
 
 /** One faint muscle-definition shape (guides v2 §4.11). */
@@ -309,54 +405,15 @@ export function definitionShapes(body: FigureBody, groups: readonly DefinitionGr
   const view = bodyFocusView(body);
   const sides: ('Near' | 'Far')[] = body.view === 'side' ? ['Near'] : ['Near', 'Far'];
   const chain = chainBase(trunkSegments(body));
-  const out: DefinitionShape[] = [];
-  const outlines = new Map<string, Occluder>();
-  const outlineOf = (other: BodySegment, seg: BodySegment): Occluder => {
-    const shared = sharedEnd(other, seg);
-    const key = `${other.name}|${other.side ?? ''}|${shared ?? ''}`;
-    let o = outlines.get(key);
-    if (o === undefined) {
-      const poly = foldOutline(other, shared);
-      o = { poly, box: bounds(poly) };
-      outlines.set(key, o);
-    }
-    return o;
+  const clip = foldClipper(body);
+  // Folds (§4.11.3): while all their groups are faint, one shape stands for them, drawn as the first group.
+  const folds = DEFINITION_FOLDS.filter((f) => f.view === view && f.groups.every((g) => groups.includes(g)));
+  const specsOf = (g: DefinitionGroup): readonly RegionSpec[] => {
+    const fold = folds.find((f) => f.groups.includes(g));
+    if (fold === undefined) return DEFINITION_MAP[g][view] ?? [];
+    return fold.groups[0] === g ? [fold.region] : [];
   };
-  for (const g of groups) {
-    for (const spec of DEFINITION_MAP[g][view] ?? []) {
-      if (spec.kind === 'hand' || spec.seg === 'trunk') {
-        for (const sh of specShapes(body, spec, sides, chain)) out.push({ definition: g, ...sh });
-        continue;
-      }
-      for (const seg of segmentsFor(body, spec.seg, sides)) {
-        const alpha = projectionFade(seg.projection);
-        if (alpha <= 0) continue;
-        const base = segmentBase(seg);
-        const trunk = seg.side === null;
-        let contours = specContours(base, trunk, spec);
-        // Limb shapes stop short of the limb's other segments, so a folded elbow or knee keeps a groove (§4.11.3),
-        // like the shading bands (ADR 0015). Straight limbs (the whole shape already clear) are unchanged.
-        const box = bounds(contours.flat());
-        const groove = DEFINITION_GROOVE;
-        const near = trunk
-          ? []
-          : body.segments
-              .filter((o) => o !== seg && o.group === seg.group)
-              .map((o) => outlineOf(o, seg))
-              .filter((o) => !(o.box.minX > box.maxX + groove || box.minX > o.box.maxX + groove || o.box.minY > box.maxY + groove || box.minY > o.box.maxY + groove));
-        if (near.length > 0) {
-          const section = limbSection(base, spec);
-          const [s0, s1] = spec.s;
-          const blocked = (s: number): boolean => section(s, taper(s, s0, s1)).some((p) => near.some((o) => nearOccluder(p, o, groove)));
-          const range = clearRange(s0, s1, blocked, MIN_DEFINITION_SHARE, DEFINITION_CLEAR_STEPS);
-          if (range === null) continue;
-          if (range[0] > s0 || range[1] < s1) contours = specContours(base, trunk, spec, range);
-        }
-        for (const contour of contours) out.push({ definition: g, group: groupOf(body, seg), contour, alpha });
-      }
-    }
-  }
-  return out;
+  return groups.flatMap((g) => specsOf(g).flatMap((spec) => specShapes(body, spec, sides, chain, clip).map((sh) => ({ definition: g, ...sh }))));
 }
 
 /** Light direction for shading (§3.7), in the facing-right frame: above and slightly in front. */

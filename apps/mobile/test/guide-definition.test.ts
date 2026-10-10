@@ -50,10 +50,11 @@ describe('definition colour hierarchy (§4.11.2, D4)', () => {
     const softLow = compositeOver(style.muscle, MUSCLE_OPACITY.pulse.soft[0], body);
     const strong = style.muscle;
 
-    for (const faint of [style.faintNeutral, style.faintTint]) {
-      // Visible on a large shape, still quiet: 1.12–1.25 from the body.
-      expect(contrastRatio(faint, body)).toBeGreaterThanOrEqual(1.12);
-      expect(contrastRatio(faint, body)).toBeLessThanOrEqual(1.25);
+    // Neutral: visible at 240 pt in both schemes, still quiet (1.24–1.31 from the body; 1.19 read as no change at 240 pt,
+    // visual review of 9 Oct 2026). Tint, Ben's comparison option: 1.12–1.25.
+    for (const [faint, lo, hi] of [[style.faintNeutral, 1.24, 1.31], [style.faintTint, 1.12, 1.25]] as const) {
+      expect(contrastRatio(faint, body)).toBeGreaterThanOrEqual(lo);
+      expect(contrastRatio(faint, body)).toBeLessThanOrEqual(hi);
       // Strong > soft > faint, always: faint stays clearly weaker than soft.
       expect(contrastRatio(strong, body)).toBeGreaterThan(contrastRatio(soft, body));
       expect(contrastRatio(soft, body)).toBeGreaterThan(contrastRatio(faint, body) + 0.2);
@@ -76,7 +77,7 @@ describe('definition colour hierarchy (§4.11.2, D4)', () => {
   });
 
   it('the composites match the design-system §2.3 table (look D and look A)', () => {
-    const want = { premium: { dark: ['#C5BDB6', '#AA9BB3'], light: ['#4B453F', '#635869'] }, navy: { dark: ['#BAC4CF', '#A1A1CA'], light: ['#3F4A59', '#595D80'] } } as const;
+    const want = { premium: { dark: ['#CBC4BC', '#AA9BB3'], light: ['#47413C', '#635869'] }, navy: { dark: ['#C1CAD4', '#A1A1CA'], light: ['#3C4755', '#595D80'] } } as const;
     for (const d of Object.values(THEME_DIRECTIONS)) {
       const look = d.id === 'D' ? want.premium : want.navy;
       for (const scheme of ['dark', 'light'] as const) {

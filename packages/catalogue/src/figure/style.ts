@@ -58,7 +58,7 @@ export const GUIDE_DEFINITION_TOKEN = 'text.primary' as const satisfies GuideTok
  * `guide.definitionOpacity`, `guide.definitionTintOpacity`).
  */
 export const DEFINITION_OPACITY = {
-  neutral: { dark: 0.25, light: 0.18 },
+  neutral: { dark: 0.35, light: 0.24 },
   tint: { dark: 0.18, light: 0.18 },
 } as const satisfies Record<'neutral' | 'tint', Record<GuideScheme, number>>;
 

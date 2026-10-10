@@ -19,6 +19,7 @@ import {
   DEFINITION_GROOVE,
   DEFINITION_GROOVE_FLOOR,
   DEFINITION_GROUPS,
+  DEFINITION_FOLDS,
   DEFINITION_MAP,
   DEFINITION_TEXT,
   definitionGroupsFor,
@@ -35,12 +36,14 @@ import {
   MUSCLE_INSET,
   MUSCLE_REGION_TEXT,
   narrowestDefinitionGroove,
+  parseRegion,
   playbackTimes,
   pointInPolygon,
   pointSegmentDistance,
   polygonGap,
   poseAt,
   regionShapes,
+  signedArea,
   renderSvg,
   resolveFocus,
   type DefinitionGroup,
@@ -48,6 +51,8 @@ import {
   type FocusView,
   type FrameOpsOptions,
   type MuscleDefinition,
+  type RegionSpec,
+  type ResolvedFocus,
   type Vec,
 } from '../src/figure/index';
 import { squatEntry, squatRaw } from './figure-helpers';
@@ -200,13 +205,21 @@ describe('geometry (§4.11.3, D2)', () => {
     }
   });
 
-  it('a folded elbow keeps its groove: the faint forearm stops short of the upper arm, and only there', () => {
+  it('a folded elbow keeps its groove: faint shapes and muscle colour stop short of the other segment, and only there', () => {
     const forearmRegion = (body: ReturnType<typeof poseAt>['body']) => regionShapes(body, resolveFocus({ primary: ['forearms'], secondary: [] }, undefined, 'side'))[0]?.contour;
-    // The squat's bar hold folds the elbow tight: the shapes are cut back so the groove holds.
+    // The squat's bar hold folds the elbow tight: the shapes are cut back so the groove holds, and the forearm, which lies
+    // across the upper arm there, has nothing left to draw.
     const fold = poseAt(loaded('barbell-back-squat').prepared, 0).body;
     const shapes = definitionShapes(fold, ['triceps', 'frontArm', 'forearm']);
     expect(narrowestDefinitionGroove(shapes)?.gap ?? Infinity).toBeGreaterThanOrEqual(DEFINITION_GROOVE);
-    expect(shapes.find((s) => s.definition === 'forearm')?.contour).not.toEqual(forearmRegion(fold));
+    expect(shapes.map((s) => s.definition)).toEqual(['triceps', 'frontArm']);
+    // Muscle colour is cut the same way: at the row's top the biceps and the grip band met in the elbow fold as arrowhead
+    // spikes (visual review of 9 Oct 2026). Now the upper-arm colour keeps the groove from the forearm colour.
+    const top = poseAt(loaded('dumbbell-one-arm-row').prepared, 0.37).body;
+    const colour = (m: Muscle) => regionShapes(top, resolveFocus({ primary: [], secondary: [m] }, undefined, 'side')).map((r) => r.contour);
+    for (const upper of [...colour('biceps'), ...colour('brachialis')]) {
+      for (const fore of colour('grip')) expect(polygonGap(upper, fore)).toBeGreaterThanOrEqual(DEFINITION_GROOVE_FLOOR);
+    }
     // A straight arm (the pushdown's lockout) keeps the full shape: the highlight's own §4.5 forearm.
     const pushdown = loaded('cable-triceps-pushdown').prepared;
     const lockout = keyFrameStops(pushdown).find((s) => /bottom|lockout/i.test(s.label));
@@ -290,7 +303,7 @@ describe('drawing (§4.11.6–4.11.7)', () => {
     const dark = guideStyleFromTokens(DIRECTION_D_GUIDE_TOKENS.dark);
     const light = guideStyleFromTokens(DIRECTION_D_GUIDE_TOKENS.light);
     // design-system §2.3, look D.
-    expect([dark.faintNeutral, dark.faintTint, light.faintNeutral, light.faintTint]).toEqual(['#C5BDB6', '#AA9BB3', '#4B453F', '#635869']);
+    expect([dark.faintNeutral, dark.faintTint, light.faintNeutral, light.faintTint]).toEqual(['#CBC4BC', '#AA9BB3', '#47413C', '#635869']);
   });
 
   it('D7: faint shapes never pulse; with tint, soft stays at 0.45 while strong still pulses', () => {
@@ -361,6 +374,96 @@ describe('drawing (§4.11.6–4.11.7)', () => {
         for (const c of new Set(svg.match(/#[0-9A-Fa-f]{6}/g))) expect(Object.values(style)).toContain(c);
         expect(svg).toContain(definition === 'neutral' ? style.faintNeutral : style.faintTint);
       }
+    }
+  });
+});
+
+describe('visual review of 9 Oct 2026: calmer shapes', () => {
+  type Body = ReturnType<typeof poseAt>['body'];
+  /** One soft region on its own, so its contour can be compared with a variant. */
+  const one = (body: Body, spec: RegionSpec): Vec[] => {
+    const focus: ResolvedFocus = { view: 'side', side: 'near', strong: [], soft: ['side_delts'], drawn: ['side_delts'], notShown: [], regions: [{ muscle: 'side_delts', level: 'soft', spec }] };
+    const shape = regionShapes(body, focus)[0];
+    if (shape === undefined) throw new Error('region should draw');
+    return shape.contour;
+  };
+  /** Position along a segment's axis, 0 at j0 and 1 at j1. */
+  const along = (seg: Body['segments'][number], p: Vec): number => ((p.x - seg.j0.x) * seg.u.x + (p.y - seg.j0.y) * seg.u.y) / seg.length;
+
+  it('blunt0 / blunt1 parse; a duplicate is rejected and plain regions parse exactly as before', () => {
+    expect(parseRegion('upperArm.face −0.02–0.32 c0 w0.9 blunt0')).toEqual({ kind: 'face', seg: 'upperArm', s: [-0.02, 0.32], c: [0, 0], w: [0.9, 0.9], mirror: false, blunt: [true, false] });
+    expect(parseRegion('trunk.back 0.85–1.9 d0.42 blunt1')).toStrictEqual({ kind: 'edge', seg: 'trunk', surface: 'back', s: [0.85, 1.9], d: 0.42, blunt: [false, true] });
+    expect(parseRegion('thigh.front 0–1 d0.5 blunt0 blunt1')).toMatchObject({ blunt: [true, true] });
+    expect(parseRegion('thigh.front 0–1 d0.5 blunt0 blunt0')).toBeNull();
+    expect(parseRegion('thigh.front 0–1 d0.5 blunt2')).toBeNull();
+    expect(parseRegion('thorax.back 0.10–0.70 d0.5')).toStrictEqual({ kind: 'edge', seg: 'thorax', surface: 'back', s: [0.1, 0.7], d: 0.5 });
+  });
+
+  it('a blunt end is a rounded cap: more of the shape near that end, the same point at the other end', () => {
+    const body = poseAt(loaded('cable-triceps-pushdown').prepared, 0).body;
+    const arm = body.segments.find((sg) => sg.name === 'upperArm' && sg.side === 'Near');
+    if (arm === undefined) throw new Error('near upper arm');
+    for (const text of ['upperArm.face −0.02–0.32 c0 w0.9', 'upperArm.back 0.36–0.86 d0.74']) {
+      const pointed = parseRegion(text);
+      const blunt = parseRegion(`${text} blunt0`);
+      if (pointed === null || blunt === null || pointed.kind === 'hand') throw new Error(text);
+      const [s0, s1] = pointed.s;
+      const mid = (s0 + s1) / 2;
+      const p = one(body, pointed);
+      const b = one(body, blunt);
+      expect(Math.abs(signedArea(b)), text).toBeGreaterThan(Math.abs(signedArea(p)) * 1.04);
+      // Both still start at s0, and the far half is untouched.
+      expect(Math.min(...b.map((q) => along(arm, q))), text).toBeCloseTo(Math.min(...p.map((q) => along(arm, q))), 3);
+      const farHalf = (c: Vec[]) => c.filter((q) => along(arm, q) > mid + 0.01);
+      expect(farHalf(b), text).toEqual(farHalf(p));
+    }
+  });
+
+  it('the faint deltoid starts at the joint with a rounded top, not up the shoulder cap', () => {
+    for (const key of ['barbell-back-squat', 'barbell-romanian-deadlift', 'cable-triceps-pushdown']) {
+      const body = poseAt(loaded(key).prepared, 0).body;
+      const arm = body.segments.find((sg) => sg.name === 'upperArm' && sg.side === 'Near');
+      const delt = definitionShapes(body, ['deltoid'])[0];
+      if (arm === undefined || delt === undefined) throw new Error(key);
+      expect(Math.min(...delt.contour.map((q) => along(arm, q))), key).toBeGreaterThan(-0.02 - 1e-6);
+    }
+    expect(DEFINITION_MAP.deltoid.side?.[0]).toMatchObject({ s: [-0.02, 0.32], blunt: [true, false] });
+  });
+
+  it('side view: abs and obliques fold into one band while both are faint, and only then', () => {
+    expect(DEFINITION_FOLDS).toEqual([{ view: 'side', groups: ['abs', 'obliques'], region: parseRegion('trunk.front 0.3–2.35 d0.75') }]);
+    const body = poseAt(loaded('barbell-bench-press').prepared, 0.549).body;
+    const both = definitionShapes(body, ['abs', 'obliques']);
+    expect(both.map((sh) => sh.definition)).toEqual(['abs']);
+    // Either one alone (the other coloured or hidden) keeps its own shape.
+    expect(definitionShapes(body, ['obliques']).map((sh) => sh.contour)).not.toEqual(both.map((sh) => sh.contour));
+    expect(definitionShapes(body, ['abs']).map((sh) => sh.contour)).not.toEqual(both.map((sh) => sh.contour));
+    // Front and back views don't fold.
+    const pulldown = poseAt(loaded('cable-lat-pulldown').prepared, 0).body;
+    expect(new Set(definitionShapes(pulldown, ['obliques', 'lowerBack']).map((sh) => sh.definition))).toEqual(new Set(['obliques', 'lowerBack']));
+  });
+
+  it('the split squat\'s abductors sit beside the glutes, not on top of them (no two-tone hip)', () => {
+    const { prepared, guide } = loaded('dumbbell-bulgarian-split-squat');
+    const focus = resolveFocus(musclesOf('dumbbell-bulgarian-split-squat'), guide.focus, 'side');
+    for (const stop of keyFrameStops(prepared)) {
+      const body = poseAt(prepared, stop.t).body;
+      const regions = regionShapes(body, focus);
+      const glutes = regionShapes(body, { ...focus, regions: focus.regions.filter((r) => r.muscle === 'glutes') });
+      const abductors = regionShapes(body, { ...focus, regions: focus.regions.filter((r) => r.muscle === 'abductors') });
+      expect(regions.length).toBeGreaterThan(glutes.length + abductors.length - 1);
+      for (const a of abductors) for (const g of glutes) expect(polygonGap(a.contour, g.contour), stop.label).toBeGreaterThan(0);
+    }
+  });
+
+  it('strong over soft gets its underlay in every mode, so one pixel never shows two violets during the pulse (§4.3)', () => {
+    // Bench: chest strong overlaps upper chest soft.
+    for (const definition of ['off', 'neutral'] as const) {
+      const frame = ops('barbell-bench-press', 0.5, { muscles: { primary: ['chest'], secondary: ['upper_chest'] }, definition, pulse: 0 });
+      const strong = frame.findIndex((o) => isPath(o) && o.fill === 'muscle' && Math.abs(o.opacity - 0.8) < 1e-9);
+      const under = frame[strong - 1];
+      expect(strong, definition).toBeGreaterThan(0);
+      expect(under && isPath(under) && under.fill === 'nearBody' && under.contours === (frame[strong] as PathOp).contours, definition).toBe(true);
     }
   });
 });

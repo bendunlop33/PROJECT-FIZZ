@@ -1,6 +1,6 @@
 # Exercise guides v2: detailed figure, muscle focus, what not to do
 
-Status: v0.1 draft, 9 Oct 2026. **Mostly built** (9 Oct 2026, [ADR 0014](../decisions/0014-guides-v2-muscle-highlight-and-figure-drawing.md)): render quality, figure v2, muscle focus, What not to do and the How to order. **Not built yet:** Full screen (§2.2), the visible-area warning (§4.7) and the rack prop. **Specified, not built:** muscle definition for every group (§4.11, Ben's request of 9 Oct 2026; Ben picks the mode, B8). The `camera: "back"` field (§4.8) is built as `seenFrom`, because `camera` already holds the fixed camera. The lat pulldown is drawn from behind (§4.10) as a **provisional** product-manager call; Ben confirms or rejects it (B3). It changes the How to screen in [exercise-library.md](exercise-library.md) §8, the figure drawing in `packages/catalogue/src/figure/`, and design-system principle 5, §2.3 and §9.57–9.60. Builds on [ADR 0011](../decisions/0011-exercise-catalogue-and-guide-tooling.md) (guide format, rig, Linux tooling) and [ADR 0013](../decisions/0013-in-app-guide-playback.md) (Skia playback). Research: [exercise-bank-and-visuals.md](../research/exercise-bank-and-visuals.md) §5.
+Status: v0.1 draft, 9 Oct 2026. **Mostly built** (9 Oct 2026, [ADR 0014](../decisions/0014-guides-v2-muscle-highlight-and-figure-drawing.md)): render quality, figure v2, muscle focus, What not to do, the How to order, and muscle definition for every group (§4.11; the app draws `neutral`, Ben picks the mode, B8). **Not built yet:** Full screen (§2.2), the visible-area warning (§4.7) and the rack prop. The `camera: "back"` field (§4.8) is built as `seenFrom`, because `camera` already holds the fixed camera. The lat pulldown is drawn from behind (§4.10) as a **provisional** product-manager call; Ben confirms or rejects it (B3). It changes the How to screen in [exercise-library.md](exercise-library.md) §8, the figure drawing in `packages/catalogue/src/figure/`, and design-system principle 5, §2.3 and §9.57–9.60. Builds on [ADR 0011](../decisions/0011-exercise-catalogue-and-guide-tooling.md) (guide format, rig, Linux tooling) and [ADR 0013](../decisions/0013-in-app-guide-playback.md) (Skia playback). Research: [exercise-bank-and-visuals.md](../research/exercise-bank-and-visuals.md) §5.
 
 **Why.** Ben reviewed the 10 animated guides on 9 Oct 2026:
 
@@ -388,6 +388,8 @@ A region belongs to one segment and is built from that segment's own profile (§
 
 - **Edge band** `segment.front | segment.back` (side view), or `segment.lat | segment.med` (front/back views), over `s0–s1` with depth `d` (0–1). The outer curve is the edge inset by 0.0035 H. The inner curve sits `d × halfWidth(s) × τ(s)` in from the edge, where `τ(s) = sin(π·(s − s0)/(s1 − s0))^0.6`, so the band tapers to the edge at both ends like a muscle belly.
 - **Face lens** `segment.face` over `s0–s1`, centred at `c` with width `w`. `c` runs from −1 to +1 across the segment: −1 is the back edge and +1 the front edge in the side view; −1 is medial and +1 lateral on front/back limbs; −1 is the figure's right edge and +1 its left edge on the trunk. `w` is a fraction of the local full width. The half-width is `w × width(s)/2 × τ(s)`. **`±c` means a mirrored pair** (left and right, trunk only).
+- **Blunt end** `blunt0` / `blunt1` (optional, either region kind): that end is a rounded cap instead of a taper to a point. The region keeps its full width from the middle to that end and rounds off over one cap length: half its width for a lens (about a semicircle), half its depth for an edge band (a rounded corner into the edge). Used where a shape meets a neighbour or its origin square-on rather than tapering away: the deltoid's top, and the lower back and lats either side of their groove (§4.11.3). Added 9 Oct 2026 after the visual review of the definition renders.
+- **Cut at a fold.** Where a limb folds tight (an elbow or knee), a limb region stops short of the limb's other segment by the groove (`guide.definitionGroove`) and ends in a rounded cap there, for muscle colour as for faint shapes (§4.11.3). Two coloured bands meeting in the fold made arrowhead spikes (the one-arm row's elbow, visual review of 9 Oct 2026). Straight limbs are unchanged.
 - **Whole segment** `hand.full`: the hand outline inset by 0.0035 H.
 - **Trunk chain** `trunk.…`: pelvis, lumbar and thorax read as one segment, with `s` = segment index + local s (pelvis −0.7…1, lumbar 1…2, thorax 2…3). It uses the trunk outline's own frames, so a muscle that spans the trunk is **one** smooth shape. Per-segment bands each taper to nothing at the joints, so a muscle drawn as one band per segment showed as a row of beads (product-manager review of the v2 renders, 9 Oct 2026).
 - Each curve is sampled at 12 points, then drawn as a smooth closed path.
@@ -399,7 +401,7 @@ Notation: `segment.surface s0–s1 d` (edge band) or `segment.face s0–s1 c w` 
 
 | Muscle | Side view | Front view | Back view |
 |---|---|---|---|
-| `abductors` | pelvis.face 0–0.95 c−0.05 w0.5 (joins the glutes, so the hip reads as one mass) | pelvis.lat 0–0.9 d0.35 | pelvis.lat 0.1–1.0 d0.4 |
+| `abductors` | pelvis.face 0.08–0.54 c+0.12 w0.42 (the upper outer hip, beside the glutes and below the iliac crest. As first specified, 0–0.95 c−0.05 w0.5, it sat on top of the glutes and read as a two-tone blotch, visual review of 9 Oct 2026) | pelvis.lat 0–0.9 d0.35 | pelvis.lat 0.1–1.0 d0.4 |
 | `abs` | trunk.front 0.3–2.35 d0.45 | trunk.face 0.4–2.4 c0 w0.42 | — |
 | `adductors` | — (the inner thigh faces away from the camera) | thigh.med 0.02–0.55 d0.55 | thigh.med 0.02–0.45 d0.5 |
 | `biceps` | upperArm.front 0.30–0.88 d0.6 | upperArm.face 0.30–0.88 c−0.1 w0.6 | — |
@@ -520,7 +522,7 @@ One draw option, `definition`, with three values (§4.11.9):
 
 | Mode | Faint paint | Dark scheme | Light scheme |
 |---|---|---|---|
-| **`neutral`** (recommended) | `color.guide.definition` = alias of `text.primary` | 0.25 over the body: a little **lighter** | 0.18 over the body: a little **darker** |
+| **`neutral`** (recommended) | `color.guide.definition` = alias of `text.primary` | 0.35 over the body: a little **lighter** | 0.24 over the body: a little **darker** |
 | `tint` (Ben's literal ask, for comparison) | `color.guide.muscle` | 0.18: a little darker, violet | 0.18: a little lighter, violet |
 | `off` | none | today's drawing | today's drawing |
 
@@ -532,20 +534,20 @@ One draw option, `definition`, with three values (§4.11.9):
 |---|---|---|---|
 | strong vs body (unchanged) | 2.33 / 2.46 | 2.48 / 2.34 | ≥ 2.0 |
 | soft vs body (unchanged) | 1.51 / 1.53 | 1.51 / 1.48 | ≥ 1.4 |
-| **faint vs body**, neutral | 1.19 / 1.19 | 1.19 / 1.21 | 1.12–1.25 |
+| **faint vs body**, neutral | 1.28 / 1.27 | 1.27 / 1.27 | 1.24–1.31 |
 | **faint vs body**, tint | 1.18 / 1.18 | 1.18 / 1.17 | 1.12–1.25 |
-| **soft vs faint**, neutral | 1.80 / 1.82 | 1.80 / 1.78 | ≥ 1.6 |
+| **soft vs faint**, neutral | 1.93 / 1.94 | 1.92 / 1.87 | ≥ 1.6 |
 | **soft vs faint**, tint | 1.28 / 1.29 | 1.28 / 1.26 | ≥ 1.25 |
-| strong vs faint, neutral | 2.79 / 2.92 | 2.96 / 2.81 | ≥ 2.5 |
+| strong vs faint, neutral | 2.99 / 3.12 | 3.14 / 2.95 | ≥ 2.5 |
 | strong vs faint, tint | 1.98 / 2.08 | 2.10 / 1.99 | ≥ 1.9 |
-| soft at its pulse low (0.36) vs faint, neutral | 1.66 / 1.66 | 1.65 / 1.64 | ≥ 1.5 |
+| soft at its pulse low (0.36) vs faint, neutral | 1.78 / 1.77 | 1.76 / 1.72 | ≥ 1.5 |
 | soft at its pulse low (0.36) vs faint, tint | 1.18 / 1.19 | 1.17 / 1.16 | (why tint keeps soft steady) |
 
-A faint step of about 1.19:1 is a little more than the step from `bg.surface` to `bg.raised` (about 1.13:1 in Navy dark), which is how a card stands off the screen. It is clearly visible on a large shape and still quiet.
+A faint step of about 1.27:1 is about twice the step from `bg.surface` to `bg.raised` (about 1.13:1 in Navy dark), which is how a card stands off the screen. It is visible at 240pt and still quiet. **Tuned 9 Oct 2026:** the first values (0.25 dark, 0.18 light, about 1.19:1) read as no change at 240pt: the visual review couldn't tell the Off and Neutral rows of `preview-definition.png` apart, in light mode on any guide, which fails D15 and Ben's "so you can see it". The ceiling is the rule that faint stays at least 0.2 below soft (`soft vs body` is 1.48 in Navy light), so neutral can't go much past 1.28:1 without crowding soft. `tint` is unchanged (B8 decides it).
 
 **Recommendation: `neutral`.**
 
-1. **The hierarchy rests on two cues, not one.** Neutral faint differs from soft in hue *and* in the direction of lightness (about 1.8:1 apart). Tint faint differs only in the amount of the same violet (about 1.28:1 apart), which is the weakest cue at 240pt, in gym light and in a glance between sets.
+1. **The hierarchy rests on two cues, not one.** Neutral faint differs from soft in hue *and* in the direction of lightness (about 1.9:1 apart). Tint faint differs only in the amount of the same violet (about 1.28:1 apart), which is the weakest cue at 240pt, in gym light and in a glance between sets.
 2. **Violet keeps one meaning.** Three strengths of one hue read as an amount scale, so faint violet would say "works a little". The catalogue doesn't say that (rule 6). Neutral says "a muscle is here", and violet still says only "this exercise works it".
 3. **Nothing else has to change.** The legend, the work-phase pulse, Increase Contrast and Differentiate Without Color all work as now. Tint needs an extra legend line, has to drop the soft pulse (at its low point, soft would sit only about 1.17:1 from faint) and has to fall back to neutral under Increase Contrast and Differentiate Without Color.
 4. **It suits both looks.** The faint tone carries the look's own warmth (D) or coolness (A), so violet stays the only hue that means anything.
@@ -563,12 +565,12 @@ The notation and geometry are §4.4's. `= §4.5` means the same region the highl
 | `chest` | chest, upper_chest | = §4.5 `chest` | thorax.face 0.55–0.85 ±c0.5 w0.42 (leaves a breastbone groove) | — |
 | `abs` | abs, core | = §4.5 `abs` | = §4.5 `abs` | — |
 | `obliques` | obliques, core | trunk.face 0.65–2.05 c+0.03 w0.35 | trunk.lat 1.05–2.2 d0.35 | = §4.5 `obliques` |
-| `lowerBack` | spinal_erectors; back view also core | trunk.back 0.85–1.9 d0.38 | — | trunk.face 0.85–1.9 ±c0.24 w0.2 (leaves a spine groove) |
-| `lats` | lats | trunk.back 1.98–2.56 d0.55 | thorax.lat 0.30–0.58 d0.25 | trunk.face 1.95–2.72 ±c0.42>0.64 w0.3>0.4 |
+| `lowerBack` | spinal_erectors; back view also core | trunk.back 0.85–1.9 d0.42 blunt1 | — | trunk.face 0.85–1.9 ±c0.24 w0.2 (leaves a spine groove) |
+| `lats` | lats | trunk.back 1.98–2.56 d0.48 blunt0 | thorax.lat 0.30–0.58 d0.25 | trunk.face 1.95–2.72 ±c0.42>0.64 w0.3>0.4 |
 | `upperBack` | upper_back, traps | thorax.back 0.64–1.0 d0.45 (shoulder blade and trap slope) | = §4.5 `traps` (the slope only) | = §4.5 `traps` |
 | `glutes` | glutes, abductors | = §4.5 `glutes` | — | pelvis.face −0.65–0.8 ±c0.5 w0.44 (leaves the cleft) |
 | `outerHip` | abductors | — (part of `glutes`) | = §4.5 `abductors` | — (part of `glutes`) |
-| `deltoid` | front_delts, side_delts, rear_delts | upperArm.face −0.12–0.32 c0 w0.9 | upperArm.face −0.10–0.32 c0 w0.9 | upperArm.face −0.10–0.32 c0 w0.9 |
+| `deltoid` | front_delts, side_delts, rear_delts | upperArm.face −0.02–0.32 c0 w0.9 blunt0 | upperArm.face −0.02–0.32 c0 w0.9 blunt0 | upperArm.face −0.02–0.32 c0 w0.9 blunt0 |
 | `frontArm` | biceps, brachialis | upperArm.front 0.38–0.88 d0.7 | upperArm.face 0.38–0.88 c−0.1 w0.6 | — |
 | `triceps` | triceps | upperArm.back 0.36–0.86 d0.74 | — | upperArm.face 0.36–0.86 c0 w0.75 |
 | `forearm` | forearms, grip | = §4.5 `forearms` | = §4.5 `forearms` | = §4.5 `forearms` |
@@ -578,6 +580,13 @@ The notation and geometry are §4.4's. `= §4.5` means the same region the highl
 | `calves` | calves | = §4.5 `calves` | = §4.5 `calves` (two edge bands) | = §4.5 `calves` |
 
 **As built (9 Oct 2026):** seven cells were tuned on the renders, within the ±15%, so every groove is at least the 0.006 H target at every 30 fps frame of the 10 guides: side-view `obliques` (c+0.05 w0.4 → c+0.03 w0.35), `frontArm` (d0.75 → d0.7), `triceps` (d0.8 → d0.74), `quads` (d0.9 → d0.86) and `hamstrings` (d0.85 → d0.8); back-view `glutes` (w0.48 → w0.44) and `lats` (c…>0.62 w…>0.45 → c…>0.64 w…>0.4). **Folded joints:** no fixed map keeps a groove where an elbow or knee folds tight (the squat's bar hold, the bench and pulldown bottoms, a deep squat), because the forearm or calf then lies across the upper arm or thigh. So a faint limb shape stops short of the limb's other segments, by the groove, the way the shading bands already do (ADR 0015). The cut point is found by bisection, so it moves smoothly and the shape shrinks rather than popping. Straight limbs are unchanged. `guide:check` lists where a shape folds or fades away mid-cycle.
+
+**Visual review (9 Oct 2026), as built:**
+
+- **Deltoid:** it started at s −0.12, the narrow tip of the arm's shoulder cap, so it came to a point at the neck (a spade or shield in hanging-arm poses) or a flat-topped lump above the squat's rack position. It now starts at −0.02 with a rounded top (`blunt0`) and comes to a point only at the insertion.
+- **Back of the trunk (side view):** the lower back and lats each tapered to the edge at both ends, so with the glutes they made a scalloped row of lobes along the bench in the bench press. They now meet square-on at their groove (`blunt1` / `blunt0`, depths 0.38 → 0.42 and 0.55 → 0.48, within the ±15%), so the back reads as one band with one groove.
+- **Folds:** while `abs` and `obliques` are both faint in a side view, one band `trunk.front 0.3–2.35 d0.75` stands for both, drawn as `abs` (like `core` does for colour, §4.5). The separate obliques lens floated mid-trunk as a capsule, worst on the supine bench. Both groups still count as faint, and each is still replaced by its own muscles (`DEFINITION_FOLDS`).
+- Suppressing the faint arm groups where the near upper arm lies across the trunk (the squat's rack position) was considered and not built: from the side, a hanging upper arm lies over the trunk too, so any overlap rule would also blank the arms of the triceps pushdown, the stress case. The rounded deltoid removes the worst of that knot; the device check (G18) decides whether anything more is needed.
 
 That is 14 groups from the side, 12 from the front and 11 from behind. Every one of the 23 vocabulary muscles appears in some `Replaced by` list. The head, the neck (apart from the back-view trap shape, as in §4.5), hands, feet and the front of the shin stay body tone. No vocabulary muscle sits there, and a plain shin reads as bone, which is right.
 
@@ -644,7 +653,7 @@ The triceps pushdown is the stress case: one strong group among 13 faint ones.
 #### 4.11.6 Drawing: one paint per pixel
 
 - **The faint fill is opaque.** `guideStyleFromTokens` pre-composites the faint paint over `nearBody` (`compositeOver(paint, opacity, nearBody)`), and the op is drawn at opacity 1. Faint shapes from different ops can overlap without a darker sliver.
-- **Muscle regions get an underlay.** Each muscle-region op (soft, then strong) is drawn over an opaque `nearBody` fill of its own path. Where a coloured region overlaps a faint neighbour, the colour sits on plain body, exactly as it does today. This also stops strong at 0.80 stacking on soft during the pulse (review N3), so §4.3's "never stacked opacity" now holds in every frame. **As built (9 Oct 2026):** the underlay is drawn only where it changes something: under a translucent region that overlaps a faint shape, and under strong while it's translucent (the pulse, a fading limb) over soft. An opaque region already covers what's beneath it, and an underlay there only lightened its anti-aliased edge and hid the trunk's lines under the side-view pelvis regions (step 8). A pixel test checks that coloured pixels are identical whether the faint shapes show or not.
+- **Muscle regions get an underlay.** Each muscle-region op (soft, then strong) is drawn over an opaque `nearBody` fill of its own path. Where a coloured region overlaps a faint neighbour, the colour sits on plain body, exactly as it does today. This also stops strong at 0.80 stacking on soft during the pulse (review N3), so §4.3's "never stacked opacity" now holds in every frame. **As built (9 Oct 2026):** the underlay is drawn only where it changes something: under a translucent region that overlaps a faint shape, and under strong while it's translucent (the pulse, a fading limb) over soft. An opaque region already covers what's beneath it, and an underlay there only lightened its anti-aliased edge and hid the trunk's lines under the side-view pelvis regions (step 8). A pixel test checks that coloured pixels are identical whether the faint shapes show or not. **Changed 9 Oct 2026:** the strong-over-soft underlay (the pulse) is drawn with definition `off` too, so §4.3's one paint per pixel holds in every mode. Without it, the split squat's strong glute showed the soft lens's edge through it in Off.
 - **Order inside each body group:** contour → fill → **faint shapes (one op)** → soft (underlay, region) → strong (underlay, region) → shading → anatomical lines. Side-view glutes follow the pelvis regions (§3.11 step 8): faint glutes first, then the pelvis highlights. Shading still sits on top, so faint groups keep the figure's volume.
 - **Budget:** at most one faint op per region group (6) and one underlay per region op. Today's 32–73 ops per frame grow by fewer than 20, inside the 220 limit.
 - Faint ops are fills only, never stroked.
@@ -740,9 +749,10 @@ All pure, in `@fizz/catalogue` `src/figure/` and `apps/mobile/src/guide/`. Nothi
 | `definitionGroupsFor(view, focus \| null, hidden)` → `DefinitionGroup[]` | The faint groups after the replace and hide rules (§4.11.5). Unit-tested against the §4.11.5 table |
 | `definitionShapes(body, groups)` → `{ group: RegionGroup; contour: Vec[] }[]` | Per-frame geometry, using the §4.4 builders. Near side only in a side view, both sides otherwise. Projection rule applies |
 | `effectiveDefinition(...)` | §4.11.9 |
-| `DEFINITION_OPACITY` | `{ neutral: { dark: 0.25, light: 0.18 }, tint: { dark: 0.18, light: 0.18 } }` (design-system `guide.definitionOpacity`, `guide.definitionTintOpacity`) |
+| `DEFINITION_OPACITY` | `{ neutral: { dark: 0.35, light: 0.24 }, tint: { dark: 0.18, light: 0.18 } }` (design-system `guide.definitionOpacity`, `guide.definitionTintOpacity`; neutral tuned up from 0.25 / 0.18 on 9 Oct 2026, §4.11.2) |
+| `DEFINITION_FOLDS` | Side view: `abs` + `obliques` → one band `trunk.front 0.3–2.35 d0.75` while both are faint (§4.11.3), parsed with `parseRegion` |
 | `DEFINITION_GROOVE` | 0.006 H target, 0.004 H test floor (`guide.definitionGroove`) |
-| `guideStyleFromTokens(tokens, scheme)` | Adds two opaque, derived paints: `faintNeutral` = `compositeOver(definition, 0.25 \| 0.18, nearBody)` and `faintTint` = `compositeOver(muscle, 0.18, nearBody)` |
+| `guideStyleFromTokens(tokens, scheme)` | Adds two opaque, derived paints: `faintNeutral` = `compositeOver(definition, 0.35 \| 0.24, nearBody)` and `faintTint` = `compositeOver(muscle, 0.18, nearBody)` |
 | `frameOps(pose, {…, definition, definitionCompact})` | Faint op and underlays per §4.11.6 |
 | `buildHowToView(...)` | `focus` gains `definitionNote: string \| null` (the tint line, or null) |
 | `guide:check` | Groove and overlap check, pop warning, and the faint group list per guide in `meta.json` |

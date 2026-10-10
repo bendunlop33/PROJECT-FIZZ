@@ -181,7 +181,7 @@ Rules:
 
 | Mode | Source paint | Opacity over `nearBody` (dark / light) | Composite, look D dark / A dark | Composite, look D light / A light |
 |---|---|---|---|---|
-| `neutral` (recommended) | `guide.definition` (`text.primary`) | 0.25 / 0.18 (`guide.definitionOpacity`) | `#C5BDB6` / `#BAC4CF` | `#4B453F` / `#3F4A59` |
+| `neutral` (recommended) | `guide.definition` (`text.primary`) | 0.35 / 0.24 (`guide.definitionOpacity`; tuned up from 0.25 / 0.18 on 9 Oct 2026, which read as no change at 240pt) | `#CBC4BC` / `#C1CAD4` | `#47413C` / `#3C4755` |
 | `tint` (option to compare) | `guide.muscle` | 0.18 / 0.18 (`guide.definitionTintOpacity`) | `#AA9BB3` / `#A1A1CA` | `#635869` / `#595D80` |
 
 The composites are what `compositeOver(source, opacity, nearBody)` gives. They are derived from existing values, not new ones, and the code computes them from the live theme rather than hard-coding them.
@@ -190,14 +190,14 @@ The composites are what `compositeOver(source, opacity, nearBody)` gives. They a
 |---|---|---|---|
 | strong vs `nearBody` (unchanged) | 2.33 / 2.46 | 2.48 / 2.34 | ≥ 2.0 |
 | soft vs `nearBody` (unchanged) | 1.51 / 1.53 | 1.51 / 1.48 | ≥ 1.4 |
-| faint vs `nearBody`, neutral · tint | 1.19 / 1.19 · 1.18 / 1.18 | 1.19 / 1.21 · 1.18 / 1.17 | 1.12–1.25 |
-| soft vs faint, neutral · tint | 1.80 / 1.82 · 1.28 / 1.29 | 1.80 / 1.78 · 1.28 / 1.26 | ≥ 1.6 · ≥ 1.25 |
-| strong vs faint, neutral · tint | 2.79 / 2.92 · 1.98 / 2.08 | 2.96 / 2.81 · 2.10 / 1.99 | ≥ 2.5 · ≥ 1.9 |
+| faint vs `nearBody`, neutral · tint | 1.28 / 1.27 · 1.18 / 1.18 | 1.27 / 1.27 · 1.18 / 1.17 | 1.24–1.31 · 1.12–1.25 |
+| soft vs faint, neutral · tint | 1.93 / 1.94 · 1.28 / 1.29 | 1.92 / 1.87 · 1.28 / 1.26 | ≥ 1.6 · ≥ 1.25 |
+| strong vs faint, neutral · tint | 2.99 / 3.12 · 1.98 / 2.08 | 3.14 / 2.95 · 2.10 / 1.99 | ≥ 2.5 · ≥ 1.9 |
 
 Rules:
 - **Strong > soft > faint, always.** The tests assert the order and the floors above in both looks and schemes. Neutral faint must also lie further from `bg.surface` in luminance than the body, while violet lies nearer, so the two can't be confused at any size.
 - **Faint carries no meaning beyond "a muscle is here".** It isn't a level of effort, so the legend doesn't explain it in `neutral` mode. Copy never calls these groups "inactive", "unused", "not used" or "resting" (rule 6).
-- **One paint per pixel.** The faint fill is opaque (the composite at opacity 1), and a translucent muscle region that would sit on a faint shape (or strong on soft during the pulse) is drawn over an opaque `nearBody` underlay of its own path. Nothing stacks.
+- **One paint per pixel.** The faint fill is opaque (the composite at opacity 1), and a translucent muscle region that would sit on a faint shape (or strong on soft during the pulse, in every mode including `off`) is drawn over an opaque `nearBody` underlay of its own path. Nothing stacks.
 - **Grooves, not lines.** Neighbouring faint shapes are separated by plain body tone at least `guide.definitionGroove` wide. Faint shapes are never stroked or outlined, so the Differentiate Without Color outline stays unique to strong regions.
 - **Faint never pulses** and is the same in every frame. In `tint` mode the soft level also stays steady at 0.45, because its pulse low (0.36) would sit only about 1.17:1 from faint violet.
 - **`tint` falls back to `neutral`** under Increase Contrast and Differentiate Without Color, and draws nothing without the catalogue entry (no violet without a source). `neutral` is drawn whenever the figure is, at the M/L tier.
@@ -294,7 +294,7 @@ Geometry is in body heights (H) inside the figure code (`STROKE`, `ADULT_V1_PROF
 | `guide.strokeFloor.ML` | halo 1.0 · edge 0.75 · contour 0.75 · hair 0.75 | Minimum stroke widths in pt at the M/L tier |
 | `guide.muscleInset` | 0.0035 H | Muscle regions stay this far inside the silhouette |
 | `guide.muscleSoftOpacity` | 0.45 (0.60 under Increase Contrast) | Secondary muscles |
-| `guide.definitionOpacity` | 0.25 dark · 0.18 light | `guide.definition` over `nearBody` for faint muscle groups, `neutral` mode (§2.3) |
+| `guide.definitionOpacity` | 0.35 dark · 0.24 light | `guide.definition` over `nearBody` for faint muscle groups, `neutral` mode (§2.3) |
 | `guide.definitionTintOpacity` | 0.18 dark · 0.18 light | `guide.muscle` over `nearBody` for faint muscle groups, `tint` mode (§2.3) |
 | `guide.definitionGroove` | 0.006 H target (about 1.2pt at 240pt); test floor 0.004 H | Minimum plain-body gap between two faint shapes in the same body group |
 | `guide.shadeMaxOpacity` | 0.26 (side) · 0.18 (front/back edges) | Peak shading at an edge facing away from the light |

@@ -317,10 +317,11 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
       for (const [alpha, world] of byAlpha(regions.filter((r) => r.group === g && r.level === level).map((r) => ({ alpha: r.alpha, points: r.contour })))) {
         const rs = world.map(project);
         const opacity = muscleOpacity(level, { ...opts, definition }) * alpha;
-        // With definition on, a translucent region that would sit on a faint shape, or strong on soft during the pulse (review
-        // N3), gets an opaque body-tone underlay of its own path: one paint per pixel (§4.11.6). Elsewhere (an opaque region,
-        // or nothing beneath) it would change only the anti-aliased edge, and hide the trunk's lines under side-view pelvis regions.
-        const underlay = definition !== 'off' && opacity < 1 && (overlapsAny(world, faintWorld) || (level === 'strong' && overlapsAny(world, softWorld)));
+        // A translucent region that would sit on a faint shape (definition on), or strong on soft during the pulse in any
+        // mode (review N3; with definition off too, so one pixel never shows two violets, §4.3), gets an opaque body-tone
+        // underlay of its own path: one paint per pixel (§4.11.6). Elsewhere (an opaque region, or nothing beneath) it would
+        // change only the anti-aliased edge, and hide the trunk's lines under side-view pelvis regions.
+        const underlay = opacity < 1 && ((definition !== 'off' && overlapsAny(world, faintWorld)) || (level === 'strong' && overlapsAny(world, softWorld)));
         if (underlay) ops.push(pathOp(rs, { smooth: true, fill: 'nearBody', opacity: alpha }));
         ops.push(pathOp(rs, { smooth: true, fill: 'muscle', opacity }));
         // Differentiate Without Color: strong regions also get a 1 pt outline in text.primary at 0.6.
