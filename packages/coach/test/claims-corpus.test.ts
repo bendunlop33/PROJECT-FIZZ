@@ -162,6 +162,73 @@ const CLAIMS: readonly string[] = [
   'Your sets are now lighter, not heavier.',
   'Bench isn’t 100 any more, it’s 95.',
   'Sets 3 & 4 → 95 kg.',
+  // Review r3 B3: forms the r2 backstop still kept with nothing saved.
+  'Expect sets 3 and 4 at 95 kg.',
+  'Expect 95 kg on your card for sets 3 and 4.',
+  'Use 95 from here, it’s on your card.',
+  'Given last week, you have 95 kg for the rest.',
+  'Sets 3 and 4 have 95 kg rather than the 100 you did.',
+  'You’ll be on 95 for the rest which may feel light.',
+  'Push A now opens with squat.',
+  'Squat first next time.',
+  'Next Push A: pec deck, not cable fly.',
+  'Pec deck’s taking cable fly’s spot next time.',
+  'Binned set 4.',
+  'Chopped set 4.',
+  'Set 4 is history.',
+  'Overhead press won’t progress until your shoulder settles.',
+  'Overhead press is on hold while your shoulder settles.',
+  'I’ve wiped that memory.',
+  'Consider it noted.',
+  'I’ll bear that in mind.',
+  'Will do.',
+  'On it.',
+  '95 for the rest, yeah?',
+  'Remember: 95 for the rest.',
+  // Adversarial additions (r3 fixes): the same ideas in other words.
+  'Expect 95 on the bar for the rest.',
+  'Expect 95 kg next time.',
+  'Heads up: sets 3 and 4 are 95 now.',
+  'Lunges are off the menu next time.',
+  'Swapped.',
+  'Switched it.',
+  'Deadlift goes first next session.',
+  'Next time starts with squat.',
+  'Your next Push A kicks off with squat.',
+  'Squat’s first next time.',
+  'Pec deck slots in where cable fly was.',
+  'Pec deck takes cable fly’s place.',
+  'Push B: rows, not pulldowns.',
+  'Your overhead press is paused for now.',
+  'No more increases on overhead press until the shoulder settles.',
+  'Overhead press won’t go up while your shoulder’s sore.',
+  'I’ve parked overhead press for now.',
+  'Shoulder’s flagged.',
+  'I’ve scrubbed that note.',
+  'Memory wiped.',
+  'Duly noted.',
+  'Noted, I’ll keep it in mind.',
+  'Sets 3 and 4 have 95 kg on them, which should feel lighter.',
+  'Sets 3 and 4 have 95 kg instead of 100.',
+  'You have 95 kg for the rest as you asked.',
+  'You’re at 95 for the rest, same as last week.',
+  'Bench drops to 95 for the rest.',
+  'Bench is 95 for the rest, yeah?',
+  '95 kg for the rest, right?',
+  'Set 4’s gone.',
+  'Removed.',
+  'Lunges are binned.',
+  'That’s on the card now.',
+  'It’s in the app.',
+  'Everything’s on your screen.',
+  'All good, 95 for the rest.',
+  'Ninety-five for the rest.',
+  'The last two are ninety five.',
+  'Will do, 95 for the rest.',
+  'Leave it with me.',
+  'Can do.',
+  'You got it.',
+  'Copy that.',
 ];
 
 /** Suggestions, questions and facts. Keeping them is right; hiding them is a (reported) false hide. */
@@ -242,6 +309,29 @@ const NOT_CLAIMS: readonly string[] = [
   'Most people use 2.5 kg jumps.',
   'Your dumbbells go up in 2 kg steps.',
   'The machine maxes out at 100 kg.',
+  // Review r3 B3 near-misses: advice, questions and history the narrower vetoes must still keep.
+  'Expect the last reps to feel slow.',
+  'Bear in mind the bar is 20 kg.',
+  'Is overhead press on hold?',
+  'Should overhead press go on hold?',
+  'If your shoulder hurts, overhead press won’t progress.',
+  'Do you want squat first next time?',
+  'Want squat first next time?',
+  'I’d put squat first next time.',
+  'You can see 95 for sets 3 and 4 if you tap the card.',
+  'Rather than 100, I’d go 95 for the rest.',
+  'See how set 3 feels first.',
+  'Plan to rest 3 minutes.',
+  'Remember to brace before each rep.',
+  'Thanks!',
+  'No problem.',
+  'Got it, here’s why.',
+  'Cue: chest up, not out.',
+  'Tip: slow down, not up.',
+  'Squat felt fast today, nice.',
+  'Last week you did 100 for 8, so 95 is conservative.',
+  'The 95 you did last week moved well.',
+  'You did 95 last time, which was smart.',
   // Known false hides (reported): explaining today's plan reads like a stated target.
   'Set 3 is at 100 because you hit 8 reps last week.',
   'Sets 3 and 4 are planned at 100 kg.',
@@ -342,6 +432,41 @@ describe('claims against a ledger', () => {
     expect(checkReplyClaims('Sets 3 and 4 are now 95 kg, not 100.', ledger([a])).keep).toBe(true);
     expect(checkReplyClaims('Bench: 95 kg for sets 3 and 4.', ledger([a])).keep).toBe(true);
     expect(checkReplyClaims('Overhead: 95 kg for sets 3 and 4.', ledger([a])).keep).toBe(false);
+  });
+
+  it('a plural or generic exercise word claims every exercise it could mean (review r3 B3)', () => {
+    const a = benchAdjust();
+    expect(checkReplyClaims('Dumbbells are 95 for the rest', ledger([a]))).toMatchObject({ keep: false, reason: 'mismatch' });
+    expect(checkReplyClaims('Flyes are 95 for the rest', ledger([a]))).toMatchObject({ keep: false, reason: 'mismatch' });
+    expect(checkReplyClaims('Your presses are 95 for the rest', ledger([a]))).toMatchObject({ keep: false, reason: 'mismatch' });
+    expect(checkReplyClaims('DBs are 95 for the rest', ledger([a]))).toMatchObject({ keep: false, reason: 'mismatch' });
+    expect(checkReplyClaims('Bench and flyes are 95 for the rest', ledger([a]))).toMatchObject({ keep: false, reason: 'mismatch' });
+    expect(checkReplyClaims('Rows are 95 for the rest', ledger([a]))).toMatchObject({ keep: false, reason: 'mismatch' });
+    // Naming the changed exercise still matches, plural or not.
+    expect(checkReplyClaims('Bench presses are 95 for the rest', ledger([a])).keep).toBe(true);
+    expect(checkReplyClaims('Bench is 95 for the rest', ledger([a])).keep).toBe(true);
+  });
+
+  it('the new claim forms match their own kinds (review r3 B3)', () => {
+    const pain = record({ kind: 'set_pain_flag', flagIds: [id(50)], exerciseNames: ['Overhead press'], area: 'shoulder' });
+    expect(checkReplyClaims('Overhead press is on hold while your shoulder settles.', ledger([pain])).keep).toBe(true);
+    expect(checkReplyClaims('Overhead press is on hold while your shoulder settles.', ledger([benchAdjust()])).keep).toBe(false);
+    expect(checkReplyClaims('Bench press is on hold while your shoulder settles.', ledger([pain])).keep).toBe(false);
+    const forget = record({ kind: 'forget_memory', memoryId: id(61), text: 'Hates lunges' });
+    expect(checkReplyClaims('I’ve wiped that memory.', ledger([forget])).keep).toBe(true);
+    expect(checkReplyClaims('I’ve wiped that memory.', ledger([benchAdjust()])).keep).toBe(false);
+    const memory = record({ kind: 'save_memory', memoryId: id(60), text: 'Trains before work' });
+    expect(checkReplyClaims('I’ll bear that in mind.', ledger([memory])).keep).toBe(true);
+    expect(checkReplyClaims('Consider it noted.', ledger([memory])).keep).toBe(true);
+    expect(checkReplyClaims('Will do.', ledger([memory])).keep).toBe(true);
+    const swap = record({ kind: 'propose_next_workout_change', sourceSessionId: id(1), workoutLabel: 'Push A', changes: [{ change: 'swap', text: 'Cable fly → Pec deck' }], because: 'you asked for some variety.' });
+    expect(checkReplyClaims('Next Push A: pec deck, not cable fly.', ledger([benchAdjust()])).keep).toBe(false);
+    expect(checkReplyClaims('Squat first next time.', ledger([benchAdjust()])).keep).toBe(false);
+    // Like "I've swapped cable fly for pec deck", a structural line names exercises a proposal record doesn't carry: hidden.
+    expect(checkReplyClaims('Next Push A: pec deck, not cable fly.', ledger([swap]))).toEqual(checkReplyClaims('I’ve swapped cable fly for pec deck.', ledger([swap])));
+    // A stale adjustment never backs "Expect …" (the r3 failure scenario).
+    expect(checkReplyClaims('Expect sets 3 and 4 at 95 kg.', ledger([benchAdjust({ status: 'stale', failure: null })]))).toMatchObject({ keep: false, reason: 'not_committed' });
+    expect(checkReplyClaims('Expect sets 3 and 4 at 95 kg.', ledger([benchAdjust()])).keep).toBe(true);
   });
 
   it('an earlier action read through get_recent_actions backs a claim about it (CC5, check 16)', () => {

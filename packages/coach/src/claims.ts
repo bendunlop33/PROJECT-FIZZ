@@ -25,6 +25,22 @@ import { normaliseForClaims } from './text';
  * suggestion, offer, history, a general fact or imperative advice. Free text
  * can lean on an `earlier` ledger entry only when the sentence cites its
  * token (CC5, review r2 S2).
+ *
+ * Review r3 B3: the backstop's vetoes are local. A suggestive, unchanged or
+ * past word only vetoes when it comes before the value in the same
+ * sub-clause (split on "rather than", "than", "which", "as", "so", "while"),
+ * and history only in that sub-clause, so "Sets 3 and 4 have 95 kg rather
+ * than the 100 you did" and "Given last week, you have 95 kg for the rest"
+ * are claims. "Expect …", "see …" and "plan …" state the app's state, not
+ * advice. "It's on your card", structural slang ("Squat first next time",
+ * "Push A now opens with squat", "taking cable fly's spot", "Next Push A:
+ * pec deck, not cable fly"), removal slang ("Binned set 4", "Set 4 is
+ * history"), progression holds ("Overhead press is on hold while your
+ * shoulder settles"), memory forms ("I've wiped that memory", "Consider it
+ * noted", "I'll bear that in mind"), bare acknowledgements ("Will do.", "On
+ * it.") and tag questions ("95 for the rest, yeah?") are claims. A generic
+ * or plural exercise word ("presses", "dumbbells", "flyes") claims every
+ * exercise it could mean.
  */
 
 export interface LedgerEntry {
@@ -62,6 +78,9 @@ const PAST = new Set([
   'halved', 'doubled', 'subbed', 'substituted', 'tracked', 'pencilled', 'penciled', 'booked', 'built', 'created', 'synced',
   'scrapped', 'ditched', 'deloaded', 'progressed', 'tweaked', 'fixed', 'sorted', 'reset', 'cut', 'put', 'set', 'upped', 'slotted',
   'memorised', 'memorized', 'jotted', 'filed',
+  // Review r3 B3: removal and memory slang.
+  'binned', 'chopped', 'axed', 'nixed', 'culled', 'canned', 'dumped', 'tossed', 'zapped', 'wiped', 'erased', 'scrubbed', 'paused',
+  'frozen', 'held', 'parked', 'benched', 'shelved',
 ]);
 /** Same form as the base verb: only a claim after a subject or auxiliary, never sentence-initial (imperatives). */
 const AMBIGUOUS_PAST = new Set(['cut', 'put', 'set', 'reset', 'sorted', 'fixed', 'made', 'planned', 'built', 'marked', 'locked']);
@@ -73,8 +92,9 @@ const BASE = new Set([
   'shave', 'push', 'put', 'make', 'lighten', 'ease', 'dial', 'modify', 'amend', 'lock', 'store', 'remember', 'write', 'rewrite',
   'reorder', 'rearrange', 'shift', 'program', 'programme', 'plan', 'queue', 'enter', 'cap', 'round', 'halve', 'double', 'sub',
   'substitute', 'track', 'pencil', 'book', 'build', 'create', 'set', 'scrap', 'ditch', 'deload', 'progress', 'fix', 'sort', 'slot', 'go',
+  'bin', 'chop', 'axe', 'nix', 'wipe', 'erase', 'pause', 'freeze', 'park', 'shelve', 'bear',
 ]);
-const DOUBLING = new Set(['drop', 'cut', 'swap', 'up', 'log', 'flag', 'trim', 'sub', 'set', 'put', 'plan', 'cap', 'scrap', 'slot', 'program', 'reset', 'pencil', 'dial']);
+const DOUBLING = new Set(['drop', 'cut', 'swap', 'up', 'log', 'flag', 'trim', 'sub', 'set', 'put', 'plan', 'cap', 'scrap', 'slot', 'program', 'reset', 'pencil', 'dial', 'bin', 'chop']);
 function ing(v: string): string {
   if (DOUBLING.has(v)) return `${v}${v.charAt(v.length - 1)}ing`;
   if (v.endsWith('e') && !v.endsWith('ee')) return `${v.slice(0, -1)}ing`;
@@ -104,7 +124,22 @@ const OFFER_TAIL = /\b(if you (want|like|would like|prefer|are happy|agree|say s
  * (review r2 B1). Function words and "back"/"front" aren't here: "back to 95"
  * names nothing.
  */
-const MENTION_WORDS = new Set(['incline', 'decline', 'seated', 'standing', 'smith', 'assisted', 'weighted', 'machine', 'cable', 'dumbbell', 'dumbbells', 'barbell', 'press']);
+const MENTION_WORDS = new Set([
+  'incline', 'decline', 'seated', 'standing', 'smith', 'assisted', 'weighted', 'machine', 'cable', 'dumbbell', 'barbell', 'press', 'db',
+  // Review r3 B3: movement words, matched in singular form ("presses", "flyes", "rows").
+  'fly', 'row', 'curl', 'raise', 'squat', 'deadlift', 'pull', 'pulldown', 'extension', 'lunge', 'dip', 'deck', 'thrust',
+]);
+/** Words that mean the same equipment: "dumbbells" names "Incline DB press". */
+const MENTION_SYNONYMS: Readonly<Record<string, readonly string[]>> = { dumbbell: ['db', 'dumbbell'], db: ['db', 'dumbbell'] };
+
+/** "presses" → "press", "flyes"/"flies" → "fly", "dumbbells" → "dumbbell", "dbs" → "db". */
+function singular(w: string): string {
+  if (w === 'flyes' || w === 'flies' || w === 'flys') return 'fly';
+  if (/(?:ss|x|ch|sh)es$/.test(w)) return w.slice(0, -2);
+  if (w.endsWith('s') && !w.endsWith('ss') && w.length > 3) return w.slice(0, -1);
+  if (w === 'dbs') return 'db';
+  return w;
+}
 
 const GENERIC_NAME_WORDS = new Set([
   'press', 'machine', 'cable', 'dumbbell', 'dumbbells', 'barbell', 'back', 'front', 'the', 'and', 'with', 'seated', 'standing',
@@ -114,6 +149,15 @@ const GENERIC_NAME_WORDS = new Set([
 // ---------------------------------------------------------------------------
 
 type ClaimKind = ActionKind | 'log_set' | 'any';
+/**
+ * An exercise the claim names. `all`: a generic or plural word ("presses",
+ * "dumbbells") claims every exercise it could mean, so each must have
+ * changed (review r3 B3); a specific name needs only one.
+ */
+interface Mention {
+  names: string[];
+  all: boolean;
+}
 type SetOp = 'change' | 'remove_set' | 'add_set';
 
 interface Claim {
@@ -121,7 +165,7 @@ interface Claim {
   op: SetOp;
   setNumbers: number[];
   /** Alias words found, each mapped to the names it could mean. */
-  exerciseMentions: string[][];
+  exerciseMentions: Mention[];
   loads: { value: number; unit: 'kg' | 'lb' }[];
   bareNumbers: number[];
   unverifiable: boolean;
@@ -210,6 +254,11 @@ const PHRASES: readonly RegExp[] = [
   /\b(?:gone|went) with\b/,
   /\bnext (?:session|time|workout|push|pull)\b.*\b(?:has|is|gets|are|will have)\b.*\d/,
   /\b(?:is|are|has|gets) (?:at )?\d.*\bnext (?:session|time|workout)\b/,
+  // Review r3 B3: the app's state with no number, memory forms.
+  /\b(?:it|they|that|this|those|these|everything|all|which) (?:is|are) (?:now |all )?(?:on|in) (?:your|the) (?:card|cards|app|screen|plan|sheet|log|workout|session|list)\b/,
+  /\bconsider it (?:noted|done|sorted|handled|saved|logged|changed|remembered|dealt with)\b/,
+  /\b(?:bear|keep|hold|carry) (?:that|this|it|those|these) in mind\b/,
+  /\b(?:on|in) (?:the|my|your) (?:radar|books|notes)\b/,
 ];
 
 /** Past-tense progress talk ("your squat has increased since August") is history, not a change made now. */
@@ -233,13 +282,60 @@ const PRESENT_STATE: readonly RegExp[] = [
   /\b(?:replaces|swaps in for|takes over from|comes in for|stands in for|subs in for)\b/,
   /\b(?:you|we) are (?:now )?(?:doing|lifting|using|going|hitting|pressing|squatting|pulling|working with|working at|sitting at) \d/,
   /\b(?:is|are) (?:now )?(?:sitting|staying|sat) (?:at )?\d/,
+  // Review r3 B3: removal slang ("Set 4 is history").
+  /\b(?:is|are) (?:now )?(?:history|toast|binned|scrapped|ditched|axed|off the (?:list|plan|card|menu))\b/,
 ];
+
+/**
+ * Structural claims with no change verb (CC10, review r3 B3): "Squat first
+ * next time", "Push A now opens with squat", "Pec deck's taking cable fly's
+ * spot next time".
+ */
+const STRUCT_STATE: readonly RegExp[] = [
+  /\b(?:first|last|second|third|next|after|before) \w* ?(?:next (?:time|session|week|workout|push|pull|legs)|from now on|going forward|from (?:here|today) on)\b/,
+  /\b(?:now |will )?(?:opens?|starts?|leads?|begins?|ends?|finish(?:es)?|closes?|kicks? off) with\b/,
+  /\b(?:slots?|slotted|slotting|steps?|stepping|comes?|coming|goes|going|swaps?|subs?|drops?|dropping) in (?:for|where|instead|in place|at)\b/,
+  /\b(?:taking|takes|took|gets|getting|has|have|got|in) (?:over )?(?:(?:[a-z]+ ){0,3}[a-z]+'s |the |its |their |that |his )?(?:old )?(?:spot|place|slot)\b/,
+  /\b(?:moves?|moved|bumped|goes|go) (?:up|down) (?:the order|a slot|one slot|one place|to (?:first|second|third|last))\b|\b(?:moves?|moved|goes|go) to the (?:front|top|start|end|back) of\b/,
+];
+/** "Next Push A: pec deck, not cable fly." A workout label, the new exercise and the old one (CC10). */
+const STRUCT_LINE = /^(?:next |your next |for )?([a-z][a-z ]{1,30}?) ?: ?([a-z][a-z ]{1,40}?),? (?:not|instead of|in place of|over|replacing) ([a-z][a-z ]{1,40}?)$/;
+/**
+ * A progression hold on a movement (review r3 B3): "Overhead press is on
+ * hold while your shoulder settles", "won't progress until your shoulder
+ * settles". It reads as a saved pain flag.
+ */
+const PAIN_HOLD = /\b(?:is|are) (?:now )?(?:on hold|paused|frozen|blocked|parked|benched|shelved)\b|\bon hold\b|\b(?:holding|pausing|freezing|blocking|stopping|stopped|paused|froze|frozen|blocked) (?:its |the |your |any )?(?:progress(?:ion)?|increases?)\b|\bno (?:more )?(?:progress(?:ion)?|increases?) (?:on|for)\b/;
+const PAIN_HOLD_SOFT = /\b(?:will not|won't|wont|not going to|cannot|can't|cant|isn't going to) (?:progress|go up|increase|move up)\b/;
+const BODY_CONTEXT = /\b(?:pain|painful|hurts?|injur(?:y|ed)|flag(?:ged)?|shoulders?|elbows?|wrists?|knees?|back|hips?|ankles?|neck|settles?|heals?|recovers?|calms? down|better)\b/;
+
+function painHoldClaim(clause: string, sentence: string): boolean {
+  // "If your shoulder hurts, overhead press won't progress" explains a rule; it doesn't claim a flag.
+  if (isQuestion(sentence) || OFFER_TAIL.test(sentence) || /^(?:if|when|once|unless|should)\b|\b(?:if|unless)\b/.test(sentence)) return false;
+  if (matchesUnnegated(PAIN_HOLD, clause) && !suggestiveBefore(clause, PAIN_HOLD)) return true;
+  return PAIN_HOLD_SOFT.test(clause) && BODY_CONTEXT.test(sentence) && !suggestiveBefore(clause, PAIN_HOLD_SOFT);
+}
+
+function suggestiveBefore(clause: string, re: RegExp): boolean {
+  const m = re.exec(clause);
+  if (m === null) return false;
+  const before = clause.slice(0, m.index).split(' ').filter((w) => w.length > 0);
+  return suggestiveAt([...before, ''], before.length, 6);
+}
+
+function structuralStateClaim(clause: string, sentence: string): boolean {
+  if (isQuestion(sentence) || OFFER_TAIL.test(sentence)) return false;
+  for (const re of STRUCT_STATE) {
+    if (matchesUnnegated(re, clause) && !suggestiveBefore(clause, re) && !/\b(?:if|when|once|unless)\b/.test(clause)) return true;
+  }
+  return false;
+}
 /** "Bench now sits at 95", "your sets read 95 kg", "the app shows 95": a state read off the screen. History ("your log shows 100 last week") isn't. */
 const SHOWN_STATE = /\b(?:sits?|sitting|reads?|reading|shows?|showing|says|displays?|displaying) (?:now )?(?:at |as )?\d/;
 /** "95 kg for sets 3 and 4", "95 for the rest", "95 from here": a value stated as the plan, with no verb. */
 const VALUE_FIRST = /^\d+(?:\.\d+)?(?: (?:kgs?|lbs?|kilos?|kilograms?|pounds?))?(?: x \d+)? (?:for (?:sets? |the |your |both|all|each|every)|from (?:here|now|next|today)|next (?:time|session|week)|it is\b|on (?:sets? |the |your |both|all))/;
 /** "Pec deck in", "cable fly out": an exercise entering or leaving the plan with no verb (CC10). */
-const BARE_IN_OUT = /^(?!(?:i|we|you|me|it|that|this|all|count|sets?|breathe|brace|knees|elbows|chest|chin|toes|hips|tuck|lock|squeeze|push|pull|log|sign|check|tap|zoom|work|time)\b)[a-z][a-z ]{1,40}? (?:in|out)$/;
+const BARE_IN_OUT = /^(?!(?:not|no|never|i|we|you|me|it|that|this|all|count|sets?|breathe|brace|knees|elbows|chest|chin|toes|hips|tuck|lock|squeeze|push|pull|log|sign|check|tap|zoom|work|time)\b)[a-z][a-z ]{1,40}? (?:in|out)$/;
 /** "No more cable fly": an exercise dropped (CC10). "No more than 3 sets" is advice. */
 const NO_MORE = /(?:^|, )no (?:more|longer)\b(?! than\b)/;
 /** "Pec deck from next time": an exercise scheduled with no verb. */
@@ -268,8 +364,11 @@ function matchesUnnegated(re: RegExp, clause: string): boolean {
   return m !== null && !negatedBeforeIndex(clause, m.index);
 }
 
+/** "95 for the rest, yeah?": a statement with a tag, not a question (review r3 B3). */
+const TAG_QUESTION = /,? (?:yeah|yep|yes|right|ok|okay|eh|innit|correct|alright|no|yeah no|got it|cool|done|ya|yup)\s*\?+\s*$/;
+
 function isQuestion(sentence: string): boolean {
-  return /\?\s*$/.test(sentence);
+  return /\?\s*$/.test(sentence) && !TAG_QUESTION.test(sentence);
 }
 
 function presentStateClaim(clause: string, sentence: string): boolean {
@@ -317,13 +416,15 @@ function hasClaimTrigger(words: readonly string[], clause: string, sentence: str
   // trailing "not 100" doesn't undo "sets 3 and 4 are now 95 kg".
   if (GENERIC_ONLY.test(clause)) return true;
   if (presentStateClaim(clause, sentence)) return true;
+  if (painHoldClaim(clause, sentence)) return true;
+  if (structuralStateClaim(clause, sentence)) return true;
   if (PHRASES.some((re) => matchesUnnegated(re, clause))) {
     if (/\b(?:try|consider|maybe|suggest|recommend|would|could|should|might)\b/.test(clause) && /\bfrom now on|going forward\b/.test(clause)) return false;
     if (/\b(?:should|will) (?:now )?(?:show|see|read|display|say|list|be)\b/.test(clause) && (/\b(?:if|when|once|unless)\b/.test(clause) || OFFER_TAIL.test(sentence) || isQuestion(sentence))) return false;
     return true;
   }
   if (verblessClaim(clause, sentence)) return true;
-  if (matchesUnnegated(WILL_VALUE, clause) && !/\b(?:would|could|should|might|may|if)\b/.test(clause)) return true;
+  if (WILL_VALUE.test(clause) && valueSubClauses(clause).some((sub) => matchesUnnegated(WILL_VALUE, sub) && !/\b(?:would|could|should|might|may|if)\b/.test(sub.slice(0, firstValueIndex(sub))))) return true;
   return valueStatement(words, clause, sentence);
 }
 
@@ -333,7 +434,7 @@ const TARGET_SCOPE =
 /** Advice in the imperative ("Aim for 95 kg on the last two") tells Ben what to do; it doesn't claim the app changed. */
 const IMPERATIVE_START = new Set([
   'aim', 'try', 'rest', 'keep', 'go', 'take', 'use', 'drop', 'lower', 'start', 'stick', 'hold', 'stay', 'add', 'do', 'hit', 'get',
-  'push', 'work', 'focus', 'pick', 'grab', 'load', 'warm', 'finish', 'leave', 'think', 'let', 'plan', 'expect', 'remember', 'see',
+  'push', 'work', 'focus', 'pick', 'grab', 'load', 'warm', 'finish', 'leave', 'think', 'let',
 ]);
 /** "Still 100 kg", "stays at 100": unchanged, so not a claim of change. "Was/were" is a past fact ("set 2 was 100 kg"). */
 const UNCHANGED_OR_PAST = /\b(?:still|stays?|staying|unchanged|as planned|as before|was|were|did|hit|lifted|managed|got through)\b|(?<!\bnow )\b(?:planned|programmed|scheduled|written)\b/;
@@ -348,19 +449,59 @@ const GENERAL_FACT = /\b(?:people|usually|typically|generally|normally|often|ste
  * "last two sets at 95 kg"). Questions, suggestions, offers, history, facts
  * about the bar or a best, unchanged values and imperative advice stay.
  */
-function valueStatement(words: readonly string[], clause: string, sentence: string): boolean {
-  const scrubbed = clause.replace(/\b(?:rpe|rir|@) ?\d+(?:\.\d+)?\b/g, ' ').replace(/\b\d{1,2}:\d{2}\b/g, ' ');
+function scrubValues(text: string): string {
+  return text.replace(/\b(?:rpe|rir|@) ?\d+(?:\.\d+)?\b/g, ' ').replace(/\b\d{1,2}:\d{2}\b/g, ' ');
+}
+
+/** Index of the first value number in `text` (a load or a target number, not a set number), or the length. */
+function firstValueIndex(text: string): number {
+  const masked = scrubValues(text)
+    .replace(/\bsets? [\d_]+\b/g, (m) => ' '.repeat(m.length))
+    .replace(/\b(?:last|final|first|next|remaining|other|those|these|both|the|all) \d+\b/g, (m) => ' '.repeat(m.length));
+  const m = /\d/.exec(masked);
+  return m === null ? text.length : m.index;
+}
+
+/** Sub-clauses a veto word can't cross (review r3 B3): "95 kg rather than the 100 you did", "95 for the rest which may feel light". */
+function valueSubClauses(clause: string): string[] {
+  return clause
+    .split(/\s+(?:rather than|other than|than|which|as|so|while|whereas|instead of|compared to|compared with|versus|vs)\s+/)
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0);
+}
+
+/**
+ * Does this sub-clause state a target value with no veto before the value?
+ * Suggestive, unchanged and past words only count before the value; history
+ * ("last week") and general facts anywhere in the sub-clause.
+ */
+function subClauseStatesValue(sub: string): boolean {
+  const scrubbed = scrubValues(sub);
   const values = scrubbed.replace(/\bsets? [\d_]+\b/g, ' ').replace(/\b(?:last|final|first|next|remaining|other|those|these|both|the|all) \d+\b/g, ' ');
   if (!/\d/.test(values)) return false;
   if (!LOAD_VALUE.test(scrubbed) && !TARGET_SCOPE.test(scrubbed)) return false;
-  if (isQuestion(sentence) || OFFER_TAIL.test(sentence) || HISTORICAL.test(sentence)) return false;
-  if (words.some((w) => SUGGESTIVE.has(w)) || STATE_FACT_SUBJECT.test(clause) || UNCHANGED_OR_PAST.test(clause) || GENERAL_FACT.test(clause)) return false;
+  const before = sub.slice(0, firstValueIndex(sub));
+  const beforeWords = before.split(' ').filter((w) => w.length > 0);
+  if (beforeWords.some((w) => SUGGESTIVE.has(w)) || UNCHANGED_OR_PAST.test(before)) return false;
+  // "95 on the bar" is a target; "the bar is 20 kg" is a fact.
+  const facts = sub.replace(/\b(?:on|onto|off) the bar\b/g, ' ');
+  if (HISTORICAL.test(sub) || STATE_FACT_SUBJECT.test(facts) || GENERAL_FACT.test(sub)) return false;
+  // Ben's own past ("you logged 100 kg × 8") is history, not a change.
+  if (/\byou (?:\w+ed|did|hit|lifted|got|went|had|made|ran)\b|\byou have (?:\w+ed|done|hit|lifted|gone|had|made|run)\b/.test(before)) return false;
+  return true;
+}
+
+function valueStatement(words: readonly string[], clause: string, sentence: string): boolean {
+  if (isQuestion(sentence) || OFFER_TAIL.test(sentence)) return false;
+  // "Your squat has increased by 10 kg since August": a history phrase split off by "since" still
+  // belongs to this clause. One in an earlier clause ("Given last week, you have 95 kg") doesn't.
+  const at = sentence.indexOf(clause);
+  const after = at >= 0 ? sentence.slice(at + clause.length) : '';
+  if (/^\s*(?:since|over the|in the last|ago|from|last|this)\b/.test(after) && HISTORICAL.test(after)) return false;
   if (/\b(?:if|when|once|until|unless|before|after)\b/.test(clause) || /^(?:if|when|once|unless)\b/.test(sentence)) return false;
   const first = words.find((w) => !INTERJECTIONS.has(w)) ?? '';
   if (IMPERATIVE_START.has(first)) return false;
-  // Ben's own past ("you logged 100 kg × 8") is history, not a change.
-  if (/\byou (?:\w+ed|did|hit|lifted|got|went|had|made|ran)\b|\byou have (?:\w+ed|done|hit|lifted|gone|had|made|run)\b/.test(clause)) return false;
-  return true;
+  return valueSubClauses(clause).some(subClauseStatesValue);
 }
 
 /** Verbless plan lines (review r2 B1): "95 for the rest", "pec deck in, cable fly out", "no more cable fly". */
@@ -390,8 +531,8 @@ function clausesOf(normalised: string): string[] {
 
 const NEXT_WORDS = /\b(?:next (?:time|session|workout|week|push|pull|legs|day)|for next|from now on|going forward|in future|future sessions?|next \w+ day)\b/;
 const TODAY_WORDS = /\b(?:today|this session|this workout|remaining|rest of|last two|last 2|sets? \d)/;
-const MEMORY_WORDS = /\b(?:remember(?:ed)?|memory|memories|noted|note|keep (?:that|this|it) in mind|stored|memori[sz]ed|jotted|got (?:that|it|this) down)\b/;
-const FORGET_WORDS = /\b(?:forgot|forgotten|forget|forgetting)\b/;
+const MEMORY_WORDS = /\b(?:remember(?:ed)?|memory|memories|noted|note|(?:keep|bear|hold|carry) (?:that|this|it|those|these) in mind|stored|memori[sz]ed|jotted|got (?:that|it|this) down|on (?:the|my) radar)\b/;
+const FORGET_WORDS = /\b(?:forgot|forgotten|forget|forgetting)\b|\b(?:wiped|erased|cleared|deleted|removed|scrubbed|binned|dropped|ditched)\b.*\b(?:memory|memories|note|notes)\b/;
 /** "I won't forget that" is a promise to remember, not a forget. */
 const NOT_FORGET = /\b(?:will not|won't|wont|shall not|never|not going to|not gonna) forget\b/;
 const PAIN_WORDS = /\b(?:flag(?:ged)?|pain flag|flagging)\b/;
@@ -400,17 +541,30 @@ const UNDO_WORDS = /\b(?:undid|undone|undo|undoing|revert(?:ed|ing)?|restor(?:ed
 const STRUCT_VERBS = /\b(?:swap(?:ped|ping|s)?|switch(?:ed|ing|es)?|replac(?:ed|es?|ing)|substitut(?:ed|es?|ing)|sub(?:bed|bing|s)?|reorder(?:ed|ing|s)?|rearrang(?:ed|es?|ing)|slot(?:ted|s)?|takes over from|comes in for|stands in for)\b/;
 /** "Cable fly is out", "pec deck is in for cable fly": an exercise entering or leaving the plan (CC10). */
 const IN_OUT = /\b(?:is|are) (?:now )?(?:out|in)(?: (?:for|of|instead|next|from|today|now)\b|$)/;
-const ADD_REMOVE = /\b(?:add(?:ed|ing)?|remov(?:ed|e|ing)|dropp(?:ed|ing)|drop|delet(?:ed|e|ing)|cut|scrap(?:ped)?|ditch(?:ed)?|took out|taken out|knocked off)\b/;
+const ADD_REMOVE =
+  /\b(?:add(?:ed|ing)?|remov(?:ed|e|ing)|dropp(?:ed|ing)|drop|delet(?:ed|e|ing)|cut|scrap(?:ped)?|ditch(?:ed)?|took out|taken out|knocked off|binned|chopped|axed|nixed|culled|canned|dumped|tossed|zapped|is history|are history|is toast|off the (?:list|plan|card|menu))\b/;
 const LOG_WORDS = /\b(?:logged|log|logging|recorded|entered|tracked)\b/;
-const GENERIC_ONLY = /^(?:(?:ok|okay|right|great|sure|alright|cool|perfect|yes|yep|yeah|got it|no problem|and)\s*)*(?:done|all done|all set|sorted|consider it done|(?:all |both |everything is |everything has been |it is |that is |they are )?(?:saved|applied|updated|changed|adjusted|sorted|done)|that is done|it is done|everything is (?:done|updated|set)|taken care of)$/;
+const GENERIC_ONLY = /^(?:(?:ok|okay|right|great|sure|alright|cool|perfect|yes|yep|yeah|got it|no problem|and)\s*)*(?:done|all done|all set|sorted|consider it done|will do|on it|i am on it|you got it|can do|coming (?:right )?up|leave it with me|roger(?: that)?|wilco|copy that|consider it noted|(?:all |both |everything is |everything has been |it is |that is |they are )?(?:saved|applied|updated|changed|adjusted|sorted|done)|that is done|it is done|everything is (?:done|updated|set)|taken care of)$/;
+
+function plurals(w: string): string[] {
+  if (w.endsWith('y')) return [`${w}s`, `${w}es`, `${w.slice(0, -1)}ies`];
+  if (/(?:s|x|ch|sh)$/.test(w)) return [`${w}es`];
+  return [`${w}s`];
+}
 
 function aliasesOf(name: string): string[] {
   const words = name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !GENERIC_NAME_WORDS.has(w));
   const full = name.toLowerCase();
-  return [full, ...words, ...words.map((w) => `${w}s`)];
+  return [full, ...words, ...words.flatMap(plurals)];
 }
 
-function exerciseMentions(clause: string, names: readonly string[]): string[][] {
+/** Does a word of an exercise name match a generic word (after singular and synonyms)? */
+function nameHasWord(name: string, word: string): boolean {
+  const forms = MENTION_SYNONYMS[word] ?? [word];
+  return name.toLowerCase().split(/[^a-z0-9]+/).some((x) => forms.includes(x) || forms.includes(singular(x)));
+}
+
+function exerciseMentions(clause: string, names: readonly string[]): Mention[] {
   const byAlias = new Map<string, Set<string>>();
   for (const n of names) {
     for (const a of aliasesOf(n)) {
@@ -419,23 +573,26 @@ function exerciseMentions(clause: string, names: readonly string[]): string[][] 
       byAlias.set(a, set);
     }
   }
-  const found: string[][] = [];
+  const found: Mention[] = [];
   const sortedAliases = [...byAlias.keys()].sort((a, b) => b.length - a.length);
   let rest = ` ${clause} `;
   for (const a of sortedAliases) {
     const re = new RegExp(`\\b${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
     if (re.test(rest)) {
-      found.push([...(byAlias.get(a) ?? [])]);
+      found.push({ names: [...(byAlias.get(a) ?? [])], all: false });
       rest = rest.replace(re, ' ');
     }
   }
-  if (found.length > 0) return found;
-  // Nothing specific named: a generic word from a known name still names it (review r2 B1).
-  for (const w of rest.split(/[^a-z0-9]+/)) {
+  // A generic word from a known name still names it (review r2 B1): "Incline is 95". Plural and
+  // generic words claim every exercise they could mean (review r3 B3), unless one of those was
+  // already named ("bench presses" names bench, not every press).
+  const named = new Set(found.flatMap((m) => m.names));
+  for (const raw of rest.split(/[^a-z0-9]+/)) {
+    const w = singular(raw);
     if (!MENTION_WORDS.has(w)) continue;
-    const singular = w.endsWith('s') && w !== 'press' ? w.slice(0, -1) : w;
-    const matches = names.filter((n) => n.toLowerCase().split(/[^a-z0-9]+/).some((x) => x === w || x === singular)).map((n) => n.toLowerCase());
-    if (matches.length > 0) found.push(matches);
+    const matches = names.filter((n) => nameHasWord(n, w)).map((n) => n.toLowerCase());
+    if (matches.length === 0 || matches.some((n) => named.has(n))) continue;
+    found.push({ names: matches, all: true });
   }
   return found;
 }
@@ -475,7 +632,7 @@ function kindsOf(clause: string, sentence: string): { kinds: Set<ClaimKind>; op:
   const hasSetWord = /\b(?:sets?|a set|another set|one more set|extra set)\b/.test(clause);
   let op: SetOp = 'change';
   if (GENERIC_ONLY.test(clause)) return { kinds: new Set<ClaimKind>(['any']), op };
-  if (PAIN_WORDS.test(clause)) kinds.add('set_pain_flag');
+  if (PAIN_WORDS.test(clause) || PAIN_HOLD.test(clause) || PAIN_HOLD_SOFT.test(clause)) kinds.add('set_pain_flag');
   if (NOT_FORGET.test(clause)) kinds.add('save_memory');
   else if (FORGET_WORDS.test(clause)) kinds.add('forget_memory');
   else if (MEMORY_WORDS.test(clause)) kinds.add('save_memory');
@@ -487,6 +644,7 @@ function kindsOf(clause: string, sentence: string): { kinds: Set<ClaimKind>; op:
   // Adding or removing something that isn't a set is an exercise change: structural, never a set target (CC10).
   const structural =
     STRUCT_VERBS.test(clause) ||
+    STRUCT_STATE.some((re) => re.test(clause)) ||
     (IN_OUT.test(clause) && !hasSetWord) ||
     (ADD_REMOVE.test(clause) && !hasSetWord && !aboutValues) ||
     (BARE_IN_OUT.test(clause) && !hasSetWord) ||
@@ -506,8 +664,8 @@ function kindsOf(clause: string, sentence: string): { kinds: Set<ClaimKind>; op:
   return { kinds, op };
 }
 
-function parseClaim(clause: string, sentence: string, names: readonly string[]): Claim {
-  const { kinds, op } = kindsOf(clause, sentence);
+function parseClaim(clause: string, sentence: string, names: readonly string[], structuralLine = false): Claim {
+  const { kinds, op } = structuralLine ? { kinds: new Set<ClaimKind>(['propose_next_workout_change']), op: 'change' as const } : kindsOf(clause, sentence);
   const { loads, bare, unverifiable } = numbersIn(clause);
   return { kinds, op, setNumbers: setNumbersIn(clause), exerciseMentions: exerciseMentions(clause, names), loads, bareNumbers: bare, unverifiable };
 }
@@ -602,11 +760,13 @@ type EntityResult = { ok: true } | { ok: false; detail: string };
 
 function entitiesMatch(claim: Claim, record: ActionRecord, f: RecordFacts): EntityResult {
   for (const mention of claim.exerciseMentions) {
-    if (f.names.size > 0 && !mention.some((n) => f.names.has(n))) {
-      return { ok: false, detail: `It named ${mention[0] ?? 'another exercise'}; only ${[...f.names].join(', ')} changed.` };
+    const covered = mention.all ? mention.names.every((n) => f.names.has(n)) : mention.names.some((n) => f.names.has(n));
+    if (f.names.size > 0 && !covered) {
+      const missing = mention.names.find((n) => !f.names.has(n)) ?? mention.names[0] ?? 'another exercise';
+      return { ok: false, detail: `It named ${missing}; only ${[...f.names].join(', ')} changed.` };
     }
     if (f.names.size === 0 && record.detail.kind !== 'save_memory' && record.detail.kind !== 'forget_memory' && record.detail.kind !== 'add_playbook_candidate') {
-      return { ok: false, detail: `It named ${mention[0] ?? 'an exercise'}; that wasn't changed.` };
+      return { ok: false, detail: `It named ${mention.names[0] ?? 'an exercise'}; that wasn't changed.` };
     }
   }
   if (record.detail.kind === 'adjust_pending_sets' || record.detail.kind === 'undo') {
@@ -644,6 +804,15 @@ const NO_ACTION = 'No change was saved in this reply.';
 function exerciseValueLine(normalised: string): boolean {
   const m = EXERCISE_VALUE_LINE.exec(normalised);
   if (m === null || isQuestion(normalised)) return false;
+  const label = (m[1] ?? '').trim();
+  return !LINE_LABELS.test(label) && label.split(' ').length <= 4;
+}
+
+/** "Next Push A: pec deck, not cable fly." (not "Cue: chest up, not out", not a question). */
+function structuralLine(normalised: string): boolean {
+  if (isQuestion(normalised) || /\d/.test(normalised)) return false;
+  const m = STRUCT_LINE.exec(normalised.replace(/[.!]+$/, ''));
+  if (m === null) return false;
   const label = (m[1] ?? '').trim();
   return !LINE_LABELS.test(label) && label.split(' ').length <= 4;
 }
@@ -694,6 +863,11 @@ export function checkReplyClaims(sentence: string, ledger: TurnLedger, citedActi
   const names = [...new Set([...ledger.knownExerciseNames, ...ledger.entries.flatMap((e) => [...factsOf(e.record).names])])];
   const matched: string[] = [];
   let anyClaim = false;
+  // "Next Push A: pec deck, not cable fly." A structural plan line (CC10, review r3 B3).
+  if (structuralLine(normalised)) {
+    const result = checkClaim(parseClaim(normalised.replace(/[.?!]+$/, ''), normalised, names, true), ledger, citedActionIds);
+    return result.keep ? { keep: true, claim: true, matchedActionIds: result.matchedActionIds } : result;
+  }
   // "Sets 3 and 4: 95 kg." states targets in the app's own format: treated as a claim about those sets.
   const listed = SET_VALUE_LINE.test(normalised) || exerciseValueLine(normalised);
   for (const clause of clausesOf(normalised)) {
@@ -718,6 +892,6 @@ export function checkReplyClaims(sentence: string, ledger: TurnLedger, citedActi
 /** Exposed for the corpus test's report: does this sentence read as a claim at all? */
 export function isChangeClaim(sentence: string): boolean {
   const normalised = normaliseForClaims(sentence);
-  if (SET_VALUE_LINE.test(normalised) || exerciseValueLine(normalised)) return true;
+  if (SET_VALUE_LINE.test(normalised) || exerciseValueLine(normalised) || structuralLine(normalised)) return true;
   return clausesOf(normalised).some((c) => hasClaimTrigger(c.split(' ').filter((w) => w.length > 0), c, normalised));
 }
