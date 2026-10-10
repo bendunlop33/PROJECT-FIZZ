@@ -29,7 +29,7 @@ const DATE = '2026-09-01';
 const plain = (s: string) => s.replaceAll(NBSP, ' ');
 /** Each name's weight in the file: different for every name, so a mix-up shows. */
 const rawOf = (i: number): number => 20 + 2 * i;
-const fileOf = (unit: WeightUnit): string => [B2, ...DEFAULTS.map((n, i) => `${DATE},${n},Other,${String(rawOf(i))},${unit === 'kg' ? 'kgs' : 'lbs'},8,,,,`)].join('\n');
+const fileOf = (unit: WeightUnit, names: readonly string[] = DEFAULTS): string => [B2, ...names.map((n, i) => `${DATE},${n},Other,${String(rawOf(i))},${unit === 'kg' ? 'kgs' : 'lbs'},8,,,,`)].join('\n');
 
 // The test's own reading of the three sources.
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -41,6 +41,8 @@ const pairWord = (name: string) => /\b(two[- ]?arms?|alternating|alternate|alt|d
 const BAR_WORD: Record<ImportBarKind, RegExp> = { barbell: /\b(barbells?|bb)\b/i, ez_bar: /\bez\b|\bez[- ]?bar\b/i, trap_bar: /\b(trap|hex)[- ]?bar\b/i };
 /** (c) Words that say the machine assists. */
 const assistWord = (name: string) => /\b(assist|assisted|assistance|gravitron|counter[- ]?weight(ed)?)\b/i.test(name);
+/** (c) The word Smith: a Smith machine, whose bar isn't the Olympic bar. */
+const smithWord = (name: string) => /\bsmith\b/i.test(name);
 
 let h: Harness;
 let s: AppServices;
@@ -81,8 +83,11 @@ interface Outcome {
  * groups. What is then still asked is answered as written ("One dumbbell",
  * "Total"), and each bodyweight exercise as weight added.
  */
-async function importAll(unit: WeightUnit): Promise<Outcome & { answered: Set<string>; added: Map<string, 'dumbbells' | 'barbell'>; exerciseOf: Map<string, { name: string; aliases: readonly string[]; compatibleEquipment: readonly string[] }> }> {
-  let d = await open(fileOf(unit));
+async function importAll(
+  unit: WeightUnit,
+  names: readonly string[] = DEFAULTS,
+): Promise<Outcome & { answered: Set<string>; added: Map<string, 'dumbbells' | 'barbell'>; exerciseOf: Map<string, { name: string; aliases: readonly string[]; compatibleEquipment: readonly string[]; defaultLoadConvention: string }> }> {
+  let d = await open(fileOf(unit, names));
   const answered = new Set<string>();
   const added = new Map<string, 'dumbbells' | 'barbell'>();
   for (const n of d.analysis.names.filter((x) => x.needsAnswer)) {
@@ -230,6 +235,53 @@ describe('FitNotes’ default names: nothing stored differs from the file withou
       expect(askedTotal.sort()).toEqual(['Stiff-Legged Deadlift']);
       // One-dumbbell defaults read as written.
       for (const n of ['One-Arm Standing Dumbbell Press', 'Dumbbell Concentration Curl', 'Dumbbell Overhead Triceps Extension']) expect(stored.get(n)?.value, n).toBe(rawOf(DEFAULTS.indexOf(n)));
+    });
+  }
+
+  /** The review's Smith + Barbell and Assisted + Machine names (review r6 B2, B3), with plain Smith and assisted ones. */
+  const TRICKY: readonly string[] = [
+    'Smith Machine Barbell Squat',
+    'Barbell Smith Squat',
+    'Barbell Squat (Smith)',
+    'Smith Machine Squat (Barbell)',
+    'BB Smith Squat',
+    'Smith Barbell Bench Press',
+    'Smith Machine Bench Press (Barbell)',
+    'Barbell Bench Press (Smith Machine)',
+    'Smith Machine Incline Barbell Press',
+    'Smith Machine Barbell Row',
+    'Smith Barbell Row',
+    'Smith Machine Deadlift (Barbell)',
+    'Squat (Smith Machine)',
+    'Assisted Shoulder Press Machine',
+    'Assisted Seated Row Machine',
+    'Assisted Lat Pull Machine',
+    'Assisted Pull Up Machine',
+    'Assisted Dip Machine',
+    'Machine Assisted Chin Up',
+  ];
+
+  for (const unit of ['kg', 'lb'] as const) {
+    it(`in ${unit}: a Smith name never gets the Olympic bar and an assisted name is never stored as a load, however trusting Ben is (review r6 B2, B3)`, async () => {
+      const { stored, exerciseOf } = await importAll(unit, TRICKY);
+      const olympic = unit === 'kg' ? 20 : 45;
+      TRICKY.forEach((name, i) => {
+        const load = stored.get(name) ?? null;
+        const c = exerciseOf.get(name);
+        const why = `${name} → ${c?.name ?? '?'}: ${String(rawOf(i))} ${unit} stored as ${JSON.stringify(load)}`;
+        if (c && smithWord(name)) expect(smithWord(c.name), why).toBe(true);
+        if (c && assistWord(name)) expect(['assistance', 'bodyweight'].includes(c.defaultLoadConvention), why).toBe(true);
+        if (!load) return;
+        expect(load.unit, why).toBe(unit);
+        if (smithWord(name)) expect(load.value, why).not.toBe(rawOf(i) + olympic);
+        if (assistWord(name)) expect(['assistance', 'added'].includes(load.convention), why).toBe(true);
+        // Nothing here has a source for changing the value, except reading a negative or machine number as assistance.
+        expect(load.value, why).toBe(rawOf(i));
+      });
+      // Not vacuous: the Smith squat and the assisted machines came in.
+      expect(stored.get('Squat (Smith Machine)')).toMatchObject({ convention: 'added' });
+      expect(stored.get('Smith Machine Barbell Squat')).toMatchObject({ convention: 'added' });
+      expect(stored.get('Assisted Pull Up Machine')).toMatchObject({ convention: 'assistance' });
     });
   }
 
