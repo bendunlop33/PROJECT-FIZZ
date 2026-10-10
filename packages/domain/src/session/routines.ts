@@ -220,7 +220,8 @@ export interface RoutineStartInput {
   /**
    * Next targets per exercise ID from the routine's most recent finished
    * workout (the built-in rule, or later the coach). Exercises without an
-   * entry use the routine's own templates.
+   * entry, or in more than one slot of the routine, use the routine's own
+   * templates.
    */
   targets?: ReadonlyMap<string, readonly { setType: SetType; planned: PlannedSet }[]>;
   at: ZonedTimestamp;
@@ -247,6 +248,10 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
   const resolved: RoutineExercise[] = [];
   const targeted = new Set<string>();
   const byGym = new Map(input.gymEquipment.map((e) => [e.id, e]));
+  // Targets are per exercise, so an exercise in two slots (a heavy and a light bench) can't tell which slot's
+  // targets are which: both keep the routine's own templates (review S7).
+  const slots = new Map<string, number>();
+  for (const rex of input.routine.exercises) slots.set(rex.exerciseId, (slots.get(rex.exerciseId) ?? 0) + 1);
   for (const rex of [...input.routine.exercises].sort((a, b) => a.order - b.order)) {
     const exercise = input.exercises.get(rex.exerciseId);
     const name = exercise?.name ?? 'Exercise';
@@ -259,7 +264,7 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
       if (eq === null) missing = known?.name ?? 'equipment';
     }
     const sessionUnit = eq?.unit ?? input.owner.preferredUnit;
-    const planned = input.targets?.get(rex.exerciseId);
+    const planned = (slots.get(rex.exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(rex.exerciseId);
     const useTargets = planned !== undefined && planned.length > 0;
     if (useTargets) targeted.add(rex.exerciseId);
     const warmups = useTargets ? rex.setTemplates.filter((t) => t.setType === 'warmup') : [];

@@ -217,6 +217,20 @@ describe('planRoutineStart (start a routine with next-session targets)', () => {
     expect(targetSummaryLines(s).map((l) => plain(l.line))).toEqual(['Target 105 kg × 6–8 · 2 sets', 'Target 50 kg stack × 10–12 · 1 set']);
   });
 
+  it('an exercise in two slots keeps each slot’s own templates, never the first slot’s targets twice (review S7)', () => {
+    const benchSlots = pushA.exercises.filter((e) => e.exerciseId === BENCH);
+    const first = benchSlots[0];
+    if (!first) throw new Error('no bench slot');
+    const light = { ...first, id: id(640), order: pushA.exercises.length, setTemplates: [template(6401, { setType: 'working', targetLoad: kg(70), targetReps: { min: 12, max: 15 } })] };
+    const r: Routine = { ...pushA, exercises: [...pushA.exercises, light] };
+    const out = planRoutineStart({ ...base, routine: r, gymEquipment: [barbell(), stack()], targets: new Map([[BENCH, plan(105, [6, 8])]]) });
+    const sx = out.aggregate.exercises.filter((e) => e.exerciseId === BENCH);
+    expect(sx).toHaveLength(2);
+    const loads = sx.map((e) => out.aggregate.sets.filter((x) => x.sessionExerciseId === e.id && x.setType !== 'warmup').map((x) => [x.planned.load?.value, x.planned.source]));
+    expect(loads[1]).toEqual([[70, undefined]]);
+    expect(loads.flat().some(([v]) => v === 105)).toBe(false);
+  });
+
   it('never above the equipment’s max: rounded down, with a note', () => {
     const small = barbell({ plates: [{ mass: 20, count: 2 }] });
     const out = planRoutineStart({ ...base, gymEquipment: [small, stack()], targets: new Map([[BENCH, plan(105, [6, 8])]]) });
