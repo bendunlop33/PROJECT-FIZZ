@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { checkRoutineName, formatDuration, formatElapsed, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -52,6 +52,7 @@ import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
 import { TargetWhyLink, TargetWhyPanel } from './TargetWhyPanel';
+import { TimeLeftLine, TimeLeftSheet } from './TimeLeftSheet';
 import { answerStillHurts, confirmClearFlag, type PainToast } from '../../workout/pain-actions';
 import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../workout/rest-fold';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
@@ -110,6 +111,9 @@ export function WorkoutScreen() {
   // `Why?` on the target line (active-workout §2.12): one panel at most, hidden while the keypad is open.
   const [why, setWhy] = useState<WhyPanel>(null);
   const [keypadOpen, setKeypadOpen] = useState(false);
+  // `Time left` (§2.15.1): its own clock moves on events (any new data) and once a minute, never every second.
+  const [timeLeftNow, setTimeLeftNow] = useState(clockNow);
+  const [timeLeftOpen, setTimeLeftOpen] = useState(false);
   const whyEvent = useCallback((e: WhyEvent) => {
     setWhy((cur) => whyPanelReducer(cur, e));
   }, []);
@@ -289,6 +293,19 @@ export function WorkoutScreen() {
   useEffect(() => {
     if (hasView) drawn.current = true;
   }, [hasView]);
+
+  useEffect(() => {
+    setTimeLeftNow(clockNow());
+  }, [data]);
+  useEffect(() => {
+    const t = setInterval(() => {
+      setTimeLeftNow(clockNow());
+    }, TIME_LEFT.refreshMs);
+    return () => {
+      clearInterval(t);
+    };
+  }, []);
+  const timeLeft = useMemo(() => (data === 'loading' || data === null ? null : services.workout.timeLeft(data, timeLeftNow)), [services, data, timeLeftNow]);
 
   // Edits belong to one set; when the active set changes, they are dropped (they were saved as a draft).
   useEffect(() => {
@@ -1062,6 +1079,15 @@ export function WorkoutScreen() {
             }}
           />
         )}
+        {/* The card's last line (AW11): an estimate, never in the top bar; hidden with the keypad. */}
+        {timeLeft && !keypadOpen ? (
+          <TimeLeftLine
+            view={timeLeft.view}
+            onPress={() => {
+              setTimeLeftOpen(true);
+            }}
+          />
+        ) : null}
       </View>
     </View>
   ) : null;
@@ -1229,7 +1255,26 @@ export function WorkoutScreen() {
         onClose={() => {
           setRenameOpen(false);
         }}
-        onDismissed={renameAfter.dismissed}
+        onDismissed={renameAfter.dismissed}      />
+      <TimeLeftSheet
+        visible={timeLeftOpen}
+        view={timeLeft?.view ?? null}
+        sheet={timeLeft?.sheet ?? null}
+        nowMs={timeLeftNow}
+        tz={tz}
+        onClose={() => {
+          setTimeLeftOpen(false);
+        }}
+        onFinishBy={async (finishByUtc) => {
+          const r = await services.workout.setFinishBy({ sessionId: session.id, finishByUtc, tz, expectedVersion: session.version, opId: newUuid() });
+          if (!r.ok) {
+            void reload();
+            return r.error.code === 'stale_version' ? 'The workout changed. Try again.' : r.error.message;
+          }
+          setData({ ...loaded, aggregate: r.aggregate });
+          changed();
+          return null;
+        }}
       />
       <StartTimeSheet
         visible={timesOpen}

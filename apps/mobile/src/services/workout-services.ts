@@ -57,6 +57,9 @@ import {
   type FinishedRef,
   type RoutineChange,
   type RoutineNameCheck,
+  buildTimeLeftView,
+  recentPaceSamples,
+  timeLeftSheet,
   type ActiveSetView,
   type SetRecord,
   type SetRecordInput,
@@ -72,6 +75,9 @@ import {
   type LiftHighlight,
   type TargetExplanation,
   type TodayView,
+  type PaceSamples,
+  type TimeLeftSheetView,
+  type TimeLeftView,
   type WorkoutSummary,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
@@ -142,6 +148,8 @@ export const TARGETS_UNAVAILABLE = 'Using last time’s numbers.';
 
 /** `notice`: something the workout screen should say once on opening (a toast). */
 export type WorkoutStartOutcome = (Extract<StartOutcome, { ok: true }> & { notice?: string }) | Extract<StartOutcome, { ok: false }>;
+/** How far back to look for Ben's last 5 finished workouts (pace for `Time left`). Older ones fall back to `Default`. */
+const RECENT_PACE_WINDOW_MS = 90 * 86_400_000;
 
 export interface PickerExercise {
   exercise: Exercise;
@@ -232,6 +240,8 @@ export interface ActiveWorkoutData {
   checkIn: CheckIn | null;
   /** `Push`, from the exercises, for a workout without a name (audit F5). */
   title: string | null;
+  /** Pace samples from Ben's last finished workouts, for `Time left` (active-workout §2.15.2). */
+  recentPace: PaceSamples;
 }
 
 /**
@@ -560,6 +570,24 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
+  /**
+   * Pace samples from the last finished workouts (§2.15.2). Finished workouts
+   * don't change during a workout, so they're read once per active session.
+   * A read failure never blocks logging: the estimate falls back to `Default`.
+   */
+  let paceCache: { key: string; samples: PaceSamples } | null = null;
+  async function recentPace(ownerId: string, sessionId: string, nowMs: number): Promise<PaceSamples> {
+    if (paceCache?.key === sessionId) return paceCache.samples;
+    try {
+      const r = await repos().sessions.listFinishedBetweenReadable(ownerId, toIso(nowMs - RECENT_PACE_WINDOW_MS), toIso(nowMs + 1));
+      const samples = recentPaceSamples(r.sessions.filter((a) => a.session.id !== sessionId));
+      paceCache = { key: sessionId, samples };
+      return samples;
+    } catch {
+      return { set: [], changeover: [] };
+    }
+  }
+
   async function historyFor(ownerId: string, exerciseId: string): Promise<HistorySession[]> {
     return ctx.store().listExerciseHistory(ownerId, exerciseId);
   }
@@ -861,6 +889,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const flags = await repos().painFlags.listActive(p.id);
       const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId) : null;
       const title = storedName(aggregate) === null && aggregate.exercises.length > 0 ? (await titleFor(aggregate.exercises.map((e) => e.exerciseId))).title : null;
+      const pace = await recentPace(p.id, aggregate.session.id, toMs(ctx.now().utc));
       return {
         aggregate,
         gymName: gym?.name ?? null,
@@ -870,13 +899,36 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         effortScale: p.effortScale,
         checkIn: ci,
         title,
+        recentPace: pace,
       };
     },
 
     /** `buildActiveSetView` over loaded data plus the screen's unsaved edits. */
     view(data: ActiveWorkoutData, nowMs: number, edits: DraftEdits | null): ActiveSetView {
-      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title });
+      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, recentPace: data.recentPace });
     },
+
+    /**
+     * `TimeLeftLine` and the `Time left` sheet (§2.15). The screen calls this
+     * with a clock that moves only on events and once a minute, so the line
+     * never ticks like a countdown.
+     */
+    timeLeft(data: ActiveWorkoutData, nowMs: number): { view: TimeLeftView; sheet: TimeLeftSheetView } | null {
+      const view = buildTimeLeftView(data.aggregate, nowMs, data.recentPace);
+      return view === null ? null : { view, sheet: timeLeftSheet(view.estimate, data.aggregate, nowMs, data.aggregate.session.startedAt.tz) };
+    },
+
+    /** `Finish by` (§2.15.3): today only; null = `Not set`. Changes only the line's wording. */
+    setFinishBy: async (req: { sessionId: string; finishByUtc: string | null; tz: string; expectedVersion: number; opId: string }): Promise<CommandOutcome> =>
+      ctx.afterCommand(
+        await domain().dispatch(req.sessionId, {
+          type: 'set_finish_by',
+          at: ctx.now(),
+          opId: req.opId,
+          finishBy: req.finishByUtc === null ? null : { utc: req.finishByUtc, tz: req.tz },
+          expectedVersion: req.expectedVersion,
+        }),
+      ),
 
     dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => ctx.afterCommand(await domain().dispatch(sessionId, command)),
 
@@ -1361,6 +1413,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         weekDates: Array.from({ length: 7 }, (_, i) => addDays(week.mondayLocalDate, i)),
         painFlags,
         tz: at.tz,
+        ...(active ? { recentPace: await recentPace(p.id, active.session.id, nowMs) } : {}),
       });
     },
 

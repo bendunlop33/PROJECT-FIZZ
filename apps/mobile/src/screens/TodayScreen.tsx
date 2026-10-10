@@ -331,7 +331,7 @@ export function TodayScreen() {
                   ? 'Add an exercise to start'
                   : 'Ready for next set';
         return (
-          <Hero label={`In progress · started ${formatTime(toMs(main.startedAtUtc), zoned.tz)}`} title={main.title} lines={[main.now, `${String(main.done)} of ${String(main.total)} sets done · ${status}`]}>
+          <Hero label={`In progress · started ${formatTime(toMs(main.startedAtUtc), zoned.tz)}`} title={main.title} lines={[main.now, `${String(main.done)} of ${String(main.total)} sets done · ${status}`, main.timeLeft]}>
             <PrimaryButton
               label="Resume"
               onPress={() => {
