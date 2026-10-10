@@ -10,7 +10,7 @@ import { join, relative } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createGuardedLoader } from '../src/guide/guarded-load';
-import { buildHowToView, bundledHowToSources, howToLayout, type HowToView } from '../src/guide/how-to';
+import { buildHowToView, bundledHowToSources, howToLayout, STILLS_ONLY_NOTICE, type HowToView } from '../src/guide/how-to';
 
 const SRC = join(import.meta.dirname, '../src');
 
@@ -128,6 +128,12 @@ describe('How to fallback when the player fails', () => {
   it('never claims cues that are not there', () => {
     const bare: HowToView = { ...squat, guide: squat.guide && { ...squat.guide, stops: [] }, setup: [], execution: [], avoid: [], safety: { notes: [], stopIf: [] }, textDraftLabel: null, notice: null };
     expect(howToLayout(bare, true).notices).toEqual(['The animated guide couldn’t be shown.']);
+  });
+
+  it('stills only (Developer: animations off) keeps the player and says why it is still', () => {
+    expect(howToLayout(squat, false, { stillsOnly: true })).toEqual({ showPlayer: true, standaloneLegend: [], notices: [STILLS_ONLY_NOTICE], textDraftLabel: null });
+    // A failure still wins: the notice is about the player that isn't there.
+    expect(howToLayout(squat, true, { stillsOnly: true }).notices).toEqual(['The animated guide couldn’t be shown. The cues below still apply.']);
   });
 
   it('without a guide nothing changes, failed or not', () => {

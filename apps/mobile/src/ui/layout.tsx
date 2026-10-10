@@ -351,9 +351,15 @@ export function Eyebrow({ children, color = 'text.tertiary', align }: { children
 export function HeroHeader({ eyebrow, title, lines = [], size = 'hero' }: { eyebrow?: string | null; title: string; lines?: readonly (string | null | undefined)[]; size?: 'hero' | 'screen' }) {
   const theme = useTheme();
   const px = size === 'hero' ? theme.components.heroTitleSize : theme.type.title1.fontSize;
+  const shown = lines.filter((l): l is string => typeof l === 'string' && l !== '');
+  // premium-feel §8: eyebrow → title 6 pt; title → lines 8 pt; the lines read as one paragraph, 4 pt apart.
   return (
-    <View style={{ gap: theme.space['2'] }}>
-      {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
+    <View>
+      {eyebrow ? (
+        <View style={{ marginBottom: theme.space['1'] + 2 }}>
+          <Eyebrow>{eyebrow}</Eyebrow>
+        </View>
+      ) : null}
       <AppText
         variant="title1"
         accessibilityRole="header"
@@ -362,13 +368,15 @@ export function HeroHeader({ eyebrow, title, lines = [], size = 'hero' }: { eyeb
       >
         {title}
       </AppText>
-      {lines
-        .filter((l): l is string => typeof l === 'string' && l !== '')
-        .map((l) => (
-          <AppText key={l} variant="callout" color="text.secondary" numeric>
-            {l}
-          </AppText>
-        ))}
+      {shown.length > 0 ? (
+        <View style={{ marginTop: theme.space['2'], gap: theme.space['1'] }}>
+          {shown.map((l) => (
+            <AppText key={l} variant="callout" color="text.secondary" numeric>
+              {l}
+            </AppText>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }

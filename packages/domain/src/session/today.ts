@@ -25,6 +25,8 @@ export type TodayMain =
       done: number;
       total: number;
       status: { kind: 'resting'; deadlineUtc: string } | { kind: 'ready' } | { kind: 'paused' } | { kind: 'all_done' } | { kind: 'empty' };
+      /** This workout's exercises with progress (premium-feel §2.3), in workout order. */
+      rows: ResumeRow[];
     }
   | {
       kind: 'stale';
@@ -42,6 +44,45 @@ export type TodayMain =
   | { kind: 'done_today'; sessionId: string; title: string; activeMs: number | null }
   | { kind: 'no_plan' };
 
+/**
+ * One Resume row: `✓ Back squat  3 of 3 sets`. Status is said in words too
+ * (`text`), never by the icon alone. `firstPendingSetId` is where a tap
+ * resumes (null when nothing is left to log).
+ */
+export interface ResumeRow {
+  sessionExerciseId: string;
+  name: string;
+  status: 'done' | 'now' | 'pending' | 'skipped';
+  done: number;
+  total: number;
+  text: string;
+  firstPendingSetId: string | null;
+}
+
+/** Resume rows from the active workout and its current exercise. Pure. */
+export function resumeRows(active: SessionAggregate, currentExerciseId: string | null): ResumeRow[] {
+  return [...active.exercises]
+    .sort((a, b) => a.order - b.order)
+    .map((e) => {
+      const sets = active.sets.filter((s) => s.sessionExerciseId === e.id && s.status !== 'deleted').sort((a, b) => a.index - b.index);
+      const done = sets.filter((s) => s.status === 'completed').length;
+      const pending = sets.filter((s) => s.status === 'pending');
+      const skipped = sets.filter((s) => s.status === 'skipped').length;
+      const status: ResumeRow['status'] =
+        e.id === currentExerciseId && pending.length > 0 ? 'now' : pending.length > 0 ? 'pending' : done === 0 && skipped > 0 ? 'skipped' : done > 0 ? 'done' : 'pending';
+      const total = sets.length - skipped;
+      return {
+        sessionExerciseId: e.id,
+        name: e.exerciseName,
+        status,
+        done,
+        total,
+        text: status === 'skipped' ? 'Skipped' : `${String(done)} of ${String(total)} ${total === 1 ? 'set' : 'sets'}`,
+        firstPendingSetId: pending[0]?.id ?? null,
+      };
+    });
+}
+
 export interface TodayInput {
   nowMs: number;
   active: SessionAggregate | null;
@@ -57,12 +98,38 @@ export interface TodayInput {
   titles?: Readonly<Record<string, string>>;
 }
 
-/** One day of This week's strip: trained (filled), today (ringed), or neither. Never a plan we don't have. */
+/**
+ * One day of This week's strip: trained (filled), in progress (ring with a
+ * centre), today (ringed), or neither. Never a plan we don't have.
+ * A day can be both trained and in progress (premium-feel.md §2.5).
+ */
 export interface WeekDay {
   letter: string;
   localDate: string;
   trained: boolean;
+  inProgress: boolean;
   today: boolean;
+}
+
+/**
+ * This week's line (premium-feel.md §2.5). An active workout is never "none":
+ * the bug Ben saw on device was a workout in progress reading as no workouts.
+ */
+export function weekText(finishedCount: number, activeTitle: string | null): string {
+  if (activeTitle !== null) {
+    return finishedCount === 0 ? `${activeTitle} in progress` : `${String(finishedCount)} done · ${activeTitle} in progress`;
+  }
+  if (finishedCount === 0) return 'No workouts yet this week.';
+  return finishedCount === 1 ? '1 workout this week' : `${String(finishedCount)} workouts this week`;
+}
+
+/** VoiceOver label for the strip: `This week: 2 days trained, today in progress`. */
+export function weekStripLabel(days: readonly WeekDay[]): string {
+  const trained = days.filter((d) => d.trained).length;
+  const parts = [trained === 1 ? '1 day trained' : `${String(trained)} days trained`];
+  const live = days.find((d) => d.inProgress);
+  if (live) parts.push(live.today ? 'today in progress' : 'a workout in progress');
+  return `This week: ${parts.join(', ')}`;
 }
 
 export interface TodayView {
@@ -123,6 +190,7 @@ export function buildTodayView(input: TodayInput): TodayView {
         done,
         total,
         status,
+        rows: resumeRows(active, v.focus?.sessionExerciseId ?? null),
       };
     }
   } else {
@@ -134,8 +202,19 @@ export function buildTodayView(input: TodayInput): TodayView {
   }
 
   const count = input.finishedThisWeek.length;
-  const text = count === 0 ? 'No workouts logged yet this week.' : count === 1 ? '1 workout this week' : `${String(count)} workouts this week`;
+  // A forgotten workout from an earlier week isn't "in progress" this week (review S8); one Ben can resume always is.
+  const open = active && active.session.status === 'active' ? active : null;
+  const openDate = open ? input.localDateOf(open.session.startedAt.utc) : null;
+  const live = open !== null && (main.kind === 'resume' || (openDate !== null && (input.weekDates ?? []).includes(openDate))) ? open : null;
+  const activeLocalDate = live ? openDate : null;
+  const text = weekText(count, live ? titleOf(live) : null);
   const trainedDates = new Set(input.finishedThisWeek.map((a) => dateOnlyOf(a.session) ?? input.localDateOf(a.session.startedAt.utc)));
-  const days = (input.weekDates ?? []).map((d, i) => ({ letter: 'MTWTFSS'[i] ?? '', localDate: d, trained: trainedDates.has(d), today: d === input.todayLocalDate }));
+  const days = (input.weekDates ?? []).map((d, i) => ({
+    letter: 'MTWTFSS'[i] ?? '',
+    localDate: d,
+    trained: trainedDates.has(d),
+    inProgress: d === activeLocalDate,
+    today: d === input.todayLocalDate,
+  }));
   return { main, week: { count, text, days }, unlinkedCheckIn: reusableCheckIn(input.recentCheckIns, nowMs) };
 }

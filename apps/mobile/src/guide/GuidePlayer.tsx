@@ -131,7 +131,14 @@ function useBakedPictures(
  * still extending `frames` (a playable prefix), a clock that gets ahead holds the last baked frame, never a gap.
  */
 function AnimatedArt({ frames, first, frame }: { frames: readonly SkPicture[]; first: SkPicture; frame: SharedValue<number> }) {
-  const picture = useDerivedValue(() => frames[Math.min(frame.value, frames.length - 1)] ?? first, [frames, first]);
+  const picture = useDerivedValue(() => {
+    // A throw here is on the UI thread: uncaught, it aborts a release build natively (ADR 0018). Hold the poster instead.
+    try {
+      return frames[Math.min(frame.value, frames.length - 1)] ?? first;
+    } catch {
+      return first;
+    }
+  }, [frames, first]);
   return <Picture picture={picture} />;
 }
 
@@ -156,6 +163,8 @@ interface Props {
   visible: boolean;
   /** Below the controls, with the same side padding (the muscle legend, guides v2 §5.3). */
   footer?: ReactNode;
+  /** Developer › Exercise guide animations off: the still key positions only, and the clock never runs. */
+  stillsOnly?: boolean;
 }
 
 /**
@@ -165,20 +174,35 @@ interface Props {
  * Under Reduce Motion it shows the key positions, one at a time (or the first
  * frame still, if the guide labels none), and never autoplays.
  */
-export function GuidePlayer({ guide, size, visible, footer }: Props) {
+export function GuidePlayer({ guide, size, visible, footer, stillsOnly = false }: Props) {
   const theme = useTheme();
   const { loaded, stops } = guide;
   const reduceMotion = theme.a11y.reduceMotion;
-  const [state, dispatch] = useReducer(playerReducer, undefined, () => initialPlayerState(reduceMotion, stops.length));
+  const [state, dispatch] = useReducer(playerReducer, undefined, () => initialPlayerState(reduceMotion, stops.length, stillsOnly));
+  // A failure outside render (the UI-thread clock, a button handler) is rethrown in render for GuideBoundary.
+  const [runtimeError, setRuntimeError] = useState<Error | null>(null);
+  const onClockError = useCallback((message: string) => {
+    setRuntimeError(new Error(`Guide playback stopped: ${message}`));
+  }, []);
+  /** Runs a handler; a throw becomes the cues-only fallback, never an uncaught error. */
+  const safely = (fn: () => void) => {
+    try {
+      fn();
+    } catch (error) {
+      setRuntimeError(error instanceof Error ? error : new Error(String(error)));
+    }
+  };
   useEffect(() => {
     dispatch({ type: 'reduce_motion', on: reduceMotion });
   }, [reduceMotion]);
   const appActive = useAppActive();
   /** A button press; VoiceOver hears the new key position, since focus stays on the button (review N6). */
   const press = (action: PlayerAction) => {
-    const announcement = stepAnnouncement(state, playerReducer(state, action), stops);
-    dispatch(action);
-    if (announcement !== null) AccessibilityInfo.announceForAccessibility(announcement);
+    safely(() => {
+      const announcement = stepAnnouncement(state, playerReducer(state, action), stops);
+      dispatch(action);
+      if (announcement !== null) AccessibilityInfo.announceForAccessibility(announcement);
+    });
   };
 
   const style = useMemo<GuideStyle>(() => {
@@ -219,18 +243,29 @@ export function GuidePlayer({ guide, size, visible, footer }: Props) {
     (info: FrameInfo) => {
       'worklet';
       if (done.value) return;
-      const step = advanceClock(elapsed.value, info.timeSincePreviousFrame, durationMs, loop);
-      elapsed.value = step.elapsedMs;
-      // Assign only when the index changes: Reanimated's setter has no equality check, so every assignment
-      // re-runs the derived picture and redraws the canvas at display rate (guides v2 review S2).
-      const next = frameIndexAt(step.elapsedMs, durationMs, count, loop, info.timeSincePreviousFrame ?? 0);
-      if (next !== frame.value) frame.value = next;
-      if (step.finished) {
+      // Nothing may escape: an uncaught UI-thread throw aborts a release build natively, no JS handler runs (ADR 0018).
+      // Stop the clock and hand the message to JS, where the player falls back to the cues.
+      try {
+        const step = advanceClock(elapsed.value, info.timeSincePreviousFrame, durationMs, loop);
+        elapsed.value = step.elapsedMs;
+        // Assign only when the index changes: Reanimated's setter has no equality check, so every assignment
+        // re-runs the derived picture and redraws the canvas at display rate (guides v2 review S2).
+        const next = frameIndexAt(step.elapsedMs, durationMs, count, loop, info.timeSincePreviousFrame ?? 0);
+        if (next !== frame.value) frame.value = next;
+        if (step.finished) {
+          done.value = true;
+          scheduleOnRN(onFinished);
+        }
+      } catch (e) {
         done.value = true;
-        scheduleOnRN(onFinished);
+        try {
+          scheduleOnRN(onClockError, e instanceof Error ? `${e.name}: ${e.message}` : String(e));
+        } catch {
+          // The clock is stopped either way.
+        }
       }
     },
-    [done, elapsed, frame, durationMs, loop, count, onFinished],
+    [done, elapsed, frame, durationMs, loop, count, onFinished, onClockError],
   );
   const clock = useFrameCallback(tick, false);
   const running = isRunning(state, { visible, appActive, framesReady: frames !== null });
@@ -244,9 +279,10 @@ export function GuidePlayer({ guide, size, visible, footer }: Props) {
     done.value = false;
   }, [state.run, state.finished, elapsed, frame, done]);
 
-  // After every hook: hand a bake failure to GuideBoundary (cues-only fallback).
+  // After every hook: hand a bake or runtime failure to GuideBoundary (cues-only fallback).
   const failure = animFailure ?? stillFailure;
   if (failure) throw failure.error;
+  if (runtimeError) throw runtimeError;
 
   const poster = anim?.pictures[0] ?? null;
 
@@ -298,7 +334,9 @@ export function GuidePlayer({ guide, size, visible, footer }: Props) {
               label={playControlLabel(state)}
               icon={state.finished ? 'arrow.counterclockwise' : state.paused ? 'play.fill' : 'pause.fill'}
               onPress={() => {
-                dispatch({ type: 'toggle_play' });
+                safely(() => {
+                  dispatch({ type: 'toggle_play' });
+                });
               }}
             />
           </View>
@@ -342,14 +380,18 @@ export function GuidePlayer({ guide, size, visible, footer }: Props) {
               </View>
             </View>
           ) : null}
-          <TextButton
-            label="Play animation"
-            icon="play"
-            tone="secondary"
-            onPress={() => {
-              dispatch({ type: 'show_animation' });
-            }}
-          />
+          {state.stillsOnly ? null : (
+            <TextButton
+              label="Play animation"
+              icon="play"
+              tone="secondary"
+              onPress={() => {
+                safely(() => {
+                  dispatch({ type: 'show_animation' });
+                });
+              }}
+            />
+          )}
         </View>
       )}
       {footer ? <View style={pad}>{footer}</View> : null}

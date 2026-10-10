@@ -7,6 +7,8 @@
  */
 export function createAfterDismiss(fallbackMs = 700, schedule: (fn: () => void, ms: number) => unknown = setTimeout) {
   let pending: (() => void) | null = null;
+  // Each `arm` owns its fallback: an earlier arm's timer can't fire a later arm's callback early (review N3).
+  let generation = 0;
   const fire = () => {
     const fn = pending;
     pending = null;
@@ -15,7 +17,11 @@ export function createAfterDismiss(fallbackMs = 700, schedule: (fn: () => void, 
   return {
     arm(fn: () => void) {
       pending = fn;
-      schedule(fire, fallbackMs);
+      generation += 1;
+      const mine = generation;
+      schedule(() => {
+        if (mine === generation) fire();
+      }, fallbackMs);
     },
     dismissed: fire,
   };

@@ -88,9 +88,22 @@ export type PerHandAnswer = z.infer<typeof PerHandAnswerSchema>;
 export const PerHandReadingSchema = z.enum(['one', 'each', 'both']);
 export type PerHandReading = z.infer<typeof PerHandReadingSchema>;
 
-/** Barbell: `"100"` is the total including the bar, or the plates only. */
+/**
+ * Barbell, one exercise's answer: `"100"` is the total as written, or the
+ * plates only (its bar's weight is added). `plates_only` is only ever an
+ * answer for one exercise, never the group's (PM decision after review r7).
+ */
 export const TotalAnswerSchema = z.enum(['total', 'plates_only']);
 export type TotalAnswer = z.infer<typeof TotalAnswerSchema>;
+
+/**
+ * Barbell, the group answer: only `total` ("Total as written", nothing
+ * added). No group answer ever adds a bar weight (PM decision after review
+ * r7). Jobs stored before then may hold `plates_only` here: it is kept as
+ * stored and read as not answered.
+ */
+export const GroupTotalAnswerSchema = z.literal('total');
+export type GroupTotalAnswer = z.infer<typeof GroupTotalAnswerSchema>;
 
 /**
  * A bodyweight exercise with a weight: added to bodyweight, or assistance
@@ -127,8 +140,16 @@ export const ImportAnswersSchema = z.object({
   perHand: PerHandAnswerSchema.nullable(),
   /** Per exercise (by name key): wins over the group answer and the catalogue's count. */
   perHandOverrides: z.record(NameKeySchema, PerHandReadingSchema),
+  /** The group answer. `plates_only` only in jobs stored before the PM decision after review r7; read as not answered. */
   total: TotalAnswerSchema.nullable(),
+  /** Per exercise (by name key): `total` or `plates_only`. The only way a bar weight is ever added. */
   totalOverrides: z.record(NameKeySchema, TotalAnswerSchema),
+  /**
+   * Per exercise (by name key): the bar "plates only" adds, when Ben changed
+   * it from the matched exercise's own bar. Absent in jobs stored before the
+   * PM decision after review r7.
+   */
+  totalBars: z.record(NameKeySchema, ImportBarKindSchema).optional(),
   /** Olympic bar weight added to `plates_only` values, per unit (never converted between kg and lb). Default 20 kg / 45 lb, shown and editable. */
   barWeight: z.object({ kg: z.number().positive().max(BAR_WEIGHT_MAX.kg), lb: z.number().positive().max(BAR_WEIGHT_MAX.lb) }),
   /**
@@ -250,10 +271,56 @@ export const AliasTargetSchema = z.discriminatedUnion('kind', [
 ]);
 export type AliasTarget = z.infer<typeof AliasTargetSchema>;
 
+/** The most uses an alias keeps (one per import; the oldest drop off first). */
+export const ALIAS_USES_MAX = 100;
+
+/**
+ * Ben's own barbell answer for one exercise, as remembered on its name's
+ * alias (PM decision after review r7). Exact (review r8 B1, B2): the
+ * exercise it was given for, and for "plates only" the bar it actually
+ * added (`barChosen`: Ben changed it from the exercise's own) and that
+ * bar's weight per unit the exercise's sets were written in. A later
+ * import fills it in only when the name resolves to the same exercise and
+ * bar and the bar weight in effect is the same (or still to be entered).
+ * Records written by the review r8 build lack `exerciseId` and are shown,
+ * never filled in.
+ */
+export const RememberedTotalSchema = z.object({
+  reading: TotalAnswerSchema,
+  exerciseId: IdSchema.optional(),
+  bar: ImportBarKindSchema.optional(),
+  barChosen: z.boolean().optional(),
+  barWeight: z.object({ kg: z.number().positive().max(BAR_WEIGHT_MAX.kg).optional(), lb: z.number().positive().max(BAR_WEIGHT_MAX.lb).optional() }).optional(),
+});
+export type RememberedTotal = z.infer<typeof RememberedTotalSchema>;
+
+/**
+ * One import's answer for a name (review r5 S2): the exercise (or Skip) it
+ * used and, when that import asked about the name's dumbbells, Ben's answer
+ * (`null`: he cleared it; absent: that import didn't ask).
+ */
+export const AliasUseSchema = z.object({
+  jobId: IdSchema,
+  target: AliasTargetSchema,
+  perHand: PerHandReadingSchema.nullable().optional(),
+  /**
+   * Ben's own barbell answer for the name when that import asked (`null`:
+   * he gave none, clearing one remembered; absent: that import didn't ask).
+   * See `RememberedTotalSchema` (PM decision after review r7; review r8 B1, B2).
+   */
+  total: RememberedTotalSchema.nullable().optional(),
+});
+export type AliasUse = z.infer<typeof AliasUseSchema>;
+
 /**
  * Ben's own name for an exercise, learnt from an import, so the next import
  * of a newer file matches it automatically. Owner-scoped (Your data): it
  * describes his naming, not general knowledge.
+ *
+ * What it says now is read from `uses`, ignoring imports that were undone
+ * (`rememberedAnswer` in `@fizz/domain`): Undo import takes back what that
+ * import taught (review r5 S2). `target`, `perHand` and `jobId` are the last
+ * write, kept as they were for older records.
  */
 export const ExerciseAliasSchema = RecordMetaSchema.extend({
   source: z.literal('fitnotes'),
@@ -261,7 +328,16 @@ export const ExerciseAliasSchema = RecordMetaSchema.extend({
   name: z.string().min(1).max(4000),
   nameKey: NameKeySchema,
   target: AliasTargetSchema,
-  /** The import that taught it. */
+  /**
+   * Ben's own answer for this name's dumbbell weights (one dumbbell, each,
+   * both together), so a newer export reads them the same way. The next
+   * preview starts with it, labelled as his answer last time (review r4 S2).
+   * Absent when he gave none for this exercise (the group answer isn't kept).
+   */
+  perHand: PerHandReadingSchema.optional(),
+  /** The import that last wrote it. */
   jobId: IdSchema,
+  /** Every import that answered or used the name, oldest first (absent on records written before review r5). */
+  uses: z.array(AliasUseSchema).max(ALIAS_USES_MAX).optional(),
 });
 export type ExerciseAlias = z.infer<typeof ExerciseAliasSchema>;

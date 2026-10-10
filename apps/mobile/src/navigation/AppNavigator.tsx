@@ -45,7 +45,7 @@ import type { HowToScreen } from '../screens/workout/HowToScreen';
 import { SummaryScreen } from '../screens/workout/SummaryScreen';
 import { WorkoutScreen } from '../screens/workout/WorkoutScreen';
 import type { SetupStep } from '../services/setup';
-import { useTheme } from '../theme';
+import { screenAnimation, useTheme } from '../theme';
 import { AppText, MessageScreen, PrimaryButton, type SymbolName } from '../ui';
 import { initialRootState } from './initial-state';
 import type { ImportQuestionKind, ProfileStackParams, RootStackParams, TabParams } from './types';
@@ -237,7 +237,8 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
           {setupDone ? (
             <>
               <RootStack.Screen name="Tabs" component={TabsNavigator} />
-              <RootStack.Screen name="Workout" component={WorkoutScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
+              {/* Slides up; a fade under Reduce Motion (premium-feel §4.2). */}
+              <RootStack.Screen name="Workout" component={WorkoutScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false, ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
               {/* Swipe-down = "not now": back to where Ben was, nothing started (check-in.md CI3). */}
               <RootStack.Screen
                 name="CheckIn"
@@ -252,7 +253,8 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
                 options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.surface'] } }}
               />
               {/* No back navigation into a finished workout; corrections go through Edit (workout-summary §2). */}
-              <RootStack.Screen name="Summary" component={SummaryScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
+              {/* Workout → Summary replaces with a 200 ms fade (motion.screenFade). */}
+              <RootStack.Screen name="Summary" component={SummaryScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false, ...screenAnimation('Summary', theme.a11y.reduceMotion) }} />
               <RootStack.Screen name="AddGym" component={AddGymScreen} options={{ presentation: 'modal' }} />
               <RootStack.Screen name="PastWorkouts" component={PastWorkoutsScreen} options={{ headerShown: true, title: 'Past workouts' }} />
               <RootStack.Screen name="Repeat" component={RepeatScreen} options={{ headerShown: true, title: 'Repeat' }} />

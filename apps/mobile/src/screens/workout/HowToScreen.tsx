@@ -1,8 +1,10 @@
 import { useIsFocused, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { ScrollView, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AppState, ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { clearGuideOpen, markGuideOpen, recordContainedError } from '../../diagnostics/crash-capture';
+import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { GuideBoundary } from '../../guide/GuideBoundary';
 import { MuscleFocusLegend } from '../../guide/MuscleFocusLegend';
 import { buildHowToView, bundledHowToSources, howToLayout } from '../../guide/how-to';
@@ -61,6 +63,20 @@ function AvoidList({ items }: { items: readonly string[] }) {
   );
 }
 
+/** The app is in the foreground. The app switcher state counts as not: the app may be ended from there. */
+function useAppIsActive(): boolean {
+  const [active, setActive] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      setActive(s === 'active');
+    });
+    return () => {
+      sub.remove();
+    };
+  }, []);
+  return active;
+}
+
 /**
  * How to (ADR 0013, guides v2): the exercise's animated guide with the
  * muscles to feel it in, What not to do, key positions, cues and safety
@@ -82,13 +98,30 @@ export function HowToScreen() {
   const increaseContrast = theme.a11y.increaseContrast;
   // The legend's tint line (guides v2 §4.11.8) follows what the card draws; the app ships `neutral`, which has none.
   const view = useMemo(() => buildHowToView({ name, catalogueKey }, bundledHowToSources(), { increaseContrast }), [name, catalogueKey, increaseContrast]);
+  const stillsOnly = !useDevicePrefs().prefs.guideAnimations;
   const player = view.guide === null ? null : loadGuidePlayer();
   const [playerThrew, setPlayerThrew] = useState(false);
-  const onPlayerError = useCallback(() => {
+  const onPlayerError = useCallback((error: unknown) => {
+    recordContainedError(error, 'guide');
     setPlayerThrew(true);
   }, []);
-  const layout = howToLayout(view, playerThrew || player?.ok === false);
+  const layout = howToLayout(view, playerThrew || player?.ok === false, { stillsOnly });
   const Player = layout.showPlayer && player?.ok === true ? player.value : null;
+  const playerShown = Player !== null;
+  useEffect(() => {
+    if (player?.ok === false) recordContainedError(player.error, 'guide');
+  }, [player]);
+  // The guide's own JS errors are contained above (GuideBoundary, `onError`, the player's `safely`); its worklets catch
+  // their own (ADR 0018). Nothing else is intercepted: an error elsewhere in the app takes React Native's normal path
+  // (review B1). A native or animation-thread abort can't be caught at all, so while the player is on screen and the
+  // app is active a breadcrumb file says so; one left at the next launch becomes Last error (review S1).
+  const appActive = useAppIsActive();
+  const crumb = playerShown && appActive;
+  useLayoutEffect(() => {
+    if (!crumb) return;
+    markGuideOpen();
+    return clearGuideOpen;
+  }, [crumb]);
 
   // The player pauses once it is scrolled out of sight (battery during rest).
   const playerBottom = useRef(Number.POSITIVE_INFINITY);
@@ -133,7 +166,7 @@ export function HowToScreen() {
             <Card style={{ paddingHorizontal: 0, overflow: 'hidden', alignItems: 'center' }}>
               <View style={{ width: '100%' }}>
                 <GuideBoundary onError={onPlayerError}>
-                  <Player guide={view.guide} size={size} visible={focused && !scrolledAway} footer={<MuscleFocusLegend lines={view.legend} />} />
+                  <Player guide={view.guide} size={size} visible={focused && !scrolledAway} stillsOnly={stillsOnly} footer={<MuscleFocusLegend lines={view.legend} />} />
                 </GuideBoundary>
               </View>
             </Card>

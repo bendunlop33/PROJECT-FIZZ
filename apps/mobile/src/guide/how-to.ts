@@ -75,6 +75,16 @@ export function howToKeyForExerciseId(exerciseId: string, src: HowToSources): st
   return map.get(exerciseId) ?? null;
 }
 
+/**
+ * How to's route params for a workout exercise, or null when it has no how-to.
+ * The active set header link, the ⋯ menu and the rest screen all use this, so
+ * they show the link for the same exercises and open the same screen.
+ */
+export function howToRouteFor(exercise: { exerciseId: string; exerciseName: string }, src: HowToSources): { catalogueKey: string; name: string } | null {
+  const catalogueKey = howToKeyForExerciseId(exercise.exerciseId, src);
+  return catalogueKey === null ? null : { catalogueKey, name: exercise.exerciseName };
+}
+
 export interface HowToGuide {
   loaded: LoadedGuide;
   /** `Draft guide` until Ben approves this guide and its catalogue entry. */
@@ -212,13 +222,16 @@ export interface HowToLayout {
  * bake task threw (review S1). The screen then drops the player and keeps
  * everything else, with one line saying so. Never a blank screen, never a crash.
  */
-export function howToLayout(view: HowToView, playerFailed: boolean): HowToLayout {
+/** Shown above the cues while Developer › Exercise guide animations is off. */
+export const STILLS_ONLY_NOTICE = 'Guide animations are off (Profile › Developer), so the guide shows its key positions only.';
+
+export function howToLayout(view: HowToView, playerFailed: boolean, opts: { stillsOnly?: boolean } = {}): HowToLayout {
   const notices = view.notice === null ? [] : [view.notice];
   // Without the player nothing is coloured: no swatches, no faint-violet line, and no `Not shown from this side` line,
   // since there is no figure and so no side (guides v2 review S4).
   const standaloneLegend = view.legend.filter((l) => l.kind !== 'definition' && l.kind !== 'notShown').map((l) => ({ ...l, swatch: false }));
   if (view.guide === null) return { showPlayer: false, standaloneLegend, notices, textDraftLabel: view.textDraftLabel };
-  if (!playerFailed) return { showPlayer: true, standaloneLegend: [], notices, textDraftLabel: null };
+  if (!playerFailed) return { showPlayer: true, standaloneLegend: [], notices: opts.stillsOnly === true ? [STILLS_ONLY_NOTICE, ...notices] : notices, textDraftLabel: null };
   const stops = view.guide.stops.length > 0;
   let failure: string;
   if (view.entryUnreadable) {

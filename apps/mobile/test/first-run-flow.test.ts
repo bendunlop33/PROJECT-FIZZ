@@ -120,7 +120,7 @@ describe('first run: install to first set', () => {
     if (!data) throw new Error('no workout');
     v = s.workout.view(data, h.clockMs, null);
     expect(v.rest).toMatchObject({ kind: 'running', remainingMs: 160_000 });
-    expect(plain(v.upNext)).toBe('Set 2 · 3–6 reps');
+    expect(plain(v.upNext)).toBe('Set 2 · 60 kg × 3–6');
     expect(plain(v.primary.label)).toBe('Log 60 kg × 6');
 
     // Sets 2 and 3: the last one so far still rests, and the primary adds the next exercise.
@@ -186,6 +186,9 @@ describe('next session (audit B2)', () => {
     expect(preview?.exercises.map((e) => e.exerciseName)).toEqual(['Bench press', 'Triceps pushdown']);
     // Bench at the top of 3–6 at RPE ≤ 8: the built-in rule adds load (snapped to the bar and plates).
     expect(plain(preview?.exercises[0]?.line)).toBe('3 sets · 62.5 kg × 3–6 · 62.5 kg × 3–6 · 62.5 kg × 3–6');
+    // Today's Up next rows: each starts with `Target` and matches what Start creates (premium-feel acceptance 3).
+    expect(plain(preview?.targets[0]?.line)).toBe('Target 62.5 kg × 3–6 · 3 sets');
+    expect(preview?.targets.every((t) => t.line.startsWith('Target ') || t.line.startsWith('No target'))).toBe(true);
     expect(await s.sessions.active()).toBeNull();
 
     const req = { gymId, opId: 'next-1', checkIn: null, nextOf: first };

@@ -1,7 +1,8 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { View } from 'react-native';
+import { Switch, View } from 'react-native';
 
+import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { useLaunchInfo, useServices } from '../../shell/context';
 import type { ProfileStackParams } from '../../navigation/types';
 import { THEME_DIRECTIONS, useTheme, useThemeDirection } from '../../theme';
@@ -9,8 +10,8 @@ import { AppText, ChoiceCard, Group, Row, Screen, SectionHeader } from '../../ui
 
 /**
  * Developer settings: the capability probe (moved here from the old shell),
- * the look (D default, A selectable; provisional decision 2026-10-09) and
- * database file names for debugging.
+ * the look (D default, A selectable; provisional decision 2026-10-09), the
+ * exercise-guide safe mode and database file names for debugging.
  */
 export function DeveloperScreen() {
   const theme = useTheme();
@@ -19,6 +20,7 @@ export function DeveloperScreen() {
   const services = useServices();
   const launch = useLaunchInfo();
   const names = services.developer.databaseNames();
+  const { prefs, update } = useDevicePrefs();
   return (
     <Screen>
       <Group>
@@ -55,6 +57,28 @@ export function DeveloperScreen() {
         ))}
         <AppText variant="callout" color="text.secondary">
           Saved on this phone only, not in backups. Light or dark follows the system setting.
+        </AppText>
+      </View>
+
+      <SectionHeader title="Exercise guides" />
+      <View style={{ gap: theme.space['2'] }}>
+        <Group>
+          <Row
+            title="Exercise guide animations"
+            subtitle={prefs.guideAnimations ? 'On: How to plays the animated guide' : 'Off: How to shows still key positions only'}
+            trailing={
+              <Switch
+                accessibilityLabel="Exercise guide animations"
+                value={prefs.guideAnimations}
+                onValueChange={(on) => {
+                  update({ guideAnimations: on });
+                }}
+              />
+            }
+          />
+        </Group>
+        <AppText variant="callout" color="text.secondary">
+          A safe mode: with animations off, How to never starts the animation clock. Saved on this phone only, not in backups.
         </AppText>
       </View>
 

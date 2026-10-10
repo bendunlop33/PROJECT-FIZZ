@@ -27,7 +27,7 @@ const RETIRED = new Set(['timing.coachFirstToken', 'timing.backupOverdue']);
 
 function referencedTokens(): string[] {
   const text = readFileSync(DESIGN_SYSTEM, 'utf8');
-  const re = /`((?:color|type|space|radius|target|timing|haptic|sound|chart|widget|icon|launch)\.[A-Za-z0-9.]+)`/g;
+  const re = /`((?:color|type|space|radius|target|timing|haptic|sound|chart|widget|icon|launch|motion)\.[A-Za-z0-9.]+)`/g;
   return [...new Set([...text.matchAll(re)].map((m) => m[1] ?? ''))].filter((t) => t !== '' && !RETIRED.has(t)).sort();
 }
 
@@ -43,8 +43,10 @@ const GUIDE_ALIASES = new Set([...Object.keys(GUIDE_PAINT_TOKENS), 'shade', 'mus
  * Named in design-system.md but specified, not built. Remove each entry when
  * the code adds it; the test below fails once it exists, so this list can't
  * go stale. (Guides v2's `color.guide.muscle` and `color.guide.shade` are built.)
+ * - `color.guide.definition`: guides v2.1 muscle definition (design-system
+ *   §2.3, exercise-guides-v2 §4.11), "specified, not built"; Ben picks the mode (B8).
  */
-const SPECIFIED_NOT_BUILT = new Set<string>();
+const SPECIFIED_NOT_BUILT = new Set<string>([]);
 
 const directions: ThemeDirection[] = Object.values(THEME_DIRECTIONS);
 

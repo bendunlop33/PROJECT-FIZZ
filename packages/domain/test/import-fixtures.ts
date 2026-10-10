@@ -8,6 +8,7 @@ const ALIASES: Record<string, string[]> = {
   'Bench press': ['Barbell bench press', 'Flat bench press', 'Flat bench', 'BB bench press'],
   'Back squat': ['Barbell back squat', 'Squat'],
   'Lateral raise': ['Dumbbell lateral raise', 'Side raise'],
+  'Incline dumbbell press': ['Incline dumbbell bench press'],
   'Triceps pushdown': ['Cable pushdown', 'Rope pushdown'],
 };
 /** The catalogue's `implements` for the starter dumbbell exercises (packages/catalogue/data/exercises); the rest use two. */

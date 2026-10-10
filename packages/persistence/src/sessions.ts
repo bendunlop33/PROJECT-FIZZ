@@ -599,6 +599,25 @@ export class SqliteSessions implements SessionRepository {
     );
   }
 
+  /**
+   * The newest finished workouts done in the app with a completed set, as
+   * small rows (no aggregate decode): what the rotation and the routine
+   * list's `last done` read (premium-feel §2.6). Newest first.
+   */
+  listFinishedRefs(ownerId: string, limit: number): Promise<{ sessionId: string; routineId: string | null; startedAtUtc: string; tz: string }[]> {
+    return this.db.read(async (q) =>
+      (
+        await q.getAll<{ id: string; routine_id: string | null; started_at_utc: string; started_at_tz: string }>(
+          `SELECT s.id, s.routine_id, s.started_at_utc, s.started_at_tz FROM sessions s
+           WHERE s.owner_id = ? AND s.status = 'finished' AND s.source = 'manual'
+             AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')
+           ORDER BY s.started_at_utc DESC, s.id DESC LIMIT ?`,
+          [ownerId, limit],
+        )
+      ).map((r) => ({ sessionId: r.id, routineId: r.routine_id, startedAtUtc: r.started_at_utc, tz: r.started_at_tz })),
+    );
+  }
+
   /** Finished imported workouts with a completed set: the ones `listRepeatableIds` leaves out (review r2 B1). */
   countImportedFinished(ownerId: string): Promise<number> {
     return this.db.read(async (q) => {

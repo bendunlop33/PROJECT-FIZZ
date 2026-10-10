@@ -98,3 +98,4 @@ fix, one feature at a time. Record significant technical decisions in
 - Store UTC timestamps with the timezone; keep original imported values as provenance.
 - kg/lb and load convention (total barbell, per-dumbbell, stack, assisted) are always explicit.
 - Commit small, descriptive commits.
+- **UI copy is minimal (Ben, 10 Oct 2026).** Screens show values and actions, not explanations of rules, guardrails or how things work. No reassurance lines ("Nothing changes unless you say so"), no rule labels in the main UI ("built-in rule", "snapped to"), no paragraphs of lead text. Honesty still applies (rule 1, 6): when something matters (offline, AI unavailable, an estimate) use the shortest possible word or icon, and put any explanation behind an optional "Why?" or info tap.

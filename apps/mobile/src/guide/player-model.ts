@@ -11,6 +11,9 @@ import { DETAIL_TIER_MIN_PT, effectiveDefinition, hasListedMuscles, type MuscleD
  *   §5.7); Ben can still choose `Play animation`. A guide with no labelled
  *   key positions shows its first frame still (spec §8.9 P6): Reduce Motion
  *   never autoplays.
+ * - Stills only (Profile › Developer › Exercise guide animations off): the
+ *   `steps` view with no way into `animate`, so the UI-thread clock never
+ *   runs. A safe mode in case the animation crashes on the phone.
  */
 export type PlayerMode = 'animate' | 'steps';
 
@@ -25,6 +28,8 @@ export interface PlayerState {
   stepCount: number;
   /** Bumped when the clock must restart from the first frame (Replay, Play animation). */
   run: number;
+  /** Animations are off in Developer settings: `animate` is never entered. */
+  stillsOnly: boolean;
 }
 
 export type PlayerAction =
@@ -35,8 +40,8 @@ export type PlayerAction =
   | { type: 'show_animation' }
   | { type: 'reduce_motion'; on: boolean };
 
-export function initialPlayerState(reduceMotion: boolean, stepCount: number): PlayerState {
-  return { mode: reduceMotion ? 'steps' : 'animate', paused: false, finished: false, step: 0, stepCount, run: 0 };
+export function initialPlayerState(reduceMotion: boolean, stepCount: number, stillsOnly = false): PlayerState {
+  return { mode: reduceMotion || stillsOnly ? 'steps' : 'animate', paused: false, finished: false, step: 0, stepCount, run: 0, stillsOnly };
 }
 
 export function playerReducer(s: PlayerState, a: PlayerAction): PlayerState {
@@ -57,7 +62,7 @@ export function playerReducer(s: PlayerState, a: PlayerAction): PlayerState {
       // The `Key positions` button only exists when there are some.
       return s.stepCount === 0 || s.mode === 'steps' ? s : { ...s, mode: 'steps', step: 0 };
     case 'show_animation':
-      return s.mode === 'animate' ? s : { ...s, mode: 'animate', paused: false, finished: false, run: s.run + 1 };
+      return s.mode === 'animate' || s.stillsOnly ? s : { ...s, mode: 'animate', paused: false, finished: false, run: s.run + 1 };
     case 'reduce_motion':
       // Turning Reduce Motion on stops the animation at once; turning it off never starts one by itself.
       return a.on && s.mode === 'animate' ? { ...s, mode: 'steps', step: 0 } : s;
@@ -75,7 +80,7 @@ export interface RunEnvironment {
 
 /** Whether the clock ticks. Anything off-screen or in the background stops it (battery during rest). */
 export function isRunning(s: PlayerState, env: RunEnvironment): boolean {
-  return s.mode === 'animate' && !s.paused && !s.finished && env.visible && env.appActive && env.framesReady;
+  return !s.stillsOnly && s.mode === 'animate' && !s.paused && !s.finished && env.visible && env.appActive && env.framesReady;
 }
 
 /** The play control's label (and VoiceOver name): what a tap will do. */

@@ -1,4 +1,5 @@
 import {
+  ALIAS_USES_MAX,
   ExerciseAliasSchema,
   ImportJobSchema,
   ImportRowSchema,
@@ -6,12 +7,14 @@ import {
   type AliasTarget,
   type Exercise,
   type ExerciseAlias,
+  type RememberedTotal,
   type ImportJob,
   type ImportRow,
+  type PerHandReading,
   type SessionAggregate,
   type ZonedTimestamp,
 } from '@fizz/schemas';
-import { localDateOf, stableStringify, toMs, type EarlierImport } from '@fizz/domain';
+import { aliasUses, localDateOf, toMs, type EarlierImport } from '@fizz/domain';
 import type { Database } from './database';
 import { EXERCISE_SPEC, listDocuments, saveDocumentIn, decodeDocument, type DocumentSpec } from './documents';
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
@@ -29,6 +32,10 @@ import { writeAggregate } from './sessions';
  *   longer `committing` (an undone import gets nothing more).
  * - Undo reverts: the job's workouts get status `reverted` (hidden from
  *   history, Progress, "Last" values and targets) and nothing is deleted (DX7).
+ *   What the import taught (its names and dumbbell answers) stays recorded as
+ *   that import's use of each alias, and readers ignore it from then on
+ *   (`rememberedAnswer`; review r5 S2). An import never changes an exercise,
+ *   so there is nothing of the kind to undo (review r6 B1).
  * - Every write is versioned; a stale `expectedVersion` is refused (rule 5).
  */
 
@@ -97,6 +104,10 @@ export interface AliasToSave {
   name: string;
   nameKey: string;
   target: AliasTarget;
+  /** Ben's dumbbell answer for the name; null clears a stored one; absent: this import didn't ask (review r4 S2). */
+  perHand?: PerHandReading | null;
+  /** Ben's barbell answer for the name, kept exactly (exercise, bar, bar weight; review r8); null: he gave none this time; absent: this import didn't ask (PM decision after review r7). */
+  total?: RememberedTotal | null;
 }
 
 export class SqliteImports {
@@ -183,9 +194,10 @@ export class SqliteImports {
 
   /**
    * Start a commit: the job, every source row, the custom exercises `Add
-   * new` makes (and catalogue exercises the rows use that aren't stored yet),
-   * and the remembered names, in one transaction. Idempotent by job ID and
-   * operation ID: the same call again is a `duplicate` and changes nothing.
+   * new` makes (and catalogue exercises the rows use that aren't stored yet;
+   * an exercise already stored is never changed), and the remembered names,
+   * in one transaction. Idempotent by job ID and operation ID: the same call
+   * again is a `duplicate` and changes nothing.
    */
   createJob(job: ImportJob, rows: readonly ImportRow[], extras: { exercises: readonly Exercise[]; aliases: readonly AliasToSave[]; at: ZonedTimestamp; newId: () => string }): Promise<CreateJobOutcome> {
     return this.db.write(async (tx) => {
@@ -202,10 +214,7 @@ export class SqliteImports {
         if (r.jobId !== job.id) throw new Error(`Row ${String(r.row)} belongs to another job`);
         await insert(tx, 'import_rows', rowRecord(checkWrite(ImportRowSchema, r, 'import_rows', `${r.jobId}#${String(r.row)}`)));
       }
-      for (const e of extras.exercises) {
-        const have = await tx.getFirst('SELECT id FROM exercises WHERE id = ?', [e.id]);
-        if (!have) await saveDocumentIn(tx, EXERCISE_SPEC, e, null);
-      }
+      for (const e of extras.exercises) await saveImportExercise(tx, e);
       for (const a of extras.aliases) await upsertAlias(tx, job, a, extras.at, extras.newId);
       return { ok: true, duplicate: false };
     });
@@ -276,28 +285,52 @@ async function readJob(q: SqlExecutor, jobId: string): Promise<ImportJob | null>
   return row ? decodeDocument(IMPORT_JOB_SPEC, row) : null;
 }
 
-/** One remembered name per owner, source and key: added, or updated (version + 1) when the answer changed. */
+/**
+ * An exercise the import uses: a catalogue exercise or `Add new`'s custom
+ * one, saved when it isn't stored yet. An exercise that is already stored
+ * is never changed by an import (review r6 B1): `Add new` with other
+ * equipment is another exercise (`customExerciseIdFor` per equipment), so
+ * nothing an undone import answered lives on in an exercise, and an import
+ * still in effect that mapped a name to it keeps reading it its way.
+ */
+async function saveImportExercise(tx: SqlExecutor, e: Exercise): Promise<void> {
+  const row = await tx.getFirst('SELECT id FROM exercises WHERE id = ?', [e.id]);
+  if (row) return;
+  const saved = await saveDocumentIn(tx, EXERCISE_SPEC, e, null);
+  if (!saved.ok) throw new Error('Exercise conflict');
+}
+
+/**
+ * One remembered name per owner, source and key, versioned (version + 1 on
+ * every import that answers or uses it). Each import adds its use (its
+ * target and, when it asked, the dumbbell and barbell answers), so Undo import can ignore
+ * exactly what that import taught (review r5 S2). `target` / `perHand` /
+ * `jobId` record the last write; the dumbbell answer is kept there unless
+ * this import gave or cleared one (review r4 S2).
+ */
 async function upsertAlias(tx: SqlExecutor, job: ImportJob, a: AliasToSave, at: ZonedTimestamp, newId: () => string): Promise<void> {
   const row = await tx.getFirst('SELECT * FROM exercise_aliases WHERE owner_id = ? AND source = ? AND name_key = ?', [job.ownerId, 'fitnotes', a.nameKey]);
-  if (!row) {
-    const alias: ExerciseAlias = {
-      id: newId(),
-      ownerId: job.ownerId,
-      version: 1,
-      createdAtUtc: at.utc,
-      updatedAtUtc: at.utc,
-      source: 'fitnotes',
-      name: a.name,
-      nameKey: a.nameKey,
-      target: a.target,
-      jobId: job.id,
-    };
-    const saved = await saveDocumentIn(tx, EXERCISE_ALIAS_SPEC, alias, null);
-    if (!saved.ok) throw new Error('Alias conflict');
-    return;
-  }
-  const current = decodeDocument(EXERCISE_ALIAS_SPEC, row);
-  if (stableStringify(current.target) === stableStringify(a.target)) return;
-  const saved = await saveDocumentIn(tx, EXERCISE_ALIAS_SPEC, { ...current, name: a.name, target: a.target, jobId: job.id, version: current.version + 1, updatedAtUtc: at.utc }, current.version);
+  const current = row ? decodeDocument(EXERCISE_ALIAS_SPEC, row) : null;
+  const perHand = (a.perHand === undefined ? current?.perHand : a.perHand) ?? null;
+  const use = { jobId: job.id, target: a.target, ...(a.perHand === undefined ? {} : { perHand: a.perHand }), ...(a.total === undefined ? {} : { total: a.total }) };
+  const uses = [...(current ? aliasUses(current) : []).filter((u) => u.jobId !== job.id), use].slice(-ALIAS_USES_MAX);
+  const next: ExerciseAlias = current
+    ? { ...current, name: a.name, target: a.target, jobId: job.id, uses, version: current.version + 1, updatedAtUtc: at.utc }
+    : {
+        id: newId(),
+        ownerId: job.ownerId,
+        version: 1,
+        createdAtUtc: at.utc,
+        updatedAtUtc: at.utc,
+        source: 'fitnotes',
+        name: a.name,
+        nameKey: a.nameKey,
+        target: a.target,
+        jobId: job.id,
+        uses,
+      };
+  if (perHand === null) delete next.perHand;
+  else next.perHand = perHand;
+  const saved = await saveDocumentIn(tx, EXERCISE_ALIAS_SPEC, next, current ? current.version : null);
   if (!saved.ok) throw new Error('Alias conflict');
 }
