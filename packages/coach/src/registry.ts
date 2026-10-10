@@ -10,7 +10,7 @@ import {
   type ToolEffect,
   type ToolNeed,
 } from '@fizz/schemas';
-import { isStructuralRequest, type BenRequest } from './request';
+import { isStructuralRequest, requestHas, type BenRequest, type BenRequestKind } from './request';
 
 /**
  * The restricted coach tool registry (coach-contract §6, ADR 0019 §2). These
@@ -250,18 +250,43 @@ export interface TurnRegistry {
   withheld: WithheldTool[];
 }
 
+/**
+ * Which request kinds open which `ben_request` tool (review r2 B2). A request
+ * of one kind never opens another kind's tools: "remember that I train before
+ * work" can't reach today's sets, and "set 2 felt good" (not a request) opens
+ * nothing. Chips count as `change` (CA1). Tools not listed here that need
+ * `ben_request` open on no request kind at all, so a new tool fails closed
+ * until it is mapped.
+ *
+ * `add_playbook_candidate` opens on `memory`: Ben asking the coach to
+ * remember or note something, which turns out to be a general training rule,
+ * goes to the playbook rather than personal memory (CLAUDE.md rule 10).
+ * Its `needs` is still unsettled in ADR 0019 (Ben/PM decision).
+ */
+export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRequestKind[]>> = {
+  adjust_pending_sets: ['change', 'difficulty'],
+  save_memory: ['memory'],
+  forget_memory: ['memory'],
+  add_playbook_candidate: ['memory'],
+};
+
+function requestOpens(t: ToolDeclaration, r: BenRequest | null): boolean {
+  const kinds = REQUEST_KINDS_BY_TOOL[t.name] ?? [];
+  return kinds.some((k) => requestHas(r, k));
+}
+
 function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null {
   switch (t.needs) {
     case 'none':
       return null;
     case 'ben_request':
-      if (g.benRequest !== null) return null;
+      if (requestOpens(t, g.benRequest)) return null;
       // An accepted offer only counts for today's sets (CA1).
       return g.acceptedOffer && t.name === 'adjust_pending_sets' ? null : 'needs_request';
     case 'ben_pain_words':
       return g.benPainWords ? null : 'needs_pain_words';
     case 'ben_named_target':
-      return g.benRequest !== null ? null : 'needs_request';
+      return requestHas(g.benRequest, 'change') ? null : 'needs_request';
     case 'summary_turn':
       return g.kind === 'summary' ? null : 'needs_summary_turn';
     case 'structural_signal':

@@ -18,8 +18,10 @@ import {
 } from '../src/index';
 import { id } from './records';
 
-const ASKED: BenRequest = { source: 'words', kind: 'change' };
-const STRUCTURAL: BenRequest = { source: 'words', kind: 'structural' };
+const ASKED: BenRequest = { source: 'words', kinds: ['change'] };
+const STRUCTURAL: BenRequest = { source: 'words', kinds: ['structural'] };
+const MEMORY: BenRequest = { source: 'words', kinds: ['memory'] };
+const DIFFICULTY: BenRequest = { source: 'words', kinds: ['difficulty'] };
 
 const gate = (over: Partial<TurnGate> = {}): TurnGate => ({
   kind: 'general',
@@ -128,6 +130,33 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     expect(buildTurnRegistry(gate({ kind: 'summary', benRequest: classifyBenRequest('swap cable fly for something else next time') })).tools.some((t) => t.structural)).toBe(true);
   });
 
+  it('the request kind limits which tools open (review r2 B2)', () => {
+    const memory = names(gate({ kind: 'workout', benRequest: MEMORY }));
+    expect(memory).toEqual(expect.arrayContaining(['save_memory', 'forget_memory', 'add_playbook_candidate']));
+    expect(memory).not.toContain('adjust_pending_sets');
+    const change = names(gate({ kind: 'workout', benRequest: ASKED }));
+    expect(change).toContain('adjust_pending_sets');
+    expect(change).not.toContain('save_memory');
+    expect(change).not.toContain('forget_memory');
+    const difficulty = names(gate({ kind: 'workout', benRequest: DIFFICULTY }));
+    expect(difficulty).toContain('adjust_pending_sets');
+    expect(difficulty).not.toContain('save_memory');
+    expect(difficulty).not.toContain('forget_memory');
+    const structural = names(gate({ kind: 'workout', benRequest: STRUCTURAL }));
+    expect(structural).not.toContain('adjust_pending_sets');
+    expect(structural).not.toContain('save_memory');
+    expect(names(gate({ kind: 'workout', benRequest: chipRequest('pain') }))).not.toContain('save_memory');
+  });
+
+  it('a remark during a workout opens no write tool, so the coach can only offer (rule 3, review r2 B2)', () => {
+    for (const remark of ['set 2 felt good', 'Set 3 was fine', 'Plan looks good', 'Remember when I did 100 for 8?']) {
+      const r = buildTurnRegistry(gate({ kind: 'workout', benRequest: classifyBenRequest(remark) }));
+      expect(r.tools.filter((t) => t.effect !== 'read').map((t) => t.name)).toEqual([]);
+      expect(r.withheld).toContainEqual({ name: 'adjust_pending_sets', reason: 'needs_request' });
+    }
+    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('remember that I train before work') }))).not.toContain('adjust_pending_sets');
+  });
+
   it("set_pain_flag needs Ben's own pain words this turn (check 19)", () => {
     expect(names(gate({ benRequest: ASKED }))).not.toContain('set_pain_flag');
     expect(names(gate({ benPainWords: true }))).toContain('set_pain_flag');
@@ -211,7 +240,7 @@ describe('parseToolCall', () => {
   });
 
   it('a reworded retry of an append tool is the same operation; content keys catch a new turn (review S4)', () => {
-    const reg = buildTurnRegistry(gate({ kind: 'workout', benRequest: ASKED, benPainWords: true }));
+    const reg = buildTurnRegistry(gate({ kind: 'workout', benRequest: { source: 'words', kinds: ['change', 'memory'] }, benPainWords: true }));
     const pain1 = parseToolCall('t1', 'set_pain_flag', JSON.stringify({ exerciseIds: [id(2), id(1)], area: 'shoulder', quote: 'my shoulder hurts' }), reg);
     const pain2 = parseToolCall('t1', 'set_pain_flag', JSON.stringify({ exerciseIds: [id(1), id(2)], area: 'shoulder', quote: 'shoulder is hurting' }), reg);
     const mem1 = parseToolCall('t1', 'save_memory', JSON.stringify({ text: 'Trains before work.', quote: 'I train before work' }), reg);
