@@ -195,7 +195,10 @@ export function GuidePlayer({ guide, size, visible, footer }: Props) {
       if (done.value) return;
       const step = advanceClock(elapsed.value, info.timeSincePreviousFrame, durationMs, loop);
       elapsed.value = step.elapsedMs;
-      frame.value = frameIndexAt(step.elapsedMs, durationMs, count, loop, info.timeSincePreviousFrame ?? 0);
+      // Assign only when the index changes: Reanimated's setter has no equality check, so every assignment
+      // re-runs the derived picture and redraws the canvas at display rate (guides v2 review S2).
+      const next = frameIndexAt(step.elapsedMs, durationMs, count, loop, info.timeSincePreviousFrame ?? 0);
+      if (next !== frame.value) frame.value = next;
       if (step.finished) {
         done.value = true;
         scheduleOnRN(onFinished);
