@@ -238,6 +238,43 @@ describe('explainTarget: routine and Repeat targets', () => {
   });
 });
 
+describe('explainTarget: Start next session (review B1.1)', () => {
+  // Last time 100 kg × 8, 8 on the bar; the built-in rule plans 102.5 kg for the next session.
+  const source = finished(0, [values(kg(100), 8, { rpe: 8 }), values(kg(100), 8, { rpe: 8 })]);
+  const h = hist(source);
+  const result = rule(h, BAR);
+  const at2 = at(2 * DAY);
+  const targetsWith = (why: boolean) => {
+    const plan = why ? plannedSetsFromTargets(result, { history: h, equipment: BAR, at: at2 }) : plannedSetsFromTargets(result);
+    return new Map([[BENCH, plan ?? []]]);
+  };
+  const next = (gym: EquipmentInstance[], why = true) =>
+    startWorkoutFromSession({ opId: `next-${String(why)}`, owner, gymId: GYM, source, exercises, gymEquipment: gym, at: at2, newId: idGen((idBase += 1_000)), targets: targetsWith(why) });
+
+  it('a progressed target from the rule is explained as the rule, never as a repeat with no progression', () => {
+    const out = next([BAR]);
+    const set = setsFor(out.aggregate, BENCH)[0];
+    expect(set?.planned).toMatchObject({ load: kg(102.5), source: 'built_in_rule', provenance: { source: 'rule' } });
+    const e = explainTarget({ aggregate: out.aggregate, setId: set?.id ?? '', nowMs: ms(2 * DAY + 60), basisNow: source, gymNames: GYMS, painFlags: [], history: h });
+    expect(rowsOf(e)[0]?.[1]).toBe('Built-in rule · after your 8 Oct workout');
+    expect(rowsOf(e)[2]).toEqual(['Reason', 'Increase to 102.5 kg for 6–8 reps.', 'Last session: every counted set reached 8+ reps at 100 kg.']);
+    expect(rowsOf(e).flat().join(' ')).not.toMatch(/Repeat of|No progression is applied/);
+  });
+
+  it('at a lighter gym the rule’s target is fitted and the fit is said against the target, not last time', () => {
+    const lighter = barbell({ plates: [{ mass: 20, count: 2 }] });
+    const set = setsFor(next([lighter]).aggregate, BENCH)[0];
+    expect(set?.planned.provenance?.source).toBe('rule');
+    expect(set?.planned.provenance?.guardNotes.map(plain)).toEqual(['Capped at 60 kg: the most this bar makes. Target was 102.5 kg.']);
+  });
+
+  it('a rule target written without provenance reads Not recorded, never a made-up repeat', () => {
+    const set = setsFor(next([BAR], false).aggregate, BENCH)[0];
+    expect(set?.planned.source).toBe('built_in_rule');
+    expect(set?.planned.provenance).toBeUndefined();
+  });
+});
+
 describe('explainTarget: pain flags (Pain and Before flag rows)', () => {
   // 8 Oct 105 × 6, 6 · flag 9 Oct (shoulder) · 10 Oct 100 × 8, 8 · today 11 Oct, held by the flag.
   const pre = finished(0, [values(kg(105), 6, { rpe: 9 }), values(kg(105), 6, { rpe: 9 })]);

@@ -606,7 +606,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const history = await historyFor(p.id, exercise.id);
     const previous = lastComparableSession(history, { equipmentId: equipment?.id ?? null, unit, loadConvention: convention });
     // No history: three working sets in the built-in rep range, no load (audit B1).
-    if (!previous) return defaultStartingPlan(exercise, equipment?.kind ?? null, convention);
+    if (!previous) return defaultStartingPlan(exercise, equipment?.kind ?? null, convention, undefined, { at: ctx.now() });
     const now = unspecifiedPain(await sessionCheckIn(aggregate));
     const then = unspecifiedPain(await sessionCheckIn(await repos().sessions.get(previous.sessionId)));
     const { result } = nextTargetsFor({
@@ -625,7 +625,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       sessionPain: now.active ? now : then,
     });
     // Each planned set records what produced it, for `Why?` (active-workout §2.12, AW3).
-    return plannedSetsFromTargets(result, { history, equipment, at: ctx.now() }) ?? defaultStartingPlan(exercise, equipment?.kind ?? null, convention, Math.max(1, previous.sets.length));
+    return plannedSetsFromTargets(result, { history, equipment, at: ctx.now() }) ?? defaultStartingPlan(exercise, equipment?.kind ?? null, convention, Math.max(1, previous.sets.length), { at: ctx.now(), decision: result.decision });
   }
 
   /**

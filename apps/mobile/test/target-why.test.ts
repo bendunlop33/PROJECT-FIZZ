@@ -118,12 +118,23 @@ describe('Why? through the services', () => {
     expect(rowsOf(off).map((r) => r[0])).toEqual(['Set by', 'Last time', 'Reason', 'Before flag']);
   });
 
-  it('a set with no target, or an unknown set: nothing to explain', async () => {
+  it('a first exercise (no history) explains its starting plan as the built-in rule, never as Not recorded', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     const { sessionId, aggregate } = await addBench(s, gymId);
     expect(aggregate.sets[0]?.planned.load).toBeNull();
-    expect(await s.workout.explainTarget(sessionId, aggregate.sets[0]?.id ?? '')).toBeNull();
+    expect(aggregate.sets[0]?.planned.provenance?.source).toBe('rule');
+    const rows = rowsOf(await s.workout.explainTarget(sessionId, aggregate.sets[0]?.id ?? ''));
+    expect(rows[0]?.[0]).toBe('Set by');
+    expect(rows[0]?.[1]).toMatch(/^Built-in rule · /);
+    expect(rows.find((r) => r[0] === 'Reason')).toEqual(['Reason', 'Starting plan: 3 sets of 3–6 reps. You choose the load.']);
+    expect(rows.flat().join(' ')).not.toMatch(/Not recorded/);
+  });
+
+  it('an unknown set or workout: nothing to explain', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { sessionId, aggregate } = await addBench(s, gymId);
     expect(await s.workout.explainTarget(sessionId, h.ids())).toBeNull();
     expect(await s.workout.explainTarget(h.ids(), aggregate.sets[0]?.id ?? '')).toBeNull();
   });

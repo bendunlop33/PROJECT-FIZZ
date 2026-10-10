@@ -1,5 +1,6 @@
-import type { EquipmentKind, Exercise, LoadConvention, PlannedSet, SessionAggregate, SetType } from '@fizz/schemas';
-import { builtInRepRange, ruleCategory, type RuleExerciseInfo } from '../default-rule';
+import type { EquipmentKind, Exercise, LoadConvention, PlannedSet, RuleDecision, SessionAggregate, SetType, TargetProvenance, ZonedTimestamp } from '@fizz/schemas';
+import { builtInRepRange, builtInRuleName, ruleCategory, type RuleExerciseInfo } from '../default-rule';
+import { fitProvenance } from '../target-provenance';
 
 /**
  * First-run flow helpers (audit B1, B2, F5): pure rules so a brand-new user
@@ -41,13 +42,45 @@ export function defaultStartingPlan(
   equipmentKind: EquipmentKind | null,
   convention: LoadConvention,
   sets = DEFAULT_WORKING_SETS,
+  why?: StartingPlanWhy,
 ): { setType: SetType; planned: PlannedSet }[] {
-  const reps = builtInRepRange(ruleCategory(exercise, equipmentKind, convention));
+  const category = ruleCategory(exercise, equipmentKind, convention);
+  const reps = builtInRepRange(category);
   const count = Math.max(1, Math.min(10, Math.round(sets)));
+  const provenance = why === undefined ? undefined : startingPlanProvenance(why, builtInRuleName(category), count, reps);
   return Array.from({ length: count }, () => ({
     setType: 'working' as const,
-    planned: { load: null, reps: { ...reps }, durationS: null, rpe: null, rir: null, source: 'built_in_rule' as const },
+    planned: { load: null, reps: { ...reps }, durationS: null, rpe: null, rir: null, source: 'built_in_rule' as const, ...(provenance ? { provenance } : {}) },
   }));
+}
+
+/**
+ * When the starting plan was made, and the rule's decision when it ran but
+ * couldn't plan (pain hold with no load, unsupported). With it, each set
+ * records rule provenance, so `Why?` never says `Not recorded` for a target
+ * this version made (active-workout §2.12, review B1.1).
+ */
+export interface StartingPlanWhy {
+  at: ZonedTimestamp;
+  decision?: RuleDecision;
+}
+
+function startingPlanProvenance(why: StartingPlanWhy, ruleName: string, count: number, reps: { min: number; max: number }): TargetProvenance {
+  return fitProvenance({
+    source: 'rule',
+    setAt: why.at,
+    routineName: null,
+    requestedLoad: null,
+    basis: null,
+    rule: {
+      name: ruleName,
+      decision: why.decision ?? 'insufficient_data',
+      // Fixed app text; true whether or not there was history (the plan never has a load).
+      summary: `Starting plan: ${String(count)} ${count === 1 ? 'set' : 'sets'} of ${String(reps.min)}–${String(reps.max)} reps. You choose the load.`,
+      facts: [],
+    },
+    guardNotes: [],
+  });
 }
 
 export type MuscleRegion = 'push' | 'pull' | 'legs' | 'core';
