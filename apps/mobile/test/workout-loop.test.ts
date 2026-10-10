@@ -278,6 +278,10 @@ describe('the loop: add exercise, log, rest, force-close, finish, summary', () =
     const sum = await s.workout.summary(sessionId);
     expect(sum?.facts).toMatchObject({ workingSets: 2, exercisesDone: 1 });
     expect(sum?.nextTime?.sourceTag).toBe('Built-in rule (coach not connected)');
+    // The connection state only changes the tag; the targets stay the built-in rule's.
+    const connected = await s.workout.summary(sessionId, 'connected');
+    expect(connected?.nextTime?.sourceTag).toBe('Built-in rule');
+    expect(connected?.nextTime?.rows).toEqual(sum?.nextTime?.rows);
     expect(plain(sum?.exercises[0]?.results)).toBe('60×8 · 60×6');
     // Named from what was in it (audit F5).
     expect((await s.today.view())?.main).toMatchObject({ kind: 'done_today', title: 'Push' });

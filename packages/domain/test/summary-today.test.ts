@@ -74,6 +74,9 @@ describe('buildWorkoutSummary', () => {
     expect(plain(sum.comparison.why)).toBe('Same Olympic bar at Main Gym, working sets');
     expect(sum.exercises.map((e) => [e.name, e.setsText, plain(e.results)])).toEqual([['Bench press', '3 sets', '60×12 · 60×12 · 60×12']]);
     expect(sum.nextTime?.sourceTag).toBe('Built-in rule (coach not connected)');
+    // The tag names the built-in rule whatever the coach's state: no coach targets exist in this build.
+    expect(buildWorkoutSummary(input(s, [lastWeek], { coach: 'unavailable' })).nextTime?.sourceTag).toBe('Built-in rule (coach unavailable)');
+    expect(buildWorkoutSummary(input(s, [lastWeek], { coach: 'connected' })).nextTime?.sourceTag).toBe('Built-in rule');
     expect(sum.nextTime?.rows.map((r) => [r.kind, plain(r.target), r.decision, r.ruleName])).toEqual([
       ['change', 'Target 62.5 kg × 8–12', 'increase_load', 'Double progression, 8–12 reps up to RPE 9 (built-in default for an accessory lift, provisional)'],
     ]);

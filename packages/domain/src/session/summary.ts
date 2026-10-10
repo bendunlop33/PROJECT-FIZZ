@@ -18,11 +18,22 @@ import { summariseVolume } from './volume';
  * source. The check-in is never read by the rules (check 24).
  */
 
-export type CoachStatus = 'not_connected';
+/**
+ * What the coach could do for this summary (workout-summary §5 source tags).
+ * - `not_connected`: no AI route.
+ * - `unavailable`: a route exists but is paused (limit, signed out, no model)
+ *   or offline.
+ * - `connected`: the coach is connected, but this build has no summary turn
+ *   yet (ADR 0018 C8), so the built-in rule still sets every target and the
+ *   tag names it plainly.
+ */
+export type CoachStatus = 'not_connected' | 'unavailable' | 'connected';
 
-/** Source tag on every `Next time` row (ADR 0006). No AI in this build. */
+/** Source tag on every `Next time` row (ADR 0006). Every target here comes from the built-in rule. */
 export const BUILT_IN_SOURCE_TAG: Record<CoachStatus, string> = {
   not_connected: 'Built-in rule (coach not connected)',
+  unavailable: 'Built-in rule (coach unavailable)',
+  connected: 'Built-in rule',
 };
 
 export interface SummaryInput {

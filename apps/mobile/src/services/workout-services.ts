@@ -42,6 +42,7 @@ import {
   type LiftHighlight,
   type TodayView,
   type WorkoutSummary,
+  type CoachStatus,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type {
@@ -578,7 +579,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       );
     },
 
-    async summary(sessionId: string): Promise<WorkoutSummary | null> {
+    /** `coach`: the coach's state from the AI connection (Keychain, read by the caller); it only changes the source tag. */
+    async summary(sessionId: string, coach: CoachStatus = 'not_connected'): Promise<WorkoutSummary | null> {
       const p = await ctx.profile();
       const aggregate = await repos().sessions.get(sessionId);
       if (!p || !aggregate) return null;
@@ -608,7 +610,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         rules,
         painFlags: await repos().painFlags.listActive(p.id),
         checkIn: ci,
-        coach: 'not_connected',
+        coach,
         exerciseInfo,
         gymNames,
       });
