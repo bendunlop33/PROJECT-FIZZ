@@ -106,14 +106,21 @@ describe('app mode (§4.11.9)', () => {
     expect(guideDefinition({ ...base, setting: 'off' })).toBe('off');
   });
 
-  it('faint and underlay ops become single opaque Skia fills', () => {
+  it('faint ops become single Skia gradient fills in the faint colour (round 4: lit end strongest, both ends fade out)', () => {
     const load = bundledGuides().load('cable-triceps-pushdown');
     if (!load.ok) throw new Error('guide');
     const { style } = styleFor(THEME_DIRECTIONS.A, 'dark', false);
     const ops = bakeFrame(load.value.prepared, load.value.camera, 0.2, [], { pt: 240, muscles: { primary: ['triceps'], secondary: [] }, definition: 'neutral' });
-    const faint = ops.filter((o) => o.kind === 'path' && o.fill === 'faintNeutral');
+    const faint = ops.filter((o) => o.kind === 'path' && o.gradient !== null && o.gradient.stops.every((st) => st.paint === 'faintNeutral'));
     expect(faint.length).toBeGreaterThan(0);
-    for (const o of faint) expect(planOp(o, style)).toEqual({ layerAlpha: null, steps: [{ draw: 'fill', color: style.faintNeutral, alpha: o.opacity }] });
+    for (const o of faint) {
+      const plan = planOp(o, style);
+      expect(plan.layerAlpha).toBeNull();
+      expect(plan.steps).toHaveLength(1);
+      const step = plan.steps[0];
+      expect(step?.draw).toBe('fill');
+      expect(step?.draw === 'fill' ? step.gradient?.colors.length : 0).toBe(4);
+    }
   });
 });
 
