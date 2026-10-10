@@ -1,3 +1,5 @@
+import { toMs } from '@fizz/domain';
+
 /**
  * The rest-screen fold (D-Rest, audit F8): while a rest runs, the next set's
  * editor is folded behind `Edit <exercise>`. Pure so the screen can't leave a
@@ -49,4 +51,29 @@ export function editorSlot(input: FoldInput & { setId: string | null; drawn: boo
   if (!input.hasFocus || input.setId === null) return { kind: 'none' };
   if (!editorShown(input)) return { kind: 'link' };
   return { kind: 'editor', key: `editor:${input.setId}`, animateOnMount: input.drawn && !input.resting };
+}
+
+/** How long `READY` holds at the rest deadline before the editor swaps in (premium-feel §4.3). */
+export const READY_HOLD_MS = 600;
+
+type RestLike = { kind: 'running'; timerId: string; deadlineUtc: string } | { kind: 'ended'; timerId: string; skipped: boolean } | { kind: 'paused' };
+
+/**
+ * Rest end → Ready (premium-feel §4.3): when a running rest reaches its end
+ * on screen, `READY` and `0:00` hold for `READY_HOLD_MS`, then the editor
+ * swaps in. Not for Skip (it swaps at once), and not when Ben comes back to
+ * the app well after the deadline (straight to Ready). Returns the time the
+ * hold ends, or null for no hold. Logging is never held: Log stays live.
+ */
+export function readyHoldUntil(prev: RestLike | null, current: RestLike | null, nowMs: number): number | null {
+  if (prev?.kind !== 'running' || current?.kind !== 'ended') return null;
+  if (current.skipped || current.timerId !== prev.timerId) return null;
+  let deadlineMs: number;
+  try {
+    deadlineMs = toMs(prev.deadlineUtc);
+  } catch {
+    return null;
+  }
+  if (nowMs - deadlineMs > 2_000) return null;
+  return nowMs + READY_HOLD_MS;
 }

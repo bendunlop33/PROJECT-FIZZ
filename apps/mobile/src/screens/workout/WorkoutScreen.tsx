@@ -50,7 +50,7 @@ import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
 import { painClearConfirm } from '../../workout/pain-clear';
-import { editorSlot, enterAction, isResting, type EntryField } from '../../workout/rest-fold';
+import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../workout/rest-fold';
 
 /**
  * Active workout: focused set card, rest, summary hand-off
@@ -252,6 +252,25 @@ export function WorkoutScreen() {
   useEffect(() => {
     setShowNextSet(false);
   }, [view?.focus?.setId]);
+
+  // Rest end → Ready: `READY` holds briefly at the deadline before the editor swaps in (premium-feel §4.3, review S2).
+  const [readyHold, setReadyHold] = useState<{ timerId: string; untilMs: number } | null>(null);
+  const prevRest = useRef<RestView | null>(null);
+  const viewRest = view?.rest ?? null;
+  useEffect(() => {
+    const until = readyHoldUntil(prevRest.current, viewRest, clockNow());
+    prevRest.current = viewRest;
+    if (until !== null && viewRest?.kind === 'ended') setReadyHold({ timerId: viewRest.timerId, untilMs: until });
+  }, [viewRest]);
+  useEffect(() => {
+    if (readyHold === null) return;
+    const t = setTimeout(() => {
+      setReadyHold(null);
+    }, Math.max(0, readyHold.untilMs - clockNow()));
+    return () => {
+      clearTimeout(t);
+    };
+  }, [readyHold]);
 
   // The record check's history is read when a set is focused, so the log haptic fires right after the write (review S1).
   const recordContext = useRef<RecordContext | null>(null);
@@ -594,7 +613,7 @@ export function WorkoutScreen() {
           label: view.primary.label,
           onPress: () => {
             // During rest the editor is folded away: open it, then focus once it's drawn (review B1).
-            const a = enterAction(field, { resting: isResting(view.rest), hasFocus: view.focus !== null, showNextSet });
+            const a = enterAction(field, { resting: restOnScreen, hasFocus: view.focus !== null, showNextSet });
             if (a.unfold) setShowNextSet(true);
             setFocusRequest({ field: a.focus });
           },
@@ -622,7 +641,11 @@ export function WorkoutScreen() {
   })();
 
   const rest = view.rest;
-  const resting = rest !== null && (rest.kind === 'running' || rest.kind === 'paused');
+  const timerRunning = rest !== null && (rest.kind === 'running' || rest.kind === 'paused');
+  const holding = readyHold !== null && rest?.kind === 'ended' && rest.timerId === readyHold.timerId;
+  /** The rest block is on screen: the timer runs or is paused, or `READY` holds at its end. */
+  const restOnScreen = timerRunning || holding;
+  const resting = restOnScreen;
   const slot = editorSlot({ resting, hasFocus: focus !== null, showNextSet, setId: focus?.setId ?? null, drawn: drawn.current });
   const restored = focus !== null && focus.draftSource === 'draft' && restoredDraft === focus.setId;
   const copied = focus !== null && focus.draftSource === 'copied' && focus.previous ? `Copied from ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}` : null;
@@ -672,6 +695,7 @@ export function WorkoutScreen() {
       <View style={{ gap: theme.space['5'] }}>
         <RestPanel
           rest={rest}
+          ready={holding}
           upNext={view.upNext !== null ? `Next · ${view.upNext}` : focus === null ? (view.openEnded ? 'Then add a set or your next exercise' : null) : null}
           onAdjust={(deltaS) => {
             if (rest.kind !== 'running') return;
@@ -1256,7 +1280,7 @@ function NextRow({ label, text, onPress }: { label: string; text: string; onPres
  * stored deadline (never a JS counter), `Next · Set 3 · 100 kg × 6–8`, and
  * −30 s / +30 s / Skip outline pills.
  */
-function RestPanel({ rest, upNext, onAdjust, onSkip }: { rest: RestView; upNext: string | null; onAdjust: (deltaS: number) => void; onSkip: () => void }) {
+function RestPanel({ rest, ready, upNext, onAdjust, onSkip }: { rest: RestView; ready: boolean; upNext: string | null; onAdjust: (deltaS: number) => void; onSkip: () => void }) {
   const theme = useTheme();
   const shownS = rest.kind === 'ended' ? 0 : Math.ceil(rest.remainingMs / 1000);
   const prevS = useRef(shownS);
@@ -1265,25 +1289,26 @@ function RestPanel({ rest, upNext, onAdjust, onSkip }: { rest: RestView; upNext:
   useEffect(() => {
     prevS.current = shownS;
   }, [shownS]);
-  if (rest.kind === 'ended') return null;
+  if (rest.kind === 'ended' && !ready) return null;
   const paused = rest.kind === 'paused';
+  const ended = rest.kind === 'ended';
   // `Next · Set 2 · 60 kg × 3–6`: the target values in text.primary (premium-feel §8).
   const nextParts = upNext === null ? null : upNext.split(' · ');
   const nextLead = nextParts && nextParts.length > 2 ? `${nextParts.slice(0, -1).join(' · ')} · ` : null;
   const nextValue = nextParts && nextParts.length > 2 ? (nextParts.at(-1) ?? '') : null;
-  const pill = (label: string, a11y: string, onPress: () => void) => <SecondaryButton grow label={label} accessibilityLabel={a11y} disabled={paused} onPress={onPress} />;
+  const pill = (label: string, a11y: string, onPress: () => void) => <SecondaryButton grow label={label} accessibilityLabel={a11y} disabled={paused || ended} onPress={onPress} />;
   return (
     <View style={{ gap: theme.space['5'] }}>
       {/* 26 pt above `REST` with the scroll padding (D-Rest). */}
       <View style={{ alignItems: 'center', gap: theme.space['1'], paddingTop: theme.space['3'] + 2 }}>
         <AppText variant="sectionLabel" color={paused ? 'status.warning' : 'text.tertiary'}>
-          {paused ? 'Rest · paused' : 'Rest'}
+          {ended ? 'Ready' : paused ? 'Rest · paused' : 'Rest'}
         </AppText>
         <TimerNumeral
           text={formatDuration(shownS)}
           whole={whole}
           color={paused ? 'text.tertiary' : 'text.primary'}
-          accessibilityLabel={`Rest${paused ? ', paused' : ''}, ${formatDuration(rest.remainingMs / 1000)} left`}
+          accessibilityLabel={rest.kind === 'ended' ? 'Rest over' : `Rest${paused ? ', paused' : ''}, ${formatDuration(rest.remainingMs / 1000)} left`}
         />
         {upNext ? (
           <AppText variant="callout" color="text.secondary" numeric align="center" accessibilityLabel={`Next set target: ${upNext.replace(/^Next · /, "")}`}>
