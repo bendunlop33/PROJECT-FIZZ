@@ -233,6 +233,20 @@ export function WorkoutScreen() {
     }
   }
 
+  // `[Use changes today]` from the gym's detail: the `Use updated …` card, once per tap (gym-editor §4.9).
+  const checkGym = route.params?.checkGym;
+  useEffect(() => {
+    if (data === 'loading' || data === null || !checkGym || !firstTime(`checkGym:${checkGym.nonce}`)) return;
+    void services.gymSwitch
+      .propose(data.aggregate.session.id, checkGym.gymId)
+      .then((p) => {
+        if (p) setSwitchCard({ proposal: p, opId: newUuid(), status: 'ready' });
+      })
+      .catch(() => {
+        showToast({ icon: 'info.circle', text: 'Couldn’t check that gym. Nothing changed.' });
+      });
+  }, [data === 'loading' || data === null ? null : data.aggregate.session.id, checkGym?.nonce]);
+
   const view = useMemo(() => (data === 'loading' || data === null ? null : services.workout.view(data, now, edits)), [services, data, now, edits]);
 
   // Edits belong to one set; when the active set changes, they are dropped (they were saved as a draft).
