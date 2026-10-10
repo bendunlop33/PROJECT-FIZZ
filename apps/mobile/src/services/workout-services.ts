@@ -796,6 +796,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const ref = routine ? (await finishedRefs(p.id)).find((f) => isFromRoutine(f, routine)) ?? null : null;
     const source = ref ? await repos().sessions.get(ref.sessionId).catch(() => null) : null;
     const targets = source ? await nextTargetsOf(p, source, req.today ?? null).catch(() => null) : null;
+    const lastUsedHere = routine ? await lastUsedFor(p.id, routine.exercises.map((e) => e.exerciseId), req.gymId) : undefined;
     const r = await domain().startRoutine({
       ownerId: p.id,
       gymId: req.gymId,
@@ -805,6 +806,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       preview: req.preview,
       ...(req.checkIn !== undefined ? { checkIn: req.checkIn } : {}),
       ...(targets && targets.size > 0 ? { targets } : {}),
+      ...(lastUsedHere ? { lastUsedHere } : {}),
     });
     return { r, ref, source, targeted: targets !== null && targets.size > 0, targetsFailed: source !== null && targets === null };
   }

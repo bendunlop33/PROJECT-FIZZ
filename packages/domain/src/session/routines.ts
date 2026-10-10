@@ -10,15 +10,15 @@ import type {
   SetTemplate,
   SetType,
   TargetProvenance,
-  WeightUnit,
   ZonedTimestamp,
 } from '@fizz/schemas';
 import { loadText, NBSP } from '../display';
-import { getAchievableLoads, roundToAvailableLoad } from '../equipment';
+import { loadDirection } from '../equipment';
 import { fitProvenance, startWarningNote } from '../target-provenance';
 import { toMs } from '../time';
-import { startWorkout, type StartWarning, type StartWorkoutInput, type StartWorkoutOutput } from './create';
+import { startWorkout, type StartWorkoutInput, type StartWorkoutOutput } from './create';
 import type { RepeatNote } from './repeat';
+import type { SnapResult } from './snap';
 
 /**
  * Routines (premium-feel §2.6, routines.md). Pure rules: building a routine
@@ -221,7 +221,7 @@ export interface RoutineStartInput {
   routine: Routine;
   exercises: ReadonlyMap<string, Exercise>;
   gymEquipment: readonly EquipmentInstance[];
-  /** Equipment from Ben's other gyms, to find the same kind here when the routine's item isn't at this gym. */
+  /** Equipment from Ben's other gyms, so the shared fit can map the routine's item to this gym (GS3). */
   knownEquipment: ReadonlyMap<string, EquipmentInstance>;
   /**
    * Next targets per exercise ID from the routine's most recent finished
@@ -233,6 +233,10 @@ export interface RoutineStartInput {
   at: ZonedTimestamp;
   newId: () => string;
   checkIn?: StartWorkoutInput['checkIn'];
+  /** The gym's name, for notes and `planned.snap` (`No Olympic bar at Hotel`); absent = "this gym". */
+  gymName?: string;
+  /** GS3 step 2: the item an exercise last used at this gym. */
+  lastUsedHere?: StartWorkoutInput['lastUsedHere'];
 }
 
 export interface RoutineStartOutput extends StartWorkoutOutput {
@@ -242,48 +246,35 @@ export interface RoutineStartOutput extends StartWorkoutOutput {
 /**
  * Start a routine (premium-feel §2.6): the structure (exercises, order,
  * supersets, rest, warm-ups) comes from the routine; loads and reps come
- * from `targets` where there are any. Every load is checked on this gym's
- * equipment: the routine's item if it's here, else one of the same kind,
- * rounded toward easier and never above a max (rule 4). With no such
- * equipment here, loads are dropped and reps kept, with a note. Exercises
- * added to an earlier workout from this routine aren't in it: the routine
- * is the structure, never the last workout.
+ * from `targets` where there are any. The routine's own item and the
+ * unfitted loads go to `startWorkout`, whose shared fit (`snapPlanToGym`,
+ * ADR 0019) maps the item to this gym (GS3: same item, last used here, same
+ * kind, another kind the exercise lists, else none) and fits every load
+ * toward easier, never above a max (rule 4). The intended target is kept on
+ * the set (`planned.snap`), so a later gym switch back restores it (GS2).
+ * Exercises added to an earlier workout from this routine aren't in it: the
+ * routine is the structure, never the last workout.
  */
 export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
-  const notes: RepeatNote[] = [];
   const resolved: RoutineExercise[] = [];
   const targeted = new Set<string>();
-  const byGym = new Map(input.gymEquipment.map((e) => [e.id, e]));
   // Targets are per exercise, so an exercise in two slots (a heavy and a light bench) can't tell which slot's
   // targets are which: both keep the routine's own templates (review S7).
   const slots = new Map<string, number>();
   for (const rex of input.routine.exercises) slots.set(rex.exerciseId, (slots.get(rex.exerciseId) ?? 0) + 1);
-  // Templates made from the built-in rule's targets: the rule's planned set, the equipment here, and why a load was dropped.
-  // `Why?` then explains them as the rule's, never as the routine's own numbers (review B1.1).
-  const ruleOf = new Map<string, { planned: PlannedSet; eq: EquipmentInstance | null; dropNote: string | null }>();
+  // Templates made from the built-in rule's targets. `Why?` then explains them as the rule's, never as the routine's own numbers (review B1.1).
+  const ruleOf = new Map<string, PlannedSet>();
   for (const rex of [...input.routine.exercises].sort((a, b) => a.order - b.order)) {
-    const exercise = input.exercises.get(rex.exerciseId);
-    const name = exercise?.name ?? 'Exercise';
-    let eq: EquipmentInstance | null = null;
-    let missing: string | null = null;
-    if (rex.equipmentId !== null) {
-      const here = byGym.get(rex.equipmentId);
-      const known = here ?? input.knownEquipment.get(rex.equipmentId) ?? null;
-      eq = here && here.availability === 'available' ? here : known === null ? null : pickEquipment(known, input.gymEquipment, { compatibleEquipment: exercise?.compatibleEquipment ?? [known.kind] });
-      if (eq === null) missing = known?.name ?? 'equipment';
-    }
-    const sessionUnit = eq?.unit ?? input.owner.preferredUnit;
     const planned = (slots.get(rex.exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(rex.exerciseId);
     const useTargets = planned !== undefined && planned.length > 0;
     if (useTargets) targeted.add(rex.exerciseId);
     const warmups = useTargets ? rex.setTemplates.filter((t) => t.setType === 'warmup') : [];
-    const fromRule = new Map<string, PlannedSet>();
     const source: SetTemplate[] = useTargets
       ? [
           ...warmups,
           ...planned.map((p) => {
             const id = input.newId();
-            fromRule.set(id, p.planned);
+            ruleOf.set(id, p.planned);
             return {
               id,
               setType: p.setType,
@@ -297,23 +288,10 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
           }),
         ]
       : rex.setTemplates;
-    let unitDropped: Parameters<typeof droppedNotes>[2] = null;
-    let harderDropped: Parameters<typeof droppedNotes>[3] = null;
-    const templates = source
-      .filter((t) => t.targetReps !== null || t.targetDurationS !== null)
-      .map((t) => {
-        const fit = fitLoadHere(missing !== null ? null : t.targetLoad, eq, sessionUnit);
-        unitDropped ??= fit.unitDropped;
-        harderDropped ??= fit.harderDropped;
-        const id = input.newId();
-        const rulePlanned = fromRule.get(t.id);
-        if (rulePlanned !== undefined) ruleOf.set(id, { planned: rulePlanned, eq, dropNote: ruleDropNote(missing, t.targetLoad, fit, eq, sessionUnit) });
-        return { ...t, id, targetLoad: fit.load };
-      });
-    if (missing !== null && source.some((t) => t.targetLoad !== null)) notes.push({ exerciseName: name, text: `No ${missing} here: no load target.`, tone: 'warning' });
-    notes.push(...droppedNotes(name, sessionUnit, unitDropped, harderDropped));
+    const templates = source.filter((t) => t.targetReps !== null || t.targetDurationS !== null);
     if (templates.length === 0) continue;
-    resolved.push({ ...rex, equipmentId: eq?.id ?? null, order: resolved.length, setTemplates: templates });
+    // The routine's own item and unfitted loads: the shared fit does the mapping and fitting (S1, ADR 0019).
+    resolved.push({ ...rex, order: resolved.length, setTemplates: templates });
   }
 
   const routine: Routine = { ...input.routine, exercises: resolved };
@@ -327,24 +305,29 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
     routine,
     exercises: withRest,
     gymEquipment: input.gymEquipment,
+    routineEquipment: input.knownEquipment,
     at: input.at,
     newId: input.newId,
+    ...(input.gymName !== undefined ? { gymName: input.gymName } : {}),
+    ...(input.lastUsedHere ? { lastUsedHere: input.lastUsedHere } : {}),
     ...(input.checkIn !== undefined ? { checkIn: input.checkIn } : {}),
   });
-  notes.push(...warningNotes(out.warnings, resolved, input.exercises));
+  const notes = routineStartNotes(out.snap, input.gymName ?? null);
   for (const w of out.warnings) {
     if (w.kind === 'exercise_missing') notes.push({ exerciseName: 'Exercise', text: 'An exercise in this routine is no longer in your list, so it was left out.', tone: 'warning' });
   }
   const exerciseOf = new Map(out.aggregate.exercises.map((e) => [e.id, e.exerciseId]));
+  const equipmentOfSlot = new Map(out.snap.slots.map((s) => [s.slotId, s.equipment]));
+  const slotOfTemplate = new Map(resolved.flatMap((rex) => rex.setTemplates.map((t) => [t.id, rex.id] as const)));
   const warningOf = new Map(out.warnings.flatMap((w) => (w.kind === 'target_rounded' || w.kind === 'target_dropped' ? [[w.setTemplateId, w] as const] : [])));
   /** The rule's own provenance plus how it was fitted here; null when it wasn't stored (`Why?` then says `Not recorded`). */
   const ruleProvenance = (setId: string): TargetProvenance | null => {
     const templateId = out.setTemplateIds[setId];
-    const from = templateId === undefined ? undefined : ruleOf.get(templateId);
-    const rule = from?.planned.provenance;
-    if (from === undefined || templateId === undefined || rule === undefined) return null;
+    const rule = templateId === undefined ? undefined : ruleOf.get(templateId)?.provenance;
+    if (templateId === undefined || rule === undefined) return null;
     const w = warningOf.get(templateId);
-    const fit = from.dropNote ?? (w ? startWarningNote(w, from.eq, 'Target') : null);
+    const slotId = slotOfTemplate.get(templateId);
+    const fit = w ? startWarningNote(w, (slotId === undefined ? null : equipmentOfSlot.get(slotId)) ?? null, 'Target') : null;
     return fitProvenance(fit === null ? rule : { ...rule, guardNotes: [...rule.guardNotes, fit] });
   };
   const aggregate: SessionAggregate = {
@@ -364,93 +347,76 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
   return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, notes };
 }
 
-/** Why a rule target's load was dropped at this gym, said against the target (`Why?` Equipment row). */
-function ruleDropNote(missing: string | null, requested: Load | null, fit: ReturnType<typeof fitLoadHere>, eq: EquipmentInstance | null, sessionUnit: string): string | null {
-  const word = (l: Load) => loadText(l, l.convention, eq);
-  if (missing !== null && requested !== null) return `No load target: no ${missing} here.`;
-  if (fit.unitDropped) return `No load target: the target was ${word(fit.unitDropped)}, and there’s no equipment here to check a ${sessionUnit} load on.`;
-  if (fit.harderDropped) return `No load target: the target was ${word(fit.harderDropped.requested)}, and the easiest here is ${word(fit.harderDropped.lightest)}.`;
-  return null;
-}
-
-/*
- * Routine Start's own pre-fit (premium-feel §2.6). It runs before
- * `startWorkout`, whose `snapPlanToGym` fit then checks every load again
- * (ADR 0019), so rule 4 holds either way. Moved here from repeat.ts when
- * Repeat moved onto the shared fit (merge of gym switch and premium-feel).
- */
-
-/** Equipment for a routine exercise at this gym: the same item, else the first available of the same kind. */
-export function pickEquipment(sourceEq: EquipmentInstance | null, gym: readonly EquipmentInstance[], exercise: Pick<Exercise, 'compatibleEquipment'>): EquipmentInstance | null {
-  if (sourceEq === null) return null;
-  const usable = gym.filter((e) => e.availability === 'available');
-  const same = usable.find((e) => e.id === sourceEq.id);
-  if (same) return same;
-  return usable.find((e) => e.kind === sourceEq.kind && exercise.compatibleEquipment.includes(e.kind)) ?? null;
-}
-
-function loadWord(l: Load | { value: number; unit: WeightUnit; convention: Load['convention'] }): string {
-  return loadText(l, l.convention).replaceAll(NBSP, ' ');
+/** A load as plain text (`32.5 kg each`, `Assist 30 kg`). */
+function loadWord(l: Load, eq: EquipmentInstance | null = null): string {
+  return loadText(l, l.convention, eq).replaceAll(NBSP, ' ');
 }
 
 /**
- * A copied or planned load checked against this gym before it becomes a
- * template (rule 4). Without equipment, a load in another unit is dropped
- * (never converted unchecked). Rounding only goes toward easier: when the
- * easiest load here is harder than the target, the target is dropped.
+ * Routine Start's notes from the shared fit, one per exercise and text, in
+ * workout order. Worded against the plan (never "last time"); a restore or a
+ * pain hold says nothing at Start.
  */
-export function fitLoadHere(
-  load: Load | null,
-  eq: EquipmentInstance | null,
-  sessionUnit: WeightUnit,
-): { load: Load | null; unitDropped: Load | null; harderDropped: { requested: Load; lightest: Load } | null } {
-  if (load === null) return { load: null, unitDropped: null, harderDropped: null };
-  if (eq === null) return load.unit !== sessionUnit ? { load: null, unitDropped: load, harderDropped: null } : { load, unitDropped: null, harderDropped: null };
-  const r = roundToAvailableLoad(load, eq, 'easier');
-  const direction = getAchievableLoads(eq).direction;
-  if (r.ok && ((direction === 'resistance' && r.bounded === 'min') || (direction === 'assistance' && r.bounded === 'max'))) {
-    return { load: null, unitDropped: null, harderDropped: { requested: load, lightest: r.load } };
-  }
-  return { load, unitDropped: null, harderDropped: null };
-}
-
-/** The notes said when `fitLoadHere` dropped a load. */
-export function droppedNotes(exerciseName: string, sessionUnit: WeightUnit, unitDropped: Load | null, harderDropped: { requested: Load; lightest: Load } | null): RepeatNote[] {
+export function routineStartNotes(snap: SnapResult, gymName: string | null): RepeatNote[] {
   const notes: RepeatNote[] = [];
-  if (unitDropped !== null) {
-    notes.push({ exerciseName, text: `No load target: last time was ${loadWord(unitDropped)}, and there's no equipment here to check a ${sessionUnit} load on.`, tone: 'warning' });
-  }
-  if (harderDropped !== null) {
-    notes.push({ exerciseName, text: `No load target: last time was ${loadWord(harderDropped.requested)}, and the easiest here is ${loadWord(harderDropped.lightest)}.`, tone: 'warning' });
-  }
-  return notes;
-}
-
-/** `startWorkout`'s rounding warnings as plain notes, one per exercise and text. */
-export function warningNotes(warnings: readonly StartWarning[], routineExercises: readonly RoutineExercise[], exercises: ReadonlyMap<string, Pick<Exercise, 'name'>>): RepeatNote[] {
-  const notes: RepeatNote[] = [];
-  const nameOfTemplate = new Map<string, string>();
-  for (const rex of routineExercises) for (const t of rex.setTemplates) nameOfTemplate.set(t.id, exercises.get(rex.exerciseId)?.name ?? 'Exercise');
   const seen = new Set<string>();
-  for (const w of warnings) {
-    if (w.kind !== 'target_rounded' && w.kind !== 'target_dropped') continue;
-    const name = nameOfTemplate.get(w.setTemplateId) ?? 'Exercise';
-    const text =
-      w.kind === 'target_rounded'
-        ? w.bounded === 'max'
-          ? `Rounded down from ${loadWord(w.requested)}: this gym stops at ${loadWord(w.planned)}.`
-          : `Rounded from ${loadWord(w.requested)} to ${loadWord(w.planned)} to match this gym.`
-        : w.reason === 'unit_not_convertible'
-          ? `No load target: ${loadWord(w.requested)} is in another unit.`
-          : w.reason === 'no_achievable_loads'
-            ? `No load target: this gym has no loads set up for ${loadWord(w.requested)}.`
-            : w.reason === 'lightest_is_harder'
-              ? `No load target: the lightest here is heavier than ${loadWord(w.requested)}.`
-              : `No load target: the ${loadWord(w.requested)} was on different equipment.`;
-    const key = `${name}|${text}`;
-    if (!seen.has(key)) notes.push({ exerciseName: name, text, tone: w.kind === 'target_dropped' ? 'warning' : 'info' });
-    seen.add(key);
+  const gym = gymName ?? 'this gym';
+  for (const slot of snap.slots) {
+    const eq = slot.equipment;
+    for (const note of slot.notes) {
+      const top = note.top;
+      const req = top.intended;
+      let text: string | null = null;
+      if (req !== null) {
+        const assisted = loadDirection(req.convention) === 'assistance';
+        switch (note.kind) {
+          case 'rounded':
+          case 'converted':
+            text = top.load ? `Rounded from ${loadWord(req)} to ${loadWord(top.load, eq)} to match ${gym}.` : null;
+            break;
+          case 'capped':
+            text = top.load
+              ? assisted
+                ? `Set to ${loadWord(top.load, eq)}: the least assistance ${gym} gives. Plan was ${loadWord(req)}.`
+                : `Rounded down from ${loadWord(req)}: ${gym} stops at ${loadWord(top.load, eq)}.`
+              : null;
+            break;
+          case 'restored':
+          case 'pain':
+            text = null;
+            break;
+          case 'dropped':
+            switch (note.reason) {
+              case 'not_here':
+                text = `No ${note.equipmentName ?? 'equipment for it'} ${gymName ? `at ${gymName}` : 'here'}: no load target.`;
+                break;
+              case 'lightest_is_harder':
+                // N1: on an assisted machine the easiest end is the most assistance.
+                text = assisted
+                  ? `No load target: ${loadWord(req)} is more assistance than ${gym} gives.`
+                  : `No load target: the lightest at ${gym} is heavier than ${loadWord(req)}.`;
+                break;
+              case 'unit_not_convertible':
+                text = `No load target: ${loadWord(req)} is in another unit.`;
+                break;
+              case 'no_achievable_loads':
+                text = `No load target: ${gym} has no loads set up for ${loadWord(req)}.`;
+                break;
+              case 'convention_mismatch':
+                text = `No load target: the ${loadWord(req)} was on different equipment.`;
+                break;
+              case 'pain_flag':
+                text = null;
+                break;
+            }
+            break;
+        }
+      }
+      if (text === null) continue;
+      const key = `${slot.exerciseName}|${text}`;
+      if (!seen.has(key)) notes.push({ exerciseName: slot.exerciseName, text, tone: note.kind === 'dropped' ? 'warning' : 'info' });
+      seen.add(key);
+    }
   }
   return notes;
 }
-
