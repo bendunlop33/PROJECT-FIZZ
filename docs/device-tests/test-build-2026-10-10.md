@@ -18,3 +18,6 @@ A "try it" build from the main branch at this point. Newer than build 66.
 - Rest alert with the phone locked, and the lock-screen Live Activity (retest from build 7).
 - How to screen: smoothness, how long a guide takes to appear, readability at normal size, Reduce Motion, light/dark.
 - Anything that feels slow or wrong: tell Claude what you tapped.
+
+## Update (10 Oct, afternoon)
+Newer builds include: the core flow with no dead ends and the dark Direction D screens (build 80), the check-in sheet fix (build 81), and smoother exercise guides with faint muscle definition, the pulldown bar path drawn behind the head, a faster bake and less redrawing (this build).
