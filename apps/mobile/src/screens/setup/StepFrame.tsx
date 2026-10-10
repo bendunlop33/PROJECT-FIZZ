@@ -34,7 +34,7 @@ export function StepFrame({
       <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingHorizontal: theme.components.screenMargin }}>
         <View style={{ flex: 1, alignItems: 'flex-start' }}>{onBack ? <TextButton label="Back" icon="chevron.left" onPress={onBack} /> : null}</View>
         {step ? (
-          <AppText variant="label" color="text.secondary" numeric>
+          <AppText variant="sectionLabel" color="text.tertiary" numeric>
             {step}
           </AppText>
         ) : null}
@@ -42,7 +42,7 @@ export function StepFrame({
       </View>
       <Screen footer={footer}>
         <View style={{ gap: theme.space['2'] }}>
-          <AppText variant="title2" accessibilityRole="header">
+          <AppText variant="title1" accessibilityRole="header">
             {title}
           </AppText>
           {explanation ? (

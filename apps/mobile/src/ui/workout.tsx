@@ -120,6 +120,7 @@ export function NumberStepper({
   hint,
   inputRef,
   flex = 1,
+  onSurface = false,
 }: {
   label: string;
   unit: string | null;
@@ -134,6 +135,8 @@ export function NumberStepper({
   inputRef?: Ref<TextInput>;
   /** Share of the row (D-ActiveSet: LOAD 1.4, REPS 1). */
   flex?: number;
+  /** Shown on `bg.surface` (a sheet): the D tile uses `bg.raised` so it still reads as a tile. */
+  onSurface?: boolean;
 }) {
   const theme = useTheme();
   const [text, setText] = useState(value === null ? '' : String(value));
@@ -184,7 +187,7 @@ export function NumberStepper({
       <View style={{ flex, minWidth: 0, gap: theme.space['1'] }}>
         <View
           style={{
-            backgroundColor: theme.colors['bg.surface'],
+            backgroundColor: onSurface ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
             borderRadius: theme.radius.lg,
             borderWidth: focused || warning ? 1.5 : 0,
             borderColor: warning ? theme.colors['status.warning'] : theme.colors['border.control'],

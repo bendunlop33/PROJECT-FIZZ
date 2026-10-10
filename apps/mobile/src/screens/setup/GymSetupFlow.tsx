@@ -42,7 +42,8 @@ export function GymSetupFlow({
   const [gymId] = useState(newUuid);
   const [phase, setPhase] = useState<'start' | 'checklist'>('start');
   const [name, setName] = useState('Main gym');
-  const [presetId, setPresetId] = useState<GymPresetId | null>(null);
+  // The most common case is preselected, so Continue works at once (first-run audit: install to first set fast).
+  const [presetId, setPresetId] = useState<GymPresetId | null>('commercial');
   const [draft, setDraft] = useState<GymDraft | null>(null);
   const [edited, setEdited] = useState(false);
   const [saving, setSaving] = useState(false);

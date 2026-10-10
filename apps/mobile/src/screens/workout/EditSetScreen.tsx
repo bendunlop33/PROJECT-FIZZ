@@ -105,9 +105,10 @@ export function EditSetScreen() {
           <TextButton label="Cancel" tone="secondary" icon="xmark" onPress={() => { navigation.goBack(); }} />
         </View>
         {view.completedAtUtc ? <AppText variant="callout" color="text.secondary" numeric>{`Done at ${formatTime(toMs(view.completedAtUtc), tz)}`}</AppText> : null}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['3'] }}>
+        <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
           {view.loadField && ex ? (
             <NumberStepper
+              onSurface
               label={view.loadField.label}
               unit={view.loadField.unitText}
               value={view.loadField.value}
@@ -121,6 +122,7 @@ export function EditSetScreen() {
           ) : null}
           {view.reps ? (
             <NumberStepper
+              onSurface
               label="Reps"
               unit={null}
               value={view.reps.value}
