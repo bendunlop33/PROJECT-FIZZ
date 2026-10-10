@@ -89,12 +89,10 @@ export const MOTION_CONFIG: Readonly<Record<string, MotionConfig>> = {
   },
   'cable-triceps-pushdown': { main: [pt('gripNear')], primary: ['elbowNear'], pairs: [] },
   'dumbbell-bulgarian-split-squat': {
-    // The hip only (plan r2 §2.5 fallback, pending Ben): with the hips dropping straight down, the front thigh
-    // ends up level and turns about the knee, so the knee point arrives early on the way down and leaves late
-    // on the way up (M3 4.8%) while the knee angle itself is one bell peaking mid-phase (J1, J5 pass). Re-posing
-    // the front shin as planned (ankle +5° at Start) made it worse: the rear hip reversed 13–15° and the knee
-    // point still stalled. The knee point is still checked for backtracking (J2.pt) and frame steps (M7v, M8).
-    main: [pt('hip')],
+    // Hip and front knee point (round 4): the hips may drift forward a little (Bottom root.x −0.111) and a second
+    // pass key (t 0.40) keeps the front shin turning to the bottom, so the knee point no longer stops while the hips
+    // still drop (M3 on both points).
+    main: [pt('hip'), pt('kneeNear')],
     primary: ['kneeNear', 'hipNear', 'ankleNear', 'hipFar'],
     pairs: [['kneeNear', 'hipNear']],
   },
