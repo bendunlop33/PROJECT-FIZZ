@@ -1,5 +1,12 @@
 # Coach honesty contract
 
+> **Revision 2026-10-10 (PM decision: honesty is structural; developer).**
+> - The model replies only through a strict `reply` function (`message`, `offer`). Every model step must call exactly one function, so a change can only ever be a tool call, and it shows as a card rendered from the saved record.
+> - CC3 and CC4 as built: the claim check is a backstop. A sentence that states a change is kept only when it cites that change's token and matches it; otherwise it is dropped whole. A wrong number is dropped, not replaced; the card shows the saved number.
+> - The fixed line is `No change made.` and is structural: it shows when Ben asked for a change and the turn has no card.
+> - `offer: "adjust_today"` marks a coach-raised offer, so the engine knows from the record, not from the words, that a bare "yes" accepts it.
+> - See ADR 0019's build log for 10 Oct.
+
 > **Revision 2026-10-10 (review fixes B4 and nits).**
 > - **CC10 now gates every structural tool**, not just two. `propose_programme`, `propose_goal_change` and `propose_rotation_change` join `propose_template_change` behind `ben_request` or `structural_signal`. A coach-raised goal question also needs playbook D11 approved; until then `propose_goal_change` is `ben_request` only. `propose_workout` is `ben_request` only: its result is a one-off draft, and only Ben's own `Save as routine` / `Add to rotation` taps make it lasting.
 > - The summary turn's registry is now a closed list (§6.1): read tools, `set_next_session_targets`, and the structural tools only when the gate passes.
