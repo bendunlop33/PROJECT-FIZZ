@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActionSheetIOS, Alert, AppState, KeyboardAvoidingView, Modal, Pressable, ScrollView, View } from 'react-native';
+import { ActionSheetIOS, Alert, AppState, KeyboardAvoidingView, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { formatDuration, formatElapsed, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
@@ -91,6 +91,10 @@ export function WorkoutScreen() {
   const played = useRef(new Set<string>());
   const [afterDismiss] = useState(() => createAfterDismiss());
   const tickedFor = useRef<string | null>(null);
+  const loadRef = useRef<TextInput>(null);
+  const repsRef = useRef<TextInput>(null);
+  /** During rest the next set is folded away (D-Rest); this opens it. Reset when the set changes. */
+  const [showNextSet, setShowNextSet] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -212,6 +216,21 @@ export function WorkoutScreen() {
   useEffect(() => {
     if (edits && view?.focus?.setId !== edits.setId) setEdits(null);
   }, [view?.focus?.setId, edits]);
+  useEffect(() => {
+    setShowNextSet(false);
+  }, [view?.focus?.setId]);
+
+  // A new empty workout opens the exercise picker straight away (audit: Start leads to a usable workout).
+  const emptySessionId = view?.phase === 'empty' && view.sessionId ? view.sessionId : null;
+  useEffect(() => {
+    if (emptySessionId === null || !firstTime(`auto-picker:${emptySessionId}`)) return;
+    const t = setTimeout(() => {
+      navigation.navigate('ExercisePicker', { sessionId: emptySessionId });
+    }, 450);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [emptySessionId, navigation]);
 
   // Debounced draft save (300 ms): unsaved edits survive a force-close without counting as results.
   useEffect(() => {
@@ -416,7 +435,14 @@ export function WorkoutScreen() {
           showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}` });
           return;
         }
-        setFinishOpen(false);
+        // From inside the Finish sheet: leave only once it has closed (review S8, audit F9).
+        if (finishOpen) {
+          afterDismiss.arm(() => {
+            navigation.dispatch(popToToday('Workout discarded'));
+          });
+          setFinishOpen(false);
+          return;
+        }
         navigation.dispatch(popToToday('Workout discarded'));
       });
     };
@@ -452,8 +478,16 @@ export function WorkoutScreen() {
     switch (view.primary.kind) {
       case 'log':
         return { label: view.primary.label, onPress: () => void log(), busy };
-      case 'enter':
-        return { label: view.primary.label, onPress: () => undefined, disabled: true };
+      case 'enter': {
+        // Audit F2: never a dead button. It opens the keypad on the missing field.
+        const field = view.primary.field;
+        return {
+          label: view.primary.label,
+          onPress: () => {
+            (field === 'load' ? loadRef : repsRef).current?.focus();
+          },
+        };
+      }
       case 'resume':
         return { label: 'Resume', onPress: () => void pauseOrResume() };
       case 'add_exercise':
@@ -476,351 +510,409 @@ export function WorkoutScreen() {
   })();
 
   const rest = view.rest;
-  const draftCaption = (() => {
-    if (!focus) return null;
-    if (focus.draftSource === 'draft' && restoredDraft === focus.setId) return 'Unsaved edit restored';
-    if (focus.draftSource === 'this_session') return 'From your last set';
-    if (focus.draftSource === 'last_session' && focus.previous) return `From ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}`;
-    if (focus.draftSource === 'copied' && focus.previous) return `Copied from ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}`;
-    return null;
-  })();
-  const showRestCard = rest !== null && (view.phase === 'resting' || view.phase === 'ready' || view.phase === 'paused');
+  const resting = rest !== null && (rest.kind === 'running' || rest.kind === 'paused');
+  const restored = focus !== null && focus.draftSource === 'draft' && restoredDraft === focus.setId;
+  const copied = focus !== null && focus.draftSource === 'copied' && focus.previous ? `Copied from ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}` : null;
+  const lastExercise = view.exercises.at(-1) ?? null;
+  const effortScale = loaded.effortScale;
+
+  const effortBlock =
+    view.justSaved && effortScale !== 'off' ? (
+      <View style={{ gap: theme.space['3'] }}>
+        <AppText variant="sectionLabel" color="text.tertiary">
+          {effortScale === 'rir' ? 'Reps in reserve' : 'Effort'}
+        </AppText>
+        <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
+          {(effortScale === 'rir' ? EFFORT_RIR : EFFORT_RPE).map((n) => (
+            <Chip
+              key={n}
+              grow
+              label={effortScale === 'rir' && n === 4 ? '4+' : String(n)}
+              accessibilityLabel={effortScale === 'rir' ? `${String(n)} reps in reserve` : `RPE ${String(n)}`}
+              selected={(effortScale === 'rir' ? view.justSaved?.rir : view.justSaved?.rpe) === n}
+              onPress={() => void effort(n)}
+            />
+          ))}
+        </View>
+      </View>
+    ) : null;
+
+  const savedLine = view.justSaved ? (
+    <AppText variant="callout" color="text.secondary" numeric>
+      {`${view.justSaved.exerciseName === focus?.exerciseName || focus === null ? '' : `${view.justSaved.exerciseName} · `}Set ${String(view.justSaved.setNumber)}${view.justSaved.side === 'left' ? ' (left)' : view.justSaved.side === 'right' ? ' (right)' : ''} saved · `}
+      <AppText variant="callout" numeric>
+        {view.justSaved.text}
+      </AppText>
+    </AppText>
+  ) : null;
+
+  const alertAsk =
+    permission === 'undetermined' && !askLater ? (
+      <Card>
+        <AppText variant="callout">Get an alert when rest ends while your phone is locked?</AppText>
+        <View style={{ flexDirection: 'row', gap: theme.space['6'] }}>
+          <TextButton
+            label="Not now"
+            tone="secondary"
+            onPress={() => {
+              setAskLater(true);
+            }}
+          />
+          <TextButton
+            label="Allow"
+            onPress={() => {
+              void requestAlertPermission().then((p) => {
+                setPermission(p);
+                // Schedule this rest's alert now that it's allowed.
+                void launch.restAlerts?.reconcile(loaded.aggregate, clockNow());
+              });
+            }}
+          />
+        </View>
+      </Card>
+    ) : null;
+
+  const restPanel =
+    resting ? (
+      <View style={{ gap: theme.space['5'] }}>
+        <RestPanel
+          rest={rest}
+          upNext={view.upNext !== null ? `Next · ${view.upNext}` : focus === null ? (view.openEnded ? 'Then add a set or your next exercise' : null) : null}
+          onAdjust={(deltaS) => {
+            if (rest.kind !== 'running') return;
+            void run({ type: 'adjust_rest', at: services.now(), opId: newUuid(), timerId: rest.timerId, deltaS }).then((r) => {
+              // −30 s to zero ends the rest here: play the rest-end cue once (review S6).
+              const key = r.ok ? restEndCueKey(r.events) : null;
+              if (key !== null && !played.current.has(key)) {
+                played.current.add(key);
+                haptic('restEnd');
+              }
+            });
+          }}
+          onSkip={() => {
+            if (rest.kind === 'running') void run({ type: 'skip_rest', at: services.now(), opId: `skip:${rest.timerId}:${String(rest.timerVersion)}`, timerId: rest.timerId });
+          }}
+        />
+        {view.justSaved ? (
+          <View style={{ borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], paddingTop: theme.space['4'], gap: theme.space['3'] }}>
+            {savedLine}
+            {effortBlock}
+          </View>
+        ) : null}
+        {alertAsk}
+      </View>
+    ) : null;
+
+  const setEditor = focus ? (
+    <View style={{ gap: theme.space['5'] }}>
+      {/* Exercise header: name, then `Barbell · Set 2 of 4 · Last 1 Oct: 100 kg × 8` (tap Last to copy it). */}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['2'] }}>
+        <View style={{ flex: 1, gap: theme.space['1'] }}>
+          <AppText variant="title1" numberOfLines={2} accessibilityRole="header">
+            {focus.exerciseName}
+          </AppText>
+          {focus.previous ? (
+            <LinkLine
+              accessibilityLabel={`${focus.headerLine}. Last time, ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}: ${focus.previous.text}. Tap to copy.`}
+              onPress={() => {
+                const prev = focus.previous;
+                if (!prev) return;
+                setEdits({ setId: focus.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
+              }}
+            >
+              <AppText variant="callout" color="text.secondary" numeric>
+                {`${focus.headerLine} · Last ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}: `}
+                <AppText variant="callout" numeric>
+                  {focus.previous.text}
+                </AppText>
+              </AppText>
+            </LinkLine>
+          ) : (
+            <AppText variant="callout" color="text.secondary" numeric>
+              {focus.headerLine}
+            </AppText>
+          )}
+        </View>
+        <IconButton
+          icon="ellipsis"
+          label={`${focus.exerciseName} menu`}
+          onPress={() => {
+            openExerciseMenu(focus);
+          }}
+        />
+      </View>
+
+      {rest?.kind === 'ended' && !resting ? (
+        <StatusLine
+          icon="checkmark.circle.fill"
+          tone="done"
+          text={rest.skipped ? 'Ready' : `Rest over · rested ${formatDuration(rest.restedMs / 1000)}`}
+          detail={rest.skipped || rest.endedAtUtc === null ? null : `Ended ${formatTime(toMs(rest.endedAtUtc), tz)}`}
+        />
+      ) : null}
+
+      {focus.warmUp && !hiddenWarmUps.includes(focus.sessionExerciseId) ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+          <AppText variant="callout" color="text.secondary" numeric style={{ flex: 1 }}>
+            {`Warm-up (built-in, not logged): ${focus.warmUp}`}
+          </AppText>
+          <TextButton
+            label="Hide"
+            tone="secondary"
+            onPress={() => {
+              setHiddenWarmUps((h) => [...h, focus.sessionExerciseId]);
+            }}
+          />
+        </View>
+      ) : null}
+
+      <View style={{ gap: theme.space['3'] }}>
+        <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+          {focus.loadField ? (
+            <NumberStepper
+              inputRef={loadRef}
+              flex={1.4}
+              label={focus.loadField.label}
+              unit={focus.loadField.unitText}
+              value={focus.loadField.value}
+              decimals
+              down={focus.loadField.down}
+              up={focus.loadField.up}
+              warning={focus.offProfileWarning !== null}
+              hint={focus.loadField.assisted ? 'More assistance is easier' : null}
+              onChange={(v) => {
+                editLoad(focus, v);
+              }}
+            />
+          ) : null}
+          {focus.reps ? (
+            <NumberStepper
+              inputRef={repsRef}
+              flex={1}
+              label="Reps"
+              unit={null}
+              value={focus.reps.value}
+              decimals={false}
+              down={focus.reps.down}
+              up={focus.reps.up}
+              onChange={(v) => {
+                setValues({ ...focus.draft, reps: v === null ? null : Math.round(v) });
+              }}
+            />
+          ) : null}
+        </View>
+        {/* `Target 100 kg · 6–8 reps · Rest after 3:00`: tap to change the rest after this set. */}
+        <LinkLine
+          accessibilityLabel={`${focus.target ?? 'No target for this set'}. Rest after this set: ${formatDuration(focus.restAfterS)}. Tap to change the rest.`}
+          onPress={() => {
+            setRestEditor(true);
+          }}
+        >
+          <AppText variant="callout" color="text.secondary" numeric>
+            {`${focus.target ?? 'No target'} · Rest after `}
+            <AppText variant="callout" numeric style={{ textDecorationLine: 'underline', textDecorationColor: theme.colors['border.control'] }}>
+              {formatDuration(focus.restAfterS)}
+            </AppText>
+          </AppText>
+        </LinkLine>
+        {focus.plateLine ? (
+          <AppText variant="callout" color="text.tertiary" numeric accessibilityLabel={`Plates: ${focus.plateLine}`}>
+            {focus.plateLine}
+          </AppText>
+        ) : null}
+        {restored ? (
+          <AppText variant="callout" color="text.secondary">
+            Unsaved edit restored
+          </AppText>
+        ) : copied ? (
+          <AppText variant="callout" color="text.secondary">
+            {copied}
+          </AppText>
+        ) : null}
+        {focus.offProfileWarning ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={focus.offProfileWarning} /> : null}
+        {focus.painFlagged ? (
+          <StatusLine
+            icon="exclamationmark.triangle"
+            tone="warning"
+            text="Pain flag: no increases"
+            action={
+              <TextButton
+                label="Clear"
+                onPress={() => {
+                  // Only Ben clears a flag (rule 9); targets already planned stay as they are.
+                  Alert.alert(painClearConfirm(focus.exerciseName).title, painClearConfirm(focus.exerciseName).message, [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Clear',
+                      onPress: () => {
+                        void services.pain
+                          .active()
+                          .then((flags) => services.pain.clear(flags.filter((f) => f.exerciseId === focus.exerciseId).map((f) => f.id)))
+                          .then(() => {
+                            changed();
+                            void reload();
+                          });
+                      },
+                    },
+                  ]);
+                }}
+              />
+            }
+          />
+        ) : null}
+        {focus.side ? (
+          focus.side.kind === 'fixed' ? (
+            <AppText variant="callout">{`Side: ${focus.side.value === 'left' ? 'Left' : 'Right'} side`}</AppText>
+          ) : (
+            <ChipRow>
+              {(['both', 'left', 'right'] as const).map((s) => (
+                <Chip
+                  key={s}
+                  label={s === 'both' ? 'Both sides' : s === 'left' ? 'Left' : 'Right'}
+                  selected={focus.side?.kind === 'choice' && focus.side.value === s}
+                  onPress={() => {
+                    setValues(focus.draft, s);
+                  }}
+                />
+              ))}
+            </ChipRow>
+          )
+        ) : null}
+      </View>
+
+      <View>
+        <AppText variant="sectionLabel" color="text.tertiary" style={{ marginBottom: theme.space['2'] }}>
+          Sets
+        </AppText>
+        {focus.rows.map((r, i) => (
+          <SetRowLine
+            key={r.setId}
+            status={r.status}
+            number={r.number}
+            badges={r.badges}
+            text={r.text}
+            edited={r.edited}
+            last={i === focus.rows.length - 1}
+            onPress={() => {
+              if (r.status === 'done') navigation.navigate('EditSet', { sessionId: session.id, setId: r.setId });
+              if (r.status === 'pending') void run({ type: 'set_active_set', at: services.now(), opId: newUuid(), setId: r.setId, expectedVersion: session.version });
+            }}
+          />
+        ))}
+      </View>
+
+      {/* `Next Incline dumbbell press ›`, or `Add exercise ›` when this is the last one (audit F3). */}
+      {focus.next?.kind === 'exercise' ? (
+        <NextRow
+          label="Next"
+          text={focus.next.name}
+          onPress={() => {
+            const next = focus.next;
+            if (next?.kind === 'exercise') void run({ type: 'set_active_set', at: services.now(), opId: newUuid(), setId: next.setId, expectedVersion: session.version });
+          }}
+        />
+      ) : (
+        <NextRow
+          label={focus.next?.kind === 'last_set' && !view.openEnded ? 'Last set ·' : 'Then'}
+          text="Add exercise"
+          onPress={() => {
+            navigation.navigate('ExercisePicker', { sessionId: session.id });
+          }}
+        />
+      )}
+    </View>
+  ) : null;
 
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <NumberAccessory />
-      {/* Top bar */}
-      <View style={{ paddingTop: insets.top, backgroundColor: theme.colors['bg.surface'], borderBottomWidth: theme.dividerWidth, borderBottomColor: theme.colors['border.divider'] }}>
+      {/* Top bar (D-ActiveSet): on the canvas, the workout's name in tracked caps, active time, pause. */}
+      <View style={{ paddingTop: insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingHorizontal: theme.space['2'], gap: theme.space['1'] }}>
           <IconButton icon="chevron.down" label="Minimise workout" onPress={close} />
-          <AppText variant="headline" numberOfLines={1} style={{ flex: 1 }} accessibilityRole="header">
+          <AppText variant="sectionLabel" color="text.secondary" numberOfLines={1} style={{ flex: 1, fontSize: 13 }} accessibilityRole="header">
             {view.title}
           </AppText>
           <View accessible accessibilityLabel={`${view.paused ? 'Paused, ' : ''}active time ${formatElapsed(view.elapsedMs)}`} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
             {view.paused ? <Icon name="pause.circle.fill" color="status.warning" size={16} /> : null}
-            <AppText variant="headline" numeric color={view.paused ? 'status.warning' : 'text.primary'}>
-              {formatElapsed(view.elapsedMs)}
+            <AppText variant="callout" numeric color={view.paused ? 'status.warning' : 'text.secondary'}>
+              {view.paused ? `Paused · ${formatElapsed(view.elapsedMs)}` : formatElapsed(view.elapsedMs)}
             </AppText>
-            {view.paused ? (
-              <AppText variant="label" color="status.warning">
-                Paused
-              </AppText>
-            ) : null}
           </View>
           <IconButton icon={view.paused ? 'play.fill' : 'pause'} label={view.paused ? 'Resume workout' : 'Pause workout'} onPress={() => void pauseOrResume()} />
-          <IconButton icon="ellipsis" label="Workout menu" onPress={topMenu} />
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['4'], paddingBottom: theme.space['2'] }}>
-          <Icon name="building.2" size={16} />
-          <AppText variant="label" color="text.secondary">
-            {loaded.gymName ?? 'No gym'}
-          </AppText>
+          <IconButton icon="ellipsis.circle" label="Workout menu" onPress={topMenu} />
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ paddingHorizontal: theme.space['5'], paddingTop: theme.space['3'], gap: theme.space['5'], paddingBottom: theme.space['8'] }} keyboardShouldPersistTaps="handled">
         {view.paused ? <Banner severity="warning" text="Workout paused. Timers are stopped." /> : null}
         {banners.map((b) => (
           <Banner key={b.key} severity={b.severity} text={b.text} />
         ))}
 
         {view.phase === 'empty' ? (
-          <Card>
-            <AppText variant="title2">Add an exercise to start</AppText>
-            <AppText variant="callout" color="text.secondary">
-              Pick from your exercises. Sets, rest and targets come from your history.
+          <View style={{ gap: theme.space['2'], paddingTop: theme.space['4'] }}>
+            <AppText variant="title1" accessibilityRole="header">
+              Add your first exercise
             </AppText>
-          </Card>
+            <AppText variant="callout" color="text.secondary">
+              Common lifts are at the top. Each one starts with 3 sets; add or remove sets as you go.
+            </AppText>
+          </View>
         ) : null}
+
+        {restPanel}
+
+        {/* During rest the next set waits below its own toggle (D-Rest is rest-first, audit F8). */}
+        {resting && focus ? (
+          showNextSet ? (
+            setEditor
+          ) : (
+            <TextButton
+              label={`Edit ${focus.exerciseName === view.justSaved?.exerciseName ? 'the next set' : focus.exerciseName}`}
+              tone="secondary"
+              onPress={() => {
+                setShowNextSet(true);
+              }}
+            />
+          )
+        ) : (
+          setEditor
+        )}
 
         {focus === null && view.phase !== 'empty' ? (
-          <Card>
-            <AppText variant="title2">All planned sets done.</AppText>
-            <View style={{ flexDirection: 'row', gap: theme.space['4'], flexWrap: 'wrap' }}>
-              {view.exercises.at(-1) ? <TextButton label="Add set" onPress={() => void addSet(view.exercises.at(-1)?.sessionExerciseId ?? '')} /> : null}
-              <TextButton
-                label="Add exercise"
-                onPress={() => {
-                  navigation.navigate('ExercisePicker', { sessionId: session.id });
-                }}
-              />
-            </View>
-          </Card>
-        ) : null}
-
-        {focus ? (
-          <View style={{ gap: theme.space['3'] }}>
-            {/* Exercise header */}
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['2'] }}>
-              <View style={{ flex: 1, gap: theme.space['1'] }}>
-                <AppText variant="title1" numberOfLines={2}>
-                  {focus.exerciseName}
+          <View style={{ gap: theme.space['4'] }}>
+            {!resting ? (
+              <>
+                <AppText variant="title1" accessibilityRole="header">
+                  {view.openEnded ? 'Exercise done' : 'All planned sets done'}
                 </AppText>
-                <AppText variant="callout" color="text.secondary" numeric>
-                  {`${focus.headerLine}${showRestCard && view.phase === 'resting' ? ' next' : ''}`}
-                </AppText>
-              </View>
-              <IconButton
-                icon="ellipsis.circle"
-                label={`${focus.exerciseName} menu`}
-                onPress={() => {
-                  openExerciseMenu(focus);
-                }}
-              />
-            </View>
-
-            {showRestCard ? (
-              <RestCard
-                rest={rest}
-                tz={tz}
-                onAdjust={(deltaS) => {
-                  if (rest.kind !== 'running') return;
-                  void run({ type: 'adjust_rest', at: services.now(), opId: newUuid(), timerId: rest.timerId, deltaS }).then((r) => {
-                    // −30 s to zero ends the rest here: play the rest-end cue once (review S6).
-                    const key = r.ok ? restEndCueKey(r.events) : null;
-                    if (key !== null && !played.current.has(key)) {
-                      played.current.add(key);
-                      haptic('restEnd');
-                    }
-                  });
-                }}
-                onSkip={() => {
-                  if (rest.kind === 'running') void run({ type: 'skip_rest', at: services.now(), opId: `skip:${rest.timerId}:${String(rest.timerVersion)}`, timerId: rest.timerId });
-                }}
-              />
-            ) : null}
-
-            {view.justSaved && showRestCard ? (
-              <View style={{ gap: theme.space['2'] }}>
-                <StatusLine icon="checkmark.circle.fill" tone="done" text={`Set ${String(view.justSaved.setNumber)} saved${view.justSaved.side === 'left' ? ' (left)' : view.justSaved.side === 'right' ? ' (right)' : ''}: ${view.justSaved.text}`} />
-                {loaded.effortScale !== 'off' ? (
-                  <View style={{ gap: theme.space['1'] }}>
-                    <AppText variant="label" color="text.secondary">
-                      {loaded.effortScale === 'rir' ? 'Reps in reserve (optional)' : 'Effort (optional)'}
-                    </AppText>
-                    <ChipRow>
-                      {(loaded.effortScale === 'rir' ? EFFORT_RIR : EFFORT_RPE).map((n) => (
-                        <Chip
-                          key={n}
-                          label={loaded.effortScale === 'rir' && n === 4 ? '4+' : String(n)}
-                          accessibilityLabel={loaded.effortScale === 'rir' ? `${String(n)} reps in reserve` : `RPE ${String(n)}`}
-                          selected={(loaded.effortScale === 'rir' ? view.justSaved?.rir : view.justSaved?.rpe) === n}
-                          onPress={() => void effort(n)}
-                        />
-                      ))}
-                    </ChipRow>
+                {view.justSaved ? (
+                  <View style={{ gap: theme.space['3'] }}>
+                    {savedLine}
+                    {effortBlock}
                   </View>
                 ) : null}
-                {permission === 'undetermined' && !askLater ? (
-                  <Card>
-                    <AppText variant="body">Get an alert when rest ends while your phone is locked?</AppText>
-                    <View style={{ flexDirection: 'row', gap: theme.space['8'] }}>
-                      <TextButton
-                        label="Not now"
-                        tone="secondary"
-                        onPress={() => {
-                          setAskLater(true);
-                        }}
-                      />
-                      <TextButton
-                        label="Allow"
-                        onPress={() => {
-                          void requestAlertPermission().then((p) => {
-                            setPermission(p);
-                            // Schedule this rest's alert now that it's allowed.
-                            void launch.restAlerts?.reconcile(loaded.aggregate, clockNow());
-                          });
-                        }}
-                      />
-                    </View>
-                  </Card>
-                ) : null}
-                {view.phase === 'resting' ? (
-                  <AppText variant="label" color="text.secondary">{`Up next · Set ${String(focus.setNumber)}`}</AppText>
-                ) : null}
-              </View>
+              </>
             ) : null}
-
-            {focus.warmUp && !hiddenWarmUps.includes(focus.sessionExerciseId) ? (
-              <Card>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-                  <Icon name="flame" size={16} />
-                  <AppText variant="label" color="text.secondary" style={{ flex: 1 }}>
-                    Warm-up suggestion (built-in, not logged)
-                  </AppText>
-                  <TextButton
-                    label="Hide"
-                    tone="secondary"
-                    onPress={() => {
-                      setHiddenWarmUps((h) => [...h, focus.sessionExerciseId]);
-                    }}
-                  />
-                </View>
-                <AppText variant="body" numeric>
-                  {focus.warmUp}
-                </AppText>
-              </Card>
-            ) : null}
-
-            {focus.previous ? (
-              <LinkLine
-                accessibilityLabel={`Last time, ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}: ${focus.previous.text}. Tap to copy.`}
-                onPress={() => {
-                  const prev = focus.previous;
-                  if (!prev) return;
-                  setEdits({ setId: focus.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
-                }}
-              >
-                <AppText variant="callout" color="text.secondary" numeric>{`Last (${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}): ${focus.previous.text}`}</AppText>
-              </LinkLine>
-            ) : (
-              <AppText variant="callout" color="text.secondary">
-                No previous result
-              </AppText>
-            )}
-
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['3'] }}>
-              {focus.loadField ? (
-                <NumberStepper
-                  label={focus.loadField.label}
-                  unit={focus.loadField.unitText}
-                  value={focus.loadField.value}
-                  decimals
-                  down={focus.loadField.down}
-                  up={focus.loadField.up}
-                  warning={focus.offProfileWarning !== null}
-                  hint={focus.loadField.assisted ? 'More assistance is easier' : null}
-                  onChange={(v) => {
-                    editLoad(focus, v);
-                  }}
-                />
-              ) : null}
-              {focus.reps ? (
-                <NumberStepper
-                  label="Reps"
-                  unit={null}
-                  value={focus.reps.value}
-                  decimals={false}
-                  down={focus.reps.down}
-                  up={focus.reps.up}
-                  onChange={(v) => {
-                    setValues({ ...focus.draft, reps: v === null ? null : Math.round(v) });
-                  }}
-                />
-              ) : null}
-            </View>
-            {focus.plateLine ? (
-              <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={`Plates: ${focus.plateLine}`}>
-                {focus.plateLine}
-              </AppText>
-            ) : null}
-            {draftCaption ? (
-              <AppText variant="callout" color="text.secondary">
-                {draftCaption}
-              </AppText>
-            ) : null}
-            <AppText variant="callout" color={focus.target ? 'text.primary' : 'text.secondary'} numeric>
-              {focus.target ?? 'No target for this set'}
-            </AppText>
-            {focus.offProfileWarning ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={focus.offProfileWarning} /> : null}
-            {focus.painFlagged ? (
-              <StatusLine
-                icon="exclamationmark.triangle"
-                tone="warning"
-                text="Pain flag: no increases"
-                action={
-                  <TextButton
-                    label="Clear"
-                    onPress={() => {
-                      // Only Ben clears a flag (rule 9); targets already planned stay as they are.
-                      Alert.alert(painClearConfirm(focus.exerciseName).title, painClearConfirm(focus.exerciseName).message, [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Clear',
-                          onPress: () => {
-                            void services.pain
-                              .active()
-                              .then((flags) => services.pain.clear(flags.filter((f) => f.exerciseId === focus.exerciseId).map((f) => f.id)))
-                              .then(() => {
-                                changed();
-                                void reload();
-                              });
-                          },
-                        },
-                      ]);
-                    }}
-                  />
-                }
-              />
-            ) : null}
-
-            {focus.side ? (
-              focus.side.kind === 'fixed' ? (
-                <AppText variant="callout">{`Side: ${focus.side.value === 'left' ? 'Left' : 'Right'} side`}</AppText>
-              ) : (
-                <View style={{ gap: theme.space['1'] }}>
-                  <AppText variant="label" color="text.secondary">
-                    Side
-                  </AppText>
-                  <ChipRow>
-                    {(['both', 'left', 'right'] as const).map((s) => (
-                      <Chip
-                        key={s}
-                        label={s === 'both' ? 'Both sides' : s === 'left' ? 'Left' : 'Right'}
-                        selected={focus.side?.kind === 'choice' && focus.side.value === s}
-                        onPress={() => {
-                          setValues(focus.draft, s);
-                        }}
-                      />
-                    ))}
-                  </ChipRow>
-                </View>
-              )
-            ) : null}
-
-            <LinkLine
-              accessibilityLabel={`Rest after this set: ${formatDuration(focus.restAfterS)}. Tap to change.`}
-              onPress={() => {
-                setRestEditor(true);
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], minHeight: 44 }}>
-                <AppText variant="callout" color="text.secondary" numeric>{`Rest after: ${formatDuration(focus.restAfterS)}`}</AppText>
-                <Icon name="chevron.right" size={14} color="text.tertiary" />
-              </View>
-            </LinkLine>
-
-            <View style={{ gap: theme.space['1'] }}>
-              {focus.rows.map((r) => (
-                <SetRowLine
-                  key={r.setId}
-                  status={r.status}
-                  number={r.number}
-                  badges={r.badges}
-                  text={r.text}
-                  edited={r.edited}
+              {lastExercise ? <SecondaryButton label={`Add set · ${lastExercise.name}`} onPress={() => void addSet(lastExercise.sessionExerciseId)} /> : null}
+              {view.primary.kind === 'add_exercise' ? (
+                <SecondaryButton
+                  label="Finish workout"
                   onPress={() => {
-                    if (r.status === 'done') navigation.navigate('EditSet', { sessionId: session.id, setId: r.setId });
-                    if (r.status === 'pending') void run({ type: 'set_active_set', at: services.now(), opId: newUuid(), setId: r.setId, expectedVersion: session.version });
+                    setFinishOpen(true);
                   }}
                 />
-              ))}
+              ) : (
+                <SecondaryButton
+                  label="Add exercise"
+                  onPress={() => {
+                    navigation.navigate('ExercisePicker', { sessionId: session.id });
+                  }}
+                />
+              )}
             </View>
-
-            {focus.next?.kind === 'exercise' ? (
-              <View>
-                <AppText variant="callout">{`Next exercise: ${focus.next.name}`}</AppText>
-                {focus.next.target ? (
-                  <AppText variant="callout" color="text.secondary" numeric>
-                    {focus.next.target}
-                  </AppText>
-                ) : null}
-              </View>
-            ) : focus.next?.kind === 'last_set' ? (
-              <AppText variant="callout" color="text.secondary">
-                Last set of the workout
-              </AppText>
-            ) : null}
           </View>
         ) : null}
       </ScrollView>
@@ -906,65 +998,125 @@ function IconButton({ icon, label, onPress }: { icon: SymbolName; label: string;
       onPress={onPress}
       style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
     >
-      <Icon name={icon} color="text.primary" size={22} />
+      <Icon name={icon} color="text.primary" size={20} />
     </Pressable>
   );
 }
 
-const STATUS_ICON: Record<'done' | 'active' | 'pending' | 'skipped', { icon: SymbolName; word: string }> = {
-  done: { icon: 'checkmark.circle.fill', word: 'Done' },
-  active: { icon: 'arrowtriangle.right.fill', word: 'Now' },
-  pending: { icon: 'circle', word: 'Target' },
-  skipped: { icon: 'slash.circle', word: 'Skipped' },
-};
+const STATUS_WORD: Record<'done' | 'active' | 'pending' | 'skipped', string> = { done: 'Done', active: 'Now', pending: 'Target', skipped: 'Skipped' };
 
-/** `SetRow` (design-system §7): icon + words per status, never colour alone. */
-function SetRowLine({ status, number, badges, text, edited, onPress }: { status: 'done' | 'active' | 'pending' | 'skipped'; number: number; badges: string[]; text: string; edited: boolean; onPress: () => void }) {
+/**
+ * `SetRow` (design-system §7, D-ActiveSet): 48pt rows between hairlines; a
+ * check for done, a filled dot for now, an outline for pending, a slash for
+ * skipped. Status is shape and words, never colour alone.
+ */
+function SetRowLine({
+  status,
+  number,
+  badges,
+  text,
+  edited,
+  last,
+  onPress,
+}: {
+  status: 'done' | 'active' | 'pending' | 'skipped';
+  number: number;
+  badges: string[];
+  text: string;
+  edited: boolean;
+  last: boolean;
+  onPress: () => void;
+}) {
   const theme = useTheme();
-  const s = STATUS_ICON[status];
   const tappable = status === 'done' || status === 'pending';
+  // `100 kg × 8   RPE 8`: effort goes to the right.
+  const [main, effort] = status === 'done' ? text.split(/\s{3}/) : [status === 'active' ? 'Now' : text, undefined];
+  const marker =
+    status === 'done' ? (
+      <Icon name="checkmark.circle" color="status.done" size={18} />
+    ) : status === 'skipped' ? (
+      <Icon name="slash.circle" color="text.tertiary" size={18} />
+    ) : (
+      <View
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: 9,
+          backgroundColor: status === 'active' ? theme.colors.accent : 'transparent',
+          borderWidth: status === 'active' ? 0 : 1.5,
+          borderColor: theme.colors['border.control'],
+        }}
+      />
+    );
   return (
     <Pressable
       accessibilityRole={tappable ? 'button' : 'text'}
-      accessibilityLabel={`Set ${String(number)}${badges.length ? ` ${badges.join(' ')}` : ''}, ${s.word}, ${text}${edited ? ', edited' : ''}`}
+      accessibilityLabel={`Set ${String(number)}${badges.length ? ` ${badges.join(' ')}` : ''}, ${STATUS_WORD[status]}, ${text}${edited ? ', edited' : ''}`}
       accessibilityHint={status === 'done' ? 'Edit or delete this set' : status === 'pending' ? 'Make this the current set' : undefined}
       disabled={!tappable}
       onPress={onPress}
       style={({ pressed }) => ({
-        minHeight: 52,
+        minHeight: 48,
         flexDirection: 'row',
         alignItems: 'center',
         gap: theme.space['3'],
-        paddingHorizontal: theme.space['3'],
-        borderRadius: theme.radius.md,
-        borderLeftWidth: status === 'active' ? 4 : 0,
-        borderLeftColor: theme.colors.accent,
-        backgroundColor: status === 'active' ? theme.colors['accent.subtle'] : pressed ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
+        borderTopWidth: theme.dividerWidth,
+        borderBottomWidth: last ? theme.dividerWidth : 0,
+        borderColor: theme.colors['border.divider'],
+        backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent',
       })}
     >
-      <Icon name={s.icon} color={status === 'done' ? 'status.done' : status === 'active' ? 'accent' : 'text.tertiary'} />
-      <AppText variant="headline" numeric style={{ minWidth: 28 }}>{`${String(number)}${badges.length ? ` ${badges.join('')}` : ''}`}</AppText>
-      <AppText variant="callout" numeric color={status === 'done' || status === 'active' ? 'text.primary' : 'text.secondary'} style={{ flex: 1 }}>
-        {text}
+      {marker}
+      <AppText variant="callout" numeric color={status === 'active' ? 'text.primary' : 'text.tertiary'} style={{ minWidth: 22, fontWeight: status === 'active' ? '600' : '400' }}>
+        {`${String(number)}${badges.length ? badges.join('') : ''}`}
       </AppText>
-      {edited ? <Icon name="pencil" size={16} /> : null}
+      <AppText
+        variant="callout"
+        numeric
+        color={status === 'done' || status === 'active' ? 'text.primary' : 'text.secondary'}
+        style={{ flex: 1, fontWeight: status === 'active' ? '600' : '400' }}
+      >
+        {main}
+      </AppText>
+      {effort ? (
+        <AppText variant="callout" numeric color="text.tertiary">
+          {effort.trim()}
+        </AppText>
+      ) : null}
+      {edited ? <Icon name="pencil" size={14} color="text.tertiary" /> : null}
     </Pressable>
   );
 }
 
-/** `RestTimer`, full version (design-system §9.6): from the deadline, never a JS counter. */
-function RestCard({ rest, tz, onAdjust, onSkip }: { rest: RestView; tz: string; onAdjust: (deltaS: number) => void; onSkip: () => void }) {
+/** `Next Incline dumbbell press ›` (D-ActiveSet): the whole line is the target. */
+function NextRow({ label, text, onPress }: { label: string; text: string; onPress: () => void }) {
   const theme = useTheme();
-  const frame = { backgroundColor: theme.colors['bg.surface'], borderWidth: 1, borderColor: theme.colors['border.control'], borderRadius: theme.radius.md, padding: theme.space['4'], gap: theme.space['3'] } as const;
-  if (rest.kind === 'ended') {
-    return (
-      <View style={frame} accessibilityLiveRegion="polite">
-        <StatusLine icon="checkmark.circle.fill" tone="done" text={rest.skipped ? 'Ready' : 'Ready when you are'} detail={rest.skipped ? null : `Rested ${formatDuration(rest.restedMs / 1000)}${rest.endedAtUtc ? ` · ended ${formatTime(toMs(rest.endedAtUtc), tz)}` : ''}`} />
-      </View>
-    );
-  }
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${label} ${text}`}
+      onPress={onPress}
+      style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', opacity: pressed ? 0.6 : 1 })}
+    >
+      <AppText variant="callout" numberOfLines={1} style={{ flex: 1 }}>
+        <AppText variant="callout" color="text.tertiary">{`${label} `}</AppText>
+        {text}
+      </AppText>
+      <Icon name="chevron.right" size={14} color="text.secondary" />
+    </Pressable>
+  );
+}
+
+/**
+ * The Rest state (D-Rest, design-system §9.6): `REST`, the time left from the
+ * stored deadline (never a JS counter), `Next · Set 3 · 100 kg × 6–8`, and
+ * −30 s / +30 s / Skip outline pills.
+ */
+function RestPanel({ rest, upNext, onAdjust, onSkip }: { rest: RestView; upNext: string | null; onAdjust: (deltaS: number) => void; onSkip: () => void }) {
+  const theme = useTheme();
+  if (rest.kind === 'ended') return null;
   const paused = rest.kind === 'paused';
-  const button = (label: string, a11y: string, onPress: () => void) => (
+  const pill = (label: string, a11y: string, onPress: () => void) => (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={a11y}
@@ -973,45 +1125,46 @@ function RestCard({ rest, tz, onAdjust, onSkip }: { rest: RestView; tz: string; 
       onPress={onPress}
       style={({ pressed }) => ({
         flex: 1,
-        minHeight: theme.target.workout.height,
-        borderRadius: theme.radius.sm,
+        minHeight: 48,
+        borderRadius: theme.radius.pill,
         borderWidth: 1,
         borderColor: theme.colors['border.control'],
-        backgroundColor: pressed ? theme.colors['accent.subtle'] : theme.colors['bg.raised'],
+        backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent',
         alignItems: 'center',
         justifyContent: 'center',
         opacity: paused ? 0.4 : 1,
       })}
     >
-      <AppText variant="headline" numeric>
+      <AppText variant="label" numeric>
         {label}
       </AppText>
     </Pressable>
   );
   return (
-    <View style={frame}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-        <Icon name={paused ? 'pause.circle.fill' : 'timer'} color={paused ? 'status.warning' : 'accent'} />
-        <AppText variant="label" color={paused ? 'status.warning' : 'text.secondary'}>
-          {paused ? 'Paused' : 'Rest'}
+    <View style={{ gap: theme.space['5'] }}>
+      <View style={{ alignItems: 'center', gap: theme.space['1'], paddingTop: theme.space['4'] }}>
+        <AppText variant="sectionLabel" color={paused ? 'status.warning' : 'text.tertiary'}>
+          {paused ? 'Rest · paused' : 'Rest'}
         </AppText>
-        {rest.kind === 'running' ? (
-          <AppText variant="label" color="text.secondary" numeric>{`· until ${formatTime(toMs(rest.deadlineUtc), tz)}`}</AppText>
+        <AppText variant="timerDisplay" align="center" accessibilityLabel={`Rest, ${formatDuration(rest.remainingMs / 1000)} left`}>
+          {formatDuration(Math.ceil(rest.remainingMs / 1000))}
+        </AppText>
+        {upNext ? (
+          <AppText variant="callout" color="text.secondary" numeric align="center">
+            {upNext}
+          </AppText>
         ) : null}
       </View>
-      <AppText variant="timerDisplay" align="center" accessibilityLabel={`Rest, ${formatDuration(rest.remainingMs / 1000)} left`}>
-        {formatDuration(Math.ceil(rest.remainingMs / 1000))}
-      </AppText>
-      <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-        {button('−30 s', 'Rest 30 seconds shorter', () => {
+      <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+        {pill('−30 s', 'Rest 30 seconds shorter', () => {
           haptic('step');
           onAdjust(-30);
         })}
-        {button('+30 s', 'Rest 30 seconds longer', () => {
+        {pill('+30 s', 'Rest 30 seconds longer', () => {
           haptic('step');
           onAdjust(30);
         })}
-        {button('Skip', 'Skip rest', onSkip)}
+        {pill('Skip', 'Skip rest', onSkip)}
       </View>
     </View>
   );

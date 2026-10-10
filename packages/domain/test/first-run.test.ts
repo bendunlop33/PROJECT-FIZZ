@@ -68,7 +68,7 @@ describe('open-ended workout: rest after every set, Add exercise when all done (
     expect(v0.title).toBe('Push');
     const f0 = v0.focus;
     if (!f0) throw new Error('no focus');
-    expect(plain(f0.headerLine)).toBe('Barbell · Working · Set 1 of 3');
+    expect(plain(f0.headerLine)).toBe('Barbell · Set 1 of 3');
     expect(plain(f0.target)).toBe('Target (built-in rule) 3–6 reps');
     // Reps come from the target; the load is Ben's to enter (no guessed load): the button focuses it.
     expect(f0.draft.reps).toBe(6);

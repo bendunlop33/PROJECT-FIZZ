@@ -117,7 +117,7 @@ export interface FocusView {
   exerciseName: string;
   measurement: 'reps' | 'duration';
   unilateral: boolean;
-  /** `Barbell · Working · Set 2 of 4` (+ ` · per side`). */
+  /** `Barbell · Set 2 of 4`, `Barbell · Warm-up · Set 1 of 4` (+ ` · per side`). */
   headerLine: string;
   setNumber: number;
   setCount: number;
@@ -358,7 +358,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   }
 
   const prevFirst = prev?.sets.find((c) => c.index === setNumber - 1) ?? prev?.sets[prev.sets.length - 1] ?? null;
-  const headerParts = [eq ? EQUIPMENT_WORD[eq.kind] : null, SET_TYPE_WORD[set.setType], `Set ${String(setNumber)} of ${String(own.length)}`, unilateral ? 'per side' : null];
+  // `Working` is the usual case, so only other set types are named (D-ActiveSet: `Barbell · Set 2 of 4`).
+  const headerParts = [eq ? EQUIPMENT_WORD[eq.kind] : null, set.setType === 'working' ? null : SET_TYPE_WORD[set.setType], `Set ${String(setNumber)} of ${String(own.length)}`, unilateral ? 'per side' : null];
 
   return {
     setId: set.id,
