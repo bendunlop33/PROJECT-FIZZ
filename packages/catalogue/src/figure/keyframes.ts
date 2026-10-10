@@ -5,10 +5,12 @@
  * interpolates numeric channels with the segment's easing; `smooth` is a C2
  * cubic spline per channel (continuous velocity and acceleration through
  * mid-movement keys, still at holds and turning points, no overshoot; ADR
- * 0015). IK modes are discrete and taken from the segment start.
+ * 0015). In phases mode a channel turning back at a pass key keeps its
+ * acceleration continuous through the turn (ADR 0017, E5; not projection
+ * channels). IK modes are discrete and taken from the segment start.
  */
 import { PROJECTION_KEYS, type FootIk, type Guide, type HandIk, type IkLimb, type Projection } from './guide-schema';
-import { ease, hermite, lerp, minimumJerk, splineSlopes, type Ease } from './math';
+import { ease, hermite, lerp, minimumJerk, phaseTurnSlopes, splineSlopes, type Ease } from './math';
 import { ADULT_V1, JOINT_NAMES, type JointName } from './rig';
 
 export interface FootTarget {
@@ -335,7 +337,10 @@ function ridePlanted(guide: Guide, a: FrameState, b: FrameState, tc: number, seg
  * C2 spline in u through the keys of the phase (pass keys sit at u of their
  * authored time), with natural ends and the monotone guard. Velocity and
  * acceleration are zero at every stop because du/dt and d²u/dt² are, and
- * continuous everywhere else.
+ * continuous everywhere else, including where a channel turns back at a pass
+ * key (its velocity is 0 there and its acceleration stays continuous; ADR
+ * 0017, E5). Projection channels are the exception: they keep a plain stop at
+ * a turning pass key (see `keepsAccelerationThroughTurns`).
  */
 interface PhaseSpan {
   /** First and last key of the phase (both stops). */
@@ -378,7 +383,25 @@ function phaseKnotSlopes(keys: readonly ResolvedKeyframe[], flat: readonly Chann
     // Natural ends; a turning or flat interior key stops that channel (the guard in splineSlopes does the rest).
     fixed.push(d.length === 2 && ((d[0] ?? 0) === 0 || (d[1] ?? 0) === 0 || Math.sign(d[0] ?? 0) !== Math.sign(d[1] ?? 0)) ? 0 : null);
   }
-  return splineSlopes(ph.u, y, fixed, false);
+  return keepsAccelerationThroughTurns(channel, fixed, usable) ? phaseTurnSlopes(ph.u, y, fixed).slopes : splineSlopes(ph.u, y, fixed, false);
+}
+
+/**
+ * E5 (ADR 0017): a channel that stops at a pass key (it turns back there, or
+ * one side is flat) keeps its acceleration continuous through that key
+ * (`phaseTurnSlopes`) instead of decoupling the two sides. Only when every
+ * segment of the phase is usable for the channel, and never for projection
+ * channels: a projection factor sets the IK bone length, and rounding its turn
+ * pulls the elbow off its single speed bell (the overhead-press shoulder
+ * reverses 5.9°). A phase with no stopped pass key keeps `splineSlopes`
+ * unchanged, so guides without turning keys are bit-identical.
+ */
+function keepsAccelerationThroughTurns(channel: string, fixed: readonly (number | null)[], usable: (j: number) => boolean): boolean {
+  if (channel.startsWith('proj.')) return false;
+  const n = fixed.length;
+  if (!fixed.some((f, j) => j > 0 && j < n - 1 && f !== null)) return false;
+  for (let j = 0; j + 1 < n; j += 1) if (!usable(j)) return false;
+  return true;
 }
 
 /**
