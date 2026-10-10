@@ -3,6 +3,11 @@ import {
   applyCheckInPatch,
   buildActiveSetView,
   buildLiftHighlight,
+  buildAddSetContinuation,
+  buildGymSwitchProposal,
+  changeGymCommand,
+  currentGymEquipment,
+  lastUsedAtGym,
   buildTodayView,
   buildWorkoutSummary,
   defaultStartingPlan,
@@ -35,6 +40,7 @@ import {
   type CheckInPatch,
   type CommandOutcome,
   type DraftEdits,
+  type GymSwitchProposal,
   type HistorySession,
   type PreviousSession,
   type RecentCheckIn,
@@ -130,6 +136,8 @@ export interface RepeatPreview {
 export interface ActiveWorkoutData {
   aggregate: SessionAggregate;
   gymName: string | null;
+  /** Every gym's name by ID (a workout can use two after a switch: dividers, captions). */
+  gymNames: Record<string, string>;
   previous: Record<string, PreviousSession | null>;
   painFlagged: Set<string>;
   effortScale: UserProfile['effortScale'];
@@ -152,6 +160,20 @@ export interface NextSessionPreview {
   sourceStartedAtUtc: string;
   tz: string;
 }
+
+/** A row of the switcher sheet (`Gym for this workout`, gym-editor §2.7). */
+export interface GymChoice {
+  id: string;
+  name: string;
+  current: boolean;
+  /** Items set up there (0 = none yet). */
+  items: number;
+}
+
+/** Toast Undo of a switch (gym-switch §4.5): restored, or refused with a `Switch back` card. */
+export type GymUndoOutcome =
+  | { ok: true; outcome: Extract<CommandOutcome, { ok: true }>; gymName: string }
+  | { ok: false; message: string; back: GymSwitchProposal | null };
 
 export function createWorkoutServices(ctx: WorkoutServicesContext) {
   const repos = () => ctx.repos();
@@ -322,6 +344,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return ctx.store().listExerciseHistory(ownerId, exerciseId);
   }
 
+  async function gymNamesOf(ownerId: string): Promise<Record<string, string>> {
+    return Object.fromEntries((await repos().gyms.listByOwner(ownerId).catch(() => [])).map((g) => [g.id, g.name]));
+  }
+
+  /** GS3 step 2 for each exercise: the item it last used at `gymId`. History that can't be read is skipped. */
+  async function lastUsedFor(ownerId: string, exerciseIds: Iterable<string>, gymId: string): Promise<(exerciseId: string) => string | null> {
+    const map = new Map<string, string | null>();
+    for (const exerciseId of new Set(exerciseIds)) {
+      map.set(exerciseId, lastUsedAtGym(await historyFor(ownerId, exerciseId).catch(() => [] as HistorySession[]), gymId));
+    }
+    return (exerciseId) => map.get(exerciseId) ?? null;
+  }
+
   /** The check-in on a workout, for "pain mentioned, no movement chosen" (PM SP3). */
   async function sessionCheckIn(a: SessionAggregate | null): Promise<CheckIn | null> {
     return a?.session.checkIn?.kind === 'answered' ? repos().checkIns.get(a.session.checkIn.checkInId) : null;
@@ -330,7 +365,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   async function planFor(p: UserProfile, req: { sessionId: string; exerciseId: string; equipmentId: string | null }): Promise<{ setType: SetType; planned: PlannedSet }[] | null> {
     const [aggregate, exercise] = await Promise.all([repos().sessions.get(req.sessionId), repos().exercises.get(req.exerciseId)]);
     if (!aggregate || !exercise || exercise.measurement !== 'reps') return null;
-    const equipment = req.equipmentId === null ? null : (aggregate.session.equipmentSnapshot.find((e) => e.id === req.equipmentId) ?? null);
+    const equipment = req.equipmentId === null ? null : (currentGymEquipment(aggregate.session).find((e) => e.id === req.equipmentId) ?? null);
     const unit = equipment?.unit ?? p.preferredUnit;
     const convention = equipment?.loadConvention ?? exercise.defaultLoadConvention;
     const history = await historyFor(p.id, exercise.id);
@@ -443,7 +478,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       }
       if (req.repeatOf) {
         // Repeat a past workout (routines.md RT4): its actuals become today's targets.
-        const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.repeatOf });
+        // Same history mapping as the preview, so Start gives what the preview showed (GS10).
+        const source = await repos().sessions.get(req.repeatOf);
+        const lastUsedHere = await lastUsedFor(p.id, source?.exercises.map((e) => e.exerciseId) ?? [], req.gymId);
+        const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.repeatOf, lastUsedHere });
         if (!r.ok) {
           const e = r.error;
           if (e.code === 'nothing_to_repeat' || e.code === 'imported_not_repeatable') return { ok: false, error: { code: 'not_found', message: e.message } };
@@ -478,6 +516,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       return {
         aggregate,
         gymName: gym?.name ?? null,
+        gymNames: await gymNamesOf(p.id),
         previous,
         painFlagged: new Set(flags.map((f) => f.exerciseId)),
         effortScale: p.effortScale,
@@ -488,7 +527,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
     /** `buildActiveSetView` over loaded data plus the screen's unsaved edits. */
     view(data: ActiveWorkoutData, nowMs: number, edits: DraftEdits | null): ActiveSetView {
-      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, previous: data.previous, painFlagged: data.painFlagged, edits, title: data.title });
+      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, edits, title: data.title });
     },
 
     dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => ctx.afterCommand(await domain().dispatch(sessionId, command)),
@@ -515,6 +554,33 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
 
     /**
+     * `Add set`. After a gym switch, a set added to an exercise whose row is
+     * on another gym's item goes on a continuation row at the current gym,
+     * with its target fitted by the shared function (gym-switch §4.3).
+     */
+    async addSet(req: { sessionId: string; sessionExerciseId: string; opId: string; newSetId: string }): Promise<CommandOutcome> {
+      const p = await ctx.profile();
+      const aggregate = await repos().sessions.get(req.sessionId);
+      if (!p || !aggregate) return { ok: false, error: { code: 'not_found', message: 'Workout not found.' } };
+      const row = aggregate.exercises.find((e) => e.id === req.sessionExerciseId);
+      const gymId = aggregate.session.gymId;
+      let continuation: ReturnType<typeof buildAddSetContinuation> = null;
+      if (row && gymId !== null) {
+        const gym = await repos().gyms.get(gymId);
+        continuation = buildAddSetContinuation(aggregate, row.id, {
+          exercise: await repos().exercises.get(row.exerciseId),
+          gymName: gym?.name ?? 'this gym',
+          painFlagged: new Set((await repos().painFlags.listActive(p.id)).map((f) => f.exerciseId)),
+          ownerUnit: p.preferredUnit,
+          lastUsedHere: await lastUsedFor(p.id, [row.exerciseId], gymId),
+          newId: ctx.newId,
+        });
+      }
+      const cmd: SessionCommand = { type: 'add_set', at: ctx.now(), opId: req.opId, sessionExerciseId: req.sessionExerciseId, newSetId: req.newSetId, setType: null, ...(continuation ? { continuation } : {}) };
+      return ctx.afterCommand(await domain().dispatch(req.sessionId, cmd));
+    },
+
+    /**
      * Exercise picker: the exercise list with compatible equipment at this
      * workout's gym. `withCatalogue` adds the bundled catalogue's exercises
      * not saved yet (audit F4); the first read of the catalogue is slower, so
@@ -527,7 +593,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const have = new Set(saved.map((e) => e.id));
       const extra = opts.withCatalogue && ctx.catalogueExercises ? ctx.catalogueExercises().filter((e) => !have.has(e.id)) : [];
       const all = [...saved, ...extra];
-      const snapshot = aggregate?.session.equipmentSnapshot ?? [];
+      // Only the current gym's items, also after a switch (gym-switch §4.3).
+      const snapshot = aggregate ? currentGymEquipment(aggregate.session) : [];
       // Bodyweight exercises never need (or get) a gym item: there's no load to check.
       return searchExercises(all, query).map((exercise) => ({
         exercise,
@@ -617,6 +684,75 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
+  /**
+   * Mid-workout gym switch (gym-switch.md). `propose` is `setActiveGym`: it
+   * fits the remaining sets to the chosen gym and returns the card; nothing
+   * changes until `apply`. Everything is local: no network, no coach.
+   */
+  const gymSwitch = {
+    /** The switcher sheet's rows: every gym (not archived), the workout's own marked. */
+    async gyms(sessionId: string): Promise<GymChoice[]> {
+      const p = await ctx.profile();
+      const aggregate = await repos().sessions.get(sessionId);
+      if (!p || !aggregate) return [];
+      const gyms = (await repos().gyms.listByOwner(p.id)).filter((g) => g.archivedAtUtc === undefined);
+      const rows: GymChoice[] = [];
+      for (const g of gyms) {
+        const items = (await repos().equipment.listByGym(g.id)).filter((e) => e.availability === 'available').length;
+        rows.push({ id: g.id, name: g.name, current: g.id === aggregate.session.gymId, items });
+      }
+      return rows.sort((a, b) => Number(b.current) - Number(a.current) || a.name.localeCompare(b.name));
+    },
+
+    /** The proposal for fitting this workout's remaining sets to `gymId` (the same gym: `[Use changes today]`). Saves nothing. */
+    async propose(sessionId: string, gymId: string): Promise<GymSwitchProposal | null> {
+      const p = await ctx.profile();
+      const aggregate = await repos().sessions.get(sessionId);
+      const gym = await repos().gyms.get(gymId);
+      if (!p || !aggregate || aggregate.session.status !== 'active' || !gym || gym.ownerId !== p.id) return null;
+      const exercises = new Map<string, Exercise>();
+      for (const e of aggregate.exercises) {
+        if (exercises.has(e.exerciseId)) continue;
+        const info = await repos().exercises.get(e.exerciseId);
+        if (info) exercises.set(info.id, info);
+      }
+      return buildGymSwitchProposal({
+        aggregate,
+        mode: gymId === aggregate.session.gymId ? 'equipment_update' : 'gym_switch',
+        gym: { id: gym.id, name: gym.name, equipment: await repos().equipment.listByGym(gym.id) },
+        gymNames: await gymNamesOf(p.id),
+        exercises,
+        painFlagged: new Set((await repos().painFlags.listActive(p.id)).map((f) => f.exerciseId)),
+        lastUsedHere: await lastUsedFor(p.id, aggregate.exercises.map((e) => e.exerciseId), gym.id),
+        ownerUnit: p.preferredUnit,
+        newId: ctx.newId,
+      });
+    },
+
+    /** `Switch` / `Apply`: one transaction; a double tap or `Try again` with the same opId is one change. */
+    async apply(proposal: GymSwitchProposal, opId: string): Promise<CommandOutcome> {
+      return ctx.afterCommand(await domain().dispatch(proposal.sessionId, changeGymCommand(proposal, opId, ctx.now())));
+    },
+
+    /**
+     * The toast's Undo. Refused when anything changed since the switch; then
+     * a `Switch back to …` card is offered instead (never a silent revert).
+     */
+    async undo(sessionId: string, opId: string): Promise<GymUndoOutcome> {
+      const aggregate = await repos().sessions.get(sessionId);
+      const last = aggregate?.session.gymChanges?.at(-1);
+      if (!aggregate || last?.kind !== 'change') return { ok: false, message: 'Can’t undo: your workout changed since the switch.', back: null };
+      const r = ctx.afterCommand(await domain().dispatch(sessionId, { type: 'undo_change_gym', at: ctx.now(), opId, actionId: last.actionId, expectedFingerprint: last.afterFingerprint }));
+      if (r.ok) {
+        const gymId = r.aggregate.session.gymId;
+        const gym = gymId === null ? null : await repos().gyms.get(gymId);
+        return { ok: true, outcome: r, gymName: gym?.name ?? 'the last gym' };
+      }
+      const back = last.fromGymId === null ? null : await gymSwitch.propose(sessionId, last.fromGymId).catch(() => null);
+      return { ok: false, message: r.error.code === 'write_failed' ? 'Couldn’t undo. Nothing changed.' : 'Can’t undo: your workout changed since the switch.', back };
+    },
+  };
+
   const repeat = {
     /**
      * `Start from a past workout`: the newest `limit` finished workouts with
@@ -679,10 +815,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async preview(sourceSessionId: string, gymId: string): Promise<RepeatPreview | null> {
       const p = await ctx.profile();
       if (!p) return null;
-      const r = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview:${sourceSessionId}`, at: ctx.now(), sourceSessionId, preview: true });
-      if (!r.ok) return null;
       const source = await repos().sessions.get(sourceSessionId);
       if (!source) return null;
+      const lastUsedHere = await lastUsedFor(p.id, source.exercises.map((e) => e.exerciseId), gymId);
+      const r = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview:${sourceSessionId}`, at: ctx.now(), sourceSessionId, preview: true, lastUsedHere });
+      if (!r.ok) return null;
       return { exercises: repeatPreviewLines(r.aggregate), notes: r.notes, notCopied: r.notCopied, sourceGymId: source.session.gymId, sourceStartedAtUtc: source.session.startedAt.utc, tz: source.session.startedAt.tz };
     },
   };
@@ -764,7 +901,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
-  return { checkIns, pain, workout, today, repeat, next };
+  return { checkIns, pain, workout, today, repeat, next, gymSwitch };
 }
 
 export type WorkoutServices = ReturnType<typeof createWorkoutServices>;

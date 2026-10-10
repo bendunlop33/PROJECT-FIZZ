@@ -56,7 +56,7 @@ describe('repeat a past workout', () => {
 
     h.clockMs += 86_400_000;
     const preview = await s.repeat.preview(benchDay, hotelId);
-    expect(preview?.notes.map((n) => plain(n.text))).toEqual(['No Barbell and plates here: no load target (last time 100 kg × 5).']);
+    expect(preview?.notes.map((n) => plain(n.text))).toEqual(['No Barbell and plates at Hotel Gym: no load target (last time 100 kg × 5).']);
     expect(preview?.notes.some((n) => n.text.includes('Kept as done'))).toBe(false);
 
     const started = await s.workout.start({ gymId: hotelId, opId: 'repeat-hotel', checkIn: null, repeatOf: benchDay });

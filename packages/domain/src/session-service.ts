@@ -1,6 +1,7 @@
 import {
   SessionCommandSchema,
   validate,
+  type EquipmentInstance,
   type Exercise,
   type SessionAggregate,
   type SessionCheckIn,
@@ -45,6 +46,8 @@ export interface StartRequest {
   at: ZonedTimestamp;
   /** Check-in outcome stored on the new session (same write). */
   checkIn?: SessionCheckIn | null;
+  /** GS3 step 2: the item an exercise last used at this gym (from history). */
+  lastUsedHere?: (exerciseId: string) => string | null;
 }
 
 const MAX_CONFLICT_RETRIES = 2;
@@ -91,6 +94,14 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       if (ex) exercises.set(ex.id, ex);
     }
     const gymEquipment = await repos.equipment.listByGym(req.gymId);
+    // A routine pinned to an item at another gym is mapped by that item's kind (gym-switch GS3).
+    const knownEquipment = new Map<string, EquipmentInstance>();
+    for (const rex of routine?.exercises ?? []) {
+      if (rex.equipmentId === null || gymEquipment.some((e) => e.id === rex.equipmentId)) continue;
+      const pinned = await repos.equipment.get(rex.equipmentId);
+      if (pinned) knownEquipment.set(pinned.id, pinned);
+    }
+    const gym = await repos.gyms.get(req.gymId);
     const { aggregate, warnings } = startWorkout({
       opId: req.opId,
       owner,
@@ -101,6 +112,9 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       at: req.at,
       newId,
       checkIn: req.checkIn ?? null,
+      knownEquipment,
+      ...(gym ? { gymName: gym.name } : {}),
+      ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     });
     const saved = await trySave(() => repos.sessions.save(aggregate, null));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
@@ -150,6 +164,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       const e = await repos.exercises.get(ex.exerciseId);
       if (e) exercises.set(e.id, e);
     }
+    const gym = await repos.gyms.get(req.gymId);
     const out = startWorkoutFromSession({
       opId: req.opId,
       owner,
@@ -162,6 +177,8 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       checkIn: req.checkIn ?? null,
       ...(req.targets ? { targets: req.targets } : {}),
       ...(req.name !== undefined ? { name: req.name } : {}),
+      ...(gym ? { gymName: gym.name } : {}),
+      ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     });
     if (out.empty) return { ok: false, error: { code: 'nothing_to_repeat', message: 'That workout has no logged sets to repeat.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false };

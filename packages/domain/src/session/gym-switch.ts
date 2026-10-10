@@ -16,9 +16,12 @@ import type {
 } from '@fizz/schemas';
 import { formatNumber, repRangeText } from '../display';
 import { isLoadAchievable } from '../equipment';
+import { equipmentRowLine } from '../gym-editor';
+import type { HistorySession } from '../progression';
+import { toMs } from '../time';
 import { deriveId, stableStringify } from '../stable';
 import { toScaled } from '../units';
-import { appendToSnapshot, equipmentOfRow } from './equipment-snapshot';
+import { appendToSnapshot, currentGymEquipment, equipmentOfRow, rowIsAtCurrentGym } from './equipment-snapshot';
 import { buildExecutionOrder } from './order';
 import { intendedOf, plannedSnapOf, snapPlanToGym, sourceOf, type SnapResult, type SnapSlotInput, type SnapSlotResult } from './snap';
 import { cardNoteText, loadWords, type NoteLine } from './snap-text';
@@ -648,4 +651,82 @@ export function applyUndoChangeGym(state: SessionAggregate, cmd: CommandOf<'undo
     draftsReplaced: [],
   };
   return { ok: true, state: { ...next, session: { ...next.session, gymChanges: [...changes, undo] } }, entry: undo };
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for the service layer (pure)
+
+/** GS3 step 2: the item an exercise last used at this gym (logged in the app, not imported). */
+export function lastUsedAtGym(history: readonly HistorySession[], gymId: string): string | null {
+  const here = history.filter((h) => !h.imported && h.gymId === gymId && h.equipmentId !== null && h.sets.length > 0);
+  here.sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
+  return here[0]?.equipmentId ?? null;
+}
+
+/** `Why?` on the switch card (gym-switch §4.2): what the check used, every note, what didn't change. No AI. */
+export function gymSwitchEvidence(p: GymSwitchProposal): { used: string[]; checks: string[]; notChanged: string[] } {
+  const usable = p.snapshot.filter((e) => e.availability === 'available');
+  return {
+    used:
+      usable.length === 0
+        ? [`${p.toGymName} has no equipment set up.`]
+        : usable.map((e) => `${e.name}: ${equipmentRowLine(e)}${e.detailsSource === 'preset' ? ' (typical values, not checked)' : ''}`),
+    checks: p.card.lines.flatMap((l) => l.notes.map((n) => `${l.exerciseName}: ${n.text}`)),
+    notChanged: [...p.card.notChanged, ...(p.card.unchanged ? [p.card.unchanged] : [])],
+  };
+}
+
+/**
+ * `Add set` after a switch on an exercise whose row is on another gym's item
+ * (gym-switch §4.3): a continuation row at the current gym, with the copied
+ * target fitted by `snapPlanToGym`. Null when the row is at the current gym
+ * (a plain `add_set` copies the target as before).
+ */
+export function buildAddSetContinuation(
+  state: SessionAggregate,
+  sessionExerciseId: string,
+  ctx: {
+    exercise: Pick<Exercise, 'id' | 'name' | 'compatibleEquipment' | 'defaultLoadConvention'> | null;
+    gymName: string;
+    painFlagged: ReadonlySet<string>;
+    ownerUnit: WeightUnit;
+    lastUsedHere?: (exerciseId: string) => string | null;
+    newId: () => string;
+  },
+): NonNullable<CommandOf<'add_set'>['continuation']> | null {
+  const row = state.exercises.find((e) => e.id === sessionExerciseId);
+  if (!row || rowIsAtCurrentGym(state.session, row) || state.session.gymId === null) return null;
+  const template = state.sets.filter((s) => s.sessionExerciseId === row.id && s.status !== 'deleted').sort((a, b) => a.index - b.index).at(-1);
+  if (!template) return null;
+  const source = sourceOf(template.planned.snap, equipmentOfRow(state.session.equipmentSnapshot, row));
+  const snap = snapPlanToGym({
+    mode: 'gym_switch',
+    slots: [
+      {
+        slotId: row.id,
+        exercise: {
+          id: row.exerciseId,
+          name: row.exerciseName,
+          compatibleEquipment: ctx.exercise?.compatibleEquipment ?? (source ? [source.kind] : []),
+          defaultLoadConvention: ctx.exercise?.defaultLoadConvention ?? row.loadConvention,
+        },
+        sourceEquipment: source,
+        unit: row.unit,
+        convention: row.loadConvention,
+        sets: [{ id: template.id, setType: template.setType, intended: intendedOf(template.planned), current: template.planned.load, reps: template.planned.reps, durationS: template.planned.durationS }],
+      },
+    ],
+    gym: { id: state.session.gymId, name: ctx.gymName, equipment: currentGymEquipment(state.session) },
+    ...(ctx.lastUsedHere ? { lastUsedHere: ctx.lastUsedHere } : {}),
+    painFlagged: ctx.painFlagged,
+    ownerUnit: ctx.ownerUnit,
+  });
+  const slot = snap.slots[0];
+  const fitted = slot?.sets[0];
+  if (!slot || !fitted) return null;
+  const planned: PlannedSet = { ...template.planned, load: fitted.load };
+  const fit = plannedSnapOf(fitted, slot, 'gym_switch', state.session.gymId);
+  if (fit === null) delete planned.snap;
+  else planned.snap = fit;
+  return { id: ctx.newId(), equipmentId: slot.equipment?.id ?? null, unit: slot.unit, loadConvention: slot.convention, planned };
 }
