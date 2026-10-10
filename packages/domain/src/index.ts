@@ -30,6 +30,7 @@ export * from './default-rule';
 export * from './next-target';
 export * from './gym-editor';
 export * from './session/repeat';
+export * from './session/routines';
 export * from './session/first-run';
 export * from './touches';
 export * from './import';

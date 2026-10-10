@@ -4,10 +4,12 @@ import {
   IdSchema,
   LoadSchema,
   MassSchema,
+  OperationIdSchema,
   RecordMetaSchema,
   RepRangeSchema,
   RirSchema,
   RpeSchema,
+  UtcTimestampSchema,
 } from './common';
 
 export const SetTypeSchema = z.enum(['warmup', 'working', 'top', 'backoff', 'drop']);
@@ -60,6 +62,18 @@ export type RoutineExercise = z.infer<typeof RoutineExerciseSchema>;
 export const RoutineSchema = RecordMetaSchema.extend({
   name: z.string().min(1).max(120),
   exercises: z.array(RoutineExerciseSchema).max(40),
+  /**
+   * The finished workout this routine was saved from (premium-feel §2.6).
+   * Optional so routines and backups written before it still parse.
+   */
+  createdFromSessionId: IdSchema.nullable().optional(),
+  /**
+   * Tombstone (routines.md §4.8): a deleted routine is kept so Undo can
+   * restore it and finished workouts keep their provenance. Absent = live.
+   */
+  deletedAtUtc: UtcTimestampSchema.nullable().optional(),
+  /** The operation that wrote this version, so a retried save, rename or delete is a no-op. */
+  lastOpId: OperationIdSchema.optional(),
 });
 export type Routine = z.infer<typeof RoutineSchema>;
 

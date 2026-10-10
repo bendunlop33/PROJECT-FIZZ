@@ -96,7 +96,8 @@ export type SessionEvent =
   | { type: 'ExerciseAdded'; sessionExerciseId: string }
   | { type: 'SetDeleted'; setId: string }
   | { type: 'RestPlanChanged'; setIds: string[]; seconds: number }
-  | { type: 'SessionTimingUpdated' };
+  | { type: 'SessionTimingUpdated' }
+  | { type: 'SessionRenamed'; name: string };
 
 export type ReduceResult =
   | {
@@ -1114,6 +1115,26 @@ function handleSetRestAfter(state: SessionAggregate, cmd: CommandOf<'set_rest_af
   return { ok: true, state: bumpVersion({ ...state, sets }), events: [{ type: 'RestPlanChanged', setIds: [...ids], seconds: cmd.seconds }] };
 }
 
+/**
+ * `rename_session` (premium-feel §2.6): the workout's own name. The routine
+ * it came from keeps its name. An open-ended workout in progress can't be
+ * named yet: a name is what marks a planned workout, so naming it would
+ * change how its last set rests (audit B1). It can be named after Finish.
+ */
+function handleRenameSession(state: SessionAggregate, cmd: CommandOf<'rename_session'>): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed; reload.');
+  const name = cmd.name.trim();
+  if (state.session.status === 'active' && isOpenEndedWorkout(state)) {
+    return fail('session_not_finished', 'You can name this workout after you finish it.');
+  }
+  if (state.session.routineName === name) return { ok: true, state, events: [] };
+  return {
+    ok: true,
+    state: { ...state, session: { ...state.session, routineName: name, version: state.session.version + 1 } },
+    events: [{ type: 'SessionRenamed', name }],
+  };
+}
+
 function handleSaveDraft(state: SessionAggregate, cmd: CommandOf<'save_draft'>): Handled {
   const set = state.sets.find((s) => s.id === cmd.setId);
   if (!set) return fail('set_not_found', 'Set not found.');
@@ -1161,6 +1182,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleDiscard(state, command, nowMs);
     case 'set_rest_after':
       return handleSetRestAfter(state, command);
+    case 'rename_session':
+      return handleRenameSession(state, command);
     case 'tick':
       return { ok: true, state, events: [] };
   }
@@ -1215,6 +1238,9 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
           const current = e.field === 'startedAt' ? state.session.startedAt : state.session.endedAt;
           return current?.utc !== e.after.utc;
         });
+    case 'rename_session':
+      // A later rename (or its undo) replaced this name.
+      return state.session.routineName !== command.name.trim();
     case 'finish':
     case 'discard':
     case 'add_exercise':
@@ -1266,7 +1292,7 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
     if (command.type === 'tick') return { ok: true, state, events: [], duplicate: false, superseded: false };
     // A finished workout accepts only corrections and timing edits; a discarded one accepts nothing.
     const allowed =
-      state.session.status === 'finished' && (command.type === 'correct_set' || command.type === 'update_session_timing');
+      state.session.status === 'finished' && (command.type === 'correct_set' || command.type === 'update_session_timing' || command.type === 'rename_session');
     if (!allowed) {
       const message =
         state.session.status === 'finished'

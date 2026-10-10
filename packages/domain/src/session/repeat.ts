@@ -2,7 +2,7 @@ import type { EquipmentInstance, Exercise, Load, PlannedSet, Routine, RoutineExe
 import { loadText, NBSP, repRangeText, targetShort } from '../display';
 import { getAchievableLoads, loadDirection, roundToAvailableLoad } from '../equipment';
 import { convertMass } from '../units';
-import { startWorkout, type StartWorkoutInput, type StartWorkoutOutput } from './create';
+import { startWorkout, type StartWarning, type StartWorkoutInput, type StartWorkoutOutput } from './create';
 import { GENERIC_WORKOUT_NAME } from './first-run';
 
 /**
@@ -64,7 +64,7 @@ export interface RepeatOutput extends StartWorkoutOutput {
 }
 
 /** Equipment for a repeated exercise at this gym: the same item, else the first available of the same kind. */
-function pickEquipment(sourceEq: EquipmentInstance | null, gym: readonly EquipmentInstance[], exercise: Pick<Exercise, 'compatibleEquipment'>): EquipmentInstance | null {
+export function pickEquipment(sourceEq: EquipmentInstance | null, gym: readonly EquipmentInstance[], exercise: Pick<Exercise, 'compatibleEquipment'>): EquipmentInstance | null {
   if (sourceEq === null) return null;
   const usable = gym.filter((e) => e.availability === 'available');
   const same = usable.find((e) => e.id === sourceEq.id);
@@ -123,20 +123,10 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
         : doneWithReps.flatMap((s) => (s.actual === null ? [] : [{ setType: s.setType, load: s.actual.load, reps: s.actual.reps === null ? null : { min: s.actual.reps, max: s.actual.reps }, durationS: s.actual.durationS }]));
     const templates: SetTemplate[] = [];
     for (const a of sources) {
-      let targetLoad = equipmentMissing ? null : a.load;
-      if (targetLoad !== null && eq === null && targetLoad.unit !== sessionUnit) {
-        unitDropped ??= targetLoad;
-        targetLoad = null;
-      }
-      // Rounding only ever goes toward easier: a gym whose lightest load is harder than last time gives no target.
-      if (targetLoad !== null && eq !== null) {
-        const r = roundToAvailableLoad(targetLoad, eq, 'easier');
-        const direction = getAchievableLoads(eq).direction;
-        if (r.ok && ((direction === 'resistance' && r.bounded === 'min') || (direction === 'assistance' && r.bounded === 'max'))) {
-          harderDropped ??= { requested: targetLoad, lightest: r.load };
-          targetLoad = null;
-        }
-      }
+      const fit = fitLoadHere(equipmentMissing ? null : a.load, eq, sessionUnit);
+      if (fit.unitDropped) unitDropped ??= fit.unitDropped;
+      if (fit.harderDropped) harderDropped ??= fit.harderDropped;
+      const targetLoad = fit.load;
       templates.push({
         id: input.newId(),
         setType: a.setType,
@@ -148,12 +138,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
         restOverrideS: null,
       });
     }
-    if (unitDropped !== null) {
-      notes.push({ exerciseName: sx.exerciseName, text: `No load target: last time was ${loadWord(unitDropped)}, and there's no equipment here to check a ${sessionUnit} load on.` });
-    }
-    if (harderDropped !== null) {
-      notes.push({ exerciseName: sx.exerciseName, text: `No load target: last time was ${loadWord(harderDropped.requested)}, and the easiest here is ${loadWord(harderDropped.lightest)}.` });
-    }
+    notes.push(...droppedNotes(sx.exerciseName, sessionUnit, unitDropped, harderDropped));
     if (templates.length === 0) continue;
     routineExercises.push({
       id: input.newId(),
@@ -193,26 +178,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   });
 
   // Rounded or dropped loads become plain notes; every target is marked as copied.
-  const nameOfTemplate = new Map<string, string>();
-  for (const rex of routineExercises) for (const t of rex.setTemplates) nameOfTemplate.set(t.id, exercises.get(rex.exerciseId)?.name ?? 'Exercise');
-  const seen = new Set<string>();
-  for (const w of out.warnings) {
-    if (w.kind !== 'target_rounded' && w.kind !== 'target_dropped') continue;
-    const name = nameOfTemplate.get(w.setTemplateId) ?? 'Exercise';
-    const text =
-      w.kind === 'target_rounded'
-        ? w.bounded === 'max'
-          ? `Rounded down from ${loadWord(w.requested)}: this gym stops at ${loadWord(w.planned)}.`
-          : `Rounded from ${loadWord(w.requested)} to ${loadWord(w.planned)} to match this gym.`
-        : w.reason === 'unit_not_convertible'
-          ? `No load target: ${loadWord(w.requested)} is in another unit.`
-          : w.reason === 'no_achievable_loads'
-            ? `No load target: this gym has no loads set up for ${loadWord(w.requested)}.`
-            : `No load target: the ${loadWord(w.requested)} was on different equipment.`;
-    const key = `${name}|${text}`;
-    if (!seen.has(key)) notes.push({ exerciseName: name, text });
-    seen.add(key);
-  }
+  notes.push(...warningNotes(out.warnings, routineExercises, exercises));
   const aggregate: SessionAggregate = {
     ...out.aggregate,
     session: { ...out.aggregate.session, routineId: null },
@@ -260,6 +226,65 @@ export function lastTimeTopSet(done: readonly WorkoutSet[]): WorkoutSet | null {
 
 function loadWord(l: Load | { value: number; unit: WeightUnit; convention: Load['convention'] }): string {
   return loadText(l, l.convention).replaceAll(NBSP, ' ');
+}
+
+/**
+ * A copied or planned load checked against this gym before it becomes a
+ * template (rule 4). Without equipment, a load in another unit is dropped
+ * (never converted unchecked). Rounding only goes toward easier: when the
+ * easiest load here is harder than the target, the target is dropped.
+ */
+export function fitLoadHere(
+  load: Load | null,
+  eq: EquipmentInstance | null,
+  sessionUnit: WeightUnit,
+): { load: Load | null; unitDropped: Load | null; harderDropped: { requested: Load; lightest: Load } | null } {
+  if (load === null) return { load: null, unitDropped: null, harderDropped: null };
+  if (eq === null) return load.unit !== sessionUnit ? { load: null, unitDropped: load, harderDropped: null } : { load, unitDropped: null, harderDropped: null };
+  const r = roundToAvailableLoad(load, eq, 'easier');
+  const direction = getAchievableLoads(eq).direction;
+  if (r.ok && ((direction === 'resistance' && r.bounded === 'min') || (direction === 'assistance' && r.bounded === 'max'))) {
+    return { load: null, unitDropped: null, harderDropped: { requested: load, lightest: r.load } };
+  }
+  return { load, unitDropped: null, harderDropped: null };
+}
+
+/** The notes said when `fitLoadHere` dropped a load. */
+export function droppedNotes(exerciseName: string, sessionUnit: WeightUnit, unitDropped: Load | null, harderDropped: { requested: Load; lightest: Load } | null): RepeatNote[] {
+  const notes: RepeatNote[] = [];
+  if (unitDropped !== null) {
+    notes.push({ exerciseName, text: `No load target: last time was ${loadWord(unitDropped)}, and there's no equipment here to check a ${sessionUnit} load on.` });
+  }
+  if (harderDropped !== null) {
+    notes.push({ exerciseName, text: `No load target: last time was ${loadWord(harderDropped.requested)}, and the easiest here is ${loadWord(harderDropped.lightest)}.` });
+  }
+  return notes;
+}
+
+/** `startWorkout`'s rounding warnings as plain notes, one per exercise and text. */
+export function warningNotes(warnings: readonly StartWarning[], routineExercises: readonly RoutineExercise[], exercises: ReadonlyMap<string, Pick<Exercise, 'name'>>): RepeatNote[] {
+  const notes: RepeatNote[] = [];
+  const nameOfTemplate = new Map<string, string>();
+  for (const rex of routineExercises) for (const t of rex.setTemplates) nameOfTemplate.set(t.id, exercises.get(rex.exerciseId)?.name ?? 'Exercise');
+  const seen = new Set<string>();
+  for (const w of warnings) {
+    if (w.kind !== 'target_rounded' && w.kind !== 'target_dropped') continue;
+    const name = nameOfTemplate.get(w.setTemplateId) ?? 'Exercise';
+    const text =
+      w.kind === 'target_rounded'
+        ? w.bounded === 'max'
+          ? `Rounded down from ${loadWord(w.requested)}: this gym stops at ${loadWord(w.planned)}.`
+          : `Rounded from ${loadWord(w.requested)} to ${loadWord(w.planned)} to match this gym.`
+        : w.reason === 'unit_not_convertible'
+          ? `No load target: ${loadWord(w.requested)} is in another unit.`
+          : w.reason === 'no_achievable_loads'
+            ? `No load target: this gym has no loads set up for ${loadWord(w.requested)}.`
+            : `No load target: the ${loadWord(w.requested)} was on different equipment.`;
+    const key = `${name}|${text}`;
+    if (!seen.has(key)) notes.push({ exerciseName: name, text });
+    seen.add(key);
+  }
+  return notes;
 }
 
 /** One line per exercise for the Repeat preview: `3 sets · Target (as last time) 100 kg × 8, 8, 7`. */
