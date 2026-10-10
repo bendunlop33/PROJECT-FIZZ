@@ -4,6 +4,8 @@ Status: v0.1 draft, 9 Oct 2026. Feature approved by Ben in brief CHANGELOG v0.9 
 
 Related specs: [today.md](today.md) (Start, Resume), [flow-first-milestone.md](flow-first-milestone.md) (state machine, tap counts), [active-workout.md](active-workout.md) (coach slot on the first set card), [coach-adjustments.md](coach-adjustments.md) (offer, Adjust, banner, Undo), [coach-memory.md](coach-memory.md) (pain flags), [voice.md](voice.md) (spoken check-in), [workout-summary.md](workout-summary.md) and [progress.md](progress.md) (showing check-ins), [profile-and-settings.md](profile-and-settings.md) (settings), [weekly-plan.md](weekly-plan.md) (Reschedule, Skip workout).
 
+> **Revision 2026-10-10 (workout overview; [workout-overview.md](workout-overview.md)).** For Up next and routine starts, the check-in now sits on the Workout overview as an optional inline row of five tiles above its `Start workout`, shown only when `shouldAskCheckIn` returns `ask` or `reuse`. A tap saves the score at once (CI4) but **never starts the workout**. Starting without a score records `skipped`. A score at or below the "What's up?" setting opens Step 2 (and 2a/2b) as a sheet over the overview. Its exits return to the overview, apart from `Skip workout`, which closes to Today as before. CI1 and CI3 are unchanged: the session still doesn't exist until Start. **CI2 is amended for this path only** (Ben to confirm). The `CheckInSheet` Step 1 stays for `Empty workout`, Repeat, the builder's `Start now`, voice and the Resume case. At AX1+ the overview's tiles collapse to a `Check-in ›` button that opens Step 1, and choosing a score returns to the overview. Changed: §2.1 (first two entry rows), §3.1 (note), checks 1–3 and 5 (path note).
+
 The check-in is **a record of what Ben said, not a measurement.** Fizz stores it as given and shows it as given. It never turns it into a score, never averages it, never puts it next to lift numbers, and the built-in progression rules ignore it.
 
 ---
@@ -52,8 +54,9 @@ The check-in is shown by one gate, `shouldAskCheckIn`, at every way of starting 
 
 | Entry point | Spec |
 |---|---|
-| `Start workout`, `Start empty workout`, `Start another workout`, `Start a workout anyway` | today.md §4 |
-| Routine row `Start`, `Repeat last workout` → `Start workout` | routines.md |
+| Workout overview `Start workout` (reached from Today's `Start workout`, `Start another workout` and routine rows): **inline row, not the sheet** (10 Oct) | workout-overview.md §2.2 |
+| `Start empty workout`, `Start a workout anyway` | today.md §4 |
+| `Repeat last workout` → `Start workout` | routines.md |
 | Session sheet `Start workout` | weekly-plan.md §2.3 |
 | `Start now` on a coach draft (after its pre-start check passes) | workout-builder.md §4 |
 | Voice "start my workout" | voice.md §4.3 |
@@ -378,6 +381,8 @@ The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is
 
 ### 3.1 Transitions
 
+(10 Oct.) From the Workout overview, the gate drives the inline row instead of Step 1: `ask` shows the row empty, `reuse` shows it pre-selected, and `skip` hides it. Step 2 onwards is below, with "Today" read as "the overview" and "startWorkout" read as "back to the overview". See workout-overview.md §2.2.
+
 ```
  Today ─ Start ─► shouldAskCheckIn ─┬─ not asked ──────────────────────────────► startWorkout ─► Active workout
                                     ├─ reuse (< 2 h) ───────── link ───────────► startWorkout ─► Active workout + toast
@@ -639,6 +644,8 @@ Storage, backup, export, delete: `CheckIn` is **Your data** (owner ID, `your_dat
 ## 7. Acceptance checks
 
 **Taps and timing**
+
+(10 Oct.) Checks 1–3 and 5 now test the sheet paths (`Empty workout`, Repeat, builder, Resume). For Up next and routine starts, use workout-overview.md OV2 and OV10 instead: a score there never starts the workout, and the first set is 3 taps (ignored) or 4 (scored).
 1. Check-ins on: Today → `Start workout` → `4` reaches Active workout in exactly **2 taps**. The `CheckIn` row has score 4, no reasons, UTC time + timezone, and `link.sessionId` of the new session; the toast reads `✓ Check-in saved · 4 of 5`.
 2. `Start workout` → `Skip` reaches Active workout in 2 taps, writes no `CheckIn`, and the session's `checkIn.kind` is `skipped`. Resume, force-quit + relaunch and P6 auto-open never show the sheet for that session.
 3. Check-ins off, or a day not selected: `Start workout` opens the workout in **1 tap**; no sheet; `checkIn.kind` is `not_asked` with the right reason. Flow check 1's tap count is unchanged.
