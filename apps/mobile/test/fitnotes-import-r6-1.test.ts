@@ -10,8 +10,9 @@ import { createHarness, setUpGym, type Harness } from './harness';
 
 /**
  * Review round 6.1, end to end on SQLite through the services, in kg and lb.
- * - B1: `Add new` → Barbell on an EZ-bar or trap-bar name gets that bar,
- *   never the Olympic bar.
+ * - B1 (as decided after review r7): `Add new` → Barbell never takes a bar
+ *   from the name; a bar is added only by Ben's answer for one exercise,
+ *   on the bar he chose, never the Olympic bar unless he chose it.
  * - S1: an assisted name mapped to a weight-stack exercise (`Choose…` or
  *   `Add new`) asks how its values read, with nothing selected.
  * - S2: a positive value among negative ones in the file isn't read as
@@ -50,12 +51,12 @@ async function commit(d: ImportDraft, op: string) {
   return job;
 }
 
-describe('review r6.1 B1: Add new → Barbell takes the bar from the name', () => {
+describe('review r6.1 B1, as decided after review r7: Add new → Barbell never takes a bar from the name; Ben chooses it per exercise', () => {
   const NAMES = ['EZ Bar Upright Row', 'Trap Bar Jump Squat', 'Upright Row (EZ Bar)', 'EZ Bar Close Grip Press', 'Trap Bar Farmers Walk'] as const;
   const barOf = (n: string) => (/ez/i.test(n) ? 'ez_bar' : 'trap_bar');
 
   for (const unit of ['kg', 'lb'] as const) {
-    it(`in ${unit}: EZ and trap names get their own bar's weight under "Plates only", never the Olympic bar`, async () => {
+    it(`in ${unit}: the group answer stores every name as written; plates only on the bar Ben chose adds that bar's own weight, never the Olympic bar's`, async () => {
       const olympic = unit === 'kg' ? 20 : 45;
       const weight = { ez_bar: unit === 'kg' ? 8 : 18, trap_bar: unit === 'kg' ? 27 : 60 } as const;
       const extra = ['Barbell Upright Row', 'Dumbbell Thing Press', 'Smith Upright Row'];
@@ -63,20 +64,22 @@ describe('review r6.1 B1: Add new → Barbell takes the bar from the name', () =
       const raw = (i: number) => 30 + 2 * i;
       let d = await open([B2, ...all.map((n, i) => line('2026-09-01', n, raw(i), unit))].join('\n'));
       for (const n of all) d = await step(d, { kind: 'name', key: nameKey(n), answer: { kind: 'new', equipment: 'barbell' } });
-      d = await step(d, { kind: 'total', answer: 'plates_only' });
+      d = await step(d, { kind: 'total', answer: 'total' });
 
-      // The EZ and trap names are read by the group answer, each with its own bar; that bar's weight is asked (none is assumed).
+      // Every name is read by the group answer as written; each row shows the Olympic bar of the exercise Add new makes, nothing selected.
+      const rows = totalOptions(d.analysis, 'en-GB')?.platesOnly.rows ?? [];
+      expect(rows.map((r) => [r.title, r.bars.find((b) => b.selected)?.label, r.choices.some((c) => c.selected)])).toEqual(all.map((n) => [n, 'Olympic bar', false]));
+      expect(d.analysis.ready).toBe(true);
+
+      // Ben chooses plates only for the EZ and trap names, and their bars.
+      for (const n of NAMES) {
+        d = await step(d, { kind: 'total_override', key: nameKey(n), answer: 'plates_only' });
+        d = await step(d, { kind: 'total_bar', key: nameKey(n), bar: barOf(n) });
+      }
       const q = d.analysis.total;
-      expect(q?.exercises.filter((e) => e.known).map((e) => [e.name, e.bar])).toEqual([...NAMES.map((n) => [n, barOf(n)]), ['Barbell Upright Row', 'barbell']]);
       expect(q?.bars.find((b) => b.bar === 'ez_bar')?.missing).toEqual([unit]);
       expect(q?.bars.find((b) => b.bar === 'trap_bar')?.missing).toEqual([unit]);
-      // A bar word for other equipment, or Smith, is asked on its own with nothing selected.
-      const own = totalOptions(d.analysis, 'en-GB')?.ask?.rows ?? [];
-      expect(own.map((r) => r.title).sort()).toEqual(['Dumbbell Thing Press', 'Smith Upright Row']);
-      for (const r of own) expect(r.choices.some((c) => c.selected), r.title).toBe(false);
-
       for (const bar of ['ez_bar', 'trap_bar'] as const) d = await step(d, { kind: 'bar_weight', bar, unit, value: weight[bar] });
-      for (const n of ['Dumbbell Thing Press', 'Smith Upright Row']) d = await step(d, { kind: 'total_override', key: nameKey(n), answer: 'total' });
       expect(d.analysis.ready).toBe(true);
       // What the barbell screen shows is the conversion with the bar's own weight.
       for (const [i, n] of NAMES.entries()) expect(d.analysis.total?.exercises.find((e) => e.name === n)?.sample?.imported, n).toBe(raw(i) + weight[barOf(n)]);
@@ -90,17 +93,22 @@ describe('review r6.1 B1: Add new → Barbell takes the bar from the name', () =
         expect(load?.value, why).not.toBe(raw(i) + olympic);
       });
       for (const [i, n] of NAMES.entries()) expect(stored.get(n)?.value, n).toBe(raw(i) + weight[barOf(n)]);
-      expect(stored.get('Barbell Upright Row')?.value).toBe(raw(5) + olympic);
+      // No answer of its own: as written, whatever the name says.
+      expect(stored.get('Barbell Upright Row')?.value).toBe(raw(5));
       expect(stored.get('Dumbbell Thing Press')?.value).toBe(raw(6));
       expect(stored.get('Smith Upright Row')?.value).toBe(raw(7));
 
-      // The exercise is made with the bar its name says, so later logging uses that bar too.
+      // The exercise is made with the bar Ben chose, so later logging uses that bar too; the others with the Olympic bar.
       const again = await open([B2, ...all.map((n, i) => line('2026-09-02', n, raw(i), unit))].join('\n'), 'second.csv');
-      for (const n of NAMES) {
+      for (const n of all) {
         const res = again.analysis.names.find((x) => x.name === n)?.resolution;
         const c = res?.kind === 'exercise' ? s.imports.candidate(again.draftId, res.exercise.exerciseId) : null;
-        expect(c?.compatibleEquipment, n).toEqual([barOf(n)]);
+        expect(c?.compatibleEquipment, n).toEqual([(NAMES as readonly string[]).includes(n) ? barOf(n) : 'barbell']);
       }
+      // And Ben's answers are filled in, labelled as his answer last time.
+      const next = totalOptions(again.analysis, 'en-GB')?.platesOnly.rows ?? [];
+      for (const n of NAMES) expect(next.find((r) => r.title === n)?.remembered, n).toBe('Your answer last time');
+      for (const n of extra) expect(next.find((r) => r.title === n)?.remembered ?? null, n).toBeNull();
     });
   }
 });

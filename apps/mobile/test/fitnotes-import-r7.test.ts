@@ -8,13 +8,13 @@ import type { AppServices } from '../src/services/app-services';
 import { createHarness, setUpGym, type Harness } from './harness';
 
 /**
- * Review round 7, end to end on SQLite through the services with the real
- * catalogue, in kg and lb, with "Plates only" for the group:
- * - B1: `Hex Barbell …` / `Trap Barbell …` name the trap bar, never the
- *   Olympic bar, under `Add new` → Barbell, `Use this` and `Choose…`.
- * - B2: a name that says two bar kinds (or `EZ Barbell …` chosen as a
- *   barbell exercise) is asked on its own under `Choose…` and `Use this`,
- *   the same rule `Add new` uses.
+ * Review round 7's names, end to end on SQLite through the services with the
+ * real catalogue, in kg and lb, under the PM decision after review r7: no
+ * group answer ever adds a bar weight, and no word in a name decides that a
+ * bar is added or which. Under `Add new` → Barbell, `Choose…` and `Use
+ * this`, none of these names gets a bar added without Ben's answer for that
+ * exercise; with one, the bar added is the one shown for it (the matched
+ * exercise's own, or the one he chose).
  */
 
 const B2_HEADER = 'Date,Exercise,Category,Weight,Weight Unit,Reps,Distance,Distance Unit,Time,Comment';
@@ -55,8 +55,8 @@ function byKey(d: ImportDraft, key: string): MatchCandidate {
 }
 
 const TRAP_BARBELL = ['Hex Barbell Deadlift', 'Trap Barbell Shrug', 'Hex Barbell Shrug'] as const;
-/** Names that say two bar kinds, or `EZ Barbell`, with the barbell exercise Ben chooses for each. */
-const NOT_THE_OLYMPIC_BAR: readonly (readonly [string, string])[] = [
+/** Names that say two bar kinds, or another bar than the exercise's, with the barbell exercise Ben chooses for each. */
+const CHOSEN: readonly (readonly [string, string])[] = [
   ['EZ Barbell Curl', 'barbell-curl'],
   ['Barbell EZ Curl', 'barbell-curl'],
   ['EZ Barbell Skullcrusher', 'barbell-curl'],
@@ -68,86 +68,65 @@ const NOT_THE_OLYMPIC_BAR: readonly (readonly [string, string])[] = [
   ['Hex Barbell Deadlift', 'barbell-deadlift'],
   ['Trap Barbell Shrug', 'barbell-deadlift'],
 ];
+const R7_NAMES: readonly string[] = [...new Set([...TRAP_BARBELL, ...CHOSEN.map(([n]) => n)])];
 
-describe('review r7 B1: Hex/Trap Barbell names never get the Olympic bar', () => {
+describe('review r7 names under the PM decision after r7: no bar is added without the exercise’s own answer', () => {
   for (const unit of ['kg', 'lb'] as const) {
-    it(`in ${unit}: Add new → Barbell reads the trap bar, whose own weight is added`, async () => {
-      const trap = unit === 'kg' ? 25 : 55;
-      let d = await open([B2_HEADER, ...TRAP_BARBELL.map((n) => line('2026-09-01', n, 100, unit))].join('\n'));
-      for (const n of TRAP_BARBELL) d = await step(d, { kind: 'name', key: nameKey(n), answer: { kind: 'new', equipment: 'barbell' } });
-      d = await step(d, { kind: 'total', answer: 'plates_only' });
-      expect(d.analysis.total?.exercises.map((e) => [e.name, e.known])).toEqual(TRAP_BARBELL.map((n) => [n, true]));
-      expect(d.analysis.total?.bars.filter((b) => b.needed).map((b) => b.bar)).toEqual(['trap_bar']);
+    const olympic = unit === 'kg' ? 20 : 45;
+    const trap = unit === 'kg' ? 25 : 55;
+
+    it(`in ${unit}: Add new → Barbell: every name is stored as written; plates only for one adds the bar shown for it`, async () => {
+      let d = await open([B2_HEADER, ...R7_NAMES.map((n) => line('2026-09-01', n, 100, unit))].join('\n'));
+      for (const n of R7_NAMES) d = await step(d, { kind: 'name', key: nameKey(n), answer: { kind: 'new', equipment: 'barbell' } });
+      // Every one is shown with the Olympic bar of the exercise Add new makes, never a bar read from its words.
+      expect(d.analysis.total?.exercises.map((e) => [e.name, e.bar, e.barChosen, e.override])).toEqual(R7_NAMES.map((n) => [n, 'barbell', false, null]));
+      d = await step(d, { kind: 'total', answer: 'total' });
+      expect(d.analysis.ready).toBe(true);
+      // Ben reads one as plates only and changes its bar to the trap bar: only that one changes.
+      d = await step(d, { kind: 'total_override', key: nameKey('Hex Barbell Deadlift'), answer: 'plates_only' });
+      d = await step(d, { kind: 'total_bar', key: nameKey('Hex Barbell Deadlift'), bar: 'trap_bar' });
       expect(d.analysis.ready).toBe(false);
       d = await step(d, { kind: 'bar_weight', bar: 'trap_bar', unit, value: trap });
-      expect(d.analysis.ready).toBe(true);
-      const loads = await stored(d, `op-r7-b1-${unit}`);
-      for (const n of TRAP_BARBELL) expect(loads.get(n), n).toEqual({ value: 100 + trap, unit, convention: 'total' });
+      const loads = await stored(d, `op-r7-new-${unit}`);
+      for (const n of R7_NAMES) expect(loads.get(n), n).toEqual({ value: n === 'Hex Barbell Deadlift' ? 100 + trap : 100, unit, convention: 'total' });
     });
 
-    it(`in ${unit}: Choose… the trap-bar deadlift reads the trap bar`, async () => {
-      const trap = unit === 'kg' ? 25 : 55;
+    it(`in ${unit}: Choose…: every name is stored as written; plates only shows and adds the chosen exercise's own bar`, async () => {
+      let d = await open([B2_HEADER, ...CHOSEN.map(([n]) => line('2026-09-01', n, 30, unit))].join('\n'));
+      for (const [n, key] of CHOSEN) d = await step(d, { kind: 'name', key: nameKey(n), answer: { kind: 'exercise', exerciseId: byKey(d, key).exerciseId } });
+      expect(d.analysis.total?.exercises.every((e) => e.reading === null && !e.barChosen)).toBe(true);
+      d = await step(d, { kind: 'total', answer: 'total' });
+      expect(d.analysis.ready).toBe(true);
+      // `Olympic EZ Bar Curl` as plates only: the barbell curl's own bar, the Olympic bar, is what is shown and added.
+      d = await step(d, { kind: 'total_override', key: nameKey('Olympic EZ Bar Curl'), answer: 'plates_only' });
+      expect(d.analysis.total?.exercises.find((e) => e.name === 'Olympic EZ Bar Curl')).toMatchObject({ exerciseBar: 'barbell', bar: 'barbell', sample: { imported: 30 + olympic, platesOnly: 30 + olympic } });
+      const loads = await stored(d, `op-r7-choose-${unit}`);
+      for (const [n] of CHOSEN) expect(loads.get(n), n).toEqual({ value: n === 'Olympic EZ Bar Curl' ? 30 + olympic : 30, unit, convention: 'total' });
+    });
+
+    it(`in ${unit}: Choose… the trap-bar deadlift: its trap bar is shown for plates only and its own weight added`, async () => {
       let d = await open([B2_HEADER, line('2026-09-01', 'Hex Barbell Deadlift', 100, unit)].join('\n'));
       d = await step(d, { kind: 'name', key: nameKey('Hex Barbell Deadlift'), answer: { kind: 'exercise', exerciseId: byKey(d, 'trap-bar-deadlift').exerciseId } });
-      d = await step(d, { kind: 'total', answer: 'plates_only' });
+      d = await step(d, { kind: 'total', answer: 'total' });
+      expect(d.analysis.total?.exercises[0]).toMatchObject({ bar: 'trap_bar', reading: 'total' });
+      d = await step(d, { kind: 'total_override', key: nameKey('Hex Barbell Deadlift'), answer: 'plates_only' });
       d = await step(d, { kind: 'bar_weight', bar: 'trap_bar', unit, value: trap });
       expect(d.analysis.ready).toBe(true);
-      expect((await stored(d, `op-r7-b1-trap-${unit}`)).get('Hex Barbell Deadlift')).toEqual({ value: 100 + trap, unit, convention: 'total' });
-    });
-  }
-});
-
-describe('review r7 B2: Choose… and Use this follow the Add new rule for names that say another or a second bar', () => {
-  for (const unit of ['kg', 'lb'] as const) {
-    it(`in ${unit}: Choose… a barbell exercise is asked on its own; "Total" stores the value as entered`, async () => {
-      const names = NOT_THE_OLYMPIC_BAR.map(([n]) => n);
-      let d = await open([B2_HEADER, ...names.map((n) => line('2026-09-01', n, 30, unit))].join('\n'));
-      for (const [n, key] of NOT_THE_OLYMPIC_BAR) d = await step(d, { kind: 'name', key: nameKey(n), answer: { kind: 'exercise', exerciseId: byKey(d, key).exerciseId } });
-      d = await step(d, { kind: 'total', answer: 'plates_only' });
-      expect(d.analysis.total?.exercises.filter((e) => e.known).map((e) => e.name)).toEqual([]);
-      expect(d.analysis.total?.exercises.filter((e) => e.reading === null).map((e) => e.name)).toEqual(names);
-      expect(d.analysis.ready).toBe(false);
-      for (const n of names) d = await step(d, { kind: 'total_override', key: nameKey(n), answer: 'total' });
-      expect(d.analysis.ready).toBe(true);
-      const loads = await stored(d, `op-r7-b2-choose-${unit}`);
-      for (const n of names) expect(loads.get(n), n).toEqual({ value: 30, unit, convention: 'total' });
+      expect((await stored(d, `op-r7-trap-${unit}`)).get('Hex Barbell Deadlift')).toEqual({ value: 100 + trap, unit, convention: 'total' });
     });
 
-    it(`in ${unit}: Use this on a suggestion never gives the Olympic bar`, async () => {
-      const names = NOT_THE_OLYMPIC_BAR.map(([n]) => n);
-      let d = await open([B2_HEADER, ...names.map((n) => line('2026-09-01', n, 30, unit))].join('\n'));
+    it(`in ${unit}: Use this on every suggestion: nothing is stored differently from the file`, async () => {
+      let d = await open([B2_HEADER, ...R7_NAMES.map((n) => line('2026-09-01', n, 30, unit))].join('\n'));
       for (const n of d.analysis.names.filter((x) => x.needsAnswer && x.match.exerciseId)) d = await step(d, { kind: 'name', key: n.key, answer: { kind: 'exercise', exerciseId: n.match.exerciseId ?? '' } });
-      d = await step(d, { kind: 'total', answer: 'plates_only' });
-      const suggestedBarbell = (d.analysis.total?.exercises ?? []).filter((e) => names.includes(e.name));
-      // The suggestion follows the bar the name says; a second bar word leaves the bar asked.
-      const resolved = (n: string) => {
-        const r = d.analysis.names.find((x) => x.name === n)?.resolution;
-        return r?.kind === 'exercise' ? [r.exercise.bar, r.exercise.barKnown] : null;
-      };
-      expect(names.map((n) => [n, resolved(n)])).toEqual([
-        ['EZ Barbell Curl', ['ez_bar', true]],
-        ['Barbell EZ Curl', null],
-        ['EZ Barbell Skullcrusher', ['ez_bar', true]],
-        ['Olympic EZ Bar Curl', ['ez_bar', false]],
-        ['Close Grip EZ Barbell Bench', null],
-        ['Olympic Hex Bar Deadlift', ['trap_bar', false]],
-        ['Barbell Hex Bar Deadlift', ['trap_bar', false]],
-        ['Barbell Trap Bar Deadlift', ['trap_bar', false]],
-        ['Hex Barbell Deadlift', ['trap_bar', true]],
-        ['Trap Barbell Shrug', null],
-      ]);
-      for (const e of suggestedBarbell) {
-        const res = d.analysis.names.find((x) => x.name === e.name)?.resolution;
-        if (res?.kind === 'exercise' && res.exercise.bar === 'barbell') expect(e.known, e.name).toBe(false);
-      }
-      for (const e of suggestedBarbell) if (e.reading === null) d = await step(d, { kind: 'total_override', key: nameKey(e.name), answer: 'total' });
-      for (const b of d.analysis.total?.bars ?? []) for (const u of b.missing) d = await step(d, { kind: 'bar_weight', bar: b.bar, unit: u, value: u === 'kg' ? 10 : 22 });
       for (const n of d.analysis.names.filter((x) => x.needsAnswer)) d = await step(d, { kind: 'name', key: n.key, answer: { kind: 'skip' } });
+      if (d.analysis.total) d = await step(d, { kind: 'total', answer: 'total' });
+      for (const q of d.analysis.bodyweight) d = await step(d, { kind: 'bodyweight', key: q.key, answer: 'added' });
+      if (d.analysis.perHand) d = await step(d, { kind: 'per_hand', answer: 'each' });
+      for (const e of d.analysis.perHand?.exercises ?? []) if (e.reading === null) d = await step(d, { kind: 'per_hand_override', key: e.key, answer: 'one' });
       expect(d.analysis.ready).toBe(true);
-      const olympic = unit === 'kg' ? 20 : 45;
-      const loads = await stored(d, `op-r7-b2-use-${unit}`);
-      for (const [n, load] of loads) if (names.includes(n)) expect(load?.value, n).not.toBe(30 + olympic);
-      expect(loads.get('Close Grip EZ Barbell Bench') ?? null, 'Close Grip EZ Barbell Bench').not.toEqual({ value: 30 + olympic, unit, convention: 'total' });
+      const loads = await stored(d, `op-r7-use-${unit}`);
+      expect(loads.size).toBeGreaterThan(0);
+      for (const [n, load] of loads) expect(load?.value, n).toBe(30);
     });
   }
 });

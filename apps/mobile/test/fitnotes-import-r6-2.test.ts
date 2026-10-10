@@ -10,9 +10,9 @@ import { createHarness, setUpGym, type Harness } from './harness';
 
 /**
  * Review round 6.2, end to end on SQLite through the services, in kg and lb.
- * - B1: `Add new` → Barbell reads the bar from the group answer only when
- *   the name says it (`Barbell`/`BB`/`Olympic`, EZ, trap); every other name
- *   is asked on its own with nothing selected, and "Total" is offered.
+ * - B1 (as decided after review r7): `Add new` → Barbell never gets a bar
+ *   from the group answer, whatever the name says; "Plates only" is chosen
+ *   per exercise from a list that shows its bar and conversion.
  * - N1: the sign-split answer on a stack exercise says "on the stack".
  * - N2: an assisted name on a stack exercise whose values are all 0 is
  *   stored as bodyweight, never a 0 stack load.
@@ -73,40 +73,34 @@ describe('review r6.2 B1: Add new → Barbell never gives the Olympic bar to a n
   const SAID = ['Barbell Upright Row', 'BB Shrug', 'Olympic Bar Good Morning'] as const;
 
   for (const unit of ['kg', 'lb'] as const) {
-    it(`in ${unit}: every other name is asked on its own with nothing selected, and "Total" stores the value as entered`, async () => {
+    it(`in ${unit}: no name gets a bar from the group answer, whatever it says; each is listed with its bar and conversion, nothing selected (PM decision after review r7)`, async () => {
       const olympic = unit === 'kg' ? 20 : 45;
       const all = [...ASKED, ...SAID];
       const raw = (i: number) => 40 + 2 * i;
       let d = await open([B2, ...all.map((n, i) => line('2026-09-01', n, raw(i), unit))].join('\n'));
       for (const n of all) d = await step(d, { kind: 'name', key: nameKey(n), answer: { kind: 'new', equipment: 'barbell' } });
-      d = await step(d, { kind: 'total', answer: 'plates_only' });
-
-      // The group answer reads only the names that say the Olympic bar.
-      const q = d.analysis.total;
-      expect(q?.exercises.filter((e) => e.known).map((e) => e.name)).toEqual([...SAID]);
-      expect(d.analysis.ready).toBe(false);
+      expect(d.analysis.total).toMatchObject({ grouped: all.length, needsGroup: true });
       const view = totalOptions(d.analysis, 'en-GB');
-      const own = view?.ask?.rows ?? [];
-      expect(own.map((r) => r.title)).toEqual([...ASKED]);
-      for (const r of own) {
+      expect(view?.options.map((o) => o.label)).toEqual(['Total as written']);
+      const rows = view?.platesOnly.rows ?? [];
+      expect(rows.map((r) => r.title)).toEqual(all);
+      rows.forEach((r, i) => {
         expect(r.choices.some((c) => c.selected), r.title).toBe(false);
-        expect(r.choices.map((c) => c.label), r.title).toContain('Total');
-        expect(r.conversion, r.title).toMatch(/not answered yet/);
-      }
+        expect(r.choices.map((c) => c.label), r.title).toEqual(['Total as written', 'Plates only']);
+        expect(r.conversion.replaceAll(' ', ' '), r.title).toBe(`If plates only: ${String(raw(i))} ${unit} → ${String(raw(i) + olympic)} ${unit} total (plates + ${String(olympic)} ${unit} bar)`);
+      });
 
-      for (const n of ASKED) d = await step(d, { kind: 'total_override', key: nameKey(n), answer: 'total' });
+      d = await step(d, { kind: 'total', answer: 'total' });
       expect(d.analysis.ready).toBe(true);
       const job = await commit(d, `op-r62-b1-${unit}`);
       const stored = new Map(job.rows.flatMap((r) => (r.imported ? [[r.exerciseName, r.imported.load] as const] : [])));
       all.forEach((n, i) => {
-        const load = stored.get(n);
-        expect(load, n).toEqual({ value: ASKED.includes(n as (typeof ASKED)[number]) ? raw(i) : raw(i) + olympic, unit, convention: 'total' });
+        expect(stored.get(n), n).toEqual({ value: raw(i), unit, convention: 'total' });
       });
 
-      // A later import of the same names: the exercise `Add new` made is that import's answer, not knowledge of its own, so they're asked again.
-      let again = await open([B2, ...all.map((n, i) => line('2026-09-08', n, raw(i), unit))].join('\n'), 'second.csv');
-      again = await step(again, { kind: 'total', answer: 'plates_only' });
-      expect(again.analysis.total?.exercises.filter((e) => !e.known && e.reading === null).map((e) => e.name)).toEqual([...ASKED]);
+      // A later import of the same names: the group answer still reads them; nothing is pre-selected per exercise.
+      const again = await open([B2, ...all.map((n, i) => line('2026-09-08', n, raw(i), unit))].join('\n'), 'second.csv');
+      expect(again.analysis.total?.exercises.filter((e) => e.override === null && e.reading === null).map((e) => e.name)).toEqual(all);
     });
   }
 });
