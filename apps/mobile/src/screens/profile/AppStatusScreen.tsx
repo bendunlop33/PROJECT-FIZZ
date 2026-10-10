@@ -1,11 +1,13 @@
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useState } from 'react';
-import { View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Share, View } from 'react-native';
 
 import { latestVersion, MIGRATIONS } from '@fizz/persistence';
 import { toMs } from '@fizz/domain';
 
+import { clearLastError, readLastError } from '../../diagnostics/crash-capture';
+import { errorOutcome, errorStatusDetail, formatErrorReport } from '../../diagnostics/error-record';
 import { useDataChanged, useLaunchInfo, useScreenData, useServices } from '../../shell/context';
 import { useInstallStatus } from '../../shell/useInstallStatus';
 import { formatWhen } from '../../format/dates';
@@ -38,6 +40,13 @@ export function AppStatusScreen() {
   const install = useInstallStatus();
   const probe = useProbeResults();
   const [checking, setChecking] = useState(false);
+  // The last JS error crash capture recorded (diagnostics/crash-capture.ts), re-read whenever the screen shows.
+  const [lastError, setLastError] = useState(readLastError);
+  useFocusEffect(
+    useCallback(() => {
+      setLastError(readLastError());
+    }, []),
+  );
   const [data] = useScreenData(async (s) => {
     const [backup, counts] = await Promise.all([s.backups.getStatus(), s.yourData.counts()]);
     return { backup, counts, integrity: s.integrity.last() };
@@ -118,6 +127,38 @@ export function AppStatusScreen() {
           text={`Database version ${String(launch.migration.to)} of ${String(latestVersion(MIGRATIONS))}`}
           detail={`SQLite ${launch.sqliteVersion}${launch.migration.applied.length > 0 ? ` · updated this launch from version ${String(launch.migration.from)}` : ''}`}
         />
+      </View>
+
+      <SectionHeader title="Last error" />
+      <View style={{ gap: theme.space['2'] }}>
+        {lastError === null ? (
+          <StatusLine icon="checkmark.circle.fill" tone="done" text="No error recorded" detail="App errors are recorded here. A crash inside iOS or a native module leaves no record." />
+        ) : (
+          <>
+            <StatusLine
+              icon="exclamationmark.triangle"
+              tone="warning"
+              text={`${errorOutcome(lastError)} · ${formatWhen(toMs(lastError.atUtc), nowMs, now.tz)}`}
+              detail={errorStatusDetail(lastError)}
+              action={
+                <TextButton
+                  label="Copy or share"
+                  onPress={() => {
+                    void Share.share({ message: formatErrorReport(lastError) }).catch(() => undefined);
+                  }}
+                />
+              }
+            />
+            <TextButton
+              label="Clear last error"
+              tone="secondary"
+              onPress={() => {
+                clearLastError();
+                setLastError(readLastError());
+              }}
+            />
+          </>
+        )}
       </View>
 
       {capabilityGroups(probe.results, now.tz).map((group) => (

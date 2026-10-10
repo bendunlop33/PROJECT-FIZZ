@@ -4,6 +4,7 @@ import {
   createContainmentScopes,
   createGlobalErrorHandler,
   errorOutcome,
+  errorStatusDetail,
   formatErrorReport,
   MAX_MESSAGE_CHARS,
   MAX_STACK_CHARS,
@@ -67,6 +68,7 @@ describe('error records', () => {
     expect(parseErrorRecord('not json')).toBeNull();
     expect(parseErrorRecord('{"v":2,"message":"a","atUtc":"x"}')).toBeNull();
     expect(parseErrorRecord('null')).toBeNull();
+    expect(parseErrorRecord(JSON.stringify({ ...r, atUtc: 'yesterday' }))).toBeNull();
   });
 
   it('reports in plain text with the outcome', () => {
@@ -78,6 +80,8 @@ describe('error records', () => {
     expect(text).toContain('Error: a');
     expect(errorOutcome({ ...r, containedBy: 'guide' })).toBe('The exercise guide stopped; the app stayed open');
     expect(errorOutcome({ ...r, fatal: false })).toBe('The app stayed open');
+    expect(errorStatusDetail(r)).toBe('on HowTo · build 0.1.0 (84). Error: a');
+    expect(errorStatusDetail({ ...r, screen: null, build: null })).toBe('Error: a');
   });
 });
 

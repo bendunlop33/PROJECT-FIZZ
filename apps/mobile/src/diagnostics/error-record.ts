@@ -17,6 +17,8 @@
  * from Ben's data is added; a message is truncated, never enriched.
  */
 
+import { toMs } from '@fizz/domain';
+
 export const LAST_ERROR_FILE = 'last-error.json';
 export const MAX_MESSAGE_CHARS = 500;
 export const MAX_STACK_CHARS = 4000;
@@ -82,6 +84,7 @@ export function parseErrorRecord(text: string | null): ErrorRecord | null {
   try {
     const j = JSON.parse(text) as Record<string, unknown> | null;
     if (typeof j !== 'object' || j === null || j.v !== 1 || typeof j.message !== 'string' || typeof j.atUtc !== 'string') return null;
+    toMs(j.atUtc); // throws on an unreadable time (App status formats it)
     return {
       v: 1,
       name: str(j.name) ?? 'Error',
@@ -104,6 +107,12 @@ export function errorOutcome(r: ErrorRecord): string {
   if (r.containedBy === 'guide') return 'The exercise guide stopped; the app stayed open';
   if (r.containedBy !== null) return 'Contained; the app stayed open';
   return r.fatal ? 'The app closed' : 'The app stayed open';
+}
+
+/** App status line under the outcome: screen, build, then the error itself. */
+export function errorStatusDetail(r: ErrorRecord): string {
+  const where = [r.screen === null ? null : `on ${r.screen}`, r.build === null ? null : `build ${r.build}`].filter((x) => x !== null).join(' · ');
+  return `${where === '' ? '' : `${where}. `}${r.name}: ${r.message}`;
 }
 
 /** Plain text to copy or send to the developer. */
