@@ -64,7 +64,8 @@ export type RootStackParams = {
   HowTo: { catalogueKey: string; name: string };
   EditSet: { sessionId: string; setId: string };
   /** `back`: opened from history (Progress), so Done goes back there rather than to Today. */
-  Summary: { sessionId: string; back?: boolean };
+  /** `justFinished`: reached by Finish itself; any other visit (Today, Progress) is static. */
+  Summary: { sessionId: string; back?: boolean; justFinished?: boolean };
   AddGym: undefined;
   /** `Start from a past workout` list. */
   PastWorkouts: undefined;

@@ -31,7 +31,7 @@ export function SummaryScreen() {
   const services = useServices();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { sessionId, back = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
+  const { sessionId, back = false, justFinished: finishedNow = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
   const [times, setTimes] = useState(false);
   const [choosePain, setChoosePain] = useState(false);
   const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
@@ -67,9 +67,10 @@ export function SummaryScreen() {
   };
 
   // The finish moment (premium-feel §6): one `haptic.finish` when a just-finished workout's summary
-  // first shows, after the commit. Never on a later visit (`back`), never for a discard (no summary).
+  // first shows, after the commit. Only when Finish itself opened it (review B2): a later visit from Today
+  // or Progress is static. Never for a discard (no summary).
   const endedUtc = data.state === 'ready' ? (data.value.summary?.endedAtUtc ?? null) : null;
-  const [justFinished] = useState(() => !back);
+  const [justFinished] = useState(() => finishedNow);
   const [playedFinish] = useState(() => new Set<string>());
   useEffect(() => {
     if (endedUtc === null) return;
