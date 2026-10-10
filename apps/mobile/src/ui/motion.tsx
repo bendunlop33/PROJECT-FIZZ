@@ -5,8 +5,9 @@ import { MOTION, pressFeedback, recordPulse, timerGlyphs, type FadeRise, type Pr
 
 /**
  * Motion primitives (premium-feel.md §4). React Native's `Animated` with the
- * native driver: opacity and transforms run on the UI thread with no app
- * worklets (ADR 0018), so a motion can't take the logging screen down.
+ * native driver: opacity and transforms run on the UI thread. Chosen over
+ * Reanimated to keep worklet risk off the logging screen (after the build-83
+ * How to crash; ADR 0018 requires guarded worklets, this avoids them).
  * Nothing here delays a write or blocks a tap; under Reduce Motion each one
  * becomes what `theme/motion.ts` says.
  */
@@ -61,8 +62,10 @@ export function FadeIn({ motion, children, style, easing = 'out' }: { motion: Fa
     };
     // Plays once per mount.
   }, []);
+  // Reduce Motion switched on mid-way finishes it at once. Not at mount: the reduced fade (`swapMotion(true)`) plays (review N2).
+  const reduceAtMount = useRef(theme.a11y.reduceMotion);
   useEffect(() => {
-    if (theme.a11y.reduceMotion) {
+    if (theme.a11y.reduceMotion && !reduceAtMount.current) {
       progress.stopAnimation();
       progress.setValue(1);
     }
@@ -141,8 +144,8 @@ export function TimerNumeral({ text, accessibilityLabel, color = 'text.primary',
   return (
     <View accessible accessibilityRole="text" accessibilityLabel={accessibilityLabel} style={{ flexDirection: 'row', justifyContent: 'center' }}>
       {glyphs.map((g, i) => (
-        // Keyed by place, so a slot keeps its glyph component and only fades when its own character changes.
-        <Glyph key={`${String(glyphs.length)}:${String(i)}`} char={g.char} changed={g.changed} textStyle={textStyle} color={theme.colors[color]} />
+        // Keyed by place from the right, so `10:00 → 9:59` keeps the slots it shares and each cross-fades (review N1).
+        <Glyph key={String(glyphs.length - i)} char={g.char} changed={g.changed} textStyle={textStyle} color={theme.colors[color]} />
       ))}
     </View>
   );

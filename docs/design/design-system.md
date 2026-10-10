@@ -370,7 +370,7 @@ Rules:
 
 - The timer updates once per second with no tick sound. Only the glyphs that changed cross-fade (`motion.digit`); tabular numerals keep every glyph in place. It never shows a progress ring.
 
-**Motion tokens (revision 2026-10-10, premium-feel.md §4.1).** Proposed; Ben to approve. All at or under 200 ms except `motion.finish` (exception 1 to principle 5, once per workout) and `motion.recordPulse` (exception 3, once per record). Driven by React Native's `Animated` with the native driver (no app worklets, ADR 0018). Every motion is removed or reduced under Reduce Motion (premium-feel.md §4.5) and never delays a write.
+**Motion tokens (revision 2026-10-10, premium-feel.md §4.1).** Proposed; Ben to approve. All at or under 200 ms except `motion.finish` (exception 1 to principle 5, once per workout) and `motion.recordPulse` (exception 3, once per record). Driven by React Native's `Animated` with the native driver, chosen to keep worklet risk off the logging screen (ADR 0018 allows guarded worklets; this avoids them). Every motion is removed or reduced under Reduce Motion (premium-feel.md §4.5) and never delays a write.
 
 | Token | Value |
 |---|---|

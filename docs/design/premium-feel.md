@@ -333,7 +333,7 @@ It opens a half sheet:
 
 ## 4. Motion
 
-Principle 5 in design-system.md ("Motion stays quiet… at most 200 ms") **still holds**, with the three marked exceptions below. **Ben approves these before they're merged into design-system.md §6.** Every motion is driven by `react-native-reanimated` on the UI thread. It never delays a write, and the write never waits for an animation.
+Principle 5 in design-system.md ("Motion stays quiet… at most 200 ms") **still holds**, with the three marked exceptions below. **Ben approves these before they're merged into design-system.md §6.** Every motion runs on the UI thread through React Native's `Animated` with the native driver (as built; chosen over Reanimated to keep worklet risk off the logging screen after the build-83 How to crash). It never delays a write, and the write never waits for an animation.
 
 ### 4.1 Proposed tokens (to merge into design-system.md §6 and `theme/tokens.ts` `MOTION`)
 
@@ -369,7 +369,7 @@ Principle 5 in design-system.md ("Motion stays quiet… at most 200 ms") **still
 - **Log → Rest.** After a successful log: `haptic.commit` → the Log label becomes `Saved` (existing guard) → the editor cross-fades into the rest block (`motion.swap`). The new done row in the set list enters with `motion.listEnter`.
 - **Rest end → Ready.** At the deadline (foreground): `haptic.restEnd` → `REST` becomes `READY` with a digit cross-fade to `0:00` → after 600 ms, `motion.swap` to the set editor. Skip uses the same swap with no haptic delay.
 - **Countdown numeral.** It still updates once a second (design-system §6). Only glyphs that changed cross-fade (`motion.digit`), so `1:21 → 1:20` animates one digit. Tabular numerals mean no glyph moves sideways, so principle 2 ("numbers never move") holds. ±30 s changes cross-fade the whole numeral once. There's no tick sound and no colour change in the last 10 s.
-- **Lists.** Rows animate only when they're **added after the first draw** (a logged set, `+2 more`, a coach card). They never animate on screen entry, refresh or scroll. Reordering uses `LinearTransition` at 180 ms.
+- **Lists.** Rows animate only when they're **added after the first draw** (a logged set, `+2 more`, a coach card). They never animate on screen entry, refresh or scroll. Reordering isn't animated (no `LinearTransition` without Reanimated).
 - **Loading.** No shimmer (unchanged). Placeholders follow `timing.placeholderDelay`.
 - **Not animated:** charts, sparklines, numbers in rows and totals (no count-up), the week strip, banners, tab switches.
 
