@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { isProposalStale, NBSP } from '@fizz/domain';
 
+import { cardIsStale, logGuardAfterSwitch, onGymChosen, reviewSheetView, switchCardView, switchedToast, undoneToast, type OpenSwitchCard } from '../src/workout/gym-switch-card';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -162,5 +163,87 @@ describe('gym switch through the services', () => {
     expect(atMain?.notes).toEqual([]);
     expect(atHotel?.notes.map((n) => plain(n.text))).toEqual(['Capped: the most here is 25 kg each. Last time 32.5 kg each.']);
     expect(await s.sessions.active()).toBeNull();
+  });
+});
+
+describe('the switch card on screen (gym-switch §2.2–§3.3)', () => {
+  it('Ready: Checks · Today only, Not now and Switch; Applying disables both; a write error offers Try again with the same opId', async () => {
+    const { s, hotelId, sessionId } = await setUp();
+    const p = await s.gymSwitch.propose(sessionId, hotelId);
+    const data = await s.workout.load(sessionId);
+    if (!p || !data) throw new Error('no proposal');
+    const card: OpenSwitchCard = { proposal: p, opId: 'op-1', status: 'ready' };
+    const v = switchCardView(card, data.aggregate);
+    expect(v.title).toBe('Switch to Hotel · Lisbon');
+    expect(v.tags).toEqual(['Checks', 'Today only']);
+    expect(v.notChanged).toEqual(['1 logged set stays as it is.']);
+    expect(v.buttons.map((b) => b.label)).toEqual(['Not now', 'Switch']);
+    expect(v.status).toBeNull();
+    const applying = switchCardView({ ...card, status: 'applying' }, data.aggregate);
+    expect(applying.buttons).toEqual([
+      { id: 'not_now', label: 'Not now', disabled: true },
+      { id: 'switch', label: 'Switching…', disabled: true },
+    ]);
+    const failed = switchCardView({ ...card, status: 'error' }, data.aggregate);
+    expect(failed.status).toEqual({ tone: 'warning', text: 'Couldn’t switch gym. Nothing changed.' });
+    expect(failed.buttons.at(-1)).toEqual({ id: 'try_again', label: 'Try again' });
+  });
+
+  it('Out of date after a set is logged: Switch hidden, Dismiss and Check again; tapping another set or editing a draft does not', async () => {
+    const { s, hotelId, sessionId } = await setUp();
+    const p = await s.gymSwitch.propose(sessionId, hotelId);
+    const data = await s.workout.load(sessionId);
+    if (!p || !data) throw new Error('no proposal');
+    const card: OpenSwitchCard = { proposal: p, opId: 'op-2', status: 'ready' };
+    // Choosing another pending set isn't a change to what the card changes (GS7).
+    const other = data.aggregate.sets.find((x) => x.status === 'pending' && x.id !== data.aggregate.session.activeSetId);
+    if (!other) throw new Error('no other set');
+    const moved = await s.workout.dispatch(sessionId, { type: 'set_active_set', at: h.now(), opId: 'active-1', setId: other.id, expectedVersion: data.aggregate.session.version });
+    if (!moved.ok) throw new Error(moved.error.message);
+    expect(cardIsStale(card, moved.aggregate)).toBe(false);
+    const fresh = await s.workout.load(sessionId);
+    if (!fresh) throw new Error('no workout');
+    const v = s.workout.view(fresh, h.clockMs, null);
+    h.clockMs += 60_000;
+    const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: v.focus?.opId ?? '', setId: v.focus?.setId ?? '', values: v.focus?.logValues ?? { load: null, reps: 8, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
+    if (!logged.ok) throw new Error(logged.error.message);
+    const stale = switchCardView(card, logged.aggregate);
+    expect(stale.status?.text).toBe('Out of date. Your workout changed since this was checked.');
+    expect(stale.buttons.map((b) => b.id)).toEqual(['dismiss', 'check_again']);
+    expect(stale.tags).toBeNull();
+    expect(stale.muted).toBe(true);
+    // The reducer refuses it too, by tap or voice (rule 5).
+    const refused = await s.gymSwitch.apply(p, 'op-2');
+    expect(refused.ok).toBe(false);
+  });
+
+  it('toasts, gym choice and the Log guard', async () => {
+    const { s, mainId, hotelId, sessionId } = await setUp();
+    const p = await s.gymSwitch.propose(sessionId, hotelId);
+    if (!p) throw new Error('no proposal');
+    expect(switchedToast(p)).toBe('Switched to Hotel · Lisbon. Remaining sets updated for today.');
+    const same = await s.gymSwitch.propose(sessionId, mainId);
+    if (!same) throw new Error('no proposal');
+    expect(same.card.title).toBe('Use updated Main Gym');
+    expect(switchedToast(same)).toBe('Using updated Main Gym. No targets changed.');
+    expect(undoneToast('Main Gym')).toBe('Back at Main Gym. Remaining sets restored.');
+    expect(onGymChosen(mainId, mainId)).toBe('dismiss');
+    expect(onGymChosen(mainId, hotelId)).toBe('propose');
+    expect(logGuardAfterSwitch('Log 100 kg × 8', 'Log 100 kg × 8')).toBe(false);
+    expect(logGuardAfterSwitch('Log 100 kg × 8', 'Enter load')).toBe(true);
+  });
+
+  it('5 or more change lines: 3 on the card and Review all N changes; Switch only on the review sheet', async () => {
+    const { s, hotelId, sessionId } = await setUp();
+    const p = await s.gymSwitch.propose(sessionId, hotelId);
+    const data = await s.workout.load(sessionId);
+    if (!p || !data) throw new Error('no proposal');
+    const many = { ...p, card: { ...p.card, lines: [...p.card.lines, ...p.card.lines, ...p.card.lines], visibleLines: 3, reviewLabel: 'Review all 6 changes ›' } };
+    const card: OpenSwitchCard = { proposal: many, opId: 'op-3', status: 'ready' };
+    const v = switchCardView(card, data.aggregate);
+    expect(v.lines).toHaveLength(3);
+    expect(v.buttons.map((b) => b.id)).toEqual(['not_now', 'review']);
+    expect(reviewSheetView(card).lines).toHaveLength(6);
+    expect(reviewSheetView(card).action).toBe('Switch');
   });
 });

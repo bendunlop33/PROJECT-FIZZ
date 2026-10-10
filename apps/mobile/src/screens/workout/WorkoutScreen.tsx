@@ -15,7 +15,7 @@ import { formatDayMonth, formatTime } from '../../format/dates';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
-import type { ActiveWorkoutData } from '../../services/workout-services';
+import type { ActiveWorkoutData, GymChoice } from '../../services/workout-services';
 import { firstTime, useDataChanged, useLaunchInfo, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import {
@@ -43,6 +43,8 @@ import { exerciseMenu } from '../../workout/exercise-menu';
 import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
+import { GymChip, GymPartDivider, GymReviewSheet, GymSwitchCard, GymSwitcherSheet, SnapNote } from './GymSwitch';
+import { logGuardAfterSwitch, onGymChosen, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
 import { painClearConfirm } from '../../workout/pain-clear';
 import { editorShown, enterAction, isResting, type EntryField } from '../../workout/rest-fold';
 
@@ -92,6 +94,11 @@ export function WorkoutScreen() {
   const [permission, setPermission] = useState<AlertPermission | 'unknown'>('unknown');
   const [askLater, setAskLater] = useState(false);
   const [restoredDraft, setRestoredDraft] = useState<string | null>(null);
+  /** Gym switch (gym-switch.md): the switcher sheet's rows, the open card, its review sheet. */
+  const [gymSheet, setGymSheet] = useState<GymChoice[] | null | 'closed'>('closed');
+  const [switchCard, setSwitchCard] = useState<OpenSwitchCard | null>(null);
+  const [checkingGym, setCheckingGym] = useState<string | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const played = useRef(new Set<string>());
   const [afterDismiss] = useState(() => createAfterDismiss());
   const tickedFor = useRef<string | null>(null);
@@ -427,10 +434,125 @@ export function WorkoutScreen() {
   }
 
   async function addSet(sessionExerciseId: string) {
-    const r = await run({ type: 'add_set', at: services.now(), opId: newUuid(), sessionExerciseId, newSetId: newUuid(), setType: null });
+    // Through the service: after a gym switch the set goes on the current gym's equipment, fitted (gym-switch §4.3).
+    const r = await services.workout.addSet({ sessionId: session.id, sessionExerciseId, opId: newUuid(), newSetId: newUuid() });
+    if (!r.ok) {
+      showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' || r.error.code === 'write_conflict' ? 'The workout changed. Try again.' : `Set wasn’t added: ${r.error.message}` });
+      void reload();
+      return;
+    }
+    setData({ ...loaded, aggregate: r.aggregate });
+    changed();
+    const added = r.aggregate.sets.find((x) => !loaded.aggregate.sets.some((y) => y.id === x.id));
+    const v = services.workout.view({ ...loaded, aggregate: r.aggregate }, clockNow(), null);
+    const n = v.focus?.rows.find((row) => row.setId === added?.id)?.number ?? r.aggregate.sets.filter((x) => x.sessionExerciseId === sessionExerciseId && x.status !== 'deleted').length;
+    showToast({ text: `Set ${String(n)} added` });
+  }
+
+  // ---- Gym switch (gym-switch.md §4) ----
+
+  function openGymSheet() {
+    setGymSheet(null);
+    void services.gymSwitch
+      .gyms(session.id)
+      .then(setGymSheet)
+      .catch(() => {
+        setGymSheet([]);
+      });
+  }
+
+  async function proposeGym(gymId: string, gymName: string) {
+    setCheckingGym(gymName);
+    try {
+      const p = await services.gymSwitch.propose(session.id, gymId);
+      // A new card replaces an open one (§3.1 Replaced); a new opId per card.
+      setSwitchCard(p ? { proposal: p, opId: newUuid(), status: 'ready' } : null);
+      if (!p) showToast({ icon: 'info.circle', text: 'Couldn’t check that gym. Nothing changed.' });
+    } catch {
+      showToast({ icon: 'info.circle', text: 'Couldn’t check that gym. Nothing changed.' });
+    } finally {
+      setCheckingGym(null);
+    }
+  }
+
+  function chooseGym(g: GymChoice) {
+    setGymSheet('closed');
+    if (onGymChosen(session.gymId, g.id) === 'dismiss') {
+      setSwitchCard(null);
+      return;
+    }
+    void proposeGym(g.id, g.name);
+  }
+
+  async function applySwitch(card: OpenSwitchCard) {
+    if (card.status === 'applying') return;
+    const labelBefore = view?.primary.label ?? '';
+    setSwitchCard({ ...card, status: 'applying' });
+    let r: CommandOutcome;
+    try {
+      r = await services.gymSwitch.apply(card.proposal, card.opId);
+    } catch (e) {
+      r = { ok: false, error: { code: 'write_failed', message: e instanceof Error ? e.message : String(e) } };
+    }
+    if (!r.ok) {
+      // A write error keeps the card for `Try again` (same opId); anything else shows it Out of date.
+      setSwitchCard({ ...card, status: r.error.code === 'write_failed' ? 'error' : 'ready' });
+      void reload();
+      return;
+    }
+    setSwitchCard(null);
+    setReviewOpen(false);
+    // GS12: an unsaved edit the new equipment can't make is replaced by the new target.
+    if (edits !== null && card.proposal.draftsToReplace.includes(edits.setId)) setEdits(null);
+    changed();
+    const fresh = await reload();
+    const after = fresh ? services.workout.view(fresh, clockNow(), null).primary.label : labelBefore;
+    if (logGuardAfterSwitch(labelBefore, after)) {
+      setGuard(true);
+      setTimeout(() => {
+        setGuard(false);
+      }, TIMING.valueChangeGuard);
+    }
+    showToast({
+      text: switchedToast(card.proposal),
+      action: 'Undo',
+      onAction: () => void undoSwitch(card.proposal.actionId),
+    });
+  }
+
+  async function undoSwitch(actionId: string) {
+    setToast(null);
+    const r = await services.gymSwitch.undo(session.id, `undo-gym:${actionId}`);
     if (r.ok) {
-      const n = r.aggregate.sets.filter((s) => s.sessionExerciseId === sessionExerciseId && s.status !== 'deleted').length;
-      showToast({ text: `Set ${String(n)} added` });
+      haptic('undo');
+      changed();
+      await reload();
+      showToast({ icon: 'info.circle', text: undoneToast(r.gymName) });
+      return;
+    }
+    showToast({ icon: 'info.circle', text: r.message });
+    // Never a silent revert: a `Switch back to …` card instead (§4.5).
+    if (r.back) setSwitchCard({ proposal: r.back, opId: newUuid(), status: 'ready' });
+  }
+
+  function onCardButton(id: CardButton) {
+    const card = switchCard;
+    if (!card) return;
+    switch (id) {
+      case 'not_now':
+      case 'dismiss':
+        setSwitchCard(null);
+        return;
+      case 'check_again':
+        void proposeGym(card.proposal.toGymId, card.proposal.toGymName);
+        return;
+      case 'review':
+        setReviewOpen(true);
+        return;
+      case 'switch':
+      case 'try_again':
+        void applySwitch(card);
+        return;
     }
   }
 
@@ -589,6 +711,14 @@ export function WorkoutScreen() {
       </Card>
     ) : null;
 
+  /** The coach slot's gym card (§2.1): under the rest timer, under the target lines, or under the all-done block. */
+  const switchSlot =
+    checkingGym !== null ? (
+      <StatusLine icon="ellipsis" tone="progress" text={`Checking ${checkingGym}’s equipment…`} />
+    ) : switchCard ? (
+      <GymSwitchCard view={switchCardView(switchCard, loaded.aggregate)} onButton={onCardButton} />
+    ) : null;
+
   const restPanel =
     resting ? (
       <View style={{ gap: theme.space['5'] }}>
@@ -610,6 +740,7 @@ export function WorkoutScreen() {
             if (rest.kind === 'running') void run({ type: 'skip_rest', at: services.now(), opId: `skip:${rest.timerId}:${String(rest.timerVersion)}`, timerId: rest.timerId });
           }}
         />
+        {switchSlot}
         {view.justSaved ? (
           <RuledSection>
             {savedLine}
@@ -744,6 +875,7 @@ export function WorkoutScreen() {
             </AppText>
           </AppText>
         </LinkLine>
+        {focus.snapNote ? <SnapNote note={focus.snapNote} /> : null}
         {focus.plateLine ? (
           <AppText variant="callout" color="text.tertiary" numeric accessibilityLabel={`Plates: ${focus.plateLine}`}>
             {focus.plateLine}
@@ -807,6 +939,7 @@ export function WorkoutScreen() {
             </ChipRow>
           )
         ) : null}
+        {resting ? null : switchSlot}
       </View>
 
       <View>
@@ -814,19 +947,22 @@ export function WorkoutScreen() {
           <Eyebrow>Sets</Eyebrow>
         </View>
         {focus.rows.map((r, i) => (
-          <SetRowLine
-            key={r.setId}
-            status={r.status}
-            number={r.number}
-            badges={r.badges}
-            text={r.text}
-            edited={r.edited}
-            last={i === focus.rows.length - 1}
-            onPress={() => {
-              if (r.status === 'done') navigation.navigate('EditSet', { sessionId: session.id, setId: r.setId });
-              if (r.status === 'pending') void run({ type: 'set_active_set', at: services.now(), opId: newUuid(), setId: r.setId, expectedVersion: session.version });
-            }}
-          />
+          <View key={r.setId}>
+            {r.partStart !== null ? <GymPartDivider label={r.partStart} /> : null}
+            <SetRowLine
+              status={r.status}
+              number={r.number}
+              badges={r.badges}
+              text={r.text}
+              caption={r.gymCaption}
+              edited={r.edited}
+              last={i === focus.rows.length - 1}
+              onPress={() => {
+                if (r.status === 'done') navigation.navigate('EditSet', { sessionId: session.id, setId: r.setId });
+                if (r.status === 'pending') void run({ type: 'set_active_set', at: services.now(), opId: newUuid(), setId: r.setId, expectedVersion: session.version });
+              }}
+            />
+          </View>
         ))}
       </View>
 
@@ -876,6 +1012,8 @@ export function WorkoutScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: theme.space['5'], paddingTop: theme.space['3'], gap: theme.space['5'], paddingBottom: theme.space['4'] }} keyboardShouldPersistTaps="handled">
+        {/* Workout status row: the gym this workout is at (gym-switch §2.1). Keypad drafts are kept. */}
+        <GymChip gymName={loaded.gymName} onPress={openGymSheet} />
         {view.paused ? <Banner severity="warning" text="Workout paused. Timers are stopped." /> : null}
         {banners.map((b) => (
           <Banner key={b.key} severity={b.severity} text={b.text} />
@@ -884,6 +1022,7 @@ export function WorkoutScreen() {
         {view.phase === 'empty' ? (
           <View style={{ paddingTop: theme.space['4'] }}>
             <HeroHeader size="screen" eyebrow="Empty workout" title="Add your first exercise" lines={['Common lifts are at the top. Each one starts with 3 sets; add or remove sets as you go.']} />
+            {resting ? null : switchSlot}
           </View>
         ) : null}
 
@@ -951,6 +1090,7 @@ export function WorkoutScreen() {
                 />
               )}
             </View>
+            {resting ? null : switchSlot}
           </View>
         ) : null}
       </ScrollView>
@@ -1010,6 +1150,23 @@ export function WorkoutScreen() {
           }}
         />
       ) : null}
+      <GymSwitcherSheet
+        visible={gymSheet !== 'closed'}
+        gyms={gymSheet === 'closed' ? null : gymSheet}
+        onChoose={chooseGym}
+        onClose={() => {
+          setGymSheet('closed');
+        }}
+      />
+      <GymReviewSheet
+        card={reviewOpen ? switchCard : null}
+        onSwitch={() => {
+          if (switchCard) void applySwitch(switchCard);
+        }}
+        onClose={() => {
+          setReviewOpen(false);
+        }}
+      />
       <StartTimeSheet
         visible={timesOpen}
         data={loaded}
@@ -1053,6 +1210,7 @@ function SetRowLine({
   number,
   badges,
   text,
+  caption = null,
   edited,
   last,
   onPress,
@@ -1061,6 +1219,8 @@ function SetRowLine({
   number: number;
   badges: string[];
   text: string;
+  /** A done set from another gym: that gym's name, right-aligned (gym-switch §2.5). */
+  caption?: string | null;
   edited: boolean;
   last: boolean;
   onPress: () => void;
@@ -1089,7 +1249,7 @@ function SetRowLine({
   return (
     <Pressable
       accessibilityRole={tappable ? 'button' : 'text'}
-      accessibilityLabel={`Set ${String(number)}${badges.length ? ` ${badges.join(' ')}` : ''}, ${STATUS_WORD[status]}, ${text}${edited ? ', edited' : ''}`}
+      accessibilityLabel={`Set ${String(number)}${badges.length ? ` ${badges.join(' ')}` : ''}, ${STATUS_WORD[status]}, ${text}${caption !== null ? `, at ${caption}` : ''}${edited ? ', edited' : ''}`}
       accessibilityHint={status === 'done' ? 'Edit or delete this set' : status === 'pending' ? 'Make this the current set' : undefined}
       disabled={!tappable}
       onPress={onPress}
@@ -1119,6 +1279,11 @@ function SetRowLine({
       {effort ? (
         <AppText variant="callout" numeric color="text.tertiary">
           {effort.trim()}
+        </AppText>
+      ) : null}
+      {caption !== null ? (
+        <AppText variant="callout" color="text.secondary" numberOfLines={1}>
+          {caption}
         </AppText>
       ) : null}
       {edited ? <Icon name="pencil" size={14} color="text.tertiary" /> : null}
