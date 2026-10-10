@@ -1,4 +1,4 @@
-import { EquipmentInstanceSchema, validate, type EquipmentInstance, type PlateCount, type WeightUnit } from '@fizz/schemas';
+import { EquipmentInstanceSchema, validate, type EquipmentInstance, type Gym, type PlateCount, type WeightUnit } from '@fizz/schemas';
 import { formatNumber } from './display';
 import { buildPlateSetup, getAchievableLoads } from './equipment';
 import { fromScaled, toScaled } from './units';
@@ -331,4 +331,28 @@ export function equipmentRowLine(eq: EquipmentInstance): string {
     case 'assisted_stack':
       return `Assist ${span}`;
   }
+}
+
+/**
+ * `selectGym` (workout-overview §6): the chosen gym becomes the one default
+ * (selected) gym; every other default is cleared. Pure: returns the versioned
+ * writes. Already selected and the only default: no writes. Archived or
+ * unknown gyms can't be selected.
+ */
+export function selectDefaultGym(
+  gyms: readonly Gym[],
+  gymId: string,
+  atUtc: string,
+): { kind: 'not_found' } | { kind: 'select'; previousGymId: string | null; writes: { next: Gym; expectedVersion: number }[] } {
+  const live = gyms.filter((g) => g.archivedAtUtc === undefined);
+  const chosen = live.find((g) => g.id === gymId);
+  if (!chosen) return { kind: 'not_found' };
+  const previous = live.find((g) => g.isDefault) ?? live[0] ?? null;
+  const writes: { next: Gym; expectedVersion: number }[] = [];
+  for (const g of gyms) {
+    const want = g.id === gymId;
+    if (g.isDefault === want) continue;
+    writes.push({ next: { ...g, isDefault: want, version: g.version + 1, updatedAtUtc: atUtc }, expectedVersion: g.version });
+  }
+  return { kind: 'select', previousGymId: previous?.id ?? null, writes };
 }

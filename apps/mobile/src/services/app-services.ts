@@ -28,14 +28,14 @@ import {
   type RecordCounts,
   type SqliteRepositories,
 } from '@fizz/persistence';
-import type { EquipmentInstance, Exercise, Gym, SessionAggregate, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Gym, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
 import type { RestAlertController } from '../alerts/rest-alerts';
 import { createBackupService, type BackupFileStore, type TextFile } from '../backup/backup-service';
 import { createRestoreService } from '../backup/restore-service';
 import { createImportService } from '../import/import-service';
 import { createGymServices } from './gym-services';
-import { createWorkoutServices } from './workout-services';
+import { createWorkoutServices, STALE_PREVIEW, type OverviewStartOf, type OverviewTarget, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, type SetupStep } from './setup';
 
 /**
@@ -396,7 +396,57 @@ export function createAppServices(deps: AppServicesDeps) {
   });
 
   /** Gyms and equipment (Your data): the minimal gym editor. */
-  const gyms = createGymServices({ repos, now: deps.now, profile: getProfile });
+  const gyms = createGymServices({ repos, store: () => deps.manager.store, now: deps.now, profile: getProfile });
+
+  /**
+   * The typical gym `Start` will save when there is no gym yet (audit B4), as
+   * equipment in memory only, so the overview previews what Start creates
+   * (workout-overview §8 `No gym`). Nothing is written. IDs are derived, so
+   * the same preview twice gives the same rows.
+   */
+  async function typicalEquipment(): Promise<EquipmentInstance[] | null> {
+    const profile = await getProfile();
+    if (!profile) return null;
+    const draft = buildPresetDraft('commercial', profile.preferredUnit);
+    let n = 0;
+    const made = materialiseGymDraft(
+      { ...draft, items: draft.items.map((i) => ({ ...i, ticked: true })) },
+      { name: 'Main gym', ownerId: profile.id, gymId: deriveId(`typical-gym-preview:${profile.id}`), isDefault: true, atUtc: deps.now().utc, newId: () => deriveId(`typical-gym-preview:item:${String((n += 1))}`) },
+    );
+    return made.ok ? made.equipment : null;
+  }
+
+  /**
+   * The Workout overview (workout-overview.md): load, Why?, and Start. With no
+   * gym, the rows are fitted to the typical gym, and Start saves it (after the
+   * stale check) before starting, as Today's Start always has.
+   */
+  const overview = {
+    async load(req: { target: OverviewTarget; gymId: string | null; checkInId?: string | null }) {
+      const typical = req.gymId === null ? await typicalEquipment().catch(() => null) : null;
+      if (req.gymId === null && typical === null) return null;
+      return loop.overview.load({ ...req, ...(typical ? { typicalEquipment: typical } : {}) });
+    },
+    async explain(req: { target: OverviewTarget; gymId: string | null; checkInId?: string | null; sessionExerciseId: string }) {
+      const typical = req.gymId === null ? await typicalEquipment().catch(() => null) : null;
+      return loop.overview.explain({ ...req, ...(typical ? { typicalEquipment: typical } : {}) });
+    },
+    /**
+     * `Start workout` on the overview: one session, idempotent by `opId`
+     * (minted at the first tap and reused for every retry), checked against
+     * `expectedPreviewKey` first (a mismatch creates nothing).
+     */
+    async start(req: { startOf: OverviewStartOf; gymId: string | null; opId: string; checkIn: SessionCheckIn | null; expectedPreviewKey: string }): Promise<WorkoutStartOutcome> {
+      const base = { opId: req.opId, checkIn: req.checkIn, ...(req.startOf.routineOf !== undefined ? { routineOf: req.startOf.routineOf } : { nextOf: req.startOf.nextOf }) };
+      if (req.gymId !== null) return loop.workout.start({ ...base, gymId: req.gymId, expectedPreviewKey: req.expectedPreviewKey });
+      const profile = await getProfile();
+      if (!profile) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
+      if (await loop.workout.previewIsStale(profile, { ...req, gymId: null })) return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
+      const made = await setup.useTypicalGym();
+      if (!made.ok || made.gymId === undefined) return { ok: false, error: { code: 'write_failed', message: made.ok ? 'Couldn’t set up a gym. Try again.' : made.message } };
+      return loop.workout.start({ ...base, gymId: made.gymId });
+    },
+  };
 
   /** FitNotes import (Your data): preview, answers, commit, Undo import, past imports. */
   const imports = createImportService({
@@ -413,6 +463,7 @@ export function createAppServices(deps: AppServicesDeps) {
 
   return {
     ...loop,
+    overview,
     gyms,
     imports,
     yourData,

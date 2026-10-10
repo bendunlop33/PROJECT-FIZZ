@@ -130,6 +130,8 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       /** "Start next session" (audit B2): next targets per exercise ID, and a name. */
       targets?: RepeatInput['targets'];
       name?: string;
+      /** Preview only: fit to this equipment instead of the gym's (the typical gym Start will save, workout-overview §8). */
+      gymEquipment?: readonly EquipmentInstance[];
     },
   ): Promise<
     | { ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; notCopied: RepeatOutput['notCopied']; duplicate: boolean; fits: Record<string, SetFit> }
@@ -165,7 +167,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       gymId: req.gymId,
       source,
       exercises,
-      gymEquipment: await repos.equipment.listByGym(req.gymId),
+      gymEquipment: req.preview && req.gymEquipment ? req.gymEquipment : await repos.equipment.listByGym(req.gymId),
       at: req.at,
       newId,
       checkIn: req.checkIn ?? null,
@@ -187,7 +189,13 @@ export function createSessionService(repos: Repositories, newId: () => string) {
    * `preview: true` builds it without saving (the routine sheet, Today).
    */
   async function startRoutine(
-    req: Omit<StartRequest, 'routineId'> & { routineId: string; preview?: boolean; targets?: RoutineStartInput['targets'] },
+    req: Omit<StartRequest, 'routineId'> & {
+      routineId: string;
+      preview?: boolean;
+      targets?: RoutineStartInput['targets'];
+      /** Preview only: fit to this equipment instead of the gym's (workout-overview §8, no gym yet). */
+      gymEquipment?: readonly EquipmentInstance[];
+    },
   ): Promise<{ ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; duplicate: boolean; fits: Record<string, SetFit> } | { ok: false; error: ServiceError | { code: 'nothing_to_start'; message: string } }> {
     if (!req.preview) {
       const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
@@ -215,7 +223,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       gymId: req.gymId,
       routine,
       exercises,
-      gymEquipment: await repos.equipment.listByGym(req.gymId),
+      gymEquipment: req.preview && req.gymEquipment ? req.gymEquipment : await repos.equipment.listByGym(req.gymId),
       knownEquipment,
       at: req.at,
       newId,
