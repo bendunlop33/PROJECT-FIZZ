@@ -44,7 +44,7 @@ import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { FinishSheet } from './FinishSheet';
 import { GymChip, GymPartDivider, GymReviewSheet, GymSwitchCard, GymSwitcherSheet, SnapNote } from './GymSwitch';
-import { afterSwitchRefused, logBlockedBySwitch, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
+import { afterSwitchRefused, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
 import { painClearConfirm } from '../../workout/pain-clear';
 import { editorShown, enterAction, isResting, type EntryField } from '../../workout/rest-fold';
 
@@ -480,7 +480,7 @@ export function WorkoutScreen() {
       });
   }
 
-  async function proposeGym(gymId: string, gymName: string) {
+  async function proposeGym(gymId: string, gymName: string, fromReviewSheet = false) {
     // The change cap is known before any card is built: say so instead of a card whose Switch can't work (review r2 M1).
     const refusal = gymSwitchRefusal(session);
     if (refusal !== null) {
@@ -492,8 +492,9 @@ export function WorkoutScreen() {
     setCheckingGym(gymName);
     try {
       const p = await services.gymSwitch.propose(session.id, gymId);
-      // A new card replaces an open one (§3.1 Replaced); a new opId per card.
-      setReviewOpen(false);
+      // A new card replaces an open one (§3.1 Replaced); a new opId per card. `Check again` on the
+      // review sheet keeps it open when the new card still needs it (review r2 N3).
+      setReviewOpen(reviewOpenAfterCheckAgain(fromReviewSheet, p));
       setSwitchCard(p ? { proposal: p, opId: newUuid(), status: 'ready' } : null);
       if (!p) showToast({ icon: 'info.circle', text: 'Couldn’t check that gym. Nothing changed.' });
     } catch {
@@ -579,7 +580,7 @@ export function WorkoutScreen() {
         setSwitchCard(null);
         return;
       case 'check_again':
-        void proposeGym(card.proposal.toGymId, card.proposal.toGymName);
+        void proposeGym(card.proposal.toGymId, card.proposal.toGymName, reviewOpen);
         return;
       case 'review':
         setReviewOpen(true);

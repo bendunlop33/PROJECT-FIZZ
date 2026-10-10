@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { gymSwitchRefusal, isProposalStale, NBSP, repeatPreviewLines } from '@fizz/domain';
 
-import { afterSwitchRefused, cardIsStale, logBlockedBySwitch, logGuardAfterSwitch, onGymChosen, reviewSheetView, sheetClosesOn, switchCardView, switchedToast, undoneToast, type OpenSwitchCard } from '../src/workout/gym-switch-card';
+import { afterSwitchRefused, cardIsStale, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, reviewSheetView, sheetClosesOn, switchCardView, switchedToast, undoneToast, type OpenSwitchCard } from '../src/workout/gym-switch-card';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -414,10 +414,15 @@ describe('the switch card on screen (gym-switch §2.2–§3.3)', () => {
     expect(stale.tags).toBeNull();
     expect(stale.muted).toBe(true);
     expect([stale.primary.id, stale.secondary.id]).not.toContain('switch');
-    // Dismiss, Not now and Check again close the sheet; Switch and Try again close it on success.
+    // Dismiss and Not now close the sheet; Switch and Try again close it on success.
     expect(sheetClosesOn('dismiss')).toBe(true);
     expect(sheetClosesOn('not_now')).toBe(true);
-    expect(sheetClosesOn('check_again')).toBe(true);
+    // Check again keeps it open over a re-checked card that still needs it (review r2 N3).
+    expect(sheetClosesOn('check_again')).toBe(false);
+    expect(reviewOpenAfterCheckAgain(true, card.proposal)).toBe(true);
+    expect(reviewOpenAfterCheckAgain(true, { ...card.proposal, card: { ...card.proposal.card, reviewLabel: null } })).toBe(false);
+    expect(reviewOpenAfterCheckAgain(false, card.proposal)).toBe(false);
+    expect(reviewOpenAfterCheckAgain(true, null)).toBe(false);
     expect(sheetClosesOn('switch')).toBe(false);
     expect(sheetClosesOn('try_again')).toBe(false);
   });

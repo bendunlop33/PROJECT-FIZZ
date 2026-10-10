@@ -138,9 +138,21 @@ export function reviewSheetView(card: OpenSwitchCard, aggregate: SessionAggregat
   };
 }
 
-/** What a card button does to the review sheet: it closes unless the tap is `Switch`/`Try again` (which close it on success). */
+/**
+ * What a card button does to the review sheet: it closes unless the tap is `Switch`/`Try again`
+ * (which close it on success) or `Check again` (decided by `reviewOpenAfterCheckAgain`).
+ */
 export function sheetClosesOn(id: CardButton): boolean {
-  return id !== 'switch' && id !== 'try_again' && id !== 'review';
+  return id !== 'switch' && id !== 'try_again' && id !== 'review' && id !== 'check_again';
+}
+
+/**
+ * `Check again` from the review sheet (review r2 N3): the sheet stays open over the re-checked
+ * card when that card still keeps `Switch` on the sheet (5 or more lines); otherwise it closes
+ * and the card itself has `Switch`.
+ */
+export function reviewOpenAfterCheckAgain(sheetWasOpen: boolean, next: GymSwitchProposal | null): boolean {
+  return sheetWasOpen && next !== null && next.card.reviewLabel !== null;
 }
 
 /**
