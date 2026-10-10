@@ -48,8 +48,18 @@ export function PrimaryButton({ label, onPress, disabled = false, busy = false, 
 }
 
 /** design-system §9.2a: outlined, never accent-filled. D: a transparent outline pill (D-Rest). */
-export function SecondaryButton({ label, onPress, disabled = false, icon, accessibilityHint, accessibilityLabel, grow = false }: ButtonProps & { icon?: SymbolName; accessibilityLabel?: string; grow?: boolean }) {
+export function SecondaryButton({
+  label,
+  onPress,
+  disabled = false,
+  icon,
+  accessibilityHint,
+  accessibilityLabel,
+  grow = false,
+  workout = false,
+}: ButtonProps & { icon?: SymbolName; accessibilityLabel?: string; grow?: boolean; /** 52pt, the workout screen's card buttons (design-system §9.48). */ workout?: boolean }) {
   const theme = useTheme();
+  const minHeight = workout ? 52 : undefined;
   if (theme.components.secondaryButton === 'outline_pill') {
     return (
       <Pressable
@@ -61,7 +71,7 @@ export function SecondaryButton({ label, onPress, disabled = false, icon, access
         onPress={onPress}
         style={({ pressed }) => ({
           ...(grow ? { flex: 1 } : {}),
-          minHeight: 48,
+          minHeight: minHeight ?? 48,
           borderRadius: theme.radius.pill,
           borderWidth: 1,
           borderColor: theme.colors['border.control'],
@@ -92,7 +102,7 @@ export function SecondaryButton({ label, onPress, disabled = false, icon, access
       onPress={onPress}
       style={({ pressed }) => ({
         ...(grow ? { flex: 1 } : {}),
-        minHeight: theme.target.min.height,
+        minHeight: minHeight ?? theme.target.min.height,
         borderRadius: theme.radius.md,
         borderWidth: 1,
         borderColor: theme.colors['border.control'],

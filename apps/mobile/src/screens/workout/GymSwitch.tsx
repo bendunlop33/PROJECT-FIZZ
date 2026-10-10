@@ -210,6 +210,7 @@ export function GymSwitchCard({ view, onButton }: { view: SwitchCardView; onButt
             <SecondaryButton
               key={b.id}
               label={b.label}
+              workout
               {...(b.disabled !== undefined ? { disabled: b.disabled } : {})}
               onPress={() => {
                 onButton(b.id);
