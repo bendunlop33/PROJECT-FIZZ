@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AliasTarget } from '@fizz/schemas';
-import { barNamed, equipmentContradicts, equipmentInName, implementCue, implementsFor, matchName, nameKey, namesExercise, nameTokens, searchCandidates, type MatchCandidate } from '../src';
+import { barNamed, barWordsIn, equipmentContradicts, equipmentInName, implementCue, implementsFor, matchName, nameKey, namesExercise, nameTokens, searchCandidates, type MatchCandidate } from '../src';
 import { CANDIDATES, idOf } from './import-fixtures';
 
 /** Exercise name matching (data-import-export §2.5 step 3a). */
@@ -312,6 +312,24 @@ describe('one dumbbell or two, from the name (review r4 S1)', () => {
     expect(barNamed('Decline Bench Press', bench, 'barbell')).toBe(false);
     expect(barNamed('EZ-Bar Skullcrusher', ez, 'ez_bar')).toBe(true);
     expect(barNamed('Skullcrusher', ez, 'ez_bar')).toBe(false);
+  });
+
+  it('`Hex/Trap/EZ Barbell` names that bar only; two bar kinds name no bar for Choose… or Use this (review r7 B1, B2)', () => {
+    const kinds = (name: string) => [...(equipmentInName(name) ?? [])].sort();
+    expect(kinds('Hex Barbell Deadlift')).toEqual(['trap_bar']);
+    expect(kinds('Trap Barbell Shrug')).toEqual(['trap_bar']);
+    expect(kinds('EZ Barbell Curl')).toEqual(['ez_bar']);
+    expect(kinds('Barbell EZ Curl')).toEqual(['barbell', 'ez_bar']);
+    expect(kinds('Olympic Hex Bar Deadlift')).toEqual(['barbell', 'trap_bar']);
+    const bench = CANDIDATES.find((c) => c.name === 'Bench press') as MatchCandidate;
+    const ez = CANDIDATES.find((c) => c.name === 'EZ-bar skull crusher') as MatchCandidate;
+    for (const n of ['Hex Barbell Deadlift', 'Trap Barbell Shrug', 'EZ Barbell Curl', 'Close Grip EZ Barbell Bench', 'Barbell EZ Curl', 'Olympic EZ Bar Curl', 'Olympic Hex Bar Deadlift', 'Barbell Hex Bar Deadlift', 'Barbell Trap Bar Deadlift', 'Barbell Cable Curl'])
+      expect(barNamed(n, bench, 'barbell'), n).toBe(false);
+    expect(barNamed('EZ Barbell Skullcrusher', ez, 'ez_bar')).toBe(true);
+    expect(barNamed('Olympic EZ Bar Skullcrusher', ez, 'ez_bar')).toBe(false);
+    expect(barWordsIn('Hex Barbell Deadlift')).toEqual({ kind: 'one', bar: 'trap_bar' });
+    expect(barWordsIn('Barbell Hex Bar Deadlift')).toEqual({ kind: 'unclear', bar: null });
+    expect(barWordsIn('Log Press')).toEqual({ kind: 'none' });
   });
 
   it('one dumbbell only when the name says so, or is the catalogue’s own name for it', () => {

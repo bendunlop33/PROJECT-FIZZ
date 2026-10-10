@@ -424,6 +424,13 @@ describe('import preview: questions before anything is saved', () => {
     for (const n of asked) expect(newBarFromName(n).known, n).toBe(false);
   });
 
+  it('Add new → Barbell: `Hex/Trap/EZ Barbell` is that bar; two bar kinds are asked (review r7 B1, B2)', () => {
+    expect(newBarFromName('Hex Barbell Deadlift')).toEqual({ bar: 'trap_bar', known: true });
+    expect(newBarFromName('Trap Barbell Shrug')).toEqual({ bar: 'trap_bar', known: true });
+    expect(newBarFromName('EZ Barbell Curl')).toEqual({ bar: 'ez_bar', known: true });
+    for (const n of ['Barbell EZ Curl', 'Olympic EZ Bar Curl', 'Olympic Hex Bar Deadlift', 'Barbell Trap Bar Deadlift']) expect(newBarFromName(n), n).toEqual({ bar: 'unknown', known: false });
+  });
+
   it('Add new on a name over 120 characters: the exercise is still recognised as import-made from its stored name (review r6.1 N4)', () => {
     const long = `Very Long Machine ${'x'.repeat(130)}`;
     const a = analyseImport(parsed(`${A1}2026-10-01,${long},Back,40,10,,,\n`), ctx(), answers({ names: { [nameKey(long)]: { kind: 'new', equipment: 'weight_stack' } } }));

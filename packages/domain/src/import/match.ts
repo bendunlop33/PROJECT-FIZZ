@@ -194,8 +194,8 @@ export type NamedEquipment = ExerciseEquipmentKind | 'smith';
 const EQUIPMENT_WORDS: readonly [RegExp, readonly NamedEquipment[]][] = [
   [/ (dumbbells?|dbs?) /, ['dumbbells']],
   [/ (barbells?|bb|olympic) /, ['barbell']],
-  [/ (ez ?bar|ez) /, ['ez_bar']],
-  [/ (trap|hex) ?bar /, ['trap_bar']],
+  [/ (ez ?bar(bells?)?|ez) /, ['ez_bar']],
+  [/ (trap|hex) ?bar(bells?)? /, ['trap_bar']],
   [/ (kettlebells?|kbs?) /, ['kettlebell']],
   [/ (cables?|pulley) /, ['weight_stack']],
   [/ hammer strength /, ['plate_loaded_machine', 'weight_stack']],
@@ -205,6 +205,13 @@ const EQUIPMENT_WORDS: readonly [RegExp, readonly NamedEquipment[]][] = [
 ];
 
 const SMITH = / smith /;
+
+/**
+ * `EZ Barbell`, `Trap Barbell`, `Hex Barbell`: one word names the EZ or trap
+ * bar, and its `barbell` is not the Olympic bar (review r7 B1). Read by the
+ * EZ / trap patterns, then removed before the barbell pattern is tried.
+ */
+const SPECIALTY_BARBELL = / (ez|trap|hex) ?barbells? /g;
 
 /**
  * The equipment a name says it uses (`Flat Dumbbell Bench Press` →
@@ -219,8 +226,35 @@ export function equipmentInName(name: string): ReadonlySet<NamedEquipment> | nul
     kinds.add('smith');
     text = text.replace(/ smith (machines? )?/g, ' ');
   }
-  for (const [re, allowed] of EQUIPMENT_WORDS) if (re.test(text)) for (const k of allowed) kinds.add(k);
+  for (const [re, allowed] of EQUIPMENT_WORDS) {
+    if (allowed.includes('barbell')) {
+      if (re.test(text.replace(SPECIALTY_BARBELL, ' '))) for (const k of allowed) kinds.add(k);
+    } else if (re.test(text)) for (const k of allowed) kinds.add(k);
+  }
   return kinds.size === 0 ? null : kinds;
+}
+
+const IMPORT_BAR_KINDS: readonly ImportBarKind[] = ['barbell', 'ez_bar', 'trap_bar'];
+
+/**
+ * What a name's own words say about its bar (source (c)), the one rule both
+ * `Choose…` / `Use this` (`barNamed`) and `Add new` → Barbell
+ * (`newBarFromName`) read (review r7 B2):
+ * - `none`: no bar word (`Log Press`, `Hex Deadlift`);
+ * - a bar kind: the name says exactly that one bar and no other equipment;
+ * - `unclear`: Smith, two bar kinds (`EZ Barbell … ` is one; `Olympic EZ Bar
+ *   Curl`, `Barbell Hex Bar Deadlift` are two), or a bar alongside other
+ *   equipment (`EZ Bar Cable Curl`). `bar` is the one bar kind it says, if any.
+ */
+export function barWordsIn(name: string): { kind: 'none' } | { kind: 'one'; bar: ImportBarKind } | { kind: 'unclear'; bar: ImportBarKind | null } {
+  const named = equipmentInName(name);
+  if (named === null) return { kind: 'none' };
+  const bars = IMPORT_BAR_KINDS.filter((b) => named.has(b));
+  const only = bars.length === 1 ? (bars[0] ?? null) : null;
+  if (named.has('smith')) return { kind: 'unclear', bar: null };
+  if (bars.length === 0) return { kind: 'none' };
+  if (only === null) return { kind: 'unclear', bar: null };
+  return named.size === 1 ? { kind: 'one', bar: only } : { kind: 'unclear', bar: only };
 }
 
 /**
@@ -437,8 +471,10 @@ export function implementsFor(sourceName: string, c: MatchCandidate): ImplementC
  * Whether the bar a `total` exercise uses is known for this source name
  * (PM decision, review r5): the name is one of the exercise's own names
  * (source (a)), or names that bar (`Barbell`, `BB`, `Olympic`, `EZ-Bar`,
- * `Trap Bar`; source (c)). `newBarFromName` applies the same rule to
- * `Add new` → Barbell (review r6.2 B1). Otherwise "plates only" would add a bar the name never mentioned
+ * `Trap Bar`; source (c)), and only when it says exactly one bar kind and
+ * no other equipment (`barWordsIn`, review r7 B2: `EZ Barbell Curl` chosen
+ * as the barbell curl is asked). `newBarFromName` reads the same
+ * `barWordsIn` for `Add new` → Barbell (review r6.2 B1). Otherwise "plates only" would add a bar the name never mentioned
  * (`Log Press` taken as the overhead press), so the barbell group answer
  * doesn't reach it and it is asked on its own. A name that says Smith names
  * a Smith machine's bar, whatever else it says: `Smith Machine Barbell
@@ -447,8 +483,8 @@ export function implementsFor(sourceName: string, c: MatchCandidate): ImplementC
  */
 export function barNamed(sourceName: string, c: MatchCandidate, bar: ImportBarKind): boolean {
   if (namesExercise(sourceName, c)) return true;
-  const named = equipmentInName(sourceName);
-  return named !== null && !named.has('smith') && named.has(bar);
+  const words = barWordsIn(sourceName);
+  return words.kind === 'one' && words.bar === bar;
 }
 
 /** The name says Smith (a Smith machine, whose bar isn't the Olympic bar; review r6 B2). */

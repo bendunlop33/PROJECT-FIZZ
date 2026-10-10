@@ -23,7 +23,7 @@ import { deriveId } from '../stable';
 import { fromScaled, toScaled } from '../units';
 import { effortFromComment } from './effort';
 import type { FitNotesRow } from './fitnotes';
-import { barNamed, equipmentInName, implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
+import { barNamed, barWordsIn, equipmentInName, implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
 
 /**
  * The FitNotes import preview and plan (data-import-export §2.5, §3.4, §4.3).
@@ -444,14 +444,12 @@ function addNewExerciseId(ctx: ImportContext, storedKey: string, key: string, ki
  * add a bar weight at all.
  */
 export function newBarFromName(name: string): { bar: BarOf; known: boolean } {
-  const named = equipmentInName(name);
-  if (named === null || named.has('smith')) return { bar: 'barbell', known: false };
-  const bars = BAR_KINDS.filter((b) => named.has(b));
-  if (bars.length > 1) return { bar: 'unknown', known: false };
-  const only = bars[0];
-  if (only === undefined) return { bar: 'barbell', known: false };
-  // Other equipment named alongside the bar (`Barbell Cable …`) contradicts it: asked on its own.
-  return { bar: only, known: named.size === 1 };
+  const words = barWordsIn(name);
+  if (words.kind === 'one') return { bar: words.bar, known: true };
+  if (words.kind === 'none') return { bar: 'barbell', known: false };
+  // Two bar kinds can't add a bar weight; Smith or other equipment alongside one bar (`Barbell Cable …`) is asked on its own.
+  if (equipmentInName(name)?.has('smith') === true) return { bar: 'barbell', known: false };
+  return { bar: words.bar ?? 'unknown', known: false };
 }
 
 /**
