@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { SessionAggregate } from '@fizz/schemas';
 import {
   clockText,
-  estimateRemainingDuration,
+  estimateTimeLeft,
   paceSamplesOf,
   percentile,
   recentPaceSamples,
   resolvePace,
-  roundEstimateMinutes,
+  roundTimeLeftMinutes,
   startWorkout,
   timeLeftLine,
   timeLeftSheet,
@@ -47,13 +47,13 @@ const NO_SAMPLES = { set: [], changeover: [] };
 /** Display text uses a no-break space between a number and `min`. */
 const t = (text: string): string => text.replace(/(\d) min/g, `$1${NBSP}min`);
 
-function est(state: SessionAggregate, nowS: number, extra: Partial<Parameters<typeof estimateRemainingDuration>[1]> = {}): TimeLeftEstimate {
-  const e = estimateRemainingDuration(state, { nowMs: ms(nowS), ...extra });
+function est(state: SessionAggregate, nowS: number, extra: Partial<Parameters<typeof estimateTimeLeft>[1]> = {}): TimeLeftEstimate {
+  const e = estimateTimeLeft(state, { nowMs: ms(nowS), ...extra });
   if (!e) throw new Error('expected an estimate');
   return e;
 }
 
-describe('estimateRemainingDuration (active-workout §2.15.2)', () => {
+describe('estimateTimeLeft (active-workout §2.15.2)', () => {
   it('check 57: 6 pending sets, 2:00 rest, 1:00 a set and a 2:00 changeover → 18 min, shown as About 20 min', () => {
     const s = twoExercises();
     const e = est(s, 0, { recent: { set: [60, 60, 60], changeover: [120] } });
@@ -167,7 +167,7 @@ describe('estimateRemainingDuration (active-workout §2.15.2)', () => {
     const [b1] = setsFor(s, BENCH);
     if (!b1) throw new Error('fixture');
     s = apply(s, logCmd(b1.id, values(kg(100), 8), 60));
-    expect(estimateRemainingDuration(s, { nowMs: ms(60) })).toBeNull();
+    expect(estimateTimeLeft(s, { nowMs: ms(60) })).toBeNull();
   });
 
   it('is frozen while paused and says so', () => {
@@ -222,11 +222,11 @@ describe('Finish by wording (check 59)', () => {
 
 describe('rounding and line variants (§2.15.1)', () => {
   it('10 min or more → nearest 5; under 10 → nearest minute', () => {
-    expect(roundEstimateMinutes(18 * 60)).toBe(20);
-    expect(roundEstimateMinutes(12 * 60 + 29)).toBe(10);
-    expect(roundEstimateMinutes(9 * 60 + 29)).toBe(9);
-    expect(roundEstimateMinutes(9 * 60 + 31)).toBe(10);
-    expect(roundEstimateMinutes(-5)).toBe(0);
+    expect(roundTimeLeftMinutes(18 * 60)).toBe(20);
+    expect(roundTimeLeftMinutes(12 * 60 + 29)).toBe(10);
+    expect(roundTimeLeftMinutes(9 * 60 + 29)).toBe(9);
+    expect(roundTimeLeftMinutes(9 * 60 + 31)).toBe(10);
+    expect(roundTimeLeftMinutes(-5)).toBe(0);
   });
 
   it('under 2 min reads Under 2 min left; never seconds', () => {

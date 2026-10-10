@@ -93,6 +93,8 @@ export function richFinishedSession(): SessionAggregate {
   };
   const [a, b, c] = s.sets;
   if (!a || !b || !c) throw new Error('fixture');
+  // §2.15.3: a `Finish by`, so every store and the backup round-trip carry it.
+  step({ type: 'set_finish_by', at: at(30), opId: 'finish-by-1', finishBy: at(3600), expectedVersion: s.session.version });
   step(logCmd(a.id, values(kg(15, 'per_hand'), 10, { rpe: 8 }), 60, 'log-a', 'left'));
   const companion = s.session.activeSetId ?? '';
   step(logCmd(companion, values(kg(15, 'per_hand'), 9, { rir: 2 }), 90, 'log-a-right'));

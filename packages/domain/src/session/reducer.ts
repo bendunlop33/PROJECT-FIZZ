@@ -99,7 +99,8 @@ export type SessionEvent =
   | { type: 'SetDeleted'; setId: string }
   | { type: 'RestPlanChanged'; setIds: string[]; seconds: number }
   | { type: 'SessionTimingUpdated' }
-  | { type: 'SessionRenamed'; name: string | null };
+  | { type: 'SessionRenamed'; name: string | null }
+  | { type: 'FinishByChanged'; finishByUtc: string | null };
 
 export type ReduceResult =
   | {
@@ -1166,7 +1167,28 @@ function handleRenameSession(state: SessionAggregate, cmd: CommandOf<'rename_ses
   return {
     ok: true,
     state: { ...state, session: { ...state.session, routineName: name, version: state.session.version + 1 } },
-    events: [{ type: 'SessionRenamed', name }],
+    events: [{ type: 'SessionRenamed', name }],  };
+}
+
+/** Latest `Finish by` the wheel offers (now + 3 h, §2.15.3). */
+const FINISH_BY_MAX_MS = 3 * 3600_000;
+
+function handleSetFinishBy(state: SessionAggregate, cmd: CommandOf<'set_finish_by'>, nowMs: number): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed since this was opened.');
+  const rest = { ...state.session };
+  delete rest.finishBy;
+  if (cmd.finishBy === null) {
+    if (state.session.finishBy === undefined) return { ok: true, state, events: [] };
+    return { ok: true, state: bumpVersion({ ...state, session: rest }), events: [{ type: 'FinishByChanged', finishByUtc: null }] };
+  }
+  const by = toMs(cmd.finishBy.utc);
+  if (by <= nowMs) return fail('invalid_time', 'That time has passed. Pick a later one.');
+  if (by > nowMs + FINISH_BY_MAX_MS) return fail('invalid_time', 'Pick a time within the next 3 hours.');
+  if (state.session.finishBy?.utc === cmd.finishBy.utc) return { ok: true, state, events: [] };
+  return {
+    ok: true,
+    state: bumpVersion({ ...state, session: { ...rest, finishBy: cmd.finishBy } }),
+    events: [{ type: 'FinishByChanged', finishByUtc: cmd.finishBy.utc }],
   };
 }
 
@@ -1218,7 +1240,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
     case 'set_rest_after':
       return handleSetRestAfter(state, command);
     case 'rename_session':
-      return handleRenameSession(state, command);
+      return handleRenameSession(state, command);    case 'set_finish_by':
+      return handleSetFinishBy(state, command, nowMs);
     case 'tick':
       return { ok: true, state, events: [] };
   }
@@ -1290,6 +1313,9 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
     case 'set_rest_after':
     case 'tick':
       return false;
+    case 'set_finish_by':
+      // A later Finish by (or Not set) replaced this one.
+      return (state.session.finishBy?.utc ?? null) !== (command.finishBy?.utc ?? null);
   }
 }
 

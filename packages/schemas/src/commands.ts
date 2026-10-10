@@ -248,6 +248,19 @@ export const SetRestAfterCommandSchema = z.object({
   expectedVersion: z.int().min(1),
 });
 
+/**
+ * `Finish by` in the `Time left` sheet (active-workout §2.15.3,
+ * `setSessionFinishBy`): today only, or null for `Not set`. Changes no set,
+ * load or rest; versioned on the session so a stale sheet is refused.
+ */
+export const SetFinishByCommandSchema = z.object({
+  type: z.literal('set_finish_by'),
+  ...base,
+  opId: OperationIdSchema,
+  finishBy: ZonedTimestampSchema.nullable(),
+  expectedVersion: z.int().min(1),
+});
+
 /** Delete a set (pending, skipped or logged). Kept as an audited tombstone. */
 export const DeleteSetCommandSchema = z.object({
   type: z.literal('delete_set'),
@@ -318,6 +331,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   DiscardCommandSchema,
   SetRestAfterCommandSchema,
   RenameSessionCommandSchema,
+  SetFinishByCommandSchema,
 ]);
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 export type SessionCommandType = SessionCommand['type'];

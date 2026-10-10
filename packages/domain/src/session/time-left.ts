@@ -4,6 +4,7 @@ import { formatDuration, formatElapsed, NBSP } from '../display';
 import { restRemainingMs } from '../rest';
 import { toIso, toMs } from '../time';
 import { isRoundEnd, nextPendingSet } from './order';
+import type { PaceSource } from './duration';
 import { dateOnlyOf, getActiveDurationMs, getSessionPhase, pausedMsWithin } from './view';
 
 /**
@@ -37,7 +38,8 @@ export interface PaceSamples {
   changeover: number[];
 }
 
-export type PaceSource = 'this_workout' | 'recent_workouts' | 'default';
+// The same three sources as the Up next / routine sheet estimate (`duration.ts`).
+export type { PaceSource };
 
 export interface Pace {
   /** Source of the per-set figure (the tag the sheet shows). */
@@ -203,7 +205,7 @@ export function resolvePace(session: PaceSamples, recent: PaceSamples): Pace {
 }
 
 /** Display rounding: 10 min or more → nearest 5; under 10 → nearest minute. */
-export function roundEstimateMinutes(seconds: number): number {
+export function roundTimeLeftMinutes(seconds: number): number {
   const m = Math.max(0, seconds) / 60;
   return m >= 10 ? Math.round(m / 5) * 5 : Math.round(m);
 }
@@ -256,13 +258,15 @@ export interface EstimateOptions {
 }
 
 /**
- * `estimateRemainingDuration` (§2.15.2). Per pending set: Ben's per-set
+ * `estimateTimeLeft` (§2.15.2, the spec's `estimateRemainingDuration` for
+ * the workout in progress; `duration.ts` has the lighter one for a workout
+ * not started yet, Up next and the routine sheet). Per pending set: Ben's per-set
  * figure (plus the planned duration of a timed set), the planned rest after
  * it (none after the last), and a changeover when the next set is another
  * exercise outside a superset; plus what's left of a running rest. Null when
  * the workout isn't active or nothing is pending (the line is hidden).
  */
-export function estimateRemainingDuration(state: SessionAggregate, opts: EstimateOptions): TimeLeftEstimate | null {
+export function estimateTimeLeft(state: SessionAggregate, opts: EstimateOptions): TimeLeftEstimate | null {
   if (state.session.status !== 'active') return null;
   const plan = pendingPlan(state);
   if (plan.length === 0) return null;
@@ -301,14 +305,14 @@ export function estimateRemainingDuration(state: SessionAggregate, opts: Estimat
   const finishBy = opts.finishByUtc ?? null;
   let overByMinutes: number | null = null;
   if (finishBy !== null) {
-    const over = roundEstimateMinutes((endMs - toMs(finishBy)) / 1000);
+    const over = roundTimeLeftMinutes((endMs - toMs(finishBy)) / 1000);
     overByMinutes = endMs > toMs(finishBy) && over > 0 ? over : null;
   }
   return {
     seconds,
-    minutes: roundEstimateMinutes(seconds),
-    lowMinutes: roundEstimateMinutes(Math.min(lowS, seconds)),
-    highMinutes: roundEstimateMinutes(Math.max(highS, seconds)),
+    minutes: roundTimeLeftMinutes(seconds),
+    lowMinutes: roundTimeLeftMinutes(Math.min(lowS, seconds)),
+    highMinutes: roundTimeLeftMinutes(Math.max(highS, seconds)),
     endsAt: toIso(Math.round(endMs / FIVE_MIN) * FIVE_MIN),
     finishBy,
     overByMinutes,

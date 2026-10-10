@@ -332,6 +332,12 @@ export const WorkoutSessionSchema = z.object({
    * check-ins existed.
    */
   checkIn: SessionCheckInSchema.nullable(),
+  /**
+   * Ben's `Finish by` for today (active-workout §2.15.3, AW12), Your data.
+   * Absent = not set. Changes only the `Time left` wording (and, from build
+   * step 4, whether the coach may offer to shorten); never a set or rest.
+   */
+  finishBy: ZonedTimestampSchema.optional(),
 });
 export type WorkoutSession = z.infer<typeof WorkoutSessionSchema>;
 
