@@ -14,9 +14,7 @@
   "check": {
     "status": "pass",
     "failed": [],
-    "warnings": [
-      "definition"
-    ]
+    "warnings": []
   },
   "focus": [
     {

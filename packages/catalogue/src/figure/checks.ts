@@ -12,7 +12,7 @@ import { poseAt, prepareGuide, type Pose, type PreparedGuide } from './pose';
 import { ROM_PROFILES, type AngleName } from './rig';
 import { BODY_GROUPS, groupContours } from './body';
 import { contactVelocity, driveMetrics, poseContinuity, seamVelocity } from './motion-metrics';
-import { PLAYBACK_FPS } from './playback';
+import { PLAYBACK_FPS, playbackTimes } from './playback';
 import { adjustProblems, DEFINITION_GROUPS, DEFINITION_MAP, definitionGroupsFor, focusViewOf, MUSCLE_REGION_MAP, parseRegion, resolveFocus, type DefinitionGroup, type MuscleLevel } from './muscle-map';
 import { DEFINITION_GROOVE, DEFINITION_GROOVE_FLOOR, definitionShapes, narrowestDefinitionGroove, regionShapes, type DefinitionGroove } from './regions';
 import { signedArea } from './paths';
@@ -453,12 +453,65 @@ function checkOutlineContact(guide: Guide, poses: readonly Pose[]): CheckItem {
 }
 
 /**
+ * Steepest per-frame change allowed in a faint shape's drawn weight (area × fade alpha), as a share of its peak over
+ * the cycle (guides v2 D16, "no shape pops"; fix review S3). 20 % at 30 fps means a shape takes at least 5 frames
+ * (~170 ms) to fade fully in or out, never one frame. A heuristic gate: an outline that jumps at constant area isn't
+ * caught, so D16 still gets Ben's look in G11/G18.
+ */
+export const DEFINITION_FADE_STEP = 0.2;
+
+export interface DefinitionFade {
+  /** `definition (group)`, e.g. `forearm (armNear)`. */
+  shape: string;
+  /** Largest change between adjacent playback frames (loop seam included), as a share of the shape's peak weight. */
+  step: number;
+  /** Playback time of the frame before that change. */
+  t: number;
+  /** The shape is absent on some frames (it fades away mid-cycle). */
+  fades: boolean;
+}
+
+/**
+ * Per faint shape, the steepest change in drawn weight (Σ area × alpha) between adjacent playback frames, steepest
+ * first. A shape that appears or disappears in one frame scores 1 (a pop); a projection fade over many frames scores low.
+ */
+export function definitionFades(prepared: PreparedGuide, faint: readonly DefinitionGroup[]): DefinitionFade[] {
+  const times = playbackTimes(prepared.guide);
+  const series = new Map<string, number[]>();
+  times.forEach((t, i) => {
+    for (const sh of definitionShapes(poseAt(prepared, t).body, faint)) {
+      const key = `${sh.definition} (${sh.group})`;
+      const s = series.get(key) ?? times.map(() => 0);
+      s[i] = (s[i] ?? 0) + Math.abs(signedArea(sh.contour)) * sh.alpha;
+      series.set(key, s);
+    }
+  });
+  const out: DefinitionFade[] = [];
+  for (const [shape, s] of series) {
+    const peak = Math.max(...s);
+    if (!(peak > 0)) continue;
+    let step = 0;
+    let t = 0;
+    s.forEach((w, i) => {
+      const d = Math.abs((s[(i + 1) % s.length] ?? 0) - w) / peak;
+      if (d > step) {
+        step = d;
+        t = times[i] ?? 0;
+      }
+    });
+    out.push({ shape, step, t, fades: s.some((w) => w === 0) });
+  }
+  return out.sort((a, b) => b.step - a.step);
+}
+
+/**
  * Report-only (guides v2 §4.11): which groups the guide draws faint with
  * muscle definition on; the narrowest groove between two faint shapes of one
  * body group over the whole cycle, with every group of the view drawn (the
  * no-entry case, a superset of any guide's); warns under the 0.004 H floor
- * and when a faint shape appears or disappears mid-cycle (a foreshortened
- * limb fading out, or a tight fold), so the guide-maker can look for a pop.
+ * and when a faint shape changes faster than `DEFINITION_FADE_STEP` a frame
+ * (a pop). Shapes that fade away mid-cycle (a foreshortened limb, a tight
+ * fold) are listed with their steepest step.
  */
 function checkDefinition(guide: Guide, entry: CatalogueEntry | null, poses: readonly Pose[]): { item: CheckItem; faint: DefinitionGroup[] } {
   const view = focusViewOf(guide);
@@ -466,21 +519,29 @@ function checkDefinition(guide: Guide, entry: CatalogueEntry | null, poses: read
   const faint = definitionGroupsFor(view, focus, guide.focus?.hide ?? []);
   const all = DEFINITION_GROUPS.filter((g) => DEFINITION_MAP[g][view] !== null);
   let worst: (DefinitionGroove & { t: number }) | null = null;
-  const seen = new Map<string, number>();
-  // Every other frame (15 fps) plus the key frames: enough to find the narrowest groove and a shape that comes and goes.
-  const keyTimes = new Set(prepareGuide(guide).keys.map((k) => k.t));
+  // Every other frame (15 fps) plus the key frames: enough to find the narrowest groove.
+  const prepared = prepareGuide(guide);
+  const keyTimes = new Set(prepared.keys.map((k) => k.t));
   const sampled = poses.filter((p, i) => i % 2 === 0 || keyTimes.has(p.t));
   for (const p of sampled) {
-    const shapes = definitionShapes(p.body, all);
-    const g = narrowestDefinitionGroove(shapes);
+    const g = narrowestDefinitionGroove(definitionShapes(p.body, all));
     if (g !== null && (worst === null || g.gap < worst.gap)) worst = { ...g, t: p.t };
-    for (const key of new Set(shapes.filter((sh) => faint.includes(sh.definition)).map((sh) => `${sh.definition} (${sh.group})`))) seen.set(key, (seen.get(key) ?? 0) + 1);
   }
-  const pops = [...seen.entries()].filter(([, n]) => n < sampled.length).map(([k]) => k);
+  const fades = definitionFades(prepared, faint);
+  const pops = fades.filter((f) => f.step > DEFINITION_FADE_STEP);
+  const fading = fades.filter((f) => f.fades);
+  const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
   const groove = worst === null ? 'no two shapes share a body group' : `narrowest groove ${r4(worst.gap)} H (${worst.a}/${worst.b}, ${worst.group}, t=${worst.t.toFixed(3)}; target ${DEFINITION_GROOVE}, floor ${DEFINITION_GROOVE_FLOOR})`;
+  const steepest = fades[0];
+  const fadeText =
+    steepest === undefined
+      ? ''
+      : `; steepest fade ${pct(steepest.step)} of peak a frame (${steepest.shape}, t=${steepest.t.toFixed(3)}; limit ${pct(DEFINITION_FADE_STEP)})` +
+        (fading.length > 0 ? `; fade away mid-cycle: ${fading.map((f) => `${f.shape} ${pct(f.step)}`).join(', ')}` : '') +
+        (pops.length > 0 ? `; POP: ${pops.map((f) => f.shape).join(', ')}` : '');
   const narrow = worst !== null && worst.gap < DEFINITION_GROOVE_FLOOR;
   const warn = narrow || pops.length > 0;
-  const detail = `${view} view, faint: ${faint.join(' · ') || 'none'}; ${groove}${pops.length > 0 ? `; fold or fade away mid-cycle (check for a pop): ${pops.join(', ')}` : ''}`;
+  const detail = `${view} view, faint: ${faint.join(' · ') || 'none'}; ${groove}${fadeText}`;
   return { item: { id: 'definition', ok: true, ...(warn ? { warn: true } : {}), detail }, faint };
 }
 

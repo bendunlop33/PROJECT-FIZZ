@@ -16,6 +16,8 @@ import { MUSCLES, type Muscle } from '../src/vocab';
 import {
   checkGuide,
   DEFAULT_MUSCLE_DEFINITION,
+  DEFINITION_FADE_STEP,
+  definitionFades,
   DEFINITION_GROOVE,
   DEFINITION_GROOVE_FLOOR,
   DEFINITION_GROUPS,
@@ -228,6 +230,30 @@ describe('geometry (§4.11.3, D2)', () => {
     if (lockout === undefined) throw new Error('pushdown should have a lockout position');
     const straight = poseAt(pushdown, lockout.t).body;
     expect(definitionShapes(straight, ['forearm']).map((s) => s.contour)).toEqual([forearmRegion(straight)]);
+  });
+
+  it('no faint shape pops (D16, fix review S3): every shape changes by at most DEFINITION_FADE_STEP of its peak a frame, with the entry\'s muscles and with every group drawn', () => {
+    for (const key of GUIDE_KEYS) {
+      const { prepared } = loaded(key);
+      const view = focusViewOf(prepared.guide);
+      const focus = resolveFocus(musclesOf(key), prepared.guide.focus, view);
+      for (const faint of [definitionGroupsFor(view, focus, prepared.guide.focus?.hide ?? []), definitionGroupsFor(view, null)]) {
+        for (const f of definitionFades(prepared, faint)) expect(f.step, `${key} ${f.shape} t=${f.t.toFixed(3)}`).toBeLessThanOrEqual(DEFINITION_FADE_STEP);
+      }
+    }
+  });
+
+  it('the fade measure sees the shapes that fade away mid-cycle (OHP arm, pulldown forearms) and scores them as gradual', () => {
+    const fadingOf = (key: string) => {
+      const { prepared } = loaded(key);
+      const view = focusViewOf(prepared.guide);
+      return definitionFades(prepared, definitionGroupsFor(view, resolveFocus(musclesOf(key), prepared.guide.focus, view), prepared.guide.focus?.hide ?? [])).filter((f) => f.fades);
+    };
+    const ohp = fadingOf('barbell-overhead-press');
+    expect(ohp.map((f) => f.shape).sort()).toEqual(['forearm (armNear)', 'frontArm (armNear)']);
+    expect(fadingOf('cable-lat-pulldown').map((f) => f.shape).sort()).toEqual(['forearm (armFar)', 'forearm (armNear)']);
+    // Gradual, but not a no-op: the measure moves when a shape fades.
+    for (const f of ohp) expect(f.step).toBeGreaterThan(0.02);
   });
 
   it('polygonGap: 0 when overlapping or touching, the distance otherwise', () => {
