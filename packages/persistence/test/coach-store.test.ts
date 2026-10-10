@@ -261,7 +261,7 @@ describe('Undo (an action of its own, written with the reversal)', () => {
     expect((await s.repos.coach.getAction(f.actionId))?.undoneBy).toBeNull();
   });
 
-  it("today's set targets and proposals can't be undone here yet (seam: needs the reducer command)", async () => {
+  it("a proposal can't be undone (it was never applied); an adjustment whose workout is gone reads as changed since", async () => {
     const s = await store();
     const p = action(
       { kind: 'propose_next_workout_change', sourceSessionId: id(60), workoutLabel: 'Push A', changes: [{ change: 'swap', text: 'Cable fly → Pec deck' }], because: 'variety.' },
@@ -271,7 +271,7 @@ describe('Undo (an action of its own, written with the reversal)', () => {
     expect(await s.repos.coach.undo(OWNER, undoOf(p))).toEqual({ status: 'not_possible', reason: 'not_committed' });
     const adj = action({ kind: 'adjust_pending_sets', sessionId: id(60), exercises: [] });
     await s.repos.coach.commit(OWNER, { kind: 'record', action: adj });
-    expect(await s.repos.coach.undo(OWNER, undoOf(adj))).toEqual({ status: 'not_possible', reason: 'unsupported' });
+    expect(await s.repos.coach.undo(OWNER, undoOf(adj))).toEqual({ status: 'not_possible', reason: 'changed_since' });
   });
 });
 
@@ -323,7 +323,7 @@ describe('integrity, backup and restore with coach data', () => {
     await src.close();
     const file = JSON.parse(made.text) as BackupFile;
     const tables = { ...file.tables };
-    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates']) Reflect.deleteProperty(tables, t);
+    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets']) Reflect.deleteProperty(tables, t);
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
     const body: Omit<BackupFile, 'checksum'> = { ...file, schemaVersion: 3, tables, counts };
     Reflect.deleteProperty(body, 'checksum');

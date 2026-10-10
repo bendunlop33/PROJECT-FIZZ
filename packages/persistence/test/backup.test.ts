@@ -403,7 +403,7 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
     delete tables.import_rows;
     delete tables.exercise_aliases;
     // …and nothing from schema 4 (coach).
-    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates']) Reflect.deleteProperty(tables, t);
+    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets']) Reflect.deleteProperty(tables, t);
     tables.sessions = (tables.sessions ?? []).map((row) => {
       const copy = { ...row };
       delete copy.check_in;

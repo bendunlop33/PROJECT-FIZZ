@@ -9,6 +9,7 @@ import {
   ZonedTimestampSchema,
 } from './common';
 import { PainAreaSchema, type PainFlag } from './checkin';
+import type { SessionCommand } from './commands';
 
 /**
  * Coach v1 contracts (ADR 0019 §2, coach-contract.md §6). Tool arguments are
@@ -534,6 +535,42 @@ export const PlaybookCandidateSchema = z.object({
 });
 export type PlaybookCandidate = z.infer<typeof PlaybookCandidateSchema>;
 
+/**
+ * One exercise's coach target for the next session of a workout (ADR 0019
+ * §5, D21, coach-adjustments CA8/CA10). Your data. One row per source
+ * workout and exercise; the action that set it is the audit.
+ * - `saved`: a small change, used by default (`nextTargetsOf` prefers it).
+ * - `undone`: Ben undid it; the built-in rule's target is used. `Use coach target` puts it back.
+ * - `proposed`: a bigger change; the built-in rule is used until Ben taps Apply.
+ * - `applied`: a bigger change Ben applied.
+ * - `not_applied`: Ben tapped Not now.
+ * A row is only used while the source workout is unchanged (`sourceVersion`)
+ * and until a workout is started from it (`usedBySessionId`).
+ */
+export const NextSessionTargetRecordSchema = RecordMetaSchema.extend({
+  sourceSessionId: IdSchema,
+  sourceVersion: z.int().min(1),
+  exerciseId: IdSchema,
+  exerciseName: z.string().min(1).max(120),
+  actionId: IdSchema,
+  target: CoachTargetSchema,
+  /** Working sets next time; null keeps the count. */
+  sets: z.int().min(1).max(12).nullable(),
+  /** The built-in rule's target for comparison (`Built-in rule would be …`). */
+  builtIn: CoachTargetSchema.nullable(),
+  builtInSets: z.int().min(0).max(40).nullable(),
+  size: z.enum(['small', 'bigger']),
+  status: z.enum(['saved', 'undone', 'proposed', 'applied', 'not_applied']),
+  /** The coach's reason (claim-checked), shown behind `Why?`. */
+  reason: z.string().max(240).nullable(),
+  guardNotes: z.array(GuardNoteSchema).max(20),
+  /** Load change from the last working target, in %, from the saved values. */
+  pctChange: z.number().nullable(),
+  usedBySessionId: IdSchema.nullable(),
+});
+export type NextSessionTargetRecord = z.infer<typeof NextSessionTargetRecordSchema>;
+export type NextSessionTargetStatus = NextSessionTargetRecord['status'];
+
 // ---------------------------------------------------------------------------
 // Store contract (implemented by `@fizz/persistence`, used by `@fizz/coach`)
 
@@ -549,7 +586,19 @@ export type CoachWrite =
   | { kind: 'save_memory'; action: ActionRecord; memory: Memory }
   | { kind: 'forget_memory'; action: ActionRecord; memoryId: string; expectedVersion: number; atUtc: string }
   | { kind: 'pain_flags'; action: ActionRecord; flags: readonly PainFlag[] }
-  | { kind: 'playbook_candidate'; action: ActionRecord; candidate: PlaybookCandidate };
+  | { kind: 'playbook_candidate'; action: ActionRecord; candidate: PlaybookCandidate }
+  /**
+   * Next-session targets (D21): the rows, replacing earlier rows for the same
+   * source and exercise. Refused as stale when the source workout changed or
+   * a workout has started since it ended (CA10).
+   */
+  | { kind: 'next_session_targets'; action: ActionRecord; rows: readonly NextSessionTargetRecord[]; sourceVersion: number }
+  /**
+   * Today's pending sets (`adjust_pending_sets`): the session command runs
+   * through the reducer inside the same transaction as the record, so the
+   * targets and their record are saved together or not at all (rule 5).
+   */
+  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand };
 
 export type CoachWriteResult =
   | { status: 'written'; action: ActionRecord }

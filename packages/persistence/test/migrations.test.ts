@@ -24,6 +24,7 @@ const TABLES = [
   'import_jobs',
   'import_rows',
   'memories',
+  'next_session_targets',
   'pain_flags',
   'playbook_candidates',
   'processed_operations',

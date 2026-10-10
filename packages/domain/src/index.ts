@@ -41,3 +41,4 @@ export * from './coach/trigger';
 export * from './coach/adjust';
 export * from './coach/signals';
 export * from './coach/pain-words';
+export * from './coach/next-session';

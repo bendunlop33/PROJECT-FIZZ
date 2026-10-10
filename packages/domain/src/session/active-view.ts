@@ -128,6 +128,10 @@ export interface FocusView {
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
   duration: { value: number | null } | null;
   target: string | null;
+  /** `Plan was 100 kg × 6–8` when a coach adjustment set this target (coach-adjustments §2.7); else null. */
+  planWas: string | null;
+  /** The coach action behind this set's target, for `Undo coach change`; null when the target isn't the coach's. */
+  coachActionId: string | null;
   painFlagged: boolean;
   offProfileWarning: string | null;
   side: { kind: 'choice'; value: SetSide } | { kind: 'fixed'; value: 'left' | 'right' } | null;
@@ -382,6 +386,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
     duration: ex.measurement === 'duration' ? { value: values.durationS } : null,
     target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral }),
+    planWas: set.planned.source === 'coach' && set.planned.coach ? planWasText(set.planned.coach.before, ex.loadConvention, eq) : null,
+    coachActionId: set.planned.source === 'coach' ? (set.planned.coach?.actionId ?? null) : null,
     painFlagged: input.painFlagged.has(ex.exerciseId),
     offProfileWarning,
     side,
@@ -550,4 +556,10 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
     text: valuesText(values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
     changed: JSON.stringify(values) !== JSON.stringify(set.actual),
   };
+}
+
+/** `Plan was 100 kg × 6–8` (the target a coach adjustment replaced). */
+function planWasText(before: WorkoutSet['planned'], convention: SessionExercise['loadConvention'], eq: EquipmentInstance | null | undefined): string | null {
+  const short = targetShort({ ...before, source: undefined }, { convention, ...(eq ? { equipment: eq } : {}) });
+  return short === null ? null : short.replace(/^Target /, 'Plan was ');
 }

@@ -35,19 +35,36 @@ export type SetValues = z.infer<typeof SetValuesSchema>;
  * - `built_in_rule`: the built-in progression rule's Next time (ADR 0006 fallback).
  * - `repeat`: copied from a past workout's actual result (routines.md RT4).
  */
-export const PlannedSourceSchema = z.enum(['built_in_rule', 'repeat']);
+export const PlannedSourceSchema = z.enum(['built_in_rule', 'repeat', 'coach']);
 export type PlannedSource = z.infer<typeof PlannedSourceSchema>;
 
-/** Planned (target) values, retained separately from the actual result. */
-export const PlannedSetSchema = z.object({
+/**
+ * Planned (target) values, retained separately from the actual result.
+ * `source: 'coach'` (ADR 0019 §4): a coach adjustment set this pending
+ * target; `coach` names the action and keeps the whole target it replaced,
+ * for `Plan was …` and for Undo, which puts exactly that back.
+ */
+export interface PlannedSet {
+  load: z.infer<typeof LoadSchema> | null;
+  reps: z.infer<typeof RepRangeSchema> | null;
+  durationS: number | null;
+  rpe: number | null;
+  rir: number | null;
+  source?: PlannedSource | undefined;
+  coach?: { actionId: string; before: PlannedSet } | undefined;
+}
+
+export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
   load: LoadSchema.nullable(),
   reps: RepRangeSchema.nullable(),
   durationS: DurationSecondsSchema.nullable(),
   rpe: RpeSchema.nullable(),
   rir: RirSchema.nullable(),
   source: PlannedSourceSchema.optional(),
+  get coach() {
+    return z.object({ actionId: IdSchema, before: PlannedSetSchema }).optional();
+  },
 });
-export type PlannedSet = z.infer<typeof PlannedSetSchema>;
 
 export const RestSourceSchema = z.enum([
   'set_override',

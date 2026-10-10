@@ -173,7 +173,7 @@ type LoadOutcome =
   | { ok: true; load: Load; note: { kind: GuardNoteKind; text: string } | null; extra: { kind: GuardNoteKind; text: string } | null }
   | { ok: false; note: { kind: GuardNoteKind; text: string } };
 
-function snapLoad(requested: Load, ex: SessionExercise, eq: EquipmentInstance | null, policy: RoundingPolicy, gymName: string | null): LoadOutcome {
+export function snapLoad(requested: Load, ex: SessionExercise, eq: EquipmentInstance | null, policy: RoundingPolicy, gymName: string | null): LoadOutcome {
   const asked = loadText(requested, requested.convention);
   if (ex.loadConvention === 'bodyweight') {
     if (requested.convention === 'bodyweight') return { ok: true, load: requested, note: null, extra: null };
@@ -214,12 +214,12 @@ function snapLoad(requested: Load, ex: SessionExercise, eq: EquipmentInstance | 
   return { ok: true, load: r.load, note: { kind: 'snapped', text: `Rounded to ${got}: ${snapWhere(eq)}.` }, extra };
 }
 
-function validReps(r: RepRange): boolean {
+export function validReps(r: RepRange): boolean {
   return r.min >= 1 && r.max <= 100 && r.min <= r.max;
 }
 
 /** Positive when `after` asks for more than `before` (load by difficulty, or either end of the rep range). */
-function isIncrease(before: CoachTarget | null, after: CoachTarget, convention: SessionExercise['loadConvention']): boolean {
+export function isIncrease(before: CoachTarget | null, after: CoachTarget, convention: SessionExercise['loadConvention']): boolean {
   const b = before ?? { load: null, reps: null };
   if (after.load !== null && after.load.convention !== 'bodyweight') {
     if (b.load === null) return true;
@@ -233,7 +233,7 @@ function isIncrease(before: CoachTarget | null, after: CoachTarget, convention: 
   return false;
 }
 
-function sameTarget(a: CoachTarget | null, b: CoachTarget): boolean {
+export function sameTarget(a: CoachTarget | null, b: CoachTarget): boolean {
   const x = a ?? { load: null, reps: null };
   const loadSame =
     (x.load === null && b.load === null) ||
@@ -246,11 +246,11 @@ function targetOf(set: WorkoutSet): CoachTarget {
   return { load: set.planned.load, reps: set.planned.reps };
 }
 
-const AREA_WORD: Record<PainArea, string> = {
+export const AREA_WORD: Record<PainArea, string> = {
   shoulder: 'shoulder', elbow: 'elbow', wrist: 'wrist', neck: 'neck', back: 'back', hip: 'hip', knee: 'knee', ankle: 'ankle', other: '',
 };
 
-function activeFlag(flags: readonly PainFlag[], exerciseId: string): PainFlag | null {
+export function activeFlag(flags: readonly PainFlag[], exerciseId: string): PainFlag | null {
   return flags.find((f) => f.exerciseId === exerciseId && f.status === 'active') ?? null;
 }
 

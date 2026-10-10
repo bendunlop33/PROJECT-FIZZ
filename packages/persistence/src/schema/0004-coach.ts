@@ -20,8 +20,12 @@
  * Coaching knowledge (no owner; rule 10):
  * - `playbook_candidates`: general rules to review; never used until approved.
  *
- * Next-session targets, offers and proposals' Apply state arrive with their
- * slices (C7, C8) in a later migration.
+ * - `next_session_targets` (C8, added before release): the coach's target per
+ *   exercise for the next workout from a finished one (D21). One row per
+ *   source workout and exercise; status changes are versioned, never deleted.
+ *
+ * Offers (CA4) are kept in memory per workout in v1; structural proposals
+ * are not built yet.
  */
 export const MIGRATION_0004 = `
 CREATE TABLE coach_threads (
@@ -103,4 +107,19 @@ CREATE TABLE playbook_candidates (
 ) STRICT;
 CREATE UNIQUE INDEX playbook_candidates_one_open ON playbook_candidates (content_key) WHERE status = 'to_review';
 CREATE TRIGGER playbook_candidates_no_delete BEFORE DELETE ON playbook_candidates BEGIN SELECT RAISE(ABORT, 'playbook candidates are withdrawn, not deleted'); END;
+
+CREATE TABLE next_session_targets (
+  id TEXT PRIMARY KEY NOT NULL,
+  owner_id TEXT NOT NULL,
+  source_session_id TEXT NOT NULL,
+  exercise_id TEXT NOT NULL,
+  action_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('saved', 'undone', 'proposed', 'applied', 'not_applied')),
+  version INTEGER NOT NULL CHECK (version >= 1),
+  updated_at_utc TEXT NOT NULL,
+  data TEXT NOT NULL CHECK (json_valid(data))
+) STRICT;
+CREATE UNIQUE INDEX next_session_targets_one ON next_session_targets (owner_id, source_session_id, exercise_id);
+CREATE INDEX next_session_targets_action ON next_session_targets (action_id);
+CREATE TRIGGER next_session_targets_no_delete BEFORE DELETE ON next_session_targets BEGIN SELECT RAISE(ABORT, 'next-session targets are never deleted'); END;
 `;

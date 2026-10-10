@@ -4,6 +4,7 @@ import {
   CoachThreadSchema,
   CoachTurnSchema,
   MemorySchema,
+  NextSessionTargetRecordSchema,
   PlaybookCandidateSchema,
   type ActionRecord,
   type CoachMessage,
@@ -12,11 +13,16 @@ import {
   type CoachUndoResult,
   type CoachWrite,
   type CoachWriteResult,
+  type ExerciseTargetChanges,
   type Memory,
+  type NextSessionTargetRecord,
   type PainFlag,
+  type SessionAggregate,
   type PlaybookCandidate,
 } from '@fizz/schemas';
+import { reduceSession } from '@fizz/domain';
 import type { Database } from './database';
+import { readAggregate, writeAggregate } from './sessions';
 import { decodeDocument, erase, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor, SqlRow } from './driver';
 import { checkRead, checkWrite, insert, mismatch, parseJson, rowId } from './sql';
@@ -28,10 +34,9 @@ import { checkRead, checkWrite, insert, mismatch, parseJson, rowId } from './sql
  * on the record's `opId` (rule 5) and, for the append kinds, on their
  * content. Conversations and action records are never deleted.
  *
- * Not here yet (seams): today's set targets (`adjust_pending_sets` and its
- * Undo) need the reducer's `adjust_pending_targets` command, which waits for
- * `claude/active-set` (`TargetSource` gains `coach`); next-session targets
- * and offers arrive with C7/C8.
+ * Today's set targets (`adjust_pending_sets`, C7) run the session reducer
+ * inside the same transaction as their record; next-session targets (C8)
+ * are rows written with theirs.
  */
 
 export const COACH_THREAD_SPEC: DocumentSpec<CoachThread> = { table: 'coach_threads', schema: CoachThreadSchema, columns: (t) => ({ owner_id: t.ownerId }) };
@@ -49,6 +54,12 @@ export const PLAYBOOK_CANDIDATE_SPEC: DocumentSpec<PlaybookCandidate> = {
   table: 'playbook_candidates',
   schema: PlaybookCandidateSchema,
   columns: (c) => ({ content_key: c.contentKey, status: c.status }),
+};
+
+export const NEXT_TARGET_SPEC: DocumentSpec<NextSessionTargetRecord> = {
+  table: 'next_session_targets',
+  schema: NextSessionTargetRecordSchema,
+  columns: (r) => ({ owner_id: r.ownerId, source_session_id: r.sourceSessionId, exercise_id: r.exerciseId, action_id: r.actionId, status: r.status }),
 };
 
 /** The session an action is about, for `get_recent_actions` and the workout's Undo. */
@@ -110,6 +121,7 @@ export const COACH_DOCUMENT_TABLES: readonly DocumentTable[] = [
   erase(COACH_TURN_SPEC),
   erase(MEMORY_SPEC),
   erase(PLAYBOOK_CANDIDATE_SPEC),
+  erase(NEXT_TARGET_SPEC),
   { table: 'coach_actions', decode: decodeAction },
   { table: 'coach_messages', decode: decodeMessage },
 ];
@@ -165,6 +177,22 @@ class Rollback extends Error {
     super(reason);
   }
 }
+
+/** Every write after a workout ended: has any workout started since? (CA10: then its next targets are stale.) */
+async function startedSince(tx: SqlExecutor, ownerId: string, source: SessionAggregate): Promise<boolean> {
+  const after = source.session.endedAt?.utc ?? source.session.startedAt.utc;
+  const row = await tx.getFirst("SELECT id FROM sessions WHERE owner_id = ? AND id != ? AND started_at_utc > ? AND status IN ('active', 'finished') LIMIT 1", [ownerId, source.session.id, after]);
+  return row !== null;
+}
+
+/** Statuses a next-session target row may move between by Ben's tap. */
+const NEXT_TARGET_MOVES: Record<NextSessionTargetRecord['status'], readonly NextSessionTargetRecord['status'][]> = {
+  saved: ['undone'],
+  undone: ['saved'],
+  proposed: ['applied', 'not_applied'],
+  applied: ['proposed'],
+  not_applied: [],
+};
 
 export class SqliteCoachStore {
   constructor(private readonly db: Database) {}
@@ -351,6 +379,26 @@ export class SqliteCoachStore {
         if (added === 0) throw new Rollback('already_exists');
         return null;
       }
+      case 'next_session_targets': {
+        const source = await readAggregate(tx, write.action.detail.kind === 'set_next_session_targets' ? write.action.detail.sourceSessionId : '');
+        if (source === null || source.session.ownerId !== ownerId) throw new Rollback('missing');
+        if (source.session.version !== write.sourceVersion || source.session.status !== 'finished' || (await startedSince(tx, ownerId, source))) throw new Rollback('stale_version');
+        for (const row of write.rows) {
+          if (row.ownerId !== ownerId) throw new Error('Next-target owner differs from the store owner');
+          const current = await getDoc(tx, NEXT_TARGET_SPEC, row.id);
+          const r = await saveDocumentIn(tx, NEXT_TARGET_SPEC, current === null ? row : { ...row, version: current.version + 1, createdAtUtc: current.createdAtUtc }, current?.version ?? null);
+          if (!r.ok) throw new Rollback('stale_version');
+        }
+        return null;
+      }
+      case 'session_command': {
+        const agg = await readAggregate(tx, write.sessionId);
+        if (agg === null || agg.session.ownerId !== ownerId) throw new Rollback('missing');
+        const r = reduceSession(agg, write.command);
+        if (!r.ok) throw new Rollback(r.error.code === 'stale_version' ? 'stale_version' : 'missing');
+        if (r.state !== agg) await writeAggregate(tx, r.state);
+        return null;
+      }
       case 'playbook_candidate': {
         const open = await tx.getFirst("SELECT * FROM playbook_candidates WHERE content_key = ? AND status = 'to_review'", [write.candidate.contentKey]);
         if (open !== null) return this.creatorOf(tx, decodeDocument(PLAYBOOK_CANDIDATE_SPEC, open).createdByActionId);
@@ -388,15 +436,22 @@ export class SqliteCoachStore {
       if (target.record.status !== 'committed') return { status: 'not_possible', reason: 'not_committed' };
       if (target.record.undoneBy !== null) return { status: 'not_possible', reason: 'already_undone' };
       const reverted = await this.revertIn(tx, ownerId, target.record, atUtc);
-      if (reverted !== 'ok') return { status: 'not_possible', reason: reverted };
+      if (reverted !== 'ok' && typeof reverted === 'string') return { status: 'not_possible', reason: reverted };
       const updated: ActionRecord = { ...target.record, undoneBy: { actionId: undo.actionId, atUtc } };
       if (!(await updateAction(tx, updated, target.version, atUtc))) throw new Error(`Action ${targetId} changed while it was being undone`);
-      await insertAction(tx, ownerId, undo);
-      return { status: 'written', undo, target: updated };
+      // Today's sets: the undo says what came back and what was already logged (from the reducer's result, not the model).
+      const saved: ActionRecord = typeof reverted === 'object' ? { ...undo, detail: { ...undo.detail, ...reverted } } : undo;
+      await insertAction(tx, ownerId, saved);
+      return { status: 'written', undo: saved, target: updated };
     });
   }
 
-  private async revertIn(tx: SqlExecutor, ownerId: string, target: ActionRecord, atUtc: string): Promise<'ok' | 'changed_since' | 'unsupported'> {
+  private async revertIn(
+    tx: SqlExecutor,
+    ownerId: string,
+    target: ActionRecord,
+    atUtc: string,
+  ): Promise<'ok' | 'changed_since' | 'unsupported' | { restored: ExerciseTargetChanges[]; alreadyLogged: number[] }> {
     const d = target.detail;
     switch (d.kind) {
       case 'save_memory': {
@@ -429,12 +484,94 @@ export class SqliteCoachStore {
         await saveDocumentIn(tx, PLAYBOOK_CANDIDATE_SPEC, { ...c, status: 'withdrawn' as const, version: c.version + 1, updatedAtUtc: atUtc }, c.version);
         return 'ok';
       }
-      case 'adjust_pending_sets':
-      case 'set_next_session_targets':
+      case 'adjust_pending_sets': {
+        const agg = await readAggregate(tx, d.sessionId);
+        if (agg === null || agg.session.ownerId !== ownerId || agg.session.status !== 'active') return 'changed_since';
+        const changes = d.exercises.flatMap((e) => e.changes);
+        const r = reduceSession(agg, {
+          type: 'revert_target_adjustment',
+          at: { utc: atUtc, tz: target.createdAt.tz },
+          opId: `undo:${target.actionId}`,
+          actionId: target.actionId,
+          removedSetIds: changes.filter((c) => c.after === null).map((c) => c.setId),
+          addedSetIds: changes.filter((c) => c.before === null).map((c) => c.setId),
+        });
+        if (!r.ok || r.state === agg || r.duplicate) return 'changed_since';
+        await writeAggregate(tx, r.state);
+        const now = new Map(r.state.sets.map((x) => [x.id, x]));
+        const was = new Map(agg.sets.map((x) => [x.id, x]));
+        const restored: ExerciseTargetChanges[] = d.exercises
+          .map((e) => ({
+            ...e,
+            changes: e.changes.filter((c) => c.before !== null && c.after !== null && was.get(c.setId)?.status === 'pending' && now.get(c.setId)?.planned.coach?.actionId !== target.actionId).map((c) => ({ ...c, before: c.after, after: c.before })),
+          }))
+          .filter((e) => e.changes.length > 0);
+        const alreadyLogged = changes.filter((c) => now.get(c.setId)?.status === 'completed').map((c) => c.setNumber);
+        return { restored, alreadyLogged };
+      }
+      case 'set_next_session_targets': {
+        const rows = await listDocuments(tx, NEXT_TARGET_SPEC, 'action_id = ?', [target.actionId]);
+        let undone = 0;
+        for (const row of rows) {
+          if (row.ownerId !== ownerId || row.usedBySessionId !== null) continue;
+          if (row.status !== 'saved' && row.status !== 'applied') continue;
+          await saveDocumentIn(tx, NEXT_TARGET_SPEC, { ...row, status: row.status === 'saved' ? ('undone' as const) : ('proposed' as const), version: row.version + 1, updatedAtUtc: atUtc }, row.version);
+          undone += 1;
+        }
+        return undone > 0 ? 'ok' : 'changed_since';
+      }
       case 'propose_next_workout_change':
       case 'undo':
         return 'unsupported';
     }
+  }
+
+  // ---------- Next-session targets (D21) ----------
+
+  /** The rows for one finished workout (the Summary's `Next time`, `nextTargetsOf`). */
+  listNextTargets(ownerId: string, sourceSessionId: string): Promise<NextSessionTargetRecord[]> {
+    return this.db.read((q) => listDocuments(q, NEXT_TARGET_SPEC, 'owner_id = ? AND source_session_id = ?', [ownerId, sourceSessionId]));
+  }
+
+  getNextTarget(id: string): Promise<NextSessionTargetRecord | null> {
+    return this.db.read((q) => getDoc(q, NEXT_TARGET_SPEC, id));
+  }
+
+  /**
+   * Ben's tap on one row: Undo, `Use coach target`, Apply or Not now. The
+   * row's new status and the record of the tap are saved together;
+   * idempotent on the record's opId; refused once a workout has started from
+   * the source (the target was used) or when the row moved on.
+   */
+  setNextTargetStatus(ownerId: string, input: { rowId: string; expectedVersion: number; status: NextSessionTargetRecord['status']; record: ActionRecord }): Promise<{ status: 'written' | 'replayed'; row: NextSessionTargetRecord } | { status: 'not_possible'; reason: 'missing' | 'changed_since' | 'used' }> {
+    return this.db.write(async (tx) => {
+      const prior = await actionByOp(tx, ownerId, input.record.opId);
+      const row = await getDoc(tx, NEXT_TARGET_SPEC, input.rowId);
+      if (row === null || row.ownerId !== ownerId) return { status: 'not_possible', reason: 'missing' };
+      if (prior !== null) return { status: 'replayed', row };
+      if (row.usedBySessionId !== null) return { status: 'not_possible', reason: 'used' };
+      if (row.version !== input.expectedVersion || !NEXT_TARGET_MOVES[row.status].includes(input.status)) return { status: 'not_possible', reason: 'changed_since' };
+      const source = await readAggregate(tx, row.sourceSessionId);
+      if (source === null || (await startedSince(tx, ownerId, source))) return { status: 'not_possible', reason: 'used' };
+      const next = { ...row, status: input.status, version: row.version + 1, updatedAtUtc: input.record.createdAt.utc };
+      await saveDocumentIn(tx, NEXT_TARGET_SPEC, next, row.version);
+      await insertAction(tx, ownerId, input.record);
+      return { status: 'written', row: next };
+    });
+  }
+
+  /** A workout was started from `sourceSessionId` with these targets: they are used and their buttons go. */
+  markNextTargetsUsed(ownerId: string, sourceSessionId: string, usedBySessionId: string, atUtc: string): Promise<number> {
+    return this.db.write(async (tx) => {
+      const rows = await listDocuments(tx, NEXT_TARGET_SPEC, 'owner_id = ? AND source_session_id = ?', [ownerId, sourceSessionId]);
+      let n = 0;
+      for (const row of rows) {
+        if (row.usedBySessionId !== null) continue;
+        await saveDocumentIn(tx, NEXT_TARGET_SPEC, { ...row, usedBySessionId, version: row.version + 1, updatedAtUtc: atUtc }, row.version);
+        n += 1;
+      }
+      return n;
+    });
   }
 
   // ---------- Memories and playbook candidates ----------
