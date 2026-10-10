@@ -4,6 +4,7 @@ import { getAchievableLoads, loadDirection, roundToAvailableLoad } from '../equi
 import { fitProvenance, startWarningNote } from '../target-provenance';
 import { convertMass } from '../units';
 import { startWorkout, type StartWarning, type StartWorkoutInput, type StartWorkoutOutput } from './create';
+import { setDisplayNumbers } from './order';
 import { GENERIC_WORKOUT_NAME } from './first-run';
 
 /**
@@ -202,7 +203,9 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   });
 
   // Rounded or dropped loads become plain notes; every target is marked as copied.
-  notes.push(...warningNotes(out.warnings, routineExercises, exercises));  const warningOf = new Map(out.warnings.flatMap((w) => (w.kind === 'target_rounded' || w.kind === 'target_dropped' ? [[w.setTemplateId, w] as const] : [])));
+  notes.push(...warningNotes(out.warnings, routineExercises, exercises));
+  const numbers = setDisplayNumbers(src.exercises, src.sets);
+  const warningOf = new Map(out.warnings.flatMap((w) => (w.kind === 'target_rounded' || w.kind === 'target_dropped' ? [[w.setTemplateId, w] as const] : [])));
   const fromOf = (setId: string) => {
     const templateId = out.setTemplateIds[setId];
     return templateId === undefined ? undefined : { templateId, entry: copied.get(templateId) };
@@ -222,6 +225,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       return fitProvenance(fit === null ? rule : { ...rule, guardNotes: [...rule.guardNotes, fit] });
     }
     if (from.set.actual === null) return null;
+    const number = numbers.get(from.set.id);
     const notes = [entry.dropNote ?? (w ? startWarningNote(w, entry.eq, 'Last time') : null)].filter((n): n is string => n !== null);
     return fitProvenance({
       source: 'repeat',
@@ -234,7 +238,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
         routineName: src.session.routineName,
         gymId: src.session.gymId,
         equipmentId: entry.equipmentId,
-        sets: [{ setId: from.set.id, version: from.set.version, setType: from.set.setType, side: from.set.side, values: from.set.actual }],
+        sets: [{ setId: from.set.id, version: from.set.version, ...(number !== undefined ? { number } : {}), setType: from.set.setType, side: from.set.side, values: from.set.actual }],
       },
       guardNotes: notes,
     });

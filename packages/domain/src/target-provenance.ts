@@ -77,6 +77,7 @@ function basisSets(h: HistorySession): TargetBasisSet[] {
     .map((s) => ({
       ...(s.setId !== undefined ? { setId: s.setId } : {}),
       ...(s.version !== undefined ? { version: s.version } : {}),
+      ...(s.number !== undefined ? { number: s.number } : {}),
       setType: s.setType,
       side: s.side,
       values: { load: s.load, reps: s.reps, durationS: null, rpe: s.rpe, rir: s.rir },

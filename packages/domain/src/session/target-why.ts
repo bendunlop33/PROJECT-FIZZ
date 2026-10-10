@@ -69,6 +69,8 @@ export interface ExplainTargetInput {
 export const PAIN_REFERENCE_WINDOW_MS = 8 * 7 * 86_400_000;
 
 interface ShownSet {
+  /** The number the card showed (`Set 4`); older stored bases don't have it. */
+  number?: number | undefined;
   side: SetSide | null;
   values: Pick<SetValues, 'load' | 'reps' | 'durationS' | 'rpe' | 'rir'>;
   exclusions?: readonly SetExclusion[] | undefined;
@@ -80,9 +82,13 @@ const counted = <T extends ShownSet>(sets: readonly T[]): T[] => sets.filter((s)
 /** Shown when every set of the workout was left out. */
 const ALL_LEFT_OUT = 'No counted sets (all left out).';
 
-/** `Not used`: basis sets Ben marked, numbered among the non-warm-up sets shown (`Set 3 on 1 Oct: spotted.`). */
+/**
+ * `Not used`: basis sets Ben marked, by the number the card showed them with
+ * (`Set 4 on 1 Oct: spotted.`, review N1). A basis stored before numbers
+ * were kept falls back to the place among the sets shown.
+ */
 function notUsedRow(sets: readonly ShownSet[], day: string): WhyRow | null {
-  const lines = sets.flatMap((s, i) => (isSetCountable(s, 'progression') ? [] : [notUsedLine(i + 1, day, s.exclusions)]));
+  const lines = sets.flatMap((s, i) => (isSetCountable(s, 'progression') ? [] : [notUsedLine(s.number ?? i + 1, day, s.exclusions)]));
   return lines.length === 0 ? null : { key: 'not_used', label: 'Not used', lines, kind: 'actual' };
 }
 
@@ -179,7 +185,7 @@ function storedLastTime(basis: TargetBasis, ex: SessionExercise, eq: EquipmentIn
 function shownSets(h: HistorySession): ShownSet[] {
   return h.sets
     .filter((x) => x.setType !== 'warmup')
-    .map((x) => ({ side: x.side, values: { load: x.load, reps: x.reps, durationS: null, rpe: x.rpe, rir: x.rir }, ...(x.exclusions ? { exclusions: x.exclusions } : {}) }));
+    .map((x) => ({ ...(x.number !== undefined ? { number: x.number } : {}), side: x.side, values: { load: x.load, reps: x.reps, durationS: null, rpe: x.rpe, rir: x.rir }, ...(x.exclusions ? { exclusions: x.exclusions } : {}) }));
 }
 
 /** The workout `lastComparableSession` picks (same equipment, unit and convention; never imported), with its sides. */

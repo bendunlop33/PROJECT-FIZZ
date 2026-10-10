@@ -112,6 +112,8 @@ export const TargetBasisSetSchema = z.object({
   setId: IdSchema.optional(),
   /** The set's version then; a later correction bumps it (`Based on 1 Oct before you edited it`). */
   version: z.int().min(1).optional(),
+  /** The set's number as the card showed it (`Set 4`, warm-ups included); absent on targets stored before it was. */
+  number: z.int().min(1).max(200).optional(),
   setType: SetTypeSchema,
   side: SetSideSchema.nullable(),
   values: SetValuesSchema,

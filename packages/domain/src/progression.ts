@@ -37,6 +37,8 @@ export interface HistorySet {
   /** The stored set and its version (sets logged in the app), so `Why?` can tell when it was edited later. */
   setId?: string;
   version?: number;
+  /** The set's number as the card showed it (`Set 4`, warm-ups included), for `Why?` `Not used`. */
+  number?: number;
   /**
    * Ben's exclusion flags (active-workout §2.13). A flagged set is left out
    * of progression, comparisons and records (`isSetCountable`), but it is

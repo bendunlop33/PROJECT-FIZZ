@@ -1,5 +1,6 @@
 import type { SessionAggregate } from '@fizz/schemas';
 import type { HistorySession, HistorySet } from './progression';
+import { setDisplayNumbers } from './session/order';
 
 /**
  * Progression history for one exercise from a stored session (third-review
@@ -29,6 +30,7 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
     .filter((e) => e.exerciseId === exerciseId)
     .sort((a, b) => a.order - b.order);
   const byEquipment = new Map<string | null, HistorySet[]>();
+  const numbers = opts.identity ? setDisplayNumbers(aggregate.exercises, aggregate.sets) : null;
   for (const ex of exercises) {
     const sets = aggregate.sets
       .filter((s) => s.sessionExerciseId === ex.id && s.status === 'completed' && s.actual !== null)
@@ -36,6 +38,7 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
     const bucket = byEquipment.get(ex.equipmentId) ?? [];
     for (const s of sets) {
       if (s.actual === null) continue;
+      const number = numbers?.get(s.id);
       bucket.push({
         setType: s.setType,
         side: s.side,
@@ -46,6 +49,7 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
         // §2.13: flags travel with the set; consumers decide with `isSetCountable`.
         ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}),
         ...(opts.identity ? { setId: s.id, version: s.version } : {}),
+        ...(number !== undefined ? { number } : {}),
       });
     }
     byEquipment.set(ex.equipmentId, bucket);

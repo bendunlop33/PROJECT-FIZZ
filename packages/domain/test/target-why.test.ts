@@ -367,12 +367,21 @@ describe('buildActiveSetView: target.hasExplanation', () => {
 
 describe('explainTarget: sets left out (Not used, active-workout §2.13)', () => {
   /** Day 0: 100 × 8, 8, then a third set Ben marked `Form broke`. */
-  function basisWithFlag(): SessionAggregate {
+  /** `warmUps`: warm-up sets logged first, which the card numbers too (`Set 3` is then the first working set). */
+  function basisWithFlag(warmUps = 0): SessionAggregate {
     const ids = idGen((idBase += 1_000));
     let s = startWorkout({ opId: 'nu-start', owner, gymId: GYM, routine: null, exercises: new Map(), gymEquipment: [BAR], at: at(0), newId: ids }).aggregate;
-    const plan = [1, 2, 3].map(() => ({ setType: 'working' as const, planned: { load: null, reps: null, durationS: null, rpe: null, rir: null } }));
+    const empty = { load: null, reps: null, durationS: null, rpe: null, rir: null };
+    const plan = [
+      ...Array.from({ length: warmUps }, () => ({ setType: 'warmup' as const, planned: empty })),
+      ...[1, 2, 3].map(() => ({ setType: 'working' as const, planned: empty })),
+    ];
     s = apply(s, buildAddExerciseCommand({ opId: 'nu-add', owner, exercise: benchEx, equipmentId: BAR.id, at: at(1), newId: ids, plan }));
-    const sets = s.sets.slice();
+    const all = s.sets.slice().sort((a, b) => a.index - b.index);
+    all.slice(0, warmUps).forEach((w, i) => {
+      s = apply(s, logCmd(w.id, values(kg(60), 5), 10 * (i + 1)));
+    });
+    const sets = all.slice(warmUps);
     [8, 8, 9].forEach((r, i) => {
       s = apply(s, logCmd(sets[i]?.id ?? '', values(kg(r === 9 ? 105 : 100), r === 9 ? 6 : 8, { rpe: 8 }), 100 * (i + 1)));
     });
@@ -389,6 +398,14 @@ describe('explainTarget: sets left out (Not used, active-workout §2.13)', () =>
     expect(rowsOf(e).at(-1)).toEqual(['Not used', 'Set 3 on 8 Oct: form broke.']);
     expect(e?.rows.at(-1)?.kind).toBe('actual');
     expect(e?.basisEdited).toBeNull();
+  });
+
+  it('Not used numbers the set as the card did, warm-ups included (review N1)', () => {
+    const basis = basisWithFlag(2);
+    const h = hist(basis);
+    // The marked set was the card's Set 5 (2 warm-ups, then 3 working sets).
+    expect(rowsOf(explain(today(2, h), { basisNow: basis, history: h })).at(-1)).toEqual(['Not used', 'Set 5 on 8 Oct: form broke.']);
+    expect(rowsOf(explain(today(2, h, { why: false }), { history: h })).at(-1)).toEqual(['Not used', 'Set 5 on 8 Oct: form broke.']);
   });
 
   it('without stored provenance, Not used is read from history', () => {

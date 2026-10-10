@@ -260,7 +260,8 @@ describe('Repeat provenance (startWorkoutFromSession)', () => {
         routineName: 'Push A',
         gymId: GYM,
         equipmentId: barbell().id,
-        sets: [{ setId: from?.id, version: from?.version, setType: 'working', side: null, values: from?.actual }],
+        // `number`: Set 2 as the card showed it (review N1).
+        sets: [{ setId: from?.id, version: from?.version, number: 2, setType: 'working', side: null, values: from?.actual }],
       },
       guardNotes: [],
     });
