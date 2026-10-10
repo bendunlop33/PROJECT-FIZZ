@@ -11,8 +11,17 @@
  * normalised time within a phase.
  *
  * Levels: `hard` metrics are bugs (a pose jump, a contact velocity jump,
- * interpolation overshoot); `quality` metrics are the acceptance thresholds
- * for "one seamless motion"; `warn` metrics are reported only.
+ * interpolation overshoot, a velocity step at the loop seam); `quality`
+ * metrics are the acceptance thresholds for "one seamless motion"; `warn`
+ * metrics are reported only. Round 2 (ADR 0017) adds the velocity-vector
+ * frame steps M7v and M8, the IK joint acceleration J5, the IK reach J6 and
+ * the seam velocity C6. Frame metrics use the baked frames at `fps` (default
+ * `PLAYBACK_FPS`).
+ *
+ * A guide's config may declare an out-and-back joint excursion (a coached
+ * lean-back) or relax a quality limit, each with its reason (`allowance`);
+ * the report carries the reason, so a relaxed gate shows in every report.
+ * Hard limits can't be relaxed.
  */
 import { flattenState, stateAt } from './keyframes';
 import { dist, minimumJerkInverse, type Vec } from './math';
@@ -31,6 +40,17 @@ export interface MotionConfig {
   pairs: readonly (readonly [AngleName, AngleName])[];
   /** Gait guides: phases in normalised time (half-strides) instead of stops. */
   phases?: readonly (readonly [number, number])[];
+  /**
+   * Declared out-and-back movements (J2, J2.any): a joint that turns exactly
+   * once in a phase, by at most `maxDeg`, is not counted as backtracking. Any
+   * more turns, or a bigger amplitude, still fail.
+   */
+  excursions?: Partial<Record<AngleName, { maxDeg: number; why: string }>>;
+  /**
+   * Relaxed quality limits for this guide, with the reason (a decision of
+   * Ben's recorded as config, never a threshold change for every guide).
+   */
+  allowance?: { limits: Partial<Record<AllowanceLimit, number>>; why: string };
 }
 
 const pt = (point: string): PointRef => ({ point });
@@ -47,7 +67,12 @@ export const MOTION_CONFIG: Readonly<Record<string, MotionConfig>> = {
     ],
   },
   'barbell-bench-press': { main: [prop('bar')], primary: ['shoulderNear', 'elbowNear'], pairs: [['shoulderNear', 'elbowNear']] },
-  'barbell-overhead-press': { main: [prop('bar')], primary: ['shoulderNear', 'elbowNear'], pairs: [['shoulderNear', 'elbowNear']] },
+  'barbell-overhead-press': {
+    main: [prop('bar')],
+    primary: ['shoulderNear', 'elbowNear'],
+    pairs: [['shoulderNear', 'elbowNear']],
+    excursions: { pelvis: { maxDeg: 6, why: 'lean back to clear the face (catalogue cue)' } },
+  },
   'barbell-romanian-deadlift': { main: [prop('bar'), pt('hip')], primary: ['pelvis', 'hipNear'], pairs: [] },
   'cable-lat-pulldown': { main: [prop('bar')], primary: ['shoulderNear', 'elbowNear'], pairs: [['shoulderNear', 'elbowNear']] },
   'cable-triceps-pushdown': { main: [pt('gripNear')], primary: ['elbowNear'], pairs: [] },
@@ -112,7 +137,58 @@ export const MOTION_LIMITS = {
   passTiming: 0.01,
   /** J1/J3/J4 only look at joints that move more than this in a phase. */
   movingDeg: 10,
+  /** C6: velocity step of any point across the loop seam (one-sided differences), H/s. */
+  seamVelocity: 0.02,
+  /** M7v: worst per-frame change of a tracked point's velocity vector over the ideal minimum-jerk step (3.08 / frames in the phase). */
+  velocityStep: 2.5,
+  /** M8: the same step as a share of the point's phase peak, where τ ≤ 0.15 or τ ≥ 0.85 (the lockout snap J4 misses). */
+  endStep: 0.25,
+  endWindow: 0.15,
+  /** J5: worst angular-acceleration step of an IK knee or elbow over its minimum-jerk ideal (ω peak · 3.08 / T). */
+  ikAccel: 2,
+  /** J6 (warning): largest reach |root→end| / (l₁ + l₂) of a moving, undriven IK limb. */
+  reach: 0.99,
+  /** M7v, M8: only points whose phase peak speed reaches this (H/s). J5: only joints whose ω peak reaches `trackOmega` (°/s). */
+  trackSpeed: 0.03,
+  trackOmega: 20,
+  /** J6 only looks at IK joints that move at least this much in a phase. */
+  reachMovingDeg: 1,
 } as const;
+
+type NumericLimit = { [K in keyof typeof MOTION_LIMITS]: (typeof MOTION_LIMITS)[K] extends number ? K : never }[keyof typeof MOTION_LIMITS];
+/** Limits a guide's `allowance` may relax: quality limits only (hard ones are bugs). */
+export type AllowanceLimit = Exclude<NumericLimit, 'continuity' | 'contactVelocity' | 'overshoot' | 'seamVelocity' | 'humpProminence' | 'movingDeg' | 'trackSpeed' | 'trackOmega' | 'reachMovingDeg' | 'endWindow'>;
+/** `MOTION_LIMITS` with a guide's allowance applied. */
+export type MotionLimits = { [K in keyof typeof MOTION_LIMITS]: (typeof MOTION_LIMITS)[K] extends number ? number : (typeof MOTION_LIMITS)[K] };
+
+/** The limits for one guide: `MOTION_LIMITS` with its allowance (if any) applied. */
+export function motionLimits(config: MotionConfig): MotionLimits {
+  return { ...MOTION_LIMITS, ...(config.allowance?.limits ?? {}) };
+}
+
+/** Which limits each metric uses (so a report can say which metrics an allowance relaxed). */
+const METRIC_LIMITS: Readonly<Record<string, readonly AllowanceLimit[]>> = {
+  M3: ['stall'],
+  'M4.1': ['easeFirst'],
+  'M4.2': ['easeSecond'],
+  M5: ['accelJump'],
+  M6: ['frameStep'],
+  M7v: ['velocityStep'],
+  M8: ['endStep'],
+  J2: ['reversalPrimaryDeg'],
+  'J2.any': ['reversalAnyDeg'],
+  'J2.pt': ['reversalPoint'],
+  'J3.t50': ['syncMs'],
+  'J3.gap': ['syncGap'],
+  J4: ['whipShare'],
+  'J4.ω': ['whipOmega'],
+  J5: ['ikAccel'],
+  J6: ['reach'],
+  S1: ['gaitKneeStep'],
+  S2: ['gaitLiftOffDegPerS'],
+  S3: ['gaitToeOffReach'],
+  P1: ['passTiming'],
+};
 
 export type MetricLevel = 'hard' | 'quality' | 'warn';
 
@@ -127,6 +203,8 @@ export interface MotionMetric {
   ok: boolean;
   /** Where the worst value is (phase, point or joint, time). */
   where: string;
+  /** The guide's declared excursion or relaxed limit behind this result, with its reason. */
+  allowance?: string;
 }
 
 export interface MotionPhase {
@@ -148,6 +226,8 @@ export interface MotionReport {
   exerciseKey: string;
   motion: 'channels' | 'phases';
   gait: boolean;
+  /** Bake rate the frame metrics (M4, M6, M7v, M8, J5, S1) used. */
+  fps: number;
   phases: MotionPhase[];
   metrics: MotionMetric[];
   suggestions: PassSuggestion[];
@@ -501,9 +581,9 @@ function accelJump(prepared: PreparedGuide, ref: PointRef, t: number): number {
   return dist(am, ap);
 }
 
-/** The baked frame times of one pass (30 fps), closed with t = 1 for a cycle. */
-function frameTimes(prepared: PreparedGuide): number[] {
-  const times = playbackTimes(prepared.guide);
+/** The baked frame times of one pass at `fps`, closed with t = 1 for a cycle. */
+function frameTimes(prepared: PreparedGuide, fps: number): number[] {
+  const times = playbackTimes(prepared.guide, fps);
   return prepared.guide.loop === 'cycle' ? [...times, 1] : times;
 }
 
@@ -532,8 +612,7 @@ function phaseEvents(prepared: PreparedGuide, ph: MotionPhase): { t: number; wha
 }
 
 /** Main-point metrics M1–M6 for rep guides. */
-function mainPointMetrics(prepared: PreparedGuide, d: Dense, phases: readonly MotionPhase[], config: MotionConfig): MotionMetric[] {
-  const L = MOTION_LIMITS;
+function mainPointMetrics(prepared: PreparedGuide, d: Dense, phases: readonly MotionPhase[], config: MotionConfig, L: MotionLimits, fps: number): MotionMetric[] {
   const m1 = new Worst((a, b) => Math.abs(a - 1) > Math.abs(b - 1));
   const m2 = new Worst((a, b) => Math.abs(a - 0.5) > Math.abs(b - 0.5));
   const m3 = new Worst((a, b) => a < b);
@@ -541,7 +620,7 @@ function mainPointMetrics(prepared: PreparedGuide, d: Dense, phases: readonly Mo
   const m42 = higher();
   const m5 = higher();
   const m6 = higher();
-  const frames = frameTimes(prepared);
+  const frames = frameTimes(prepared, fps);
   for (const ref of config.main) {
     const xs = series(d, (p) => pointOf(p, ref));
     if (xs === null) continue;
@@ -611,7 +690,7 @@ function mainPointMetrics(prepared: PreparedGuide, d: Dense, phases: readonly Mo
       if (inPhase.length > 2 && framePeak > 1e-9) {
         let step = 0;
         for (let i = 1; i < inPhase.length; i += 1) step = Math.max(step, Math.abs((inPhase[i] ?? 0) - (inPhase[i - 1] ?? 0)));
-        const nFrames = span * prepared.guide.durationMs * (PLAYBACK_FPS / 1000);
+        const nFrames = span * prepared.guide.durationMs * (fps / 1000);
         const ratio = step / framePeak / (3.08 / nFrames);
         m6.add(ratio, `${where} (${f((100 * step) / framePeak, 0)}% of peak in one frame)`, ratio <= L.frameStep);
       }
@@ -625,7 +704,7 @@ function mainPointMetrics(prepared: PreparedGuide, d: Dense, phases: readonly Mo
     metric('M4.1', 'stop-ease-1st-frame', 'quality', `≤ ${pc(L.easeFirst)} of peak`, m41, pc),
     metric('M4.2', 'stop-ease-2nd-frame', 'quality', `≤ ${pc(L.easeSecond)} of peak`, m42, pc),
     metric('M5', 'accel-jump', 'quality', `≤ ${pc(L.accelJump)} of peak`, m5, pc),
-    metric('M6', 'frame-step', 'quality', `≤ ${L.frameStep}× ideal`, m6, (x) => `${f(x, 2)}×`),
+    metric('M6', 'frame-step', 'quality', `≤ ${L.frameStep}× ideal at ${fps} fps`, m6, (x) => `${f(x, 2)}×`),
   ];
 }
 
@@ -637,9 +716,34 @@ function ikJoints(pose: Pose): Set<AngleName> {
   return out;
 }
 
+/**
+ * Turns (direction changes) in an angle series, ignoring wobbles smaller
+ * than `deadband` degrees.
+ */
+export function countTurns(xs: readonly number[], deadband = 0.05): number {
+  let turns = 0;
+  let dir = 0;
+  let ext = xs[0] ?? 0;
+  for (const x of xs) {
+    const move = x - ext;
+    if (dir === 0) {
+      if (Math.abs(move) > deadband) {
+        dir = Math.sign(move);
+        ext = x;
+      }
+    } else if (move * dir > 0) ext = x;
+    else if (-move * dir > deadband) {
+      turns += 1;
+      dir = -dir;
+      ext = x;
+    }
+  }
+  return turns;
+}
+
 /** Joint metrics J1–J4 for rep guides. */
-function jointMetrics(prepared: PreparedGuide, d: Dense, phases: readonly MotionPhase[], config: MotionConfig): MotionMetric[] {
-  const L = MOTION_LIMITS;
+function jointMetrics(prepared: PreparedGuide, d: Dense, phases: readonly MotionPhase[], config: MotionConfig, L: MotionLimits): { metrics: MotionMetric[]; excused: string[] } {
+  const excused: string[] = [];
   const j1 = new Worst((a, b) => Math.abs(a - 1) > Math.abs(b - 1));
   const j2 = higher();
   const j2any = higher();
@@ -669,6 +773,12 @@ function jointMetrics(prepared: PreparedGuide, d: Dense, phases: readonly Motion
       if (skip.has(name) || unchecked.has(name)) continue;
       const slice = xs.slice(i0, i1 + 1);
       const r = reversal(slice);
+      // A declared out-and-back (one turn, within its amplitude) is the movement, not backtracking.
+      const declared = config.excursions?.[name];
+      if (declared !== undefined && r > L.reversalPrimaryDeg && r <= declared.maxDeg && countTurns(slice) === 1) {
+        excused.push(`${name} out-and-back ${f(r, 2)}° ≤ ${declared.maxDeg}° in ${pn} (declared: ${declared.why})`);
+        continue;
+      }
       j2any.add(r, `${name} ${pn}`, r <= L.reversalAnyDeg);
       if (!config.primary.includes(name)) continue;
       j2.add(r, `${name} ${pn}`, r <= L.reversalPrimaryDeg);
@@ -721,7 +831,7 @@ function jointMetrics(prepared: PreparedGuide, d: Dense, phases: readonly Motion
   }
   const pc = (x: number): string => `${f(100 * x, 1)}%`;
   const deg = (x: number): string => `${f(x, 2)}°`;
-  return [
+  const metrics = [
     metric('J1', 'joint-humps', 'quality', '= 1 per moving joint', j1, (x) => f(x, 0)),
     metric('J2', 'joint-reversal', 'quality', `≤ ${L.reversalPrimaryDeg}° primary`, j2, deg),
     metric('J2.any', 'any-angle-reversal', 'quality', `≤ ${L.reversalAnyDeg}°`, j2any, deg),
@@ -731,15 +841,15 @@ function jointMetrics(prepared: PreparedGuide, d: Dense, phases: readonly Motion
     metric('J4', 'lockout-share', 'warn', `≤ ${pc(L.whipShare)} in last 10%`, j4s, pc),
     metric('J4.ω', 'lockout-speed', 'warn', `≤ ${pc(L.whipOmega)} of peak at τ 0.95`, j4w, pc),
   ];
+  return { metrics, excused };
 }
 
 /** Gait metrics S1–S3 (a scrolling floor). */
-function gaitMetrics(prepared: PreparedGuide, d: Dense): MotionMetric[] {
-  const L = MOTION_LIMITS;
+function gaitMetrics(prepared: PreparedGuide, d: Dense, L: MotionLimits, fps: number): MotionMetric[] {
   const s1 = higher();
   const s2 = higher();
   const s3 = higher();
-  const frames = frameTimes(prepared);
+  const frames = frameTimes(prepared, fps);
   for (const side of ['Near', 'Far'] as const) {
     const fv = frameSpeeds(prepared, { point: `knee${side}` }, frames).filter((x): x is number => x !== null);
     const peak = Math.max(0, ...fv);
@@ -789,6 +899,181 @@ function gaitMetrics(prepared: PreparedGuide, d: Dense): MotionMetric[] {
 }
 
 /**
+ * C6 `seam-velocity`: no point's velocity steps across the loop seam
+ * (second-order one-sided differences with step 1e-4 at t = 1 and t = 0, H/s).
+ * A ping-pong reverses at each end, so there the step is twice the speed.
+ */
+export function seamVelocity(prepared: PreparedGuide, limit: number = MOTION_LIMITS.seamVelocity): MotionMetric {
+  const w = higher();
+  const sec = prepared.guide.durationMs / 1000;
+  const named = (p: Pose): [string, Vec][] => [...Object.entries(p.points), ...Object.entries(p.propPoints).map(([k, q]): [string, Vec] => [`prop ${k}`, q])];
+  const [a0, a1, a2, b0, b1, b2] = [0, H, 2 * H, 1, 1 - H, 1 - 2 * H].map((t) => new Map(named(poseAt(prepared, t))));
+  const k = 1 / (2 * H * sec);
+  for (const [name, p0] of a0 ?? []) {
+    const p1 = a1?.get(name);
+    const p2 = a2?.get(name);
+    const q0 = b0?.get(name);
+    const q1 = b1?.get(name);
+    const q2 = b2?.get(name);
+    if (p1 === undefined || p2 === undefined || q0 === undefined || q1 === undefined || q2 === undefined) continue;
+    const vStart = { x: (-3 * p0.x + 4 * p1.x - p2.x) * k, y: (-3 * p0.y + 4 * p1.y - p2.y) * k };
+    const vEnd = { x: (3 * q0.x - 4 * q1.x + q2.x) * k, y: (3 * q0.y - 4 * q1.y + q2.y) * k };
+    if (prepared.guide.loop === 'cycle') {
+      const jump = dist(vStart, vEnd);
+      w.add(jump, `${name} at the loop seam`, jump <= limit);
+    } else {
+      for (const [v, end] of [
+        [vStart, 'start'],
+        [vEnd, 'end'],
+      ] as const) {
+        const jump = 2 * Math.hypot(v.x, v.y);
+        w.add(jump, `${name} turning at the ${end}`, jump <= limit);
+      }
+    }
+  }
+  return metric('C6', 'seam-velocity', 'hard', `≤ ${limit} H/s`, w, (x) => `${f(x, 4)} H/s`);
+}
+
+/** Points whose velocity vector M7v and M8 follow (plan §5.2). */
+export const TRACKED_POINTS = ['hip', 'head', 'c7', 'shoulderNear', 'kneeNear', 'kneeFar', 'ankleNear', 'ankleFar', 'elbowNear', 'elbowFar', 'wristNear', 'wristFar'] as const;
+
+/** The baked frames of one pass: times, poses, frames per cycle and seconds per frame. */
+interface Baked {
+  times: number[];
+  poses: Pose[];
+  n: number;
+  dt: number;
+}
+
+function bake(prepared: PreparedGuide, fps: number): Baked {
+  const times = frameTimes(prepared, fps);
+  const n = Math.max(2, Math.round((prepared.guide.durationMs / 1000) * fps));
+  return { times, poses: times.map((t) => poseAt(prepared, t)), n, dt: prepared.guide.durationMs / 1000 / n };
+}
+
+/** Indices of the baked frames inside a phase (both ends included). */
+function framesIn(b: Baked, ph: MotionPhase): number[] {
+  const out: number[] = [];
+  b.times.forEach((t, i) => {
+    if (t >= ph.from - 1e-9 && t <= ph.to + 1e-9) out.push(i);
+  });
+  return out;
+}
+
+/**
+ * M7v `velocity-step` and M8 `end-step`: for every tracked point with a phase
+ * peak of at least 0.03 H/s, the largest change of its velocity *vector*
+ * from one baked frame to the next. M7v divides it (as a share of the peak)
+ * by the ideal minimum-jerk step 3.08/N (N frames in the phase); M8 is the
+ * share itself where τ ≤ 0.15 or τ ≥ 0.85, the snap into or out of a stop
+ * that J4 (τ 0.95 only) misses. The vector means a genuine reversal (speed
+ * through zero) isn't flagged.
+ */
+function velocityStepMetrics(b: Baked, phases: readonly MotionPhase[], L: MotionLimits, level: MetricLevel): MotionMetric[] {
+  const m7 = higher();
+  const m8 = higher();
+  for (const ph of phases) {
+    const idx = framesIn(b, ph);
+    if (idx.length < 5) continue;
+    const ideal = 3.08 / ((ph.to - ph.from) * b.n);
+    for (const name of TRACKED_POINTS) {
+      const vel: Vec[] = [];
+      const at: number[] = [];
+      for (let j = 1; j < idx.length; j += 1) {
+        const i0 = idx[j - 1] ?? 0;
+        const i1 = idx[j] ?? 0;
+        const a = b.poses[i0]?.points[name];
+        const c = b.poses[i1]?.points[name];
+        const dt = ((b.times[i1] ?? 0) - (b.times[i0] ?? 0)) * b.n * b.dt;
+        if (a === undefined || c === undefined || !(dt > 0)) continue;
+        vel.push({ x: (c.x - a.x) / dt, y: (c.y - a.y) / dt });
+        at.push(b.times[i1] ?? 0);
+      }
+      const peak = Math.max(0, ...vel.map((q) => Math.hypot(q.x, q.y)));
+      if (vel.length < 4 || peak < L.trackSpeed) continue;
+      for (let j = 1; j < vel.length; j += 1) {
+        const p = vel[j] as Vec;
+        const q = vel[j - 1] as Vec;
+        const step = Math.hypot(p.x - q.x, p.y - q.y) / peak;
+        const t = at[j] ?? 0;
+        const tau = (t - ph.from) / (ph.to - ph.from);
+        const where = `${name} ${phaseName(ph)} t=${f(t)} τ=${f(tau, 2)}`;
+        m7.add(step / ideal, `${where} (${f(100 * step, 0)}% of peak in one frame)`, step / ideal <= L.velocityStep);
+        if (tau <= L.endWindow || tau >= 1 - L.endWindow) m8.add(step, where, step <= L.endStep);
+      }
+    }
+  }
+  const pc = (x: number): string => `${f(100 * x, 1)}%`;
+  return [
+    metric('M7v', 'velocity-step', level, `≤ ${L.velocityStep}× ideal`, m7, (x) => `${f(x, 2)}×`),
+    metric('M8', 'end-step', level, `≤ ${pc(L.endStep)} of peak near stops`, m8, pc),
+  ];
+}
+
+/** IK limbs at a pose: middle joint, root point and end point (`feet[].wanted`, `hands[]`). */
+function ikLimbs(pose: Pose): { joint: AngleName; root: string; end: string }[] {
+  const out: { joint: AngleName; root: string; end: string }[] = [];
+  for (const foot of pose.feet) {
+    if (foot.wanted === null) continue;
+    const side = foot.limb === 'footNear' ? 'Near' : 'Far';
+    out.push({ joint: `knee${side}`, root: `hip${side}`, end: `ankle${side}` });
+  }
+  for (const hand of pose.hands) {
+    const side = hand.limb === 'handNear' ? 'Near' : 'Far';
+    out.push({ joint: `elbow${side}`, root: `shoulder${side}`, end: `grip${side}` });
+  }
+  return out;
+}
+
+/**
+ * J5 `ik-accel`: for each knee or elbow solved by IK in a phase (a target at
+ * its middle frame) whose angular speed peaks at 20 °/s or more, the largest
+ * frame-to-frame change of angular speed |Δω|/Δt over its minimum-jerk ideal
+ * ω_peak · 3.08/T (near a straight joint IK amplifies the hip's slow-down
+ * into a whip). J6 `ik-reach` (warning): the largest reach
+ * |root→end| / (l₁ + l₂) of such a limb whose joint moves at least 1° and
+ * isn't driven (`drive`): near 1 the joint is in that amplifying band.
+ */
+function ikJointMetrics(b: Baked, phases: readonly MotionPhase[], L: MotionLimits, level: MetricLevel, driven: ReadonlySet<AngleName>): MotionMetric[] {
+  const j5 = higher();
+  const j6 = higher();
+  for (const ph of phases) {
+    const idx = framesIn(b, ph);
+    if (idx.length < 5) continue;
+    const mid = b.poses[idx[Math.floor(idx.length / 2)] ?? 0];
+    if (mid === undefined) continue;
+    const T = (ph.to - ph.from) * b.n * b.dt;
+    for (const { joint, root, end } of ikLimbs(mid)) {
+      const th = idx.map((i) => b.poses[i]?.angles[joint]);
+      if (th.some((x) => x === undefined)) continue;
+      const a = th as number[];
+      const w = a.slice(1).map((x, j) => (x - (a[j] ?? 0)) / b.dt);
+      const peak = Math.max(0, ...w.map(Math.abs));
+      if (peak >= L.trackOmega) {
+        for (let j = 1; j < w.length; j += 1) {
+          const r = Math.abs((w[j] ?? 0) - (w[j - 1] ?? 0)) / b.dt / ((peak * 3.08) / T);
+          j5.add(r, `${joint} ${phaseName(ph)} t=${f(b.times[idx[j + 1] ?? 0] ?? 0)} (ω peak ${f(peak, 0)} °/s)`, r <= L.ikAccel);
+        }
+      }
+      if (driven.has(joint) || Math.max(...a) - Math.min(...a) < L.reachMovingDeg) continue;
+      for (const i of idx) {
+        const pose = b.poses[i];
+        const pr = pose?.points[root];
+        const pm = pose?.points[joint];
+        const pe = pose?.points[end];
+        if (pr === undefined || pm === undefined || pe === undefined) continue;
+        const r = dist(pr, pe) / (dist(pr, pm) + dist(pm, pe));
+        j6.add(r, `${joint} t=${f(b.times[i] ?? 0)}`, r <= L.reach);
+      }
+    }
+  }
+  return [
+    metric('J5', 'ik-accel', level, `≤ ${L.ikAccel}× ideal`, j5, (x) => `${f(x, 2)}×`),
+    metric('J6', 'ik-reach', 'warn', `≤ ${L.reach}`, j6, (x) => f(x, 4)),
+  ];
+}
+
+/**
  * Suggested times for pass keys (phases mode): each key's chord-length share
  * of its phase in main-point space, mapped through the inverse minimum-jerk
  * progress. Keys at these times make the main points' speed one centred bell.
@@ -819,27 +1104,61 @@ export function suggestPassTimes(prepared: PreparedGuide, config: MotionConfig =
   return out;
 }
 
+export interface MeasureOptions {
+  /** Dense samples per cycle for the continuous metrics (default `MOTION_SAMPLES`). */
+  n?: number;
+  config?: MotionConfig;
+  /** Bake rate for the frame metrics (default `PLAYBACK_FPS`; the thresholds apply at the rate in use). */
+  fps?: number;
+}
+
 /** Every metric for one guide (hard, quality and warnings) plus pass-key suggestions. */
-export function measureMotion(prepared: PreparedGuide, opts: { n?: number; config?: MotionConfig } = {}): MotionReport {
+export function measureMotion(prepared: PreparedGuide, opts: MeasureOptions = {}): MotionReport {
   const config = opts.config ?? motionConfig(prepared);
   const n = opts.n ?? MOTION_SAMPLES;
+  const fps = opts.fps ?? PLAYBACK_FPS;
+  const L = motionLimits(config);
   const gait = isGait(prepared, config);
   const phases = motionPhases(prepared, config);
   const d = sampleDense(prepared, n);
+  const baked = bake(prepared, fps);
   const suggestions = suggestPassTimes(prepared, config);
   const p1 = higher();
   for (const s of suggestions) {
     const off = Math.abs(s.suggested - s.t);
-    p1.add(off, `key ${s.key}${s.label ? ` ${s.label}` : ''} (${f(s.t, 4)} → ${f(s.suggested, 4)})`, off <= MOTION_LIMITS.passTiming);
+    p1.add(off, `key ${s.key}${s.label ? ` ${s.label}` : ''} (${f(s.t, 4)} → ${f(s.suggested, 4)})`, off <= L.passTiming);
   }
+  // Gait guides: S1–S3 are the gates; the round-2 frame metrics are reported as warnings (plan §5.2).
+  const frameLevel: MetricLevel = gait ? 'warn' : 'quality';
+  const joints = gait ? null : jointMetrics(prepared, d, phases, config, L);
   const metrics: MotionMetric[] = [
     poseContinuity(prepared),
     contactVelocity(prepared),
     channelOvershoot(prepared, n),
-    ...(gait ? gaitMetrics(prepared, d) : [...mainPointMetrics(prepared, d, phases, config), ...jointMetrics(prepared, d, phases, config)]),
-    metric('P1', 'pass-timing', 'warn', `≤ ${MOTION_LIMITS.passTiming} cycle`, p1, (x) => f(x, 4)),
+    seamVelocity(prepared),
+    ...(gait ? gaitMetrics(prepared, d, L, fps) : [...mainPointMetrics(prepared, d, phases, config, L, fps), ...(joints?.metrics ?? [])]),
+    ...velocityStepMetrics(baked, phases, L, frameLevel),
+    ...ikJointMetrics(baked, phases, L, frameLevel, new Set()),
+    metric('P1', 'pass-timing', 'warn', `≤ ${L.passTiming} cycle`, p1, (x) => f(x, 4)),
   ];
-  return { exerciseKey: prepared.guide.exerciseKey, motion: prepared.guide.motion ?? 'channels', gait, phases, metrics, suggestions };
+  annotateAllowances(metrics, config, joints?.excused ?? []);
+  return { exerciseKey: prepared.guide.exerciseKey, motion: prepared.guide.motion ?? 'channels', gait, fps, phases, metrics, suggestions };
+}
+
+/** Attach the guide's relaxed limits and declared excursions (with their reasons) to the metrics they changed. */
+function annotateAllowances(metrics: MotionMetric[], config: MotionConfig, excused: readonly string[]): void {
+  const relaxed = config.allowance;
+  for (const m of metrics) {
+    const notes: string[] = [];
+    if (relaxed !== undefined) {
+      for (const key of METRIC_LIMITS[m.id] ?? []) {
+        const value = relaxed.limits[key];
+        if (value !== undefined) notes.push(`${key} ${value} instead of ${MOTION_LIMITS[key]}: ${relaxed.why}`);
+      }
+    }
+    if ((m.id === 'J2' || m.id === 'J2.any') && excused.length > 0) notes.push(...excused);
+    if (notes.length > 0) m.allowance = notes.join('; ');
+  }
 }
 
 /** Exit status for `guide:motion`: any failed hard or quality metric fails the guide (warnings never do). */
