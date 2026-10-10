@@ -4,7 +4,7 @@ import { TextInput, View } from 'react-native';
 
 import type { AnswerChange } from '@fizz/domain';
 
-import { barWeightEntry, bodyweightOptions, longDate, perHandOptions, totalOptions, type BarWeightView, type OptionView, type PerHandRowView } from '../../import/views';
+import { barWeightEntry, bodyweightOptions, longDate, perHandOptions, totalOptions, type BarWeightView, type OptionView, type PerHandRowView, type TotalRowView } from '../../import/views';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -13,8 +13,12 @@ import { AppText, ChecklistRow, ChoiceCard, Group, Screen, SectionHeader, Status
 /**
  * One import question (data-import-export §2.5 steps 3b–3c): dumbbell and
  * barbell conventions (one answer for the group, per-exercise overrides;
- * dumbbells: each exercise shows what it will import as, and one-dumbbell
- * or unknown exercises are never read by the group answer, review r3 S1),
+ * each exercise shows what it will import as; one-dumbbell exercises, and
+ * exercises whose count the name doesn't establish, are never read by the
+ * group answer, review r3 S1, r5; the barbell group answer is only "Total
+ * as written" and "Plates only" is chosen per exercise with its bar shown,
+ * PM decision after review r7; Ben's answer for an exercise in an earlier
+ * import is filled in and says so, review r4 S2),
  * a bodyweight exercise with weights, the weight unit for rows with both
  * columns, effort ratings in comments, dates already in GymSmarter, and the
  * gym. Convention questions start with nothing selected (DX6). Each change
@@ -41,38 +45,93 @@ export function ImportQuestionScreen() {
   const options = <A extends string>(list: readonly OptionView<A>[], onPick: (v: A) => AnswerChange) =>
     list.map((o) => <ChoiceCard key={o.value} title={o.label} subtitle={o.detail} selected={o.selected} onPress={() => void answer(onPick(o.value))} />);
 
-  const overrides = <A extends string>(exercises: readonly { key: string; name: string; override: A | null }[], choices: readonly { value: A; label: string }[], onPick: (k: string, v: A | null) => AnswerChange): ReactNode =>
-    exercises.length < 2 ? null : (
-      <>
-        <SectionHeader title="Different for some?" />
-        {exercises.map((e) => (
-          <View key={e.key} style={{ gap: theme.space['1'] }}>
-            <AppText variant="body">{e.name}</AppText>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
-              <TextButton label={e.override === null ? '✓ Same' : 'Same'} tone={e.override === null ? 'accent' : 'secondary'} onPress={() => void answer(onPick(e.key, null))} />
-              {choices.map((c) => (
-                <TextButton key={c.value} label={e.override === c.value ? `✓ ${c.label}` : c.label} tone={e.override === c.value ? 'accent' : 'secondary'} onPress={() => void answer(onPick(e.key, c.value))} />
-              ))}
-            </View>
-          </View>
+  /** One exercise: its name, what it imports as, and its choices (each change saved at once). */
+  const exerciseRow = (r: { key: string; title: string; conversion: string; remembered?: string | null; choices: readonly { label: string; selected: boolean }[] }, onPick: (i: number) => AnswerChange) => (
+    <View key={r.key} style={{ gap: theme.space['1'] }}>
+      <AppText variant="body">{r.title}</AppText>
+      <AppText variant="callout" color="text.secondary">
+        {r.conversion}
+      </AppText>
+      {r.remembered ? (
+        <AppText variant="callout" color="text.secondary">
+          {r.remembered}
+        </AppText>
+      ) : null}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+        {r.choices.map((c, i) => (
+          <TextButton key={c.label} label={c.selected ? `✓ ${c.label}` : c.label} tone={c.selected ? 'accent' : 'secondary'} onPress={() => void answer(onPick(i))} />
         ))}
-      </>
-    );
+      </View>
+    </View>
+  );
+
+  const section = (title: string, lead: string | null, rows: ReactNode): ReactNode => (
+    <>
+      <SectionHeader title={title} />
+      {lead ? (
+        <AppText variant="callout" color="text.secondary">
+          {lead}
+        </AppText>
+      ) : null}
+      {rows}
+    </>
+  );
 
   let body: ReactNode = <AppText variant="body">This question no longer applies.</AppText>;
   switch (question) {
     case 'per_hand': {
       const q = perHandOptions(a);
       if (q) {
-        const row = (r: PerHandRowView) => (
+        const row = (r: PerHandRowView) => exerciseRow(r, (i) => ({ kind: 'per_hand_override', key: r.key, answer: r.choices[i]?.value ?? null }));
+        body = (
+          <>
+            <AppText variant="body">{q.lead}</AppText>
+            {q.question ? <AppText variant="headline">{q.question}</AppText> : null}
+            {options(q.options, (v) => ({ kind: 'per_hand', answer: v }))}
+            {q.example ? <AppText variant="callout" color="text.secondary">{q.example}</AppText> : null}
+            {q.ask ? section(q.ask.title, q.ask.lead, q.ask.rows.map(row)) : null}
+            {q.rows ? section(q.rows.title, q.rows.note, q.rows.rows.map(row)) : null}
+          </>
+        );
+      }
+      break;
+    }
+    case 'total': {
+      const q = totalOptions(a);
+      if (q) {
+        // One exercise: its bar (changeable), what plates only would import as, what it imports as now, and Total as written / Plates only.
+        const row = (r: TotalRowView) => (
           <View key={r.key} style={{ gap: theme.space['1'] }}>
             <AppText variant="body">{r.title}</AppText>
             <AppText variant="callout" color="text.secondary">
+              {r.barLine}
+            </AppText>
+            {r.bars.length > 0 ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+                {r.bars.map((b) => (
+                  <TextButton key={b.label} label={b.selected ? `✓ ${b.label}` : b.label} tone={b.selected ? 'accent' : 'secondary'} onPress={() => void answer({ kind: 'total_bar', key: r.key, bar: b.value })} />
+                ))}
+              </View>
+            ) : null}
+            <AppText variant="callout" color="text.secondary">
               {r.conversion}
             </AppText>
+            <AppText variant="callout" color="text.secondary">
+              {r.now}
+            </AppText>
+            {r.remembered ? (
+              <AppText variant="callout" color="text.secondary">
+                {r.remembered}
+              </AppText>
+            ) : null}
+            {r.lastTime ? (
+              <AppText variant="callout" color="text.secondary">
+                {r.lastTime}
+              </AppText>
+            ) : null}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
               {r.choices.map((c) => (
-                <TextButton key={c.label} label={c.selected ? `✓ ${c.label}` : c.label} tone={c.selected ? 'accent' : 'secondary'} onPress={() => void answer({ kind: 'per_hand_override', key: r.key, answer: c.value })} />
+                <TextButton key={c.label} label={c.selected ? `✓ ${c.label}` : c.label} tone={c.selected ? 'accent' : 'secondary'} onPress={() => void answer({ kind: 'total_override', key: r.key, answer: c.value })} />
               ))}
             </View>
           </View>
@@ -81,46 +140,12 @@ export function ImportQuestionScreen() {
           <>
             <AppText variant="body">{q.lead}</AppText>
             {q.question ? <AppText variant="headline">{q.question}</AppText> : null}
-            {options(q.options, (v) => ({ kind: 'per_hand', answer: v }))}
-            {q.example ? <AppText variant="callout" color="text.secondary">{q.example}</AppText> : null}
-            {q.ask ? (
-              <>
-                <SectionHeader title={q.ask.title} />
-                <AppText variant="callout" color="text.secondary">
-                  {q.ask.lead}
-                </AppText>
-                {q.ask.rows.map(row)}
-              </>
-            ) : null}
-            {q.rows ? (
-              <>
-                <SectionHeader title={q.rows.title} />
-                {q.rows.note ? (
-                  <AppText variant="callout" color="text.secondary">
-                    {q.rows.note}
-                  </AppText>
-                ) : null}
-                {q.rows.rows.map(row)}
-              </>
-            ) : null}
-          </>
-        );
-      }
-      break;
-    }
-    case 'total': {
-      const q = totalOptions(a);
-      if (q && a.total) {
-        body = (
-          <>
-            <AppText variant="body">{q.lead}</AppText>
-            <AppText variant="headline">{q.question}</AppText>
             {options(q.options, (v) => ({ kind: 'total', answer: v }))}
+            {q.example ? <AppText variant="callout" color="text.secondary">{q.example}</AppText> : null}
+            {section(q.platesOnly.title, q.platesOnly.lead, q.platesOnly.rows.map(row))}
             {q.barWeights.map((b) => (
               <BarWeightField key={`${b.bar}-${b.unit}`} field={b} onSave={(value) => void answer({ kind: 'bar_weight', bar: b.bar, unit: b.unit, value })} />
             ))}
-            {q.example ? <AppText variant="callout" color="text.secondary">{q.example}</AppText> : null}
-            {overrides(a.total.exercises, [{ value: 'total', label: 'Total' }, { value: 'plates_only', label: 'Plates only' }], (k, v) => ({ kind: 'total_override', key: k, answer: v }))}
           </>
         );
       }

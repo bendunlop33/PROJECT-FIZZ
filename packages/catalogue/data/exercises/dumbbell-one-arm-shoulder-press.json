@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-one-arm-shoulder-press",
+  "tier": "basic",
+  "name": "One-arm dumbbell shoulder press",
+  "aliases": ["One-arm standing dumbbell press", "Single-arm standing dumbbell press", "Single-arm dumbbell shoulder press", "One-arm DB shoulder press", "One-arm dumbbell overhead press", "Single-arm dumbbell overhead press"],
+  "family": "overhead_press",
+  "movementPattern": "vertical_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["front_delts"],
+  "secondaryMuscles": ["side_delts", "triceps", "upper_chest", "core", "obliques"],
+  "compatibleEquipment": ["dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "implements": 1,
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

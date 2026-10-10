@@ -5,11 +5,12 @@ import {
   DEFAULT_ANSWERS,
   parseFitNotesCsv,
   planImportRows,
+  rememberedAnswer,
   starterExercises,
   type MatchCandidate,
 } from '@fizz/domain';
 import { id, idGen, OWNER, profile, richFinishedSession } from '@fizz/domain/testing';
-import type { ImportJob, ImportRow, ZonedTimestamp } from '@fizz/schemas';
+import type { Exercise, ExerciseAlias, ImportJob, ImportRow, ZonedTimestamp } from '@fizz/schemas';
 import {
   checkIntegrity,
   createBackup,
@@ -117,6 +118,86 @@ describe('import jobs and rows', () => {
     // One unfinished import at a time.
     const second = planned(id(9002));
     expect(await store.repos.imports.createJob({ ...second.job, operationId: 'commit-2' }, second.rows, { ...extras, newId: idGen(60_000) })).toEqual({ ok: false, error: 'another_import_running' });
+  });
+
+  it('remembers each import’s answer for a name (its exercise and dumbbell answer), versioned; what an undone import taught can be ignored (review r4 S2, r5 S2)', async () => {
+    const ROW = candidates.find((c) => c.name === 'One-arm dumbbell row')?.exerciseId ?? '';
+    const target = { kind: 'exercise' as const, exerciseId: ROW };
+    const alias = () => store.repos.imports.aliases(OWNER).then((list) => list.find((a) => a.nameKey === 'one arm db row'));
+    // One import after another: each finishes before the next starts (one unfinished import at a time).
+    const commit = async (
+      n: number,
+      aliases: { name: string; nameKey: string; target: typeof target; perHand?: 'one' | 'each' | 'both' | null; total?: { reading: 'total' | 'plates_only'; bar?: 'barbell' | 'ez_bar' | 'trap_bar' } | null }[],
+    ) => {
+      const { job, rows } = planned(id(9100 + n));
+      const extras = { exercises: [], aliases, at: AT, newId: idGen(70_000 + n * 100) };
+      expect(await store.repos.imports.createJob({ ...job, operationId: `commit-${String(n)}` }, rows, extras)).toMatchObject({ ok: true, duplicate: false });
+      // The same commit again (a retry) adds nothing.
+      expect(await store.repos.imports.createJob({ ...job, operationId: `commit-${String(n)}` }, rows, extras)).toMatchObject({ ok: true, duplicate: true });
+      expect(await store.repos.imports.finishJob(job.id, 1, LATER)).toMatchObject({ ok: true });
+      return job.id;
+    };
+    const first = await commit(1, [{ name: 'One Arm DB Row', nameKey: 'one arm db row', target, perHand: 'one' }]);
+    expect(await alias()).toMatchObject({ target, perHand: 'one', version: 1, jobId: first, uses: [{ jobId: first, target, perHand: 'one' }] });
+    // A newer import that uses the name but says nothing about its dumbbells: its use is recorded; the answer is kept.
+    const second = await commit(2, [{ name: 'One Arm DB Row', nameKey: 'one arm db row', target }]);
+    expect(await alias()).toMatchObject({ perHand: 'one', version: 2, jobId: second });
+    // A different answer.
+    const third = await commit(3, [{ name: 'One Arm DB Row', nameKey: 'one arm db row', target, perHand: 'both' }]);
+    expect(await alias()).toMatchObject({ perHand: 'both', version: 3, jobId: third });
+    // Cleared: the name is still remembered, the dumbbell answer isn't.
+    const fourth = await commit(4, [{ name: 'One Arm DB Row', nameKey: 'one arm db row', target, perHand: null }]);
+    const cleared = await alias();
+    expect(cleared).toMatchObject({ target, version: 4 });
+    expect(cleared?.perHand).toBeUndefined();
+    // Every import's use is kept, oldest first, so a reader can leave out an undone import's (`rememberedAnswer`).
+    expect(cleared?.uses).toEqual([
+      { jobId: first, target, perHand: 'one' },
+      { jobId: second, target },
+      { jobId: third, target, perHand: 'both' },
+      { jobId: fourth, target, perHand: null },
+    ]);
+    expect(rememberedAnswer(cleared as ExerciseAlias, new Set([fourth]))).toEqual({ target, perHand: 'both', total: null });
+    expect(rememberedAnswer(cleared as ExerciseAlias, new Set([third, fourth]))).toEqual({ target, perHand: 'one', total: null });
+    // A barbell answer with the bar Ben chose is kept with the use the same way (PM decision after review r7).
+    const fifth = await commit(5, [{ name: 'One Arm DB Row', nameKey: 'one arm db row', target, total: { reading: 'plates_only', bar: 'trap_bar' } }]);
+    const withTotal = await alias();
+    expect(withTotal?.uses?.at(-1)).toEqual({ jobId: fifth, target, total: { reading: 'plates_only', bar: 'trap_bar' } });
+    expect(rememberedAnswer(withTotal as ExerciseAlias, new Set())).toEqual({ target, perHand: null, total: { reading: 'plates_only', bar: 'trap_bar' } });
+    expect(rememberedAnswer(withTotal as ExerciseAlias, new Set([fifth]))?.total).toBeNull();
+    expect((await checkIntegrity(store.db)).ok).toBe(true);
+  });
+
+  it('an import never changes an exercise that is already stored, whatever it says (review r6 B1)', async () => {
+    const custom = (equipment: 'dumbbells' | 'barbell', at: string): Exercise => ({
+      id: id(8800),
+      ownerId: OWNER,
+      source: 'custom',
+      name: 'Zottman Curl',
+      movementPattern: 'other',
+      primaryMuscles: [],
+      catalogueKey: null,
+      measurement: 'reps',
+      laterality: 'bilateral',
+      compatibleEquipment: [equipment],
+      defaultLoadConvention: equipment === 'dumbbells' ? 'per_hand' : 'total',
+      version: 1,
+      createdAtUtc: at,
+      updatedAtUtc: at,
+    });
+    const commit = async (n: number, e: Exercise) => {
+      const { job, rows } = planned(id(9200 + n));
+      expect(await store.repos.imports.createJob({ ...job, operationId: `commit-${String(n)}` }, rows, { exercises: [e], aliases: [], at: AT, newId: idGen(80_000 + n * 100) })).toMatchObject({ ok: true });
+      expect(await store.repos.imports.finishJob(job.id, 1, LATER)).toMatchObject({ ok: true });
+    };
+    await commit(1, custom('dumbbells', AT.utc));
+    // The same answer again changes nothing.
+    await commit(2, custom('dumbbells', LATER.utc));
+    expect(await store.repos.exercises.get(id(8800))).toMatchObject({ version: 1, defaultLoadConvention: 'per_hand' });
+    // Other equipment under the same ID (never sent by the importer, which gives each equipment its own ID): still unchanged.
+    await commit(3, custom('barbell', LATER.utc));
+    expect(await store.repos.exercises.get(id(8800))).toMatchObject({ version: 1, compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand', updatedAtUtc: AT.utc });
+    expect((await checkIntegrity(store.db)).ok).toBe(true);
   });
 
   it('source rows are append-only at the database level', async () => {

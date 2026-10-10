@@ -1,4 +1,4 @@
-import type { BodyweightAnswer, ImportAnswers, ImportBarKind, NameAnswer, PerHandAnswer, PerHandReading, TotalAnswer, WeightUnit } from '@fizz/schemas';
+import type { BodyweightAnswer, GroupTotalAnswer, ImportAnswers, ImportBarKind, NameAnswer, PerHandAnswer, PerHandReading, TotalAnswer, WeightUnit } from '@fizz/schemas';
 
 /**
  * One change to the import answers (data-import-export §2.5 steps 3a–3c).
@@ -10,11 +10,16 @@ export type AnswerChange =
   | { kind: 'per_hand'; answer: PerHandAnswer }
   /** One exercise's reading (`one` / `each` / `both`); null goes back to the default (review r3 S1). */
   | { kind: 'per_hand_override'; key: string; answer: PerHandReading | null }
-  | { kind: 'total'; answer: TotalAnswer }
+  /** The barbell group answer: only "Total as written". No group answer adds a bar weight (PM decision after review r7). */
+  | { kind: 'total'; answer: GroupTotalAnswer }
+  /** One exercise: total as written, or plates only (its bar's weight added); null goes back to the group answer. */
   | { kind: 'total_override'; key: string; answer: TotalAnswer | null }
+  /** The bar one exercise's "plates only" adds; null goes back to the matched exercise's own bar. Only for an exercise answered "plates only" (review r8 S2). */
+  | { kind: 'total_bar'; key: string; bar: ImportBarKind | null }
   /** A bar's weight for `plates_only` values (each bar kind has its own; review S1). */
   | { kind: 'bar_weight'; bar: ImportBarKind; unit: WeightUnit; value: number }
-  | { kind: 'bodyweight'; key: string; answer: BodyweightAnswer }
+  /** null clears it: the question is open again (a re-mapped name whose question changed meaning; review r6.2 N4). */
+  | { kind: 'bodyweight'; key: string; answer: BodyweightAnswer | null }
   | { kind: 'both_columns'; answer: WeightUnit }
   | { kind: 'effort_mode'; mode: 'notes_only' | 'review' }
   | { kind: 'effort_rows'; rows: readonly number[]; checked: boolean }
@@ -42,13 +47,16 @@ export function applyAnswerChange(a: ImportAnswers, c: AnswerChange): ImportAnsw
     case 'total':
       return { ...a, total: c.answer };
     case 'total_override':
-      return { ...a, totalOverrides: setOrClear(a.totalOverrides, c.key, c.answer) };
+      // A bar is only ever chosen for "plates only": any other answer drops it, so it can't change the exercise `Add new` makes or be remembered (review r8 S2).
+      return { ...a, totalOverrides: setOrClear(a.totalOverrides, c.key, c.answer), totalBars: c.answer === 'plates_only' ? (a.totalBars ?? {}) : without(a.totalBars ?? {}, c.key) };
+    case 'total_bar':
+      return { ...a, totalBars: setOrClear(a.totalBars ?? {}, c.key, c.bar) };
     case 'bar_weight':
       return c.bar === 'barbell'
         ? { ...a, barWeight: { ...a.barWeight, [c.unit]: c.value } }
         : { ...a, otherBarWeight: { ...a.otherBarWeight, [c.bar]: { ...a.otherBarWeight[c.bar], [c.unit]: c.value } } };
     case 'bodyweight':
-      return { ...a, bodyweight: { ...a.bodyweight, [c.key]: c.answer } };
+      return { ...a, bodyweight: setOrClear(a.bodyweight, c.key, c.answer) };
     case 'both_columns':
       return { ...a, bothColumns: c.answer };
     case 'effort_mode':

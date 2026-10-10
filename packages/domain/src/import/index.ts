@@ -4,5 +4,6 @@ export * from './match';
 export * from './effort';
 export * from './plan';
 export * from './answers';
+export * from './remembered';
 export * from './session';
 export * from './results-csv';
