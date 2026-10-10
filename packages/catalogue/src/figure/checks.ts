@@ -11,7 +11,8 @@ import { dist, penetrationDepth, lerpVec, v, type Vec } from './math';
 import { poseAt, prepareGuide, type Pose, type PreparedGuide } from './pose';
 import { ROM_PROFILES, type AngleName } from './rig';
 import { BODY_GROUPS, groupContours } from './body';
-import { contactVelocity, poseContinuity } from './motion-metrics';
+import { contactVelocity, poseContinuity, seamVelocity } from './motion-metrics';
+import { PLAYBACK_FPS } from './playback';
 import { adjustProblems, DEFINITION_GROUPS, DEFINITION_MAP, definitionGroupsFor, focusViewOf, MUSCLE_REGION_MAP, parseRegion, resolveFocus, type DefinitionGroup, type MuscleLevel } from './muscle-map';
 import { DEFINITION_GROOVE, DEFINITION_GROOVE_FLOOR, definitionShapes, narrowestDefinitionGroove, type DefinitionGroove } from './regions';
 
@@ -42,7 +43,9 @@ export const CHECK_IDS = [
   'loop-continuity',
   'pose-continuity',
   'contact-velocity',
+  'seam-velocity',
   'duration',
+  'duration-grid',
   'file-size',
   'captions',
   'key-positions',
@@ -293,6 +296,31 @@ function checkContactVelocity(prepared: PreparedGuide): CheckItem {
   };
 }
 
+/** No point's velocity steps across the loop seam (ADR 0017, C6). */
+function checkSeamVelocity(prepared: PreparedGuide): CheckItem {
+  const m = seamVelocity(prepared);
+  const where = prepared.guide.loop === 'cycle' ? 'the loop seam' : 'either end of the ping-pong';
+  return m.ok
+    ? { id: 'seam-velocity', ok: true, detail: `Nothing changes speed across ${where} (max ${(m.value ?? 0).toFixed(4)} H/s)` }
+    : { id: 'seam-velocity', ok: false, detail: `Velocity step: ${m.where}` };
+}
+
+/**
+ * The app bakes at `PLAYBACK_FPS` and shows each frame for a whole number of
+ * screen refreshes only if the cycle is a whole number of frames (ADR 0017,
+ * V5): otherwise frame lengths beat against the display and some frames are
+ * held a refresh longer once per cycle.
+ */
+function checkDurationGrid(guide: Guide): CheckItem {
+  const frames = (guide.durationMs * PLAYBACK_FPS) / 1000;
+  if (Number.isInteger(frames)) return { id: 'duration-grid', ok: true, detail: `${guide.durationMs} ms is ${frames} frames at ${PLAYBACK_FPS} fps` };
+  // Whole milliseconds on the frame grid: multiples of 1000 / gcd(1000, fps) (100 ms at 30 fps).
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  const step = 1000 / gcd(1000, PLAYBACK_FPS);
+  const lo = Math.floor(guide.durationMs / step) * step;
+  return { id: 'duration-grid', ok: false, detail: `${guide.durationMs} ms is ${frames} frames at ${PLAYBACK_FPS} fps; use a multiple of ${step} ms (${lo} or ${lo + step})` };
+}
+
 function checkKeyTimes(guide: Guide, prepared: PreparedGuide): CheckItem {
   const ks = prepared.keys;
   const first = ks[0];
@@ -463,11 +491,13 @@ export function checkGuide(input: GuideCheckInput): GuideCheckReport {
     checkLoop(prepared),
     checkPoseContinuity(prepared),
     checkContactVelocity(prepared),
+    checkSeamVelocity(prepared),
     {
       id: 'duration',
       ok: guide.durationMs >= LIMITS.minDurationMs && guide.durationMs <= LIMITS.maxDurationMs,
       detail: `${guide.durationMs} ms (allowed ${LIMITS.minDurationMs}–${LIMITS.maxDurationMs})`,
     },
+    checkDurationGrid(guide),
     { id: 'file-size', ok: input.bytes <= LIMITS.maxBytes, detail: `${input.bytes} bytes (limit ${LIMITS.maxBytes})` },
     checkCaptions(prepared),
     checkKeyPositions(prepared, input.entry),

@@ -361,7 +361,10 @@ describe('props', () => {
     const p = poseAt(prepareGuide(riding), 0.5);
     expect(p.feet[0]?.ball.x).toBeCloseTo(0.05 - 0.2 * 0.5, 6);
     expect(p.groundOffset).toBeCloseTo(-0.1);
-    expect(failedFor(riding)).toEqual([]);
+    // This fixture lands the swing foot at the seam with zero world velocity
+    // while the floor moves under it: C6 catches that landing step (the
+    // committed sled avoids it with the stance slope). Nothing else fails.
+    expect(failedFor(riding)).toEqual(['seam-velocity']);
     // Holding the foot still while the floor moves is a slide.
     expect(failedFor(sled(0.05))).toContain('planted-feet');
   });
@@ -379,6 +382,9 @@ describe('guide checks', () => {
 
   it('catches duration, size, captions, labels, folder and loop problems', () => {
     expect(failed({ ...squatRaw(), durationMs: 7000 })).toEqual(['duration']);
+    // Off the 30 fps frame grid (76.5 frames): some frames would be held a refresh longer once per cycle.
+    expect(failed({ ...squatRaw(), durationMs: 2550 })).toEqual(['duration-grid']);
+    expect(failed({ ...squatRaw(), durationMs: 2600 })).toEqual([]);
     expect(failed(squatRaw(), { bytes: 9000 })).toEqual(['file-size']);
     expect(failed(squatRaw(), { dirKey: 'barbell-front-squat' })).toEqual(['exercise-match']);
     const keys = structuredClone(squatRaw().keyframes) as Record<string, unknown>[];
