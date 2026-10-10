@@ -319,7 +319,16 @@ function harder(a: number, b: number, d: LoadDirection): boolean {
  */
 function feasibleHold(ctx: Ctx, value: number | null): number | null {
   const eq = ctx.input.equipment;
-  if (value === null || eq === null) return value;
+  if (value === null) return null;
+  if (eq === null) {
+    // Review failure-tests M2: with no equipment profile there is nothing to snap to, so a
+    // logged 0 would be planned as "0 kg each" or "assist 0 kg". Only `added` has a real zero.
+    if (toScaled(value) <= 0 && ctx.convention !== 'added') {
+      pushFact(ctx, `Last load was ${formatLoad({ value, unit: ctx.unit, convention: ctx.convention })}, which isn't a load to plan; enter your load.`);
+      return null;
+    }
+    return value;
+  }
   const load = { value, unit: ctx.unit, convention: ctx.convention };
   if (isLoadAchievable(load, eq)) return value;
   const r = roundToAvailableLoad(load, eq, 'easier');
