@@ -57,7 +57,13 @@ export function RoutineSheet({
   if (row === null) return null;
   const p = preview.state === 'ready' ? preview.value : null;
   const last = p?.lastDone ?? null;
-  const lastLine = last ? `Last done ${formatShortDate(toMs(last.atUtc), last.tz)}${last.gymName ? ` at ${last.gymName}` : ''}` : 'Not done yet';
+  const lastLine = [
+    `${String(row.exercises)} ${row.exercises === 1 ? 'exercise' : 'exercises'}`,
+    p?.aboutMinutes != null ? `about ${String(p.aboutMinutes)} min` : null,
+    last ? `last done ${formatShortDate(toMs(last.atUtc), last.tz)}${last.gymName ? ` at ${last.gymName}` : ''}` : 'not done yet',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   function menu(r: RoutineRow) {
     ActionSheetIOS.showActionSheetWithOptions({ title: r.name, options: ['Rename', 'Delete', 'Cancel'], destructiveButtonIndex: 1, cancelButtonIndex: 2 }, (i) => {

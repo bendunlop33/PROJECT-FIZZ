@@ -32,6 +32,7 @@ import {
   toMs,
   weekdayOf,
   findSetRecord,
+  estimateRemainingDuration,
   checkRoutineName,
   deleteRoutine,
   isFromRoutine,
@@ -174,6 +175,8 @@ export interface NextSessionPreview {
   /** `Target 100 kg × 6–8 · 3 sets` per exercise, from what Start would create (premium-feel §2.3). */
   targets: { exerciseName: string; line: string }[];
   sets: number;
+  /** `about 45 min` (`estimateRemainingDuration` on what Start would create; always an estimate). */
+  aboutMinutes: number | null;
   sourceStartedAtUtc: string | null;
   tz: string;
 }
@@ -195,6 +198,7 @@ export interface RoutinePreview {
   /** `Target 100 kg × 6–8 · 3 sets` per exercise, snapped to this gym. */
   targets: { exerciseName: string; line: string }[];
   notes: { exerciseName: string; text: string }[];
+  aboutMinutes: number | null;
   /** Where the targets come from: the built-in rule (next targets) or the routine as saved. */
   source: 'built_in_rule' | 'routine';
   lastDone: { atUtc: string; tz: string; gymName: string | null } | null;
@@ -457,6 +461,22 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   /** The source's own name, unless it's the generic `Workout`. */
   const storedName = (a: SessionAggregate): string | null => storedWorkoutName(a.session);
+
+  /** `about N min` for a workout not started yet, at Ben's pace over his last 5 workouts. Null if it can't be read. */
+  async function aboutMinutes(p: UserProfile, a: SessionAggregate): Promise<number | null> {
+    try {
+      const refs = (await repos().sessions.listFinishedRefs(p.id, 5)).map((r) => r.sessionId);
+      const recent: SessionAggregate[] = [];
+      for (const id of refs) {
+        const x = await repos().sessions.get(id).catch(() => null);
+        if (x) recent.push(x);
+      }
+      const m = estimateRemainingDuration(a, { recent }).minutes;
+      return m > 0 ? m : null;
+    } catch {
+      return null;
+    }
+  }
 
   /** Enough finished workouts to find each routine's last one; small rows, no decode. */
   const REF_LIMIT = 400;
@@ -912,6 +932,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           routine: row,
           targets: targetSummaryLines(r.aggregate),
           notes: r.notes,
+          aboutMinutes: await aboutMinutes(p, r.aggregate),
           source: targeted ? 'built_in_rule' : 'routine',
           lastDone: ref ? { atUtc: ref.startedAtUtc, tz: ref.tz, gymName } : null,
         };
@@ -946,6 +967,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
               exercises: repeatPreviewLines(r.aggregate).map((l) => ({ exerciseName: l.exerciseName, line: l.line })),
               targets: targetSummaryLines(r.aggregate),
               sets: r.aggregate.sets.length,
+              aboutMinutes: await aboutMinutes(p, r.aggregate),
               sourceStartedAtUtc: ref?.startedAtUtc ?? null,
               tz: ref?.tz ?? ctx.now().tz,
             };
@@ -967,6 +989,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           exercises: repeatPreviewLines(r.aggregate).map((l) => ({ exerciseName: l.exerciseName, line: l.line })),
           targets: targetSummaryLines(r.aggregate),
           sets: r.aggregate.sets.length,
+          aboutMinutes: await aboutMinutes(p, r.aggregate),
           sourceStartedAtUtc: source.session.startedAt.utc,
           tz: source.session.startedAt.tz,
         };

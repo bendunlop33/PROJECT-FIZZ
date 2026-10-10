@@ -62,6 +62,8 @@ describe('Save as routine, then start it', () => {
     h.clockMs += 2 * DAY;
     const next = await s.next.preview(gymId);
     expect(next).toMatchObject({ title: 'Push A', routine: { id: saved.routine.id, basis: { kind: 'only' } }, sourceSessionId: first });
+    // Muscles and an estimate on the hero, always worded `about` (active-workout §2.15).
+    expect(next?.aboutMinutes).toBeGreaterThan(0);
     const targetLine = plain(next?.targets[0]?.line);
     expect(targetLine.startsWith('Target ')).toBe(true);
     const sheet = await s.routines.preview(saved.routine.id, gymId);

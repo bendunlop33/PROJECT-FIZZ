@@ -407,7 +407,10 @@ export function TodayScreen() {
             <Hero
               label="Up next"
               title={next.title}
-              lines={[[next.muscles, `${String(exerciseCount)} ${exerciseCount === 1 ? 'exercise' : 'exercises'} · ${String(next.sets)} sets`].filter(Boolean).join(' · '), basis]}
+              lines={[
+                [next.muscles, `${String(exerciseCount)} ${exerciseCount === 1 ? 'exercise' : 'exercises'}`, next.aboutMinutes !== null ? `about ${String(next.aboutMinutes)} min` : `${String(next.sets)} sets`].filter(Boolean).join(' · '),
+                basis,
+              ]}
             >
               <PrimaryButton label="Start workout" busy={starting} onPress={() => void start(upNextIntent(next))} />
               {/* What Start creates, already fitted to this gym; each line says `Target` (premium-feel §2.3). */}
