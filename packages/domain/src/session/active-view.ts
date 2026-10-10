@@ -1,4 +1,4 @@
-import type { EquipmentInstance, Load, SessionAggregate, SessionExercise, SetSide, SetValues, WorkoutSet } from '@fizz/schemas';
+import type { EquipmentInstance, Load, PainFlag, SessionAggregate, SessionExercise, SetSide, SetValues, WorkoutSet } from '@fizz/schemas';
 import {
   EQUIPMENT_WORD,
   SET_TYPE_BADGE,
@@ -12,6 +12,7 @@ import {
   valuesText,
 } from '../display';
 import { getAchievableLoads, isLoadAchievable, loadDirection, stepLoad } from '../equipment';
+import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import type { HistorySession } from '../progression';
 import { toMs } from '../time';
@@ -79,9 +80,43 @@ export interface ActiveViewInput {
   previous: Readonly<Record<string, PreviousSession | null>>;
   /** Exercise IDs with an active pain flag. */
   painFlagged: ReadonlySet<string>;
+  /**
+   * Ben's pain flags (active ones are enough), for the note's `check due`
+   * and the rest card's `Still hurts?` line (active-workout §2.14.2). Dates
+   * are read in the workout's zone.
+   */
+  painFlags?: readonly PainFlag[];
   edits: DraftEdits | null;
   /** A derived name (`Push`) for a workout without one (audit F5); the stored name wins. */
   title?: string | null;
+}
+
+/** `PainFlagNote` under the target line; tapping it opens that flag's sheet (§2.14.4). */
+export interface PainFlagNoteView {
+  flagId: string;
+  flagVersion: number;
+  checkDue: boolean;
+  /** `Pain flag: no increases` (`· check due`). */
+  text: string;
+  accessibilityLabel: string;
+}
+
+/**
+ * `PainReviewLine` (§2.14.2): asked in the rest card once per due flag per
+ * workout, right after the first logged set of that movement. Derived from
+ * stored state, so it survives a force-close; the next Log moves on and it
+ * isn't asked again in that workout. Never spoken, never a banner.
+ */
+export interface PainReviewPrompt {
+  flagId: string;
+  flagVersion: number;
+  exerciseName: string;
+  /** The just-saved set it follows (the outcome line hides when this changes). */
+  afterSetId: string;
+  /** `Overhead press: still hurting?` */
+  question: string;
+  /** `Pain flag since 6 Oct · 16 days` */
+  fact: string;
 }
 
 export type StepTarget = { enabled: true; value: number; label: string } | { enabled: false; reason: string };
@@ -131,6 +166,8 @@ export interface FocusView {
   /** The target line carries `Why?` (active-workout §2.12): every set with a target; `explainTarget` fills the panel. */
   hasExplanation: boolean;
   painFlagged: boolean;
+  /** Set when `painFlags` were given and one covers this exercise. */
+  painFlag: PainFlagNoteView | null;
   offProfileWarning: string | null;
   side: { kind: 'choice'; value: SetSide } | { kind: 'fixed'; value: 'left' | 'right' } | null;
   restAfterS: number;
@@ -191,6 +228,8 @@ export interface ActiveSetView {
   focus: FocusView | null;
   rest: RestView | null;
   justSaved: JustSavedView | null;
+  /** The `Still hurts?` line for the rest card, or null. */
+  painReview: PainReviewPrompt | null;
   primary: PrimaryAction;
   progress: { done: number; total: number };
   /** Ordered exercises with their live set count (exercise menu, pain picker). */
@@ -314,6 +353,10 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
 
   const edits = input.edits?.setId === set.id ? input.edits : null;
   const pre = prefillDraft(state, set.id, prev?.sets ?? []);
+  const covering = painFlagCovering(input.painFlags ?? [], ex.exerciseId, input.nowMs, state.session.startedAt.tz);
+  const painNote: PainFlagNoteView | null = covering
+    ? { flagId: covering.flag.id, flagVersion: covering.flag.version, checkDue: covering.checkDue, text: painNoteText(covering.checkDue), accessibilityLabel: painNoteAccessibility(covering.checkDue) }
+    : null;
   let values: SetValues = edits ? edits.values : pre.values;
   // Effort is never prefilled; only an explicit chip sets it.
   values = { ...values, rpe: null, rir: null };
@@ -385,7 +428,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     duration: ex.measurement === 'duration' ? { value: values.durationS } : null,
     target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral }),
     hasExplanation: set.planned.load !== null || set.planned.reps !== null || set.planned.durationS !== null,
-    painFlagged: input.painFlagged.has(ex.exerciseId),
+    painFlagged: input.painFlagged.has(ex.exerciseId) || painNote !== null,
+    painFlag: painNote,
     offProfileWarning,
     side,
     restAfterS: set.rest.seconds,
@@ -433,6 +477,35 @@ function buildJustSaved(state: SessionAggregate): JustSavedView | null {
   };
 }
 
+/**
+ * The `Still hurts?` prompt: the just-saved set is the first set of its
+ * movement logged in this workout (any set type, any of its session
+ * exercises), and a flag on that movement has its check due.
+ */
+function buildPainReview(input: ActiveViewInput, justSaved: JustSavedView | null): PainReviewPrompt | null {
+  const state = input.aggregate;
+  if (justSaved === null || state.session.status !== 'active' || !input.painFlags?.length) return null;
+  const set = state.sets.find((s) => s.id === justSaved.setId);
+  const ex = state.exercises.find((e) => e.id === set?.sessionExerciseId);
+  if (!set || !ex) return null;
+  const sameMovement = new Set(state.exercises.filter((e) => e.exerciseId === ex.exerciseId).map((e) => e.id));
+  const first = state.sets
+    .filter((s) => sameMovement.has(s.sessionExerciseId) && s.status === 'completed' && s.completedAt)
+    .sort((a, b) => toMs(a.completedAt?.utc ?? '') - toMs(b.completedAt?.utc ?? '') || a.index - b.index)[0];
+  if (first?.id !== set.id) return null;
+  const tz = state.session.startedAt.tz;
+  const covering = painFlagCovering(input.painFlags, ex.exerciseId, input.nowMs, tz);
+  if (!covering?.checkDue) return null;
+  return {
+    flagId: covering.flag.id,
+    flagVersion: covering.flag.version,
+    exerciseName: ex.exerciseName,
+    afterSetId: set.id,
+    question: painReviewQuestion(ex.exerciseName),
+    fact: painFlagFact(covering.flag, input.nowMs, tz),
+  };
+}
+
 export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
   const { aggregate: state, nowMs } = input;
   const phase = getSessionPhase(state, nowMs);
@@ -464,6 +537,7 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
   else primary = { kind: 'log', label: focus.logLabel };
 
   const completed = liveSets.filter((s) => s.status === 'completed' && s.completedAt);
+  const justSaved = buildJustSaved(state);
   const last = completed.map((s) => s.completedAt?.utc ?? '').sort().at(-1) ?? null;
 
   return {
@@ -475,7 +549,8 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     paused: session.pause !== null,
     focus,
     rest,
-    justSaved: buildJustSaved(state),
+    justSaved,
+    painReview: buildPainReview(input, justSaved),
     primary,
     progress: { done: completed.length, total: liveSets.length },
     exercises: [...state.exercises]

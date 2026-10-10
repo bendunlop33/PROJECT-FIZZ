@@ -79,6 +79,16 @@ export function addDays(localDate: string, days: number): string {
   return `${String(t.getUTCFullYear()).padStart(4, '0')}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
 }
 
+/** Whole calendar days from `from` to `to` (`YYYY-MM-DD`; negative when `to` is earlier). Zone-free. */
+export function daysBetween(from: string, to: string): number {
+  const utc = (date: string) => {
+    const [y, m, d] = date.split('-').map(Number);
+    // eslint-disable-next-line no-restricted-globals -- arithmetic on calendar fields, not a clock read
+    return Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1);
+  };
+  return Math.round((utc(to) - utc(from)) / 86_400_000);
+}
+
 /** Monday–Sunday week containing `ms` in `tz`, as UTC bounds [start, end). */
 export function localWeekBounds(ms: number, tz: string): { startMs: number; endMs: number; mondayLocalDate: string } {
   const today = localDateOf(ms, tz);

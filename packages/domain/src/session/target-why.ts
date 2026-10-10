@@ -12,6 +12,7 @@ import type {
 } from '@fizz/schemas';
 import { dayMonthText, formatDuration, formatNumber, loadText, NBSP, repRangeText } from '../display';
 import type { HistorySession } from '../progression';
+import { isPainCheckDue, PAIN_AREA_WORD } from '../pain-flags';
 import { stepText } from '../target-provenance';
 import { toMs } from '../time';
 import { lastComparableSession } from './active-view';
@@ -33,6 +34,8 @@ export interface WhyRow {
   lines: string[];
   /** `actual`: logged results, never targets. `warning`: shown with the warning icon. */
   kind: 'app' | 'actual' | 'warning';
+  /** `Check due ›` on the `Pain` row when the flag's two-weekly check is due: opens the pain flag sheet. */
+  link?: { kind: 'pain_flag'; flagId: string; label: 'Check due ›' };
 }
 
 export interface TargetExplanation {
@@ -62,18 +65,6 @@ export interface ExplainTargetInput {
 
 /** `timing.painReferenceWindow`: `Before flag` stays this long after a flag is cleared (active-workout §9). */
 export const PAIN_REFERENCE_WINDOW_MS = 8 * 7 * 86_400_000;
-
-const AREA_WORD: Record<NonNullable<PainFlag['area']>, string | null> = {
-  shoulder: 'shoulder',
-  elbow: 'elbow',
-  wrist: 'wrist',
-  neck: 'neck',
-  back: 'back',
-  hip: 'hip',
-  knee: 'knee',
-  ankle: 'ankle',
-  other: null,
-};
 
 interface ShownSet {
   side: SetSide | null;
@@ -174,10 +165,15 @@ function shownSets(h: HistorySession): ShownSet[] {
 }
 
 /** The workout `lastComparableSession` picks (same equipment, unit and convention; never imported), with its sides. */
-function lastComparable(history: readonly HistorySession[], ex: Pick<SessionExercise, 'equipmentId' | 'unit' | 'loadConvention'>): HistorySession | null {
+export function lastComparableHistory(history: readonly HistorySession[], ex: Pick<SessionExercise, 'equipmentId' | 'unit' | 'loadConvention'>): HistorySession | null {
   const prev = lastComparableSession(history, ex);
   if (prev === null) return null;
   return history.find((h) => h.sessionId === prev.sessionId && h.equipmentId === ex.equipmentId) ?? null;
+}
+
+/** `55 kg × 6, 6, 6`: a history workout's non-warm-up sets as actual results (`Before flag`, the pain flag sheet). */
+export function historySetsText(h: HistorySession, ex: Pick<SessionExercise, 'loadConvention' | 'measurement'>, eq: EquipmentInstance | null): string {
+  return basisSetsText(shownSets(h), ex, eq);
 }
 
 function historyLastTime(prev: HistorySession | null, ex: SessionExercise, eq: EquipmentInstance | null, tz: string, gymNames: Readonly<Record<string, string>>): WhyRow {
@@ -228,7 +224,7 @@ function referenceFlag(flags: readonly PainFlag[], nowMs: number): { flag: PainF
  */
 export function painReference(history: readonly HistorySession[], flag: Pick<PainFlag, 'reportedAt'>, ex: Pick<SessionExercise, 'equipmentId' | 'unit' | 'loadConvention'>): HistorySession | null {
   const before = toMs(flag.reportedAt.utc);
-  return lastComparable(
+  return lastComparableHistory(
     history.filter((h) => toMs(h.performedAtUtc) < before),
     ex,
   );
@@ -272,7 +268,7 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
   const tz = state.session.startedAt.tz;
 
   const rows: WhyRow[] = [setByRow(p)];
-  rows.push(p?.basis ? storedLastTime(p.basis, ex, eq, input.basisNow, input.gymNames) : historyLastTime(lastComparable(input.history, ex), ex, eq, tz, input.gymNames));
+  rows.push(p?.basis ? storedLastTime(p.basis, ex, eq, input.basisNow, input.gymNames) : historyLastTime(lastComparableHistory(input.history, ex), ex, eq, tz, input.gymNames));
   const reason = reasonRow(p, planned, ex, eq);
   if (reason) rows.push(reason);
   const equipment = equipmentRow(p);
@@ -281,17 +277,19 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
   const flags = input.painFlags.filter((f) => f.exerciseId === ex.exerciseId);
   const ref = referenceFlag(flags, input.nowMs);
   if (ref?.active) {
-    const area = ref.flag.area === null ? null : AREA_WORD[ref.flag.area];
+    const area = ref.flag.area === null ? null : PAIN_AREA_WORD[ref.flag.area];
     const since = dayMonthText(ref.flag.reportedAt.utc, ref.flag.reportedAt.tz);
     const lines = [`Flag on since ${since}${area === null ? '' : ` (${area})`}. Loads, reps and sets can’t go up.`];
     // A flag set after the target was made doesn't change it (targets already planned stay as they are).
     if (p !== undefined && toMs(ref.flag.reportedAt.utc) > toMs(p.setAt.utc)) lines.push('Flagged after this target was set, so the target wasn’t changed.');
-    rows.push({ key: 'pain', label: 'Pain', lines, kind: 'warning' });
+    // `Check due ›` opens the pain flag sheet with `Still hurts?` first (§2.14.2).
+    const checkDue = isPainCheckDue(ref.flag, input.nowMs, tz);
+    rows.push({ key: 'pain', label: 'Pain', lines, kind: 'warning', ...(checkDue ? { link: { kind: 'pain_flag', flagId: ref.flag.id, label: 'Check due ›' } } : {}) });
   }
   if (ref) {
     const before = painReference(input.history, ref.flag, ex);
     if (before) {
-      rows.push({ key: 'before_flag', label: 'Before flag', lines: [`${basisSetsText(shownSets(before), ex, eq)} · ${dayMonthText(before.performedAtUtc, before.tz ?? tz)}`], kind: 'actual' });
+      rows.push({ key: 'before_flag', label: 'Before flag', lines: [`${historySetsText(before, ex, eq)} · ${dayMonthText(before.performedAtUtc, before.tz ?? tz)}`], kind: 'actual' });
     }
   }
 

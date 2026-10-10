@@ -36,6 +36,8 @@ export * from './session/first-run';
 export * from './step-card';
 export * from './target-provenance';
 export * from './session/target-why';
+export * from './pain-flags';
+export * from './session/pain-sheet';
 export * from './touches';
 export * from './import';
 export * from './session/lift-highlight';

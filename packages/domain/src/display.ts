@@ -42,6 +42,12 @@ export function dayMonthText(utc: string, tz: string): string {
   return `${String(Number(day))}${NBSP}${MONTHS[Number(month) - 1] ?? ''}`;
 }
 
+/** `3 Nov`: a local calendar date (`YYYY-MM-DD`), as `dayMonthText` prints an instant. */
+export function localDateText(localDate: string): string {
+  const [, month, day] = localDate.split('-');
+  return `${String(Number(day))}${NBSP}${MONTHS[Number(month) - 1] ?? ''}`;
+}
+
 /** Summary durations: `54 min`, `1 h 04 min`. */
 export function formatMinutes(ms: number): string {
   const total = Math.max(0, Math.round(ms / 60_000));
