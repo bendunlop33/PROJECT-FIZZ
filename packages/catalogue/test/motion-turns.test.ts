@@ -163,7 +163,7 @@ describe('phaseTurnSlopes (E5)', () => {
     // turns can't all be C2 without overshoot; those stay decoupled, as before E5).
     expect(turns).toBeGreaterThan(500);
     expect(continuous).toBeGreaterThan(0.3 * turns);
-  });
+  }, 30_000); // ~1–5 s; slower when the whole suite runs in parallel
 
   it('a phase with one pass key that turns (the common case) always keeps acceleration continuous there', () => {
     const rand = rng(3);
