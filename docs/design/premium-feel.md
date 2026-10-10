@@ -606,3 +606,12 @@ Start notices: `Using saved targets.` · `Using last time’s numbers.`
 3. **Pause** moves from the header into `⋯` (§3.2).
 4. **Record rule:** "≥ 3 earlier comparable sessions" is a judgement call (§5.1).
 5. **Rest ring:** try it on device, then keep it or remove it.
+6. **Rename while active (review S5).** As built, `Rename workout` is in `⋯` only for a planned workout (a routine or a named next session). An open-ended (Empty) workout is named after Finish, because a name currently marks a workout as planned and that changes how its last set rests (audit B1). Options: (a) keep "named after Finish"; (b) store a display name separately from the planned marker so Empty workouts can be renamed mid-workout. (b) is a session schema and backup format change, so it waits for Ben's call.
+7. **`bell.slash` target (review S6).** Built as an in-place action (iOS Settings when denied, the iOS prompt after `Not now`) rather than opening Voice & alerts (§3.5). Confirm or revert.
+8. **Per-haptic switches (§5, design-system §6).** Not built yet; every haptic follows the system setting. A dependency for a later Voice & alerts pass, not part of this one.
+
+### 13.1 Deferred from this pass (as built)
+
+- `Rest ring` developer toggle (§4.4): not built; the ring stays off.
+- Spoken `Workout saved.` (§6.2): waits for the voice-cue pipeline (build order step 5); there's no in-app speech yet.
+- The ±30 s `haptic.step`, the READY hold (§4.3), the Summary record lines and `motion.recordPulse` are built.
