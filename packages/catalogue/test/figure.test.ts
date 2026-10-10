@@ -388,9 +388,9 @@ describe('guide checks', () => {
     expect(failed(squatRaw(), { bytes: 9000 })).toEqual(['file-size']);
     expect(failed(squatRaw(), { dirKey: 'barbell-front-squat' })).toEqual(['exercise-match']);
     const keys = structuredClone(squatRaw().keyframes) as Record<string, unknown>[];
-    const noCaption = keys.map((k, i) => (i === 2 ? { ...k, caption: undefined } : k));
+    const noCaption = keys.map((k) => (k.label === 'Halfway' ? { ...k, caption: undefined } : k));
     expect(failed({ ...squatRaw(), keyframes: JSON.parse(JSON.stringify(noCaption)) as unknown })).toEqual(['captions']);
-    const relabelled = keys.map((k, i) => (i === 2 ? { ...k, label: 'Hole' } : k));
+    const relabelled = keys.map((k) => (k.label === 'Halfway' ? { ...k, label: 'Hole' } : k));
     expect(failed({ ...squatRaw(), keyframes: relabelled })).toEqual(['key-positions']);
     const open = keys.map((k, i) => (i === keys.length - 1 ? { t: 1, root: { y: 0.45 } } : k));
     expect(failed({ ...squatRaw(), keyframes: open })).toContain('loop-continuity');
@@ -401,12 +401,13 @@ describe('guide checks', () => {
     if (keys[0]?.ik) keys[0].ik.footNear = null;
     if (keys[0]?.joints) Object.assign(keys[0].joints, { hipNear: 0, kneeNear: -30 });
     const checks = { ...(squatRaw().checks as object), romSkip: { angles: ['kneeNear'], reason: 'test reason' } };
-    const r = checkGuide({ raw: { ...squatRaw(), keyframes: keys, checks }, bytes: 2000, dirKey: 'barbell-back-squat', entry: squatEntry() });
+    // The leg drive needs a planted near foot at every key; this fixture takes it off.
+    const r = checkGuide({ raw: { ...squatRaw(), drive: undefined, keyframes: keys, checks }, bytes: 2000, dirKey: 'barbell-back-squat', entry: squatEntry() });
     const rom = r.items.find((i) => i.id === 'rom');
     expect(rom?.ok).toBe(true);
     expect(rom?.detail).toContain('test reason');
     const other = { ...checks, romSkip: { angles: ['kneeFar'], reason: 'test reason' } };
-    expect(failed({ ...squatRaw(), keyframes: keys, checks: other })).toContain('rom');
+    expect(failed({ ...squatRaw(), drive: undefined, keyframes: keys, checks: other })).toContain('rom');
   });
 
   it('catches bar drift, unreachable planted feet and hyperextension', () => {
@@ -419,7 +420,7 @@ describe('guide checks', () => {
     const hyper = structuredClone(keys);
     if (hyper[0]?.ik) hyper[0].ik.footNear = null;
     if (hyper[0]?.joints) Object.assign(hyper[0].joints, { hipNear: 0, kneeNear: -30 });
-    expect(failed({ ...squatRaw(), keyframes: hyper })).toContain('rom');
+    expect(failed({ ...squatRaw(), drive: undefined, keyframes: hyper })).toContain('rom');
   });
 
   it('every committed guide passes and its meta.json is current-format', () => {
@@ -466,8 +467,8 @@ describe('SVG output and style', () => {
     expect(pose.shapes.some((s) => s.kind === 'capsule' && s.paint === 'nearBody')).toBe(false);
     const ops = frameOps(pose, { px: 240, camera: fitCamera(prepared) });
     const bodyFills = ops.filter((o) => o.kind === 'path' && o.fill === 'nearBody');
-    // Trunk (with neck and head), near leg (thigh, shank, shoe), near arm (upper arm, forearm, fist, thumb).
-    expect(bodyFills.map((o) => (o.kind === 'path' ? o.contours.length : 0))).toEqual([3, 3, 4]);
+    // Trunk (with neck and head), near leg (hip fillet, thigh, shank, shoe), near arm (upper arm, forearm, fist, thumb).
+    expect(bodyFills.map((o) => (o.kind === 'path' ? o.contours.length : 0))).toEqual([3, 4, 4]);
     expect(bodyFills.every((o) => o.kind === 'path' && o.smooth)).toBe(true);
     const svg = renderSvg(pose, { px: 240, style, camera: fitCamera(prepared) });
     // The plate rim is a soft `frame` ring behind the body (it ringed the head when stroked in `implement`).
