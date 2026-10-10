@@ -320,3 +320,38 @@ describe('buildActiveSetView: target.hasExplanation', () => {
     expect(view(today(2, [])).focus?.hasExplanation).toBe(false);
   });
 });
+
+describe('explainTarget: sets left out (Not used, active-workout §2.13)', () => {
+  /** Day 0: 100 × 8, 8, then a third set Ben marked `Form broke`. */
+  function basisWithFlag(): SessionAggregate {
+    const ids = idGen((idBase += 1_000));
+    let s = startWorkout({ opId: 'nu-start', owner, gymId: GYM, routine: null, exercises: new Map(), gymEquipment: [BAR], at: at(0), newId: ids }).aggregate;
+    const plan = [1, 2, 3].map(() => ({ setType: 'working' as const, planned: { load: null, reps: null, durationS: null, rpe: null, rir: null } }));
+    s = apply(s, buildAddExerciseCommand({ opId: 'nu-add', owner, exercise: benchEx, equipmentId: BAR.id, at: at(1), newId: ids, plan }));
+    const sets = s.sets.slice();
+    [8, 8, 9].forEach((r, i) => {
+      s = apply(s, logCmd(sets[i]?.id ?? '', values(kg(r === 9 ? 105 : 100), r === 9 ? 6 : 8, { rpe: 8 }), 100 * (i + 1)));
+    });
+    const third = s.sets.find((x) => x.id === sets[2]?.id);
+    s = apply(s, { type: 'correct_set', at: at(500), opId: 'nu-mark', setId: third?.id ?? '', expectedSetVersion: third?.version ?? 0, patch: { exclusions: ['technique'] } });
+    return apply(s, { type: 'finish', at: at(1_000), opId: 'nu-fin', expectedVersion: s.session.version, endedAt: null });
+  }
+
+  it('Last time lists the counted sets; Not used names the marked one with Ben’s reason', () => {
+    const basis = basisWithFlag();
+    const h = hist(basis);
+    const e = explain(today(2, h), { basisNow: basis, history: h });
+    expect(rowsOf(e)[1]).toEqual(['Last time', '100 kg × 8, 8', 'RPE 8, 8', '8 Oct · Main Gym · Olympic bar']);
+    expect(rowsOf(e).at(-1)).toEqual(['Not used', 'Set 3 on 8 Oct: form broke.']);
+    expect(e?.rows.at(-1)?.kind).toBe('actual');
+    expect(e?.basisEdited).toBeNull();
+  });
+
+  it('without stored provenance, Not used is read from history', () => {
+    const basis = basisWithFlag();
+    const h = hist(basis);
+    const e = explain(today(2, h, { why: false }), { history: h });
+    expect(rowsOf(e)[1]?.[1]).toBe('100 kg × 8, 8');
+    expect(rowsOf(e).at(-1)).toEqual(['Not used', 'Set 3 on 8 Oct: form broke.']);
+  });
+});

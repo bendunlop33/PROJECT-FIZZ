@@ -1,6 +1,7 @@
 import type {
   EquipmentInstance,
   Load,
+  SetExclusion,
   LoadConvention,
   Measurement,
   ProgressionRule,
@@ -18,6 +19,7 @@ import {
   roundToAvailableLoad,
   type LoadDirection,
 } from './equipment';
+import { allLeftOutFact, isSetCountable } from './exclusions';
 import { toMs } from './time';
 import { convertMass, convertMassExactly, fromScaled, toScaled } from './units';
 
@@ -35,6 +37,12 @@ export interface HistorySet {
   /** The stored set and its version (sets logged in the app), so `Why?` can tell when it was edited later. */
   setId?: string;
   version?: number;
+  /**
+   * Ben's exclusion flags (active-workout §2.13). A flagged set is left out
+   * of progression, comparisons and records (`isSetCountable`), but it is
+   * still history: it shows with its words wherever it appears.
+   */
+  exclusions?: readonly SetExclusion[];
 }
 
 /**
@@ -146,6 +154,8 @@ interface SessionEval {
   unpairable: boolean;
   /** Completed sets of other types (e.g. back-offs when no top set was logged). */
   otherSets: number;
+  /** Sets of the counted type Ben left out of progress (§2.13); not in `loggedSets`. */
+  leftOut: number;
   /** Easiest counted load (lowest resistance / most assistance); null for bodyweight or no sets. */
   load: number | null;
   minReps: number;
@@ -262,7 +272,11 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
 
   // Imported history isn't comparable (P-I3 open; review r2 B1): left out before anything is counted.
   for (const s of input.history.filter((h) => !h.imported).sort(byRecency)) {
-    const counted = s.sets.filter((x) => types.includes(x.setType) && x.reps !== null);
+    const typed = s.sets.filter((x) => types.includes(x.setType) && x.reps !== null);
+    // §2.13: a set Ben marked (spotted, pain, form broke, other equipment) is
+    // left out here, including the unit check (a flagged set on other
+    // equipment doesn't make the session incomparable).
+    const counted = typed.filter((x) => isSetCountable(x, 'progression'));
     const mismatched = counted.some(
       (x) =>
         x.load !== null &&
@@ -293,7 +307,8 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
       sessionId: s.sessionId,
       performedAtUtc: s.performedAtUtc,
       loggedSets: counted.length,
-      otherSets: s.sets.length - counted.length,
+      otherSets: s.sets.length - typed.length,
+      leftOut: typed.length - counted.length,
       prescribedDone: sided ? both.length + Math.min(left.length, right.length) : counted.length,
       sides: sided ? { left: evalSide([...both, ...left], criteria), right: evalSide([...both, ...right], criteria) } : null,
       unpairable,
@@ -467,7 +482,9 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
 
   const required = requiredSets(rule);
   const when = day(latest.performedAtUtc);
-  if (latest.loggedSets === 0) {
+  if (latest.loggedSets === 0 && latest.leftOut > 0) {
+    pushFact(ctx, allLeftOutFact(when));
+  } else if (latest.loggedSets === 0) {
     // Review minor 7: say "no top set" when back-off (or other) sets were logged.
     const why = latest.otherSets === 0 ? 'all skipped' : rule.method === 'double_progression' ? 'only other set types' : 'no top set';
     pushFact(ctx, `No ${countedLabel(rule, 2)} were logged on ${when} (${why}); holding.`);
@@ -482,9 +499,12 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
       `${lead} of ${required} ${countedLabel(rule, required)} had both sides logged on ${when} (left ${left.sets}, right ${right.sets}${behind}); holding.`,
     );
   } else if (latest.prescribedDone < required) {
+    const verb = latest.prescribedDone === 1 ? 'was' : 'were';
     pushFact(
       ctx,
-      `Only ${latest.prescribedDone} of ${required} ${countedLabel(rule, required)} ${latest.prescribedDone === 1 ? 'was' : 'were'} logged on ${when}; holding.`,
+      latest.leftOut > 0
+        ? `Only ${latest.prescribedDone} of ${required} ${countedLabel(rule, required)} counted on ${when} (${latest.leftOut} left out); holding.`
+        : `Only ${latest.prescribedDone} of ${required} ${countedLabel(rule, required)} ${verb} logged on ${when}; holding.`,
     );
   }
   if (!reference) {

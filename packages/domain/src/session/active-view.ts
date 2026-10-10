@@ -1,4 +1,4 @@
-import type { EquipmentInstance, Load, PainFlag, SessionAggregate, SessionExercise, SetSide, SetValues, WorkoutSet } from '@fizz/schemas';
+import type { EquipmentInstance, Load, PainFlag, SessionAggregate, SessionExercise, SetExclusion, SetSide, SetValues, WorkoutSet } from '@fizz/schemas';
 import {
   EQUIPMENT_WORD,
   SET_TYPE_BADGE,
@@ -11,6 +11,7 @@ import {
   targetText,
   valuesText,
 } from '../display';
+import { exclusionAccessibility, exclusionPainLine, exclusionTag, normaliseExclusions, notCountedLine, withExclusionWords } from '../exclusions';
 import { getAchievableLoads, isLoadAchievable, loadDirection, stepLoad } from '../equipment';
 import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
@@ -57,7 +58,11 @@ export function lastComparableSession(history: readonly HistorySession[], ex: Pi
       sessionId: h.sessionId,
       performedAtUtc: h.performedAtUtc,
       gymId: h.gymId,
-      sets: sets.map((s, index) => ({ index, values: { load: s.load, reps: s.reps, durationS: null, rpe: s.rpe, rir: s.rir } })),
+      sets: sets.map((s, index) => ({
+        index,
+        values: { load: s.load, reps: s.reps, durationS: null, rpe: s.rpe, rir: s.rir },
+        ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}),
+      })),
     };
   }
   return null;
@@ -141,6 +146,16 @@ export interface SetRowView {
   status: SetRowStatus;
   text: string;
   edited: boolean;
+  /**
+   * Ben's exclusion flags (§2.13), canonical order. `exclusionTag` is the
+   * colourless `Tag` (`Spotted`), `notCounted` the Overview's second line
+   * (`Spotted · not counted`), `accessibility` what VoiceOver appends. All
+   * null when the set counts.
+   */
+  exclusions: SetExclusion[];
+  exclusionTag: string | null;
+  notCounted: string | null;
+  exclusionAccessibility: string | null;
   version: number;
 }
 
@@ -196,8 +211,9 @@ export interface JustSavedView {
   exerciseName: string;
   setNumber: number;
   side: SetSide | null;
-  /** `100 kg × 7` (the actual result). */
+  /** `100 kg × 7` (the actual result), with Ben's exclusion words (`100 kg × 8 · spotted`, §2.13). */
   text: string;
+  exclusions: SetExclusion[];
   rpe: number | null;
   rir: number | null;
   /** Undo opId: one per log (the set's undo count). */
@@ -333,6 +349,12 @@ function rowText(set: WorkoutSet, ex: SessionExercise, eq: EquipmentInstance | n
   return { status: 'pending', text: targetShort(set.planned, { convention: ex.loadConvention, equipment: eq }) ?? 'No target' };
 }
 
+/** A done row's exclusion fields (§2.13); empty for any other row. */
+export function exclusionFields(set: Pick<WorkoutSet, 'status' | 'exclusions'>): Pick<SetRowView, 'exclusions' | 'exclusionTag' | 'notCounted' | 'exclusionAccessibility'> {
+  const xs = set.status === 'completed' ? normaliseExclusions(set.exclusions) : [];
+  return { exclusions: xs, exclusionTag: exclusionTag(xs), notCounted: notCountedLine(xs), exclusionAccessibility: exclusionAccessibility(xs) };
+}
+
 function missingFor(values: SetValues, ex: SessionExercise): FocusView['missing'] {
   if (ex.loadConvention !== 'bodyweight' && values.load === null && ex.loadConvention !== 'added') return 'load';
   if (ex.measurement === 'reps' && values.reps === null) return 'reps';
@@ -419,7 +441,12 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     setCount: own.length,
     previous:
       prev && prevFirst
-        ? { performedAtUtc: prev.performedAtUtc, text: valuesText(prevFirst.values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }), values: prevFirst.values }
+        ? {
+            performedAtUtc: prev.performedAtUtc,
+            // §2.13: a flagged set still shows (and copies) what happened, with its words.
+            text: withExclusionWords(valuesText(prevFirst.values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }), prevFirst.exclusions),
+            values: prevFirst.values,
+          }
         : null,
     draft: values,
     draftSource,
@@ -445,6 +472,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
         status,
         text,
         edited: s.edited,
+        ...exclusionFields(s),
         version: s.version,
       };
     }),
@@ -470,7 +498,8 @@ function buildJustSaved(state: SessionAggregate): JustSavedView | null {
     exerciseName: ex.exerciseName,
     setNumber: exerciseSets(state, ex.id).findIndex((s) => s.id === set.id) + 1,
     side: set.side,
-    text: valuesText(set.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
+    text: withExclusionWords(valuesText(set.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }), set.exclusions),
+    exclusions: normaliseExclusions(set.exclusions),
     rpe: set.actual.rpe,
     rir: set.actual.rir,
     undoOpId: `undo:${set.id}:${String(set.undoCount)}`,
@@ -596,6 +625,11 @@ export interface SetEditView {
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
   /** `100 kg × 8` for the values as edited. */
   text: string;
+  /** Exclusion chips as edited (§2.13, canonical order); the stored ones when untouched. */
+  exclusions: SetExclusion[];
+  /** `This also puts a pain flag on Bench press: …` while `Pain` is ticked and wasn't before (AW7). */
+  painLine: string | null;
+  /** Values or exclusions differ from the stored set: `Save changes` is enabled. */
   changed: boolean;
 }
 
@@ -604,13 +638,15 @@ export interface SetEditView {
  * equipment-aware steppers as the set card. `correct_set` saves it; the rest
  * timer is never touched (invariant 5).
  */
-export function buildSetEditView(state: SessionAggregate, setId: string, edits: SetValues | null): SetEditView | null {
+export function buildSetEditView(state: SessionAggregate, setId: string, edits: SetValues | null, exclusionEdits: readonly SetExclusion[] | null = null): SetEditView | null {
   const set = state.sets.find((s) => s.id === setId);
   if (!set || set.status !== 'completed' || !set.actual) return null;
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
   if (!ex) return null;
   const eq = equipmentOf(state, ex);
   const values = edits ?? set.actual;
+  const stored = normaliseExclusions(set.exclusions);
+  const exclusions = exclusionEdits === null ? stored : normaliseExclusions(exclusionEdits);
   const label = loadFieldLabel(ex.loadConvention, eq);
   const loadValue = values.load === null || values.load.convention === 'bodyweight' ? null : values.load.value;
   return {
@@ -626,6 +662,8 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
         : { label, unitText: loadFieldUnit(ex.unit, ex.loadConvention), value: loadValue, assisted: loadDirection(ex.loadConvention) === 'assistance', ...loadSteps(loadValue, ex, eq) },
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
     text: valuesText(values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
-    changed: JSON.stringify(values) !== JSON.stringify(set.actual),
+    exclusions,
+    painLine: exclusions.includes('pain') && !stored.includes('pain') ? exclusionPainLine(ex.exerciseName) : null,
+    changed: JSON.stringify(values) !== JSON.stringify(set.actual) || exclusions.join() !== stored.join(),
   };
 }

@@ -9,6 +9,7 @@ import type {
   ZonedTimestamp,
 } from '@fizz/schemas';
 import { formatNumber, loadText, NBSP } from './display';
+import { isSetCountable } from './exclusions';
 import { loadDirection } from './equipment';
 import type { HistorySession, NextTargets, TargetSet } from './progression';
 import type { StartWarning } from './session/create';
@@ -79,20 +80,23 @@ function basisSets(h: HistorySession): TargetBasisSet[] {
       setType: s.setType,
       side: s.side,
       values: { load: s.load, reps: s.reps, durationS: null, rpe: s.rpe, rir: s.rir },
+      ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: [...s.exclusions] } : {}),
     }));
 }
 
 /**
  * The comparable workout the rule's targets rest on: the most recent of
  * `basedOnSessionIds` that has any non-warm-up set at this equipment (a
- * workout where everything was skipped can't be the basis of a load).
+ * workout where everything was skipped can't be the basis of a load). A
+ * workout whose sets Ben all left out of progress (§2.13) isn't the basis
+ * either: the rule held on the workout before it.
  */
 export function ruleBasis(result: NextTargets, history: readonly HistorySession[], equipmentId: string | null, fallbackTz: string): TargetBasis | null {
   for (const id of result.basedOnSessionIds) {
     const h = history.find((x) => x.sessionId === id && x.equipmentId === equipmentId && !x.imported);
     if (!h) continue;
     const sets = basisSets(h);
-    if (sets.length === 0) continue;
+    if (!sets.some((s) => isSetCountable(s, 'progression'))) continue;
     return {
       sessionId: h.sessionId,
       performedAt: { utc: h.performedAtUtc, tz: h.tz ?? fallbackTz },
@@ -108,8 +112,10 @@ export function ruleBasis(result: NextTargets, history: readonly HistorySession[
 /** Easiest load of the basis sets of one set type (the rule's reference load), else of all of them. */
 function referenceLoad(basis: TargetBasis, setType: TargetSet['setType']): Load | null {
   const loads = (sets: readonly TargetBasisSet[]) => sets.map((s) => s.values.load).filter((l): l is Load => l !== null && l.convention !== 'bodyweight');
-  const own = loads(basis.sets.filter((s) => s.setType === setType));
-  const pool = own.length > 0 ? own : loads(basis.sets);
+  // Flagged sets (§2.13) never set the reference load.
+  const counted = basis.sets.filter((s) => isSetCountable(s, 'progression'));
+  const own = loads(counted.filter((s) => s.setType === setType));
+  const pool = own.length > 0 ? own : loads(counted);
   const first = pool[0];
   if (first === undefined) return null;
   const easier = (a: Load, b: Load) => (loadDirection(a.convention) === 'resistance' ? toScaled(a.value) < toScaled(b.value) : toScaled(a.value) > toScaled(b.value));

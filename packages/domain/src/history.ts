@@ -43,6 +43,8 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
         reps: s.actual.reps,
         rpe: s.actual.rpe,
         rir: s.actual.rir,
+        // §2.13: flags travel with the set; consumers decide with `isSetCountable`.
+        ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}),
         ...(opts.identity ? { setId: s.id, version: s.version } : {}),
       });
     }

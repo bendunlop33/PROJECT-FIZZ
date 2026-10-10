@@ -5,6 +5,7 @@ import type {
   PlannedSet,
   SessionAggregate,
   SessionExercise,
+  SetExclusion,
   SetSide,
   SetValues,
   TargetBasis,
@@ -13,6 +14,7 @@ import type {
 import { dayMonthText, formatDuration, formatNumber, loadText, NBSP, repRangeText } from '../display';
 import type { HistorySession } from '../progression';
 import { isPainCheckDue, PAIN_AREA_WORD } from '../pain-flags';
+import { isSetCountable, notUsedLine } from '../exclusions';
 import { stepText } from '../target-provenance';
 import { toMs } from '../time';
 import { lastComparableSession } from './active-view';
@@ -26,11 +28,11 @@ import { lastComparableSession } from './active-view';
  * in by code; `Last time` and `Before flag` hold actual results.
  */
 
-export type WhyRowKey = 'set_by' | 'last_time' | 'reason' | 'equipment' | 'pain' | 'before_flag';
+export type WhyRowKey = 'set_by' | 'last_time' | 'reason' | 'equipment' | 'pain' | 'before_flag' | 'not_used';
 
 export interface WhyRow {
   key: WhyRowKey;
-  label: 'Set by' | 'Last time' | 'Reason' | 'Equipment' | 'Pain' | 'Before flag';
+  label: 'Set by' | 'Last time' | 'Reason' | 'Equipment' | 'Pain' | 'Before flag' | 'Not used';
   lines: string[];
   /** `actual`: logged results, never targets. `warning`: shown with the warning icon. */
   kind: 'app' | 'actual' | 'warning';
@@ -69,6 +71,19 @@ export const PAIN_REFERENCE_WINDOW_MS = 8 * 7 * 86_400_000;
 interface ShownSet {
   side: SetSide | null;
   values: Pick<SetValues, 'load' | 'reps' | 'durationS' | 'rpe' | 'rir'>;
+  exclusions?: readonly SetExclusion[] | undefined;
+}
+
+/** `Last time` and `Before flag` list counted sets only; the ones Ben marked go under `Not used` (§2.13). */
+const counted = <T extends ShownSet>(sets: readonly T[]): T[] => sets.filter((s) => isSetCountable(s, 'progression'));
+
+/** Shown when every set of the workout was left out. */
+const ALL_LEFT_OUT = 'No counted sets (all left out).';
+
+/** `Not used`: basis sets Ben marked, numbered among the non-warm-up sets shown (`Set 3 on 1 Oct: spotted.`). */
+function notUsedRow(sets: readonly ShownSet[], day: string): WhyRow | null {
+  const lines = sets.flatMap((s, i) => (isSetCountable(s, 'progression') ? [] : [notUsedLine(i + 1, day, s.exclusions)]));
+  return lines.length === 0 ? null : { key: 'not_used', label: 'Not used', lines, kind: 'actual' };
 }
 
 const SIDE_ORDER: Record<SetSide, number> = { both: 0, left: 1, right: 2 };
@@ -152,8 +167,9 @@ function whereText(day: string, gymId: string | null, equipmentName: string | nu
 
 function storedLastTime(basis: TargetBasis, ex: SessionExercise, eq: EquipmentInstance | null, basisNow: SessionAggregate | null, gymNames: Readonly<Record<string, string>>): WhyRow {
   const basisEq = basis.equipmentId === null ? null : (basisNow?.session.equipmentSnapshot.find((e) => e.id === basis.equipmentId) ?? (eq?.id === basis.equipmentId ? eq : null));
-  const lines = [basisSetsText(basis.sets, ex, basisEq ?? eq)];
-  const effort = effortText(basis.sets);
+  const sets = counted(basis.sets);
+  const lines = [sets.length === 0 ? ALL_LEFT_OUT : basisSetsText(sets, ex, basisEq ?? eq)];
+  const effort = effortText(sets);
   if (effort !== null) lines.push(effort);
   lines.push(whereText(dayMonthText(basis.performedAt.utc, basis.performedAt.tz), basis.gymId, basisEq?.name ?? null, gymNames));
   return { key: 'last_time', label: 'Last time', lines, kind: 'actual' };
@@ -161,7 +177,9 @@ function storedLastTime(basis: TargetBasis, ex: SessionExercise, eq: EquipmentIn
 
 /** A history workout's non-warm-up sets, sides kept, in the shape the rows print. */
 function shownSets(h: HistorySession): ShownSet[] {
-  return h.sets.filter((x) => x.setType !== 'warmup').map((x) => ({ side: x.side, values: { load: x.load, reps: x.reps, durationS: null, rpe: x.rpe, rir: x.rir } }));
+  return h.sets
+    .filter((x) => x.setType !== 'warmup')
+    .map((x) => ({ side: x.side, values: { load: x.load, reps: x.reps, durationS: null, rpe: x.rpe, rir: x.rir }, ...(x.exclusions ? { exclusions: x.exclusions } : {}) }));
 }
 
 /** The workout `lastComparableSession` picks (same equipment, unit and convention; never imported), with its sides. */
@@ -173,15 +191,16 @@ export function lastComparableHistory(history: readonly HistorySession[], ex: Pi
 
 /** `55 kg × 6, 6, 6`: a history workout's non-warm-up sets as actual results (`Before flag`, the pain flag sheet). */
 export function historySetsText(h: HistorySession, ex: Pick<SessionExercise, 'loadConvention' | 'measurement'>, eq: EquipmentInstance | null): string {
-  return basisSetsText(shownSets(h), ex, eq);
+  const sets = counted(shownSets(h));
+  return sets.length === 0 ? ALL_LEFT_OUT : basisSetsText(sets, ex, eq);
 }
 
 function historyLastTime(prev: HistorySession | null, ex: SessionExercise, eq: EquipmentInstance | null, tz: string, gymNames: Readonly<Record<string, string>>): WhyRow {
   if (prev === null) {
     return { key: 'last_time', label: 'Last time', lines: [eq === null ? 'No earlier sets of this exercise.' : `No earlier sets on ${eq.name}.`], kind: 'app' };
   }
-  const sets = shownSets(prev);
-  const lines = [basisSetsText(sets, ex, eq)];
+  const sets = counted(shownSets(prev));
+  const lines = [sets.length === 0 ? ALL_LEFT_OUT : basisSetsText(sets, ex, eq)];
   const effort = effortText(sets);
   if (effort !== null) lines.push(effort);
   lines.push(whereText(dayMonthText(prev.performedAtUtc, prev.tz ?? tz), prev.gymId, eq?.name ?? null, gymNames));
@@ -268,7 +287,8 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
   const tz = state.session.startedAt.tz;
 
   const rows: WhyRow[] = [setByRow(p)];
-  rows.push(p?.basis ? storedLastTime(p.basis, ex, eq, input.basisNow, input.gymNames) : historyLastTime(lastComparableHistory(input.history, ex), ex, eq, tz, input.gymNames));
+  const fromHistory = p?.basis ? null : lastComparableHistory(input.history, ex);
+  rows.push(p?.basis ? storedLastTime(p.basis, ex, eq, input.basisNow, input.gymNames) : historyLastTime(fromHistory, ex, eq, tz, input.gymNames));
   const reason = reasonRow(p, planned, ex, eq);
   if (reason) rows.push(reason);
   const equipment = equipmentRow(p);
@@ -292,6 +312,13 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
       rows.push({ key: 'before_flag', label: 'Before flag', lines: [`${historySetsText(before, ex, eq)} · ${dayMonthText(before.performedAtUtc, before.tz ?? tz)}`], kind: 'actual' });
     }
   }
+  // §2.13: the basis sets Ben marked, with his reason. Stored with the target, or read from history when nothing was stored.
+  const notUsed = p?.basis
+    ? notUsedRow(p.basis.sets, dayMonthText(p.basis.performedAt.utc, p.basis.performedAt.tz))
+    : fromHistory
+      ? notUsedRow(shownSets(fromHistory), dayMonthText(fromHistory.performedAtUtc, fromHistory.tz ?? tz))
+      : null;
+  if (notUsed) rows.push(notUsed);
 
   return {
     setId: set.id,
