@@ -467,8 +467,8 @@ describe('SVG output and style', () => {
     expect(pose.shapes.some((s) => s.kind === 'capsule' && s.paint === 'nearBody')).toBe(false);
     const ops = frameOps(pose, { px: 240, camera: fitCamera(prepared) });
     const bodyFills = ops.filter((o) => o.kind === 'path' && o.fill === 'nearBody');
-    // Trunk (with neck and head), near leg (hip fillet, thigh, shank, shoe), near arm (upper arm, forearm, fist, thumb).
-    expect(bodyFills.map((o) => (o.kind === 'path' ? o.contours.length : 0))).toEqual([3, 4, 4]);
+    // Trunk (with neck, neck fillet and head), near leg (hip fillet, thigh, shank, shoe), near arm (upper arm, forearm, fist, thumb).
+    expect(bodyFills.map((o) => (o.kind === 'path' ? o.contours.length : 0))).toEqual([4, 4, 4]);
     expect(bodyFills.every((o) => o.kind === 'path' && o.smooth)).toBe(true);
     const svg = renderSvg(pose, { px: 240, style, camera: fitCamera(prepared) });
     // The plate rim is a soft `frame` ring behind the body (it ringed the head when stroked in `implement`).

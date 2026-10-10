@@ -23,12 +23,14 @@ import {
   poseAt,
   poseContinuity,
   prepareGuide,
+  projector,
   reversal,
   splineSlopes,
   stateAt,
   suggestPassTimes,
   type Guide,
   type PreparedGuide,
+  type Vec,
 } from '../src/figure/index';
 import { CatalogueEntrySchema } from '../src/entry-schema';
 import { baseGuide } from './figure-helpers';
@@ -551,20 +553,19 @@ describe('drawing seams (ADR 0015, V1–V3)', () => {
     // The outline contour is the 0.5-opacity shade stroke (anatomical lines are 0.35).
     const contour = ops.filter((o) => o.stroke === 'shade' && o.opacity === 0.5 && o.fill === null);
     const open = contour.filter((o) => !o.closed);
-    // The full-strength middle of each arm segment's open stroke; the ends fade in their own, fainter ops.
-    expect(open).toHaveLength(1);
-    expect(open[0]?.contours).toHaveLength(2);
-    const faded = ops.filter((o) => o.stroke === 'shade' && !o.closed && o.fill === null && o.opacity < 0.5 && o.width === open[0]?.width);
-    expect(faded.length).toBe(3);
+    // Arm strokes are open paths: tapered at both ends and, over the torso, a soft occlusion edge (round 4), so the
+    // full-strength 0.5 op holds only the parts outside the torso.
+    const strokes = ops.filter((o) => o.stroke === 'shade' && !o.closed && o.fill === null && o.width === open[0]?.width);
+    expect(open.length).toBeLessThanOrEqual(1);
+    expect(strokes.length).toBeGreaterThan(3);
+    expect(strokes.every((o) => o.opacity <= 0.5 + 1e-9)).toBe(true);
     const seg = poseAt(p, 0.2).body.segments.find((x) => x.name === 'upperArm' && x.side === 'Near');
     if (seg === undefined) throw new Error('no upper arm');
-    // Open path = closed outline minus the 3-point proximal cap, cut into a full middle and three fading pieces per end.
-    const pieces = [...faded.flatMap((o) => o.contours), ...(open[0]?.contours ?? [])].filter((c) => c.length > 0);
-    const proximal = chainOutline([seg]).length - 3;
-    // Every piece shares its cut point with the next one: 7 pieces, 6 cut points, each counted twice.
-    const upperArmPieces = pieces.length / 2;
-    expect(upperArmPieces).toBe(7);
-    expect(proximal).toBeGreaterThan(10);
+    // No stroke runs across the shoulder: the outline's proximal cap (its last 3 points) is in none of the pieces.
+    const P = projector(fitCamera(p), 240, p.guide.facing);
+    const cap = chainOutline([seg]).slice(-3).map(P);
+    const near = (a: Vec, b: Vec): boolean => Math.hypot(a.x - b.x, a.y - b.y) < 0.05;
+    expect(strokes.flatMap((o) => o.contours).some((c) => c.some((q) => cap.some((k) => near(q, k))))).toBe(false);
     // The fist (and thumb) outline stays closed.
     expect(contour.some((o) => o.closed && o.contours.length >= 1)).toBe(true);
   });

@@ -74,7 +74,9 @@ function musclesOf(key: string) {
 
 type PathOp = Extract<DrawOp, { kind: 'path' }>;
 const isPath = (o: DrawOp): o is PathOp => o.kind === 'path';
-const faintOps = (ops: readonly DrawOp[]): PathOp[] => ops.filter(isPath).filter((o) => o.fill === 'faintNeutral' || o.fill === 'faintTint');
+const isFaintPaint = (paint: string | null | undefined): boolean => paint === 'faintNeutral' || paint === 'faintTint';
+/** Faint definition ops: gradient fills in a faint paint (round 4: one per shape, along its long axis). */
+const faintOps = (ops: readonly DrawOp[]): PathOp[] => ops.filter(isPath).filter((o) => isFaintPaint(o.fill) || (o.gradient !== null && o.gradient.stops.every((st) => isFaintPaint(st.paint))));
 const ops = (key: string, t: number, o: Partial<FrameOpsOptions> = {}): DrawOp[] => {
   const { prepared, camera } = loaded(key);
   return frameOps(poseAt(prepared, t), { px: 240, camera, muscles: musclesOf(key), ...o });
@@ -247,13 +249,18 @@ describe('drawing (§4.11.6–4.11.7)', () => {
     }
   });
 
-  it('D6: faint ops are opaque fills, never stroked; a translucent region over a faint shape gets a body-tone underlay of its own path', () => {
+  it('D6: faint ops are gradient fills in the faint paint, never stroked; a translucent region over a faint shape gets a body-tone underlay of its own path', () => {
     let underlays = 0;
     for (const key of GUIDE_KEYS) {
       const frame = ops(key, 0.3, { definition: 'neutral', pulse: 0.2 });
       expect(faintOps(frame).length, key).toBeGreaterThan(0);
-      // Faint shapes from several groups share one fill op per group, so overlaps can't stack.
-      for (const f of faintOps(frame)) expect(f.stroke === null && f.gradient === null && f.fill === 'faintNeutral', key).toBe(true);
+      // One gradient op per shape (shapes of one body group never overlap), lit end strongest, both ends fading out.
+      for (const f of faintOps(frame)) {
+        const stops = f.gradient?.stops ?? [];
+        expect(f.stroke === null && f.fill === null && stops.every((st) => st.paint === 'faintNeutral'), key).toBe(true);
+        expect(stops[0]?.opacity ?? 1, key).toBe(0);
+        expect(stops[stops.length - 1]?.opacity ?? 1, key).toBe(0);
+      }
       frame.forEach((o, i) => {
         const under = frame[i - 1];
         if (isPath(o) && o.fill === 'muscle' && under && isPath(under) && under.fill === 'nearBody' && under.contours === o.contours) underlays += 1;

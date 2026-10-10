@@ -335,18 +335,29 @@ export function trunkSegments(body: FigureBody): BodySegment[] {
 
 /** Trunk outline caps: the buttocks round off; the front view's pelvis bottom stays flat between the thighs. */
 export function trunkOutline(body: FigureBody): Vec[] {
-  return chainOutline(trunkSegments(body), { start: body.view === 'side' ? 0.55 : 0.25, end: 0.6 });
+  let out = trunkOutlineCache.get(body);
+  if (out === undefined) {
+    out = chainOutline(trunkSegments(body), { start: body.view === 'side' ? 0.55 : 0.25, end: 0.6 });
+    trunkOutlineCache.set(body, out);
+  }
+  return [...out];
 }
+/** The fillets and the trunk contour all start from the trunk outline: built once per body. */
+const trunkOutlineCache = new WeakMap<FigureBody, Vec[]>();
 
 /** Every closed contour of a body group, in drawing order within the group. */
 export function groupContours(body: FigureBody, group: BodyGroup): Vec[][] {
   if (group === 'trunk') {
     const neck = body.segments.find((s) => s.name === 'neck');
-    return [trunkOutline(body), ...(neck ? [chainOutline([neck])] : []), headContour(body)];
+    const fillet = neckFillet(body);
+    const crease = hipCreaseFill(body);
+    return [trunkOutline(body), ...(crease ? [crease] : []), ...(neck ? [chainOutline([neck])] : []), ...(fillet ? [fillet] : []), headContour(body)];
   }
   const out: Vec[][] = [];
   const fillet = group === 'legNear' ? hipFillet(body) : null;
   if (fillet !== null) out.push(fillet);
+  const knee = group === 'legNear' || group === 'legFar' ? kneeCreaseFill(body, group === 'legNear' ? 'Near' : 'Far') : null;
+  if (knee !== null) out.push(knee);
   for (const seg of body.segments) if (seg.group === group) out.push(chainOutline([seg]));
   for (const f of body.feet) if (f.group === group) out.push(footContour(f, body.view));
   for (const h of body.hands) if (h.group === group) out.push(...handContours(h, body.view));
@@ -354,6 +365,28 @@ export function groupContours(body: FigureBody, group: BodyGroup): Vec[][] {
 }
 
 export const BODY_GROUPS: readonly BodyGroup[] = ['trunk', 'legNear', 'legFar', 'armNear', 'armFar'];
+
+/** Neck fillet reach: trunk outline within this distance of the neck base (side, front/back view), and the neck's edges up to this share of its length. */
+const NECK_FILLET_RADIUS = { side: 0.075, front: 0.1 } as const;
+const NECK_FILLET_S = 0.5;
+
+/**
+ * A convex patch from the top of the trunk outline (the trapezius in a side
+ * view, the shoulder line from the front or back) up the neck's lower half,
+ * drawn with the trunk, so the neck rises out of the shoulders in one slope
+ * instead of standing on them as a tube with a collar (visual review, round 4).
+ */
+export function neckFillet(body: FigureBody): Vec[] | null {
+  const neck = body.segments.find((s) => s.name === 'neck');
+  if (neck === undefined) return null;
+  const base = neck.j0;
+  const r = body.view === 'side' ? NECK_FILLET_RADIUS.side : NECK_FILLET_RADIUS.front;
+  // Only the outline at or above the neck base's level along the trunk (not the chest or back further down).
+  const top = trunkOutline(body).filter((p) => dist(p, base) < r && dot(sub(p, base), neck.u) > -r * 0.45);
+  if (top.length < 2) return null;
+  const up = [...edgeCurveOf(neck, 1, 0, NECK_FILLET_S), ...edgeCurveOf(neck, -1, 0, NECK_FILLET_S)];
+  return convexHull([...top, ...up]);
+}
 
 /** Hip fillet reach: buttock outline within this distance of the hip joint, and the thigh's back edge over this share of its length. */
 const FILLET_RADIUS = 0.16;
@@ -378,6 +411,121 @@ export function hipFillet(body: FigureBody): Vec[] | null {
   const back = edgeCurveOf(thigh, -1, 0, FILLET_THIGH_S);
   return convexHull([...buttock, ...back, hip]);
 }
+
+/** Hip crease fill: reach from the hip joint at full size, and the hip flexion (degrees) over which it grows to it. */
+const CREASE_RADIUS = 0.2;
+const CREASE_FLEXION: readonly [number, number] = [70, 110];
+const CREASE_THIGH_S = 0.7;
+
+/** Near hip flexion in degrees (0 = thigh in line with the pelvis), from the drawn segments. */
+export function hipFlexion(body: FigureBody): number {
+  const thigh = body.segments.find((s) => s.name === 'thigh' && s.side === 'Near');
+  const pelvis = body.segments.find((s) => s.name === 'pelvis');
+  if (thigh === undefined || pelvis === undefined) return 0;
+  return 180 - (Math.acos(Math.max(-1, Math.min(1, dot(thigh.u, pelvis.u)))) * 180) / Math.PI;
+}
+
+/**
+ * Side view, deep hip flexion: a convex patch from the belly to the top of the
+ * near thigh's front edge, drawn with the trunk (under the near leg and over
+ * the trunk's colour), so the fold reads as soft
+ * tissue meeting rather than a background-coloured wedge cut into the body
+ * (visual review, round 4). It grows in with the flexion (none below 70°),
+ * so it never pops. Null in front/back views or without a near thigh.
+ */
+export function hipCreaseFill(body: FigureBody): Vec[] | null {
+  if (body.view !== 'side') return null;
+  const thigh = body.segments.find((s) => s.name === 'thigh' && s.side === 'Near');
+  const pelvis = body.segments.find((s) => s.name === 'pelvis');
+  if (thigh === undefined || pelvis === undefined) return null;
+  const grow = smoothstep((hipFlexion(body) - CREASE_FLEXION[0]) / (CREASE_FLEXION[1] - CREASE_FLEXION[0]));
+  const r = CREASE_RADIUS * grow;
+  if (r < 0.02) return null;
+  const hip = thigh.j0;
+  // In front of the pelvis axis and near the hip joint: the belly side of the fold.
+  const belly = trunkOutline(body).filter((p) => dist(p, hip) < r && dot(sub(p, hip), pelvis.n) > 0);
+  const front = edgeCurveOf(thigh, 1, 0, CREASE_THIGH_S).filter((p) => dist(p, hip) < r);
+  if (belly.length < 2 || front.length < 2) return null;
+  return convexHull([...belly, ...front, hip]);
+}
+
+/** Knee crease fill: reach from the fold's apex at full size, and the knee flexion (degrees) over which it grows to it. */
+const KNEE_CREASE_RADIUS = 0.03;
+const KNEE_CREASE_FLEXION: readonly [number, number] = [80, 130];
+
+/** Where two polylines first cross (null if they don't). */
+function crossing(a: readonly Vec[], b: readonly Vec[]): Vec | null {
+  for (let i = 1; i < a.length; i += 1) {
+    const p = a[i - 1] as Vec;
+    const r = sub(a[i] as Vec, p);
+    for (let j = 1; j < b.length; j += 1) {
+      const q = b[j - 1] as Vec;
+      const sv = sub(b[j] as Vec, q);
+      const den = r.x * sv.y - r.y * sv.x;
+      if (Math.abs(den) < 1e-12) continue;
+      const qp = sub(q, p);
+      const t = (qp.x * sv.y - qp.y * sv.x) / den;
+      const u = (qp.x * r.y - qp.y * r.x) / den;
+      if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return add(p, scale(r, t));
+    }
+  }
+  return null;
+}
+
+/**
+ * Side view, a deeply bent knee (either leg): the inside of the fold, where
+ * the back of the thigh meets the calf, is rounded off by a small convex patch
+ * at the apex, so it reads as a soft crease instead of a sharp V notch (the
+ * split squat's rear knee; visual review, round 4). Grows in with the
+ * flexion, none below 80°.
+ */
+export function kneeCreaseFill(body: FigureBody, side: BodySide): Vec[] | null {
+  if (body.view !== 'side') return null;
+  const thigh = body.segments.find((s) => s.name === 'thigh' && s.side === side);
+  const shank = body.segments.find((s) => s.name === 'shank' && s.side === side);
+  if (thigh === undefined || shank === undefined) return null;
+  const flex = (Math.acos(Math.max(-1, Math.min(1, dot(thigh.u, shank.u)))) * 180) / Math.PI;
+  const r = KNEE_CREASE_RADIUS * smoothstep((flex - KNEE_CREASE_FLEXION[0]) / (KNEE_CREASE_FLEXION[1] - KNEE_CREASE_FLEXION[0]));
+  if (r < 0.004) return null;
+  const tb = edgeCurveOf(thigh, -1, 0.3, 1);
+  const sb = edgeCurveOf(shank, -1, 0, 0.7);
+  const apex = crossing(tb, sb);
+  if (apex === null) return null;
+  // Each edge's direction away from the apex, measured a little way along it (the edges curve).
+  const away = (pts: readonly Vec[], dir: Vec): Vec => {
+    const far = pts.filter((p) => dot(sub(p, apex), dir) > 1.5 * r).sort((p, q) => dist(p, apex) - dist(q, apex))[0];
+    return far === undefined ? dir : unit(sub(far, apex));
+  };
+  return filletPatch(apex, away(tb, scale(thigh.u, -1)), away(sb, shank.u), r);
+}
+
+/**
+ * The patch that rounds off the corner between two edges leaving `apex` along
+ * `dA` and `dB` (unit vectors): apex, the tangent point on each edge `reach`
+ * from the apex, and the concave arc between them.
+ */
+export function filletPatch(apex: Vec, dA: Vec, dB: Vec, reach: number): Vec[] | null {
+  const c = Math.max(-1, Math.min(1, dot(dA, dB)));
+  const half = Math.acos(c) / 2;
+  if (half < 0.05 || half > 1.45) return null;
+  const rr = reach * Math.tan(half);
+  const bis = unit(add(dA, dB));
+  const centre = add(apex, scale(bis, rr / Math.sin(half)));
+  const ta = add(apex, scale(dA, reach));
+  const tb = add(apex, scale(dB, reach));
+  const a0 = Math.atan2(ta.y - centre.y, ta.x - centre.x);
+  let a1 = Math.atan2(tb.y - centre.y, tb.x - centre.x);
+  // The short way round (the side facing the apex).
+  while (a1 - a0 > Math.PI) a1 -= 2 * Math.PI;
+  while (a0 - a1 > Math.PI) a1 += 2 * Math.PI;
+  const arc: Vec[] = [];
+  for (let i = 0; i <= 8; i += 1) {
+    const a = a0 + ((a1 - a0) * i) / 8;
+    arc.push(add(centre, v(Math.cos(a) * rr, Math.sin(a) * rr)));
+  }
+  return [apex, ...arc];
+}
+
 
 /** `edgeCurve` without the forward reference (defined below). */
 function edgeCurveOf(seg: BodySegment, x: 1 | -1, from: number, to: number): Vec[] {

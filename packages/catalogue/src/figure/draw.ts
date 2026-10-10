@@ -14,13 +14,13 @@
  * draws them its own way (`GUIDE_CORNER_FRACTION`).
  */
 import { BODY_GROUPS, groupContours, groupStrokeContours, soleBand, type BodyGroup } from './body';
-import { add, dist, polygonsWithin, scale, sub, v, type Vec } from './math';
+import { add, dist, pointInPolygon, pointSegmentDistance, polygonsWithin, scale, sub, v, type Vec } from './math';
 import { definitionGroupsFor, effectiveDefinition, focusViewOf, hasListedMuscles, resolveFocus, type MuscleDefinition, type MuscleInput, type MuscleLevel } from './muscle-map';
 import { counterClockwise, signedArea } from './paths';
 import type { Muscle } from '../vocab';
 import type { Pose } from './pose';
 import { STROKE, type Layer, type Paint, type Shape } from './props';
-import { anatomyLines, definitionShapes, regionShapes, shadeBands, type RegionGroup } from './regions';
+import { anatomyLines, definitionShapes, LIGHT, regionShapes, shadeBands, type DefinitionShape, type RegionGroup } from './regions';
 import { MUSCLE_OPACITY } from './style';
 
 /** Square camera in world units. */
@@ -52,6 +52,9 @@ export const STROKE_FLOORS_PT = {
   compact: { halo: 1.25, edge: 1, contour: 1, hair: 0.75 },
   full: { halo: 1, edge: 0.75, contour: 0.75, hair: 0.75 },
 } as const satisfies Record<DetailTier, Record<'halo' | 'edge' | 'contour' | 'hair', number>>;
+
+/** S tier: a cable is at least this wide, points (a hairline cable read as missing at 115 pt; visual review, round 4). */
+export const CABLE_COMPACT_MIN_PT = 1.5;
 
 export interface FrameOpsOptions {
   /** Output size in pixels (the app uses 1 and scales the recorded picture). */
@@ -207,7 +210,7 @@ function shapeOp(s: Shape, c: Ctx): DrawOp {
   const { P, k } = c;
   switch (s.kind) {
     case 'line':
-      return { kind: 'line', a: P(s.a), b: P(s.b), width: c.sw(s.width, strokeClass(s.width)), paint: s.paint, cap: 'round', dash: s.dash ? s.dash.map((d) => d * k) : null, opacity: s.opacity ?? 1 };
+      return { kind: 'line', a: P(s.a), b: P(s.b), width: Math.max(c.sw(s.width, strokeClass(s.width)), s.paint === 'cable' && c.tier === 'compact' ? CABLE_COMPACT_MIN_PT * c.ptPx : 0), paint: s.paint, cap: 'round', dash: s.dash ? s.dash.map((d) => d * k) : null, opacity: s.opacity ?? 1 };
     case 'circle': {
       const w = s.width ?? STROKE.edge;
       return { kind: 'circle', c: P(s.c), r: s.r * k, fill: s.fill ?? null, stroke: s.stroke ?? null, width: c.sw(w, strokeClass(w)), opacity: s.opacity ?? 1 };
@@ -315,11 +318,191 @@ export function taperedPieces(pts: readonly Vec[], fade: number): { alpha: numbe
   return [...out, ...ends.reverse()];
 }
 
+/**
+ * Opacity of an arm's occlusion edge where it lies over the torso, against
+ * its silhouette edge (1). A full-strength outline over the chest read as a
+ * stitched seam or a crossed-arm X (visual review, round 4): over the torso
+ * only a soft edge separates the arm from the body it belongs to.
+ */
+export const ARM_OVER_TRUNK_EDGE = 0.22;
+/** Depth inside the torso outline over which an arm edge fades from the silhouette strength to `ARM_OVER_TRUNK_EDGE`, H. */
+export const ARM_EDGE_RAMP = 0.02;
+/** Alpha levels the fade is quantised to (one op per level). */
+const EDGE_LEVELS = 5;
+
+/** Polygons with their bounds, for repeated depth tests. */
+interface Occluders {
+  polys: { pts: readonly Vec[]; minX: number; maxX: number; minY: number; maxY: number }[];
+}
+
+function occludersOf(polys: readonly (readonly Vec[])[]): Occluders {
+  return {
+    polys: polys
+      .filter((pts) => pts.length >= 3)
+      .map((pts) => ({ pts, minX: Math.min(...pts.map((q) => q.x)), maxX: Math.max(...pts.map((q) => q.x)), minY: Math.min(...pts.map((q) => q.y)), maxY: Math.max(...pts.map((q) => q.y)) })),
+  };
+}
+
+/**
+ * Distance from `p` to the nearest edge of the occluders, negative inside
+ * one of them, clamped to ±`cap` (polygons further than `cap` are skipped).
+ */
+function signedDepth(p: Vec, occ: Occluders, cap: number): number {
+  let d = cap;
+  let inside = false;
+  for (const o of occ.polys) {
+    if (p.x < o.minX - cap || p.x > o.maxX + cap || p.y < o.minY - cap || p.y > o.maxY + cap) continue;
+    if (!inside && p.x >= o.minX && p.x <= o.maxX && p.y >= o.minY && p.y <= o.maxY && pointInPolygon(p, o.pts)) inside = true;
+    const n = o.pts.length;
+    for (let i = 0; i < n; i += 1) d = Math.min(d, pointSegmentDistance(p, o.pts[i] as Vec, o.pts[(i + 1) % n] as Vec));
+  }
+  return inside ? -d : d;
+}
+
+/** A polyline with extra points so no step is longer than `step`. */
+function densify(pts: readonly Vec[], step: number): Vec[] {
+  const out: Vec[] = [];
+  pts.forEach((b, i) => {
+    const a = pts[i - 1];
+    if (a !== undefined) {
+      const n = Math.ceil(dist(a, b) / step);
+      for (let j = 1; j < n; j += 1) out.push(add(a, scale(sub(b, a), j / n)));
+    }
+    out.push(b);
+  });
+  return out;
+}
+
+/**
+ * Splits stroke pieces where they run over the occluders (the torso, in
+ * output units): full strength outside, fading over `ramp` inside to `soft`.
+ * Alpha is quantised to `EDGE_LEVELS` steps, so each level is one op.
+ */
+export function softenOver(pieces: readonly { alpha: number; points: Vec[] }[], occluders: readonly (readonly Vec[])[], ramp: number, soft: number = ARM_OVER_TRUNK_EDGE): { alpha: number; points: Vec[] }[] {
+  if (occluders.length === 0 || ramp <= 0) return pieces.map((p) => ({ alpha: p.alpha, points: [...p.points] }));
+  const occ = occludersOf(occluders);
+  const out: { alpha: number; points: Vec[] }[] = [];
+  const level = (p: Vec): number => {
+    const depth = -signedDepth(p, occ, ramp);
+    const x = Math.min(1, Math.max(0, depth / ramp));
+    const f = 1 - (1 - soft) * x * x * (3 - 2 * x);
+    return Math.round(f * EDGE_LEVELS) / EDGE_LEVELS;
+  };
+  for (const piece of pieces) {
+    const pts = densify(piece.points, ramp / 3);
+    const lv = pts.map(level);
+    // No flicker along an edge that runs close to the outline: a run shorter than one ramp takes its neighbour's level.
+    const minRun = 3;
+    for (let i = 0; i < lv.length; ) {
+      let j = i;
+      while (j + 1 < lv.length && lv[j + 1] === lv[i]) j += 1;
+      if (j - i + 1 < minRun && i > 0) for (let q = i; q <= j; q += 1) lv[q] = lv[i - 1] as number;
+      i = j + 1;
+    }
+    let run: Vec[] = [];
+    let cur = -1;
+    pts.forEach((p, i) => {
+      const l = lv[i] as number;
+      if (l !== cur && run.length > 0) {
+        run.push(p);
+        if (run.length > 1 && cur > 0) out.push({ alpha: piece.alpha * cur, points: run });
+        run = [];
+      }
+      cur = l;
+      run.push(p);
+    });
+    if (run.length > 1 && cur > 0) out.push({ alpha: piece.alpha * cur, points: run });
+  }
+  return out;
+}
+
+/**
+ * Lines faded by the share of their points that lie inside the occluders:
+ * an arm's groove line over the torso or head reads as a seam on the body,
+ * so it fades out as the arm moves over it (gone from 60% inside).
+ */
+export function fadeOver(pieces: readonly { alpha: number; points: Vec[] }[], occluders: readonly (readonly Vec[])[]): { alpha: number; points: Vec[] }[] {
+  const out: { alpha: number; points: Vec[] }[] = [];
+  for (const piece of pieces) {
+    const pts = densify(piece.points, Math.max(1e-6, dist(piece.points[0] as Vec, piece.points[piece.points.length - 1] as Vec) / 12));
+    const share = pts.filter((p) => occluders.some((o) => o.length >= 3 && pointInPolygon(p, o))).length / Math.max(1, pts.length);
+    const x = Math.min(1, Math.max(0, (share - 0.1) / 0.5));
+    const a = piece.alpha * (1 - x * x * (3 - 2 * x));
+    if (a > 0.01) out.push({ alpha: Math.round(a * 20) / 20, points: [...piece.points] });
+  }
+  return out;
+}
+
+/** How far a trunk line keeps from the near arm's outline, H (`clearOf`). */
+export const LINE_ARM_CLEARANCE = 0.025;
+
+/**
+ * Line pieces with the parts inside or within `margin` of the occluders cut
+ * out (output units); a piece left shorter than a third of its line is dropped.
+ */
+export function clearOf(pieces: readonly { alpha: number; points: Vec[] }[], occluders: readonly (readonly Vec[])[], margin: number): { alpha: number; points: Vec[] }[] {
+  if (occluders.length === 0) return pieces.map((p) => ({ alpha: p.alpha, points: [...p.points] }));
+  const occ = occludersOf(occluders);
+  const out: { alpha: number; points: Vec[] }[] = [];
+  for (const piece of pieces) {
+    let total = 0;
+    for (let i = 1; i < piece.points.length; i += 1) total += dist(piece.points[i - 1] as Vec, piece.points[i] as Vec);
+    const pts = densify(piece.points, Math.max(margin / 3, 1e-6));
+    const runs: Vec[][] = [];
+    let run: Vec[] = [];
+    for (const p of pts) {
+      if (signedDepth(p, occ, 2 * margin) > margin) run.push(p);
+      else {
+        if (run.length > 1) runs.push(run);
+        run = [];
+      }
+    }
+    if (run.length > 1) runs.push(run);
+    for (const r of runs) {
+      let len = 0;
+      for (let i = 1; i < r.length; i += 1) len += dist(r[i - 1] as Vec, r[i] as Vec);
+      if (len >= total / 3) out.push({ alpha: piece.alpha, points: r });
+    }
+  }
+  return out;
+}
+
 /** Contours grouped by alpha, fully opaque first (almost always the only group). */
 function byAlpha(items: readonly { alpha: number; points: Vec[] }[]): [number, Vec[][]][] {
   const groups = new Map<number, Vec[][]>();
   for (const it of items) groups.set(it.alpha, [...(groups.get(it.alpha) ?? []), it.points]);
   return [...groups.entries()].sort((a, b) => b[0] - a[0]);
+}
+
+/**
+ * Opacity along a faint definition shape's long axis, from its lit end (guides
+ * v2 §4.11.6, round 4): both ends fade to nothing and the lit half is fuller,
+ * so a shape reads as a muscle belly catching the light rather than a flat,
+ * evenly lit disc (a round pale patch read as a stain; visual review).
+ */
+export const DEFINITION_STOPS: readonly { at: number; k: number }[] = [
+  { at: 0, k: 0 },
+  { at: 0.3, k: 1 },
+  { at: 0.62, k: 0.8 },
+  { at: 1, k: 0 },
+];
+/** Faint glute and outer-hip shapes are drawn at this share: their large pale patch on the hip read as a stain (visual review, round 4). */
+export const DEFINITION_HIP_SCALE = 0.7;
+const HIP_GROUPS: ReadonlySet<string> = new Set(['glutes', 'outerHip']);
+
+/** A faint shape's gradient in world units: its long axis (lit end first) and the stops with the shape's alpha applied. Null for a degenerate shape. */
+export function definitionGradient(f: DefinitionShape): { from: Vec; to: Vec; stops: { at: number; opacity: number }[] } | null {
+  const pts = f.contour;
+  if (pts.length < 3) return null;
+  const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length;
+  const cy = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+  const farthest = (from: Vec): Vec => pts.reduce((best, p) => (dist(p, from) > dist(best, from) ? p : best), pts[0] as Vec);
+  const a = farthest(v(cx, cy));
+  const b = farthest(a);
+  if (dist(a, b) < 1e-6) return null;
+  const lit = a.x * LIGHT.x + a.y * LIGHT.y >= b.x * LIGHT.x + b.y * LIGHT.y;
+  const alpha = f.alpha * (HIP_GROUPS.has(f.definition) ? DEFINITION_HIP_SCALE : 1);
+  return { from: lit ? a : b, to: lit ? b : a, stops: DEFINITION_STOPS.map((st) => ({ at: st.at, opacity: st.k * alpha })) };
 }
 
 /** Every op for one frame, back to front (guides v2 §3.11). */
@@ -351,6 +534,11 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
 
   const contours = new Map<BodyGroup, Vec[][]>(BODY_GROUPS.map((g) => [g, groupContours(body, g).map(project)]));
   const cs = (g: BodyGroup): Vec[][] => contours.get(g) ?? [];
+  // The torso and neck in output units (not the head: an arm in front of the face keeps its edge): arm edges over
+  // them are soft occlusion edges (`softenOver`). The head is the trunk group's last contour.
+  const trunkPx = cs('trunk').slice(0, -1);
+  // The near arm(s) in output units: trunk lines keep clear of them (`clearOf`).
+  const armPx = side ? cs('armNear') : [...cs('armNear'), ...cs('armFar')];
   const halo = (g: BodyGroup): DrawOp => pathOp(cs(g), { smooth: true, fill: 'background', stroke: 'background', width: 2 * c.sw(STROKE.halo, 'halo'), join: 'round' });
 
   const view = focusViewOf({ view: body.view, seenFrom: body.seenFrom });
@@ -371,9 +559,13 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
   });
   const faint = definition === 'off' ? [] : definitionShapes(body, definitionGroupsFor(view, focus, pose.focus?.hide ?? []));
   const faintOps = (g: RegionGroup): void => {
-    // Opaque composite at opacity 1 (fading only with a foreshortened segment): overlaps never stack, and it never pulses.
-    for (const [alpha, fs] of byAlpha(faint.filter((f) => f.group === g).map((f) => ({ alpha: f.alpha, points: project(f.contour) })))) {
-      ops.push(pathOp(fs, { smooth: true, fill: definition === 'tint' ? 'faintTint' : 'faintNeutral', opacity: alpha }));
+    // One gradient op per shape along its long axis, lit end strongest, both ends fading out (`definitionGradient`);
+    // it never pulses. Shapes of one body group never overlap (the groove), so nothing stacks within a group.
+    const paint = definition === 'tint' ? 'faintTint' : 'faintNeutral';
+    for (const f of faint.filter((x) => x.group === g)) {
+      const gr = definitionGradient(f);
+      if (gr === null) continue;
+      ops.push(pathOp([project(f.contour)], { smooth: true, gradient: { from: c.P(gr.from), to: c.P(gr.to), stops: gr.stops.map((st) => ({ at: st.at, paint, opacity: st.opacity })) } }));
     }
   };
   // What a region could otherwise stack on: faint shapes (any group) and, for strong, soft regions.
@@ -421,7 +613,7 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
   const openStrokeOps = (open: readonly Vec[][], width: number, opacity: number, cap: 'round' | null): void => {
     const pieces: { alpha: number; points: Vec[] }[] = [];
     for (const pts of open) pieces.push(...taperedPieces(pts.map(c.P), TAPER_LENGTH * k));
-    for (const [alpha, ps] of byAlpha(pieces)) ops.push(pathOp(ps, { closed: false, smooth: true, stroke: 'shade', width, join: 'round', cap, opacity: opacity * alpha }));
+    for (const [alpha, ps] of byAlpha(softenOver(pieces, trunkPx, ARM_EDGE_RAMP * k))) ops.push(pathOp(ps, { closed: false, smooth: true, stroke: 'shade', width, join: 'round', cap, opacity: opacity * alpha }));
   };
   /**
    * S tier, arms: the occlusion edge where an arm crosses the body, as a thin
@@ -466,7 +658,11 @@ export function frameOps(pose: Pose, opts: FrameOpsOptions): DrawOp[] {
       const soles = body.feet.filter((f) => f.group === g).map((f) => project(soleBand(f, body.view)));
       if (soles.length > 0) ops.push(pathOp(soles, { fill: 'shade', opacity: 0.35 }));
     }
-    for (const [alpha, gl] of byAlpha(lines.filter((l) => l.group === g).map((l) => ({ alpha: l.alpha, points: l.points.map(c.P) })))) {
+    const groupLines = lines.filter((l) => l.group === g).map((l) => ({ alpha: l.alpha, points: l.points.map(c.P) }));
+    // Arm lines over the torso or head fade out with the share of them that lies there; trunk lines stop short of the near arm instead of
+    // running out from under it (with the arm's edge they read as a crossed X on the chest; visual review, round 4).
+    const shown = g === 'armNear' || g === 'armFar' ? fadeOver(groupLines, cs('trunk')) : g === 'trunk' ? clearOf(groupLines, armPx, LINE_ARM_CLEARANCE * k) : groupLines;
+    for (const [alpha, gl] of byAlpha(shown)) {
       ops.push(pathOp(gl, { closed: false, smooth: true, stroke: 'shade', width: c.sw(STROKE.hair, 'hair'), join: 'round', cap: 'round', opacity: (ic ? 0.5 : 0.35) * alpha }));
     }
   };

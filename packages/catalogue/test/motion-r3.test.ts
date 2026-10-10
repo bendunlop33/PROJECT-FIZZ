@@ -289,7 +289,7 @@ describe('drawing (problems 9–12, 16)', () => {
     const pose = poseAt(p, 0.55);
     const muscles = musclesOf('dumbbell-bulgarian-split-squat');
     const ops = frameOps(pose, { px: 400, camera, muscles, definition: 'neutral' }).filter(isPath);
-    const lastFaint = ops.map((o, i) => (o.fill === 'faintNeutral' ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
+    const lastFaint = ops.map((o, i) => (o.gradient?.stops.some((st) => st.paint === 'faintNeutral') === true ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
     const muscleOps = ops.map((o, i) => (o.fill === 'muscle' ? i : -1)).filter((i) => i >= 0);
     // Every faint shape is drawn before the last muscle colour op of the near leg and pelvis.
     expect(lastFaint).toBeLessThan(Math.max(...muscleOps));

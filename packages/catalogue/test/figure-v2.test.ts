@@ -16,6 +16,8 @@ import {
   focusViewOf,
   frameOps,
   groupContours,
+  headContour,
+  neckFillet,
   guideStyleFromTokens,
   MUSCLE_INSET,
   MUSCLE_REGION_MAP,
@@ -99,8 +101,11 @@ describe('figure drawing v2', () => {
     expect(Math.min(...shoe.map((q) => q.y))).toBeCloseTo(0, 3);
     expect(pose.body.head.rx).toBeCloseTo(0.056, 6);
     expect(pose.body.head.ry).toBeCloseTo(0.063, 6);
-    // One trunk contour from pelvis to thorax (plus neck and head).
-    expect(groupContours(pose.body, 'trunk')).toHaveLength(3);
+    // One trunk contour from pelvis to thorax, the neck, the neck fillet (round 4) and the head, drawn last.
+    const trunk = groupContours(pose.body, 'trunk');
+    expect(trunk).toHaveLength(4);
+    expect(trunk[3]).toEqual(headContour(pose.body));
+    expect(trunk[2]).toEqual(neckFillet(pose.body));
   });
 
   it('far limbs are 0.96 as wide, drawn flat with no muscle colour', () => {

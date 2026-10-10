@@ -130,7 +130,7 @@ const MAP_TEXT: Record<Exclude<Muscle, 'core'>, Row> = {
   },
   hamstrings: { side: ['thigh.back 0.08–0.88 d0.65'], front: null, back: ['thigh.face 0.10–0.88 c0 w0.7'] },
   lats: {
-    side: ['trunk.back 1.45–2.78 d0.5'],
+    side: ['trunk.face 1.05–2.74 c-0.42>-0.12 w0.3>0.52 blunt1'],
     front: ['thorax.lat 0.25–0.80 d0.25'],
     back: ['trunk.face 1.3–2.88 ±c0.3>0.6 w0.25>0.5'],
   },

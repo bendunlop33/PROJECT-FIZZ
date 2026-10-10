@@ -110,6 +110,9 @@ export function prepareGuide(guide: Guide): PreparedGuide {
   return { guide, keys: resolveKeyframes(guide) };
 }
 
+/** How far the drawn head sits below the rig's head centre, along the neck (H). */
+export const HEAD_DRAW_DROP = 0.01;
+
 interface Trunk {
   hip: Vec;
   lumbarBase: Vec;
@@ -475,7 +478,9 @@ export function poseAt(prepared: PreparedGuide, t: number): Pose {
     segments,
     hands: bodyHands,
     feet: bodyFeet,
-    head: { c: trunk.head, rx: headSize.rx, ry: headSize.ry, rot: -rad(trunk.leans.neck) },
+    // Drawn a little lower on the neck than the rig's head centre (the floor check keeps the rig's), so the visible
+    // neck is about 15% shorter and the head doesn't stand forward on a stalk (visual review, round 4).
+    head: { c: add(trunk.head, scale(fromUp(trunk.leans.neck), -HEAD_DRAW_DROP)), rx: headSize.rx, ry: headSize.ry, rot: -rad(trunk.leans.neck) },
   };
   const head = { c: trunk.head, r: headSize.ry };
 
