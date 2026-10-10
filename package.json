@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run lint && npm run test && npm run catalogue:validate && npm run guide:check -- --all --verify",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run catalogue:validate && npm run guide:check -- --all --verify && npm run guide:motion -- --all",
     "check:entitlements": "node scripts/check-entitlements.ts --prebuild apps/mobile/ios",
     "catalogue:index": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/build-index.ts",
     "catalogue:validate": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/validate-catalogue.ts",
