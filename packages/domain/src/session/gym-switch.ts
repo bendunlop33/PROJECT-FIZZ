@@ -14,6 +14,7 @@ import type {
   WorkoutSet,
   ZonedTimestamp,
 } from '@fizz/schemas';
+import { MAX_GYM_CHANGES } from '@fizz/schemas';
 import { formatNumber, repRangeText } from '../display';
 import { isLoadAchievable } from '../equipment';
 import { equipmentRowLine } from '../gym-editor';
@@ -500,6 +501,8 @@ export function applyChangeGym(state: SessionAggregate, cmd: CommandOf<'change_g
     return bad('stale_version', 'Out of date. Your workout changed since this was checked.');
   }
   if (cmd.snapshot.some((e) => e.gymId !== cmd.toGymId)) return bad('invalid_values', 'That equipment belongs to another gym.');
+  // A change and its Undo are two records; refuse one that couldn't be undone (review N5).
+  if ((session.gymChanges?.length ?? 0) + 2 > MAX_GYM_CHANGES) return bad('invalid_values', 'This workout has changed gym too many times. Finish it and start a new one at this gym.');
 
   const excluded = excludedFromSwitch(state);
   const pending = state.sets.filter((s) => s.status === 'pending' && !excluded.has(s.id));
@@ -621,6 +624,7 @@ export function applyChangeGym(state: SessionAggregate, cmd: CommandOf<'change_g
     afterFingerprint: planFingerprint(next),
     changedSetIds,
     draftsReplaced,
+    equipment: cmd.snapshot.map((e) => ({ id: e.id, version: e.version })),
     before,
   };
   return { ok: true, state: { ...next, session: { ...next.session, gymChanges: [...(session.gymChanges ?? []), entry] } }, entry };

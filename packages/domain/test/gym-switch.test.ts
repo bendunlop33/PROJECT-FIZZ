@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionAggregate } from '@fizz/schemas';
-import { SessionAggregateSchema } from '@fizz/schemas';
+import { MAX_GYM_CHANGES, SessionAggregateSchema } from '@fizz/schemas';
 import {
   buildActiveSetView,
   buildWorkoutSummary,
+  currentGymEquipment,
   doneExerciseNames,
   editFitsCurrentEquipment,
   partRootOf,
@@ -17,7 +18,7 @@ import {
   toHistorySessions,
   type GymSwitchProposal,
 } from '../src/index';
-import { at, dumbbells, id, idGen, kg, lb, profile, routine, routineExercise, template, values } from './fixtures';
+import { at, dumbbells, id, idGen, kg, lb, profile, stack, routine, routineExercise, template, values } from './fixtures';
 import {
   BENCH,
   CABLE_ROW,
@@ -580,5 +581,32 @@ describe('Main → Hotel → Home → Main (review: double switch)', () => {
     expect(plain(sum.exercises.find((e) => e.name === 'Incline DB press')?.results ?? '')).toBe('20×12 (Hotel · Lisbon) · 30×9 (Home) · 32.5×8 (Main Gym)');
     const rep = startWorkoutFromSession({ opId: 'rep-3', owner: profile(), gymId: MAIN, gymName: 'Main Gym', source: done, exercises: EXERCISES, gymEquipment: MAIN_EQ, at: at(90_000), newId: idGen(82_000) });
     expect(rep.aggregate.exercises.filter((e) => e.exerciseId === INCLINE)).toHaveLength(1);
+  });
+});
+
+describe('The current gym’s list after visits and the change cap (review N3, N5)', () => {
+  it('an item removed from a gym between two visits isn’t offered on the second', () => {
+    const hotelCable = stack({ id: id(711), gymId: HOTEL, name: 'Hotel cable', stackLoads: [5, 10, 15, 20] });
+    let s = benchTwoDone();
+    s = switched(s, propose(s, { id: HOTEL, equipment: [hotelRack, hotelCable] }), 320, 'v1').state;
+    expect(currentGymEquipment(s.session).map((e) => e.id)).toEqual([hotelRack.id, hotelCable.id]);
+    s = switched(s, propose(s, main), 400, 'v2').state;
+    expect(currentGymEquipment(s.session).map((e) => e.id)).toEqual(MAIN_EQ.map((e) => e.id));
+    s = switched(s, propose(s, hotel), 500, 'v3').state;
+    expect(currentGymEquipment(s.session).map((e) => e.id)).toEqual([hotelRack.id]);
+    // Undo the last switch: back at Main with Main’s list.
+    const c = latestUndoableGymChange(s);
+    s = apply(s, { type: 'undo_change_gym', at: at(510), opId: 'u3', actionId: c?.actionId ?? '', expectedFingerprint: c?.afterFingerprint ?? '' });
+    expect(currentGymEquipment(s.session).map((e) => e.id)).toEqual(MAIN_EQ.map((e) => e.id));
+  });
+
+  it('a switch past the record cap is refused with a reason, so the workout can still be saved', () => {
+    const s = benchTwoDone();
+    const one = switched(s, propose(s, hotel)).state.session.gymChanges?.[0];
+    if (!one) throw new Error('no change');
+    const full: SessionAggregate = { ...s, session: { ...s.session, gymChanges: Array.from({ length: MAX_GYM_CHANGES - 1 }, (_, i) => ({ ...one, actionId: `a${String(i)}`, kind: 'undo' as const, fromGymId: MAIN, toGymId: MAIN, undoOf: 'x' })) } };
+    const r = reduceSession(full, switchCmd(propose(full, hotel), 320, 'cap'));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.message).toMatch(/too many times/);
   });
 });

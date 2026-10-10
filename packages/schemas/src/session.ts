@@ -218,6 +218,9 @@ export type GymChangeSetBefore = z.infer<typeof GymChangeSetBeforeSchema>;
  * restores it exactly, also after a relaunch, and only while the plan still
  * has `afterFingerprint` (nothing logged, corrected or changed since).
  */
+/** Gym changes and Undos one workout can record; the reducer refuses one past it (review N5). */
+export const MAX_GYM_CHANGES = 50;
+
 export const GymChangeSchema = z.object({
   actionId: z.string().min(1).max(128),
   opId: OperationIdSchema,
@@ -233,6 +236,16 @@ export const GymChangeSchema = z.object({
   changedSetIds: z.array(IdSchema).max(200),
   /** Sets whose edited draft couldn't be set up on the new equipment and was replaced (GS12). */
   draftsReplaced: z.array(IdSchema).max(200),
+  /**
+   * `change` only: the new gym's equipment list as it was at the change (each item's ID
+   * and version). The snapshot is a union of every visit, so this is what says which
+   * items are at the gym now (review N3). Absent in older records: every snapshot item
+   * of that gym counts.
+   */
+  equipment: z
+    .array(z.object({ id: IdSchema, version: z.int().min(1) }))
+    .max(500)
+    .optional(),
   /** `change` only: every exercise row and moved set as they were before. */
   before: z
     .object({
@@ -273,7 +286,7 @@ export const WorkoutSessionSchema = z.object({
    */
   gymId: IdSchema.nullable(),
   /** GS-S2: every gym change in this workout, in order. Absent = none. */
-  gymChanges: z.array(GymChangeSchema).max(50).optional(),
+  gymChanges: z.array(GymChangeSchema).max(MAX_GYM_CHANGES).optional(),
   /** Operation ID that created the session; makes startWorkout idempotent. */
   startOperationId: OperationIdSchema,
   /**

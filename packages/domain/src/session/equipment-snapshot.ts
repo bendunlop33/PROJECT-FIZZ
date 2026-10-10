@@ -45,6 +45,24 @@ function latestPerId(entries: readonly EquipmentInstance[]): EquipmentInstance[]
 export function currentGymEquipment(session: Pick<WorkoutSession, 'gymId' | 'gymChanges' | 'equipmentSnapshot'>): EquipmentInstance[] {
   const all = latestPerId(session.equipmentSnapshot);
   if (!session.gymChanges || session.gymChanges.length === 0) return all;
+  // Changes stack and an Undo pops the latest (only the latest can be undone). The change
+  // on top says which items the gym had then: an item deleted from its profile since an
+  // earlier visit isn't offered again (review N3). None (all undone) = the starting gym.
+  const stack: NonNullable<WorkoutSession['gymChanges']> = [];
+  for (const c of session.gymChanges) {
+    if (c.kind === 'change') stack.push(c);
+    else if (stack.at(-1)?.actionId === c.undoOf) stack.pop();
+  }
+  const top = stack.at(-1);
+  if (top?.equipment !== undefined && top.toGymId === session.gymId) {
+    const out: EquipmentInstance[] = [];
+    for (const ref of top.equipment) {
+      const e = session.equipmentSnapshot.find((x) => x.id === ref.id && x.version === ref.version);
+      if (e) out.push(e);
+    }
+    return out;
+  }
+  // All undone (back at the start), or a record from before `equipment` was kept.
   return all.filter((e) => e.gymId === session.gymId);
 }
 

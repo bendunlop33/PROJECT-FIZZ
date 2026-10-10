@@ -31,12 +31,17 @@ function norm(s: string): string {
 
 const OPENERS = [/^(?:i am|im) (?:at|in) (.+)$/, /^(?:switch|change) (?:the )?gym to (.+)$/, /^(?:switch|change) to (.+)$/, /^(?:use|go to) (.+?)(?: gym)?$/];
 
-/** What the utterance means for the gym card, or null when it isn't a gym command. */
-export function parseGymCommand(utterance: string, gyms: readonly GymName[]): GymCommand | null {
+/**
+ * What the utterance means for the gym card, or null when it isn't a gym command.
+ * The bare confirm and dismiss words ("yes", "no", "switch", "not now" …) mean
+ * something only while a gym card is open, so they never intercept another voice
+ * flow (review N6).
+ */
+export function parseGymCommand(utterance: string, gyms: readonly GymName[], ctx: { cardOpen: boolean }): GymCommand | null {
   const said = norm(utterance);
   if (said === '') return null;
-  if (said === 'switch' || said === 'yes' || said === 'apply') return { kind: 'confirm' };
-  if (said === 'not now' || said === 'no' || said === 'cancel') return { kind: 'not_now' };
+  if (said === 'switch' || said === 'yes' || said === 'apply') return ctx.cardOpen ? { kind: 'confirm' } : null;
+  if (said === 'not now' || said === 'no' || said === 'cancel') return ctx.cardOpen ? { kind: 'not_now' } : null;
   let heard: string | null = null;
   for (const re of OPENERS) {
     const m = re.exec(said);
