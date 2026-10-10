@@ -38,6 +38,7 @@
     {
       "t": 0.4138, "label": "Lockout", "caption": "Arms straight, head through, bar over mid-foot",
       "root": { "x": 0.016, "y": 0.5261, "pelvisDeg": 0 },
+      "joints": { "neck": 24 },
       "props": { "bar": { "y": 1.171 } },
       "projection": { "armNear": 0.95, "armFar": 0.95, "forearmNear": 0.95, "forearmFar": 0.95 },
       "holdMs": 300, "ease": "smooth"
