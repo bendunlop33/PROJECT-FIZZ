@@ -87,7 +87,7 @@ const CONTRACTIONS: [RegExp, string][] = [
   [/\bthey've\b/g, 'they have'],
   [/\b(it|that|this|everything|everything's|what|there|set \d+|weight|load)'s been\b/g, '$1 has been'],
   [/\b(\w+)'s been\b/g, '$1 has been'],
-  [/\b([a-z0-9]+)'s (now|done|sorted|set|all set|lower|lighter|heavier|updated|changed|in|locked|flagged|saved|gone|down|up)\b/g, '$1 is $2'],
+  [/\b([a-z0-9]+)'s (now|done|sorted|set|all set|lower|lighter|heavier|updated|changed|in|out|at|on|off|locked|flagged|saved|gone|down|up)\b/g, '$1 is $2'],
   [/\bit's\b/g, 'it is'],
   [/\bthat's\b/g, 'that is'],
   [/\bthere's\b/g, 'there is'],

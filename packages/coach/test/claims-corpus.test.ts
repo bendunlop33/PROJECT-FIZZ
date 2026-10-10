@@ -94,6 +94,26 @@ const CLAIMS: readonly string[] = [
   'Okey dokey, adjusted.',
   'Yep, did that.',
   'I lowered it last week and again today.',
+  // Present-tense state statements about a target (review B1, coach-contract CC3).
+  'Bench is down to 95.',
+  'Squat goes to 120 kg next time.',
+  'Pec deck replaces cable fly next time.',
+  'Cable fly is out, pec deck is in.',
+  'All changed.',
+  'Sets 3 and 4 are 95 kg.',
+  'You’re on 95 kg for the last two sets.',
+  'Bench is 95 for the rest.',
+  'The last two sets are at 95 kg.',
+  'Squat’s at 120 next time.',
+  'Your weight for sets 3 and 4 is 95 kg.',
+  'Pec deck is in for cable fly next time.',
+  'Bench goes up to 102.5 next week.',
+  'Set 4 is gone.',
+  'Your remaining sets are 95 kg × 8.',
+  'Incline press is out of next week’s session.',
+  'All updated.',
+  'Everything’s changed.',
+  'Pec deck takes over from cable fly.',
 ];
 
 /** Suggestions, questions and facts. Keeping them is right; hiding them is a (reported) false hide. */
@@ -142,6 +162,13 @@ const NOT_CLAIMS: readonly string[] = [
   'That was your best set of the day.',
   'Rest is set to 3 minutes.',
   'The plan was 100 kg × 6–8.',
+  // Near-misses for the present-tense rule (B1): facts, not targets.
+  'The bar is 20 kg.',
+  'Your best set is 100 kg × 8.',
+  'Bench is your strongest lift.',
+  'Set 3 is next.',
+  'Is bench down to 95 on your sheet?',
+  'If bench is down to 95, the bar should move faster.',
 ];
 
 const EMPTY = ledger([]);
@@ -217,6 +244,19 @@ describe('claims against a ledger', () => {
 
   it('a swap claim is never backed by a set change (CC10)', () => {
     expect(checkReplyClaims('I’ve swapped cable fly for pec deck.', ledger([benchAdjust()])).keep).toBe(false);
+    expect(checkReplyClaims('Pec deck replaces cable fly next time.', ledger([benchAdjust()])).keep).toBe(false);
+    expect(checkReplyClaims('Cable fly is out, pec deck is in.', ledger([benchAdjust()])).keep).toBe(false);
+  });
+
+  it('present-tense target statements are claims, backed only by a matching saved change (B1)', () => {
+    const a = benchAdjust();
+    expect(checkReplyClaims('Bench is down to 95.', ledger([a]))).toEqual({ keep: true, claim: true, matchedActionIds: [a.actionId] });
+    expect(checkReplyClaims('Sets 3 and 4 are 95 kg.', ledger([a])).keep).toBe(true);
+    expect(checkReplyClaims('Sets 3 and 4 are 92.5 kg.', ledger([a]))).toMatchObject({ keep: false, reason: 'numbers_differ' });
+    expect(checkReplyClaims('Squat goes to 120 kg next time.', ledger([a])).keep).toBe(false);
+    expect(checkReplyClaims('All changed.', ledger([a])).keep).toBe(true);
+    const stale = benchAdjust({ status: 'stale', failure: null });
+    expect(checkReplyClaims('Bench is down to 95.', ledger([stale]))).toMatchObject({ keep: false, reason: 'not_committed' });
   });
 
   it('an earlier action read through get_recent_actions backs a claim about it (CC5, check 16)', () => {

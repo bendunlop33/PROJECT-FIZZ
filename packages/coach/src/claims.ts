@@ -8,8 +8,9 @@ import { normaliseForClaims } from './text';
  *
  * A finished sentence of model text is split into clauses. A clause that
  * states a change in the coach's voice (past or perfect tense, passive,
- * "done"/"all set", "is now …", "will be …" with a value, or "I'll …"
- * promising a change) is a claim. A claim is kept only if this turn's ledger
+ * "done"/"all set", "is now …", "will be …" with a value, "I'll …"
+ * promising a change, or a present-tense statement of a target's state such
+ * as "Bench is down to 95" or "Pec deck replaces cable fly") is a claim. A claim is kept only if this turn's ledger
  * holds a committed, not-undone action of the same kind on the same sets or
  * exercises; if its numbers differ from the saved ones, the sentence is
  * replaced by the rendered line (CC4). When unsure, it hides: a hidden
@@ -193,6 +194,32 @@ const HISTORICAL = /\b(?:since (?:january|february|march|april|may|june|july|aug
 /** "… will be 95 kg", "you'll do 95 for the last two": a stated value in the future is a claim. */
 const WILL_VALUE = /\b(?:will (?:now )?be|you will (?:now )?(?:be (?:doing|lifting|on|using|at)|do|lift|use|go|hit|start|have))\b.*\d/;
 
+/**
+ * Present-tense statements of a target's state ("Bench is down to 95",
+ * "Sets 3 and 4 are 95 kg", "Squat goes to 120 next time", "Pec deck
+ * replaces cable fly", "Cable fly is out"). Said by the coach, they read as a
+ * change already made, so they are claims (review B1, coach-contract CC3).
+ */
+const PRESENT_STATE: readonly RegExp[] = [
+  /\b(?:is|are|goes|go|comes|come|drops|moves|jumps) (?:now )?(?:down |up )?to \d/,
+  /\b(?:is|are) (?:now )?(?:down|up) to\b/,
+  /\b(?:is|are) (?:now )?(?:at |on )?\d/,
+  /\b(?:you|we) are (?:now )?(?:at|on) \d/,
+  /\b(?:is|are) (?:now )?(?:out|in|gone|off)(?: (?:for|of|instead|next|from|today|now)\b|$)/,
+  /\b(?:replaces|swaps in for|takes over from|comes in for|stands in for|subs in for)\b/,
+];
+/** Subjects whose present-tense numbers are facts, not targets ("the bar is 20 kg", "your best set is 100 kg"). */
+const STATE_FACT_SUBJECT = /\b(?:bar|barbell|plates?|e1rm|1rm|estimate|estimated|best|pr|pb|record|average|total|volume|bodyweight|rpe|rir)\b/;
+
+function presentStateClaim(clause: string, sentence: string): boolean {
+  if (!PRESENT_STATE.some((re) => re.test(clause))) return false;
+  if (STATE_FACT_SUBJECT.test(clause)) return false;
+  if (OFFER_TAIL.test(sentence)) return false;
+  const words = clause.split(' ');
+  if (words.some((w) => SUGGESTIVE.has(w))) return false;
+  return !/\b(?:when|once|after|until)\b/.test(clause);
+}
+
 function hasClaimTrigger(words: readonly string[], clause: string, sentence: string): boolean {
   for (let i = 0; i < words.length; i += 1) {
     const w = words[i] ?? '';
@@ -228,6 +255,8 @@ function hasClaimTrigger(words: readonly string[], clause: string, sentence: str
     // A negated phrase ("nothing is now different") isn't a claim of change.
     return false;
   }
+  if (GENERIC_ONLY.test(clause)) return true;
+  if (presentStateClaim(clause, sentence)) return true;
   if (PHRASES.some((re) => re.test(clause))) {
     if (/\b(?:try|consider|maybe|suggest|recommend|would|could|should|might)\b/.test(clause) && /\bfrom now on|going forward\b/.test(clause)) return false;
     return true;
@@ -256,10 +285,12 @@ const FORGET_WORDS = /\b(?:forgot|forgotten|forget|forgetting)\b/;
 const PAIN_WORDS = /\b(?:flag(?:ged)?|pain flag|flagging)\b/;
 const PLAYBOOK_WORDS = /\bplaybook\b|\brule\b/;
 const UNDO_WORDS = /\b(?:undid|undone|undo|undoing|revert(?:ed|ing)?|restor(?:ed|e|ing)|put (?:it |them |that )?back|back to)\b/;
-const STRUCT_VERBS = /\b(?:swap(?:ped|ping)?|switch(?:ed|ing)?|replac(?:ed|e|ing)|substitut(?:ed|e|ing)|sub(?:bed|bing)?|reorder(?:ed|ing)?|rearrang(?:ed|e|ing)|slot(?:ted)?)\b/;
+const STRUCT_VERBS = /\b(?:swap(?:ped|ping|s)?|switch(?:ed|ing|es)?|replac(?:ed|es?|ing)|substitut(?:ed|es?|ing)|sub(?:bed|bing|s)?|reorder(?:ed|ing|s)?|rearrang(?:ed|es?|ing)|slot(?:ted|s)?|takes over from|comes in for|stands in for)\b/;
+/** "Cable fly is out", "pec deck is in for cable fly": an exercise entering or leaving the plan (CC10). */
+const IN_OUT = /\b(?:is|are) (?:now )?(?:out|in)(?: (?:for|of|instead|next|from|today|now)\b|$)/;
 const ADD_REMOVE = /\b(?:add(?:ed|ing)?|remov(?:ed|e|ing)|dropp(?:ed|ing)|drop|delet(?:ed|e|ing)|cut|scrap(?:ped)?|ditch(?:ed)?|took out|taken out|knocked off)\b/;
 const LOG_WORDS = /\b(?:logged|log|logging|recorded|entered|tracked)\b/;
-const GENERIC_ONLY = /^(?:(?:ok|okay|right|great|sure|alright|cool|perfect|yes|yep|yeah|got it|no problem|and)\s*)*(?:done|all done|all set|sorted|consider it done|saved|applied|updated|changed|that is done|it is done|everything is (?:done|updated|set)|taken care of)$/;
+const GENERIC_ONLY = /^(?:(?:ok|okay|right|great|sure|alright|cool|perfect|yes|yep|yeah|got it|no problem|and)\s*)*(?:done|all done|all set|sorted|consider it done|(?:all |both |everything is |everything has been |it is |that is |they are )?(?:saved|applied|updated|changed|adjusted|sorted|done)|that is done|it is done|everything is (?:done|updated|set)|taken care of)$/;
 
 function aliasesOf(name: string): string[] {
   const words = name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !GENERIC_NAME_WORDS.has(w));
@@ -333,7 +364,7 @@ function kindsOf(clause: string, sentence: string): { kinds: Set<ClaimKind>; op:
   const next = NEXT_WORDS.test(clause) || (NEXT_WORDS.test(sentence) && !TODAY_WORDS.test(clause));
   const aboutValues = /\b(?:weight|load|kg|lb|kilos|pounds|reps?|to \d)\b/.test(clause);
   // Adding or removing something that isn't a set is an exercise change: structural, never a set target (CC10).
-  const structural = STRUCT_VERBS.test(clause) || (ADD_REMOVE.test(clause) && !hasSetWord && !aboutValues);
+  const structural = STRUCT_VERBS.test(clause) || (IN_OUT.test(clause) && !hasSetWord) || (ADD_REMOVE.test(clause) && !hasSetWord && !aboutValues);
   if (structural) kinds.add('propose_next_workout_change');
   if (ADD_REMOVE.test(clause) && hasSetWord && !aboutValues) {
     op = /\badd(?:ed|ing)?\b/.test(clause) ? 'add_set' : 'remove_set';
