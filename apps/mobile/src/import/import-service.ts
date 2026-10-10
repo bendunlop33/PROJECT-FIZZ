@@ -253,6 +253,12 @@ interface Draft {
   analysis: ImportAnalysis;
 }
 
+/** What a name's bodyweight question reads a load as (`none`: it has no such question). */
+function loadAsOf(a: ImportAnalysis, key: string): string {
+  const q = a.bodyweight.find((x) => x.key === key);
+  return q === undefined ? 'none' : (q.loadAs ?? 'bodyweight');
+}
+
 export function createImportService(deps: ImportServiceDeps) {
   const drafts = new Map<string, Draft>();
   /** One write loop per job in this app run; a second caller joins it (review N2). */
@@ -528,10 +534,19 @@ export function createImportService(deps: ImportServiceDeps) {
       if (change.kind === 'gym' && change.gymId !== null && !(await gymsOf(d.ownerId)).some((g) => g.id === change.gymId)) {
         return { ok: false, reason: 'invalid', message: 'That gym isn’t one of yours', draft: await view(d) };
       }
+      const before = change.kind === 'name' ? loadAsOf(d.analysis, change.key) : undefined;
       d.answers = next.value;
       d.changes.push(change);
       d.mappingVersion += 1;
       d.analysis = analyseImport({ variant: d.variant, rows: d.rows }, d.ctx, d.answers);
+      // A re-mapped name whose bodyweight question now means something else (stack vs added, or gone) loses its
+      // answer, so a question Ben never saw isn't answered for him. Recorded as a change, so a replay does the same (review r6.2 N4).
+      if (change.kind === 'name' && d.answers.bodyweight[change.key] !== undefined && loadAsOf(d.analysis, change.key) !== before) {
+        const clear: AnswerChange = { kind: 'bodyweight', key: change.key, answer: null };
+        d.answers = applyAnswerChange(d.answers, clear);
+        d.changes.push(clear);
+        d.analysis = analyseImport({ variant: d.variant, rows: d.rows }, d.ctx, d.answers);
+      }
       return { ok: true, draft: await view(d) };
     },
 

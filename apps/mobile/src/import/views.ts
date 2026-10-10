@@ -856,10 +856,13 @@ export function bodyweightOptions(a: ImportAnalysis, key: string): { title: stri
     },
   ];
   // Offered while the values span zero, and kept once chosen so the chosen answer is always visible (review r2 N5).
+  // A positive value is stored as the exercise's own load: on the stack for a stack exercise (review r6.2 N1).
+  const positive = q.loadAs === 'stack' ? 'on the stack' : 'added';
+  const splitLabel = `Negative = assistance, positive = ${positive}`;
   if (q.mixed) {
-    options.push({ value: 'split', label: 'Negative = assistance, positive = added', detail: `${formatNumber(q.min)} is read as ${formatNumber(-q.min)} assistance; ${formatNumber(q.max)} as ${formatNumber(q.max)} added`, selected: q.answer === 'split' });
+    options.push({ value: 'split', label: splitLabel, detail: `${formatNumber(q.min)} is read as ${formatNumber(-q.min)} assistance; ${formatNumber(q.max)} as ${formatNumber(q.max)} ${positive}`, selected: q.answer === 'split' });
   } else if (q.answer === 'split') {
-    options.push({ value: 'split', label: 'Negative = assistance, positive = added', detail: 'Each value is read by its sign', selected: true });
+    options.push({ value: 'split', label: splitLabel, detail: 'Each value is read by its sign', selected: true });
   }
   return {
     title: `${q.name} weights`,

@@ -14,7 +14,8 @@ export type AnswerChange =
   | { kind: 'total_override'; key: string; answer: TotalAnswer | null }
   /** A bar's weight for `plates_only` values (each bar kind has its own; review S1). */
   | { kind: 'bar_weight'; bar: ImportBarKind; unit: WeightUnit; value: number }
-  | { kind: 'bodyweight'; key: string; answer: BodyweightAnswer }
+  /** null clears it: the question is open again (a re-mapped name whose question changed meaning; review r6.2 N4). */
+  | { kind: 'bodyweight'; key: string; answer: BodyweightAnswer | null }
   | { kind: 'both_columns'; answer: WeightUnit }
   | { kind: 'effort_mode'; mode: 'notes_only' | 'review' }
   | { kind: 'effort_rows'; rows: readonly number[]; checked: boolean }
@@ -48,7 +49,7 @@ export function applyAnswerChange(a: ImportAnswers, c: AnswerChange): ImportAnsw
         ? { ...a, barWeight: { ...a.barWeight, [c.unit]: c.value } }
         : { ...a, otherBarWeight: { ...a.otherBarWeight, [c.bar]: { ...a.otherBarWeight[c.bar], [c.unit]: c.value } } };
     case 'bodyweight':
-      return { ...a, bodyweight: { ...a.bodyweight, [c.key]: c.answer } };
+      return { ...a, bodyweight: setOrClear(a.bodyweight, c.key, c.answer) };
     case 'both_columns':
       return { ...a, bothColumns: c.answer };
     case 'effort_mode':
