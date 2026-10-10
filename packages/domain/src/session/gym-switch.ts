@@ -28,7 +28,7 @@ import { cardNoteText, loadWords, type NoteLine } from './snap-text';
 
 /**
  * Mid-workout gym switch and `[Use changes today]` (gym-switch.md, GE7,
- * ADR 0017). `buildGymSwitchProposal` is `setActiveGym`'s pure core: it
+ * ADR 0019). `buildGymSwitchProposal` is `setActiveGym`'s pure core: it
  * fits every pending set to the chosen gym with `snapPlanToGym` and returns a
  * `Checks`-authored, `Today only` proposal plus the card that shows it.
  * Nothing changes until Ben taps `Switch`; then the reducer applies

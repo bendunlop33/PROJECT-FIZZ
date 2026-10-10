@@ -39,7 +39,7 @@ export const PlannedSourceSchema = z.enum(['built_in_rule', 'repeat']);
 export type PlannedSource = z.infer<typeof PlannedSourceSchema>;
 
 /**
- * How a target was fitted to a gym's equipment (gym-switch.md §6.1, ADR 0017).
+ * How a target was fitted to a gym's equipment (gym-switch.md §6.1, ADR 0019).
  * `restored`: back to the intended target after an earlier fit lowered or
  * dropped it. `dropped`: no load target (reps and time are kept).
  */

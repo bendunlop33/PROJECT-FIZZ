@@ -1,4 +1,4 @@
-# 0017: Gym switch and the shared re-snap (`snapPlanToGym`)
+# 0019: Gym switch and the shared re-snap (`snapPlanToGym`)
 
 **Status:** Proposed, 2026-10-10 (developer; for review). Built and tested on Linux only (domain, SQLite on Node, app services with the fake expo-sqlite). **Not yet run on an iPhone.**
 

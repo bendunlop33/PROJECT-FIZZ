@@ -16,7 +16,7 @@ import { needsNoEquipment } from '../exercise-equipment';
 import { convertMass, toScaled } from '../units';
 
 /**
- * `snapPlanToGym` (gym-switch.md §6.1, GS1–GS3, ADR 0017): the one pure
+ * `snapPlanToGym` (gym-switch.md §6.1, GS1–GS3, ADR 0019): the one pure
  * function that fits a plan's targets to a gym's equipment. Routine Start,
  * Repeat, the mid-workout gym switch and `[Use changes today]` all call it,
  * so one property test guards every way a load target reaches a set.

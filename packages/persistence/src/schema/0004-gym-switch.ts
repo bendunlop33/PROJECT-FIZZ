@@ -1,5 +1,5 @@
 /**
- * Schema version 4 (mid-workout gym switch, gym-switch.md §6.5, ADR 0017).
+ * Schema version 4 (mid-workout gym switch, gym-switch.md §6.5, ADR 0019).
  * Frozen once released.
  *
  * - `sessions.gym_changes`: the workout's gym changes and their Undo records

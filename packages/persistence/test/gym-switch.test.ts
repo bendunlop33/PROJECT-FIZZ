@@ -18,7 +18,7 @@ function switchedWorkout(): { before: SessionAggregate; after: SessionAggregate 
   return { before: s, after: r.state };
 }
 
-describe('a switched workout in SQLite (schema 4, ADR 0017)', () => {
+describe('a switched workout in SQLite (schema 4, ADR 0019)', () => {
   it('round-trips continuation rows, gym changes, fitted targets and the append-only snapshot', async () => {
     const store = await openStore(memoryDriver());
     await store.repos.profiles.save(profile(), null);
