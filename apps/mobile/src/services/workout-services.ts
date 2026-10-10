@@ -637,7 +637,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           const names = [...a.exercises].sort((x, y) => x.order - y.order).filter((e) => done.some((s) => s.sessionExerciseId === e.id)).map((e) => e.exerciseName);
           rows.push({
             sessionId: a.session.id,
-            title: a.session.routineName ?? 'Workout',
+            title: a.session.routineName ?? (await titleFor(a.exercises.map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title,
             startedAtUtc: a.session.startedAt.utc,
             tz: a.session.startedAt.tz,
             gymId,

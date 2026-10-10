@@ -60,7 +60,8 @@ export type RootStackParams = {
   /** How to (ADR 0013): guide, cues and mistakes for a catalogue exercise. Opened only when it has a how-to. */
   HowTo: { catalogueKey: string; name: string };
   EditSet: { sessionId: string; setId: string };
-  Summary: { sessionId: string };
+  /** `back`: opened from history (Progress), so Done goes back there rather than to Today. */
+  Summary: { sessionId: string; back?: boolean };
   AddGym: undefined;
   /** `Start from a past workout` list. */
   PastWorkouts: undefined;

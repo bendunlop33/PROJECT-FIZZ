@@ -29,7 +29,7 @@ export function SummaryScreen() {
   const services = useServices();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { sessionId } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
+  const { sessionId, back = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
   const [times, setTimes] = useState(false);
   const [choosePain, setChoosePain] = useState(false);
   const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
@@ -48,7 +48,8 @@ export function SummaryScreen() {
   });
 
   const done = () => {
-    navigation.dispatch(popToToday());
+    if (back && navigation.canGoBack()) navigation.goBack();
+    else navigation.dispatch(popToToday());
   };
 
   // One success haptic when a just-finished workout's summary first shows (critic #10).
