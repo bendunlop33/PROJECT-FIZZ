@@ -3,7 +3,7 @@
  * §2.1–2.6, §3.1, §5), the Profile row, and the Summary's coach lines. Pure:
  * the screen renders these and calls services; it never decides wording.
  *
- * v1 differences from the spec (ADR 0018 §8, §10; Needs Ben):
+ * v1 differences from the spec (ADR 0019 §8, §10; Needs Ben):
  * - ChatGPT plan only. No API-key links (`Use an OpenAI API key…`,
  *   `Switch coach to your API key (paid)`) and no Coach voice section.
  * - No `This week: N coach messages` line: no coach messages are stored yet,
@@ -41,7 +41,7 @@ export interface ConnectionStatusView {
 }
 
 /**
- * This build has the connection but no coach chat (ADR 0018: C3/C4 not built).
+ * This build has the connection but no coach chat (ADR 0019: C3/C4 not built).
  * While false, the connected card says so and the once-ever first-use notice
  * isn't shown or used up, so Ben sees it when the coach can actually reply
  * (review S2). Set to true in the build that ships the coach sheet.
@@ -276,7 +276,7 @@ export function profileCoachLine(state: TextCoachState): string {
 
 /**
  * The Summary's coach lines. In this build the coach has no summary turn
- * (ADR 0018 C8), so every target is the built-in rule's and the note says so;
+ * (ADR 0019 C8), so every target is the built-in rule's and the note says so;
  * nothing pretends a coach reviewed the workout (CLAUDE.md rule 1).
  */
 export function summaryCoachView(state: TextCoachState | null): { coach: CoachStatus; note: string } {

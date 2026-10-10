@@ -17,7 +17,7 @@ export type ParsedToolCall =
   | { ok: false; error: 'invalid_args'; line: string; issues: string[] };
 
 /**
- * Idempotency key (ADR 0018 §5): the same call in the same turn, e.g. replayed
+ * Idempotency key (ADR 0019 §5): the same call in the same turn, e.g. replayed
  * after a dropped connection, gets the same opId and so changes nothing twice.
  * `parseToolCall` passes `semanticArgs`, so a retry that only rewords the
  * reason or quote is the same operation (review S4).

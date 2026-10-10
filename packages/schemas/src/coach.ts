@@ -10,7 +10,7 @@ import {
 import { PainAreaSchema } from './checkin';
 
 /**
- * Coach v1 contracts (ADR 0018 §2, coach-contract.md §6). Tool arguments are
+ * Coach v1 contracts (ADR 0019 §2, coach-contract.md §6). Tool arguments are
  * the shapes the model must send; action records are what the app saved. The
  * app renders every change line from an `ActionRecord`, never from model text.
  *
@@ -59,7 +59,7 @@ export const CapabilitySectionSchema = z.enum(['read', 'when_you_ask', 'after_wo
 export type CapabilitySection = z.infer<typeof CapabilitySectionSchema>;
 
 // ---------------------------------------------------------------------------
-// Tool arguments (v1 subset of coach-contract §6.1, ADR 0018 §2)
+// Tool arguments (v1 subset of coach-contract §6.1, ADR 0019 §2)
 
 const reason = z.string().min(1).max(240);
 /** A short quote of Ben's own words from this turn. Checked by the gate, never trusted alone. */

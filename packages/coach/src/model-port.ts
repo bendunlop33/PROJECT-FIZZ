@@ -1,7 +1,7 @@
 import type { FunctionToolDefinition } from './function-tools';
 
 /**
- * The coach's view of a model provider (ADR 0018 §7). The real port (slice C5)
+ * The coach's view of a model provider (ADR 0019 §7). The real port (slice C5)
  * wraps `streamResponse` and the token refresher from `@fizz/providers`; tests
  * use the scripted fake in `@fizz/coach/testing`. The coach package never
  * imports a network client.

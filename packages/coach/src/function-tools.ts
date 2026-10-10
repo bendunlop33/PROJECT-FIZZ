@@ -4,7 +4,7 @@ import type { ToolDeclaration } from './registry';
 
 /**
  * Strict function-tool definitions for the Responses API, generated from the
- * same Zod schemas the app parses with, so the two can't drift (ADR 0018 §7).
+ * same Zod schemas the app parses with, so the two can't drift (ADR 0019 §7).
  * Strict mode needs every object closed (`additionalProperties: false`) with
  * every property required (optional values are `null`), `anyOf` rather than
  * `oneOf`, and no string length keywords. Length limits are still enforced

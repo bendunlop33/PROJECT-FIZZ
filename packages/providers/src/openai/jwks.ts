@@ -1,6 +1,6 @@
 /**
  * ID-token RS256 signature check against OpenAI's JWKS (ADR 0012 open item,
- * ADR 0018 C0, review S5). Pure TypeScript: `BigInt` modular exponentiation
+ * ADR 0019 C0, review S5). Pure TypeScript: `BigInt` modular exponentiation
  * and the PKCS#1 v1.5 (RFC 8017 §8.2.2, EMSA-PKCS1-v1_5) encoding check, with
  * SHA-256 from the injected `CryptoPort` (expo-crypto on the phone). No new
  * dependency. The JWKS URI is read from the discovery document; there is no

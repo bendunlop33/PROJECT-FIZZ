@@ -15,7 +15,7 @@ export type ProfileStackParams = {
   EquipmentEditor: { gymId: string; equipmentId: string; kind: EquipmentKind; isNew: boolean };
   /** Spike S1 (Developer). */
   ChatGptSignInTest: undefined;
-  /** Profile → Coach connection (ai-connection.md, ADR 0018 C5). */
+  /** Profile → Coach connection (ai-connection.md, ADR 0019 C5). */
   CoachConnection: undefined;
   /** FitNotes import (data-import-export §2.5): intro, file pick and file errors. */
   ImportIntro: undefined;

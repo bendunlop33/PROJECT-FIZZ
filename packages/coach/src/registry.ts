@@ -13,7 +13,7 @@ import {
 import { isStructuralRequest, type BenRequest } from './request';
 
 /**
- * The restricted coach tool registry (coach-contract §6, ADR 0018 §2). These
+ * The restricted coach tool registry (coach-contract §6, ADR 0019 §2). These
  * are the only tools a coach turn can ever receive; `buildTurnRegistry`
  * narrows them per turn. No tool deletes or overwrites anything (CC6).
  */
@@ -160,7 +160,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     description: 'Forget a saved memory Ben asked you to forget. It can be undone.',
   },
   {
-    // Contract §6.1 says `ben_request`; ADR 0018 §2 proposes `none`. The approved
+    // Contract §6.1 says `ben_request`; ADR 0019 §2 proposes `none`. The approved
     // spec (the stricter one) wins until Ben decides.
     name: 'add_playbook_candidate',
     effect: 'append',
