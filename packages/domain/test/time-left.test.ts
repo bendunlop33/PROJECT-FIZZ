@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionAggregate } from '@fizz/schemas';
 import {
+  buildActiveSetView,
   clockText,
   estimateTimeLeft,
   paceSamplesOf,
@@ -279,5 +280,31 @@ describe('pace helpers', () => {
     if (!imported) throw new Error('fixture');
     finished[6] = { ...imported, session: { ...imported.session, localDate: '2026-10-20' } };
     expect(recentPaceSamples(finished).set.sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5]);
+  });
+});
+
+describe('buildActiveSetView carries the time left (§2.15.1)', () => {
+  const view = (s: SessionAggregate, nowS: number) =>
+    buildActiveSetView({ aggregate: s, nowMs: ms(nowS), gymName: null, previous: {}, painFlagged: new Set(), edits: null, recentPace: { set: [60, 60, 60], changeover: [120] } });
+
+  it('Ready shows the estimate line with the Finish by wording from the session', () => {
+    let s = twoExercises();
+    expect(view(s, 0).timeLeft?.line.text).toBe(t('About 20 min left · ends about 19:20'));
+    s = apply(s, { type: 'set_finish_by', at: at(0), opId: 'fb', finishBy: at(45 * 60), expectedVersion: s.session.version });
+    const v = view(s, 0);
+    expect(v.finishByUtc).toBe(at(45 * 60).utc);
+    expect(v.timeLeft?.line.text).toBe(t('About 20 min left · on track for 19:45'));
+  });
+
+  it('hidden once all sets are done', () => {
+    let s = twoExercises(1, 1);
+    const [b1] = setsFor(s, BENCH);
+    const [r1] = setsFor(s, ROW);
+    if (!b1 || !r1) throw new Error('fixture');
+    s = apply(s, logCmd(b1.id, values(kg(100), 8), 0));
+    s = apply(s, logCmd(r1.id, values(kg(50, 'stack'), 10), 200));
+    const v = view(s, 200);
+    expect(v.phase).toBe('all_done');
+    expect(v.timeLeft).toBeNull();
   });
 });

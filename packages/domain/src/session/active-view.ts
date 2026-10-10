@@ -20,6 +20,7 @@ import { toMs } from '../time';
 import { buildExecutionOrder, nextPendingSet } from './order';
 import { GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
 import { latestCommittedSetId } from './reducer';
+import { estimateRemainingDuration, timeLeftLine, type PaceSamples, type TimeLeftEstimate, type TimeLeftLineView } from './time-left';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
 
 /**
@@ -94,6 +95,14 @@ export interface ActiveViewInput {
   edits: DraftEdits | null;
   /** A derived name (`Push`) for a workout without one (audit F5); the stored name wins. */
   title?: string | null;
+  /** Pace samples from Ben's last finished workouts, for `Time left` (§2.15.2). Omitted = none. */
+  recentPace?: PaceSamples;
+}
+
+/** `TimeLeftLine` (§2.15.1): an estimate, never a countdown; null when hidden. */
+export interface TimeLeftView {
+  estimate: TimeLeftEstimate;
+  line: TimeLeftLineView;
 }
 
 /** `PainFlagNote` under the target line; tapping it opens that flag's sheet (§2.14.4). */
@@ -255,6 +264,10 @@ export interface ActiveSetView {
   openEnded: boolean;
   /** `Set 3 · 100 kg × 6–8` (or `Incline dumbbell press · Set 1 · …`) for the Rest state's Next line. */
   upNext: string | null;
+  /** `About 35 min left · ends about 19:40` (§2.15); null once all sets are done, when empty or finished. */
+  timeLeft: TimeLeftView | null;
+  /** Today's `Finish by` (UTC), or null when not set. */
+  finishByUtc: string | null;
 }
 
 const live = (s: WorkoutSet) => s.status !== 'deleted';
@@ -568,6 +581,7 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
   const completed = liveSets.filter((s) => s.status === 'completed' && s.completedAt);
   const justSaved = buildJustSaved(state);
   const last = completed.map((s) => s.completedAt?.utc ?? '').sort().at(-1) ?? null;
+  const estimate = phase.kind === 'all_done' || phase.kind === 'empty' ? null : estimateRemainingDuration(state, { nowMs, ...(input.recentPace ? { recent: input.recentPace } : {}) });
 
   return {
     phase: phase.kind,
@@ -594,6 +608,8 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     lastCompletedAtUtc: last,
     openEnded: isOpenEndedWorkout(state),
     upNext: focus === null ? null : upNextLine(state, focus),
+    timeLeft: estimate === null ? null : { estimate, line: timeLeftLine(estimate, session.startedAt.tz) },
+    finishByUtc: session.finishBy?.utc ?? null,
   };
 }
 

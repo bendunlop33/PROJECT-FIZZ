@@ -253,7 +253,7 @@ export interface EstimateOptions {
   nowMs: number;
   /** Samples from Ben's recent finished workouts (`recentPaceSamples`). */
   recent?: PaceSamples;
-  /** Today's `Finish by` (UTC), when Ben set one. */
+  /** Override for today's `Finish by` (UTC); defaults to the session's own. */
   finishByUtc?: string | null;
 }
 
@@ -302,7 +302,7 @@ export function estimateTimeLeft(state: SessionAggregate, opts: EstimateOptions)
   const highS = total(pace.high.secondsPerSet, pace.high.changeoverSeconds);
 
   const endMs = nowMs + seconds * 1000;
-  const finishBy = opts.finishByUtc ?? null;
+  const finishBy = opts.finishByUtc !== undefined ? opts.finishByUtc : (state.session.finishBy?.utc ?? null);
   let overByMinutes: number | null = null;
   if (finishBy !== null) {
     const over = roundTimeLeftMinutes((endMs - toMs(finishBy)) / 1000);
