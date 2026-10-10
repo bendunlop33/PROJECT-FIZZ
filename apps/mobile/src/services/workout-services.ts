@@ -4,6 +4,8 @@ import {
   buildActiveSetView,
   buildLiftHighlight,
   buildPainFlagSheet,
+  buildSetEditView,
+  planExclusionMark,
   buildTodayView,
   buildWorkoutSummary,
   defaultStartingPlan,
@@ -86,7 +88,9 @@ import type {
   SessionAggregate,
   SessionCheckIn,
   SessionCommand,
+  SetExclusion,
   SetType,
+  SetValues,
   UserProfile,
   ZonedTimestamp,
 } from '@fizz/schemas';
@@ -165,6 +169,22 @@ export type PainReviewWrite =
       duplicate: boolean;
     }
   | { ok: false; reason: 'not_found' | 'not_active' | 'not_due' | 'stale' | 'failed'; message: string };
+
+/**
+ * `correctSet` from the correction sheet (active-workout §4.4, §2.13). On
+ * success, `undo` is what the toast's Undo sends back to `undoMark`.
+ */
+export type SetCorrectionWrite =
+  | {
+      ok: true;
+      aggregate: SessionAggregate;
+      duplicate: boolean;
+      /** `Set 2: spotted · not counted for records`; null when the exclusions didn't change. */
+      toast: string | null;
+      /** Present when the exclusions changed: the flags before, and the set version the mark produced. */
+      undo: { setId: string; setVersion: number; previous: SetExclusion[]; painFlagIds: string[] } | null;
+    }
+  | { ok: false; stale: boolean; message: string };
 
 export type PainClearWrite = { ok: true; cleared: { id: string; version: number } | null } | { ok: false; stale: boolean; message: string };
 
@@ -859,6 +879,79 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
 
     dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => ctx.afterCommand(await domain().dispatch(sessionId, command)),
+
+    /**
+     * `Save changes` in the correction sheet: values and exclusion chips in
+     * one versioned `correct_set` (§2.13, AW6). Ticking `Pain` when no flag
+     * covers the movement sets one first (AW7, source `workout`, ID derived
+     * from the opId so a retry flags once). A stale set version is refused
+     * before anything is written.
+     */
+    async correctSet(req: {
+      sessionId: string;
+      setId: string;
+      expectedSetVersion: number;
+      patch: Partial<SetValues> & { exclusions?: SetExclusion[] };
+      opId: string;
+    }): Promise<SetCorrectionWrite> {
+      const failed = { ok: false as const, stale: false, message: 'The change wasn’t saved. Try again.' };
+      try {
+        const p = await owner();
+        const aggregate = await repos().sessions.get(req.sessionId);
+        const set = aggregate?.sets.find((s) => s.id === req.setId);
+        const ex = aggregate?.exercises.find((e) => e.id === set?.sessionExerciseId);
+        if (!aggregate || !set || !ex) return { ok: false, stale: true, message: 'This set isn’t logged any more.' };
+        const at = ctx.now();
+        const done = aggregate.processedOps[req.opId] !== undefined;
+        if (!done && set.version !== req.expectedSetVersion) return { ok: false, stale: true, message: 'This set changed since it was shown. Showing the latest.' };
+        const flags = await repos().painFlags.listActive(p.id);
+        const flagId = deriveId(`pain:${req.opId}:${ex.exerciseId}`);
+        const ours = await repos().painFlags.get(flagId);
+        const covered = painFlagCovering(flags.filter((f) => f.id !== flagId), ex.exerciseId, toMs(at.utc), aggregate.session.startedAt.tz) !== null;
+        const setNumber = buildSetEditView(aggregate, set.id, null)?.setNumber ?? set.index + 1;
+        const plan = planExclusionMark({ prior: done ? undefined : set.exclusions, next: req.patch.exclusions, painFlagActive: covered, setNumber, exerciseName: ex.exerciseName });
+        const painFlagIds: string[] = [];
+        if (!done && (plan.setsPainFlag || ours)) {
+          if (!ours) {
+            const flag = newPainFlag({ id: flagId, ownerId: p.id, opId: req.opId, exerciseId: ex.exerciseId, exerciseName: ex.exerciseName, area: null, source: 'workout', checkInId: null, at });
+            const saved = await repos().painFlags.save(flag, null);
+            if (!saved.ok && !(await repos().painFlags.get(flagId))) return failed;
+          }
+          painFlagIds.push(flagId);
+        }
+        const r = ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'correct_set', at, opId: req.opId, setId: req.setId, expectedSetVersion: req.expectedSetVersion, patch: req.patch }));
+        if (!r.ok) return { ok: false, stale: r.error.code === 'stale_version', message: r.error.code === 'stale_version' ? 'This set changed since it was shown. Showing the latest.' : r.error.message };
+        const after = r.aggregate.sets.find((s) => s.id === req.setId);
+        const changedFlags = plan.toast !== null && !r.duplicate;
+        return {
+          ok: true,
+          aggregate: r.aggregate,
+          duplicate: r.duplicate,
+          toast: r.duplicate ? null : plan.toast,
+          undo: changedFlags && after ? { setId: req.setId, setVersion: after.version, previous: plan.prior, painFlagIds } : null,
+        };
+      } catch {
+        return failed;
+      }
+    },
+
+    /**
+     * Undo on the exclusion toast: put the flags back as they were, as one
+     * more versioned correction (kept in `Edit history`), and clear a pain
+     * flag that the same save set. Refused when the set changed since.
+     */
+    async undoMark(req: { sessionId: string; setId: string; setVersion: number; previous: SetExclusion[]; painFlagIds: string[]; opId: string }): Promise<{ ok: boolean; message: string | null }> {
+      try {
+        const r = ctx.afterCommand(
+          await domain().dispatch(req.sessionId, { type: 'correct_set', at: ctx.now(), opId: req.opId, setId: req.setId, expectedSetVersion: req.setVersion, patch: { exclusions: req.previous } }),
+        );
+        if (!r.ok) return { ok: false, message: r.error.code === 'stale_version' ? 'Can’t undo: this set changed. Tap it to edit.' : r.error.message };
+        if (req.painFlagIds.length > 0) await pain.clear(req.painFlagIds);
+        return { ok: true, message: null };
+      } catch {
+        return { ok: false, message: 'Undo wasn’t saved. Try again.' };
+      }
+    },
 
     /**
      * `Rest after` (rest-state §2.4): this set only, or every pending set of

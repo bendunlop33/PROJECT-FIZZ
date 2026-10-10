@@ -21,6 +21,7 @@ import {
   normaliseExclusions,
   notCountedLine,
   notComparedText,
+  planExclusionMark,
   reduceSession,
   ruleBasis,
   startWorkout,
@@ -328,5 +329,26 @@ describe('history, Last, summary and records', () => {
     const today = finish(logAll(workout(bar, 1, 86_400, 'h2'), [values(kg(105), 3)], 86_400), 87_100);
     const hist = [...toHistorySessions(spottedBefore, BENCH.id), ...toHistorySessions(before, BENCH.id)];
     expect(plain(summaryHighlight(today, { [BENCH.id]: hist }))).toBe('Heaviest Bench press set on Olympic bar: 105 kg × 3');
+  });
+});
+
+describe('planExclusionMark (correction sheet save, AW7)', () => {
+  const base = { setNumber: 2, exerciseName: 'Bench press', painFlagActive: false };
+
+  it('ticking Pain sets the movement’s flag only when none is active', () => {
+    expect(planExclusionMark({ ...base, prior: [], next: ['pain'] })).toEqual({
+      prior: [],
+      next: ['pain'],
+      setsPainFlag: true,
+      toast: 'Set 2: pain · not counted for records · pain flag on Bench press',
+    });
+    expect(planExclusionMark({ ...base, painFlagActive: true, prior: [], next: ['pain'] }).setsPainFlag).toBe(false);
+    // Already marked Pain: saving again sets nothing new.
+    expect(planExclusionMark({ ...base, prior: ['pain'], next: ['pain', 'spotted'] }).setsPainFlag).toBe(false);
+  });
+
+  it('unticking Pain never clears the movement flag; a patch without exclusions keeps them', () => {
+    expect(planExclusionMark({ ...base, prior: ['pain'], next: [] })).toMatchObject({ setsPainFlag: false, toast: 'Set 2 counts for records again' });
+    expect(planExclusionMark({ ...base, prior: ['spotted'], next: undefined })).toMatchObject({ next: ['spotted'], toast: null });
   });
 });

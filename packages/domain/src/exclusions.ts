@@ -155,3 +155,44 @@ export function notComparedText(xs: readonly SetExclusion[] | undefined): string
 export function notUsedLine(setNumber: number, day: string, xs: readonly SetExclusion[] | undefined): string {
   return `Set ${String(setNumber)} on ${day}: ${exclusionWords(xs) ?? 'left out'}.`;
 }
+
+export interface ExclusionMarkPlan {
+  /** The set's flags now, and after the correction (canonical order). */
+  prior: SetExclusion[];
+  next: SetExclusion[];
+  /**
+   * AW7: `Pain` was just ticked and no active flag covers the movement, so
+   * the same save sets one (`setPainFlag`, source `workout`). Unticking
+   * `Pain` never clears a movement flag; only `Clear flag` does (§2.14.3).
+   */
+  setsPainFlag: boolean;
+  /** The toast after saving, or null when the flags didn't change. */
+  toast: string | null;
+}
+
+/**
+ * What saving the correction sheet's exclusion chips does (§2.13, §4.4).
+ * Pure: the service reads the set and the active flags, then writes the pain
+ * flag (when `setsPainFlag`) before the `correct_set`, so a crash in between
+ * leaves the safe direction (coach-memory CM4).
+ */
+export function planExclusionMark(input: {
+  prior: readonly SetExclusion[] | undefined;
+  /** Undefined = the patch doesn't touch exclusions. */
+  next: readonly SetExclusion[] | undefined;
+  /** An active pain flag already covers this exercise. */
+  painFlagActive: boolean;
+  setNumber: number;
+  exerciseName: string;
+}): ExclusionMarkPlan {
+  const prior = normaliseExclusions(input.prior);
+  const next = input.next === undefined ? prior : normaliseExclusions(input.next);
+  const setsPainFlag = next.includes('pain') && !prior.includes('pain') && !input.painFlagActive;
+  const toast = exclusionToast(input.setNumber, prior, next);
+  return {
+    prior,
+    next,
+    setsPainFlag,
+    toast: toast === null ? null : setsPainFlag ? `${toast} · pain flag on ${input.exerciseName}` : toast,
+  };
+}
