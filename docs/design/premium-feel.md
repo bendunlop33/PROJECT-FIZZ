@@ -133,8 +133,6 @@ The ask pill (today.md region 7) isn't built yet. When it is, the content keeps 
 │ ╭────────────────────────────────────╮ │
 │ │           Start workout            │ │
 │ ╰────────────────────────────────────╯ │
-│ After your first workout you can save  │ callout, text.secondary
-│ it as a routine and start it from here.│
 │ ────────────────────────────────────── │
 │ THIS WEEK                              │
 │  M   T   W   T   F   S   S             │
@@ -525,20 +523,22 @@ Any sheet the app opens (check-in, permission, routine, picker) must render its 
 
 ## 10. Copy (exact)
 
+Cut to values, actions and short status words after the CLAUDE.md minimal-copy rule (Ben, 10 Oct; review B3).
+Start notices: `Using saved targets.` · `Using last time’s numbers.`
+
 | Key | Text |
 |---|---|
 | Today eyebrows | `UP NEXT` · `IN PROGRESS · STARTED 16:22` · `DONE TODAY` · `TODAY` · `YOUR ROUTINES` · `THIS WEEK` |
-| Up next basis | `After Pull A on Thu 8 Oct` · `Your only routine` · `From Thu 8 Oct, with next targets` |
+| Up next basis | `After Pull A on Thu 8 Oct` · `Your only routine` · `From Thu 8 Oct` |
 | Preview row | `Target 100 kg × 6–8 · 3 sets` |
 | Resume row | `3 of 3 sets` |
 | More | `+2 more` |
 | Routine row | `5 exercises · 6 Oct` (last done) · `5 exercises · not done yet` |
 | Links | `Empty workout` · `Past workouts` · `All routines` · `Save as routine` · `Edit next set` |
 | Week text | §2.5 |
-| First workout hint | `After your first workout you can save it as a routine and start it from here.` |
-| Save sheet | `Save as routine` · `Name` · `3 exercises · 9 sets. Targets start from what you did today.` · `Save routine` · `Give it a name` · `You already have a routine called Push A.` |
+| Save sheet | `Save as routine` · `Name` · `3 exercises · 9 sets` · `Save routine` · `Give it a name` · `You already have a routine called Push A.` |
 | Toasts | `Saved routine Push A` · `Deleted Push A` · `Renamed to Push A` (each with `Undo`) |
-| Routine sheet | `Last done Thu 8 Oct at Main gym` · `Targets from the built-in rule.` / `Targets set by the coach.` · `Start this routine` |
+| Routine sheet | `Last done Thu 8 Oct at Main gym` · `Rule` tag + `Why?` → `Next targets from the built-in rule` (nothing when the routine's own targets are used) · `Start this routine` |
 | Delete confirm | `Delete Push A?` / `Past workouts keep their name.` / `Cancel` / `Delete` |
 | Rename | `Rename routine` / `Rename workout` · `Save name` |
 | Permission sheet | `Rest alerts` · `Get an alert when rest ends while your phone is locked?` · `Allow` · `Not now` |

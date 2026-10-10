@@ -401,7 +401,7 @@ export function TodayScreen() {
               : next.routine?.basis.kind === 'after'
                 ? `After ${next.routine.basis.routineName} on ${formatShortDate(toMs(next.routine.basis.atUtc), next.routine.basis.tz)}`
                 : next.sourceStartedAtUtc !== null
-                  ? `From ${formatShortDate(toMs(next.sourceStartedAtUtc), next.tz)}, with next targets (built-in rule)`
+                  ? `From ${formatShortDate(toMs(next.sourceStartedAtUtc), next.tz)}`
                   : null;
           return (
             <Hero
@@ -435,11 +435,6 @@ export function TodayScreen() {
                 Uses a typical gym (barbell, dumbbells, cables, machines) until you check its equipment in Profile.
               </AppText>
             )}
-            {routines.length === 0 ? (
-              <AppText variant="callout" color="text.secondary">
-                After your first workout you can save it as a routine and start it from here.
-              </AppText>
-            ) : null}
           </Hero>
         );
     }

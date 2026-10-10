@@ -103,7 +103,7 @@ export type CheckInWrite = { ok: true; checkIn: CheckIn; duplicate: boolean } | 
 const CHECK_IN_WRITE_FAILED = 'Check-in wasn’t saved. Your workout can start as normal.';
 const RECENT_WINDOW_MS = 3 * 60 * 60 * 1000;
 /** Said on the workout when "Start next session" couldn't work out targets (review S2). */
-export const TARGETS_UNAVAILABLE = 'Couldn’t work out next targets, so these are last time’s numbers.';
+export const TARGETS_UNAVAILABLE = 'Using last time’s numbers.';
 
 /** `notice`: something the workout screen should say once on opening (a toast). */
 export type WorkoutStartOutcome = (Extract<StartOutcome, { ok: true }> & { notice?: string }) | Extract<StartOutcome, { ok: false }>;
@@ -564,7 +564,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           if (e.code === 'nothing_to_start') return { ok: false, error: { code: 'not_found', message: e.message } };
           return { ok: false, error: e };
         }
-        const notice = targetsFailed && !r.duplicate ? 'Couldn’t work out next targets, so these are the routine’s own numbers.' : null;
+        const notice = targetsFailed && !r.duplicate ? 'Using saved targets.' : null;
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate, ...(notice !== null ? { notice } : {}) };
       }
       if (req.nextOf) {

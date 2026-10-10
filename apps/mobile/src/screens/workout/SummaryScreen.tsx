@@ -434,7 +434,7 @@ export function SummaryScreen() {
           initialName={sum.title}
           detail={
             nameSheet === 'routine'
-              ? `${String(sum.facts.exercisesDone)} ${sum.facts.exercisesDone === 1 ? 'exercise' : 'exercises'} · ${String(sum.facts.workingSets + sum.facts.warmupSets)} sets. Targets start from what you did today.`
+              ? `${String(sum.facts.exercisesDone)} ${sum.facts.exercisesDone === 1 ? 'exercise' : 'exercises'} · ${String(sum.facts.workingSets + sum.facts.warmupSets)} sets`
               : null
           }
           check={nameSheet === 'routine' ? (n) => services.routines.checkName(n) : (n) => Promise.resolve(checkRoutineName(n, []))}

@@ -18,7 +18,7 @@ export interface NameSheetProps {
   title: string;
   buttonLabel: string;
   initialName: string;
-  /** `3 exercises · 9 sets. Targets start from what you did today.` */
+  /** `3 exercises · 9 sets`: values only (CLAUDE.md minimal copy). */
   detail?: string | null;
   check: (name: string) => Promise<RoutineNameCheck>;
   /** Null when saved; otherwise the message to show (the sheet stays open). */

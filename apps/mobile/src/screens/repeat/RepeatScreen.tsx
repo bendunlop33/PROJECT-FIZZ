@@ -185,7 +185,7 @@ export function RepeatScreen() {
         title="Save as routine"
         buttonLabel="Save routine"
         initialName={preview.title}
-        detail={`${String(preview.exercises.length)} ${preview.exercises.length === 1 ? 'exercise' : 'exercises'}. Targets start from what you did on ${day}.`}
+        detail={`${String(preview.exercises.length)} ${preview.exercises.length === 1 ? 'exercise' : 'exercises'}`}
         check={(n) => services.routines.checkName(n)}
         onSubmit={saveRoutine}
         onClose={() => {

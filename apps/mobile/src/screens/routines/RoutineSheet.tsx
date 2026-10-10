@@ -7,7 +7,7 @@ import { formatShortDate } from '../../format/dates';
 import type { RoutinePreview, RoutineRow } from '../../services/workout-services';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, Icon, PrimaryButton, StatusLine } from '../../ui';
+import { AppText, BottomCard, Icon, PrimaryButton, StatusLine, Tag, TextButton } from '../../ui';
 
 /**
  * The routine sheet (premium-feel §2.6): name and `⋯` (Rename · Delete), when
@@ -39,12 +39,14 @@ export function RoutineSheet({
 }) {
   const theme = useTheme();
   const services = useServices();
+  const [why, setWhy] = useState(false);
   const [preview, setPreview] = useState<{ state: 'loading' } | { state: 'ready'; value: RoutinePreview | null }>({ state: 'loading' });
 
   useEffect(() => {
     if (!visible || row === null) return;
     let live = true;
     setPreview({ state: 'loading' });
+    setWhy(false);
     const read = gymId === null ? Promise.resolve(null) : services.routines.preview(row.id, gymId);
     void read.then((value) => {
       if (live) setPreview({ state: 'ready', value });
@@ -104,16 +106,24 @@ export function RoutineSheet({
               </View>
             ))}
       </ScrollView>
-      {preview.state === 'ready' && p === null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t read this routine’s targets. You can still start it." /> : null}
+      {preview.state === 'ready' && p === null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t read targets." /> : null}
       {(p?.notes ?? []).map((n, i) => (
         <AppText key={`n${String(i)}`} variant="callout" color="text.secondary">
           {`${n.exerciseName}: ${n.text}`}
         </AppText>
       ))}
-      {p ? (
-        <AppText variant="callout" color="text.secondary">
-          {p.source === 'built_in_rule' ? 'Targets from the built-in rule.' : 'Targets as saved in the routine.'}
-        </AppText>
+      {/* Where the targets come from: a short tag, the explanation behind `Why?` (CLAUDE.md minimal copy). */}
+      {p?.source === 'built_in_rule' ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'] }}>
+          <Tag text="Rule" />
+          <TextButton
+            label={why ? 'Next targets from the built-in rule' : 'Why?'}
+            tone="secondary"
+            onPress={() => {
+              setWhy((w) => !w);
+            }}
+          />
+        </View>
       ) : null}
       <PrimaryButton
         label="Start this routine"
