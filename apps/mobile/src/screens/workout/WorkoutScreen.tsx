@@ -38,6 +38,7 @@ import {
   SecondaryButton,
   FadeIn,
   StatusLine,
+  Tag,
   TEXT_PRESSED_OPACITY,
   TextButton,
   TimerNumeral,
@@ -226,8 +227,14 @@ export function WorkoutScreen() {
       }, 4000);
     }
     const handed = route.params?.toast;
-    if (handed && firstTime(`toast:${sid}:${handed.kind}:${handed.text}`)) showHanded(handed);
+    if (handed && handed.kind !== 'exclusion' && firstTime(`toast:${sid}:${handed.kind}:${handed.text}`)) showHanded(handed);
   }, [data === 'loading' || data === null ? null : data.aggregate.session.id]);
+
+  // The correction sheet hands its exclusion toast back on return (§2.13); each save shows once.
+  const handedExclusion = route.params?.toast?.kind === 'exclusion' ? route.params.toast : null;
+  useEffect(() => {
+    if (handedExclusion && firstTime(`toast:exclusion:${handedExclusion.key}`)) showHanded(handedExclusion);
+  }, [handedExclusion?.key]);
 
   function showHanded(t: WorkoutToastParam) {
     switch (t.kind) {
@@ -256,6 +263,21 @@ export function WorkoutScreen() {
         break;
       case 'info':
         showToast({ icon: 'info.circle', text: t.text });
+        break;
+      case 'exclusion':
+        showToast({
+          icon: 'info.circle',
+          text: t.text,
+          action: 'Undo',
+          onAction: () => {
+            // One more versioned correction; a pain flag the same save set is cleared with it.
+            void services.workout.undoMark({ ...t.undo, opId: `undo:${t.key}` }).then((r) => {
+              changed();
+              void reload();
+              showToast({ icon: 'info.circle', text: r.ok ? 'Undone' : (r.message ?? 'Undo wasn’t saved. Try again.') });
+            });
+          },
+        });
         break;
     }
   }
@@ -1010,6 +1032,8 @@ export function WorkoutScreen() {
             text={r.text}
             edited={r.edited}
             last={i === focus.rows.length - 1}
+            exclusionTag={r.exclusionTag}
+            exclusionAccessibility={r.exclusionAccessibility}
             onPress={() => {
               if (r.status === 'done') navigation.navigate('EditSet', { sessionId: session.id, setId: r.setId });
               if (r.status === 'pending') void run({ type: 'set_active_set', at: services.now(), opId: newUuid(), setId: r.setId, expectedVersion: session.version });
@@ -1286,6 +1310,8 @@ function SetRowLine({
   text,
   edited,
   last,
+  exclusionTag,
+  exclusionAccessibility,
   onPress,
 }: {
   status: 'done' | 'active' | 'pending' | 'skipped';
@@ -1294,6 +1320,9 @@ function SetRowLine({
   text: string;
   edited: boolean;
   last: boolean;
+  /** `Spotted` (§2.13): a colourless `Tag`, never hidden. */
+  exclusionTag: string | null;
+  exclusionAccessibility: string | null;
   onPress: () => void;
 }) {
   const theme = useTheme();
@@ -1320,7 +1349,7 @@ function SetRowLine({
   return (
     <Pressable
       accessibilityRole={tappable ? 'button' : 'text'}
-      accessibilityLabel={`Set ${String(number)}${badges.length ? ` ${badges.join(' ')}` : ''}, ${STATUS_WORD[status]}, ${text}${edited ? ', edited' : ''}`}
+      accessibilityLabel={`Set ${String(number)}${badges.length ? ` ${badges.join(' ')}` : ''}, ${STATUS_WORD[status]}, ${text}${edited ? ', edited' : ''}${exclusionAccessibility ? `. ${exclusionAccessibility}` : ''}`}
       accessibilityHint={status === 'done' ? 'Edit or delete this set' : status === 'pending' ? 'Make this the current set' : undefined}
       disabled={!tappable}
       onPress={onPress}
@@ -1352,6 +1381,7 @@ function SetRowLine({
           {effort.trim()}
         </AppText>
       ) : null}
+      {exclusionTag ? <Tag text={exclusionTag} /> : null}
       {edited ? <Icon name="pencil" size={14} color="text.tertiary" /> : null}
     </Pressable>
   );

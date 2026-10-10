@@ -1,5 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
-import type { EquipmentKind } from '@fizz/schemas';
+import type { EquipmentKind, SetExclusion } from '@fizz/schemas';
 
 export type ProfileStackParams = {
   ProfileHome: undefined;
@@ -81,7 +81,18 @@ export type RootStackParams = {
 export type WorkoutToastParam =
   | { kind: 'check_in'; text: string; checkInId: string }
   | { kind: 'pain'; text: string; flagIds: string[] }
-  | { kind: 'info'; text: string };
+  | { kind: 'info'; text: string }
+  /**
+   * Back from the correction sheet after the exclusion chips changed
+   * (active-workout §2.13): `Set 2: spotted · not counted for records`
+   * [Undo]. `key` is the save's opId, so each save shows once.
+   */
+  | {
+      kind: 'exclusion';
+      key: string;
+      text: string;
+      undo: { sessionId: string; setId: string; setVersion: number; previous: SetExclusion[]; painFlagIds: string[] };
+    };
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace

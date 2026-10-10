@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { buildSetEditView, toMs } from '@fizz/domain';
-import type { SessionAggregate, SetValues } from '@fizz/schemas';
+import { buildSetEditView, EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_NOTE, EXCLUSION_ORDER, toMs } from '@fizz/domain';
+import type { SessionAggregate, SetExclusion, SetValues } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
 import { formatTime } from '../../format/dates';
@@ -17,6 +17,8 @@ import { AppText, Chip, ChipRow, DangerTextButton, NumberAccessory, NumberSteppe
  * Correction sheet for a logged set (active-workout §4.4): `correct_set`
  * guarded on the set's own version; the rest timer is never touched.
  * `Delete set` always confirms and keeps an audited record (no Undo yet).
+ * The exclusion chips (§2.13) save in the same `correct_set`; the toast with
+ * Undo is handed back to the workout screen.
  */
 export function EditSetScreen() {
   const theme = useTheme();
@@ -27,6 +29,7 @@ export function EditSetScreen() {
   const { sessionId, setId } = useRoute<RouteProp<RootStackParams, 'EditSet'>>().params;
   const [aggregate, setAggregate] = useState<SessionAggregate | null>(null);
   const [values, setValues] = useState<SetValues | null>(null);
+  const [exclusions, setExclusions] = useState<SetExclusion[] | null>(null);
   const [effortScale, setEffortScale] = useState<'rpe' | 'rir' | 'off'>('rpe');
   const [error, setError] = useState<string | null>(null);
   const [saveOp] = useState(newUuid);
@@ -42,7 +45,7 @@ export function EditSetScreen() {
     void load();
   }, [sessionId, setId]);
 
-  const view = aggregate ? buildSetEditView(aggregate, setId, values) : null;
+  const view = aggregate ? buildSetEditView(aggregate, setId, values, exclusions) : null;
   if (!aggregate || !view) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'], padding: theme.space['4'] }}>
@@ -59,19 +62,30 @@ export function EditSetScreen() {
     if (!view) return;
     const actual = aggregate?.sets.find((s) => s.id === setId)?.actual;
     if (!actual) return;
-    const patch: Partial<SetValues> = {};
+    const patch: Partial<SetValues> & { exclusions?: SetExclusion[] } = {};
     for (const k of ['load', 'reps', 'rpe', 'rir'] as const) {
       if (JSON.stringify(current[k]) !== JSON.stringify(actual[k])) Object.assign(patch, { [k]: current[k] });
     }
-    const r = await services.workout.dispatch(sessionId, { type: 'correct_set', at: services.now(), opId: saveOp, setId, expectedSetVersion: view.setVersion, patch });
+    if (exclusions !== null) patch.exclusions = view.exclusions;
+    const r = await services.workout.correctSet({ sessionId, setId, expectedSetVersion: view.setVersion, patch, opId: saveOp });
     if (!r.ok) {
-      setError(r.error.code === 'stale_version' ? 'This set changed since it was shown. Showing the latest.' : r.error.message);
+      setError(r.message);
       setValues(null);
+      setExclusions(null);
       void load();
       return;
     }
     changed();
+    if (r.toast !== null && r.undo !== null) {
+      navigation.navigate('Workout', { toast: { kind: 'exclusion', key: saveOp, text: r.toast, undo: { sessionId, ...r.undo } } });
+      return;
+    }
     navigation.goBack();
+  }
+
+  function toggle(x: SetExclusion) {
+    const now = view?.exclusions ?? [];
+    setExclusions(now.includes(x) ? now.filter((y) => y !== x) : [...now, x]);
   }
 
   function remove() {
@@ -157,6 +171,20 @@ export function EditSetScreen() {
             </ChipRow>
           </View>
         ) : null}
+        <View style={{ gap: theme.space['2'] }}>
+          <AppText variant="label" color="text.secondary" accessibilityRole="header">
+            {EXCLUSION_HEADING}
+          </AppText>
+          <ChipRow>
+            {EXCLUSION_ORDER.map((x) => (
+              <Chip key={x} label={EXCLUSION_LABEL[x]} selected={view.exclusions.includes(x)} onPress={() => { toggle(x); }} />
+            ))}
+          </ChipRow>
+          {view.painLine ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={view.painLine} /> : null}
+          <AppText variant="callout" color="text.secondary">
+            {EXCLUSION_NOTE}
+          </AppText>
+        </View>
         <AppText variant="callout" color="text.secondary" numeric>{`Saved as: ${view.text}`}</AppText>
         {error ? <StatusLine icon="info.circle" tone="info" text={error} /> : null}
         <PrimaryButton label="Save changes" disabled={!view.changed} onPress={() => void save()} />
