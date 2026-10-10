@@ -641,6 +641,41 @@ describe('classifyPainMention (CM6)', () => {
     ["I don't think it hurts", 'unclear'],
     ['knee feels a bit uncomfortable', 'unclear'],
     ["you're killing it", 'none'],
+    // Review r2 B3: common injury talk that used to come back as `none`.
+    ['my shoulder flared up', 'pain'],
+    ['my shoulder flared up on the last set', 'pain'],
+    ['my back spasmed', 'pain'],
+    ['my knee is swollen', 'pain'],
+    ['aggravated my elbow', 'pain'],
+    ["it's bothering my wrist", 'pain'],
+    ['rolled my ankle', 'pain'],
+    ['my knee gave out', 'pain'],
+    ['my back went', 'pain'],
+    ['my lower back went on the last rep', 'pain'],
+    ['my lower back is acting up', 'pain'],
+    ['shoulder impingement again', 'pain'],
+    ['tendinitis flaring', 'pain'],
+    ['pins and needles in my hand', 'pain'],
+    ['dislocated finger', 'pain'],
+    ['bruised', 'pain'],
+    ['calf cramped up', 'pain'],
+    // A body part Ben owns with nothing else said is asked about, never `none`.
+    ['my shoulder feels weird', 'unclear'],
+    ['something going on with my left knee', 'unclear'],
+    ['my elbows flared on that set', 'unclear'],
+    // ... but not exercise names, praise or effort.
+    ['leg press felt good', 'none'],
+    ['back squat next', 'none'],
+    ['my shoulder feels fine today', 'none'],
+    ['my legs are cooked', 'effort'],
+    ['foam rolled my quads', 'none'],
+    ['back to 100 for set 3', 'none'],
+    ['take 5 kg off the last set', 'none'],
+    // Review r2 nit: "sharp" needs a body part.
+    ['feeling sharp today', 'none'],
+    ['sharp in my knee', 'pain'],
+    ['shooting down my arm', 'pain'],
+    ['my knee is not swollen', 'none'],
   ] as const)('%s → %s', (text, expected) => {
     expect(classifyPainMention(text)).toBe(expected);
   });
