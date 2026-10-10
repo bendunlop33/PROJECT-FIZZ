@@ -161,7 +161,7 @@ export function openErrorView(r: OpenResult, locale?: string): OpenErrorView | n
     case 'not_csv':
       return { text: 'This isn’t a CSV file.', firstLine: null, sameFileJobId: null };
     case 'fitnotes_backup':
-      return { text: 'This looks like a FitNotes backup, not a CSV export. Export a CSV from FitNotes and choose that.', firstLine: null, sameFileJobId: null };
+      return { text: 'This is a FitNotes backup, not a CSV. In FitNotes, export a CSV and choose that.', firstLine: null, sameFileJobId: null };
     case 'body_tracker':
       return { text: 'This looks like a FitNotes Body Tracker export. Choose the Workout Data export.', firstLine: r.firstLine, sameFileJobId: null };
     case 'unknown_header':
