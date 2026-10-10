@@ -452,7 +452,7 @@ export function WorkoutScreen() {
     switch (view.primary.kind) {
       case 'log':
         return { label: view.primary.label, onPress: () => void log(), busy };
-      case 'disabled':
+      case 'enter':
         return { label: view.primary.label, onPress: () => undefined, disabled: true };
       case 'resume':
         return { label: 'Resume', onPress: () => void pauseOrResume() };

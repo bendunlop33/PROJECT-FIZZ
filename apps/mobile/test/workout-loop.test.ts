@@ -202,7 +202,7 @@ describe('the loop: add exercise, log, rest, force-close, finish, summary', () =
     data = await s.workout.load();
     if (!data) throw new Error('no workout');
     let v = s.workout.view(data, clockMs, null);
-    expect(v.primary).toEqual({ kind: 'disabled', label: 'Enter load' });
+    expect(v.primary).toEqual({ kind: 'enter', field: 'load', label: 'Enter load' });
     const setId = v.focus?.setId ?? '';
     // Draft edit saved (debounced in the app), then a force-close.
     const draft = { load: { value: 60, unit: 'kg' as const, convention: 'total' as const }, reps: 8, durationS: null, rpe: null, rir: null };
@@ -220,8 +220,8 @@ describe('the loop: add exercise, log, rest, force-close, finish, summary', () =
     expect(v.focus?.draftSource).toBe('draft');
     expect(plain(v.primary.label)).toBe('Log 60 kg × 8');
 
-    // A second set (Add set copies the first), so the first log starts a rest.
-    await s.workout.dispatch(sessionId, { type: 'add_set', at: now(), opId: 'add-set-1', sessionExerciseId: data.aggregate.exercises[0]?.id ?? '', newSetId: ids(), setType: null });
+    // No history: three working sets in the built-in range (audit B1), so the first log starts a rest.
+    expect(data.aggregate.sets.map((x) => x.planned.reps)).toEqual([{ min: 3, max: 6 }, { min: 3, max: 6 }, { min: 3, max: 6 }]);
 
     // Log, twice with the same opId (double tap): one set, one rest, one alert.
     const log = { type: 'log_set' as const, at: now(), opId: v.focus?.opId ?? '', setId, values: v.focus?.logValues ?? draft, restTimerId: ids() };
@@ -230,7 +230,7 @@ describe('the loop: add exercise, log, rest, force-close, finish, summary', () =
     expect(first.ok && !first.duplicate).toBe(true);
     expect(second.ok && second.duplicate).toBe(true);
     await settle(s);
-    expect([...pending.values()].map((p) => [p.fireAtMs - clockMs, plain(p.body)])).toEqual([[180_000, 'Next: Bench press']]);
+    expect([...pending.values()].map((p) => [p.fireAtMs - clockMs, plain(p.body)])).toEqual([[180_000, 'Next: Bench press · 3–6 reps (no load target)']]);
 
     // Force-close during rest; reopen 10 s later: the remaining time is right, one alert.
     await forceClose();
@@ -256,14 +256,17 @@ describe('the loop: add exercise, log, rest, force-close, finish, summary', () =
     data = await s.workout.load();
     if (!data) throw new Error('no workout');
     v = s.workout.view(data, clockMs, null);
-    expect(v.focus?.draftSource).toBe('this_session');
+    // The target's reps, with the load from this session's last set.
+    expect(v.focus?.draftSource).toBe('target');
+    expect(v.focus?.draft.load?.value).toBe(60);
     const l2 = await s.workout.dispatch(sessionId, { type: 'log_set', at: now(), opId: v.focus?.opId ?? '', setId: v.focus?.setId ?? '', values: v.focus?.logValues ?? draft, restTimerId: ids() });
     expect(l2.ok).toBe(true);
     data = await s.workout.load();
     if (!data) throw new Error('no workout');
     v = s.workout.view(data, clockMs, null);
-    expect(v.primary).toEqual({ kind: 'finish', label: 'Finish workout' });
-    expect(v.rest).toBeNull();
+    // Set 3 is next, after a rest; Finish skips it.
+    expect(v.focus?.setNumber).toBe(3);
+    expect(v.rest).toMatchObject({ kind: 'running' });
 
     // Finish: summary, backup, no alert left.
     clockMs += 60_000;
@@ -275,7 +278,7 @@ describe('the loop: add exercise, log, rest, force-close, finish, summary', () =
     const sum = await s.workout.summary(sessionId);
     expect(sum?.facts).toMatchObject({ workingSets: 2, exercisesDone: 1 });
     expect(sum?.nextTime?.sourceTag).toBe('Built-in rule (coach not connected)');
-    expect(plain(sum?.exercises[0]?.results)).toBe('60×8 · 60×8');
+    expect(plain(sum?.exercises[0]?.results)).toBe('60×8 · 60×6');
     expect((await s.today.view())?.main).toMatchObject({ kind: 'done_today', title: 'Workout' });
     expect((await s.today.view())?.week.text).toBe('1 workout this week');
 

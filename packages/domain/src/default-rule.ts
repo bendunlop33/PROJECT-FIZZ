@@ -62,6 +62,11 @@ const RULES: Record<RuleCategory, CategoryRule> = {
   isolation: { min: 8, max: 12, rpe: 9, cap: 15, label: 'an accessory lift' },
 };
 
+/** The built-in rep range for a category (`3–6` for a main barbell lift). */
+export function builtInRepRange(category: RuleCategory): { min: number; max: number } {
+  return { min: RULES[category].min, max: RULES[category].max };
+}
+
 /** `Double progression, 3–6 reps up to RPE 8.5 (built-in default for a main barbell lift, provisional)` */
 export function builtInRuleName(category: RuleCategory): string {
   const r = RULES[category];

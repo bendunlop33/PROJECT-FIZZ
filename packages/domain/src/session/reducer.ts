@@ -26,6 +26,7 @@ import {
 } from '../rest';
 import { deriveId, stableStringify } from '../stable';
 import { toIso, toMs } from '../time';
+import { isOpenEndedWorkout } from './first-run';
 import { isRoundEnd, nextPendingSet } from './order';
 
 export type SessionErrorCode =
@@ -328,7 +329,30 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
 
   const nextActive = companion?.id ?? nextPendingSet(set.id, state.exercises, sets);
   if (nextActive === null) {
-    // Final set of the workout: no rest; the primary becomes Finish.
+    // Final set of a planned workout: no rest; the primary becomes Finish
+    // (rest-state #14). An open-ended workout is built as Ben goes, so its
+    // "final" set is only the last one so far: the rest still runs while he
+    // adds a set or the next exercise (audit B1). Finish cancels it.
+    if (isOpenEndedWorkout(state) && set.rest.seconds > 0) {
+      restTimer = createRestTimer({
+        id: cmd.restTimerId,
+        sessionId: state.session.id,
+        setId: set.id,
+        kind: 'rest',
+        durationS: set.rest.seconds,
+        source: set.rest.source === 'not_recorded' ? null : set.rest.source,
+        nowMs,
+      });
+      events.push({
+        type: 'RestStarted',
+        timerId: restTimer.id,
+        setId: set.id,
+        kind: restTimer.kind,
+        durationS: restTimer.durationS,
+        deadlineUtc: restTimer.deadlineUtc,
+        timerVersion: restTimer.version,
+      });
+    }
     events.push({ type: 'ActiveSetChanged', setId: null }, { type: 'AllSetsDone' });
     const next = bumpVersion({ ...state, sets, audit, restTimer, workInterval: wi?.setId === set.id ? null : wi }, null);
     return { ok: true, state: next, events };

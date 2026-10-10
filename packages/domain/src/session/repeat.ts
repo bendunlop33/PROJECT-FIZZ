@@ -1,4 +1,4 @@
-import type { EquipmentInstance, Exercise, Load, Routine, RoutineExercise, SessionAggregate, SetTemplate, WeightUnit, WorkoutSet } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Load, PlannedSet, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, WeightUnit, WorkoutSet } from '@fizz/schemas';
 import { loadText, NBSP, repRangeText } from '../display';
 import { getAchievableLoads, loadDirection, roundToAvailableLoad } from '../equipment';
 import { convertMass } from '../units';
@@ -38,6 +38,15 @@ export interface RepeatInput {
   at: StartWorkoutInput['at'];
   newId: () => string;
   checkIn?: StartWorkoutInput['checkIn'];
+  /**
+   * "Start next session" (audit B2): per exercise ID, the built-in rule's
+   * next targets (`plannedSetsFromTargets`), used instead of last time's
+   * actuals and labelled `built_in_rule`. Exercises without an entry are
+   * copied as last time. Loads still go through this gym's check (rule 4).
+   */
+  targets?: ReadonlyMap<string, readonly { setType: SetType; planned: PlannedSet }[]>;
+  /** The new workout's name; default: the source's. */
+  name?: string;
 }
 
 export interface RepeatNote {
@@ -106,10 +115,13 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     let unitDropped: Load | null = null;
     let harderDropped: { requested: Load; lightest: Load } | null = null;
 
+    const planned = input.targets?.get(sx.exerciseId);
+    const sources: { setType: SetType; load: Load | null; reps: { min: number; max: number } | null; durationS: number | null }[] =
+      planned && planned.length > 0
+        ? planned.map((p) => ({ setType: p.setType, load: p.planned.load, reps: p.planned.reps, durationS: p.planned.durationS }))
+        : doneWithReps.flatMap((s) => (s.actual === null ? [] : [{ setType: s.setType, load: s.actual.load, reps: s.actual.reps === null ? null : { min: s.actual.reps, max: s.actual.reps }, durationS: s.actual.durationS }]));
     const templates: SetTemplate[] = [];
-    for (const s of doneWithReps) {
-      const a = s.actual;
-      if (a === null) continue;
+    for (const a of sources) {
       let targetLoad = equipmentMissing ? null : a.load;
       if (targetLoad !== null && eq === null && targetLoad.unit !== sessionUnit) {
         unitDropped ??= targetLoad;
@@ -126,9 +138,9 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       }
       templates.push({
         id: input.newId(),
-        setType: s.setType,
+        setType: a.setType,
         targetLoad,
-        targetReps: a.reps === null ? null : { min: a.reps, max: a.reps },
+        targetReps: a.reps,
         targetDurationS: a.durationS,
         targetRpe: null,
         targetRir: null,
@@ -161,7 +173,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     version: 1,
     createdAtUtc: input.at.utc,
     updatedAtUtc: input.at.utc,
-    name: src.session.routineName ?? 'Workout',
+    name: input.name ?? src.session.routineName ?? 'Workout',
     exercises: routineExercises,
   };
   // Ben's own per-exercise rest defaults come first (rest-state §2.4).
@@ -203,7 +215,11 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   const aggregate: SessionAggregate = {
     ...out.aggregate,
     session: { ...out.aggregate.session, routineId: null },
-    sets: out.aggregate.sets.map((s) => ({ ...s, planned: { ...s.planned, source: 'repeat' as const } })),
+    sets: out.aggregate.sets.map((s) => {
+      const exerciseId = out.aggregate.exercises.find((e) => e.id === s.sessionExerciseId)?.exerciseId;
+      const fromRule = exerciseId !== undefined && (input.targets?.get(exerciseId)?.length ?? 0) > 0;
+      return { ...s, planned: { ...s.planned, source: fromRule ? ('built_in_rule' as const) : ('repeat' as const) } };
+    }),
   };
   return { aggregate, warnings: out.warnings, notes, notCopied, empty: routineExercises.length === 0 };
 }

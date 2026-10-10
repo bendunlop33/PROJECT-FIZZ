@@ -139,7 +139,7 @@ describe('buildActiveSetView: empty workout and equipment conventions', () => {
     const press = exercise(210, 'Dumbbell press', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
     const s = emptyWith(press, db);
     const f = focus(view(s));
-    expect(view(s).primary).toEqual({ kind: 'disabled', label: 'Enter load' });
+    expect(view(s).primary).toEqual({ kind: 'enter', field: 'load', label: 'Enter load' });
     expect(f.target).toBeNull();
     expect(f.loadField).toMatchObject({ label: 'Load each', unitText: 'kg each', value: null, up: { enabled: true, value: 5 }, down: { enabled: false } });
     const atMax = focus(view(s, { edits: { setId: f.setId, values: values(kg(30, 'per_hand'), 10) } }));

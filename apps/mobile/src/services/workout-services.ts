@@ -3,6 +3,9 @@ import {
   buildActiveSetView,
   buildTodayView,
   buildWorkoutSummary,
+  defaultStartingPlan,
+  deriveWorkoutTitle,
+  muscleSummary,
   clearPainFlag,
   restorePainFlag,
   createSessionService,
@@ -68,6 +71,8 @@ export interface WorkoutServicesContext {
   profile: () => Promise<UserProfile | null>;
   /** Runs after every committed session command (backups, alerts). Never awaited by the caller's write. */
   afterCommand: (outcome: CommandOutcome) => CommandOutcome;
+  /** The bundled catalogue as exercise rows (read on first use). Absent: the picker shows the database only. */
+  catalogueExercises?: () => readonly Exercise[];
 }
 
 export type CheckInWrite = { ok: true; checkIn: CheckIn; duplicate: boolean } | { ok: false; message: string; stale?: boolean };
@@ -119,6 +124,23 @@ export interface ActiveWorkoutData {
   painFlagged: Set<string>;
   effortScale: UserProfile['effortScale'];
   checkIn: CheckIn | null;
+  /** `Push`, from the exercises, for a workout without a name (audit F5). */
+  title: string | null;
+}
+
+/**
+ * Today's main card (audit B2): the next session, built from the last
+ * workout with the built-in rule's next targets (labelled), at this gym.
+ */
+export interface NextSessionPreview {
+  sourceSessionId: string;
+  title: string;
+  /** `Chest · Shoulders · Triceps`. */
+  muscles: string | null;
+  exercises: { exerciseName: string; line: string }[];
+  sets: number;
+  sourceStartedAtUtc: string;
+  tz: string;
 }
 
 export function createWorkoutServices(ctx: WorkoutServicesContext) {
@@ -303,7 +325,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const convention = equipment?.loadConvention ?? exercise.defaultLoadConvention;
     const history = await historyFor(p.id, exercise.id);
     const previous = lastComparableSession(history, { equipmentId: equipment?.id ?? null, unit, loadConvention: convention });
-    if (!previous) return null;
+    // No history: three working sets in the built-in rep range, no load (audit B1).
+    if (!previous) return defaultStartingPlan(exercise, equipment?.kind ?? null, convention);
     const now = unspecifiedPain(await sessionCheckIn(aggregate));
     const then = unspecifiedPain(await sessionCheckIn(await repos().sessions.get(previous.sessionId)));
     const { result } = nextTargetsFor({
@@ -321,8 +344,57 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       painFlags: await repos().painFlags.listActive(p.id),
       sessionPain: now.active ? now : then,
     });
-    return plannedSetsFromTargets(result);
+    return plannedSetsFromTargets(result) ?? defaultStartingPlan(exercise, equipment?.kind ?? null, convention, Math.max(1, previous.sets.length));
   }
+
+  /**
+   * Next targets for every exercise of a finished workout, on the equipment
+   * it was done with (the gym check happens when the workout is built).
+   * Exercises the rule can't plan are left out, so they repeat as last time.
+   */
+  async function nextTargetsOf(p: UserProfile, source: SessionAggregate): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
+    const out = new Map<string, { setType: SetType; planned: PlannedSet }[]>();
+    const flags = await repos().painFlags.listActive(p.id);
+    const sessionPain = unspecifiedPain(await sessionCheckIn(source));
+    for (const sx of source.exercises) {
+      if (out.has(sx.exerciseId) || sx.measurement !== 'reps') continue;
+      const done = source.sets.filter((s) => s.sessionExerciseId === sx.id && s.status === 'completed' && s.pairedWithSetId === null && s.setType !== 'warmup');
+      if (done.length === 0) continue;
+      const exercise = await repos().exercises.get(sx.exerciseId);
+      const equipment = sx.equipmentId === null ? null : (source.session.equipmentSnapshot.find((e) => e.id === sx.equipmentId) ?? null);
+      const { result } = nextTargetsFor({
+        ownerId: p.id,
+        exerciseId: sx.exerciseId,
+        exerciseName: sx.exerciseName,
+        measurement: sx.measurement,
+        unit: sx.unit,
+        convention: sx.loadConvention,
+        equipment,
+        exercise,
+        rule: null,
+        workingSets: done.length,
+        history: await historyFor(p.id, sx.exerciseId),
+        painFlags: flags,
+        sessionPain,
+      });
+      const plan = plannedSetsFromTargets(result);
+      if (plan) out.set(sx.exerciseId, plan);
+    }
+    return out;
+  }
+
+  /** `Push` for a workout without a stored name, from its exercises' muscles. */
+  async function titleFor(exerciseIds: readonly string[]): Promise<{ title: string; muscles: string | null }> {
+    const infos: Exercise[] = [];
+    for (const id of new Set(exerciseIds)) {
+      const e = await repos().exercises.get(id).catch(() => null);
+      if (e) infos.push(e);
+    }
+    return { title: deriveWorkoutTitle(infos), muscles: muscleSummary(infos) };
+  }
+
+  /** The source's own name, unless it's the generic `Workout`. */
+  const storedName = (a: SessionAggregate): string | null => (a.session.routineName !== null && a.session.routineName !== 'Workout' ? a.session.routineName : null);
 
   const workout = {
     /**
@@ -330,7 +402,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * A gym is required (PM SP1). An answered check-in is linked in the same
      * write as the session; one already linked to another workout is refused.
      */
-    async start(req: { gymId: string; opId: string; checkIn: SessionCheckIn | null; repeatOf?: string | null }): Promise<StartOutcome> {
+    async start(req: { gymId: string; opId: string; checkIn: SessionCheckIn | null; repeatOf?: string | null; nextOf?: string | null }): Promise<StartOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
       let checkIn = req.checkIn;
@@ -339,6 +411,20 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const linked = await repos().checkIns.linkedIds([checkIn.checkInId]);
         // Linked to another workout (not this start's retry): start without it rather than block.
         if (linked.has(checkIn.checkInId) && already?.session.checkIn?.kind !== 'answered') checkIn = { kind: 'skipped', atUtc: ctx.now().utc };
+      }
+      if (req.nextOf) {
+        // "Start next session" (audit B2): last workout's exercises with the built-in rule's next targets.
+        const source = await repos().sessions.get(req.nextOf);
+        if (!source) return { ok: false, error: { code: 'not_found', message: 'That workout wasn’t found.' } };
+        const targets = await nextTargetsOf(p, source).catch(() => new Map<string, { setType: SetType; planned: PlannedSet }[]>());
+        const name = storedName(source) ?? (await titleFor(source.exercises.map((e) => e.exerciseId))).title;
+        const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.nextOf, targets, name });
+        if (!r.ok) {
+          const e = r.error;
+          if (e.code === 'nothing_to_repeat' || e.code === 'imported_not_repeatable') return { ok: false, error: { code: 'not_found', message: e.message } };
+          return { ok: false, error: e };
+        }
+        return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate };
       }
       if (req.repeatOf) {
         // Repeat a past workout (routines.md RT4): its actuals become today's targets.
@@ -373,6 +459,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       }
       const flags = await repos().painFlags.listActive(p.id);
       const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId) : null;
+      const title = aggregate.session.routineName === null && aggregate.exercises.length > 0 ? (await titleFor(aggregate.exercises.map((e) => e.exerciseId))).title : null;
       return {
         aggregate,
         gymName: gym?.name ?? null,
@@ -380,12 +467,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         painFlagged: new Set(flags.map((f) => f.exerciseId)),
         effortScale: p.effortScale,
         checkIn: ci,
+        title,
       };
     },
 
     /** `buildActiveSetView` over loaded data plus the screen's unsaved edits. */
     view(data: ActiveWorkoutData, nowMs: number, edits: DraftEdits | null): ActiveSetView {
-      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, previous: data.previous, painFlagged: data.painFlagged, edits });
+      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, previous: data.previous, painFlagged: data.painFlagged, edits, title: data.title });
     },
 
     dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => ctx.afterCommand(await domain().dispatch(sessionId, command)),
@@ -411,10 +499,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       return { ...r, defaultSaved: false };
     },
 
-    /** Exercise picker: the exercise list with compatible equipment at this workout's gym. */
-    async pickerExercises(sessionId: string, query: string): Promise<PickerExercise[]> {
+    /**
+     * Exercise picker: the exercise list with compatible equipment at this
+     * workout's gym. `withCatalogue` adds the bundled catalogue's exercises
+     * not saved yet (audit F4); the first read of the catalogue is slower, so
+     * the screen asks for the saved list first.
+     */
+    async pickerExercises(sessionId: string, query: string, opts: { withCatalogue?: boolean } = {}): Promise<PickerExercise[]> {
       const aggregate = await repos().sessions.get(sessionId);
-      const all = (await repos().exercises.list()).filter((e) => e.measurement === 'reps');
+      const p = await ctx.profile();
+      const saved = (await repos().exercises.list()).filter((e) => e.measurement === 'reps' && (e.ownerId === null || e.ownerId === p?.id));
+      const have = new Set(saved.map((e) => e.id));
+      const extra = opts.withCatalogue && ctx.catalogueExercises ? ctx.catalogueExercises().filter((e) => !have.has(e.id)) : [];
+      const all = [...saved, ...extra];
       const snapshot = aggregate?.session.equipmentSnapshot ?? [];
       // Bodyweight exercises never need (or get) a gym item: there's no load to check.
       return searchExercises(all, query).map((exercise) => ({
@@ -444,6 +541,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async addExercise(req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string }): Promise<CommandOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
+      // A catalogue exercise is saved (Coaching knowledge, no owner) the first time it's added.
+      if (!(await repos().exercises.get(req.exerciseId))) {
+        const row = ctx.catalogueExercises?.().find((e) => e.id === req.exerciseId);
+        if (row) {
+          const saved = await repos().exercises.save(row, null).catch(() => null);
+          if (!saved?.ok && !(await repos().exercises.get(req.exerciseId))) return { ok: false, error: { code: 'write_failed', message: 'Couldn’t save that exercise. Try again.' } };
+        }
+      }
       const plan = await planFor(p, req).catch(() => null);
       return ctx.afterCommand(
         await domain().addExercise(req.sessionId, {
@@ -565,6 +670,39 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
+  const next = {
+    /**
+     * Today's `Start workout` card (audit B2): the last workout with next
+     * targets, previewed at this gym. Saves nothing; null when there's no
+     * workout to build from. Never throws (an unreadable record hides the card).
+     */
+    async preview(gymId: string): Promise<NextSessionPreview | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const last = (await repeat.candidates(1, { countImported: false })).rows[0];
+        if (!last) return null;
+        const source = await repos().sessions.get(last.sessionId);
+        if (!source) return null;
+        const targets = await nextTargetsOf(p, source);
+        const r = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview-next:${last.sessionId}`, at: ctx.now(), sourceSessionId: last.sessionId, preview: true, targets });
+        if (!r.ok) return null;
+        const derived = await titleFor(source.exercises.map((e) => e.exerciseId));
+        return {
+          sourceSessionId: last.sessionId,
+          title: storedName(source) ?? derived.title,
+          muscles: derived.muscles,
+          exercises: repeatPreviewLines(r.aggregate).map((l) => ({ exerciseName: l.exerciseName, line: l.line })),
+          sets: r.aggregate.sets.length,
+          sourceStartedAtUtc: source.session.startedAt.utc,
+          tz: source.session.startedAt.tz,
+        };
+      } catch {
+        return null;
+      }
+    },
+  };
+
   const today = {
     async view(): Promise<TodayView | null> {
       const p = await ctx.profile();
@@ -589,7 +727,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
-  return { checkIns, pain, workout, today, repeat };
+  return { checkIns, pain, workout, today, repeat, next };
 }
 
 export type WorkoutServices = ReturnType<typeof createWorkoutServices>;
