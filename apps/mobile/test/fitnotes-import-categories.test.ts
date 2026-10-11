@@ -37,7 +37,7 @@ const CASES: readonly Case[] = [
   ['Seated Calf Raise Machine', 'Legs', ['matched', 'Seated calf raise']],
   ['Lateral Dumbbell Raise', 'Shoulders', ['matched', 'Lateral raise']],
   ['Rope Push Down', 'Triceps', ['matched', 'Rope triceps pushdown']],
-  ['Parallel Bar Triceps Dip', 'Triceps', ['matched', 'Dip']],
+  ['Parallel Bar Triceps Dip', 'Triceps', ['check', 'Dip']],
   ['Chest Dips', 'Chest', ['matched', 'Dip']],
   ['Seated Machine Fly', 'Chest', ['matched', 'Pec deck']],
   ['Rear Delt Machine Fly', 'Shoulders', ['matched', 'Reverse pec deck']],

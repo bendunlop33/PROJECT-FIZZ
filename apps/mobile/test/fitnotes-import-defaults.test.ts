@@ -282,7 +282,7 @@ describe('FitNotes’ default names: nothing stored differs from the file withou
     expect(shown('Smith Machine Overhead Press')).toEqual(['no_match', null]);
     expect(shown('Smith Machine Close Grip Bench Press')).toEqual(['check', 'Smith machine bench press']);
     // FitNotes defaults that are catalogue aliases now match exactly; ambiguous ones stay a Check.
-    expect(shown('Parallel Bar Triceps Dip')).toEqual(['matched', 'Dip']);
+    expect(shown('Parallel Bar Triceps Dip')).toEqual(['check', 'Dip']);
     expect(shown('Flat Barbell Bench Press')).toEqual(['matched', 'Bench press']);
     expect(shown('Leg Extension Machine')).toEqual(['matched', 'Leg extension']);
     expect(shown('Seated Calf Raise Machine')).toEqual(['matched', 'Seated calf raise']);
