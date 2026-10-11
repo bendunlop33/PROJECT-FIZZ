@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -9,6 +9,7 @@ import type { ZonedTimestamp } from '@fizz/schemas';
 import { createRestAlertController, type NotifierPort, type PlannedRestAlert } from '../src/alerts/rest-alerts';
 import type { BackupFileStore, TextFile } from '../src/backup/backup-service';
 import { createExpoDatabaseHost } from '../src/data/expo-driver';
+import { createPersonalFiles, type ContainerFileOps } from '../src/device/personal-files';
 import type { AppServices } from '../src/services/app-services';
 import { startApp, type StartupDeps, type StartupOutcome } from '../src/services/startup';
 import { fakeHostDeps } from './fake-expo-sqlite';
@@ -26,8 +27,26 @@ export interface Harness {
   ids: () => string;
   backupFiles: Map<string, string>;
   pending: Map<string, PlannedRestAlert>;
+  /** The notifier refuses to cancel every workout alert (Delete's `alerts` step). */
+  alertsFail: boolean;
+  /** Training database files can't be deleted (e.g. the old file after Delete's swap). */
+  failDbRemove: boolean;
+  /** Small files in Documents besides the backup record and the data ledger (prefs, coach settings, crash notes, damaged copies). */
+  documents: Map<string, string>;
+  /** `tmp/`: the document picker's copies (`<bundle>-Inbox/<name>`) and anything else temporary. */
+  tmp: Map<string, string>;
+  /** `Library/Caches/`. */
+  cache: Map<string, string>;
   now: () => ZonedTimestamp;
   launch: () => Promise<Extract<StartupOutcome, { kind: 'ready' }>>;
+  /** Launch and return whatever startup returned (`interruptedDelete` as Root passes it). */
+  start: (extra?: { interruptedDelete?: 'finish' | 'leave'; /** Background backups wait for it (main's idle rule). */ idle?: () => Promise<void> }) => Promise<StartupOutcome>;
+  /**
+   * Every file in the app's container, by path: backups, the backup record,
+   * the data ledger, other Documents files, tmp, Caches, and every SQLite
+   * file (training, meta, probe; read as text so strings can be searched).
+   */
+  containerFiles: () => Map<string, string>;
   settle: (s: AppServices) => Promise<void>;
   forceClose: () => Promise<void>;
   cleanup: () => Promise<void>;
@@ -38,19 +57,69 @@ export interface Harness {
  * generator. Two phones (a reinstall on another day) need both to differ,
  * as real installs do (review R1).
  */
-export function createHarness(start = '2026-10-08T17:00:00.000Z', opts: { idStart?: number; coach?: StartupDeps['coach'] } = {}): Harness {
+export function createHarness(
+  start = '2026-10-08T17:00:00.000Z',
+  opts: {
+    idStart?: number;
+    coach?: StartupDeps['coach'];
+    credentials?: StartupDeps['credentials'];
+    personalFiles?: StartupDeps['personalFiles'];
+    signOutTimeoutMs?: number;
+    /** The data ledger can be damaged or failing in a test. */
+    ledger?: TextFile;
+  } = {},
+): Harness {
   const dir = mkdtempSync(join(tmpdir(), 'fizz-harness-'));
   let dbNames = 0;
   let manifestText: string | null = null;
+  // The Delete my data marker survives a force-close like any file in the container.
+  let ledgerText: string | null = null;
   const open: AppServices[] = [];
+  // The same Your-data file list as the phone (Root), over the in-memory container.
+  const containerOps: ContainerFileOps = {
+    removeDocuments(names, matching) {
+      for (const n of [...h.documents.keys()]) if (names.includes(n) || names.includes(n.replace(/\.tmp$/, '')) || matching.test(n)) h.documents.delete(n);
+      return Promise.resolve();
+    },
+    removeDatabaseFiles(name) {
+      for (const n of [name, `${name}-wal`, `${name}-shm`]) rmSync(join(dir, n), { force: true });
+      const left = [name, `${name}-wal`, `${name}-shm`].filter((n) => existsSync(join(dir, n)));
+      return left.length > 0 ? Promise.reject(new Error(`Couldn’t delete ${left.join(', ')}`)) : Promise.resolve();
+    },
+    emptyTemporary() {
+      h.tmp.clear();
+      h.cache.clear();
+      return Promise.resolve({ systemLeft: [] });
+    },
+  };
   const h: Harness = {
     dir,
     clockMs: toMs(start),
     ids: idGen(opts.idStart ?? 1),
     backupFiles: new Map(),
     pending: new Map(),
+    alertsFail: false,
+    failDbRemove: false,
+    documents: new Map(),
+    tmp: new Map(),
+    cache: new Map(),
     now: () => ({ utc: toIso(h.clockMs), tz: TZ }),
     async launch() {
+      const o = await h.start();
+      if (o.kind !== 'ready') throw new Error(o.kind);
+      return o;
+    },
+    containerFiles() {
+      const all = new Map([...h.backupFiles].map(([n, t]) => [`backups/${n}`, t]));
+      if (manifestText !== null) all.set('backup-state.json', manifestText);
+      if (ledgerText !== null) all.set('data-ops.json', ledgerText);
+      for (const [n, t] of h.documents) all.set(n, t);
+      for (const [n, t] of h.tmp) all.set(`tmp/${n}`, t);
+      for (const [n, t] of h.cache) all.set(`Caches/${n}`, t);
+      for (const n of readdirSync(dir)) all.set(`SQLite/${n}`, readFileSync(join(dir, n), 'latin1'));
+      return all;
+    },
+    async start(extra = {}) {
       const files: BackupFileStore = {
         write: (n, t) => {
           h.backupFiles.set(n, t);
@@ -61,6 +130,7 @@ export function createHarness(start = '2026-10-08T17:00:00.000Z', opts: { idStar
           h.backupFiles.delete(n);
           return Promise.resolve();
         },
+        list: () => Promise.resolve([...h.backupFiles.keys()]),
       };
       const manifest: TextFile = {
         read: () => Promise.resolve(manifestText),
@@ -78,9 +148,18 @@ export function createHarness(start = '2026-10-08T17:00:00.000Z', opts: { idStar
           h.pending.delete(id);
           return Promise.resolve();
         },
+        cancelAllWorkoutAlerts: (keep) => {
+          if (h.alertsFail) return Promise.reject(new Error('1 scheduled alert(s) couldn’t be cancelled'));
+          for (const id of [...h.pending.keys()]) if (id.startsWith('fizz.rest.') && id !== keep) h.pending.delete(id);
+          return Promise.resolve();
+        },
       };
+      const hostDeps = fakeHostDeps(dir);
       const o = await startApp({
-        host: createExpoDatabaseHost(fakeHostDeps(dir)),
+        host: createExpoDatabaseHost({
+          ...hostDeps,
+          deleteDatabase: (n) => (h.failDbRemove && n.startsWith('training-') ? Promise.reject(new Error(`EBUSY: ${n}`)) : hostDeps.deleteDatabase(n)),
+        }),
         newDatabaseName: () => `training-${String(++dbNames)}.db`,
         backupFiles: files,
         backupManifest: manifest,
@@ -90,9 +169,19 @@ export function createHarness(start = '2026-10-08T17:00:00.000Z', opts: { idStar
         locale: 'en-GB',
         restAlerts: createRestAlertController(notifier),
         ...(opts.coach === undefined ? {} : { coach: opts.coach }),
+        dataLedger: opts.ledger ?? {
+          read: () => Promise.resolve(ledgerText),
+          write: (t) => {
+            ledgerText = t;
+            return Promise.resolve();
+          },
+        },
+        ...(opts.credentials === undefined ? {} : { credentials: opts.credentials }),
+        personalFiles: opts.personalFiles ?? createPersonalFiles(containerOps),
+        ...(opts.signOutTimeoutMs === undefined ? {} : { signOutTimeoutMs: opts.signOutTimeoutMs }),
+        ...extra,
       });
-      if (o.kind !== 'ready') throw new Error(o.kind);
-      open.push(o.services);
+      if (o.kind === 'ready') open.push(o.services);
       return o;
     },
     async settle(s) {

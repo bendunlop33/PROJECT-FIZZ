@@ -37,6 +37,7 @@ function files(): BackupFileStore {
       backupFiles.delete(n);
       return Promise.resolve();
     },
+    list: () => Promise.resolve([...backupFiles.keys()]),
   };
 }
 const manifest: TextFile = {

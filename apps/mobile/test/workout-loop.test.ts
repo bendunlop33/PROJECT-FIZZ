@@ -46,6 +46,7 @@ const files = (): BackupFileStore => ({
     backupFiles.delete(n);
     return Promise.resolve();
   },
+  list: () => Promise.resolve([...backupFiles.keys()]),
 });
 const manifest: TextFile = {
   read: () => Promise.resolve(manifestText),
@@ -63,6 +64,11 @@ const notifier: NotifierPort = {
   cancel: (id) => {
     alertCalls.push(`cancel ${id}`);
     pending.delete(id);
+    return Promise.resolve();
+  },
+  cancelAllWorkoutAlerts: () => {
+    alertCalls.push('cancel all');
+    pending.clear();
     return Promise.resolve();
   },
 };

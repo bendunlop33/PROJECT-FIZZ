@@ -4,7 +4,7 @@ import { View } from 'react-native';
 import { useDataChanged, useServices } from '../../shell/context';
 import { pickBackupFolder } from '../../device/files';
 import { useTheme } from '../../theme';
-import { InfoLine, PrimaryButton, Row, StatusLine } from '../../ui';
+import { InfoLine, PrimaryButton, Row, SecondaryButton, StatusLine } from '../../ui';
 
 /**
  * `Save a copy to Files` (data-import-export.md §2.2, §4.1): the system folder
@@ -12,7 +12,7 @@ import { InfoLine, PrimaryButton, Row, StatusLine } from '../../ui';
  * picker changes nothing and shows nothing. Success says `Copy saved to
  * Files` with where; it is only claimed after the file read back correctly.
  */
-export function SaveCopyToFiles({ variant, label = 'Save a copy to Files', onSaved }: { variant: 'primary' | 'row'; label?: string; onSaved?: (where: string) => void }) {
+export function SaveCopyToFiles({ variant, label = 'Save a copy to Files', onSaved }: { variant: 'primary' | 'secondary' | 'row'; label?: string; onSaved?: (where: string) => void }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
@@ -50,6 +50,8 @@ export function SaveCopyToFiles({ variant, label = 'Save a copy to Files', onSav
           <InfoLine infoLabel="About backup files" info="Backups are plain files with your training data and coaching knowledge. They never contain your coach sign-in or API keys." />
           <PrimaryButton label={busy ? 'Saving a copy…' : label} busy={busy} onPress={() => void save()} />
         </>
+      ) : variant === 'secondary' ? (
+        <SecondaryButton label={busy ? 'Saving a copy…' : label} icon="externaldrive" onPress={() => void save()} disabled={busy} />
       ) : (
         <Row title={label} icon="externaldrive" onPress={() => void save()} disabled={busy} />
       )}

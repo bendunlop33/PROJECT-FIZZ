@@ -31,6 +31,9 @@ class MemoryFiles implements BackupFileStore {
     this.files.delete(name);
     return Promise.resolve();
   }
+  list() {
+    return Promise.resolve([...this.files.keys()]);
+  }
 }
 
 class MemoryText implements TextFile {

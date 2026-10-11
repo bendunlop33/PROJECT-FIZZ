@@ -62,7 +62,13 @@ export type BackupErrorCode =
   | 'integrity_failed'
   | 'nothing_to_roll_back'
   /** The data changed since the restore preview was made (review S5): nothing was switched. */
-  | 'preview_stale';
+  | 'preview_stale'
+  /**
+   * Reset would delete the copy kept for Undo, which holds Your data that
+   * isn't on this phone (review r5 B1). Nothing was switched; confirm with
+   * that copy named (and backed up) to go ahead.
+   */
+  | 'kept_copy_at_risk';
 
 export interface BackupError {
   code: BackupErrorCode;
@@ -310,7 +316,7 @@ export async function parseBackup(text: string, migrations: readonly Migration[]
  * Before loading: the backup's tables must be exactly those of an empty
  * database migrated to `file.schemaVersion`, and every column must exist.
  */
-export async function checkBackupShape(q: SqlExecutor, file: BackupFile, slice: Slicer = noYield): Promise<BackupError | null> {
+export async function checkBackupShape(q: SqlExecutor, file: Pick<BackupFile, 'schemaVersion' | 'tables'>, slice: Slicer = noYield): Promise<BackupError | null> {
   const expected = await tableNames(q);
   const given = Object.keys(file.tables).sort();
   if (stableStringify(expected) !== stableStringify(given)) {
@@ -341,7 +347,7 @@ export async function checkBackupShape(q: SqlExecutor, file: BackupFile, slice: 
 }
 
 /** Insert every row of a backup (inside the caller's transaction). */
-export async function insertBackupRows(tx: SqlExecutor, file: BackupFile, slice: Slicer = noYield): Promise<void> {
+export async function insertBackupRows(tx: SqlExecutor, file: Pick<BackupFile, 'tables'>, slice: Slicer = noYield): Promise<void> {
   for (const [table, rows] of Object.entries(file.tables)) {
     for (const row of rows) {
       await insert(tx, table, row);

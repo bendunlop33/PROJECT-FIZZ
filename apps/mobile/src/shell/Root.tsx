@@ -1,28 +1,32 @@
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppState, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { toMs } from '@fizz/domain';
 import { readTextCoachState } from '@fizz/providers';
 
-import { coachConnectionPorts } from '../ai/coach-connection-ports';
+import { coachConnectionPorts, deviceCredentials } from '../ai/coach-connection-ports';
 import { clearDeliveredWorkoutAlerts, expoNotifier } from '../alerts/notifier';
 import { createPlanModelPort } from '../coach/plan-model-port';
 import { createRestAlertController } from '../alerts/rest-alerts';
-import { containerBackupFiles, containerTextFile } from '../device/files';
-import { expoDatabaseHost } from '../data/expo-sqlite-host';
-import { DevicePrefsProvider } from '../device/DevicePrefsContext';
-import { DEFAULT_PREFS, loadPrefs, savePrefs, settleLoadedPrefs, updatePrefs, type DevicePrefs } from '../device/prefs';
+import { containerBackupFiles, containerTextFile, emptyTemporaryFiles, removeContainerFiles } from '../device/files';
+import { createPersonalFiles, DEVICE_PREFS_FILE } from '../device/personal-files';
+import { expoDatabaseHost, removeDatabaseFiles } from '../data/expo-sqlite-host';
+import { deleteUnfinishedView } from '../backup/data-domain-view';
+import { DevicePrefsProvider, useDevicePrefs } from '../device/DevicePrefsContext';
+import { createPrefsHolder, DEFAULT_PREFS, type DevicePrefs } from '../device/prefs';
 import { appInfo, newUuid, nowZoned, whenIdle } from '../device/runtime';
 import { AppNavigator } from '../navigation/AppNavigator';
 import type { AppServices } from '../services/app-services';
 import { startApp, type StartupOutcome } from '../services/startup';
 import { ThemeProvider, TIMING, useTheme, type AvailableDirectionId } from '../theme';
-import { MessageScreen, PrimaryButton } from '../ui';
+import { MessageScreen, PrimaryButton, SecondaryButton } from '../ui';
 import { AppProvider } from './context';
 
 const BACKUP_MANIFEST = 'backup-state.json';
+/** Delete my data's marker and done op IDs (data-import-export §3.6 Interrupted). */
+const DATA_LEDGER = 'data-ops.json';
 
 /** One rest-alert controller for the app run (it remembers what is scheduled). */
 const restAlerts = createRestAlertController(expoNotifier);
@@ -52,14 +56,15 @@ function ForegroundAlerts({ services }: { services: AppServices }) {
   useForegroundAlerts(services);
   return null;
 }
-const DEVICE_PREFS = 'device-prefs.json';
 
 /** Launch: open the data (DatabaseManager, migrations, recovery), then the app. */
 function Launch() {
   const theme = useTheme();
+  const { clear: clearPrefs } = useDevicePrefs();
   const [outcome, setOutcome] = useState<StartupOutcome | null>(null);
   const [slow, setSlow] = useState(false);
-  const [attempt, setAttempt] = useState(0);
+  // `leave`: Continue after an interrupted delete kept failing (S1).
+  const [attempt, setAttempt] = useState<{ n: number; interruptedDelete: 'finish' | 'leave' }>({ n: 0, interruptedDelete: 'finish' });
 
   useEffect(() => {
     let alive = true;
@@ -87,21 +92,33 @@ function Launch() {
         },
         connection: () => readTextCoachState(coachConnectionPorts().ports),
       },
+      dataLedger: containerTextFile(DATA_LEDGER),
+      credentials: deviceCredentials(),
+      interruptedDelete: attempt.interruptedDelete,
+      // Your-data files outside SQLite: coach connection settings, this phone's look and alert answers,
+      // crash notes, damaged copies kept aside, the capability-probe database, and picked-file copies in tmp.
+      personalFiles: createPersonalFiles({ removeDocuments: removeContainerFiles, removeDatabaseFiles, emptyTemporary: emptyTemporaryFiles }),
     }).then((o) => {
       clearTimeout(timer);
-      if (alive) setOutcome(o);
+      if (!alive) return;
+      // Prefs read before an interrupted delete finished are stale: never write them back (S2).
+      if (o.kind === 'ready' && o.personalDataCleared) clearPrefs();
+      setOutcome(o);
     });
     return () => {
       alive = false;
       clearTimeout(timer);
     };
-  }, [attempt]);
+  }, [attempt, clearPrefs]);
 
+  const relaunchWith = (interruptedDelete: 'finish' | 'leave') => {
+    setAttempt((a) => ({ n: a.n + 1, interruptedDelete }));
+  };
   const retry = (
     <PrimaryButton
       label="Try again"
       onPress={() => {
-        setAttempt((a) => a + 1);
+        relaunchWith('finish');
       }}
     />
   );
@@ -128,6 +145,29 @@ function Launch() {
           lines={[`The database engine is SQLite ${outcome.version}; GymSmarter needs 3.37 or newer. Data unchanged.`]}
         />
       );
+    case 'delete_unfinished': {
+      const view = deleteUnfinishedView(outcome);
+      return (
+        <MessageScreen title={view.title} lines={view.lines}>
+          {view.retry ? retry : null}
+          {view.retry ? (
+            <SecondaryButton
+              label="Continue"
+              onPress={() => {
+                relaunchWith('leave');
+              }}
+            />
+          ) : (
+            <PrimaryButton
+              label="Continue"
+              onPress={() => {
+                relaunchWith('finish');
+              }}
+            />
+          )}
+        </MessageScreen>
+      );
+    }
     case 'open_failed':
       return (
         <MessageScreen
@@ -138,17 +178,17 @@ function Launch() {
         </MessageScreen>
       );
     case 'ready': {
-      const { services, migration, sqliteVersion, setup, recovery, recoveryError } = outcome;
+      const { services, migration, sqliteVersion, setup, recovery, recoveryError, signOutNotConfirmed } = outcome;
       const relaunch = () => {
         void services
           .close()
           .catch(() => undefined)
           .finally(() => {
-            setAttempt((a) => a + 1);
+            relaunchWith('finish');
           });
       };
       return (
-        <AppProvider services={services} launch={{ migration, sqliteVersion, recovery, recoveryError, restAlerts, restoreInterrupted: services.restore.interruptedRestore }} relaunch={relaunch}>
+        <AppProvider services={services} launch={{ migration, sqliteVersion, recovery, recoveryError, restAlerts, restoreInterrupted: services.restore.interruptedRestore, signOutNotConfirmed }} relaunch={relaunch}>
           <ForegroundAlerts services={services} />
           <AppNavigator
             setupStep={setup.step}
@@ -172,34 +212,16 @@ function Themed() {
 }
 
 export function Root() {
-  const prefsFile = useMemo(() => containerTextFile(DEVICE_PREFS), []);
   const [prefs, setPrefs] = useState<DevicePrefs | null>(null);
-  // The latest prefs for `update`, so two quick changes never drop one another.
-  const latest = useRef<DevicePrefs | null>(null);
-  latest.current = prefs;
-  // Changes made before the file loads: shown at once, then kept on top of the file and saved (review N1).
-  const early = useRef<Partial<DevicePrefs> | null>({});
+  const holder = useMemo(() => createPrefsHolder(containerTextFile(DEVICE_PREFS_FILE), setPrefs), []);
   useEffect(() => {
-    void loadPrefs(prefsFile).then((loaded) => {
-      const settled = settleLoadedPrefs(loaded, early.current ?? {});
-      early.current = null;
-      latest.current = settled.prefs;
-      setPrefs(settled.prefs);
-      if (settled.save) void savePrefs(prefsFile, settled.prefs).catch(() => undefined);
-    });
-  }, [prefsFile]);
+    void holder.load();
+  }, [holder]);
   const update = useCallback(
     (change: Partial<DevicePrefs>) => {
-      const next = updatePrefs(latest.current, change);
-      latest.current = next;
-      setPrefs(next);
-      if (early.current !== null) {
-        early.current = { ...early.current, ...change };
-        return;
-      }
-      void savePrefs(prefsFile, next).catch(() => undefined);
+      void holder.update(change);
     },
-    [prefsFile],
+    [holder],
   );
   const onChangeDirection = useCallback(
     (id: AvailableDirectionId) => {
@@ -207,7 +229,11 @@ export function Root() {
     },
     [update],
   );
-  const prefsValue = useMemo(() => ({ prefs: prefs ?? DEFAULT_PREFS, update }), [prefs, update]);
+  // Delete my data removed `device-prefs.json`: forget what is in memory without writing it (S2).
+  const clear = useCallback(() => {
+    holder.clear();
+  }, [holder]);
+  const prefsValue = useMemo(() => ({ prefs: prefs ?? DEFAULT_PREFS, update, clear }), [prefs, update, clear]);
   return (
     <SafeAreaProvider>
       <DevicePrefsProvider value={prefsValue}>

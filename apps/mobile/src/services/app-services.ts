@@ -38,6 +38,7 @@ import type { RestAlertController } from '../alerts/rest-alerts';
 import { createCoachService } from '../coach/coach-service';
 import { createBackupService, type BackupFileStore, type TextFile } from '../backup/backup-service';
 import { createRestoreService } from '../backup/restore-service';
+import { createDataDomainService, type CredentialPort, type PersonalFilesPort } from '../backup/data-domain-service';
 import { createImportService } from '../import/import-service';
 import { createGymServices } from './gym-services';
 import { createWorkoutServices, STALE_PREVIEW, type OverviewStartOf, type OverviewTarget, type WorkoutStartOutcome } from './workout-services';
@@ -77,8 +78,30 @@ export interface AppServicesDeps {
    * Absent: the coach reads as not connected; nothing else changes (rule 1).
    */
   coach?: { model: () => CoachModelPort; connection: () => Promise<TextCoachState> };
+  /**
+   * Delete my data / Reset coaching knowledge: the marker and op-ID ledger
+   * (a small file in the container), the Keychain items and the Your-data
+   * files outside SQLite. Absent in tests that don't need them: the ledger
+   * is then kept in memory.
+   */
+  dataLedger?: TextFile;
+  credentials?: CredentialPort;
+  personalFiles?: PersonalFilesPort;
+  /** How long Delete waits for the online ChatGPT revoke (default 10 s). */
+  signOutTimeoutMs?: number;
   /** Resolves when the UI is idle; background backups wait for it so Finish's Summary appears first (backup review B1). */
   idle?: () => Promise<void>;
+}
+
+function memoryTextFile(): TextFile {
+  let text: string | null = null;
+  return {
+    read: () => Promise.resolve(text),
+    write: (t) => {
+      text = t;
+      return Promise.resolve();
+    },
+  };
 }
 
 export type SetupState = { step: SetupStep; profile: UserProfile | null; gyms: Gym[] };
@@ -546,9 +569,25 @@ export function createAppServices(deps: AppServicesDeps) {
     },
   });
 
+  /** Export, Delete my data and Reset coaching knowledge, by data domain (rule 10). */
+  const data = createDataDomainService({
+    manager: deps.manager,
+    backups,
+    ledger: deps.dataLedger ?? memoryTextFile(),
+    now: deps.now,
+    app: deps.app,
+    bundledKnowledge: (atUtc) => starterExercises(atUtc),
+    ...(deps.credentials ? { credentials: deps.credentials } : {}),
+    ...(deps.personalFiles ? { personalFiles: deps.personalFiles } : {}),
+    ...(deps.restAlerts ? { restAlerts: deps.restAlerts } : {}),
+    activeWorkout: () => sessions.active(),
+    ...(deps.signOutTimeoutMs === undefined ? {} : { signOutTimeoutMs: deps.signOutTimeoutMs }),
+  });
+
   return {
     ...loop,
     overview,
+    data,
     coach,
     gyms,
     imports,

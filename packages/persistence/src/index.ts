@@ -17,3 +17,4 @@ export * from './backup/coverage';
 export * from './backup/backup';
 export * from './backup/replace';
 export * from './manager';
+export * from './data-domains';

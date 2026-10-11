@@ -8,10 +8,14 @@
 
 import type { ConnectionPorts, SettingsStore } from '@fizz/providers';
 
+import type { CredentialPort } from '../backup/data-domain-service';
 import { containerTextFile } from '../device/files';
+import { COACH_SETTINGS_FILE } from '../device/personal-files';
 import { createDeviceLoopback, createDevicePorts, type DeviceLoopback } from './chatgpt-test-ports';
+import { createCredentialPort } from './credential-port';
+import { wipeKeychain } from './keychain';
 
-const SETTINGS_FILE = 'coach-connection.json';
+export const SETTINGS_FILE = COACH_SETTINGS_FILE;
 
 let shared: { ports: ConnectionPorts; loopback: DeviceLoopback } | null = null;
 
@@ -23,4 +27,16 @@ export function coachConnectionPorts(): { ports: ConnectionPorts; loopback: Devi
   const settings: SettingsStore = { load: () => file.read(), save: (s) => file.write(s) };
   shared = { ports: { ...createDevicePorts(loopback), settings }, loopback };
   return shared;
+}
+
+/**
+ * `Delete my data` (data-import-export §4.5 step 1): the sign-in is removed
+ * from this phone first; the online revoke runs after (offline is fine).
+ */
+export function deviceCredentials(): CredentialPort {
+  // The ports (and the loopback module) are made only when Delete runs.
+  return {
+    signOut: () => createCredentialPort(coachConnectionPorts().ports, wipeKeychain).signOut(),
+    wipe: wipeKeychain,
+  };
 }

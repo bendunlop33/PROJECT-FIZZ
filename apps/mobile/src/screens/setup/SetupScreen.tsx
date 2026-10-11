@@ -4,7 +4,8 @@ import { View } from 'react-native';
 
 import type { WeightUnit } from '@fizz/schemas';
 
-import { useDataChanged, useServices } from '../../shell/context';
+import { SIGN_OUT_NOT_CONFIRMED } from '../../backup/data-domain-view';
+import { useDataChanged, useLaunchInfo, useServices } from '../../shell/context';
 import { measurementSystem } from '../../device/runtime';
 import { formatClock } from '../../format/numbers';
 import type { SetupStep } from '../../services/setup';
@@ -37,6 +38,7 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
+  const launch = useLaunchInfo();
   const [step, setStep] = useState<Step>(initialStep);
   const [unit, setUnit] = useState<WeightUnit>(initialUnit ?? unitFromMeasurementSystem(measurementSystem()));
   const [gym, setGym] = useState<SavedGymSummary | 'skipped' | null>(null);
@@ -104,6 +106,8 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
           }
         >
           <View>
+            {/* A delete finished at this launch couldn't confirm the ChatGPT sign-out online (§3.6; review r2 N4). */}
+            {launch.signOutNotConfirmed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={SIGN_OUT_NOT_CONFIRMED} /> : null}
             <View style={{ marginBottom: theme.space['2'] }}>
               <Eyebrow>You’ll set</Eyebrow>
             </View>

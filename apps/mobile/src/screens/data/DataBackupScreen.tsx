@@ -5,14 +5,16 @@ import { Alert, View } from 'react-native';
 
 import { toMs } from '@fizz/domain';
 
-import { describeBackupError, rollbackRowView } from '../../backup/restore-view';
+import { deleteLeftoverView, finishLeftoverView } from '../../backup/data-domain-view';
+import { describeBackupError, rollbackConfirmMessage, rollbackRowView } from '../../backup/restore-view';
+import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useRelaunch, useScreenData, useServices } from '../../shell/context';
 import { formatShortDate, formatWhen } from '../../format/dates';
 import { formatCount, plural } from '../../format/numbers';
 import { pausedLine } from '../../import/views';
 import { useTheme } from '../../theme';
-import { AppText, Card, DomainLabel, Group, Row, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
+import { AppText, Card, DangerTextButton, DomainLabel, Group, Row, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
 import { BlockingCover } from './BlockingCover';
 import { SaveCopyToFiles } from './SaveCopyToFiles';
 
@@ -23,7 +25,9 @@ const TONE = { done: 'done', info: 'info', warning: 'warning', progress: 'progre
  * the two-line status card, `Save a copy to Files`, `Back up on this phone
  * now`, the copies on this phone, the trial-run line, the quiet 30-day
  * reminder, Restore, Check a backup and Undo last restore, FitNotes import
- * and Past imports. Export and delete are listed honestly as not in this build.
+ * and Past imports, Export, and Delete my data / Reset coaching knowledge
+ * (two danger buttons, each opening its own screen). After `Continue` on an
+ * unfinished delete: one warning line with `Finish deleting` (review r2 S2).
  */
 export function DataBackupScreen() {
   const theme = useTheme();
@@ -35,9 +39,19 @@ export function DataBackupScreen() {
   const [undoError, setUndoError] = useState<string | null>(null);
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParams>>();
   const relaunch = useRelaunch();
+  const prefs = useDevicePrefs();
+  const [finishing, setFinishing] = useState(false);
+  const [finishError, setFinishError] = useState<string | null>(null);
   const [data] = useScreenData(async (s) => {
-    const [status, counts, blocked, undoBlocked, imports] = await Promise.all([s.backups.getStatus(), s.yourData.counts(), s.restore.blockedBy(), s.restore.undoBlockedBy(), s.imports.list()]);
-    return { status, counts, blocked, undoBlocked, imports, rollback: s.restore.rollbackTarget() };
+    const [status, counts, blocked, undoBlocked, imports, leftover] = await Promise.all([
+      s.backups.getStatus(),
+      s.yourData.counts(),
+      s.restore.blockedBy(),
+      s.restore.undoBlockedBy(),
+      s.imports.list(),
+      s.data.leftover(),
+    ]);
+    return { status, counts, blocked, undoBlocked, imports, leftover, rollback: s.restore.rollbackTarget() };
   });
   const now = services.now();
 
@@ -52,13 +66,44 @@ export function DataBackupScreen() {
   }
 
   if (data.state !== 'ready') return <Screen>{null}</Screen>;
-  const { status, counts, blocked, undoBlocked, imports, rollback } = data.value;
+  const { status, counts, blocked, undoBlocked, imports, leftover, rollback } = data.value;
+  const leftoverView = leftover ? deleteLeftoverView(leftover) : null;
+
+  function finishDeleting() {
+    if (!leftoverView) return;
+    Alert.alert(`${leftoverView.action}?`, leftoverView.confirmMessage, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: leftoverView.action,
+        style: 'destructive',
+        onPress: () => {
+          setFinishing(true);
+          setFinishError(null);
+          void services.data
+            .finishLeftover()
+            .catch((e: unknown) => ({ ok: false as const, step: leftover?.step ?? ('database' as const), message: e instanceof Error ? e.message : String(e) }))
+            .then((r) => {
+              const view = finishLeftoverView(r);
+              if (view.relaunch) {
+                // Settings files may be gone: never write this phone's prefs back (as Delete).
+                prefs.clear();
+                relaunch();
+                return;
+              }
+              setFinishing(false);
+              setFinishError(view.line);
+              changed();
+            });
+        },
+      },
+    ]);
+  }
   const pausedImport = imports.find((p) => p.state === 'paused') ?? null;
   const undoRow = rollbackRowView(rollback, { nowMs: toMs(now.utc), tz: now.tz });
 
   function undoRestore() {
-    if (!undoRow) return;
-    Alert.alert(`${undoRow.title}?`, `${undoRow.subtitle}. Anything logged since then stays only in the data you switch away from, which is kept so you can switch again.`, [
+    if (!undoRow || rollback.last === null) return;
+    Alert.alert(`${undoRow.title}?`, rollbackConfirmMessage(undoRow, rollback.last.reason), [
       { text: 'Cancel', style: 'cancel' },
       {
         text: undoRow.title,
@@ -138,6 +183,15 @@ export function DataBackupScreen() {
       </Card>
 
       {status.manifestProblem ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={status.manifestProblem} /> : null}
+      {leftoverView ? (
+        <StatusLine
+          icon="exclamationmark.triangle"
+          tone="warning"
+          text={finishError ?? leftoverView.line}
+          action={<TextButton label={leftoverView.action} onPress={finishDeleting} disabled={finishing} />}
+        />
+      ) : null}
+      <BlockingCover visible={finishing} title="Deleting…" lines={[{ text: 'Coaching knowledge kept', done: true }]} />
 
       <SectionHeader title="Backups on this phone" />
       <Group>
@@ -213,8 +267,30 @@ export function DataBackupScreen() {
 
       <SectionHeader title="Export" />
       <Group>
-        <Row title="Export" subtitle="Not in this build yet" disabled />
+        <Row
+          title="Export"
+          icon="square.and.arrow.up"
+          subtitle="My data or Coaching knowledge only"
+          onPress={() => {
+            navigation.navigate('Export');
+          }}
+        />
       </Group>
+
+      <View style={{ gap: theme.space['8'], marginTop: theme.space['4'] }}>
+        <DangerTextButton
+          label="Delete my data (keep coaching knowledge)"
+          onPress={() => {
+            navigation.navigate('DeleteMyData');
+          }}
+        />
+        <DangerTextButton
+          label="Reset coaching knowledge"
+          onPress={() => {
+            navigation.navigate('ResetKnowledge');
+          }}
+        />
+      </View>
     </Screen>
   );
 }

@@ -54,8 +54,18 @@ export interface BackupFacts {
   locale?: string;
 }
 
+/**
+ * Whether a backup is of this phone's data. A `kept_for_undo` backup is of
+ * the copy kept for Undo (another, older database, review r5 B1): it never
+ * counts as the phone being backed up, so its digest is never compared with
+ * the phone's.
+ */
+export function backsUpThisPhone(record: BackupRecord): boolean {
+  return record.reason !== 'kept_for_undo';
+}
+
 function newest(files: readonly BackupRecord[]): BackupRecord | null {
-  return files.reduce<BackupRecord | null>((best, f) => (best === null || f.createdAtUtc > best.createdAtUtc ? f : best), null);
+  return files.filter(backsUpThisPhone).reduce<BackupRecord | null>((best, f) => (best === null || f.createdAtUtc > best.createdAtUtc ? f : best), null);
 }
 
 /**

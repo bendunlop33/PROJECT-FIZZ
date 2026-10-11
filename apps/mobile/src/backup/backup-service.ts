@@ -4,6 +4,7 @@ import { createBackup, sha256HexAsync, timeSlicer, type AppInfo, type Slicer, ty
 
 import {
   backupFileName,
+  emptyManifest,
   parseManifest,
   planRotation,
   serialiseManifest,
@@ -36,6 +37,8 @@ export interface BackupFileStore {
   write(name: string, text: string): Promise<void>;
   read(name: string): Promise<string | null>;
   remove(name: string): Promise<void>;
+  /** Every file name in the backup folder (Delete my data removes them all). */
+  list(): Promise<string[]>;
 }
 
 /** One small text file (the manifest). Writes must replace it atomically. */
@@ -78,10 +81,12 @@ export type BackupReason = BackupRecord['reason'];
 
 /**
  * Runs Ben started and is waiting on (`Back up now`, the backup before an
- * import): they start at once. Only background runs wait for the UI to be
- * idle (fix-backup review N4). `Save a copy to Files` is user-started too.
+ * import, the two before `Reset coaching knowledge`): they start at once.
+ * Only background runs wait for the UI to be idle (fix-backup review N4).
+ * `Save a copy to Files` is user-started too, and so is the backup after
+ * `Delete my data` (`wipeOnPhone`, which never waits).
  */
-const USER_STARTED: ReadonlySet<BackupReason> = new Set(['manual', 'before_import']);
+export const USER_STARTED: ReadonlySet<BackupReason> = new Set(['manual', 'before_import', 'before_reset', 'kept_for_undo', 'after_delete']);
 
 export type BackupRunResult = { ok: true; record: BackupRecord; deleted: string[] } | { ok: false; error: string };
 
@@ -182,11 +187,12 @@ export function createBackupService(deps: BackupServiceDeps) {
     throw new Error('no free backup file name');
   }
 
-  async function backUpNow(reason: BackupReason): Promise<BackupRunResult> {
+  async function backUpNow(reason: BackupReason, source: Store | undefined): Promise<BackupRunResult> {
     const at = deps.now();
     const loaded = await loadManifest();
     const { manifest } = loaded;
-    const kind: BackupRecord['kind'] = reason === 'manual' ? 'manual' : 'automatic';
+    // The copy kept for Undo (review r5 B1) is never rotated: it may be the only place some data is.
+    const kind: BackupRecord['kind'] = reason === 'manual' || reason === 'kept_for_undo' ? 'manual' : 'automatic';
     const attempt = (ok: boolean, error: string | null): BackupAttempt => ({ atUtc: at.utc, tz: at.tz, ok, error });
     let record: BackupRecord;
     let fileName: string;
@@ -197,7 +203,7 @@ export function createBackupService(deps: BackupServiceDeps) {
         manifest.onPhone.files.map((f) => f.fileName),
         async (n) => (await deps.files.read(n)) !== null,
       );
-      const store = deps.store();
+      const store = source ?? deps.store();
       const created = await createBackup(store, { at, app: deps.app, slice });
       const counts = await store.countRecords();
       const { sha256 } = created;
@@ -271,16 +277,87 @@ export function createBackupService(deps: BackupServiceDeps) {
   }
 
   const service = {
-    /** Write a backup into Fizz's container, then rotate automatic files. Queued; never throws. */
-    backUpOnPhone(reason: BackupReason): Promise<BackupRunResult> {
+    /**
+     * Write a backup into Fizz's container, then rotate automatic files. Queued; never throws.
+     * `source`: back up that store instead of the current one (the copy kept for Undo, review r5 B1).
+     */
+    backUpOnPhone(reason: BackupReason, opts: { source?: Store } = {}): Promise<BackupRunResult> {
       return track(() =>
         queued(async () => {
           try {
             if (deps.idle && !USER_STARTED.has(reason)) await deps.idle();
-            return await backUpNow(reason);
+            return await backUpNow(reason, opts.source);
           } catch (e) {
             return { ok: false, error: describeWriteError(e) } as const;
           }
+        }),
+      );
+    },
+
+    /**
+     * `Delete my data` (data-import-export §4.5 step 3; check 30): delete
+     * every backup file on this phone (they hold Ben's data), start the
+     * record again (copies, the last Files copy, trial run and reminder
+     * answers), then write one backup of what is left: coaching knowledge
+     * only. Queued behind any run in progress, so a backup that started
+     * before the switch is deleted too. Safe to repeat. Throws when a file
+     * is still there; a failed fresh backup is recorded, not thrown.
+     */
+    wipeOnPhone(): Promise<BackupRunResult> {
+      return track(() =>
+        queued(async () => {
+          const names = new Set(await deps.files.list());
+          const recorded = await deps.manifest.read().catch(() => null);
+          for (const f of parseManifest(recorded).manifest.onPhone.files) names.add(f.fileName);
+          for (const name of names) await deps.files.remove(name);
+          const left = (await deps.files.list()).filter((n) => names.has(n));
+          if (left.length > 0) throw new Error(`${String(left.length)} backup file(s) couldn’t be deleted`);
+          const fresh = emptyManifest();
+          await deps.manifest.write(serialiseManifest(fresh));
+          lastKnown = fresh;
+          manifestProblem = null;
+          damagedCopyKept = false;
+          notify();
+          try {
+            return await backUpNow('after_delete', undefined);
+          } catch (e) {
+            return { ok: false, error: describeWriteError(e) } as const;
+          }
+        }),
+      );
+    },
+
+    /**
+     * `Finish deleting` after Ben chose `Continue` on an unfinished delete
+     * (review r2 S2): delete every backup file on this phone except those
+     * recorded at or after `sinceUtc` (made from data logged since), and
+     * forget what the record says about before then. Writes no new backup.
+     * Refused when the record can't be read (new backups can't be told
+     * apart). Throws when a file is still there.
+     */
+    removeOnPhoneBefore(sinceUtc: string): Promise<void> {
+      return track(() =>
+        queued(async () => {
+          const { manifest, problem } = parseManifest(await deps.manifest.read());
+          if (problem !== null) throw new Error(problem.replace(/;.*$/, '.'));
+          const kept = manifest.onPhone.files.filter((f) => f.createdAtUtc >= sinceUtc);
+          const keep = new Set(kept.map((f) => f.fileName));
+          const names = new Set([...(await deps.files.list()), ...manifest.onPhone.files.map((f) => f.fileName)].filter((n) => !keep.has(n)));
+          for (const name of names) await deps.files.remove(name);
+          const left = (await deps.files.list()).filter((n) => names.has(n));
+          if (left.length > 0) throw new Error(`${String(left.length)} backup file(s) couldn’t be deleted`);
+          const since = (at: string | null) => (at !== null && at >= sinceUtc ? at : null);
+          const lastCopy = manifest.offPhone.lastCopy !== null && manifest.offPhone.lastCopy.atUtc >= sinceUtc ? manifest.offPhone.lastCopy : null;
+          const next: BackupManifest = {
+            ...manifest,
+            onPhone: { files: kept, lastAttempt: manifest.onPhone.lastAttempt !== null && manifest.onPhone.lastAttempt.atUtc >= sinceUtc ? manifest.onPhone.lastAttempt : null },
+            offPhone: { ...manifest.offPhone, lastCopy, reminderDismissedAtUtc: since(manifest.offPhone.reminderDismissedAtUtc) },
+            trialRunDoneAtUtc: since(manifest.trialRunDoneAtUtc),
+          };
+          await deps.manifest.write(serialiseManifest(next));
+          lastKnown = next;
+          manifestProblem = null;
+          notify();
         }),
       );
     },

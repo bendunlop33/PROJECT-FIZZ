@@ -450,3 +450,6 @@ export function formatReport(results: ProbeResults, meta: ReportMeta, nowMs: num
   );
   return lines.join('\n');
 }
+
+/** The capability probe's own database (never the workout database). Removed by Delete my data. */
+export const PROBE_DB_NAME = 'fizz-probe.db';

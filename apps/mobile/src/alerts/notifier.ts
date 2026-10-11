@@ -2,7 +2,7 @@ import * as Notifications from 'expo-notifications';
 import { AppState } from 'react-native';
 
 import { isWorkoutOnScreen, showRestAlertInForeground } from './presentation';
-import type { NotifierPort } from './rest-alerts';
+import { REST_ALERT_PREFIX, type NotifierPort } from './rest-alerts';
 
 /**
  * Phone binding for rest-end notifications (expo-notifications 57).
@@ -17,7 +17,7 @@ import type { NotifierPort } from './rest-alerts';
 Notifications.setNotificationHandler({
   handleNotification: (n) => {
     const show = showRestAlertInForeground({
-      isWorkoutAlert: n.request.identifier.startsWith('fizz.rest.'),
+      isWorkoutAlert: n.request.identifier.startsWith(REST_ALERT_PREFIX),
       appActive: AppState.currentState === 'active',
       workoutOnScreen: isWorkoutOnScreen(),
     });
@@ -36,6 +36,13 @@ export const expoNotifier: NotifierPort = {
   async cancel(identifier) {
     await Notifications.cancelScheduledNotificationAsync(identifier);
   },
+  async cancelAllWorkoutAlerts(keep) {
+    const workoutAlerts = async () => (await Notifications.getAllScheduledNotificationsAsync()).filter((n) => n.identifier.startsWith(REST_ALERT_PREFIX) && n.identifier !== keep);
+    for (const n of await workoutAlerts()) await Notifications.cancelScheduledNotificationAsync(n.identifier);
+    await clearDeliveredWorkoutAlerts(keep);
+    const left = await workoutAlerts();
+    if (left.length > 0) throw new Error(`${String(left.length)} scheduled alert(s) couldn’t be cancelled`);
+  },
 };
 
 export type AlertPermission = 'granted' | 'denied' | 'undetermined';
@@ -53,9 +60,9 @@ export async function requestAlertPermission(): Promise<AlertPermission> {
 }
 
 /** On return to the foreground, delivered workout alerts are stale: remove them (§4.3). */
-export async function clearDeliveredWorkoutAlerts(): Promise<void> {
+export async function clearDeliveredWorkoutAlerts(keep?: string): Promise<void> {
   const shown = await Notifications.getPresentedNotificationsAsync();
   for (const n of shown) {
-    if (n.request.identifier.startsWith('fizz.rest.')) await Notifications.dismissNotificationAsync(n.request.identifier);
+    if (n.request.identifier.startsWith(REST_ALERT_PREFIX) && n.request.identifier !== keep) await Notifications.dismissNotificationAsync(n.request.identifier);
   }
 }

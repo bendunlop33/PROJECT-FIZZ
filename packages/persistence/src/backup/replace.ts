@@ -170,3 +170,26 @@ export function replacesAnything(a: ReplaceAnalysis): boolean {
   const n = (c: ReplaceCounts | null) => (c === null ? 0 : c.workouts + c.otherRecords);
   return n(a.onlyOnPhone) + n(a.changedOnPhone) + n(a.keptForUndo) > 0;
 }
+
+/**
+ * What in a database kept for Undo isn't on this phone, so dropping that copy
+ * loses it (review r5 B1: Reset drops the copy too). Your data only.
+ * - `absent`: only records whose ID is gone. For a copy that is an earlier
+ *   state of this same data (kept by Reset or its Undo, which copy every
+ *   Your-data row), a different version is an older one, not a lost one.
+ * - `either`: also records whose content differs (a copy kept by a restore
+ *   is another history), as the restore preview counts it.
+ */
+export async function keptOnly(
+  input: {
+    current: { schemaVersion: number; tables: Tables };
+    kept: { schemaVersion: number; tables: Tables };
+    match: 'absent' | 'either';
+  },
+  slice: Slicer = noYield,
+): Promise<ReplaceCounts> {
+  const mode: CompareMode = input.current.schemaVersion === input.kept.schemaVersion ? 'content' : 'stamp';
+  const kept = await fingerprints(input.kept.tables, mode, slice);
+  const current = await fingerprints(input.current.tables, mode, slice);
+  return notIn(kept, [current], input.match);
+}

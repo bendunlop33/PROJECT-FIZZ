@@ -78,6 +78,9 @@ export function createRestoreService(deps: RestoreServiceDeps) {
     const a = await deps.activeWorkout().catch(() => null);
     if (!a) return null;
     const last = deps.manager.rollbackTarget.last;
+    // Undo (or redo) of a reset copies Your data into a new file (review r5 S1), so a set logged meanwhile
+    // would be lost: any unfinished workout blocks, as it blocks Reset (review r2 S3).
+    if (last?.reason === 'reset' || last?.reason === 'undo_reset') return { title: a.session.routineName ?? 'Workout', startedAtUtc: a.session.startedAt.utc, tz: a.session.startedAt.tz };
     const cameWithSwitch = last !== null && a.session.startedAt.utc <= last.atUtc && a.session.lastActivityAtUtc <= last.atUtc;
     if (cameWithSwitch) return null;
     return { title: a.session.routineName ?? 'Workout', startedAtUtc: a.session.startedAt.utc, tz: a.session.startedAt.tz };

@@ -1,8 +1,9 @@
 import { toMs } from '@fizz/domain';
-import type { BackupError, RestorePreview } from '@fizz/persistence';
+import type { BackupError, LastSwitch, RestorePreview } from '@fizz/persistence';
 
 import { formatShortDate, formatTime, formatWhen } from '../format/dates';
 import { formatCount, plural } from '../format/numbers';
+import type { BackupRecord } from './manifest';
 
 /**
  * Wording for Restore and Check a backup (data-import-export.md §2.3, §2.4,
@@ -159,6 +160,8 @@ export function describeBackupError(e: BackupError): string {
       return 'Your data changed since this preview, so nothing was restored. Check the updated preview and confirm again.';
     case 'nothing_to_roll_back':
       return 'There’s no earlier data to go back to.';
+    case 'kept_copy_at_risk':
+      return 'The copy kept for Undo holds data that isn’t on this phone. Nothing was reset.';
     case 'restore_failed':
       return `Restore didn’t finish: ${e.message.replace(/^Restore failed[;:]?\s*/i, '')} Your data is as it was.`;
   }
@@ -194,13 +197,30 @@ export function buildCheckResultView(
   };
 }
 
-/** `Undo last restore` row (§3.3). */
-export function rollbackRowView(target: { available: boolean; last: { atUtc: string; reason: 'restore' | 'rollback' } | null }, ctx: WhenContext): { title: string; subtitle: string } | null {
+/** `Undo last restore` / `Undo last reset` row (§3.3, §3.6). */
+export function rollbackRowView(target: { available: boolean; last: { atUtc: string; reason: LastSwitch['reason'] } | null }, ctx: WhenContext): { title: string; subtitle: string } | null {
   if (!target.available || target.last === null) return null;
   const when = formatWhen(toMs(target.last.atUtc), ctx.nowMs, ctx.tz, ctx.locale);
-  return target.last.reason === 'restore'
-    ? { title: 'Undo last restore', subtitle: `Brings back your data from before ${when}` }
-    : { title: 'Switch back to the restored backup', subtitle: `You undid a restore at ${when}` };
+  switch (target.last.reason) {
+    case 'restore':
+      return { title: 'Undo last restore', subtitle: `Brings back your data from before ${when}` };
+    case 'rollback':
+      return { title: 'Switch back to the restored backup', subtitle: `You undid a restore at ${when}` };
+    case 'reset':
+      return { title: 'Undo last reset', subtitle: `Brings back coaching knowledge from before ${when}` };
+    case 'undo_reset':
+      return { title: 'Switch back to the reset coaching knowledge', subtitle: `You undid a reset at ${when}` };
+  }
+}
+
+/**
+ * The `Undo last restore` / `Undo last reset` confirmation's message. Undo
+ * (or redo) of a reset changes coaching knowledge only (review r5 S1);
+ * undoing a restore swaps all data, so it says where anything since stays.
+ */
+export function rollbackConfirmMessage(row: { subtitle: string }, reason: LastSwitch['reason']): string {
+  if (reason === 'reset' || reason === 'undo_reset') return `${row.subtitle}. Your data isn’t changed.`;
+  return `${row.subtitle}. Anything logged since then stays only in the data you switch away from, which is kept so you can switch again.`;
 }
 
 /** The restore screen's steps, as far as leaving the screen is concerned. */
@@ -224,7 +244,7 @@ export function restoreBackAllowed(step: RestoreStepKind, fromWelcome: boolean):
 }
 
 /** Why an on-phone backup was made, for the choose list (§2.3 step 1). */
-export function backupReasonLabel(reason: 'workout_finished' | 'manual' | 'catch_up' | 'before_import' | 'after_import' | 'after_undo_import'): string {
+export function backupReasonLabel(reason: BackupRecord['reason']): string {
   switch (reason) {
     case 'manual':
       return 'Saved by you';
@@ -235,6 +255,12 @@ export function backupReasonLabel(reason: 'workout_finished' | 'manual' | 'catch
     // Copy unconfirmed by the designer (fix-backup review N3).
     case 'after_undo_import':
       return 'After undoing an import';
+    case 'after_delete':
+      return 'Coaching knowledge only';
+    case 'before_reset':
+      return 'Before Reset coaching knowledge';
+    case 'kept_for_undo':
+      return 'Copy kept for Undo, saved before Reset';
     case 'workout_finished':
     case 'catch_up':
       return 'After a workout';

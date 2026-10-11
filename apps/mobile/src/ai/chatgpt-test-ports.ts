@@ -12,28 +12,15 @@
 
 import { fetch as expoFetch } from 'expo/fetch';
 import * as Crypto from 'expo-crypto';
-import * as SecureStore from 'expo-secure-store';
 
-import type { AuthSessionOutcome, ChatGptVault, CryptoPort, FetchLike, ListenerLogEntry, LoopbackPort, SignInTestPorts } from '@fizz/providers';
+import type { AuthSessionOutcome, CryptoPort, FetchLike, ListenerLogEntry, LoopbackPort, SignInTestPorts } from '@fizz/providers';
 
 import LoopbackAuth, { type NativeListenerLogEntry } from '../../modules/loopback-auth';
 import { nowMs } from '../clock';
 import { newUuid } from '../device/runtime';
+import { keychainVault } from './keychain';
 
-const KEYCHAIN_OPTIONS: SecureStore.SecureStoreOptions = {
-  keychainService: 'fizz.chatgpt',
-  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-};
-const REGISTRATION_KEY = 'fizz.chatgpt.registration';
-const TOKENS_KEY = 'fizz.chatgpt.tokens';
-
-export const keychainVault: ChatGptVault = {
-  loadRegistration: () => SecureStore.getItemAsync(REGISTRATION_KEY, KEYCHAIN_OPTIONS),
-  saveRegistration: (s) => SecureStore.setItemAsync(REGISTRATION_KEY, s, KEYCHAIN_OPTIONS),
-  loadTokens: () => SecureStore.getItemAsync(TOKENS_KEY, KEYCHAIN_OPTIONS),
-  saveTokens: (s) => SecureStore.setItemAsync(TOKENS_KEY, s, KEYCHAIN_OPTIONS),
-  deleteTokens: () => SecureStore.deleteItemAsync(TOKENS_KEY, KEYCHAIN_OPTIONS),
-};
+export { keychainVault };
 
 const deviceCrypto: CryptoPort = {
   randomBytes: (count) => Crypto.getRandomBytes(count),
