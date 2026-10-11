@@ -7,6 +7,7 @@ import type { LibraryHistoryRow, LibraryRow, LibrarySort } from '@fizz/domain';
 import type { Routine } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
+import { popToTabs } from '../../navigation/actions';
 import type { LibraryToastParam, RootStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
@@ -236,7 +237,7 @@ export function WorkoutsScreen() {
                 label={LIBRARY_COPY_UI.restore}
                 tone="secondary"
                 onPress={() => {
-                  navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'Restore', params: { mode: 'restore' }, initial: false } });
+                  navigation.dispatch(popToTabs({ screen: 'Profile', params: { screen: 'Restore', params: { mode: 'restore' }, initial: false } }));
                 }}
               />
             </View>
@@ -321,7 +322,8 @@ export function WorkoutsScreen() {
             label={LIBRARY_COPY_UI.emptyWorkout}
             tone="secondary"
             onPress={() => {
-              navigation.navigate('Tabs', { screen: 'Today', params: { startEmpty: newUuid() } });
+              // Today's own start (gym, alerts question, check-in gate); one Tabs, never a second (actions.ts).
+              navigation.dispatch(popToTabs({ screen: 'Today', params: { startEmpty: newUuid() } }));
             }}
           />
         </View>
