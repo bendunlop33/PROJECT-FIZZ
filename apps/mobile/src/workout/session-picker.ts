@@ -1,7 +1,7 @@
 import { formatLastDone } from '@fizz/domain';
 import type { ZonedTimestamp } from '@fizz/schemas';
 
-import type { OverviewStartOf, SessionList, SessionPickerRow } from '../services/workout-services';
+import type { OverviewData, OverviewStartOf, OverviewTarget, SessionList, SessionPickerRow } from '../services/workout-services';
 
 /**
  * The session picker's view (session-picker.md §2, §4.5, §6): words and
@@ -22,6 +22,7 @@ export const SESSION_PICKER_COPY = {
   allSessions: 'All sessions',
   change: 'Change',
   changeSession: 'Change session',
+  switchFailed: 'Couldn’t load that session.',
   emptyWorkout: 'Empty workout',
   pastWorkouts: 'Past workouts',
   saveAsRoutine: 'Save as routine',
@@ -83,4 +84,18 @@ export function todaySessions(list: SessionList | null, opts: { includeUpNext: b
   if (list === null || (!hasChoice(list) && list.recommendedKey !== null)) return { rows: [], more: false };
   const pool = allRows(list).filter((r) => opts.includeUpNext || !r.recommended);
   return { rows: pool.slice(0, TODAY_SESSIONS_CAP), more: pool.length > TODAY_SESSIONS_CAP };
+}
+
+/**
+ * An in-place switch on the overview (§4.2, review r2 S1): read the picked
+ * session first, with the same gym and tapped check-in as the page (SP11),
+ * and show it only when it loads. A session that can't be shown here (its
+ * routine deleted, its source gone, or it can't be planned at this gym)
+ * leaves the current page up: Ben is never left on a dead page.
+ */
+export async function switchSession(ports: { load: (target: OverviewTarget) => Promise<OverviewData | null>; show: (target: OverviewTarget) => void }, next: OverviewTarget): Promise<'switched' | 'failed'> {
+  const page = await ports.load(next).catch(() => null);
+  if (page === null) return 'failed';
+  ports.show(next);
+  return 'switched';
 }

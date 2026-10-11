@@ -55,7 +55,7 @@ import {
   type RowCustomAction,
 } from '../../workout/overview-edits';
 import { NameSheet } from '../routines/NameSheet';
-import { isShownRow, SESSION_PICKER_COPY } from '../../workout/session-picker';
+import { isShownRow, SESSION_PICKER_COPY, switchSession } from '../../workout/session-picker';
 import { SessionPickerSheet } from './SessionPickerSheet';
 import { TargetWhyPanel } from './TargetWhyPanel';
 
@@ -148,6 +148,11 @@ export function WorkoutOverviewScreen() {
     return page;
   });
   const page = data.state === 'ready' ? data.value : null;
+  // True from a session switch's first read until its page is shown: row actions would name the new target with the old page (r2 N1).
+  const switching = useRef(false);
+  useEffect(() => {
+    switching.current = false;
+  }, [data]);
 
   // `DONE BY` moves at most once a minute (timing.timeLeftRefresh, OV16).
   useEffect(() => {
@@ -433,23 +438,46 @@ export function WorkoutOverviewScreen() {
       .then(setPickerList);
   }
 
-  /** Show another session in place (§4.2): no write and no navigation; its own today's edits come back with it (SP-D6). */
-  function switchTo(next: OverviewTarget) {
-    startOp.current = null;
-    setOpen(null);
-    setCard(null);
-    setSwap(null);
-    setReordering(false);
-    setStartError(null);
-    setTarget(next);
-    scrollRef.current?.scrollTo({ y: 0, animated: false });
-    reload();
+  /**
+   * Show another session in place (§4.2): no write and no navigation; its own
+   * today's edits come back with it (SP-D6). The new session is read first and
+   * the page switches only when it loads (review r2 S1): a session that can't
+   * be shown here leaves the current one up, with a short toast. Row actions
+   * wait until the new page is shown (r2 N1). Keeps the tapped check-in and
+   * the gym (SP11).
+   */
+  async function switchTo(next: OverviewTarget): Promise<boolean> {
+    switching.current = true;
+    const gymId = page?.view.gym?.id ?? (await services.yourData.currentGym().catch(() => null))?.id ?? null;
+    const done = await switchSession(
+      {
+        load: (t) => services.overview.load({ target: t, gymId, checkInId: tappedRef.current?.id ?? null }),
+        show: (t) => {
+          // Reset what belongs to the old page (start op, panel, cards, swap, reorder); keep the tapped check-in and the gym.
+          startOp.current = null;
+          setOpen(null);
+          setCard(null);
+          setSwap(null);
+          setReordering(false);
+          setStartError(null);
+          setTarget(t);
+          scrollRef.current?.scrollTo({ y: 0, animated: false });
+          reload();
+        },
+      },
+      next,
+    );
+    if (done === 'failed') {
+      switching.current = false;
+      setToast({ text: SESSION_PICKER_COPY.switchFailed });
+    }
+    return done === 'switched';
   }
 
   function pickSession(row: SessionPickerRow) {
     setPickerVisible(false);
     if (page !== null && isShownRow(row, page.startOf)) return;
-    switchTo(row.target);
+    void switchTo(row.target);
   }
 
   /** `Save as routine` → the name prompt → one routine from the source workout (idempotent on `opId`), then the page on it. Undo deletes it. */
@@ -461,16 +489,20 @@ export function WorkoutOverviewScreen() {
     if (!r.ok) return r.message;
     const saved = r.routine;
     saveAsAfter.arm(() => {
-      switchTo({ kind: 'routine', routineId: saved.id });
+      void switchTo({ kind: 'routine', routineId: saved.id });
       setToast({
         text: SESSION_PICKER_COPY.savedAsRoutine,
         action: 'Undo',
         onAction: () => {
           setToast(null);
           void services.routines.remove({ routineId: saved.id, expectedVersion: saved.version, opId: newUuid() }).then((u) => {
-            if (!u.ok) setToast({ text: u.message });
             changed();
-            switchTo(before);
+            // The routine is still there when the delete failed: stay on it (r2 N2).
+            if (!u.ok) {
+              setToast({ text: u.message });
+              return;
+            }
+            void switchTo(before);
           });
         },
       });
@@ -481,6 +513,7 @@ export function WorkoutOverviewScreen() {
   }
 
   async function showWhy(sessionExerciseId: string, name: string) {
+    if (switching.current) return;
     // The check-in the rows were planned with: tapped here, else the reused one (review S1).
     const explanation = await services.overview.explain({ target, gymId: page?.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? page?.planCheckIn?.id ?? null, sessionExerciseId }).catch(() => null);
     setWhy({ name, explanation });
@@ -493,7 +526,7 @@ export function WorkoutOverviewScreen() {
    * is refused and the page re-reads (rule 5). One tap at a time (merge N1).
    */
   async function tapCoach(r: OverviewData['view']['rows'][number]) {
-    if (!page || r.coach === null) return;
+    if (!page || r.coach === null || switching.current) return;
     const coach = r.coach;
     const record = page.coachTargets[coach.rowId];
     if (!record) return;
@@ -528,7 +561,7 @@ export function WorkoutOverviewScreen() {
    * it). A stale version re-reads the page (rule 5).
    */
   async function writeEdit(intent: string, call: (base: { target: typeof target; gymId: string | null; expectedDraftVersion: number | null; opId: string }) => Promise<DraftWrite>, version?: number | null): Promise<Extract<DraftWrite, { ok: true }> | null> {
-    if (!page) return null;
+    if (!page || switching.current) return null;
     const result = await editGuard.run(async () => {
       const base = { target, gymId: page.view.gym?.id ?? null, expectedDraftVersion: version === undefined ? (page.draft?.version ?? null) : version, opId: ops.of(intent) };
       const w = await call(base).catch(() => null);
@@ -577,7 +610,7 @@ export function WorkoutOverviewScreen() {
   }
 
   async function openSwap(slotKey: string) {
-    if (!page) return;
+    if (!page || switching.current) return;
     setSwap({ slotKey, sheet: null, loading: true });
     const sheet = await services.overview.swapCandidates({ target, gymId: page.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? page.planCheckIn?.id ?? null, slotKey }).catch(() => null);
     setSwap((cur) => (cur?.slotKey === slotKey ? { slotKey, sheet, loading: false } : cur));
@@ -750,6 +783,32 @@ export function WorkoutOverviewScreen() {
     </>
   );
 
+  // The picker, also reachable when the page can't load (session-picker §5, r2 S1): no ✓ then.
+  const pickerSheet = (
+    <SessionPickerSheet
+      visible={pickerVisible}
+      list={pickerList}
+      now={services.now()}
+      shown={page?.startOf ?? null}
+      onPick={pickSession}
+      onClose={() => {
+        setPickerVisible(false);
+      }}
+      onRetry={openPicker}
+      onEmptyWorkout={() => {
+        pickerAfter.arm(() => void startEmpty());
+        setPickerVisible(false);
+      }}
+      onPastWorkouts={() => {
+        pickerAfter.arm(() => {
+          navigation.navigate('PastWorkouts');
+        });
+        setPickerVisible(false);
+      }}
+      onDismissed={pickerAfter.dismissed}
+    />
+  );
+
   const shell = (body: React.ReactNode, bar: React.ReactNode = null) => (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top }} accessibilityViewIsModal onAccessibilityEscape={close}>
       {topBar}
@@ -779,8 +838,10 @@ export function WorkoutOverviewScreen() {
         </AppText>
         <View style={{ flexDirection: 'row', columnGap: theme.space['5'], flexWrap: 'wrap' }}>
           <TextButton label={OVERVIEW_COPY.tryAgain} onPress={reload} />
+          <TextButton label={SESSION_PICKER_COPY.changeSession} tone="secondary" onPress={openPicker} />
           <TextButton label={OVERVIEW_COPY.emptyWorkout} tone="secondary" onPress={() => void startEmpty()} />
         </View>
+        {pickerSheet}
       </View>,
     );
   }
@@ -1087,28 +1148,7 @@ export function WorkoutOverviewScreen() {
         </AppText>
         {why ? <TargetWhyPanel panel={why.explanation ? { setId: why.explanation.setId, status: 'ready', explanation: why.explanation } : { setId: '', status: 'failed' }} /> : null}
       </BottomCard>
-      <SessionPickerSheet
-        visible={pickerVisible}
-        list={pickerList}
-        now={services.now()}
-        shown={page.startOf}
-        onPick={pickSession}
-        onClose={() => {
-          setPickerVisible(false);
-        }}
-        onRetry={openPicker}
-        onEmptyWorkout={() => {
-          pickerAfter.arm(() => void startEmpty());
-          setPickerVisible(false);
-        }}
-        onPastWorkouts={() => {
-          pickerAfter.arm(() => {
-            navigation.navigate('PastWorkouts');
-          });
-          setPickerVisible(false);
-        }}
-        onDismissed={pickerAfter.dismissed}
-      />
+      {pickerSheet}
       {page.startOf.nextOf !== undefined ? (
         <NameSheet
           visible={saveAsVisible}

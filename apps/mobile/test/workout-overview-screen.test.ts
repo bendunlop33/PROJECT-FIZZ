@@ -339,4 +339,37 @@ describe('source checks', () => {
   it('Reduce Motion: the panel appears without the height animation', () => {
     expect(screen).toContain('if (!theme.a11y.reduceMotion) LayoutAnimation.configureNext');
   });
+
+  it('session-picker SP9/SP11 (r2 S1, S3): a switch reads the new session first, then resets the page state and keeps the check-in and gym', () => {
+    const body = screen.slice(screen.indexOf('async function switchTo('), screen.indexOf('function pickSession('));
+    // Loaded first through switchSession (tested on SQLite); only `show` changes the page.
+    expect(body).toContain('const done = await switchSession(');
+    expect(body).toContain('load: (t) => services.overview.load({ target: t, gymId, checkInId: tappedRef.current?.id ?? null }),');
+    const show = body.slice(body.indexOf('show: (t) => {'), body.indexOf('next,\n'));
+    for (const reset of ['startOp.current = null;', 'setOpen(null);', 'setCard(null);', 'setSwap(null);', 'setReordering(false);', 'setStartError(null);', 'setTarget(t);', 'reload();']) expect(show).toContain(reset);
+    // Kept: the tapped score and the gym are never touched by a switch.
+    expect(body).not.toMatch(/setTapped|tappedRef\.current =|gyms\.select|selectGym/);
+    expect(body).toContain('const gymId = page?.view.gym?.id ??');
+    // A failed read leaves the page up, with a toast; nothing was reset.
+    expect(body).toMatch(/if \(done === 'failed'\) \{\n\s*switching\.current = false;\n\s*setToast\(\{ text: SESSION_PICKER_COPY\.switchFailed \}\);/);
+    // Picking the shown row does nothing.
+    expect(screen).toContain('if (page !== null && isShownRow(row, page.startOf)) return;');
+  });
+
+  it('session-picker r2 S1: a page that can’t load still reaches the picker (Change session), so Ben is never stuck', () => {
+    const failed = screen.slice(screen.indexOf('if (!page) {\n    return shell('), screen.indexOf('const { view } = page;'));
+    expect(failed).toContain('OVERVIEW_COPY.loadFailed');
+    expect(failed).toContain('<TextButton label={SESSION_PICKER_COPY.changeSession} tone="secondary" onPress={openPicker} />');
+    expect(failed).toContain('{pickerSheet}');
+    expect(screen).toContain('shown={page?.startOf ?? null}');
+    expect(screen.match(/<SessionPickerSheet\b/g)).toHaveLength(1);
+  });
+
+  it('session-picker r2 N1/N2: row actions wait while a switch is loading; Undo of Save as routine switches back only when the delete worked', () => {
+    expect(screen).toContain('if (switching.current) return;');
+    expect(screen).toContain('if (!page || r.coach === null || switching.current) return;');
+    expect(screen).toContain('if (!page || switching.current) return null;');
+    expect(screen).toContain('if (!page || switching.current) return;');
+    expect(screen).toMatch(/if \(!u\.ok\) \{\n\s*setToast\(\{ text: u\.message \}\);\n\s*return;\n\s*\}\n\s*void switchTo\(before\);/);
+  });
 });

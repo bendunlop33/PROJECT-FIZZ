@@ -457,7 +457,7 @@ export function TodayScreen() {
                       <TextButton
                         label={SESSION_PICKER_COPY.change}
                         tone="secondary"
-                        accessibilityHint={SESSION_PICKER_COPY.changeSession}
+                        accessibilityLabel={SESSION_PICKER_COPY.changeSession}
                         onPress={() => {
                           setPickerVisible(true);
                         }}
