@@ -4,7 +4,7 @@
  * destructive actions (review S3). `How to` leads when the exercise has one
  * (ADR 0013), so the bottom rows stay put under the thumb either way.
  */
-export type ExerciseMenuAction = 'how_to' | 'add_set' | 'add_exercise' | 'delete_set' | 'skip_exercise';
+export type ExerciseMenuAction = 'how_to' | 'undo_coach' | 'add_set' | 'add_exercise' | 'delete_set' | 'skip_exercise';
 
 interface MenuItem {
   action: ExerciseMenuAction | 'cancel';
@@ -13,6 +13,8 @@ interface MenuItem {
 }
 
 const HOW_TO: MenuItem = { action: 'how_to', label: 'How to', destructive: false };
+/** While the focused set carries a coach change still pending (coach-adjustments §2.7). */
+const UNDO_COACH: MenuItem = { action: 'undo_coach', label: 'Undo coach change', destructive: false };
 const ITEMS: readonly MenuItem[] = [
   { action: 'add_set', label: 'Add set', destructive: false },
   { action: 'add_exercise', label: 'Add exercise', destructive: false },
@@ -31,8 +33,8 @@ export interface ExerciseMenu {
   actionAt: (index: number) => ExerciseMenuAction | null;
 }
 
-export function exerciseMenu(hasHowTo: boolean): ExerciseMenu {
-  const items = hasHowTo ? [HOW_TO, ...ITEMS] : [...ITEMS];
+export function exerciseMenu(hasHowTo: boolean, hasCoachChange = false): ExerciseMenu {
+  const items = [...(hasHowTo ? [HOW_TO] : []), ...(hasCoachChange ? [UNDO_COACH] : []), ...ITEMS];
   return {
     options: items.map((i) => i.label),
     destructiveButtonIndex: items.flatMap((item, i) => (item.destructive ? [i] : [])),

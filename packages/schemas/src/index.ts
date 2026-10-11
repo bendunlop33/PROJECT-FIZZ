@@ -8,3 +8,4 @@ export * from './checkin';
 export * from './commands';
 export * from './import';
 export * from './validate';
+export * from './coach';

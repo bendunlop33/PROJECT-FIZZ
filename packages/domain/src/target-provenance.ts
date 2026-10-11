@@ -2,6 +2,7 @@ import type {
   EquipmentInstance,
   ExerciseEquipmentKind,
   Load,
+  PlannedSnap,
   TargetBasis,
   TargetBasisSet,
   TargetProvenance,
@@ -217,6 +218,13 @@ export function startWarningNote(w: Extract<StartWarning, { kind: 'target_rounde
       return `No load target: ${eq?.name ?? 'This equipment'} can’t make any load as set up.`;
     case 'equipment_not_in_gym':
       return `No load target: ${was.toLowerCase()} was ${requested}, and this gym has nothing of that kind to check it on.`;
+    case 'lightest_is_harder':
+      // Rounded only toward easier (ADR 0019): the easiest load here is harder than asked, so there's no target.
+      return loadDirection(w.requested.convention) === 'assistance'
+        ? `No load target: ${was.toLowerCase()} was ${requested}, more assistance than this ${noun} gives.`
+        : `No load target: ${was.toLowerCase()} was ${requested}, lighter than this ${noun} makes.`;
+    case 'pain_flag':
+      return `No load target: ${was.toLowerCase()} was ${requested}, and a pain flag stops increases.`;
   }
 }
 
@@ -267,4 +275,55 @@ export function planTargetProvenance(input: PlanProvenanceInput): TargetProvenan
     basis: null,
     guardNotes: input.warning === null ? [] : [startWarningNote(input.warning, input.equipment, 'Plan')],
   });
+}
+
+/** Where a refitted target's load came from, as the equipment note says it. */
+function wasWord(source: TargetProvenance['source']): 'Plan' | 'Last time' | 'Target' {
+  switch (source) {
+    case 'plan':
+      return 'Plan';
+    case 'repeat':
+      return 'Last time';
+    case 'rule':
+    case 'coach':
+      return 'Target';
+  }
+}
+
+const sameLoadValue = (a: Load, b: Load): boolean => a.unit === b.unit && a.convention === b.convention && toScaled(a.value) === toScaled(b.value);
+
+/**
+ * The equipment note for a target fitted by a gym switch or `[Use changes
+ * today]` (`planned.snap`, ADR 0019), in `startWarningNote`'s wording. Null
+ * when the load is the intended one (exact or restored).
+ */
+export function refitNote(snap: PlannedSnap | undefined, load: Load | null, eq: EquipmentInstance | null, was: 'Plan' | 'Last time' | 'Target'): string | null {
+  if (snap === undefined || snap.intended === null) return null;
+  const requested = snap.intended;
+  if (snap.outcome === 'dropped') {
+    const reason = snap.reason ?? 'no_achievable_loads';
+    return startWarningNote({ kind: 'target_dropped', setTemplateId: '', requested, reason: reason === 'not_here' ? 'equipment_not_in_gym' : reason }, eq, was);
+  }
+  if (load === null) return null;
+  if (snap.painHeld) return `Kept at ${loadWord(load, eq)}: a pain flag stops increases. ${was} was ${loadWord(requested, eq)}.`;
+  if (snap.outcome === 'exact' || snap.outcome === 'restored') return null;
+  // `capped`: held at the easy end of the equipment (the most a bar makes; the least assistance a machine gives).
+  const bounded = snap.outcome === 'capped' ? (loadDirection(load.convention) === 'assistance' ? 'min' : 'max') : null;
+  return startWarningNote({ kind: 'target_rounded', setTemplateId: '', requested, planned: load, bounded, converted: snap.outcome === 'converted' }, eq, was);
+}
+
+/**
+ * `Why?` for a target a gym switch (or `[Use changes today]`, or `Add set`
+ * after a switch) fitted again: the new fit's note replaces the equipment
+ * notes made for the old equipment, and the step stays only while it still
+ * describes this load on this kind of equipment. Who set the target, its
+ * basis and the rule's reasons are kept. Absent stays absent (`Not recorded`).
+ */
+export function refitProvenance(p: TargetProvenance | undefined, planned: { load: Load | null; snap?: PlannedSnap | undefined }, eq: EquipmentInstance | null): TargetProvenance | undefined {
+  if (p === undefined) return undefined;
+  const note = refitNote(planned.snap, planned.load, eq, wasWord(p.source));
+  const keepStep = p.step !== undefined && planned.load !== null && sameLoadValue(p.step.to, planned.load) && p.step.equipmentKind === (eq?.kind ?? null);
+  const out: TargetProvenance = { ...p, guardNotes: note === null ? [] : [note] };
+  if (!keepStep) delete out.step;
+  return fitProvenance(out);
 }

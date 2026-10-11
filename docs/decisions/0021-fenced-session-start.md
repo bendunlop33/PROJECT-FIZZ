@@ -1,4 +1,4 @@
-# 0019: A fenced session start for the Workout overview
+# 0021: A fenced session start for the Workout overview
 
 **Status:** Proposed, 2026-10-11 (developer, from review [workout-overview.md](../reviews/workout-overview.md) S3). Ben to confirm. Built and tested on Linux (real SQLite through the node driver).
 
@@ -16,3 +16,5 @@ Running the whole planner inside one SQLite transaction would mean every reposit
 ## Consequences
 - A change that lands after the key check, at any point before the write, creates nothing. The page re-reads and Ben taps Start again, with the same opId.
 - When coach v1 stores D21 actions, they must join `PreviewKeyParts.coachActions` **and** the fence (a new fence set), or this guarantee won't cover them.
+
+**Numbering:** written as 0019 on the overview branch; main took 0019 (gym switch) and 0020 (coach v1), so this is 0021. Reviews `workout-overview.md`, `-r2` and `-r3` call it ADR 0019.

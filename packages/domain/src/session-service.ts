@@ -49,6 +49,8 @@ export interface StartRequest {
   at: ZonedTimestamp;
   /** Check-in outcome stored on the new session (same write). */
   checkIn?: SessionCheckIn | null;
+  /** GS3 step 2: the item an exercise last used at this gym (from history). */
+  lastUsedHere?: (exerciseId: string) => string | null;
 }
 
 const MAX_CONFLICT_RETRIES = 2;
@@ -97,12 +99,14 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       if (ex) exercises.set(ex.id, ex);
     }
     const gymEquipment = await repos.equipment.listByGym(req.gymId);
+    // The items a routine is pinned to, from any gym: one not here is mapped by its kind (gym-switch GS3).
     const routineEquipment = new Map<string, EquipmentInstance>();
     for (const rex of routine?.exercises ?? []) {
       if (rex.equipmentId === null || routineEquipment.has(rex.equipmentId)) continue;
       const eq = await repos.equipment.get(rex.equipmentId);
       if (eq) routineEquipment.set(eq.id, eq);
     }
+    const gym = await repos.gyms.get(req.gymId);
     const { aggregate, warnings } = startWorkout({
       opId: req.opId,
       owner,
@@ -114,6 +118,8 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       at: req.at,
       newId,
       checkIn: req.checkIn ?? null,
+      ...(gym ? { gymName: gym.name } : {}),
+      ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     });
     const saved = await trySave(() => repos.sessions.save(aggregate, null));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
@@ -167,6 +173,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       const e = await repos.exercises.get(ex.exerciseId);
       if (e) exercises.set(e.id, e);
     }
+    const gym = await repos.gyms.get(req.gymId);
     const out = startWorkoutFromSession({
       opId: req.opId,
       owner,
@@ -179,6 +186,8 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       checkIn: req.checkIn ?? null,
       ...(req.targets ? { targets: req.targets } : {}),
       ...(req.name !== undefined ? { name: req.name } : {}),
+      ...(gym ? { gymName: gym.name } : {}),
+      ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     });
     if (out.empty) return { ok: false, error: { code: 'nothing_to_repeat', message: 'That workout has no logged sets to repeat.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false, fits: out.fits };
@@ -225,6 +234,13 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     // Ben's other gyms: to find the same kind of equipment here when the routine's item is elsewhere.
     const knownEquipment = new Map<string, EquipmentInstance>();
     for (const g of await repos.gyms.listByOwner(req.ownerId)) for (const e of await repos.equipment.listByGym(g.id)) knownEquipment.set(e.id, e);
+    // The routine's own items too (as Start does), so a note names the item even when its gym isn't listed.
+    for (const rex of routine.exercises) {
+      if (rex.equipmentId === null || knownEquipment.has(rex.equipmentId)) continue;
+      const eq = await repos.equipment.get(rex.equipmentId);
+      if (eq) knownEquipment.set(eq.id, eq);
+    }
+    const gym = await repos.gyms.get(req.gymId);
     const out = planRoutineStart({
       opId: req.opId,
       owner,
@@ -237,6 +253,8 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       newId,
       checkIn: req.checkIn ?? null,
       ...(req.targets ? { targets: req.targets } : {}),
+      ...(gym ? { gymName: gym.name } : {}),
+      ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     });
     if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This routine has no exercises to start.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false, fits: out.fits };

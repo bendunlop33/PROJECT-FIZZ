@@ -75,6 +75,8 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     }
     // Rest alerts follow the recovered state: one alert for a running rest, none otherwise (flow §4.2).
     if (recovery && deps.restAlerts) void deps.restAlerts.reconcile(recovery.state, toMs(deps.now().utc));
+    // Coach turns cut off by a force-close become interrupted before any sheet opens (ADR 0020 §7).
+    await services.coach.recover().catch(() => 0);
     // Background work: never awaited by the launch. The integrity check reads
     // in small turns so a Log isn't held behind it (review S4). The catch-up
     // backup exports everything in one turn, so it waits while a workout is

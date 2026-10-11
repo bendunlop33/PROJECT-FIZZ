@@ -690,11 +690,13 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
           ? `No ${(missing ?? 'equipment for this').toLowerCase()} here`
           : dropped.reason === 'unit_not_convertible'
             ? `Nothing here takes ${dropped.requested.unit}`
-            : dropped.reason === 'easiest_too_heavy'
-              ? `Lightest here is above ${loadWord(dropped.requested)}`
+            : dropped.reason === 'lightest_is_harder'
+              ? dropped.requested.convention === 'assistance'
+                ? `Most assistance here is under ${formatNumber(dropped.requested.value)}${NBSP}${dropped.requested.unit}`
+                : `Lightest here is above ${loadWord(dropped.requested)}`
               : dropped.reason === 'no_achievable_loads'
                 ? 'No loads set up here'
-                : `Last time was ${loadWord(dropped.requested)}`;
+                : 'Different equipment here';
       panel.push({ key: 'gym', label: 'Gym', value: what, tone: 'warning' });
     }
     if (covering !== null) panel.push({ key: 'flag', label: 'Flag', value: flagText(covering.flag), tone: 'warning' });

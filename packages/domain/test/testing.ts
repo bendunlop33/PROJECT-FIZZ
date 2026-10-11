@@ -6,3 +6,4 @@
 export * from './fixtures';
 export * from './session-fixture';
 export * from './repository-contract';
+export * as hotelFixture from './gym-fixture';

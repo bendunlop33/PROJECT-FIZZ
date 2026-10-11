@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createSign, generateKeyPairSync, randomBytes, type KeyObject } from 'node:crypto';
 
 import type { ChatGptVault, CryptoPort, FetchInitLike, FetchLike, FetchResponseLike, ListenerLogEntry, LoopbackPort, AuthSessionOutcome } from '../src';
 import { base64UrlEncode, parseJsonObject, parseQuery, utf8Encode } from '../src';
@@ -76,9 +76,20 @@ export function sse(events: readonly Record<string, unknown>[]): string {
   return events.map((e) => `event: ${String(e.type)}\ndata: ${JSON.stringify(e)}\n\n`).join('');
 }
 
-export function makeJwt(claims: Record<string, unknown>): string {
+/** A test signing key (OpenSSL via node:crypto), published as the JWKS the fake discovery document points to. */
+const TEST_KEY = generateKeyPairSync('rsa', { modulusLength: 2048 });
+export const TEST_KID = 'test-key-1';
+export const TEST_JWKS_URL = 'https://auth.openai.com/.well-known/jwks.json';
+export const TEST_JWKS = { keys: [{ ...TEST_KEY.publicKey.export({ format: 'jwk' }), kid: TEST_KID, use: 'sig', alg: 'RS256' }] };
+/** Discovery as the fakes serve it: revocation and the JWKS URI. */
+export const TEST_DISCOVERY = { revocation_endpoint: 'https://auth.openai.com/api/accounts/oauth/revoke', jwks_uri: TEST_JWKS_URL };
+
+/** An RS256 JWT signed with the test key (or with `privateKey`, e.g. a stranger's key). */
+export function makeJwt(claims: Record<string, unknown>, opts: { kid?: string; alg?: string; privateKey?: KeyObject } = {}): string {
   const enc = (o: unknown) => base64UrlEncode(utf8Encode(JSON.stringify(o)));
-  return `${enc({ alg: 'RS256', typ: 'JWT' })}.${enc(claims)}.c2lnbmF0dXJl`;
+  const input = `${enc({ alg: opts.alg ?? 'RS256', typ: 'JWT', kid: opts.kid ?? TEST_KID })}.${enc(claims)}`;
+  const signature = createSign('RSA-SHA256').update(input).sign(opts.privateKey ?? TEST_KEY.privateKey);
+  return `${input}.${base64UrlEncode(new Uint8Array(signature))}`;
 }
 
 export class MemoryVault implements ChatGptVault {

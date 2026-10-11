@@ -18,6 +18,7 @@ import { isSetCountable, notUsedLine } from '../exclusions';
 import { stepText } from '../target-provenance';
 import { toMs } from '../time';
 import { lastComparableSession } from './active-view';
+import { equipmentOfRow } from './equipment-snapshot';
 
 /**
  * `explainTarget` (active-workout.md §2.12, §6): the `Why?` panel under a set
@@ -25,7 +26,8 @@ import { lastComparableSession } from './active-view';
  * (AW3), plus the pain flags on the movement and a check of whether the
  * basis sets were edited since. It runs no progression rule and no coach,
  * so it is the same offline as online. Every line is fixed app text filled
- * in by code; `Last time` and `Before flag` hold actual results.
+ * in by code, except a coach target's reason, shown in quotes as the
+ * coach's words; `Last time` and `Before flag` hold actual results.
  */
 
 export type WhyRowKey = 'set_by' | 'last_time' | 'reason' | 'equipment' | 'pain' | 'before_flag' | 'not_used';
@@ -164,6 +166,14 @@ function setByRow(p: TargetProvenance | undefined): WhyRow {
       return { key: 'set_by', label: 'Set by', lines: [`Your routine · ${p.routineName ?? 'Routine'}`], kind: 'app' };
     case 'repeat':
       return { key: 'set_by', label: 'Set by', lines: [after === null ? 'Repeat of a past workout' : `Repeat of ${after}`], kind: 'app' };
+    case 'coach':
+      // Today's change says when; a next-session target says which workout it followed.
+      return {
+        key: 'set_by',
+        label: 'Set by',
+        lines: [p.coach?.scope === 'next_session' && after !== null ? `Coach · after ${after}` : `Coach · ${dayMonthText(p.setAt.utc, p.setAt.tz)}`],
+        kind: 'app',
+      };
   }
 }
 
@@ -222,6 +232,11 @@ function reasonRow(p: TargetProvenance | undefined, planned: PlannedSet, ex: Ses
       return { key: 'reason', label: 'Reason', lines: [`${p.routineName ?? 'Your routine'} sets ${planTargetText(planned, p.requestedLoad, ex, eq)}.`], kind: 'app' };
     case 'repeat':
       return { key: 'reason', label: 'Reason', lines: ['What you did last time is today’s target. No progression is applied.'], kind: 'app' };
+    case 'coach': {
+      // The coach's own words, in quotes (never shown as app text); none given, no row.
+      const reason = p.coach?.reason ?? null;
+      return reason === null || reason.trim() === '' ? null : { key: 'reason', label: 'Reason', lines: [`“${reason.trim()}”`], kind: 'app' };
+    }
   }
 }
 
@@ -288,7 +303,8 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
   if (planned.load === null && planned.reps === null && planned.durationS === null) return null;
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
   if (!ex) return null;
-  const eq = ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
+  // The version of the item this row uses (a gym switch can append a newer one, GS-S3).
+  const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
   const p = planned.provenance;
   const tz = state.session.startedAt.tz;
 

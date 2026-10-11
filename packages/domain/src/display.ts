@@ -145,7 +145,7 @@ export function targetText(planned: PlannedSet, o: { convention: LoadConvention;
   if (planned.durationS !== null) parts.push(formatDuration(planned.durationS));
   if (parts.length === 0) return null;
   // Rule 3: a suggested target says where it came from.
-  const word = planned.source === 'built_in_rule' ? 'Target (built-in rule)' : planned.source === 'repeat' ? 'Target (as last time)' : 'Target';
+  const word = planned.source === 'built_in_rule' ? 'Target (built-in rule)' : planned.source === 'repeat' ? 'Target (as last time)' : planned.source === 'coach' ? 'Coach target' : 'Target';
   return `${word} ${parts.join(' · ')}`;
 }
 
@@ -156,9 +156,10 @@ export function targetShort(planned: PlannedSet, o: { convention: LoadConvention
   const reps = planned.reps === null ? null : repRangeText(planned.reps);
   const dur = planned.durationS === null ? null : formatDuration(planned.durationS);
   const right = reps ?? dur;
-  if (load !== null && right !== null) return `Target ${load}${TIMES}${right}`;
-  if (load !== null) return `Target ${load}`;
-  return `Target ${right ?? ''}${reps !== null ? `${NBSP}reps` : ''}`;
+  const word = planned.source === 'coach' ? 'Coach target' : 'Target';
+  if (load !== null && right !== null) return `${word} ${load}${TIMES}${right}`;
+  if (load !== null) return `${word} ${load}`;
+  return `${word} ${right ?? ''}${reps !== null ? `${NBSP}reps` : ''}`;
 }
 
 export const SET_TYPE_WORD: Record<SetType, string> = {

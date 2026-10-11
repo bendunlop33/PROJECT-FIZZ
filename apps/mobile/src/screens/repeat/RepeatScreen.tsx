@@ -12,6 +12,7 @@ import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Card, PrimaryButton, Screen, StatusLine, TextButton } from '../../ui';
+import { GymChip, GymSwitcherSheet } from '../workout/GymSwitch';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { NameSheet } from '../routines/NameSheet';
 
@@ -20,6 +21,9 @@ import { NameSheet } from '../routines/NameSheet';
  * at today's gym, the notes for anything rounded or missing, and `Start
  * workout` (through the same check-in gate as Today). Saves nothing until
  * Start; the start is idempotent by one opId per screen.
+ *
+ * `Checked for [gym ▾]` (gym-switch GS10): choosing another gym re-checks
+ * the preview with the same fit Start uses, and starts nothing.
  */
 export function RepeatScreen() {
   const theme = useTheme();
@@ -30,6 +34,9 @@ export function RepeatScreen() {
   const startOp = useRef(newUuid());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The gym chosen on the chip; null = today's gym. */
+  const [chosenGymId, setChosenGymId] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const alertsAsk = useStartAlertsAsk();
   // `Save as routine` (routines.md §4.6, premium-feel §2.6): one opId per sheet opening.
   const [saveOpen, setSaveOpen] = useState(false);
@@ -37,9 +44,14 @@ export function RepeatScreen() {
   const [saveAfter] = useState(() => createAfterDismiss());
   const [saved, setSaved] = useState<{ id: string; name: string; version: number } | null>(null);
   const [data, reload] = useScreenData(async (s) => {
-    const gym = await s.yourData.currentGym();
+    const gyms = await s.yourData.gyms();
+    const gym = gyms.find((g) => g.id === chosenGymId) ?? (await s.yourData.currentGym());
     const [preview, active, routines] = await Promise.all([gym ? s.repeat.preview(sessionId, gym.id) : Promise.resolve(null), s.sessions.active(), s.routines.list().catch(() => [])]);
-    return { gym, preview, active, savedAs: routines.find((r) => r.createdFromSessionId === sessionId) ?? null };
+    const choices = await Promise.all(
+      gyms.map(async (g) => ({ id: g.id, name: g.name, current: g.id === gym?.id, items: (await s.yourData.equipment(g.id).catch(() => [])).filter((e) => e.availability === 'available').length })),
+    );
+    const sourceGymName = preview?.sourceGymId ? (gyms.find((g) => g.id === preview.sourceGymId)?.name ?? null) : null;
+    return { gym, preview, active, choices, sourceGymName, savedAs: routines.find((r) => r.createdFromSessionId === sessionId) ?? null };
   });
   if (data.state === 'loading') return <Screen>{null}</Screen>;
   if (data.state === 'error' || data.value.preview === null || data.value.gym === null) {
@@ -55,7 +67,7 @@ export function RepeatScreen() {
       </Screen>
     );
   }
-  const { gym, preview, active, savedAs } = data.value;
+  const { gym, preview, active, choices, sourceGymName, savedAs } = data.value;
 
   async function saveRoutine(name: string): Promise<string | null> {
     const r = await services.routines.saveFromSession({ sessionId, name, opId: saveOp.current });
@@ -125,8 +137,17 @@ export function RepeatScreen() {
     >
       <View style={{ gap: theme.space['1'] }}>
         <AppText variant="title2" accessibilityRole="header">{`Repeat ${formatShortDate(toMs(preview.sourceStartedAtUtc), preview.tz)}`}</AppText>
+        {sourceGymName !== null ? <AppText variant="callout" color="text.secondary">{`Done at ${sourceGymName}`}</AppText> : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], flexWrap: 'wrap' }}>
+          <AppText variant="callout">Checked for</AppText>
+          <GymChip
+            gymName={gym.name}
+            onPress={() => {
+              setSheetOpen(true);
+            }}
+          />
+        </View>
         <AppText variant="callout">{`Targets are what you did on ${day}. Nothing is marked done. Progression isn’t applied.`}</AppText>
-        {preview.sourceGymId !== gym.id ? <AppText variant="callout" color="text.secondary">{`Checked for ${gym.name}.`}</AppText> : null}
       </View>
       <AppText variant="label" color="text.secondary">
         All values are targets.
@@ -140,7 +161,7 @@ export function RepeatScreen() {
         </Card>
       ))}
       {preview.notes.map((n) => (
-        <StatusLine key={`${n.exerciseName}:${n.text}`} icon="info.circle" tone="info" text={`${n.exerciseName}: ${n.text}`} />
+        <StatusLine key={`${n.exerciseName}:${n.text}`} icon={n.tone === 'warning' ? 'exclamationmark.triangle' : 'info.circle'} tone={n.tone} text={`${n.exerciseName}: ${n.text}`} />
       ))}
       {preview.notCopied.length > 0 ? (
         <AppText variant="callout" color="text.secondary">
@@ -179,6 +200,23 @@ export function RepeatScreen() {
         </View>
       ) : null}
       {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
+      <GymSwitcherSheet
+        visible={sheetOpen}
+        gyms={choices}
+        onChoose={(g) => {
+          setSheetOpen(false);
+          if (g.id === gym.id) return;
+          // Re-check only: nothing is started or saved (GS10).
+          setChosenGymId(g.id);
+          // A start at another gym is another operation: a retry of a failed start at the
+          // old gym must not return that gym's workout (review N4).
+          startOp.current = newUuid();
+          reload();
+        }}
+        onClose={() => {
+          setSheetOpen(false);
+        }}
+      />
       {alertsAsk.sheet}
       <NameSheet
         visible={saveOpen}

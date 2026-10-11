@@ -5,6 +5,10 @@ import type { EquipmentInstance, Exercise, Load, LoadConvention, ProgressionRule
 import {
   buildActiveSetView,
   buildAddExerciseCommand,
+  buildGymSwitchProposal,
+  changeGymCommand,
+  currentGymEquipment,
+  equipmentOfRow,
   buildTodayView,
   calculateNextTargets,
   createMemoryRepositories,
@@ -840,7 +844,52 @@ describe('(g) Repeat at a gym without the equipment never keeps an impossible lo
     expect(out.aggregate.sets[0]?.planned.load).toEqual(kg(20, 'per_hand'));
   });
 
-  it.todo(
-    'mid-workout gym switch re-snaps every pending load to the new gym as a proposal (GE7). TODO(competitor-landscape.md opportunity 6): not built yet; when setActiveGym lands, run expectNoImpossibleLoad on the switched session here instead of duplicating its fix',
-  );
+  it('mid-workout gym switch re-fits every pending load to the new gym (GE7; competitor-landscape opportunity 6, ADR 0019)', () => {
+    const r = routine(plan.map(([ex, eq, load], i) => routineExercise(1560 + i, { exerciseId: ex.id, equipmentId: eq.id, order: i, setTemplates: [template(15600 + i * 10, { targetLoad: load }), template(15601 + i * 10, { targetLoad: load })] })));
+    let s = startWorkout({ opId: 'mid', owner: profile(), gymId: GYM, gymName: 'Main', routine: r, exercises: catalogue, gymEquipment: MAIN_GYM, at: at(0), newId: idGen(157_000) }).aggregate;
+    // One set of each exercise done at the main gym before the switch.
+    let t = 10;
+    for (const ex of s.exercises) {
+      const first = s.sets.filter((x) => x.sessionExerciseId === ex.id).sort((a, b) => a.index - b.index)[0];
+      if (!first) continue;
+      s = apply(s, logCmd(first.id, values(first.planned.load, 8), t));
+      t += 60;
+    }
+    const OTHER = id(1590);
+    let checked = 0;
+    for (const [n, g] of GYMS.entries()) {
+      // A retired main gym is an equipment update at the same gym (newer versions of the same items).
+      const same = g.equipment.some((e) => MAIN_GYM.some((m) => m.id === e.id));
+      const gymId = same ? GYM : OTHER;
+      const equipment = g.equipment.map((e) => (same ? { ...e, version: e.version + 1 } : { ...e, gymId }));
+      const p = buildGymSwitchProposal({
+        aggregate: s,
+        mode: same ? 'equipment_update' : 'gym_switch',
+        gym: { id: gymId, name: g.name, equipment },
+        gymNames: { [GYM]: 'Main', [OTHER]: g.name },
+        exercises: catalogue,
+        painFlagged: new Set(),
+        ownerUnit: 'kg',
+        newId: idGen(158_000 + n * 100),
+      });
+      const after = expectOk(reduceSession(s, changeGymCommand(p, `switch-${g.name}`, at(t + 10)))).state;
+      // Rule 2: logged sets are never touched; rule 4: no pending load the new gym can't make.
+      for (const d of s.sets.filter((x) => x.status === 'completed')) expect(after.sets.find((x) => x.id === d.id), g.name).toEqual(d);
+      for (const x of after.sets.filter((y) => y.status === 'pending')) {
+        const row = after.exercises.find((e) => e.id === x.sessionExerciseId);
+        const eq = row ? equipmentOfRow(after.session.equipmentSnapshot, row) : null;
+        if (x.planned.load === null || x.planned.load.convention === 'bodyweight') continue;
+        expect(eq, `${g.name}: ${row?.exerciseName ?? ''} keeps a ${formatLoad(x.planned.load)} target with no equipment here`).not.toBeNull();
+        if (eq) {
+          expect(eq.availability, `${g.name}: ${eq.name}`).toBe('available');
+          expect(currentGymEquipment(after.session).some((c) => c.id === eq.id && c.version === eq.version), `${g.name}: ${eq.name} is this gym's`).toBe(true);
+          expectPossibleTarget(x.planned.load, eq, `${g.name}: ${row?.exerciseName ?? ''}`);
+          checked += 1;
+        }
+        // Reps are kept whatever happens to the load (GS4).
+        expect(x.planned.reps).not.toBeNull();
+      }
+    }
+    expect(checked, 'some pending loads were re-fitted and checked').toBeGreaterThan(0);
+  });
 });
