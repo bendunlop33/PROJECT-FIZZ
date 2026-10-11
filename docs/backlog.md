@@ -116,7 +116,8 @@ Partly built items are marked *(partly)*, with what exists. Sources are under `d
 |---|---|---|---|
 | Swap an exercise mid-workout (applies at once with Undo). Today it's only possible before Start | M | Ben (B3) | design/active-workout.md §4.4; exercise-library EL4 |
 | Undo for delete set, skip exercise and corrections (these only confirm today) | M | Ben (copy D4) | ADR 0003; minimal-copy-audit D4 |
-| Timed exercises (planks, hangs, carries) with a work timer and an "Auto-save timed sets" setting. *(partly: domain commands only; the picker hides timed exercises)* | M | nothing | active-workout §2.7; ADR 0010 |
+| Timed exercises (planks, hangs, carries) with a work timer. *(built on claude/gaps: picker, Start/Stop, `Log 0:45` without the timer, a `Time` notification at 0 when locked; needs a device check)* | M | nothing | active-workout §2.7; ADR 0010 |
+| "Auto-save timed sets" setting (save the planned time at 0 with Undo), and the spoken `Time.` cue | S | Audio-session module (cue) | active-workout §2.7 |
 | Distance sets (sled push, carries), so the sled-push guide can be reached | M | nothing | ADR 0011; exercise-library §8.2 |
 | Supersets during the workout: create them, A1/A2 rounds, rest at the end of a round. *(partly: domain grouping, bracket on the overview)* | M | After the routine editor | active-workout §2.6 |
 | In-workout "All" overview table (FitNotes style) | L | nothing | active-workout §2.4 |

@@ -262,7 +262,8 @@ While the work timer runs or is paused, Finish, Delete set and Skip exercise (fo
 - Timed exercises are in the exercise picker (they were hidden). The set card has a `Time` field (seconds, ±5 s, from 0:05) instead of reps. Before Start, the time in the field is what the timer runs (else the target, else 0:30); the primary reads `Start 0:45`.
 - Before Start, a `Log 0:45` text button under the fields logs the time in the field without running the timer (timed on the gym clock, or Start forgotten; review gaps S2). `Start` stays the primary.
 - While the timer runs, the field is replaced by the countdown (`Work 0:38`) and the primary reads `Stop`. At 0 there is one haptic while the app is on screen and the planned time fills the field; the primary becomes `Log 0:45`. A Stop leaves the time worked (`Log 0:38`).
-- Not built yet: the `Time.` spoken cue (needs the audio-session module), a notification or Live Activity at 0 while the phone is locked (the deadline is stored, so a relaunch catches up), and the opt-in `Auto-save timed sets` setting.
+- At 0 while the app is in the background or the phone is locked, the workout's one local notification fires: `Time` / `Plank · 0:45` (the same identifier as the rest alert, which a work timer replaces; review gaps S3). Needs a device check like the rest alert.
+- Not built yet: the `Time.` spoken cue (needs the audio-session module), a Live Activity for the work timer, and the opt-in `Auto-save timed sets` setting (backlog §4.1).
 - Next-time targets: the built-in rule has no rule for timed or distance sets, so an added timed exercise starts with one set prefilled from last time (`Add set` copies it). No progression is suggested for them.
 
 ### 2.8 Paused
