@@ -10,6 +10,7 @@
  */
 
 import {
+  asksForMoreSets,
   buildCoachContext,
   createAdjustExecutor,
   createNextTargetsExecutor,
@@ -247,7 +248,7 @@ export function createCoachService(deps: CoachServiceDeps) {
   async function askedForMoreSets(threadId: string | null): Promise<boolean> {
     if (threadId === null) return false;
     const msgs = await coachStore().listMessages(threadId).catch(() => []);
-    return msgs.some((m) => m.body.role === 'ben' && m.body.input.kind === 'words' && /\b(more|extra|another|add (a|one))\b.{0,20}\b(sets?|volume)\b/i.test(m.body.input.text));
+    return msgs.some((m) => m.body.role === 'ben' && m.body.input.kind === 'words' && asksForMoreSets(m.body.input.text));
   }
 
   interface SendRequest {

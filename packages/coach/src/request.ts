@@ -587,3 +587,23 @@ export function requestHas(r: BenRequest | null, kind: BenRequestKind): boolean 
 export function isStructuralRequest(r: BenRequest | null): boolean {
   return requestHas(r, 'structural');
 }
+
+const MORE_SETS = /\b(?:more|extra|another|add (?:a|one|an))\b.{0,20}\b(?:sets?|volume)\b/;
+
+/**
+ * Did Ben ask for more sets or volume (D1: +1 set next session only when he
+ * asked)? His own words only, clause by clause; a negated ask ("I don't want
+ * any more sets", "no extra sets please") is not one (review S7).
+ */
+export function asksForMoreSets(text: string): boolean {
+  const clauses = text
+    .toLowerCase()
+    .replace(/[’]/g, "'")
+    .split(/[.!?;,]+|\b(?:but|though|although)\b/);
+  return clauses.some((c) => {
+    const m = MORE_SETS.exec(c);
+    if (m === null) return false;
+    const before = c.slice(0, m.index).trim().split(/\s+/).slice(-6).join(' ');
+    return !NEGATORS.test(before) && !/\b(?:any|enough|too many)\b/.test(`${before} ${m[0]}`) && !/^\s*no\b/.test(c);
+  });
+}

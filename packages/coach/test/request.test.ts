@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chipRequest, classifyBenRequest, isStructuralRequest, requestHas } from '../src/request';
+import { asksForMoreSets, chipRequest, classifyBenRequest, isStructuralRequest, requestHas } from '../src/request';
 
 describe('classifyBenRequest (the ben_request gate; review S3)', () => {
   it.each([
@@ -453,5 +453,14 @@ describe('review r5 S1: clear requests and the rule 3 signals in words', () => {
 
   it('a hold opens no tool by itself (next-session targets are written only in the summary turn)', () => {
     expect(classifyBenRequest('Same weight next time')).toEqual({ source: 'words', kinds: ['hold'] });
+  });
+});
+
+describe('asksForMoreSets (D1; review S7)', () => {
+  it.each(['Can I have more sets next time?', 'Add a set to bench', 'I want extra volume on rows', 'Give me another set', 'Legs felt fine, more sets please'])('an ask: %s', (t) => {
+    expect(asksForMoreSets(t)).toBe(true);
+  });
+  it.each(['I don’t want any more sets', 'no extra sets please', 'Not another set, I’m done', 'Never add a set to squats', 'That was enough volume', 'too many sets today', 'No more sets on bench'])('not an ask: %s', (t) => {
+    expect(asksForMoreSets(t)).toBe(false);
   });
 });
