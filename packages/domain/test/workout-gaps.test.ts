@@ -6,7 +6,9 @@ import {
   buildSwapExerciseCommand,
   isRemovable,
   midSwapSlot,
+  notCopiedText,
   reduceSession,
+  startWorkoutFromSession,
   swapPainCarry,
   valuesText,
   type SwapPlan,
@@ -373,6 +375,25 @@ describe('distance sets (ADR 0011)', () => {
     expect(v.primary).toMatchObject({ kind: 'enter', field: 'distance', label: 'Enter distance' });
     s = apply(s, { type: 'save_draft', at: at(8), setId: sled?.id ?? '', values: values(kg(0, 'added'), null, { distanceM: 25 }) });
     expect(view(s, 9).focus?.distance).toMatchObject({ value: 25, down: { enabled: true, value: 20 } });
+  });
+});
+
+describe('Repeat with a distance exercise (review gaps S4)', () => {
+  it('a sled push is listed as not copied, never dropped silently; the rest is copied', () => {
+    let s = startFixture().state;
+    s = apply(s, buildAddExerciseCommand({ opId: 'add-sled', owner: profile(), exercise: SLED, equipmentId: null, at: at(5), newId: idGen(61_000) }));
+    const [sled] = setsFor(s, SLED.id);
+    const [w] = setsFor(s, BENCH);
+    s = apply(s, logCmd(w?.id ?? '', values(kg(60), 10), 10));
+    s = apply(s, logCmd(sled?.id ?? '', values(kg(40, 'added'), null, { distanceM: 20 }), 30));
+    for (const ex of s.exercises) if (s.sets.some((x) => x.sessionExerciseId === ex.id && x.status === 'pending')) s = apply(s, { type: 'skip_exercise', at: at(40), opId: `skip-${ex.id}`, sessionExerciseId: ex.id });
+    s = apply(s, { type: 'finish', at: at(90), opId: 'fin', expectedVersion: s.session.version, endedAt: null });
+    const out = startWorkoutFromSession({ opId: 'rep-sled', owner: profile(), gymId: s.session.gymId ?? '', source: s, exercises: new Map([[SLED.id, SLED]]), gymEquipment: s.session.equipmentSnapshot, at: at(86_400), newId: idGen(62_000) });
+    expect(out.notCopied).toContainEqual({ kind: 'distance', exerciseName: 'Sled push', sets: 1 });
+    expect(out.aggregate.exercises.map((e) => e.exerciseName)).toEqual(['Bench press']);
+    expect(notCopiedText(out.notCopied)).toContain('1 distance set (Sled push)');
+    expect(notCopiedText([{ kind: 'skipped', exerciseName: 'Cable fly', skipped: 2 }])).toBe('Not copied: 2 skipped sets (Cable fly)');
+    expect(notCopiedText([])).toBeNull();
   });
 });
 

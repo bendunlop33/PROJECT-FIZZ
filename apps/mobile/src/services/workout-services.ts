@@ -138,6 +138,7 @@ import {
   SESSION_PICKER_DECISIONS,
   type SessionType,
   type SessionTypeKind,
+  type NotCopied,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type {
@@ -311,7 +312,7 @@ export interface RepeatPreview {
   title: string;
   exercises: { exerciseName: string; equipmentName: string | null; line: string }[];
   notes: { exerciseName: string; text: string; tone: 'info' | 'warning' }[];
-  notCopied: { exerciseName: string; skipped: number }[];
+  notCopied: NotCopied[];
   sourceGymId: string | null;
   sourceStartedAtUtc: string;
   tz: string;

@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useRef, useState } from 'react';
 import { View } from 'react-native';
 
-import { scoreText, toMs } from '@fizz/domain';
+import { notCopiedText, scoreText, toMs } from '@fizz/domain';
 
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
 import { newUuid } from '../../device/runtime';
@@ -163,9 +163,9 @@ export function RepeatScreen() {
       {preview.notes.map((n) => (
         <StatusLine key={`${n.exerciseName}:${n.text}`} icon={n.tone === 'warning' ? 'exclamationmark.triangle' : 'info.circle'} tone={n.tone} text={`${n.exerciseName}: ${n.text}`} />
       ))}
-      {preview.notCopied.length > 0 ? (
+      {notCopiedText(preview.notCopied) !== null ? (
         <AppText variant="callout" color="text.secondary">
-          {`Not copied: ${preview.notCopied.map((n) => `${String(n.skipped)} skipped ${n.skipped === 1 ? 'set' : 'sets'} (${n.exerciseName})`).join(', ')}`}
+          {notCopiedText(preview.notCopied)}
         </AppText>
       ) : null}
       {saved ? (
