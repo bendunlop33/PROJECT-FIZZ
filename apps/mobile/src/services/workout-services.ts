@@ -751,6 +751,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return withCoachTargets(builtIn, rows, source, { flaggedExerciseIds: new Set(flags.map((f) => f.exerciseId)), painToday: unspecifiedPain(today).active });
   }
 
+  /**
+   * Before a start from a finished workout: note which workout it starts
+   * from, so the coach's targets for that source count as used while the new
+   * workout exists and isn't discarded (D21; review S2, S3). Never blocks
+   * the start: if the note can't be saved, the targets just stay unused.
+   */
+  async function noteStartFrom(ownerId: string, sourceSessionId: string, opId: string): Promise<void> {
+    await ctx
+      .store()
+      .repos.coach.noteStartFrom(ownerId, sourceSessionId, opId, ctx.now().utc)
+      .catch(() => undefined);
+  }
+
   /** The built-in rule's next targets only (playbook 7-F): the comparison and the fallback for the coach's. */
   async function builtInNextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
     const out = new Map<string, { setType: SetType; planned: PlannedSet }[]>();
@@ -831,12 +844,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * `today`: the check-in for the workout being started (pain holds loads).
    * Targets that can't be worked out leave the routine's own templates.
    */
-  async function routineStart(p: UserProfile, req: { routineId: string; gymId: string; opId: string; preview: boolean; checkIn?: SessionCheckIn | null; today?: CheckIn | null }) {
+  async function routineStart(p: UserProfile, req: { routineId: string; gymId: string; opId: string; preview: boolean; checkIn?: SessionCheckIn | null; today?: CheckIn | null; noteSource?: boolean }) {
     const routine = await repos().routines.get(req.routineId);
     const ref = routine ? (await finishedRefs(p.id)).find((f) => isFromRoutine(f, routine)) ?? null : null;
     const source = ref ? await repos().sessions.get(ref.sessionId).catch(() => null) : null;
     const targets = source ? await nextTargetsOf(p, source, req.today ?? null).catch(() => null) : null;
     const lastUsedHere = routine ? await lastUsedFor(p.id, routine.exercises.map((e) => e.exerciseId), req.gymId) : undefined;
+    if (req.noteSource === true && ref !== null && !req.preview) await noteStartFrom(p.id, ref.sessionId, req.opId);
     const r = await domain().startRoutine({
       ownerId: p.id,
       gymId: req.gymId,
@@ -898,13 +912,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (req.routineOf) {
         // A routine (premium-feel §2.6): its structure, with next targets from its last workout, fitted to this gym.
         const today = checkIn?.kind === 'answered' ? await repos().checkIns.get(checkIn.checkInId) : null;
-        const { r, targetsFailed, ref } = await routineStart(p, { routineId: req.routineOf, gymId: req.gymId, opId: req.opId, preview: false, checkIn, today });
+        const { r, targetsFailed } = await routineStart(p, { routineId: req.routineOf, gymId: req.gymId, opId: req.opId, preview: false, checkIn, today, noteSource: true });
         if (!r.ok) {
           const e = r.error;
           if (e.code === 'nothing_to_start') return { ok: false, error: { code: 'not_found', message: e.message } };
           return { ok: false, error: e };
         }
-        if (!r.duplicate && ref !== null) void ctx.store().repos.coach.markNextTargetsUsed(p.id, ref.sessionId, r.aggregate.session.id, ctx.now().utc).catch(() => 0);
         const notice = targetsFailed && !r.duplicate ? 'Using saved targets.' : null;
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate, ...(notice !== null ? { notice } : {}) };
       }
@@ -918,14 +931,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         // No derived name (`Push`) is stored as if Ben chose it; titles are worked out when shown (review S3).
         // Same history mapping as Today's preview, so Start gives what the card showed (gym-switch GS3).
         const lastUsedHere = await lastUsedFor(p.id, source.exercises.map((e) => e.exerciseId), req.gymId);
+        await noteStartFrom(p.id, source.session.id, req.opId);
         const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.nextOf, targets: targets ?? new Map(), name: storedName(source) ?? GENERIC_WORKOUT_NAME, lastUsedHere });
         if (!r.ok) {
           const e = r.error;
           if (e.code === 'nothing_to_repeat' || e.code === 'imported_not_repeatable') return { ok: false, error: { code: 'not_found', message: e.message } };
           return { ok: false, error: e };
         }
-        // The coach's next targets for this source are used now: their Undo buttons go (D21).
-        if (!r.duplicate) void ctx.store().repos.coach.markNextTargetsUsed(p.id, source.session.id, r.aggregate.session.id, ctx.now().utc).catch(() => 0);
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate, ...(targets === null && !r.duplicate ? { notice: TARGETS_UNAVAILABLE } : {}) };
       }
       if (req.repeatOf) {

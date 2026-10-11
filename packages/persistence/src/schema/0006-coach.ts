@@ -23,8 +23,15 @@
  *   exercise for the next workout from a finished one (D21). One row per
  *   source workout and exercise; status changes are versioned, never deleted.
  *
- * Offers (CA4) are kept in memory per workout in v1; structural proposals
- * are not built yet.
+ * - `next_target_uses` (review S2, S3): a workout started from a finished
+ *   one, by the start's opId, written just before the start. A source's
+ *   targets count as used only while that start's session exists and isn't
+ *   discarded, so a discarded start gives them back and an unrelated workout
+ *   never uses them up.
+ * - `coach_offers` (CA4, review S6): offers shown during a workout, at most
+ *   one per exercise row and trigger kind, so a relaunch doesn't offer again.
+ *
+ * Structural proposals are not built yet.
  */
 export const MIGRATION_0006 = `
 CREATE TABLE coach_threads (
@@ -121,4 +128,23 @@ CREATE TABLE next_session_targets (
 CREATE UNIQUE INDEX next_session_targets_one ON next_session_targets (owner_id, source_session_id, exercise_id);
 CREATE INDEX next_session_targets_action ON next_session_targets (action_id);
 CREATE TRIGGER next_session_targets_no_delete BEFORE DELETE ON next_session_targets BEGIN SELECT RAISE(ABORT, 'next-session targets are never deleted'); END;
+
+CREATE TABLE next_target_uses (
+  owner_id TEXT NOT NULL,
+  start_op_id TEXT NOT NULL,
+  source_session_id TEXT NOT NULL,
+  created_at_utc TEXT NOT NULL,
+  PRIMARY KEY (owner_id, start_op_id)
+) STRICT;
+CREATE INDEX next_target_uses_source ON next_target_uses (owner_id, source_session_id);
+
+CREATE TABLE coach_offers (
+  owner_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  session_exercise_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  at_version INTEGER NOT NULL CHECK (at_version >= 1),
+  created_at_utc TEXT NOT NULL,
+  PRIMARY KEY (session_id, session_exercise_id, kind)
+) STRICT;
 `;

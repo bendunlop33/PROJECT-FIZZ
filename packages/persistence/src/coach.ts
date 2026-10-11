@@ -17,7 +17,6 @@ import {
   type Memory,
   type NextSessionTargetRecord,
   type PainFlag,
-  type SessionAggregate,
   type PlaybookCandidate,
 } from '@fizz/schemas';
 import { reduceSession } from '@fizz/domain';
@@ -178,11 +177,23 @@ class Rollback extends Error {
   }
 }
 
-/** Every write after a workout ended: has any workout started since? (CA10: then its next targets are stale.) */
-async function startedSince(tx: SqlExecutor, ownerId: string, source: SessionAggregate): Promise<boolean> {
-  const after = source.session.endedAt?.utc ?? source.session.startedAt.utc;
-  const row = await tx.getFirst("SELECT id FROM sessions WHERE owner_id = ? AND id != ? AND started_at_utc > ? AND status IN ('active', 'finished') LIMIT 1", [ownerId, source.session.id, after]);
-  return row !== null;
+/**
+ * The workout started from `source`, if any (CA10; review S2, S3): a start
+ * noted in `next_target_uses` whose session exists and isn't discarded. An
+ * unrelated workout never counts, and a discarded start gives the source's
+ * targets back.
+ */
+async function startedFrom(q: SqlExecutor, ownerId: string, sourceSessionId: string): Promise<string | null> {
+  const row = await q.getFirst<{ id: string }>(
+    "SELECT s.id AS id FROM next_target_uses u JOIN sessions s ON s.owner_id = u.owner_id AND s.start_operation_id = u.start_op_id WHERE u.owner_id = ? AND u.source_session_id = ? AND s.id != ? AND s.status IN ('active', 'finished') ORDER BY s.started_at_utc LIMIT 1",
+    [ownerId, sourceSessionId, sourceSessionId],
+  );
+  return row?.id ?? null;
+}
+
+/** A row as read: `usedBySessionId` is the live workout started from its source, worked out at read time. */
+function withUse(row: NextSessionTargetRecord, usedBy: string | null): NextSessionTargetRecord {
+  return row.usedBySessionId === usedBy ? row : { ...row, usedBySessionId: usedBy };
 }
 
 /** Statuses a next-session target row may move between by Ben's tap. */
@@ -382,7 +393,7 @@ export class SqliteCoachStore {
       case 'next_session_targets': {
         const source = await readAggregate(tx, write.action.detail.kind === 'set_next_session_targets' ? write.action.detail.sourceSessionId : '');
         if (source === null || source.session.ownerId !== ownerId) throw new Rollback('missing');
-        if (source.session.version !== write.sourceVersion || source.session.status !== 'finished' || (await startedSince(tx, ownerId, source))) throw new Rollback('stale_version');
+        if (source.session.version !== write.sourceVersion || source.session.status !== 'finished' || (await startedFrom(tx, ownerId, source.session.id)) !== null) throw new Rollback('stale_version');
         for (const row of write.rows) {
           if (row.ownerId !== ownerId) throw new Error('Next-target owner differs from the store owner');
           const current = await getDoc(tx, NEXT_TARGET_SPEC, row.id);
@@ -513,7 +524,7 @@ export class SqliteCoachStore {
         const rows = await listDocuments(tx, NEXT_TARGET_SPEC, 'action_id = ?', [target.actionId]);
         let undone = 0;
         for (const row of rows) {
-          if (row.ownerId !== ownerId || row.usedBySessionId !== null) continue;
+          if (row.ownerId !== ownerId || (await startedFrom(tx, ownerId, row.sourceSessionId)) !== null) continue;
           if (row.status !== 'saved' && row.status !== 'applied') continue;
           await saveDocumentIn(tx, NEXT_TARGET_SPEC, { ...row, status: row.status === 'saved' ? ('undone' as const) : ('proposed' as const), version: row.version + 1, updatedAtUtc: atUtc }, row.version);
           undone += 1;
@@ -530,11 +541,19 @@ export class SqliteCoachStore {
 
   /** The rows for one finished workout (the Summary's `Next time`, `nextTargetsOf`). */
   listNextTargets(ownerId: string, sourceSessionId: string): Promise<NextSessionTargetRecord[]> {
-    return this.db.read((q) => listDocuments(q, NEXT_TARGET_SPEC, 'owner_id = ? AND source_session_id = ?', [ownerId, sourceSessionId]));
+    return this.db.read(async (q) => {
+      const rows = await listDocuments(q, NEXT_TARGET_SPEC, 'owner_id = ? AND source_session_id = ?', [ownerId, sourceSessionId]);
+      if (rows.length === 0) return rows;
+      const usedBy = await startedFrom(q, ownerId, sourceSessionId);
+      return rows.map((r) => withUse(r, usedBy));
+    });
   }
 
   getNextTarget(id: string): Promise<NextSessionTargetRecord | null> {
-    return this.db.read((q) => getDoc(q, NEXT_TARGET_SPEC, id));
+    return this.db.read(async (q) => {
+      const row = await getDoc(q, NEXT_TARGET_SPEC, id);
+      return row === null ? null : withUse(row, await startedFrom(q, row.ownerId, row.sourceSessionId));
+    });
   }
 
   /**
@@ -548,29 +567,50 @@ export class SqliteCoachStore {
       const prior = await actionByOp(tx, ownerId, input.record.opId);
       const row = await getDoc(tx, NEXT_TARGET_SPEC, input.rowId);
       if (row === null || row.ownerId !== ownerId) return { status: 'not_possible', reason: 'missing' };
-      if (prior !== null) return { status: 'replayed', row };
-      if (row.usedBySessionId !== null) return { status: 'not_possible', reason: 'used' };
+      const usedBy = await startedFrom(tx, ownerId, row.sourceSessionId);
+      if (prior !== null) return { status: 'replayed', row: withUse(row, usedBy) };
+      // Used only by a workout started from this source that still exists (review S2, S3).
+      if (usedBy !== null) return { status: 'not_possible', reason: 'used' };
       if (row.version !== input.expectedVersion || !NEXT_TARGET_MOVES[row.status].includes(input.status)) return { status: 'not_possible', reason: 'changed_since' };
       const source = await readAggregate(tx, row.sourceSessionId);
-      if (source === null || (await startedSince(tx, ownerId, source))) return { status: 'not_possible', reason: 'used' };
-      const next = { ...row, status: input.status, version: row.version + 1, updatedAtUtc: input.record.createdAt.utc };
+      if (source === null) return { status: 'not_possible', reason: 'missing' };
+      const next = { ...row, status: input.status, usedBySessionId: null, version: row.version + 1, updatedAtUtc: input.record.createdAt.utc };
       await saveDocumentIn(tx, NEXT_TARGET_SPEC, next, row.version);
       await insertAction(tx, ownerId, input.record);
       return { status: 'written', row: next };
     });
   }
 
-  /** A workout was started from `sourceSessionId` with these targets: they are used and their buttons go. */
-  markNextTargetsUsed(ownerId: string, sourceSessionId: string, usedBySessionId: string, atUtc: string): Promise<number> {
+  /**
+   * Note that the workout with this start opId is being started from
+   * `sourceSessionId`, before the start is written (review S2, S3). The
+   * source's targets count as used only while that session exists and isn't
+   * discarded, so a force-close before the start, a failed start or a
+   * discard leaves them unused. Idempotent on the opId.
+   */
+  noteStartFrom(ownerId: string, sourceSessionId: string, startOpId: string, atUtc: string): Promise<void> {
     return this.db.write(async (tx) => {
-      const rows = await listDocuments(tx, NEXT_TARGET_SPEC, 'owner_id = ? AND source_session_id = ?', [ownerId, sourceSessionId]);
-      let n = 0;
-      for (const row of rows) {
-        if (row.usedBySessionId !== null) continue;
-        await saveDocumentIn(tx, NEXT_TARGET_SPEC, { ...row, usedBySessionId, version: row.version + 1, updatedAtUtc: atUtc }, row.version);
-        n += 1;
-      }
-      return n;
+      await tx.run('INSERT OR IGNORE INTO next_target_uses (owner_id, start_op_id, source_session_id, created_at_utc) VALUES (?, ?, ?, ?)', [ownerId, startOpId, sourceSessionId, atUtc]);
+    });
+  }
+
+  // ---------- Offers (CA4) ----------
+
+  /** Offers shown during one workout (CA4: once per exercise row and kind; survives a relaunch, review S6). */
+  listOffers(sessionId: string): Promise<{ sessionExerciseId: string; kind: string; atVersion: number }[]> {
+    return this.db.read(async (q) =>
+      (await q.getAll<{ session_exercise_id: string; kind: string; at_version: number }>('SELECT session_exercise_id, kind, at_version FROM coach_offers WHERE session_id = ? ORDER BY created_at_utc, session_exercise_id, kind', [sessionId])).map((r) => ({
+        sessionExerciseId: r.session_exercise_id,
+        kind: r.kind,
+        atVersion: r.at_version,
+      })),
+    );
+  }
+
+  /** Record an offer as shown; a later one for the same row and kind (after an adjustment) replaces it. */
+  recordOffer(ownerId: string, input: { sessionId: string; sessionExerciseId: string; kind: string; atVersion: number; atUtc: string }): Promise<void> {
+    return this.db.write(async (tx) => {
+      await tx.run('INSERT OR REPLACE INTO coach_offers (owner_id, session_id, session_exercise_id, kind, at_version, created_at_utc) VALUES (?, ?, ?, ?, ?, ?)', [ownerId, input.sessionId, input.sessionExerciseId, input.kind, input.atVersion, input.atUtc]);
     });
   }
 

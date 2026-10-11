@@ -12,7 +12,7 @@ import { memoryDriver } from './helpers';
  * numbered 5, the migrator would treat this database as current and the
  * first `Ask` would fail on a missing table.
  */
-const COACH_TABLES = ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets'];
+const COACH_TABLES = ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers'];
 
 async function copyIntoSchema5(from: SqlDriver, to: SqlDriver): Promise<void> {
   await migrate(to, MIGRATIONS, 5);

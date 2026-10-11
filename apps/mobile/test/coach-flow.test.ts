@@ -273,4 +273,69 @@ describe('C8: Summary next-session targets (D21) and routines', () => {
     const view = nextTimeView({ title: 'Workout', builtIn: summary?.nextTime ?? null, coachRows: [], availability: await s.coach.availability(), reviewing: false });
     expect(view?.rows.every((r) => r.tag === 'Built-in rule (coach not connected)')).toBe(true);
   });
+
+  async function savedBenchTarget(s: Awaited<ReturnType<Harness['launch']>>['services'], gymId: string) {
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }] }]);
+    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: `save-${first}` });
+    if (!saved.ok) throw new Error(saved.message);
+    model = new StepModel([
+      (req) => {
+        const w = yourData(req).workout;
+        return call('set_next_session_targets', { sourceSessionId: w.sessionId, sourceVersion: w.version, targets: [{ exerciseId: w.exercises[0]?.exerciseId, target: { load: { value: 57.5, unit: 'kg', convention: 'total' }, reps: null }, sets: null, reason: 'Heavy.' }] });
+      },
+      () => reply('Ok.'),
+    ]);
+    return { first, routineId: saved.routine.id };
+  }
+
+  it('an unrelated workout doesn’t use the targets up: a late summary answer is saved, and Undo still works (review S2)', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { first } = await savedBenchTarget(s, gymId);
+    // Before the summary answers, Ben does an empty workout (not from Push A).
+    h.clockMs += 3_600_000;
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 40, reps: 10 }] }]);
+    const turn = await s.coach.runSummaryTurn(first);
+    expect(turn?.status).toBe('completed');
+    const [row] = await s.coach.nextTargets(first);
+    expect(row).toMatchObject({ status: 'saved', usedBySessionId: null });
+    if (!row) throw new Error('no row');
+    expect(await s.coach.tapNextTarget(row, 'undo', 'tap-undo-s2')).toMatchObject({ status: 'written', row: { status: 'undone' } });
+  });
+
+  it('a discarded start gives the coach’s targets back; a restart plans them again (review S3)', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { first, routineId } = await savedBenchTarget(s, gymId);
+    await s.coach.runSummaryTurn(first);
+    h.clockMs += 86_400_000;
+    const a = await s.workout.start({ gymId, opId: 'start-a', checkIn: null, routineOf: routineId });
+    if (!a.ok) throw new Error(a.error.message);
+    expect(a.aggregate.sets.filter((x) => x.setType !== 'warmup').every((x) => x.planned.source === 'coach' && x.planned.load?.value === 57.5)).toBe(true);
+    expect((await s.coach.nextTargets(first))[0]?.usedBySessionId).toBe(a.aggregate.session.id);
+    const d = await s.workout.dispatch(a.aggregate.session.id, { type: 'discard', at: h.now(), opId: 'discard-a', expectedVersion: a.aggregate.session.version, confirmedLoggedSets: 0 });
+    expect(d.ok).toBe(true);
+    // Unused again: Undo is back, and a restart plans the coach's target, not the built-in rule's.
+    expect((await s.coach.nextTargets(first))[0]?.usedBySessionId).toBeNull();
+    const b = await s.workout.start({ gymId, opId: 'start-b', checkIn: null, routineOf: routineId });
+    if (!b.ok) throw new Error(b.error.message);
+    expect(b.aggregate.sets.filter((x) => x.setType !== 'warmup').every((x) => x.planned.source === 'coach' && x.planned.load?.value === 57.5)).toBe(true);
+    expect((await s.coach.nextTargets(first))[0]?.usedBySessionId).toBe(b.aggregate.session.id);
+  });
+
+  it('a start noted but never written (refused, or cut off by a force-close) leaves the targets unused (review S3)', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { first, routineId } = await savedBenchTarget(s, gymId);
+    await s.coach.runSummaryTurn(first);
+    h.clockMs += 86_400_000;
+    // An empty workout is open, so the routine start is noted and then refused.
+    const open = await s.workout.start({ gymId, opId: 'start-empty', checkIn: null });
+    expect(open.ok).toBe(true);
+    const refused = await s.workout.start({ gymId, opId: 'start-refused', checkIn: null, routineOf: routineId });
+    expect(refused.ok).toBe(false);
+    await h.forceClose();
+    const { services: again } = await h.launch();
+    expect((await again.coach.nextTargets(first))[0]).toMatchObject({ status: 'saved', usedBySessionId: null });
+  });
 });

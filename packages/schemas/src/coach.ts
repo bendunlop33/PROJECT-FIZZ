@@ -545,7 +545,9 @@ export type PlaybookCandidate = z.infer<typeof PlaybookCandidateSchema>;
  * - `applied`: a bigger change Ben applied.
  * - `not_applied`: Ben tapped Not now.
  * A row is only used while the source workout is unchanged (`sourceVersion`)
- * and until a workout is started from it (`usedBySessionId`).
+ * and until a workout is started from it. `usedBySessionId` is worked out
+ * when the row is read: the workout started from this source that exists
+ * and isn't discarded (review S2, S3); null while there is none.
  */
 export const NextSessionTargetRecordSchema = RecordMetaSchema.extend({
   sourceSessionId: IdSchema,
