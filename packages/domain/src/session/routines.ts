@@ -314,9 +314,8 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
     ...(input.checkIn !== undefined ? { checkIn: input.checkIn } : {}),
   });
   const notes = routineStartNotes(out.snap);
-  for (const w of out.warnings) {
-    if (w.kind === 'exercise_missing') notes.push({ exerciseName: 'Exercise', text: 'An exercise in this routine is no longer in your list, so it was left out.', tone: 'warning' });
-  }
+  const missing = out.warnings.filter((w) => w.kind === 'exercise_missing').length;
+  if (missing > 0) notes.push({ exerciseName: 'Exercise', text: `${String(missing)} ${missing === 1 ? 'exercise' : 'exercises'} left out (not in your list)`, tone: 'warning' });
   const exerciseOf = new Map(out.aggregate.exercises.map((e) => [e.id, e.exerciseId]));
   const equipmentOfSlot = new Map(out.snap.slots.map((s) => [s.slotId, s.equipment]));
   const slotOfTemplate = new Map(resolved.flatMap((rex) => rex.setTemplates.map((t) => [t.id, rex.id] as const)));

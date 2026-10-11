@@ -115,6 +115,16 @@ describe('Routine Start uses GS3 like Start, Repeat and the switch (one rule)', 
   });
 });
 
+describe('Routine Start with exercises no longer in the list (minimal-copy review S4)', () => {
+  it('says once, briefly, how many were left out', () => {
+    const exs = new Map([...EXERCISES].filter(([k]) => k !== INCLINE && k !== LATERAL));
+    const out = startAt(MAIN, MAIN_EQ, { exercises: exs });
+    expect(out.notes.filter((n) => n.text.includes('left out'))).toEqual([{ exerciseName: 'Exercise', text: '2 exercises left out (not in your list)', tone: 'warning' }]);
+    const one = startAt(MAIN, MAIN_EQ, { exercises: new Map([...EXERCISES].filter(([k]) => k !== LATERAL)) });
+    expect(one.notes.filter((n) => n.text.includes('left out')).map((n) => n.text)).toEqual(['1 exercise left out (not in your list)']);
+  });
+});
+
 describe('Routine Start on an assisted machine (N1)', () => {
   const PULL = id(851);
   const exs = new Map([[PULL, exercise(851, 'Assisted pull-up', { compatibleEquipment: ['assisted_stack'], defaultLoadConvention: 'assistance' })]]);

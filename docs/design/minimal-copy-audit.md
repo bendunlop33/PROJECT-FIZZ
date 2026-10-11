@@ -72,7 +72,7 @@ Already short (no change): `In progress · started 14:05`, `2 of 12 sets done`, 
 | C8 | :601 | `Change check-in` lead `Changing it never changes your sets or next-time targets.` | *(none)* | Delete |
 | C9 | :28, :345 and `services/workout-services.ts:151` | `Check-in wasn't saved.` / `Check-in wasn't saved. Your workout started as normal.` / `…can start as normal.` | `Check-in not saved` (all three) | Shorten |
 | C10 | :402 | toast `No workout started. Your check-in is saved.` | `Check-in saved · no workout` | Shorten |
-| C11 | `domain/checkin.ts:182` | `Check-in saved. Coach offline, so today's plan is unchanged.` | `wifi.slash` + `Coach offline` | Word/icon |
+| C11 | `domain/checkin.ts:182` | `Check-in saved. Coach offline, so today's plan is unchanged.` | `wifi.slash` + `Coach offline` | Word/icon. Not on screen yet: `evaluateCheckInOffer` (the whole check-in offer, path B′) has no consumer in `apps/` (review S4). Render it with `wifi.slash` when the offer is wired |
 
 Fine: `How are you feeling today?`, `1 = rough`, `5 = great` (scale anchors), `What's up?`, `Note (optional)`, `Where? (optional)`, `Which movements hurt?` + `ⓘ` (`Flagged movements don't go up until you clear the flag.` sits behind it), `Rest today?`, `Pain noted for Bench press`, `Check-in saved · 3 of 5`, `A workout is already in progress. Resume it from Today.` (:312, actionable).
 

@@ -43,7 +43,7 @@ export type EquipmentSave =
   | { ok: false; reason: 'stale'; message: string; latest: EquipmentInstance | null }
   | { ok: false; reason: 'failed'; message: string };
 
-const FAILED = 'Couldn’t save this. Your changes are still here.';
+const FAILED = 'Couldn’t save. Try again.';
 
 /** Content that matters for "is this save a repeat?" (not version or timestamps). */
 function content(eq: EquipmentInstance): string {
