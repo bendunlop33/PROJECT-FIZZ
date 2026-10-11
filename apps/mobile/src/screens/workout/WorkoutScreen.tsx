@@ -51,7 +51,7 @@ import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu } from '../../workout/exercise-menu';
 import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
-import { newerWorkoutData } from '../../workout/load-order';
+import { newerWorkoutData, withCommandResult } from '../../workout/load-order';
 import { FinishSheet } from './FinishSheet';
 import { GymChip, GymPartDivider, GymReviewSheet, GymSwitchCard, GymSwitcherSheet, SnapNote } from './GymSwitch';
 import { afterSwitchRefused, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
@@ -422,7 +422,7 @@ export function WorkoutScreen() {
     if (tickedFor.current === key) return;
     tickedFor.current = key;
     void services.workout.dispatch(data.aggregate.session.id, { type: 'tick', at: services.now() }).then((r) => {
-      if (r.ok) setData((cur) => (cur === 'loading' || cur === null ? cur : newerWorkoutData(cur, { ...cur, aggregate: r.aggregate })));
+      if (r.ok) setData((cur) => (cur === 'loading' || cur === null ? cur : withCommandResult(cur, cur, r.aggregate)));
     });
   }, [now, data, services]);
 
@@ -494,7 +494,7 @@ export function WorkoutScreen() {
   async function run(command: SessionCommand): Promise<CommandOutcome> {
     const r = await services.workout.dispatch(session.id, command);
     if (r.ok) {
-      setData((cur) => newerWorkoutData(cur, { ...loaded, aggregate: r.aggregate }));
+      setData((cur) => withCommandResult(cur, loaded, r.aggregate));
       changed();
     } else if (r.error.code === 'stale_version' || r.error.code === 'write_conflict') {
       // Review N8: reload so the next try uses the latest version.
@@ -534,7 +534,7 @@ export function WorkoutScreen() {
     const r = await run(cmd);
     setBusy(false);
     if (!r.ok) {
-      setBanners((b) => [...b.filter((x) => x.key !== 'write'), { key: 'write', severity: 'warning', text: r.error.code === 'write_failed' ? 'Set not saved. Try again.' : r.error.message }]);
+      setBanners((b) => [...b.filter((x) => x.key !== 'write'), { key: 'write', severity: 'warning', text: r.error.code === 'write_failed' || r.error.code === 'operation_id_reused' ? 'Set not saved. Try again.' : r.error.message }]);
       return;
     }
     // Already saved by an earlier tap: the saved state is shown, without a second haptic, toast or coach check.
@@ -693,7 +693,7 @@ export function WorkoutScreen() {
       void reload();
       return;
     }
-    setData((cur) => newerWorkoutData(cur, { ...loaded, aggregate: r.aggregate }));
+    setData((cur) => withCommandResult(cur, loaded, r.aggregate));
     changed();
     const added = r.aggregate.sets.find((x) => !loaded.aggregate.sets.some((y) => y.id === x.id));
     const v = services.workout.view({ ...loaded, aggregate: r.aggregate }, clockNow(), null);
@@ -1528,7 +1528,7 @@ export function WorkoutScreen() {
                   void reload();
                   return;
                 }
-                setData((cur) => newerWorkoutData(cur, { ...loaded, aggregate: r.aggregate }));
+                setData((cur) => withCommandResult(cur, loaded, r.aggregate));
                 changed();
                 showToast({
                   text:
@@ -1582,7 +1582,7 @@ export function WorkoutScreen() {
             void reload();
             return r.error.code === 'stale_version' ? 'The workout changed. Try again.' : r.error.message;
           }
-          setData((cur) => newerWorkoutData(cur, { ...loaded, aggregate: r.aggregate }));
+          setData((cur) => withCommandResult(cur, loaded, r.aggregate));
           changed();
           return null;
         }}
