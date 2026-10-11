@@ -7,8 +7,8 @@
  */
 
 import { renderActionResult, type CoachTurnResult } from '@fizz/coach';
-import type { CoachTrigger } from '@fizz/domain';
-import type { ActionRecord } from '@fizz/schemas';
+import { coachUndoRefusal, type CoachTrigger } from '@fizz/domain';
+import type { ActionRecord, SessionAggregate } from '@fizz/schemas';
 
 import type { CoachAvailability } from './coach-service';
 import { outcomeFor } from './sheet-view';
@@ -26,6 +26,8 @@ export interface SlotInput {
   /** The latest turn's outcome when it changed nothing (refused, stale, failed). */
   outcome: { text: string; retry: boolean } | null;
   offer: (CoachTrigger & { sessionExerciseId: string }) | null;
+  /** The workout as loaded, to hide Undo on a change that can't be undone now (gym changed since; review r2 B1). */
+  workout?: Pick<SessionAggregate, 'session' | 'sets'> | null;
 }
 
 export function slotView(input: SlotInput): SlotView | null {
@@ -34,7 +36,7 @@ export function slotView(input: SlotInput): SlotView | null {
   if (a !== null && a.detail.kind === 'adjust_pending_sets' && a.status === 'committed') {
     const r = renderActionResult(a, 'slot');
     if (a.undoneBy !== null) return { kind: 'outcome', text: 'Coach change undone.', retry: false };
-    return { kind: 'banner', actionId: a.actionId, title: r.text, detail: r.detail, notes: [...new Set(a.guardNotes.filter((n) => n.kind !== 'completed_set_dropped').map((n) => n.text))].slice(0, 2), canUndo: true };
+    return { kind: 'banner', actionId: a.actionId, title: r.text, detail: r.detail, notes: [...new Set(a.guardNotes.filter((n) => n.kind !== 'completed_set_dropped').map((n) => n.text))].slice(0, 2), canUndo: input.workout == null || coachUndoRefusal(input.workout, a.actionId) === null };
   }
   if (input.outcome !== null) return { kind: 'outcome', text: input.outcome.text, retry: input.outcome.retry };
   if (input.offer !== null) return { kind: 'offer', prompt: input.offer.prompt, fact: input.offer.fact, triggerKind: input.offer.kind };

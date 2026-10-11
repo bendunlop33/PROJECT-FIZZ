@@ -265,7 +265,8 @@ export interface PlannedSet {
   /** Absent on targets made before `Why?` existed (shown as `Not recorded`). */
   provenance?: TargetProvenance | undefined;
   snap?: PlannedSnap | undefined;
-  coach?: { actionId: string; before: PlannedSet } | undefined;
+  /** `gymChanges`: how many gym-change entries the workout had when the coach made this change (Undo is refused after a later one). */
+  coach?: { actionId: string; before: PlannedSet; gymChanges?: number | undefined } | undefined;
 }
 
 export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
@@ -279,7 +280,7 @@ export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
   /** How the load was fitted to the gym's equipment (GS-S1); absent = as intended. */
   snap: PlannedSnapSchema.optional(),
   get coach() {
-    return z.object({ actionId: IdSchema, before: PlannedSetSchema }).optional();
+    return z.object({ actionId: IdSchema, before: PlannedSetSchema, gymChanges: z.int().min(0).optional() }).optional();
   },
 });
 

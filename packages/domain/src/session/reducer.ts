@@ -31,6 +31,7 @@ import {
 } from '../rest';
 import { deriveId, stableStringify } from '../stable';
 import { toIso, toMs } from '../time';
+import { coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
 import { isRoundEnd, nextPendingSet } from './order';
 
@@ -58,6 +59,8 @@ export type SessionErrorCode =
   | 'equipment_not_found'
   | 'equipment_incompatible'
   | 'gym_change_not_found'
+  /** A coach adjustment's Undo after the gym changed (its saved targets were for the old gym). */
+  | 'gym_changed'
   /** A discard whose `confirmedLoggedSets` doesn't match the logged sets it would discard. */
   | 'discard_unconfirmed';
 
@@ -1305,13 +1308,14 @@ function handleAdjustPendingTargets(state: SessionAggregate, cmd: CommandOf<'adj
     coach: { actionId: cmd.actionId, scope: 'today', reason: cmd.reason ?? null },
     guardNotes: [],
   });
+  const gymChanges = state.session.gymChanges?.length ?? 0;
   const coachTarget = (set: WorkoutSet, target: { load: WorkoutSet['planned']['load']; reps: WorkoutSet['planned']['reps'] }): WorkoutSet['planned'] => ({
     ...set.planned,
     load: target.load,
     reps: target.reps,
     source: 'coach',
     provenance: coachProvenance(set),
-    coach: { actionId: cmd.actionId, before: set.planned },
+    coach: { actionId: cmd.actionId, before: set.planned, gymChanges },
   });
   const changed = new Map<string, WorkoutSet>();
   for (const c of cmd.changes) {
@@ -1324,7 +1328,7 @@ function handleAdjustPendingTargets(state: SessionAggregate, cmd: CommandOf<'adj
     const set = byId.get(id);
     if (!set) continue;
     // The removed set remembers which action removed it, so that action's Undo can put it back.
-    const removed: WorkoutSet = { ...set, status: 'deleted', draft: null, planned: { ...set.planned, coach: { actionId: cmd.actionId, before: set.planned } }, version: set.version + 1 };
+    const removed: WorkoutSet = { ...set, status: 'deleted', draft: null, planned: { ...set.planned, coach: { actionId: cmd.actionId, before: set.planned, gymChanges } }, version: set.version + 1 };
     changed.set(id, removed);
     audit.push({ id: `${cmd.opId}:deleted:${id}`, sessionId: state.session.id, setId: id, opId: cmd.opId, kind: 'deleted', atUtc: cmd.at.utc, before: snapshot(set), after: snapshot(removed) });
     events.push({ type: 'SetDeleted', setId: id });
@@ -1372,9 +1376,12 @@ function handleAdjustPendingTargets(state: SessionAggregate, cmd: CommandOf<'adj
  * still carry this action's target (pending, `planned.coach.actionId`) go
  * back; a set logged since, or changed again by a later adjustment, stays
  * as it is. Removed sets come back if still removed; added sets are removed
- * if still pending.
+ * if still pending. Refused once the gym changed after the adjustment: its
+ * saved targets (and removed sets' rows) were for the old gym's equipment
+ * (rule 4; ADR 0020 §4.3).
  */
 function handleRevertTargetAdjustment(state: SessionAggregate, cmd: CommandOf<'revert_target_adjustment'>): Handled {
+  if (coachUndoRefusal(state, cmd.actionId) === 'gym_changed') return fail('gym_changed', 'The gym changed.');
   const removed = new Set(cmd.removedSetIds);
   const added = new Set(cmd.addedSetIds);
   const ownTarget = (s: WorkoutSet): boolean => s.planned.source === 'coach' && s.planned.coach?.actionId === cmd.actionId;
@@ -1532,8 +1539,8 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
       // A later rename (or its undo) replaced this name.
       return state.session.routineName !== (command.name === null ? null : command.name.trim());
     case 'adjust_pending_targets':
-      // Undone, or every set it set has since been logged or changed again.
-      return !state.sets.some((s) => s.planned.coach?.actionId === command.actionId && s.status === 'pending' && s.planned.source === 'coach');
+      // Undone, or every set it set has since been logged or changed again, or the gym changed since.
+      return coachUndoRefusal(state, command.actionId) !== null || !state.sets.some((s) => s.planned.coach?.actionId === command.actionId && s.status === 'pending' && s.planned.source === 'coach');
     case 'revert_target_adjustment':
     case 'undo_change_gym':
     case 'finish':

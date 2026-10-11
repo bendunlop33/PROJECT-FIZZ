@@ -352,6 +352,7 @@ const UNDO_FAILURE: Record<Extract<CoachUndoResult, { status: 'not_possible' }>[
   not_committed: 'it was never applied',
   already_undone: 'it was already undone',
   changed_since: 'it changed since',
+  gym_changed: 'gym changed',
   unsupported: 'this change can’t be undone here yet',
 };
 

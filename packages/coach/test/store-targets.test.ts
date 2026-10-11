@@ -88,6 +88,23 @@ describe("today's sets: the reducer command and the record in one transaction (C
     expect((await undoCoachAction(s.repos.coach, { ownerId: OWNER, actionId: r.cards[0]?.record.actionId ?? '', opId: 'undo-tap-1', now: at(601) })).result.status).toBe('replayed');
   });
 
+  it('rule 4: Undo after a gym change is refused as gym_changed and leaves the sets as they are (review r2 B1)', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const model = new ScriptedCoachModel([[call('adjust_pending_sets', lower(), 'x1'), { type: 'completed' }], reply('Okay.')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words('Drop the last two to 95'), context: { session: workout(), gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(s, model, todayExecutors(s)));
+    const after = (await s.repos.sessions.get(SESSION)) as SessionAggregate & { revision: number };
+    // A gym change recorded after the coach change (the switch itself is covered in the domain tests).
+    const change = { actionId: 'gym-change-1', opId: 'switch-1', kind: 'change' as const, mode: 'gym_switch' as const, at: at(550), fromGymId: after.session.gymId, toGymId: id(9999), afterFingerprint: 'f', changedSetIds: [], draftsReplaced: [] };
+    const moved = { ...after, session: { ...after.session, gymId: id(9999), gymChanges: [change], version: after.session.version + 1 } };
+    const w = await s.repos.sessions.save(moved, after.revision);
+    expect(w.ok).toBe(true);
+    const u = await undoCoachAction(s.repos.coach, { ownerId: OWNER, actionId: r.cards[0]?.record.actionId ?? '', opId: 'undo-tap-gym', now: at(600) });
+    expect(u.result).toEqual({ status: 'not_possible', reason: 'gym_changed' });
+    expect(u.undo).toMatchObject({ status: 'rejected', failure: 'gym changed' });
+    expect((await s.repos.sessions.get(SESSION))?.sets.find((x) => x.id === id(103))?.planned).toMatchObject({ load: kg(95), source: 'coach' });
+  });
+
   it('rule 5: the workout moved on between the read and the write; the record says stale and nothing changes', async () => {
     const s = await store();
     await saved(s, workout(8));

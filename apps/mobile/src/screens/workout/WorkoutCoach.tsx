@@ -45,7 +45,7 @@ export interface WorkoutCoach {
   toggleWhy: () => void;
 }
 
-export function useWorkoutCoach(sessionId: string | null, onApplied: () => void): WorkoutCoach {
+export function useWorkoutCoach(sessionId: string | null, onApplied: () => void, workout: SessionAggregate | null = null): WorkoutCoach {
   const services = useServices();
   const [availability, setAvailability] = useState<CoachAvailability | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -99,7 +99,7 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void)
     [services, sessionId, pending],
   );
 
-  const slot = slotView({ pending: pending !== null, adjustment, outcome, offer });
+  const slot = slotView({ pending: pending !== null, adjustment, outcome, offer, workout });
 
   return {
     availability,

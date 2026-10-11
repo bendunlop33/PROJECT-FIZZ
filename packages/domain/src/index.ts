@@ -38,6 +38,7 @@ export * from './session/snap';
 export * from './session/snap-text';
 export * from './session/equipment-snapshot';
 export * from './session/gym-switch';
+export * from './session/coach-undo';
 export * from './session/gym-command';
 export * from './session/discard';
 export * from './step-card';

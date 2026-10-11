@@ -4,7 +4,7 @@ import { KeyboardAvoidingView, Linking, Pressable, ScrollView, View, type TextIn
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { ContextDescription } from '@fizz/coach';
-import { toMs } from '@fizz/domain';
+import { coachUndoRefusal, toMs } from '@fizz/domain';
 import type { BenInput, CoachThread } from '@fizz/schemas';
 
 import { MANAGE_USAGE_URL } from '../../ai/coach-connection-view';
@@ -250,6 +250,12 @@ export function CoachSheetScreen() {
     navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'CoachConnection' } });
   }
 
+  /** A coach change to today's sets can't be undone once the gym changed after it (review r2 B1). */
+  const undoBlocked = (actionId: string): boolean => {
+    const d = loadedWorkout.current;
+    return d !== null && coachUndoRefusal(d.aggregate, actionId) !== null;
+  };
+
   const status = availability === null ? null : statusView(availability);
   const route = availability === null ? null : routeLine(availability);
   const chips: StarterChip[] = availability === null ? [] : starterChips(entry, availability, workout?.active === true);
@@ -366,7 +372,7 @@ export function CoachSheetScreen() {
           </View>
         ) : null}
         {rows.map((r) => (
-          <Row key={r.key} row={r} onUndo={(id) => void undo(id)} onRetry={() => lastInput.current !== null && void send(lastInput.current)} />
+          <Row key={r.key} row={r} undoBlocked={undoBlocked} onUndo={(id) => void undo(id)} onRetry={() => lastInput.current !== null && void send(lastInput.current)} />
         ))}
         {live !== null ? <LiveRows live={live} now={now} /> : null}
         {askPain ? (
@@ -460,7 +466,7 @@ function SendButton({ icon, label, enabled, onPress }: { icon: 'arrow.up' | 'sto
   );
 }
 
-function Row({ row, onUndo, onRetry }: { row: ThreadRow; onUndo: (actionId: string) => void; onRetry: () => void }) {
+function Row({ row, undoBlocked, onUndo, onRetry }: { row: ThreadRow; undoBlocked: (actionId: string) => boolean; onUndo: (actionId: string) => void; onRetry: () => void }) {
   const theme = useTheme();
   switch (row.kind) {
     case 'ben':
@@ -488,7 +494,7 @@ function Row({ row, onUndo, onRetry }: { row: ThreadRow; onUndo: (actionId: stri
         </AppText>
       );
     case 'card':
-      return <CoachCard card={row.card} onUndo={onUndo} />;
+      return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} />;
     case 'note':
       return (
         <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>

@@ -616,4 +616,4 @@ export type CoachWriteResult =
 
 export type CoachUndoResult =
   | { status: 'written' | 'replayed'; undo: ActionRecord; target: ActionRecord }
-  | { status: 'not_possible'; reason: 'missing' | 'not_committed' | 'already_undone' | 'changed_since' | 'unsupported' };
+  | { status: 'not_possible'; reason: 'missing' | 'not_committed' | 'already_undone' | 'changed_since' | 'gym_changed' | 'unsupported' };

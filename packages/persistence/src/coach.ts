@@ -462,7 +462,7 @@ export class SqliteCoachStore {
     ownerId: string,
     target: ActionRecord,
     atUtc: string,
-  ): Promise<'ok' | 'changed_since' | 'unsupported' | { restored: ExerciseTargetChanges[]; alreadyLogged: number[] }> {
+  ): Promise<'ok' | 'changed_since' | 'gym_changed' | 'unsupported' | { restored: ExerciseTargetChanges[]; alreadyLogged: number[] }> {
     const d = target.detail;
     switch (d.kind) {
       case 'save_memory': {
@@ -507,6 +507,7 @@ export class SqliteCoachStore {
           removedSetIds: changes.filter((c) => c.after === null).map((c) => c.setId),
           addedSetIds: changes.filter((c) => c.before === null).map((c) => c.setId),
         });
+        if (!r.ok && r.error.code === 'gym_changed') return 'gym_changed';
         if (!r.ok || r.state === agg || r.duplicate) return 'changed_since';
         await writeAggregate(tx, r.state);
         const now = new Map(r.state.sets.map((x) => [x.id, x]));

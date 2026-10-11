@@ -17,6 +17,7 @@ import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, pa
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import type { HistorySession } from '../progression';
 import { toMs } from '../time';
+import { coachUndoRefusal } from './coach-undo';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, isEmptyPart, partRootOf } from './gym-switch';
 import { buildExecutionOrder, nextPendingSet } from './order';
@@ -205,7 +206,7 @@ export interface FocusView {
   target: string | null;
   /** `Plan was 100 kg × 6–8` when a coach adjustment set this target (coach-adjustments §2.7); else null. */
   planWas: string | null;
-  /** The coach action behind this set's target, for `Undo coach change`; null when the target isn't the coach's. */
+  /** The coach action behind this set's target, for `Undo coach change`; null when the target isn't the coach's or can't be undone (gym changed since). */
   coachActionId: string | null;
   /**
    * `SnapNote` under the target (gym-switch §2.5): only for a capped,
@@ -498,7 +499,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     duration: ex.measurement === 'duration' ? { value: values.durationS } : null,
     target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral }),
     planWas: set.planned.source === 'coach' && set.planned.coach ? planWasText(set.planned.coach.before, ex.loadConvention, eq) : null,
-    coachActionId: set.planned.source === 'coach' ? (set.planned.coach?.actionId ?? null) : null,
+    coachActionId: set.planned.source === 'coach' && set.planned.coach !== undefined && coachUndoRefusal(state, set.planned.coach.actionId) === null ? set.planned.coach.actionId : null,
     snapNote: setSnapNote(set.planned.snap, set.planned.load, { gymName: input.gymName, equipment: eq, unit: ex.unit }),
     hasExplanation: set.planned.load !== null || set.planned.reps !== null || set.planned.durationS !== null,
     painFlagged: input.painFlagged.has(ex.exerciseId) || painNote !== null,

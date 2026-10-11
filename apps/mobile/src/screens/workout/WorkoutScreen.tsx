@@ -444,11 +444,15 @@ export function WorkoutScreen() {
   // The coach in the workout (ADR 0020 C7). An applied change reloads the targets and guards Log for
   // `timing.valueChangeGuard`, so a tap aimed at the old label never saves the new one (§4.3).
   const coachSessionId = data === 'loading' || data === null ? null : data.aggregate.session.id;
-  const coach = useWorkoutCoach(coachSessionId, () => {
-    void reload();
-    changed();
-    armGuard();
-  });
+  const coach = useWorkoutCoach(
+    coachSessionId,
+    () => {
+      void reload();
+      changed();
+      armGuard();
+    },
+    data === 'loading' || data === null ? null : data.aggregate,
+  );
   // An unanswered offer goes when the rest ends (§3.2).
   const restRunning = data !== 'loading' && data !== null && data.aggregate.restTimer?.status === 'running';
   const clearOffer = coach.clearOffer;
