@@ -10,3 +10,4 @@ export * from './import';
 export * from './validate';
 export * from './coach';
 export * from './draft';
+export * from './muscle-groups';

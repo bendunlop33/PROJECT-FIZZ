@@ -8,10 +8,12 @@ import { z } from 'zod';
 
 /**
  * Muscle filter groups shown as chips in the exercise library (11 groups), and
- * each muscle's group. Defined in `@fizz/domain` (Progress counts by group,
- * progress.md PG26) and re-exported here so there is one table.
+ * each muscle's group. Defined in `@fizz/schemas` (shared with Progress,
+ * progress.md PG26) and re-exported here so there is one table. Import the
+ * schemas leaf, never the `@fizz/domain` barrel: the Node ts-hooks loader used
+ * by `catalogue:validate` and the guide scripts can't load the domain barrel.
  */
-import { MUSCLE_GROUPS, MUSCLE_TO_GROUP, type MuscleGroup } from '@fizz/domain';
+import { MUSCLE_GROUPS, MUSCLE_TO_GROUP, type MuscleGroup } from '@fizz/schemas';
 export { MUSCLE_GROUPS, MUSCLE_TO_GROUP, type MuscleGroup };
 
 export type Muscle = keyof typeof MUSCLE_TO_GROUP;
