@@ -14,7 +14,7 @@ import { containerBackupFiles, containerTextFile } from '../device/files';
 import { expoDatabaseHost } from '../data/expo-sqlite-host';
 import { DevicePrefsProvider } from '../device/DevicePrefsContext';
 import { DEFAULT_PREFS, loadPrefs, savePrefs, settleLoadedPrefs, updatePrefs, type DevicePrefs } from '../device/prefs';
-import { appInfo, newUuid, nowZoned } from '../device/runtime';
+import { appInfo, newUuid, nowZoned, whenIdle } from '../device/runtime';
 import { AppNavigator } from '../navigation/AppNavigator';
 import type { AppServices } from '../services/app-services';
 import { startApp, type StartupOutcome } from '../services/startup';
@@ -78,6 +78,7 @@ function Launch() {
       newId: newUuid,
       app: appInfo(),
       restAlerts,
+      idle: () => whenIdle(),
       // The coach over the ChatGPT-plan route (ADR 0020 C5); the same Keychain items and fetch as the connection screen.
       coach: {
         model: () => {

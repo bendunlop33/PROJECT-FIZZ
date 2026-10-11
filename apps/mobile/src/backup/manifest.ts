@@ -20,14 +20,24 @@ const UtcSchema = z.iso.datetime({ offset: false });
 export const BackupRecordSchema = z.object({
   fileName: z.string().min(1).max(200),
   kind: z.enum(['automatic', 'manual']),
-  /** `before_import` / `after_import`: around a FitNotes import commit (data-import-export §3.2, §3.4). */
-  reason: z.enum(['workout_finished', 'manual', 'catch_up', 'before_import', 'after_import']),
+  /**
+   * `before_import` / `after_import`: around a FitNotes import commit (data-import-export §3.2, §3.4).
+   * `after_undo_import`: right after `Undo this import` (fix-backup review N3).
+   */
+  reason: z.enum(['workout_finished', 'manual', 'catch_up', 'before_import', 'after_import', 'after_undo_import']),
   createdAtUtc: UtcSchema,
   tz: z.string().min(1),
   /** SHA-256 of the whole file text, checked again before rotation deletes it. */
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
   textLength: z.int().min(0),
   finishedWorkouts: z.int().min(0),
+  /**
+   * Which finished workouts the file holds, at which revision
+   * (`finishedWorkoutsDigest`, B2, S1). Absent on records written before it
+   * existed: those fall back to the count. A record from the ID-only digest
+   * never matches, so it costs one catch-up backup.
+   */
+  finishedDigest: z.string().regex(/^[0-9a-f]{64}$/).optional(),
   loggedSets: z.int().min(0),
   exercises: z.int().min(0),
   /** False when the database had damaged records (ADR 0005 #3): the file can't be restored. */

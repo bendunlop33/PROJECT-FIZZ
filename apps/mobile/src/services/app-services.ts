@@ -22,6 +22,7 @@ import {
   listDocuments,
   PROFILE_SPEC,
   saveDocumentIn,
+  timeSlicer,
   type AppInfo,
   type DatabaseManager,
   type IntegrityReport,
@@ -76,6 +77,8 @@ export interface AppServicesDeps {
    * Absent: the coach reads as not connected; nothing else changes (rule 1).
    */
   coach?: { model: () => CoachModelPort; connection: () => Promise<TextCoachState> };
+  /** Resolves when the UI is idle; background backups wait for it so Finish's Summary appears first (backup review B1). */
+  idle?: () => Promise<void>;
 }
 
 export type SetupState = { step: SetupStep; profile: UserProfile | null; gyms: Gym[] };
@@ -95,6 +98,7 @@ export function createAppServices(deps: AppServicesDeps) {
     now: deps.now,
     app: deps.app,
     ...(deps.locale === undefined ? {} : { locale: deps.locale }),
+    ...(deps.idle === undefined ? {} : { idle: deps.idle }),
   });
   let lastIntegrity: IntegrityCheck = null;
 
@@ -359,7 +363,7 @@ export function createAppServices(deps: AppServicesDeps) {
     /** `Check all data` (system-states §3.7). Reads only; never repairs. */
     async checkAll(): Promise<IntegrityCheck> {
       const at = deps.now();
-      lastIntegrity = { atUtc: at.utc, tz: at.tz, report: await checkIntegrity(deps.manager.store.db) };
+      lastIntegrity = { atUtc: at.utc, tz: at.tz, report: await checkIntegrity(deps.manager.store.db, undefined, timeSlicer()) };
       return lastIntegrity;
     },
     last: (): IntegrityCheck => lastIntegrity,

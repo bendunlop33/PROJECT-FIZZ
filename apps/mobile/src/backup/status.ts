@@ -14,12 +14,12 @@ import type { BackupManifest, BackupRecord, OffPhoneCopy } from './manifest';
 export type OnPhoneState =
   /** No backup yet and no finished workout: nothing is owed. */
   | 'nothing_yet'
-  /** The newest backup includes every finished workout. */
+  /** The newest backup holds exactly the finished workouts there are now. */
   | 'backed_up'
   | 'backing_up'
   /** The last attempt failed after the newest success. */
   | 'failed'
-  /** A workout finished after the newest backup and no attempt has finished yet (e.g. iOS stopped it). */
+  /** The finished workouts changed since the newest backup and no attempt has finished yet (e.g. iOS stopped it). */
   | 'pending'
   /** The newest backup was written but has damaged records, so it won't restore. */
   | 'damaged';
@@ -46,6 +46,8 @@ export interface BackupStatus {
 export interface BackupFacts {
   /** Finished workouts in the database now. */
   finishedWorkouts: number;
+  /** `finishedWorkoutsDigest` of the database now (B2). */
+  finishedDigest?: string;
   backingUp: boolean;
   nowMs: number;
   tz: string;
@@ -56,14 +58,29 @@ function newest(files: readonly BackupRecord[]): BackupRecord | null {
   return files.reduce<BackupRecord | null>((best, f) => (best === null || f.createdAtUtc > best.createdAtUtc ? f : best), null);
 }
 
-export function onPhoneState(m: BackupManifest, facts: Pick<BackupFacts, 'finishedWorkouts' | 'backingUp'>): OnPhoneState {
+/**
+ * Whether a backup holds exactly the finished workouts there are now, as
+ * corrected since (B2, S1). A count alone can't tell after Undo import or a
+ * restore lowered it, nor after a set was corrected. Records
+ * from before the digest existed fall back to the count.
+ */
+export function backupCovers(record: BackupRecord, facts: Pick<BackupFacts, 'finishedWorkouts' | 'finishedDigest'>): boolean {
+  if (record.finishedDigest !== undefined && facts.finishedDigest !== undefined) return record.finishedDigest === facts.finishedDigest;
+  return record.finishedWorkouts >= facts.finishedWorkouts;
+}
+
+export function newestBackup(files: readonly BackupRecord[]): BackupRecord | null {
+  return newest(files);
+}
+
+export function onPhoneState(m: BackupManifest, facts: Pick<BackupFacts, 'finishedWorkouts' | 'finishedDigest' | 'backingUp'>): OnPhoneState {
   if (facts.backingUp) return 'backing_up';
   const last = newest(m.onPhone.files);
   const attempt = m.onPhone.lastAttempt;
   if (attempt && !attempt.ok && (last === null || attempt.atUtc > last.createdAtUtc)) return 'failed';
   if (last === null) return facts.finishedWorkouts === 0 ? 'nothing_yet' : 'pending';
   if (!last.integrityOk) return 'damaged';
-  return last.finishedWorkouts >= facts.finishedWorkouts ? 'backed_up' : 'pending';
+  return backupCovers(last, facts) ? 'backed_up' : 'pending';
 }
 
 export function offPhoneState(m: BackupManifest, nowMs: number): OffPhoneState {

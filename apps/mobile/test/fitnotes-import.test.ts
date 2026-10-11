@@ -302,6 +302,11 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(undo).toMatchObject({ ok: true, workouts: 3, duplicate: false });
     expect(await s.imports.revert(jobId, job.job.version, 'undo-1')).toMatchObject({ ok: true, duplicate: true });
     expect(await s.yourData.counts()).toMatchObject({ finishedWorkouts: 0, loggedSets: 0 });
+    // Backed up straight away, once, so the newest file no longer holds the hidden workouts (fix-backup N3).
+    await h.settle(s);
+    const backups = await s.backups.getStatus();
+    expect(backups.copiesOnPhone.filter((c) => c.reason === 'after_undo_import')).toHaveLength(1);
+    expect(backups.onPhone.state).toBe('backed_up');
     expect(await s.repeat.candidates()).toEqual({ rows: [], unreadable: 0, importedNotListed: 0 });
     const after = await s.imports.job(jobId);
     expect(after?.rows.length).toBe(job.rows.length);
