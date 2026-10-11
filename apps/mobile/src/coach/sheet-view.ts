@@ -82,6 +82,7 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
     case 'summary':
       return ready ? [words('What should I change next time?')] : [];
     case 'today':
+    case 'progress':
       // No `How am I doing?` until the coach can read past workouts (review S4, rule 6).
       return [];
   }
@@ -301,6 +302,8 @@ export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active
   switch (entry.kind) {
     case 'today':
       return 'Sees: Today';
+    case 'progress':
+      return `Sees: Progress · last ${String(entry.days)} days`;
     case 'summary':
       return `Sees: ${workoutTitle ?? 'this workout'}`;
     case 'workout':

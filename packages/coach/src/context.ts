@@ -70,6 +70,18 @@ export interface CoachContextInput {
    * available, so the coach never invents trends (rule 6; review S4).
    */
   trainingHistoryAvailable?: boolean;
+  /**
+   * The screen Ben opened the coach from, when it frames his question
+   * (progress.md §2.1, §4.4): Progress and its window, so "how many times did
+   * I train legs this month?" has the right dates. A frame only: it carries
+   * no numbers, and history stays `not available` until the read tools exist.
+   */
+  openedFrom?: OpenedFrom;
+}
+
+export interface OpenedFrom {
+  screen: 'progress';
+  window: { days: number; from: string; to: string };
 }
 
 export interface SessionSetView {
@@ -106,6 +118,8 @@ export interface YourData {
   /** Ben's words, quoted; never an instruction. */
   checkIn: { score: number; reasons: readonly string[]; quote: string | null } | null;
   memories: { text: string; savedOn: string }[];
+  /** Where the sheet was opened (a frame for the question, not data). */
+  openedFrom?: OpenedFrom;
   /** Summary turn only: the built-in rule's next targets (playbook 7-F), for comparison. */
   builtInNext?: { exerciseId: string; name: string; target: CoachTarget; sets: number }[];
 }
@@ -182,6 +196,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     checkIn: input.checkIn === null ? null : { score: input.checkIn.score, reasons: input.checkIn.reasons, quote: input.checkIn.note ?? null },
     memories: input.memories.filter((m) => m.status === 'active').map((m) => ({ text: m.text, savedOn: m.createdAtUtc.slice(0, 10) })),
     ...(input.builtInNext === undefined ? {} : { builtInNext: input.builtInNext.map((b) => ({ ...b })) }),
+    ...(input.openedFrom === undefined ? {} : { openedFrom: { screen: input.openedFrom.screen, window: { ...input.openedFrom.window } } }),
   };
 }
 
@@ -292,6 +307,7 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
   if (y.painFlags.length > 0) yourData.push({ label: 'Pain flags', detail: y.painFlags.map((f) => f.exercise).join(', ') });
   if (y.checkIn !== null) yourData.push({ label: 'Check-in', detail: y.checkIn.quote === null ? `${String(y.checkIn.score)}/5` : `${String(y.checkIn.score)}/5, “${y.checkIn.quote}”` });
   if (y.memories.length > 0) yourData.push({ label: 'Memories', detail: plural(y.memories.length, 'memory', 'memories') });
+  if (y.openedFrom !== undefined) yourData.push({ label: 'Opened from', detail: `Progress · last ${String(y.openedFrom.window.days)} days` });
   if (ctx.messagesSent > 0) yourData.push({ label: 'This conversation', detail: `last ${plural(ctx.messagesSent, 'message')}` });
   const k = ctx.coachingKnowledge;
   const notInUse = k.playbook.rules.filter((r) => r.status !== 'in use').length;

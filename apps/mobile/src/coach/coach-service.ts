@@ -30,6 +30,7 @@ import {
   type CoachTurnResult,
   type ContextDescription,
   type NextTargetTap,
+  type OpenedFrom,
 } from '@fizz/coach';
 import {
   DEFAULT_COACH_TRIGGER_THRESHOLDS,
@@ -41,6 +42,7 @@ import {
   nextTargetFitsSource,
   nextTargetSourceBasis,
   painFlagChoices,
+  progressWindowAt,
   shouldShowCoachOffer,
   todayAdjustmentIds,
   toMs,
@@ -62,6 +64,7 @@ import type {
   CoachTurnKind,
   NextSessionTargetRecord,
   PlannedSet,
+  ProgressWindowDays,
   SessionAggregate,
   SetType,
   UserProfile,
@@ -71,8 +74,17 @@ import type {
 /** Where the sheet was opened from (coach-sheet §1). */
 export type CoachEntry =
   | { kind: 'today' }
+  /** Progress (progress.md §2.1, §4.4): a general thread, framed by the window on screen. */
+  | { kind: 'progress'; days: ProgressWindowDays }
   | { kind: 'workout'; sessionId: string }
   | { kind: 'summary'; sessionId: string };
+
+/** Today and Progress: no workout attached; the general thread. */
+export type GeneralEntry = Extract<CoachEntry, { kind: 'today' | 'progress' }>;
+
+export function isGeneralEntry(entry: CoachEntry): entry is GeneralEntry {
+  return entry.kind === 'today' || entry.kind === 'progress';
+}
 
 /** Connection state as the coach UI needs it: the stored status, plus `offline` after a request failed for lack of network. */
 export type CoachStatus = TextCoachState['status'];
@@ -152,7 +164,7 @@ export function createCoachService(deps: CoachServiceDeps) {
   }
 
   async function sessionOf(entry: CoachEntry): Promise<SessionAggregate | null> {
-    if (entry.kind === 'today') return null;
+    if (isGeneralEntry(entry)) return null;
     return repos().sessions.get(entry.sessionId).catch(() => null);
   }
 
@@ -160,7 +172,7 @@ export function createCoachService(deps: CoachServiceDeps) {
   async function resolveThread(entry: CoachEntry): Promise<string | null> {
     const p = await owner();
     const threads = await coachStore().listThreads(p.id);
-    if (entry.kind !== 'today') return threads.find((t) => t.sessionId === entry.sessionId)?.id ?? null;
+    if (!isGeneralEntry(entry)) return threads.find((t) => t.sessionId === entry.sessionId)?.id ?? null;
     const recent = threads.find((t) => t.sessionId === null);
     if (recent === undefined) return null;
     return toMs(deps.now().utc) - toMs(recent.updatedAtUtc) <= GENERAL_REUSE_MS ? recent.id : null;
@@ -230,7 +242,15 @@ export function createCoachService(deps: CoachServiceDeps) {
     return (await repos().gyms.get(gymId).catch(() => null))?.name ?? null;
   }
 
-  async function contextInput(p: UserProfile, kind: CoachTurnKind, session: SessionAggregate | null) {
+  /** Progress's window as dates in Ben's timezone, so the coach reads "this month" against what he sees. */
+  function openedFromOf(p: UserProfile, entry: CoachEntry): OpenedFrom | undefined {
+    if (entry.kind !== 'progress') return undefined;
+    const w = progressWindowAt(toMs(deps.now().utc), p.timezone, entry.days);
+    return { screen: 'progress', window: { days: entry.days, from: w.from, to: w.to } };
+  }
+
+  async function contextInput(p: UserProfile, kind: CoachTurnKind, session: SessionAggregate | null, entry: CoachEntry) {
+    const openedFrom = openedFromOf(p, entry);
     const gymName = await gymNameOf(session);
     const checkIn = await checkInOf(session);
     const builtIn = kind === 'summary' && session !== null ? await builtInNext(session) : null;
@@ -244,6 +264,7 @@ export function createCoachService(deps: CoachServiceDeps) {
         checkIn,
         memories: await coachStore().listMemories(p.id),
         catalogue: [],
+        ...(openedFrom === undefined ? {} : { openedFrom }),
         ...(builtIn === null || session === null
           ? {}
           : {
@@ -281,7 +302,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (model === undefined || a.model === null) throw new Error("The coach isn't connected.");
     const session = await sessionOf(req.entry);
     const kind = kindFor(req.entry, session, req.summary === true);
-    const ctx = await contextInput(p, kind, session);
+    const ctx = await contextInput(p, kind, session, req.entry);
     const offerScope = req.input.kind === 'chip' ? (req.input.sessionExerciseId ?? null) : null;
     const executors = await executorsFor(p, kind, session, ctx.gymName, ctx.checkIn, await askedForMoreSets(req.threadId), offerScope);
     const stop = new AbortController();
@@ -349,7 +370,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       const p = await owner();
       const session = await sessionOf(entry);
       const kind = kindFor(entry, session, false);
-      const ctx = await contextInput(p, kind, session);
+      const ctx = await contextInput(p, kind, session, entry);
       const thread = threadId === null ? [] : await coachStore().listMessages(threadId);
       return describeCoachContext(buildCoachContext({ ...ctx.input, turnKind: kind, thread }));
     },
@@ -430,7 +451,7 @@ export function createCoachService(deps: CoachServiceDeps) {
      */
     async painChoices(entry: CoachEntry, words: string | null, focus: { exerciseId: string; name: string } | null = null): Promise<{ choices: { exerciseId: string; name: string }[]; pick: boolean }> {
       const p = await owner();
-      const sessionId = entry.kind === 'today' ? ((await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []))[0]?.sessionId ?? null) : entry.sessionId;
+      const sessionId = isGeneralEntry(entry) ? ((await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []))[0]?.sessionId ?? null) : entry.sessionId;
       const session = sessionId === null ? null : await repos().sessions.get(sessionId).catch(() => null);
       const seen = new Set<string>();
       const all: { exerciseId: string; exerciseName: string }[] = [];
