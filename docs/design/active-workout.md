@@ -582,7 +582,7 @@ Opened from the `PainFlagNote`, the `Pain` row in `Why?`, or Today's check row. 
 │ ⚠ Overhead press · shoulder            │ status.warning icon + text
 │ Since 6 Oct (16 days) · you, during    │
 │ Push A                                 │
-│ No increases in load, reps or sets.    │
+│ No increases                           │
 │                                        │
 │ Still hurts?                           │ only when the check is due
 │ [ Still hurts ]   [ Better: clear… ]   │ SecondaryButtons, 52pt
@@ -994,7 +994,7 @@ None of these is on the Log path, and none needs the network. Voice phrases are 
 | Exclusions | Heading `Leave out of records and progress` · chips `Spotted` · `Pain` · `Form broke` · `Other equipment` · `Still counts in your log and volume.` · pain line `This also puts a pain flag on Bench press: no increases until you clear it.` · row words `· Spotted` · Overview `Spotted · not counted` · `Last (1 Oct): 100 kg × 8 · spotted` (**actual**) · toast `Set 2: spotted · not counted for records` [Undo] · audit `Set 2 marked: spotted` · hold `No counted sets on 8 Oct (all left out); holding.` · summary `Not compared: the only top set was spotted.` · pain card chip `Leave set 2 out of records` |
 | May hurt | Tag `May hurt` · confirm `Overhead press may hurt` / `Shoulder pain flagged 6 Oct.` [Add anyway] [Choose another] |
 | Pain check | `Overhead press: still hurting?` · `Pain flag since 6 Oct · 16 days` · [Still hurts] [Better…] · note `Pain flag: no increases · check due` · outcome `Pain flag kept · next check 3 Nov` [Undo] · 4 weeks: `It's been 4 weeks. Pain that lasts this long is worth getting checked by a physio or doctor.` |
-| Pain flag sheet | `Pain flag` · `Overhead press · shoulder` · `Since 6 Oct (16 days) · you, during Push A` · `No increases in load, reps or sets.` · `Still hurts?` · [Still hurts] [Better: clear…] · `Before the flag` · `Since the flag` · `Sharp or lasting pain: see a physio or doctor.` · `Clear flag…` · `All pain flags ›` |
+| Pain flag sheet | `Pain flag` · `Overhead press · shoulder` · `Since 6 Oct (16 days) · you, during Push A` · `No increases` · `Still hurts?` · [Still hurts] [Better: clear…] · `Before the flag` · `Since the flag` · `Sharp or lasting pain: see a physio or doctor.` · `Clear flag…` · `All pain flags ›` |
 | Clear confirm (AW10) | `Clear the pain flag on Overhead press?`  [Clear flag] [Keep it] · toast `Pain flag cleared for Overhead press` [Undo] · guard note `Not raising faster than one step: pain flag cleared 14 Oct.` |
 | Time left (**estimate**) | `About 35 min left · ends about 19:40` · `About 35 min left · on track for 19:45` · `About 35 min left · about 10 min past 19:30` · `Paused · about 35 min left after you resume` · `About 2 min left` · `Under 2 min left` · VoiceOver "Workout estimate: about 35 minutes left, ending about 7:40 PM." |
 | Time left sheet | `Time left` · `About 35 min · likely 30–40 min` · `Ends about 19:40` · `Left to do` `11 sets · 3 exercises` · `Planned rest` `18 min` · `Your pace` `1:05 a set · 2 min between exercises` · tags `From this workout` / `Your last 5 workouts` / `Default` · `So far` `24:31 active` · `Finish by` `Not set` · `Shorten to fit…` · `This is an estimate from your pace and rest settings. It doesn't change your sets.` · offline `Coach offline. Skip exercises from their ⋯ menu.` |

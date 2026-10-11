@@ -30,7 +30,7 @@ export function ProgressScreen() {
           <SectionHeader title="Workouts" />
           {data.value.rows.length === 0 ? (
             <AppText variant="callout" color="text.secondary">
-              No finished workouts yet. They’ll show here, newest first.
+              No finished workouts yet
             </AppText>
           ) : (
             <Group>
@@ -53,9 +53,6 @@ export function ProgressScreen() {
           {data.value.importedNotListed > 0 ? (
             <StatusLine icon="info.circle" tone="info" text={`${plural(data.value.importedNotListed, 'workout', 'workouts')} imported from FitNotes ${data.value.importedNotListed === 1 ? 'isn’t' : 'aren’t'} listed here yet. They’re in Data & backup, under Past imports.`} />
           ) : null}
-          <AppText variant="callout" color="text.tertiary">
-            Trends and records come in a later build.
-          </AppText>
         </>
       ) : null}
     </Screen>

@@ -213,7 +213,7 @@ describe('pain flag sheet and the pre-flag reference (§2.14.3–2.14.4, check 5
     expect(sheet).toMatchObject({
       heading: 'Bench press · shoulder',
       since: 'Since 9 Oct (14 days) · you, in a check-in',
-      effect: 'No increases in load, reps or sets.',
+      effect: 'No increases',
       checkDue: true,
       active: true,
     });

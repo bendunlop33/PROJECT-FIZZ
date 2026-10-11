@@ -109,7 +109,7 @@ export function DataBackupScreen() {
         />
         {status.offPhone.state === 'none' ? (
           <AppText variant="callout" color="text.secondary">
-            Copies on this phone are lost if GymSmarter is deleted or re-signed with another Apple ID.
+            Lost if the app is deleted or signed with another Apple ID. Save a copy to Files.
           </AppText>
         ) : null}
         <View style={{ gap: theme.space['1'] }}>
@@ -150,9 +150,6 @@ export function DataBackupScreen() {
         <Row title={running ? 'Backing up…' : 'Back up on this phone now'} icon="iphone" onPress={() => void backUpNow()} disabled={running} />
       </Group>
       {runResult ? <StatusLine icon={runResult.ok ? 'iphone' : 'exclamationmark.triangle'} tone={runResult.ok ? 'done' : 'warning'} text={runResult.text} /> : null}
-      <AppText variant="callout" color="text.secondary">
-        These are lost if GymSmarter is deleted or re-signed with another Apple ID.
-      </AppText>
       {status.copiesOnPhone.length > 0 ? (
         <Group>
           {status.copiesOnPhone.map((f) => (
@@ -171,7 +168,7 @@ export function DataBackupScreen() {
         <Row
           title="Restore from a backup"
           icon="arrow.counterclockwise"
-          subtitle={blocked ? `Finish or discard your workout first (${blocked.title})` : 'From this phone or Files. You can undo it.'}
+          subtitle={blocked ? `Finish or discard your workout first (${blocked.title})` : 'Phone or Files'}
           disabled={blocked !== null}
           onPress={() => {
             navigation.navigate('Restore', { mode: 'restore' });
@@ -180,7 +177,6 @@ export function DataBackupScreen() {
         <Row
           title="Check a backup"
           icon="checkmark.shield"
-          subtitle="Rebuilds it in a test copy. Changes nothing."
           onPress={() => {
             navigation.navigate('Restore', { mode: 'check' });
           }}
@@ -202,7 +198,7 @@ export function DataBackupScreen() {
         <Row
           title="Import from FitNotes"
           icon="square.and.arrow.down"
-          subtitle={blocked ? `Finish or discard your workout first (${blocked.title})` : pausedImport ? pausedLine(pausedImport) : 'From a FitNotes CSV export. You see everything before it’s saved.'}
+          subtitle={blocked ? `Finish or discard your workout first (${blocked.title})` : pausedImport ? pausedLine(pausedImport) : 'FitNotes CSV'}
           onPress={() => {
             navigation.navigate('ImportIntro');
           }}

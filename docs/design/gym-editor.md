@@ -357,7 +357,7 @@ Defined in today.md §4 (list, check on the selected gym, `Add gym`, `Edit gyms`
 |---|---|---|
 | No gyms | Onboarding skipped the gym | Profile Gyms section: `No gym yet. Loads won't be checked against equipment.` + `Add gym` (matches today.md No gym banner) |
 | Normal | — | §2.2 |
-| No equipment | Gym saved empty | Equipment section: `No equipment yet. Add what this gym has so targets match it.` + `Add equipment` |
+| No equipment | Gym saved empty | Equipment section: `No equipment yet` + `Add equipment` |
 | Has unchecked items | Items still at `detailsSource: 'preset'` | Gym row subtitle `3 not checked`; each item shows the `Typical values, not checked` tag |
 | Default | `isDefault` | Row subtitle starts `Default`. Exactly one gym is default; switching the default on another gym turns this one off |
 | Travel, active | `kind: 'travel'`, today ≤ `useUntil` | Row icon `airplane` + `Travel, until Sun 18 Oct`. Today preselects it while active (GE5) |
@@ -376,7 +376,7 @@ Defined in today.md §4 (list, check on the selected gym, `Add gym`, `Edit gyms`
 | Checked | Ben saved the editor (or edited an inline travel range) | `Checked by you` tag for 3 s after saving, then no tag (checked is the normal state) |
 | Invalid | Validator rejects | Field: 2pt `status.warning` border + inline text. `Save` disabled with the label `Fix 1 problem`. Texts in §5 |
 | Makes no load | Inventory and min/max leave no achievable load | Preview: `(!) This setup can't make any load. Check the min and max.` `Save` disabled |
-| Unit locked | The item has logged sets | Unit control disabled with `This item has sets logged in kg. To use lb, add it as new equipment so history stays comparable.` [Add as new] |
+| Unit locked | The item has logged sets | Unit control disabled with `Has kg sets. Add new equipment for lb.` [Add as new] |
 | Out of order | Ben set `Out of order` (GE4) | Row: `(!) Out of order since 3 Oct`. Excluded from new workouts' snapshots and from targets and swaps until `Fixed` |
 | Busy today | `setTemporaryAvailability(sessionId, id, 'busy' \| 'broken')` during a workout | Row: `Busy today (this workout only)` [Clear]. The saved gym is unchanged |
 | Removed | `availability: 'retired'` | Under `Removed from this gym`, with the date. History keeps it. [Put back] |
@@ -460,18 +460,18 @@ The full state table and transitions are in [gym-switch.md](gym-switch.md) §3. 
 | Dumbbells | `Weights are per dumbbell.` · `Range` · `From … to … every …` · `Add another range` · `In the rack (tap any that are missing)` · `Add a single weight` |
 | Stack | `Stack, as printed on the pins` · `Uneven stack? Enter each value` · `Add-on weights (optional)` · `Attachments` · `Rope` `Straight bar` `V-bar` `Single handle` `Lat bar` `Ankle strap` `Other` · `Numbers are as printed on the stack. They're never converted to free-weight equivalents.` |
 | Assisted | `Assistance, as printed` · `More assistance = easier. In a workout "+" adds assistance.` |
-| Plate-loaded | `Plates go on` · `Both sides, balanced` · `One horn` · `Most plates it takes (optional)` · `Logged as plates added. The machine's own resistance isn't counted or estimated.` |
-| Bodyweight | `Logged as bodyweight (BW).` · `Adding weight with a belt isn't supported yet.` |
+| Plate-loaded | `Plates go on` · `Both sides, balanced` · `One horn` · `Most plates it takes (optional)` · `Logged as plates added` |
+| Bodyweight | `Logged as bodyweight` |
 | Plate sets | `Use plate set` · `Just this bar` · `Shared with Leg press and Hip thrust machine.` |
 | Preview | `Makes 126 loads: 20–332.5 kg, total, every 2.5 kg.` · `Makes 15 loads: 2.5–40 kg each.` · `Gap: 27.5 → 32.5 kg.` · `Makes 40 loads: 5–102.5 kg stack.` · `Makes 14 loads: Assist 5–70 kg.` |
 | Check a load | `Check a load` · `Each side: 25 + 15 + 1.25` · `103 kg can't be made. Nearest: 102.5 kg or 105 kg.` · `335 kg is above this bar's limit (332.5 kg).` |
 | Provenance | `Typical values, not checked` · `Checked by you` |
 | Validation | `Max is below the bar weight (20 kg).` · `Min is above max.` · `Add at least one weight.` · `This setup can't make any load. Check the min and max.` · `Each weight can appear once.` · Save label when invalid: `Fix 1 problem` / `Fix 2 problems` |
-| Unit lock | `This item has sets logged in kg. To use lb, add it as new equipment so history stays comparable.` [Add as new] |
+| Unit lock | `Has kg sets. Add new equipment for lb.` [Add as new] |
 | Availability | `Available` · `Out of order` / `Until you mark it fixed. Workouts won't use it.` · `Removed from this gym` / `It's gone for good. History keeps it.` · rows `Out of order since 3 Oct` · `Busy today (this workout only)` [Clear] · `Removed 1 Sep` [Put back] · button `Fixed` |
 | Saves | `Saved. Future workouts use the new setup.` [Undo] · `Future targets will avoid it.` · `Couldn't save Main gym. Your changes are still here.` [Try again] · `This item changed since you opened it.` [Show latest] |
 | Gym detail | `Name` · `Location` · `Default gym` · `Gym notes` · `Equipment (6)` · `Add equipment` · `Removed from this gym (1)` · `Duplicate gym` · `New travel gym from this one` · `Archive gym` · `Delete gym` |
-| Empty states | `No gym yet. Loads won't be checked against equipment.` · `No equipment yet. Add what this gym has so targets match it.` |
+| Empty states | `No gym yet. Loads won't be checked against equipment.` · `No equipment yet` |
 | In-workout banner | `Your workout in progress uses this gym as it was when you started.` [Use changes today] |
 | Travel | `New travel gym` · `Travel gym · 12 Oct` · `Use until` · `What's there?` · `Save and switch` / `Save travel gym` · row `Travel, until Sun 18 Oct` |
 | Confirms | `Archive Main gym? It's hidden from the gym list. Past workouts keep it.` · `Choose another default gym first.` · `Delete Home? It hasn't been used in a workout. This can't be undone.` · `Discard changes to Dumbbells?` · `Bench press history uses this bar, so it's kept as removed rather than deleted.` |

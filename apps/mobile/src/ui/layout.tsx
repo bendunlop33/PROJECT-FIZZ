@@ -241,20 +241,22 @@ export function StatusLine({
  * A short line with an optional `ⓘ` (minimal copy): the explanation shows only
  * on a tap. With no `info` it is a plain line.
  */
-export function InfoLine({ text, info, variant = 'body' }: { text: string; info?: string | null; variant?: 'body' | 'callout' }) {
+export function InfoLine({ text, info, variant = 'body', infoLabel = 'Info' }: { text?: string | null; info?: string | null; variant?: 'body' | 'callout'; infoLabel?: string }) {
   const theme = useTheme();
   const [open, setOpen] = useState(false);
   const hasInfo = info !== undefined && info !== null && info !== '';
   return (
     <View style={{ gap: theme.space['1'] }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-        <AppText variant={variant} style={{ flexShrink: 1 }}>
-          {text}
-        </AppText>
+        {text ? (
+          <AppText variant={variant} style={{ flexShrink: 1 }}>
+            {text}
+          </AppText>
+        ) : null}
         {hasInfo ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Info"
+            accessibilityLabel={infoLabel}
             accessibilityState={{ expanded: open }}
             hitSlop={12}
             onPress={() => {

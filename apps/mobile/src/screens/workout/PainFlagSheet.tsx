@@ -66,7 +66,7 @@ export function PainFlagSheet() {
   if (sheet === null) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'], padding: theme.space['4'], gap: theme.space['3'] }}>
-        <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t read this pain flag." detail="Nothing was changed." />
+        <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t read this pain flag." />
         <TextButton label="Done" onPress={close} />
       </View>
     );

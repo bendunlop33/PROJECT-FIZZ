@@ -465,7 +465,7 @@ Why these questions (playbook v1): the **goal** picks the target profile (rule G
 | 2 Gym, starting point | No card chosen | Cards unselected | `Continue` disabled, label `Choose a starting point` |
 | 2 Gym, starting point | Name empty | Field shows inline `Give the gym a name` (`status.warning` border + text) | `Continue` disabled |
 | 2 Gym, checklist | Normal | Ticked items with `not checked` tags | `Save gym` |
-| 2 Gym, checklist | Nothing ticked | Hint `Nothing ticked. Logging still works, but loads won't be checked.` | `Save empty gym` |
+| 2 Gym, checklist | Nothing ticked | Hint `Nothing ticked · loads not checked` | `Save empty gym` |
 | 2 Gym, checklist | Item detail invalid | The item's row shows `(!) Needs fixing: max is below the bar weight` (validator text) | `Save gym` disabled until fixed or unticked |
 | 2 Gym | Skipped | `Skip for now…` tapped | Goes to Step 3. Ready shows `No gym yet` with `Add gym ›` |
 | 3 Data explainer | Normal | §2.5 | `Continue` (always enabled); `Skip` in the top bar |
@@ -567,12 +567,11 @@ None. Voice isn't set up during onboarding and no microphone is opened.
 | Welcome title | `Set up your training log` |
 | Welcome body | `Takes about 2 minutes. Everything is saved on this phone. Nothing needs an account or the internet.` |
 | Welcome list | `You'll set:` `Units and rest times` · `Your gym's equipment` · `How your data is kept` |
-| Welcome footer | `Coach, goals and history import are optional and can come later.` |
 | Welcome actions | `Set up` · `Restore from a backup` |
 | Step counter | `Step 1 of 3` (Essentials) · `Step 1 of 4` (About your training, revised 9 Oct) |
-| Step 1 title | `How you log` / `You can change these any time in Profile.` |
-| Unit | `Weights in` · `Kilograms (kg)` · `Pounds (lb)` · `Picked from your phone's region.` · `Each piece of equipment keeps its own unit, so a kg gym and a lb gym both work.` |
-| Rest | `Rest times` · `Starting points, not advice. Edit them to match how you train.` · `Warm-up 1:00` · `Standard (default) 1:30` · `Heavy 3:00` |
+| Step 1 title | `How you log` |
+| Unit | `Weights in` · `Kilograms (kg)` · `Pounds (lb)` |
+| Rest | `Rest times` · `Warm-up 1:00` · `Standard (default) 1:30` · `Heavy 3:00` |
 | Step 2 title | `Where do you train most?` / `Pick the closest match. You'll check the equipment next.` |
 | Gym name | Label `Gym name`, default `Main gym`. Error `Give the gym a name` |
 | Presets | `Commercial gym` (`Barbells, dumbbells, cables, machines`) · `Home: dumbbells and a bench` · `Home: barbell, rack and plates` · `Hotel or small gym` · `Start empty` |
@@ -582,7 +581,7 @@ None. Voice isn't set up during onboarding and no microphone is opened.
 | Checklist footer | `You can check the numbers at the gym. Until then they're marked "not checked".` |
 | Checklist primary | `Save gym` · `Save empty gym` |
 | Step 3 title | `How your data is kept` |
-| Step 3 body | `Your data is saved and backed up on this phone.` · `Copies on the phone are lost if the app is deleted or re-signed with a different Apple ID. You can save a copy to Files any time.` (wording approved by Ben) |
+| Step 3 body | `Your data is saved and backed up on this phone.` · `Lost if the app is deleted or signed with another Apple ID. Save a copy to Files.` (wording approved by Ben) |
 | Step 3 option | `Save a copy to Files now` · result `Copy saved to Files · <location>` · `iCloud uploads it when you're back online.` · failure `Couldn't save the copy: <reason>. Your data on this phone is fine.` |
 | Ready title | `You're ready to log` |
 | Ready lines | `Units: kg · Rest 1:00 / 1:30 / 3:00` · `Main gym · 6 items (3 not checked)` · `Saved on this phone · backups run after each workout` (+ `Copy saved to Files` when one was made) / `No gym yet` |

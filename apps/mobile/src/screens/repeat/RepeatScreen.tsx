@@ -147,7 +147,7 @@ export function RepeatScreen() {
             }}
           />
         </View>
-        <AppText variant="callout">{`Targets are what you did on ${day}. Nothing is marked done. Progression isn’t applied.`}</AppText>
+        <AppText variant="callout">{`Targets: as on ${day}`}</AppText>
       </View>
       <AppText variant="label" color="text.secondary">
         All values are targets.

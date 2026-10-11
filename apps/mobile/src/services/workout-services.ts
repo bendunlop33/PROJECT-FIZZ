@@ -1716,7 +1716,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         return { ok: true, outcome: r, gymName: gym?.name ?? 'the last gym' };
       }
       const back = last.fromGymId === null ? null : await gymSwitch.propose(sessionId, last.fromGymId).catch(() => null);
-      return { ok: false, message: r.error.code === 'write_failed' ? 'Couldn’t undo. Nothing changed.' : 'Can’t undo: your workout changed since the switch.', back };
+      return { ok: false, message: r.error.code === 'write_failed' ? 'Couldn’t undo.' : 'Can’t undo: your workout changed since the switch.', back };
     },
   };
 

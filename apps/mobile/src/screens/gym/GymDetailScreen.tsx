@@ -63,7 +63,7 @@ export function GymDetailScreen() {
       <SectionHeader title={`Equipment (${String(equipment.length)})`} />
       {equipment.length === 0 ? (
         <AppText variant="callout" color="text.secondary">
-          No equipment yet. Add what this gym has so targets match it.
+          No equipment yet
         </AppText>
       ) : (
         <Group>

@@ -108,7 +108,7 @@ export function createGymServices(ctx: GymServicesContext) {
           return {
             ok: false,
             reason: 'unit_locked',
-            message: `This item has sets logged in ${base.unit}. To use ${req.form.unit}, add it as new equipment so history stays comparable.`,
+            message: `Has ${base.unit} sets. Add new equipment for ${req.form.unit}.`,
           };
         }
         const built = applyEquipmentForm(req.form, base, { id: req.equipmentId, ownerId: p.id, gymId: req.gymId, atUtc: ctx.now().utc });

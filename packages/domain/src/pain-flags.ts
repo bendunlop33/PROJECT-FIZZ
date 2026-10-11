@@ -31,7 +31,7 @@ export const PAIN_AREA_WORD: Readonly<Record<PainArea, string | null>> = {
   other: null,
 };
 
-export const PAIN_NO_INCREASES = 'No increases in load, reps or sets.';
+export const PAIN_NO_INCREASES = 'No increases';
 export const PAIN_PROFESSIONAL_TEXT = 'Sharp or lasting pain: see a physio or doctor.';
 /** The red-flag line on the check-in pain step: safety, so always visible (minimal-copy D2). */
 export const PAIN_RED_FLAG_TEXT = 'Chest pain, faintness or sudden severe pain: stop and get medical help now.';

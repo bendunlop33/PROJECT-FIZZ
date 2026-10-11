@@ -376,7 +376,7 @@ describe('buildPainFlagSheet (§2.14.4)', () => {
     const sheet = buildPainFlagSheet({ flag: f, history, nowMs: ms(9 * DAY), tz: TZ, exercise: press, anchor: { equipmentId: BAR.id, unit: 'kg', loadConvention: 'total', equipment: BAR } });
     expect(sheet.heading).toBe('Overhead press · shoulder');
     expect(plain(sheet.since)).toBe('Since 13 Oct (4 days) · you, in a check-in');
-    expect(sheet.effect).toBe('No increases in load, reps or sets.');
+    expect(sheet.effect).toBe('No increases');
     expect(plain(sheet.before)).toBe('8 Oct · 57.5 kg × 5, 4');
     expect(plain(sheet.sinceFlag)).toBe('16 Oct · 50 kg × 8, 8, 8');
     expect(sheet.checkDue).toBe(false);

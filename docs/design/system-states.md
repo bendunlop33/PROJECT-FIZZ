@@ -65,7 +65,7 @@ Never used for status: system alerts (kept for confirming destructive actions), 
 |---|---|---|
 | W1 | Say what happened, plainly | `The folder can't be reached.` |
 | W2 | Say what still works, especially logging | `Logging and built-in targets still work.` |
-| W3 | Claim data is safe only when that's guaranteed by construction (a rolled-back transaction, an untouched file) or checked | `Nothing was changed.` after a rollback; never "everything's fine" after an unknown error |
+| W3 | Claim data is safe only when that's guaranteed by construction (a rolled-back transaction, an untouched file) or checked | `Couldn't X.` already says nothing happened; a data-at-risk failure (database won't open, restore or migration fails) adds `Data unchanged` (minimal-copy audit §1 rule 1); never "everything's fine" after an unknown error |
 | W4 | At most one action, named for what it does | [Open Settings], [Back up now], not [OK] |
 | W5 | No blame, no "Oops", no exclamation marks | — |
 | W6 | Exact dates, times and counts with tabular numerals. If a value is estimated, say "about" | `Signed until Sun 11 Oct, 09:00` / `about Thu 15 Oct` |
@@ -321,7 +321,7 @@ Detected when a record fails validation on read (`CorruptDataError`), when `crea
 | Set didn't save | Active workout banner (active-workout.md) | `Set not saved. Try again.` | [Try again] (same operation ID) |
 | Finish didn't save | Active workout banner (workout-summary.md) | `Couldn't finish. Try again.` | [Try again] |
 | Storage full | Where the write failed | `This iPhone is out of space, so Fizz can't save. Your entry is still here. Free up some space, then try again.` | [Try again] |
-| A command failed and rolled back | Where it was tapped (inline line or toast-free row) | `Couldn't <action>: <short reason>. Nothing was changed.` e.g. `Couldn't delete set 1: it changed since you opened it. Nothing was changed.` | One relevant action |
+| A command failed and rolled back | Where it was tapped (inline line or toast-free row) | `Couldn't <action>: <short reason>.` e.g. `Couldn't delete set 1: it changed since you opened it.` | One relevant action |
 | Out of date (version conflict) | Card or row (design-system §9.11) | `Out of date. Your workout changed since this was suggested.` | [Dismiss] |
 | Undo rejected | Toast (active-workout.md §4.9) | `Can't undo: set 2 changed` | — |
 | Screen error (render crash) | Replaces that screen only | `Something went wrong on this screen. Saved workouts aren't affected.` | [Go to Today] · [Copy details] |
@@ -336,7 +336,7 @@ Only these block logging. Each uses `BlockingCover`; none can be dismissed; each
 
 | Operation | Title | Close-safety line | Owner |
 |---|---|---|---|
-| Restore | `Restoring your data` | `Keep Fizz open. If it closes now, your current data stays as it is.` | data-import-export.md |
+| Restore | `Restoring your data` | `Keep Fizz open.` | data-import-export.md |
 | Undo restore | `Switching back to your previous data` | same | data-import-export.md |
 | Delete all data | `Deleting your data…` | `If Fizz closes, it finishes deleting when it next opens.` | data-import-export.md |
 | Database update | `Updating your data for build 13` | `Keep Fizz open. If it closes, the update carries on next time.` | here (§3.6) |

@@ -119,7 +119,7 @@ export function createBackupService(deps: BackupServiceDeps) {
     try {
       text = await deps.manifest.read();
     } catch (e) {
-      manifestProblem = `The backup record couldn’t be read (${errorText(e)}). Nothing was changed; it’s tried again next time.`;
+      manifestProblem = `The backup record couldn’t be read (${errorText(e)}). Data unchanged; it’s tried again next time.`;
       return { manifest: lastKnown ?? parseManifest(null).manifest, writable: false };
     }
     const read = parseManifest(text);

@@ -4,7 +4,7 @@ import { View } from 'react-native';
 import { useDataChanged, useServices } from '../../shell/context';
 import { pickBackupFolder } from '../../device/files';
 import { useTheme } from '../../theme';
-import { AppText, PrimaryButton, Row, StatusLine } from '../../ui';
+import { InfoLine, PrimaryButton, Row, StatusLine } from '../../ui';
 
 /**
  * `Save a copy to Files` (data-import-export.md §2.2, §4.1): the system folder
@@ -47,9 +47,7 @@ export function SaveCopyToFiles({ variant, label = 'Save a copy to Files', onSav
     <View style={{ gap: theme.space['2'] }}>
       {variant === 'primary' ? (
         <>
-          <AppText variant="callout" color="text.secondary">
-            Backups are plain files with your training data and coaching knowledge. They never contain your coach sign-in or API keys.
-          </AppText>
+          <InfoLine infoLabel="About backup files" info="Backups are plain files with your training data and coaching knowledge. They never contain your coach sign-in or API keys." />
           <PrimaryButton label={busy ? 'Saving a copy…' : label} busy={busy} onPress={() => void save()} />
         </>
       ) : (

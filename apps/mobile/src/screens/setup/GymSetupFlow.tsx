@@ -111,7 +111,7 @@ export function GymSetupFlow({
           <>
             {ticked === 0 ? (
               <AppText variant="callout" color="text.secondary">
-                Nothing ticked. Logging still works, but loads won’t be checked.
+                Nothing ticked · loads not checked
               </AppText>
             ) : null}
             <PrimaryButton label={ticked === 0 ? 'Save empty gym' : 'Save gym'} busy={saving} onPress={() => void save(draft)} />
@@ -179,7 +179,7 @@ export function GymSetupFlow({
         <View style={{ gap: theme.space['1'] }}>
           <TextButton label="Skip: use a typical gym for now" tone="secondary" onPress={onSkip} />
           <AppText variant="callout" color="text.tertiary">
-            Barbell, dumbbells, cables and machines with typical weights, marked “not checked”. Edit it any time in Profile.
+            Typical weights · not checked
           </AppText>
         </View>
       ) : null}
