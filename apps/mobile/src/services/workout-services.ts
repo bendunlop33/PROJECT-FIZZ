@@ -160,6 +160,8 @@ import type {
   ZonedTimestamp,
 } from '@fizz/schemas';
 
+import { undoOpId, undoRefusalText } from '../workout/undo-op';
+
 /**
  * Services for the workout loop (Today → check-in → Active set → Rest →
  * Summary). In-process, local, no AI and no network. Screens call these; the
@@ -1602,6 +1604,21 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       ),
 
     dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => ctx.afterCommand(await domain().dispatch(sessionId, command)),
+
+    /**
+     * `Undo` on a delete-set, skip, correction, remove or swap toast (copy D4):
+     * `undo_op` puts back exactly what that operation changed, or is refused
+     * when anything it touched changed since (rule 5). The opId is derived
+     * from the target, so a retry or a double tap undoes once.
+     */
+    async undoOp(req: { sessionId: string; targetOpId: string }): Promise<{ ok: true; aggregate: SessionAggregate } | { ok: false; message: string }> {
+      try {
+        const r = ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'undo_op', at: ctx.now(), opId: undoOpId(req.targetOpId), targetOpId: req.targetOpId }));
+        return r.ok ? { ok: true, aggregate: r.aggregate } : { ok: false, message: undoRefusalText(r.error.code) };
+      } catch {
+        return { ok: false, message: undoRefusalText('failed') };
+      }
+    },
 
     /**
      * `Save changes` in the correction sheet: values and exclusion chips in

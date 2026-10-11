@@ -60,6 +60,7 @@ import { TargetWhyLink, TargetWhyPanel } from './TargetWhyPanel';
 import { TimeLeftLine, TimeLeftSheet } from './TimeLeftSheet';
 import { answerStillHurts, confirmClearFlag, type PainToast } from '../../workout/pain-actions';
 import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../workout/rest-fold';
+import { UNDO_TOAST } from '../../workout/undo-op';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 
 /**
@@ -246,7 +247,7 @@ export function WorkoutScreen() {
       }, 4000);
     }
     const handed = route.params?.toast;
-    if (handed && handed.kind !== 'exclusion' && firstTime(`toast:${sid}:${handed.kind}:${handed.text}`)) showHanded(handed);
+    if (handed && handed.kind !== 'exclusion' && handed.kind !== 'undo_op' && firstTime(`toast:${sid}:${handed.kind}:${handed.text}`)) showHanded(handed);
   }, [data === 'loading' || data === null ? null : data.aggregate.session.id]);
 
   // The correction sheet hands its exclusion toast back on return (§2.13); each save shows once.
@@ -254,6 +255,33 @@ export function WorkoutScreen() {
   useEffect(() => {
     if (handedExclusion && firstTime(`toast:exclusion:${handedExclusion.key}`)) showHanded(handedExclusion);
   }, [handedExclusion?.key]);
+  // …and its `Set 2 deleted` / `Set 2 updated` [Undo] (copy D4), once per operation.
+  const handedUndo = route.params?.toast?.kind === 'undo_op' ? route.params.toast : null;
+  useEffect(() => {
+    if (handedUndo && firstTime(`toast:undo_op:${handedUndo.targetOpId}`)) showHanded(handedUndo);
+  }, [handedUndo?.targetOpId]);
+
+  /**
+   * A toast with `Undo` for an operation that applied at once (copy D4):
+   * delete set, skip, a correction, remove or swap. Undo is `undo_op`,
+   * refused when anything it touched changed since (rule 5).
+   */
+  function toastUndoOp(text: string, targetOpId: string, sessionId: string) {
+    showToast({
+      icon: 'info.circle',
+      text,
+      action: 'Undo',
+      onAction: () => {
+        setToast(null);
+        void services.workout.undoOp({ sessionId, targetOpId }).then((r) => {
+          changed();
+          void reload();
+          if (r.ok) haptic('undo');
+          else showToast({ icon: 'info.circle', text: r.message });
+        });
+      },
+    });
+  }
 
   function showHanded(t: WorkoutToastParam) {
     switch (t.kind) {
@@ -283,6 +311,9 @@ export function WorkoutScreen() {
         break;
       case 'info':
         showToast({ icon: 'info.circle', text: t.text });
+        break;
+      case 'undo_op':
+        if (data !== 'loading' && data !== null) toastUndoOp(t.text, t.targetOpId, data.aggregate.session.id);
         break;
       case 'exclusion':
         showToast({
@@ -664,33 +695,17 @@ export function WorkoutScreen() {
       if (action === 'add_set') void addSet(f.sessionExerciseId);
       if (action === 'add_exercise') navigation.navigate('ExercisePicker', { sessionId: session.id });
       if (action === 'delete_set') {
-        Alert.alert(`Delete set ${String(f.setNumber)}?`, 'It’s removed from this workout. The edit log keeps a record.', [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: () => {
-              void run({ type: 'delete_set', at: services.now(), opId: newUuid(), setId: f.setId, expectedSetVersion: f.setVersion }).then((r) => {
-                if (r.ok) showToast({ icon: 'info.circle', text: `Set ${String(f.setNumber)} deleted` });
-              });
-            },
-          },
-        ]);
+        // No confirm (copy D4): it applies at once with Undo.
+        const opId = newUuid();
+        void run({ type: 'delete_set', at: services.now(), opId, setId: f.setId, expectedSetVersion: f.setVersion }).then((r) => {
+          if (r.ok) toastUndoOp(UNDO_TOAST.deleted(f.setNumber), opId, session.id);
+        });
       }
       if (action === 'skip_exercise') {
-        const pending = view?.exercises.find((e) => e.sessionExerciseId === f.sessionExerciseId)?.pendingSets ?? 0;
-        Alert.alert(`Skip the ${String(pending)} remaining ${pending === 1 ? 'set' : 'sets'} of ${f.exerciseName}?`, undefined, [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Skip',
-            style: 'destructive',
-            onPress: () => {
-              void run({ type: 'skip_exercise', at: services.now(), opId: newUuid(), sessionExerciseId: f.sessionExerciseId }).then((r) => {
-                if (r.ok) showToast({ icon: 'info.circle', text: `${f.exerciseName} skipped` });
-              });
-            },
-          },
-        ]);
+        const opId = newUuid();
+        void run({ type: 'skip_exercise', at: services.now(), opId, sessionExerciseId: f.sessionExerciseId }).then((r) => {
+          if (r.ok) toastUndoOp(UNDO_TOAST.skipped(f.exerciseName), opId, session.id);
+        });
       }
     });
   }

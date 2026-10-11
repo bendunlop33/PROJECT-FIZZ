@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { buildSetEditView, EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
@@ -10,15 +10,17 @@ import { newUuid } from '../../device/runtime';
 import { formatTime } from '../../format/dates';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
+import { UNDO_TOAST } from '../../workout/undo-op';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, DangerTextButton, NumberAccessory, NumberStepper, PrimaryButton, StatusLine, TextButton } from '../../ui';
 
 /**
  * Correction sheet for a logged set (active-workout §4.4): `correct_set`
  * guarded on the set's own version; the rest timer is never touched.
- * `Delete set` always confirms and keeps an audited record (no Undo yet).
- * The exclusion chips (§2.13) save in the same `correct_set`; the toast with
- * Undo is handed back to the workout screen.
+ * `Delete set` deletes at once and keeps an audited record; the workout
+ * screen shows `Set 2 deleted` [Undo] (copy D4). A value change hands back
+ * `Set 2 updated` [Undo]. The exclusion chips (§2.13) save in the same
+ * `correct_set`; their toast (with its own Undo) wins when they changed.
  */
 export function EditSetScreen() {
   const theme = useTheme();
@@ -80,6 +82,10 @@ export function EditSetScreen() {
       navigation.navigate('Workout', { toast: { kind: 'exclusion', key: saveOp, text: r.toast, undo: { sessionId, ...r.undo } } });
       return;
     }
+    if (!r.duplicate) {
+      navigation.navigate('Workout', { toast: { kind: 'undo_op', text: UNDO_TOAST.corrected(view.setNumber), targetOpId: saveOp } });
+      return;
+    }
     navigation.goBack();
   }
 
@@ -88,26 +94,17 @@ export function EditSetScreen() {
     setExclusions(now.includes(x) ? now.filter((y) => y !== x) : [...now, x]);
   }
 
-  function remove() {
+  async function remove() {
     if (!view) return;
-    Alert.alert(`Delete set ${String(view.setNumber)}?`, 'It’s removed from this workout’s totals and history. The edit log keeps a record.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          void services.workout.dispatch(sessionId, { type: 'delete_set', at: services.now(), opId: deleteOp, setId, expectedSetVersion: view.setVersion }).then((r) => {
-            if (!r.ok) {
-              setError(r.error.message);
-              void load();
-              return;
-            }
-            changed();
-            navigation.goBack();
-          });
-        },
-      },
-    ]);
+    // No confirm (copy D4): the workout screen offers Undo.
+    const r = await services.workout.dispatch(sessionId, { type: 'delete_set', at: services.now(), opId: deleteOp, setId, expectedSetVersion: view.setVersion });
+    if (!r.ok) {
+      setError(r.error.message);
+      void load();
+      return;
+    }
+    changed();
+    navigation.navigate('Workout', { toast: { kind: 'undo_op', text: UNDO_TOAST.deleted(view.setNumber), targetOpId: deleteOp } });
   }
 
   return (
@@ -186,7 +183,7 @@ export function EditSetScreen() {
         {error ? <StatusLine icon="info.circle" tone="info" text={error} /> : null}
         <PrimaryButton label="Save changes" disabled={!view.changed} onPress={() => void save()} />
         <View style={{ height: theme.space['8'] }} />
-        <DangerTextButton label="Delete set" onPress={remove} />
+        <DangerTextButton label="Delete set" onPress={() => void remove()} />
       </ScrollView>
     </View>
   );

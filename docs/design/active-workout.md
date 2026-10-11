@@ -827,7 +827,7 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
   - `Swap exercise` (→ the Swap sheet in exercise-library.md §2.5 → `ChangeReviewCard` with scope `Today only`). If Ben approves exercise-library EL4, a swap he picks himself applies at once with Undo (`SwapSlotLine`) instead; coach-suggested swaps keep the card either way.
   - `Machine busy` (calls `setTemporaryAvailability`).
   - `Notes`.
-  - `Skip exercise` (`skip_exercise`) marks the pending sets skipped; logged sets are untouched. It confirms first because there is no Undo yet: `Skip the 2 remaining sets of Bench press?` [Skip] [Cancel]. Toast `Bench press skipped` (no Undo). Skipped rows stay visible with the Skipped style; `Add set` brings the exercise back.
+  - `Skip exercise` (`skip_exercise`) marks the pending sets skipped; logged sets are untouched. No confirm (copy D4, accepted 11 Oct): toast `Bench press skipped` [Undo] (`undo_op`). Skipped rows stay visible with the Skipped style; `Add set` also brings the exercise back.
 - **Add exercise:** `+ Add exercise` at the end of the Overview list, and on the All-done and Empty cards. Opens the exercise picker → `addExercise`.
 - **Tap a pending set** (mini list or Overview) to make it the active set (`setActiveSet`). The draft and the Log label update.
 - **Tap a done set** to open the correction sheet:
@@ -849,7 +849,7 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 └────────────────────────────────────────┘
 ```
   - `Save changes` calls `correctSet(setId, patch, expectedVersion)`. The row gets an `Edited` tag. Rest is not touched. A correction never calls the coach and never changes other targets by itself. If the corrected effort or reps meet a trigger, the deterministic check may show a coach **offer** (no AI call until Ben taps `Adjust`).
-  - `Delete set` calls `deleteSet` (`delete_set`, guarded on the set's version). It always confirms: `Delete set 1? It's removed from this workout's totals and history. The edit log keeps a record.` [Delete] [Cancel]. Toast `Set 1 deleted` (no Undo yet; ADR 0003 Open). The set is kept as an audited deleted record and disappears from the mini list, Overview and volume. Pending sets can be deleted the same way from their row's `⋯` in Overview.
+  - `Delete set` calls `deleteSet` (`delete_set`, guarded on the set's version). No confirm (copy D4, accepted 11 Oct): toast `Set 1 deleted` [Undo] (`undo_op`). The set is kept as an audited deleted record and disappears from the mini list, Overview and volume. Pending sets can be deleted the same way from their row's `⋯` in Overview.
   - The sheet also shows the Side control for unilateral exercises (§2.9).
   - (2026-10-09) **Exclusion chips** (§2.13): `Spotted`, `Pain`, `Form broke`, `Other equipment`, multi-select, none selected by default. They save with `Save changes` as part of the same `correctSet` patch (`exclusions`). Selecting `Pain` adds the line `⚠ This also puts a pain flag on Bench press: no increases until you clear it.`; when there's no active flag on the movement, the same commit sets one (`setPainFlag`, source `workout`) and the pain card appears with its Undo (AW7). Unticking `Pain` later doesn't clear the movement flag; that stays an explicit `Clear flag` (§2.14.3). At AX1+ the chips wrap two per row.
 
@@ -921,9 +921,11 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 | Action | Undo |
 |---|---|
 | Log set | Toast `Undo` (8 s). Guarded on the set's own version (`expectedSetVersion`) and on it still being the latest commit by commit order, so an effort-chip tap during rest doesn't block it. For a single-side log it also removes the pending other-side set (§2.9). After that: the done row → Delete set |
-| Correction | Not yet (ADR 0003 Open). Correct it again; the edit history keeps every version |
-| Delete set | Not yet (ADR 0003 Open), so it always confirms. The deleted record is kept, so Undo can be added later |
-| Skip exercise | Not yet (ADR 0003 Open), so it confirms. `Add set` brings the exercise back |
+| Correction | Toast `Set 2 updated` [Undo] (`undo_op`, 11 Oct). Refused once the set changed again (`Can't undo: it changed since`); the edit history keeps every version. A save that changed exclusion chips shows the chips' toast and Undo instead (§2.13) |
+| Delete set | No confirm (copy D4). Toast `Set 2 deleted` [Undo] (`undo_op`): the audited record goes back to what it was. Refused once it changed since |
+| Skip exercise | No confirm (copy D4). Toast `Bench press skipped` [Undo] (`undo_op`): the skipped sets go back to pending. `Add set` also brings the exercise back |
+| Remove exercise (nothing logged) | Toast `Face pull removed` [Undo] (`undo_op`) |
+| Swap exercise (mid-workout) | Toast `Bench press → Dumbbell press` [Undo] (`undo_op`): pending sets go back; a set already logged on the substitute stays |
 | Applied proposal (swap, gym) | Toast `Undo` → `undoAction` (or a compensating proposal if it isn't safe) |
 | Gym switch (2026-10-09) | Toast `Undo` (8 s) restores the gym, exercise rows, pending targets and drafts exactly. If anything changed since, it shows `Can't undo: your workout changed since the switch.` and a `Switch back to Main Gym` card, which restores the planned loads. Undoing a coach change or a swap after a switch fits the restored target to the current gym (gym-switch §4.5) |
 | Coach adjustment | `Undo` on the banner; later, `Why?` on a coach-marked set → `Undo this change`, or exercise `⋯` → `Undo coach change`. `undoAction` restores only sets still pending (coach-adjustments §4.4) |
