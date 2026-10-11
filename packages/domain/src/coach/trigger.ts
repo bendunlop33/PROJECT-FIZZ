@@ -155,8 +155,6 @@ export interface OfferGateInput {
   sessionExerciseId: string;
   /** Only while Resting (path B), never in Ready. */
   resting: boolean;
-  /** `getAiCapabilities` says a route can answer now. Offline: no offers at all. */
-  coachReachable: boolean;
   /** A coach request is already pending. */
   pending: boolean;
   /** Offers shown earlier in this session (any response). */
@@ -168,10 +166,12 @@ export interface OfferGateInput {
 /**
  * Whether to show an offer now (coach-adjustments §4.2 step 2 and CA4: at
  * most once per exercise and trigger kind, unless an adjustment to that
- * exercise was applied after the last offer).
+ * exercise was applied after the last offer). Whether it is the coach's
+ * offer or the built-in rule's (CA6, coach unreachable) is decided by the
+ * caller; the gate is the same for both.
  */
 export function shouldShowCoachOffer(input: OfferGateInput): boolean {
-  if (!input.resting || !input.coachReachable || input.pending) return false;
+  if (!input.resting || input.pending) return false;
   const earlier = input.log.filter((e) => e.sessionExerciseId === input.sessionExerciseId && e.kind === input.trigger.kind);
   if (earlier.length === 0) return true;
   const lastOffer = Math.max(...earlier.map((e) => e.atVersion));

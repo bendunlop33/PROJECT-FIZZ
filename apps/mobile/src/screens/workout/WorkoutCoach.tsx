@@ -2,17 +2,16 @@ import { useNavigation } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 
-import { renderActionResult, undoOpId } from '@fizz/coach';
-import type { CoachTrigger } from '@fizz/domain';
+import { renderActionResult, undoOpId, type CoachTurnResult } from '@fizz/coach';
 import type { ActionRecord, BenInput, SessionAggregate } from '@fizz/schemas';
 
-import type { CoachAvailability } from '../../coach/coach-service';
+import type { CoachAvailability, WorkoutOffer } from '../../coach/coach-service';
 import { whyView, type WhyView } from '../../coach/sheet-view';
-import { ADJUST_CHIP_LABEL, adjustControlView, chipForTrigger, slotAfterFailure, slotAfterTurn, slotView, syncAdjustment, type SlotView } from '../../coach/slot-view';
+import { ADJUST_CHIP_LABEL, adjustControlView, chipForTrigger, coachCouldNotAnswer, offerCandidates, ruleOfferOutcome, slotAfterFailure, slotAfterTurn, slotView, syncAdjustment, type SlotView } from '../../coach/slot-view';
 import { newUuid } from '../../device/runtime';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Chip, Icon, TextButton } from '../../ui';
+import { AppText, Chip, Icon, Tag, TextButton } from '../../ui';
 import { WhyPanel } from '../coach/CoachCard';
 
 /**
@@ -23,7 +22,7 @@ import { WhyPanel } from '../coach/CoachCard';
  * for the coach (rule 1). The sheet never opens by itself.
  */
 
-type Offer = CoachTrigger & { sessionExerciseId: string };
+type Offer = WorkoutOffer;
 
 export interface WorkoutCoach {
   availability: CoachAvailability | null;
@@ -55,8 +54,12 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [why, setWhy] = useState<WhyView | null>(null);
   const lastAsk = useRef<BenInput | null>(null);
+  /** The offer whose `Adjust` started the running turn: if the coach can't answer, the rule's offer takes its place (F3). */
+  const askedOffer = useRef<Offer | null>(null);
   /** Only the latest log's offer check may set the offer. */
   const offerCheck = useRef(0);
+  /** Sets logged with no rest running, checked when the next rest starts (F7). Per workout. */
+  const heldSets = useRef<{ sessionId: string | null; ids: string[] }>({ sessionId: null, ids: [] });
   const appliedRef = useRef(onApplied);
   appliedRef.current = onApplied;
 
@@ -80,38 +83,63 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
   }, [services, liveAdjustment, workout]);
 
   const ask = useCallback(
-    (input: BenInput) => {
+    (input: BenInput, fromOffer: Offer | null = null) => {
       if (sessionId === null || pending !== null) return;
       const turnId = newUuid();
       lastAsk.current = input;
+      askedOffer.current = fromOffer;
       setPending(turnId);
       setOffer(null);
       setOutcome(null);
       setAdjustOpen(false);
       setWhy(null);
       void (async () => {
+        let result: CoachTurnResult | null = null;
+        let after: ReturnType<typeof slotAfterTurn>;
         try {
           const threadId = await services.coach.resolveThread({ kind: 'workout', sessionId });
-          const r = await services.coach.send({ entry: { kind: 'workout', sessionId }, threadId, input, turnId });
-          const after = slotAfterTurn(r);
-          setAdjustment(after.adjustment);
-          setOutcome(after.outcome);
-          if (after.adjustment !== null) appliedRef.current();
+          result = await services.coach.send({ entry: { kind: 'workout', sessionId }, threadId, input, turnId });
+          after = slotAfterTurn(result);
         } catch {
           // Read what this turn saved before saying "Nothing changed" (review N2).
           const threadId = await services.coach.resolveThread({ kind: 'workout', sessionId }).catch(() => null);
           const data = threadId === null ? null : await services.coach.loadThread(threadId).catch(() => null);
-          const after = slotAfterFailure(data?.actionsByTurn.get(turnId) ?? []);
-          setAdjustment(after.adjustment);
-          setOutcome(after.outcome);
-          if (after.adjustment !== null) appliedRef.current();
-        } finally {
-          setPending(null);
-          setAvailability(await services.coach.availability());
+          after = slotAfterFailure(data?.actionsByTurn.get(turnId) ?? []);
         }
+        // F3: Adjust on an offer, and the coach couldn't answer: the built-in rule's offer for the same trigger instead.
+        const offered = askedOffer.current;
+        askedOffer.current = null;
+        const fallback = offered !== null && after.adjustment === null && coachCouldNotAnswer(result) ? await services.coach.ruleOfferFor(offered).catch(() => null) : null;
+        setAdjustment(after.adjustment);
+        setOutcome(fallback === null ? after.outcome : null);
+        if (fallback !== null) setOffer(fallback);
+        if (after.adjustment !== null) appliedRef.current();
+        setPending(null);
+        setAvailability(await services.coach.availability());
       })();
     },
     [services, sessionId, pending],
+  );
+
+  /** `Adjust` on the built-in rule's offer: applied at once (a local write), with Undo in the banner. */
+  const applyRule = useCallback(
+    (o: Offer) => {
+      setOffer(null);
+      setOutcome(null);
+      setWhy(null);
+      void services.coach
+        .applyRuleOffer(o)
+        .then((r) => {
+          if (r.status === 'applied') {
+            setAdjustment(r.record);
+            appliedRef.current();
+          } else setOutcome(ruleOfferOutcome(r.status));
+        })
+        .catch(() => {
+          setOutcome(ruleOfferOutcome('failed'));
+        });
+    },
+    [services],
   );
 
   const slot = slotView({ pending: pending !== null, adjustment, outcome, offer, workout });
@@ -131,12 +159,21 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
       const resting = aggregate.restTimer?.status === 'running';
       const check = ++offerCheck.current;
       setOffer(null);
+      const sid = aggregate.session.id;
+      const held = heldSets.current.sessionId === sid ? heldSets.current.ids : [];
+      const { check: toCheck, held: nextHeld } = offerCandidates(held, setId, resting);
+      heldSets.current = { sessionId: sid, ids: nextHeld };
       // Re-read the status on each log: `Offline` from an earlier failure lapses once the network is back.
+      // Not reachable: the built-in rule offers instead (CA6 revised); nothing it can change, nothing shown.
       void services.coach
         .availability()
-        .then((now) => {
+        .then(async (now) => {
           setAvailability(now);
-          return services.coach.offerAfterLog({ aggregate, setId, resting, coachReachable: now.status === 'ok', pending: pending !== null });
+          for (const id of toCheck) {
+            const next = await services.coach.offerAfterLog({ aggregate, setId: id, resting, coachReachable: now.status === 'ok', pending: pending !== null });
+            if (next !== null) return next;
+          }
+          return null;
         })
         .catch(() => null)
         .then((next) => {
@@ -169,9 +206,11 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
           setOutcome({ text: 'Couldn’t undo.', retry: false });
         });
     },
-    // CA1: Adjust on an offer is Ben asking, in the trigger's direction.
+    // CA1: Adjust on an offer is Ben asking, in the trigger's direction. The rule's offer applies its own change.
     acceptOffer: () => {
-      if (offer !== null) ask({ kind: 'chip', chip: chipForTrigger(offer.kind), sessionExerciseId: offer.sessionExerciseId });
+      if (offer === null) return;
+      if (offer.by === 'rule') applyRule(offer);
+      else ask({ kind: 'chip', chip: chipForTrigger(offer.kind), sessionExerciseId: offer.sessionExerciseId }, offer);
     },
     dismissOffer: () => {
       setOffer(null);
@@ -244,11 +283,12 @@ export function CoachSlotContent({ coach }: { coach: WorkoutCoach }) {
     case 'banner':
       return (
         <View style={{ gap: theme.space['2'] }} accessible={false}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }} accessible accessibilityLabel={`Saved change. ${s.title}. ${s.detail ?? ''}`}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }} accessible accessibilityLabel={`Saved change${s.tag === null ? '' : `, ${s.tag}`}. ${s.title}. ${s.detail ?? ''}`}>
             <Icon name="checkmark.circle.fill" color="status.done" size={18} />
             <AppText variant="headline" style={{ flex: 1 }}>
               {s.title}
             </AppText>
+            {s.tag !== null ? <Tag text={s.tag} /> : null}
           </View>
           {s.detail !== null ? (
             <AppText variant="body" numeric>
@@ -291,6 +331,14 @@ export function CoachSlotContent({ coach }: { coach: WorkoutCoach }) {
           <AppText variant="callout" color="text.secondary" numeric>
             {s.fact}
           </AppText>
+          {s.change !== null ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }} accessible accessibilityLabel={`${s.tag ?? ''} ${s.change}`}>
+              <AppText variant="body" numeric style={{ flex: 1 }}>
+                {s.change}
+              </AppText>
+              {s.tag !== null ? <Tag text={s.tag} /> : null}
+            </View>
+          ) : null}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <TextButton label="No thanks" tone="secondary" onPress={coach.dismissOffer} />
             <TextButton label="Adjust" onPress={coach.acceptOffer} />

@@ -15,6 +15,8 @@ interface MenuItem {
 const HOW_TO: MenuItem = { action: 'how_to', label: 'How to', destructive: false };
 /** While the focused set carries a coach change still pending (coach-adjustments §2.7). */
 const UNDO_COACH: MenuItem = { action: 'undo_coach', label: 'Undo coach change', destructive: false };
+/** The same for the built-in rule's change (CA6 revised): never called the coach's. */
+const UNDO_RULE: MenuItem = { action: 'undo_coach', label: 'Undo change', destructive: false };
 const ITEMS: readonly MenuItem[] = [
   { action: 'add_set', label: 'Add set', destructive: false },
   { action: 'add_exercise', label: 'Add exercise', destructive: false },
@@ -33,8 +35,9 @@ export interface ExerciseMenu {
   actionAt: (index: number) => ExerciseMenuAction | null;
 }
 
-export function exerciseMenu(hasHowTo: boolean, hasCoachChange = false): ExerciseMenu {
-  const items = [...(hasHowTo ? [HOW_TO] : []), ...(hasCoachChange ? [UNDO_COACH] : []), ...ITEMS];
+export function exerciseMenu(hasHowTo: boolean, hasCoachChange: boolean | 'rule' = false): ExerciseMenu {
+  const undo = hasCoachChange === 'rule' ? [UNDO_RULE] : hasCoachChange ? [UNDO_COACH] : [];
+  const items = [...(hasHowTo ? [HOW_TO] : []), ...undo, ...ITEMS];
   return {
     options: items.map((i) => i.label),
     destructiveButtonIndex: items.flatMap((item, i) => (item.destructive ? [i] : [])),

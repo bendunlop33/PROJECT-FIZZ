@@ -115,7 +115,7 @@ describe('turn lines: honest, short, Try again where it helps', () => {
 });
 
 describe('the workout coach slot (one item: pending > banner > outcome > offer)', () => {
-  const offer = { triggerId: ID(5), kind: 'rpe_high' as const, setId: ID(102), fact: 'RPE 10 on set 2', prompt: 'That looked hard. Adjust remaining sets?', sessionExerciseId: ID(10) };
+  const offer = { triggerId: ID(5), kind: 'rpe_high' as const, setId: ID(102), fact: 'RPE 10 on set 2', prompt: 'That looked hard. Adjust remaining sets?', sessionExerciseId: ID(10), by: 'coach' as const, change: null };
   it('priority', () => {
     expect(slotView({ pending: true, adjustment: adjust, outcome: null, offer })).toMatchObject({ kind: 'pending' });
     const banner = slotView({ pending: false, adjustment: adjust, outcome: { text: 'x', retry: false }, offer });

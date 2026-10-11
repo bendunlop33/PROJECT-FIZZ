@@ -596,12 +596,11 @@ describe('evaluateCoachTrigger (rule T, D20)', () => {
 describe('shouldShowCoachOffer (CA4, §4.2)', () => {
   const t = evaluateCoachTrigger(trig({ actual: { reps: 8, rpe: 10, rir: null } }), 2);
   if (t === null) throw new Error('fixture');
-  const base = { trigger: t, sessionExerciseId: exId(1), resting: true, coachReachable: true, pending: false, log: [], lastAdjustedAtVersion: null };
+  const base = { trigger: t, sessionExerciseId: exId(1), resting: true, pending: false, log: [], lastAdjustedAtVersion: null };
 
-  it('only while resting, reachable and idle', () => {
+  it('only while resting and idle; reachability picks coach or rule, not whether to offer (CA6 revised)', () => {
     expect(shouldShowCoachOffer(base)).toBe(true);
     expect(shouldShowCoachOffer({ ...base, resting: false })).toBe(false);
-    expect(shouldShowCoachOffer({ ...base, coachReachable: false })).toBe(false);
     expect(shouldShowCoachOffer({ ...base, pending: true })).toBe(false);
   });
 
