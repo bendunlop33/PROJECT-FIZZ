@@ -48,12 +48,15 @@ function setsPart(sets: number | null): string {
   return sets === null ? '' : ` · ${String(sets)} sets`;
 }
 
-function coachRow(r: NextSessionTargetRecord, builtIn: NextTimeRow | undefined): NextTimeRowView {
+function coachRow(r: NextSessionTargetRecord, builtIn: NextTimeRow | undefined, stale: boolean): NextTimeRowView {
   const used = r.usedBySessionId !== null;
   const builtInLine = r.builtIn === null ? null : `Rule: ${targetPhrase(r.builtIn)}${setsPart(r.builtInSets)}`;
   const why = [...(r.reason === null ? [] : [`“${r.reason}”`]), ...r.guardNotes.map((n) => n.text), ...(builtInLine === null ? [] : [builtInLine])];
   const target = `Target ${targetPhrase(r.target)}${setsPart(r.sets)}`;
   const base = { key: r.id, exerciseName: r.exerciseName, pct: pctText(r.pctChange), row: r, note: used ? 'Used' : null };
+  const ruleTarget = builtIn?.target ?? (r.builtIn === null ? 'Same targets' : `Target ${targetPhrase(r.builtIn)}`);
+  // The workout's sets changed since the review (a correction): the next workout won't use it, so neither does this row.
+  if (stale && !used) return { ...base, target: ruleTarget, pct: null, tag: 'Rule', why: [`Coach target: ${targetPhrase(r.target)}${setsPart(r.sets)}`, ...why.filter((w) => w !== builtInLine)], actions: [] };
   switch (r.status) {
     case 'saved':
     case 'applied':
@@ -87,6 +90,8 @@ export interface NextTimeInput {
   /** `buildWorkoutSummary(…).nextTime`; null hides the section. */
   builtIn: { sourceTag: string; rows: NextTimeRow[]; emptyText: string | null } | null;
   coachRows: readonly NextSessionTargetRecord[];
+  /** Rows whose workout changed since they were saved (`staleNextTargets`): shown as the built-in rule's. */
+  stale?: ReadonlySet<string>;
   availability: CoachAvailability;
   reviewing: boolean;
 }
@@ -94,17 +99,18 @@ export interface NextTimeInput {
 export function nextTimeView(input: NextTimeInput): NextTimeView | null {
   if (input.builtIn === null) return null;
   const byExercise = new Map(input.coachRows.map((r) => [r.exerciseId, r]));
+  const stale = input.stale ?? new Set<string>();
   const rows: NextTimeRowView[] = [];
   const seen = new Set<string>();
   for (const b of input.builtIn.rows) {
     const c = byExercise.get(b.exerciseId);
     seen.add(b.exerciseId);
-    if (c !== undefined) rows.push(coachRow(c, b));
+    if (c !== undefined) rows.push(coachRow(c, b, stale.has(c.id)));
     else rows.push({ key: b.exerciseId, exerciseName: b.exerciseName, target: b.target, pct: null, tag: input.builtIn.sourceTag, why: [b.summary, ...b.facts], actions: [], note: null, row: null });
   }
   // Coach rows for exercises the built-in rule didn't list (it held them).
-  for (const c of input.coachRows) if (!seen.has(c.exerciseId)) rows.push(coachRow(c, undefined));
-  const live = input.coachRows.filter((r) => (r.status === 'saved' || r.status === 'applied') && r.usedBySessionId === null);
+  for (const c of input.coachRows) if (!seen.has(c.exerciseId)) rows.push(coachRow(c, undefined, stale.has(c.id)));
+  const live = input.coachRows.filter((r) => (r.status === 'saved' || r.status === 'applied') && r.usedBySessionId === null && !stale.has(r.id));
   const actionIds = [...new Set(live.map((r) => r.actionId))];
   const only = actionIds.length === 1 ? actionIds[0] : undefined;
   return {

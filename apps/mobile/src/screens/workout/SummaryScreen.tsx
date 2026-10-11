@@ -58,8 +58,8 @@ export function SummaryScreen() {
     // `Save as routine` is offered once: not for a routine's workout, nor one already saved as a routine.
     const savedAs = routines.find((r) => r.createdFromSessionId === sessionId) ?? null;
     // D21: the coach's saved targets over the built-in rule's, and the summary turn's checked reply as the note.
-    const [coachRows, availability, turnNote] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null)]);
-    const nextTime = summary === null ? null : nextTimeView({ title: summary.title, builtIn: summary.nextTime, coachRows, availability, reviewing: s.coach.summaryRunning(sessionId) !== null && reviewing.current });
+    const [coachRows, stale, availability, turnNote] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.staleNextTargets(sessionId).catch(() => new Set<string>()), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null)]);
+    const nextTime = summary === null ? null : nextTimeView({ title: summary.title, builtIn: summary.nextTime, coachRows, stale, availability, reviewing: s.coach.summaryRunning(sessionId) !== null && reviewing.current });
     return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime };
   });
   // The one coach review after Finish (D21). It runs in the service, so leaving the Summary doesn't stop it;

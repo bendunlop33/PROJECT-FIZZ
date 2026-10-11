@@ -1,4 +1,4 @@
-import { deriveId, validateNextSessionTargets, validateTodayAdjustment, type AdjustIntent, type ExerciseAdjustmentPlan, type MessagePain, type NextSessionBasis } from '@fizz/domain';
+import { deriveId, nextTargetSourceBasis, validateNextSessionTargets, validateTodayAdjustment, type AdjustIntent, type ExerciseAdjustmentPlan, type MessagePain, type NextSessionBasis } from '@fizz/domain';
 import type {
   ActionDetail,
   ActionRecord,
@@ -480,6 +480,7 @@ export function createNextTargetsExecutor(deps: NextTargetsDeps): ToolExecutor {
       updatedAtUtc: ctx.now.utc,
       sourceSessionId: deps.source.session.id,
       sourceVersion: deps.source.session.version,
+      sourceBasis: nextTargetSourceBasis(deps.source),
       exerciseId: r.exerciseId,
       exerciseName: r.exerciseName,
       actionId: record.actionId,
@@ -494,7 +495,7 @@ export function createNextTargetsExecutor(deps: NextTargetsDeps): ToolExecutor {
       pctChange: r.pctChange,
       usedBySessionId: null,
     }));
-    const w = await deps.store.commit(ctx.ownerId, { kind: 'next_session_targets', action: record, rows, sourceVersion: deps.source.session.version });
+    const w = await deps.store.commit(ctx.ownerId, { kind: 'next_session_targets', action: record, rows, sourceVersion: deps.source.session.version, sourceBasis: nextTargetSourceBasis(deps.source) });
     if (w.status === 'conflict') return refuse(w.reason === 'stale_version' ? 'stale' : 'rejected', w.reason === 'stale_version' ? null : 'the workout wasn’t found', notes);
     return { kind: 'action', record: w.action, replayed: w.status === 'replayed' };
   };

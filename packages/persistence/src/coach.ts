@@ -19,7 +19,7 @@ import {
   type PainFlag,
   type PlaybookCandidate,
 } from '@fizz/schemas';
-import { reduceSession } from '@fizz/domain';
+import { nextTargetSourceBasis, reduceSession } from '@fizz/domain';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
 import { decodeDocument, erase, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
@@ -394,7 +394,8 @@ export class SqliteCoachStore {
       case 'next_session_targets': {
         const source = await readAggregate(tx, write.action.detail.kind === 'set_next_session_targets' ? write.action.detail.sourceSessionId : '');
         if (source === null || source.session.ownerId !== ownerId) throw new Rollback('missing');
-        if (source.session.version !== write.sourceVersion || source.session.status !== 'finished' || (await startedFrom(tx, ownerId, source.session.id)) !== null) throw new Rollback('stale_version');
+        // The same sets as the review saw (CA10): a rename or a time edit since isn't a change to the targets' basis.
+        if (nextTargetSourceBasis(source) !== write.sourceBasis || source.session.status !== 'finished' || (await startedFrom(tx, ownerId, source.session.id)) !== null) throw new Rollback('stale_version');
         for (const row of write.rows) {
           if (row.ownerId !== ownerId) throw new Error('Next-target owner differs from the store owner');
           const current = await getDoc(tx, NEXT_TARGET_SPEC, row.id);

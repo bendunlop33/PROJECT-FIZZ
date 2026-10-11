@@ -569,14 +569,18 @@ export type PlaybookCandidate = z.infer<typeof PlaybookCandidateSchema>;
  * - `proposed`: a bigger change; the built-in rule is used until Ben taps Apply.
  * - `applied`: a bigger change Ben applied.
  * - `not_applied`: Ben tapped Not now.
- * A row is only used while the source workout is unchanged (`sourceVersion`)
- * and until a workout is started from it. `usedBySessionId` is worked out
+ * A row is only used while the source workout's sets are unchanged
+ * (`sourceBasis`; rows saved before it existed: `sourceVersion`; a rename
+ * or a time edit doesn't count) and until a workout is started from it.
+ * `usedBySessionId` is worked out
  * when the row is read: the workout started from this source that exists
  * and isn't discarded (review S2, S3); null while there is none.
  */
 export const NextSessionTargetRecordSchema = RecordMetaSchema.extend({
   sourceSessionId: IdSchema,
   sourceVersion: z.int().min(1),
+  /** `nextTargetSourceBasis` of the source workout when saved: its sets as they stood. Absent on rows saved before it existed. */
+  sourceBasis: z.string().min(1).max(80).optional(),
   exerciseId: IdSchema,
   exerciseName: z.string().min(1).max(120),
   actionId: IdSchema,
@@ -619,7 +623,7 @@ export type CoachWrite =
    * source and exercise. Refused as stale when the source workout changed or
    * a workout has started since it ended (CA10).
    */
-  | { kind: 'next_session_targets'; action: ActionRecord; rows: readonly NextSessionTargetRecord[]; sourceVersion: number }
+  | { kind: 'next_session_targets'; action: ActionRecord; rows: readonly NextSessionTargetRecord[]; sourceVersion: number; sourceBasis: string }
   /**
    * Today's pending sets (`adjust_pending_sets`): the session command runs
    * through the reducer inside the same transaction as the record, so the

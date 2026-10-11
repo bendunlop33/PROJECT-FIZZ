@@ -36,6 +36,8 @@ import {
   isTriggerKind,
   lastAdjustedVersion,
   nextSessionBases,
+  nextTargetFitsSource,
+  nextTargetSourceBasis,
   painFlagChoices,
   shouldShowCoachOffer,
   todayAdjustmentIds,
@@ -403,7 +405,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       const p = await owner();
       const [source, rows] = await Promise.all([repos().sessions.get(sessionId).catch(() => null), coachStore().listNextTargets(p.id, sessionId).catch(() => [])]);
       const names = [...new Set((source?.exercises ?? []).map((e) => e.exerciseName))];
-      const text = summaryNoteSentences(sentences, names, rows).join(' ');
+      const fits = source === null ? null : { version: source.session.version, basis: nextTargetSourceBasis(source) };
+      const text = summaryNoteSentences(sentences, names, fits === null ? rows : rows.filter((r) => nextTargetFitsSource(r, fits))).join(' ');
       return text === '' ? null : text;
     },
 
@@ -438,6 +441,15 @@ export function createCoachService(deps: CoachServiceDeps) {
     async nextTargets(sessionId: string): Promise<NextSessionTargetRecord[]> {
       const p = await owner();
       return coachStore().listNextTargets(p.id, sessionId);
+    },
+
+    /** IDs of this workout's saved rows that no longer fit it (a set corrected since; a rename doesn't count). */
+    async staleNextTargets(sessionId: string): Promise<Set<string>> {
+      const p = await owner();
+      const [source, rows] = await Promise.all([repos().sessions.get(sessionId).catch(() => null), coachStore().listNextTargets(p.id, sessionId).catch(() => [])]);
+      if (source === null) return new Set();
+      const fits = { version: source.session.version, basis: nextTargetSourceBasis(source) };
+      return new Set(rows.filter((r) => !nextTargetFitsSource(r, fits)).map((r) => r.id));
     },
 
     /** Ben's tap on a `Next time` row: Undo, Use coach target, Apply, Not now. */

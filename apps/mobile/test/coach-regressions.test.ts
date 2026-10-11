@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
 import type { TextCoachState } from '@fizz/providers';
 
+import { nextTimeView } from '../src/coach/next-time-view';
 import { CONNECTED, lowerPending, replyWith, saveNextTarget, StepModel } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -98,5 +100,76 @@ describe('Offline recovers by itself; the summary review isn’t skipped for an 
     connection = CONNECTED;
     model = new StepModel([saveNextTarget(), () => replyWith('Ok.')]);
     expect((await s.coach.runSummaryTurn(first))?.status).toBe('completed');
+  });
+});
+
+describe('A name or time edit on the Summary keeps the coach’s next-time targets (D21, CA10)', () => {
+  async function reviewed(s: Services, gymId: string) {
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }] }]);
+    model = new StepModel([saveNextTarget(), () => replyWith('Ok.')]);
+    return first;
+  }
+  const rename = async (s: Services, sessionId: string, name: string) => {
+    const v = (await s.workout.load(sessionId))?.aggregate.session.version ?? 0;
+    const r = await s.workout.dispatch(sessionId, { type: 'rename_session', at: h.now(), opId: h.ids(), name, expectedVersion: v });
+    if (!r.ok) throw new Error(r.error.message);
+  };
+  const startFrom = async (s: Services, gymId: string, first: string) => {
+    h.clockMs += 86_400_000;
+    const started = await s.workout.start({ gymId, opId: h.ids(), checkIn: null, nextOf: first });
+    if (!started.ok) throw new Error(started.error.message);
+    return started.aggregate.sets.filter((x) => x.setType !== 'warmup');
+  };
+
+  it('rename after the targets are saved: the next workout still uses them', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await reviewed(s, gymId);
+    await s.coach.runSummaryTurn(first);
+    await rename(s, first, 'Chest day');
+    const work = await startFrom(s, gymId, first);
+    expect(work.every((x) => x.planned.source === 'coach' && x.planned.load?.value === 57.5)).toBe(true);
+  });
+
+  it('rename while the review is running: its targets are still saved and used', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await reviewed(s, gymId);
+    let open = (): void => undefined;
+    const gate = new Promise<void>((r) => {
+      open = r;
+    });
+    const inner = model;
+    model = new (class implements CoachModelPort {
+      async *stream(req: ModelRequest): AsyncIterable<ModelEvent> {
+        await gate;
+        yield* inner.stream(req);
+      }
+    })() as unknown as StepModel;
+    const run = s.coach.runSummaryTurn(first);
+    await new Promise((r) => setTimeout(r, 50));
+    await rename(s, first, 'Chest day');
+    open();
+    await run;
+    expect((await s.coach.nextTargets(first))[0]).toMatchObject({ status: 'saved' });
+    const work = await startFrom(s, gymId, first);
+    expect(work.every((x) => x.planned.source === 'coach' && x.planned.load?.value === 57.5)).toBe(true);
+  });
+
+  it('a corrected set does make them stale, and the Summary then shows the built-in rule, not the coach target', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await reviewed(s, gymId);
+    await s.coach.runSummaryTurn(first);
+    const set = (await s.workout.load(first))?.aggregate.sets.find((x) => x.status === 'completed');
+    if (!set) throw new Error('fixture');
+    const fixed = await s.workout.dispatch(first, { type: 'correct_set', at: h.now(), opId: h.ids(), setId: set.id, expectedSetVersion: set.version, patch: { reps: 5 } });
+    if (!fixed.ok) throw new Error(fixed.error.message);
+    const summary = await s.workout.summary(first, 'connected');
+    const view = nextTimeView({ title: 'Workout', builtIn: summary?.nextTime ?? null, coachRows: await s.coach.nextTargets(first), stale: await s.coach.staleNextTargets(first), availability: await s.coach.availability(), reviewing: false });
+    expect(view?.rows.find((r) => r.exerciseName === 'Bench press')).toMatchObject({ tag: 'Rule', actions: [] });
+    expect(view?.undoAll).toBeNull();
+    const work = await startFrom(s, gymId, first);
+    expect(work.some((x) => x.planned.source === 'coach')).toBe(false);
   });
 });

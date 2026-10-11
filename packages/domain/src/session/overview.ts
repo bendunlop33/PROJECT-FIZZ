@@ -20,6 +20,7 @@ import { buildPlateSetup, loadDirection } from '../equipment';
 import { isSetCountable } from '../exclusions';
 import { painFlagCovering, PAIN_AREA_WORD } from '../pain-flags';
 import { deriveId, stableStringify } from '../stable';
+import { nextTargetFitsSource } from '../coach/next-session';
 import { buildStepCard } from '../step-card';
 import { toMs } from '../time';
 import { convertMass, toScaled } from '../units';
@@ -566,7 +567,7 @@ export interface OverviewInput {
    * them). Read only: the page never calls the coach. Absent or empty:
    * nothing coach-related renders.
    */
-  coach?: { targets: readonly NextSessionTargetRecord[]; sourceVersion: number; painToday: boolean } | null;
+  coach?: { targets: readonly NextSessionTargetRecord[]; sourceVersion: number; /** `nextTargetSourceBasis` of that workout. */ sourceBasis?: string | null; painToday: boolean } | null;
   /**
    * Today's edits (overview-today-edits §6.2), from `planWithTodayEdits`:
    * each session exercise's slot key, today's slots in order, what each
@@ -621,14 +622,14 @@ export function coachTargetText(record: Pick<NextSessionTargetRecord, 'target' |
 export function overviewCoachOf(
   first: Pick<WorkoutSet, 'planned'> | null,
   record: NextSessionTargetRecord | undefined,
-  ctx: { sourceVersion: number | null; painFlagged: boolean; painToday: boolean },
+  ctx: { sourceVersion: number | null; sourceBasis?: string | null; painFlagged: boolean; painToday: boolean },
 ): OverviewCoach | null {
   if (record === undefined) return null;
   const coach = first?.planned.provenance?.coach ?? null;
   if (first?.planned.source === 'coach' && coach !== null && coach.actionId === record.actionId && (record.status === 'saved' || record.status === 'applied')) {
     return { state: 'coach', rowId: record.id, reason: coach.reason ?? record.reason };
   }
-  const usable = record.usedBySessionId === null && record.sourceVersion === ctx.sourceVersion && !ctx.painFlagged && !ctx.painToday;
+  const usable = record.usedBySessionId === null && nextTargetFitsSource(record, { version: ctx.sourceVersion, basis: ctx.sourceBasis ?? null }) && !ctx.painFlagged && !ctx.painToday;
   if (!usable) return null;
   if (record.status === 'undone') return { state: 'built_in', rowId: record.id, putBack: 'use_coach', target: coachTargetText(record) };
   if (record.status === 'proposed') return { state: 'built_in', rowId: record.id, putBack: 'apply', target: coachTargetText(record) };
@@ -771,6 +772,7 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
   const todaySlots: TodaySlot[] = today?.slots.length ? [...today.slots] : ordered.map((e) => ({ slotKey: e.id, exerciseId: e.exerciseId, supersetGroup: e.supersetGroup }));
   const coachByExercise = new Map((input.coach?.targets ?? []).map((r) => [r.exerciseId, r]));
   const sourceVersion = input.coach?.sourceVersion ?? null;
+  const sourceBasis = input.coach?.sourceBasis ?? null;
 
   const rows: OverviewRow[] = ordered.map((ex, i) => {
     const own = sets.filter((s) => s.sessionExerciseId === ex.id && s.pairedWithSetId === null).sort((a, b) => a.index - b.index);
@@ -832,7 +834,7 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
       panel.push({ key: 'gym', label: 'Gym', value: what, tone: 'warning' });
     }
     if (covering !== null) panel.push({ key: 'flag', label: 'Flag', value: flagText(covering.flag), tone: 'warning' });
-    const coach = overviewCoachOf(first, coachByExercise.get(ex.exerciseId), { sourceVersion, painFlagged: covering !== null, painToday: input.coach?.painToday === true });
+    const coach = overviewCoachOf(first, coachByExercise.get(ex.exerciseId), { sourceVersion, sourceBasis, painFlagged: covering !== null, painToday: input.coach?.painToday === true });
     // D1 (minimal copy): a built-in rule target says so in one word, as a coach target does; the rule in full is behind `Why?`.
     if (coach?.state !== 'coach' && first?.planned.source === 'built_in_rule') panel.push({ key: 'rule', label: 'Rule', value: first.planned.provenance?.rule?.name ?? 'Built-in', tone: 'normal' });
     if (coach?.state === 'coach' && coach.reason !== null) panel.push({ key: 'coach', label: 'Coach', value: `“${coach.reason}”`, tone: 'normal' });
