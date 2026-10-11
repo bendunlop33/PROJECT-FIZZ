@@ -220,7 +220,9 @@ export function CoachSheetScreen() {
     setNotice(null);
     setLive(startLiveTurn(newUuid(), input, clockNow()));
     try {
-      await services.coach.runSummaryTurn(entry.sessionId);
+      // Null: the coach can't answer now (review N1); the same word `send` shows.
+      const r = await services.coach.runSummaryTurn(entry.sessionId).catch(() => null);
+      if (r === null) setNotice('Not sent.');
     } finally {
       setLive(null);
       setAvailability(await services.coach.availability());
