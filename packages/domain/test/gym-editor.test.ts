@@ -113,4 +113,9 @@ describe('selectDefaultGym (workout-overview §6)', () => {
     expect(selectDefaultGym([gym(1, true), gym(2, false, { archivedAtUtc: at })], 'g2', at)).toEqual({ kind: 'not_found' });
     expect(selectDefaultGym([gym(1, true)], 'nope', at)).toEqual({ kind: 'not_found' });
   });
+
+  it('with no default gym, choosing the one shown (the first) has no previous gym to undo to; another one names it', () => {
+    expect(selectDefaultGym([gym(1, false), gym(2, false)], 'g1', at)).toMatchObject({ kind: 'select', previousGymId: null, writes: [{ next: { id: 'g1', isDefault: true } }] });
+    expect(selectDefaultGym([gym(1, false), gym(2, false)], 'g2', at)).toMatchObject({ kind: 'select', previousGymId: 'g1' });
+  });
 });

@@ -176,6 +176,20 @@ describe('load cells, details and panel text', () => {
     expect(bestSet(key, [past({ imported: true, actuals: [{ setType: 'working', load: kg(150), reps: 1, durationS: null }] })])).toBeNull();
   });
 
+  it('BEST on an assisted machine is the least assistance, not the most (N5)', () => {
+    const key = { equipment: equipmentKey(assisted()), convention: 'assistance' as const };
+    const p = past({
+      equipment: equipmentKey(assisted()),
+      convention: 'assistance',
+      actuals: [
+        { setType: 'working', load: kg(30, 'assistance'), reps: 8, durationS: null },
+        { setType: 'working', load: kg(20, 'assistance'), reps: 6, durationS: null },
+        { setType: 'working', load: kg(20, 'assistance'), reps: 7, durationS: null },
+      ],
+    });
+    expect(bestSet(key, [p])).toMatchObject({ load: kg(20, 'assistance'), reps: 7 });
+  });
+
   it('PLATES per side with the bar; ROUNDED names the cap or the steps', () => {
     expect(plain(platesText(kg(100), barbell()))).toBe('20 · 20 a side · 20 kg bar');
     expect(plain(platesText(kg(20), barbell()))).toBe('Bar only · 20 kg bar');

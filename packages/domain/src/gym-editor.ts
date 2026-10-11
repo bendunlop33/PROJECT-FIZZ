@@ -354,5 +354,6 @@ export function selectDefaultGym(
     if (g.isDefault === want) continue;
     writes.push({ next: { ...g, isDefault: want, version: g.version + 1, updatedAtUtc: atUtc }, expectedVersion: g.version });
   }
-  return { kind: 'select', previousGymId: previous?.id ?? null, writes };
+  // With no default, the current gym reads as the first live one; if that is the chosen gym, there is nothing to undo to (N3).
+  return { kind: 'select', previousGymId: previous === null || previous.id === gymId ? null : previous.id, writes };
 }

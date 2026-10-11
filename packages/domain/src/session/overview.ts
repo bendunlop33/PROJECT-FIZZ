@@ -575,11 +575,13 @@ export function lastText(past: PastExercise): string | null {
 /** The heaviest counted working set over comparable history (never an estimate). Ties: more reps, then the newest. */
 export function bestSet(planned: PlannedKey, pasts: readonly PastExercise[]): { load: Load; reps: number; at: ZonedTimestamp } | null {
   let best: { load: Load; reps: number; at: ZonedTimestamp; kg: number } | null = null;
+  // Harder is heavier, except on an assisted machine, where less assistance is harder (N5).
+  const sign = loadDirection(planned.convention) === 'assistance' ? -1 : 1;
   for (const p of pasts) {
     if (!isComparable(planned, p)) continue;
     for (const s of p.actuals) {
       if (s.load === null || s.reps === null || s.reps <= 0 || s.load.convention === 'bodyweight' || s.setType === 'drop' || !isSetCountable(s, 'record')) continue;
-      const kg = convertMass(s.load, 'kg').value;
+      const kg = sign * convertMass(s.load, 'kg').value;
       if (best === null || kg > best.kg || (kg === best.kg && s.reps > best.reps)) best = { load: s.load, reps: s.reps, at: p.performedAt, kg };
     }
   }

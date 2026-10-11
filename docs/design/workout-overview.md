@@ -91,7 +91,7 @@ Canvas `bg.canvas`, side margin 20 (`components.screenMargin`). The list scrolls
    - `FLAG`: `⚠ Shoulder · 6 Oct`, with `Still hurts?` (`isPainCheckDue`) as a link to the pain flag sheet.
    - `COACH`: the stored one-line reason, in quotes, clamped to 2 lines (only once the coach is live, §5).
 
-   Actions are outline pills, 44 pt: `How to` (exercise guide), `History` (Progress → exercise), `Why?` (the `TargetWhyPanel` content from active-workout §2.12, in a sheet), and `Undo` / `Use coach target` on coach rows (§5).
+   Actions are outline pills, 44 pt: `How to` (exercise guide), `History` (Progress → exercise; **deferred** until Progress has a per-exercise screen, review S4), `Why?` (the `TargetWhyPanel` content from active-workout §2.12, in a sheet), and `Undo` / `Use coach target` on coach rows (§5).
 9. **Fixed bottom bar** on the canvas, with no rule above it and a 14 pt fade over the list:
    - **Check-in row** (only when due or reused). A `CHECK-IN` label on the left, five tiles `1`–`5` on the right (`CheckInScale`, 50 × 52 pt at 390 pt, `radius.pill`, `border.control` outline). The selected tile is `accent.subtle` fill + 2 pt `accent` border + `checkmark`, **never an accent fill**, so Start stays the only filled pill. There are no end labels: VoiceOver says "1 of 5, rough" … "5 of 5, great". Keep **≥ 20 pt** between the tiles and Start. The row fits by measured width (onLayout), not only the font scale: label and tiles on one line when `label + 12 + 274 pt` fits; otherwise the label sits above the tiles (375 pt phones, xLarge–xxxLarge text); at AX sizes, or with no room for the 274 pt of tiles, it collapses to `Check-in ›`.
    - `Start workout`: `PrimaryButton`, 60 pt pill, `accent` / `on.accent`, full width.
@@ -130,7 +130,7 @@ Markers never use `status.done`, `status.danger` or `accent`. The panel's `CHANG
 
 | Edit | Call | Recorded as |
 |---|---|---|
-| Gym | `selectGym(gymId)` (selection only; there is no session yet). Every row re-snaps and re-marks, toast `Hotel gym · 2 targets changed` [Undo] | Owner setting, versioned, op ID |
+| Gym | `selectGym(gymId)` (selection only; there is no session yet). Every row re-snaps and re-marks, toast `Hotel gym · 2 targets changed` [Undo] | Owner setting, versioned. Idempotent by state (choosing the selected gym writes nothing), so no op ID |
 | Check-in score | `recordCheckIn` on the first tap, then `updateCheckIn(id, {score}, expectedVersion, opId)` on a change | `CheckIn`, Your data. It is linked by `startWorkout` in the same transaction |
 | What's up? / pain / ill | check-in.md §4.1 unchanged | as check-in.md |
 | Pain flag review (`Still hurts?`) | `recordPainFlagReview` / `clearPainFlag` via the existing sheet | as active-workout §2.14 |
@@ -152,7 +152,7 @@ Markers never use `status.done`, `status.danger` or `accent`. The panel's `CHANG
   - D21 action ids + versions
   - the owner's unit
   - the answered check-in id + version (pain mentioned there holds loads)
-- Start sends `expectedPreviewKey`. The service checks it, then re-checks the same inputs inside the start's write transaction (a `WriteFence`, ADR 0019), so a change that lands in between also creates nothing. **On a mismatch nothing is created.** The page re-renders with the new rows, and the toast `Targets updated` appears. Ben taps Start again (rule 5: never apply stale).
+- Start sends `expectedPreviewKey`. The service checks it, then re-checks the same inputs inside the start's write transaction (a `WriteFence`, ADR 0019), so a change that lands in between also creates nothing. **On a mismatch nothing is created.** The page re-reads with the check-in Start sends. If what Ben sees is unchanged (only the key moved, e.g. a score saved just before Start, or `Done` in What's up?), Start goes ahead at once with the fresh key and the same op ID, with no toast. Otherwise the page re-renders with the new rows, the toast `Targets updated` appears, and Ben taps Start again (rule 5: never apply stale). Start also waits for a score that is still being written.
 - `services.overview.load({kind: 'next'} | {kind: 'routine', routineId}, gymId)` is the only read. It is local, has no AI and never throws: it returns `null` if the preview can't be built.
 
 ---
@@ -211,7 +211,7 @@ The page has no explanation lines, no reassurance and no rule names. Explanation
 
 1. **The extra tap.** It is 3 taps to the first set (was 2). Should a long-press on Today's `Start workout` → `Start now` skip the overview? Recommendation: don't build it, and re-check after two weeks of real use.
 2. **Check-in moves onto the overview** (amends check-in.md CI2). Ignoring the tiles counts as Skip, a score never starts the workout, and a low score's What's up? returns to the overview. CI1 is unchanged.
-3. **Swap/Skip today, reorder and "Lighter start?" are deferred.** They need a pre-start draft (an ADR). In the first slice, rows expand to show the facts, `How to`, `History` and `Why?` only.
+3. **Swap/Skip today, reorder and "Lighter start?" are deferred.** They need a pre-start draft (an ADR). In the first slice, rows expand to show the facts, `How to` and `Why?` only. `History` waits for a Progress per-exercise screen (none exists yet).
 
 Follow-ups for the product manager (not edited here):
 - flow-first-milestone tap counts
