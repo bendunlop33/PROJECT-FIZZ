@@ -185,10 +185,11 @@ describe('next-session targets (C8, D21): small saved by default, bigger propose
     expect(await s.repos.coach.setNextTargetStatus(OWNER, { rowId: row.id, expectedVersion: undone?.version ?? 0, ...again })).toMatchObject({ status: 'written', row: { status: 'saved' } });
   });
 
-  it('CA10: an answer after a new workout started is stale and saves nothing; taps after the next start are refused', async () => {
+  it('CA10: an answer after a workout started from this one is stale and saves nothing', async () => {
     const s = await store();
     const source = await saved(s, finished());
     const next = workout();
+    await s.repos.coach.noteStartFrom(OWNER, SESSION, 'start-2', at(899).utc);
     await saved(s, { ...next, session: { ...next.session, id: id(9100), startOperationId: 'start-2', startedAt: at(900) }, exercises: [], sets: [] });
     const r = await runCoachTurn(
       request({ kind: 'summary', input: { kind: 'summary' }, context: { session: source, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }),
@@ -196,6 +197,19 @@ describe('next-session targets (C8, D21): small saved by default, bigger propose
     );
     expect(r.cards.map((c) => [c.record.status, c.rendered.text])).toEqual([['stale', "Couldn't set next targets. The built-in rule's are used."]]);
     expect(await s.repos.coach.listNextTargets(OWNER, SESSION)).toEqual([]);
+  });
+
+  it('an unrelated workout started since doesn’t make the answer stale (review S2)', async () => {
+    const s = await store();
+    const source = await saved(s, finished());
+    const next = workout();
+    await saved(s, { ...next, session: { ...next.session, id: id(9100), startOperationId: 'start-other', startedAt: at(900) }, exercises: [], sets: [] });
+    const r = await runCoachTurn(
+      request({ kind: 'summary', input: { kind: 'summary' }, context: { session: source, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }),
+      ports(s, new ScriptedCoachModel([[call('set_next_session_targets', nextArgs(7)), { type: 'completed' }], reply('Ok.')]), summaryExecutors(s, source)),
+    );
+    expect(r.cards[0]?.record.status).toBe('committed');
+    expect((await s.repos.coach.listNextTargets(OWNER, SESSION)).every((x) => x.usedBySessionId === null)).toBe(true);
   });
 
   it('a summary turn names the wrong workout or an old version: refused, nothing saved', async () => {
