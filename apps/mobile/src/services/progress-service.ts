@@ -95,6 +95,22 @@ export function createProgressService(deps: ProgressServiceDeps) {
    */
   let chosen: { store: Store; days?: ProgressWindowDays; grouping?: ProgressGrouping } | null = null;
   let settingsWrites: Promise<unknown> = Promise.resolve();
+  /** The tap that last set each field of `chosen`; a failed save drops only the fields it still owns (review r2 N2). */
+  const fieldOwner: { days?: symbol; grouping?: symbol } = {};
+
+  function dropFailed(patch: { days?: ProgressWindowDays; grouping?: ProgressGrouping }, token: symbol): void {
+    if (chosen === null) return;
+    const next = { ...chosen };
+    if (patch.days !== undefined && fieldOwner.days === token) {
+      delete next.days;
+      delete fieldOwner.days;
+    }
+    if (patch.grouping !== undefined && fieldOwner.grouping === token) {
+      delete next.grouping;
+      delete fieldOwner.grouping;
+    }
+    chosen = next.days === undefined && next.grouping === undefined ? null : next;
+  }
 
   function chosenNow(): { days?: ProgressWindowDays; grouping?: ProgressGrouping } {
     if (chosen === null || chosen.store !== deps.store()) return {};
@@ -237,11 +253,15 @@ export function createProgressService(deps: ProgressServiceDeps) {
      * data, so no Undo. The choice is shared at once (the next `home()` from
      * either screen uses it); the save merges onto the stored setting and runs
      * after any earlier one, so quick taps never lose a field (review S3).
-     * On a failed save the choice is dropped and the saved setting shows again.
+     * On a failed save the fields it set are dropped (unless a later tap set
+     * them again) and the saved setting shows again.
      */
     saveSettings(patch: { days?: ProgressWindowDays; grouping?: ProgressGrouping }): Promise<{ ok: boolean }> {
       const mine = { ...chosenNow(), ...patch, store: deps.store() };
       chosen = mine;
+      const token = Symbol('settings tap');
+      if (patch.days !== undefined) fieldOwner.days = token;
+      if (patch.grouping !== undefined) fieldOwner.grouping = token;
       const run = async (): Promise<{ ok: boolean }> => {
         const out = await deps
           .saveSettings((current) => {
@@ -250,7 +270,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
             return next.window === now.window && next.grouping === now.grouping ? null : next;
           })
           .catch(() => ({ ok: false }));
-        if (!out.ok && chosen === mine) chosen = null;
+        if (!out.ok) dropFailed(patch, token);
         return out;
       };
       const out = settingsWrites.then(run, run);
