@@ -3,6 +3,7 @@ import { formatNumber } from '../display';
 import { stepLoad } from '../equipment';
 import { activeFlag, AREA_WORD, isIncrease, sameTarget, snapLoad, validReps } from './adjust';
 import { equipmentOfRow } from '../session/equipment-snapshot';
+import { deriveId } from '../stable';
 import { nextTargetBlocks } from '../session/gym-switch';
 
 /**
@@ -239,9 +240,29 @@ export function nextSessionBases(source: SessionAggregate, builtIn: ReadonlyMap<
 type PlanEntry = { setType: SetType; planned: PlannedSet };
 
 /**
+ * What the coach's next-session targets were worked out from: the source
+ * workout's sets as they stand (each set's ID, status and version). A rename
+ * or a time edit on the Summary leaves it as it is; a corrected set changes
+ * it (CA10, rule 5).
+ */
+export function nextTargetSourceBasis(source: Pick<SessionAggregate, 'sets'>): string {
+  return deriveId(`next-target-basis:${source.sets.map((s) => `${s.id}:${s.status}:${String(s.version)}`).sort().join(',')}`);
+}
+
+/**
+ * Whether a saved row still fits its source workout as it is now: the same
+ * sets (`sourceBasis`), or, for rows saved before that existed, the same
+ * session version.
+ */
+export function nextTargetFitsSource(row: Pick<NextSessionTargetRecord, 'sourceVersion' | 'sourceBasis'>, source: { version: number | null; basis: string | null }): boolean {
+  if (row.sourceBasis !== undefined && source.basis !== null) return row.sourceBasis === source.basis;
+  return row.sourceVersion === source.version;
+}
+
+/**
  * `nextTargetsOf` with the coach's saved targets (D21): for each exercise
  * with a row that is in use (`saved`, or `applied` by Ben), not used yet and
- * set on the workout as it still is, the working sets take the coach's
+ * set on the workout as it still is (its sets; a rename doesn't count), the working sets take the coach's
  * target (source `coach`) and count; warm-ups stay as the built-in rule
  * plans them. Everything else keeps the built-in rule's plan, which is
  * always the fallback. A pain flag set since, or pain in today's check-in,
@@ -255,9 +276,10 @@ export function withCoachTargets(
 ): Map<string, PlanEntry[]> {
   const out = new Map<string, PlanEntry[]>([...builtIn].map(([k, v]) => [k, [...v]]));
   if (ctx.painToday) return out;
+  const fits = { version: source.session.version, basis: nextTargetSourceBasis(source) };
   for (const row of rows) {
     if (row.status !== 'saved' && row.status !== 'applied') continue;
-    if (row.usedBySessionId !== null || row.sourceVersion !== source.session.version || row.sourceSessionId !== source.session.id) continue;
+    if (row.usedBySessionId !== null || !nextTargetFitsSource(row, fits) || row.sourceSessionId !== source.session.id) continue;
     if (ctx.flaggedExerciseIds.has(row.exerciseId)) continue;
     const plan = builtIn.get(row.exerciseId) ?? [];
     const warmups = plan.filter((p) => p.setType === 'warmup');

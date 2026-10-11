@@ -1253,7 +1253,17 @@ function handleSaveDraft(state: SessionAggregate, cmd: CommandOf<'save_draft'>):
   const set = state.sets.find((s) => s.id === cmd.setId);
   if (!set) return fail('set_not_found', 'Set not found.');
   if (set.status !== 'pending') return fail('set_not_pending', 'Drafts are only for sets not yet logged.');
-  return { ok: true, state: { ...state, sets: replaceSet(state.sets, { ...set, draft: cmd.values }) }, events: [] };
+  // The side chosen before logging is kept on the pending set, so it survives a minimise or restart.
+  if (cmd.side !== undefined) {
+    const ex = exerciseOf(state, set);
+    if (!ex) return fail('set_not_found', 'Exercise for this set not found.');
+    const badSide = checkSide(cmd.side, ex);
+    if (badSide) return { ok: false, error: badSide };
+    if (set.pairedWithSetId !== null && cmd.side !== set.side) {
+      return fail('invalid_values', `This set is the ${set.side ?? 'other'} side of an earlier set. Log it as that side, or delete it.`);
+    }
+  }
+  return { ok: true, state: { ...state, sets: replaceSet(state.sets, { ...set, draft: cmd.values, ...(cmd.side !== undefined ? { side: cmd.side } : {}) }) }, events: [] };
 }
 
 /**

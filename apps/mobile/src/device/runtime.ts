@@ -61,3 +61,24 @@ export function appInfo(): AppInfo {
     build: Application.nativeBuildVersion ?? null,
   };
 }
+
+type IdleCallback = (cb: () => void, opts?: { timeout?: number }) => number;
+
+/**
+ * Resolves once the JS thread is idle (React Native's `requestIdleCallback`),
+ * or after `timeoutMs` at most, so background backups start after Finish's
+ * transition (backup review B1). Falls back to the next macrotask.
+ */
+export function whenIdle(timeoutMs = 1000): Promise<void> {
+  const ric = (globalThis as { requestIdleCallback?: IdleCallback }).requestIdleCallback;
+  return new Promise((resolve) => {
+    if (typeof ric === 'function') {
+      ric(
+        () => {
+          resolve();
+        },
+        { timeout: timeoutMs },
+      );
+    } else setTimeout(resolve, 0);
+  });
+}

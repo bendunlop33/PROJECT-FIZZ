@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Linking, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import type { ContextDescription } from '@fizz/coach';
+import { undoOpId, type ContextDescription } from '@fizz/coach';
 import { coachUndoRefusal, toMs } from '@fizz/domain';
 import type { BenInput, CoachThread } from '@fizz/schemas';
 
@@ -73,7 +73,6 @@ export function CoachSheetScreen() {
   /** Show the choices as chips even when there is one (a short name, say "bench"; never flagged on a guess). */
   const [painPick, setPainPick] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const lastInput = useRef<BenInput | null>(null);
   const sendGuard = useRef(0);
   const scroll = useRef<ScrollView>(null);
   const field = useRef<TextInput>(null);
@@ -173,7 +172,6 @@ export function CoachSheetScreen() {
     if (live !== null || clockNow() - sendGuard.current < TIMING.commitGuard) return;
     sendGuard.current = clockNow();
     const turnId = newUuid();
-    lastInput.current = input;
     setNotice(null);
     setAskPain(false);
     setLive(startLiveTurn(turnId, input, clockNow()));
@@ -215,8 +213,26 @@ export function CoachSheetScreen() {
     }
   }
 
+  /** `Try again` on a turn's row: that turn's own words as a new turn; a cut-off summary review runs again. */
+  async function retry(input: BenInput) {
+    if (input.kind !== 'summary') return send(input);
+    if (entry.kind === 'today' || live !== null) return;
+    setNotice(null);
+    setLive(startLiveTurn(newUuid(), input, clockNow()));
+    try {
+      // Null: the coach can't answer now (review N1); the same word `send` shows.
+      const r = await services.coach.runSummaryTurn(entry.sessionId).catch(() => null);
+      if (r === null) setNotice('Not sent.');
+    } finally {
+      setLive(null);
+      setAvailability(await services.coach.availability());
+    }
+    await loadRows(threadId ?? (await services.coach.resolveThread(entry).catch(() => null)));
+    changed();
+  }
+
   async function undo(actionId: string) {
-    const r = await services.coach.undo(actionId, `undo:${actionId}:${newUuid()}`).catch(() => null);
+    const r = await services.coach.undo(actionId, undoOpId(actionId)).catch(() => null);
     if (r === null) {
       setNotice('Couldn’t undo.');
       return;
@@ -373,7 +389,7 @@ export function CoachSheetScreen() {
           </View>
         ) : null}
         {rows.map((r) => (
-          <Row key={r.key} row={r} undoBlocked={undoBlocked} onUndo={(id) => void undo(id)} onRetry={() => lastInput.current !== null && void send(lastInput.current)} />
+          <Row key={r.key} row={r} undoBlocked={undoBlocked} onUndo={(id) => void undo(id)} onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)} />
         ))}
         {live !== null ? <LiveRows live={live} now={now} /> : null}
         {askPain ? (

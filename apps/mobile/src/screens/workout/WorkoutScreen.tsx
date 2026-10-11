@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -51,6 +51,8 @@ import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu } from '../../workout/exercise-menu';
 import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
+import { newerWorkoutData, withCommandResult } from '../../workout/load-order';
+import { logRefusal, reloadsAfterRefusal } from '../../workout/log-refusal';
 import { FinishSheet } from './FinishSheet';
 import { GymChip, GymPartDivider, GymReviewSheet, GymSwitchCard, GymSwitcherSheet, SnapNote } from './GymSwitch';
 import { afterSwitchRefused, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
@@ -145,10 +147,15 @@ export function WorkoutScreen() {
     };
   }, [focusRequest, showNextSet]);
 
+  /** Counts workout reads as they start, so a slow older read never brings back older pain flags or names. */
+  const loadSeq = useRef(0);
   const reload = useCallback(async () => {
+    const seq = ++loadSeq.current;
     try {
       const d = await services.workout.load();
-      setData(d);
+      const startedLast = seq === loadSeq.current;
+      // A read that started before a newer write never replaces it on screen.
+      setData((cur) => newerWorkoutData(cur, d, { startedLast }));
       setLoadError(null);
       return d;
     } catch (e) {
@@ -400,7 +407,7 @@ export function WorkoutScreen() {
     if (!edits || data === 'loading' || data === null) return;
     const sessionId = data.aggregate.session.id;
     const t = setTimeout(() => {
-      void services.workout.dispatch(sessionId, { type: 'save_draft', at: services.now(), setId: edits.setId, values: edits.values });
+      void services.workout.dispatch(sessionId, saveDraftCommand(edits, services.now()));
     }, 300);
     return () => {
       clearTimeout(t);
@@ -420,7 +427,7 @@ export function WorkoutScreen() {
     if (tickedFor.current === key) return;
     tickedFor.current = key;
     void services.workout.dispatch(data.aggregate.session.id, { type: 'tick', at: services.now() }).then((r) => {
-      if (r.ok) setData((d) => (d === 'loading' || d === null ? d : { ...d, aggregate: r.aggregate }));
+      if (r.ok) setData((cur) => (cur === 'loading' || cur === null ? cur : withCommandResult(cur, cur, r.aggregate)));
     });
   }, [now, data, services]);
 
@@ -492,10 +499,11 @@ export function WorkoutScreen() {
   async function run(command: SessionCommand): Promise<CommandOutcome> {
     const r = await services.workout.dispatch(session.id, command);
     if (r.ok) {
-      setData({ ...loaded, aggregate: r.aggregate });
+      setData((cur) => withCommandResult(cur, loaded, r.aggregate));
       changed();
-    } else if (r.error.code === 'stale_version' || r.error.code === 'write_conflict') {
-      // Review N8: reload so the next try uses the latest version.
+    } else if (reloadsAfterRefusal(r.error.code)) {
+      // Review N8: reload so the next try uses the latest version. A reused opId means the
+      // screen is behind a write already saved; the reload shows it (fix-workout r2 S2).
       void reload();
     }
     return r;
@@ -532,7 +540,14 @@ export function WorkoutScreen() {
     const r = await run(cmd);
     setBusy(false);
     if (!r.ok) {
-      setBanners((b) => [...b.filter((x) => x.key !== 'write'), { key: 'write', severity: 'warning', text: r.error.code === 'write_failed' ? 'Set not saved. Try again.' : r.error.message }]);
+      const refusal = logRefusal(r.error);
+      if (refusal.clearEdits) setEdits(null);
+      setBanners((b) => [...b.filter((x) => x.key !== 'write'), { key: 'write', ...refusal.banner }]);
+      return;
+    }
+    // Already saved by an earlier tap: the saved state is shown, without a second haptic, toast or coach check.
+    if (r.duplicate) {
+      setEdits(null);
       return;
     }
     // After the write, never on press-in. A heaviest-set record plays `record` instead of `commit` (premium-feel §5.1).
@@ -606,7 +621,7 @@ export function WorkoutScreen() {
       return;
     }
     void services.workout
-      .dispatch(session.id, { type: 'save_draft', at: services.now(), setId: draft.setId, values: draft.values })
+      .dispatch(session.id, saveDraftCommand(draft, services.now()))
       .then((r) => r.ok)
       .catch(() => false)
       .then((ok) => {
@@ -623,6 +638,7 @@ export function WorkoutScreen() {
   }
 
   async function undo(setId: string, opId: string, setNumber: number) {
+    const seq = ++loadSeq.current;
     const fresh = await services.workout.load(session.id);
     const set = fresh?.aggregate.sets.find((s) => s.id === setId);
     if (!fresh || !set) return;
@@ -632,7 +648,8 @@ export function WorkoutScreen() {
       return;
     }
     haptic('undo');
-    setData({ ...fresh, aggregate: r.aggregate });
+    const startedLast = seq === loadSeq.current;
+    setData((cur) => newerWorkoutData(cur, { ...fresh, aggregate: r.aggregate }, { startedLast }));
     changed();
     setToast(null);
   }
@@ -686,7 +703,7 @@ export function WorkoutScreen() {
       void reload();
       return;
     }
-    setData({ ...loaded, aggregate: r.aggregate });
+    setData((cur) => withCommandResult(cur, loaded, r.aggregate));
     changed();
     const added = r.aggregate.sets.find((x) => !loaded.aggregate.sets.some((y) => y.id === x.id));
     const v = services.workout.view({ ...loaded, aggregate: r.aggregate }, clockNow(), null);
@@ -1521,7 +1538,7 @@ export function WorkoutScreen() {
                   void reload();
                   return;
                 }
-                setData({ ...loaded, aggregate: r.aggregate });
+                setData((cur) => withCommandResult(cur, loaded, r.aggregate));
                 changed();
                 showToast({
                   text:
@@ -1575,7 +1592,7 @@ export function WorkoutScreen() {
             void reload();
             return r.error.code === 'stale_version' ? 'The workout changed. Try again.' : r.error.message;
           }
-          setData({ ...loaded, aggregate: r.aggregate });
+          setData((cur) => withCommandResult(cur, loaded, r.aggregate));
           changed();
           return null;
         }}
@@ -1587,7 +1604,7 @@ export function WorkoutScreen() {
           setTimesOpen(false);
         }}
         onSaved={(d) => {
-          setData(d);
+          setData((cur) => newerWorkoutData(cur, d));
           changed();
           setTimesOpen(false);
           showToast({ text: 'Start time changed' });

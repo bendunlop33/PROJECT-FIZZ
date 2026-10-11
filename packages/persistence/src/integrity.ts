@@ -8,6 +8,7 @@ import { latestVersion, readUserVersion } from './migrations';
 import { decodeImportRow, EXERCISE_ALIAS_SPEC, IMPORT_JOB_SPEC } from './imports';
 import { readAggregate } from './sessions';
 import { ident, rowId } from './sql';
+import { monotonicMs, noYield, type Slicer } from './backup/slice';
 
 /** Every document table, the import ones included. */
 const ALL_DOCUMENTS: readonly DocumentTable[] = [...DOCUMENT_TABLES, erase(IMPORT_JOB_SPEC), erase(EXERCISE_ALIAS_SPEC), ...COACH_DOCUMENT_TABLES, ...DRAFT_DOCUMENT_TABLES];
@@ -92,8 +93,10 @@ export async function checkIntegrityWith(q: SqlExecutor, expectedVersion: number
   return { ok: issues.length === 0, schemaVersion, issues, checked };
 }
 
-/** Sessions read per queue turn by `checkIntegrity`. */
+/** Most sessions read per queue turn by `checkIntegrity`. */
 const SESSION_CHUNK = 10;
+/** A turn also ends once it has run this long, so a Log tapped meanwhile waits at most about this (backup review B1). */
+const TURN_BUDGET_MS = 8;
 
 /**
  * The same checks as `checkIntegrityWith`, through the store's queue in small
@@ -102,7 +105,7 @@ const SESSION_CHUNK = 10;
  * launch check waits for one small turn, never for the whole database.
  * Records written between turns are checked as they are then.
  */
-export async function checkIntegrity(db: Database, expectedVersion: number = latestVersion()): Promise<IntegrityReport> {
+export async function checkIntegrity(db: Database, expectedVersion: number = latestVersion(), slice: Slicer = noYield): Promise<IntegrityReport> {
   const issues: IntegrityIssue[] = [];
   const checked: Record<string, number> = {};
   const schemaVersion = await db.read(async (q) => {
@@ -128,6 +131,7 @@ export async function checkIntegrity(db: Database, expectedVersion: number = lat
         }
       }
     });
+    await slice();
   }
   const rowCount = await db.read(async (q) => (await q.getFirst<{ n: number }>('SELECT count(*) AS n FROM import_rows'))?.n ?? 0);
   checked.import_rows = rowCount;
@@ -142,19 +146,26 @@ export async function checkIntegrity(db: Database, expectedVersion: number = lat
         }
       }
     });
+    await slice();
   }
   const ids = await db.read(async (q) => (await q.getAll<{ id: string }>('SELECT id FROM sessions ORDER BY id')).map((r) => r.id));
   checked.sessions = ids.length;
-  for (let i = 0; i < ids.length; i += SESSION_CHUNK) {
-    await db.read(async (q) => {
-      for (const id of ids.slice(i, i + SESSION_CHUNK)) {
+  for (let i = 0; i < ids.length; ) {
+    i = await db.read(async (q) => {
+      const started = monotonicMs();
+      let next = i;
+      do {
+        const id = ids[next] ?? '';
+        next += 1;
         try {
           await readAggregate(q, id);
         } catch (e) {
           issues.push({ table: e instanceof CorruptDataError ? e.table : 'sessions', id, message: describe(e) });
         }
-      }
+      } while (next < ids.length && next - i < SESSION_CHUNK && monotonicMs() - started < TURN_BUDGET_MS);
+      return next;
     });
+    await slice();
   }
   return { ok: issues.length === 0, schemaVersion, issues, checked };
 }

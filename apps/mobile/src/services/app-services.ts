@@ -22,6 +22,7 @@ import {
   listDocuments,
   PROFILE_SPEC,
   saveDocumentIn,
+  timeSlicer,
   type AppInfo,
   type DatabaseManager,
   type IntegrityReport,
@@ -41,7 +42,7 @@ import { createDataDomainService, type CredentialPort, type PersonalFilesPort } 
 import { createImportService } from '../import/import-service';
 import { createGymServices } from './gym-services';
 import { createWorkoutServices, STALE_PREVIEW, type OverviewStartOf, type OverviewTarget, type WorkoutStartOutcome } from './workout-services';
-import { bumpProfile, newProfile, setupStep, type SetupStep } from './setup';
+import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
 
 /**
  * The app's in-process services (no HTTP layer). Screens call these and never
@@ -88,6 +89,8 @@ export interface AppServicesDeps {
   personalFiles?: PersonalFilesPort;
   /** How long Delete waits for the online ChatGPT revoke (default 10 s). */
   signOutTimeoutMs?: number;
+  /** Resolves when the UI is idle; background backups wait for it so Finish's Summary appears first (backup review B1). */
+  idle?: () => Promise<void>;
 }
 
 function memoryTextFile(): TextFile {
@@ -118,6 +121,7 @@ export function createAppServices(deps: AppServicesDeps) {
     now: deps.now,
     app: deps.app,
     ...(deps.locale === undefined ? {} : { locale: deps.locale }),
+    ...(deps.idle === undefined ? {} : { idle: deps.idle }),
   });
   let lastIntegrity: IntegrityCheck = null;
 
@@ -212,7 +216,14 @@ export function createAppServices(deps: AppServicesDeps) {
       if (created) return { ok: true };
       const existing = await getProfile();
       if (!existing) return { ok: false, message: WRITE_FAILED };
-      return existing.preferredUnit === unit ? { ok: true } : updateProfile({ preferredUnit: unit });
+      if (existing.preferredUnit === unit) return { ok: true };
+      // Back to Step 1 over a saved gym: its equipment is in the old unit and
+      // stays so, so the unit is locked (Ready would say lb over kg loads).
+      const inSetup = existing.setup !== undefined && existing.setup.completedAtUtc === undefined;
+      if (inSetup && (await repos().gyms.listByOwner(existing.id)).some((g) => g.archivedAtUtc === undefined)) {
+        return { ok: false, message: unitLockedText(existing.preferredUnit) };
+      }
+      return updateProfile({ preferredUnit: unit });
     },
 
     /**
@@ -375,7 +386,7 @@ export function createAppServices(deps: AppServicesDeps) {
     /** `Check all data` (system-states §3.7). Reads only; never repairs. */
     async checkAll(): Promise<IntegrityCheck> {
       const at = deps.now();
-      lastIntegrity = { atUtc: at.utc, tz: at.tz, report: await checkIntegrity(deps.manager.store.db) };
+      lastIntegrity = { atUtc: at.utc, tz: at.tz, report: await checkIntegrity(deps.manager.store.db, undefined, timeSlicer()) };
       return lastIntegrity;
     },
     last: (): IntegrityCheck => lastIntegrity,

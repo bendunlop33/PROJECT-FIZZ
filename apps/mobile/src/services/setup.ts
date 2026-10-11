@@ -33,6 +33,14 @@ export function unitFromMeasurementSystem(system: string | null | undefined): We
   return system === 'us' ? 'lb' : 'kg';
 }
 
+/**
+ * Step 1 after a gym is saved in first run (`Gym saved in kg`): the unit is
+ * read-only, as the gym's equipment stays in the unit it was saved in.
+ */
+export function unitLockedText(unit: WeightUnit): string {
+  return `Gym saved in ${unit}`;
+}
+
 export interface NewProfileInput {
   id: string;
   unit: WeightUnit;

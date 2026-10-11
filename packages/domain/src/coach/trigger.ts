@@ -162,3 +162,26 @@ export function shouldShowCoachOffer(input: OfferGateInput): boolean {
   const lastOffer = Math.max(...earlier.map((e) => e.atVersion));
   return input.lastAdjustedAtVersion !== null && input.lastAdjustedAtVersion > lastOffer;
 }
+
+/**
+ * The in-workout coach adjustments still carried by an exercise's sets
+ * (`planned.coach`, set only by `adjust_pending_sets`). A next-session
+ * target the workout started with is `source: 'coach'` too, but it isn't
+ * an adjustment made during this workout, so it never re-opens CA4.
+ */
+export function todayAdjustmentIds(sets: readonly { sessionExerciseId: string; planned: PlannedSet }[], sessionExerciseId: string): string[] {
+  return [...new Set(sets.flatMap((s) => (s.sessionExerciseId === sessionExerciseId && s.planned.coach !== undefined ? [s.planned.coach.actionId] : [])))];
+}
+
+/**
+ * `lastAdjustedAtVersion` for the offer gate: the latest session version at
+ * which one of those adjustments was applied (`appliedAt`: its saved
+ * record's session version; unknown ones are skipped). Null: none.
+ */
+export function lastAdjustedVersion(actionIds: readonly string[], appliedAt: ReadonlyMap<string, number>): number | null {
+  const versions = actionIds.flatMap((id) => {
+    const v = appliedAt.get(id);
+    return v === undefined ? [] : [v];
+  });
+  return versions.length === 0 ? null : Math.max(...versions);
+}

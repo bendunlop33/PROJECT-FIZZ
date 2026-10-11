@@ -252,6 +252,9 @@ export function backupReasonLabel(reason: BackupRecord['reason']): string {
       return 'Before a FitNotes import';
     case 'after_import':
       return 'After a FitNotes import';
+    // Copy unconfirmed by the designer (fix-backup review N3).
+    case 'after_undo_import':
+      return 'After undoing an import';
     case 'after_delete':
       return 'Coaching knowledge only';
     case 'before_reset':

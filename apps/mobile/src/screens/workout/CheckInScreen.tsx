@@ -24,6 +24,7 @@ import type { RootStackParams, WorkoutToastParam } from '../../navigation/types'
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Eyebrow, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton, TextField } from '../../ui';
+import { NO_REASONS_WRITTEN, skipReasons, submitReasons, type ReasonsSheetState } from '../../workout/check-in-sheet';
 import { checkInSheetEnd } from '../../workout/overview';
 
 type Step = 'score' | 'reasons' | 'pain' | 'ill';
@@ -250,6 +251,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
   const [checkInId] = useState(newUuid);
   const [recordOp] = useState(newUuid);
   const [startOp] = useState(newUuid);
+  const reasonsWrites = useRef<ReasonsSheetState>(NO_REASONS_WRITTEN);
   const [step, setStep] = useState<Step>(overview?.checkInId && !overview.atScore ? 'reasons' : 'score');
   const [record, setRecord] = useState<CheckIn | null>(null);
   const [score, setScore] = useState<CheckInScore | null>(null);
@@ -358,24 +360,65 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
     await start({ kind: 'answered', checkInId: saved.id }, savedToast(saved));
   }
 
+  /** A refused reasons write: say so; when stale, show the latest check-in, chips and note included (review N1). */
+  function reasonsFailed(r: { message: string; latest: CheckIn | null }) {
+    if (r.latest) {
+      setRecord(r.latest);
+      setScore(r.latest.score);
+      setReasons(r.latest.reasons);
+      setNote(r.latest.note ?? '');
+    }
+    setError(r.message);
+  }
+
   async function done() {
     if (record === null || busy) return;
     setBusy(true);
-    const r = await services.checkIns.update(record.id, { reasons, note: note.trim() === '' ? null : note }, record.version, `${recordOp}:reasons`);
+    setError(null);
+    // A new opId per distinct Done (Back from the pain step and a change is a new write); a retry reuses it.
+    const r = await submitReasons(services.checkIns, record, { reasons, note: note.trim() === '' ? null : note }, reasonsWrites.current, newUuid);
+    reasonsWrites.current = r.state;
     setBusy(false);
-    const saved = r.ok ? r.checkIn : record;
+    if (!r.ok) {
+      reasonsFailed(r);
+      return;
+    }
+    const saved = r.checkIn;
     setRecord(saved);
     changed();
-    if (reasons.includes('pain')) setStep('pain');
-    else if (reasons.includes('ill')) setStep('ill');
+    if (r.next === 'pain' || r.next === 'ill') setStep(r.next);
     else await start({ kind: 'answered', checkInId: saved.id }, savedToast(saved));
+  }
+
+  /** `Skip` once a score is saved: the score only, so reasons saved by an earlier Done are put back first (review S1). */
+  async function skipWithScore() {
+    if (record === null || busy) return;
+    setBusy(true);
+    setError(null);
+    const r = await skipReasons(services.checkIns, record, reasonsWrites.current, newUuid);
+    reasonsWrites.current = r.state;
+    setBusy(false);
+    if (!r.ok) {
+      if (r.stale || checkInSheetEnd({ overview: overview !== undefined, gymId }) === 'back_to_overview') {
+        reasonsFailed(r);
+        return;
+      }
+      // Never blocks logging (check-in.md §3 Write failed): start without the check-in.
+      await start({ kind: 'skipped', atUtc: services.now().utc }, { kind: 'info', text: CHECK_IN_NOT_SAVED });
+      return;
+    }
+    if (r.checkIn !== record) {
+      setRecord(r.checkIn);
+      changed();
+    }
+    await start({ kind: 'answered', checkInId: r.checkIn.id }, savedToast(r.checkIn));
   }
 
   async function afterPain(flagged: { flags: { id: string; version: number }[]; names: string[]; checkIn: CheckIn } | null) {
     const current = flagged?.checkIn ?? record;
     if (current === null) return;
     const toast: WorkoutToastParam = flagged ? { kind: 'pain', text: `Pain noted for ${flagged.names.join(', ')}`, flags: flagged.flags } : savedToast(current);
-    if (reasons.includes('ill')) {
+    if (current.reasons.includes('ill')) {
       setRecord(current);
       setPainToast(flagged ? toast : null);
       setStep('ill');
@@ -426,7 +469,8 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
               disabled={busy}
               onPress={() => {
                 // A score already given (back from What's up?) is kept; otherwise nothing is written.
-                void start(record ? { kind: 'answered', checkInId: record.id } : { kind: 'skipped', atUtc: services.now().utc }, record ? savedToast(record) : null);
+                if (record) void skipWithScore();
+                else void start({ kind: 'skipped', atUtc: services.now().utc }, null);
               }}
             />
           }
@@ -456,9 +500,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
                 label="Skip"
                 tone="secondary"
                 accessibilityHint={overview ? 'Keeps your score.' : 'Keeps your score and starts the workout.'}
-                onPress={() => {
-                  if (record) void start({ kind: 'answered', checkInId: record.id }, savedToast(record));
-                }}
+                onPress={() => void skipWithScore()}
               />
               <View style={{ flex: 1 }}>
                 <PrimaryButton label="Done" busy={busy} onPress={() => void done()} />

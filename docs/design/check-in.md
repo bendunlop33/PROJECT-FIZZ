@@ -356,6 +356,7 @@ The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is
 | Voice saved | Clear phrase | Strip `✓ Got it · 3 of 5 · Tired` + `Heard: "…"`, then the sheet continues as if tapped | — | The in-workout toast carries [Change] |
 | Swiped away | Swipe down / escape | Back to Today, nothing started | — | Saved score (if any) stays, unlinked, reusable for 2 h |
 | Write failed | `recordCheckIn` fails | Workout starts anyway; toast `Check-in not saved`. Over the Workout overview nothing starts: the sheet shows `Check-in not saved` and the overview's Start still works | — | Never blocks logging. Session `checkIn: skipped` |
+| Reasons write failed | `Done` (or `Skip` putting back reasons saved by an earlier `Done`) fails | Stays on the sheet with the error; `Skip` stays one tap away. Stale: the sheet shows the latest check-in (score, chips, note). A non-stale `Skip` failure starts with `checkIn: skipped` and toast `Check-in not saved` (over the overview: the error stays on the sheet) | — | Never blocks logging |
 | Resume, not yet started | `Resume` or P6 auto-open of a session with 0 sets ever logged and `checkIn: pending` | Same sheet over Active workout (§2.2 Resume line) | — | Skip or swipe-down → stays in the workout, `skipped`. `Skip workout` → `discardWorkout` (0 sets; no Undo) + `skipScheduledSession` (Undo) |
 | Paused, not yet started | As above, workout paused | Same sheet | — | Answering doesn't resume; `Resume` stays the workout's primary |
 | Offline | No network | Identical sheet; everything is local | — | Only the in-workout offer differs (CI7) |
@@ -405,7 +406,7 @@ The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is
 | `‹ 3 of 5` (Step 2) | Back to Step 1 with `3` shown as chosen. A new score `updateCheckIn`s the same record | Choosing 4 or 5 from here starts the workout; selected reasons are kept in the record |
 | Reason chip | Toggles; nothing is written until `Done` | `Other…` focuses the note |
 | `Done` (Step 2) | `updateCheckIn(id, {reasons, note}, expectedVersion, opId)`, then the pain step, the ill step, or start | |
-| `Skip` (Step 2) | Starts with the score only; selected chips and the note are discarded | VoiceOver hint: "Keeps your score and starts the workout." Over the Workout overview (nothing starts): "Keeps your score." |
+| `Skip` (Step 2) | Starts with the score only; selected chips and the note are discarded. If an earlier `Done` saved reasons (Back from the pain step), they are put back to what the check-in had before that `Done` (a new versioned write) first. Same for `Skip` on Step 1 after Back | VoiceOver hint: "Keeps your score and starts the workout." Over the Workout overview (nothing starts): "Keeps your score." |
 | Pain step `Flag n movements` | `setPainFlag({exerciseIds, active: true, area?, source: 'check_in'}, opId)`; `updateCheckIn(…, {painFlagIds})`; continue | Flag first, then everything else (CM4) |
 | Pain step `Not now` | No flag; continue | CI8 |
 | `Train anyway` | Start (answered) | |

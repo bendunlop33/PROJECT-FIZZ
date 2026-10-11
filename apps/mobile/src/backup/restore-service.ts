@@ -134,6 +134,11 @@ export function createRestoreService(deps: RestoreServiceDeps) {
       }
     },
 
+    /** Free the checked backup held for Restore; the restore screen calls it when it closes (N2). */
+    forgetChecked: (): void => {
+      deps.manager.forgetChecked();
+    },
+
     rollbackTarget: (): { available: boolean; last: LastSwitch | null } => deps.manager.rollbackTarget,
 
     async undo(): Promise<UndoResult> {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { toMs } from '@fizz/domain';
-import { exportDomain, sha256Hex, type AppInfo, type DataDomain, type DatabaseManager, type DomainCounts, type DomainSwitchOutcome, type KeptCopyLoss } from '@fizz/persistence';
+import { exportDomain, type AppInfo, type DataDomain, type DatabaseManager, type DomainCounts, type DomainSwitchOutcome, type KeptCopyLoss } from '@fizz/persistence';
 import type { Exercise, SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 
 import { restAlertIdentifier, type RestAlertController } from '../alerts/rest-alerts';
@@ -706,7 +706,8 @@ export function createDataDomainService(deps: DataDomainDeps) {
         if (file.records === 0) return { ok: false, reason: 'empty', message: 'Nothing to export' };
         await dest.write(file.fileName, file.text);
         const back = await dest.read(file.fileName);
-        if (back === null || sha256Hex(back) !== sha256Hex(file.text)) throw new Error('the file read back differently from what was written');
+        // Byte for byte, as backups compare it (fix-backup B1): no second hash.
+        if (back !== file.text) throw new Error('the file read back differently from what was written');
         return { ok: true, fileName: file.fileName, destinationLabel: dest.label };
       } catch (e) {
         return { ok: false, reason: 'failed', message: `Couldn’t create the file: ${describeWriteError(e)}` };

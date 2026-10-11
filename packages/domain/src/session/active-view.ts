@@ -1,4 +1,4 @@
-import type { EquipmentInstance, Load, PainFlag, SessionAggregate, SessionExercise, SetExclusion, SetSide, SetValues, WorkoutSet } from '@fizz/schemas';
+import type { CommandOf, EquipmentInstance, Load, PainFlag, ZonedTimestamp, SessionAggregate, SessionExercise, SetExclusion, SetSide, SetValues, WorkoutSet } from '@fizz/schemas';
 import {
   EQUIPMENT_WORD,
   SET_TYPE_BADGE,
@@ -80,6 +80,11 @@ export interface DraftEdits {
   side?: SetSide;
   /** Set by "copy last time" (`Copied from 1 Oct`). */
   copied?: boolean;
+}
+
+/** The `save_draft` for the screen's edits: the values and, when chosen, the side (so it survives a minimise or restart). */
+export function saveDraftCommand(edits: DraftEdits, at: ZonedTimestamp): CommandOf<'save_draft'> {
+  return { type: 'save_draft', at, setId: edits.setId, values: edits.values, ...(edits.side !== undefined ? { side: edits.side } : {}) };
 }
 
 export interface ActiveViewInput {

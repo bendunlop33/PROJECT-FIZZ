@@ -1,6 +1,7 @@
 import { stableStringify } from '@fizz/domain';
 
 import type { SqlRow } from '../driver';
+import { noYield, type Slicer } from './slice';
 
 /**
  * What a restore replaces (data-import-export §2.3, PM decision on review
@@ -58,7 +59,7 @@ interface Fingerprints {
   other: Map<string, Map<string, string>>;
 }
 
-function fingerprints(tables: Tables, mode: CompareMode): Fingerprints {
+async function fingerprints(tables: Tables, mode: CompareMode, slice: Slicer): Promise<Fingerprints> {
   const children = new Map<string, string[]>();
   if (mode === 'content') {
     for (const [name, rows] of Object.entries(tables)) {
@@ -69,6 +70,7 @@ function fingerprints(tables: Tables, mode: CompareMode): Fingerprints {
         const list = children.get(sid) ?? [];
         list.push(`${name}:${stableStringify(row)}`);
         children.set(sid, list);
+        await slice();
       }
     }
   }
@@ -82,6 +84,7 @@ function fingerprints(tables: Tables, mode: CompareMode): Fingerprints {
         ? stableStringify({ s, c: [...(children.get(id) ?? [])].sort() })
         : stableStringify([s.status, s.version, s.revision, s.last_activity_at_utc]);
     workouts.set(id, { print, startedAtUtc: typeof s.started_at_utc === 'string' ? s.started_at_utc : null });
+    await slice();
   }
   const other = new Map<string, Map<string, string>>();
   for (const t of OTHER_RECORD_TABLES) {
@@ -89,6 +92,7 @@ function fingerprints(tables: Tables, mode: CompareMode): Fingerprints {
     for (const r of tables[t] ?? []) {
       if (isSharedKnowledge(r)) continue;
       m.set(keyOf(r), mode === 'content' ? stableStringify(r) : stableStringify([r.version, r.updated_at_utc]));
+      await slice();
     }
     other.set(t, m);
   }
@@ -132,22 +136,26 @@ export interface ReplaceAnalysis {
   keptForUndo: ReplaceCounts | null;
 }
 
-export function analyseReplace(input: {
-  current: { schemaVersion: number; tables: Tables };
-  backup: { schemaVersion: number; tables: Tables };
-  /** The rollback database, or null when none is kept (or it's empty). */
-  kept: { schemaVersion: number; tables: Tables } | null;
-}): ReplaceAnalysis {
+/** `slice` pauses between records so a large history never holds the JS thread (backup review B1). */
+export async function analyseReplace(
+  input: {
+    current: { schemaVersion: number; tables: Tables };
+    backup: { schemaVersion: number; tables: Tables };
+    /** The rollback database, or null when none is kept (or it's empty). */
+    kept: { schemaVersion: number; tables: Tables } | null;
+  },
+  slice: Slicer = noYield,
+): Promise<ReplaceAnalysis> {
   const pairMode: CompareMode = input.current.schemaVersion === input.backup.schemaVersion ? 'content' : 'stamp';
-  const current = fingerprints(input.current.tables, pairMode);
-  const backup = fingerprints(input.backup.tables, pairMode);
+  const current = await fingerprints(input.current.tables, pairMode, slice);
+  const backup = await fingerprints(input.backup.tables, pairMode, slice);
   let keptForUndo: ReplaceCounts | null = null;
   if (input.kept !== null) {
     const allSame = pairMode === 'content' && input.kept.schemaVersion === input.current.schemaVersion;
     const mode: CompareMode = allSame ? 'content' : 'stamp';
-    const k = fingerprints(input.kept.tables, mode);
-    const c = allSame ? current : fingerprints(input.current.tables, mode);
-    const b = allSame ? backup : fingerprints(input.backup.tables, mode);
+    const k = await fingerprints(input.kept.tables, mode, slice);
+    const c = allSame ? current : await fingerprints(input.current.tables, mode, slice);
+    const b = allSame ? backup : await fingerprints(input.backup.tables, mode, slice);
     keptForUndo = notIn(k, [c, b], 'either');
   }
   return {
@@ -172,11 +180,16 @@ export function replacesAnything(a: ReplaceAnalysis): boolean {
  * - `either`: also records whose content differs (a copy kept by a restore
  *   is another history), as the restore preview counts it.
  */
-export function keptOnly(input: {
-  current: { schemaVersion: number; tables: Tables };
-  kept: { schemaVersion: number; tables: Tables };
-  match: 'absent' | 'either';
-}): ReplaceCounts {
+export async function keptOnly(
+  input: {
+    current: { schemaVersion: number; tables: Tables };
+    kept: { schemaVersion: number; tables: Tables };
+    match: 'absent' | 'either';
+  },
+  slice: Slicer = noYield,
+): Promise<ReplaceCounts> {
   const mode: CompareMode = input.current.schemaVersion === input.kept.schemaVersion ? 'content' : 'stamp';
-  return notIn(fingerprints(input.kept.tables, mode), [fingerprints(input.current.tables, mode)], input.match);
+  const kept = await fingerprints(input.kept.tables, mode, slice);
+  const current = await fingerprints(input.current.tables, mode, slice);
+  return notIn(kept, [current], input.match);
 }

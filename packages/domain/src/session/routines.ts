@@ -17,6 +17,7 @@ import { loadDirection } from '../equipment';
 import { fitProvenance, startWarningNote } from '../target-provenance';
 import { toMs } from '../time';
 import { startWorkout, type StartWorkoutInput, type StartWorkoutOutput } from './create';
+import { blockSets, partRootOf, partsOf } from './gym-switch';
 import { boundWords, convertedWords, noLoadWords, roundedWords, withWas } from './fit-words';
 import type { RepeatNote } from './repeat';
 import type { SnapResult } from './snap';
@@ -82,10 +83,10 @@ export function routineFromSession(input: RoutineFromSessionInput): Routine | nu
   const src = input.source;
   if (src.session.status !== 'finished' || src.session.source !== 'manual') return null;
   const exercises: RoutineExercise[] = [];
-  for (const sx of [...src.exercises].sort((a, b) => a.order - b.order)) {
-    const done = src.sets
-      .filter((s) => s.sessionExerciseId === sx.id && s.status === 'completed' && s.actual !== null && s.pairedWithSetId === null)
-      .sort((a, b) => a.index - b.index);
+  // An exercise split across gyms (GS6) is one block of rows: one entry, its parts' done sets in execution order.
+  const roots = [...src.exercises].sort((a, b) => a.order - b.order).filter((sx) => partRootOf(src.exercises, sx.id) === sx.id);
+  for (const sx of roots) {
+    const done = blockSets(src, sx.id).filter((s) => s.status === 'completed' && s.actual !== null && s.pairedWithSetId === null);
     if (done.every((s) => s.setType === 'warmup')) continue;
     const templates: SetTemplate[] = [];
     const restBySetType: Partial<Record<SetType, RestSetting>> = {};
@@ -106,10 +107,17 @@ export function routineFromSession(input: RoutineFromSessionInput): Routine | nu
       if (restBySetType[s.setType] === undefined && s.rest.source !== 'not_recorded') restBySetType[s.setType] = { seconds: s.rest.seconds };
     }
     if (templates.length === 0) continue;
+    // Pinned to the item it was last done on, as Repeat does: the latest part with done sets and equipment.
+    const equipmentId =
+      [...partsOf(src.exercises, sx.id)]
+        .reverse()
+        .filter((p) => done.some((d) => d.sessionExerciseId === p.id))
+        .map((p) => p.equipmentId)
+        .find((e) => e !== null) ?? null;
     exercises.push({
       id: input.newId(),
       exerciseId: sx.exerciseId,
-      equipmentId: sx.equipmentId,
+      equipmentId,
       order: exercises.length,
       supersetGroup: sx.supersetGroup,
       setTemplates: templates.slice(0, 30),
