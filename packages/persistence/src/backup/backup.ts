@@ -113,7 +113,11 @@ const EXPORT_PAGE = 1000;
  * Every row of every table, in primary-key order (deterministic, so equal data
  * hashes equal). With a `slice`, big tables are read in pages with a pause
  * between them (backup review B1); the caller still holds one queue slot, so
- * no write lands between pages.
+ * no write lands between pages. A write queued meanwhile (a set logged,
+ * Summary Undo) waits for the rest of the export: ~200-350 ms on a 2-year
+ * history in the perf test (fix-backup review S3), not yet measured on the
+ * phone. A separate read connection would remove the wait; not done until
+ * a device measurement shows it is needed.
  */
 export async function exportTables(q: SqlExecutor, slice?: Slicer): Promise<Record<string, SqlRow[]>> {
   const tables: Record<string, SqlRow[]> = {};
@@ -197,6 +201,8 @@ export async function createBackup(store: Store, options: { at: ZonedTimestamp; 
   const slice = options.slice ?? noYield;
   const { schemaVersion, tables } = await store.db.read(async (q) => ({ schemaVersion: await readUserVersion(q), tables: await exportTables(q, slice) }));
   await slice();
+  // Runs in later queue turns, so a write landing between the export and this check is judged
+  // here but isn't in the file: `integrity` describes the live database, not exactly these rows (N1).
   const integrity = await checkIntegrity(store.db, schemaVersion, slice);
   const counts: Record<string, number> = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
   const body = {

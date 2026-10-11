@@ -78,10 +78,12 @@ describe('backup on a 2-year history (B1)', () => {
       runs.push(`${String(Math.round(m.totalMs))}ms/${String(Math.round(m.maxBlockMs))}ms${m.result.deleted.length > 0 ? ' (rotated)' : ''}`);
       if (i === 0) runs.unshift(`file ${(m.result.record.textLength / 1e6).toFixed(1)} MB`);
     }
-    console.log(`[B1] automatic backup, total/longest block: ${runs.join(', ')}`);
+    console.log(`[B1]${process.execArgv.includes('--jitless') ? ' (--jitless)' : ''} automatic backup, total/longest block: ${runs.join(', ')}`);
     expect(files.files.size).toBe(2);
     // Before the fix each run blocked for its whole length (~6 s here, ~50 s under --jitless).
-    // Typically under 150 ms; the margin absorbs CPU contention from parallel test files.
+    // Typically under 150 ms; the margin absorbs CPU contention from parallel test files. Under
+    // `npm run test:perf:jitless` (no JIT, closer to Hermes) the longest block was ~190 ms
+    // (11 Oct 2026, 19.7 MB). Not yet measured on the phone.
     expect(worst).toBeLessThan(1000);
   }, 600_000);
 });

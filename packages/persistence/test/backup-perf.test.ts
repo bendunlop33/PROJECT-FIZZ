@@ -11,6 +11,7 @@ import { tempDir } from './helpers';
  */
 
 const APP = { name: 'GymSmarter', version: '0.1.0', build: '9' };
+const jitless = () => (process.execArgv.includes('--jitless') ? ' (--jitless)' : '');
 const dirs: { cleanup: () => void }[] = [];
 let source: DatabaseManager;
 let text: string;
@@ -49,11 +50,34 @@ describe('Check and Restore on a 2-year history (B1)', () => {
     const restore = await measureBlocking(() => target.restore(text, at(10), { expectedStamp: check.result.ok ? check.result.preview.stamp : '' }));
     expect(restore.result).toMatchObject({ ok: true, status: 'restored' });
     const fmt = (m: { totalMs: number; maxBlockMs: number }) => `${String(Math.round(m.totalMs))}ms/${String(Math.round(m.maxBlockMs))}ms`;
-    console.log(`[B1] ${(text.length / 1e6).toFixed(1)} MB backup, total/longest block: check ${fmt(check)}, restore ${fmt(restore)}`);
+    console.log(`[B1]${jitless()} ${(text.length / 1e6).toFixed(1)} MB backup, total/longest block: check ${fmt(check)}, restore ${fmt(restore)}`);
     // Before the fix each step blocked for its whole length (13-15 s here). Typically under 250 ms
     // (node:sqlite runs PRAGMA integrity_check synchronously; expo-sqlite runs it off the JS thread);
-    // the margin absorbs CPU contention from parallel test files.
+    // the margin absorbs CPU contention from parallel test files. Under `npm run test:perf:jitless`
+    // (no JIT, closer to Hermes) the longest block was ~200 ms (11 Oct 2026, 19.7 MB): the
+    // unsliced JSON.parse of the whole file. Not yet measured on the phone.
     expect(Math.max(check.maxBlockMs, restore.maxBlockMs)).toBeLessThan(1000);
     await target.close();
+  }, 600_000);
+
+  it('hold the store queue only for the export: a write issued meanwhile waits a bounded time (S3)', async () => {
+    // A set logged or Summary Undo tapped just after Finish, while the automatic backup runs.
+    let backupDone = false;
+    const backup = createBackup(source.store, { at: at(20), app: APP, slice: timeSlicer() }).then((b) => {
+      backupDone = true;
+      return b;
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    const t0 = performance.now();
+    await source.store.db.write((tx) => tx.run('SELECT 1'));
+    const waitedMs = performance.now() - t0;
+    expect(backupDone).toBe(false);
+    const created = await backup;
+    expect(created.counts.finishedWorkouts).toBe(416);
+    console.log(`[S3]${jitless()} write queued during a ${(created.text.length / 1e6).toFixed(1)} MB backup waited ${String(Math.round(waitedMs))}ms`);
+    // Only the paged export holds the queue; integrity, serialising and hashing run in later
+    // turns or off it. Typically ~200 ms here (~350 ms under `npm run test:perf:jitless`); the
+    // margin absorbs CPU contention from parallel test files. Not yet measured on the phone.
+    expect(waitedMs).toBeLessThan(1500);
   }, 600_000);
 });
