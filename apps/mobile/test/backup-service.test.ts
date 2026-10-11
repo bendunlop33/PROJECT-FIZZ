@@ -412,6 +412,15 @@ describe('backup service', () => {
     expect(files.files.size).toBe(1);
   });
 
+  it('runs Ben started don’t wait for idle (N4)', async () => {
+    const never = new Promise<void>(() => undefined);
+    const svc = createBackupService({ store: () => store, files, manifest, now, app: APP, locale: 'en-GB', idle: () => never });
+    expect((await svc.backUpOnPhone('manual')).ok).toBe(true);
+    clockMs += 60_000;
+    expect((await svc.backUpOnPhone('before_import')).ok).toBe(true);
+    expect(files.files.size).toBe(2);
+  });
+
   it('saves a copy to Files, refuses a folder inside Fizz, and reminds after 30 days', async () => {
     const svc = service();
     const folder = new Map<string, string>();

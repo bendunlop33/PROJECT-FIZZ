@@ -68,13 +68,20 @@ export interface BackupServiceDeps {
   now: () => ZonedTimestamp;
   app: AppInfo;
   locale?: string;
-  /** Resolves when the UI is idle (after Finish's transition); each run waits for it first. Default: start at once. */
+  /** Resolves when the UI is idle (after Finish's transition); each background run waits for it first. Default: start at once. */
   idle?: () => Promise<void>;
   /** Pauses long work so taps and renders run in between. Default: 8 ms slices. */
   slice?: Slicer;
 }
 
 export type BackupReason = BackupRecord['reason'];
+
+/**
+ * Runs Ben started and is waiting on (`Back up now`, the backup before an
+ * import): they start at once. Only background runs wait for the UI to be
+ * idle (fix-backup review N4). `Save a copy to Files` is user-started too.
+ */
+const USER_STARTED: ReadonlySet<BackupReason> = new Set(['manual', 'before_import']);
 
 export type BackupRunResult = { ok: true; record: BackupRecord; deleted: string[] } | { ok: false; error: string };
 
@@ -269,7 +276,7 @@ export function createBackupService(deps: BackupServiceDeps) {
       return track(() =>
         queued(async () => {
           try {
-            if (deps.idle) await deps.idle();
+            if (deps.idle && !USER_STARTED.has(reason)) await deps.idle();
             return await backUpNow(reason);
           } catch (e) {
             return { ok: false, error: describeWriteError(e) } as const;
@@ -298,7 +305,6 @@ export function createBackupService(deps: BackupServiceDeps) {
     saveCopyTo(dest: CopyDestination): Promise<CopyResult> {
       return track(() =>
         queued(async (): Promise<CopyResult> => {
-          if (deps.idle) await deps.idle();
           if (dest.insideApp) {
             return { ok: false, reason: 'inside_app', message: 'That’s inside GymSmarter, so it’s lost with the app. Choose iCloud Drive or another folder.' };
           }
