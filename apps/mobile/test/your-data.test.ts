@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { sha256Hex } from '@fizz/persistence';
+
 import type { CopyDestination } from '../src/backup/backup-service';
 import type { CredentialPort, PersonalFilesPort } from '../src/backup/data-domain-service';
 import { rollbackConfirmMessage, rollbackRowView } from '../src/backup/restore-view';
@@ -889,6 +891,96 @@ describe('Reset and the copy kept for Undo (review r5 B1, S1)', () => {
     expect(await s.data.resetCoachingKnowledge({ opId: 'full', stamp: summary.stamp })).toEqual({ ok: false, reason: 'backup_failed', message: 'This iPhone is out of space.' });
     expect(s.restore.rollbackTarget().last?.reason).toBe('restore');
     expect((await s.data.summary()).stamp).toBe(summary.stamp);
+  });
+});
+
+describe('Reset and Delete with main’s backup rules (fix-backup merge)', () => {
+  /** An idle gate the test opens and closes: closed, background backups wait (as behind Finish’s transition). */
+  function idleGate() {
+    let open = true;
+    const waiting: (() => void)[] = [];
+    return {
+      idle: () => (open ? Promise.resolve() : new Promise<void>((r) => waiting.push(r))),
+      close() {
+        open = false;
+      },
+      release() {
+        open = true;
+        for (const r of waiting.splice(0)) r();
+      },
+      get waiting() {
+        return waiting.length;
+      },
+    };
+  }
+
+  it('Restore → Reset with the UI never idle: the kept_for_undo and before_reset backups still run, and only the phone’s own backup counts as coverage', async () => {
+    h = createHarness('2026-10-08T17:00:00.000Z');
+    const gate = idleGate();
+    const o = await h.start({ idle: gate.idle });
+    if (o.kind !== 'ready') throw new Error(o.kind);
+    const s = o.services;
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    await h.settle(s);
+    const first = (await s.restore.copiesOnPhone())[0]?.fileName ?? '';
+    h.clockMs += 86_400_000;
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 62.5, reps: 8 }] }]);
+    await h.settle(s);
+    const text = (await s.restore.readOnPhone(first)) ?? '';
+    const checked = await s.restore.prepare(text);
+    if (!checked.ok) throw new Error(checked.error.message);
+    h.clockMs += 60_000;
+    expect(await s.restore.restore(text, checked.preview.stamp)).toMatchObject({ ok: true, status: 'restored' });
+    await h.settle(s);
+
+    // From here the UI never goes idle: a background backup would wait, Ben’s Reset must not.
+    gate.close();
+    h.clockMs += 60_000;
+    const summary = await s.data.summary();
+    expect(summary.keptForUndo).toMatchObject({ workouts: 1 });
+    expect(await s.data.resetCoachingKnowledge({ opId: 'reset-idle', stamp: summary.stamp })).toMatchObject({ ok: true, status: 'switched' });
+    expect(gate.waiting).toBe(0);
+
+    const copies = await s.restore.copiesOnPhone();
+    const kept = copies.find((c) => c.reason === 'kept_for_undo');
+    const before = copies.find((c) => c.reason === 'before_reset');
+    if (kept === undefined || before === undefined) throw new Error('missing backup');
+    // Main’s single-pass hash: the recorded SHA-256 is of the file as written.
+    expect(kept.sha256).toBe(sha256Hex(h.backupFiles.get(kept.fileName) ?? ''));
+    expect(before.sha256).toBe(sha256Hex(h.backupFiles.get(before.fileName) ?? ''));
+    // The kept copy’s digest is of the copy (two workouts), not of the phone (one).
+    expect(kept.finishedWorkouts).toBe(2);
+    expect(before.finishedWorkouts).toBe(1);
+    expect(kept.finishedDigest).not.toBe(before.finishedDigest);
+    // `before_reset` matches the phone’s digest; the older `kept_for_undo` one never stands for the phone.
+    expect((await s.backups.getStatus()).onPhone).toMatchObject({ state: 'backed_up', lastSuccess: { fileName: before.fileName } });
+    expect(await s.backups.ensureBackedUp()).toBeNull();
+
+    gate.release();
+  });
+
+  it('Delete my data with the UI never idle: the coaching-knowledge-only backup runs at once and covers the phone', async () => {
+    h = createHarness('2026-10-08T17:00:00.000Z', { credentials: fakeKeychain().port, personalFiles: fakeFiles().port });
+    const gate = idleGate();
+    const o = await h.start({ idle: gate.idle });
+    if (o.kind !== 'ready') throw new Error(o.kind);
+    const s = o.services;
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    await h.settle(s);
+    gate.close();
+    h.clockMs += 60_000;
+    const { stamp } = await s.data.summary();
+    expect(await s.data.deleteMyData({ opId: 'delete-idle', stamp })).toMatchObject({ ok: true });
+    expect(gate.waiting).toBe(0);
+    const copies = await s.restore.copiesOnPhone();
+    expect(copies.map((c) => c.reason)).toEqual(['after_delete']);
+    expect(copies[0]?.finishedWorkouts).toBe(0);
+    expect(copies[0]?.sha256).toBe(sha256Hex(h.backupFiles.get(copies[0]?.fileName ?? '') ?? ''));
+    expect((await s.backups.getStatus()).onPhone.state).toBe('backed_up');
+    expect(await s.backups.ensureBackedUp()).toBeNull();
+    gate.release();
   });
 });
 

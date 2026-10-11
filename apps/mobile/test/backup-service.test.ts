@@ -537,6 +537,78 @@ describe('backup service', () => {
   });
 });
 
+describe('Your-data backup kinds with main’s backup rules (fix-backup merge)', () => {
+  it('Reset’s and Delete’s backups don’t wait for idle; background ones still do', async () => {
+    const never = new Promise<void>(() => undefined);
+    const svc = createBackupService({ store: () => store, files, manifest, now, app: APP, locale: 'en-GB', idle: () => never });
+    expect((await svc.backUpOnPhone('kept_for_undo')).ok).toBe(true);
+    clockMs += 60_000;
+    expect((await svc.backUpOnPhone('before_reset')).ok).toBe(true);
+    clockMs += 60_000;
+    expect((await svc.wipeOnPhone()).ok).toBe(true);
+    expect(files.files.size).toBe(1);
+    void svc.backUpOnPhone('catch_up');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(svc.isRunning).toBe(true);
+  });
+
+  it('a kept_for_undo backup of another store records that store’s digest and the file’s hash, and never counts as the phone’s backup', async () => {
+    const kept = await openStore(openNodeDriver(':memory:'));
+    try {
+      await kept.repos.sessions.save(richFinishedSession(), null);
+      const svc = service();
+      // The phone has no finished workout; its own backup covers that.
+      const own = await svc.backUpOnPhone('manual');
+      if (!own.ok) throw new Error(own.error);
+      clockMs += 60_000;
+      const r = await svc.backUpOnPhone('kept_for_undo', { source: kept });
+      if (!r.ok) throw new Error(r.error);
+      expect(r.record).toMatchObject({ kind: 'manual', finishedWorkouts: 1, finishedDigest: await kept.finishedWorkoutsDigest() });
+      expect(r.record.finishedDigest).not.toBe(await store.finishedWorkoutsDigest());
+      expect(r.record.sha256).toBe(sha256Hex(files.files.get(r.record.fileName) ?? ''));
+      const parsed = await parseBackup(files.files.get(r.record.fileName) ?? '');
+      expect(parsed.ok && parsed.file.tables.sessions?.length).toBe(1);
+
+      // Newest file, but of another database: the phone is still backed up by its own, and launch doesn't catch up.
+      const status = await svc.getStatus();
+      expect(status.onPhone).toMatchObject({ state: 'backed_up', lastSuccess: { fileName: own.record.fileName } });
+      expect(status.copiesOnPhone[0]?.fileName).toBe(r.record.fileName);
+      expect(await svc.ensureBackedUp()).toBeNull();
+
+      // And with only a kept_for_undo backup, a phone with a finished workout is pending, never "backed up".
+      await store.repos.sessions.save(richFinishedSession(), null);
+      const onlyKept = { ...emptyManifest(), onPhone: { files: [r.record], lastAttempt: null } };
+      expect(onPhoneState(onlyKept, { finishedWorkouts: 1, finishedDigest: await store.finishedWorkoutsDigest(), backingUp: false })).toBe('pending');
+    } finally {
+      await kept.close();
+    }
+  });
+
+  it('rotation still keeps the newest restorable backup of the phone when a kept_for_undo backup is newer', () => {
+    const rec = (n: number, extra: Partial<BackupRecord> = {}): BackupRecord => ({
+      fileName: `fizz-backup-2026-10-${String(n).padStart(2, '0')}-1900-auto.json`,
+      kind: 'automatic',
+      reason: 'workout_finished',
+      createdAtUtc: `2026-10-${String(n).padStart(2, '0')}T18:00:00.000Z`,
+      tz: TZ,
+      sha256: 'a'.repeat(64),
+      textLength: 1,
+      finishedWorkouts: 1,
+      loggedSets: 1,
+      exercises: 1,
+      integrityOk: false,
+      integrityIssues: 1,
+      ...extra,
+    });
+    const good = rec(1, { integrityOk: true, integrityIssues: 0 });
+    const damaged = [2, 3, 4].map((n) => rec(n));
+    const keptCopy = rec(5, { fileName: 'fizz-backup-2026-10-05-1900.json', kind: 'manual', reason: 'kept_for_undo', integrityOk: true, integrityIssues: 0 });
+    const plan = planRotation([good, ...damaged, keptCopy], 2, damaged[2]?.fileName ?? '');
+    expect(plan.map((f) => f.fileName)).not.toContain(good.fileName);
+    expect(plan.map((f) => f.fileName)).not.toContain(keptCopy.fileName);
+  });
+});
+
 describe('wipeOnPhone (Delete my data, check 30)', () => {
   it('deletes every file in the backup folder, recorded or not, starts the record again, then writes one backup', async () => {
     const svc = service();

@@ -711,3 +711,74 @@ describe('Reset and the copy kept for Undo (review r5 B1, S1)', () => {
     expect(m.rollbackTarget.last?.reason).toBe('restore');
   });
 });
+
+describe('Delete and Reset with main’s backup rules (fix-backup merge)', () => {
+  const APP = { name: 'x', version: '1', build: null };
+
+  it('Delete, Reset and the kept-copy check pause in slices, like a restore preview (backup review B1)', async () => {
+    const d = dir();
+    let pauses = 0;
+    const m = await DatabaseManager.open({
+      host: nodeDatabaseHost(d),
+      newName: names(d),
+      slice: () => {
+        pauses += 1;
+        return Promise.resolve();
+      },
+    });
+    managers.push(m);
+    await populate(m.store);
+    const { createBackup } = await import('../src/index');
+    const text = (await createBackup(m.store, { at: at(50), app: APP })).text;
+    await m.store.repos.gyms.save(gym(3), null);
+    expect(await m.restore(text, at(60))).toMatchObject({ ok: true, status: 'restored' });
+
+    pauses = 0;
+    const summary = await m.domainSummary();
+    expect(summary.keptForUndo).toMatchObject({ otherRecords: 1 });
+    expect(pauses).toBeGreaterThan(0);
+    pauses = 0;
+    expect(await m.resetKnowledge([BUNDLED], { expectedStamp: summary.stamp, at: at(61), dropKeptCopy: true })).toMatchObject({ ok: true, status: 'switched' });
+    expect(pauses).toBeGreaterThan(0);
+    pauses = 0;
+    expect(await m.deleteYourData({ expectedStamp: (await m.domainSummary()).stamp })).toMatchObject({ ok: true, status: 'switched' });
+    expect(pauses).toBeGreaterThan(0);
+  });
+
+  it('Delete my data drops a checked backup held in memory (it is Ben’s data too)', async () => {
+    const d = dir();
+    const m = await openManager(d);
+    await populate(m.store);
+    const { createBackup } = await import('../src/index');
+    const text = (await createBackup(m.store, { at: at(50), app: APP })).text;
+    expect((await m.preview(text)).ok).toBe(true);
+    expect(m.holdsCheckedBackup).toBe(true);
+    // Reset keeps it: only coaching knowledge changed, and the cache is keyed on the backup text.
+    expect(await m.resetKnowledge([BUNDLED])).toMatchObject({ ok: true });
+    expect(m.holdsCheckedBackup).toBe(true);
+    expect(await m.deleteYourData()).toMatchObject({ ok: true, status: 'switched' });
+    expect(m.holdsCheckedBackup).toBe(false);
+  });
+
+  it('a backup of the copy kept for Undo carries that copy’s finished-workout digest, not the phone’s', async () => {
+    const d = dir();
+    const m = await openManager(d);
+    await populate(m.store);
+    const { createBackup } = await import('../src/index');
+    const text = (await createBackup(m.store, { at: at(50), app: APP })).text;
+    const later = unilateralSession('later-digest', idGen(98_500));
+    const finished = apply(later, { type: 'finish', at: at(4000), opId: 'finish-digest', expectedVersion: later.session.version, endedAt: at(600) });
+    expect((await m.store.repos.sessions.save(finished, null)).ok).toBe(true);
+    const keptDigest = await m.store.finishedWorkoutsDigest();
+    expect(await m.restore(text, at(60))).toMatchObject({ ok: true, status: 'restored' });
+
+    const saved = await m.withKeptCopy(async (store) => ({ backup: await createBackup(store, { at: at(62), app: APP }), digest: await store.finishedWorkoutsDigest() }));
+    if (saved === null) throw new Error('no kept copy');
+    const { value } = saved;
+    expect(value.digest).toBe(keptDigest);
+    expect(value.backup.finishedWorkoutsDigest).toBe(keptDigest);
+    expect(value.backup.finishedWorkoutsDigest).not.toBe(await m.store.finishedWorkoutsDigest());
+    const { sha256Hex } = await import('../src/index');
+    expect(value.backup.sha256).toBe(sha256Hex(value.backup.text));
+  });
+});

@@ -40,7 +40,7 @@ export interface Harness {
   now: () => ZonedTimestamp;
   launch: () => Promise<Extract<StartupOutcome, { kind: 'ready' }>>;
   /** Launch and return whatever startup returned (`interruptedDelete` as Root passes it). */
-  start: (extra?: { interruptedDelete?: 'finish' | 'leave' }) => Promise<StartupOutcome>;
+  start: (extra?: { interruptedDelete?: 'finish' | 'leave'; /** Background backups wait for it (main's idle rule). */ idle?: () => Promise<void> }) => Promise<StartupOutcome>;
   /**
    * Every file in the app's container, by path: backups, the backup record,
    * the data ledger, other Documents files, tmp, Caches, and every SQLite
