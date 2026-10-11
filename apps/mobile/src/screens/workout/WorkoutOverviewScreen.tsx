@@ -14,7 +14,7 @@ import { formatShortDate } from '../../format/dates';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { openStartedWorkout, popToTabs, popToToday } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
-import type { DraftWrite, OverviewData, SwapSheet } from '../../services/workout-services';
+import type { DraftWrite, OverviewData, OverviewTarget, SessionList, SessionPickerRow, SwapSheet } from '../../services/workout-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, Icon, OverviewRow, PrimaryButton, ReorderRow, StatStrip, SubstituteRowView, SupersetBracket, TextButton, Toast } from '../../ui';
@@ -55,6 +55,8 @@ import {
   type RowCustomAction,
 } from '../../workout/overview-edits';
 import { NameSheet } from '../routines/NameSheet';
+import { isShownRow, SESSION_PICKER_COPY } from '../../workout/session-picker';
+import { SessionPickerSheet } from './SessionPickerSheet';
 import { TargetWhyPanel } from './TargetWhyPanel';
 
 /**
@@ -88,7 +90,16 @@ export function WorkoutOverviewScreen() {
   const [rowWidth, setRowWidth] = useState<number | null>(null);
   const [labelWidth, setLabelWidth] = useState<number | null>(null);
   const checkInFit = checkInRowLayout({ available: rowWidth ?? windowWidth - 2 * theme.components.screenMargin, labelWidth, fontScale });
-  const { target } = useRoute<RouteProp<RootStackParams, 'WorkoutOverview'>>().params;
+  const routeTarget = useRoute<RouteProp<RootStackParams, 'WorkoutOverview'>>().params.target;
+  // The session shown: the one opened, until Ben picks another from the title (session-picker §4.2, in place).
+  const [target, setTarget] = useState<OverviewTarget>(routeTarget);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerList, setPickerList] = useState<SessionList | null | 'loading'>('loading');
+  const [saveAsVisible, setSaveAsVisible] = useState(false);
+  const [saveAsOp, setSaveAsOp] = useState(newUuid);
+  const [saveAsAfter] = useState(() => createAfterDismiss());
+  const [pickerAfter] = useState(() => createAfterDismiss());
+  const scrollRef = useRef<ScrollView>(null);
   const alertsAsk = useStartAlertsAsk();
 
   // A score tapped on this page (saved at once, CI4); null until then.
@@ -389,16 +400,20 @@ export function WorkoutOverviewScreen() {
   function menu() {
     const routine = page?.routine ?? null;
     const edits = page ? editMenuItems(page.view) : [];
-    const options = [...edits, OVERVIEW_COPY.otherRoutine, OVERVIEW_COPY.emptyWorkout, ...(routine ? [OVERVIEW_COPY.rename, OVERVIEW_COPY.delete] : []), 'Cancel'];
-    ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1, ...(routine ? { destructiveButtonIndex: edits.length + 3 } : {}) }, (i) => {
+    // `Save as routine` (session-picker §4.3): a session from history, while the page has no today's edits (a draft is never re-keyed).
+    const canSave = page !== null && page.startOf.nextOf !== undefined && page.view.editCount === 0;
+    const options = [...edits, ...(canSave ? [SESSION_PICKER_COPY.saveAsRoutine] : []), OVERVIEW_COPY.emptyWorkout, ...(routine ? [OVERVIEW_COPY.rename, OVERVIEW_COPY.delete] : []), 'Cancel'];
+    ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1, ...(routine ? { destructiveButtonIndex: options.indexOf(OVERVIEW_COPY.delete) } : {}) }, (i) => {
       const picked = options[i];
       if (picked === TODAY_EDITS_COPY.reorder) {
         setOpen(null);
         setReordering(true);
       }
       if (picked === TODAY_EDITS_COPY.resetEdits) void resetEdits();
-      // `Other routine`: Today lists the routines (the Plan hub comes later).
-      if (picked === OVERVIEW_COPY.otherRoutine) close();
+      if (picked === SESSION_PICKER_COPY.saveAsRoutine) {
+        setSaveAsOp(newUuid());
+        setSaveAsVisible(true);
+      }
       if (picked === OVERVIEW_COPY.emptyWorkout) void startEmpty();
       if (picked === OVERVIEW_COPY.rename) {
         setRenameOp(newUuid());
@@ -406,6 +421,63 @@ export function WorkoutOverviewScreen() {
       }
       if (picked === OVERVIEW_COPY.delete) deleteRoutine();
     });
+  }
+
+  /** The title button (session-picker §2.3): the picker, with the shown session checked. Local read only. */
+  function openPicker() {
+    setPickerList('loading');
+    setPickerVisible(true);
+    void services.sessions
+      .list(page?.view.gym?.id ?? null)
+      .catch(() => null)
+      .then(setPickerList);
+  }
+
+  /** Show another session in place (§4.2): no write and no navigation; its own today's edits come back with it (SP-D6). */
+  function switchTo(next: OverviewTarget) {
+    startOp.current = null;
+    setOpen(null);
+    setCard(null);
+    setSwap(null);
+    setReordering(false);
+    setStartError(null);
+    setTarget(next);
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+    reload();
+  }
+
+  function pickSession(row: SessionPickerRow) {
+    setPickerVisible(false);
+    if (page !== null && isShownRow(row, page.startOf)) return;
+    switchTo(row.target);
+  }
+
+  /** `Save as routine` → the name prompt → one routine from the source workout (idempotent on `opId`), then the page on it. Undo deletes it. */
+  async function saveAsRoutine(name: string): Promise<string | null> {
+    const sourceId = page?.startOf.nextOf;
+    if (sourceId === undefined) return null;
+    const before = target;
+    const r = await services.routines.saveFromSession({ sessionId: sourceId, name, opId: saveAsOp });
+    if (!r.ok) return r.message;
+    const saved = r.routine;
+    saveAsAfter.arm(() => {
+      switchTo({ kind: 'routine', routineId: saved.id });
+      setToast({
+        text: SESSION_PICKER_COPY.savedAsRoutine,
+        action: 'Undo',
+        onAction: () => {
+          setToast(null);
+          void services.routines.remove({ routineId: saved.id, expectedVersion: saved.version, opId: newUuid() }).then((u) => {
+            if (!u.ok) setToast({ text: u.message });
+            changed();
+            switchTo(before);
+          });
+        },
+      });
+    });
+    setSaveAsVisible(false);
+    changed();
+    return null;
   }
 
   async function showWhy(sessionExerciseId: string, name: string) {
@@ -825,13 +897,24 @@ export function WorkoutOverviewScreen() {
   };
 
   const body = (
-    <ScrollView contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'] }}>
+    <ScrollView ref={scrollRef} contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'] }}>
       <AppText variant="sectionLabel" color="text.tertiary" style={{ marginTop: 10 }}>
         {eyebrowText(view.basis, (ms, tz) => formatShortDate(ms, tz))}
       </AppText>
-      <AppText variant="title1" accessibilityRole="header" style={{ fontSize: 40, lineHeight: 46, letterSpacing: -0.8, marginTop: 6 }}>
-        {view.title}
-      </AppText>
+      {/* The title is a button (session-picker §2.3): `Shoulders ▾` opens the picker; VoiceOver "Shoulders. Change session." */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${view.title}. ${SESSION_PICKER_COPY.changeSession}.`}
+        onPress={openPicker}
+        style={({ pressed }) => ({ minHeight: 44, marginTop: 6, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', opacity: pressed ? 0.6 : 1 })}
+      >
+        <AppText variant="title1" accessibilityRole="header" style={{ fontSize: 40, lineHeight: 46, letterSpacing: -0.8 }}>
+          {view.title}
+          <AppText variant="title1" color="text.secondary" style={{ fontSize: 28, lineHeight: 46 }}>
+            {' ▾'}
+          </AppText>
+        </AppText>
+      </Pressable>
       <View style={{ marginTop: theme.space['4'] }}>
         <StatStrip items={stats} ax={stacked} accessibilityLabel={statStripSpoken(view.estimate?.minutes ?? null, done?.text ?? null, view.workingSets)} />
       </View>
@@ -1004,6 +1087,42 @@ export function WorkoutOverviewScreen() {
         </AppText>
         {why ? <TargetWhyPanel panel={why.explanation ? { setId: why.explanation.setId, status: 'ready', explanation: why.explanation } : { setId: '', status: 'failed' }} /> : null}
       </BottomCard>
+      <SessionPickerSheet
+        visible={pickerVisible}
+        list={pickerList}
+        now={services.now()}
+        shown={page.startOf}
+        onPick={pickSession}
+        onClose={() => {
+          setPickerVisible(false);
+        }}
+        onRetry={openPicker}
+        onEmptyWorkout={() => {
+          pickerAfter.arm(() => void startEmpty());
+          setPickerVisible(false);
+        }}
+        onPastWorkouts={() => {
+          pickerAfter.arm(() => {
+            navigation.navigate('PastWorkouts');
+          });
+          setPickerVisible(false);
+        }}
+        onDismissed={pickerAfter.dismissed}
+      />
+      {page.startOf.nextOf !== undefined ? (
+        <NameSheet
+          visible={saveAsVisible}
+          title={SESSION_PICKER_COPY.saveAsRoutine}
+          buttonLabel="Save"
+          initialName={view.title}
+          check={(n) => services.routines.checkName(n, null)}
+          onSubmit={saveAsRoutine}
+          onClose={() => {
+            setSaveAsVisible(false);
+          }}
+          onDismissed={saveAsAfter.dismissed}
+        />
+      ) : null}
       {page.routine ? (
         <NameSheet
           visible={renameVisible}

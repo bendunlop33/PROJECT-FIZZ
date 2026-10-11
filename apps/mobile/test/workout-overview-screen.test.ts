@@ -287,9 +287,9 @@ describe('source checks', () => {
     expect(read('navigation/initial-state.ts')).not.toContain('WorkoutOverview');
     expect(read('screens/workout/WorkoutScreen.tsx')).not.toContain('WorkoutOverview');
     const today = read('screens/TodayScreen.tsx');
-    // Today opens it only through `openOverview`, from Up next, Start next session and routine rows.
+    // Today opens it only through `openOverview`, from Up next, Start next session, routine rows, Sessions rows and the session picker.
     expect(today.match(/navigate\('WorkoutOverview'/g)).toHaveLength(1);
-    expect(today.match(/openOverview\(/g)?.length).toBe(5);
+    expect(today.match(/openOverview\(/g)?.length).toBe(7);
   });
 
   it('OV9: the page makes no network or provider call', () => {
