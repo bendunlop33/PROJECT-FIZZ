@@ -1,0 +1,190 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { StackRouter, type ParamListBase, type StackNavigationState } from '@react-navigation/routers';
+import { describe, expect, it } from 'vitest';
+
+import type { OverviewRow } from '@fizz/domain';
+import type { CheckIn } from '@fizz/schemas';
+
+import { openStartedWorkout, popToTabs } from '../src/navigation/actions';
+import {
+  checkInRow,
+  eyebrowText,
+  gymToastText,
+  OVERVIEW_COPY,
+  overviewLayout,
+  panelReducer,
+  rowDetail,
+  startCheckIn,
+  startFailure,
+  targetsChanged,
+  tileLabel,
+} from '../src/workout/overview';
+
+/**
+ * The Workout overview screen's own rules (workout-overview.md §2, §3, §8,
+ * §9), the route through the stack, and source checks for what must never
+ * render (OV8 coach, OV11 resume paths, OV13 one filled pill).
+ */
+const SRC = join(__dirname, '..', 'src');
+const read = (p: string) => readFileSync(join(SRC, p), 'utf8');
+
+const checkIn = (score: 1 | 2 | 3 | 4 | 5, id = 'ci-1'): CheckIn =>
+  ({ id, ownerId: 'o', version: 1, score, reasons: [], outcome: 'not_started', recordedAt: { utc: '2026-10-10T17:00:00.000Z', tz: 'Europe/London' } }) as unknown as CheckIn;
+
+describe('row panel: one open at a time (§3.8)', () => {
+  it('a tap toggles in place; another row moves it; a reload keeps it only if the row is still there', () => {
+    expect(panelReducer(null, { kind: 'toggle', rowId: 'a' })).toBe('a');
+    expect(panelReducer('a', { kind: 'toggle', rowId: 'a' })).toBeNull();
+    expect(panelReducer('a', { kind: 'toggle', rowId: 'b' })).toBe('b');
+    expect(panelReducer('a', { kind: 'rows', rowIds: ['a', 'b'] })).toBe('a');
+    expect(panelReducer('a', { kind: 'rows', rowIds: ['b'] })).toBeNull();
+    expect(panelReducer('a', { kind: 'close' })).toBeNull();
+  });
+});
+
+describe('inline check-in (§3.9, §2.2, OV2, OV10)', () => {
+  const now = '2026-10-10T17:10:00.000Z';
+  it('due: no selection, and Start with no score records skipped', () => {
+    const row = checkInRow({ kind: 'ask' }, null);
+    expect(row).toEqual({ shown: true, selected: null, record: null });
+    expect(startCheckIn({ kind: 'ask' }, row, now)).toEqual({ kind: 'skipped', atUtc: now });
+  });
+  it('reused (< 2 h): shown selected and linked by Start; a score tapped here wins', () => {
+    const reused = checkIn(4, 'ci-old');
+    const row = checkInRow({ kind: 'reuse', checkIn: reused }, null);
+    expect(row.selected).toBe(4);
+    expect(startCheckIn({ kind: 'reuse', checkIn: reused }, row, now)).toEqual({ kind: 'answered', checkInId: 'ci-old' });
+    const tapped = checkIn(2, 'ci-new');
+    expect(checkInRow({ kind: 'reuse', checkIn: reused }, tapped)).toMatchObject({ selected: 2, record: { id: 'ci-new' } });
+  });
+  it('not due: no row; Start records why it wasn’t asked', () => {
+    const off = { kind: 'skip', reason: 'off' } as const;
+    expect(checkInRow(off, null).shown).toBe(false);
+    expect(startCheckIn(off, checkInRow(off, null), now)).toEqual({ kind: 'not_asked', reason: 'off' });
+    const decided = { kind: 'skip', reason: 'already_decided' } as const;
+    expect(startCheckIn(decided, checkInRow(decided, null), now)).toBeNull();
+  });
+  it('VoiceOver reads each tile with its meaning at the ends', () => {
+    expect([1, 2, 3, 4, 5].map((n) => tileLabel(n as 1 | 2 | 3 | 4 | 5))).toEqual(['1 of 5, rough', '2 of 5', '3 of 5', '4 of 5', '5 of 5, great']);
+  });
+});
+
+describe('words on the page (§3.2, §9)', () => {
+  const day = (ms: number) => (ms === Date.parse('2026-10-08T17:00:00.000Z') ? 'Thu 8 Oct' : '?');
+  const at = { utc: '2026-10-08T17:00:00.000Z', tz: 'Europe/London' };
+  it('eyebrow variants', () => {
+    expect(eyebrowText({ kind: 'after', routineName: 'Pull A', at }, day)).toBe('After Pull A · Thu 8 Oct');
+    expect(eyebrowText({ kind: 'only' }, day)).toBe('Only routine');
+    expect(eyebrowText({ kind: 'rotation_start' }, day)).toBe('Start of your rotation');
+    expect(eyebrowText({ kind: 'last_done', at }, day)).toBe('Last done Thu 8 Oct');
+    expect(eyebrowText({ kind: 'next_from', at }, day)).toBe('Next session · from Thu 8 Oct');
+    expect(eyebrowText({ kind: 'new_routine' }, day)).toBe('New routine');
+  });
+  it('every fixed string is in the spec’s copy list or states table (minimal copy)', () => {
+    const spec = readFileSync(join(__dirname, '..', '..', '..', 'docs', 'design', 'workout-overview.md'), 'utf8');
+    const norm = (t: string) => t.replaceAll('’', "'").toLowerCase();
+    const copy = norm(spec.slice(spec.indexOf('## 8. States'), spec.indexOf('## 10.')));
+    for (const text of Object.values(OVERVIEW_COPY)) expect(copy).toContain(norm(text.replace(/\.$/, '')));
+  });
+  it('the gym toast counts the rows whose targets changed', () => {
+    const row = (exerciseId: string, value: string, detail = '3 × 8'): OverviewRow => ({ exerciseId, load: { value, unit: 'kg', spoken: '', none: false }, detail }) as unknown as OverviewRow;
+    const before = [row('a', '100'), row('b', '32'), row('c', '17.5')];
+    const after = [row('a', '100'), row('b', '30'), row('c', '—')];
+    expect(targetsChanged(before, after)).toBe(2);
+    expect(gymToastText('Hotel gym', 2)).toBe('Hotel gym · 2 targets changed');
+    expect(gymToastText('Hotel gym', 1)).toBe('Hotel gym · 1 target changed');
+    expect(gymToastText('Hotel gym', 0)).toBe('Hotel gym');
+  });
+});
+
+describe('Dynamic Type and failures (§8, OV14)', () => {
+  it('stacks at AX sizes and drops the warm-up fragment first', () => {
+    expect(overviewLayout(1).stacked).toBe(false);
+    expect(overviewLayout(1.35).stacked).toBe(false);
+    expect(overviewLayout(1.65).stacked).toBe(true);
+    const row = { detail: '3 × 6–8 · 3 warm-ups', warmups: '3 warm-ups' };
+    expect(rowDetail(row, false)).toBe('3 × 6–8 · 3 warm-ups');
+    expect(rowDetail(row, true)).toBe('3 × 6–8');
+    expect(rowDetail({ detail: '3 × 8', warmups: null }, true)).toBe('3 × 8');
+  });
+  it('a stale preview re-renders, an active workout goes to Today, anything else says Couldn’t start', () => {
+    expect(startFailure('stale_preview')).toEqual({ kind: 'stale' });
+    expect(startFailure('session_already_active')).toEqual({ kind: 'active' });
+    expect(startFailure('write_failed')).toEqual({ kind: 'failed' });
+  });
+});
+
+describe('route through the stack (§2.1)', () => {
+  const routeNames = ['Tabs', 'WorkoutOverview', 'Workout', 'CheckIn', 'PainFlag', 'HowTo'];
+  const router = StackRouter({});
+  const options = { routeNames, routeParamList: {}, routeGetIdList: {} };
+  type State = StackNavigationState<ParamListBase>;
+  const apply = (state: State, action: Parameters<typeof router.getStateForAction>[1]): State => {
+    const next = router.getStateForAction(state, action, options);
+    if (next === null || next.stale) throw new Error(`action not handled: ${action.type}`);
+    return next as State;
+  };
+  const names = (s: State) => s.routes.map((r) => r.name);
+  const navigate = (name: string, params: object = {}) => ({ type: 'NAVIGATE', payload: { name, params } }) as const;
+
+  it('Today → overview → What’s up? → back to the overview → Start leaves [Tabs, Workout]', () => {
+    let s = apply(router.getInitialState(options), navigate('WorkoutOverview', { target: { kind: 'next' } }));
+    s = apply(s, navigate('CheckIn', { mode: 'overview', checkInId: 'ci-1' }));
+    expect(names(s)).toEqual(['Tabs', 'WorkoutOverview', 'CheckIn']);
+    s = apply(s, { type: 'GO_BACK' });
+    expect(names(s)).toEqual(['Tabs', 'WorkoutOverview']);
+    s = apply(s, openStartedWorkout() as unknown as Parameters<typeof router.getStateForAction>[1]);
+    expect(names(s)).toEqual(['Tabs', 'Workout']);
+  });
+
+  it('Close returns to Today with nothing started; Delete returns to Today with Undo', () => {
+    let s = apply(router.getInitialState(options), navigate('WorkoutOverview', { target: { kind: 'routine', routineId: 'r1' } }));
+    expect(names(apply(s, { type: 'GO_BACK' }))).toEqual(['Tabs']);
+    s = apply(s, popToTabs({ screen: 'Today', params: { toast: 'Deleted Push A', undoRoutine: { id: 'r1', version: 2 } } }));
+    expect(names(s)).toEqual(['Tabs']);
+    expect(s.routes[0]?.params).toEqual({ screen: 'Today', params: { toast: 'Deleted Push A', undoRoutine: { id: 'r1', version: 2 } } });
+  });
+});
+
+describe('source checks', () => {
+  const screen = read('screens/workout/WorkoutOverviewScreen.tsx');
+  const ui = read('ui/overview.tsx');
+
+  it('OV8: with no coach configured nothing coach-related renders (no coach slot, tag or text)', () => {
+    for (const src of [screen, ui]) {
+      expect(src).not.toMatch(/CoachSlot|SourceTag|text\.bubble/);
+      // Only comments may mention the coach; no rendered string does.
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+      expect(code).not.toMatch(/['"`>][^'"`<]*\bCoach\b/);
+    }
+  });
+
+  it('OV13: Start is the only filled pill; a selected tile is accent.subtle + a 2 pt accent border, never an accent fill; ≥ 20 pt from Start', () => {
+    expect(screen.match(/<PrimaryButton\b/g)).toHaveLength(1);
+    const scale = ui.slice(ui.indexOf('export function CheckInScale'));
+    expect(scale).toContain("backgroundColor: on ? theme.colors['accent.subtle']");
+    expect(scale).toContain('borderWidth: on ? 2 : 1');
+    expect(scale).not.toMatch(/backgroundColor: on \? theme\.colors\.accent\b/);
+    expect(screen).toContain("marginTop: row?.shown ? theme.space['5']");
+  });
+
+  it('OV11: Resume, the stale card and P6 auto-open never reach the overview', () => {
+    expect(read('navigation/initial-state.ts')).not.toContain('WorkoutOverview');
+    expect(read('screens/workout/WorkoutScreen.tsx')).not.toContain('WorkoutOverview');
+    const today = read('screens/TodayScreen.tsx');
+    // Today opens it only through `openOverview`, from Up next, Start next session and routine rows.
+    expect(today.match(/navigate\('WorkoutOverview'/g)).toHaveLength(1);
+    expect(today.match(/openOverview\(/g)?.length).toBe(5);
+  });
+
+  it('OV9: the page makes no network or provider call', () => {
+    expect(screen).not.toMatch(/@fizz\/providers|fetch\(/);
+    expect(read('services/workout-services.ts')).not.toMatch(/@fizz\/providers|fetch\(/);
+  });
+
+  it('Reduce Motion: the panel appears without the height animation', () => {
+    expect(screen).toContain('if (!theme.a11y.reduceMotion) LayoutAnimation.configureNext');
+  });
+});

@@ -40,8 +40,11 @@ export type ImportQuestionKind = 'per_hand' | 'total' | 'bodyweight' | 'unit' | 
 export type ImportSkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise';
 
 export type TabParams = {
-  /** `toast`: a one-off message after returning from the check-in (e.g. Skip workout). */
-  Today: { toast?: string } | undefined;
+  /**
+   * `toast`: a one-off message after returning from the check-in (e.g. Skip workout).
+   * `undoRoutine`: the toast offers Undo for a routine deleted from the Workout overview.
+   */
+  Today: { toast?: string; undoRoutine?: { id: string; version: number } } | undefined;
   Progress: undefined;
   Profile: NavigatorScreenParams<ProfileStackParams> | undefined;
 };
@@ -58,7 +61,20 @@ export type RootStackParams = {
    * `repeatOf`: start by repeating that finished workout (routines.md RT4). `nextOf`: its next session, with next targets (audit B2).
    * `routineOf`: start that routine with next targets (premium-feel §2.6).
    */
-  CheckIn: { mode: 'start'; gymId: string; repeatOf?: string; nextOf?: string; routineOf?: string } | { mode: 'edit'; checkInId: string };
+  CheckIn:
+    | { mode: 'start'; gymId: string; repeatOf?: string; nextOf?: string; routineOf?: string }
+    | { mode: 'edit'; checkInId: string }
+    /**
+     * Over the Workout overview (workout-overview §2.2): `What's up?` for a
+     * score already saved there (`checkInId`), or the whole check-in from the
+     * score at AX sizes (null). Every exit returns to the overview; nothing starts.
+     */
+    | { mode: 'overview'; checkInId: string | null; atScore?: boolean };
+  /**
+   * The one page before the first set (workout-overview.md): Up next, or a
+   * routine from the list. Creates nothing until Start.
+   */
+  WorkoutOverview: { target: { kind: 'next' } | { kind: 'routine'; routineId: string } };
   ExercisePicker: { sessionId: string };
   /** How to (ADR 0013): guide, cues and mistakes for a catalogue exercise. Opened only when it has a how-to. */
   HowTo: { catalogueKey: string; name: string };

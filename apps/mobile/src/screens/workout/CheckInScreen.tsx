@@ -35,7 +35,10 @@ const SCORES: readonly CheckInScore[] = [1, 2, 3, 4, 5];
  */
 export function CheckInScreen() {
   const route = useRoute<RouteProp<RootStackParams, 'CheckIn'>>();
-  return route.params.mode === 'start' ? <StartCheckIn gymId={route.params.gymId} repeatOf={route.params.repeatOf ?? null} nextOf={route.params.nextOf ?? null} routineOf={route.params.routineOf ?? null} /> : <EditCheckIn checkInId={route.params.checkInId} />;
+  const p = route.params;
+  if (p.mode === 'start') return <StartCheckIn gymId={p.gymId} repeatOf={p.repeatOf ?? null} nextOf={p.nextOf ?? null} routineOf={p.routineOf ?? null} />;
+  if (p.mode === 'overview') return <StartCheckIn gymId={null} repeatOf={null} nextOf={null} routineOf={null} overview={{ checkInId: p.checkInId, atScore: p.atScore === true }} />;
+  return <EditCheckIn checkInId={p.checkInId} />;
 }
 
 function Sheet({
@@ -199,7 +202,15 @@ function ReasonsEditor({ reasons, setReasons, note, setNote, noteRef }: { reason
   );
 }
 
-function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; repeatOf: string | null; nextOf: string | null; routineOf: string | null }) {
+/**
+ * `overview`: opened over the Workout overview (workout-overview §2.2). The
+ * session doesn't exist yet and this sheet never starts one: `Done`, `Skip`,
+ * `Not now`, `Flag n movements` and `Train anyway` save and return to the
+ * overview, which re-reads its plan (a new pain flag shows `HELD`). `Skip
+ * workout` still closes to Today. `checkInId`: the score already saved on
+ * the page (opens at What's up?); null opens at the score (AX sizes).
+ */
+function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId: string | null; repeatOf: string | null; nextOf: string | null; routineOf: string | null; overview?: { checkInId: string | null; atScore: boolean } }) {
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
@@ -208,7 +219,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
   const [checkInId] = useState(newUuid);
   const [recordOp] = useState(newUuid);
   const [startOp] = useState(newUuid);
-  const [step, setStep] = useState<Step>('score');
+  const [step, setStep] = useState<Step>(overview?.checkInId && !overview.atScore ? 'reasons' : 'score');
   const [record, setRecord] = useState<CheckIn | null>(null);
   const [score, setScore] = useState<CheckInScore | null>(null);
   const [reasons, setReasons] = useState<CheckInReason[]>([]);
@@ -235,7 +246,30 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
     };
   }, [services]);
 
+  // Over the overview: the check-in Ben already has (the score saved there, or a reused one).
+  const existingId = overview?.checkInId ?? null;
+  useEffect(() => {
+    if (existingId === null) return;
+    let alive = true;
+    void services.checkIns.get(existingId).then((c) => {
+      if (!alive || !c) return;
+      setRecord(c);
+      setScore(c.score);
+      setReasons(c.reasons);
+      setNote(c.note ?? '');
+    });
+    return () => {
+      alive = false;
+    };
+  }, [services, existingId]);
+
   async function start(checkIn: SessionCheckIn, toast: WorkoutToastParam | null) {
+    if (overview || gymId === null) {
+      // Back to the overview: it re-reads, and its Start links this check-in.
+      changed();
+      navigation.goBack();
+      return;
+    }
     setBusy(true);
     let r: Awaited<ReturnType<typeof services.workout.start>>;
     try {
@@ -372,9 +406,13 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
         <Sheet
           title="What’s up?"
           lead="Pick any that apply. Optional."
-          onBack={() => {
-            setStep('score');
-          }}
+          {...(overview?.checkInId && !overview.atScore
+            ? {}
+            : {
+                onBack: () => {
+                  setStep('score');
+                },
+              })}
           backLabel={score === null ? 'Back' : scoreText(score)}
           barFirst
           bar={

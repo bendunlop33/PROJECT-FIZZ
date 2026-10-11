@@ -1,0 +1,132 @@
+import { toMs, type OverviewBasis, type OverviewRow } from '@fizz/domain';
+import type { CheckIn, CheckInScore, SessionCheckIn } from '@fizz/schemas';
+
+import type { OverviewData } from '../services/workout-services';
+
+/**
+ * Screen-side rules for the Workout overview (workout-overview.md). Pure, so
+ * they run on Linux. Nothing here computes a target, marker or duration
+ * (the domain does); these only decide what the screen shows and sends.
+ */
+
+/** One row panel open at a time (§3.8); a tap toggles it in place. A reload keeps it only if the row is still there. */
+export type PanelAction = { kind: 'toggle'; rowId: string } | { kind: 'rows'; rowIds: readonly string[] } | { kind: 'close' };
+
+export function panelReducer(open: string | null, action: PanelAction): string | null {
+  switch (action.kind) {
+    case 'toggle':
+      return open === action.rowId ? null : action.rowId;
+    case 'rows':
+      return open !== null && action.rowIds.includes(open) ? open : null;
+    case 'close':
+      return null;
+  }
+}
+
+/** The inline check-in row (§3.9) as the page holds it: the score shown selected and the record behind it. */
+export interface CheckInRowState {
+  /** Null: no row (not due). */
+  shown: boolean;
+  selected: CheckInScore | null;
+  record: CheckIn | null;
+}
+
+/** From the loaded page: the reused check-in pre-selected, or nothing selected; a score tapped on this page wins. */
+export function checkInRow(gate: OverviewData['checkIn'], tapped: CheckIn | null): CheckInRowState {
+  if (tapped !== null) return { shown: true, selected: tapped.score, record: tapped };
+  if (gate.kind === 'reuse') return { shown: true, selected: gate.checkIn.score, record: gate.checkIn };
+  if (gate.kind === 'ask') return { shown: true, selected: null, record: null };
+  return { shown: false, selected: null, record: null };
+}
+
+/**
+ * What Start sends as the check-in (§2.2): the score on the page (tapped or
+ * reused) is linked; a due check-in left alone is `skipped`; a gate that
+ * didn't ask records why.
+ */
+export function startCheckIn(gate: OverviewData['checkIn'], row: CheckInRowState, nowUtc: string): SessionCheckIn | null {
+  if (row.record !== null) return { kind: 'answered', checkInId: row.record.id };
+  if (gate.kind === 'skip') return gate.reason === 'off' || gate.reason === 'not_a_check_in_day' ? { kind: 'not_asked', reason: gate.reason } : null;
+  return { kind: 'skipped', atUtc: nowUtc };
+}
+
+/** VoiceOver for a tile: `1 of 5, rough` … `5 of 5, great`. */
+export function tileLabel(n: CheckInScore): string {
+  return `${String(n)} of 5${n === 1 ? ', rough' : n === 5 ? ', great' : ''}`;
+}
+
+/** The eyebrow (§3.2), before tracked caps: `After Pull A · Thu 8 Oct`. `day` formats a date (`Thu 8 Oct`). */
+export function eyebrowText(basis: OverviewBasis, day: (ms: number, tz: string) => string): string {
+  switch (basis.kind) {
+    case 'after':
+      return `After ${basis.routineName} · ${day(toMs(basis.at.utc), basis.at.tz)}`;
+    case 'only':
+      return 'Only routine';
+    case 'rotation_start':
+      return 'Start of your rotation';
+    case 'last_done':
+      return `Last done ${day(toMs(basis.at.utc), basis.at.tz)}`;
+    case 'next_from':
+      return `Next session · from ${day(toMs(basis.at.utc), basis.at.tz)}`;
+    case 'new_routine':
+      return 'New routine';
+  }
+}
+
+/** How many rows' targets differ between two reads of the page (the gym toast: `Hotel gym · 2 targets changed`). */
+export function targetsChanged(before: readonly OverviewRow[], after: readonly OverviewRow[]): number {
+  const key = (r: OverviewRow) => `${r.load.value}|${r.load.unit ?? ''}|${r.detail}`;
+  const was = new Map(before.map((r) => [r.exerciseId, key(r)]));
+  return after.filter((r) => was.get(r.exerciseId) !== key(r)).length;
+}
+
+export function gymToastText(gymName: string, changed: number): string {
+  return changed === 0 ? gymName : `${gymName} · ${String(changed)} ${changed === 1 ? 'target' : 'targets'} changed`;
+}
+
+/** At AX1 and above (RN font scale ≈ 1.6+): the strip and rows stack, the warm-up fragment drops, the tiles collapse (§8). */
+export const AX_FONT_SCALE = 1.6;
+
+export function overviewLayout(fontScale: number): { stacked: boolean } {
+  return { stacked: fontScale >= AX_FONT_SCALE };
+}
+
+/** The row's detail line at a size: the warm-up fragment drops first when stacked. */
+export function rowDetail(row: Pick<OverviewRow, 'detail' | 'warmups'>, stacked: boolean): string {
+  if (!stacked || row.warmups === null) return row.detail;
+  return row.detail.replace(` · ${row.warmups}`, '');
+}
+
+export type StartFailure = { kind: 'stale' } | { kind: 'active' } | { kind: 'failed' };
+
+/** How the page reacts to a Start that didn't create a session (§8). */
+export function startFailure(code: string): StartFailure {
+  if (code === 'stale_preview') return { kind: 'stale' };
+  if (code === 'session_already_active') return { kind: 'active' };
+  return { kind: 'failed' };
+}
+
+export const OVERVIEW_COPY = {
+  start: 'Start workout',
+  close: 'Close',
+  addGym: 'Add gym',
+  noGym: 'No gym · typical equipment',
+  stale: 'Targets updated',
+  startFailed: 'Couldn’t start. Try again.',
+  loadFailed: 'Couldn’t load this workout.',
+  tryAgain: 'Try again',
+  emptyWorkout: 'Empty workout',
+  otherRoutine: 'Other routine',
+  rename: 'Rename',
+  delete: 'Delete',
+  checkIn: 'Check-in',
+  target: 'Target',
+  superset: 'Superset',
+  time: 'Time',
+  doneBy: 'Done by',
+  sets: 'Sets',
+  stillHurts: 'Still hurts?',
+  howTo: 'How to',
+  why: 'Why?',
+  editGym: 'Edit gym',
+} as const;

@@ -43,6 +43,7 @@ import { EditSetScreen } from '../screens/workout/EditSetScreen';
 import { ExercisePickerScreen } from '../screens/workout/ExercisePickerScreen';
 import type { HowToScreen } from '../screens/workout/HowToScreen';
 import { SummaryScreen } from '../screens/workout/SummaryScreen';
+import { WorkoutOverviewScreen } from '../screens/workout/WorkoutOverviewScreen';
 import { WorkoutScreen } from '../screens/workout/WorkoutScreen';
 import type { SetupStep } from '../services/setup';
 import { screenAnimation, useTheme } from '../theme';
@@ -238,6 +239,12 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               <RootStack.Screen name="Tabs" component={TabsNavigator} />
               {/* Slides up; a fade under Reduce Motion (premium-feel §4.2). */}
               <RootStack.Screen name="Workout" component={WorkoutScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false, ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
+              {/* The page before the first set (workout-overview.md): slides up like Workout; a fade under Reduce Motion. */}
+              <RootStack.Screen
+                name="WorkoutOverview"
+                component={WorkoutOverviewScreen}
+                options={{ presentation: 'fullScreenModal', ...screenAnimation('Workout', theme.a11y.reduceMotion) }}
+              />
               {/* Swipe-down = "not now": back to where Ben was, nothing started (check-in.md CI3). */}
               <RootStack.Screen
                 name="CheckIn"
