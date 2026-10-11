@@ -48,8 +48,8 @@ The single primary action on the workout screen stays **`Log …`**. Every contr
 | CA2 | Path A covers **targets of pending sets**: load, reps, and adding or removing pending sets, in this exercise or later ones today. **Swapping an exercise or changing the gym** still goes through the `ChangeReviewCard` (Apply) | Swaps change equipment and history comparability, so they're bigger than a number change. Rule 2 still wants a review for broad plan changes |
 | CA3 | **Rest durations are not changed by adjustments** in this version | Keeps the rest timer rules simple (rest-state §4.5). Ben can still change rest himself |
 | CA4 | **"At most once per exercise unless a new trigger fires"** is read as: after one offer for an exercise, another offer for that exercise only appears for a **different trigger kind** (`rpe_high`, `reps_short`, `rpe_low`), or after an adjustment was applied to that exercise (the plan changed, so a trigger means something new) | Otherwise a run of hard sets would raise an offer after every set, which is the "constant" coaching ADR 0006 rules out |
-| CA5 | Triggers never fire on **warm-up or drop sets**. "Reps short" is counted from the **bottom** of a rep range (target 6–8, did 4 → short by 2) | A short warm-up or drop set is normal. The bottom of the range is the least the plan asked for |
-| CA6 | With the coach offline, **no in-session adjustment is offered** (the brief's deterministic `evaluateSessionAdjustment` isn't used). Ben edits the next set's numbers directly. | ADR 0006 defines the built-in fallback only for next-session targets. Ben may want an offline in-session rule later; that would need a brief change |
+| CA5 | Triggers never fire on **warm-up or drop sets**. "Reps short" (revised 11 Oct, build 108 fix F1, option A): for a **range** target, **any rep below the floor** fires (target 3–6, did 2 → short; did 3 → not). For a **single-number** target, short by **≥ 2** (target 8, did 6). `repsShortBy` stays editable for single numbers | A short warm-up or drop set is normal. Build 108: the Log button shows the top of the range (`× 6`), so 2 reps against `3–6` was a big miss Ben saw, but the old "2 below the floor" rule needed 0 or 1 rep to fire. **Pending Ben's confirmation of option A** (diagnosis F1); option B (≥ 2 below the prefilled top) would also fire on normal bottom-of-range double-progression sets |
+| CA6 | (Revised 11 Oct, build 108 fix F2. **Built ahead of Ben's approval; needs his sign-off, an ADR 0006 amendment, playbook rule 5/7-F notes and a brief CHANGELOG entry.**) With the coach **not reachable** (not signed in, unavailable, or `Offline` after a failed request), the **same triggers** show the **built-in rule's offer** on the rest card: the same prompt and fact, plus the concrete change and a `Rule` tag (`Next sets: 57.5 kg × 3–6  [Rule]`), `No thanks` / `Adjust`. `Adjust` applies it at once to **today's remaining sets of that exercise only**, through the same versioned, idempotent write as the coach's, with the banner `Adjusted sets 2–3 [Rule]`, `Why?` and one-tap Undo. Nothing changes until Ben taps `Adjust` (CLAUDE.md rule 3). If the rule has nothing it may change (no lighter load or fewer reps that fit; a raise blocked by pain; no pending set), no offer is shown and nothing extra appears. If the coach looked reachable but the `Adjust` turn fails (no network, unavailable, timeout), the rule's offer for the same trigger replaces the failure line (F3). **Size of the change** (`evaluateSessionAdjustment`, `BUILT_IN_SESSION_RULE`), the most conservative step of the approved rules: see §4.8 | CLAUDE.md rule 3: "With no AI available, the simple built-in progression rules are the labelled fallback." The earlier CA6 left Ben with nothing after a big miss whenever the coach couldn't answer (build 108). The diagnosis flags the CLAUDE.md vs ADR 0006 scope disagreement; this resolves it in CLAUDE.md's favour, pending Ben |
 | CA7 | If Ben logs while the coach is still working, the request is **re-sent once** with the new state (if any set it covers is still pending), otherwise dropped | "Recompute or discard" from the brief; a single retry keeps cost and confusion bounded |
 | CA8 | (9 Oct, D21) **What counts as a "small" next-session change** is decided by code: `classifyNextSessionChange(before, after, stepCard, context)`. A coach target is `small` only if it keeps the same routine, exercises and order, and: the load stays or moves **one achievable step** up or down from the last target on that equipment (`buildStepCard`); the rep target moves by **at most 2** at either end; the set count changes by **at most 1**, and **+1 only when Ben has asked** for more sets or volume (playbook D1); effort targets and rest don't change. Anything else is `bigger` and comes as a `CoachTargetProposal` with Apply, except an added set Ben didn't ask for, which is dropped and listed in `Why?` (D1: extra sets only when he asks). Stall resets (rule 8) and deloads (rule 10) are always `bigger`, which keeps those approved rules' "propose" wording true. A set whose load Ben pinned as `Fixed` in the routine (routines RT3) is never changed by default; a coach change to it is `bigger`. A pain flag still blocks every increase | D21 says "small adjustments only". A definition the reviewer can test stops "small" drifting with the model. One step can be large on coarse dumbbells (10 → 12 kg, +20%); every row shows its %, so Ben sees it. **Alternative for Ben:** any load, rep or set change on the same exercises applies by default |
 | CA9 | (9 Oct, D21) **Structural changes need a request or a signal.** `getStructuralChangeSignals(ownerId, routineId, sessionId)` (pure) returns any of: `variety_request` (Ben asked for variety or new exercises for this routine, in chat or by voice, not yet answered), `goal_changed` (goal version differs from the routine's), `schedule_changed` (days a week or session length changed), `equipment_changed` (the routine's gym equipment version changed, or this workout switched gym), `pain_flag` (a flag set on one of its movements since the routine's version). Without a request or signal the coach doesn't receive the structural proposal tools (coach-contract CC10) and the validator drops any structural item. With one, the Summary shows at most one `ChangeReviewCard` (`Because: …`, scope `Push A from now on`, Apply, Undo) | CLAUDE.md rule 3: structural changes are raised only when Ben asks or something changed. A gate makes "only" testable |
@@ -239,7 +239,9 @@ Wherever a pending set's target came from a coach adjustment:
 ### 4.2 Path B: coach offers
 
 1. On `SetCommitted` (reps short) or `SetCorrected` with a new effort value (RPE high or low), the UI calls `evaluateCoachTrigger(set, target, thresholds)`. This is a pure domain check: **no AI call**, no network.
-2. The offer shows only if **all** hold: the session is Resting; `getAiCapabilities` reports a usable route now; the set isn't a warm-up or drop set; CA4 allows it for this exercise; nothing is pending.
+2. The offer shows only if **all** hold: the session is Resting; the set isn't a warm-up or drop set; a pending set is left on that exercise; CA4 allows it for this exercise; nothing is pending. Whether it is the **coach's** offer or the **built-in rule's** (CA6 revised) depends on `getAiCapabilities` now: a usable route → the coach's; otherwise the rule's, shown only if the rule has a change to offer. CA4 counts both kinds.
+   - (11 Oct, F7) A set logged with **no rest running** (a superset's 0 s transition, an exercise with rest 0) is held and checked when the next rest starts, newest first. The last set of an exercise never offers (nothing to adjust).
+   - (11 Oct, F4) Correcting a logged set's reps or effort in the correction sheet runs the same check on the corrected set when Ben returns to the workout (new set version, so a new trigger).
 3. `No thanks` → `recordTriggerResponse(triggerId, 'dismissed')`. The line disappears. Nothing else happens.
 4. `Adjust` → `recordTriggerResponse(triggerId, 'accepted')`, then step 2 of path A with `origin: 'trigger_offer'` and the trigger's facts attached (CA1).
 5. Ignoring it is fine: the next Log removes it (`'expired'`).
@@ -301,6 +303,26 @@ The full screen, including RIR equivalents and `Reset to defaults` with Undo, is
 ```
 Thresholds are stored as data and read by `evaluateCoachTrigger`. The switch turns path B off completely; path A and C are unaffected.
 
+### 4.8 Built-in in-session rule (CA6 revised, 11 Oct)
+
+`evaluateSessionAdjustment(aggregate, trigger, painFlags, sessionPainUnspecified)` in `packages/domain/src/coach/session-adjust.ts`. Pure; no AI, no network. Its result goes through `validateTodayAdjustment` (snap, cap, pain, completed sets) before it is shown, so the offer shows exactly what `Adjust` writes.
+
+No approved playbook rule gives an in-session size for a rep miss logged **without RPE** (Ben's case; diagnosis §5). So the rule uses the **most conservative approved step**:
+
+| Trigger | Change to each remaining working set of that exercise | Source |
+|---|---|---|
+| Too hard (`reps_short`, `rpe_high`) | The next achievable load **at least 5% lighter** (rounded down to what the equipment makes), same reps | Rule 5 band −5…−10%; D22 minimum 5% |
+| …if that load is > 10% lighter, or there is none (equipment min, bodyweight) | **Same load, fewer reps**: the reps Ben just managed (`reps_short`, at least 1), or one fewer than he managed (`rpe_high`) | Rule 5 guardrail; equipment-aware progression §9 |
+| Assisted machine, too hard | **One assistance step more** (no % without bodyweight) | Playbook rule 7 step 6, D5 |
+| Too easy (`rpe_low`) | The next achievable load if it is **≤ 5% heavier**, else **+1 rep**; assisted: one step less assistance. Never past the equipment max | Rule 6 (+2–5% or +1–2 reps) |
+| Pain flag on the movement, or pain at check-in | No raise, so no too-easy offer. A too-hard change still applies | Rule 9 |
+
+Never after a miss: an increase, a removed or added set, a change to a done or warm-up set, or a change to another exercise. kg/lb and the load convention (total, per hand, stack, assisted) follow the row's own equipment.
+
+Recorded: an `ActionRecord` with author `checks` (app code, not the coach), turn `null`, opId `built-in-adjust:<triggerId>` (a double tap applies once), the session version before/after, the guard notes, and the reason as app text (`2 reps on set 1 (target 3–6). Lighter load for the remaining sets (8%).`). Each changed target gets `source: built_in_rule` and a `rule` provenance, so `Why?` reads `Set by  Built-in rule · 10 Oct` and the rule's words, never `Coach`. `Adjust` re-works the change on the workout as it is now and applies it only if it is still what Ben was shown; otherwise `Out of date. Nothing changed.` (rule 5).
+
+At Summary (F5) a session with a set below the rule's range floor is always listed under `Next time` (`hold_after_miss`, tag `Rule`): `Same target: 62.5 kg × 3–6`, or `Target 57.5 kg × 3–6` when the rule held a lighter load used today. Two such sessions in a row at the same load reduce (7-F).
+
 ## 5. Copy
 
 Values are labelled as **target** or **actual** every time. `→` reads "to" in VoiceOver.
@@ -313,6 +335,9 @@ Values are labelled as **target** or **actual** every time. `→` reads "to" in 
 | Chip row | `What should change?` · `Too hard` · `Too easy` · `Pain` · `Type…` | — |
 | Offer (hard) | `That looked hard. Adjust remaining sets?` + fact `RPE 10 on set 2` or `6 reps on set 2 (target 8–10)` | Fact = actual; range = target |
 | Offer (easy) | `That looked easy. Adjust remaining sets?` + fact `RPE 6 on set 2` | Actual |
+| Offer, built-in rule (CA6) | Same prompt and fact, then `Next sets: 57.5 kg × 3–6` + tag `Rule` (one set: `Next set: …`; different targets: `Set 2: 95 kg × 6–8 · Set 3: 75 kg × 6–8`) | Targets |
+| Banner, built-in rule | `Adjusted sets 2–3` + tag `Rule` · `62.5 → 57.5 kg × 3–6` · `Why? ›` (heading `Rule`) · `Undo` · after Undo `Change undone.` · `⋯` menu `Undo change` | Targets |
+| Rule offer refused | `Out of date. Nothing changed.` · `Nothing to change.` | — |
 | Offer buttons | `No thanks` · `Adjust` | — |
 | Pending | `Coach is working on sets 3–4` · `Nothing has changed yet.` · `Cancel` | — |
 | Re-sending | `Updating for the set you just logged…` | — |
@@ -389,7 +414,7 @@ Existing (brief §7–8, ADR 0006):
 ## 7. Acceptance checks
 
 1. **No added taps.** Run the 3 × 3 matching-set workout from flow check 1 with the coach connected and no triggers firing: the tap count is identical to the coach-off run, and no coach UI appears except the `Adjust` control.
-2. With airplane mode on, no AI call is made after any set, and no offer appears even when RPE 10 is entered.
+2. With airplane mode on, no AI call is made after any set. (Revised 11 Oct, CA6) RPE 10 or a rep miss shows the **built-in rule's** offer with its concrete change and `Rule` tag; nothing changes until `Adjust`.
 3. With the coach connected, logging 10 sets with RPE 7–8 and reps on target makes **zero** AI calls (check the provider log).
 4. Log bench set 2 at RPE 10: the rest card shows `That looked hard. Adjust remaining sets?` with `RPE 10 on set 2`. Targets for sets 3–4 are unchanged until `Adjust` is tapped. No modal or sheet opens, and nothing is spoken (Set cues mode).
 5. Tap `No thanks`, then log set 3 at RPE 10: no new offer. Log set 3 at RPE 6 instead: an easy offer appears (different kind, CA4).
@@ -421,3 +446,7 @@ Existing (brief §7–8, ADR 0006):
 31. (9 Oct, CA10) Tap `Done` while the coach is still working: the answer's small changes are saved when it arrives, appear in that summary in history with Undo, and are dropped if Push A has started again first.
 32. (9 Oct) `Undo` on one row restores the built-in rule's target for that exercise only; the other coach targets stay. `Use coach target` restores the coach's. After the next Push A starts, neither button is offered on the summary.
 33. (9 Oct, coach-contract) Every number in a saved row, banner or spoken cue equals the saved `ActionRecord`'s value; the model's raw numbers appear only in `Why?`.
+31. (11 Oct, build 108) Built-in rule 62.5 kg × 3–6, log 2 reps: an offer appears in every connection state: the coach's when reachable, the rule's (`Next sets: 57.5 kg × 3–6`, `Rule`) when not signed in or offline. `Adjust` on the rule's offer changes sets 2–3 only, set 1 keeps its actual 2 reps, Undo restores 62.5 kg, a double tap applies once, and the change survives a force-close.
+32. (11 Oct) The rule's change is refused as `Out of date` if the workout moved on so that the change no longer matches what was shown; nothing is applied to newer state.
+33. (11 Oct) Correcting a logged set from 6 to 2 reps offers on return to the workout (F4).
+34. (11 Oct) After a session below the range floor, the Summary lists the hold (`Same target: …`, `Rule`); a second such session at the same load lists `Target 55 kg × 3–6` (7-F).
