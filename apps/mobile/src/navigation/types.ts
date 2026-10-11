@@ -49,7 +49,24 @@ export type ProgressStackParams = {
   ProgressHome: undefined;
   /** `group`: the row to open expanded (a body-part group such as `Chest`, or `push` / `pull` / `legs` / `core` / `other`). */
   ProgressMuscles: { group?: string };
+  /** Exercises list (slice B, §2.6). */
+  ProgressExercises: undefined;
+  /** Exercise detail inside the Progress tab (slice B, §2.7). */
+  ProgressExercise: ExerciseDetailParams;
 };
+
+/**
+ * Exercise detail (progress.md §2.7). `sessionId`: open on the series with
+ * that workout and select its point (a home record, a past workout's
+ * Summary). `equipmentId`: prefer that equipment's series (Workout overview).
+ */
+export interface ExerciseDetailParams {
+  exerciseId: string;
+  sessionId?: string;
+  equipmentId?: string;
+  /** Shown in the header while loading. */
+  name?: string;
+}
 
 export type ImportQuestionKind = 'per_hand' | 'total' | 'bodyweight' | 'unit' | 'effort' | 'dates' | 'gym';
 export type ImportSkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise';
@@ -116,6 +133,8 @@ export type RootStackParams = {
    * workout); never by a trigger, timer or reply. `focus`: the field gets focus.
    */
   Coach: { entry: CoachEntry; focus?: boolean };
+  /** Exercise detail over a past workout's Summary or the Workout overview (`History`). */
+  ExerciseProgress: ExerciseDetailParams;
 };
 
 export type WorkoutToastParam =

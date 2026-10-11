@@ -2,7 +2,7 @@ import { View } from 'react-native';
 
 import type { ActivityView, TimeSheetRow } from '@fizz/domain';
 
-import { HOW_COUNTED_LINES, TIME_SHEET_COPY } from '../../progress/copy';
+import { E1RM_SHEET_LINES, HOW_COUNTED_LINES, TIME_SHEET_COPY } from '../../progress/copy';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, OutlinePill, TextButton } from '../../ui';
 
@@ -105,6 +105,23 @@ export function HowCountedSheet({ visible, onClose }: { visible: boolean; onClos
       <Heading title="How this is counted" onDone={onClose} />
       <View style={{ gap: theme.space['3'] }}>
         {lines.map((l) => (
+          <AppText key={l} variant="body">
+            {l}
+          </AppText>
+        ))}
+      </View>
+    </BottomCard>
+  );
+}
+
+/** Est. 1RM `ⓘ` (§2.7): how the estimate is worked out. */
+export function E1rmSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const theme = useTheme();
+  return (
+    <BottomCard visible={visible} onClose={onClose}>
+      <Heading title="Est. 1RM" onDone={onClose} />
+      <View style={{ gap: theme.space['3'] }}>
+        {E1RM_SHEET_LINES.map((l) => (
           <AppText key={l} variant="body">
             {l}
           </AppText>

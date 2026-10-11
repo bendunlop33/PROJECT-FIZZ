@@ -931,6 +931,9 @@ export function WorkoutOverviewScreen() {
               }
             : undefined
         }
+        onHistory={() => {
+          navigation.navigate('ExerciseProgress', { exerciseId: r.exerciseId, name: r.name });
+        }}
         onStillHurts={
           flagId
             ? () => {

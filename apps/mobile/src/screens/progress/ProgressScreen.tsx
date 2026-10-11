@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
-import { toMs, type ProgressHomeView } from '@fizz/domain';
+import { toMs, type ProgressHomeView, type RecordView } from '@fizz/domain';
 import type { ProgressGrouping, ProgressWindowDays } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
@@ -183,8 +183,15 @@ export function ProgressScreen() {
         onMuscle={(group) => {
           navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressMuscles', params: { group } } });
         }}
-        onWorkout={(sessionId) => {
-          navigation.navigate('Summary', { sessionId, back: true });
+        onRecord={(r) => {
+          // Slice B: a record opens exercise detail on its series with its point selected (§4.1).
+          navigation.navigate('Tabs', {
+            screen: 'Progress',
+            params: { screen: 'ProgressExercise', params: { exerciseId: r.exerciseId, sessionId: r.sessionId, ...(r.equipmentId === null ? {} : { equipmentId: r.equipmentId }) } },
+          });
+        }}
+        onExercises={() => {
+          navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressExercises' } });
         }}
       />
         </View>
@@ -266,7 +273,8 @@ function Overview({
   onTime,
   onHow,
   onMuscle,
-  onWorkout,
+  onRecord,
+  onExercises,
 }: {
   home: ProgressHome;
   view: Extract<ProgressHomeView, { dataState: 'normal' }>;
@@ -277,7 +285,8 @@ function Overview({
   onTime: () => void;
   onHow: () => void;
   onMuscle: (group: string) => void;
-  onWorkout: (sessionId: string) => void;
+  onRecord: (r: RecordView) => void;
+  onExercises: () => void;
 }) {
   const theme = useTheme();
   const { activity, muscles, records } = view;
@@ -383,9 +392,9 @@ function Overview({
               key={r.key}
               accessibilityRole="button"
               accessibilityLabel={r.words}
-              accessibilityHint="Opens the workout"
+              accessibilityHint="Opens the exercise"
               onPress={() => {
-                onWorkout(r.sessionId);
+                onRecord(r);
               }}
               style={({ pressed }) => ({ minHeight: theme.target.min.height, paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
             >
@@ -398,6 +407,19 @@ function Overview({
           ))
         )}
       </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Exercises"
+        accessibilityHint="Opens every exercise's history"
+        onPress={onExercises}
+        style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], borderTopWidth: theme.dividerWidth, borderBottomWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
+      >
+        <AppText variant="body" style={{ flex: 1 }}>
+          Exercises
+        </AppText>
+        <Icon name="chevron.right" color="text.tertiary" size={14} />
+      </Pressable>
 
       {home.unreadable > 0 ? (
         <StatusLine icon="exclamationmark.triangle" tone="warning" text={`${String(home.unreadable)} ${home.unreadable === 1 ? 'workout couldn’t be read and isn’t' : 'workouts couldn’t be read and aren’t'} counted.`} />

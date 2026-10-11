@@ -1,4 +1,5 @@
 import { createGuardedLoader } from '../guide/guarded-load';
+import type { TrendCanvas } from './TrendCanvas';
 import type { WeekBarsCanvas } from './WeekBarsCanvas';
 
 /**
@@ -10,4 +11,11 @@ export const loadWeekBarsCanvas = createGuardedLoader(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate lazy, guarded load
   const mod = require('./WeekBarsCanvas') as { WeekBarsCanvas: typeof WeekBarsCanvas };
   return mod.WeekBarsCanvas;
+});
+
+/** The exercise `TrendChart` plot, behind the same guard: a Skia failure falls back to the table, never a crash. */
+export const loadTrendCanvas = createGuardedLoader(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate lazy, guarded load
+  const mod = require('./TrendCanvas') as { TrendCanvas: typeof TrendCanvas };
+  return mod.TrendCanvas;
 });

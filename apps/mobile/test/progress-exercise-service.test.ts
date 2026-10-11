@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { buildCoachContext, describeCoachContext } from '@fizz/coach';
+
+import { seesLabel, starterChips } from '../src/coach/sheet-view';
 import { createHarness, logWorkout, type Harness } from './harness';
 
 /**
@@ -87,5 +90,20 @@ describe('Exercises list and exercise detail through the services', () => {
     const fresh = (await s2.progress.exerciseDetail({ exerciseId }))?.view;
     expect([fresh?.metric, fresh?.range]).toEqual(['e1rm', '6m']);
     expect(fresh?.points).toHaveLength(3);
+  });
+});
+
+describe('Ask from exercise detail (§2.1, §4.4)', () => {
+  const entry = { kind: 'progress_exercise' as const, exerciseName: 'Bench press', seriesLabel: 'Main Gym · Barbell', from: '2026-04-09', to: '2026-10-08' };
+
+  it('frames the general thread with the exercise, series and range; no numbers, no canned chips', async () => {
+    expect(seesLabel(entry, null, false)).toBe('Sees: Bench press · Main Gym · Barbell');
+    expect(starterChips(entry, { status: 'ok', model: 'm' }, false)).toEqual([]);
+    const openedFrom = { screen: 'progress_exercise' as const, exercise: 'Bench press', series: 'Main Gym · Barbell', range: { from: '2026-04-09', to: '2026-10-08' } };
+    const ctx = buildCoachContext({ turnKind: 'general', session: null, gymName: null, painFlags: [], checkIn: null, memories: [], thread: [], catalogue: [], openedFrom });
+    expect(ctx.yourData.openedFrom).toEqual(openedFrom);
+    expect(describeCoachContext(ctx).yourData).toContainEqual({ label: 'Opened from', detail: 'Progress · Bench press · Main Gym · Barbell' });
+    const { s } = await setUp();
+    expect((await s.coach.describe(entry, null)).yourData).toContainEqual({ label: 'Opened from', detail: 'Progress · Bench press · Main Gym · Barbell' });
   });
 });

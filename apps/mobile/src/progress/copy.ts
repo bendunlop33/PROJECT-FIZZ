@@ -25,3 +25,10 @@ export const TIME_SHEET_COPY = {
   countIt: 'Count it',
   editTimes: 'Edit times',
 } as const;
+
+/** The Est. 1RM `ⓘ` sheet (progress.md §2.7): the formula and its limits, nowhere else. */
+export const E1RM_SHEET_LINES: readonly string[] = [
+  'Est. 1RM is an estimate of the most you could lift once, worked out from your best set each session: weight × (1 + reps ÷ 30) (Epley).',
+  'Only sets of 1–10 reps are used. Warm-ups and sets you marked spotted, painful or with form breaking aren’t used.',
+  'It’s an estimate, not a target.',
+];

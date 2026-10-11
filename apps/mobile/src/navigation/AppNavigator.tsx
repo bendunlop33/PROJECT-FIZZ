@@ -37,6 +37,8 @@ import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
 import { PainFlagSheet } from '../screens/workout/PainFlagSheet';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
+import { ExerciseDetailScreen } from '../screens/progress/ExerciseDetailScreen';
+import { ExercisesScreen } from '../screens/progress/ExercisesScreen';
 import { MusclesScreen } from '../screens/progress/MusclesScreen';
 import { ProgressScreen } from '../screens/progress/ProgressScreen';
 import { PastWorkoutsScreen } from '../screens/repeat/PastWorkoutsScreen';
@@ -121,6 +123,8 @@ function ProgressNavigator() {
     <ProgressStack.Navigator screenOptions={options}>
       <ProgressStack.Screen name="ProgressHome" component={ProgressScreen} options={{ headerShown: false }} />
       <ProgressStack.Screen name="ProgressMuscles" component={MusclesScreen} options={{ title: 'Muscles' }} />
+      <ProgressStack.Screen name="ProgressExercises" component={ExercisesScreen} options={{ title: 'Exercises' }} />
+      <ProgressStack.Screen name="ProgressExercise" component={ExerciseDetailScreen} options={({ route }) => ({ title: route.params.name ?? '' })} />
     </ProgressStack.Navigator>
   );
 }
@@ -292,6 +296,8 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               <RootStack.Screen name="PastWorkouts" component={PastWorkoutsScreen} options={{ headerShown: true, title: 'Past workouts' }} />
               <RootStack.Screen name="Repeat" component={RepeatScreen} options={{ headerShown: true, title: 'Repeat' }} />
               {/* A side door, not a step: swipe down closes it and nothing in the workout waits for it (coach-sheet §1). */}
+              {/* Exercise detail over a past workout's Summary or the Workout overview (`History`); swipe down or Done closes it. */}
+              <RootStack.Screen name="ExerciseProgress" component={ExerciseDetailScreen} options={({ route }) => ({ presentation: 'modal', headerShown: true, title: route.params.name ?? '' })} />
               <RootStack.Screen name="Coach" component={CoachSheetScreen} options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
             </>
           ) : (

@@ -415,14 +415,24 @@ export function SummaryScreen() {
                   marginTop: i === 0 ? theme.space['2'] : 0,
                 }}
               >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: theme.space['2'] }}>
+                {/* The exercise's history (progress.md §2.7, slice B): its series, with this workout's point selected. */}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${e.name}, ${e.setsText}`}
+                  accessibilityHint="Opens this exercise’s history"
+                  onPress={() => {
+                    navigation.navigate('ExerciseProgress', { exerciseId: e.exerciseId, sessionId, name: e.name });
+                  }}
+                  style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], opacity: pressed ? 0.6 : 1 })}
+                >
                   <AppText variant="headline" style={{ flex: 1 }}>
                     {e.name}
                   </AppText>
                   <AppText variant="callout" color="text.secondary" numeric>
                     {e.setsText}
                   </AppText>
-                </View>
+                  <Icon name="chevron.right" color="text.tertiary" size={14} />
+                </Pressable>
                 {e.results !== '' ? (
                   <AppText variant="callout" numeric>
                     {e.results}
