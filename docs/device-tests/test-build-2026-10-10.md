@@ -47,7 +47,7 @@ Calmer rest screen, richer Today with routines (Save as routine on Summary, Up n
 - The check-in is now an optional 1–5 row above **Start workout** (ignoring it = skip).
 - Please check at large text sizes (Settings › Accessibility › Larger Text) that nothing overlaps.
 
-## Update (11 Oct, later): today's edits, Your data, bug-hunt fixes
+## Update (11 Oct, later): today's edits, Your data, bug-hunt fixes (first build after the repo went public)
 - **Overview › tap a row:** Swap for today (fits this gym; pain-flagged exercises last), Skip today, Do first, drag to reorder, each with Undo. `Change Push A too` goes through a before/after card. Today's edits survive a force-close until midnight.
 - **Data & backup:** Export `My data` / `Coaching knowledge only`; `Delete my data (keep coaching knowledge)` (backs up first, signs out of ChatGPT); `Reset coaching knowledge`.
 - **14 bug fixes** from a full bug hunt: units locked once the gym is saved in setup; check-in changes after Back are kept; Save as routine after a gym switch; a slow reload can't overwrite a just-logged set; Left/Right side kept; coach offers once (not every hard set), Offline clears after 60 s, rename keeps next-time targets, Try again / Undo / Undo all fixed; no backup freeze on a long history; "Backed up" accurate after Undo import or restore.
