@@ -4,7 +4,7 @@ import type { NextTimeRow } from '@fizz/domain';
 import type { ActionRecord, NextSessionTargetRecord } from '@fizz/schemas';
 
 import type { CoachAvailability } from '../src/coach/coach-service';
-import { nextTimeView } from '../src/coach/next-time-view';
+import { nextTimeView, summaryNoteSentences } from '../src/coach/next-time-view';
 import { applyProgress, cardView, outcomeFor, routeLine, seesLabel, starterChips, startLiveTurn, statusView, thinkingLabel, whyView, workoutBarText } from '../src/coach/sheet-view';
 import { adjustControlView, chipForTrigger, slotView } from '../src/coach/slot-view';
 
@@ -168,6 +168,15 @@ describe('Next time (D21): coach rows over the built-in rule', () => {
     expect(v?.rows[0]).toMatchObject({ tag: 'Coach', pct: '−4.2%', actions: [{ label: 'Undo', tap: 'undo' }] });
     expect(v?.rows[0]?.why.map(nb)).toEqual(['“Every set was RPE 10.”', 'Built-in rule would be 62.5 kg × 8–10 · 3 sets']);
     expect(v?.undoAll).toEqual({ actionId: ID(77) });
+  });
+
+  it('the coach note drops a number about an exercise without a saved coach target (review S5)', () => {
+    const said = ['All three sets were RPE 10.', 'Bench at 57.5 should feel better.', 'Next time row 65 for 10.', 'Rows looked smooth.'];
+    // Bench has the coach's saved row; Row has none, so its number would sit beside the built-in rule's.
+    expect(summaryNoteSentences(said, ['Bench press', 'Row'], [coachRow(1, 'saved')])).toEqual(['All three sets were RPE 10.', 'Bench at 57.5 should feel better.', 'Rows looked smooth.']);
+    // Undone or only suggested: the row shows the built-in rule, so the bench number goes too.
+    expect(summaryNoteSentences(said, ['Bench press', 'Row'], [coachRow(1, 'undone')])).toEqual(['All three sets were RPE 10.', 'Rows looked smooth.']);
+    expect(summaryNoteSentences(said, ['Bench press', 'Row'], [coachRow(1, 'proposed')])).toEqual(['All three sets were RPE 10.', 'Rows looked smooth.']);
   });
 
   it('undone → the built-in rule with Use coach target; proposed → Not now / Apply; used → no buttons', () => {

@@ -271,6 +271,21 @@ describe('Pain from Adjust or the sheet: deterministic, offline, one flag', () =
   });
 });
 
+describe('Sore or pain? outside a workout (review S5)', () => {
+  it('Today: the named movement, else the last workout’s movements to choose from; nothing to flag before any workout', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    expect(await s.coach.painChoices({ kind: 'today' }, 'my shoulder hurts')).toEqual([]);
+    const done = await logWorkout(h, s, gymId, [
+      { exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] },
+      { exercise: 'Lat pulldown', sets: [{ load: 50, reps: 10 }] },
+    ]);
+    expect((await s.coach.painChoices({ kind: 'today' }, 'my shoulder hurts')).map((c) => c.name)).toEqual(['Bench press', 'Lat pulldown']);
+    expect((await s.coach.painChoices({ kind: 'today' }, 'shoulder hurts on bench press')).map((c) => c.name)).toEqual(['Bench press']);
+    expect((await s.coach.painChoices({ kind: 'summary', sessionId: done }, null)).map((c) => c.name)).toEqual(['Bench press', 'Lat pulldown']);
+  });
+});
+
 describe('C8: Summary next-session targets (D21) and routines', () => {
   it('one summary turn saves a small bench change; Next time shows it with Undo; the next session of the routine plans it and marks it used', async () => {
     const { services: s } = await h.launch();

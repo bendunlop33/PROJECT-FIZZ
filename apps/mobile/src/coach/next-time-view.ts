@@ -115,3 +115,27 @@ export function nextTimeView(input: NextTimeInput): NextTimeView | null {
     undoAll: live.length >= 2 && only !== undefined ? { actionId: only } : null,
   };
 }
+
+/** Words too common in exercise names to say which one a sentence is about. */
+const GENERIC_NAME_WORDS = new Set(['press', 'raise', 'raises', 'curl', 'curls', 'extension', 'extensions', 'machine', 'cable', 'barbell', 'dumbbell', 'seated', 'standing', 'single', 'assisted', 'supported']);
+
+function mentions(sentence: string, exerciseName: string): boolean {
+  const said = ` ${sentence.toLowerCase().replace(/[^a-z0-9]+/g, ' ')} `;
+  const name = exerciseName.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (said.includes(` ${name} `)) return true;
+  return name.split(' ').some((w) => w.length >= 4 && !GENERIC_NAME_WORDS.has(w) && (said.includes(` ${w} `) || said.includes(` ${w}s `)));
+}
+
+/**
+ * The Summary's coach note, sentence by sentence (review S5): a sentence
+ * with a number about an exercise whose `Next time` isn't the coach's saved
+ * target (no row, or undone, or only suggested) is dropped whole, so the
+ * note never shows a number beside a row that says something else. Pure.
+ */
+export function summaryNoteSentences(sentences: readonly string[], exerciseNames: readonly string[], rows: readonly NextSessionTargetRecord[]): string[] {
+  const live = new Set(rows.filter((r) => r.status === 'saved' || r.status === 'applied').map((r) => r.exerciseName.toLowerCase()));
+  return sentences.filter((s) => {
+    if (!/\d/.test(s)) return true;
+    return exerciseNames.every((name) => !mentions(s, name) || live.has(name.toLowerCase()));
+  });
+}

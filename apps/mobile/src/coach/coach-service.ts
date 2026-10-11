@@ -32,6 +32,7 @@ import {
   DEFAULT_COACH_TRIGGER_THRESHOLDS,
   evaluateCoachTrigger,
   exercisesNamedForPain,
+  exercisesNamedIn,
   isTriggerKind,
   nextSessionBases,
   shouldShowCoachOffer,
@@ -41,6 +42,8 @@ import {
   type OfferLogEntry,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
+
+import { summaryNoteSentences } from './next-time-view';
 import type { TextCoachState } from '@fizz/providers';
 import type {
   ActionRecord,
@@ -374,8 +377,34 @@ export function createCoachService(deps: CoachServiceDeps) {
       const summaryTurns = new Set([...data.turns.values()].filter((t) => t.kind === 'summary').map((t) => t.id));
       const msg = [...data.messages].reverse().find((m) => m.body.role === 'coach' && summaryTurns.has(m.turnId));
       if (msg === undefined || msg.body.role !== 'coach') return null;
-      const text = msg.body.items.flatMap((i) => (i.kind === 'sentence' ? [i.text] : [])).join(' ');
+      const sentences = msg.body.items.flatMap((i) => (i.kind === 'sentence' ? [i.text] : []));
+      // A number about an exercise is shown only beside the coach's own saved target for it (review S5).
+      const p = await owner();
+      const [source, rows] = await Promise.all([repos().sessions.get(sessionId).catch(() => null), coachStore().listNextTargets(p.id, sessionId).catch(() => [])]);
+      const names = [...new Set((source?.exercises ?? []).map((e) => e.exerciseName))];
+      const text = summaryNoteSentences(sentences, names, rows).join(' ');
       return text === '' ? null : text;
+    },
+
+    /**
+     * `Sore or pain?` outside a workout (review S5): the movements a `Pain`
+     * tap can flag. Those Ben named (whole names), else every movement of
+     * the workout in view (the Summary's, or the last finished one from
+     * Today). Empty: nothing to flag, so the question isn't shown.
+     */
+    async painChoices(entry: CoachEntry, words: string | null): Promise<{ exerciseId: string; name: string }[]> {
+      const p = await owner();
+      const sessionId = entry.kind === 'today' ? ((await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []))[0]?.sessionId ?? null) : entry.sessionId;
+      const session = sessionId === null ? null : await repos().sessions.get(sessionId).catch(() => null);
+      const seen = new Set<string>();
+      const all: { exerciseId: string; exerciseName: string }[] = [];
+      for (const e of [...(session?.exercises ?? [])].sort((a, b) => a.order - b.order)) {
+        if (seen.has(e.exerciseId)) continue;
+        seen.add(e.exerciseId);
+        all.push({ exerciseId: e.exerciseId, exerciseName: e.exerciseName });
+      }
+      const named = words === null ? [] : exercisesNamedIn(words, all);
+      return (named.length > 0 ? all.filter((e) => named.includes(e.exerciseId)) : all).map((e) => ({ exerciseId: e.exerciseId, name: e.exerciseName }));
     },
 
     async nextTargets(sessionId: string): Promise<NextSessionTargetRecord[]> {

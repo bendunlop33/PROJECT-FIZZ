@@ -486,6 +486,11 @@ export function classifyPainMention(text: string): PainMention {
  */
 export function exercisesNamedForPain(text: string, exercises: readonly { exerciseId: string; exerciseName: string }[]): string[] {
   if (painBodyPart(text) !== null) return [];
+  return exercisesNamedIn(text, exercises);
+}
+
+/** Exercises whose whole name (plural allowed) appears in the words; never a lone word of a name. */
+export function exercisesNamedIn(text: string, exercises: readonly { exerciseId: string; exerciseName: string }[]): string[] {
   const norm = (s: string): string => ` ${s.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim()} `;
   const said = norm(text);
   const out: string[] = [];

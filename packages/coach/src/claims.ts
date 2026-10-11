@@ -537,6 +537,24 @@ function r5FormClaim(words: readonly string[], clause: string, sentence: string)
   return [UNDO_R5, REMOVE_R5, ADD_R5, SET_TYPE_R5, VALUE_R5, PAIN_R5, LOCKED_R5, ...SAME_FOR_R5, ...STRUCT_R5].some((re) => matchesUnnegated(re, clause) || (re === STRUCT_R5[3] && re.test(clause)));
 }
 
+/**
+ * Review S5: a future or kept state stated as fact needs a saved change
+ * behind it, like any other claim: "Next push day you start on 100.",
+ * "Squat stays where it is for the rest.", "Your squat stays at 100."
+ * Advice ("Keep the squat where it is"), conditions and questions are not.
+ */
+const NEXT_START = /\b(?:you (?:will |ll )?)?(?:start|open|begin|kick off)s? (?:on|at|with|from) \d/;
+const STAYS_STATE = /\b(?:stays?|remains?|is staying|are staying|will stay|is kept|are kept|is held|are held) (?:where (?:it|they) (?:is|are)|as (?:it|they) (?:is|are)|the same|unchanged|put|at \d)/;
+const FUTURE_STATE_VETO = /\b(?:if|unless|would|could|should|might|may|when|once|until|till|while|try|maybe|perhaps|suggest|recommend|let|keep|aim)\b/;
+
+function futureStateClaim(clause: string, sentence: string): boolean {
+  if (isQuestion(sentence) || OFFER_TAIL.test(sentence) || FUTURE_STATE_VETO.test(sentence)) return false;
+  if (HISTORICAL.test(sentence) || STATE_FACT_SUBJECT.test(clause) || /^(?:the |your )?rest\b/.test(clause)) return false;
+  // "Start on 95 next time" is advice (imperative); "you start on 100" states the plan.
+  if (matchesUnnegated(NEXT_START, clause) && /\bnext\b/.test(sentence) && !/^(?:start|open|begin|kick off)\b/.test(clause)) return true;
+  return matchesUnnegated(STAYS_STATE, clause);
+}
+
 function hasClaimTrigger(words: readonly string[], clause: string, sentence: string): boolean {
   for (let i = 0; i < words.length; i += 1) {
     const w = words[i] ?? '';
@@ -574,6 +592,7 @@ function hasClaimTrigger(words: readonly string[], clause: string, sentence: str
   if (presentStateClaim(clause, sentence)) return true;
   if (painHoldClaim(clause, sentence)) return true;
   if (structuralStateClaim(clause, sentence)) return true;
+  if (futureStateClaim(clause, sentence)) return true;
   if (PHRASES.some((re) => matchesUnnegated(re, clause))) {
     if (/\b(?:try|consider|maybe|suggest|recommend|would|could|should|might)\b/.test(clause) && /\bfrom now on|going forward\b/.test(clause)) return false;
     if (/\b(?:should|will) (?:now )?(?:show|see|read|display|say|list|be)\b/.test(clause) && (/\b(?:if|when|once|unless)\b/.test(clause) || OFFER_TAIL.test(sentence) || isQuestion(sentence))) return false;

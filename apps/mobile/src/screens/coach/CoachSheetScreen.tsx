@@ -67,6 +67,9 @@ export function CoachSheetScreen() {
   const [threads, setThreads] = useState<CoachThread[] | null>(null);
   const [workout, setWorkout] = useState<{ title: string | null; active: boolean; bar: string; exercise: { id: string; name: string } | null } | null>(null);
   const [askPain, setAskPain] = useState(false);
+  /** Outside a workout: the movements `Pain` can flag; `picking` shows them as chips. */
+  const [painChoices, setPainChoices] = useState<{ exerciseId: string; name: string }[]>([]);
+  const [picking, setPicking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const lastInput = useRef<BenInput | null>(null);
   const sendGuard = useRef(0);
@@ -173,7 +176,15 @@ export function CoachSheetScreen() {
         },
       });
       setThreadId(r.threadId);
-      setAskPain(r.askPain !== null && workout?.active === true && workout.exercise !== null);
+      setPicking(false);
+      if (r.askPain === null) setAskPain(false);
+      else if (workout?.active === true && workout.exercise !== null) setAskPain(true);
+      else {
+        // Outside a workout too (review S5): the named movement, or which one.
+        const choices = await services.coach.painChoices(entry, typed).catch(() => []);
+        setPainChoices(choices);
+        setAskPain(choices.length > 0);
+      }
       await loadRows(r.threadId);
       if (r.cards.length > 0) changed();
     } catch {
@@ -193,13 +204,21 @@ export function CoachSheetScreen() {
     changed();
   }
 
-  async function pain() {
-    const ex = workout?.exercise ?? null;
-    if (ex === null) return;
+  async function flag(ex: { id: string; name: string }) {
     const r = await services.pain.flagMovement({ exerciseId: ex.id, exerciseName: ex.name, opId: newUuid() });
     setAskPain(false);
+    setPicking(false);
     setNotice(r.ok ? `Pain noted for ${ex.name}.` : r.message);
     changed();
+  }
+
+  async function pain() {
+    const ex = workout?.active === true ? (workout.exercise ?? null) : null;
+    if (ex !== null) return flag(ex);
+    const [only, ...more] = painChoices;
+    if (only === undefined) return;
+    if (more.length === 0) return flag({ id: only.exerciseId, name: only.name });
+    setPicking(true);
   }
 
   function statusAction(a: StatusAction) {
@@ -334,8 +353,15 @@ export function CoachSheetScreen() {
             <AppText variant="callout" style={{ flex: 1 }}>
               Sore or pain?
             </AppText>
-            <TextButton label="Sore" tone="secondary" onPress={() => { setAskPain(false); }} />
+            <TextButton label="Sore" tone="secondary" onPress={() => { setAskPain(false); setPicking(false); }} />
             <TextButton label="Pain" onPress={() => void pain()} />
+          </View>
+        ) : null}
+        {askPain && picking ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }} accessibilityLabel="Which movement?">
+            {painChoices.map((c) => (
+              <Chip key={c.exerciseId} label={c.name} selected={false} onPress={() => void flag({ id: c.exerciseId, name: c.name })} />
+            ))}
           </View>
         ) : null}
         {notice !== null ? (

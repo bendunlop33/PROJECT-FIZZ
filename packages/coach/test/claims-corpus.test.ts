@@ -843,10 +843,21 @@ describe('review r5 B1: numbers, conventions and undo against a live ledger', ()
     '"unchanged" about a set that changed this turn contradicts the card: %s',
     (s) => {
       expect(checkReplyClaims(s, LIVE())).toMatchObject({ keep: false, reason: 'numbers_differ' });
-      // With nothing changed it is simply true.
-      expect(checkReplyClaims(s, EMPTY).keep).toBe(true);
+      // With nothing changed it is simply true, except a kept state stated as fact (review S5), which needs a saved change.
+      expect(checkReplyClaims(s, EMPTY).keep).toBe(s !== 'Bench stays at 100.');
     },
   );
+
+  it.each(['Squat stays where it is for the rest.', 'Next push day you start on 100.', 'You start on 100 next push day.', 'Your squat stays at 100.'])(
+    'a future or kept state stated as fact needs a saved change behind it (review S5): %s',
+    (s) => {
+      expect(checkReplyClaims(s, EMPTY).keep).toBe(false);
+    },
+  );
+
+  it.each(['Keep the squat where it is.', 'It should stay where it is.', 'If it feels heavy, start on 95 next time.', 'Rest stays at 2 minutes.', 'Want me to keep squat where it is?'])('advice, conditions and questions about the same are kept: %s', (s) => {
+    expect(checkReplyClaims(s, EMPTY).keep).toBe(true);
+  });
 
   it('the r4 failure scenario: a stale undo leaves the change live, so "Back at 100." is never kept', () => {
     const a = benchAdjust();
