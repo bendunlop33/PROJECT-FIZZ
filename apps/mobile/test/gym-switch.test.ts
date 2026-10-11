@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { gymSwitchRefusal, isProposalStale, NBSP, repeatPreviewLines } from '@fizz/domain';
 
+import { newerWorkoutData } from '../src/workout/load-order';
 import { afterSwitchRefused, cardIsStale, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, reviewSheetView, sheetClosesOn, switchCardView, switchedToast, undoneToast, type OpenSwitchCard } from '../src/workout/gym-switch-card';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -51,6 +52,27 @@ async function setUp() {
 }
 
 describe('gym switch through the services', () => {
+  it('a focus reload that read before the switch and resolves last never shows the old gym name (fix-workout r2 S1)', async () => {
+    const { s, hotelId, sessionId } = await setUp();
+    // R1: a focus or foreground reload reads before the switch.
+    const r1 = await s.workout.load();
+    if (!r1) throw new Error('no workout');
+    expect(r1.gymName).toBe('Main Gym');
+    const p = await s.gymSwitch.propose(sessionId, hotelId);
+    if (!p) throw new Error('no proposal');
+    const applied = await s.gymSwitch.apply(p, 'switch-1');
+    if (!applied.ok) throw new Error(applied.error.message);
+    // R2: applySwitch's own reload starts after R1 and resolves first.
+    const r2 = await s.workout.load();
+    if (!r2) throw new Error('no workout');
+    let shown = newerWorkoutData(r1, r2, { startedLast: true });
+    shown = newerWorkoutData(shown, r1, { startedLast: false });
+    if (shown === 'loading' || shown === null) throw new Error('nothing shown');
+    expect(shown.aggregate.session.gymId).toBe(hotelId);
+    expect(shown.gymName).toBe('Hotel · Lisbon');
+    expect(shown).toBe(r2);
+  });
+
   it('3 steps: list gyms, propose (nothing changes), Switch; done sets untouched; the result survives a force-close', async () => {
     const { s, mainId, hotelId, sessionId } = await setUp();
     expect((await s.gymSwitch.gyms(sessionId)).map((g) => [g.name, g.current])).toEqual([

@@ -50,6 +50,8 @@ export const SaveDraftCommandSchema = z.object({
   ...base,
   setId: IdSchema,
   values: SetValuesSchema,
+  /** The side chosen for a unilateral set before it is logged; absent = unchanged. */
+  side: SetSideSchema.optional(),
 });
 
 export const SetActiveSetCommandSchema = z.object({
