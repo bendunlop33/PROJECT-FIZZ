@@ -257,6 +257,26 @@ describe('sessions.listFinishedRefs (rotation, routine last done)', () => {
   });
 });
 
+describe('sessions.listSessionTypeRows (session picker)', () => {
+  it('lists finished workouts with a logged set, newest first, with name, source and exercise count', async () => {
+    const store = await openStore(memoryDriver());
+    const older = richFinishedSession();
+    let newer = unilateralSession('start-new', idGen(97_000));
+    newer = { ...newer, session: { ...newer.session, startedAt: at(86_400), routineName: 'Legs' } };
+    newer = apply(newer, logCmd(newer.sets[0]?.id ?? '', values(kg(17.5, 'per_hand'), 9), 86_460, 'n-1', 'left'));
+    newer = apply(newer, { type: 'finish', at: at(86_500), opId: 'fin-n', expectedVersion: newer.session.version, endedAt: null });
+    let empty = unilateralSession('start-empty', idGen(99_000));
+    empty = apply(empty, { type: 'finish', at: at(86_600), opId: 'fin-e', expectedVersion: empty.session.version, endedAt: null });
+    for (const s of [older, newer, empty]) await store.repos.sessions.save(s, null);
+    const rows = await store.repos.sessions.listSessionTypeRows(OWNER, 10);
+    expect(rows.map((r) => r.sessionId)).toEqual([newer.session.id, older.session.id]);
+    expect(rows[0]).toMatchObject({ routineName: 'Legs', imported: false, startedAtUtc: at(86_400).utc, exerciseCount: new Set(newer.exercises.map((e) => e.exerciseId)).size });
+    expect(rows[1]?.exerciseCount).toBe(new Set(older.exercises.map((e) => e.exerciseId)).size);
+    expect(await store.repos.sessions.listSessionTypeRows(OWNER, 1)).toHaveLength(1);
+    await store.close();
+  });
+});
+
 describe('gyms.createWithEquipment (createGymFromDraft)', () => {
   const draftGym = () => {
     const result = materialiseGymDraft(buildPresetDraft('commercial', 'kg'), {

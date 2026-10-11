@@ -3,13 +3,17 @@ import type { ZonedTimestamp } from '@fizz/schemas';
 
 import {
   categoryLabel,
-  deriveSessionTypes,
+  deriveSessionTypes as deriveWith,
   formatLastDone,
+  groupSessionTypes,
   nextInRotation,
   normaliseSessionName,
   orderSessionTypes,
-  recommendSession,
+  recommendSession as recommend,
+  routineTypeKey,
+  SESSION_PICKER_DECISIONS,
   NBSP,
+  type DeriveSessionTypesInput,
   type FinishedRef,
   type SessionTypeRoutine,
   type SessionTypeSession,
@@ -31,6 +35,12 @@ function imported(id: string, date: string, categories: Record<string, number>, 
 }
 function logged(id: string, date: string, o: { routineId?: string | null; routineName?: string | null; exerciseCount?: number } = {}): SessionTypeSession {
   return { id, routineId: o.routineId ?? null, routineName: o.routineName ?? null, startedAt: on(date), exerciseCount: o.exerciseCount ?? 5, imported: false };
+}
+/** Decision 1 on: these tests cover category grouping itself; the gate has its own test. */
+const deriveSessionTypes = (input: Omit<DeriveSessionTypesInput, 'groupImportsByCategory'>) => deriveWith({ ...input, groupImportsByCategory: true });
+/** Decision 2's path, from routines and workouts (category grouping on). */
+function recommendSession(routines: readonly SessionTypeRoutine[], sessions: readonly SessionTypeSession[], last: FinishedRef | null) {
+  return recommend({ index: groupSessionTypes({ routines, sessions, now: NOW, groupImportsByCategory: true }), routines, lastFinished: last });
 }
 const ref = (s: SessionTypeSession): FinishedRef => ({ sessionId: s.id, routineId: s.routineId, startedAtUtc: s.startedAt.utc, tz: s.startedAt.tz });
 
@@ -79,6 +89,11 @@ describe('categoryLabel (SP3)', () => {
     expect(categoryLabel({})).toBeNull();
     expect(categoryLabel({ '': 4 })).toBeNull();
     expect(categoryLabel({ 'Legs ': 2, Legs: 2, Back: 1 })?.label).toBe('Legs');
+  });
+
+  it('merges spellings that differ only in case, showing the most frequent (review N3)', () => {
+    expect(categoryLabel({ Legs: 5, legs: 5 })).toEqual({ label: 'Legs', key: 'name:legs' });
+    expect(categoryLabel({ legs: 7, Legs: 2, Back: 1 })?.label).toBe('legs');
   });
 });
 
@@ -150,39 +165,110 @@ describe('deriveSessionTypes (§3.1)', () => {
   });
 });
 
-describe('recommendSession (§3.3, SP5)', () => {
-  it('recommends the type with the longest gap, never the one just done (SP1)', () => {
+describe('deriveSessionTypes: gates and keys', () => {
+  it('groups imports by Category only with Decision 1 on; it is off until Ben decides', () => {
+    expect(SESSION_PICKER_DECISIONS).toEqual({ groupImportsByCategory: false, longestGapFallback: false });
     const { routines, sessions } = fixture();
-    const types = deriveSessionTypes({ routines, sessions, now: NOW });
-    const last = ref(nth(sessions, sessions.length - 1));
-    const rec = recommendSession(types, routines, last);
-    expect(rec).toEqual({ key: types.find((t) => t.label === 'Legs')?.key, basis: { kind: 'longest_gap', lastDone: on('2026-10-05') } });
+    const off = deriveWith({ routines, sessions, now: NOW, groupImportsByCategory: SESSION_PICKER_DECISIONS.groupImportsByCategory });
+    expect(off.map((t) => t.label)).toEqual(['Arms', 'Full body']);
   });
 
-  it('never recommends an OLDER type, even when it has the longest gap', () => {
-    const sessions = [imported('old', '2026-07-01', { Arms: 9 }), imported('a', '2026-10-06', { Legs: 9 }), imported('b', '2026-10-09', { Back: 9 })];
-    const types = deriveSessionTypes({ routines: [], sessions, now: NOW });
-    expect(types.find((t) => t.key === recommendSession(types, [], ref(nth(sessions, 2)))?.key)?.label).toBe('Legs');
+  it('marks a type whose source is imported as not startable (P-I3), routines and app workouts as startable', () => {
+    const { routines, sessions } = fixture();
+    const types = deriveSessionTypes({ routines, sessions: [...sessions, logged('s-push', '2026-10-10', { routineName: 'Push' })], now: NOW });
+    expect(types.filter((t) => !t.startable).map((t) => t.label)).toEqual(['Back', 'Chest', 'Legs', 'Shoulders']);
+    expect(types.find((t) => t.label === 'Push')?.startable).toBe(true);
+    expect(types.find((t) => t.label === 'Arms')?.startable).toBe(true);
+  });
+
+  it('a named app workout joining an imported Category group makes it startable (its newest is the app one)', () => {
+    const types = deriveSessionTypes({ routines: [], sessions: [imported('i-legs', '2026-10-05', { Legs: 9 }), logged('s-legs', '2026-10-09', { routineName: 'Legs' })], now: NOW });
+    expect(types).toHaveLength(1);
+    expect(types[0]).toMatchObject({ sourceSessionId: 's-legs', startable: true });
+  });
+
+  it('keys each grouped workout to its type, and leaves untyped workouts out', () => {
+    const routines = [{ id: 'r-pull', name: 'Pull A', exerciseCount: 5 }];
+    const sessions = [logged('s1', '2026-10-01', { routineId: 'r-pull' }), logged('s2', '2026-10-06', { routineName: 'pull a' }), logged('s3', '2026-10-07', { routineName: 'Legs' }), logged('u', '2026-10-08')];
+    const { keyOfSession } = groupSessionTypes({ routines, sessions, now: NOW, groupImportsByCategory: false });
+    expect(Object.fromEntries(keyOfSession)).toEqual({ s1: routineTypeKey('r-pull'), s2: routineTypeKey('r-pull'), s3: 'name:legs' });
+  });
+
+  it('an imported Category matching a routine’s name joins the routine and sets its lastDone', () => {
+    const routines = [{ id: 'r-legs', name: 'Legs', exerciseCount: 4 }];
+    const sessions = [logged('s1', '2026-09-20', { routineId: 'r-legs', routineName: 'Legs' }), imported('i1', '2026-10-02', { legs: 12, Back: 1 })];
+    const index = groupSessionTypes({ routines, sessions, now: NOW, groupImportsByCategory: true });
+    expect(index.types).toHaveLength(1);
+    expect(index.types[0]).toMatchObject({ key: 'routine:r-legs', kind: 'routine', sourceSessionId: 'i1', lastDone: on('2026-10-02'), startable: true, exerciseCount: 4 });
+    expect(index.keyOfSession.get('i1')).toBe('routine:r-legs');
+  });
+});
+
+describe('recommendSession (§3.3, SP5; Decision 2)', () => {
+  /** The §8 split, logged in the app (named) rather than imported, so every type is startable. */
+  function split() {
+    const routines: SessionTypeRoutine[] = [
+      { id: 'r-arms', name: 'Arms', exerciseCount: 4 },
+      { id: 'r-full', name: 'Full body', exerciseCount: 6 },
+    ];
+    const sessions: SessionTypeSession[] = [
+      logged('s-full', '2026-08-14', { routineId: 'r-full', routineName: 'Full body', exerciseCount: 6 }),
+      logged('s-legs', '2026-10-05', { routineName: 'Legs' }),
+      logged('s-shoulders', '2026-10-07', { routineName: 'Shoulders' }),
+      logged('s-back', '2026-10-08', { routineName: 'Back', exerciseCount: 6 }),
+      logged('s-chest', '2026-10-09', { routineName: 'Chest' }),
+    ];
+    return { routines, sessions };
+  }
+
+  it('recommends the type with the longest gap, never the one just done (SP1)', () => {
+    const { routines, sessions } = split();
+    expect(recommendSession(routines, sessions, ref(nth(sessions, 4)))).toEqual({ key: 'name:legs', basis: { kind: 'longest_gap', lastDone: on('2026-10-05') } });
+  });
+
+  it('never recommends an imported (unstartable) type while P-I3 is open (review B2)', () => {
+    const { routines, sessions } = fixture();
+    // Every history type in the §8 fixture is imported; only Full body (OLDER) can start.
+    const rec = recommendSession(routines, sessions, ref(nth(sessions, sessions.length - 1)));
+    expect(rec).toEqual({ key: 'routine:r-full', basis: { kind: 'from', lastDone: on('2026-08-14') } });
+    const withApp = [...sessions, logged('s-push', '2026-10-03', { routineName: 'Push' })];
+    expect(recommendSession(routines, withApp, ref(nth(sessions, sessions.length - 1)))?.key).toBe('name:push');
+  });
+
+  it('never recommends an OLDER type while an active one exists', () => {
+    const sessions = [logged('old', '2026-07-01', { routineName: 'Arms' }), logged('a', '2026-10-06', { routineName: 'Legs' }), logged('b', '2026-10-09', { routineName: 'Back' })];
+    expect(recommendSession([], sessions, ref(nth(sessions, 2)))?.key).toBe('name:legs');
+  });
+
+  it('after a break where every type is OLDER, recommends the one done most recently, not First workout (review S1)', () => {
+    const sessions = [logged('a', '2026-06-01', { routineName: 'Legs' }), logged('b', '2026-08-01', { routineName: 'Back' }), logged('c', '2026-07-01', { routineName: 'Chest' })];
+    expect(recommendSession([], sessions, ref(nth(sessions, 1)))).toEqual({ key: 'name:back', basis: { kind: 'from', lastDone: on('2026-08-01') } });
   });
 
   it('excludes the type just done unless it is the only active one', () => {
-    const sessions = [imported('old', '2026-07-01', { Arms: 9 }), imported('b', '2026-10-09', { Back: 9 })];
-    const types = deriveSessionTypes({ routines: [], sessions, now: NOW });
-    const rec = recommendSession(types, [], ref(nth(sessions, 1)));
-    expect(rec).toEqual({ key: 'name:back', basis: { kind: 'longest_gap', lastDone: on('2026-10-09') } });
+    const sessions = [logged('old', '2026-07-01', { routineName: 'Arms' }), logged('b', '2026-10-09', { routineName: 'Back' })];
+    expect(recommendSession([], sessions, ref(nth(sessions, 1)))).toEqual({ key: 'name:back', basis: { kind: 'longest_gap', lastDone: on('2026-10-09') } });
   });
 
-  it('with one type, that type (`From …`)', () => {
-    const sessions = [imported('b', '2026-10-09', { Back: 9 })];
-    const types = deriveSessionTypes({ routines: [], sessions, now: NOW });
-    expect(recommendSession(types, [], ref(nth(sessions, 0)))).toEqual({ key: 'name:back', basis: { kind: 'single', lastDone: on('2026-10-09') } });
-  });
-
-  it('with one type done long ago, still that type; with none, null (First workout)', () => {
-    const sessions = [imported('b', '2026-06-01', { Back: 9 })];
-    const types = deriveSessionTypes({ routines: [], sessions, now: NOW });
-    expect(recommendSession(types, [], ref(nth(sessions, 0)))?.basis.kind).toBe('single');
+  it('with one type, that type (`From …`), even done long ago; with none, null (First workout)', () => {
+    const recent = [logged('b', '2026-10-09', { routineName: 'Back' })];
+    expect(recommendSession([], recent, ref(nth(recent, 0)))).toEqual({ key: 'name:back', basis: { kind: 'from', lastDone: on('2026-10-09') } });
+    const old = [logged('b', '2026-06-01', { routineName: 'Back' })];
+    expect(recommendSession([], old, ref(nth(old, 0)))?.basis.kind).toBe('from');
     expect(recommendSession([], [], null)).toBeNull();
+  });
+
+  it('breaks a tie on lastDone by key, the same every time', () => {
+    const sessions = [logged('b', '2026-10-05', { routineName: 'Back' }), logged('a', '2026-10-05', { routineName: 'Arms' }), logged('c', '2026-10-09', { routineName: 'Chest' })];
+    expect(recommendSession([], sessions, ref(nth(sessions, 2)))?.key).toBe('name:arms');
+    expect(recommendSession([], [...sessions].reverse(), ref(nth(sessions, 2)))?.key).toBe('name:arms');
+  });
+
+  it('never recommends a never-done routine, even as the only alternative to yesterday’s session (SI5)', () => {
+    const routines = [{ id: 'r-arms', name: 'Arms', exerciseCount: 4 }];
+    const sessions = [logged('b', '2026-10-10', { routineName: 'Back' })];
+    expect(recommendSession(routines, sessions, ref(nth(sessions, 0)))?.key).toBe('name:back');
+    expect(recommendSession(routines, [], null)).toBeNull();
   });
 
   it('follows the D19 rotation when the last workout came from a routine (equals nextInRotation)', () => {
@@ -193,19 +279,15 @@ describe('recommendSession (§3.3, SP5)', () => {
     ];
     // Push A has the longest gap, but the last workout was Pull A, so D19 wins: Legs.
     const sessions = [logged('legs', '2026-10-02', { routineId: 'r-legs', routineName: 'Legs' }), logged('push', '2026-09-30', { routineId: 'r-push', routineName: 'Push A' }), logged('pull', '2026-10-08', { routineId: 'r-pull', routineName: 'Pull A' })];
-    const types = deriveSessionTypes({ routines, sessions, now: NOW });
     const last = ref(nth(sessions, 2));
-    const d19 = nextInRotation(routines, last);
-    expect(d19.kind).toBe('routine');
-    const rec = recommendSession(types, routines, last);
-    expect(rec).toEqual({ key: 'routine:r-legs', basis: { kind: 'after', routineName: 'Pull A', at: on('2026-10-08') } });
+    expect(nextInRotation(routines, last).kind).toBe('routine');
+    expect(recommendSession(routines, sessions, last)).toEqual({ key: 'routine:r-legs', basis: { kind: 'after', routineName: 'Pull A', at: on('2026-10-08') } });
   });
 
   it('with one routine and the last workout from it: `Your only routine`', () => {
     const routines = [{ id: 'r-full', name: 'Full body', exerciseCount: 6 }];
     const sessions = [logged('f', '2026-10-08', { routineId: 'r-full', routineName: 'Full body' }), imported('i', '2026-10-01', { Legs: 9 })];
-    const types = deriveSessionTypes({ routines, sessions, now: NOW });
-    expect(recommendSession(types, routines, ref(nth(sessions, 0)))).toEqual({ key: 'routine:r-full', basis: { kind: 'only' } });
+    expect(recommendSession(routines, sessions, ref(nth(sessions, 0)))).toEqual({ key: 'routine:r-full', basis: { kind: 'only' } });
   });
 
   it('when the last workout is not from a routine, the longest gap replaces “repeat the last workout”', () => {
@@ -214,15 +296,27 @@ describe('recommendSession (§3.3, SP5)', () => {
       { id: 'r-pull', name: 'Pull A', exerciseCount: 5 },
     ];
     const sessions = [logged('push', '2026-10-03', { routineId: 'r-push', routineName: 'Push A' }), logged('pull', '2026-10-06', { routineId: 'r-pull', routineName: 'Pull A' }), logged('legs', '2026-10-10', { routineName: 'Legs' })];
-    const types = deriveSessionTypes({ routines, sessions, now: NOW });
     expect(nextInRotation(routines, ref(nth(sessions, 2))).kind).toBe('last_workout');
-    expect(recommendSession(types, routines, ref(nth(sessions, 2)))?.key).toBe('routine:r-push');
+    expect(recommendSession(routines, sessions, ref(nth(sessions, 2)))?.key).toBe('routine:r-push');
+  });
+
+  it('a last workout that joined a routine by name counts as that routine: excluded as just done (review N2)', () => {
+    const routines = [
+      { id: 'r-push', name: 'Push A', exerciseCount: 5 },
+      { id: 'r-pull', name: 'Pull A', exerciseCount: 5 },
+    ];
+    const sessions = [logged('push', '2026-10-01', { routineId: 'r-push' }), logged('legs', '2026-10-04', { routineName: 'Legs' }), logged('pull', '2026-10-09', { routineName: 'pull a' })];
+    const last = ref(nth(sessions, 2));
+    // Not started from the routine, so D19 has no rotation step.
+    expect(nextInRotation(routines, last).kind).toBe('last_workout');
+    const rec = recommendSession(routines, sessions, last);
+    expect(rec?.key).toBe('routine:r-push');
+    expect(rec?.key).not.toBe('routine:r-pull');
   });
 
   it('an unnamed app workout as the last workout excludes nothing', () => {
-    const sessions = [imported('a', '2026-10-05', { Legs: 9 }), imported('b', '2026-10-08', { Back: 9 }), logged('u', '2026-10-10')];
-    const types = deriveSessionTypes({ routines: [], sessions, now: NOW });
-    expect(recommendSession(types, [], ref(nth(sessions, 2)))?.key).toBe('name:legs');
+    const sessions = [logged('a', '2026-10-05', { routineName: 'Legs' }), logged('b', '2026-10-08', { routineName: 'Back' }), logged('u', '2026-10-10')];
+    expect(recommendSession([], sessions, ref(nth(sessions, 2)))?.key).toBe('name:legs');
   });
 });
 
@@ -230,8 +324,7 @@ describe('orderSessionTypes (SP-D3, SP2)', () => {
   it('orders recommended, longest gap first, New routines, then OLDER', () => {
     const { routines, sessions } = fixture();
     const types = deriveSessionTypes({ routines, sessions, now: NOW });
-    const rec = recommendSession(types, routines, ref(nth(sessions, sessions.length - 1)));
-    const ordered = orderSessionTypes(types, rec?.key ?? null);
+    const ordered = orderSessionTypes(types, 'name:legs');
     expect(ordered.current.map((t) => t.label)).toEqual(['Legs', 'Shoulders', 'Back', 'Chest', 'Arms']);
     expect(ordered.older.map((t) => t.label)).toEqual(['Full body']);
   });
@@ -264,6 +357,13 @@ describe('formatLastDone (§6)', () => {
     expect(formatLastDone(on('2026-09-28'), NOW)).toBe('13 days ago');
     expect(plain(formatLastDone(on('2026-09-27'), NOW))).toBe('27 Sep');
     expect(plain(formatLastDone(on('2026-08-14'), NOW))).toBe('14 Aug');
+  });
+
+  it('adds the year 11 or more calendar months back, so old imported history never reads as recent (review S4)', () => {
+    expect(plain(formatLastDone(on('2024-08-14'), NOW))).toBe('14 Aug 2024');
+    expect(plain(formatLastDone(on('2025-10-12'), NOW))).toBe('12 Oct 2025');
+    expect(plain(formatLastDone(on('2025-11-30'), NOW))).toBe('30 Nov 2025');
+    expect(plain(formatLastDone(on('2025-12-01'), NOW))).toBe('1 Dec');
   });
 
   it('counts calendar days in Ben’s zone, not 24-hour blocks', () => {
