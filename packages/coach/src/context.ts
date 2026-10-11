@@ -79,10 +79,10 @@ export interface CoachContextInput {
   openedFrom?: OpenedFrom;
 }
 
-export interface OpenedFrom {
-  screen: 'progress';
-  window: { days: number; from: string; to: string };
-}
+export type OpenedFrom =
+  | { screen: 'progress'; window: { days: number; from: string; to: string } }
+  /** Exercise detail (progress.md slice B): the exercise, its series and the chart's range. A frame only, no numbers. */
+  | { screen: 'progress_exercise'; exercise: string; series: string; range: { from: string; to: string } };
 
 export interface SessionSetView {
   setId: string;
@@ -196,8 +196,12 @@ export function buildYourData(input: CoachContextInput): YourData {
     checkIn: input.checkIn === null ? null : { score: input.checkIn.score, reasons: input.checkIn.reasons, quote: input.checkIn.note ?? null },
     memories: input.memories.filter((m) => m.status === 'active').map((m) => ({ text: m.text, savedOn: m.createdAtUtc.slice(0, 10) })),
     ...(input.builtInNext === undefined ? {} : { builtInNext: input.builtInNext.map((b) => ({ ...b })) }),
-    ...(input.openedFrom === undefined ? {} : { openedFrom: { screen: input.openedFrom.screen, window: { ...input.openedFrom.window } } }),
+    ...(input.openedFrom === undefined ? {} : { openedFrom: copyOpenedFrom(input.openedFrom) }),
   };
+}
+
+function copyOpenedFrom(o: OpenedFrom): OpenedFrom {
+  return o.screen === 'progress' ? { screen: 'progress', window: { ...o.window } } : { screen: 'progress_exercise', exercise: o.exercise, series: o.series, range: { ...o.range } };
 }
 
 /** Coaching knowledge only: approved rules and catalogue cues. Nothing personal is read here. */
@@ -307,7 +311,10 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
   if (y.painFlags.length > 0) yourData.push({ label: 'Pain flags', detail: y.painFlags.map((f) => f.exercise).join(', ') });
   if (y.checkIn !== null) yourData.push({ label: 'Check-in', detail: y.checkIn.quote === null ? `${String(y.checkIn.score)}/5` : `${String(y.checkIn.score)}/5, “${y.checkIn.quote}”` });
   if (y.memories.length > 0) yourData.push({ label: 'Memories', detail: plural(y.memories.length, 'memory', 'memories') });
-  if (y.openedFrom !== undefined) yourData.push({ label: 'Opened from', detail: `Progress · last ${String(y.openedFrom.window.days)} days` });
+  if (y.openedFrom !== undefined) {
+    const o = y.openedFrom;
+    yourData.push({ label: 'Opened from', detail: o.screen === 'progress' ? `Progress · last ${String(o.window.days)} days` : `Progress · ${o.exercise} · ${o.series}` });
+  }
   if (ctx.messagesSent > 0) yourData.push({ label: 'This conversation', detail: `last ${plural(ctx.messagesSent, 'message')}` });
   const k = ctx.coachingKnowledge;
   const notInUse = k.playbook.rules.filter((r) => r.status !== 'in use').length;

@@ -76,14 +76,16 @@ export type CoachEntry =
   | { kind: 'today' }
   /** Progress (progress.md §2.1, §4.4): a general thread, framed by the window on screen. */
   | { kind: 'progress'; days: ProgressWindowDays }
+  /** Exercise detail (progress.md slice B): a general thread framed by the exercise, its series and the chart's dates. */
+  | { kind: 'progress_exercise'; exerciseName: string; seriesLabel: string; from: string; to: string }
   | { kind: 'workout'; sessionId: string }
   | { kind: 'summary'; sessionId: string };
 
 /** Today and Progress: no workout attached; the general thread. */
-export type GeneralEntry = Extract<CoachEntry, { kind: 'today' | 'progress' }>;
+export type GeneralEntry = Extract<CoachEntry, { kind: 'today' | 'progress' | 'progress_exercise' }>;
 
 export function isGeneralEntry(entry: CoachEntry): entry is GeneralEntry {
-  return entry.kind === 'today' || entry.kind === 'progress';
+  return entry.kind === 'today' || entry.kind === 'progress' || entry.kind === 'progress_exercise';
 }
 
 /** Connection state as the coach UI needs it: the stored status, plus `offline` after a request failed for lack of network. */
@@ -244,6 +246,7 @@ export function createCoachService(deps: CoachServiceDeps) {
 
   /** Progress's window as dates in Ben's timezone, so the coach reads "this month" against what he sees. */
   function openedFromOf(p: UserProfile, entry: CoachEntry): OpenedFrom | undefined {
+    if (entry.kind === 'progress_exercise') return { screen: 'progress_exercise', exercise: entry.exerciseName, series: entry.seriesLabel, range: { from: entry.from, to: entry.to } };
     if (entry.kind !== 'progress') return undefined;
     const w = progressWindowAt(toMs(deps.now().utc), p.timezone, entry.days);
     return { screen: 'progress', window: { days: entry.days, from: w.from, to: w.to } };
