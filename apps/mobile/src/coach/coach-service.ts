@@ -52,6 +52,7 @@ import {
   type CoachTrigger,
   type OfferLogEntry,
   type SessionAdjustment,
+  type SessionAdjustmentTrigger,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 
@@ -93,7 +94,35 @@ export interface CoachAvailability {
  * change (CA6 revised, build 108 F2), shown as `change` and applied only on
  * Ben's Adjust, with Undo.
  */
-export type WorkoutOffer = CoachTrigger & { sessionExerciseId: string; by: 'coach' | 'rule'; change: string | null };
+export type WorkoutOffer = CoachTrigger & {
+  sessionExerciseId: string;
+  by: 'coach' | 'rule';
+  change: string | null;
+  /**
+   * The rule's offer only: what it was worked out on and would write (review
+   * coach-fallback S2). `Adjust` applies only if the change worked out again
+   * now touches the same sets with the same targets. Null for the coach's.
+   */
+  basis: RuleOfferBasis | null;
+};
+
+export interface RuleOfferBasis {
+  /** The workout's version the offer was computed on (recorded; a rest or set-value edit moves it on without changing the offer). */
+  baseVersion: number;
+  touchedSetIds: string[];
+  /** Each changed set's new target, in order (canonical JSON). */
+  targets: string;
+}
+
+function basisOf(a: SessionAdjustment): RuleOfferBasis {
+  const targets = a.plan.flatMap((e) => e.changes.flatMap((c) => (c.after === null ? [] : [{ setId: c.setId, after: c.after }])));
+  return { baseVersion: a.args.baseVersion, touchedSetIds: [...a.touchedSetIds], targets: JSON.stringify(targets) };
+}
+
+/** Whether the change worked out now is the one Ben was shown (rule 5: never applied to different sets or targets). */
+export function sameRuleChange(shown: RuleOfferBasis, now: RuleOfferBasis): boolean {
+  return shown.touchedSetIds.length === now.touchedSetIds.length && shown.touchedSetIds.every((id, i) => now.touchedSetIds[i] === id) && shown.targets === now.targets;
+}
 
 /** What Ben's `Adjust` on the rule's offer did. */
 export type RuleOfferResult =
@@ -553,7 +582,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       const session = await sessionOfSet(offer.setId);
       if (session === null) return null;
       const adjustment = await ruleAdjustment(session, offer).catch(() => null);
-      return adjustment === null ? null : { ...offer, by: 'rule', change: adjustment.change };
+      return adjustment === null ? null : { ...offer, by: 'rule', change: adjustment.change, basis: basisOf(adjustment) };
     },
 
     /**
@@ -573,12 +602,32 @@ export function createCoachService(deps: CoachServiceDeps) {
       if (session === null || session.session.status !== 'active') return { status: 'stale' };
       const adjustment = await ruleAdjustment(session, offer);
       if (adjustment === null) return { status: 'unchanged' };
-      if (adjustment.change !== offer.change) return { status: 'stale' };
-      const w = await applyBuiltInAdjustment(coachStore(), { ownerId: p.id, sessionId: session.session.id, adjustment, opId, now: deps.now() });
-      if (w.status === 'stale') return { status: 'stale' };
-      const fresh = await repos().sessions.get(session.session.id).catch(() => null);
-      if (fresh !== null) deps.onSessionChanged?.(fresh);
-      return { status: 'applied', record: w.record };
+      // Same sets, same targets, same words as shown (review S2); else it is a different change.
+      if (offer.basis === null || !sameRuleChange(offer.basis, basisOf(adjustment)) || adjustment.change !== offer.change) return { status: 'stale' };
+      return writeRuleChange(p.id, session.session.id, adjustment, opId);
+    },
+
+    /**
+     * Ben's own `Too hard` / `Too easy` chip when the coach can't answer
+     * (review coach-fallback S1; CLAUDE.md rule 3: when Ben asks, today's
+     * remaining sets change at once, with Undo; the built-in rule is the
+     * fallback with no AI). The rule's change to the focused exercise,
+     * applied now on the current version. One opId per tap.
+     */
+    async applyRuleRequest(input: { sessionId: string; sessionExerciseId: string; intent: 'too_hard' | 'too_easy'; opId: string }): Promise<RuleOfferResult> {
+      const p = await owner();
+      const opId = `built-in-ask:${input.opId}`;
+      const earlier = await coachStore()
+        .getAction(actionIdFor(opId))
+        .catch(() => null);
+      if (earlier !== null) return earlier.status === 'committed' ? { status: 'applied', record: earlier } : { status: 'stale' };
+      const session = await repos()
+        .sessions.getActive(p.id)
+        .catch(() => null);
+      if (session === null || session.session.id !== input.sessionId || !session.exercises.some((e) => e.id === input.sessionExerciseId)) return { status: 'stale' };
+      const adjustment = await ruleAdjustment(session, { kind: 'ben_asked', intent: input.intent, sessionExerciseId: input.sessionExerciseId, fact: input.intent === 'too_hard' ? 'Too hard' : 'Too easy' });
+      if (adjustment === null) return { status: 'unchanged' };
+      return writeRuleChange(p.id, session.session.id, adjustment, opId);
     },
   };
 
@@ -591,8 +640,16 @@ export function createCoachService(deps: CoachServiceDeps) {
     return active !== null && active.sets.some((x) => x.id === setId) ? active : null;
   }
 
-  /** The built-in rule's change for a trigger (pure `evaluateSessionAdjustment` with Ben's pain flags, check-in and gym). */
-  async function ruleAdjustment(a: SessionAggregate, trigger: Pick<CoachTrigger, 'kind' | 'setId' | 'fact'>): Promise<SessionAdjustment | null> {
+  async function writeRuleChange(ownerId: string, sessionId: string, adjustment: SessionAdjustment, opId: string): Promise<RuleOfferResult> {
+    const w = await applyBuiltInAdjustment(coachStore(), { ownerId, sessionId, adjustment, opId, now: deps.now() });
+    if (w.status === 'stale') return { status: 'stale' };
+    const fresh = await repos().sessions.get(sessionId).catch(() => null);
+    if (fresh !== null) deps.onSessionChanged?.(fresh);
+    return { status: 'applied', record: w.record };
+  }
+
+  /** The built-in rule's change for a trigger or Ben's request (pure `evaluateSessionAdjustment` with Ben's pain flags, check-in and gym). */
+  async function ruleAdjustment(a: SessionAggregate, trigger: SessionAdjustmentTrigger): Promise<SessionAdjustment | null> {
     const p = await owner();
     const [painFlags, checkIn, gymName] = await Promise.all([repos().painFlags.listActive(p.id), checkInOf(a), gymNameOf(a)]);
     return evaluateSessionAdjustment({ aggregate: a, trigger, painFlags, sessionPainUnspecified: unspecifiedPain(checkIn).active, gymName });
@@ -630,7 +687,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     await coachStore()
       .recordOffer(a.session.ownerId, { sessionId: a.session.id, ...entry, atUtc: deps.now().utc })
       .catch(() => undefined);
-    return { ...trigger, sessionExerciseId: set.sessionExerciseId, by: rule === null ? 'coach' : 'rule', change: rule?.change ?? null };
+    return { ...trigger, sessionExerciseId: set.sessionExerciseId, by: rule === null ? 'coach' : 'rule', change: rule?.change ?? null, basis: rule === null ? null : basisOf(rule) };
   }
 }
 

@@ -1,3 +1,8 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+
+import { StackRouter, type ParamListBase, type StackNavigationState } from '@react-navigation/routers';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
@@ -7,6 +12,8 @@ import type { SessionAggregate } from '@fizz/schemas';
 
 import type { WorkoutOffer } from '../src/coach/coach-service';
 import { nextTimeView } from '../src/coach/next-time-view';
+import { correctedSetToCheck, findOffer, NO_HELD_SETS, planOfferCheck } from '../src/coach/offer-check';
+import { returnToWorkout } from '../src/navigation/actions';
 import { whyView } from '../src/coach/sheet-view';
 import { coachCouldNotAnswer, offerCandidates, ruleOfferOutcome, slotView } from '../src/coach/slot-view';
 import { exerciseMenu } from '../src/workout/exercise-menu';
@@ -201,7 +208,49 @@ describe('Ben’s case: 62.5 kg × 3–6 planned, 2 reps logged', () => {
     expect(await s.coach.applyRuleOffer(offer)).toEqual({ status: 'unchanged' });
   });
 
-  it('no offer is possible: the last set, or a raise blocked by pain; nothing is shown or recorded', async () => {
+  it('S2: the same words on different sets is a different change: refused; a draft or rest edit since (version moved, same sets and targets) still applies', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    connection = NOT_CONNECTED;
+    const [s1, s2, s3] = work;
+    if (!s1 || !s2 || !s3) throw new Error('fixture');
+    const exId = s1.sessionExerciseId;
+    const agg = await log(s, sessionId, s1.id, 2, 'log-1');
+    const offer = await offerFor(s, agg, s1.id);
+    if (offer === null) throw new Error('no offer');
+    expect(offer.basis).toMatchObject({ baseVersion: agg.session.version, touchedSetIds: [s2.id, s3.id] });
+
+    // Ben adds a set during the rest: the remaining sets are now 2–4, all 62.5 kg × 3–6, so the words are the same.
+    const added = await s.workout.dispatch(sessionId, { type: 'add_set', at: h.now(), opId: 'add-1', sessionExerciseId: exId, newSetId: h.ids(), setType: null });
+    if (!added.ok) throw new Error(added.error.message);
+    const again = await s.coach.ruleOfferFor(offer);
+    expect(plain(again?.change)).toBe(plain(offer.change));
+    expect(again?.basis?.touchedSetIds).toHaveLength(3);
+    expect(await s.coach.applyRuleOffer(offer)).toEqual({ status: 'stale' });
+    const now = (await s.workout.load(sessionId))?.aggregate;
+    expect(now?.sets.filter((x) => x.status === 'pending' && x.setType !== 'warmup').every((x) => x.planned.load?.value === 62.5)).toBe(true);
+    // The offer worked out on this state applies.
+    if (again === null) throw new Error('no offer');
+    expect((await s.coach.applyRuleOffer(again)).status).toBe('applied');
+  });
+
+  it('S2: a rest edit after the offer moves the version but not the change: Adjust still applies', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    connection = NOT_CONNECTED;
+    const [s1, s2, s3] = work;
+    if (!s1 || !s2 || !s3) throw new Error('fixture');
+    const agg = await log(s, sessionId, s1.id, 2, 'log-1');
+    const offer = await offerFor(s, agg, s1.id);
+    if (offer === null) throw new Error('no offer');
+    const rest = await s.workout.dispatch(sessionId, { type: 'set_rest_after', at: h.now(), opId: 'rest-1', setId: s3.id, seconds: 90, scope: 'set', expectedVersion: agg.session.version });
+    if (!rest.ok) throw new Error(rest.error.message);
+    expect(rest.aggregate.session.version).toBeGreaterThan(agg.session.version);
+    const r = await s.coach.applyRuleOffer(offer);
+    expect(r.status).toBe('applied');
+    // A rule offer without its basis (an old shape) is never applied.
+    expect(await s.coach.applyRuleOffer({ ...offer, triggerId: 'other', basis: null })).toEqual({ status: 'stale' });
+  });
+
+  it('no offer is possible on the last set; nothing is shown or recorded', async () => {
     const { s, sessionId, work } = await bensWorkout();
     connection = NOT_CONNECTED;
     const [s1, s2, s3] = work;
@@ -325,6 +374,147 @@ describe('Ben’s case: 62.5 kg × 3–6 planned, 2 reps logged', () => {
     const row = (await s.workout.summary(sessionId, 'not_connected'))?.nextTime?.rows.find((r) => r.exerciseName === 'Bench press');
     expect(row).toMatchObject({ kind: 'held', decision: 'hold_after_miss' });
     expect(plain(row?.target)).toBe('Target 57.5 kg × 3–6');
+  });
+});
+
+describe('S1: Ben’s own Too hard / Too easy with no coach: the built-in rule applies at once, with Undo', () => {
+  it('not connected: chips are shown; Too hard after set 1 lowers sets 2–3 now (no AI call), set 1 untouched; a double tap applies once; Undo restores', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    connection = NOT_CONNECTED;
+    const [s1, s2, s3] = work;
+    if (!s1 || !s2 || !s3) throw new Error('fixture');
+    const logged = await log(s, sessionId, s1.id, 6, 'log-1');
+    const r = await s.coach.applyRuleRequest({ sessionId, sessionExerciseId: s1.sessionExerciseId, intent: 'too_hard', opId: 'tap-1' });
+    if (r.status !== 'applied') throw new Error(r.status);
+    expect(r.record).toMatchObject({ author: 'checks', turnId: null, reason: 'Too hard. Lighter load for the remaining sets (8%).' });
+    expect((await s.coach.applyRuleRequest({ sessionId, sessionExerciseId: s1.sessionExerciseId, intent: 'too_hard', opId: 'tap-1' })).status).toBe('applied');
+    const after = (await s.workout.load(sessionId))?.aggregate;
+    expect(after?.sets.find((x) => x.id === s1.id)?.actual).toMatchObject({ reps: 6, load: { value: 62.5 } });
+    for (const id of [s2.id, s3.id]) expect(after?.sets.find((x) => x.id === id)?.planned).toMatchObject({ load: { value: 57.5 }, source: 'built_in_rule' });
+    // One version step: the double tap replayed.
+    expect(after?.session.version).toBe(logged.session.version + 1);
+    expect(slotView({ pending: false, adjustment: r.record, outcome: null, offer: null, workout: after ?? null })).toMatchObject({ kind: 'banner', tag: 'Rule', canUndo: true });
+    expect(model.requests).toEqual([]);
+    const undone = await s.coach.undo(r.record.actionId, `undo:${r.record.actionId}`);
+    expect(undone.result.status).toBe('written');
+    expect((await s.workout.load(sessionId))?.aggregate.sets.find((x) => x.id === s3.id)?.planned.load?.value).toBe(62.5);
+  });
+
+  it('offline after a failed chip turn: the rule’s change applies; too easy with a pain flag changes nothing', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    const s1 = work[0];
+    if (!s1) throw new Error('fixture');
+    model = new StepModel([() => [{ type: 'error', error: 'network' }]]);
+    const threadId = await s.coach.resolveThread({ kind: 'workout', sessionId });
+    const turn = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId, input: { kind: 'chip', chip: 'too_easy' }, turnId: h.ids() });
+    expect(coachCouldNotAnswer(turn)).toBe(true);
+    expect((await s.coach.availability()).status).toBe('offline');
+    const easy = await s.coach.applyRuleRequest({ sessionId, sessionExerciseId: s1.sessionExerciseId, intent: 'too_easy', opId: 'tap-2' });
+    if (easy.status !== 'applied') throw new Error(easy.status);
+    const ex = (await s.workout.load(sessionId))?.aggregate.exercises[0];
+    if (!ex) throw new Error('fixture');
+    await s.coach.undo(easy.record.actionId, `undo:${easy.record.actionId}`);
+    await s.pain.flagMovement({ exerciseId: ex.exerciseId, exerciseName: 'Bench press', opId: 'pain-1' });
+    expect(await s.coach.applyRuleRequest({ sessionId, sessionExerciseId: s1.sessionExerciseId, intent: 'too_easy', opId: 'tap-3' })).toEqual({ status: 'unchanged' });
+    expect(ruleOfferOutcome('unchanged').text).toBe('Nothing to change.');
+    // Another workout's row, or none: nothing changes.
+    expect(await s.coach.applyRuleRequest({ sessionId, sessionExerciseId: 'nope', intent: 'too_hard', opId: 'tap-4' })).toEqual({ status: 'stale' });
+  });
+});
+
+describe('S3: the screen wiring for F4 and F7, through the same functions the screens call', () => {
+  const router = StackRouter({});
+  const options = { routeNames: ['Tabs', 'Workout', 'EditSet'], routeParamList: {}, routeGetIdList: {} };
+  type State = StackNavigationState<ParamListBase>;
+  const apply = (state: State, action: Parameters<typeof router.getStateForAction>[1]): State => {
+    const next = router.getStateForAction(state, action, options);
+    if (next === null) throw new Error(action.type);
+    return next as State;
+  };
+
+  it('F4: correct 6 → 2 in the sheet, return to the one Workout with `corrected`, and its check offers the rule’s change', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    connection = NOT_CONNECTED;
+    const s1 = work[0];
+    if (!s1) throw new Error('fixture');
+    const logged = await log(s, sessionId, s1.id, 6, 'log-1');
+    let held = NO_HELD_SETS;
+    const first = planOfferCheck(held, logged, s1.id);
+    held = first.held;
+    expect((await findOffer(s.coach, { aggregate: logged, check: first.check, resting: first.resting, pending: false })).offer).toBeNull();
+
+    let nav = apply(router.getInitialState(options), { type: 'NAVIGATE', payload: { name: 'Workout', params: {} } });
+    nav = apply(nav, { type: 'NAVIGATE', payload: { name: 'EditSet', params: { sessionId, setId: s1.id } } });
+    // EditSetScreen.save(): correctSet, then back with the corrected key.
+    const set = logged.sets.find((x) => x.id === s1.id);
+    const fixed = await s.workout.correctSet({ sessionId, setId: s1.id, expectedSetVersion: set?.version ?? 0, patch: { reps: 2 }, opId: 'fix-1' });
+    if (!fixed.ok) throw new Error(fixed.message);
+    nav = apply(nav, returnToWorkout({ corrected: { setId: s1.id, key: 'fix-1' } }));
+    expect(nav.routes.map((r) => r.name)).toEqual(['Tabs', 'Workout']);
+    const corrected = (nav.routes[1]?.params as { corrected?: { setId: string; key: string } }).corrected;
+
+    // WorkoutScreen's F4 effect: reload, then afterLog on the corrected set.
+    const reloaded = (await s.workout.load(sessionId))?.aggregate;
+    const id = correctedSetToCheck(corrected, reloaded);
+    expect(id).toBe(s1.id);
+    if (reloaded === undefined || id === null) throw new Error('fixture');
+    const plan = planOfferCheck(held, reloaded, id);
+    const found = await findOffer(s.coach, { aggregate: reloaded, check: plan.check, resting: plan.resting, pending: false });
+    expect(found.availability.status).toBe('not_connected');
+    expect(found.offer).toMatchObject({ by: 'rule', fact: '2 reps on set 1 (target 3–6)' });
+    // A pending set that wasn't logged is never checked.
+    expect(correctedSetToCheck({ setId: work[2]?.id ?? '' }, reloaded)).toBeNull();
+  });
+
+  it('F7: a superset’s A1 missed with no rest running, then B1 starts the round’s rest: the offer for A, by the rule, offline', async () => {
+    const { services: s0 } = await h.launch();
+    const gymId = await setUpGym(h, s0);
+    const first = await logWorkout(h, s0, gymId, [
+      { exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }, { load: 60, reps: 8 }] },
+      { exercise: 'Lat pulldown', sets: [{ load: 50, reps: 10 }, { load: 50, reps: 10 }, { load: 50, reps: 10 }] },
+    ]);
+    h.clockMs += 2 * 86_400_000;
+    const started = await s0.workout.start({ gymId, opId: 'start-ss', checkIn: null, nextOf: first });
+    if (!started.ok) throw new Error(started.error.message);
+    const sessionId = started.aggregate.session.id;
+    // Make A and B a superset in the saved workout (no service builds one outside a routine), then relaunch.
+    await h.forceClose();
+    const file = readdirSync(h.dir).find((f) => /^training-\d+\.db$/.test(f));
+    if (file === undefined) throw new Error('no db');
+    const db = new DatabaseSync(join(h.dir, file));
+    db.prepare("UPDATE session_exercises SET superset_group = 'A' WHERE session_id = ?").run(sessionId);
+    db.close();
+    const { services: s } = await h.launch();
+    connection = NOT_CONNECTED;
+    const agg = (await s.workout.load(sessionId))?.aggregate;
+    if (!agg) throw new Error('no workout');
+    expect(agg.exercises.every((e) => e.supersetGroup === 'A')).toBe(true);
+    const [a, b] = [...agg.exercises].sort((x, y) => x.order - y.order);
+    const firstOf = (exId: string | undefined) => agg.sets.filter((x) => x.sessionExerciseId === exId && x.setType !== 'warmup').sort((x, y) => x.index - y.index)[0];
+    const a1 = firstOf(a?.id);
+    const b1 = firstOf(b?.id);
+    if (!a1 || !b1 || !a) throw new Error('fixture');
+    expect(a1.planned.reps?.min).toBeGreaterThan(2);
+
+    let held = NO_HELD_SETS;
+    const afterA = await log(s, sessionId, a1.id, 2, 'log-a1');
+    expect(afterA.restTimer?.status === 'running').toBe(false);
+    const p1 = planOfferCheck(held, afterA, a1.id);
+    held = p1.held;
+    expect(p1).toMatchObject({ check: [], resting: false });
+    expect(held.ids).toEqual([a1.id]);
+
+    const afterB = await log(s, sessionId, b1.id, b1.planned.reps?.max ?? 10, 'log-b1');
+    expect(afterB.restTimer?.status).toBe('running');
+    const p2 = planOfferCheck(held, afterB, b1.id);
+    expect(p2.check).toEqual([b1.id, a1.id]);
+    expect(p2.held.ids).toEqual([]);
+    const found = await findOffer(s.coach, { aggregate: afterB, check: p2.check, resting: p2.resting, pending: false });
+    expect(found.offer).toMatchObject({ by: 'rule', kind: 'reps_short', setId: a1.id, sessionExerciseId: a.id });
+    expect(found.offer?.change).toMatch(/^Next sets?: /);
+    // Held sets are per workout: another workout's ID starts empty.
+    expect(planOfferCheck({ sessionId: 'other', ids: [a1.id] }, afterB, b1.id).check).toEqual([b1.id]);
+    expect(model.requests).toEqual([]);
   });
 });
 

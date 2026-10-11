@@ -47,6 +47,7 @@ import {
 } from '../../ui';
 import { CoachSlot } from './CoachSlot';
 import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './WorkoutCoach';
+import { correctedSetToCheck } from '../../coach/offer-check';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu } from '../../workout/exercise-menu';
 import { shouldCueRestEnd } from '../../workout/cues';
@@ -466,7 +467,8 @@ export function WorkoutScreen() {
   useEffect(() => {
     if (corrected === undefined || !firstTime(`corrected:${corrected.key}`)) return;
     void reload().then((d) => {
-      if (d?.aggregate.sets.some((x) => x.id === corrected.setId && x.status === 'completed')) afterLog(d.aggregate, corrected.setId);
+      const id = correctedSetToCheck(corrected, d?.aggregate);
+      if (d && id !== null) afterLog(d.aggregate, id);
     });
   }, [corrected?.key]);
   // An unanswered offer goes when the rest ends (§3.2).
@@ -1169,7 +1171,7 @@ export function WorkoutScreen() {
         />
       </View>
 
-      <AdjustRow coach={coach} sessionId={session.id} onPain={() => void painFromAdjust(focus)} />
+      <AdjustRow coach={coach} sessionId={session.id} sessionExerciseId={focus.sessionExerciseId} onPain={() => void painFromAdjust(focus)} />
       {/* In Ready the slot sits under the header; offers only ever show during rest (§2.3). */}
       {!resting && coach.slot !== null && coach.slot.kind !== 'offer' ? <CoachSlot>{<CoachSlotContent coach={coach} />}</CoachSlot> : null}
 

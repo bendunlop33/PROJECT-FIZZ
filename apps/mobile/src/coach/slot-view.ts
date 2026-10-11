@@ -151,7 +151,8 @@ export interface AdjustControlView {
 export function adjustControlView(a: CoachAvailability): AdjustControlView {
   if (a.status === 'ok') return { caption: null, chips: ['too_hard', 'too_easy', 'pain', 'type'], line: null };
   if (a.status === 'offline') return { caption: 'Offline', chips: ['too_hard', 'too_easy', 'pain', 'type'], line: null };
-  return { caption: a.status === 'not_connected' ? 'Not connected' : 'Unavailable', chips: ['pain'], line: null };
+  // No coach: Too hard / Too easy are the built-in rule's (review coach-fallback S1); typing needs the coach.
+  return { caption: a.status === 'not_connected' ? 'Not connected' : 'Unavailable', chips: ['too_hard', 'too_easy', 'pain'], line: null };
 }
 
 export const ADJUST_CHIP_LABEL: Record<AdjustControlView['chips'][number], string> = { too_hard: 'Too hard', too_easy: 'Too easy', pain: 'Pain', type: 'Type…' };
