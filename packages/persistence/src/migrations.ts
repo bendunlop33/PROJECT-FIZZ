@@ -17,11 +17,23 @@ import { MIGRATION_0010 } from './schema/0010-workout-gaps';
 export interface Migration {
   version: number;
   name: string;
+  /** The SQL, when the migration is plain SQL (`sqlMigration`); checked by `emptyMigrations`. */
+  sql?: string;
   up(tx: SqlExecutor): Promise<void>;
 }
 
 export function sqlMigration(version: number, name: string, sql: string): Migration {
-  return { version, name, up: (tx) => tx.exec(sql) };
+  return { version, name, sql, up: (tx) => tx.exec(sql) };
+}
+
+/**
+ * Versions whose SQL is empty: placeholders that must never reach Ben's
+ * phone (a database migrated past one never runs the real migration). The
+ * iOS build's check job fails while any exists (review gaps S5;
+ * `packages/persistence/test/release-migrations.test.ts`).
+ */
+export function emptyMigrations(migrations: readonly Migration[] = MIGRATIONS): number[] {
+  return migrations.filter((m) => m.sql !== undefined && m.sql.trim() === '').map((m) => m.version);
 }
 
 /** The app's migrations, in order. The last one's `version` is the current schema version. */
@@ -37,7 +49,8 @@ export const MIGRATIONS: readonly Migration[] = [
   // workout-library (9) branches. They are no-ops here only so this branch's
   // migration can keep its number, 10. Whoever merges replaces them with the
   // real ones; no build with these placeholders may reach Ben's phone (a
-  // database migrated past them would never run the real 8 and 9).
+  // database migrated past them would never run the real 8 and 9). The iOS
+  // workflow's release check fails while they are empty (`emptyMigrations`).
   sqlMigration(8, 'reserved-delete-workouts', ''),
   sqlMigration(9, 'reserved-workout-library', ''),
   sqlMigration(10, 'workout-gaps', MIGRATION_0010),
