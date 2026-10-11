@@ -51,13 +51,22 @@ export const BUILT_IN_SESSION_RULE_NAME = {
 
 export interface SessionAdjustmentInput {
   aggregate: SessionAggregate;
-  /** The trigger that fired on a logged set. */
-  trigger: { kind: CoachTriggerKind; setId: string; fact: string };
+  /**
+   * What asked for the change: a trigger that fired on a logged set, or Ben's
+   * own `Too hard` / `Too easy` chip on an exercise when the coach can't
+   * answer (review coach-fallback S1; CA6, CLAUDE.md rule 3).
+   */
+  trigger: SessionAdjustmentTrigger;
   painFlags: readonly PainFlag[];
   /** The check-in said `Pain` with no movement chosen (rule 9: no increases today). */
   sessionPainUnspecified: boolean;
   gymName: string | null;
 }
+
+export type SessionAdjustmentTrigger =
+  | { kind: CoachTriggerKind; setId: string; fact: string }
+  /** `fact`: app text for the request (`Too hard`). Fewer reps, when used, is one fewer than the planned top. */
+  | { kind: 'ben_asked'; intent: 'too_hard' | 'too_easy'; sessionExerciseId: string; fact: string };
 
 export interface SessionAdjustment {
   sessionExerciseId: string;
@@ -122,9 +131,11 @@ function harderLoad(cur: Load, eq: EquipmentInstance): Load | null {
   return (step.value - now) / now <= BUILT_IN_SESSION_RULE.maxLoadRisePct / 100 + EPS ? { value: step.value, unit: eq.unit, convention: eq.loadConvention } : null;
 }
 
-function fewerReps(kind: CoachTriggerKind, planned: RepRange, achieved: number | null): RepRange | null {
-  if (achieved === null) return null;
-  const n = Math.max(1, kind === 'reps_short' ? achieved : achieved - 1);
+function fewerReps(kind: SessionAdjustmentTrigger['kind'], planned: RepRange, achieved: number | null): RepRange | null {
+  // Ben asked with no logged set to go by: one fewer than the planned top.
+  const base = kind === 'ben_asked' ? planned.max : achieved;
+  if (base === null) return null;
+  const n = Math.max(1, kind === 'reps_short' ? base : base - 1);
   if (n >= planned.max) return null;
   return { min: Math.min(planned.min, n), max: n };
 }
@@ -146,15 +157,16 @@ function pct(from: Load, to: Load): number {
 export function evaluateSessionAdjustment(input: SessionAdjustmentInput): SessionAdjustment | null {
   const state = input.aggregate;
   if (state.session.status !== 'active') return null;
-  const logged = state.sets.find((s) => s.id === input.trigger.setId);
+  const t = input.trigger;
+  const logged = t.kind === 'ben_asked' ? null : state.sets.find((s) => s.id === t.setId);
   if (logged === undefined) return null;
-  const ex = state.exercises.find((e) => e.id === logged.sessionExerciseId);
+  const ex = state.exercises.find((e) => e.id === (t.kind === 'ben_asked' ? t.sessionExerciseId : logged?.sessionExerciseId));
   if (ex === undefined) return null;
   const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
-  const intent: SessionAdjustment['intent'] = input.trigger.kind === 'rpe_low' ? 'too_easy' : 'too_hard';
+  const intent: SessionAdjustment['intent'] = t.kind === 'ben_asked' ? t.intent : t.kind === 'rpe_low' ? 'too_easy' : 'too_hard';
   if (intent === 'too_easy' && (activeFlag(input.painFlags, ex.exerciseId) !== null || input.sessionPainUnspecified)) return null;
 
-  const achieved = logged.actual?.reps ?? null;
+  const achieved = logged?.actual?.reps ?? null;
   const pending = liveInOrder(state, ex.id).filter((s) => s.status === 'pending' && s.setType !== 'warmup');
   const changes: PendingSetChange[] = [];
   const levers = new Set<Lever>();
@@ -201,7 +213,7 @@ export function evaluateSessionAdjustment(input: SessionAdjustmentInput): Sessio
     exercises: [{ sessionExerciseId: ex.id, sets: changes, addSet: null, removeSetId: null }],
     reason,
   };
-  const checked = validateTodayAdjustment({ aggregate: state, args, intent, opId: `built-in:${input.trigger.setId}`, painFlags: input.painFlags, sessionPainUnspecified: input.sessionPainUnspecified, gymName: input.gymName, messagePain: null });
+  const checked = validateTodayAdjustment({ aggregate: state, args, intent, opId: `built-in:${t.kind === 'ben_asked' ? `asked:${t.sessionExerciseId}` : t.setId}`, painFlags: input.painFlags, sessionPainUnspecified: input.sessionPainUnspecified, gymName: input.gymName, messagePain: null });
   if (checked.status !== 'apply') return null;
   const applied = checked.exercises.flatMap((e) => e.changes).filter((c) => c.before !== null && c.after !== null);
   if (applied.length === 0) return null;

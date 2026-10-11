@@ -355,3 +355,56 @@ describe('the rule’s change through the reducer: labelled, versioned, idempote
     if (r2.ok) expect(r2.state.session.version).toBe(r1.state.session.version);
   });
 });
+
+describe('Ben’s own Too hard / Too easy with no coach (review coach-fallback S1)', () => {
+  const asked = (sp: Spec, intent: 'too_hard' | 'too_easy', over: { painFlags?: PainFlag[]; sessionPainUnspecified?: boolean } = {}) =>
+    evaluateSessionAdjustment({
+      aggregate: workout(sp),
+      trigger: { kind: 'ben_asked', intent, sessionExerciseId: id(1), fact: intent === 'too_hard' ? 'Too hard' : 'Too easy' },
+      painFlags: over.painFlags ?? [],
+      sessionPainUnspecified: over.sessionPainUnspecified ?? false,
+      gymName: 'Main Gym',
+    });
+
+  it('too hard: the same lighter step as a trigger, recorded with Ben’s request as the fact', () => {
+    const a = asked({ eq: BAR, convention: 'total', load: kg(62.5), reps: [3, 6], logged: { reps: 6 } }, 'too_hard');
+    expect(targets(a)).toEqual([
+      { set: 2, load: 57.5, unit: 'kg', reps: { min: 3, max: 6 } },
+      { set: 3, load: 57.5, unit: 'kg', reps: { min: 3, max: 6 } },
+    ]);
+    expect(a?.reason).toBe('Too hard. Lighter load for the remaining sets (8%).');
+    expect(a?.rule.facts).toEqual(['Too hard']);
+  });
+
+  it('per-hand dumbbells and lb equipment stay in their own unit and convention', () => {
+    const d = asked({ eq: DB, convention: 'per_hand', load: kg(25, 'per_hand'), reps: [8, 10], logged: { reps: 10 } }, 'too_hard');
+    expect(nb(d?.change)).toBe('Next sets: 22.5 kg each × 8–10');
+    const l = asked({ eq: LB_BAR, convention: 'total', unit: 'lb', load: lb(135), reps: [5, 5], logged: { reps: 5 } }, 'too_hard');
+    for (const t of targets(l)) expect(t.unit).toBe('lb');
+  });
+
+  it('too hard with no lighter load (bodyweight): one fewer rep than the planned top, never below 1', () => {
+    const a = asked({ eq: null, convention: 'bodyweight', load: null, reps: [8, 10], logged: { reps: null } }, 'too_hard');
+    expect(targets(a).map((t) => t.reps)).toEqual([{ min: 8, max: 9 }, { min: 8, max: 9 }]);
+    expect(asked({ eq: null, convention: 'bodyweight', load: null, reps: [1, 1], logged: { reps: null } }, 'too_hard')).toBeNull();
+  });
+
+  it('assisted: one step more assistance; too easy: one step less', () => {
+    const sp: Spec = { eq: ASSIST, convention: 'assistance', load: kg(20, 'assistance'), reps: [6, 8], logged: { reps: 8 } };
+    expect(targets(asked(sp, 'too_hard')).every((t) => t.load !== null && t.load > 20)).toBe(true);
+    expect(nb(asked(sp, 'too_easy')?.change)).toBe('Next sets: Assist 15 kg × 6–8');
+  });
+
+  it('too easy: never with a pain flag or pain at check-in (rule 9); too hard still applies', () => {
+    const sp: Spec = { eq: BAR, convention: 'total', load: kg(60), reps: [8, 10], logged: { reps: 10 } };
+    expect(asked(sp, 'too_easy')).not.toBeNull();
+    expect(asked(sp, 'too_easy', { painFlags: [flag()] })).toBeNull();
+    expect(asked(sp, 'too_easy', { sessionPainUnspecified: true })).toBeNull();
+    expect(asked(sp, 'too_hard', { painFlags: [flag()] })).not.toBeNull();
+  });
+
+  it('an unknown exercise row: nothing', () => {
+    const a = evaluateSessionAdjustment({ aggregate: workout({ eq: BAR, convention: 'total', load: kg(60), reps: [8, 10], logged: { reps: 10 } }), trigger: { kind: 'ben_asked', intent: 'too_hard', sessionExerciseId: id(999), fact: 'Too hard' }, painFlags: [], sessionPainUnspecified: false, gymName: null });
+    expect(a).toBeNull();
+  });
+});
