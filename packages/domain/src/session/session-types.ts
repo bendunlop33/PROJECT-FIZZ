@@ -16,10 +16,11 @@
  * - `formatLastDone` (§6): `Today` / `Yesterday` / `N days ago` / `14 Aug` /
  *   `14 Aug 2025`.
  *
- * Ben's two open decisions (session-picker §9) are switches, both off until
- * he decides: `SESSION_PICKER_DECISIONS`. Until then imports are never
- * grouped by Category and Up next keeps D19's "last workout" fallback (the
- * service resolves it; `recommendSession` is the Decision 2 path).
+ * Ben's two open decisions (session-picker §9), both off until he decides:
+ * `SESSION_PICKER_DECISIONS`. Decision 1 is a switch; Decision 2 is only a
+ * marker until the service resolver is wired to `recommendSession`. Until
+ * then imports are never grouped by Category and Up next keeps D19's "last
+ * workout" fallback.
  */
 import type { ZonedTimestamp } from '@fizz/schemas';
 
@@ -44,13 +45,16 @@ const YEAR_AFTER_MONTHS = 11;
  * - `groupImportsByCategory` (Decision 1): unnamed FitNotes imports become
  *   types by their `Category` label. Also needs P-I3: imported workouts
  *   can't be started yet, so such a type is `startable: false` (ADR 0016).
- * - `longestGapFallback` (Decision 2): without a D19 rotation, Up next is
- *   the type with the longest gap (`recommendSession`) instead of the last
- *   workout's next session.
+ * - `longestGapFallback` (Decision 2): a marker, not a switch yet (review
+ *   r2 S4). The rule is built and tested (`recommendSession`), but the
+ *   services don't read this flag: Today, the picker, the overview and the
+ *   Plan all take Up next from the app's D19 resolver (`resolveUpNext`).
+ *   Its type is `false` so turning it on fails to compile until that
+ *   resolver branches on it (with its eyebrow, §2.3 `UP NEXT · LAST DONE`).
  */
 export interface SessionPickerDecisions {
   groupImportsByCategory: boolean;
-  longestGapFallback: boolean;
+  longestGapFallback: false;
 }
 
 export const SESSION_PICKER_DECISIONS: Readonly<SessionPickerDecisions> = Object.freeze({ groupImportsByCategory: false, longestGapFallback: false });
