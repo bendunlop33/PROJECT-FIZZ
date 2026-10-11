@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { applyDraftCommand, basisSlots, reduceSession, type DraftCommand } from '@fizz/domain';
+import { applyDraftCommand, basisSlots, reduceSession, stableStringify, type DraftCommand } from '@fizz/domain';
 import { at, hotelFixture, id, OWNER, profile } from '@fizz/domain/testing';
 import { ActionRecordSchema, type ActionRecord, type DraftBasis, type PreStartDraft, type Routine, type SessionAggregate, type ZonedTimestamp } from '@fizz/schemas';
 
-import { checkIntegrity, createBackup, DatabaseManager, migrate, MIGRATIONS, openStore, fenceHolds, type SqlDriver, type SqlValue, type Store } from '../src/index';
+import { checkIntegrity, createBackup, DatabaseManager, migrate, MIGRATIONS, openStore, fenceHolds, readUserVersion, sha256Hex, type BackupFile, type SqlDriver, type SqlValue, type Store } from '../src/index';
 import { nodeDatabaseHost } from '../src/node/index';
 import { memoryDriver, tempDir } from './helpers';
 
@@ -375,5 +375,123 @@ describe('a populated schema-6 database migrates in place to 7', () => {
     await expect(v7.db.write((tx) => tx.run('DELETE FROM coach_actions'))).rejects.toThrow(/never deleted/);
     expect((await checkIntegrity(v7.db)).ok).toBe(true);
     await v7.close();
+  });
+});
+
+describe('review fixes: the template Undo keeps a newer swap (S4), rollback discards drafts (N4), a v6 backup with coach actions (S6)', () => {
+  it('Undo of the template change leaves a newer today-swap on that slot as it is', async () => {
+    const store = await openStore(memoryDriver());
+    await seeded(store);
+    const draft = change(null, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: id(805) } }, 'op-1');
+    await store.repos.drafts.save(draft, null);
+    const r1 = routine();
+    const before = r1.exercises[0];
+    if (!before) throw new Error('no slot');
+    const after = { ...before, exerciseId: id(805), equipmentId: null };
+    const action = updateAction('apply-s4', before, after, { id: draft.id, editId: draft.edits[0]?.editId ?? '' });
+    expect((await store.repos.drafts.applyRoutineChange({ ownerId: OWNER, routine: { ...r1, version: 2, exercises: r1.exercises.map((x, i) => (i === 0 ? after : x)) }, expectedRoutineVersion: 1, action, at: at(30) })).status).toBe('written');
+    // Then Ben swaps that slot to something else for today.
+    const d2 = await store.repos.drafts.get(draft.id);
+    if (!d2) throw new Error('no draft');
+    const d3 = change(d2, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: id(806) } }, 'op-2', at(35));
+    expect((await store.repos.drafts.save(d3, d2.version)).ok).toBe(true);
+    const undo = ActionRecordSchema.parse({ ...action, actionId: id(6300), opId: 'undo-s4', detail: { kind: 'undo', undoneActionId: action.actionId, what: 'the change to Push A', restored: [], alreadyLogged: [] }, createdAt: at(40) });
+    const undone = await store.repos.drafts.undoRoutineChange({ ownerId: OWNER, undo, at: at(40), newRoutineAtUtc: at(40).utc });
+    expect(undone).toMatchObject({ status: 'written', routine: { version: 3 } });
+    expect((await store.repos.routines.get(ROUTINE))?.exercises[0]).toEqual(before);
+    // The draft is untouched: today's machine pick stays.
+    const d4 = await store.repos.drafts.get(draft.id);
+    expect(d4?.version).toBe(d3.version);
+    expect(d4?.edits.filter((e) => e.removed === null)).toMatchObject([{ kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: id(806) }]);
+    await store.close();
+  });
+
+  it('a rollback never brings back an open draft', async () => {
+    const m = await managerIn();
+    await seeded(m.store);
+    const open = change(null, { type: 'edit', edit: { kind: 'skip', slotKey: id(903) } }, 'op-1');
+    await m.store.repos.drafts.save(open, null);
+    const made = await createBackup(m.store, { at: at(100), app: { name: 'PROJECT-FIZZ', version: '0.1.0', build: null } });
+    // Change something so the restore isn't identical; the draft stays open in the old database.
+    await m.store.repos.routines.save({ ...routine(), name: 'Push B', version: 2 }, 1);
+    expect(await m.restore(made.text, at(200))).toMatchObject({ ok: true, status: 'restored' });
+    expect(await m.store.repos.drafts.open(OWNER, BASIS)).toBeNull();
+    expect(await m.rollback(at(300))).toMatchObject({ ok: true });
+    expect((await m.store.repos.routines.get(ROUTINE))?.name).toBe('Push B');
+    expect(await m.store.repos.drafts.get(open.id)).toMatchObject({ status: 'discarded', version: open.version + 1, updatedAtUtc: at(300).utc });
+    expect((await checkIntegrity(m.store.db)).ok).toBe(true);
+    await m.close();
+  });
+
+  it('a schema-6 backup with coach actions restores through migration 7 (the coach_actions rebuild)', async () => {
+    const src = await managerIn();
+    await seeded(src.store);
+    const a = startedFrom(null, 'v6-backup');
+    await src.store.repos.sessions.save(a, null);
+    const coachRecord = ActionRecordSchema.parse({
+      actionId: id(6400),
+      turnId: null,
+      opId: 'mem-b',
+      status: 'committed',
+      author: 'coach',
+      detail: { kind: 'save_memory', memoryId: id(6401), text: 'Trains before work' },
+      failure: null,
+      reason: null,
+      evidenceRefs: [],
+      guardNotes: [],
+      entityVersions: [],
+      undoneBy: null,
+      createdAt: at(5),
+    });
+    await src.store.db.write((tx) =>
+      tx.run('INSERT INTO coach_actions (id, owner_id, op_id, turn_id, session_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES (?, ?, ?, NULL, NULL, ?, ?, 1, ?, ?, ?)', [
+        coachRecord.actionId,
+        OWNER,
+        coachRecord.opId,
+        'save_memory',
+        'committed',
+        coachRecord.createdAt.utc,
+        coachRecord.createdAt.utc,
+        JSON.stringify(coachRecord),
+      ]),
+    );
+    const made = await createBackup(src.store, { at: at(100), app: { name: 'PROJECT-FIZZ', version: '0.1.0', build: null } });
+    await src.close();
+    // As build 6 wrote it: no drafts table, no today_edits / skipped_by columns.
+    const file = JSON.parse(made.text) as BackupFile;
+    const tables = { ...file.tables };
+    Reflect.deleteProperty(tables, 'pre_start_drafts');
+    tables.sessions = (tables.sessions ?? []).map((row) => {
+      const copy = { ...row };
+      delete copy.today_edits;
+      return copy;
+    });
+    tables.session_sets = (tables.session_sets ?? []).map((row) => {
+      const copy = { ...row };
+      delete copy.skipped_by;
+      return copy;
+    });
+    expect(tables.coach_actions).toHaveLength(1);
+    const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
+    const body: Partial<BackupFile> = { ...file, schemaVersion: 6, tables, counts };
+    delete body.checksum;
+    const v6 = JSON.stringify({ ...body, checksum: { algorithm: 'sha-256', value: sha256Hex(stableStringify(body)) } });
+
+    const dst = await managerIn();
+    expect(await dst.restore(v6, at(200))).toMatchObject({ ok: true, status: 'restored', preview: { needsMigration: true } });
+    expect(await dst.store.db.read((q) => readUserVersion(q))).toBe(7);
+    expect(await dst.store.repos.sessions.get(a.session.id)).toEqual(a);
+    expect(await dst.store.repos.coach.getAction(coachRecord.actionId)).toEqual(coachRecord);
+    expect(await dst.store.repos.drafts.listByOwner(OWNER)).toEqual([]);
+    // The rebuilt table takes the new kind and still refuses deletes.
+    const r1 = routine();
+    const before = r1.exercises[0];
+    if (!before) throw new Error('no slot');
+    const after = { ...before, exerciseId: id(805), equipmentId: null };
+    const applied = await dst.store.repos.drafts.applyRoutineChange({ ownerId: OWNER, routine: { ...r1, version: 2, exercises: r1.exercises.map((x, i) => (i === 0 ? after : x)) }, expectedRoutineVersion: 1, action: updateAction('apply-b', before, after, null), at: at(210) });
+    expect(applied.status).toBe('written');
+    await expect(dst.store.db.write((tx) => tx.run('DELETE FROM coach_actions'))).rejects.toThrow(/never deleted/);
+    expect((await checkIntegrity(dst.store.db)).ok).toBe(true);
+    await dst.close();
   });
 });

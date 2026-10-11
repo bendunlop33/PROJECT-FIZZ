@@ -358,6 +358,8 @@ export class DatabaseManager {
         // Opening a missing file creates an empty one; never switch to that.
         if ((await readUserVersion(driver)) === 0) throw new RestoreAbort(missing);
         store = await openStore(driver, { migrations: this.options.migrations });
+        // As after a restore (ADR 0022 §5): the database switched to never starts from its old pre-start drafts (review N4).
+        await discardOpenDrafts(store.db, at.utc);
         const integrity = await checkIntegrity(store.db, latestVersion(this.options.migrations));
         if (!integrity.ok) {
           throw new RestoreAbort({ code: 'integrity_failed', message: 'The earlier database failed its integrity check; staying on the current one.' });

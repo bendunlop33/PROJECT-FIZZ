@@ -130,7 +130,8 @@ export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
   /**
    * Undo of `Change Push A too ›` (TE4): the routine slot goes back exactly
    * as it was, if the routine is still at the version Apply produced, and
-   * the draft's swap edit comes back (a new copy) while that draft is open.
+   * the draft's swap edit comes back (a new copy) while that draft is open
+   * and the slot has no newer swap of Ben's.
    * Otherwise nothing changes (`changed_since`: `Can't undo: Push A changed
    * since.`). The undo is its own `ActionRecord` (author `ben`), written with
    * the original's `undoneBy` in the same transaction; idempotent on its opId.
@@ -171,7 +172,8 @@ export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
             basis: current.basis,
             newDraftId: current.id,
             slots: [],
-            command: { type: 'restore', editIds: [d.draft.editId] },
+            // A newer swap Ben made on that slot since stays: his later choice is never replaced without a word (review S4).
+            command: { type: 'restore', editIds: [d.draft.editId], keepLive: true },
           });
           if (change.kind === 'write') {
             const r = await saveDocumentIn(tx, DRAFT_SPEC, change.next, current.version);
