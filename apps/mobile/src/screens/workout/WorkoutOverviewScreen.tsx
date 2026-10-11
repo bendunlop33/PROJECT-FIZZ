@@ -34,7 +34,7 @@ import {
   rowDetail,
   targetsChanged,
 } from '../../workout/overview';
-import { checkInAtStart, createGuard, saveScore, scoreStepOf, startEmptyFromOverview, startFromOverview, undoGymSwitch, type ScoreStep } from '../../workout/overview-start';
+import { checkInAtStart, createGuard, saveScore, scoreStepOf, staleStartToast, startEmptyFromOverview, startFromOverview, undoGymSwitch, type ScoreStep } from '../../workout/overview-start';
 import {
   changeCardState,
   createOpIds,
@@ -286,7 +286,8 @@ export function WorkoutOverviewScreen() {
           navigation.dispatch(openStartedWorkout(r.outcome.notice ? { toast: { kind: 'info', text: r.outcome.notice } } : undefined));
         } else if (r.kind === 'stale') {
           // Nothing was created and the page changed: the rows re-render with what Start would make now (rule 5).
-          setToast({ text: OVERVIEW_COPY.stale });
+          // The re-read that closed a draft at midnight says so (TE5); the next read no longer can (review S2).
+          setToast({ text: staleStartToast(r.page, { stale: OVERVIEW_COPY.stale, cleared: TODAY_EDITS_COPY.earlierCleared }) });
           reload();
         } else if (r.kind === 'active') {
           changed();
@@ -488,6 +489,7 @@ export function WorkoutOverviewScreen() {
   }
 
   const undoEdit = (editId: string, version?: number | null) => writeEdit(`undo:${editId}`, (b) => services.overview.undoEdit({ ...b, editId }), version);
+  const clearSwap = (slotKey: string) => writeEdit(`clear-swap:${slotKey}`, (b) => services.overview.clearSwap({ ...b, slotKey }));
   const restoreEdits = (editIds: readonly string[], version?: number | null) => writeEdit(`restore:${editIds.join(',')}`, (b) => services.overview.restoreEdits({ ...b, editIds }), version);
 
   async function skipRow(r: OverviewData['view']['rows'][number]) {
@@ -517,7 +519,8 @@ export function WorkoutOverviewScreen() {
     const go = async () => {
       setSwap(null);
       if (tap === 'undo') {
-        if (current?.edit?.kind === 'swapped') await undoEdit(current.edit.editId);
+        // `<original> · planned` is the plan itself, however many swaps were chained on the slot (S1).
+        await clearSwap(slotKey);
         return;
       }
       const from = current?.edit?.kind === 'swapped' ? current.edit.fromName : (current?.name ?? '');
@@ -541,7 +544,8 @@ export function WorkoutOverviewScreen() {
     if (key === 'swap') void openSwap(r.slotKey);
     if (key === 'skip') void skipRow(r);
     if (key === 'do_first') void moveRow(r, 'first');
-    if ((key === 'undo_swap' || key === 'bring_back') && r.edit !== null) void undoEdit(r.edit.editId);
+    if (key === 'undo_swap') void clearSwap(r.slotKey);
+    if (key === 'bring_back' && r.edit !== null) void undoEdit(r.edit.editId);
   }
 
   function customAction(r: OverviewData['view']['rows'][number], name: RowCustomAction['name']) {

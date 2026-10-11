@@ -73,6 +73,7 @@ import {
   buildWorkoutOverview,
   applyDraftCommand,
   basisSlots,
+  doableHere,
   draftBasisKey,
   draftIsLive,
   editCountOf,
@@ -834,6 +835,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return Object.fromEntries((await repos().gyms.listByOwner(ownerId).catch(() => [])).map((g) => [g.id, g.name]));
   }
 
+  /** The substitutes today's swaps plan with (their own GS3 step 2 at this gym). */
+  function swapExerciseIds(today: TodayEditsInput | undefined): string[] {
+    return today === undefined ? [] : [...today.swaps.values()].map((sp) => sp.exercise.id);
+  }
+
   /** GS3 step 2 for each exercise: the item it last used at `gymId`. History that can't be read is skipped. */
   async function lastUsedFor(ownerId: string, exerciseIds: Iterable<string>, gymId: string): Promise<(exerciseId: string) => string | null> {
     const map = new Map<string, string | null>();
@@ -1009,7 +1015,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const ref = routine ? (await finishedRefs(p.id)).find((f) => isFromRoutine(f, routine)) ?? null : null;
     const source = ref ? await repos().sessions.get(ref.sessionId).catch(() => null) : null;
     const targets = source ? await nextTargetsOf(p, source, req.today ?? null).catch(() => null) : null;
-    const lastUsedHere = routine ? await lastUsedFor(p.id, routine.exercises.map((e) => e.exerciseId), req.gymId) : undefined;
+    // Swapped slots' substitutes too, so the dry run, the Swap sheet and Start map the same item (GS3 step 2, review S3).
+    const lastUsedHere = routine ? await lastUsedFor(p.id, [...routine.exercises.map((e) => e.exerciseId), ...swapExerciseIds(req.todayEdits)], req.gymId) : undefined;
     if (req.noteSource === true && ref !== null && !req.preview) await noteStartFrom(p.id, ref.sessionId, req.opId);
     const service = req.newId ? createSessionService(repos(), req.newId) : domain();
     const r = await service.startRoutine({
@@ -1264,7 +1271,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     }
     const targets = await nextTargetsOf(p, resolved.source, today).catch(() => null);
     // The same history mapping Start uses, so the preview is what Start creates (gym-switch GS3).
-    const lastUsedHere = await lastUsedFor(p.id, resolved.source.exercises.map((e) => e.exerciseId), gymId);
+    const lastUsedHere = await lastUsedFor(p.id, [...resolved.source.exercises.map((e) => e.exerciseId), ...swapExerciseIds(todayEdits)], gymId);
     const r = await createSessionService(repos(), newId).startFromSession({
       ownerId: p.id,
       gymId,
@@ -1372,9 +1379,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const targets = await nextTargetsOf(p, source, today).catch(() => null);
         // No derived name (`Push`) is stored as if Ben chose it; titles are worked out when shown (review S3).
         // Same history mapping as the overview's preview, so Start gives what the page showed (gym-switch GS3).
-        const lastUsedHere = await lastUsedFor(p.id, source.exercises.map((e) => e.exerciseId), req.gymId);
         const resolvedN = await resolveNext(p, source.session.id);
         const t = resolvedN === null ? { draft: null, input: NO_TODAY } : await todayFor(p, resolvedN, req.gymId, undefined, today);
+        const lastUsedHere = await lastUsedFor(p.id, [...source.exercises.map((e) => e.exerciseId), ...swapExerciseIds(t.input)], req.gymId);
         if (draftMismatch(req.draft, t.draft) && !(await repos().sessions.findByStartOperation(p.id, req.opId))) return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
         const fenced = withDraftFence(fence, t.draft);
         await noteStartFrom(p.id, source.session.id, req.opId);
@@ -2207,8 +2214,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const source = await repos().sessions.get(last.sessionId);
         if (!source) return null;
         const targets = await nextTargetsOf(p, source);
-        const lastUsedHere = await lastUsedFor(p.id, source.exercises.map((e) => e.exerciseId), gymId);
         const t = await todayFor(p, { kind: 'next', source, basis: { kind: 'next_from', at: source.session.startedAt } }, gymId, undefined, null);
+        const lastUsedHere = await lastUsedFor(p.id, [...source.exercises.map((e) => e.exerciseId), ...swapExerciseIds(t.input)], gymId);
         const r = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview-next:${last.sessionId}`, at: ctx.now(), sourceSessionId: last.sessionId, preview: true, targets, lastUsedHere, today: t.input });
         if (!r.ok) return null;
         const derived = await titleFor(source.exercises.map((e) => e.exerciseId));
@@ -2265,7 +2272,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const basis = basisOf(resolved);
       const current = await drafts.open(p.id, basis);
       const base = basisSlots(slotBasisOf(resolved));
-      const resolvedEdits = current === null ? null : resolveTodayEdits(base, current.edits);
+      // A swap to an exercise that can't be found any more is pruned too, as the plan treats it (review N3).
+      const known = new Set<string>();
+      for (const e of current === null ? [] : liveEdits(current.edits)) if (e.kind === 'swap' && (await exerciseById(e.toExerciseId)) !== null) known.add(e.toExerciseId);
+      const resolvedEdits = current === null ? null : resolveTodayEdits(base, current.edits, (id) => known.has(id));
       const command = make({ base, today: resolvedEdits === null ? base : editedSlots(base, resolvedEdits) });
       if (command === null) return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
       const c = applyDraftCommand({
@@ -2302,6 +2312,24 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       }
     } catch {
       return { ok: false, reason: 'failed', message: DRAFT_COPY.failed };
+    }
+  }
+
+  /** Whether `toExerciseId` may replace the slot's exercise today: it exists, measures the same way, and this gym can do it. */
+  async function swapAllowed(req: DraftTarget, slotKey: string, toExerciseId: string): Promise<boolean> {
+    try {
+      const p = await owner();
+      const gymId = req.gymId ?? 'typical-gym-preview';
+      const resolved = await resolveOverview(p, req.target, { gymId, gymEquipment: req.gymId === null ? req.typicalEquipment : undefined });
+      if (resolved === null) return true; // writeDraft refuses it as stale.
+      const slot = basisSlots(slotBasisOf(resolved)).find((x) => x.slotKey === slotKey);
+      if (slot === undefined) return true; // writeDraft refuses it as `slot_gone`.
+      const [planned, to] = await Promise.all([exerciseById(slot.exerciseId), exerciseById(toExerciseId)]);
+      if (planned === null || to === null || to.measurement !== planned.measurement) return false;
+      const equipment = req.gymId === null ? (req.typicalEquipment ?? []) : await repos().equipment.listByGym(req.gymId);
+      return doableHere(to, { id: gymId, name: '', equipment });
+    } catch {
+      return false;
     }
   }
 
@@ -2434,8 +2462,21 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * changes. The first edit creates the draft (`expectedDraftVersion: null`).
      */
     async edit(req: DraftTarget & { edit: { kind: 'swap'; slotKey: string; toExerciseId: string } | { kind: 'skip'; slotKey: string } }): Promise<DraftWrite> {
-      if (req.edit.kind === 'swap' && (await ensureExercise(req.edit.toExerciseId)) === null) return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
+      if (req.edit.kind === 'swap') {
+        // The Swap sheet's own checks, again here (review S5): the same measurement, doable at this gym. Not in today's plan: `applyDraftCommand`.
+        if (!(await swapAllowed(req, req.edit.slotKey, req.edit.toExerciseId))) return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
+        if ((await ensureExercise(req.edit.toExerciseId)) === null) return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
+      }
       return writeDraft(req, () => ({ type: 'edit', edit: req.edit }));
+    },
+
+    /**
+     * `Undo swap` and `<original> · planned` in `Swap again` (§2.4, TE-A6):
+     * the slot goes back to the plan, however many swaps were chained on it.
+     * The toast's `Undo` (`undoEdit`) still steps back one swap.
+     */
+    clearSwap(req: DraftTarget & { slotKey: string }): Promise<DraftWrite> {
+      return writeDraft(req, () => ({ type: 'clear_swap', slotKey: req.slotKey }));
     },
 
     /** `Do first`, `Move up`, `Move down` (Reorder): the whole new order is worked out here, a superset moving as one (TE10). */

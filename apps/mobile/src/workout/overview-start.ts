@@ -67,8 +67,9 @@ export async function startFromOverview(ports: OverviewStartPorts, req: { page: 
   // Today's edits go with Start (ADR 0022): the draft the page showed, re-checked in the start's write.
   let r = await ports.start({ ...base, expectedPreviewKey: req.page.view.previewKey, draft: draftOf(req.page) });
   if (!r.ok && r.error.code === 'stale_preview') {
+    // This read is the one that closes a draft past midnight (`cleared`): its page is the one returned, never a second read (review S2).
     const fresh = await ports.reload().catch(() => null);
-    if (fresh === null || fresh.view.previewKey === req.page.view.previewKey || !samePage(req.page.view, fresh.view) || (fresh.view.gym?.id ?? null) !== base.gymId) return { kind: 'stale', page: fresh };
+    if (fresh === null || fresh.cleared || fresh.view.previewKey === req.page.view.previewKey || !samePage(req.page.view, fresh.view) || (fresh.view.gym?.id ?? null) !== base.gymId) return { kind: 'stale', page: fresh };
     r = await ports.start({ ...base, startOf: fresh.startOf, expectedPreviewKey: fresh.view.previewKey, draft: draftOf(fresh) });
     if (!r.ok && r.error.code === 'stale_preview') return { kind: 'stale', page: await ports.reload().catch(() => null) };
   }
@@ -76,6 +77,14 @@ export async function startFromOverview(ports: OverviewStartPorts, req: { page: 
   const failure = startFailure(r.error.code);
   // A stale result here means the re-read was still the same page and failed again: say so rather than loop.
   return failure.kind === 'stale' ? { kind: 'stale', page: null } : failure;
+}
+
+/**
+ * The toast after a stale Start (§3, TE5): `Earlier edits cleared` when the
+ * re-read closed the draft at midnight, else `Targets updated`.
+ */
+export function staleStartToast(page: Pick<OverviewData, 'cleared'> | null, copy: { stale: string; cleared: string }): string {
+  return page?.cleared === true ? copy.cleared : copy.stale;
 }
 
 /** How a score tap on the page ended, as Start sees it (review r2 S1): `reasons` opened What's up? over the page. */

@@ -133,7 +133,7 @@ export interface LoggedSet {
  * Start an empty workout, add each exercise (by name) with the gym's first
  * compatible equipment, log the given sets, and finish. Returns the session ID.
  */
-export async function logWorkout(h: Harness, s: AppServices, gymId: string, plan: { exercise: string; sets: LoggedSet[] }[]): Promise<string> {
+export async function logWorkout(h: Harness, s: AppServices, gymId: string, plan: { exercise: string; sets: LoggedSet[]; /** The item's name; default the first compatible one. */ equipment?: string }[]): Promise<string> {
   const started = await s.workout.start({ gymId, opId: `start-${String(h.clockMs)}`, checkIn: { kind: 'skipped', atUtc: h.now().utc } });
   if (!started.ok) throw new Error(started.error.message);
   const sessionId = started.aggregate.session.id;
@@ -141,7 +141,9 @@ export async function logWorkout(h: Harness, s: AppServices, gymId: string, plan
     const picks = await s.workout.pickerExercises(sessionId, item.exercise);
     const pick = picks.find((p) => p.exercise.name === item.exercise);
     if (!pick) throw new Error(`no exercise ${item.exercise}`);
-    const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: h.ids() });
+    const chosen = item.equipment === undefined ? pick.equipment[0] : pick.equipment.find((e) => e.name === item.equipment);
+    if (item.equipment !== undefined && chosen === undefined) throw new Error(`no ${item.equipment} for ${item.exercise}`);
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: chosen?.id ?? null, opId: h.ids() });
     if (!added.ok) throw new Error(added.error.message);
     const ex = added.aggregate.exercises.at(-1);
     if (!ex) throw new Error('no exercise');

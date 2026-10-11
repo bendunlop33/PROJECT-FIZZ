@@ -142,7 +142,7 @@ Panel lines added: `SWAPPED  For Bench press · today` and `SKIPPED  Today`.
 ```
 
 - Up to 8 rows, in `rankSubstitutions` order. The trailing value is the **target** the row will show after the pick (same function, same fit).
-- From `Swap again`, the original is listed first as `Bench press · planned`. Picking it equals `Undo swap`.
+- From `Swap again`, the original is listed first as `Bench press · planned`. Picking it equals `Undo swap`: both return the slot to the plan, however many swaps were chained (`clearSwap`). Only the toast's `Undo` steps back one swap (review S1; pending Ben).
 - Empty: `No swaps at Main gym.` (one line, no button).
 - A row with `⚠ May hurt` asks `DB bench press may hurt` · `Shoulder pain flagged 6 Oct.` [Add anyway] [Choose another] first (EL9). `Choose another` keeps the sheet open.
 
@@ -226,7 +226,7 @@ With no edits the path is unchanged: Start → Start → Log (OV2).
 
 | Action | Call | Undo |
 |---|---|---|
-| Swap today / Swap again | `services.overview.edit({target, edit: {kind: 'swap', slotKey, toExerciseId}, expectedDraftVersion, opId})` | `services.overview.undoEdit({draftId, editId, expectedDraftVersion, opId})` (restores the edit it replaced) |
+| Swap today / Swap again | `services.overview.edit({target, edit: {kind: 'swap', slotKey, toExerciseId}, expectedDraftVersion, opId})` | Toast: `services.overview.undoEdit({draftId, editId, expectedDraftVersion, opId})` (restores the edit it replaced). `Undo swap` / `· planned`: `services.overview.clearSwap({slotKey, expectedDraftVersion, opId})` (back to the plan) |
 | Skip today / Bring back | `edit({kind: 'skip', slotKey})` / `undoEdit` | Toast or `Bring back` |
 | Do first / `↑` / `↓` | `edit({kind: 'order', slotKeys})` (replaces the previous `order`) | Toast (Do first) or `Reset order` |
 | Reset today's edits | `services.overview.resetEdits({draftId, expectedDraftVersion, opId})` | Toast `Today's edits reset` [Undo] → `restoreEdits` |
@@ -296,7 +296,7 @@ No reassurance lines, no rule names, no explanations outside `Why?`.
 
 ### 6.3 New service calls
 
-`services.overview.edit`, `undoEdit`, `resetEdits`, `restoreEdits`, `swapCandidates({target, gymId, slotKey})` (wraps `rankSubstitutions`); `services.overview.load` returns the draft, its outcomes and drops stale/redundant edits on its next write; `services.overview.start` accepts `draft`; `services.routines.applyTemplateSwap` / `undoTemplateSwap`. `services.next.preview` (Today's Up next) reads through `planWithTodayEdits` with the open draft.
+`services.overview.edit`, `undoEdit`, `clearSwap`, `resetEdits`, `restoreEdits`, `swapCandidates({target, gymId, slotKey})` (wraps `rankSubstitutions`); `services.overview.load` returns the draft, its outcomes and drops stale/redundant edits on its next write; `services.overview.start` accepts `draft`; `services.routines.applyTemplateSwap` / `undoTemplateSwap`. `services.next.preview` (Today's Up next) reads through `planWithTodayEdits` with the open draft.
 
 ### 6.4 Schema (ADR 0022)
 

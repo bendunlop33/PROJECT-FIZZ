@@ -505,6 +505,9 @@ export function createAppServices(deps: AppServicesDeps) {
     async resetOrder(req: Omit<Parameters<typeof loop.overview.resetOrder>[0], 'typicalEquipment'>) {
       return loop.overview.resetOrder({ ...req, ...(await typicalFor(req.gymId)) });
     },
+    async clearSwap(req: Omit<Parameters<typeof loop.overview.clearSwap>[0], 'typicalEquipment'>) {
+      return loop.overview.clearSwap({ ...req, ...(await typicalFor(req.gymId)) });
+    },
     async restoreEdits(req: Omit<Parameters<typeof loop.overview.restoreEdits>[0], 'typicalEquipment'>) {
       return loop.overview.restoreEdits({ ...req, ...(await typicalFor(req.gymId)) });
     },
