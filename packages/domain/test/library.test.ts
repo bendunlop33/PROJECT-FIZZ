@@ -20,13 +20,16 @@ import {
   routineChangeLines,
   routineEditDirty,
   routineFromPlan,
+  routineGymIssues,
   routineIssues,
+  saveSheetDetail,
+  unnamedWorkoutName,
   setRoutineRotation,
   NBSP,
   type LibraryRoutineInput,
   type SessionTypeSession,
 } from '../src/index';
-import { at, id, idGen, kg, OWNER, routineExercise, template } from './fixtures';
+import { at, barbell, id, idGen, kg, OWNER, routineExercise, stack, template } from './fixtures';
 import { apply, BENCH, FACE, HANG, ROW, setsFor, startFixture } from './session-fixture';
 
 const plain = (s: string) => s.replaceAll(NBSP, ' ');
@@ -272,5 +275,22 @@ describe('buildLibraryView (§A2.1, WL-A1)', () => {
     expect(v.history[0]?.label).toBe('Day 0');
     expect(v.historyTotal).toBe(12);
     expect(buildLibraryView({ routines: [], types: t, upNextRoutineId: null, now: NOW, sort: 'recent', showAllHistory: true })).toMatchObject({ historyTotal: 0 });
+  });
+});
+
+describe('library helpers', () => {
+  it('gym issues: exercises with no equipment here; bodyweight never; unknown counts', () => {
+    const r = { exercises: [routineExercise(1, { exerciseId: BENCH }), routineExercise(2, { exerciseId: ROW }), routineExercise(3, { exerciseId: HANG }), routineExercise(4, { exerciseId: id(4040) })] };
+    const info = new Map([
+      [BENCH, { defaultLoadConvention: 'total' as const, compatibleEquipment: ['barbell' as const] }],
+      [ROW, { defaultLoadConvention: 'stack' as const, compatibleEquipment: ['weight_stack' as const] }],
+      [HANG, { defaultLoadConvention: 'bodyweight' as const, compatibleEquipment: ['bodyweight_station' as const] }],
+    ]);
+    expect(routineGymIssues(r, info, [stack()])).toBe(2);
+    expect(routineGymIssues(r, info, [stack(), barbell()])).toBe(1);
+  });
+  it('unnamed name and save detail', () => {
+    expect(plain(unnamedWorkoutName({ utc: '2026-10-11T08:00:00.000Z', tz: 'Europe/London' }))).toBe('Workout · Sun 11 Oct');
+    expect(saveSheetDetail(made())).toBe('3 exercises · 6 sets');
   });
 });

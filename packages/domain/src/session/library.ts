@@ -1,4 +1,8 @@
-import type { RestSetting, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, ZonedTimestamp } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, RestSetting, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, ZonedTimestamp } from '@fizz/schemas';
+
+import { dayMonthText } from '../display';
+import { weekdayOf } from '../calendar';
+import { equipmentForExercise, needsNoEquipment } from '../exercise-equipment';
 
 import { toMs } from '../time';
 import { isDeleted, isInRotation, rotationRoutines, ROUTINE_NAME_MAX, routineCounts, routineWrite, withDefaultMain, type RoutineChange } from './routines';
@@ -12,6 +16,10 @@ import { blockSets, partRootOf } from './gym-switch';
  * Code and data say `Routine`; only the UI says `Workouts` (WL1). Every
  * write is versioned and idempotent through `routineWrite` (WL10, rule 5).
  */
+
+function exercisesWord(n: number): string {
+  return `${String(n)} ${n === 1 ? 'exercise' : 'exercises'}`;
+}
 
 export const ROUTINE_MAX_EXERCISES = 40;
 export const ROUTINE_MAX_SETS = 30;
@@ -322,6 +330,32 @@ export function routineFromPlan(input: RoutineFromPlanInput): Routine | null {
   };
 }
 
+/**
+ * `⚠ 1 not here` (§A2.1): exercises that need equipment this gym has none
+ * of. An exercise missing from Ben's list and the catalogue counts too (it
+ * can't be checked at all).
+ */
+export function routineGymIssues(r: Pick<Routine, 'exercises'>, exercises: ReadonlyMap<string, Pick<Exercise, 'defaultLoadConvention' | 'compatibleEquipment'>>, gym: readonly EquipmentInstance[]): number {
+  return r.exercises.filter((e) => {
+    const info = exercises.get(e.exerciseId);
+    if (info === undefined) return true;
+    return !needsNoEquipment(info) && equipmentForExercise(info, gym).length === 0;
+  }).length;
+}
+
+const WEEKDAY_WORD: Record<string, string> = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
+
+/** The save sheet's name for a workout with none (§A2.5): `Workout · Sun 11 Oct`. */
+export function unnamedWorkoutName(at: ZonedTimestamp): string {
+  return `Workout · ${WEEKDAY_WORD[weekdayOf(toMs(at.utc), at.tz)] ?? ''} ${dayMonthText(at.utc, at.tz)}`;
+}
+
+/** What the save sheet will save (§A2.5): `5 exercises · 15 sets`. */
+export function saveSheetDetail(r: Pick<Routine, 'exercises'>): string {
+  const c = routineCounts(r);
+  return `${exercisesWord(c.exercises)} · ${String(c.sets)} ${c.sets === 1 ? 'set' : 'sets'}`;
+}
+
 // ---------------------------------------------------------------------------
 // The list (routines.md §A2.1)
 
@@ -391,7 +425,6 @@ export interface LibraryView {
 /** History rows shown before `Show all (N)` (§A2.1). */
 export const LIBRARY_HISTORY_CAP = 10;
 
-const exercisesWord = (n: number): string => `${String(n)} ${n === 1 ? 'exercise' : 'exercises'}`;
 const minutesWord = (m: number): string => `≈ ${String(m)} min`;
 
 function sayLastDone(at: ZonedTimestamp | null, now: ZonedTimestamp): string {
