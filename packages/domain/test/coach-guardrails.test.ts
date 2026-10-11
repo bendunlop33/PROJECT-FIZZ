@@ -554,9 +554,10 @@ describe('evaluateCoachTrigger (rule T, D20)', () => {
     expect(evaluateCoachTrigger(trig({ actual: { reps: 8, rpe: 9, rir: null } }), 1)).toBeNull();
   });
 
-  it('reps short by 2 from the bottom of the range (CA5)', () => {
+  it('a range fires on any rep below its floor (CA5 revised, build 108 F1)', () => {
     expect(evaluateCoachTrigger(trig({ actual: { reps: 6, rpe: null, rir: null } }), 2)?.fact).toBe('6 reps on set 2 (target 8–10)');
-    expect(evaluateCoachTrigger(trig({ actual: { reps: 7, rpe: null, rir: null } }), 2)).toBeNull();
+    expect(evaluateCoachTrigger(trig({ actual: { reps: 7, rpe: null, rir: null } }), 2)?.fact).toBe('7 reps on set 2 (target 8–10)');
+    expect(evaluateCoachTrigger(trig({ actual: { reps: 8, rpe: null, rir: null } }), 2)).toBeNull();
   });
 
   it('"too easy" needs a plan of 8+ and never fires above 12 reps', () => {

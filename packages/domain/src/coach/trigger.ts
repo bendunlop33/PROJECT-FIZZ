@@ -22,7 +22,12 @@ export interface CoachTriggerThresholds {
   rpeHigh: number;
   /** …and the plan's effort was at most this (rule T). */
   plannedAtMostForHigh: number;
-  /** "Too hard" when reps fall short of the bottom of the target range by at least this. */
+  /**
+   * "Too hard" on a single-number target (8) when reps fall short of it by at
+   * least this. A range target (3–6) fires on any rep below its floor
+   * (build 108 fix F1: Ben is shown the top of the range, so a 2 against
+   * `× 6` is a big miss even though it is only 1 below the floor).
+   */
   repsShortBy: number;
   /** "Too easy" when logged effort is at most this RPE. */
   rpeLow: number;
@@ -81,6 +86,16 @@ function plannedAllOut(planned: TriggerSetInput['planned']): boolean {
   return (planned.rpe !== null && planned.rpe >= 10) || (planned.rir !== null && planned.rir <= 0);
 }
 
+/**
+ * Reps short of target (rule T "short of target", F1 option A): below the
+ * floor of a range, or short of a single number by `repsShortBy`.
+ */
+export function repsShort(range: { min: number; max: number }, reps: number, thresholds: Pick<CoachTriggerThresholds, 'repsShortBy'> = DEFAULT_COACH_TRIGGER_THRESHOLDS): boolean {
+  if (range.min <= 0) return false;
+  if (range.min < range.max) return reps < range.min;
+  return range.min - reps >= thresholds.repsShortBy;
+}
+
 const NEVER_TRIGGERS: ReadonlySet<SetType> = new Set<SetType>(['warmup', 'drop']);
 
 /**
@@ -113,9 +128,9 @@ export function evaluateCoachTrigger(
   }
   const range = set.planned.reps;
   const reps = set.actual.reps;
-  if (range !== null && reps !== null && range.min - reps >= thresholds.repsShortBy) {
+  if (range !== null && reps !== null && repsShort(range, reps, thresholds)) {
     const target = range.min === range.max ? String(range.min) : `${String(range.min)}–${String(range.max)}`;
-    return make('reps_short', `${String(reps)} reps ${where} (target ${target})`);
+    return make('reps_short', `${String(reps)} ${reps === 1 ? 'rep' : 'reps'} ${where} (target ${target})`);
   }
   if (
     logged !== null &&
