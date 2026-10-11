@@ -1397,6 +1397,12 @@ export function WorkoutScreen() {
             />
           ) : null}
         </View>
+        {/* A timed set before Start: the time in the field can be logged without the timer (review gaps S2). */}
+        {view.primary.kind === 'start_work' && view.primary.logLabel !== null ? (
+          <View style={{ alignItems: 'flex-start' }}>
+            <TextButton label={view.primary.logLabel} onPress={() => void log()} />
+          </View>
+        ) : null}
         {/* `Target 100 kg · 6–8 reps · Rest after 3:00`: tap to change the rest after this set. `Why?` ends the line (§2.12). */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
           <View style={{ flex: 1 }}>

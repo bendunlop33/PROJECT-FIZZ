@@ -44,7 +44,7 @@ describe('timed sets end to end', () => {
     const data = await s.workout.load(sessionId);
     if (!data) throw new Error('load');
     const v = s.workout.view(data, h.clockMs, null);
-    expect(v.primary).toEqual({ kind: 'start_work', label: 'Start 0:30', durationS: 30 });
+    expect(v.primary).toMatchObject({ kind: 'start_work', label: 'Start 0:30', durationS: 30 });
     const setId = v.focus?.setId ?? '';
 
     const go = await s.workout.dispatch(sessionId, { type: 'start_work_interval', at: h.now(), opId: 'work-1', setId, durationS: 30 });

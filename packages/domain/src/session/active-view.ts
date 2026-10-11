@@ -291,8 +291,13 @@ export type PrimaryAction =
   /** A value is missing: the button focuses that field (audit F2), it never logs. */
   | { kind: 'enter'; label: string; field: 'load' | 'reps' | 'time' | 'distance' }
   | { kind: 'resume'; label: 'Resume' }
-  /** A timed set before its work timer runs (§2.7): `Start 0:45` runs `start_work_interval`. */
-  | { kind: 'start_work'; label: string; durationS: number }
+  /**
+   * A timed set before its work timer runs (§2.7): `Start 0:45` runs
+   * `start_work_interval`. `logLabel` (`Log 0:45`): the time in the field
+   * can be logged without the timer (timed on the gym clock, or Start
+   * forgotten; review gaps S2). Null when the set can't be logged yet.
+   */
+  | { kind: 'start_work'; label: string; durationS: number; logLabel: string | null }
   /** The work timer is running or paused: `Stop` runs `stop_work_interval`; the time so far becomes the draft. */
   | { kind: 'stop_work'; label: 'Stop' }
   | { kind: 'add_exercise'; label: 'Add exercise' }
@@ -715,7 +720,7 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
   else if (focus === null) primary = isOpenEndedWorkout(state) ? { kind: 'add_exercise', label: 'Add exercise' } : { kind: 'finish', label: 'Finish workout' };
   // A timed set (§2.7): `Start 0:45` until its work timer runs, `Stop` while it runs, then `Log 0:38`.
   else if (focus.workTimer?.state === 'running' || focus.workTimer?.state === 'paused') primary = { kind: 'stop_work', label: 'Stop' };
-  else if (focus.workTimer?.state === 'idle') primary = { kind: 'start_work', label: focus.workTimer.label, durationS: focus.workTimer.plannedS };
+  else if (focus.workTimer?.state === 'idle') primary = { kind: 'start_work', label: focus.workTimer.label, durationS: focus.workTimer.plannedS, logLabel: focus.logLabel };
   else if (focus.logLabel === null) {
     const field = focus.missing ?? 'reps';
     primary = { kind: 'enter', field, label: field === 'load' ? 'Enter load' : field === 'time' ? 'Enter time' : field === 'distance' ? 'Enter distance' : 'Enter reps' };

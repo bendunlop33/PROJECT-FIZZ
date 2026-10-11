@@ -382,7 +382,7 @@ describe('timed sets: the work timer on the focus card (active-workout §2.7)', 
     const [h1] = setsFor(s, HANG);
     s = apply(s, { type: 'set_active_set', at: at(1), opId: 'act', setId: h1?.id ?? '', expectedVersion: s.session.version });
     expect(view(s, 2).focus?.workTimer).toEqual({ state: 'idle', plannedS: 45, remainingMs: null, label: 'Start 0:45' });
-    expect(view(s, 2).primary).toEqual({ kind: 'start_work', label: 'Start 0:45', durationS: 45 });
+    expect(view(s, 2).primary).toEqual({ kind: 'start_work', label: 'Start 0:45', durationS: 45, logLabel: 'Log 0:45' });
     expect(view(s, 2).focus?.duration).toMatchObject({ value: 45, up: { enabled: true, value: 50 }, down: { enabled: true, value: 40 } });
     s = apply(s, { type: 'start_work_interval', at: at(10), opId: 'w', setId: h1?.id ?? '', durationS: 45 });
     expect(view(s, 20).focus?.workTimer).toMatchObject({ state: 'running', remainingMs: 35_000, label: 'Stop' });
@@ -395,12 +395,26 @@ describe('timed sets: the work timer on the focus card (active-workout §2.7)', 
     expect(view(s, 49).primary.kind).toBe('log');
   });
 
+  it('a time typed without the timer (gym clock, Start forgotten) logs as typed; Start stays primary (review gaps S2)', () => {
+    let s = startFixture().state;
+    const [h1] = setsFor(s, HANG);
+    s = apply(s, { type: 'set_active_set', at: at(1), opId: 'act', setId: h1?.id ?? '', expectedVersion: s.session.version });
+    s = apply(s, { type: 'save_draft', at: at(2), setId: h1?.id ?? '', values: values(null, null, { durationS: 52 }) });
+    const v = view(s, 3);
+    expect(v.primary).toMatchObject({ kind: 'start_work', logLabel: 'Log 0:52' });
+    const f = v.focus;
+    if (!f) throw new Error('focus');
+    s = apply(s, { type: 'log_set', at: at(4), opId: f.opId, setId: f.setId, values: f.logValues, restTimerId: id(98_001) });
+    expect(s.sets.find((x) => x.id === h1?.id)).toMatchObject({ status: 'completed', actual: { durationS: 52 } });
+    expect(s.workInterval).toBeNull();
+  });
+
   it('the time Ben sets before Start is what the timer runs; at 0 a tick fills the planned time', () => {
     let s = startFixture().state;
     const [h1] = setsFor(s, HANG);
     s = apply(s, { type: 'set_active_set', at: at(1), opId: 'act', setId: h1?.id ?? '', expectedVersion: s.session.version });
     s = apply(s, { type: 'save_draft', at: at(2), setId: h1?.id ?? '', values: values(null, null, { durationS: 60 }) });
-    expect(view(s, 3).primary).toEqual({ kind: 'start_work', label: 'Start 1:00', durationS: 60 });
+    expect(view(s, 3).primary).toEqual({ kind: 'start_work', label: 'Start 1:00', durationS: 60, logLabel: 'Log 1:00' });
     s = apply(s, { type: 'start_work_interval', at: at(5), opId: 'w', setId: h1?.id ?? '', durationS: 60 });
     s = apply(s, { type: 'tick', at: at(70) });
     expect(view(s, 71).focus?.duration?.value).toBe(60);
