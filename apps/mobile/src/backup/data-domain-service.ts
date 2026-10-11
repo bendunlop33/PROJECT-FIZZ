@@ -4,7 +4,7 @@ import { toMs } from '@fizz/domain';
 import { exportDomain, sha256Hex, type AppInfo, type DataDomain, type DatabaseManager, type DomainCounts, type DomainSwitchOutcome } from '@fizz/persistence';
 import type { Exercise, SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 
-import type { RestAlertController } from '../alerts/rest-alerts';
+import { restAlertIdentifier, type RestAlertController } from '../alerts/rest-alerts';
 import { localStamp } from '../format/dates';
 import { describeWriteError, type BackupService, type CopyDestination, type TextFile } from './backup-service';
 
@@ -22,21 +22,27 @@ import { describeWriteError, type BackupService, type CopyDestination, type Text
  * 3. `database`: the swap (one meta transaction: all or nothing), then the
  *    old file and the copy kept for Undo restore are removed. The marker
  *    then records the swap, so a resume never swaps again (it would delete
- *    anything logged since).
- * 4. `alerts`: every scheduled workout alert cancelled, known to this run or
+ *    anything logged since). Database first, unlike §4.5's order: a failure
+ *    before the swap then deletes nothing (ADR 0022).
+ * 4. `coach_sign_in`: the sign-in removed from this phone, revoked online
+ *    where possible (bounded; offline is fine), every Keychain item deleted.
+ *    First after the swap: Keychain items survive an uninstall, so nothing
+ *    else may stand in their way (§4.5 step 1, review r3 B1).
+ * 5. `alerts`: every scheduled workout alert cancelled, known to this run or
  *    not (a resume runs after a relaunch), and delivered ones cleared.
- * 5. `backups`: every backup file on this phone deleted, the backup record
+ * 6. `backups`: every backup file on this phone deleted, the backup record
  *    started again, one coaching-knowledge-only backup written.
- * 6. `settings_files`: Your-data files outside SQLite removed (coach
+ * 7. `settings_files`: Your-data files outside SQLite removed (coach
  *    connection settings, this phone's look and alert answers, crash notes,
  *    the probe database, picked-file copies in tmp, Caches).
- * 7. `coach_sign_in`: the sign-in removed from this phone, revoked online
- *    where possible (bounded; offline is fine), every Keychain item deleted.
- * 8. Marker cleared; the op ID recorded, so a repeat is a no-op.
+ * 8. Marker cleared; the op ID recorded, so a repeat is a no-op, and any
+ *    earlier delete left unfinished is marked done (review r3 S1).
  *
- * `Continue` at launch after a step kept failing records it as unfinished;
- * Data & backup then offers `Finish deleting`, which re-runs only the
- * clean-up from that step, never the swap (review r2 S2).
+ * After the swap every step runs even when an earlier one fails, so one
+ * stuck file never keeps the others (review r3 B1); the first failure is
+ * the one reported. `Continue` at launch after steps kept failing records
+ * them as unfinished; Data & backup then offers `Finish deleting`, which
+ * re-runs only those steps, never the swap (review r2 S2).
  *
  * Reset: refused while a workout is unfinished (DX4, review r2 S3), stamp
  * check, a `before_reset` backup, then one swap that keeps every Your-data
@@ -81,9 +87,17 @@ export interface DataDomainDeps {
   signOutTimeoutMs?: number;
 }
 
-/** The parts of Delete after the swap, in order, for an honest message when one fails. */
-export const DELETE_STEPS = ['database', 'alerts', 'backups', 'settings_files', 'coach_sign_in'] as const;
+/** The parts of Delete, in the order they run, for an honest message when one fails. */
+export const DELETE_STEPS = ['database', 'coach_sign_in', 'alerts', 'backups', 'settings_files'] as const;
 export type DeleteStep = (typeof DELETE_STEPS)[number];
+/** The order before review r3 B1, for a ledger written by it: a failed step and every later one didn't run. */
+const LEGACY_STEPS: readonly DeleteStep[] = ['database', 'alerts', 'backups', 'settings_files', 'coach_sign_in'];
+
+/** The steps still to run, in run order. */
+function inRunOrder(steps: Iterable<DeleteStep>): DeleteStep[] {
+  const set = new Set(steps);
+  return DELETE_STEPS.filter((s) => set.has(s));
+}
 
 const OpKind = z.enum(['delete_my_data', 'reset_coaching_knowledge']);
 const StepSchema = z.enum(DELETE_STEPS);
@@ -96,8 +110,12 @@ const LedgerSchema = z.object({
       startedAtUtc: z.string(),
       /** The database swap happened: a resume only finishes the clean-up, it never swaps again. */
       swapped: z.boolean().default(false),
-      /** The step that failed last time, for `Continue` at launch. */
+      /** The step that failed first last time, for `Continue` at launch. */
       failedStep: StepSchema.nullable().default(null),
+      /** Every step that failed last time (review r3 B1); absent in older ledgers. */
+      failedSteps: z.array(StepSchema).optional(),
+      /** The sign-out's online result from an earlier run, for the message once a resume finishes (the sign-in is gone by then). */
+      signedOutOnline: z.boolean().nullable().optional(),
     })
     .nullable(),
   done: z.array(
@@ -107,8 +125,10 @@ const LedgerSchema = z.object({
       atUtc: z.string(),
       /** False when a ChatGPT sign-in was removed from the phone but revoking it online wasn't confirmed. */
       signedOutOnline: z.boolean().nullable(),
-      /** Ben chose `Continue` after this step kept failing at launch. */
+      /** Ben chose `Continue` after this step kept failing at launch (the first that failed). */
       unfinished: StepSchema.nullable().default(null),
+      /** Every step `Finish deleting` still has to run; absent in older ledgers (then `unfinished` and every later legacy step). */
+      remaining: z.array(StepSchema).optional(),
     }),
   ),
 });
@@ -158,7 +178,10 @@ export interface WorkoutBlock {
 
 /** A delete left unfinished with `Continue` (review r2 S2). */
 export interface DeleteLeftover {
+  /** The first step still to run. */
   step: DeleteStep;
+  /** Every step `Finish deleting` runs, in order (`coach_sign_in`: it signs out of ChatGPT). */
+  steps: DeleteStep[];
   atUtc: string;
 }
 
@@ -217,6 +240,19 @@ class StepFailed extends Error {
   }
 }
 
+/** What `Finish deleting` still has to run for a done entry. */
+function remainingOf(d: DoneEntry): DeleteStep[] {
+  if (d.unfinished === null) return [];
+  if (d.remaining !== undefined) return inRunOrder(d.remaining);
+  return inRunOrder(LEGACY_STEPS.slice(LEGACY_STEPS.indexOf(d.unfinished)));
+}
+
+/** Every step a pending delete's failure left undone. */
+function failedOf(p: Pending): DeleteStep[] {
+  if (p.failedSteps !== undefined && p.failedSteps.length > 0) return inRunOrder(p.failedSteps);
+  return p.failedStep === null ? [...DELETE_STEPS] : inRunOrder(LEGACY_STEPS.slice(LEGACY_STEPS.indexOf(p.failedStep)));
+}
+
 export function createDataDomainService(deps: DataDomainDeps) {
   let chain: Promise<unknown> = Promise.resolve();
   function queued<T>(fn: () => Promise<T>): Promise<T> {
@@ -273,9 +309,10 @@ export function createDataDomainService(deps: DataDomainDeps) {
 
   /**
    * Steps 3–8. Every step is safe to repeat. A failure before the swap
-   * clears the marker (nothing was deleted); after it, the marker stays with
-   * the step that failed. `expectedStamp` (first run only): data changed
-   * since the confirmation, so nothing is deleted and the marker is cleared.
+   * clears the marker (nothing was deleted); after it, every step still
+   * runs and the marker stays with the steps that failed (review r3 B1).
+   * `expectedStamp` (first run only): data changed since the confirmation,
+   * so nothing is deleted and the marker is cleared.
    */
   async function finishDelete(
     start: Ledger & { pending: Pending },
@@ -283,11 +320,12 @@ export function createDataDomainService(deps: DataDomainDeps) {
     expectedStamp?: string,
   ): Promise<{ stale: true } | { stale: false; signedOutOnline: boolean | null }> {
     let l: Ledger & { pending: Pending } = start;
-    let step: DeleteStep = 'database';
-    const keepFailure = async (e: unknown, deleted: true | null = true): Promise<never> => {
-      await writeLedger({ ...l, pending: { ...l.pending, failedStep: step } }).catch(() => undefined);
-      throw new StepFailed(step, deleted, e);
+    /** Nothing after the swap ran (or it may not have happened): every step is left. */
+    const abort = async (e: unknown, deleted: true | null): Promise<never> => {
+      await writeLedger({ ...l, pending: { ...l.pending, failedStep: 'database', failedSteps: [...DELETE_STEPS] } }).catch(() => undefined);
+      throw new StepFailed('database', deleted, e);
     };
+    const failed: { step: DeleteStep; error: unknown }[] = [];
     if (!l.pending.swapped) {
       const swapped = await deps.manager.deleteYourData(expectedStamp === undefined ? {} : { expectedStamp }).catch(
         (e: unknown): DomainSwitchOutcome => ({ ok: false, error: { code: 'restore_failed', message: errorText(e) } }),
@@ -306,50 +344,75 @@ export function createDataDomainService(deps: DataDomainDeps) {
           await writeLedger({ ...l, pending: null }).catch(() => undefined);
           throw new StepFailed('database', false, swapped.error.message);
         }
-        // Couldn't check (review r2 N2): never say deleted. The marker stays, so a resume finishes it.
-        if (left === null) return keepFailure(swapped.error.message, null);
-        l = { ...l, pending: { ...l.pending, swapped: true } };
-        return keepFailure(swapped.error.message);
+        // Couldn't check (review r2 N2): never say deleted, and clean up nothing. The marker stays, so a resume finishes it.
+        if (left === null) return abort(swapped.error.message, null);
+        // Swapped, but the old file is still there: the rest still runs.
+        failed.push({ step: 'database', error: swapped.error.message });
       }
       l = { ...l, pending: { ...l.pending, swapped: true } };
       try {
         await writeLedger(l);
       } catch (e) {
-        return keepFailure(e);
+        return abort(e, true);
       }
     } else {
       try {
         await deps.manager.forgetPrevious();
       } catch (e) {
-        return keepFailure(e);
+        failed.push({ step: 'database', error: e });
       }
     }
-    try {
-      step = 'alerts';
-      // Not `reconcile(null)`: after a relaunch this run doesn't know what is scheduled (review r2 S1).
-      if (deps.restAlerts) await deps.restAlerts.cancelAll();
-      step = 'backups';
-      await deps.backups.wipeOnPhone();
-      step = 'settings_files';
-      if (deps.personalFiles) await deps.personalFiles.remove();
-      step = 'coach_sign_in';
-      const signedOutOnline = await signOutAndWipe();
-      const atUtc = deps.now().utc;
-      await writeLedger(remember(l, opIds.map((opId) => ({ opId, kind: 'delete_my_data' as const, atUtc, signedOutOnline, unfinished: null }))));
-      return { stale: false, signedOutOnline };
-    } catch (e) {
-      return keepFailure(e);
+    let signedOutOnline: boolean | null = null;
+    for (const step of DELETE_STEPS) {
+      if (step === 'database') continue;
+      try {
+        switch (step) {
+          case 'coach_sign_in': {
+            const now = await signOutAndWipe();
+            // A resume finds nothing left to sign out: keep what the run that did it found.
+            signedOutOnline = now ?? l.pending.signedOutOnline ?? null;
+            l = { ...l, pending: { ...l.pending, signedOutOnline } };
+            break;
+          }
+          case 'alerts':
+            // Not `reconcile(null)`: after a relaunch this run doesn't know what is scheduled (review r2 S1).
+            if (deps.restAlerts) await deps.restAlerts.cancelAll();
+            break;
+          case 'backups':
+            await deps.backups.wipeOnPhone();
+            break;
+          case 'settings_files':
+            if (deps.personalFiles) await deps.personalFiles.remove();
+            break;
+        }
+      } catch (e) {
+        failed.push({ step, error: e });
+      }
     }
+    const first = failed[0];
+    if (first) {
+      await writeLedger({ ...l, pending: { ...l.pending, failedStep: first.step, failedSteps: failed.map((f) => f.step) } }).catch(() => undefined);
+      throw new StepFailed(first.step, true, first.error);
+    }
+    const atUtc = deps.now().utc;
+    // Every step ran: an earlier delete left unfinished with `Continue` has nothing left either (review r3 S1).
+    const cleared: Ledger = { ...l, done: l.done.map((d) => (d.kind === 'delete_my_data' && d.unfinished !== null ? { ...d, unfinished: null, remaining: [] } : d)) };
+    await writeLedger(remember(cleared, opIds.map((opId) => ({ opId, kind: 'delete_my_data' as const, atUtc, signedOutOnline, unfinished: null }))));
+    return { stale: false, signedOutOnline };
   }
 
-  /** Step 7: the sign-in off this phone, revoked online where possible (bounded), every Keychain item deleted. */
+  /** Step 4: the sign-in off this phone, revoked online where possible (bounded), every Keychain item deleted. */
   async function signOutAndWipe(): Promise<boolean | null> {
     if (!deps.credentials) return null;
     let signedOutOnline: boolean | null = null;
-    const out = await deps.credentials.signOut();
-    // Offline is fine (§4.5 step 1): the sign-in is already off this phone.
-    if (out.revokeOnline !== null) signedOutOnline = await withTimeout(out.revokeOnline(), deps.signOutTimeoutMs ?? 10_000, false);
-    await deps.credentials.wipe();
+    try {
+      const out = await deps.credentials.signOut();
+      // Offline is fine (§4.5 step 1): the sign-in is already off this phone.
+      if (out.revokeOnline !== null) signedOutOnline = await withTimeout(out.revokeOnline(), deps.signOutTimeoutMs ?? 10_000, false);
+    } finally {
+      // The wipe runs even when the sign-out threw: it is what clears the Keychain.
+      await deps.credentials.wipe();
+    }
     return signedOutOnline;
   }
 
@@ -361,34 +424,42 @@ export function createDataDomainService(deps: DataDomainDeps) {
   }
 
   /**
-   * `Finish deleting` (review r2 S2): the clean-up from `from` on, never the
-   * swap. Anything Ben made since `sinceUtc` (when he chose `Continue`) is
-   * kept: backups recorded since, a later restore's Undo copy, the alert of a
-   * workout in progress.
+   * `Finish deleting` (review r2 S2): the steps left undone, never the swap.
+   * Every step runs even when one fails (review r3 B1); the failed ones are
+   * returned. Anything Ben made since `sinceUtc` (when he chose `Continue`)
+   * is kept: backups recorded since, a later restore's Undo copy, the alert
+   * of a workout in progress (review r3 N2).
    */
-  async function runLeftover(from: DeleteStep, sinceUtc: string, report: (s: DeleteStep) => void): Promise<void> {
-    const todo = DELETE_STEPS.slice(DELETE_STEPS.indexOf(from));
-    for (const step of todo) {
-      report(step);
-      switch (step) {
-        case 'database':
-          // A switch since then (restore, reset) already dropped the old file; its copy is Ben's new Undo.
-          if (deps.manager.rollbackTarget.last === null) await deps.manager.forgetPrevious();
-          break;
-        case 'alerts':
-          if (deps.restAlerts && (await workoutBlock()) === null) await deps.restAlerts.cancelAll();
-          break;
-        case 'backups':
-          await deps.backups.removeOnPhoneBefore(sinceUtc);
-          break;
-        case 'settings_files':
-          if (deps.personalFiles) await deps.personalFiles.remove();
-          break;
-        case 'coach_sign_in':
-          await signOutAndWipe();
-          break;
+  async function runLeftover(steps: readonly DeleteStep[], sinceUtc: string): Promise<{ step: DeleteStep; error: unknown }[]> {
+    const failed: { step: DeleteStep; error: unknown }[] = [];
+    for (const step of inRunOrder(steps)) {
+      try {
+        switch (step) {
+          case 'database':
+            // A switch since then (restore, reset) already dropped the old file; its copy is Ben's new Undo.
+            if (deps.manager.rollbackTarget.last === null) await deps.manager.forgetPrevious();
+            break;
+          case 'coach_sign_in':
+            await signOutAndWipe();
+            break;
+          case 'alerts':
+            if (deps.restAlerts) {
+              const active = deps.activeWorkout ? await deps.activeWorkout().catch(() => null) : null;
+              await deps.restAlerts.cancelAll(active ? restAlertIdentifier(active.session.id) : undefined);
+            }
+            break;
+          case 'backups':
+            await deps.backups.removeOnPhoneBefore(sinceUtc);
+            break;
+          case 'settings_files':
+            if (deps.personalFiles) await deps.personalFiles.remove();
+            break;
+        }
+      } catch (e) {
+        failed.push({ step, error: e });
       }
     }
+    return failed;
   }
 
   async function buildExport(kind: ExportKind): Promise<ExportFile> {
@@ -500,8 +571,9 @@ export function createDataDomainService(deps: DataDomainDeps) {
             return { step: null };
           }
         }
-        const step = l.pending.failedStep ?? 'database';
-        await writeLedger(remember(l, [{ opId: l.pending.opId, kind: 'delete_my_data', atUtc: deps.now().utc, signedOutOnline: null, unfinished: step }]));
+        const remaining = failedOf(l.pending);
+        const step = remaining[0] ?? 'database';
+        await writeLedger(remember(l, [{ opId: l.pending.opId, kind: 'delete_my_data', atUtc: deps.now().utc, signedOutOnline: null, unfinished: step, remaining }]));
         return { step };
       });
     },
@@ -509,8 +581,11 @@ export function createDataDomainService(deps: DataDomainDeps) {
     /** The newest delete left unfinished with `Continue`, if any (Data & backup's warning line). */
     async leftover(): Promise<DeleteLeftover | null> {
       const l = await readLedger().catch(() => EMPTY);
-      const entry = [...l.done].reverse().find((d) => d.kind === 'delete_my_data' && d.unfinished !== null);
-      return entry?.unfinished ? { step: entry.unfinished, atUtc: entry.atUtc } : null;
+      const entries = l.done.filter((d) => d.kind === 'delete_my_data' && d.unfinished !== null);
+      const steps = inRunOrder(entries.flatMap(remainingOf));
+      const newest = entries.at(-1);
+      const step = steps[0];
+      return newest && step ? { step, steps, atUtc: newest.atUtc } : null;
     },
 
     /** `Finish deleting`: re-run the clean-up left undone, never the swap. Safe to repeat. */
@@ -523,23 +598,24 @@ export function createDataDomainService(deps: DataDomainDeps) {
           return { ok: false, step: 'database', message: errorText(e) };
         }
         const entries = l.done.filter((d) => d.kind === 'delete_my_data' && d.unfinished !== null);
-        const first = entries.reduce<DeleteStep | null>((a, d) => (d.unfinished === null ? a : a === null || DELETE_STEPS.indexOf(d.unfinished) < DELETE_STEPS.indexOf(a) ? d.unfinished : a), null);
+        const steps = inRunOrder(entries.flatMap(remainingOf));
         const since = entries.reduce<string | null>((a, d) => (a === null || d.atUtc > a ? d.atUtc : a), null);
-        if (first === null || since === null) return { ok: true };
-        let current: DeleteStep = first;
-        const mark = (unfinished: DeleteStep | null): Ledger => ({ ...l, done: l.done.map((d) => (d.kind === 'delete_my_data' && d.unfinished !== null ? { ...d, unfinished } : d)) });
-        try {
-          await runLeftover(first, since, (s) => {
-            current = s;
-          });
-        } catch (e) {
-          await writeLedger(mark(current)).catch(() => undefined);
-          return { ok: false, step: current, message: errorText(e) };
+        if (steps.length === 0 || since === null) return { ok: true };
+        const failed = await runLeftover(steps, since);
+        const left = failed.map((f) => f.step);
+        const mark: Ledger = {
+          ...l,
+          done: l.done.map((d) => (d.kind === 'delete_my_data' && d.unfinished !== null ? { ...d, unfinished: left[0] ?? null, remaining: left } : d)),
+        };
+        const first = failed[0];
+        if (first) {
+          await writeLedger(mark).catch(() => undefined);
+          return { ok: false, step: first.step, message: errorText(first.error) };
         }
         try {
-          await writeLedger(mark(null));
+          await writeLedger(mark);
         } catch (e) {
-          return { ok: false, step: current, message: describeWriteError(e) };
+          return { ok: false, step: steps[0] ?? 'database', message: describeWriteError(e) };
         }
         return { ok: true };
       });

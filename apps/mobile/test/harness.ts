@@ -89,7 +89,7 @@ export function createHarness(
     emptyTemporary() {
       h.tmp.clear();
       h.cache.clear();
-      return Promise.resolve();
+      return Promise.resolve({ systemLeft: [] });
     },
   };
   const h: Harness = {
@@ -148,9 +148,9 @@ export function createHarness(
           h.pending.delete(id);
           return Promise.resolve();
         },
-        cancelAllWorkoutAlerts: () => {
+        cancelAllWorkoutAlerts: (keep) => {
           if (h.alertsFail) return Promise.reject(new Error('1 scheduled alert(s) couldn’t be cancelled'));
-          for (const id of [...h.pending.keys()]) if (id.startsWith('fizz.rest.')) h.pending.delete(id);
+          for (const id of [...h.pending.keys()]) if (id.startsWith('fizz.rest.') && id !== keep) h.pending.delete(id);
           return Promise.resolve();
         },
       };

@@ -2,7 +2,7 @@ import { toMs } from '@fizz/domain';
 
 import { formatShortDate, formatTime } from '../format/dates';
 import { plural } from '../format/numbers';
-import type { DataSummary, DeleteOutcome, DeleteStep, FinishLeftoverOutcome, ResetOutcome } from './data-domain-service';
+import type { DataSummary, DeleteLeftover, DeleteOutcome, DeleteStep, FinishLeftoverOutcome, ResetOutcome } from './data-domain-service';
 
 /**
  * What the Export, Delete my data and Reset coaching knowledge screens show
@@ -76,6 +76,15 @@ export function deleteStepLabel(step: DeleteStep): string {
   }
 }
 
+/** One or two words for a step, inside a line that already says where (review r3 N3). */
+const SHORT_STEP: Record<DeleteStep, string> = {
+  database: 'old database',
+  coach_sign_in: 'coach sign-in',
+  alerts: 'alerts',
+  backups: 'backups',
+  settings_files: 'settings',
+};
+
 /** ChatGPT sign-in removed from the phone, online revoke not confirmed (§3.6). */
 export const SIGN_OUT_NOT_CONFIRMED = 'Couldn’t sign out of ChatGPT online. The sign-in was removed from this phone; you can also remove GymSmarter’s access in your ChatGPT settings.';
 
@@ -100,8 +109,8 @@ export function deleteResultView(r: DeleteOutcome): { line: string | null; relau
 }
 
 /**
- * What a step left on this phone when it didn't finish (review r2 S2): the
- * steps after it never ran either, so something of Ben's is always left.
+ * What a step left on this phone when it didn't finish (review r2 S2):
+ * something of Ben's is always left when a step after the swap fails.
  */
 const LEFT_ON_PHONE = 'Your data is removed from the app. Some of it is still on this phone.';
 
@@ -120,9 +129,17 @@ export function deleteUnfinishedView(o: { deleted: boolean | null; step: DeleteS
   return { title, lines: [LEFT_ON_PHONE, `${what} didn’t finish.`, o.message], retry: true };
 }
 
-/** Data & backup after `Continue` (review r2 S2): one warning line and `Finish deleting`. */
-export function deleteLeftoverView(step: DeleteStep): { line: string; action: string } {
-  return { line: `Deleting didn’t finish: ${deleteStepLabel(step).toLowerCase()}. Some of your data is still on this phone.`, action: 'Finish deleting' };
+/**
+ * Data & backup after `Continue` (review r2 S2): one warning line and
+ * `Finish deleting`. Its confirmation says so when it signs out of ChatGPT
+ * (review r3 N1); otherwise it has no message.
+ */
+export function deleteLeftoverView(l: Pick<DeleteLeftover, 'step' | 'steps'>): { line: string; action: string; confirmMessage: string | undefined } {
+  return {
+    line: `Deleting didn’t finish (${SHORT_STEP[l.step]}). Some of your data is still on this phone.`,
+    action: 'Finish deleting',
+    confirmMessage: l.steps.includes('coach_sign_in') ? 'Signs you out of ChatGPT.' : undefined,
+  };
 }
 
 /** After `Finish deleting`. */

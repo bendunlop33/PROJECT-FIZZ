@@ -67,11 +67,11 @@ export function DataBackupScreen() {
 
   if (data.state !== 'ready') return <Screen>{null}</Screen>;
   const { status, counts, blocked, undoBlocked, imports, leftover, rollback } = data.value;
-  const leftoverView = leftover ? deleteLeftoverView(leftover.step) : null;
+  const leftoverView = leftover ? deleteLeftoverView(leftover) : null;
 
   function finishDeleting() {
     if (!leftoverView) return;
-    Alert.alert(`${leftoverView.action}?`, undefined, [
+    Alert.alert(`${leftoverView.action}?`, leftoverView.confirmMessage, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: leftoverView.action,

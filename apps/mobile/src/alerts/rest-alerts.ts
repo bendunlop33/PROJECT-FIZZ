@@ -82,9 +82,10 @@ export interface NotifierPort {
   /**
    * Cancel every scheduled workout alert (any `fizz.rest.` identifier, known
    * to this run or not) and clear delivered ones. Throws if one is still
-   * scheduled (Delete my data, review r2 S1).
+   * scheduled (Delete my data, review r2 S1). `keep`: one identifier left
+   * alone (`Finish deleting` during a workout, review r3 N2).
    */
-  cancelAllWorkoutAlerts(): Promise<void>;
+  cancelAllWorkoutAlerts(keep?: string): Promise<void>;
 }
 
 /**
@@ -123,13 +124,14 @@ export function createRestAlertController(notifier: NotifierPort) {
     /**
      * Delete my data: every workout alert goes, including one scheduled
      * before a relaunch that this run knows nothing about. Unlike
-     * `reconcile`, a failure is thrown so the caller can say so.
+     * `reconcile`, a failure is thrown so the caller can say so. `keep`:
+     * the alert of the workout in progress stays (review r3 N2).
      */
-    cancelAll(): Promise<void> {
+    cancelAll(keep?: string): Promise<void> {
       const run = chain.then(async () => {
         try {
-          await notifier.cancelAllWorkoutAlerts();
-          current = null;
+          await notifier.cancelAllWorkoutAlerts(keep);
+          if (current?.identifier !== keep) current = null;
           lastError = null;
         } catch (e) {
           lastError = e instanceof Error ? e.message : String(e);

@@ -84,7 +84,14 @@ describe('data domain views', () => {
   });
 
   it('after Continue, Data & backup says something is still on this phone and offers Finish deleting (review r2 S2)', () => {
-    expect(deleteLeftoverView('database')).toEqual({ line: 'Deleting didn’t finish: removing the old database. Some of your data is still on this phone.', action: 'Finish deleting' });
+    expect(deleteLeftoverView({ step: 'database', steps: ['database', 'backups'] })).toEqual({
+      line: 'Deleting didn’t finish (old database). Some of your data is still on this phone.',
+      action: 'Finish deleting',
+      confirmMessage: undefined,
+    });
+    expect(deleteLeftoverView({ step: 'backups', steps: ['backups'] }).line).toBe('Deleting didn’t finish (backups). Some of your data is still on this phone.');
+    // Only when it signs out of ChatGPT does the confirmation say anything (review r3 N1).
+    expect(deleteLeftoverView({ step: 'coach_sign_in', steps: ['coach_sign_in', 'settings_files'] })).toMatchObject({ line: 'Deleting didn’t finish (coach sign-in). Some of your data is still on this phone.', confirmMessage: 'Signs you out of ChatGPT.' });
     expect(finishLeftoverView({ ok: true })).toEqual({ line: 'Deleting finished.', tone: 'done', relaunch: true });
     expect(finishLeftoverView({ ok: false, step: 'backups', message: '1 backup file(s) couldn’t be deleted' })).toEqual({
       line: 'Couldn’t finish deleting (removing backups on this phone). 1 backup file(s) couldn’t be deleted',

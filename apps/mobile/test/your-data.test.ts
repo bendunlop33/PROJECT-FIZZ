@@ -263,16 +263,20 @@ describe('Delete my data (keep coaching knowledge)', () => {
     const opened = await h.start({ interruptedDelete: 'leave' });
     if (opened.kind !== 'ready') throw new Error(opened.kind);
     const s2 = opened.services;
-    expect(await s2.data.leftover()).toEqual({ step: 'backups', atUtc: h.now().utc });
+    expect(await s2.data.leftover()).toEqual({ step: 'backups', steps: ['backups'], atUtc: h.now().utc });
+    // The sign-in went first, before the stuck backups (review r3 B1).
+    expect(keychain.items.size).toBe(0);
+    // Ben signs in to ChatGPT again: Finish deleting leaves that alone (review r3 N1).
+    keychain.items.set('fizz.chatgpt.tokens', '{"v":2}');
+    const signOuts = keychain.calls.filter((c) => c === 'signOut').length;
     const gymId = await setUpGym(h, s2);
     h.clockMs += 60_000;
     await logWorkout(h, s2, gymId, [{ exercise: 'Bench press', sets: [{ load: 40, reps: 5 }] }]);
     const fresh = (await s2.restore.copiesOnPhone()).map((c) => c.fileName).filter((n) => !old.includes(n));
     expect(fresh.length).toBeGreaterThan(0);
-    // Old backups (and the sign-in, never reached) are still on this phone.
+    // Old backups are still on this phone.
     const oldOnly = personal.filter((p) => !['Main Gym', personal[0]].includes(p));
     expect(filesHolding(h, oldOnly).length).toBeGreaterThan(0);
-    expect(keychain.items.size).toBeGreaterThan(0);
 
     // Finish deleting while files still can't go: says so, keeps the line.
     expect(await s2.data.finishLeftover()).toEqual({ ok: false, step: 'backups', message: expect.stringMatching(/couldn’t be deleted/) as string });
@@ -287,7 +291,8 @@ describe('Delete my data (keep coaching knowledge)', () => {
     for (const n of fresh) expect(h.backupFiles.has(n)).toBe(true);
     expect((await s2.restore.copiesOnPhone()).map((c) => c.fileName)).toEqual(fresh);
     expect((await s2.yourData.counts()).finishedWorkouts).toBe(1);
-    expect(keychain.items.size).toBe(0);
+    expect([...keychain.items.keys()]).toEqual(['fizz.chatgpt.tokens']);
+    expect(keychain.calls.filter((c) => c === 'signOut')).toHaveLength(signOuts);
     // A repeat is a no-op.
     expect(await s2.data.finishLeftover()).toEqual({ ok: true });
   });
@@ -316,6 +321,131 @@ describe('Delete my data (keep coaching knowledge)', () => {
     expect(readdirSync(h.dir).filter((n) => n.startsWith('training-') && n.endsWith('.db'))).toEqual([s2.developer.databaseNames().current]);
     // The new workout is untouched.
     expect((await s2.yourData.counts()).finishedWorkouts).toBe(1);
+  });
+
+  it('a settings-files step that always fails never keeps the ChatGPT sign-in on the phone (review r3 B1)', async () => {
+    const keychain = fakeKeychain();
+    const stuckFiles: PersonalFilesPort = { remove: () => Promise.reject(new Error('Couldn’t delete Cache.db')) };
+    h = createHarness('2026-10-08T17:00:00.000Z', { credentials: keychain.port, personalFiles: stuckFiles });
+    const { services: s } = await h.launch();
+    const { personal } = await bensData(s);
+    await workoutWithRestRunning(s, (await s.yourData.currentGym())?.id ?? '');
+    await h.settle(s);
+    const { stamp } = await s.data.summary();
+    expect(await s.data.deleteMyData({ opId: 'stuck-files', stamp })).toEqual({ ok: false, reason: 'failed', message: 'Couldn’t delete Cache.db', deleted: true, step: 'settings_files' });
+    // Every other step still ran.
+    expect(keychain.items.size).toBe(0);
+    expect(h.pending.size).toBe(0);
+    expect((await s.restore.copiesOnPhone()).map((c) => c.reason)).toEqual(['after_delete']);
+    expect(filesHolding(h, personal)).toEqual([]);
+
+    await h.forceClose();
+    expect(await h.start()).toMatchObject({ kind: 'delete_unfinished', deleted: true, step: 'settings_files' });
+    const opened = await h.start({ interruptedDelete: 'leave' });
+    if (opened.kind !== 'ready') throw new Error(opened.kind);
+    expect(await opened.services.data.leftover()).toMatchObject({ step: 'settings_files', steps: ['settings_files'] });
+    expect(await opened.services.data.finishLeftover()).toMatchObject({ ok: false, step: 'settings_files' });
+    expect(keychain.items.size).toBe(0);
+  });
+
+  it('a later full Delete clears an earlier Continue: no leftover line, nothing for Finish deleting to do (review r3 S1)', async () => {
+    const keychain = fakeKeychain();
+    h = createHarness('2026-10-08T17:00:00.000Z', { credentials: keychain.port });
+    const { services: s } = await h.launch();
+    await bensData(s);
+    expect((await s.backups.backUpOnPhone('manual')).ok).toBe(true);
+    const realDelete = h.backupFiles.delete.bind(h.backupFiles);
+    h.backupFiles.delete = () => false;
+    expect(await s.data.deleteMyData({ opId: 'first', stamp: (await s.data.summary()).stamp })).toMatchObject({ ok: false, step: 'backups' });
+    await h.forceClose();
+    const opened = await h.start({ interruptedDelete: 'leave' });
+    if (opened.kind !== 'ready') throw new Error(opened.kind);
+    const s2 = opened.services;
+    expect(await s2.data.leftover()).toMatchObject({ step: 'backups' });
+    const gymId = await setUpGym(h, s2);
+    await logWorkout(h, s2, gymId, [{ exercise: 'Bench press', sets: [{ load: 40, reps: 5 }] }]);
+    await h.settle(s2);
+    h.backupFiles.delete = realDelete;
+    h.clockMs += 60_000;
+    expect(await s2.data.deleteMyData({ opId: 'second', stamp: (await s2.data.summary()).stamp })).toMatchObject({ ok: true, duplicate: false });
+    expect(await s2.data.leftover()).toBeNull();
+    // Ben sets up again and signs in: Finish deleting isn't offered and would do nothing.
+    keychain.items.set('fizz.chatgpt.tokens', '{"v":2}');
+    const calls = keychain.calls.length;
+    expect(await s2.data.finishLeftover()).toEqual({ ok: true });
+    expect(keychain.calls).toHaveLength(calls);
+    expect(keychain.items.has('fizz.chatgpt.tokens')).toBe(true);
+  });
+
+  it('Finish deleting during a workout keeps its rest alert, cancels the old one, and the workout recovers after the relaunch (review r3 S3, N2)', async () => {
+    let failFiles = true;
+    const files: PersonalFilesPort = {
+      remove() {
+        if (failFiles) return Promise.reject(new Error('Couldn’t delete device-prefs.json'));
+        h.documents.clear();
+        return Promise.resolve();
+      },
+    };
+    h = createHarness('2026-10-08T17:00:00.000Z', { personalFiles: files });
+    const { services: s } = await h.launch();
+    const { gymId } = await bensData(s);
+    await workoutWithRestRunning(s, gymId);
+    await h.settle(s);
+    const [oldAlert] = [...h.pending.keys()];
+    if (oldAlert === undefined) throw new Error('no alert');
+    // Alerts and settings files both fail; every other step runs.
+    h.alertsFail = true;
+    expect(await s.data.deleteMyData({ opId: 'mid', stamp: (await s.data.summary()).stamp })).toMatchObject({ ok: false, deleted: true, step: 'alerts' });
+    await h.forceClose();
+    expect(await h.start()).toMatchObject({ kind: 'delete_unfinished', step: 'alerts' });
+    const opened = await h.start({ interruptedDelete: 'leave' });
+    if (opened.kind !== 'ready') throw new Error(opened.kind);
+    const s2 = opened.services;
+    expect(await s2.data.leftover()).toMatchObject({ step: 'alerts', steps: ['alerts', 'settings_files'] });
+
+    // A new workout with its rest running, and this phone's prefs.
+    await workoutWithRestRunning(s2, await setUpGym(h, s2));
+    await h.settle(s2);
+    const active = await s2.sessions.active();
+    if (!active) throw new Error('no workout');
+    const newAlert = `fizz.rest.${active.session.id}`;
+    expect([...h.pending.keys()].sort()).toEqual([newAlert, oldAlert].sort());
+    h.documents.set('device-prefs.json', '{"look":"dark"}');
+
+    h.alertsFail = false;
+    failFiles = false;
+    expect(await s2.data.finishLeftover()).toEqual({ ok: true });
+    expect([...h.pending.keys()]).toEqual([newAlert]);
+    expect(await s2.data.leftover()).toBeNull();
+
+    // The screen relaunches: the workout and its alert are recovered.
+    await h.forceClose();
+    const again = await h.launch();
+    const recovered = await again.services.sessions.active();
+    expect(recovered?.session.id).toBe(active.session.id);
+    expect(recovered?.sets.filter((x) => x.status === 'completed')).toHaveLength(1);
+    expect([...h.pending.keys()]).toEqual([newAlert]);
+  });
+
+  it('a Continue recorded before the step order changed still finishes every step that never ran (review r3 B1)', async () => {
+    let text: string | null = JSON.stringify({
+      version: 1,
+      pending: null,
+      done: [{ opId: 'old', kind: 'delete_my_data', atUtc: '2026-10-08T16:00:00.000Z', signedOutOnline: null, unfinished: 'backups' }],
+    });
+    h = createHarness('2026-10-08T17:00:00.000Z', {
+      ledger: {
+        read: () => Promise.resolve(text),
+        write: (t) => {
+          text = t;
+          return Promise.resolve();
+        },
+      },
+    });
+    const { services: s } = await h.launch();
+    expect(await s.data.leftover()).toEqual({ step: 'coach_sign_in', steps: ['coach_sign_in', 'backups', 'settings_files'], atUtc: '2026-10-08T16:00:00.000Z' });
+    expect(await s.data.finishLeftover()).toEqual({ ok: true });
+    expect(await s.data.leftover()).toBeNull();
   });
 
   it('is idempotent by op ID: a repeat returns the first result and leaves one knowledge-only backup', async () => {
@@ -428,10 +558,11 @@ describe('Delete my data (keep coaching knowledge)', () => {
     h = createHarness('2026-10-08T17:00:00.000Z', { credentials: keychain.port });
     const { services: s } = await h.launch();
     await bensData(s);
-    // Stopped before the sign-in step (the alerts step fails), then force-closed.
+    // Signed out offline, then the alerts step fails, then force-closed.
     h.alertsFail = true;
     const { stamp } = await s.data.summary();
     expect(await s.data.deleteMyData({ opId: 'offline', stamp })).toMatchObject({ ok: false, deleted: true, step: 'alerts' });
+    expect(keychain.items.size).toBe(0);
     await h.forceClose();
     h.alertsFail = false;
     const relaunched = await h.launch();

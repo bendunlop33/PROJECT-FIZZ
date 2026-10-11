@@ -36,10 +36,10 @@ export const expoNotifier: NotifierPort = {
   async cancel(identifier) {
     await Notifications.cancelScheduledNotificationAsync(identifier);
   },
-  async cancelAllWorkoutAlerts() {
-    const workoutAlerts = async () => (await Notifications.getAllScheduledNotificationsAsync()).filter((n) => n.identifier.startsWith(REST_ALERT_PREFIX));
+  async cancelAllWorkoutAlerts(keep) {
+    const workoutAlerts = async () => (await Notifications.getAllScheduledNotificationsAsync()).filter((n) => n.identifier.startsWith(REST_ALERT_PREFIX) && n.identifier !== keep);
     for (const n of await workoutAlerts()) await Notifications.cancelScheduledNotificationAsync(n.identifier);
-    await clearDeliveredWorkoutAlerts();
+    await clearDeliveredWorkoutAlerts(keep);
     const left = await workoutAlerts();
     if (left.length > 0) throw new Error(`${String(left.length)} scheduled alert(s) couldn’t be cancelled`);
   },
@@ -60,9 +60,9 @@ export async function requestAlertPermission(): Promise<AlertPermission> {
 }
 
 /** On return to the foreground, delivered workout alerts are stale: remove them (§4.3). */
-export async function clearDeliveredWorkoutAlerts(): Promise<void> {
+export async function clearDeliveredWorkoutAlerts(keep?: string): Promise<void> {
   const shown = await Notifications.getPresentedNotificationsAsync();
   for (const n of shown) {
-    if (n.request.identifier.startsWith(REST_ALERT_PREFIX)) await Notifications.dismissNotificationAsync(n.request.identifier);
+    if (n.request.identifier.startsWith(REST_ALERT_PREFIX) && n.request.identifier !== keep) await Notifications.dismissNotificationAsync(n.request.identifier);
   }
 }

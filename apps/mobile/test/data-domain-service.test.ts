@@ -79,10 +79,12 @@ describe('Delete my data when the swap fails', () => {
       records: () => 0,
     });
     expect(await w.svc.deleteMyData({ opId: 'a', stamp: 'stamp' })).toMatchObject({ ok: false, deleted: true, step: 'database' });
-    expect(w.ledger()?.pending).toMatchObject({ opId: 'a', swapped: true, failedStep: 'database' });
+    expect(w.ledger()?.pending).toMatchObject({ opId: 'a', swapped: true, failedStep: 'database', failedSteps: ['database'] });
+    // The rest of the clean-up still ran (review r3 B1).
+    expect(w.wiped).toEqual(['backups']);
     expect(await w.svc.resumeInterrupted()).toEqual({ kind: 'finished', signedOutOnline: null });
     expect(swaps).toBe(1);
-    expect(w.wiped).toEqual(['backups']);
+    expect(w.wiped).toEqual(['backups', 'backups']);
   });
 
   it('a force-close after the marker, then a swap that fails at launch: not deleted, marker cleared, the app opens', async () => {
@@ -119,7 +121,8 @@ describe('Delete my data when the swap fails', () => {
     w.setLedger({ version: 1, pending: { kind: 'delete_my_data', opId: 'a', startedAtUtc: '2026-10-09T07:59:00.000Z' }, done: [] });
     expect(await w.svc.resumeInterrupted()).toEqual({ kind: 'unfinished', deleted: null, step: 'database', message: 'The file couldn’t be written (ENOSPC).' });
     expect(await w.svc.leaveInterrupted()).toEqual({ step: 'database' });
-    expect(await w.svc.leftover()).toEqual({ step: 'database', atUtc: '2026-10-09T08:00:00.000Z' });
+    // Nothing after the swap ran: every step is left.
+    expect(await w.svc.leftover()).toEqual({ step: 'database', steps: ['database', 'coach_sign_in', 'alerts', 'backups', 'settings_files'], atUtc: '2026-10-09T08:00:00.000Z' });
   });
 
   it('Continue when the data is still there: nothing was deleted, nothing is left to finish', async () => {
