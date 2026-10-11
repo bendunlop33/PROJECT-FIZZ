@@ -310,7 +310,7 @@ describe('errors, timeouts, Stop and restart recovery (rule 1: honest states, no
     const s = await store();
     const model = new ScriptedCoachModel([[call('save_memory', { text: 'Trains before work', quote: 'remember I train before work' }), { type: 'completed' }], [{ type: 'error', error: 'network' }]]);
     const r = await runCoachTurn(request({ input: words('Remember I train before work') }), ports(s, model, storeExecutors(s)));
-    expect(r).toMatchObject({ status: 'failed', error: 'network', items: [], note: 'Stopped. Anything applied is shown above.' });
+    expect(r).toMatchObject({ status: 'failed', error: 'network', items: [], note: 'Stopped.' });
     expect(r.cards.map((c) => c.record.status)).toEqual(['committed']);
   });
 
@@ -366,7 +366,7 @@ describe('errors, timeouts, Stop and restart recovery (rule 1: honest states, no
     expect((await s.repos.coach.getTurn(req.turnId))?.status).toBe('running');
     const recovered = await recoverCoachTurns(s.repos.coach, OWNER, at(900));
     expect(recovered).toHaveLength(1);
-    expect(recovered[0]?.note).toBe('Interrupted. Anything applied is shown above.');
+    expect(recovered[0]?.note).toBe('Interrupted.');
     expect(recovered[0]?.cards.map((c) => c.record.actionId)).toEqual([saved.record?.actionId]);
     expect(await recoverCoachTurns(s.repos.coach, OWNER, at(901))).toEqual([]);
   });

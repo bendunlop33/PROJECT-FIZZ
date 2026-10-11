@@ -323,7 +323,7 @@ function toolOutput(result: ToolResult, ref: string | null): string {
   return JSON.stringify({ status: result.record.status, ref, line: rendered.text, guardNotes: result.record.guardNotes.map((n) => n.text), shownToBen: 'as a card' });
 }
 
-const INTERRUPTED_NOTE = 'Stopped. Anything applied is shown above.';
+const INTERRUPTED_NOTE = 'Stopped.';
 
 /**
  * Run one coach turn. Never throws for a model failure: the result says
@@ -572,7 +572,7 @@ async function replayedResult(turn: CoachTurn, ports: CoachTurnPorts, surface: R
 }
 
 /** Shown on a turn that a force-close cut off (ADR 0020 §7). */
-export const INTERRUPTED_TURN_NOTE = 'Interrupted. Anything applied is shown above.';
+export const INTERRUPTED_TURN_NOTE = 'Interrupted.';
 
 export interface InterruptedTurn {
   turn: CoachTurn;

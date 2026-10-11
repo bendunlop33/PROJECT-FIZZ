@@ -183,29 +183,30 @@ export function benText(input: BenInput): string | null {
 
 /** The line for a turn that didn't finish (coach-sheet §5, shortened). `retry`: offers Try again. */
 export function outcomeFor(status: CoachTurn['status'], error: CoachTurnError | null, anyCard: boolean): { text: string; icon: ViewIcon; retry: boolean } | null {
-  const tail = anyCard ? 'Anything applied is shown above.' : 'Nothing changed.';
-  if (status === 'interrupted') return { text: `Interrupted. ${tail}`, icon: 'info.circle', retry: true };
-  if (status === 'cancelled') return { text: `Stopped. ${tail}`, icon: 'info.circle', retry: false };
+  // The cards show anything applied; without one, say nothing changed (minimal copy, audit W2).
+  const tail = anyCard ? '' : ' Nothing changed.';
+  if (status === 'interrupted') return { text: `Interrupted.${tail}`, icon: 'info.circle', retry: true };
+  if (status === 'cancelled') return { text: `Stopped.${tail}`, icon: 'info.circle', retry: false };
   if (status !== 'failed') return null;
   switch (error) {
     case 'timeout':
-      return { text: `No answer in time. ${tail}`, icon: 'clock.badge.xmark', retry: true };
+      return { text: `No answer in time.${tail}`, icon: 'clock.badge.xmark', retry: true };
     case 'network':
-      return { text: `Offline. ${tail}`, icon: 'wifi.slash', retry: true };
+      return { text: `Offline.${tail}`, icon: 'wifi.slash', retry: true };
     case 'usage_limit':
-      return { text: `Usage limit reached. ${tail}`, icon: 'pause.circle', retry: false };
+      return { text: `Usage limit reached.${tail}`, icon: 'pause.circle', retry: false };
     case 'auth_expired':
-      return { text: `Signed out. ${tail}`, icon: 'exclamationmark.triangle', retry: false };
+      return { text: `Signed out.${tail}`, icon: 'exclamationmark.triangle', retry: false };
     case 'not_eligible':
-      return { text: `Unavailable. ${tail}`, icon: 'xmark.octagon', retry: false };
+      return { text: `Unavailable.${tail}`, icon: 'xmark.octagon', retry: false };
     case 'model_gone':
-      return { text: `Model unavailable. ${tail}`, icon: 'exclamationmark.triangle', retry: false };
+      return { text: `Model unavailable.${tail}`, icon: 'exclamationmark.triangle', retry: false };
     case 'too_many_steps':
     case 'no_reply':
     case 'unavailable':
     case 'cancelled':
     case null:
-      return { text: `Couldn’t reach the coach. ${tail}`, icon: 'exclamationmark.triangle', retry: true };
+      return { text: `Couldn’t reach the coach.${tail}`, icon: 'exclamationmark.triangle', retry: true };
   }
 }
 

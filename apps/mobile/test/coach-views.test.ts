@@ -95,7 +95,7 @@ describe('turn lines: honest, short, Try again where it helps', () => {
   it('failures say what happened and whether anything changed', () => {
     expect(outcomeFor('failed', 'timeout', false)).toEqual({ text: 'No answer in time. Nothing changed.', icon: 'clock.badge.xmark', retry: true });
     expect(outcomeFor('failed', 'usage_limit', false)?.retry).toBe(false);
-    expect(outcomeFor('cancelled', 'cancelled', true)?.text).toBe('Stopped. Anything applied is shown above.');
+    expect(outcomeFor('cancelled', 'cancelled', true)?.text).toBe('Stopped.');
     expect(outcomeFor('interrupted', null, false)?.text).toBe('Interrupted. Nothing changed.');
     expect(outcomeFor('completed', null, false)).toBeNull();
   });
