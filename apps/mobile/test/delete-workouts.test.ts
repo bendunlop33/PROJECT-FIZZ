@@ -7,6 +7,7 @@ import { buildCheckResultView, buildRestorePreviewView } from '../src/backup/res
 import { IntentOps } from '../src/history/intent-ops';
 import { openErrorView, previewView, stateLine, undoAlert } from '../src/import/views';
 import type { PastImport } from '../src/import/import-service';
+import type { AppServices } from '../src/services/app-services';
 import { createHarness, logWorkout, setUpGym, TZ, type Harness } from './harness';
 
 /**
@@ -120,6 +121,77 @@ describe('delete one workout from Past workouts / Summary (DW1, DW2, DW9, DW11, 
     // A deleted workout takes no correction.
     const r = await s.workout.dispatch(second, { type: 'rename_session', at: h.now(), opId: 'rn-x', expectedVersion: row.version + 1, name: 'X' });
     expect(r).toMatchObject({ ok: false });
+  });
+});
+
+/** Start a workout and `Finish anyway` with nothing logged (FinishSheet): a test session. */
+async function emptyWorkout(s: AppServices, gymId: string): Promise<string> {
+  const started = await s.workout.start({ gymId, opId: `start-${String(h.clockMs)}`, checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+  if (!started.ok) throw new Error(started.error.message);
+  const id = started.aggregate.session.id;
+  h.clockMs += 60_000;
+  const fin = await s.workout.dispatch(id, { type: 'finish', at: h.now(), opId: `fin-${id}`, expectedVersion: started.aggregate.session.version, endedAt: null });
+  if (!fin.ok) throw new Error(fin.error.message);
+  return id;
+}
+
+describe('Past workouts lists every workout, pages, and empty ones delete (§2.3; review r2 B1, B2)', () => {
+  it('an empty finished workout is listed as `Empty workout · 0 sets`, can be selected and deleted, and Undo brings it back', async () => {
+    h = createHarness('2026-10-06T17:00:00.000Z');
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const real = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    h.clockMs += DAY;
+    const empty = await emptyWorkout(s, gymId);
+    expect((await s.yourData.counts()).finishedWorkouts).toBe(2);
+    // Repeat's own list still leaves it out (nothing to repeat); Past workouts lists it.
+    expect((await s.repeat.candidates()).rows.map((r) => r.sessionId)).toEqual([real]);
+    const page = await s.history.pastWorkouts();
+    expect(page).toMatchObject({ unreadable: 0, more: false });
+    expect(page.rows.map((r) => r.sessionId)).toEqual([empty, real]);
+    const row = page.rows[0];
+    if (!row) throw new Error('no row');
+    expect({ title: pastRowTitle(row, TZ), sets: row.sets }).toEqual({ title: 'Wed 7 Oct · Empty workout', sets: 0 });
+
+    // Select → tick → Delete (1): one write; Undo restores it.
+    expect(s.history.confirmView([row])).not.toBeNull();
+    const out = await s.history.deleteWorkouts([{ sessionId: row.sessionId, expectedVersion: row.version }], 'del-empty');
+    if (!out.ok) throw new Error(out.message);
+    expect((await s.history.pastWorkouts()).rows.map((r) => r.sessionId)).toEqual([real]);
+    expect((await s.yourData.counts()).finishedWorkouts).toBe(1);
+    expect((await s.history.recentlyDeleted()).rows.map((r) => r.sessionId)).toEqual([empty]);
+    const undo = await s.history.restoreWorkouts(out.refs.map((r) => ({ sessionId: r.sessionId, expectedVersion: r.version })), 'undo-empty');
+    expect(undo.ok).toBe(true);
+    expect((await s.history.pastWorkouts()).rows.map((r) => r.sessionId)).toEqual([empty, real]);
+  });
+
+  it('with 35 workouts the first page holds 30 and says there are more; the 35th is reached and deleted', async () => {
+    h = createHarness('2026-08-01T17:00:00.000Z');
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const oldest = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    for (let i = 0; i < 34; i += 1) {
+      h.clockMs += DAY;
+      await emptyWorkout(s, gymId);
+    }
+    const first = await s.history.pastWorkouts();
+    expect(first.rows).toHaveLength(30);
+    expect(first.more).toBe(true);
+    expect(first.rows.map((r) => r.sessionId)).not.toContain(oldest);
+    // `Show more` widens what is loaded (and so what `Select all` covers); paging by offset reaches the same rows.
+    const widened = await s.history.pastWorkouts({ limit: 60 });
+    expect(widened.rows).toHaveLength(35);
+    expect(widened.more).toBe(false);
+    expect(widened.rows.at(-1)?.sessionId).toBe(oldest);
+    const next = await s.history.pastWorkouts({ offset: 30 });
+    expect(next.rows.map((r) => r.sessionId)).toEqual(widened.rows.slice(30).map((r) => r.sessionId));
+    const row = widened.rows.at(-1);
+    if (!row) throw new Error('no row');
+    const out = await s.history.deleteWorkouts([{ sessionId: row.sessionId, expectedVersion: row.version }], 'del-35th');
+    expect(out.ok).toBe(true);
+    const after = await s.history.pastWorkouts({ limit: 60 });
+    expect(after.rows).toHaveLength(34);
+    expect(after.rows.map((r) => r.sessionId)).not.toContain(oldest);
   });
 });
 

@@ -1,26 +1,32 @@
 import { useNavigation } from '@react-navigation/native';
+import { useState } from 'react';
 
-import { plural } from '../../format/numbers';
-import { deleteToolbarLabel, pastRowDetail, pastRowTitle, recentlyDeletedFooter, rowCustomActions, selectRowLabel } from '../../history/delete-view';
+import { deleteToolbarLabel, pastRowDetail, pastRowTitle, recentlyDeletedFooter, rowCustomActions, selectRowLabel, unreadableLine } from '../../history/delete-view';
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { useDeleteToast } from '../../history/useDeleteToast';
 import { useSelectDelete } from '../../history/useSelectDelete';
 import { importedNotListedLine } from '../../import/views';
+import { PAST_PAGE } from '../../services/history-services';
 import { useScreenData, useServices } from '../../shell/context';
 import { AppText, DangerTextButton, Group, LinkLine, Row, Screen, SelectionToolbar, SelectRow, StatusLine, TextButton } from '../../ui';
 
 /**
  * Past workouts (Today → `Past workouts`): pick one to repeat, or delete
- * (delete-workouts §2.3). `Select` → tick → `Delete (n)` → one confirm
- * sheet → one all-or-nothing write → toast with Undo. VoiceOver has a
- * `Delete` action on each row. Swipe-to-delete isn't built (ADR 0024).
+ * (delete-workouts §2.3). Every workout logged in the app is listed, with
+ * `Show more` for older ones; one with nothing logged opens its Summary
+ * (with `⋯`) instead of Repeat (review r2 B1, B2). `Select` → tick →
+ * `Delete (n)` → one confirm sheet → one all-or-nothing write → toast with
+ * Undo. VoiceOver has a `Delete` action on each row. Swipe-to-delete isn't
+ * built (ADR 0024).
  * Imported FitNotes workouts aren't listed here (P-I3); they are deleted
  * from their import's view.
  */
 export function PastWorkoutsScreen() {
   const navigation = useNavigation();
   const services = useServices();
-  const [data, reload] = useScreenData(async (s) => ({ list: await s.repeat.candidates(), deleted: await s.history.recentlyDeletedCount() }));
+  // Pages of 30; `Show more` widens what is loaded, and `Select all` covers only that (§2.3; review r2 B2).
+  const [limit, setLimit] = useState(PAST_PAGE);
+  const [data, reload] = useScreenData(async (s) => ({ list: await s.history.pastWorkouts({ limit }), deleted: await s.history.recentlyDeletedCount() }));
   const toast = useDeleteToast();
   const tz = services.now().tz;
   const rows = data.state === 'ready' ? data.value.list.rows : NO_ROWS;
@@ -52,7 +58,7 @@ export function PastWorkoutsScreen() {
           <StatusLine
             icon="exclamationmark.triangle"
             tone="warning"
-            text={`${plural(list.unreadable, 'workout', 'workouts')} couldn’t be read and ${list.unreadable === 1 ? 'isn’t' : 'aren’t'} listed.`}
+            text={unreadableLine(list.unreadable)}
             action={
               <TextButton
                 label="Check data ›"
@@ -106,12 +112,23 @@ export function PastWorkoutsScreen() {
                   sel.removeOne(c);
                 }}
                 onPress={() => {
-                  navigation.navigate('Repeat', { sessionId: c.sessionId });
+                  if (c.sets === 0) navigation.navigate('Summary', { sessionId: c.sessionId, back: true });
+                  else navigation.navigate('Repeat', { sessionId: c.sessionId });
                 }}
               />
             ))}
           </Group>
         )}
+        {list.more ? (
+          <TextButton
+            label="Show more"
+            tone="secondary"
+            onPress={() => {
+              setLimit((n) => n + PAST_PAGE);
+              reload();
+            }}
+          />
+        ) : null}
         {footer !== null && !selecting ? (
           <Group>
             <Row

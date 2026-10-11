@@ -737,6 +737,24 @@ export class SqliteSessions implements SessionRepository {
   }
 
   /**
+   * IDs of every workout in history done in the app, with or without
+   * completed sets, newest first: Past workouts' list, where test sessions
+   * (`Finish anyway` with nothing logged) must be reachable to delete them
+   * (delete-workouts §2.3; review r2 B1). Paged by `offset` (B2).
+   */
+  listPastWorkoutIds(ownerId: string, limit: number, offset = 0): Promise<string[]> {
+    return this.db.read(async (q) =>
+      (
+        await q.getAll<{ id: string }>(
+          `SELECT id FROM sessions WHERE owner_id = ? AND ${inHistorySql()} AND source = 'manual'
+           ORDER BY started_at_utc DESC, id DESC LIMIT ? OFFSET ?`,
+          [ownerId, limit, offset],
+        )
+      ).map((r) => r.id),
+    );
+  }
+
+  /**
    * The newest finished workouts done in the app with a completed set, as
    * small rows (no aggregate decode): what the rotation and the routine
    * list's `last done` read (premium-feel §2.6). Newest first.
@@ -827,19 +845,25 @@ export class SqliteSessions implements SessionRepository {
    * newest deletion first. Past their 30 days they are never listed, whether
    * or not the purge has run (DW21).
    */
-  listRecentlyDeleted(ownerId: string, nowUtc: string): Promise<SessionAggregate[]> {
+  listRecentlyDeleted(ownerId: string, nowUtc: string): Promise<{ sessions: SessionAggregate[]; unreadable: number }> {
     return this.db.read(async (q) => {
       const rows = await q.getAll<{ id: string }>(
         `SELECT id FROM sessions WHERE owner_id = ? AND status = 'deleted' AND purge_after_utc > ?
          ORDER BY deleted_at_utc DESC, id DESC`,
         [ownerId, nowUtc],
       );
-      const out: SessionAggregate[] = [];
+      // One row that can't be read is skipped and counted; the rest stay restorable (review r2 S2).
+      const sessions: SessionAggregate[] = [];
+      let unreadable = 0;
       for (const r of rows) {
-        const agg = await readAggregate(q, r.id);
-        if (agg) out.push(agg);
+        try {
+          const agg = await readAggregate(q, r.id);
+          if (agg) sessions.push(agg);
+        } catch {
+          unreadable += 1;
+        }
       }
-      return out;
+      return { sessions, unreadable };
     });
   }
 

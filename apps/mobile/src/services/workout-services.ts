@@ -155,13 +155,15 @@ import type {
   ZonedTimestamp,
 } from '@fizz/schemas';
 
+/** A past workout's title when it has no exercise (`Finish anyway` with nothing added). */
+export const EMPTY_WORKOUT_TITLE = 'Empty workout';
+
 /**
  * Services for the workout loop (Today → check-in → Active set → Rest →
  * Summary). In-process, local, no AI and no network. Screens call these; the
  * rules live in `@fizz/domain`. Every write is idempotent by an operation ID
  * chosen by the screen once per intent, and versioned where it edits.
  */
-
 export interface WorkoutServicesContext {
   repos: () => SqliteRepositories;
   store: () => Store;
@@ -1991,7 +1993,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       return {
         sessionId: a.session.id,
         version: a.session.version,
-        title: storedName(a) ?? (await titleFor(a.exercises.map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title,
+        // A test session with no exercise at all is recognisable in Past workouts' delete list (delete-workouts §2.3).
+        title: storedName(a) ?? (a.exercises.length === 0 ? EMPTY_WORKOUT_TITLE : (await titleFor(a.exercises.map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title),
         startedAtUtc: a.session.startedAt.utc,
         tz: a.session.startedAt.tz,
         localDate: a.session.localDate ?? null,

@@ -17,6 +17,7 @@ import {
   selectTitle,
   toggleAll,
   toggleOne,
+  unreadableLine,
 } from '../../history/delete-view';
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { IntentOps } from '../../history/intent-ops';
@@ -139,7 +140,24 @@ export function RecentlyDeletedScreen() {
     <>
       <Screen>
         {line ? <StatusLine icon="info.circle" tone="info" text={line} /> : null}
-        {rows.length === 0 ? (
+        {/* Never `Nothing deleted…` while some can't be read (review r2 S2). */}
+        {data.value.unreadable > 0 ? (
+          <StatusLine
+            icon="exclamationmark.triangle"
+            tone="warning"
+            text={unreadableLine(data.value.unreadable)}
+            action={
+              <TextButton
+                label="Check data ›"
+                tone="secondary"
+                onPress={() => {
+                  navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'DataBackup', initial: false } });
+                }}
+              />
+            }
+          />
+        ) : null}
+        {rows.length === 0 && data.value.unreadable > 0 ? null : rows.length === 0 ? (
           <AppText variant="body">{DELETE_COPY.empty}</AppText>
         ) : (
           <Group>

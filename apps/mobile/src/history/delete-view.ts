@@ -45,6 +45,11 @@ export function pastRowDetail(row: PastRow): string {
   return row.source === 'import' ? `${plural(row.sets, 'set', 'sets')} · ${DELETE_COPY.imported}` : `${row.gymName} · ${plural(row.sets, 'set', 'sets')}`;
 }
 
+/** `2 workouts couldn’t be read and aren’t listed.` (Past workouts, Recently deleted). */
+export function unreadableLine(n: number): string {
+  return `${plural(n, 'workout', 'workouts')} couldn’t be read and ${n === 1 ? 'isn’t' : 'aren’t'} listed.`;
+}
+
 /** `Gone on 9 Nov` (the last day it can be restored, in the phone's zone). */
 export function goneOnText(goneOn: string): string {
   return `Gone on ${formatDayMonth(localHourUtcMs(goneOn, 12, 'UTC'), 'UTC')}`;

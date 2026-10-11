@@ -182,7 +182,7 @@ describe('Delete my data and Reset coaching knowledge with deleted workouts (DW2
       tombstones: await q.getAll('SELECT * FROM purged_sessions'),
     }));
     expect(after).toEqual(before);
-    expect((await m.store.repos.sessions.listRecentlyDeleted(OWNER, NOW.utc)).map((x) => x.session.id)).toEqual([a.session.id]);
+    expect((await m.store.repos.sessions.listRecentlyDeleted(OWNER, NOW.utc)).sessions.map((x) => x.session.id)).toEqual([a.session.id]);
     expect(await m.store.repos.sessions.isPurged(b.session.id)).toBe(true);
     expect((await checkIntegrity(m.store.db)).ok).toBe(true);
   });

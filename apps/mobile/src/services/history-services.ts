@@ -22,6 +22,17 @@ import type { RepeatCandidate } from './workout-services';
  * is allowed and the store writes it in one transaction.
  */
 
+/** Past workouts loads this many rows at a time; `Show more` loads the next (review r2 B2). */
+export const PAST_PAGE = 30;
+
+export interface PastWorkoutsPage {
+  rows: RepeatCandidate[];
+  unreadable: number;
+  importedNotListed: number;
+  /** Older workouts exist beyond these rows. */
+  more: boolean;
+}
+
 export interface DeletedWorkoutRow extends RepeatCandidate {
   /** Last local day it can be restored (`Gone on <date>`), in the phone's zone. */
   goneOn: string;
@@ -106,25 +117,60 @@ export function createHistoryServices(ctx: HistoryServicesContext) {
       return run(() => repos().sessions.restoreWorkouts({ ownerId: p.id, items, opId, at: ctx.now() }), DELETE_MESSAGES.gone, DELETE_MESSAGES.restoreFailed);
     },
 
-    /** Recently deleted (§2.5): newest deletion first; past 30 days never listed. A row that can't be read is skipped and counted. */
+    /**
+     * Recently deleted (§2.5): newest deletion first; past 30 days never
+     * listed. A row that can't be read is skipped and counted; a read that
+     * fails outright throws, so the screen shows its error, never the empty
+     * state (review r2 S2).
+     */
     async recentlyDeleted(): Promise<{ rows: DeletedWorkoutRow[]; unreadable: number }> {
       const p = await ctx.profile();
       if (!p) return { rows: [], unreadable: 0 };
       const now = ctx.now();
-      let list: SessionAggregate[];
-      try {
-        list = await repos().sessions.listRecentlyDeleted(p.id, now.utc);
-      } catch {
-        return { rows: [], unreadable: 1 };
-      }
+      const list = await repos().sessions.listRecentlyDeleted(p.id, now.utc);
       const gyms = new Map<string, string>();
       const rows: DeletedWorkoutRow[] = [];
-      for (const a of list) {
+      let unreadable = list.unreadable;
+      for (const a of list.sessions) {
         const deletion = a.session.deletion;
-        if (!deletion) continue;
+        if (!deletion) {
+          unreadable += 1;
+          continue;
+        }
         rows.push({ ...(await ctx.describe(a, gyms)), goneOn: goneOnDate(deletion.purgeAfterUtc, now.tz), deletedAtUtc: deletion.at.utc });
       }
-      return { rows, unreadable: 0 };
+      return { rows, unreadable };
+    },
+
+    /**
+     * Past workouts (§2.3): every workout logged in the app that is in
+     * history, newest first, including ones with nothing logged (review r2
+     * B1). Paged: `limit` rows from `offset`; `more` when older ones exist
+     * (B2). A record that can't be read is skipped and counted. Imported
+     * workouts are counted, not listed (P-I3); they are deleted from their
+     * import's view.
+     */
+    async pastWorkouts(page: { limit?: number; offset?: number } = {}): Promise<PastWorkoutsPage> {
+      const limit = page.limit ?? PAST_PAGE;
+      const offset = page.offset ?? 0;
+      const p = await ctx.profile();
+      if (!p) return { rows: [], unreadable: 0, importedNotListed: 0, more: false };
+      const ids = await repos().sessions.listPastWorkoutIds(p.id, limit + 1, offset);
+      const gyms = new Map<string, string>();
+      const rows: RepeatCandidate[] = [];
+      let unreadable = 0;
+      for (const id of ids.slice(0, limit)) {
+        let a: SessionAggregate | null;
+        try {
+          a = await repos().sessions.get(id);
+        } catch {
+          unreadable += 1;
+          continue;
+        }
+        if (a) rows.push(await ctx.describe(a, gyms));
+      }
+      const importedNotListed = await repos().sessions.countImportedFinished(p.id).catch(() => 0);
+      return { rows, unreadable, importedNotListed, more: ids.length > limit };
     },
 
     /** The Past workouts footer and the Data & backup row: 0 hides the footer and reads `None`. */
