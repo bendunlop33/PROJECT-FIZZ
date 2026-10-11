@@ -500,6 +500,12 @@ export const WorkoutSessionSchema = z.object({
   finishBy: ZonedTimestampSchema.optional(),
   /** The pre-start draft's edits this workout was started with (ADR 0022 §4). Absent = none. */
   todayEdits: SessionTodayEditsSchema.optional(),
+  /**
+   * Ben confirmed a long workout's time with `Count it` (progress.md PG25a),
+   * Your data. A workout over Progress's 4 h cap counts in `Time in gym` only
+   * once this is set. Absent = not confirmed. Changes no set and no time.
+   */
+  durationConfirmedAt: ZonedTimestampSchema.optional(),
 });
 export type WorkoutSession = z.infer<typeof WorkoutSessionSchema>;
 

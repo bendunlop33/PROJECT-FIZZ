@@ -6,20 +6,31 @@ import type { Weekday } from '@fizz/schemas';
  * (progress.md PG16).
  */
 
+/** One formatter per zone: building an `Intl.DateTimeFormat` costs far more than using one (Progress reads hundreds of dates). */
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(tz: string): Intl.DateTimeFormat {
+  let f = FORMATTERS.get(tz);
+  if (f === undefined) {
+    f = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+      weekday: 'short',
+    });
+    FORMATTERS.set(tz, f);
+  }
+  return f;
+}
+
 function parts(ms: number, tz: string): { year: number; month: number; day: number; hour: number; minute: number; second: number; weekday: string } {
   const out: Record<string, string> = {};
-  const f = new Intl.DateTimeFormat('en-GB', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-    weekday: 'short',
-  });
-  for (const p of f.formatToParts(ms)) out[p.type] = p.value;
+  for (const p of formatterFor(tz).formatToParts(ms)) out[p.type] = p.value;
   return {
     year: Number(out.year),
     month: Number(out.month),
@@ -101,4 +112,12 @@ export function localWeekBounds(ms: number, tz: string): { startMs: number; endM
 export function clockText(ms: number, tz: string): string {
   const p = parts(ms, tz);
   return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
+}
+
+/** Day of the week of a calendar date (`YYYY-MM-DD`), 0 = Monday … 6 = Sunday. Zone-free. */
+export function weekdayIndexOfDate(localDate: string): number {
+  const [y, m, d] = localDate.split('-').map(Number);
+  // eslint-disable-next-line no-restricted-globals -- arithmetic on calendar fields, not a clock read
+  const sundayFirst = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1)).getUTCDay();
+  return (sundayFirst + 6) % 7;
 }

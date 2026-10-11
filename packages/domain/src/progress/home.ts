@@ -1,0 +1,324 @@
+import type { Load, ProgressGrouping, ProgressWindowDays } from '@fizz/schemas';
+import { formatNumber } from '../display';
+import { deriveWorkoutTitle } from '../session/first-run';
+import { countSessions, timeInGym, type DayCount, type LeftOutSession } from './activity';
+import { muscleFrequency, type MuscleInfo } from './muscles';
+import type { ProgressSession } from './projection';
+import { recordsInWindow, type ProgressRecord } from './records';
+import {
+  dayMonth,
+  dayMonthLong,
+  dayStripWords,
+  gymTimeText,
+  gymTimeWords,
+  perWeekText,
+  countNoun,
+  rangeText,
+  setsText,
+  setsWords,
+  WEEKDAY_LETTER,
+  weekBarsWords,
+  weekdayDayMonth,
+  windowLabel,
+} from './text';
+import { progressWindow, type ProgressWindow } from './window';
+
+/**
+ * The Progress home view model (progress.md §2.2–§2.4, §3.1, §5): every
+ * number and word the screens show, from the finished workouts and the
+ * exercise table. Pure; the screens only lay it out. Nothing here needs a
+ * network or the coach.
+ */
+
+export interface ProgressHomeInput {
+  /** Every finished workout (logged and imported), any order. */
+  sessions: readonly ProgressSession[];
+  exercises: ReadonlyMap<string, MuscleInfo>;
+  /** Today's local date in the owner's zone. */
+  today: string;
+  days: ProgressWindowDays;
+  grouping: ProgressGrouping;
+  gymNames?: Readonly<Record<string, string>>;
+  /** How many records to list (slice A lists up to 5 inline). */
+  recordLimit?: number;
+}
+
+export interface StatView {
+  value: string;
+  label: string;
+}
+
+export interface DayCellView {
+  date: string;
+  letter: string;
+  isToday: boolean;
+  count: number;
+  /** `●` for one, `2` for two or more, `·` for none: the screen draws shapes from `count`. */
+}
+
+export type BarsView =
+  | { kind: 'days'; rows: { firstDate: string; cells: DayCellView[] }[]; words: string }
+  | { kind: 'weeks'; bars: { label: string; from: string; count: number; partial: boolean }[]; max: number; words: string };
+
+export interface TimeSheetRow {
+  sessionId: string;
+  version: number;
+  /** `Fri 2 Oct · Push A · 5 h 12 min`. */
+  text: string;
+  title: string;
+  durationMs: number | null;
+}
+
+export interface ActivityView {
+  stats: StatView[];
+  statsWords: string;
+  bars: BarsView;
+  /** `Previous 30 days: 7 sessions · 6 h 50 min` · `Previous 30 days: none`. */
+  comparison: string;
+  /** `Last workout: Fri 14 Aug` when the window is empty; null otherwise. */
+  lastWorkout: string | null;
+  /** `Time from 7 of 9 sessions` · `No times for imported workouts`; null when nothing was left out. */
+  footnote: string | null;
+  cardWords: string;
+  sheet: {
+    countLine: string;
+    overCap: TimeSheetRow[];
+    noEnd: TimeSheetRow[];
+    /** `1 imported from FitNotes`; null when none. */
+    imported: string | null;
+  };
+}
+
+export interface ContributorLine {
+  exerciseId: string;
+  text: string;
+}
+
+export interface FrequencyRowView {
+  key: string;
+  label: string;
+  sessions: number;
+  sets: number;
+  setsText: string;
+  perWeek: string | null;
+  /** 0–1 of the largest row's sets in this view. */
+  fraction: number;
+  zero: boolean;
+  words: string;
+  /** `Last trained 8 Oct` · `Not trained yet`. */
+  lastTrained: string;
+  contributors: ContributorLine[];
+}
+
+export interface MusclesView {
+  grouping: ProgressGrouping;
+  rows: FrequencyRowView[];
+  /** All rows are zero because no counted set has muscles (rows hidden). */
+  noneSet: boolean;
+  /** `2 exercises have no muscles set`; null when every exercise has them. */
+  noMusclesLine: string | null;
+  notCounted: {
+    /** `22 warm-up sets · 2 rated under RPE 6`; null when nothing was left out. */
+    summary: string | null;
+    noMuscles: { exerciseId: string; text: string }[];
+    /** `3 sets you marked (spotted) are counted here.`; null when none. */
+    marked: string | null;
+  };
+}
+
+export interface RecordView {
+  sessionId: string;
+  exerciseId: string;
+  /** `Bench press · Main Gym`. */
+  title: string;
+  label: string;
+  value: string;
+  date: string;
+  words: string;
+}
+
+export type ProgressHomeView =
+  | { dataState: 'empty' }
+  | {
+      dataState: 'normal';
+      window: ProgressWindow;
+      windowLabel: string;
+      datesLine: string;
+      activity: ActivityView;
+      muscles: MusclesView;
+      records: { items: RecordView[]; total: number; empty: string | null };
+    };
+
+function sessionTitle(s: ProgressSession, exercises: ReadonlyMap<string, MuscleInfo>): string {
+  if (s.name !== null && s.name.trim() !== '') return s.name;
+  if (s.source === 'import') return 'Imported';
+  const infos = s.exercises.flatMap((e) => {
+    const i = exercises.get(e.exerciseId);
+    return i ? [{ movementPattern: i.movementPattern, primaryMuscles: [...i.primaryMuscles] }] : [];
+  });
+  return deriveWorkoutTitle(infos);
+}
+
+function massWords(load: Load): string {
+  const unit = load.unit === 'kg' ? 'kilograms' : 'pounds';
+  const suffix = load.convention === 'per_hand' ? ' each' : load.convention === 'stack' ? ' on the stack' : '';
+  return `${formatNumber(load.value)} ${unit}${suffix}`;
+}
+
+function recordView(r: ProgressRecord, gymNames: Readonly<Record<string, string>>): RecordView {
+  const gym = r.gymId === null || r.equipmentId === null ? null : (gymNames[r.gymId] ?? null);
+  const title = gym === null ? r.exerciseName : `${r.exerciseName} · ${gym}`;
+  const what = r.kind === 'heaviest' ? `Heaviest set, ${massWords(r.load)} by ${String(r.reps)}` : `Most reps at ${massWords(r.load)}, ${String(r.reps)}`;
+  return {
+    sessionId: r.sessionId,
+    exerciseId: r.exerciseId,
+    title,
+    label: r.label,
+    value: r.value,
+    date: dayMonth(r.date),
+    words: `${gym === null ? r.exerciseName : `${r.exerciseName}, ${gym}`}. ${what}, ${dayMonthLong(r.date)}.`,
+  };
+}
+
+function dayCell(d: DayCount): DayCellView {
+  return { date: d.date, letter: WEEKDAY_LETTER[d.weekday] ?? '', isToday: d.isToday, count: d.count };
+}
+
+function leftOutRow(s: LeftOutSession, title: string): TimeSheetRow {
+  return {
+    sessionId: s.sessionId,
+    version: s.version,
+    title,
+    durationMs: s.durationMs,
+    text: s.durationMs === null ? `${weekdayDayMonth(s.date)} · ${title}` : `${weekdayDayMonth(s.date)} · ${title} · ${gymTimeText(s.durationMs)}`,
+  };
+}
+
+export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeView {
+  if (input.sessions.length === 0) return { dataState: 'empty' };
+  const window = progressWindow(input.today, input.days);
+  const label = windowLabel(input.days);
+  const gymNames = input.gymNames ?? {};
+  const byId = new Map(input.sessions.map((s) => [s.sessionId, s]));
+  const titleOf = (id: string): string => {
+    const s = byId.get(id);
+    return s ? sessionTitle(s, input.exercises) : 'Workout';
+  };
+
+  // Activity (PG24, PG25)
+  const counts = countSessions(input.sessions, window);
+  const time = timeInGym(input.sessions, window);
+  const timeValue = time.timedCount === 0 ? '—' : gymTimeText(time.totalMs);
+  const avgValue = time.avgMs === null ? '—' : gymTimeText(time.avgMs);
+  const statsWords = [
+    `${countNoun(counts.count, 'session', 'sessions')}.`,
+    time.timedCount === 0 ? 'Time in gym not available.' : `Time in gym ${gymTimeWords(time.totalMs)}.`,
+    time.avgMs === null ? '' : `Average ${gymTimeWords(time.avgMs)} per session.`,
+  ]
+    .filter((x) => x !== '')
+    .join(' ');
+  let bars: BarsView;
+  if (counts.days !== null) {
+    const cells = counts.days.map(dayCell);
+    const rows: { firstDate: string; cells: DayCellView[] }[] = [];
+    for (let i = 0; i < cells.length; i += 7) {
+      const chunk = cells.slice(i, i + 7);
+      rows.push({ firstDate: dayMonth(chunk[0]?.date ?? window.from), cells: chunk });
+    }
+    bars = { kind: 'days', rows, words: dayStripWords(counts.days) };
+  } else {
+    const weeks = counts.weeks ?? [];
+    bars = {
+      kind: 'weeks',
+      bars: weeks.map((w) => ({ label: dayMonth(w.from), from: w.from, count: w.count, partial: w.partial })),
+      max: Math.max(3, ...weeks.map((w) => w.count)),
+      words: weekBarsWords(weeks),
+    };
+  }
+  const prevHead = `Previous ${label}`;
+  const comparison =
+    counts.previousCount === 0
+      ? `${prevHead}: none`
+      : time.previousTimedCount === 0
+        ? `${prevHead}: ${countNoun(counts.previousCount, 'session', 'sessions')}`
+        : `${prevHead}: ${countNoun(counts.previousCount, 'session', 'sessions')} · ${gymTimeText(time.previousTotalMs)}`;
+  const leftOut = time.sessionCount - time.timedCount;
+  const onlyImported = time.sessionCount > 0 && time.excluded.imported === time.sessionCount;
+  const footnote = leftOut === 0 ? null : onlyImported ? 'No times for imported workouts' : `Time from ${String(time.timedCount)} of ${String(time.sessionCount)} sessions`;
+  const comparisonWords =
+    counts.previousCount === 0
+      ? `previous ${label} none`
+      : time.previousTimedCount === 0
+        ? `previous ${label} ${countNoun(counts.previousCount, 'session', 'sessions')}`
+        : `previous ${label} ${countNoun(counts.previousCount, 'session', 'sessions')}, ${gymTimeWords(time.previousTotalMs)}`;
+  const activity: ActivityView = {
+    stats: [
+      { value: String(counts.count), label: 'SESSIONS' },
+      { value: timeValue, label: 'TIME' },
+      { value: avgValue, label: 'AVG' },
+    ],
+    statsWords,
+    bars,
+    comparison,
+    lastWorkout: counts.count === 0 && counts.lastSessionDate !== null ? `Last workout: ${weekdayDayMonth(counts.lastSessionDate)}` : null,
+    footnote,
+    cardWords: `${statsWords} ${bars.words} ${comparisonWords[0]?.toUpperCase() ?? ''}${comparisonWords.slice(1)}. Opens calendar.`,
+    sheet: {
+      countLine: `Last ${label}: ${String(time.timedCount)} of ${countNoun(time.sessionCount, 'session', 'sessions')}`,
+      overCap: time.excluded.overCap.map((s) => leftOutRow(s, titleOf(s.sessionId))),
+      noEnd: time.excluded.noEnd.map((s) => leftOutRow(s, titleOf(s.sessionId))),
+      imported: time.excluded.imported === 0 ? null : `${String(time.excluded.imported)} imported from FitNotes`,
+    },
+  };
+
+  // Muscles (PG26, PG27)
+  const freq = muscleFrequency(input.sessions, input.exercises, window, input.grouping);
+  const maxSets = Math.max(0, ...freq.rows.map((r) => r.sets));
+  const rows: FrequencyRowView[] = freq.rows.map((r) => ({
+    key: r.key,
+    label: r.label,
+    sessions: r.sessions,
+    sets: r.sets,
+    setsText: setsText(r.sets),
+    perWeek: r.perWeek === null ? null : perWeekText(r.perWeek),
+    fraction: maxSets === 0 ? 0 : r.sets / maxSets,
+    zero: r.sets === 0 && r.sessions === 0,
+    words: `${r.label}, ${countNoun(r.sessions, 'session', 'sessions')}, ${setsWords(r.sets)}.`,
+    lastTrained: r.lastTrained === null ? 'Not trained yet' : `Last trained ${dayMonth(r.lastTrained)}`,
+    contributors: r.contributors.map((c) => ({
+      exerciseId: c.exerciseId,
+      text: c.factor === null ? `${c.name}  ${countNoun(c.sets, 'set', 'sets')}` : `${c.name}  ${countNoun(c.sets, 'set', 'sets')} × ${c.factor === 1 ? '1' : '½'} = ${setsText(c.total)}`,
+    })),
+  }));
+  const skipped = [freq.notCounted.warmups > 0 ? countNoun(freq.notCounted.warmups, 'warm-up set', 'warm-up sets') : null, freq.notCounted.easy > 0 ? `${String(freq.notCounted.easy)} rated under RPE 6` : null].filter(
+    (x): x is string => x !== null,
+  );
+  const noMusclesCount = freq.notCounted.noMuscles.length;
+  const muscles: MusclesView = {
+    grouping: input.grouping,
+    rows,
+    noneSet: input.grouping === 'body_part' && freq.hardSets > 0 && rows.every((r) => r.sets === 0),
+    noMusclesLine: input.grouping === 'body_part' && noMusclesCount > 0 ? `${countNoun(noMusclesCount, 'exercise has', 'exercises have')} no muscles set` : null,
+    notCounted: {
+      summary: skipped.length === 0 ? null : skipped.join(' · '),
+      noMuscles: freq.notCounted.noMuscles.map((n) => ({ exerciseId: n.exerciseId, text: `${n.name}: no muscles set (${countNoun(n.sets, 'set', 'sets')})` })),
+      marked: freq.markedCounted === 0 ? null : `${countNoun(freq.markedCounted, 'set', 'sets')} you marked ${freq.markedCounted === 1 ? 'is' : 'are'} counted here.`,
+    },
+  };
+
+  // Records (PG10, PG30)
+  const rec = recordsInWindow(input.sessions, window, { gymNames, limit: input.recordLimit ?? 5 });
+  return {
+    dataState: 'normal',
+    window,
+    windowLabel: label,
+    datesLine: rangeText(window),
+    activity,
+    muscles,
+    records: {
+      items: rec.items.map((r) => recordView(r, gymNames)),
+      total: rec.total,
+      empty: rec.total === 0 ? `No new records in the last ${label}.` : null,
+    },
+  };
+}
