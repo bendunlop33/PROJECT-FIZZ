@@ -120,6 +120,24 @@ export function overviewLayout(fontScale: number): { stacked: boolean } {
   return { stacked: fontScale >= AX_FONT_SCALE };
 }
 
+/** Where a stat value was seen wrapping in its column (onTextLayout): the window width and font scale then. */
+export interface StripWrap {
+  width: number;
+  fontScale: number;
+}
+
+/**
+ * Whether the stat strip stacks (§8, OV14; review r2 S2): at AX sizes, or
+ * once a value (`≈ 19:05`) was measured wrapping in its column at this
+ * width and text size, which can happen from xLarge up. Sticky for that
+ * width and scale, so the strip doesn't flip back when the stacked values
+ * (full width, one line) report no wrap.
+ */
+export function statStripStacked(p: { ax: boolean; width: number; fontScale: number; wrappedAt: StripWrap | null }): boolean {
+  if (p.ax) return true;
+  return p.wrappedAt !== null && p.wrappedAt.width === p.width && p.wrappedAt.fontScale === p.fontScale;
+}
+
 /** The inline tiles (§3.9): five 50 pt tiles with 6 pt gaps. Fixed size (their digit is capped at ×1.4). */
 export const CHECK_IN_TILES_WIDTH = 5 * 50 + 4 * 6;
 /** The gap between the `CHECK-IN` label and the tiles when they share a line. */

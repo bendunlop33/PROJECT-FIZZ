@@ -181,7 +181,7 @@ Markers never use `status.done`, `status.danger` or `accent`. The panel's `CHANG
 | Stale preview on Start | Rows re-render, toast `Targets updated`, no session (§7) |
 | A workout became active (another path) | Start returns `session_already_active`: the overview closes and Today shows Resume |
 | Force-close on the overview | No session. Relaunch opens Today. A tapped score is unlinked and reused within 2 h (CI4), so it shows pre-selected next time |
-| Dynamic Type AX1+ | The stat strip stacks (value + label per line). Rows stack the load under the name, and the warm-up fragment drops first. Numbers never truncate. Check-in tiles collapse to one `Check-in ›` button that opens `CheckInSheet` Step 1. A score there returns to the overview |
+| Dynamic Type AX1+ | The stat strip stacks (value + label per line); below AX it also stacks once a value is measured wrapping in its column (xLarge–xxxLarge, review r2 S2). Rows stack the load under the name, and the warm-up fragment drops first. Numbers never truncate. Check-in tiles collapse to one `Check-in ›` button that opens `CheckInSheet` Step 1. A score there returns to the overview and is linked by the next Start, even before the page reloads |
 | VoiceOver | Order: Close, gym, menu, eyebrow, title, strip (one element: "About 55 minutes, done about 19:05, 15 working sets"), muscles, rows (one button each: "1, Bench press, 3 sets of 6 to 8, 3 warm-ups, target 100 kilograms, load up. Expands."), check-in, Start. The escape gesture = Close |
 | Reduce Motion | The row panel appears without the height animation |
 
@@ -223,6 +223,7 @@ Follow-ups for the product manager (not edited here):
 - design-system components
 - the 12 pt `sectionLabel` vs the 16 pt floor (an existing token conflict)
 - `CheckInScale` inline tiles at 50 × 52 vs the sheet's ≥ 52 × 60 (check-in check 28); confirm on device
+- **Device check still open (review r1 B2, r2 S2/S3):** on Ben's iPhone at xLarge, xxxLarge and AX3, check the top bar and gym chip, the row panel lines, the check-in row in all three layouts, the stat strip (no number breaking mid-way, e.g. `≈ 19:05`) and Start staying visible. Not yet done; record the result here.
 
 ---
 

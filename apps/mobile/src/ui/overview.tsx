@@ -1,11 +1,11 @@
-import type { ReactNode } from 'react';
-import { Animated, Pressable, View } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { Animated, Pressable, useWindowDimensions, View } from 'react-native';
 
 import type { MarkerWords, OverviewRow as OverviewRowData, PanelLine } from '@fizz/domain';
 import type { CheckInScore } from '@fizz/schemas';
 
 import { useTheme } from '../theme';
-import { tileLabel } from '../workout/overview';
+import { statStripStacked, tileLabel, type StripWrap } from '../workout/overview';
 import { Icon } from './Icon';
 import { usePressScale } from './motion';
 import { AppText } from './Text';
@@ -27,9 +27,17 @@ export interface StatItem {
   label: string;
 }
 
-/** Three equal columns between hairlines; one VoiceOver element. Stacks (value + label per line) at AX sizes. */
-export function StatStrip({ items, accessibilityLabel, stacked }: { items: readonly StatItem[]; accessibilityLabel: string; stacked: boolean }) {
+/**
+ * Three equal columns between hairlines; one VoiceOver element. Stacks
+ * (value + label per line) at AX sizes (`ax`), or when a value is measured
+ * wrapping in its column (review r2 S2), so no number breaks mid-way.
+ */
+export function StatStrip({ items, accessibilityLabel, ax }: { items: readonly StatItem[]; accessibilityLabel: string; ax: boolean }) {
   const theme = useTheme();
+  // The window's width stands in for the strip's (the strip is the window less fixed margins), so it's known at the first layout.
+  const { fontScale, width } = useWindowDimensions();
+  const [wrappedAt, setWrappedAt] = useState<StripWrap | null>(null);
+  const stacked = statStripStacked({ ax, width, fontScale, wrappedAt });
   const hair = { borderColor: theme.colors['border.divider'], borderTopWidth: theme.dividerWidth, borderBottomWidth: theme.dividerWidth };
   return (
     <View accessible accessibilityLabel={accessibilityLabel} style={[hair, { flexDirection: stacked ? 'column' : 'row' }]}>
@@ -45,7 +53,15 @@ export function StatStrip({ items, accessibilityLabel, stacked }: { items: reado
             borderColor: theme.colors['border.divider'],
           }}
         >
-          <AppText numeric style={{ fontSize: 32, lineHeight: 36, fontWeight: '300', letterSpacing: -0.6, fontVariant: ['tabular-nums'] }} maxFontSizeMultiplier={1.6}>
+          <AppText
+            numeric
+            style={{ fontSize: 32, lineHeight: 36, fontWeight: '300', letterSpacing: -0.6, fontVariant: ['tabular-nums'] }}
+            maxFontSizeMultiplier={1.6}
+            onTextLayout={(e) => {
+              // Measured in columns only: a wrapped value stacks the strip for this width and text size.
+              if (!stacked && e.nativeEvent.lines.length > 1) setWrappedAt({ width, fontScale });
+            }}
+          >
             {it.approx ? (
               <AppText color="text.secondary" style={{ fontSize: 32, lineHeight: 36, fontWeight: '300' }} maxFontSizeMultiplier={1.6}>
                 {'≈'}

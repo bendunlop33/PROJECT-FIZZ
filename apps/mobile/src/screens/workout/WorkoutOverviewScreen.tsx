@@ -497,7 +497,7 @@ export function WorkoutOverviewScreen() {
         {view.title}
       </AppText>
       <View style={{ marginTop: theme.space['4'] }}>
-        <StatStrip items={stats} stacked={stacked} accessibilityLabel={statStripSpoken(view.estimate?.minutes ?? null, done?.text ?? null, view.workingSets)} />
+        <StatStrip items={stats} ax={stacked} accessibilityLabel={statStripSpoken(view.estimate?.minutes ?? null, done?.text ?? null, view.workingSets)} />
       </View>
       {view.gym === null ? (
         <View accessible accessibilityLabel={OVERVIEW_COPY.noGym} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], marginTop: theme.space['3'] }}>

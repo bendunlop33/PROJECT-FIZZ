@@ -22,6 +22,7 @@ import {
   rowDetail,
   startCheckIn,
   startFailure,
+  statStripStacked,
   targetsChanged,
   tileLabel,
 } from '../src/workout/overview';
@@ -170,6 +171,15 @@ describe('Dynamic Type and failures (§8, OV14)', () => {
     expect(rowDetail(row, true)).toBe('3 × 6–8');
     expect(rowDetail({ detail: '3 × 8', warmups: null }, true)).toBe('3 × 8');
   });
+  it('r2 S2: the stat strip stacks at AX, or once a value wrapped at this width and text size (sticky until either changes)', () => {
+    expect(statStripStacked({ ax: true, width: 390, fontScale: 1.65, wrappedAt: null })).toBe(true);
+    expect(statStripStacked({ ax: false, width: 390, fontScale: 1.235, wrappedAt: null })).toBe(false);
+    const wrap = { width: 390, fontScale: 1.235 };
+    expect(statStripStacked({ ax: false, width: 390, fontScale: 1.235, wrappedAt: wrap })).toBe(true);
+    // Text size or width changed: measure again in columns.
+    expect(statStripStacked({ ax: false, width: 390, fontScale: 1, wrappedAt: wrap })).toBe(false);
+    expect(statStripStacked({ ax: false, width: 430, fontScale: 1.235, wrappedAt: wrap })).toBe(false);
+  });
   it('B2: the check-in row fits by measured width: inline, label over the tiles, or collapsed', () => {
     expect(CHECK_IN_TILES_WIDTH).toBe(274);
     // 390 pt phone, 20 pt margins (350 available), default text: label (~64) + 12 + 274 = 350 fits.
@@ -286,6 +296,9 @@ describe('source checks', () => {
     expect(ui).toContain("flexDirection: stacked ? 'column' : 'row', columnGap");
     expect(ui).toContain('minWidth: stacked ? undefined : 80');
     expect(screen).toContain('checkInRowLayout({ available: rowWidth ??');
+    // r2 S2: the strip stacks by a measured wrap, not only at AX.
+    expect(ui).toContain('statStripStacked({ ax, width, fontScale, wrappedAt })');
+    expect(ui).toContain('e.nativeEvent.lines.length > 1');
   });
 
   it('Reduce Motion: the panel appears without the height animation', () => {
