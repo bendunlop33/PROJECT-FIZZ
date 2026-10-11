@@ -107,11 +107,6 @@ export function DataBackupScreen() {
             ) : undefined
           }
         />
-        {status.offPhone.state === 'none' ? (
-          <AppText variant="callout" color="text.secondary">
-            Lost if the app is deleted or signed with another Apple ID. Save a copy to Files.
-          </AppText>
-        ) : null}
         <View style={{ gap: theme.space['1'] }}>
           <DomainLabel domain="yourData" />
           <AppText variant="callout" numeric>
@@ -149,6 +144,10 @@ export function DataBackupScreen() {
         <Row title="After each workout" subtitle="On · keeps the last 14" />
         <Row title={running ? 'Backing up…' : 'Back up on this phone now'} icon="iphone" onPress={() => void backUpNow()} disabled={running} />
       </Group>
+      {/* D3, shown once and always (review S3): phone backups made after a Files copy are still at risk. */}
+      <AppText variant="callout" color="text.secondary">
+        Lost if the app is deleted or signed with another Apple ID. Save a copy to Files.
+      </AppText>
       {runResult ? <StatusLine icon={runResult.ok ? 'iphone' : 'exclamationmark.triangle'} tone={runResult.ok ? 'done' : 'warning'} text={runResult.text} /> : null}
       {status.copiesOnPhone.length > 0 ? (
         <Group>

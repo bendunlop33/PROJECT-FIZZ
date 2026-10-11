@@ -191,6 +191,16 @@ describe('§12 check 6: honesty kept', () => {
     expect(describeBackupError({ code: 'not_a_backup', message: '' })).toBe('This isn’t a GymSmarter backup file. Data unchanged.');
     expect(describeBackupError({ code: 'checksum_mismatch', message: '' })).toMatch(/Data unchanged\.$/);
   });
+
+  it('Data & backup shows the D3 data-loss line once, whatever the Files copy state (review S3)', () => {
+    const src = readFileSync(join(ROOT, 'apps/mobile/src/screens/data/DataBackupScreen.tsx'), 'utf8');
+    const line = 'Lost if the app is deleted or signed with another Apple ID. Save a copy to Files.';
+    expect(src.split(line).length - 1).toBe(1);
+    // Not behind the `none` state: it sits under `Backups on this phone`.
+    const at = src.indexOf(line);
+    expect(src.lastIndexOf('title="Backups on this phone"', at)).toBeGreaterThan(-1);
+    expect(src.slice(src.lastIndexOf('</Group>', at), at)).not.toMatch(/offPhone\.state/);
+  });
 });
 
 describe('§12 check 7: the pain step (D2)', () => {
