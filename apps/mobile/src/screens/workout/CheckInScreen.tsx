@@ -49,6 +49,7 @@ function Sheet({
   title,
   lead,
   info,
+  infoLabel,
   children,
   bar,
   onBack,
@@ -59,6 +60,8 @@ function Sheet({
   lead?: string;
   /** Behind an ⓘ by the title (minimal copy): how a rule works, shown only on a tap. */
   info?: string;
+  /** VoiceOver label for the ⓘ; defaults to `About <title>`. */
+  infoLabel?: string;
   children?: React.ReactNode;
   bar: React.ReactNode;
   onBack?: () => void;
@@ -91,7 +94,7 @@ function Sheet({
             {info ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`About ${title}`}
+                accessibilityLabel={infoLabel ?? `About ${title}`}
                 accessibilityState={{ expanded: infoOpen }}
                 hitSlop={12}
                 onPress={() => {
@@ -473,6 +476,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
         <Sheet
           title="Which movements hurt?"
           info="Flagged movements don’t go up until you clear the flag."
+          infoLabel="About pain flags"
           onBack={() => {
             setStep('reasons');
           }}

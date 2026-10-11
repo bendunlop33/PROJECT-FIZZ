@@ -15,7 +15,7 @@ import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatTime } from '../../format/dates';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
-import { popToTabs, popToToday, replaceWithSummary } from '../../navigation/actions';
+import { openGymFromWorkout, popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
 import type { ActiveWorkoutData, GymChoice, RecordContext } from '../../services/workout-services';
 import { NameSheet } from '../routines/NameSheet';
@@ -590,16 +590,16 @@ export function WorkoutScreen() {
   }
 
   /**
-   * The off-profile line (audit A3) opens that equipment in the gym editor.
-   * The typed load is saved as a draft first (the debounced save would be
-   * cancelled on leaving), so it is back on return; the workout stays open
-   * on Today.
+   * The off-profile line (audit A3) opens that gym's detail, where `Use
+   * changes today` brings an equipment fix into this workout. The typed load
+   * is saved as a draft first (the debounced save would be cancelled on
+   * leaving), so it is back on return; if that save fails, stay here.
    */
   function openOffProfileEquipment(eq: FocusView['offProfileEquipment']) {
     if (eq === null) return;
     const draft = edits;
     const go = () => {
-      navigation.dispatch(popToTabs({ screen: 'Profile', params: { screen: 'EquipmentEditor', params: { gymId: eq.gymId, equipmentId: eq.equipmentId, kind: eq.kind, isNew: false }, initial: false } }));
+      navigation.dispatch(openGymFromWorkout(eq.gymId));
     };
     if (draft === null) {
       go();
@@ -607,8 +607,12 @@ export function WorkoutScreen() {
     }
     void services.workout
       .dispatch(session.id, { type: 'save_draft', at: services.now(), setId: draft.setId, values: draft.values })
-      .catch(() => null)
-      .then(go);
+      .then((r) => r.ok)
+      .catch(() => false)
+      .then((ok) => {
+        if (ok) go();
+        else showToast({ icon: 'exclamationmark.triangle', text: 'Couldn’t save. Try again.' });
+      });
   }
 
   /** Outcomes of `Still hurts` / `Clear flag` in the rest card, as the usual toast. */
