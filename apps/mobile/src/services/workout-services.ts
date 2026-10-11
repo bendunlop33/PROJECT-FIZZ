@@ -127,6 +127,12 @@ import {
   type TimeLeftView,
   type WorkoutSummary,
   type CoachStatus,
+  groupSessionTypes,
+  orderSessionTypes,
+  routineTypeKey,
+  SESSION_PICKER_DECISIONS,
+  type SessionType,
+  type SessionTypeKind,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type {
@@ -382,8 +388,36 @@ export interface RoutinePreview {
 
 export type RoutineWrite = { ok: true; routine: Routine; duplicate: boolean } | { ok: false; message: string; stale?: boolean };
 
-/** What the Workout overview previews (workout-overview §7): Up next, or one routine from the list. */
-export type OverviewTarget = { kind: 'next' } | { kind: 'routine'; routineId: string };
+/**
+ * What the Workout overview previews (workout-overview §7): Up next, one
+ * routine, or (session picker §7) a session type picked from its history:
+ * the next session of `sourceSessionId`, its most recent workout.
+ */
+export type OverviewTarget = { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string };
+
+/** One session picker row (session-picker §2.2): actuals only, no targets and no coach content. */
+export interface SessionPickerRow {
+  key: string;
+  label: string;
+  kind: SessionTypeKind;
+  /** What a tap opens: Up next (the recommended row, so the page is Today's card), a routine, or a history type's next session. */
+  target: OverviewTarget;
+  routineId: string | null;
+  sourceSessionId: string | null;
+  lastDone: ZonedTimestamp | null;
+  exerciseCount: number;
+  /** The `UP NEXT` row: the same session Today's card shows. */
+  recommended: boolean;
+  /** Today's pre-start draft for this session has edits (`Edited`, SP-D6). */
+  edited: boolean;
+}
+
+/** `services.sessions.list` (session-picker §7). `current`: Up next first, longest gap first, then `New`; `older`: `OLDER`. */
+export interface SessionList {
+  current: SessionPickerRow[];
+  older: SessionPickerRow[];
+  recommendedKey: string | null;
+}
 
 /** What a Start from the overview starts: the routine, or the last workout's next session. */
 export type OverviewStartOf = { routineOf: string; nextOf?: undefined } | { nextOf: string; routineOf?: undefined };
@@ -1099,6 +1133,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   async function resolveOverview(p: UserProfile, target: OverviewTarget | OverviewStartOf, gym?: { gymId: string; gymEquipment?: readonly EquipmentInstance[] | undefined }): Promise<ResolvedOverview | null> {
     if ('kind' in target) {
       if (target.kind === 'routine') return resolveRoutine(p, target.routineId, null);
+      if (target.kind === 'session') {
+        // A picked session type (session-picker §2.3): `Last done Wed 7 Oct`. Start, drafts and the key are the `nextOf` ones.
+        const picked = await resolveNext(p, target.sourceSessionId);
+        return picked === null || picked.kind !== 'next' ? picked : { ...picked, basis: { kind: 'last_done', at: picked.source.session.startedAt } };
+      }
       const up = await resolveUpNext(p, gym?.gymId ?? 'typical-gym-preview', gym?.gymEquipment);
       if (up === null) return null;
       if (up.kind === 'next') return resolveNext(p, up.sessionId);
@@ -2238,6 +2277,65 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
+  /** Two years of FitNotes history is a few hundred workouts; small rows, no decode. */
+  const TYPE_ROW_LIMIT = 2000;
+
+  const sessionTypes = {
+    /**
+     * The session picker's rows (session-picker §3, §7): routines and named
+     * workouts, one row per normalised name, in picker order. `UP NEXT` is
+     * the session Today's card shows (the same D19 resolver), so the two
+     * always agree; Ben's Decision 2 (longest gap) stays off until he
+     * decides. Types that can't be started (an imported source, P-I3) are
+     * left out. Local reads only: no AI, no network, nothing written.
+     * Never throws: null when it can't be read.
+     */
+    async list(req: { gymId: string | null; typicalEquipment?: readonly EquipmentInstance[] }): Promise<SessionList | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const now = ctx.now();
+        const live = liveRoutines(await repos().routines.listByOwner(p.id));
+        const rows = await repos().sessions.listSessionTypeRows(p.id, TYPE_ROW_LIMIT);
+        const index = groupSessionTypes({
+          routines: live.map((r) => ({ id: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null, exerciseCount: routineCounts(r).exercises })),
+          sessions: rows.map((r) => ({ id: r.sessionId, routineId: r.routineId, routineName: r.routineName, startedAt: { utc: r.startedAtUtc, tz: r.tz }, exerciseCount: r.exerciseCount, imported: r.imported })),
+          now,
+          groupImportsByCategory: SESSION_PICKER_DECISIONS.groupImportsByCategory,
+        });
+        const up = await resolveUpNext(p, req.gymId ?? 'typical-gym-preview', req.gymId === null ? req.typicalEquipment : undefined).catch(() => null);
+        const recommendedKey = up === null ? null : up.kind === 'routine' ? routineTypeKey(up.routine.id) : (index.keyOfSession.get(up.sessionId) ?? null);
+        const startable = index.types.filter((t) => t.startable);
+        // `Edited`: an open draft with edits, for the plan the row opens (a routine, or the type's newest workout).
+        const drafts = await ctx
+          .store()
+          .repos.drafts.listByOwner(p.id)
+          .catch(() => [] as PreStartDraft[]);
+        const editedBases = new Set(drafts.filter((d) => d.status === 'open' && draftIsLive(d, now.utc) && liveEdits(d.edits).length > 0).map((d) => draftBasisKey(d.basis)));
+        const isEdited = (t: SessionType): boolean => {
+          if (t.routineId !== null) return editedBases.has(draftBasisKey({ kind: 'routine', routineId: t.routineId }));
+          return t.sourceSessionId !== null && editedBases.has(draftBasisKey({ kind: 'next', sourceSessionId: t.sourceSessionId }));
+        };
+        const row = (t: SessionType): SessionPickerRow => ({
+          key: t.key,
+          label: t.label,
+          kind: t.kind,
+          target: t.key === recommendedKey ? { kind: 'next' } : t.routineId !== null ? { kind: 'routine', routineId: t.routineId } : { kind: 'session', sourceSessionId: t.sourceSessionId ?? '' },
+          routineId: t.routineId,
+          sourceSessionId: t.sourceSessionId,
+          lastDone: t.lastDone,
+          exerciseCount: t.exerciseCount,
+          recommended: t.key === recommendedKey,
+          edited: isEdited(t),
+        });
+        const ordered = orderSessionTypes(startable, recommendedKey);
+        return { current: ordered.current.map(row), older: ordered.older.map(row), recommendedKey: startable.some((t) => t.key === recommendedKey) ? recommendedKey : null };
+      } catch {
+        return null;
+      }
+    },
+  };
+
   /** The check-in an overview plans with: a score tapped on the page, else one reused from the last 2 h (the gate). */
   async function overviewCheckIn(tappedId: string | null): Promise<{ gate: CheckInGate; reused: CheckIn | null; planCheckIn: CheckIn | null }> {
     const gate = await checkIns.gate().catch((): CheckInGate => ({ kind: 'ask' }));
@@ -2626,7 +2724,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
-  return { checkIns, pain, workout, today, repeat, next, routines, gymSwitch, overview };
+  return { checkIns, pain, workout, today, repeat, next, routines, gymSwitch, overview, sessionTypes };
 }
 
 export type WorkoutServices = ReturnType<typeof createWorkoutServices>;
