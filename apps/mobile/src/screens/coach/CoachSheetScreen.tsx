@@ -198,7 +198,11 @@ export function CoachSheetScreen() {
   }
 
   async function undo(actionId: string) {
-    const r = await services.coach.undo(actionId, `undo:${actionId}:${newUuid()}`);
+    const r = await services.coach.undo(actionId, `undo:${actionId}:${newUuid()}`).catch(() => null);
+    if (r === null) {
+      setNotice('Couldn’t undo.');
+      return;
+    }
     setNotice(r.result.status === 'not_possible' ? `Couldn’t undo: ${r.undo.failure ?? 'it changed since'}.` : null);
     await loadRows(threadId ?? null);
     changed();

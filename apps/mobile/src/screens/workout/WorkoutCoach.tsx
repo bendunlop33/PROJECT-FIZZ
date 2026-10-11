@@ -8,7 +8,7 @@ import type { ActionRecord, BenInput, SessionAggregate } from '@fizz/schemas';
 
 import type { CoachAvailability } from '../../coach/coach-service';
 import { whyView, type WhyView } from '../../coach/sheet-view';
-import { ADJUST_CHIP_LABEL, adjustControlView, chipForTrigger, slotAfterTurn, slotView, type SlotView } from '../../coach/slot-view';
+import { ADJUST_CHIP_LABEL, adjustControlView, chipForTrigger, slotAfterFailure, slotAfterTurn, slotView, type SlotView } from '../../coach/slot-view';
 import { newUuid } from '../../device/runtime';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -83,7 +83,13 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void)
           setOutcome(after.outcome);
           if (after.adjustment !== null) appliedRef.current();
         } catch {
-          setOutcome({ text: 'Couldn’t reach the coach. Nothing changed.', retry: true });
+          // Read what this turn saved before saying "Nothing changed" (review N2).
+          const threadId = await services.coach.resolveThread({ kind: 'workout', sessionId }).catch(() => null);
+          const data = threadId === null ? null : await services.coach.loadThread(threadId).catch(() => null);
+          const after = slotAfterFailure(data?.actionsByTurn.get(turnId) ?? []);
+          setAdjustment(after.adjustment);
+          setOutcome(after.outcome);
+          if (after.adjustment !== null) appliedRef.current();
         } finally {
           setPending(null);
           setAvailability(await services.coach.availability());
@@ -128,13 +134,19 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void)
       if (pending !== null) services.coach.stop(pending);
     },
     undo: (actionId) => {
-      void services.coach.undo(actionId, `undo:${actionId}:${newUuid()}`).then((r) => {
-        // The line is rendered from the saved undo record (what came back, what was already logged).
-        setAdjustment(null);
-        setWhy(null);
-        setOutcome({ text: renderActionResult(r.undo, 'slot').text, retry: false });
-        if (r.result.status === 'written' || r.result.status === 'replayed') appliedRef.current();
-      });
+      void services.coach
+        .undo(actionId, `undo:${actionId}:${newUuid()}`)
+        .then((r) => {
+          // The line is rendered from the saved undo record (what came back, what was already logged).
+          setAdjustment(null);
+          setWhy(null);
+          setOutcome({ text: renderActionResult(r.undo, 'slot').text, retry: false });
+          if (r.result.status === 'written' || r.result.status === 'replayed') appliedRef.current();
+        })
+        .catch(() => {
+          // A store error: the banner and its Undo stay, so Ben can try again (review N1).
+          setOutcome({ text: 'Couldn’t undo.', retry: false });
+        });
     },
     // CA1: Adjust on an offer is Ben asking, in the trigger's direction.
     acceptOffer: () => {

@@ -59,6 +59,18 @@ export function slotAfterTurn(result: CoachTurnResult): { adjustment: ActionReco
   return { adjustment: null, outcome: { text: 'No change made.', retry: false } };
 }
 
+/**
+ * The slot after a turn that threw (review N2): "Nothing changed" only when
+ * the turn saved nothing. A change saved before the error (say, the reply
+ * failed to save) still shows as its banner with Undo.
+ */
+export function slotAfterFailure(saved: readonly ActionRecord[]): { adjustment: ActionRecord | null; outcome: { text: string; retry: boolean } | null } {
+  const committed = saved.find((r) => r.status === 'committed' && r.detail.kind === 'adjust_pending_sets') ?? null;
+  if (committed !== null) return { adjustment: committed, outcome: null };
+  if (saved.some((r) => r.status === 'committed')) return { adjustment: null, outcome: { text: 'Couldn’t reach the coach.', retry: false } };
+  return { adjustment: null, outcome: { text: 'Couldn’t reach the coach. Nothing changed.', retry: true } };
+}
+
 /** The `Adjust` control (§2.2): its caption and which chips it offers now. */
 export interface AdjustControlView {
   caption: string | null;

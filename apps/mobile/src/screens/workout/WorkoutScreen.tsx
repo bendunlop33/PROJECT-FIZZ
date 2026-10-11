@@ -424,16 +424,30 @@ export function WorkoutScreen() {
     });
   }, [now, data, services]);
 
+  // `valueChangeGuard` after a target changed under Ben's thumb; the timer is cleared on unmount (review N5).
+  const guardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armGuard = useCallback(() => {
+    setGuard(true);
+    if (guardTimer.current !== null) clearTimeout(guardTimer.current);
+    guardTimer.current = setTimeout(() => {
+      guardTimer.current = null;
+      setGuard(false);
+    }, TIMING.valueChangeGuard);
+  }, []);
+  useEffect(
+    () => () => {
+      if (guardTimer.current !== null) clearTimeout(guardTimer.current);
+    },
+    [],
+  );
+
   // The coach in the workout (ADR 0020 C7). An applied change reloads the targets and guards Log for
   // `timing.valueChangeGuard`, so a tap aimed at the old label never saves the new one (§4.3).
   const coachSessionId = data === 'loading' || data === null ? null : data.aggregate.session.id;
   const coach = useWorkoutCoach(coachSessionId, () => {
     void reload();
     changed();
-    setGuard(true);
-    setTimeout(() => {
-      setGuard(false);
-    }, TIMING.valueChangeGuard);
+    armGuard();
   });
   // An unanswered offer goes when the rest ends (§3.2).
   const restRunning = data !== 'loading' && data !== null && data.aggregate.restTimer?.status === 'running';
@@ -724,12 +738,7 @@ export function WorkoutScreen() {
     setSwitchCard(null);
     setReviewOpen(false);
     const after = fresh ? services.workout.view(fresh, clockNow(), null).primary.label : labelBefore;
-    if (logGuardAfterSwitch(labelBefore, after)) {
-      setGuard(true);
-      setTimeout(() => {
-        setGuard(false);
-      }, TIMING.valueChangeGuard);
-    }
+    if (logGuardAfterSwitch(labelBefore, after)) armGuard();
     showToast({
       text: switchedToast(card.proposal),
       action: 'Undo',

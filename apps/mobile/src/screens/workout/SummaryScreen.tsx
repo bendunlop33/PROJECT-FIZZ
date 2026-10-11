@@ -134,8 +134,9 @@ export function SummaryScreen() {
 
   async function tapNext(row: NextTimeRowView, tap: NextTimeTap) {
     if (row.row === null) return;
-    const r = await services.coach.tapNextTarget(row.row, tap, newUuid());
-    if (r.status === 'not_possible') setToast({ text: r.reason === 'used' ? 'Already used.' : 'Changed since. Check it again.' });
+    const r = await services.coach.tapNextTarget(row.row, tap, newUuid()).catch(() => null);
+    if (r === null) setToast({ text: tap === 'undo' ? 'Couldn’t undo.' : 'Couldn’t save.' });
+    else if (r.status === 'not_possible') setToast({ text: r.reason === 'used' ? 'Already used.' : 'Changed since. Check it again.' });
     reload();
     changed();
   }
@@ -459,10 +460,15 @@ export function SummaryScreen() {
                 onPress={() => {
                   const id = nextTime.undoAll?.actionId;
                   if (id === undefined) return;
-                  void services.coach.undo(id, newUuid()).then(() => {
-                    reload();
-                    changed();
-                  });
+                  void services.coach
+                    .undo(id, newUuid())
+                    .catch(() => {
+                      setToast({ text: 'Couldn’t undo.' });
+                    })
+                    .then(() => {
+                      reload();
+                      changed();
+                    });
                 }}
               />
             ) : null}

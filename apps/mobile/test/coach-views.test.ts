@@ -6,7 +6,7 @@ import type { ActionRecord, NextSessionTargetRecord } from '@fizz/schemas';
 import type { CoachAvailability } from '../src/coach/coach-service';
 import { nextTimeView, summaryNoteSentences } from '../src/coach/next-time-view';
 import { applyProgress, cardView, outcomeFor, routeLine, seesLabel, starterChips, startLiveTurn, statusView, thinkingLabel, whyView, workoutBarText } from '../src/coach/sheet-view';
-import { adjustControlView, chipForTrigger, slotView } from '../src/coach/slot-view';
+import { adjustControlView, chipForTrigger, slotAfterFailure, slotView } from '../src/coach/slot-view';
 
 /** View models for the coach sheet, the workout's coach slot and the Summary's Next time (C6–C8). */
 
@@ -211,5 +211,19 @@ describe('sheet chrome: context chip and workout bar (CS3, minimal copy)', () =>
     expect(workoutBarText(null, false)).toBe('Ready');
     expect(workoutBarText({ kind: 'running', remainingMs: 60_000 }, true)).toBe('Paused');
     for (const t of [workoutBarText(null, false), workoutBarText({ kind: 'ended' }, true)]) expect(t).not.toMatch(/log/i);
+  });
+});
+
+describe('slotAfterFailure (review N2)', () => {
+  const rec = (status: ActionRecord['status'], kind: 'adjust_pending_sets' | 'save_memory') =>
+    ({ actionId: ID(800), status, detail: kind === 'adjust_pending_sets' ? { kind, sessionId: ID(9), exercises: [] } : { kind, memoryId: ID(801), text: 'x' } }) as unknown as ActionRecord;
+  it('nothing saved: Nothing changed, with Try again', () => {
+    expect(slotAfterFailure([])).toEqual({ adjustment: null, outcome: { text: 'Couldn’t reach the coach. Nothing changed.', retry: true } });
+    expect(slotAfterFailure([rec('rejected', 'adjust_pending_sets')]).outcome?.text).toBe('Couldn’t reach the coach. Nothing changed.');
+  });
+  it('a change saved before the error shows as its banner; another saved action never reads "Nothing changed"', () => {
+    const a = rec('committed', 'adjust_pending_sets');
+    expect(slotAfterFailure([a])).toEqual({ adjustment: a, outcome: null });
+    expect(slotAfterFailure([rec('committed', 'save_memory')]).outcome).toEqual({ text: 'Couldn’t reach the coach.', retry: false });
   });
 });
