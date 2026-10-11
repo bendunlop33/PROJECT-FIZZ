@@ -80,7 +80,7 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
 
 describe('buildTurnRegistry (CC10, summary closed list)', () => {
   it('a plain question gets the reads only', () => {
-    expect(names(gate())).toEqual(['get_active_session', 'get_recent_training', 'get_training_overview', 'get_gym_equipment', 'get_progression_targets', 'get_recent_actions']);
+    expect(names(gate())).toEqual(['get_active_session', 'get_recent_training', 'get_training_overview', 'get_gym_equipment', 'get_progression_targets', 'get_substitutions', 'get_recent_actions']);
   });
 
   it("today's sets need Ben's request or an accepted offer, and only in a workout", () => {
@@ -94,7 +94,7 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
 
   it('the summary turn is a closed list: reads, next-session targets, structural only when gated (check 17)', () => {
     const summary = names(gate({ kind: 'summary' }));
-    expect(summary).toEqual(['get_active_session', 'get_recent_training', 'get_training_overview', 'get_gym_equipment', 'get_progression_targets', 'get_recent_actions', 'set_next_session_targets']);
+    expect(summary).toEqual(['get_active_session', 'get_recent_training', 'get_training_overview', 'get_gym_equipment', 'get_progression_targets', 'get_substitutions', 'get_recent_actions', 'set_next_session_targets']);
     const withSignal = names(gate({ kind: 'summary', structuralSignals: ['pain_flag'] }));
     expect(withSignal).toContain('propose_next_workout_change');
     // Even a request in the summary turn can't reach memory, pain or today's sets.

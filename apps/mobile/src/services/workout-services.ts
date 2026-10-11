@@ -2583,7 +2583,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * (no Apply step: Ben choosing is consent, TE3); nothing outside today
      * changes. The first edit creates the draft (`expectedDraftVersion: null`).
      */
-    async edit(req: DraftTarget & { edit: { kind: 'swap'; slotKey: string; toExerciseId: string } | { kind: 'skip'; slotKey: string } }): Promise<DraftWrite> {
+    async edit(req: DraftTarget & { edit: { kind: 'swap'; slotKey: string; toExerciseId: string } | { kind: 'skip'; slotKey: string } | { kind: 'order'; slotKeys: string[] } }): Promise<DraftWrite> {
       const edit = req.edit;
       return writeDraft(req, async ({ base }) => {
         if (edit.kind === 'swap') {

@@ -203,3 +203,10 @@ Each slice ends with `npm run check` passing and a small set of commits; slices 
 
 **11 Oct, coach tools slice 1: read tools** (developer; branch `claude/coach-tools`). Tested in Node only.
 - Executors for `get_recent_training`, `get_gym_equipment`, `get_progression_targets` and a new read, `get_training_overview` (`TrainingReadPort`, pure views in `packages/domain/src/coach/training-view.ts`). The context no longer says "Training history before this workout: not available"; Today has the `How am I doing?` chip. Decisions written into coach-contract (revision 11 Oct): no estimates, flagged sets labelled and left out, imports never compared, every read labelled Your data and quoted as data.
+
+**11 Oct, coach tools slice 2: structural proposals** (developer; branch `claude/coach-tools`). Ben accepted §3 (CHANGELOG 2026-10-11 "Backlog defaults accepted"). Tested in Node only.
+- With routines now in the app, §3's basis widens as it anticipated: a proposal targets the source workout's **routine** (its version recorded; a later version makes it `Out of date`), else the next session built from that workout. Pure check in `packages/domain/src/coach/structural.ts` (`checkStructuralProposal`, `substitutionOptions`, `structuralProposalState`), executor and `get_substitutions` in `packages/coach/src/structural.ts`, Ben's Apply / Not now as his own `ActionRecord`s (`commitStructuralTap`, one transaction, idempotent, refused once stale).
+- Apply writes Ben's own today-edits into the next workout's draft when its overview loads (one op ID per apply and change, so a reload writes nothing); Undo of the Apply takes them back on the next load and is refused once a workout started from that plan. The routine itself only changes through the overview's `Change Push A too ›` (change-review).
+- **Add is not offered** (the draft can't hold an added exercise yet); remove and reorder requests now count as structural requests with a future scope. No migration: the extra fields live in the action record's JSON detail.
+- Not built: a structural card on the Summary screen itself (the summary turn can make one; it shows in that thread in the coach sheet).
+

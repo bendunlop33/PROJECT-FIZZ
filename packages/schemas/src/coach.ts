@@ -9,6 +9,7 @@ import {
   ZonedTimestampSchema,
 } from './common';
 import { PainAreaSchema, type PainFlag } from './checkin';
+import { DraftBasisSchema } from './draft';
 import type { SessionCommand } from './commands';
 import { RoutineExerciseSchema } from './routine';
 
@@ -97,6 +98,11 @@ export const GetGymEquipmentArgsSchema = z.strictObject({
 });
 
 export const GetProgressionTargetsArgsSchema = z.strictObject({
+  exerciseId: IdSchema,
+});
+
+/** Exercises that could replace one in the plan at this gym (for a swap proposal). */
+export const GetSubstitutionsArgsSchema = z.strictObject({
   exerciseId: IdSchema,
 });
 
@@ -202,6 +208,7 @@ export const CoachToolNameSchema = z.enum([
   'get_training_overview',
   'get_gym_equipment',
   'get_progression_targets',
+  'get_substitutions',
   'get_recent_actions',
   'adjust_pending_sets',
   'set_next_session_targets',
@@ -220,6 +227,7 @@ export const COACH_TOOL_ARGS = {
   get_training_overview: GetTrainingOverviewArgsSchema,
   get_gym_equipment: GetGymEquipmentArgsSchema,
   get_progression_targets: GetProgressionTargetsArgsSchema,
+  get_substitutions: GetSubstitutionsArgsSchema,
   get_recent_actions: GetRecentActionsArgsSchema,
   adjust_pending_sets: AdjustPendingSetsArgsSchema,
   set_next_session_targets: SetNextSessionTargetsArgsSchema,
@@ -308,6 +316,14 @@ export const StructuralChangeLineSchema = z.object({
   text: z.string().min(1).max(200),
 });
 
+/** One checked structural change, by plan slot (routine slot or the source workout's part root). */
+export const StructuralOpSchema = z.discriminatedUnion('change', [
+  z.object({ change: z.literal('swap'), slotKey: IdSchema, fromExerciseId: IdSchema, fromName: z.string().min(1).max(120), toExerciseId: IdSchema, toName: z.string().min(1).max(120) }),
+  z.object({ change: z.literal('remove'), slotKey: IdSchema, exerciseId: IdSchema, name: z.string().min(1).max(120) }),
+  z.object({ change: z.literal('reorder'), slotKeys: z.array(IdSchema).min(2).max(40), names: z.array(z.string().max(120)).max(40) }),
+]);
+export type StructuralOpRecord = z.infer<typeof StructuralOpSchema>;
+
 export const ActionDetailSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('adjust_pending_sets'),
@@ -328,6 +344,25 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     changes: z.array(StructuralChangeLineSchema).min(1).max(6),
     /** App text after `Because:`. */
     because: z.string().min(1).max(200),
+    /**
+     * (11 Oct, coach tools) What the next workout starts from: the routine, or
+     * the next session built from `sourceSessionId`. Absent on records made
+     * before structural proposals were built.
+     */
+    basis: DraftBasisSchema.optional(),
+    /** The basis's version when proposed: the routine's version, or the source workout's. A later version makes the card `Out of date`. */
+    basisVersion: z.int().min(1).optional(),
+    /** The checked changes, by plan slot (`structuralDraftEdits` turns them into draft edits on Apply). */
+    ops: z.array(StructuralOpSchema).max(6).optional(),
+    /** Exercise names before and after, in order. */
+    before: z.array(z.string().min(1).max(120)).max(40).optional(),
+    after: z.array(z.string().min(1).max(120)).max(40).optional(),
+    /**
+     * On Ben's own records about a proposal (author `ben`): the proposal's
+     * action ID. `committed` = Apply (undoable until the next workout
+     * starts), `rejected` = Not now.
+     */
+    proposalId: IdSchema.optional(),
   }),
   /**
    * Ben changed a routine from today's edits (`Change Push A too ›`, ADR 0022;

@@ -62,3 +62,4 @@ export * from './coach/pain-words';
 export * from './coach/short-forms';
 export * from './coach/next-session';
 export * from './coach/training-view';
+export * from './coach/structural';

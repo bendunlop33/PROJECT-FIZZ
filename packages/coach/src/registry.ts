@@ -96,6 +96,17 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     description: "The built-in rule's next targets for an exercise and why. A comparison, not advice.",
   },
   {
+    name: 'get_substitutions',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ALL,
+    plainLabel: null,
+    capabilitySection: 'read',
+    description: 'Exercises that could replace one at Ben’s gym (the catalogue’s substitutes and the same movement family), with exercise IDs to use in a swap. Only doable here, never pain-flagged.',
+  },
+  {
     name: 'get_recent_actions',
     effect: 'read',
     writes: [],
@@ -138,7 +149,8 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ['general', 'workout', 'summary'],
     plainLabel: 'Swapping, adding, removing or reordering exercises in your next workout',
     capabilitySection: 'suggest_only',
-    description: 'Suggest swapping, adding, removing or reordering exercises in the next workout built from this one. Nothing changes until Ben taps Apply.',
+    description:
+      'Suggest swapping, removing or reordering exercises in the next workout built from a finished one (its routine, or the next session from it). Use exercise IDs from the workout or get_substitutions. Adding exercises is not possible yet. Nothing changes until Ben taps Apply.',
   },
   {
     name: 'set_pain_flag',

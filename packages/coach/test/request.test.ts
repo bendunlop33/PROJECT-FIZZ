@@ -108,6 +108,27 @@ describe('classifyBenRequest (the ben_request gate; review S3)', () => {
     expect(classifyBenRequest(text)).toEqual({ source: 'words', kinds: [kind] });
   });
 
+  // 11 Oct, coach tools: removing or reordering exercises in the plan opens the structural tool only with a future scope.
+  it.each([
+    ['Drop the triceps pushdown next time', ['structural']],
+    ['Drop the triceps pushdown next time and do laterals first', ['structural']],
+    ['Do laterals first next time', ['structural']],
+    ['can you remove lateral raises from my routine?', ['structural']],
+    ['Move squats to the end from now on', ['structural']],
+    ['Reorder push day', ['structural']],
+    ['drop bench to 95', ['change']],
+    ['drop bench by 5 next time', ['change']],
+    ['Drop the weight next time', ['change']],
+    ['drop the pushdown', ['change']],
+    ["don't drop bench next time", null],
+    ['should I drop bench next time?', null],
+    ['I dropped the pushdown last time', null],
+    ['I do squats first', null],
+    ['Do squats first?', null],
+  ] as const)('remove/reorder: %s', (text, kinds) => {
+    expect(classifyBenRequest(text)).toEqual(kinds === null ? null : { source: 'words', kinds: [...kinds] });
+  });
+
   it('a message can carry more than one kind', () => {
     expect(classifyBenRequest('swap cable fly next time and drop bench to 95')).toEqual({ source: 'words', kinds: ['structural', 'change'] });
     expect(classifyBenRequest('remember that I train before work. Also lower sets 3 and 4')).toEqual({ source: 'words', kinds: ['memory', 'change'] });

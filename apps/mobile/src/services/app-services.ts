@@ -4,6 +4,8 @@ import {
   deriveId,
   discardCommand,
   LEGACY_STARTER_IDS,
+  liveEdits,
+  structuralDraftPlan,
   listGymPresets,
   materialiseGymDraft,
   starterExercises,
@@ -29,7 +31,7 @@ import {
   type RecordCounts,
   type SqliteRepositories,
 } from '@fizz/persistence';
-import type { EquipmentInstance, Exercise, Gym, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
+import type { DraftBasis, EquipmentInstance, Exercise, Gym, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
 import type { CoachModelPort } from '@fizz/coach';
 import type { TextCoachState } from '@fizz/providers';
@@ -472,6 +474,8 @@ export function createAppServices(deps: AppServicesDeps) {
     onSessionChanged: (a) => {
       if (deps.restAlerts) void deps.restAlerts.reconcile(a, toMs(deps.now().utc));
     },
+    catalogueExercises,
+    catalogueSubstitutions,
   });
 
   /** Gyms and equipment (Your data): the minimal gym editor. */
@@ -496,6 +500,42 @@ export function createAppServices(deps: AppServicesDeps) {
   }
 
   /**
+   * Structural changes Ben applied from a coach card (ADR 0020 §3) are
+   * written into the next workout's pre-start draft as his own `Swap today`,
+   * `Skip today` and order edits (ADR 0022), so the overview shows them with
+   * its own Undo and `Change Push A too ›` (the only route to a template
+   * change), and Start uses them like any edit. One op ID per apply and
+   * change: a second load writes nothing. An edit the plan has no place for
+   * any more is refused by the draft's own checks and left out.
+   */
+  async function applyCoachChanges(target: OverviewTarget, gymId: string | null, startOf: OverviewStartOf, draftVersion: number | null): Promise<boolean> {
+    const basis: DraftBasis = startOf.routineOf !== undefined ? { kind: 'routine', routineId: startOf.routineOf } : { kind: 'next', sourceSessionId: startOf.nextOf };
+    const applies = await coach.appliedStructural(basis);
+    if (applies.length === 0) return false;
+    const p = await getProfile();
+    const draft = p === null ? null : await repos().drafts.open(p.id, basis).catch(() => null);
+    const plan = structuralDraftPlan({ applies, draftOpIds: draft?.opIds ?? null, liveEdits: draft === null ? [] : liveEdits(draft.edits) });
+    if (plan.write.length === 0 && plan.remove.length === 0) return false;
+    let version = draftVersion;
+    let wrote = false;
+    for (const w of plan.write) {
+      const r = await overview.edit({ target, gymId, expectedDraftVersion: version, opId: w.opId, edit: w.edit });
+      if (r.ok) {
+        version = r.draft?.version ?? version;
+        wrote = wrote || !r.duplicate;
+      }
+    }
+    for (const editId of plan.remove) {
+      const r = await overview.undoEdit({ target, gymId, expectedDraftVersion: version, opId: `coach-undo:${editId}`, editId });
+      if (r.ok) {
+        version = r.draft?.version ?? version;
+        wrote = true;
+      }
+    }
+    return wrote;
+  }
+
+  /**
    * The Workout overview (workout-overview.md): load, Why?, and Start. With no
    * gym, the rows are fitted to the typical gym, and Start saves it (after the
    * stale check) before starting, as Today's Start always has.
@@ -504,7 +544,12 @@ export function createAppServices(deps: AppServicesDeps) {
     async load(req: { target: OverviewTarget; gymId: string | null; checkInId?: string | null }) {
       const typical = req.gymId === null ? await typicalEquipment().catch(() => null) : null;
       if (req.gymId === null && typical === null) return null;
-      return loop.overview.load({ ...req, ...(typical ? { typicalEquipment: typical } : {}) });
+      const read = () => loop.overview.load({ ...req, ...(typical ? { typicalEquipment: typical } : {}) });
+      const data = await read();
+      if (data === null) return null;
+      // Coach changes Ben applied for this workout (ADR 0020 §3) become today's edits, once; an undone one is taken back.
+      const wrote = await applyCoachChanges(req.target, req.gymId, data.startOf, data.draft?.version ?? null).catch(() => false);
+      return wrote ? read() : data;
     },
     async explain(req: { target: OverviewTarget; gymId: string | null; checkInId?: string | null; sessionExerciseId: string }) {
       const typical = req.gymId === null ? await typicalEquipment().catch(() => null) : null;

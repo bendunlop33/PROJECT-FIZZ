@@ -25,7 +25,10 @@ import {
   undoCoachAction,
   undoOpId,
   createTrainingReadExecutors,
+  createStructuralExecutors,
+  structuralTapRecord,
   type CoachExecutors,
+  type StructuralDeps,
   type TrainingReadPort,
   type CoachModelPort,
   type CoachTurnProgress,
@@ -34,6 +37,16 @@ import {
   type NextTargetTap,
 } from '@fizz/coach';
 import {
+  basisSlots,
+  doableHere,
+  draftBasisKey,
+  getStructuralChangeSignals,
+  partRootOf,
+  structuralProposalState,
+  substitutionOptions,
+  type AppliedStructural,
+  type StructuralProposalState,
+  type StructuralSlot,
   builtInTargetsView,
   equipmentView,
   exerciseHistoryView,
@@ -62,6 +75,9 @@ import type { TextCoachState } from '@fizz/providers';
 import type {
   ActionRecord,
   BenInput,
+  DraftBasis,
+  Exercise,
+  StructuralSignalKind,
   CheckIn,
   CoachMessage,
   CoachThread,
@@ -102,6 +118,16 @@ export interface CoachServiceDeps {
   builtInNextTargets: (sessionId: string) => Promise<Map<string, { setType: SetType; planned: PlannedSet }[]> | null>;
   /** After a coach change to today's sets or its Undo: rest alerts follow the new targets. */
   onSessionChanged?: (aggregate: SessionAggregate) => void;
+  /** The bundled exercise catalogue (Coaching knowledge), for swap options and names. */
+  catalogueExercises?: () => readonly Exercise[];
+  catalogueSubstitutions?: (catalogueKey: string) => readonly (string | null)[];
+}
+
+/** A structural proposal card's state (ADR 0020 §3), from the proposal and Ben's taps on it. */
+export interface ProposalCardState {
+  state: StructuralProposalState;
+  /** Ben's Apply record (its Undo), when he applied it. */
+  apply: ActionRecord | null;
 }
 
 /** A thread as stored, with every action its messages and turns refer to. */
@@ -111,6 +137,8 @@ export interface ThreadData {
   turns: Map<string, CoachTurn>;
   /** Actions by turn, for cards (including turns cut off before their reply was saved). */
   actionsByTurn: Map<string, ActionRecord[]>;
+  /** Structural proposals in this thread: their card state (Apply, Not now, Undo). */
+  proposals?: Map<string, ProposalCardState>;
 }
 
 const GENERAL_REUSE_MS = 6 * 60 * 60 * 1000;
@@ -184,7 +212,120 @@ export function createCoachService(deps: CoachServiceDeps) {
       if (t !== null) turns.set(turnId, t);
       actionsByTurn.set(turnId, await coachStore().listTurnActions(turnId));
     }
-    return { thread, messages, turns, actionsByTurn };
+    const proposalIds = [...actionsByTurn.values()].flat().filter((a) => a.detail.kind === 'propose_next_workout_change' && a.status === 'proposed').map((a) => a.actionId);
+    const proposals = proposalIds.length === 0 ? new Map<string, ProposalCardState>() : await proposalStates(proposalIds);
+    return { thread, messages, turns, actionsByTurn, proposals };
+  }
+
+  /** Each proposal's card state: Ben's Apply or Not now, and whether a workout started from its basis since (or the routine moved on). */
+  async function proposalStates(proposalIds: readonly string[]): Promise<Map<string, ProposalCardState>> {
+    const p = await owner();
+    const all = await coachStore().listStructural(p.id);
+    const out = new Map<string, ProposalCardState>();
+    for (const id of proposalIds) {
+      const proposal = all.find((a) => a.actionId === id);
+      if (proposal === undefined || proposal.detail.kind !== 'propose_next_workout_change' || proposal.detail.basis === undefined) continue;
+      const d = proposal.detail;
+      const basis = d.basis;
+      if (basis === undefined) continue;
+      const taps = all.filter((a) => a.detail.kind === 'propose_next_workout_change' && a.detail.proposalId === id);
+      const apply = taps.find((a) => a.status === 'committed') ?? null;
+      const dismissed = taps.some((a) => a.status === 'rejected');
+      const since = apply?.createdAt.utc ?? proposal.createdAt.utc;
+      const startedSince = await coachStore().basisStartedSince(p.id, basis, since).catch(() => false);
+      let basisChanged = false;
+      if (apply === null && basis.kind === 'routine' && d.basisVersion !== undefined) {
+        const routine = await repos().routines.get(basis.routineId).catch(() => null);
+        basisChanged = routine === null || routine.version !== d.basisVersion;
+      }
+      out.set(id, { state: structuralProposalState({ apply: apply === null ? null : { undone: apply.undoneBy !== null }, dismissed, startedSince, basisChanged }), apply });
+    }
+    return out;
+  }
+
+  async function exerciseById(id: string): Promise<Exercise | null> {
+    return (await repos().exercises.get(id).catch(() => null)) ?? deps.catalogueExercises?.().find((e) => e.id === id) ?? null;
+  }
+
+  /** What the next workout from `source` starts from (ADR 0020 §3): its routine, else the next session built from it. */
+  async function structuralBasisOf(p: UserProfile, source: SessionAggregate): Promise<{ basis: DraftBasis; basisVersion: number | null; label: string; slots: StructuralSlot[] } | null> {
+    const routineId = source.session.routineId;
+    const routine = routineId === null ? null : await repos().routines.get(routineId).catch(() => null);
+    if (routine !== null && routine.ownerId === p.id && (routine.deletedAtUtc ?? null) === null) {
+      const slots: StructuralSlot[] = [];
+      for (const r of [...routine.exercises].sort((a, b) => a.order - b.order)) {
+        const name = (await exerciseById(r.exerciseId))?.name ?? source.exercises.find((e) => e.exerciseId === r.exerciseId)?.exerciseName ?? 'Exercise';
+        slots.push({ slotKey: r.id, exerciseId: r.exerciseId, supersetGroup: r.supersetGroup, name });
+      }
+      return { basis: { kind: 'routine', routineId: routine.id }, basisVersion: routine.version, label: routine.name, slots };
+    }
+    // The next session of a workout: its part roots (the ones Start copies once it's finished).
+    const roots =
+      source.session.status === 'finished'
+        ? basisSlots({ kind: 'next', source })
+        : [...source.exercises].sort((a, b) => a.order - b.order).filter((e) => partRootOf(source.exercises, e.id) === e.id).map((e) => ({ slotKey: e.id, exerciseId: e.exerciseId, supersetGroup: e.supersetGroup }));
+    if (roots.length === 0) return null;
+    const name = (exerciseId: string) => source.exercises.find((e) => e.exerciseId === exerciseId)?.exerciseName ?? 'Exercise';
+    return { basis: { kind: 'next', sourceSessionId: source.session.id }, basisVersion: null, label: source.session.routineName ?? 'workout', slots: roots.map((r) => ({ ...r, name: name(r.exerciseId) })) };
+  }
+
+  /** The workout a structural change would build from in this turn: the one in context, else the last finished one. */
+  async function structuralSource(p: UserProfile, session: SessionAggregate | null): Promise<SessionAggregate | null> {
+    if (session !== null) return session;
+    return repos().sessions.latestFinished(p.id).catch(() => null);
+  }
+
+  /** CA9 signals for the gate: a pain flag since that workout, or its equipment changed (never from the model). */
+  async function structuralSignalsFor(p: UserProfile, session: SessionAggregate | null): Promise<StructuralSignalKind[]> {
+    const source = await structuralSource(p, session);
+    if (source === null) return [];
+    const gymId = source.session.gymId;
+    const equipment = gymId === null ? [] : await repos().equipment.listByGym(gymId).catch(() => []);
+    const signals = getStructuralChangeSignals({ source, painFlags: await repos().painFlags.listActive(p.id).catch(() => []), varietyRequests: [], currentEquipment: equipment, nextGymId: null, nowUtc: deps.now().utc });
+    return [...new Set(signals.map((x) => x.kind))];
+  }
+
+  function structuralDeps(p: UserProfile, session: SessionAggregate | null): StructuralDeps {
+    const gymOf = async () => {
+      const g = await gymInContext(p, session);
+      return g === null ? null : { id: g.id, name: g.name, equipment: await repos().equipment.listByGym(g.id).catch(() => []) };
+    };
+    return {
+      store: coachStore(),
+      async basisFor(sourceSessionId) {
+        const source = await repos().sessions.get(sourceSessionId).catch(() => null);
+        if (source === null || source.session.ownerId !== p.id || (source.session.status !== 'finished' && source.session.status !== 'active')) return null;
+        const basis = await structuralBasisOf(p, source);
+        return basis === null ? null : { sourceVersion: source.session.version, basis };
+      },
+      async exercise(id) {
+        const e = await exerciseById(id);
+        return e === null ? null : { name: e.name, measurement: e.measurement };
+      },
+      async doable(id) {
+        const e = await exerciseById(id);
+        const gym = await gymOf();
+        return e !== null && gym !== null && doableHere(e, gym);
+      },
+      painFlags: () => repos().painFlags.listActive(p.id),
+      async substitutions(exerciseId) {
+        const planned = await exerciseById(exerciseId);
+        const gym = await gymOf();
+        if (planned === null || gym === null) return null;
+        const pool = new Map<string, Exercise>();
+        for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) pool.set(e.id, e);
+        for (const e of deps.catalogueExercises?.() ?? []) if (!pool.has(e.id)) pool.set(e.id, e);
+        const flagged = new Set((await repos().painFlags.listActive(p.id).catch(() => [])).map((f) => f.exerciseId));
+        return substitutionOptions({
+          planned,
+          pool: [...pool.values()],
+          catalogueSubstitutions: planned.catalogueKey ? (deps.catalogueSubstitutions?.(planned.catalogueKey) ?? []) : [],
+          gym,
+          painFlagged: flagged,
+          exclude: new Set((session?.exercises ?? []).map((e) => e.exerciseId)),
+        });
+      },
+    };
   }
 
   async function checkInOf(session: SessionAggregate | null): Promise<CheckIn | null> {
@@ -269,6 +410,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const reads = createTrainingReadExecutors(trainingReads(p, session));
     const base: CoachExecutors = {
       ...reads,
+      ...createStructuralExecutors(structuralDeps(p, session)),
       ...createStoreExecutors({
       store,
       exercises: { exerciseName: async (id) => (await repos().exercises.get(id).catch(() => null))?.name ?? session?.exercises.find((e) => e.exerciseId === id)?.exerciseName ?? null },
@@ -371,7 +513,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           model: a.model,
           surface: 'sheet',
           context: ctx.input,
-          structuralSignals: [],
+          structuralSignals: await structuralSignalsFor(p, session).catch(() => []),
           namedExerciseIds: req.input.kind === 'words' ? namedExercises(req.input.text, session) : [],
           signal: stop.signal,
           ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
@@ -417,6 +559,41 @@ export function createCoachService(deps: CoachServiceDeps) {
     },
 
     getAction: (actionId: string): Promise<ActionRecord | null> => coachStore().getAction(actionId),
+
+    proposalStates,
+
+    /**
+     * Apply or Not now on a structural proposal card (ADR 0020 §3). Checked
+     * and saved in one write: refused once a workout has started from its
+     * basis or the routine changed (`Out of date`), or after an earlier tap.
+     * A double tap replays. Applying changes nothing else yet: the next
+     * workout's overview writes it into that day's draft (`structuralDraftPlan`).
+     */
+    async tapProposal(proposalId: string, tap: 'apply' | 'not_now'): Promise<{ ok: true; record: ActionRecord } | { ok: false; state: StructuralProposalState | null }> {
+      const p = await owner();
+      const proposal = await coachStore().getAction(proposalId);
+      if (proposal === null || proposal.detail.kind !== 'propose_next_workout_change' || proposal.status !== 'proposed' || proposal.detail.basis === undefined) return { ok: false, state: null };
+      const r = await coachStore().commitStructuralTap(p.id, structuralTapRecord(proposal, tap, { now: deps.now() }));
+      if (r.status !== 'conflict') return { ok: true, record: r.action };
+      return { ok: false, state: (await proposalStates([proposalId])).get(proposalId)?.state ?? null };
+    },
+
+    /**
+     * Ben's applied structural proposals for one plan (ADR 0020 §3), for the
+     * next workout's overview to write into its draft (`structuralDraftPlan`).
+     * Reads coach records only.
+     */
+    async appliedStructural(basis: DraftBasis): Promise<AppliedStructural[]> {
+      const p = await owner();
+      const key = draftBasisKey(basis);
+      const out: AppliedStructural[] = [];
+      for (const a of await coachStore().listStructural(p.id)) {
+        if (a.status !== 'committed' || a.author !== 'ben' || a.detail.kind !== 'propose_next_workout_change' || a.detail.basis === undefined || draftBasisKey(a.detail.basis) !== key) continue;
+        const used = a.undoneBy === null && (await coachStore().basisStartedSince(p.id, basis, a.createdAt.utc).catch(() => true));
+        out.push({ applyActionId: a.actionId, ops: a.detail.ops ?? [], undone: a.undoneBy !== null, used });
+      }
+      return out;
+    },
 
     /** `What the coach can see` for this entry, from the same builder the request uses. */
     async describe(entry: CoachEntry, threadId: string | null): Promise<ContextDescription> {

@@ -46,6 +46,8 @@ export interface ReadSetLine {
 }
 
 export interface ReadSessionLine {
+  /** The workout's ID (a structural proposal names the workout it builds the next one from). */
+  sessionId: string;
   /** Local date of the workout, `YYYY-MM-DD`. */
   date: string;
   gym: string | null;
@@ -132,6 +134,7 @@ export function exerciseHistoryView(input: ExerciseHistoryInput): ExerciseHistor
   const sessions: ReadSessionLine[] = history
     .filter((h) => listed.has(h.sessionId))
     .map((h) => ({
+      sessionId: h.sessionId,
       date: dateOf(h),
       gym: h.gymId === null ? null : (input.gymNames[h.gymId] ?? null),
       equipment: equipmentName(h.equipmentId),
@@ -164,6 +167,8 @@ export function exerciseHistoryView(input: ExerciseHistoryInput): ExerciseHistor
 // Overview ("How am I doing?")
 
 export interface OverviewExerciseLine {
+  /** For a follow-up read or a swap proposal. */
+  exerciseId: string;
   name: string;
   workingSets: number;
   /** The best counted working set of that workout, `100 kg × 8`; null when none counts. */
@@ -171,6 +176,9 @@ export interface OverviewExerciseLine {
 }
 
 export interface OverviewSessionLine {
+  sessionId: string;
+  /** The workout's version: a structural proposal names it, and a later edit makes the proposal stale (rule 5). */
+  version: number;
   date: string;
   title: string | null;
   gym: string | null;
@@ -255,13 +263,15 @@ export function trainingOverviewView(input: TrainingOverviewInput): TrainingOver
         const t = topOf(g);
         if (t !== null && (top === null || (t.load.unit === top.load.unit && t.load.convention === top.load.convention && better(t, top)))) top = t;
       }
-      exercises.push({ name: ex.exerciseName, workingSets: sets.filter((s) => WORKING.has(s.setType)).length, top: top === null ? null : topText(top) });
+      exercises.push({ exerciseId: ex.exerciseId, name: ex.exerciseName, workingSets: sets.filter((s) => WORKING.has(s.setType)).length, top: top === null ? null : topText(top) });
       const entry = perExercise.get(ex.exerciseId) ?? { name: ex.exerciseName, tops: [] };
       entry.tops.push({ date, ms: toMs(agg.session.startedAt.utc), top });
       perExercise.set(ex.exerciseId, entry);
     }
     if (exercises.length === 0) continue;
     sessions.push({
+      sessionId: agg.session.id,
+      version: agg.session.version,
       date,
       title: agg.session.routineName,
       gym: agg.session.gymId === null ? null : (input.gymNames[agg.session.gymId] ?? null),

@@ -328,8 +328,14 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
         const text = `Applied for your next ${d.workoutLabel}: ${what}.`;
         return make(status, text, speakable(text));
       }
-      const text = `Out of date: ${failureOr(record, 'your workout changed')}. Nothing changed.`;
-      return make(status, text, text);
+      // Ben's Not now on a proposal card.
+      if (d.proposalId !== undefined && st === 'rejected') {
+        const text = `Not applied: ${what}.`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Out of date. Nothing changed.', 'Out of date. Nothing changed.');
+      const text = `Couldn't suggest that: ${failureOr(record, 'it was refused')}. Nothing changed.`;
+      return make(status, text, speakable(text));
     }
     case 'update_routine': {
       // Ben's own change from today's edits (ADR 0022): the routine, from now on.

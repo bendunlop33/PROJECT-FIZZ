@@ -13,6 +13,7 @@ import {
   type CoachUndoResult,
   type CoachWrite,
   type CoachWriteResult,
+  type DraftBasis,
   type ExerciseTargetChanges,
   type Memory,
   type NextSessionTargetRecord,
@@ -190,6 +191,23 @@ async function startedFrom(q: SqlExecutor, ownerId: string, sourceSessionId: str
     [ownerId, sourceSessionId, sourceSessionId],
   );
   return row?.id ?? null;
+}
+
+/**
+ * Has a workout started from this basis since `sinceUtc` (and still exists,
+ * not discarded)? A routine: a session of that routine. The next session of a
+ * workout: a start noted against it (`next_target_uses`). Structural
+ * proposals and their Apply end there (ADR 0020 §3).
+ */
+export async function basisStartedSince(q: SqlExecutor, ownerId: string, basis: DraftBasis, sinceUtc: string): Promise<boolean> {
+  const row =
+    basis.kind === 'routine'
+      ? await q.getFirst<{ id: string }>("SELECT id FROM sessions WHERE owner_id = ? AND routine_id = ? AND started_at_utc >= ? AND status IN ('active', 'finished') LIMIT 1", [ownerId, basis.routineId, sinceUtc])
+      : await q.getFirst<{ id: string }>(
+          "SELECT s.id AS id FROM next_target_uses u JOIN sessions s ON s.owner_id = u.owner_id AND s.start_operation_id = u.start_op_id WHERE u.owner_id = ? AND u.source_session_id = ? AND s.id != ? AND u.created_at_utc >= ? AND s.status IN ('active', 'finished') LIMIT 1",
+          [ownerId, basis.sourceSessionId, basis.sourceSessionId, sinceUtc],
+        );
+  return row !== null;
 }
 
 /** A row as read: `usedBySessionId` is the live workout started from its source, worked out at read time. */
@@ -547,8 +565,12 @@ export class SqliteCoachStore {
         }
         return undone > 0 ? 'ok' : 'changed_since';
       }
+      case 'propose_next_workout_change': {
+        // Only Ben's Apply is undoable (a proposal itself was never applied), until a workout starts from its basis.
+        if (d.proposalId === undefined || d.basis === undefined) return 'unsupported';
+        return (await basisStartedSince(tx, ownerId, d.basis, target.createdAt.utc)) ? 'changed_since' : 'ok';
+      }
       // Ben's routine change from today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.
-      case 'propose_next_workout_change':
       case 'update_routine':
       case 'undo':
         return 'unsupported';
@@ -663,6 +685,54 @@ export class SqliteCoachStore {
     return this.db.write(async (tx) => {
       await tx.run('INSERT OR REPLACE INTO coach_offers (owner_id, session_id, session_exercise_id, kind, at_version, created_at_utc) VALUES (?, ?, ?, ?, ?, ?)', [ownerId, input.sessionId, input.sessionExerciseId, input.kind, input.atVersion, input.atUtc]);
     });
+  }
+
+  // ---------- Structural proposals (ADR 0020 §3) ----------
+
+  /** Every structural proposal and Ben's taps on them (Apply, Not now), oldest first. A small list. */
+  listStructural(ownerId: string): Promise<ActionRecord[]> {
+    return this.db.read(async (q) => (await q.getAll("SELECT * FROM coach_actions WHERE owner_id = ? AND kind = 'propose_next_workout_change' ORDER BY created_at_utc, id", [ownerId])).map(decodeAction));
+  }
+
+  /**
+   * Ben's Apply or Not now on a structural proposal, checked and saved in one
+   * transaction (rule 5): the proposal must still be a live suggestion (no
+   * earlier tap), no workout may have started from its basis since it was
+   * made, and a routine must still be at the version it was proposed
+   * against. Idempotent on the tap's opId. A refusal writes nothing.
+   */
+  commitStructuralTap(ownerId: string, tap: ActionRecord): Promise<CoachWriteResult> {
+    const d = tap.detail;
+    if (d.kind !== 'propose_next_workout_change' || d.proposalId === undefined || d.basis === undefined) throw new TypeError('commitStructuralTap takes a tap on a structural proposal');
+    const proposalId = d.proposalId;
+    const basis = d.basis;
+    return this.db
+      .write(async (tx): Promise<CoachWriteResult> => {
+        const prior = await actionByOp(tx, ownerId, tap.opId);
+        if (prior !== null) return { status: 'replayed', action: prior };
+        const proposal = await actionById(tx, proposalId);
+        if (proposal === null || proposal.ownerId !== ownerId || proposal.record.status !== 'proposed') throw new Rollback('missing');
+        const earlier = (await tx.getAll("SELECT * FROM coach_actions WHERE owner_id = ? AND kind = 'propose_next_workout_change'", [ownerId]))
+          .map(decodeAction)
+          .filter((r) => r.detail.kind === 'propose_next_workout_change' && r.detail.proposalId === proposalId);
+        if (earlier.length > 0) throw new Rollback('already_exists');
+        if (await basisStartedSince(tx, ownerId, basis, proposal.record.createdAt.utc)) throw new Rollback('stale_version');
+        const pd = proposal.record.detail;
+        if (basis.kind === 'routine' && pd.kind === 'propose_next_workout_change' && pd.basisVersion !== undefined) {
+          const routine = await tx.getFirst<{ version: number }>('SELECT version FROM routines WHERE id = ?', [basis.routineId]);
+          if (routine === null || routine.version !== pd.basisVersion) throw new Rollback('stale_version');
+        }
+        await insertAction(tx, ownerId, tap);
+        return { status: 'written', action: tap };
+      })
+      .catch((e: unknown) => {
+        if (e instanceof Rollback) return { status: 'conflict', reason: e.reason };
+        throw e;
+      });
+  }
+
+  basisStartedSince(ownerId: string, basis: DraftBasis, sinceUtc: string): Promise<boolean> {
+    return this.db.read((q) => basisStartedSince(q, ownerId, basis, sinceUtc));
   }
 
   // ---------- Memories and playbook candidates ----------

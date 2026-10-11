@@ -243,6 +243,14 @@ export function CoachSheetScreen() {
     void loadWorkout();
   }
 
+  /** Apply or Not now on a structural proposal (ADR 0020 §3): saved at once; a stale card comes back `Out of date`. */
+  async function tapProposal(proposalId: string, tap: 'apply' | 'not_now') {
+    const r = await services.coach.tapProposal(proposalId, tap).catch(() => null);
+    setNotice(r === null ? 'Couldn’t apply.' : r.ok ? null : r.state === 'out_of_date' || r.state === 'used' ? 'Out of date. Nothing changed.' : 'Couldn’t apply.');
+    await loadRows(threadId ?? null);
+    changed();
+  }
+
   async function flag(ex: { id: string; name: string }) {
     const r = await services.pain.flagMovement({ exerciseId: ex.id, exerciseName: ex.name, opId: newUuid() });
     setAskPain(false);
@@ -389,7 +397,7 @@ export function CoachSheetScreen() {
           </View>
         ) : null}
         {rows.map((r) => (
-          <Row key={r.key} row={r} undoBlocked={undoBlocked} onUndo={(id) => void undo(id)} onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)} />
+          <Row key={r.key} row={r} undoBlocked={undoBlocked} onUndo={(id) => void undo(id)} onProposal={(id, tap) => void tapProposal(id, tap)} onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)} />
         ))}
         {live !== null ? <LiveRows live={live} now={now} /> : null}
         {askPain ? (
@@ -483,7 +491,19 @@ function SendButton({ icon, label, enabled, onPress }: { icon: 'arrow.up' | 'sto
   );
 }
 
-function Row({ row, undoBlocked, onUndo, onRetry }: { row: ThreadRow; undoBlocked: (actionId: string) => boolean; onUndo: (actionId: string) => void; onRetry: () => void }) {
+function Row({
+  row,
+  undoBlocked,
+  onUndo,
+  onProposal,
+  onRetry,
+}: {
+  row: ThreadRow;
+  undoBlocked: (actionId: string) => boolean;
+  onUndo: (actionId: string) => void;
+  onProposal: (proposalId: string, tap: 'apply' | 'not_now') => void;
+  onRetry: () => void;
+}) {
   const theme = useTheme();
   switch (row.kind) {
     case 'ben':
@@ -511,7 +531,7 @@ function Row({ row, undoBlocked, onUndo, onRetry }: { row: ThreadRow; undoBlocke
         </AppText>
       );
     case 'card':
-      return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} />;
+      return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} />;
     case 'note':
       return (
         <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>

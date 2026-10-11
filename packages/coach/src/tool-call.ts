@@ -62,6 +62,7 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'get_training_overview':
     case 'get_gym_equipment':
     case 'get_progression_targets':
+    case 'get_substitutions':
     case 'get_recent_actions':
       return call.args;
   }
@@ -92,6 +93,7 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'get_training_overview':
     case 'get_gym_equipment':
     case 'get_progression_targets':
+    case 'get_substitutions':
     case 'get_recent_actions':
       return [];
   }

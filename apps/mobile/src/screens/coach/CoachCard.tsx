@@ -12,10 +12,13 @@ import { AppText, Icon, TextButton } from '../../ui';
  * saved record, `Why?` (the coach's reason in quotes, the rest from the
  * record) and `Undo`. Never the model's words as a change.
  */
-export function CoachCard({ card, onUndo }: { card: CardView; onUndo: (actionId: string) => void }) {
+export function CoachCard({ card, onUndo, onProposal }: { card: CardView; onUndo: (actionId: string) => void; onProposal?: (proposalId: string, tap: 'apply' | 'not_now') => void }) {
   const theme = useTheme();
   const services = useServices();
   const [why, setWhy] = useState<WhyView | null>(null);
+  // Apply is disabled for a second after a tap (coach-sheet §4: no double apply; the write is idempotent anyway).
+  const [busy, setBusy] = useState(false);
+  const p = card.proposal;
   const toneColor = card.status.word === 'Applied' || card.status.word === 'Saved' ? 'status.done' : card.status.word === 'Out of date' || card.status.word === 'Couldn’t apply' ? 'status.warning' : 'text.secondary';
   return (
     <View
@@ -28,9 +31,22 @@ export function CoachCard({ card, onUndo }: { card: CardView; onUndo: (actionId:
           {card.status.word}
         </AppText>
       </View>
-      <AppText variant="callout" numeric>
-        {card.text}
-      </AppText>
+      {p === undefined ? (
+        <AppText variant="callout" numeric>
+          {card.text}
+        </AppText>
+      ) : (
+        <View style={{ gap: theme.space['1'] }}>
+          <AppText variant="headline">{p.title}</AppText>
+          {p.lines.map((l) => (
+            <AppText key={l} variant="callout">
+              {l}
+            </AppText>
+          ))}
+          <AppText variant="callout" color="text.secondary">{`Before: ${p.before}`}</AppText>
+          <AppText variant="callout" color="text.secondary">{`After: ${p.after}`}</AppText>
+        </View>
+      )}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
         <TextButton
           label={why === null ? 'Why?' : 'Hide'}
@@ -50,6 +66,36 @@ export function CoachCard({ card, onUndo }: { card: CardView; onUndo: (actionId:
             label="Undo"
             onPress={() => {
               onUndo(card.actionId);
+            }}
+          />
+        ) : null}
+        {p?.canApply === true && onProposal !== undefined ? (
+          <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+            <TextButton
+              label="Not now"
+              tone="secondary"
+              onPress={() => {
+                onProposal(p.proposalId, 'not_now');
+              }}
+            />
+            <TextButton
+              label="Apply"
+              disabled={busy}
+              onPress={() => {
+                setBusy(true);
+                setTimeout(() => {
+                  setBusy(false);
+                }, 1000);
+                onProposal(p.proposalId, 'apply');
+              }}
+            />
+          </View>
+        ) : null}
+        {p?.undoActionId != null ? (
+          <TextButton
+            label="Undo"
+            onPress={() => {
+              if (p.undoActionId !== null) onUndo(p.undoActionId);
             }}
           />
         ) : null}

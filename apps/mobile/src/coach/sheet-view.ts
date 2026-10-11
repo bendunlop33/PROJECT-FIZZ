@@ -11,7 +11,7 @@
 import { renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
 import type { ActionRecord, BenInput, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine } from '@fizz/schemas';
 
-import type { CoachAvailability, CoachEntry, ThreadData } from './coach-service';
+import type { CoachAvailability, CoachEntry, ProposalCardState, ThreadData } from './coach-service';
 
 export type ViewIcon = 'checkmark.circle.fill' | 'arrow.uturn.backward' | 'minus.circle' | 'exclamationmark.triangle' | 'clock.badge.xmark' | 'xmark.octagon' | 'info.circle' | 'wifi.slash' | 'pause.circle' | 'ellipsis';
 
@@ -100,6 +100,58 @@ export interface CardView {
   /** VoiceOver prefix so app lines are never read as coach text. */
   accessibilityPrefix: string;
   canUndo: boolean;
+  /** A structural proposal (ADR 0020 §3): before/after and its own buttons. */
+  proposal?: ProposalView;
+}
+
+/**
+ * A structural proposal card (coach-sheet §2.6 `ChangeReviewCard`, ADR 0020
+ * §3): one line per change, the plan before and after, `Not now` · `Apply`
+ * while it is a live suggestion, `Undo` (of Ben's Apply) until the next
+ * workout starts. App text only; the coach's reason is behind `Why?`.
+ */
+export interface ProposalView {
+  proposalId: string;
+  title: string;
+  lines: string[];
+  before: string;
+  after: string;
+  canApply: boolean;
+  /** Ben's Apply record, when `Undo` is offered. */
+  undoActionId: string | null;
+}
+
+const PROPOSAL_STATUS: Record<ProposalCardState['state'], CardView['status']> = {
+  suggested: { word: 'Suggested', icon: 'minus.circle' },
+  applied: { word: 'Applied', icon: 'checkmark.circle.fill' },
+  used: { word: 'Applied', icon: 'checkmark.circle.fill' },
+  undone: { word: 'Undone', icon: 'arrow.uturn.backward' },
+  not_applied: { word: 'Not applied', icon: 'minus.circle' },
+  out_of_date: { word: 'Out of date', icon: 'clock.badge.xmark' },
+};
+
+/** The card for a structural proposal in a given state; null when the record isn't one (or predates before/after). */
+export function proposalCardView(r: ActionRecord, s: ProposalCardState): CardView | null {
+  const d = r.detail;
+  if (d.kind !== 'propose_next_workout_change' || r.status !== 'proposed' || d.before === undefined || d.after === undefined) return null;
+  const lines = d.changes.map((c) => c.text);
+  const live = s.state === 'applied' && s.apply !== null;
+  return {
+    actionId: r.actionId,
+    status: PROPOSAL_STATUS[s.state],
+    text: lines.join('\n'),
+    accessibilityPrefix: 'Coach suggestion.',
+    canUndo: false,
+    proposal: {
+      proposalId: r.actionId,
+      title: `Next ${d.workoutLabel}`,
+      lines,
+      before: d.before.join(' · '),
+      after: d.after.join(' · '),
+      canApply: s.state === 'suggested',
+      undoActionId: live ? (s.apply?.actionId ?? null) : null,
+    },
+  };
 }
 
 const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate']);
@@ -235,7 +287,10 @@ export function threadRows(data: ThreadData): ThreadRow[] {
     }
     const tools = toolLines(turn?.toolLog ?? []);
     if (tools.length > 0) rows.push({ kind: 'tools', key: `${turnId}:tools`, lines: tools });
-    for (const a of actions) rows.push({ kind: 'card', key: a.actionId, card: cardView(a) });
+    for (const a of actions) {
+      const state = data.proposals?.get(a.actionId);
+      rows.push({ kind: 'card', key: a.actionId, card: (state === undefined ? null : proposalCardView(a, state)) ?? cardView(a) });
+    }
     const coach = msgs.find((m) => m.body.role === 'coach');
     if (coach !== undefined && coach.body.role === 'coach') {
       const sentences = coach.body.items.flatMap((i) => (i.kind === 'sentence' ? [i.text] : []));

@@ -213,6 +213,25 @@ const FED_UP = new RegExp(`\\b(?:bored|sick|tired|fed up) (?:of|with) (?:(?:the|
 /** "Do dumbbells instead", "use the machine instead" (review r5 S1). */
 const DO_INSTEAD = new RegExp(`^(?:do|use|go with|try|let me do|give me) (?:the |some |a |an )?(?:\\w+ ){0,2}${EXERCISE_WORD} instead\\b`);
 const INSTEAD_OF = new RegExp(`\\binstead of (?:the |my )?(?:\\w+ ){0,2}${EX}\\b`);
+/** The future plan, not today: a removal or reorder only counts with one (11 Oct, coach tools; conservative). */
+const FUTURE_SCOPE = /\b(?:next (?:time|session|week|workout)|from now on|going forward|for good|from (?:the |my )?(?:routine|workout|plan|session|programme|program))\b/;
+/**
+ * Taking an exercise out of the plan (11 Oct, coach tools): an imperative
+ * with an exercise object and a future scope. "Drop bench to 95" is a load
+ * change; "drop the pushdown" with no scope could mean today, so it isn't one.
+ */
+const REMOVE = new RegExp(`^(?:drop|remove|cut|ditch|lose|bin|take out|get rid of|leave out|scrap)(?: out)? (?:the |my |all )?(?:\\w+ ){0,2}${EX}s?\\b(?! (?:to|by|down|back|off) \\d)`);
+/** Changing the order (11 Oct, coach tools): "do laterals first next time", "move squats to the end from now on", "reorder push day". */
+const REORDER = new RegExp(`^(?:(?:do|put|move|start with|have) (?:the |my )?(?:\\w+ ){0,2}${EX}s?(?: (?:to|at))? (?:first|last|before|after|earlier|later|(?:the )?(?:start|end|beginning))\\b|reorder\\b|re-order\\b|(?:change|swap|switch) (?:the|my) order\\b)`);
+
+/** A remove or reorder imperative (bare or after "can you" / "let's"), with a future scope where it needs one. */
+function removeOrReorder(clause: string): boolean {
+  const c = clause.replace(POLITE, '');
+  const body = ASK_PREFIX.exec(c)?.[1] ?? c;
+  if (REMOVE.test(body) && FUTURE_SCOPE.test(body)) return true;
+  if (/^(?:reorder|re-order|(?:change|swap|switch) (?:the|my) order)\b/.test(body)) return true;
+  return REORDER.test(body) && FUTURE_SCOPE.test(body);
+}
 /**
  * Ben wants something remembered or forgotten. "Remember when …?" is a
  * question; "Remember to bring chalk" and "Don't forget to stretch" are
@@ -498,7 +517,7 @@ function structuralIn(clause: string): boolean {
     const m = re.exec(clause);
     if (m !== null && !negatedBefore(clause, m.index)) return true;
   }
-  return false;
+  return removeOrReorder(clause);
 }
 
 /** Variety on its own ("I'm bored of incline press", "mix it up") is a request; a swap needs to be asked. */
@@ -507,7 +526,8 @@ function selfStandingStructural(clause: string): boolean {
     const m = re.exec(clause);
     if (m !== null && !negatedBefore(clause, m.index)) return true;
   }
-  return false;
+  // Anchored imperatives, so a negator can only come before them as a prefix ("don't drop …" doesn't match).
+  return removeOrReorder(clause);
 }
 
 /**
