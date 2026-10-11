@@ -540,8 +540,15 @@ export function nameRowView(n: NameRow, candidateName: (id: string) => string | 
     case 'check':
       return { ...base, status: { icon: 'questionmark.circle', tone: 'warning', word: 'Check', text: candidateName(n.match.exerciseId ?? '') ?? '' }, actions: ['use', 'choose', 'new'], suggestionId: n.match.exerciseId };
     case 'no_match':
-      return { ...base, status: { icon: 'xmark.circle', tone: 'info', word: 'No match', text: 'No match' }, actions: ['choose', 'new', 'skip'], suggestionId: null };
+      // The FitNotes category, as written, helps Ben choose.
+      return { ...base, status: { icon: 'xmark.circle', tone: 'info', word: 'No match', text: n.category === null ? 'No match' : `No match · ${clipCategory(n.category)}` }, actions: ['choose', 'new', 'skip'], suggestionId: null };
   }
+}
+
+/** A category cell is data of any length: one line, clipped (review import-names N3). */
+function clipCategory(category: string): string {
+  const one = category.replace(/\s+/g, ' ').trim();
+  return one.length <= 24 ? one : `${one.slice(0, 23).trimEnd()}…`;
 }
 
 /** Names needing Ben first, then answered ones; plain name matches collapsed into one line. */

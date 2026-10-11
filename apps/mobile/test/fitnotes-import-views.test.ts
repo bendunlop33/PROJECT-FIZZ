@@ -33,7 +33,8 @@ const plain = (s: string | null | undefined) => (s ?? '').replaceAll(NBSP, ' ');
 const B2 = 'Date,Exercise,Category,Weight,Weight Unit,Reps,Distance,Distance Unit,Time,Comment';
 const FILE = [
   B2,
-  '2026-09-01,Flat Barbell Bench Press,Chest,100.0,kgs,8,,,,"@8, felt heavy"',
+  // A barbell name that is a Check (FitNotes' own `Flat Barbell Bench Press` is a catalogue alias, so Matched).
+  '2026-09-01,Bench Press (Barbell),Chest,100.0,kgs,8,,,,"@8, felt heavy"',
   '2026-09-01,Incline DB Press,Chest,50.0,lbs,10,,,,',
   '2026-09-01,Pull Up,Back,10.0,kgs,6,,,,',
   '2026-09-01,Pull Up,Back,-20.0,kgs,8,,,,',
@@ -92,11 +93,11 @@ describe('import preview wording', () => {
     let d = await open();
     const names = namesView(d.analysis, (id) => s.imports.candidate(d.draftId, id)?.name ?? null);
     expect(names.rows.map((r) => [r.title, r.status.word, r.status.text, r.actions])).toEqual([
-      ['Flat Barbell Bench Press', 'Check', 'Bench press', ['use', 'choose', 'new']],
-      ['Mystery Machine', 'No match', 'No match', ['choose', 'new', 'skip']],
+      ['Bench Press (Barbell)', 'Check', 'Bench press', ['use', 'choose', 'new']],
+      ['Mystery Machine', 'No match', 'No match · Back', ['choose', 'new', 'skip']],
     ]);
     expect(names.matchedCount).toBe(2);
-    d = await step(d, { kind: 'name', key: 'flat barbell bench press', answer: { kind: 'exercise', exerciseId: names.rows[0]?.suggestionId ?? '' } });
+    d = await step(d, { kind: 'name', key: 'bench press (barbell)', answer: { kind: 'exercise', exerciseId: names.rows[0]?.suggestionId ?? '' } });
     d = await step(d, { kind: 'name', key: 'mystery machine', answer: { kind: 'skip' } });
     const v = previewView(d, 'en-GB');
     expect(v.questions.map((q) => q.line.text)).toEqual(['Exercise names: 2 checked', 'Dumbbell weights: each or both?', 'Barbell weights: total as written, or plates only?', 'Pull Up weights: added or assist?']);
@@ -118,7 +119,7 @@ describe('import preview wording', () => {
     // Plates only is chosen per exercise: its bar (the matched exercise's own) and its conversion, nothing selected.
     expect(tq?.platesOnly.rows.map((r) => [r.title, r.barLine, r.bars.map((b) => [b.label, b.selected]), plain(r.conversion), plain(r.now), r.choices.map((c) => [c.label, c.selected])])).toEqual([
       [
-        'Flat Barbell Bench Press',
+        'Bench Press (Barbell)',
         'Bar: Olympic bar (from Bench press)',
         // The bar buttons appear once Plates only is selected (review r8 S2).
         [],
@@ -138,7 +139,7 @@ describe('import preview wording', () => {
     ]);
 
     d = await step(d, { kind: 'per_hand', answer: 'each' });
-    d = await step(d, { kind: 'total_override', key: 'flat barbell bench press', answer: 'plates_only' });
+    d = await step(d, { kind: 'total_override', key: 'bench press (barbell)', answer: 'plates_only' });
     d = await step(d, { kind: 'bodyweight', key: 'pull up', answer: 'split' });
     // Once chosen, the answer stays visible even if the values stop spanning zero (review r2 N5).
     const oneWay = { ...d.analysis, bodyweight: d.analysis.bodyweight.map((q) => ({ ...q, min: 5, mixed: false })) };
@@ -196,7 +197,7 @@ describe('import preview wording', () => {
   });
 
   it('barbell: the group answer only reads weights as written; plates only is chosen per exercise with its bar, changeable (PM decision after review r7)', async () => {
-    let d = await open([B2, '2026-09-01,Flat Barbell Bench Press,Chest,100.0,kgs,5,,,,', '2026-09-01,Stiff-Legged Deadlift,Legs,80.0,kgs,8,,,,', '2026-09-01,Deadlift,Back,140.0,kgs,3,,,,'].join('\n'));
+    let d = await open([B2, '2026-09-01,Bench Press (Barbell),Chest,100.0,kgs,5,,,,', '2026-09-01,Stiff-Legged Deadlift,Legs,80.0,kgs,8,,,,', '2026-09-01,Deadlift,Back,140.0,kgs,3,,,,'].join('\n'));
     for (const n of d.analysis.names.filter((x) => x.needsAnswer && x.match.exerciseId)) d = await step(d, { kind: 'name', key: n.key, answer: { kind: 'exercise', exerciseId: n.match.exerciseId ?? '' } });
     const rows = (q: ReturnType<typeof totalOptions>) => q?.platesOnly.rows.map((r) => [r.title, plain(r.conversion), plain(r.now), r.choices.filter((c) => c.selected).map((c) => c.label)]);
     let q = totalOptions(d.analysis, 'en-GB');
@@ -204,7 +205,7 @@ describe('import preview wording', () => {
     expect(q?.question).toBe('For these 3 exercises, “100” means:');
     expect(q?.platesOnly).toMatchObject({ title: 'Plates only (bar not counted)?' });
     expect(rows(q)).toEqual([
-      ['Flat Barbell Bench Press', 'If plates only: 100 kg → 120 kg total (plates + 20 kg bar)', 'Now: 100 kg → not answered yet', []],
+      ['Bench Press (Barbell)', 'If plates only: 100 kg → 120 kg total (plates + 20 kg bar)', 'Now: 100 kg → not answered yet', []],
       ['Stiff-Legged Deadlift', 'If plates only: 80 kg → 100 kg total (plates + 20 kg bar)', 'Now: 80 kg → not answered yet', []],
       ['Deadlift', 'If plates only: 140 kg → 160 kg total (plates + 20 kg bar)', 'Now: 140 kg → not answered yet', []],
     ]);
@@ -218,7 +219,7 @@ describe('import preview wording', () => {
     d = await step(d, { kind: 'total_override', key: nameKey('Stiff-Legged Deadlift'), answer: 'plates_only' });
     q = totalOptions(d.analysis, 'en-GB');
     expect(rows(q)).toEqual([
-      ['Flat Barbell Bench Press', 'If plates only: 100 kg → 120 kg total (plates + 20 kg bar)', 'Now: 100 kg → 100 kg total as written', []],
+      ['Bench Press (Barbell)', 'If plates only: 100 kg → 120 kg total (plates + 20 kg bar)', 'Now: 100 kg → 100 kg total as written', []],
       ['Stiff-Legged Deadlift', 'If plates only: 80 kg → 100 kg total (plates + 20 kg bar)', 'Now: 80 kg → 100 kg total (plates + 20 kg bar)', ['Plates only']],
       ['Deadlift', 'If plates only: 140 kg → 160 kg total (plates + 20 kg bar)', 'Now: 140 kg → 140 kg total as written', []],
     ]);
@@ -373,13 +374,13 @@ describe('import preview wording', () => {
     expect(shown('Flat Dumbbell Bench Press')).toEqual(['matched', 'Dumbbell bench press']);
     expect(shown('One-Arm Standing Dumbbell Press')).toEqual(['matched', 'One-arm dumbbell shoulder press']);
     expect(shown('Dumbbell Concentration Curl')).toEqual(['matched', 'Dumbbell concentration curl']);
-    expect(shown('Flat Barbell Bench Press')).toEqual(['check', 'Bench press']);
+    expect(shown('Flat Barbell Bench Press')).toEqual(['matched', 'Bench press']);
     expect(shown('EZ-Bar Skullcrusher')).toEqual(['check', 'Skull crusher']);
-    // Never the EZ-bar skull crusher, the dumbbell shrug or the dumbbell raise for these: nothing, or one with the right equipment.
+    // Never the EZ-bar skull crusher, the dumbbell shrug or the calf-raise machine for these: nothing, or one with the right equipment.
     expect(shown('Dumbbell Skullcrusher')).toEqual(['no_match', null]);
-    expect(shown('Barbell Shrug')).toEqual(['no_match', null]);
+    expect(shown('Barbell Shrug')).toEqual(['matched', 'Barbell shrug']);
     expect(shown('Machine Shrug')).toEqual(['no_match', null]);
-    expect(shown('Barbell Calf Raise')).toEqual(['no_match', null]);
+    expect(shown('Barbell Calf Raise')).toEqual(['check', 'Standing barbell calf raise']);
     expect(shown('Lateral Machine Raise')).toEqual(['check', 'Cable lateral raise']);
     // A Smith machine is its own kind: only a Smith exercise, and only for the same movement (review r5 S3).
     expect(shown('Smith Machine Close Grip Bench Press')).toEqual(['check', 'Smith machine bench press']);

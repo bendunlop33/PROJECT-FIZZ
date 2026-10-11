@@ -1,5 +1,6 @@
 import type { AliasTarget, ExerciseEquipmentKind, ImplementCount, Laterality, LoadConvention } from '@fizz/schemas';
 import { deriveId } from '../stable';
+import { muscleFit } from './category';
 
 /**
  * Exercise name matching for imports (data-import-export §2.5 step 3a). Pure.
@@ -21,6 +22,10 @@ import { deriveId } from '../stable';
  *   the exercise whose own name says the same count, then is broken on
  *   equipment, never by alphabetical order: a tie neither can break gives no
  *   suggestion (review r4 S3).
+ *   A FitNotes category is a ranking hint only (`category.ts`): a word
+ *   suggestion whose primary muscles contradict it is dropped (`Barbell Leg
+ *   Curls` under Legs is never the barbell curl), and a tie goes to the
+ *   exercise whose muscles agree. It never makes a match.
  * - `no_match`: nothing suggested.
  * No score is shown or stored: the matcher has no calibrated confidence.
  * Names are data, never instructions (rule 8).
@@ -59,6 +64,8 @@ export interface MatchCandidate {
    * import's answer can't come back as `Matched` (review r5 S2).
    */
   importMade?: boolean;
+  /** Catalogue primary muscles, for the category hint. Absent or empty: not known (a custom exercise). */
+  primaryMuscles?: readonly string[];
 }
 
 export interface NameMatch {
@@ -296,12 +303,16 @@ function sameCount(tied: readonly MatchCandidate[], cue: ImplementCount | 'uncle
  * the matcher can't tell them apart, so it suggests nothing rather than the
  * first by name (review r4 S3).
  */
-function breakTie(tied: readonly MatchCandidate[], named: ReadonlySet<NamedEquipment> | null): string | null {
+function breakTie(tied: readonly MatchCandidate[], named: ReadonlySet<NamedEquipment> | null, muscles: ReadonlySet<string> | null): string | null {
   const ids = (list: readonly MatchCandidate[]) => [...new Set(list.map((c) => c.exerciseId))];
   if (ids(tied).length === 1) return tied[0]?.exerciseId ?? null;
   const agreeing = tied.filter((c) => equipmentFit(named, c) === 'agrees');
   const left = ids(agreeing);
-  return left.length === 1 ? (left[0] ?? null) : null;
+  if (left.length === 1) return left[0] ?? null;
+  // Then the category hint: the one exercise whose primary muscles agree with it.
+  const pool = left.length > 1 ? agreeing : tied;
+  const byMuscle = ids(pool.filter((c) => muscleFit(muscles, c.primaryMuscles) === 'agrees'));
+  return byMuscle.length === 1 ? (byMuscle[0] ?? null) : null;
 }
 
 /** Scores this close are a tie. */
@@ -343,8 +354,15 @@ export function namesExercise(sourceName: string, c: MatchCandidate): boolean {
 /**
  * Match one source name. `aliases` are Ben's saved answers by name key
  * (they win over everything). A tie is never broken by candidate order.
+ * `categoryMuscles` is the FitNotes category hint (`categoryHint`), null for
+ * none: it only ever removes or ranks suggestions, never makes a match.
  */
-export function matchName(name: string, candidates: readonly MatchCandidate[], aliases: ReadonlyMap<string, AliasTarget>): NameMatch {
+export function matchName(
+  name: string,
+  candidates: readonly MatchCandidate[],
+  aliases: ReadonlyMap<string, AliasTarget>,
+  categoryMuscles: ReadonlySet<string> | null = null,
+): NameMatch {
   const key = nameKey(name);
   const saved = aliases.get(key);
   if (saved?.kind === 'skip') return { status: 'matched', exerciseId: null, via: 'alias', skip: true };
@@ -361,7 +379,10 @@ export function matchName(name: string, candidates: readonly MatchCandidate[], a
   if (exact.length === 1) return { status: 'matched', exerciseId: exact[0] ?? null, via: 'name', skip: false };
   if (exact.length > 1) {
     // Two exercises share the name: an exercise's own name beats another's other name, then the Smith and assist words, then equipment. Ben confirms either way.
-    const pick = breakTie((byName.length > 0 ? byName : byAlias).filter((c) => kindFits(c, smith, assisted)), named);
+    // The category hint demotes an exercise it contradicts; when it contradicts every one, the name still names them.
+    const sharing = (byName.length > 0 ? byName : byAlias).filter((c) => kindFits(c, smith, assisted));
+    const fitting = sharing.filter((c) => muscleFit(categoryMuscles, c.primaryMuscles) !== 'contradicts');
+    const pick = breakTie(fitting.length > 0 ? fitting : sharing, named, categoryMuscles);
     if (pick !== null) return { status: 'check', exerciseId: pick, via: 'name', skip: false };
   }
 
@@ -383,7 +404,11 @@ export function matchName(name: string, candidates: readonly MatchCandidate[], a
       tied = [c];
     } else tied.push(c);
   }
-  const pick = tied.length === 0 ? null : breakTie(sameCount(tied, cue), named);
+  // The category hint is drop-only: the best score is taken over every fitting exercise first, and
+  // only one of those best that the category doesn't contradict is suggested. It never promotes a
+  // weaker one (`Romanian Deadlifts` under Back is never the deadlift; review import-names S1).
+  const agreeing = tied.filter((c) => muscleFit(categoryMuscles, c.primaryMuscles) !== 'contradicts');
+  const pick = agreeing.length === 0 ? null : breakTie(sameCount(agreeing, cue), named, categoryMuscles);
   if (pick !== null) return { status: 'check', exerciseId: pick, via: 'words', skip: false };
   return { status: 'no_match', exerciseId: null, via: null, skip: false };
 }

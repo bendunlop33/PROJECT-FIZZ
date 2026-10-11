@@ -1,6 +1,7 @@
 export * from './csv';
 export * from './fitnotes';
 export * from './match';
+export * from './category';
 export * from './effort';
 export * from './plan';
 export * from './answers';
