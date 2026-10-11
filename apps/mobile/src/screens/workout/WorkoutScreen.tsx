@@ -15,7 +15,7 @@ import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatTime } from '../../format/dates';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
-import { popToToday, replaceWithSummary } from '../../navigation/actions';
+import { popToTabs, popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
 import type { ActiveWorkoutData, GymChoice, RecordContext } from '../../services/workout-services';
 import { NameSheet } from '../routines/NameSheet';
@@ -587,6 +587,28 @@ export function WorkoutScreen() {
   function openPainFlag(flagId: string, sessionExerciseId?: string) {
     if (flagId === '') return;
     navigation.navigate('PainFlag', { flagId, sessionId: session.id, ...(sessionExerciseId ? { sessionExerciseId } : {}) });
+  }
+
+  /**
+   * The off-profile line (audit A3) opens that equipment in the gym editor.
+   * The typed load is saved as a draft first (the debounced save would be
+   * cancelled on leaving), so it is back on return; the workout stays open
+   * on Today.
+   */
+  function openOffProfileEquipment(eq: FocusView['offProfileEquipment']) {
+    if (eq === null) return;
+    const draft = edits;
+    const go = () => {
+      navigation.dispatch(popToTabs({ screen: 'Profile', params: { screen: 'EquipmentEditor', params: { gymId: eq.gymId, equipmentId: eq.equipmentId, kind: eq.kind, isNew: false }, initial: false } }));
+    };
+    if (draft === null) {
+      go();
+      return;
+    }
+    void services.workout
+      .dispatch(session.id, { type: 'save_draft', at: services.now(), setId: draft.setId, values: draft.values })
+      .catch(() => null)
+      .then(go);
   }
 
   /** Outcomes of `Still hurts` / `Clear flag` in the rest card, as the usual toast. */
@@ -1234,7 +1256,25 @@ export function WorkoutScreen() {
             {copied}
           </AppText>
         ) : null}
-        {focus.offProfileWarning ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={focus.offProfileWarning} /> : null}
+        {focus.offProfileWarning && focus.offProfileEquipment ? (
+          // Audit A3: Log still works; the line opens the equipment to fix the gym.
+          <LinkLine
+            accessibilityLabel={`${focus.offProfileWarning}. Opens this equipment.`}
+            onPress={() => {
+              openOffProfileEquipment(focus.offProfileEquipment);
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: 44 }}>
+              <Icon name="exclamationmark.triangle" color="status.warning" size={16} />
+              <AppText variant="callout" color="text.secondary" style={{ flex: 1 }}>
+                {focus.offProfileWarning}
+              </AppText>
+              <Icon name="chevron.right" size={14} color="text.tertiary" />
+            </View>
+          </LinkLine>
+        ) : focus.offProfileWarning ? (
+          <StatusLine icon="exclamationmark.triangle" tone="warning" text={focus.offProfileWarning} />
+        ) : null}
         {focus.painFlag ? (
           // `PainFlagNote` (§2.14.4): opens the pain flag sheet; it never blocks or changes Log.
           <LinkLine

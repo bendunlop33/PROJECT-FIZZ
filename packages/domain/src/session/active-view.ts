@@ -219,6 +219,8 @@ export interface FocusView {
   /** Set when `painFlags` were given and one covers this exercise. */
   painFlag: PainFlagNoteView | null;
   offProfileWarning: string | null;
+  /** The equipment the off-profile line opens (audit A3): fix the gym, or log anyway. */
+  offProfileEquipment: { gymId: string; equipmentId: string; kind: EquipmentInstance['kind'] } | null;
   side: { kind: 'choice'; value: SetSide } | { kind: 'fixed'; value: 'left' | 'right' } | null;
   restAfterS: number;
   /** Where the rest came from (`Heavy preset (Bench press, working sets)`), shown only in the Rest after editor. */
@@ -442,9 +444,11 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
       : { label: loadLabel, unitText: loadFieldUnit(ex.unit, ex.loadConvention), value: loadValue, assisted: loadDirection(ex.loadConvention) === 'assistance', ...loadSteps(loadValue, ex, eq) };
 
   let offProfileWarning: string | null = null;
+  let offProfileEquipment: FocusView['offProfileEquipment'] = null;
   if (eq !== null && values.load !== null && values.load.convention !== 'bodyweight' && !isLoadAchievable(values.load, eq)) {
     const max = maxText(eq, values.load);
     offProfileWarning = `Not on ${eq.name}${input.gymName ? ` at ${input.gymName}` : ''}${max === '' ? '' : ` (max ${max})`}`;
+    offProfileEquipment = { gymId: eq.gymId, equipmentId: eq.id, kind: eq.kind };
   }
 
   const missing = missingFor(values, ex);
@@ -505,6 +509,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     painFlagged: input.painFlagged.has(ex.exerciseId) || painNote !== null,
     painFlag: painNote,
     offProfileWarning,
+    offProfileEquipment,
     side,
     restAfterS: set.rest.seconds,
     restSourceLabel: set.rest.sourceLabel,

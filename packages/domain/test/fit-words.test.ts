@@ -1,3 +1,4 @@
+import type { Load } from '@fizz/schemas';
 import { describe, expect, it } from 'vitest';
 import { boundWords, convertedWords, droppedWords, nameInLine, noLoadWords, roundedWords, withWas } from '../src/session/fit-words';
 import { cardNoteText, repeatNoteText, setSnapNote } from '../src/session/snap-text';
@@ -35,9 +36,9 @@ describe('shared fit words (minimal-copy audit §11)', () => {
 describe('assisted caps and equipment names in the snap wording (minimal-copy review S1, N3)', () => {
   const assist = (value: number) => ({ value, unit: 'kg' as const, convention: 'assistance' as const });
   const total = (value: number) => ({ value, unit: 'kg' as const, convention: 'total' as const });
-  const top = (intended: ReturnType<typeof assist>, load: ReturnType<typeof assist>) => ({ setId: 's1', intended, current: intended, load, reps: { min: 6, max: 8 }, durationS: null });
+  const top = (intended: Load, load: Load) => ({ setId: 's1', intended, current: intended, load, reps: { min: 6, max: 8 }, durationS: null });
   const slot = { equipment: null, exerciseName: 'Assisted pull-up', sourceEquipment: null, unit: 'kg' as const };
-  const snap = (intended: ReturnType<typeof assist> | null, outcome: 'capped' | 'dropped', extra: Record<string, unknown> = {}) => ({ intended, intendedOn: null, outcome, equipmentId: null, gymId: null, by: 'gym_switch' as const, ...extra });
+  const snap = (intended: Load | null, outcome: 'capped' | 'dropped', extra: Record<string, unknown> = {}) => ({ intended, intendedOn: null, outcome, equipmentId: null, gymId: null, by: 'gym_switch' as const, ...extra });
   const ctx = { gymName: 'Hotel', equipment: null, unit: 'kg' as const };
 
   it('gym-switch card: a capped assistance load is the least assistance here', () => {
