@@ -642,3 +642,39 @@ describe('swapRoutineSlot (Change Push A too ›, TE4)', () => {
     expect(editCountOf(resolveTodayEdits(SLOTS, [back]))).toBe(0);
   });
 });
+
+describe('TE-A2: for every combination of swap, skip and order, the overview shows exactly the planned session', () => {
+  const combos = [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ swap: (n & 1) !== 0, skip: (n & 2) !== 0, order: (n & 4) !== 0 }));
+  for (const c of combos) {
+    it(`swap ${String(c.swap)}, skip ${String(c.skip)}, order ${String(c.order)}: every convention (total, per hand, stack)`, () => {
+      const edits: TodayEdit[] = [];
+      if (c.swap) edits.push(edit({ kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH }));
+      if (c.skip) edits.push(edit({ kind: 'skip', slotKey: SLOT_FLY }));
+      if (c.order) edits.push(edit({ kind: 'order', slotKeys: moveSlot(SLOTS, SLOT_RAISE, 'first') ?? [] }));
+      const out = plan(edits, { swaps: swapsFor(MAIN_GYM, [[SLOT_BENCH, DB_BENCH, DB_BENCH_HISTORY]]) });
+      const view = overview(out);
+      const ordered = rowsOf(out.aggregate);
+      expect(view.rows.map((r) => r.sessionExerciseId)).toEqual(ordered.map((e) => e.id));
+      expect(new Set(ordered.map((e) => e.loadConvention))).toEqual(new Set(['total', 'per_hand', 'stack'].filter((x) => !(c.swap && x === 'total'))));
+      for (const r of view.rows) {
+        const sets = setsOf(out.aggregate, r.sessionExerciseId).filter((x) => x.setType !== 'warmup');
+        if (r.edit?.kind === 'skipped') {
+          expect(sets.every((x) => x.status === 'skipped' && x.skippedBy === 'before_start')).toBe(true);
+          expect(r.load.value).toBe('—');
+          continue;
+        }
+        const ex = ordered.find((e) => e.id === r.sessionExerciseId);
+        expect(sets[0]?.status).toBe('pending');
+        expect(r.firstSetId).toBe(sets[0]?.id);
+        expect(plain(r.detail).startsWith(`${String(sets.length)} × `)).toBe(true);
+        const first = sets[0]?.planned.load ?? null;
+        const unit = first === null ? null : first.convention === 'per_hand' ? `${first.unit} each` : first.unit;
+        expect(r.load.unit).toBe(unit);
+        if (first !== null) expect(Number(r.load.value)).toBe(first.value);
+        expect(r.marker.kind === 'swapped').toBe(c.swap && ex?.exerciseId === DB_BENCH);
+      }
+      expect(view.editCount).toBe(Number(c.swap) + Number(c.skip) + Number(c.order));
+      expect(view.workingSets).toBe(out.aggregate.sets.filter((x) => x.setType !== 'warmup' && x.status === 'pending').length);
+    });
+  }
+});

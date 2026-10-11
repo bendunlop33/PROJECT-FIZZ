@@ -173,6 +173,12 @@ describe('source checks', () => {
     expect(read('ui/overview.tsx')).toContain('accessibilityActions={customActions.map((a) => ({ name: a.name, label: a.label }))}');
   });
 
+  it('rule 10: drafts are Your data and never reach coach context', () => {
+    const coachFiles = ['coach/coach-service.ts', 'coach/sheet-view.ts', 'coach/slot-view.ts', 'coach/next-time-view.ts'];
+    for (const f of coachFiles) expect(read(f)).not.toMatch(/drafts|PreStartDraft|pre_start/);
+    expect(readFileSync(join(__dirname, '..', '..', '..', 'packages', 'coach', 'src', 'context.ts'), 'utf8')).not.toMatch(/drafts|PreStartDraft|pre_start/);
+  });
+
   it('Start sends the draft the page showed (ADR 0022 §3)', () => {
     expect(read('workout/overview-start.ts')).toContain('draft: draftOf(req.page)');
   });

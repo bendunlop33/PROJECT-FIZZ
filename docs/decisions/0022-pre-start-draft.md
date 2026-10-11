@@ -104,3 +104,13 @@ Each open edit gets an outcome: `applied`, `stale` (its slot is gone, or an `ord
 
 1. Saved draft (PM default) or in-memory (alternative 2)?
 2. Close keeps the draft until local midnight (PM default), or Close discards it with an Undo toast?
+
+## Implementation notes (build, 11 Oct 2026)
+
+Small differences from the text above, found while building; none changes behaviour Ben sees.
+
+- `WorkoutSession.source` is the string `manual | import`, so the applied edits live in a new optional `WorkoutSession.todayEdits` (`SessionTodayEdits`: draft ID and version, swapped rows with the original's name, skipped rows, reordered), not `source.todayEdits`.
+- `PreStartDraft` also stores `opIds` (the operations already applied, for idempotency) and `updatedAtUtc` (the document store's version column).
+- Migration 7 also rebuilds `coach_actions` so its `kind` CHECK accepts `update_routine` (SQLite can't alter a CHECK); rows, indexes and the no-delete trigger are kept. The `update_routine` detail stores the slot before and after and the routine versions, so Undo restores exactly `before`.
+- A substitute's targets use the built-in rule's own rep range for that exercise (with the slot's set count); a substitute with no comparable history keeps the slot's sets and reps with no load.
+- An expired draft is closed (`expired`) on the next overview read or write; restore discards open drafts only when it actually replaces data (restoring a backup identical to the phone is a no-op).
