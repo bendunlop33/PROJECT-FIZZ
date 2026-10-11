@@ -32,6 +32,7 @@ export * from './next-target';
 export * from './gym-editor';
 export * from './session/repeat';
 export * from './session/routines';
+export * from './session/session-types';
 export * from './session/duration';
 export * from './session/first-run';
 export * from './session/snap';
