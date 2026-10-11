@@ -253,7 +253,7 @@ function messagePainBlock(m: MessagePain | null, ex: SessionExercise): { kind: G
     return { kind: 'pain_unspecified', text: `Not increasing anything: you mentioned ${what}.`, outcome: `Not increasing anything: you mentioned ${what}. Sets unchanged.` };
   }
   if (!m.exerciseIds.includes(ex.exerciseId)) return null;
-  return { kind: 'pain_blocked', text: `Not increasing ${ex.exerciseName}: you mentioned ${what}.`, outcome: `Not increasing ${ex.exerciseName}: you mentioned ${what}. Sets unchanged.` };
+  return { kind: 'pain_mentioned', text: `Not increasing ${ex.exerciseName}: you mentioned ${what}.`, outcome: `Not increasing ${ex.exerciseName}: you mentioned ${what}. Sets unchanged.` };
 }
 
 class Notes {

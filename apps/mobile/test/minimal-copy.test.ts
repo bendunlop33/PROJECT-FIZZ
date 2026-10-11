@@ -238,9 +238,16 @@ describe('§12 check 8: the coach slot banner (W13) and card Why? (W11)', () => 
     expect(whyView(a).checks).toEqual(['Rounded to 97.5 kg', 'Max here 30 kg each']);
   });
 
-  it('a pain block is the one visible warning, in its short form', () => {
-    const a = record({ detail, guardNotes: [{ kind: 'pain_blocked', setIds: [], text: 'Not increasing Bench press: you mentioned shoulder pain.' }] });
+  it('a pain-flag block is the one visible warning, in its short form', () => {
+    const a = record({ detail, guardNotes: [{ kind: 'pain_blocked', setIds: [], text: 'Not increasing Bench press: you flagged shoulder pain.' }] });
     expect(slotView({ pending: false, adjustment: a, outcome: null, offer: null })).toMatchObject({ kind: 'banner', notes: ['Pain flag · no increases'] });
+  });
+
+  it('pain only mentioned in chat (no flag saved) never claims a pain flag (review B1)', () => {
+    const named = record({ detail, guardNotes: [{ kind: 'pain_mentioned', setIds: [], text: 'Not increasing Bench press: you mentioned your shoulder.' }] });
+    expect(slotView({ pending: false, adjustment: named, outcome: null, offer: null })).toMatchObject({ kind: 'banner', notes: ['Pain mentioned · no increases'] });
+    const unnamed = record({ detail, guardNotes: [{ kind: 'pain_unspecified', setIds: [], text: 'Not increasing anything: you mentioned your shoulder.' }] });
+    expect(slotView({ pending: false, adjustment: unnamed, outcome: null, offer: null })).toMatchObject({ kind: 'banner', notes: ['Pain mentioned · no increases'] });
   });
 
   it('a playbook candidate’s card says `to review`; that it isn’t used until approved is behind Why?', () => {

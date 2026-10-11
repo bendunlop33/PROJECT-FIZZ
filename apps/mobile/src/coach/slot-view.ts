@@ -32,11 +32,13 @@ export interface SlotInput {
 
 /**
  * The banner's visible notes (minimal-copy W13): only a pain block, as one
- * short warning. Every other guard note is a `Why?` check.
+ * short warning. Every other guard note is a `Why?` check. `Pain flag` only
+ * when a saved flag blocked it (`pain_blocked`); a pain mention in chat or
+ * the check-in writes no flag, so it reads `Pain mentioned` (review B1).
  */
 function slotNotes(notes: readonly { kind: string }[]): string[] {
   if (notes.some((n) => n.kind === 'pain_blocked')) return ['Pain flag · no increases'];
-  if (notes.some((n) => n.kind === 'pain_unspecified')) return ['Pain mentioned · no increases'];
+  if (notes.some((n) => n.kind === 'pain_mentioned' || n.kind === 'pain_unspecified')) return ['Pain mentioned · no increases'];
   return [];
 }
 

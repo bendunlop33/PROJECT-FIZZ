@@ -943,6 +943,9 @@ describe('validateTodayAdjustment: pain in the same message blocks increases (re
     const named = said('Add 5 kg to squat, my knee is sore', [id(5 + 1000)]);
     const r = validateTodayAdjustment(input(squatUp, { intent: 'general', messagePain: named }));
     expect(r).toMatchObject({ status: 'unchanged', outcome: 'Not increasing Squat: you mentioned your knee. Sets unchanged.' });
+    // A mention, not a flag: its own note kind so no screen claims a pain flag exists (minimal-copy review B1).
+    expect(r.guardNotes).toContainEqual({ kind: 'pain_mentioned', setIds: [setId(5, 1)], text: 'Not increasing Squat: you mentioned your knee.' });
+    expect(r.guardNotes.some((n) => n.kind === 'pain_blocked')).toBe(false);
     // Another movement isn't blocked when a movement was named.
     expect(validateTodayAdjustment(input(raiseBench, { intent: 'too_easy', messagePain: named })).status).toBe('apply');
     // Nothing named: every movement is blocked.
