@@ -528,7 +528,9 @@ describe('Summary and history after a switch (check 24)', () => {
       return { equipmentId: ex[0]?.equipmentId, loads: s.sets.filter((x) => x.sessionExerciseId === ex[0]?.id).map((x) => x.planned.load) };
     };
     const each = (v: number) => ({ value: v, unit: 'kg', convention: 'per_hand' });
-    // Main's rack holds 32.5; the Hotel rack stops at 20, so the first set is held to its max.
+    // The routine pins the Hotel rack. At Main that item isn't there, so the start-time fit
+    // substitutes Main's rack (which holds 32.5); at Hotel the pinned rack stops at 20, so the
+    // first set is held to its max.
     expect(loadsAt(MAIN, MAIN_EQ)).toEqual({ equipmentId: mainRack.id, loads: [each(32.5), each(20), each(20)] });
     expect(loadsAt(HOTEL, HOTEL_EQ)).toEqual({ equipmentId: hotelRack.id, loads: [each(20), each(20), each(20)] });
   });
