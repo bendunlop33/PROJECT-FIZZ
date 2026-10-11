@@ -637,6 +637,7 @@ Opened from the `PainFlagNote`, the `Pain` row in `Why?`, or Today's check row. 
 - **Range:** low and high from the 25th and 75th percentiles of the pace samples (±25% on defaults). Only the sheet shows it.
 - **Never used:** check-ins, coach output, or any readiness-style guess.
 - **Returns** `{minutes, lowMinutes, highMinutes, endsAt, finishBy?, overByMinutes?, pace: {source: 'this_workout' | 'recent_workouts' | 'default', secondsPerSet, changeoverSeconds, samples}, plannedRestSeconds, pendingSets, pendingExercises}`. Unit-tested.
+- **One estimator (2026-10-11, backlog §4.1).** `about N min` before Start (Up next, the routine sheet, the overview) and the workout's `Time left` both run `estimatePendingWork` (`time-left.ts`); `duration.ts` only adds the rounding (never `about 0 min` while sets are left).
 
 #### 2.15.3 Time left sheet
 
