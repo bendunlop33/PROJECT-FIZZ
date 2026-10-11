@@ -4,7 +4,7 @@
  * destructive actions (review S3). `How to` leads when the exercise has one
  * (ADR 0013), so the bottom rows stay put under the thumb either way.
  */
-export type ExerciseMenuAction = 'how_to' | 'undo_coach' | 'undo_swap' | 'add_set' | 'swap' | 'add_exercise' | 'delete_set' | 'skip_exercise' | 'remove_exercise';
+export type ExerciseMenuAction = 'how_to' | 'undo_coach' | 'undo_swap' | 'add_set' | 'swap' | 'notes' | 'add_exercise' | 'delete_set' | 'skip_exercise' | 'remove_exercise';
 
 interface MenuItem {
   action: ExerciseMenuAction | 'cancel';
@@ -21,6 +21,7 @@ const ADD_SET: MenuItem = { action: 'add_set', label: 'Add set', destructive: fa
 /** Only while the exercise has a pending set (B3: applies at once with Undo). */
 const SWAP: MenuItem = { action: 'swap', label: 'Swap exercise', destructive: false };
 const ITEMS: readonly MenuItem[] = [
+  { action: 'notes', label: 'Notes', destructive: false },
   { action: 'add_exercise', label: 'Add exercise', destructive: false },
   { action: 'delete_set', label: 'Delete this set', destructive: true },
   { action: 'skip_exercise', label: 'Skip exercise', destructive: true },

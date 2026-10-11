@@ -12,7 +12,8 @@ import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { UNDO_TOAST } from '../../workout/undo-op';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChipRow, DangerTextButton, NumberAccessory, NumberStepper, PrimaryButton, StatusLine, TextButton } from '../../ui';
+import { AppText, Chip, ChipRow, DangerTextButton, NumberAccessory, NumberStepper, PrimaryButton, StatusLine, TextButton, TextField } from '../../ui';
+import { NOTE_MAX, noteChanged, noteValue } from '../../workout/notes';
 
 /**
  * Correction sheet for a logged set (active-workout §4.4): `correct_set`
@@ -36,6 +37,9 @@ export function EditSetScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saveOp] = useState(newUuid);
   const [deleteOp] = useState(newUuid);
+  const [noteOp] = useState(newUuid);
+  /** The note field as typed; null = untouched (shows the stored note). */
+  const [noteText, setNoteText] = useState<string | null>(null);
 
   async function load() {
     const d = await services.workout.load(sessionId);
@@ -60,29 +64,47 @@ export function EditSetScreen() {
   const tz = aggregate.session.startedAt.tz;
   const current = view.values;
 
+  const storedNote = aggregate.sets.find((s) => s.id === setId)?.note ?? null;
+  const noteEdited = noteText !== null && noteChanged(storedNote, noteText);
+
   async function save() {
-    if (!view) return;
-    const actual = aggregate?.sets.find((s) => s.id === setId)?.actual;
+    if (!view || !aggregate) return;
+    const actual = aggregate.sets.find((s) => s.id === setId)?.actual;
     if (!actual) return;
-    const patch: Partial<SetValues> & { exclusions?: SetExclusion[] } = {};
-    for (const k of ['load', 'reps', 'rpe', 'rir'] as const) {
-      if (JSON.stringify(current[k]) !== JSON.stringify(actual[k])) Object.assign(patch, { [k]: current[k] });
+    let sessionVersion = aggregate.session.version;
+    let corrected: Extract<Awaited<ReturnType<typeof services.workout.correctSet>>, { ok: true }> | null = null;
+    if (view.changed) {
+      const patch: Partial<SetValues> & { exclusions?: SetExclusion[] } = {};
+      for (const k of ['load', 'reps', 'rpe', 'rir'] as const) {
+        if (JSON.stringify(current[k]) !== JSON.stringify(actual[k])) Object.assign(patch, { [k]: current[k] });
+      }
+      if (exclusions !== null) patch.exclusions = view.exclusions;
+      const r = await services.workout.correctSet({ sessionId, setId, expectedSetVersion: view.setVersion, patch, opId: saveOp });
+      if (!r.ok) {
+        setError(r.message);
+        setValues(null);
+        setExclusions(null);
+        void load();
+        return;
+      }
+      corrected = r;
+      sessionVersion = r.aggregate.session.version;
     }
-    if (exclusions !== null) patch.exclusions = view.exclusions;
-    const r = await services.workout.correctSet({ sessionId, setId, expectedSetVersion: view.setVersion, patch, opId: saveOp });
-    if (!r.ok) {
-      setError(r.message);
-      setValues(null);
-      setExclusions(null);
-      void load();
-      return;
+    // The set's note (Your data) is its own versioned write; it never changes a value.
+    if (noteEdited) {
+      const n = await services.workout.setNote({ sessionId, target: { kind: 'set', setId }, note: noteValue(noteText), expectedVersion: sessionVersion, opId: noteOp });
+      if (!n.ok) {
+        setError(n.error.code === 'stale_version' ? 'The workout changed. Try again.' : n.error.message);
+        void load();
+        return;
+      }
     }
     changed();
-    if (r.toast !== null && r.undo !== null) {
-      navigation.navigate('Workout', { toast: { kind: 'exclusion', key: saveOp, text: r.toast, undo: { sessionId, ...r.undo } } });
+    if (corrected !== null && corrected.toast !== null && corrected.undo !== null) {
+      navigation.navigate('Workout', { toast: { kind: 'exclusion', key: saveOp, text: corrected.toast, undo: { sessionId, ...corrected.undo } } });
       return;
     }
-    if (!r.duplicate) {
+    if (corrected !== null && !corrected.duplicate) {
       navigation.navigate('Workout', { toast: { kind: 'undo_op', text: UNDO_TOAST.corrected(view.setNumber), targetOpId: saveOp } });
       return;
     }
@@ -179,9 +201,21 @@ export function EditSetScreen() {
           </ChipRow>
           {view.painLine ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={view.painLine} /> : null}
         </View>
+        <View style={{ gap: theme.space['2'] }}>
+          <AppText variant="label" color="text.secondary">
+            Note
+          </AppText>
+          <TextField
+            accessibilityLabel="Note"
+            value={noteText ?? storedNote ?? ''}
+            onChangeText={setNoteText}
+            multiline
+            maxLength={NOTE_MAX}
+          />
+        </View>
         <AppText variant="callout" color="text.secondary" numeric>{`Saved as: ${view.text}`}</AppText>
         {error ? <StatusLine icon="info.circle" tone="info" text={error} /> : null}
-        <PrimaryButton label="Save changes" disabled={!view.changed} onPress={() => void save()} />
+        <PrimaryButton label="Save changes" disabled={!view.changed && !noteEdited} onPress={() => void save()} />
         <View style={{ height: theme.space['8'] }} />
         <DangerTextButton label="Delete set" onPress={() => void remove()} />
       </ScrollView>

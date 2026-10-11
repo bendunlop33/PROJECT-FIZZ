@@ -1857,6 +1857,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
 
     /**
+     * A note on an exercise or a logged set (active-workout §4.4; Your data),
+     * during or after the workout. Null clears it. Changes no value, target
+     * or rest; versioned on the workout.
+     */
+    async setNote(req: { sessionId: string; target: { kind: 'exercise'; sessionExerciseId: string } | { kind: 'set'; setId: string }; note: string | null; expectedVersion: number; opId: string }): Promise<CommandOutcome> {
+      return ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'set_note', at: ctx.now(), opId: req.opId, target: req.target, note: req.note, expectedVersion: req.expectedVersion }));
+    },
+
+    /**
      * The Swap sheet mid-workout (exercise-library EL4, B3): the same rows as
      * before Start (`rankSubstitutions`, this gym's items as the workout has
      * them, never an exercise already in the workout, flagged ones last),

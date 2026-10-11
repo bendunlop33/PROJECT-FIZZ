@@ -47,6 +47,7 @@ import {
 } from '../../ui';
 import { CoachSlot } from './CoachSlot';
 import { MidSwapSheet } from './MidSwapSheet';
+import { NoteSheet } from './NoteSheet';
 import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './WorkoutCoach';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu } from '../../workout/exercise-menu';
@@ -62,6 +63,7 @@ import { TimeLeftLine, TimeLeftSheet } from './TimeLeftSheet';
 import { answerStillHurts, confirmClearFlag, type PainToast } from '../../workout/pain-actions';
 import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../workout/rest-fold';
 import { UNDO_TOAST } from '../../workout/undo-op';
+import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 
 /**
@@ -109,6 +111,8 @@ export function WorkoutScreen() {
   const renameOp = useRef(newUuid());
   const [renameAfter] = useState(() => createAfterDismiss());
   const [restEditor, setRestEditor] = useState(false);
+  /** `Notes` on the focused exercise (§4.4). */
+  const [noteFor, setNoteFor] = useState<{ sessionExerciseId: string; exerciseName: string; note: string | null } | null>(null);
   /** The mid-workout Swap sheet (EL4): the row it swaps and its candidates. */
   const [swap, setSwap] = useState<{ sessionExerciseId: string; exerciseName: string; sheet: SwapSheet | null; loading: boolean } | null>(null);
   const [hiddenWarmUps, setHiddenWarmUps] = useState<string[]>([]);
@@ -703,6 +707,7 @@ export function WorkoutScreen() {
       if (action === 'undo_coach' && f.coachActionId !== null) coach.undo(f.coachActionId);
       if (action === 'add_set') void addSet(f.sessionExerciseId);
       if (action === 'swap') void openSwap(f);
+      if (action === 'notes') setNoteFor({ sessionExerciseId: f.sessionExerciseId, exerciseName: f.exerciseName, note: f.note });
       if (action === 'undo_swap' && f.swappedFrom !== null) {
         const targetOpId = f.swappedFrom.opId;
         void services.workout.undoOp({ sessionId: session.id, targetOpId }).then((r) => {
@@ -1254,6 +1259,20 @@ export function WorkoutScreen() {
         />
       ) : null}
 
+      {focus.note !== null ? (
+        // Ben's own note on this exercise today: shown as typed; tap to edit.
+        <LinkLine
+          accessibilityLabel={`Note: ${focus.note}. Tap to edit.`}
+          onPress={() => {
+            setNoteFor({ sessionExerciseId: focus.sessionExerciseId, exerciseName: focus.exerciseName, note: focus.note });
+          }}
+        >
+          <AppText variant="callout" color="text.secondary" numberOfLines={3}>
+            {focus.note}
+          </AppText>
+        </LinkLine>
+      ) : null}
+
       {focus.warmUp && !hiddenWarmUps.includes(focus.sessionExerciseId) ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
           <AppText variant="callout" color="text.secondary" numeric style={{ flex: 1 }}>
@@ -1427,7 +1446,7 @@ export function WorkoutScreen() {
               number={r.number}
               badges={r.badges}
               text={r.text}
-              caption={r.gymCaption}
+              caption={setRowCaption(r.gymCaption, r.note)}
               edited={r.edited}
               last={i === focus.rows.length - 1}
               exclusionTag={r.exclusionTag}
@@ -1580,6 +1599,26 @@ export function WorkoutScreen() {
       {/* No Talk button until voice exists (critic T3): no dead control in the best thumb spot. */}
       <ActionBar primary={primary} guard={guard || logBlockedBySwitch(switchCard)} />
 
+      <NoteSheet
+        visible={noteFor !== null}
+        title={`Notes · ${noteFor?.exerciseName ?? ''}`}
+        initial={noteFor?.note ?? null}
+        onClose={() => {
+          setNoteFor(null);
+        }}
+        onSave={async (note) => {
+          if (noteFor === null) return null;
+          const r = await services.workout.setNote({ sessionId: session.id, target: { kind: 'exercise', sessionExerciseId: noteFor.sessionExerciseId }, note, expectedVersion: session.version, opId: newUuid() });
+          if (!r.ok) {
+            void reload();
+            return refusalText(r.error.code, r.error.message);
+          }
+          setData((cur) => withCommandResult(cur, loaded, r.aggregate));
+          changed();
+          setNoteFor(null);
+          return null;
+        }}
+      />
       <MidSwapSheet
         visible={swap !== null}
         exerciseName={swap?.exerciseName ?? ''}

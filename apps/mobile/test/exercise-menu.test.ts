@@ -6,32 +6,32 @@ import { exerciseMenu } from '../src/workout/exercise-menu';
 describe('exercise ⋯ menu', () => {
   it('without How to: every row maps to its own action; the two destructive rows are red', () => {
     const m = exerciseMenu(false);
-    expect(m.options).toEqual(['Add set', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
-    expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['add_set', 'add_exercise', 'delete_set', 'skip_exercise', null]);
+    expect(m.options).toEqual(['Add set', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
+    expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['add_set', 'notes', 'add_exercise', 'delete_set', 'skip_exercise', null]);
     expect(m.destructiveButtonIndex.map((i) => m.options[i])).toEqual(['Delete this set', 'Skip exercise']);
     expect(m.options[m.cancelButtonIndex]).toBe('Cancel');
   });
 
   it('with How to: it leads, and nothing below it shifts onto the wrong action', () => {
     const m = exerciseMenu(true);
-    expect(m.options).toEqual(['How to', 'Add set', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
-    expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['how_to', 'add_set', 'add_exercise', 'delete_set', 'skip_exercise', null]);
+    expect(m.options).toEqual(['How to', 'Add set', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
+    expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['how_to', 'add_set', 'notes', 'add_exercise', 'delete_set', 'skip_exercise', null]);
     expect(m.destructiveButtonIndex.map((i) => m.options[i])).toEqual(['Delete this set', 'Skip exercise']);
     expect(m.options[m.cancelButtonIndex]).toBe('Cancel');
   });
 
   it('with a coach change on the set: Undo coach change sits under How to, not red, and the rows below keep their actions', () => {
     const m = exerciseMenu(true, true);
-    expect(m.options).toEqual(['How to', 'Undo coach change', 'Add set', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
-    expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['how_to', 'undo_coach', 'add_set', 'add_exercise', 'delete_set', 'skip_exercise', null]);
+    expect(m.options).toEqual(['How to', 'Undo coach change', 'Add set', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
+    expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['how_to', 'undo_coach', 'add_set', 'notes', 'add_exercise', 'delete_set', 'skip_exercise', null]);
     expect(m.destructiveButtonIndex.map((i) => m.options[i])).toEqual(['Delete this set', 'Skip exercise']);
     expect(exerciseMenu(false, true).actionAt(0)).toBe('undo_coach');
   });
 
   it('mid-workout swap (EL4): Swap exercise under Add set while sets are pending; Undo swap near the top, never red', () => {
     const m = exerciseMenu(true, false, { canSwap: true, canUndoSwap: true });
-    expect(m.options).toEqual(['How to', 'Undo swap', 'Add set', 'Swap exercise', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
-    expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['how_to', 'undo_swap', 'add_set', 'swap', 'add_exercise', 'delete_set', 'skip_exercise', null]);
+    expect(m.options).toEqual(['How to', 'Undo swap', 'Add set', 'Swap exercise', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
+    expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['how_to', 'undo_swap', 'add_set', 'swap', 'notes', 'add_exercise', 'delete_set', 'skip_exercise', null]);
     expect(m.destructiveButtonIndex.map((i) => m.options[i])).toEqual(['Delete this set', 'Skip exercise']);
     expect(exerciseMenu(false, false, { canSwap: false }).options).not.toContain('Swap exercise');
   });
