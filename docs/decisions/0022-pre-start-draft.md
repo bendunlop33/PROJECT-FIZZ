@@ -83,7 +83,7 @@ Each open edit gets an outcome: `applied`, `stale` (its slot is gone, or an `ord
 
 - **Migration 7** (`0007-pre-start-drafts`): table `pre_start_drafts` (`id`, `owner_id`, `basis_key`, `status`, `version`, `expires_at_utc`, `data` JSON). Partial unique index on `(owner_id, basis_key) WHERE status = 'open'`.
 - `FenceTable` gains `pre_start_drafts`.
-- Backups include the rows (ADR 0005). **Restore marks every `open` draft `discarded`**, so a restored phone never starts from an old draft. The erase list for Your data includes the table.
+- Backups include the rows (ADR 0005). **Restore marks every `open` draft `discarded`**, so a restored phone never starts from an old draft. The erase list for Your data includes the table. `Reset coaching knowledge` and `Undo last reset` are not restores and keep open drafts as they are; Delete my data removes them as Your data (ADR 0023, proposed).
 - New optional fields: `WorkoutSession.source.todayEdits?` and `SetRecord.skippedBy?`. Older sessions read unchanged.
 
 ## Alternatives considered

@@ -111,7 +111,7 @@ const PICKER_INBOX = /-Inbox$/;
  * there itself, and running iOS frameworks own entries that come straight
  * back or can't be removed (URL cache, Metal shader cache). Those are
  * returned, not thrown, so they never make Delete fail (review r3 S2).
- * Throws if a picked file is left. Needs a device test (ADR 0022).
+ * Throws if a picked file is left. Needs a device test (ADR 0023).
  */
 export function emptyTemporaryFiles(): Promise<{ systemLeft: string[] }> {
   const pickedLeft: string[] = [];

@@ -45,7 +45,7 @@ const META_MIGRATIONS: readonly Migration[] = [
   sqlMigration(2, 'orphan reason', `ALTER TABLE database_slots ADD COLUMN orphan_reason TEXT CHECK (orphan_reason IN ('restore', 'check', 'dropped'));`),
   // `Undo last reset` (data-import-export §3.6, check 31a): a Reset coaching
   // knowledge switch is recorded like a restore. SQLite can't change a CHECK
-  // in place, so the one-row table is rebuilt (ADR 0022).
+  // in place, so the one-row table is rebuilt (ADR 0023).
   sqlMigration(
     3,
     'reset switch reason',

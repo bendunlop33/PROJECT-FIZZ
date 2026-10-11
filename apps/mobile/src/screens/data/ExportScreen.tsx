@@ -13,7 +13,7 @@ import { ChoiceCard, InfoLine, PrimaryButton, Screen, SectionHeader, StatusLine 
  * JSON of Your data; `Coaching knowledge only` has nothing about Ben (rule
  * 10). Success is claimed only after the file read back correctly. With
  * nothing in the chosen domain, Export is disabled (§3.5). CSV, FitNotes 2
- * CSV, ranges and the share sheet aren't built yet (ADR 0022).
+ * CSV, ranges and the share sheet aren't built yet (ADR 0023).
  */
 export function ExportScreen() {
   const theme = useTheme();

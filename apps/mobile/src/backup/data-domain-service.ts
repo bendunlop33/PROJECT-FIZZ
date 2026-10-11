@@ -23,7 +23,7 @@ import { describeWriteError, type BackupService, type CopyDestination, type Text
  *    old file and the copy kept for Undo restore are removed. The marker
  *    then records the swap, so a resume never swaps again (it would delete
  *    anything logged since). Database first, unlike §4.5's order: a failure
- *    before the swap then deletes nothing (ADR 0022).
+ *    before the swap then deletes nothing (ADR 0023).
  * 4. `coach_sign_in`: the sign-in removed from this phone, revoked online
  *    where possible (bounded; offline is fine), every Keychain item deleted.
  *    First after the swap: Keychain items survive an uninstall, so nothing
