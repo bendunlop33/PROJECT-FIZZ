@@ -61,3 +61,43 @@ export async function loadPrefs(file: TextFile): Promise<DevicePrefs> {
 export async function savePrefs(file: TextFile, prefs: DevicePrefs): Promise<void> {
   await file.write(JSON.stringify(prefs));
 }
+
+/**
+ * This phone's preferences for one app run, owned by `Root`. `onChange`
+ * renders. Changes made before the file loads are shown at once, then kept
+ * on top of the file and saved (review N1). `clear` (after Delete my data
+ * removed the file) forgets what is in memory without writing it; a load
+ * still in flight is ignored, so old values never come back (review S2).
+ */
+export function createPrefsHolder(file: TextFile, onChange: (prefs: DevicePrefs) => void) {
+  let current: DevicePrefs | null = null;
+  let early: Partial<DevicePrefs> | null = {};
+  let cleared = false;
+  return {
+    async load(): Promise<void> {
+      const loaded = await loadPrefs(file);
+      if (cleared) return;
+      const settled = settleLoadedPrefs(loaded, early ?? {});
+      early = null;
+      current = settled.prefs;
+      onChange(current);
+      if (settled.save) await savePrefs(file, current).catch(() => undefined);
+    },
+    async update(change: Partial<DevicePrefs>): Promise<void> {
+      const next = updatePrefs(current, change);
+      current = next;
+      onChange(next);
+      if (early !== null) {
+        early = { ...early, ...change };
+        return;
+      }
+      await savePrefs(file, next).catch(() => undefined);
+    },
+    clear(): void {
+      early = null;
+      cleared = true;
+      current = DEFAULT_PREFS;
+      onChange(DEFAULT_PREFS);
+    },
+  };
+}

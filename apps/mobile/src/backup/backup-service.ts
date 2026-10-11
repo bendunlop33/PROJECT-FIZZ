@@ -4,6 +4,7 @@ import { createBackup, sha256Hex, type AppInfo, type Store } from '@fizz/persist
 
 import {
   backupFileName,
+  emptyManifest,
   parseManifest,
   planRotation,
   serialiseManifest,
@@ -31,6 +32,8 @@ export interface BackupFileStore {
   write(name: string, text: string): Promise<void>;
   read(name: string): Promise<string | null>;
   remove(name: string): Promise<void>;
+  /** Every file name in the backup folder (Delete my data removes them all). */
+  list(): Promise<string[]>;
 }
 
 /** One small text file (the manifest). Writes must replace it atomically. */
@@ -259,6 +262,39 @@ export function createBackupService(deps: BackupServiceDeps) {
         queued(async () => {
           try {
             return await backUpNow(reason);
+          } catch (e) {
+            return { ok: false, error: describeWriteError(e) } as const;
+          }
+        }),
+      );
+    },
+
+    /**
+     * `Delete my data` (data-import-export §4.5 step 3; check 30): delete
+     * every backup file on this phone (they hold Ben's data), start the
+     * record again (copies, the last Files copy, trial run and reminder
+     * answers), then write one backup of what is left: coaching knowledge
+     * only. Queued behind any run in progress, so a backup that started
+     * before the switch is deleted too. Safe to repeat. Throws when a file
+     * is still there; a failed fresh backup is recorded, not thrown.
+     */
+    wipeOnPhone(): Promise<BackupRunResult> {
+      return track(() =>
+        queued(async () => {
+          const names = new Set(await deps.files.list());
+          const recorded = await deps.manifest.read().catch(() => null);
+          for (const f of parseManifest(recorded).manifest.onPhone.files) names.add(f.fileName);
+          for (const name of names) await deps.files.remove(name);
+          const left = (await deps.files.list()).filter((n) => names.has(n));
+          if (left.length > 0) throw new Error(`${String(left.length)} backup file(s) couldn’t be deleted`);
+          const fresh = emptyManifest();
+          await deps.manifest.write(serialiseManifest(fresh));
+          lastKnown = fresh;
+          manifestProblem = null;
+          damagedCopyKept = false;
+          notify();
+          try {
+            return await backUpNow('after_delete');
           } catch (e) {
             return { ok: false, error: describeWriteError(e) } as const;
           }

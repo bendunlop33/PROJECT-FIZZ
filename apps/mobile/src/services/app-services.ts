@@ -86,6 +86,8 @@ export interface AppServicesDeps {
   dataLedger?: TextFile;
   credentials?: CredentialPort;
   personalFiles?: PersonalFilesPort;
+  /** How long Delete waits for the online ChatGPT revoke (default 10 s). */
+  signOutTimeoutMs?: number;
 }
 
 function memoryTextFile(): TextFile {
@@ -517,6 +519,7 @@ export function createAppServices(deps: AppServicesDeps) {
     ...(deps.credentials ? { credentials: deps.credentials } : {}),
     ...(deps.personalFiles ? { personalFiles: deps.personalFiles } : {}),
     ...(deps.restAlerts ? { restAlerts: deps.restAlerts } : {}),
+    ...(deps.signOutTimeoutMs === undefined ? {} : { signOutTimeoutMs: deps.signOutTimeoutMs }),
   });
 
   return {

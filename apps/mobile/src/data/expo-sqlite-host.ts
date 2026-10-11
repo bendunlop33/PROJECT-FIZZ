@@ -30,3 +30,15 @@ export function expoDatabaseHost(): DatabaseHost {
     },
   });
 }
+
+/**
+ * Delete a database's files (with `-wal`/`-shm`) by name, without opening it.
+ * Delete my data removes the capability-probe database this way (§4.5 step 3).
+ */
+export function removeDatabaseFiles(name: string): Promise<void> {
+  for (const n of [name, `${name}-wal`, `${name}-shm`]) {
+    const file = databaseFile(n);
+    if (file.exists) file.delete();
+  }
+  return Promise.resolve();
+}

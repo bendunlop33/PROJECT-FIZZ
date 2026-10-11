@@ -4,6 +4,7 @@ import { DatabaseManager, SchemaTooNewError, type DatabaseHost, type MigrationRe
 import { isSqliteVersionSupported, readSqliteVersion } from '../data/expo-driver';
 import { createAppServices, type AppServices, type AppServicesDeps } from './app-services';
 import type { SetupState } from './app-services';
+import type { DeleteStep } from '../backup/data-domain-service';
 
 /**
  * Launch sequence (system-states §3.6–§3.9, flow §4.2). Pure TS: the host and
@@ -31,7 +32,20 @@ export type StartupOutcome =
        * instead of a blank workout (review workout-loop S2).
        */
       recoveryError: string | null;
+      /**
+       * A Delete my data that was interrupted was finished at this launch:
+       * anything held in memory from before (this phone's prefs) is stale
+       * and must not be written back (review S2).
+       */
+      personalDataCleared: boolean;
     }
+  /**
+   * A Delete my data couldn't be finished at launch (review S1). `deleted`:
+   * the data is already gone and `step` failed (`Try again`, or `Continue`
+   * with `interruptedDelete: 'leave'`); otherwise nothing was deleted and
+   * the marker is cleared (`Continue` opens the app as it was).
+   */
+  | { kind: 'delete_unfinished'; deleted: boolean; step: DeleteStep | null; message: string }
   | { kind: 'schema_too_new'; message: string }
   | { kind: 'sqlite_too_old'; version: string }
   | { kind: 'open_failed'; message: string };
@@ -40,6 +54,12 @@ export interface StartupDeps extends Omit<AppServicesDeps, 'manager'> {
   host: DatabaseHost;
   /** A new, unique training database file name. */
   newDatabaseName: () => string;
+  /**
+   * `leave`: Ben chose `Continue` after an interrupted delete kept failing;
+   * the marker is cleared with the step recorded as unfinished. Default:
+   * finish it.
+   */
+  interruptedDelete?: 'finish' | 'leave';
 }
 
 function errorText(e: unknown): string {
@@ -62,10 +82,18 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     }
     const services = createAppServices({ ...deps, manager });
     // A Delete my data that was interrupted is finished before anything is shown (data-import-export check 31).
-    const resumed = await services.data.resumeInterrupted();
-    if (resumed.ran && !resumed.ok) {
-      await manager.close().catch(() => undefined);
-      return { kind: 'open_failed', message: `Deleting your data didn’t finish: ${resumed.message ?? 'unknown error'}. It’s tried again when you retry.` };
+    let personalDataCleared = false;
+    if (deps.interruptedDelete === 'leave') {
+      await services.data.leaveInterrupted().catch(() => null);
+    } else {
+      const resumed = await services.data.resumeInterrupted();
+      if (resumed.kind === 'unfinished' || resumed.kind === 'not_deleted') {
+        await services.close().catch(() => undefined);
+        return resumed.kind === 'unfinished'
+          ? { kind: 'delete_unfinished', deleted: true, step: resumed.step, message: resumed.message }
+          : { kind: 'delete_unfinished', deleted: false, step: null, message: resumed.message };
+      }
+      personalDataCleared = resumed.kind === 'finished';
     }
     // Coaching knowledge: the starter exercise list (only missing IDs are added).
     await services.coachingKnowledge.ensureStarterExercises().catch(() => 0);
@@ -89,7 +117,7 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     // unfinished; finishing that workout backs up anyway.
     if (recoveryError === null && recovery?.state.session.status !== 'active') void services.backups.ensureBackedUp().catch(() => null);
     void services.integrity.checkAll().catch(() => null);
-    return { kind: 'ready', services, migration: manager.store.migration, sqliteVersion, setup, recovery, recoveryError };
+    return { kind: 'ready', services, migration: manager.store.migration, sqliteVersion, setup, recovery, recoveryError, personalDataCleared };
   } catch (e) {
     await manager.close().catch(() => undefined);
     return { kind: 'open_failed', message: errorText(e) };

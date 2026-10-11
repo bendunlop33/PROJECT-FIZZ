@@ -28,6 +28,10 @@ export interface Harness {
   pending: Map<string, PlannedRestAlert>;
   now: () => ZonedTimestamp;
   launch: () => Promise<Extract<StartupOutcome, { kind: 'ready' }>>;
+  /** Launch and return whatever startup returned (`interruptedDelete` as Root passes it). */
+  start: (extra?: { interruptedDelete?: 'finish' | 'leave' }) => Promise<StartupOutcome>;
+  /** Every small file the app keeps in its container, by name: backups, the backup record, the data ledger. */
+  containerFiles: () => Map<string, string>;
   settle: (s: AppServices) => Promise<void>;
   forceClose: () => Promise<void>;
   cleanup: () => Promise<void>;
@@ -40,7 +44,15 @@ export interface Harness {
  */
 export function createHarness(
   start = '2026-10-08T17:00:00.000Z',
-  opts: { idStart?: number; coach?: StartupDeps['coach']; credentials?: StartupDeps['credentials']; personalFiles?: StartupDeps['personalFiles'] } = {},
+  opts: {
+    idStart?: number;
+    coach?: StartupDeps['coach'];
+    credentials?: StartupDeps['credentials'];
+    personalFiles?: StartupDeps['personalFiles'];
+    signOutTimeoutMs?: number;
+    /** The data ledger can be damaged or failing in a test. */
+    ledger?: TextFile;
+  } = {},
 ): Harness {
   const dir = mkdtempSync(join(tmpdir(), 'fizz-harness-'));
   let dbNames = 0;
@@ -56,6 +68,17 @@ export function createHarness(
     pending: new Map(),
     now: () => ({ utc: toIso(h.clockMs), tz: TZ }),
     async launch() {
+      const o = await h.start();
+      if (o.kind !== 'ready') throw new Error(o.kind);
+      return o;
+    },
+    containerFiles() {
+      const all = new Map(h.backupFiles);
+      if (manifestText !== null) all.set('backup-state.json', manifestText);
+      if (ledgerText !== null) all.set('data-ops.json', ledgerText);
+      return all;
+    },
+    async start(extra = {}) {
       const files: BackupFileStore = {
         write: (n, t) => {
           h.backupFiles.set(n, t);
@@ -66,6 +89,7 @@ export function createHarness(
           h.backupFiles.delete(n);
           return Promise.resolve();
         },
+        list: () => Promise.resolve([...h.backupFiles.keys()]),
       };
       const manifest: TextFile = {
         read: () => Promise.resolve(manifestText),
@@ -95,7 +119,7 @@ export function createHarness(
         locale: 'en-GB',
         restAlerts: createRestAlertController(notifier),
         ...(opts.coach === undefined ? {} : { coach: opts.coach }),
-        dataLedger: {
+        dataLedger: opts.ledger ?? {
           read: () => Promise.resolve(ledgerText),
           write: (t) => {
             ledgerText = t;
@@ -104,9 +128,10 @@ export function createHarness(
         },
         ...(opts.credentials === undefined ? {} : { credentials: opts.credentials }),
         ...(opts.personalFiles === undefined ? {} : { personalFiles: opts.personalFiles }),
+        ...(opts.signOutTimeoutMs === undefined ? {} : { signOutTimeoutMs: opts.signOutTimeoutMs }),
+        ...extra,
       });
-      if (o.kind !== 'ready') throw new Error(o.kind);
-      open.push(o.services);
+      if (o.kind === 'ready') open.push(o.services);
       return o;
     },
     async settle(s) {

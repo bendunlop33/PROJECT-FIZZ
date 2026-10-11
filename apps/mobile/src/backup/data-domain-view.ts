@@ -2,7 +2,7 @@ import { toMs } from '@fizz/domain';
 
 import { formatShortDate } from '../format/dates';
 import { plural } from '../format/numbers';
-import type { DataSummary, DeleteOutcome, ResetOutcome } from './data-domain-service';
+import type { DataSummary, DeleteOutcome, DeleteStep, ResetOutcome } from './data-domain-service';
 
 /**
  * What the Export, Delete my data and Reset coaching knowledge screens show
@@ -15,10 +15,10 @@ export interface WhenContext {
   locale?: string;
 }
 
-/** `Copy saved to Files · Thu 8 Oct` / `No copy off this phone` (§2.7; §3.6 lists Save first above it then). */
+/** `Copy saved to Files · Thu 8 Oct`, or the §3.6 line with `Save a copy to Files first` listed first. */
 export function offPhoneLine(summary: DataSummary, ctx: WhenContext): { text: string; saveFirst: boolean } {
   const c = summary.lastCopyToFiles;
-  if (c === null) return { text: 'No copy off this phone', saveFirst: true };
+  if (c === null) return { text: 'No copy off this phone. Deleting removes the backups on this phone too.', saveFirst: true };
   return { text: `Copy saved to Files · ${formatShortDate(toMs(c.atUtc), ctx.tz, ctx.locale)}`, saveFirst: false };
 }
 
@@ -33,7 +33,7 @@ export function deleteListView(summary: DataSummary): { removed: string[]; kept:
       'Coach chats and memories',
       'Coach sign-in',
       'Your settings and scheduled alerts',
-      'The copy kept to undo a restore',
+      'Backups on this phone, and the copy kept to undo a restore',
     ],
     kept: 'Coaching knowledge',
   };
@@ -41,7 +41,7 @@ export function deleteListView(summary: DataSummary): { removed: string[]; kept:
 
 export const DELETE_ALERT = {
   title: 'Delete your data?',
-  message: 'Your workouts and everything about you are removed from this iPhone. Coaching knowledge is kept. A backup is saved on this phone first.',
+  message: 'Your workouts and everything about you are removed from this iPhone. Coaching knowledge is kept. This can’t be undone. Copies in Files are kept.',
   confirm: 'Delete',
 } as const;
 
@@ -56,9 +56,25 @@ export function resetListView(summary: DataSummary): { changed: string[]; unchan
 
 export const RESET_ALERT = {
   title: 'Reset coaching knowledge?',
-  message: 'The exercise list returns to the built-in one. Your data isn’t changed. A backup is saved on this phone first.',
+  message: 'The exercise list returns to the built-in one. Your data isn’t changed. You can undo this from Data & backup.',
   confirm: 'Reset',
 } as const;
+
+/** What didn't finish, named for Ben (S1). */
+export function deleteStepLabel(step: DeleteStep): string {
+  switch (step) {
+    case 'database':
+      return 'Removing the old database';
+    case 'alerts':
+      return 'Cancelling scheduled alerts';
+    case 'backups':
+      return 'Removing backups on this phone';
+    case 'settings_files':
+      return 'Removing your settings';
+    case 'coach_sign_in':
+      return 'Removing the coach sign-in';
+  }
+}
 
 /** After a delete: the line to show (null: none), and whether the app relaunches. */
 export function deleteResultView(r: DeleteOutcome): { line: string | null; relaunch: boolean; tone: 'done' | 'warning' } {
@@ -72,23 +88,39 @@ export function deleteResultView(r: DeleteOutcome): { line: string | null; relau
   switch (r.reason) {
     case 'stale':
       return { line: 'Your data changed. Nothing was deleted. Check and try again.', relaunch: false, tone: 'warning' };
-    case 'backup_failed':
-      return { line: `Nothing was deleted: the backup didn’t save. ${r.message}`, relaunch: false, tone: 'warning' };
     case 'failed':
-      return r.pending
-        ? { line: `Deleting didn’t finish (${r.message}). It finishes when GymSmarter opens again.`, relaunch: true, tone: 'warning' }
+      return r.deleted
+        ? { line: `Deleting didn’t finish (${r.step === null ? r.message : deleteStepLabel(r.step)}). It finishes when GymSmarter opens again.`, relaunch: true, tone: 'warning' }
         : { line: `Nothing was deleted. ${r.message}`, relaunch: false, tone: 'warning' };
   }
 }
 
-export function resetResultView(r: ResetOutcome): { line: string; relaunch: boolean; tone: 'done' | 'warning' } {
-  if (r.ok) return { line: 'Coaching knowledge reset.', relaunch: true, tone: 'done' };
+/**
+ * Launch after a delete that didn't finish (S1). `deleted: false`: the swap
+ * never happened and the marker is gone, so `Continue` opens the app as it
+ * was. Otherwise `Try again` retries the step and `Continue` opens first run
+ * with that step left undone.
+ */
+export function deleteUnfinishedView(o: { deleted: boolean; step: DeleteStep | null; message: string }): { title: string; lines: string[]; retry: boolean } {
+  if (!o.deleted) return { title: 'Deleting your data didn’t finish', lines: ['Nothing was deleted.', o.message], retry: false };
+  const what = o.step === null ? 'The rest' : deleteStepLabel(o.step);
+  return { title: 'Deleting your data didn’t finish', lines: [`Your data is deleted. ${what} didn’t finish.`, o.message], retry: true };
+}
+
+/** After a reset. `undo`: offer Undo with the done line (§3.6 Reset done). */
+export function resetResultView(r: ResetOutcome): { line: string | null; relaunch: boolean; undo: boolean; tone: 'done' | 'warning' } {
+  if (r.ok) {
+    if (r.duplicate) return { line: null, relaunch: false, undo: false, tone: 'done' };
+    return r.status === 'switched'
+      ? { line: 'Coaching knowledge reset.', relaunch: true, undo: true, tone: 'done' }
+      : { line: 'Coaching knowledge is already the built-in one.', relaunch: false, undo: false, tone: 'done' };
+  }
   switch (r.reason) {
     case 'stale':
-      return { line: 'Your data changed. Nothing was reset. Check and try again.', relaunch: false, tone: 'warning' };
+      return { line: 'Your data changed. Nothing was reset. Check and try again.', relaunch: false, undo: false, tone: 'warning' };
     case 'backup_failed':
-      return { line: `Nothing was reset: the backup didn’t save. ${r.message}`, relaunch: false, tone: 'warning' };
+      return { line: `Nothing was reset: the backup didn’t save. ${r.message}`, relaunch: false, undo: false, tone: 'warning' };
     case 'failed':
-      return { line: `Nothing was reset. ${r.message}`, relaunch: false, tone: 'warning' };
+      return { line: `Nothing was reset. ${r.message}`, relaunch: false, undo: false, tone: 'warning' };
   }
 }

@@ -28,6 +28,9 @@ class MemoryFiles implements BackupFileStore {
     this.files.delete(name);
     return Promise.resolve();
   }
+  list() {
+    return Promise.resolve([...this.files.keys()]);
+  }
 }
 
 class MemoryText implements TextFile {
@@ -336,5 +339,34 @@ describe('backup service', () => {
     await svc.markTrialRunDone();
     expect((await svc.getStatus()).trialRunDoneAtUtc).toBe(toIso(clockMs));
     expect(parseManifest(JSON.stringify(emptyManifest())).problem).toBeNull();
+  });
+});
+
+describe('wipeOnPhone (Delete my data, check 30)', () => {
+  it('deletes every file in the backup folder, recorded or not, starts the record again, then writes one backup', async () => {
+    const svc = service();
+    await svc.backUpOnPhone('manual');
+    clockMs += 60_000;
+    await svc.backUpOnPhone('workout_finished');
+    await svc.markTrialRunDone();
+    files.files.set('fizz-backup-2026-10-01-0900.json', '{"stray":true}');
+    expect(files.files.size).toBe(3);
+
+    clockMs += 60_000;
+    const r = await svc.wipeOnPhone();
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error(r.error);
+    expect([...files.files.keys()]).toEqual([r.record.fileName]);
+    expect(r.record.reason).toBe('after_delete');
+    const status = await svc.getStatus();
+    expect(status.copiesOnPhone.map((c) => c.fileName)).toEqual([r.record.fileName]);
+    expect(status.trialRunDoneAtUtc).toBeNull();
+  });
+
+  it('throws when a file is still there, so Delete names the step and tries again', async () => {
+    const svc = service();
+    await svc.backUpOnPhone('manual');
+    files.remove = () => Promise.resolve();
+    await expect(svc.wipeOnPhone()).rejects.toThrow(/couldn’t be deleted/);
   });
 });

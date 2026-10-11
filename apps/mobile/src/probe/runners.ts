@@ -18,7 +18,7 @@ import { restCountdownActivity } from '../live-activity/RestCountdownActivity';
 import { judgeAlarmKitStatus } from './alarmkit';
 import { analyseAppGroup, parseNativeAppGroupInfo } from './app-group';
 import { LOCKED_CUE_DELAY_S, judgeLockedCue } from './locked-cue';
-import type { ResultUpdate } from './model';
+import { PROBE_DB_NAME, type ResultUpdate } from './model';
 import { PROBE_CONTEXTUAL_STRINGS, chooseRecognitionLocale, describeTranscript, type LocaleChoice } from './speech-probe';
 
 /**
@@ -67,7 +67,6 @@ const NATIVE_CALL_TIMEOUT_MS = 30_000;
 
 // ---------- SQLite ----------
 
-const PROBE_DB_NAME = 'fizz-probe.db';
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 /** Separate probe database; never the workout database. */

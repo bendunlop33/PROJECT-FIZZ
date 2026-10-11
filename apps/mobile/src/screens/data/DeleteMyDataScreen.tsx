@@ -3,7 +3,6 @@ import { Alert, View } from 'react-native';
 
 import { DELETE_ALERT, deleteListView, deleteResultView, offPhoneLine } from '../../backup/data-domain-view';
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
-import { DEFAULT_PREFS } from '../../device/prefs';
 import { useRelaunch, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, DangerTextButton, DomainLabel, Screen, StatusLine } from '../../ui';
@@ -13,10 +12,10 @@ import { SaveCopyToFiles } from './SaveCopyToFiles';
 /**
  * `Delete my data (keep coaching knowledge)` (data-import-export §2.7, §3.6,
  * §4.5): what goes and what stays, `Save a copy to Files first`
- * (secondary), then the danger button and a system alert (two steps). The
- * service backs up on this phone first, then deletes in one switch; the app
- * relaunches into first run. The op ID is minted per confirmation, so a
- * double tap deletes once.
+ * (listed first when there's no copy off this phone: the backups on this
+ * phone are deleted too), then the danger button and a system alert (two
+ * steps). The service deletes in one switch; the app relaunches into first
+ * run. The op ID is minted per confirmation, so a double tap deletes once.
  */
 export function DeleteMyDataScreen() {
   const theme = useTheme();
@@ -44,7 +43,7 @@ export function DeleteMyDataScreen() {
           setLine(null);
           void services.data
             .deleteMyData({ opId, stamp: summary.stamp })
-            .catch((e: unknown) => ({ ok: false as const, reason: 'failed' as const, message: e instanceof Error ? e.message : String(e), pending: false }))
+            .catch((e: unknown) => ({ ok: false as const, reason: 'failed' as const, message: e instanceof Error ? e.message : String(e), deleted: false, step: null }))
             .then((r) => {
               const view = deleteResultView(r);
               if (!view.relaunch) {
@@ -53,8 +52,8 @@ export function DeleteMyDataScreen() {
                 reload();
                 return;
               }
-              // This phone's look and alert answers are Your data too.
-              if (r.ok) prefs.update(DEFAULT_PREFS);
+              // This phone's look and alert answers are Your data too: never written back (S2).
+              prefs.clear();
               if (view.line) Alert.alert(view.line, undefined, [{ text: 'OK', onPress: relaunch }]);
               else relaunch();
             });

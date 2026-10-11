@@ -1,5 +1,5 @@
 import { toMs } from '@fizz/domain';
-import type { BackupError, RestorePreview } from '@fizz/persistence';
+import type { BackupError, LastSwitch, RestorePreview } from '@fizz/persistence';
 
 import { formatShortDate, formatTime, formatWhen } from '../format/dates';
 import { formatCount, plural } from '../format/numbers';
@@ -195,13 +195,20 @@ export function buildCheckResultView(
   };
 }
 
-/** `Undo last restore` row (§3.3). */
-export function rollbackRowView(target: { available: boolean; last: { atUtc: string; reason: 'restore' | 'rollback' } | null }, ctx: WhenContext): { title: string; subtitle: string } | null {
+/** `Undo last restore` / `Undo last reset` row (§3.3, §3.6). */
+export function rollbackRowView(target: { available: boolean; last: { atUtc: string; reason: LastSwitch['reason'] } | null }, ctx: WhenContext): { title: string; subtitle: string } | null {
   if (!target.available || target.last === null) return null;
   const when = formatWhen(toMs(target.last.atUtc), ctx.nowMs, ctx.tz, ctx.locale);
-  return target.last.reason === 'restore'
-    ? { title: 'Undo last restore', subtitle: `Brings back your data from before ${when}` }
-    : { title: 'Switch back to the restored backup', subtitle: `You undid a restore at ${when}` };
+  switch (target.last.reason) {
+    case 'restore':
+      return { title: 'Undo last restore', subtitle: `Brings back your data from before ${when}` };
+    case 'rollback':
+      return { title: 'Switch back to the restored backup', subtitle: `You undid a restore at ${when}` };
+    case 'reset':
+      return { title: 'Undo last reset', subtitle: `Brings back coaching knowledge from before ${when}` };
+    case 'undo_reset':
+      return { title: 'Switch back to the reset coaching knowledge', subtitle: `You undid a reset at ${when}` };
+  }
 }
 
 /** The restore screen's steps, as far as leaving the screen is concerned. */
@@ -233,8 +240,8 @@ export function backupReasonLabel(reason: BackupRecord['reason']): string {
       return 'Before a FitNotes import';
     case 'after_import':
       return 'After a FitNotes import';
-    case 'before_delete':
-      return 'Before Delete my data';
+    case 'after_delete':
+      return 'Coaching knowledge only';
     case 'before_reset':
       return 'Before Reset coaching knowledge';
     case 'workout_finished':

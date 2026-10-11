@@ -32,6 +32,14 @@ export function containerBackupFiles(): BackupFileStore {
       if (file.exists) file.delete();
       return Promise.resolve();
     },
+    list() {
+      return Promise.resolve(
+        backupDir()
+          .list()
+          .filter((e) => e instanceof File)
+          .map((f) => f.name),
+      );
+    },
   };
 }
 
@@ -65,16 +73,24 @@ export function containerTextFile(name: string): TextFile {
 }
 
 /**
- * Remove small files from Documents (and their `.tmp` twins). Used by
- * Delete my data for Your-data files outside SQLite. Missing files are fine.
+ * Remove small files from Documents: each name and its `.tmp` twin, and any
+ * file whose name matches `matching` (e.g. damaged copies kept aside). Used
+ * by Delete my data for Your-data files outside SQLite. Missing files are
+ * fine; a file still there afterwards throws.
  */
-export function removeContainerFiles(names: readonly string[]): Promise<void> {
-  for (const name of names) {
-    for (const n of [name, `${name}.tmp`]) {
-      const f = new File(Paths.document, n);
-      if (f.exists) f.delete();
+export function removeContainerFiles(names: readonly string[], matching?: RegExp): Promise<void> {
+  const doomed = names.flatMap((n) => [n, `${n}.tmp`]);
+  if (matching) {
+    for (const e of new Directory(Paths.document).list()) {
+      if (e instanceof File && matching.test(e.name)) doomed.push(e.name);
     }
   }
+  for (const n of doomed) {
+    const f = new File(Paths.document, n);
+    if (f.exists) f.delete();
+  }
+  const left = doomed.filter((n) => new File(Paths.document, n).exists);
+  if (left.length > 0) return Promise.reject(new Error(`Couldn’t delete ${left.join(', ')}`));
   return Promise.resolve();
 }
 

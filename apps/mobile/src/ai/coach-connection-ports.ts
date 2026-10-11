@@ -6,11 +6,13 @@
  * app's container: never in SQLite or a GymSmarter backup, never a credential.
  */
 
-import { disconnectChatGpt, type ConnectionPorts, type SettingsStore } from '@fizz/providers';
+import type { ConnectionPorts, SettingsStore } from '@fizz/providers';
 
 import type { CredentialPort } from '../backup/data-domain-service';
 import { containerTextFile } from '../device/files';
-import { createDeviceLoopback, createDevicePorts, wipeKeychain, type DeviceLoopback } from './chatgpt-test-ports';
+import { createDeviceLoopback, createDevicePorts, type DeviceLoopback } from './chatgpt-test-ports';
+import { createCredentialPort } from './credential-port';
+import { wipeKeychain } from './keychain';
 
 export const SETTINGS_FILE = 'coach-connection.json';
 
@@ -27,18 +29,13 @@ export function coachConnectionPorts(): { ports: ConnectionPorts; loopback: Devi
 }
 
 /**
- * `Delete my data` (data-import-export §4.5 step 1): sign out of ChatGPT
- * (revoke online where possible; offline is fine), then delete every
- * Keychain item, including the registration (it holds the account email).
+ * `Delete my data` (data-import-export §4.5 step 1): the sign-in is removed
+ * from this phone first; the online revoke runs after (offline is fine).
  */
 export function deviceCredentials(): CredentialPort {
+  // The ports (and the loopback module) are made only when Delete runs.
   return {
-    async signOut() {
-      const { ports } = coachConnectionPorts();
-      if ((await ports.vault.loadTokens()) === null) return { revoked: false, hadSession: false };
-      const r = await disconnectChatGpt(ports);
-      return { revoked: r.revoked, hadSession: true };
-    },
+    signOut: () => createCredentialPort(coachConnectionPorts().ports, wipeKeychain).signOut(),
     wipe: wipeKeychain,
   };
 }

@@ -163,7 +163,7 @@ describe('I/O errors during Restore and Undo (review S3)', () => {
     const manager = { check: boom, restore: boom, rollback: boom, rollbackTarget: { available: true, last: null } } as unknown as DatabaseManager;
     const svc = createRestoreService({
       manager,
-      backupFiles: { read: boom, write: boom, remove: boom },
+      backupFiles: { read: boom, write: boom, remove: boom, list: boom },
       now: () => ({ utc: '2026-10-09T08:00:00.000Z', tz: TZ }),
       activeWorkout: () => Promise.resolve(null),
       copiesOnPhone: () => Promise.resolve([]),
@@ -180,7 +180,7 @@ describe('I/O errors during Restore and Undo (review S3)', () => {
     // Waiting for a backup that fails is caught too.
     const svc2 = createRestoreService({
       manager,
-      backupFiles: { read: boom, write: boom, remove: boom },
+      backupFiles: { read: boom, write: boom, remove: boom, list: boom },
       now: () => ({ utc: '2026-10-09T08:00:00.000Z', tz: TZ }),
       activeWorkout: () => Promise.resolve(null),
       copiesOnPhone: () => Promise.resolve([]),
