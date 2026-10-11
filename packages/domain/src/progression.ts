@@ -535,6 +535,11 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
 
   const L = reference.load;
   const lastText = fmt(ctx, L);
+  // Review failure-tests-r2 S2: with no equipment profile, a logged 0 on a load with no real zero
+  // (total, each, stack) isn't a reference to build on: never plan 0 + one step (a "2.5 kg barbell").
+  if (L !== null && (input.equipment ?? null) === null && ctx.direction === 'resistance' && ctx.convention !== 'added' && ctx.convention !== 'bodyweight' && toScaled(L) <= 0) {
+    return startingPoint(ctx, criteria, `Last load was ${formatLoad({ value: L, unit: ctx.unit, convention: ctx.convention })}, which isn't a load to plan.`);
+  }
   const complete = latest.prescribedDone >= required && !latest.unpairable;
   if (complete && latest.sides !== null) {
     // Review R4: the load goes up only when both sides qualify; say which side lagged.
