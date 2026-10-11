@@ -715,7 +715,8 @@ export class SqliteSessions implements SessionRepository {
    * Finished workouts with a completed set, app-logged and imported, as
    * small rows (no aggregate decode): what the session picker groups into
    * session types (session-picker §3.1). `exerciseCount` counts distinct
-   * exercises. Newest first.
+   * exercises with a completed set, as the next-session plan copies them
+   * (review r2 N3). Newest first.
    */
   listSessionTypeRows(
     ownerId: string,
@@ -725,7 +726,8 @@ export class SqliteSessions implements SessionRepository {
       (
         await q.getAll<{ id: string; routine_id: string | null; routine_name: string | null; source: string; started_at_utc: string; started_at_tz: string; n: number }>(
           `SELECT s.id, s.routine_id, s.routine_name, s.source, s.started_at_utc, s.started_at_tz,
-                  (SELECT count(DISTINCT e.exercise_id) FROM session_exercises e WHERE e.session_id = s.id) AS n
+                  (SELECT count(DISTINCT e.exercise_id) FROM session_exercises e WHERE e.session_id = s.id
+                    AND EXISTS (SELECT 1 FROM session_sets y WHERE y.session_exercise_id = e.id AND y.status = 'completed')) AS n
            FROM sessions s
            WHERE s.owner_id = ? AND s.status = 'finished'
              AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')
