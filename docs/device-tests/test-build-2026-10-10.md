@@ -41,3 +41,8 @@ Calmer rest screen, richer Today with routines (Save as routine on Summary, Up n
 - **In the workout:** ask "make the rest lighter", "add a set", etc. Today's remaining sets change at once with Undo. After a clear signal (RPE 10, a big miss, a very easy set) the coach may offer once during rest; nothing changes until you tap Adjust.
 - **Summary › Next time:** the coach's small changes for next session, with Why? and Undo; bigger changes are proposals (Apply / Not now). Offline: the built-in rule's targets, labelled.
 - **First real test of the coach on your ChatGPT plan.** Sign in (Profile › Coach connection), then send one message. If it fails, the sheet says so honestly — please screenshot it either way.
+
+## Update (11 Oct): workout overview
+- **Up next › Start** (or a routine) now opens a one-page overview first: name, gym, `≈ time · done by · sets`, muscles, every exercise with sets × reps and target, and a change marker vs last time. Tap a row for last time, best set, warm-up ramp, plates per side, pain flag, How to / History / Why?. Coach-set targets show a Coach tag with Undo.
+- The check-in is now an optional 1–5 row above **Start workout** (ignoring it = skip).
+- Please check at large text sizes (Settings › Accessibility › Larger Text) that nothing overlaps.
