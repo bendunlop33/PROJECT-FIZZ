@@ -530,7 +530,8 @@ export function nameRowView(n: NameRow, candidateName: (id: string) => string | 
     case 'check':
       return { ...base, status: { icon: 'questionmark.circle', tone: 'warning', word: 'Check', text: candidateName(n.match.exerciseId ?? '') ?? '' }, actions: ['use', 'choose', 'new'], suggestionId: n.match.exerciseId };
     case 'no_match':
-      return { ...base, status: { icon: 'xmark.circle', tone: 'info', word: 'No match', text: 'No match' }, actions: ['choose', 'new', 'skip'], suggestionId: null };
+      // The FitNotes category, as written, helps Ben choose.
+      return { ...base, status: { icon: 'xmark.circle', tone: 'info', word: 'No match', text: n.category === null ? 'No match' : `No match · ${n.category}` }, actions: ['choose', 'new', 'skip'], suggestionId: null };
   }
 }
 

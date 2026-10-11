@@ -94,7 +94,7 @@ describe('import preview wording', () => {
     const names = namesView(d.analysis, (id) => s.imports.candidate(d.draftId, id)?.name ?? null);
     expect(names.rows.map((r) => [r.title, r.status.word, r.status.text, r.actions])).toEqual([
       ['Bench Press (Barbell)', 'Check', 'Bench press', ['use', 'choose', 'new']],
-      ['Mystery Machine', 'No match', 'No match', ['choose', 'new', 'skip']],
+      ['Mystery Machine', 'No match', 'No match · Back', ['choose', 'new', 'skip']],
     ]);
     expect(names.matchedCount).toBe(2);
     d = await step(d, { kind: 'name', key: 'bench press (barbell)', answer: { kind: 'exercise', exerciseId: names.rows[0]?.suggestionId ?? '' } });

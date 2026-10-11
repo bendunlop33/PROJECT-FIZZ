@@ -213,6 +213,8 @@ export function buildCandidates(
       compatibleEquipment: e.compatibleEquipment,
       implements: e.defaultLoadConvention === 'per_hand' ? (entry?.implements ?? null) : null,
       ...(importMade ? { importMade } : {}),
+      // For the FitNotes category hint; a custom exercise's are only what Ben gave it.
+      ...(e.primaryMuscles.length > 0 ? { primaryMuscles: e.primaryMuscles } : {}),
     });
   };
   for (const e of dbExercises) {
