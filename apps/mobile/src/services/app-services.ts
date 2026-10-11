@@ -394,6 +394,18 @@ export function createAppServices(deps: AppServicesDeps) {
     return catalogueRows;
   };
 
+  /** A catalogue entry's substitutions in catalogue order (Coaching knowledge), for `Swap today` (exercise-library §2.5). */
+  let substitutionsByKey: Map<string, (string | null)[]> | null = null;
+  const catalogueSubstitutions = (catalogueKey: string): readonly (string | null)[] => {
+    if (substitutionsByKey === null) {
+      substitutionsByKey = new Map();
+      for (const entry of deps.catalogue ? deps.catalogue() : bundledCatalogue().catalogue.entries) {
+        substitutionsByKey.set(entry.key, 'variations' in entry ? (entry.variations?.substitutions ?? []).map((v) => v.key) : []);
+      }
+    }
+    return substitutionsByKey.get(catalogueKey) ?? [];
+  };
+
   const loop = createWorkoutServices({
     repos,
     store: () => deps.manager.store,
@@ -402,6 +414,7 @@ export function createAppServices(deps: AppServicesDeps) {
     profile: getProfile,
     afterCommand,
     catalogueExercises,
+    catalogueSubstitutions,
   });
 
   /** The coach (ADR 0020 C6–C8): threads, turns, Undo, the summary turn, next-session targets. */
@@ -458,8 +471,13 @@ export function createAppServices(deps: AppServicesDeps) {
      * (minted at the first tap and reused for every retry), checked against
      * `expectedPreviewKey` first (a mismatch creates nothing).
      */
-    async start(req: { startOf: OverviewStartOf; gymId: string | null; opId: string; checkIn: SessionCheckIn | null; expectedPreviewKey: string }): Promise<WorkoutStartOutcome> {
-      const base = { opId: req.opId, checkIn: req.checkIn, ...(req.startOf.routineOf !== undefined ? { routineOf: req.startOf.routineOf } : { nextOf: req.startOf.nextOf }) };
+    async start(req: { startOf: OverviewStartOf; gymId: string | null; opId: string; checkIn: SessionCheckIn | null; expectedPreviewKey: string; draft?: { id: string; expectedVersion: number } | null }): Promise<WorkoutStartOutcome> {
+      const base = {
+        opId: req.opId,
+        checkIn: req.checkIn,
+        ...(req.startOf.routineOf !== undefined ? { routineOf: req.startOf.routineOf } : { nextOf: req.startOf.nextOf }),
+        ...(req.draft !== undefined ? { draft: req.draft } : {}),
+      };
       if (req.gymId !== null) return loop.workout.start({ ...base, gymId: req.gymId, expectedPreviewKey: req.expectedPreviewKey });
       const profile = await getProfile();
       if (!profile) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
@@ -470,7 +488,36 @@ export function createAppServices(deps: AppServicesDeps) {
       // The routine, source workout, pain flags and check-in are re-checked inside the start's write.
       return loop.workout.start({ ...base, gymId: made.gymId, ...(check.kind === 'fresh' ? { fence: check.fence } : {}) });
     },
+
+    // Today's edits (overview-today-edits §4.2): with no gym, checked against the typical gym's items, as the page shows.
+    async edit(req: Omit<Parameters<typeof loop.overview.edit>[0], 'typicalEquipment'>) {
+      return loop.overview.edit({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    async move(req: Omit<Parameters<typeof loop.overview.move>[0], 'typicalEquipment'>) {
+      return loop.overview.move({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    async undoEdit(req: Omit<Parameters<typeof loop.overview.undoEdit>[0], 'typicalEquipment'>) {
+      return loop.overview.undoEdit({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    async resetEdits(req: Omit<Parameters<typeof loop.overview.resetEdits>[0], 'typicalEquipment'>) {
+      return loop.overview.resetEdits({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    async resetOrder(req: Omit<Parameters<typeof loop.overview.resetOrder>[0], 'typicalEquipment'>) {
+      return loop.overview.resetOrder({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    async restoreEdits(req: Omit<Parameters<typeof loop.overview.restoreEdits>[0], 'typicalEquipment'>) {
+      return loop.overview.restoreEdits({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    async swapCandidates(req: Omit<Parameters<typeof loop.overview.swapCandidates>[0], 'typicalEquipment'>) {
+      return loop.overview.swapCandidates({ ...req, ...(await typicalFor(req.gymId)) });
+    },
   };
+
+  async function typicalFor(gymId: string | null): Promise<{ typicalEquipment?: EquipmentInstance[] }> {
+    if (gymId !== null) return {};
+    const typical = await typicalEquipment().catch(() => null);
+    return typical === null ? {} : { typicalEquipment: typical };
+  }
 
   /** FitNotes import (Your data): preview, answers, commit, Undo import, past imports. */
   const imports = createImportService({

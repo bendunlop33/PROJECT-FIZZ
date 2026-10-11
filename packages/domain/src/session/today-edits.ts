@@ -1,4 +1,5 @@
 import type {
+  SetType as SetTemplateType,
   DraftBasis,
   PreStartDraft,
   Routine,
@@ -190,7 +191,11 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
     case 'edit': {
       const e = cmd.edit;
       if (e.kind === 'order') {
-        if (!validOrder(e.slotKeys, input.slots)) return { kind: 'invalid', reason: 'bad_order' };
+        // Today's superset groups: a group left with one member after skips is no longer kept together.
+        const skippedNow = new Map(live().flatMap((x) => (x.kind === 'skip' ? [[x.slotKey, x.editId] as const] : [])));
+        const keepNow = keptGroups(input.slots, skippedNow);
+        const todayGroups = input.slots.map((x) => ({ ...x, supersetGroup: x.supersetGroup !== null && keepNow.has(x.supersetGroup) ? x.supersetGroup : null }));
+        if (!validOrder(e.slotKeys, todayGroups)) return { kind: 'invalid', reason: 'bad_order' };
         const prev = live().find((x) => x.kind === 'order');
         const base = input.slots.map((s) => s.slotKey);
         if (prev?.kind === 'order' && sameOrder(prev.slotKeys, e.slotKeys)) return { kind: 'unchanged', current };
@@ -382,10 +387,13 @@ export function resolveTodayEdits(slots: readonly TodaySlot[], edits: readonly T
     if (result === 'applied') out.skipped.set(e.slotKey, e.editId);
     out.outcomes.push({ editId: e.editId, kind: e.kind, result });
   }
+  const keep = keptGroups(slots, out.skipped);
+  const todayGroups = slots.map((x) => ({ ...x, supersetGroup: x.supersetGroup !== null && keep.has(x.supersetGroup) ? x.supersetGroup : null }));
   for (const e of open) {
     if (e.kind !== 'order') continue;
-    const result: EditResult = validOrder(e.slotKeys, slots) ? 'applied' : 'stale';
-    if (result === 'applied') {
+    const result: EditResult = validOrder(e.slotKeys, todayGroups) ? 'applied' : 'stale';
+    // An order moved back to the plan's own is no reorder (not counted, no marker), but stays undoable.
+    if (result === 'applied' && !sameOrder(e.slotKeys, slots.map((x) => x.slotKey))) {
       out.order = [...e.slotKeys];
       out.orderEditId = e.editId;
     }
@@ -444,6 +452,30 @@ function keptGroups(slots: readonly TodaySlot[], skipped: ReadonlyMap<string, st
   const count = new Map<string, number>();
   for (const s of slots) if (s.supersetGroup !== null && !skipped.has(s.slotKey)) count.set(s.supersetGroup, (count.get(s.supersetGroup) ?? 0) + 1);
   return new Set([...count].filter(([, n]) => n >= 2).map(([g]) => g));
+}
+
+/**
+ * A slot's shape for `substituteTargets` (§6.2): its working-set count and its
+ * own sets and reps (a routine's templates; a source workout's done sets).
+ * Null when the slot isn't in the basis.
+ */
+export function substituteSlotOf(
+  basis: { kind: 'routine'; routine: Pick<Routine, 'exercises'> } | { kind: 'next'; source: SessionAggregate },
+  slotKey: string,
+): { workingSets: number; templates: { setType: SetTemplateType; reps: { min: number; max: number } | null; durationS: number | null }[] } | null {
+  if (basis.kind === 'routine') {
+    const rex = basis.routine.exercises.find((r) => r.id === slotKey);
+    if (rex === undefined) return null;
+    const templates = rex.setTemplates.map((t) => ({ setType: t.setType, reps: t.targetReps, durationS: t.targetDurationS }));
+    return { workingSets: templates.filter((t) => t.setType !== 'warmup').length, templates };
+  }
+  if (!nextRoots(basis.source).some((sx) => sx.id === slotKey)) return null;
+  const done = blockSets(basis.source, slotKey).filter((s) => s.status === 'completed' && s.actual !== null && s.pairedWithSetId === null);
+  const templates = done.map((s) => {
+    const reps = s.actual?.reps ?? null;
+    return { setType: s.setType, reps: reps === null ? null : { min: reps, max: reps }, durationS: reps === null ? (s.actual?.durationS ?? null) : null };
+  });
+  return { workingSets: templates.filter((t) => t.setType !== 'warmup').length, templates };
 }
 
 // ---------------------------------------------------------------------------

@@ -23,6 +23,8 @@ import {
   resolveTodayEdits,
   slotMoves,
   substituteTargets,
+  swapRoutineSlot,
+  editedSlots,
   type DraftCommand,
   type HistorySession,
   type OverviewToday,
@@ -612,3 +614,31 @@ function overviewInput(out: ReturnType<typeof plan>): Parameters<typeof buildWor
     key: { target: { kind: 'routine', routineId: id(300) }, routine: { id: id(300), version: 1 }, gym: { id: MAIN, equipment: [] }, source: null, painFlags: [], coachActions: [], unit: 'kg', checkIn: null, draft: { id: id(5000), version: 3 } },
   };
 }
+
+describe('swapRoutineSlot (Change Push A too ›, TE4)', () => {
+  it('replaces the slot’s exercise from now on: item cleared, template loads automatic, sets and reps kept; versioned and idempotent', () => {
+    const r = pushA();
+    const c = swapRoutineSlot(r, SLOT_BENCH, exOf(DB_BENCH), 1, 'apply-1', at(60));
+    if (c.kind !== 'write') throw new Error(c.kind);
+    const slot = c.next.exercises.find((e) => e.id === SLOT_BENCH);
+    expect(slot).toMatchObject({ exerciseId: DB_BENCH, equipmentId: null, progressionRuleId: null });
+    expect(slot?.setTemplates.map((t) => [t.setType, t.targetLoad, t.targetReps])).toEqual(r.exercises[0]?.setTemplates.map((t) => [t.setType, null, t.targetReps]));
+    expect(c.next.version).toBe(2);
+    expect(swapRoutineSlot(c.next, SLOT_BENCH, exOf(DB_BENCH), 1, 'apply-1', at(61)).kind).toBe('duplicate');
+    // A card shown before the routine moved is out of date, even if it would now change nothing.
+    expect(swapRoutineSlot(c.next, SLOT_BENCH, exOf(DB_BENCH), 1, 'apply-2', at(62)).kind).toBe('stale');
+    expect(swapRoutineSlot(c.next, id(999), exOf(DB_BENCH), 2, 'apply-3', at(62)).kind).toBe('invalid');
+  });
+
+  it('after a skip breaks a superset, its other member can move on its own; the order then stays valid', () => {
+    let d = written(write(null, { type: 'edit', edit: { kind: 'skip', slotKey: SLOT_PUSHDOWN } }, 'sk'));
+    const today = editedSlots(SLOTS, resolveTodayEdits(SLOTS, d.edits));
+    const order = moveSlot(today, SLOT_RAISE, 'first') ?? [];
+    expect(order).toEqual([SLOT_RAISE, SLOT_BENCH, SLOT_INCLINE, SLOT_PUSHDOWN, SLOT_FLY]);
+    d = written(write(d, { type: 'edit', edit: { kind: 'order', slotKeys: order } }, 'mv'));
+    expect(resolveTodayEdits(SLOTS, d.edits).outcomes.map((o) => o.result)).toEqual(['applied', 'applied']);
+    // An order moved back to the plan's own is no reorder (not counted).
+    const back = edit({ kind: 'order', slotKeys: SLOTS.map((s) => s.slotKey) });
+    expect(editCountOf(resolveTodayEdits(SLOTS, [back]))).toBe(0);
+  });
+});
