@@ -113,7 +113,6 @@ The same sheet grows to its medium detent; content swaps in place (no new sheet)
 │                 ───                    │
 │ ‹ 3 of 5                               │ back: change the score (44pt)
 │ What's up?                             │ type.title2
-│ Pick any that apply. Optional.         │ type.callout, text.secondary
 │                                        │
 │ [ Tired ]  [ Poor sleep ]              │ ParamChip, multi-select, 52pt
 │ [ Sore (from training) ]  [ Stressed ] │
@@ -145,9 +144,7 @@ Pushed inside the sheet (large detent). Content and copy are coach-memory.md §2
 ```
 ├────────────────────────────────────────┤
 │ ‹ What's up?                           │
-│ Which movements hurt?                  │ type.title2
-│ No increases on these until you clear  │
-│ the flag. This isn't a diagnosis.      │
+│ Which movements hurt?  ⓘ               │ type.title2; ⓘ → `Flagged movements don't go up until you clear the flag.`
 │ In Push A                              │ type.label
 │ [ Bench press ] [ Overhead press ]     │ ParamChip, multi-select, none
 │ [ Incline DB press ] [ Lateral raise ] │ preselected
@@ -176,9 +173,7 @@ Pushed inside the sheet (large detent). Content and copy are coach-memory.md §2
 
 ```
 ├────────────────────────────────────────┤
-│ Rest might be the better call today.   │ type.title2
-│ You picked Feeling ill. It's your      │ type.body
-│ call. Nothing changes either way.      │
+│ Rest today?                            │ type.title2
 │                                        │
 │ ┌────────────────────────────────────┐ │
 │ │            Reschedule              │ │ SecondaryButton, 52pt
@@ -513,13 +508,13 @@ Every value is either **what Ben said** (the check-in), a **target** or an **act
 | Line 2 | None (minimal UI copy, 10 Oct 2026) |
 | Scale | `1` `2` `3` `4` `5` · ends `1 = rough` · `5 = great` |
 | Step 1 actions | `Skip` · `Talk` · settings button (VoiceOver "Check-in settings") |
-| Step 2 | back `‹ 3 of 5` · `What's up?` · `Pick any that apply. Optional.` |
+| Step 2 | back `‹ 3 of 5` · `What's up?` |
 | Chips | `Tired` · `Poor sleep` · `Sore (from training)` · `Stressed` · `Feeling ill` · `Pain` · `Other…` |
 | Pain hint | `Next you'll choose which movements hurt.` |
 | Note | `Note (optional)` · placeholder `Anything else?` (after `Other…`: `What else?`) · counter `240 of 280` |
 | Step 2 actions | `Done` · `Skip` |
-| Pain step | `Which movements hurt?` · `No increases on these until you clear the flag. This isn't a diagnosis.` · `In Push A` · `Recent` · `Where? (optional)` · professional and urgent lines (coach-memory §5) · `Flag 1 movement` / `Flag 2 movements` · disabled `Choose a movement` · `Not now` |
-| Ill step | `Rest might be the better call today.` · `You picked Feeling ill. It's your call. Nothing changes either way.` · `Reschedule` · `Skip workout` · `Train anyway` |
+| Pain step | `Which movements hurt?` · ⓘ `Flagged movements don't go up until you clear the flag.` · `In Push A` · `Recent` · `Where? (optional)` · professional and urgent lines (coach-memory §5) · `Flag 1 movement` / `Flag 2 movements` · disabled `Choose a movement` · `Not now` |
+| Ill step | `Rest today?` · `Reschedule` · `Skip workout` · `Train anyway` |
 
 ### 5.2 In the workout
 

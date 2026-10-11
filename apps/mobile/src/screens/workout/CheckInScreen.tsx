@@ -46,6 +46,7 @@ export function CheckInScreen() {
 function Sheet({
   title,
   lead,
+  info,
   children,
   bar,
   onBack,
@@ -54,6 +55,8 @@ function Sheet({
 }: {
   title: string;
   lead?: string;
+  /** Behind an ⓘ by the title (minimal copy): how a rule works, shown only on a tap. */
+  info?: string;
   children?: React.ReactNode;
   bar: React.ReactNode;
   onBack?: () => void;
@@ -63,6 +66,7 @@ function Sheet({
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const [infoOpen, setInfoOpen] = useState(false);
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
       {/*
@@ -78,9 +82,29 @@ function Sheet({
         {onBack ? <TextButton label={backLabel ?? 'Back'} icon="chevron.left" onPress={onBack} /> : null}
         <View style={{ gap: theme.space['2'] }}>
           <Eyebrow>Check-in</Eyebrow>
-          <AppText variant="title2" accessibilityRole="header">
-            {title}
-          </AppText>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+            <AppText variant="title2" accessibilityRole="header" style={{ flexShrink: 1 }}>
+              {title}
+            </AppText>
+            {info ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Info"
+                accessibilityState={{ expanded: infoOpen }}
+                hitSlop={12}
+                onPress={() => {
+                  setInfoOpen((o) => !o);
+                }}
+              >
+                <Icon name="info.circle" color="text.secondary" size={18} />
+              </Pressable>
+            ) : null}
+          </View>
+          {info && infoOpen ? (
+            <AppText variant="callout" color="text.secondary">
+              {info}
+            </AppText>
+          ) : null}
         </View>
         {lead ? (
           <AppText variant="callout" color="text.secondary">
@@ -413,7 +437,6 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
       return (
         <Sheet
           title="What’s up?"
-          lead="Pick any that apply. Optional."
           {...(overview?.checkInId && !overview.atScore
             ? {}
             : {
@@ -448,7 +471,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
       return (
         <Sheet
           title="Which movements hurt?"
-          lead="No increases on these until you clear the flag. This isn’t a diagnosis."
+          info="Flagged movements don’t go up until you clear the flag."
           onBack={() => {
             setStep('reasons');
           }}
@@ -505,8 +528,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
     case 'ill':
       return (
         <Sheet
-          title="Rest might be the better call today."
-          lead="You picked Feeling ill. It’s your call. Nothing changes either way."
+          title="Rest today?"
           bar={
             <>
               {/* Reschedule needs the weekly plan (not in this build), so it is hidden, not disabled. */}
