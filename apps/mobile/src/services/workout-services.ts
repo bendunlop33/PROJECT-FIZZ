@@ -133,6 +133,7 @@ import {
   SESSION_PICKER_DECISIONS,
   type SessionType,
   type SessionTypeKind,
+  isInHistory,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type {
@@ -160,13 +161,15 @@ import type {
   ZonedTimestamp,
 } from '@fizz/schemas';
 
+/** A past workout's title when it has no exercise (`Finish anyway` with nothing added). */
+export const EMPTY_WORKOUT_TITLE = 'Empty workout';
+
 /**
  * Services for the workout loop (Today → check-in → Active set → Rest →
  * Summary). In-process, local, no AI and no network. Screens call these; the
  * rules live in `@fizz/domain`. Every write is idempotent by an operation ID
  * chosen by the screen once per intent, and versioned where it edits.
  */
-
 export interface WorkoutServicesContext {
   repos: () => SqliteRepositories;
   store: () => Store;
@@ -276,9 +279,14 @@ export type PainClearWrite = { ok: true; cleared: { id: string; version: number 
 
 export interface RepeatCandidate {
   sessionId: string;
+  /** The session version the row was read at: what Delete sends as `expectedVersion` (rule 5). */
+  version: number;
   title: string;
   startedAtUtc: string;
   tz: string;
+  /** Imported (FitNotes) workouts have a date only. */
+  localDate: string | null;
+  source: 'manual' | 'import';
   gymId: string | null;
   gymName: string;
   exerciseNames: string[];
@@ -1108,7 +1116,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   async function resolveNext(p: UserProfile, sourceSessionId: string): Promise<ResolvedOverview | null> {
     const source = await repos().sessions.get(sourceSessionId);
-    if (!source || source.session.ownerId !== p.id || source.session.status !== 'finished' || source.session.source === 'import') return null;
+    if (!source || source.session.ownerId !== p.id || !isInHistory(source.session) || source.session.source === 'import') return null;
     return { kind: 'next', source, basis: { kind: 'next_from', at: source.session.startedAt } };
   }
 
@@ -2002,29 +2010,46 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
             continue;
           }
           if (!a || a.session.source === 'import') continue;
-          const done = a.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null);
-          if (done.length === 0) continue;
-          const gymId = a.session.gymId;
-          // A workout that switched gym is listed as `Main Gym → Hotel · Lisbon` (gym-switch check 24).
-          const route = gymRouteIds(a.session);
-          for (const g of route) if (!gyms.has(g)) gyms.set(g, (await repos().gyms.get(g).catch(() => null))?.name ?? 'Gym');
-          // An exercise done at two gyms is listed once (review B1).
-          const names = doneExerciseNames(a);
-          rows.push({
-            sessionId: a.session.id,
-            title: storedName(a) ?? (await titleFor(a.exercises.map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title,
-            startedAtUtc: a.session.startedAt.utc,
-            tz: a.session.startedAt.tz,
-            gymId,
-            gymName: route.length === 0 ? 'Gym not recorded' : route.map((g) => gyms.get(g) ?? 'Gym').join(' → '),
-            exerciseNames: names,
-            sets: done.length,
-          });
+          const row = await repeat.describe(a, gyms);
+          if (row.sets === 0) continue;
+          rows.push(row);
         }
       }
       // Only `Start from a past workout` shows this count; Today's row doesn't read it (review r3 N4).
       const importedNotListed = opts.countImported === false ? 0 : await repos().sessions.countImportedFinished(p.id).catch(() => 0);
       return { rows, unreadable, importedNotListed };
+    },
+
+    /**
+     * One past workout as a list row (Past workouts, Recently deleted):
+     * title, gym route, done exercises and set count. `gyms` caches names.
+     */
+    async describe(a: SessionAggregate, gyms: Map<string, string> = new Map()): Promise<RepeatCandidate> {
+      const done = a.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null);
+      // A workout that switched gym is listed as `Main Gym → Hotel · Lisbon` (gym-switch check 24).
+      const route = gymRouteIds(a.session);
+      for (const g of route) if (!gyms.has(g)) gyms.set(g, (await repos().gyms.get(g).catch(() => null))?.name ?? 'Gym');
+      return {
+        sessionId: a.session.id,
+        version: a.session.version,
+        // A test session with no exercise at all is recognisable in Past workouts' delete list (delete-workouts §2.3).
+        title: storedName(a) ?? (a.exercises.length === 0 ? EMPTY_WORKOUT_TITLE : (await titleFor(a.exercises.map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title),
+        startedAtUtc: a.session.startedAt.utc,
+        tz: a.session.startedAt.tz,
+        localDate: a.session.localDate ?? null,
+        source: a.session.source,
+        gymId: a.session.gymId,
+        gymName: route.length === 0 ? 'Gym not recorded' : route.map((g) => gyms.get(g) ?? 'Gym').join(' → '),
+        // An exercise done at two gyms is listed once (review B1).
+        exerciseNames: doneExerciseNames(a),
+        sets: done.length,
+      };
+    },
+
+    /** `describe` by ID (an imported workout's view, delete-workouts §2.1); null if it isn't stored or can't be read. */
+    async describeById(sessionId: string): Promise<RepeatCandidate | null> {
+      const a = await repos().sessions.get(sessionId).catch(() => null);
+      return a === null ? null : repeat.describe(a);
     },
 
     /** Today's `Repeat last workout` row: the newest readable candidate, or null. Never throws (review S1). */

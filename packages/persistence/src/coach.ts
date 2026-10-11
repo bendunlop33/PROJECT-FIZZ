@@ -19,12 +19,12 @@ import {
   type PainFlag,
   type PlaybookCandidate,
 } from '@fizz/schemas';
-import { nextTargetSourceBasis, reduceSession } from '@fizz/domain';
+import { isInHistory, nextTargetSourceBasis, reduceSession } from '@fizz/domain';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
 import { decodeDocument, erase, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor, SqlRow } from './driver';
-import { checkRead, checkWrite, insert, mismatch, parseJson, rowId } from './sql';
+import { checkRead, checkWrite, inHistorySql, insert, mismatch, parseJson, rowId } from './sql';
 
 /**
  * Coach v1 storage (ADR 0020 §9, slice C3). Every coach write is an
@@ -184,6 +184,17 @@ class Rollback extends Error {
  * unrelated workout never counts, and a discarded start gives the source's
  * targets back.
  */
+/**
+ * SQL: a `coach_actions` row (alias `a`) is in the coach's context. Its workout, if any, is the live
+ * one or in history; a workout that's deleted, discarded, reverted or purged (tombstone) isn't
+ * (delete-workouts §5, DW16; review r3 S1).
+ */
+export function actionInContextSql(a: string): string {
+  return `(${a}.session_id IS NULL OR (
+    NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = ${a}.session_id AND NOT (s.status = 'active' OR ${inHistorySql('s')}))
+    AND NOT EXISTS (SELECT 1 FROM purged_sessions p WHERE p.session_id = ${a}.session_id)))`;
+}
+
 async function startedFrom(q: SqlExecutor, ownerId: string, sourceSessionId: string): Promise<string | null> {
   const row = await q.getFirst<{ id: string }>(
     "SELECT s.id AS id FROM next_target_uses u JOIN sessions s ON s.owner_id = u.owner_id AND s.start_operation_id = u.start_op_id WHERE u.owner_id = ? AND u.source_session_id = ? AND s.id != ? AND s.status IN ('active', 'finished') ORDER BY s.started_at_utc LIMIT 1",
@@ -334,13 +345,18 @@ export class SqliteCoachStore {
     return this.db.read(async (q) => (await q.getAll('SELECT * FROM coach_actions WHERE turn_id = ? ORDER BY created_at_utc, id', [turnId])).map(decodeAction));
   }
 
-  /** Newest first: this session's actions when given, else the owner's (for `get_recent_actions`). */
+  /**
+   * Newest first: this session's actions when given, else the owner's (for `get_recent_actions`).
+   * Only actions in the coach's context (delete-workouts §5, DW16; review r3 S1): an action on a
+   * deleted, discarded, reverted or purged workout is left out, and so is an Undo of one.
+   */
   listRecentActions(ownerId: string, options: { sessionId?: string | null; limit: number }): Promise<ActionRecord[]> {
     return this.db.read(async (q) => {
+      const inContext = `${actionInContextSql('a')} AND NOT (a.kind = 'undo' AND EXISTS (SELECT 1 FROM coach_actions t WHERE t.id = json_extract(a.data, '$.detail.undoneActionId') AND NOT ${actionInContextSql('t')}))`;
       const rows =
         options.sessionId != null
-          ? await q.getAll('SELECT * FROM coach_actions WHERE owner_id = ? AND session_id = ? ORDER BY created_at_utc DESC, id DESC LIMIT ?', [ownerId, options.sessionId, options.limit])
-          : await q.getAll('SELECT * FROM coach_actions WHERE owner_id = ? ORDER BY created_at_utc DESC, id DESC LIMIT ?', [ownerId, options.limit]);
+          ? await q.getAll(`SELECT a.* FROM coach_actions a WHERE a.owner_id = ? AND a.session_id = ? AND ${inContext} ORDER BY a.created_at_utc DESC, a.id DESC LIMIT ?`, [ownerId, options.sessionId, options.limit])
+          : await q.getAll(`SELECT a.* FROM coach_actions a WHERE a.owner_id = ? AND ${inContext} ORDER BY a.created_at_utc DESC, a.id DESC LIMIT ?`, [ownerId, options.limit]);
       return rows.map(decodeAction);
     });
   }
@@ -405,7 +421,7 @@ export class SqliteCoachStore {
         const source = await readAggregate(tx, write.action.detail.kind === 'set_next_session_targets' ? write.action.detail.sourceSessionId : '');
         if (source === null || source.session.ownerId !== ownerId) throw new Rollback('missing');
         // The same sets as the review saw (CA10): a rename or a time edit since isn't a change to the targets' basis.
-        if (nextTargetSourceBasis(source) !== write.sourceBasis || source.session.status !== 'finished' || (await startedFrom(tx, ownerId, source.session.id)) !== null) throw new Rollback('stale_version');
+        if (nextTargetSourceBasis(source) !== write.sourceBasis || !isInHistory(source.session) || (await startedFrom(tx, ownerId, source.session.id)) !== null) throw new Rollback('stale_version');
         // A newer review replaces the rows, including a tap Ben made on an earlier review's row
         // (only reachable through his own `Try again` after a review that saved then failed; review N2).
         // The earlier review's card can't revert them after that (`changed_since`).

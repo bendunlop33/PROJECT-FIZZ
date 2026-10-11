@@ -436,6 +436,19 @@ export const PauseIntervalSchema = z.object({
 });
 export type PauseInterval = z.infer<typeof PauseIntervalSchema>;
 
+/**
+ * Why a finished workout is in Recently deleted (delete-workouts §6.1, DW-D1).
+ * Set only while `status` is `deleted`; cleared by Restore. `purgeAfterUtc`
+ * is the end of the local day 30 days after `at` (in `at.tz`): from then the
+ * workout is no longer listed or restorable, whether or not the purge has run.
+ */
+export const SessionDeletionSchema = z.object({
+  at: ZonedTimestampSchema,
+  opId: OperationIdSchema,
+  purgeAfterUtc: UtcTimestampSchema,
+});
+export type SessionDeletion = z.infer<typeof SessionDeletionSchema>;
+
 export const WorkoutSessionSchema = z.object({
   id: IdSchema,
   ownerId: IdSchema,
@@ -455,8 +468,12 @@ export const WorkoutSessionSchema = z.object({
    * `reverted`: an imported workout hidden by `Undo this import` (DX7). Like
    * `discarded`, it is excluded from history, Progress, "Last" values and
    * targets; the rows are kept.
+   * `deleted`: a finished workout Ben deleted (delete-workouts DW-D1). Out of
+   * every derived view like `reverted`, restorable for 30 days (`deletion`).
    */
-  status: z.enum(['active', 'finished', 'discarded', 'reverted']),
+  status: z.enum(['active', 'finished', 'discarded', 'reverted', 'deleted']),
+  /** Present exactly when `status` is `deleted`. */
+  deletion: SessionDeletionSchema.optional(),
   source: z.enum(['manual', 'import']),
   /** The import job this workout came in with (imported workouts only). */
   importJobId: IdSchema.optional(),

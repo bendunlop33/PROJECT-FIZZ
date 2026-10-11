@@ -1614,7 +1614,9 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
           ? 'This workout is finished.'
           : state.session.status === 'reverted'
             ? 'This workout was hidden when its import was undone.'
-            : 'This workout was discarded.';
+            : state.session.status === 'deleted'
+              ? 'This workout was deleted.'
+              : 'This workout was discarded.';
       return { ok: false, error: { code: 'session_finished', message }, state, events: [] };
     }
     // Imported workouts have a date and no time (FitNotes files carry none); there is no time to correct.

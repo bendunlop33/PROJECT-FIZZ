@@ -873,8 +873,8 @@ describe('importing, results, past imports and undo wording', () => {
     // The same file again while it's unfinished: Continue said once; a running import isn't called paused (review r2 N1).
     const job = paused?.job;
     if (!job) throw new Error('no job');
-    expect(openErrorView({ kind: 'same_file', job, written: 2, state: 'paused' }, 'en-GB')?.text).toBe('You started importing this file on Thu 8 Oct. Import not finished. All 2 workouts are in your history. Continue that import instead.');
-    expect(openErrorView({ kind: 'same_file', job, written: 1, state: 'running' }, 'en-GB')?.text).toBe('You started importing this file on Thu 8 Oct. It’s importing now: 1 of 2 workouts in.');
+    expect(openErrorView({ kind: 'same_file', job, written: 2, state: 'paused', inRecentlyDeleted: 0 }, 'en-GB')?.text).toBe('You started importing this file on Thu 8 Oct. Import not finished. All 2 workouts are in your history. Continue that import instead.');
+    expect(openErrorView({ kind: 'same_file', job, written: 1, state: 'running', inRecentlyDeleted: 0 }, 'en-GB')?.text).toBe('You started importing this file on Thu 8 Oct. It’s importing now: 1 of 2 workouts in.');
     expect(progressView(180, 412)).toEqual({ text: '180 of 412 workouts', fraction: 180 / 412 });
   });
 });
