@@ -14,7 +14,7 @@ import { formatShortDate } from '../../format/dates';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { openStartedWorkout, popToTabs, popToToday } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
-import type { DraftWrite, OverviewData, SwapSheet } from '../../services/workout-services';
+import type { DraftWrite, OverviewData, OverviewTarget, SessionList, SessionPickerRow, SwapSheet } from '../../services/workout-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, Icon, OverviewRow, PrimaryButton, ReorderRow, StatStrip, SubstituteRowView, SupersetBracket, TextButton, Toast } from '../../ui';
@@ -55,6 +55,8 @@ import {
   type RowCustomAction,
 } from '../../workout/overview-edits';
 import { NameSheet } from '../routines/NameSheet';
+import { isShownRow, SESSION_PICKER_COPY, switchSession } from '../../workout/session-picker';
+import { SessionPickerSheet } from './SessionPickerSheet';
 import { TargetWhyPanel } from './TargetWhyPanel';
 
 /**
@@ -88,7 +90,16 @@ export function WorkoutOverviewScreen() {
   const [rowWidth, setRowWidth] = useState<number | null>(null);
   const [labelWidth, setLabelWidth] = useState<number | null>(null);
   const checkInFit = checkInRowLayout({ available: rowWidth ?? windowWidth - 2 * theme.components.screenMargin, labelWidth, fontScale });
-  const { target } = useRoute<RouteProp<RootStackParams, 'WorkoutOverview'>>().params;
+  const routeTarget = useRoute<RouteProp<RootStackParams, 'WorkoutOverview'>>().params.target;
+  // The session shown: the one opened, until Ben picks another from the title (session-picker §4.2, in place).
+  const [target, setTarget] = useState<OverviewTarget>(routeTarget);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerList, setPickerList] = useState<SessionList | null | 'loading'>('loading');
+  const [saveAsVisible, setSaveAsVisible] = useState(false);
+  const [saveAsOp, setSaveAsOp] = useState(newUuid);
+  const [saveAsAfter] = useState(() => createAfterDismiss());
+  const [pickerAfter] = useState(() => createAfterDismiss());
+  const scrollRef = useRef<ScrollView>(null);
   const alertsAsk = useStartAlertsAsk();
 
   // A score tapped on this page (saved at once, CI4); null until then.
@@ -137,6 +148,11 @@ export function WorkoutOverviewScreen() {
     return page;
   });
   const page = data.state === 'ready' ? data.value : null;
+  // True from a session switch's first read until its page is shown: row actions would name the new target with the old page (r2 N1).
+  const switching = useRef(false);
+  useEffect(() => {
+    switching.current = false;
+  }, [data]);
 
   // `DONE BY` moves at most once a minute (timing.timeLeftRefresh, OV16).
   useEffect(() => {
@@ -389,16 +405,20 @@ export function WorkoutOverviewScreen() {
   function menu() {
     const routine = page?.routine ?? null;
     const edits = page ? editMenuItems(page.view) : [];
-    const options = [...edits, OVERVIEW_COPY.otherRoutine, OVERVIEW_COPY.emptyWorkout, ...(routine ? [OVERVIEW_COPY.rename, OVERVIEW_COPY.delete] : []), 'Cancel'];
-    ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1, ...(routine ? { destructiveButtonIndex: edits.length + 3 } : {}) }, (i) => {
+    // `Save as routine` (session-picker §4.3): a session from history, while the page has no today's edits (a draft is never re-keyed).
+    const canSave = page !== null && page.startOf.nextOf !== undefined && page.view.editCount === 0;
+    const options = [...edits, ...(canSave ? [SESSION_PICKER_COPY.saveAsRoutine] : []), OVERVIEW_COPY.emptyWorkout, ...(routine ? [OVERVIEW_COPY.rename, OVERVIEW_COPY.delete] : []), 'Cancel'];
+    ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1, ...(routine ? { destructiveButtonIndex: options.indexOf(OVERVIEW_COPY.delete) } : {}) }, (i) => {
       const picked = options[i];
       if (picked === TODAY_EDITS_COPY.reorder) {
         setOpen(null);
         setReordering(true);
       }
       if (picked === TODAY_EDITS_COPY.resetEdits) void resetEdits();
-      // `Other routine`: Today lists the routines (the Plan hub comes later).
-      if (picked === OVERVIEW_COPY.otherRoutine) close();
+      if (picked === SESSION_PICKER_COPY.saveAsRoutine) {
+        setSaveAsOp(newUuid());
+        setSaveAsVisible(true);
+      }
       if (picked === OVERVIEW_COPY.emptyWorkout) void startEmpty();
       if (picked === OVERVIEW_COPY.rename) {
         setRenameOp(newUuid());
@@ -408,7 +428,92 @@ export function WorkoutOverviewScreen() {
     });
   }
 
+  /** The title button (session-picker §2.3): the picker, with the shown session checked. Local read only. */
+  function openPicker() {
+    setPickerList('loading');
+    setPickerVisible(true);
+    void services.sessions
+      .list(page?.view.gym?.id ?? null)
+      .catch(() => null)
+      .then(setPickerList);
+  }
+
+  /**
+   * Show another session in place (§4.2): no write and no navigation; its own
+   * today's edits come back with it (SP-D6). The new session is read first and
+   * the page switches only when it loads (review r2 S1): a session that can't
+   * be shown here leaves the current one up, with a short toast. Row actions
+   * wait until the new page is shown (r2 N1). Keeps the tapped check-in and
+   * the gym (SP11).
+   */
+  async function switchTo(next: OverviewTarget): Promise<boolean> {
+    switching.current = true;
+    const gymId = page?.view.gym?.id ?? (await services.yourData.currentGym().catch(() => null))?.id ?? null;
+    const done = await switchSession(
+      {
+        load: (t) => services.overview.load({ target: t, gymId, checkInId: tappedRef.current?.id ?? null }),
+        show: (t) => {
+          // Reset what belongs to the old page (start op, panel, cards, swap, reorder); keep the tapped check-in and the gym.
+          startOp.current = null;
+          setOpen(null);
+          setCard(null);
+          setSwap(null);
+          setReordering(false);
+          setStartError(null);
+          setTarget(t);
+          scrollRef.current?.scrollTo({ y: 0, animated: false });
+          reload();
+        },
+      },
+      next,
+    );
+    if (done === 'failed') {
+      switching.current = false;
+      setToast({ text: SESSION_PICKER_COPY.switchFailed });
+    }
+    return done === 'switched';
+  }
+
+  function pickSession(row: SessionPickerRow) {
+    setPickerVisible(false);
+    if (page !== null && isShownRow(row, page.startOf)) return;
+    void switchTo(row.target);
+  }
+
+  /** `Save as routine` → the name prompt → one routine from the source workout (idempotent on `opId`), then the page on it. Undo deletes it. */
+  async function saveAsRoutine(name: string): Promise<string | null> {
+    const sourceId = page?.startOf.nextOf;
+    if (sourceId === undefined) return null;
+    const before = target;
+    const r = await services.routines.saveFromSession({ sessionId: sourceId, name, opId: saveAsOp });
+    if (!r.ok) return r.message;
+    const saved = r.routine;
+    saveAsAfter.arm(() => {
+      void switchTo({ kind: 'routine', routineId: saved.id });
+      setToast({
+        text: SESSION_PICKER_COPY.savedAsRoutine,
+        action: 'Undo',
+        onAction: () => {
+          setToast(null);
+          void services.routines.remove({ routineId: saved.id, expectedVersion: saved.version, opId: newUuid() }).then((u) => {
+            changed();
+            // The routine is still there when the delete failed: stay on it (r2 N2).
+            if (!u.ok) {
+              setToast({ text: u.message });
+              return;
+            }
+            void switchTo(before);
+          });
+        },
+      });
+    });
+    setSaveAsVisible(false);
+    changed();
+    return null;
+  }
+
   async function showWhy(sessionExerciseId: string, name: string) {
+    if (switching.current) return;
     // The check-in the rows were planned with: tapped here, else the reused one (review S1).
     const explanation = await services.overview.explain({ target, gymId: page?.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? page?.planCheckIn?.id ?? null, sessionExerciseId }).catch(() => null);
     setWhy({ name, explanation });
@@ -421,7 +526,7 @@ export function WorkoutOverviewScreen() {
    * is refused and the page re-reads (rule 5). One tap at a time (merge N1).
    */
   async function tapCoach(r: OverviewData['view']['rows'][number]) {
-    if (!page || r.coach === null) return;
+    if (!page || r.coach === null || switching.current) return;
     const coach = r.coach;
     const record = page.coachTargets[coach.rowId];
     if (!record) return;
@@ -456,7 +561,7 @@ export function WorkoutOverviewScreen() {
    * it). A stale version re-reads the page (rule 5).
    */
   async function writeEdit(intent: string, call: (base: { target: typeof target; gymId: string | null; expectedDraftVersion: number | null; opId: string }) => Promise<DraftWrite>, version?: number | null): Promise<Extract<DraftWrite, { ok: true }> | null> {
-    if (!page) return null;
+    if (!page || switching.current) return null;
     const result = await editGuard.run(async () => {
       const base = { target, gymId: page.view.gym?.id ?? null, expectedDraftVersion: version === undefined ? (page.draft?.version ?? null) : version, opId: ops.of(intent) };
       const w = await call(base).catch(() => null);
@@ -505,7 +610,7 @@ export function WorkoutOverviewScreen() {
   }
 
   async function openSwap(slotKey: string) {
-    if (!page) return;
+    if (!page || switching.current) return;
     setSwap({ slotKey, sheet: null, loading: true });
     const sheet = await services.overview.swapCandidates({ target, gymId: page.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? page.planCheckIn?.id ?? null, slotKey }).catch(() => null);
     setSwap((cur) => (cur?.slotKey === slotKey ? { slotKey, sheet, loading: false } : cur));
@@ -678,6 +783,32 @@ export function WorkoutOverviewScreen() {
     </>
   );
 
+  // The picker, also reachable when the page can't load (session-picker §5, r2 S1): no ✓ then.
+  const pickerSheet = (
+    <SessionPickerSheet
+      visible={pickerVisible}
+      list={pickerList}
+      now={services.now()}
+      shown={page?.startOf ?? null}
+      onPick={pickSession}
+      onClose={() => {
+        setPickerVisible(false);
+      }}
+      onRetry={openPicker}
+      onEmptyWorkout={() => {
+        pickerAfter.arm(() => void startEmpty());
+        setPickerVisible(false);
+      }}
+      onPastWorkouts={() => {
+        pickerAfter.arm(() => {
+          navigation.navigate('PastWorkouts');
+        });
+        setPickerVisible(false);
+      }}
+      onDismissed={pickerAfter.dismissed}
+    />
+  );
+
   const shell = (body: React.ReactNode, bar: React.ReactNode = null) => (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top }} accessibilityViewIsModal onAccessibilityEscape={close}>
       {topBar}
@@ -707,8 +838,10 @@ export function WorkoutOverviewScreen() {
         </AppText>
         <View style={{ flexDirection: 'row', columnGap: theme.space['5'], flexWrap: 'wrap' }}>
           <TextButton label={OVERVIEW_COPY.tryAgain} onPress={reload} />
+          <TextButton label={SESSION_PICKER_COPY.changeSession} tone="secondary" onPress={openPicker} />
           <TextButton label={OVERVIEW_COPY.emptyWorkout} tone="secondary" onPress={() => void startEmpty()} />
         </View>
+        {pickerSheet}
       </View>,
     );
   }
@@ -825,13 +958,24 @@ export function WorkoutOverviewScreen() {
   };
 
   const body = (
-    <ScrollView contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'] }}>
+    <ScrollView ref={scrollRef} contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'] }}>
       <AppText variant="sectionLabel" color="text.tertiary" style={{ marginTop: 10 }}>
         {eyebrowText(view.basis, (ms, tz) => formatShortDate(ms, tz))}
       </AppText>
-      <AppText variant="title1" accessibilityRole="header" style={{ fontSize: 40, lineHeight: 46, letterSpacing: -0.8, marginTop: 6 }}>
-        {view.title}
-      </AppText>
+      {/* The title is a button (session-picker §2.3): `Shoulders ▾` opens the picker; VoiceOver "Shoulders. Change session." */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${view.title}. ${SESSION_PICKER_COPY.changeSession}.`}
+        onPress={openPicker}
+        style={({ pressed }) => ({ minHeight: 44, marginTop: 6, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', opacity: pressed ? 0.6 : 1 })}
+      >
+        <AppText variant="title1" accessibilityRole="header" style={{ fontSize: 40, lineHeight: 46, letterSpacing: -0.8 }}>
+          {view.title}
+          <AppText variant="title1" color="text.secondary" style={{ fontSize: 28, lineHeight: 46 }}>
+            {' ▾'}
+          </AppText>
+        </AppText>
+      </Pressable>
       <View style={{ marginTop: theme.space['4'] }}>
         <StatStrip items={stats} ax={stacked} accessibilityLabel={statStripSpoken(view.estimate?.minutes ?? null, done?.text ?? null, view.workingSets)} />
       </View>
@@ -1004,6 +1148,21 @@ export function WorkoutOverviewScreen() {
         </AppText>
         {why ? <TargetWhyPanel panel={why.explanation ? { setId: why.explanation.setId, status: 'ready', explanation: why.explanation } : { setId: '', status: 'failed' }} /> : null}
       </BottomCard>
+      {pickerSheet}
+      {page.startOf.nextOf !== undefined ? (
+        <NameSheet
+          visible={saveAsVisible}
+          title={SESSION_PICKER_COPY.saveAsRoutine}
+          buttonLabel="Save"
+          initialName={view.title}
+          check={(n) => services.routines.checkName(n, null)}
+          onSubmit={saveAsRoutine}
+          onClose={() => {
+            setSaveAsVisible(false);
+          }}
+          onDismissed={saveAsAfter.dismissed}
+        />
+      ) : null}
       {page.routine ? (
         <NameSheet
           visible={renameVisible}

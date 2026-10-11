@@ -2153,6 +2153,8 @@ Numbering continues from §7.
 
 ### 9.8 Questions for Ben and proposals
 
+> **Answered 2026-10-11:** Q2 (sending sample rows to ChatGPT) approved by Ben (CHANGELOG 2026-10-11). Q1 and Q3 still open.
+
 #### Open questions for Ben
 
 The first question blocks the build.

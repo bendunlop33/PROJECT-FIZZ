@@ -297,7 +297,11 @@ describe('workouts and recovery', () => {
 
     const second = await ready();
     await idle(second.services);
-    expect([...backupFiles.keys()].some((n) => n.endsWith('-auto.json'))).toBe(true);
+    // The catch-up is queued at launch, not awaited by it: under full-suite load it can start after `idle`'s
+    // short settle, so wait for it (up to 2 s) rather than for a fixed time (review session-picker N1).
+    const landed = () => [...backupFiles.keys()].some((n) => n.endsWith('-auto.json'));
+    for (let i = 0; i < 100 && (!landed() || second.services.backups.isRunning); i += 1) await new Promise((r) => setTimeout(r, 20));
+    expect(landed()).toBe(true);
     expect(second.services.integrity.last()?.report.ok).toBe(true);
   });
 });

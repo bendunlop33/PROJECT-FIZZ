@@ -90,7 +90,8 @@ export type RootStackParams = {
    * The one page before the first set (workout-overview.md): Up next, or a
    * routine from the list. Creates nothing until Start.
    */
-  WorkoutOverview: { target: { kind: 'next' } | { kind: 'routine'; routineId: string } };
+  /** Up next, a routine, or a session type picked from its history (session-picker §7). */
+  WorkoutOverview: { target: { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string } };
   ExercisePicker: { sessionId: string };
   /** How to (ADR 0013): guide, cues and mistakes for a catalogue exercise. Opened only when it has a how-to. */
   HowTo: { catalogueKey: string; name: string };
