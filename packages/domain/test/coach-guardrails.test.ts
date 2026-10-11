@@ -22,7 +22,9 @@ import {
   getStructuralChangeSignals,
   isLoadAchievable,
   setNumbersText,
+  lastAdjustedVersion,
   shouldShowCoachOffer,
+  todayAdjustmentIds,
   validateTodayAdjustment,
   type AdjustIntent,
   type TodayAdjustmentInput,
@@ -1043,3 +1045,21 @@ describe('getStructuralChangeSignals (CA9)', () => {
   });
 });
 
+
+describe('lastAdjustedAtVersion for CA4 (coach-sourced targets aren’t adjustments)', () => {
+  const planned = (coach?: string) => ({ load: null, reps: null, durationS: null, rpe: null, rir: null, source: 'coach' as const, ...(coach === undefined ? {} : { coach: { actionId: coach, before: { load: null, reps: null, durationS: null, rpe: null, rir: null } } }) });
+  it('next-session coach targets give null; an in-workout adjustment gives the version it was applied at', () => {
+    const sets = [
+      { sessionExerciseId: 'e1', planned: planned() },
+      { sessionExerciseId: 'e1', planned: planned('a1') },
+      { sessionExerciseId: 'e1', planned: planned('a2') },
+      { sessionExerciseId: 'e2', planned: planned('a3') },
+    ];
+    expect(todayAdjustmentIds(sets.slice(0, 1), 'e1')).toEqual([]);
+    expect(lastAdjustedVersion(todayAdjustmentIds(sets.slice(0, 1), 'e1'), new Map())).toBeNull();
+    const ids = todayAdjustmentIds(sets, 'e1');
+    expect(ids).toEqual(['a1', 'a2']);
+    expect(lastAdjustedVersion(ids, new Map([['a1', 4], ['a2', 7], ['a3', 9]]))).toBe(7);
+    expect(lastAdjustedVersion(ids, new Map([['a3', 9]]))).toBeNull();
+  });
+});

@@ -34,9 +34,11 @@ import {
   evaluateCoachTrigger,
   exercisesNamedForPain,
   isTriggerKind,
+  lastAdjustedVersion,
   nextSessionBases,
   painFlagChoices,
   shouldShowCoachOffer,
+  todayAdjustmentIds,
   toMs,
   unspecifiedPain,
   type CoachTrigger,
@@ -465,7 +467,18 @@ export function createCoachService(deps: CoachServiceDeps) {
     // Nothing to adjust when this exercise has no pending set left (review S1).
     if (!live.some((s) => s.status === 'pending')) return null;
     const log = await offerLogOf(a.session.id);
-    const adjusted = a.sets.filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.planned.source === 'coach').length > 0 ? a.session.version : null;
+    // CA4: only an adjustment applied during this workout re-opens the offer, at the version it was applied (not the
+    // current one, and not the coach's next-session target the workout started with).
+    const ids = todayAdjustmentIds(a.sets, set.sessionExerciseId);
+    const appliedAt = new Map<string, number>();
+    for (const id of ids) {
+      const r = await coachStore()
+        .getAction(id)
+        .catch(() => null);
+      const v = r?.status === 'committed' && r.undoneBy === null ? r.entityVersions.find((e) => e.entity === 'session' && e.id === a.session.id)?.after : null;
+      if (typeof v === 'number') appliedAt.set(id, v);
+    }
+    const adjusted = lastAdjustedVersion(ids, appliedAt);
     if (!shouldShowCoachOffer({ trigger, sessionExerciseId: set.sessionExerciseId, resting: input.resting, coachReachable: input.coachReachable, pending: input.pending, log, lastAdjustedAtVersion: adjusted })) return null;
     const entry: OfferLogEntry = { sessionExerciseId: set.sessionExerciseId, kind: trigger.kind, atVersion: a.session.version };
     offerLogs.set(a.session.id, [...log.filter((e) => e.sessionExerciseId !== entry.sessionExerciseId || e.kind !== entry.kind), entry]);

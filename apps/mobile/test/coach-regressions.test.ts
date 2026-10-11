@@ -1,0 +1,62 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import type { TextCoachState } from '@fizz/providers';
+
+import { CONNECTED, lowerPending, replyWith, saveNextTarget, StepModel } from './coach-model';
+import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
+
+/** Coach bugs found by the independent check (rule 3, honesty, Undo), each reproduced on real SQLite. */
+
+let h: Harness;
+let model: StepModel;
+let connection: TextCoachState;
+beforeEach(() => {
+  model = new StepModel([]);
+  connection = CONNECTED;
+  h = createHarness('2026-10-10T07:00:00.000Z', { coach: { model: () => model, connection: () => Promise.resolve(connection) } });
+});
+afterEach(async () => {
+  await h.cleanup();
+});
+
+type Services = Awaited<ReturnType<Harness['launch']>>['services'];
+
+/** A routine whose last workout got the coach's next-time target, then a new workout started from it (coach-sourced sets). */
+async function coachPlannedWorkout(s: Services, gymId: string) {
+  const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }] }]);
+  const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: `save-${first}` });
+  if (!saved.ok) throw new Error(saved.message);
+  model = new StepModel([saveNextTarget(), () => replyWith('Ok.')]);
+  await s.coach.runSummaryTurn(first);
+  h.clockMs += 2 * 86_400_000;
+  const started = await s.workout.start({ gymId, opId: 'start-coach', checkIn: null, routineOf: saved.routine.id });
+  if (!started.ok) throw new Error(started.error.message);
+  const work = started.aggregate.sets.filter((x) => x.setType !== 'warmup').sort((a, b) => a.index - b.index);
+  return { first, routineId: saved.routine.id, sessionId: started.aggregate.session.id, work };
+}
+
+describe('CA4 with coach-sourced targets (rule 3)', () => {
+  it('RPE 10 on sets 1 and 2 of coach-planned sets offers once; a real adjustment after the offer allows exactly one more', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { sessionId, work } = await coachPlannedWorkout(s, gymId);
+    expect(work.every((x) => x.planned.source === 'coach')).toBe(true);
+    expect(work.length).toBeGreaterThanOrEqual(4);
+    const logHard = async (i: number) => {
+      const set = (await s.workout.load(sessionId))?.aggregate.sets.find((x) => x.id === work[i]?.id);
+      if (!set) throw new Error('fixture');
+      h.clockMs += 60_000;
+      const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `hard-${String(i)}`, setId: set.id, values: { load: set.planned.load, reps: 8, durationS: null, rpe: 10, rir: null }, restTimerId: h.ids() });
+      if (!r.ok) throw new Error(r.error.message);
+      return (await s.coach.offerAfterLog({ aggregate: r.aggregate, setId: set.id, resting: true, coachReachable: true, pending: false }))?.fact ?? null;
+    };
+    expect(await logHard(0)).toBe('RPE 10 on set 1');
+    expect(await logHard(1)).toBeNull();
+    // Ben accepts an adjustment: one more offer may follow, then none.
+    model = new StepModel([lowerPending(), () => replyWith('Lighter.')]);
+    const r = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'chip', chip: 'too_hard' }, turnId: h.ids() });
+    expect(r.cards.some((c) => c.record.detail.kind === 'adjust_pending_sets' && c.record.status === 'committed')).toBe(true);
+    expect(await logHard(2)).toBe('RPE 10 on set 3');
+    expect(await logHard(3)).toBeNull();
+  });
+});
