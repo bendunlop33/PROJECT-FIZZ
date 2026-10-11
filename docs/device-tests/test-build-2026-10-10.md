@@ -40,4 +40,4 @@ Calmer rest screen, richer Today with routines (Save as routine on Summary, Up n
 - **Coach sheet** (coach button in the workout and on Summary): ask anything; replies stream in. Every change shows as a card with Why? and Undo. Status words only when it can't answer (`Offline`, `Not connected`, `Paused`).
 - **In the workout:** ask "make the rest lighter", "add a set", etc. Today's remaining sets change at once with Undo. After a clear signal (RPE 10, a big miss, a very easy set) the coach may offer once during rest; nothing changes until you tap Adjust.
 - **Summary › Next time:** the coach's small changes for next session, with Why? and Undo; bigger changes are proposals (Apply / Not now). Offline: the built-in rule's targets, labelled.
-- **First real test of the coach on your ChatGPT plan.** Sign in (Profile › AI), then send one message. If it fails, the sheet says so honestly — please screenshot it either way.
+- **First real test of the coach on your ChatGPT plan.** Sign in (Profile › Coach connection), then send one message. If it fails, the sheet says so honestly — please screenshot it either way.
