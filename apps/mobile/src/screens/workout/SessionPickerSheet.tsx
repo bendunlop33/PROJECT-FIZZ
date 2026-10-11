@@ -5,7 +5,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import type { OverviewStartOf, SessionList, SessionPickerRow as Row } from '../../services/workout-services';
 import { useTheme, TIMING } from '../../theme';
 import { AppText, BottomCard, Eyebrow, Icon, Tag, TextButton } from '../../ui';
-import { isShownRow, pickerRowDetail, pickerRowLabel, SESSION_PICKER_COPY } from '../../workout/session-picker';
+import { isShownRow, pickerRowDetail, pickerRowLabel, pickerSections, SESSION_PICKER_COPY } from '../../workout/session-picker';
 
 /**
  * `SessionPickerSheet` (session-picker §2.2): which session to train today.
@@ -23,6 +23,7 @@ export function SessionPickerSheet({
   onRetry,
   onEmptyWorkout,
   onPastWorkouts,
+  onEditWorkouts,
   onDismissed,
 }: {
   visible: boolean;
@@ -36,6 +37,8 @@ export function SessionPickerSheet({
   onRetry: () => void;
   onEmptyWorkout: () => void;
   onPastWorkouts: () => void;
+  /** `Edit workouts` → the Workouts list (routines.md §A2.4). */
+  onEditWorkouts?: () => void;
   onDismissed?: () => void;
 }) {
   const theme = useTheme();
@@ -77,13 +80,16 @@ export function SessionPickerSheet({
     const render = (r: Row, i: number) => <SessionPickerRow key={r.key} row={r} now={now} selected={isShownRow(r, shown)} first={i === 0} onPress={() => { onPick(r); }} />;
     return (
       <View>
-        {list.current.map(render)}
-        {list.older.length > 0 ? (
-          <View style={{ marginTop: theme.space['4'] }} accessibilityRole="header">
-            <Eyebrow>{SESSION_PICKER_COPY.older}</Eyebrow>
+        {pickerSections(list).map((section, si) => (
+          <View key={section.title ?? `up-${String(si)}`}>
+            {section.title !== null ? (
+              <View style={{ marginTop: theme.space['4'] }} accessibilityRole="header">
+                <Eyebrow>{section.title}</Eyebrow>
+              </View>
+            ) : null}
+            {section.rows.map(render)}
           </View>
-        ) : null}
-        {list.older.map(render)}
+        ))}
       </View>
     );
   })();
@@ -101,6 +107,7 @@ export function SessionPickerSheet({
         <View style={{ marginTop: theme.space['4'], alignItems: 'flex-start' }}>
           <TextButton label={SESSION_PICKER_COPY.emptyWorkout} tone="secondary" onPress={onEmptyWorkout} />
           <TextButton label={SESSION_PICKER_COPY.pastWorkouts} tone="secondary" onPress={onPastWorkouts} />
+          {onEditWorkouts ? <TextButton label={SESSION_PICKER_COPY.editWorkouts} tone="secondary" onPress={onEditWorkouts} /> : null}
         </View>
       </ScrollView>
     </BottomCard>

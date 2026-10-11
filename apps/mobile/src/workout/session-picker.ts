@@ -14,6 +14,9 @@ export const SESSION_PICKER_COPY = {
   close: 'Close',
   upNext: 'Up next',
   older: 'Older',
+  yourWorkouts: 'Your workouts',
+  fromHistory: 'From history',
+  editWorkouts: 'Edit workouts',
   edited: 'Edited',
   new: 'New',
   loadFailed: 'Couldn’t load sessions.',
@@ -25,8 +28,8 @@ export const SESSION_PICKER_COPY = {
   switchFailed: 'Couldn’t load that session.',
   emptyWorkout: 'Empty workout',
   pastWorkouts: 'Past workouts',
-  saveAsRoutine: 'Save as routine',
-  savedAsRoutine: 'Saved as routine',
+  saveAsRoutine: 'Save to Workouts',
+  savedAsRoutine: 'Saved to Workouts',
 } as const;
 
 const exercisesText = (n: number): string => `${String(n)} ${n === 1 ? 'exercise' : 'exercises'}`;
@@ -61,9 +64,30 @@ export function isShownRow(row: Pick<SessionPickerRow, 'routineId' | 'sourceSess
   return row.routineId === null && row.sourceSessionId === startOf.nextOf;
 }
 
-/** Every row, in picker order (`current`, then `OLDER`). */
+/** Every row, in picker order (routines.md WL4): Up next, `YOUR WORKOUTS`, `FROM HISTORY`, `OLDER`. */
 export function allRows(list: SessionList): SessionPickerRow[] {
-  return [...list.current, ...list.older];
+  return [...(list.upNext ? [list.upNext] : []), ...list.workouts, ...list.fromHistory, ...list.older];
+}
+
+export interface PickerSection {
+  /** `YOUR WORKOUTS`, `FROM HISTORY`, `OLDER`; null for the Up next row and when only one section shows (§A2.4). */
+  title: string | null;
+  rows: SessionPickerRow[];
+}
+
+/**
+ * The picker's sections (routines.md §A2.4): Up next first with no label,
+ * then `YOUR WORKOUTS`, `FROM HISTORY`, `OLDER`. Empty sections are hidden;
+ * with only one labelled section its label is hidden too.
+ */
+export function pickerSections(list: SessionList): PickerSection[] {
+  const labelled = [
+    { title: SESSION_PICKER_COPY.yourWorkouts, rows: list.workouts },
+    { title: SESSION_PICKER_COPY.fromHistory, rows: list.fromHistory },
+    { title: SESSION_PICKER_COPY.older, rows: list.older },
+  ].filter((x) => x.rows.length > 0);
+  const titled = labelled.length > 1 || (labelled.length === 1 && list.upNext !== null);
+  return [...(list.upNext ? [{ title: null, rows: [list.upNext] }] : []), ...labelled.map((x) => ({ title: titled ? x.title : null, rows: x.rows }))];
 }
 
 /** `Change` and `SESSIONS` show only with 2 or more session types (§2.1, §5). */

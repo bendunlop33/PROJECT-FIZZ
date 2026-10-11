@@ -52,7 +52,7 @@ async function withPushA(s: AppServices): Promise<{ gymId: string; routineId: st
     { exercise: 'Lateral raise', sets: [{ load: 10, reps: 12 }, { load: 10, reps: 12 }] },
     { exercise: 'Triceps pushdown', sets: [{ load: 25, reps: 12 }, { load: 25, reps: 12 }] },
   ]);
-  const saved = await s.routines.saveFromSession({ sessionId: pushA, name: 'Push A', opId: 'save-1' });
+  const saved = await s.routines.saveFromSession({ sessionId: pushA, name: 'Push A', opId: 'save-1' , addToRotation: true });
   if (!saved.ok) throw new Error(saved.message);
   h.clockMs += 2 * DAY;
   return { gymId, routineId: saved.routine.id };

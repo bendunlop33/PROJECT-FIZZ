@@ -130,6 +130,22 @@ import {
   groupSessionTypes,
   orderSessionTypes,
   routineTypeKey,
+  buildLibraryView,
+  createRoutine,
+  duplicateRoutine,
+  editableExercises,
+  editRoutine,
+  planRoutineStart,
+  rotationRoutines,
+  routineChangeLines,
+  routineFromPlan,
+  routineGymIssues,
+  saveSheetDetail,
+  setRoutineRotation,
+  unnamedWorkoutName,
+  type LibrarySort,
+  type LibraryView,
+  type RoutineEdit,
   SESSION_PICKER_DECISIONS,
   type SessionType,
   type SessionTypeKind,
@@ -150,6 +166,8 @@ import type {
   PlannedSet,
   ProgressionRule,
   Routine,
+  RoutineExercise,
+  RestSetting,
   SessionAggregate,
   SessionCheckIn,
   SessionCommand,
@@ -414,10 +432,79 @@ export interface SessionPickerRow {
 
 /** `services.sessions.list` (session-picker §7). `current`: Up next first, longest gap first, then `New`; `older`: `OLDER`. */
 export interface SessionList {
-  current: SessionPickerRow[];
+  /** The `UP NEXT` row, always first (routines.md WL4). */
+  upNext: SessionPickerRow | null;
+  /** `YOUR WORKOUTS`: saved workouts, longest gap first, `New` last. */
+  workouts: SessionPickerRow[];
+  /** `FROM HISTORY`: named (and, with Decision 1, Category) types that aren't saved workouts. */
+  fromHistory: SessionPickerRow[];
+  /** `OLDER`: not done in 42 days, saved workouts first. */
   older: SessionPickerRow[];
   recommendedKey: string | null;
 }
+
+/** The Workouts list (routines.md §A2.1): the rows, and the workout in progress (`StatusBanner`, Resume). */
+export interface LibraryData {
+  view: LibraryView;
+  active: { sessionId: string; name: string; routineId: string | null } | null;
+}
+
+/** An exercise as the editor shows it (names, how it's measured, Fixed-load checks). */
+export interface EditorExerciseInfo {
+  id: string;
+  name: string;
+  measurement: Exercise['measurement'];
+  laterality: Exercise['laterality'];
+  defaultLoadConvention: Exercise['defaultLoadConvention'];
+  compatibleEquipment: Exercise['compatibleEquipment'];
+  /** Rest resolution step 3: Ben's own default for it, else the catalogue's. */
+  defaultRestS: number | null;
+  compound: boolean;
+}
+
+/** The workout editor's data (routines.md §A2.3). Local reads only. */
+export interface RoutineEditorData {
+  /** The stored workout; null for `New workout`. */
+  routine: Routine | null;
+  /** What the editor opens with (a workout from before the library shows `Auto` loads). */
+  exercises: RoutineExercise[];
+  info: Record<string, EditorExerciseInfo>;
+  /** The selected gym: Fixed loads are checked on its items. */
+  gym: { id: string; name: string; equipment: EquipmentInstance[] } | null;
+  unit: UserProfile['preferredUnit'];
+  globalDefault: RestSetting;
+  restPresets: RestSetting[];
+  /** This workout is the one in progress (`In progress · changes apply next time`). */
+  inProgress: boolean;
+}
+
+/** An editor save (WL10): the new version and the record its Undo reads. */
+export type RoutineEditWrite =
+  | { ok: true; routine: Routine; actionId: string | null; duplicate: boolean }
+  | { ok: false; reason: 'stale'; message: string; current: Routine; changedAtUtc: string; lines: string[] }
+  | { ok: false; reason: 'invalid' | 'missing' | 'failed'; message: string };
+
+/** What `Save to Workouts` saves (§A4.2): a finished workout, or exactly what an overview shows. */
+export type SaveFrom =
+  | { kind: 'session'; sessionId: string; keepLoads?: boolean }
+  | { kind: 'preview'; target: OverviewTarget; gymId: string | null; checkInId?: string | null; typicalEquipment?: readonly EquipmentInstance[]; previewKey: string };
+
+/** The save sheet's prefill (§A2.5): name and `5 exercises · 15 sets`; null = `Nothing to save`. */
+export interface SaveSource {
+  name: string;
+  detail: string;
+}
+
+export type LibrarySaveWrite = RoutineWrite | { ok: false; message: string; reason: 'nothing' | 'stale_preview' };
+
+/** User-facing words for library writes (minimal copy; the UI says "workout", never "routine", WL1). */
+export const LIBRARY_COPY = {
+  notFound: 'That workout wasn’t found.',
+  changed: (name: string) => `${name} changed. Check it and try again.`,
+  saveFailed: 'Couldn’t save. Try again.',
+  editFailed: (name: string) => `Couldn’t save ${name}. Your edits are still here.`,
+  nothing: 'Nothing to save',
+} as const;
 
 /** What a Start from the overview starts: the routine, or the last workout's next session. */
 export type OverviewStartOf = { routineOf: string; nextOf?: undefined } | { nextOf: string; routineOf?: undefined };
@@ -1076,16 +1163,89 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const current = await repos().routines.get(routineId);
       const p = await ctx.profile();
-      if (!current || !p || current.ownerId !== p.id) return { ok: false, message: 'That routine wasn’t found.' };
+      if (!current || !p || current.ownerId !== p.id) return { ok: false, message: LIBRARY_COPY.notFound };
       const c = make(current);
       if (c.kind === 'duplicate') return { ok: true, routine: c.current, duplicate: true };
-      if (c.kind === 'stale') return { ok: false, message: 'The routine changed. Check it and try again.', stale: true };
+      if (c.kind === 'stale') return { ok: false, message: LIBRARY_COPY.changed(current.name), stale: true };
       if (c.kind === 'invalid') return { ok: false, message: c.message };
       const saved = await repos().routines.save(c.next, c.expectedVersion).catch(() => null);
       if (saved?.ok) return { ok: true, routine: c.next, duplicate: false };
-      if (saved === null) return { ok: false, message: 'Couldn’t save the routine. Try again.' };
+      if (saved === null) return { ok: false, message: LIBRARY_COPY.saveFailed };
     }
-    return { ok: false, message: 'The routine changed. Check it and try again.', stale: true };
+    return { ok: false, message: LIBRARY_COPY.notFound, stale: true };
+  }
+
+  /** Whether each exercise is a compound one (`Main`, WL9): Ben's list, then the catalogue. Unknown = not. */
+  async function compoundOf(ids: Iterable<string>): Promise<(exerciseId: string) => boolean> {
+    const yes = new Set<string>();
+    for (const id of new Set(ids)) if ((await exerciseById(id))?.mechanic === 'compound') yes.add(id);
+    return (exerciseId) => yes.has(exerciseId);
+  }
+
+  /** Session types for the picker and the library (session-picker §3, routines.md WL5). Local reads. */
+  async function typeIndex(p: UserProfile, live: readonly Routine[]) {
+    const rows = await repos().sessions.listSessionTypeRows(p.id, TYPE_ROW_LIMIT);
+    return groupSessionTypes({
+      routines: live.map((r) => ({ id: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null, exerciseCount: routineCounts(r).exercises })),
+      sessions: rows.map((r) => ({ id: r.sessionId, routineId: r.routineId, routineName: r.routineName, startedAt: { utc: r.startedAtUtc, tz: r.tz }, exerciseCount: r.exerciseCount, imported: r.imported })),
+      now: ctx.now(),
+      groupImportsByCategory: SESSION_PICKER_DECISIONS.groupImportsByCategory,
+    });
+  }
+
+  /** A new workout write: idempotent by `opId` (the workout's ID comes from it), so a double tap saves one. */
+  async function createOnce(id: string, opId: string, make: () => Routine | null, nothing: string): Promise<LibrarySaveWrite> {
+    const existing = await repos().routines.get(id).catch(() => null);
+    if (existing) return existing.lastOpId === opId || existing.version > 1 ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed };
+    const routine = make();
+    if (routine === null) return { ok: false, message: nothing, reason: 'nothing' };
+    // Catalogue exercises are saved as rows before a workout can use them (as `Add exercise` does).
+    for (const e of routine.exercises) if ((await ensureExercise(e.exerciseId)) === null) return { ok: false, message: LIBRARY_COPY.notFound };
+    const saved = await repos().routines.save(routine, null).catch(() => null);
+    if (saved?.ok) return { ok: true, routine, duplicate: false };
+    // The write may have landed before an error: read it back.
+    const again = await repos().routines.get(id).catch(() => null);
+    return again?.lastOpId === opId ? { ok: true, routine: again, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed };
+  }
+
+  /** What an overview shows, planned exactly as the page did (same draft, check-in and gym), and whether its key still matches. */
+  async function previewPlan(p: UserProfile, from: Extract<SaveFrom, { kind: 'preview' }>): Promise<{ aggregate: SessionAggregate; resolved: ResolvedOverview } | 'stale' | null> {
+    const gymId = from.gymId ?? 'typical-gym-preview';
+    const typical = from.gymId === null ? from.typicalEquipment : undefined;
+    const resolved = await resolveOverview(p, from.target, { gymId, gymEquipment: typical });
+    if (resolved === null) return 'stale';
+    const { planCheckIn } = await overviewCheckIn(from.checkInId ?? null);
+    const t = await todayFor(p, resolved, gymId, typical, planCheckIn);
+    if (previewKey(await previewKeyParts(p, resolved, from.gymId, planCheckIn, t.draft)) !== from.previewKey) return 'stale';
+    const run = await overviewDryRun(p, resolved, gymId, planCheckIn, typical, t.input);
+    return run === null ? null : { aggregate: run.aggregate, resolved };
+  }
+
+  /** A workout from a save source, not saved: what the sheet shows and what `saveFrom` writes. */
+  async function routineFromSource(p: UserProfile, from: SaveFrom, req: { id: string; name: string; opId: string; inRotation: boolean }): Promise<Routine | 'stale' | null> {
+    const at = ctx.now();
+    if (from.kind === 'session') {
+      const source = await repos().sessions.get(from.sessionId).catch(() => null);
+      if (!source || source.session.ownerId !== p.id) return null;
+      const isCompound = await compoundOf(source.exercises.map((e) => e.exerciseId));
+      return routineFromSession({ id: req.id, ownerId: p.id, name: req.name, opId: req.opId, source, at, newId: ctx.newId, keepLoads: from.keepLoads === true, inRotation: req.inRotation, isCompound });
+    }
+    const plan = await previewPlan(p, from);
+    if (plan === null || plan === 'stale') return plan;
+    const isCompound = await compoundOf(plan.aggregate.exercises.map((e) => e.exerciseId));
+    return routineFromPlan({
+      id: req.id,
+      ownerId: p.id,
+      name: req.name,
+      opId: req.opId,
+      plan: plan.aggregate,
+      at,
+      newId: ctx.newId,
+      isCompound,
+      inRotation: req.inRotation,
+      // A next session's source keeps its history (WL5); a routine's plan is a new workout.
+      createdFromSessionId: plan.resolved.kind === 'next' ? plan.resolved.source.session.id : null,
+    });
   }
 
   /** IDs for a preview: the same inputs give the same IDs, so `Why?` can find a set from an earlier read. */
@@ -1120,7 +1280,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    */
   async function resolveUpNext(p: UserProfile, gymId: string, gymEquipment?: readonly EquipmentInstance[]) {
     const { live, refs } = await routineRows(p.id).catch(() => ({ live: [] as Routine[], refs: [] as FinishedRef[] }));
-    const pick = nextInRotation(live, refs[0] ?? null);
+    // Only workouts in the rotation (D19, RT9); a workout from before the library is in it.
+    const pick = nextInRotation(rotationRoutines(live), refs[0] ?? null);
     if (pick.kind === 'routine') {
       const run = await routineStart(p, { routineId: pick.routine.id, gymId, opId: `preview-next-routine:${pick.routine.id}`, preview: true, ...(gymEquipment ? { gymEquipment } : {}) });
       if (run.r.ok) return { kind: 'routine' as const, routine: pick.routine, basis: pick.basis, run: { ...run, r: run.r } };
@@ -2069,27 +2230,280 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
 
     /**
-     * `Save as routine` from a finished workout. Idempotent by `opId`: the
-     * routine's ID is derived from it, so a double tap or a retry after a lost
-     * acknowledgement saves one routine. The workout is never changed.
+     * The Workouts list (routines.md §A2.1): rotation from Up next, the
+     * rest, and history types that aren't saved workouts, with `≈ N min`
+     * and `⚠ N not here` at the selected gym. Local reads only; never a
+     * provider call. Null when it can't be read (`Couldn't open your data.`).
      */
-    async saveFromSession(req: { sessionId: string; name: string; opId: string }): Promise<RoutineWrite> {
+    async library(req: { gymId: string | null; sort: LibrarySort; showAllHistory: boolean }): Promise<LibraryData | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const now = ctx.now();
+        const live = liveRoutines(await repos().routines.listByOwner(p.id));
+        const index = await typeIndex(p, live);
+        const up = await resolveUpNext(p, req.gymId ?? 'typical-gym-preview').catch(() => null);
+        const gymEquipment = req.gymId === null ? null : await repos().equipment.listByGym(req.gymId).catch(() => null);
+        const recent = await recentFinished(p);
+        const infos = new Map<string, Exercise>();
+        for (const r of live) for (const e of r.exercises) if (!infos.has(e.exerciseId)) {
+          const x = await exerciseById(e.exerciseId);
+          if (x) infos.set(x.id, x);
+        }
+        const routines = [];
+        for (const routine of live) {
+          let minutes: number | null = null;
+          if (req.gymId !== null) {
+            const run = await routineStart(p, { routineId: routine.id, gymId: req.gymId, opId: `library:${routine.id}`, preview: true, newId: previewIds() }).catch(() => null);
+            if (run?.r.ok) {
+              const m = estimateRemainingDuration(run.r.aggregate, { recent }).minutes;
+              minutes = m > 0 ? m : null;
+            }
+          }
+          routines.push({ routine, minutes, gymIssues: gymEquipment === null ? 0 : routineGymIssues(routine, infos, gymEquipment) });
+        }
+        const view = buildLibraryView({ routines, types: index.types, upNextRoutineId: up?.kind === 'routine' ? up.routine.id : null, now, sort: req.sort, showAllHistory: req.showAllHistory });
+        const active = await repos().sessions.getActive(p.id).catch(() => null);
+        const activeName = active === null ? null : (active.session.routineName ?? storedName(active) ?? (await titleFor(active.exercises.map((e) => e.exerciseId))).title);
+        return { view, active: active === null ? null : { sessionId: active.session.id, name: activeName ?? GENERIC_WORKOUT_NAME, routineId: active.session.routineId ?? null } };
+      } catch {
+        return null;
+      }
+    },
+
+    /** The editor (§A2.3): the stored workout (null = new) with what each exercise needs. Local reads only. */
+    async editor(req: { routineId: string | null; gymId: string | null }): Promise<RoutineEditorData | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const routine = req.routineId === null ? null : await repos().routines.get(req.routineId);
+        if (req.routineId !== null && (routine === null || routine.ownerId !== p.id || (routine.deletedAtUtc ?? null) !== null)) return null;
+        const exercises = routine === null ? [] : editableExercises(routine);
+        const gym = req.gymId === null ? null : await repos().gyms.get(req.gymId).catch(() => null);
+        const active = await repos().sessions.getActive(p.id).catch(() => null);
+        return {
+          routine,
+          exercises,
+          info: await routines.exerciseInfo(exercises.map((e) => e.exerciseId)),
+          gym: gym === null ? null : { id: gym.id, name: gym.name, equipment: await repos().equipment.listByGym(gym.id) },
+          unit: p.preferredUnit,
+          globalDefault: p.defaultRest,
+          restPresets: p.restPresets,
+          inProgress: routine !== null && active?.session.routineId === routine.id,
+        };
+      } catch {
+        return null;
+      }
+    },
+
+    /** Editor info for exercises (added ones too): Ben's list, then the catalogue. */
+    async exerciseInfo(ids: readonly string[]): Promise<Record<string, EditorExerciseInfo>> {
       const p = await ctx.profile();
-      if (!p) return { ok: false, message: 'Owner profile not found.' };
-      const id = deriveId(`routine:${req.opId}`);
-      const existing = await repos().routines.get(id);
-      if (existing) return existing.lastOpId === req.opId || existing.createdFromSessionId === req.sessionId ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: 'Couldn’t save the routine. Try again.' };
-      const name = checkRoutineName(req.name, []);
-      if (!name.ok) return { ok: false, message: name.message };
-      const source = await repos().sessions.get(req.sessionId).catch(() => null);
-      if (!source || source.session.ownerId !== p.id) return { ok: false, message: 'That workout wasn’t found.' };
-      const routine = routineFromSession({ id, ownerId: p.id, name: name.name, opId: req.opId, source, at: ctx.now(), newId: ctx.newId });
-      if (!routine) return { ok: false, message: source.session.source === 'import' ? 'Workouts imported from FitNotes can’t be saved as routines yet.' : 'This workout has no logged sets to save.' };
-      const saved = await repos().routines.save(routine, null).catch(() => null);
-      if (saved?.ok) return { ok: true, routine, duplicate: false };
-      // The write may have landed before an error: read it back.
-      const again = await repos().routines.get(id).catch(() => null);
-      return again?.lastOpId === req.opId ? { ok: true, routine: again, duplicate: true } : { ok: false, message: 'Couldn’t save the routine. Try again.' };
+      const out: Record<string, EditorExerciseInfo> = {};
+      for (const id of new Set(ids)) {
+        const x = await exerciseById(id);
+        if (!x) continue;
+        out[id] = {
+          id,
+          name: x.name,
+          measurement: x.measurement,
+          laterality: x.laterality,
+          defaultLoadConvention: x.defaultLoadConvention,
+          compatibleEquipment: x.compatibleEquipment,
+          defaultRestS: p?.exerciseRestS?.[id] ?? x.defaultRestS ?? null,
+          compound: x.mechanic === 'compound',
+        };
+      }
+      return out;
+    },
+
+    /** The editor's `Add exercise` list: Ben's exercises and the catalogue's, searched by name. */
+    async searchExercises(query: string): Promise<EditorExerciseInfo[]> {
+      const p = await ctx.profile();
+      const saved = (await repos().exercises.list()).filter((e) => e.ownerId === null || e.ownerId === p?.id);
+      const have = new Set(saved.map((e) => e.id));
+      const all = [...saved, ...(ctx.catalogueExercises ? ctx.catalogueExercises().filter((e) => !have.has(e.id)) : [])];
+      return searchExercises(all, query)
+        .slice(0, 60)
+        .map((x) => ({ id: x.id, name: x.name, measurement: x.measurement, laterality: x.laterality, defaultLoadConvention: x.defaultLoadConvention, compatibleEquipment: x.compatibleEquipment, defaultRestS: p?.exerciseRestS?.[x.id] ?? x.defaultRestS ?? null, compound: x.mechanic === 'compound' }));
+    },
+
+    /** `≈ N min` while editing (§A2.3): the workout as edited, planned at this gym with no targets. Null when it can't be estimated. */
+    async estimate(req: { exercises: readonly RoutineExercise[]; gymId: string | null }): Promise<number | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p || req.gymId === null || req.exercises.length === 0) return null;
+        const exercises = new Map<string, Exercise>();
+        for (const e of req.exercises) {
+          const x = await exerciseById(e.exerciseId);
+          if (x) exercises.set(x.id, x);
+        }
+        const at = ctx.now();
+        const routine: Routine = { id: deriveId('editor-estimate'), ownerId: p.id, version: 1, createdAtUtc: at.utc, updatedAtUtc: at.utc, name: 'Estimate', exercises: [...req.exercises], createdFromSessionId: null, source: 'ben' };
+        const out = planRoutineStart({ opId: 'editor-estimate', owner: p, gymId: req.gymId, routine, exercises, gymEquipment: await repos().equipment.listByGym(req.gymId), knownEquipment: await allEquipment(p.id), at, newId: previewIds() });
+        const m = estimateRemainingDuration(out.aggregate, { recent: await recentFinished(p) }).minutes;
+        return m > 0 ? m : null;
+      } catch {
+        return null;
+      }
+    },
+
+    /** `New workout` → `Save` (§A4.2). Idempotent by `opId`. */
+    async create(req: { edit: RoutineEdit; opId: string; inRotation?: boolean }): Promise<LibrarySaveWrite> {
+      try {
+        const p = await owner();
+        const isCompound = await compoundOf(req.edit.exercises.map((e) => e.exerciseId));
+        const id = deriveId(`routine:${req.opId}`);
+        const c = createRoutine({ id, ownerId: p.id, edit: req.edit, opId: req.opId, at: ctx.now(), isCompound, inRotation: req.inRotation === true });
+        // A retry of a save that landed is the same save, even if the edit no longer validates.
+        if (c.kind === 'invalid' && (await repos().routines.get(id).catch(() => null)) === null) return { ok: false, message: c.message };
+        return await createOnce(id, req.opId, () => (c.kind === 'write' ? c.next : null), LIBRARY_COPY.nothing);
+      } catch {
+        return { ok: false, message: LIBRARY_COPY.saveFailed };
+      }
+    },
+
+    /**
+     * The editor's `Save` on a stored workout (§A4.2, WL10): the next
+     * version and Ben's `update_routine` record holding the version before,
+     * in one write, so `Undo` (`revert`) works after a force-close too. A
+     * retried opId is the same save; an older `expectedVersion` writes
+     * nothing and returns the newer version for the conflict sheet (rule 5).
+     */
+    async update(req: { routineId: string; edit: RoutineEdit; expectedVersion: number; opId: string }): Promise<RoutineEditWrite> {
+      try {
+        const p = await owner();
+        const current = await repos().routines.get(req.routineId);
+        if (!current || current.ownerId !== p.id || (current.deletedAtUtc ?? null) !== null) return { ok: false, reason: 'missing', message: LIBRARY_COPY.notFound };
+        const actionId = deriveId(`update-routine:${req.opId}`);
+        if (current.lastOpId === req.opId) return { ok: true, routine: current, actionId, duplicate: true };
+        if (current.version !== req.expectedVersion) {
+          // What changed since (`Coach target applied for Bench press, 18:40`): the newest record on it, if any.
+          const actions = await ctx.store().repos.coach.listRecentActions(p.id, { limit: 50 }).catch(() => [] as ActionRecord[]);
+          const last = actions.find((a) => a.detail.kind === 'update_routine' && a.detail.routineId === current.id && a.undoneBy === null);
+          const lines = last !== undefined && last.detail.kind === 'update_routine' ? last.detail.changes.map((c) => c.text) : [];
+          return { ok: false, reason: 'stale', message: LIBRARY_COPY.changed(current.name), current, changedAtUtc: current.updatedAtUtc, lines };
+        }
+        for (const e of req.edit.exercises) if ((await ensureExercise(e.exerciseId)) === null) return { ok: false, reason: 'missing', message: LIBRARY_COPY.notFound };
+        const at = ctx.now();
+        const c = editRoutine(current, req.edit, req.expectedVersion, req.opId, at, await compoundOf(req.edit.exercises.map((e) => e.exerciseId)));
+        if (c.kind === 'invalid') return { ok: false, reason: 'invalid', message: c.message };
+        if (c.kind === 'duplicate') return { ok: true, routine: c.current, actionId, duplicate: true };
+        if (c.kind === 'stale') return { ok: false, reason: 'stale', message: LIBRARY_COPY.changed(current.name), current: c.current, changedAtUtc: c.current.updatedAtUtc, lines: [] };
+        const nameOf = new Map<string, string>();
+        for (const e of [...current.exercises, ...c.next.exercises]) if (!nameOf.has(e.exerciseId)) nameOf.set(e.exerciseId, (await exerciseById(e.exerciseId))?.name ?? 'Exercise');
+        const action: ActionRecord = {
+          actionId,
+          turnId: null,
+          opId: req.opId,
+          status: 'committed',
+          author: 'ben',
+          detail: {
+            kind: 'update_routine',
+            routineId: current.id,
+            routineName: current.name,
+            changes: routineChangeLines(current, c.next, (id) => nameOf.get(id) ?? 'Exercise'),
+            before: current,
+            versionBefore: current.version,
+            versionAfter: c.next.version,
+            draft: null,
+          },
+          failure: null,
+          reason: null,
+          evidenceRefs: [],
+          guardNotes: [],
+          entityVersions: [{ entity: 'routine', id: current.id, before: current.version, after: c.next.version }],
+          undoneBy: null,
+          createdAt: at,
+        };
+        const r = await ctx.store().repos.drafts.applyRoutineChange({ ownerId: p.id, routine: c.next, expectedRoutineVersion: current.version, action, at });
+        if (r.status === 'missing') return { ok: false, reason: 'missing', message: LIBRARY_COPY.notFound };
+        if (r.status === 'stale') {
+          const now = r.routine ?? current;
+          return { ok: false, reason: 'stale', message: LIBRARY_COPY.changed(current.name), current: now, changedAtUtc: now.updatedAtUtc, lines: [] };
+        }
+        return { ok: true, routine: r.routine, actionId: r.action.actionId, duplicate: r.status === 'replayed' };
+      } catch {
+        const name = (await repos().routines.get(req.routineId).catch(() => null))?.name ?? 'workout';
+        return { ok: false, reason: 'failed', message: LIBRARY_COPY.editFailed(name) };
+      }
+    },
+
+    /**
+     * `Undo` on `Saved Push A` (§A4.2): the version before, while the
+     * workout is still at the version that save made; else nothing changes
+     * and the message says `Can't undo: Push A changed since.`
+     */
+    revert(req: { actionId: string; opId: string }): Promise<TemplateSwapWrite> {
+      return routines.undoTemplateSwap(req);
+    },
+
+    /** `Duplicate` (§4.4): `Push A copy`, not in the rotation; the toast's Undo deletes it. Idempotent by `opId`. */
+    async duplicate(req: { routineId: string; opId: string }): Promise<LibrarySaveWrite> {
+      try {
+        const p = await owner();
+        const current = await repos().routines.get(req.routineId);
+        if (!current || current.ownerId !== p.id) return { ok: false, message: LIBRARY_COPY.notFound };
+        const id = deriveId(`routine:${req.opId}`);
+        const isCompound = await compoundOf(current.exercises.map((e) => e.exerciseId));
+        return await createOnce(id, req.opId, () => duplicateRoutine(current, { id, opId: req.opId, at: ctx.now(), newId: ctx.newId, isCompound }), LIBRARY_COPY.nothing);
+      } catch {
+        return { ok: false, message: LIBRARY_COPY.saveFailed };
+      }
+    },
+
+    /** `Add to rotation` / `Remove from rotation` (RT9). `placeAtUtc`: an Undo of a removal puts it back where it was. */
+    setRotation(req: { routineId: string; on: boolean; expectedVersion: number; opId: string; placeAtUtc?: string | null }): Promise<RoutineWrite> {
+      return writeRoutine(req.routineId, (r) => setRoutineRotation(r, req.on, req.expectedVersion, req.opId, ctx.now(), req.placeAtUtc ?? null));
+    },
+
+    /**
+     * The save sheet's prefill (§A2.5): the name (the workout's or the
+     * page's, else `Workout · Sun 11 Oct`) and what will be saved. Null:
+     * nothing to save (all skipped, or only warm-ups), so no sheet opens.
+     */
+    async saveSource(from: SaveFrom, fallbackName: string | null = null): Promise<SaveSource | null> {
+      try {
+        const p = await owner();
+        const r = await routineFromSource(p, from, { id: deriveId('save-source'), name: 'x', opId: 'save-source', inRotation: false });
+        if (r === null || r === 'stale') return null;
+        let name = fallbackName;
+        if (name === null && from.kind === 'session') {
+          const source = await repos().sessions.get(from.sessionId).catch(() => null);
+          name = source === null ? null : (source.session.routineName ?? storedName(source) ?? unnamedWorkoutName(source.session.startedAt));
+        }
+        return { name: name ?? unnamedWorkoutName(ctx.now()), detail: saveSheetDetail(r) };
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * `Save to Workouts` (§A4.2, WL6, WL7): always a new workout, from a
+     * finished one (imported too) or from what an overview shows. Loads are
+     * `Auto` (Repeat's save keeps them Fixed). Idempotent by `opId`; the
+     * source is never changed. A preview save with an out-of-date key saves
+     * nothing (`Targets updated`).
+     */
+    async saveFrom(req: { from: SaveFrom; name: string; addToRotation: boolean; opId: string }): Promise<LibrarySaveWrite> {
+      try {
+        const p = await owner();
+        const name = checkRoutineName(req.name, []);
+        if (!name.ok) return { ok: false, message: name.message };
+        const id = deriveId(`routine:${req.opId}`);
+        const existing = await repos().routines.get(id).catch(() => null);
+        if (existing) return existing.lastOpId === req.opId || existing.version > 1 ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed };
+        const made = await routineFromSource(p, req.from, { id, name: name.name, opId: req.opId, inRotation: req.addToRotation });
+        if (made === 'stale') return { ok: false, message: STALE_PREVIEW, reason: 'stale_preview' };
+        return await createOnce(id, req.opId, () => made, LIBRARY_COPY.nothing);
+      } catch {
+        return { ok: false, message: LIBRARY_COPY.saveFailed };
+      }
+    },
+
+    /** Older entry point: `Save to Workouts` from a finished workout (Auto loads; `keepLoads` for Repeat). */
+    saveFromSession(req: { sessionId: string; name: string; opId: string; keepLoads?: boolean; addToRotation?: boolean }): Promise<LibrarySaveWrite> {
+      return routines.saveFrom({ from: { kind: 'session', sessionId: req.sessionId, ...(req.keepLoads ? { keepLoads: true } : {}) }, name: req.name, addToRotation: req.addToRotation === true, opId: req.opId });
     },
 
     rename(req: { routineId: string; name: string; expectedVersion: number; opId: string }): Promise<RoutineWrite> {
@@ -2296,13 +2710,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (!p) return null;
         const now = ctx.now();
         const live = liveRoutines(await repos().routines.listByOwner(p.id));
-        const rows = await repos().sessions.listSessionTypeRows(p.id, TYPE_ROW_LIMIT);
-        const index = groupSessionTypes({
-          routines: live.map((r) => ({ id: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null, exerciseCount: routineCounts(r).exercises })),
-          sessions: rows.map((r) => ({ id: r.sessionId, routineId: r.routineId, routineName: r.routineName, startedAt: { utc: r.startedAtUtc, tz: r.tz }, exerciseCount: r.exerciseCount, imported: r.imported })),
-          now,
-          groupImportsByCategory: SESSION_PICKER_DECISIONS.groupImportsByCategory,
-        });
+        const index = await typeIndex(p, live);
         const up = await resolveUpNext(p, req.gymId ?? 'typical-gym-preview', req.gymId === null ? req.typicalEquipment : undefined).catch(() => null);
         const startable = index.types.filter((t) => t.startable);
         // Up next is a row only when the row opens exactly that plan (review r2 B1): the same routine, or a named type whose
@@ -2351,7 +2759,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           edited: isEdited(targetOf(t)),
         });
         const ordered = orderSessionTypes(startable, recommendedKey);
-        return { current: [...(ordered.upNext ? [ordered.upNext] : []), ...ordered.workouts, ...ordered.fromHistory].map(row), older: ordered.older.map(row), recommendedKey };
+        return { upNext: ordered.upNext === null ? null : row(ordered.upNext), workouts: ordered.workouts.map(row), fromHistory: ordered.fromHistory.map(row), older: ordered.older.map(row), recommendedKey };
       } catch {
         return null;
       }

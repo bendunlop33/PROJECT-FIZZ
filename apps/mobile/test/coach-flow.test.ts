@@ -329,7 +329,7 @@ describe('C8: Summary next-session targets (D21) and routines', () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }, { load: 60, reps: 6, rpe: 10 }] }]);
-    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' });
+    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' , addToRotation: true });
     if (!saved.ok) throw new Error(saved.message);
     model = new StepModel([
       (req) => {
@@ -421,7 +421,7 @@ describe('C8: Summary next-session targets (D21) and routines', () => {
 
   async function savedBenchTarget(s: Awaited<ReturnType<Harness['launch']>>['services'], gymId: string) {
     const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }] }]);
-    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: `save-${first}` });
+    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: `save-${first}`, addToRotation: true });
     if (!saved.ok) throw new Error(saved.message);
     model = new StepModel([
       (req) => {

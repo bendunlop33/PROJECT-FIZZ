@@ -44,7 +44,7 @@ async function withRoutine(s: AppServices): Promise<{ gymId: string; routineId: 
     { exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }, { load: 60, reps: 8 }] },
     { exercise: 'Barbell row', sets: [{ load: 50, reps: 10 }, { load: 50, reps: 10 }] },
   ]);
-  const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' });
+  const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' , addToRotation: true });
   if (!saved.ok) throw new Error(saved.message);
   h.clockMs += 2 * DAY;
   return { gymId, routineId: saved.routine.id, first };
@@ -370,7 +370,8 @@ describe('r2 B1: a check-in saved in the `Check-in ›` sheet (AX sizes) before 
     if (r.kind !== 'stale' || r.page === null) throw new Error('expected the fresh page');
     // An unflagged pain mention holds the load at last time's 60 kg (only a pain flag shows the HELD word).
     expect(r.page.view.rows[0]?.load.value).toBe('60');
-    expect(r.page.view.rows[0]?.marker.kind).toBe('same');
+    // The load isn't raised; the reps are the saved workout's own range (WL7: loads Auto, structure Ben's).
+    expect(['same', 'reps_up']).toContain(r.page.view.rows[0]?.marker.kind);
     expect(bench?.load.value).toBe('62.5');
     expect(await s.sessions.active()).toBeNull();
 

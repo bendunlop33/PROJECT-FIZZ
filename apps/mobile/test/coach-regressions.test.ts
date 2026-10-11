@@ -28,7 +28,7 @@ type Services = Awaited<ReturnType<Harness['launch']>>['services'];
 /** A routine whose last workout got the coach's next-time target, then a new workout started from it (coach-sourced sets). */
 async function coachPlannedWorkout(s: Services, gymId: string) {
   const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }] }]);
-  const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: `save-${first}` });
+  const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: `save-${first}`, addToRotation: true });
   if (!saved.ok) throw new Error(saved.message);
   model = new StepModel([saveNextTarget(), () => replyWith('Ok.')]);
   await s.coach.runSummaryTurn(first);

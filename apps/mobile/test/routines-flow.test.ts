@@ -29,7 +29,7 @@ describe('Save as routine, then start it', () => {
     const before = await s.workout.load(sessionId);
 
     expect(await s.routines.checkName('')).toEqual({ ok: false, message: 'Give it a name' });
-    const [a, b] = await Promise.all([s.routines.saveFromSession({ sessionId, name: 'Push A', opId: 'save-1' }), s.routines.saveFromSession({ sessionId, name: 'Push A', opId: 'save-1' })]);
+    const [a, b] = await Promise.all([s.routines.saveFromSession({ sessionId, name: 'Push A', opId: 'save-1' , addToRotation: true }), s.routines.saveFromSession({ sessionId, name: 'Push A', opId: 'save-1' })]);
     expect(a.ok && b.ok).toBe(true);
     if (!a.ok) return;
     const rows = await s.routines.list();
@@ -38,7 +38,7 @@ describe('Save as routine, then start it', () => {
     expect(rows[0]?.lastDone?.atUtc).toBe(before?.aggregate.session.startedAt.utc);
     // Saving changed nothing on the finished workout (its version isn't bumped).
     expect((await s.workout.load(sessionId))?.aggregate).toEqual(before?.aggregate);
-    expect(await s.routines.checkName('push a')).toEqual({ ok: true, name: 'push a', note: 'You already have a routine called Push A.' });
+    expect(await s.routines.checkName('push a')).toEqual({ ok: true, name: 'push a', note: 'You already have Push A.' });
 
     // Undo = delete (a tombstone); a retry of the same delete is a duplicate; restore brings it back.
     const del = await s.routines.remove({ routineId: a.routine.id, expectedVersion: a.routine.version, opId: 'del-1' });
@@ -56,7 +56,7 @@ describe('Save as routine, then start it', () => {
     let { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }, { load: 60, reps: 8 }] }]);
-    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' });
+    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' , addToRotation: true });
     if (!saved.ok) throw new Error(saved.message);
 
     h.clockMs += 2 * DAY;
@@ -120,7 +120,7 @@ describe('rotation and names', () => {
     for (const [i, name] of names.entries()) {
       h.clockMs += DAY;
       const sid = await logWorkout(h, s, gymId, [{ exercise: exercisesFor[i] ?? '', sets: [{ load: 40, reps: 8 }] }]);
-      const r = await s.routines.saveFromSession({ sessionId: sid, name, opId: `save-${name}` });
+      const r = await s.routines.saveFromSession({ sessionId: sid, name, opId: `save-${name}`, addToRotation: true });
       if (!r.ok) throw new Error(r.message);
       ids.push(r.routine.id);
     }
@@ -148,7 +148,7 @@ describe('rotation and names', () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     const sid = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
-    const r = await s.routines.saveFromSession({ sessionId: sid, name: 'Push A', opId: 'save' });
+    const r = await s.routines.saveFromSession({ sessionId: sid, name: 'Push A', opId: 'save' , addToRotation: true });
     if (!r.ok) throw new Error(r.message);
     const renamed = await s.routines.rename({ routineId: r.routine.id, name: 'Push B', expectedVersion: r.routine.version, opId: 'ren' });
     expect(renamed).toMatchObject({ ok: true, routine: { name: 'Push B', version: 2 } });
