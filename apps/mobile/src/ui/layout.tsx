@@ -308,15 +308,17 @@ export function Banner({ severity, text, action }: { severity: 'info' | 'warning
 }
 
 /** `ChoiceCard` (§9.34): selected shows a check icon and a thicker border, never colour alone. */
-export function ChoiceCard({ title, subtitle, selected, onPress }: { title: string; subtitle?: string | null; selected: boolean; onPress: () => void }) {
+export function ChoiceCard({ title, subtitle, selected, onPress, disabled = false }: { title: string; subtitle?: string | null; selected: boolean; onPress: () => void; disabled?: boolean }) {
   const theme = useTheme();
   return (
     <Pressable
       accessibilityRole="radio"
-      accessibilityState={{ selected, checked: selected }}
+      accessibilityState={{ selected, checked: selected, disabled }}
       accessibilityLabel={[title, subtitle].filter(Boolean).join(', ')}
+      disabled={disabled}
       onPress={onPress}
       style={{
+        opacity: disabled && !selected ? 0.4 : 1,
         minHeight: 60,
         padding: theme.space['4'],
         borderRadius: theme.components.cardBorderWidth === 0 ? theme.radius.lg : theme.radius.md,
