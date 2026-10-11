@@ -203,7 +203,9 @@ function benInputText(input: BenInput): string | null {
     case 'words':
       return input.text;
     case 'chip':
-      return `[Ben tapped: ${input.chip.replaceAll('_', ' ')}]`;
+      return input.sessionExerciseId === undefined
+        ? `[Ben tapped: ${input.chip.replaceAll('_', ' ')}]`
+        : `[Ben tapped: ${input.chip.replaceAll('_', ' ')}, about sessionExerciseId ${input.sessionExerciseId} only]`;
     case 'accept_offer':
       return '[Ben accepted your offer to adjust today’s sets]';
     case 'summary':

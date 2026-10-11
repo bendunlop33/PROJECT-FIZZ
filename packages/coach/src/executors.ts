@@ -253,6 +253,12 @@ export interface AdjustDeps {
   painFlags(): Promise<readonly PainFlag[]>;
   sessionPainUnspecified: boolean;
   gymName: string | null;
+  /**
+   * Set when Ben accepted an offer about one exercise row (CA1): a change to
+   * any other exercise is refused, so the tool's scope matches the offer
+   * (review S1).
+   */
+  onlySessionExerciseId?: string | null;
 }
 
 function requestedSets(agg: SessionAggregate | null, args: AdjustPendingSetsArgs): ExerciseTargetChanges[] {
@@ -284,6 +290,11 @@ export function createAdjustExecutor(deps: AdjustDeps): ToolExecutor {
       return { kind: 'action', record: r.action, replayed: r.status === 'replayed' };
     };
     if (agg === null) return refuse('stale', 'There is no active workout.', []);
+    const only = deps.onlySessionExerciseId ?? null;
+    if (only !== null && call.args.exercises.some((e) => e.sessionExerciseId !== only)) {
+      const name = agg.exercises.find((e) => e.id === only)?.exerciseName ?? 'that exercise';
+      return refuse('rejected', `Only ${name} was in question. Sets unchanged.`, []);
+    }
     const result = validateTodayAdjustment({
       aggregate: agg,
       args: call.args,

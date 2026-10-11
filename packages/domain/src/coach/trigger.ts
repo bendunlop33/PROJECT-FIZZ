@@ -10,6 +10,11 @@ import { deriveId } from '../stable';
 
 export type CoachTriggerKind = 'rpe_high' | 'reps_short' | 'rpe_low';
 
+/** A stored offer's kind, read back (an unknown value is ignored rather than trusted). */
+export function isTriggerKind(value: string): value is CoachTriggerKind {
+  return value === 'rpe_high' || value === 'reps_short' || value === 'rpe_low';
+}
+
 /** Stored as data and editable (profile-and-settings §2.7). Defaults are rule T. */
 export interface CoachTriggerThresholds {
   enabled: boolean;

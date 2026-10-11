@@ -112,13 +112,13 @@ describe('C7: in the workout (offer, Adjust, banner, Undo)', () => {
     h.clockMs += 60_000;
     const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: 'log-1', setId: s1.id, values: { load: s1.planned.load, reps: 8, durationS: null, rpe: 10, rir: null }, restTimerId: h.ids() });
     if (!logged.ok) throw new Error(logged.error.message);
-    const offer = s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: true, pending: false });
+    const offer = await s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: true, pending: false });
     expect(offer).toMatchObject({ kind: 'rpe_high', fact: 'RPE 10 on set 1', prompt: 'That looked hard. Adjust remaining sets?' });
     expect(model.requests).toEqual([]);
     // CA4: the same kind on the same exercise doesn't come back.
-    expect(s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: true, pending: false })).toBeNull();
+    expect(await s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: true, pending: false })).toBeNull();
     // Offline: no offers at all.
-    expect(s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: false, pending: false })).toBeNull();
+    expect(await s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: false, pending: false })).toBeNull();
     expect(slotView({ pending: false, adjustment: null, outcome: null, offer })).toMatchObject({ kind: 'offer', fact: 'RPE 10 on set 1' });
 
     model = new StepModel([
@@ -152,6 +152,79 @@ describe('C7: in the workout (offer, Adjust, banner, Undo)', () => {
     expect(back?.aggregate.sets.find((x) => x.id === s3.id)?.planned.source).toBe(s3.planned.source);
   });
 
+  async function twoExerciseWorkout() {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [
+      { exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }] },
+      { exercise: 'Lat pulldown', sets: [{ load: 50, reps: 10 }, { load: 50, reps: 10 }] },
+    ]);
+    h.clockMs += 2 * 86_400_000;
+    const started = await s.workout.start({ gymId, opId: 'start-two', checkIn: null, nextOf: first });
+    if (!started.ok) throw new Error(started.error.message);
+    const a = started.aggregate;
+    const rowOf = (name: string) => a.exercises.find((e) => e.exerciseName === name);
+    const bench = rowOf('Bench press');
+    const pulldown = rowOf('Lat pulldown');
+    if (!bench || !pulldown) throw new Error('fixture');
+    const setsOf = (rowId: string) => a.sets.filter((x) => x.sessionExerciseId === rowId && x.setType !== 'warmup').sort((x, y) => x.index - y.index);
+    return { s, sessionId: a.session.id, bench, pulldown, benchSets: setsOf(bench.id), pulldownSets: setsOf(pulldown.id) };
+  }
+
+  it('no offer for an exercise with no pending set left, even with another exercise still to do (review S1)', async () => {
+    const { s, sessionId, benchSets, pulldownSets } = await twoExerciseWorkout();
+    expect(pulldownSets.every((x) => x.status === 'pending')).toBe(true);
+    let latest = null as Awaited<ReturnType<typeof s.workout.dispatch>> | null;
+    for (const [i, set] of benchSets.entries()) {
+      h.clockMs += 60_000;
+      latest = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `b-${String(i)}`, setId: set.id, values: { load: set.planned.load, reps: 8, durationS: null, rpe: i === benchSets.length - 1 ? 10 : 8, rir: null }, restTimerId: h.ids() });
+      if (!latest.ok) throw new Error(latest.error.message);
+    }
+    if (!latest?.ok) throw new Error('not logged');
+    expect(await s.coach.offerAfterLog({ aggregate: latest.aggregate, setId: benchSets.at(-1)?.id ?? '', resting: true, coachReachable: true, pending: false })).toBeNull();
+  });
+
+  it('accepting an offer about bench can only change bench: a pulldown change is refused (review S1)', async () => {
+    const { s, sessionId, bench, pulldown, benchSets, pulldownSets } = await twoExerciseWorkout();
+    const [b1] = benchSets;
+    if (!b1) throw new Error('fixture');
+    h.clockMs += 60_000;
+    const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: 'b-rpe10', setId: b1.id, values: { load: b1.planned.load, reps: 8, durationS: null, rpe: 10, rir: null }, restTimerId: h.ids() });
+    if (!logged.ok) throw new Error(logged.error.message);
+    const offer = await s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: b1.id, resting: true, coachReachable: true, pending: false });
+    expect(offer?.sessionExerciseId).toBe(bench.id);
+    model = new StepModel([
+      (req) => {
+        const w = yourData(req).workout;
+        const pd = w.exercises.find((e) => e.sessionExerciseId === pulldown.id);
+        const pending = pd?.sets.filter((x) => x.status === 'pending') ?? [];
+        return call('adjust_pending_sets', { baseVersion: w.version, exercises: [{ sessionExerciseId: pulldown.id, sets: pending.map((x) => ({ setId: x.setId, target: { load: { value: 45, unit: 'kg', convention: 'stack' }, reps: null } })), addSet: null, removeSetId: null }], reason: 'Lighter.' });
+      },
+      () => reply('Ok.'),
+    ]);
+    const r = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'chip', chip: 'too_hard', sessionExerciseId: offer?.sessionExerciseId ?? '' }, turnId: h.ids() });
+    expect(r.status).toBe('completed');
+    const thread = await s.coach.loadThread(r.threadId);
+    const records = thread?.actionsByTurn.get(r.turnId) ?? [];
+    expect(records.map((x) => [x.status, x.failure])).toEqual([['rejected', 'only Bench press was in question']]);
+    const after = await s.workout.load(sessionId);
+    for (const x of pulldownSets) expect(after?.aggregate.sets.find((y) => y.id === x.id)?.planned).toEqual(x.planned);
+  });
+
+  it('an offer shown before a force-close doesn’t come back after the relaunch (CA4, review S6)', async () => {
+    const { s, sessionId } = await secondWorkout();
+    const data = await s.workout.load(sessionId);
+    const [s1] = (data?.aggregate.sets ?? []).filter((x) => x.setType !== 'warmup').sort((a, b) => a.index - b.index);
+    if (!s1) throw new Error('fixture');
+    h.clockMs += 60_000;
+    const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: 'log-s6', setId: s1.id, values: { load: s1.planned.load, reps: 8, durationS: null, rpe: 10, rir: null }, restTimerId: h.ids() });
+    if (!logged.ok) throw new Error(logged.error.message);
+    expect(await s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: true, pending: false })).not.toBeNull();
+    await h.forceClose();
+    const { services: again } = await h.launch();
+    expect(await again.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: true, pending: false })).toBeNull();
+  });
+
   it('logging 10 normal sets makes no AI call and no offer', async () => {
     const { s, sessionId } = await secondWorkout();
     let data = await s.workout.load(sessionId);
@@ -169,7 +242,7 @@ describe('C7: in the workout (offer, Adjust, banner, Undo)', () => {
       h.clockMs += 60_000;
       const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `n-${String(i)}`, setId: pending.id, values: { load: pending.planned.load, reps: pending.planned.reps?.max ?? 8, durationS: null, rpe: 8, rir: null }, restTimerId: h.ids() });
       if (!r.ok) throw new Error(r.error.message);
-      expect(s.coach.offerAfterLog({ aggregate: r.aggregate, setId: pending.id, resting: true, coachReachable: true, pending: false })).toBeNull();
+      expect(await s.coach.offerAfterLog({ aggregate: r.aggregate, setId: pending.id, resting: true, coachReachable: true, pending: false })).toBeNull();
       data = data === null ? null : { ...data, aggregate: r.aggregate };
     }
     expect(model.requests).toEqual([]);

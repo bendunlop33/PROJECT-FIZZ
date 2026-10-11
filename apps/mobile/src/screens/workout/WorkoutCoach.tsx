@@ -55,6 +55,8 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void)
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [why, setWhy] = useState<WhyView | null>(null);
   const lastAsk = useRef<BenInput | null>(null);
+  /** Only the latest log's offer check may set the offer. */
+  const offerCheck = useRef(0);
   const appliedRef = useRef(onApplied);
   appliedRef.current = onApplied;
 
@@ -106,8 +108,14 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void)
       if (pending === null) setOutcome(null);
       if (adjustment !== null && adjustment.undoneBy === null) setAdjustment(null);
       const resting = aggregate.restTimer?.status === 'running';
-      const next = services.coach.offerAfterLog({ aggregate, setId, resting, coachReachable: availability?.status === 'ok', pending: pending !== null });
-      setOffer(next);
+      const check = ++offerCheck.current;
+      setOffer(null);
+      void services.coach
+        .offerAfterLog({ aggregate, setId, resting, coachReachable: availability?.status === 'ok', pending: pending !== null })
+        .catch(() => null)
+        .then((next) => {
+          if (check === offerCheck.current) setOffer(next);
+        });
     },
     clearOffer: () => {
       setOffer(null);
@@ -130,7 +138,7 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void)
     },
     // CA1: Adjust on an offer is Ben asking, in the trigger's direction.
     acceptOffer: () => {
-      if (offer !== null) ask({ kind: 'chip', chip: chipForTrigger(offer.kind) });
+      if (offer !== null) ask({ kind: 'chip', chip: chipForTrigger(offer.kind), sessionExerciseId: offer.sessionExerciseId });
     },
     dismissOffer: () => {
       setOffer(null);

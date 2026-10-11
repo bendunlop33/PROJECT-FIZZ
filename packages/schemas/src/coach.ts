@@ -464,7 +464,12 @@ export type CoachTurn = z.infer<typeof CoachTurnSchema>;
 /** Ben's words (or chip) in a turn, saved before the request is sent. */
 export const BenInputSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('words'), text: z.string().min(1).max(4000), spoken: z.boolean() }),
-  z.object({ kind: z.literal('chip'), chip: z.enum(['too_hard', 'too_easy', 'pain', 'lighter_session']) }),
+  z.object({
+    kind: z.literal('chip'),
+    chip: z.enum(['too_hard', 'too_easy', 'pain', 'lighter_session']),
+    /** An offer's `Adjust` (CA1): the exercise row the offer was about; only it may change (review S1). */
+    sessionExerciseId: IdSchema.optional(),
+  }),
   z.object({ kind: z.literal('accept_offer'), offer: CoachOfferKindSchema }),
   /** The post-workout summary turn: no words from Ben (ADR 0020 C8). */
   z.object({ kind: z.literal('summary') }),
