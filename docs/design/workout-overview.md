@@ -223,7 +223,7 @@ Follow-ups for the product manager (not edited here):
 - design-system components
 - the 12 pt `sectionLabel` vs the 16 pt floor (an existing token conflict)
 - `CheckInScale` inline tiles at 50 × 52 vs the sheet's ≥ 52 × 60 (check-in check 28); confirm on device
-- **Device check still open (review r1 B2, r2 S2/S3):** on Ben's iPhone at xLarge, xxxLarge and AX3, check the top bar and gym chip, the row panel lines, the check-in row in all three layouts, the stat strip (no number breaking mid-way, e.g. `≈ 19:05`) and Start staying visible. Not yet done; record the result here.
+- **Device check still open (review r1 B2, r2 S2/S3):** on Ben's iPhone at xLarge, xxxLarge and AX3, check the top bar and gym chip, the row panel lines, the check-in row in all three layouts, the stat strip (no number breaking mid-way, e.g. `≈ 19:05`; `onTextLayout` wrap detection stacks it without a visible column-then-stack flash) and Start staying visible. Not yet done (review r3 S2): do it before the first real workout and record the result here.
 
 ---
 
