@@ -1,10 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toIso, toMs } from '@fizz/domain';
-import { largeHistory, richFinishedSession } from '@fizz/domain/testing';
+import {
+  analyseImport,
+  buildImportedSession,
+  createSessionService,
+  DEFAULT_ANSWERS,
+  parseFitNotesCsv,
+  planImportRows,
+  starterExercises,
+  toIso,
+  toMs,
+  type MatchCandidate,
+} from '@fizz/domain';
+import { idGen, largeHistory, OWNER, profile, richFinishedSession } from '@fizz/domain/testing';
 import { openStore, parseBackup, sha256Hex, type Store } from '@fizz/persistence';
 import { openNodeDriver } from '@fizz/persistence/node';
-import type { ZonedTimestamp } from '@fizz/schemas';
+import type { ImportJob, ZonedTimestamp } from '@fizz/schemas';
 
 import { createBackupService, type BackupFileStore, type CopyDestination, type TextFile } from '../src/backup/backup-service';
 import { backupFileName, emptyManifest, parseManifest, planRotation, type BackupRecord } from '../src/backup/manifest';
@@ -58,6 +69,66 @@ const now = (): ZonedTimestamp => ({ utc: toIso(clockMs), tz: TZ });
 
 function service() {
   return createBackupService({ store: () => store, files, manifest, now, app: APP, locale: 'en-GB' });
+}
+
+/**
+ * A real FitNotes import of two workouts through the import repository
+ * (create job, write each workout, finish), as the import service does it.
+ * Returns the committed job.
+ */
+async function importTwoWorkouts(): Promise<ImportJob> {
+  const at = now();
+  await store.repos.profiles.save(profile(), null);
+  const exercises = starterExercises(at.utc);
+  for (const e of exercises) await store.repos.exercises.save(e, null);
+  const csv = ['Date,Exercise,Category,Weight (kgs),Reps,Distance,Distance Unit,Time', '2026-10-01,Lat pulldown,Back,40,10,,,', '2026-10-03,Lat pulldown,Back,45,8,,,'].join('\n');
+  const p = parseFitNotesCsv(csv, '2026-10-08');
+  if (!p.ok) throw new Error('not parsed');
+  const candidates: MatchCandidate[] = exercises.map((e) => ({
+    exerciseId: e.id,
+    name: e.name,
+    aliases: [],
+    catalogueKey: e.catalogueKey ?? null,
+    laterality: e.laterality,
+    defaultLoadConvention: e.defaultLoadConvention,
+    compatibleEquipment: e.compatibleEquipment,
+    implements: null,
+  }));
+  const a = analyseImport(p, { ownerId: OWNER, candidates, aliases: new Map(), appDates: new Set<string>(), importedDates: new Map(), defaultUnit: 'kg' }, DEFAULT_ANSWERS);
+  const jobId = '00000000-0000-4000-8000-000000009001';
+  const rows = planImportRows(p, a, { jobId, defaultUnit: 'kg' });
+  const job: ImportJob = {
+    id: jobId,
+    ownerId: OWNER,
+    version: 1,
+    createdAtUtc: at.utc,
+    updatedAtUtc: at.utc,
+    source: 'fitnotes',
+    fileName: 'FitNotes_Export_synthetic.csv',
+    checksum: 'a'.repeat(64),
+    variant: 'A1-kg',
+    header: p.firstLine,
+    timezone: TZ,
+    startedAt: at,
+    operationId: 'commit-1',
+    mappingVersion: 1,
+    answers: DEFAULT_ANSWERS,
+    counts: { rows: a.rowCount, workouts: a.counts.workouts, sets: a.counts.sets, exercises: a.counts.exercises, byResult: { imported: 2, skipped_cardio: 0, skipped_unsupported: 0, skipped_duplicate: 0, skipped_date_exists: 0, skipped_exercise: 0, unreadable: 0 } },
+    dateRange: a.dateRange,
+    status: 'committing',
+    finishedAt: null,
+    revert: null,
+  };
+  const lat = candidates.find((c) => c.name === 'Lat pulldown')?.exerciseId ?? '';
+  const created = await store.repos.imports.createJob(job, rows, { exercises: [], aliases: [{ name: 'Lat pulldown', nameKey: 'lat pulldown', target: { kind: 'exercise', exerciseId: lat } }], at, newId: idGen(50_000) });
+  if (!created.ok) throw new Error(created.error);
+  for (const date of ['2026-10-01', '2026-10-03']) {
+    const written = await store.repos.imports.commitWorkout(jobId, buildImportedSession({ ownerId: OWNER, jobId, operationId: job.operationId, tz: TZ, gymId: null, importedAtUtc: at.utc, date, rows }));
+    if (written !== 'written') throw new Error(written);
+  }
+  const done = await store.repos.imports.finishJob(jobId, 1, at);
+  if (!done.ok) throw new Error(done.error);
+  return done.job;
 }
 
 beforeEach(async () => {
@@ -218,11 +289,13 @@ describe('backup service', () => {
 
   it('after Undo import, an interrupted after-Finish backup is pending and caught up at launch (B2)', async () => {
     const svc = service();
-    // A 3-workout import; the after_import backup records 3 finished workouts.
-    for (const s of largeHistory({ weeks: 1, perWeek: 3 })) await store.repos.sessions.save(s, null);
+    // A real 2-workout FitNotes import; the after_import backup holds them.
+    const job = await importTwoWorkouts();
+    expect((await store.countRecords()).finishedWorkouts).toBe(2);
     expect((await svc.backUpOnPhone('after_import')).ok).toBe(true);
-    // Undo import (`revertJob`) takes the imported workouts out of the finished count.
-    await store.db.write((tx) => tx.run("UPDATE sessions SET status = 'discarded' WHERE status = 'finished'"));
+    // Undo import through the real path (`revertImport`): its workouts become `reverted`.
+    const undo = await store.repos.imports.revertJob(job.id, job.version, 'undo-1', now());
+    expect(undo).toMatchObject({ ok: true, workouts: 2 });
     expect((await store.countRecords()).finishedWorkouts).toBe(0);
     // One workout finishes, but iOS ends the app before its backup runs.
     clockMs += 3_600_000;
@@ -231,6 +304,40 @@ describe('backup service', () => {
     expect((await svc.getStatus()).onPhone.line.text).toBe('Saved on this phone');
     const run = await svc.ensureBackedUp();
     expect(run?.ok && run.record.reason).toBe('catch_up');
+    expect((await svc.getStatus()).onPhone.state).toBe('backed_up');
+    expect(await svc.ensureBackedUp()).toBeNull();
+  });
+
+  it('a correction to a finished workout after its backup is pending and caught up (S1)', async () => {
+    const svc = service();
+    const workout = richFinishedSession();
+    await store.repos.sessions.save(workout, null);
+    expect((await svc.backUpOnPhone('workout_finished')).ok).toBe(true);
+    expect((await svc.getStatus()).onPhone.state).toBe('backed_up');
+    // That evening Ben corrects a set in History: same workouts, new content.
+    const sessions = createSessionService(store.repos, idGen(90_000));
+    const set = workout.sets.find((x) => x.status === 'completed');
+    if (!set) throw new Error('fixture');
+    clockMs += 3_600_000;
+    const fixed = await sessions.dispatch(workout.session.id, {
+      type: 'correct_set',
+      at: now(),
+      opId: 'fix-after-backup',
+      setId: set.id,
+      expectedSetVersion: set.version,
+      patch: { load: { value: 17.5, unit: 'kg', convention: 'per_hand' } },
+    });
+    expect(fixed.ok).toBe(true);
+    expect((await store.countRecords()).finishedWorkouts).toBe(1);
+    expect((await svc.getStatus()).onPhone.state).toBe('pending');
+    const run = await svc.ensureBackedUp();
+    expect(run?.ok && run.record.reason).toBe('catch_up');
+    // The new file holds the corrected load.
+    const newest = run?.ok ? files.files.get(run.record.fileName) : undefined;
+    const parsed = await parseBackup(newest ?? '');
+    if (!parsed.ok) throw new Error(parsed.error.message);
+    const row = parsed.file.tables.session_sets?.find((r) => r.id === set.id);
+    expect(row?.actual_load_value).toBe(17.5);
     expect((await svc.getStatus()).onPhone.state).toBe('backed_up');
     expect(await svc.ensureBackedUp()).toBeNull();
   });
