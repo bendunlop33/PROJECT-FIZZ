@@ -10,6 +10,8 @@ export type ProfileStackParams = {
   Developer: undefined;
   CapabilityProbe: undefined;
   PainFlags: undefined;
+  /** Profile → Coach → Memory (coach-memory §2.1). */
+  Memory: undefined;
   /** Restore from a backup, or Check a backup (data-import-export §2.3–2.4). */
   Restore: { mode: 'restore' | 'check' };
   /** Export, Delete my data, Reset coaching knowledge (data-import-export §2.6, §2.7). */

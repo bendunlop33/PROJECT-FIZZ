@@ -11,7 +11,7 @@
 import { renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
 import type { ActionRecord, BenInput, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine } from '@fizz/schemas';
 
-import type { CoachAvailability, CoachEntry, ProposalCardState, ThreadData } from './coach-service';
+import type { CoachAvailability, CoachEntry, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
 
 export type ViewIcon = 'checkmark.circle.fill' | 'arrow.uturn.backward' | 'minus.circle' | 'exclamationmark.triangle' | 'clock.badge.xmark' | 'xmark.octagon' | 'info.circle' | 'wifi.slash' | 'pause.circle' | 'ellipsis';
 
@@ -90,7 +90,7 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
 // ---------------------------------------------------------------------------
 // Cards (coach-sheet §2.6): status word and icon, never colour alone
 
-export type CardStatusWord = 'Applied' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Out of date' | 'Couldn’t apply' | 'Suggested';
+export type CardStatusWord = 'Applied' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Not saved' | 'Out of date' | 'Couldn’t apply' | 'Suggested';
 
 export interface CardView {
   actionId: string;
@@ -102,6 +102,23 @@ export interface CardView {
   canUndo: boolean;
   /** A structural proposal (ADR 0020 §3): before/after and its own buttons. */
   proposal?: ProposalView;
+  /** A memory suggestion that can still be saved (coach-memory §2.4): `Not now` · `Save`. */
+  memoryChoice?: { memoryId: string; version: number };
+}
+
+/**
+ * A memory suggestion's card (coach-memory §2.4, CM1–CM3): `Save to memory?`
+ * with the words, `Not now` · `Save` while it waits; `Saved` or `Not saved`
+ * after (14 days without an answer also reads `Not saved`).
+ */
+export function memoryCardView(r: ActionRecord, s: MemoryCardState): CardView | null {
+  if (r.detail.kind !== 'suggest_memory' || r.status !== 'proposed') return null;
+  const words = `“${s.memory.text}”`;
+  if (s.memory.status === 'active') return { actionId: r.actionId, status: { word: 'Saved', icon: 'checkmark.circle.fill' }, text: `Saved to memory: ${words}`, accessibilityPrefix: 'Memory.', canUndo: false };
+  if (s.memory.status === 'suggested' && s.canSave) {
+    return { actionId: r.actionId, status: { word: 'Suggested', icon: 'minus.circle' }, text: `Save to memory? ${words}`, accessibilityPrefix: 'Coach suggestion, not saved.', canUndo: false, memoryChoice: { memoryId: s.memory.id, version: s.memory.version } };
+  }
+  return { actionId: r.actionId, status: { word: 'Not saved', icon: 'minus.circle' }, text: words, accessibilityPrefix: 'Coach suggestion, not saved.', canUndo: false };
 }
 
 /**
@@ -290,7 +307,9 @@ export function threadRows(data: ThreadData): ThreadRow[] {
     if (tools.length > 0) rows.push({ kind: 'tools', key: `${turnId}:tools`, lines: tools });
     for (const a of actions) {
       const state = data.proposals?.get(a.actionId);
-      rows.push({ kind: 'card', key: a.actionId, card: (state === undefined ? null : proposalCardView(a, state)) ?? cardView(a) });
+      const memory = data.memories?.get(a.actionId);
+      const special = state !== undefined ? proposalCardView(a, state) : memory !== undefined ? memoryCardView(a, memory) : null;
+      rows.push({ kind: 'card', key: a.actionId, card: special ?? cardView(a) });
     }
     const coach = msgs.find((m) => m.body.role === 'coach');
     if (coach !== undefined && coach.body.role === 'coach') {

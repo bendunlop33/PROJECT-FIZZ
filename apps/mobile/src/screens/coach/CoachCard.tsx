@@ -12,7 +12,17 @@ import { AppText, Icon, TextButton } from '../../ui';
  * saved record, `Why?` (the coach's reason in quotes, the rest from the
  * record) and `Undo`. Never the model's words as a change.
  */
-export function CoachCard({ card, onUndo, onProposal }: { card: CardView; onUndo: (actionId: string) => void; onProposal?: (proposalId: string, tap: 'apply' | 'not_now') => void }) {
+export function CoachCard({
+  card,
+  onUndo,
+  onProposal,
+  onMemory,
+}: {
+  card: CardView;
+  onUndo: (actionId: string) => void;
+  onProposal?: (proposalId: string, tap: 'apply' | 'not_now') => void;
+  onMemory?: (memoryId: string, version: number, decision: 'save' | 'not_now') => void;
+}) {
   const theme = useTheme();
   const services = useServices();
   const [why, setWhy] = useState<WhyView | null>(null);
@@ -87,6 +97,28 @@ export function CoachCard({ card, onUndo, onProposal }: { card: CardView; onUndo
                   setBusy(false);
                 }, 1000);
                 onProposal(p.proposalId, 'apply');
+              }}
+            />
+          </View>
+        ) : null}
+        {card.memoryChoice !== undefined && onMemory !== undefined ? (
+          <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+            <TextButton
+              label="Not now"
+              tone="secondary"
+              onPress={() => {
+                if (card.memoryChoice) onMemory(card.memoryChoice.memoryId, card.memoryChoice.version, 'not_now');
+              }}
+            />
+            <TextButton
+              label="Save"
+              disabled={busy}
+              onPress={() => {
+                setBusy(true);
+                setTimeout(() => {
+                  setBusy(false);
+                }, 1000);
+                if (card.memoryChoice) onMemory(card.memoryChoice.memoryId, card.memoryChoice.version, 'save');
               }}
             />
           </View>

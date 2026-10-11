@@ -248,6 +248,7 @@ export const CoachToolNameSchema = z.enum([
   'propose_next_workout_change',
   'set_pain_flag',
   'save_memory',
+  'suggest_memory',
   'forget_memory',
   'add_playbook_candidate',
 ]);
@@ -269,6 +270,7 @@ export const COACH_TOOL_ARGS = {
   propose_next_workout_change: ProposeNextWorkoutChangeArgsSchema,
   set_pain_flag: SetPainFlagArgsSchema,
   save_memory: SaveMemoryArgsSchema,
+  suggest_memory: SaveMemoryArgsSchema,
   forget_memory: ForgetMemoryArgsSchema,
   add_playbook_candidate: AddPlaybookCandidateArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
@@ -444,6 +446,8 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     area: PainAreaSchema.nullable(),
   }),
   z.object({ kind: z.literal('save_memory'), memoryId: IdSchema, text: z.string().min(1).max(200) }),
+  /** (11 Oct) A memory the coach suggested: `proposed`; Ben's Save or Not now changes the memory, not this record. */
+  z.object({ kind: z.literal('suggest_memory'), memoryId: IdSchema, text: z.string().min(1).max(200) }),
   z.object({ kind: z.literal('forget_memory'), memoryId: IdSchema, text: z.string().min(1).max(200) }),
   z.object({ kind: z.literal('add_playbook_candidate'), candidateId: IdSchema, text: z.string().min(1).max(400) }),
   z.object({
@@ -634,10 +638,19 @@ export const MemorySchema = RecordMetaSchema.extend({
   text: z.string().min(1).max(200),
   /** `appendContentKeys`: a live memory with the same key is the same memory. */
   contentKey: z.string().min(1).max(160),
-  status: z.enum(['active', 'forgotten']),
+  /**
+   * `active`: confirmed, sent to the coach. `forgotten`: tombstone.
+   * (11 Oct, coach tools) `suggested`: the coach suggested it; waits for Ben's
+   * Save and is never sent to the coach (CM1). `not_saved`: Ben tapped Not now.
+   */
+  status: z.enum(['active', 'forgotten', 'suggested', 'not_saved']),
   /** Ben's words that asked for it (quoted data). */
   quote: z.string().min(1).max(400),
   createdByActionId: IdSchema,
+  /** (11 Oct) Where it came from: Ben asked the coach (absent on older rows), the coach suggested it, or Ben added it in Memory. */
+  source: z.enum(['ben_asked', 'coach_suggested', 'ben_added']).optional(),
+  /** (11 Oct) Ben's edits, oldest first: the text before each edit. */
+  edits: z.array(z.object({ before: z.string().min(1).max(200), atUtc: UtcTimestampSchema })).max(20).optional(),
 });
 export type Memory = z.infer<typeof MemorySchema>;
 
@@ -713,6 +726,8 @@ export type CoachWrite =
   /** A record with no other change: a proposal, or a rejected / stale / failed outcome. */
   | { kind: 'record'; action: ActionRecord }
   | { kind: 'save_memory'; action: ActionRecord; memory: Memory }
+  /** (11 Oct) A coach suggestion: a `suggested` memory, refused when the same text is already saved or waiting. */
+  | { kind: 'suggest_memory'; action: ActionRecord; memory: Memory }
   | { kind: 'forget_memory'; action: ActionRecord; memoryId: string; expectedVersion: number; atUtc: string }
   | { kind: 'pain_flags'; action: ActionRecord; flags: readonly PainFlag[] }
   | { kind: 'playbook_candidate'; action: ActionRecord; candidate: PlaybookCandidate }

@@ -62,6 +62,9 @@ export const NEXT_TARGET_SPEC: DocumentSpec<NextSessionTargetRecord> = {
   columns: (r) => ({ owner_id: r.ownerId, source_session_id: r.sourceSessionId, exercise_id: r.exerciseId, action_id: r.actionId, status: r.status }),
 };
 
+/** A Ben write on a memory (Save, Not now, edit). */
+export type MemoryWrite = { status: 'written'; memory: Memory } | { status: 'stale' | 'duplicate'; memory: Memory } | { status: 'missing' };
+
 /** The session an action is about, for `get_recent_actions` and the workout's Undo. */
 function sessionOf(record: ActionRecord): string | null {
   switch (record.detail.kind) {
@@ -74,6 +77,7 @@ function sessionOf(record: ActionRecord): string | null {
       return record.detail.sourceSessionId;
     case 'set_pain_flag':
     case 'save_memory':
+    case 'suggest_memory':
     case 'forget_memory':
     case 'add_playbook_candidate':
     case 'update_routine':
@@ -400,6 +404,15 @@ export class SqliteCoachStore {
         if (!r.ok) throw new Rollback('already_exists');
         return null;
       }
+      case 'suggest_memory': {
+        // CM1/CM2: a suggestion waits for Ben; one already saved or waiting with the same text isn't suggested again.
+        if (write.memory.ownerId !== ownerId) throw new Error('Memory owner differs from the store owner');
+        const live = await tx.getFirst("SELECT id FROM memories WHERE owner_id = ? AND content_key = ? AND status IN ('active', 'suggested')", [ownerId, write.memory.contentKey]);
+        if (live !== null) throw new Rollback('already_exists');
+        const r = await saveDocumentIn(tx, MEMORY_SPEC, write.memory, null);
+        if (!r.ok) throw new Rollback('already_exists');
+        return null;
+      }
       case 'forget_memory': {
         const m = await getDoc(tx, MEMORY_SPEC, write.memoryId);
         if (m === null || m.ownerId !== ownerId) throw new Rollback('missing');
@@ -585,7 +598,9 @@ export class SqliteCoachStore {
         if (d.proposalId === undefined || d.basis === undefined) return 'unsupported';
         return (await basisStartedSince(tx, ownerId, d.basis, target.createdAt.utc)) ? 'changed_since' : 'ok';
       }
-      // Ben's routine change from today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.
+      // A suggestion was never applied (Ben's Not now, or Forget after Save, are the ways back). Ben's routine change from
+      // today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.
+      case 'suggest_memory':
       case 'update_routine':
       case 'undo':
         return 'unsupported';
@@ -760,6 +775,49 @@ export class SqliteCoachStore {
 
   getMemory(id: string): Promise<Memory | null> {
     return this.db.read((q) => getDoc(q, MEMORY_SPEC, id));
+  }
+
+  /**
+   * Ben's Save or Not now on a coach suggestion (coach-memory §2.4, CM2):
+   * versioned (rule 5). Save makes it a confirmed memory, refused when the
+   * same text is already saved; Not now keeps it as `not_saved`.
+   */
+  decideMemory(ownerId: string, req: { memoryId: string; expectedVersion: number; decision: 'save' | 'not_now'; atUtc: string }): Promise<MemoryWrite> {
+    return this.db.write(async (tx): Promise<MemoryWrite> => {
+      const m = await getDoc(tx, MEMORY_SPEC, req.memoryId);
+      if (m === null || m.ownerId !== ownerId) return { status: 'missing' };
+      const target = req.decision === 'save' ? ('active' as const) : ('not_saved' as const);
+      // A double tap: already where it was asked to go.
+      if (m.status === target && m.version === req.expectedVersion + 1) return { status: 'written', memory: m };
+      if (m.version !== req.expectedVersion || m.status !== 'suggested') return { status: 'stale', memory: m };
+      if (target === 'active') {
+        const clash = await tx.getFirst("SELECT id FROM memories WHERE owner_id = ? AND content_key = ? AND status = 'active'", [ownerId, m.contentKey]);
+        if (clash !== null) return { status: 'duplicate', memory: m };
+      }
+      const next: Memory = { ...m, status: target, version: m.version + 1, updatedAtUtc: req.atUtc };
+      await saveDocumentIn(tx, MEMORY_SPEC, next, m.version);
+      return { status: 'written', memory: next };
+    });
+  }
+
+  /**
+   * Ben's edit of a confirmed memory (coach-memory §2.2): new text and key,
+   * the earlier text kept in `edits`. Versioned; refused when another saved
+   * memory already says the same.
+   */
+  editMemory(ownerId: string, req: { memoryId: string; expectedVersion: number; text: string; contentKey: string; atUtc: string }): Promise<MemoryWrite> {
+    return this.db.write(async (tx): Promise<MemoryWrite> => {
+      const m = await getDoc(tx, MEMORY_SPEC, req.memoryId);
+      if (m === null || m.ownerId !== ownerId) return { status: 'missing' };
+      if (m.version === req.expectedVersion + 1 && m.text === req.text) return { status: 'written', memory: m };
+      if (m.version !== req.expectedVersion || m.status !== 'active') return { status: 'stale', memory: m };
+      if (m.text === req.text) return { status: 'written', memory: m };
+      const clash = await tx.getFirst("SELECT id FROM memories WHERE owner_id = ? AND content_key = ? AND status = 'active' AND id != ?", [ownerId, req.contentKey, m.id]);
+      if (clash !== null) return { status: 'duplicate', memory: m };
+      const next: Memory = { ...m, text: req.text, contentKey: req.contentKey, edits: [...(m.edits ?? []), { before: m.text, atUtc: req.atUtc }].slice(-20), version: m.version + 1, updatedAtUtc: req.atUtc };
+      await saveDocumentIn(tx, MEMORY_SPEC, next, m.version);
+      return { status: 'written', memory: next };
+    });
   }
 
   /** Coaching knowledge, read-only in v1; never sent to the coach until approved. */

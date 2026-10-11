@@ -198,6 +198,18 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     description: 'Save a short personal fact Ben asked you to remember. Not for general training rules.',
   },
   {
+    name: 'suggest_memory',
+    effect: 'propose',
+    writes: ['memory'],
+    needs: 'none',
+    structural: false,
+    turnKinds: ['general', 'workout'],
+    plainLabel: 'Suggest something to remember (saved only if you tap Save)',
+    capabilitySection: 'suggest_only',
+    description:
+      'Suggest a short personal fact or preference about Ben worth remembering, when he states one without asking you to remember it. Never a general training rule. Not used until Ben taps Save.',
+  },
+  {
     name: 'forget_memory',
     effect: 'versioned_update',
     writes: ['memory'],

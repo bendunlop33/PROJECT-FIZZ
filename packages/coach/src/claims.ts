@@ -1044,6 +1044,7 @@ function factsOf(record: ActionRecord): RecordFacts {
     case 'propose_next_workout_change':
     case 'update_routine':
     case 'save_memory':
+    case 'suggest_memory':
     case 'forget_memory':
     case 'add_playbook_candidate':
       break;

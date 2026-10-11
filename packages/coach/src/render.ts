@@ -386,6 +386,10 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       if (st === 'proposed') return make(status, `Suggested memory: ${quoteText(d.text)}. Not saved.`, `Suggested memory: ${d.text}. Not saved.`);
       return make(status, "Couldn't save that memory.", "Couldn't save that memory.");
     }
+    case 'suggest_memory': {
+      if (st === 'proposed') return make(status, `Save to memory? ${quoteText(d.text)}`, `Save to memory? ${d.text}.`);
+      return make(status, `Not suggested: ${failureOr(record, 'it was refused')}.`, `Not suggested: ${failureOr(record, 'it was refused')}.`);
+    }
     case 'forget_memory': {
       if (st === 'committed') return make(status, `Forgot: ${quoteText(d.text)}`, `Forgot: ${d.text}.`);
       return make(status, "Couldn't forget that memory.", "Couldn't forget that memory.");

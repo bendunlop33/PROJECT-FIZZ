@@ -251,6 +251,14 @@ export function CoachSheetScreen() {
     changed();
   }
 
+  /** Save or Not now on a memory suggestion (coach-memory §2.4). */
+  async function decideMemory(memoryId: string, version: number, decision: 'save' | 'not_now') {
+    const r = await services.coach.decideMemory(memoryId, version, decision).catch(() => null);
+    setNotice(r === null || r.status === 'missing' ? 'Couldn’t save.' : r.status === 'duplicate' ? 'Already saved.' : r.status === 'stale' ? 'Out of date.' : null);
+    await loadRows(threadId ?? null);
+    changed();
+  }
+
   async function flag(ex: { id: string; name: string }) {
     const r = await services.pain.flagMovement({ exerciseId: ex.id, exerciseName: ex.name, opId: newUuid() });
     setAskPain(false);
@@ -397,7 +405,7 @@ export function CoachSheetScreen() {
           </View>
         ) : null}
         {rows.map((r) => (
-          <Row key={r.key} row={r} undoBlocked={undoBlocked} onUndo={(id) => void undo(id)} onProposal={(id, tap) => void tapProposal(id, tap)} onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)} />
+          <Row key={r.key} row={r} undoBlocked={undoBlocked} onUndo={(id) => void undo(id)} onProposal={(id, tap) => void tapProposal(id, tap)} onMemory={(id, v, d) => void decideMemory(id, v, d)} onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)} />
         ))}
         {live !== null ? <LiveRows live={live} now={now} /> : null}
         {askPain ? (
@@ -496,12 +504,14 @@ function Row({
   undoBlocked,
   onUndo,
   onProposal,
+  onMemory,
   onRetry,
 }: {
   row: ThreadRow;
   undoBlocked: (actionId: string) => boolean;
   onUndo: (actionId: string) => void;
   onProposal: (proposalId: string, tap: 'apply' | 'not_now') => void;
+  onMemory: (memoryId: string, version: number, decision: 'save' | 'not_now') => void;
   onRetry: () => void;
 }) {
   const theme = useTheme();
@@ -531,7 +541,7 @@ function Row({
         </AppText>
       );
     case 'card':
-      return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} />;
+      return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} onMemory={onMemory} />;
     case 'note':
       return (
         <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>

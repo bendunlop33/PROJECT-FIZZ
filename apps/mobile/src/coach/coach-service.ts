@@ -28,6 +28,8 @@ import {
   createTrainingReadExecutors,
   createStructuralExecutors,
   structuralTapRecord,
+  memoryContentKey,
+  newActionRecord,
   type CoachExecutors,
   type StructuralDeps,
   type TrainingReadPort,
@@ -45,7 +47,12 @@ import {
   partRootOf,
   structuralProposalState,
   substitutionOptions,
+  cleanMemoryText,
+  deriveId,
+  memoryCanBeSaved,
+  memoryList,
   type AppliedStructural,
+  type MemoryList,
   type StructuralProposalState,
   type StructuralSlot,
   builtInTargetsView,
@@ -69,11 +76,13 @@ import {
   type CoachTrigger,
   type OfferLogEntry,
 } from '@fizz/domain';
-import type { SqliteRepositories, Store } from '@fizz/persistence';
+import type { MemoryWrite, SqliteRepositories, Store } from '@fizz/persistence';
 
 import { summaryNoteSentences } from './next-time-view';
 import type { TextCoachState } from '@fizz/providers';
 import type {
+  ActionDetail,
+  Memory,
   ActionRecord,
   BenInput,
   DraftBasis,
@@ -131,6 +140,12 @@ export interface ProposalCardState {
   apply: ActionRecord | null;
 }
 
+/** A memory suggestion card's state (coach-memory §2.4): the memory as it is now, and whether Save is still possible. */
+export interface MemoryCardState {
+  memory: Memory;
+  canSave: boolean;
+}
+
 /** A thread as stored, with every action its messages and turns refer to. */
 export interface ThreadData {
   thread: CoachThread;
@@ -140,6 +155,8 @@ export interface ThreadData {
   actionsByTurn: Map<string, ActionRecord[]>;
   /** Structural proposals in this thread: their card state (Apply, Not now, Undo). */
   proposals?: Map<string, ProposalCardState>;
+  /** Memory suggestions in this thread, by action ID. */
+  memories?: Map<string, MemoryCardState>;
 }
 
 const GENERAL_REUSE_MS = 6 * 60 * 60 * 1000;
@@ -215,7 +232,20 @@ export function createCoachService(deps: CoachServiceDeps) {
     }
     const proposalIds = [...actionsByTurn.values()].flat().filter((a) => a.detail.kind === 'propose_next_workout_change' && a.status === 'proposed').map((a) => a.actionId);
     const proposals = proposalIds.length === 0 ? new Map<string, ProposalCardState>() : await proposalStates(proposalIds);
-    return { thread, messages, turns, actionsByTurn, proposals };
+    // Memory suggestions: the card follows the memory (Save, Not now, or 14 days without an answer).
+    const memories = new Map<string, MemoryCardState>();
+    const suggested = [...actionsByTurn.values()].flat().filter((a) => a.detail.kind === 'suggest_memory' && a.status === 'proposed');
+    if (suggested.length > 0) {
+      const all = await coachStore().listMemories(thread.ownerId, 'all');
+      const nowUtc = deps.now().utc;
+      for (const a of suggested) {
+        if (a.detail.kind !== 'suggest_memory') continue;
+        const id = a.detail.memoryId;
+        const m = all.find((x) => x.id === id);
+        if (m !== undefined) memories.set(a.actionId, { memory: m, canSave: memoryCanBeSaved(m, all, nowUtc) });
+      }
+    }
+    return { thread, messages, turns, actionsByTurn, proposals, memories };
   }
 
   /** Each proposal's card state: Ben's Apply or Not now, and whether a workout started from its basis since (or the routine moved on). */
@@ -564,6 +594,59 @@ export function createCoachService(deps: CoachServiceDeps) {
     getAction: (actionId: string): Promise<ActionRecord | null> => coachStore().getAction(actionId),
 
     proposalStates,
+
+    // ---------- Memory (coach-memory §2.1–2.4; Your data, local, no AI) ----------
+
+    /** Waiting suggestions and saved memories. */
+    async memories(): Promise<MemoryList> {
+      const p = await owner();
+      return memoryList(await coachStore().listMemories(p.id, 'all'), deps.now().utc);
+    },
+
+    /** Save or Not now on a suggestion (versioned; a double tap is one write). */
+    async decideMemory(memoryId: string, expectedVersion: number, decision: 'save' | 'not_now'): Promise<MemoryWrite> {
+      const p = await owner();
+      const m = await coachStore().getMemory(memoryId);
+      // 14 days without an answer: it can't be saved any more (CM3).
+      if (decision === 'save' && m !== null && m.status === 'suggested' && !memoryCanBeSaved(m, await coachStore().listMemories(p.id, 'all'), deps.now().utc)) return { status: 'stale', memory: m };
+      return coachStore().decideMemory(p.id, { memoryId, expectedVersion, decision, atUtc: deps.now().utc });
+    },
+
+    /** Edit a saved memory's words; the earlier words are kept with the memory. */
+    async editMemory(memoryId: string, expectedVersion: number, text: string): Promise<MemoryWrite | { status: 'invalid' }> {
+      const p = await owner();
+      const clean = cleanMemoryText(text);
+      if (clean === null) return { status: 'invalid' };
+      return coachStore().editMemory(p.id, { memoryId, expectedVersion, text: clean, contentKey: memoryContentKey(clean), atUtc: deps.now().utc });
+    },
+
+    /** Ben's own new memory (`Add`): saved at once, with Undo (its record is his). The same words twice are one memory. */
+    async addMemory(text: string, opId: string): Promise<{ ok: true; record: ActionRecord; duplicate: boolean } | { ok: false }> {
+      const p = await owner();
+      const clean = cleanMemoryText(text);
+      if (clean === null) return { ok: false };
+      const now = deps.now();
+      const memoryId = deriveId(`ben-memory:${opId}`);
+      const detail: ActionDetail = { kind: 'save_memory', memoryId, text: clean };
+      const record = { ...newActionRecord({ turnId: '', opId, now }, detail, { author: 'ben', entityVersions: [{ entity: 'memory', id: memoryId, before: null, after: 1 }] }), turnId: null };
+      const memory: Memory = { id: memoryId, ownerId: p.id, version: 1, createdAtUtc: now.utc, updatedAtUtc: now.utc, text: clean, contentKey: memoryContentKey(clean), status: 'active', quote: clean, createdByActionId: record.actionId, source: 'ben_added' };
+      const r = await coachStore().commit(p.id, { kind: 'save_memory', action: record, memory });
+      if (r.status === 'conflict') return { ok: false };
+      return { ok: true, record: r.action, duplicate: r.status === 'replayed' };
+    },
+
+    /** Forget a saved memory (a tombstone). Undo through `undo` on the returned record. */
+    async forgetMemory(memoryId: string, expectedVersion: number, opId: string): Promise<{ ok: true; record: ActionRecord } | { ok: false; stale: boolean }> {
+      const p = await owner();
+      const m = await coachStore().getMemory(memoryId);
+      if (m === null || m.ownerId !== p.id) return { ok: false, stale: false };
+      const now = deps.now();
+      const detail: ActionDetail = { kind: 'forget_memory', memoryId, text: m.text };
+      const record = { ...newActionRecord({ turnId: '', opId, now }, detail, { author: 'ben', entityVersions: [{ entity: 'memory', id: memoryId, before: expectedVersion, after: expectedVersion + 1 }] }), turnId: null };
+      const r = await coachStore().commit(p.id, { kind: 'forget_memory', action: record, memoryId, expectedVersion, atUtc: now.utc });
+      if (r.status === 'conflict') return { ok: false, stale: r.reason === 'stale_version' };
+      return { ok: true, record: r.action };
+    },
 
     /**
      * Apply or Not now on a structural proposal card (ADR 0020 §3). Checked

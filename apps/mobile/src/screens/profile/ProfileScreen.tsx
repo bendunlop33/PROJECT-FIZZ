@@ -109,6 +109,13 @@ export function ProfileScreen() {
             navigation.navigate('CoachConnection');
           }}
         />
+        <Row
+          title="Memory"
+          icon="brain"
+          onPress={() => {
+            navigation.navigate('Memory');
+          }}
+        />
       </Group>
 
       <SectionHeader title="App" />

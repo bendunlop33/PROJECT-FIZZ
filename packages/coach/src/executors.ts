@@ -181,6 +181,29 @@ export function createStoreExecutors(deps: { store: CoachWriteStore; exercises: 
       );
     },
 
+    suggest_memory: async (call, ctx) => {
+      if (call.tool !== 'suggest_memory') throw new TypeError(call.tool);
+      // A suggestion only (CM2): a `suggested` memory that the coach never sees until Ben taps Save (CM1).
+      const memoryId = deriveId(`coach-memory:${ctx.opId}`);
+      const memory: Memory = {
+        id: memoryId,
+        ownerId: ctx.ownerId,
+        version: 1,
+        createdAtUtc: ctx.now.utc,
+        updatedAtUtc: ctx.now.utc,
+        text: call.args.text,
+        contentKey: appendContentKeys(call)[0] ?? `memory:${memoryId}`,
+        status: 'suggested',
+        quote: call.args.quote,
+        createdByActionId: actionIdFor(ctx.opId),
+        source: 'coach_suggested',
+      };
+      const detail: ActionDetail = { kind: 'suggest_memory', memoryId, text: call.args.text };
+      return commitOr(store, ctx.ownerId, { kind: 'suggest_memory', action: newActionRecord(ctx, detail, { status: 'proposed' }), memory }, () =>
+        newActionRecord({ ...ctx, opId: `${ctx.opId}:refused` }, detail, { status: 'rejected', failure: 'it is already saved or waiting' }),
+      );
+    },
+
     forget_memory: async (call, ctx) => {
       if (call.tool !== 'forget_memory') throw new TypeError(call.tool);
       const m = await store.getMemory(call.args.memoryId);
@@ -333,6 +356,8 @@ function undoWhat(target: ActionRecord): string {
   switch (d.kind) {
     case 'save_memory':
       return `the memory “${d.text}”`;
+    case 'suggest_memory':
+      return `the suggestion “${d.text}”`;
     case 'forget_memory':
       return `forgetting “${d.text}”`;
     case 'set_pain_flag':

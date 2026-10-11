@@ -56,6 +56,7 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'set_pain_flag':
       return { exerciseIds: [...new Set(call.args.exerciseIds)].sort(), area: call.args.area };
     case 'save_memory':
+    case 'suggest_memory':
       return { text: normaliseContentText(call.args.text) };
     case 'add_playbook_candidate':
       return { text: normaliseContentText(call.args.text), statedBy: call.args.statedBy };
@@ -79,12 +80,18 @@ export function semanticArgs(call: CoachToolCall): unknown {
  * memory text, the same playbook candidate text. Other tools return [] (they
  * are protected by their base version instead).
  */
+/** The content key of a memory's text: the same words (case, spacing, punctuation aside) are the same memory. */
+export function memoryContentKey(text: string): string {
+  return `memory:${deriveId(normaliseContentText(text))}`;
+}
+
 export function appendContentKeys(call: CoachToolCall): string[] {
   switch (call.tool) {
     case 'set_pain_flag':
       return [...new Set(call.args.exerciseIds)].sort().map((id) => `pain_flag:${id}`);
     case 'save_memory':
-      return [`memory:${deriveId(normaliseContentText(call.args.text))}`];
+    case 'suggest_memory':
+      return [memoryContentKey(call.args.text)];
     case 'add_playbook_candidate':
       return [`playbook_candidate:${deriveId(normaliseContentText(call.args.text))}`];
     case 'forget_memory':
