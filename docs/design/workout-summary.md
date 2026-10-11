@@ -65,7 +65,7 @@ Regions, top to bottom:
    - **Coach offline, not connected or failed:** the built-in rule's target with the tag `Rule`, and the rule's own explanation.
    - **Coach still working:** the built-in rule's target tagged `Built-in rule` and the line `Coach is reviewing…`. When the coach's answer is saved, each row updates in place.
 6b. **Suggested change to Push A (rare; 9 Oct, D21).** Only when Ben asked for variety, or `getStructuralChangeSignals` reports that something changed: goal, schedule, equipment or pain (coach-adjustments CA9). At most one `ChangeReviewCard` (author `Coach`): `Because: …` (app text from the signal), scope `Push A from now on`, change lines (`Cable fly → Pec deck`), the coach's reason, `Why? ›`, [Not now] [Apply]. Never shown without a request or signal.
-7. **Coach note (optional, loads later).** One observation. It comes from the same single coach call as the targets. Its sentences pass the claim check ([coach-contract.md](coach-contract.md) CC3): a sentence that claims a change that wasn't saved is hidden, with `ⓘ Only the changes shown under Next time were made. One line said otherwise and is hidden.`
+7. **Coach note (optional, loads later).** One observation. It comes from the same single coach call as the targets. Its sentences pass the claim check ([coach-contract.md](coach-contract.md) CC3): a sentence that claims a change that wasn't saved is hidden, with `ⓘ Only the changes shown were made · 1 line hidden`
 8. **Footer bar (fixed).** [Edit workout] (secondary) and [Done] (primary). `Share / export` sits in the overflow `⋯` in the title row.
 
 ```
@@ -193,7 +193,7 @@ Built-in rule text comes from `calculateNextTargets`. Coach targets, % changes a
 | Coach: agrees | Coach target equals the built-in rule target | `Coach agrees: 100 kg × 6–8`. No buttons |
 | Coach: no target for an exercise | The coach answered but gave no target for it, or its target was dropped by the checks | Built-in target tagged `Built-in rule` + `No coach target for this one.` `Why?` names any dropped target and its reason (e.g. `Not used: an extra set you didn't ask for.`) |
 | Coach: bigger change (CA8) | The coach's target is more than one load step, ±2 reps or ±1 set, or a stall reset or deload | Not saved. Built-in target in use (`Built-in rule`), with the `CoachTargetProposal` below: `More than a small change: tap Apply to use it.` + before/after, reason, [Not now] [Apply]. Apply / Not now / Undo / Out of date / Expired follow change-review.md (CR7, CR8) |
-| Coach: guard applied | `validateCoachProposal` snapped or capped the coach's load | Guard note under the reason, e.g. `Rounded to 97.5 kg: nearest your bar and plates allow.` / `Capped at 30 kg each: the most Main Gym's rack goes to.` The saved target is the guarded one |
+| Coach: guard applied | `validateCoachProposal` snapped or capped the coach's load | Guard note under the reason, e.g. `Rounded to 97.5 kg` / `Max here 30 kg each` The saved target is the guarded one |
 | Coach: pain-blocked | The coach gave an increase on a pain-flagged movement | `Not increasing: you flagged shoulder pain. Same target: 50 kg × 6–8`. Nothing saved for that exercise, no Undo. The built-in rule also holds (`halted_pain`) |
 | Coach: failed | Error or quota | Note: `Couldn't get a coach note (limit reached).` [Try again]. Rows tagged `Rule`. It never falls back to a paid route. A successful `Try again` saves the coach's small changes as above |
 | Coach target undone | `Undo` on a row | That exercise only: the built-in rule's target is in use, tagged `Built-in rule`, with `You undid the coach's target.` and `Use coach target: 97.5 kg × 6–8`. Other rows keep their coach targets |
@@ -203,7 +203,7 @@ Built-in rule text comes from `calculateNextTargets`. Coach targets, % changes a
 | Next session started | This routine's next session started | Rows lose Undo and read `Used in Push A, 10 Oct.` In that workout, the set card's `Why?` → `Use built-in rule` (active-workout AW4) changes that day's sets |
 | Structural suggestion (region 6b) | Ben asked for variety, or a signal exists (CA9), and the coach proposed a structural change | One `ChangeReviewCard`: `Because: …`, scope `Push A from now on`, change lines, reason, [Not now] [Apply]. Applied: `✓ Applied to Push A from now on` [Undo]. Out of date or expired as change-review.md (CR8: expires when Push A next starts) |
 | Structural, no request or signal | The coach returned a structural change anyway | Not shown. `Why?` → `Not used: changing exercises wasn't asked for.` (coach-contract CC10) |
-| Hidden coach line | A note or reason sentence claims a change that wasn't saved | The sentence is hidden; `ⓘ Only the changes shown under Next time were made. One line said otherwise and is hidden.` (coach-contract CC3) |
+| Hidden coach line | A note or reason sentence claims a change that wasn't saved | The sentence is hidden; `ⓘ Only the changes shown were made · 1 line hidden` (coach-contract CC3) |
 | Built-in step over 10% (review fixes) | 7-F's next achievable load is more than ~10% heavier (e.g. 10 → 12 kg dumbbells, +20%) | `Same load, one more rep: 10 kg each × 13` (a **target**) + `Next dumbbell is 12 kg, +20%: adding reps first.` No added set. At the rep cap: `Holding at 10 kg each × 15. Next step is +20%. Microplates or the coach can help.` |
 | Check-in answered (2026-10-09) | `session.checkIn.kind = 'answered'` | Region 2a `CheckInLine` with score, reasons and note exactly as given |
 | Check-in skipped / not asked | `skipped` or `not_asked` | No check-in line; nothing says it was skipped |
@@ -278,7 +278,7 @@ Undo:
 | Based on edited sets (9 Oct) | `Based on set values you've since edited.` [Use built-in rule: 100 kg × 6–8] [Ask the coach again] |
 | Used (9 Oct) | `Used in Push A, 10 Oct.` |
 | Structural card (9 Oct, region 6b) | `Suggested change to Push A` · `Because:` + one of `you asked for more variety on 8 Oct.` · `you flagged pain on Overhead press.` · `your goal changed to Muscle on 9 Oct.` · `you now lift 3 days a week (was 4).` · `Main Gym's equipment changed on 9 Oct.` · `you switched to Hotel · Lisbon in this workout.` · scope `Push A from now on` · `Not now` · `Apply` · applied `✓ Applied to Push A from now on` [Undo] |
-| Hidden coach line (9 Oct) | `Only the changes shown under Next time were made. One line said otherwise and is hidden.` |
+| Hidden coach line (9 Oct) | `Only the changes shown were made · 1 line hidden` |
 | Coach agrees | `Coach agrees: 100 kg × 6–8` (a **target**) |
 | Coach reviewing | `Coach is reviewing…` · VoiceOver on arrival `Coach set 2 targets for next Push A.` |
 | Pain-blocked | `Not increasing: you flagged shoulder pain. Same target: 50 kg × 6–8` |
@@ -337,7 +337,7 @@ The summary makes **no personal-best claims** unless the domain confirms that th
 15. An exercise whose equipment can make no load shows `No load target` with `Fix the equipment profile.` and [Update gym] under `Next time`, never "bodyweight".
 16. With airplane mode on, every `Next time` row is tagged `Rule` and shows the rule's explanation; no row says `Coach` and no coach text appears.
 17. (Revised 9 Oct, D21) With the coach connected, finishing makes exactly **one** coach call (note + targets). Its small changes are saved with no tap, and the next Push A plans them (the set card's `Why?` row `Set by` reads `Coach · after Push A, 8 Oct`, active-workout §2.12). Exercises with no coach target use the built-in rule's, tagged `Built-in rule`. The playbook screen reads 7-F `In use: when there's no coach target`, never "not in use".
-18. A coach proposal of 98 kg on a 2.5 kg-step barbell shows 97.5 kg with `Rounded to 97.5 kg: nearest your bar and plates allow.`; a proposal above a rack maximum shows the capped value and `Capped at …`.
+18. A coach proposal of 98 kg on a 2.5 kg-step barbell shows 97.5 kg with `Rounded to 97.5 kg`; a proposal above a rack maximum shows the capped value and `Capped at …`.
 19. With a pain flag active, a coach increase for that movement shows `Not increasing: you flagged … pain.` with no Apply or Undo, and nothing is saved for it.
 20. (Revised 9 Oct, D21) `Undo` on the Bench press row → that row shows the built-in rule's target with `Use coach target`, the other coach rows are unchanged, and the next Push A plans the built-in rule's bench target. `Use coach target` puts the coach's back. `Undo all` reverts every coach row in one transaction, and its toast's Undo restores them.
 21. (Revised 9 Oct) Correcting a set in Edit workout after coach targets were saved adds `Based on set values you've since edited.` to the affected rows; the saved targets don't change and no coach call is made until Ben taps `Ask the coach again`. A bigger-change proposal becomes `Out of date` (Apply hidden).

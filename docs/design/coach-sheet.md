@@ -299,8 +299,8 @@ Pushed inside the sheet (moves to large detent).
 | Timed out | `ⓘ The coach didn't answer in time. Nothing changed.` [Try again] | Enabled | `Try again` resends Ben's same message as a new turn on current state |
 | Stream cut off | Partial text + `ⓘ The reply was cut off. Anything applied is shown above.` [Try again] | Enabled | Never pads the text |
 | Not connected | `StatusBanner`: `Coach not connected. Logging, targets and rest timers work without it.` [Connect] | Disabled; field still editable | Starter chips hidden except `Pain`. `Connect` opens ai-connection.md §2.1 |
-| Offline | `StatusBanner`: `No connection. The coach needs the internet. Your workout is saved on this phone.` | Disabled, text kept (CS4) | Banner clears by itself when the network returns |
-| Limit reached (ChatGPT plan) | `StatusBanner` warning: `ChatGPT usage limit reached. The coach is paused.` [Manage usage] + second line `Logging and built-in targets still work.` If an API key is set up: link `Switch coach to your API key (paid) ›` | Disabled | Never switches by itself (rule 7). No guessed reset time |
+| Offline | `StatusBanner`: `No connection. The coach needs the internet.` | Disabled, text kept (CS4) | Banner clears by itself when the network returns |
+| Limit reached (ChatGPT plan) | `StatusBanner` warning: `ChatGPT usage limit reached. The coach is paused.` [Manage usage] If an API key is set up: link `Switch coach to your API key (paid) ›` | Disabled | Never switches by itself (rule 7). No guessed reset time |
 | Paused at app spend cap (API key) | `Paused: you've reached your $5.00 cap for October.` [Change cap] | Disabled | ai-connection.md §3.2 |
 | Sign-in expired / revoked | `ChatGPT disconnected. Sign in again to use the coach.` [Sign in] | Disabled | Old threads stay readable |
 | Not eligible | `This ChatGPT account can't be used by other apps.` [Options] | Disabled | ai-connection.md §3.1 |
@@ -456,8 +456,8 @@ See voice.md §4. In the sheet: "send" isn't needed (spoken turns send themselve
 | Error | `Couldn't reach the coach. Nothing changed.` [Try again] |
 | Interrupted | `Coach request was interrupted. Anything applied is shown above.` [Try again] |
 | Not connected | `Coach not connected. Logging, targets and rest timers work without it.` [Connect] |
-| Offline | `No connection. The coach needs the internet. Your workout is saved on this phone.` |
-| Limit | `ChatGPT usage limit reached. The coach is paused.` · `Logging and built-in targets still work.` [Manage usage] · `Switch coach to your API key (paid) ›` |
+| Offline | `No connection. The coach needs the internet.` |
+| Limit | `ChatGPT usage limit reached. The coach is paused.` [Manage usage] · `Switch coach to your API key (paid) ›` |
 | Cap reached | `Paused: you've reached your $5.00 cap for October.` [Change cap] |
 | Expired | `ChatGPT disconnected. Sign in again to use the coach.` [Sign in] |
 | Model gone | `The model you chose isn't available any more.` [Choose model] |

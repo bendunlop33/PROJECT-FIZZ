@@ -65,19 +65,19 @@ describe('renderActionResult (coach-contract §5.1)', () => {
     expect(nb(renderActionResult(r, 'summary').text)).toBe(
       'Next Push A: Bench press 97.5 kg × 6–8 (target). Suggested for next Push A: Overhead press 40 kg × 6–8 (target). Not applied.',
     );
-    expect(renderActionResult(record(r.detail, { status: 'failed' }), 'summary').text).toBe("Couldn't set next targets. The built-in rule's are used.");
+    expect(renderActionResult(record(r.detail, { status: 'failed' }), 'summary').text).toBe("Couldn't set next targets.");
   });
 
   it('proposals, pain flags, memories, playbook, undo', () => {
     const swap = record({ kind: 'propose_next_workout_change', sourceSessionId: id(1), workoutLabel: 'Push A', changes: [{ change: 'swap', text: 'Cable fly → Pec deck' }], because: 'you asked for some variety.' }, { status: 'proposed' });
     expect(renderActionResult(swap, 'sheet').text).toBe('Suggested for your next Push A: Cable fly → Pec deck. Not applied.');
     expect(renderActionResult(record({ kind: 'set_pain_flag', flagIds: [id(50)], exerciseNames: ['Overhead press'], area: 'shoulder' }), 'sheet').text).toBe(
-      'Pain flag on for Overhead press. No increases until you clear it.',
+      'Pain flag on: Overhead press · no increases',
     );
     expect(renderActionResult(record({ kind: 'save_memory', memoryId: id(60), text: 'Trains before work' }), 'sheet').text).toBe('Saved to memory: “Trains before work”.');
-    expect(renderActionResult(record({ kind: 'forget_memory', memoryId: id(60), text: "Doesn't like lunges" }), 'sheet').text).toBe('Forgot: “Doesn\'t like lunges”. Undo is on the card.');
+    expect(renderActionResult(record({ kind: 'forget_memory', memoryId: id(60), text: "Doesn't like lunges" }), 'sheet').text).toBe('Forgot: “Doesn\'t like lunges”');
     expect(renderActionResult(record({ kind: 'add_playbook_candidate', candidateId: id(70), text: 'Deload every 6 weeks' }), 'sheet').text).toBe(
-      'Added to your playbook to review: “Deload every 6 weeks”. Not in use until you approve it.',
+      'Playbook, to review: “Deload every 6 weeks”',
     );
     const undo = record({
       kind: 'undo',

@@ -212,7 +212,7 @@ describe('next-session targets (C8, D21): small saved by default, bigger propose
       request({ kind: 'summary', input: { kind: 'summary' }, context: { session: source, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }),
       ports(s, new ScriptedCoachModel([[call('set_next_session_targets', nextArgs(7)), { type: 'completed' }], reply('Ok.')]), summaryExecutors(s, source)),
     );
-    expect(r.cards.map((c) => [c.record.status, c.rendered.text])).toEqual([['stale', "Couldn't set next targets. The built-in rule's are used."]]);
+    expect(r.cards.map((c) => [c.record.status, c.rendered.text])).toEqual([['stale', "Couldn't set next targets."]]);
     expect(await s.repos.coach.listNextTargets(OWNER, SESSION)).toEqual([]);
   });
 

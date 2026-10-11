@@ -47,11 +47,9 @@ export interface ReplyFilter {
   note(): ClaimNote | null;
 }
 
-const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
-
+/** `1 line hidden`, `2 lines hidden` (minimal copy W15). */
 function linesSaid(n: number): string {
-  const count = COUNT_WORDS[n] ?? String(n);
-  return n === 1 ? `${count} line said otherwise and is hidden.` : `${count} lines said otherwise and are hidden.`;
+  return `${String(n)} ${n === 1 ? 'line' : 'lines'} hidden`;
 }
 
 /** Does this turn have a saved change that still stands? */
@@ -62,8 +60,8 @@ function liveThisTurn(ledger: TurnLedger) {
 export function claimNoteFor(ledger: TurnLedger, hiddenCount: number, surface: RenderSurface): ClaimNote | null {
   if (hiddenCount === 0) return null;
   const live = liveThisTurn(ledger);
-  if (live.length === 0) return { text: `Nothing was changed. ${linesSaid(hiddenCount)}`, spoken: 'Nothing was changed.' };
-  if (surface === 'summary') return { text: `Only the changes shown under Next time were made. ${linesSaid(hiddenCount)}`, spoken: null };
+  if (live.length === 0) return { text: `Nothing changed · ${linesSaid(hiddenCount)}`, spoken: 'Nothing changed.' };
+  if (surface === 'summary') return { text: `Only the changes shown were made · ${linesSaid(hiddenCount)}`, spoken: null };
   if (surface === 'slot') {
     const numbers = live.flatMap((e) => (e.record.detail.kind === 'adjust_pending_sets' ? e.record.detail.exercises.flatMap((x) => x.changes.map((c) => c.setNumber)) : []));
     if (numbers.length > 0) {
@@ -71,7 +69,7 @@ export function claimNoteFor(ledger: TurnLedger, hiddenCount: number, surface: R
       return { text: `Only ${which} ${numbers.length === 1 ? 'was' : 'were'} changed.`, spoken: null };
     }
   }
-  return { text: `Only the changes shown here were made. ${linesSaid(hiddenCount)}`, spoken: null };
+  return { text: `Only the changes shown were made · ${linesSaid(hiddenCount)}`, spoken: null };
 }
 
 /**

@@ -47,7 +47,8 @@ describe('status (minimal copy: a word or two, the rest behind Why?)', () => {
     expect(v.word).toBe(word);
     expect(v.canSend).toBe(canSend);
     if (word !== null) expect(word.split(' ').length).toBeLessThanOrEqual(2);
-    if (status !== 'ok') expect(v.why).not.toBeNull();
+    // Not connected: the `Connect` action is enough (minimal-copy W1).
+    if (status !== 'ok' && status !== 'not_connected') expect(v.why).not.toBeNull();
   });
 
   it('the route line always names the route; never a paid route', () => {
@@ -118,7 +119,8 @@ describe('the workout coach slot (one item: pending > banner > outcome > offer)'
   it('priority', () => {
     expect(slotView({ pending: true, adjustment: adjust, outcome: null, offer })).toMatchObject({ kind: 'pending' });
     const banner = slotView({ pending: false, adjustment: adjust, outcome: { text: 'x', retry: false }, offer });
-    expect(banner).toMatchObject({ kind: 'banner', canUndo: true, notes: ['Rounded to 97.5 kg: nearest your bar and plates allow.'] });
+    // W13: guard notes are Why? checks; only a pain block shows on the banner.
+    expect(banner).toMatchObject({ kind: 'banner', canUndo: true, notes: [] });
     expect(nb(banner?.kind === 'banner' ? banner.title : '')).toBe('Coach adjusted sets 3–4');
     expect(nb(banner?.kind === 'banner' ? banner.detail : '')).toBe('100 → 97.5 kg × 6–8');
     expect(slotView({ pending: false, adjustment: null, outcome: { text: 'Your workout moved on. Nothing changed.', retry: true }, offer })).toMatchObject({ kind: 'outcome', retry: true });

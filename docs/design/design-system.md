@@ -336,7 +336,7 @@ Rules:
 | `timing.coachTimeout` | 20 s. A coach adjustment request, a coach-sheet turn or a voice question with no first answer (first chunk, tool call or result) by then shows `The coach didn't answer in time. Nothing changed.` Replaces coach-sheet's `timing.coachFirstToken` |
 | `timing.coachStreamStall` | 20 s without a new chunk in the middle of a coach reply → `The reply was cut off. Anything applied is shown above.` (coach-sheet.md §3) |
 | `timing.coachBuildTimeout` | 60 s. A workout-builder request with no answer by then shows `The coach didn't answer in time. Nothing was built.` |
-| `timing.signInTimeout` | 5 min. ChatGPT sign-in listener and browser sheet close; `Sign-in took too long. Nothing was connected.` (ai-connection.md §2.3) |
+| `timing.signInTimeout` | 5 min. ChatGPT sign-in listener and browser sheet close; `Sign-in took too long.` (ai-connection.md §2.3) |
 | `timing.placeholderDelay` | 300 ms. A local read that takes longer than this shows static grey placeholder rows (never shimmer). Under it, nothing extra shows |
 | `timing.coverDelay` | 1 s. A start-up or data operation shorter than this shows no `BlockingCover` (system-states.md §3.6) |
 | `timing.staleWorkout` | 6 h since the last activity. Under it a cold launch opens the workout (P6) and the `ResumeBar` shows; at or over it, Today shows the stale-workout card |

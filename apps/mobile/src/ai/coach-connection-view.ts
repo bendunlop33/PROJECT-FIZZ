@@ -54,8 +54,6 @@ export function showFirstUseNotice(outcome: Extract<ConnectOutcome, { kind: 'con
   return coachChatInBuild && outcome.firstUse && outcome.models.length > 0;
 }
 
-const NOT_CONNECTED_BODY = 'Logging, targets, rest timers and built-in progression work without the coach.';
-
 /**
  * The status screen (§2.1 / §2.6 and the §3.1 rows). `signInUnavailable` is
  * the reason when this build has no loopback module.
@@ -70,14 +68,14 @@ export function connectionStatusView(state: TextCoachState, signInUnavailable: s
       if (signInUnavailable !== null) {
         return {
           ...base,
-          card: { icon: 'slash.circle', tone: 'info', title: 'ChatGPT sign-in isn’t in this build', lines: [signInUnavailable, NOT_CONNECTED_BODY] },
+          card: { icon: 'slash.circle', tone: 'info', title: 'ChatGPT sign-in isn’t in this build', lines: [signInUnavailable] },
           primary: null,
           showDisconnect: false,
         };
       }
       return {
         ...base,
-        card: { icon: 'xmark.circle', tone: 'info', title: 'Not connected', lines: [NOT_CONNECTED_BODY] },
+        card: { icon: 'xmark.circle', tone: 'info', title: 'Not connected', lines: [] },
         pitch: 'Your ChatGPT Plus or Pro plan can run the coach’s text replies. Voice isn’t included.',
         primary: { label: 'Continue with ChatGPT', action: 'open_explainer' },
         showDisconnect: false,
@@ -101,14 +99,14 @@ export function connectionStatusView(state: TextCoachState, signInUnavailable: s
     case 'model_gone':
       return {
         ...base,
-        card: { icon: 'exclamationmark.triangle', tone: 'warning', title: `${modelName ?? 'The model you chose'} isn’t available any more.`, lines: [...signedIn, 'The coach is paused until you choose a model.'] },
+        card: { icon: 'exclamationmark.triangle', tone: 'warning', title: `${modelName ?? 'The model you chose'} isn’t available any more.`, lines: [...signedIn] },
         primary: { label: 'Choose model', action: 'choose_model' },
         links: [manage],
       };
     case 'limit':
       return {
         ...base,
-        card: { icon: 'exclamationmark.triangle', tone: 'warning', title: 'ChatGPT usage limit reached', lines: ['The coach is paused. Logging and built-in targets still work.'] },
+        card: { icon: 'exclamationmark.triangle', tone: 'warning', title: 'ChatGPT usage limit reached', lines: ['Coach paused'] },
         primary: manage,
         // Ben's tap lifts the pause; nothing retries by itself and no reset time is guessed.
         links: [{ label: 'Check again', action: 'check_again' }],
@@ -167,7 +165,7 @@ export interface CheckingLine {
 }
 
 /** §2.4: done steps ticked, the running one marked, later ones open. No percentage. */
-export function checkingView(phase: Extract<ConnectPhase, { kind: 'checking' }>): { title: string; lines: CheckingLine[]; footnote: string } {
+export function checkingView(phase: Extract<ConnectPhase, { kind: 'checking' }>): { title: string; lines: CheckingLine[]; footnote: string | null } {
   const order = ['signed_in', 'access', 'models'] as const;
   const at = order.indexOf(phase.step);
   const texts = [phase.email === null ? 'Signed in' : `Signed in as ${phase.email}`, 'Checking coach access', 'Finding available models'];
@@ -177,7 +175,7 @@ export function checkingView(phase: Extract<ConnectPhase, { kind: 'checking' }>)
     if (i === at) return { icon: 'ellipsis', tone: 'progress', text };
     return { icon: 'circle', tone: 'info', text };
   });
-  return { title: 'Connecting ChatGPT', lines, footnote: 'Nothing is used from your plan yet.' };
+  return { title: 'Connecting ChatGPT', lines, footnote: null };
 }
 
 export interface ModelChoiceRow {
@@ -220,9 +218,9 @@ export function connectNotice(outcome: ConnectOutcome, failuresInARow: number): 
         ? null
         : { icon: 'exclamationmark.triangle', tone: 'warning', text: 'Connected, but the model list didn’t load.', detail: describeFailure(outcome.modelsFailure), retry: false };
     case 'cancelled':
-      return { icon: 'info.circle', tone: 'info', text: 'Sign-in cancelled. Nothing was connected.', detail: null, retry: false };
+      return { icon: 'info.circle', tone: 'info', text: 'Sign-in cancelled.', detail: null, retry: false };
     case 'timed_out':
-      return { icon: 'exclamationmark.triangle', tone: 'warning', text: 'Sign-in took too long. Nothing was connected.', detail: null, retry: true };
+      return { icon: 'exclamationmark.triangle', tone: 'warning', text: 'Sign-in took too long.', detail: null, retry: true };
     case 'didnt_return':
       return {
         icon: 'exclamationmark.triangle',
@@ -232,12 +230,12 @@ export function connectNotice(outcome: ConnectOutcome, failuresInARow: number): 
         retry: true,
       };
     case 'no_scope':
-      return { icon: 'exclamationmark.triangle', tone: 'warning', text: 'Signed in, but ChatGPT didn’t allow coach replies for this app.', detail: 'Nothing was stored.', retry: true };
+      return { icon: 'exclamationmark.triangle', tone: 'warning', text: 'Signed in, but ChatGPT didn’t allow coach replies for this app.', detail: null, retry: true };
     case 'different_account':
       return {
         icon: 'exclamationmark.triangle',
         tone: 'warning',
-        text: 'That’s a different ChatGPT account from the one this iPhone uses. Nothing was changed.',
+        text: 'That’s a different ChatGPT account from the one this iPhone uses.',
         detail: 'Sign in with the same account, or disconnect first.',
         retry: true,
       };
@@ -245,7 +243,7 @@ export function connectNotice(outcome: ConnectOutcome, failuresInARow: number): 
       return { icon: 'slash.circle', tone: 'info', text: 'ChatGPT sign-in isn’t in this build.', detail: outcome.reason, retry: false };
     case 'failed':
       // not_eligible / region show as the status card; other failures say what happened.
-      return { icon: 'exclamationmark.triangle', tone: 'warning', text: 'Couldn’t connect ChatGPT. Nothing was connected.', detail: describeFailure(outcome.failure), retry: outcome.failure.kind !== 'not_eligible' };
+      return { icon: 'exclamationmark.triangle', tone: 'warning', text: 'Couldn’t connect ChatGPT.', detail: describeFailure(outcome.failure), retry: outcome.failure.kind !== 'not_eligible' };
   }
 }
 

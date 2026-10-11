@@ -216,11 +216,11 @@ describe('validateTodayAdjustment: snapping and caps (rule 4)', () => {
     const ask = [adj(exId(1), { sets: [{ setId: setId(1, 2), target: { load: kg(96), reps: null } }] })];
     const hard = applied(validateTodayAdjustment(input(ask, { intent: 'too_hard' })));
     expect(hard.exercises[0]?.changes[0]?.after?.load).toEqual(kg(95));
-    expect(hard.guardNotes.map((n) => n.text)).toContain('Rounded to 95\u00a0kg: nearest your bar and plates allow.');
+    expect(hard.guardNotes.map((n) => n.text)).toContain('Rounded to 95\u00a0kg');
 
     const easy = applied(validateTodayAdjustment(input(ask, { intent: 'too_easy' })));
     expect(easy.exercises[0]?.changes[0]?.after?.load).toEqual(kg(97.5));
-    expect(easy.guardNotes[0]?.text).toBe('Rounded to 97.5\u00a0kg: nearest your bar and plates allow.');
+    expect(easy.guardNotes[0]?.text).toBe('Rounded to 97.5\u00a0kg');
   });
 
   it('every stored load is achievable on the snapshot equipment', () => {
@@ -238,7 +238,7 @@ describe('validateTodayAdjustment: snapping and caps (rule 4)', () => {
       ),
     );
     expect(r.exercises[0]?.changes[0]?.after?.load).toEqual(kg(30, 'per_hand'));
-    expect(r.guardNotes[0]).toMatchObject({ kind: 'capped', text: "Capped at 30\u00a0kg\u00a0each: the most Main Gym's rack goes to." });
+    expect(r.guardNotes[0]).toMatchObject({ kind: 'capped', text: 'Max here 30\u00a0kg\u00a0each' });
   });
 
   it('never extrapolates past a machine max, whatever the policy', () => {

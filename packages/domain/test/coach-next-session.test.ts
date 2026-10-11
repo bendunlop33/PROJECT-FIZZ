@@ -58,7 +58,7 @@ describe('validateNextSessionTargets (rule 4 snap and cap, rule 9 pain, D21)', (
     const r = validateNextSessionTargets({ source, bases, targets: [ask(BENCH.exerciseId, t(98, 6, 8))], painFlags: [], gymName: 'Main Gym', ctx });
     expect(r.rows).toHaveLength(1);
     expect(r.rows[0]).toMatchObject({ after: t(97.5, 6, 8), builtIn: t(102.5, 6, 8), size: 'small', pctChange: -2.5, sets: null });
-    expect(r.rows[0]?.guardNotes[0]?.text.replace(/\u00a0/g, ' ')).toBe('Rounded to 97.5 kg: nearest your bar and plates allow.');
+    expect(r.rows[0]?.guardNotes[0]?.text.replace(/\u00a0/g, ' ')).toBe('Rounded to 97.5 kg');
   });
 
   it('per-hand dumbbells are capped at the rack’s max (a bigger change); never past it', () => {

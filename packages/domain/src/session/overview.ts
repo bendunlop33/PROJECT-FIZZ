@@ -392,7 +392,7 @@ export function setsDetail(working: readonly Pick<WorkoutSet, 'planned'>[], unil
 }
 
 export interface PanelLine {
-  key: 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag' | 'coach';
+  key: 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag' | 'coach' | 'rule';
   label: string;
   value: string;
   tone: 'normal' | 'warning';
@@ -757,6 +757,8 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     }
     if (covering !== null) panel.push({ key: 'flag', label: 'Flag', value: flagText(covering.flag), tone: 'warning' });
     const coach = overviewCoachOf(first, coachByExercise.get(ex.exerciseId), { sourceVersion, painFlagged: covering !== null, painToday: input.coach?.painToday === true });
+    // D1 (minimal copy): a built-in rule target says so in one word, as a coach target does; the rule in full is behind `Why?`.
+    if (coach?.state !== 'coach' && first?.planned.source === 'built_in_rule') panel.push({ key: 'rule', label: 'Rule', value: first.planned.provenance?.rule?.name ?? 'Built-in', tone: 'normal' });
     if (coach?.state === 'coach' && coach.reason !== null) panel.push({ key: 'coach', label: 'Coach', value: `“${coach.reason}”`, tone: 'normal' });
     if (coach?.state === 'built_in') panel.push({ key: 'coach', label: 'Coach', value: coach.target, tone: 'normal' });
 

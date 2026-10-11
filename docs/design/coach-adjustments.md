@@ -157,8 +157,8 @@ The rest timer keeps running. The draft fields and `Log …` stay live. `TalkBut
 
 | Outcome | When | Shown as |
 |---|---|---|
-| Snapped | The coach's load isn't achievable; `roundToAvailableLoad` picked the nearest one, except that it never rounds above the coach's number when the request was "too hard" (or a `rpe_high` / `reps_short` offer), and never below it when "too easy" (or `rpe_low`) | Guard note: `Rounded to 97.5 kg: nearest your bar and plates allow.` Dumbbells: `…nearest your dumbbell rack allows.` Stack: `…nearest the stack allows.` |
-| Capped | The coach's load is above the equipment max | Guard note: `Capped at 30 kg each: the most Main Gym's rack goes to.` |
+| Snapped | The coach's load isn't achievable; `roundToAvailableLoad` picked the nearest one, except that it never rounds above the coach's number when the request was "too hard" (or a `rpe_high` / `reps_short` offer), and never below it when "too easy" (or `rpe_low`) | Guard note: `Rounded to 97.5 kg` Dumbbells: `…nearest your dumbbell rack allows.` Stack: `…nearest the stack allows.` |
+| Capped | The coach's load is above the equipment max | Guard note: `Max here 30 kg each` |
 | Pain-blocked (all) | Every change would increase load, reps or sets on a movement with an active pain flag | **Outcome line, no Undo (nothing changed):** `Not increasing: you flagged shoulder pain. Sets unchanged.` If no area was given: `Not increasing: you flagged pain on Bench press. Sets unchanged.` |
 | Pain-blocked (part) | Some changes were increases on a pain-flagged movement | The rest apply. Guard note: `Not increasing Overhead press: you flagged shoulder pain.` |
 | No achievable load | No load on the equipment is near the coach's value, or the equipment can't make any load | Outcome line: `Couldn't use the coach's load: 31 kg each isn't possible on this rack. Sets unchanged.` |
@@ -194,7 +194,7 @@ Wherever a pending set's target came from a coach adjustment:
 | No change / blocked | Outcome line (§2.6), no Undo | `Log …` | Auto-hides on the next Log |
 | Undone | `Back to the plan for sets 3–4.` (or `Back to the previous targets for sets 3–4.` if an earlier adjustment was in place) | `Log <restored values>` | Auto-hides on the next Log |
 | Undo partly possible | `Undone for set 4. Set 3 was already logged.` | as Undone | Done sets are never touched |
-| Stale, dropped | `Your workout moved on before the coach answered. Nothing changed.` [Ask again] | `Log …` | `Ask again` re-sends the same request on the current state |
+| Stale, dropped | `Out of date` [Ask again] | `Log …` | `Ask again` re-sends the same request on the current state |
 | Timed out | `The coach didn't answer in time. Nothing changed.` [Try again] | `Log …` | Never a canned answer |
 | Failed (limit/error) | `Couldn't reach the coach (limit reached). Nothing changed.` | `Log …` | Never switches to a paid route (rule 7) |
 | Coach offline / not connected | `Adjust` shows the `Coach offline` caption; tapping it shows the offline line (§5) and only the `Pain` chip | `Log …` | No offers are shown at all |
@@ -319,12 +319,12 @@ Values are labelled as **target** or **actual** every time. `→` reads "to" in 
 | Banner line 1 | `Coach adjusted sets 3–4` / `Coach adjusted set 4` / `Coach adjusted 3 sets` | — |
 | Banner line 2 | `100 → 95 kg × 8 · <reason>`. Reps only: `95 kg × 8 → 6`. Set removed: `Set 4 removed · <reason>`. Set added: `Set 5 added: 90 kg × 8 · <reason>` | Targets |
 | Banner actions | `Why? ›` · `Undo` | — |
-| Guard notes | `Rounded to 97.5 kg: nearest your bar and plates allow.` · `Capped at 30 kg each: the most Main Gym's rack goes to.` · `Not increasing Overhead press: you flagged shoulder pain.` | Targets |
+| Guard notes | `Rounded to 97.5 kg` · `Max here 30 kg each` · `Not increasing Overhead press: you flagged shoulder pain.` | Targets |
 | Blocked | `Not increasing: you flagged shoulder pain. Sets unchanged.` | — |
 | No achievable load | `Couldn't use the coach's load: 31 kg each isn't possible on this rack. Sets unchanged.` | — |
 | No change | `Coach kept sets 3–4 as planned.` + reason | — |
 | Undone | `Back to the plan for sets 3–4.` · `Back to the previous targets for sets 3–4.` · `Undone for set 4. Set 3 was already logged.` | — |
-| Stale | `Your workout moved on before the coach answered. Nothing changed.` [Ask again] | — |
+| Stale | `Out of date` [Ask again] | — |
 | Timed out | `The coach didn't answer in time. Nothing changed.` [Try again] | — |
 | Failed | `Couldn't reach the coach (limit reached). Nothing changed.` | — |
 | Interrupted | `Coach request was interrupted. Nothing changed.` [Ask again] | — |
@@ -396,7 +396,7 @@ Existing (brief §7–8, ADR 0006):
 6. Offers never appear on warm-up or drop sets, or while Ready.
 7. Say "that was a grind" during rest: the slot shows pending, then `Coach adjusted sets 3–4: 100 → 95 kg × 8 · <reason>`, the next set's draft and Log label read 95 kg, and the rest countdown is unchanged throughout (±1 s).
 8. Tap `Undo` on the banner: sets 3–4 show `Target 100 kg × 6–8` again, the coach tags are gone, the rest-end cue (Set cues) says 100.
-9. During pending, Log set 3 at once: set 3 saves with the values on the Log button. The coach result never changes set 3. Either the re-sent result changes only set 4, or `Your workout moved on…` appears.
+9. During pending, Log set 3 at once: set 3 saves with the values on the Log button. The coach result never changes set 3. Either the re-sent result changes only set 4, or `Out of date` appears.
 10. The coach suggests 96 kg on a barbell with 1.25 kg pairs (95 and 97.5 achievable): after "too hard" the target is 95 kg, after "too easy" it is 97.5 kg; the banner shows `Rounded to 95 kg: …` / `Rounded to 97.5 kg: …`. The stored target is achievable (`getAchievableLoads`).
 11. The coach suggests 35 kg each on a 30 kg rack: the target is 30 kg each with `Capped at 30 kg each…`.
 12. With a shoulder pain flag on Overhead press, a coach increase is never applied, and the slot shows `Not increasing: you flagged shoulder pain. Sets unchanged.` with no Undo. A decrease still applies.

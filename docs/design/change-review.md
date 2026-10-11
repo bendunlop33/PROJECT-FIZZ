@@ -296,7 +296,7 @@ Every set number in a change line is a **target** (`Target …`, or under `All v
 | Change lines | `Thu 15 Oct → Tue 13 Oct` · `Back-off sets 3 → 1` · `3 × 8 → 2 × 8 · Target 90 kg` · `Target 50 kg stack × 12 → Target 45 kg stack × 12` · `Cable row → Seated row · Stack` · markers `Moved` · `Changed` · `Added` · `Removed` · `Was …` · `Plan was …` · `(unchanged)` |
 | Programme groups | `Week 2 · 3 sessions changed` · `Week 4 (deload) · no change` |
 | Checks | `No conflicts with your scheduling rules.` · `Legs A still counts as heavy legs (6 squat and hinge sets), 2 days before your long run. (C3)` · `Estimate: about 60 → 45 min.` |
-| Not changed | `Long run · Sat 17 · Fixed` · `Push A · Mon 12 · already done` · `Set 1 is done and stays as Cable row.` · `Not increasing Overhead press: you flagged shoulder pain.` · `Capped at 30 kg each: the most Main Gym's rack goes to.` |
+| Not changed | `Long run · Sat 17 · Fixed` · `Push A · Mon 12 · already done` · `Set 1 is done and stays as Cable row.` · `Not increasing Overhead press: you flagged shoulder pain.` · `Max here 30 kg each` |
 | Actions | `Apply` · `Applying…` · `Not now` · `Review ›` · `Review all 7 changes ›` · `Ask for changes` · `Dismiss` · `Ask again` · `Rebuild` · `Undo` · `Apply all (2)` |
 | Proposal card | `Move 2 sessions` · `This week only · nothing changed yet` · `+ 1 more` |
 | Overlap | `Overlaps with "Lighter Legs A"` |

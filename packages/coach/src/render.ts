@@ -315,7 +315,7 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
         const text = nextLine(d.workoutLabel, d.rows, st);
         return make(status, text, speakable(text));
       }
-      const text = "Couldn't set next targets. The built-in rule's are used.";
+      const text = "Couldn't set next targets.";
       return make(status, text, text);
     }
     case 'propose_next_workout_change': {
@@ -333,8 +333,8 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
     }
     case 'set_pain_flag': {
       if (st === 'committed') {
-        const text = `Pain flag on for ${namesText(d.exerciseNames)}. No increases until you clear it.`;
-        return make(status, text, text);
+        const text = `Pain flag on: ${namesText(d.exerciseNames)} · no increases`;
+        return make(status, text, `Pain flag on for ${namesText(d.exerciseNames)}. No increases.`);
       }
       const text = `Couldn't turn the pain flag on: ${failureOr(record, 'it was refused')}. Nothing changed.`;
       return make(status, text, text);
@@ -342,18 +342,18 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
     case 'save_memory': {
       if (st === 'committed') return make(status, `Saved to memory: ${quoteText(d.text)}.`, `Saved to memory: ${d.text}.`);
       if (st === 'proposed') return make(status, `Suggested memory: ${quoteText(d.text)}. Not saved.`, `Suggested memory: ${d.text}. Not saved.`);
-      return make(status, "Couldn't save that memory. Nothing changed.", "Couldn't save that memory. Nothing changed.");
+      return make(status, "Couldn't save that memory.", "Couldn't save that memory.");
     }
     case 'forget_memory': {
-      if (st === 'committed') return make(status, `Forgot: ${quoteText(d.text)}. Undo is on the card.`, `Forgot: ${d.text}.`);
-      return make(status, "Couldn't forget that memory. Nothing changed.", "Couldn't forget that memory. Nothing changed.");
+      if (st === 'committed') return make(status, `Forgot: ${quoteText(d.text)}`, `Forgot: ${d.text}.`);
+      return make(status, "Couldn't forget that memory.", "Couldn't forget that memory.");
     }
     case 'add_playbook_candidate': {
       if (st === 'committed') {
-        const text = `Added to your playbook to review: ${quoteText(d.text)}. Not in use until you approve it.`;
-        return make(status, text, `Added to your playbook to review. Not in use until you approve it.`);
+        // `to review` is the honest state; that it isn't used until approved is behind the card's `Why?`.
+        return make(status, `Playbook, to review: ${quoteText(d.text)}`, 'Added to your playbook to review.');
       }
-      return make(status, "Couldn't add that to your playbook. Nothing changed.", "Couldn't add that to your playbook. Nothing changed.");
+      return make(status, "Couldn't add that to your playbook.", "Couldn't add that to your playbook.");
     }
     case 'undo': {
       if (st === 'committed') {

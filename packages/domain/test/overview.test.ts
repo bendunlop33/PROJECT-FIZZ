@@ -450,6 +450,15 @@ describe('buildWorkoutOverview over the shared dry run', () => {
     expect(incline?.accessibilityLabel).toContain('held, pain flag');
   });
 
+  it('D1 (minimal copy): a built-in rule target has a one-word Rule line in its panel; a routine template has none', () => {
+    const out = dryRun(pushA(), [bar, rack, cable]);
+    const benchId = out.aggregate.exercises.find((e) => e.exerciseName === 'Bench press')?.id;
+    const ruled = { ...out, aggregate: { ...out.aggregate, sets: out.aggregate.sets.map((x) => (x.sessionExerciseId === benchId ? { ...x, planned: { ...x.planned, source: 'built_in_rule' as const } } : x)) } };
+    const view = overviewOf(ruled, []);
+    expect(view.rows[0]?.panel.find((l) => l.key === 'rule')).toEqual({ key: 'rule', label: 'Rule', value: 'Built-in', tone: 'normal' });
+    expect(view.rows[1]?.panel.some((l) => l.key === 'rule')).toBe(false);
+  });
+
   it('the first barbell lift gets WARM-UP, PLATES, BEST and LAST; supersets group consecutive members', () => {
     const out = dryRun(pushA(), [bar, rack, cable]);
     const older = finishedFrom(out.aggregate, id(913), -21 * 86_400, { load: (l) => (l && l.convention === 'total' ? kg(102.5) : l), reps: 5 });

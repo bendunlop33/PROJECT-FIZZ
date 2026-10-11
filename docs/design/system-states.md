@@ -64,7 +64,7 @@ Never used for status: system alerts (kept for confirming destructive actions), 
 | # | Rule | Example |
 |---|---|---|
 | W1 | Say what happened, plainly | `The folder can't be reached.` |
-| W2 | Say what still works, especially logging | `Logging and built-in targets still work.` |
+| W2 | Logging always works, so screens don't say so (minimal copy); an unavailable coach shows its status word (`Offline`, `Paused`, `Not connected`) | `Coach paused` |
 | W3 | Claim data is safe only when that's guaranteed by construction (a rolled-back transaction, an untouched file) or checked | `Couldn't X.` already says nothing happened; a data-at-risk failure (database won't open, restore or migration fails) adds `Data unchanged` (minimal-copy audit §1 rule 1); never "everything's fine" after an unknown error |
 | W4 | At most one action, named for what it does | [Open Settings], [Back up now], not [OK] |
 | W5 | No blame, no "Oops", no exclamation marks | — |
@@ -177,7 +177,7 @@ Each row: how it's detected, where it shows (S1–S6 from §2.1), exact copy, th
 
 | State | Detected by | Surfaces | Copy | Action | Clears |
 |---|---|---|---|---|---|
-| Offline | `getConnectivity()` (system network path) | S1 only: Talk `Offline`, `Adjust` `Coach offline`, coach sheet banner, summary coach note, workout builder. **No banner on Today or in the workout**: logging needs no network | Coach sheet: `No connection. The coach needs the internet. Your workout is saved on this phone.` · Summary: `Coach note will be added when you're back online.` · App status: `⚠ Coach: no connection` | None | Network returns (banners clear by themselves; nothing queued is sent on its own, coach-sheet.md CS4) |
+| Offline | `getConnectivity()` (system network path) | S1 only: Talk `Offline`, `Adjust` `Coach offline`, coach sheet banner, summary coach note, workout builder. **No banner on Today or in the workout**: logging needs no network | Coach sheet: `No connection. The coach needs the internet.` · Summary: `Coach note will be added when you're back online.` · App status: `⚠ Coach: no connection` | None | Network returns (banners clear by themselves; nothing queued is sent on its own, coach-sheet.md CS4) |
 | Offline, OpenAI voice selected | Same, while the OpenAI voice route is chosen for coach replies | Voice strip, once per workout; Voice settings | `OpenAI voice isn't available offline. Using the Apple voice.` | None | Network returns |
 | Offline, copy saved to iCloud Drive | Same, after a copy to Files is written | Data & backup card | `iCloud uploads it when you're back online.` | None | Network returns |
 
@@ -188,8 +188,8 @@ Owned by [coach-sheet.md](coach-sheet.md) §3 and [ai-connection.md](ai-connecti
 | State | Talk caption (S1) | Coach sheet banner (S4) | App status (S2) | Rules |
 |---|---|---|---|---|
 | Not connected | `Offline` (`text.bubble` + slash) | `Coach not connected. Logging, targets and rest timers work without it.` [Connect] | `– Coach: not connected` [Connect ›] | No canned replies (rule 1) |
-| Offline | `Offline` | `No connection. The coach needs the internet. Your workout is saved on this phone.` | `⚠ Coach: no connection` | — |
-| Limit reached (ChatGPT plan) | `Offline` | `ChatGPT usage limit reached. The coach is paused.` [Manage usage] · `Logging and built-in targets still work.` · if an API key exists: `Switch coach to your API key (paid) ›` | `⚠ Coach: ChatGPT usage limit reached` | Never switches route on its own (rule 7). No guessed reset time |
+| Offline | `Offline` | `No connection. The coach needs the internet.` | `⚠ Coach: no connection` | — |
+| Limit reached (ChatGPT plan) | `Offline` | `ChatGPT usage limit reached. The coach is paused.` [Manage usage] · if an API key exists: `Switch coach to your API key (paid) ›` | `⚠ Coach: ChatGPT usage limit reached` | Never switches route on its own (rule 7). No guessed reset time |
 | API spend cap reached | `Offline` | `Paused: you've reached your $5.00 cap for October.` [Change cap] | `⚠ Coach: monthly cap reached` | Cap and spend come from Fizz's own records (ai-connection.md) |
 | API key out of credit / rejected | `Offline` | `Your OpenAI API key was rejected (<reason from OpenAI>).` [Check key] | `⚠ Coach: API key rejected` | — |
 | Signed out / expired / revoked | `Offline` | `ChatGPT disconnected. Sign in again to use the coach.` [Sign in] | `⚠ Coach: signed out` [Sign in ›] | Old threads stay readable |
@@ -363,7 +363,7 @@ While a cover is up: notification taps and `fizz://` links are held and dropped 
 | Area | Strings |
 |---|---|
 | Durability | `Unsaved edit restored` · `Saving…` · `Saved` · `✓ Set 2 saved · 100 kg × 8` · `Workout saved on this phone` · `Saved on this phone` · `Backed up on this phone · 19:05` · `Copy saved to Files · Thu 8 Oct` · `No copy off this phone yet` · `Coach note will be added when you're back online.` |
-| Offline | `No connection. The coach needs the internet. Your workout is saved on this phone.` · `OpenAI voice isn't available offline. Using the Apple voice.` · `iCloud uploads it when you're back online.` |
+| Offline | `No connection. The coach needs the internet.` · `OpenAI voice isn't available offline. Using the Apple voice.` · `iCloud uploads it when you're back online.` |
 | Coach | as §3.2 (owned by coach-sheet.md) |
 | Permissions | `Rest alerts are off in iOS Settings.` · `Voice isn't available: microphone is off in iOS Settings` · `Voice isn't available: speech recognition is off in iOS Settings` · `Voice isn't available: speech recognition for English (UK) isn't on this iPhone yet.` · `Lock Screen timer: Live Activities are off for Fizz in iOS Settings` · `Turned off in iOS Settings` · `Open Settings` |
 | Signing | `Refresh Fizz in SideStore by Sat` · `Refresh Fizz in SideStore today, by 21:00` · `Refresh Fizz in SideStore by tomorrow 09:00` · `Signed until Sun 11 Oct, 09:00` · `Refresh weekly in SideStore` · `Signing date unknown. Refresh weekly in SideStore.` · `I refreshed today` · `Signed until about Thu 15 Oct (estimated from your refresh on 8 Oct)` · notification `Refresh Fizz by Sat` / `Fizz stops opening on Sun at 09:00 until it's refreshed. Open SideStore on Wi-Fi with LocalDevVPN on.` · How sheet §3.5 |
