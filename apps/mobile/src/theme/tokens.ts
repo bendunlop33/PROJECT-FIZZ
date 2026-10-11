@@ -123,6 +123,12 @@ export interface ChartDimensions {
   markerLane: number;
   bandBar: number;
   weekBar: { width: number; gap: number };
+  /** `WeekBars` (Progress, design-system §4.1 revision 2026-10-11): plot height, widest bar, gap, top-corner radius. */
+  weekBars: { height: number; maxBarWidth: number; gap: number; radius: number };
+  /** `FrequencyRow` bar. */
+  countBar: { height: number; radius: number };
+  /** `DayStrip` glyph diameter in a column at least `minColumn` wide. */
+  dayCell: { diameter: number; minColumn: number };
 }
 
 /**
@@ -256,6 +262,9 @@ export const NAVY_DIRECTION: ThemeDirection = {
     markerLane: 28,
     bandBar: 12,
     weekBar: { width: 8, gap: 4 },
+    weekBars: { height: 64, maxBarWidth: 28, gap: 8, radius: 4 },
+    countBar: { height: 6, radius: 3 },
+    dayCell: { diameter: 10, minColumn: 32 },
   },
 };
 
