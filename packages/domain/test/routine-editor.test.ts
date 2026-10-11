@@ -6,12 +6,14 @@ import {
   addSet,
   createRoutine,
   deleteSet,
+  editorItemFor,
   editorMainFlags,
   editorSetRows,
   editorSummaryLine,
   fixedLoadFrame,
   fixedLoadNote,
   fixedLoadSteps,
+  mergeRoutineEdits,
   moveExercise,
   planRoutineStart,
   removeExercise,
@@ -204,5 +206,53 @@ describe('Fixed loads (§2.3 set sheet; rule 4)', () => {
       [30, 'per_hand', { min: 6, max: 8 }, undefined],
       [25, 'per_hand', { min: 6, max: 8 }, 'built_in_rule'],
     ]);
+  });
+});
+
+describe('editorItemFor (the item a Fixed load is checked on)', () => {
+  it('the slot’s own item here, else the first compatible one, else none', () => {
+    const rack = dumbbells();
+    const info = { defaultLoadConvention: 'per_hand' as const, compatibleEquipment: ['dumbbells' as const] };
+    expect(editorItemFor({ equipmentId: rack.id }, info, [stack(), rack])?.id).toBe(rack.id);
+    expect(editorItemFor({ equipmentId: id(999) }, info, [stack(), rack])?.id).toBe(rack.id);
+    expect(editorItemFor({ equipmentId: null }, info, [stack()])).toBeNull();
+    expect(editorItemFor({ equipmentId: rack.id }, info, [{ ...rack, availability: 'retired' }])).toBeNull();
+  });
+});
+
+describe('mergeRoutineEdits (Keep both, WL-A6)', () => {
+  const b = { name: 'Push A', exercises: base() };
+  const reps = (e: RoutineExercise, min: number): RoutineExercise => ({ ...e, setTemplates: e.setTemplates.map((t) => ({ ...t, targetReps: { min, max: min + 2 } })) });
+  it('different slots: both kept; Ben’s order wins when he reordered; additions keep their place', () => {
+    const [bench, row, face] = base();
+    if (!bench || !row || !face) throw new Error('fixture');
+    const mine = { name: 'Push A', exercises: [face, bench, reps(row, 10)] };
+    const theirs = { name: 'Push A', exercises: [reps(bench, 4), row, face, routineExercise(40, { exerciseId: HANG })] };
+    const r = mergeRoutineEdits(b, mine, theirs);
+    expect(r.conflicts).toEqual([]);
+    expect(r.merged.exercises.map((e) => [e.exerciseId, e.setTemplates[0]?.targetReps?.min, e.order])).toEqual([
+      [FACE, 6, 0],
+      [BENCH, 4, 1],
+      [ROW, 10, 2],
+      [HANG, 6, 3],
+    ]);
+  });
+  it('the same slot or the name changed on both: a conflict; unpicked keeps the newer version, a pick takes Ben’s', () => {
+    const [bench, row, face] = base();
+    if (!bench || !row || !face) throw new Error('fixture');
+    const mine = { name: 'Push B', exercises: [reps(bench, 10), row, face] };
+    const theirs = { name: 'Push C', exercises: [reps(bench, 3), row] };
+    const r = mergeRoutineEdits(b, mine, theirs);
+    expect(r.conflicts.map((c) => (c.kind === 'name' ? 'name' : c.slotId))).toEqual(['name', bench.id]);
+    expect(r.merged.name).toBe('Push C');
+    expect(r.merged.exercises.map((e) => [e.exerciseId, e.setTemplates[0]?.targetReps?.min])).toEqual([
+      [BENCH, 3],
+      [ROW, 6],
+    ]);
+    const picked = mergeRoutineEdits(b, mine, theirs, { name: 'mine', [bench.id]: 'mine' });
+    expect(picked.merged.name).toBe('Push B');
+    expect(picked.merged.exercises[0]?.setTemplates[0]?.targetReps?.min).toBe(10);
+    // Face pull: removed by the newer version, untouched by Ben, so it stays removed.
+    expect(picked.merged.exercises.map((e) => e.exerciseId)).toEqual([BENCH, ROW]);
   });
 });

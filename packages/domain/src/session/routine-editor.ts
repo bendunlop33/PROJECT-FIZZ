@@ -1,11 +1,12 @@
-import type { EquipmentInstance, Load, LoadConvention, Measurement, RepRange, RestSetting, RoutineExercise, SetTemplate, SetType, WeightUnit } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Load, LoadConvention, Measurement, RepRange, RestSetting, RoutineExercise, SetTemplate, SetType, WeightUnit } from '@fizz/schemas';
 
 import { formatDuration, formatNumber, loadText, NBSP, repRangeText, SET_TYPE_BADGE, SET_TYPE_WORD } from '../display';
 import { getAchievableLoads, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
+import { equipmentForExercise } from '../exercise-equipment';
 import { resolveRestPreset } from '../rest';
 import type { StepTarget } from './active-view';
 import { boundWords, droppedWords } from './fit-words';
-import { normaliseRoutineExercises, ROUTINE_MAX_SETS, SUPERSET_MAX } from './library';
+import { normaliseRoutineExercises, ROUTINE_MAX_SETS, SUPERSET_MAX, type RoutineEdit } from './library';
 import { defaultMain } from './routines';
 
 /**
@@ -307,4 +308,94 @@ export function fixedLoadSteps(value: number | null, frame: { unit: WeightUnit; 
     up: { enabled: true, value: upV, label: fmt(upV) },
     down: value === null || downV < 0 ? { enabled: false, reason: 'Min 0' } : { enabled: true, value: downV, label: fmt(downV) },
   };
+}
+
+/**
+ * The item a Fixed load is checked on in the editor (§2.3): the slot's own
+ * item when it is at this gym, else the first compatible one here, else
+ * none (`Fixed` is then saved unchecked and fitted at Start).
+ */
+export function editorItemFor(slot: Pick<RoutineExercise, 'equipmentId'>, exercise: Pick<Exercise, 'defaultLoadConvention' | 'compatibleEquipment'>, gym: readonly EquipmentInstance[]): EquipmentInstance | null {
+  const own = slot.equipmentId === null ? undefined : gym.find((e) => e.id === slot.equipmentId && e.availability === 'available');
+  return own ?? equipmentForExercise(exercise, gym)[0] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Save conflict (v0.1 §3.3, WL-A6; rule 5)
+
+/** One thing both Ben's edits and the newer version changed: Ben picks one. */
+export type RoutineConflict = { kind: 'name'; mine: string; theirs: string } | { kind: 'slot'; slotId: string; exerciseId: string; mine: RoutineExercise | null; theirs: RoutineExercise | null };
+
+export interface RoutineMerge {
+  /** Ben's edits re-applied on the newer version, with each conflict as picked (default: the newer version's). */
+  merged: RoutineEdit;
+  conflicts: RoutineConflict[];
+}
+
+const conflictKey = (c: RoutineConflict): string => (c.kind === 'name' ? 'name' : c.slotId);
+
+/**
+ * `Keep both` (v0.1 §3.3): Ben's edits (`mine`, from `base`) re-applied on
+ * the version that was saved meanwhile (`theirs`). A slot or the name that
+ * only one side changed takes that side; one both changed differently is a
+ * conflict, resolved by `picks` (`'mine'` / `'theirs'`, by slot ID or
+ * `name`; unpicked = theirs, so nothing newer is lost by default). Ben's
+ * order wins when he reordered; added slots keep their place in his list.
+ * Pure: the caller saves the result against `theirs`' version.
+ */
+export function mergeRoutineEdits(base: RoutineEdit, mine: RoutineEdit, theirs: RoutineEdit, picks: Readonly<Record<string, 'mine' | 'theirs'>> = {}): RoutineMerge {
+  const same = (a: RoutineExercise | undefined, b: RoutineExercise | undefined): boolean => {
+    if (a === undefined || b === undefined) return a === b;
+    const strip = (e: RoutineExercise) => ({ ...e, order: 0 });
+    return JSON.stringify(strip(a)) === JSON.stringify(strip(b));
+  };
+  const conflicts: RoutineConflict[] = [];
+  const nameMine = mine.name.trim() !== base.name.trim();
+  const nameTheirs = theirs.name.trim() !== base.name.trim();
+  let name = nameMine ? mine.name : theirs.name;
+  if (nameMine && nameTheirs && mine.name.trim() !== theirs.name.trim()) {
+    const c: RoutineConflict = { kind: 'name', mine: mine.name.trim(), theirs: theirs.name.trim() };
+    conflicts.push(c);
+    name = picks[conflictKey(c)] === 'mine' ? mine.name : theirs.name;
+  }
+  const b = new Map(base.exercises.map((e) => [e.id, e]));
+  const m = new Map(mine.exercises.map((e) => [e.id, e]));
+  const t = new Map(theirs.exercises.map((e) => [e.id, e]));
+  const chosen = new Map<string, RoutineExercise | null>();
+  for (const id of new Set([...b.keys(), ...m.keys(), ...t.keys()])) {
+    const was = b.get(id);
+    const mx = m.get(id);
+    const tx = t.get(id);
+    if (was === undefined) {
+      // Added on one side (IDs are new, so never on both).
+      chosen.set(id, mx ?? tx ?? null);
+      continue;
+    }
+    const mineChanged = !same(was, mx);
+    const theirsChanged = !same(was, tx);
+    if (mineChanged && theirsChanged && !same(mx, tx)) {
+      const c: RoutineConflict = { kind: 'slot', slotId: id, exerciseId: was.exerciseId, mine: mx ?? null, theirs: tx ?? null };
+      conflicts.push(c);
+      chosen.set(id, picks[conflictKey(c)] === 'mine' ? (mx ?? null) : (tx ?? null));
+    } else chosen.set(id, mineChanged ? (mx ?? null) : (tx ?? null));
+  }
+  const order = (list: RoutineEdit) => list.exercises.map((e) => e.id).filter((id) => b.has(id));
+  const reordered = JSON.stringify(order(mine)) !== JSON.stringify(order(base));
+  const lead = reordered ? mine.exercises : theirs.exercises;
+  const other = reordered ? theirs.exercises : mine.exercises;
+  const ids: string[] = lead.map((e) => e.id);
+  // Slots only the other list has: at the end when they were added at its end, else after the slot they follow there.
+  const leadIds = new Set(ids);
+  other.forEach((e, i) => {
+    if (ids.includes(e.id)) return;
+    const trailing = other.slice(i + 1).every((x) => !leadIds.has(x.id));
+    const prev = other[i - 1];
+    const at = trailing || prev === undefined ? (trailing ? ids.length - 1 : -1) : ids.indexOf(prev.id);
+    ids.splice(at + 1, 0, e.id);
+  });
+  const exercises = ids.flatMap((id) => {
+    const e = chosen.get(id);
+    return e === null || e === undefined ? [] : [e];
+  });
+  return { merged: { name, exercises: normaliseRoutineExercises(exercises) }, conflicts };
 }
