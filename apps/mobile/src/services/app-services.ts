@@ -41,6 +41,7 @@ import { createRestoreService } from '../backup/restore-service';
 import { createDataDomainService, type CredentialPort, type PersonalFilesPort } from '../backup/data-domain-service';
 import { createImportService } from '../import/import-service';
 import { createGymServices } from './gym-services';
+import { createProgressService } from './progress-service';
 import { createWorkoutServices, STALE_PREVIEW, type OverviewStartOf, type OverviewTarget, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
 
@@ -569,6 +570,16 @@ export function createAppServices(deps: AppServicesDeps) {
     },
   });
 
+  /** Progress (progress.md slice A): windows, sessions, time, muscles, records, calendar, `Count it`. Local only. */
+  const progress = createProgressService({
+    store: () => deps.manager.store,
+    now: deps.now,
+    profile: getProfile,
+    saveSettings: (p) => updateProfile({ progress: p }),
+    catalogueExercises,
+    dispatch: (sessionId, command) => sessions.dispatch(sessionId, command),
+  });
+
   /** Export, Delete my data and Reset coaching knowledge, by data domain (rule 10). */
   const data = createDataDomainService({
     manager: deps.manager,
@@ -587,6 +598,7 @@ export function createAppServices(deps: AppServicesDeps) {
   return {
     ...loop,
     overview,
+    progress,
     data,
     coach,
     gyms,

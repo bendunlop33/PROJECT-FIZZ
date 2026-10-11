@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:perf:jitless": "vitest run packages/persistence/test/backup-perf.test.ts packages/persistence/test/data-domains-perf.test.ts apps/mobile/test/backup-perf.test.ts --pool=forks --execArgv=--jitless --testTimeout=1200000 --silent=false",
+    "test:perf:jitless": "vitest run packages/persistence/test/backup-perf.test.ts packages/persistence/test/data-domains-perf.test.ts apps/mobile/test/backup-perf.test.ts apps/mobile/test/progress-perf.test.ts --pool=forks --execArgv=--jitless --testTimeout=1200000 --silent=false",
     "check": "npm run typecheck && npm run lint && npm run test && npm run catalogue:validate && npm run guide:check -- --all --verify && npm run guide:motion -- --all",
     "check:entitlements": "node scripts/check-entitlements.ts --prebuild apps/mobile/ios",
     "catalogue:index": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/build-index.ts",

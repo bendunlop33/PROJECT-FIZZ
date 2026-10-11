@@ -729,6 +729,15 @@ export class SqliteSessions implements SessionRepository {
     });
   }
 
+  /**
+   * Every finished session of `ownerId` as `(id, revision)`, no decode
+   * (Progress, progress.md §6): the service re-reads only sessions whose
+   * revision changed since it last projected them.
+   */
+  listFinishedRevisions(ownerId: string): Promise<{ id: string; revision: number }[]> {
+    return this.db.read((q) => q.getAll<{ id: string; revision: number }>("SELECT id, revision FROM sessions WHERE owner_id = ? AND status = 'finished' ORDER BY started_at_utc, id", [ownerId]));
+  }
+
   /** IDs of every stored session (for integrity checks). */
   listIds(): Promise<string[]> {
     return this.db.read(async (q) => (await q.getAll<{ id: string }>('SELECT id FROM sessions ORDER BY id')).map((r) => r.id));
