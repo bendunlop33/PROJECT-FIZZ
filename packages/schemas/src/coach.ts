@@ -56,6 +56,8 @@ export const CoachEntityKindSchema = z.enum([
   'pain_flag',
   'memory',
   'playbook_candidate',
+  /** (11 Oct) A set Ben told the coach to log, or a logged set he told it to correct: values only, never deleted. */
+  'logged_set',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -105,6 +107,35 @@ export const GetProgressionTargetsArgsSchema = z.strictObject({
 export const GetSubstitutionsArgsSchema = z.strictObject({
   exerciseId: IdSchema,
 });
+
+/**
+ * (11 Oct, coach tools) Log a pending set with the values Ben said in this
+ * turn ("log 100 for 8"). Unit and convention are the exercise's own; the
+ * numbers must be in Ben's words. Same `log_set` command as the Log button.
+ */
+export const LogSetArgsSchema = z.strictObject({
+  /** The session version the coach read (rule 5). */
+  baseVersion: z.int().min(1),
+  setId: IdSchema,
+  load: LoadSchema.nullable(),
+  reps: z.int().min(0).max(100),
+  rpe: z.number().min(1).max(10).multipleOf(0.5).nullable(),
+});
+export type LogSetArgs = z.infer<typeof LogSetArgsSchema>;
+
+/**
+ * (11 Oct, coach tools) Correct a logged set's values when Ben says which set
+ * and what it was ("set 2 was 95"). Null keeps a value. Same `correct_set`
+ * command as the correction sheet; never a mark or a delete.
+ */
+export const CorrectSetArgsSchema = z.strictObject({
+  baseVersion: z.int().min(1),
+  setId: IdSchema,
+  load: LoadSchema.nullable(),
+  reps: z.int().min(0).max(100).nullable(),
+  rpe: z.number().min(1).max(10).multipleOf(0.5).nullable(),
+});
+export type CorrectSetArgs = z.infer<typeof CorrectSetArgsSchema>;
 
 export const GetRecentActionsArgsSchema = z.strictObject({
   limit: z.int().min(1).max(10),
@@ -211,6 +242,8 @@ export const CoachToolNameSchema = z.enum([
   'get_substitutions',
   'get_recent_actions',
   'adjust_pending_sets',
+  'log_set',
+  'correct_set',
   'set_next_session_targets',
   'propose_next_workout_change',
   'set_pain_flag',
@@ -230,6 +263,8 @@ export const COACH_TOOL_ARGS = {
   get_substitutions: GetSubstitutionsArgsSchema,
   get_recent_actions: GetRecentActionsArgsSchema,
   adjust_pending_sets: AdjustPendingSetsArgsSchema,
+  log_set: LogSetArgsSchema,
+  correct_set: CorrectSetArgsSchema,
   set_next_session_targets: SetNextSessionTargetsArgsSchema,
   propose_next_workout_change: ProposeNextWorkoutChangeArgsSchema,
   set_pain_flag: SetPainFlagArgsSchema,
@@ -329,6 +364,27 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     kind: z.literal('adjust_pending_sets'),
     sessionId: IdSchema,
     exercises: z.array(ExerciseTargetChangesSchema).max(12),
+  }),
+  /** (11 Oct) A set logged from chat: what was saved, and the set's version after, for Undo (`undo_log`). */
+  z.object({
+    kind: z.literal('log_set'),
+    sessionId: IdSchema,
+    setId: IdSchema,
+    exerciseName: z.string().min(1).max(120),
+    setNumber: z.int().min(1),
+    values: z.object({ load: LoadSchema.nullable(), reps: z.int().min(0).max(100).nullable(), rpe: z.number().min(1).max(10).nullable() }),
+    setVersionAfter: z.int().min(1).nullable(),
+  }),
+  /** (11 Oct) A logged set corrected from chat: before and after values, and the set's version after, for Undo. */
+  z.object({
+    kind: z.literal('correct_set'),
+    sessionId: IdSchema,
+    setId: IdSchema,
+    exerciseName: z.string().min(1).max(120),
+    setNumber: z.int().min(1),
+    before: z.object({ load: LoadSchema.nullable(), reps: z.int().min(0).max(100).nullable(), rpe: z.number().min(1).max(10).nullable() }),
+    after: z.object({ load: LoadSchema.nullable(), reps: z.int().min(0).max(100).nullable(), rpe: z.number().min(1).max(10).nullable() }),
+    setVersionAfter: z.int().min(1).nullable(),
   }),
   z.object({
     kind: z.literal('set_next_session_targets'),

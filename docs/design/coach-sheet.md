@@ -6,6 +6,12 @@
 > - `timing.coachFirstToken` is merged into `timing.coachTimeout` (same 20 s, same copy). Card frames, `ClarifyChips` and the other additions are merged into design-system (§11 index).
 > - Fixed cross-links: cap-reached state is ai-connection.md §3.2 (was §3.5); not-eligible is ai-connection.md §3.1 (was §3.3).
 
+> **Revision 2026-10-11 (coach tools: log or correct a set from chat; developer).** Ben accepted this (CHANGELOG 2026-10-11). Built as §2.7 describes, with these conservative decisions:
+> - Only in an active workout's sheet, and only when Ben's own words ask: an explicit log command with a number ("Log 100 for 8", "can you record 60 for 10") or a named set with a value ("Set 2 was 95", "the last set was 7 reps", "correct set 3 to 100"). A report ("I did 100 for 8") or a question ("set 2 was 95?") opens nothing.
+> - Every number saved must be one Ben said in that message (digits or number words). The load must be in the exercise's own unit and convention; the app never converts it (kg/lb, per dumbbell, stack, assisted). Timed exercises, marks (pain, spotted …), set types and deletes stay in the workout's own sheets.
+> - The coach's inferred `CorrectionCard` (proposed, Apply) is not built: corrections only happen when Ben names the set.
+> - The card's status word is `Logged` (log) or `Applied` (correction). Undo of a log is the workout's own `undo_log` (refused once another set was logged or the set changed); Undo of a correction puts the values before back (refused once the set changed). Rest starts on a chat log as on Log; a correction never touches rest.
+
 > **Revision 2026-10-11 (coach tools; developer).** Today's empty thread offers one starter chip, `How am I doing?` (sent as Ben's words), now that the coach can read past workouts (`get_training_overview`). `Build a workout` and `Plan my week` stay out until they exist. `What the coach can see` gains the Your data line `Past workouts and gym equipment · read when needed`.
 
 > **Revision 2026-10-09 (pre-workout check-in, brief v0.9).** During a workout with an answered check-in, `What the coach can see` lists one more `Your data` line: `✓ Today's check-in: 2 of 5 · Tired, Poor sleep (your words)`. On other screens `Not included` lists `– Check-ins from other days` ([check-in.md](check-in.md) CI10). The check-in note is quoted as Ben's words and treated as data, never as instructions (rule 8). Nothing else in this spec changes.

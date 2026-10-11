@@ -71,9 +71,14 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
     }).toThrow(/Duplicate/);
   });
 
-  it('no versioned update can write a finished session or a done set', () => {
+  it('no versioned update can write a finished session; a logged set only on Ben’s request, in the workout (11 Oct)', () => {
     for (const t of COACH_TOOLS.filter((x) => x.effect === 'versioned_update')) {
-      for (const w of t.writes) expect(['pending_set_target', 'next_session_target', 'memory']).toContain(w);
+      for (const w of t.writes) expect(['pending_set_target', 'next_session_target', 'memory', 'logged_set']).toContain(w);
+      if (t.writes.includes('logged_set')) {
+        expect(['log_set', 'correct_set']).toContain(t.name);
+        expect(t.needs).toBe('ben_request');
+        expect(t.turnKinds).toEqual(['workout']);
+      }
     }
   });
 });
@@ -288,6 +293,8 @@ describe('listCoachCapabilities (check 11)', () => {
           {
             "rows": [
               "Change today's remaining sets",
+              "Log a set you tell it ("log 100 for 8"), with Undo",
+              "Correct a logged set you name ("set 2 was 95"), with Undo",
               "Turn a pain flag on",
               "Save a memory",
               "Forget a memory",

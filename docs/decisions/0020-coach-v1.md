@@ -210,3 +210,7 @@ Each slice ends with `npm run check` passing and a small set of commits; slices 
 - **Add is not offered** (the draft can't hold an added exercise yet); remove and reorder requests now count as structural requests with a future scope. No migration: the extra fields live in the action record's JSON detail.
 - Not built: a structural card on the Summary screen itself (the summary turn can make one; it shows in that thread in the coach sheet).
 
+**11 Oct, coach tools slice 3: log or correct a set from chat** (developer). Accepted by Ben (CHANGELOG 2026-10-11). Tested in Node only.
+- `log_set` and `correct_set` leave §2's deferred list. Pure checks in `packages/domain/src/coach/chat-log.ts` build the workout's own `log_set` / `correct_set` commands; the store runs them with the record in one transaction. Only numbers Ben said, only the exercise's own unit and convention, only in an active workout at the version the coach read. Undo uses `undo_log` or a correction back, refused once the set changed. Decisions in coach-sheet (revision 11 Oct).
+- **Migration 10** (`0010-coach-set-actions.ts`) rebuilds `coach_actions` for the two kinds. 8 and 9 are reserved no-ops on this branch because delete-workouts and workout-library take them; they must be replaced by the real migrations at merge, and no `[ios-build]` may ship from this branch before that (a phone at 10 would never run the real 8 and 9). If either rebuilds `coach_actions`, 10's CHECK list must include its kinds.
+

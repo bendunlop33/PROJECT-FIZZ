@@ -98,7 +98,7 @@ import { EXERCISE_WORD, TRAINING_NOUN } from './vocab';
 
 export type BenChip = 'too_hard' | 'too_easy' | 'pain' | 'lighter_session';
 
-export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold';
+export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct';
 
 export type BenRequest = { source: 'chip'; chip: BenChip } | { source: 'words'; kinds: readonly BenRequestKind[] };
 
@@ -213,6 +213,21 @@ const FED_UP = new RegExp(`\\b(?:bored|sick|tired|fed up) (?:of|with) (?:(?:the|
 /** "Do dumbbells instead", "use the machine instead" (review r5 S1). */
 const DO_INSTEAD = new RegExp(`^(?:do|use|go with|try|let me do|give me) (?:the |some |a |an )?(?:\\w+ ){0,2}${EXERCISE_WORD} instead\\b`);
 const INSTEAD_OF = new RegExp(`\\binstead of (?:the |my )?(?:\\w+ ){0,2}${EX}\\b`);
+/** A number as Ben says it: digits or a number word (the domain checks the values against his words again). */
+const NUM = String.raw`(?:\d+(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|(?:a |one )?hundred)`;
+/**
+ * (11 Oct, coach tools) An explicit log command with a value: "log 100 for 8",
+ * "can you record 60 kg for 10". A report ("I did 100 for 8") isn't one: Ben
+ * logs with the Log button or says "log" (coach-sheet CS5).
+ */
+const LOG = new RegExp(`^(?:log|record|enter|put down|mark down|save)(?: (?:it|that|this|the set|this set|set ${NUM}|the last (?:set|one)))?(?: as| at)? ${NUM}\\b`);
+/**
+ * (11 Oct, coach tools) A correction of a named logged set: "set 2 was 95",
+ * "the last set was 7 reps", "correct set 3 to 100 for 6", "fix set 2: 95".
+ */
+const SET_REF = String.raw`(?:set ${NUM}|(?:the |my |that )?last (?:set|one)|that set|the (?:first|second|third|fourth|fifth) set)`;
+const CORRECT = new RegExp(`^(?:${SET_REF} (?:was|were) (?:actually |really |only )?${NUM}\\b|(?:correct|fix|change|update|edit|amend) ${SET_REF}(?: to| as)? ${NUM}\\b)`);
+
 /** The future plan, not today: a removal or reorder only counts with one (11 Oct, coach tools; conservative). */
 const FUTURE_SCOPE = /\b(?:next (?:time|session|week|workout)|from now on|going forward|for good|from (?:the |my )?(?:routine|workout|plan|session|programme|program))\b/;
 /**
@@ -579,13 +594,20 @@ export function classifyBenRequest(text: string): BenRequest | null {
   // "Is 95 too light?" asks for a view; "too easy, what next?" reports how it went.
   if (!isOpinionQuestion(clauses[0] ?? '') && open.some(difficultyIn)) kinds.push('difficulty');
   if (open.some((c) => !c.question && HOLD.some((re) => re.test(c.text.replace(POLITE, ''))))) kinds.push('hold');
+  const bodyOf = (c: string) => {
+    const t = c.replace(POLITE, '');
+    return ASK_PREFIX.exec(t)?.[1] ?? t;
+  };
+  // A question only counts when it asks ("can you log 100 for 8?"), never "set 2 was 95?".
+  if (open.some((c) => LOG.test(bodyOf(c.text)) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))))) kinds.push('log');
+  if (open.some((c) => CORRECT.test(bodyOf(c.text)) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))))) kinds.push('correct');
   if (kinds.length === 0) return null;
   // Review r5 B3: a retraction in any clause after the last request takes it back ("I want it lighter
   // but leave it", "Lower it. Never mind, keep it", "Lower it. Don't"). A new request after a
   // retraction still counts ("Lower it. Actually no, raise it").
   let lastRequest = -1;
   all.forEach((c, i) => {
-    if (c.label !== null || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, '')))) lastRequest = i;
+    if (c.label !== null || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
   });
   if (all.slice(lastRequest + 1).some((c) => RETRACTION.test(c.text.replace(/,/g, '').trim()))) return null;
   return { source: 'words', kinds };

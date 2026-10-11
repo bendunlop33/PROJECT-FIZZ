@@ -130,6 +130,29 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       "Change targets of today's pending sets (load, reps), or add or remove one pending set per exercise. Done sets are never changed. Loads are snapped to the equipment.",
   },
   {
+    name: 'log_set',
+    effect: 'versioned_update',
+    writes: ['logged_set'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['workout'],
+    plainLabel: 'Log a set you tell it ("log 100 for 8"), with Undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Log one pending set with the weight, reps and RPE Ben just said, in the exercise’s own unit and convention. Only numbers Ben said are accepted. Starts rest like the Log button.',
+  },
+  {
+    name: 'correct_set',
+    effect: 'versioned_update',
+    writes: ['logged_set'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['workout'],
+    plainLabel: 'Correct a logged set you name ("set 2 was 95"), with Undo',
+    capabilitySection: 'when_you_ask',
+    description: 'Correct the weight, reps or RPE of a logged set Ben named, with the numbers he said (null keeps a value). Never marks, deletes or changes set types.',
+  },
+  {
     name: 'set_next_session_targets',
     effect: 'versioned_update',
     writes: ['next_session_target'],
@@ -208,7 +231,8 @@ export const COACH_NEVER: readonly string[] = [
 ];
 
 /** Entity kinds a versioned update may write; all keep the previous version (CC6, check 1). */
-const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory']);
+/** (11 Oct) `logged_set`: a set Ben told the coach to log or correct, through the workout's own versioned commands; never a delete. */
+const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set']);
 
 export class UnsafeRegistryError extends Error {}
 
@@ -234,7 +258,7 @@ export function assertRegistrySafe(tools: readonly ToolDeclaration[]): void {
     if (t.effect === 'read' && t.writes.length > 0) throw new UnsafeRegistryError(`${t.name}: a read tool can't write`);
     if (t.effect !== 'read' && t.writes.length === 0) throw new UnsafeRegistryError(`${t.name}: a write tool must declare what it writes`);
     if (t.effect === 'versioned_update' && t.writes.some((w) => !VERSIONED_WRITABLE.has(w))) {
-      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets or memories`);
+      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets, memories or a set Ben named`);
     }
     if (t.effect !== 'read' && (t.plainLabel === null || t.plainLabel.trim() === '')) {
       throw new UnsafeRegistryError(`${t.name}: a write tool needs a plainLabel for What the coach can do`);
@@ -294,6 +318,8 @@ export interface TurnRegistry {
  */
 export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRequestKind[]>> = {
   adjust_pending_sets: ['change', 'difficulty'],
+  log_set: ['log'],
+  correct_set: ['correct'],
   save_memory: ['memory'],
   forget_memory: ['memory'],
   add_playbook_candidate: ['playbook'],

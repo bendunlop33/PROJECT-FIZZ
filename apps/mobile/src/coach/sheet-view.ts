@@ -90,7 +90,7 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
 // ---------------------------------------------------------------------------
 // Cards (coach-sheet §2.6): status word and icon, never colour alone
 
-export type CardStatusWord = 'Applied' | 'Saved' | 'Undone' | 'Not applied' | 'Out of date' | 'Couldn’t apply' | 'Suggested';
+export type CardStatusWord = 'Applied' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Out of date' | 'Couldn’t apply' | 'Suggested';
 
 export interface CardView {
   actionId: string;
@@ -154,12 +154,13 @@ export function proposalCardView(r: ActionRecord, s: ProposalCardState): CardVie
   };
 }
 
-const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate']);
+const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate']);
 
 function statusOf(r: ActionRecord): CardView['status'] {
   if (r.status === 'committed' && r.undoneBy !== null) return { word: 'Undone', icon: 'arrow.uturn.backward' };
   switch (r.status) {
     case 'committed':
+      if (r.detail.kind === 'log_set') return { word: 'Logged', icon: 'checkmark.circle.fill' };
       return r.detail.kind === 'save_memory' || r.detail.kind === 'add_playbook_candidate' ? { word: 'Saved', icon: 'checkmark.circle.fill' } : { word: 'Applied', icon: 'checkmark.circle.fill' };
     case 'proposed':
       return { word: 'Suggested', icon: 'minus.circle' };

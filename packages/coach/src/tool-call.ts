@@ -50,6 +50,9 @@ export function semanticArgs(call: CoachToolCall): unknown {
       return { ...call.args, targets: call.args.targets.map((t) => ({ exerciseId: t.exerciseId, target: t.target, sets: t.sets })) };
     case 'propose_next_workout_change':
       return { sourceSessionId: call.args.sourceSessionId, sourceVersion: call.args.sourceVersion, changes: call.args.changes };
+    case 'log_set':
+    case 'correct_set':
+      return call.args;
     case 'set_pain_flag':
       return { exerciseIds: [...new Set(call.args.exerciseIds)].sort(), area: call.args.area };
     case 'save_memory':
@@ -86,6 +89,8 @@ export function appendContentKeys(call: CoachToolCall): string[] {
       return [`playbook_candidate:${deriveId(normaliseContentText(call.args.text))}`];
     case 'forget_memory':
     case 'adjust_pending_sets':
+    case 'log_set':
+    case 'correct_set':
     case 'set_next_session_targets':
     case 'propose_next_workout_change':
     case 'get_active_session':

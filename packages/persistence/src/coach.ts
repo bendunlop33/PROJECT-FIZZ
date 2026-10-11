@@ -20,7 +20,7 @@ import {
   type PainFlag,
   type PlaybookCandidate,
 } from '@fizz/schemas';
-import { nextTargetSourceBasis, reduceSession } from '@fizz/domain';
+import { chatSetUndoCommand, nextTargetSourceBasis, reduceSession } from '@fizz/domain';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
 import { decodeDocument, erase, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
@@ -66,6 +66,8 @@ export const NEXT_TARGET_SPEC: DocumentSpec<NextSessionTargetRecord> = {
 function sessionOf(record: ActionRecord): string | null {
   switch (record.detail.kind) {
     case 'adjust_pending_sets':
+    case 'log_set':
+    case 'correct_set':
       return record.detail.sessionId;
     case 'set_next_session_targets':
     case 'propose_next_workout_change':
@@ -553,6 +555,19 @@ export class SqliteCoachStore {
           .filter((e) => e.changes.length > 0);
         const alreadyLogged = changes.filter((c) => now.get(c.setId)?.status === 'completed').map((c) => c.setNumber);
         return { restored, alreadyLogged };
+      }
+      case 'log_set':
+      case 'correct_set': {
+        // The workout's own guards (11 Oct, coach tools): a log comes back with `undo_log` (the set's version, still the
+        // latest commit); a correction with one more `correct_set` to the values before. Only in the workout it was made in.
+        const agg = await readAggregate(tx, d.sessionId);
+        if (agg === null || agg.session.ownerId !== ownerId || agg.session.status !== 'active') return 'changed_since';
+        const command = chatSetUndoCommand(d, { opId: `undo:${target.actionId}`, at: { utc: atUtc, tz: target.createdAt.tz } });
+        if (command === null) return 'unsupported';
+        const r = reduceSession(agg, command);
+        if (!r.ok || r.duplicate) return 'changed_since';
+        await writeAggregate(tx, r.state);
+        return 'ok';
       }
       case 'set_next_session_targets': {
         const rows = await listDocuments(tx, NEXT_TARGET_SPEC, 'action_id = ?', [target.actionId]);

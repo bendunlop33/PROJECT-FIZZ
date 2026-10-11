@@ -129,6 +129,28 @@ describe('classifyBenRequest (the ben_request gate; review S3)', () => {
     expect(classifyBenRequest(text)).toEqual(kinds === null ? null : { source: 'words', kinds: [...kinds] });
   });
 
+  // 11 Oct, coach tools: logging or correcting a set from chat needs an explicit command with a number.
+  it.each([
+    ['Log 100 for 8', ['log']],
+    ['Can you log 60 kg for 10?', ['log']],
+    ['log it as 95 x 6', ['log']],
+    ['Log a hundred for eight', ['log']],
+    ['Set 2 was 95', ['correct']],
+    ['Actually, set 2 was 95, not 100', ['correct']],
+    ['the last set was 7 reps', ['correct']],
+    ['set two was ninety five', ['correct']],
+    ['correct set 3 to 100 for 6', ['change', 'correct']],
+    ['I did 100 for 8', null],
+    ['set 2 was fine', null],
+    ['set 2 was 95?', null],
+    ['was set 2 95?', null],
+    ['log my workout', null],
+    ["don't log that", null],
+    ['remember to log 100', null],
+  ] as const)('log/correct: %s', (text, kinds) => {
+    expect(classifyBenRequest(text)).toEqual(kinds === null ? null : { source: 'words', kinds: [...kinds] });
+  });
+
   it('a message can carry more than one kind', () => {
     expect(classifyBenRequest('swap cable fly next time and drop bench to 95')).toEqual({ source: 'words', kinds: ['structural', 'change'] });
     expect(classifyBenRequest('remember that I train before work. Also lower sets 3 and 4')).toEqual({ source: 'words', kinds: ['memory', 'change'] });

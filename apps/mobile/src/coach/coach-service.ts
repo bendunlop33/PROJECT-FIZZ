@@ -13,6 +13,7 @@ import {
   asksForMoreSets,
   buildCoachContext,
   createAdjustExecutor,
+  createChatSetExecutors,
   createNextTargetsExecutor,
   createSessionReadExecutor,
   createStoreExecutors,
@@ -423,6 +424,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     const out: CoachExecutors = { ...base, get_active_session: createSessionReadExecutor({ loadSession: load, gymName }) };
     if (kind === 'workout') {
       out.adjust_pending_sets = createAdjustExecutor({ store, targets: storeTodayTargets(store), loadSession: load, painFlags, sessionPainUnspecified: unspecifiedPain(checkIn).active, gymName, onlySessionExerciseId });
+      // "Log 100 for 8", "set 2 was 95" (backlog §4.3): the workout's own commands, only when Ben's words ask.
+      Object.assign(out, createChatSetExecutors({ store, loadSession: load, ...(deps.onSessionChanged === undefined ? {} : { onSessionChanged: deps.onSessionChanged }) }));
     }
     if (kind === 'summary') {
       out.set_next_session_targets = createNextTargetsExecutor({
@@ -551,7 +554,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       const p = await owner();
       const r = await undoCoachAction(coachStore(), { ownerId: p.id, actionId, opId, now: deps.now() });
       const target = r.result.status === 'written' || r.result.status === 'replayed' ? r.result.target : null;
-      if (target?.detail.kind === 'adjust_pending_sets') {
+      if (target?.detail.kind === 'adjust_pending_sets' || target?.detail.kind === 'log_set' || target?.detail.kind === 'correct_set') {
         const fresh = await repos().sessions.get(target.detail.sessionId).catch(() => null);
         if (fresh !== null) deps.onSessionChanged?.(fresh);
       }

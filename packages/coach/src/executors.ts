@@ -339,6 +339,10 @@ function undoWhat(target: ActionRecord): string {
       return `the pain flag on ${d.exerciseNames.join(' and ')}`;
     case 'add_playbook_candidate':
       return 'the playbook suggestion';
+    case 'log_set':
+      return `logging set ${String(d.setNumber)} of ${d.exerciseName}`;
+    case 'correct_set':
+      return `the correction to set ${String(d.setNumber)} of ${d.exerciseName}`;
     case 'adjust_pending_sets':
     case 'set_next_session_targets':
     case 'propose_next_workout_change':

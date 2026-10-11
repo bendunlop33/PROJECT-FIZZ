@@ -7,6 +7,7 @@ import { MIGRATION_0004 } from './schema/0004-active-set';
 import { MIGRATION_0005 } from './schema/0005-gym-switch';
 import { MIGRATION_0006 } from './schema/0006-coach';
 import { MIGRATION_0007 } from './schema/0007-pre-start-drafts';
+import { MIGRATION_0010 } from './schema/0010-coach-set-actions';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -32,6 +33,12 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(5, 'gym-switch', MIGRATION_0005),
   sqlMigration(6, 'coach', MIGRATION_0006),
   sqlMigration(7, 'pre-start-drafts', MIGRATION_0007),
+  // RESERVED, branch claude/coach-tools only: 8 (delete-workouts) and 9 (workout-library) are built on
+  // other branches and replace these no-ops at merge. Never ship an [ios-build] from this branch before
+  // that merge: a phone at version 10 would never run the real 8 and 9.
+  sqlMigration(8, 'reserved-delete-workouts', ''),
+  sqlMigration(9, 'reserved-workout-library', ''),
+  sqlMigration(10, 'coach-set-actions', MIGRATION_0010),
 ];
 
 export function latestVersion(migrations: readonly Migration[] = MIGRATIONS): number {

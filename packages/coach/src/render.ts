@@ -39,6 +39,14 @@ function loadPart(load: Load | null): string | null {
   return loadText(load, load.convention);
 }
 
+/** A logged set's values: `100 kg × 8 · RPE 8`, `Bodyweight × 12`. */
+function chatValues(v: { load: Load | null; reps: number | null; rpe: number | null }): string {
+  const load = loadPart(v.load);
+  const reps = v.reps === null ? null : String(v.reps);
+  const main = load !== null && reps !== null ? `${load}${TIMES}${reps}` : load !== null ? load : reps !== null ? `${reps} reps` : '—';
+  return v.rpe === null ? main : `${main} · RPE ${formatNumber(v.rpe)}`;
+}
+
 /** `95 kg × 8`, `95 kg × 6–8`, `10–15 reps`, `22.5 kg each`. */
 export function targetPhrase(t: CoachTarget | null): string {
   if (t === null) return '—';
@@ -309,6 +317,24 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const why = st === 'stale' ? 'your workout moved on' : failureOr(record, 'the change was refused');
       const text = `Couldn't change ${where}: ${why}. Nothing changed.`;
       return make(status, text, st === 'stale' ? 'Your workout moved on. Nothing changed.' : speakable(text));
+    }
+    case 'log_set': {
+      if (st === 'committed') {
+        const text = `Logged set ${String(d.setNumber)} · ${d.exerciseName}: ${chatValues(d.values)} (actual).`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Not logged: your workout moved on.', 'Not logged. Your workout moved on.');
+      const text = `Not logged: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
+    case 'correct_set': {
+      if (st === 'committed') {
+        const text = `Set ${String(d.setNumber)} corrected · ${d.exerciseName}: ${chatValues(d.before)} → ${chatValues(d.after)} (actual).`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Not corrected: your workout moved on.', 'Not corrected. Your workout moved on.');
+      const text = `Not corrected: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
     }
     case 'set_next_session_targets': {
       if (st === 'committed' || st === 'proposed') {
