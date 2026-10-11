@@ -3,7 +3,7 @@
   "key": "barbell-seal-row",
   "tier": "rich",
   "name": "Barbell seal row",
-  "aliases": ["Seal row (barbell)", "Barbell bench row", "Prone barbell row", "Chest-supported barbell row"],
+  "aliases": ["Seal row (barbell)", "Barbell bench row"],
   "family": "row",
   "movementPattern": "horizontal_pull",
   "mechanic": "compound",
@@ -127,6 +127,10 @@
     {
       "field": "name",
       "note": "\"Seal row\" alone is used for both the barbell and the dumbbell version (Catalyst lists both), so it is not an alias here: a FitNotes \"Seal Row\" is suggested as this entry for Ben to confirm, never matched. No dumbbell seal row entry yet."
+    },
+    {
+      "field": "aliases",
+      "note": "\"Chest-supported barbell row\" and \"Prone barbell row\" are deliberately not aliases: both names are also used for a face-down row on an incline bench, with a different torso angle and range. An import shows them as a Check (never matched) and Ben chooses (review import-names-r2 S1)."
     },
     {
       "field": "guideBrief.keyPositions[*].approxAnglesDeg",

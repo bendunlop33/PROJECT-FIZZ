@@ -24,6 +24,10 @@ const CASES: readonly Case[] = [
   // No match in the run.
   ['Lat Prayers', 'Back', ['matched', 'Lat prayer']],
   ['Seal Row', 'Back', ['check', 'Barbell seal row']],
+  // Also name a face-down incline-bench row: never matched, Ben chooses (review import-names-r2 S1).
+  ['Chest-Supported Barbell Row', 'Back', ['check', 'Barbell row']],
+  ['Prone Barbell Row', 'Back', ['check', 'Barbell row']],
+  ['Barbell Bench Row', 'Back', ['matched', 'Barbell seal row']],
   ['Barbell Shrug', 'Back', ['matched', 'Barbell shrug']],
   // Doesn't say standing or seated: Ben confirms (review import-names S3).
   ['Barbell Calf Raise', 'Legs', ['check', 'Standing barbell calf raise']],
