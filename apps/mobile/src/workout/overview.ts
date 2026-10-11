@@ -50,6 +50,17 @@ export function startCheckIn(gate: OverviewData['checkIn'], row: CheckInRowState
   return { kind: 'skipped', atUtc: nowUtc };
 }
 
+/**
+ * Where the pre-workout check-in sheet goes when Ben finishes it (§2.2).
+ * Over the overview (or with no gym to start at) it never starts a workout:
+ * `Done`, `Skip`, `Not now`, `Flag n movements`, `Train anyway` and a 4–5 at
+ * the score all return to the page, whose Start links the check-in.
+ * `Skip workout` is separate: it always closes to Today.
+ */
+export function checkInSheetEnd(p: { overview: boolean; gymId: string | null }): 'back_to_overview' | 'start_workout' {
+  return p.overview || p.gymId === null ? 'back_to_overview' : 'start_workout';
+}
+
 /** VoiceOver for a tile: `1 of 5, rough` … `5 of 5, great`. */
 export function tileLabel(n: CheckInScore): string {
   return `${String(n)} of 5${n === 1 ? ', rough' : n === 5 ? ', great' : ''}`;

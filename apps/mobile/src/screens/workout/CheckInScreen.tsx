@@ -22,6 +22,7 @@ import type { RootStackParams, WorkoutToastParam } from '../../navigation/types'
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Eyebrow, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton, TextField } from '../../ui';
+import { checkInSheetEnd } from '../../workout/overview';
 
 type Step = 'score' | 'reasons' | 'pain' | 'ill';
 const SCORES: readonly CheckInScore[] = [1, 2, 3, 4, 5];
@@ -93,7 +94,7 @@ function Sheet({
   );
 }
 
-function ScoreRow({ chosen, onPick }: { chosen: CheckInScore | null; onPick: (s: CheckInScore) => void }) {
+function ScoreRow({ chosen, onPick, disabled = false }: { chosen: CheckInScore | null; onPick: (s: CheckInScore) => void; disabled?: boolean }) {
   const theme = useTheme();
   const d = theme.components.cardBorderWidth === 0;
   return (
@@ -105,8 +106,9 @@ function ScoreRow({ chosen, onPick }: { chosen: CheckInScore | null; onPick: (s:
             <Pressable
               key={n}
               accessibilityRole="button"
-              accessibilityState={{ selected }}
+              accessibilityState={{ selected, disabled }}
               accessibilityLabel={`${scoreText(n)}${n === 1 ? ', rough' : n === 5 ? ', great' : ''}`}
+              disabled={disabled}
               onPress={() => {
                 haptic('step');
                 onPick(n);
@@ -264,7 +266,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
   }, [services, existingId]);
 
   async function start(checkIn: SessionCheckIn, toast: WorkoutToastParam | null) {
-    if (overview || gymId === null) {
+    if (checkInSheetEnd({ overview: overview !== undefined, gymId }) === 'back_to_overview' || gymId === null) {
       // Back to the overview: it re-reads, and its Start links this check-in.
       changed();
       navigation.goBack();
@@ -295,7 +297,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
   const savedToast = (c: CheckIn): WorkoutToastParam => ({ kind: 'check_in', text: `Check-in saved · ${scoreText(c.score)}`, checkInId: c.id });
 
   async function pickScore(n: CheckInScore) {
-    if (busy) return;
+    if (busy || (existingId !== null && record === null)) return;
     setScore(n);
     setError(null);
     setBusy(true);
@@ -396,7 +398,8 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
             />
           }
         >
-          <ScoreRow chosen={score} onPick={(n) => void pickScore(n)} />
+          {/* Over the overview with a saved score: wait for it, so a tap updates it rather than recording a second one (N1). */}
+          <ScoreRow chosen={score} disabled={existingId !== null && record === null} onPick={(n) => void pickScore(n)} />
           {errorLine}
         </Sheet>
       );

@@ -28,9 +28,9 @@ import {
   panelReducer,
   rowDetail,
   startCheckIn,
-  startFailure,
   targetsChanged,
 } from '../../workout/overview';
+import { createGuard, saveScore, startEmptyFromOverview, startFromOverview } from '../../workout/overview-start';
 import { NameSheet } from '../routines/NameSheet';
 import { TargetWhyPanel } from './TargetWhyPanel';
 
@@ -66,6 +66,13 @@ export function WorkoutOverviewScreen() {
   const [checkInOp] = useState(newUuid);
   // One opId from the first Start tap until success or the page closes: a double tap or a retry starts one workout (OV5).
   const startOp = useRef<string | null>(null);
+  // `Empty workout` has its own, also one per page (S2).
+  const emptyOp = useRef<string | null>(null);
+  // Refs, not state: two taps in one frame both see the old state (S2, S7).
+  const [startGuard] = useState(createGuard);
+  const [scoreGuard] = useState(createGuard);
+  const scoreWrite = useRef<Promise<unknown>>(Promise.resolve());
+  const [scoring, setScoring] = useState(false);
   const [busy, setBusy] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [toast, setToast] = useState<Toasting>(null);
@@ -155,64 +162,78 @@ export function WorkoutOverviewScreen() {
   const row = page ? checkInRow(page.checkIn, tapped) : null;
 
   async function pickScore(n: CheckInScore) {
-    if (!page || busy) return;
-    haptic('step');
-    const current = row?.record ?? null;
-    let saved: CheckIn | null = current;
-    if (current === null) {
-      const r = await services.checkIns.record({ checkInId, opId: checkInOp, score: n });
-      saved = r.ok ? r.checkIn : null;
-    } else if (current.score !== n) {
-      const r = await services.checkIns.update(current.id, { score: n }, current.version, newUuid());
-      if (!r.ok) {
-        // Changed elsewhere: show the latest rather than guess (rule 5).
-        reload();
-        return;
+    // Tiles are disabled while a score is written (S7); the guard also drops a second tap in the same frame.
+    if (!page || busy || scoreGuard.running()) return;
+    const write = scoreGuard.run(async () => {
+      setScoring(true);
+      try {
+        haptic('step');
+        const r = await saveScore(
+          {
+            record: (q) => services.checkIns.record(q),
+            update: (id, patch, version, opId) => services.checkIns.update(id, patch, version, opId),
+            newOpId: newUuid,
+          },
+          { current: checkInRow(page.checkIn, tappedRef.current).record, score: n, checkInId, opId: checkInOp },
+        );
+        if (r.kind === 'stale') {
+          // Changed elsewhere: show the latest rather than guess (rule 5).
+          reload();
+          return;
+        }
+        if (r.kind === 'failed') {
+          setToast({ text: r.message });
+          return;
+        }
+        setTapped(r.checkIn);
+        tappedRef.current = r.checkIn;
+        changed();
+        // At or below the What's up? setting: check-in Step 2 over this page; every exit comes back here.
+        if (asksReasons(n, DEFAULT_CHECK_IN_SETTINGS)) navigation.navigate('CheckIn', { mode: 'overview', checkInId: r.checkIn.id });
+      } finally {
+        setScoring(false);
       }
-      saved = r.checkIn;
-    }
-    if (saved === null) return;
-    setTapped(saved);
-    tappedRef.current = saved;
-    changed();
-    // At or below the What's up? setting: check-in Step 2 over this page; every exit comes back here.
-    if (asksReasons(n, DEFAULT_CHECK_IN_SETTINGS)) navigation.navigate('CheckIn', { mode: 'overview', checkInId: saved.id });
+    });
+    // Start waits for this write, so it sends the score Ben just tapped (B1).
+    scoreWrite.current = write;
+    await write;
   }
 
   async function start() {
-    if (!page || busy) return;
-    setBusy(true);
-    setStartError(null);
-    try {
-      // First Start ever: the one-time Rest alerts question; either answer continues the same Start.
-      await alertsAsk.ensureAsked();
-      startOp.current ??= newUuid();
-      const r = await services.overview.start({
-        startOf: page.startOf,
-        gymId: page.view.gym?.id ?? null,
-        opId: startOp.current,
-        checkIn: startCheckIn(page.checkIn, checkInRow(page.checkIn, tappedRef.current), services.now().utc),
-        expectedPreviewKey: page.view.previewKey,
-      });
-      if (r.ok) {
-        changed();
-        navigation.dispatch(openStartedWorkout(r.notice ? { toast: { kind: 'info', text: r.notice } } : undefined));
-        return;
+    if (!page) return;
+    await startGuard.run(async () => {
+      setBusy(true);
+      setStartError(null);
+      try {
+        await scoreWrite.current;
+        // First Start ever: the one-time Rest alerts question; either answer continues the same Start.
+        await alertsAsk.ensureAsked();
+        startOp.current ??= newUuid();
+        const tappedNow = tappedRef.current;
+        const r = await startFromOverview(
+          {
+            start: (q) => services.overview.start(q),
+            reload: () => services.overview.load({ target, gymId: page.view.gym?.id ?? null, checkInId: tappedNow?.id ?? null }),
+          },
+          { page, opId: startOp.current, checkIn: startCheckIn(page.checkIn, checkInRow(page.checkIn, tappedNow), services.now().utc) },
+        );
+        if (r.kind === 'started') {
+          changed();
+          navigation.dispatch(openStartedWorkout(r.outcome.notice ? { toast: { kind: 'info', text: r.outcome.notice } } : undefined));
+        } else if (r.kind === 'stale') {
+          // Nothing was created and the page changed: the rows re-render with what Start would make now (rule 5).
+          setToast({ text: OVERVIEW_COPY.stale });
+          reload();
+        } else if (r.kind === 'active') {
+          changed();
+          navigation.dispatch(popToToday());
+        } else setStartError(OVERVIEW_COPY.startFailed);
+      } catch {
+        setStartError(OVERVIEW_COPY.startFailed);
+      } finally {
+        setBusy(false);
       }
-      const failure = startFailure(r.error.code);
-      if (failure.kind === 'stale') {
-        // Nothing was created; the rows re-render with what Start would make now (rule 5).
-        setToast({ text: OVERVIEW_COPY.stale });
-        reload();
-      } else if (failure.kind === 'active') {
-        changed();
-        navigation.dispatch(popToToday());
-      } else setStartError(OVERVIEW_COPY.startFailed);
-    } catch {
-      setStartError(OVERVIEW_COPY.startFailed);
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   function chooseGym() {
@@ -241,31 +262,38 @@ export function WorkoutOverviewScreen() {
   }
 
   async function startEmpty() {
-    if (!page) return;
-    let gymId: string | null = page.view.gym?.id ?? null;
-    if (gymId === null) {
-      const made = await services.setup.useTypicalGym();
-      gymId = made.ok ? (made.gymId ?? null) : null;
-    }
-    if (gymId === null) {
-      setStartError(OVERVIEW_COPY.startFailed);
-      return;
-    }
-    await alertsAsk.ensureAsked();
-    const gate = await services.checkIns.gate();
-    if (gate.kind === 'ask') {
-      navigation.navigate('CheckIn', { mode: 'start', gymId });
-      return;
-    }
-    const checkIn = gate.kind === 'reuse' ? ({ kind: 'answered', checkInId: gate.checkInId } as const) : gate.reason === 'off' || gate.reason === 'not_a_check_in_day' ? ({ kind: 'not_asked', reason: gate.reason } as const) : null;
-    const r = await services.workout.start({ gymId, opId: newUuid(), checkIn });
-    if (!r.ok) {
-      if (r.error.code === 'session_already_active') navigation.dispatch(popToToday());
-      else setStartError(OVERVIEW_COPY.startFailed);
-      return;
-    }
-    changed();
-    navigation.dispatch(openStartedWorkout());
+    // Shares Start's guard and keeps one opId per page: a double tap or a retry starts one workout (S2).
+    await startGuard.run(async () => {
+      setBusy(true);
+      setStartError(null);
+      try {
+        await alertsAsk.ensureAsked();
+        emptyOp.current ??= newUuid();
+        const r = await startEmptyFromOverview(
+          {
+            ensureGym: async () => {
+              const known = page?.view.gym?.id ?? (await services.yourData.currentGym())?.id ?? null;
+              if (known !== null) return known;
+              const made = await services.setup.useTypicalGym();
+              return made.ok ? (made.gymId ?? null) : null;
+            },
+            gate: () => services.checkIns.gate(),
+            start: (q) => services.workout.start(q),
+          },
+          emptyOp.current,
+        );
+        if (r.kind === 'started') {
+          changed();
+          navigation.dispatch(openStartedWorkout());
+        } else if (r.kind === 'ask') navigation.navigate('CheckIn', { mode: 'start', gymId: r.gymId });
+        else if (r.kind === 'active') {
+          changed();
+          navigation.dispatch(popToToday());
+        } else setStartError(OVERVIEW_COPY.startFailed);
+      } finally {
+        setBusy(false);
+      }
+    });
   }
 
   function deleteRoutine() {
@@ -507,7 +535,7 @@ export function WorkoutOverviewScreen() {
             <AppText variant="sectionLabel" color="text.tertiary">
               {OVERVIEW_COPY.checkIn}
             </AppText>
-            <CheckInScale selected={row.selected} disabled={busy} onPick={(n) => void pickScore(n)} />
+            <CheckInScale selected={row.selected} disabled={busy || scoring} onPick={(n) => void pickScore(n)} />
           </View>
         )
       ) : null}

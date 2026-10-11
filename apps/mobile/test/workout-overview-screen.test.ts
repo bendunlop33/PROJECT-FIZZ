@@ -10,6 +10,7 @@ import type { CheckIn } from '@fizz/schemas';
 import { openStartedWorkout, popToTabs } from '../src/navigation/actions';
 import {
   checkInRow,
+  checkInSheetEnd,
   eyebrowText,
   gymToastText,
   OVERVIEW_COPY,
@@ -68,6 +69,39 @@ describe('inline check-in (§3.9, §2.2, OV2, OV10)', () => {
   });
   it('VoiceOver reads each tile with its meaning at the ends', () => {
     expect([1, 2, 3, 4, 5].map((n) => tileLabel(n as 1 | 2 | 3 | 4 | 5))).toEqual(['1 of 5, rough', '2 of 5', '3 of 5', '4 of 5', '5 of 5, great']);
+  });
+});
+
+describe('the check-in sheet over the overview (§2.2, review S6)', () => {
+  it('over the overview, or with no gym to start at, every finishing exit returns to the page; otherwise it starts', () => {
+    expect(checkInSheetEnd({ overview: true, gymId: null })).toBe('back_to_overview');
+    expect(checkInSheetEnd({ overview: true, gymId: 'g' })).toBe('back_to_overview');
+    expect(checkInSheetEnd({ overview: false, gymId: null })).toBe('back_to_overview');
+    expect(checkInSheetEnd({ overview: false, gymId: 'g' })).toBe('start_workout');
+  });
+  it('Done, Skip, Not now, Flag, Train anyway and a 4–5 at the score all finish through start(), which checks the mode first; Skip workout goes to Today', () => {
+    const src = read('screens/workout/CheckInScreen.tsx');
+    const sheet = src.slice(src.indexOf('function StartCheckIn('), src.indexOf('function EditCheckIn('));
+    const startBody = sheet.slice(sheet.indexOf('async function start('), sheet.indexOf('const savedToast'));
+    // The mode check comes before any write: over the overview nothing starts.
+    expect(startBody.indexOf("checkInSheetEnd({ overview: overview !== undefined, gymId }) === 'back_to_overview'")).toBeGreaterThan(-1);
+    expect(startBody.indexOf('navigation.goBack()')).toBeLessThan(startBody.indexOf('services.workout.start('));
+    // The only workout start in the sheet is inside start().
+    expect(sheet.match(/services\.workout\.start\(/g)).toHaveLength(1);
+    const body = (name: string) => sheet.slice(sheet.indexOf(`async function ${name}(`), sheet.indexOf('\n  }\n', sheet.indexOf(`async function ${name}(`)));
+    // pickScore (a 4–5 at AX sizes), done (Done), afterPain (Not now, Flag, via flagPain) each end in start().
+    for (const name of ['pickScore', 'done', 'afterPain']) expect(body(name)).toContain('await start(');
+    expect(body('flagPain')).toContain('await afterPain(');
+    expect(sheet).toContain('onPress={() => void afterPain(null)}');
+    // Skip and Train anyway call start() directly.
+    expect(sheet.match(/void start\(\{ kind: 'answered', checkInId: record\.id \}/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(body('skipWorkout')).toContain('popToToday(');
+    expect(body('skipWorkout')).not.toContain('start(');
+  });
+  it('N1: with a saved score to load, the scale waits for it (no second check-in)', () => {
+    const src = read('screens/workout/CheckInScreen.tsx');
+    expect(src).toContain('disabled={existingId !== null && record === null}');
+    expect(src).toContain('if (busy || (existingId !== null && record === null)) return;');
   });
 });
 
@@ -182,6 +216,17 @@ describe('source checks', () => {
   it('OV9: the page makes no network or provider call', () => {
     expect(screen).not.toMatch(/@fizz\/providers|fetch\(/);
     expect(read('services/workout-services.ts')).not.toMatch(/@fizz\/providers|fetch\(/);
+  });
+
+  it('B1/S2/S7: Start waits for a score being written; tiles are off while one is; both Starts share one guard and keep one opId per page', () => {
+    expect(screen).toContain('await scoreWrite.current;');
+    expect(screen).toContain('disabled={busy || scoring}');
+    expect(screen).toContain('if (!page || busy || scoreGuard.running()) return;');
+    expect(screen.match(/await startGuard\.run\(/g)).toHaveLength(2);
+    expect(screen).toContain('startOp.current ??= newUuid();');
+    expect(screen).toContain('emptyOp.current ??= newUuid();');
+    // The writes themselves live in overview-start.ts (tested on real SQLite); the screen never calls them directly.
+    expect(screen).not.toMatch(/services\.overview\.start\(\{|services\.checkIns\.record\(\{/);
   });
 
   it('Reduce Motion: the panel appears without the height animation', () => {

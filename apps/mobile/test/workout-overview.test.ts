@@ -1,4 +1,3 @@
-import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -259,9 +258,8 @@ describe('Workout overview', () => {
     if (!savedA.ok || !savedB.ok) throw new Error('routines not saved');
     h.clockMs += DAY;
     // Rotation: Legs B was done last, so Push A is up next. Make it unstartable (its exercise is gone).
+    const file = s.developer.databaseNames().current;
     await h.forceClose();
-    const file = readdirSync(h.dir).find((n) => /^training.*\.db$/.test(n));
-    if (!file) throw new Error('no database file');
     const raw = new DatabaseSync(join(h.dir, file));
     const row = raw.prepare('SELECT data FROM routines WHERE id = ?').get(savedA.routine.id) as { data: string };
     const doc = JSON.parse(row.data) as { exercises: { exerciseId: string }[] };
