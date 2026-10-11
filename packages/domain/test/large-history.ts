@@ -1,6 +1,8 @@
+import { availableParallelism, loadavg } from 'node:os';
+
 import type { Exercise, SessionAggregate, SessionCommand } from '@fizz/schemas';
 import { reduceSession, startWorkout } from '../src/index';
-import { at, barbell, exercise, GYM, id, idGen, kg, profile, routine, routineExercise, stack, template, values } from './fixtures';
+import { at, barbell, dumbbells, exercise, GYM, id, idGen, kg, profile, routine, routineExercise, stack, template, values } from './fixtures';
 
 /**
  * A realistic, large training history for performance tests (backup review):
@@ -16,29 +18,44 @@ export const HISTORY_EXERCISES: readonly Exercise[] = [
   exercise(202, 'Face pull', { compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack' }),
 ];
 
-function historyRoutine() {
+/**
+ * Opt-in sixth exercise (`largeHistory({ unilateral: true })`): a single-arm
+ * dumbbell row logged left then right, so perf tests cover per-hand loads and
+ * the unilateral side-pairing in Progress (review progress-A r3 N2). Kept out
+ * of the default history so the backup fixtures' sizes don't change.
+ */
+export const UNILATERAL_HISTORY_EXERCISE: Exercise = exercise(206, 'Single-arm dumbbell row', {
+  primaryMuscles: ['lats'],
+  laterality: 'unilateral',
+  compatibleEquipment: ['dumbbells'],
+  defaultLoadConvention: 'per_hand',
+  defaultRestS: 90,
+});
+
+function historyRoutine(list: readonly Exercise[]) {
   return routine(
-    HISTORY_EXERCISES.map((ex, i) => {
+    list.map((ex, i) => {
       const onBar = ex.defaultLoadConvention === 'total';
+      const perHand = ex.defaultLoadConvention === 'per_hand';
+      const load = onBar ? kg(80 + i * 10) : perHand ? kg(22.5, 'per_hand') : kg(40, 'stack');
       return routineExercise(800 + i, {
         exerciseId: ex.id,
-        equipmentId: onBar ? barbell().id : stack().id,
+        equipmentId: onBar ? barbell().id : perHand ? dumbbells().id : stack().id,
         order: i,
-        setTemplates: [0, 1, 2, 3].map((n) =>
-          template(8000 + i * 10 + n, { targetLoad: onBar ? kg(80 + i * 10) : kg(40, 'stack'), targetReps: { min: 6, max: 10 } }),
-        ),
+        setTemplates: [0, 1, 2, 3].map((n) => template(8000 + i * 10 + n, { targetLoad: load, targetReps: { min: 6, max: 10 } })),
       });
     }),
   );
 }
 
-export function largeHistory(opts: { weeks?: number; perWeek?: number } = {}): SessionAggregate[] {
+export function largeHistory(opts: { weeks?: number; perWeek?: number; unilateral?: boolean } = {}): SessionAggregate[] {
   const weeks = opts.weeks ?? 104;
   const perWeek = opts.perWeek ?? 4;
   const total = weeks * perWeek;
-  const r = historyRoutine();
-  const exercises = new Map(HISTORY_EXERCISES.map((e) => [e.id, e]));
-  const gymEquipment = [barbell(), stack()];
+  const list = opts.unilateral === true ? [...HISTORY_EXERCISES, UNILATERAL_HISTORY_EXERCISE] : HISTORY_EXERCISES;
+  const r = historyRoutine(list);
+  const exercises = new Map(list.map((e) => [e.id, e]));
+  const gymEquipment = opts.unilateral === true ? [barbell(), stack(), dumbbells()] : [barbell(), stack()];
   const owner = profile();
   const dayS = 86_400;
   const out: SessionAggregate[] = [];
@@ -66,6 +83,7 @@ export function largeHistory(opts: { weeks?: number; perWeek?: number } = {}): S
     while (s.session.activeSetId !== null) {
       const setId = s.session.activeSetId;
       const set = s.sets.find((x) => x.id === setId);
+      const unilateral = s.exercises.find((e) => e.id === set?.sessionExerciseId)?.laterality === 'unilateral';
       timer += 1;
       apply({
         type: 'log_set',
@@ -74,6 +92,8 @@ export function largeHistory(opts: { weeks?: number; perWeek?: number } = {}): S
         setId,
         values: values(set?.planned.load ?? kg(40, 'stack'), 6 + ((k + n) % 5), { rpe: 7 + ((k + n) % 4) * 0.5 }),
         restTimerId: id(timer),
+        // Left first; the reducer then adds the right-side companion as the next set.
+        ...(unilateral && set?.pairedWithSetId === null ? { side: 'left' as const } : {}),
       });
       t += 150;
       n += 1;
@@ -106,4 +126,19 @@ export async function measureBlocking<T>(fn: () => Promise<T>): Promise<{ result
   running = false;
   tick();
   return { result, totalMs, maxBlockMs };
+}
+
+/**
+ * A wall-clock budget for perf and timing tests, scaled for a loaded machine
+ * (review progress-A r3 S1). When the 1-minute load average exceeds the core
+ * count, other worktrees' tsc/eslint/vitest runs stretch every timing, so the
+ * budget grows with the oversubscription (at most 4×): a gross regression
+ * still fails, contention alone doesn't. `FIZZ_PERF_STRICT=1` (CI, or the
+ * quiet-machine pre-merge run) always uses the plain budget.
+ */
+export function timingBudget(ms: number): number {
+  if (process.env['FIZZ_PERF_STRICT'] === '1') return ms;
+  const [oneMinute = 0] = loadavg();
+  const factor = Math.min(4, Math.max(1, oneMinute / availableParallelism()));
+  return ms * factor;
 }

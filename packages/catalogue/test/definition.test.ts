@@ -295,7 +295,8 @@ describe('drawing (§4.11.6–4.11.7)', () => {
     expect(underlays).toBeGreaterThan(0);
   });
 
-  it('D6: one paint per pixel: coloured pixels are the same whether the faint shapes show or not (steady and at the pulse low)', { timeout: 60_000 }, () => {
+  // Rasterises every guide: 3× the old 60 s for a loaded machine (review progress-A r3 S1).
+  it('D6: one paint per pixel: coloured pixels are the same whether the faint shapes show or not (steady and at the pulse low)', { timeout: 180_000 }, () => {
     const PX = 240;
     for (const key of GUIDE_KEYS) {
       const { prepared, camera } = loaded(key);
