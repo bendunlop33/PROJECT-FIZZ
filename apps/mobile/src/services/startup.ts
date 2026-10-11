@@ -61,6 +61,12 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
       return { kind: 'sqlite_too_old', version: sqliteVersion };
     }
     const services = createAppServices({ ...deps, manager });
+    // A Delete my data that was interrupted is finished before anything is shown (data-import-export check 31).
+    const resumed = await services.data.resumeInterrupted();
+    if (resumed.ran && !resumed.ok) {
+      await manager.close().catch(() => undefined);
+      return { kind: 'open_failed', message: `Deleting your data didn’t finish: ${resumed.message ?? 'unknown error'}. It’s tried again when you retry.` };
+    }
     // Coaching knowledge: the starter exercise list (only missing IDs are added).
     await services.coachingKnowledge.ensureStarterExercises().catch(() => 0);
     // Restored data with a profile skips setup, even after a force-close straight after the switch (SP4; review R3).

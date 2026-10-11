@@ -20,8 +20,11 @@ const UtcSchema = z.iso.datetime({ offset: false });
 export const BackupRecordSchema = z.object({
   fileName: z.string().min(1).max(200),
   kind: z.enum(['automatic', 'manual']),
-  /** `before_import` / `after_import`: around a FitNotes import commit (data-import-export §3.2, §3.4). */
-  reason: z.enum(['workout_finished', 'manual', 'catch_up', 'before_import', 'after_import']),
+  /**
+   * `before_import` / `after_import`: around a FitNotes import commit (data-import-export §3.2, §3.4).
+   * `before_delete` / `before_reset`: right before `Delete my data` / `Reset coaching knowledge`, so either can be undone with Restore.
+   */
+  reason: z.enum(['workout_finished', 'manual', 'catch_up', 'before_import', 'after_import', 'before_delete', 'before_reset']),
   createdAtUtc: UtcSchema,
   tz: z.string().min(1),
   /** SHA-256 of the whole file text, checked again before rotation deletes it. */

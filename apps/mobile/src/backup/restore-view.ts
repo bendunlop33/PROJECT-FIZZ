@@ -3,6 +3,7 @@ import type { BackupError, RestorePreview } from '@fizz/persistence';
 
 import { formatShortDate, formatTime, formatWhen } from '../format/dates';
 import { formatCount, plural } from '../format/numbers';
+import type { BackupRecord } from './manifest';
 
 /**
  * Wording for Restore and Check a backup (data-import-export.md §2.3, §2.4,
@@ -224,7 +225,7 @@ export function restoreBackAllowed(step: RestoreStepKind, fromWelcome: boolean):
 }
 
 /** Why an on-phone backup was made, for the choose list (§2.3 step 1). */
-export function backupReasonLabel(reason: 'workout_finished' | 'manual' | 'catch_up' | 'before_import' | 'after_import'): string {
+export function backupReasonLabel(reason: BackupRecord['reason']): string {
   switch (reason) {
     case 'manual':
       return 'Saved by you';
@@ -232,6 +233,10 @@ export function backupReasonLabel(reason: 'workout_finished' | 'manual' | 'catch
       return 'Before a FitNotes import';
     case 'after_import':
       return 'After a FitNotes import';
+    case 'before_delete':
+      return 'Before Delete my data';
+    case 'before_reset':
+      return 'Before Reset coaching knowledge';
     case 'workout_finished':
     case 'catch_up':
       return 'After a workout';

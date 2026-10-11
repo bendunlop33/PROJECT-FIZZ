@@ -38,10 +38,15 @@ export interface Harness {
  * generator. Two phones (a reinstall on another day) need both to differ,
  * as real installs do (review R1).
  */
-export function createHarness(start = '2026-10-08T17:00:00.000Z', opts: { idStart?: number; coach?: StartupDeps['coach'] } = {}): Harness {
+export function createHarness(
+  start = '2026-10-08T17:00:00.000Z',
+  opts: { idStart?: number; coach?: StartupDeps['coach']; credentials?: StartupDeps['credentials']; personalFiles?: StartupDeps['personalFiles'] } = {},
+): Harness {
   const dir = mkdtempSync(join(tmpdir(), 'fizz-harness-'));
   let dbNames = 0;
   let manifestText: string | null = null;
+  // The Delete my data marker survives a force-close like any file in the container.
+  let ledgerText: string | null = null;
   const open: AppServices[] = [];
   const h: Harness = {
     dir,
@@ -90,6 +95,15 @@ export function createHarness(start = '2026-10-08T17:00:00.000Z', opts: { idStar
         locale: 'en-GB',
         restAlerts: createRestAlertController(notifier),
         ...(opts.coach === undefined ? {} : { coach: opts.coach }),
+        dataLedger: {
+          read: () => Promise.resolve(ledgerText),
+          write: (t) => {
+            ledgerText = t;
+            return Promise.resolve();
+          },
+        },
+        ...(opts.credentials === undefined ? {} : { credentials: opts.credentials }),
+        ...(opts.personalFiles === undefined ? {} : { personalFiles: opts.personalFiles }),
       });
       if (o.kind !== 'ready') throw new Error(o.kind);
       open.push(o.services);
