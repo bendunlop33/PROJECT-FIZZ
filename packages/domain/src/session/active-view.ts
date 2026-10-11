@@ -1,8 +1,10 @@
-import type { CommandOf, EquipmentInstance, Load, PainFlag, ZonedTimestamp, SessionAggregate, SessionExercise, SetExclusion, SetSide, SetValues, WorkoutSet } from '@fizz/schemas';
+import type { CommandOf, EquipmentInstance, Load, Measurement, PainFlag, ZonedTimestamp, SessionAggregate, SessionExercise, SetExclusion, SetSide, SetValues, WorkoutSet } from '@fizz/schemas';
 import {
   EQUIPMENT_WORD,
   SET_TYPE_BADGE,
   SET_TYPE_WORD,
+  formatDistance,
+  formatDuration,
   formatNumber,
   loadFieldLabel,
   loadFieldUnit,
@@ -65,7 +67,7 @@ export function lastComparableSession(history: readonly HistorySession[], ex: Pi
       gymId: h.gymId,
       sets: sets.map((s, index) => ({
         index,
-        values: { load: s.load, reps: s.reps, durationS: null, rpe: s.rpe, rir: s.rir },
+        values: { load: s.load, reps: s.reps, durationS: s.durationS ?? null, rpe: s.rpe, rir: s.rir, ...(s.distanceM !== undefined ? { distanceM: s.distanceM } : {}) },
         ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}),
       })),
     };
@@ -170,6 +172,8 @@ export interface SetRowView {
   number: number;
   /** `W`, `T`, `B`, `D`, `L`, `R` text badges (never colour alone). */
   badges: string[];
+  /** Ben's note on this set, or null. */
+  note: string | null;
   status: SetRowStatus;
   text: string;
   edited: boolean;
@@ -196,8 +200,14 @@ export interface FocusView {
   sessionExerciseId: string;
   exerciseId: string;
   exerciseName: string;
-  measurement: 'reps' | 'duration';
+  measurement: Measurement;
   unilateral: boolean;
+  /** Ben's note on this exercise today (Notes), or null. */
+  note: string | null;
+  /** `Swapped from Bench press` while this row is today's swap (EL4); null otherwise. */
+  swappedFrom: { name: string; opId: string } | null;
+  /** `Remove exercise` is offered: nothing on it is logged and it has no parts at another gym (exercise-library §4.6). */
+  removable: boolean;
   /** `Barbell · Set 2 of 4`, `Barbell · Warm-up · Set 1 of 4` (+ ` · per side`). */
   headerLine: string;
   setNumber: number;
@@ -208,6 +218,14 @@ export interface FocusView {
   loadField: LoadField | null;
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
   duration: { value: number | null } | null;
+  /** Distance sets: metres, stepping 5 m (sled push, carries). */
+  distance: { value: number | null; down: StepTarget; up: StepTarget } | null;
+  /**
+   * The work timer of a timed set (active-workout §2.7): `idle` shows
+   * `Start 0:45`; `running`/`paused` count down; `ended` (reached 0 or
+   * stopped) leaves the time in the field to log. Null for other sets.
+   */
+  workTimer: WorkTimerView | null;
   target: string | null;
   /** `Plan was 100 kg × 6–8` when a coach adjustment set this target (coach-adjustments §2.7); else null. */
   planWas: string | null;
@@ -238,7 +256,7 @@ export interface FocusView {
   next: { kind: 'exercise'; name: string; target: string | null; setId: string } | { kind: 'last_set' } | null;
   /** Null when a value is missing. */
   logLabel: string | null;
-  missing: 'load' | 'reps' | 'time' | null;
+  missing: 'load' | 'reps' | 'time' | 'distance' | null;
   /** Deterministic per draft, so a retry after a crash commits once. */
   opId: string;
   /** Values `log_set` will save (effort is never prefilled). */
@@ -270,7 +288,7 @@ export type RestView =
 export type PrimaryAction =
   | { kind: 'log'; label: string }
   /** A value is missing: the button focuses that field (audit F2), it never logs. */
-  | { kind: 'enter'; label: string; field: 'load' | 'reps' | 'time' }
+  | { kind: 'enter'; label: string; field: 'load' | 'reps' | 'time' | 'distance' }
   | { kind: 'resume'; label: 'Resume' }
   | { kind: 'add_exercise'; label: 'Add exercise' }
   | { kind: 'finish'; label: 'Finish workout' }
@@ -409,7 +427,40 @@ function missingFor(values: SetValues, ex: SessionExercise): FocusView['missing'
   if (ex.loadConvention !== 'bodyweight' && values.load === null && ex.loadConvention !== 'added') return 'load';
   if (ex.measurement === 'reps' && values.reps === null) return 'reps';
   if (ex.measurement === 'duration' && values.durationS === null) return 'time';
+  if (ex.measurement === 'distance' && (values.distanceM === null || values.distanceM === undefined)) return 'distance';
   return null;
+}
+
+export interface WorkTimerView {
+  state: 'idle' | 'running' | 'paused' | 'ended';
+  /** What `Start` runs: the planned time, else the draft's, else 30 s. */
+  plannedS: number;
+  /** Counting down (running/paused); null otherwise. */
+  remainingMs: number | null;
+  /** `Start 0:45` / `Stop`. */
+  label: string;
+}
+
+/** Default work time when a timed set has no target or draft (active-workout §2.7). */
+export const DEFAULT_WORK_S = 30;
+
+function workTimerView(state: SessionAggregate, set: WorkoutSet, values: SetValues, nowMs: number): WorkTimerView {
+  const plannedS = set.planned.durationS ?? values.durationS ?? DEFAULT_WORK_S;
+  const wi = state.workInterval?.setId === set.id ? state.workInterval : null;
+  if (wi?.status === 'running') return { state: 'running', plannedS: wi.durationS, remainingMs: Math.max(0, toMs(wi.deadlineUtc) - nowMs), label: 'Stop' };
+  if (wi?.status === 'paused') return { state: 'paused', plannedS: wi.durationS, remainingMs: wi.remainingMsAtPause ?? 0, label: 'Stop' };
+  if (wi?.status === 'completed' || wi?.status === 'stopped') return { state: 'ended', plannedS: wi.durationS, remainingMs: null, label: `Start ${formatDuration(plannedS)}` };
+  return { state: 'idle', plannedS, remainingMs: null, label: `Start ${formatDuration(plannedS)}` };
+}
+
+/** Distance steps: 5 m, never below 0 (no equipment involved). */
+function distanceSteps(value: number | null): { down: StepTarget; up: StepTarget } {
+  const v = value ?? 0;
+  const up = v + 5;
+  return {
+    up: { enabled: true, value: up, label: formatDistance(up) },
+    down: value === null || v - 5 < 0 ? { enabled: false, reason: 'Minimum 0' } : { enabled: true, value: v - 5, label: formatDistance(v - 5) },
+  };
 }
 
 function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
@@ -489,6 +540,9 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     exerciseName: ex.exerciseName,
     measurement: ex.measurement,
     unilateral,
+    note: ex.note ?? null,
+    swappedFrom: swappedFromOf(state, ex),
+    removable: isRemovable(state, ex),
     headerLine: headerParts.filter((p): p is string => p !== null).join(' · '),
     setNumber,
     setCount: own.length,
@@ -506,6 +560,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     loadField,
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
     duration: ex.measurement === 'duration' ? { value: values.durationS } : null,
+    distance: ex.measurement === 'distance' ? { value: values.distanceM ?? null, ...distanceSteps(values.distanceM ?? null) } : null,
+    workTimer: ex.measurement === 'duration' ? workTimerView(state, set, values, input.nowMs) : null,
     target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral }),
     planWas: set.planned.source === 'coach' && set.planned.coach ? planWasText(set.planned.coach.before, ex.loadConvention, eq) : null,
     coachActionId: set.planned.source === 'coach' && set.planned.coach !== undefined && coachUndoRefusal(state, set.planned.coach.actionId) === null ? set.planned.coach.actionId : null,
@@ -532,6 +588,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
         setId: s.id,
         number: i + 1,
         badges: [SET_TYPE_BADGE[s.setType], sideBadge(s)].filter((b): b is string => b !== null),
+        note: s.note ?? null,
         status,
         text,
         edited: s.edited,
@@ -548,6 +605,22 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     logValues,
     logSide: unilateral && fixedSide === null ? (chosenSide ?? 'both') : undefined,
   };
+}
+
+/** `Swapped from Bench press` while the swap can still be undone (any of its sets pending). */
+function swappedFromOf(state: SessionAggregate, ex: SessionExercise): FocusView['swappedFrom'] {
+  const from = ex.swappedFrom;
+  if (from === undefined) return null;
+  const original = state.exercises.find((e) => e.id === from.sessionExerciseId);
+  if (!original) return null;
+  return { name: original.exerciseName, opId: from.opId };
+}
+
+/** Nothing logged on it and no part at another gym (the reducer refuses the rest). */
+export function isRemovable(state: SessionAggregate, ex: SessionExercise): boolean {
+  if (ex.removed !== undefined || ex.continuesFromId !== undefined) return false;
+  if (state.exercises.some((e) => e.continuesFromId === ex.id && e.removed === undefined)) return false;
+  return !state.sets.some((s) => s.sessionExerciseId === ex.id && s.status === 'completed');
 }
 
 function buildJustSaved(state: SessionAggregate): JustSavedView | null {
@@ -626,7 +699,7 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
   else if (focus === null) primary = isOpenEndedWorkout(state) ? { kind: 'add_exercise', label: 'Add exercise' } : { kind: 'finish', label: 'Finish workout' };
   else if (focus.logLabel === null) {
     const field = focus.missing ?? 'reps';
-    primary = { kind: 'enter', field, label: field === 'load' ? 'Enter load' : field === 'time' ? 'Enter time' : 'Enter reps' };
+    primary = { kind: 'enter', field, label: field === 'load' ? 'Enter load' : field === 'time' ? 'Enter time' : field === 'distance' ? 'Enter distance' : 'Enter reps' };
   }
   else primary = { kind: 'log', label: focus.logLabel };
 
@@ -683,7 +756,7 @@ function exerciseEntries(state: SessionAggregate, liveSets: readonly WorkoutSet[
   const out: ActiveSetView['exercises'] = [];
   const index = new Map<string, number>();
   for (const e of [...state.exercises].sort((a, b) => a.order - b.order)) {
-    if (isEmptyPart(state, e)) continue;
+    if (isEmptyPart(state, e) || e.removed !== undefined) continue;
     const root = partRootOf(state.exercises, e.id);
     const pending = liveSets.filter((s) => s.sessionExerciseId === e.id && s.status === 'pending').length;
     const done = liveSets.filter((s) => s.sessionExerciseId === e.id && s.status === 'completed').length;

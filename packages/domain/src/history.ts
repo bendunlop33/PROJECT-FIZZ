@@ -47,6 +47,9 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
         reps: s.actual.reps,
         rpe: s.actual.rpe,
         rir: s.actual.rir,
+        // Timed and distance sets carry their time or metres (for `Last`); absent on others.
+        ...(s.actual.durationS !== null ? { durationS: s.actual.durationS } : {}),
+        ...(s.actual.distanceM !== null && s.actual.distanceM !== undefined ? { distanceM: s.actual.distanceM } : {}),
         // §2.13: flags travel with the set; consumers decide with `isSetCountable`.
         ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}),
         ...(opts.identity ? { setId: s.id, version: s.version } : {}),

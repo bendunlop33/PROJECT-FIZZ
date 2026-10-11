@@ -1,4 +1,4 @@
-import type { EquipmentInstance, Load, LoadConvention, PlannedSet, RepRange, SetSide, SetType, SetValues, WeightUnit } from '@fizz/schemas';
+import type { EquipmentInstance, Load, LoadConvention, Measurement, PlannedSet, RepRange, SetSide, SetType, SetValues, WeightUnit } from '@fizz/schemas';
 import { localDateOf } from './calendar';
 import { toMs } from './time';
 import { fromScaled, toScaled } from './units';
@@ -23,6 +23,12 @@ export function formatNumber(value: number): string {
 export function formatDuration(totalSeconds: number): string {
   const s = Math.max(0, Math.round(totalSeconds));
   return `${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** `50 m`, `400 m`, `1.5 km` (distance sets: sled push, carries). */
+export function formatDistance(metres: number): string {
+  const m = Math.max(0, metres);
+  return m >= 1000 ? `${formatNumber(m / 1000)}${NBSP}km` : `${formatNumber(m)}${NBSP}m`;
 }
 
 /** Elapsed workout time: `m:ss` under an hour, `h:mm:ss` from an hour up. */
@@ -79,6 +85,17 @@ export function loadText(load: Load | null, convention: LoadConvention, equipmen
   }
 }
 
+/**
+ * The load of a distance set (sled push, carries): what is on the sled or in
+ * the hands, never `BW + …` (Ben's body isn't part of a sled load). Other
+ * conventions read as `loadText`.
+ */
+export function distanceLoadText(load: Load | null, convention: LoadConvention, equipment: LoadContext = null): string | null {
+  if (convention === 'bodyweight' || load === null || load.convention === 'bodyweight') return null;
+  if (load.convention !== 'added' || equipment?.kind === 'plate_loaded_machine') return loadText(load, convention, equipment);
+  return load.value === 0 ? null : `${formatNumber(load.value)}${NBSP}${load.unit}`;
+}
+
 /** The number field's label (active-workout §5). Null = no load field (bodyweight). */
 export function loadFieldLabel(convention: LoadConvention, equipment: LoadContext = null): string | null {
   switch (convention) {
@@ -104,7 +121,7 @@ export function loadFieldUnit(unit: WeightUnit, convention: LoadConvention): str
 
 export interface ValuesTextOptions {
   convention: LoadConvention;
-  measurement: 'reps' | 'duration';
+  measurement: Measurement;
   equipment?: LoadContext;
   /** Unilateral only. */
   side?: SetSide | null;
@@ -112,11 +129,15 @@ export interface ValuesTextOptions {
   compact?: boolean;
 }
 
-/** `100 kg × 8`, `BW × 12`, `0:45`; unilateral `… per side` or `Left · …`. */
-export function valuesText(values: Pick<SetValues, 'load' | 'reps' | 'durationS'>, o: ValuesTextOptions): string {
+/** `100 kg × 8`, `BW × 12`, `0:45`, `40 kg × 50 m`; unilateral `… per side` or `Left · …`. */
+export function valuesText(values: Pick<SetValues, 'load' | 'reps' | 'durationS' | 'distanceM'>, o: ValuesTextOptions): string {
   const times = o.compact ? '×' : TIMES;
   let body: string;
-  if (o.measurement === 'duration') {
+  if (o.measurement === 'distance') {
+    const d = values.distanceM === null || values.distanceM === undefined ? '—' : formatDistance(values.distanceM);
+    const load = distanceLoadText(values.load, o.convention, o.equipment);
+    body = load === null ? d : `${load}${times}${d}`;
+  } else if (o.measurement === 'duration') {
     const d = formatDuration(values.durationS ?? 0);
     body = o.convention === 'bodyweight' || values.load === null ? d : `${loadText(values.load, o.convention, o.equipment)}${times}${d}`;
   } else {
@@ -140,9 +161,12 @@ export function repRangeText(r: RepRange): string {
  */
 export function targetText(planned: PlannedSet, o: { convention: LoadConvention; equipment?: LoadContext; perSide?: boolean }): string | null {
   const parts: string[] = [];
-  if (planned.load !== null) parts.push(loadText(planned.load, o.convention, o.equipment));
+  const isDistance = planned.distanceM !== undefined && planned.distanceM !== null;
+  const load = planned.load === null ? null : isDistance ? distanceLoadText(planned.load, o.convention, o.equipment) : loadText(planned.load, o.convention, o.equipment);
+  if (load !== null) parts.push(load);
   if (planned.reps !== null) parts.push(`${repRangeText(planned.reps)}${NBSP}reps${o.perSide ? `${NBSP}per side` : ''}`);
   if (planned.durationS !== null) parts.push(formatDuration(planned.durationS));
+  if (planned.distanceM !== undefined && planned.distanceM !== null) parts.push(formatDistance(planned.distanceM));
   if (parts.length === 0) return null;
   // Rule 3: a coach target says so; any other source is behind `Why?` (`Set by`, minimal-copy D1).
   const word = planned.source === 'coach' ? 'Coach target' : 'Target';
@@ -151,11 +175,12 @@ export function targetText(planned: PlannedSet, o: { convention: LoadConvention;
 
 /** Short target for list rows: `Target 100 kg × 6–8`. */
 export function targetShort(planned: PlannedSet, o: { convention: LoadConvention; equipment?: LoadContext }): string | null {
-  if (planned.load === null && planned.reps === null && planned.durationS === null) return null;
-  const load = planned.load === null ? null : loadText(planned.load, o.convention, o.equipment);
+  const distance = planned.distanceM === undefined || planned.distanceM === null ? null : formatDistance(planned.distanceM);
+  if (planned.load === null && planned.reps === null && planned.durationS === null && distance === null) return null;
+  const load = planned.load === null ? null : distance !== null ? distanceLoadText(planned.load, o.convention, o.equipment) : loadText(planned.load, o.convention, o.equipment);
   const reps = planned.reps === null ? null : repRangeText(planned.reps);
   const dur = planned.durationS === null ? null : formatDuration(planned.durationS);
-  const right = reps ?? dur;
+  const right = reps ?? dur ?? distance;
   const word = planned.source === 'coach' ? 'Coach target' : 'Target';
   if (load !== null && right !== null) return `${word} ${load}${TIMES}${right}`;
   if (load !== null) return `${word} ${load}`;

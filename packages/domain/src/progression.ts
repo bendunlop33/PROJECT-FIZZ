@@ -34,6 +34,10 @@ export interface HistorySet {
   reps: number | null;
   rpe: Rpe | null;
   rir: Rir | null;
+  /** Timed sets: the work time logged. Absent on rep sets. */
+  durationS?: number;
+  /** Distance sets: the metres logged. Absent on other sets. */
+  distanceM?: number;
   /** The stored set and its version (sets logged in the app), so `Why?` can tell when it was edited later. */
   setId?: string;
   version?: number;

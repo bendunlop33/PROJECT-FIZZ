@@ -502,12 +502,19 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
       const copy = { ...row };
       delete copy.continues_from_id;
       delete copy.equipment_version;
+      // …or schema 10 (workout gaps).
+      delete copy.note;
+      delete copy.removed;
+      delete copy.swapped_from;
+      delete copy.measures_distance;
       return copy;
     });
     tables.session_sets = (tables.session_sets ?? []).map((row) => {
       const copy = { ...row };
       delete copy.exclusions;
       delete copy.skipped_by;
+      delete copy.note;
+      delete copy.actual_distance_m;
       return copy;
     });
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
@@ -607,11 +614,18 @@ describe('merged schema: active-set (4) and gym switch (5)', () => {
       const copy = { ...row };
       delete copy.continues_from_id;
       delete copy.equipment_version;
+      // …or schema 10 (workout gaps).
+      delete copy.note;
+      delete copy.removed;
+      delete copy.swapped_from;
+      delete copy.measures_distance;
       return copy;
     });
     tables.session_sets = (tables.session_sets ?? []).map((row) => {
       const copy = { ...row };
       delete copy.skipped_by;
+      delete copy.note;
+      delete copy.actual_distance_m;
       return copy;
     });
     // Nor coach tables (schema 6).

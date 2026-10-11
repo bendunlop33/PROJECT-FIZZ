@@ -110,3 +110,9 @@ export type RepRange = z.infer<typeof RepRangeSchema>;
 
 /** Rest or work duration in whole seconds. */
 export const DurationSecondsSchema = z.int().min(0).max(4 * 3600);
+
+/** A distance in metres (sled push, carries, erg pieces): at most 100 km, to the centimetre. */
+export const DistanceMetresSchema = z.number().min(0).max(100_000);
+
+/** A note Ben wrote on an exercise or a set (Your data): trimmed text, 1–500 characters. */
+export const NoteSchema = z.string().trim().min(1).max(500);

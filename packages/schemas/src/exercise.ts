@@ -31,20 +31,17 @@ export const EquipmentKindSchema = z.enum([
 ]);
 export type ExerciseEquipmentKind = z.infer<typeof EquipmentKindSchema>;
 
-/** `reps` sets log a count; `duration` sets log a work time (timed exercises). */
-export const MeasurementSchema = z.enum(['reps', 'duration']);
+/**
+ * `reps` sets log a count; `duration` sets log a work time (timed exercises:
+ * planks, hangs); `distance` sets log metres (sled push, carries; ADR 0011,
+ * merged 2026-10-11 once sets could record a distance).
+ */
+export const MeasurementSchema = z.enum(['reps', 'duration', 'distance']);
 export type Measurement = z.infer<typeof MeasurementSchema>;
 
-/**
- * Measurement as described by the exercise catalogue. Adds `distance` (sled
- * 50 m, farmer's carry, ski/row 1000 m). It is deliberately separate from
- * `MeasurementSchema`: sets can't record a distance yet (no `SetValues`
- * field, reducer check or progression rule), so a distance exercise is not
- * loggable and the catalogue loader doesn't turn it into an `Exercise` row
- * (ADR 0010). Merge the two once distance logging is built.
- */
-export const CatalogueMeasurementSchema = z.enum(['reps', 'duration', 'distance']);
-export type CatalogueMeasurement = z.infer<typeof CatalogueMeasurementSchema>;
+/** Measurement as described by the exercise catalogue: the same three since distance sets exist (ADR 0011). */
+export const CatalogueMeasurementSchema = MeasurementSchema;
+export type CatalogueMeasurement = Measurement;
 
 export const LateralitySchema = z.enum(['bilateral', 'unilateral']);
 export type Laterality = z.infer<typeof LateralitySchema>;

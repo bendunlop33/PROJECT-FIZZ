@@ -73,7 +73,9 @@ function exerciseRow(e: SessionExercise, ordinal: number): Record<string, SqlVal
     ordinal,
     exercise_id: e.exerciseId,
     exercise_name: e.exerciseName,
-    measurement: e.measurement,
+    // Schema 10: the measurement CHECK predates distance; a distance row is `reps` + `measures_distance`.
+    measurement: e.measurement === 'distance' ? 'reps' : e.measurement,
+    measures_distance: e.measurement === 'distance' ? 1 : null,
     laterality: e.laterality,
     equipment_id: e.equipmentId,
     load_convention: e.loadConvention,
@@ -84,6 +86,9 @@ function exerciseRow(e: SessionExercise, ordinal: number): Record<string, SqlVal
     progression_rule_id: e.progressionRuleId,
     continues_from_id: e.continuesFromId ?? null,
     equipment_version: e.equipmentVersion ?? null,
+    note: e.note ?? null,
+    removed: e.removed === undefined ? null : JSON.stringify(e.removed),
+    swapped_from: e.swappedFrom === undefined ? null : JSON.stringify(e.swappedFrom),
   };
 }
 
@@ -108,6 +113,7 @@ function setRow(s: WorkoutSet, ordinal: number): Record<string, SqlValue> {
     actual_load_convention: a?.load?.convention ?? null,
     actual_reps: a?.reps ?? null,
     actual_duration_s: a?.durationS ?? null,
+    actual_distance_m: a?.distanceM ?? null,
     actual_rpe: a?.rpe ?? null,
     actual_rir: a?.rir ?? null,
     draft: s.draft === null ? null : JSON.stringify(s.draft),
@@ -119,6 +125,7 @@ function setRow(s: WorkoutSet, ordinal: number): Record<string, SqlValue> {
     // §2.13: NULL = the set counts (as for every set saved before schema 4).
     exclusions: s.exclusions && s.exclusions.length > 0 ? JSON.stringify(s.exclusions) : null,
     skipped_by: s.skippedBy ?? null,
+    note: s.note ?? null,
     edited: int(s.edited),
     version: s.version,
   };
@@ -221,7 +228,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       sessionId: e.session_id,
       exerciseId: e.exercise_id,
       exerciseName: e.exercise_name,
-      measurement: e.measurement,
+      measurement: e.measures_distance === 1 ? 'distance' : e.measurement,
       laterality: e.laterality,
       equipmentId: e.equipment_id,
       loadConvention: e.load_convention,
@@ -233,6 +240,9 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       // Absent rather than null (optional fields); a wrong type still fails validation.
       ...(e.continues_from_id === null || e.continues_from_id === undefined ? {} : { continuesFromId: e.continues_from_id }),
       ...(e.equipment_version === null || e.equipment_version === undefined ? {} : { equipmentVersion: e.equipment_version }),
+      ...(e.note === null || e.note === undefined ? {} : { note: e.note }),
+      ...(e.removed === null || e.removed === undefined ? {} : { removed: parseJson('session_exercises', rowId(e.id), 'removed', e.removed) }),
+      ...(e.swapped_from === null || e.swapped_from === undefined ? {} : { swappedFrom: parseJson('session_exercises', rowId(e.id), 'swapped_from', e.swapped_from) }),
     })),
     sets: sets.map((x) => {
       const sid = rowId(x.id);
@@ -258,6 +268,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
                 durationS: x.actual_duration_s,
                 rpe: x.actual_rpe,
                 rir: x.actual_rir,
+                ...(x.actual_distance_m === null || x.actual_distance_m === undefined ? {} : { distanceM: x.actual_distance_m }),
               }
             : x.has_actual === 0
               ? null
@@ -269,6 +280,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
         flags: parseJson('session_sets', sid, 'flags', x.flags ?? null),
         ...exclusionsOf(parseJsonOrNull('session_sets', sid, 'exclusions', x.exclusions ?? null)),
         ...(x.skipped_by === null || x.skipped_by === undefined ? {} : { skippedBy: x.skipped_by }),
+        ...(x.note === null || x.note === undefined ? {} : { note: x.note }),
         edited: bool(x.edited ?? null),
         version: x.version,
       };
