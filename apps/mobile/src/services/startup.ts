@@ -125,6 +125,8 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     // unfinished; finishing that workout backs up anyway.
     if (recoveryError === null && recovery?.state.session.status !== 'active') void services.backups.ensureBackedUp().catch(() => null);
     void services.integrity.checkAll().catch(() => null);
+    // Progress projections, so the first Progress open after a cold start is quick (review progress-A S4).
+    void services.progress.prewarm().catch(() => null);
     return { kind: 'ready', services, migration: manager.store.migration, sqliteVersion, setup, recovery, recoveryError, personalDataCleared, signOutNotConfirmed };
   } catch (e) {
     await manager.close().catch(() => undefined);

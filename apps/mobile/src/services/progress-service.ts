@@ -34,13 +34,19 @@ export interface ProgressServiceDeps {
   store: () => Store;
   now: () => ZonedTimestamp;
   profile: () => Promise<UserProfile | null>;
-  /** Saves `profile.progress` (versioned profile write). */
-  saveSettings: (progress: NonNullable<UserProfile['progress']>) => Promise<{ ok: boolean }>;
+  /**
+   * Saves `profile.progress` (versioned profile write). `merge` runs on the
+   * profile as read inside the write (and again on a retry), so concurrent
+   * changes to window and grouping both land; it returns null for no change.
+   */
+  saveSettings: (merge: (current: UserProfile['progress']) => NonNullable<UserProfile['progress']> | null) => Promise<{ ok: boolean }>;
   /** Bundled catalogue rows, by catalogue key: muscles for stored rows saved without helpers. */
   catalogueExercises: () => readonly Exercise[];
   dispatch: (sessionId: string, command: SessionCommand) => Promise<CommandOutcome>;
   /** Yields between workouts on a cold read so taps and frames keep running (default: 8 ms slices). */
   slicer?: () => Slicer;
+  /** Resolves when the UI is idle; `prewarm` waits for it so it never competes with a launch or Finish. */
+  idle?: () => Promise<void>;
 }
 
 export interface ProgressHome {
@@ -81,9 +87,32 @@ export function createProgressService(deps: ProgressServiceDeps) {
   const repos = () => deps.store().repos;
   let cache = new Map<string, Cached>();
   let cacheKey: { store: Store; ownerId: string; tz: string } | null = null;
+  /**
+   * Ben's latest window / grouping choice, set the moment he taps, before the
+   * save lands, so the home and Muscles always show the same thing (one shared
+   * setting, check 15). Set synchronously, so a reload started right after
+   * the tap already sees it. Tied to the open store: a restore drops it.
+   */
+  let chosen: { store: Store; days?: ProgressWindowDays; grouping?: ProgressGrouping } | null = null;
+  let settingsWrites: Promise<unknown> = Promise.resolve();
 
-  /** Every finished workout, projected; reads only sessions whose revision changed. */
-  async function finishedSessions(profile: UserProfile): Promise<{ sessions: ProgressSession[]; unreadable: number }> {
+  function chosenNow(): { days?: ProgressWindowDays; grouping?: ProgressGrouping } {
+    if (chosen === null || chosen.store !== deps.store()) return {};
+    return chosen;
+  }
+
+  /** A projection pass in progress (prewarm or a screen); the next one waits for it, then mostly hits the cache. */
+  let pass: Promise<unknown> = Promise.resolve();
+
+  /** Every finished workout, projected; reads only sessions whose revision changed. One pass at a time. */
+  function finishedSessions(profile: UserProfile): Promise<{ sessions: ProgressSession[]; unreadable: number }> {
+    const run = () => projectAll(profile);
+    const out = pass.then(run, run);
+    pass = out.catch(() => undefined);
+    return out;
+  }
+
+  async function projectAll(profile: UserProfile): Promise<{ sessions: ProgressSession[]; unreadable: number }> {
     const store = deps.store();
     if (cacheKey === null || cacheKey.store !== store || cacheKey.ownerId !== profile.id || cacheKey.tz !== profile.timezone) {
       cache = new Map();
@@ -129,15 +158,30 @@ export function createProgressService(deps: ProgressServiceDeps) {
 
   return {
     /**
+     * Projects every finished workout into the in-memory cache ahead of time,
+     * after launch and after Finish, so opening Progress after a cold start
+     * doesn't wait seconds on a long history (review S4). Sliced and run when
+     * the UI is idle; never awaited by anything Ben does.
+     */
+    async prewarm(): Promise<void> {
+      await deps.idle?.();
+      const profile = await deps.profile();
+      if (!profile) return;
+      await finishedSessions(profile);
+    },
+
+    /**
      * `buildProgressHome` (§6.2): one call for the home and the Muscles
-     * screen. `days` / `grouping` default to Ben's last choice (Your data,
-     * settings), else `30 days` and `Body parts`.
+     * screen. `days` / `grouping` default to Ben's last choice (the one shared
+     * setting: just chosen, else saved in Your data), else `30 days` and
+     * `Body parts`. Screens pass nothing, so they never disagree.
      */
     async home(req: { days?: ProgressWindowDays; grouping?: ProgressGrouping } = {}): Promise<ProgressHome | null> {
       const profile = await deps.profile();
       if (!profile) return null;
-      const days = req.days ?? profile.progress?.window ?? DEFAULT_PROGRESS_WINDOW;
-      const grouping = req.grouping ?? profile.progress?.grouping ?? 'body_part';
+      const pick = chosenNow();
+      const days = req.days ?? pick.days ?? profile.progress?.window ?? DEFAULT_PROGRESS_WINDOW;
+      const grouping = req.grouping ?? pick.grouping ?? profile.progress?.grouping ?? 'body_part';
       const now = deps.now();
       const nowMs = toMs(now.utc);
       const ctx = await context(profile);
@@ -188,14 +232,30 @@ export function createProgressService(deps: ProgressServiceDeps) {
       return setConfirmed(req, false);
     },
 
-    /** `setProgressWindow` / `setProgressGrouping` (Your data settings). Not data, so no Undo. */
-    async saveSettings(patch: { days?: ProgressWindowDays; grouping?: ProgressGrouping }): Promise<{ ok: boolean }> {
-      const profile = await deps.profile();
-      if (!profile) return { ok: false };
-      const current = profile.progress ?? {};
-      const next = { ...current, ...(patch.days !== undefined ? { window: patch.days } : {}), ...(patch.grouping !== undefined ? { grouping: patch.grouping } : {}) };
-      if (next.window === current.window && next.grouping === current.grouping) return { ok: true };
-      return deps.saveSettings(next);
+    /**
+     * `setProgressWindow` / `setProgressGrouping` (Your data settings). Not
+     * data, so no Undo. The choice is shared at once (the next `home()` from
+     * either screen uses it); the save merges onto the stored setting and runs
+     * after any earlier one, so quick taps never lose a field (review S3).
+     * On a failed save the choice is dropped and the saved setting shows again.
+     */
+    saveSettings(patch: { days?: ProgressWindowDays; grouping?: ProgressGrouping }): Promise<{ ok: boolean }> {
+      const mine = { ...chosenNow(), ...patch, store: deps.store() };
+      chosen = mine;
+      const run = async (): Promise<{ ok: boolean }> => {
+        const out = await deps
+          .saveSettings((current) => {
+            const now = current ?? {};
+            const next = { ...now, ...(patch.days !== undefined ? { window: patch.days } : {}), ...(patch.grouping !== undefined ? { grouping: patch.grouping } : {}) };
+            return next.window === now.window && next.grouping === now.grouping ? null : next;
+          })
+          .catch(() => ({ ok: false }));
+        if (!out.ok && chosen === mine) chosen = null;
+        return out;
+      };
+      const out = settingsWrites.then(run, run);
+      settingsWrites = out.catch(() => undefined);
+      return out;
     },
   };
 
