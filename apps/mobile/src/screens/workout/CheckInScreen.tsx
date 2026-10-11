@@ -24,6 +24,7 @@ import type { RootStackParams, WorkoutToastParam } from '../../navigation/types'
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Eyebrow, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton, TextField } from '../../ui';
+import { afterReasonsStep, reasonsSubmission, type ReasonsSubmission } from '../../workout/check-in-sheet';
 import { checkInSheetEnd } from '../../workout/overview';
 
 type Step = 'score' | 'reasons' | 'pain' | 'ill';
@@ -250,6 +251,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
   const [checkInId] = useState(newUuid);
   const [recordOp] = useState(newUuid);
   const [startOp] = useState(newUuid);
+  const reasonsOp = useRef<ReasonsSubmission | null>(null);
   const [step, setStep] = useState<Step>(overview?.checkInId && !overview.atScore ? 'reasons' : 'score');
   const [record, setRecord] = useState<CheckIn | null>(null);
   const [score, setScore] = useState<CheckInScore | null>(null);
@@ -360,22 +362,34 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
 
   async function done() {
     if (record === null || busy) return;
+    const patch = { reasons, note: note.trim() === '' ? null : note };
+    // A new opId per distinct Done (Back from the pain step and a change is a new write); a retry reuses it.
+    const submission = reasonsSubmission(reasonsOp.current, patch, newUuid);
+    reasonsOp.current = submission;
     setBusy(true);
-    const r = await services.checkIns.update(record.id, { reasons, note: note.trim() === '' ? null : note }, record.version, `${recordOp}:reasons`);
+    setError(null);
+    const r = await services.checkIns.update(record.id, patch, record.version, submission.opId);
+    if (!r.ok) {
+      const latest = r.stale === true ? await services.checkIns.get(record.id) : null;
+      setBusy(false);
+      if (latest) setRecord(latest);
+      setError(r.message);
+      return;
+    }
     setBusy(false);
-    const saved = r.ok ? r.checkIn : record;
+    const saved = r.checkIn;
     setRecord(saved);
     changed();
-    if (reasons.includes('pain')) setStep('pain');
-    else if (reasons.includes('ill')) setStep('ill');
-    else await start({ kind: 'answered', checkInId: saved.id }, savedToast(saved));
+    const next = afterReasonsStep(saved);
+    if (next === 'start') await start({ kind: 'answered', checkInId: saved.id }, savedToast(saved));
+    else setStep(next);
   }
 
   async function afterPain(flagged: { flags: { id: string; version: number }[]; names: string[]; checkIn: CheckIn } | null) {
     const current = flagged?.checkIn ?? record;
     if (current === null) return;
     const toast: WorkoutToastParam = flagged ? { kind: 'pain', text: `Pain noted for ${flagged.names.join(', ')}`, flags: flagged.flags } : savedToast(current);
-    if (reasons.includes('ill')) {
+    if (current.reasons.includes('ill')) {
       setRecord(current);
       setPainToast(flagged ? toast : null);
       setStep('ill');
