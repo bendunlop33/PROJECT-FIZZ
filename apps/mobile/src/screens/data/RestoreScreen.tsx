@@ -57,7 +57,12 @@ export function RestoreScreen(props: { mode?: 'restore' | 'check'; fromWelcome?:
     navigation.setOptions({ headerBackVisible: backAllowed, gestureEnabled: backAllowed });
   }, [navigation, backAllowed]);
   // A checked backup is held for Restore; let it go when the screen closes (N2).
-  useEffect(() => () => services.restore.forgetChecked(), [services]);
+  useEffect(
+    () => () => {
+      services.restore.forgetChecked();
+    },
+    [services],
+  );
   const [data] = useScreenData(async (s) => {
     const [copies, blocked, status] = await Promise.all([s.restore.copiesOnPhone(), s.restore.blockedBy(), s.backups.getStatus()]);
     return { copies, blocked, status };
