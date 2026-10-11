@@ -56,6 +56,18 @@ export function slotView(input: SlotInput): SlotView | null {
 }
 
 /**
+ * The banner's record read again from the store (after the workout reloads,
+ * say on return from the sheet): an Undo made elsewhere shows as undone here
+ * too, instead of a banner with an Undo that can't work. A failed read keeps
+ * what is shown.
+ */
+export async function syncAdjustment(cached: ActionRecord | null, read: (actionId: string) => Promise<ActionRecord | null>): Promise<ActionRecord | null> {
+  if (cached === null || cached.undoneBy !== null) return cached;
+  const fresh = await read(cached.actionId).catch(() => null);
+  return fresh ?? cached;
+}
+
+/**
  * What a finished Adjust turn leaves in the slot: its adjustment card, or
  * one line saying what happened (nothing changed). Never the model's words.
  */

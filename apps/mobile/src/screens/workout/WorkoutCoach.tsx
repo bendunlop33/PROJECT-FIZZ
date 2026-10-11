@@ -8,7 +8,7 @@ import type { ActionRecord, BenInput, SessionAggregate } from '@fizz/schemas';
 
 import type { CoachAvailability } from '../../coach/coach-service';
 import { whyView, type WhyView } from '../../coach/sheet-view';
-import { ADJUST_CHIP_LABEL, adjustControlView, chipForTrigger, slotAfterFailure, slotAfterTurn, slotView, type SlotView } from '../../coach/slot-view';
+import { ADJUST_CHIP_LABEL, adjustControlView, chipForTrigger, slotAfterFailure, slotAfterTurn, slotView, syncAdjustment, type SlotView } from '../../coach/slot-view';
 import { newUuid } from '../../device/runtime';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -63,6 +63,21 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
   useEffect(() => {
     void services.coach.availability().then(setAvailability);
   }, [services]);
+
+  // Each time the workout reloads (focus, after a change), the banner's record is read again: an Undo
+  // made in the sheet shows here as undone, not as a live Undo.
+  const liveAdjustment = adjustment?.undoneBy === null ? adjustment : null;
+  useEffect(() => {
+    if (liveAdjustment === null) return;
+    let alive = true;
+    void syncAdjustment(liveAdjustment, (id) => services.coach.getAction(id)).then((fresh) => {
+      // Only an Undo since changes what's shown (setting an equal record again would only re-run this).
+      if (alive && fresh !== null && fresh.undoneBy !== null) setAdjustment((cur) => (cur?.actionId === fresh.actionId ? fresh : cur));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [services, liveAdjustment, workout]);
 
   const ask = useCallback(
     (input: BenInput) => {

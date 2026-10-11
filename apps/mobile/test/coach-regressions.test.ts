@@ -5,6 +5,7 @@ import type { TextCoachState } from '@fizz/providers';
 
 import { nextTimeView } from '../src/coach/next-time-view';
 import { threadRows } from '../src/coach/sheet-view';
+import { slotAfterTurn, slotView, syncAdjustment } from '../src/coach/slot-view';
 import { CONNECTED, lowerPending, replyWith, saveNextTarget, StepModel } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -254,5 +255,29 @@ describe('A double-tapped Undo undoes once and reports success both times', () =
     if (!now) throw new Error('no row');
     expect(nextTargetTapOpId(now, 'use_coach')).not.toBe(nextTargetTapOpId(row, 'use_coach'));
     expect(await s.coach.tapNextTarget(now, 'use_coach', nextTargetTapOpId(now, 'use_coach'))).toMatchObject({ status: 'written', row: { status: 'saved' } });
+  });
+});
+
+describe('The workout banner follows an Undo made in the sheet', () => {
+  it('after the sheet’s Undo, the banner’s record is read again: `Coach change undone.`, no live Undo', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }, { load: 60, reps: 8 }] }]);
+    h.clockMs += 86_400_000;
+    const started = await s.workout.start({ gymId, opId: 'start-banner', checkIn: null, nextOf: first });
+    if (!started.ok) throw new Error(started.error.message);
+    const sessionId = started.aggregate.session.id;
+    model = new StepModel([lowerPending(), () => replyWith('Lighter.')]);
+    const r = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'chip', chip: 'too_hard' }, turnId: h.ids() });
+    const cached = slotAfterTurn(r).adjustment;
+    if (cached === null) throw new Error('no adjustment');
+    // The sheet's card Undo.
+    expect((await s.coach.undo(cached.actionId, undoOpId(cached.actionId))).result.status).toBe('written');
+    // Back to the workout: the reloaded workout and the banner's record read again.
+    const workout = (await s.workout.load(sessionId))?.aggregate ?? null;
+    const fresh = await syncAdjustment(cached, (id) => s.coach.getAction(id));
+    expect(slotView({ pending: false, adjustment: fresh, outcome: null, offer: null, workout })).toEqual({ kind: 'outcome', text: 'Coach change undone.', retry: false });
+    // Still live: the same record back.
+    expect(await syncAdjustment(null, (id) => s.coach.getAction(id))).toBeNull();
   });
 });
