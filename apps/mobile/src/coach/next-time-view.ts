@@ -9,7 +9,7 @@
  */
 
 import { targetPhrase } from '@fizz/coach';
-import { pctText, type NextTimeRow } from '@fizz/domain';
+import { EXERCISE_SHORT_FORMS, pctText, shortFormMeans, type NextTimeRow } from '@fizz/domain';
 import type { NextSessionTargetRecord } from '@fizz/schemas';
 
 import type { CoachAvailability } from './coach-service';
@@ -119,14 +119,11 @@ export function nextTimeView(input: NextTimeInput): NextTimeView | null {
 /** Words too common in exercise names to say which one a sentence is about. */
 const GENERIC_NAME_WORDS = new Set(['press', 'raise', 'raises', 'curl', 'curls', 'extension', 'extensions', 'machine', 'cable', 'barbell', 'dumbbell', 'seated', 'standing', 'single', 'assisted', 'supported']);
 
-/** Gym short forms Ben and the coach use for whole names (review r2 N2). */
-const SHORT_FORMS: Record<string, string> = { rdl: 'romanian deadlift', rdls: 'romanian deadlift', ohp: 'overhead press', cgbp: 'close grip bench press', sldl: 'stiff leg deadlift' };
-
 function mentions(sentence: string, exerciseName: string): boolean {
   const said = ` ${sentence.toLowerCase().replace(/[^a-z0-9]+/g, ' ')} `;
   const name = exerciseName.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   if (said.includes(` ${name} `)) return true;
-  if (Object.entries(SHORT_FORMS).some(([short, full]) => said.includes(` ${short} `) && ` ${name} `.includes(` ${full} `))) return true;
+  if ([...EXERCISE_SHORT_FORMS.keys()].some((short) => said.includes(` ${short} `) && shortFormMeans(short, name))) return true;
   return name.split(' ').some((w) => w.length >= 4 && !GENERIC_NAME_WORDS.has(w) && (said.includes(` ${w} `) || said.includes(` ${w}s `)));
 }
 

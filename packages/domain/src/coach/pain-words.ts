@@ -1,3 +1,5 @@
+import { EXERCISE_SHORT_FORMS, shortFormMeans } from './short-forms';
+
 /**
  * `classifyPainMention` (coach-memory CM6): deterministic word lists, so the
  * pain flag works offline and the coach's `set_pain_flag` gate can't be
@@ -489,17 +491,17 @@ export function exercisesNamedForPain(text: string, exercises: readonly { exerci
   return exercisesNamedIn(text, exercises);
 }
 
-/** Exercises whose whole name (plural allowed) appears in the words; never a lone word of a name. */
-export function exercisesNamedIn(text: string, exercises: readonly { exerciseId: string; exerciseName: string }[]): string[] {
-  const norm = (s: string): string => ` ${s.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim()} `;
-  const said = norm(text);
-  const out: string[] = [];
-  for (const ex of exercises) {
-    const name = norm(ex.exerciseName).trim();
-    if (name.length === 0) continue;
-    if (said.includes(` ${name} `) || said.includes(` ${name}s `) || said.includes(` ${name}es `)) out.push(ex.exerciseId);
-  }
-  return [...new Set(out)];
+type NamedExercise = { exerciseId: string; exerciseName: string };
+
+/** Lower-case words of a text or name, apostrophes dropped ("Romanian deadlift" → `romanian`, `deadlift`). */
+function plainWords(s: string): string[] {
+  return s.toLowerCase().replace(/[’']/g, '').split(/[^a-z0-9]+/).filter((w) => w.length > 0);
+}
+
+/** Exercises whose whole name (plural allowed) or gym short form ("rdl") appears in the words; never a lone word of a name. */
+export function exercisesNamedIn(text: string, exercises: readonly NamedExercise[]): string[] {
+  const ws = plainWords(text);
+  return [...new Set(exercises.filter((ex) => nameHits(ws, ex.exerciseName).some((h) => h.whole)).map((ex) => ex.exerciseId))];
 }
 
 /** Name words too general to say which exercise was meant ("press", "machine", "seated"). */
@@ -511,45 +513,125 @@ const GENERIC_NAME_WORDS = new Set([
   'degree', 'the', 'and', 'with', 'on', 'to', 'up', 'down',
 ]);
 
+/** Distinctive words of a name: never a body part ("back" of Back squat) or a general word ("press"). */
+function distinctiveWords(nameWords: readonly string[]): string[] {
+  return nameWords.filter((w) => w.length >= 3 && !GENERIC_NAME_WORDS.has(w) && !BODY_SET.has(w) && !BODY_QUALIFIERS.has(w));
+}
+
+/** `said` is `word` or its plural ("squats" for squat, "deadlift" for deadlifts). */
+function sameWord(said: string, word: string): boolean {
+  return said === word || said === `${word}s` || said === `${word}es` || (word.endsWith('s') && said === word.slice(0, -1));
+}
+
+/**
+ * Where an exercise is mentioned in a clause's words: `whole` for its whole
+ * name (last word plural allowed) or a short form ("rdl"), else a distinctive
+ * word of it ("bench" for Bench press).
+ */
+function nameHits(words: readonly string[], exerciseName: string): { at: number; whole: boolean }[] {
+  const ws = words.map((w) => w.replace(/'/g, ''));
+  const name = plainWords(exerciseName);
+  if (name.length === 0) return [];
+  const distinctive = distinctiveWords(name);
+  const hits: { at: number; whole: boolean }[] = [];
+  for (let i = 0; i < ws.length; i += 1) {
+    const w = ws[i] ?? '';
+    const whole = i + name.length <= ws.length && name.every((n, k) => (k === name.length - 1 ? sameWord(ws[i + k] ?? '', n) && (ws[i + k] ?? '').startsWith(n) : ws[i + k] === n));
+    if (whole) {
+      hits.push({ at: i, whole: true });
+      i += name.length - 1;
+    } else if (shortFormMeans(w, exerciseName)) hits.push({ at: i, whole: true });
+    else if (distinctive.some((d) => sameWord(w, d))) hits.push({ at: i, whole: false });
+  }
+  return hits;
+}
+
 /**
  * Exercises a short name in the words could mean ("bench" for Bench press,
  * "deadlifts" for Romanian deadlift), for Ben to pick from, never to act on
  * alone. Only a distinctive word of the name counts: never a body part
  * ("back" for Back squat) or a general word ("press").
  */
-export function exercisesLooselyNamedIn(text: string, exercises: readonly { exerciseId: string; exerciseName: string }[]): string[] {
-  const words = (s: string): string[] => s.toLowerCase().replace(/[’']/g, '').split(/[^a-z0-9]+/).filter((w) => w.length > 0);
-  const said = new Set(words(text));
-  const has = (w: string): boolean => said.has(w) || said.has(`${w}s`) || said.has(`${w}es`) || (w.endsWith('s') && said.has(w.slice(0, -1)));
-  const out: string[] = [];
-  for (const ex of exercises) {
-    const distinctive = words(ex.exerciseName).filter((w) => w.length >= 3 && !GENERIC_NAME_WORDS.has(w) && !BODY_SET.has(w) && !BODY_QUALIFIERS.has(w));
-    if (distinctive.some(has)) out.push(ex.exerciseId);
+export function exercisesLooselyNamedIn(text: string, exercises: readonly NamedExercise[]): string[] {
+  const said = plainWords(text);
+  return [...new Set(exercises.filter((ex) => distinctiveWords(plainWords(ex.exerciseName)).some((d) => said.some((w) => sameWord(w, d)))).map((ex) => ex.exerciseId))];
+}
+
+/** Words that may sit between a negator and a name: "not the bench press", "no squats", "not on bench". */
+const NAME_NEGATION_FILLERS = new Set(['the', 'a', 'an', 'on', 'my', 'doing', 'during', 'with', 'in', 'at', 'for', 'from', 'just', 'those', 'these', 'that', 'this', 'any', 'even']);
+
+/** "not the bench press", "no squats", "never on bench": the name at `at` is ruled out. */
+function nameNegated(ws: readonly string[], at: number): boolean {
+  for (let j = at - 1; j >= Math.max(0, at - 4); j -= 1) {
+    const w = ws[j] ?? '';
+    if (NEGATORS.has(w) || w === 'never') return true;
+    if (!NAME_NEGATION_FILLERS.has(w)) return false;
   }
-  return [...new Set(out)];
+  return false;
+}
+
+/** "back squat felt fine", "bench was ok", "squats didn't hurt": a clause that clears what it names. */
+function clauseClears(ws: readonly string[]): boolean {
+  const mention = classifyPainMention(ws.join(' '));
+  if (mention === 'pain' || mention === 'unclear') return false;
+  return ws.some((w, i) => (POSITIVE.has(w) && !positiveNegated(ws, i)) || PAIN_SET.has(w));
 }
 
 /**
- * Which movements `Pain` flags after Ben mentions pain to the coach (review S5, r2 S1),
- * in workout order. `pick` says to show them as chips rather than flag at once.
- * - Whole names in his words: those (flagged at once when there's one).
- * - Else short names ("bench"): those, with the exercise in focus, to pick from.
- * - Else, in a workout, the exercise in focus; outside one, every movement to pick from.
+ * Which movements `Pain` flags after Ben mentions pain to the coach (review S5,
+ * r2 S1, r3 S1/S2), with `pick` saying to show them as chips rather than flag
+ * at once. Rule 9's safe direction: a movement Ben named with pain is always
+ * offered; a guess is never flagged in one tap.
+ *
+ * Clause by clause ("…, but …"), a named movement is ruled out when its clause
+ * clears it ("back squat felt fine", "bench didn't hurt") or a negator comes
+ * just before it ("not the bench press") while the clause names something
+ * else or isn't about pain. What's left:
+ * - one whole name or short form ("rdl"), nothing ruled out: flagged at once;
+ * - several, a short name ("bench"), or something ruled out: chips, with the
+ *   exercise in focus when it wasn't ruled out;
+ * - nothing named: in a workout, the exercise in focus at once, or as the
+ *   first chip of every movement when a body part is named ("my shoulder
+ *   hurts"), a movement was ruled out, or a movement not in the workout is
+ *   named ("sldl"); outside a workout, every movement.
  */
-export function painFlagChoices(
-  words: string | null,
-  exercises: readonly { exerciseId: string; exerciseName: string }[],
-  focusExerciseId: string | null,
-): { exerciseIds: string[]; pick: boolean } {
-  const inOrder = (ids: ReadonlySet<string>): string[] => exercises.map((e) => e.exerciseId).filter((id) => ids.has(id));
-  const named = words === null ? [] : exercisesNamedIn(words, exercises);
-  if (named.length > 0) return { exerciseIds: inOrder(new Set(named)), pick: named.length > 1 };
-  const loose = words === null ? [] : exercisesLooselyNamedIn(words, exercises);
-  if (loose.length > 0) {
-    const ids = inOrder(new Set([...loose, ...(focusExerciseId === null ? [] : [focusExerciseId])]));
-    return { exerciseIds: ids, pick: true };
+export function painFlagChoices(words: string | null, exercises: readonly NamedExercise[], focusExerciseId: string | null): { exerciseIds: string[]; pick: boolean } {
+  const inOrder = (ids: ReadonlySet<string>): string[] => [...new Set(exercises.map((e) => e.exerciseId))].filter((id) => ids.has(id));
+  const strong = new Set<string>();
+  const weak = new Set<string>();
+  const ruledOut = new Set<string>();
+  for (const ws of words === null ? [] : clauses(words)) {
+    const clears = clauseClears(ws);
+    const hits = exercises.map((ex) => ({ id: ex.exerciseId, hits: nameHits(ws, ex.exerciseName) })).filter((h) => h.hits.length > 0);
+    const negated = (h: { at: number }): boolean => nameNegated(ws, h.at);
+    // A negated name only rules itself out when the clause blames another movement or isn't pain ("no bench press without pain" is pain).
+    const blamed = new Set(hits.filter((h) => h.hits.some((x) => !negated(x))).map((h) => h.id));
+    const mention = classifyPainMention(ws.join(' '));
+    for (const h of hits) {
+      const live = h.hits.filter((x) => !negated(x));
+      const out = clears || (live.length === 0 && ([...blamed].some((id) => id !== h.id) || (mention !== 'pain' && mention !== 'unclear')));
+      if (out) {
+        ruledOut.add(h.id);
+        continue;
+      }
+      if ((live.length > 0 ? live : h.hits).some((x) => x.whole)) strong.add(h.id);
+      else weak.add(h.id);
+    }
   }
-  if (focusExerciseId !== null) return { exerciseIds: [focusExerciseId], pick: false };
-  const all = exercises.map((e) => e.exerciseId);
-  return { exerciseIds: all, pick: all.length > 1 };
+  const named = new Set([...strong, ...weak]);
+  for (const id of named) ruledOut.delete(id);
+  const focus = focusExerciseId !== null && !ruledOut.has(focusExerciseId) ? focusExerciseId : null;
+  if (named.size > 0) {
+    if (strong.size === 1 && weak.size === 0 && ruledOut.size === 0) return { exerciseIds: [...strong], pick: false };
+    const withFocus = weak.size > 0 || ruledOut.size > 0;
+    return { exerciseIds: inOrder(new Set([...named, ...(withFocus && focus !== null ? [focus] : [])])), pick: true };
+  }
+  const all = inOrder(new Set(exercises.map((e) => e.exerciseId)));
+  // A short form for a movement not in this workout ("sldl") says the pain may not be the focus exercise's.
+  const otherMovement = words !== null && plainWords(words).some((w) => EXERCISE_SHORT_FORMS.has(w));
+  if (focusExerciseId !== null && ruledOut.size === 0 && !otherMovement && (words === null || painBodyPart(words) === null)) return { exerciseIds: [focusExerciseId], pick: false };
+  // Focus first, then the rest in workout order, anything ruled out last.
+  const order = [...(focus === null ? [] : [focus]), ...all.filter((id) => id !== focus && !ruledOut.has(id)), ...all.filter((id) => ruledOut.has(id) && id !== focus)];
+  if (focusExerciseId !== null && !order.includes(focusExerciseId)) order.push(focusExerciseId);
+  return { exerciseIds: order, pick: order.length > 1 };
 }

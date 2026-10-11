@@ -172,7 +172,7 @@ describe('C7: in the workout (offer, Adjust, banner, Undo)', () => {
     return { s, sessionId: a.session.id, bench, pulldown, benchSets: setsOf(bench.id), pulldownSets: setsOf(pulldown.id) };
   }
 
-  it('in a workout, Pain flags the movement Ben named, not the one in focus; the focus row only when none is named (review r2 S1)', async () => {
+  it('in a workout, Pain flags the movement Ben named, not the one in focus; the focus row only when nothing is named (review r2 S1, r3 S1/S2)', async () => {
     const { s, sessionId, bench, pulldown } = await twoExerciseWorkout();
     const entry = { kind: 'workout' as const, sessionId };
     const focus = { exerciseId: pulldown.exerciseId, name: 'Lat pulldown' };
@@ -181,8 +181,12 @@ describe('C7: in the workout (offer, Adjust, banner, Undo)', () => {
     // A short name: that movement and the one in focus, to pick from (never Lat pulldown alone).
     expect(await s.coach.painChoices(entry, 'bench earlier hurt my shoulder, go lighter', focus)).toEqual({ choices: [{ exerciseId: bench.exerciseId, name: 'Bench press' }, focus], pick: true });
     expect((await s.coach.painChoices(entry, 'bench press and lat pulldown both hurt', focus)).choices.map((c) => c.name)).toEqual(['Bench press', 'Lat pulldown']);
-    // Nothing named: the one in focus.
-    expect(await s.coach.painChoices(entry, 'my elbow hurts', focus)).toEqual({ choices: [focus], pick: false });
+    // r3 S1: a movement Ben clears isn't the one flagged.
+    expect(await s.coach.painChoices(entry, 'bench press felt fine but my shoulder hurts on pulldowns', focus)).toEqual({ choices: [focus], pick: true });
+    // r3 S2: a body part alone: chips, the one in focus first.
+    expect(await s.coach.painChoices(entry, 'my elbow hurts', focus)).toEqual({ choices: [focus, { exerciseId: bench.exerciseId, name: 'Bench press' }], pick: true });
+    // Nothing named at all: the one in focus.
+    expect(await s.coach.painChoices(entry, 'ow, that hurt', focus)).toEqual({ choices: [focus], pick: false });
     expect(await s.coach.painChoices(entry, null, focus)).toEqual({ choices: [focus], pick: false });
   });
 

@@ -195,7 +195,7 @@ export function CoachSheetScreen() {
       else {
         // The movement Ben's words name (chips if several); in a workout, else the one in focus (review S5, r2 S1).
         const focusEx = workout?.active === true && workout.exercise !== null ? { exerciseId: workout.exercise.id, name: workout.exercise.name } : null;
-        const pc = await services.coach.painChoices(entry, typed, focusEx).catch(() => ({ choices: focusEx === null ? [] : [focusEx], pick: false }));
+        const pc = await services.coach.painChoices(entry, typed, focusEx).catch(() => ({ choices: focusEx === null ? [] : [focusEx], pick: true }));
         setPainChoices(pc.choices);
         setPainPick(pc.pick);
         setAskPain(pc.choices.length > 0);
