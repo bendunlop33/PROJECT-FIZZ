@@ -2304,32 +2304,54 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           groupImportsByCategory: SESSION_PICKER_DECISIONS.groupImportsByCategory,
         });
         const up = await resolveUpNext(p, req.gymId ?? 'typical-gym-preview', req.gymId === null ? req.typicalEquipment : undefined).catch(() => null);
-        const recommendedKey = up === null ? null : up.kind === 'routine' ? routineTypeKey(up.routine.id) : (index.keyOfSession.get(up.sessionId) ?? null);
         const startable = index.types.filter((t) => t.startable);
+        // Up next is a row only when the row opens exactly that plan (review r2 B1): the same routine, or a named type whose
+        // newest workout is Up next's source. A workout that joined a routine by name keeps the routine row on the routine.
+        const upKey = up === null ? null : up.kind === 'routine' ? routineTypeKey(up.routine.id) : (index.keyOfSession.get(up.sessionId) ?? null);
+        const upType = upKey === null ? undefined : startable.find((t) => t.key === upKey);
+        const recommendedKey =
+          up === null || upType === undefined
+            ? null
+            : up.kind === 'routine'
+              ? upType.routineId === up.routine.id
+                ? upKey
+                : null
+              : upType.routineId === null && upType.sourceSessionId === up.sessionId
+                ? upKey
+                : null;
         // `Edited`: an open draft with edits, for the plan the row opens (a routine, or the type's newest workout).
         const drafts = await ctx
           .store()
           .repos.drafts.listByOwner(p.id)
           .catch(() => [] as PreStartDraft[]);
         const editedBases = new Set(drafts.filter((d) => d.status === 'open' && draftIsLive(d, now.utc) && liveEdits(d.edits).length > 0).map((d) => draftBasisKey(d.basis)));
-        const isEdited = (t: SessionType): boolean => {
-          if (t.routineId !== null) return editedBases.has(draftBasisKey({ kind: 'routine', routineId: t.routineId }));
-          return t.sourceSessionId !== null && editedBases.has(draftBasisKey({ kind: 'next', sourceSessionId: t.sourceSessionId }));
+        // The plan a row's target opens: `next` is Up next's own plan (the routine, or its source workout).
+        const opened = (target: OverviewTarget): DraftBasis | null => {
+          if (target.kind === 'routine') return { kind: 'routine', routineId: target.routineId };
+          if (target.kind === 'session') return { kind: 'next', sourceSessionId: target.sourceSessionId };
+          if (up === null) return null;
+          return up.kind === 'routine' ? { kind: 'routine', routineId: up.routine.id } : { kind: 'next', sourceSessionId: up.sessionId };
         };
+        const isEdited = (target: OverviewTarget): boolean => {
+          const basis = opened(target);
+          return basis !== null && editedBases.has(draftBasisKey(basis));
+        };
+        const targetOf = (t: SessionType): OverviewTarget =>
+          t.key === recommendedKey ? { kind: 'next' } : t.routineId !== null ? { kind: 'routine', routineId: t.routineId } : { kind: 'session', sourceSessionId: t.sourceSessionId ?? '' };
         const row = (t: SessionType): SessionPickerRow => ({
           key: t.key,
           label: t.label,
           kind: t.kind,
-          target: t.key === recommendedKey ? { kind: 'next' } : t.routineId !== null ? { kind: 'routine', routineId: t.routineId } : { kind: 'session', sourceSessionId: t.sourceSessionId ?? '' },
+          target: targetOf(t),
           routineId: t.routineId,
           sourceSessionId: t.sourceSessionId,
           lastDone: t.lastDone,
           exerciseCount: t.exerciseCount,
           recommended: t.key === recommendedKey,
-          edited: isEdited(t),
+          edited: isEdited(targetOf(t)),
         });
         const ordered = orderSessionTypes(startable, recommendedKey);
-        return { current: ordered.current.map(row), older: ordered.older.map(row), recommendedKey: startable.some((t) => t.key === recommendedKey) ? recommendedKey : null };
+        return { current: ordered.current.map(row), older: ordered.older.map(row), recommendedKey };
       } catch {
         return null;
       }

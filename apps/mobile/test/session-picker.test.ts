@@ -1,14 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
-import { NBSP } from '@fizz/domain';
+import { loadCell, NBSP, type OverviewRow } from '@fizz/domain';
 import type { TextCoachState } from '@fizz/providers';
-import type { ZonedTimestamp } from '@fizz/schemas';
+import type { SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData, OverviewTarget, SessionList, SessionPickerRow } from '../src/services/workout-services';
 import { startFromOverview } from '../src/workout/overview-start';
-import { allRows, hasChoice, isShownRow, lastDoneText, pickerRowDetail, pickerRowLabel, todaySessions } from '../src/workout/session-picker';
+import { allRows, hasChoice, isShownRow, lastDoneText, pickerRowDetail, pickerRowLabel, SESSION_PICKER_COPY, switchSession, todaySessions } from '../src/workout/session-picker';
 import { createHarness, logWorkout, setUpGym, TZ, type Harness } from './harness';
 
 /**
@@ -28,13 +31,49 @@ class NeverModel implements CoachModelPort {
     throw new Error('the session picker never calls the coach');
   }
 }
+/** A coach that answers with scripted tool calls (SP7), or can't be reached once the script runs out. */
+class StepModel implements CoachModelPort {
+  readonly requests: ModelRequest[] = [];
+  constructor(private readonly steps: ((req: ModelRequest) => ModelEvent[])[]) {}
+  async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+    this.requests.push(request);
+    const step = this.steps[this.requests.length - 1];
+    const events = step === undefined ? [{ type: 'error' as const, error: 'unavailable' as const }] : step(request);
+    for (const e of events) {
+      await Promise.resolve();
+      yield e;
+    }
+  }
+}
+
+function workoutOf(req: ModelRequest): { sessionId: string; version: number; exercises: { exerciseId: string; name: string }[] } {
+  const block = req.input.find((i) => i.type === 'message' && i.role === 'developer' && i.content.startsWith('YOUR DATA'));
+  if (block?.type !== 'message') throw new Error('no context');
+  return (JSON.parse(block.content.slice(block.content.indexOf('\n') + 1)) as { workout: ReturnType<typeof workoutOf> }).workout;
+}
+const call = (toolName: string, args: unknown): ModelEvent[] => [{ type: 'tool_call', callId: `c-${toolName}`, name: toolName, arguments: JSON.stringify(args) }, { type: 'completed' }];
+
+/** What a row shows against what Start created for it (OV3): working-set count, first load (value and unit) and reps. */
+function matchesSession(row: OverviewRow, agg: SessionAggregate): void {
+  const ex = agg.exercises.find((e) => e.exerciseId === row.exerciseId);
+  if (!ex) throw new Error(`no ${row.name}`);
+  const working = agg.sets.filter((x) => x.sessionExerciseId === ex.id && x.setType !== 'warmup' && x.pairedWithSetId === null).sort((a, b) => a.index - b.index);
+  const first = working[0];
+  expect(first?.status).toBe('pending');
+  expect(row.detail.startsWith(`${String(working.length)}${NBSP}×${NBSP}`)).toBe(true);
+  const cell = loadCell(first?.planned.load ?? null, ex.loadConvention, null, false);
+  expect({ value: row.load.value, unit: row.load.unit }).toEqual({ value: cell.value, unit: cell.unit });
+  const reps = first?.planned.reps;
+  if (reps) expect(row.detail).toContain(reps.min === reps.max ? String(reps.min) : `${String(reps.min)}–${String(reps.max)}`);
+}
+
 const CONNECTED: TextCoachState = { status: 'ok', route: 'chatgpt_plan', email: 'ben@example.com', model: { slug: 'gpt-6.1-sol', displayName: 'GPT-6.1-Sol' } };
 const plain = (s: string | null | undefined): string => (s ?? '').replaceAll(NBSP, ' ');
 /** 18:00 BST on a date. */
 const at = (date: string): number => Date.parse(`${date}T17:00:00.000Z`);
 
 let h: Harness;
-let model: NeverModel;
+let model: CoachModelPort & { readonly requests: ModelRequest[] };
 beforeEach(() => {
   model = new NeverModel();
   h = createHarness('2026-10-01T07:00:00.000Z', { coach: { model: () => model, connection: () => Promise.resolve(CONNECTED) } });
@@ -186,11 +225,9 @@ describe('Picking a session (SP6, SP9, SP10, SP12, SP14)', () => {
     const agg = r.outcome.aggregate;
     const ordered = [...agg.exercises].sort((a, b) => a.order - b.order);
     expect(ordered.map((e) => e.exerciseName)).toEqual(page.view.rows.map((x) => x.name));
-    for (const [i, row] of page.view.rows.entries()) {
-      const working = agg.sets.filter((x) => x.sessionExerciseId === ordered[i]?.id && x.setType !== 'warmup' && x.pairedWithSetId === null);
-      expect(plain(row.detail).startsWith(`${String(working.length)} × `)).toBe(true);
-      expect(working[0]?.planned.load?.value).toBeDefined();
-    }
+    // Each row's load (value and unit) and reps are the started set's planned ones (r2 S2).
+    for (const row of page.view.rows) matchesSession(row, agg);
+    expect(page.view.rows.every((x) => x.load.value !== '—')).toBe(true);
     // SP-D8: the workout carries the session's name, so it groups with Shoulders next time.
     expect(agg.session.routineName).toBe('Shoulders');
     // A retry of the same Start is the same workout (rule 5).
@@ -280,6 +317,178 @@ describe('Picking a session (SP6, SP9, SP10, SP12, SP14)', () => {
     const l = await list(s, gymId);
     for (const r of allRows(l)) await load(s, r.target, gymId);
     expect(model.requests).toHaveLength(0);
+  });
+});
+
+describe('Up next only where the row opens it (review r2 B1)', () => {
+  /** Routine Legs (Back squat, Triceps pushdown), then a newer Legs workout not started from it (Leg press, Lateral raise): D19 falls back to that workout. */
+  async function joinedByName(s: AppServices) {
+    const gymId = await setUpGym(h, s);
+    h.clockMs = at('2026-10-05');
+    const first = await logWorkout(h, s, gymId, [
+      { exercise: 'Back squat', sets: [{ load: 100, reps: 5 }, { load: 100, reps: 5 }] },
+      { exercise: 'Triceps pushdown', sets: [{ load: 25, reps: 12 }] },
+    ]);
+    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Legs', opId: 'save-legs' });
+    if (!saved.ok) throw new Error(saved.message);
+    h.clockMs = at('2026-10-08');
+    const later = await logWorkout(h, s, gymId, [
+      { exercise: 'Leg press', sets: [{ load: 150, reps: 10 }, { load: 150, reps: 10 }] },
+      { exercise: 'Lateral raise', sets: [{ load: 10, reps: 12 }] },
+    ]);
+    await name(s, later, 'Legs');
+    h.clockMs = Date.parse('2026-10-11T08:00:00.000Z');
+    return { gymId, routineId: saved.routine.id, later };
+  }
+
+  it('a workout that joined a routine by name: the routine row opens the routine, is not Up next, and stays reachable from Today', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routineId, later } = await joinedByName(s);
+    // The fixture: Up next is the newest workout's next session, not the routine.
+    const up = await load(s, { kind: 'next' }, gymId);
+    expect(up.startOf).toEqual({ nextOf: later });
+    expect(up.view.rows.map((r) => r.name)).toEqual(['Leg press', 'Lateral raise']);
+    expect((await s.next.preview(gymId))?.sourceSessionId).toBe(later);
+
+    const l = await list(s, gymId);
+    expect(allRows(l).map((r) => r.label)).toEqual(['Legs']);
+    const legs = rowOf(l, 'Legs');
+    expect(legs).toMatchObject({ kind: 'routine', routineId, recommended: false, target: { kind: 'routine', routineId }, exerciseCount: 2, edited: false });
+    expect(l.recommendedKey).toBeNull();
+    // The row opens the routine (Back squat), and the overview it opens checks it; Up next's page doesn't.
+    const routinePage = await load(s, legs.target, gymId);
+    expect(routinePage.startOf).toEqual({ routineOf: routineId });
+    expect(routinePage.view.rows.map((r) => r.name)).toEqual(['Back squat', 'Triceps pushdown']);
+    expect(isShownRow(legs, routinePage.startOf)).toBe(true);
+    expect(isShownRow(legs, up.startOf)).toBe(false);
+    // Today's Sessions still lists the routine (with its long-press Rename/Delete), as Your routines did.
+    expect(todaySessions(l, { includeUpNext: false }).rows).toEqual([legs]);
+
+    // Edited reads the plan the row opens: an edit on Up next's page doesn't mark it ...
+    const press = up.view.rows[0];
+    expect((await s.overview.edit({ target: { kind: 'next' }, gymId, expectedDraftVersion: null, opId: 'skip-press', edit: { kind: 'skip', slotKey: press?.slotKey ?? '' } })).ok).toBe(true);
+    expect(rowOf(await list(s, gymId), 'Legs').edited).toBe(false);
+    // ... and one on the routine's page does.
+    const squat = routinePage.view.rows[0];
+    expect((await s.overview.edit({ target: legs.target, gymId, expectedDraftVersion: null, opId: 'skip-squat', edit: { kind: 'skip', slotKey: squat?.slotKey ?? '' } })).ok).toBe(true);
+    expect(rowOf(await list(s, gymId), 'Legs').edited).toBe(true);
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it('a routine that is Up next keeps the Up next row, opening the routine (with ✓), and Edited reads the routine’s draft', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, ids } = await split(s);
+    const saved = await s.routines.saveFromSession({ sessionId: ids.Chest, name: 'Chest', opId: 'save-chest' });
+    if (!saved.ok) throw new Error(saved.message);
+    const chest = rowOf(await list(s, gymId), 'Chest');
+    expect(chest).toMatchObject({ recommended: true, target: { kind: 'next' } });
+    const page = await load(s, chest.target, gymId);
+    expect(isShownRow(chest, page.startOf)).toBe(true);
+    const routinePage = await load(s, { kind: 'routine', routineId: saved.routine.id }, gymId);
+    const first = routinePage.view.rows[0];
+    expect((await s.overview.edit({ target: { kind: 'routine', routineId: saved.routine.id }, gymId, expectedDraftVersion: null, opId: 'skip-1', edit: { kind: 'skip', slotKey: first?.slotKey ?? '' } })).ok).toBe(true);
+    expect(rowOf(await list(s, gymId), 'Chest').edited).toBe(true);
+  });
+});
+
+describe('Done today and the in-place switch (§5, SP9, SP11, r2 S1)', () => {
+  it('Done today lists Up next first, then picker order, with All sessions for the rest', async () => {
+    const { services: s } = await h.launch();
+    const { gymId } = await split(s);
+    const l = await list(s, gymId);
+    const done = todaySessions(l, { includeUpNext: true });
+    expect(done.rows.map((r) => r.label)).toEqual(['Chest', 'Legs', 'Shoulders']);
+    expect(done.rows[0]?.recommended).toBe(true);
+    expect(done.more).toBe(true);
+  });
+
+  it('switching to a session that can’t be shown leaves the page as it was; a good one shows with the same check-in and gym', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, ids } = await split(s);
+    const saved = await s.routines.saveFromSession({ sessionId: ids.Legs, name: 'Legs', opId: 'save-legs' });
+    if (!saved.ok) throw new Error(saved.message);
+    const legs = rowOf(await list(s, gymId), 'Legs');
+    expect(legs.target).toEqual({ kind: 'routine', routineId: saved.routine.id });
+    // The routine is deleted while the picker is open.
+    expect((await s.routines.remove({ routineId: saved.routine.id, expectedVersion: saved.routine.version, opId: 'rm-legs' })).ok).toBe(true);
+
+    const ci = await s.checkIns.record({ checkInId: h.ids(), opId: h.ids(), score: 4 });
+    if (!ci.ok) throw new Error(ci.message);
+    const shown: OverviewTarget[] = [];
+    const pages: OverviewData[] = [];
+    const ports = {
+      load: async (t: OverviewTarget) => {
+        const p = await s.overview.load({ target: t, gymId, checkInId: ci.checkIn.id });
+        if (p) pages.push(p);
+        return p;
+      },
+      show: (t: OverviewTarget) => {
+        shown.push(t);
+      },
+    };
+    expect(await switchSession(ports, legs.target)).toBe('failed');
+    expect(shown).toEqual([]);
+    expect(SESSION_PICKER_COPY.switchFailed).toBe('Couldn’t load that session.');
+
+    const back = rowOf(await list(s, gymId), 'Back');
+    expect(await switchSession(ports, back.target)).toBe('switched');
+    expect(shown).toEqual([back.target]);
+    // SP11: the tapped score is what the new page plans with, at the same gym.
+    expect(pages.at(-1)?.planCheckIn?.id).toBe(ci.checkIn.id);
+    expect(pages.at(-1)?.view.gym?.id).toBe(gymId);
+    expect(await s.sessions.active()).toBeNull();
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it('Today’s Change reads “Change session” to VoiceOver (§4.5, r2 N4)', () => {
+    const today = readFileSync(join(__dirname, '..', 'src', 'screens', 'TodayScreen.tsx'), 'utf8');
+    expect(today).toMatch(/label=\{SESSION_PICKER_COPY\.change\}\n\s*tone="secondary"\n\s*accessibilityLabel=\{SESSION_PICKER_COPY\.changeSession\}/);
+  });
+});
+
+describe('SP7: coach targets on a picked session (D21, rule 3)', () => {
+  it('a stored coach target on the picked source shows Coach and is what Start creates; opening it makes no model call', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, ids } = await split(s);
+    model = new StepModel([
+      (req) => {
+        const w = workoutOf(req);
+        const press = w.exercises.find((e) => e.name === 'Dumbbell shoulder press');
+        return call('set_next_session_targets', { sourceSessionId: w.sessionId, sourceVersion: w.version, targets: [{ exerciseId: press?.exerciseId, target: { load: { value: 20, unit: 'kg', convention: 'per_hand' }, reps: null }, sets: null, reason: 'Last reps were a grind.' }] });
+      },
+      () => call('reply', { message: 'Ok.', offer: null }),
+    ]);
+    await s.coach.runSummaryTurn(ids.Shoulders);
+    const calls = model.requests.length;
+    expect(calls).toBeGreaterThan(0);
+
+    const shoulders = rowOf(await list(s, gymId), 'Shoulders');
+    expect(shoulders.target).toEqual({ kind: 'session', sourceSessionId: ids.Shoulders });
+    const page = await load(s, shoulders.target, gymId);
+    const press = page.view.rows.find((r) => r.name === 'Dumbbell shoulder press');
+    expect(press?.coach).toMatchObject({ state: 'coach', reason: 'Last reps were a grind.' });
+    expect(press?.load).toMatchObject({ value: '20' });
+    expect(page.view.rows.find((r) => r.name === 'Lateral raise')?.coach).toBeNull();
+    const r = await startFromOverview(ports(s, shoulders.target, gymId), { page, opId: 'start-coach', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (r.kind !== 'started') throw new Error(r.kind);
+    for (const row of page.view.rows) matchesSession(row, r.outcome.aggregate);
+    expect(model.requests.length).toBe(calls);
+  });
+
+  it('with no stored target, or the coach unreachable when the workout ended, the picked session shows the built-in targets and no coach UI', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, ids } = await split(s);
+    const target = rowOf(await list(s, gymId), 'Shoulders').target;
+    const none = await load(s, target, gymId);
+    expect(none.view.rows.every((r) => r.coach === null)).toBe(true);
+    expect(none.coachTargets).toEqual({});
+    // The coach can't be reached: nothing is stored, and the page is the same.
+    model = new StepModel([]);
+    await s.coach.runSummaryTurn(ids.Shoulders);
+    const offline = await load(s, target, gymId);
+    expect(offline.view.rows.every((r) => r.coach === null)).toBe(true);
+    expect(offline.coachTargets).toEqual({});
+    expect(offline.view.rows.map((r) => r.load)).toEqual(none.view.rows.map((r) => r.load));
   });
 });
 
