@@ -91,9 +91,10 @@ export function CoachSheetScreen() {
     [services],
   );
 
-  const loadWorkout = useCallback(async () => {
-    if (entry.kind === 'today') return;
-    const d = await services.workout.load(entry.sessionId).catch(() => null);
+  /** The workout as last read; the bar is worked out from it each second without reading SQLite (review N3). */
+  const loadedWorkout = useRef<Awaited<ReturnType<typeof services.workout.load>>>(null);
+  const showWorkout = useCallback(() => {
+    const d = loadedWorkout.current;
     if (d === null) {
       setWorkout(null);
       return;
@@ -107,7 +108,13 @@ export function CoachSheetScreen() {
       bar: workoutBarText(rest === null ? null : rest.kind === 'ended' ? { kind: 'ended' } : { kind: rest.kind, remainingMs: rest.remainingMs }, d.aggregate.session.pause !== null),
       exercise: v?.focus ? { id: v.focus.exerciseId, name: v.focus.exerciseName } : null,
     });
-  }, [entry, services]);
+  }, [services]);
+
+  const loadWorkout = useCallback(async () => {
+    if (entry.kind === 'today') return;
+    loadedWorkout.current = await services.workout.load(entry.sessionId).catch(() => null);
+    showWorkout();
+  }, [entry, services, showWorkout]);
 
   useFocusEffect(
     useCallback(() => {
@@ -129,16 +136,21 @@ export function CoachSheetScreen() {
     }, [services, entry, threadId, loadRows, loadWorkout]),
   );
 
-  // One ticker for the elapsed label and the workout bar; no animation (check 22).
+  // One ticker for the elapsed label and the workout bar; no animation (check 22). The bar is
+  // worked out from the loaded workout; it's read again on focus, after a change, and every 15 s.
   useEffect(() => {
+    let ticks = 0;
     const t = setInterval(() => {
       setNow(clockNow());
-      if (entry.kind === 'workout') void loadWorkout();
+      if (entry.kind !== 'workout') return;
+      ticks += 1;
+      if (ticks % 15 === 0) void loadWorkout();
+      else showWorkout();
     }, 1000);
     return () => {
       clearInterval(t);
     };
-  }, [entry, loadWorkout]);
+  }, [entry, loadWorkout, showWorkout]);
 
   useEffect(() => {
     if (!focus) return;
@@ -186,7 +198,10 @@ export function CoachSheetScreen() {
         setAskPain(choices.length > 0);
       }
       await loadRows(r.threadId);
-      if (r.cards.length > 0) changed();
+      if (r.cards.length > 0) {
+        changed();
+        void loadWorkout();
+      }
     } catch {
       // Not sent (no route): the words go back in the field; nothing is queued (CS4).
       if (typed !== null) setDraft(typed);
@@ -206,6 +221,7 @@ export function CoachSheetScreen() {
     setNotice(r.result.status === 'not_possible' ? `Couldn’t undo: ${r.undo.failure ?? 'it changed since'}.` : null);
     await loadRows(threadId ?? null);
     changed();
+    void loadWorkout();
   }
 
   async function flag(ex: { id: string; name: string }) {
@@ -214,6 +230,7 @@ export function CoachSheetScreen() {
     setPicking(false);
     setNotice(r.ok ? `Pain noted for ${ex.name}.` : r.message);
     changed();
+    void loadWorkout();
   }
 
   async function pain() {

@@ -377,7 +377,10 @@ export function createCoachService(deps: CoachServiceDeps) {
       if (data === null) return null;
       const summaryTurns = new Set([...data.turns.values()].filter((t) => t.kind === 'summary').map((t) => t.id));
       const msg = [...data.messages].reverse().find((m) => m.body.role === 'coach' && summaryTurns.has(m.turnId));
-      if (msg === undefined || msg.body.role !== 'coach') return null;
+      if (msg === undefined || msg.body.role !== 'coach') {
+        // Cut off by a force-close and never retried (review N7): say so rather than nothing.
+        return [...data.turns.values()].some((t) => t.kind === 'summary' && t.status === 'interrupted') ? 'Interrupted.' : null;
+      }
       const sentences = msg.body.items.flatMap((i) => (i.kind === 'sentence' ? [i.text] : []));
       // A number about an exercise is shown only beside the coach's own saved target for it (review S5).
       const p = await owner();

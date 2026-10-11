@@ -362,6 +362,25 @@ describe('C8: Summary next-session targets (D21) and routines', () => {
     expect(view?.rows.every((r) => r.tag === 'Built-in rule (coach not connected)')).toBe(true);
   });
 
+  it('a summary turn cut off by a force-close shows Interrupted on the Summary, not nothing (review N7)', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    // The model never answers; the app is closed mid-turn.
+    model = new (class extends StepModel {
+      override stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+        this.requests.push(request);
+        return { [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<ModelEvent>>(() => undefined) }) };
+      }
+    })([]);
+    const pending = s.coach.runSummaryTurn(first);
+    void pending.catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 50));
+    await h.forceClose();
+    const { services: again } = await h.launch();
+    expect(await again.coach.summaryNote(first)).toBe('Interrupted.');
+  });
+
   async function savedBenchTarget(s: Awaited<ReturnType<Harness['launch']>>['services'], gymId: string) {
     const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }] }]);
     const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: `save-${first}` });
