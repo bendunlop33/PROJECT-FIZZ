@@ -116,8 +116,13 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
       const resting = aggregate.restTimer?.status === 'running';
       const check = ++offerCheck.current;
       setOffer(null);
+      // Re-read the status on each log: `Offline` from an earlier failure lapses once the network is back.
       void services.coach
-        .offerAfterLog({ aggregate, setId, resting, coachReachable: availability?.status === 'ok', pending: pending !== null })
+        .availability()
+        .then((now) => {
+          setAvailability(now);
+          return services.coach.offerAfterLog({ aggregate, setId, resting, coachReachable: now.status === 'ok', pending: pending !== null });
+        })
         .catch(() => null)
         .then((next) => {
           if (check === offerCheck.current) setOffer(next);

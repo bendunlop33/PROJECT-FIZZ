@@ -60,3 +60,43 @@ describe('CA4 with coach-sourced targets (rule 3)', () => {
     expect(await logHard(3)).toBeNull();
   });
 });
+
+describe('Offline recovers by itself; the summary review isn’t skipped for an earlier failure', () => {
+  it('after one network failure, the review still calls the model, and once the network is back the status is ok again', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    model = new StepModel([() => [{ type: 'error', error: 'network' }]]);
+    const failed = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Hi', spoken: false }, turnId: h.ids() });
+    expect(failed.error).toBe('network');
+    expect((await s.coach.availability()).status).toBe('offline');
+    // Signal back: the next request isn't refused for the old failure.
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }] }]);
+    model = new StepModel([saveNextTarget(), () => replyWith('Ok.')]);
+    const review = await s.coach.runSummaryTurn(first);
+    expect(model.requests).toHaveLength(2);
+    expect(review?.status).toBe('completed');
+    expect((await s.coach.availability()).status).toBe('ok');
+  });
+
+  it('Offline clears by itself after a short while, with no request needed', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    model = new StepModel([() => [{ type: 'error', error: 'network' }]]);
+    await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Hi', spoken: false }, turnId: h.ids() });
+    expect((await s.coach.availability()).status).toBe('offline');
+    h.clockMs += 2 * 60_000;
+    expect((await s.coach.availability()).status).toBe('ok');
+  });
+
+  it('a review skipped while not connected isn’t cached: it runs once the coach is back', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }] }]);
+    connection = { status: 'not_connected', route: null, email: null, model: null };
+    expect(await s.coach.runSummaryTurn(first)).toBeNull();
+    expect(s.coach.summaryRunning(first)).toBeNull();
+    connection = CONNECTED;
+    model = new StepModel([saveNextTarget(), () => replyWith('Ok.')]);
+    expect((await s.coach.runSummaryTurn(first))?.status).toBe('completed');
+  });
+});

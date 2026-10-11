@@ -103,6 +103,8 @@ export interface ThreadData {
 }
 
 const GENERAL_REUSE_MS = 6 * 60 * 60 * 1000;
+/** How long one network failure reads as `Offline` (coach-sheet §4: it clears by itself when the network returns). */
+export const OFFLINE_HOLD_MS = 60 * 1000;
 
 /** Exercise IDs Ben named in his words, matched to the workout's exercises (for rule 9's `messagePain`). */
 export function namedExercises(text: string, session: SessionAggregate | null): string[] {
@@ -116,7 +118,8 @@ export function createCoachService(deps: CoachServiceDeps) {
   const summaryRuns = new Map<string, Promise<CoachTurnResult | null>>();
   const offerLogs = new Map<string, OfferLogEntry[]>();
   const offerQueues = new Map<string, Promise<unknown>>();
-  let lastNetworkFailure = false;
+  /** When the last request failed for lack of network (UTC ms); a completed turn clears it, and it lapses after `OFFLINE_HOLD_MS`. */
+  let lastNetworkFailureMs: number | null = null;
 
   /** The workout's offer log: from memory, else the store (a relaunch keeps CA4's once-per-kind). */
   async function offerLogOf(sessionId: string): Promise<OfferLogEntry[]> {
@@ -139,7 +142,8 @@ export function createCoachService(deps: CoachServiceDeps) {
   async function availability(): Promise<CoachAvailability> {
     if (deps.connection === undefined || deps.model === undefined) return { status: 'not_connected', model: null };
     const s = await deps.connection().catch((): TextCoachState => ({ status: 'not_connected', route: null, email: null, model: null }));
-    const status: CoachStatus = s.status === 'ok' && lastNetworkFailure ? 'offline' : s.status;
+    const offline = lastNetworkFailureMs !== null && toMs(deps.now().utc) - lastNetworkFailureMs < OFFLINE_HOLD_MS;
+    const status: CoachStatus = s.status === 'ok' && offline ? 'offline' : s.status;
     return { status, model: s.model?.slug ?? null };
   }
 
@@ -296,8 +300,8 @@ export function createCoachService(deps: CoachServiceDeps) {
         },
         { model, store: coachStore(), executors, now: deps.now, newId: deps.newId },
       );
-      if (result.error === 'network') lastNetworkFailure = true;
-      else if (result.status === 'completed') lastNetworkFailure = false;
+      if (result.error === 'network') lastNetworkFailureMs = toMs(deps.now().utc);
+      else if (result.status === 'completed') lastNetworkFailureMs = null;
       if (session !== null && result.cards.some((c) => c.record.detail.kind === 'adjust_pending_sets' && c.record.status === 'committed')) {
         const fresh = await repos().sessions.get(session.session.id).catch(() => null);
         if (fresh !== null) deps.onSessionChanged?.(fresh);
@@ -349,14 +353,21 @@ export function createCoachService(deps: CoachServiceDeps) {
     /**
      * The one summary turn after a workout (D21, CA10). Runs in the
      * background; leaving the Summary doesn't stop it. Once per workout: a
-     * workout whose thread already has a summary turn is skipped.
+     * workout whose thread already has a summary turn is skipped. `Offline`
+     * after an earlier failure still tries (the network may be back); a
+     * review skipped because the coach can't answer isn't remembered, so a
+     * later call runs it.
      */
     runSummaryTurn(sessionId: string): Promise<CoachTurnResult | null> {
       const existing = summaryRuns.get(sessionId);
       if (existing !== undefined) return existing;
+      let skipped = false;
       const run = (async (): Promise<CoachTurnResult | null> => {
         const a = await availability();
-        if (a.status !== 'ok') return null;
+        if (a.status !== 'ok' && a.status !== 'offline') {
+          skipped = true;
+          return null;
+        }
         const entry: CoachEntry = { kind: 'summary', sessionId };
         const threadId = await resolveThread(entry);
         if (threadId !== null) {
@@ -366,6 +377,9 @@ export function createCoachService(deps: CoachServiceDeps) {
         return send({ entry, threadId, input: { kind: 'summary' }, turnId: deps.newId(), summary: true });
       })().catch(() => null);
       summaryRuns.set(sessionId, run);
+      void run.then(() => {
+        if (skipped && summaryRuns.get(sessionId) === run) summaryRuns.delete(sessionId);
+      });
       return run;
     },
 
