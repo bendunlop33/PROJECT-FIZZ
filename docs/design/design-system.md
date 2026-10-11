@@ -28,6 +28,8 @@
 > - **Components:** a compact `ParamChip` size for digit and weekday chips (§9.17); the value-provenance tag `Default` (§9.28); new `TrainingContextCard` (§9.61), `RuleActivityTag` (§9.62), `ParameterRow` (§9.63) and `StepCardList` (§9.64); index rows (§11).
 > - **No new colour, type, spacing or timing values; one accent kept.** On/off-now tags and percentages never use status colours, because "off" isn't a warning and a percentage isn't good or bad.
 
+> **Revision 2026-10-11 (Workouts library, edit before start, fit to time; [routines.md](routines.md) Part A, [overview-today-edits.md](overview-today-edits.md) §11, [fit-to-time.md](fit-to-time.md)).** New components `WorkoutRow` (§9.69), `SaveWorkoutSheet` (§9.70), `EditRow` with `SetCountStepper` (§9.71), `RepsSheet` (§9.72), `HowLongSheet` (§9.73) and `FitCard` (§9.74); `ChangeMarker` gains `＋ ADDED`, `✎ EDITED` and `◷ TRIMMED` with a new precedence (§9.67); `ChangeReviewCard` gains per-line checks for multi-line Ben-authored cards (§9.75); `StatStrip`'s TIME column can be a button (§9.65). The UI name for saved routines is **Workouts**. **No new colour, type, spacing or timing values; one accent kept.**
+
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
 Context: one person uses the app on an iPhone, one-handed, mid-workout, with sweaty fingers and headphones, often in bright or dim gym light. Every choice below favours speed, legibility and calm over decoration.
@@ -980,6 +982,26 @@ The % is never coloured: a bigger step isn't shown as bad. Rows aren't tappable 
 
 **9.68 `SubstituteRow` target variant** (overview Swap sheet). The `SubstituteRow` frame (§9.35), ≥ 64pt, whole row one button: line 1 name `type.headline` (+ trailing `⚠ May hurt` `AvailabilityTag` when flagged); line 2 equipment kind · `last …` actual or `No history`, `type.callout` `text.secondary` tabular; trailing target `type.body` tabular under a `TARGET` column header. No reason lines, no scores. At AX1+ the target stacks under line 2.
 
+**9.65 addendum (2026-10-11).** The TIME column may be a button (fit-to-time FT1): caret `chevron.down` 12pt `text.secondary` after the value; label `TIME` or `TIME · FIT 45` with a `clock` icon. Whole column ≥ 44pt tall, one VoiceOver element ending "How long? button".
+
+**9.67 addendum (2026-10-11).** New markers, all `text.secondary`, icon + word: `＋ ADDED` (`plus.circle`), `✎ EDITED` (`pencil`), `◷ TRIMMED` (`clock`). Precedence is now SKIPPED > HELD > NO LOAD > ADDED > SWAPPED > EDITED > TRIMMED > the rest.
+
+#### Workouts library, edit before start, fit to time (revision 2026-10-11; owners: routines.md Part A, overview-today-edits.md §11, fit-to-time.md)
+
+**9.69 `WorkoutRow`.** Library and picker-style row, min 64pt, `border.divider` between rows. Line 1: name `type.headline` (two lines max), optional `Tag` (`UP NEXT` with `arrow.clockwise`; `SourceTag` only for `Coach` / `Imported`), trailing `⋯` icon button 44 × 44 (or a `SecondaryButton` `Save` on `FROM HISTORY` rows). Line 2: `type.callout` `text.secondary` tabular (`6 exercises · ≈ 60 min · 6 days ago`); a gym problem uses `exclamationmark.triangle` + `status.warning` icon with `text.secondary` words. Whole row (except `⋯` / `Save`) is one button. At AX1+ line 2 wraps and `Save` moves under the name.
+
+**9.70 `SaveWorkoutSheet`.** `BottomCard` medium detent. Title `type.title2` + `Cancel`; `Name` text field (`type.body`, ≥ 44pt, text selected on open); summary line `type.callout` `text.secondary` tabular; one switch row `Add to rotation` (`SettingsRow`, off); `PrimaryButton` `Save` in the `ActionBar`, above the keyboard. Duplicate-name note as a `NoteLine` under the field.
+
+**9.71 `EditRow` and `SetCountStepper`.** Overview Edit mode row, `border.divider` between rows, padding `space.3` vertical. Line 1: index (as `OverviewRow`), name 17/600, `ChangeMarker`, `↑` `↓` icon buttons 44 × 44 (`chevron.up` / `chevron.down`, disabled at the ends). Line 2: `SetCountStepper` (`[−]` and `[+]` 44 × 44 outline circles, `border.control`; value `N sets` `type.body` tabular, min width for `10 sets`) and a reps button (`6–8 reps ›`, `type.body`, 44pt hit). Line 3: load button (`100 kg ›`, 22/500 tabular as the `OverviewRow` load; unit 16pt `text.secondary`; `—  No history` in `text.tertiary` when none), optional `SourceTag` `Ben`, then outline pills (`Swap`, `Skip` / `Remove` / `Bring back`, 44pt). Superset members carry the bracket bar as `OverviewRow`. At AX1+ every line stacks and the arrows get their own line.
+
+**9.72 `RepsSheet`.** `BottomCard` small detent. Title `Reps · <exercise>` + `Done`; `ParamChip` pair `Range` / `Exact`; one or two `NumberStepper`s (§9.4) joined by `to`; `Use planned` text button when edited. Timed variant: `Work time` picker (wheel, 5 s steps).
+
+**9.73 `HowLongSheet`.** `BottomCard` medium detent. Title `How long?` + `Close`; `Now ≈ 62 min` (`type.title2`, tabular, `≈` `text.secondary`) with an `info.circle` button (44pt hit); `ParamChip` row `30 45 60 75 90 Other` (44pt, tabular, wrap); `PrimaryButton` `Trim to 45 min` (disabled variant `Fits already`); `SecondaryButton` `Ask coach` (disabled with caption `Coach offline` + `wifi.slash` icon); `Clear fit` text button when a fit is live. The page behind keeps its own `Start` (the sheet's filled button is modal, so the page rule "Start is the only filled pill" still holds).
+
+**9.74 `FitCard`.** A `ResultCard` (§9.48) above the overview list: `bg.surface`, `radius.md`, padding `space.3`. Line 1 `clock` icon + `Fitted to 45 min` / `Shortest: ≈ 52 min` (`type.headline`); coach variant starts with `SourceTag` `Coach`. Line 2 `≈ 62 → 44 min` (`type.body`, tabular). Cut lines `type.callout` `text.secondary`, one per exercise, plan order. Actions: `Undo` and `Change` (outline pills 44pt); coach variant adds `Why? ›`. Collapsed state: one 52pt line `◷ Fitted to 45 min · ≈ 44 min ›`. Static: no progress animation while the coach works (pending variant shows `Fitting to 45 min…` + `Cancel`).
+
+**9.75 `ChangeReviewCard` per-line checks (2026-10-11).** For a Ben-authored card with several lines (overview-today-edits TE15), each `ChangeLine` gets a leading checkbox (`checkmark.square` / `square`, 44pt row). Removals start unchecked. `Apply` (`SecondaryButton`) is disabled with nothing checked. Single-line cards keep the plain layout.
+
 #### Sound asset
 
 `sound.restEnd` is the file `rest-end.caf` (≤ 2 s), used by both the in-app chime and the rest-end notification sound.
@@ -1035,3 +1057,7 @@ Use the canonical name in new specs. Aliases are kept so older specs stay readab
 | `RuleActivityTag` | §9.62 | "on/off-now tag", "Applies now" (revision 2026-10-09) |
 | `ParameterRow` | §9.63 | "Defaults" rows, "default value row" (revision 2026-10-09) |
 | `StepCardList` | §9.64 | "Next steps at <gym>", "step card" display (revision 2026-10-09) |
+| `WorkoutRow` | §9.69 | `RoutineRow` (routines v0.1; its `Start` button is retired) (revision 2026-10-11) |
+| `SaveWorkoutSheet` | §9.70 | "Save as routine sheet" (premium-feel §2.6, workout-builder §3.8, session-picker §4.3) (revision 2026-10-11) |
+| `EditRow`, `SetCountStepper` | §9.71 | "Edit mode row" (overview-today-edits §11); replaces the overview Reorder mode's `ReorderRow` use (revision 2026-10-11) |
+| `RepsSheet`, `HowLongSheet`, `FitCard` | §9.72–9.74 | "How long? sheet", "fitted result card" (revision 2026-10-11) |

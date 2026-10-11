@@ -1,10 +1,12 @@
 # Workout overview: today's edits (Swap today, Skip today, Do first, Reorder)
 
+> **v0.3, 11 Oct 2026 (Ben: "an option to edit before starting the workout").** New §11: **full edit before start** (build slice B of the Workouts library change, [routines.md](routines.md) §A8). The overview gets a visible `Edit` mode that puts sets, reps, today's target load, add exercise, swap, skip and order in one place, and `Update Push A ›` turns today's edits into one change-review card. The `How long?` control on the TIME tile is specified in [fit-to-time.md](fit-to-time.md) (slice C). §1–§10 are unchanged and built; where §11 differs, §11 wins. Mockup: [mockups/workout-library.html](mockups/workout-library.html) frame 3.
+
 Status: v0.2, 11 Oct 2026. **Ready to build; PM defaults pending Ben** (§10). Schema: [ADR 0022](../decisions/0022-pre-start-draft.md) (pre-start draft, migration 7). Reconciled with the merged overview (`apps/mobile/src/screens/workout/WorkoutOverviewScreen.tsx`, `packages/domain/src/session/overview.ts`).
 
 This is the slice that [workout-overview.md](workout-overview.md) §6 and §11.3 deferred. Everything else on the overview is unchanged. Sources: [exercise-library.md](exercise-library.md) §2.5, EL4, EL9; [gym-switch.md](gym-switch.md) GS2–GS3; [change-review.md](change-review.md) CR3, CR4; [active-workout.md](active-workout.md) §4.4; CLAUDE.md rules 1–5, 9, 10 and the minimal-copy convention.
 
-**Out of scope:** Lighter start after a break (its playbook rules R1–R6 aren't approved; ADR 0022 §1 leaves the seam), adding exercises, editing sets/reps/loads before Start, any AI call on this page.
+**Out of scope (v0.2):** Lighter start after a break (its playbook rules R1–R6 aren't approved; ADR 0022 §1 leaves the seam), adding exercises, editing sets/reps/loads before Start, any AI call on this page. (v0.3: adding exercises and editing sets, reps and loads are now in §11. The only AI call is the coach fit in fit-to-time.md, and only when Ben asks.)
 
 Borrowed patterns (not screens): a "just this workout" swap scope, and restoring the original after edits.
 
@@ -360,3 +362,197 @@ Follow-ups for the PM (not edited here): today.md (Up next reads the edited prev
 3. **`Change Push A too ›` uses a change-review card** (routines.md §4.2 updated to match).
 4. **Lighter start** waits for R1–R6 approval.
 5. **EL6** (same-movement substitute of a flagged exercise) is still pending; v1 marks only candidates that are themselves flagged.
+
+---
+
+## 11. Full edit before start (v0.3, build slice B)
+
+### 11.1 Purpose
+
+**Question:** "Before I start, can I change today's workout the way I want: more or fewer sets, different reps, a different weight, an extra exercise?" FitNotes' `Log All` lets Ben edit the copied day before saving it. This is the same idea, with the template left alone unless Ben says so.
+
+**Primary action: still `Start workout`**, live in every mode. Edit mode is optional and never between Ben and Start.
+
+### 11.2 Decisions
+
+| # | Decision | Reason |
+|---|---|---|
+| TE11 | **A visible `Edit` button** in the overview top bar (`⌄ · [Main gym ▾] · Edit · ⋯`) opens **Edit mode**: every row shows its controls at once. `Done` leaves. `⋯ → Reorder` now opens Edit mode (it has `↑` / `↓`), so the v0.2 Reorder mode (§2.3) retires when this ships | Ben asked for an edit option he can see. One mode instead of panels plus a separate Reorder mode |
+| TE12 | **Four new `TodayEdit` kinds**, stored as intent in the draft: `add` (exercise), `sets` (working-set count), `reps` (range, or work time), `load` (Ben's own target for today). Applied in this order after the v0.2 ones: swap, add, skip, order, sets, reps, load. Then the planner and `snapPlanToGym` run as now (TE2) | Preview = Start stays true by construction |
+| TE13 | **`load` is the one edit that carries a number.** It's Ben's *intended* target, fitted on every read like any intended load (toward easier, never past a max; GS2). Amends ADR 0022 §1 "edits never carry a load" (needs a one-line ADR note) | Rule 4 still holds: the fitted value is what shows and what Start plans |
+| TE14 | **Everything applies at once** (TE3). Steppers show no toast (`−` undoes `+` in place). Add, remove, swap, skip and a typed load show a toast with Undo | No toast spam while tapping `+` |
+| TE15 | **`Update Push A ›`** (routine basis, when there are template-able edits) opens **one** inline `ChangeReviewCard` listing every change as a line with its own check. Skips start **unchecked**, the rest checked. Today's loads and the time fit are never listed. History basis: the link reads `Save to Workouts ›` (routines.md §A2.5) | Research R5/P5. A skip often means "machine taken", so removing it from the template must be a deliberate tick (rule 2) |
+| TE16 | **Added exercises** come from the exercise picker (pick one), filtered to equipment usable at this gym, pain-flagged ones marked and confirmed (EL9). Targets: its own comparable history through the built-in rule (or a stored D21 coach target), else `No history` and load `—`. Default shape 3 working sets × the exercise's rule range (else 8–12). Added at the end | Same rules as a swap substitute (TE6). Never converted from another exercise |
+| TE17 | **Limits:** working sets 1–10 per exercise (`−` disabled at 1; use Skip), up to 6 added exercises, reps 1–50, work time 0:05–10:00. The last exercise not skipped can't be skipped (v0.2) | Mistyped values can't make a silly plan |
+
+### 11.3 Layout: Edit mode (390 × 844)
+
+```
+┌────────────────────────────────────────┐
+│ Reset                            Done  │ Reset only with edits
+│ Push A                                 │
+│────────────────────────────────────────│
+│  ≈ 62 min ▾│  ≈ 19:05  │     16        │ TIME tile → How long? (slice C)
+│  TIME      │  DONE BY  │    SETS       │
+│────────────────────────────────────────│
+│ 6 EXERCISES · 3 EDITED         TARGET  │
+│ 01 Bench press                [↑] [↓]  │ EditRow; ↑ disabled on 01
+│    [−]  3 sets  [+]      6–8 reps ›    │ SetCountStepper, 44pt
+│    100 kg ›          (⇄ Swap) (⊘ Skip) │ load = target (fitted)
+│────────────────────────────────────────│
+│ 02 Incline DB press  ✎ EDITED [↑] [↓]  │
+│    [−]  4 sets  [+]     8–10 reps ›    │ was 3 sets
+│    30 kg each ›      (⇄ Swap) (⊘ Skip) │
+│────────────────────────────────────────│
+│┃03 Lateral raise              [↑] [↓]  │ superset moves as one
+│┃   [−]  3 sets  [+]    12–15 reps ›    │
+│┃   10 kg each ›      (⇄ Swap) (⊘ Skip) │
+│┃04 Triceps pushdown  ✎ EDITED          │
+│┃   [−]  3 sets  [+]    10–12 reps ›    │
+│┃   27.5 kg › [Ben]   (⇄ Swap) (⊘ Skip) │ Ben's own load today
+│────────────────────────────────────────│
+│ 05 Cable fly          ⊘ SKIPPED        │ text.tertiary
+│                         (Bring back)   │
+│────────────────────────────────────────│
+│ 06 Face pull          ＋ ADDED [↑] [↓] │
+│    [−]  3 sets  [+]    12–15 reps ›    │
+│    —  No history             (Remove)  │ added: Remove instead of Skip
+│────────────────────────────────────────│
+│ ＋ Add exercise                        │ row link, 52pt
+│ Update Push A ›                        │ TE15
+│ [            Start workout           ] │ fixed bar, the only filled pill
+└────────────────────────────────────────┘
+```
+
+Rules:
+- **Row (`EditRow`)**: line 1 index, name, marker, `↑` `↓` (44 × 44). Line 2 `SetCountStepper` and the reps button. Line 3 the load button (`100 kg ›`, a target) or `—  No history`, then outline pills. Superset members share `↑` `↓` on the first member (the group moves as one).
+- **Markers** (`ChangeMarker`): new `＋ ADDED` (`plus.circle`) and `✎ EDITED` (`pencil`, for sets, reps or load). Precedence: `⊘ SKIPPED` > `⚠ HELD` > `⚠ NO LOAD` > `＋ ADDED` > `⇄ SWAPPED` > `✎ EDITED` > the §4 markers. A Ben-typed load also shows the `SourceTag` `Ben` after it.
+- **`N EDITED`** counts slots with any live Ben edit (an `order` counts once). The fit (slice C) is shown separately and doesn't count.
+- **Out of Edit mode** the rows look as v0.2 §2.1, with the new markers; row panels keep `Swap today` / `Skip today` / `Do first` and the built `Change Push A too ›`.
+- Warm-ups aren't edited here. They follow the exercise (added exercises get none; the first set card handles them as today).
+
+### 11.4 Small sheets
+
+**Reps (`RepsSheet`, small detent).**
+
+```
+│ Reps · Incline DB press          Done  │
+│ [✓ Range ] [ Exact ]                   │
+│ [−]  8 [+]   to   [−] 10 [+]           │ NumberStepper, tabular
+│ Use planned                            │ only when edited
+```
+Applies to every working set of that exercise today. Timed exercises show `Work time [0:45 ▾]` instead. `Done` writes one `reps` edit. `Use planned` removes it.
+
+**Load (keypad).** Tapping the load opens `WorkoutKeypad` with this gym's feasible step keys and the value in the exercise's convention (`kg each`, stack, assisted). The action bar above the keypad has `Set target` (primary of the keypad) and `Use planned`. A value the gym can't make shows a `NoteLine` before saving: `Rounds to 97.5 kg here`. Above the max: `Most here: 30 kg each`. The row then shows the fitted value. A top-set + back-off exercise: the edit sets the top and plain working sets; back-off and drop sets keep their planned loads.
+
+**Add exercise.** The exercise library in pick-one mode ([exercise-library.md](exercise-library.md)), `At Main gym` filter on, exercises already in today's plan hidden, `⚠ May hurt` marked and confirmed. Pick → row appended with toast `Face pull added` [Undo].
+
+### 11.5 `Update Push A ›` card (inline, at the list end)
+
+```
+│ ┌────────────────────────────────────┐ │
+│ │ [person Ben] Update Push A         │ │
+│ │ [▦ Push A from now on]             │ │
+│ │ [✓] Changed  Bench press           │ │ CheckRow 44pt each
+│ │          →  DB bench press         │ │
+│ │ [✓] Added    Face pull · 3 × 12–15 │ │
+│ │ [✓] Sets     Incline DB press 3 → 4│ │
+│ │ [✓] Reps     Pushdown 10–12 → 8–10 │ │
+│ │ [✓] Order    Incline DB press first│ │
+│ │ [ ] Removed  Cable fly             │ │ skips start unchecked
+│ │ (Not now)                 (Apply)  │ │ Apply = SecondaryButton
+│ └────────────────────────────────────┘ │
+```
+
+- **Apply** writes routine v+1 with the checked lines, in one transaction with an `ActionRecord` (`update_routine`, author `ben`, `before` stored) and the matching draft edits marked `redundant`. A swapped or added exercise gets `Auto` loads in the template (never converted). Collapses to `✓ Applied · Push A from now on` [Undo]; toast `Push A updated` [Undo].
+- **Out of date** (Push A changed since the page loaded): lines go `text.secondary` under `Was suggested:`, Apply hidden, `Dismiss` shown (CR4, rule 5).
+- `Apply` is disabled with no line checked.
+- Not listed: loads typed for today, and anything the time fit did.
+
+### 11.6 States
+
+| State | Shows |
+|---|---|
+| Edit mode, no edits | §11.3 without markers; `Reset` hidden; no `Update` link |
+| Edit mode with edits | Markers, `N EDITED`, live TIME / DONE BY / SETS |
+| Stepper at a limit | That button disabled (`[−]` at 1, `[+]` at 10), VoiceOver "dimmed" |
+| Add picker empty at this gym | `Nothing else here at Main gym.` + `Show all` (turns the filter off; a pick with no usable item shows `⚠ NO LOAD`) |
+| Gym changed in Edit mode | Every row re-fits; Ben's loads re-fit from his intended values; added exercises with no usable item show `⚠ NO LOAD` |
+| Routine edited elsewhere | `sets` / `reps` / `load` / `add` edits on slots that still exist apply; stale ones drop with `Plan changed · 1 edit removed` (v0.2) |
+| Write failed | `Couldn't save that edit.` Row unchanged |
+| Offline / no AI | Identical. Nothing in §11 needs network or AI |
+| Force-close | Draft intact; reopening shows the edits (Edit mode closed) |
+| AX1+ | `EditRow` stacks: name; steppers; load; pills; `↑` `↓` on their own line. Start stays in the bar |
+
+Transitions:
+
+```
+Overview ─Edit─► Edit mode ─[+]/[−]/reps/load/↑↓─► same (live) ─Done─► Overview
+                    ├─＋ Add exercise─► picker ─pick─► row ＋ ADDED (toast Undo)
+                    ├─Update Push A ›─► inline card ─Apply─► routine v+1 (toast Undo)
+                    └─Start workout─► [one transaction] ─► Workout
+```
+
+### 11.7 Interactions
+
+| Edit | Taps from the overview |
+|---|---|
+| One more set | 2: `Edit` → `[+]` |
+| Reps | 4: `Edit` → reps → stepper → `Done` |
+| Today's load | 4+: `Edit` → load → keys → `Set target` |
+| Add exercise | 3+: `Edit` → `Add exercise` → pick (search optional) |
+| Make it permanent | 2: `Update Push A ›` → `Apply` |
+
+Commands (all `opId` + `expectedDraftVersion`, through `services.overview.edit`):
+
+| Edit | Payload | Undo |
+|---|---|---|
+| Add | `{kind: 'add', slotKey: <new id>, exerciseId}` (the `order` edit, if any, gets the new key at the end) | Toast, or `Remove` |
+| Sets | `{kind: 'sets', slotKey, workingSets}` (replaces the slot's previous `sets` edit) | `−` / `+`, or `Reset` |
+| Reps | `{kind: 'reps', slotKey, reps: {min, max} \| null, durationS: number \| null}` | `Use planned`, or `Reset` |
+| Load | `{kind: 'load', slotKey, load: Load}` (convention explicit) | Toast, or `Use planned` |
+| Update Push A → Apply | `services.routines.applyTodayEdits({routineId, expectedRoutineVersion, draft: {id, expectedVersion}, editIds, opId})` | `services.routines.revert({actionId, opId})` |
+
+Voice (for voice.md, step 5; deterministic, no coach): "add a set to incline" → `sets` +1 with Undo · "eight to ten reps on incline" → `reps` · "add face pulls" → opens the picker with the query filled (pick needs a tap).
+
+VoiceOver: `EditRow` reads "2, Incline DB press, edited, 4 sets, 8 to 10 reps, target 30 kilograms each." Custom actions: Add set, Remove set, Change reps, Change target, Swap, Skip, Move up, Move down.
+
+### 11.8 Copy
+
+Loads in Edit mode are **targets** (`TARGET` header; `[Ben]` tag when typed by Ben). `No history` and `—` mean no target.
+
+| Element | Text |
+|---|---|
+| Top bar | `Edit` · `Done` · `Reset` |
+| Row | `3 sets` · `6–8 reps` · `0:45` · `100 kg` · `—  No history` · `Swap` · `Skip` · `Bring back` · `Remove` |
+| Markers | `＋ ADDED` · `✎ EDITED` |
+| Sheets | `Reps · Incline DB press` · `Range` · `Exact` · `Work time` · `Use planned` · `Done` · `Set target` · `Rounds to 97.5 kg here` · `Most here: 30 kg each` |
+| Add | `Add exercise` · `Nothing else here at Main gym.` · `Show all` |
+| Card | `Update Push A ›` · `Save to Workouts ›` · `Update Push A` · `Push A from now on` · `Changed` · `Added` · `Removed` · `Sets` · `Reps` · `Order` · `Not now` · `Apply` · `✓ Applied · Push A from now on` · `Was suggested:` · `Dismiss` |
+| Toasts | `Face pull added` [Undo] · `Face pull removed` [Undo] · `Target 27.5 kg today` [Undo] · `Push A updated` [Undo] · `Today's edits reset` [Undo] |
+
+### 11.9 Data needed
+
+- **Schema (`packages/schemas/src/draft.ts`; JSON in `pre_start_drafts.data`, no migration):** `TodayEditSchema` gains `add`, `sets`, `reps`, `load` (and `fit`, slice C). `editBase` gains `author: 'ben' | 'coach'` (default `ben`) and `actionId?` (slice C). `SessionTodayEdits` gains `added[]` and `edited[]` (`{sessionExerciseId, slotKey, kinds}`).
+- **Domain (pure):** `applyTodayEdits` (new kinds, order in TE12), `planWithTodayEdits` (unchanged contract), `addTargets(exercise, pasts, ctx)` (shares `substituteTargets`' path), `templateLinesFromEdits(routine, edits, outcomes)` → `StructuralChangeLine[]` with default checks (TE15), `applyEditsToRoutine(routine, lines, expectedVersion, opId, at)` → `RoutineChange`, `buildWorkoutOverview` (`edit` gains `added` / `edited`; `ChangeMarkerKind` gains `added`, `edited`).
+- **Services:** `services.overview.edit` (new kinds), `services.overview.addCandidates({target, gymId, query})` (wraps the exercise library's pick search with this gym's filter and pain marks), `services.routines.applyTodayEdits`, `services.routines.revert`.
+- **Not touched:** session tables, `skipped_by` values, coach context (the draft stays out of it).
+
+### 11.10 Acceptance checks (slice B)
+
+Fixture as §7, plus Face pull (cable, last 20 kg × 15 on 1 Oct) and Hotel gym.
+
+- **TE-B1. Visible edit.** `Edit` is in the top bar on every overview basis. Edit mode shows sets, reps, load, Swap, Skip and `↑` `↓` on every row without opening a panel. Start is live and visible throughout, at AX3 too.
+- **TE-B2. Preview = Start.** For every combination of the new kinds with the v0.2 ones, and every load convention, the rows equal the pending sets Start creates (the OV3 test extended).
+- **TE-B3. Sets.** `[+]` on incline makes 4 working sets copying set 3's target; SETS and TIME update; Start creates 4. `[−]` at 1 is disabled. A superset member's `[+]` adds one round's set to that member only.
+- **TE-B4. Reps.** 8–10 → 6–8 on incline changes every working set's target reps today; warm-ups unchanged; the routine unchanged.
+- **TE-B5. Load.** Typing 37.5 kg each at Hotel gym (rack to 20) shows `Most here: 20 kg each`, the row shows 20 kg each, Start plans 20 kg each, and switching to Main gym re-fits from the intended 37.5 kg each (the nearest makeable value toward easier, capped at Main gym's max). Back-off sets keep their planned loads.
+- **TE-B6. Add.** Face pull is added at the end with `＋ ADDED` and 20 kg × 12–15 from its own history (never derived from another exercise). An exercise with no history shows `—  No history`. A flagged pick asks first. `Remove` and the toast Undo both take it out.
+- **TE-B7. Update card.** With a swap, an add, a sets change, an order change and a skip, `Update Push A ›` lists five lines with the skip unchecked. Apply makes routine v+1 without the skip; template loads for the swapped and added exercises are `Auto`. The applied edits become redundant and their markers go. Undo restores the routine and the edits. With Push A changed elsewhere first, the card shows `Was suggested:` and no Apply.
+- **TE-B8. Today's loads stay today.** A typed load never appears on the card, and the routine's templates don't change after Start or Finish.
+- **TE-B9. Rule 2.** No §11 action changes the routine except `Apply`. No completed set exists to touch.
+- **TE-B10. Idempotent and versioned.** A repeated `opId` gives one edit; an old `expectedDraftVersion` is rejected and the page re-reads.
+- **TE-B11. Force-close and expiry.** Edits survive a force-close and clear at local midnight as v0.2 (TE-A14, TE-A15).
+- **TE-B12. Offline.** Airplane mode, no AI: every §11 action works; no provider call.
+- **TE-B13. Next time.** After a workout with an added exercise and 4 incline sets, the next Push A overview (no Apply) has 3 incline sets and no face pull; face pull's own history is updated.
+- **TE-B14. Visual.** Steppers and pills ≥ 44pt; markers icon + word; numbers tabular; Start the only filled pill (Apply is secondary); light and dark.
