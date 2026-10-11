@@ -296,7 +296,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       return { ...s, planned };
     }),
   };
-  return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, notes, notCopied, empty: routineExercises.length === 0 };
+  return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, fits: out.fits, notes, notCopied, empty: routineExercises.length === 0 };
 }
 
 /**

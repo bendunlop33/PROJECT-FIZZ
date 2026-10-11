@@ -16,10 +16,9 @@ import { firstTime, useDataChanged, useLaunchInfo, useScreenData, useServices } 
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
-import type { NextSessionPreview, RoutineRow } from '../services/workout-services';
+import type { RoutineRow } from '../services/workout-services';
 import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, Sparkline, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { NameSheet } from './routines/NameSheet';
-import { RoutineSheet } from './routines/RoutineSheet';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
@@ -33,19 +32,18 @@ import { FinishSheet } from './workout/FinishSheet';
  * a typical one (marked not checked, B4); with routines it starts the next in
  * the rotation (premium-feel §2.6, D19); with a past workout it starts the
  * next session at the Summary's targets (B2); otherwise an empty workout
- * that opens the exercise picker. `Your routines` lists saved routines; a
- * row opens the routine sheet. The rare pain flag check (region 4b) opens the
- * pain flag sheet. The weekly plan comes later. No AI, no network.
+ * that opens the exercise picker. Up next's Start (and its rows) and a
+ * `Your routines` row open the Workout overview (workout-overview.md), whose
+ * Start starts the workout; the check-in for those starts lives there. The
+ * rare pain flag check (region 4b) opens the pain flag sheet. The weekly
+ * plan comes later. No AI, no network.
  */
 
-/** What a Start begins: an empty workout, the next session of a past one, or a routine. */
-type StartIntent = { kind: 'empty' } | { kind: 'next'; sessionId: string } | { kind: 'routine'; routineId: string };
-
-/** Up next's Start: the routine when Up next is one, else the last workout's next session. */
-function upNextIntent(next: NextSessionPreview): StartIntent {
-  if (next.routine) return { kind: 'routine', routineId: next.routine.id };
-  return next.sourceSessionId === null ? { kind: 'empty' } : { kind: 'next', sessionId: next.sourceSessionId };
-}
+/**
+ * What a Start from Today begins directly: an empty workout. Up next and
+ * routines go through the Workout overview, whose Start begins them.
+ */
+type StartIntent = { kind: 'empty' };
 
 const ROUTINE_CAP = 4;
 export function TodayScreen() {
@@ -68,12 +66,9 @@ export function TodayScreen() {
   const [finishVisible, setFinishVisible] = useState(false);
   const [afterDismiss] = useState(() => createAfterDismiss());
   const alertsAsk = useStartAlertsAsk();
-  // Routine sheet, name sheet (rename) and their after-close steps.
-  const [sheetRow, setSheetRow] = useState<RoutineRow | null>(null);
-  const [sheetVisible, setSheetVisible] = useState(false);
+  // Name sheet (rename, from a routine row's long-press) and its after-close step.
   const [renameRow, setRenameRow] = useState<RoutineRow | null>(null);
   const [renameVisible, setRenameVisible] = useState(false);
-  const [sheetAfter] = useState(() => createAfterDismiss());
   const [renameAfter] = useState(() => createAfterDismiss());
   const [allRoutines, setAllRoutines] = useState(false);
   // One opId per rename intent (sheet open), so a double tap saves once.
@@ -109,11 +104,32 @@ export function TodayScreen() {
   }, []);
 
   const handed = route.params?.toast;
+  const undoRoutine = route.params?.undoRoutine;
   useEffect(() => {
     if (!handed) return;
-    setToast({ text: handed });
-    navigation.setParams({ toast: undefined } as never);
-  }, [handed, navigation]);
+    // A routine deleted from the Workout overview: the toast keeps its Undo (a restore, versioned).
+    setToast({
+      text: handed,
+      ...(undoRoutine
+        ? {
+            action: 'Undo',
+            onAction: () => {
+              void services.routines.restore({ routineId: undoRoutine.id, expectedVersion: undoRoutine.version, opId: newUuid() }).then((u) => {
+                if (!u.ok) setError(u.message);
+                changed();
+                setToast(null);
+              });
+            },
+          }
+        : {}),
+    });
+    navigation.setParams({ toast: undefined, undoRoutine: undefined } as never);
+  }, [handed, undoRoutine, navigation, services, changed]);
+
+  /** Up next or a routine: the Workout overview, which creates nothing until its Start. */
+  function openOverview(target: { kind: 'next' } | { kind: 'routine'; routineId: string }) {
+    navigation.navigate('WorkoutOverview', { target });
+  }
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => {
@@ -124,10 +140,8 @@ export function TodayScreen() {
     };
   }, [toast]);
 
-  /** Start: a routine, the next session (`nextOf`) or an empty workout. Never leaves a dead button (audit F9). */
+  /** Start an empty workout (First workout, `Empty workout`). Never leaves a dead button (audit F9). */
   async function start(intent: StartIntent) {
-    const nextOf = intent.kind === 'next' ? intent.sessionId : null;
-    const routineOf = intent.kind === 'routine' ? intent.routineId : null;
     if (starting) return;
     setStarting(true);
     setError(null);
@@ -150,10 +164,10 @@ export function TodayScreen() {
       await alertsAsk.ensureAsked();
       const gate = await services.checkIns.gate();
       if (gate.kind === 'ask') {
-        navigation.navigate('CheckIn', { mode: 'start', gymId, ...(nextOf !== null ? { nextOf } : {}), ...(routineOf !== null ? { routineOf } : {}) });
+        navigation.navigate('CheckIn', { mode: 'start', gymId });
         return;
       }
-      const key = routineOf !== null ? `routine:${routineOf}` : (nextOf ?? 'empty');
+      const key = intent.kind;
       const opId = startOps.current.get(key) ?? newUuid();
       startOps.current.set(key, opId);
       const checkIn =
@@ -162,7 +176,7 @@ export function TodayScreen() {
           : gate.reason === 'off' || gate.reason === 'not_a_check_in_day'
             ? ({ kind: 'not_asked', reason: gate.reason } as const)
             : null;
-      const r = await services.workout.start({ gymId, opId, checkIn, nextOf, routineOf });
+      const r = await services.workout.start({ gymId, opId, checkIn });
       if (!r.ok) {
         setError(r.error.code === 'session_already_active' ? 'A workout is already in progress. Resume it above.' : r.error.message);
         reload();
@@ -202,17 +216,6 @@ export function TodayScreen() {
     navigation.navigate('Workout');
   }
 
-  function openRoutine(row: RoutineRow) {
-    setSheetRow(row);
-    setSheetVisible(true);
-  }
-
-  /** Close the routine sheet, then run `then` once it has gone (so the next sheet or screen presents cleanly). */
-  function closeSheetThen(then: () => void) {
-    sheetAfter.arm(then);
-    setSheetVisible(false);
-  }
-
   function askRename(row: RoutineRow) {
     renameOp.current = newUuid();
     setRenameRow(row);
@@ -247,7 +250,7 @@ export function TodayScreen() {
   }
 
   function confirmDelete(row: RoutineRow) {
-    Alert.alert(`Delete ${row.name}?`, 'Past workouts keep their name.', [
+    Alert.alert(`Delete ${row.name}?`, undefined, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -399,7 +402,14 @@ export function TodayScreen() {
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
               {/* A second workout: a routine row below, or an empty one (premium-feel §2.4). With no routines yet,
                   the next session of today's workout stays one tap (review S1). */}
-              {next && routines.length === 0 ? <TextButton label="Start next session" onPress={() => void start(upNextIntent(next))} /> : null}
+              {next && routines.length === 0 ? (
+                <TextButton
+                  label="Start next session"
+                  onPress={() => {
+                    openOverview({ kind: 'next' });
+                  }}
+                />
+              ) : null}
               <TextButton label="Empty workout" onPress={() => void start({ kind: 'empty' })} />
             </View>
           </Hero>
@@ -424,9 +434,24 @@ export function TodayScreen() {
                 basis,
               ]}
             >
-              <PrimaryButton label="Start workout" busy={starting} onPress={() => void start(upNextIntent(next))} />
-              {/* What Start creates, already fitted to this gym; each line says `Target` (premium-feel §2.3). */}
-              <DetailList rows={next.targets.map((t, i) => ({ key: `${String(i)}:${t.exerciseName}`, title: t.exerciseName, detail: t.line }))} />
+              <PrimaryButton
+                label="Start workout"
+                busy={starting}
+                onPress={() => {
+                  openOverview({ kind: 'next' });
+                }}
+              />
+              {/* What Start creates, already fitted to this gym; each line says `Target` (premium-feel §2.3). A row opens the overview. */}
+              <DetailList
+                rows={next.targets.map((t, i) => ({
+                  key: `${String(i)}:${t.exerciseName}`,
+                  title: t.exerciseName,
+                  detail: t.line,
+                  onPress: () => {
+                    openOverview({ kind: 'next' });
+                  },
+                }))}
+              />
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
                 <TextButton label="Empty workout" onPress={() => void start({ kind: 'empty' })} />
                 <TextButton
@@ -540,7 +565,7 @@ export function TodayScreen() {
                   row={r}
                   tz={zoned.tz}
                   onPress={() => {
-                    openRoutine(r);
+                    openOverview({ kind: 'routine', routineId: r.id });
                   }}
                   onLongPress={() => {
                     ActionSheetIOS.showActionSheetWithOptions({ title: r.name, options: ['Rename', 'Delete', 'Cancel'], destructiveButtonIndex: 1, cancelButtonIndex: 2 }, (k) => {
@@ -582,29 +607,6 @@ export function TodayScreen() {
         }}
       />
       {alertsAsk.sheet}
-      <RoutineSheet
-        row={sheetRow}
-        gymId={gym?.id ?? null}
-        visible={sheetVisible}
-        starting={starting}
-        onStart={(r) => {
-          closeSheetThen(() => void start({ kind: 'routine', routineId: r.id }));
-        }}
-        onRename={(r) => {
-          closeSheetThen(() => {
-            askRename(r);
-          });
-        }}
-        onDelete={(r) => {
-          closeSheetThen(() => {
-            confirmDelete(r);
-          });
-        }}
-        onClose={() => {
-          setSheetVisible(false);
-        }}
-        onDismissed={sheetAfter.dismissed}
-      />
       {renameRow ? (
         <NameSheet
           visible={renameVisible}
@@ -761,8 +763,8 @@ interface DetailRow {
 }
 
 /**
- * The hero's detail list (premium-feel §2.3): Up next targets (two lines,
- * not tappable) or Resume progress (one line with a status icon and words,
+ * The hero's detail list (premium-feel §2.3): Up next targets (two lines;
+ * a tap opens the Workout overview) or Resume progress (one line with a status icon and words,
  * ≥ 52 pt, tappable). At most 5, then `+2 more` expands in place; only the
  * rows that appear then fade in (`motion.listEnter`).
  */
@@ -800,12 +802,18 @@ function DetailList({ rows }: { rows: readonly DetailRow[] }) {
               </AppText>
             </Pressable>
           ) : (
-            <View accessible accessibilityLabel={`${r.title}. ${r.detail}`} style={{ minHeight: theme.target.min.height, justifyContent: 'center', paddingVertical: theme.space['1'] }}>
+            <Pressable
+              accessibilityRole={r.onPress ? 'button' : 'text'}
+              accessibilityLabel={`${r.title}. ${r.detail}`}
+              disabled={!r.onPress}
+              onPress={r.onPress}
+              style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', paddingVertical: theme.space['1'], backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent' })}
+            >
               <AppText variant="body">{r.title}</AppText>
               <AppText variant="callout" color="text.secondary" numeric>
                 {r.detail}
               </AppText>
-            </View>
+            </Pressable>
           );
         return (
           <FadeIn key={r.key} motion={added ? listEnterMotion(i - DETAIL_CAP, theme.a11y.reduceMotion) : null}>
@@ -837,7 +845,7 @@ function RoutineListRow({ row, tz, onPress, onLongPress }: { row: RoutineRow; tz
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${row.name}, ${count}, ${row.lastDone ? `last done ${when}` : 'not done yet'}`}
-      accessibilityHint="Opens the routine. Touch and hold to rename or delete."
+      accessibilityHint="Opens the routine's overview. Touch and hold to rename or delete."
       onPress={onPress}
       onLongPress={onLongPress}
       style={({ pressed }) => ({

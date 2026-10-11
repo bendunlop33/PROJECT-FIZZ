@@ -23,6 +23,8 @@
 > - `No plan` becomes **`No rotation yet`**.
 > - Changed: §1, §2 (regions 2, 3, 5, 6 and wireframes), §3 (rows Planned, Rest day, Workout skipped, No plan; new rows), transitions, §4, §5, §6, checks 23–30.
 
+> **Revision 2026-10-10 (workout overview; Ben's ask).** `Start workout` on the Up next card, a tap anywhere on that card, a hero detail row and Done today's `Start another workout` now open the **[Workout overview](workout-overview.md)**, a full-screen page that previews the whole session. It creates nothing. The workout starts from that page's `Start workout`. The check-in is asked on that page as an optional inline row, not as a sheet over Today. `Resume`, the stale card and P6 are unchanged. `Empty workout` and `Build a workout` still start directly, with the check-in sheet when due. Taps to the first set go from 2 to 3 (check-in not due). Changed: §3 transitions, §4 `Start workout`, checks 6, 16, 17 and 23. Superseded where they conflict: research idea 2's "2 taps".
+
 Status: v0.1 draft, 8 Oct 2026. Flow: [flow-first-milestone.md](flow-first-milestone.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -185,7 +187,7 @@ Regions, top to bottom:
 | Resume, time left (2026-10-09) | Unfinished session < 6 h old | Resume card adds `about 35 min left` to the sets line (`Paused · about 35 min left after you resume` when paused) | Estimate from `estimateRemainingDuration`; recomputed when Today appears and once a minute |
 
 Transitions:
-- Up next → Start → Active workout (pushed full-screen). With check-ins on and due: Up next → Start → check-in sheet → (score, `Skip`, `Done` or `Train anyway`) → Active workout; swipe-down → Up next, nothing started; `Skip workout` → Workout skipped (rotation unchanged). (9 Oct evening: the check-in's `Reschedule` isn't offered for lifting.)
+- (Revised 10 Oct.) Up next → Start → Workout overview → Start → Active workout. The check-in is inline on the overview (workout-overview.md §2.2). The flow below now applies only to `Empty workout` and other starts that skip the overview: Up next → Start → Active workout (pushed full-screen). With check-ins on and due: Up next → Start → check-in sheet → (score, `Skip`, `Done` or `Train anyway`) → Active workout; swipe-down → Up next, nothing started; `Skip workout` → Workout skipped (rotation unchanged). (9 Oct evening: the check-in's `Reschedule` isn't offered for lifting.)
 - (9 Oct evening, D19) Finishing a workout from a rotation routine (≥ 1 working set) → Up next becomes the routine after it. `Other routine` → any routine → finish → the rotation carries on from that one. An empty or discarded workout leaves Up next unchanged.
 - Active workout → chevron-down (minimise) → Today in the Resume state.
 - Resume → Resume → Active workout.
@@ -196,7 +198,7 @@ Transitions:
 
 | Element | Tap | Other |
 |---|---|---|
-| `Start workout` | Creates the opId, then `shouldAskCheckIn`. Not due: `startWorkout(upNext.routineId, gymId, opId, {checkIn: {kind: 'not_asked', reason}})` and open Active workout (one tap, as before). Due: the check-in sheet; the sheet's score / `Skip` / `Done` / `Train anyway` then calls `startWorkout(…, opId, {checkIn})` with the same opId (check-in.md §4.1). Disabled for 1 s after the tap and while the sheet is up, so it can't double-start. The opId stops a second session being created | none |
+| `Start workout` | **(Revised 10 Oct.)** Up next: opens the Workout overview (workout-overview.md). The opId, the check-in and `startWorkout` move to that page's Start. The text that follows still applies to `Start empty workout`. Creates the opId, then `shouldAskCheckIn`. Not due: `startWorkout(upNext.routineId, gymId, opId, {checkIn: {kind: 'not_asked', reason}})` and open Active workout (one tap, as before). Due: the check-in sheet; the sheet's score / `Skip` / `Done` / `Train anyway` then calls `startWorkout(…, opId, {checkIn})` with the same opId (check-in.md §4.1). Disabled for 1 s after the tap and while the sheet is up, so it can't double-start. The opId stops a second session being created | none |
 | `Resume` | Opens Active workout in the persisted state | none |
 | `Finish (ended about 19:24)` | Opens the finish sheet (see active-workout.md §4.8) with the end time prefilled as the last set time + 3 min. Ben can edit it between the last set and now. `Finish` calls `finishWorkout(sessionId, expectedVersion, endedAt)` once; the tap time is kept in the timing audit. If a work timer was left running or paused, the sheet shows `Stop the timer first` with [Stop] (the elapsed time is kept as that set's draft), then the normal Finish. This works even when the stale workout is paused: Stop ends the interval at the moment the pause began, leaves the workout paused, and Finish completes without a Resume. After Stop, the sheet's primary button is `Finish`; Resume stays available as a secondary action, never the primary one. Stale cards with 0 logged sets show `Discard (nothing logged)` instead of Finish | none |
 | Gym chip | Opens the gym switcher sheet: a list of gyms with a check on the selected one, plus `Add gym` and `Edit gyms` (→ Profile). Choosing a gym before starting just selects it. During an unfinished session, it calls `setActiveGym(gymId, sessionId)`, which returns a proposal shown as a `ChangeReviewCard` in Active workout | none |
@@ -271,7 +273,7 @@ Spoken cue: none on Today. Starting a workout can trigger the optional set intro
 3. Only one `PrimaryButton` is visible in every state. The Ask pill never overlaps it at any Dynamic Type size, including AX3.
 4. With airplane mode on and no AI connected, Today renders fully. The only AI sign is the `Offline` Ask pill, and there is no error banner.
 5. (Revised 2026-10-09.) Today shows no readiness chips. With check-ins on, `Start workout` → `3` → `Tired` → `Done` saves a check-in and opens the workout with the same targets as a skipped check-in (any change only follows a coach offer Ben accepts; check-in.md checks 14–19).
-6. Double-tapping `Start workout` creates one session, with or without the check-in sheet in between.
+6. Double-tapping `Start workout` creates one session, with or without the check-in sheet in between. (10 Oct: on Up next, a double tap opens one overview and creates no session; the overview's Start is covered by workout-overview OV5.)
 7. The pinned lift line never compares different equipment or load conventions. With no comparable data, it shows the "not comparable" or "pin a lift" text, not a blank chart.
 8. All text is at least 16pt by default, and numbers use tabular numerals.
 9. In light mode, all tokens switch and contrast meets design-system §2.
@@ -281,14 +283,14 @@ Spoken cue: none on Today. Starting a workout can trigger the optional set intro
 13. A stale workout left **paused** with a work timer running: [Stop] succeeds without resuming, the stopped time ends at the pause start (paused hours never count as work), and Finish then reaches the summary.
 14. `Empty workout` opens `Add an exercise to start`, not `All planned sets done`.
 15. After a workout with 2 unapplied coach proposals, Today shows `2 coach suggestions to review ›`, which opens that summary's `Next time`. Starting the routine without reviewing them uses the built-in rule's targets, and the line disappears. Today never applies a change itself and makes no AI call.
-16. (2026-10-09) Check-ins off or not due today: `Start workout` opens the workout in one tap with no sheet. Due: exactly one extra tap (a score or `Skip`) for scores above the "What's up?" setting.
-17. (2026-10-09) Swiping the check-in sheet away returns to Today in the Up next state (was Planned) with no session created.
+16. (Revised 10 Oct.) Check-ins off or not due today: `Start workout` opens the Workout overview, and its `Start workout` opens the workout (first set logged in 3 taps). Due: the overview shows the inline check-in row. Ignoring it adds no tap, and a score adds one (workout-overview OV2).
+17. (2026-10-09; now `Empty workout` only) Swiping the check-in sheet away returns to Today in the Up next state (was Planned) with no session created.
 18. (2026-10-09) With an unlinked check-in < 2 h old, Today shows the region 4 line, and `Start workout` opens the workout without the sheet.
 19. (2026-10-09) A pain flag set 14 days ago (no check since) shows the region 4b row; a flag set 13 days ago doesn't. With a workout in progress the row is hidden.
 20. (2026-10-09) The row never clears a flag: `Still hurts` keeps it and moves the next check 14 days on; only `Clear flag` in the confirmation clears it, with Undo. No notification is ever scheduled for a check.
 21. (2026-10-09) The pain flag check row isn't counted as a banner, never pushes `Start workout` out of the first screen at the default text size, and only one `PrimaryButton` is visible.
 22. (2026-10-09) The Resume card's `about N min left` matches the workout's `TimeLeftLine` for the same moment, and always reads "about".
-23. (9 Oct evening, D19) Rotation Push A, Pull A, Legs A; last finished workout Pull A on Wed: Today shows `Up next` · `Legs A` · `After Pull A on Wed 14` and `Then: Push A · Pull A`. One tap on `Start workout` (with check-ins off or not due) opens Legs A.
+23. (9 Oct evening, D19) Rotation Push A, Pull A, Legs A; last finished workout Pull A on Wed: Today shows `Up next` · `Legs A` · `After Pull A on Wed 14` and `Then: Push A · Pull A`. `Start workout` opens the Workout overview for Legs A, and its Start opens Legs A (revised 10 Oct).
 24. (9 Oct evening) Finish Push A via `Other routine` instead: Today then shows `Up next` · `Pull A` · `After Push A on …`. An empty workout or a discarded one leaves Up next unchanged.
 25. (9 Oct evening) No date appears for Up next or on the `Then` row, and no screen state says a lifting session was missed. With 2 workouts this week and `Days a week you lift` = 4, `This week` reads `2 of your 4 days done`; with it unset, `2 workouts this week`.
 26. (9 Oct evening) There is no `Reschedule` link and no `Rest day` state. The alternatives row reads `Other routine · Empty workout · Build a workout` (+ `Shorter session` once it exists).

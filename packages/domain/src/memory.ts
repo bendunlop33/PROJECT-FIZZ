@@ -14,8 +14,10 @@ import type {
   ProfileRepository,
   Repositories,
   RoutineRepository,
+  FencedResult,
   SaveResult,
   SessionRepository,
+  WriteFence,
 } from './ports';
 
 /** Deep copy through JSON, mimicking a storage round-trip (no shared references). */
@@ -92,7 +94,11 @@ class MemorySessions implements SessionRepository {
     return Promise.resolve(row ? copy(row) : null);
   }
 
-  save(aggregate: SessionAggregate, expectedRevision: number | null): Promise<SaveResult> {
+  /** Pins sessions only: the other fenced tables (check-ins, pain flags) aren't in memory storage. */
+  save(aggregate: SessionAggregate, expectedRevision: number | null, fence?: WriteFence): Promise<SaveResult | FencedResult> {
+    for (const row of fence?.rows ?? []) {
+      if (row.table === 'sessions' && (this.rows.get(row.id)?.revision ?? null) !== row.version) return Promise.resolve({ ok: false, error: 'stale_inputs' });
+    }
     const current = this.rows.get(aggregate.session.id);
     const currentRevision = current?.revision ?? null;
     if (currentRevision !== expectedRevision) {

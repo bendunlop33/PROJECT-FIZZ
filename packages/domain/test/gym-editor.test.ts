@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { EquipmentInstance } from '@fizz/schemas';
+import type { EquipmentInstance, Gym } from '@fizz/schemas';
 
 import {
+  selectDefaultGym,
   applyEquipmentForm,
   buildPresetDraft,
   checkLoadText,
@@ -90,5 +91,31 @@ describe('gym editor (gym-editor.md §7)', () => {
     const edited = save({ ...(formFromEquipment(preset) as Extract<EquipmentForm, { kind: 'dumbbells' }>), range: { from: 2.5, to: 32.5, step: 2.5 } }, preset);
     expect(edited).toMatchObject({ id: preset.id, gymId: preset.gymId, version: 2, detailsSource: 'user', createdAtUtc: preset.createdAtUtc });
     expect(loadPreviewLine(edited)).toBe('Makes 13 loads: 2.5–32.5 kg each.');
+  });
+});
+
+describe('selectDefaultGym (workout-overview §6)', () => {
+  const gym = (n: number, isDefault: boolean, over: Partial<Gym> = {}): Gym => ({ id: `g${String(n)}`, ownerId: OWNER, version: 3, createdAtUtc: '2026-10-01T00:00:00.000Z', updatedAtUtc: '2026-10-01T00:00:00.000Z', name: `Gym ${String(n)}`, isDefault, ...over });
+  const at = '2026-10-10T07:00:00.000Z';
+
+  it('makes the chosen gym the only default, with versioned writes, and names the previous one for Undo', () => {
+    const r = selectDefaultGym([gym(1, true), gym(2, false)], 'g2', at);
+    expect(r).toMatchObject({ kind: 'select', previousGymId: 'g1' });
+    if (r.kind !== 'select') return;
+    expect(r.writes.map((w) => [w.next.id, w.next.isDefault, w.next.version, w.expectedVersion])).toEqual([
+      ['g1', false, 4, 3],
+      ['g2', true, 4, 3],
+    ]);
+  });
+
+  it('choosing the selected gym writes nothing; archived or unknown gyms are refused', () => {
+    expect(selectDefaultGym([gym(1, true), gym(2, false)], 'g1', at)).toMatchObject({ kind: 'select', writes: [] });
+    expect(selectDefaultGym([gym(1, true), gym(2, false, { archivedAtUtc: at })], 'g2', at)).toEqual({ kind: 'not_found' });
+    expect(selectDefaultGym([gym(1, true)], 'nope', at)).toEqual({ kind: 'not_found' });
+  });
+
+  it('with no default gym, choosing the one shown (the first) has no previous gym to undo to; another one names it', () => {
+    expect(selectDefaultGym([gym(1, false), gym(2, false)], 'g1', at)).toMatchObject({ kind: 'select', previousGymId: null, writes: [{ next: { id: 'g1', isDefault: true } }] });
+    expect(selectDefaultGym([gym(1, false), gym(2, false)], 'g2', at)).toMatchObject({ kind: 'select', previousGymId: 'g1' });
   });
 });

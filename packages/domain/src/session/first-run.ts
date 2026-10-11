@@ -161,8 +161,8 @@ const MUSCLE_WORD: Readonly<Record<string, string>> = {
   obliques: 'Core',
 };
 
-/** `Chest · Shoulders · Triceps`: up to `max` muscle words in the order they first appear. */
-export function muscleSummary(exercises: readonly Pick<Exercise, 'primaryMuscles'>[], max = 3): string | null {
+/** `['Chest', 'Shoulders', 'Triceps']`: up to `max` muscle words in the order they first appear (the first is the main one). */
+export function muscleWords(exercises: readonly Pick<Exercise, 'primaryMuscles'>[], max = 3): string[] {
   const words: string[] = [];
   for (const e of exercises) {
     for (const m of e.primaryMuscles) {
@@ -170,5 +170,11 @@ export function muscleSummary(exercises: readonly Pick<Exercise, 'primaryMuscles
       if (w !== undefined && !words.includes(w)) words.push(w);
     }
   }
-  return words.length === 0 ? null : words.slice(0, max).join(' · ');
+  return words.slice(0, max);
+}
+
+/** `Chest · Shoulders · Triceps`: up to `max` muscle words in the order they first appear. */
+export function muscleSummary(exercises: readonly Pick<Exercise, 'primaryMuscles'>[], max = 3): string | null {
+  const words = muscleWords(exercises, max);
+  return words.length === 0 ? null : words.join(' · ');
 }

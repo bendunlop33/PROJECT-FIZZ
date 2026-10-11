@@ -73,6 +73,38 @@ export function startDropReason(reason: SnapReason | undefined): StartDropReason
   return reason === 'not_here' ? 'equipment_not_in_gym' : reason;
 }
 
+/**
+ * How a planned set's load was fitted to this gym, by set ID (workout-overview
+ * §3.7 info glyph, §4 `NO LOAD`), read from the shared fit (`snapPlanToGym`)
+ * so the overview's preview says exactly what Start saves. `rounded`: the
+ * load was snapped (rounded toward easier, capped at a max, or converted).
+ * `dropped`: there is no load target here; `missing` names the equipment this
+ * gym lacks, when that's why. Sets that kept their load exactly have no entry.
+ */
+export type SetFit =
+  | { kind: 'rounded'; requested: Load; planned: Load; bounded: 'min' | 'max' | null; converted: boolean }
+  | { kind: 'dropped'; requested: Load; reason: StartDropReason; missing: string | null };
+
+/** Per-set fits from a start's warnings and shared fit (by template), keyed by the new set IDs. */
+export function setFitsOf(out: Pick<StartWorkoutOutput, 'warnings' | 'setTemplateIds' | 'snap'>): Record<string, SetFit> {
+  // The item a template's slot was planned on, for `missing` (`not_here`).
+  const sourceName = new Map<string, string>();
+  for (const slot of out.snap.slots) for (const s of slot.sets) if (slot.sourceEquipment !== null) sourceName.set(s.id, slot.sourceEquipment.name);
+  const byTemplate = new Map<string, SetFit>();
+  for (const w of out.warnings) {
+    if (w.kind === 'target_rounded') byTemplate.set(w.setTemplateId, { kind: 'rounded', requested: w.requested, planned: w.planned, bounded: w.bounded, converted: w.converted });
+    if (w.kind === 'target_dropped') {
+      byTemplate.set(w.setTemplateId, { kind: 'dropped', requested: w.requested, reason: w.reason, missing: w.reason === 'equipment_not_in_gym' ? (sourceName.get(w.setTemplateId) ?? null) : null });
+    }
+  }
+  const fits: Record<string, SetFit> = {};
+  for (const [setId, templateId] of Object.entries(out.setTemplateIds)) {
+    const fit = byTemplate.get(templateId);
+    if (fit) fits[setId] = fit;
+  }
+  return fits;
+}
+
 export type PlannedLoadResult =
   | { load: Load | null; warning: null }
   | { load: Load | null; warning: Extract<StartWarning, { kind: 'target_rounded' | 'target_dropped' }> };
@@ -169,6 +201,8 @@ export interface StartWorkoutOutput {
   snap: SnapResult;
   /** The template each planned set came from (set ID → set template ID). */
   setTemplateIds: Record<string, string>;
+  /** How each set's load was fitted to this gym (rounded or dropped), by set ID (workout overview). */
+  fits: Record<string, SetFit>;
 }
 
 function sourceFor(equipment: EquipmentInstance): SnapSource {
@@ -330,6 +364,7 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
   });
 
   const order = buildExecutionOrder(exercises, sets);
+  const fits = setFitsOf({ warnings, setTemplateIds, snap });
   return {
     aggregate: {
       session: {
@@ -363,6 +398,7 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
     warnings,
     snap,
     setTemplateIds,
+    fits,
   };
 }
 

@@ -22,8 +22,10 @@ import type { RootStackParams, WorkoutToastParam } from '../../navigation/types'
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Eyebrow, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton, TextField } from '../../ui';
+import { checkInSheetEnd } from '../../workout/overview';
 
 type Step = 'score' | 'reasons' | 'pain' | 'ill';
+const CHECK_IN_NOT_SAVED = 'Check-in wasn’t saved.';
 const SCORES: readonly CheckInScore[] = [1, 2, 3, 4, 5];
 
 /**
@@ -35,12 +37,16 @@ const SCORES: readonly CheckInScore[] = [1, 2, 3, 4, 5];
  */
 export function CheckInScreen() {
   const route = useRoute<RouteProp<RootStackParams, 'CheckIn'>>();
-  return route.params.mode === 'start' ? <StartCheckIn gymId={route.params.gymId} repeatOf={route.params.repeatOf ?? null} nextOf={route.params.nextOf ?? null} routineOf={route.params.routineOf ?? null} /> : <EditCheckIn checkInId={route.params.checkInId} />;
+  const p = route.params;
+  if (p.mode === 'start') return <StartCheckIn gymId={p.gymId} repeatOf={p.repeatOf ?? null} nextOf={p.nextOf ?? null} routineOf={p.routineOf ?? null} />;
+  if (p.mode === 'overview') return <StartCheckIn gymId={null} repeatOf={null} nextOf={null} routineOf={null} overview={{ checkInId: p.checkInId, atScore: p.atScore === true }} />;
+  return <EditCheckIn checkInId={p.checkInId} />;
 }
 
 function Sheet({
   title,
   lead,
+  info,
   children,
   bar,
   onBack,
@@ -49,6 +55,8 @@ function Sheet({
 }: {
   title: string;
   lead?: string;
+  /** Behind an ⓘ by the title (minimal copy): how a rule works, shown only on a tap. */
+  info?: string;
   children?: React.ReactNode;
   bar: React.ReactNode;
   onBack?: () => void;
@@ -58,6 +66,7 @@ function Sheet({
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const [infoOpen, setInfoOpen] = useState(false);
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
       {/*
@@ -73,9 +82,29 @@ function Sheet({
         {onBack ? <TextButton label={backLabel ?? 'Back'} icon="chevron.left" onPress={onBack} /> : null}
         <View style={{ gap: theme.space['2'] }}>
           <Eyebrow>Check-in</Eyebrow>
-          <AppText variant="title2" accessibilityRole="header">
-            {title}
-          </AppText>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+            <AppText variant="title2" accessibilityRole="header" style={{ flexShrink: 1 }}>
+              {title}
+            </AppText>
+            {info ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Info"
+                accessibilityState={{ expanded: infoOpen }}
+                hitSlop={12}
+                onPress={() => {
+                  setInfoOpen((o) => !o);
+                }}
+              >
+                <Icon name="info.circle" color="text.secondary" size={18} />
+              </Pressable>
+            ) : null}
+          </View>
+          {info && infoOpen ? (
+            <AppText variant="callout" color="text.secondary">
+              {info}
+            </AppText>
+          ) : null}
         </View>
         {lead ? (
           <AppText variant="callout" color="text.secondary">
@@ -90,7 +119,7 @@ function Sheet({
   );
 }
 
-function ScoreRow({ chosen, onPick }: { chosen: CheckInScore | null; onPick: (s: CheckInScore) => void }) {
+function ScoreRow({ chosen, onPick, disabled = false }: { chosen: CheckInScore | null; onPick: (s: CheckInScore) => void; disabled?: boolean }) {
   const theme = useTheme();
   const d = theme.components.cardBorderWidth === 0;
   return (
@@ -102,8 +131,9 @@ function ScoreRow({ chosen, onPick }: { chosen: CheckInScore | null; onPick: (s:
             <Pressable
               key={n}
               accessibilityRole="button"
-              accessibilityState={{ selected }}
+              accessibilityState={{ selected, disabled }}
               accessibilityLabel={`${scoreText(n)}${n === 1 ? ', rough' : n === 5 ? ', great' : ''}`}
+              disabled={disabled}
               onPress={() => {
                 haptic('step');
                 onPick(n);
@@ -199,7 +229,15 @@ function ReasonsEditor({ reasons, setReasons, note, setNote, noteRef }: { reason
   );
 }
 
-function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; repeatOf: string | null; nextOf: string | null; routineOf: string | null }) {
+/**
+ * `overview`: opened over the Workout overview (workout-overview §2.2). The
+ * session doesn't exist yet and this sheet never starts one: `Done`, `Skip`,
+ * `Not now`, `Flag n movements` and `Train anyway` save and return to the
+ * overview, which re-reads its plan (a new pain flag shows `HELD`). `Skip
+ * workout` still closes to Today. `checkInId`: the score already saved on
+ * the page (opens at What's up?); null opens at the score (AX sizes).
+ */
+function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId: string | null; repeatOf: string | null; nextOf: string | null; routineOf: string | null; overview?: { checkInId: string | null; atScore: boolean } }) {
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
@@ -208,7 +246,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
   const [checkInId] = useState(newUuid);
   const [recordOp] = useState(newUuid);
   const [startOp] = useState(newUuid);
-  const [step, setStep] = useState<Step>('score');
+  const [step, setStep] = useState<Step>(overview?.checkInId && !overview.atScore ? 'reasons' : 'score');
   const [record, setRecord] = useState<CheckIn | null>(null);
   const [score, setScore] = useState<CheckInScore | null>(null);
   const [reasons, setReasons] = useState<CheckInReason[]>([]);
@@ -235,7 +273,30 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
     };
   }, [services]);
 
+  // Over the overview: the check-in Ben already has (the score saved there, or a reused one).
+  const existingId = overview?.checkInId ?? null;
+  useEffect(() => {
+    if (existingId === null) return;
+    let alive = true;
+    void services.checkIns.get(existingId).then((c) => {
+      if (!alive || !c) return;
+      setRecord(c);
+      setScore(c.score);
+      setReasons(c.reasons);
+      setNote(c.note ?? '');
+    });
+    return () => {
+      alive = false;
+    };
+  }, [services, existingId]);
+
   async function start(checkIn: SessionCheckIn, toast: WorkoutToastParam | null) {
+    if (checkInSheetEnd({ overview: overview !== undefined, gymId }) === 'back_to_overview' || gymId === null) {
+      // Back to the overview: it re-reads, and its Start links this check-in.
+      changed();
+      navigation.goBack();
+      return;
+    }
     setBusy(true);
     let r: Awaited<ReturnType<typeof services.workout.start>>;
     try {
@@ -261,7 +322,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
   const savedToast = (c: CheckIn): WorkoutToastParam => ({ kind: 'check_in', text: `Check-in saved · ${scoreText(c.score)}`, checkInId: c.id });
 
   async function pickScore(n: CheckInScore) {
-    if (busy) return;
+    if (busy || (existingId !== null && record === null)) return;
     setScore(n);
     setError(null);
     setBusy(true);
@@ -274,6 +335,11 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
       saved = r.ok ? r.checkIn : saved;
     }
     setBusy(false);
+    if (saved === null && checkInSheetEnd({ overview: overview !== undefined, gymId }) === 'back_to_overview') {
+      // Over the overview nothing starts here: say so on the sheet; the overview's Start still works (review r2 N4).
+      setError(CHECK_IN_NOT_SAVED);
+      return;
+    }
     if (saved === null) {
       // Never blocks logging (check-in.md §3 Write failed).
       await start({ kind: 'skipped', atUtc: services.now().utc }, { kind: 'info', text: 'Check-in wasn’t saved. Your workout started as normal.' });
@@ -350,7 +416,6 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
       return (
         <Sheet
           title="How are you feeling today?"
-          lead="Before your workout. Saved with it. Nothing changes unless you say so."
           bar={
             <SecondaryButton
               label="Skip"
@@ -362,7 +427,8 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
             />
           }
         >
-          <ScoreRow chosen={score} onPick={(n) => void pickScore(n)} />
+          {/* Over the overview with a saved score: wait for it, so a tap updates it rather than recording a second one (N1). */}
+          <ScoreRow chosen={score} disabled={existingId !== null && record === null} onPick={(n) => void pickScore(n)} />
           {errorLine}
         </Sheet>
       );
@@ -371,10 +437,13 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
       return (
         <Sheet
           title="What’s up?"
-          lead="Pick any that apply. Optional."
-          onBack={() => {
-            setStep('score');
-          }}
+          {...(overview?.checkInId && !overview.atScore
+            ? {}
+            : {
+                onBack: () => {
+                  setStep('score');
+                },
+              })}
           backLabel={score === null ? 'Back' : scoreText(score)}
           barFirst
           bar={
@@ -382,7 +451,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
               <TextButton
                 label="Skip"
                 tone="secondary"
-                accessibilityHint="Keeps your score and starts the workout."
+                accessibilityHint={overview ? 'Keeps your score.' : 'Keeps your score and starts the workout.'}
                 onPress={() => {
                   if (record) void start({ kind: 'answered', checkInId: record.id }, savedToast(record));
                 }}
@@ -402,7 +471,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
       return (
         <Sheet
           title="Which movements hurt?"
-          lead="No increases on these until you clear the flag. This isn’t a diagnosis."
+          info="Flagged movements don’t go up until you clear the flag."
           onBack={() => {
             setStep('reasons');
           }}
@@ -459,8 +528,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf }: { gymId: string; r
     case 'ill':
       return (
         <Sheet
-          title="Rest might be the better call today."
-          lead="You picked Feeling ill. It’s your call. Nothing changes either way."
+          title="Rest today?"
           bar={
             <>
               {/* Reschedule needs the weekly plan (not in this build), so it is hidden, not disabled. */}

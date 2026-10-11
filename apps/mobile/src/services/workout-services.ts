@@ -70,6 +70,16 @@ import {
   type RoutineChange,
   type RoutineNameCheck,
   buildTimeLeftView,
+  buildWorkoutOverview,
+  pastExercisesOf,
+  previewKey,
+  previewFence,
+  type OverviewBasis,
+  type PastExercise,
+  type PreviewKeyParts,
+  type SetFit,
+  type WorkoutOverview,
+  type WriteFence,
   recentPaceSamples,
   timeLeftSheet,
   type ActiveSetView,
@@ -99,7 +109,9 @@ import type {
   CheckIn,
   CheckInScore,
   EquipmentInstance,
+  Gym,
   Exercise,
+  NextSessionTargetRecord,
   PainArea,
   PainFlag,
   PlannedSet,
@@ -161,7 +173,11 @@ function recordFromContext(context: RecordContext, aggregate: SessionAggregate, 
 export const TARGETS_UNAVAILABLE = 'Using last time’s numbers.';
 
 /** `notice`: something the workout screen should say once on opening (a toast). */
-export type WorkoutStartOutcome = (Extract<StartOutcome, { ok: true }> & { notice?: string }) | Extract<StartOutcome, { ok: false }>;
+export type WorkoutStartOutcome =
+  | (Extract<StartOutcome, { ok: true }> & { notice?: string })
+  | Extract<StartOutcome, { ok: false }>
+  /** The overview's `expectedPreviewKey` no longer matches: nothing was created (workout-overview §7, rule 5). */
+  | { ok: false; error: { code: 'stale_preview'; message: string } };
 /** How far back to look for Ben's last 5 finished workouts (pace for `Time left`). Older ones fall back to `Default`. */
 const RECENT_PACE_WINDOW_MS = 90 * 86_400_000;
 
@@ -336,6 +352,60 @@ export interface RoutinePreview {
 }
 
 export type RoutineWrite = { ok: true; routine: Routine; duplicate: boolean } | { ok: false; message: string; stale?: boolean };
+
+/** What the Workout overview previews (workout-overview §7): Up next, or one routine from the list. */
+export type OverviewTarget = { kind: 'next' } | { kind: 'routine'; routineId: string };
+
+/** What a Start from the overview starts: the routine, or the last workout's next session. */
+export type OverviewStartOf = { routineOf: string; nextOf?: undefined } | { nextOf: string; routineOf?: undefined };
+
+/**
+ * Everything the Workout overview shows (workout-overview §3, §7). Local
+ * reads only: no AI, no network, nothing written.
+ */
+export interface OverviewData {
+  view: WorkoutOverview;
+  /** What this page's Start starts (the resolved Up next, or the routine). */
+  startOf: OverviewStartOf;
+  /** The routine shown (`⋯` Rename / Delete); null for a non-routine next session. */
+  routine: RoutineRow | null;
+  /** Gyms for the chip (not archived), the selected one first. */
+  gyms: Pick<Gym, 'id' | 'name' | 'isDefault'>[];
+  /**
+   * The inline check-in row (§3.9): `ask` (no selection), `reuse` (an
+   * unlinked check-in under 2 h, pre-selected), or `skip` (no row).
+   */
+  checkIn: { kind: 'ask' } | { kind: 'reuse'; checkIn: CheckIn } | { kind: 'skip'; reason: 'off' | 'not_a_check_in_day' | 'already_decided' | 'set_logged' };
+  /** The answered check-in the targets were planned with (pain mentioned holds loads), when there is one. */
+  planCheckIn: CheckIn | null;
+  /** Ben's unit, for the `Typical equipment` preview. */
+  unit: UserProfile['preferredUnit'];
+  /** The coach's stored next-session targets the rows name (`row.coach.rowId`), for Undo / `Use coach target` (§5). */
+  coachTargets: Readonly<Record<string, NextSessionTargetRecord>>;
+}
+
+export const STALE_PREVIEW = 'Targets updated';
+
+export interface WorkoutStartRequest {
+  gymId: string;
+  opId: string;
+  checkIn: SessionCheckIn | null;
+  repeatOf?: string | null;
+  nextOf?: string | null;
+  routineOf?: string | null;
+  /**
+   * From the Workout overview (§7): the key of the page Ben saw. Checked
+   * against the inputs as stored now; a mismatch creates nothing and
+   * returns `stale_preview`. A retry of a Start that already went through
+   * is a duplicate, never stale.
+   */
+  expectedPreviewKey?: string;
+  /** Internal (the no-gym overview Start): a fence from a key check already made, re-checked inside the write. */
+  fence?: WriteFence;
+}
+
+/** The overview's key check (§7): a retry of a Start that landed, out of date, or fresh with what to re-check in the write. */
+export type PreviewCheck = { kind: 'duplicate' } | { kind: 'stale' } | { kind: 'fresh'; fence: WriteFence };
 
 export function createWorkoutServices(ctx: WorkoutServicesContext) {
   const repos = () => ctx.repos();
@@ -844,14 +914,29 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * `today`: the check-in for the workout being started (pain holds loads).
    * Targets that can't be worked out leave the routine's own templates.
    */
-  async function routineStart(p: UserProfile, req: { routineId: string; gymId: string; opId: string; preview: boolean; checkIn?: SessionCheckIn | null; today?: CheckIn | null; noteSource?: boolean }) {
+  async function routineStart(
+    p: UserProfile,
+    req: {
+      routineId: string;
+      gymId: string;
+      opId: string;
+      preview: boolean;
+      checkIn?: SessionCheckIn | null;
+      today?: CheckIn | null;
+      gymEquipment?: readonly EquipmentInstance[];
+      newId?: () => string;
+      fence?: WriteFence;
+      noteSource?: boolean;
+    },
+  ) {
     const routine = await repos().routines.get(req.routineId);
     const ref = routine ? (await finishedRefs(p.id)).find((f) => isFromRoutine(f, routine)) ?? null : null;
     const source = ref ? await repos().sessions.get(ref.sessionId).catch(() => null) : null;
     const targets = source ? await nextTargetsOf(p, source, req.today ?? null).catch(() => null) : null;
     const lastUsedHere = routine ? await lastUsedFor(p.id, routine.exercises.map((e) => e.exerciseId), req.gymId) : undefined;
     if (req.noteSource === true && ref !== null && !req.preview) await noteStartFrom(p.id, ref.sessionId, req.opId);
-    const r = await domain().startRoutine({
+    const service = req.newId ? createSessionService(repos(), req.newId) : domain();
+    const r = await service.startRoutine({
       ownerId: p.id,
       gymId: req.gymId,
       routineId: req.routineId,
@@ -860,9 +945,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       preview: req.preview,
       ...(req.checkIn !== undefined ? { checkIn: req.checkIn } : {}),
       ...(targets && targets.size > 0 ? { targets } : {}),
+      ...(req.gymEquipment ? { gymEquipment: req.gymEquipment } : {}),
+      ...(req.fence ? { fence: req.fence } : {}),
       ...(lastUsedHere ? { lastUsedHere } : {}),
     });
-    return { r, ref, source, targeted: targets !== null && targets.size > 0, targetsFailed: source !== null && targets === null };
+    return { r, ref, source, routine, targeted: targets !== null && targets.size > 0, targetsFailed: source !== null && targets === null };
   }
 
   /** Save one routine change; a conflict re-reads once so a retry after a lost acknowledgement reads as done. */
@@ -882,6 +969,136 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return { ok: false, message: 'The routine changed. Check it and try again.', stale: true };
   }
 
+  /** IDs for a preview: the same inputs give the same IDs, so `Why?` can find a set from an earlier read. */
+  const previewIds = (): (() => string) => {
+    let n = 0;
+    return () => deriveId(`overview-preview:${String((n += 1))}`);
+  };
+
+  /** What an overview previews, resolved: a routine (and its last workout), or the last workout's next session. */
+  type ResolvedOverview =
+    | { kind: 'routine'; routine: Routine; ref: FinishedRef | null; basis: OverviewBasis }
+    | { kind: 'next'; source: SessionAggregate; basis: OverviewBasis };
+
+  async function resolveRoutine(p: UserProfile, routineId: string, basis: OverviewBasis | null): Promise<ResolvedOverview | null> {
+    const routine = await repos().routines.get(routineId);
+    if (!routine || routine.ownerId !== p.id || (routine.deletedAtUtc !== undefined && routine.deletedAtUtc !== null)) return null;
+    const ref = (await finishedRefs(p.id)).find((f) => isFromRoutine(f, routine)) ?? null;
+    return { kind: 'routine', routine, ref, basis: basis ?? (ref ? { kind: 'last_done', at: { utc: ref.startedAtUtc, tz: ref.tz } } : { kind: 'new_routine' }) };
+  }
+
+  async function resolveNext(p: UserProfile, sourceSessionId: string): Promise<ResolvedOverview | null> {
+    const source = await repos().sessions.get(sourceSessionId);
+    if (!source || source.session.ownerId !== p.id || source.session.status !== 'finished' || source.session.source === 'import') return null;
+    return { kind: 'next', source, basis: { kind: 'next_from', at: source.session.startedAt } };
+  }
+
+  /**
+   * Up next (D19 rotation), the one resolver Today's card and the overview
+   * share (review S5): the rotation's routine when it can be started at this
+   * gym, else the last workout's next session. `run`: the routine's dry run,
+   * for Today's card. `gymEquipment`: the typical gym when there is none yet.
+   */
+  async function resolveUpNext(p: UserProfile, gymId: string, gymEquipment?: readonly EquipmentInstance[]) {
+    const { live, refs } = await routineRows(p.id).catch(() => ({ live: [] as Routine[], refs: [] as FinishedRef[] }));
+    const pick = nextInRotation(live, refs[0] ?? null);
+    if (pick.kind === 'routine') {
+      const run = await routineStart(p, { routineId: pick.routine.id, gymId, opId: `preview-next-routine:${pick.routine.id}`, preview: true, ...(gymEquipment ? { gymEquipment } : {}) });
+      if (run.r.ok) return { kind: 'routine' as const, routine: pick.routine, basis: pick.basis, run: { ...run, r: run.r } };
+    }
+    const last = (await repeat.candidates(1, { countImported: false })).rows[0];
+    return last ? { kind: 'next' as const, sessionId: last.sessionId } : null;
+  }
+
+  /** Up next (as Today's card, at this gym) or the routine asked for. */
+  async function resolveOverview(p: UserProfile, target: OverviewTarget | OverviewStartOf, gym?: { gymId: string; gymEquipment?: readonly EquipmentInstance[] | undefined }): Promise<ResolvedOverview | null> {
+    if ('kind' in target) {
+      if (target.kind === 'routine') return resolveRoutine(p, target.routineId, null);
+      const up = await resolveUpNext(p, gym?.gymId ?? 'typical-gym-preview', gym?.gymEquipment);
+      if (up === null) return null;
+      if (up.kind === 'next') return resolveNext(p, up.sessionId);
+      const basis: OverviewBasis = up.basis.kind === 'only' ? { kind: 'only' } : { kind: 'after', routineName: up.basis.routineName, at: { utc: up.basis.atUtc, tz: up.basis.tz } };
+      return resolveRoutine(p, up.routine.id, basis);
+    }
+    if (target.routineOf !== undefined) return resolveRoutine(p, target.routineOf, null);
+    return resolveNext(p, target.nextOf);
+  }
+
+  /** The finished workout an overview's targets come from: the next session's source, or the routine's last workout. */
+  async function overviewSource(resolved: ResolvedOverview): Promise<SessionAggregate | null> {
+    if (resolved.kind === 'next') return resolved.source;
+    return resolved.ref === null ? null : repos().sessions.get(resolved.ref.sessionId).catch(() => null);
+  }
+
+  /** The coach's stored next-session targets from a finished workout (D21), as saved. A read only; never calls the coach. */
+  async function storedCoachTargets(ownerId: string, source: SessionAggregate | null): Promise<NextSessionTargetRecord[]> {
+    if (source === null) return [];
+    return ctx.store().repos.coach.listNextTargets(ownerId, source.session.id);
+  }
+
+  /** `previewKey` inputs as stored now (workout-overview §7). `gymId` null: the typical gym Start will save. */
+  async function previewKeyParts(p: UserProfile, resolved: ResolvedOverview, gymId: string | null, checkIn: CheckIn | null): Promise<PreviewKeyParts> {
+    const equipment = gymId === null ? null : await repos().equipment.listByGym(gymId);
+    const source = await overviewSource(resolved);
+    const flags = await repos().painFlags.listActive(p.id);
+    const coachRows = await storedCoachTargets(p.id, source);
+    return {
+      target: resolved.kind === 'routine' ? { kind: 'routine', routineId: resolved.routine.id } : { kind: 'next', sourceSessionId: resolved.source.session.id },
+      routine: resolved.kind === 'routine' ? { id: resolved.routine.id, version: resolved.routine.version } : null,
+      gym: gymId === null || equipment === null ? { typical: true } : { id: gymId, equipment: equipment.map((e) => ({ id: e.id, version: e.version })) },
+      source: source === null ? null : { id: source.session.id, revision: source.revision },
+      painFlags: flags.map((f) => ({ id: f.id, version: f.version })),
+      coachActions: coachRows.map((r) => ({ id: r.id, version: r.version })),
+      unit: p.preferredUnit,
+      checkIn: checkIn === null ? null : { id: checkIn.id, version: checkIn.version },
+    };
+  }
+
+  /**
+   * The dry run Start uses (workout-overview §7): the same planner, the same
+   * targets and the same gym check, with `preview: true`. `gymEquipment`: the
+   * typical gym's items when there is no gym yet.
+   */
+  async function overviewDryRun(p: UserProfile, resolved: ResolvedOverview, gymId: string, today: CheckIn | null, gymEquipment?: readonly EquipmentInstance[]): Promise<{ aggregate: SessionAggregate; fits: Record<string, SetFit> } | null> {
+    const newId = previewIds();
+    if (resolved.kind === 'routine') {
+      const { r } = await routineStart(p, { routineId: resolved.routine.id, gymId, opId: 'overview-preview', preview: true, today, newId, ...(gymEquipment ? { gymEquipment } : {}) });
+      return r.ok ? { aggregate: r.aggregate, fits: r.fits } : null;
+    }
+    const targets = await nextTargetsOf(p, resolved.source, today).catch(() => null);
+    // The same history mapping Start uses, so the preview is what Start creates (gym-switch GS3).
+    const lastUsedHere = await lastUsedFor(p.id, resolved.source.exercises.map((e) => e.exerciseId), gymId);
+    const r = await createSessionService(repos(), newId).startFromSession({
+      ownerId: p.id,
+      gymId,
+      routineId: null,
+      opId: 'overview-preview',
+      at: ctx.now(),
+      sourceSessionId: resolved.source.session.id,
+      preview: true,
+      targets: targets ?? new Map(),
+      name: storedName(resolved.source) ?? GENERIC_WORKOUT_NAME,
+      lastUsedHere,
+      ...(gymEquipment ? { gymEquipment } : {}),
+    });
+    return r.ok ? { aggregate: r.aggregate, fits: r.fits } : null;
+  }
+
+  /** Ben's last 5 finished workouts (pace for the estimate), newest first. Never throws. */
+  async function recentFinished(p: UserProfile): Promise<SessionAggregate[]> {
+    try {
+      const refs = (await repos().sessions.listFinishedRefs(p.id, 5)).map((r) => r.sessionId);
+      const out: SessionAggregate[] = [];
+      for (const id of refs) {
+        const x = await repos().sessions.get(id).catch(() => null);
+        if (x) out.push(x);
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
   const workout = {
     /**
      * The built-in rule's next targets for a finished workout (the summary
@@ -899,9 +1116,30 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * A gym is required (PM SP1). An answered check-in is linked in the same
      * write as the session; one already linked to another workout is refused.
      */
-    async start(req: { gymId: string; opId: string; checkIn: SessionCheckIn | null; repeatOf?: string | null; nextOf?: string | null; routineOf?: string | null }): Promise<WorkoutStartOutcome> {
+    async start(req: WorkoutStartRequest): Promise<WorkoutStartOutcome> {
+      const r = await workout.startOnce(req);
+      if (r.ok || (r.error.code !== 'write_failed' && r.error.code !== 'write_conflict')) return r;
+      // Two taps raced and the other one's write landed (OV5): this tap is its duplicate, not a failure.
+      const p = await ctx.profile();
+      const landed = p ? await repos().sessions.findByStartOperation(p.id, req.opId).catch(() => null) : null;
+      return landed ? { ok: true, aggregate: landed, warnings: [], duplicate: true } : r;
+    },
+
+    async startOnce(req: WorkoutStartRequest): Promise<WorkoutStartOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
+      let fence = req.fence;
+      if (req.expectedPreviewKey !== undefined && (req.routineOf || req.nextOf)) {
+        const check = await workout.previewCheck(p, {
+          startOf: req.routineOf ? { routineOf: req.routineOf } : { nextOf: req.nextOf ?? '' },
+          gymId: req.gymId,
+          opId: req.opId,
+          checkIn: req.checkIn,
+          expectedPreviewKey: req.expectedPreviewKey,
+        });
+        if (check.kind === 'stale') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
+        if (check.kind === 'fresh') fence = check.fence;
+      }
       let checkIn = req.checkIn;
       if (checkIn?.kind === 'answered') {
         const already = await repos().sessions.findByStartOperation(p.id, req.opId);
@@ -912,10 +1150,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (req.routineOf) {
         // A routine (premium-feel §2.6): its structure, with next targets from its last workout, fitted to this gym.
         const today = checkIn?.kind === 'answered' ? await repos().checkIns.get(checkIn.checkInId) : null;
-        const { r, targetsFailed } = await routineStart(p, { routineId: req.routineOf, gymId: req.gymId, opId: req.opId, preview: false, checkIn, today, noteSource: true });
+        const { r, targetsFailed } = await routineStart(p, { routineId: req.routineOf, gymId: req.gymId, opId: req.opId, preview: false, checkIn, today, noteSource: true, ...(fence ? { fence } : {}) });
         if (!r.ok) {
           const e = r.error;
           if (e.code === 'nothing_to_start') return { ok: false, error: { code: 'not_found', message: e.message } };
+          if (e.code === 'stale_inputs') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
           return { ok: false, error: e };
         }
         const notice = targetsFailed && !r.duplicate ? 'Using saved targets.' : null;
@@ -929,13 +1168,26 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         // Targets that can't be worked out repeat last time's numbers, and the workout says so (review S2).
         const targets = await nextTargetsOf(p, source, today).catch(() => null);
         // No derived name (`Push`) is stored as if Ben chose it; titles are worked out when shown (review S3).
-        // Same history mapping as Today's preview, so Start gives what the card showed (gym-switch GS3).
+        // Same history mapping as the overview's preview, so Start gives what the page showed (gym-switch GS3).
         const lastUsedHere = await lastUsedFor(p.id, source.exercises.map((e) => e.exerciseId), req.gymId);
         await noteStartFrom(p.id, source.session.id, req.opId);
-        const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.nextOf, targets: targets ?? new Map(), name: storedName(source) ?? GENERIC_WORKOUT_NAME, lastUsedHere });
+        const r = await domain().startFromSession({
+          ownerId: p.id,
+          gymId: req.gymId,
+          routineId: null,
+          opId: req.opId,
+          at: ctx.now(),
+          checkIn,
+          sourceSessionId: req.nextOf,
+          targets: targets ?? new Map(),
+          name: storedName(source) ?? GENERIC_WORKOUT_NAME,
+          lastUsedHere,
+          ...(fence ? { fence } : {}),
+        });
         if (!r.ok) {
           const e = r.error;
           if (e.code === 'nothing_to_repeat' || e.code === 'imported_not_repeatable') return { ok: false, error: { code: 'not_found', message: e.message } };
+          if (e.code === 'stale_inputs') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
           return { ok: false, error: e };
         }
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate, ...(targets === null && !r.duplicate ? { notice: TARGETS_UNAVAILABLE } : {}) };
@@ -954,6 +1206,24 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate };
       }
       return domain().start({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn });
+    },
+
+    /**
+     * Whether the overview a Start came from is out of date (rule 5).
+     * `duplicate` when this opId already started a workout (a retry after
+     * success). `fresh` carries the rows the key was read from, so the write
+     * re-checks them inside its transaction (§7): a change that lands after
+     * this check (a late coach write, CA10) still creates nothing.
+     * `gymId` null: checked against the typical gym Start is about to save.
+     */
+    async previewCheck(p: UserProfile, req: { startOf: OverviewStartOf; gymId: string | null; opId: string; checkIn: SessionCheckIn | null; expectedPreviewKey: string }): Promise<PreviewCheck> {
+      if (await repos().sessions.findByStartOperation(p.id, req.opId)) return { kind: 'duplicate' };
+      const resolved = await resolveOverview(p, req.startOf);
+      if (resolved === null) return { kind: 'stale' };
+      const ci = req.checkIn?.kind === 'answered' ? await repos().checkIns.get(req.checkIn.checkInId) : null;
+      const parts = await previewKeyParts(p, resolved, req.gymId, ci);
+      if (previewKey(parts) !== req.expectedPreviewKey) return { kind: 'stale' };
+      return { kind: 'fresh', fence: previewFence(parts, p.id, req.gymId === null ? null : { id: p.id, version: p.version }) };
     },
 
     /**
@@ -1615,29 +1885,26 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       try {
         const p = await ctx.profile();
         if (!p) return null;
-        // Rotation (D19, simplified): the routine after the one done last, when the last workout was a routine's.
-        const { live, refs } = await routineRows(p.id).catch(() => ({ live: [] as Routine[], refs: [] as FinishedRef[] }));
-        const pick = nextInRotation(live, refs[0] ?? null);
-        if (pick.kind === 'routine') {
-          const { r, ref } = await routineStart(p, { routineId: pick.routine.id, gymId, opId: `preview-next-routine:${pick.routine.id}`, preview: true });
-          if (r.ok) {
-            const derived = await titleFor(r.aggregate.exercises.map((e) => e.exerciseId));
-            return {
-              routine: { id: pick.routine.id, basis: pick.basis },
-              sourceSessionId: ref?.sessionId ?? null,
-              title: pick.routine.name,
-              muscles: derived.muscles,
-              exercises: repeatPreviewLines(r.aggregate).map((l) => ({ exerciseName: l.exerciseName, line: l.line })),
-              targets: targetSummaryLines(r.aggregate),
-              sets: r.aggregate.sets.length,
-              aboutMinutes: await aboutMinutes(p, r.aggregate),
-              sourceStartedAtUtc: ref?.startedAtUtc ?? null,
-              tz: ref?.tz ?? ctx.now().tz,
-            };
-          }
+        // Rotation (D19, simplified): the routine after the one done last, when the last workout was a routine's (the overview's resolver).
+        const up = await resolveUpNext(p, gymId);
+        if (up === null) return null;
+        if (up.kind === 'routine') {
+          const { r, ref } = up.run;
+          const derived = await titleFor(r.aggregate.exercises.map((e) => e.exerciseId));
+          return {
+            routine: { id: up.routine.id, basis: up.basis },
+            sourceSessionId: ref?.sessionId ?? null,
+            title: up.routine.name,
+            muscles: derived.muscles,
+            exercises: repeatPreviewLines(r.aggregate).map((l) => ({ exerciseName: l.exerciseName, line: l.line })),
+            targets: targetSummaryLines(r.aggregate),
+            sets: r.aggregate.sets.length,
+            aboutMinutes: await aboutMinutes(p, r.aggregate),
+            sourceStartedAtUtc: ref?.startedAtUtc ?? null,
+            tz: ref?.tz ?? ctx.now().tz,
+          };
         }
-        const last = (await repeat.candidates(1, { countImported: false })).rows[0];
-        if (!last) return null;
+        const last = { sessionId: up.sessionId };
         const source = await repos().sessions.get(last.sessionId);
         if (!source) return null;
         const targets = await nextTargetsOf(p, source);
@@ -1657,6 +1924,122 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           sourceStartedAtUtc: source.session.startedAt.utc,
           tz: source.session.startedAt.tz,
         };
+      } catch {
+        return null;
+      }
+    },
+  };
+
+  /** The check-in an overview plans with: a score tapped on the page, else one reused from the last 2 h (the gate). */
+  async function overviewCheckIn(tappedId: string | null): Promise<{ gate: CheckInGate; reused: CheckIn | null; planCheckIn: CheckIn | null }> {
+    const gate = await checkIns.gate().catch((): CheckInGate => ({ kind: 'ask' }));
+    const reused = gate.kind === 'reuse' ? await repos().checkIns.get(gate.checkInId) : null;
+    const tapped = tappedId ? await repos().checkIns.get(tappedId) : null;
+    return { gate, reused, planCheckIn: tapped ?? reused };
+  }
+
+  const overview = {
+    /**
+     * `services.overview.load` (workout-overview §7): the page for Up next or
+     * a routine at this gym. Local and read-only; no AI and no network. Never
+     * throws: null when the preview can't be built. `gymId` null: no gym yet,
+     * so the rows are fitted to `typicalEquipment` (what Start will save).
+     * `checkInId`: a score Ben tapped on the page (pain mentioned holds loads).
+     */
+    async load(req: { target: OverviewTarget; gymId: string | null; checkInId?: string | null; typicalEquipment?: readonly EquipmentInstance[] }): Promise<OverviewData | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        if (req.gymId === null && !req.typicalEquipment) return null;
+        const resolved = await resolveOverview(p, req.target, { gymId: req.gymId ?? 'typical-gym-preview', gymEquipment: req.gymId === null ? req.typicalEquipment : undefined });
+        if (resolved === null) return null;
+        const { gate, reused, planCheckIn } = await overviewCheckIn(req.checkInId ?? null);
+        const gymId = req.gymId ?? 'typical-gym-preview';
+        const run = await overviewDryRun(p, resolved, gymId, planCheckIn, req.gymId === null ? req.typicalEquipment : undefined);
+        if (run === null) return null;
+        const { aggregate } = run;
+        const pasts: Record<string, PastExercise[]> = {};
+        const exerciseInfo: Record<string, Exercise> = {};
+        for (const ex of aggregate.exercises) {
+          if (ex.exerciseId in pasts) continue;
+          const history = await repos().sessions.listFinishedWithExercise(p.id, ex.exerciseId).catch(() => [] as SessionAggregate[]);
+          pasts[ex.exerciseId] = pastExercisesOf(history, ex.exerciseId);
+          const info = await repos().exercises.get(ex.exerciseId).catch(() => null);
+          if (info) exerciseInfo[ex.exerciseId] = info;
+        }
+        const allGyms = (await repos().gyms.listByOwner(p.id)).filter((g) => g.archivedAtUtc === undefined);
+        const gym = req.gymId === null ? null : (allGyms.find((g) => g.id === req.gymId) ?? null);
+        if (req.gymId !== null && gym === null) return null;
+        const at = ctx.now();
+        const title =
+          resolved.kind === 'routine' ? resolved.routine.name : (storedName(resolved.source) ?? (await titleFor(resolved.source.exercises.map((e) => e.exerciseId))).title);
+        const source = await overviewSource(resolved);
+        // A failed read shows no coach rows; the key below reads them again, so a Start planned without them is refused.
+        const coachTargets = await storedCoachTargets(p.id, source).catch(() => [] as NextSessionTargetRecord[]);
+        const view = buildWorkoutOverview({
+          aggregate,
+          fits: run.fits,
+          coach: source === null || coachTargets.length === 0 ? null : { targets: coachTargets, sourceVersion: source.session.version, painToday: unspecifiedPain(planCheckIn).active },
+          pasts,
+          painFlags: await repos().painFlags.listActive(p.id),
+          exerciseInfo,
+          recent: await recentFinished(p),
+          nowMs: toMs(at.utc),
+          tz: at.tz,
+          title,
+          basis: resolved.basis,
+          gym: gym === null ? null : { id: gym.id, name: gym.name },
+          key: await previewKeyParts(p, resolved, req.gymId, planCheckIn),
+        });
+        const rows = resolved.kind === 'routine' ? (await routineRows(p.id)).rows : [];
+        return {
+          view,
+          startOf: resolved.kind === 'routine' ? { routineOf: resolved.routine.id } : { nextOf: resolved.source.session.id },
+          routine: resolved.kind === 'routine' ? (rows.find((r) => r.id === resolved.routine.id) ?? null) : null,
+          gyms: [...allGyms].sort((a, b) => Number(b.id === req.gymId) - Number(a.id === req.gymId) || a.name.localeCompare(b.name)).map((g) => ({ id: g.id, name: g.name, isDefault: g.isDefault })),
+          checkIn: gate.kind === 'reuse' ? (reused ? { kind: 'reuse', checkIn: reused } : { kind: 'ask' }) : gate.kind === 'ask' ? { kind: 'ask' } : { kind: 'skip', reason: gate.reason },
+          planCheckIn,
+          unit: p.preferredUnit,
+          coachTargets: Object.fromEntries(coachTargets.map((r) => [r.id, r])),
+        };
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * `Why?` on a row (active-workout §2.12 content, in a sheet): the first
+     * working set of the exercise at `index` in the same dry run. Reads only.
+     */
+    async explain(req: { target: OverviewTarget; gymId: string | null; checkInId?: string | null; typicalEquipment?: readonly EquipmentInstance[]; sessionExerciseId: string }): Promise<TargetExplanation | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const resolved = await resolveOverview(p, req.target, { gymId: req.gymId ?? 'typical-gym-preview', gymEquipment: req.gymId === null ? req.typicalEquipment : undefined });
+        if (resolved === null) return null;
+        // The same check-in the page planned with (tapped, else reused), so `Why?` explains the row it opens on (review S1).
+        const { planCheckIn: today } = await overviewCheckIn(req.checkInId ?? null);
+        const run = await overviewDryRun(p, resolved, req.gymId ?? 'typical-gym-preview', today, req.gymId === null ? req.typicalEquipment : undefined);
+        const ex = run?.aggregate.exercises.find((e) => e.id === req.sessionExerciseId);
+        if (!run || !ex) return null;
+        const set = run.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id && x.setType !== 'warmup' && x.pairedWithSetId === null).sort((a, b) => a.index - b.index)[0];
+        if (!set) return null;
+        const basisId = set.planned.provenance?.basis?.sessionId ?? null;
+        const [basisNow, gyms, flags, history] = await Promise.all([
+          basisId === null ? null : repos().sessions.get(basisId).catch(() => null),
+          repos().gyms.listByOwner(p.id).catch(() => []),
+          repos().painFlags.listByOwner(p.id).catch(() => [] as PainFlag[]),
+          historyFor(p.id, ex.exerciseId).catch(() => [] as HistorySession[]),
+        ]);
+        return explainTarget({
+          aggregate: run.aggregate,
+          setId: set.id,
+          nowMs: toMs(ctx.now().utc),
+          basisNow,
+          gymNames: Object.fromEntries(gyms.map((g) => [g.id, g.name])),
+          painFlags: flags.filter((f) => f.exerciseId === ex.exerciseId),
+          history,
+        });
       } catch {
         return null;
       }
@@ -1712,7 +2095,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
-  return { checkIns, pain, workout, today, repeat, next, routines, gymSwitch };
+  return { checkIns, pain, workout, today, repeat, next, routines, gymSwitch, overview };
 }
 
 export type WorkoutServices = ReturnType<typeof createWorkoutServices>;

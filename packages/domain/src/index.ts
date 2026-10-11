@@ -50,6 +50,7 @@ export * from './session/pain-sheet';
 export * from './touches';
 export * from './import';
 export * from './session/lift-highlight';
+export * from './session/overview';
 export * from './coach/trigger';
 export * from './coach/adjust';
 export * from './coach/signals';

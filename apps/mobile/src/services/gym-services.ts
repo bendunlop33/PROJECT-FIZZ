@@ -1,10 +1,11 @@
 import {
   applyEquipmentForm,
   equipmentRowLine,
+  selectDefaultGym,
   stableStringify,
   type EquipmentForm,
 } from '@fizz/domain';
-import type { SqliteRepositories } from '@fizz/persistence';
+import { GYM_SPEC, listDocuments, saveDocumentIn, type SqliteRepositories, type Store } from '@fizz/persistence';
 import type { EquipmentInstance, Gym, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
@@ -16,6 +17,8 @@ import type { EquipmentInstance, Gym, UserProfile, ZonedTimestamp } from '@fizz/
 
 export interface GymServicesContext {
   repos: () => SqliteRepositories;
+  /** For writes that change several gyms in one transaction (selecting a gym). */
+  store?: () => Store;
   now: () => ZonedTimestamp;
   profile: () => Promise<UserProfile | null>;
 }
@@ -120,6 +123,33 @@ export function createGymServices(ctx: GymServicesContext) {
         return { ok: false, reason: 'stale', message: 'This item changed since you opened it.', latest };
       } catch {
         return { ok: false, reason: 'failed', message: FAILED };
+      }
+    },
+
+    /**
+     * `selectGym(gymId)` before a workout (workout-overview §6, today.md gym
+     * chip): the chosen gym becomes the selected (default) gym. One
+     * transaction, versioned; choosing the gym that is already selected
+     * writes nothing, so a double tap or a retry is a no-op. Undo selects the
+     * previous gym the same way. No session exists yet, so nothing else changes.
+     */
+    async select(gymId: string): Promise<{ ok: true; previousGymId: string | null; changed: boolean } | { ok: false; message: string }> {
+      const p = await ctx.profile();
+      const store = ctx.store?.();
+      if (!p || !store) return { ok: false, message: 'That gym wasn’t found.' };
+      try {
+        return await store.db.write(async (tx) => {
+          const gyms = (await listDocuments(tx, GYM_SPEC)).filter((g) => g.ownerId === p.id);
+          const plan = selectDefaultGym(gyms, gymId, ctx.now().utc);
+          if (plan.kind === 'not_found') return { ok: false as const, message: 'That gym wasn’t found.' };
+          for (const w of plan.writes) {
+            const r = await saveDocumentIn(tx, GYM_SPEC, w.next, w.expectedVersion);
+            if (!r.ok) throw new Error('gym changed');
+          }
+          return { ok: true as const, previousGymId: plan.previousGymId, changed: plan.writes.length > 0 };
+        });
+      } catch {
+        return { ok: false, message: FAILED };
       }
     },
 

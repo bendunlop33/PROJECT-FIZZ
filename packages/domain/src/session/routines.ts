@@ -347,7 +347,7 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
       return { ...s, planned: plannedSet };
     }),
   };
-  return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, notes };
+  return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, fits: out.fits, notes };
 }
 
 /** A load as plain text (`32.5 kg each`, `Assist 30 kg`). */

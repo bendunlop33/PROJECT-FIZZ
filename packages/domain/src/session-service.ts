@@ -8,8 +8,8 @@ import {
   type ValidationIssue,
   type ZonedTimestamp,
 } from '@fizz/schemas';
-import type { Repositories, SaveResult } from './ports';
-import { buildAddExerciseCommand, startWorkout, type AddExerciseInput, type StartWarning } from './session/create';
+import type { FencedResult, Repositories, SaveResult, WriteFence } from './ports';
+import { buildAddExerciseCommand, startWorkout, type AddExerciseInput, type SetFit, type StartWarning } from './session/create';
 import { recoverSession, type RecoveryResult } from './session/recovery';
 import { startWorkoutFromSession, type RepeatInput, type RepeatNote, type RepeatOutput } from './session/repeat';
 import { isDeleted, planRoutineStart, type RoutineStartInput } from './session/routines';
@@ -22,7 +22,9 @@ export type ServiceError =
   | { code: 'session_already_active'; message: string; sessionId: string }
   | { code: 'write_conflict'; message: string }
   /** Storage threw (e.g. SQLite full or locked). Nothing was committed by us; retry with the same opId. */
-  | { code: 'write_failed'; message: string };
+  | { code: 'write_failed'; message: string }
+  /** A fenced start found an input it was planned from changed before the write (workout-overview §7). Nothing was written. */
+  | { code: 'stale_inputs'; message: string };
 
 export type CommandOutcome =
   | {
@@ -53,13 +55,15 @@ export interface StartRequest {
 
 const MAX_CONFLICT_RETRIES = 2;
 
+const STALE_INPUTS = { code: 'stale_inputs', message: 'What this start was planned from changed. Nothing was saved.' } as const;
+
 const WRITE_FAILED = {
   code: 'write_failed',
   message: "Couldn't save this change. Your entry is still here; try again.",
 } as const;
 
 /** Run a save, turning a thrown storage error into a value. */
-async function trySave(save: () => Promise<SaveResult>): Promise<SaveResult | 'threw'> {
+async function trySave<R extends SaveResult | FencedResult>(save: () => Promise<R>): Promise<R | 'threw'> {
   try {
     return await save();
   } catch {
@@ -136,14 +140,18 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       /** "Start next session" (audit B2): next targets per exercise ID, and a name. */
       targets?: RepeatInput['targets'];
       name?: string;
+      /** Preview only: fit to this equipment instead of the gym's (the typical gym Start will save, workout-overview §8). */
+      gymEquipment?: readonly EquipmentInstance[];
+      /** What the caller's preview was planned from, re-checked inside the write. */
+      fence?: WriteFence;
     },
   ): Promise<
-    | { ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; notCopied: RepeatOutput['notCopied']; duplicate: boolean }
+    | { ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; notCopied: RepeatOutput['notCopied']; duplicate: boolean; fits: Record<string, SetFit> }
     | { ok: false; error: ServiceError | { code: 'nothing_to_repeat'; message: string } | { code: 'imported_not_repeatable'; message: string } }
   > {
     if (!req.preview) {
       const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
-      if (existing) return { ok: true, aggregate: existing, notes: [], notCopied: [], duplicate: true };
+      if (existing) return { ok: true, aggregate: existing, notes: [], notCopied: [], duplicate: true, fits: {} };
       const active = await repos.sessions.getActive(req.ownerId);
       if (active) {
         return { ok: false, error: { code: 'session_already_active', message: 'Finish or resume the unfinished workout first.', sessionId: active.session.id } };
@@ -172,7 +180,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       gymId: req.gymId,
       source,
       exercises,
-      gymEquipment: await repos.equipment.listByGym(req.gymId),
+      gymEquipment: req.preview && req.gymEquipment ? req.gymEquipment : await repos.equipment.listByGym(req.gymId),
       at: req.at,
       newId,
       checkIn: req.checkIn ?? null,
@@ -182,11 +190,11 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     });
     if (out.empty) return { ok: false, error: { code: 'nothing_to_repeat', message: 'That workout has no logged sets to repeat.' } };
-    if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false };
-    const saved = await trySave(() => repos.sessions.save(out.aggregate, null));
+    if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false, fits: out.fits };
+    const saved = await trySave(() => repos.sessions.save(out.aggregate, null, req.fence));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
-    if (!saved.ok) return { ok: false, error: { code: 'write_conflict', message: 'Could not create the session.' } };
-    return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false };
+    if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' } };
+    return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false, fits: out.fits };
   }
 
   /**
@@ -196,11 +204,19 @@ export function createSessionService(repos: Repositories, newId: () => string) {
    * `preview: true` builds it without saving (the routine sheet, Today).
    */
   async function startRoutine(
-    req: Omit<StartRequest, 'routineId'> & { routineId: string; preview?: boolean; targets?: RoutineStartInput['targets'] },
-  ): Promise<{ ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; duplicate: boolean } | { ok: false; error: ServiceError | { code: 'nothing_to_start'; message: string } }> {
+    req: Omit<StartRequest, 'routineId'> & {
+      routineId: string;
+      preview?: boolean;
+      targets?: RoutineStartInput['targets'];
+      /** Preview only: fit to this equipment instead of the gym's (workout-overview §8, no gym yet). */
+      gymEquipment?: readonly EquipmentInstance[];
+      /** What the caller's preview was planned from, re-checked inside the write. */
+      fence?: WriteFence;
+    },
+  ): Promise<{ ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; duplicate: boolean; fits: Record<string, SetFit> } | { ok: false; error: ServiceError | { code: 'nothing_to_start'; message: string } }> {
     if (!req.preview) {
       const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
-      if (existing) return { ok: true, aggregate: existing, notes: [], duplicate: true };
+      if (existing) return { ok: true, aggregate: existing, notes: [], duplicate: true, fits: {} };
       const active = await repos.sessions.getActive(req.ownerId);
       if (active) {
         return { ok: false, error: { code: 'session_already_active', message: 'Finish or resume the unfinished workout first.', sessionId: active.session.id } };
@@ -231,7 +247,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       gymId: req.gymId,
       routine,
       exercises,
-      gymEquipment: await repos.equipment.listByGym(req.gymId),
+      gymEquipment: req.preview && req.gymEquipment ? req.gymEquipment : await repos.equipment.listByGym(req.gymId),
       knownEquipment,
       at: req.at,
       newId,
@@ -241,11 +257,11 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     });
     if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This routine has no exercises to start.' } };
-    if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false };
-    const saved = await trySave(() => repos.sessions.save(out.aggregate, null));
+    if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false, fits: out.fits };
+    const saved = await trySave(() => repos.sessions.save(out.aggregate, null, req.fence));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
-    if (!saved.ok) return { ok: false, error: { code: 'write_conflict', message: 'Could not create the session.' } };
-    return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false };
+    if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' } };
+    return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false, fits: out.fits };
   }
 
   async function dispatch(sessionId: string, rawCommand: unknown): Promise<CommandOutcome> {

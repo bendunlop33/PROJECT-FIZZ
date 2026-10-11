@@ -4,6 +4,8 @@ Status: v0.1 draft, 9 Oct 2026. Feature approved by Ben in brief CHANGELOG v0.9 
 
 Related specs: [today.md](today.md) (Start, Resume), [flow-first-milestone.md](flow-first-milestone.md) (state machine, tap counts), [active-workout.md](active-workout.md) (coach slot on the first set card), [coach-adjustments.md](coach-adjustments.md) (offer, Adjust, banner, Undo), [coach-memory.md](coach-memory.md) (pain flags), [voice.md](voice.md) (spoken check-in), [workout-summary.md](workout-summary.md) and [progress.md](progress.md) (showing check-ins), [profile-and-settings.md](profile-and-settings.md) (settings), [weekly-plan.md](weekly-plan.md) (Reschedule, Skip workout).
 
+> **Revision 2026-10-10 (workout overview; [workout-overview.md](workout-overview.md)).** For Up next and routine starts, the check-in now sits on the Workout overview as an optional inline row of five tiles above its `Start workout`, shown only when `shouldAskCheckIn` returns `ask` or `reuse`. A tap saves the score at once (CI4) but **never starts the workout**. Starting without a score records `skipped`. A score at or below the "What's up?" setting opens Step 2 (and 2a/2b) as a sheet over the overview. Its exits return to the overview, apart from `Skip workout`, which closes to Today as before. CI1 and CI3 are unchanged: the session still doesn't exist until Start. **CI2 is amended for this path only** (Ben to confirm). The `CheckInSheet` Step 1 stays for `Empty workout`, Repeat, the builder's `Start now`, voice and the Resume case. At AX1+ the overview's tiles collapse to a `Check-in ›` button that opens Step 1, and choosing a score returns to the overview. Changed: §2.1 (first two entry rows), §3.1 (note), checks 1–3 and 5 (path note).
+
 The check-in is **a record of what Ben said, not a measurement.** Fizz stores it as given and shows it as given. It never turns it into a score, never averages it, never puts it next to lift numbers, and the built-in progression rules ignore it.
 
 ---
@@ -52,8 +54,9 @@ The check-in is shown by one gate, `shouldAskCheckIn`, at every way of starting 
 
 | Entry point | Spec |
 |---|---|
-| `Start workout`, `Start empty workout`, `Start another workout`, `Start a workout anyway` | today.md §4 |
-| Routine row `Start`, `Repeat last workout` → `Start workout` | routines.md |
+| Workout overview `Start workout` (reached from Today's `Start workout`, `Start another workout` and routine rows): **inline row, not the sheet** (10 Oct) | workout-overview.md §2.2 |
+| `Start empty workout`, `Start a workout anyway` | today.md §4 |
+| `Repeat last workout` → `Start workout` | routines.md |
 | Session sheet `Start workout` | weekly-plan.md §2.3 |
 | `Start now` on a coach draft (after its pre-start check passes) | workout-builder.md §4 |
 | Voice "start my workout" | voice.md §4.3 |
@@ -98,8 +101,8 @@ The check-in is shown by one gate, `shouldAskCheckIn`, at every way of starting 
 
 - No `PrimaryButton` on this step: the five score buttons are the action, and none is accent-filled (accent stays for Today's Start, which is now behind the scrim, and for Log).
 - `Talk` is hidden when voice input isn't available; `Skip` then spans the full width.
-- Empty workout or no plan: the second line reads `Before your workout. Saved with it. Nothing changes unless you say so.`
-- Resume case (§3): the same sheet over Active workout. Line 2: `Before your first set. Saved with this workout. Nothing changes unless you say so.`
+- No second line under the title (minimal UI copy, CLAUDE.md 10 Oct 2026; review workout-overview r2 N2).
+- Resume case (§3): the same sheet over Active workout.
 
 ### 2.3 Step 2: What's up? (score at or below the "What's up?" setting; default 3 or lower)
 
@@ -110,7 +113,6 @@ The same sheet grows to its medium detent; content swaps in place (no new sheet)
 │                 ───                    │
 │ ‹ 3 of 5                               │ back: change the score (44pt)
 │ What's up?                             │ type.title2
-│ Pick any that apply. Optional.         │ type.callout, text.secondary
 │                                        │
 │ [ Tired ]  [ Poor sleep ]              │ ParamChip, multi-select, 52pt
 │ [ Sore (from training) ]  [ Stressed ] │
@@ -142,9 +144,7 @@ Pushed inside the sheet (large detent). Content and copy are coach-memory.md §2
 ```
 ├────────────────────────────────────────┤
 │ ‹ What's up?                           │
-│ Which movements hurt?                  │ type.title2
-│ No increases on these until you clear  │
-│ the flag. This isn't a diagnosis.      │
+│ Which movements hurt?  ⓘ               │ type.title2; ⓘ → `Flagged movements don't go up until you clear the flag.`
 │ In Push A                              │ type.label
 │ [ Bench press ] [ Overhead press ]     │ ParamChip, multi-select, none
 │ [ Incline DB press ] [ Lateral raise ] │ preselected
@@ -173,9 +173,7 @@ Pushed inside the sheet (large detent). Content and copy are coach-memory.md §2
 
 ```
 ├────────────────────────────────────────┤
-│ Rest might be the better call today.   │ type.title2
-│ You picked Feeling ill. It's your      │ type.body
-│ call. Nothing changes either way.      │
+│ Rest today?                            │ type.title2
 │                                        │
 │ ┌────────────────────────────────────┐ │
 │ │            Reschedule              │ │ SecondaryButton, 52pt
@@ -361,7 +359,7 @@ The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is
 | Voice clarifying | Unclear phrase | `ClarifyChips` in the strip: `What number, 1 to 5?` / `Sore like after training, or pain?` / `3 or 4?` | — | Nothing saved until answered; `Not saved` after 30 s |
 | Voice saved | Clear phrase | Strip `✓ Got it · 3 of 5 · Tired` + `Heard: "…"`, then the sheet continues as if tapped | — | The in-workout toast carries [Change] |
 | Swiped away | Swipe down / escape | Back to Today, nothing started | — | Saved score (if any) stays, unlinked, reusable for 2 h |
-| Write failed | `recordCheckIn` fails | Workout starts anyway; toast `Check-in wasn't saved. Your workout started as normal.` | — | Never blocks logging. Session `checkIn: skipped` |
+| Write failed | `recordCheckIn` fails | Workout starts anyway; toast `Check-in wasn't saved. Your workout started as normal.` Over the Workout overview nothing starts: the sheet shows `Check-in wasn't saved.` and the overview's Start still works | — | Never blocks logging. Session `checkIn: skipped` |
 | Resume, not yet started | `Resume` or P6 auto-open of a session with 0 sets ever logged and `checkIn: pending` | Same sheet over Active workout (§2.2 Resume line) | — | Skip or swipe-down → stays in the workout, `skipped`. `Skip workout` → `discardWorkout` (0 sets; no Undo) + `skipScheduledSession` (Undo) |
 | Paused, not yet started | As above, workout paused | Same sheet | — | Answering doesn't resume; `Resume` stays the workout's primary |
 | Offline | No network | Identical sheet; everything is local | — | Only the in-workout offer differs (CI7) |
@@ -377,6 +375,8 @@ The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is
 | Deleted | `Delete check-in` | Line gone; toast `Check-in deleted` [Undo] | — | Audited tombstone |
 
 ### 3.1 Transitions
+
+(10 Oct.) From the Workout overview, the gate drives the inline row instead of Step 1: `ask` shows the row empty, `reuse` shows it pre-selected, and `skip` hides it. Step 2 onwards is below, with "Today" read as "the overview" and "startWorkout" read as "back to the overview". See workout-overview.md §2.2.
 
 ```
  Today ─ Start ─► shouldAskCheckIn ─┬─ not asked ──────────────────────────────► startWorkout ─► Active workout
@@ -409,7 +409,7 @@ The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is
 | `‹ 3 of 5` (Step 2) | Back to Step 1 with `3` shown as chosen. A new score `updateCheckIn`s the same record | Choosing 4 or 5 from here starts the workout; selected reasons are kept in the record |
 | Reason chip | Toggles; nothing is written until `Done` | `Other…` focuses the note |
 | `Done` (Step 2) | `updateCheckIn(id, {reasons, note}, expectedVersion, opId)`, then the pain step, the ill step, or start | |
-| `Skip` (Step 2) | Starts with the score only; selected chips and the note are discarded | VoiceOver hint: "Keeps your score and starts the workout." |
+| `Skip` (Step 2) | Starts with the score only; selected chips and the note are discarded | VoiceOver hint: "Keeps your score and starts the workout." Over the Workout overview (nothing starts): "Keeps your score." |
 | Pain step `Flag n movements` | `setPainFlag({exerciseIds, active: true, area?, source: 'check_in'}, opId)`; `updateCheckIn(…, {painFlagIds})`; continue | Flag first, then everything else (CM4) |
 | Pain step `Not now` | No flag; continue | CI8 |
 | `Train anyway` | Start (answered) | |
@@ -505,16 +505,16 @@ Every value is either **what Ben said** (the check-in), a **target** or an **act
 | Element | Text |
 |---|---|
 | Title | `How are you feeling today?` |
-| Line 2 | `Before Push A. Saved with this workout. Nothing changes unless you say so.` · no plan: `Before your workout. Saved with it. Nothing changes unless you say so.` · Resume case: `Before your first set. Saved with this workout. Nothing changes unless you say so.` |
+| Line 2 | None (minimal UI copy, 10 Oct 2026) |
 | Scale | `1` `2` `3` `4` `5` · ends `1 = rough` · `5 = great` |
 | Step 1 actions | `Skip` · `Talk` · settings button (VoiceOver "Check-in settings") |
-| Step 2 | back `‹ 3 of 5` · `What's up?` · `Pick any that apply. Optional.` |
+| Step 2 | back `‹ 3 of 5` · `What's up?` |
 | Chips | `Tired` · `Poor sleep` · `Sore (from training)` · `Stressed` · `Feeling ill` · `Pain` · `Other…` |
 | Pain hint | `Next you'll choose which movements hurt.` |
 | Note | `Note (optional)` · placeholder `Anything else?` (after `Other…`: `What else?`) · counter `240 of 280` |
 | Step 2 actions | `Done` · `Skip` |
-| Pain step | `Which movements hurt?` · `No increases on these until you clear the flag. This isn't a diagnosis.` · `In Push A` · `Recent` · `Where? (optional)` · professional and urgent lines (coach-memory §5) · `Flag 1 movement` / `Flag 2 movements` · disabled `Choose a movement` · `Not now` |
-| Ill step | `Rest might be the better call today.` · `You picked Feeling ill. It's your call. Nothing changes either way.` · `Reschedule` · `Skip workout` · `Train anyway` |
+| Pain step | `Which movements hurt?` · ⓘ `Flagged movements don't go up until you clear the flag.` · `In Push A` · `Recent` · `Where? (optional)` · professional and urgent lines (coach-memory §5) · `Flag 1 movement` / `Flag 2 movements` · disabled `Choose a movement` · `Not now` |
+| Ill step | `Rest today?` · `Reschedule` · `Skip workout` · `Train anyway` |
 
 ### 5.2 In the workout
 
@@ -639,6 +639,8 @@ Storage, backup, export, delete: `CheckIn` is **Your data** (owner ID, `your_dat
 ## 7. Acceptance checks
 
 **Taps and timing**
+
+(10 Oct.) Checks 1–3 and 5 now test the sheet paths (`Empty workout`, Repeat, builder, Resume). For Up next and routine starts, use workout-overview.md OV2 and OV10 instead: a score there never starts the workout, and the first set is 3 taps (ignored) or 4 (scored).
 1. Check-ins on: Today → `Start workout` → `4` reaches Active workout in exactly **2 taps**. The `CheckIn` row has score 4, no reasons, UTC time + timezone, and `link.sessionId` of the new session; the toast reads `✓ Check-in saved · 4 of 5`.
 2. `Start workout` → `Skip` reaches Active workout in 2 taps, writes no `CheckIn`, and the session's `checkIn.kind` is `skipped`. Resume, force-quit + relaunch and P6 auto-open never show the sheet for that session.
 3. Check-ins off, or a day not selected: `Start workout` opens the workout in **1 tap**; no sheet; `checkIn.kind` is `not_asked` with the right reason. Flow check 1's tap count is unchanged.
