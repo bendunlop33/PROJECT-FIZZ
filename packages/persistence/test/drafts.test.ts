@@ -4,7 +4,7 @@ import { applyDraftCommand, basisSlots, reduceSession, stableStringify, type Dra
 import { at, hotelFixture, id, OWNER, profile } from '@fizz/domain/testing';
 import { ActionRecordSchema, type ActionRecord, type DraftBasis, type PreStartDraft, type Routine, type SessionAggregate, type ZonedTimestamp } from '@fizz/schemas';
 
-import { checkIntegrity, createBackup, DatabaseManager, migrate, MIGRATIONS, openStore, fenceHolds, readUserVersion, sha256Hex, type BackupFile, type SqlDriver, type SqlValue, type Store } from '../src/index';
+import { checkIntegrity, createBackup, DatabaseManager, latestVersion, migrate, MIGRATIONS, openStore, fenceHolds, readUserVersion, sha256Hex, type BackupFile, type SqlDriver, type SqlValue, type Store } from '../src/index';
 import { nodeDatabaseHost } from '../src/node/index';
 import { memoryDriver, tempDir } from './helpers';
 
@@ -359,7 +359,8 @@ describe('a populated schema-6 database migrates in place to 7', () => {
     await expect(phone.run("INSERT INTO coach_actions (id, owner_id, op_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES ('x', 'o', 'p', 'update_routine', 'committed', 1, 't', 't', '{}')")).rejects.toThrow();
 
     const v7 = await openStore(phone);
-    expect(v7.migration).toMatchObject({ from: 6, to: 7, applied: [7] });
+    // Migration 7, then every later one (8: Progress).
+    expect(v7.migration).toMatchObject({ from: 6, to: latestVersion(), applied: MIGRATIONS.slice(6).map((m) => m.version) });
     expect(await v7.repos.sessions.get(a.session.id)).toEqual(a);
     expect(await v7.repos.coach.getAction(coachRecord.actionId)).toEqual(coachRecord);
     expect(await v7.repos.drafts.listByOwner(OWNER)).toEqual([]);
@@ -464,6 +465,9 @@ describe('review fixes: the template Undo keeps a newer swap (S4), rollback disc
     tables.sessions = (tables.sessions ?? []).map((row) => {
       const copy = { ...row };
       delete copy.today_edits;
+      // …or schema 8 (Progress's Count it).
+      delete copy.duration_confirmed_at_utc;
+      delete copy.duration_confirmed_at_tz;
       return copy;
     });
     tables.session_sets = (tables.session_sets ?? []).map((row) => {
@@ -479,7 +483,7 @@ describe('review fixes: the template Undo keeps a newer swap (S4), rollback disc
 
     const dst = await managerIn();
     expect(await dst.restore(v6, at(200))).toMatchObject({ ok: true, status: 'restored', preview: { needsMigration: true } });
-    expect(await dst.store.db.read((q) => readUserVersion(q))).toBe(7);
+    expect(await dst.store.db.read((q) => readUserVersion(q))).toBe(latestVersion());
     expect(await dst.store.repos.sessions.get(a.session.id)).toEqual(a);
     expect(await dst.store.repos.coach.getAction(coachRecord.actionId)).toEqual(coachRecord);
     expect(await dst.store.repos.drafts.listByOwner(OWNER)).toEqual([]);

@@ -335,6 +335,20 @@ export const RenameSessionCommandSchema = z.object({
   expectedVersion: z.int().min(1),
 });
 
+/**
+ * `Count it` on Progress's Time sheet (progress.md PG25a), and its Undo
+ * (`confirmed: false`): a finished workout over the 4 h cap counts in `Time
+ * in gym`. Changes no set and no time; versioned and idempotent like every
+ * correction.
+ */
+export const ConfirmSessionDurationCommandSchema = z.object({
+  type: z.literal('confirm_session_duration'),
+  ...base,
+  opId: OperationIdSchema,
+  confirmed: z.boolean(),
+  expectedVersion: z.int().min(1),
+});
+
 /** A pending set's new load and reps target (both explicit; unit and convention in the load). */
 const TargetValuesSchema = z.object({ load: LoadSchema.nullable(), reps: RepRangeSchema.nullable() });
 
@@ -447,6 +461,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   DiscardCommandSchema,
   SetRestAfterCommandSchema,
   RenameSessionCommandSchema,
+  ConfirmSessionDurationCommandSchema,
   SetFinishByCommandSchema,
   AdjustPendingTargetsCommandSchema,
   RevertTargetAdjustmentCommandSchema,
