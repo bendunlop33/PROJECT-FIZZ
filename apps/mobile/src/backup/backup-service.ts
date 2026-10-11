@@ -12,7 +12,7 @@ import {
   type BackupManifest,
   type BackupRecord,
 } from './manifest';
-import { buildBackupStatus, type BackupStatus } from './status';
+import { backupCovers, buildBackupStatus, newestBackup, type BackupStatus } from './status';
 
 /**
  * Automatic backups on this phone, `Back up on this phone now` and
@@ -207,6 +207,7 @@ export function createBackupService(deps: BackupServiceDeps) {
         sha256,
         textLength: created.text.length,
         finishedWorkouts: created.counts.finishedWorkouts,
+        finishedDigest: created.finishedWorkoutsDigest,
         loggedSets: created.counts.loggedSets,
         exercises: counts.exercises,
         integrityOk: created.integrity.ok,
@@ -279,13 +280,17 @@ export function createBackupService(deps: BackupServiceDeps) {
 
     /**
      * Launch catch-up (§3.2 "If iOS stops it, it runs again on the next
-     * launch"): back up if a finished workout isn't in the newest backup.
+     * launch"): back up unless the newest backup holds exactly the finished
+     * workouts there are now (B2: not just as many).
      */
     async ensureBackedUp(): Promise<BackupRunResult | null> {
       const { manifest } = await loadManifest();
-      const counts = await deps.store().countRecords();
-      const newest = manifest.onPhone.files.reduce<BackupRecord | null>((b, f) => (b === null || f.createdAtUtc > b.createdAtUtc ? f : b), null);
-      if (counts.finishedWorkouts === 0 || (newest !== null && newest.finishedWorkouts >= counts.finishedWorkouts)) return null;
+      const store = deps.store();
+      const counts = await store.countRecords();
+      const newest = newestBackup(manifest.onPhone.files);
+      if (newest === null ? counts.finishedWorkouts === 0 : backupCovers(newest, { finishedWorkouts: counts.finishedWorkouts, finishedDigest: await store.finishedWorkoutsDigest() })) {
+        return null;
+      }
       return service.backUpOnPhone('catch_up');
     },
 
@@ -321,10 +326,13 @@ export function createBackupService(deps: BackupServiceDeps) {
 
     async getStatus(): Promise<BackupStatus & { manifestProblem: string | null }> {
       const { manifest } = await loadManifest();
-      const counts = await deps.store().countRecords();
+      const store = deps.store();
+      const counts = await store.countRecords();
+      const finishedDigest = await store.finishedWorkoutsDigest();
       const at = deps.now();
       const status = buildBackupStatus(manifest, {
         finishedWorkouts: counts.finishedWorkouts,
+        finishedDigest,
         backingUp: running > 0,
         nowMs: toMs(at.utc),
         tz: at.tz,

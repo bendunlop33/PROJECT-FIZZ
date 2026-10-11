@@ -13,6 +13,7 @@ export * from './integrity';
 export * from './backup/sha256';
 export * from './backup/slice';
 export * from './backup/serialise';
+export * from './backup/coverage';
 export * from './backup/backup';
 export * from './backup/replace';
 export * from './manager';

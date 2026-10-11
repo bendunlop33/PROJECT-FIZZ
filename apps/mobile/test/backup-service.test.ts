@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { toIso, toMs } from '@fizz/domain';
-import { richFinishedSession } from '@fizz/domain/testing';
+import { largeHistory, richFinishedSession } from '@fizz/domain/testing';
 import { openStore, parseBackup, sha256Hex, type Store } from '@fizz/persistence';
 import { openNodeDriver } from '@fizz/persistence/node';
 import type { ZonedTimestamp } from '@fizz/schemas';
 
 import { createBackupService, type BackupFileStore, type CopyDestination, type TextFile } from '../src/backup/backup-service';
 import { backupFileName, emptyManifest, parseManifest, planRotation, type BackupRecord } from '../src/backup/manifest';
+import { onPhoneState } from '../src/backup/status';
 
 const TZ = 'Europe/London';
 const APP = { name: 'GymSmarter', version: '0.1.0', build: '9' };
@@ -213,6 +214,68 @@ describe('backup service', () => {
     const run = await svc.ensureBackedUp();
     expect(run?.ok && run.record.reason).toBe('catch_up');
     expect(await svc.ensureBackedUp()).toBeNull();
+  });
+
+  it('after Undo import, an interrupted after-Finish backup is pending and caught up at launch (B2)', async () => {
+    const svc = service();
+    // A 3-workout import; the after_import backup records 3 finished workouts.
+    for (const s of largeHistory({ weeks: 1, perWeek: 3 })) await store.repos.sessions.save(s, null);
+    expect((await svc.backUpOnPhone('after_import')).ok).toBe(true);
+    // Undo import (`revertJob`) takes the imported workouts out of the finished count.
+    await store.db.write((tx) => tx.run("UPDATE sessions SET status = 'discarded' WHERE status = 'finished'"));
+    expect((await store.countRecords()).finishedWorkouts).toBe(0);
+    // One workout finishes, but iOS ends the app before its backup runs.
+    clockMs += 3_600_000;
+    await store.repos.sessions.save(richFinishedSession(), null);
+    expect((await svc.getStatus()).onPhone.state).toBe('pending');
+    expect((await svc.getStatus()).onPhone.line.text).toBe('Saved on this phone');
+    const run = await svc.ensureBackedUp();
+    expect(run?.ok && run.record.reason).toBe('catch_up');
+    expect((await svc.getStatus()).onPhone.state).toBe('backed_up');
+    expect(await svc.ensureBackedUp()).toBeNull();
+  });
+
+  it('after restoring a smaller backup, an interrupted after-Finish backup is pending and caught up (B2)', async () => {
+    const svc = service();
+    for (const s of largeHistory({ weeks: 1, perWeek: 3 })) await store.repos.sessions.save(s, null);
+    expect((await svc.backUpOnPhone('workout_finished')).ok).toBe(true);
+    // Restore an older backup holding one of those workouts: the services now read the
+    // restored database, and the manifest is deliberately not rewound.
+    const [first] = largeHistory({ weeks: 1, perWeek: 3 });
+    const before = store;
+    store = await openStore(openNodeDriver(':memory:'));
+    await before.close();
+    if (first) await store.repos.sessions.save(first, null);
+    clockMs += 3_600_000;
+    await store.repos.sessions.save(richFinishedSession(), null);
+    expect((await store.countRecords()).finishedWorkouts).toBe(2);
+    expect((await svc.getStatus()).onPhone.state).toBe('pending');
+    expect((await svc.ensureBackedUp())?.ok).toBe(true);
+    expect((await svc.getStatus()).onPhone.state).toBe('backed_up');
+  });
+
+  it('a record from before the digest falls back to the count (B2)', () => {
+    const rec: BackupRecord = {
+      fileName: 'fizz-backup-2026-10-08-1905-auto.json',
+      kind: 'automatic',
+      reason: 'workout_finished',
+      createdAtUtc: '2026-10-08T18:05:00.000Z',
+      tz: TZ,
+      sha256: '0'.repeat(64),
+      textLength: 1,
+      finishedWorkouts: 3,
+      loggedSets: 0,
+      exercises: 0,
+      integrityOk: true,
+      integrityIssues: 0,
+    };
+    const m = { ...emptyManifest(), onPhone: { files: [rec], lastAttempt: null } };
+    expect(parseManifest(JSON.stringify(m)).problem).toBeNull();
+    expect(onPhoneState(m, { finishedWorkouts: 3, finishedDigest: 'a'.repeat(64), backingUp: false })).toBe('backed_up');
+    expect(onPhoneState(m, { finishedWorkouts: 4, backingUp: false })).toBe('pending');
+    const withDigest = { ...m, onPhone: { files: [{ ...rec, finishedDigest: 'b'.repeat(64) }], lastAttempt: null } };
+    expect(onPhoneState(withDigest, { finishedWorkouts: 1, finishedDigest: 'a'.repeat(64), backingUp: false })).toBe('pending');
+    expect(onPhoneState(withDigest, { finishedWorkouts: 1, finishedDigest: 'b'.repeat(64), backingUp: false })).toBe('backed_up');
   });
 
   it('queues runs one at a time and reports "Backing up…" meanwhile', async () => {

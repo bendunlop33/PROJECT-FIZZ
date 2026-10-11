@@ -1,5 +1,6 @@
 import type { ProgressionRule, UserProfile } from '@fizz/schemas';
 import { toHistorySessions, toMs, type HistorySession, type ProfileRepository, type Repositories, type VersionedRepository } from '@fizz/domain';
+import { finishedWorkoutsDigest } from './backup/coverage';
 import { Database } from './database';
 import {
   DocumentRepository,
@@ -66,6 +67,8 @@ export interface Store {
    */
   listExerciseHistory(ownerId: string, exerciseId: string): Promise<HistorySession[]>;
   countRecords(): Promise<RecordCounts>;
+  /** `finishedWorkoutsDigest` of the finished workouts now (backup coverage, B2). */
+  finishedWorkoutsDigest(): Promise<string>;
   close(): Promise<void>;
 }
 
@@ -112,6 +115,8 @@ export async function openStore(driver: SqlDriver, options: OpenStoreOptions = {
           exercises: row?.exercises ?? 0,
         };
       }),
+    finishedWorkoutsDigest: () =>
+      db.read(async (q) => finishedWorkoutsDigest((await q.getAll<{ id: string }>("SELECT id FROM sessions WHERE status = 'finished'")).map((r) => r.id))),
     close: () => db.close(),
   };
 }

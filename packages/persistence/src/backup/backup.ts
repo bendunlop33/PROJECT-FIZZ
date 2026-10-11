@@ -6,6 +6,7 @@ import { checkIntegrity, type IntegrityReport } from '../integrity';
 import { latestVersion, readUserVersion, type Migration, MIGRATIONS } from '../migrations';
 import { ident, insert } from '../sql';
 import type { Store } from '../store';
+import { finishedWorkoutsDigest } from './coverage';
 import { writeStable, stableHash } from './serialise';
 import { Sha256Stream } from './sha256';
 import { noYield, type Slicer } from './slice';
@@ -168,6 +169,8 @@ export interface CreatedBackup {
   text: string;
   /** SHA-256 of `text` (the whole file), computed in the same pass as the checksum. */
   sha256: string;
+  /** `finishedWorkoutsDigest` of the finished workouts in this backup (B2). */
+  finishedWorkoutsDigest: string;
   schemaVersion: number;
   counts: BackupCounts;
   checksum: string;
@@ -233,6 +236,9 @@ export async function createBackup(store: Store, options: { at: ZonedTimestamp; 
     fileName: `fizz-backup-${stamp}-v${String(schemaVersion)}.json`,
     text,
     sha256,
+    finishedWorkoutsDigest: finishedWorkoutsDigest(
+      (tables.sessions ?? []).filter((s) => s.status === 'finished').map((s) => String(s.id)),
+    ),
     schemaVersion,
     counts: countBackup(tables),
     checksum,

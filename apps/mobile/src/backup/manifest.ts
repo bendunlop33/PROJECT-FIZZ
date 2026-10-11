@@ -28,6 +28,11 @@ export const BackupRecordSchema = z.object({
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
   textLength: z.int().min(0),
   finishedWorkouts: z.int().min(0),
+  /**
+   * Which finished workouts the file holds (`finishedWorkoutsDigest`, B2).
+   * Absent on records written before it existed: those fall back to the count.
+   */
+  finishedDigest: z.string().regex(/^[0-9a-f]{64}$/).optional(),
   loggedSets: z.int().min(0),
   exercises: z.int().min(0),
   /** False when the database had damaged records (ADR 0005 #3): the file can't be restored. */
