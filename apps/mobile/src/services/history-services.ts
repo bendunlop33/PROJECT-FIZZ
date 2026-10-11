@@ -173,11 +173,14 @@ export function createHistoryServices(ctx: HistoryServicesContext) {
       return { rows, unreadable, importedNotListed, more: ids.length > limit };
     },
 
-    /** The Past workouts footer and the Data & backup row: 0 hides the footer and reads `None`. */
-    async recentlyDeletedCount(): Promise<number> {
+    /**
+     * The Past workouts footer and the Data & backup row: 0 hides the footer and reads `None`.
+     * `null` when the count can't be read: the row shows without a count, never a false `None` (review r3 N6).
+     */
+    async recentlyDeletedCount(): Promise<number | null> {
       const p = await ctx.profile();
       if (!p) return 0;
-      return repos().sessions.countRecentlyDeleted(p.id, ctx.now().utc).catch(() => 0);
+      return repos().sessions.countRecentlyDeleted(p.id, ctx.now().utc).catch(() => null);
     },
 
     /** `Delete now (n)` after its alert (§3.3, DW23): purged at once, in one transaction. */

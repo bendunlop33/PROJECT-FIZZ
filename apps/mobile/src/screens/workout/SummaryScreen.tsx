@@ -23,7 +23,7 @@ import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, Chip, Checkl
 import { stepTime } from '../../workout/finish';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { NameSheet } from '../routines/NameSheet';
-import { DELETE_COPY, deletedToastText, restoredToastText } from '../../history/delete-view';
+import { DELETE_COPY, deletedToastText, restoredToastText, summaryCanDelete } from '../../history/delete-view';
 import { handOffDeleteToast } from '../../history/toast-handoff';
 import { DeletedWorkoutView } from './DeletedWorkoutView';
 import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
@@ -145,8 +145,7 @@ export function SummaryScreen() {
     );
   }
   const { summary: sum, backup, painFlags, savedAs, coachNote, nextTime, presence } = data.value;
-  /** `⋯` (its one item is Delete) only on a workout in history (review r2 N2). */
-  const canDelete = presence.kind === 'live';
+  const canDelete = summaryCanDelete(presence);
 
   /** `⋯` → `Delete workout` (§2.2, DW1, DW2): the tap is the confirmation; Undo comes as a toast where Ben lands. */
   function openMenu() {

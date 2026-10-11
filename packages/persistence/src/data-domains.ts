@@ -261,6 +261,17 @@ function hiddenCheckInIds(sessions: readonly SqlRow[]): Set<SqlRow[string]> {
 /** The same rule in SQL, for `countDomainsIn`. */
 const HIDDEN_CHECK_IN_SQL = `EXISTS (SELECT 1 FROM sessions d WHERE d.check_in_id = c.id AND d.status = 'deleted')`;
 
+/** The action an Undo record undid (`data.detail.undoneActionId`), or null when unreadable. */
+function undoneActionOf(row: SqlRow): string | null {
+  if (typeof row.data !== 'string') return null;
+  try {
+    const detail = (JSON.parse(row.data) as { detail?: { undoneActionId?: unknown } }).detail;
+    return typeof detail?.undoneActionId === 'string' ? detail.undoneActionId : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * An export leaves out deleted workouts (Recently deleted and purge-due),
  * their rows, the tombstones of purged ones, the check-in hidden with each,
@@ -283,7 +294,11 @@ export function withoutDeletedWorkouts<T extends Record<string, SqlRow[]>>(table
   }
   const checkIns = hiddenCheckInIds(sessions);
   if (out.check_ins) out.check_ins = out.check_ins.filter((r) => !checkIns.has(r.id ?? null));
-  if (out.coach_actions) out.coach_actions = out.coach_actions.filter((r) => !deleted.has(r.session_id ?? null));
+  if (out.coach_actions) {
+    const dropped = new Set(out.coach_actions.filter((r) => deleted.has(r.session_id ?? null)).map((r) => r.id ?? null));
+    // An Undo of a dropped action goes with it: no Undo in the file whose target isn't (review r3 N1).
+    out.coach_actions = out.coach_actions.filter((r) => !dropped.has(r.id ?? null) && !(r.kind === 'undo' && dropped.has(undoneActionOf(r))));
+  }
   for (const t of ['next_session_targets', 'next_target_uses'] as const) {
     const rows = out[t];
     if (rows) out[t] = rows.filter((r) => !deleted.has(r.source_session_id ?? null));

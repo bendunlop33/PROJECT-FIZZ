@@ -4,7 +4,7 @@ import { KeyboardAvoidingView, Linking, Pressable, ScrollView, View, type TextIn
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { undoOpId, type ContextDescription } from '@fizz/coach';
-import { coachUndoRefusal, isInHistory, toMs } from '@fizz/domain';
+import { coachUndoRefusal, toMs } from '@fizz/domain';
 import type { BenInput, CoachThread } from '@fizz/schemas';
 
 import { MANAGE_USAGE_URL } from '../../ai/coach-connection-view';
@@ -12,6 +12,8 @@ import { nowMs as clockNow } from '../../clock';
 import type { CoachAvailability, CoachEntry } from '../../coach/coach-service';
 import {
   applyProgress,
+  loadedOutOfContext,
+  missingOutOfContext,
   routeLine,
   seesLabel,
   starterChips,
@@ -112,7 +114,7 @@ export function CoachSheetScreen() {
       title: d.aggregate.session.routineName ?? d.title,
       active,
       // Out of the coach's context; the chip says so (delete-workouts §5, DW16): deleted, or discarded/reverted (review r2 N3).
-      out: d.aggregate.session.status === 'deleted' ? 'deleted' : active || isInHistory(d.aggregate.session) ? null : 'unavailable',
+      out: loadedOutOfContext(d.aggregate.session),
       bar: workoutBarText(rest === null ? null : rest.kind === 'ended' ? { kind: 'ended' } : { kind: rest.kind, remainingMs: rest.remainingMs }, d.aggregate.session.pause !== null),
       exercise: v?.focus ? { id: v.focus.exerciseId, name: v.focus.exerciseName } : null,
     });
@@ -122,7 +124,7 @@ export function CoachSheetScreen() {
     if (entry.kind === 'today') return;
     loadedWorkout.current = await services.workout.load(entry.sessionId).catch(() => null);
     missingWorkout.current =
-      loadedWorkout.current !== null ? null : (await services.history.presence(entry.sessionId).catch(() => ({ kind: 'missing' as const }))).kind === 'gone' ? 'deleted' : 'unavailable';
+      loadedWorkout.current !== null ? null : missingOutOfContext((await services.history.presence(entry.sessionId).catch(() => ({ kind: 'missing' as const }))).kind);
     showWorkout();
   }, [entry, services, showWorkout]);
 

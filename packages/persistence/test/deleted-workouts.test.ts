@@ -246,7 +246,7 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
       'packages/persistence/src/backup/backup.ts': { why: 'backup counts by status, each on its own line', lines: /discardedWorkouts:|deletedWorkouts:/ },
       'packages/persistence/src/data-domains.ts': { why: 'check-ins hidden with a deleted workout in exports and counts (review r2 S1)', lines: /FROM sessions d WHERE d\.check_in_id = c\.id AND d\.status = 'deleted'/ },
       'apps/mobile/src/import/import-service.ts': { why: 'import-job status (`reverted` = undone), not a session', lines: /\b(?:job|j|current\?)\.status/ },
-      'apps/mobile/src/screens/coach/CoachSheetScreen.tsx': { why: 'the coach chip’s `Deleted workout` label (DW16)', lines: /out: d\.aggregate\.session\.status === 'deleted' \? 'deleted'/ },
+      'apps/mobile/src/coach/sheet-view.ts': { why: 'the coach chip’s `Deleted workout` label (DW16; review r3 N5)', lines: /return session\.status === 'deleted' \? 'deleted' : 'unavailable';/ },
     };
     const offenders: string[] = [];
     const walk = (dir: string) => {
@@ -278,19 +278,23 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
     const allowed: Record<string, { why: string; query: RegExp }[]> = {
       'packages/persistence/src/sessions.ts': [
         { why: 'one session by ID, whatever its status: `readAggregate`, the revision guards, the purge’s checks and tombstone', query: /FROM sessions WHERE id = \?['`]$/ },
-        { why: 'the deletion lifecycle: the purge, Recently deleted and its count', query: /status = 'deleted'/ },
-        { why: '`active`: the one unfinished workout', query: /status = 'active'/ },
+        // Anchored to each query's whole text (review r3 N4): a broader reader that also says `status = 'deleted'` isn't allowed.
+        { why: 'the purge’s check that the session is deleted', query: /^"SELECT check_in_id FROM sessions WHERE id = \? AND status = 'deleted'"$/ },
+        { why: 'Recently deleted', query: /^`SELECT id FROM sessions WHERE owner_id = \? AND status = 'deleted' AND purge_after_utc > \? ORDER BY deleted_at_utc DESC, id DESC`$/ },
+        { why: 'Recently deleted’s count', query: /^"SELECT count\(\*\) AS n FROM sessions WHERE owner_id = \? AND status = 'deleted' AND purge_after_utc > \?"$/ },
+        { why: 'the purge: deleted workouts past their 30 days', query: /^"SELECT id FROM sessions WHERE owner_id = \? AND status = 'deleted' AND purge_after_utc <= \? ORDER BY id"$/ },
+        { why: '`active`: the one unfinished workout', query: /^"SELECT id FROM sessions WHERE owner_id = \? AND status = 'active'"$/ },
         { why: '`byStartOp`: idempotent start by operation ID', query: /start_operation_id = \?'$/ },
         { why: '`listIds`: integrity checks over every stored session', query: /^'SELECT id FROM sessions ORDER BY id'$/ },
       ],
       'packages/persistence/src/integrity.ts': [{ why: 'integrity checks over every stored session', query: /^'SELECT id FROM sessions ORDER BY id'$/ }],
       'packages/persistence/src/coach.ts': [{ why: '`startedFrom`: was a workout started from this one (active included)', query: /status IN \('active', 'finished'\)/ }],
       'packages/persistence/src/documents.ts': [{ why: 'a check-in still linked to any stored session (deleted ones can be restored)', query: /FROM sessions WHERE check_in_id IN/ }],
-      'packages/persistence/src/store.ts': [{ why: 'the backup status’ unfinished-workout count', query: /status = 'active'/ }],
-      'packages/persistence/src/data-domains.ts': [{ why: 'check-ins hidden with a deleted workout (export and counts)', query: /status = 'deleted'/ }],
+      'packages/persistence/src/store.ts': [{ why: 'the backup status’ unfinished-workout count', query: /^FROM sessions WHERE status = 'active'\) AS unfinishedWorkouts, \(SELECT count\(\*\) FROM session_sets s$/ }],
+      'packages/persistence/src/data-domains.ts': [{ why: 'check-ins hidden with a deleted workout (export and counts)', query: /^`EXISTS \(SELECT 1 FROM sessions d WHERE d\.check_in_id = c\.id AND d\.status = 'deleted'\)`$/ }],
       'packages/persistence/src/imports.ts': [
         { why: '`appDates`: dates with a workout in the app (active included)', query: /status IN \('active', 'finished'\)/ },
-        { why: 'an import job’s deleted count and its dates in Recently deleted', query: /status = 'deleted'/ },
+        { why: 'an import’s dates in Recently deleted', query: /^"SELECT local_date AS d FROM sessions WHERE owner_id = \? AND import_job_id IS NOT NULL AND status = 'deleted' AND purge_after_utc > \?"$/ },
         { why: '`writtenDates`: an import’s rows already written, any status (resume)', query: /^'SELECT local_date AS d FROM sessions WHERE import_job_id = \?'$/ },
         { why: 'idempotent import write by start operation ID', query: /start_operation_id = \?'$/ },
       ],
@@ -318,6 +322,14 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
     expect(offenders).toEqual([]);
     // The scan found the store's readers (it didn't silently match nothing).
     expect(scanned).toBeGreaterThan(30);
+  });
+
+  it('a reader that also takes deleted workouts isn’t covered by the lifecycle entries (review r3 N4)', () => {
+    const lifecycle = /^"SELECT id FROM sessions WHERE owner_id = \? AND status = 'active'"$/;
+    const [q] = sessionQueries(`const r = await q.getAll("SELECT id FROM sessions WHERE owner_id = ? AND status = 'active' OR status = 'deleted'", [o]);`);
+    expect(q).toBeDefined();
+    expect(lifecycle.test(q ?? '')).toBe(false);
+    expect(lifecycle.test(sessionQueries(`q.getFirst("SELECT id FROM sessions WHERE owner_id = ? AND status = 'active'", [o])`)[0] ?? '')).toBe(true);
   });
 
   it('the reader scan catches a reader with no status filter at all (review r2 S3)', () => {
@@ -634,6 +646,15 @@ describe('exports and backups (§6.3, §6.5)', () => {
         "INSERT INTO coach_actions (id, owner_id, op_id, turn_id, session_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES ('act-a', ?, 'op-act-a', NULL, ?, 'set_next_session_targets', 'committed', 1, ?, ?, '{}')",
         [OWNER, a.session.id, NOW.utc, NOW.utc],
       );
+      // An Undo of act-a (no session of its own) goes with it (review r3 N1); an unrelated memory action stays.
+      await tx.run(
+        "INSERT INTO coach_actions (id, owner_id, op_id, turn_id, session_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES ('undo-a', ?, 'op-undo-a', NULL, NULL, 'undo', 'committed', 1, ?, ?, ?)",
+        [OWNER, NOW.utc, NOW.utc, JSON.stringify({ detail: { kind: 'undo', undoneActionId: 'act-a' } })],
+      );
+      await tx.run(
+        "INSERT INTO coach_actions (id, owner_id, op_id, turn_id, session_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES ('mem-x', ?, 'op-mem-x', NULL, NULL, 'save_memory', 'committed', 1, ?, ?, '{}')",
+        [OWNER, NOW.utc, NOW.utc],
+      );
     });
     const answered = async (x: SessionAggregate, checkInId: string): Promise<SessionAggregate> => {
       const next = { ...x, session: { ...x.session, checkIn: { kind: 'answered' as const, checkInId }, version: x.session.version + 1 }, revision: x.revision + 1 };
@@ -646,7 +667,8 @@ describe('exports and backups (§6.3, §6.5)', () => {
     await del([a2, b]);
     const mine = await exportDomain(store.db, 'your_data');
     const text = JSON.stringify(mine);
-    for (const gone of [CI_A, 'nst-a', 'act-a', 'use-a', 'sore after test session']) expect(text).not.toContain(gone);
+    for (const gone of [CI_A, 'nst-a', 'act-a', 'use-a', 'undo-a', 'sore after test session']) expect(text).not.toContain(gone);
+    expect(mine.tables.coach_actions?.map((r) => r.id)).toEqual(['mem-x']);
     expect(mine.tables.check_ins?.map((r) => r.id)).toEqual([CI_C]);
     expect(mine.tables.next_session_targets?.map((r) => r.id)).toEqual(['nst-c']);
     // The counts agree with the export, in SQL and in JS.

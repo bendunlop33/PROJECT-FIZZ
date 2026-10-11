@@ -2,7 +2,22 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { purgeAfterUtc } from '@fizz/domain';
 
-import { deletedToastText, goneOnText, keepSelection, pastRowTitle, recentlyDeletedDataRow, recentlyDeletedFooter, selectAllLabel, selectTitle, toggleAll } from '../src/history/delete-view';
+import {
+  deletedToastText,
+  goneOnText,
+  keepSelection,
+  pastRowOpens,
+  pastRowTitle,
+  recentlyDeletedDataRow,
+  recentlyDeletedFooter,
+  recentlyDeletedListView,
+  selectAllLabel,
+  selectTitle,
+  summaryCanDelete,
+  toggleAll,
+} from '../src/history/delete-view';
+import { loadedOutOfContext, missingOutOfContext, seesLabel } from '../src/coach/sheet-view';
+import { createHistoryServices } from '../src/services/history-services';
 import { buildCheckResultView, buildRestorePreviewView } from '../src/backup/restore-view';
 import { IntentOps } from '../src/history/intent-ops';
 import { openErrorView, previewView, stateLine, undoAlert } from '../src/import/views';
@@ -400,3 +415,47 @@ async function deleteSecond(s: Awaited<ReturnType<Harness['launch']>>['services'
   if (!out.ok) throw new Error(out.message);
   return out.refs.map((r) => ({ sessionId: r.sessionId, expectedVersion: r.version }));
 }
+
+describe('screen decisions as view helpers (review r3 N3, N5, N6)', () => {
+  it('Summary offers `⋯` only on a workout in history', () => {
+    expect(summaryCanDelete({ kind: 'live' })).toBe(true);
+    expect(summaryCanDelete({ kind: 'deleted', goneOn: '2026-11-08', version: 4 })).toBe(false);
+    for (const kind of ['gone', 'hidden', 'missing'] as const) expect(summaryCanDelete({ kind })).toBe(false);
+  });
+
+  it('the coach chip: deleted or purged → `Deleted workout`; discarded, reverted or unreadable → `Workout unavailable`', () => {
+    expect(loadedOutOfContext({ status: 'active' })).toBeNull();
+    expect(loadedOutOfContext({ status: 'finished' })).toBeNull();
+    expect(loadedOutOfContext({ status: 'deleted' })).toBe('deleted');
+    expect(loadedOutOfContext({ status: 'discarded' })).toBe('unavailable');
+    expect(loadedOutOfContext({ status: 'reverted' })).toBe('unavailable');
+    expect(missingOutOfContext('gone')).toBe('deleted');
+    expect(missingOutOfContext('missing')).toBe('unavailable');
+    expect(seesLabel({ kind: 'summary', sessionId: 'x' }, 'Push A', false, missingOutOfContext('gone'))).toBe('Deleted workout');
+  });
+
+  it('a Past workouts row with 0 sets opens its Summary; others open Repeat', () => {
+    expect(pastRowOpens({ sets: 0 })).toBe('summary');
+    expect(pastRowOpens({ sets: 3 })).toBe('repeat');
+  });
+
+  it('Recently deleted: no empty line while some can’t be read; no `Select` or select mode over an empty list', () => {
+    expect(recentlyDeletedListView(0, 0, false)).toEqual({ empty: true, select: false, selecting: false, footnote: false });
+    expect(recentlyDeletedListView(0, 2, false)).toEqual({ empty: false, select: false, selecting: false, footnote: false });
+    expect(recentlyDeletedListView(0, 2, true)).toEqual({ empty: false, select: false, selecting: false, footnote: false });
+    expect(recentlyDeletedListView(3, 1, true)).toEqual({ empty: false, select: true, selecting: true, footnote: true });
+  });
+
+  it('a count that can’t be read shows the row without a count, never a false `None`', async () => {
+    expect(recentlyDeletedFooter(null)).toBe('Recently deleted');
+    expect(recentlyDeletedDataRow(null)).toEqual({ title: 'Recently deleted', value: '', opens: true });
+    const failing = createHistoryServices({
+      repos: () => ({ sessions: { countRecentlyDeleted: () => Promise.reject(new Error('disk I/O error')) } }) as unknown as ReturnType<Parameters<typeof createHistoryServices>[0]['repos']>,
+      now: () => ({ utc: '2026-10-10T07:00:00.000Z', tz: TZ }),
+      profile: () => Promise.resolve({ id: 'owner' } as never),
+      describe: () => Promise.reject(new Error('unused')),
+      activeWorkout: () => Promise.resolve(null),
+    });
+    expect(await failing.recentlyDeletedCount()).toBeNull();
+  });
+});

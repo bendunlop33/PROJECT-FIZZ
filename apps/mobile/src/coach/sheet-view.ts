@@ -9,9 +9,11 @@
  */
 
 import { renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
-import type { ActionRecord, BenInput, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine } from '@fizz/schemas';
+import { isInHistory } from '@fizz/domain';
+import type { ActionRecord, BenInput, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine, WorkoutSession } from '@fizz/schemas';
 
 import type { CoachAvailability, CoachEntry, ThreadData } from './coach-service';
+import type { WorkoutPresence } from '../services/history-services';
 
 export type ViewIcon = 'checkmark.circle.fill' | 'arrow.uturn.backward' | 'minus.circle' | 'exclamationmark.triangle' | 'clock.badge.xmark' | 'xmark.octagon' | 'info.circle' | 'wifi.slash' | 'pause.circle' | 'ellipsis';
 
@@ -298,6 +300,20 @@ export type { ReplyItem };
 
 /** Why a thread's workout isn't in the coach's context: deleted (or purged), or otherwise not in history or unreadable. */
 export type WorkoutOutOfContext = 'deleted' | 'unavailable';
+
+/**
+ * A loaded thread workout out of the coach's context, as the chip says it (delete-workouts §5, DW16;
+ * review r2 N3, r3 N5): deleted → `deleted`; discarded or reverted → `unavailable`; live or in history → none.
+ */
+export function loadedOutOfContext(session: Pick<WorkoutSession, 'status'>): WorkoutOutOfContext | null {
+  if (session.status === 'active' || isInHistory(session)) return null;
+  return session.status === 'deleted' ? 'deleted' : 'unavailable';
+}
+
+/** A thread workout that couldn't be loaded: purged → `deleted`; anything else (unreadable, missing) → `unavailable`. */
+export function missingOutOfContext(presence: WorkoutPresence['kind']): WorkoutOutOfContext {
+  return presence === 'gone' ? 'deleted' : 'unavailable';
+}
 
 /**
  * `Sees: Push A (live)`, `Sees: this workout`, `Sees: Today`; `Deleted

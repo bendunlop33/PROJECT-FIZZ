@@ -9,6 +9,7 @@ import {
   deletedToastText,
   deleteNowAlert,
   keepSelection,
+  recentlyDeletedListView,
   restoredToastText,
   restoreToolbarLabels,
   rowCustomActions,
@@ -45,16 +46,19 @@ export function RecentlyDeletedScreen() {
   /** One op ID per intent: a double tap on Restore is a duplicate, not a false `No longer available.` (review S4). */
   const ops = useRef(new IntentOps(newUuid)).current;
   const tz = services.now().tz;
-  const rows = data.state === 'ready' ? data.value.rows : [];
+  const rows = data.state === 'ready' ? data.value.rows : NO_ROWS;
+  // No `Select` over an empty list, even when some can't be read (review r3 N3).
+  const view = recentlyDeletedListView(rows.length, data.state === 'ready' ? data.value.unreadable : 0, selecting);
 
   useEffect(() => {
     if (data.state === 'ready') setSelected((s) => keepSelection(s, data.value.rows));
+    if (data.state === 'ready' && data.value.rows.length === 0) setSelecting(false);
   }, [data]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: selecting ? selectTitle(selected.size) : DELETE_COPY.recentlyDeleted,
-      headerLeft: selecting
+      title: view.selecting ? selectTitle(selected.size) : DELETE_COPY.recentlyDeleted,
+      headerLeft: view.selecting
         ? () => (
             <TextButton
               label={selectAllLabel(selected, rows)}
@@ -65,9 +69,9 @@ export function RecentlyDeletedScreen() {
           )
         : undefined,
       headerRight: () =>
-        rows.length === 0 ? null : (
+        !view.select ? null : (
           <TextButton
-            label={selecting ? DELETE_COPY.cancel : DELETE_COPY.select}
+            label={view.selecting ? DELETE_COPY.cancel : DELETE_COPY.select}
             onPress={() => {
               setSelecting(!selecting);
               setSelected(new Set());
@@ -75,7 +79,7 @@ export function RecentlyDeletedScreen() {
           />
         ),
     });
-  }, [navigation, selecting, selected, rows]);
+  }, [navigation, selecting, selected, rows, view.select, view.selecting]);
 
   async function restore(target: readonly DeletedWorkoutRow[]) {
     const items = target.map((t) => ({ sessionId: t.sessionId, expectedVersion: t.version }));
@@ -157,13 +161,13 @@ export function RecentlyDeletedScreen() {
             }
           />
         ) : null}
-        {rows.length === 0 && data.value.unreadable > 0 ? null : rows.length === 0 ? (
+        {view.empty ? (
           <AppText variant="body">{DELETE_COPY.empty}</AppText>
-        ) : (
+        ) : rows.length === 0 ? null : (
           <Group>
             {rows.map((r) => {
               const l = deletedRowLines(r, tz);
-              return selecting ? (
+              return view.selecting ? (
                 <SelectRow
                   key={r.sessionId}
                   title={l.title}
@@ -190,10 +194,10 @@ export function RecentlyDeletedScreen() {
             })}
           </Group>
         )}
-        {rows.length > 0 ? <InfoLine variant="callout" text={DELETE_COPY.footnote} info={DELETE_COPY.footnoteInfo} /> : null}
+        {view.footnote ? <InfoLine variant="callout" text={DELETE_COPY.footnote} info={DELETE_COPY.footnoteInfo} /> : null}
       </Screen>
       <DeleteToastView state={toast} icon="info.circle" />
-      {selecting ? (
+      {view.selecting ? (
         <SelectionToolbar
           leading={<TextButton label={labels.restore} disabled={selected.size === 0} onPress={() => void restore(chosen)} />}
           trailing={
@@ -210,3 +214,5 @@ export function RecentlyDeletedScreen() {
     </>
   );
 }
+
+const NO_ROWS: DeletedWorkoutRow[] = [];

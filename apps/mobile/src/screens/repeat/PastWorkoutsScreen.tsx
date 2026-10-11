@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 
-import { deleteToolbarLabel, pastRowDetail, pastRowTitle, recentlyDeletedFooter, rowCustomActions, selectRowLabel, unreadableLine } from '../../history/delete-view';
+import { deleteToolbarLabel, pastRowDetail, pastRowOpens, pastRowTitle, recentlyDeletedFooter, rowCustomActions, selectRowLabel, unreadableLine } from '../../history/delete-view';
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { useDeleteToast } from '../../history/useDeleteToast';
 import { useSelectDelete } from '../../history/useSelectDelete';
@@ -112,7 +112,7 @@ export function PastWorkoutsScreen() {
                   sel.removeOne(c);
                 }}
                 onPress={() => {
-                  if (c.sets === 0) navigation.navigate('Summary', { sessionId: c.sessionId, back: true });
+                  if (pastRowOpens(c) === 'summary') navigation.navigate('Summary', { sessionId: c.sessionId, back: true });
                   else navigation.navigate('Repeat', { sessionId: c.sessionId });
                 }}
               />

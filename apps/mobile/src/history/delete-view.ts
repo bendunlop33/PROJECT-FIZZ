@@ -2,7 +2,7 @@ import { localHourUtcMs, toMs } from '@fizz/domain';
 
 import { formatCalendarDate, formatDayMonth, formatShortDate } from '../format/dates';
 import { formatCount, plural } from '../format/numbers';
-import type { DeletedWorkoutRow } from '../services/history-services';
+import type { DeletedWorkoutRow, WorkoutPresence } from '../services/history-services';
 import type { RepeatCandidate } from '../services/workout-services';
 
 /**
@@ -119,12 +119,15 @@ export function deleteNowAlert(count: number): { title: string; message: string;
 }
 
 /** `Recently deleted (3) ›` footer in Past workouts, only when there is something. */
-export function recentlyDeletedFooter(count: number): string | null {
+export function recentlyDeletedFooter(count: number | null): string | null {
+  // `null`: the count couldn't be read, so the row shows without one rather than hiding (review r3 N6).
+  if (count === null) return DELETE_COPY.recentlyDeleted;
   return count > 0 ? `${DELETE_COPY.recentlyDeleted} (${formatCount(count)})` : null;
 }
 
-/** Data & backup's always-present row: value `3` or `None` (not tappable at 0). */
-export function recentlyDeletedDataRow(count: number): { title: string; value: string; opens: boolean } {
+/** Data & backup's always-present row: value `3` or `None` (not tappable at 0); no value when the count couldn't be read. */
+export function recentlyDeletedDataRow(count: number | null): { title: string; value: string; opens: boolean } {
+  if (count === null) return { title: DELETE_COPY.recentlyDeleted, value: '', opens: true };
   return { title: DELETE_COPY.recentlyDeleted, value: count > 0 ? formatCount(count) : DELETE_COPY.none, opens: count > 0 };
 }
 
@@ -141,4 +144,23 @@ export function selectRowLabel(row: PastRow, phoneTz: string, selected: boolean)
 /** A Recently deleted row's three lines (§2.5). */
 export function deletedRowLines(row: DeletedWorkoutRow, phoneTz: string): { title: string; detail: string; gone: string } {
   return { title: pastRowTitle(row, phoneTz), detail: pastRowDetail(row), gone: goneOnText(row.goneOn) };
+}
+
+/** Summary's `⋯` (its one item is Delete) only on a workout in history (review r2 N2, r3 N5). */
+export function summaryCanDelete(presence: WorkoutPresence): boolean {
+  return presence.kind === 'live';
+}
+
+/** Where a Past workouts row opens: one with nothing logged opens its Summary, others Repeat (review r2 B1, r3 N5). */
+export function pastRowOpens(row: Pick<RepeatCandidate, 'sets'>): 'summary' | 'repeat' {
+  return row.sets === 0 ? 'summary' : 'repeat';
+}
+
+/**
+ * Recently deleted's list state (review r2 S2, r3 N3, N5): the empty line only when nothing is deleted
+ * and nothing is unreadable; `Select`, the toolbar and the footnote only over rows.
+ */
+export function recentlyDeletedListView(rowCount: number, unreadable: number, selecting: boolean): { empty: boolean; select: boolean; selecting: boolean; footnote: boolean } {
+  const any = rowCount > 0;
+  return { empty: !any && unreadable === 0, select: any, selecting: selecting && any, footnote: any };
 }
