@@ -216,20 +216,36 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
     expect(toHistorySessions(stored, BENCH)).toEqual([]);
   });
 
-  it('no reader compares a session status with `finished` except through the one predicate (DW19)', () => {
+  it('no reader compares a session status except through the one predicate, or with a listed reason (DW19, review S2)', () => {
     const root = join(__dirname, '..', '..', '..');
     const dirs = ['packages/domain/src', 'packages/persistence/src', 'packages/coach/src', 'packages/schemas/src', 'packages/providers/src', 'apps/mobile/src'];
-    // Allowed, each for a reason: the predicate itself; the reducer's command guard (a state machine, not a reader);
-    // frozen migration DDL; `startedFrom` (was a routine started since, active included) and `appDates` (dates of
-    // workouts logged in the app, active included), which deliberately count more than history.
-    const allowed: Record<string, RegExp> = {
-      'packages/domain/src/session/deletion.ts': /./,
-      'packages/domain/src/session/reducer.ts': /./,
-      'packages/persistence/src/coach.ts': /status IN \('active', 'finished'\)/,
-      // `revertJob` is a writer: Undo this import hides finished and deleted workouts alike (§6.2).
-    'packages/persistence/src/imports.ts': /status IN \('active', 'finished'\)|status IN \('finished', 'deleted'\)/,
+    // What is checked:
+    // - any comparison with `finished`, `discarded` or `reverted` (TS `===`/`!==`, SQL `=`/`<>`/`IN (...)`); session and
+    //   import-job statuses use these words, set statuses don't;
+    // - `deleted` compared on a session in TS (`session.status`) or in SQL (sets compare `deleted` only in TS, on `s.status`).
+    // Writes (`SET status = ...`) aren't reads.
+    const patterns = [
+      /status\s*(?:===|!==|=|<>|!=)\s*'(?:finished|discarded|reverted)'|status\s+(?:NOT\s+)?IN\s*\([^)]*'(?:finished|discarded|reverted)'/,
+      /session\??\.status\s*(?:===|!==)\s*'deleted'|status\s*(?:=|<>|!=)\s*'deleted'|status\s+(?:NOT\s+)?IN\s*\([^)]*'deleted'/,
+    ];
+    const write = /SET\s+status\s*=/;
+    // Allowed, each for a reason.
+    const allowed: Record<string, { why: string; lines: RegExp }> = {
+      'packages/domain/src/session/deletion.ts': { why: 'the predicate itself and the delete/restore planner', lines: /./ },
+      'packages/domain/src/session/reducer.ts': { why: 'the command guard: a state machine, not a reader', lines: /./ },
+      'packages/persistence/src/sessions.ts': {
+        why: 'the deletion record check on read, Recently deleted, and the purge: the deletion lifecycle itself',
+        lines: /deletion !== undefined|status = 'deleted' AND purge_after_utc|AND status = 'deleted'"|row\?\.status !== 'deleted'/,
+      },
+      'packages/persistence/src/coach.ts': { why: '`startedFrom`: was a routine started since (active included)', lines: /status IN \('active', 'finished'\)/ },
+      'packages/persistence/src/imports.ts': {
+        why: '`appDates` (active included), import-job status, the job’s deleted count, deleted import dates, and `revertJob` (a writer)',
+        lines: /status IN \('active', 'finished'\)|status <> 'reverted'"|job\.status === 'reverted'|status = 'deleted' AND purge_after_utc|AND status = 'deleted'"|status IN \('finished', 'deleted'\)/,
+      },
+      'packages/persistence/src/backup/backup.ts': { why: 'backup counts by status, each on its own line', lines: /discardedWorkouts:|deletedWorkouts:/ },
+      'apps/mobile/src/import/import-service.ts': { why: 'import-job status (`reverted` = undone), not a session', lines: /\b(?:job|j|current\?)\.status/ },
+      'apps/mobile/src/screens/coach/CoachSheetScreen.tsx': { why: 'the coach chip’s `Deleted workout` label (DW16)', lines: /deleted: d\.aggregate\.session\.status === 'deleted'/ },
     };
-    const pattern = /status\s*(?:===|!==|=|<>)\s*'finished'|status\s+IN\s*\([^)]*'finished'/;
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
@@ -243,15 +259,28 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
         readFileSync(path, 'utf8')
           .split('\n')
           .forEach((line, i) => {
-            if (!pattern.test(line)) return;
-            const allow = allowed[rel];
-            if (allow?.test(line)) return;
+            if (!patterns.some((p) => p.test(line)) || write.test(line)) return;
+            if (allowed[rel]?.lines.test(line)) return;
             offenders.push(`${rel}:${String(i + 1)}: ${line.trim()}`);
           });
       }
     };
     for (const d of dirs) walk(join(root, d));
     expect(offenders).toEqual([]);
+  });
+
+  it('the DW19 scan catches the readers the review found (S2)', () => {
+    const patterns = [
+      /status\s*(?:===|!==|=|<>|!=)\s*'(?:finished|discarded|reverted)'|status\s+(?:NOT\s+)?IN\s*\([^)]*'(?:finished|discarded|reverted)'/,
+      /session\??\.status\s*(?:===|!==)\s*'deleted'|status\s*(?:=|<>|!=)\s*'deleted'|status\s+(?:NOT\s+)?IN\s*\([^)]*'deleted'/,
+    ];
+    const caught = (line: string) => patterns.some((p) => p.test(line));
+    expect(caught("if (s.status === 'discarded' || s.status === 'reverted') continue;")).toBe(true);
+    expect(caught("return a?.session.status === 'deleted' ? null : a;")).toBe(true);
+    expect(caught("if (a.session.status !== 'deleted') return { kind: 'live' };")).toBe(true);
+    expect(caught("SELECT id FROM sessions WHERE status <> 'deleted'")).toBe(true);
+    // A set's own `deleted` status isn't a session reader.
+    expect(caught("const live = state.sets.filter((s) => s.status !== 'deleted');")).toBe(false);
   });
 });
 
@@ -295,7 +324,7 @@ describe('Recently deleted and the purge (§2.5, §6.4)', () => {
       session_pauses: 0,
       rest_timers: 0,
       work_intervals: 0,
-      tombstone: { session_id: a.session.id, owner_id: OWNER, deleted_at_utc: NOW.utc, purged_at_utc: DAY_31.utc, purge_op_id: 'purge-1', import_job_id: null },
+      tombstone: { session_id: a.session.id, owner_id: OWNER, deleted_at_utc: NOW.utc, purged_at_utc: DAY_31.utc, purge_op_id: 'purge-1', import_job_id: null, local_date: null },
     });
     // The same operation again changes nothing.
     expect(await store.repos.sessions.purgeDeleted({ ownerId: OWNER, opId: 'purge-1', at: DAY_31 })).toEqual({ ok: true, duplicate: true, purged: [a.session.id] });
@@ -325,7 +354,7 @@ describe('Recently deleted and the purge (§2.5, §6.4)', () => {
     await expect(tryRun('DELETE FROM session_sets WHERE session_id = ?', [b.session.id])).rejects.toThrow(/tombstoned/);
     await expect(tryRun('DELETE FROM sessions WHERE id = ?', [b.session.id])).rejects.toThrow(/never deleted/);
     // A tombstone can't be written for a workout that isn't deleted.
-    await expect(tryRun("INSERT INTO purged_sessions VALUES (?, ?, 'x', 'x', 'op', NULL)", [b.session.id, OWNER])).rejects.toThrow(/only a deleted workout/);
+    await expect(tryRun("INSERT INTO purged_sessions VALUES (?, ?, 'x', 'x', 'op', NULL, NULL)", [b.session.id, OWNER])).rejects.toThrow(/only a deleted workout/);
     // A deleted workout without a tombstone still can't lose rows.
     await del([a]);
     await expect(tryRun('DELETE FROM set_audit WHERE session_id = ?', [a.session.id])).rejects.toThrow(/append-only/);

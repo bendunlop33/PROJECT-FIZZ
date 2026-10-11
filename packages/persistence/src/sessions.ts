@@ -601,8 +601,8 @@ async function purgeOne(tx: SqlExecutor, sessionId: string, opId: string, atUtc:
   const s = await tx.getFirst<{ check_in_id: string | null }>("SELECT check_in_id FROM sessions WHERE id = ? AND status = 'deleted'", [sessionId]);
   if (!s) throw new Error(`Session ${sessionId} isn't deleted`);
   await tx.run(
-    `INSERT INTO purged_sessions (session_id, owner_id, deleted_at_utc, purged_at_utc, purge_op_id, import_job_id)
-     SELECT id, owner_id, deleted_at_utc, ?, ?, import_job_id FROM sessions WHERE id = ?`,
+    `INSERT INTO purged_sessions (session_id, owner_id, deleted_at_utc, purged_at_utc, purge_op_id, import_job_id, local_date)
+     SELECT id, owner_id, deleted_at_utc, ?, ?, import_job_id, CASE WHEN import_job_id IS NULL THEN NULL ELSE local_date END FROM sessions WHERE id = ?`,
     [atUtc, opId, sessionId],
   );
   for (const table of PURGED_CHILD_TABLES) await tx.run(`DELETE FROM ${table} WHERE session_id = ?`, [sessionId]);
@@ -798,6 +798,31 @@ export class SqliteSessions implements SessionRepository {
   }
 
   /**
+   * One import's workouts in history, oldest first (Select in an import's
+   * workout list, delete-workouts §2.1, DW24). A row that can't be read is
+   * skipped and counted.
+   */
+  listImportJobInHistory(ownerId: string, jobId: string): Promise<{ sessions: SessionAggregate[]; unreadable: number }> {
+    return this.db.read(async (q) => {
+      const rows = await q.getAll<{ id: string }>(
+        `SELECT id FROM sessions WHERE owner_id = ? AND import_job_id = ? AND ${inHistorySql()} ORDER BY local_date, started_at_utc, id`,
+        [ownerId, jobId],
+      );
+      const sessions: SessionAggregate[] = [];
+      let unreadable = 0;
+      for (const r of rows) {
+        try {
+          const agg = await readAggregate(q, r.id);
+          if (agg) sessions.push(agg);
+        } catch {
+          unreadable += 1;
+        }
+      }
+      return { sessions, unreadable };
+    });
+  }
+
+  /**
    * Recently deleted (§2.5): deleted workouts still restorable at `nowUtc`,
    * newest deletion first. Past their 30 days they are never listed, whether
    * or not the purge has run (DW21).
@@ -834,12 +859,15 @@ export class SqliteSessions implements SessionRepository {
   purgeDeleted(req: { ownerId: string; opId: string; at: ZonedTimestamp; sessionIds?: readonly string[] }): Promise<PurgeOutcome> {
     return this.db.write(async (tx): Promise<PurgeOutcome> => {
       const done = await tx.getAll<{ session_id: string }>('SELECT session_id FROM purged_sessions WHERE owner_id = ? AND purge_op_id = ? ORDER BY session_id', [req.ownerId, req.opId]);
-      if (done.length > 0) return { ok: true, duplicate: true, purged: done.map((r) => r.session_id) };
       let ids: string[];
       if (req.sessionIds === undefined) {
         ids = (
           await tx.getAll<{ id: string }>("SELECT id FROM sessions WHERE owner_id = ? AND status = 'deleted' AND purge_after_utc <= ? ORDER BY id", [req.ownerId, req.at.utc])
         ).map((r) => r.id);
+        // The due purge under an op ID already used (a second launch the same day) still purges what has become due since (review N1).
+        if (done.length > 0 && ids.length === 0) return { ok: true, duplicate: true, purged: done.map((r) => r.session_id) };
+      } else if (done.length > 0) {
+        return { ok: true, duplicate: true, purged: done.map((r) => r.session_id) };
       } else {
         ids = [...new Set(req.sessionIds)].sort();
         for (const id of ids) {
@@ -850,6 +878,11 @@ export class SqliteSessions implements SessionRepository {
       for (const id of ids) await purgeOne(tx, id, req.opId, req.at.utc);
       return { ok: true, duplicate: false, purged: ids };
     });
+  }
+
+  /** Whether an import's workout on `localDate` was purged (its import rows went with it; review N4). */
+  isPurgedImportDate(jobId: string, localDate: string): Promise<boolean> {
+    return this.db.read(async (q) => (await q.getFirst('SELECT 1 AS x FROM purged_sessions WHERE import_job_id = ? AND local_date = ?', [jobId, localDate])) !== null);
   }
 
   /** Whether `sessionId` was purged (an old link opens `This workout was deleted.`, §3.2). */

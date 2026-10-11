@@ -14,8 +14,9 @@
  *   keep both events).
  *
  * `purged_sessions`: one tombstone per purged workout (§6.4): ID, owner,
- * when it was deleted and purged, the purge operation and its import job.
- * No training values. Append-only.
+ * when it was deleted and purged, the purge operation, its import job and an
+ * imported workout's date (so its import's date view can say `This workout
+ * was deleted.`; review N4). No training values. Append-only.
  *
  * Purge under the append-only triggers (DW-Q2, ADR 0024): the DELETE
  * triggers on a session's rows now allow a delete only when the session has
@@ -24,11 +25,55 @@
  * other delete is refused exactly as before. UPDATE triggers are unchanged.
  * A session ID with a tombstone can never be written again.
  *
+ * Merge-order guard (review B1): the rebuild copies a frozen column list, so
+ * a `sessions` column added by any other migration (for example one that
+ * merged first and took number 8) would be dropped without an error. `up`
+ * therefore reads `PRAGMA table_info(sessions)` first and refuses, rolling
+ * the whole migration back, unless the columns are exactly the 26 below.
+ * Whoever merges second must add the other branch's columns to this rebuild
+ * (and to the list) or move its ALTER after it.
+ *
  * The rebuild runs inside the migration's transaction with foreign-key
  * checks deferred to commit, as migration 3 does: the rows are re-inserted
  * into a table named `sessions` (not renamed into place), which is what
  * resolves the child rows' deferred references before the commit checks them.
  */
+import type { SqlExecutor } from '../driver';
+
+/** The `sessions` columns at schema 7, in order. Frozen. */
+export const SESSIONS_V7_COLUMNS: readonly string[] = [
+  'id', 'owner_id', 'routine_id', 'routine_name', 'gym_id', 'start_operation_id', 'status', 'source',
+  'started_at_utc', 'started_at_tz', 'ended_at_utc', 'ended_at_tz', 'version', 'revision', 'active_set_id',
+  'equipment_snapshot', 'paused_at_utc', 'last_activity_at_utc', 'check_in', 'check_in_id', 'import_job_id',
+  'local_date', 'finish_by_utc', 'finish_by_tz', 'gym_changes', 'today_edits',
+];
+
+function columnsMessage(unknown: readonly string[], missing: readonly string[]): string {
+  const parts = [unknown.length > 0 ? `unknown column(s) ${unknown.join(', ')}` : null, missing.length > 0 ? `missing column(s) ${missing.join(', ')}` : null].filter((p): p is string => p !== null);
+  return `Migration 8 (deleted workouts) refuses to rebuild sessions: ${parts.join('; ')}. Add them to the rebuild before shipping.`;
+}
+
+/** Thrown when `sessions` isn't the shape this rebuild was written for. Nothing is changed. */
+export class UnexpectedSessionsColumnsError extends Error {
+  constructor(
+    readonly unknown: readonly string[],
+    readonly missing: readonly string[],
+  ) {
+    super(columnsMessage(unknown, missing));
+    this.name = 'UnexpectedSessionsColumnsError';
+  }
+}
+
+export async function upMigration0008(tx: SqlExecutor): Promise<void> {
+  const cols = (await tx.getAll<{ name: string }>('PRAGMA table_info(sessions)')).map((c) => c.name);
+  const known = new Set(SESSIONS_V7_COLUMNS);
+  const present = new Set(cols);
+  const unknown = cols.filter((c) => !known.has(c));
+  const missing = SESSIONS_V7_COLUMNS.filter((c) => !present.has(c));
+  if (unknown.length > 0 || missing.length > 0) throw new UnexpectedSessionsColumnsError(unknown, missing);
+  await tx.exec(MIGRATION_0008);
+}
+
 export const MIGRATION_0008 = `
 PRAGMA defer_foreign_keys = ON;
 
@@ -98,7 +143,8 @@ CREATE TABLE purged_sessions (
   deleted_at_utc TEXT NOT NULL,
   purged_at_utc TEXT NOT NULL,
   purge_op_id TEXT NOT NULL,
-  import_job_id TEXT
+  import_job_id TEXT,
+  local_date TEXT
 ) STRICT;
 CREATE INDEX purged_sessions_op ON purged_sessions (owner_id, purge_op_id);
 CREATE TRIGGER purged_sessions_no_update BEFORE UPDATE ON purged_sessions BEGIN SELECT RAISE(ABORT, 'purged_sessions is append-only'); END;
