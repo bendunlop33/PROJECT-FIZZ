@@ -4,9 +4,11 @@ import { ActionSheetIOS, Pressable } from 'react-native';
 
 import { newUuid } from '../../device/runtime';
 import { DELETE_COPY, deletedBannerText, deletedToastText, restoredToastText } from '../../history/delete-view';
+import { IntentOps } from '../../history/intent-ops';
 import { handOffDeleteToast } from '../../history/toast-handoff';
 import { importedSetLines, longDate } from '../../import/views';
 import type { ProfileStackParams } from '../../navigation/types';
+import type { WorkoutPresence } from '../../services/history-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Group, Icon, PrimaryButton, Row, Screen, StatusLine, TextButton } from '../../ui';
@@ -29,12 +31,14 @@ export function ImportedWorkoutScreen() {
   const { jobId, date } = useRoute<RouteProp<ProfileStackParams, 'ImportedWorkout'>>().params;
   const [shown, setShown] = useState(PAGE);
   const [line, setLine] = useState<string | null>(null);
-  const deleteOp = useRef(newUuid());
+  const ops = useRef(new IntentOps(newUuid)).current;
   const [data, reload] = useScreenData(async (s) => {
     const found = await s.imports.importedRows(jobId, date);
     const sessionId = found?.rows.find((r) => r.sessionId !== null)?.sessionId ?? null;
     const session = sessionId === null ? null : await s.repeat.describeById(sessionId);
-    const presence = sessionId === null ? null : await s.history.presence(sessionId);
+    // Purged: its import rows went with it, so the date's tombstone says so (review N4).
+    const presence: WorkoutPresence | null =
+      sessionId !== null ? await s.history.presence(sessionId) : (await s.history.importDatePurged(jobId, date)) ? { kind: 'gone' } : null;
     return found === null ? null : { ...found, session, presence };
   });
   const value = data.state === 'ready' ? data.value : null;
@@ -56,7 +60,8 @@ export function ImportedWorkoutScreen() {
           )
         : undefined,
     });
-  });
+    // `openMenu` reads `value` at tap time; the effect re-runs when what it shows changes (review N5).
+  }, [navigation, date, live, theme, value]);
 
   function openMenu() {
     ActionSheetIOS.showActionSheetWithOptions({ options: [DELETE_COPY.menuItem, DELETE_COPY.cancel], destructiveButtonIndex: 0, cancelButtonIndex: 1 }, (i) => {
@@ -67,9 +72,9 @@ export function ImportedWorkoutScreen() {
   async function remove() {
     const row = value?.session;
     if (!row) return;
-    const r = await services.history.deleteWorkouts([{ sessionId: row.sessionId, expectedVersion: row.version }], deleteOp.current, { from: 'opened' });
+    const items = [{ sessionId: row.sessionId, expectedVersion: row.version }];
+    const r = await services.history.deleteWorkouts(items, ops.for('delete', items), { from: 'opened' });
     if (!r.ok) {
-      if (r.kind === 'stale') deleteOp.current = newUuid();
       setLine(r.message);
       reload();
       return;
@@ -84,7 +89,8 @@ export function ImportedWorkoutScreen() {
     const row = value?.session;
     const p = value?.presence;
     if (!row || p?.kind !== 'deleted') return;
-    const r = await services.history.restoreWorkouts([{ sessionId: row.sessionId, expectedVersion: p.version }], newUuid());
+    const items = [{ sessionId: row.sessionId, expectedVersion: p.version }];
+    const r = await services.history.restoreWorkouts(items, ops.for('restore', items));
     setLine(r.ok ? restoredToastText([row], services.now().tz) : r.message);
     changed();
     reload();

@@ -12,6 +12,7 @@ import { nowMs as clockNow } from '../clock';
 import { newUuid } from '../device/runtime';
 import { formatDayMonth, formatLongDate, formatShortDate, formatTime } from '../format/dates';
 import type { TabParams } from '../navigation/types';
+import { DeleteToastView } from '../history/DeleteToastView';
 import { useDeleteToast } from '../history/useDeleteToast';
 import { firstTime, useDataChanged, useLaunchInfo, useScreenData, useServices } from '../shell/context';
 import { loadBanners } from '../shell/system-banners';
@@ -624,7 +625,7 @@ export function TodayScreen() {
         />
       ) : null}
       {deleted.toast ? (
-        <Toast icon="trash" text={deleted.toast.text} {...(deleted.toast.action ? { action: deleted.toast.action } : {})} {...(deleted.toast.onAction ? { onAction: deleted.toast.onAction } : {})} />
+        <DeleteToastView state={deleted} />
       ) : toast ? (
         <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} />
       ) : null}

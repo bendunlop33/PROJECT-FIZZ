@@ -6,8 +6,9 @@ import { formatShortDate } from '../format/dates';
 import { importedNotListedLine } from '../import/views';
 import { plural } from '../format/numbers';
 import { useScreenData, useServices } from '../shell/context';
+import { DeleteToastView } from '../history/DeleteToastView';
 import { useDeleteToast } from '../history/useDeleteToast';
-import { AppText, Group, LinkLine, Row, Screen, SectionHeader, StatusLine, TextButton, Toast } from '../ui';
+import { AppText, Group, LinkLine, Row, Screen, SectionHeader, StatusLine, TextButton } from '../ui';
 
 /**
  * Progress (audit F6): until progress.md's charts are built, an honest list
@@ -20,7 +21,7 @@ export function ProgressScreen() {
   const [data, reload] = useScreenData((s) => s.repeat.candidates(50));
   const tz = services.now().tz;
   // A workout deleted from its Past workout view comes back here with Undo (delete-workouts DW1).
-  const { toast } = useDeleteToast();
+  const deleted = useDeleteToast();
   return (
     <>
     <Screen>
@@ -71,7 +72,7 @@ export function ProgressScreen() {
         </>
       ) : null}
     </Screen>
-    {toast ? <Toast icon="trash" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
+    <DeleteToastView state={deleted} />
     </>
   );
 }

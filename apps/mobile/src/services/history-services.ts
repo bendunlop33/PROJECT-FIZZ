@@ -1,7 +1,9 @@
 import {
   buildDeleteConfirmView,
   goneOnDate,
+  isInHistory,
   isRestorable,
+  localDateOf,
   toMs,
   type DeleteConfirmView,
   type DeleteItem,
@@ -43,6 +45,8 @@ export type WorkoutPresence =
   | { kind: 'deleted'; goneOn: string; version: number }
   /** Purged, or past its 30 days: `This workout was deleted.` and nothing else. */
   | { kind: 'gone' }
+  /** Not in history and not in Recently deleted (unfinished, discarded, or its import undone): shown, with no delete or restore (review S5). */
+  | { kind: 'hidden' }
   | { kind: 'missing' };
 
 export interface HistoryServicesContext {
@@ -151,7 +155,8 @@ export function createHistoryServices(ctx: HistoryServicesContext) {
       if (!p) return 0;
       if (await ctx.activeWorkout()) return 0;
       const now = ctx.now();
-      const out = await repos().sessions.purgeDeleted({ ownerId: p.id, opId: `purge:${now.utc.slice(0, 10)}`, at: now });
+      // Keyed on the phone's day; a second launch that day still purges what has become due since (review N1).
+      const out = await repos().sessions.purgeDeleted({ ownerId: p.id, opId: `purge:${localDateOf(toMs(now.utc), now.tz)}`, at: now });
       return out.ok && !out.duplicate ? out.purged.length : 0;
     },
 
@@ -159,10 +164,26 @@ export function createHistoryServices(ctx: HistoryServicesContext) {
     async presence(sessionId: string): Promise<WorkoutPresence> {
       const a = await repos().sessions.get(sessionId).catch(() => null);
       if (a === null) return (await repos().sessions.isPurged(sessionId).catch(() => false)) ? { kind: 'gone' } : { kind: 'missing' };
-      if (a.session.status !== 'deleted') return { kind: 'live' };
-      const nowMs = toMs(ctx.now().utc);
-      if (!a.session.deletion || !isRestorable(a.session, nowMs)) return { kind: 'gone' };
+      if (isInHistory(a.session)) return { kind: 'live' };
+      if (!a.session.deletion) return { kind: 'hidden' };
+      if (!isRestorable(a.session, toMs(ctx.now().utc))) return { kind: 'gone' };
       return { kind: 'deleted', goneOn: goneOnDate(a.session.deletion.purgeAfterUtc, phoneTz()), version: a.session.version };
+    },
+
+    /** An import's date view after its workout was purged (its import rows went with it; review N4). */
+    async importDatePurged(jobId: string, localDate: string): Promise<boolean> {
+      return repos().sessions.isPurgedImportDate(jobId, localDate).catch(() => false);
+    },
+
+    /** Select in an import's workout list (§2.1, DW24): its workouts in history, oldest first. */
+    async importWorkouts(jobId: string): Promise<{ rows: RepeatCandidate[]; unreadable: number }> {
+      const p = await ctx.profile();
+      if (!p) return { rows: [], unreadable: 0 };
+      const { sessions, unreadable } = await repos().sessions.listImportJobInHistory(p.id, jobId);
+      const gyms = new Map<string, string>();
+      const rows: RepeatCandidate[] = [];
+      for (const a of sessions) rows.push(await ctx.describe(a, gyms));
+      return { rows, unreadable };
     },
 
     /** The confirm sheet for several (§2.4). The UI never computes the range. */

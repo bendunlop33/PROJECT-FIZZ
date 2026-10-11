@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 
 import { newUuid } from '../../device/runtime';
@@ -18,15 +18,18 @@ import {
   toggleAll,
   toggleOne,
 } from '../../history/delete-view';
+import { DeleteToastView } from '../../history/DeleteToastView';
+import { IntentOps } from '../../history/intent-ops';
 import { useDeleteToast } from '../../history/useDeleteToast';
 import type { DeletedWorkoutRow } from '../../services/history-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
-import { AppText, DangerTextButton, Group, InfoLine, Row, Screen, SelectionToolbar, SelectRow, StatusLine, TextButton, Toast } from '../../ui';
+import { AppText, DangerTextButton, Group, InfoLine, Row, Screen, SelectionToolbar, SelectRow, StatusLine, TextButton } from '../../ui';
 
 /**
  * Recently deleted (delete-workouts §2.5): newest deletion first, each with
  * `Gone on <date>`. Restore needs no confirm and has its own Undo; `Delete
- * now` asks once. Past their 30 days, workouts are never listed.
+ * now` asks once. Past their 30 days, workouts are never listed. Restore is
+ * a row action for VoiceOver and in select mode; swipe isn't built (ADR 0024).
  */
 export function RecentlyDeletedScreen() {
   const navigation = useNavigation();
@@ -36,7 +39,10 @@ export function RecentlyDeletedScreen() {
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [line, setLine] = useState<string | null>(null);
-  const { toast, show } = useDeleteToast();
+  const toast = useDeleteToast();
+  const { show } = toast;
+  /** One op ID per intent: a double tap on Restore is a duplicate, not a false `No longer available.` (review S4). */
+  const ops = useRef(new IntentOps(newUuid)).current;
   const tz = services.now().tz;
   const rows = data.state === 'ready' ? data.value.rows : [];
 
@@ -71,10 +77,8 @@ export function RecentlyDeletedScreen() {
   }, [navigation, selecting, selected, rows]);
 
   async function restore(target: readonly DeletedWorkoutRow[]) {
-    const r = await services.history.restoreWorkouts(
-      target.map((t) => ({ sessionId: t.sessionId, expectedVersion: t.version })),
-      newUuid(),
-    );
+    const items = target.map((t) => ({ sessionId: t.sessionId, expectedVersion: t.version }));
+    const r = await services.history.restoreWorkouts(items, ops.for('restore', items));
     if (!r.ok) {
       setLine(r.message);
       reload();
@@ -100,7 +104,7 @@ export function RecentlyDeletedScreen() {
 
   function deleteNow(target: readonly DeletedWorkoutRow[]) {
     const ask = deleteNowAlert(target.length);
-    const op = newUuid();
+    const op = ops.for('delete_now', target.map((t) => ({ sessionId: t.sessionId, expectedVersion: t.version })));
     Alert.alert(ask.title, ask.message, [
       { text: DELETE_COPY.cancel, style: 'cancel' },
       {
@@ -170,7 +174,7 @@ export function RecentlyDeletedScreen() {
         )}
         {rows.length > 0 ? <InfoLine variant="callout" text={DELETE_COPY.footnote} info={DELETE_COPY.footnoteInfo} /> : null}
       </Screen>
-      {toast ? <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
+      <DeleteToastView state={toast} icon="info.circle" />
       {selecting ? (
         <SelectionToolbar
           leading={<TextButton label={labels.restore} disabled={selected.size === 0} onPress={() => void restore(chosen)} />}
