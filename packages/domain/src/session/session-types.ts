@@ -383,21 +383,33 @@ export function recommendSession(input: RecommendSessionInput): SessionRecommend
 // Order (§3.3)
 
 export interface OrderedSessionTypes {
-  /** Recommended first, then longest gap first, then never-done routines (`New`) in list order. */
-  current: SessionType[];
-  /** `OLDER`: most recent first. */
+  /** The recommended row (`UP NEXT`), always first; null when there is none. */
+  upNext: SessionType | null;
+  /** `YOUR WORKOUTS` (routines.md WL4): saved workouts, longest gap first, never-done (`New`) last. */
+  workouts: SessionType[];
+  /** `FROM HISTORY`: named and Category types that aren't saved workouts, longest gap first. */
+  fromHistory: SessionType[];
+  /** `OLDER` (not done in 42 days): saved workouts first, then history, each most recent first. */
   older: SessionType[];
 }
 
-/** The picker's order (SP-D3). `types` in `deriveSessionTypes` order (routines in list order first). */
+/**
+ * The picker's order (routines.md WL4, amending SP-D3): Up next, then saved
+ * workouts, then history types, then `OLDER`. `types` in
+ * `deriveSessionTypes` order (routines in list order first).
+ */
 export function orderSessionTypes(types: readonly SessionType[], recommendedKey: string | null): OrderedSessionTypes {
   const rec = types.find((t) => t.key === recommendedKey) ?? null;
   const rest = types.filter((t) => t !== rec);
   const ms = (t: SessionType): number => (t.lastDone === null ? 0 : toMs(t.lastDone.utc));
-  const active = rest.filter((t) => t.lastDone !== null && !t.older).sort((a, b) => ms(a) - ms(b) || a.key.localeCompare(b.key));
-  const fresh = rest.filter((t) => t.lastDone === null);
-  const older = rest.filter((t) => t.lastDone !== null && t.older).sort((a, b) => ms(b) - ms(a) || a.key.localeCompare(b.key));
-  return { current: [...(rec ? [rec] : []), ...active, ...fresh], older };
+  const longestGap = (a: SessionType, b: SessionType) => ms(a) - ms(b) || a.key.localeCompare(b.key);
+  const newest = (a: SessionType, b: SessionType) => ms(b) - ms(a) || a.key.localeCompare(b.key);
+  const isWorkout = (t: SessionType) => t.routineId !== null;
+  const current = rest.filter((t) => !t.older);
+  const workouts = [...current.filter((t) => isWorkout(t) && t.lastDone !== null).sort(longestGap), ...current.filter((t) => isWorkout(t) && t.lastDone === null)];
+  const fromHistory = current.filter((t) => !isWorkout(t) && t.lastDone !== null).sort(longestGap);
+  const older = rest.filter((t) => t.older);
+  return { upNext: rec, workouts, fromHistory, older: [...older.filter(isWorkout).sort(newest), ...older.filter((t) => !isWorkout(t)).sort(newest)] };
 }
 
 // ---------------------------------------------------------------------------

@@ -2351,7 +2351,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           edited: isEdited(targetOf(t)),
         });
         const ordered = orderSessionTypes(startable, recommendedKey);
-        return { current: ordered.current.map(row), older: ordered.older.map(row), recommendedKey };
+        return { current: [...(ordered.upNext ? [ordered.upNext] : []), ...ordered.workouts, ...ordered.fromHistory].map(row), older: ordered.older.map(row), recommendedKey };
       } catch {
         return null;
       }

@@ -42,6 +42,28 @@ async function getRoutine(q: SqlExecutor, id: string): Promise<Routine | null> {
   return row ? decodeDocument(ROUTINE_SPEC, row) : null;
 }
 
+/**
+ * The routine as an `update_routine` record found it, at the next version:
+ * an editor save puts the whole workout back (its name, exercises and Main
+ * flags; WL10), keeping the rotation and tombstone as they are now; a
+ * one-slot change puts that slot back. Null when the slot is gone.
+ */
+function routineBefore(routine: Routine, d: Extract<ActionRecord['detail'], { kind: 'update_routine' }>, opId: string, atUtc: string): Routine | null {
+  const next = { version: routine.version + 1, updatedAtUtc: atUtc, lastOpId: opId };
+  if (d.before !== undefined) {
+    const b = d.before;
+    const back: Routine = { ...routine, name: b.name, exercises: b.exercises, ...next };
+    if (b.source === undefined) delete back.source;
+    else back.source = b.source;
+    return back;
+  }
+  if (d.slot === undefined) return null;
+  const slot = d.slot;
+  const at = routine.exercises.findIndex((x) => x.id === slot.after.id);
+  if (at < 0) return null;
+  return { ...routine, exercises: routine.exercises.map((x, i) => (i === at ? { ...slot.before, order: x.order } : x)), ...next };
+}
+
 export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
   constructor(db: Database) {
     super(db, DRAFT_SPEC);
@@ -153,10 +175,8 @@ export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
       const routine = await getRoutine(tx, d.routineId);
       if (routine === null || routine.ownerId !== req.ownerId) return { status: 'not_possible', reason: 'missing' };
       if (routine.version !== d.versionAfter) return { status: 'not_possible', reason: 'changed_since' };
-      const at = routine.exercises.findIndex((x) => x.id === d.slot.after.id);
-      if (at < 0) return { status: 'not_possible', reason: 'changed_since' };
-      const exercises = routine.exercises.map((x, i) => (i === at ? { ...d.slot.before, order: x.order } : x));
-      const back: Routine = { ...routine, exercises, version: routine.version + 1, updatedAtUtc: req.newRoutineAtUtc, lastOpId: req.undo.opId };
+      const back = routineBefore(routine, d, req.undo.opId, req.newRoutineAtUtc);
+      if (back === null) return { status: 'not_possible', reason: 'changed_since' };
       const saved = await saveDocumentIn(tx, ROUTINE_SPEC, back, routine.version);
       if (!saved.ok) return { status: 'not_possible', reason: 'changed_since' };
       let draft: PreStartDraft | null = null;

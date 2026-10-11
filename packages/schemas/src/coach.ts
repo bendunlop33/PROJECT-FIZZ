@@ -10,7 +10,7 @@ import {
 } from './common';
 import { PainAreaSchema, type PainFlag } from './checkin';
 import type { SessionCommand } from './commands';
-import { RoutineExerciseSchema } from './routine';
+import { RoutineExerciseSchema, RoutineSchema } from './routine';
 
 /**
  * Coach v1 contracts (ADR 0020 §2, coach-contract.md §6). Tool arguments are
@@ -296,7 +296,7 @@ export const NextTargetRowSchema = z.object({
 export type NextTargetRow = z.infer<typeof NextTargetRowSchema>;
 
 export const StructuralChangeLineSchema = z.object({
-  change: z.enum(['swap', 'add', 'remove', 'reorder']),
+  change: z.enum(['swap', 'add', 'remove', 'reorder', 'edit']),
   /** App text, e.g. `Cable fly → Pec deck`. */
   text: z.string().min(1).max(200),
 });
@@ -334,7 +334,14 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     routineId: IdSchema,
     routineName: z.string().min(1).max(120),
     changes: z.array(StructuralChangeLineSchema).min(1).max(6),
-    slot: z.object({ before: RoutineExerciseSchema, after: RoutineExerciseSchema }),
+    /** A one-slot change (`Change Push A too ›`); absent for an editor save. */
+    slot: z.object({ before: RoutineExerciseSchema, after: RoutineExerciseSchema }).optional(),
+    /**
+     * An editor save (routines.md WL10): the whole workout as it was, so
+     * `Undo` (also after a force-close) restores it while the workout is
+     * still at `versionAfter`.
+     */
+    before: RoutineSchema.optional(),
     versionBefore: z.int().min(1),
     versionAfter: z.int().min(2),
     draft: z.object({ id: IdSchema, editId: IdSchema }).nullable(),

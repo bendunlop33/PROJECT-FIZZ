@@ -320,32 +320,53 @@ describe('recommendSession (§3.3, SP5; Decision 2)', () => {
   });
 });
 
-describe('orderSessionTypes (SP-D3, SP2)', () => {
-  it('orders recommended, longest gap first, New routines, then OLDER', () => {
+describe('orderSessionTypes (routines.md WL4, amending SP-D3)', () => {
+  it('orders Up next, YOUR WORKOUTS (New last), FROM HISTORY longest gap first, then OLDER', () => {
     const { routines, sessions } = fixture();
     const types = deriveSessionTypes({ routines, sessions, now: NOW });
     const ordered = orderSessionTypes(types, 'name:legs');
-    expect(ordered.current.map((t) => t.label)).toEqual(['Legs', 'Shoulders', 'Back', 'Chest', 'Arms']);
+    expect(ordered.upNext?.label).toBe('Legs');
+    expect(ordered.workouts.map((t) => t.label)).toEqual(['Arms']);
+    expect(ordered.fromHistory.map((t) => t.label)).toEqual(['Shoulders', 'Back', 'Chest']);
     expect(ordered.older.map((t) => t.label)).toEqual(['Full body']);
   });
 
-  it('lists OLDER most recent first and keeps New routines in list order', () => {
+  it('lists saved workouts by longest gap with never-done ones last in list order; OLDER puts saved workouts first', () => {
     const routines = [
       { id: 'r-b', name: 'B', exerciseCount: 3 },
       { id: 'r-a', name: 'A', exerciseCount: 3 },
+      { id: 'r-c', name: 'C', exerciseCount: 3 },
+      { id: 'r-old', name: 'Old', exerciseCount: 3 },
     ];
-    const sessions = [imported('x', '2026-06-01', { Back: 9 }), imported('y', '2026-07-01', { Legs: 9 })];
+    const sessions = [
+      imported('x', '2026-06-01', { Back: 9 }),
+      imported('y', '2026-07-01', { Legs: 9 }),
+      logged('c1', '2026-10-09', { routineId: 'r-c', routineName: 'C' }),
+      logged('o1', '2026-05-01', { routineId: 'r-old', routineName: 'Old' }),
+    ];
     const ordered = orderSessionTypes(deriveSessionTypes({ routines, sessions, now: NOW }), null);
-    expect(ordered.current.map((t) => t.label)).toEqual(['B', 'A']);
-    expect(ordered.older.map((t) => t.label)).toEqual(['Legs', 'Back']);
+    expect(ordered.upNext).toBeNull();
+    expect(ordered.workouts.map((t) => t.label)).toEqual(['C', 'B', 'A']);
+    expect(ordered.fromHistory).toEqual([]);
+    expect(ordered.older.map((t) => t.label)).toEqual(['Old', 'Legs', 'Back']);
   });
 
   it('keeps every type exactly once', () => {
     const { routines, sessions } = fixture();
     const types = deriveSessionTypes({ routines, sessions, now: NOW });
     const ordered = orderSessionTypes(types, 'routine:r-full');
-    expect(ordered.current[0]?.label).toBe('Full body');
-    expect([...ordered.current, ...ordered.older].map((t) => t.key).sort()).toEqual(types.map((t) => t.key).sort());
+    expect(ordered.upNext?.label).toBe('Full body');
+    const all = [...(ordered.upNext ? [ordered.upNext] : []), ...ordered.workouts, ...ordered.fromHistory, ...ordered.older];
+    expect(all.map((t) => t.key).sort()).toEqual(types.map((t) => t.key).sort());
+  });
+
+  it('a Category group named like a saved workout counts as that workout’s history (WL5)', () => {
+    const routines = [{ id: 'r-shoulders', name: 'Shoulders', exerciseCount: 5 }];
+    const sessions = [imported('i-sh', '2026-10-07', { Shoulders: 12 })];
+    const types = deriveSessionTypes({ routines, sessions, now: NOW });
+    expect(types).toHaveLength(1);
+    expect(types[0]).toMatchObject({ key: 'routine:r-shoulders', kind: 'routine', sourceSessionId: 'i-sh' });
+    expect(types[0]?.lastDone?.utc).toBe(sessions[0]?.startedAt.utc);
   });
 });
 
