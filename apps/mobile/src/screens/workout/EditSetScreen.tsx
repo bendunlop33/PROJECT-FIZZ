@@ -8,6 +8,7 @@ import type { SessionAggregate, SetExclusion, SetValues } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
 import { formatTime } from '../../format/dates';
+import { returnToWorkout } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -80,11 +81,11 @@ export function EditSetScreen() {
     const effortOrReps = patch.reps !== undefined || patch.rpe !== undefined || patch.rir !== undefined;
     const corrected = effortOrReps ? { corrected: { setId, key: saveOp } } : {};
     if (r.toast !== null && r.undo !== null) {
-      navigation.navigate('Workout', { toast: { kind: 'exclusion', key: saveOp, text: r.toast, undo: { sessionId, ...r.undo } }, ...corrected });
+      navigation.dispatch(returnToWorkout({ toast: { kind: 'exclusion', key: saveOp, text: r.toast, undo: { sessionId, ...r.undo } }, ...corrected }));
       return;
     }
     if (effortOrReps) {
-      navigation.navigate('Workout', corrected);
+      navigation.dispatch(returnToWorkout(corrected));
       return;
     }
     navigation.goBack();
