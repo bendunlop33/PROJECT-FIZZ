@@ -41,7 +41,7 @@ import { createRestoreService } from '../backup/restore-service';
 import { createDataDomainService, type CredentialPort, type PersonalFilesPort } from '../backup/data-domain-service';
 import { createImportService } from '../import/import-service';
 import { createGymServices } from './gym-services';
-import { createWorkoutServices, STALE_PREVIEW, type OverviewStartOf, type OverviewTarget, type WorkoutStartOutcome } from './workout-services';
+import { createWorkoutServices, STALE_PREVIEW, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
 
 /**
@@ -377,6 +377,16 @@ export function createAppServices(deps: AppServicesDeps) {
     dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => afterCommand(await domainSessions().dispatch(sessionId, command)),
     finish: (s: SessionAggregate, opId: string): Promise<CommandOutcome> =>
       sessions.dispatch(s.session.id, { type: 'finish', at: deps.now(), opId, expectedVersion: s.session.version, endedAt: null }),
+    /**
+     * The session picker (session-picker §7): Ben's session types in picker
+     * order, `UP NEXT` the same as Today's card. With no gym, Up next is
+     * resolved against the typical gym, as the overview does. Local only;
+     * never throws (null: couldn't read).
+     */
+    list: async (gymId: string | null): Promise<SessionList | null> => {
+      const typical = gymId === null ? await typicalEquipment().catch(() => null) : null;
+      return loop.sessionTypes.list({ gymId, ...(typical ? { typicalEquipment: typical } : {}) });
+    },
     /** Discard with the confirmation Ben accepted (`discardConfirmation`); the reducer refuses a mismatch. */
     discard: (sessionId: string, ask: DiscardConfirmation, opId: string): Promise<CommandOutcome> =>
       sessions.dispatch(sessionId, discardCommand(ask, { opId, at: deps.now() })),

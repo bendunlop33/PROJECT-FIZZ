@@ -5,7 +5,7 @@ import { ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native
 import { AskPill } from './coach/AskPill';
 
 import { discardCommand, discardConfirmation, formatDuration, formatMinutes, reasonsText, scoreText, sparklinePoints, toMs, weekStripLabel, type LiftHighlight, type ResumeRow, type TodayMain, type WeekDay } from '@fizz/domain';
-import type { SessionAggregate } from '@fizz/schemas';
+import type { SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 
 import { useStartAlertsAsk } from '../alerts/AlertsAskSheet';
 import { nowMs as clockNow } from '../clock';
@@ -16,8 +16,10 @@ import { firstTime, useDataChanged, useLaunchInfo, useScreenData, useServices } 
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
-import type { RoutineRow } from '../services/workout-services';
+import type { OverviewTarget, RoutineRow, SessionPickerRow } from '../services/workout-services';
 import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, Sparkline, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
+import { hasChoice, lastDoneText, pickerRowLabel, SESSION_PICKER_COPY, todaySessions } from '../workout/session-picker';
+import { SessionPickerSheet } from './workout/SessionPickerSheet';
 import { NameSheet } from './routines/NameSheet';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
@@ -34,7 +36,10 @@ import { FinishSheet } from './workout/FinishSheet';
  * next session at the Summary's targets (B2); otherwise an empty workout
  * that opens the exercise picker. Up next's Start (and its rows) and a
  * `Your routines` row open the Workout overview (workout-overview.md), whose
- * Start starts the workout; the check-in for those starts lives there. The
+ * Start starts the workout; the check-in for those starts lives there.
+ * Choosing another session (session-picker §2.1): `Change` on Up next and
+ * `All sessions` open the picker sheet; a `Sessions` row opens that
+ * session's overview. The
  * rare pain flag check (region 4b) opens the pain flag sheet. The weekly
  * plan comes later. No AI, no network.
  */
@@ -71,6 +76,9 @@ export function TodayScreen() {
   const [renameVisible, setRenameVisible] = useState(false);
   const [renameAfter] = useState(() => createAfterDismiss());
   const [allRoutines, setAllRoutines] = useState(false);
+  // The session picker (session-picker §2.2); a pick opens the overview once the sheet has gone.
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerAfter] = useState(() => createAfterDismiss());
   // One opId per rename intent (sheet open), so a double tap saves once.
   const renameOp = useRef<string>(newUuid());
   const [data, reload] = useScreenData(async (s) => {
@@ -86,7 +94,9 @@ export function TodayScreen() {
     // Decorative history; never blocks Today either.
     const lift = await s.today.liftHighlight().catch(() => null);
     const routines = await s.routines.list().catch(() => [] as RoutineRow[]);
-    return { gym, view, banners, active, unlinked, next, lift, routines };
+    // Session types for `Change` / `Sessions` (local; null when unreadable: the routines list stays).
+    const sessions = await s.sessions.list(gym?.id ?? null).catch(() => null);
+    return { gym, view, banners, active, unlinked, next, lift, routines, sessions };
   });
 
   useEffect(() => {
@@ -127,8 +137,16 @@ export function TodayScreen() {
   }, [handed, undoRoutine, navigation, services, changed]);
 
   /** Up next or a routine: the Workout overview, which creates nothing until its Start. */
-  function openOverview(target: { kind: 'next' } | { kind: 'routine'; routineId: string }) {
+  function openOverview(target: OverviewTarget) {
     navigation.navigate('WorkoutOverview', { target });
+  }
+
+  /** A picked session: close the sheet, then open its overview (creates nothing). */
+  function pickSession(row: SessionPickerRow) {
+    pickerAfter.arm(() => {
+      openOverview(row.target);
+    });
+    setPickerVisible(false);
   }
   useEffect(() => {
     if (!toast) return;
@@ -321,10 +339,12 @@ export function TodayScreen() {
       </View>
     );
   }
-  const { gym, view, banners, active, unlinked, next, lift, routines } = data.value;
+  const { gym, view, banners, active, unlinked, next, lift, routines, sessions } = data.value;
   const zoned = services.now();
   const checkInLine = (c: NonNullable<typeof unlinked>) => `Check-in ${formatTime(toMs(c.recordedAt.utc), zoned.tz)} · ${scoreText(c.score)}${c.reasons.length ? ` · ${reasonsText(c.reasons)}` : ''}`;
   const main = view?.main ?? { kind: 'no_plan' as const };
+  // Up next is the hero; on Done today it leads the list (session-picker §5).
+  const sessionRows = todaySessions(sessions, { includeUpNext: main.kind === 'done_today' });
 
   const hero = (() => {
     switch (main.kind) {
@@ -431,6 +451,20 @@ export function TodayScreen() {
           return (
             <Hero
               label="Up next"
+              {...(hasChoice(sessions)
+                ? {
+                    labelAction: (
+                      <TextButton
+                        label={SESSION_PICKER_COPY.change}
+                        tone="secondary"
+                        accessibilityLabel={SESSION_PICKER_COPY.changeSession}
+                        onPress={() => {
+                          setPickerVisible(true);
+                        }}
+                      />
+                    ),
+                  }
+                : {})}
               title={next.title}
               lines={[
                 [next.muscles, `${String(exerciseCount)} ${exerciseCount === 1 ? 'exercise' : 'exercises'}`, next.aboutMinutes !== null ? `about ${String(next.aboutMinutes)} min` : `${String(next.sets)} sets`].filter(Boolean).join(' · '),
@@ -555,8 +589,49 @@ export function TodayScreen() {
 
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
 
-        {/* Your routines (premium-feel §2.1 region 6): hidden while a workout is in progress and when there are none. */}
-        {routines.length > 0 && main.kind !== 'resume' && main.kind !== 'stale' ? (
+        {/* Sessions (session-picker §2.1): up to 3 other sessions, then `All sessions`. Hidden while a workout is in progress. */}
+        {sessionRows.rows.length > 0 && main.kind !== 'resume' && main.kind !== 'stale' ? (
+          <RuledSection title={SESSION_PICKER_COPY.sessions} gap="2">
+            {sessionRows.rows.map((r) => {
+              const routineRow = r.routineId === null ? null : (routines.find((x) => x.id === r.routineId) ?? null);
+              return (
+                <SessionListRow
+                  key={r.key}
+                  row={r}
+                  now={zoned}
+                  onPress={() => {
+                    openOverview(r.target);
+                  }}
+                  onLongPress={
+                    routineRow
+                      ? () => {
+                          ActionSheetIOS.showActionSheetWithOptions({ title: routineRow.name, options: ['Rename', 'Delete', 'Cancel'], destructiveButtonIndex: 1, cancelButtonIndex: 2 }, (k) => {
+                            if (k === 0) askRename(routineRow);
+                            if (k === 1) confirmDelete(routineRow);
+                          });
+                        }
+                      : undefined
+                  }
+                />
+              );
+            })}
+            {sessionRows.more ? (
+              <View style={{ alignSelf: 'flex-start' }}>
+                <TextButton
+                  label={SESSION_PICKER_COPY.allSessions}
+                  icon="chevron.right"
+                  tone="secondary"
+                  onPress={() => {
+                    setPickerVisible(true);
+                  }}
+                />
+              </View>
+            ) : null}
+          </RuledSection>
+        ) : null}
+
+        {/* Your routines (premium-feel §2.1 region 6), only when the session list couldn't be read: routines stay reachable. */}
+        {sessions === null && routines.length > 0 && main.kind !== 'resume' && main.kind !== 'stale' ? (
           <RuledSection title="Your routines" gap="2">
             {(allRoutines ? routines : routines.slice(0, ROUTINE_CAP)).map((r, i) => (
               <FadeIn key={r.id} motion={i >= ROUTINE_CAP ? listEnterMotion(i - ROUTINE_CAP, theme.a11y.reduceMotion) : null}>
@@ -606,6 +681,28 @@ export function TodayScreen() {
         }}
       />
       {alertsAsk.sheet}
+      <SessionPickerSheet
+        visible={pickerVisible}
+        list={sessions}
+        now={zoned}
+        shown={null}
+        onPick={pickSession}
+        onClose={() => {
+          setPickerVisible(false);
+        }}
+        onRetry={reload}
+        onEmptyWorkout={() => {
+          pickerAfter.arm(() => void start({ kind: 'empty' }));
+          setPickerVisible(false);
+        }}
+        onPastWorkouts={() => {
+          pickerAfter.arm(() => {
+            navigation.navigate('PastWorkouts');
+          });
+          setPickerVisible(false);
+        }}
+        onDismissed={pickerAfter.dismissed}
+      />
       {renameRow ? (
         <NameSheet
           visible={renameVisible}
@@ -674,12 +771,22 @@ export function TodayScreen() {
   );
 }
 
-/** D-Today's hero: tracked label, a 40pt title, quiet lines, then the actions. */
-function Hero({ label, title, lines, children }: { label: string; title: string; lines: readonly (string | null)[]; children: ReactNode }) {
+/** D-Today's hero: tracked label (with `Change` on Up next), a 40pt title, quiet lines, then the actions. */
+function Hero({ label, labelAction, title, lines, children }: { label: string; labelAction?: ReactNode; title: string; lines: readonly (string | null)[]; children: ReactNode }) {
   const theme = useTheme();
   return (
     <View style={{ gap: theme.space['6'] }}>
-      <HeroHeader eyebrow={label} title={title} lines={lines} />
+      {labelAction ? (
+        <View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['3'], marginBottom: -theme.space['2'] }}>
+            <Eyebrow>{label}</Eyebrow>
+            {labelAction}
+          </View>
+          <HeroHeader title={title} lines={lines} />
+        </View>
+      ) : (
+        <HeroHeader eyebrow={label} title={title} lines={lines} />
+      )}
       <View style={{ gap: theme.space['4'] }}>{children}</View>
     </View>
   );
@@ -860,6 +967,35 @@ function RoutineListRow({ row, tz, onPress, onLongPress }: { row: RoutineRow; tz
       </AppText>
       <AppText variant="callout" color="text.secondary" numeric>
         {`${count} · ${when}`}
+      </AppText>
+      <Icon name="chevron.right" color="text.tertiary" size={14} />
+    </Pressable>
+  );
+}
+
+/** A Today `Sessions` row (≥ 52 pt): name, `4 days ago` (or `New`), and a chevron. Opens that session's overview. */
+function SessionListRow({ row, now, onPress, onLongPress }: { row: SessionPickerRow; now: ZonedTimestamp; onPress: () => void; onLongPress: (() => void) | undefined }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={pickerRowLabel(row, now, false)}
+      {...(onLongPress ? { accessibilityHint: 'Touch and hold to rename or delete.' } : {})}
+      onPress={onPress}
+      {...(onLongPress ? { onLongPress } : {})}
+      style={({ pressed }) => ({
+        minHeight: theme.target.workout.height,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.space['3'],
+        backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent',
+      })}
+    >
+      <AppText variant="body" numberOfLines={2} style={{ flex: 1 }}>
+        {row.label}
+      </AppText>
+      <AppText variant="callout" color="text.secondary" numeric>
+        {lastDoneText(row, now)}
       </AppText>
       <Icon name="chevron.right" color="text.tertiary" size={14} />
     </Pressable>

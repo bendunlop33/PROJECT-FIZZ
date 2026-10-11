@@ -214,7 +214,6 @@ export const OVERVIEW_COPY = {
   loadFailed: 'Couldn’t load this workout.',
   tryAgain: 'Try again',
   emptyWorkout: 'Empty workout',
-  otherRoutine: 'Other routine',
   rename: 'Rename',
   delete: 'Delete',
   checkIn: 'Check-in',

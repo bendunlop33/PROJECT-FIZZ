@@ -139,7 +139,7 @@ export function SecondaryButton({
  * text (D), it always carries a chevron so it reads as tappable (research
  * §6.3 risk 1); `icon` replaces the chevron when given.
  */
-export function TextButton({ label, onPress, disabled = false, icon, tone = 'accent', accessibilityHint }: ButtonProps & { icon?: SymbolName; tone?: 'accent' | 'secondary' }) {
+export function TextButton({ label, onPress, disabled = false, icon, tone = 'accent', accessibilityHint, accessibilityLabel }: ButtonProps & { icon?: SymbolName; tone?: 'accent' | 'secondary'; /** VoiceOver's name when the short label isn't enough (`Change` → `Change session`). */ accessibilityLabel?: string }) {
   const theme = useTheme();
   if (theme.components.linkAffordance === 'underline') {
     // D (D-Today): a 16pt underlined link; the underline, not colour, says it's tappable.
@@ -147,7 +147,7 @@ export function TextButton({ label, onPress, disabled = false, icon, tone = 'acc
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={label}
+        accessibilityLabel={accessibilityLabel ?? label}
         accessibilityState={{ disabled }}
         {...(accessibilityHint ? { accessibilityHint } : {})}
         disabled={disabled}
@@ -169,7 +169,7 @@ export function TextButton({ label, onPress, disabled = false, icon, tone = 'acc
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled }}
       {...(accessibilityHint ? { accessibilityHint } : {})}
       disabled={disabled}
