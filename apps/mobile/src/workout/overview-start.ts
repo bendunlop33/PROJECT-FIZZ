@@ -2,7 +2,8 @@ import { asksReasons, DEFAULT_CHECK_IN_SETTINGS, type CheckInGate, type WorkoutO
 import type { CheckIn, CheckInScore, SessionCheckIn } from '@fizz/schemas';
 
 import type { OverviewData, OverviewStartOf, WorkoutStartOutcome } from '../services/workout-services';
-import { checkInForStart, startFailure } from './overview';
+import { checkInForStart, OVERVIEW_COPY, startFailure } from './overview';
+import { TODAY_EDITS_COPY } from './overview-edits';
 
 /**
  * The Workout overview's writes, as plain async functions over the services
@@ -83,7 +84,7 @@ export async function startFromOverview(ports: OverviewStartPorts, req: { page: 
  * The toast after a stale Start (§3, TE5): `Earlier edits cleared` when the
  * re-read closed the draft at midnight, else `Targets updated`.
  */
-export function staleStartToast(page: Pick<OverviewData, 'cleared'> | null, copy: { stale: string; cleared: string }): string {
+export function staleStartToast(page: Pick<OverviewData, 'cleared'> | null, copy: { stale: string; cleared: string } = { stale: OVERVIEW_COPY.stale, cleared: TODAY_EDITS_COPY.earlierCleared }): string {
   return page?.cleared === true ? copy.cleared : copy.stale;
 }
 

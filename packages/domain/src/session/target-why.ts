@@ -34,7 +34,8 @@ export type WhyRowKey = 'set_by' | 'last_time' | 'reason' | 'equipment' | 'pain'
 
 export interface WhyRow {
   key: WhyRowKey;
-  label: 'Swapped' | 'Set by' | 'Last time' | 'Reason' | 'Equipment' | 'Pain' | 'Before flag' | 'Not used';
+  /** Null: one full-width line with no label column (`Swapped before start · Bench press`, overview-today-edits.md §5). */
+  label: 'Set by' | 'Last time' | 'Reason' | 'Equipment' | 'Pain' | 'Before flag' | 'Not used' | null;
   lines: string[];
   /** `actual`: logged results, never targets. `warning`: shown with the warning icon. */
   kind: 'app' | 'actual' | 'warning';
@@ -311,7 +312,7 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
   const rows: WhyRow[] = [];
   // Swapped on the Workout overview before Start (ADR 0022 §4): said first, then the usual explanation of the substitute's target.
   const swapped = state.session.todayEdits?.swapped.find((x) => x.sessionExerciseId === ex.id);
-  if (swapped !== undefined) rows.push({ key: 'swapped', label: 'Swapped', lines: [`Before start · ${swapped.fromExerciseName}`], kind: 'app' });
+  if (swapped !== undefined) rows.push({ key: 'swapped', label: null, lines: [`Swapped before start · ${swapped.fromExerciseName}`], kind: 'app' });
   rows.push(setByRow(p));
   const fromHistory = p?.basis ? null : lastComparableHistory(input.history, ex);
   rows.push(p?.basis ? storedLastTime(p.basis, ex, eq, input.basisNow, input.gymNames) : historyLastTime(fromHistory, ex, eq, tz, input.gymNames));

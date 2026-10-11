@@ -287,7 +287,7 @@ export function WorkoutOverviewScreen() {
         } else if (r.kind === 'stale') {
           // Nothing was created and the page changed: the rows re-render with what Start would make now (rule 5).
           // The re-read that closed a draft at midnight says so (TE5); the next read no longer can (review S2).
-          setToast({ text: staleStartToast(r.page, { stale: OVERVIEW_COPY.stale, cleared: TODAY_EDITS_COPY.earlierCleared }) });
+          setToast({ text: staleStartToast(r.page) });
           reload();
         } else if (r.kind === 'active') {
           changed();

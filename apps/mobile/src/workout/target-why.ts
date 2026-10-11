@@ -51,5 +51,5 @@ export const WHY_FAILED_TEXT = 'Couldn’t load.';
 export function whyRowAccessibilityLabel(row: WhyRow): string {
   const body = row.lines.map((l) => l.replaceAll(' · ', ', ').replaceAll(' ', ' ')).join('. ');
   const kind = row.kind === 'actual' ? ' (what you did)' : '';
-  return `${row.label}${kind}: ${body}`;
+  return row.label === null ? body : `${row.label}${kind}: ${body}`;
 }

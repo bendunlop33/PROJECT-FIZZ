@@ -6,7 +6,7 @@ import type { SessionAggregate } from '@fizz/schemas';
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData } from '../src/services/workout-services';
 import { OVERVIEW_COPY } from '../src/workout/overview';
-import { TODAY_EDITS_COPY } from '../src/workout/overview-edits';
+import { pageToast, TODAY_EDITS_COPY } from '../src/workout/overview-edits';
 import { staleStartToast, startFromOverview } from '../src/workout/overview-start';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -163,6 +163,19 @@ describe('S2: Start after midnight through the screen’s Start path', () => {
     // Any other stale Start still says `Targets updated`.
     expect(staleStartToast({ cleared: false }, { stale: OVERVIEW_COPY.stale, cleared: TODAY_EDITS_COPY.earlierCleared })).toBe('Targets updated');
     expect(staleStartToast(null, { stale: OVERVIEW_COPY.stale, cleared: TODAY_EDITS_COPY.earlierCleared })).toBe('Targets updated');
+    // The screen's own sequence (review r2 N1): `staleStartToast(r.page)` with the screen's copy, then its
+    // `reload()` re-reads, and `pageToast` on that page must not overwrite the toast.
+    const shown = new Set<string>();
+    let toast = staleStartToast(r.page);
+    expect(toast).toBe(TODAY_EDITS_COPY.earlierCleared);
+    const reloaded = await load(s, gymId);
+    expect(reloaded.cleared).toBe(false);
+    const after = pageToast(reloaded, shown);
+    if (after !== null) toast = after.text;
+    expect(after).toBeNull();
+    expect(toast).toBe('Earlier edits cleared');
+    // Without the fix (toasting the stale page as an ordinary stale Start), Ben would read `Targets updated`.
+    expect(staleStartToast({ cleared: false })).toBe(OVERVIEW_COPY.stale);
     // Ben taps Start again on the re-read page: it starts, with no edits.
     const fresh = r.page;
     if (fresh === null) throw new Error('no page');

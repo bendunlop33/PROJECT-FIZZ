@@ -263,7 +263,7 @@ describe('Swap today (TE-A4 – TE-A7, TE-A11)', () => {
     await s.overview.edit({ ...base(p3, gymId, 'swap-2'), edit: { kind: 'swap', slotKey: bench.slotKey, toExerciseId: db?.exerciseId ?? '' } });
     const p4 = await load(s, gymId);
     const why = await s.overview.explain({ target: { kind: 'next' }, gymId, sessionExerciseId: p4.view.rows[0]?.sessionExerciseId ?? '' });
-    expect(why?.rows[0]).toMatchObject({ key: 'swapped', lines: ['Before start · Bench press'] });
+    expect(why?.rows[0]).toMatchObject({ key: 'swapped', label: null, lines: ['Swapped before start · Bench press'] });
     const r = await startFromOverview(ports(s, gymId), { page: p4, opId: 'start-swap', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
     if (r.kind !== 'started') throw new Error(r.kind);
     sameAsStart(p4, r.outcome.aggregate);

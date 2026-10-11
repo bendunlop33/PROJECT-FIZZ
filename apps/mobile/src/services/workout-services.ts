@@ -2261,7 +2261,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * edits the plan no longer has a place for are marked removed in the same
    * write. Local only; never an AI call.
    */
-  async function writeDraft(req: DraftTarget, make: (slots: { base: ReturnType<typeof basisSlots>; today: ReturnType<typeof basisSlots> }) => DraftCommand | null): Promise<DraftWrite> {
+  async function writeDraft(
+    req: DraftTarget,
+    make: (slots: { base: ReturnType<typeof basisSlots>; today: ReturnType<typeof basisSlots> }) => DraftCommand | null | Promise<DraftCommand | null>,
+  ): Promise<DraftWrite> {
     try {
       const p = await owner();
       const resolved = await resolveOverview(p, req.target, { gymId: req.gymId ?? 'typical-gym-preview', gymEquipment: req.gymId === null ? req.typicalEquipment : undefined });
@@ -2276,7 +2279,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const known = new Set<string>();
       for (const e of current === null ? [] : liveEdits(current.edits)) if (e.kind === 'swap' && (await exerciseById(e.toExerciseId)) !== null) known.add(e.toExerciseId);
       const resolvedEdits = current === null ? null : resolveTodayEdits(base, current.edits, (id) => known.has(id));
-      const command = make({ base, today: resolvedEdits === null ? base : editedSlots(base, resolvedEdits) });
+      const command = await make({ base, today: resolvedEdits === null ? base : editedSlots(base, resolvedEdits) });
       if (command === null) return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
       const c = applyDraftCommand({
         current,
@@ -2316,14 +2319,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** Whether `toExerciseId` may replace the slot's exercise today: it exists, measures the same way, and this gym can do it. */
-  async function swapAllowed(req: DraftTarget, slotKey: string, toExerciseId: string): Promise<boolean> {
+  // Runs inside `writeDraft` on the base slots it already resolved, so a swap resolves the overview once (review r2 N5).
+  async function swapAllowed(req: DraftTarget, base: readonly { slotKey: string; exerciseId: string }[], slotKey: string, toExerciseId: string): Promise<boolean> {
     try {
-      const p = await owner();
       const gymId = req.gymId ?? 'typical-gym-preview';
-      const resolved = await resolveOverview(p, req.target, { gymId, gymEquipment: req.gymId === null ? req.typicalEquipment : undefined });
-      if (resolved === null) return true; // writeDraft refuses it as stale.
-      const slot = basisSlots(slotBasisOf(resolved)).find((x) => x.slotKey === slotKey);
-      if (slot === undefined) return true; // writeDraft refuses it as `slot_gone`.
+      const slot = base.find((x) => x.slotKey === slotKey);
+      if (slot === undefined) return true; // applyDraftCommand refuses it as `slot_gone`.
       const [planned, to] = await Promise.all([exerciseById(slot.exerciseId), exerciseById(toExerciseId)]);
       if (planned === null || to === null || to.measurement !== planned.measurement) return false;
       const equipment = req.gymId === null ? (req.typicalEquipment ?? []) : await repos().equipment.listByGym(req.gymId);
@@ -2462,12 +2463,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * changes. The first edit creates the draft (`expectedDraftVersion: null`).
      */
     async edit(req: DraftTarget & { edit: { kind: 'swap'; slotKey: string; toExerciseId: string } | { kind: 'skip'; slotKey: string } }): Promise<DraftWrite> {
-      if (req.edit.kind === 'swap') {
-        // The Swap sheet's own checks, again here (review S5): the same measurement, doable at this gym. Not in today's plan: `applyDraftCommand`.
-        if (!(await swapAllowed(req, req.edit.slotKey, req.edit.toExerciseId))) return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
-        if ((await ensureExercise(req.edit.toExerciseId)) === null) return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
-      }
-      return writeDraft(req, () => ({ type: 'edit', edit: req.edit }));
+      const edit = req.edit;
+      return writeDraft(req, async ({ base }) => {
+        if (edit.kind === 'swap') {
+          // The Swap sheet's own checks, again here (review S5): the same measurement, doable at this gym. Not in today's plan: `applyDraftCommand`.
+          if (!(await swapAllowed(req, base, edit.slotKey, edit.toExerciseId))) return null;
+          if ((await ensureExercise(edit.toExerciseId)) === null) return null;
+        }
+        return { type: 'edit', edit };
+      });
     },
 
     /**
