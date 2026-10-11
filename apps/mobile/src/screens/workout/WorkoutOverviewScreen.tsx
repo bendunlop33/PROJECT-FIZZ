@@ -308,7 +308,8 @@ export function WorkoutOverviewScreen() {
   }
 
   async function showWhy(sessionExerciseId: string, name: string) {
-    const explanation = await services.overview.explain({ target, gymId: page?.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? null, sessionExerciseId }).catch(() => null);
+    // The check-in the rows were planned with: tapped here, else the reused one (review S1).
+    const explanation = await services.overview.explain({ target, gymId: page?.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? page?.planCheckIn?.id ?? null, sessionExerciseId }).catch(() => null);
     setWhy({ name, explanation });
     setWhyVisible(true);
   }

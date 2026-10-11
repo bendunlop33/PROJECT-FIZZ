@@ -199,6 +199,31 @@ describe('Workout overview', () => {
     expect(blocked).toMatchObject({ ok: false, error: { code: 'session_already_active' } });
   });
 
+  it('S1: Why? plans with the reused check-in, as the page does, so it explains the paused target the row shows', async () => {
+    const { services: s } = await h.launch();
+    const { gymId } = await withRoutine(s);
+    // Saved on Today 30 min ago, pain mentioned: reused on the page and pre-selected.
+    const ci = await s.checkIns.record({ checkInId: h.ids(), opId: h.ids(), score: 2 });
+    if (!ci.ok) throw new Error(ci.message);
+    const withPain = await s.checkIns.update(ci.checkIn.id, { reasons: ['pain'] }, ci.checkIn.version, h.ids());
+    if (!withPain.ok) throw new Error('not updated');
+    h.clockMs += 30 * 60_000;
+    const page = await s.overview.load({ target: { kind: 'next' }, gymId });
+    if (!page) throw new Error('no overview');
+    expect(page.checkIn.kind).toBe('reuse');
+    expect(page.planCheckIn?.id).toBe(ci.checkIn.id);
+    const bench = page.view.rows[0];
+    if (!bench) throw new Error('no row');
+    // No check-in tapped on the page: Why? still plans with the reused one.
+    const why = await s.overview.explain({ target: { kind: 'next' }, gymId, sessionExerciseId: bench.sessionExerciseId });
+    const withId = await s.overview.explain({ target: { kind: 'next' }, gymId, checkInId: ci.checkIn.id, sessionExerciseId: bench.sessionExerciseId });
+    expect(why).not.toBeNull();
+    expect(why).toEqual(withId);
+    // Pain mentioned: progression paused, as the row shows (no +2.5 kg explained).
+    expect(why?.rows.find((r) => r.key === 'reason')?.lines[0]).toMatch(/paused because pain was reported/);
+    expect(bench.marker.kind).not.toBe('up');
+  });
+
   it('S3: a change that lands after the key check, before the write, creates nothing (checked inside the start transaction)', async () => {
     const { services: s } = await h.launch();
     const { gymId, routineId } = await withRoutine(s);

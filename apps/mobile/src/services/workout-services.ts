@@ -1690,6 +1690,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
+  /** The check-in an overview plans with: a score tapped on the page, else one reused from the last 2 h (the gate). */
+  async function overviewCheckIn(tappedId: string | null): Promise<{ gate: CheckInGate; reused: CheckIn | null; planCheckIn: CheckIn | null }> {
+    const gate = await checkIns.gate().catch((): CheckInGate => ({ kind: 'ask' }));
+    const reused = gate.kind === 'reuse' ? await repos().checkIns.get(gate.checkInId) : null;
+    const tapped = tappedId ? await repos().checkIns.get(tappedId) : null;
+    return { gate, reused, planCheckIn: tapped ?? reused };
+  }
+
   const overview = {
     /**
      * `services.overview.load` (workout-overview §7): the page for Up next or
@@ -1705,10 +1713,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (req.gymId === null && !req.typicalEquipment) return null;
         const resolved = await resolveOverview(p, req.target, { gymId: req.gymId ?? 'typical-gym-preview', gymEquipment: req.gymId === null ? req.typicalEquipment : undefined });
         if (resolved === null) return null;
-        const gate = await checkIns.gate().catch((): CheckInGate => ({ kind: 'ask' }));
-        const reused = gate.kind === 'reuse' ? await repos().checkIns.get(gate.checkInId) : null;
-        const tapped = req.checkInId ? await repos().checkIns.get(req.checkInId) : null;
-        const planCheckIn = tapped ?? reused;
+        const { gate, reused, planCheckIn } = await overviewCheckIn(req.checkInId ?? null);
         const gymId = req.gymId ?? 'typical-gym-preview';
         const run = await overviewDryRun(p, resolved, gymId, planCheckIn, req.gymId === null ? req.typicalEquipment : undefined);
         if (run === null) return null;
@@ -1767,7 +1772,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (!p) return null;
         const resolved = await resolveOverview(p, req.target, { gymId: req.gymId ?? 'typical-gym-preview', gymEquipment: req.gymId === null ? req.typicalEquipment : undefined });
         if (resolved === null) return null;
-        const today = req.checkInId ? await repos().checkIns.get(req.checkInId) : null;
+        // The same check-in the page planned with (tapped, else reused), so `Why?` explains the row it opens on (review S1).
+        const { planCheckIn: today } = await overviewCheckIn(req.checkInId ?? null);
         const run = await overviewDryRun(p, resolved, req.gymId ?? 'typical-gym-preview', today, req.gymId === null ? req.typicalEquipment : undefined);
         const ex = run?.aggregate.exercises.find((e) => e.id === req.sessionExerciseId);
         if (!run || !ex) return null;
