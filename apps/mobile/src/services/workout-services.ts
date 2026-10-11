@@ -127,6 +127,7 @@ import {
   type TimeLeftView,
   type WorkoutSummary,
   type CoachStatus,
+  isInHistory,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type {
@@ -1074,7 +1075,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   async function resolveNext(p: UserProfile, sourceSessionId: string): Promise<ResolvedOverview | null> {
     const source = await repos().sessions.get(sourceSessionId);
-    if (!source || source.session.ownerId !== p.id || source.session.status !== 'finished' || source.session.source === 'import') return null;
+    if (!source || source.session.ownerId !== p.id || !isInHistory(source.session) || source.session.source === 'import') return null;
     return { kind: 'next', source, basis: { kind: 'next_from', at: source.session.startedAt } };
   }
 
