@@ -86,6 +86,11 @@ export const GetRecentTrainingArgsSchema = z.strictObject({
   sessions: z.int().min(1).max(10),
 });
 
+/** "How am I doing?": workouts, what was done and whether the main lifts moved, over the last `weeks`. */
+export const GetTrainingOverviewArgsSchema = z.strictObject({
+  weeks: z.int().min(1).max(12),
+});
+
 export const GetGymEquipmentArgsSchema = z.strictObject({
   /** Null = everything used in the current or last workout. */
   exerciseId: IdSchema.nullable(),
@@ -194,6 +199,7 @@ export type AddPlaybookCandidateArgs = z.infer<typeof AddPlaybookCandidateArgsSc
 export const CoachToolNameSchema = z.enum([
   'get_active_session',
   'get_recent_training',
+  'get_training_overview',
   'get_gym_equipment',
   'get_progression_targets',
   'get_recent_actions',
@@ -211,6 +217,7 @@ export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 export const COACH_TOOL_ARGS = {
   get_active_session: EmptyArgsSchema,
   get_recent_training: GetRecentTrainingArgsSchema,
+  get_training_overview: GetTrainingOverviewArgsSchema,
   get_gym_equipment: GetGymEquipmentArgsSchema,
   get_progression_targets: GetProgressionTargetsArgsSchema,
   get_recent_actions: GetRecentActionsArgsSchema,

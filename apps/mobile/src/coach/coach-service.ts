@@ -24,7 +24,9 @@ import {
   storeTodayTargets,
   undoCoachAction,
   undoOpId,
+  createTrainingReadExecutors,
   type CoachExecutors,
+  type TrainingReadPort,
   type CoachModelPort,
   type CoachTurnProgress,
   type CoachTurnResult,
@@ -32,6 +34,11 @@ import {
   type NextTargetTap,
 } from '@fizz/coach';
 import {
+  builtInTargetsView,
+  equipmentView,
+  exerciseHistoryView,
+  toIso,
+  trainingOverviewView,
   DEFAULT_COACH_TRIGGER_THRESHOLDS,
   evaluateCoachTrigger,
   exercisesNamedForPain,
@@ -196,13 +203,78 @@ export function createCoachService(deps: CoachServiceDeps) {
     return (await deps.builtInNextTargets(session.session.id).catch(() => null)) ?? new Map();
   }
 
+  /** The gym a question is about: the workout's, else the default gym, else the last workout's (null: none yet). */
+  async function gymInContext(p: UserProfile, session: SessionAggregate | null): Promise<{ id: string; name: string } | null> {
+    const gyms = (await repos().gyms.listByOwner(p.id).catch(() => [])).filter((g) => g.archivedAtUtc === undefined);
+    const byId = (id: string | null | undefined) => (id == null ? undefined : gyms.find((g) => g.id === id));
+    const last = session === null ? await repos().sessions.latestFinished(p.id).catch(() => null) : null;
+    const g = byId(session?.session.gymId) ?? gyms.find((x) => x.isDefault) ?? byId(last?.session.gymId) ?? gyms[0];
+    return g === undefined ? null : { id: g.id, name: g.name };
+  }
+
+  /**
+   * Past workouts, gym equipment and the built-in rule's targets for the read
+   * tools (backlog §4.3). Local reads only; each view is Your data, quoted as
+   * data (rules 8, 10). Deleted and discarded workouts are never read: the
+   * repository lists finished workouts only.
+   */
+  function trainingReads(p: UserProfile, session: SessionAggregate | null): TrainingReadPort {
+    const gymNames = async (): Promise<Record<string, string>> => Object.fromEntries((await repos().gyms.listByOwner(p.id).catch(() => [])).map((g) => [g.id, g.name]));
+    const equipmentNames = (aggs: readonly SessionAggregate[]): Record<string, string> => Object.fromEntries(aggs.flatMap((a) => a.session.equipmentSnapshot.map((e) => [e.id, e.name] as const)));
+    const exerciseNameOf = async (id: string, aggs: readonly SessionAggregate[]): Promise<string | null> =>
+      (await repos().exercises.get(id).catch(() => null))?.name ?? aggs.flatMap((a) => a.exercises).find((e) => e.exerciseId === id)?.exerciseName ?? null;
+    const finishedWith = (exerciseId: string) => repos().sessions.listFinishedWithExercise(p.id, exerciseId).catch(() => [] as SessionAggregate[]);
+    return {
+      async exerciseHistory(exerciseId, sessions) {
+        const aggs = await finishedWith(exerciseId);
+        const name = await exerciseNameOf(exerciseId, aggs);
+        if (name === null || aggs.length === 0) return null;
+        return exerciseHistoryView({ exerciseId, exerciseName: name, sessions: aggs, limit: sessions, gymNames: await gymNames(), equipmentNames: equipmentNames(aggs) });
+      },
+      async overview(weeks) {
+        const now = deps.now();
+        const from = toIso(toMs(now.utc) - weeks * 7 * 86_400_000);
+        const aggs = await repos().sessions.listFinishedBetween(p.id, from, now.utc).catch(() => [] as SessionAggregate[]);
+        return trainingOverviewView({ weeks, nowUtc: now.utc, tz: now.tz, sessions: aggs, gymNames: await gymNames() });
+      },
+      async equipment(exerciseId) {
+        const gym = await gymInContext(p, session);
+        if (gym === null) return null;
+        const exercise = exerciseId === null ? null : await repos().exercises.get(exerciseId).catch(() => null);
+        if (exerciseId !== null && exercise === null) return null;
+        const items = await repos().equipment.listByGym(gym.id).catch(() => []);
+        return equipmentView({ gymName: gym.name, equipment: items, exercise });
+      },
+      async builtInTargets(exerciseId) {
+        const aggs = await finishedWith(exerciseId);
+        const latest = [...aggs].sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc))[0];
+        if (latest === undefined) return null;
+        const planned = (await deps.builtInNextTargets(latest.session.id).catch(() => null))?.get(exerciseId) ?? null;
+        const ex = latest.exercises.find((e) => e.exerciseId === exerciseId);
+        if (planned === null || ex === undefined) return null;
+        const flags = await repos().painFlags.listActive(p.id).catch(() => []);
+        return builtInTargetsView({
+          exerciseName: ex.exerciseName,
+          convention: ex.loadConvention,
+          planned,
+          basedOn: { utc: latest.session.startedAt.utc, tz: latest.session.startedAt.tz, title: latest.session.routineName },
+          painFlag: flags.find((f) => f.exerciseId === exerciseId && f.status === 'active') ?? null,
+        });
+      },
+    };
+  }
+
   async function executorsFor(p: UserProfile, kind: CoachTurnKind, session: SessionAggregate | null, gymName: string | null, checkIn: CheckIn | null, benAskedForMoreSets: boolean, onlySessionExerciseId: string | null = null): Promise<CoachExecutors> {
     const store = coachStore();
-    const base: CoachExecutors = createStoreExecutors({
+    const reads = createTrainingReadExecutors(trainingReads(p, session));
+    const base: CoachExecutors = {
+      ...reads,
+      ...createStoreExecutors({
       store,
       exercises: { exerciseName: async (id) => (await repos().exercises.get(id).catch(() => null))?.name ?? session?.exercises.find((e) => e.exerciseId === id)?.exerciseName ?? null },
       sessionId: session?.session.id ?? null,
-    });
+      }),
+    };
     if (session === null) return base;
     const load = () => repos().sessions.get(session.session.id);
     const painFlags = () => repos().painFlags.listActive(p.id);
@@ -244,6 +316,8 @@ export function createCoachService(deps: CoachServiceDeps) {
         checkIn,
         memories: await coachStore().listMemories(p.id),
         catalogue: [],
+        // The read tools for past workouts, equipment and the built-in rule are wired (backlog §4.3).
+        trainingHistoryAvailable: true,
         ...(builtIn === null || session === null
           ? {}
           : {

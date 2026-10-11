@@ -59,6 +59,7 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'forget_memory':
     case 'get_active_session':
     case 'get_recent_training':
+    case 'get_training_overview':
     case 'get_gym_equipment':
     case 'get_progression_targets':
     case 'get_recent_actions':
@@ -88,6 +89,7 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'propose_next_workout_change':
     case 'get_active_session':
     case 'get_recent_training':
+    case 'get_training_overview':
     case 'get_gym_equipment':
     case 'get_progression_targets':
     case 'get_recent_actions':

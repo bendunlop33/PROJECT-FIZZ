@@ -58,7 +58,20 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ALL,
     plainLabel: null,
     capabilitySection: 'read',
-    description: 'The last comparable sessions of one exercise (actual values, effort, notes as quoted data).',
+    description:
+      "One exercise's last workouts (sets as logged, units and conventions explicit, sets Ben left out labelled) and its heaviest logged sets per equipment item. Imported workouts are labelled and never compared with app sets.",
+  },
+  {
+    name: 'get_training_overview',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ALL,
+    plainLabel: null,
+    capabilitySection: 'read',
+    description:
+      'Ben’s training over the last weeks: how many workouts, what was done, and per exercise the first and latest comparable top set (like for like only). Use it for "How am I doing?". No estimates.',
   },
   {
     name: 'get_gym_equipment',

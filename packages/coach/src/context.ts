@@ -293,6 +293,8 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
   if (y.checkIn !== null) yourData.push({ label: 'Check-in', detail: y.checkIn.quote === null ? `${String(y.checkIn.score)}/5` : `${String(y.checkIn.score)}/5, “${y.checkIn.quote}”` });
   if (y.memories.length > 0) yourData.push({ label: 'Memories', detail: plural(y.memories.length, 'memory', 'memories') });
   if (ctx.messagesSent > 0) yourData.push({ label: 'This conversation', detail: `last ${plural(ctx.messagesSent, 'message')}` });
+  // Read through tools when a question needs them (minimal by default), still Your data.
+  if (!ctx.notAvailable.includes(NO_TRAINING_HISTORY)) yourData.push({ label: 'Past workouts and gym equipment', detail: 'read when needed' });
   const k = ctx.coachingKnowledge;
   const notInUse = k.playbook.rules.filter((r) => r.status !== 'in use').length;
   const coachingKnowledge: DomainLabel[] = [

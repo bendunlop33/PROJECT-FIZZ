@@ -82,8 +82,8 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
     case 'summary':
       return ready ? [words('What should I change next time?')] : [];
     case 'today':
-      // No `How am I doing?` until the coach can read past workouts (review S4, rule 6).
-      return [];
+      // The coach reads past workouts through `get_training_overview` (backlog §4.3). `Build a workout` and `Plan my week` aren't built.
+      return ready ? [words('How am I doing?')] : [];
   }
 }
 
