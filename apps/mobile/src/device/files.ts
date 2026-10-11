@@ -94,6 +94,34 @@ export function removeContainerFiles(names: readonly string[], matching?: RegExp
   return Promise.resolve();
 }
 
+/** The app's `tmp` directory (no `Paths` entry in expo-file-system 57; it sits beside Documents). */
+function tmpDirectory(): Directory {
+  return new Directory(`${containerRoot()}tmp/`);
+}
+
+/**
+ * Delete my data: empty `tmp` (the document picker's copies of imported CSVs
+ * and picked backups, review r2 B1) and Caches. Both are GymSmarter's own;
+ * a missing directory is fine. Throws if anything that was there is left.
+ * Needs a device test: iOS may keep files of its own in either.
+ */
+export function emptyTemporaryFiles(): Promise<void> {
+  const left: string[] = [];
+  for (const dir of [tmpDirectory(), Paths.cache]) {
+    if (!dir.exists) continue;
+    for (const entry of dir.list()) {
+      try {
+        entry.delete();
+      } catch {
+        // Counted below.
+      }
+      if (entry.exists) left.push(entry.name);
+    }
+  }
+  if (left.length > 0) return Promise.reject(new Error(`Couldn’t delete ${left.join(', ')}`));
+  return Promise.resolve();
+}
+
 /** `Documents/` as a file URI with a trailing slash, for "is this inside Fizz?" checks. */
 function containerRoot(): string {
   const doc = Paths.document.uri;
@@ -149,6 +177,26 @@ export async function pickBackupFolder(): Promise<PickOutcome> {
   };
 }
 
+/**
+ * Read the copy iOS made of a picked file (`UIDocumentPickerViewController`
+ * `asCopy: true` puts it in `tmp/<bundle>-Inbox`), then delete it, even when
+ * the read fails: it can hold Ben's whole history (review r2 B1). The
+ * original in Files is untouched. A copy that can't be deleted here is
+ * removed by Delete my data (`emptyTemporaryFiles`).
+ */
+async function readThenDelete(file: File, maxBytes: number, tooLarge: string): Promise<PickedFile> {
+  try {
+    if (file.size > maxBytes) return { kind: 'failed', message: tooLarge };
+    return { kind: 'picked', name: file.name, text: await file.text() };
+  } finally {
+    try {
+      if (file.exists) file.delete();
+    } catch {
+      // Left for Delete my data's clean-up; the read itself succeeded or already failed.
+    }
+  }
+}
+
 export type PickedFile = { kind: 'picked'; name: string; text: string } | { kind: 'cancelled' } | { kind: 'failed'; message: string };
 
 /** Backups are well under this; anything bigger isn't a Fizz backup and isn't read into memory. */
@@ -156,17 +204,15 @@ const MAX_BACKUP_BYTES = 200 * 1024 * 1024;
 
 /**
  * `Choose another file…` (Restore / Check a backup): the system document
- * picker filtered to JSON. iOS hands back a temporary copy, so the original
- * in Files is never changed. The text is data, never instructions (rule 8).
+ * picker filtered to JSON. iOS hands back a copy in the app's `tmp`, so the
+ * original in Files is never changed; the copy is deleted once read (review r2 B1). The text is data, never instructions (rule 8).
  * Needs a device test (iCloud Drive, On My iPhone, offline).
  */
 export async function pickBackupFile(): Promise<PickedFile> {
   try {
     const picked = await File.pickFileAsync({ mimeTypes: ['application/json', 'public.json', 'text/plain'] });
     if (picked.canceled) return { kind: 'cancelled' };
-    const file = picked.result;
-    if (file.size > MAX_BACKUP_BYTES) return { kind: 'failed', message: 'That file is too large to be a GymSmarter backup.' };
-    return { kind: 'picked', name: file.name, text: await file.text() };
+    return await readThenDelete(picked.result, MAX_BACKUP_BYTES, 'That file is too large to be a GymSmarter backup.');
   } catch (e) {
     const text = e instanceof Error ? e.message : String(e);
     if (/cancel/i.test(text)) return { kind: 'cancelled' };
@@ -179,8 +225,8 @@ const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 
 /**
  * `Choose CSV file` (data-import-export §4.3): the system document picker
- * for CSV and plain text. iOS hands back a temporary copy in the app's
- * cache, so the original in Files is never changed. The text is data, never
+ * for CSV and plain text. iOS hands back a copy in the app's `tmp`, so the
+ * original in Files is never changed; the copy is deleted once read (review r2 B1). The text is data, never
  * instructions (rule 8); its kind is decided from the content, not the name.
  * Needs a device test (iCloud Drive, On My iPhone, a file emailed from FitNotes 2).
  */
@@ -188,9 +234,7 @@ export async function pickCsvFile(): Promise<PickedFile> {
   try {
     const picked = await File.pickFileAsync({ mimeTypes: ['text/csv', 'text/comma-separated-values', 'text/plain', 'text/*'] });
     if (picked.canceled) return { kind: 'cancelled' };
-    const file = picked.result;
-    if (file.size > MAX_IMPORT_BYTES) return { kind: 'failed', message: 'That file is too large to be a FitNotes export.' };
-    return { kind: 'picked', name: file.name, text: await file.text() };
+    return await readThenDelete(picked.result, MAX_IMPORT_BYTES, 'That file is too large to be a FitNotes export.');
   } catch (e) {
     const text = e instanceof Error ? e.message : String(e);
     if (/cancel/i.test(text)) return { kind: 'cancelled' };

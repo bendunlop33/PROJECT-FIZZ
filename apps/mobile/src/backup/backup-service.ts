@@ -303,6 +303,41 @@ export function createBackupService(deps: BackupServiceDeps) {
     },
 
     /**
+     * `Finish deleting` after Ben chose `Continue` on an unfinished delete
+     * (review r2 S2): delete every backup file on this phone except those
+     * recorded at or after `sinceUtc` (made from data logged since), and
+     * forget what the record says about before then. Writes no new backup.
+     * Refused when the record can't be read (new backups can't be told
+     * apart). Throws when a file is still there.
+     */
+    removeOnPhoneBefore(sinceUtc: string): Promise<void> {
+      return track(() =>
+        queued(async () => {
+          const { manifest, problem } = parseManifest(await deps.manifest.read());
+          if (problem !== null) throw new Error(problem.replace(/;.*$/, '.'));
+          const kept = manifest.onPhone.files.filter((f) => f.createdAtUtc >= sinceUtc);
+          const keep = new Set(kept.map((f) => f.fileName));
+          const names = new Set([...(await deps.files.list()), ...manifest.onPhone.files.map((f) => f.fileName)].filter((n) => !keep.has(n)));
+          for (const name of names) await deps.files.remove(name);
+          const left = (await deps.files.list()).filter((n) => names.has(n));
+          if (left.length > 0) throw new Error(`${String(left.length)} backup file(s) couldn’t be deleted`);
+          const since = (at: string | null) => (at !== null && at >= sinceUtc ? at : null);
+          const lastCopy = manifest.offPhone.lastCopy !== null && manifest.offPhone.lastCopy.atUtc >= sinceUtc ? manifest.offPhone.lastCopy : null;
+          const next: BackupManifest = {
+            ...manifest,
+            onPhone: { files: kept, lastAttempt: manifest.onPhone.lastAttempt !== null && manifest.onPhone.lastAttempt.atUtc >= sinceUtc ? manifest.onPhone.lastAttempt : null },
+            offPhone: { ...manifest.offPhone, lastCopy, reminderDismissedAtUtc: since(manifest.offPhone.reminderDismissedAtUtc) },
+            trialRunDoneAtUtc: since(manifest.trialRunDoneAtUtc),
+          };
+          await deps.manifest.write(serialiseManifest(next));
+          lastKnown = next;
+          manifestProblem = null;
+          notify();
+        }),
+      );
+    },
+
+    /**
      * Launch catch-up (§3.2 "If iOS stops it, it runs again on the next
      * launch"): back up if a finished workout isn't in the newest backup.
      */

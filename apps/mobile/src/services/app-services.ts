@@ -519,6 +519,7 @@ export function createAppServices(deps: AppServicesDeps) {
     ...(deps.credentials ? { credentials: deps.credentials } : {}),
     ...(deps.personalFiles ? { personalFiles: deps.personalFiles } : {}),
     ...(deps.restAlerts ? { restAlerts: deps.restAlerts } : {}),
+    activeWorkout: () => sessions.active(),
     ...(deps.signOutTimeoutMs === undefined ? {} : { signOutTimeoutMs: deps.signOutTimeoutMs }),
   });
 

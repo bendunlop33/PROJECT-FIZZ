@@ -43,7 +43,7 @@ export function DeleteMyDataScreen() {
           setLine(null);
           void services.data
             .deleteMyData({ opId, stamp: summary.stamp })
-            .catch((e: unknown) => ({ ok: false as const, reason: 'failed' as const, message: e instanceof Error ? e.message : String(e), deleted: false, step: null }))
+            .catch((e: unknown) => ({ ok: false as const, reason: 'failed' as const, message: e instanceof Error ? e.message : String(e), deleted: null, step: null }))
             .then((r) => {
               const view = deleteResultView(r);
               if (!view.relaunch) {

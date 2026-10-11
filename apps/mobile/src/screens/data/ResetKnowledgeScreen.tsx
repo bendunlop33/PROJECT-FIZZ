@@ -13,7 +13,8 @@ import { SaveCopyToFiles } from './SaveCopyToFiles';
  * `Reset coaching knowledge` (data-import-export §2.7, §3.6, §4.5): what
  * changes, what doesn't, `Save a copy to Files first`, then the danger
  * button and a system alert. The service backs up on this phone first and
- * never touches Your data or the coach sign-in. Done offers Undo (one
+ * never touches Your data or the coach sign-in. Unavailable while a workout
+ * is unfinished (DX4, review r2 S3). Done offers Undo (one
  * rollback generation, §3.6); Data & backup keeps `Undo last reset`.
  */
 export function ResetKnowledgeScreen() {
@@ -23,9 +24,12 @@ export function ResetKnowledgeScreen() {
   const [busy, setBusy] = useState(false);
   const [line, setLineState] = useState<string | null>(null);
   const [lineTone, setLineTone] = useState<'done' | 'warning'>('warning');
-  const [data, reload] = useScreenData((s) => s.data.summary());
+  const [data, reload] = useScreenData(async (s) => {
+    const [summary, blocked] = await Promise.all([s.data.summary(), s.restore.blockedBy()]);
+    return { summary, blocked };
+  });
   if (data.state !== 'ready') return <Screen>{null}</Screen>;
-  const summary = data.value;
+  const { summary, blocked } = data.value;
   const list = resetListView(summary);
 
   function undo() {
@@ -87,9 +91,10 @@ export function ResetKnowledgeScreen() {
       <DomainLabel domain="yourData" />
       <AppText variant="body">{`Not changed: ${list.unchanged}`}</AppText>
       <SaveCopyToFiles variant="secondary" label="Save a copy to Files first" />
+      {blocked && !line ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={`Finish or discard your workout first (${blocked.title})`} /> : null}
       {line ? <StatusLine icon={lineTone === 'done' ? 'checkmark.circle.fill' : 'exclamationmark.triangle'} tone={lineTone} text={line} /> : null}
       <View style={{ marginTop: theme.space['8'] }}>
-        <DangerTextButton label="Reset coaching knowledge" onPress={confirm} disabled={busy} />
+        <DangerTextButton label="Reset coaching knowledge" onPress={confirm} disabled={busy || blocked !== null} />
       </View>
       <BlockingCover visible={busy} title="Resetting coaching knowledge…" lines={[{ text: 'Your data isn’t touched', done: true }]} />
     </Screen>

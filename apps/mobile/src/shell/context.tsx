@@ -18,6 +18,8 @@ export interface LaunchInfo {
   restAlerts: RestAlertController | null;
   /** A restore was building a file when Fizz last closed; the data is as it was (shown once on Today). */
   restoreInterrupted: boolean;
+  /** A delete finished at this launch couldn't confirm the ChatGPT sign-out online (first-run line, §3.6). */
+  signOutNotConfirmed: boolean;
 }
 
 const consumed = new Set<string>();

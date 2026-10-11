@@ -10,11 +10,12 @@ import type { ConnectionPorts, SettingsStore } from '@fizz/providers';
 
 import type { CredentialPort } from '../backup/data-domain-service';
 import { containerTextFile } from '../device/files';
+import { COACH_SETTINGS_FILE } from '../device/personal-files';
 import { createDeviceLoopback, createDevicePorts, type DeviceLoopback } from './chatgpt-test-ports';
 import { createCredentialPort } from './credential-port';
 import { wipeKeychain } from './keychain';
 
-export const SETTINGS_FILE = 'coach-connection.json';
+export const SETTINGS_FILE = COACH_SETTINGS_FILE;
 
 let shared: { ports: ConnectionPorts; loopback: DeviceLoopback } | null = null;
 

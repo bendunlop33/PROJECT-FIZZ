@@ -28,7 +28,7 @@ function world(opts: { swap: () => Promise<DomainSwitchOutcome>; records: () => 
   };
   const wiped: string[] = [];
   const manager = {
-    domainSummary: () => Promise.resolve({ counts: counts(opts.records()), stamp: 'stamp' }),
+    domainSummary: () => Promise.resolve().then(() => ({ counts: counts(opts.records()), stamp: 'stamp' })),
     deleteYourData: () => opts.swap(),
     forgetPrevious: () => Promise.resolve(),
   } as unknown as DatabaseManager;
@@ -80,7 +80,7 @@ describe('Delete my data when the swap fails', () => {
     });
     expect(await w.svc.deleteMyData({ opId: 'a', stamp: 'stamp' })).toMatchObject({ ok: false, deleted: true, step: 'database' });
     expect(w.ledger()?.pending).toMatchObject({ opId: 'a', swapped: true, failedStep: 'database' });
-    expect(await w.svc.resumeInterrupted()).toEqual({ kind: 'finished' });
+    expect(await w.svc.resumeInterrupted()).toEqual({ kind: 'finished', signedOutOnline: null });
     expect(swaps).toBe(1);
     expect(w.wiped).toEqual(['backups']);
   });
@@ -92,5 +92,41 @@ describe('Delete my data when the swap fails', () => {
     expect(w.ledger()?.pending).toBeNull();
     expect(await w.svc.resumeInterrupted()).toEqual({ kind: 'none' });
     expect(w.wiped).toEqual([]);
+  });
+
+  it('when the swap fails and the data can’t be checked: never says deleted, keeps the marker for a resume (review r2 N2)', async () => {
+    let summaries = 0;
+    let swapOk = false;
+    const w = world({
+      swap: () => Promise.resolve(swapOk ? { ok: true, status: 'switched', store: null } : failed) as Promise<DomainSwitchOutcome>,
+      records: () => {
+        summaries += 1;
+        if (summaries > 1) throw new Error('database is locked');
+        return 12;
+      },
+    });
+    expect(await w.svc.deleteMyData({ opId: 'a', stamp: 'stamp' })).toEqual({ ok: false, reason: 'failed', message: 'The file couldn’t be written (ENOSPC).', deleted: null, step: 'database' });
+    expect(w.ledger()?.pending).toMatchObject({ opId: 'a', swapped: false, failedStep: 'database' });
+    expect(w.wiped).toEqual([]);
+    // Launch: the swap now works, and the delete finishes.
+    swapOk = true;
+    expect(await w.svc.resumeInterrupted()).toEqual({ kind: 'finished', signedOutOnline: null });
+    expect(w.wiped).toEqual(['backups']);
+  });
+
+  it('a resume that can’t check either reports deleted: null; Continue records the database step as unfinished', async () => {
+    const w = world({ swap: () => Promise.resolve(failed), records: () => { throw new Error('database is locked'); } });
+    w.setLedger({ version: 1, pending: { kind: 'delete_my_data', opId: 'a', startedAtUtc: '2026-10-09T07:59:00.000Z' }, done: [] });
+    expect(await w.svc.resumeInterrupted()).toEqual({ kind: 'unfinished', deleted: null, step: 'database', message: 'The file couldn’t be written (ENOSPC).' });
+    expect(await w.svc.leaveInterrupted()).toEqual({ step: 'database' });
+    expect(await w.svc.leftover()).toEqual({ step: 'database', atUtc: '2026-10-09T08:00:00.000Z' });
+  });
+
+  it('Continue when the data is still there: nothing was deleted, nothing is left to finish', async () => {
+    const w = world({ swap: () => Promise.resolve(failed), records: () => 12 });
+    w.setLedger({ version: 1, pending: { kind: 'delete_my_data', opId: 'a', startedAtUtc: '2026-10-09T07:59:00.000Z', swapped: false, failedStep: 'database' }, done: [] });
+    expect(await w.svc.leaveInterrupted()).toEqual({ step: null });
+    expect(w.ledger()?.pending).toBeNull();
+    expect(await w.svc.leftover()).toBeNull();
   });
 });

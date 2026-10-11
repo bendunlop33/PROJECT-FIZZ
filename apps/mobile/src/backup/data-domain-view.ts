@@ -1,8 +1,8 @@
 import { toMs } from '@fizz/domain';
 
-import { formatShortDate } from '../format/dates';
+import { formatShortDate, formatTime } from '../format/dates';
 import { plural } from '../format/numbers';
-import type { DataSummary, DeleteOutcome, DeleteStep, ResetOutcome } from './data-domain-service';
+import type { DataSummary, DeleteOutcome, DeleteStep, FinishLeftoverOutcome, ResetOutcome } from './data-domain-service';
 
 /**
  * What the Export, Delete my data and Reset coaching knowledge screens show
@@ -76,11 +76,14 @@ export function deleteStepLabel(step: DeleteStep): string {
   }
 }
 
+/** ChatGPT sign-in removed from the phone, online revoke not confirmed (§3.6). */
+export const SIGN_OUT_NOT_CONFIRMED = 'Couldn’t sign out of ChatGPT online. The sign-in was removed from this phone; you can also remove GymSmarter’s access in your ChatGPT settings.';
+
 /** After a delete: the line to show (null: none), and whether the app relaunches. */
 export function deleteResultView(r: DeleteOutcome): { line: string | null; relaunch: boolean; tone: 'done' | 'warning' } {
   if (r.ok) {
     return {
-      line: r.signedOutOnline === false ? 'Couldn’t sign out of ChatGPT online. The sign-in was removed from this phone; you can also remove GymSmarter’s access in your ChatGPT settings.' : null,
+      line: r.signedOutOnline === false ? SIGN_OUT_NOT_CONFIRMED : null,
       relaunch: true,
       tone: 'done',
     };
@@ -89,6 +92,7 @@ export function deleteResultView(r: DeleteOutcome): { line: string | null; relau
     case 'stale':
       return { line: 'Your data changed. Nothing was deleted. Check and try again.', relaunch: false, tone: 'warning' };
     case 'failed':
+      if (r.deleted === null) return { line: 'Couldn’t check whether your data was deleted. GymSmarter tries again when it opens.', relaunch: true, tone: 'warning' };
       return r.deleted
         ? { line: `Deleting didn’t finish (${r.step === null ? r.message : deleteStepLabel(r.step)}). It finishes when GymSmarter opens again.`, relaunch: true, tone: 'warning' }
         : { line: `Nothing was deleted. ${r.message}`, relaunch: false, tone: 'warning' };
@@ -96,15 +100,35 @@ export function deleteResultView(r: DeleteOutcome): { line: string | null; relau
 }
 
 /**
+ * What a step left on this phone when it didn't finish (review r2 S2): the
+ * steps after it never ran either, so something of Ben's is always left.
+ */
+const LEFT_ON_PHONE = 'Your data is removed from the app. Some of it is still on this phone.';
+
+/**
  * Launch after a delete that didn't finish (S1). `deleted: false`: the swap
  * never happened and the marker is gone, so `Continue` opens the app as it
- * was. Otherwise `Try again` retries the step and `Continue` opens first run
- * with that step left undone.
+ * was. `null`: it couldn't be checked (review r2 N2). Otherwise `Try again`
+ * retries the step and `Continue` opens first run with that step left
+ * undone (then `Finish deleting` on Data & backup).
  */
-export function deleteUnfinishedView(o: { deleted: boolean; step: DeleteStep | null; message: string }): { title: string; lines: string[]; retry: boolean } {
-  if (!o.deleted) return { title: 'Deleting your data didn’t finish', lines: ['Nothing was deleted.', o.message], retry: false };
+export function deleteUnfinishedView(o: { deleted: boolean | null; step: DeleteStep | null; message: string }): { title: string; lines: string[]; retry: boolean } {
+  const title = 'Deleting your data didn’t finish';
+  if (o.deleted === false) return { title, lines: ['Nothing was deleted.', o.message], retry: false };
+  if (o.deleted === null) return { title, lines: ['Couldn’t check whether your data was deleted.', o.message], retry: true };
   const what = o.step === null ? 'The rest' : deleteStepLabel(o.step);
-  return { title: 'Deleting your data didn’t finish', lines: [`Your data is deleted. ${what} didn’t finish.`, o.message], retry: true };
+  return { title, lines: [LEFT_ON_PHONE, `${what} didn’t finish.`, o.message], retry: true };
+}
+
+/** Data & backup after `Continue` (review r2 S2): one warning line and `Finish deleting`. */
+export function deleteLeftoverView(step: DeleteStep): { line: string; action: string } {
+  return { line: `Deleting didn’t finish: ${deleteStepLabel(step).toLowerCase()}. Some of your data is still on this phone.`, action: 'Finish deleting' };
+}
+
+/** After `Finish deleting`. */
+export function finishLeftoverView(r: FinishLeftoverOutcome): { line: string; tone: 'done' | 'warning'; relaunch: boolean } {
+  if (r.ok) return { line: 'Deleting finished.', tone: 'done', relaunch: true };
+  return { line: `Couldn’t finish deleting (${deleteStepLabel(r.step).toLowerCase()}). ${r.message}`, tone: 'warning', relaunch: false };
 }
 
 /** After a reset. `undo`: offer Undo with the done line (§3.6 Reset done). */
@@ -118,6 +142,8 @@ export function resetResultView(r: ResetOutcome): { line: string | null; relaunc
   switch (r.reason) {
     case 'stale':
       return { line: 'Your data changed. Nothing was reset. Check and try again.', relaunch: false, undo: false, tone: 'warning' };
+    case 'workout_unfinished':
+      return { line: `Finish or discard your workout first (${r.block.title}, started ${formatTime(toMs(r.block.startedAtUtc), r.block.tz)}).`, relaunch: false, undo: false, tone: 'warning' };
     case 'backup_failed':
       return { line: `Nothing was reset: the backup didn’t save. ${r.message}`, relaunch: false, undo: false, tone: 'warning' };
     case 'failed':

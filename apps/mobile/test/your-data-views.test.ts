@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DataSummary } from '../src/backup/data-domain-service';
-import { DELETE_ALERT, deleteListView, deleteResultView, deleteUnfinishedView, offPhoneLine, RESET_ALERT, resetListView, resetResultView } from '../src/backup/data-domain-view';
+import {
+  DELETE_ALERT,
+  deleteLeftoverView,
+  deleteListView,
+  deleteResultView,
+  deleteUnfinishedView,
+  finishLeftoverView,
+  offPhoneLine,
+  RESET_ALERT,
+  resetListView,
+  resetResultView,
+} from '../src/backup/data-domain-view';
 import { rollbackRowView } from '../src/backup/restore-view';
 
 /** What the Delete my data / Reset coaching knowledge screens say (data-import-export §2.7, §3.6, §5). */
@@ -60,9 +71,32 @@ describe('data domain views', () => {
     expect(deleteUnfinishedView({ deleted: false, step: null, message: 'Disk full.' })).toEqual({ title: 'Deleting your data didn’t finish', lines: ['Nothing was deleted.', 'Disk full.'], retry: false });
     expect(deleteUnfinishedView({ deleted: true, step: 'backups', message: 'x' })).toEqual({
       title: 'Deleting your data didn’t finish',
-      lines: ['Your data is deleted. Removing backups on this phone didn’t finish.', 'x'],
+      lines: ['Your data is removed from the app. Some of it is still on this phone.', 'Removing backups on this phone didn’t finish.', 'x'],
       retry: true,
     });
+    // Never "deleted" when nobody could check (review r2 N2).
+    expect(deleteUnfinishedView({ deleted: null, step: 'database', message: 'x' })).toEqual({
+      title: 'Deleting your data didn’t finish',
+      lines: ['Couldn’t check whether your data was deleted.', 'x'],
+      retry: true,
+    });
+    expect(deleteResultView({ ok: false, reason: 'failed', message: 'x', deleted: null, step: 'database' })).toMatchObject({ relaunch: true, line: 'Couldn’t check whether your data was deleted. GymSmarter tries again when it opens.' });
+  });
+
+  it('after Continue, Data & backup says something is still on this phone and offers Finish deleting (review r2 S2)', () => {
+    expect(deleteLeftoverView('database')).toEqual({ line: 'Deleting didn’t finish: removing the old database. Some of your data is still on this phone.', action: 'Finish deleting' });
+    expect(finishLeftoverView({ ok: true })).toEqual({ line: 'Deleting finished.', tone: 'done', relaunch: true });
+    expect(finishLeftoverView({ ok: false, step: 'backups', message: '1 backup file(s) couldn’t be deleted' })).toEqual({
+      line: 'Couldn’t finish deleting (removing backups on this phone). 1 backup file(s) couldn’t be deleted',
+      tone: 'warning',
+      relaunch: false,
+    });
+  });
+
+  it('Reset during a workout names the workout, as Restore does (review r2 S3)', () => {
+    const view = resetResultView({ ok: false, reason: 'workout_unfinished', block: { title: 'Push day', startedAtUtc: '2026-10-08T17:00:00.000Z', tz: 'Europe/London' } });
+    expect(view).toMatchObject({ relaunch: false, undo: false, tone: 'warning' });
+    expect(view.line).toMatch(/^Finish or discard your workout first \(Push day, started .+\)\.$/);
   });
 
   it('names Undo last reset and its switch back (check 31a)', () => {

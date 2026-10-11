@@ -66,6 +66,11 @@ const notifier: NotifierPort = {
     pending.delete(id);
     return Promise.resolve();
   },
+  cancelAllWorkoutAlerts: () => {
+    alertCalls.push('cancel all');
+    pending.clear();
+    return Promise.resolve();
+  },
 };
 
 async function launch(): Promise<Extract<StartupOutcome, { kind: 'ready' }>> {

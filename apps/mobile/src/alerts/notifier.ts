@@ -2,7 +2,7 @@ import * as Notifications from 'expo-notifications';
 import { AppState } from 'react-native';
 
 import { isWorkoutOnScreen, showRestAlertInForeground } from './presentation';
-import type { NotifierPort } from './rest-alerts';
+import { REST_ALERT_PREFIX, type NotifierPort } from './rest-alerts';
 
 /**
  * Phone binding for rest-end notifications (expo-notifications 57).
@@ -17,7 +17,7 @@ import type { NotifierPort } from './rest-alerts';
 Notifications.setNotificationHandler({
   handleNotification: (n) => {
     const show = showRestAlertInForeground({
-      isWorkoutAlert: n.request.identifier.startsWith('fizz.rest.'),
+      isWorkoutAlert: n.request.identifier.startsWith(REST_ALERT_PREFIX),
       appActive: AppState.currentState === 'active',
       workoutOnScreen: isWorkoutOnScreen(),
     });
@@ -35,6 +35,13 @@ export const expoNotifier: NotifierPort = {
   },
   async cancel(identifier) {
     await Notifications.cancelScheduledNotificationAsync(identifier);
+  },
+  async cancelAllWorkoutAlerts() {
+    const workoutAlerts = async () => (await Notifications.getAllScheduledNotificationsAsync()).filter((n) => n.identifier.startsWith(REST_ALERT_PREFIX));
+    for (const n of await workoutAlerts()) await Notifications.cancelScheduledNotificationAsync(n.identifier);
+    await clearDeliveredWorkoutAlerts();
+    const left = await workoutAlerts();
+    if (left.length > 0) throw new Error(`${String(left.length)} scheduled alert(s) couldn’t be cancelled`);
   },
 };
 
@@ -56,6 +63,6 @@ export async function requestAlertPermission(): Promise<AlertPermission> {
 export async function clearDeliveredWorkoutAlerts(): Promise<void> {
   const shown = await Notifications.getPresentedNotificationsAsync();
   for (const n of shown) {
-    if (n.request.identifier.startsWith('fizz.rest.')) await Notifications.dismissNotificationAsync(n.request.identifier);
+    if (n.request.identifier.startsWith(REST_ALERT_PREFIX)) await Notifications.dismissNotificationAsync(n.request.identifier);
   }
 }

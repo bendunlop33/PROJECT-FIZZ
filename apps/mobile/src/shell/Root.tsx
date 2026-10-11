@@ -6,15 +6,14 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { toMs } from '@fizz/domain';
 import { readTextCoachState } from '@fizz/providers';
 
-import { coachConnectionPorts, deviceCredentials, SETTINGS_FILE } from '../ai/coach-connection-ports';
+import { coachConnectionPorts, deviceCredentials } from '../ai/coach-connection-ports';
 import { clearDeliveredWorkoutAlerts, expoNotifier } from '../alerts/notifier';
 import { createPlanModelPort } from '../coach/plan-model-port';
 import { createRestAlertController } from '../alerts/rest-alerts';
-import { containerBackupFiles, containerTextFile, removeContainerFiles } from '../device/files';
+import { containerBackupFiles, containerTextFile, emptyTemporaryFiles, removeContainerFiles } from '../device/files';
+import { createPersonalFiles, DEVICE_PREFS_FILE } from '../device/personal-files';
 import { expoDatabaseHost, removeDatabaseFiles } from '../data/expo-sqlite-host';
 import { deleteUnfinishedView } from '../backup/data-domain-view';
-import { GUIDE_OPEN_FILE, LAST_ERROR_FILE } from '../diagnostics/error-record';
-import { PROBE_DB_NAME } from '../probe/model';
 import { DevicePrefsProvider, useDevicePrefs } from '../device/DevicePrefsContext';
 import { createPrefsHolder, DEFAULT_PREFS, type DevicePrefs } from '../device/prefs';
 import { appInfo, newUuid, nowZoned } from '../device/runtime';
@@ -57,7 +56,6 @@ function ForegroundAlerts({ services }: { services: AppServices }) {
   useForegroundAlerts(services);
   return null;
 }
-const DEVICE_PREFS = 'device-prefs.json';
 
 /** Launch: open the data (DatabaseManager, migrations, recovery), then the app. */
 function Launch() {
@@ -95,16 +93,10 @@ function Launch() {
       },
       dataLedger: containerTextFile(DATA_LEDGER),
       credentials: deviceCredentials(),
-      // Your-data files outside SQLite: coach connection settings and this phone's look and alert answers.
       interruptedDelete: attempt.interruptedDelete,
       // Your-data files outside SQLite: coach connection settings, this phone's look and alert answers,
-      // crash notes, damaged copies kept aside, and the capability-probe database.
-      personalFiles: {
-        remove: async () => {
-          await removeContainerFiles([SETTINGS_FILE, DEVICE_PREFS, LAST_ERROR_FILE, GUIDE_OPEN_FILE], /\.damaged-.*\.json$/);
-          await removeDatabaseFiles(PROBE_DB_NAME);
-        },
-      },
+      // crash notes, damaged copies kept aside, the capability-probe database, and picked-file copies in tmp.
+      personalFiles: createPersonalFiles({ removeDocuments: removeContainerFiles, removeDatabaseFiles, emptyTemporary: emptyTemporaryFiles }),
     }).then((o) => {
       clearTimeout(timer);
       if (!alive) return;
@@ -185,7 +177,7 @@ function Launch() {
         </MessageScreen>
       );
     case 'ready': {
-      const { services, migration, sqliteVersion, setup, recovery, recoveryError } = outcome;
+      const { services, migration, sqliteVersion, setup, recovery, recoveryError, signOutNotConfirmed } = outcome;
       const relaunch = () => {
         void services
           .close()
@@ -195,7 +187,7 @@ function Launch() {
           });
       };
       return (
-        <AppProvider services={services} launch={{ migration, sqliteVersion, recovery, recoveryError, restAlerts, restoreInterrupted: services.restore.interruptedRestore }} relaunch={relaunch}>
+        <AppProvider services={services} launch={{ migration, sqliteVersion, recovery, recoveryError, restAlerts, restoreInterrupted: services.restore.interruptedRestore, signOutNotConfirmed }} relaunch={relaunch}>
           <ForegroundAlerts services={services} />
           <AppNavigator
             setupStep={setup.step}
@@ -220,7 +212,7 @@ function Themed() {
 
 export function Root() {
   const [prefs, setPrefs] = useState<DevicePrefs | null>(null);
-  const holder = useMemo(() => createPrefsHolder(containerTextFile(DEVICE_PREFS), setPrefs), []);
+  const holder = useMemo(() => createPrefsHolder(containerTextFile(DEVICE_PREFS_FILE), setPrefs), []);
   useEffect(() => {
     void holder.load();
   }, [holder]);

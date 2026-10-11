@@ -20,7 +20,9 @@ export interface PlannedRestAlert {
   body: string;
 }
 
-export const restAlertIdentifier = (sessionId: string) => `fizz.rest.${sessionId}`;
+/** Every workout alert's identifier starts with this; GymSmarter schedules nothing else under it. */
+export const REST_ALERT_PREFIX = 'fizz.rest.';
+export const restAlertIdentifier = (sessionId: string) => `${REST_ALERT_PREFIX}${sessionId}`;
 
 /** `Next: Bench press · 100 kg × 6–8 target` and its variants (§2.2). */
 export function nextSetLine(state: SessionAggregate): string {
@@ -77,6 +79,12 @@ export function decideAlertActions(current: ScheduledAlert | null, planned: Plan
 export interface NotifierPort {
   schedule(alert: PlannedRestAlert): Promise<void>;
   cancel(identifier: string): Promise<void>;
+  /**
+   * Cancel every scheduled workout alert (any `fizz.rest.` identifier, known
+   * to this run or not) and clear delivered ones. Throws if one is still
+   * scheduled (Delete my data, review r2 S1).
+   */
+  cancelAllWorkoutAlerts(): Promise<void>;
 }
 
 /**
@@ -111,6 +119,25 @@ export function createRestAlertController(notifier: NotifierPort) {
         if (planned === null) current = null;
       });
       return chain;
+    },
+    /**
+     * Delete my data: every workout alert goes, including one scheduled
+     * before a relaunch that this run knows nothing about. Unlike
+     * `reconcile`, a failure is thrown so the caller can say so.
+     */
+    cancelAll(): Promise<void> {
+      const run = chain.then(async () => {
+        try {
+          await notifier.cancelAllWorkoutAlerts();
+          current = null;
+          lastError = null;
+        } catch (e) {
+          lastError = e instanceof Error ? e.message : String(e);
+          throw e;
+        }
+      });
+      chain = run.catch(() => undefined);
+      return run;
     },
     get scheduled(): ScheduledAlert | null {
       return current;

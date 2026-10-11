@@ -21,6 +21,11 @@ function fakeNotifier() {
       pending.delete(id);
       return Promise.resolve();
     },
+    cancelAllWorkoutAlerts() {
+      calls.push('cancel all');
+      pending.clear();
+      return Promise.resolve();
+    },
   };
   return { port, pending, calls };
 }
@@ -121,8 +126,31 @@ describe('rest alert controller through a whole loop', () => {
   it('a failing notifier never throws into logging', async () => {
     const { state } = startFixture();
     const s = apply(state, logCmd(setsFor(state, BENCH)[0]?.id ?? '', values(kg(60), 10), 5));
-    const ctl = createRestAlertController({ schedule: () => Promise.reject(new Error('not allowed')), cancel: () => Promise.resolve() });
+    const ctl = createRestAlertController({ schedule: () => Promise.reject(new Error('not allowed')), cancel: () => Promise.resolve(), cancelAllWorkoutAlerts: () => Promise.resolve() });
     await expect(ctl.reconcile(s, ms(10))).resolves.toBeUndefined();
     expect(ctl.lastError).toBe('not allowed');
+  });
+
+  it('cancelAll removes an alert scheduled before a relaunch, which reconcile(null) can’t see (review r2 S1)', async () => {
+    const { state } = startFixture();
+    const s = apply(state, logCmd(setsFor(state, BENCH)[0]?.id ?? '', values(kg(60), 10), 5));
+    const phone = fakeNotifier();
+    await createRestAlertController(phone.port).reconcile(s, ms(10));
+    expect(phone.pending.size).toBe(1);
+    // A new run knows nothing: reconcile(null) issues no cancel.
+    const relaunched = createRestAlertController(phone.port);
+    await relaunched.reconcile(null, ms(11));
+    expect(phone.pending.size).toBe(1);
+    await relaunched.cancelAll();
+    expect(phone.pending.size).toBe(0);
+    expect(relaunched.scheduled).toBeNull();
+  });
+
+  it('cancelAll throws when the phone refuses, unlike reconcile', async () => {
+    const ctl = createRestAlertController({ schedule: () => Promise.resolve(), cancel: () => Promise.resolve(), cancelAllWorkoutAlerts: () => Promise.reject(new Error('1 scheduled alert(s) couldn’t be cancelled')) });
+    await expect(ctl.cancelAll()).rejects.toThrow(/couldn’t be cancelled/);
+    expect(ctl.lastError).toMatch(/couldn’t be cancelled/);
+    // The chain carries on.
+    await expect(ctl.reconcile(null, ms(1))).resolves.toBeUndefined();
   });
 });

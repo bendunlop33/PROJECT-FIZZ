@@ -1,3 +1,6 @@
+import { readdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { CopyDestination } from '../src/backup/backup-service';
@@ -183,6 +186,138 @@ describe('Delete my data (keep coaching knowledge)', () => {
     expect(filesHolding(h, personal)).toEqual([]);
   });
 
+  it('leaves no file of Ben’s anywhere in the container: settings, crash notes, probe database, picked-file copies, caches, old database files (review r2 B1, S4)', async () => {
+    h = createHarness('2026-10-08T17:00:00.000Z', { credentials: fakeKeychain().port });
+    const { services: s } = await h.launch();
+    const { personal } = await bensData(s);
+    const [ownerId] = personal;
+    // Files outside SQLite, as the phone keeps them (Root's list, via createPersonalFiles).
+    h.documents.set('device-prefs.json', `{"themeDirection":"d1","owner":"${ownerId ?? ''}"}`);
+    h.documents.set('device-prefs.json.tmp', '{"owner":"Main Gym"}');
+    h.documents.set('coach-connection.json', '{"model":"gpt","note":"Main Gym"}');
+    h.documents.set('last-error.json', '{"message":"Slept badly"}');
+    h.documents.set('guide-open.json', '{"gym":"Main Gym"}');
+    h.documents.set('backup-state.damaged-2026-10-08T17-00-00-000Z.json', '{"label":"Main Gym"}');
+    // A FitNotes CSV and a backup picked from Files: iOS copies both into tmp/<bundle>-Inbox (B1).
+    const backupText = [...h.backupFiles.values()][0] ?? '';
+    expect(backupText).toContain('Main Gym');
+    h.tmp.set('com.bendunlop.fizz-Inbox/FitNotes_Export.csv', 'Date,Exercise,Category,Weight,Reps\n2026-10-01,Bench press,Chest,60,8,Slept badly');
+    h.tmp.set('com.bendunlop.fizz-Inbox/fizz-backup-2026-10-08.json', backupText);
+    h.cache.set('com.bendunlop.fizz/Cache.db', 'Main Gym');
+    // The capability probe's database.
+    writeFileSync(join(h.dir, 'fizz-probe.db'), 'Main Gym');
+    writeFileSync(join(h.dir, 'fizz-probe.db-wal'), 'Slept badly');
+    const holding = filesHolding(h, personal);
+    for (const f of ['tmp/com.bendunlop.fizz-Inbox/FitNotes_Export.csv', 'tmp/com.bendunlop.fizz-Inbox/fizz-backup-2026-10-08.json', 'SQLite/fizz-probe.db', 'device-prefs.json']) expect(holding).toContain(f);
+    expect(holding.some((f) => /^SQLite\/training-/.test(f))).toBe(true);
+
+    const { stamp } = await s.data.summary();
+    expect(await s.data.deleteMyData({ opId: 'everything', stamp })).toMatchObject({ ok: true });
+    expect(filesHolding(h, personal)).toEqual([]);
+    expect([...h.documents.keys()]).toEqual([]);
+    expect(h.tmp.size).toBe(0);
+    expect(h.cache.size).toBe(0);
+    // One training database (the new, knowledge-only one) and the slot record; no old file, no probe.
+    expect(readdirSync(h.dir).filter((n) => n.endsWith('.db'))).toEqual(['fizz-meta.db', s.developer.databaseNames().current].sort());
+  });
+
+  it('a rest alert scheduled before a relaunch is cancelled by a delete finished at launch (review r2 S1)', async () => {
+    h = createHarness();
+    const { services: s } = await h.launch();
+    const { gymId } = await bensData(s);
+    await workoutWithRestRunning(s, gymId);
+    await h.settle(s);
+    expect(h.pending.size).toBe(1);
+    // The phone refuses to cancel: the step fails, and says so, after the swap.
+    h.alertsFail = true;
+    const { stamp } = await s.data.summary();
+    expect(await s.data.deleteMyData({ opId: 'with-rest', stamp })).toMatchObject({ ok: false, deleted: true, step: 'alerts' });
+    expect(h.pending.size).toBe(1);
+    // Force-close; the next run knows nothing about what was scheduled.
+    await h.forceClose();
+    h.alertsFail = false;
+    const relaunched = await h.launch();
+    expect(relaunched.personalDataCleared).toBe(true);
+    expect(relaunched.setup.step).toBe('welcome');
+    expect(h.pending.size).toBe(0);
+  });
+
+  it('Continue after a backups failure leaves a Finish deleting that removes only the old backups (review r2 S2)', async () => {
+    const keychain = fakeKeychain();
+    h = createHarness('2026-10-08T17:00:00.000Z', { credentials: keychain.port });
+    const { services: s } = await h.launch();
+    const { personal } = await bensData(s);
+    expect((await s.backups.backUpOnPhone('manual')).ok).toBe(true);
+    const old = [...h.backupFiles.keys()];
+    expect(old.length).toBeGreaterThan(0);
+    // Backup files can't be deleted, at this run and the next.
+    const realDelete = h.backupFiles.delete.bind(h.backupFiles);
+    h.backupFiles.delete = () => false;
+    const { stamp } = await s.data.summary();
+    expect(await s.data.deleteMyData({ opId: 'stuck-backups', stamp })).toMatchObject({ ok: false, deleted: true, step: 'backups' });
+    await h.forceClose();
+    expect(await h.start()).toMatchObject({ kind: 'delete_unfinished', deleted: true, step: 'backups' });
+
+    // Continue: first run. Ben sets up and logs a workout; it is backed up.
+    h.clockMs += 3_600_000;
+    const opened = await h.start({ interruptedDelete: 'leave' });
+    if (opened.kind !== 'ready') throw new Error(opened.kind);
+    const s2 = opened.services;
+    expect(await s2.data.leftover()).toEqual({ step: 'backups', atUtc: h.now().utc });
+    const gymId = await setUpGym(h, s2);
+    h.clockMs += 60_000;
+    await logWorkout(h, s2, gymId, [{ exercise: 'Bench press', sets: [{ load: 40, reps: 5 }] }]);
+    const fresh = (await s2.restore.copiesOnPhone()).map((c) => c.fileName).filter((n) => !old.includes(n));
+    expect(fresh.length).toBeGreaterThan(0);
+    // Old backups (and the sign-in, never reached) are still on this phone.
+    const oldOnly = personal.filter((p) => !['Main Gym', personal[0]].includes(p));
+    expect(filesHolding(h, oldOnly).length).toBeGreaterThan(0);
+    expect(keychain.items.size).toBeGreaterThan(0);
+
+    // Finish deleting while files still can't go: says so, keeps the line.
+    expect(await s2.data.finishLeftover()).toEqual({ ok: false, step: 'backups', message: expect.stringMatching(/couldn’t be deleted/) as string });
+    expect(await s2.data.leftover()).toMatchObject({ step: 'backups' });
+
+    h.backupFiles.delete = realDelete;
+    expect(await s2.data.finishLeftover()).toEqual({ ok: true });
+    expect(await s2.data.leftover()).toBeNull();
+    // Nothing of the old data is left; what Ben logged since, and its backups, are kept.
+    expect(filesHolding(h, oldOnly)).toEqual([]);
+    for (const n of old) expect(h.backupFiles.has(n)).toBe(false);
+    for (const n of fresh) expect(h.backupFiles.has(n)).toBe(true);
+    expect((await s2.restore.copiesOnPhone()).map((c) => c.fileName)).toEqual(fresh);
+    expect((await s2.yourData.counts()).finishedWorkouts).toBe(1);
+    expect(keychain.items.size).toBe(0);
+    // A repeat is a no-op.
+    expect(await s2.data.finishLeftover()).toEqual({ ok: true });
+  });
+
+  it('Continue after the old database file wouldn’t go: Finish deleting removes it, never swaps again (review r2 S2)', async () => {
+    h = createHarness();
+    const { services: s } = await h.launch();
+    const { personal } = await bensData(s);
+    h.failDbRemove = true;
+    const { stamp } = await s.data.summary();
+    expect(await s.data.deleteMyData({ opId: 'stuck-db', stamp })).toMatchObject({ ok: false, deleted: true, step: 'database' });
+    expect(filesHolding(h, personal).some((f) => f.startsWith('SQLite/training-'))).toBe(true);
+    await h.forceClose();
+    expect(await h.start()).toMatchObject({ kind: 'delete_unfinished', deleted: true, step: 'database' });
+    const opened = await h.start({ interruptedDelete: 'leave' });
+    if (opened.kind !== 'ready') throw new Error(opened.kind);
+    const s2 = opened.services;
+    expect(await s2.data.leftover()).toMatchObject({ step: 'database' });
+    const gymId = await setUpGym(h, s2);
+    await logWorkout(h, s2, gymId, [{ exercise: 'Bench press', sets: [{ load: 40, reps: 5 }] }]);
+
+    h.failDbRemove = false;
+    expect(await s2.data.finishLeftover()).toEqual({ ok: true });
+    const oldOnly = personal.filter((p) => !['Main Gym', personal[0]].includes(p));
+    expect(filesHolding(h, oldOnly)).toEqual([]);
+    expect(readdirSync(h.dir).filter((n) => n.startsWith('training-') && n.endsWith('.db'))).toEqual([s2.developer.databaseNames().current]);
+    // The new workout is untouched.
+    expect((await s2.yourData.counts()).finishedWorkouts).toBe(1);
+  });
+
   it('is idempotent by op ID: a repeat returns the first result and leaves one knowledge-only backup', async () => {
     h = createHarness();
     const { services: s } = await h.launch();
@@ -223,6 +358,7 @@ describe('Delete my data (keep coaching knowledge)', () => {
 
     const relaunched = await h.launch();
     expect(relaunched.personalDataCleared).toBe(true);
+    expect(relaunched.signOutNotConfirmed).toBe(false);
     expect(relaunched.setup.step).toBe('welcome');
     expect(keychain.items.size).toBe(0);
     expect(files.files.size).toBe(0);
@@ -287,6 +423,23 @@ describe('Delete my data (keep coaching knowledge)', () => {
     expect(files.files.size).toBe(0);
   });
 
+  it('a delete finished at launch that couldn’t confirm the ChatGPT sign-out online says so on first run (review r2 N4)', async () => {
+    const keychain = fakeKeychain({ online: false });
+    h = createHarness('2026-10-08T17:00:00.000Z', { credentials: keychain.port });
+    const { services: s } = await h.launch();
+    await bensData(s);
+    // Stopped before the sign-in step (the alerts step fails), then force-closed.
+    h.alertsFail = true;
+    const { stamp } = await s.data.summary();
+    expect(await s.data.deleteMyData({ opId: 'offline', stamp })).toMatchObject({ ok: false, deleted: true, step: 'alerts' });
+    await h.forceClose();
+    h.alertsFail = false;
+    const relaunched = await h.launch();
+    expect(relaunched.setup.step).toBe('welcome');
+    expect(keychain.items.size).toBe(0);
+    expect(relaunched.signOutNotConfirmed).toBe(true);
+  });
+
   it('a damaged ledger is kept aside once Ben confirms, instead of refusing for ever (review N1)', async () => {
     let text: string | null = '{not json';
     const kept: string[] = [];
@@ -346,6 +499,29 @@ describe('Reset coaching knowledge', () => {
     expect(tablesOf((await s.data.buildExport('coaching_knowledge')).text)).toEqual(knownBefore);
     expect(tablesOf((await s.data.buildExport('your_data')).text)).toEqual(mineBefore);
     expect(rollbackRowView(s.restore.rollbackTarget(), { nowMs: h.clockMs, tz: 'Europe/London' })?.title).toBe('Switch back to the reset coaching knowledge');
+  });
+
+  it('is refused while a workout is unfinished (DX4): no backup, nothing changed (review r2 S3)', async () => {
+    h = createHarness();
+    const { services: s } = await h.launch();
+    const { gymId } = await bensData(s);
+    await workoutWithRestRunning(s, gymId);
+    await h.settle(s);
+    const backups = new Map(h.backupFiles);
+    const before = await s.data.buildExport('coaching_knowledge');
+    const { stamp } = await s.data.summary();
+    expect(await s.data.resetCoachingKnowledge({ opId: 'mid-workout', stamp })).toMatchObject({ ok: false, reason: 'workout_unfinished', block: { title: 'Workout' } });
+    expect(h.backupFiles).toEqual(backups);
+    expect((await s.data.buildExport('coaching_knowledge')).text).toBe(before.text);
+    expect(s.restore.rollbackTarget().last).toBeNull();
+    // The op isn't recorded as done: after the workout it can still run.
+    const active = await s.sessions.active();
+    if (!active) throw new Error('no workout');
+    const fin = await s.workout.dispatch(active.session.id, { type: 'finish', at: h.now(), opId: h.ids(), expectedVersion: active.session.version, endedAt: null });
+    expect(fin.ok).toBe(true);
+    await h.settle(s);
+    h.clockMs += 60_000;
+    expect(await s.data.resetCoachingKnowledge({ opId: 'mid-workout', stamp: (await s.data.summary()).stamp })).toMatchObject({ ok: true, duplicate: false });
   });
 
   it('is refused against a stale confirmation, with no backup and nothing changed (rule 5)', async () => {

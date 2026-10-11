@@ -27,6 +27,10 @@ vi.mock('expo-secure-store', () => ({
 }));
 
 const disk = new Map<string, string>();
+/** What the document picker hands back next (iOS: a copy in tmp/<bundle>-Inbox). */
+let picked: string | null = null;
+let failRead = false;
+vi.mock('expo-sqlite', () => ({ defaultDatabaseDirectory: '/C/Documents/SQLite' }));
 vi.mock('expo-file-system', () => {
   const pathOf = (parent: unknown, name?: string): string => {
     const base = typeof parent === 'string' ? parent : (parent as { uri: string }).uri;
@@ -46,12 +50,20 @@ vi.mock('expo-file-system', () => {
     write(text: string) {
       disk.set(this.uri, text);
     }
+    get size() {
+      return (disk.get(this.uri) ?? '').length;
+    }
     text() {
+      if (failRead) return Promise.reject(new Error('read failed'));
       return Promise.resolve(disk.get(this.uri) ?? '');
     }
     delete() {
       if (this.name.includes('locked')) return;
       disk.delete(this.uri);
+    }
+    static pickFileAsync() {
+      if (picked === null) return Promise.resolve({ canceled: true, result: null });
+      return Promise.resolve({ canceled: false, result: new File(picked) });
     }
   }
   class Directory {
@@ -59,27 +71,43 @@ vi.mock('expo-file-system', () => {
     constructor(parent: unknown, name?: string) {
       this.uri = pathOf(parent, name);
     }
+    private get prefix() {
+      return `${this.uri.replace(/\/$/, '')}/`;
+    }
+    get name() {
+      const u = this.uri.replace(/\/$/, '');
+      return u.slice(u.lastIndexOf('/') + 1);
+    }
     get exists() {
-      return true;
+      return [...disk.keys()].some((k) => k.startsWith(this.prefix));
     }
     create() {
       return undefined;
     }
+    delete() {
+      for (const k of [...disk.keys()]) if (k.startsWith(this.prefix) && !k.includes('locked')) disk.delete(k);
+    }
     list() {
-      const prefix = `${this.uri.replace(/\/$/, '')}/`;
-      return [...disk.keys()].filter((k) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/')).map((k) => new File(k));
+      const p = this.prefix;
+      const below = [...disk.keys()].filter((k) => k.startsWith(p)).map((k) => k.slice(p.length));
+      const files = below.filter((r) => !r.includes('/')).map((r) => new File(p + r));
+      const dirs = [...new Set(below.filter((r) => r.includes('/')).map((r) => r.slice(0, r.indexOf('/'))))].map((d) => new Directory(p + d));
+      return [...files, ...dirs];
     }
   }
-  return { File, Directory, Paths: { document: new Directory('file:///Documents') } };
+  return { File, Directory, Paths: { document: new Directory('file:///C/Documents'), cache: new Directory('file:///C/Library/Caches') } };
 });
 
 const { KEYCHAIN_KEYS, keychainVault, wipeKeychain } = await import('../src/ai/keychain');
-const { containerBackupFiles, removeContainerFiles } = await import('../src/device/files');
+const { containerBackupFiles, emptyTemporaryFiles, pickBackupFile, pickCsvFile, removeContainerFiles } = await import('../src/device/files');
+const { removeDatabaseFiles } = await import('../src/data/expo-sqlite-host');
 
 beforeEach(() => {
   keychain.clear();
   disk.clear();
   stuck = null;
+  picked = null;
+  failRead = false;
 });
 
 describe('wipeKeychain', () => {
@@ -101,13 +129,13 @@ describe('wipeKeychain', () => {
 
 describe('removeContainerFiles and the backup folder', () => {
   it('removes each name, its .tmp twin and matching damaged copies; leaves the rest', async () => {
-    for (const n of ['device-prefs.json', 'device-prefs.json.tmp', 'coach-connection.json', 'backup-state.damaged-2026.json', 'training.db', 'data-ops.json']) disk.set(`file:///Documents/${n}`, 'x');
+    for (const n of ['device-prefs.json', 'device-prefs.json.tmp', 'coach-connection.json', 'backup-state.damaged-2026.json', 'training.db', 'data-ops.json']) disk.set(`file:///C/Documents/${n}`, 'x');
     await removeContainerFiles(['device-prefs.json', 'coach-connection.json', 'last-error.json'], /\.damaged-.*\.json$/);
-    expect([...disk.keys()].sort()).toEqual(['file:///Documents/data-ops.json', 'file:///Documents/training.db']);
+    expect([...disk.keys()].sort()).toEqual(['file:///C/Documents/data-ops.json', 'file:///C/Documents/training.db']);
   });
 
   it('rejects when a file couldn’t be removed', async () => {
-    disk.set('file:///Documents/locked.json', 'x');
+    disk.set('file:///C/Documents/locked.json', 'x');
     await expect(removeContainerFiles(['locked.json'])).rejects.toThrow(/locked\.json/);
   });
 
@@ -115,10 +143,61 @@ describe('removeContainerFiles and the backup folder', () => {
     const files = containerBackupFiles();
     await files.write('fizz-backup-2026-10-08-1905-auto.json', '{}');
     await files.write('fizz-backup-2026-10-08-1912.json', '{}');
-    disk.set('file:///Documents/device-prefs.json', '{}');
+    disk.set('file:///C/Documents/device-prefs.json', '{}');
     expect((await files.list()).sort()).toEqual(['fizz-backup-2026-10-08-1905-auto.json', 'fizz-backup-2026-10-08-1912.json']);
     for (const n of await files.list()) await files.remove(n);
     expect(await files.list()).toEqual([]);
+  });
+});
+
+describe('picked files and temporary copies (review r2 B1)', () => {
+  const inbox = 'file:///C/tmp/com.bendunlop.fizz-Inbox';
+
+  it('a picked CSV or backup is read, then iOS’s copy in tmp is deleted', async () => {
+    picked = `${inbox}/FitNotes_Export.csv`;
+    disk.set(picked, 'Date,Exercise\n2026-10-01,Bench press');
+    expect(await pickCsvFile()).toEqual({ kind: 'picked', name: 'FitNotes_Export.csv', text: 'Date,Exercise\n2026-10-01,Bench press' });
+    expect(disk.has(picked)).toBe(false);
+
+    picked = `${inbox}/fizz-backup.json`;
+    disk.set(picked, '{"format":"fizz-backup"}');
+    expect(await pickBackupFile()).toMatchObject({ kind: 'picked', text: '{"format":"fizz-backup"}' });
+    expect(disk.has(picked)).toBe(false);
+  });
+
+  it('the copy is deleted even when reading it fails', async () => {
+    picked = `${inbox}/fizz-backup.json`;
+    disk.set(picked, '{}');
+    failRead = true;
+    expect(await pickBackupFile()).toEqual({ kind: 'failed', message: 'read failed' });
+    expect(disk.has(picked)).toBe(false);
+  });
+
+  it('emptyTemporaryFiles empties tmp (with the picker inbox) and Caches, and leaves Documents', async () => {
+    for (const k of [`${inbox}/old.csv`, 'file:///C/tmp/x.json', 'file:///C/Library/Caches/com.bendunlop.fizz/Cache.db', 'file:///C/Documents/data-ops.json']) disk.set(k, 'x');
+    await emptyTemporaryFiles();
+    expect([...disk.keys()]).toEqual(['file:///C/Documents/data-ops.json']);
+    // Missing directories are fine.
+    await expect(emptyTemporaryFiles()).resolves.toBeUndefined();
+  });
+
+  it('emptyTemporaryFiles throws when something is left', async () => {
+    disk.set('file:///C/tmp/locked.json', 'x');
+    await expect(emptyTemporaryFiles()).rejects.toThrow(/locked\.json/);
+  });
+});
+
+describe('removeDatabaseFiles', () => {
+  it('removes the database with its -wal and -shm, and nothing else; missing is fine', async () => {
+    for (const n of ['fizz-probe.db', 'fizz-probe.db-wal', 'fizz-probe.db-shm', 'training-1.db']) disk.set(`file:///C/Documents/SQLite/${n}`, 'x');
+    await removeDatabaseFiles('fizz-probe.db');
+    expect([...disk.keys()]).toEqual(['file:///C/Documents/SQLite/training-1.db']);
+    await expect(removeDatabaseFiles('fizz-probe.db')).resolves.toBeUndefined();
+  });
+
+  it('throws when a file is left', async () => {
+    disk.set('file:///C/Documents/SQLite/locked.db', 'x');
+    await expect(removeDatabaseFiles('locked.db')).rejects.toThrow(/locked\.db/);
   });
 });
 

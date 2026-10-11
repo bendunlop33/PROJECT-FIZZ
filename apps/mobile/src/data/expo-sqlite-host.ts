@@ -34,11 +34,19 @@ export function expoDatabaseHost(): DatabaseHost {
 /**
  * Delete a database's files (with `-wal`/`-shm`) by name, without opening it.
  * Delete my data removes the capability-probe database this way (§4.5 step 3).
+ * Missing files are fine; throws if one is left.
  */
 export function removeDatabaseFiles(name: string): Promise<void> {
-  for (const n of [name, `${name}-wal`, `${name}-shm`]) {
-    const file = databaseFile(n);
-    if (file.exists) file.delete();
+  const names = [name, `${name}-wal`, `${name}-shm`];
+  try {
+    for (const n of names) {
+      const file = databaseFile(n);
+      if (file.exists) file.delete();
+    }
+  } catch (e) {
+    return Promise.reject(e instanceof Error ? e : new Error(String(e)));
   }
+  const left = names.filter((n) => databaseFile(n).exists);
+  if (left.length > 0) return Promise.reject(new Error(`Couldn’t delete ${left.join(', ')}`));
   return Promise.resolve();
 }
