@@ -12,6 +12,7 @@ import { nowMs as clockNow } from '../clock';
 import { newUuid } from '../device/runtime';
 import { formatDayMonth, formatLongDate, formatShortDate, formatTime } from '../format/dates';
 import type { TabParams } from '../navigation/types';
+import { useDeleteToast } from '../history/useDeleteToast';
 import { firstTime, useDataChanged, useLaunchInfo, useScreenData, useServices } from '../shell/context';
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
@@ -61,6 +62,8 @@ export function TodayScreen() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
+  // A workout deleted from its Summary lands here with its Undo toast (delete-workouts DW2).
+  const deleted = useDeleteToast();
   const [now, setNow] = useState(clockNow);
   const [finishFor, setFinishFor] = useState<SessionAggregate | null>(null);
   const [finishVisible, setFinishVisible] = useState(false);
@@ -620,7 +623,11 @@ export function TodayScreen() {
           onDismissed={renameAfter.dismissed}
         />
       ) : null}
-      {toast ? <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
+      {deleted.toast ? (
+        <Toast icon="trash" text={deleted.toast.text} {...(deleted.toast.action ? { action: deleted.toast.action } : {})} {...(deleted.toast.onAction ? { onAction: deleted.toast.onAction } : {})} />
+      ) : toast ? (
+        <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} />
+      ) : null}
       {finishFor ? (
         <FinishSheet
           aggregate={finishFor}

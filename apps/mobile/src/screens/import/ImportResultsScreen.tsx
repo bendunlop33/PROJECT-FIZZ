@@ -11,7 +11,8 @@ import { formatTime } from '../../format/dates';
 import { resultsView, undoAlert, undoneToast } from '../../import/views';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
-import { AppText, Card, Group, PrimaryButton, Row, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
+import { useDeleteToast } from '../../history/useDeleteToast';
+import { AppText, Card, Group, PrimaryButton, Row, Screen, SectionHeader, StatusLine, TextButton, Toast } from '../../ui';
 
 const ICON_TONE = { done: 'done', info: 'info', warning: 'warning' } as const;
 
@@ -32,6 +33,8 @@ export function ImportResultsScreen() {
   const [workoutPages, setWorkoutPages] = useState(1);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [undoOp] = useState(() => newUuid());
+  // An imported workout deleted from its own view comes back here with Undo (delete-workouts DW24).
+  const deleted = useDeleteToast();
   const [data] = useScreenData(async (s) => {
     const [job, block] = await Promise.all([s.imports.job(jobId), s.imports.blockedBy()]);
     return { job, block };
@@ -89,6 +92,7 @@ export function ImportResultsScreen() {
   }
 
   return (
+    <>
     <Screen
       footer={
         v.canContinue ? (
@@ -176,5 +180,7 @@ export function ImportResultsScreen() {
       <TextButton label="Save row-by-row results (CSV)" onPress={() => void saveResults()} />
       {v.canUndo ? <TextButton label="Undo this import" onPress={undo} disabled={block !== null} /> : null}
     </Screen>
+    {deleted.toast ? <Toast icon="trash" text={deleted.toast.text} {...(deleted.toast.action ? { action: deleted.toast.action } : {})} {...(deleted.toast.onAction ? { onAction: deleted.toast.onAction } : {})} /> : null}
+    </>
   );
 }
