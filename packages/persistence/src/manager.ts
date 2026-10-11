@@ -13,7 +13,7 @@ import {
 } from './backup/backup';
 import { analyseReplace, keptOnly, type ReplaceCounts } from './backup/replace';
 import { timeSlicer, type Slicer } from './backup/slice';
-import { countDomains, filterDomain, knowledgeExercisesInUse, type DomainCounts } from './data-domains';
+import { countDomains, countDomainsIn, exportDomain, filterDomain, knowledgeExercisesInUse, type DataDomain, type DomainCounts, type DomainExport } from './data-domains';
 import { EXERCISE_SPEC, saveDocumentIn } from './documents';
 import type { DatabaseHost, SqlDriver, SqlRow } from './driver';
 import { discardOpenDrafts } from './drafts';
@@ -500,7 +500,7 @@ export class DatabaseManager {
     const knowledge = filterDomain(theirs.tables, 'coaching_knowledge');
     for (const [table, rows] of Object.entries(knowledge)) tables[table] = [...(tables[table] ?? []), ...rows];
     const have = new Set((knowledge.exercises ?? []).map((r) => String(r.id)));
-    const inUse = knowledgeExercisesInUse(current.tables);
+    const inUse = await knowledgeExercisesInUse(current.tables, this.options.slice);
     tables.exercises = [...(tables.exercises ?? []), ...(current.tables.exercises ?? []).filter((r) => r.owner_id === null && inUse.has(String(r.id)) && !have.has(String(r.id)))];
     await this.dropStaleOrphan();
     const name = this.options.newName();
@@ -523,6 +523,24 @@ export class DatabaseManager {
       const closing = store ?? driver;
       await quietly(() => closing.close());
     }
+  }
+
+  /**
+   * Counts per data domain only, from SQL (your-data-merge S3): no stamp, no
+   * read of the copy kept for Undo. For the Export screen; the Delete and
+   * Reset confirmations need `domainSummary`.
+   */
+  domainCounts(): Promise<DomainCounts> {
+    return this.exclusive(() => this.current.db.read((q) => countDomainsIn(q)));
+  }
+
+  /**
+   * One domain's rows for an export, read in pages and shaped in slices
+   * (your-data-merge S1). Doesn't take the manager lock, as before: only the
+   * paged read holds the store queue.
+   */
+  exportDomain(domain: DataDomain): Promise<DomainExport> {
+    return exportDomain(this.current.db, domain, this.options.slice);
   }
 
   /** Counts per data domain and the stamp a Delete or Reset confirmation is made against. */
@@ -645,7 +663,7 @@ export class DatabaseManager {
       if (opts.expectedStamp !== undefined && opts.expectedStamp !== this.stampOf(currentHash)) {
         return { ok: false, error: { code: 'preview_stale', message: 'Your data changed since you confirmed. Nothing was reset.' } };
       }
-      const inUse = knowledgeExercisesInUse(current.tables);
+      const inUse = await knowledgeExercisesInUse(current.tables, this.options.slice);
       const tables = filterDomain(current.tables, 'your_data');
       tables.exercises = [...(tables.exercises ?? []), ...(current.tables.exercises ?? []).filter((r) => r.owner_id === null && inUse.has(String(r.id)))];
       await this.dropStaleOrphan();

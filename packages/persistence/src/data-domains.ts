@@ -1,5 +1,7 @@
+import type { Database } from './database';
 import type { SqlExecutor, SqlRow } from './driver';
 import { exportTables } from './backup/backup';
+import { noYield, type Slicer } from './backup/slice';
 import { readUserVersion } from './migrations';
 
 /**
@@ -141,35 +143,93 @@ async function jsonColumns(q: SqlExecutor, table: string): Promise<Set<string>> 
   return out;
 }
 
+/** One domain's rows as exported (JSON columns opened). */
+export interface DomainExport {
+  schemaVersion: number;
+  tables: Record<string, Record<string, unknown>[]>;
+}
+
+/**
+ * Counts per domain straight from SQL (review S3): no row is read into JS,
+ * so the Export screen gets its counts in milliseconds on any history.
+ * Equal to `countDomains` over every table (tested). An unclassified table
+ * throws, as `countDomains` does.
+ */
+export async function countDomainsIn(q: SqlExecutor): Promise<DomainCounts> {
+  const count = async (sql: string): Promise<number> => (await q.getFirst<{ n: number }>(sql))?.n ?? 0;
+  const mine: Record<string, number> = {};
+  const known: Record<string, number> = {};
+  for (const table of await userTables(q)) {
+    const quoted = `"${table.replaceAll('"', '""')}"`;
+    if ((YOUR_DATA_TABLES as readonly string[]).includes(table)) mine[table] = await count(`SELECT COUNT(*) AS n FROM ${quoted}`);
+    else if ((KNOWLEDGE_TABLES as readonly string[]).includes(table)) known[table] = await count(`SELECT COUNT(*) AS n FROM ${quoted}`);
+    else if ((SPLIT_TABLES as readonly string[]).includes(table)) {
+      mine[table] = await count(`SELECT COUNT(*) AS n FROM ${quoted} WHERE owner_id IS NOT NULL`);
+      known[table] = await count(`SELECT COUNT(*) AS n FROM ${quoted} WHERE owner_id IS NULL`);
+    } else throw new UnclassifiedTableError(table);
+  }
+  const sum = (t: Record<string, number>) => Object.values(t).reduce((a, b) => a + b, 0);
+  return {
+    yourData: {
+      workouts: await count("SELECT COUNT(*) AS n FROM sessions WHERE status = 'finished'"),
+      sets: await count("SELECT COUNT(*) AS n FROM session_sets s JOIN sessions x ON x.id = s.session_id WHERE s.status = 'completed' AND x.status = 'finished'"),
+      gyms: mine.gyms ?? 0,
+      routines: mine.routines ?? 0,
+      checkIns: mine.check_ins ?? 0,
+      painFlags: mine.pain_flags ?? 0,
+      memories: await count("SELECT COUNT(*) AS n FROM memories WHERE status = 'active'"),
+      coachThreads: mine.coach_threads ?? 0,
+      imports: mine.import_jobs ?? 0,
+      records: sum(mine),
+    },
+    coachingKnowledge: {
+      exercises: known.exercises ?? 0,
+      playbookCandidates: await count("SELECT COUNT(*) AS n FROM playbook_candidates WHERE status = 'to_review'"),
+      records: sum(known),
+    },
+  };
+}
+
 /**
  * One domain's rows, for `Export: My data` / `Coaching knowledge only`
  * (data-import-export §2.6, §4.4). JSON columns are parsed so the file reads
  * as data rather than escaped strings. Tables with no rows in the domain are
  * left out. Not restorable (backups are).
+ *
+ * As `createBackup` does (backup review B1, your-data-merge S1), only the
+ * paged read holds the store queue; filtering and parsing run after it, with
+ * `slice()` between rows.
  */
-export async function exportDomain(q: SqlExecutor, domain: DataDomain): Promise<{ schemaVersion: number; tables: Record<string, Record<string, unknown>[]> }> {
-  const schemaVersion = await readUserVersion(q);
-  const all = await exportTables(q);
-  const picked = filterDomain(all, domain);
+export async function exportDomain(db: Pick<Database, 'read'>, domain: DataDomain, slice: Slicer = noYield): Promise<DomainExport> {
+  const { schemaVersion, all, json } = await db.read(async (q) => {
+    const all = await exportTables(q, slice);
+    const json = new Map<string, Set<string>>();
+    for (const table of Object.keys(all)) json.set(table, await jsonColumns(q, table));
+    return { schemaVersion: await readUserVersion(q), all, json };
+  });
+  await slice();
   const tables: Record<string, Record<string, unknown>[]> = {};
-  for (const [table, rows] of Object.entries(picked)) {
-    if (rows.length === 0) continue;
-    const json = await jsonColumns(q, table);
-    tables[table] = rows.map((row) => {
-      const out: Record<string, unknown> = {};
+  for (const [table, rows] of Object.entries(all)) {
+    const cols = json.get(table) ?? new Set<string>();
+    const out: Record<string, unknown>[] = [];
+    for (const row of rows) {
+      if (domainOf(table, row) !== domain) continue;
+      const shaped: Record<string, unknown> = {};
       for (const [col, value] of Object.entries(row)) {
-        if (json.has(col) && typeof value === 'string') {
+        if (cols.has(col) && typeof value === 'string') {
           try {
-            out[col] = JSON.parse(value) as unknown;
+            shaped[col] = JSON.parse(value) as unknown;
             continue;
           } catch {
             // Stored text that isn't JSON is exported as it is.
           }
         }
-        out[col] = value;
+        shaped[col] = value;
       }
-      return out;
-    });
+      out.push(shaped);
+      await slice();
+    }
+    if (out.length > 0) tables[table] = out;
   }
   return { schemaVersion, tables };
 }
@@ -198,10 +258,17 @@ function stringsIn(value: unknown, out: Set<string>): void {
  * these so nothing of Ben's points at a missing exercise (open-decisions
  * "For the developer" §1). Deliberately broad: any string equal to the ID.
  */
-export function knowledgeExercisesInUse(tables: Record<string, readonly SqlRow[]>): Set<string> {
+export async function knowledgeExercisesInUse(tables: Record<string, readonly SqlRow[]>, slice: Slicer = noYield): Promise<Set<string>> {
   const ids = new Set((tables.exercises ?? []).filter((r) => domainOf('exercises', r) === 'coaching_knowledge').map((r) => String(r.id)));
   const seen = new Set<string>();
-  for (const rows of Object.values(filterDomain(tables, 'your_data'))) for (const row of rows) stringsIn(row, seen);
+  // Sliced per row (your-data-merge S1): a 2-year history held the JS thread for ~150-260 ms in one go.
+  for (const [table, rows] of Object.entries(tables)) {
+    for (const row of rows) {
+      if (domainOf(table, row) !== 'your_data') continue;
+      stringsIn(row, seen);
+      await slice();
+    }
+  }
   return new Set([...ids].filter((id) => seen.has(id)));
 }
 

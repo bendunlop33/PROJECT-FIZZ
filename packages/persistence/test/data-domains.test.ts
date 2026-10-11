@@ -26,6 +26,10 @@ import { ActionRecordSchema, type ActionDetail, type ActionRecord, type Exercise
 import {
   CLASSIFIED_TABLES,
   checkIntegrity,
+  countDomains,
+  countDomainsIn,
+  knowledgeExercisesInUse,
+  stringifyPretty,
   DatabaseManager,
   domainOf,
   exportDomain,
@@ -182,7 +186,7 @@ describe('data domains', () => {
   it('exports one domain only: Coaching knowledge has no owner-scoped record; My data has no knowledge record', async () => {
     const m = await openManager(dir());
     await populate(m.store);
-    const known = await m.store.db.read((q) => exportDomain(q, 'coaching_knowledge'));
+    const known = await exportDomain(m.store.db, 'coaching_knowledge');
     expect(Object.keys(known.tables).sort()).toEqual(['exercises', 'playbook_candidates']);
     for (const rows of Object.values(known.tables)) for (const r of rows) expect(r.owner_id ?? null).toBeNull();
     // Check 29a: no known personal string anywhere in the file.
@@ -191,10 +195,83 @@ describe('data domains', () => {
     // JSON columns are opened, not escaped text.
     expect(known.tables.playbook_candidates?.[0]?.data).toMatchObject({ text: 'Deload every 6 weeks' });
 
-    const mine = await m.store.db.read((q) => exportDomain(q, 'your_data'));
+    const mine = await exportDomain(m.store.db, 'your_data');
     expect(mine.tables.playbook_candidates).toBeUndefined();
     expect(mine.tables.exercises?.map((r) => r.id)).toEqual([id(241)]);
     for (const t of ['profiles', 'sessions', 'session_sets', 'check_ins', 'pain_flags', 'memories', 'coach_actions']) expect(mine.tables[t]?.length ?? 0).toBeGreaterThan(0);
+  });
+});
+
+describe('counts-only and sliced export helpers (your-data-merge S1, S3)', () => {
+  it('countDomainsIn (SQL) equals countDomains over every row: empty, populated, with a draft, after Delete', async () => {
+    const m = await openManager(dir());
+    const same = async () => {
+      const sql = await m.store.db.read((q) => countDomainsIn(q));
+      expect(sql).toEqual(countDomains(await snapshot(m.store)));
+      expect(await m.domainCounts()).toEqual(sql);
+      expect((await m.domainSummary()).counts).toEqual(sql);
+      return sql;
+    };
+    expect((await same()).yourData.records).toBe(0);
+    await populate(m.store);
+    const full = await same();
+    expect(full.yourData).toMatchObject({ workouts: 1, gyms: 1, checkIns: 1, painFlags: 1, memories: 1 });
+    expect(full.yourData.sets).toBeGreaterThan(0);
+    expect(full.coachingKnowledge.playbookCandidates).toBe(1);
+    await saveDraft(m.store);
+    await same();
+    expect(await m.deleteYourData()).toMatchObject({ ok: true, status: 'switched' });
+    expect((await same()).yourData.records).toBe(0);
+  });
+
+  it('countDomainsIn throws on a table that isn’t classified', async () => {
+    const m = await openManager(dir());
+    await m.store.db.write((tx) => tx.run('CREATE TABLE something_new (id TEXT PRIMARY KEY)'));
+    await expect(m.store.db.read((q) => countDomainsIn(q))).rejects.toThrow(/isn.t assigned/);
+  });
+
+  it('stringifyPretty writes exactly JSON.stringify(value, null, indent), pausing between elements', async () => {
+    const samples: unknown[] = [
+      null,
+      0,
+      'a "quoted"\nline',
+      [],
+      {},
+      [1, [2, [3, []]], {}, { a: [] }],
+      { b: 1, a: { c: [null, undefined, 'x'], d: undefined, e: { f: {} } }, 'é ü': '\u2028' },
+      { at: { toJSON: () => 'converted' }, d: new Date(0) },
+      { format: 'fizz-export', tables: { sessions: [{ id: 's1', data: { sets: [{ load: 62.5, reps: 8 }] } }, { id: 's2', data: null }] } },
+    ];
+    for (const v of samples) for (const indent of [1, 2]) expect(await stringifyPretty(v, indent)).toBe(JSON.stringify(v, null, indent));
+    let pauses = 0;
+    const rows = Array.from({ length: 50 }, (_, i) => ({ i, nested: { list: [i, i + 1] } }));
+    expect(
+      await stringifyPretty({ rows }, 1, () => {
+        pauses += 1;
+        return Promise.resolve();
+      }),
+    ).toBe(JSON.stringify({ rows }, null, 1));
+    expect(pauses).toBeGreaterThanOrEqual(rows.length);
+    await expect(stringifyPretty({}, 0)).rejects.toThrow(RangeError);
+  });
+
+  it('exportDomain and knowledgeExercisesInUse pause per row and match the unsliced result', async () => {
+    const m = await openManager(dir());
+    await populate(m.store);
+    let pauses = 0;
+    const slice = () => {
+      pauses += 1;
+      return Promise.resolve();
+    };
+    const tables = await snapshot(m.store);
+    const rows = rowsOf(filterDomain(tables, 'your_data'));
+    expect(await exportDomain(m.store.db, 'your_data', slice)).toEqual(await exportDomain(m.store.db, 'your_data'));
+    expect(pauses).toBeGreaterThanOrEqual(rows);
+    pauses = 0;
+    const inUse = await knowledgeExercisesInUse(tables, slice);
+    expect(pauses).toBe(rows);
+    expect(inUse.has(SPLIT_SQUAT.id)).toBe(true);
+    expect(inUse.has(UNUSED.id)).toBe(false);
   });
 });
 
@@ -210,9 +287,9 @@ describe('a saved pre-start draft (review r4 B1)', () => {
     const withoutDraft = rowsOf(filterDomain(await snapshot(m.store), 'your_data')) - 1;
     expect(counts.yourData.records).toBe(withoutDraft + 1);
 
-    const mine = await m.store.db.read((q) => exportDomain(q, 'your_data'));
+    const mine = await exportDomain(m.store.db, 'your_data');
     expect(mine.tables.pre_start_drafts?.map((r) => r.id)).toEqual([draft.id]);
-    const known = await m.store.db.read((q) => exportDomain(q, 'coaching_knowledge'));
+    const known = await exportDomain(m.store.db, 'coaching_knowledge');
     expect(known.tables.pre_start_drafts).toBeUndefined();
     expect(JSON.stringify(known)).not.toContain(draft.id);
 

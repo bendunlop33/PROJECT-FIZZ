@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { toMs } from '@fizz/domain';
-import { exportDomain, type AppInfo, type DataDomain, type DatabaseManager, type DomainCounts, type DomainSwitchOutcome, type KeptCopyLoss } from '@fizz/persistence';
+import { stringifyPretty, timeSlicer, type AppInfo, type DataDomain, type DatabaseManager, type DomainCounts, type DomainSwitchOutcome, type KeptCopyLoss } from '@fizz/persistence';
 import type { Exercise, SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 
 import { restAlertIdentifier, type RestAlertController } from '../alerts/rest-alerts';
@@ -501,7 +501,8 @@ export function createDataDomainService(deps: DataDomainDeps) {
 
   async function buildExport(kind: ExportKind): Promise<ExportFile> {
     const at = deps.now();
-    const body = await deps.manager.store.db.read((q) => exportDomain(q, kind));
+    // Paged and sliced (your-data-merge S1): only the read holds the store queue.
+    const body = await deps.manager.exportDomain(kind);
     const file = {
       format: EXPORT_FORMAT,
       formatVersion: 1,
@@ -513,11 +514,14 @@ export function createDataDomainService(deps: DataDomainDeps) {
     };
     const stem = kind === 'your_data' ? 'fizz-my-data' : 'fizz-coaching-knowledge';
     const records = Object.values(body.tables).reduce((n, rows) => n + rows.length, 0);
-    return { fileName: `${stem}-${localStamp(toMs(at.utc), at.tz)}.json`, text: JSON.stringify(file, null, 1), records };
+    return { fileName: `${stem}-${localStamp(toMs(at.utc), at.tz)}.json`, text: await stringifyPretty(file, 1, timeSlicer()), records };
   }
 
   return {
     summary: (): Promise<DataSummary> => summaryNow(),
+
+    /** Counts only (Export screen, review S3): no stamp, no read of the copy kept for Undo. */
+    counts: (): Promise<DomainCounts> => deps.manager.domainCounts(),
 
     /**
      * `Delete my data (keep coaching knowledge)`. `opId` is minted once per

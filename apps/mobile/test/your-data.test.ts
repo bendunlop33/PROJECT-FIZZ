@@ -153,6 +153,11 @@ describe('Delete my data (keep coaching knowledge)', () => {
     expect(summary.counts.yourData).toMatchObject({ workouts: 2, gyms: 1, painFlags: 1, checkIns: 1 });
     expect(summary.counts.coachingKnowledge.exercises).toBeGreaterThan(0);
     expect(summary.lastCopyToFiles).not.toBeNull();
+    // The Export screen's counts-only call (review S3) agrees with the full summary.
+    expect(await s.data.counts()).toEqual(summary.counts);
+    // The sliced export text is exactly what `JSON.stringify(file, null, 1)` wrote before (S1).
+    const exported = await s.data.buildExport('your_data');
+    expect(exported.text).toBe(JSON.stringify(JSON.parse(exported.text), null, 1));
 
     const r = await s.data.deleteMyData({ opId: 'delete-1', stamp: summary.stamp });
     expect(r).toEqual({ ok: true, duplicate: false, signedOutOnline: true });
@@ -160,6 +165,7 @@ describe('Delete my data (keep coaching knowledge)', () => {
     // Your data: nothing left. Coaching knowledge: identical.
     const after = await s.data.summary();
     expect(after.counts.yourData.records).toBe(0);
+    expect(await s.data.counts()).toEqual(after.counts);
     expect(after.lastCopyToFiles).toBeNull();
     expect(tablesOf((await s.data.buildExport('coaching_knowledge')).text)).toEqual(knowledgeBefore);
     expect(Object.keys(tablesOf((await s.data.buildExport('your_data')).text))).toEqual([]);
