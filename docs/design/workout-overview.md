@@ -141,7 +141,7 @@ Built with the coach v1 merge. The rows read the coach's stored next-session tar
 | Coach Undo / Use coach target | The Summary's Next-time commands (`undoAction` on the D21 action; re-apply) | `ActionRecord`, versioned |
 | **Start** | `services.workout.start({gymId, routineOf \| nextOf, opId, checkIn, expectedPreviewKey})` | One session write. The `opId` is minted at the first Start tap and reused for every retry until success or the page closes. A double tap creates one session |
 
-**Not in the first slice:** `Swap today`, `Skip today`, reorder and the return-after-a-break offer (idea 13). Each needs edits to a session that doesn't exist yet, which means a persisted pre-start draft plus an `edits` input to `startWorkout`. That is a schema, backup and ADR change, and it needs Ben's go-ahead. Today, Ben swaps or skips in the workout as before.
+**Second slice:** `Swap today`, `Skip today`, `Do first` and Reorder are specified in [overview-today-edits.md](overview-today-edits.md) (pre-start draft, [ADR 0022](../decisions/0022-pre-start-draft.md)). The return-after-a-break offer (idea 13) stays out until playbook R1–R6 are approved.
 
 ---
 
@@ -215,7 +215,7 @@ The page has no explanation lines, no reassurance and no rule names. Explanation
 
 1. **The extra tap.** It is 3 taps to the first set (was 2). Should a long-press on Today's `Start workout` → `Start now` skip the overview? Recommendation: don't build it, and re-check after two weeks of real use.
 2. **Check-in moves onto the overview** (amends check-in.md CI2). Ignoring the tiles counts as Skip, a score never starts the workout, and a low score's What's up? returns to the overview. CI1 is unchanged.
-3. **Swap/Skip today, reorder and "Lighter start?" are deferred.** They need a pre-start draft (an ADR). In the first slice, rows expand to show the facts, `How to` and `Why?` only. `History` waits for a Progress per-exercise screen (none exists yet).
+3. **Swap/Skip today and reorder** moved to [overview-today-edits.md](overview-today-edits.md); "Lighter start?" is still deferred. `History` waits for a Progress per-exercise screen (none exists yet).
 
 Follow-ups for the product manager (not edited here):
 - flow-first-milestone tap counts

@@ -1,86 +1,75 @@
-# Workout overview: today's edits (Swap today, Skip today, Do first / Reorder, Lighter start)
+# Workout overview: today's edits (Swap today, Skip today, Do first, Reorder)
 
-Status: v0.1 draft, 11 Oct 2026. **Needs Ben's go-ahead.** It adds a schema change (the pre-start draft, ADR draft [draft-pre-start-draft.md](../decisions/draft-pre-start-draft.md)), and the Lighter start offer depends on Ben approving candidate playbook rules R1, R2 and R6 ([return-to-load.md](../training-guides/return-to-load.md)).
+Status: v0.2, 11 Oct 2026. **Ready to build; PM defaults pending Ben** (§10). Schema: [ADR 0022](../decisions/0022-pre-start-draft.md) (pre-start draft, migration 7). Reconciled with the merged overview (`apps/mobile/src/screens/workout/WorkoutOverviewScreen.tsx`, `packages/domain/src/session/overview.ts`).
 
-This is the slice that [workout-overview.md](workout-overview.md) §6 and §11.3 deferred. It changes only what that spec lists as deferred; everything else on the overview is unchanged. Sources: workout-overview.md §3–§8 and §12, [routines.md](routines.md) §2.2 / §4.2 (`Swap ›` with `Today only` "made at Start"), [gym-switch.md](gym-switch.md) GS1–GS3 (`snapPlanToGym`, intended vs fitted), [exercise-library.md](exercise-library.md) §2.5, EL4, EL6, EL9, [active-workout.md](active-workout.md) §4.4 (in-workout swap and skip), [coach-adjustments.md](coach-adjustments.md) CA1, CA8 and B′, [check-in.md](check-in.md) CI5–CI7, [change-review.md](change-review.md) CR3, CR4, CR8, and [competitor-first-pages.md](../research/competitor-first-pages.md) ideas 6 and 13. CLAUDE.md rules 1–6, 9 and 10, plus the minimal-copy convention and [minimal-copy-audit.md](minimal-copy-audit.md).
+This is the slice that [workout-overview.md](workout-overview.md) §6 and §11.3 deferred. Everything else on the overview is unchanged. Sources: [exercise-library.md](exercise-library.md) §2.5, EL4, EL9; [gym-switch.md](gym-switch.md) GS2–GS3; [change-review.md](change-review.md) CR3, CR4; [active-workout.md](active-workout.md) §4.4; CLAUDE.md rules 1–5, 9, 10 and the minimal-copy convention.
 
-**Dependencies (checked 11 Oct against the base branch `30555a4` and the worktrees):**
-- workout-overview.md and `targetChangeMarker` exist only on branch `claude/workout-overview` (review: CHANGES NEEDED). This slice builds on that branch after its fixes merge.
-- `rankSubstitutions`, `getComparableHistory` and `expireProposals` are **specified, not built** (no code on any branch). Swap today needs `rankSubstitutions` and the exercise-library §2.5 sheet first; the closest built helpers are `lastComparableSession` / `lastComparableHistory`. Skip, Do first, Reorder and the built-in Lighter start don't depend on them.
-- Built: `snapPlanToGym` (mode `start` exists in `SnapModeSchema`), `nextTargetsFor`, `painFlagCovering`, `evaluateCheckInOffer`, `estimateRemainingDuration`, the `skip_exercise` command.
+**Out of scope:** Lighter start after a break (its playbook rules R1–R6 aren't approved; ADR 0022 §1 leaves the seam), adding exercises, editing sets/reps/loads before Start, any AI call on this page.
 
-Borrowed patterns (not screens): a "just this workout" scope for swaps (Boostcamp), restoring the original after edits (Ladder), and a lighter first session after a break with before/after loads (StrongLifts). No competitor names, assets or layouts appear in the app.
+Borrowed patterns (not screens): a "just this workout" swap scope, and restoring the original after edits.
 
 ---
 
 ## 1. Purpose
 
-**Question:** "Before I start, can I fit today's plan to today: this machine is taken, I'll skip that one, I want to start with this, and it's been a while?"
+**Question:** "Before I start, can I fit today's plan to today? This machine is taken, I'll skip that one, I want to start with this."
 
-**Primary action: still `Start workout`.** Every edit here is optional, one row away, and never between Ben and Start. An edited overview shows exactly what Start will create (OV3 still holds, now with the edits applied).
+**Primary action: still `Start workout`.** Every edit is optional, sits in a row panel or the `⋯` menu, and is never between Ben and Start. An edited overview shows exactly what Start will create (OV3).
 
-### 1.1 Decisions in this spec
+### 1.1 Decisions
 
 | # | Decision | Reason |
 |---|---|---|
-| TE1 | **Today's edits live in a persisted pre-start draft**, not in a session. Opening the page still creates nothing. The first edit creates the draft. Start consumes it in the same transaction that creates the session | Keeps OV1 (no session before Start) and Resume semantics unchanged. Edits survive a force-close. See the ADR draft for the alternatives |
-| TE2 | **Edits store intent, not numbers** (`swap` slot → exercise, `skip` slot, `order` of slots, `lighter_start` as the rule mode or the coach's intended loads, TE11). The page re-plans from the routine every time and applies the edits with one pure function, `applyTodayEdits`. Then `snapPlanToGym` fits the result | A gym change, a late D21 target or a routine edit can't leave a stale number in the draft. It's the same "fit from intended" rule as GS2 |
-| TE3 | **Ben's own today-only edits apply at once with Undo.** There is no Apply card for Swap, Skip or Do first | Ben choosing is his consent (EL4). Nothing outside today changes (rule 2) |
-| TE4 | **Template changes are always proposals.** After a swap, `Change Push A too ›` opens change-review with scope `Future sessions`, author `Ben`, and Apply/Undo. Skip and reorder have no template link here: the routine editor already does both | Rule 2. One link where it's useful, no new template paths. **Conflicts with routines.md §4.2**, where Ben's own `Change Push A` from a swap goes through the editor's normal Save with no change-review card. For Ben (§11.6) |
-| TE5 | **Close keeps the draft.** The draft ends at Start, at `Reset today's edits`, when any other workout starts, or at local midnight in the draft's stored timezone. Expiry runs when the overview or Today opens (the same pass as change-review's `expireProposals`, CR8), **never while the overview is open**: a draft open across midnight stays until that page closes, so a late-night Start keeps its edits | A swipe down on a full-screen modal is easy to do by accident with one hand. Losing a swap to it would cost 3 taps. Reopening shows the edits on the rows, so nothing is hidden. **For Ben to confirm (§11.1)** |
-| TE6 | **Lighter start is an offer**, raised by a deterministic trigger. The line shows when the **workout** gap (days since any logged lifting session) is ≥ 14 days (R1's hero-line rule). Each row is then judged on its **own** R1 gap (last working set of that exercise on comparable equipment, with R1's usual-spacing exception), and its R2 band (−10/−20/−40%) comes from that gap. It's one line on the page, then a before/after sheet with `Apply` and Undo. With no AI it uses R2's built-in numbers. With the coach live, tapping it counts as Ben asking (CA1), and the coach's numbers are validated the same way | Rules 2, 3 and 6; R1/R2 as written in return-to-load.md. Opening the page still makes no AI call |
-| TE7 | **Swap candidates must be doable at the selected gym**, are never already in today's plan, and get targets from their **own** history, fitted with `snapPlanToGym` (mode `start`). Loads are never converted from the original exercise | Rule 4, EL4, GS5 |
-| TE8 | **Pain flags still win.** A substitute with its own flag asks `… may hurt` first (EL9). A same-movement substitute of a flagged exercise is held (EL6, pending Ben). Lighter start can only lower targets, so flagged exercises and exercises with a flag cleared in the last 8 weeks are included. R5's "R4/R5 win" governs the climb back (R3 vs R4), which is out of scope here | Rule 9 |
-| TE9 | **Skipped exercises stay in the session as skipped**, not deleted. In the workout they look like any skipped exercise, and `Add set` brings one back | Honest record. It reuses the existing skipped style and active-workout §4.4 |
-| TE10 | **Applying Lighter start suppresses the check-in's lighter-session offer** (CI5) for this session | Two reductions stacked from two offers would be a surprise. Ben can still ask the coach in the workout |
-| TE11 | **A built-in Lighter start is stored as intent** (`mode: 'rule'`, the playbook version), not as numbers: `applyTodayEdits` re-applies R2 to every returning slot of the current edited plan. A coach Lighter start stores its per-slot numbers (`mode: 'coach'`) | Same reason as TE2. A later swap, skip, gym change or D21 Undo just re-computes the built-in version instead of dropping it. Only the coach version can go stale (CR3) |
+| TE1 | Edits live in a **saved pre-start draft** (ADR 0022), not a session. Opening the page still creates nothing; the first edit creates the draft; Start consumes it in the session's transaction | OV1 and Resume unchanged; survives force-close |
+| TE2 | Edits store **intent** (`swap` slot → exercise, `skip` slot, `order` of slots). `applyTodayEdits` rewrites the **start input**; the unchanged planner and `snapPlanToGym` (mode `start`) then run. Preview and Start share `planWithTodayEdits` | Preview = Start by construction; gym changes re-fit |
+| TE3 | Ben's today-only edits **apply at once** with a toast Undo. No Apply step | Ben choosing is consent (EL4). Nothing outside today changes |
+| TE4 | **`Change Push A too ›` opens a change-review card** (author `Ben`, scope `Push A from now on`, before → after, Apply, Undo). It replaces routines.md §4.2's "editor Save, no card" | Rule 2: template changes are always proposals with Undo |
+| TE5 | **Close keeps the draft.** It ends at Start, `Reset today's edits`, any other workout start, or **local midnight in the draft's stored timezone**. Start after expiry creates nothing; the page re-reads without edits | A swipe or Close by accident costs nothing. One expiry rule, checked on read and at Start |
+| TE6 | **Swap candidates** come from `rankSubstitutions`: catalogue substitutions, then same-family exercises, filtered to this gym's usable equipment, never already in today's plan, pain-flagged ones marked and last. Each shows the target it would get: its **own** comparable history through the built-in rule, else the slot's sets and reps with no load (`No history`). Fitted with the shared `snapPlanToGym`. **Never converted** from the original's load | Rules 4, 9; EL4, GS3 |
+| TE7 | **Skipped exercises stay in the session** as skipped sets (`skippedBy: 'before_start'`). `Add set` in the workout brings one back | Honest record; reuses active-workout §4.4 |
+| TE8 | Rows are keyed by **`slotKey`** (routine: `RoutineExercise.id`; next session: the source part-root `SessionExercise.id`), not `exerciseId` | A swap changes the exercise; an exercise can appear twice |
+| TE9 | Swap sheet v1 has **no intent chips and no search** (Closest match order only) | Fewer taps at the gym. Intents and search come with the library build |
+| TE10 | Reorder v1 is **buttons only** (`↑` / `↓`), no drag. No long-press menu; VoiceOver custom actions instead | One hand, sweaty fingers; no new gesture dependency |
 
 ---
 
 ## 2. Layout (390 × 844)
 
-The overview's regions are unchanged (workout-overview.md §3). This slice adds:
-- the **Lighter start line** between the muscles line and the list header, only when offered;
-- an **edit count** in the list header;
-- **edit markers** and panel actions on rows;
-- a **Reorder** mode;
-- two sheets: Swap (the existing exercise-library §2.5 sheet) and Lighter start.
+Regions are as workout-overview.md §3. This slice adds: an edit count in the list header, edit markers and panel actions on rows, a Reorder mode, a Swap sheet, and an inline change-review card.
 
 ### 2.1 Overview with edits
 
-Ben is back after 5 weeks. Bench is taken, so he swaps it and starts with incline. He skips cable fly.
+Bench is taken, so Ben swaps it for DB bench and starts with incline. He skips cable fly.
 
 ```
 ┌────────────────────────────────────────┐
 │ ⌄                     [Main gym ▾]  ⋯  │ ⋯ adds: Reorder · Reset today's edits
-│ AFTER PULL A · MON 31 AUG              │
+│ AFTER PULL A · MON 5 OCT               │
 │ Push A                                 │
 │────────────────────────────────────────│
-│  ≈ 45 min  │  ≈ 18:50  │     12        │ recomputed: skips drop out
+│  ≈ 45 min  │  ≈ 18:50  │     12        │ skipped sets left out
 │  TIME      │  DONE BY  │    SETS       │
 │────────────────────────────────────────│
 │ Chest · Shoulders · Triceps            │
-│ Last workout 5 weeks ago               │ LighterStartLine (fact = actual)
-│                     ( Lighter start? ) │ outline pill, 44pt
 │                                        │
 │ 5 EXERCISES · 3 EDITED         TARGET  │
-│ 01 Incline DB press          SAME      │ moved first (Do first)
+│ 01 Incline DB press          SAME      │ moved (no marker; index shows it)
 │    3 × 8–10 · 2 warm-ups  30 kg each   │
 │ 02 DB bench press         ⇄ SWAPPED    │
 │    3 × 6–8              32.5 kg each   │
 │  ┌──────────────────────────────────┐  │ row panel (open)
 │  │ SWAPPED  For Bench press · today │  │
-│  │ LAST   32.5 kg each × 8 · 17 Aug │  │ actual
+│  │ LAST   32.5 kg each × 8 · 17 Sep │  │ actual
 │  │ (Undo swap) (Swap again)         │  │
-│  │ (How to) (History) (Why?)        │  │
-│  │ Change Push A too ›              │  │ → change-review, Future sessions
+│  │ (Skip today) (How to) (Why?)     │  │
+│  │ Change Push A too ›              │  │ routine basis only
 │  └──────────────────────────────────┘  │
 │ SUPERSET                               │
 │┃03 Lateral raise           SAME        │
 │┃   3 × 12–15              10 kg each   │
 │┃04 Triceps pushdown        ↑ REPS      │
 │┃   3 × 10–12                  25 kg    │
-│ 05 Cable fly              ⊘ SKIPPED    │ text.tertiary name + detail
+│ 05 Cable fly              ⊘ SKIPPED    │ text.tertiary
 │    3 × 12–15                     —     │
 │                                        │
 │ CHECK-IN        (1)(2)(3)(4)(5)        │ only when due
@@ -89,26 +78,24 @@ Ben is back after 5 weeks. Bench is taken, so he swaps it and starts with inclin
 ```
 
 Rules:
-- **Edit markers** take the `ChangeMarker` slot. They use the same type and colour (`text.secondary`, 12/600 caps, icon + word). The order of precedence is: `⊘ SKIPPED` > `⚠ HELD` > `⚠ NO LOAD` > `⇄ SWAPPED` > the overview §4 change markers (so a swapped `NEW` row shows `⇄ SWAPPED`, and its panel shows `NEW`). A swapped row's `CHANGE` panel line compares the substitute with **its own** last comparable session.
-- **Moved rows have no marker.** The index numbers show the new order. `Do first` and Reorder count once each in `N EDITED` (one `order` edit), however many rows moved.
-- **Skipped rows stay in place**, in `text.tertiary`, with the load cell `—`. They're still one button, so the panel can `Bring back`. They're left out of `TIME`, `DONE BY`, `SETS` and the muscles line.
-- **The list header** reads `5 EXERCISES · 3 EDITED` when the draft has applied edits, otherwise `5 EXERCISES`. Lighter start counts as one edit.
-- **Supersets:** a swapped member keeps the bracket and letter. Skipping a member leaves the others bracketed when two or more are left. With one left, the bracket goes for today. `Do first` on a member moves the whole group.
-- **WARM-UP, PLATES and BEST** panel lines follow the overview rule ("first barbell exercise only") on the **edited** order.
+- **Markers** use the `ChangeMarker` slot and style. Precedence: `⊘ SKIPPED` > `⚠ HELD` > `⚠ NO LOAD` > `⇄ SWAPPED` > the §4 markers. A swapped row's panel still shows `CHANGE` / `LAST` against **the substitute's own** last comparable session (or `NEW`).
+- **Moved rows have no marker.** One `order` edit counts once in `N EDITED`, however many rows moved.
+- **Skipped rows stay in place** in `text.tertiary` with load `—`. They're left out of `TIME`, `DONE BY`, `SETS` and the muscles line. `N EXERCISES` still counts them.
+- **List header:** `5 EXERCISES · 3 EDITED` when the draft has applied edits, else `5 EXERCISES`.
+- **Supersets:** a swapped member keeps the bracket. Skipping a member keeps the bracket if two or more remain; with one left, the bracket goes for today. `Do first` on a member moves the whole group.
+- **WARM-UP, PLATES, BEST** follow "first barbell exercise only" on the **edited** order.
 
-### 2.2 Row panel actions (`OverviewRow` panel, outline pills, 44pt, wrapping)
+### 2.2 Row panel actions (outline pills, 44pt, wrapping)
 
 | Row state | Pills, in order |
 |---|---|
-| Normal | `Swap today` · `Skip today` · `Do first` (hidden on the first row or group) · `How to` · `History` · `Why?` (+ coach `Undo` / `Use coach target` from overview §5) |
-| `⚠ NO LOAD` | Same, with `Swap today` first and its panel line `ROUNDED`/missing item as overview §8 |
-| Swapped | `Undo swap` · `Swap again` · `Skip today` · `Do first` · `How to` · `History` · `Why?`, then the link `Change Push A too ›` (routine basis only) |
-| Skipped | `Bring back` · `How to` · `History` |
-| The only exercise not skipped | `Skip today` hidden |
+| Normal | `Swap today` · `Skip today` · `Do first` (not on the first row/group) · `How to` · `Why?` · coach pills (overview §5) |
+| `⚠ NO LOAD` | Same; panel `GYM` line as now |
+| Swapped | `Undo swap` · `Swap again` · `Skip today` · `Do first` · `How to` · `Why?`, then the link `Change Push A too ›` (routine basis only) |
+| Skipped | `Bring back` · `How to` |
+| Only exercise not skipped | `Skip today` hidden |
 
-Panel lines added: `SWAPPED  For Bench press · today` and `SKIPPED  Today`. Lighter start adds `TODAY  Lighter start · 100 → 80 kg` to each changed row.
-
-Long-press on a row opens the iOS context menu with the same actions (`Swap today`, `Skip today` / `Bring back`, `Do first`, `Move up`, `Move down`). It's a shortcut only; every action is also a visible button.
+Panel lines added: `SWAPPED  For Bench press · today` and `SKIPPED  Today`.
 
 ### 2.3 Reorder mode (`⋯` → `Reorder`)
 
@@ -117,116 +104,106 @@ Long-press on a row opens the iOS context menu with the same actions (`Swap toda
 │ Reset order                      Done  │ Reset only when the order changed
 │ Push A                                 │
 │ 5 EXERCISES                            │
-│ ≡ 01 Incline DB press        [↑] [↓]   │ ReorderRow: drag handle + 44pt buttons
-│ ≡ 02 DB bench press          [↑] [↓]   │
-│ ┃≡ 03 Lateral raise ┐        [↑] [↓]   │ a superset moves as one row
-│ ┃   Triceps pushdown┘                  │
-│ ≡ 05 Cable fly · skipped     [↑] [↓]   │
+│ 01 Incline DB press          [↑] [↓]   │ ReorderRow, 44 × 44 buttons
+│ 02 DB bench press            [↑] [↓]   │
+│┃03 Lateral raise             [↑] [↓]   │ a superset moves as one row
+│┃   Triceps pushdown                    │
+│ 05 Cable fly · skipped       [↑] [↓]   │
 │                                        │
 │ [            Start workout           ] │ still live
 └────────────────────────────────────────┘
 ```
 
-- Each move writes a new `order` edit at once (drag on release; `↑`/`↓` per tap). There's no separate save. `Done` leaves the mode. `Start workout` stays visible and live, so starting from Reorder mode keeps the order.
-- `Reset order` removes the `order` edit (toast with Undo).
-- No reorder animation (premium-feel §4.3, "Lists"). With Reduce Motion, nothing changes: there is no motion to remove.
+- Each tap writes a new `order` edit at once (it replaces the previous one). There's no save step. `Done` leaves the mode. Start stays live and keeps the order.
+- `↑` is disabled on the first row, `↓` on the last. No animation.
 
-### 2.4 Swap sheet (reuses exercise-library §2.5, large detent)
-
-The header is `Swap Bench press` / `At Main Gym · today only`. Intents, reasons, pain warnings and `Search all exercises ›` are unchanged. Overview-specific rules:
-- **Candidates** come from `rankSubstitutions(exerciseId, gymId, intent, {excludeExerciseIds})`. They are limited to exercises doable with the **selected** gym's usable equipment (out-of-order items excluded; there's no `Busy today` before Start). Anything already in today's plan after edits is excluded, including skipped exercises (bring those back instead).
-- The substitute keeps the slot's set types, sets, reps, effort and rest (exercise-library §2.5). Each row's trailing value is the **target load** it would get today (`Target 32.5 kg each × 6–8`), from `nextTargetsFor` on its own history and fitted with `snapPlanToGym` (mode `start`). With no comparable history it shows `No history` (shortened per the minimal-copy convention from exercise-library's `No history: start light, enter your load.`), and the row gets `NEW` with load `—`.
-- Choosing a row closes the sheet and applies the swap (TE3). A substitute with its own pain flag asks `DB bench press may hurt` [Add anyway] [Choose another] first (EL9).
-- `Swap again` reopens the sheet for the **original** slot. The original exercise is listed first as `Bench press · planned` so Ben can swap back. Choosing it is the same as `Undo swap`.
-
-### 2.5 Lighter start sheet (medium detent; large at AX1+)
+### 2.4 Swap sheet (`BottomCard`, large)
 
 ```
 ┌────────────────────────────────────────┐
-│ Lighter start                    Close │
-│ [▦ Today only]                         │ ScopeBadge
-│ Last workout Mon 31 Aug                │ actual
-│                                        │
-│                         TARGET         │
-│ Incline DB press  30 → 22.5 kg each    │ before → after, tabular
-│ DB bench press    32.5 → 25 kg each    │ −20% of last load, rounded down
-│ Lateral raise     10 → 7.5 kg each     │
-│ Triceps pushdown        25 → 20 kg     │
-│                                        │
-│ Why? ›                                 │
-│ (Not now)                  [ Apply ]   │ Apply = this sheet's PrimaryButton
+│ Swap Bench press                 Close │
+│ Main gym · today                       │
+│                                TARGET  │
+│ DB bench press                         │ SubstituteRow, ≥ 64pt, one button
+│ Dumbbells · last 32.5 × 8 · 17 Sep     │ actual
+│                    32.5 kg each × 6–8  │
+│────────────────────────────────────────│
+│ Chest press machine                    │
+│ Stack · No history          — × 6–8    │
+│────────────────────────────────────────│
+│ Push-up                                │
+│ Bodyweight · last BW × 15 · 2 Oct      │
+│                           BW × 12–15   │
+│────────────────────────────────────────│
+│ Incline DB press           ⚠ May hurt  │ flagged: marked, listed last
+│ Dumbbells · last 30 × 9 · 5 Oct        │
+│                      30 kg each × 8–10 │
 └────────────────────────────────────────┘
 ```
 
-- **Built-in numbers (R2):** for each returning exercise (TE6), after = its **last comparable working load** × (1 − band %), snapped **down** at the selected gym, and never above today's target. Sets and reps stay as planned, and the planned RPE of those working sets is capped at 7 (R2; not shown on the sheet, only in `Why?` and on the set card's effort target).
-- **Equipment minimum (R2):** if the reduced load is below the item's minimum, the load goes to the minimum. If that is no lighter than today's target, the load stays and the rep target drops by 2 at both ends, not below 1 (the line reads `Lateral raise  2.5 kg each · 12–15 → 10–13`). R2 says "1–2 reps"; 2 is chosen so the session is lighter in every case. If neither load nor reps change, the exercise isn't listed.
-- One line per exercise that changes. Exercises that don't (not returning, bodyweight, timed, `NEW`, `NO LOAD`, already at or below the reduced load) go into one `No change: …` line in `text.secondary`, omitted when empty. Skipped exercises aren't listed. If no line would change, the offer isn't shown at all.
-- With the coach live: the header adds the `Coach` SourceTag. Without the coach, the sheet has no author tag (overview §5: no `Built-in rule` on screen; R6). `Why?` says who set it.
-- `Why? ›` (info sheet, no AI): `Last workout 31 Aug · 41 days.` · `4–12 weeks: 20% lighter, rounded down to loads here.` · `Same sets and reps. Effort RPE 7 or less.` · `Set by Built-in rule` (or `Set by Coach`, with the coach's one-line reason in quotes). Per-row gaps that differ from the workout gap show on that row's line (`Lateral raise · 13 weeks: 40%`).
+- Up to 8 rows, in `rankSubstitutions` order. The trailing value is the **target** the row will show after the pick (same function, same fit).
+- From `Swap again`, the original is listed first as `Bench press · planned`. Picking it equals `Undo swap`.
+- Empty: `No swaps at Main gym.` (one line, no button).
+- A row with `⚠ May hurt` asks `DB bench press may hurt` · `Shoulder pain flagged 6 Oct.` [Add anyway] [Choose another] first (EL9). `Choose another` keeps the sheet open.
 
-After `Apply`, the page line becomes:
+### 2.5 Change-review card (inline, in the swapped row's panel)
+
+Tapping `Change Push A too ›` replaces the link with a `ChangeReviewCard` (design-system §9.11), in place. No sheet, no screen.
 
 ```
-│ ↓ Lighter start · today          Undo  │ Undo = 44pt text button
+│  ┌──────────────────────────────────┐  │
+│  │ [person Ben] Change Push A       │  │ SourceTag + title
+│  │ [▦ Push A from now on]           │  │ ScopeBadge
+│  │ Changed  Bench press             │  │ ChangeLine
+│  │       →  DB bench press          │  │
+│  │ (Not now)              (Apply)   │  │ Apply: secondary accent button
+│  └──────────────────────────────────┘  │
 ```
+
+- After Apply: the card collapses to `✓ Applied · Push A from now on` [Undo]. The row loses `⇄ SWAPPED` (the template now matches), and the toast `Push A changed` [Undo] shows.
+- Out of date (the routine version moved): the lines turn `text.secondary` under `Was suggested:`, Apply is **hidden**, `Dismiss` shows (CR4).
+- `Why?` isn't shown: a Ben-authored one-line change has nothing to explain.
 
 ---
 
 ## 3. States
 
-### 3.1 Draft and page
-
 | State | Shows | Notes |
 |---|---|---|
-| No draft | Overview as workout-overview.md | The first edit creates the draft |
-| Draft, edits applied | Markers, `N EDITED`, recomputed strip | — |
-| Saving an edit | Nothing visible (local write). The row updates on success | `timing.placeholderDelay` doesn't apply to writes |
-| Edit write failed | Toast `Couldn't save that edit.` The row stays as it was | Retry reuses the opId |
-| Edit rejected as stale (draft version moved) | The page re-renders from the stored draft, with toast `Targets updated` | Rule 5. Rare: one page, one writer, but late coach writes exist |
-| An edit no longer fits the plan (routine edited and the slot is gone, an `order` whose slot set changed, a **coach** Lighter start whose base target moved) | The edit is marked `stale` and dropped from the view. Toast `Plan changed · 1 edit removed` | All-or-nothing per edit (CR3). A built-in Lighter start never goes stale (TE11): it re-computes. After a stale coach one, the offer re-computes if R1 still holds |
-| Edit made redundant (a template change now matches it) | The edit is dropped silently. The row shows the same exercise, with no `SWAPPED` marker | Applying `Change Push A too ›` does this in the same transaction |
-| Reopened, draft still open | Edits shown as left | Same day, same basis |
-| Page open across local midnight | Nothing changes while the page is open; Start consumes the draft as normal | TE5. Expiry runs on the next open |
-| Another routine opened (`⋯` → `Other routine`) | That routine's own draft, if any (one open draft per basis, ADR draft §1). The first routine's draft is kept until expiry or any Start | — |
-| Reopened after expiry (midnight) or after another workout started | No edits. A one-time toast `Earlier edits cleared` if the draft had edits Ben hadn't started with | Honest, once |
-| Gym changed on the page | Every row re-fits. Edits are kept. A swapped substitute that isn't doable at the new gym shows `⚠ NO LOAD` with `Swap again` first | Lighter start stores intended loads, so it re-fits and doesn't go stale |
-| Check-in What's up? adds a pain flag | The affected row shows `⚠ HELD` before Start. A swap or lighter start on it stays (both only hold or lower) | — |
+| No draft | The overview as workout-overview.md | First edit creates the draft |
+| Draft with applied edits | Markers, `N EDITED`, recomputed strip | — |
+| Writing an edit | Nothing visible (local write); the row updates on success | — |
+| Edit write failed | Toast `Couldn't save that edit.` Row unchanged | Retry reuses the opId |
+| Stale draft version | Page re-reads; toast `Targets updated` | Rule 5 |
+| An edit no longer fits (routine edited and the slot is gone; an `order` whose slots changed) | Edit marked `stale`, dropped. Toast `Plan changed · 1 edit removed` | Other edits still apply |
+| Edit made redundant (template now matches) | Dropped silently; row shows no `SWAPPED` | Change-review Apply does this in its transaction |
+| Reopened, draft open | Edits as left | — |
+| Reopened after midnight / another start | No edits. Toast `Earlier edits cleared` once, if the draft had edits | — |
+| Start after midnight with the page still open | Nothing created; page re-reads without edits; toast `Earlier edits cleared`. Ben taps Start again | TE5 |
+| Other routine | That routine's own draft, if any | One open draft per basis |
+| Gym changed | Every row re-fits; edits kept. A substitute with no usable item here shows `⚠ NO LOAD` with `Swap again` first | Intent, not numbers |
+| Check-in adds a pain flag | The row shows `⚠ HELD`. Swap and skip stay | — |
 | Reorder mode | §2.3 | Start live |
-| Every exercise but one skipped | That row's `Skip today` is hidden | Ben can use `⋯` → `Empty workout` |
-| Start with a draft | One transaction: re-plan, apply edits, check `expectedPreviewKey` (which now includes the draft id and version), create the session, mark the draft consumed | A stale key creates nothing (OV4) |
-| Force-close at any point | Relaunch → Today. The draft is intact. Opening the overview shows it. Today's Up next rows reflect it too (§9 follow-up) | Never a session |
-| Offline / no AI | Everything works. Lighter start uses built-in numbers | Rule 1 |
-| Workout active (another path) | Overview unreachable (OV11). Any start discards every open draft | — |
+| Swap sheet, no candidates | `No swaps at Main gym.` | — |
+| Change-review card: ready / applied / out of date | §2.5 | — |
+| Start with a draft | One transaction (ADR 0022 §3) | Stale key → nothing created (OV4) |
+| Force-close anywhere | Relaunch → Today; draft intact; Today's Up next and the overview show it | Never a session |
+| Offline / no AI | Identical. Nothing here needs network or AI | Rule 1 |
+| Workout active | Overview unreachable (OV11) | — |
+| Dynamic Type AX1+ | Pills wrap; Swap sheet rows stack the target under the name; Reorder buttons go under the name; numbers never truncate; Start stays in the fixed bar | — |
 
-### 3.2 Lighter start
-
-| State | Trigger | Shows |
-|---|---|---|
-| Not offered | Workout gap < 14 days, no returning exercise, nothing would change, a playbook rule (R1/R2) not approved, or Ben turned it off (§4.5) | Nothing. No placeholder |
-| Offered | R1 holds | `Last workout 5 weeks ago` + `Lighter start?` |
-| Sheet, built-in | No coach configured, or coach not merged yet | Built-in numbers at once |
-| Sheet, coach checking | Coach live and reachable (after coach v1) | `Checking…` (static `ellipsis`, no shimmer) for up to `timing.coachTimeout`. `Not now` works; `Apply` is hidden |
-| Sheet, coach answered | Validated coach proposal | Coach numbers + `Coach` tag. Guard notes (`No increases in a lighter session.`, rounding) appear only in `Why?` |
-| Sheet, coach failed / offline / timed out | Route exists but can't answer | Built-in numbers with `wifi.slash` + `Coach offline` under the title (minimal-copy audit C11). Honest, no coach wording |
-| Applied | `Apply` | Sheet closes. Line `↓ Lighter start · today` + `Undo`. Changed rows get their marker from `targetChangeMarker` as usual (normally `↓ DOWN`; `↓ REPS` for an equipment-minimum row) and the panel `TODAY` line. Toast `Lighter start · today` [Undo] |
-| Undone | Toast or line `Undo` | Previous targets back. The offer line returns |
-| Not now | `Not now` / `Close` / swipe down | Nothing changes. The line stays (static, never repeated as a pop-up) |
-| Plan changes after Apply (swap, skip, gym, D21 Undo) | Built-in (TE11) | The rows re-compute with R2 applied to the current plan. A swapped-in returning substitute gets its own lighter target; a skipped row drops out. No toast |
-| Stale | Coach version only: the base intended target of any changed exercise moved | The edit drops (toast `Plan changed · 1 edit removed`). The offer re-computes |
-
-### 3.3 Transitions
+### 3.1 Transitions
 
 ```
-Overview ─row─► panel ─Swap today─► Swap sheet ─pick─► Overview (row ⇄ SWAPPED, toast Undo)
-                  │                      └─may hurt─► confirm ─Add anyway─► same
-                  ├─Skip today─► row ⊘ SKIPPED (toast Undo) ─Bring back─► row restored
-                  ├─Do first─► row moves to 01 (toast Undo)
-                  └─Change Push A too ›─► change-review (Future sessions) ─Apply─► routine v+1, today edit absorbed
-Overview ─⋯ Reorder─► Reorder mode ─moves─► … ─Done─► Overview
-Overview ─Lighter start?─► sheet ─(Checking…)─► before/after ─Apply─► Overview (↓ line, toast Undo)
-                                                          └─Not now─► Overview (unchanged)
-Overview ─Start─► [one transaction] ─ok─► Workout (Ready, first pending set of the edited order)
-                                   └─stale─► Overview re-rendered, `Targets updated`
+Overview ─row─► panel ─Swap today─► Swap sheet ─pick─► Overview (⇄ SWAPPED, toast Undo)
+                  │                      └─May hurt─► confirm ─Add anyway─► same
+                  ├─Skip today─► ⊘ SKIPPED (toast Undo) ─Bring back─► restored
+                  ├─Do first─► row/group to 01 (toast Undo)
+                  └─Change Push A too ›─► inline card ─Apply─► routine v+1, swap edit redundant (toast Undo)
+                                                      └─Not now─► link again
+Overview ─⋯ Reorder─► Reorder mode ─↑/↓…─► Done ─► Overview
+Overview ─Start─► [one transaction] ─ok─► Workout (Ready on the first pending set of the edited order)
+                                   └─stale / expired─► Overview re-read, toast
 Overview ─Close─► Today (draft kept until midnight / any start / Reset)
 ```
 
@@ -234,186 +211,152 @@ Overview ─Close─► Today (draft kept until midnight / any start / Reset)
 
 ## 4. Interactions
 
-### 4.1 Tap counts (from the overview)
+### 4.1 Tap counts
 
 | Edit | Taps | Then to the first logged set |
 |---|---|---|
-| Skip one exercise | 2 (row, `Skip today`) | +2 (Start, Log) |
+| Skip | 2 (row, `Skip today`) | +2 (Start, Log) |
 | Do first | 2 (row, `Do first`) | +2 |
 | Swap | 3 (row, `Swap today`, pick) | +2 |
-| Lighter start | 2 (`Lighter start?`, `Apply`) | +2 |
-| Undo any edit | 1 (toast `Undo`, within `timing.undoToast`), or 2 later (row → `Undo swap` / `Bring back`; line `Undo`) | — |
+| Undo | 1 (toast, within `timing.undoToast`), or 2 later (row → `Undo swap` / `Bring back`) | — |
 
 With no edits the path is unchanged: Start → Start → Log (OV2).
 
-### 4.2 Commands (every write: op ID + expected draft version)
+### 4.2 Commands (every write: `opId` + `expectedDraftVersion`)
 
 | Action | Call | Undo |
 |---|---|---|
-| Swap today | `services.overview.edit({basis, edit: {kind: 'swap', slotKey, toExerciseId}, expectedDraftVersion, opId})` | `services.overview.undoEdit({draftId, editId, expectedDraftVersion, opId})` |
-| Skip today / Bring back | `edit({kind: 'skip', slotKey})` / `undoEdit(editId)` | Toast, or `Bring back` |
-| Do first / Move up / Move down / drag | `edit({kind: 'order', slotKeys[]})`. It replaces the previous `order` edit (the old one is marked removed, not deleted) | Toast (Do first only), or `Reset order` |
-| Lighter start Apply | Built-in: `edit({kind: 'lighter_start', mode: 'rule', ruleRef: 'R2', playbookVersion, workoutGapDays})`. Coach: `edit({kind: 'lighter_start', mode: 'coach', coachActionId, changes[{slotKey, beforeIntended, afterIntended, repsAfter?}]})` | Toast or line `Undo` |
-| Reset today's edits | `services.overview.resetEdits({draftId, expectedDraftVersion, opId})`: every open edit is marked removed | Toast `Today's edits reset` [Undo] → `restoreEdits` |
-| Change Push A too › | Opens change-review with a Ben-authored `future_template` proposal. On Apply: `updateRoutine` (new version) and, in the same transaction, the matching today edit is marked `redundant` | Change-review's Undo (the routine version is reverted; the today swap comes back as an edit) |
-| Start | `services.workout.start({…, draft: {id, expectedVersion}, expectedPreviewKey, opId})` | Workout `⋯` → `Discard workout` (unchanged) |
+| Swap today / Swap again | `services.overview.edit({target, edit: {kind: 'swap', slotKey, toExerciseId}, expectedDraftVersion, opId})` | `services.overview.undoEdit({draftId, editId, expectedDraftVersion, opId})` (restores the edit it replaced) |
+| Skip today / Bring back | `edit({kind: 'skip', slotKey})` / `undoEdit` | Toast or `Bring back` |
+| Do first / `↑` / `↓` | `edit({kind: 'order', slotKeys})` (replaces the previous `order`) | Toast (Do first) or `Reset order` |
+| Reset today's edits | `services.overview.resetEdits({draftId, expectedDraftVersion, opId})` | Toast `Today's edits reset` [Undo] → `restoreEdits` |
+| Change Push A too › → Apply | `services.routines.applyTemplateSwap({routineId, expectedRoutineVersion, slotKey, toExerciseId, draft: {id, expectedVersion}, opId})`. One transaction: routine v+1 (slot's exercise replaced, equipment cleared, its template loads reset to Auto, never converted; sets, reps, effort, rest kept), an `ActionRecord` (author `ben`, detail `update_routine`), and the draft's swap edit marked `redundant` | `services.routines.undoTemplateSwap({actionId, opId})` (new; there is no generic `undoAction` yet): restores the routine if it is still at the version Apply produced and brings the swap edit back. Otherwise `Can't undo: Push A changed since.` |
+| Start | `services.overview.start({…, draft: {id, expectedVersion} \| null, expectedPreviewKey, opId})` | Workout `⋯` → `Discard workout` (unchanged) |
 
-Edits are never deleted: Undo appends `removedAt`/`removedOpId` to the edit, and the draft version bumps. Repeating an `opId` is a no-op that returns the current draft.
+Edits are never deleted. Undo marks `removed`; the draft version bumps. A repeated `opId` returns the current draft. Taps go through the screen's existing `createGuard` pattern (one write at a time).
 
 ### 4.3 After Start
 
-- Swapped rows start as the substitute exercise, with `planned.provenance` noting `Swapped before start · Bench press`. In-workout `Why?` shows it. Undo is no longer offered for a pre-start edit after Start: Ben uses the normal workout actions (`Swap exercise`, `Skip exercise`, `Add set`).
-- Skipped rows start as `skipped` sets (`skippedBy: 'before_start'`), shown in the Skipped style. `Add set` brings the exercise back (TE9).
-- The order is the session's exercise order. The first pending set is the first row.
-- Lighter-start sets carry `planned.source` (`rule` or `coach`), planned RPE ≤ 7 (R2), and a provenance reason (`Lighter start · last workout 31 Aug`). The check-in's lighter-session offer isn't raised (TE10).
-- Next-session targets: a skipped exercise keeps its current next target (no done sets). A swapped-away exercise is unchanged. The substitute progresses on its own history. The ramp back after a lighter start (R3) is out of scope here: it needs Ben's approval of R3.
+- Swapped slots start as the substitute; `Why?` shows `Swapped before start · Bench press`. Pre-start Undo is gone; Ben uses the workout's own actions.
+- Skipped slots show in the Skipped style; `Add set` brings one back.
+- Next-session targets: a skipped exercise keeps its next target (no sets done). The substitute progresses on its own history. The swapped-away exercise is unchanged.
 
-### 4.4 Voice (for voice.md; no voice on this page until build step 5)
+### 4.4 Voice (for voice.md; none on this page until build step 5)
 
-Deterministic local commands, no coach:
+Deterministic local commands, no coach: "skip cable fly" → skip + Undo · "do incline first" → Do first + Undo · "swap bench" → opens the Swap sheet (pick needs a tap) · "undo" → latest edit. No spoken cues from this page.
 
-| Say | Result | Voice strip |
-|---|---|---|
-| "skip cable fly" / "skip cable fly today" | Skip edit, with Undo | `Cable fly skipped today` [Undo] |
-| "do incline first" | Do first | `Incline DB press first` [Undo] |
-| "swap bench" | Opens the Swap sheet (a pick needs a tap) | — |
-| "lighter start" | Opens the Lighter start sheet. **Apply needs a tap** (it changes targets; same reasoning as GS9) | — |
-| "start" / "start workout" | Start | — |
-| "undo" | Undoes the latest edit | `Undone` |
+### 4.5 Accessibility
 
-No spoken cues come from this page.
-
-### 4.5 Settings
-
-Profile → Coaching → `Lighter start after a break` (On by default once R1/R2 are approved). The thresholds and percentages are **Coaching knowledge** (playbook R1/R2), edited in the playbook, not here (rule 10).
-
-### 4.6 Accessibility
-
-- All pills are ≥ 44pt; Reorder `↑`/`↓` are 44 × 44; the Lighter start pill is 44pt high.
-- VoiceOver row labels add the edit: "2, DB bench press, swapped for Bench press today, 3 sets of 6 to 8, target 32.5 kilograms each." / "5, Cable fly, skipped today." The Reorder buttons are "Move Incline DB press up". A long-press context menu is also exposed as VoiceOver custom actions.
-- Lighter start sheet lines read "Incline DB press, target 30 to 22.5 kilograms each."
-- At AX1+: the Lighter start line stacks (fact, then pill full width), the sheet goes large and each line stacks (name, then before → after), and Reorder rows put the buttons under the name. Numbers never truncate. Start stays in the fixed bar.
+- Every pill ≥ 44pt; Reorder buttons 44 × 44; Swap rows ≥ 64pt.
+- Row labels add the edit: "2, DB bench press, swapped for Bench press today, 3 sets of 6 to 8, target 32.5 kilograms each." / "5, Cable fly, skipped today."
+- Each row exposes VoiceOver custom actions: Swap today, Skip today / Bring back, Do first, Move up, Move down.
+- Reorder buttons: "Move Incline DB press up".
+- Swap rows: "DB bench press, dumbbells, last 32.5 kilograms each for 8 on 17 September, target 32.5 kilograms each, 6 to 8 reps."
 
 ---
 
 ## 5. Copy (complete for this slice)
 
-All loads here are **targets**, except `LAST` and the `Last workout …` fact, which are **actuals**.
+All loads are **targets** except `LAST` and the Swap sheet's `last …` line, which are **actuals**.
 
 | Element | Text |
 |---|---|
 | Row pills | `Swap today` · `Skip today` · `Do first` · `Undo swap` · `Swap again` · `Bring back` |
-| Context menu | `Swap today` · `Skip today` · `Bring back` · `Do first` · `Move up` · `Move down` |
 | Markers | `⇄ SWAPPED` · `⊘ SKIPPED` |
-| Panel lines | `SWAPPED  For Bench press · today` · `SKIPPED  Today` · `TODAY  Lighter start · 100 → 80 kg` |
+| Panel lines | `SWAPPED  For Bench press · today` · `SKIPPED  Today` |
 | List header | `5 EXERCISES · 3 EDITED` |
-| `⋯` menu | `Reorder` · `Reset today's edits` |
+| `⋯` menu (added) | `Reorder` · `Reset today's edits` (only with edits) |
 | Reorder | `Reset order` · `Done` · `· skipped` |
-| Swap sheet (overview) | `Swap Bench press` · `At Main Gym · today only` · `Bench press · planned` · `Target 32.5 kg each × 6–8` · `No history` · `Change Push A too ›` |
-| Lighter start line | `Last workout 5 weeks ago` · `Lighter start?` · after Apply `↓ Lighter start · today` · `Undo` |
-| Lighter start sheet | `Lighter start` · `Today only` · `Last workout Mon 31 Aug` · `TARGET` · `30 → 22.5 kg each` · `No change: …` · `2.5 kg each · 12–15 → 10–13` · `Checking…` · `Coach offline` · `Why? ›` · `Not now` · `Apply` · `Close` |
-| Lighter start `Why?` | `Last workout 31 Aug · 41 days.` · `2–4 weeks: 10% lighter` / `4–12 weeks: 20% lighter` / `12+ weeks: 40% lighter` `, rounded down to loads here.` · `Same sets and reps. Effort RPE 7 or less.` · `Set by Built-in rule` / `Set by Coach` |
-| Toasts | `Bench press → DB bench press · today` [Undo] · `Cable fly skipped today` [Undo] · `Incline DB press first` [Undo] · `Lighter start · today` [Undo] · `Today's edits reset` [Undo] · `Order reset` [Undo] · `Plan changed · 1 edit removed` · `Earlier edits cleared` · `Couldn't save that edit.` · `Targets updated` (existing) |
-| Pain confirm (EL9, shortened per minimal-copy audit A25) | `DB bench press may hurt` · `Shoulder pain flagged 6 Oct.` · `Add anyway` · `Choose another` |
-| Settings | `Lighter start after a break` |
-| Voice strip | `Cable fly skipped today` · `Incline DB press first` · `Undone` |
+| Swap sheet | `Swap Bench press` · `Main gym · today` · `TARGET` · `Bench press · planned` · `last 32.5 × 8 · 17 Sep` · `No history` · `⚠ May hurt` · `No swaps at Main gym.` · `Close` |
+| Pain confirm | `DB bench press may hurt` · `Shoulder pain flagged 6 Oct.` · `Add anyway` · `Choose another` |
+| Change-review card | `Change Push A too ›` · `Change Push A` · `Push A from now on` · `Changed` · `Not now` · `Apply` · `✓ Applied · Push A from now on` · `Undo` · `Was suggested:` · `Dismiss` |
+| Toasts | `Bench press → DB bench press · today` [Undo] · `Cable fly skipped today` [Undo] · `Incline DB press first` [Undo] · `Order reset` [Undo] · `Today's edits reset` [Undo] · `Push A changed` [Undo] · `Plan changed · 1 edit removed` · `Earlier edits cleared` · `Couldn't save that edit.` · `Can't undo: Push A changed since.` · `Targets updated` (existing) |
+| `Why?` (swapped row) | `Swapped before start · Bench press` (then the usual target explanation) |
 
-"5 weeks ago" is `floor(days / 7)` weeks. VoiceOver reads the date ("Last workout Monday 31 August, 5 weeks ago").
-
-There are no reassurance lines, no rule names on the page and no explanations outside `Why?`. "Same sets and reps" lives only in `Why?`: on the sheet it would be a reassurance line, and it isn't true for an equipment-minimum row.
+No reassurance lines, no rule names, no explanations outside `Why?`.
 
 ---
 
 ## 6. Data needed
 
-**Existing:** `buildWorkoutOverview`, `previewKey`, `services.overview.load`, `services.workout.start`, `planRoutineStart` / `startFromSession` (`preview: true`), `snapPlanToGym` (mode `start`), `rankSubstitutions`, `nextTargetsFor`, `getComparableHistory`, `painFlagCovering`, `estimateRemainingDuration`, `targetChangeMarker`, `evaluateCheckInOffer`, `requestCoachAdjustment` / `validateCoachProposal` (after coach v1), change-review's `future_template` proposal + `updateRoutine`, `expireProposals`.
+### 6.1 Existing (merged)
 
-**New (pure, `packages/domain`, unit-tested):**
+`services.overview.load` / `start` / `explain`, `buildWorkoutOverview`, `previewKey`, `previewFence`, `planRoutineStart`, `startWorkoutFromSession`, `startWorkout` → `snapPlanToGym` (mode `start`), `nextTargetsFor`, `plannedSetsFromTargets`, `pastExercisesOf`, `lastComparable`, `painFlagCovering`, `targetChangeMarker`, `estimateRemainingDuration`, `ActionRecord` (author `ben`), catalogue `variations.substitutions`, `Exercise.family` / `catalogueKey`.
+
+### 6.2 New pure functions (`packages/domain`, unit-tested)
 
 | Function | Contract |
 |---|---|
-| `applyTodayEdits(plan, edits, ctx)` | `plan` = the unfitted dry-run plan (slots with intended targets). Applies open edits in a fixed order (skip, swap, order, lighter_start) and returns `{plan, outcomes: {editId, result: 'applied' \| 'stale' \| 'redundant' \| 'blocked', reason?}[]}`. A swap re-plans the slot with the substitute's own `nextTargetsFor`. A `lighter_start` in `mode: 'rule'` runs `buildLighterStartOffer` on the edited plan and applies its changes (never stale; it changes nothing if the offer is now `null`). In `mode: 'coach'`, a change applies only if the slot's current `intended` equals `beforeIntended`; otherwise the whole edit is `stale`, except that changes on skipped slots are ignored. An `order` edit whose slot set no longer matches is `stale`. Never touches equipment fitting: `snapPlanToGym` runs after it |
-| `buildLighterStartOffer(plan, history, playbook, gym, now)` | Returns `null` or `{workoutGapDays, lastSessionDate, changes[{slotKey, gapDays, percent, beforeIntended, afterIntended, beforeFitted, afterFitted, repsBefore?, repsAfter?}], noChange[slotKey]}`. Uses R1 (workout gap ≥ 14 days for the offer; each slot's own gap and usual-spacing exception for `returning`) and R2 (band by the slot's gap, from its last comparable working load, snapped down, capped at today's target, equipment-minimum rep cut, RPE ≤ 7). A slot lands in `changes` only if its fitted load or reps go down. Returns `null` when there are no changes. Skipped slots are ignored |
-| `swapCandidatesForOverview(slot, plan, gym, history, painFlags)` | Thin wrapper over `rankSubstitutions` with `excludeExerciseIds` (plan after edits) and the gym's usable equipment, plus each candidate's fitted target and `mayHurt` |
-| `previewKey(...)` | Adds `draftId` + `draftVersion` to the inputs (workout-overview §7) |
+| `applyTodayEdits(basis, edits, ctx)` | `basis` = the start input (`routine` or source session exercises, plus the `targets` map). Applies open edits in a fixed order (swap, skip, order; a later target-edit kind goes after these). A swap re-points the slot to the substitute, clears its equipment (the shared fit maps an item, GS3) and puts `substituteTargets` in `targets`. Returns `{basis, skippedSlotKeys, outcomes: {editId, result: 'applied' \| 'stale' \| 'redundant'}[]}`. Never fits loads |
+| `planWithTodayEdits(input)` | `applyTodayEdits` → the existing planner (`preview: true` or real) → skipped slots' sets marked `skipped` / `skippedBy: 'before_start'`. Returns the planner output plus `slotOf: Record<sessionExerciseId, slotKey>` and `outcomes`. **The only path** for both the overview dry run and Start |
+| `substituteTargets(slot, exercise, pasts, ctx)` | Comparable history (`lastComparable` at the item the fit will map) → `nextTargetsFor` with the slot's working-set count → `plannedSetsFromTargets` (with provenance). None → the slot's own set templates with `targetLoad: null`. Never converts the original's load |
+| `rankSubstitutions({slot, exercises, catalogueSubstitutions, excludeExerciseIds, gymEquipment, knownEquipment, pasts, painFlags, nowMs, tz})` | Candidates: (1) the slot exercise's catalogue substitutions resolved to Ben's exercises by `catalogueKey`, in catalogue order; (2) Ben's exercises with the same `family`, most recently done first. Excludes: anything in `excludeExerciseIds` (today's edited plan, skipped included), anything with no usable item at this gym (bodyweight always passes), unresolved catalogue keys. Pain-flagged candidates (`painFlagCovering`) keep `mayHurt` and go last. Each candidate's target = `substituteTargets` → `snapPlanToGym` (mode `start`) for that one slot. Max 8. No scores |
+| `buildWorkoutOverview` (extended) | Input gains `slotOf` and the draft's applied edits. `OverviewRow` gains `slotKey` and `edit: {kind: 'swapped', fromName} \| {kind: 'skipped'} \| null`. `ChangeMarkerKind` gains `swapped` and `skipped`. `WorkoutOverview` gains `editCount` and `draft: {id, version} \| null`. Skipped rows are excluded from `estimate`, `workingSets` and `muscles` |
+| `previewKey` / `previewFence` | `PreviewKeyParts` gains `draft: {id, version} \| null`; the fence pins the `pre_start_drafts` row |
 
-**New service calls:** `services.overview.edit`, `undoEdit`, `resetEdits`, `restoreEdits`, `services.overview.lighterStart({draftId?, gymId})` (built-in now; the coach path after coach v1 calls `requestCoachAdjustment(…, {origin: 'break_offer', intent: 'lighter_start'})` against the **draft**, not a session, with the validator dropping any increase (`lighter_no_increase`) and anything below the equipment minimum). `services.overview.load` returns the draft and its edit outcomes. `services.workout.start` accepts `draft`.
+### 6.3 New service calls
 
-**Schema:** the `PreStartDraft` record and `TodayEdit` union in the ADR draft, with `lighter_start` split into `mode: 'rule'` and `mode: 'coach'` variants (TE11; the ADR draft §1–§2 still shows one numbers-only variant and needs the matching change). `SetStatus` gets the `skippedBy?: 'before_start' | 'in_workout'` provenance. `session.source.todayEdits?` keeps the applied edits for history and `Why?`.
+`services.overview.edit`, `undoEdit`, `resetEdits`, `restoreEdits`, `swapCandidates({target, gymId, slotKey})` (wraps `rankSubstitutions`); `services.overview.load` returns the draft, its outcomes and drops stale/redundant edits on its next write; `services.overview.start` accepts `draft`; `services.routines.applyTemplateSwap` / `undoTemplateSwap`. `services.next.preview` (Today's Up next) reads through `planWithTodayEdits` with the open draft.
 
-The screen formats only. It never applies an edit, computes a target or decides an offer.
+### 6.4 Schema (ADR 0022)
+
+`PreStartDraft`, `TodayEdit`, migration 7, `FenceTable` + `pre_start_drafts`, `SetRecord.skippedBy?`, `WorkoutSession.source.todayEdits?`, `ActionDetail` + `{kind: 'update_routine', routineId, routineName, changes: StructuralChangeLine[]}`.
+
+### 6.5 Screen changes (`WorkoutOverviewScreen.tsx`)
+
+- Row `key`, open-panel state and `panelReducer` row ids use `slotKey`, not `exerciseId`.
+- `menu()` adds `Reorder` and `Reset today's edits`.
+- Reorder mode replaces the list body; top bar shows `Reset order` / `Done`; the bottom bar is unchanged.
+- The screen formats only: it never applies an edit, ranks a candidate or computes a target.
 
 ---
 
 ## 7. Acceptance checks
 
-Fixture: Push A at Main Gym (bench 3 × 100 kg × 6–8 with 2 warm-ups, incline 3 × 30 kg each × 8–10, superset lateral raise 3 × 10 kg each + triceps pushdown 3 × 25 kg stack, cable fly 3 × 50 kg stack × 12–15). Last lifting session (Pull A) 41 days ago, Mon 31 Aug; each exercise's last comparable working load equals today's target, and DB bench press was last done 17 Aug at 32.5 kg each × 8. Hotel · Lisbon: dumbbells 2.5–20 kg each, no barbell, no cable.
+Fixture: Push A at Main gym (bench 3 × 100 kg × 6–8 with 2 warm-ups; incline 3 × 30 kg each × 8–10; superset lateral raise 3 × 10 kg each + triceps pushdown 3 × 25 kg stack; cable fly 3 × 50 kg stack × 12–15). DB bench press last done 17 Sep at 32.5 kg each × 8. Hotel gym: dumbbells 2.5–20 kg each, no barbell, no cable.
 
-- **TE-A1. Nothing before Start.** Making, undoing and resetting any edit creates no session row. Close returns to Today with no session. The draft row exists with its edits.
-- **TE-A2. Preview = Start.** For every combination of swap, skip, order and lighter start (property test over the fixture plus generated plans, every load convention), the overview rows equal the pending sets, order and skipped sets of the session Start creates.
-- **TE-A3. Skip.** `Skip today` on cable fly is 2 taps. The row shows `⊘ SKIPPED`, `SETS` drops by 3 and `TIME` drops. After Start, cable fly's 3 sets are `skipped` with `skippedBy: 'before_start'`, and `Add set` in the workout brings it back. The last unskipped exercise has no `Skip today`.
-- **TE-A4. Swap.** `Swap today` on bench lists only exercises doable at the selected gym that aren't already in the plan. Each shows a target from its own history fitted to the gym, or `No history…`. A load is never converted from bench's 100 kg. Picking DB bench press shows `⇄ SWAPPED`, and the toast Undo restores bench exactly.
-- **TE-A5. Swap and pain.** With a shoulder flag on DB bench press, picking it asks `… may hurt` first, and `Choose another` changes nothing. With a flag on bench, a same-movement substitute's target is never above its own last working load (EL6, if approved).
-- **TE-A6. Do first and reorder.** `Do first` on incline makes it `01` and Start opens Ready on incline set 1. `Do first` on lateral raise moves the whole superset. Reorder works with buttons only (no drag) and with VoiceOver custom actions. `Reset order` restores the routine order.
-- **TE-A7. Template is a proposal.** `Change Push A too ›` opens change-review with scope `Future sessions`, author `Ben`. The routine version doesn't change until Apply. After Apply the row shows DB bench press with no `SWAPPED` marker, the draft edit is `redundant`, and Undo on the change-review toast brings both back.
-- **TE-A8. Lighter start offer.** With a 41-day gap and R1/R2 approved, the line shows `Last workout 5 weeks ago` and `Lighter start?`. With a 13-day gap, or the setting off, nothing renders. Opening the page makes no AI call (provider log).
-- **TE-A9. Lighter start values.** The built-in sheet shows −20% (41-day gap) from each exercise's **last comparable working load**, rounded down to loads at the selected gym and never above today's target (incline 30 → 24 → `22.5 kg each` on a 2.5 kg rack; bench 100 → `80 kg`). No line is higher than before. Bodyweight, timed, `NEW` and `NO LOAD` rows are under `No change`. Sets and reps are unchanged and the changed working sets carry planned RPE ≤ 7. Unit tests also cover: a 20-day gap (−10%), a 90-day gap (−40%), a per-exercise gap that differs from the workout gap, R1's usual-spacing exception (an exercise done every 3 weeks isn't returning at 20 days), and the equipment minimum (load kept, reps −2 at both ends, not below 1).
-- **TE-A10. Lighter start apply and undo.** Nothing changes until `Apply`. After `Apply`, the rows, `CHANGE` panel lines and the Start-created session all have the lighter targets, with provenance `lighter_start` and source `rule`. The toast or line `Undo` restores every target exactly.
-- **TE-A11. Lighter start with the coach (after coach v1).** Tapping `Lighter start?` with the coach live sends one request, scoped to the draft. A reply that raises any load has that change dropped (`No increases in a lighter session.` in `Why?`). A timeout shows the built-in numbers with `Coach offline`, never coach-styled text. With no coach configured, no `Coach` tag or coach text appears anywhere.
-- **TE-A12. Lighter start + check-in.** After a lighter start is applied and a check-in score of 2 is given, the first set card shows no `Want a lighter session today?` offer.
-- **TE-A13. Gym change keeps edits.** Switching to Hotel · Lisbon keeps the skip and order. The swapped DB bench press re-fits (capped at 20 kg each), and the built-in lighter start re-computes for the new gym without going stale. A swapped substitute needing a cable shows `⚠ NO LOAD` with `Swap again` first.
-- **TE-A14. Stale edits (rule 5).** Undoing a D21 coach target on a row covered by a built-in lighter start re-computes that row with no toast; with a **coach** lighter start it drops the edit (`Plan changed · 1 edit removed`) and the offer re-computes. Swapping a row after a built-in lighter start gives the substitute its own lighter target if it's returning. Editing Push A to remove cable fly drops the skip edit. An edit command with an old `expectedDraftVersion` is rejected and the page re-renders.
-- **TE-A15. Idempotent.** Repeating any edit, undo or Start `opId` (double tap, retry after a simulated write error) gives exactly one change and at most one session.
-- **TE-A16. Force-close.** Kill the app after a swap, a skip and a lighter start. Relaunch → Today (no session). The overview shows all three edits. Start consumes the draft, and a second overview open shows no edits.
-- **TE-A17. Expiry.** A draft with edits expires at the first open after local midnight (in the draft's timezone), and is discarded when any workout starts from another path (Empty workout, Repeat, voice). The next overview open shows `Earlier edits cleared` once. With the overview left open from 23:55, Start at 00:05 keeps the edits.
-- **TE-A18. Offline.** In airplane mode with no AI, every edit, Undo, Reset, the built-in Lighter start and Start work.
-- **TE-A19. Backup.** A backup taken with an open draft restores with that draft marked `discarded` (restore never revives a draft). Drafts are exported and deleted with **Your data**, and never appear in coach context before Start, except the one Lighter start request Ben taps (TE6), which carries today's edited plan only.
-- **TE-A20. Visual.** Only one filled pill is visible on the page (Start). The Lighter start sheet's `Apply` is the only filled pill while the sheet is up. Markers carry icon + word. Every pill is ≥ 44pt. At AX3 on 375pt, nothing scrolls sideways and Start stays visible in Reorder mode too.
+- **TE-A1. Nothing before Start.** Any edit, Undo or Reset creates no session row. Close returns to Today with no session; the draft row holds the edits.
+- **TE-A2. Preview = Start.** The existing overview OV3 tests, extended: for every combination of swap, skip and order, and every load convention, the overview rows equal the pending sets, order and skipped sets of the session Start creates.
+- **TE-A3. Skip.** `Skip today` on cable fly is 2 taps; the row shows `⊘ SKIPPED`; `SETS` drops by 3 and `TIME` drops. After Start, its 3 sets are `skipped` with `skippedBy: 'before_start'`, and `Add set` brings it back. The last unskipped exercise has no `Skip today`.
+- **TE-A4. Swap candidates.** For bench at Main gym, the sheet lists only exercises doable there and not in today's plan (skipped included), at most 8, flagged ones last with `⚠ May hurt`. At Hotel gym, nothing needing a barbell or cable is listed.
+- **TE-A5. Swap targets.** DB bench press shows `32.5 kg each × 6–8` from its own history; an exercise with no comparable history shows `No history` and becomes `NEW` with load `—`. No load is ever derived from bench's 100 kg. The target in the sheet equals the row after the pick and the set Start creates.
+- **TE-A6. Swap and Undo.** Picking DB bench press shows `⇄ SWAPPED`; toast Undo restores bench exactly. `Swap again` lists `Bench press · planned` first, and picking it equals Undo.
+- **TE-A7. Pain.** Picking a flagged candidate asks `… may hurt` first; `Choose another` changes nothing.
+- **TE-A8. Do first and Reorder.** `Do first` on incline makes it `01`, and Start opens Ready on incline set 1. `Do first` on lateral raise moves the whole superset. Reorder works with buttons and with VoiceOver custom actions; `Reset order` restores the routine order.
+- **TE-A9. Template change is a card.** `Change Push A too ›` shows the inline card (author `Ben`, scope `Push A from now on`, before → after). The routine version is unchanged until Apply. After Apply: routine v+1 with DB bench press and template loads Auto; the row has no `SWAPPED`; the draft edit is `redundant`; one `ActionRecord` (author `ben`). Undo restores both. With the routine edited elsewhere first, the card shows `Was suggested:` with no Apply.
+- **TE-A10. No AI.** Opening the page, every edit, the Swap sheet and the change-review card make no provider call (provider log).
+- **TE-A11. Gym change keeps edits.** Switching to Hotel gym keeps skip and order; DB bench re-fits (capped at 20 kg each); a substitute needing a cable shows `⚠ NO LOAD` with `Swap again` first.
+- **TE-A12. Stale (rule 5).** Removing cable fly from Push A drops the skip edit with `Plan changed · 1 edit removed`. An edit with an old `expectedDraftVersion` is rejected and the page re-reads. A draft change between page load and Start makes Start create nothing (`Targets updated`).
+- **TE-A13. Idempotent.** Repeating any edit, Undo, Apply or Start `opId` gives exactly one change and at most one session.
+- **TE-A14. Force-close.** Kill the app after a swap and a skip. Relaunch → Today (no session); Today's Up next and the overview show both edits. Start consumes the draft; the next overview shows no edits.
+- **TE-A15. Expiry.** A draft expires at local midnight in its stored timezone. The next open shows `Earlier edits cleared` once. With the page open from 23:55, Start at 00:05 creates nothing, the page re-reads without edits, and a second Start works. Any other start (Empty workout, Repeat) discards every open draft in the same transaction.
+- **TE-A16. Offline.** In airplane mode with no AI, every edit, Undo, Reset, the Swap sheet, the change-review card and Start work.
+- **TE-A17. Backup and data.** A backup with an open draft restores it as `discarded`. Drafts are exported and deleted with Your data and never appear in coach context.
+- **TE-A18. Visual.** Start is the only filled pill on the page (the card's Apply is secondary style). Markers carry icon + word. Every target ≥ 44pt. At AX3 on 375pt nothing scrolls sideways and Start stays visible, including in Reorder mode.
 
 ---
 
-## 8. Proposed design-system additions (components only; no new colour, type or timing tokens)
+## 8. Effects on other specs (done in this change)
 
-| Component | Spec |
-|---|---|
-| `ChangeMarker` variants | `swapped` (`arrow.left.arrow.right` + `SWAPPED`) and `skipped` (`minus.circle` + `SKIPPED`), `text.secondary`, same frame as the other markers |
-| `OverviewRow` skipped style | Name and detail in `text.tertiary`, load `—`, still a 64pt button |
-| `LighterStartLine` | `type.callout` fact (`text.secondary`) + an outline pill (`border.control`, 44pt, `radius.pill`, label `type.headline` in `text.primary`, **never accent**). Applied variant: `arrow.down` + text, trailing `Undo` text button. Stacks at AX1+ |
-| `BeforeAfterLine` | Name left, `30 → 25 kg each` right (tabular, `→` read as "to"). Stacks at AX1+ |
-| `ReorderRow` | Existing (routines.md); here also used for a superset as one row with a bracket |
+- **routines.md §4.2:** `Swap ›` → `Change Push A` now goes through the change-review card (TE4), not the editor's Save. The editor's own `Replace exercise` is unchanged (that is Ben editing the template directly, with Save and Undo).
+- **workout-overview.md §6, §11.3:** point here.
+- **design-system.md §9.65–9.68:** `OverviewRow` (incl. skipped), `ChangeMarker` (incl. swapped, skipped), `StatStrip`, `SubstituteRow` target variant; `ReorderRow` superset variant.
 
-These go into design-system.md §9 when that file is free (same as workout-overview.md's follow-ups).
+Follow-ups for the PM (not edited here): today.md (Up next reads the edited preview), voice.md (§4.4 grammar), active-workout §4.4 (`skippedBy` in `Why?`), workout-summary (skipped-before-start shows like any skip), change-review.md §1 (first built instance is Ben-authored, inline).
 
 ---
 
-## 9. Effects on other specs (follow-ups for the product manager; not edited here)
+## 9. Lighter start seam (not built)
 
-- **workout-overview.md:** §6's "Not in the first slice" points here. OV1/OV3/OV4/OV9 extend to drafts (OV9: the only possible AI call is `Lighter start?` with the coach live, after coach v1). §5's "the page has no lighter-session offer" becomes "no check-in lighter-session offer".
-- **today.md / premium-feel §2.3:** the Up next rows read the same preview, so they show today's edits (substitute names, skipped rows left out, new order). No extra words. Otherwise Today and the overview disagree.
-- **routines.md §4.2:** the detail's `Swap ›` → `Today only` "made at Start" is this slice (the overview replaced the routine sheet and detail Start).
-- **check-in.md CI5 / coach-adjustments B′:** TE10 suppression.
-- **active-workout.md §4.4:** the `skippedBy: 'before_start'` provenance shows in `Why?` and the Skipped style. There's no new in-workout UI.
-- **voice.md:** §4.4 grammar.
-- **draft-pre-start-draft.md:** the `lighter_start` `mode` split (TE11), expiry "never while the overview is open" (TE5), and the one coach request that may read the draft (TE-A19).
-- **coaching-playbook.md:** the R1/R2/R6 approval gates the offer. `Lighter start after a break` setting in profile-and-settings.
-- **workout-summary.md:** swapped and skipped-before-start exercises appear like in-workout ones.
+- `TodayEdit` gets a new variant later; `applyTodayEdits` already has the slot after structural edits.
+- No line, sheet, setting or toast for it appears in this slice. Nothing in this UI mentions a break.
 
 ---
 
-## 10. Out of scope
+## 10. For Ben to confirm (PM defaults applied)
 
-- The R3 ramp back after a lighter start, and any R4 return after a pain flag.
-- Adding an exercise before Start (use `⋯` → `Edit routine`, or add in the workout).
-- Editing sets, reps or loads per row before Start (Ben edits on the set card, where the keypad and Log live).
-- Multi-day or future-session edits (always change-review).
-
----
-
-## 11. For Ben to confirm
-
-1. **Close keeps today's edits** until midnight, Start, Reset or another workout (TE5). The alternative is that Close discards them, with an Undo toast on Today.
-2. **Is this slice worth a schema change now?** The cheaper option is an in-memory draft: the same UI, no migration, and the edits are lost on force-close. The ADR draft compares them.
-3. **Lighter start needs R1, R2 and R6 approved** (14 days; −10/−20/−40%; built-in fallback). Is it on by default once approved?
-4. **The coach path for Lighter start** makes the overview's only possible AI call (after coach v1, only when Ben taps `Lighter start?`). The alternative is built-in numbers only, with the coach reachable from the workout as now.
-5. **EL6** (a same-movement substitute of a flagged exercise is held) is still pending. This slice follows whatever is decided there.
-6. **`Change Push A too ›`: change-review card or routine editor?** TE4 sends Ben's own template change through change-review (before/after, Apply, Undo). routines.md §4.2 already sends the same kind of change through the editor's normal Save with no card. One of the two specs should change.
+1. **Saved draft** (migration 7) rather than in-memory.
+2. **Close keeps today's edits** until local midnight, Start, Reset or another workout.
+3. **`Change Push A too ›` uses a change-review card** (routines.md §4.2 updated to match).
+4. **Lighter start** waits for R1–R6 approval.
+5. **EL6** (same-movement substitute of a flagged exercise) is still pending; v1 marks only candidates that are themselves flagged.
