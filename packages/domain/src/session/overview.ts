@@ -28,6 +28,7 @@ import type { SetFit } from './create';
 import { estimateRemainingDuration } from './duration';
 import { muscleWords } from './first-run';
 import { droppedWords } from './fit-words';
+import { slotMoves, type TodaySlot } from './today-edits';
 
 /**
  * The Workout overview (workout-overview.md): the one page before the first
@@ -168,7 +169,7 @@ export interface PlannedFirst {
   convention: LoadConvention;
 }
 
-export type ChangeMarkerKind = 'held' | 'new' | 'no_load' | 'up' | 'down' | 'reps_up' | 'reps_down' | 'sets_up' | 'sets_down' | 'same';
+export type ChangeMarkerKind = 'held' | 'new' | 'no_load' | 'up' | 'down' | 'reps_up' | 'reps_down' | 'sets_up' | 'sets_down' | 'same' | 'swapped' | 'skipped';
 
 export type ChangeDelta =
   /** `from` is last time's load in today's unit (converted when it was in another unit). */
@@ -248,7 +249,7 @@ export function targetChangeMarker(planned: PlannedFirst, comparable: PastExerci
 export interface MarkerWords {
   /** Shown in tracked caps: `Up`, `Reps`, `No load`. */
   word: string;
-  glyph: 'up' | 'down' | 'warning' | null;
+  glyph: 'up' | 'down' | 'warning' | 'swap' | 'skip' | null;
   /** `warning`: `status.warning` with its icon (HELD, NO LOAD). Never `status.done`, `status.danger` or the accent. */
   tone: 'warning' | 'secondary';
 }
@@ -275,6 +276,10 @@ export function markerWords(kind: ChangeMarkerKind): MarkerWords {
       return { word: 'Sets', glyph: 'down', tone: 'secondary' };
     case 'same':
       return { word: 'Same', glyph: null, tone: 'secondary' };
+    case 'swapped':
+      return { word: 'Swapped', glyph: 'swap', tone: 'secondary' };
+    case 'skipped':
+      return { word: 'Skipped', glyph: 'skip', tone: 'secondary' };
   }
 }
 
@@ -313,6 +318,10 @@ export function markerSpoken(m: ChangeMarker): string {
       return 'no load target here';
     case 'same':
       return 'same as last time';
+    case 'swapped':
+      return 'swapped today';
+    case 'skipped':
+      return 'skipped today';
     case 'up':
     case 'down':
     case 'reps_up':
@@ -392,15 +401,39 @@ export function setsDetail(working: readonly Pick<WorkoutSet, 'planned'>[], unil
 }
 
 export interface PanelLine {
-  key: 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag' | 'coach' | 'rule';
+  key: 'swapped' | 'skipped' | 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag' | 'coach' | 'rule';
   label: string;
   value: string;
   tone: 'normal' | 'warning';
 }
 
+/** Today's edit on a row (overview-today-edits §2): swapped for another exercise, or skipped. */
+export type RowEdit = { kind: 'swapped'; editId: string; fromExerciseId: string; fromName: string } | { kind: 'skipped'; editId: string } | null;
+
+/**
+ * Which of today's edits a row offers (§2.2), decided here so the screen
+ * only lays them out. `move`: Reorder's `↑` / `↓` (a superset moves as one).
+ */
+export interface RowActions {
+  swap: boolean;
+  /** The row is swapped: `Undo swap`, and `Swap` reads `Swap again`. */
+  undoSwap: boolean;
+  skip: boolean;
+  bringBack: boolean;
+  doFirst: boolean;
+  up: boolean;
+  down: boolean;
+  /** `Change Push A too ›` (routine basis, swapped rows). */
+  changeRoutine: boolean;
+}
+
 export interface OverviewRow {
   sessionExerciseId: string;
   exerciseId: string;
+  /** The plan slot this row is (routine: `RoutineExercise.id`; next: the source part-root row). Today's edits are keyed by it. */
+  slotKey: string;
+  edit: RowEdit;
+  actions: RowActions;
   /** 1-based position on the page. */
   index: number;
   /** `01`. */
@@ -455,6 +488,8 @@ export interface PreviewKeyParts {
   unit: WeightUnit;
   /** An answered check-in today: pain mentioned there holds loads. */
   checkIn: { id: string; version: number } | null;
+  /** Today's pre-start draft (ADR 0022): any edit, Undo or Reset changes the key. Null: none. */
+  draft?: { id: string; version: number } | null;
 }
 
 const byId = <T extends { id: string }>(xs: readonly T[]): T[] => [...xs].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -472,6 +507,8 @@ export function previewKey(parts: PreviewKeyParts): string {
       coachActions: byId(parts.coachActions).map((a) => [a.id, a.version]),
       unit: parts.unit,
       checkIn: parts.checkIn,
+      // Absent and null hash alike, so a page with no draft keeps the key it had before drafts existed.
+      ...(parts.draft ? { draft: parts.draft } : {}),
     }),
   );
 }
@@ -490,6 +527,7 @@ export function previewFence(parts: PreviewKeyParts, ownerId: string, profile: {
       ...(parts.source ? [{ table: 'sessions' as const, id: parts.source.id, version: parts.source.revision }] : []),
       ...(parts.checkIn ? [{ table: 'check_ins' as const, id: parts.checkIn.id, version: parts.checkIn.version }] : []),
       ...(profile ? [{ table: 'profiles' as const, id: profile.id, version: profile.version }] : []),
+      ...(parts.draft ? [{ table: 'pre_start_drafts' as const, id: parts.draft.id, version: parts.draft.version }] : []),
     ],
     sets: [
       ...('typical' in parts.gym ? [] : [{ kind: 'gym_equipment' as const, gymId: parts.gym.id, members: parts.gym.equipment }]),
@@ -529,6 +567,26 @@ export interface OverviewInput {
    * nothing coach-related renders.
    */
   coach?: { targets: readonly NextSessionTargetRecord[]; sourceVersion: number; painToday: boolean } | null;
+  /**
+   * Today's edits (overview-today-edits §6.2), from `planWithTodayEdits`:
+   * each session exercise's slot key, today's slots in order, what each
+   * applied edit did, and the draft. Absent: no edits (every row's slot key
+   * is its session exercise ID).
+   */
+  today?: OverviewToday | null;
+}
+
+export interface OverviewToday {
+  slotOf: Readonly<Record<string, string>>;
+  /** Today's slots after the edits, in today's order (`Do first` and Reorder move these). */
+  slots: readonly TodaySlot[];
+  swapped: ReadonlyMap<string, { editId: string; fromExerciseId: string; fromName: string }>;
+  skipped: ReadonlyMap<string, string>;
+  /** `N EDITED`. */
+  editCount: number;
+  draft: { id: string; version: number } | null;
+  /** The routine Change … too › would change; null for a next session. */
+  routineName: string | null;
 }
 
 /**
@@ -591,10 +649,14 @@ export interface WorkoutOverview {
   exerciseCount: number;
   groups: OverviewGroup[];
   rows: OverviewRow[];
+  /** `5 EXERCISES · 3 EDITED` (§2.1): swaps and skips each count, an order change once. 0 with no draft. */
+  editCount: number;
+  /** Today's pre-start draft, for the next write's `expectedDraftVersion`. */
+  draft: { id: string; version: number } | null;
 }
 
-function firstBarbell(aggregate: SessionAggregate): SessionExercise | null {
-  const ordered = [...aggregate.exercises].sort((a, b) => a.order - b.order);
+function firstBarbell(aggregate: SessionAggregate, skippedRows: ReadonlySet<string>): SessionExercise | null {
+  const ordered = [...aggregate.exercises].sort((a, b) => a.order - b.order).filter((e) => !skippedRows.has(e.id));
   return ordered.find((ex) => (ex.equipmentId === null ? null : aggregate.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId))?.kind === 'barbell') ?? null;
 }
 
@@ -701,7 +763,12 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
   const { aggregate } = input;
   const ordered = [...aggregate.exercises].sort((a, b) => a.order - b.order);
   const sets = aggregate.sets.filter(live);
-  const barbellEx = firstBarbell(aggregate);
+  const today = input.today ?? null;
+  const slotOf = (sxId: string): string => today?.slotOf[sxId] ?? sxId;
+  const skippedRows = new Set(ordered.filter((e) => today?.skipped.has(slotOf(e.id)) === true).map((e) => e.id));
+  const barbellEx = firstBarbell(aggregate, skippedRows);
+  const unskipped = ordered.length - skippedRows.size;
+  const todaySlots: TodaySlot[] = today?.slots.length ? [...today.slots] : ordered.map((e) => ({ slotKey: e.id, exerciseId: e.exerciseId, supersetGroup: e.supersetGroup }));
   const coachByExercise = new Map((input.coach?.targets ?? []).map((r) => [r.exerciseId, r]));
   const sourceVersion = input.coach?.sourceVersion ?? null;
 
@@ -722,16 +789,25 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     const comparable = lastComparable(key, pasts);
     const covering = painFlagCovering([...input.painFlags], ex.exerciseId, input.nowMs, input.tz);
     const rounded = fits.find((f): f is Extract<SetFit, { kind: 'rounded' }> => f.kind === 'rounded') ?? null;
-    const marker = targetChangeMarker(planned, comparable, covering?.flag ?? null, firstFit);
+    const slotKey = slotOf(ex.id);
+    const swappedFrom = today?.swapped.get(slotKey);
+    const skipEdit = today?.skipped.get(slotKey);
+    const edit: RowEdit = skipEdit !== undefined ? { kind: 'skipped', editId: skipEdit } : swappedFrom !== undefined ? { kind: 'swapped', editId: swappedFrom.editId, fromExerciseId: swappedFrom.fromExerciseId, fromName: swappedFrom.fromName } : null;
+    const base = targetChangeMarker(planned, comparable, covering?.flag ?? null, firstFit);
+    // Precedence (§2.1): SKIPPED > HELD > NO LOAD > SWAPPED > the §4 markers.
+    const marker: ChangeMarker =
+      edit?.kind === 'skipped' ? { kind: 'skipped', delta: null, basis: null } : edit?.kind === 'swapped' && base.kind !== 'held' && base.kind !== 'no_load' ? { kind: 'swapped', delta: base.delta, basis: base.basis } : base;
     const words = markerWords(marker.kind);
-    const load = loadCell(planned.load, ex.loadConvention, eq?.kind ?? null, firstFit?.kind === 'dropped');
+    const load = edit?.kind === 'skipped' ? { value: '—', unit: null, spoken: 'skipped', none: true } : loadCell(planned.load, ex.loadConvention, eq?.kind ?? null, firstFit?.kind === 'dropped');
 
     const warmups = warm.length === 0 ? null : `${String(warm.length)} ${warm.length === 1 ? 'warm-up' : 'warm-ups'}`;
     const setsText = setsDetail(working, ex.laterality === 'unilateral');
     const detail = [setsText, warmups].filter((x): x is string => x !== null && x !== '').join(' · ');
 
     const panel: PanelLine[] = [];
-    const change = changeText(marker);
+    if (edit?.kind === 'swapped') panel.push({ key: 'swapped', label: 'Swapped', value: `For ${edit.fromName} · today`, tone: 'normal' });
+    if (edit?.kind === 'skipped') panel.push({ key: 'skipped', label: 'Skipped', value: 'Today', tone: 'normal' });
+    const change = edit?.kind === 'skipped' ? null : changeText(marker);
     if (change !== null) panel.push({ key: 'change', label: 'Change', value: change, tone: 'normal' });
     const last = comparable === null ? null : lastText(comparable);
     if (comparable !== null && last !== null) panel.push({ key: 'last', label: 'Last', value: `${last} · ${dayMonthText(comparable.performedAt.utc, comparable.performedAt.tz)}`, tone: 'normal' });
@@ -769,23 +845,38 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
       const what = r ? (r.min === r.max ? String(r.min) : `${String(r.min)} to ${String(r.max)}`) : first?.planned.durationS !== null && first?.planned.durationS !== undefined ? formatDuration(first.planned.durationS) : null;
       return `${String(n)} ${n === 1 ? 'set' : 'sets'}${what === null ? '' : ` of ${what}`}${ex.laterality === 'unilateral' ? ' each side' : ''}`;
     })();
-    const accessibilityLabel = [
+    const moves = slotMoves(todaySlots, slotKey);
+    const actions: RowActions = {
+      swap: edit?.kind !== 'skipped',
+      undoSwap: edit?.kind === 'swapped',
+      skip: edit?.kind !== 'skipped' && unskipped > 1,
+      bringBack: edit?.kind === 'skipped',
+      doFirst: edit?.kind !== 'skipped' && moves.first,
+      up: moves.up,
+      down: moves.down,
+      changeRoutine: edit?.kind === 'swapped' && today?.routineName !== null && today?.routineName !== undefined,
+    };
+    const accessibilityLabel = (edit?.kind === 'skipped' ? [String(i + 1), ex.exerciseName, 'skipped today'] : [
       String(i + 1),
       ex.exerciseName,
+      edit?.kind === 'swapped' ? `swapped for ${edit.fromName} today` : null,
       supersetWith.length > 0 ? `superset with ${supersetWith.join(' and ')}` : null,
       spokenSets,
       warmups,
       load.spoken,
       rounded !== null && !dropped ? 'rounded to this gym' : null,
-      markerSpoken(marker),
+      marker.kind === 'swapped' ? markerSpoken(base) : markerSpoken(marker),
       coach?.state === 'coach' ? 'coach target' : null,
-    ]
+    ])
       .filter((x): x is string => x !== null && x !== '')
       .join(', ');
 
     return {
       sessionExerciseId: ex.id,
       exerciseId: ex.exerciseId,
+      slotKey,
+      edit,
+      actions,
       index: i + 1,
       indexText: String(i + 1).padStart(2, '0'),
       name: ex.exerciseName,
@@ -820,19 +911,27 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     else groups.push({ kind: 'single', row });
   });
 
+  // Skipped rows stay in place but are left out of TIME, DONE BY, SETS and the muscles line (§2.1).
   const est = estimateRemainingDuration(aggregate, { recent: input.recent });
-  const muscles = muscleWords(ordered.map((e) => input.exerciseInfo[e.exerciseId]).filter((x): x is Pick<Exercise, 'primaryMuscles'> => x !== undefined));
+  const muscles = muscleWords(
+    ordered
+      .filter((e) => !skippedRows.has(e.id))
+      .map((e) => input.exerciseInfo[e.exerciseId])
+      .filter((x): x is Pick<Exercise, 'primaryMuscles'> => x !== undefined),
+  );
   return {
     previewKey: previewKey(input.key),
     title: input.title,
     basis: input.basis,
     gym: input.gym,
     estimate: est.pendingSets === 0 ? null : { minutes: est.minutes, seconds: est.seconds },
-    workingSets: sets.filter((s) => s.pairedWithSetId === null && isWorking(s.setType)).length,
+    workingSets: sets.filter((s) => s.pairedWithSetId === null && isWorking(s.setType) && !skippedRows.has(s.sessionExerciseId)).length,
     muscles,
     exerciseCount: ordered.length,
     groups,
     rows,
+    editCount: today?.editCount ?? 0,
+    draft: today?.draft ?? null,
   };
 }
 

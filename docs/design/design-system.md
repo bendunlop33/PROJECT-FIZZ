@@ -812,7 +812,7 @@ Each component has one name and one definition here. The owning spec says where 
 | `ExerciseRow` / `SubstituteRow` | exercise-library | Line 1 `type.headline`, lines 2–3 `type.callout` `text.secondary`; trailing history button 44 × 44 (`clock.arrow.circlepath`); optional leading checkbox. Substitute adds up to 2 reason lines (`checkmark`, `text.primary`) and 1 difference line (`notequal`, `text.secondary`), then `More ›`. Never a numeric score |
 | `RoutineRow` | routines | Min 76pt; line 1 name + `SecondaryButton` `Start` (≥ 44 × 88); line 2 `SourceTag` + summary; line 3 one status. At AX1+ `Start` goes full width under line 3 |
 | `SetTemplateRow` | routines | Columns: set number + type badge, type word, target, rest; `●` + VoiceOver "own rest" for overrides. Stacks at AX1+ |
-| `ReorderRow` | routines | One line + drag handle + `Move up` / `Move down` buttons 44 × 44 (gesture never the only way) |
+| `ReorderRow` | routines, overview-today-edits | One line + drag handle + `Move up` / `Move down` buttons 44 × 44 (gesture never the only way). Overview variant: no drag handle; a superset is one row with its bracket and member names stacked; a skipped row adds `· skipped` in `text.tertiary` |
 | `DayRow` | weekly-plan | Date column 64pt; today = 4pt `accent` left bar + `accent.subtle` + the word `Today`. At AX1+ the date sits above its items |
 | `MemoryRow` | coach-memory | ≥ 64pt; status icon (§7.1) + `type.body` text (max 3 lines); line 2 source · date · expiry `type.label`; trailing chevron or inline `Not now` / `Save` (≥ `space.8` apart) |
 | `PainFlagRow` | coach-memory | Card frame (§9.48) with `exclamationmark.triangle` `status.warning` + `Movement · area` `type.headline`; source/date line; effect line; `Clear…` text button |
@@ -969,6 +969,16 @@ Each component has one name and one definition here. The owning spec says where 
 - an optional line 3: `info.circle` + `type.callout` `text.secondary` (`Over 10%: reps first`, `At this machine's max`).
 
 The % is never coloured: a bigger step isn't shown as bad. Rows aren't tappable on the playbook detail; in `Why?` sheets they can open the exercise history. VoiceOver: "Lateral raise, dumbbells, 10 to 12 kilograms each, up 20 percent, over 10 percent, reps first".
+
+#### Workout overview (revision 2026-10-11; owners: workout-overview.md, overview-today-edits.md)
+
+**9.65 `StatStrip`.** Three equal columns between `border.divider` hairlines. Value 32/300 tabular `text.primary`; `≈` and units in `text.secondary`; label `type.sectionLabel`. Estimates always carry `≈`. Stacks (value + label per line) at AX1+, or earlier when a value is measured wrapping. One VoiceOver element.
+
+**9.66 `OverviewRow`.** One button, min 64pt, `border.divider` between rows. Index `01` (16/500 tabular `text.tertiary`), name 17/600, detail `type.callout` `text.secondary` tabular; right column `ChangeMarker` over the load (22/500 tabular, unit 16pt `text.secondary`); optional `info.circle` 14pt after the load when rounded. Panel: `bg.surface`, `radius.md`, label/value lines (`type.sectionLabel` `text.tertiary` / `type.callout`), then outline pills (44pt, `border.control`, wrapping). **Skipped variant:** name and detail `text.tertiary`, load `—`, still a 64pt button. Exposes VoiceOver custom actions for its edits. At AX1+ the load goes under the name.
+
+**9.67 `ChangeMarker`.** 12/600 tracked caps, icon + word, one per row. `text.secondary` for `UP` / `DOWN` / `REPS` / `SETS` / `SAME` / `NEW`, `⇄ SWAPPED` (`arrow.left.arrow.right`) and `⊘ SKIPPED` (`minus.circle`); `status.warning` + `exclamationmark.triangle` for `HELD` and `NO LOAD`. Never `accent`, `status.done` or `status.danger`. Precedence: SKIPPED > HELD > NO LOAD > SWAPPED > the rest.
+
+**9.68 `SubstituteRow` target variant** (overview Swap sheet). The `SubstituteRow` frame (§9.35), ≥ 64pt, whole row one button: line 1 name `type.headline` (+ trailing `⚠ May hurt` `AvailabilityTag` when flagged); line 2 equipment kind · `last …` actual or `No history`, `type.callout` `text.secondary` tabular; trailing target `type.body` tabular under a `TARGET` column header. No reason lines, no scores. At AX1+ the target stacks under line 2.
 
 #### Sound asset
 

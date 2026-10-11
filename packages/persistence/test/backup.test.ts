@@ -404,7 +404,7 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
     delete tables.import_rows;
     delete tables.exercise_aliases;
     // …and nothing from schema 4 (coach).
-    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers']) Reflect.deleteProperty(tables, t);
+    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers', 'pre_start_drafts']) Reflect.deleteProperty(tables, t);
     tables.sessions = (tables.sessions ?? []).map((row) => {
       const copy = { ...row };
       delete copy.check_in;
@@ -416,6 +416,8 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
       delete copy.finish_by_tz;
       // …or schema 5 (gym switch).
       delete copy.gym_changes;
+      // …or schema 7 (today's edits).
+      delete copy.today_edits;
       return copy;
     });
     tables.session_exercises = (tables.session_exercises ?? []).map((row) => {
@@ -427,6 +429,7 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
     tables.session_sets = (tables.session_sets ?? []).map((row) => {
       const copy = { ...row };
       delete copy.exclusions;
+      delete copy.skipped_by;
       return copy;
     });
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
@@ -518,6 +521,8 @@ describe('merged schema: active-set (4) and gym switch (5)', () => {
     tables.sessions = (tables.sessions ?? []).map((row) => {
       const copy = { ...row };
       delete copy.gym_changes;
+      // …or schema 7 (today's edits).
+      delete copy.today_edits;
       return copy;
     });
     tables.session_exercises = (tables.session_exercises ?? []).map((row) => {
@@ -526,8 +531,13 @@ describe('merged schema: active-set (4) and gym switch (5)', () => {
       delete copy.equipment_version;
       return copy;
     });
+    tables.session_sets = (tables.session_sets ?? []).map((row) => {
+      const copy = { ...row };
+      delete copy.skipped_by;
+      return copy;
+    });
     // Nor coach tables (schema 6).
-    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers']) Reflect.deleteProperty(tables, t);
+    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers', 'pre_start_drafts']) Reflect.deleteProperty(tables, t);
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
     const v4 = resign({ ...file, schemaVersion: 4, tables, counts });
 

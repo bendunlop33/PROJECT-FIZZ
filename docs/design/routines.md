@@ -387,7 +387,7 @@ Opened from the quick-start row. If several workouts finished in the last 14 day
 
 ### 4.2 Detail
 - `Start workout` as the list's `Start`. Exercise row tap opens the exercise's history sheet (same as Active workout).
-- `Swap ›` on a gym note opens the substitution list ([exercise-library.md](exercise-library.md) §2.5) with scope choices `Today only` (a session-level swap made at Start) or `Change Push A`. The second edits the routine through the editor's normal Save (Ben's own edit; no change-review card).
+- `Swap ›` on a gym note: superseded by the Workout overview's `Swap today` ([overview-today-edits.md](overview-today-edits.md), 11 Oct 2026). A today-only swap is stored in the pre-start draft and made at Start. `Change Push A too ›` opens a Ben-authored change-review card (scope `Push A from now on`, before → after, Apply, Undo), not the editor's Save (rule 2; TE4). The editor's own `Replace exercise` (§4.3) is unchanged.
 - `Edit` opens the editor. `⋯` → `Duplicate`, `Version history`, `Delete routine`.
 
 ### 4.3 Editor

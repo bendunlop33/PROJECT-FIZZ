@@ -2,7 +2,8 @@ import { asksReasons, DEFAULT_CHECK_IN_SETTINGS, type CheckInGate, type WorkoutO
 import type { CheckIn, CheckInScore, SessionCheckIn } from '@fizz/schemas';
 
 import type { OverviewData, OverviewStartOf, WorkoutStartOutcome } from '../services/workout-services';
-import { checkInForStart, startFailure } from './overview';
+import { checkInForStart, OVERVIEW_COPY, startFailure } from './overview';
+import { TODAY_EDITS_COPY } from './overview-edits';
 
 /**
  * The Workout overview's writes, as plain async functions over the services
@@ -50,7 +51,7 @@ export type OverviewStartResult =
   | { kind: 'failed' };
 
 export interface OverviewStartPorts {
-  start: (req: { startOf: OverviewStartOf; gymId: string | null; opId: string; checkIn: SessionCheckIn | null; expectedPreviewKey: string }) => Promise<WorkoutStartOutcome>;
+  start: (req: { startOf: OverviewStartOf; gymId: string | null; opId: string; checkIn: SessionCheckIn | null; expectedPreviewKey: string; draft: { id: string; expectedVersion: number } | null }) => Promise<WorkoutStartOutcome>;
   /** Re-read the page with the check-in Start sends (the tapped or reused one). */
   reload: () => Promise<OverviewData | null>;
 }
@@ -62,18 +63,29 @@ export interface OverviewStartPorts {
  * nothing and comes back for the toast and re-render (rule 5).
  */
 export async function startFromOverview(ports: OverviewStartPorts, req: { page: OverviewData; opId: string; checkIn: SessionCheckIn | null }): Promise<OverviewStartResult> {
+  const draftOf = (page: OverviewData) => (page.draft === null ? null : { id: page.draft.id, expectedVersion: page.draft.version });
   const base = { startOf: req.page.startOf, gymId: req.page.view.gym?.id ?? null, opId: req.opId, checkIn: req.checkIn };
-  let r = await ports.start({ ...base, expectedPreviewKey: req.page.view.previewKey });
+  // Today's edits go with Start (ADR 0022): the draft the page showed, re-checked in the start's write.
+  let r = await ports.start({ ...base, expectedPreviewKey: req.page.view.previewKey, draft: draftOf(req.page) });
   if (!r.ok && r.error.code === 'stale_preview') {
+    // This read is the one that closes a draft past midnight (`cleared`): its page is the one returned, never a second read (review S2).
     const fresh = await ports.reload().catch(() => null);
-    if (fresh === null || fresh.view.previewKey === req.page.view.previewKey || !samePage(req.page.view, fresh.view) || (fresh.view.gym?.id ?? null) !== base.gymId) return { kind: 'stale', page: fresh };
-    r = await ports.start({ ...base, startOf: fresh.startOf, expectedPreviewKey: fresh.view.previewKey });
+    if (fresh === null || fresh.cleared || fresh.view.previewKey === req.page.view.previewKey || !samePage(req.page.view, fresh.view) || (fresh.view.gym?.id ?? null) !== base.gymId) return { kind: 'stale', page: fresh };
+    r = await ports.start({ ...base, startOf: fresh.startOf, expectedPreviewKey: fresh.view.previewKey, draft: draftOf(fresh) });
     if (!r.ok && r.error.code === 'stale_preview') return { kind: 'stale', page: await ports.reload().catch(() => null) };
   }
   if (r.ok) return { kind: 'started', outcome: r };
   const failure = startFailure(r.error.code);
   // A stale result here means the re-read was still the same page and failed again: say so rather than loop.
   return failure.kind === 'stale' ? { kind: 'stale', page: null } : failure;
+}
+
+/**
+ * The toast after a stale Start (§3, TE5): `Earlier edits cleared` when the
+ * re-read closed the draft at midnight, else `Targets updated`.
+ */
+export function staleStartToast(page: Pick<OverviewData, 'cleared'> | null, copy: { stale: string; cleared: string } = { stale: OVERVIEW_COPY.stale, cleared: TODAY_EDITS_COPY.earlierCleared }): string {
+  return page?.cleared === true ? copy.cleared : copy.stale;
 }
 
 /** How a score tap on the page ended, as Start sees it (review r2 S1): `reasons` opened What's up? over the page. */

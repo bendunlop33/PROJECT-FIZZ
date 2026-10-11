@@ -15,6 +15,7 @@ import { analyseReplace, type ReplaceCounts } from './backup/replace';
 import { countDomains, filterDomain, knowledgeExercisesInUse, type DomainCounts } from './data-domains';
 import { EXERCISE_SPEC, saveDocumentIn } from './documents';
 import type { DatabaseHost, SqlDriver, SqlRow } from './driver';
+import { discardOpenDrafts } from './drafts';
 import { checkIntegrity } from './integrity';
 import { latestVersion, migrate, MIGRATIONS, readUserVersion, sqlMigration, type Migration } from './migrations';
 import { openStore, type Store } from './store';
@@ -377,6 +378,8 @@ export class DatabaseManager {
         }
       });
       fresh = await openStore(driver, { migrations });
+      // A restored phone never starts from an old pre-start draft (ADR 0022 §5): every open one is discarded.
+      await discardOpenDrafts(fresh.db);
       const integrity = await checkIntegrity(fresh.db, latestVersion(migrations));
       if (!integrity.ok) {
         throw new RestoreAbort({
@@ -413,6 +416,8 @@ export class DatabaseManager {
         // Opening a missing file creates an empty one; never switch to that.
         if ((await readUserVersion(driver)) === 0) throw new RestoreAbort(missing);
         store = await openStore(driver, { migrations: this.options.migrations });
+        // As after a restore (ADR 0022 §5): the database switched to never starts from its old pre-start drafts (review N4).
+        await discardOpenDrafts(store.db, at.utc);
         const integrity = await checkIntegrity(store.db, latestVersion(this.options.migrations));
         if (!integrity.ok) {
           throw new RestoreAbort({ code: 'integrity_failed', message: 'The earlier database failed its integrity check; staying on the current one.' });

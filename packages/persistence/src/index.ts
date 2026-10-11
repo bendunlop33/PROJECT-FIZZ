@@ -7,6 +7,7 @@ export * from './documents';
 export * from './sessions';
 export * from './imports';
 export * from './coach';
+export * from './drafts';
 export * from './store';
 export * from './integrity';
 export * from './backup/sha256';
