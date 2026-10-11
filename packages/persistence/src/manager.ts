@@ -379,7 +379,8 @@ export class DatabaseManager {
       });
       fresh = await openStore(driver, { migrations });
       // A restored phone never starts from an old pre-start draft (ADR 0022 §5): every open one is discarded.
-      await discardOpenDrafts(fresh.db);
+      // Only for a restore: Reset and Delete build with `check` and keep Your-data rows as they are (review r4 S1).
+      if (purpose === 'restore') await discardOpenDrafts(fresh.db);
       const integrity = await checkIntegrity(fresh.db, latestVersion(migrations));
       if (!integrity.ok) {
         throw new RestoreAbort({
@@ -417,13 +418,16 @@ export class DatabaseManager {
         if ((await readUserVersion(driver)) === 0) throw new RestoreAbort(missing);
         store = await openStore(driver, { migrations: this.options.migrations });
         // As after a restore (ADR 0022 §5): the database switched to never starts from its old pre-start drafts (review N4).
-        await discardOpenDrafts(store.db, at.utc);
+        // Undo last reset (and redoing it) is not a restore: Your data there is Ben's as at the reset, drafts
+        // included, so they're kept (review r4 S1, ADR 0023).
+        const last = this.switched?.reason;
+        const undoingReset = last === 'reset' || last === 'undo_reset';
+        if (!undoingReset) await discardOpenDrafts(store.db, at.utc);
         const integrity = await checkIntegrity(store.db, latestVersion(this.options.migrations));
         if (!integrity.ok) {
           throw new RestoreAbort({ code: 'integrity_failed', message: 'The earlier database failed its integrity check; staying on the current one.' });
         }
         // Undoing a reset is recorded as such, and undoing that puts the reset back (the two swap places).
-        const last = this.switched?.reason;
         const reason: SwitchReason = last === 'reset' ? 'undo_reset' : last === 'undo_reset' ? 'reset' : 'rollback';
         await this.writeSlots({ current: previous, previous: this.slots.current, orphan: null }, null, { atUtc: at.utc, reason });
       } catch (e) {

@@ -1,7 +1,7 @@
 import { cpSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { newCheckIn, newPainFlag } from '@fizz/domain';
+import { applyDraftCommand, basisSlots, newCheckIn, newPainFlag } from '@fizz/domain';
 import {
   assisted,
   at,
@@ -21,7 +21,7 @@ import {
   stack,
   unilateralSession,
 } from '@fizz/domain/testing';
-import { ActionRecordSchema, type ActionDetail, type ActionRecord, type Exercise } from '@fizz/schemas';
+import { ActionRecordSchema, type ActionDetail, type ActionRecord, type Exercise, type PreStartDraft } from '@fizz/schemas';
 import {
   CLASSIFIED_TABLES,
   checkIntegrity,
@@ -133,6 +133,35 @@ async function populate(store: Store): Promise<void> {
   });
 }
 
+/** A knowledge exercise only a pre-start draft points to (a swap for today). */
+const DRAFTED = exercise(290, 'Hack squat');
+const DRAFT_ROUTINE = routine([routineExercise(700, { exerciseId: SPLIT_SQUAT.id })]);
+
+/**
+ * Ben's open pre-start draft (main's ADR 0022, migration 7): a today-only swap
+ * of the routine's split squat for `DRAFTED`, saved as the overview does.
+ */
+async function saveDraft(store: Store): Promise<PreStartDraft> {
+  await store.repos.exercises.save(DRAFTED, null);
+  const c = applyDraftCommand({
+    current: null,
+    expectedVersion: null,
+    opId: 'draft-op-1',
+    at: at(20),
+    ownerId: OWNER,
+    basis: { kind: 'routine', routineId: DRAFT_ROUTINE.id },
+    newDraftId: id(5000),
+    slots: basisSlots({ kind: 'routine', routine: DRAFT_ROUTINE }),
+    command: { type: 'edit', edit: { kind: 'swap', slotKey: id(700), toExerciseId: DRAFTED.id } },
+  });
+  if (c.kind !== 'write') throw new Error(c.kind);
+  const saved = await store.repos.drafts.save(c.next, null);
+  if (!saved.ok) throw new Error(saved.error);
+  const draft = await store.repos.drafts.get(c.next.id);
+  if (draft === null) throw new Error('draft not saved');
+  return draft;
+}
+
 const snapshot = (store: Store) => store.db.read((q) => exportTables(q));
 const dbFiles = (d: string) => readdirSync(d).filter((f) => f.endsWith('.db')).sort();
 const rowsOf = (tables: Record<string, SqlRow[]>) => Object.values(tables).reduce((n, r) => n + r.length, 0);
@@ -165,6 +194,32 @@ describe('data domains', () => {
     expect(mine.tables.playbook_candidates).toBeUndefined();
     expect(mine.tables.exercises?.map((r) => r.id)).toEqual([id(241)]);
     for (const t of ['profiles', 'sessions', 'session_sets', 'check_ins', 'pain_flags', 'memories', 'coach_actions']) expect(mine.tables[t]?.length ?? 0).toBeGreaterThan(0);
+  });
+});
+
+describe('a saved pre-start draft (review r4 B1)', () => {
+  it('is Your data: counted, exported with My data only, removed by Delete, and Data & backup still loads', async () => {
+    const d = dir();
+    const m = await openManager(d);
+    await populate(m.store);
+    const draft = await saveDraft(m.store);
+    expect(domainOf('pre_start_drafts', {})).toBe('your_data');
+
+    const { stamp, counts } = await m.domainSummary();
+    const withoutDraft = rowsOf(filterDomain(await snapshot(m.store), 'your_data')) - 1;
+    expect(counts.yourData.records).toBe(withoutDraft + 1);
+
+    const mine = await m.store.db.read((q) => exportDomain(q, 'your_data'));
+    expect(mine.tables.pre_start_drafts?.map((r) => r.id)).toEqual([draft.id]);
+    const known = await m.store.db.read((q) => exportDomain(q, 'coaching_knowledge'));
+    expect(known.tables.pre_start_drafts).toBeUndefined();
+    expect(JSON.stringify(known)).not.toContain(draft.id);
+
+    expect(await m.deleteYourData({ expectedStamp: stamp })).toMatchObject({ ok: true, status: 'switched' });
+    const after = await snapshot(m.store);
+    expect(after.pre_start_drafts).toEqual([]);
+    expect(rowsOf(filterDomain(after, 'your_data'))).toBe(0);
+    expect((await m.domainSummary()).counts.yourData.records).toBe(0);
   });
 });
 
@@ -393,6 +448,50 @@ describe('resetKnowledge', () => {
     // Delete my data after a reset leaves nothing to undo.
     expect(await m.deleteYourData()).toMatchObject({ ok: true, status: 'switched' });
     expect(m.rollbackTarget).toEqual({ available: false, last: null });
+  });
+
+  it('keeps Ben’s open pre-start draft as it is, and the exercise it swaps to (review r4 S1)', async () => {
+    const draft = await saveDraft(m.store);
+    const before = await snapshot(m.store);
+    const { stamp } = await m.domainSummary();
+    expect(await m.resetKnowledge(bundled, { expectedStamp: stamp, at: at(90) })).toMatchObject({ ok: true, status: 'switched' });
+    expect(await m.store.repos.drafts.get(draft.id)).toEqual(draft);
+    expect(filterDomain(await snapshot(m.store), 'your_data')).toEqual(filterDomain(before, 'your_data'));
+    expect(await m.store.repos.exercises.get(DRAFTED.id)).not.toBeNull();
+
+    // A repeat with the draft still open changes nothing.
+    expect(await m.resetKnowledge(bundled)).toMatchObject({ ok: true, status: 'unchanged' });
+    expect(m.databaseNames.current).toBe('training-2.db');
+
+    // Undo last reset and redoing it keep the draft open too.
+    expect(await m.rollback(at(91))).toMatchObject({ ok: true });
+    expect(m.rollbackTarget.last?.reason).toBe('undo_reset');
+    expect(await m.store.repos.drafts.get(draft.id)).toEqual(draft);
+    expect(await snapshot(m.store)).toEqual(before);
+    expect(await m.rollback(at(92))).toMatchObject({ ok: true });
+    expect(await m.store.repos.drafts.get(draft.id)).toEqual(draft);
+  });
+
+  it('a Reset that changes nothing is unchanged with an open draft (no rollback generation)', async () => {
+    expect(await m.resetKnowledge(bundled)).toMatchObject({ ok: true, status: 'switched' });
+    const draft = await saveDraft(m.store);
+    const names = m.databaseNames;
+    // DRAFTED is outside the bundled list but the draft uses it, so it stays: nothing to reset.
+    expect(await m.resetKnowledge(bundled, { at: at(95) })).toMatchObject({ ok: true, status: 'unchanged' });
+    expect(m.databaseNames).toEqual(names);
+    expect(await m.store.repos.drafts.get(draft.id)).toEqual(draft);
+  });
+
+  it('a restore still discards an open draft (ADR 0022 §5); undoing that restore does too', async () => {
+    const { createBackup } = await import('../src/index');
+    const draft = await saveDraft(m.store);
+    const text = (await createBackup(m.store, { at: at(50), app: { name: 'x', version: '1', build: null } })).text;
+    await m.store.repos.gyms.save(gym(3), null);
+    expect(await m.restore(text, at(60))).toMatchObject({ ok: true, status: 'restored' });
+    expect((await m.store.repos.drafts.get(draft.id))?.status).toBe('discarded');
+    expect(await m.rollback(at(61))).toMatchObject({ ok: true });
+    expect(m.rollbackTarget.last?.reason).toBe('rollback');
+    expect((await m.store.repos.drafts.get(draft.id))?.status).toBe('discarded');
   });
 
   it('is refused against a stale confirmation', async () => {

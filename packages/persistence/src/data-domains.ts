@@ -50,6 +50,8 @@ export const YOUR_DATA_TABLES = [
   'next_session_targets',
   'next_target_uses',
   'coach_offers',
+  // Today's edits before a workout starts (main's ADR 0022, migration 7): owner-scoped, Ben's choices.
+  'pre_start_drafts',
 ] as const;
 
 /** Tables whose every row is Coaching knowledge. */
