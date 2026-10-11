@@ -19,6 +19,7 @@ Evidence grades: **Strong** = consistent meta-analyses. **Moderate** = several t
 | [volume-by-frequency.md](volume-by-frequency.md) | Rule 1 rewrite: weekly sets per muscle from stated days a week and session length, per-session cap, goal ranges, adding volume, short and long weeks (V1–V8, worked examples for 1–6 days; fact-checked) | 2026-10-09 |
 | [equipment-aware-progression.md](equipment-aware-progression.md) | Rule 7 rewrite: % steps, reps check for steps > 5%, coarse dumbbell/stack/plate steps, microloading, goal-based lever choice, no-AI fallback (EQ1–EQ10; fact-checked). Replaces evidence-core E8 | 2026-10-09 |
 | [goal-adaptive.md](goal-adaptive.md) | Rule G source: goal profiles (Strength, Muscle, General fitness, Maintain, Endurance), "also matters" floors, named events and tapers, how training is run, the endurance switch for rules 11–13, confirming goal changes (GA1–GA19; fact-checked). Library since v1: where it differs from the playbook, the playbook wins | 2026-10-09 |
+| [return-to-load.md](return-to-load.md) | **Candidates R1–R6, awaiting Ben:** comeback after a break (14-day trigger, today-only lighter start −10/−20/−40%, ramp over ~half the gap) and returning towards pre-flag sets after a pain flag is cleared (one step per session, ≤ ~10%, proposal only; pain stops it). Unblocks active-workout §2.14.3 once approved. Flags: new session-start offer; built-in ramp step vs 7-F (ADR 0006 note) | 2026-10-11 |
 
 ## Shortlist (14 rules): Ben's decisions, 9 Oct 2026
 
@@ -52,6 +53,8 @@ The approved text, its guardrails and the open parameters are in **[playbook-v1.
 - **G:** targets follow the goal and how training is run. This comes from Ben's HYROX instruction and is built on GA1–GA19.
 - **T:** mid-session triggers compare logged effort with planned effort (conflict 1).
 - **7-F:** the equipment-aware built-in rule, as worded in the ADR 0006 amendment. It sets next-session targets when the coach is unavailable, and today also when no coach target has been applied. Whether the coach's target should apply instead is D21, for Ben.
+
+**Candidates awaiting Ben (not in force):** R1–R6 in [return-to-load.md](return-to-load.md).
 
 **Endurance switch (one definition, used everywhere):** on when a hard, long or key endurance-type session (run, ride, swim, row, class or HIIT, match or sport) is in the plan (planned or usual) or logged (imported or reported). Easy sessions never turn it on. Details in the playbook under "How training is run".
 
@@ -90,6 +93,7 @@ Ben (9 Oct 2026): "stop with hyrox, it should be more adaptable depending on wha
     - 9 → D12 (new-lifter cut-off).
     - 10 → **resolved**: rule 13's "applies when" is reworded, per Ben's HYROX direction.
 11. **equipment-aware-progression.md open questions.** These are D2–D7: fallback step size and sets, the 10% cap vs an earned bigger jump, the "Big jump" note, a bodyweight entry, microplates, and heavy/light-day history. *Developer finding:* the built-in rule has `maxLoadJump: null`, so it can currently propose +20–25% jumps, which conflicts with 7-F. Details are in the playbook's PM notes.
+12. **return-to-load.md (R1–R6), open for Ben.** R2 adds a coach-raised offer at session start (a gap ≥ 14 days as the "clear signal" under CLAUDE.md rule 3). R6's built-in ramp step (up to ~10%) is larger than 7-F's smallest increment, so it needs an ADR 0006 note and code, or Ben picks the slower 7-F step. R4 lifts the block in active-workout §2.14.3 but keeps every pain-return step as a proposal.
 
 ## Paid material Ben may want to add to the library
 
@@ -102,5 +106,7 @@ Ben (9 Oct 2026): "stop with hyrox, it should be more adaptable depending on wha
 - Pelland et al. *Sports Medicine* journal version (the preprint is free)
 - Rønnestad & Mujika 2014 (*Scand J Med Sci Sports*) journal version
 - NSCA *Essentials* textbook
+- MASS Research Review (Stronger By Science subscription; Sept 2022 "Detraining" issue)
+- Bosquet et al. 2013 and Ardern et al. 2016 full texts (journal access)
 
 Only summaries are held here.
