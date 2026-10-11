@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
-import { UNDO_TOAST, undoOpId, undoRefusalText } from '../src/workout/undo-op';
+import { correctionToastText, UNDO_TOAST, undoOpId, undoRefusalText } from '../src/workout/undo-op';
 import { createHarness, setUpGym, type Harness } from './harness';
 
 /**
@@ -102,5 +102,19 @@ describe('undoOp through the services', () => {
     expect(skipped.length).toBeGreaterThan(0);
     const u = await s.workout.undoOp({ sessionId, targetOpId: 'skip-1' });
     expect(u.ok && u.aggregate.sets.filter((x) => x.status === 'pending').map((x) => x.id).sort()).toEqual([...skipped].sort());
+  });
+});
+
+describe('Edit set: the correction keeps its Undo when the note fails (review gaps N7)', () => {
+  it('says the note wasn’t saved, and nothing else changes', () => {
+    expect(correctionToastText(UNDO_TOAST.corrected(2), true)).toBe('Set 2 updated · note not saved');
+    expect(correctionToastText(UNDO_TOAST.corrected(2), false)).toBe('Set 2 updated');
+  });
+});
+
+describe('backup Keep failure line (review gaps N4)', () => {
+  it('is the short failure line', async () => {
+    const { KEEP_SAVE_FAILED } = await import('../src/backup/status');
+    expect(KEEP_SAVE_FAILED).toBe('Couldn’t save that. Try again.');
   });
 });

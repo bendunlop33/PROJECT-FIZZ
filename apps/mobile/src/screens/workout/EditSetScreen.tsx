@@ -10,7 +10,7 @@ import { newUuid } from '../../device/runtime';
 import { formatTime } from '../../format/dates';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
-import { UNDO_TOAST } from '../../workout/undo-op';
+import { correctionToastText, UNDO_TOAST } from '../../workout/undo-op';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, DangerTextButton, NumberAccessory, NumberStepper, PrimaryButton, StatusLine, TextButton, TextField } from '../../ui';
 import { NOTE_MAX, noteChanged, noteValue } from '../../workout/notes';
@@ -94,21 +94,27 @@ export function EditSetScreen() {
       sessionVersion = r.aggregate.session.version;
     }
     // The set's note (Your data) is its own versioned write; it never changes a value.
+    let noteFailed = false;
     if (noteEdited) {
       const n = await services.workout.setNote({ sessionId, target: { kind: 'set', setId }, note: noteValue(noteText), expectedVersion: sessionVersion, opId: noteOp });
       if (!n.ok) {
-        setError(n.error.code === 'stale_version' ? 'The workout changed. Try again.' : n.error.message);
-        void load();
-        return;
+        // No correction saved: stay and say so. A correction saved: hand over its Undo toast anyway (review gaps N7).
+        if (corrected === null || corrected.duplicate) {
+          setError(n.error.code === 'stale_version' ? 'The workout changed. Try again.' : n.error.message);
+          void load();
+          return;
+        }
+        noteFailed = true;
       }
     }
     changed();
+    const withNote = (text: string) => correctionToastText(text, noteFailed);
     if (corrected !== null && corrected.toast !== null && corrected.undo !== null) {
-      navigation.navigate('Workout', { toast: { kind: 'exclusion', key: saveOp, text: corrected.toast, undo: { sessionId, ...corrected.undo } } });
+      navigation.navigate('Workout', { toast: { kind: 'exclusion', key: saveOp, text: withNote(corrected.toast), undo: { sessionId, ...corrected.undo } } });
       return;
     }
     if (corrected !== null && !corrected.duplicate) {
-      navigation.navigate('Workout', { toast: { kind: 'undo_op', text: UNDO_TOAST.corrected(view.setNumber), targetOpId: saveOp } });
+      navigation.navigate('Workout', { toast: { kind: 'undo_op', text: withNote(UNDO_TOAST.corrected(view.setNumber)), targetOpId: saveOp } });
       return;
     }
     navigation.goBack();

@@ -512,7 +512,8 @@ function dropPendingCompanions(
 ): WorkoutSet[] {
   return sets.map((s) => {
     if (s.pairedWithSetId !== setId || s.status !== 'pending') return s;
-    const deleted: WorkoutSet = { ...s, status: 'deleted', draft: null, version: s.version + 1 };
+    // The draft stays on the tombstone so an Undo brings it back (review gaps N6).
+    const deleted: WorkoutSet = { ...s, status: 'deleted', version: s.version + 1 };
     audit.push({
       id: `${cmd.opId}:deleted:${s.id}`,
       sessionId: state.session.id,
@@ -1125,7 +1126,8 @@ function handleDeleteSet(state: SessionAggregate, cmd: CommandOf<'delete_set'>):
   if (!set || set.status === 'deleted') return fail('set_not_found', 'Set not found.');
   if (set.version !== cmd.expectedSetVersion) return fail('stale_version', 'This set changed since it was shown.');
   if (isWorkLive(state, [set.id])) return fail('work_interval_running', 'Stop the work timer before deleting this set.');
-  const deleted: WorkoutSet = { ...set, status: 'deleted', draft: null, version: set.version + 1 };
+  // A pending set's typed draft stays on the tombstone, so Undo brings it back (review gaps N6).
+  const deleted: WorkoutSet = { ...set, status: 'deleted', version: set.version + 1 };
   const audit: SessionAggregate['audit'] = [
     ...state.audit,
     {
@@ -1538,7 +1540,7 @@ function handleSwapExercise(state: SessionAggregate, cmd: CommandOf<'swap_exerci
   const events: SessionEvent[] = [];
   const gone = new Map<string, WorkoutSet>();
   for (const p of pending) {
-    const deleted: WorkoutSet = { ...p, status: 'deleted', draft: null, version: p.version + 1 };
+    const deleted: WorkoutSet = { ...p, status: 'deleted', version: p.version + 1 }; // draft kept for Undo (N6)
     gone.set(p.id, deleted);
     audit.push(auditEntry(state, cmd, 'deleted', p, deleted, 'deleted'));
     events.push({ type: 'SetDeleted', setId: p.id });
@@ -1598,7 +1600,7 @@ function handleRemoveExercise(state: SessionAggregate, cmd: CommandOf<'remove_ex
   const events: SessionEvent[] = [];
   const gone = new Map<string, WorkoutSet>();
   for (const p of own) {
-    const deleted: WorkoutSet = { ...p, status: 'deleted', draft: null, version: p.version + 1 };
+    const deleted: WorkoutSet = { ...p, status: 'deleted', version: p.version + 1 }; // draft kept for Undo (N6)
     gone.set(p.id, deleted);
     audit.push(auditEntry(state, cmd, 'deleted', p, deleted, 'deleted'));
     events.push({ type: 'SetDeleted', setId: p.id });

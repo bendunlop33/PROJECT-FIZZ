@@ -460,4 +460,22 @@ describe('review gaps nits', () => {
   it('N3: the built-in rule cites version 2 since the 10% jump limit', () => {
     expect(builtInDefaultRule(profile().id, 'kg', 3, 'isolation')).toMatchObject({ version: 2, maxLoadJumpPercent: 10 });
   });
+
+  it('N6: a typed draft on a pending set comes back with Undo after Delete and after Swap', () => {
+    const typed = values(kg(102.5), 7);
+    // Delete set.
+    let s = midBench();
+    const b2 = setsFor(s, BENCH)[2];
+    s = apply(s, { type: 'save_draft', at: at(310), setId: b2?.id ?? '', values: typed });
+    const v = s.sets.find((x) => x.id === b2?.id)?.version ?? 0;
+    s = apply(s, { type: 'delete_set', at: at(320), opId: 'del-b2', setId: b2?.id ?? '', expectedSetVersion: v });
+    s = apply(s, { type: 'undo_op', at: at(330), opId: 'undo-del', targetOpId: 'del-b2' });
+    expect(s.sets.find((x) => x.id === b2?.id)).toMatchObject({ status: 'pending', draft: typed });
+    // Swap, then Undo swap.
+    let w = midBench();
+    w = apply(w, { type: 'save_draft', at: at(310), setId: b2?.id ?? '', values: typed });
+    w = apply(w, swapCmd(w, chestPlan(45)));
+    w = apply(w, { type: 'undo_op', at: at(420), opId: 'undo-swap', targetOpId: 'swap-1' });
+    expect(w.sets.find((x) => x.id === b2?.id)).toMatchObject({ status: 'pending', draft: typed });
+  });
 });

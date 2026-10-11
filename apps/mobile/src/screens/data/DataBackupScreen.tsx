@@ -10,7 +10,7 @@ import { describeBackupError, rollbackConfirmMessage, rollbackRowView } from '..
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useRelaunch, useScreenData, useServices } from '../../shell/context';
-import { backupKeepView } from '../../backup/status';
+import { backupKeepView, KEEP_SAVE_FAILED } from '../../backup/status';
 import { formatShortDate, formatWhen } from '../../format/dates';
 import { formatCount, plural } from '../../format/numbers';
 import { pausedLine } from '../../import/views';
@@ -38,6 +38,7 @@ export function DataBackupScreen() {
   const [runResult, setRunResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [undoError, setUndoError] = useState<string | null>(null);
+  const [keepFailed, setKeepFailed] = useState(false);
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParams>>();
   const relaunch = useRelaunch();
   const prefs = useDevicePrefs();
@@ -137,9 +138,14 @@ export function DataBackupScreen() {
     ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1 }, (i) => {
       const choice = keepView.choices[i];
       if (!choice || choice.selected) return;
-      void services.backups.setKeep(choice.keep).then(() => {
-        changed();
-      });
+      setKeepFailed(false);
+      void services.backups
+        .setKeep(choice.keep)
+        .catch(() => false)
+        .then((ok) => {
+          if (!ok) setKeepFailed(true);
+          changed();
+        });
     });
   }
 
@@ -212,6 +218,7 @@ export function DataBackupScreen() {
         <Row title="After each workout" subtitle={keepView.subtitle} onPress={chooseKeep} />
         <Row title={running ? 'Backing up…' : 'Back up on this phone now'} icon="iphone" onPress={() => void backUpNow()} disabled={running} />
       </Group>
+      {keepFailed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={KEEP_SAVE_FAILED} /> : null}
       {/* Ben, 11 Oct: copies are what's kept or replaced, never workouts. */}
       <AppText variant="callout" color="text.secondary">
         {keepView.line}

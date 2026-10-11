@@ -15,6 +15,14 @@ export const UNDO_TOAST = {
 } as const;
 
 /**
+ * Edit set: the correction saved but its note didn't. The correction's
+ * toast (and its Undo) is still handed over, and says so (review gaps N7).
+ */
+export function correctionToastText(text: string, noteFailed: boolean): string {
+  return noteFailed ? `${text} · note not saved` : text;
+}
+
+/**
  * What the toast says when an Undo is refused. A stale refusal means
  * something it touched changed since (rule 5): nothing is changed.
  */

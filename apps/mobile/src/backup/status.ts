@@ -164,6 +164,9 @@ export function buildBackupStatus(m: BackupManifest, facts: BackupFacts): Backup
  * replaced: every copy holds every workout, and the workouts themselves stay
  * on the phone.
  */
+/** `Keep …` couldn't be saved (the backup manifest isn't writable): the choice didn't stick (review gaps N4). */
+export const KEEP_SAVE_FAILED = 'Couldn’t save that. Try again.';
+
 export function backupKeepView(keep: number | null): { subtitle: string; line: string; choices: { keep: number | null; label: string; selected: boolean }[] } {
   return {
     subtitle: keep === null ? 'On · keeps every copy' : `On · keeps the last ${String(keep)} copies`,

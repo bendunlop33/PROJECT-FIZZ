@@ -552,12 +552,12 @@ export function WorkoutScreen() {
     else navigation.dispatch(popToToday());
   }
 
-  /** Run one command; adopt the committed state; never throw. */
   /** A refused menu action: the shortest honest line (the screen reloads on a stale version). */
   function refusalText(code: string, message: string): string {
     return code === 'stale_version' || code === 'write_conflict' ? 'The workout changed. Try again.' : message;
   }
 
+  /** Run one command; adopt the committed state; never throw. */
   async function run(command: SessionCommand): Promise<CommandOutcome> {
     const r = await services.workout.dispatch(session.id, command);
     if (r.ok) {
