@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { CopyDestination } from '../src/backup/backup-service';
 import type { CredentialPort, PersonalFilesPort } from '../src/backup/data-domain-service';
-import { rollbackRowView } from '../src/backup/restore-view';
+import { rollbackConfirmMessage, rollbackRowView } from '../src/backup/restore-view';
+import { resetAlertView } from '../src/backup/data-domain-view';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -606,6 +607,49 @@ describe('Delete my data (keep coaching knowledge)', () => {
     expect(await s.data.leftover()).toBeNull();
   });
 
+  it('a sign-out that throws (a Keychain read error) still wipes the Keychain; the outcome names the sign-in, and Finish deleting wipes again (review r5 S2)', async () => {
+    const keychain = fakeKeychain({ failWipe: 'once' });
+    let signOuts = 0;
+    const throwing: CredentialPort = {
+      signOut: () => {
+        signOuts += 1;
+        return Promise.reject(new Error('Keychain item couldn’t be read'));
+      },
+      wipe: () => keychain.port.wipe(),
+    };
+    h = createHarness('2026-10-08T17:00:00.000Z', { credentials: throwing, personalFiles: fakeFiles().port });
+    const { services: s } = await h.launch();
+    const { personal } = await bensData(s);
+    // The first wipe fails too, so Finish deleting has the step left: both runs must still reach the wipe.
+    const r = await s.data.deleteMyData({ opId: 'throws', stamp: (await s.data.summary()).stamp });
+    expect(r).toMatchObject({ ok: false, reason: 'failed', deleted: true, step: 'coach_sign_in' });
+    expect(keychain.calls).toEqual(['wipe']);
+    expect(keychain.items.size).toBe(2);
+    expect(filesHolding(h, personal)).toEqual([]);
+
+    await h.forceClose();
+    expect(await h.start()).toMatchObject({ kind: 'delete_unfinished', deleted: true, step: 'coach_sign_in' });
+    const opened = await h.start({ interruptedDelete: 'leave' });
+    if (opened.kind !== 'ready') throw new Error(opened.kind);
+    expect(await opened.services.data.leftover()).toMatchObject({ step: 'coach_sign_in' });
+    // Finish deleting: the sign-out throws again, the wipe runs anyway and empties the Keychain.
+    expect(await opened.services.data.finishLeftover()).toMatchObject({ ok: false, step: 'coach_sign_in' });
+    expect(keychain.items.size).toBe(0);
+    expect(signOuts).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a sign-out that throws on the first try never leaves the Keychain full (review r5 S2)', async () => {
+    const keychain = fakeKeychain();
+    const throwing: CredentialPort = { signOut: () => Promise.reject(new Error('locked')), wipe: () => keychain.port.wipe() };
+    h = createHarness('2026-10-08T17:00:00.000Z', { credentials: throwing, personalFiles: fakeFiles().port });
+    const { services: s } = await h.launch();
+    await bensData(s);
+    const r = await s.data.deleteMyData({ opId: 'locked', stamp: (await s.data.summary()).stamp });
+    expect(r).toMatchObject({ ok: false, reason: 'failed', deleted: true, step: 'coach_sign_in' });
+    expect(keychain.items.size).toBe(0);
+    expect(keychain.calls).toEqual(['wipe']);
+  });
+
   it('a delete finished at launch that couldn’t confirm the ChatGPT sign-out online says so on first run (review r2 N4)', async () => {
     const keychain = fakeKeychain({ online: false });
     h = createHarness('2026-10-08T17:00:00.000Z', { credentials: keychain.port });
@@ -735,6 +779,116 @@ describe('Reset coaching knowledge', () => {
     expect(await s.data.resetCoachingKnowledge({ opId: 'full', stamp })).toEqual({ ok: false, reason: 'backup_failed', message: 'This iPhone is out of space.' });
     expect((await s.data.buildExport('coaching_knowledge')).text).toBe(before.text);
     expect((await s.data.summary()).stamp).toBe(stamp);
+  });
+});
+
+describe('Reset and the copy kept for Undo (review r5 B1, S1)', () => {
+  it('Reset → log a workout → Undo last reset keeps the workout; Reset again never deletes it', async () => {
+    h = createHarness('2026-10-08T17:00:00.000Z');
+    const { services: s } = await h.launch();
+    const { gymId } = await bensData(s);
+    const knownBefore = tablesOf((await s.data.buildExport('coaching_knowledge')).text);
+    h.clockMs += 60_000;
+    expect(await s.data.resetCoachingKnowledge({ opId: 'reset-1', stamp: (await s.data.summary()).stamp })).toMatchObject({ ok: true, status: 'switched' });
+    h.clockMs += 86_400_000;
+    const workout = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 65, reps: 5 }] }]);
+    await h.settle(s);
+    const mine = tablesOf((await s.data.buildExport('your_data')).text);
+
+    // Undo last reset: only coaching knowledge comes back; the workout stays.
+    const target = s.restore.rollbackTarget();
+    const row = rollbackRowView(target, { nowMs: h.clockMs, tz: 'Europe/London' });
+    expect(row && target.last && rollbackConfirmMessage(row, target.last.reason)).toMatch(/Your data isn’t changed\.$/);
+    expect(await s.restore.undo()).toEqual({ ok: true });
+    expect(tablesOf((await s.data.buildExport('your_data')).text)).toEqual(mine);
+    expect(tablesOf((await s.data.buildExport('coaching_knowledge')).text)).toEqual(knownBefore);
+    expect(tablesOf((await s.data.buildExport('your_data')).text).sessions?.some((r) => r.id === workout)).toBe(true);
+
+    // Reset again: nothing only the Undo copy holds, so no warning, and the workout is still here.
+    const summary = await s.data.summary();
+    expect(summary.keptForUndo).toBeNull();
+    expect(resetAlertView(summary, { tz: 'Europe/London' }).message).not.toMatch(/copy kept for Undo/);
+    expect(await s.data.resetCoachingKnowledge({ opId: 'reset-2', stamp: summary.stamp })).toMatchObject({ ok: true, status: 'switched' });
+    expect(tablesOf((await s.data.buildExport('your_data')).text)).toEqual(mine);
+  });
+
+  it('Undo last reset waits for an unfinished workout, as Reset does', async () => {
+    h = createHarness('2026-10-08T17:00:00.000Z');
+    const { services: s } = await h.launch();
+    const { gymId } = await bensData(s);
+    expect(await s.data.resetCoachingKnowledge({ opId: 'reset-1', stamp: (await s.data.summary()).stamp })).toMatchObject({ ok: true, status: 'switched' });
+    h.clockMs += 60_000;
+    await workoutWithRestRunning(s, gymId);
+    await h.settle(s);
+    expect(await s.restore.undoBlockedBy()).toMatchObject({ title: 'Workout' });
+    expect(await s.restore.undo()).toMatchObject({ ok: false, reason: 'workout_unfinished' });
+    expect(s.restore.rollbackTarget().last?.reason).toBe('reset');
+  });
+
+  it('Restore → Reset: the alert names the workout only the Undo copy holds, and Reset saves that copy as a backup first (scenario B)', async () => {
+    h = createHarness('2026-10-08T17:00:00.000Z');
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    await h.settle(s);
+    const first = (await s.restore.copiesOnPhone())[0]?.fileName ?? '';
+    h.clockMs += 86_400_000;
+    const second = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 62.5, reps: 8 }] }]);
+    await h.settle(s);
+    const text = await s.restore.readOnPhone(first);
+    if (text === null) throw new Error('no backup');
+    const checked = await s.restore.prepare(text);
+    if (!checked.ok) throw new Error(checked.error.message);
+    h.clockMs += 60_000;
+    expect(await s.restore.restore(text, checked.preview.stamp)).toMatchObject({ ok: true, status: 'restored' });
+    expect((await s.yourData.counts()).finishedWorkouts).toBe(1);
+
+    h.clockMs += 60_000;
+    const summary = await s.data.summary();
+    expect(summary.keptForUndo).toMatchObject({ workouts: 1, unreadable: false });
+    expect(resetAlertView(summary, { tz: 'Europe/London', locale: 'en-GB' }).message).toMatch(
+      /The copy kept for Undo \(since Fri 9 Oct\) holds 1 workout that isn’t on this phone\. Reset saves that copy as a backup on this phone, then deletes it\.$/,
+    );
+    expect(await s.data.resetCoachingKnowledge({ opId: 'reset-b', stamp: summary.stamp })).toMatchObject({ ok: true, status: 'switched' });
+    const copies = await s.restore.copiesOnPhone();
+    const saved = copies.find((c) => c.reason === 'kept_for_undo');
+    expect(saved).toBeDefined();
+    expect(copies.some((c) => c.reason === 'before_reset')).toBe(true);
+    expect(s.restore.rollbackTarget().last?.reason).toBe('reset');
+
+    // That backup is the only place the second workout is, and it restores.
+    const keptText = await s.restore.readOnPhone(saved?.fileName ?? '');
+    expect(keptText).toContain(second);
+    const p = await s.restore.prepare(keptText ?? '');
+    if (!p.ok) throw new Error(p.error.message);
+    expect(await s.restore.restore(keptText ?? '', p.preview.stamp)).toMatchObject({ ok: true, status: 'restored' });
+    expect((await s.yourData.counts()).finishedWorkouts).toBe(2);
+    // Never rotated away: it's kept like a backup Ben saved.
+    expect(h.backupFiles.has(saved?.fileName ?? '')).toBe(true);
+    expect(saved?.fileName.endsWith('-auto.json')).toBe(false);
+  });
+
+  it('Restore → Reset with no room for the copy kept for Undo resets nothing, and Undo last restore stays', async () => {
+    h = createHarness('2026-10-08T17:00:00.000Z');
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    await h.settle(s);
+    const first = (await s.restore.copiesOnPhone())[0]?.fileName ?? '';
+    h.clockMs += 86_400_000;
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 62.5, reps: 8 }] }]);
+    await h.settle(s);
+    const text = (await s.restore.readOnPhone(first)) ?? '';
+    const checked = await s.restore.prepare(text);
+    if (!checked.ok) throw new Error(checked.error.message);
+    expect(await s.restore.restore(text, checked.preview.stamp)).toMatchObject({ ok: true });
+    const summary = await s.data.summary();
+    h.backupFiles.set = () => {
+      throw new Error('ENOSPC: no space left on device');
+    };
+    expect(await s.data.resetCoachingKnowledge({ opId: 'full', stamp: summary.stamp })).toEqual({ ok: false, reason: 'backup_failed', message: 'This iPhone is out of space.' });
+    expect(s.restore.rollbackTarget().last?.reason).toBe('restore');
+    expect((await s.data.summary()).stamp).toBe(summary.stamp);
   });
 });
 

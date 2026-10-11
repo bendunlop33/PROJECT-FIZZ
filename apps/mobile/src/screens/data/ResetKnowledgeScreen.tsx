@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Alert, View } from 'react-native';
 
-import { RESET_ALERT, resetListView, resetResultView } from '../../backup/data-domain-view';
+import { resetAlertView, resetListView, resetResultView } from '../../backup/data-domain-view';
 import { describeBackupError } from '../../backup/restore-view';
 import { useRelaunch, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -15,7 +15,9 @@ import { SaveCopyToFiles } from './SaveCopyToFiles';
  * button and a system alert. The service backs up on this phone first and
  * never touches Your data or the coach sign-in. Unavailable while a workout
  * is unfinished (DX4, review r2 S3). Done offers Undo (one
- * rollback generation, §3.6); Data & backup keeps `Undo last reset`.
+ * rollback generation, §3.6, knowledge only); Data & backup keeps
+ * `Undo last reset`. When the copy kept for Undo holds data that isn't on
+ * this phone, the alert names it (review r5 B1).
  */
 export function ResetKnowledgeScreen() {
   const theme = useTheme();
@@ -50,10 +52,12 @@ export function ResetKnowledgeScreen() {
 
   function confirm() {
     const opId = services.newId();
-    Alert.alert(RESET_ALERT.title, RESET_ALERT.message, [
+    const now = services.now();
+    const alert = resetAlertView(summary, { tz: now.tz });
+    Alert.alert(alert.title, alert.message, [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: RESET_ALERT.confirm,
+        text: alert.confirm,
         style: 'destructive',
         onPress: () => {
           setBusy(true);

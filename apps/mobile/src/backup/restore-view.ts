@@ -160,6 +160,8 @@ export function describeBackupError(e: BackupError): string {
       return 'Your data changed since this preview, so nothing was restored. Check the updated preview and confirm again.';
     case 'nothing_to_roll_back':
       return 'There’s no earlier data to go back to.';
+    case 'kept_copy_at_risk':
+      return 'The copy kept for Undo holds data that isn’t on this phone. Nothing was reset.';
     case 'restore_failed':
       return `Restore didn’t finish: ${e.message.replace(/^Restore failed[;:]?\s*/i, '')} Your data is as it was.`;
   }
@@ -211,6 +213,16 @@ export function rollbackRowView(target: { available: boolean; last: { atUtc: str
   }
 }
 
+/**
+ * The `Undo last restore` / `Undo last reset` confirmation's message. Undo
+ * (or redo) of a reset changes coaching knowledge only (review r5 S1);
+ * undoing a restore swaps all data, so it says where anything since stays.
+ */
+export function rollbackConfirmMessage(row: { subtitle: string }, reason: LastSwitch['reason']): string {
+  if (reason === 'reset' || reason === 'undo_reset') return `${row.subtitle}. Your data isn’t changed.`;
+  return `${row.subtitle}. Anything logged since then stays only in the data you switch away from, which is kept so you can switch again.`;
+}
+
 /** The restore screen's steps, as far as leaving the screen is concerned. */
 export type RestoreStepKind = 'choose' | 'checking' | 'error' | 'checked' | 'preview' | 'restoring' | 'done' | 'undoing';
 
@@ -244,6 +256,8 @@ export function backupReasonLabel(reason: BackupRecord['reason']): string {
       return 'Coaching knowledge only';
     case 'before_reset':
       return 'Before Reset coaching knowledge';
+    case 'kept_for_undo':
+      return 'Copy kept for Undo, saved before Reset';
     case 'workout_finished':
     case 'catch_up':
       return 'After a workout';

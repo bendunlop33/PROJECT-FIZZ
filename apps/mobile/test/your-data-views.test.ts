@@ -10,10 +10,11 @@ import {
   finishLeftoverView,
   offPhoneLine,
   RESET_ALERT,
+  resetAlertView,
   resetListView,
   resetResultView,
 } from '../src/backup/data-domain-view';
-import { rollbackRowView } from '../src/backup/restore-view';
+import { describeBackupError, rollbackConfirmMessage, rollbackRowView } from '../src/backup/restore-view';
 
 /** What the Delete my data / Reset coaching knowledge screens say (data-import-export §2.7, §3.6, §5). */
 
@@ -22,6 +23,7 @@ const summary = (over: Partial<DataSummary> = {}): DataSummary => ({
     yourData: { workouts: 412, sets: 4105, gyms: 2, routines: 3, checkIns: 10, painFlags: 1, memories: 4, coachThreads: 2, imports: 1, records: 9000 },
     coachingKnowledge: { exercises: 60, playbookCandidates: 1, records: 61 },
   },
+  keptForUndo: null,
   stamp: 's',
   lastCopyToFiles: null,
   ...over,
@@ -111,5 +113,24 @@ describe('data domain views', () => {
     expect(rollbackRowView({ available: true, last: { atUtc: '2026-10-09T08:00:00.000Z', reason: 'reset' } }, ctx)?.title).toBe('Undo last reset');
     expect(rollbackRowView({ available: true, last: { atUtc: '2026-10-09T08:00:00.000Z', reason: 'undo_reset' } }, ctx)?.title).toBe('Switch back to the reset coaching knowledge');
     expect(rollbackRowView({ available: false, last: { atUtc: '2026-10-09T08:00:00.000Z', reason: 'reset' } }, ctx)).toBeNull();
+  });
+
+  it('Undo last reset says Your data isn’t changed; Undo last restore says where anything since stays (review r5 S1)', () => {
+    const row = { subtitle: 'Brings back coaching knowledge from before 08:00' };
+    expect(rollbackConfirmMessage(row, 'reset')).toBe('Brings back coaching knowledge from before 08:00. Your data isn’t changed.');
+    expect(rollbackConfirmMessage(row, 'undo_reset')).toMatch(/Your data isn’t changed\.$/);
+    expect(rollbackConfirmMessage({ subtitle: 'x' }, 'restore')).toMatch(/stays only in the data you switch away from/);
+  });
+
+  it('the Reset alert names data that only the copy kept for Undo holds, and that it’s saved first (review r5 B1)', () => {
+    const ctx = { tz: 'Europe/London', locale: 'en-GB' };
+    expect(resetAlertView(summary(), ctx)).toEqual({ ...RESET_ALERT });
+    const kept = { workouts: 1, newestWorkoutUtc: '2026-10-10T08:00:00.000Z', otherRecords: 2, keptSinceUtc: '2026-10-10T09:00:00.000Z', unreadable: false };
+    expect(resetAlertView(summary({ keptForUndo: kept }), ctx).message).toBe(
+      `${RESET_ALERT.message} The copy kept for Undo (since Sat 10 Oct) holds 1 workout and 2 other records that aren’t on this phone. Reset saves that copy as a backup on this phone, then deletes it.`,
+    );
+    expect(resetAlertView(summary({ keptForUndo: { ...kept, workouts: 0, otherRecords: 1 } }), ctx).message).toMatch(/holds 1 other record that isn’t on this phone\./);
+    expect(resetAlertView(summary({ keptForUndo: { ...kept, unreadable: true } }), ctx).message).toMatch(/The copy kept for Undo \(since Sat 10 Oct\) can’t be read\. Reset deletes it\.$/);
+    expect(describeBackupError({ code: 'kept_copy_at_risk', message: 'x' })).toBe('The copy kept for Undo holds data that isn’t on this phone. Nothing was reset.');
   });
 });

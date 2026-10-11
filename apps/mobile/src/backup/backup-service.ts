@@ -168,11 +168,12 @@ export function createBackupService(deps: BackupServiceDeps) {
     throw new Error('no free backup file name');
   }
 
-  async function backUpNow(reason: BackupReason): Promise<BackupRunResult> {
+  async function backUpNow(reason: BackupReason, source: Store | undefined): Promise<BackupRunResult> {
     const at = deps.now();
     const loaded = await loadManifest();
     const { manifest } = loaded;
-    const kind: BackupRecord['kind'] = reason === 'manual' ? 'manual' : 'automatic';
+    // The copy kept for Undo (review r5 B1) is never rotated: it may be the only place some data is.
+    const kind: BackupRecord['kind'] = reason === 'manual' || reason === 'kept_for_undo' ? 'manual' : 'automatic';
     const attempt = (ok: boolean, error: string | null): BackupAttempt => ({ atUtc: at.utc, tz: at.tz, ok, error });
     let record: BackupRecord;
     let fileName: string;
@@ -183,7 +184,7 @@ export function createBackupService(deps: BackupServiceDeps) {
         manifest.onPhone.files.map((f) => f.fileName),
         async (n) => (await deps.files.read(n)) !== null,
       );
-      const store = deps.store();
+      const store = source ?? deps.store();
       const created = await createBackup(store, { at, app: deps.app });
       const counts = await store.countRecords();
       const sha256 = sha256Hex(created.text);
@@ -256,12 +257,15 @@ export function createBackupService(deps: BackupServiceDeps) {
   }
 
   const service = {
-    /** Write a backup into Fizz's container, then rotate automatic files. Queued; never throws. */
-    backUpOnPhone(reason: BackupReason): Promise<BackupRunResult> {
+    /**
+     * Write a backup into Fizz's container, then rotate automatic files. Queued; never throws.
+     * `source`: back up that store instead of the current one (the copy kept for Undo, review r5 B1).
+     */
+    backUpOnPhone(reason: BackupReason, opts: { source?: Store } = {}): Promise<BackupRunResult> {
       return track(() =>
         queued(async () => {
           try {
-            return await backUpNow(reason);
+            return await backUpNow(reason, opts.source);
           } catch (e) {
             return { ok: false, error: describeWriteError(e) } as const;
           }
@@ -294,7 +298,7 @@ export function createBackupService(deps: BackupServiceDeps) {
           damagedCopyKept = false;
           notify();
           try {
-            return await backUpNow('after_delete');
+            return await backUpNow('after_delete', undefined);
           } catch (e) {
             return { ok: false, error: describeWriteError(e) } as const;
           }

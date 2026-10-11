@@ -60,6 +60,28 @@ export const RESET_ALERT = {
   confirm: 'Reset',
 } as const;
 
+/**
+ * The Reset confirmation (review r5 B1). Reset deletes the copy kept for
+ * Undo; when that copy holds data that isn't on this phone, the alert says
+ * so and that it's saved as a backup on this phone first.
+ */
+export function resetAlertView(summary: Pick<DataSummary, 'keptForUndo'>, ctx: WhenContext): { title: string; message: string; confirm: string } {
+  const k = summary.keptForUndo;
+  if (k === null) return { ...RESET_ALERT };
+  const since = k.keptSinceUtc ? ` (since ${formatShortDate(toMs(k.keptSinceUtc), ctx.tz, ctx.locale)})` : '';
+  let line: string;
+  if (k.unreadable) {
+    line = `The copy kept for Undo${since} can’t be read. Reset deletes it.`;
+  } else {
+    const parts = [k.workouts > 0 ? plural(k.workouts, 'workout', 'workouts', ctx.locale) : null, k.otherRecords > 0 ? plural(k.otherRecords, 'other record', 'other records', ctx.locale) : null].filter(
+      (x): x is string => x !== null,
+    );
+    const n = k.workouts + k.otherRecords;
+    line = `The copy kept for Undo${since} holds ${parts.join(' and ')} that ${n === 1 ? 'isn’t' : 'aren’t'} on this phone. Reset saves that copy as a backup on this phone, then deletes it.`;
+  }
+  return { ...RESET_ALERT, message: `${RESET_ALERT.message} ${line}` };
+}
+
 /** What didn't finish, named for Ben (S1). */
 export function deleteStepLabel(step: DeleteStep): string {
   switch (step) {

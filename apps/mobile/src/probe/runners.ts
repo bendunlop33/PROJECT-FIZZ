@@ -154,8 +154,13 @@ export async function runSecureStoreProbe(): Promise<ResultUpdate> {
       return { status: 'unavailable', summary: 'SecureStore reports it is not available', details: [] };
     }
     await SecureStore.setItemAsync(key, value, options);
-    const read = await SecureStore.getItemAsync(key, options);
-    await SecureStore.deleteItemAsync(key, options);
+    let read: string | null;
+    try {
+      read = await SecureStore.getItemAsync(key, options);
+    } finally {
+      // Never left behind, even when the read throws (review r5 N3).
+      await SecureStore.deleteItemAsync(key, options);
+    }
     const afterDelete = await SecureStore.getItemAsync(key, options);
     const ok = read === value && afterDelete === null;
     return {

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { applyDraftCommand, basisSlots, newCheckIn, newPainFlag } from '@fizz/domain';
 import {
+  apply,
   assisted,
   at,
   barbell,
@@ -509,5 +510,162 @@ describe('resetKnowledge', () => {
     expect(await snapshot(m.store)).toEqual(before);
     expect(dbFiles(d)).toEqual(['fizz-meta.db', 'training-1.db']);
     expect(m.databaseNames).toEqual({ current: 'training-1.db', previous: null, orphan: null });
+  });
+});
+
+/**
+ * Review r5 B1 and S1: Reset coaching knowledge and its Undo never move or
+ * delete Your data. Undo last reset (and redoing it) change Coaching
+ * knowledge only; Reset never silently drops a copy kept for Undo that holds
+ * data that isn't on this phone.
+ */
+describe('Reset and the copy kept for Undo (review r5 B1, S1)', () => {
+  let d: string;
+  let m: DatabaseManager;
+  const bundled: readonly Exercise[] = [BUNDLED, SPLIT_SQUAT];
+  beforeEach(async () => {
+    d = dir();
+    m = await openManager(d);
+    await populate(m.store);
+  });
+
+  /** A workout logged later (a new session with its own IDs). */
+  async function logWorkout(base: number): Promise<string> {
+    const started = unilateralSession(`later-${String(base)}`, idGen(base));
+    const s = apply(started, { type: 'finish', at: at(4000), opId: `finish-${String(base)}`, expectedVersion: started.session.version, endedAt: at(600) });
+    const saved = await m.store.repos.sessions.save(s, null);
+    if (!saved.ok) throw new Error(saved.error);
+    return s.session.id;
+  }
+
+  it('Reset → log → Undo last reset keeps what was logged since and brings back the old knowledge only (S1)', async () => {
+    const before = await snapshot(m.store);
+    expect(await m.resetKnowledge(bundled, { at: at(90) })).toMatchObject({ ok: true, status: 'switched' });
+    await m.store.repos.gyms.save(gym(3), null);
+    const workout = await logWorkout(98_000);
+    const logged = filterDomain(await snapshot(m.store), 'your_data');
+
+    expect(await m.rollback(at(91))).toMatchObject({ ok: true });
+    expect(m.rollbackTarget.last).toEqual({ atUtc: at(91).utc, reason: 'undo_reset' });
+    const undone = await snapshot(m.store);
+    expect(filterDomain(undone, 'your_data')).toEqual(logged);
+    expect(filterDomain(undone, 'coaching_knowledge')).toEqual(filterDomain(before, 'coaching_knowledge'));
+    expect(await m.store.repos.gyms.get(gym(3).id)).not.toBeNull();
+    expect(await m.store.repos.sessions.get(workout)).not.toBeNull();
+    expect((await checkIntegrity(m.store.db)).ok).toBe(true);
+
+    // Redo (`Switch back to the reset coaching knowledge`) also keeps Your data.
+    await m.store.repos.gyms.save(gym(4), null);
+    const later = filterDomain(await snapshot(m.store), 'your_data');
+    expect(await m.rollback(at(92))).toMatchObject({ ok: true });
+    expect(m.rollbackTarget.last?.reason).toBe('reset');
+    expect(filterDomain(await snapshot(m.store), 'your_data')).toEqual(later);
+    expect((await snapshot(m.store)).playbook_candidates).toEqual([]);
+    // Two files: the current one and the copy kept for Undo; the rest were dropped.
+    expect(dbFiles(d)).toEqual(['fizz-meta.db', m.databaseNames.current, m.databaseNames.previous ?? ''].sort());
+  });
+
+  it('Reset → log → Undo last reset → Reset never deletes the workout (scenario A)', async () => {
+    expect(await m.resetKnowledge(bundled, { at: at(90) })).toMatchObject({ ok: true, status: 'switched' });
+    const workout = await logWorkout(98_000);
+    await m.store.repos.gyms.save(gym(3), null);
+    expect(await m.rollback(at(91))).toMatchObject({ ok: true });
+    const mine = filterDomain(await snapshot(m.store), 'your_data');
+
+    // Nothing in the copy kept for Undo is missing here, so Reset needs no warning.
+    const { stamp, keptForUndo } = await m.domainSummary();
+    expect(keptForUndo).toBeNull();
+    expect(await m.resetKnowledge(bundled, { expectedStamp: stamp, at: at(93) })).toMatchObject({ ok: true, status: 'switched' });
+    expect(await m.store.repos.sessions.get(workout)).not.toBeNull();
+    expect(await m.store.repos.gyms.get(gym(3).id)).not.toBeNull();
+    expect(filterDomain(await snapshot(m.store), 'your_data')).toEqual(mine);
+    // Undo once more, after a relaunch: still all there.
+    await m.close();
+    m = await openManager(d);
+    expect(await m.rollback(at(94))).toMatchObject({ ok: true });
+    expect(filterDomain(await snapshot(m.store), 'your_data')).toEqual(mine);
+  });
+
+  it('Undo last reset keeps a bundled exercise Ben used after the reset, which the old knowledge lacked', async () => {
+    const NEW = exercise(271, 'Belt squat');
+    expect(await m.resetKnowledge([...bundled, NEW], { at: at(90) })).toMatchObject({ ok: true, status: 'switched' });
+    const saved = await m.store.repos.routines.save({ ...routine([routineExercise(710, { exerciseId: NEW.id })]), id: id(711), name: 'Legs' }, null);
+    expect(saved.ok).toBe(true);
+    expect(await m.rollback(at(91))).toMatchObject({ ok: true });
+    expect(await m.store.repos.exercises.get(NEW.id)).not.toBeNull();
+    expect(await m.store.repos.exercises.get(UNUSED.id)).not.toBeNull();
+    expect((await checkIntegrity(m.store.db)).ok).toBe(true);
+  });
+
+  it('Restore → Reset: a pre-restore workout only the Undo copy holds is named, refused unless confirmed, and can be backed up (scenario B)', async () => {
+    const { createBackup } = await import('../src/index');
+    const text = (await createBackup(m.store, { at: at(50), app: { name: 'x', version: '1', build: null } })).text;
+    const workout = await logWorkout(98_000);
+    await m.store.repos.gyms.save(gym(3), null);
+    expect(await m.restore(text, at(60))).toMatchObject({ ok: true, status: 'restored' });
+    expect(await m.store.repos.sessions.get(workout)).toBeNull();
+
+    const summary = await m.domainSummary();
+    expect(summary.keptForUndo).toMatchObject({ workouts: 1, otherRecords: 1, keptSinceUtc: at(60).utc, unreadable: false });
+    const names = m.databaseNames;
+    const files = dbFiles(d);
+
+    // Without Ben's confirmation of that loss, nothing changes and Undo last restore stays.
+    expect(await m.resetKnowledge(bundled, { expectedStamp: summary.stamp, at: at(61) })).toMatchObject({ ok: false, error: { code: 'kept_copy_at_risk' } });
+    expect(m.databaseNames).toEqual(names);
+    expect(dbFiles(d)).toEqual(files);
+    expect(m.rollbackTarget).toEqual({ available: true, last: { atUtc: at(60).utc, reason: 'restore' } });
+
+    // The copy can be backed up as it is, with the workout in it.
+    const saved = await m.withKeptCopy((store) => createBackup(store, { at: at(62), app: { name: 'x', version: '1', build: null } }));
+    expect(saved?.value.text).toContain(workout);
+    expect(m.databaseNames).toEqual(names);
+
+    expect(await m.resetKnowledge(bundled, { expectedStamp: summary.stamp, at: at(63), dropKeptCopy: true })).toMatchObject({ ok: true, status: 'switched' });
+    expect(m.rollbackTarget.last?.reason).toBe('reset');
+    // That backup restores the workout.
+    expect(await m.restore(saved?.value.text ?? '', at(64))).toMatchObject({ ok: true, status: 'restored' });
+    expect(await m.store.repos.sessions.get(workout)).not.toBeNull();
+  });
+
+  it('Rollback (Undo last restore) → Reset: the restored backup’s own records are counted too', async () => {
+    const { createBackup } = await import('../src/index');
+    await m.store.repos.gyms.save(gym(3), null);
+    const text = (await createBackup(m.store, { at: at(50), app: { name: 'x', version: '1', build: null } })).text;
+    expect(await m.store.repos.gyms.get(gym(3).id)).not.toBeNull();
+    // A phone that never had gym 3: start again, restore the backup, then undo the restore.
+    const fresh = dir();
+    const other = await openManager(fresh);
+    await populate(other.store);
+    expect(await other.restore(text, at(60))).toMatchObject({ ok: true, status: 'restored' });
+    expect(await other.rollback(at(61))).toMatchObject({ ok: true });
+    expect(await other.store.repos.gyms.get(gym(3).id)).toBeNull();
+    // Gym 3 is only in the restored copy; records that differ between the two histories count too, as on restore.
+    const kept = (await other.domainSummary()).keptForUndo;
+    expect(kept?.otherRecords).toBeGreaterThanOrEqual(1);
+    expect(kept?.unreadable).toBe(false);
+  });
+
+  it('a copy kept for Undo that can’t be read is reported as unreadable', async () => {
+    const { createBackup } = await import('../src/index');
+    const text = (await createBackup(m.store, { at: at(50), app: { name: 'x', version: '1', build: null } })).text;
+    await m.store.repos.gyms.save(gym(3), null);
+    expect(await m.restore(text, at(60))).toMatchObject({ ok: true, status: 'restored' });
+    const kept = m.databaseNames.previous ?? '';
+    const { writeFileSync } = await import('node:fs');
+    writeFileSync(join(d, kept), 'not a database at all, just bytes that aren’t SQLite');
+    expect((await m.domainSummary()).keptForUndo).toMatchObject({ unreadable: true, keptSinceUtc: at(60).utc });
+    expect(await m.withKeptCopy(() => Promise.resolve(1))).toBeNull();
+  });
+
+  it('a Reset that changes nothing never needs the confirmation, even with a copy at risk', async () => {
+    expect(await m.resetKnowledge(bundled)).toMatchObject({ ok: true, status: 'switched' });
+    const { createBackup } = await import('../src/index');
+    const text = (await createBackup(m.store, { at: at(50), app: { name: 'x', version: '1', build: null } })).text;
+    await m.store.repos.gyms.save(gym(3), null);
+    expect(await m.restore(text, at(60))).toMatchObject({ ok: true, status: 'restored' });
+    expect((await m.domainSummary()).keptForUndo).not.toBeNull();
+    expect(await m.resetKnowledge(bundled, { at: at(61) })).toMatchObject({ ok: true, status: 'unchanged' });
+    expect(m.rollbackTarget.last?.reason).toBe('restore');
   });
 });

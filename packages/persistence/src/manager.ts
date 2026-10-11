@@ -11,7 +11,7 @@ import {
   type BackupError,
   type BackupFile,
 } from './backup/backup';
-import { analyseReplace, type ReplaceCounts } from './backup/replace';
+import { analyseReplace, keptOnly, type ReplaceCounts } from './backup/replace';
 import { countDomains, filterDomain, knowledgeExercisesInUse, type DomainCounts } from './data-domains';
 import { EXERCISE_SPEC, saveDocumentIn } from './documents';
 import type { DatabaseHost, SqlDriver, SqlRow } from './driver';
@@ -150,9 +150,21 @@ export type RestoreOutcome =
 
 export type RollbackOutcome = { ok: true; store: Store } | { ok: false; error: BackupError };
 
+/**
+ * Your data in the copy kept for Undo that isn't on this phone (review r5
+ * B1). `unreadable`: the copy couldn't be read, so what's in it is unknown.
+ */
+export type KeptCopyLoss = ReplaceCounts & { keptSinceUtc: string | null; unreadable: boolean };
+
 /** What `Delete my data` / `Reset coaching knowledge` are confirmed against (rule 5: never applied to newer state). */
 export interface DomainSummary {
   counts: DomainCounts;
+  /**
+   * What `Reset coaching knowledge` would delete with the copy kept for Undo
+   * (review r5 B1): null when that copy holds nothing that isn't on this
+   * phone. Reset is refused (`kept_copy_at_risk`) unless confirmed with it.
+   */
+  keptForUndo: KeptCopyLoss | null;
   /** Same form as a restore preview's stamp: the current content and the database slots. */
   stamp: string;
 }
@@ -410,6 +422,8 @@ export class DatabaseManager {
       const previous = this.slots.previous;
       const missing: BackupError = { code: 'nothing_to_roll_back', message: 'There is no earlier database to go back to.' };
       if (previous === null) return { ok: false, error: missing };
+      const last = this.switched?.reason;
+      if (last === 'reset' || last === 'undo_reset') return this.swapKnowledge(previous, last === 'reset' ? 'undo_reset' : 'reset', at);
       let driver: SqlDriver | null = null;
       let store: Store | null = null;
       try {
@@ -418,18 +432,12 @@ export class DatabaseManager {
         if ((await readUserVersion(driver)) === 0) throw new RestoreAbort(missing);
         store = await openStore(driver, { migrations: this.options.migrations });
         // As after a restore (ADR 0022 §5): the database switched to never starts from its old pre-start drafts (review N4).
-        // Undo last reset (and redoing it) is not a restore: Your data there is Ben's as at the reset, drafts
-        // included, so they're kept (review r4 S1, ADR 0023).
-        const last = this.switched?.reason;
-        const undoingReset = last === 'reset' || last === 'undo_reset';
-        if (!undoingReset) await discardOpenDrafts(store.db, at.utc);
+        await discardOpenDrafts(store.db, at.utc);
         const integrity = await checkIntegrity(store.db, latestVersion(this.options.migrations));
         if (!integrity.ok) {
           throw new RestoreAbort({ code: 'integrity_failed', message: 'The earlier database failed its integrity check; staying on the current one.' });
         }
-        // Undoing a reset is recorded as such, and undoing that puts the reset back (the two swap places).
-        const reason: SwitchReason = last === 'reset' ? 'undo_reset' : last === 'undo_reset' ? 'reset' : 'rollback';
-        await this.writeSlots({ current: previous, previous: this.slots.current, orphan: null }, null, { atUtc: at.utc, reason });
+        await this.writeSlots({ current: previous, previous: this.slots.current, orphan: null }, null, { atUtc: at.utc, reason: 'rollback' });
       } catch (e) {
         const closing = store ?? driver;
         if (closing !== null) await quietly(() => closing.close());
@@ -441,12 +449,106 @@ export class DatabaseManager {
     });
   }
 
+  /**
+   * `Undo last reset` and redoing it (data-import-export §3.6, check 31a;
+   * review r5 B1, S1) change Coaching knowledge only: a new file is built
+   * from every Your-data row on this phone now plus the other database's
+   * Coaching knowledge (and any knowledge exercise Ben's records use that
+   * it lacks), then switched to. Anything logged since the reset stays. The
+   * file switched away from becomes the copy kept for the next Undo; the one
+   * it replaces was an earlier state of this same data and is dropped.
+   */
+  private async swapKnowledge(other: string, reason: 'reset' | 'undo_reset', at: ZonedTimestamp): Promise<RollbackOutcome> {
+    const missing: BackupError = { code: 'nothing_to_roll_back', message: 'There is no earlier database to go back to.' };
+    const theirs = await this.readFile(other);
+    if (theirs === null) return { ok: false, error: missing };
+    const current = await this.readCurrent();
+    const tables = filterDomain(current.tables, 'your_data');
+    const knowledge = filterDomain(theirs.tables, 'coaching_knowledge');
+    for (const [table, rows] of Object.entries(knowledge)) tables[table] = [...(tables[table] ?? []), ...rows];
+    const have = new Set((knowledge.exercises ?? []).map((r) => String(r.id)));
+    const inUse = knowledgeExercisesInUse(current.tables);
+    tables.exercises = [...(tables.exercises ?? []), ...(current.tables.exercises ?? []).filter((r) => r.owner_id === null && inUse.has(String(r.id)) && !have.has(String(r.id)))];
+    await this.dropStaleOrphan();
+    const name = this.options.newName();
+    const built = await this.build({ schemaVersion: current.schemaVersion, tables }, name, 'check');
+    if (!built.ok) return built.error.code === 'integrity_failed' ? { ok: false, error: { code: 'integrity_failed', message: 'The earlier coaching knowledge failed its integrity check; staying on the current one.' } } : built;
+    await this.switchTo(built.store, name, { atUtc: at.utc, reason });
+    return { ok: true, store: built.store };
+  }
+
+  /** A kept database file's content at the current schema (migrated on open); null when it's missing or empty. */
+  private async readFile(name: string): Promise<{ schemaVersion: number; tables: Record<string, SqlRow[]> } | null> {
+    const driver = await this.options.host.open(name);
+    let store: Store | null = null;
+    try {
+      // Opening a missing file creates an empty one; never read that as data.
+      if ((await readUserVersion(driver)) === 0) return null;
+      store = await openStore(driver, { migrations: this.options.migrations });
+      return await store.db.read(async (q) => ({ schemaVersion: await readUserVersion(q), tables: await exportTables(q) }));
+    } finally {
+      const closing = store ?? driver;
+      await quietly(() => closing.close());
+    }
+  }
+
   /** Counts per data domain and the stamp a Delete or Reset confirmation is made against. */
   domainSummary(): Promise<DomainSummary> {
     return this.exclusive(async () => {
       const current = await this.readCurrent();
-      return { counts: countDomains(current.tables), stamp: this.stampOf(contentHash(current.schemaVersion, current.tables)) };
+      return {
+        counts: countDomains(current.tables),
+        keptForUndo: await this.lostWithKeptCopy(current),
+        stamp: this.stampOf(contentHash(current.schemaVersion, current.tables)),
+      };
     });
+  }
+
+  /**
+   * Run `fn` on the copy kept for Undo, opened (and migrated) on its own and
+   * closed again, e.g. to back it up before Reset drops it (review r5 B1).
+   * Null when no copy is kept or it can't be opened.
+   */
+  withKeptCopy<T>(fn: (store: Store) => Promise<T>): Promise<{ value: T } | null> {
+    return this.exclusive(async () => {
+      const name = this.slots.previous;
+      if (name === null) return null;
+      let driver: SqlDriver | null = null;
+      let store: Store | null = null;
+      try {
+        driver = await this.options.host.open(name);
+        if ((await readUserVersion(driver)) === 0) return null;
+        store = await openStore(driver, { migrations: this.options.migrations });
+      } catch {
+        const closing = store ?? driver;
+        if (closing !== null) await quietly(() => closing.close());
+        return null;
+      }
+      try {
+        return { value: await fn(store) };
+      } finally {
+        const s = store;
+        await quietly(() => s.close());
+      }
+    });
+  }
+
+  /**
+   * What dropping the copy kept for Undo would lose (review r5 B1): Your
+   * data in it that isn't on this phone. A copy kept by Reset or its Undo
+   * is an earlier state of this data (every Your-data row was copied), so
+   * only records gone from this phone count; a copy kept by a restore is
+   * another history, so changed records count too, as the restore preview
+   * counts them.
+   */
+  private async lostWithKeptCopy(current: { schemaVersion: number; tables: Record<string, SqlRow[]> }): Promise<KeptCopyLoss | null> {
+    const kept = await this.readKept();
+    if (kept === 'none') return null;
+    const keptSinceUtc = this.switched?.atUtc ?? null;
+    if (kept === 'unreadable') return { workouts: 0, newestWorkoutUtc: null, otherRecords: 0, keptSinceUtc, unreadable: true };
+    const reason = this.switched?.reason;
+    const lost = keptOnly({ current, kept, match: reason === 'reset' || reason === 'undo_reset' ? 'absent' : 'either' });
+    return lost.workouts + lost.otherRecords > 0 ? { ...lost, keptSinceUtc, unreadable: false } : null;
   }
 
   /**
@@ -491,8 +593,17 @@ export class DatabaseManager {
    * meta transaction and keeps the database it replaced as the rollback
    * generation. `unchanged` when the result would equal the current data.
    * With `at`, the switch is recorded so `Undo last reset` is offered (check 31a).
+   *
+   * The copy kept for Undo before this Reset is dropped. When it holds Your
+   * data that isn't on this phone (`domainSummary().keptForUndo`, e.g. the
+   * pre-restore data of `Undo last restore`), Reset is refused with
+   * `kept_copy_at_risk` unless `dropKeptCopy` says Ben confirmed with that
+   * named (and the caller backed it up): review r5 B1.
    */
-  resetKnowledge(bundled: readonly Exercise[], opts: { expectedStamp?: string; at?: ZonedTimestamp } = {}): Promise<DomainSwitchOutcome> {
+  resetKnowledge(
+    bundled: readonly Exercise[],
+    opts: { expectedStamp?: string; at?: ZonedTimestamp; dropKeptCopy?: boolean } = {},
+  ): Promise<DomainSwitchOutcome> {
     return this.exclusiveSafe(async (): Promise<DomainSwitchOutcome> => {
       const current = await this.readCurrent();
       const currentHash = contentHash(current.schemaVersion, current.tables);
@@ -511,6 +622,11 @@ export class DatabaseManager {
         await quietly(() => built.store.close());
         if (await quietly(() => this.options.host.remove(name))) await quietly(() => this.writeSlots({ ...this.slots, orphan: null }, null));
         return { ok: true, status: 'unchanged', store: this.current };
+      }
+      if (opts.dropKeptCopy !== true && (await this.lostWithKeptCopy(current)) !== null) {
+        await quietly(() => built.store.close());
+        if (await quietly(() => this.options.host.remove(name))) await quietly(() => this.writeSlots({ ...this.slots, orphan: null }, null));
+        return { ok: false, error: { code: 'kept_copy_at_risk', message: 'The copy kept for Undo holds data that isn’t on this phone. Nothing was reset.' } };
       }
       await this.switchTo(built.store, name, opts.at ? { atUtc: opts.at.utc, reason: 'reset' } : null);
       return { ok: true, status: 'switched', store: built.store };

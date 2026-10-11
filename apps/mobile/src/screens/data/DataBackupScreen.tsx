@@ -6,7 +6,7 @@ import { Alert, View } from 'react-native';
 import { toMs } from '@fizz/domain';
 
 import { deleteLeftoverView, finishLeftoverView } from '../../backup/data-domain-view';
-import { describeBackupError, rollbackRowView } from '../../backup/restore-view';
+import { describeBackupError, rollbackConfirmMessage, rollbackRowView } from '../../backup/restore-view';
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useRelaunch, useScreenData, useServices } from '../../shell/context';
@@ -102,8 +102,8 @@ export function DataBackupScreen() {
   const undoRow = rollbackRowView(rollback, { nowMs: toMs(now.utc), tz: now.tz });
 
   function undoRestore() {
-    if (!undoRow) return;
-    Alert.alert(`${undoRow.title}?`, `${undoRow.subtitle}. Anything logged since then stays only in the data you switch away from, which is kept so you can switch again.`, [
+    if (!undoRow || rollback.last === null) return;
+    Alert.alert(`${undoRow.title}?`, rollbackConfirmMessage(undoRow, rollback.last.reason), [
       { text: 'Cancel', style: 'cancel' },
       {
         text: undoRow.title,

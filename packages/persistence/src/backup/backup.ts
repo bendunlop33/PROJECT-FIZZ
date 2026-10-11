@@ -59,7 +59,13 @@ export type BackupErrorCode =
   | 'integrity_failed'
   | 'nothing_to_roll_back'
   /** The data changed since the restore preview was made (review S5): nothing was switched. */
-  | 'preview_stale';
+  | 'preview_stale'
+  /**
+   * Reset would delete the copy kept for Undo, which holds Your data that
+   * isn't on this phone (review r5 B1). Nothing was switched; confirm with
+   * that copy named (and backed up) to go ahead.
+   */
+  | 'kept_copy_at_risk';
 
 export interface BackupError {
   code: BackupErrorCode;

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { toMs } from '@fizz/domain';
-import { exportDomain, sha256Hex, type AppInfo, type DataDomain, type DatabaseManager, type DomainCounts, type DomainSwitchOutcome } from '@fizz/persistence';
+import { exportDomain, sha256Hex, type AppInfo, type DataDomain, type DatabaseManager, type DomainCounts, type DomainSwitchOutcome, type KeptCopyLoss } from '@fizz/persistence';
 import type { Exercise, SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 
 import { restAlertIdentifier, type RestAlertController } from '../alerts/rest-alerts';
@@ -45,9 +45,11 @@ import { describeWriteError, type BackupService, type CopyDestination, type Text
  * re-runs only those steps, never the swap (review r2 S2).
  *
  * Reset: refused while a workout is unfinished (DX4, review r2 S3), stamp
- * check, a `before_reset` backup, then one swap that keeps every Your-data
- * row and one rollback generation (`Undo last reset`). Never touches
- * credentials.
+ * check, then, when the copy kept for Undo holds data that isn't on this
+ * phone, that copy saved as a `kept_for_undo` backup (review r5 B1), a
+ * `before_reset` backup, then one swap that keeps every Your-data row and
+ * one rollback generation (`Undo last reset`, knowledge only, review r5
+ * S1). Never touches credentials.
  *
  * Neither the coach nor voice can call these (DX10).
  */
@@ -142,6 +144,12 @@ const KEEP_DONE = 20;
 
 export interface DataSummary {
   counts: DomainCounts;
+  /**
+   * Your data in the copy kept for Undo that isn't on this phone, which Reset
+   * deletes with that copy (review r5 B1); null when there is none. The
+   * Reset confirmation names it, and Reset saves that copy as a backup first.
+   */
+  keptForUndo: KeptCopyLoss | null;
   /** Pass back with the confirmation; a mismatch is refused as stale. */
   stamp: string;
   /** The newest copy saved to Files, if any (the screens' off-phone line). */
@@ -213,7 +221,11 @@ function errorText(e: unknown): string {
 
 const TIMED_OUT: unique symbol = Symbol('timed out');
 
-/** `p`'s value or rejection, or `TIMED_OUT` when it hasn't settled within `ms`. `p` keeps running; a late result is ignored. */
+/**
+ * `p`'s value or rejection, or `TIMED_OUT` when it hasn't settled within `ms`. `p` keeps running; a late result is ignored.
+ * A sign-out that answers late still runs alongside the wipe, so `CredentialPort.signOut` must only ever delete,
+ * never write (review r5 N2).
+ */
 function settlesWithin<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -323,9 +335,9 @@ export function createDataDomainService(deps: DataDomainDeps) {
   }
 
   async function summaryNow(): Promise<DataSummary> {
-    const [{ counts, stamp }, status] = await Promise.all([deps.manager.domainSummary(), deps.backups.getStatus()]);
+    const [{ counts, stamp, keptForUndo }, status] = await Promise.all([deps.manager.domainSummary(), deps.backups.getStatus()]);
     const copy = status.offPhone.lastCopy;
-    return { counts, stamp, lastCopyToFiles: copy ? { atUtc: copy.atUtc, tz: copy.tz, destinationLabel: copy.destinationLabel } : null };
+    return { counts, keptForUndo, stamp, lastCopyToFiles: copy ? { atUtc: copy.atUtc, tz: copy.tz, destinationLabel: copy.destinationLabel } : null };
   }
 
   /**
@@ -662,12 +674,20 @@ export function createDataDomainService(deps: DataDomainDeps) {
         const fresh = await summaryNow();
         if (fresh.stamp !== req.stamp) return { ok: false, reason: 'stale', fresh };
         await deps.backups.whenIdle();
+        // The copy kept for Undo holds data that isn't on this phone and Reset deletes it (review r5 B1): the
+        // confirmation named it (same stamp), and it's saved as a backup first. One that can't be read can't be saved.
+        const kept = fresh.keptForUndo;
+        if (kept !== null && !kept.unreadable) {
+          const saved = await deps.manager.withKeptCopy((store) => deps.backups.backUpOnPhone('kept_for_undo', { source: store }));
+          if (saved === null) return { ok: false, reason: 'backup_failed', message: 'The copy kept for Undo couldn’t be opened.' };
+          if (!saved.value.ok) return { ok: false, reason: 'backup_failed', message: saved.value.error };
+        }
         const backup = await deps.backups.backUpOnPhone('before_reset');
         if (!backup.ok) return { ok: false, reason: 'backup_failed', message: backup.error };
         const at = deps.now();
-        const r = await deps.manager.resetKnowledge(deps.bundledKnowledge(at.utc), { expectedStamp: req.stamp, at });
+        const r = await deps.manager.resetKnowledge(deps.bundledKnowledge(at.utc), { expectedStamp: req.stamp, at, dropKeptCopy: kept !== null });
         if (!r.ok) {
-          if (r.error.code === 'preview_stale') return { ok: false, reason: 'stale', fresh: await summaryNow() };
+          if (r.error.code === 'preview_stale' || r.error.code === 'kept_copy_at_risk') return { ok: false, reason: 'stale', fresh: await summaryNow() };
           return { ok: false, reason: 'failed', message: r.error.message };
         }
         await writeLedger(remember(l, [{ opId: req.opId, kind: 'reset_coaching_knowledge', atUtc: deps.now().utc, signedOutOnline: null, unfinished: null }])).catch(() => undefined);
