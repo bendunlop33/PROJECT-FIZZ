@@ -23,6 +23,7 @@ import {
   runCoachTurn,
   storeTodayTargets,
   undoCoachAction,
+  undoOpId,
   type CoachExecutors,
   type CoachModelPort,
   type CoachTurnProgress,
@@ -466,21 +467,25 @@ export function createCoachService(deps: CoachServiceDeps) {
     },
 
     /**
-     * `Undo all` on the Summary: Undo on each live row, as its own tap. Row by
-     * row, so it works however the rows got back to `saved` (a `Use coach
-     * target` after an earlier Undo all leaves the coach's record undone).
+     * `Undo all` on the Summary for the coach's one review (`actionId`). While
+     * that record is live, it is undone as a whole, so its card in the coach
+     * sheet reads `Undone` too (review B1). Once it is already undone (a `Use
+     * coach target` after an earlier Undo all), the live rows are undone as
+     * one write. Either way all rows change or none do (review S3); a repeat
+     * tap replays.
      */
-    async undoNextTargets(rows: readonly NextSessionTargetRecord[]): Promise<{ ok: boolean }> {
+    async undoNextTargets(actionId: string, rows: readonly NextSessionTargetRecord[]): Promise<{ ok: boolean }> {
       const p = await owner();
-      let ok = true;
-      for (const row of rows) {
-        const { status, record } = nextTargetTapRecord(row, 'undo', { opId: nextTargetTapOpId(row, 'undo'), now: deps.now() });
-        const r = await coachStore()
-          .setNextTargetStatus(p.id, { rowId: row.id, expectedVersion: row.version, status, record })
-          .catch(() => null);
-        if (r === null || r.status === 'not_possible') ok = false;
+      const action = await coachStore().getAction(actionId).catch(() => null);
+      if (action !== null && action.status === 'committed' && action.undoneBy === null) {
+        const r = await undoCoachAction(coachStore(), { ownerId: p.id, actionId, opId: undoOpId(actionId), now: deps.now() }).catch(() => null);
+        return { ok: r !== null && (r.result.status === 'written' || r.result.status === 'replayed') };
       }
-      return { ok };
+      const taps = rows.map((row) => ({ rowId: row.id, expectedVersion: row.version, ...nextTargetTapRecord(row, 'undo', { opId: nextTargetTapOpId(row, 'undo'), now: deps.now() }) }));
+      const r = await coachStore()
+        .setNextTargetStatuses(p.id, taps)
+        .catch(() => null);
+      return { ok: r !== null && r.status !== 'not_possible' };
     },
 
     /** Restart recovery at launch: turns cut off by a force-close become `interrupted`. */

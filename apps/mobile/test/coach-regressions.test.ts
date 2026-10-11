@@ -82,6 +82,21 @@ describe('Offline recovers by itself; the summary review isn’t skipped for an 
     expect((await s.coach.availability()).status).toBe('ok');
   });
 
+  it('a workout finished while the status still reads Offline: the review runs (calls the model) rather than being skipped', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }] }]);
+    // The request fails right before the finish, so Offline hasn't lapsed when the review starts.
+    model = new StepModel([() => [{ type: 'error', error: 'network' }]]);
+    await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Hi', spoken: false }, turnId: h.ids() });
+    expect((await s.coach.availability()).status).toBe('offline');
+    model = new StepModel([saveNextTarget(), () => replyWith('Ok.')]);
+    const review = await s.coach.runSummaryTurn(first);
+    expect(model.requests).toHaveLength(2);
+    expect(review?.status).toBe('completed');
+    expect((await s.coach.availability()).status).toBe('ok');
+  });
+
   it('Offline clears by itself after a short while, with no request needed', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);
@@ -129,6 +144,9 @@ describe('A name or time edit on the Summary keeps the coach’s next-time targe
     const first = await reviewed(s, gymId);
     await s.coach.runSummaryTurn(first);
     await rename(s, first, 'Chest day');
+    // The overview's preview still shows the coach's target (review N3).
+    const page = await s.overview.load({ target: { kind: 'next' }, gymId });
+    expect(page?.view.rows.find((r) => r.name === 'Bench press')?.coach).toMatchObject({ state: 'coach' });
     const work = await startFrom(s, gymId, first);
     expect(work.every((x) => x.planned.source === 'coach' && x.planned.load?.value === 57.5)).toBe(true);
   });
@@ -283,9 +301,7 @@ describe('The workout banner follows an Undo made in the sheet', () => {
 });
 
 describe('Undo all on the Summary works every time it is shown', () => {
-  it('Undo all → Use coach target on both → Undo all again undoes both rows', async () => {
-    const { services: s } = await h.launch();
-    const gymId = await setUpGym(h, s);
+  async function twoTargets(s: Services, gymId: string) {
     const first = await logWorkout(h, s, gymId, [
       { exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }] },
       { exercise: 'Lat pulldown', sets: [{ load: 50, reps: 10, rpe: 10 }] },
@@ -301,14 +317,46 @@ describe('Undo all on the Summary works every time it is shown', () => {
     await s.coach.runSummaryTurn(first);
     const summary = await s.workout.summary(first, 'connected');
     const view = async () => nextTimeView({ title: 'Workout', builtIn: summary?.nextTime ?? null, coachRows: await s.coach.nextTargets(first), availability: await s.coach.availability(), reviewing: false });
+    const card = async () => {
+      const threadId = await s.coach.resolveThread({ kind: 'summary', sessionId: first });
+      const data = threadId === null ? null : await s.coach.loadThread(threadId);
+      if (data === null) throw new Error('no thread');
+      const row = threadRows(data).find((r) => r.kind === 'card');
+      if (row?.kind !== 'card') throw new Error('no card');
+      return row.card;
+    };
+    return { first, view, card };
+  }
+
+  it('Undo all → Use coach target on both → Undo all again undoes both rows', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { first, view } = await twoTargets(s, gymId);
     const before = await view();
     expect(before?.undoAll?.rows).toHaveLength(2);
-    expect(await s.coach.undoNextTargets(before?.undoAll?.rows ?? [])).toEqual({ ok: true });
+    expect(await s.coach.undoNextTargets(before?.undoAll?.actionId ?? '', before?.undoAll?.rows ?? [])).toEqual({ ok: true });
     expect((await s.coach.nextTargets(first)).map((r) => r.status)).toEqual(['undone', 'undone']);
     for (const r of await s.coach.nextTargets(first)) expect((await s.coach.tapNextTarget(r, 'use_coach', nextTargetTapOpId(r, 'use_coach'))).status).toBe('written');
     const again = await view();
     expect(again?.undoAll?.rows).toHaveLength(2);
-    expect(await s.coach.undoNextTargets(again?.undoAll?.rows ?? [])).toEqual({ ok: true });
+    expect(await s.coach.undoNextTargets(again?.undoAll?.actionId ?? '', again?.undoAll?.rows ?? [])).toEqual({ ok: true });
     expect((await s.coach.nextTargets(first)).map((r) => r.status)).toEqual(['undone', 'undone']);
+    // A double tap of that second Undo all replays.
+    expect(await s.coach.undoNextTargets(again?.undoAll?.actionId ?? '', again?.undoAll?.rows ?? [])).toEqual({ ok: true });
+  });
+
+  it('after Undo all, the review’s card in the coach sheet reads Undone with no Undo (review B1)', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { first, view, card } = await twoTargets(s, gymId);
+    expect(await card()).toMatchObject({ status: { word: 'Applied' }, canUndo: true });
+    const v = await view();
+    const all = v?.undoAll;
+    if (!all) throw new Error('no Undo all');
+    // A double tap: both report success, the action is undone once.
+    expect(await Promise.all([s.coach.undoNextTargets(all.actionId, all.rows), s.coach.undoNextTargets(all.actionId, all.rows)])).toEqual([{ ok: true }, { ok: true }]);
+    expect((await s.coach.nextTargets(first)).map((r) => r.status)).toEqual(['undone', 'undone']);
+    expect(await card()).toMatchObject({ status: { word: 'Undone' }, canUndo: false });
+    expect((await s.coach.getAction(all.actionId))?.undoneBy).not.toBeNull();
   });
 });

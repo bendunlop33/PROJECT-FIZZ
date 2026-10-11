@@ -206,6 +206,16 @@ const NEXT_TARGET_MOVES: Record<NextSessionTargetRecord['status'], readonly Next
   not_applied: [],
 };
 
+/** Ben's tap on one `Next time` row: the row as he saw it, its new status and the record of the tap. */
+export interface NextTargetStatusWrite {
+  rowId: string;
+  expectedVersion: number;
+  status: NextSessionTargetRecord['status'];
+  record: ActionRecord;
+}
+
+export type NextTargetStatusResult = { status: 'written' | 'replayed'; row: NextSessionTargetRecord } | { status: 'not_possible'; reason: 'missing' | 'changed_since' | 'used' };
+
 export class SqliteCoachStore {
   constructor(private readonly db: Database) {}
 
@@ -396,6 +406,9 @@ export class SqliteCoachStore {
         if (source === null || source.session.ownerId !== ownerId) throw new Rollback('missing');
         // The same sets as the review saw (CA10): a rename or a time edit since isn't a change to the targets' basis.
         if (nextTargetSourceBasis(source) !== write.sourceBasis || source.session.status !== 'finished' || (await startedFrom(tx, ownerId, source.session.id)) !== null) throw new Rollback('stale_version');
+        // A newer review replaces the rows, including a tap Ben made on an earlier review's row
+        // (only reachable through his own `Try again` after a review that saved then failed; review N2).
+        // The earlier review's card can't revert them after that (`changed_since`).
         for (const row of write.rows) {
           if (row.ownerId !== ownerId) throw new Error('Next-target owner differs from the store owner');
           const current = await getDoc(tx, NEXT_TARGET_SPEC, row.id);
@@ -567,23 +580,56 @@ export class SqliteCoachStore {
    * idempotent on the record's opId; refused once a workout has started from
    * the source (the target was used) or when the row moved on.
    */
-  setNextTargetStatus(ownerId: string, input: { rowId: string; expectedVersion: number; status: NextSessionTargetRecord['status']; record: ActionRecord }): Promise<{ status: 'written' | 'replayed'; row: NextSessionTargetRecord } | { status: 'not_possible'; reason: 'missing' | 'changed_since' | 'used' }> {
-    return this.db.write(async (tx) => {
-      const prior = await actionByOp(tx, ownerId, input.record.opId);
-      const row = await getDoc(tx, NEXT_TARGET_SPEC, input.rowId);
-      if (row === null || row.ownerId !== ownerId) return { status: 'not_possible', reason: 'missing' };
-      const usedBy = await startedFrom(tx, ownerId, row.sourceSessionId);
-      if (prior !== null) return { status: 'replayed', row: withUse(row, usedBy) };
-      // Used only by a workout started from this source that still exists (review S2, S3).
-      if (usedBy !== null) return { status: 'not_possible', reason: 'used' };
-      if (row.version !== input.expectedVersion || !NEXT_TARGET_MOVES[row.status].includes(input.status)) return { status: 'not_possible', reason: 'changed_since' };
-      const source = await readAggregate(tx, row.sourceSessionId);
-      if (source === null) return { status: 'not_possible', reason: 'missing' };
-      const next = { ...row, status: input.status, usedBySessionId: null, version: row.version + 1, updatedAtUtc: input.record.createdAt.utc };
-      await saveDocumentIn(tx, NEXT_TARGET_SPEC, next, row.version);
-      await insertAction(tx, ownerId, input.record);
-      return { status: 'written', row: next };
-    });
+  setNextTargetStatus(ownerId: string, input: NextTargetStatusWrite): Promise<NextTargetStatusResult> {
+    return this.db.write((tx) => this.nextTargetStatusIn(tx, ownerId, input));
+  }
+
+  /**
+   * Several row taps as one write (the Summary's `Undo all` once the coach's
+   * record is already undone): all are saved, or none (review S3). Each tap
+   * is idempotent on its own opId, so a repeat replays. A refusal names the
+   * first row that couldn't move; nothing is written then.
+   */
+  setNextTargetStatuses(ownerId: string, inputs: readonly NextTargetStatusWrite[]): Promise<{ status: 'written' | 'replayed'; rows: NextSessionTargetRecord[] } | ({ status: 'not_possible'; rowId: string } & Extract<NextTargetStatusResult, { status: 'not_possible' }>)> {
+    const refused = new Error('next-target batch refused');
+    let refusal: { status: 'not_possible'; rowId: string; reason: 'missing' | 'changed_since' | 'used' } | null = null;
+    return this.db
+      .write(async (tx) => {
+        const rows: NextSessionTargetRecord[] = [];
+        let wrote = false;
+        for (const input of inputs) {
+          const r = await this.nextTargetStatusIn(tx, ownerId, input);
+          if (r.status === 'not_possible') {
+            refusal = { status: 'not_possible', rowId: input.rowId, reason: r.reason };
+            // Roll back the rows already written in this transaction.
+            throw refused;
+          }
+          if (r.status === 'written') wrote = true;
+          rows.push(r.row);
+        }
+        return { status: wrote ? ('written' as const) : ('replayed' as const), rows };
+      })
+      .catch((e: unknown) => {
+        if (e === refused && refusal !== null) return refusal;
+        throw e;
+      });
+  }
+
+  private async nextTargetStatusIn(tx: SqlExecutor, ownerId: string, input: NextTargetStatusWrite): Promise<NextTargetStatusResult> {
+    const prior = await actionByOp(tx, ownerId, input.record.opId);
+    const row = await getDoc(tx, NEXT_TARGET_SPEC, input.rowId);
+    if (row === null || row.ownerId !== ownerId) return { status: 'not_possible', reason: 'missing' };
+    const usedBy = await startedFrom(tx, ownerId, row.sourceSessionId);
+    if (prior !== null) return { status: 'replayed', row: withUse(row, usedBy) };
+    // Used only by a workout started from this source that still exists (review S2, S3).
+    if (usedBy !== null) return { status: 'not_possible', reason: 'used' };
+    if (row.version !== input.expectedVersion || !NEXT_TARGET_MOVES[row.status].includes(input.status)) return { status: 'not_possible', reason: 'changed_since' };
+    const source = await readAggregate(tx, row.sourceSessionId);
+    if (source === null) return { status: 'not_possible', reason: 'missing' };
+    const next = { ...row, status: input.status, usedBySessionId: null, version: row.version + 1, updatedAtUtc: input.record.createdAt.utc };
+    await saveDocumentIn(tx, NEXT_TARGET_SPEC, next, row.version);
+    await insertAction(tx, ownerId, input.record);
+    return { status: 'written', row: next };
   }
 
   /**

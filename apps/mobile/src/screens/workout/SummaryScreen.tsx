@@ -459,10 +459,10 @@ export function SummaryScreen() {
                 label="Undo all"
                 tone="secondary"
                 onPress={() => {
-                  const rows = nextTime.undoAll?.rows;
-                  if (rows === undefined) return;
+                  const all = nextTime.undoAll;
+                  if (all === null) return;
                   void services.coach
-                    .undoNextTargets(rows)
+                    .undoNextTargets(all.actionId, all.rows)
                     .catch(() => ({ ok: false }))
                     .then((r) => {
                       if (!r.ok) setToast({ text: 'Couldn’t undo.' });
