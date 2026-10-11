@@ -7,6 +7,7 @@ import { scoreText, toMs } from '@fizz/domain';
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatShortDate, formatTime } from '../../format/dates';
+import { DELETE_COPY } from '../../history/delete-view';
 import { openStartedWorkout } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
@@ -51,9 +52,18 @@ export function RepeatScreen() {
       gyms.map(async (g) => ({ id: g.id, name: g.name, current: g.id === gym?.id, items: (await s.yourData.equipment(g.id).catch(() => [])).filter((e) => e.availability === 'available').length })),
     );
     const sourceGymName = preview?.sourceGymId ? (gyms.find((g) => g.id === preview.sourceGymId)?.name ?? null) : null;
-    return { gym, preview, active, choices, sourceGymName, savedAs: routines.find((r) => r.createdFromSessionId === sessionId) ?? null };
+    // A source deleted since the list loaded (or purged) says so, not `nothing to repeat` (delete-workouts §5; review r2 N4).
+    const presence = preview === null ? (await s.history.presence(sessionId).catch(() => null))?.kind : null;
+    return { gym, preview, active, choices, sourceGymName, savedAs: routines.find((r) => r.createdFromSessionId === sessionId) ?? null, deleted: presence === 'deleted' || presence === 'gone' };
   });
   if (data.state === 'loading') return <Screen>{null}</Screen>;
+  if (data.state === 'ready' && data.value.deleted) {
+    return (
+      <Screen>
+        <StatusLine icon="info.circle" tone="info" text={DELETE_COPY.gone} />
+      </Screen>
+    );
+  }
   if (data.state === 'error' || data.value.preview === null || data.value.gym === null) {
     return (
       <Screen>

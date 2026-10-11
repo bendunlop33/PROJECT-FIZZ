@@ -4,8 +4,10 @@ import { ActionSheetIOS, Pressable } from 'react-native';
 
 import { newUuid } from '../../device/runtime';
 import { DELETE_COPY, deletedBannerText, deletedToastText, restoredToastText } from '../../history/delete-view';
+import { DeleteToastView } from '../../history/DeleteToastView';
 import { IntentOps } from '../../history/intent-ops';
 import { handOffDeleteToast } from '../../history/toast-handoff';
+import { useDeleteToast } from '../../history/useDeleteToast';
 import { importedSetLines, longDate } from '../../import/views';
 import type { ProfileStackParams } from '../../navigation/types';
 import type { WorkoutPresence } from '../../services/history-services';
@@ -32,6 +34,7 @@ export function ImportedWorkoutScreen() {
   const [shown, setShown] = useState(PAGE);
   const [line, setLine] = useState<string | null>(null);
   const ops = useRef(new IntentOps(newUuid)).current;
+  const toast = useDeleteToast();
   const [data, reload] = useScreenData(async (s) => {
     const found = await s.imports.importedRows(jobId, date);
     const sessionId = found?.rows.find((r) => r.sessionId !== null)?.sessionId ?? null;
@@ -91,9 +94,27 @@ export function ImportedWorkoutScreen() {
     if (!row || p?.kind !== 'deleted') return;
     const items = [{ sessionId: row.sessionId, expectedVersion: p.version }];
     const r = await services.history.restoreWorkouts(items, ops.for('restore', items));
-    setLine(r.ok ? restoredToastText([row], services.now().tz) : r.message);
     changed();
     reload();
+    if (!r.ok) {
+      setLine(r.message);
+      return;
+    }
+    setLine(null);
+    // The restored toast with its Undo, as on Recently deleted (§7; review r2 N6).
+    const tz = services.now().tz;
+    const undoOp = newUuid();
+    toast.show({
+      text: restoredToastText([row], tz),
+      action: DELETE_COPY.undo,
+      onAction: () => {
+        void services.history.deleteWorkouts(r.refs.map((x) => ({ sessionId: x.sessionId, expectedVersion: x.version })), undoOp, { from: 'opened' }).then((d) => {
+          toast.show({ text: d.ok ? deletedToastText([row], tz) : d.message });
+          changed();
+          reload();
+        });
+      },
+    });
   }
 
   if (data.state !== 'ready') return <Screen>{null}</Screen>;
@@ -113,25 +134,28 @@ export function ImportedWorkoutScreen() {
     );
   }
   return (
-    <Screen {...(presence?.kind === 'deleted' ? { footer: <PrimaryButton label={DELETE_COPY.restore} onPress={() => void restore()} /> } : {})}>
-      {presence?.kind === 'deleted' ? <StatusLine icon="trash" tone="info" text={deletedBannerText(presence.goneOn)} /> : null}
-      {line ? <StatusLine icon="info.circle" tone="info" text={line} /> : null}
-      <AppText variant="callout" color="text.secondary">{`From ${job.fileName}`}</AppText>
-      {rows.length === 0 ? <AppText variant="callout" color="text.secondary">Nothing came in on this date.</AppText> : null}
-      <Group>
-        {rows.slice(0, shown).map((r) => {
-          const l = importedSetLines(job, r);
-          return <Row key={r.row} title={l.title} subtitle={l.source} secondLine={l.original} />;
-        })}
-      </Group>
-      {rows.length > shown ? (
-        <TextButton
-          label="Show more"
-          onPress={() => {
-            setShown((n) => n + PAGE);
-          }}
-        />
-      ) : null}
-    </Screen>
+    <>
+      <Screen {...(presence?.kind === 'deleted' ? { footer: <PrimaryButton label={DELETE_COPY.restore} onPress={() => void restore()} /> } : {})}>
+        {presence?.kind === 'deleted' ? <StatusLine icon="trash" tone="info" text={deletedBannerText(presence.goneOn)} /> : null}
+        {line ? <StatusLine icon="info.circle" tone="info" text={line} /> : null}
+        <AppText variant="callout" color="text.secondary">{`From ${job.fileName}`}</AppText>
+        {rows.length === 0 ? <AppText variant="callout" color="text.secondary">Nothing came in on this date.</AppText> : null}
+        <Group>
+          {rows.slice(0, shown).map((r) => {
+            const l = importedSetLines(job, r);
+            return <Row key={r.row} title={l.title} subtitle={l.source} secondLine={l.original} />;
+          })}
+        </Group>
+        {rows.length > shown ? (
+          <TextButton
+            label="Show more"
+            onPress={() => {
+              setShown((n) => n + PAGE);
+            }}
+          />
+        ) : null}
+      </Screen>
+      <DeleteToastView state={toast} icon="info.circle" />
+    </>
   );
 }

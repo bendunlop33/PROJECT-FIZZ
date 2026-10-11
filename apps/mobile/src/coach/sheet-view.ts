@@ -296,9 +296,16 @@ export type { ReplyItem };
 // ---------------------------------------------------------------------------
 // The sheet's context chip and workout bar (coach-sheet §2.1, §2.4)
 
-/** `Sees: Push A (live)`, `Sees: this workout`, `Sees: Today`; `Deleted workout` once the thread's workout is deleted (delete-workouts §5, DW16). */
-export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active: boolean, deleted = false): string {
-  if (deleted && entry.kind !== 'today') return 'Deleted workout';
+/** Why a thread's workout isn't in the coach's context: deleted (or purged), or otherwise not in history or unreadable. */
+export type WorkoutOutOfContext = 'deleted' | 'unavailable';
+
+/**
+ * `Sees: Push A (live)`, `Sees: this workout`, `Sees: Today`; `Deleted
+ * workout` once the thread's workout is deleted (delete-workouts §5, DW16),
+ * `Workout unavailable` when the coach is given nothing of it (review r2 N3).
+ */
+export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active: boolean, out: WorkoutOutOfContext | null = null): string {
+  if (out !== null && entry.kind !== 'today') return out === 'deleted' ? 'Deleted workout' : 'Workout unavailable';
   switch (entry.kind) {
     case 'today':
       return 'Sees: Today';

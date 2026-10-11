@@ -165,9 +165,10 @@ describe('a coach write citing a workout deleted meanwhile is stale (DW16, rule 
   });
 
   it('the chip reads `Deleted workout`; the coach has no delete tool and declines with the spec’s line (DW33)', () => {
-    expect(seesLabel({ kind: 'summary', sessionId: 'x' }, 'Push A', false, true)).toBe('Deleted workout');
+    expect(seesLabel({ kind: 'summary', sessionId: 'x' }, 'Push A', false, 'deleted')).toBe('Deleted workout');
+    expect(seesLabel({ kind: 'summary', sessionId: 'x' }, 'Push A', false, 'unavailable')).toBe('Workout unavailable');
     expect(seesLabel({ kind: 'summary', sessionId: 'x' }, 'Push A', false)).toBe('Sees: Push A');
-    expect(seesLabel({ kind: 'today' }, null, false, true)).toBe('Sees: Today');
+    expect(seesLabel({ kind: 'today' }, null, false, 'deleted')).toBe('Sees: Today');
     expect(COACH_INSTRUCTIONS).toContain('reply only: "Delete workouts from Past workouts."');
   });
 });
