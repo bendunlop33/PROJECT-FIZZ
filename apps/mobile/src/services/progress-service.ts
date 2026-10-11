@@ -1,5 +1,7 @@
 import {
   buildCalendarMonthView,
+  buildExerciseDetailView,
+  buildExerciseListView,
   buildProgressHomeView,
   DEFAULT_PROGRESS_WINDOW,
   localDateOf,
@@ -8,8 +10,14 @@ import {
   STALE_SESSION_MS,
   toMs,
   toProgressSession,
+  painFlagCovering,
   type CalendarMonthView,
   type CommandOutcome,
+  type ExerciseDetailView,
+  type ExerciseListView,
+  type ExerciseMetric,
+  type MuscleGroup,
+  type TrendRange,
   type MuscleInfo,
   type ProgressHomeView,
   type ProgressSession,
@@ -56,6 +64,20 @@ export interface ProgressHome {
   /** Workouts that failed to read and aren't counted. */
   unreadable: number;
   resume: ResumeBar | null;
+}
+
+/** What exercise detail is asked for (§2.7); anything left out is the remembered choice, else the default. */
+export interface ExerciseDetailRequest {
+  exerciseId: string;
+  seriesId?: string | null;
+  /** Prefer this equipment's series (Workout overview `History`). */
+  equipmentId?: string | null;
+  /** Open on the series with this workout, its point selected (home record, past workout). */
+  sessionId?: string | null;
+  metric?: ExerciseMetric | null;
+  range?: TrendRange | null;
+  repBy?: 'weight' | 'reps';
+  historyMonths?: number;
 }
 
 export type ConfirmOutcome = { ok: true; sessionId: string; version: number } | { ok: false; message: string };
@@ -172,7 +194,68 @@ export function createProgressService(deps: ProgressServiceDeps) {
     };
   }
 
+  /**
+   * Ben's choices on exercise detail, per exercise, for this run of the app
+   * (§4.2: the series and the rep-table toggle are remembered per exercise).
+   * In memory only: not data, and a restore or relaunch falls back to the
+   * defaults (most-used series, `Est. 1RM`, `6 mo`, `By weight`).
+   */
+  const detailChoice = new Map<string, { store: Store; seriesId?: string; metric?: ExerciseMetric; range?: TrendRange; repBy?: 'weight' | 'reps' }>();
+
   return {
+    /** `listProgressExercises` (§6.2, §2.6): exercises with a finished session, by last done; search and body-part filter. */
+    async exercises(req: { query?: string; group?: MuscleGroup | null } = {}): Promise<{ view: ExerciseListView; unreadable: number } | null> {
+      const profile = await deps.profile();
+      if (!profile) return null;
+      const ctx = await context(profile);
+      const today = localDateOf(toMs(deps.now().utc), profile.timezone);
+      return { view: buildExerciseListView({ sessions: ctx.sessions, exercises: ctx.exercises, today, query: req.query ?? '', group: req.group ?? null }), unreadable: ctx.unreadable };
+    },
+
+    /**
+     * Exercise detail (§2.7): one call builds the series menu, headline,
+     * chart, panel, table, rep table, records and history for one series,
+     * metric and range. Local only; no AI. Explicit choices in the request
+     * are remembered for the exercise; opening on a workout (`sessionId`) or
+     * equipment picks that series without overwriting the remembered one.
+     */
+    async exerciseDetail(req: ExerciseDetailRequest): Promise<{ view: ExerciseDetailView | null; unreadable: number } | null> {
+      const profile = await deps.profile();
+      if (!profile) return null;
+      const store = deps.store();
+      const prev = detailChoice.get(req.exerciseId);
+      const kept = prev !== undefined && prev.store === store ? prev : { store };
+      const next = {
+        ...kept,
+        ...(req.seriesId ? { seriesId: req.seriesId } : {}),
+        ...(req.metric ? { metric: req.metric } : {}),
+        ...(req.range ? { range: req.range } : {}),
+        ...(req.repBy ? { repBy: req.repBy } : {}),
+      };
+      detailChoice.set(req.exerciseId, next);
+      const nowMs = toMs(deps.now().utc);
+      const today = localDateOf(nowMs, profile.timezone);
+      const [ctx, flags] = await Promise.all([context(profile), repos().painFlags.listActive(profile.id).catch(() => [])]);
+      const pain = painFlagCovering(flags, req.exerciseId, nowMs, profile.timezone);
+      const opening = req.sessionId != null || req.equipmentId != null;
+      const view = buildExerciseDetailView({
+        sessions: ctx.sessions,
+        exerciseId: req.exerciseId,
+        today,
+        gymNames: ctx.gymNames,
+        name: ctx.exercises.get(req.exerciseId)?.name ?? '',
+        seriesId: req.seriesId ?? (opening ? null : (next.seriesId ?? null)),
+        equipmentId: req.equipmentId ?? null,
+        sessionId: req.sessionId ?? null,
+        metric: next.metric ?? null,
+        range: next.range ?? null,
+        repBy: next.repBy ?? 'weight',
+        historyMonths: req.historyMonths ?? 2,
+        painFlag: pain === null ? null : { flagId: pain.flag.id, date: localDateOf(toMs(pain.flag.reportedAt.utc), pain.flag.reportedAt.tz) },
+      });
+      return { view, unreadable: ctx.unreadable };
+    },
+
     /**
      * Projects every finished workout into the in-memory cache ahead of time,
      * after launch and after Finish, so opening Progress after a cold start

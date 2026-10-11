@@ -357,7 +357,11 @@ export function exerciseRecords(sessions: readonly ProgressSession[], series: Ex
   const loggedSessions = series.key.source === 'app' ? series.sessions.length : 0;
   if (series.key.source === 'import') return { items: [], loggedSessions };
   const ids = new Set([series.key.exerciseId]);
-  const mine = sessions.filter((s) => s.exercises.some((e) => e.exerciseId === series.key.exerciseId));
+  // Only this exercise's rows: records and import suppression never look at other exercises.
+  const mine = sessions.flatMap((s) => {
+    const rows = s.exercises.filter((e) => e.exerciseId === series.key.exerciseId);
+    return rows.length === 0 ? [] : [{ ...s, exercises: rows }];
+  });
   const items: ExerciseRecord[] = [];
   if (series.kind === 'load' || series.kind === 'added_bodyweight') {
     const actual: ProgressRecord[] = recordsInWindow(mine, ALL_TIME, { limit: Number.POSITIVE_INFINITY }).items;

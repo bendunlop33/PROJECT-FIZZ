@@ -436,7 +436,9 @@ export function exerciseTrend(series: ExerciseSeries, metric: ExerciseMetric, ra
   }
   markers.sort((a, b) => a.date.localeCompare(b.date));
 
-  const sessionPoints = pointsOf(series, metric, within);
+  // One pass over the whole series; each range's count (for `Try 1 yr`) comes from the same points.
+  const allPoints = pointsOf(series, metric, () => true);
+  const sessionPoints = allPoints.filter((p) => within(p.date));
   let points = sessionPoints;
   let aggregation: ExerciseTrend['aggregation'] = 'session';
   if (sessionPoints.length > TREND_MAX_POINTS) {
@@ -463,7 +465,7 @@ export function exerciseTrend(series: ExerciseSeries, metric: ExerciseMetric, ra
   const pointsByRange = Object.fromEntries(
     TREND_RANGES.map((r) => {
       const b = trendRangeBounds(r, today, firstDate);
-      return [r, pointsOf(series, metric, (d) => inRange(d, b)).length];
+      return [r, allPoints.filter((p) => inRange(p.date, b)).length];
     }),
   ) as Record<TrendRange, number>;
 
