@@ -44,6 +44,13 @@ export type ProfileStackParams = {
   PastImports: undefined;
 };
 
+/** The Progress tab's stack (progress.md §2.1, slice A). */
+export type ProgressStackParams = {
+  ProgressHome: undefined;
+  /** `group`: the row to open expanded (a body-part group such as `Chest`, or `push` / `pull` / `legs` / `core` / `other`). */
+  ProgressMuscles: { group?: string };
+};
+
 export type ImportQuestionKind = 'per_hand' | 'total' | 'bodyweight' | 'unit' | 'effort' | 'dates' | 'gym';
 export type ImportSkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise';
 
@@ -53,7 +60,7 @@ export type TabParams = {
    * `undoRoutine`: the toast offers Undo for a routine deleted from the Workout overview.
    */
   Today: { toast?: string; undoRoutine?: { id: string; version: number } } | undefined;
-  Progress: undefined;
+  Progress: NavigatorScreenParams<ProgressStackParams> | undefined;
   Profile: NavigatorScreenParams<ProfileStackParams> | undefined;
 };
 

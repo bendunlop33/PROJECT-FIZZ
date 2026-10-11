@@ -37,7 +37,8 @@ import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
 import { PainFlagSheet } from '../screens/workout/PainFlagSheet';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
-import { ProgressScreen } from '../screens/ProgressScreen';
+import { MusclesScreen } from '../screens/progress/MusclesScreen';
+import { ProgressScreen } from '../screens/progress/ProgressScreen';
 import { PastWorkoutsScreen } from '../screens/repeat/PastWorkoutsScreen';
 import { RepeatScreen } from '../screens/repeat/RepeatScreen';
 import { SetupScreen } from '../screens/setup/SetupScreen';
@@ -54,7 +55,7 @@ import type { SetupStep } from '../services/setup';
 import { screenAnimation, useTheme } from '../theme';
 import { AppText, MessageScreen, PrimaryButton, type SymbolName } from '../ui';
 import { initialRootState } from './initial-state';
-import type { ImportQuestionKind, ProfileStackParams, RootStackParams, TabParams } from './types';
+import type { ImportQuestionKind, ProfileStackParams, ProgressStackParams, RootStackParams, TabParams } from './types';
 
 /**
  * How to is required on first open, not at launch (review S1): it keeps the
@@ -92,6 +93,7 @@ function loadHowToScreen(): typeof HowToScreen {
 const RootStack = createNativeStackNavigator<RootStackParams>();
 const TabNav = createBottomTabNavigator<TabParams>();
 const ProfileStack = createNativeStackNavigator<ProfileStackParams>();
+const ProgressStack = createNativeStackNavigator<ProgressStackParams>();
 
 function useStackOptions() {
   const theme = useTheme();
@@ -110,6 +112,16 @@ function ProbeRoute({ navigation }: { navigation: { goBack: () => void } }) {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
       <CapabilityProbeScreen onBack={navigation.goBack} />
     </SafeAreaView>
+  );
+}
+
+function ProgressNavigator() {
+  const options = useStackOptions();
+  return (
+    <ProgressStack.Navigator screenOptions={options}>
+      <ProgressStack.Screen name="ProgressHome" component={ProgressScreen} options={{ headerShown: false }} />
+      <ProgressStack.Screen name="ProgressMuscles" component={MusclesScreen} options={{ title: 'Muscles' }} />
+    </ProgressStack.Navigator>
   );
 }
 
@@ -198,7 +210,7 @@ function TabsNavigator() {
       }
     >
       <TabNav.Screen name="Today" component={TodayScreen} />
-      <TabNav.Screen name="Progress" component={ProgressScreen} />
+      <TabNav.Screen name="Progress" component={ProgressNavigator} />
       <TabNav.Screen name="Profile" component={ProfileNavigator} />
     </TabNav.Navigator>
   );

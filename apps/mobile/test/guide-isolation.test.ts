@@ -31,8 +31,15 @@ function valueImporters(re: RegExp): string[] {
 }
 
 describe('guide isolation (review S1)', () => {
-  it('only the player and the bake import Skia, Reanimated or worklets', () => {
-    expect(valueImporters(/^(@shopify\/react-native-skia|react-native-reanimated|react-native-worklets)$/)).toEqual(['guide/GuidePlayer.tsx', 'guide/bake.ts']);
+  it('only the player, the bake and Progress’s bars import Skia, Reanimated or worklets', () => {
+    expect(valueImporters(/^(@shopify\/react-native-skia|react-native-reanimated|react-native-worklets)$/)).toEqual(['guide/GuidePlayer.tsx', 'guide/bake.ts', 'progress/WeekBarsCanvas.tsx']);
+  });
+
+  it('Progress’s Skia bars are required behind the same guard, never imported directly (progress.md §7.1)', () => {
+    expect(valueImporters(/\/WeekBarsCanvas$/)).toEqual([]);
+    const loader = readFileSync(join(SRC, 'progress/load-charts.ts'), 'utf8');
+    expect(loader).toContain('createGuardedLoader(() => {');
+    expect(loader).toContain("require('./WeekBarsCanvas')");
   });
 
   it('nothing imports the player or the bake directly; the player is required behind the guard', () => {

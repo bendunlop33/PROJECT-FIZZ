@@ -52,8 +52,10 @@ export interface DayCellView {
   date: string;
   letter: string;
   isToday: boolean;
+  /** The screen draws `●` for one, `2` for two or more, a small dot for none. */
   count: number;
-  /** `●` for one, `2` for two or more, `·` for none: the screen draws shapes from `count`. */
+  /** `Thu 8 Oct` (the AX list). */
+  dateText: string;
 }
 
 export type BarsView =
@@ -181,7 +183,7 @@ function recordView(r: ProgressRecord, gymNames: Readonly<Record<string, string>
 }
 
 function dayCell(d: DayCount): DayCellView {
-  return { date: d.date, letter: WEEKDAY_LETTER[d.weekday] ?? '', isToday: d.isToday, count: d.count };
+  return { date: d.date, letter: WEEKDAY_LETTER[d.weekday] ?? '', isToday: d.isToday, count: d.count, dateText: weekdayDayMonth(d.date) };
 }
 
 function leftOutRow(s: LeftOutSession, title: string): TimeSheetRow {
