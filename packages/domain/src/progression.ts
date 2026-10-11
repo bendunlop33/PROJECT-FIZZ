@@ -369,7 +369,7 @@ type Step =
   | { kind: 'at_max' }
   /** Assisted: none left (`next` false), or, with no machine profile, the next step would leave none (`next` true). */
   | { kind: 'no_assistance_left'; next: boolean }
-  | { kind: 'jump_too_big'; next: number; maxJump: number }
+  | { kind: 'jump_too_big'; next: number; limit: string }
   | { kind: 'no_loads' };
 
 function nextHarderLoad(ctx: Ctx, current: number): Step {
@@ -396,7 +396,14 @@ function nextHarderLoad(ctx: Ctx, current: number): Step {
   if (rule.maxLoadJump !== null) {
     const maxJump = convertMass(rule.maxLoadJump, ctx.unit).value;
     if (Math.abs(toScaled(chosen) - toScaled(current)) > toScaled(maxJump)) {
-      return { kind: 'jump_too_big', next: chosen, maxJump };
+      return { kind: 'jump_too_big', next: chosen, limit: `${fromScaled(toScaled(maxJump))} ${ctx.unit}` };
+    }
+  }
+  // Playbook 7-F: more than ~10% heavier is too big a step; reps progress instead. Resistance only.
+  const pct = rule.maxLoadJumpPercent;
+  if (pct !== undefined && ctx.direction === 'resistance' && toScaled(current) > 0) {
+    if ((toScaled(chosen) - toScaled(current)) * 100 > toScaled(current) * pct) {
+      return { kind: 'jump_too_big', next: chosen, limit: `${String(pct)}%` };
     }
   }
   return { kind: 'load', value: chosen };
@@ -597,7 +604,7 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
       case 'jump_too_big':
         return repStep(
           () =>
-            `the next available load, ${fmt(ctx, step.next)}, is a bigger jump than the rule allows (${fromScaled(toScaled(step.maxJump))} ${ctx.unit})`,
+            `the next available load, ${fmt(ctx, step.next)}, is a bigger jump than the rule allows (${step.limit})`,
         );
       case 'no_loads':
         // Unreachable: handled before any history is read. Kept so the switch stays exhaustive.

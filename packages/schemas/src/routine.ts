@@ -96,6 +96,13 @@ const ruleCommon = RecordMetaSchema.extend({
   reducePercent: z.number().min(1).max(30),
   /** Refuse jumps larger than this (equipment gaps); progress reps instead. */
   maxLoadJump: MassSchema.nullable(),
+  /**
+   * Refuse jumps bigger than this percentage of the current load; progress
+   * reps instead (playbook 7-F: "if that jump is > ~10%"). Resistance loads
+   * only: an assisted machine's real load (bodyweight minus assistance) isn't
+   * known, so its steps are never measured this way. Absent = no limit.
+   */
+  maxLoadJumpPercent: z.number().min(1).max(100).optional(),
 });
 
 export const DoubleProgressionRuleSchema = ruleCommon.extend({
