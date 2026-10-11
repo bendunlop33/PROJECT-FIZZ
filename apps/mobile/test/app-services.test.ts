@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { discardConfirmation, toIso, toMs } from '@fizz/domain';
 import { idGen } from '@fizz/domain/testing';
@@ -242,7 +242,10 @@ describe('workouts and recovery', () => {
     await s3.sessions.discard(active.session.id, discardConfirmation(active), 'discard-2');
     await closeAll();
     await ready().then((o) => idle(o.services));
-    expect([...backupFiles.keys()].some((n) => n.endsWith('-auto.json'))).toBe(true);
+    // The catch-up starts after the launch's background integrity turns; give it time under load.
+    await vi.waitFor(() => {
+      expect([...backupFiles.keys()].some((n) => n.endsWith('-auto.json'))).toBe(true);
+    });
   });
 
   it('backs up on this phone after Finish, once, without the finish waiting for it', async () => {

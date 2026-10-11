@@ -138,7 +138,7 @@ describe('backup service', () => {
     if (!run.ok) throw new Error(run.error);
     expect(run.record.fileName).toBe('fizz-backup-2026-10-08-1905-auto.json');
     const text = files.files.get(run.record.fileName) ?? '';
-    expect(parseBackup(text).ok).toBe(true);
+    expect((await parseBackup(text)).ok).toBe(true);
     expect(run.record.sha256).toBe(sha256Hex(text));
     expect(run.record.finishedWorkouts).toBe(1);
 
@@ -224,6 +224,22 @@ describe('backup service', () => {
     const [ra, rb] = await Promise.all([a, b]);
     expect(ra.ok && rb.ok && ra.record.fileName !== rb.record.fileName).toBe(true);
     expect(svc.isRunning).toBe(false);
+  });
+
+  it('waits for the UI to be idle before starting, so Finish’s Summary shows first (B1)', async () => {
+    let release: () => void = () => undefined;
+    const idle = new Promise<void>((r) => {
+      release = r;
+    });
+    const svc = createBackupService({ store: () => store, files, manifest, now, app: APP, locale: 'en-GB', idle: () => idle });
+    await store.repos.sessions.save(richFinishedSession(), null);
+    const run = svc.backUpOnPhone('workout_finished');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(svc.isRunning).toBe(true);
+    expect(files.files.size).toBe(0);
+    release();
+    expect((await run).ok).toBe(true);
+    expect(files.files.size).toBe(1);
   });
 
   it('saves a copy to Files, refuses a folder inside Fizz, and reminds after 30 days', async () => {

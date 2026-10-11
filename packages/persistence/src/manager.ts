@@ -12,6 +12,7 @@ import {
   type BackupFile,
 } from './backup/backup';
 import { analyseReplace, type ReplaceCounts } from './backup/replace';
+import { timeSlicer, type Slicer } from './backup/slice';
 import type { DatabaseHost, SqlDriver, SqlRow } from './driver';
 import { discardOpenDrafts } from './drafts';
 import { checkIntegrity } from './integrity';
@@ -66,6 +67,8 @@ export interface DatabaseManagerOptions {
   metaName?: string;
   /** Override the migration list (tests of older schema versions only). */
   migrations?: readonly Migration[];
+  /** Pauses long preview/check/restore work so the JS thread stays responsive (backup review B1). Default: 8 ms slices. */
+  slice?: Slicer;
 }
 
 export interface RestorePreview {
@@ -157,6 +160,12 @@ async function quietly(fn: () => Promise<void>): Promise<boolean> {
  */
 export class DatabaseManager {
   private lock: Promise<unknown> = Promise.resolve();
+  /**
+   * The last backup text that parsed and verified, with its content hash
+   * (backup review B1): Check, the restore preview and Restore of the same
+   * file parse and hash it once. Parsing depends only on the text.
+   */
+  private verified: { text: string; file: BackupFile; contentHash: string } | null = null;
 
   private constructor(
     private readonly options: Required<Omit<DatabaseManagerOptions, 'metaName'>>,
@@ -204,7 +213,15 @@ export class DatabaseManager {
     }
     const migrations = options.migrations ?? MIGRATIONS;
     const store = await openStore(await host.open(slots.current), { migrations });
-    return new DatabaseManager({ host, newName: options.newName, migrations }, meta, slots, store, orphanReason, switched, interruptedRestore);
+    return new DatabaseManager(
+      { host, newName: options.newName, migrations, slice: options.slice ?? timeSlicer() },
+      meta,
+      slots,
+      store,
+      orphanReason,
+      switched,
+      interruptedRestore,
+    );
   }
 
   /** The store in use now. */
@@ -272,6 +289,7 @@ export class DatabaseManager {
         return { ok: false, error: { code: 'preview_stale', message: 'Your data changed since this preview. Nothing was changed.' } };
       }
       if (preview.identical) return { ok: true, status: 'unchanged', preview, store: this.current };
+      this.verified = null;
 
       const name = this.options.newName();
       const built = await this.build(file, name, 'restore');
@@ -313,16 +331,17 @@ export class DatabaseManager {
       recorded = true;
       await driver.exec('PRAGMA journal_mode = WAL');
       await migrate(driver, migrations, file.schemaVersion);
-      const shape = await checkBackupShape(driver, file);
+      const { slice } = this.options;
+      const shape = await checkBackupShape(driver, file, slice);
       if (shape) throw new RestoreAbort(shape);
       await driver.withExclusiveTransaction(async (tx) => {
         await tx.exec('PRAGMA defer_foreign_keys = ON');
-        await insertBackupRows(tx, file);
+        await insertBackupRows(tx, file, slice);
       });
       fresh = await openStore(driver, { migrations });
       // A restored phone never starts from an old pre-start draft (ADR 0022 §5): every open one is discarded.
       await discardOpenDrafts(fresh.db);
-      const integrity = await checkIntegrity(fresh.db, latestVersion(migrations));
+      const integrity = await checkIntegrity(fresh.db, latestVersion(migrations), slice);
       if (!integrity.ok) {
         throw new RestoreAbort({
           code: 'integrity_failed',
@@ -360,7 +379,7 @@ export class DatabaseManager {
         store = await openStore(driver, { migrations: this.options.migrations });
         // As after a restore (ADR 0022 §5): the database switched to never starts from its old pre-start drafts (review N4).
         await discardOpenDrafts(store.db, at.utc);
-        const integrity = await checkIntegrity(store.db, latestVersion(this.options.migrations));
+        const integrity = await checkIntegrity(store.db, latestVersion(this.options.migrations), this.options.slice);
         if (!integrity.ok) {
           throw new RestoreAbort({ code: 'integrity_failed', message: 'The earlier database failed its integrity check; staying on the current one.' });
         }
@@ -378,20 +397,37 @@ export class DatabaseManager {
 
   close(): Promise<void> {
     return this.exclusive(async () => {
+      this.verified = null;
       await this.current.close();
       await this.meta.close();
     });
   }
 
-  private async previewNow(text: string): Promise<PreviewOutcome> {
-    const parsed = parseBackup(text, this.options.migrations);
+  /** Parse and verify once per backup text (B1). */
+  private async verify(text: string): Promise<{ ok: true; file: BackupFile; contentHash: string } | { ok: false; error: BackupError }> {
+    const cached = this.verified;
+    if (cached !== null && cached.text === text) return { ok: true, file: cached.file, contentHash: cached.contentHash };
+    const { slice, migrations } = this.options;
+    const parsed = await parseBackup(text, migrations, slice);
     if (!parsed.ok) return parsed;
-    const { file } = parsed;
-    const current = await this.current.db.read(async (q) => ({ schemaVersion: await readUserVersion(q), tables: await exportTables(q) }));
+    const hash = await contentHash(parsed.file.schemaVersion, parsed.file.tables, slice);
+    this.verified = { text, file: parsed.file, contentHash: hash };
+    return { ok: true, file: parsed.file, contentHash: hash };
+  }
+
+  private async previewNow(text: string): Promise<PreviewOutcome> {
+    const { slice } = this.options;
+    const verified = await this.verify(text);
+    if (!verified.ok) return verified;
+    const { file } = verified;
+    const current = await this.current.db.read(async (q) => ({ schemaVersion: await readUserVersion(q), tables: await exportTables(q, slice) }));
     const currentCounts = countBackup(current.tables);
-    const currentHash = contentHash(current.schemaVersion, current.tables);
+    const currentHash = await contentHash(current.schemaVersion, current.tables, slice);
     const kept = await this.readKept();
-    const replace = analyseReplace({ current, backup: { schemaVersion: file.schemaVersion, tables: file.tables }, kept: kept === 'none' || kept === 'unreadable' ? null : kept });
+    const replace = await analyseReplace(
+      { current, backup: { schemaVersion: file.schemaVersion, tables: file.tables }, kept: kept === 'none' || kept === 'unreadable' ? null : kept },
+      slice,
+    );
     const keptSinceUtc = this.switched?.atUtc ?? null;
     const keptForUndo =
       kept === 'none'
@@ -407,7 +443,7 @@ export class DatabaseManager {
       preview: {
         backup: { createdAt: file.createdAt, app: file.app, schemaVersion: file.schemaVersion, counts: countBackup(file.tables) },
         current: { schemaVersion: current.schemaVersion, counts: currentCounts },
-        identical: file.schemaVersion === current.schemaVersion && contentHash(file.schemaVersion, file.tables) === currentHash,
+        identical: file.schemaVersion === current.schemaVersion && verified.contentHash === currentHash,
         needsMigration: file.schemaVersion < latestVersion(this.options.migrations),
         replacesUnfinishedWorkout: currentCounts.unfinishedWorkouts > 0,
         onlyOnPhone: replace.onlyOnPhone,
@@ -436,7 +472,7 @@ export class DatabaseManager {
       driver = await this.options.host.open(name);
       const schemaVersion = await readUserVersion(driver);
       if (schemaVersion === 0) return 'none';
-      return { schemaVersion, tables: await exportTables(driver) };
+      return { schemaVersion, tables: await exportTables(driver, this.options.slice) };
     } catch {
       return 'unreadable';
     } finally {

@@ -1,6 +1,6 @@
 import type { ZonedTimestamp } from '@fizz/schemas';
 import { toMs } from '@fizz/domain';
-import { createBackup, sha256Hex, type AppInfo, type Store } from '@fizz/persistence';
+import { createBackup, sha256HexAsync, timeSlicer, type AppInfo, type Slicer, type Store } from '@fizz/persistence';
 
 import {
   backupFileName,
@@ -24,6 +24,11 @@ import { buildBackupStatus, type BackupStatus } from './status';
  *
  * Never blocks logging: callers fire `backUpOnPhone` without awaiting, and
  * runs are queued one at a time. A failure is recorded and shown, never thrown.
+ *
+ * Never freezes the screen (backup review B1): a run starts once the UI is
+ * idle, serialises and hashes in short slices, hashes the file once (the
+ * read-back is compared as text), and rotation hashes only the file it is
+ * about to delete, in slices too.
  */
 
 /** Backup files in Fizz's own container. */
@@ -63,6 +68,10 @@ export interface BackupServiceDeps {
   now: () => ZonedTimestamp;
   app: AppInfo;
   locale?: string;
+  /** Resolves when the UI is idle (after Finish's transition); each run waits for it first. Default: start at once. */
+  idle?: () => Promise<void>;
+  /** Pauses long work so taps and renders run in between. Default: 8 ms slices. */
+  slice?: Slicer;
 }
 
 export type BackupReason = BackupRecord['reason'];
@@ -85,6 +94,7 @@ export function describeWriteError(e: unknown): string {
 }
 
 export function createBackupService(deps: BackupServiceDeps) {
+  const slice = deps.slice ?? timeSlicer();
   let chain: Promise<unknown> = Promise.resolve();
   let running = 0;
   let manifestProblem: string | null = null;
@@ -181,13 +191,13 @@ export function createBackupService(deps: BackupServiceDeps) {
         async (n) => (await deps.files.read(n)) !== null,
       );
       const store = deps.store();
-      const created = await createBackup(store, { at, app: deps.app });
+      const created = await createBackup(store, { at, app: deps.app, slice });
       const counts = await store.countRecords();
-      const sha256 = sha256Hex(created.text);
+      const { sha256 } = created;
       await deps.files.write(fileName, created.text);
-      // Written and checked before anything older is deleted (§3.2 Rotation).
+      // Written and checked before anything older is deleted (§3.2 Rotation): byte for byte, so no second hash.
       const back = await deps.files.read(fileName);
-      if (back === null || sha256Hex(back) !== sha256) throw new Error('the file read back differently from what was written');
+      if (back !== created.text) throw new Error('the file read back differently from what was written');
       record = {
         fileName,
         kind,
@@ -227,7 +237,7 @@ export function createBackupService(deps: BackupServiceDeps) {
         const text = await deps.files.read(f.fileName);
         if (text === null) {
           deleted.push(f.fileName); // already gone: drop the record
-        } else if (AUTOMATIC_NAME.test(f.fileName) && sha256Hex(text) === f.sha256) {
+        } else if (AUTOMATIC_NAME.test(f.fileName) && text.length === f.textLength && (await sha256HexAsync(text, slice)) === f.sha256) {
           await deps.files.remove(f.fileName);
           deleted.push(f.fileName);
         } else {
@@ -258,6 +268,7 @@ export function createBackupService(deps: BackupServiceDeps) {
       return track(() =>
         queued(async () => {
           try {
+            if (deps.idle) await deps.idle();
             return await backUpNow(reason);
           } catch (e) {
             return { ok: false, error: describeWriteError(e) } as const;
@@ -282,6 +293,7 @@ export function createBackupService(deps: BackupServiceDeps) {
     saveCopyTo(dest: CopyDestination): Promise<CopyResult> {
       return track(() =>
         queued(async (): Promise<CopyResult> => {
+          if (deps.idle) await deps.idle();
           if (dest.insideApp) {
             return { ok: false, reason: 'inside_app', message: 'That’s inside GymSmarter, so it’s lost with the app. Choose iCloud Drive or another folder.' };
           }
@@ -289,10 +301,10 @@ export function createBackupService(deps: BackupServiceDeps) {
           let fileName: string;
           try {
             fileName = await freeName(at, 'manual', [], async (n) => (await dest.read(n)) !== null);
-            const created = await createBackup(deps.store(), { at, app: deps.app });
+            const created = await createBackup(deps.store(), { at, app: deps.app, slice });
             await dest.write(fileName, created.text);
             const back = await dest.read(fileName);
-            if (back === null || sha256Hex(back) !== sha256Hex(created.text)) throw new Error('the copy read back differently from what was written');
+            if (back !== created.text) throw new Error('the copy read back differently from what was written');
           } catch (e) {
             return { ok: false, reason: 'failed', message: `Couldn’t save the copy: ${describeWriteError(e)} Your data on this phone is fine.` };
           }

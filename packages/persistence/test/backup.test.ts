@@ -38,7 +38,12 @@ import {
   parseBackup,
   readUserVersion,
   sha256Hex,
+  sha256HexAsync,
+  Sha256Stream,
   sqlMigration,
+  timeSlicer,
+  utf8Bytes,
+  writeStable,
   type BackupFile,
   type DatabaseHost,
   type Migration,
@@ -120,9 +125,48 @@ function resign(file: BackupFile): string {
 }
 
 describe('sha256Hex', () => {
+  const inputs = ['', 'abc', 'a'.repeat(55), 'a'.repeat(56), 'a'.repeat(64), 'Kōrero 💪 120 kg × 5', 'lone \ud800 surrogate', 'ends \ud800', '\udc00 first', 'x'.repeat(10_000)];
+  const node = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
+
   it('matches node:crypto, including multi-byte text and block boundaries', () => {
-    const inputs = ['', 'abc', 'a'.repeat(55), 'a'.repeat(56), 'a'.repeat(64), 'Kōrero 💪 120 kg × 5', 'lone \ud800 surrogate', 'x'.repeat(10_000)];
-    for (const s of inputs) expect(sha256Hex(s)).toBe(createHash('sha256').update(s, 'utf8').digest('hex'));
+    for (const s of inputs) expect(sha256Hex(s)).toBe(node(s));
+    for (const s of inputs) expect(Buffer.from(utf8Bytes(s)).equals(Buffer.from(s, 'utf8'))).toBe(true);
+  });
+
+  it('streams: any split, even inside a surrogate pair, and a clone finishes independently (B1)', async () => {
+    for (const s of inputs.slice(0, -1)) {
+      for (let cut = 0; cut <= s.length; cut += 1) expect(new Sha256Stream().update(s, 0, cut).update(s, cut).digestHex()).toBe(node(s));
+    }
+    const prefix = new Sha256Stream().update('{"a":1');
+    const copy = prefix.clone();
+    expect(prefix.update('}').digestHex()).toBe(node('{"a":1}'));
+    expect(copy.update(',"b":2}').digestHex()).toBe(node('{"a":1,"b":2}'));
+    const big = 'Bench 💪 '.repeat(20_000);
+    expect(await sha256HexAsync(big, timeSlicer(0))).toBe(node(big));
+  });
+
+  it('writeStable pieces are exactly stableStringify (B1)', async () => {
+    const value = { b: [1, 'x', null, { z: undefined, y: [true, { q: 'Kōrero' }] }], a: { c: 2.5, d: [] }, e: undefined, f: '\ud800' };
+    const pieces: string[] = [];
+    await writeStable(value, (p) => pieces.push(p), timeSlicer(0));
+    expect(pieces.join('')).toBe(stableStringify(value));
+  });
+});
+
+describe('timeSlicer', () => {
+  it('pauses only once its budget is used', async () => {
+    let now = 0;
+    let pauses = 0;
+    const slice = timeSlicer(8, () => ((pauses += 1), Promise.resolve()), () => now);
+    await slice();
+    now = 7;
+    await slice();
+    expect(pauses).toBe(0);
+    now = 8;
+    await slice();
+    expect(pauses).toBe(1);
+    await slice();
+    expect(pauses).toBe(1);
   });
 });
 
@@ -136,6 +180,10 @@ describe('createBackup / restore', () => {
     const created = await createBackup(source.store, { at: at(3600), app: APP });
     backupText = created.text;
     expect(created.integrity.ok).toBe(true);
+    // One pass hashes both: the whole file's SHA-256 and the body checksum (B1).
+    expect(created.sha256).toBe(sha256Hex(created.text));
+    const parsed = await parseBackup(created.text);
+    expect(parsed.ok && parsed.file.checksum.value).toBe(created.checksum);
     expect(created.fileName).toBe(`fizz-backup-2026-10-08T07-00-00Z-v${latestVersion()}.json`);
     expect(created.counts).toMatchObject({ profiles: 1, gyms: 1, equipment: 6, exercises: 2, routines: 1, progressionRules: 2, finishedWorkouts: 1, unfinishedWorkouts: 1, loggedSets: 3 });
   });
@@ -472,7 +520,7 @@ describe('restoring a backup from an older schema version', () => {
 
     // A backup from the newer schema can't be restored by the older build.
     const newerBackup = await createBackup(newer.store, { at: at(300), app: APP });
-    expect(parseBackup(newerBackup.text)).toMatchObject({ ok: false, error: { code: 'schema_too_new' } });
+    expect(await parseBackup(newerBackup.text)).toMatchObject({ ok: false, error: { code: 'schema_too_new' } });
     expect(await old.restore(newerBackup.text, at(400))).toMatchObject({ ok: false, error: { code: 'schema_too_new' } });
     await old.close();
     await newer.close();
