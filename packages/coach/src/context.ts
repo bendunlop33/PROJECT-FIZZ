@@ -77,9 +77,12 @@ export interface SessionSetView {
   number: number;
   type: string;
   status: string;
-  target: CoachTarget & { rpe: number | null };
-  actual: (CoachTarget & { rpe: number | null }) | null;
+  target: SetValuesView;
+  actual: SetValuesView | null;
 }
+
+/** A set's values as the coach sees them; time and distance only when the set has them (timed and distance sets). */
+export type SetValuesView = CoachTarget & { rpe: number | null; durationS?: number; distanceM?: number };
 
 export interface SessionExerciseView {
   sessionExerciseId: string;
@@ -126,13 +129,19 @@ export interface CoachContext {
   messagesSent: number;
 }
 
-function targetOf(v: { load: CoachTarget['load']; reps: CoachTarget['reps']; rpe: number | null }): CoachTarget & { rpe: number | null } {
-  return { load: v.load, reps: v.reps, rpe: v.rpe };
+const timeAndDistance = (v: { durationS: number | null; distanceM?: number | null | undefined }) => ({
+  ...(v.durationS !== null ? { durationS: v.durationS } : {}),
+  ...(v.distanceM !== undefined && v.distanceM !== null ? { distanceM: v.distanceM } : {}),
+});
+
+function targetOf(v: { load: CoachTarget['load']; reps: CoachTarget['reps']; rpe: number | null; durationS: number | null; distanceM?: number | null | undefined }): SetValuesView {
+  return { load: v.load, reps: v.reps, rpe: v.rpe, ...timeAndDistance(v) };
 }
 
-function actualOf(a: SetValues | null): (CoachTarget & { rpe: number | null }) | null {
+/** A sled push reads `40 kg × 20 m`, a plank `0:45`, never `40 kg × —` (review gaps N2). */
+function actualOf(a: SetValues | null): SetValuesView | null {
   if (a === null) return null;
-  return { load: a.load, reps: a.reps === null ? null : { min: a.reps, max: a.reps }, rpe: a.rpe };
+  return { load: a.load, reps: a.reps === null ? null : { min: a.reps, max: a.reps }, rpe: a.rpe, ...timeAndDistance(a) };
 }
 
 /** `get_active_session` data: the workout as the model sees it, read fresh (versions move as sets are logged). */

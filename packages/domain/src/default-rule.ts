@@ -80,9 +80,10 @@ export function builtInDefaultRule(ownerId: string, unit: WeightUnit, workingSet
   return {
     id: deriveId(`builtin-rule:${category}:double-${String(r.min)}-${String(r.max)}:${unit}`),
     ownerId,
-    version: 1,
+    // 2: playbook 7-F's 10% jump limit (11 Oct). Targets cite the version whose logic made them (review gaps N3).
+    version: 2,
     createdAtUtc: '2026-10-09T00:00:00.000Z',
-    updatedAtUtc: '2026-10-09T00:00:00.000Z',
+    updatedAtUtc: '2026-10-11T00:00:00.000Z',
     name: builtInRuleName(category),
     method: 'double_progression',
     repRange: { min: r.min, max: r.max },

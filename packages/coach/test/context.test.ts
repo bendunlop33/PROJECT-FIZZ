@@ -150,3 +150,20 @@ describe('describeCoachContext (What the coach can see)', () => {
     expect(d.notAvailable).toHaveLength(4);
   });
 });
+
+describe('timed and distance sets in the workout view (review gaps N2)', () => {
+  it('a sled push shows its distance and a hang its time; a reps set gains no extra fields', async () => {
+    const { workoutView } = await import('../src/context');
+    const { startFixture, apply, logCmd, setsFor, values, kg, HANG, BENCH } = await import('@fizz/domain/testing');
+    let s = startFixture().state;
+    const [hang] = setsFor(s, HANG);
+    const [warm] = setsFor(s, BENCH);
+    s = apply(s, logCmd(hang?.id ?? '', values(null, null, { durationS: 40 }), 30));
+    s = apply(s, logCmd(warm?.id ?? '', values(kg(60), 10), 300));
+    const sets = workoutView(s, 'Main').exercises.flatMap((e) => e.sets);
+    expect(sets.find((x) => x.setId === hang?.id)?.actual).toMatchObject({ durationS: 40 });
+    expect(sets.find((x) => x.setId === warm?.id)?.actual).toEqual({ load: kg(60), reps: { min: 10, max: 10 }, rpe: null });
+    const sled = { ...s, sets: s.sets.map((x) => (x.id === warm?.id && x.actual ? { ...x, actual: { ...x.actual, reps: null, distanceM: 20 } } : x)) };
+    expect(workoutView(sled, 'Main').exercises.flatMap((e) => e.sets).find((x) => x.setId === warm?.id)?.actual).toMatchObject({ load: kg(60), reps: null, distanceM: 20 });
+  });
+});

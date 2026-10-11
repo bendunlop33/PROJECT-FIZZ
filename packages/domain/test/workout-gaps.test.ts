@@ -4,6 +4,8 @@ import {
   buildActiveSetView,
   buildAddExerciseCommand,
   buildSwapExerciseCommand,
+  builtInDefaultRule,
+  calculateNextTargets,
   isRemovable,
   midSwapSlot,
   notCopiedText,
@@ -444,5 +446,18 @@ describe('timed sets: the work timer on the focus card (active-workout §2.7)', 
     const s2 = apply(startFixture().state, { type: 'start_work_interval', at: at(5), opId: 'w', setId: h1?.id ?? '', durationS: 60 });
     const hangRow = s2.exercises.find((e) => e.exerciseId === HANG)?.id ?? '';
     expectError(reduceSession(s2, { type: 'skip_exercise', at: at(6), opId: 'sk', sessionExerciseId: hangRow }), 'work_interval_running');
+  });
+});
+
+describe('review gaps nits', () => {
+  it('N1: a distance exercise gets no rep target from the rule (unsupported, like time)', () => {
+    const rule = builtInDefaultRule(profile().id, 'kg', 3, 'isolation');
+    const t = calculateNextTargets({ exerciseName: 'Sled push', measurement: 'distance', history: [], rule, equipment: null, unit: 'kg', convention: 'added', pain: { active: false, reportedAtUtc: null } });
+    expect(t.decision).toBe('unsupported');
+    expect(t.sets).toEqual([]);
+  });
+
+  it('N3: the built-in rule cites version 2 since the 10% jump limit', () => {
+    expect(builtInDefaultRule(profile().id, 'kg', 3, 'isolation')).toMatchObject({ version: 2, maxLoadJumpPercent: 10 });
   });
 });

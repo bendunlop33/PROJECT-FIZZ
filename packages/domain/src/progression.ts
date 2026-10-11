@@ -695,6 +695,9 @@ export function calculateNextTargets(input: NextTargetsInput): NextTargets {
   if (input.measurement === 'duration') {
     return unsupported(`Time-based progression isn't supported yet, so ${input.exerciseName} targets stay as planned.`);
   }
+  if (input.measurement === 'distance') {
+    return unsupported(`Distance-based progression isn't supported yet, so ${input.exerciseName} targets stay as planned.`);
+  }
   if (rule.method === 'top_set_backoff' && ctx.direction === 'assistance') {
     return unsupported('Top-set/back-off rules are not supported on assisted machines. Use double progression instead.');
   }
