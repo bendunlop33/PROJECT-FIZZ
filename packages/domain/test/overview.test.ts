@@ -6,11 +6,13 @@ import {
   bestSet,
   buildWorkoutOverview,
   changeText,
+  coachTargetText,
   equipmentKey,
   isComparable,
   lastComparable,
   lastText,
   loadCell,
+  NBSP,
   markerSpoken,
   markerWords,
   overviewDoneBy,
@@ -523,14 +525,32 @@ describe('coach rows (§5): stored next-session targets only', () => {
 
   it('after Undo: the built-in target, with Use coach target only where Start would use it again', () => {
     const undone = record({ status: 'undone', version: 2 });
-    expect(overviewCoachOf(ruleSet(), undone, ctx)).toEqual({ state: 'built_in', rowId: 'row-1' });
+    expect(overviewCoachOf(ruleSet(), undone, ctx)).toEqual({ state: 'built_in', rowId: 'row-1', putBack: 'use_coach', target: `57.5${NBSP}kg` });
     expect(overviewCoachOf(ruleSet(), { ...undone, usedBySessionId: id(700) }, ctx)).toBeNull();
     expect(overviewCoachOf(ruleSet(), undone, { ...ctx, sourceVersion: 4 })).toBeNull();
     expect(overviewCoachOf(ruleSet(), undone, { ...ctx, painFlagged: true })).toBeNull();
     expect(overviewCoachOf(ruleSet(), undone, { ...ctx, painToday: true })).toBeNull();
-    // A suggestion (bigger change) or a declined one isn't a row change here.
-    expect(overviewCoachOf(ruleSet(), record({ status: 'proposed' }), ctx)).toBeNull();
+    // A declined suggestion isn't offered again here.
     expect(overviewCoachOf(ruleSet(), record({ status: 'not_applied' }), ctx)).toBeNull();
+  });
+
+  it('a bigger change still to apply (or applied, then undone, so back to proposed) offers Apply, with the same checks (merge S1)', () => {
+    const proposed = record({ status: 'proposed', size: 'bigger', version: 3, target: { load: kg(50), reps: { min: 6, max: 8 } }, sets: 4 });
+    expect(overviewCoachOf(ruleSet(), proposed, ctx)).toEqual({ state: 'built_in', rowId: 'row-1', putBack: 'apply', target: `50${NBSP}kg${NBSP}×${NBSP}6–8 · 4${NBSP}sets` });
+    expect(overviewCoachOf(ruleSet(), { ...proposed, usedBySessionId: id(700) }, ctx)).toBeNull();
+    expect(overviewCoachOf(ruleSet(), proposed, { ...ctx, sourceVersion: 4 })).toBeNull();
+    expect(overviewCoachOf(ruleSet(), proposed, { ...ctx, painFlagged: true })).toBeNull();
+    expect(overviewCoachOf(ruleSet(), proposed, { ...ctx, painToday: true })).toBeNull();
+    // Applied: Start uses it, so it's the Coach state with Undo.
+    expect(overviewCoachOf(coachSet(), record({ status: 'applied', size: 'bigger' }), ctx)).toMatchObject({ state: 'coach' });
+  });
+
+  it('the stored target as a value only (merge N2): load, reps, sets, per hand', () => {
+    expect(coachTargetText({ target: { load: kg(57.5), reps: null }, sets: null })).toBe(`57.5${NBSP}kg`);
+    expect(coachTargetText({ target: { load: null, reps: { min: 10, max: 12 } }, sets: null })).toBe(`10–12${NBSP}reps`);
+    expect(coachTargetText({ target: { load: null, reps: null }, sets: 3 })).toBe(`3${NBSP}sets`);
+    expect(coachTargetText({ target: { load: { value: 50, unit: 'lb', convention: 'per_hand' }, reps: { min: 8, max: 8 } }, sets: null })).toBe(`50${NBSP}lb${NBSP}each${NBSP}×${NBSP}8`);
+    expect(coachTargetText({ target: { load: null, reps: null }, sets: null })).toBe('—');
   });
 
   it('the stored rows are in the key and the start’s fence (ADR 0021): an Undo changes the key', () => {

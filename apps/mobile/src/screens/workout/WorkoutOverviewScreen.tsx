@@ -22,6 +22,7 @@ import { createAfterDismiss } from '../../workout/after-dismiss';
 import {
   checkInRow,
   checkInRowLayout,
+  coachPill,
   coachTapFailedText,
   coachTapOf,
   coachUndoneText,
@@ -33,7 +34,7 @@ import {
   rowDetail,
   targetsChanged,
 } from '../../workout/overview';
-import { checkInAtStart, createGuard, saveScore, scoreStepOf, startEmptyFromOverview, startFromOverview, type ScoreStep } from '../../workout/overview-start';
+import { checkInAtStart, createGuard, saveScore, scoreStepOf, startEmptyFromOverview, startFromOverview, undoGymSwitch, type ScoreStep } from '../../workout/overview-start';
 import { NameSheet } from '../routines/NameSheet';
 import { TargetWhyPanel } from './TargetWhyPanel';
 
@@ -79,6 +80,8 @@ export function WorkoutOverviewScreen() {
   // Refs, not state: two taps in one frame both see the old state (S2, S7).
   const [startGuard] = useState(createGuard);
   const [scoreGuard] = useState(createGuard);
+  // Coach-row taps: a double tap on Undo sends one (review merge N1).
+  const [coachGuard] = useState(createGuard);
   // The latest score write; Start waits for it if it was still running at the tap (B1), and stops if it opened What's up? (r2 S1).
   const scoreWrite = useRef<Promise<ScoreStep | null>>(Promise.resolve(null));
   const [scoring, setScoring] = useState(false);
@@ -155,7 +158,8 @@ export function WorkoutOverviewScreen() {
             action: 'Undo',
             onAction: () => {
               setToast(null);
-              void services.gyms.select(previous).then(() => {
+              void undoGymSwitch((id) => services.gyms.select(id), previous).then((message) => {
+                if (message !== null) setToast({ text: message });
                 changed();
               });
             },
@@ -304,6 +308,8 @@ export function WorkoutOverviewScreen() {
         );
         if (r.kind === 'started') {
           changed();
+          // Something opened over the page while it ran (r3 S1, merge N4): leave the session for Today's Resume.
+          if (!navigation.isFocused()) return;
           navigation.dispatch(openStartedWorkout());
         } else if (r.kind === 'ask') navigation.navigate('CheckIn', { mode: 'start', gymId: r.gymId });
         else if (r.kind === 'active') {
@@ -363,37 +369,37 @@ export function WorkoutOverviewScreen() {
   }
 
   /**
-   * Undo on a coach row, or `Use coach target` after one (§5): the same
-   * versioned tap as the Summary's `Next time` row. A stale version is
-   * refused and the page re-reads (rule 5).
+   * Undo on a coach row, or `Use coach target` / `Apply` to put it back (§5):
+   * the same versioned tap as the Summary's `Next time` row. A stale version
+   * is refused and the page re-reads (rule 5). One tap at a time (merge N1).
    */
   async function tapCoach(r: OverviewData['view']['rows'][number]) {
     if (!page || r.coach === null) return;
-    const record = page.coachTargets[r.coach.rowId];
+    const coach = r.coach;
+    const record = page.coachTargets[coach.rowId];
     if (!record) return;
-    const tap = coachTapOf(r.coach.state, record.status);
-    const done = await services.coach.tapNextTarget(record, tap, newUuid()).catch(() => null);
-    changed();
-    if (done === null || done.status === 'not_possible') {
-      setToast({ text: coachTapFailedText(done === null ? 'failed' : done.reason) });
-      reload();
-      return;
-    }
-    if (r.coach.state !== 'coach') return;
-    const saved = done.row;
-    setToast({
-      text: coachUndoneText(r.name),
-      action: 'Undo',
-      onAction: () => {
-        setToast(null);
-        void services.coach
-          .tapNextTarget(saved, coachTapOf('built_in', record.status), newUuid())
-          .catch(() => null)
-          .then((back) => {
+    await coachGuard.run(async () => {
+      const done = await services.coach.tapNextTarget(record, coachPill(coach).tap, newUuid()).catch(() => null);
+      changed();
+      if (done === null || done.status === 'not_possible') {
+        setToast({ text: coachTapFailedText(done === null ? 'failed' : done.reason) });
+        reload();
+        return;
+      }
+      if (coach.state !== 'coach') return;
+      const saved = done.row;
+      setToast({
+        text: coachUndoneText(r.name),
+        action: 'Undo',
+        onAction: () => {
+          setToast(null);
+          void coachGuard.run(async () => {
+            const back = await services.coach.tapNextTarget(saved, coachTapOf('built_in', record.status), newUuid()).catch(() => null);
             if (back === null || back.status === 'not_possible') setToast({ text: coachTapFailedText(back === null ? 'failed' : back.reason) });
             changed();
           });
-      },
+        },
+      });
     });
   }
 

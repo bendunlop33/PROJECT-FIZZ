@@ -5,7 +5,7 @@ import type { MarkerWords, OverviewRow as OverviewRowData, PanelLine } from '@fi
 import type { CheckInScore } from '@fizz/schemas';
 
 import { useTheme } from '../theme';
-import { statStripStacked, tileLabel, type StripWrap } from '../workout/overview';
+import { coachPill, statStripStacked, tileLabel, type StripWrap } from '../workout/overview';
 import { Icon } from './Icon';
 import { usePressScale } from './motion';
 import { AppText } from './Text';
@@ -210,7 +210,7 @@ export interface OverviewRowProps {
   onWhy: () => void;
   onStillHurts?: (() => void) | undefined;
   onEditGym?: (() => void) | undefined;
-  /** The coach row's tap (§5): Undo on a coach target, `Use coach target` after an Undo. */
+  /** The coach row's tap (§5): Undo on a coach target; `Use coach target` or `Apply` to put it back. */
   onCoach?: (() => void) | undefined;
 }
 
@@ -234,7 +234,7 @@ function CoachTag() {
  */
 export function OverviewRow({ row, detail, open, stacked, last, first, onToggle, onHowTo, onWhy, onStillHurts, onEditGym, onCoach }: OverviewRowProps) {
   const theme = useTheme();
-  const coachLabel = row.coach === null ? null : row.coach.state === 'coach' ? 'Undo' : 'Use coach target';
+  const coachLabel = row.coach === null ? null : coachPill(row.coach).label;
   const right = (
     <View style={{ alignItems: stacked ? 'flex-start' : 'flex-end' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

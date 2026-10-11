@@ -177,3 +177,14 @@ export async function startEmptyFromOverview(ports: EmptyStartPorts, opId: strin
     return { kind: 'failed' };
   }
 }
+
+/**
+ * The gym toast's `Undo` (OV12; review merge N3): selects the previous gym
+ * again. Returns the message to show when that fails (the gym is gone, or
+ * the write failed), null when it worked.
+ */
+export async function undoGymSwitch(select: (gymId: string) => Promise<{ ok: true } | { ok: false; message: string }>, previousGymId: string): Promise<string | null> {
+  const r = await select(previousGymId).catch(() => null);
+  if (r === null) return 'Couldn’t switch back.';
+  return r.ok ? null : r.message;
+}

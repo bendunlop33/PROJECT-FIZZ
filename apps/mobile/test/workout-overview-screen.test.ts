@@ -250,13 +250,26 @@ describe('source checks', () => {
   it('OV8: coach UI renders only from a stored coach row (row.coach); none means no tag, pill or text', () => {
     // The tag and the Undo / Use coach target pill are gated on `row.coach`, which the domain sets only from stored targets.
     expect(ui).toContain("{row.coach?.state === 'coach' ? <CoachTag /> : null}");
-    expect(ui).toContain("const coachLabel = row.coach === null ? null : row.coach.state === 'coach' ? 'Undo' : 'Use coach target';");
+    expect(ui).toContain('const coachLabel = row.coach === null ? null : coachPill(row.coach).label;');
     expect(ui).toContain('{coachLabel !== null && onCoach ?');
     expect(screen).not.toMatch(/CoachSlot/);
     // Opening the page never calls the coach: the screen only taps a stored row.
     expect(screen).not.toMatch(/services\.coach\.(?:send|ask|turn|summary|run)/);
     const code = screen.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
     expect(code.match(/services\.coach\.\w+/g)?.every((m) => m === 'services.coach.tapNextTarget')).toBe(true);
+  });
+
+  it('merge N1/N3/N4: coach taps run one at a time; a failed gym Undo is shown; Empty workout re-checks focus before the reset', () => {
+    // N1: the row pill and the toast's Undo both go through one guard, so a double tap sends one tap.
+    expect(screen).toContain('const [coachGuard] = useState(createGuard);');
+    expect(screen.match(/coachGuard\.run\(/g)).toHaveLength(2);
+    expect(screen).toContain('services.coach.tapNextTarget(record, coachPill(coach).tap, newUuid())');
+    // N3: the gym toast's Undo goes through undoGymSwitch (tested on SQLite) and shows its message.
+    expect(screen).toContain('void undoGymSwitch((id) => services.gyms.select(id), previous).then((message) => {');
+    expect(screen).toContain('if (message !== null) setToast({ text: message });');
+    // N4: startEmpty matches start().
+    const empty = screen.slice(screen.indexOf('async function startEmpty()'), screen.indexOf('function deleteRoutine()'));
+    expect(empty).toMatch(/if \(r\.kind === 'started'\) \{\n\s*changed\(\);\n\s*\/\/[^\n]*\n\s*if \(!navigation\.isFocused\(\)\) return;\n\s*navigation\.dispatch\(openStartedWorkout\(\)\)/);
   });
 
   it('OV13: Start is the only filled pill; a selected tile is accent.subtle + a 2 pt accent border, never an accent fill; ≥ 20 pt from Start', () => {

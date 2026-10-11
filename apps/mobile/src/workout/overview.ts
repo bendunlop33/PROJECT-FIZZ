@@ -1,4 +1,4 @@
-import { toMs, type CheckInGate, type OverviewBasis, type OverviewRow } from '@fizz/domain';
+import { toMs, type CheckInGate, type OverviewBasis, type OverviewCoach, type OverviewRow } from '@fizz/domain';
 import type { CheckIn, CheckInScore, NextSessionTargetRecord, SessionCheckIn } from '@fizz/schemas';
 
 import type { NextTimeTap } from '../coach/next-time-view';
@@ -175,9 +175,18 @@ export function startFailure(code: string): StartFailure {
 }
 
 /**
- * The `Next time` tap a coach row sends (§5): Undo on the coach's target;
- * after it, the tap that puts it back (`Use coach target`, or `Apply` for a
- * bigger change Ben had applied). `status`: the row's status before the Undo.
+ * The coach row's pill and the `Next time` tap it sends (§5): `Undo` on the
+ * coach's target; after it, `Use coach target` (a small change) or `Apply`
+ * (a bigger change, also one Ben applied and then undid; review merge S1).
+ */
+export function coachPill(coach: OverviewCoach): { label: 'Undo' | 'Use coach target' | 'Apply'; tap: NextTimeTap } {
+  if (coach.state === 'coach') return { label: 'Undo', tap: 'undo' };
+  return coach.putBack === 'apply' ? { label: 'Apply', tap: 'apply' } : { label: 'Use coach target', tap: 'use_coach' };
+}
+
+/**
+ * The tap the Undo toast's own `Undo` sends: back to how the row was.
+ * `status`: the row's status before the Undo (`applied` goes back through `apply`).
  */
 export function coachTapOf(state: 'coach' | 'built_in', status: NextSessionTargetRecord['status']): NextTimeTap {
   if (state === 'coach') return 'undo';

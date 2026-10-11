@@ -7,8 +7,8 @@ import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData } from '../src/services/workout-services';
-import { coachTapOf, coachUndoneText } from '../src/workout/overview';
-import { startFromOverview } from '../src/workout/overview-start';
+import { coachPill, coachTapOf, coachUndoneText } from '../src/workout/overview';
+import { createGuard, startFromOverview, undoGymSwitch } from '../src/workout/overview-start';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -124,20 +124,24 @@ describe('preview == Start after a gym switch (shared fit)', () => {
 });
 
 describe('coach rows (§5): stored targets only, Undo / Use coach target', () => {
-  async function withCoachTarget() {
+  /** A stored coach target for Bench press: 57.5 kg (small, saved) or 50 kg (bigger, proposed). From a routine, or the last workout (`nextOf`). */
+  async function withCoachTarget(opts: { load?: number; routine?: boolean } = {}) {
+    const { load: kgs = 57.5, routine = true } = opts;
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     const first = await logWorkout(h, s, gymId, [
       { exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }, { load: 60, reps: 6, rpe: 10 }] },
       { exercise: 'Barbell row', sets: [{ load: 50, reps: 10 }, { load: 50, reps: 10 }] },
     ]);
-    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' });
-    if (!saved.ok) throw new Error(saved.message);
+    if (routine) {
+      const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' });
+      if (!saved.ok) throw new Error(saved.message);
+    }
     model = new StepModel([
       (req) => {
         const w = workoutOf(req);
         const bench = w.exercises.find((e) => e.name === 'Bench press');
-        return call('set_next_session_targets', { sourceSessionId: w.sessionId, sourceVersion: w.version, targets: [{ exerciseId: bench?.exerciseId, target: { load: { value: 57.5, unit: 'kg', convention: 'total' }, reps: null }, sets: null, reason: 'Every set was RPE 10.' }] });
+        return call('set_next_session_targets', { sourceSessionId: w.sessionId, sourceVersion: w.version, targets: [{ exerciseId: bench?.exerciseId, target: { load: { value: kgs, unit: 'kg', convention: 'total' }, reps: null }, sets: null, reason: 'Every set was RPE 10.' }] });
       },
       () => call('reply', { message: 'Ok.', offer: null }),
     ]);
@@ -179,9 +183,10 @@ describe('coach rows (§5): stored targets only, Undo / Use coach target', () =>
     expect(coachUndoneText('Bench press')).toBe('Bench press · coach target undone');
     const after = await load(s, gymId);
     const benchAfter = after.view.rows.find((r) => r.name === 'Bench press');
-    expect(benchAfter?.coach).toEqual({ state: 'built_in', rowId: record.id });
+    expect(benchAfter?.coach).toEqual({ state: 'built_in', rowId: record.id, putBack: 'use_coach', target: `57.5${NBSP}kg${NBSP}×${NBSP}3–6` });
     expect(benchAfter?.load.value).not.toBe('57.5');
-    expect(benchAfter?.panel.some((l) => l.key === 'coach')).toBe(false);
+    // No reason line now; the coach's target as a value, so `Use coach target` isn't blind (merge N2).
+    expect(benchAfter?.panel.filter((l) => l.key === 'coach')).toEqual([{ key: 'coach', label: 'Coach', value: `57.5${NBSP}kg${NBSP}×${NBSP}3–6`, tone: 'normal' }]);
     expect(after.view.previewKey).not.toBe(page.view.previewKey);
     // Start against the page as it was before the Undo creates nothing (rule 5).
     expect(await s.overview.start({ startOf: page.startOf, gymId, opId: 'op-stale', checkIn: null, expectedPreviewKey: page.view.previewKey })).toMatchObject({ ok: false, error: { code: 'stale_preview' } });
@@ -207,5 +212,97 @@ describe('coach rows (§5): stored targets only, Undo / Use coach target', () =>
     expect((await s.pain.flagFromCheckIn({ checkIn: ci.checkIn, exercises: [{ id: bench?.exerciseId ?? '', name: 'Bench press' }], area: 'shoulder', opId: 'pain-1' })).ok).toBe(true);
     const flagged = await load(s, gymId);
     expect(flagged.view.rows.find((r) => r.name === 'Bench press')?.coach).toBeNull();
+  });
+
+  it('a bigger change: Apply on the page; Undo, then a reload still offers Apply, which puts it back (merge S1)', async () => {
+    const { s, gymId } = await withCoachTarget({ load: 50 });
+    const page = await load(s, gymId);
+    const bench = page.view.rows.find((r) => r.name === 'Bench press');
+    if (bench?.coach?.state !== 'built_in') throw new Error('no proposed row');
+    expect(bench.coach.putBack).toBe('apply');
+    expect(coachPill(bench.coach)).toEqual({ label: 'Apply', tap: 'apply' });
+    // The tap isn't blind: the panel shows the stored target (N2); Start still uses the built-in rule.
+    expect(bench.panel.find((l) => l.key === 'coach')?.value).toBe(`50${NBSP}kg${NBSP}×${NBSP}3–6`);
+    expect(bench.load.value).not.toBe('50');
+    const proposed = page.coachTargets[bench.coach.rowId];
+    if (!proposed) throw new Error('no record');
+    expect(proposed.status).toBe('proposed');
+
+    expect(await s.coach.tapNextTarget(proposed, coachPill(bench.coach).tap, 'tap-apply')).toMatchObject({ status: 'written', row: { status: 'applied' } });
+    const applied = await load(s, gymId);
+    const benchApplied = applied.view.rows.find((r) => r.name === 'Bench press');
+    if (benchApplied?.coach?.state !== 'coach') throw new Error('not applied');
+    expect(benchApplied.load.value).toBe('50');
+    expect(coachPill(benchApplied.coach)).toEqual({ label: 'Undo', tap: 'undo' });
+    const appliedRecord = applied.coachTargets[benchApplied.coach.rowId];
+    if (!appliedRecord) throw new Error('no record');
+
+    // Undo, and the toast's 8 seconds pass: the reloaded page still offers Apply.
+    expect(await s.coach.tapNextTarget(appliedRecord, 'undo', 'tap-undo')).toMatchObject({ status: 'written', row: { status: 'proposed' } });
+    const undone = await load(s, gymId);
+    const benchUndone = undone.view.rows.find((r) => r.name === 'Bench press');
+    if (benchUndone?.coach?.state !== 'built_in') throw new Error('no way back');
+    expect(coachPill(benchUndone.coach)).toEqual({ label: 'Apply', tap: 'apply' });
+    expect(benchUndone.load.value).not.toBe('50');
+    const latest = undone.coachTargets[benchUndone.coach.rowId];
+    if (!latest) throw new Error('no record');
+    // A tap with the applied version is stale (rule 5).
+    expect(await s.coach.tapNextTarget(appliedRecord, 'undo', 'tap-stale')).toMatchObject({ status: 'not_possible', reason: 'changed_since' });
+
+    expect(await s.coach.tapNextTarget(latest, coachPill(benchUndone.coach).tap, 'tap-apply-again')).toMatchObject({ status: 'written', row: { status: 'applied' } });
+    const again = await load(s, gymId);
+    expect(again.view.rows.find((r) => r.name === 'Bench press')?.coach).toMatchObject({ state: 'coach' });
+    const r = await startFromOverview(ports(s, gymId), { page: again, opId: 'op-applied', checkIn: null });
+    if (r.kind !== 'started') throw new Error(r.kind);
+    for (const x of again.view.rows) matchesSession(x, r.outcome.aggregate);
+  });
+
+  it('a double tap on Undo sends one tap: no refused second tap replacing the Undo toast (merge N1)', async () => {
+    const { s, gymId } = await withCoachTarget();
+    const page = await load(s, gymId);
+    const bench = page.view.rows.find((r) => r.name === 'Bench press');
+    if (bench?.coach?.state !== 'coach') throw new Error('no coach row');
+    const record = page.coachTargets[bench.coach.rowId];
+    if (!record) throw new Error('no record');
+    const guard = createGuard();
+    const tap = (opId: string) => guard.run(() => s.coach.tapNextTarget(record, coachPill(bench.coach as NonNullable<typeof bench.coach>).tap, opId));
+    const [one, two] = await Promise.all([tap('tap-1'), tap('tap-2')]);
+    expect(one).toMatchObject({ status: 'written', row: { status: 'undone' } });
+    expect(two).toBeNull();
+  });
+
+  it('from the last workout (nextOf, no routine): the same Coach row, Undo and Use coach target (merge N5)', async () => {
+    const { s, gymId, first } = await withCoachTarget({ routine: false });
+    const page = await load(s, gymId);
+    expect(page.startOf).toEqual({ nextOf: first });
+    const bench = page.view.rows.find((r) => r.name === 'Bench press');
+    if (bench?.coach?.state !== 'coach') throw new Error('no coach row');
+    expect(bench.load.value).toBe('57.5');
+    const record = page.coachTargets[bench.coach.rowId];
+    if (!record) throw new Error('no record');
+    expect(await s.coach.tapNextTarget(record, coachPill(bench.coach).tap, 'tap-undo')).toMatchObject({ status: 'written', row: { status: 'undone' } });
+    const after = await load(s, gymId);
+    const benchAfter = after.view.rows.find((r) => r.name === 'Bench press');
+    if (benchAfter?.coach?.state !== 'built_in') throw new Error('no built-in row');
+    expect(coachPill(benchAfter.coach)).toEqual({ label: 'Use coach target', tap: 'use_coach' });
+    expect(benchAfter.panel.find((l) => l.key === 'coach')?.value).toBe(`57.5${NBSP}kg${NBSP}×${NBSP}3–6`);
+    expect(after.view.previewKey).not.toBe(page.view.previewKey);
+    const r = await startFromOverview(ports(s, gymId), { page: after, opId: 'op-next', checkIn: null });
+    if (r.kind !== 'started') throw new Error(r.kind);
+    for (const x of after.view.rows) matchesSession(x, r.outcome.aggregate);
+  });
+});
+
+describe('gym toast Undo (merge N3)', () => {
+  it('selects the previous gym again, and reports a failed select instead of ignoring it', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const hotelId = h.ids();
+    expect((await s.setup.saveGym({ gymId: hotelId, name: 'Hotel gym', draft: s.coachingKnowledge.buildGymDraft('home_dumbbells', 'kg') })).ok).toBe(true);
+    expect(await s.gyms.select(hotelId)).toMatchObject({ ok: true });
+    expect(await undoGymSwitch((id) => s.gyms.select(id), gymId)).toBeNull();
+    expect((await s.yourData.currentGym())?.id).toBe(gymId);
+    expect(await undoGymSwitch((id) => s.gyms.select(id), 'gone-gym')).toBe('That gym wasn’t found.');
+    expect(await undoGymSwitch(() => Promise.reject(new Error('boom')), gymId)).toBe('Couldn’t switch back.');
   });
 });

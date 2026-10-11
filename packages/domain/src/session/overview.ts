@@ -532,18 +532,32 @@ export interface OverviewInput {
 
 /**
  * A row's coach state (§5). `coach`: the first working set's target is the
- * coach's stored one (Start uses it); `reason` is the stored reason. `built_in`:
- * Ben undid it, so the built-in rule's target is used and the coach's can be
- * put back. Null: the coach has nothing for this row.
+ * coach's stored one (Start uses it); `reason` is the stored reason.
+ * `built_in`: the built-in rule's target is used and the coach's can be put
+ * back: `use_coach` after Ben undid a small change, `apply` for a bigger
+ * change still to apply (one Ben applied and then undid goes back to
+ * `proposed`; review merge S1). `target` is the stored target (value only,
+ * `57.5 kg × 6–8 · 4 sets`), so the tap isn't blind (merge N2). Null: the
+ * coach has nothing for this row.
  */
 export type OverviewCoach =
   | { state: 'coach'; rowId: string; reason: string | null }
-  | { state: 'built_in'; rowId: string };
+  | { state: 'built_in'; rowId: string; putBack: 'use_coach' | 'apply'; target: string };
+
+/** The stored coach target as a value: `57.5 kg × 6–8`, `+ 4 sets`. */
+export function coachTargetText(record: Pick<NextSessionTargetRecord, 'target' | 'sets'>): string {
+  const load = record.target.load === null ? null : loadWord(record.target.load);
+  const reps = record.target.reps === null ? null : repRangeText(record.target.reps);
+  const what = load !== null && reps !== null ? `${load}${NBSP}×${NBSP}${reps}` : (load ?? (reps === null ? null : `${reps}${NBSP}reps`));
+  const sets = record.sets === null ? null : `${String(record.sets)}${NBSP}sets`;
+  return [what, sets].filter((x): x is string => x !== null).join(' · ') || '—';
+}
 
 /**
  * The coach state for one row, from the dry run's first working set and the
- * stored rows. `Use coach target` is offered only where Start would use it
- * again (not used, the same source version, no pain flag, no pain today).
+ * stored rows. Putting the coach's target back is offered only where Start
+ * would use it again (not used, the same source version, no pain flag, no
+ * pain today).
  */
 export function overviewCoachOf(
   first: Pick<WorkoutSet, 'planned'> | null,
@@ -556,7 +570,10 @@ export function overviewCoachOf(
     return { state: 'coach', rowId: record.id, reason: coach.reason ?? record.reason };
   }
   const usable = record.usedBySessionId === null && record.sourceVersion === ctx.sourceVersion && !ctx.painFlagged && !ctx.painToday;
-  return record.status === 'undone' && usable ? { state: 'built_in', rowId: record.id } : null;
+  if (!usable) return null;
+  if (record.status === 'undone') return { state: 'built_in', rowId: record.id, putBack: 'use_coach', target: coachTargetText(record) };
+  if (record.status === 'proposed') return { state: 'built_in', rowId: record.id, putBack: 'apply', target: coachTargetText(record) };
+  return null;
 }
 
 export interface WorkoutOverview {
@@ -745,6 +762,7 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     if (covering !== null) panel.push({ key: 'flag', label: 'Flag', value: flagText(covering.flag), tone: 'warning' });
     const coach = overviewCoachOf(first, coachByExercise.get(ex.exerciseId), { sourceVersion, painFlagged: covering !== null, painToday: input.coach?.painToday === true });
     if (coach?.state === 'coach' && coach.reason !== null) panel.push({ key: 'coach', label: 'Coach', value: `“${coach.reason}”`, tone: 'normal' });
+    if (coach?.state === 'built_in') panel.push({ key: 'coach', label: 'Coach', value: coach.target, tone: 'normal' });
 
     const supersetWith = ex.supersetGroup === null ? [] : ordered.filter((o) => o.id !== ex.id && o.supersetGroup === ex.supersetGroup).map((o) => o.exerciseName);
     const spokenSets = (() => {
