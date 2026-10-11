@@ -54,7 +54,7 @@ It has no primary action of its own. On every surface it covers, the primary act
 | Coach sheet reply | Action card (coach-sheet §2.6) and inline `ActionResultLine` for each token | Reasons, explanations, questions, suggestions; checked sentence by sentence |
 | Workout coach slot | `CoachAdjustmentBanner` lines 1–2 and guard notes (coach-adjustments §2.5) | The one-sentence reason, in quotes, checked |
 | Voice strip and speech | `rendered.spoken` from the action (the `buildSetCue` family) | The checked reply sentences, only when the turn began by voice (voice.md) |
-| Summary `Next time` | Each row's target, % change, `Built-in rule would be …` and status (workout-summary §2) | The coach's reason in quotes, and the coach note; both checked |
+| Summary `Next time` | Each row's target, % change, `Rule: …` and status (workout-summary §2) | The coach's reason in quotes, and the coach note; both checked |
 | Workout builder | Draft rows, `Checks` and the diff (workout-builder §3.3–3.4) | The rationale (≤ 240 characters), checked |
 | Plan proposals | `ChangeReviewCard` / `ProposalCard` lines and status words (change-review) | The reason, checked |
 

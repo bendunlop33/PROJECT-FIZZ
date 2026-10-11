@@ -216,14 +216,14 @@ export function SummaryScreen() {
           </View>
           {failed ? (
             <LinkLine
-              accessibilityLabel="Last backup on this phone didn’t save. Open Data and backup."
+              accessibilityLabel="Backup didn’t save. Open Data and backup."
               onPress={() => {
                 navigation.dispatch(popToTabs({ screen: 'Profile', params: { screen: 'DataBackup', initial: false } }));
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
                 <Icon name="exclamationmark.triangle" color="status.warning" size={16} />
-                <AppText variant="callout">Last backup on this phone didn’t save. Open Data & backup ›</AppText>
+                <AppText variant="callout">Backup didn’t save ›</AppText>
               </View>
             </LinkLine>
           ) : (
@@ -304,8 +304,7 @@ export function SummaryScreen() {
               <StatusLine
                 icon="exclamationmark.triangle"
                 tone="warning"
-                text="You mentioned pain before this workout. Flag the movements that hurt so their loads don’t go up."
-                detail="Until you do, no exercise in this workout is increased next time."
+                text="Pain mentioned · which movements?"
                 action={
                   <TextButton
                     label="Choose movements"
@@ -331,7 +330,7 @@ export function SummaryScreen() {
                 onPress={() => {
                   // Same confirm as the set card and Profile, plus Undo here (rule 9, review S4).
                   const c = painClearConfirm(f);
-                  Alert.alert(c.title, c.message, [
+                  Alert.alert(c.title, undefined, [
                     { text: c.cancel, style: 'cancel' },
                     {
                       text: c.confirm,
@@ -351,7 +350,7 @@ export function SummaryScreen() {
                               setToast(null);
                               void services.pain.undoClear(r.cleared).then((ok) => {
                                 changed();
-                                if (!ok) setToast({ text: 'The pain flag changed since, so it wasn’t put back. Check Profile › Pain flags.' });
+                                if (!ok) setToast({ text: 'Couldn’t undo: flag changed' });
                               });
                             },
                           });
@@ -722,9 +721,6 @@ function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: Worko
         </AppText>
         {row('Started at', start, setStart, toMs(summary.startedAtUtc) - 12 * 3600_000, startMax)}
         {row('Ended at', end, setEnd, endMin, endMax)}
-        <AppText variant="callout" color="text.secondary">
-          Active time counts from start to end, minus pauses inside that window. The original times are kept in the edit history.
-        </AppText>
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
         <PrimaryButton label="Save" onPress={() => void save()} />
         <TextButton label="Cancel" tone="secondary" onPress={onClose} />
@@ -761,9 +757,6 @@ function PainChooseSheet({ summary, visible, onClose, onSaved }: { summary: Work
       <ScrollView style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }} contentContainerStyle={{ padding: theme.space['4'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['3'] }}>
         <AppText variant="title2" accessibilityRole="header">
           Which movements hurt?
-        </AppText>
-        <AppText variant="callout" color="text.secondary">
-          Flagged movements won’t go up until you clear the flag in Profile › Pain flags.
         </AppText>
         {summary.exercises.map((e) => (
           <ChecklistRow

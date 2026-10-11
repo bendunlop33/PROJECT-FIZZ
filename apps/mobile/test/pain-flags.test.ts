@@ -71,7 +71,6 @@ describe('Summary Clear on a pain flag (review S4, rule 9)', () => {
     const flag = { exerciseName: 'Bench press', reportedAt: { utc: '2026-10-06T09:00:00.000Z', tz: 'Europe/London' } };
     expect(painClearConfirm(flag)).toEqual({
       title: 'Clear the pain flag on Bench press?',
-      message: 'Loads, reps and sets can go up again, starting from your recent sets. Your sets from before 6\u00a0Oct stay in your history as the reference.',
       confirm: 'Clear flag',
       cancel: 'Keep it',
     });

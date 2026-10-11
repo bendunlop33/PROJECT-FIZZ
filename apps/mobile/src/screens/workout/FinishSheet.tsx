@@ -82,7 +82,7 @@ export function FinishSheet({
         setError('Stop the timer first.');
         return;
       }
-      setError('Couldn’t finish the workout. Nothing was lost; try again.');
+      setError('Couldn’t finish. Try again.');
       return;
     }
     onFinished(aggregate.session.id);
@@ -120,7 +120,7 @@ export function FinishSheet({
           <View style={{ gap: theme.space['2'] }}>
             <Eyebrow>Ended at</Eyebrow>
             <AppText variant="title1" numeric accessibilityLiveRegion="polite" maxFontSizeMultiplier={1.6} style={{ fontWeight: '300', fontSize: 40, lineHeight: 46 }}>
-              {`${formatTime(endMs, tz)}${Math.abs(endMs - now) < 60_000 ? ' (now)' : model.forgotten && endMs === model.defaultEndMs ? ' (last set + 3 min)' : ''}`}
+              {`${formatTime(endMs, tz)}${Math.abs(endMs - now) < 60_000 ? ' (now)' : model.forgotten && endMs === model.defaultEndMs ? ' (estimated)' : ''}`}
             </AppText>
             <View style={{ flexDirection: 'row', gap: theme.space['2'], flexWrap: 'wrap' }}>
               {timeButton('−5 min', -5)}
@@ -136,9 +136,6 @@ export function FinishSheet({
                 }}
               />
             ) : null}
-            <AppText variant="callout" color="text.secondary">
-              Only times between the last logged set and now.
-            </AppText>
           </View>
         ) : null}
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}

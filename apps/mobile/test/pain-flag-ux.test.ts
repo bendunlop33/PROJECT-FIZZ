@@ -219,7 +219,7 @@ describe('pain flag sheet and the pre-flag reference (§2.14.3–2.14.4, check 5
     });
     expect(sheet?.before).toMatch(/^8\u00a0Oct · 100/);
     expect(sheet?.sinceFlag).toMatch(/^10\u00a0Oct · 90/);
-    expect(sheet?.clearConfirm.message).toBe('Loads, reps and sets can go up again, starting from your recent sets. Your sets from before 9 Oct stay in your history as the reference.');
+    expect(sheet?.clearConfirm).not.toHaveProperty('message');
 
     const v = await flagVersion(s, flagId);
     expect((await s.pain.clearConfirmed({ flagId, expectedVersion: v })).ok).toBe(true);

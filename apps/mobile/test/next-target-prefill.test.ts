@@ -34,7 +34,7 @@ describe('Next time prefills the next workout', () => {
     const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [1, 2, 3].map(() => ({ load: 100, reps: 6, rpe: 8 })) }]);
     const sum = await s.workout.summary(first);
     expect(sum?.nextTime?.rows.map((r) => [r.decision, plain(r.target), r.ruleName])).toEqual([
-      ['increase_load', 'Target 102.5 kg × 3–6', 'Double progression, 3–6 reps up to RPE 8.5 (built-in default for a main barbell lift, provisional)'],
+      ['increase_load', 'Target 102.5 kg × 3–6', '3–6 reps, up to RPE 8.5'],
     ]);
 
     h.clockMs += 2 * 86_400_000;

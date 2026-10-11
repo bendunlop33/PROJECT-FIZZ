@@ -128,7 +128,7 @@ describe('backup service', () => {
     let status = await svc.getStatus();
     expect(status.onPhone.state).toBe('nothing_yet');
     expect(status.onPhone.line.text).toBe('Saved on this phone');
-    expect(status.onPhone.line.detail).toBe('The first backup runs after your first workout.');
+    expect(status.onPhone.line.detail).toBeNull();
     expect(status.offPhone.line.text).toBe('No copy off this phone yet');
 
     await store.repos.sessions.save(richFinishedSession(), null);
@@ -189,7 +189,7 @@ describe('backup service', () => {
     let status = await svc.getStatus();
     expect(status.onPhone.state).toBe('failed');
     expect(status.onPhone.line.text).toBe('Last backup on this phone didn’t save');
-    expect(status.onPhone.line.detail).toBe('This iPhone is out of space. Your workouts are still saved on this phone.');
+    expect(status.onPhone.line.detail).toBe('This iPhone is out of space.');
 
     files.failWrite = null;
     clockMs += 60_000;

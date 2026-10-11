@@ -397,7 +397,7 @@ describe('C8: Summary next-session targets (D21) and routines', () => {
     expect(model.requests.length).toBe(calls);
     const summary = await s.workout.summary(second, 'not_connected');
     const view = nextTimeView({ title: 'Workout', builtIn: summary?.nextTime ?? null, coachRows: [], availability: await s.coach.availability(), reviewing: false });
-    expect(view?.rows.every((r) => r.tag === 'Built-in rule (coach not connected)')).toBe(true);
+    expect(view?.rows.every((r) => r.tag === 'Rule')).toBe(true);
   });
 
   it('a summary turn cut off by a force-close shows Interrupted on the Summary, not nothing (review N7)', async () => {

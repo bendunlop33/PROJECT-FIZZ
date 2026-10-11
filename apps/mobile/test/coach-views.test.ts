@@ -175,7 +175,7 @@ describe('Next time (D21): coach rows over the built-in rule', () => {
     const v = nextTimeView(input([coachRow(1, 'saved'), coachRow(2, 'saved')]));
     expect(v?.heading).toBe('Next time · Push A');
     expect(v?.rows[0]).toMatchObject({ tag: 'Coach', pct: '−4.2%', actions: [{ label: 'Undo', tap: 'undo' }] });
-    expect(v?.rows[0]?.why.map(nb)).toEqual(['“Every set was RPE 10.”', 'Built-in rule would be 62.5 kg × 8–10 · 3 sets']);
+    expect(v?.rows[0]?.why.map(nb)).toEqual(['“Every set was RPE 10.”', 'Rule: 62.5 kg × 8–10 · 3 sets']);
     expect(v?.undoAll).toEqual({ actionId: ID(77) });
   });
 
@@ -201,7 +201,7 @@ describe('Next time (D21): coach rows over the built-in rule', () => {
 
   it('undone → the built-in rule with Use coach target; proposed → Not now / Apply; used → no buttons', () => {
     const v = nextTimeView(input([coachRow(1, 'undone'), coachRow(2, 'proposed')]));
-    expect(v?.rows[0]).toMatchObject({ tag: 'Built-in rule', target: 'Target 61 kg × 8–10', actions: [{ label: 'Use coach target' }] });
+    expect(v?.rows[0]).toMatchObject({ tag: 'Rule', target: 'Target 61 kg × 8–10', actions: [{ label: 'Use coach target' }] });
     expect(v?.rows[1]).toMatchObject({ tag: 'Suggested', actions: [{ label: 'Not now' }, { label: 'Apply' }] });
     expect(v?.undoAll).toBeNull();
     const used = nextTimeView(input([coachRow(1, 'saved', { usedBySessionId: ID(99) })]));

@@ -447,7 +447,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(today.aggregate.sets.map((x) => x.planned.load?.value ?? null).filter((v) => v === 40 || v === 140 || v === 90)).toEqual([]);
     // The summary doesn't compare with FitNotes, or claim it was the same set-up at this gym.
     const sum = await s.workout.summary(sid);
-    expect(sum?.comparison).toEqual({ kind: 'not_comparable', text: 'Earlier Dumbbell bench press sets were imported from FitNotes. Not compared.' });
+    expect(sum?.comparison).toEqual({ kind: 'not_comparable', text: 'Not compared · imported' });
     expect(sum?.highlight).toBeNull();
     expect(JSON.stringify(sum)).not.toMatch(/Same set-up|FitNotes, 1 Oct/);
     const benchOnly = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
@@ -463,7 +463,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(await s.imports.commit(draft.draftId, draft.mappingVersion, 'op-1')).toMatchObject({ ok: true });
     h.clockMs += 86_400_000;
     const sid = await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 45, reps: 10 }] }]);
-    expect((await s.workout.summary(sid))?.comparison).toEqual({ kind: 'not_comparable', text: 'Earlier Lat pulldown sets were imported from FitNotes. Not compared.' });
+    expect((await s.workout.summary(sid))?.comparison).toEqual({ kind: 'not_comparable', text: 'Not compared · imported' });
   });
 
   it('tells file kinds apart by content and stops on an unknown header (DX5, check 16)', async () => {

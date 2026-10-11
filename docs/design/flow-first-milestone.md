@@ -277,7 +277,7 @@ From the brief: `buildTodayView`, `startWorkout`, `getActiveSession`, `buildActi
 17. Repeat check 1 with the coach connected and no triggers firing: the tap count is identical and the provider log shows no AI calls until Finish (then exactly one).
 18. Log a set at RPE 10, tap `Adjust` on the offer, and log the next set before the coach answers: that set keeps exactly the values on its Log button, and the coach result changes only sets still pending, or is dropped.
 19. Ask for an adjustment, then force-quit before the answer: on relaunch nothing was applied and the slot reads `Coach request was interrupted. Nothing changed.`
-20. With airplane mode on, `Adjust` shows `Coach offline`, no offer ever appears, and the summary's `Next time` rows are tagged `Built-in rule (coach offline)`.
+20. With airplane mode on, `Adjust` shows `Coach offline`, no offer ever appears, and the summary's `Next time` rows are tagged `Rule`.
 21. (2026-10-09) Force-quit with the check-in sheet open: relaunch shows Today with no session (nothing to recover or discard). A score already tapped is reused by the next Start within 2 h.
 22. (2026-10-09) Log one set, undo it, then go to Today and `Resume`: no check-in appears (never mid-workout).
 23. (2026-10-09) Check-in score 1 with the coach offline: the loop runs exactly as with no check-in, and `Next time` targets match a run with no check-in.

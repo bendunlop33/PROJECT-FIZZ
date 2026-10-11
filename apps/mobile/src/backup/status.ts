@@ -92,19 +92,19 @@ export function buildBackupStatus(m: BackupManifest, facts: BackupFacts): Backup
           tone: 'warning',
           icon: 'exclamationmark.triangle',
           text: 'Last backup on this phone didn’t save',
-          detail: `${m.onPhone.lastAttempt?.error ?? 'The file couldn’t be written.'} Your workouts are still saved on this phone.`,
+          detail: m.onPhone.lastAttempt?.error ?? 'The file couldn’t be written.',
         };
       case 'damaged':
         return {
           tone: 'warning',
           icon: 'exclamationmark.triangle',
           text: 'Backup saved, but it can’t be restored',
-          detail: `It includes ${String(last?.integrityIssues ?? 0)} damaged record(s). GymSmarter won’t change or guess damaged records.`,
+          detail: `${String(last?.integrityIssues ?? 0)} damaged record(s)`,
         };
       case 'pending':
-        return { tone: 'done', icon: 'checkmark.circle.fill', text: 'Saved on this phone', detail: 'A backup on this phone runs next.' };
+        return { tone: 'done', icon: 'checkmark.circle.fill', text: 'Saved on this phone', detail: null };
       case 'nothing_yet':
-        return { tone: 'done', icon: 'checkmark.circle.fill', text: 'Saved on this phone', detail: 'The first backup runs after your first workout.' };
+        return { tone: 'done', icon: 'checkmark.circle.fill', text: 'Saved on this phone', detail: null };
     }
   })();
   const off = offPhoneState(m, nowMs);

@@ -36,7 +36,7 @@ There are three ways in:
 | **A. Ben asks** | Voice ("that was a grind", "too easy"), text in the coach sheet, or the `Adjust` control | The coach answers briefly. Today's remaining sets change **at once**. A banner shows the change with one-tap Undo | Voice: 0 (Talk + speech). Control: 2 (`Adjust` → a reason chip) |
 | **B. Coach offers** | A deterministic trigger in `packages/domain` (RPE ≥ 9.5, reps short by ≥ 2, RPE ≤ 6 on a working set) | One line in the rest card: `That looked hard. Adjust remaining sets?` [No thanks] [Adjust]. **Nothing changes, and no AI call is made, until Ben taps Adjust.** Then it continues as path A | 1 (`Adjust`), or 0 if ignored |
 | **B′. Check-in offer** (2026-10-09) | A low pre-workout check-in ([check-in.md](check-in.md) §4.4), checked by `evaluateCheckInOffer` in `packages/domain` | One line in the first set card's coach slot before any set is logged: `Want a lighter session today?` [No thanks] [Adjust]. **No AI call until Adjust**; then path A for all of today's pending sets, with no increases allowed | 1 (`Adjust`), or 0 if ignored |
-| **C. Next session** (revised 9 Oct, D21) | Finishing the workout (one coach call per workout, together with the coach note) | The coach's **small** changes (CA8) are saved for the next session of that routine without a tap. `Next time` shows each with its reason, `Built-in rule would be …`, `Why?` and `Undo`. Bigger changes are proposals with Apply. Structural changes appear only with a request or signal (CA9) | 0 (1 to Undo) |
+| **C. Next session** (revised 9 Oct, D21) | Finishing the workout (one coach call per workout, together with the coach note) | The coach's **small** changes (CA8) are saved for the next session of that routine without a tap. `Next time` shows each with its reason, `Rule: …`, `Why?` and `Undo`. Bigger changes are proposals with Apply. Structural changes appear only with a request or signal (CA9) | 0 (1 to Undo) |
 
 The single primary action on the workout screen stays **`Log …`**. Every control in this spec is secondary. The single primary on the summary stays **`Done`**.
 
@@ -278,8 +278,8 @@ Specified in [workout-summary.md](workout-summary.md) §2 and §3. In short:
 2. `validateCoachProposal` applies the guardrails: snap to achievable loads, cap at the equipment max, pain blocks, completed sets untouched, version checks. Then `classifyNextSessionChange` (CA8) splits the result.
 3. **Small changes are saved at once**: `applyCoachProposal(id, {kind: 'default_next_session', expectedVersion, opId})`, one transaction and one `actionId` for the workout, each exercise undoable on its own. No tap.
 4. **Bigger changes** (CA8) become `CoachTargetProposal`s with `Not now` / `Apply`. The built-in rule's target stays in use for that exercise until Ben applies.
-5. Each saved row shows the target and its % change, the coach's reason, guard notes, `Built-in rule would be …`, `Why?` and `Undo`. `Undo` puts the built-in rule's target back for that exercise; `Use coach target` puts the coach's back.
-6. **The built-in rule (playbook 7-F)** sets the target when the coach is offline, not connected or fails (`Built-in rule (coach offline)` / `(coach unavailable)`), when the coach gives no target for an exercise (`Built-in rule`), and after Ben's Undo. It is always computed, as the fallback and the comparison value. It is equipment-aware: smallest achievable step, reps first when that step is over ~10% or at the max, then hold, never an added set.
+5. Each saved row shows the target and its % change, the coach's reason, guard notes, `Rule: …`, `Why?` and `Undo`. `Undo` puts the built-in rule's target back for that exercise; `Use coach target` puts the coach's back.
+6. **The built-in rule (playbook 7-F)** sets the target when the coach is offline, not connected or fails (tag `Rule`), when the coach gives no target for an exercise (`Built-in rule`), and after Ben's Undo. It is always computed, as the fallback and the comparison value. It is equipment-aware: smallest achievable step, reps first when that step is over ~10% or at the max, then hold, never an added set.
 7. **Structural changes** appear only with a request or signal (CA9), as one `ChangeReviewCard` (scope `Push A from now on`, Apply, Undo; change-review.md). They expire when the routine next starts (change-review CR8).
 8. **Undo window:** on the Summary until that routine's next session starts. After that, the set card's `Why?` → `Use built-in rule` (active-workout AW4) changes that day's pending sets.
 9. Late answers: CA10. Change lines on every surface come from the saved action, not the model's words (coach-contract.md CC1).
@@ -332,7 +332,7 @@ Values are labelled as **target** or **actual** every time. `→` reads "to" in 
 | Not connected (Adjust tapped) | `Coach not connected. Your sets are unchanged.` [Connect in Profile] | — |
 | Target line | `Coach target 95 kg × 8` + `Plan was 100 kg × 6–8` | Targets |
 | Edited draft kept | `Your edit kept · Coach target 95 kg × 8` | Target |
-| Source tags | `Coach` · `Built-in rule` · `Built-in rule (coach offline)` · `Built-in rule (coach unavailable)` | — |
+| Source tags | `Coach` · `Rule` · `Suggested` | — |
 | Pain | `Pain noted for Bench press. No increases for this movement until you clear it.` | — |
 | Why sheet heading | `Why the coach changed this` · sections `What it used` (evidence) · `Checks` (guard notes) · `Not changed` | — |
 

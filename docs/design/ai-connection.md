@@ -496,7 +496,7 @@ No new colours.
 - [onboarding.md](onboarding.md) §2.8: the optional first-run entry to §2.2 and §2.7.
 - [data-import-export.md](data-import-export.md) §2.7: `Delete my data` disconnects and removes keys.
 - [voice.md](voice.md) §6: speech input engine and the spoken-reply engine switch at runtime.
-- [coach-adjustments.md](coach-adjustments.md) §3.1 and [workout-summary.md](workout-summary.md): coach failure lines and `Built-in rule (coach unavailable)`.
+- [coach-adjustments.md](coach-adjustments.md) §3.1 and [workout-summary.md](workout-summary.md): coach failure lines and the `Rule` tag.
 - [rest-state.md](rest-state.md) §5: Conversation mode is selectable only when `getAiCapabilities` reports a route; set cues always Apple.
 - [today.md](today.md), [active-workout.md](active-workout.md) §4.7: `Offline` / `Ask` / `Coach not connected` states.
 - Research: [ai-access-and-voice.md](../research/ai-access-and-voice.md) §1 (OAuth, errors, UI guidelines), §3 (cost estimates), spike S1–S8.

@@ -237,7 +237,7 @@ The sheet closes and Active workout opens as normal (Ready on the first set). Tw
 │ Active time            54 min          │ facts start here
 ```
 
-With `Pain` picked but no movement flagged (CI8), one `NoteLine` follows: `⚠ You mentioned pain before this workout. Flag the movements that hurt so loads don't go up.` [Choose movements ›].
+With `Pain` picked but no movement flagged (CI8), one `NoteLine` follows: `⚠ Pain mentioned · which movements?` [Choose movements ›].
 
 No line at all when the check-in was skipped or not asked. Tapping the line opens the edit sheet (§4.6).
 
@@ -529,7 +529,7 @@ Every value is either **what Ben said** (the check-in), a **target** or an **act
 | Element | Text |
 |---|---|
 | `CheckInLine` | `How you said you felt: 2 of 5` · reasons `Tired · Poor sleep` · note in quotes `"Baby was up at 3"` · `Other` shows as `Other` with the note |
-| Pain not flagged | `You mentioned pain before this workout. Flag the movements that hurt so loads don't go up.` [Choose movements ›] |
+| Pain not flagged | `⚠ Pain mentioned · which movements?` [Choose movements ›] |
 | Edit sheet | title `Change check-in` · `Save changes` · `Delete check-in` · confirm `Delete this check-in? Your workout isn't affected.` [Delete] [Cancel] · toast `Check-in deleted` [Undo] |
 | Progress card | `How you said you felt` · `Before each workout · 1 = rough, 5 = great` · rows `Thu 8 Oct  2 · Tired, Poor sleep` · outcomes `· skipped` / `· rescheduled` / `· no workout` · `9 check-ins in the last 4 weeks · 3 at 3 or lower` · none yet (check-ins on): `No check-ins yet. You're asked when you start a workout.` |
 | Progress detail | title `How you said you felt` · heading `Before each workout (your own rating)` · axis `1 rough` … `5 great` · `Show as table` · table headers `Date` · `Rating` · `What's up` · `Workout` · footer `These are your own ratings before each workout, shown as you gave them. Fizz doesn't combine them with anything else or turn them into a score.` |

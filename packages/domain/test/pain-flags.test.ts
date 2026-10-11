@@ -225,7 +225,6 @@ describe('copy (active-workout §5, exercise-library §5, today.md §5)', () => 
   it('clear confirmation (AW10): default wording, the reference kept, and the toast', () => {
     expect(mapPlain(painClearConfirm(f))).toEqual({
       title: 'Clear the pain flag on Overhead press?',
-      message: 'Loads, reps and sets can go up again, starting from your recent sets. Your sets from before 6 Oct stay in your history as the reference.',
       confirm: 'Clear flag',
       cancel: 'Keep it',
     });

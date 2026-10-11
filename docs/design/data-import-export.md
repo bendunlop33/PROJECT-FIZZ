@@ -150,8 +150,7 @@ Status card variants (icon + text, never colour alone; see §3.1 for triggers):
 
 │ ⚠ Last backup on this phone didn't     │ status.warning
 │   save                                 │
-│ This iPhone is out of space. Your      │
-│ workouts are still saved on this phone.│
+│ This iPhone is out of space.           │
 │ [      Back up on this phone now     ] │
 
 │ ⚠ Copy to Files didn't save            │ status.warning (automatic off-phone on)
@@ -749,8 +748,8 @@ Revised (consolidation; backups in the app by default). `getBackupStatus` decide
 |---|---|---|---|
 | Backed up on this phone | The newest automatic backup in Fizz's container includes every finished workout | `✓ Backed up on this phone · 19:05` | Summary line `Backed up on this phone · 19:05` (X2) |
 | Backing up | `createBackup` + write in progress (normally < 2 s) | `Backing up…` (static icon) | Summary line `Backing up…` |
-| Nothing yet | No workout finished yet | `✓ Saved on this phone` · `The first backup runs after your first workout.` | — |
-| Failed: storage full | Write failed for lack of space | `⚠ Last backup on this phone didn't save` · `This iPhone is out of space. Your workouts are still saved on this phone.` + `Back up on this phone now` | Today banner (system-states.md T5); never in a workout |
+| Nothing yet | No workout finished yet | `✓ Saved on this phone` | — |
+| Failed: storage full | Write failed for lack of space | `⚠ Last backup on this phone didn't save` · `This iPhone is out of space.` + `Back up on this phone now` | Today banner (system-states.md T5); never in a workout |
 | Automatic backups off | Ben turned `After each workout` off | `ⓘ Automatic backups are off` · `Your workouts are saved on this phone, with no backup copy.` + `Turn on` | Profile row line |
 | Includes damaged records | `createBackup` returned an integrity report with problems (ADR 0005 #3) | `⚠ Backup saved, but it can't be restored` · `It includes 1 damaged record (workout on Tue 6 Oct). Your newest good backup: Sun 4 Oct.` + `Details` | system-states.md data integrity |
 
@@ -925,9 +924,9 @@ At each of these moments Fizz shows one inline `NoteLine` with a one-tap `Second
 | Element | Text |
 |---|---|
 | Hub title | `Data & backup` |
-| Status, on this phone | `✓ Backed up on this phone · 19:05` · `✓ Saved on this phone` + `The first backup runs after your first workout.` · `⚠ Last backup on this phone didn't save` · `ⓘ Automatic backups are off` · `Backing up…` |
+| Status, on this phone | `✓ Backed up on this phone · 19:05` · `✓ Saved on this phone` · `⚠ Last backup on this phone didn't save` · `ⓘ Automatic backups are off` · `Backing up…` |
 | Status, off this phone | `✓ Copy saved to Files · Thu 8 Oct` · `ⓘ No copy off this phone yet` · `ⓘ No copy off this phone since 8 Sep` · `⚠ Copy to Files didn't save` |
-| Status details | `👤 Your data: 412 workouts · 4,105 sets` · `📚 Coaching knowledge: 9 rules · 412 exercises` · `Copies on this phone are lost if Fizz is deleted or re-signed with another Apple ID.` · `The folder can't be reached. Your backups on this phone are fine.` · `This iPhone is out of space. Your workouts are still saved on this phone.` · `iCloud uploads it when you're back online.` |
+| Status details | `👤 Your data: 412 workouts · 4,105 sets` · `📚 Coaching knowledge: 9 rules · 412 exercises` · `Copies on this phone are lost if Fizz is deleted or re-signed with another Apple ID.` · `The folder can't be reached. Your backups on this phone are fine.` · `This iPhone is out of space.` · `iCloud uploads it when you're back online.` |
 | Buttons | `Save a copy to Files` · `Save a copy to Files first` · `Skip` · `Back up on this phone now` · `Send a copy…` · `Choose backup folder` · `Check` · `Restore your data` · `Restore coaching knowledge` · `Restore both` · `Choose what to restore` · `Undo restore` · `Choose CSV file` · `Import 412 workouts` · `Answer 3 questions to import` · `Export` · `Delete my data` · `Reset coaching knowledge` · `Done` |
 | Settings rows | `Backups on this phone` · `After each workout` · `Keep automatic backups` · `Copies on this phone` · `Off this phone (optional)` · `Also back up off the phone automatically` · `Remind me if there's no copy off this phone` · `Turn off automatic backups? Your workouts stay saved on this phone, but there'll be no backup copy.` [Turn off] [Cancel] |
 | Files copy | `Backups are plain files with your training data and coaching knowledge. They never contain your coach sign-in or API keys.` · `That's inside Fizz, so it's lost with the app. Choose iCloud Drive or another folder.` · folder sheet title `Back up off the phone automatically` · `After each workout, Fizz also saves a copy in a folder you choose, like iCloud Drive. It survives if the app is deleted.` |

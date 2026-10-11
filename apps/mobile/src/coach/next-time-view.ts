@@ -50,7 +50,7 @@ function setsPart(sets: number | null): string {
 
 function coachRow(r: NextSessionTargetRecord, builtIn: NextTimeRow | undefined): NextTimeRowView {
   const used = r.usedBySessionId !== null;
-  const builtInLine = r.builtIn === null ? null : `Built-in rule would be ${targetPhrase(r.builtIn)}${setsPart(r.builtInSets)}`;
+  const builtInLine = r.builtIn === null ? null : `Rule: ${targetPhrase(r.builtIn)}${setsPart(r.builtInSets)}`;
   const why = [...(r.reason === null ? [] : [`“${r.reason}”`]), ...r.guardNotes.map((n) => n.text), ...(builtInLine === null ? [] : [builtInLine])];
   const target = `Target ${targetPhrase(r.target)}${setsPart(r.sets)}`;
   const base = { key: r.id, exerciseName: r.exerciseName, pct: pctText(r.pctChange), row: r, note: used ? 'Used' : null };
@@ -63,7 +63,7 @@ function coachRow(r: NextSessionTargetRecord, builtIn: NextTimeRow | undefined):
         ...base,
         target: builtIn?.target ?? (r.builtIn === null ? 'Same targets' : `Target ${targetPhrase(r.builtIn)}`),
         pct: null,
-        tag: 'Built-in rule',
+        tag: 'Rule',
         why: [`Coach target: ${targetPhrase(r.target)}${setsPart(r.sets)}`, ...why.filter((w) => w !== builtInLine)],
         actions: used ? [] : [{ label: 'Use coach target', tap: 'use_coach' }],
       };
@@ -74,7 +74,7 @@ function coachRow(r: NextSessionTargetRecord, builtIn: NextTimeRow | undefined):
         ...base,
         target: builtIn?.target ?? (r.builtIn === null ? 'Same targets' : `Target ${targetPhrase(r.builtIn)}`),
         pct: null,
-        tag: 'Built-in rule',
+        tag: 'Rule',
         why: [`Suggested: ${targetPhrase(r.target)}${setsPart(r.sets)}`, ...why.filter((w) => w !== builtInLine)],
         actions: [],
       };

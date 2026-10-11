@@ -67,10 +67,10 @@ export function builtInRepRange(category: RuleCategory): { min: number; max: num
   return { min: RULES[category].min, max: RULES[category].max };
 }
 
-/** `Double progression, 3–6 reps up to RPE 8.5 (built-in default for a main barbell lift, provisional)` */
+/** `3–6 reps, up to RPE 8.5` (the `Rule:` line behind `Why?`). */
 export function builtInRuleName(category: RuleCategory): string {
   const r = RULES[category];
-  return `Double progression, ${String(r.min)}–${String(r.max)} reps up to RPE ${String(r.rpe)} (built-in default for ${r.label}, provisional)`;
+  return `${String(r.min)}–${String(r.max)} reps, up to RPE ${String(r.rpe)}`;
 }
 
 export function builtInDefaultRule(ownerId: string, unit: WeightUnit, workingSets: number, category: RuleCategory): ProgressionRule {

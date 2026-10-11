@@ -207,11 +207,14 @@ export function mayHurtAccessibility(flag: Pick<PainFlag, 'area'>): string {
   return `May hurt: you flagged ${area === null ? '' : `${area} `}pain on it.`;
 }
 
-/** The clear confirmation (AW10; revises coach-memory §2.7). Default style, not red: clearing isn't destructive. */
-export function painClearConfirm(flag: Pick<PainFlag, 'exerciseName' | 'reportedAt'>): { title: string; message: string; confirm: 'Clear flag'; cancel: 'Keep it' } {
+/**
+ * The clear confirmation (AW10; revises coach-memory §2.7). Default style, not
+ * red: clearing isn't destructive. Title and buttons only (minimal copy S11):
+ * the toast that follows has Undo.
+ */
+export function painClearConfirm(flag: Pick<PainFlag, 'exerciseName'>): { title: string; confirm: 'Clear flag'; cancel: 'Keep it' } {
   return {
     title: `Clear the pain flag on ${flag.exerciseName}?`,
-    message: `Loads, reps and sets can go up again, starting from your recent sets. Your sets from before ${painFlagDay(flag)} stay in your history as the reference.`,
     confirm: 'Clear flag',
     cancel: 'Keep it',
   };

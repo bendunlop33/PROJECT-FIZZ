@@ -76,7 +76,7 @@ function startingPlanProvenance(why: StartingPlanWhy, ruleName: string, count: n
       name: ruleName,
       decision: why.decision ?? 'insufficient_data',
       // Fixed app text; true whether or not there was history (the plan never has a load).
-      summary: `Starting plan: ${String(count)} ${count === 1 ? 'set' : 'sets'} of ${String(reps.min)}–${String(reps.max)} reps. You choose the load.`,
+      summary: `${String(count)} × ${String(reps.min)}–${String(reps.max)} · load: your choice`,
       facts: [],
     },
     guardNotes: [],
