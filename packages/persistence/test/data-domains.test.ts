@@ -646,6 +646,48 @@ describe('Reset and the copy kept for Undo (review r5 B1, S1)', () => {
     expect(kept?.unreadable).toBe(false);
   });
 
+  it('Correct a workout → restore an older backup → Reset: the corrected workout in the Undo copy is counted, not only missing ones (r6 S1)', async () => {
+    const { createBackup } = await import('../src/index');
+    const text = (await createBackup(m.store, { at: at(50), app: { name: 'x', version: '1', build: null } })).text;
+    // Ben corrects a completed set in a workout the backup also holds (same ID, different content).
+    const rich = richFinishedSession();
+    const stored = await m.store.repos.sessions.get(rich.session.id);
+    if (stored === null) throw new Error('fixture');
+    // The fixture's second set, logged and corrected to 8 reps.
+    const set = stored.sets.find((x) => x.id === rich.sets[1]?.id);
+    if (!set) throw new Error('fixture');
+    const before = JSON.stringify(set);
+    const corrected = apply(stored, { type: 'correct_set', at: at(55), opId: 'fix-after-backup', setId: set.id, expectedSetVersion: set.version, patch: { reps: 9 } });
+    expect(await m.store.repos.sessions.save(corrected, stored.revision)).toMatchObject({ ok: true });
+    expect(JSON.stringify((await m.store.repos.sessions.get(rich.session.id))?.sets.find((x) => x.id === set.id))).not.toBe(before);
+
+    // The older backup is restored: the phone has the old values, the copy kept for Undo the corrected ones.
+    expect(await m.restore(text, at(60))).toMatchObject({ ok: true, status: 'restored' });
+    expect(JSON.stringify((await m.store.repos.sessions.get(rich.session.id))?.sets.find((x) => x.id === set.id))).toBe(before);
+
+    const summary = await m.domainSummary();
+    expect(summary.keptForUndo).toMatchObject({ workouts: 1, otherRecords: 0, keptSinceUtc: at(60).utc, unreadable: false });
+    const names = m.databaseNames;
+    expect(await m.resetKnowledge(bundled, { expectedStamp: summary.stamp, at: at(61) })).toMatchObject({ ok: false, error: { code: 'kept_copy_at_risk' } });
+    expect(m.databaseNames).toEqual(names);
+    expect(m.rollbackTarget).toEqual({ available: true, last: { atUtc: at(60).utc, reason: 'restore' } });
+  });
+
+  it('Rename a gym → restore an older backup → Reset: the renamed gym in the Undo copy is counted (r6 S1)', async () => {
+    const { createBackup } = await import('../src/index');
+    const text = (await createBackup(m.store, { at: at(50), app: { name: 'x', version: '1', build: null } })).text;
+    const before = await m.store.repos.gyms.get(gym(2).id);
+    if (before === null) throw new Error('fixture');
+    expect(await m.store.repos.gyms.save({ ...before, name: 'Renamed gym', version: before.version + 1 }, before.version)).toMatchObject({ ok: true });
+    expect(await m.restore(text, at(60))).toMatchObject({ ok: true, status: 'restored' });
+    expect((await m.store.repos.gyms.get(gym(2).id))?.name).toBe(before.name);
+
+    const summary = await m.domainSummary();
+    expect(summary.keptForUndo).toMatchObject({ workouts: 0, otherRecords: 1, unreadable: false });
+    expect(await m.resetKnowledge(bundled, { expectedStamp: summary.stamp, at: at(61) })).toMatchObject({ ok: false, error: { code: 'kept_copy_at_risk' } });
+    expect(m.rollbackTarget.last?.reason).toBe('restore');
+  });
+
   it('a copy kept for Undo that can’t be read is reported as unreadable', async () => {
     const { createBackup } = await import('../src/index');
     const text = (await createBackup(m.store, { at: at(50), app: { name: 'x', version: '1', build: null } })).text;
