@@ -28,6 +28,14 @@ describe('exercise ⋯ menu', () => {
     expect(exerciseMenu(false, true).actionAt(0)).toBe('undo_coach');
   });
 
+  it('mid-workout swap (EL4): Swap exercise under Add set while sets are pending; Undo swap near the top, never red', () => {
+    const m = exerciseMenu(true, false, { canSwap: true, canUndoSwap: true });
+    expect(m.options).toEqual(['How to', 'Undo swap', 'Add set', 'Swap exercise', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
+    expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['how_to', 'undo_swap', 'add_set', 'swap', 'add_exercise', 'delete_set', 'skip_exercise', null]);
+    expect(m.destructiveButtonIndex.map((i) => m.options[i])).toEqual(['Delete this set', 'Skip exercise']);
+    expect(exerciseMenu(false, false, { canSwap: false }).options).not.toContain('Swap exercise');
+  });
+
   it('the bottom rows sit the same distance from the thumb in both shapes', () => {
     const a = exerciseMenu(false).options;
     const b = exerciseMenu(true).options;

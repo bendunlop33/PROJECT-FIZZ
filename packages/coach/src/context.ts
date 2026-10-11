@@ -139,7 +139,9 @@ function actualOf(a: SetValues | null): (CoachTarget & { rpe: number | null }) |
 export function workoutView(session: SessionAggregate, gymName: string | null): NonNullable<YourData['workout']> {
   const order = buildExecutionOrder(session.exercises, session.sets);
   const pos = new Map(order.map((id, i) => [id, i]));
+  // A row removed from the workout (added by mistake, or emptied by a swap) isn't part of it.
   const exercises = [...session.exercises]
+    .filter((ex) => ex.removed === undefined)
     .sort((a, b) => a.order - b.order)
     .map((ex) => {
       const sets = session.sets

@@ -1,5 +1,7 @@
 import {
   addDays,
+  buildSwapExerciseCommand,
+  midSwapSlot,
   applyCheckInPatch,
   buildActiveSetView,
   buildLiftHighlight,
@@ -1231,6 +1233,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     };
   }
 
+  /** `substituteCtx` for a running workout: its current gym's items as the workout has them, and its check-in. */
+  async function midSwapCtx(p: UserProfile, aggregate: SessionAggregate, exerciseIds: Iterable<string>) {
+    const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId).catch(() => null) : null;
+    const gymId = aggregate.session.gymId ?? 'no-gym';
+    return substituteCtx(p, gymId, currentGymEquipment(aggregate.session), ci ?? null, exerciseIds);
+  }
+
   /**
    * Today's edits as the planner takes them (TE2): the live draft's edits and
    * each swapped slot's own plan (`substituteTargets`: the substitute's own
@@ -1844,6 +1853,80 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           exerciseRestS: p.exerciseRestS?.[req.exerciseId] ?? null,
         }),
       );
+    },
+
+    /**
+     * The Swap sheet mid-workout (exercise-library EL4, B3): the same rows as
+     * before Start (`rankSubstitutions`, this gym's items as the workout has
+     * them, never an exercise already in the workout, flagged ones last),
+     * ranked for the row's **pending** sets. Null when nothing is left to
+     * swap. Reads only; never an AI call.
+     */
+    async swapCandidates(sessionId: string, sessionExerciseId: string): Promise<SwapSheet | null> {
+      try {
+        const p = await owner();
+        const aggregate = await repos().sessions.get(sessionId);
+        if (!aggregate) return null;
+        const slot = midSwapSlot(aggregate, sessionExerciseId);
+        const row = aggregate.exercises.find((e) => e.id === sessionExerciseId);
+        const planned = row ? await exerciseById(row.exerciseId) : null;
+        if (slot === null || !row || planned === null) return null;
+        const inWorkout = new Set(aggregate.exercises.filter((e) => e.removed === undefined).map((e) => e.exerciseId));
+        const all = new Map<string, Exercise>();
+        for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) all.set(e.id, e);
+        for (const e of ctx.catalogueExercises?.() ?? []) if (!all.has(e.id)) all.set(e.id, e);
+        const subs = planned.catalogueKey ? (ctx.catalogueSubstitutions?.(planned.catalogueKey) ?? []) : [];
+        const keys = new Set(subs.filter((k): k is string => k !== null));
+        const pool = [...all.values()].filter((e) => (e.ownerId === null || e.ownerId === p.id) && ((e.catalogueKey !== undefined && e.catalogueKey !== null && keys.has(e.catalogueKey)) || (planned.family !== undefined && e.family === planned.family)));
+        const histories = new Map<string, HistorySession[]>();
+        for (const e of pool) histories.set(e.id, await historyFor(p.id, e.id).catch(() => [] as HistorySession[]));
+        const sctx = await midSwapCtx(p, aggregate, pool.map((e) => e.id));
+        const rows = rankSubstitutions({ ...sctx, slotExercise: planned, slot, exercises: pool, catalogueSubstitutions: subs, excludeExerciseIds: inWorkout, histories, planned: null });
+        return { slotKey: sessionExerciseId, plannedName: row.exerciseName, gymName: sctx.gym.name, rows };
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * Ben's pick on the mid-workout Swap sheet applies at once (B3): only the
+     * row's pending sets move, each target from the substitute's own history
+     * fitted to this gym (rule 4); logged sets stay. Undo is `undoOp` on the
+     * same opId. A retry with the same opId is a duplicate.
+     */
+    async swapExercise(req: { sessionId: string; sessionExerciseId: string; exerciseId: string; opId: string }): Promise<CommandOutcome & { fromName?: string; toName?: string }> {
+      const failed = (message: string): CommandOutcome => ({ ok: false, error: { code: 'set_not_pending', message } });
+      const p = await ctx.profile();
+      const aggregate = await repos().sessions.get(req.sessionId);
+      if (!p || !aggregate) return { ok: false, error: { code: 'not_found', message: 'Workout not found.' } };
+      // Already applied (a retry after a crash): the same result, nothing new.
+      const row = aggregate.exercises.find((e) => e.id === req.sessionExerciseId);
+      if (aggregate.processedOps[req.opId] !== undefined) {
+        const to = aggregate.exercises.find((e) => e.swappedFrom?.opId === req.opId);
+        return { ok: true, aggregate, events: [], duplicate: true, superseded: false, fromName: row?.exerciseName ?? '', toName: to?.exerciseName ?? '' };
+      }
+      const slot = midSwapSlot(aggregate, req.sessionExerciseId);
+      const exercise = await ensureExercise(req.exerciseId);
+      if (!row || slot === null) return failed('Nothing left to swap.');
+      if (exercise === null) return { ok: false, error: { code: 'write_failed', message: 'Couldn’t save that exercise. Try again.' } };
+      const history = await historyFor(p.id, exercise.id).catch(() => [] as HistorySession[]);
+      const sctx = await midSwapCtx(p, aggregate, [exercise.id]);
+      const plan = substituteTargets(slot, exercise, history, sctx);
+      const built = buildSwapExerciseCommand({
+        aggregate,
+        sessionExerciseId: row.id,
+        plan,
+        gymName: sctx.gym.name,
+        ownerUnit: p.preferredUnit,
+        painFlagged: new Set(sctx.painFlags.map((f) => f.exerciseId)),
+        lastUsedHere: sctx.lastUsedHere,
+        opId: req.opId,
+        at: ctx.now(),
+        newId: ctx.newId,
+      });
+      if (!built.ok) return failed(built.reason === 'measurement' ? `${exercise.name} is measured differently.` : 'Nothing left to swap.');
+      const r = ctx.afterCommand(await domain().dispatch(req.sessionId, built.command));
+      return r.ok ? { ...r, fromName: row.exerciseName, toName: exercise.name } : r;
     },
 
     /**

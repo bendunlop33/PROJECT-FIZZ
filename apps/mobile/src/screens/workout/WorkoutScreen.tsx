@@ -17,7 +17,7 @@ import { formatDayMonth, formatTime } from '../../format/dates';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { openGymFromWorkout, popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
-import type { ActiveWorkoutData, GymChoice, RecordContext } from '../../services/workout-services';
+import type { ActiveWorkoutData, GymChoice, RecordContext, SwapSheet } from '../../services/workout-services';
 import { NameSheet } from '../routines/NameSheet';
 import { firstTime, useDataChanged, useLaunchInfo, useServices } from '../../shell/context';
 import { logHaptic, swapMotion, TIMING, useTheme } from '../../theme';
@@ -46,6 +46,7 @@ import {
   type SymbolName,
 } from '../../ui';
 import { CoachSlot } from './CoachSlot';
+import { MidSwapSheet } from './MidSwapSheet';
 import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './WorkoutCoach';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu } from '../../workout/exercise-menu';
@@ -108,6 +109,8 @@ export function WorkoutScreen() {
   const renameOp = useRef(newUuid());
   const [renameAfter] = useState(() => createAfterDismiss());
   const [restEditor, setRestEditor] = useState(false);
+  /** The mid-workout Swap sheet (EL4): the row it swaps and its candidates. */
+  const [swap, setSwap] = useState<{ sessionExerciseId: string; exerciseName: string; sheet: SwapSheet | null; loading: boolean } | null>(null);
   const [hiddenWarmUps, setHiddenWarmUps] = useState<string[]>([]);
   const [permission, setPermission] = useState<AlertPermission | 'unknown'>('unknown');
   const { prefs } = useDevicePrefs();
@@ -687,12 +690,23 @@ export function WorkoutScreen() {
 
   function openExerciseMenu(f: FocusView) {
     const howTo = howToRouteFor(f, bundledHowToSources());
-    const menu = exerciseMenu(howTo !== null, f.coachActionId !== null);
+    const pendingHere = view?.exercises.find((e) => e.sessionExerciseId === f.sessionExerciseId)?.pendingSets ?? 0;
+    const menu = exerciseMenu(howTo !== null, f.coachActionId !== null, { canSwap: pendingHere > 0, canUndoSwap: f.swappedFrom !== null });
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
       if (action === 'undo_coach' && f.coachActionId !== null) coach.undo(f.coachActionId);
       if (action === 'add_set') void addSet(f.sessionExerciseId);
+      if (action === 'swap') void openSwap(f);
+      if (action === 'undo_swap' && f.swappedFrom !== null) {
+        const targetOpId = f.swappedFrom.opId;
+        void services.workout.undoOp({ sessionId: session.id, targetOpId }).then((r) => {
+          changed();
+          void reload();
+          if (r.ok) haptic('undo');
+          else showToast({ icon: 'info.circle', text: r.message });
+        });
+      }
       if (action === 'add_exercise') navigation.navigate('ExercisePicker', { sessionId: session.id });
       if (action === 'delete_set') {
         // No confirm (copy D4): it applies at once with Undo.
@@ -708,6 +722,43 @@ export function WorkoutScreen() {
         });
       }
     });
+  }
+
+  async function openSwap(f: FocusView) {
+    setSwap({ sessionExerciseId: f.sessionExerciseId, exerciseName: f.exerciseName, sheet: null, loading: true });
+    const sheet = await services.workout.swapCandidates(session.id, f.sessionExerciseId).catch(() => null);
+    setSwap((cur) => (cur?.sessionExerciseId === f.sessionExerciseId ? { ...cur, sheet, loading: false } : cur));
+  }
+
+  /** A pick applies at once with Undo (B3); a flagged one asks first (EL9). */
+  function pickSwap(row: SwapSheet['rows'][number]) {
+    const target = swap;
+    if (target === null) return;
+    const go = async () => {
+      setSwap(null);
+      const opId = newUuid();
+      const r = await services.workout.swapExercise({ sessionId: session.id, sessionExerciseId: target.sessionExerciseId, exerciseId: row.exerciseId, opId });
+      if (!r.ok) {
+        showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' || r.error.code === 'write_conflict' ? 'The workout changed. Try again.' : `Not swapped: ${r.error.message}` });
+        void reload();
+        return;
+      }
+      setData((cur) => withCommandResult(cur, loaded, r.aggregate));
+      changed();
+      haptic('step');
+      toastUndoOp(UNDO_TOAST.swapped(r.fromName ?? target.exerciseName, r.toName ?? row.name), opId, session.id);
+      // `Last` lines are per exercise: read the new row's history.
+      void reload();
+    };
+    if (row.mayHurt !== null) {
+      const c = row.mayHurt.confirm;
+      Alert.alert(c.title, c.message, [
+        { text: c.cancel, style: 'cancel' },
+        { text: c.confirm, onPress: () => void go() },
+      ]);
+      return;
+    }
+    void go();
   }
 
   async function addSet(sessionExerciseId: string) {
@@ -1514,6 +1565,16 @@ export function WorkoutScreen() {
       {/* No Talk button until voice exists (critic T3): no dead control in the best thumb spot. */}
       <ActionBar primary={primary} guard={guard || logBlockedBySwitch(switchCard)} />
 
+      <MidSwapSheet
+        visible={swap !== null}
+        exerciseName={swap?.exerciseName ?? ''}
+        sheet={swap?.sheet ?? null}
+        loading={swap?.loading ?? false}
+        onPick={pickSwap}
+        onClose={() => {
+          setSwap(null);
+        }}
+      />
       <FinishSheet
         aggregate={loaded.aggregate}
         visible={finishOpen}

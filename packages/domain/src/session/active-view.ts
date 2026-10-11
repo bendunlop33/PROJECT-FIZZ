@@ -610,7 +610,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
 /** `Swapped from Bench press` while the swap can still be undone (any of its sets pending). */
 function swappedFromOf(state: SessionAggregate, ex: SessionExercise): FocusView['swappedFrom'] {
   const from = ex.swappedFrom;
-  if (from === undefined) return null;
+  if (from === undefined || !state.sets.some((s) => s.sessionExerciseId === ex.id && s.status === 'pending')) return null;
   const original = state.exercises.find((e) => e.id === from.sessionExerciseId);
   if (!original) return null;
   return { name: original.exerciseName, opId: from.opId };
