@@ -4,7 +4,7 @@
  * destructive actions (review S3). `How to` leads when the exercise has one
  * (ADR 0013), so the bottom rows stay put under the thumb either way.
  */
-export type ExerciseMenuAction = 'how_to' | 'undo_coach' | 'undo_swap' | 'add_set' | 'swap' | 'add_exercise' | 'delete_set' | 'skip_exercise';
+export type ExerciseMenuAction = 'how_to' | 'undo_coach' | 'undo_swap' | 'add_set' | 'swap' | 'add_exercise' | 'delete_set' | 'skip_exercise' | 'remove_exercise';
 
 interface MenuItem {
   action: ExerciseMenuAction | 'cancel';
@@ -24,8 +24,10 @@ const ITEMS: readonly MenuItem[] = [
   { action: 'add_exercise', label: 'Add exercise', destructive: false },
   { action: 'delete_set', label: 'Delete this set', destructive: true },
   { action: 'skip_exercise', label: 'Skip exercise', destructive: true },
-  { action: 'cancel', label: 'Cancel', destructive: false },
 ];
+/** Only while nothing on the exercise is logged (exercise-library §4.6): no confirm, toast with Undo. */
+const REMOVE: MenuItem = { action: 'remove_exercise', label: 'Remove exercise', destructive: true };
+const CANCEL: MenuItem = { action: 'cancel', label: 'Cancel', destructive: false };
 
 export interface ExerciseMenu {
   /** Labels in sheet order. */
@@ -42,10 +44,12 @@ export interface ExerciseMenuOptions {
   canSwap?: boolean;
   /** The exercise is today's swap and it can still be undone. */
   canUndoSwap?: boolean;
+  /** Nothing on the exercise is logged: it can be removed (added by mistake). */
+  canRemove?: boolean;
 }
 
 export function exerciseMenu(hasHowTo: boolean, hasCoachChange = false, o: ExerciseMenuOptions = {}): ExerciseMenu {
-  const items = [...(hasHowTo ? [HOW_TO] : []), ...(hasCoachChange ? [UNDO_COACH] : []), ...(o.canUndoSwap ? [UNDO_SWAP] : []), ADD_SET, ...(o.canSwap ? [SWAP] : []), ...ITEMS];
+  const items = [...(hasHowTo ? [HOW_TO] : []), ...(hasCoachChange ? [UNDO_COACH] : []), ...(o.canUndoSwap ? [UNDO_SWAP] : []), ADD_SET, ...(o.canSwap ? [SWAP] : []), ...ITEMS, ...(o.canRemove ? [REMOVE] : []), CANCEL];
   return {
     options: items.map((i) => i.label),
     destructiveButtonIndex: items.flatMap((item, i) => (item.destructive ? [i] : [])),

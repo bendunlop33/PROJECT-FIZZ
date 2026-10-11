@@ -366,7 +366,7 @@ A row whose equipment isn't at this gym (with `At <gym>` off) asks before adding
 ### 4.6 Undo paths
 | What | Undo |
 |---|---|
-| Added an exercise in a workout by mistake | While none of its sets are logged: exercise `⋯` → `Remove exercise` (no confirm, toast [Undo]) |
+| Added an exercise in a workout by mistake | While none of its sets are logged: exercise `⋯` → `Remove exercise` (no confirm, toast `Face pull removed` [Undo]). Built 11 Oct (`remove_exercise`, Undo by `undo_op`): the row stays as an audited record marked removed and leaves every view, the coach's view and the derived title. Not offered for an exercise with parts at another gym (skip it instead) |
 | Swap in a workout | `Undo` in the slot; later, exercise `⋯` → `Undo swap` while its sets are still pending. Logged sets of the new exercise stay (they're real) |
 | Replace in the editor | Editor `Cancel` (until Save), then routine Undo |
 | New custom exercise | Delete it (no history) |

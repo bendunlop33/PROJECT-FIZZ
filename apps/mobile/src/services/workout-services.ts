@@ -1,5 +1,6 @@
 import {
   addDays,
+  liveExercises,
   buildSwapExerciseCommand,
   midSwapSlot,
   applyCheckInPatch,
@@ -1568,7 +1569,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       }
       const flags = await repos().painFlags.listActive(p.id);
       const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId) : null;
-      const title = storedName(aggregate) === null && aggregate.exercises.length > 0 ? (await titleFor(aggregate.exercises.map((e) => e.exerciseId))).title : null;
+      const title = storedName(aggregate) === null && aggregate.exercises.length > 0 ? (await titleFor(liveExercises(aggregate.exercises).map((e) => e.exerciseId))).title : null;
       const pace = await recentPace(p.id, aggregate.session.id, toMs(ctx.now().utc));
       return {
         aggregate,
@@ -2112,7 +2113,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           const names = doneExerciseNames(a);
           rows.push({
             sessionId: a.session.id,
-            title: storedName(a) ?? (await titleFor(a.exercises.map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title,
+            title: storedName(a) ?? (await titleFor(liveExercises(a.exercises).map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title,
             startedAtUtc: a.session.startedAt.utc,
             tz: a.session.startedAt.tz,
             gymId,
@@ -2145,7 +2146,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const lastUsedHere = await lastUsedFor(p.id, source.exercises.map((e) => e.exerciseId), gymId);
       const r = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview:${sourceSessionId}`, at: ctx.now(), sourceSessionId, preview: true, lastUsedHere });
       if (!r.ok) return null;
-      const title = storedName(source) ?? (await titleFor(source.exercises.map((e) => e.exerciseId)).catch(() => ({ title: GENERIC_WORKOUT_NAME }))).title;
+      const title = storedName(source) ?? (await titleFor(liveExercises(source.exercises).map((e) => e.exerciseId)).catch(() => ({ title: GENERIC_WORKOUT_NAME }))).title;
       return { title, exercises: repeatPreviewLines(r.aggregate), notes: r.notes, notCopied: r.notCopied, sourceGymId: source.session.gymId, sourceStartedAtUtc: source.session.startedAt.utc, tz: source.session.startedAt.tz };
     },
   };
@@ -2336,7 +2337,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           const t = await todayFor(p, resolvedR, gymId, undefined, null);
           const edited = t.draft === null ? null : await routineStart(p, { routineId: up.routine.id, gymId, opId: `preview-next-routine:${up.routine.id}`, preview: true, todayEdits: t.input });
           const { r, ref } = edited !== null && edited.r.ok ? { r: edited.r, ref: edited.ref } : up.run;
-          const derived = await titleFor(r.aggregate.exercises.map((e) => e.exerciseId));
+          const derived = await titleFor(liveExercises(r.aggregate.exercises).map((e) => e.exerciseId));
           return {
             routine: { id: up.routine.id, basis: up.basis },
             sourceSessionId: ref?.sessionId ?? null,
@@ -2358,7 +2359,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const lastUsedHere = await lastUsedFor(p.id, [...source.exercises.map((e) => e.exerciseId), ...swapExerciseIds(t.input)], gymId);
         const r = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview-next:${last.sessionId}`, at: ctx.now(), sourceSessionId: last.sessionId, preview: true, targets, lastUsedHere, today: t.input });
         if (!r.ok) return null;
-        const derived = await titleFor(source.exercises.map((e) => e.exerciseId));
+        const derived = await titleFor(liveExercises(source.exercises).map((e) => e.exerciseId));
         return {
           routine: null,
           sourceSessionId: last.sessionId,
@@ -2598,7 +2599,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (req.gymId !== null && gym === null) return null;
         const at = ctx.now();
         const title =
-          resolved.kind === 'routine' ? resolved.routine.name : (storedName(resolved.source) ?? (await titleFor(resolved.source.exercises.map((e) => e.exerciseId))).title);
+          resolved.kind === 'routine' ? resolved.routine.name : (storedName(resolved.source) ?? (await titleFor(liveExercises(resolved.source.exercises).map((e) => e.exerciseId))).title);
         const source = await overviewSource(resolved);
         // A failed read shows no coach rows; the key below reads them again, so a Start planned without them is refused.
         const coachTargets = await storedCoachTargets(p.id, source).catch(() => [] as NextSessionTargetRecord[]);
@@ -2815,7 +2816,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       // Names for workouts without one (`Push`), from their exercises (audit F5).
       const titles: Record<string, string> = {};
       for (const a of [...(active ? [active] : []), ...finished]) {
-        if (storedName(a) === null && a.exercises.length > 0) titles[a.session.id] = (await titleFor(a.exercises.map((e) => e.exerciseId))).title;
+        if (storedName(a) === null && a.exercises.length > 0) titles[a.session.id] = (await titleFor(liveExercises(a.exercises).map((e) => e.exerciseId))).title;
       }
       return buildTodayView({
         nowMs,

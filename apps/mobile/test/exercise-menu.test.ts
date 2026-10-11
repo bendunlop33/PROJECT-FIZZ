@@ -36,6 +36,14 @@ describe('exercise ⋯ menu', () => {
     expect(exerciseMenu(false, false, { canSwap: false }).options).not.toContain('Swap exercise');
   });
 
+  it('Remove exercise (nothing logged, §4.6) is the last red row, above Cancel', () => {
+    const m = exerciseMenu(false, false, { canSwap: true, canRemove: true });
+    expect(m.options.slice(-3)).toEqual(['Skip exercise', 'Remove exercise', 'Cancel']);
+    expect(m.actionAt(m.options.indexOf('Remove exercise'))).toBe('remove_exercise');
+    expect(m.destructiveButtonIndex.map((i) => m.options[i])).toEqual(['Delete this set', 'Skip exercise', 'Remove exercise']);
+    expect(exerciseMenu(false).options).not.toContain('Remove exercise');
+  });
+
   it('the bottom rows sit the same distance from the thumb in both shapes', () => {
     const a = exerciseMenu(false).options;
     const b = exerciseMenu(true).options;

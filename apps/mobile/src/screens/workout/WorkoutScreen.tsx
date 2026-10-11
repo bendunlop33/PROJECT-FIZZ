@@ -530,6 +530,11 @@ export function WorkoutScreen() {
   }
 
   /** Run one command; adopt the committed state; never throw. */
+  /** A refused menu action: the shortest honest line (the screen reloads on a stale version). */
+  function refusalText(code: string, message: string): string {
+    return code === 'stale_version' || code === 'write_conflict' ? 'The workout changed. Try again.' : message;
+  }
+
   async function run(command: SessionCommand): Promise<CommandOutcome> {
     const r = await services.workout.dispatch(session.id, command);
     if (r.ok) {
@@ -691,7 +696,7 @@ export function WorkoutScreen() {
   function openExerciseMenu(f: FocusView) {
     const howTo = howToRouteFor(f, bundledHowToSources());
     const pendingHere = view?.exercises.find((e) => e.sessionExerciseId === f.sessionExerciseId)?.pendingSets ?? 0;
-    const menu = exerciseMenu(howTo !== null, f.coachActionId !== null, { canSwap: pendingHere > 0, canUndoSwap: f.swappedFrom !== null });
+    const menu = exerciseMenu(howTo !== null, f.coachActionId !== null, { canSwap: pendingHere > 0, canUndoSwap: f.swappedFrom !== null, canRemove: f.removable });
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
@@ -713,12 +718,22 @@ export function WorkoutScreen() {
         const opId = newUuid();
         void run({ type: 'delete_set', at: services.now(), opId, setId: f.setId, expectedSetVersion: f.setVersion }).then((r) => {
           if (r.ok) toastUndoOp(UNDO_TOAST.deleted(f.setNumber), opId, session.id);
+          else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
+        });
+      }
+      if (action === 'remove_exercise') {
+        // Added by mistake, nothing logged (exercise-library §4.6): no confirm, Undo on the toast.
+        const opId = newUuid();
+        void run({ type: 'remove_exercise', at: services.now(), opId, sessionExerciseId: f.sessionExerciseId, expectedVersion: session.version }).then((r) => {
+          if (r.ok) toastUndoOp(UNDO_TOAST.removed(f.exerciseName), opId, session.id);
+          else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
         });
       }
       if (action === 'skip_exercise') {
         const opId = newUuid();
         void run({ type: 'skip_exercise', at: services.now(), opId, sessionExerciseId: f.sessionExerciseId }).then((r) => {
           if (r.ok) toastUndoOp(UNDO_TOAST.skipped(f.exerciseName), opId, session.id);
+          else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
         });
       }
     });
