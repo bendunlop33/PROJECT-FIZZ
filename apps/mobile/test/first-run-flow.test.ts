@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -5,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { COMMON_EXERCISE_IDS, NBSP, pickerSections } from '@fizz/domain';
 
+import { unitLockedText } from '../src/services/setup';
 import { TARGETS_UNAVAILABLE } from '../src/services/workout-services';
 
 import { createHarness, logWorkout, type Harness } from './harness';
@@ -68,6 +70,27 @@ describe('first run: install to first set', () => {
     const gym = (await s.yourData.gyms())[0];
     const bar = (await s.yourData.equipment(gym?.id ?? '')).find((i) => i.kind === 'barbell');
     expect(bar).toMatchObject({ unit: 'lb', barMass: 45 });
+  });
+
+  it('Back to units after the gym is saved: a different unit is refused, the gym and profile stay in one unit (bug: lb shown, kg loads)', async () => {
+    const { services: s } = await h.launch();
+    await s.setup.saveUnits('kg');
+    await s.setup.useTypicalGym();
+    const r = await s.setup.saveUnits('lb');
+    expect(r.ok).toBe(false);
+    expect((await s.setup.getState()).profile?.preferredUnit).toBe('kg');
+    const gym = (await s.yourData.gyms())[0];
+    expect((await s.yourData.equipment(gym?.id ?? '')).every((i) => i.unit === 'kg')).toBe(true);
+    // The same unit again is still fine (Continue on the locked step).
+    expect(await s.setup.saveUnits('kg')).toEqual({ ok: true });
+  });
+
+  it('Step 1 over a saved gym: both unit cards read-only with `Gym saved in kg`', () => {
+    expect(unitLockedText('kg')).toBe('Gym saved in kg');
+    const src = readFileSync(join(__dirname, '..', 'src', 'screens', 'setup', 'SetupScreen.tsx'), 'utf8');
+    expect(src).toContain("const unitLocked = gym !== null && gym !== 'skipped';");
+    expect(src.match(/disabled=\{unitLocked\}/g)).toHaveLength(2);
+    expect(src).toContain('unitLockedText(unit)');
   });
 
   it('start → common lifts first → Bench press with 3 sets → log → rest → force-close → all done → Add exercise', async () => {

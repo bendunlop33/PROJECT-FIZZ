@@ -118,11 +118,13 @@ describe('the check-in sheet over the overview (§2.2, review S6)', () => {
     expect(sheet.match(/services\.workout\.start\(/g)).toHaveLength(1);
     const body = (name: string) => sheet.slice(sheet.indexOf(`async function ${name}(`), sheet.indexOf('\n  }\n', sheet.indexOf(`async function ${name}(`)));
     // pickScore (a 4–5 at AX sizes), done (Done), afterPain (Not now, Flag, via flagPain) each end in start().
-    for (const name of ['pickScore', 'done', 'afterPain']) expect(body(name)).toContain('await start(');
+    // skipWithScore (both Skips once a score is saved) ends in start() too.
+    for (const name of ['pickScore', 'done', 'afterPain', 'skipWithScore']) expect(body(name)).toContain('await start(');
     expect(body('flagPain')).toContain('await afterPain(');
     expect(sheet).toContain('onPress={() => void afterPain(null)}');
-    // Skip and Train anyway call start() directly.
-    expect(sheet.match(/void start\(\{ kind: 'answered', checkInId: record\.id \}/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(sheet).toContain('onPress={() => void skipWithScore()}');
+    // Train anyway calls start() directly.
+    expect(sheet.match(/void start\(\{ kind: 'answered', checkInId: record\.id \}/g)?.length).toBeGreaterThanOrEqual(1);
     expect(body('skipWorkout')).toContain('popToToday(');
     expect(body('skipWorkout')).not.toContain('start(');
   });

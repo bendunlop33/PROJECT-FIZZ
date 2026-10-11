@@ -8,7 +8,7 @@ import { useDataChanged, useServices } from '../../shell/context';
 import { measurementSystem } from '../../device/runtime';
 import { formatClock } from '../../format/numbers';
 import type { SetupStep } from '../../services/setup';
-import { DEFAULT_REST_PRESETS, unitFromMeasurementSystem } from '../../services/setup';
+import { DEFAULT_REST_PRESETS, unitFromMeasurementSystem, unitLockedText } from '../../services/setup';
 import { useTheme } from '../../theme';
 import { AppText, ChoiceCard, Eyebrow, Group, PrimaryButton, Row, StatusLine, TextButton } from '../../ui';
 import { SaveCopyToFiles } from '../data/SaveCopyToFiles';
@@ -132,7 +132,9 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
         </StepFrame>
       );
 
-    case 'units':
+    case 'units': {
+      // Back over a saved gym: its equipment stays in this unit, so the choice is read-only.
+      const unitLocked = gym !== null && gym !== 'skipped';
       return (
         <StepFrame
           step="Step 1 of 3"
@@ -159,12 +161,13 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
             <Eyebrow>Weights in</Eyebrow>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }} accessibilityRole="radiogroup">
               <View style={{ flexGrow: 1, flexBasis: 150 }}>
-                <ChoiceCard title="Kilograms (kg)" selected={unit === 'kg'} onPress={() => { setUnit('kg'); }} />
+                <ChoiceCard title="Kilograms (kg)" selected={unit === 'kg'} disabled={unitLocked} onPress={() => { setUnit('kg'); }} />
               </View>
               <View style={{ flexGrow: 1, flexBasis: 150 }}>
-                <ChoiceCard title="Pounds (lb)" selected={unit === 'lb'} onPress={() => { setUnit('lb'); }} />
+                <ChoiceCard title="Pounds (lb)" selected={unit === 'lb'} disabled={unitLocked} onPress={() => { setUnit('lb'); }} />
               </View>
             </View>
+            {unitLocked ? <StatusLine icon="info.circle" tone="info" text={unitLockedText(unit)} /> : null}
           </View>
           <View style={{ gap: theme.space['2'] }}>
             <Eyebrow>Rest times</Eyebrow>
@@ -177,6 +180,7 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
           {errorLine}
         </StepFrame>
       );
+    }
 
     case 'gym':
       // Back over a saved gym (review B1, PM SP3): shown read-only until the
