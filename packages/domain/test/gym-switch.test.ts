@@ -519,6 +519,18 @@ describe('Summary and history after a switch (check 24)', () => {
     expect(r?.exercises.map((e) => e.order)).toEqual(r?.exercises.map((_, i) => i));
     const sum = buildWorkoutSummary({ aggregate: done, nowMs: Date.parse(at(1000).utc), gymName: 'Hotel · Lisbon', gymNames: GYM_NAMES, history: {}, rules: {}, painFlags: [], checkIn: null, coach: 'not_connected' });
     expect(r === null ? 0 : routineCounts(r).exercises).toBe(sum.facts.exercisesDone);
+    // Started again: each template is fitted to the gym it's started at (review N2).
+    if (!r) throw new Error('no routine');
+    const loadsAt = (g: string, eq: typeof MAIN_EQ) => {
+      const s = startWorkout({ opId: `start-${g}`, owner: profile(), gymId: g, routine: r, exercises: EXERCISES, gymEquipment: eq, at: at(0), newId: idGen(84_000) }).aggregate;
+      const ex = s.exercises.filter((e) => e.exerciseId === INCLINE);
+      expect(ex).toHaveLength(1);
+      return { equipmentId: ex[0]?.equipmentId, loads: s.sets.filter((x) => x.sessionExerciseId === ex[0]?.id).map((x) => x.planned.load) };
+    };
+    const each = (v: number) => ({ value: v, unit: 'kg', convention: 'per_hand' });
+    // Main's rack holds 32.5; the Hotel rack stops at 20, so the first set is held to its max.
+    expect(loadsAt(MAIN, MAIN_EQ)).toEqual({ equipmentId: mainRack.id, loads: [each(32.5), each(20), each(20)] });
+    expect(loadsAt(HOTEL, HOTEL_EQ)).toEqual({ equipmentId: hotelRack.id, loads: [each(20), each(20), each(20)] });
   });
 
   it('next-session targets read a split exercise as one block: the latest part with equipment, the block’s set count (review r2 B1)', () => {
