@@ -26,9 +26,10 @@ export interface ContainerFileOps {
   removeDatabaseFiles(name: string): Promise<void>;
   /**
    * Empty `tmp` (where iOS puts the copy of a file picked for import, restore
-   * or Check a backup) and Caches. Throws if anything that was there is left.
+   * or Check a backup) and Caches. Throws if a picked file is left; entries
+   * iOS keeps are returned, not thrown (review r3 S2).
    */
-  emptyTemporary(): Promise<void>;
+  emptyTemporary(): Promise<{ systemLeft: string[] }>;
 }
 
 export function createPersonalFiles(ops: ContainerFileOps): PersonalFilesPort {

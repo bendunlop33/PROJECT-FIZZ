@@ -30,6 +30,8 @@ const disk = new Map<string, string>();
 /** What the document picker hands back next (iOS: a copy in tmp/<bundle>-Inbox). */
 let picked: string | null = null;
 let failRead = false;
+/** `File.delete()` throws (e.g. a picked copy iOS won't let go of). */
+let failDelete = false;
 vi.mock('expo-sqlite', () => ({ defaultDatabaseDirectory: '/C/Documents/SQLite' }));
 vi.mock('expo-file-system', () => {
   const pathOf = (parent: unknown, name?: string): string => {
@@ -58,6 +60,7 @@ vi.mock('expo-file-system', () => {
       return Promise.resolve(disk.get(this.uri) ?? '');
     }
     delete() {
+      if (failDelete) throw new Error('delete failed');
       if (this.name.includes('locked')) return;
       disk.delete(this.uri);
     }
@@ -108,6 +111,7 @@ beforeEach(() => {
   stuck = null;
   picked = null;
   failRead = false;
+  failDelete = false;
 });
 
 describe('wipeKeychain', () => {
@@ -173,17 +177,34 @@ describe('picked files and temporary copies (review r2 B1)', () => {
     expect(disk.has(picked)).toBe(false);
   });
 
-  it('emptyTemporaryFiles empties tmp (with the picker inbox) and Caches, and leaves Documents', async () => {
-    for (const k of [`${inbox}/old.csv`, 'file:///C/tmp/x.json', 'file:///C/Library/Caches/com.bendunlop.fizz/Cache.db', 'file:///C/Documents/data-ops.json']) disk.set(k, 'x');
+  it('the picked text is still returned when deleting the copy throws; the copy is left for Delete (review r3 S3)', async () => {
+    picked = `${inbox}/FitNotes_Export.csv`;
+    disk.set(picked, 'Date,Exercise');
+    failDelete = true;
+    expect(await pickCsvFile()).toEqual({ kind: 'picked', name: 'FitNotes_Export.csv', text: 'Date,Exercise' });
+    expect(disk.has(picked)).toBe(true);
+    failDelete = false;
     await emptyTemporaryFiles();
-    expect([...disk.keys()]).toEqual(['file:///C/Documents/data-ops.json']);
-    // Missing directories are fine.
-    await expect(emptyTemporaryFiles()).resolves.toBeUndefined();
+    expect(disk.has(picked)).toBe(false);
   });
 
-  it('emptyTemporaryFiles throws when something is left', async () => {
-    disk.set('file:///C/tmp/locked.json', 'x');
-    await expect(emptyTemporaryFiles()).rejects.toThrow(/locked\.json/);
+  it('emptyTemporaryFiles empties tmp (with the picker inbox) and Caches, and leaves Documents', async () => {
+    for (const k of [`${inbox}/old.csv`, 'file:///C/tmp/x.json', 'file:///C/Library/Caches/com.bendunlop.fizz/Cache.db', 'file:///C/Documents/data-ops.json']) disk.set(k, 'x');
+    expect(await emptyTemporaryFiles()).toEqual({ systemLeft: [] });
+    expect([...disk.keys()]).toEqual(['file:///C/Documents/data-ops.json']);
+    // Missing directories are fine.
+    await expect(emptyTemporaryFiles()).resolves.toEqual({ systemLeft: [] });
+  });
+
+  it('emptyTemporaryFiles throws when a picked file is left in the inbox', async () => {
+    disk.set(`${inbox}/locked.csv`, 'x');
+    await expect(emptyTemporaryFiles()).rejects.toThrow(/com\.bendunlop\.fizz-Inbox\/locked\.csv/);
+  });
+
+  it('emptyTemporaryFiles reports, but doesn’t fail on, entries iOS keeps outside the inbox (review r3 S2)', async () => {
+    for (const k of ['file:///C/tmp/locked.json', 'file:///C/Library/Caches/com.bendunlop.fizz/com.apple.metal/locked.data', 'file:///C/Library/Caches/old.json']) disk.set(k, 'x');
+    expect(await emptyTemporaryFiles()).toEqual({ systemLeft: ['locked.json', 'com.bendunlop.fizz'] });
+    expect(disk.has('file:///C/Library/Caches/old.json')).toBe(false);
   });
 });
 

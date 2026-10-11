@@ -99,27 +99,46 @@ function tmpDirectory(): Directory {
   return new Directory(`${containerRoot()}tmp/`);
 }
 
+/** The document picker's copies: `tmp/<bundle>-Inbox` (iOS `asCopy: true`). */
+const PICKER_INBOX = /-Inbox$/;
+
 /**
  * Delete my data: empty `tmp` (the document picker's copies of imported CSVs
- * and picked backups, review r2 B1) and Caches. Both are GymSmarter's own;
- * a missing directory is fine. Throws if anything that was there is left.
- * Needs a device test: iOS may keep files of its own in either.
+ * and picked backups, review r2 B1) and Caches (e.g. URL-cache copies of
+ * coach replies). A missing directory is fine.
+ *
+ * Only the picker inbox is checked strictly: GymSmarter writes nothing else
+ * there itself, and running iOS frameworks own entries that come straight
+ * back or can't be removed (URL cache, Metal shader cache). Those are
+ * returned, not thrown, so they never make Delete fail (review r3 S2).
+ * Throws if a picked file is left. Needs a device test (ADR 0022).
  */
-export function emptyTemporaryFiles(): Promise<void> {
-  const left: string[] = [];
-  for (const dir of [tmpDirectory(), Paths.cache]) {
+export function emptyTemporaryFiles(): Promise<{ systemLeft: string[] }> {
+  const pickedLeft: string[] = [];
+  const systemLeft: string[] = [];
+  for (const { dir, picker } of [
+    { dir: tmpDirectory(), picker: true },
+    { dir: Paths.cache, picker: false },
+  ]) {
     if (!dir.exists) continue;
     for (const entry of dir.list()) {
       try {
         entry.delete();
       } catch {
-        // Counted below.
+        // Checked below.
       }
-      if (entry.exists) left.push(entry.name);
+      if (!entry.exists) continue;
+      if (picker && entry instanceof Directory && PICKER_INBOX.test(entry.name)) {
+        // The folder itself may stay; a file in it may not.
+        const files = entry.list().map((f) => `${entry.name}/${f.name}`);
+        pickedLeft.push(...files);
+        continue;
+      }
+      systemLeft.push(entry.name);
     }
   }
-  if (left.length > 0) return Promise.reject(new Error(`Couldn’t delete ${left.join(', ')}`));
-  return Promise.resolve();
+  if (pickedLeft.length > 0) return Promise.reject(new Error(`Couldn’t delete ${pickedLeft.join(', ')}`));
+  return Promise.resolve({ systemLeft });
 }
 
 /** `Documents/` as a file URI with a trailing slash, for "is this inside Fizz?" checks. */
