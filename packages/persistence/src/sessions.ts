@@ -7,7 +7,7 @@ import {
   type WorkoutSet,
   type ZonedTimestamp,
 } from '@fizz/schemas';
-import type { SaveResult, SessionRepository } from '@fizz/domain';
+import type { FencedResult, SaveResult, SessionRepository, WriteFence } from '@fizz/domain';
 import type { Database } from './database';
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
 import { CorruptDataError, HistoryRewriteError } from './errors';
@@ -399,6 +399,35 @@ async function upsertChildren<T extends { id: string }>(
   }
 }
 
+const FENCE_SQL: Record<WriteFence['rows'][number]['table'], string> = {
+  routines: 'SELECT version AS v FROM routines WHERE id = ?',
+  check_ins: 'SELECT version AS v FROM check_ins WHERE id = ?',
+  profiles: 'SELECT version AS v FROM profiles WHERE id = ?',
+  sessions: 'SELECT revision AS v FROM sessions WHERE id = ?',
+};
+
+/**
+ * Whether every input a write was planned from is unchanged, read inside the
+ * write's own transaction (workout-overview §7). The SQL is fixed above; the
+ * caller supplies only IDs and versions.
+ */
+export async function fenceHolds(tx: SqlExecutor, fence: WriteFence): Promise<boolean> {
+  for (const row of fence.rows) {
+    const found = await tx.getFirst<{ v: number }>(FENCE_SQL[row.table], [row.id]);
+    if ((found?.v ?? null) !== row.version) return false;
+  }
+  for (const set of fence.sets) {
+    const rows =
+      set.kind === 'gym_equipment'
+        ? await tx.getAll<{ id: string; version: number }>('SELECT id, version FROM equipment WHERE gym_id = ?', [set.gymId])
+        : await tx.getAll<{ id: string; version: number }>("SELECT id, version FROM pain_flags WHERE owner_id = ? AND status = 'active'", [set.ownerId]);
+    if (rows.length !== set.members.length) return false;
+    const want = new Map(set.members.map((m) => [m.id, m.version]));
+    if (rows.some((r) => want.get(r.id) !== r.version)) return false;
+  }
+  return true;
+}
+
 /** Write a validated aggregate inside the caller's transaction (append-only checks included). */
 export async function writeAggregate(tx: SqlExecutor, a: SessionAggregate): Promise<void> {
   const sid = a.session.id;
@@ -505,9 +534,10 @@ export class SqliteSessions implements SessionRepository {
     });
   }
 
-  save(aggregate: SessionAggregate, expectedRevision: number | null): Promise<SaveResult> {
-    return this.db.write(async (tx) => {
+  save(aggregate: SessionAggregate, expectedRevision: number | null, fence?: WriteFence): Promise<SaveResult | FencedResult> {
+    return this.db.write(async (tx): Promise<SaveResult | FencedResult> => {
       const valid = checkWrite(SessionAggregateSchema, aggregate, T, aggregate.session.id);
+      if (fence && !(await fenceHolds(tx, fence))) return { ok: false, error: 'stale_inputs' };
       const current = await tx.getFirst<{ revision: number }>('SELECT revision FROM sessions WHERE id = ?', [valid.session.id]);
       const currentRevision = current?.revision ?? null;
       if (currentRevision !== expectedRevision) return { ok: false, error: 'conflict', currentVersion: currentRevision };

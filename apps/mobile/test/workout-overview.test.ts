@@ -195,6 +195,30 @@ describe('Workout overview', () => {
     expect(blocked).toMatchObject({ ok: false, error: { code: 'session_already_active' } });
   });
 
+  it('S3: a change that lands after the key check, before the write, creates nothing (checked inside the start transaction)', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routineId } = await withRoutine(s);
+    const page = await s.overview.load({ target: { kind: 'next' }, gymId });
+    if (!page) throw new Error('no overview');
+    // A late write (as a coach result could, CA10) between the key check and the session write.
+    const check = s.workout.previewCheck.bind(s.workout);
+    s.workout.previewCheck = async (p, req) => {
+      const r = await check(p, req);
+      const routine = await s.routines.rename({ routineId, name: 'Push late', expectedVersion: page.routine?.version ?? 0, opId: 'late-rename' });
+      expect(routine.ok).toBe(true);
+      return r;
+    };
+    const stale = await s.overview.start({ startOf: page.startOf, gymId, opId: 'op-late', checkIn: null, expectedPreviewKey: page.view.previewKey });
+    expect(stale).toMatchObject({ ok: false, error: { code: 'stale_preview', message: 'Targets updated' } });
+    expect(await s.sessions.active()).toBeNull();
+    s.workout.previewCheck = check;
+    // The page re-reads; the same opId then starts once.
+    const fresh = await s.overview.load({ target: { kind: 'next' }, gymId });
+    if (!fresh) throw new Error('no overview');
+    const started = await s.overview.start({ startOf: fresh.startOf, gymId, opId: 'op-late', checkIn: null, expectedPreviewKey: fresh.view.previewKey });
+    expect(started).toMatchObject({ ok: true, duplicate: false, aggregate: { session: { routineName: 'Push late' } } });
+  });
+
   it('an unreadable or missing target reads as null, never throws', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);

@@ -22,6 +22,7 @@ import { deriveId, stableStringify } from '../stable';
 import { buildStepCard } from '../step-card';
 import { toMs } from '../time';
 import { convertMass, toScaled } from '../units';
+import type { WriteFence } from '../ports';
 import type { SetFit } from './create';
 import { estimateRemainingDuration } from './duration';
 import { muscleWords } from './first-run';
@@ -445,7 +446,7 @@ export interface PreviewKeyParts {
   /** The workout the targets come from (its revision changes on a correction). */
   source: { id: string; revision: number } | null;
   painFlags: readonly { id: string; version: number }[];
-  /** Stored coach (D21) next-session actions. Empty until coach v1. */
+  /** Stored coach (D21) next-session actions. Empty until coach v1, which must add them to `previewFence` too (ADR 0019). */
   coachActions: readonly { id: string; version: number }[];
   unit: WeightUnit;
   /** An answered check-in today: pain mentioned there holds loads. */
@@ -469,6 +470,28 @@ export function previewKey(parts: PreviewKeyParts): string {
       checkIn: parts.checkIn,
     }),
   );
+}
+
+/**
+ * The rows a fresh preview was planned from, as a fence the start re-checks
+ * inside its write (workout-overview §7, rule 5): a change that lands between
+ * the key check and the write creates nothing. `profile`: the owner's row
+ * (the unit); null where Start itself may write the profile (no gym yet: it
+ * saves the typical gym first, so the gym isn't pinned either).
+ */
+export function previewFence(parts: PreviewKeyParts, ownerId: string, profile: { id: string; version: number } | null): WriteFence {
+  return {
+    rows: [
+      ...(parts.routine ? [{ table: 'routines' as const, id: parts.routine.id, version: parts.routine.version }] : []),
+      ...(parts.source ? [{ table: 'sessions' as const, id: parts.source.id, version: parts.source.revision }] : []),
+      ...(parts.checkIn ? [{ table: 'check_ins' as const, id: parts.checkIn.id, version: parts.checkIn.version }] : []),
+      ...(profile ? [{ table: 'profiles' as const, id: profile.id, version: profile.version }] : []),
+    ],
+    sets: [
+      ...('typical' in parts.gym ? [] : [{ kind: 'gym_equipment' as const, gymId: parts.gym.id, members: parts.gym.equipment }]),
+      { kind: 'active_pain_flags' as const, ownerId, members: parts.painFlags },
+    ],
+  };
 }
 
 // ---------------------------------------------------------------------------

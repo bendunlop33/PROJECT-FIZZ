@@ -59,9 +59,32 @@ export interface SessionRepository {
   getActive(ownerId: string): Promise<SessionAggregate | null>;
   /** Lookup by the operation ID that started the session (idempotent start). */
   findByStartOperation(ownerId: string, opId: string): Promise<SessionAggregate | null>;
-  /** `expectedRevision` null = create. */
-  save(aggregate: SessionAggregate, expectedRevision: number | null): Promise<SaveResult>;
+  /**
+   * `expectedRevision` null = create. `fence`: rows the new state was planned
+   * from, re-checked inside the same transaction; a mismatch writes nothing
+   * and returns `stale_inputs` (workout-overview §7, rule 5).
+   */
+  save(aggregate: SessionAggregate, expectedRevision: number | null, fence?: WriteFence): Promise<SaveResult | FencedResult>;
 }
+
+/** Tables a `WriteFence` can pin a row of. `sessions` pins the aggregate `revision`. */
+export type FenceTable = 'routines' | 'sessions' | 'check_ins' | 'profiles';
+
+/**
+ * What a planned write was planned from (workout-overview §7: the stale check
+ * runs inside the start transaction). Every row must still be at its version
+ * (null: must not exist), and every set must still hold exactly these members.
+ */
+export interface WriteFence {
+  rows: readonly { table: FenceTable; id: string; version: number | null }[];
+  sets: readonly (
+    | { kind: 'gym_equipment'; gymId: string; members: readonly { id: string; version: number }[] }
+    | { kind: 'active_pain_flags'; ownerId: string; members: readonly { id: string; version: number }[] }
+  )[];
+}
+
+/** A fenced write found an input changed since it was planned; nothing was written. */
+export type FencedResult = { ok: false; error: 'stale_inputs' };
 
 export interface Repositories {
   profiles: ProfileRepository;

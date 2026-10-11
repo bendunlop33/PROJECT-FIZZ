@@ -62,11 +62,13 @@ import {
   buildWorkoutOverview,
   pastExercisesOf,
   previewKey,
+  previewFence,
   type OverviewBasis,
   type PastExercise,
   type PreviewKeyParts,
   type SetFit,
   type WorkoutOverview,
+  type WriteFence,
   recentPaceSamples,
   timeLeftSheet,
   type ActiveSetView,
@@ -366,7 +368,12 @@ export interface WorkoutStartRequest {
    * is a duplicate, never stale.
    */
   expectedPreviewKey?: string;
+  /** Internal (the no-gym overview Start): a fence from a key check already made, re-checked inside the write. */
+  fence?: WriteFence;
 }
+
+/** The overview's key check (§7): a retry of a Start that landed, out of date, or fresh with what to re-check in the write. */
+export type PreviewCheck = { kind: 'duplicate' } | { kind: 'stale' } | { kind: 'fresh'; fence: WriteFence };
 
 export function createWorkoutServices(ctx: WorkoutServicesContext) {
   const repos = () => ctx.repos();
@@ -821,7 +828,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    */
   async function routineStart(
     p: UserProfile,
-    req: { routineId: string; gymId: string; opId: string; preview: boolean; checkIn?: SessionCheckIn | null; today?: CheckIn | null; gymEquipment?: readonly EquipmentInstance[]; newId?: () => string },
+    req: { routineId: string; gymId: string; opId: string; preview: boolean; checkIn?: SessionCheckIn | null; today?: CheckIn | null; gymEquipment?: readonly EquipmentInstance[]; newId?: () => string; fence?: WriteFence },
   ) {
     const routine = await repos().routines.get(req.routineId);
     const ref = routine ? (await finishedRefs(p.id)).find((f) => isFromRoutine(f, routine)) ?? null : null;
@@ -838,6 +845,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       ...(req.checkIn !== undefined ? { checkIn: req.checkIn } : {}),
       ...(targets && targets.size > 0 ? { targets } : {}),
       ...(req.gymEquipment ? { gymEquipment: req.gymEquipment } : {}),
+      ...(req.fence ? { fence: req.fence } : {}),
     });
     return { r, ref, source, routine, targeted: targets !== null && targets.size > 0, targetsFailed: source !== null && targets === null };
   }
@@ -979,15 +987,17 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async startOnce(req: WorkoutStartRequest): Promise<WorkoutStartOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
+      let fence = req.fence;
       if (req.expectedPreviewKey !== undefined && (req.routineOf || req.nextOf)) {
-        const stale = await workout.previewIsStale(p, {
+        const check = await workout.previewCheck(p, {
           startOf: req.routineOf ? { routineOf: req.routineOf } : { nextOf: req.nextOf ?? '' },
           gymId: req.gymId,
           opId: req.opId,
           checkIn: req.checkIn,
           expectedPreviewKey: req.expectedPreviewKey,
         });
-        if (stale) return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
+        if (check.kind === 'stale') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
+        if (check.kind === 'fresh') fence = check.fence;
       }
       let checkIn = req.checkIn;
       if (checkIn?.kind === 'answered') {
@@ -999,10 +1009,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (req.routineOf) {
         // A routine (premium-feel §2.6): its structure, with next targets from its last workout, fitted to this gym.
         const today = checkIn?.kind === 'answered' ? await repos().checkIns.get(checkIn.checkInId) : null;
-        const { r, targetsFailed } = await routineStart(p, { routineId: req.routineOf, gymId: req.gymId, opId: req.opId, preview: false, checkIn, today });
+        const { r, targetsFailed } = await routineStart(p, { routineId: req.routineOf, gymId: req.gymId, opId: req.opId, preview: false, checkIn, today, ...(fence ? { fence } : {}) });
         if (!r.ok) {
           const e = r.error;
           if (e.code === 'nothing_to_start') return { ok: false, error: { code: 'not_found', message: e.message } };
+          if (e.code === 'stale_inputs') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
           return { ok: false, error: e };
         }
         const notice = targetsFailed && !r.duplicate ? 'Using saved targets.' : null;
@@ -1016,10 +1027,22 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         // Targets that can't be worked out repeat last time's numbers, and the workout says so (review S2).
         const targets = await nextTargetsOf(p, source, today).catch(() => null);
         // No derived name (`Push`) is stored as if Ben chose it; titles are worked out when shown (review S3).
-        const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.nextOf, targets: targets ?? new Map(), name: storedName(source) ?? GENERIC_WORKOUT_NAME });
+        const r = await domain().startFromSession({
+          ownerId: p.id,
+          gymId: req.gymId,
+          routineId: null,
+          opId: req.opId,
+          at: ctx.now(),
+          checkIn,
+          sourceSessionId: req.nextOf,
+          targets: targets ?? new Map(),
+          name: storedName(source) ?? GENERIC_WORKOUT_NAME,
+          ...(fence ? { fence } : {}),
+        });
         if (!r.ok) {
           const e = r.error;
           if (e.code === 'nothing_to_repeat' || e.code === 'imported_not_repeatable') return { ok: false, error: { code: 'not_found', message: e.message } };
+          if (e.code === 'stale_inputs') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
           return { ok: false, error: e };
         }
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate, ...(targets === null && !r.duplicate ? { notice: TARGETS_UNAVAILABLE } : {}) };
@@ -1038,16 +1061,21 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
 
     /**
-     * Whether the overview a Start came from is out of date (rule 5). False
-     * when this opId already started a workout (a retry after success).
+     * Whether the overview a Start came from is out of date (rule 5).
+     * `duplicate` when this opId already started a workout (a retry after
+     * success). `fresh` carries the rows the key was read from, so the write
+     * re-checks them inside its transaction (§7): a change that lands after
+     * this check (a late coach write, CA10) still creates nothing.
      * `gymId` null: checked against the typical gym Start is about to save.
      */
-    async previewIsStale(p: UserProfile, req: { startOf: OverviewStartOf; gymId: string | null; opId: string; checkIn: SessionCheckIn | null; expectedPreviewKey: string }): Promise<boolean> {
-      if (await repos().sessions.findByStartOperation(p.id, req.opId)) return false;
+    async previewCheck(p: UserProfile, req: { startOf: OverviewStartOf; gymId: string | null; opId: string; checkIn: SessionCheckIn | null; expectedPreviewKey: string }): Promise<PreviewCheck> {
+      if (await repos().sessions.findByStartOperation(p.id, req.opId)) return { kind: 'duplicate' };
       const resolved = await resolveOverview(p, req.startOf);
-      if (resolved === null) return true;
+      if (resolved === null) return { kind: 'stale' };
       const ci = req.checkIn?.kind === 'answered' ? await repos().checkIns.get(req.checkIn.checkInId) : null;
-      return previewKey(await previewKeyParts(p, resolved, req.gymId, ci)) !== req.expectedPreviewKey;
+      const parts = await previewKeyParts(p, resolved, req.gymId, ci);
+      if (previewKey(parts) !== req.expectedPreviewKey) return { kind: 'stale' };
+      return { kind: 'fresh', fence: previewFence(parts, p.id, req.gymId === null ? null : { id: p.id, version: p.version }) };
     },
 
     /**

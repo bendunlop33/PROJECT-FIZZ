@@ -441,10 +441,12 @@ export function createAppServices(deps: AppServicesDeps) {
       if (req.gymId !== null) return loop.workout.start({ ...base, gymId: req.gymId, expectedPreviewKey: req.expectedPreviewKey });
       const profile = await getProfile();
       if (!profile) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
-      if (await loop.workout.previewIsStale(profile, { ...req, gymId: null })) return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
+      const check = await loop.workout.previewCheck(profile, { ...req, gymId: null });
+      if (check.kind === 'stale') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
       const made = await setup.useTypicalGym();
       if (!made.ok || made.gymId === undefined) return { ok: false, error: { code: 'write_failed', message: made.ok ? 'Couldn’t set up a gym. Try again.' : made.message } };
-      return loop.workout.start({ ...base, gymId: made.gymId });
+      // The routine, source workout, pain flags and check-in are re-checked inside the start's write.
+      return loop.workout.start({ ...base, gymId: made.gymId, ...(check.kind === 'fresh' ? { fence: check.fence } : {}) });
     },
   };
 

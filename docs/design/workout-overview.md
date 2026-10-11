@@ -151,7 +151,8 @@ Markers never use `status.done`, `status.danger` or `accent`. The panel's `CHANG
   - active pain flag ids + versions
   - D21 action ids + versions
   - the owner's unit
-- Start sends `expectedPreviewKey`, and the service re-plans inside the start transaction. **On a mismatch nothing is created.** The page re-renders with the new rows, and the toast `Targets updated` appears. Ben taps Start again (rule 5: never apply stale).
+  - the answered check-in id + version (pain mentioned there holds loads)
+- Start sends `expectedPreviewKey`. The service checks it, then re-checks the same inputs inside the start's write transaction (a `WriteFence`, ADR 0019), so a change that lands in between also creates nothing. **On a mismatch nothing is created.** The page re-renders with the new rows, and the toast `Targets updated` appears. Ben taps Start again (rule 5: never apply stale).
 - `services.overview.load({kind: 'next'} | {kind: 'routine', routineId}, gymId)` is the only read. It is local, has no AI and never throws: it returns `null` if the preview can't be built.
 
 ---
