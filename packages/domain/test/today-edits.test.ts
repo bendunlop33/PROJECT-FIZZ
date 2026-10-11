@@ -678,3 +678,91 @@ describe('TE-A2: for every combination of swap, skip and order, the overview sho
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Review fixes (docs/reviews/today-edits.md S1, S4, S5)
+
+describe('back to the plan after chained swaps (review S1, TE-A6)', () => {
+  it('clear_swap removes the whole chain: none of the swaps it replaced comes back; the toast Undo still steps back one', () => {
+    let d = written(write(null, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH } }, 'c1'));
+    d = written(write(d, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: CHEST_PRESS } }, 'c2'));
+    d = written(write(d, { type: 'edit', edit: { kind: 'skip', slotKey: SLOT_FLY } }, 'c3'));
+    const chained = liveEdits(d.edits).find((e) => e.kind === 'swap');
+    // `Bench press · planned` (or `Undo swap`): bench, not DB bench.
+    const cleared = write(d, { type: 'clear_swap', slotKey: SLOT_BENCH }, 'c4');
+    if (cleared.kind !== 'write') throw new Error(cleared.kind);
+    expect(cleared.removed).toEqual([chained?.editId]);
+    expect(cleared.added).toEqual([]);
+    expect(liveEdits(cleared.next.edits).map((e) => e.kind)).toEqual(['skip']);
+    expect(resolveTodayEdits(SLOTS, cleared.next.edits).swaps.size).toBe(0);
+    expect(editedSlots(SLOTS, resolveTodayEdits(SLOTS, cleared.next.edits)).find((s) => s.slotKey === SLOT_BENCH)?.exerciseId).toBe(BENCH);
+    // Nothing to clear: unchanged, no version bump; a retry is a duplicate.
+    expect(write(cleared.next, { type: 'clear_swap', slotKey: SLOT_BENCH }, 'c5')).toMatchObject({ kind: 'unchanged' });
+    expect(write(cleared.next, { type: 'clear_swap', slotKey: SLOT_BENCH }, 'c4')).toMatchObject({ kind: 'duplicate' });
+    // Its Undo (the toast restores what it removed): the chained swap again.
+    const back = written(write(cleared.next, { type: 'restore', editIds: cleared.removed }, 'c6'));
+    expect(liveEdits(back.edits).find((e) => e.kind === 'swap')).toMatchObject({ toExerciseId: CHEST_PRESS });
+    // The step-wise Undo (toast) on the second swap still brings back the first.
+    const step = written(write(d, { type: 'undo', editId: chained?.editId ?? '' }, 'c7'));
+    expect(liveEdits(step.edits).find((e) => e.kind === 'swap')).toMatchObject({ toExerciseId: DB_BENCH });
+  });
+});
+
+describe('restoring without replacing a newer choice (review S4)', () => {
+  it('keepLive: a removed swap stays removed when its slot has a newer live swap; restored when the slot is free', () => {
+    let d = written(write(null, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH } }, 'k1'));
+    const first = liveEdits(d.edits)[0];
+    // The template change's Apply marks it redundant; then Ben swaps the slot again today.
+    d = markDraftEdits(d, [first?.editId ?? ''], 'redundant', 'apply', at(10)) ?? d;
+    d = written(write(d, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: CHEST_PRESS } }, 'k2'));
+    // The template change's Undo: machine press stays.
+    expect(write(d, { type: 'restore', editIds: [first?.editId ?? ''], keepLive: true }, 'k3')).toMatchObject({ kind: 'unchanged' });
+    // Without keepLive (Undo of a Reset) the old behaviour stands.
+    const replaced = written(write(d, { type: 'restore', editIds: [first?.editId ?? ''] }, 'k4'));
+    expect(liveEdits(replaced.edits)).toMatchObject([{ kind: 'swap', toExerciseId: DB_BENCH }]);
+    // A free slot: restored.
+    const free = written(write(d, { type: 'clear_swap', slotKey: SLOT_BENCH }, 'k5'));
+    expect(liveEdits(written(write(free, { type: 'restore', editIds: [first?.editId ?? ''], keepLive: true }, 'k6')).edits)).toMatchObject([{ kind: 'swap', toExerciseId: DB_BENCH }]);
+  });
+});
+
+describe('a swap never takes another slot’s exercise (review S5)', () => {
+  const withDbBench = (): Routine => {
+    const r = pushA();
+    return { ...r, exercises: r.exercises.map((x) => (x.id === SLOT_INCLINE ? { ...x, exerciseId: DB_BENCH } : x)) };
+  };
+  const slotsWithDb = basisSlots({ kind: 'routine', routine: withDbBench() });
+
+  it('applyDraftCommand refuses an exercise already in today’s plan (another slot’s own, or another slot’s swap)', () => {
+    const w = (current: PreStartDraft | null, command: DraftCommand, opId: string) =>
+      applyDraftCommand({ current, expectedVersion: current?.version ?? null, opId, at: at(0), ownerId: OWNER, basis: BASIS, newDraftId: id(5000), slots: slotsWithDb, command });
+    expect(w(null, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH } }, 's1')).toEqual({ kind: 'invalid', reason: 'in_plan' });
+    const d = written(w(null, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: CHEST_PRESS } }, 's2'));
+    expect(w(d, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_FLY, toExerciseId: CHEST_PRESS } }, 's3')).toEqual({ kind: 'invalid', reason: 'in_plan' });
+    // Swapped away today, the other slot's exercise is free.
+    const away = written(w(null, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_INCLINE, toExerciseId: CHEST_PRESS } }, 's4'));
+    expect(w(away, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH } }, 's5').kind).toBe('write');
+  });
+
+  it('resolveTodayEdits marks it stale once the routine gains that exercise; the other slot keeps its own targets', () => {
+    const swap = edit({ kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH });
+    expect(resolveTodayEdits(SLOTS, [swap]).outcomes[0]?.result).toBe('applied');
+    // DB bench added to Push A in the routine editor after the swap.
+    const r = resolveTodayEdits(slotsWithDb, [swap]);
+    expect(r.outcomes[0]?.result).toBe('stale');
+    expect(pruneOf(r.outcomes)).toEqual([{ editId: swap.editId, why: 'stale' }]);
+    // A cross-swap (each slot swapped away) and two swaps to one exercise (the later is stale).
+    const a = edit({ kind: 'swap', slotKey: SLOT_INCLINE, toExerciseId: CHEST_PRESS });
+    expect(resolveTodayEdits(slotsWithDb, [swap, a]).outcomes.map((o) => o.result)).toEqual(['applied', 'applied']);
+    const twice = edit({ kind: 'swap', slotKey: SLOT_FLY, toExerciseId: DB_BENCH });
+    expect(resolveTodayEdits(SLOTS, [swap, twice]).outcomes.map((o) => o.result)).toEqual(['applied', 'stale']);
+
+    // The plan: the bench slot stays bench; the DB bench slot plans from its own template, not the substitute's.
+    const own = [kg(30, 'per_hand'), kg(30, 'per_hand'), kg(30, 'per_hand')];
+    const out = plan([swap], { r: withDbBench(), swaps: swapsFor(MAIN_GYM, [[SLOT_BENCH, DB_BENCH, [history(901, 2, rack, kg(20, 'per_hand'), [8, 8, 8])]]]) });
+    const rows = rowsOf(out.aggregate);
+    expect(rows.map((e) => e.exerciseName).slice(0, 2)).toEqual(['Bench press', 'DB bench press']);
+    expect(setsOf(out.aggregate, rows[1]?.id ?? '').map((s) => s.planned.load)).toEqual(own);
+    expect(out.outcomes[0]?.result).toBe('stale');
+  });
+});

@@ -69,14 +69,25 @@ export function liveEdits(edits: readonly TodayEdit[]): TodayEdit[] {
 /** What one draft write asks for. Ben's taps only; nothing here is ever proposed by the coach. */
 export type DraftCommand =
   | { type: 'edit'; edit: { kind: 'swap'; slotKey: string; toExerciseId: string } | { kind: 'skip'; slotKey: string } | { kind: 'order'; slotKeys: readonly string[] } }
-  /** Undo one edit (toast `Undo`, `Undo swap`, `Bring back`): a swap or order it replaced comes back. */
+  /** Undo one edit (toast `Undo`, `Bring back`): a swap or order it replaced comes back (one step). */
   | { type: 'undo'; editId: string }
+  /**
+   * Back to the plan on one slot (`Undo swap`, or `<original> · planned` in
+   * `Swap again`): the live swap is removed and none it replaced comes back,
+   * however many swaps were chained on the slot.
+   */
+  | { type: 'clear_swap'; slotKey: string }
   /** `Reset today's edits`: every live edit removed; the draft stays open so Undo can restore them. */
   | { type: 'reset' }
   /** `Reset order`. */
   | { type: 'clear_order' }
-  /** Bring back removed edits as new copies (Undo of a Reset, an Undo, or a template change's Undo). */
-  | { type: 'restore'; editIds: readonly string[] };
+  /**
+   * Bring back removed edits as new copies (Undo of a Reset, an Undo, or a
+   * template change's Undo). `keepLive`: an edit whose slot (or the order)
+   * already has a newer live edit stays removed, so a later choice of Ben's
+   * is never replaced without a word (the template change's Undo).
+   */
+  | { type: 'restore'; editIds: readonly string[]; keepLive?: boolean };
 
 export interface DraftWriteInput {
   /** The open, unexpired draft for this basis, or null when there is none. */
@@ -112,7 +123,7 @@ export type DraftChange =
   | { kind: 'unchanged'; current: PreStartDraft | null }
   /** The draft moved since the caller read it (rule 5): nothing is written. */
   | { kind: 'stale'; current: PreStartDraft | null }
-  | { kind: 'invalid'; reason: 'slot_gone' | 'last_exercise' | 'bad_order' | 'not_found' | 'too_many' };
+  | { kind: 'invalid'; reason: 'slot_gone' | 'last_exercise' | 'bad_order' | 'not_found' | 'too_many' | 'in_plan' };
 
 /** One plan slot as edits see it: its key, its exercise and its superset group (today's, after skips). */
 export interface TodaySlot {
@@ -215,6 +226,8 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
         break;
       }
       if (prev?.kind === 'swap' && prev.toExerciseId === e.toExerciseId) return { kind: 'unchanged', current };
+      // Never an exercise already in today's plan in another slot: targets are planned per exercise (review S5).
+      if (exerciseInOtherSlot(input.slots, live(), e.slotKey, e.toExerciseId)) return { kind: 'invalid', reason: 'in_plan' };
       if (prev !== undefined) remove(prev.editId, 'replaced');
       append({ kind: 'swap', slotKey: e.slotKey, toExerciseId: e.toExerciseId }, prev?.editId ?? null);
       break;
@@ -228,6 +241,14 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
       const was = target.replacesEditId === null ? undefined : edits.find((x) => x.editId === target.replacesEditId);
       // The edit it replaced comes back as a copy, still pointing at the one before it (a chain of swaps undoes one step at a time).
       if (was !== undefined && was.removed?.why === 'replaced') append(bodyOf(was), was.replacesEditId);
+      break;
+    }
+    case 'clear_swap': {
+      const sw = live().find((x) => x.kind === 'swap' && x.slotKey === cmd.slotKey);
+      if (sw === undefined) return { kind: 'unchanged', current };
+      // The edits it replaced stay `replaced`: nothing in the chain comes back.
+      remove(sw.editId, 'undo');
+      removed.push(sw.editId);
       break;
     }
     case 'reset': {
@@ -252,7 +273,7 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
         if (e === undefined) return { kind: 'invalid', reason: 'not_found' };
         if (e.removed === null) continue;
         const clash = live().find((x) => sameTarget(x, e.kind === 'order' ? { kind: 'order' } : { kind: e.kind, slotKey: e.slotKey }));
-        if (clash !== undefined && clash.kind === 'skip') continue;
+        if (clash !== undefined && (clash.kind === 'skip' || cmd.keepLive === true)) continue;
         if (clash !== undefined) remove(clash.editId, 'replaced');
         append(bodyOf(e), clash?.editId ?? null);
       }
@@ -291,6 +312,16 @@ export function markDraftEdits(draft: PreStartDraft, editIds: readonly string[],
   if (!draft.edits.some((e) => editIds.includes(e.editId) && e.removed === null)) return null;
   const edits = draft.edits.map((e) => (!editIds.includes(e.editId) || e.removed !== null ? e : { ...e, removed: { atUtc: at.utc, opId, why } }));
   return { ...draft, edits, opIds: [...draft.opIds, opId].slice(-MAX_DRAFT_OPS), version: draft.version + 1, updatedAt: at, updatedAtUtc: at.utc, tz: at.tz, expiresAtUtc: nextLocalMidnightUtc(at.utc, at.tz) };
+}
+
+/**
+ * Whether `exerciseId` is already in today's plan in a slot other than
+ * `slotKey`: as that slot's own exercise (and not swapped away today), or as
+ * the exercise another slot is swapped to.
+ */
+function exerciseInOtherSlot(slots: readonly TodaySlot[], live: readonly TodayEdit[], slotKey: string, exerciseId: string): boolean {
+  const swappedTo = new Map(live.flatMap((x) => (x.kind === 'swap' ? [[x.slotKey, x.toExerciseId] as const] : [])));
+  return slots.some((s) => s.slotKey !== slotKey && (swappedTo.get(s.slotKey) ?? s.exerciseId) === exerciseId);
 }
 
 function bodyOf(e: TodayEdit): { kind: 'swap'; slotKey: string; toExerciseId: string } | { kind: 'skip'; slotKey: string } | { kind: 'order'; slotKeys: string[] } {
@@ -366,7 +397,10 @@ export interface ResolvedEdits {
 /**
  * Which open edits still apply (ADR 0022 §2). Fixed order: swaps, skips, then
  * the order. A swap or skip whose slot is gone is `stale`; a swap to the
- * slot's own exercise (the template changed to match) is `redundant`; an
+ * slot's own exercise (the template changed to match) is `redundant`; a swap
+ * to an exercise another slot already has (the routine gained it since, or
+ * an earlier swap took it) is `stale`, since targets are planned per
+ * exercise and it would take that slot's (review S5); an
  * order that doesn't list exactly today's slots, or splits a superset, is
  * `stale`. `knownExercise`: whether a swap's exercise can still be found.
  */
@@ -374,10 +408,15 @@ export function resolveTodayEdits(slots: readonly TodaySlot[], edits: readonly T
   const bySlot = new Map(slots.map((s) => [s.slotKey, s]));
   const out: ResolvedEdits = { swaps: new Map(), skipped: new Map(), order: null, orderEditId: null, outcomes: [] };
   const open = liveEdits(edits);
+  // Slots swapped away today (their own exercise isn't in today's plan), from every swap that could apply.
+  const swappedAway = new Set(open.flatMap((e) => (e.kind === 'swap' && bySlot.has(e.slotKey) && bySlot.get(e.slotKey)?.exerciseId !== e.toExerciseId && knownExercise(e.toExerciseId) ? [e.slotKey] : [])));
+  const taken = (slotKey: string, exerciseId: string): boolean =>
+    slots.some((s) => s.slotKey !== slotKey && s.exerciseId === exerciseId && !swappedAway.has(s.slotKey)) || [...out.swaps.values()].some((x) => x.toExerciseId === exerciseId);
   for (const e of open) {
     if (e.kind !== 'swap') continue;
     const slot = bySlot.get(e.slotKey);
-    const result: EditResult = slot === undefined || !knownExercise(e.toExerciseId) ? 'stale' : slot.exerciseId === e.toExerciseId ? 'redundant' : 'applied';
+    const result: EditResult =
+      slot === undefined || !knownExercise(e.toExerciseId) ? 'stale' : slot.exerciseId === e.toExerciseId ? 'redundant' : taken(e.slotKey, e.toExerciseId) ? 'stale' : 'applied';
     if (result === 'applied') out.swaps.set(e.slotKey, { editId: e.editId, toExerciseId: e.toExerciseId });
     out.outcomes.push({ editId: e.editId, kind: e.kind, result });
   }
