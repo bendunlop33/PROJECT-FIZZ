@@ -321,7 +321,7 @@ describe('records in the window (check 17, PG10, PG30)', () => {
   const w30 = progressWindow(TODAY, 30);
 
   it('a heavier set after 3 earlier sessions on the same equipment is a record, with load × reps', () => {
-    const r = recordsInWindow([...history, session('2026-10-01', { exercises: [benchRow(kg(105), 3)] })], w30, { gymNames: { 'gym-1': 'Main Gym' } });
+    const r = recordsInWindow([...history, session('2026-10-01', { exercises: [benchRow(kg(105), 3)] })], w30);
     expect(r.total).toBe(1);
     expect(r.items[0]).toMatchObject({ kind: 'heaviest', label: 'Heaviest set', date: '2026-10-01', isEstimate: false });
     expect(sp(r.items[0]?.value)).toBe('105 kg × 3');

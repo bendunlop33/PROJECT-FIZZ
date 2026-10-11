@@ -307,7 +307,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
   };
 
   // Records (PG10, PG30)
-  const rec = recordsInWindow(input.sessions, window, { gymNames, limit: input.recordLimit ?? 5 });
+  const rec = recordsInWindow(input.sessions, window, { limit: input.recordLimit ?? 5 });
   return {
     dataState: 'normal',
     window,
