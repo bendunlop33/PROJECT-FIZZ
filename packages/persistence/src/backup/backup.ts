@@ -169,7 +169,7 @@ export interface CreatedBackup {
   text: string;
   /** SHA-256 of `text` (the whole file), computed in the same pass as the checksum. */
   sha256: string;
-  /** `finishedWorkoutsDigest` of the finished workouts in this backup (B2). */
+  /** `finishedWorkoutsDigest` of the finished workouts in this backup, by ID and revision (B2, S1). */
   finishedWorkoutsDigest: string;
   schemaVersion: number;
   counts: BackupCounts;
@@ -237,7 +237,7 @@ export async function createBackup(store: Store, options: { at: ZonedTimestamp; 
     text,
     sha256,
     finishedWorkoutsDigest: finishedWorkoutsDigest(
-      (tables.sessions ?? []).filter((s) => s.status === 'finished').map((s) => String(s.id)),
+      (tables.sessions ?? []).filter((s) => s.status === 'finished').map((s) => ({ id: String(s.id), revision: Number(s.revision) })),
     ),
     schemaVersion,
     counts: countBackup(tables),

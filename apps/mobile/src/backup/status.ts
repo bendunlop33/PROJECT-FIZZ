@@ -59,8 +59,9 @@ function newest(files: readonly BackupRecord[]): BackupRecord | null {
 }
 
 /**
- * Whether a backup holds exactly the finished workouts there are now (B2).
- * A count alone can't tell after Undo import or a restore lowered it. Records
+ * Whether a backup holds exactly the finished workouts there are now, as
+ * corrected since (B2, S1). A count alone can't tell after Undo import or a
+ * restore lowered it, nor after a set was corrected. Records
  * from before the digest existed fall back to the count.
  */
 export function backupCovers(record: BackupRecord, facts: Pick<BackupFacts, 'finishedWorkouts' | 'finishedDigest'>): boolean {

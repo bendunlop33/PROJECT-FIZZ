@@ -67,7 +67,7 @@ export interface Store {
    */
   listExerciseHistory(ownerId: string, exerciseId: string): Promise<HistorySession[]>;
   countRecords(): Promise<RecordCounts>;
-  /** `finishedWorkoutsDigest` of the finished workouts now (backup coverage, B2). */
+  /** `finishedWorkoutsDigest` of the finished workouts now, by ID and revision (backup coverage, B2, S1). */
   finishedWorkoutsDigest(): Promise<string>;
   close(): Promise<void>;
 }
@@ -116,7 +116,7 @@ export async function openStore(driver: SqlDriver, options: OpenStoreOptions = {
         };
       }),
     finishedWorkoutsDigest: () =>
-      db.read(async (q) => finishedWorkoutsDigest((await q.getAll<{ id: string }>("SELECT id FROM sessions WHERE status = 'finished'")).map((r) => r.id))),
+      db.read(async (q) => finishedWorkoutsDigest(await q.getAll<{ id: string; revision: number }>("SELECT id, revision FROM sessions WHERE status = 'finished'"))),
     close: () => db.close(),
   };
 }

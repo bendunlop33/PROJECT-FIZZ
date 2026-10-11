@@ -29,8 +29,10 @@ export const BackupRecordSchema = z.object({
   textLength: z.int().min(0),
   finishedWorkouts: z.int().min(0),
   /**
-   * Which finished workouts the file holds (`finishedWorkoutsDigest`, B2).
-   * Absent on records written before it existed: those fall back to the count.
+   * Which finished workouts the file holds, at which revision
+   * (`finishedWorkoutsDigest`, B2, S1). Absent on records written before it
+   * existed: those fall back to the count. A record from the ID-only digest
+   * never matches, so it costs one catch-up backup.
    */
   finishedDigest: z.string().regex(/^[0-9a-f]{64}$/).optional(),
   loggedSets: z.int().min(0),

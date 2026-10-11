@@ -191,6 +191,25 @@ describe('createBackup / restore', () => {
     await source.close();
   });
 
+  it('records the same coverage digest as the store, and a correction to a finished workout moves it (S1)', async () => {
+    const created = await createBackup(source.store, { at: at(3600), app: APP });
+    expect(created.finishedWorkoutsDigest).toBe(await source.store.finishedWorkoutsDigest());
+    const workout = richFinishedSession();
+    const stored = await source.store.db.read((q) => q.getFirst<{ version: number }>('SELECT version FROM sessions WHERE id = ?', [workout.session.id]));
+    const fixed = await createSessionService(source.store.repos, idGen(95_000)).dispatch(workout.session.id, {
+      type: 'rename_session',
+      at: at(7200),
+      opId: 'rename-after-backup',
+      name: 'Upper A',
+      expectedVersion: stored?.version ?? 0,
+    });
+    expect(fixed.ok).toBe(true);
+    const renamed = await source.store.finishedWorkoutsDigest();
+    expect(renamed).not.toBe(created.finishedWorkoutsDigest);
+    const again = await createBackup(source.store, { at: at(7300), app: APP });
+    expect(again.finishedWorkoutsDigest).toBe(renamed);
+  });
+
   it('round-trips every table and every aggregate exactly', async () => {
     const target = await openManager(dir());
     const preview = await target.preview(backupText);
