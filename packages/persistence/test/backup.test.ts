@@ -210,6 +210,17 @@ describe('createBackup / restore', () => {
     expect(again.finishedWorkoutsDigest).toBe(renamed);
   });
 
+  it('holds a checked backup for Restore until told to forget it (N2)', async () => {
+    const target = await openManager(dir());
+    expect(target.holdsCheckedBackup).toBe(false);
+    expect((await target.check(backupText)).ok).toBe(true);
+    expect(target.holdsCheckedBackup).toBe(true);
+    target.forgetChecked();
+    expect(target.holdsCheckedBackup).toBe(false);
+    expect((await target.check(backupText)).ok).toBe(true);
+    await target.close();
+  });
+
   it('round-trips every table and every aggregate exactly', async () => {
     const target = await openManager(dir());
     const preview = await target.preview(backupText);

@@ -241,6 +241,20 @@ export class DatabaseManager {
     return { available: this.slots.previous !== null, last: this.switched };
   }
 
+  /**
+   * Drop the cached checked backup (its text and parsed tables can be tens of
+   * MB), e.g. when the restore screen closes (fix-backup review N2). The next
+   * Check parses the file again.
+   */
+  forgetChecked(): void {
+    this.verified = null;
+  }
+
+  /** Whether a checked backup is cached (tests). */
+  get holdsCheckedBackup(): boolean {
+    return this.verified !== null;
+  }
+
   /** Verify a backup file and compare it with the current data. Changes nothing. */
   preview(text: string): Promise<PreviewOutcome> {
     return this.exclusive(() => failSafe(() => this.previewNow(text)));
