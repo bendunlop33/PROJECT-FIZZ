@@ -224,6 +224,40 @@ describe('deleteYourData', () => {
     expect(dbFiles(d)).toEqual(['fizz-meta.db', m.databaseNames.current]);
   });
 
+  it('an old file whose quiet removal failed is still removed, never dropped from the slots and left on disk (review r2 N1)', async () => {
+    await m.close();
+    const real = nodeDatabaseHost(d);
+    const failOnce = new Set<string>();
+    const host: DatabaseHost = {
+      open: (name) => real.open(name),
+      async remove(name) {
+        if (failOnce.delete(name)) throw new Error(`busy: ${name}`);
+        await real.remove(name);
+      },
+    };
+    m = await openManager(d, host);
+    const { createBackup } = await import('../src/index');
+    const backupOf = async (n: number) => {
+      await m.store.repos.gyms.save(gym(n), null);
+      return (await createBackup(m.store, { at: at(n), app: { name: 'x', version: '1', build: null } })).text;
+    };
+    const first = await backupOf(3);
+    await m.store.repos.gyms.save(gym(4), null);
+    expect(await m.restore(first, at(60))).toMatchObject({ ok: true, status: 'restored' });
+    const second = await backupOf(5);
+    await m.store.repos.gyms.save(gym(6), null);
+    // The second restore drops the oldest file; its removal fails, so it stays as the orphan.
+    const oldest = m.databaseNames.previous ?? '';
+    failOnce.add(oldest);
+    expect(await m.restore(second, at(70))).toMatchObject({ ok: true, status: 'restored' });
+    expect(m.databaseNames.orphan).toBe(oldest);
+    expect(dbFiles(d)).toContain(oldest);
+
+    expect(await m.deleteYourData()).toMatchObject({ ok: true, status: 'switched' });
+    expect(m.databaseNames).toEqual({ current: m.databaseNames.current, previous: null, orphan: null });
+    expect(dbFiles(d)).toEqual(['fizz-meta.db', m.databaseNames.current]);
+  });
+
   it('a force-close at any point leaves either all of Ben’s data or none of it; a relaunch can finish the clean-up', async () => {
     const before = await snapshot(m.store);
     await m.close();

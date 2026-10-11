@@ -318,6 +318,7 @@ export class DatabaseManager {
       }
       if (preview.identical) return { ok: true, status: 'unchanged', preview, store: this.current };
 
+      await this.dropStaleOrphan();
       const name = this.options.newName();
       const built = await this.build(file, name, 'restore');
       if (!built.ok) return built;
@@ -462,6 +463,7 @@ export class DatabaseManager {
       }
       const any = countDomains(current.tables).yourData.records > 0;
       if (any) {
+        await this.dropStaleOrphan();
         const name = this.options.newName();
         const built = await this.build({ schemaVersion: current.schemaVersion, tables: filterDomain(current.tables, 'coaching_knowledge') }, name, 'check');
         if (!built.ok) return built;
@@ -491,6 +493,7 @@ export class DatabaseManager {
       const inUse = knowledgeExercisesInUse(current.tables);
       const tables = filterDomain(current.tables, 'your_data');
       tables.exercises = [...(tables.exercises ?? []), ...(current.tables.exercises ?? []).filter((r) => r.owner_id === null && inUse.has(String(r.id)))];
+      await this.dropStaleOrphan();
       const name = this.options.newName();
       const built = await this.build({ schemaVersion: current.schemaVersion, tables }, name, 'check', bundled);
       if (!built.ok) return built;
@@ -514,7 +517,22 @@ export class DatabaseManager {
     return this.exclusive(() => this.forgetPreviousNow());
   }
 
+  /**
+   * An orphan left by a failed quiet removal (`replaceCurrent`) is removed
+   * before anything else is written to the orphan slot, so its name is never
+   * overwritten and the file left on disk untracked (review r2 N1). Throws if
+   * it can't be removed.
+   */
+  private async dropStaleOrphan(): Promise<void> {
+    const stale = this.slots.orphan;
+    if (stale !== null && stale !== this.slots.current && stale !== this.slots.previous) {
+      await this.options.host.remove(stale);
+      await this.writeSlots({ ...this.slots, orphan: null }, null);
+    }
+  }
+
   private async forgetPreviousNow(): Promise<void> {
+    await this.dropStaleOrphan();
     const previous = this.slots.previous;
     if (previous !== null) {
       await this.writeSlots({ ...this.slots, previous: null, orphan: previous }, 'dropped', null);
