@@ -50,7 +50,7 @@ export type OverviewStartResult =
   | { kind: 'failed' };
 
 export interface OverviewStartPorts {
-  start: (req: { startOf: OverviewStartOf; gymId: string | null; opId: string; checkIn: SessionCheckIn | null; expectedPreviewKey: string }) => Promise<WorkoutStartOutcome>;
+  start: (req: { startOf: OverviewStartOf; gymId: string | null; opId: string; checkIn: SessionCheckIn | null; expectedPreviewKey: string; draft: { id: string; expectedVersion: number } | null }) => Promise<WorkoutStartOutcome>;
   /** Re-read the page with the check-in Start sends (the tapped or reused one). */
   reload: () => Promise<OverviewData | null>;
 }
@@ -62,12 +62,14 @@ export interface OverviewStartPorts {
  * nothing and comes back for the toast and re-render (rule 5).
  */
 export async function startFromOverview(ports: OverviewStartPorts, req: { page: OverviewData; opId: string; checkIn: SessionCheckIn | null }): Promise<OverviewStartResult> {
+  const draftOf = (page: OverviewData) => (page.draft === null ? null : { id: page.draft.id, expectedVersion: page.draft.version });
   const base = { startOf: req.page.startOf, gymId: req.page.view.gym?.id ?? null, opId: req.opId, checkIn: req.checkIn };
-  let r = await ports.start({ ...base, expectedPreviewKey: req.page.view.previewKey });
+  // Today's edits go with Start (ADR 0022): the draft the page showed, re-checked in the start's write.
+  let r = await ports.start({ ...base, expectedPreviewKey: req.page.view.previewKey, draft: draftOf(req.page) });
   if (!r.ok && r.error.code === 'stale_preview') {
     const fresh = await ports.reload().catch(() => null);
     if (fresh === null || fresh.view.previewKey === req.page.view.previewKey || !samePage(req.page.view, fresh.view) || (fresh.view.gym?.id ?? null) !== base.gymId) return { kind: 'stale', page: fresh };
-    r = await ports.start({ ...base, startOf: fresh.startOf, expectedPreviewKey: fresh.view.previewKey });
+    r = await ports.start({ ...base, startOf: fresh.startOf, expectedPreviewKey: fresh.view.previewKey, draft: draftOf(fresh) });
     if (!r.ok && r.error.code === 'stale_preview') return { kind: 'stale', page: await ports.reload().catch(() => null) };
   }
   if (r.ok) return { kind: 'started', outcome: r };

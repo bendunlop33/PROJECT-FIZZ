@@ -415,6 +415,8 @@ export interface OverviewData {
   cleared: boolean;
   /** Edits the plan no longer has a place for (the routine changed): `Plan changed · N edit(s) removed`. */
   removedEdits: number;
+  /** Today's order differs from the plan's (Reorder's `Reset order`). */
+  reordered: boolean;
 }
 
 /** A write to today's draft (overview-today-edits §4.2). `stale`: the page re-reads (rule 5). */
@@ -2379,6 +2381,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           draft: t.draft === null ? null : { id: t.draft.id, version: t.draft.version },
           cleared,
           removedEdits: (run.today?.outcomes ?? []).filter((o: EditOutcome) => o.result === 'stale').length,
+          reordered: (run.today?.resolved.order ?? null) !== null,
         };
       } catch {
         return null;
