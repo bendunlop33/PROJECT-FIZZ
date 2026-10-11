@@ -237,6 +237,43 @@ export function StatusLine({
   );
 }
 
+/**
+ * A short line with an optional `ⓘ` (minimal copy): the explanation shows only
+ * on a tap. With no `info` it is a plain line.
+ */
+export function InfoLine({ text, info, variant = 'body' }: { text: string; info?: string | null; variant?: 'body' | 'callout' }) {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  const hasInfo = info !== undefined && info !== null && info !== '';
+  return (
+    <View style={{ gap: theme.space['1'] }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+        <AppText variant={variant} style={{ flexShrink: 1 }}>
+          {text}
+        </AppText>
+        {hasInfo ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Info"
+            accessibilityState={{ expanded: open }}
+            hitSlop={12}
+            onPress={() => {
+              setOpen((o) => !o);
+            }}
+          >
+            <Icon name="info.circle" color="text.secondary" size={18} />
+          </Pressable>
+        ) : null}
+      </View>
+      {hasInfo && open ? (
+        <AppText variant="callout" color="text.secondary">
+          {info}
+        </AppText>
+      ) : null}
+    </View>
+  );
+}
+
 /** `StatusBanner` (§9.12): info or warning, one line and an optional action. */
 export function Banner({ severity, text, action }: { severity: 'info' | 'warning'; text: string; action?: ReactNode }) {
   const theme = useTheme();

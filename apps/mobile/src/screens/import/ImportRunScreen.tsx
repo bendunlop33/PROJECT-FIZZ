@@ -77,13 +77,13 @@ export function ImportRunScreen() {
         // Paused by an earlier build that read barbell weights as plates only for every exercise at once (review r8 S3).
         setPhase({
           kind: 'failed',
-          text: `This import was paused by an earlier version of GymSmarter that added a bar weight to every barbell exercise from one answer. It won’t be continued. ${plural(r.written, 'workout is', 'workouts are')} in; undo it in Past imports, then import the file again.`,
+          text: `This import can’t continue (older version). ${plural(r.written, 'workout is', 'workouts are')} in. Undo it, then import again.`,
           jobId: r.jobId,
           retry: false,
         });
         return;
       case 'stale':
-        Alert.alert('The preview changed', 'Something changed since the preview (an answer, a workout or another import). Check the preview again before importing.', [{ text: 'OK', onPress: () => { navigation.goBack(); } }]);
+        Alert.alert('The preview changed', 'Check the preview again.', [{ text: 'OK', onPress: () => { navigation.goBack(); } }]);
         return;
       case 'workout_unfinished':
         setPhase({ kind: 'failed', text: `Finish or discard your workout first (${r.block.title}, started ${formatTime(toMs(r.block.startedAtUtc), r.block.tz)}).`, jobId: null, retry: false });
@@ -119,7 +119,7 @@ export function ImportRunScreen() {
       setPhase({ kind: 'backing_up' });
       finish(await services.imports.commit(params.draftId, params.mappingVersion, operationId, hooks));
     } catch (e) {
-      setPhase({ kind: 'failed', text: `Import didn’t finish: ${e instanceof Error ? e.message : String(e)}. Anything already in is complete; continue from Past imports.`, jobId: resumeJob, retry: true });
+      setPhase({ kind: 'failed', text: `Import didn’t finish: ${e instanceof Error ? e.message : String(e)}. Continue from Past imports.`, jobId: resumeJob, retry: true });
     }
   }
 
@@ -137,10 +137,10 @@ export function ImportRunScreen() {
     const workouts = 'workouts' in params ? params.workouts : 0;
     return (
       <Screen footer={<PrimaryButton label={`Import ${plural(workouts, 'workout', 'workouts')}`} onPress={() => void run()} />}>
-        <AppText variant="body">{`Importing adds ${plural(workouts, 'workout', 'workouts')} to your history. GymSmarter backs up on this phone first, and you can undo the import afterwards.`}</AppText>
+        <AppText variant="body">{`Adds ${plural(workouts, 'workout', 'workouts')}.`}</AppText>
         {needsCopy ? (
           <View style={{ gap: theme.space['2'] }}>
-            <AppText variant="callout" color="text.secondary">{`Importing adds ${plural(workouts, 'workout', 'workouts')}. Save a copy to Files first?`}</AppText>
+            <AppText variant="callout" color="text.secondary">Save a copy to Files first?</AppText>
             <SaveCopyToFiles variant="row" label="Save a copy to Files first" />
           </View>
         ) : null}
@@ -184,7 +184,7 @@ export function ImportRunScreen() {
   return (
     <Screen>
       <AppText variant="title2" accessibilityRole="header">
-        {phase.kind === 'backing_up' ? 'Backing up on this phone before import…' : 'Importing from FitNotes'}
+        {phase.kind === 'backing_up' ? 'Backing up…' : 'Importing from FitNotes'}
       </AppText>
       {progress ? (
         <View style={{ gap: theme.space['2'] }} accessible accessibilityLabel={progress.text}>
@@ -197,7 +197,7 @@ export function ImportRunScreen() {
         </View>
       ) : null}
       <AppText variant="callout" color="text.secondary">
-        Keep GymSmarter open. If it closes, you can carry on from here.
+        Keep GymSmarter open.
       </AppText>
       {phase.kind === 'importing' ? (
         <TextButton

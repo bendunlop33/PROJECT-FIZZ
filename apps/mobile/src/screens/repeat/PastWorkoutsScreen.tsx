@@ -6,7 +6,7 @@ import { formatShortDate } from '../../format/dates';
 import { importedNotListedLine } from '../../import/views';
 import { plural } from '../../format/numbers';
 import { useScreenData, useServices } from '../../shell/context';
-import { AppText, Group, Row, Screen, StatusLine, TextButton } from '../../ui';
+import { AppText, Group, LinkLine, Row, Screen, StatusLine, TextButton } from '../../ui';
 
 /**
  * `Start from a past workout`: a lightweight stand-in for routines
@@ -38,11 +38,28 @@ export function PastWorkoutsScreen() {
           icon="exclamationmark.triangle"
           tone="warning"
           text={`${plural(data.value.unreadable, 'workout', 'workouts')} couldn’t be read and ${data.value.unreadable === 1 ? 'isn’t' : 'aren’t'} listed.`}
-          detail="Your other workouts are fine. Check all data in Data & backup for details."
+          action={
+            <TextButton
+              label="Check data ›"
+              tone="secondary"
+              onPress={() => {
+                navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'DataBackup', initial: false } });
+              }}
+            />
+          }
         />
       ) : null}
       {data.value.importedNotListed > 0 ? (
-        <StatusLine icon="info.circle" tone="info" text={importedNotListedLine(data.value.importedNotListed)} />
+        <LinkLine
+          accessibilityLabel={`${importedNotListedLine(data.value.importedNotListed).replace(' ›', '')}. Opens Past imports.`}
+          onPress={() => {
+            navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'PastImports', initial: false } });
+          }}
+        >
+          <AppText variant="callout" color="text.secondary">
+            {importedNotListedLine(data.value.importedNotListed)}
+          </AppText>
+        </LinkLine>
       ) : null}
       {data.value.rows.length === 0 ? (
         <AppText variant="body">{data.value.importedNotListed > 0 ? 'No workouts logged in the app yet.' : 'No finished workouts yet.'}</AppText>

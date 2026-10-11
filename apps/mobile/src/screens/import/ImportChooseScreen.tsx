@@ -44,9 +44,6 @@ export function ImportChooseScreen() {
     return (
       <Screen>
         <AppText variant="body">{`“${name}” becomes a new exercise with that name. What equipment is it done on?`}</AppText>
-        <AppText variant="callout" color="text.secondary">
-          The equipment decides how its weights are read (for example plates added on a plate-loaded machine).
-        </AppText>
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
         {CustomExerciseKindSchema.options.map((kind: CustomExerciseKind) => (
           <ChoiceCard

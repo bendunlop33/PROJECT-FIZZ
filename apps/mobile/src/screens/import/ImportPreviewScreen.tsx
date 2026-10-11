@@ -40,7 +40,7 @@ export function ImportPreviewScreen() {
           label="Cancel"
           tone="secondary"
           onPress={() => {
-            Alert.alert('Cancel this import?', 'Nothing has been saved.', [
+            Alert.alert('Cancel this import?', undefined, [
               { text: 'Keep going', style: 'cancel' },
               {
                 text: 'Cancel import',

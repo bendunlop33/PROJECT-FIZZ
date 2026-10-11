@@ -169,7 +169,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(previewView(reopened.draft, 'en-GB').notice).toEqual({
       icon: 'info.circle',
       tone: 'info',
-      text: 'You imported this file on Thu 8 Oct. Workouts from it that are still in GymSmarter are skipped; dates that aren’t in GymSmarter now are offered again, with your answers from then filled in.',
+      text: 'Imported before on Thu 8 Oct · new dates only',
     });
     // 20 Sep is still in (from b.csv) and skipped; the three dates a.csv brought are offered again.
     expect(reopened.draft.analysis.alreadyImported).toMatchObject({ dates: 1, imports: [{ jobId: b.jobId, dates: 1 }] });
@@ -582,7 +582,7 @@ describe('FitNotes import: closed or failed right after the last workout (review
     expect(introView({ block: null, blockTime: '', paused }).primary).toEqual({ label: 'Continue import', enabled: true });
     const job = await next.svc.job(jobId);
     if (!job) throw new Error('no job');
-    expect(resultsView(job, 'en-GB')).toMatchObject({ canContinue: true, canUndo: true, banner: { text: 'Import not finished. All 2 workouts are in your history; Continue import finishes it.' } });
+    expect(resultsView(job, 'en-GB')).toMatchObject({ canContinue: true, canUndo: true, banner: { text: 'Import not finished. All 2 workouts are in your history.' } });
     // Another file waits for this one, and says so.
     const other = await next.svc.open({ name: 'g.csv', text: [A1, '2026-09-05,Lat pulldown,Back,45,10,,,'].join('\n') });
     if (other.kind !== 'preview') throw new Error(other.kind);

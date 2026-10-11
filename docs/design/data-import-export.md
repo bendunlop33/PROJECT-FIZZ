@@ -355,17 +355,8 @@ Same choose screen as §2.3 step 1 (no unfinished-workout restriction: checking 
 ┌────────────────────────────────────────┐
 │ ‹ Back      Import from FitNotes       │
 ├────────────────────────────────────────┤
-│ Bring in your FitNotes history from a  │
-│ CSV export.                            │
-│                                        │
-│ 1  In FitNotes, export a CSV and save  │
-│    it to Files.                        │
-│ 2  Choose it here. You'll see what     │
-│    will be imported before anything    │
-│    is saved.                           │
-│                                        │
-│ Works with FitNotes (Android) and      │
-│ FitNotes 2 (iPhone) CSV files.         │
+│ Export a CSV from FitNotes to Files,   │
+│ then choose it. ⓘ                      │
 ├────────────────────────────────────────┤
 │ [           Choose CSV file          ] │
 └────────────────────────────────────────┘
@@ -403,8 +394,7 @@ No menu paths inside FitNotes are given: they're unverified, and wrong instructi
 │ Kept as written                        │
 │ ⓘ 212 comments, kept as notes        › │
 │   47 look like effort ratings. Review  │
-│ ⓘ FitNotes files have no times. These  │
-│   workouts show the date only.         │
+│ ⓘ Date only (no times)                 │
 │ Gym: Not recorded                    › │
 │                                        │
 │ Workouts (412)                         │
@@ -457,10 +447,6 @@ Once every question is answered the primary becomes `Import 412 workouts` (accen
 ┌────────────────────────────────────────┐
 │ ‹ Back       Dumbbell weights     Done │
 ├────────────────────────────────────────┤
-│ FitNotes doesn't record whether a      │
-│ dumbbell weight is one dumbbell or     │
-│ both together.                         │
-│                                        │
 │ For these 9 exercises, "22.5" means:   │
 │ ( ) Each dumbbell                      │
 │     Imported as 22.5 kg each           │
@@ -805,10 +791,10 @@ Durability wording is exactly design-system §7.1. The off-phone file is written
 | FitNotes backup, not CSV | `This looks like a FitNotes backup, not a CSV export. Export a CSV from FitNotes and choose that.` | `Choose another file` |
 | Unknown header | (Revised 9 Oct.) A saved layout with the same columns imports it offline (§9.2.7). Otherwise `New file layout` (§9.2.2) offers `Read with the coach`, or shows the honest unavailable state (§9.3.2) with the first line in a monospaced box (max 3 lines, tail ellipsis) and `Share first line` (ADR 0016 difference 3). Nothing guessed | `Read with the coach`, or `Choose another file` |
 | Same file again | `You imported this file on Thu 8 Oct (412 workouts). Nothing new to import.` + `View that import ›` | `Done` |
-| Newer export of an earlier file | Preview as normal, plus `ⓘ 312 workouts came in with your import on Thu 8 Oct. They'll be skipped.` Fizz's version always wins, including sets Ben corrected since | as preview |
+| Newer export of an earlier file | Preview as normal, plus `ⓘ 312 workouts came in with your import on Thu 8 Oct. They'll be skipped.` (Fizz's version always wins) | as preview |
 | Needs answers | §2.5 step 3 | Disabled `Answer 3 questions to import` |
 | Ready | All answered | `Import 412 workouts` |
-| Backing up first | Commit tapped | `Backing up on this phone before import…` then importing. The confirm step before it offers `Save a copy to Files first` (safeguard, §4.1a) |
+| Backing up first | Commit tapped | `Backing up…` then importing. The confirm step before it offers `Save a copy to Files first` (safeguard, §4.1a) |
 | Importing | §2.5 step 4 | — |
 | Stopped / interrupted | `Import paused at 180 of 412 workouts. The 180 are in your history.` | `Continue import` + text button `Undo this import` |
 | Write failed mid-way | `Couldn't save workout 181 (Mon 3 Jun 2024): <reason>. 180 workouts are in. Nothing was half-saved.` | `Try again` + `Undo this import` |
@@ -941,17 +927,17 @@ At each of these moments Fizz shows one inline `NoteLine` with a one-tap `Second
 | Restore failures | `This isn't a Fizz backup file. Nothing was changed.` · `This backup file is damaged (its checksum doesn't match). Nothing was changed.` · `This backup has 2 damaged records (…), so it can't be restored. Nothing was changed.` · `This backup was made by a newer Fizz (build 15). Install build 15 or newer first. Nothing was changed.` · `This backup matches your data on this phone. Nothing to restore.` · `Restore didn't finish: <reason>. Your data is as it was.` · `Restore didn't finish · data unchanged` · `Finish or discard your workout first (Push A, started 18:02).` |
 | Undo restore | Row `Undo last restore` + `Brings back your data from before Thu 8 Oct, 19:20` · alert `Bring back your data from before Thu 8 Oct, 19:20? The restored backup is kept, so you can switch again.` · after: `Switch back to the restored backup` |
 | Check result | `✓ This backup restores` · `⚠ This backup won't restore` · `Nothing on this phone was changed.` · `Your newest good backup: Sun 4 Oct.` |
-| Import intro | `Bring in your FitNotes history from a CSV export.` · `In FitNotes, export a CSV and save it to Files.` · `Choose it here. You'll see what will be imported before anything is saved.` · `Works with FitNotes (Android) and FitNotes 2 (iPhone) CSV files.` |
+| Import intro | `Export a CSV from FitNotes to Files, then choose it.` + `ⓘ` → `FitNotes or FitNotes 2` |
 | Import detection | `FitNotes (Android) CSV · weights in kg` · `FitNotes 2 (iPhone) CSV · weights in lb` · `4,212 rows · 2 Mar 2019 – 1 Oct 2026` |
 | Preview headings | `Will import` · `Needs your answer (3)` · `Will be skipped` · `Kept as written` · `Workouts (412)` |
 | Skips | `86 cardio rows (not imported yet)` · `7 rows can't be read` · `3 dates already have a Fizz workout` · `312 workouts came in with your import on Thu 8 Oct. They'll be skipped.` |
-| Kept as written | `212 comments, kept as notes` · `47 look like effort ratings. Review` · `FitNotes files have no times. These workouts show the date only.` |
+| Kept as written | `212 comments, kept as notes` · `47 look like effort ratings. Review` · `Date only (no times)` |
 | Match status | `Matched` · `Check` · `No match` · buttons `Use this` · `Choose…` · `Add new` · `Skip` · `34 matched by name · Show` |
-| Convention questions | `FitNotes doesn't record whether a dumbbell weight is one dumbbell or both together.` · `For these 9 exercises, "22.5" means:` · `Each dumbbell` / `Imported as 22.5 kg each` · `Both dumbbells together` / `Imported as 11.25 kg each` · `Total as written` · `Nothing added: imported as 100 kg` · `Plates only (bar not counted)?` · `Bar: Olympic bar (from Bench press)` · `If plates only: 60 kg → 80 kg total (plates + 20 kg bar)` · `Plates only` · `Your answer last time` · `Weight added to bodyweight` · `Assistance from a machine` · `Values in your file: 0 to 20, none negative` · `Different for some?` · `Same` |
+| Convention questions | `For these 9 exercises, "22.5" means:` · `Each dumbbell` / `Imported as 22.5 kg each` · `Both dumbbells together` / `Imported as 11.25 kg each` · `Total as written` · `Nothing added: imported as 100 kg` · `Plates only (bar not counted)?` · `Bar: Olympic bar (from Bench press)` · `If plates only: 60 kg → 80 kg total (plates + 20 kg bar)` · `Plates only` · `Your answer last time` · `Weight added to bodyweight` · `Assistance from a machine` · `Values in your file: 0 to 20, none negative` · `Different for some?` · `Same` |
 | Other questions | `Rows have values in both the kg and lb columns. Which did you enter in FitNotes?` · `Keep as notes only` / `Review and import as RPE` · `Skip those dates` / `Import them as extra workouts` · `Not recorded` / `All at Main Gym` |
 | Provenance (history set detail) | `Imported from FitNotes on Thu 8 Oct 2026 · row 4,180` · `Original: Flat Barbell Bench Press · 100 kgs · 8 reps · "@8 felt heavy"` |
 | Import errors | `This file is empty.` · `This isn't a CSV file.` · `This looks like a FitNotes backup, not a CSV export. Export a CSV from FitNotes and choose that.` · `Fizz doesn't recognise this file's columns yet.` · `Copy first line` · `You imported this file on Thu 8 Oct (412 workouts). Nothing new to import.` |
-| Importing | `Importing from FitNotes` · `180 of 412 workouts` · `Keep Fizz open. If it closes, you can carry on from here.` · `Backing up on this phone before import…` · `Import paused at 180 of 412 workouts. The 180 are in your history.` · `Continue import` |
+| Importing | `Importing from FitNotes` · `180 of 412 workouts` · `Keep Fizz open.` · `Backing up…` · `Import paused at 180 of 412 workouts. The 180 are in your history.` · `Continue import` |
 | Results | `✓ Import finished` · `412 workouts · 4,105 sets added` · `Save row-by-row results (CSV)` · `Undo this import` · row detail `Row 1,204 · 2024-05-03 · Treadmill · 5 km · 25:00 — cardio isn't imported yet` |
 | Undo import alert | `Undo this import?` / `412 workouts from FitNotes_Export_2026_10_01.csv will be hidden from history, Progress and targets. Your other workouts aren't touched.` [Cancel] [Undo import] |
 | Export | `What to export` · `My data` · `Coaching knowledge only` / `Rules, sources and the exercise list. Nothing about you.` · `Spreadsheet (CSV)` / `One row per set. Opens in Numbers, Excel or Google Sheets.` · `Full data (JSON)` / `Workouts, routines, gyms, coach decisions and memories.` · `FitNotes 2 CSV` / `For importing into FitNotes 2. Set types, RPE and load conventions are lost.` · `Include warm-up sets` · `Exports can't be restored into Fizz. Use Save a copy to Files for that.` · `No workouts in this range.` · `Preparing…` |

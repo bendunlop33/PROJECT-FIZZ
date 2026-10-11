@@ -85,7 +85,7 @@ export function ImportQuestionScreen() {
         const row = (r: PerHandRowView) => exerciseRow(r, (i) => ({ kind: 'per_hand_override', key: r.key, answer: r.choices[i]?.value ?? null }));
         body = (
           <>
-            <AppText variant="body">{q.lead}</AppText>
+            {q.lead ? <AppText variant="body">{q.lead}</AppText> : null}
             {q.question ? <AppText variant="headline">{q.question}</AppText> : null}
             {options(q.options, (v) => ({ kind: 'per_hand', answer: v }))}
             {q.example ? <AppText variant="callout" color="text.secondary">{q.example}</AppText> : null}
@@ -138,7 +138,7 @@ export function ImportQuestionScreen() {
         );
         body = (
           <>
-            <AppText variant="body">{q.lead}</AppText>
+            {q.lead ? <AppText variant="body">{q.lead}</AppText> : null}
             {q.question ? <AppText variant="headline">{q.question}</AppText> : null}
             {options(q.options, (v) => ({ kind: 'total', answer: v }))}
             {q.example ? <AppText variant="callout" color="text.secondary">{q.example}</AppText> : null}
@@ -175,9 +175,6 @@ export function ImportQuestionScreen() {
             {(['kg', 'lb'] as const).map((u) => (
               <ChoiceCard key={u} title={u} selected={unit.answer === u} onPress={() => void answer({ kind: 'both_columns', answer: u })} />
             ))}
-            <AppText variant="callout" color="text.secondary">
-              The other column is kept with each row as the original.
-            </AppText>
           </>
         );
       }
@@ -188,7 +185,7 @@ export function ImportQuestionScreen() {
         <>
           <AppText variant="body">{`${String(c.length)} ${c.length === 1 ? 'comment looks' : 'comments look'} like effort ratings, for example “@8” or “RPE 9”.`}</AppText>
           <ChoiceCard title="Keep as notes only" selected={a.effort.mode === 'notes_only'} onPress={() => void answer({ kind: 'effort_mode', mode: 'notes_only' })} />
-          <ChoiceCard title="Review and import as RPE" subtitle="Only the rows you tick get an RPE. The comment is kept either way." selected={a.effort.mode === 'review'} onPress={() => void answer({ kind: 'effort_mode', mode: 'review' })} />
+          <ChoiceCard title="Review and import as RPE" subtitle="Ticked rows only" selected={a.effort.mode === 'review'} onPress={() => void answer({ kind: 'effort_mode', mode: 'review' })} />
           {a.effort.mode === 'review' ? (
             <>
               <TextButton label="Select all" onPress={() => void answer({ kind: 'effort_rows', rows: c.map((x) => x.row), checked: true })} />
@@ -213,7 +210,7 @@ export function ImportQuestionScreen() {
       body = (
         <>
           <AppText variant="body">{`${String(a.appDates.count)} ${a.appDates.count === 1 ? 'date already has' : 'dates already have'} a workout logged in GymSmarter${a.appDates.newest ? ` (newest: ${longDate(a.appDates.newest)})` : ''}.`}</AppText>
-          <ChoiceCard title="Skip those dates" subtitle="Same as FitNotes 2 does" selected={draft.answers.existingDates === 'skip'} onPress={() => void answer({ kind: 'existing_dates', answer: 'skip' })} />
+          <ChoiceCard title="Skip those dates" selected={draft.answers.existingDates === 'skip'} onPress={() => void answer({ kind: 'existing_dates', answer: 'skip' })} />
           <ChoiceCard title="Import them as extra workouts" selected={draft.answers.existingDates === 'import'} onPress={() => void answer({ kind: 'existing_dates', answer: 'import' })} />
         </>
       );
@@ -221,13 +218,10 @@ export function ImportQuestionScreen() {
     case 'gym':
       body = (
         <>
-          <ChoiceCard title="Not recorded" subtitle="Don’t assume a gym" selected={draft.answers.gymId === null} onPress={() => void answer({ kind: 'gym', gymId: null })} />
+          <ChoiceCard title="Not recorded" selected={draft.answers.gymId === null} onPress={() => void answer({ kind: 'gym', gymId: null })} />
           {draft.gyms.map((g) => (
             <ChoiceCard key={g.id} title={`All at ${g.name}`} selected={draft.answers.gymId === g.id} onPress={() => void answer({ kind: 'gym', gymId: g.id })} />
           ))}
-          <AppText variant="callout" color="text.secondary">
-            Imported sets aren’t linked to a particular machine or bar. For now they’re kept and listed under Data & backup → Past imports, but aren’t used as “Last” values or targets, and imported workouts can’t be repeated.
-          </AppText>
         </>
       );
       break;

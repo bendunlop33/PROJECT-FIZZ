@@ -11,7 +11,7 @@ import { INTRO_COPY, introView, openErrorView, type OpenErrorView } from '../../
 import type { ProfileStackParams } from '../../navigation/types';
 import { useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Card, PrimaryButton, Screen, StatusLine, TextButton } from '../../ui';
+import { AppText, Card, InfoLine, PrimaryButton, Screen, StatusLine, TextButton } from '../../ui';
 
 type Step = { kind: 'intro' } | { kind: 'reading' } | { kind: 'error'; view: OpenErrorView };
 
@@ -75,15 +75,8 @@ export function ImportIntroScreen() {
 
   return (
     <Screen footer={footer}>
-      <AppText variant="body">{INTRO_COPY.lead}</AppText>
-      <View style={{ gap: theme.space['3'] }}>
-        <AppText variant="body">{`1  ${INTRO_COPY.step1}`}</AppText>
-        <AppText variant="body">{`2  ${INTRO_COPY.step2}`}</AppText>
-      </View>
-      <AppText variant="callout" color="text.secondary">
-        {INTRO_COPY.works}
-      </AppText>
-      {view.blockLine ? <StatusLine icon="info.circle" tone="info" text={view.blockLine} detail="Importing adds history your workout is using." /> : null}
+      <InfoLine text={INTRO_COPY.line} info={INTRO_COPY.info} />
+      {view.blockLine ? <StatusLine icon="info.circle" tone="info" text={view.blockLine} /> : null}
       {view.paused ? (
         <Card>
           <StatusLine icon="exclamationmark.triangle" tone="warning" text={view.paused.text} />
