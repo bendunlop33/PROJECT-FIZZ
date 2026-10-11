@@ -68,7 +68,7 @@ export interface ImportServiceDeps {
   profile: () => Promise<UserProfile | null>;
   activeWorkout: () => Promise<SessionAggregate | null>;
   /** On-phone backup around a commit; never throws. */
-  backUpOnPhone: (reason: 'before_import' | 'after_import') => Promise<{ ok: true } | { ok: false; error: string }>;
+  backUpOnPhone: (reason: 'before_import' | 'after_import' | 'after_undo_import') => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Bundled catalogue entries; defaults to the shipped catalogue (read on first use, not at launch). */
   catalogue?: () => readonly CatalogueEntry[];
 }
@@ -663,6 +663,8 @@ export function createImportService(deps: ImportServiceDeps) {
       const b = await block();
       if (b) return { ok: false, reason: 'workout_unfinished', block: b };
       const r = await repos().imports.revertJob(jobId, expectedVersion, operationId, deps.now());
+      // The newest backup still holds the hidden workouts: back up now, not at the next launch (fix-backup review N3).
+      if (r.ok && !r.duplicate) void deps.backUpOnPhone('after_undo_import');
       if (r.ok) return { ok: true, job: r.job, workouts: r.workouts ?? 0, duplicate: r.duplicate };
       if (r.error === 'wrong_status') return { ok: false, reason: 'already_undone' };
       return { ok: false, reason: r.error };

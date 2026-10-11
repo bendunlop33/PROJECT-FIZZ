@@ -224,7 +224,7 @@ export function restoreBackAllowed(step: RestoreStepKind, fromWelcome: boolean):
 }
 
 /** Why an on-phone backup was made, for the choose list (§2.3 step 1). */
-export function backupReasonLabel(reason: 'workout_finished' | 'manual' | 'catch_up' | 'before_import' | 'after_import'): string {
+export function backupReasonLabel(reason: 'workout_finished' | 'manual' | 'catch_up' | 'before_import' | 'after_import' | 'after_undo_import'): string {
   switch (reason) {
     case 'manual':
       return 'Saved by you';
@@ -232,6 +232,9 @@ export function backupReasonLabel(reason: 'workout_finished' | 'manual' | 'catch
       return 'Before a FitNotes import';
     case 'after_import':
       return 'After a FitNotes import';
+    // Copy unconfirmed by the designer (fix-backup review N3).
+    case 'after_undo_import':
+      return 'After undoing an import';
     case 'workout_finished':
     case 'catch_up':
       return 'After a workout';
