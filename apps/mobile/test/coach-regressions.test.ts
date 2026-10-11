@@ -4,6 +4,7 @@ import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
 import type { TextCoachState } from '@fizz/providers';
 
 import { nextTimeView } from '../src/coach/next-time-view';
+import { threadRows } from '../src/coach/sheet-view';
 import { CONNECTED, lowerPending, replyWith, saveNextTarget, StepModel } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -171,5 +172,51 @@ describe('A name or time edit on the Summary keeps the coach’s next-time targe
     expect(view?.undoAll).toBeNull();
     const work = await startFrom(s, gymId, first);
     expect(work.some((x) => x.planned.source === 'coach')).toBe(false);
+  });
+});
+
+describe('Try again retries its own turn, also after a relaunch', () => {
+  it('each failed turn’s row carries that turn’s own words: A fails, B succeeds, A’s Try again is A', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    model = new StepModel([() => [{ type: 'error', error: 'timeout' }], () => replyWith('Two minutes.')]);
+    const a = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Message A', spoken: false }, turnId: h.ids() });
+    await s.coach.send({ entry: { kind: 'today' }, threadId: a.threadId, input: { kind: 'words', text: 'Message B', spoken: false }, turnId: h.ids() });
+    await h.forceClose();
+    const { services: again } = await h.launch();
+    const data = await again.coach.loadThread(a.threadId);
+    if (data === null) throw new Error('no thread');
+    const outcomes = threadRows(data).filter((r) => r.kind === 'outcome');
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]).toMatchObject({ retry: true, input: { kind: 'words', text: 'Message A' } });
+  });
+
+  it('a summary review cut off by a force-close runs again when asked (its Try again), not skipped', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }] }]);
+    model = new (class extends StepModel {
+      override stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+        this.requests.push(request);
+        return { [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<ModelEvent>>(() => undefined) }) };
+      }
+    })([]);
+    void s.coach.runSummaryTurn(first).catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 50));
+    await h.forceClose();
+    const { services: again } = await h.launch();
+    const threadId = await again.coach.resolveThread({ kind: 'summary', sessionId: first });
+    const data = threadId === null ? null : await again.coach.loadThread(threadId);
+    if (data === null) throw new Error('no thread');
+    expect(threadRows(data).find((r) => r.kind === 'outcome')).toMatchObject({ text: 'Interrupted. Nothing changed.', retry: true, input: { kind: 'summary' } });
+    model = new StepModel([saveNextTarget(), () => replyWith('All sets were RPE 10.')]);
+    expect((await again.coach.runSummaryTurn(first))?.status).toBe('completed');
+    expect(await again.coach.summaryNote(first)).toBe('All sets were RPE 10.');
+    // Once it has completed, it isn't run again.
+    const calls = model.requests.length;
+    await h.forceClose();
+    const { services: third } = await h.launch();
+    expect(await third.coach.runSummaryTurn(first)).toBeNull();
+    expect(model.requests.length).toBe(calls);
   });
 });

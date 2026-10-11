@@ -355,7 +355,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     /**
      * The one summary turn after a workout (D21, CA10). Runs in the
      * background; leaving the Summary doesn't stop it. Once per workout: a
-     * workout whose thread already has a summary turn is skipped. `Offline`
+     * workout whose thread already has a completed summary turn is skipped;
+     * one cut off or failed runs again (`Try again`). `Offline`
      * after an earlier failure still tries (the network may be back); a
      * review skipped because the coach can't answer isn't remembered, so a
      * later call runs it.
@@ -364,6 +365,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       const existing = summaryRuns.get(sessionId);
       if (existing !== undefined) return existing;
       let skipped = false;
+      let finished = false;
       const run = (async (): Promise<CoachTurnResult | null> => {
         const a = await availability();
         if (a.status !== 'ok' && a.status !== 'offline') {
@@ -374,13 +376,16 @@ export function createCoachService(deps: CoachServiceDeps) {
         const threadId = await resolveThread(entry);
         if (threadId !== null) {
           const data = await loadThread(threadId);
-          if (data !== null && [...data.turns.values()].some((t) => t.kind === 'summary')) return null;
+          if (data !== null && [...data.turns.values()].some((t) => t.kind === 'summary' && t.status === 'completed')) return null;
         }
-        return send({ entry, threadId, input: { kind: 'summary' }, turnId: deps.newId(), summary: true });
+        const r = await send({ entry, threadId, input: { kind: 'summary' }, turnId: deps.newId(), summary: true });
+        finished = r.status === 'completed';
+        return r;
       })().catch(() => null);
       summaryRuns.set(sessionId, run);
+      // Only a running or completed review is remembered; a skipped or failed one can be run again.
       void run.then(() => {
-        if (skipped && summaryRuns.get(sessionId) === run) summaryRuns.delete(sessionId);
+        if ((skipped || !finished) && summaryRuns.get(sessionId) === run) summaryRuns.delete(sessionId);
       });
       return run;
     },

@@ -168,7 +168,8 @@ export type ThreadRow =
   | { kind: 'tools'; key: string; lines: string[] }
   | { kind: 'card'; key: string; card: CardView }
   | { kind: 'note'; key: string; text: string }
-  | { kind: 'outcome'; key: string; text: string; icon: ViewIcon; retry: boolean };
+  /** `input`: what `Try again` sends, the turn's own (a summary review: `{ kind: 'summary' }`); null when unknown. */
+  | { kind: 'outcome'; key: string; text: string; icon: ViewIcon; retry: boolean; input: BenInput | null };
 
 const CHIP_TEXT: Record<Extract<BenInput, { kind: 'chip' }>['chip'], string> = { too_hard: 'Too hard', too_easy: 'Too easy', pain: 'Pain', lighter_session: 'Lighter session' };
 
@@ -243,7 +244,9 @@ export function threadRows(data: ThreadData): ThreadRow[] {
     }
     if (turn !== null) {
       const o = outcomeFor(turn.status, turn.error, actions.length > 0);
-      if (o !== null) rows.push({ kind: 'outcome', key: `${turnId}:outcome`, ...o });
+      const ben = msgs.find((m) => m.body.role === 'ben');
+      const input = ben?.body.role === 'ben' ? ben.body.input : null;
+      if (o !== null) rows.push({ kind: 'outcome', key: `${turnId}:outcome`, ...o, retry: o.retry && input !== null, input });
     }
   }
   return rows;
