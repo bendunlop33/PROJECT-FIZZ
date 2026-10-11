@@ -42,6 +42,26 @@ const META_MIGRATIONS: readonly Migration[] = [
   // Why the orphan exists, so a relaunch can say "A restore was interrupted"
   // only when one really was (data-import-export §3.3).
   sqlMigration(2, 'orphan reason', `ALTER TABLE database_slots ADD COLUMN orphan_reason TEXT CHECK (orphan_reason IN ('restore', 'check', 'dropped'));`),
+  // `Undo last reset` (data-import-export §3.6, check 31a): a Reset coaching
+  // knowledge switch is recorded like a restore. SQLite can't change a CHECK
+  // in place, so the one-row table is rebuilt (ADR 0022).
+  sqlMigration(
+    3,
+    'reset switch reason',
+    `CREATE TABLE database_slots_v3 (
+       id INTEGER PRIMARY KEY CHECK (id = 1),
+       current_name TEXT NOT NULL,
+       previous_name TEXT,
+       orphan_name TEXT,
+       switched_at_utc TEXT,
+       switch_reason TEXT CHECK (switch_reason IN ('restore', 'rollback', 'reset', 'undo_reset')),
+       orphan_reason TEXT CHECK (orphan_reason IN ('restore', 'check', 'dropped'))
+     ) STRICT;
+     INSERT INTO database_slots_v3 (id, current_name, previous_name, orphan_name, switched_at_utc, switch_reason, orphan_reason)
+       SELECT id, current_name, previous_name, orphan_name, switched_at_utc, switch_reason, orphan_reason FROM database_slots;
+     DROP TABLE database_slots;
+     ALTER TABLE database_slots_v3 RENAME TO database_slots;`,
+  ),
 ];
 
 interface Slots {
@@ -53,10 +73,17 @@ interface Slots {
 /** `restore`/`check`: a file being built; `dropped`: a file that fell out of the rollback slot. */
 type OrphanReason = 'restore' | 'check' | 'dropped';
 
-/** The last restore or rollback, for `Undo last restore` (data-import-export §2.1, §3.3). */
+/**
+ * The last switch that can be undone, for `Undo last restore` / `Undo last
+ * reset` (data-import-export §2.1, §3.3, §3.6). `rollback` undid a restore;
+ * `undo_reset` undid a Reset coaching knowledge.
+ */
+export type SwitchReason = 'restore' | 'rollback' | 'reset' | 'undo_reset';
+const SWITCH_REASONS: readonly string[] = ['restore', 'rollback', 'reset', 'undo_reset'] satisfies readonly SwitchReason[];
+
 export interface LastSwitch {
   atUtc: string;
-  reason: 'restore' | 'rollback';
+  reason: SwitchReason;
 }
 
 export interface DatabaseManagerOptions {
@@ -207,8 +234,8 @@ export class DatabaseManager {
     const storedReason = row.orphan_reason;
     let orphanReason: OrphanReason | null = storedReason === 'restore' || storedReason === 'check' || storedReason === 'dropped' ? storedReason : null;
     const switched: LastSwitch | null =
-      typeof row.switched_at_utc === 'string' && (row.switch_reason === 'restore' || row.switch_reason === 'rollback')
-        ? { atUtc: row.switched_at_utc, reason: row.switch_reason }
+      typeof row.switched_at_utc === 'string' && typeof row.switch_reason === 'string' && SWITCH_REASONS.includes(row.switch_reason)
+        ? { atUtc: row.switched_at_utc, reason: row.switch_reason as SwitchReason }
         : null;
     // A restore that crashed midway, or a deletion that didn't finish.
     let interruptedRestore = false;
@@ -389,7 +416,10 @@ export class DatabaseManager {
         if (!integrity.ok) {
           throw new RestoreAbort({ code: 'integrity_failed', message: 'The earlier database failed its integrity check; staying on the current one.' });
         }
-        await this.writeSlots({ current: previous, previous: this.slots.current, orphan: null }, null, { atUtc: at.utc, reason: 'rollback' });
+        // Undoing a reset is recorded as such, and undoing that puts the reset back (the two swap places).
+        const last = this.switched?.reason;
+        const reason: SwitchReason = last === 'reset' ? 'undo_reset' : last === 'undo_reset' ? 'reset' : 'rollback';
+        await this.writeSlots({ current: previous, previous: this.slots.current, orphan: null }, null, { atUtc: at.utc, reason });
       } catch (e) {
         const closing = store ?? driver;
         if (closing !== null) await quietly(() => closing.close());
@@ -449,8 +479,9 @@ export class DatabaseManager {
    * knowledge (other exercises, playbook candidates) is gone. Switches in one
    * meta transaction and keeps the database it replaced as the rollback
    * generation. `unchanged` when the result would equal the current data.
+   * With `at`, the switch is recorded so `Undo last reset` is offered (check 31a).
    */
-  resetKnowledge(bundled: readonly Exercise[], opts: { expectedStamp?: string } = {}): Promise<DomainSwitchOutcome> {
+  resetKnowledge(bundled: readonly Exercise[], opts: { expectedStamp?: string; at?: ZonedTimestamp } = {}): Promise<DomainSwitchOutcome> {
     return this.exclusiveSafe(async (): Promise<DomainSwitchOutcome> => {
       const current = await this.readCurrent();
       const currentHash = contentHash(current.schemaVersion, current.tables);
@@ -469,7 +500,7 @@ export class DatabaseManager {
         if (await quietly(() => this.options.host.remove(name))) await quietly(() => this.writeSlots({ ...this.slots, orphan: null }, null));
         return { ok: true, status: 'unchanged', store: this.current };
       }
-      await this.switchTo(built.store, name);
+      await this.switchTo(built.store, name, opts.at ? { atUtc: opts.at.utc, reason: 'reset' } : null);
       return { ok: true, status: 'switched', store: built.store };
     });
   }
@@ -502,11 +533,12 @@ export class DatabaseManager {
   /**
    * Switch to a freshly built file in one meta transaction. The old current
    * becomes the rollback generation and the old rollback generation is
-   * dropped (as a restore does); the last-restore record is cleared.
+   * dropped (as a restore does). `switched`: the record for Undo (a reset),
+   * or null to clear it (delete).
    */
-  private async switchTo(fresh: Store, name: string): Promise<void> {
+  private async switchTo(fresh: Store, name: string, switched: LastSwitch | null = null): Promise<void> {
     try {
-      await this.writeSlots({ current: name, previous: this.slots.current, orphan: this.slots.previous }, 'dropped', null);
+      await this.writeSlots({ current: name, previous: this.slots.current, orphan: this.slots.previous }, 'dropped', switched);
     } catch (e) {
       await quietly(() => fresh.close());
       await quietly(() => this.options.host.remove(name));

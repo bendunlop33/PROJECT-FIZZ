@@ -155,7 +155,9 @@ describe('data domains', () => {
     const known = await m.store.db.read((q) => exportDomain(q, 'coaching_knowledge'));
     expect(Object.keys(known.tables).sort()).toEqual(['exercises', 'playbook_candidates']);
     for (const rows of Object.values(known.tables)) for (const r of rows) expect(r.owner_id ?? null).toBeNull();
-    expect(JSON.stringify(known)).not.toContain(OWNER);
+    // Check 29a: no known personal string anywhere in the file.
+    const knownText = JSON.stringify(known);
+    for (const personal of [OWNER, 'Slept badly', 'Trains before work', 'I train before work', 'knee', id(300), id(301), id(400), gym(2).name]) expect(knownText).not.toContain(personal);
     // JSON columns are opened, not escaped text.
     expect(known.tables.playbook_candidates?.[0]?.data).toMatchObject({ text: 'Deload every 6 weeks' });
 
@@ -282,6 +284,33 @@ describe('deleteYourData', () => {
   });
 });
 
+describe('meta database migration 3 (reset switch reason)', () => {
+  it('keeps the slots and the last restore of a version-2 meta database, then accepts a reset', async () => {
+    const d = dir();
+    const first = await openManager(d);
+    await populate(first.store);
+    await first.close();
+    managers = managers.filter((x) => x !== first);
+    // Put the meta database back to version 2 as an older build left it, with a restore recorded.
+    const meta = await nodeDatabaseHost(d).open('fizz-meta.db');
+    await meta.exec(`DROP TABLE database_slots;
+      CREATE TABLE database_slots (
+        id INTEGER PRIMARY KEY CHECK (id = 1), current_name TEXT NOT NULL, previous_name TEXT, orphan_name TEXT,
+        switched_at_utc TEXT, switch_reason TEXT CHECK (switch_reason IN ('restore', 'rollback'))
+      ) STRICT;
+      ALTER TABLE database_slots ADD COLUMN orphan_reason TEXT CHECK (orphan_reason IN ('restore', 'check', 'dropped'));
+      INSERT INTO database_slots (id, current_name, switched_at_utc, switch_reason) VALUES (1, 'training-1.db', '${at(5).utc}', 'restore');
+      PRAGMA user_version = 2;`);
+    await meta.close();
+
+    const m = await openManager(d);
+    expect(m.databaseNames).toEqual({ current: 'training-1.db', previous: null, orphan: null });
+    expect(m.rollbackTarget.last).toEqual({ atUtc: at(5).utc, reason: 'restore' });
+    expect(await m.resetKnowledge([BUNDLED], { at: at(6) })).toMatchObject({ ok: true, status: 'switched' });
+    expect(m.rollbackTarget.last?.reason).toBe('reset');
+  });
+});
+
 describe('resetKnowledge', () => {
   let d: string;
   let m: DatabaseManager;
@@ -311,6 +340,25 @@ describe('resetKnowledge', () => {
     expect(dbFiles(d)).toEqual(['fizz-meta.db', 'training-1.db', 'training-2.db']);
     expect(await m.rollback(at(99))).toMatchObject({ ok: true });
     expect(await snapshot(m.store)).toEqual(before);
+  });
+
+  it('records the reset for Undo last reset; undoing and redoing swap the two (check 31a), and survive a relaunch', async () => {
+    const before = await snapshot(m.store);
+    expect(await m.resetKnowledge(bundled, { at: at(90) })).toMatchObject({ ok: true, status: 'switched' });
+    const reset = await snapshot(m.store);
+    expect(m.rollbackTarget).toEqual({ available: true, last: { atUtc: at(90).utc, reason: 'reset' } });
+    await m.close();
+    m = await openManager(d);
+    expect(m.rollbackTarget.last?.reason).toBe('reset');
+    expect(await m.rollback(at(91))).toMatchObject({ ok: true });
+    expect(m.rollbackTarget.last).toEqual({ atUtc: at(91).utc, reason: 'undo_reset' });
+    expect(await snapshot(m.store)).toEqual(before);
+    expect(await m.rollback(at(92))).toMatchObject({ ok: true });
+    expect(m.rollbackTarget.last?.reason).toBe('reset');
+    expect(await snapshot(m.store)).toEqual(reset);
+    // Delete my data after a reset leaves nothing to undo.
+    expect(await m.deleteYourData()).toMatchObject({ ok: true, status: 'switched' });
+    expect(m.rollbackTarget).toEqual({ available: false, last: null });
   });
 
   it('is refused against a stale confirmation', async () => {
