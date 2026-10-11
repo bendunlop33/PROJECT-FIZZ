@@ -1,6 +1,6 @@
-import type { ProgressWindowDays } from '@fizz/schemas';
+import type { EquipmentKind, Load, LoadConvention, ProgressWindowDays, WeightUnit } from '@fizz/schemas';
 import { weekdayIndexOfDate } from '../calendar';
-import { formatMinutes, localDateText, NBSP } from '../display';
+import { formatMinutes, formatNumber, localDateText, NBSP } from '../display';
 import type { DayCount, WeekCount } from './activity';
 import type { DateRange } from './window';
 
@@ -115,4 +115,37 @@ export function dayStripWords(days: readonly DayCount[]): string {
   if (done.length === 0) return `${head}: no workouts.`;
   const list = done.map((d) => `${weekdayDayMonthLong(d.date)}, ${countNoun(d.count, 'workout', 'workouts')}`).join('; ');
   return done.length === days.length ? `${head}: ${list}.` : `${head}: ${list}. Other days none.`;
+}
+
+/** A load for VoiceOver: `100 kilograms`, `22.5 kilograms each`, `body weight plus 10 kilograms`, `15 kilograms of assistance`. */
+export function massWords(load: Load, equipmentKind: EquipmentKind | null): string {
+  const unit = load.unit === 'kg' ? 'kilograms' : 'pounds';
+  const mass = `${formatNumber(load.value)} ${unit}`;
+  if (load.convention === 'added') {
+    // `BW + 10 kg` reads "body weight plus 10 kilograms"; plate-loaded machines read their plates (review N9).
+    if (equipmentKind === 'plate_loaded_machine') return `${mass} of plates`;
+    return load.value === 0 ? 'body weight' : `body weight plus ${mass}`;
+  }
+  if (load.convention === 'assistance') return `${mass} of assistance`;
+  if (load.convention === 'bodyweight') return 'body weight';
+  const suffix = load.convention === 'per_hand' ? ' each' : load.convention === 'stack' ? ' on the stack' : '';
+  return `${mass}${suffix}`;
+}
+
+/** A load's unit with its convention, for values, axes and estimates: `kg`, `kg each`, `kg stack`, `kg plates`, `kg added`, `kg assist`. */
+export function loadUnitText(unit: WeightUnit, convention: LoadConvention, equipmentKind: EquipmentKind | null): string {
+  switch (convention) {
+    case 'total':
+      return unit;
+    case 'per_hand':
+      return `${unit} each`;
+    case 'stack':
+      return `${unit} stack`;
+    case 'added':
+      return equipmentKind === 'plate_loaded_machine' ? `${unit} plates` : `${unit} added`;
+    case 'assistance':
+      return `${unit} assist`;
+    case 'bodyweight':
+      return 'reps';
+  }
 }

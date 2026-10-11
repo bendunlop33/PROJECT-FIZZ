@@ -1,4 +1,4 @@
-import type { EquipmentKind, Load, ProgressGrouping, ProgressWindowDays } from '@fizz/schemas';
+import type { ProgressGrouping, ProgressWindowDays } from '@fizz/schemas';
 import { formatNumber } from '../display';
 import { EXCLUSION_WORD } from '../exclusions';
 import { deriveWorkoutTitle } from '../session/first-run';
@@ -12,6 +12,7 @@ import {
   dayStripWords,
   gymTimeText,
   gymTimeWords,
+  massWords,
   perWeekText,
   countNoun,
   rangeText,
@@ -135,6 +136,10 @@ export interface RecordView {
   key: string;
   sessionId: string;
   exerciseId: string;
+  /** Exercise detail opens on this equipment's series (slice B). */
+  equipmentId: string | null;
+  /** `Best Est. 1RM` (labelled `≈`, `Est.`). */
+  isEstimate: boolean;
   /** `Bench press · Main Gym`. */
   title: string;
   label: string;
@@ -167,26 +172,22 @@ function sessionTitle(s: ProgressSession, exercises: ReadonlyMap<string, MuscleI
   return deriveWorkoutTitle(infos);
 }
 
-function massWords(load: Load, equipmentKind: EquipmentKind | null): string {
-  const unit = load.unit === 'kg' ? 'kilograms' : 'pounds';
-  const mass = `${formatNumber(load.value)} ${unit}`;
-  if (load.convention === 'added') {
-    // `BW + 10 kg` reads "body weight plus 10 kilograms"; plate-loaded machines read their plates (review N9).
-    if (equipmentKind === 'plate_loaded_machine') return `${mass} of plates`;
-    return load.value === 0 ? 'body weight' : `body weight plus ${mass}`;
-  }
-  const suffix = load.convention === 'per_hand' ? ' each' : load.convention === 'stack' ? ' on the stack' : '';
-  return `${mass}${suffix}`;
-}
-
 function recordView(r: ProgressRecord, gymNames: Readonly<Record<string, string>>): RecordView {
   const gym = r.gymId === null || r.equipmentId === null ? null : (gymNames[r.gymId] ?? null);
   const title = gym === null ? r.exerciseName : `${r.exerciseName} · ${gym}`;
-  const what = r.kind === 'heaviest' ? `Heaviest set, ${massWords(r.load, r.equipmentKind)} by ${String(r.reps)}` : `Most reps at ${massWords(r.load, r.equipmentKind)}, ${String(r.reps)}`;
+  const unitWords = r.load.unit === 'kg' ? 'kilograms' : 'pounds';
+  const what =
+    r.kind === 'heaviest'
+      ? `Heaviest set, ${massWords(r.load, r.equipmentKind)} by ${String(r.reps)}`
+      : r.kind === 'best_e1rm'
+        ? `Best estimated one-rep max, an estimate, about ${formatNumber(r.estimate ?? 0)} ${unitWords}${r.load.convention === 'per_hand' ? ' each' : ''}`
+        : `Most reps at ${massWords(r.load, r.equipmentKind)}, ${String(r.reps)}`;
   return {
     key: `${r.sessionExerciseId}:${r.kind}`,
     sessionId: r.sessionId,
     exerciseId: r.exerciseId,
+    equipmentId: r.equipmentId,
+    isEstimate: r.isEstimate,
     title,
     label: r.label,
     value: r.value,
@@ -322,7 +323,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
   };
 
   // Records (PG10, PG30)
-  const rec = recordsInWindow(input.sessions, window, { limit: input.recordLimit ?? 5 });
+  const rec = recordsInWindow(input.sessions, window, { limit: input.recordLimit ?? 5, estimates: true });
   return {
     dataState: 'normal',
     window,

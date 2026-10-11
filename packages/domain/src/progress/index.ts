@@ -9,3 +9,5 @@ export * from './text';
 export * from './home';
 export * from './calendar-view';
 export * from './resume';
+export * from './exercise';
+export * from './exercise-view';

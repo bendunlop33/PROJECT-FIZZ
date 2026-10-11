@@ -29,6 +29,8 @@ export interface ProgressSet {
   /** Null on rows imported with no time. */
   completedAtUtc: string | null;
   index: number;
+  /** Corrected after logging (`correctSet`): the chart's `Edited` marker (progress.md §3.4). */
+  edited?: true;
 }
 
 export interface ProgressExercise {
@@ -39,6 +41,8 @@ export interface ProgressExercise {
   equipmentId: string | null;
   /** The equipment's kind from the workout's snapshot (`plate_loaded_machine` tells plates from `BW +`). */
   equipmentKind: EquipmentKind | null;
+  /** The equipment's name from the snapshot (`Barbell`, `Cable stack 2`); null with none. Series labels (slice B). */
+  equipmentName?: string | null;
   /** The gym this row was done at (its own gym after a mid-workout switch); null when not recorded. */
   gymId: string | null;
   convention: LoadConvention;
@@ -100,6 +104,7 @@ export function toProgressSession(aggregate: SessionAggregate, ownerTz: string, 
       ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}),
       completedAtUtc: s.completedAt?.utc ?? null,
       index: s.index,
+      ...(s.edited ? { edited: true as const } : {}),
     });
     byExercise.set(s.sessionExerciseId, bucket);
   }
@@ -114,6 +119,7 @@ export function toProgressSession(aggregate: SessionAggregate, ownerTz: string, 
         exerciseName: ex.exerciseName,
         equipmentId: ex.equipmentId,
         equipmentKind: equipment?.kind ?? null,
+        equipmentName: equipment?.name ?? null,
         gymId: switched && equipment !== null ? equipment.gymId : session.gymId,
         convention: ex.loadConvention,
         unit: ex.unit,
