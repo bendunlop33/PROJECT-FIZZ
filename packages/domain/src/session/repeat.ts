@@ -10,6 +10,7 @@ import { setDisplayNumbers } from './order';
 import type { SnapSetResult, SnapSlotResult } from './snap';
 import { GENERIC_WORKOUT_NAME } from './first-run';
 import { repeatNoteText } from './snap-text';
+import { swapEquipmentId, type SwapPlan } from './swap-plan';
 
 /**
  * `Repeat last workout` / `Start from a past workout` (routines.md RT4, §2.4,
@@ -59,6 +60,12 @@ export interface RepeatInput {
   /** The gym's name, for notes (`No Olympic bar at Hotel · Lisbon …`); absent = "here". */
   gymName?: string;
   lastUsedHere?: StartWorkoutInput['lastUsedHere'];
+  /**
+   * Today's swaps (ADR 0022), by the source's part-root row ID: the slot is
+   * planned as the substitute, from its own targets (or last time's reps with
+   * no load), on its own item. Never from the original's loads.
+   */
+  swaps?: ReadonlyMap<string, SwapPlan>;
 }
 
 export interface RepeatNote {
@@ -74,6 +81,8 @@ export interface RepeatOutput extends StartWorkoutOutput {
   notCopied: { exerciseName: string; skipped: number }[];
   /** Nothing to copy (no completed sets). */
   empty: boolean;
+  /** The source part-root row each planned slot came from, by the plan's slot ID (`snap.slots[i].slotId`). */
+  slotSources: Record<string, string>;
 }
 
 export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
@@ -94,7 +103,8 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   const targetsFor = (exerciseId: string) => ((slots.get(exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(exerciseId));
 
   // What each template came from: the done set it copies, or the built-in rule's planned set (Start next session).
-  const copied = new Map<string, { kind: 'copy'; set: WorkoutSet } | { kind: 'rule'; planned: PlannedSet }>();
+  const copied = new Map<string, { kind: 'copy'; set: WorkoutSet } | { kind: 'rule'; planned: PlannedSet } | { kind: 'plain' }>();
+  const slotSources: Record<string, string> = {};
 
   for (const sx of roots) {
     const parts = partsOf(src.exercises, sx.id);
@@ -104,6 +114,42 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     const skipped = own.filter((s) => s.status === 'skipped').length;
     if (skipped > 0) notCopied.push({ exerciseName: sx.exerciseName, skipped });
     if (done.length === 0) continue;
+    const swap = input.swaps?.get(sx.id);
+    if (swap !== undefined) {
+      // A swapped slot (ADR 0022): the substitute on its own item, with its own targets, or last time's reps with no load.
+      exercises.set(swap.exercise.id, swap.exercise);
+      if (swap.pin !== null) knownEquipment.set(swap.pin.id, swap.pin);
+      const plan = swap.plan ?? [];
+      const sources =
+        plan.length > 0
+          ? plan.map((p) => ({ setType: p.setType, load: p.planned.load, reps: p.planned.reps, durationS: p.planned.durationS, from: { kind: 'rule' as const, planned: p.planned } }))
+          : done
+              .filter((s) => s.setType !== 'warmup' && s.actual !== null && (s.actual.reps !== null || s.actual.durationS !== null))
+              .map((s) => {
+                const reps = s.actual?.reps ?? null;
+                return { setType: s.setType, load: null, reps: reps === null ? null : { min: reps, max: reps }, durationS: reps === null ? (s.actual?.durationS ?? null) : null, from: { kind: 'plain' as const } };
+              });
+      const templates: SetTemplate[] = sources.map((a) => {
+        const templateId = input.newId();
+        copied.set(templateId, a.from);
+        return { id: templateId, setType: a.setType, targetLoad: a.load, targetReps: a.reps, targetDurationS: a.durationS, targetRpe: null, targetRir: null, restOverrideS: null };
+      });
+      if (templates.length === 0) continue;
+      const rexId = input.newId();
+      slotSources[rexId] = sx.id;
+      routineExercises.push({
+        id: rexId,
+        exerciseId: swap.exercise.id,
+        equipmentId: swapEquipmentId(swap),
+        order: routineExercises.length,
+        supersetGroup: sx.supersetGroup,
+        setTemplates: templates,
+        restBySetType: {},
+        transitionRestS: sx.transitionRestS,
+        progressionRuleId: null,
+      });
+      continue;
+    }
     const known = input.exercises.get(sx.exerciseId);
     // The item it was last done on: the latest part that had equipment (a part with none,
     // e.g. bench at a gym with no bar, doesn't unpin the exercise).
@@ -155,8 +201,10 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       });
     }
     if (templates.length === 0) continue;
+    const rexId = input.newId();
+    slotSources[rexId] = sx.id;
     routineExercises.push({
-      id: input.newId(),
+      id: rexId,
       exerciseId: exercise.id,
       // Pinned to last time's item: `snapPlanToGym` maps it to this gym (GS3).
       equipmentId: sourceEq?.id ?? null,
@@ -250,6 +298,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     const found = fromOf(setId);
     const from = found?.from;
     if (found === undefined || from === undefined) return null;
+    if (from.kind === 'plain') return null;
     if (from.kind === 'rule') {
       // A target from the built-in rule (Start next session, review B1.1): its own rule provenance, never `repeat`.
       // Without one it reads `Not recorded`, rather than a made-up explanation.
@@ -288,15 +337,18 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       // The synthetic routine isn't the source: the set Ben did last time is, or the built-in rule's target.
       const from = fromOf(s.id)?.from;
       // A coach target for next time (D21) keeps its source and its own `Why?`.
-      const source = from?.kind === 'rule' ? (from.planned.source === 'coach' ? 'coach' : 'built_in_rule') : 'repeat';
-      const planned: PlannedSet = { ...s.planned, source };
+      const source = from?.kind === 'rule' ? (from.planned.source === 'coach' ? 'coach' : 'built_in_rule') : from?.kind === 'plain' ? null : 'repeat';
+      const planned: PlannedSet = { ...s.planned };
+      // A swapped slot with no history of its own has reps only: no source to claim.
+      if (source === null) delete planned.source;
+      else planned.source = source;
       const provenance = provenanceOf(s.id);
       if (provenance === null) delete planned.provenance;
       else planned.provenance = provenance;
       return { ...s, planned };
     }),
   };
-  return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, fits: out.fits, notes, notCopied, empty: routineExercises.length === 0 };
+  return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, fits: out.fits, notes, notCopied, empty: routineExercises.length === 0, slotSources };
 }
 
 /**

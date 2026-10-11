@@ -67,8 +67,8 @@ export interface SessionRepository {
   save(aggregate: SessionAggregate, expectedRevision: number | null, fence?: WriteFence): Promise<SaveResult | FencedResult>;
 }
 
-/** Tables a `WriteFence` can pin a row of. `sessions` pins the aggregate `revision`. */
-export type FenceTable = 'routines' | 'sessions' | 'check_ins' | 'profiles';
+/** Tables a `WriteFence` can pin a row of. `sessions` pins the aggregate `revision`; `pre_start_drafts` pins an open draft (ADR 0022). */
+export type FenceTable = 'routines' | 'sessions' | 'check_ins' | 'profiles' | 'pre_start_drafts';
 
 /**
  * What a planned write was planned from (workout-overview §7: the stale check

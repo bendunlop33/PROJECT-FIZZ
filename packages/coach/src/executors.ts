@@ -342,6 +342,7 @@ function undoWhat(target: ActionRecord): string {
     case 'adjust_pending_sets':
     case 'set_next_session_targets':
     case 'propose_next_workout_change':
+    case 'update_routine':
     case 'undo':
       return renderActionResult(target, 'sheet').text.replace(/\.$/, '').slice(0, 200);
   }
