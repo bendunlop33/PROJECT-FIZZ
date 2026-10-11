@@ -173,6 +173,49 @@ describe('a coach write citing a workout deleted meanwhile is stale (DW16, rule 
   });
 });
 
+describe('get_recent_actions and a deleted workout (§5, DW16; review r3 S1)', () => {
+  /** Runs a turn whose model calls `get_recent_actions`, and returns the tool output it was given. */
+  async function recentActionsSeen(s: Services, entry: Parameters<Services['coach']['send']>[0]['entry']): Promise<string> {
+    let seen = '';
+    model = new StepModel([
+      () => call('get_recent_actions', { limit: 10 }),
+      (req) => {
+        const out = req.input.find((i) => i.type === 'function_call_output');
+        if (out?.type !== 'function_call_output') throw new Error('no tool output');
+        seen = out.output;
+        return reply('Ok.');
+      },
+    ]);
+    const r = await s.coach.send({ entry, threadId: null, input: { kind: 'words', text: 'What did you change recently?', spoken: false }, turnId: h.ids() });
+    expect(r.status).toBe('completed');
+    return seen;
+  }
+
+  it('neither Today nor the deleted workout’s thread sees its targets; after Restore both do; a purge hides them for good', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { first } = await coachTargetFrom(s, gymId);
+    const today = { kind: 'today' } as const;
+    const own = { kind: 'summary', sessionId: first } as const;
+    expect(await recentActionsSeen(s, today)).toContain('57.5');
+    expect(await recentActionsSeen(s, own)).toContain('57.5');
+
+    const undo = await deleteOne(s, first, 'del-1');
+    expect(await recentActionsSeen(s, today)).not.toContain('57.5');
+    // The deleted workout's own thread reads that workout's actions only, which are hidden: not every action Ben has.
+    expect(await recentActionsSeen(s, own)).not.toContain('57.5');
+
+    expect((await s.history.restoreWorkouts(undo, 'restore-1')).ok).toBe(true);
+    expect(await recentActionsSeen(s, today)).toContain('57.5');
+    expect(await recentActionsSeen(s, own)).toContain('57.5');
+
+    const again = await deleteOne(s, first, 'del-2');
+    expect(again).toHaveLength(1);
+    expect(await s.history.deleteNow([first], 'now-1')).toEqual({ ok: true, purged: 1 });
+    expect(await recentActionsSeen(s, today)).not.toContain('57.5');
+  });
+});
+
 describe('pain flags raised in a deleted workout (DW17, DW-D6)', () => {
   it('stay active, and progression on that movement stays blocked', async () => {
     const { services: s } = await h.launch();
