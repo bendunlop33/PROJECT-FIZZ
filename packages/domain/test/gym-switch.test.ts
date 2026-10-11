@@ -15,6 +15,8 @@ import {
   nextTargetsForBlock,
   planFingerprint,
   reduceSession,
+  routineCounts,
+  routineFromSession,
   startWorkout,
   startWorkoutFromSession,
   toHistorySessions,
@@ -505,6 +507,18 @@ describe('Summary and history after a switch (check 24)', () => {
       [20, 11],
     ]);
     expect(doneExerciseNames(done)).toEqual(['Bench press', 'Incline DB press']);
+  });
+
+  it('Save as routine keeps a split exercise as one entry, its sets in order, on the latest part’s item', () => {
+    const done = finishedAcrossGyms();
+    const r = routineFromSession({ id: id(90_001), ownerId: profile().id, name: 'Split', opId: 'save-split', source: done, at: at(90_000), newId: idGen(83_000) });
+    const incline = r?.exercises.filter((e) => e.exerciseId === INCLINE) ?? [];
+    expect(incline).toHaveLength(1);
+    expect(incline[0]?.equipmentId).toBe(hotelRack.id);
+    expect(incline[0]?.setTemplates.map((t) => t.targetLoad?.value)).toEqual([32.5, 20, 20]);
+    expect(r?.exercises.map((e) => e.order)).toEqual(r?.exercises.map((_, i) => i));
+    const sum = buildWorkoutSummary({ aggregate: done, nowMs: Date.parse(at(1000).utc), gymName: 'Hotel · Lisbon', gymNames: GYM_NAMES, history: {}, rules: {}, painFlags: [], checkIn: null, coach: 'not_connected' });
+    expect(r === null ? 0 : routineCounts(r).exercises).toBe(sum.facts.exercisesDone);
   });
 
   it('next-session targets read a split exercise as one block: the latest part with equipment, the block’s set count (review r2 B1)', () => {
