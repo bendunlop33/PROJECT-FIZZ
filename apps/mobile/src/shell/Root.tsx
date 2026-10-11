@@ -6,11 +6,11 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { toMs } from '@fizz/domain';
 import { readTextCoachState } from '@fizz/providers';
 
-import { coachConnectionPorts } from '../ai/coach-connection-ports';
+import { coachConnectionPorts, deviceCredentials, SETTINGS_FILE } from '../ai/coach-connection-ports';
 import { clearDeliveredWorkoutAlerts, expoNotifier } from '../alerts/notifier';
 import { createPlanModelPort } from '../coach/plan-model-port';
 import { createRestAlertController } from '../alerts/rest-alerts';
-import { containerBackupFiles, containerTextFile } from '../device/files';
+import { containerBackupFiles, containerTextFile, removeContainerFiles } from '../device/files';
 import { expoDatabaseHost } from '../data/expo-sqlite-host';
 import { DevicePrefsProvider } from '../device/DevicePrefsContext';
 import { DEFAULT_PREFS, loadPrefs, savePrefs, settleLoadedPrefs, updatePrefs, type DevicePrefs } from '../device/prefs';
@@ -23,6 +23,8 @@ import { MessageScreen, PrimaryButton } from '../ui';
 import { AppProvider } from './context';
 
 const BACKUP_MANIFEST = 'backup-state.json';
+/** Delete my data's marker and done op IDs (data-import-export §3.6 Interrupted). */
+const DATA_LEDGER = 'data-ops.json';
 
 /** One rest-alert controller for the app run (it remembers what is scheduled). */
 const restAlerts = createRestAlertController(expoNotifier);
@@ -86,6 +88,10 @@ function Launch() {
         },
         connection: () => readTextCoachState(coachConnectionPorts().ports),
       },
+      dataLedger: containerTextFile(DATA_LEDGER),
+      credentials: deviceCredentials(),
+      // Your-data files outside SQLite: coach connection settings and this phone's look and alert answers.
+      personalFiles: { remove: () => removeContainerFiles([SETTINGS_FILE, DEVICE_PREFS]) },
     }).then((o) => {
       clearTimeout(timer);
       if (alive) setOutcome(o);

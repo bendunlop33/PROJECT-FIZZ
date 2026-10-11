@@ -12,7 +12,7 @@ import { formatShortDate, formatWhen } from '../../format/dates';
 import { formatCount, plural } from '../../format/numbers';
 import { pausedLine } from '../../import/views';
 import { useTheme } from '../../theme';
-import { AppText, Card, DomainLabel, Group, Row, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
+import { AppText, Card, DangerTextButton, DomainLabel, Group, Row, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
 import { BlockingCover } from './BlockingCover';
 import { SaveCopyToFiles } from './SaveCopyToFiles';
 
@@ -23,7 +23,8 @@ const TONE = { done: 'done', info: 'info', warning: 'warning', progress: 'progre
  * the two-line status card, `Save a copy to Files`, `Back up on this phone
  * now`, the copies on this phone, the trial-run line, the quiet 30-day
  * reminder, Restore, Check a backup and Undo last restore, FitNotes import
- * and Past imports. Export and delete are listed honestly as not in this build.
+ * and Past imports, Export, and Delete my data / Reset coaching knowledge
+ * (two danger buttons, each opening its own screen).
  */
 export function DataBackupScreen() {
   const theme = useTheme();
@@ -213,8 +214,30 @@ export function DataBackupScreen() {
 
       <SectionHeader title="Export" />
       <Group>
-        <Row title="Export" subtitle="Not in this build yet" disabled />
+        <Row
+          title="Export"
+          icon="square.and.arrow.up"
+          subtitle="My data or Coaching knowledge only"
+          onPress={() => {
+            navigation.navigate('Export');
+          }}
+        />
       </Group>
+
+      <View style={{ gap: theme.space['8'], marginTop: theme.space['4'] }}>
+        <DangerTextButton
+          label="Delete my data (keep coaching knowledge)"
+          onPress={() => {
+            navigation.navigate('DeleteMyData');
+          }}
+        />
+        <DangerTextButton
+          label="Reset coaching knowledge"
+          onPress={() => {
+            navigation.navigate('ResetKnowledge');
+          }}
+        />
+      </View>
     </Screen>
   );
 }

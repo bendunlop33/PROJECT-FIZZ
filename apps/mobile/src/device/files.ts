@@ -64,6 +64,20 @@ export function containerTextFile(name: string): TextFile {
   };
 }
 
+/**
+ * Remove small files from Documents (and their `.tmp` twins). Used by
+ * Delete my data for Your-data files outside SQLite. Missing files are fine.
+ */
+export function removeContainerFiles(names: readonly string[]): Promise<void> {
+  for (const name of names) {
+    for (const n of [name, `${name}.tmp`]) {
+      const f = new File(Paths.document, n);
+      if (f.exists) f.delete();
+    }
+  }
+  return Promise.resolve();
+}
+
 /** `Documents/` as a file URI with a trailing slash, for "is this inside Fizz?" checks. */
 function containerRoot(): string {
   const doc = Paths.document.uri;

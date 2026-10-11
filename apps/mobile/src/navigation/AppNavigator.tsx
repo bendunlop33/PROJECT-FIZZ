@@ -17,6 +17,9 @@ import { DataBackupScreen } from '../screens/data/DataBackupScreen';
 import { EquipmentEditorScreen } from '../screens/gym/EquipmentEditorScreen';
 import { GymDetailScreen } from '../screens/gym/GymDetailScreen';
 import { RestoreScreen } from '../screens/data/RestoreScreen';
+import { DeleteMyDataScreen } from '../screens/data/DeleteMyDataScreen';
+import { ExportScreen } from '../screens/data/ExportScreen';
+import { ResetKnowledgeScreen } from '../screens/data/ResetKnowledgeScreen';
 import { ImportChooseScreen } from '../screens/import/ImportChooseScreen';
 import { ImportedWorkoutScreen } from '../screens/import/ImportedWorkoutScreen';
 import { ImportIntroScreen } from '../screens/import/ImportIntroScreen';
@@ -126,6 +129,9 @@ function ProfileNavigator() {
         component={RestoreScreen}
         options={({ route }) => ({ title: route.params.mode === 'restore' ? 'Restore from a backup' : 'Check a backup' })}
       />
+      <ProfileStack.Screen name="Export" component={ExportScreen} options={{ title: 'Export' }} />
+      <ProfileStack.Screen name="DeleteMyData" component={DeleteMyDataScreen} options={{ title: 'Delete my data' }} />
+      <ProfileStack.Screen name="ResetKnowledge" component={ResetKnowledgeScreen} options={{ title: 'Reset coaching knowledge' }} />
       <ProfileStack.Screen name="ImportIntro" component={ImportIntroScreen} options={{ title: 'Import from FitNotes' }} />
       <ProfileStack.Screen name="ImportPreview" component={ImportPreviewScreen} options={{ title: 'FitNotes import' }} />
       <ProfileStack.Screen name="ImportNames" component={ImportNamesScreen} options={{ title: 'Check exercise names' }} />

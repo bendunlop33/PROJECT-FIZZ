@@ -12,6 +12,10 @@ export type ProfileStackParams = {
   PainFlags: undefined;
   /** Restore from a backup, or Check a backup (data-import-export §2.3–2.4). */
   Restore: { mode: 'restore' | 'check' };
+  /** Export, Delete my data, Reset coaching knowledge (data-import-export §2.6, §2.7). */
+  Export: undefined;
+  DeleteMyData: undefined;
+  ResetKnowledge: undefined;
   GymDetail: { gymId: string };
   /** `equipmentId` is chosen once per visit (a new item's ID too), so Save is idempotent. */
   EquipmentEditor: { gymId: string; equipmentId: string; kind: EquipmentKind; isNew: boolean };

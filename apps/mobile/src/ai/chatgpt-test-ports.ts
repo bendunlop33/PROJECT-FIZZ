@@ -35,6 +35,19 @@ export const keychainVault: ChatGptVault = {
   deleteTokens: () => SecureStore.deleteItemAsync(TOKENS_KEY, KEYCHAIN_OPTIONS),
 };
 
+/**
+ * Every Keychain item GymSmarter owns (Delete my data, §4.5 step 1). Items
+ * survive an uninstall, so they are deleted by key, then checked gone.
+ */
+export const KEYCHAIN_KEYS: readonly string[] = [REGISTRATION_KEY, TOKENS_KEY];
+
+export async function wipeKeychain(): Promise<void> {
+  for (const key of KEYCHAIN_KEYS) await SecureStore.deleteItemAsync(key, KEYCHAIN_OPTIONS);
+  for (const key of KEYCHAIN_KEYS) {
+    if ((await SecureStore.getItemAsync(key, KEYCHAIN_OPTIONS)) !== null) throw new Error('A coach sign-in item is still in the Keychain');
+  }
+}
+
 const deviceCrypto: CryptoPort = {
   randomBytes: (count) => Crypto.getRandomBytes(count),
   // Copy into a plain ArrayBuffer-backed view (digest's BufferSource type excludes SharedArrayBuffer).
