@@ -791,7 +791,7 @@ export class SqliteSessions implements SessionRepository {
                   (SELECT count(DISTINCT e.exercise_id) FROM session_exercises e WHERE e.session_id = s.id
                     AND EXISTS (SELECT 1 FROM session_sets y WHERE y.session_exercise_id = e.id AND y.status = 'completed')) AS n
            FROM sessions s
-           WHERE s.owner_id = ? AND s.status = 'finished'
+           WHERE s.owner_id = ? AND ${inHistorySql('s')}
              AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')
            ORDER BY s.started_at_utc DESC, s.id DESC LIMIT ?`,
           [ownerId, limit],
