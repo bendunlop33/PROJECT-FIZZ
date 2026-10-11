@@ -1,4 +1,4 @@
-import { toMs, type OverviewBasis, type OverviewRow } from '@fizz/domain';
+import { toMs, type CheckInGate, type OverviewBasis, type OverviewRow } from '@fizz/domain';
 import type { CheckIn, CheckInScore, SessionCheckIn } from '@fizz/schemas';
 
 import type { OverviewData } from '../services/workout-services';
@@ -48,6 +48,24 @@ export function startCheckIn(gate: OverviewData['checkIn'], row: CheckInRowState
   if (row.record !== null) return { kind: 'answered', checkInId: row.record.id };
   if (gate.kind === 'skip') return gate.reason === 'off' || gate.reason === 'not_a_check_in_day' ? { kind: 'not_asked', reason: gate.reason } : null;
   return { kind: 'skipped', atUtc: nowUtc };
+}
+
+/**
+ * The check-in Start sends, decided after any score write has landed
+ * (§2.2; review r2 B1). `gateNow` is the check-in gate re-read at Start: a
+ * check-in made in the `Check-in ›` sheet (AX sizes) is only on the page
+ * after its reload, so a Start before that reload would send `skipped` and
+ * plan without it. The gate finds it (unlinked, under 2 h) and it is linked.
+ * - a score tapped on this page wins;
+ * - else a reusable check-in now (the sheet's, or the one the page showed);
+ * - else what the rendered page says. A reused check-in the page showed
+ *   selected stands even if it aged past 2 h while the page was open (N1).
+ * `gateNow` null: the re-read failed, so the rendered page decides.
+ */
+export function checkInForStart(p: { rendered: OverviewData['checkIn']; tapped: CheckIn | null; gateNow: CheckInGate | null; nowUtc: string }): SessionCheckIn | null {
+  if (p.tapped !== null) return { kind: 'answered', checkInId: p.tapped.id };
+  if (p.gateNow?.kind === 'reuse' && p.rendered.kind !== 'skip') return { kind: 'answered', checkInId: p.gateNow.checkInId };
+  return startCheckIn(p.rendered, checkInRow(p.rendered, null), p.nowUtc);
 }
 
 /**

@@ -1,8 +1,8 @@
-import type { CheckInGate, WorkoutOverview } from '@fizz/domain';
+import { asksReasons, DEFAULT_CHECK_IN_SETTINGS, type CheckInGate, type WorkoutOverview } from '@fizz/domain';
 import type { CheckIn, CheckInScore, SessionCheckIn } from '@fizz/schemas';
 
 import type { OverviewData, OverviewStartOf, WorkoutStartOutcome } from '../services/workout-services';
-import { startFailure } from './overview';
+import { checkInForStart, startFailure } from './overview';
 
 /**
  * The Workout overview's writes, as plain async functions over the services
@@ -74,6 +74,45 @@ export async function startFromOverview(ports: OverviewStartPorts, req: { page: 
   const failure = startFailure(r.error.code);
   // A stale result here means the re-read was still the same page and failed again: say so rather than loop.
   return failure.kind === 'stale' ? { kind: 'stale', page: null } : failure;
+}
+
+/** How a score tap on the page ended, as Start sees it (review r2 S1): `reasons` opened What's up? over the page. */
+export type ScoreStep = 'saved' | 'reasons' | 'not_saved';
+
+/** What a finished score write means for Start: a saved score at or below the What's up? setting opens the reasons step. */
+export function scoreStepOf(r: ScoreResult, score: CheckInScore): ScoreStep {
+  if (r.kind !== 'saved') return 'not_saved';
+  return asksReasons(score, DEFAULT_CHECK_IN_SETTINGS) ? 'reasons' : 'saved';
+}
+
+export type StartCheckInDecision =
+  | { kind: 'send'; checkIn: SessionCheckIn | null }
+  /** A score write still running at the tap opened What's up?: Start stops, so the reasons step (and any pain) comes first. */
+  | { kind: 'reasons_open' };
+
+export interface StartCheckInPorts {
+  /** The check-in gate now (`services.checkIns.gate`). */
+  gate: () => Promise<CheckInGate>;
+  /** The score tapped on this page, read after the pending write has landed. */
+  tapped: () => CheckIn | null;
+}
+
+/**
+ * The check-in step of `Start workout` (§2.2; review r2 B1, S1, S4). `pending`
+ * is the score write that was still running when Start was tapped (null if
+ * none): Start waits for it, and stops if it opened What's up?. Then the gate
+ * is re-read, so a check-in saved in the `Check-in ›` sheet is linked even
+ * if the page hasn't reloaded yet; the preview key check then catches any row
+ * it changes (a pain mention holds loads).
+ */
+export async function checkInAtStart(ports: StartCheckInPorts, req: { rendered: OverviewData['checkIn']; pending: Promise<ScoreStep | null> | null; nowUtc: () => string }): Promise<StartCheckInDecision> {
+  if (req.pending !== null) {
+    const step = await req.pending.catch(() => null);
+    if (step === 'reasons') return { kind: 'reasons_open' };
+  }
+  const tapped = ports.tapped();
+  const gateNow = tapped === null && req.rendered.kind !== 'skip' ? await ports.gate().catch(() => null) : null;
+  return { kind: 'send', checkIn: checkInForStart({ rendered: req.rendered, tapped, gateNow, nowUtc: req.nowUtc() }) };
 }
 
 export type ScoreResult =

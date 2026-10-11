@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, LayoutAnimation, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { asksReasons, DEFAULT_CHECK_IN_SETTINGS, overviewDoneBy, statStripSpoken, type TargetExplanation } from '@fizz/domain';
+import { overviewDoneBy, statStripSpoken, type TargetExplanation } from '@fizz/domain';
 import type { CheckIn, CheckInScore } from '@fizz/schemas';
 
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
@@ -28,10 +28,9 @@ import {
   overviewLayout,
   panelReducer,
   rowDetail,
-  startCheckIn,
   targetsChanged,
 } from '../../workout/overview';
-import { createGuard, saveScore, startEmptyFromOverview, startFromOverview } from '../../workout/overview-start';
+import { checkInAtStart, createGuard, saveScore, scoreStepOf, startEmptyFromOverview, startFromOverview, type ScoreStep } from '../../workout/overview-start';
 import { NameSheet } from '../routines/NameSheet';
 import { TargetWhyPanel } from './TargetWhyPanel';
 
@@ -76,7 +75,8 @@ export function WorkoutOverviewScreen() {
   // Refs, not state: two taps in one frame both see the old state (S2, S7).
   const [startGuard] = useState(createGuard);
   const [scoreGuard] = useState(createGuard);
-  const scoreWrite = useRef<Promise<unknown>>(Promise.resolve());
+  // The latest score write; Start waits for it if it was still running at the tap (B1), and stops if it opened What's up? (r2 S1).
+  const scoreWrite = useRef<Promise<ScoreStep | null>>(Promise.resolve(null));
   const [scoring, setScoring] = useState(false);
   const [busy, setBusy] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
@@ -169,7 +169,7 @@ export function WorkoutOverviewScreen() {
   async function pickScore(n: CheckInScore) {
     // Tiles are disabled while a score is written (S7); the guard also drops a second tap in the same frame.
     if (!page || busy || scoreGuard.running()) return;
-    const write = scoreGuard.run(async () => {
+    const write = scoreGuard.run(async (): Promise<ScoreStep> => {
       setScoring(true);
       try {
         haptic('step');
@@ -184,17 +184,19 @@ export function WorkoutOverviewScreen() {
         if (r.kind === 'stale') {
           // Changed elsewhere: show the latest rather than guess (rule 5).
           reload();
-          return;
+          return 'not_saved';
         }
         if (r.kind === 'failed') {
           setToast({ text: r.message });
-          return;
+          return 'not_saved';
         }
         setTapped(r.checkIn);
         tappedRef.current = r.checkIn;
         changed();
         // At or below the What's up? setting: check-in Step 2 over this page; every exit comes back here.
-        if (asksReasons(n, DEFAULT_CHECK_IN_SETTINGS)) navigation.navigate('CheckIn', { mode: 'overview', checkInId: r.checkIn.id });
+        const step = scoreStepOf(r, n);
+        if (step === 'reasons') navigation.navigate('CheckIn', { mode: 'overview', checkInId: r.checkIn.id });
+        return step;
       } finally {
         setScoring(false);
       }
@@ -206,21 +208,28 @@ export function WorkoutOverviewScreen() {
 
   async function start() {
     if (!page) return;
+    // Read at the tap: a score write still running now is the one Start waits for (and stops on if it opens What's up?).
+    const pending = scoreGuard.running() ? scoreWrite.current : null;
     await startGuard.run(async () => {
       setBusy(true);
       setStartError(null);
       try {
-        await scoreWrite.current;
+        const decided = await checkInAtStart(
+          { gate: () => services.checkIns.gate(), tapped: () => tappedRef.current },
+          { rendered: page.checkIn, pending, nowUtc: () => services.now().utc },
+        );
+        // What's up? opened over the page (r2 S1), or anything else did: never reset the stack under it.
+        if (decided.kind === 'reasons_open' || !navigation.isFocused()) return;
         // First Start ever: the one-time Rest alerts question; either answer continues the same Start.
         await alertsAsk.ensureAsked();
         startOp.current ??= newUuid();
-        const tappedNow = tappedRef.current;
+        const checkIn = decided.checkIn;
         const r = await startFromOverview(
           {
             start: (q) => services.overview.start(q),
-            reload: () => services.overview.load({ target, gymId: page.view.gym?.id ?? null, checkInId: tappedNow?.id ?? null }),
+            reload: () => services.overview.load({ target, gymId: page.view.gym?.id ?? null, checkInId: checkIn?.kind === 'answered' ? checkIn.checkInId : null }),
           },
-          { page, opId: startOp.current, checkIn: startCheckIn(page.checkIn, checkInRow(page.checkIn, tappedNow), services.now().utc) },
+          { page, opId: startOp.current, checkIn },
         );
         if (r.kind === 'started') {
           changed();

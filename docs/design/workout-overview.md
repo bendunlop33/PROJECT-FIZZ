@@ -53,6 +53,8 @@ The overview costs one tap. That is the price of the page Ben asked for. Mitigat
 
 **Where the check-in lives now.** On this path it is an optional inline row in the overview's fixed bottom bar, shown only when `shouldAskCheckIn` says `ask` or `reuse`. A tapped score is saved at once (`recordCheckIn`, CI4). A score never starts the workout. A score at or below the "What's up?" setting opens check-in.md's Step 2 as a sheet **over the overview**. Its `Done`, `Skip`, `Not now`, `Flag n movements` and `Train anyway` all return to the overview with the plan re-rendered (a new pain flag shows `HELD` at once). `Skip workout` closes the overview to Today's skipped state, exactly as before. Because the session still doesn't exist until Start, CI1 holds unchanged. Starting with no score records `{kind: 'skipped'}`.
 
+**Start and the check-in (review r2 B1, S1).** Start first waits for a score that is still being written. If that score is at or below the What's up? setting, Start stops: What's up? always comes before the workout starts, and Ben taps Start again from the overview. A check-in made in the `Check-in ›` sheet (AX sizes) is the page's check-in as soon as the sheet closes, before the page reloads: Start re-reads the check-in gate and links any reusable check-in (the stale-preview check then catches any row it changes, e.g. a pain mention holding a load). A reused check-in the page showed selected stays linked even if it passes 2 h while the page is open.
+
 ---
 
 ## 3. Layout (390 × 844, top to bottom)

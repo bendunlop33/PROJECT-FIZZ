@@ -10,6 +10,7 @@ import type { CheckIn } from '@fizz/schemas';
 import { openStartedWorkout, popToTabs } from '../src/navigation/actions';
 import {
   CHECK_IN_TILES_WIDTH,
+  checkInForStart,
   checkInRow,
   checkInRowLayout,
   checkInSheetEnd,
@@ -71,6 +72,30 @@ describe('inline check-in (§3.9, §2.2, OV2, OV10)', () => {
   });
   it('VoiceOver reads each tile with its meaning at the ends', () => {
     expect([1, 2, 3, 4, 5].map((n) => tileLabel(n as 1 | 2 | 3 | 4 | 5))).toEqual(['1 of 5, rough', '2 of 5', '3 of 5', '4 of 5', '5 of 5, great']);
+  });
+});
+
+describe('r2 B1: the check-in Start sends, decided after the score write (§2.2)', () => {
+  const now = '2026-10-10T17:10:00.000Z';
+  const ask = { kind: 'ask' } as const;
+  it('a check-in from the `Check-in ›` sheet the page hasn’t reloaded for: the gate finds it and it is linked', () => {
+    expect(checkInForStart({ rendered: ask, tapped: null, gateNow: { kind: 'reuse', checkInId: 'ci-sheet' }, nowUtc: now })).toEqual({ kind: 'answered', checkInId: 'ci-sheet' });
+  });
+  it('a score tapped on the page wins over the gate', () => {
+    expect(checkInForStart({ rendered: ask, tapped: checkIn(2, 'ci-tap'), gateNow: { kind: 'reuse', checkInId: 'ci-other' }, nowUtc: now })).toEqual({ kind: 'answered', checkInId: 'ci-tap' });
+  });
+  it('nothing new: a due check-in left alone is skipped; a failed gate read falls back to the page', () => {
+    expect(checkInForStart({ rendered: ask, tapped: null, gateNow: ask, nowUtc: now })).toEqual({ kind: 'skipped', atUtc: now });
+    expect(checkInForStart({ rendered: ask, tapped: null, gateNow: null, nowUtc: now })).toEqual({ kind: 'skipped', atUtc: now });
+  });
+  it('N1: a reused check-in the page showed stands even if it aged past 2 h while the page was open', () => {
+    const reused = { kind: 'reuse', checkIn: checkIn(4, 'ci-old') } as const;
+    expect(checkInForStart({ rendered: reused, tapped: null, gateNow: ask, nowUtc: now })).toEqual({ kind: 'answered', checkInId: 'ci-old' });
+    expect(checkInForStart({ rendered: reused, tapped: null, gateNow: { kind: 'reuse', checkInId: 'ci-old' }, nowUtc: now })).toEqual({ kind: 'answered', checkInId: 'ci-old' });
+  });
+  it('no check-in row on the page: the gate isn’t consulted', () => {
+    const off = { kind: 'skip', reason: 'off' } as const;
+    expect(checkInForStart({ rendered: off, tapped: null, gateNow: { kind: 'reuse', checkInId: 'x' }, nowUtc: now })).toEqual({ kind: 'not_asked', reason: 'off' });
   });
 });
 
@@ -233,7 +258,12 @@ describe('source checks', () => {
   });
 
   it('B1/S2/S7: Start waits for a score being written; tiles are off while one is; both Starts share one guard and keep one opId per page', () => {
-    expect(screen).toContain('await scoreWrite.current;');
+    // r2 B1/S1: the check-in step of Start runs through checkInAtStart (tested on SQLite), with the write still running at the tap.
+    expect(screen).toContain('const pending = scoreGuard.running() ? scoreWrite.current : null;');
+    expect(screen).toContain('checkInAtStart(');
+    expect(screen).toContain("if (decided.kind === 'reasons_open' || !navigation.isFocused()) return;");
+    expect(screen).toContain('scoreWrite.current = write;');
+    expect(screen).not.toContain('startCheckIn(');
     expect(screen).toContain('disabled={busy || scoring}');
     expect(screen).toContain('if (!page || busy || scoreGuard.running()) return;');
     expect(screen.match(/await startGuard\.run\(/g)).toHaveLength(2);

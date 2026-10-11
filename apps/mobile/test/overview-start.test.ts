@@ -9,7 +9,17 @@ import type { SessionAggregate } from '@fizz/schemas';
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData, OverviewTarget } from '../src/services/workout-services';
 import { checkInRow, startCheckIn } from '../src/workout/overview';
-import { createGuard, samePage, saveScore, startEmptyFromOverview, startFromOverview, type OverviewStartPorts } from '../src/workout/overview-start';
+import {
+  checkInAtStart,
+  createGuard,
+  samePage,
+  saveScore,
+  scoreStepOf,
+  startEmptyFromOverview,
+  startFromOverview,
+  type OverviewStartPorts,
+  type ScoreStep,
+} from '../src/workout/overview-start';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -317,5 +327,180 @@ describe('S6: the no-gym Start and OV4 inputs', () => {
     expect((await s.checkIns.update(CI, { score: 3 }, ci.checkIn.version, 'ci-2')).ok).toBe(true);
     expect(await s.overview.start({ startOf: page.startOf, gymId, opId: 'op-ci', checkIn: { kind: 'answered', checkInId: CI }, expectedPreviewKey: page.view.previewKey })).toMatchObject({ ok: false, error: { code: 'stale_preview' } });
     expect(await s.sessions.active()).toBeNull();
+  });
+});
+
+describe('r2 B1: a check-in saved in the `Check-in ›` sheet (AX sizes) before the page reloads', () => {
+  it('score 2 + Pain + Not now behind the page, Start with the old page: linked as answered, loads held, never skipped with progression', async () => {
+    const { services: s } = await h.launch();
+    const { gymId } = await withRoutine(s);
+    const page = await load(s, gymId);
+    expect(page.checkIn.kind).toBe('ask');
+    const bench = page.view.rows[0];
+    expect(bench?.name).toBe('Bench press');
+    expect(bench?.marker.kind).toBe('up');
+    // The sheet's own check-in (its ID, not the page's): score 2, `Pain` ticked, `Done`, then `Not now` (no flag).
+    const Y = h.ids();
+    const scored = await s.checkIns.record({ checkInId: Y, opId: h.ids(), score: 2 });
+    if (!scored.ok) throw new Error(scored.message);
+    expect((await s.checkIns.update(Y, { reasons: ['pain'], note: null }, scored.checkIn.version, h.ids())).ok).toBe(true);
+    // Before the fix the page sent this, and the start went ahead at 62.5 kg (UP).
+    expect(startCheckIn(page.checkIn, checkInRow(page.checkIn, null), h.now().utc)).toMatchObject({ kind: 'skipped' });
+
+    let gateReads = 0;
+    const decided = await checkInAtStart(
+      {
+        gate: () => {
+          gateReads += 1;
+          return s.checkIns.gate();
+        },
+        tapped: () => null,
+      },
+      { rendered: page.checkIn, pending: null, nowUtc: () => h.now().utc },
+    );
+    expect(gateReads).toBe(1);
+    expect(decided).toEqual({ kind: 'send', checkIn: { kind: 'answered', checkInId: Y } });
+    if (decided.kind !== 'send') return;
+
+    const p = ports(s, gymId, () => Y);
+    const opId = 'op-ax-sheet';
+    const r = await startFromOverview(p, { page, opId, checkIn: decided.checkIn });
+    // The rows Ben saw are no longer what Start makes: nothing created, the fresh page shows HELD.
+    expect(r.kind).toBe('stale');
+    if (r.kind !== 'stale' || r.page === null) throw new Error('expected the fresh page');
+    // An unflagged pain mention holds the load at last time's 60 kg (only a pain flag shows the HELD word).
+    expect(r.page.view.rows[0]?.load.value).toBe('60');
+    expect(r.page.view.rows[0]?.marker.kind).toBe('same');
+    expect(bench?.load.value).toBe('62.5');
+    expect(await s.sessions.active()).toBeNull();
+
+    // Start on the fresh page: the check-in is linked and the loads are held.
+    const again = await checkInAtStart({ gate: () => s.checkIns.gate(), tapped: () => null }, { rendered: r.page.checkIn, pending: null, nowUtc: () => h.now().utc });
+    expect(again).toEqual({ kind: 'send', checkIn: { kind: 'answered', checkInId: Y } });
+    if (again.kind !== 'send') return;
+    const started = await startFromOverview(p, { page: r.page, opId, checkIn: again.checkIn });
+    expect(started.kind).toBe('started');
+    if (started.kind !== 'started') return;
+    expect(started.outcome.aggregate.session.checkIn).toEqual({ kind: 'answered', checkInId: Y });
+    for (const row of r.page.view.rows) matchesSession(row, started.outcome.aggregate);
+    // Linked now, so the next start doesn't reuse it.
+    expect(await s.checkIns.gate()).toEqual({ kind: 'ask' });
+  });
+
+  it('a sheet check-in that changes nothing Ben sees (score 4) starts at once, linked', async () => {
+    const { services: s } = await h.launch();
+    const { gymId } = await withRoutine(s);
+    const page = await load(s, gymId);
+    const Y = h.ids();
+    expect((await s.checkIns.record({ checkInId: Y, opId: h.ids(), score: 4 })).ok).toBe(true);
+    const decided = await checkInAtStart({ gate: () => s.checkIns.gate(), tapped: () => null }, { rendered: page.checkIn, pending: null, nowUtc: () => h.now().utc });
+    if (decided.kind !== 'send') throw new Error(decided.kind);
+    const r = await startFromOverview(ports(s, gymId, () => Y), { page, opId: 'op-4', checkIn: decided.checkIn });
+    expect(r).toMatchObject({ kind: 'started', outcome: { aggregate: { session: { checkIn: { kind: 'answered', checkInId: Y } } } } });
+  });
+
+  it('a score tapped on the page wins without a gate read; a failed gate read falls back to the page; no row means no read', async () => {
+    const { services: s } = await h.launch();
+    const { gymId } = await withRoutine(s);
+    const page = await load(s, gymId);
+    const tapped = await s.checkIns.record({ checkInId: h.ids(), opId: h.ids(), score: 5 });
+    if (!tapped.ok) throw new Error(tapped.message);
+    let reads = 0;
+    const gate = () => {
+      reads += 1;
+      return s.checkIns.gate();
+    };
+    expect(await checkInAtStart({ gate, tapped: () => tapped.checkIn }, { rendered: page.checkIn, pending: null, nowUtc: () => h.now().utc })).toEqual({
+      kind: 'send',
+      checkIn: { kind: 'answered', checkInId: tapped.checkIn.id },
+    });
+    expect(reads).toBe(0);
+    const now = h.now().utc;
+    expect(await checkInAtStart({ gate: () => Promise.reject(new Error('db')), tapped: () => null }, { rendered: { kind: 'ask' }, pending: null, nowUtc: () => now })).toEqual({
+      kind: 'send',
+      checkIn: { kind: 'skipped', atUtc: now },
+    });
+    expect(await checkInAtStart({ gate, tapped: () => null }, { rendered: { kind: 'skip', reason: 'off' }, pending: null, nowUtc: () => now })).toEqual({
+      kind: 'send',
+      checkIn: { kind: 'not_asked', reason: 'off' },
+    });
+    expect(reads).toBe(0);
+  });
+});
+
+describe('r2 S1: a low score then a quick Start', () => {
+  it('a saved score at or below the setting opens What’s up?; 4–5 and failures don’t', () => {
+    const saved = { kind: 'saved', checkIn: {} } as Parameters<typeof scoreStepOf>[0];
+    expect(scoreStepOf(saved, 2)).toBe('reasons');
+    expect(scoreStepOf(saved, 3)).toBe('reasons');
+    expect(scoreStepOf(saved, 4)).toBe('saved');
+    expect(scoreStepOf({ kind: 'stale' }, 1)).toBe('not_saved');
+    expect(scoreStepOf({ kind: 'failed', message: 'x' }, 1)).toBe('not_saved');
+  });
+
+  it('Start tapped while a score 2 is saving: waits, then stops (no gate read, nothing started); a Start after What’s up? starts linked', async () => {
+    const { services: s } = await h.launch();
+    const { gymId } = await withRoutine(s);
+    const page = await load(s, gymId);
+    // The screen's write, as pickScore runs it: save, keep the tapped record, map to a step.
+    let tapped: Awaited<ReturnType<typeof saveScore>> | null = null;
+    const CI = h.ids();
+    const guard = createGuard();
+    const write: Promise<ScoreStep | null> = guard.run(async () => {
+      const r = await saveScore(scorePorts(s), { current: null, score: 2, checkInId: CI, opId: 'ci-op' });
+      tapped = r;
+      return scoreStepOf(r, 2);
+    });
+    // Start's tap lands in the same frame: the write is still running.
+    expect(guard.running()).toBe(true);
+    let reads = 0;
+    const tappedNow = () => (tapped?.kind === 'saved' ? tapped.checkIn : null);
+    const decided = await checkInAtStart(
+      {
+        gate: () => {
+          reads += 1;
+          return s.checkIns.gate();
+        },
+        tapped: tappedNow,
+      },
+      { rendered: page.checkIn, pending: guard.running() ? write : null, nowUtc: () => h.now().utc },
+    );
+    expect(decided).toEqual({ kind: 'reasons_open' });
+    expect(reads).toBe(0);
+    expect(await s.sessions.active()).toBeNull();
+
+    // What's up?: Pain, Not now. Back on the page, Start again (no write pending): linked, loads held.
+    const current = await s.checkIns.get(CI);
+    if (!current) throw new Error('no check-in');
+    expect((await s.checkIns.update(CI, { reasons: ['pain'], note: null }, current.version, h.ids())).ok).toBe(true);
+    const next = await checkInAtStart({ gate: () => s.checkIns.gate(), tapped: tappedNow }, { rendered: page.checkIn, pending: null, nowUtc: () => h.now().utc });
+    expect(next).toEqual({ kind: 'send', checkIn: { kind: 'answered', checkInId: CI } });
+    if (next.kind !== 'send') return;
+    const p = ports(s, gymId, () => CI);
+    const r = await startFromOverview(p, { page, opId: 'op-s1', checkIn: next.checkIn });
+    expect(r.kind).toBe('stale');
+    if (r.kind !== 'stale' || r.page === null) throw new Error('expected the fresh page');
+    expect(r.page.view.rows[0]?.load.value).toBe('60');
+    expect(page.view.rows[0]?.load.value).toBe('62.5');
+  });
+
+  it('Start tapped while a score 4 is saving: waits and sends that score', async () => {
+    const { services: s } = await h.launch();
+    const { gymId } = await withRoutine(s);
+    const page = await load(s, gymId);
+    let saved: Awaited<ReturnType<typeof saveScore>> | null = null;
+    const CI = h.ids();
+    const guard = createGuard();
+    const write = guard.run(async () => {
+      saved = await saveScore(scorePorts(s), { current: null, score: 4, checkInId: CI, opId: 'ci-op' });
+      return scoreStepOf(saved, 4);
+    });
+    const decided = await checkInAtStart(
+      { gate: () => s.checkIns.gate(), tapped: () => (saved?.kind === 'saved' ? saved.checkIn : null) },
+      { rendered: page.checkIn, pending: guard.running() ? write : null, nowUtc: () => h.now().utc },
+    );
+    expect(decided).toEqual({ kind: 'send', checkIn: { kind: 'answered', checkInId: CI } });
+    if (decided.kind !== 'send') return;
+    expect((await startFromOverview(ports(s, gymId, () => CI), { page, opId: 'op-4', checkIn: decided.checkIn })).kind).toBe('started');
   });
 });
