@@ -147,7 +147,7 @@ describe('buildActiveSetView: empty workout and equipment conventions', () => {
     expect(plain(atMax.logLabel)).toBe('Log 30 kg each × 10');
     expect(atMax.offProfileWarning).toBeNull();
     const off = focus(view(s, { edits: { setId: f.setId, values: values(kg(37.5, 'per_hand'), 8) } }));
-    expect(plain(off.offProfileWarning)).toBe('37.5 kg each isn’t on Home dumbbells at Main Gym (max 30 kg each). Log it anyway if that’s what you lifted, or update the gym.');
+    expect(plain(off.offProfileWarning)).toBe('Not on Home dumbbells at Main Gym (max 30 kg each)');
     expect(plain(off.logLabel)).toBe('Log 37.5 kg each × 8');
   });
 

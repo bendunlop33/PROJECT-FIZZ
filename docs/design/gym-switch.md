@@ -63,7 +63,6 @@ Example: Push A at Main Gym, bench sets 1–2 logged. Ben moves to Hotel · Lisb
 │ ┌────────────────────────────────────┐ │
 │ │ [✓ Checks] Switch to Hotel · Lisbon│ │ SourceTag + title
 │ │ [▦ Today only]                     │ │ ScopeBadge
-│ │ 2 logged sets stay as they are.    │ │ not-changed line, always first
 │ │                                    │ │
 │ │ ✎ Bench press · sets 3–4           │ │ ChangeLine: swap
 │ │   → DB bench press                 │ │
@@ -116,9 +115,9 @@ Nothing changes (every pending target is already achievable on the mapped equipm
 │ └────────────────────────────────────┘ │
 ```
 
-Nothing left to update (all sets finished or skipped, or an empty workout): `No sets left to update. Anything you add uses Home's equipment.` with [Not now] [Switch].
+Nothing left to update (all sets finished or skipped, or an empty workout): `No sets left to update` with [Not now] [Switch].
 
-Target gym has no equipment set up: every loaded exercise is `not_here`. The card leads with `⚠ Hotel · Lisbon has no equipment set up yet, so remaining load targets are removed.` and `Add equipment ›` (gym-editor §2.3 as a sheet; after `Save`, the card checks again).
+Target gym has no equipment set up: every loaded exercise is `not_here`. The card leads with `⚠ No equipment set up · load targets removed` and `Add equipment ›` (gym-editor §2.3 as a sheet; after `Save`, the card checks again).
 
 Out of date (GS7; design-system §9.11 variant: Switch hidden, lines kept in `text.secondary`):
 
@@ -133,9 +132,9 @@ Out of date (GS7; design-system §9.11 variant: Switch hidden, lines kept in `te
 │ └────────────────────────────────────┘ │
 ```
 
-Same gym after an equipment edit (`[Use changes today]`): title `Use updated Main Gym`, button `Apply`, otherwise identical. Example line after Ben corrected the rack from 30 to 50 kg each: `✎ Incline DB press · sets 2–3` / `Target 30 → 32.5 kg each × 8–10` / `ⓘ Back to the planned load.`
+Same gym after an equipment edit (`[Use changes today]`): title `Use updated Main Gym`, button `Apply`, otherwise identical. Example line after Ben corrected the rack from 30 to 50 kg each: `✎ Incline DB press · sets 2–3` / `Target 30 → 32.5 kg each × 8–10` / `ⓘ Back to plan`
 
-Switch back (Ben chose his earlier gym, or the compensating card after an Undo was refused): title `Switch back to Main Gym`. Lines show restored targets (`ⓘ Back to the planned load.`).
+Switch back (Ben chose his earlier gym, or the compensating card after an Undo was refused): title `Switch back to Main Gym`. Lines show restored targets (`ⓘ Back to plan`).
 
 ### 2.4 Review sheet (5 or more change lines)
 
@@ -146,7 +145,6 @@ A large-detent sheet over the workout, so Log is one swipe away. It uses change-
 │ Switch to Hotel · Lisbon         Close │
 ├────────────────────────────────────────┤
 │ [✓ Checks] [▦ Today only]              │
-│ 3 logged sets stay as they are.        │
 │ All values are targets.                │
 │ Changes (6)                            │
 │ ✎ Bench press · sets 3–4               │
@@ -260,13 +258,13 @@ Repeat uses the same function and the same note wording. The layout is owned by 
 | Ready, changes | ≥ 1 change line | §2.2 | `Not now`, `Switch`, `Why? ›` |
 | Ready, many changes | ≥ 5 change lines | First 3 lines + `Review all 6 changes ›` | `Not now`, `Review all …` (Switch on the sheet) |
 | Ready, nothing changes | All pending targets achievable as they are | §2.3 one-line variant | `Not now`, `Switch` |
-| Ready, nothing left | No pending sets | `No sets left to update. Anything you add uses Home's equipment.` | `Not now`, `Switch` |
+| Ready, nothing left | No pending sets | `No sets left to update` | `Not now`, `Switch` |
 | Ready, gym has no equipment | Target gym's snapshot is empty | Lead `⚠` line + `Add equipment ›` | as Ready |
 | Ready, unchecked values | Any mapped item has `detailsSource: 'preset'` | Extra `ⓘ` line + `Check ›` | as Ready |
 | Out of date | GS7 trigger before `Switch` | §2.3 stale variant | `Dismiss`, `Check again` |
 | Applying | `Switch` tapped | Button shows `Switching…`, disabled | none (normally under 100 ms) |
 | Applied | Commit succeeded | Card closes. Toast (§5). `GymChip` shows the new gym | Toast `Undo` (`timing.undoToast`, 8 s) |
-| Write error | SQLite write failed | Card stays, with `Couldn't switch gym. Nothing changed.` | `Try again` (same opId) |
+| Write error | SQLite write failed | Card stays, with `Couldn't switch gym.` | `Try again` (same opId) |
 | Undone | `Undo` within the toast, guard passes | Toast `Back at Main Gym. Remaining sets restored.` | none |
 | Undo refused | A set was logged, corrected, skipped, deleted or added since, or a pending target changed | Toast `Can't undo: your workout changed since the switch.` Then a new card `Switch back to Main Gym` (a compensating proposal from the same function) | as Ready |
 | Dismissed | `Not now`, `Dismiss`, or choosing the current gym again | Card closes. Old gym, chip and targets unchanged | — |
@@ -278,17 +276,17 @@ Repeat uses the same function and the same note wording. The layout is owned by 
 |---|---|
 | Ready / Resting | As §2.2. Rest keeps running and is never restarted or changed. `Up next` updates only on `Switch` |
 | Paused | Switching is allowed. Timers stay frozen, the primary stays `Resume`, and the workout stays paused after `Switch` |
-| Work timer running or paused | That set is excluded (GS11), with the line `Dead hang set 2 is running. It stays as it is.` |
+| Work timer running or paused | That set is excluded (GS11), with the line `Dead hang set 2 running · unchanged` |
 | Keypad open | Tapping the gym chip closes the keypad, keeping the draft. The card never takes focus |
 | Empty workout / all sets done | "Nothing left" variant. After `Switch`, `Add exercise` and `Add set` use the new gym (§4.3) |
-| Unilateral, half-logged pair | The partner is excluded (GS11), with the line `Right side of Single-arm row set 2 stays on Main Gym's equipment, to match its left side.` |
+| Unilateral, half-logged pair | The partner is excluded (GS11), with the line `Single-arm row set 2 right · stays on Main Gym (matches left)` |
 | Superset | A substitute takes the original's place and superset letter for the pending rounds |
 | Coach slot busy | GS8: an offer or banner waits behind the card. A coach request in progress is cancelled, and the card adds `Coach request cancelled because the gym is changing. Ask again after switching.` |
 | Offline | No effect. Everything is local (rule 1) |
 | AI unavailable / coach not connected | No effect. The switch never calls the coach; `Why?` uses stored evidence |
 | Voice unavailable | No effect; every voice action has a tap equivalent |
 | Restored after force-close, card open | **Deferred to the coach proposals store (build step 4), ADR 0019.** Until then the card isn't stored and doesn't come back; the switch itself is one transaction (next row). When the store exists: the card is a stored proposal and comes back, and if anything changed it shows Out of date |
-| Force-close during `Switch` | One transaction: after relaunch the workout is either fully switched (chip shows the new gym; the restore banner says `Workout restored. Nothing was lost.`) or not switched at all |
+| Force-close during `Switch` | One transaction: after relaunch the workout is either fully switched (chip shows the new gym; the restore banner says `Workout restored`) or not switched at all |
 
 ### 3.3 Transitions
 
@@ -297,7 +295,7 @@ Ready/Resting ──gym chip──► switcher ──gym row──► Computing 
                                   └─same gym / swipe down──► (closed, nothing changes)
 Ready ──Switch──► Applying ──ok──► Applied (toast, Undo 8 s) ──Undo──► Undone
    │                  │                   └─Undo refused──► "Switch back to Main Gym" card
-   │                  └─error──► Ready + "Couldn't switch gym. Nothing changed." [Try again]
+   │                  └─error──► Ready + "Couldn't switch gym." [Try again]
    ├─Not now──► closed (old gym kept)
    ├─log / correct / undo / skip / delete / add set / coach change──► Out of date ──Check again──► Computing
    └─gym chip → another gym──► Computing (replaces this card)
@@ -375,20 +373,20 @@ Every load on the card and the set card is a **target** (`Target …`, `Plan was
 |---|---|
 | Card titles | `Switch to Hotel · Lisbon` · `Use updated Main Gym` · `Switch back to Main Gym` |
 | Author, scope | `Checks` · `Today only` |
-| Not changed | `2 logged sets stay as they are.` / `1 logged set stays as it is.` · `Right side of Single-arm row set 2 stays on Main Gym's equipment, to match its left side.` · `Dead hang set 2 is running. It stays as it is.` · `No change: Lateral raise, Face pull.` |
+| Not changed | `Single-arm row set 2 right · stays on Main Gym (matches left)` · `Dead hang set 2 running · unchanged` · `No change: Lateral raise, Face pull.` |
 | Draft replaced (active set) | `Your edit on set 3 (102.5 kg) can't be set up here. Set 3 will use the new target.` |
 | Coach cancelled | `Coach request cancelled because the gym is changing. Ask again after switching.` |
 | Change line, swap | `Bench press · sets 3–4` / `→ DB bench press` / `Target 22.5 kg each × 6–8` / `ⓘ No Olympic bar here.` · no history: `→ 6–8 reps, no load target` / `ⓘ No Olympic bar here. No DB bench press history: start light, enter your load.` |
-| Change line, re-fitted | `Target 32.5 → 30 kg each × 8–10` + `ⓘ Rounded down to the nearest load here.` · `Target 32.5 → 20 kg each × 8–10` + `ⓘ Capped: the most here is 20 kg each.` · `Target 22.5 kg each → 45 lb each × 8–10` + `ⓘ Dumbbells here are in lb. Rounded down.` · `Target 20 → 32.5 kg each × 8–10` + `ⓘ Back to the planned load.` |
-| Change line, load dropped | `Target 50 kg stack × 12` / `→ 12 reps, no load target` + one of: `⚠ No Cable station here. Swap or skip it after switching.` (`not_here`) · `⚠ This is a different kind of machine, so 140 kg plates isn't converted.` (`convention_mismatch`) · `⚠ The lightest here is 10 kg each, heavier than planned.` (`lightest_is_harder`) · `⚠ Leg press here can't make any load as set up.` (`no_achievable_loads`) · `⚠ Plan says 225 lb. Nothing here can check it in kg.` (`unit_not_convertible`) |
-| Pain (with any line on a flagged movement) | `⚠ Pain flag on Bench press: no increases.` |
+| Change line, re-fitted | `Target 32.5 → 30 kg each × 8–10` + `ⓘ Rounded` · `Target 32.5 → 20 kg each × 8–10` + `ⓘ Max here 20 kg each` · `Target 22.5 kg each → 45 lb each × 8–10` + `ⓘ Converted · rounded` · `Target 20 → 32.5 kg each × 8–10` + `ⓘ Back to plan` |
+| Change line, load dropped | `Target 50 kg stack × 12` / `→ 12 reps, no load target` + one of: `⚠ No cable station here` (`not_here`) · `⚠ Different equipment here` (`convention_mismatch`) · `⚠ Lightest here is above 5 kg each` (`lightest_is_harder`) · `⚠ No loads set up here` (`no_achievable_loads`) · `⚠ Nothing here takes lb` (`unit_not_convertible`) |
+| Pain (with any line on a flagged movement) | `⚠ Pain flag · no increases` |
 | Unchecked | `ⓘ Hotel · Lisbon's dumbbells are typical values, not checked.` `Check ›` |
-| No equipment | `⚠ Hotel · Lisbon has no equipment set up yet, so remaining load targets are removed.` `Add equipment ›` |
-| Variants | `Home has everything for your 9 remaining sets. Targets stay as they are.` · `No sets left to update. Anything you add uses Home's equipment.` |
-| States | `Checking Hotel · Lisbon's equipment…` · `Out of date. Your workout changed since this was checked.` · `Was suggested:` · `Couldn't switch gym. Nothing changed.` · `Switching…` |
+| No equipment | `⚠ No equipment set up · load targets removed` `Add equipment ›` |
+| Variants | `No target changes` · `No sets left to update` |
+| States | `Checking Hotel · Lisbon's equipment…` · `Out of date` · `Was suggested:` · `Couldn't switch gym.` · `Switching…` |
 | Buttons | `Not now` · `Switch` · `Apply` (same gym) · `Why? ›` · `Review all 6 changes ›` · `Check again` · `Dismiss` · `Try again` · `Check ›` · `Add equipment ›` · `Close` (review sheet) |
 | Toasts | `Switched to Hotel · Lisbon. Remaining sets updated for today.` [Undo] · `Switched to Home. No targets changed.` [Undo] · `Back at Main Gym. Remaining sets restored.` · `Can't undo: your workout changed since the switch.` |
-| Set card `SnapNote` (switch; capped, converted or dropped only) | `Capped: the most here is 20 kg each. Plan was 32.5 kg each.` · `Rounded from 22.5 kg each to 45 lb each to match this gym.` · `No Cable station at Hotel · Lisbon. Plan was 50 kg stack.` `Swap ›` · `The lightest here is 10 kg each, heavier than the plan's 5 kg each.` · convention and no-load wording as active-workout §5 (`Dropped target`) |
+| Set card `SnapNote` (switch; capped, converted or dropped only) | `Max here · plan 32.5 kg each` · `Converted from 22.5 kg each` · `No load target · no cable station here · plan 50 kg stack` `Swap ›` · `No load target · lightest here is heavier · plan 5 kg each` · `No load target · different machine` · `No load target · no loads set up` · `No load target · no kg equipment` · `No load target · pain flag`. The full sentence is in the `Why?` `Equipment` row |
 | `Why?` `Equipment` row (every fit) | `Rounded down to what Hotel · Lisbon has. Plan was 32.5 kg each (Main Gym).` · `Capped at 20 kg each at Hotel · Lisbon. Plan was 32.5 kg each (Main Gym).` · `Converted to lb and rounded down for Hotel · Lisbon. Plan was 22.5 kg each.` · `Back to the planned load at Main Gym.` · `No load target: no Cable station at Hotel · Lisbon. Plan was 50 kg stack.` |
 | Repeat notes (same results, "last time" wording) | `No load target · no olympic bar here · last time 100 kg × 8` `Swap ›` · `Max here 20 kg each · last time 30 kg each` · `Rounded · last time 32.5 kg each` · `Converted from 22.5 kg each` · `No load target · lightest here is above 5 kg each` |
 | Divider and gym captions | `At Hotel · Lisbon` · a done set from another gym: `Main Gym` |
@@ -475,12 +473,12 @@ Rules, in order:
 
 Fixture "hotel": Main Gym has a 20 kg bar with plates up to 180 kg, dumbbells 2.5–40 kg each every 2.5, and a cable stack 5–100 kg. Hotel · Lisbon has dumbbells 2.5–20 kg each every 2.5 and a bench; no barbell, no cable. Push A: Bench press 4 × 100 kg × 6–8, Incline DB press 3 × 32.5 kg each × 8–10, Cable row 3 × 50 kg stack × 12, Lateral raise 3 × 10 kg each × 12–15. Bench sets 1–2 are logged.
 
-1. **Hotel switch (brief §10).** Switching to Hotel · Lisbon shows `2 logged sets stay as they are.`, Bench sets 3–4 → DB bench press (target from its own history, or no load target), Incline `32.5 → 20 kg each` with the capped note, Cable row `→ 12 reps, no load target`, and `No change: Lateral raise.` After `Switch`, bench sets 1–2 show the same values, gym and equipment in Overview, Edit workout and history. No pending target exceeds 20 kg each, and none uses a barbell or cable.
+1. **Hotel switch (brief §10).** Switching to Hotel · Lisbon leaves the 2 logged sets out of the card, Bench sets 3–4 → DB bench press (target from its own history, or no load target), Incline `32.5 → 20 kg each` with the capped note, Cable row `→ 12 reps, no load target`, and `No change: Lateral raise.` After `Switch`, bench sets 1–2 show the same values, gym and equipment in Overview, Edit workout and history. No pending target exceeds 20 kg each, and none uses a barbell or cable.
 2. **Property test.** For generated gyms (every equipment kind, kg and lb, min/max, gaps, empty) and plans, in all four modes, `snapPlanToGym` meets the §6.1 invariant.
 3. **One code path.** For the same exercise, intended loads and target gym, Repeat and the switch return the same loads, outcomes and note keys (shared fixture). Only "Plan was" vs "last time" differs.
 4. **Repeat B1 regression (competitor test 2g).** Repeat of a 100 kg × 5 bench session at a dumbbell-only gym gives `planned.load === null`, reps 5, `equipmentId === null`, every set `pending`, and the note `No Olympic bar at … : no load target (last time 100 kg × 5).` The set card shows `Target 5 reps · no load target` and `Swap ›`. No text says "kept as done" or "kept as planned".
 5. **Routine start gap.** A routine with a Fixed 100 kg bench pinned to Main Gym's bar, started at a dumbbell-only gym, has no bench load target. A routine pinned to Main Gym's dumbbells, started at Hotel, maps to Hotel's rack and caps at 20 kg each.
-6. **Switch back restores.** Main → Hotel (32.5 → 20) → Main restores 32.5 kg each with `ⓘ Back to the planned load.` If a pain flag is set on Incline DB press in between, the switch back leaves 20 kg each.
+6. **Switch back restores.** Main → Hotel (32.5 → 20) → Main restores 32.5 kg each with `ⓘ Back to plan` If a pain flag is set on Incline DB press in between, the switch back leaves 20 kg each.
 7. **Review SP1.** With Main Gym's rack wrongly saved at max 30, a 32.5 target starts capped at 30. After editing the rack to 50, `[Use changes today]` → `Apply` restores 32.5 kg each, and `+` steps past 30.
 8. **Out of date.** With the card open, logging a set, correcting one, Undo, `Add set`, `Skip exercise` or an applied coach change each makes it Out of date with `Switch` hidden. `Switch` can't apply it by tap or voice. Tapping a different pending set, editing a draft or `+30 s` doesn't.
 9. **Not now** leaves the gym chip, the snapshot, every target and every draft unchanged.

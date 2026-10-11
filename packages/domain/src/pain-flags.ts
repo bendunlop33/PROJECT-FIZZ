@@ -196,7 +196,7 @@ export function mayHurtConfirm(flag: Pick<PainFlag, 'exerciseName' | 'area' | 'r
   const area = areaWord(flag);
   return {
     title: `${flag.exerciseName} may hurt`,
-    message: `You flagged ${area === null ? '' : `${area} `}pain on it on ${painFlagDay(flag)}. Loads won’t go up while the flag is on.`,
+    message: `${area === null ? 'Pain' : `${area.charAt(0).toUpperCase()}${area.slice(1)} pain`} flagged ${painFlagDay(flag)}.`,
     confirm: 'Add anyway',
     cancel: 'Choose another',
   };

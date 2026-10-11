@@ -444,7 +444,7 @@ Pain hold, with a set left out and the pre-flag reference:
 | `Last time` | The comparable sets the target was built from, as actual results, with date, gym and equipment. A coach target shows the latest session; older evidence is behind `Evidence ›`. With none: `No earlier sets on this machine.` | `basisSetIds` |
 | `Reason` (or `Coach`) | Built-in rule, routine, warm-up and back-off: the domain's explanation (`Every set reached 8 at RPE 8.5 or easier, so one step up.` · `Holding: set 3 was 7 reps.` · `Push A sets 100 kg × 6–8.` · `60% of your first working set (100 kg), rounded down.` · `90% of today's top set (102.5 kg), rounded down.`). Coach: the row is labelled `Coach`, and its stored one-sentence reason is shown in quotes | `ruleOutcome.text` / `coachReason` |
 | `Equipment` | The snap, cap or step: `Rounded to 97.5 kg: nearest your bar and plates allow.` · `Capped at 30 kg each: the most Main Gym's rack goes to.` · `+2.5 kg (+2.5%), the smallest step on this bar.` · `Next dumbbell is 12 kg (+20%): adding reps first.` · `No load target: Cable stack can't make any load as set up.` After a gym switch it says what the switch did (§2.16) | `guardNotes`, `stepCard`, and the set's `planned.snap` after a switch (gym-switch §6.5) |
-| `Pain` | Only with an active flag on this movement: `⚠ Flag on since 6 Oct (shoulder). Loads, reps and sets can't go up.` plus `Check due ›` when the two-weekly check is due (§2.14.2) | `painHold` |
+| `Pain` | Only with an active flag on this movement: `⚠ Since 6 Oct (shoulder) · no increases` plus `Check due ›` when the two-weekly check is due (§2.14.2) | `painHold` |
 | `Before flag` | Only while a flag is on, and for `timing.painReferenceWindow` (8 weeks) after it's cleared: the last comparable session before the flag, as actual results. Reference only; it never sets a target (§2.14.3) | `getPainReference` |
 | `Not used` | Basis sets left out because Ben marked them (§2.13): `Set 3 on 1 Oct: spotted.` | `excludedSetIds` with reasons |
 | Footer | `History ›` (history sheet, §4.4) · `Evidence ›` (coach sources only: the `getDecisionEvidence` sheet, coach-sheet §4.6) · `Undo this change` (a coach change made today, while the set is still pending) · `Use built-in rule: 100 kg × 6–8` (a coach next-session target, AW4) | — |
@@ -514,9 +514,7 @@ In `Add exercise` (Pick one) and the Swap sheet, an exercise with an active pain
 ```
 ┌────────────────────────────────────────┐
 │ Overhead press may hurt                │
-│ You flagged shoulder pain on it on     │
-│ 6 Oct. Loads won't go up while the     │
-│ flag is on.                            │
+│ Shoulder pain flagged 6 Oct.           │
 │ ┌────────────────────────────────────┐ │
 │ │            Add anyway              │ │
 │ └────────────────────────────────────┘ │
@@ -749,7 +747,7 @@ The switch itself (entry, card, states, Undo) is specified in [gym-switch.md](gy
 | All sets done | Card: `All planned sets done.` + links `Add set` / `Add exercise` | `Finish workout` | No rest after the final set. An empty workout shows `Add an exercise to start` (phase `empty`), not `All planned sets done` |
 | Finish blocked by work timer | Finish sheet shows `Stop the timer first` (§4.8) | [Stop] in the sheet | Domain error `work_interval_running` is never shown raw |
 | Paused | §2.8 | `Resume` | Log is hidden until Resume. Fields stay editable |
-| Restored after force-close | Normal + banner `Workout restored. Nothing was lost.` (4 s) | per state | See flow §4.2 |
+| Restored after force-close | Normal + banner `Workout restored` (4 s) | per state | See flow §4.2 |
 | Offline | No change to logging | per state | Status row: no banner unless Ben opens the coach. The Talk button shows `Offline` if the coach needs the network |
 | AI unavailable | No change to logging | per state | Talk button `Offline` / `Ask`. Coach sheet explains (§4.7) |
 | Voice unavailable, text available | — | — | Talk button shows `Ask` (text bubble). Tapping opens the coach sheet |
@@ -763,10 +761,10 @@ The switch itself (entry, card, states, Undo) is specified in [gym-switch.md](gy
 | Coach offline (Adjust tapped) | `Coach offline. Your sets are unchanged. Change the next set's numbers directly.` + `Pain` chip | unchanged | No offers appear while offline |
 | Coach proposal pending (swap or gym) | `ChangeReviewCard` inline under the rest timer (Focus) or under the active exercise (Overview) | unchanged | Swaps and gym changes still need Apply (coach-adjustments CA2). It never takes over the screen |
 | Proposal stale | The card shows `Out of date` | unchanged | Apply is disabled |
-| Gym switch card open (revision 2026-10-09) | Coach slot: `ChangeReviewCard` `[Checks] Switch to Hotel · Lisbon` · `Today only` · `2 logged sets stay as they are.` + one line per changed exercise + `No change: …` [Not now] [Switch] (gym-switch §2.2) | unchanged, usable | Holds the slot (GS8). Out of date when the sets it changes change (GS7). Completed sets aren't listed and don't change |
+| Gym switch card open (revision 2026-10-09) | Coach slot: `ChangeReviewCard` `[Checks] Switch to Hotel · Lisbon` · `Today only` · one line per changed exercise + `No change: …` [Not now] [Switch] (gym-switch §2.2) | unchanged, usable | Holds the slot (GS8). Out of date when the sets it changes change (GS7). Completed sets aren't listed and don't change |
 | Gym switched (2026-10-09) | Toast `Switched to Hotel · Lisbon. Remaining sets updated for today.` [Undo]; gym chip shows the new gym; `GymPartDivider` and `SnapNote`s (§2.16) | `Log <fitted values>`, guarded 1 s if the label changed | Rest, pause and elapsed time untouched |
 | Ready, equipment not here (2026-10-09) | §2.11 `not_here`: `Target 8–10 reps · no load target` + `⚠ No Cable station at Hotel · Lisbon. Plan was 50 kg stack.` `Swap ›` | `Log …` from the same-part fallback draft, or `Enter load` | Never a load kept unchecked |
-| Write error | `Couldn't save this set. Your entry is still here.` [Try again] | `Log …` stays available with the same opId | Extremely rare: SQLite full or locked |
+| Write error | `Set not saved. Try again.` [Try again] | `Log …` stays available with the same opId | Extremely rare: SQLite full or locked |
 | `Why?` open (2026-10-09) | `TargetWhyPanel` under the target line (§2.12) | unchanged, usable | Closes on `Hide`, Log, another active set or the keypad. Offline and AI-unavailable look the same |
 | `Why?`, basis edited since | Panel + `Based on 1 Oct before you edited it on 2 Oct.` | unchanged | Nothing recomputes by itself |
 | `Why?`, no stored provenance | `Set by  Not recorded (set before this app version)` + `Last time` from history | unchanged | Never a guessed reason |
@@ -817,7 +815,7 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 ### 4.3 Equipment-aware input
 - The steppers move through `getAchievableLoads(equipmentId)`, so `+` on 100 kg barbell goes to the next achievable total, such as 102.5 kg.
 - At the maximum, `+` is disabled and its hint says `Rack maximum 30 kg each`. The targets themselves are never above the maximum, which is the domain's job.
-- Typed loads that aren't achievable show a warning under the field: `37.5 kg each isn't on Main Gym's dumbbell rack (max 30 kg). Log it anyway if that's what you lifted, or update the gym.` with an [Update gym] link. Log still works, and the set is saved with an `off_profile_load` flag.
+- Typed loads that aren't achievable show a warning under the field: `⚠ Not on Main Gym's dumbbell rack (max 30 kg each)` with an [Update gym] link. Log still works, and the set is saved with an `off_profile_load` flag.
 - Assisted machines: the field label reads `Assist`. The `+` hint reads `More assistance (easier)`.
 
 ### 4.4 Set and exercise controls
@@ -938,7 +936,7 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 | `Finish by` | Choose another time or `Not set` in the `Time left` sheet |
 | Coach shortened (step 4) | `Undo` on the banner; later exercise `⋯` → `Undo coach change` while the sets are still pending. `Skipped · to save time` sets return to pending |
 
-If an Undo is rejected (the set was corrected from another path, or something was logged after it), the toast changes to `Can't undo: set 2 changed. Tap it to edit or delete.` Nothing is removed.
+If an Undo is rejected (the set was corrected from another path, or something was logged after it), the toast changes to `Can't undo: set 2 changed` Nothing is removed.
 
 ### 4.10 Why?, exclusions, pain checks and time left (revision 2026-10-09)
 
@@ -983,8 +981,8 @@ None of these is on the Log path, and none needs the network. Voice phrases are 
 | Other-side set (unilateral) | Side shows `Right side` (fixed); Log `Log Right · 25 kg stack × 10` |
 | Add / delete / skip | Toasts `Set 4 added` · `Set 1 deleted` · `Bench press skipped` · `Workout discarded`. Confirms as in §4.4 and §4.9 |
 | Finish blocked | `Dead hang timer is running (0:38).` · `Stop the timer first` · [Stop] · after Stop: `Dead hang: 0:38 not logged. It will be kept as a draft on the skipped set.` · `Log 0:38 first` |
-| Undo rejected | `Can't undo: set 2 changed. Tap it to edit or delete.` |
-| Banners | `Workout restored. Nothing was lost.` · `Workout paused. Timers are stopped.` · `Couldn't save this set. Your entry is still here.` |
+| Undo rejected | `Can't undo: set 2 changed` |
+| Banners | `Workout restored` · `Workout paused. Timers are stopped.` · `Set not saved. Try again.` |
 | Coach target (pending sets) | `Coach target 95 kg × 8` + `Plan was 100 kg × 6–8` (both **targets**); Overview badge `C`; draft kept: `Your edit kept · Coach target 95 kg × 8` |
 | Adjust | `Adjust` · caption `Coach offline` · chips `What should change?` `Too hard` `Too easy` `Pain` `Type…`. Every other coach-adjustment string: coach-adjustments §5 |
 | Talk captions | `Talk` · `Ask` · `Stop` · `Wait` · `Offline` |
@@ -992,16 +990,16 @@ None of these is on the Log path, and none needs the network. Voice phrases are 
 | `Why?` link (2026-10-09) | `Why?` / `Hide` · Overview menu `Why these targets?` · VoiceOver "Why this number? Button." |
 | `Why?` panel rows | `Set by` · `Last time` (**actual**) · `Reason` / `Coach` · `Equipment` · `Pain` · `Before flag` (**actual**, reference only) · `Not used` |
 | `Set by` values | `Built-in rule · after Push A, 1 Oct` · `Built-in rule (coach offline) · after Push A, 1 Oct` · `Coach · after Push A, 1 Oct` · `Coach · today, you asked` · `Coach · today, you tapped Adjust` · `Your routine · Push A` · `Warm-up ramp` · `Swap · from DB bench press history` · `Built-in rule · you chose it today` · `Not recorded (set before this app version)` |
-| `Why?` texts | `No earlier sets on this machine.` · `Based on 1 Oct before you edited it on 2 Oct.` · `Flag on since 6 Oct (shoulder). Loads, reps and sets can't go up.` · `Check due ›` · `Set 3 on 1 Oct: spotted.` · footer `History ›` · `Evidence ›` · `Undo this change` · `Use built-in rule: 100 kg × 6–8` (a **target**) · toast `Bench press: built-in rule for today` [Undo] |
+| `Why?` texts | `No earlier sets on this machine.` · `Based on 1 Oct before you edited it on 2 Oct.` · `Since 6 Oct (shoulder) · no increases` · `Check due ›` · `Set 3 on 1 Oct: spotted.` · footer `History ›` · `Evidence ›` · `Undo this change` · `Use built-in rule: 100 kg × 6–8` (a **target**) · toast `Bench press: built-in rule for today` [Undo] |
 | Exclusions | Heading `Leave out of records and progress` · chips `Spotted` · `Pain` · `Form broke` · `Other equipment` · `Still counts in your log and volume.` · pain line `This also puts a pain flag on Bench press: no increases until you clear it.` · row words `· Spotted` · Overview `Spotted · not counted` · `Last (1 Oct): 100 kg × 8 · spotted` (**actual**) · toast `Set 2: spotted · not counted for records` [Undo] · audit `Set 2 marked: spotted` · hold `No counted sets on 8 Oct (all left out); holding.` · summary `Not compared: the only top set was spotted.` · pain card chip `Leave set 2 out of records` |
-| May hurt | Tag `May hurt` · confirm `Overhead press may hurt` / `You flagged shoulder pain on it on 6 Oct. Loads won't go up while the flag is on.` [Add anyway] [Choose another] |
+| May hurt | Tag `May hurt` · confirm `Overhead press may hurt` / `Shoulder pain flagged 6 Oct.` [Add anyway] [Choose another] |
 | Pain check | `Overhead press: still hurting?` · `Pain flag since 6 Oct · 16 days` · [Still hurts] [Better…] · note `Pain flag: no increases · check due` · outcome `Pain flag kept · next check 3 Nov` [Undo] · 4 weeks: `It's been 4 weeks. Pain that lasts this long is worth getting checked by a physio or doctor.` |
 | Pain flag sheet | `Pain flag` · `Overhead press · shoulder` · `Since 6 Oct (16 days) · you, during Push A` · `No increases in load, reps or sets.` · `Still hurts?` · [Still hurts] [Better: clear…] · `Before the flag` · `Since the flag` · `Sharp or lasting pain: see a physio or doctor.` · `Clear flag…` · `All pain flags ›` |
 | Clear confirm (AW10) | `Clear the pain flag on Overhead press?` · `Loads, reps and sets can go up again, starting from your recent sets. Your sets from before 6 Oct stay in your history as the reference.` [Clear flag] [Keep it] · toast `Pain flag cleared for Overhead press` [Undo] · guard note `Not raising faster than one step: pain flag cleared 14 Oct.` |
 | Time left (**estimate**) | `About 35 min left · ends about 19:40` · `About 35 min left · on track for 19:45` · `About 35 min left · about 10 min past 19:30` · `Paused · about 35 min left after you resume` · `About 2 min left` · `Under 2 min left` · VoiceOver "Workout estimate: about 35 minutes left, ending about 7:40 PM." |
 | Time left sheet | `Time left` · `About 35 min · likely 30–40 min` · `Ends about 19:40` · `Left to do` `11 sets · 3 exercises` · `Planned rest` `18 min` · `Your pace` `1:05 a set · 2 min between exercises` · tags `From this workout` / `Your last 5 workouts` / `Default` · `So far` `24:31 active` · `Finish by` `Not set` · `Shorten to fit…` · `This is an estimate from your pace and rest settings. It doesn't change your sets.` · offline `Coach offline. Skip exercises from their ⋯ menu.` |
 | Shorten (step 4) | Offer `About 10 min past 19:30. Shorten the rest of today?` / `11 sets left · about 35 min (estimate)` [No thanks] [Shorten] · banner `Coach shortened today` · `About 50 → 20 min · kept Bench press and Cable row. Skipped Cable fly (3 sets) and Curl (3 sets).` · guard `Loads and rest unchanged.` · set status `Skipped · to save time` · outcome `Bench press and Cable row alone take about 28 min. Skipped everything else.` · picker `Fit into` / `Finish by` |
-| Gym switch (2026-10-09; the card's strings are owned by gym-switch.md §5) | Divider `At Hotel · Lisbon` · done-set gym caption `Main Gym` · `SnapNote` (**targets**): `Capped: the most here is 20 kg each. Plan was 32.5 kg each.` · `Rounded from 22.5 kg each to 45 lb each to match this gym.` · `not_here` warning `No Cable station at Hotel · Lisbon. Plan was 50 kg stack.` `Swap ›` · `Why?` `Equipment` row `Capped at 20 kg each at Hotel · Lisbon. Plan was 32.5 kg each (Main Gym).` / `Back to the planned load at Main Gym.` · toasts `Switched to Hotel · Lisbon. Remaining sets updated for today.` [Undo] · `Switched to Home. No targets changed.` [Undo] · `Can't undo: your workout changed since the switch.` |
+| Gym switch (2026-10-09; the card's strings are owned by gym-switch.md §5) | Divider `At Hotel · Lisbon` · done-set gym caption `Main Gym` · `SnapNote` (**targets**): `Max here · plan 32.5 kg each` · `Rounded from 22.5 kg each to 45 lb each to match this gym.` · `not_here` warning `No Cable station at Hotel · Lisbon. Plan was 50 kg stack.` `Swap ›` · `Why?` `Equipment` row `Capped at 20 kg each at Hotel · Lisbon. Plan was 32.5 kg each (Main Gym).` / `Back to the planned load at Main Gym.` · toasts `Switched to Hotel · Lisbon. Remaining sets updated for today.` [Undo] · `Switched to Home. No targets changed.` [Undo] · `Can't undo: your workout changed since the switch.` |
 
 Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md §5):
 - Set intro (optional, off by default): "Bench press. Set 2: 100 kilos, target 6 to 8 reps."
@@ -1202,7 +1200,7 @@ Implemented differently from this spec, for the designer and Ben to confirm:
 - **Merging with `claude/coach`** (review r2 N4): `PainFlag.status` gains `retracted`. Coach code that reads `status === 'cleared'` as "not active" must use `status !== 'active'`, and must use the retraction-aware `clearPainFlag` / `restorePainFlag`.
 - **AW7 "in the same commit"** (review r2 S3): services have no transaction across `painFlags` and `sessions`, so `correctSet` writes the flag, then `correct_set`, and takes the flag back (retracts it) if the mark doesn't land, including when the write throws. Only an *active* flag of the save's opId counts as that save's, so a retry after a failed save writes a fresh flag rather than pointing at a withdrawn one (review r2 B1). A cross-repository transaction would remove the compensation; it needs an ADR (persistence contract change) and is not built.
 
-Open question for Ben (review S3): a pain flag set mid-workout leaves today's already-planned targets as they are (`Flagged after this target was set, so the target wasn't changed.`). Rule 9 says a pain mention stops progression for that movement. Should setting a flag offer (or apply, with Undo) "hold today's remaining sets at the last done load"? Not built until Ben decides.
+Open question for Ben (review S3): a pain flag set mid-workout leaves today's already-planned targets as they are (`Flagged after this target was set`). Rule 9 says a pain mention stops progression for that movement. Should setting a flag offer (or apply, with Undo) "hold today's remaining sets at the last done load"? Not built until Ben decides.
 
 ## 9. Tokens and components to merge into design-system.md (revision 2026-10-09)
 

@@ -71,11 +71,11 @@ describe('Hotel switch (gym-switch check 1, brief §10)', () => {
   it('the card: logged sets first, one line per changed exercise, unchanged collapsed', () => {
     expect(p).toMatchObject({ kind: 'change_gym', author: 'checks', scope: 'this_session', fromGymId: MAIN, toGymId: HOTEL });
     expect(p.card).toMatchObject({ title: 'Switch to Hotel · Lisbon', action: 'Switch', author: 'Checks', scope: 'Today only', changesTargets: true, summary: null });
-    expect(p.card.notChanged).toEqual(['2 logged sets stay as they are.']);
+    expect(p.card.notChanged).toEqual([]);
     expect(p.card.lines.map((l) => [l.exerciseName, l.setsLabel, plain(l.target), l.after, l.notes.map((n) => `${n.tone}:${n.text}`)])).toEqual([
-      ['Bench press', 'sets 3–4', 'Target 100 kg × 6–8', '→ 6–8 reps, no load target', ['warning:No Olympic bar here. Enter your own load, or skip it after switching.']],
-      ['Incline DB press', 'sets 1–3', 'Target 32.5 → 20 kg each × 8–10', null, ['info:Capped: the most here is 20 kg each.']],
-      ['Cable row', 'sets 1–3', 'Target 50 kg stack × 12', '→ 12 reps, no load target', ['warning:No Cable station here. Enter your own load, or skip it after switching.']],
+      ['Bench press', 'sets 3–4', 'Target 100 kg × 6–8', '→ 6–8 reps, no load target', ['warning:No olympic bar here']],
+      ['Incline DB press', 'sets 1–3', 'Target 32.5 → 20 kg each × 8–10', null, ['info:Max here 20 kg each']],
+      ['Cable row', 'sets 1–3', 'Target 50 kg stack × 12', '→ 12 reps, no load target', ['warning:No cable station here']],
     ]);
     expect(p.card.unchanged).toBe('No change: Lateral raise.');
     expect(p.card.lines[1]?.accessibilityLabel).toContain('Incline DB press, sets 1 to 3.');
@@ -134,7 +134,7 @@ describe('Hotel switch (gym-switch check 1, brief §10)', () => {
     expect(focus?.exerciseName).toBe('Bench press');
     expect(focus?.headerLine).toBe('Set 3 of 4');
     expect(plain(focus?.target ?? '')).toBe('Target 6–8 reps');
-    expect(focus?.snapNote).toEqual({ tone: 'warning', text: 'No Olympic bar at Hotel · Lisbon. Plan was 100 kg.' });
+    expect(focus?.snapNote).toEqual({ tone: 'warning', text: 'No load target · no olympic bar here · plan 100 kg' });
     expect(focus?.rows.map((r) => [r.number, r.status, r.gymCaption, r.partStart])).toEqual([
       [1, 'done', 'Main Gym', null],
       [2, 'done', 'Main Gym', null],
@@ -189,7 +189,7 @@ describe('Undo and switch back (gym-switch checks 6, 10)', () => {
     expect(back.card.title).toBe('Switch back to Main Gym');
     const incline = back.card.lines.find((l) => l.exerciseName === 'Incline DB press');
     expect(plain(incline?.target ?? '')).toBe('Target 20 → 32.5 kg each × 8–10');
-    expect(incline?.notes.map((n) => n.text)).toEqual(['Back to the planned load.']);
+    expect(incline?.notes.map((n) => n.text)).toEqual(['Back to plan']);
     const atMain = switched(atHotel, back, 600).state;
     expect(exerciseSets(atMain, INCLINE).map((s) => s.planned.load)).toEqual([kg(32.5, 'per_hand'), kg(32.5, 'per_hand'), kg(32.5, 'per_hand')]);
     expect(rowOf(atMain, INCLINE)?.equipmentId).toBe(mainRack.id);
@@ -257,7 +257,7 @@ describe('Out of date, idempotency and exclusions (checks 8, 11, 12)', () => {
     s = apply(s, logCmd(first, values(kg(10, 'per_hand'), 12), 350, 'left-1', 'left'));
     const partner = s.sets.find((x) => x.pairedWithSetId === first);
     const prop = propose(s, hotel);
-    expect(prop.card.notChanged).toContain('Right side of Lateral raise set 1 stays on Main Gym’s equipment, to match its left side.');
+    expect(prop.card.notChanged).toContain('Lateral raise set 1 right · stays on Main Gym (matches left)');
     const after = switched(s, prop, 360).state;
     expect(after.sets.find((x) => x.id === partner?.id)).toEqual(partner);
     expect(after.exercises.find((e) => e.id === partner?.sessionExerciseId)?.equipmentId).toBe(mainRack.id);
@@ -268,7 +268,7 @@ describe('Out of date, idempotency and exclusions (checks 8, 11, 12)', () => {
     const hang = setsFor(s, HANG)[0]?.id ?? '';
     s = apply(s, { type: 'start_work_interval', at: at(30), opId: 'hang-go', setId: hang, durationS: 45 });
     const prop = propose(s, hotel);
-    expect(prop.card.notChanged).toContain('Dead hang set 1 is running. It stays as it is.');
+    expect(prop.card.notChanged).toContain('Dead hang set 1 running · unchanged');
     expect(prop.slots.some((x) => x.sets.some((y) => y.setId === hang))).toBe(false);
     const after = switched(s, prop, 40).state;
     expect(after.sets.find((x) => x.id === hang)).toEqual(s.sets.find((x) => x.id === hang));
@@ -353,7 +353,7 @@ describe('Same gym, updated equipment (`[Use changes today]`, review SP1, check 
     delete (fixed as { maxLoad?: number }).maxLoad;
     const prop = propose(s, { id: MAIN, equipment: [mainBar, fixed] });
     expect(prop.card).toMatchObject({ title: 'Use updated Main Gym', action: 'Apply' });
-    expect(prop.card.lines.map((l) => [l.exerciseName, l.setsLabel, plain(l.target), l.notes.map((n) => n.text)])).toEqual([['Incline DB press', 'sets 2–3', 'Target 30 → 32.5 kg each × 8–10', ['Back to the planned load.']]]);
+    expect(prop.card.lines.map((l) => [l.exerciseName, l.setsLabel, plain(l.target), l.notes.map((n) => n.text)])).toEqual([['Incline DB press', 'sets 2–3', 'Target 30 → 32.5 kg each × 8–10', ['Back to plan']]]);
     const after = switched(s, prop, 200).state;
     const parts = after.exercises.filter((e) => e.exerciseId === INCLINE).sort((a, b) => a.order - b.order);
     // The done set keeps the old version of the rack; the rest continue on the new one.
@@ -375,18 +375,18 @@ describe('Nothing changes / nothing left (§2.3)', () => {
     for (const ex of [BENCH, CABLE_ROW]) s = apply(s, { type: 'skip_exercise', at: at(30), opId: `skip-${ex}`, sessionExerciseId: rowOf(s, ex)?.id ?? '' });
     const p = propose(s, { id: HOME, equipment: HOME_EQ });
     expect(p.card.changesTargets).toBe(false);
-    expect(p.card.summary).toBe('Home has everything for your 6 remaining sets. Targets stay as they are.');
+    expect(p.card.summary).toBe('No target changes');
     expect(p.card.lines).toEqual([]);
   });
 
   it('with every set done the card says anything added uses the new gym', () => {
     let s = pushA();
     for (const ex of [BENCH, INCLINE, CABLE_ROW, LATERAL]) s = apply(s, { type: 'skip_exercise', at: at(30), opId: `skip-${ex}`, sessionExerciseId: rowOf(s, ex)?.id ?? '' });
-    expect(propose(s, hotel).card.summary).toBe('No sets left to update. Anything you add uses Hotel · Lisbon’s equipment.');
+    expect(propose(s, hotel).card.summary).toBe('No sets left to update');
   });
 
   it('a gym with no equipment set up leads with a warning', () => {
-    expect(propose(benchTwoDone(), { id: HOTEL, equipment: [] }).card.lead?.text).toBe('Hotel · Lisbon has no equipment set up yet, so remaining load targets are removed.');
+    expect(propose(benchTwoDone(), { id: HOTEL, equipment: [] }).card.lead?.text).toBe('No equipment set up · load targets removed');
   });
 
   it('many changes: three lines on the card and `Review all N changes ›` (§2.4)', () => {

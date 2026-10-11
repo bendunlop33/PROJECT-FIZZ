@@ -169,7 +169,7 @@ On every cold start, the app reads `getActiveSession` before rendering Today.
 
 | Persisted situation | What Ben sees | Cues |
 |---|---|---|
-| Unfinished session, last activity < 6 h ago | **Opens straight into Active workout** (no tap; proposal P6). A banner reads `Workout restored. Nothing was lost.` for 4 s | `cancelObsoleteCues`, then reschedule for the current timer version |
+| Unfinished session, last activity < 6 h ago | **Opens straight into Active workout** (no tap; proposal P6). A banner reads `Workout restored` for 4 s | `cancelObsoleteCues`, then reschedule for the current timer version |
 | Unfinished session, last activity ≥ 6 h ago | Today, with the stale-workout card (see today.md) | All old cues cancelled |
 | Resting, deadline still in the future | Rest card showing the correct remaining time, never the full preset | Remaining cues rescheduled. No duplicate of a cue already delivered |
 | Resting, deadline passed while closed | Ready (rest ended), `Rested 4:12` count-up, banner `Rest ended at 18:42` | **No late spoken cue.** If a notification already fired, nothing more |

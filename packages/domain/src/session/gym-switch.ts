@@ -361,8 +361,6 @@ function spoken(line: Omit<ChangeLine, 'accessibilityLabel'>): string {
     .join(' ');
 }
 
-const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
-
 /** Kinds that read as "dumbbells", "plates" … in the unchecked line. */
 function itemWord(eq: EquipmentInstance): string {
   return eq.kind === 'dumbbells' ? 'dumbbells' : eq.name;
@@ -459,8 +457,6 @@ function buildCard(input: GymSwitchInput, snap: SnapResult, excluded: ReadonlyMa
   };
 
   const notChanged: string[] = [];
-  const logged = state.sets.filter((s) => s.status === 'completed').length;
-  if (logged > 0) notChanged.push(logged === 1 ? '1 logged set stays as it is.' : `${String(logged)} logged sets stay as they are.`);
   for (const [setId, why] of excluded) {
     const set = state.sets.find((s) => s.id === setId);
     const row = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
@@ -469,8 +465,8 @@ function buildCard(input: GymSwitchInput, snap: SnapResult, excluded: ReadonlyMa
     const n = String(numberOf(why === 'other_side' ? (set.pairedWithSetId ?? setId) : setId));
     notChanged.push(
       why === 'timed'
-        ? `${row.exerciseName} set ${n} is running. It stays as it is.`
-        : `${set.side === 'right' ? 'Right' : 'Left'} side of ${row.exerciseName} set ${n} stays on ${fromName}’s equipment, to match its ${set.side === 'right' ? 'left' : 'right'} side.`,
+        ? `${row.exerciseName} set ${n} running · unchanged`
+        : `${row.exerciseName} set ${n} ${set.side === 'right' ? 'right' : 'left'} · stays on ${fromName} (matches ${set.side === 'right' ? 'left' : 'right'})`,
     );
   }
   const active = session.activeSetId;
@@ -495,14 +491,14 @@ function buildCard(input: GymSwitchInput, snap: SnapResult, excluded: ReadonlyMa
   const changesTargets = lines.length > 0;
   const summary =
     pendingCount === 0
-      ? `No sets left to update. Anything you add uses ${gymName}’s equipment.`
+      ? 'No sets left to update'
       : !changesTargets
-        ? `${gymName} has everything for your ${String(pendingCount)} remaining ${plural(pendingCount, 'set', 'sets')}. Targets stay as they are.`
+        ? 'No target changes'
         : null;
   const usable = input.gym.equipment.filter((e) => e.availability === 'available');
   const lead =
     input.mode === 'gym_switch' && usable.length === 0
-      ? { tone: 'warning' as const, text: `${gymName} has no equipment set up yet, so remaining load targets are removed.` }
+      ? { tone: 'warning' as const, text: 'No equipment set up · load targets removed' }
       : null;
   const uncheckedItems = snap.slots.flatMap((s) => (s.equipment?.detailsSource === 'preset' ? [s.equipment] : []));
   const firstUnchecked = uncheckedItems[0];
@@ -620,7 +616,7 @@ export function applyChangeGym(state: SessionAggregate, cmd: CommandOf<'change_g
   if (cmd.mode === 'gym_switch' && cmd.toGymId === session.gymId) return bad('invalid_values', 'The workout is already at that gym.');
   if (cmd.mode === 'equipment_update' && cmd.toGymId !== session.gymId) return bad('invalid_values', 'Updated equipment can only be used at the workout’s own gym.');
   if (cmd.expected.gymId !== session.gymId || cmd.expected.fingerprint !== planFingerprint(state)) {
-    return bad('stale_version', 'Out of date. Your workout changed since this was checked.');
+    return bad('stale_version', 'Out of date');
   }
   if (cmd.snapshot.some((e) => e.gymId !== cmd.toGymId)) return bad('invalid_values', 'That equipment belongs to another gym.');
   const refusal = gymSwitchRefusal(session);

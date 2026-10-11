@@ -133,9 +133,6 @@ export function TimeLeftSheet({
 
               <View style={{ gap: theme.space['2'] }}>
                 <Row label="Finish by" value={sheet.finishBy} />
-                <AppText variant="callout" color="text.secondary">
-                  Today only. It changes only how the line reads.
-                </AppText>
                 <ChipRow>
                   {STEPS.map((m) => (
                     <Chip

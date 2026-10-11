@@ -444,7 +444,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   let offProfileWarning: string | null = null;
   if (eq !== null && values.load !== null && values.load.convention !== 'bodyweight' && !isLoadAchievable(values.load, eq)) {
     const max = maxText(eq, values.load);
-    offProfileWarning = `${loadText(values.load, ex.loadConvention, eq)} isn’t on ${eq.name}${input.gymName ? ` at ${input.gymName}` : ''}${max === '' ? '' : ` (max ${max})`}. Log it anyway if that’s what you lifted, or update the gym.`;
+    offProfileWarning = `Not on ${eq.name}${input.gymName ? ` at ${input.gymName}` : ''}${max === '' ? '' : ` (max ${max})`}`;
   }
 
   const missing = missingFor(values, ex);
@@ -659,8 +659,8 @@ function upNextLine(state: SessionAggregate, focus: FocusView): string {
   // that load with the planned reps, so the next line says what will be lifted (premium-feel §3.6, D6).
   const planned = set && set.planned.load === null && focus.draft.load !== null && (set.planned.reps !== null || set.planned.durationS !== null) ? { ...set.planned, load: focus.draft.load } : set?.planned;
   const target = planned && ex ? targetShort(planned, { convention: ex.loadConvention, equipment: eq }) : null;
-  // `Target (built-in rule) 3–6 reps` → `3–6 reps`: the label stays on the set view.
-  const what = target !== null ? target.replace(/^Target (\([^)]*\) )?/, '') : focus.logLabel === null ? null : focus.logLabel.replace(/^Log /, '');
+  // `Target 3–6 reps` → `3–6 reps`: the label stays on the set view.
+  const what = target !== null ? target.replace(/^Target /, '') : focus.logLabel === null ? null : focus.logLabel.replace(/^Log /, '');
   return [sameExercise ? null : focus.exerciseName, `Set ${String(focus.setNumber)}`, what].filter((p): p is string => p !== null).join(' · ');
 }
 

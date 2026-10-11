@@ -170,7 +170,7 @@ Built-in rule text comes from `calculateNextTargets`. Coach targets, % changes a
 | State | Trigger | Display |
 |---|---|---|
 | Saving | `finishWorkout` in progress (normally < 200 ms) | The Finish sheet shows `Saving…`. The summary isn't shown until the commit |
-| Save failed | The SQLite write failed | Stay on Active workout with the banner `Couldn't finish the workout. Nothing was lost; try again.` [Try again]. **Never show a summary that isn't saved** |
+| Save failed | The SQLite write failed | Stay on Active workout with the banner `Couldn't finish. Try again.` [Try again]. **Never show a summary that isn't saved** |
 | Normal | Commit OK | As in the wireframe |
 | No comparison available | No compatible previous session | `First time logging Bench press with this barbell at Main Gym. Nothing to compare yet.` |
 | Not comparable | History exists but with different equipment, convention or set type | `Last bench press was at Hotel Gym (different bar). Not compared.` |

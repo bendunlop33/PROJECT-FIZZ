@@ -43,7 +43,7 @@ describe('Next time prefills the next workout', () => {
     const data = await s.workout.load(sessionId);
     if (!data) throw new Error('no data');
     const v = s.workout.view(data, h.clockMs, null);
-    expect(plain(v.focus?.target)).toBe('Target (built-in rule) 102.5 kg · 3–6 reps');
+    expect(plain(v.focus?.target)).toBe('Target 102.5 kg · 3–6 reps');
     expect(plain(v.primary.label)).toBe('Log 102.5 kg × 6');
   });
 

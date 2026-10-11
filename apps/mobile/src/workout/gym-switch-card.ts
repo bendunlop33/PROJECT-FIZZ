@@ -23,7 +23,7 @@ export interface SwitchCardView {
   title: string;
   /** `Checks` · `Today only` (hidden when Out of date, as design-system §9.11's stale variant). */
   tags: string[] | null;
-  /** `Out of date. Your workout changed since this was checked.` / `Couldn't switch gym. Nothing changed.` / `Switching…` */
+  /** `Out of date` / `Couldn't switch gym.` / `Switching…` */
   status: { tone: 'info' | 'warning'; text: string } | null;
   lead: NoteLine | null;
   notChanged: string[];
@@ -52,7 +52,7 @@ export function switchCardView(card: OpenSwitchCard, aggregate: SessionAggregate
     return {
       title: c.title,
       tags: null,
-      status: { tone: 'info', text: 'Out of date. Your workout changed since this was checked.' },
+      status: { tone: 'info', text: 'Out of date' },
       lead: null,
       notChanged: [],
       wasSuggested: c.lines.length > 0,
@@ -79,7 +79,7 @@ export function switchCardView(card: OpenSwitchCard, aggregate: SessionAggregate
   return {
     title: c.title,
     tags: [c.author, c.scope],
-    status: card.status === 'error' ? { tone: 'warning', text: 'Couldn’t switch gym. Nothing changed.' } : null,
+    status: card.status === 'error' ? { tone: 'warning', text: 'Couldn’t switch gym.' } : null,
     lead: c.lead,
     notChanged: c.notChanged,
     wasSuggested: false,

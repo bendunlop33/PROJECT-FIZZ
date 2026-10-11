@@ -1443,7 +1443,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const r = ctx.afterCommand(
           await domain().dispatch(req.sessionId, { type: 'correct_set', at: ctx.now(), opId: req.opId, setId: req.setId, expectedSetVersion: req.setVersion, patch: { exclusions: req.previous } }),
         );
-        if (!r.ok) return { ok: false, message: r.error.code === 'stale_version' ? 'Can’t undo: this set changed. Tap it to edit.' : r.error.message };
+        if (!r.ok) return { ok: false, message: r.error.code === 'stale_version' ? 'Can’t undo: this set changed' : r.error.message };
         if (req.painFlags.length === 0) return { ok: true, message: null };
         const retracted = await pain.retract(req.painFlags, `${req.opId}:pain`);
         if (!retracted.ok) return { ok: false, message: 'Set undone. The pain flag wasn’t removed. Try again.' };

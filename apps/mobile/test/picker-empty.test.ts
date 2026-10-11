@@ -7,6 +7,6 @@ describe('picker empty state (review S4)', () => {
     expect(pickerEmptyText('loading', '')).toBe('Loading exercises…');
     expect(pickerEmptyText('failed', 'bench')).toBe('Couldn’t load exercises. Go back and try again.');
     expect(pickerEmptyText('ready', '  ')).toBe('No exercises yet.');
-    expect(pickerEmptyText('ready', ' zzz ')).toBe('No exercise matches “zzz”. Try a shorter word, like “press” or “row”.');
+    expect(pickerEmptyText('ready', ' zzz ')).toBe('No match for “zzz”');
   });
 });

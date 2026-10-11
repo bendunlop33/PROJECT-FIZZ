@@ -59,7 +59,7 @@ const STALE_INPUTS = { code: 'stale_inputs', message: 'What this start was plann
 
 const WRITE_FAILED = {
   code: 'write_failed',
-  message: "Couldn't save this change. Your entry is still here; try again.",
+  message: 'Couldn’t save. Try again.',
 } as const;
 
 /** Run a save, turning a thrown storage error into a value. */

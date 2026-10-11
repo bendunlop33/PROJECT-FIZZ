@@ -318,12 +318,12 @@ Detected when a record fails validation on read (`CorruptDataError`), when `crea
 
 | State | Surface | Copy | Action |
 |---|---|---|---|
-| Set didn't save | Active workout banner (active-workout.md) | `Couldn't save this set. Your entry is still here.` | [Try again] (same operation ID) |
-| Finish didn't save | Active workout banner (workout-summary.md) | `Couldn't finish the workout. Nothing was lost; try again.` | [Try again] |
+| Set didn't save | Active workout banner (active-workout.md) | `Set not saved. Try again.` | [Try again] (same operation ID) |
+| Finish didn't save | Active workout banner (workout-summary.md) | `Couldn't finish. Try again.` | [Try again] |
 | Storage full | Where the write failed | `This iPhone is out of space, so Fizz can't save. Your entry is still here. Free up some space, then try again.` | [Try again] |
 | A command failed and rolled back | Where it was tapped (inline line or toast-free row) | `Couldn't <action>: <short reason>. Nothing was changed.` e.g. `Couldn't delete set 1: it changed since you opened it. Nothing was changed.` | One relevant action |
 | Out of date (version conflict) | Card or row (design-system §9.11) | `Out of date. Your workout changed since this was suggested.` | [Dismiss] |
-| Undo rejected | Toast (active-workout.md §4.9) | `Can't undo: set 2 changed. Tap it to edit or delete.` | — |
+| Undo rejected | Toast (active-workout.md §4.9) | `Can't undo: set 2 changed` | — |
 | Screen error (render crash) | Replaces that screen only | `Something went wrong on this screen. Saved workouts aren't affected.` | [Go to Today] · [Copy details] |
 | Restore interrupted | Today info banner, one launch (T9) | `Restore didn't finish · data unchanged` | — |
 | Import paused | Today info banner, one launch (T9) | `FitNotes import paused at 180 of 412 workouts.` | [Continue ›] |

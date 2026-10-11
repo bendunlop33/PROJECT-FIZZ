@@ -201,12 +201,12 @@ describe('copy (active-workout §5, exercise-library §5, today.md §5)', () => 
   it('picker: `May hurt` confirm with area and date; no area reads `pain` alone; never “safe”', () => {
     expect(mapPlain(mayHurtConfirm(f))).toEqual({
       title: 'Overhead press may hurt',
-      message: 'You flagged shoulder pain on it on 6 Oct. Loads won’t go up while the flag is on.',
+      message: 'Shoulder pain flagged 6 Oct.',
       confirm: 'Add anyway',
       cancel: 'Choose another',
     });
-    expect(plain(mayHurtConfirm({ ...f, area: null }).message)).toBe('You flagged pain on it on 6 Oct. Loads won’t go up while the flag is on.');
-    expect(plain(mayHurtConfirm({ ...f, area: 'other' }).message)).toBe('You flagged pain on it on 6 Oct. Loads won’t go up while the flag is on.');
+    expect(plain(mayHurtConfirm({ ...f, area: null }).message)).toBe('Pain flagged 6 Oct.');
+    expect(plain(mayHurtConfirm({ ...f, area: 'other' }).message)).toBe('Pain flagged 6 Oct.');
     expect(mayHurtAccessibility(f)).toBe('May hurt: you flagged shoulder pain on it.');
     expect(JSON.stringify(mayHurtConfirm(f)).toLowerCase()).not.toMatch(/safe|injur|strain|tendon/);
   });

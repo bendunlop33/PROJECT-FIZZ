@@ -52,7 +52,7 @@ describe('picker `May hurt` (EL9, check 50)', () => {
     const bench = rows.find((r) => r.exercise.name === 'Bench press');
     expect(bench?.mayHurt?.confirm).toEqual({
       title: 'Bench press may hurt',
-      message: 'You flagged shoulder pain on it on 9 Oct. Loads won’t go up while the flag is on.',
+      message: 'Shoulder pain flagged 9 Oct.',
       confirm: 'Add anyway',
       cancel: 'Choose another',
     });

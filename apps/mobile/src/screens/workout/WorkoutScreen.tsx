@@ -228,7 +228,7 @@ export function WorkoutScreen() {
     const rec = launch.recovery;
     const sid = data.aggregate.session.id;
     if (rec && rec.state.session.id === sid && rec.openInto === 'active_workout' && firstTime(`recovered:${sid}`)) {
-      const list: { key: string; severity: 'info' | 'warning'; text: string }[] = [{ key: 'restored', severity: 'info', text: 'Workout restored. Nothing was lost.' }];
+      const list: { key: string; severity: 'info' | 'warning'; text: string }[] = [{ key: 'restored', severity: 'info', text: 'Workout restored' }];
       for (const n of rec.notices) {
         if (n.kind === 'rest_ended_while_closed') list.push({ key: 'rest-ended', severity: 'info', text: `Rest ended at ${formatTime(toMs(n.endedAtUtc), data.aggregate.session.startedAt.tz)}` });
         if (n.kind === 'unsaved_edit_restored') setRestoredDraft(n.setId);
@@ -310,7 +310,7 @@ export function WorkoutScreen() {
         if (p) setSwitchCard({ proposal: p, opId: newUuid(), status: 'ready' });
       })
       .catch(() => {
-        showToast({ icon: 'info.circle', text: 'Couldn’t check that gym. Nothing changed.' });
+        showToast({ icon: 'info.circle', text: 'Couldn’t check that gym.' });
       });
   }, [data === 'loading' || data === null ? null : data.aggregate.session.id, checkGym?.nonce]);
 
@@ -463,7 +463,7 @@ export function WorkoutScreen() {
   if (loadError !== null && (data === 'loading' || data === null)) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top + theme.space['4'], paddingHorizontal: theme.space['4'], gap: theme.space['4'] }}>
-        <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t open this workout." detail={`Nothing was changed. ${loadError}`} />
+        <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t open this workout." info={loadError} />
         <SecondaryButton label="Try again" onPress={() => void reload()} />
         <TextButton label="Go to Today" onPress={close} />
       </View>
@@ -532,7 +532,7 @@ export function WorkoutScreen() {
     const r = await run(cmd);
     setBusy(false);
     if (!r.ok) {
-      setBanners((b) => [...b.filter((x) => x.key !== 'write'), { key: 'write', severity: 'warning', text: r.error.code === 'write_failed' ? 'Couldn’t save this set. Your entry is still here.' : r.error.message }]);
+      setBanners((b) => [...b.filter((x) => x.key !== 'write'), { key: 'write', severity: 'warning', text: r.error.code === 'write_failed' ? 'Set not saved. Try again.' : r.error.message }]);
       return;
     }
     // After the write, never on press-in. A heaviest-set record plays `record` instead of `commit` (premium-feel §5.1).
@@ -602,7 +602,7 @@ export function WorkoutScreen() {
     if (!fresh || !set) return;
     const r = await services.workout.dispatch(session.id, { type: 'undo_log', at: services.now(), opId, setId, expectedSetVersion: set.version });
     if (!r.ok) {
-      showToast({ icon: 'info.circle', text: `Can’t undo: set ${String(setNumber)} changed. Tap it to edit or delete.` });
+      showToast({ icon: 'info.circle', text: `Can’t undo: set ${String(setNumber)} changed` });
       return;
     }
     haptic('undo');
@@ -636,7 +636,7 @@ export function WorkoutScreen() {
       }
       if (action === 'skip_exercise') {
         const pending = view?.exercises.find((e) => e.sessionExerciseId === f.sessionExerciseId)?.pendingSets ?? 0;
-        Alert.alert(`Skip the ${String(pending)} remaining ${pending === 1 ? 'set' : 'sets'} of ${f.exerciseName}?`, 'Logged sets are kept.', [
+        Alert.alert(`Skip the ${String(pending)} remaining ${pending === 1 ? 'set' : 'sets'} of ${f.exerciseName}?`, undefined, [
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Skip',
@@ -696,9 +696,9 @@ export function WorkoutScreen() {
       // review sheet keeps it open when the new card still needs it (review r2 N3).
       setReviewOpen(reviewOpenAfterCheckAgain(fromReviewSheet, p));
       setSwitchCard(p ? { proposal: p, opId: newUuid(), status: 'ready' } : null);
-      if (!p) showToast({ icon: 'info.circle', text: 'Couldn’t check that gym. Nothing changed.' });
+      if (!p) showToast({ icon: 'info.circle', text: 'Couldn’t check that gym.' });
     } catch {
-      showToast({ icon: 'info.circle', text: 'Couldn’t check that gym. Nothing changed.' });
+      showToast({ icon: 'info.circle', text: 'Couldn’t check that gym.' });
     } finally {
       setCheckingGym(null);
     }
@@ -1016,7 +1016,7 @@ export function WorkoutScreen() {
         <RestPanel
           rest={rest}
           ready={holding}
-          upNext={view.upNext !== null ? `Next · ${view.upNext}` : focus === null ? (view.openEnded ? 'Then add a set or your next exercise' : null) : null}
+          upNext={view.upNext !== null ? `Next · ${view.upNext}` : focus === null ? (view.openEnded ? 'Next · add exercise' : null) : null}
           onAdjust={(deltaS) => {
             if (rest.kind !== 'running') return;
             void run({ type: 'adjust_rest', at: services.now(), opId: newUuid(), timerId: rest.timerId, deltaS }).then((r) => {
@@ -1133,7 +1133,7 @@ export function WorkoutScreen() {
       {focus.warmUp && !hiddenWarmUps.includes(focus.sessionExerciseId) ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
           <AppText variant="callout" color="text.secondary" numeric style={{ flex: 1 }}>
-            {`Warm-up (built-in, not logged): ${focus.warmUp}`}
+            {`Warm-up · ${focus.warmUp}`}
           </AppText>
           <TextButton
             label="Hide"
@@ -1254,7 +1254,7 @@ export function WorkoutScreen() {
         ) : null}
         {focus.side ? (
           focus.side.kind === 'fixed' ? (
-            <AppText variant="callout">{`Side: ${focus.side.value === 'left' ? 'Left' : 'Right'} side`}</AppText>
+            <AppText variant="callout">{`${focus.side.value === 'left' ? 'Left' : 'Right'} side`}</AppText>
           ) : (
             <ChipRow>
               {(['both', 'left', 'right'] as const).map((s) => (
@@ -1365,7 +1365,7 @@ export function WorkoutScreen() {
 
         {view.phase === 'empty' ? (
           <View style={{ paddingTop: theme.space['4'] }}>
-            <HeroHeader size="screen" eyebrow="Empty workout" title="Add your first exercise" lines={['Common lifts are at the top. Each one starts with 3 sets; add or remove sets as you go.']} />
+            <HeroHeader size="screen" eyebrow="Empty workout" title="Add your first exercise" />
             {resting ? null : switchSlot}
           </View>
         ) : null}
@@ -1840,9 +1840,6 @@ function RestAfterSheet({
           ))}
         </ChipRow>
         <AppText variant="callout" color="text.secondary">{`From: ${sourceLabel}`}</AppText>
-        <AppText variant="callout" color="text.secondary">
-          A rest that’s running now isn’t changed.
-        </AppText>
         <SecondaryButton label="This set only" onPress={() => { onApply(value, 'set'); }} />
         <SecondaryButton label={`All ${exerciseName} sets, and next time`} onPress={() => { onApply(value, 'exercise'); }} />
         <TextButton label="Cancel" tone="secondary" onPress={onClose} />
@@ -1902,9 +1899,6 @@ function StartTimeSheet({ visible, data, onClose, onSaved }: { visible: boolean;
             <Chip key={m} label={`${m < 0 ? '−' : '+'}${String(Math.abs(m))} min`} selected={false} onPress={() => { step(m); }} />
           ))}
         </ChipRow>
-        <AppText variant="callout" color="text.secondary">
-          The start can’t move after the first logged set or into the future. The end time can be changed after Finish.
-        </AppText>
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
         <SecondaryButton label="Save" onPress={() => void save()} />
         <TextButton label="Cancel" tone="secondary" onPress={onClose} />

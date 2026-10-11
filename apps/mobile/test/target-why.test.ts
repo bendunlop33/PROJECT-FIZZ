@@ -108,7 +108,7 @@ describe('Why? through the services', () => {
     const setId = aggregate.sets[0]?.id ?? '';
     const on = await s.workout.explainTarget(sessionId, setId);
     expect(rowsOf(on).filter((r) => r[0] === 'Pain' || r[0] === 'Before flag')).toEqual([
-      ['Pain', 'Flag on since 9 Oct (shoulder). Loads, reps and sets can’t go up.'],
+      ['Pain', 'Since 9 Oct (shoulder) · no increases'],
       ['Before flag', '105 kg × 5, 5, 5 · 8 Oct'],
     ]);
     expect(rowsOf(on)[2]?.[1]).toMatch(/^Progression for Bench press is paused because pain was reported/);

@@ -144,8 +144,8 @@ export function targetText(planned: PlannedSet, o: { convention: LoadConvention;
   if (planned.reps !== null) parts.push(`${repRangeText(planned.reps)}${NBSP}reps${o.perSide ? `${NBSP}per side` : ''}`);
   if (planned.durationS !== null) parts.push(formatDuration(planned.durationS));
   if (parts.length === 0) return null;
-  // Rule 3: a suggested target says where it came from.
-  const word = planned.source === 'built_in_rule' ? 'Target (built-in rule)' : planned.source === 'repeat' ? 'Target (as last time)' : planned.source === 'coach' ? 'Coach target' : 'Target';
+  // Rule 3: a coach target says so; any other source is behind `Why?` (`Set by`, minimal-copy D1).
+  const word = planned.source === 'coach' ? 'Coach target' : 'Target';
   return `${word} ${parts.join(' · ')}`;
 }
 

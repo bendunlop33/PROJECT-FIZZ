@@ -324,7 +324,6 @@ Defined in today.md §4 (list, check on the selected gym, `Add gym`, `Edit gyms`
 ┌──────────────────────────────────────┐
 │ [✓ Checks] Switch to Hotel · Lisbon  │
 │ [▦ Today only]                       │
-│ 2 logged sets stay as they are.      │
 │ ✎ Bench press · sets 3–4             │
 │   → DB bench press                   │
 │   Target 22.5 kg each × 6–8          │
@@ -392,8 +391,8 @@ The full state table and transitions are in [gym-switch.md](gym-switch.md) §3. 
 |---|---|
 | Computing | After 300 ms only: static `ellipsis` + `Checking Hotel · Lisbon's equipment…` (local, normally under 100 ms) |
 | Proposal ready | §2.8. With 5 or more change lines: 3 lines + `Review all N changes ›`, and `Switch` on the review sheet |
-| Nothing changes | `Home has everything for your 9 remaining sets. Targets stay as they are.` [Not now] [Switch] |
-| Out of date | `Out of date. Your workout changed since this was checked.` `Switch` hidden; [Dismiss] [Check again] |
+| Nothing changes | `No target changes` [Not now] [Switch] |
+| Out of date | `Out of date` `Switch` hidden; [Dismiss] [Check again] |
 | Applied | Toast with [Undo]; gym chip shows the new gym |
 | Undo refused | Something changed after the switch: the toast says `Can't undo: your workout changed since the switch.` and a `Switch back to Main Gym` card appears, built by the same function. Never a silent revert |
 
@@ -478,7 +477,7 @@ The full state table and transitions are in [gym-switch.md](gym-switch.md) §3. 
 | Confirms | `Archive Main gym? It's hidden from the gym list. Past workouts keep it.` · `Choose another default gym first.` · `Delete Home? It hasn't been used in a workout. This can't be undone.` · `Discard changes to Dumbbells?` · `Bench press history uses this bar, so it's kept as removed rather than deleted.` |
 | Duplicate | `Main gym copy` · `Copied Main gym. History isn't shared between the two.` [Undo] |
 | Switcher | `Gym for this workout` / `Choose gym` · `(current)` · `New travel gym` · `Add gym` · `Edit gyms` |
-| Switch card | Owned by [gym-switch.md](gym-switch.md) §5. Main strings: `Switch to Hotel · Lisbon` · `Today only` · `2 logged sets stay as they are.` · `No change: Lateral raise.` · `ⓘ No Olympic bar here.` · `ⓘ Capped: the most here is 20 kg each.` · `→ 12 reps, no load target` · `⚠ No Cable station here. Swap or skip it after switching.` · `Home has everything for your 9 remaining sets. Targets stay as they are.` · `Checking Hotel · Lisbon's equipment…` · actions `Not now` / `Switch` (same gym: `Use updated Main Gym` / `Apply`) |
+| Switch card | Owned by [gym-switch.md](gym-switch.md) §5. Main strings: `Switch to Hotel · Lisbon` · `Today only` · `No change: Lateral raise.` · `ⓘ No Olympic bar here.` · `ⓘ Max here 20 kg each` · `→ 12 reps, no load target` · `⚠ No cable station here` · `No target changes` · `Checking Hotel · Lisbon's equipment…` · actions `Not now` / `Switch` (same gym: `Use updated Main Gym` / `Apply`) |
 | Switch result | `Switched to Hotel · Lisbon. Remaining sets updated for today.` [Undo] · `Switched to Home. No targets changed.` [Undo] · spoken (Set cues), only when a target changed: "Remaining sets updated for today." |
 | Coach link | `Edit Main gym ›` |
 
