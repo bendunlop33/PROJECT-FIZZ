@@ -278,6 +278,12 @@ describe('Delete my data (keep coaching knowledge)', () => {
     const oldOnly = personal.filter((p) => !['Main Gym', personal[0]].includes(p));
     expect(filesHolding(h, oldOnly).length).toBeGreaterThan(0);
 
+    // What the fresh backups hold now: Finish deleting must leave these very files, not remake them (review r4 N3).
+    const freshText = new Map(fresh.map((n) => [n, h.backupFiles.get(n)]));
+    const freshCopies = (await s2.restore.copiesOnPhone()).filter((c) => fresh.includes(c.fileName));
+    // A later clock, so a backup remade by Finish deleting would get a new name and reason.
+    h.clockMs += 3_600_000;
+
     // Finish deleting while files still can't go: says so, keeps the line.
     expect(await s2.data.finishLeftover()).toEqual({ ok: false, step: 'backups', message: expect.stringMatching(/couldn’t be deleted/) as string });
     expect(await s2.data.leftover()).toMatchObject({ step: 'backups' });
@@ -288,8 +294,9 @@ describe('Delete my data (keep coaching knowledge)', () => {
     // Nothing of the old data is left; what Ben logged since, and its backups, are kept.
     expect(filesHolding(h, oldOnly)).toEqual([]);
     for (const n of old) expect(h.backupFiles.has(n)).toBe(false);
-    for (const n of fresh) expect(h.backupFiles.has(n)).toBe(true);
+    for (const n of fresh) expect(h.backupFiles.get(n)).toBe(freshText.get(n));
     expect((await s2.restore.copiesOnPhone()).map((c) => c.fileName)).toEqual(fresh);
+    expect((await s2.restore.copiesOnPhone()).filter((c) => fresh.includes(c.fileName))).toEqual(freshCopies);
     expect((await s2.yourData.counts()).finishedWorkouts).toBe(1);
     expect([...keychain.items.keys()]).toEqual(['fizz.chatgpt.tokens']);
     expect(keychain.calls.filter((c) => c === 'signOut')).toHaveLength(signOuts);
@@ -346,6 +353,40 @@ describe('Delete my data (keep coaching knowledge)', () => {
     expect(await opened.services.data.leftover()).toMatchObject({ step: 'settings_files', steps: ['settings_files'] });
     expect(await opened.services.data.finishLeftover()).toMatchObject({ ok: false, step: 'settings_files' });
     expect(keychain.items.size).toBe(0);
+  });
+
+  it('Finish deleting keeps going after a failed step: alerts stuck, settings files still removed (review r4 N2)', async () => {
+    let filesStuck = true;
+    let removed = 0;
+    const files: PersonalFilesPort = {
+      remove() {
+        if (filesStuck) return Promise.reject(new Error('Couldn’t delete device-prefs.json'));
+        removed += 1;
+        return Promise.resolve();
+      },
+    };
+    h = createHarness('2026-10-08T17:00:00.000Z', { credentials: fakeKeychain().port, personalFiles: files });
+    const { services: s } = await h.launch();
+    await bensData(s);
+    h.alertsFail = true;
+    expect(await s.data.deleteMyData({ opId: 'two-stuck', stamp: (await s.data.summary()).stamp })).toMatchObject({ ok: false, deleted: true, step: 'alerts' });
+    await h.forceClose();
+    const opened = await h.start({ interruptedDelete: 'leave' });
+    if (opened.kind !== 'ready') throw new Error(opened.kind);
+    const s2 = opened.services;
+    expect(await s2.data.leftover()).toMatchObject({ step: 'alerts', steps: ['alerts', 'settings_files'] });
+
+    // Alerts still can't be cancelled; the files now can. The later step runs anyway.
+    filesStuck = false;
+    expect(await s2.data.finishLeftover()).toMatchObject({ ok: false, step: 'alerts' });
+    expect(removed).toBe(1);
+    expect(await s2.data.leftover()).toMatchObject({ step: 'alerts', steps: ['alerts'] });
+
+    h.alertsFail = false;
+    expect(await s2.data.finishLeftover()).toEqual({ ok: true });
+    expect(await s2.data.leftover()).toBeNull();
+    // settings_files was done already, so it isn't run again.
+    expect(removed).toBe(1);
   });
 
   it('a later full Delete clears an earlier Continue: no leftover line, nothing for Finish deleting to do (review r3 S1)', async () => {
@@ -551,6 +592,18 @@ describe('Delete my data (keep coaching knowledge)', () => {
     expect(keychain.calls).toEqual(['signOut', 'wipe', 'revoked']);
     expect(keychain.items.size).toBe(0);
     expect(files.files.size).toBe(0);
+  });
+
+  it('a sign-out that never answers doesn’t hold Delete: the Keychain is still wiped, and the sign-out isn’t confirmed (review r4 N4)', async () => {
+    const keychain = fakeKeychain();
+    const hung: CredentialPort = { signOut: () => new Promise(() => undefined), wipe: () => keychain.port.wipe() };
+    h = createHarness('2026-10-08T17:00:00.000Z', { credentials: hung, personalFiles: fakeFiles().port, signOutTimeoutMs: 20 });
+    const { services: s } = await h.launch();
+    await bensData(s);
+    const r = await s.data.deleteMyData({ opId: 'hung', stamp: (await s.data.summary()).stamp });
+    expect(r).toEqual({ ok: true, duplicate: false, signedOutOnline: false });
+    expect(keychain.items.size).toBe(0);
+    expect(await s.data.leftover()).toBeNull();
   });
 
   it('a delete finished at launch that couldn’t confirm the ChatGPT sign-out online says so on first run (review r2 N4)', async () => {

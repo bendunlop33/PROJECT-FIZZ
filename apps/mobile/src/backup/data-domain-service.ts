@@ -211,6 +211,27 @@ function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+const TIMED_OUT: unique symbol = Symbol('timed out');
+
+/** `p`'s value or rejection, or `TIMED_OUT` when it hasn't settled within `ms`. `p` keeps running; a late result is ignored. */
+function settlesWithin<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      resolve(TIMED_OUT);
+    }, ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(timer);
+        reject(e instanceof Error ? e : new Error(String(e)));
+      },
+    );
+  });
+}
+
 /** `fallback` when `p` hasn't settled within `ms` or rejects. `p` keeps running; its result is ignored. */
 function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise((resolve) => {
@@ -405,10 +426,14 @@ export function createDataDomainService(deps: DataDomainDeps) {
   async function signOutAndWipe(): Promise<boolean | null> {
     if (!deps.credentials) return null;
     let signedOutOnline: boolean | null = null;
+    const ms = deps.signOutTimeoutMs ?? 10_000;
     try {
-      const out = await deps.credentials.signOut();
+      // A sign-out that hangs (a stuck Keychain read) can't hold Delete behind the cover: after `ms` the wipe
+      // runs anyway and the sign-out counts as not confirmed online (review r4 N4). A rejection still fails the step.
+      const out = await settlesWithin(deps.credentials.signOut(), ms);
+      if (out === TIMED_OUT) signedOutOnline = false;
       // Offline is fine (§4.5 step 1): the sign-in is already off this phone.
-      if (out.revokeOnline !== null) signedOutOnline = await withTimeout(out.revokeOnline(), deps.signOutTimeoutMs ?? 10_000, false);
+      else if (out.revokeOnline !== null) signedOutOnline = await withTimeout(out.revokeOnline(), ms, false);
     } finally {
       // The wipe runs even when the sign-out threw: it is what clears the Keychain.
       await deps.credentials.wipe();

@@ -32,14 +32,30 @@ export interface ContainerFileOps {
   emptyTemporary(): Promise<{ systemLeft: string[] }>;
 }
 
+/**
+ * Every part runs even when an earlier one throws, so a stuck settings file
+ * never leaves the picker's copies of Ben's history behind; the first
+ * failure is the one thrown (review r4 N1, the r3 rule inside the step).
+ */
 export function createPersonalFiles(ops: ContainerFileOps): PersonalFilesPort {
   return {
     async remove() {
-      await ops.removeDocuments(PERSONAL_DOCUMENTS, DAMAGED_COPY);
-      // The capability probe's database.
-      await ops.removeDatabaseFiles(PROBE_DB_NAME);
-      // Picked CSV and backup copies (review r2 B1).
-      await ops.emptyTemporary();
+      const parts: (() => Promise<unknown>)[] = [
+        () => ops.removeDocuments(PERSONAL_DOCUMENTS, DAMAGED_COPY),
+        // The capability probe's database.
+        () => ops.removeDatabaseFiles(PROBE_DB_NAME),
+        // Picked CSV and backup copies (review r2 B1).
+        () => ops.emptyTemporary(),
+      ];
+      const errors: unknown[] = [];
+      for (const part of parts) {
+        try {
+          await part();
+        } catch (e) {
+          errors.push(e);
+        }
+      }
+      if (errors.length > 0) throw errors[0];
     },
   };
 }
