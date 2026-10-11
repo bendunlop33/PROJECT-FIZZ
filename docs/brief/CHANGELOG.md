@@ -135,3 +135,11 @@ Ben's reply to the 14 candidate rules (`docs/training-guides/README.md`): "Ok. 1
 - **Other playbook defaults (D1–D18, D20, D22) accepted as proposed.**
 - **Competitor follow-ups approved** (`docs/research/competitor-landscape.md`): 1 rest Live Activity (plus fallback if the retest fails), 2 competitor-failure test pack, 3 "Why this number?" on every set target, 6 mid-workout gym switch re-snap (and Repeat B1), 7 coach honesty contract, 8 pain-flag UX, 9 per-set exclusion flags, 10 "About N min left" and a shorten proposal.
 - **Item 4 changed by Ben:** history import should use AI to interpret any format and transform it into the app's format, instead of hand-written per-app import rules. The deterministic FitNotes importer stays as the offline path; the AI route is designed so the model proposes the mapping and code applies and validates it (rules 6 and 8).
+
+## 2026-10-11: Your data slice: awaiting Ben (proposed, not approved)
+Recorded so the open scope is tracked; nothing here is approved yet. Details in ADR 0022 and `docs/reviews/your-data-r2.md`.
+- **Export scope:** JSON only, saved through the Files folder picker. CSV, FitNotes 2 CSV, date ranges, the warm-up toggle and the share sheet (data-import-export §2.6, §4.4) proposed as a follow-up slice. Ben to accept for now or ask for them before merge.
+- **Pre-delete safety net:** `Save a copy to Files first` listed first when there is no copy off the phone (as specified), or a prompt before the Delete alert. Ben to decide.
+- **Reset and playbook candidates:** until approving rules ships, Reset removes every candidate. The spec (§2.7, §3.6) should say so.
+- **Custom exercises and aliases (B12):** treated as Your data in code, Coaching knowledge in the spec. The spec should match the code until B12 is decided.
+- **Spec wording:** §4.5 step 3's "cached import files" should also name the copies made when Ben picks a backup to restore or check (the code removes all of them).
