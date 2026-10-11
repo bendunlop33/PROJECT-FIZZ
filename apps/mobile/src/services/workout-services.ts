@@ -1546,7 +1546,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     /**
      * Add an exercise. Its sets are planned from the built-in rule's next
      * targets for this exercise and equipment (the same result the last
-     * Summary showed, labelled `Target (built-in rule)`; review S3), or one
+     * Summary showed, shown as `Target`, its source behind `Why?`; review S3, minimal-copy D1), or one
      * empty set when there's no comparable history.
      */
     async addExercise(req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string }): Promise<CommandOutcome> {

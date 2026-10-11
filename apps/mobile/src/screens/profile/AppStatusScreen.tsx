@@ -132,7 +132,7 @@ export function AppStatusScreen() {
       <SectionHeader title="Last error" />
       <View style={{ gap: theme.space['2'] }}>
         {lastError === null ? (
-          <StatusLine icon="checkmark.circle.fill" tone="done" text="No error recorded" info="Errors the app catches are recorded here. If the app closed and nothing is here, it was a native or animation-thread crash: try Profile › Developer › Exercise guide animations off." />
+          <StatusLine icon="checkmark.circle.fill" tone="done" text="No error recorded" infoLabel="About errors" info="Errors the app catches are recorded here. If the app closed and nothing is here, it was a native or animation-thread crash: try Profile › Developer › Exercise guide animations off." />
         ) : (
           <>
             <StatusLine

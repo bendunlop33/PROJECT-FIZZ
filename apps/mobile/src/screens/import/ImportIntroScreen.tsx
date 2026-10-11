@@ -75,7 +75,7 @@ export function ImportIntroScreen() {
 
   return (
     <Screen footer={footer}>
-      <InfoLine text={INTRO_COPY.line} info={INTRO_COPY.info} />
+      <InfoLine text={INTRO_COPY.line} info={INTRO_COPY.info} infoLabel="About FitNotes files" />
       {view.blockLine ? <StatusLine icon="info.circle" tone="info" text={view.blockLine} /> : null}
       {view.paused ? (
         <Card>

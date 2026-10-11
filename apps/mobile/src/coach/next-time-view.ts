@@ -23,7 +23,7 @@ export interface NextTimeRowView {
   target: string;
   /** `−2.5%`, from the saved values. */
   pct: string | null;
-  /** `Coach`, `Suggested`, `Built-in rule (…)`. */
+  /** `Coach`, `Suggested`, `Rule` (D1). */
   tag: string;
   /** Behind `Why?`. */
   why: string[];

@@ -463,7 +463,7 @@ export function WorkoutScreen() {
   if (loadError !== null && (data === 'loading' || data === null)) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top + theme.space['4'], paddingHorizontal: theme.space['4'], gap: theme.space['4'] }}>
-        <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t open this workout." info={loadError} />
+        <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t open this workout." info={loadError} infoLabel="Error details" />
         <SecondaryButton label="Try again" onPress={() => void reload()} />
         <TextButton label="Go to Today" onPress={close} />
       </View>

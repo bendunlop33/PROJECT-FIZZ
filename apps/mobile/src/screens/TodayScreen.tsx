@@ -307,6 +307,7 @@ export function TodayScreen() {
             text={launch.recoveryError ? 'Your unfinished workout couldn’t be read.' : 'Couldn’t open your training data.'}
             detail="Data unchanged"
             info={data.message}
+            infoLabel="Error details"
           />
           <SecondaryButton label="Try again" onPress={reload} />
           {/* The way out when a record can't be read (review S2): restore a backup; the current data is kept for Undo. */}
@@ -322,6 +323,7 @@ export function TodayScreen() {
   }
   const { gym, view, banners, active, unlinked, next, lift, routines } = data.value;
   const zoned = services.now();
+  const checkInLine = (c: NonNullable<typeof unlinked>) => `Check-in ${formatTime(toMs(c.recordedAt.utc), zoned.tz)} · ${scoreText(c.score)}${c.reasons.length ? ` · ${reasonsText(c.reasons)}` : ''}`;
   const main = view?.main ?? { kind: 'no_plan' as const };
 
   const hero = (() => {
@@ -519,13 +521,14 @@ export function TodayScreen() {
 
         {unlinked && main.kind !== 'resume' && main.kind !== 'stale' ? (
           <LinkLine
-            accessibilityLabel="Edit your saved check-in"
+            // The visible time and score, read out too (review N6).
+            accessibilityLabel={`${checkInLine(unlinked)}. Edits your saved check-in.`}
             onPress={() => {
               navigation.navigate('CheckIn', { mode: 'edit', checkInId: unlinked.id });
             }}
           >
             <AppText variant="callout" color="text.secondary" numeric>
-              {`Check-in ${formatTime(toMs(unlinked.recordedAt.utc), zoned.tz)} · ${scoreText(unlinked.score)}${unlinked.reasons.length ? ` · ${reasonsText(unlinked.reasons)}` : ''} ›`}
+              {`${checkInLine(unlinked)} ›`}
             </AppText>
           </LinkLine>
         ) : null}

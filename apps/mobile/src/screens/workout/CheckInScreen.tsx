@@ -91,7 +91,7 @@ function Sheet({
             {info ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Info"
+                accessibilityLabel={`About ${title}`}
                 accessibilityState={{ expanded: infoOpen }}
                 hitSlop={12}
                 onPress={() => {

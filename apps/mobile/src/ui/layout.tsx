@@ -185,6 +185,7 @@ export function StatusLine({
   text,
   detail,
   info,
+  infoLabel = 'Details',
   action,
 }: {
   icon: SymbolName;
@@ -193,6 +194,8 @@ export function StatusLine({
   detail?: string | null;
   /** Behind an ⓘ (minimal copy): shown only on a tap, for example an error's own message. */
   info?: string | null;
+  /** The ⓘ's VoiceOver label, in context (`Error details`), never a bare `Info` (review N1). */
+  infoLabel?: string;
   action?: ReactNode;
 }) {
   const theme = useTheme();
@@ -221,7 +224,7 @@ export function StatusLine({
       {hasInfo ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Info"
+          accessibilityLabel={infoLabel}
           accessibilityState={{ expanded: infoOpen }}
           hitSlop={12}
           style={{ paddingTop: 2 }}
@@ -241,7 +244,7 @@ export function StatusLine({
  * A short line with an optional `ⓘ` (minimal copy): the explanation shows only
  * on a tap. With no `info` it is a plain line.
  */
-export function InfoLine({ text, info, variant = 'body', infoLabel = 'Info' }: { text?: string | null; info?: string | null; variant?: 'body' | 'callout'; infoLabel?: string }) {
+export function InfoLine({ text, info, variant = 'body', infoLabel = 'Details' }: { text?: string | null; info?: string | null; variant?: 'body' | 'callout'; infoLabel?: string }) {
   const theme = useTheme();
   const [open, setOpen] = useState(false);
   const hasInfo = info !== undefined && info !== null && info !== '';
