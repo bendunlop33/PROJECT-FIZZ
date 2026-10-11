@@ -221,7 +221,7 @@ describe('C7: in the workout (offer, Adjust, banner, Undo)', () => {
     expect(r.status).toBe('completed');
     const thread = await s.coach.loadThread(r.threadId);
     const records = thread?.actionsByTurn.get(r.turnId) ?? [];
-    expect(records.map((x) => [x.status, x.failure])).toEqual([['rejected', 'only Bench press was in question']]);
+    expect(records.map((x) => [x.status, x.failure])).toEqual([['rejected', 'only Bench press']]);
     const after = await s.workout.load(sessionId);
     for (const x of pulldownSets) expect(after?.aggregate.sets.find((y) => y.id === x.id)?.planned).toEqual(x.planned);
   });

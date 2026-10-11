@@ -457,10 +457,10 @@ describe('review r5 S1: clear requests and the rule 3 signals in words', () => {
 });
 
 describe('asksForMoreSets (D1; review S7)', () => {
-  it.each(['Can I have more sets next time?', 'Add a set to bench', 'I want extra volume on rows', 'Give me another set', 'Legs felt fine, more sets please'])('an ask: %s', (t) => {
+  it.each(['Can I have more sets next time?', 'Add a set to bench', 'I want extra volume on rows', 'Give me another set', 'Legs felt fine, more sets please', 'Could you add a set to bench next time?', 'Bench felt easy. Can we do more sets?', 'More sets please?'])('an ask: %s', (t) => {
     expect(asksForMoreSets(t)).toBe(true);
   });
-  it.each(['I don’t want any more sets', 'no extra sets please', 'Not another set, I’m done', 'Never add a set to squats', 'That was enough volume', 'too many sets today', 'No more sets on bench'])('not an ask: %s', (t) => {
+  it.each(['I don’t want any more sets', 'no extra sets please', 'Not another set, I’m done', 'Never add a set to squats', 'That was enough volume', 'too many sets today', 'No more sets on bench', 'Should I do more sets?', 'Would more sets help?', 'Do I need extra volume for legs?', 'Bench felt easy. Is another set worth it?'])('not an ask: %s', (t) => {
     expect(asksForMoreSets(t)).toBe(false);
   });
 });

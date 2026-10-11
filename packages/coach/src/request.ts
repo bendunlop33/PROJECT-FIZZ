@@ -590,20 +590,24 @@ export function isStructuralRequest(r: BenRequest | null): boolean {
 
 const MORE_SETS = /\b(?:more|extra|another|add (?:a|one|an))\b.{0,20}\b(?:sets?|volume)\b/;
 
+/** A question that asks for something ("Can I have more sets?"), not for advice ("Should I do more sets?"). */
+const REQUEST_QUESTION = /^(?:(?:can|could|may) (?:i|we) (?:have|get|do|add|try)|(?:can|could|will|would) you (?:add|give|put|make)|any chance)\b|\bplease\b/;
+
 /**
  * Did Ben ask for more sets or volume (D1: +1 set next session only when he
  * asked)? His own words only, clause by clause; a negated ask ("I don't want
- * any more sets", "no extra sets please") is not one (review S7).
+ * any more sets", "no extra sets please") is not one (review S7), nor is a
+ * question asking for advice ("Should I do more sets?", review r2 N1).
  */
 export function asksForMoreSets(text: string): boolean {
-  const clauses = text
-    .toLowerCase()
-    .replace(/[’]/g, "'")
-    .split(/[.!?;,]+|\b(?:but|though|although)\b/);
-  return clauses.some((c) => {
-    const m = MORE_SETS.exec(c);
-    if (m === null) return false;
-    const before = c.slice(0, m.index).trim().split(/\s+/).slice(-6).join(' ');
-    return !NEGATORS.test(before) && !/\b(?:any|enough|too many)\b/.test(`${before} ${m[0]}`) && !/^\s*no\b/.test(c);
+  const sentences = text.toLowerCase().replace(/[’]/g, "'").match(/[^.!?;]+[.!?;]*/g) ?? [];
+  return sentences.some((sentence) => {
+    if (/\?\s*$/.test(sentence) && !REQUEST_QUESTION.test(sentence.trim())) return false;
+    return sentence.split(/[.!?;,]+|\b(?:but|though|although)\b/).some((c) => {
+      const m = MORE_SETS.exec(c);
+      if (m === null) return false;
+      const before = c.slice(0, m.index).trim().split(/\s+/).slice(-6).join(' ');
+      return !NEGATORS.test(before) && !/\b(?:any|enough|too many)\b/.test(`${before} ${m[0]}`) && !/^\s*no\b/.test(c);
+    });
   });
 }

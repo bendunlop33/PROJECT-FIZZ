@@ -119,23 +119,50 @@ export function nextTimeView(input: NextTimeInput): NextTimeView | null {
 /** Words too common in exercise names to say which one a sentence is about. */
 const GENERIC_NAME_WORDS = new Set(['press', 'raise', 'raises', 'curl', 'curls', 'extension', 'extensions', 'machine', 'cable', 'barbell', 'dumbbell', 'seated', 'standing', 'single', 'assisted', 'supported']);
 
+/** Gym short forms Ben and the coach use for whole names (review r2 N2). */
+const SHORT_FORMS: Record<string, string> = { rdl: 'romanian deadlift', rdls: 'romanian deadlift', ohp: 'overhead press', cgbp: 'close grip bench press', sldl: 'stiff leg deadlift' };
+
 function mentions(sentence: string, exerciseName: string): boolean {
   const said = ` ${sentence.toLowerCase().replace(/[^a-z0-9]+/g, ' ')} `;
   const name = exerciseName.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   if (said.includes(` ${name} `)) return true;
+  if (Object.entries(SHORT_FORMS).some(([short, full]) => said.includes(` ${short} `) && ` ${name} `.includes(` ${full} `))) return true;
   return name.split(' ').some((w) => w.length >= 4 && !GENERIC_NAME_WORDS.has(w) && (said.includes(` ${w} `) || said.includes(` ${w}s `)));
 }
 
+/** Numbers in a sentence that could be a target (not `RPE 10`, `RIR 2`, `set 3`). */
+function targetNumbers(sentence: string): number[] {
+  const out: number[] = [];
+  for (const m of sentence.toLowerCase().matchAll(/(\b[a-z#]+\s*)?(\d+(?:[.,]\d+)?)/g)) {
+    if (/^(?:rpe|rir|set|#)$/.test((m[1] ?? '').trim())) continue;
+    out.push(Number((m[2] ?? '').replace(',', '.')));
+  }
+  return out;
+}
+
+/** The numbers a saved row says: its load, reps, set count and % change. */
+function rowNumbers(r: NextSessionTargetRecord): number[] {
+  const pct = r.pctChange === null ? [] : [Math.abs(r.pctChange), Math.round(Math.abs(r.pctChange))];
+  const reps = r.target.reps === null ? [] : [r.target.reps.min, r.target.reps.max];
+  return [...(r.target.load === null ? [] : [r.target.load.value]), ...reps, ...(r.sets === null ? [] : [r.sets]), ...pct];
+}
+
 /**
- * The Summary's coach note, sentence by sentence (review S5): a sentence
- * with a number about an exercise whose `Next time` isn't the coach's saved
- * target (no row, or undone, or only suggested) is dropped whole, so the
- * note never shows a number beside a row that says something else. Pure.
+ * The Summary's coach note, sentence by sentence (review S5, r2 N2): a
+ * sentence with a number about an exercise whose `Next time` isn't the
+ * coach's saved target (no row, or undone, or only suggested), or with a
+ * number that row doesn't say, is dropped whole, so the note never shows a
+ * number beside a row that says something else. Pure.
  */
 export function summaryNoteSentences(sentences: readonly string[], exerciseNames: readonly string[], rows: readonly NextSessionTargetRecord[]): string[] {
-  const live = new Set(rows.filter((r) => r.status === 'saved' || r.status === 'applied').map((r) => r.exerciseName.toLowerCase()));
+  const live = new Map(rows.filter((r) => r.status === 'saved' || r.status === 'applied').map((r) => [r.exerciseName.toLowerCase(), r]));
   return sentences.filter((s) => {
     if (!/\d/.test(s)) return true;
-    return exerciseNames.every((name) => !mentions(s, name) || live.has(name.toLowerCase()));
+    const named = exerciseNames.map((name) => name.toLowerCase()).filter((name) => mentions(s, name));
+    if (named.length === 0) return true;
+    const saved = named.map((name) => live.get(name));
+    if (saved.some((r) => r === undefined)) return false;
+    const said = new Set(saved.flatMap((r) => (r === undefined ? [] : rowNumbers(r))));
+    return targetNumbers(s).every((n) => said.has(n));
   });
 }

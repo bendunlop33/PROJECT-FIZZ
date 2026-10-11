@@ -275,7 +275,7 @@ function requestedSets(agg: SessionAggregate | null, args: AdjustPendingSetsArgs
 }
 
 function failureText(outcome: string): string {
-  const t = outcome.replace(/\s*(?:Nothing changed|Sets unchanged)\.?\s*$/i, '').replace(/[.\s]+$/, '');
+  const t = outcome.replace(/\s*(?:Nothing changed|Sets unchanged|No change)\.?\s*$/i, '').replace(/[.\s]+$/, '');
   return (t.charAt(0).toLowerCase() + t.slice(1)).slice(0, 200) || 'the change was refused';
 }
 
@@ -293,7 +293,7 @@ export function createAdjustExecutor(deps: AdjustDeps): ToolExecutor {
     const only = deps.onlySessionExerciseId ?? null;
     if (only !== null && call.args.exercises.some((e) => e.sessionExerciseId !== only)) {
       const name = agg.exercises.find((e) => e.id === only)?.exerciseName ?? 'that exercise';
-      return refuse('rejected', `Only ${name} was in question. Sets unchanged.`, []);
+      return refuse('rejected', `Only ${name}. No change.`, []);
     }
     const result = validateTodayAdjustment({
       aggregate: agg,

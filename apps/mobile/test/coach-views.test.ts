@@ -188,6 +188,17 @@ describe('Next time (D21): coach rows over the built-in rule', () => {
     expect(summaryNoteSentences(said, ['Bench press', 'Row'], [coachRow(1, 'proposed')])).toEqual(['All three sets were RPE 10.', 'Rows looked smooth.']);
   });
 
+  it('the coach note drops a number the saved row doesn’t say, and knows short forms like RDL (review r2 N2)', () => {
+    const bench = coachRow(1, 'saved');
+    expect(summaryNoteSentences(['Bench goes to 100 next time.', 'Bench at 57.5 for 8 to 10, after RPE 10 on set 3.', 'Bench drops 4% next time.'], ['Bench press'], [bench])).toEqual([
+      'Bench at 57.5 for 8 to 10, after RPE 10 on set 3.',
+      'Bench drops 4% next time.',
+    ]);
+    const rdl = coachRow(2, 'saved', { exerciseName: 'Romanian deadlift', target: { load: kg(80), reps: { min: 8, max: 8 } } });
+    expect(summaryNoteSentences(['RDL goes to 90.', 'RDL at 80 next time.'], ['Romanian deadlift'], [rdl])).toEqual(['RDL at 80 next time.']);
+    expect(summaryNoteSentences(['RDL goes to 90.'], ['Romanian deadlift'], [])).toEqual([]);
+  });
+
   it('undone → the built-in rule with Use coach target; proposed → Not now / Apply; used → no buttons', () => {
     const v = nextTimeView(input([coachRow(1, 'undone'), coachRow(2, 'proposed')]));
     expect(v?.rows[0]).toMatchObject({ tag: 'Built-in rule', target: 'Target 61 kg × 8–10', actions: [{ label: 'Use coach target' }] });
