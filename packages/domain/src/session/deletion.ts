@@ -105,6 +105,8 @@ function plan(
   command: string,
   eligible: (a: SessionAggregate) => boolean,
   apply: (a: SessionAggregate) => SessionAggregate,
+  /** The operation's outcome still holds (nothing undid it since); a retry otherwise is stale (review r2 N5). */
+  stillApplied: (a: SessionAggregate) => boolean,
 ): DeletionPlan {
   if (req.items.length === 0) return { ok: false, error: { code: 'empty' } };
   const ids = new Set(req.items.map((i) => i.sessionId));
@@ -115,6 +117,12 @@ function plan(
   const prior = req.items.map((i) => found.get(i.sessionId)?.processedOps[req.opId] ?? null);
   if (prior.some((p) => p !== null)) {
     if (prior.every((p) => p !== null && p.commandType === command && p.fingerprint === fp)) {
+      // A late retry after a later operation changed the workout again: say so, never `ok` with the newer state.
+      const changed = req.items.filter((i) => {
+        const a = found.get(i.sessionId);
+        return !a || !stillApplied(a) || laterLifecycleOp(a, req.opId);
+      });
+      if (changed.length > 0) return { ok: false, error: { code: 'stale', sessionIds: changed.map((i) => i.sessionId) } };
       return {
         ok: true,
         duplicate: true,
@@ -147,6 +155,13 @@ function plan(
   return { ok: true, duplicate: false, writes, refs: writes.map((w) => ({ sessionId: w.aggregate.session.id, version: w.aggregate.session.version })) };
 }
 
+/** Whether a delete or restore was recorded on `a` after operation `opId`. */
+function laterLifecycleOp(a: SessionAggregate, opId: string): boolean {
+  const at = a.processedOps[opId]?.atUtc;
+  if (at === undefined) return false;
+  return Object.values(a.processedOps).some((o) => o.opId !== opId && (o.commandType === DELETE_WORKOUT_COMMAND || o.commandType === RESTORE_WORKOUT_COMMAND) && o.atUtc > at);
+}
+
 /**
  * `deleteWorkouts` (§8): only `finished` workouts at the shown version.
  * Refuses active, discarded, reverted and already-deleted ones as stale.
@@ -156,7 +171,7 @@ export function planDeleteWorkouts(found: ReadonlyMap<string, SessionAggregate |
   return plan(found, req, DELETE_WORKOUT_COMMAND, (a) => a.session.status === 'finished', (a) => ({
     ...a,
     session: { ...a.session, status: 'deleted', deletion, version: a.session.version + 1 },
-  }));
+  }), (a) => a.session.status === 'deleted' && a.session.deletion?.opId === req.opId);
 }
 
 /**
@@ -170,7 +185,7 @@ export function planRestoreWorkouts(found: ReadonlyMap<string, SessionAggregate 
     const session: WorkoutSession = { ...a.session, status: 'finished', version: a.session.version + 1 };
     delete session.deletion;
     return { ...a, session };
-  });
+  }, (a) => isInHistory(a.session));
 }
 
 /** What the confirm sheet for several workouts shows (§2.4, DW4). The UI never computes the range. */

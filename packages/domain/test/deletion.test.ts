@@ -136,6 +136,23 @@ describe('deleteWorkouts / restoreWorkouts (DW6–DW9)', () => {
     expect(again.session.deletion?.purgeAfterUtc).toBe(purgeAfterUtc(later));
   });
 
+  it('a late retry after a later operation changed the workout is stale, never `ok` with the newer state (review r2 N5)', () => {
+    const a = history()[1] as SessionAggregate;
+    const d = deleteOne(a, 'del-x');
+    const req = { ownerId: OWNER, items: [{ sessionId: a.session.id, expectedVersion: a.session.version }], opId: 'del-x', at: DELETED_AT };
+    // An immediate retry is still a duplicate.
+    expect(planDeleteWorkouts(byId([d]), req)).toMatchObject({ ok: true, duplicate: true });
+    // Restored since: the retry of the delete says it changed.
+    const later = z('2026-10-10T08:00:00.000Z');
+    const back = ok(planRestoreWorkouts(byId([d]), { ownerId: OWNER, items: [{ sessionId: a.session.id, expectedVersion: d.session.version }], opId: 'res-x', at: later })).writes[0]?.aggregate as SessionAggregate;
+    expect(planDeleteWorkouts(byId([back]), req)).toEqual({ ok: false, error: { code: 'stale', sessionIds: [a.session.id] } });
+    // Deleted again by another operation: still not this one's outcome.
+    const again = deleteOne(back, 'del-y', z('2026-10-11T08:00:00.000Z'));
+    expect(planDeleteWorkouts(byId([again]), req)).toMatchObject({ ok: false, error: { code: 'stale' } });
+    // A restore retried after a later delete is stale too.
+    expect(planRestoreWorkouts(byId([again]), { ownerId: OWNER, items: [{ sessionId: a.session.id, expectedVersion: d.session.version }], opId: 'res-x', at: later })).toMatchObject({ ok: false, error: { code: 'stale' } });
+  });
+
   it('a deleted workout accepts no command (corrections, timing, rename)', () => {
     const d = deleteOne(history()[0] as SessionAggregate);
     const set = d.sets.find((s) => s.status === 'completed');
