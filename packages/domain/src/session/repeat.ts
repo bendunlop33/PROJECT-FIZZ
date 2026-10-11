@@ -204,7 +204,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   const seen = new Set<string>();
   for (const slot of out.snap.slots) {
     for (const note of slot.notes) {
-      const text = repeatNoteText(note, slot, input.gymName ?? null);
+      const text = repeatNoteText(note, slot);
       if (text === null) continue;
       const key = `${slot.exerciseName}|${text}`;
       if (!seen.has(key)) notes.push({ exerciseName: slot.exerciseName, text, tone: note.kind === 'dropped' ? 'warning' : 'info' });

@@ -178,7 +178,7 @@ export function TodayScreen() {
             : null;
       const r = await services.workout.start({ gymId, opId, checkIn });
       if (!r.ok) {
-        setError(r.error.code === 'session_already_active' ? 'A workout is already in progress. Resume it above.' : r.error.message);
+        setError(r.error.code === 'session_already_active' ? 'A workout is already in progress.' : r.error.message);
         reload();
         return;
       }
@@ -188,7 +188,7 @@ export function TodayScreen() {
       if (gate.kind === 'reuse') {
         const ci = await services.checkIns.get(gate.checkInId);
         if (ci) {
-          const text = `Using your check-in from ${formatTime(toMs(ci.recordedAt.utc), ci.recordedAt.tz)} · ${scoreText(ci.score)}`;
+          const text = `Check-in ${formatTime(toMs(ci.recordedAt.utc), ci.recordedAt.tz)} · ${scoreText(ci.score)}`;
           navigation.navigate('Workout', { toast: { kind: 'check_in', text: notice === null ? text : `${text}. ${notice}`, checkInId: ci.id } });
           return;
         }
@@ -305,7 +305,8 @@ export function TodayScreen() {
             icon="exclamationmark.triangle"
             tone="warning"
             text={launch.recoveryError ? 'Your unfinished workout couldn’t be read.' : 'Couldn’t open your training data.'}
-            detail={`Nothing was deleted. ${data.message}`}
+            detail="Data unchanged"
+            info={data.message}
           />
           <SecondaryButton label="Try again" onPress={reload} />
           {/* The way out when a record can't be read (review S2): restore a backup; the current data is kept for Undo. */}
@@ -329,7 +330,7 @@ export function TodayScreen() {
         const status =
           main.status.kind === 'resting'
             ? toMs(main.status.deadlineUtc) <= now
-              ? 'Rest over · ready for next set'
+              ? 'Rest over'
               : `Rest ${formatDuration(Math.ceil((toMs(main.status.deadlineUtc) - now) / 1000))} left`
             : main.status.kind === 'paused'
               ? 'Paused'
@@ -465,13 +466,8 @@ export function TodayScreen() {
           );
         }
         return (
-          <Hero label="Today" title="First workout" lines={['Pick an exercise and log your first set. Common lifts are at the top.']}>
+          <Hero label="Today" title="First workout" lines={[]}>
             <PrimaryButton label="Start workout" busy={starting} onPress={() => void start({ kind: 'empty' })} />
-            {gym ? null : (
-              <AppText variant="callout" color="text.secondary">
-                Uses a typical gym (barbell, dumbbells, cables, machines) until you check its equipment in Profile.
-              </AppText>
-            )}
           </Hero>
         );
     }
@@ -506,7 +502,7 @@ export function TodayScreen() {
           <StatusLine
             icon="info.circle"
             tone="info"
-            text="A restore was interrupted. Your data is as it was before."
+            text="Restore didn’t finish · data unchanged"
             action={
               <TextButton
                 label="OK"
@@ -529,7 +525,7 @@ export function TodayScreen() {
             }}
           >
             <AppText variant="callout" color="text.secondary" numeric>
-              {`Check-in saved at ${formatTime(toMs(unlinked.recordedAt.utc), zoned.tz)}: ${scoreText(unlinked.score)}${unlinked.reasons.length ? ` · ${reasonsText(unlinked.reasons)}` : ''}. It’ll be used when you start.`}
+              {`Check-in ${formatTime(toMs(unlinked.recordedAt.utc), zoned.tz)} · ${scoreText(unlinked.score)}${unlinked.reasons.length ? ` · ${reasonsText(unlinked.reasons)}` : ''} ›`}
             </AppText>
           </LinkLine>
         ) : null}

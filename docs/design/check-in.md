@@ -65,7 +65,7 @@ The check-in is shown by one gate, `shouldAskCheckIn`, at every way of starting 
 | Situation | What happens |
 |---|---|
 | Check-ins on, today is a check-in day, nothing answered for this start | Sheet (§2.2) |
-| An unlinked check-in exists from the last 2 h (`timing.checkInReuse`) | No sheet. The workout starts, the check-in is linked, toast `Using your check-in from 18:02 · 3 of 5` [Change] |
+| An unlinked check-in exists from the last 2 h (`timing.checkInReuse`) | No sheet. The workout starts, the check-in is linked, toast `Check-in 18:02 · 3 of 5` [Change] |
 | Check-ins off, or today isn't one of the selected days | No sheet. Start behaves exactly as before (one tap). Session status `not_asked` |
 | This session already answered or skipped | Never asked again (Resume, relaunch, P6) |
 | Any set has been logged in this session (even if later undone or deleted) | Never asked. **Never mid-workout** |
@@ -338,7 +338,7 @@ No line at all when the check-in was skipped or not asked. Tapping the line open
 
 ### 2.9 Today
 
-The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is removed (today.md §2). The only check-in trace on Today is rare: when an unlinked check-in from the last 2 h exists (app closed mid-sheet, or `Train anyway` not yet tapped), one line sits under the main card: `Check-in saved at 18:02: 3 of 5 · Tired. It'll be used when you start.` Tap → edit sheet.
+The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is removed (today.md §2). The only check-in trace on Today is rare: when an unlinked check-in from the last 2 h exists (app closed mid-sheet, or `Train anyway` not yet tapped), one line sits under the main card: `Check-in 18:02 · 3 of 5 · Tired ›` Tap → edit sheet.
 
 ---
 
@@ -347,7 +347,7 @@ The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is
 | State | Trigger | Shows | Primary | Notes |
 |---|---|---|---|---|
 | Not asked | Off, not a check-in day, already decided, or a set already logged | Nothing; Start behaves as before | Start → Active workout | Session `checkIn: not_asked` (off / not a day) or untouched |
-| Reused | Unlinked check-in < 2 h old | No sheet; toast `Using your check-in from 18:02 · 3 of 5` [Change] | — | Linked in the `startWorkout` transaction |
+| Reused | Unlinked check-in < 2 h old | No sheet; toast `Check-in 18:02 · 3 of 5` [Change] | — | Linked in the `startWorkout` transaction |
 | Step 1 | Gate says ask | §2.2 | (none; score buttons) | Today's Start is disabled behind the scrim; no double start |
 | Saving score | Score tapped | Tapped button shows `accent.subtle` + check; nothing else changes | — | Local write, normally < 50 ms; nothing is shown for it |
 | Score above the "What's up?" setting | 4 or 5 by default | Sheet closes; Active workout opens; toast | — | One tap |
@@ -520,7 +520,7 @@ Every value is either **what Ben said** (the check-in), a **target** or an **act
 
 | Element | Text | Kind |
 |---|---|---|
-| Toast | `✓ Check-in saved · 2 of 5` [Change] · reused: `Using your check-in from 18:02 · 3 of 5` [Change] · failed: `Check-in wasn't saved. Your workout started as normal.` | What Ben said |
+| Toast | `✓ Check-in saved · 2 of 5` [Change] · reused: `Check-in 18:02 · 3 of 5` [Change] · failed: `Check-in wasn't saved. Your workout started as normal.` | What Ben said |
 | Offer | `Want a lighter session today?` · fact `You said 2 of 5 · Tired, Poor sleep` (or `You said 3 of 5 · Tired`) · `No thanks` · `Adjust` | Fact = what Ben said |
 | Pending | `Coach is working on today's sets` · `Nothing has changed yet.` · `Cancel` | — |
 | Applied | `Coach adjusted 14 sets` · `Bench press 2–6 · Incline DB press 1–3 · Lateral raise 1–3` · coach reason (one sentence, ≤ 90 characters) · `Why? ›` · `Undo` | Targets |
@@ -538,7 +538,7 @@ Every value is either **what Ben said** (the check-in), a **target** or an **act
 | Edit sheet | title `Change check-in` · `Save changes` · `Delete check-in` · confirm `Delete this check-in? Your workout isn't affected.` [Delete] [Cancel] · toast `Check-in deleted` [Undo] |
 | Progress card | `How you said you felt` · `Before each workout · 1 = rough, 5 = great` · rows `Thu 8 Oct  2 · Tired, Poor sleep` · outcomes `· skipped` / `· rescheduled` / `· no workout` · `9 check-ins in the last 4 weeks · 3 at 3 or lower` · none yet (check-ins on): `No check-ins yet. You're asked when you start a workout.` |
 | Progress detail | title `How you said you felt` · heading `Before each workout (your own rating)` · axis `1 rough` … `5 great` · `Show as table` · table headers `Date` · `Rating` · `What's up` · `Workout` · footer `These are your own ratings before each workout, shown as you gave them. Fizz doesn't combine them with anything else or turn them into a score.` |
-| Today | `Check-in saved at 18:02: 3 of 5 · Tired. It'll be used when you start.` |
+| Today | `Check-in 18:02 · 3 of 5 · Tired ›` |
 | Profile row | `Check-in` · `Every workout · asks what's up at 3 or lower` / `Mon, Wed, Fri · asks what's up at 3 or lower` / `Off` |
 | Settings | as §2.8 |
 

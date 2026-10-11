@@ -51,7 +51,7 @@ export function buildSystemStatus(input: SystemStatusInput): Banner[] {
     all.push({ id: 'T7', severity: 'info', text: input.signing.banner, action: { kind: 'how_to_refresh', label: 'How' } });
   }
   if (!input.hasGym) {
-    all.push({ id: 'T8', severity: 'info', text: 'No gym yet. Add one to start a workout.', action: { kind: 'add_gym', label: 'Add gym' } });
+    all.push({ id: 'T8', severity: 'info', text: 'No gym yet', action: { kind: 'add_gym', label: 'Add gym' } });
   }
   return all;
 }

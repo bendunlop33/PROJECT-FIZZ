@@ -219,7 +219,7 @@ describe('next session from the last workout (audit B2)', () => {
     expect(set?.planned.snap?.reason).toBe('not_here');
     expect(set?.planned.snap?.intended).toEqual(kg(102.5));
     expect(set?.status).toBe('pending');
-    expect(out.notes.map((n) => n.text).join(' ')).toContain('no load target');
+    expect(out.notes.map((n) => n.text).join(' ')).toContain('No load target');
   });
 });
 

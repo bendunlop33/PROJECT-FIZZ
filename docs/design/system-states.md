@@ -325,7 +325,7 @@ Detected when a record fails validation on read (`CorruptDataError`), when `crea
 | Out of date (version conflict) | Card or row (design-system §9.11) | `Out of date. Your workout changed since this was suggested.` | [Dismiss] |
 | Undo rejected | Toast (active-workout.md §4.9) | `Can't undo: set 2 changed. Tap it to edit or delete.` | — |
 | Screen error (render crash) | Replaces that screen only | `Something went wrong on this screen. Saved workouts aren't affected.` | [Go to Today] · [Copy details] |
-| Restore interrupted | Today info banner, one launch (T9) | `A restore was interrupted. Your data is as it was before.` | — |
+| Restore interrupted | Today info banner, one launch (T9) | `Restore didn't finish · data unchanged` | — |
 | Import paused | Today info banner, one launch (T9) | `FitNotes import paused at 180 of 412 workouts.` | [Continue ›] |
 
 "Saved workouts aren't affected" on the screen-error state is true by construction: screens never write to SQLite directly; every write goes through a service in one transaction.

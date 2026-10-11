@@ -63,8 +63,8 @@ describe('Repeat last workout (routines.md RT4, check 13)', () => {
     // The stack isn't here: reps kept, no load planned (review B1).
     expect(setsFor(out.aggregate, ROW).map((x) => [x.planned.load, x.planned.reps])).toEqual([[null, { min: 12, max: 12 }]]);
     expect(out.notes.map((n) => [n.exerciseName, n.text])).toEqual([
-      ['Bench press', 'Capped: the most here is 100 kg. Last time 102.5 kg.'],
-      ['Cable row', 'No Cable stack here: no load target (last time 50 kg stack × 12).'],
+      ['Bench press', 'Max here 100 kg · last time 102.5 kg'],
+      ['Cable row', 'No load target · no cable stack here · last time 50 kg stack × 12'],
     ]);
   });
 
@@ -81,8 +81,8 @@ describe('Repeat last workout (routines.md RT4, check 13)', () => {
     expect(out.aggregate.exercises.every((e) => e.equipmentId === null)).toBe(true);
     expect(setsFor(out.aggregate, ROW).every((x) => x.planned.load === null)).toBe(true);
     expect(out.notes.map((n) => [n.exerciseName, n.text])).toEqual([
-      ['Bench press', 'No Olympic bar here: no load target (last time 102.5 kg × 8).'],
-      ['Cable row', 'No Cable stack here: no load target (last time 50 kg stack × 12).'],
+      ['Bench press', 'No load target · no olympic bar here · last time 102.5 kg × 8'],
+      ['Cable row', 'No load target · no cable stack here · last time 50 kg stack × 12'],
     ]);
     expect(out.notes.some((n) => n.text.includes('Kept as done'))).toBe(false);
     expect(out.aggregate.sets.every((x) => x.status === 'pending')).toBe(true);
@@ -121,7 +121,7 @@ describe('Repeat across units', () => {
     const out = startWorkoutFromSession({ opId: 'r-lb', owner: profile(), gymId: GYM, source, exercises: dbExercises, gymEquipment: [lbRack], at: at(86_400), newId: idGen(61_000) });
     // 22.5 kg ≈ 49.6 lb: rounds down to 45 lb, never up to 50.
     expect(setsFor(out.aggregate, DB_PRESS)[0]?.planned.load).toEqual(lb(45, 'per_hand'));
-    expect(out.notes.map((n) => n.text)).toContain('Rounded from 22.5 kg each to 45 lb each to match this gym.');
+    expect(out.notes.map((n) => n.text)).toContain('Converted from 22.5 kg each');
   });
 
   it('when the easiest converted load is harder than last time (below the rack’s lightest), the load is dropped with a note', () => {
@@ -130,7 +130,7 @@ describe('Repeat across units', () => {
     const set = setsFor(out.aggregate, DB_PRESS)[0];
     expect(set?.planned.load).toBeNull();
     expect(set?.planned.reps).toEqual({ min: 8, max: 8 });
-    expect(out.notes).toContainEqual({ exerciseName: 'DB press', text: 'No load target: last time was 22.5 kg each, and the lightest here is 60 lb each.', tone: 'warning' });
+    expect(out.notes).toContainEqual({ exerciseName: 'DB press', text: 'No load target · lightest here is above 22.5 kg each', tone: 'warning' });
   });
 
   it('with no equipment to check on, a load in the other unit is dropped (never converted), reps kept', () => {
@@ -138,7 +138,7 @@ describe('Repeat across units', () => {
     const curl = setsFor(out.aggregate, CURL)[0];
     expect(curl?.planned.load).toBeNull();
     expect(curl?.planned.reps).toEqual({ min: 12, max: 12 });
-    expect(out.notes).toContainEqual({ exerciseName: 'Weighted curl', text: "No load target: last time was 10 kg, and there's no equipment here to check a lb load on.", tone: 'warning' });
+    expect(out.notes).toContainEqual({ exerciseName: 'Weighted curl', text: 'No load target · nothing here takes kg · last time 10 kg × 12', tone: 'warning' });
     // The session is in lb: Ben enters a load in lb and it logs.
     const set = curl?.id ?? '';
     const r = reduceSession(out.aggregate, logCmd(set, values(lb(25), 12), 86_500));
@@ -173,7 +173,7 @@ describe('Repeat: the top set in a missing-equipment note', () => {
     s = apply(s, { type: 'finish', at: at(600), opId: 'fin-a', expectedVersion: s.session.version, endedAt: null });
     const out = startWorkoutFromSession({ opId: 'r-a', owner: profile(), gymId: GYM, source: s, exercises: pullExercises, gymEquipment: [barbell()], at: at(86_400), newId: idGen(66_000) });
     expect(out.notes).toHaveLength(1);
-    expect(out.notes[0]?.text).toBe('No Assisted pull-up here: no load target (last time Assist 30 kg × 6).');
+    expect(out.notes[0]?.text).toBe('No load target · no assisted pull-up here · last time Assist 30 kg × 6');
     expect(lastTimeTopSet(s.sets)?.actual?.load?.value).toBe(30);
   });
 

@@ -1,6 +1,7 @@
 import type { EquipmentInstance, Load, PlannedSnap, WeightUnit } from '@fizz/schemas';
-import { loadText, NBSP, type LoadContext } from '../display';
+import { formatNumber, loadText, NBSP, type LoadContext } from '../display';
 import { getAchievableLoads, loadsByDifficulty } from '../equipment';
+import { boundWords, convertedWords, noLoadWords, roundedWords, withWas } from './fit-words';
 import type { SnapNote, SnapSlotResult } from './snap';
 
 /**
@@ -88,40 +89,29 @@ function amountText(top: SnapNote['top']): string {
   return '';
 }
 
-/** Repeat's notes (routines.md §2.4): the same results, worded as "last time". */
-export function repeatNoteText(note: SnapNote, slot: SlotInfo, gymName: string | null): string | null {
+/** Repeat's notes (routines.md §2.4): the same results, worded as "last time" (short fit words, `fit-words.ts`). */
+export function repeatNoteText(note: SnapNote, slot: SlotInfo): string | null {
   const top = note.top;
-  const at = gymName ? `at ${gymName}` : 'here';
   const here = slot.equipment;
   const src = kindCtx(slot.sourceEquipment?.kind);
+  const last = top.intended ? loadWords(top.intended, src) : null;
   switch (note.kind) {
     case 'rounded':
-      return top.intended ? `Rounded down to what ${gymName ?? 'this gym'} has. Last time ${loadWords(top.intended, src)}.` : null;
+      return last ? roundedWords({ was: 'last time', load: last }) : null;
     case 'capped':
-      return top.load && top.intended ? `Capped: the most here is ${loadWords(top.load, here)}. Last time ${loadWords(top.intended, src)}.` : null;
+      return top.load && last ? withWas(boundWords('max', loadWords(top.load, here), false), 'last time', last) : null;
     case 'converted':
-      return top.load && top.intended ? `Rounded from ${loadWords(top.intended, src)} to ${loadWords(top.load, here)} to match this gym.` : null;
+      return top.load && last ? convertedWords(last) : null;
     case 'restored':
     case 'pain':
       return null;
     case 'dropped': {
-      const from = top.intended ? loadWords(top.intended, src) : null;
-      switch (note.reason) {
-        case 'not_here':
-          return from === null
-            ? `No ${note.equipmentName ?? 'equipment for it'} ${at}.`
-            : `No ${note.equipmentName ?? 'equipment for it'} ${at}: no load target (last time ${from}${amountText(top)}).`;
-        case 'lightest_is_harder':
-          return `No load target: last time was ${from ?? 'lighter'}, and the lightest here is ${note.lightest ? loadWords(note.lightest, here) : 'heavier'}.`;
-        case 'unit_not_convertible':
-          return `No load target: last time was ${from ?? 'in another unit'}, and there's no equipment here to check a ${slot.unit} load on.`;
-        case 'convention_mismatch':
-          return `No load target: the ${from ?? 'load'} was on different equipment.`;
-        case 'no_achievable_loads':
-          return `No load target: this gym has no loads set up for ${from ?? 'it'}.`;
-        case 'pain_flag':
-          return null;
-      }
+      if (note.reason === 'pain_flag') return null;
+      const assisted = top.intended?.convention === 'assistance';
+      const asked = assisted && top.intended ? `${formatNumber(top.intended.value)} ${top.intended.unit}` : last;
+      const words = noLoadWords(note.reason, { equipmentName: note.equipmentName, unit: top.intended?.unit ?? slot.unit, requested: asked, assisted });
+      if (note.reason === 'lightest_is_harder') return words;
+      return withWas(words, 'last time', last === null ? null : `${last}${amountText(top)}`);
     }
   }
 }

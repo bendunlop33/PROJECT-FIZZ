@@ -421,9 +421,9 @@ describe('One code path: Repeat and the switch fit alike (check 3), routine Star
     expect(shape(repeat.snap.slots)).toEqual(shape(live.snap.slots));
     // Only the wording differs: "last time" versus the card's "here".
     expect(repeat.notes.map((n) => n.text)).toEqual([
-      'No Olympic bar at Hotel · Lisbon: no load target (last time 100 kg × 8).',
-      'Capped: the most here is 20 kg each. Last time 32.5 kg each.',
-      'No Cable station at Hotel · Lisbon: no load target (last time 50 kg stack × 12).',
+      'No load target · no olympic bar here · last time 100 kg × 8',
+      'Max here 20 kg each · last time 32.5 kg each',
+      'No load target · no cable station here · last time 50 kg stack × 12',
     ]);
     // Repeat B1 (competitor test 2g): no load, reps kept, no equipment, all pending; never "kept as done".
     const bench = repeat.aggregate.sets.filter((x) => x.sessionExerciseId === repeat.aggregate.exercises[0]?.id);

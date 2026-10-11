@@ -128,8 +128,6 @@ The ask pill (today.md region 7) isn't built yet. When it is, the content keeps 
 ```
 │ TODAY                                  │
 │ First workout                          │
-│ Pick an exercise and log your first    │
-│ set. Common lifts are at the top.      │
 │ ╭────────────────────────────────────╮ │
 │ │           Start workout            │ │
 │ ╰────────────────────────────────────╯ │

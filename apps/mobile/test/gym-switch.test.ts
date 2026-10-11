@@ -175,7 +175,7 @@ describe('gym switch through the services', () => {
     const atMain = await s.repeat.preview(past, mainId);
     const atHotel = await s.repeat.preview(past, hotelId);
     expect(atMain?.notes).toEqual([]);
-    expect(atHotel?.notes.map((n) => plain(n.text))).toEqual(['Capped: the most here is 25 kg each. Last time 32.5 kg each.']);
+    expect(atHotel?.notes.map((n) => plain(n.text))).toEqual(['Max here 25 kg each · last time 32.5 kg each']);
     expect(await s.sessions.active()).toBeNull();
   });
 
@@ -192,7 +192,7 @@ describe('gym switch through the services', () => {
     if (!atHotel) throw new Error('no preview');
     const bar = atHotel.notes.find((n) => n.exerciseName === 'Bench press');
     expect(bar?.tone).toBe('warning');
-    expect(plain(bar?.text)).toMatch(/^No .+ at Hotel · Lisbon: no load target \(last time 100 kg × 5\)\.$/);
+    expect(plain(bar?.text)).toMatch(/^No load target · no .+ here · last time 100 kg × 5$/);
     expect(atHotel.notes.find((n) => n.exerciseName === 'Dumbbell bench press')?.tone).toBe('info');
     h.clockMs += 86_400_000;
     const started = await s.workout.start({ gymId: hotelId, opId: 'repeat-at-hotel', checkIn: { kind: 'skipped', atUtc: h.now().utc }, repeatOf: past });

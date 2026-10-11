@@ -179,10 +179,27 @@ export const TONE_COLOR: Record<Tone, ColorToken> = {
 };
 
 /** `StatusRow` / `StatusLabel` (§9.40): icon + words, never colour alone. */
-export function StatusLine({ icon, tone, text, detail, action }: { icon: SymbolName; tone: Tone; text: string; detail?: string | null; action?: ReactNode }) {
+export function StatusLine({
+  icon,
+  tone,
+  text,
+  detail,
+  info,
+  action,
+}: {
+  icon: SymbolName;
+  tone: Tone;
+  text: string;
+  detail?: string | null;
+  /** Behind an ⓘ (minimal copy): shown only on a tap, for example an error's own message. */
+  info?: string | null;
+  action?: ReactNode;
+}) {
   const theme = useTheme();
+  const [infoOpen, setInfoOpen] = useState(false);
+  const hasInfo = info !== undefined && info !== null && info !== '';
   return (
-    <View style={{ flexDirection: 'row', gap: theme.space['3'], alignItems: 'flex-start', minHeight: theme.target.min.height }} accessible accessibilityLabel={[text, detail].filter(Boolean).join('. ')}>
+    <View style={{ flexDirection: 'row', gap: theme.space['3'], alignItems: 'flex-start', minHeight: theme.target.min.height }} accessible={!hasInfo} accessibilityLabel={[text, detail].filter(Boolean).join('. ')}>
       <View style={{ paddingTop: 2 }}>
         <Icon name={icon} color={TONE_COLOR[tone]} />
       </View>
@@ -195,7 +212,26 @@ export function StatusLine({ icon, tone, text, detail, action }: { icon: SymbolN
             {detail}
           </AppText>
         ) : null}
+        {hasInfo && infoOpen ? (
+          <AppText variant="callout" color="text.secondary" numeric>
+            {info}
+          </AppText>
+        ) : null}
       </View>
+      {hasInfo ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Info"
+          accessibilityState={{ expanded: infoOpen }}
+          hitSlop={12}
+          style={{ paddingTop: 2 }}
+          onPress={() => {
+            setInfoOpen((o) => !o);
+          }}
+        >
+          <Icon name="info.circle" color="text.secondary" size={18} />
+        </Pressable>
+      ) : null}
       {action}
     </View>
   );
