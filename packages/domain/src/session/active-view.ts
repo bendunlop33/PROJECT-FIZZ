@@ -804,6 +804,10 @@ export interface SetEditView {
   values: SetValues;
   loadField: LoadField | null;
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
+  /** Timed sets: seconds, ±5 s. */
+  duration: { value: number | null; down: StepTarget; up: StepTarget } | null;
+  /** Distance sets: metres, ±5 m. */
+  distance: { value: number | null; down: StepTarget; up: StepTarget } | null;
   /** `100 kg × 8` for the values as edited. */
   text: string;
   /** Exclusion chips as edited (§2.13, canonical order); the stored ones when untouched. */
@@ -852,6 +856,8 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
         ? null
         : { label, unitText: loadFieldUnit(ex.unit, ex.loadConvention), value: loadValue, assisted: loadDirection(ex.loadConvention) === 'assistance', ...loadSteps(loadValue, ex, eq) },
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
+    duration: ex.measurement === 'duration' ? { value: values.durationS, ...durationSteps(values.durationS) } : null,
+    distance: ex.measurement === 'distance' ? { value: values.distanceM ?? null, ...distanceSteps(values.distanceM ?? null) } : null,
     text: valuesText(values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
     exclusions,
     painLine: exclusions.includes('pain') && !stored.includes('pain') ? exclusionPainLine(ex.exerciseName) : null,

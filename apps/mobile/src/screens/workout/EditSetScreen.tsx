@@ -76,7 +76,7 @@ export function EditSetScreen() {
     let corrected: Extract<Awaited<ReturnType<typeof services.workout.correctSet>>, { ok: true }> | null = null;
     if (view.changed) {
       const patch: Partial<SetValues> & { exclusions?: SetExclusion[] } = {};
-      for (const k of ['load', 'reps', 'rpe', 'rir'] as const) {
+      for (const k of ['load', 'reps', 'durationS', 'distanceM', 'rpe', 'rir'] as const) {
         if (JSON.stringify(current[k]) !== JSON.stringify(actual[k])) Object.assign(patch, { [k]: current[k] });
       }
       if (exclusions !== null) patch.exclusions = view.exclusions;
@@ -153,6 +153,34 @@ export function EditSetScreen() {
               up={view.loadField.up}
               onChange={(v) => {
                 setValues({ ...current, load: v === null ? null : { value: v, unit: ex.unit, convention: ex.loadConvention } });
+              }}
+            />
+          ) : null}
+          {view.duration ? (
+            <NumberStepper
+              onSurface
+              label="Time"
+              unit="s"
+              value={view.duration.value}
+              decimals={false}
+              down={view.duration.down}
+              up={view.duration.up}
+              onChange={(v) => {
+                setValues({ ...current, durationS: v === null ? null : Math.max(0, Math.round(v)) });
+              }}
+            />
+          ) : null}
+          {view.distance ? (
+            <NumberStepper
+              onSurface
+              label="Distance"
+              unit="m"
+              value={view.distance.value}
+              decimals
+              down={view.distance.down}
+              up={view.distance.up}
+              onChange={(v) => {
+                setValues({ ...current, distanceM: v === null ? null : Math.max(0, v) });
               }}
             />
           ) : null}

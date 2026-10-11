@@ -141,6 +141,7 @@ export function WorkoutScreen() {
   const loadRef = useRef<TextInput>(null);
   const repsRef = useRef<TextInput>(null);
   const timeRef = useRef<TextInput>(null);
+  const distanceRef = useRef<TextInput>(null);
   /** During rest the next set is folded away (D-Rest); this opens it. Reset when the set changes. */
   const [showNextSet, setShowNextSet] = useState(false);
   /** A field to focus once the editor is drawn (`Enter load` during rest opens it first). A fresh object per tap. */
@@ -148,7 +149,7 @@ export function WorkoutScreen() {
   useEffect(() => {
     if (focusRequest === null) return;
     const id = requestAnimationFrame(() => {
-      (focusRequest.field === 'load' ? loadRef : focusRequest.field === 'time' ? timeRef : repsRef).current?.focus();
+      (focusRequest.field === 'load' ? loadRef : focusRequest.field === 'time' ? timeRef : focusRequest.field === 'distance' ? distanceRef : repsRef).current?.focus();
       setFocusRequest(null);
     });
     return () => {
@@ -1362,6 +1363,21 @@ export function WorkoutScreen() {
               up={focus.duration.up}
               onChange={(v) => {
                 setValues({ ...focus.draft, durationS: v === null ? null : Math.max(0, Math.round(v)) });
+              }}
+            />
+          ) : null}
+          {focus.distance ? (
+            <NumberStepper
+              inputRef={distanceRef}
+              flex={1}
+              label="Distance"
+              unit="m"
+              value={focus.distance.value}
+              decimals
+              down={focus.distance.down}
+              up={focus.distance.up}
+              onChange={(v) => {
+                setValues({ ...focus.draft, distanceM: v === null ? null : Math.max(0, v) });
               }}
             />
           ) : null}

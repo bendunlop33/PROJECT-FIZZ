@@ -38,8 +38,6 @@ describe('timed sets end to end', () => {
     const picks = await s.workout.pickerExercises(sessionId, 'Plank', { withCatalogue: true });
     const plank = picks.find((p) => p.exercise.name === 'Plank');
     expect(plank?.exercise.measurement).toBe('duration');
-    // Distance exercises aren't offered by this picker yet.
-    expect((await s.workout.pickerExercises(sessionId, '', { withCatalogue: true })).every((p) => p.exercise.measurement !== 'distance')).toBe(true);
 
     const added = await s.workout.addExercise({ sessionId, exerciseId: plank?.exercise.id ?? '', equipmentId: null, opId: 'add-plank' });
     if (!added.ok) throw new Error(added.error.message);

@@ -188,8 +188,8 @@ export interface WorkoutServicesContext {
 
 export type CheckInWrite = { ok: true; checkIn: CheckIn; duplicate: boolean } | { ok: false; message: string; stale?: boolean };
 
-/** What the exercise picker offers: rep and timed exercises (active-workout §2.7). */
-export const PICKER_MEASUREMENTS: ReadonlySet<Exercise['measurement']> = new Set(['reps', 'duration']);
+/** What the exercise picker offers: rep, timed (active-workout §2.7) and distance exercises (ADR 0011). */
+export const PICKER_MEASUREMENTS: ReadonlySet<Exercise['measurement']> = new Set(['reps', 'duration', 'distance']);
 
 const CHECK_IN_WRITE_FAILED = 'Check-in not saved';
 const RECENT_WINDOW_MS = 3 * 60 * 60 * 1000;
