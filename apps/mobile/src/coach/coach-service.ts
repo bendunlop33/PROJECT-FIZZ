@@ -113,6 +113,7 @@ export function createCoachService(deps: CoachServiceDeps) {
   const running = new Map<string, AbortController>();
   const summaryRuns = new Map<string, Promise<CoachTurnResult | null>>();
   const offerLogs = new Map<string, OfferLogEntry[]>();
+  const offerQueues = new Map<string, Promise<unknown>>();
   let lastNetworkFailure = false;
 
   /** The workout's offer log: from memory, else the store (a relaunch keeps CA4's once-per-kind). */
@@ -446,25 +447,33 @@ export function createCoachService(deps: CoachServiceDeps) {
      * (review S6). A failed read or write never blocks logging.
      */
     async offerAfterLog(input: { aggregate: SessionAggregate; setId: string; resting: boolean; coachReachable: boolean; pending: boolean }): Promise<(CoachTrigger & { sessionExerciseId: string }) | null> {
-      const a = input.aggregate;
-      const set = a.sets.find((s) => s.id === input.setId);
-      if (set === undefined) return null;
-      const live = a.sets.filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.status !== 'deleted').sort((x, y) => x.index - y.index);
-      const trigger = evaluateCoachTrigger(set, live.findIndex((s) => s.id === set.id) + 1, DEFAULT_COACH_TRIGGER_THRESHOLDS);
-      if (trigger === null) return null;
-      // Nothing to adjust when this exercise has no pending set left (review S1).
-      if (!live.some((s) => s.status === 'pending')) return null;
-      const log = await offerLogOf(a.session.id);
-      const adjusted = a.sets.filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.planned.source === 'coach').length > 0 ? a.session.version : null;
-      if (!shouldShowCoachOffer({ trigger, sessionExerciseId: set.sessionExerciseId, resting: input.resting, coachReachable: input.coachReachable, pending: input.pending, log, lastAdjustedAtVersion: adjusted })) return null;
-      const entry: OfferLogEntry = { sessionExerciseId: set.sessionExerciseId, kind: trigger.kind, atVersion: a.session.version };
-      offerLogs.set(a.session.id, [...log.filter((e) => e.sessionExerciseId !== entry.sessionExerciseId || e.kind !== entry.kind), entry]);
-      await coachStore()
-        .recordOffer(a.session.ownerId, { sessionId: a.session.id, ...entry, atUtc: deps.now().utc })
-        .catch(() => undefined);
-      return { ...trigger, sessionExerciseId: set.sessionExerciseId };
+      // One check at a time per workout, so two quick logs can't both read the log before the first offer is saved (review r2 N3).
+      const sessionId = input.aggregate.session.id;
+      const run = (offerQueues.get(sessionId) ?? Promise.resolve()).then(() => checkOffer(input));
+      offerQueues.set(sessionId, run.catch(() => undefined));
+      return run;
     },
   };
+
+  async function checkOffer(input: { aggregate: SessionAggregate; setId: string; resting: boolean; coachReachable: boolean; pending: boolean }): Promise<(CoachTrigger & { sessionExerciseId: string }) | null> {
+    const a = input.aggregate;
+    const set = a.sets.find((s) => s.id === input.setId);
+    if (set === undefined) return null;
+    const live = a.sets.filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.status !== 'deleted').sort((x, y) => x.index - y.index);
+    const trigger = evaluateCoachTrigger(set, live.findIndex((s) => s.id === set.id) + 1, DEFAULT_COACH_TRIGGER_THRESHOLDS);
+    if (trigger === null) return null;
+    // Nothing to adjust when this exercise has no pending set left (review S1).
+    if (!live.some((s) => s.status === 'pending')) return null;
+    const log = await offerLogOf(a.session.id);
+    const adjusted = a.sets.filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.planned.source === 'coach').length > 0 ? a.session.version : null;
+    if (!shouldShowCoachOffer({ trigger, sessionExerciseId: set.sessionExerciseId, resting: input.resting, coachReachable: input.coachReachable, pending: input.pending, log, lastAdjustedAtVersion: adjusted })) return null;
+    const entry: OfferLogEntry = { sessionExerciseId: set.sessionExerciseId, kind: trigger.kind, atVersion: a.session.version };
+    offerLogs.set(a.session.id, [...log.filter((e) => e.sessionExerciseId !== entry.sessionExerciseId || e.kind !== entry.kind), entry]);
+    await coachStore()
+      .recordOffer(a.session.ownerId, { sessionId: a.session.id, ...entry, atUtc: deps.now().utc })
+      .catch(() => undefined);
+    return { ...trigger, sessionExerciseId: set.sessionExerciseId };
+  }
 }
 
 export type CoachService = ReturnType<typeof createCoachService>;

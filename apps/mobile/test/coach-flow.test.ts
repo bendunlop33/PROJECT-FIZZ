@@ -230,6 +230,19 @@ describe('C7: in the workout (offer, Adjust, banner, Undo)', () => {
     for (const x of pulldownSets) expect(after?.aggregate.sets.find((y) => y.id === x.id)?.planned).toEqual(x.planned);
   });
 
+  it('two quick logs checked at once show the offer once (CA4, review r2 N3)', async () => {
+    const { s, sessionId } = await secondWorkout();
+    const data = await s.workout.load(sessionId);
+    const [s1] = (data?.aggregate.sets ?? []).filter((x) => x.setType !== 'warmup').sort((a, b) => a.index - b.index);
+    if (!s1) throw new Error('fixture');
+    h.clockMs += 60_000;
+    const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: 'log-n3', setId: s1.id, values: { load: s1.planned.load, reps: 8, durationS: null, rpe: 10, rir: null }, restTimerId: h.ids() });
+    if (!logged.ok) throw new Error(logged.error.message);
+    const input = { aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: true, pending: false };
+    const both = await Promise.all([s.coach.offerAfterLog(input), s.coach.offerAfterLog(input)]);
+    expect(both.filter((o) => o !== null)).toHaveLength(1);
+  });
+
   it('an offer shown before a force-close doesn’t come back after the relaunch (CA4, review S6)', async () => {
     const { s, sessionId } = await secondWorkout();
     const data = await s.workout.load(sessionId);
