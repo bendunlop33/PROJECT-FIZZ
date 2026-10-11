@@ -666,8 +666,16 @@ export const PlaybookCandidateSchema = z.object({
   text: z.string().min(1).max(400),
   contentKey: z.string().min(1).max(160),
   statedBy: z.enum(['ben', 'coach']),
-  status: z.enum(['to_review', 'withdrawn']),
+  /**
+   * `to_review`: waiting for Ben, never used. `withdrawn`: undone.
+   * (11 Oct, coach tools; B8: the app records which rules Ben approved)
+   * `approved`: sent to the coach as Coaching knowledge, labelled not
+   * evidence-graded. `rejected`: not used and not offered again in the same words.
+   */
+  status: z.enum(['to_review', 'withdrawn', 'approved', 'rejected']),
   createdByActionId: IdSchema,
+  /** (11 Oct) When Ben last approved or rejected it. */
+  decidedAtUtc: UtcTimestampSchema.optional(),
 });
 export type PlaybookCandidate = z.infer<typeof PlaybookCandidateSchema>;
 

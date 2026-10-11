@@ -21,7 +21,7 @@ import { describeBackupError, rollbackConfirmMessage, rollbackRowView } from '..
 const summary = (over: Partial<DataSummary> = {}): DataSummary => ({
   counts: {
     yourData: { workouts: 412, sets: 4105, gyms: 2, routines: 3, checkIns: 10, painFlags: 1, memories: 4, coachThreads: 2, imports: 1, records: 9000 },
-    coachingKnowledge: { exercises: 60, playbookCandidates: 1, records: 61 },
+    coachingKnowledge: { exercises: 60, playbookCandidates: 1, playbookRules: 0, records: 61 },
   },
   keptForUndo: null,
   stamp: 's',

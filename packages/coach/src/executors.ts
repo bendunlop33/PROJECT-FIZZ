@@ -243,7 +243,7 @@ export function createStoreExecutors(deps: { store: CoachWriteStore; exercises: 
             createdByActionId: actionIdFor(ctx.opId),
           },
         },
-        () => newActionRecord({ ...ctx, opId: `${ctx.opId}:refused` }, detail, { status: 'rejected', failure: 'it is already waiting for review' }),
+        () => newActionRecord({ ...ctx, opId: `${ctx.opId}:refused` }, detail, { status: 'rejected', failure: 'it was already reviewed' }),
       );
     },
   };

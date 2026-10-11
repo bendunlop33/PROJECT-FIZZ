@@ -76,7 +76,8 @@ import {
   type CoachTrigger,
   type OfferLogEntry,
 } from '@fizz/domain';
-import type { MemoryWrite, SqliteRepositories, Store } from '@fizz/persistence';
+import type { CandidateWrite, MemoryWrite, SqliteRepositories, Store } from '@fizz/persistence';
+import { playbookRuleList, type PlaybookRuleList } from './playbook-view';
 
 import { summaryNoteSentences } from './next-time-view';
 import type { TextCoachState } from '@fizz/providers';
@@ -491,6 +492,8 @@ export function createCoachService(deps: CoachServiceDeps) {
         checkIn,
         memories: await coachStore().listMemories(p.id),
         catalogue: [],
+        // Coaching knowledge: only the chat rules Ben approved are sent (never memories, rule 10).
+        playbookCandidates: await coachStore().listPlaybookCandidates().catch(() => []),
         // The read tools for past workouts, equipment and the built-in rule are wired (backlog §4.3).
         trainingHistoryAvailable: true,
         ...(builtIn === null || session === null
@@ -594,6 +597,18 @@ export function createCoachService(deps: CoachServiceDeps) {
     getAction: (actionId: string): Promise<ActionRecord | null> => coachStore().getAction(actionId),
 
     proposalStates,
+
+    // ---------- Playbook chat rules (coaching-playbook §2.1, §4.1; Coaching knowledge, local, no AI) ----------
+
+    /** Rules from chat: to review, approved and rejected, numbered `Chat rule N`. */
+    async playbookRules(): Promise<PlaybookRuleList> {
+      return playbookRuleList(await coachStore().listPlaybookCandidates());
+    },
+
+    /** Approve, Reject, or back to review (the toast's Undo, Remove, Review again). Versioned; a double tap is one write. */
+    decidePlaybookRule(candidateId: string, expectedVersion: number, decision: 'approve' | 'reject' | 'reopen'): Promise<CandidateWrite> {
+      return coachStore().decidePlaybookCandidate({ candidateId, expectedVersion, decision, atUtc: deps.now().utc });
+    },
 
     // ---------- Memory (coach-memory §2.1–2.4; Your data, local, no AI) ----------
 

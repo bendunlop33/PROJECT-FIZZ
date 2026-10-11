@@ -14,6 +14,12 @@
  *   Rebuilt the same way; the one-active-per-key index stays.
  * - `coach_actions.kind` also gains `suggest_memory`.
  *
+ * Coaching knowledge (no owner):
+ * - `playbook_candidates.status` gains `approved` (sent to the coach as a
+ *   rule Ben approved, not evidence-graded) and `rejected` (B8: the app is
+ *   the record of which rules he approved). Rebuilt the same way; the
+ *   one-open-per-key index stays.
+ *
  * Merge note: versions 8 (delete-workouts) and 9 (workout-library) are being
  * built on other branches. If either rebuilds `coach_actions` with new kinds,
  * this CHECK list must include them too.
@@ -57,4 +63,19 @@ DROP TABLE memories;
 ALTER TABLE memories_v10 RENAME TO memories;
 CREATE UNIQUE INDEX memories_one_active ON memories (owner_id, content_key) WHERE status = 'active';
 CREATE TRIGGER memories_no_delete BEFORE DELETE ON memories BEGIN SELECT RAISE(ABORT, 'memories are tombstoned, not deleted'); END;
+
+CREATE TABLE playbook_candidates_v10 (
+  id TEXT PRIMARY KEY NOT NULL,
+  content_key TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('to_review', 'withdrawn', 'approved', 'rejected')),
+  version INTEGER NOT NULL CHECK (version >= 1),
+  updated_at_utc TEXT NOT NULL,
+  data TEXT NOT NULL CHECK (json_valid(data))
+) STRICT;
+INSERT INTO playbook_candidates_v10 (id, content_key, status, version, updated_at_utc, data)
+  SELECT id, content_key, status, version, updated_at_utc, data FROM playbook_candidates;
+DROP TABLE playbook_candidates;
+ALTER TABLE playbook_candidates_v10 RENAME TO playbook_candidates;
+CREATE UNIQUE INDEX playbook_candidates_one_open ON playbook_candidates (content_key) WHERE status = 'to_review';
+CREATE TRIGGER playbook_candidates_no_delete BEFORE DELETE ON playbook_candidates BEGIN SELECT RAISE(ABORT, 'playbook candidates are withdrawn, not deleted'); END;
 `;

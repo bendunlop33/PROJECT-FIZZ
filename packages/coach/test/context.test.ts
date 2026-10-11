@@ -150,3 +150,34 @@ describe('describeCoachContext (What the coach can see)', () => {
     expect(d.notAvailable).toHaveLength(4);
   });
 });
+
+describe('approved chat rules (11 Oct, coaching-playbook §3.1, B8)', () => {
+  const rule = (n: number, status: 'to_review' | 'approved' | 'rejected' | 'withdrawn', text: string) => ({
+    id: id(700 + n),
+    version: 2,
+    createdAtUtc: at(n).utc,
+    updatedAtUtc: at(n + 10).utc,
+    text,
+    contentKey: `playbook_candidate:${String(n)}`,
+    statedBy: n % 2 === 0 ? ('ben' as const) : ('coach' as const),
+    status,
+    createdByActionId: id(800 + n),
+    ...(status === 'approved' ? { decidedAtUtc: at(n + 10).utc } : {}),
+  });
+  it('only approved rules are sent, as Coaching knowledge, not evidence-graded, numbered as on the screen; a suggested memory never is', () => {
+    const ctx = buildCoachContext(
+      input({
+        playbookCandidates: [rule(1, 'to_review', 'Deload every 5th week'), rule(2, 'approved', 'Never superset heavy compounds'), rule(3, 'rejected', 'Train to failure always'), rule(4, 'withdrawn', 'Gone')],
+        memories: [memory, { ...memory, id: id(6), text: 'Waiting suggestion', status: 'suggested' }],
+      }),
+    );
+    expect(ctx.coachingKnowledge.approvedChatRules).toEqual([{ id: 'Chat rule 2', rule: 'Never superset heavy compounds', from: 'Ben', grade: 'not evidence-graded', approved: at(12).utc.slice(0, 10) }]);
+    const yours = JSON.stringify(ctx.yourData);
+    expect(yours).not.toContain('superset');
+    expect(yours).not.toContain('Waiting suggestion');
+    const sent = contextInputItems(ctx).map((i) => (i.type === 'message' ? i.content : '')).join('\n');
+    for (const t of ['Deload every 5th week', 'Train to failure always', 'Gone']) expect(sent).not.toContain(t);
+    expect(describeCoachContext(ctx).coachingKnowledge.map((d) => d.label)).toContain('Rules you approved');
+    expect(buildCoachContext(input()).coachingKnowledge.approvedChatRules).toBeUndefined();
+  });
+});

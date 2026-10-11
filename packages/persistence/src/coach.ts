@@ -62,6 +62,9 @@ export const NEXT_TARGET_SPEC: DocumentSpec<NextSessionTargetRecord> = {
   columns: (r) => ({ owner_id: r.ownerId, source_session_id: r.sourceSessionId, exercise_id: r.exerciseId, action_id: r.actionId, status: r.status }),
 };
 
+/** Ben's review of a playbook candidate. */
+export type CandidateWrite = { status: 'written'; candidate: PlaybookCandidate } | { status: 'stale'; candidate: PlaybookCandidate } | { status: 'missing' };
+
 /** A Ben write on a memory (Save, Not now, edit). */
 export type MemoryWrite = { status: 'written'; memory: Memory } | { status: 'stale' | 'duplicate'; memory: Memory } | { status: 'missing' };
 
@@ -461,6 +464,9 @@ export class SqliteCoachStore {
       case 'playbook_candidate': {
         const open = await tx.getFirst("SELECT * FROM playbook_candidates WHERE content_key = ? AND status = 'to_review'", [write.candidate.contentKey]);
         if (open !== null) return this.creatorOf(tx, decodeDocument(PLAYBOOK_CANDIDATE_SPEC, open).createdByActionId);
+        // (11 Oct) Already approved or rejected in the same words: not offered again (coaching-playbook §3.1).
+        const decided = await tx.getFirst("SELECT id FROM playbook_candidates WHERE content_key = ? AND status IN ('approved', 'rejected')", [write.candidate.contentKey]);
+        if (decided !== null) throw new Rollback('already_exists');
         const r = await saveDocumentIn(tx, PLAYBOOK_CANDIDATE_SPEC, write.candidate, null);
         if (!r.ok) throw new Rollback('already_exists');
         return null;
@@ -820,8 +826,32 @@ export class SqliteCoachStore {
     });
   }
 
-  /** Coaching knowledge, read-only in v1; never sent to the coach until approved. */
+  /** Coaching knowledge; never sent to the coach until approved. */
   listPlaybookCandidates(): Promise<PlaybookCandidate[]> {
     return this.db.read((q) => listDocuments(q, PLAYBOOK_CANDIDATE_SPEC));
+  }
+
+  /**
+   * Ben's review of a chat rule (coaching-playbook §4.1, B8): Approve or
+   * Reject a rule to review, or put an approved or rejected one back to
+   * review (the toast's Undo, `Remove from playbook`, `Review again`).
+   * Versioned (rule 5); a double tap is one write. Coaching knowledge: no owner.
+   */
+  decidePlaybookCandidate(req: { candidateId: string; expectedVersion: number; decision: 'approve' | 'reject' | 'reopen'; atUtc: string }): Promise<CandidateWrite> {
+    return this.db.write(async (tx): Promise<CandidateWrite> => {
+      const c = await getDoc(tx, PLAYBOOK_CANDIDATE_SPEC, req.candidateId);
+      if (c === null || c.status === 'withdrawn') return { status: 'missing' };
+      const target = req.decision === 'approve' ? ('approved' as const) : req.decision === 'reject' ? ('rejected' as const) : ('to_review' as const);
+      if (c.status === target && c.version === req.expectedVersion + 1) return { status: 'written', candidate: c };
+      const from = req.decision === 'reopen' ? c.status === 'approved' || c.status === 'rejected' : c.status === 'to_review';
+      if (c.version !== req.expectedVersion || !from) return { status: 'stale', candidate: c };
+      if (target === 'to_review') {
+        const clash = await tx.getFirst("SELECT id FROM playbook_candidates WHERE content_key = ? AND status = 'to_review'", [c.contentKey]);
+        if (clash !== null) return { status: 'stale', candidate: c };
+      }
+      const next: PlaybookCandidate = { ...c, status: target, version: c.version + 1, updatedAtUtc: req.atUtc, ...(target === 'to_review' ? {} : { decidedAtUtc: req.atUtc }) };
+      await saveDocumentIn(tx, PLAYBOOK_CANDIDATE_SPEC, next, c.version);
+      return { status: 'written', candidate: next };
+    });
   }
 }

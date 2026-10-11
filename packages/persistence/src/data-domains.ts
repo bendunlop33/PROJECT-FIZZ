@@ -103,6 +103,8 @@ export interface DomainCounts {
   coachingKnowledge: {
     exercises: number;
     playbookCandidates: number;
+    /** (11 Oct) Chat rules Ben approved: sent to the coach as Coaching knowledge. */
+    playbookRules: number;
     records: number;
   };
 }
@@ -130,6 +132,7 @@ export function countDomains(tables: Record<string, readonly SqlRow[]>): DomainC
     coachingKnowledge: {
       exercises: n(known, 'exercises'),
       playbookCandidates: (known.playbook_candidates ?? []).filter((c) => c.status === 'to_review').length,
+      playbookRules: (known.playbook_candidates ?? []).filter((c) => c.status === 'approved').length,
       records: total(known),
     },
   };
@@ -185,6 +188,7 @@ export async function countDomainsIn(q: SqlExecutor): Promise<DomainCounts> {
     coachingKnowledge: {
       exercises: known.exercises ?? 0,
       playbookCandidates: await count("SELECT COUNT(*) AS n FROM playbook_candidates WHERE status = 'to_review'"),
+      playbookRules: await count("SELECT COUNT(*) AS n FROM playbook_candidates WHERE status = 'approved'"),
       records: sum(known),
     },
   };

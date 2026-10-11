@@ -49,7 +49,11 @@ export const DELETE_ALERT = {
 export function resetListView(summary: DataSummary): { changed: string[]; unchanged: string } {
   const k = summary.counts.coachingKnowledge;
   return {
-    changed: ['Exercise list goes back to the built-in one', `${plural(k.playbookCandidates, 'rule to review', 'rules to review')} removed`],
+    changed: [
+      'Exercise list goes back to the built-in one',
+      `${plural(k.playbookCandidates, 'rule to review', 'rules to review')} removed`,
+      ...(k.playbookRules > 0 ? [`${plural(k.playbookRules, 'approved chat rule', 'approved chat rules')} removed`] : []),
+    ],
     unchanged: 'Your data',
   };
 }
