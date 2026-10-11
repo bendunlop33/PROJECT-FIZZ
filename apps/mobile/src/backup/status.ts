@@ -40,6 +40,8 @@ export interface BackupStatus {
   onPhone: { state: OnPhoneState; lastSuccess: BackupRecord | null; line: StatusLine };
   offPhone: { state: OffPhoneState; lastCopy: OffPhoneCopy | null; line: StatusLine };
   copiesOnPhone: BackupRecord[];
+  /** Automatic copies kept on the phone (null: all), for the `After each workout` row. */
+  keep: number | null;
   trialRunDoneAtUtc: string | null;
 }
 
@@ -151,6 +153,21 @@ export function buildBackupStatus(m: BackupManifest, facts: BackupFacts): Backup
     onPhone: { state, lastSuccess: last, line: onLine },
     offPhone: { state: off, lastCopy: copy, line: offLine },
     copiesOnPhone: [...m.onPhone.files].sort((a, b) => (a.createdAtUtc < b.createdAtUtc ? 1 : -1)),
+    keep: m.keep,
     trialRunDoneAtUtc: m.trialRunDoneAtUtc,
+  };
+}
+
+/**
+ * The `After each workout` row and its line (DX9; Ben, 11 Oct: "it should
+ * save every workout ever logged"). Copies, not workouts, are what's kept or
+ * replaced: every copy holds every workout, and the workouts themselves stay
+ * on the phone.
+ */
+export function backupKeepView(keep: number | null): { subtitle: string; line: string; choices: { keep: number | null; label: string; selected: boolean }[] } {
+  return {
+    subtitle: keep === null ? 'On · keeps every copy' : `On · keeps the last ${String(keep)} copies`,
+    line: 'Every workout is kept. Each copy is a full backup of all of them.',
+    choices: [7, 14, 30, null].map((k) => ({ keep: k, label: k === null ? 'All' : String(k), selected: k === keep })),
   };
 }
