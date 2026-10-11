@@ -1,4 +1,4 @@
-import { deriveId, nextTargetSourceBasis, validateNextSessionTargets, validateTodayAdjustment, type AdjustIntent, type ExerciseAdjustmentPlan, type MessagePain, type NextSessionBasis } from '@fizz/domain';
+import { deriveId, nextTargetSourceBasis, validateNextSessionTargets, validateTodayAdjustment, type AdjustIntent, type ExerciseAdjustmentPlan, type MessagePain, type NextSessionBasis, type SessionAdjustment } from '@fizz/domain';
 import type {
   ActionDetail,
   ActionRecord,
@@ -415,6 +415,49 @@ export function storeTodayTargets(store: Pick<CoachWriteStore, 'commit'>): Today
       return { status: r.status, record: r.action };
     },
   };
+}
+
+/** The operation ID of Ben's `Adjust` on the built-in rule's offer: one per trigger, so a double tap applies once. */
+export function builtInAdjustOpId(triggerId: string): string {
+  return `built-in-adjust:${triggerId}`;
+}
+
+/**
+ * The built-in rule's change to today's remaining sets (CA6 revised, build
+ * 108 F2), applied on Ben's `Adjust` when the coach can't answer. The same
+ * write as the coach's (`adjust_pending_targets`, version-gated, idempotent
+ * on the opId, one transaction with its record), so the same Undo works.
+ * The record's author is `checks` (app code, not the coach) and its reason
+ * is the rule's own app text; each changed target is `source: 'built_in_rule'`.
+ */
+export async function applyBuiltInAdjustment(
+  store: Pick<CoachWriteStore, 'commit'>,
+  input: { ownerId: string; sessionId: string; adjustment: SessionAdjustment; opId: string; now: ZonedTimestamp },
+): Promise<TodayTargetsWriteResult> {
+  const a = input.adjustment;
+  const exercises: ExerciseTargetChanges[] = a.plan.map((e) => ({ sessionExerciseId: e.sessionExerciseId, exerciseName: e.exerciseName, changes: e.changes }));
+  const base = newActionRecord({ turnId: '', opId: input.opId, now: input.now }, { kind: 'adjust_pending_sets', sessionId: input.sessionId, exercises }, {
+    author: 'checks',
+    guardNotes: a.guardNotes,
+    entityVersions: [{ entity: 'session', id: input.sessionId, before: a.args.baseVersion, after: a.args.baseVersion + 1 }],
+  });
+  // The rule's reason is app text, not a coach sentence, so the claim check (CC3) doesn't apply to it.
+  const record: ActionRecord = { ...base, turnId: null, reason: a.reason };
+  const command = {
+    type: 'adjust_pending_targets' as const,
+    at: input.now,
+    opId: input.opId,
+    expectedVersion: a.args.baseVersion,
+    actionId: record.actionId,
+    reason: a.reason,
+    rule: a.rule,
+    changes: a.plan.flatMap((e) => e.changes.flatMap((c) => (c.before !== null && c.after !== null ? [{ setId: c.setId, target: c.after }] : []))),
+    removeSetIds: [],
+    addSets: [],
+  };
+  const r = await store.commit(input.ownerId, { kind: 'session_command', action: record, sessionId: input.sessionId, command });
+  if (r.status === 'conflict') return { status: 'stale' };
+  return { status: r.status, record: r.action };
 }
 
 /** `get_active_session`: the workout read fresh, with set IDs and the version a change must name. */

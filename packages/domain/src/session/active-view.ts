@@ -17,7 +17,7 @@ import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, pa
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import type { HistorySession } from '../progression';
 import { toMs } from '../time';
-import { coachUndoRefusal } from './coach-undo';
+import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, isEmptyPart, partRootOf } from './gym-switch';
 import { buildExecutionOrder, nextPendingSet } from './order';
@@ -213,6 +213,8 @@ export interface FocusView {
   planWas: string | null;
   /** The coach action behind this set's target, for `Undo coach change`; null when the target isn't the coach's or can't be undone (gym changed since). */
   coachActionId: string | null;
+  /** Who made that today-change: the coach, or the built-in rule when the coach couldn't answer (CA6 revised). */
+  adjustedBy: 'coach' | 'rule' | null;
   /**
    * `SnapNote` under the target (gym-switch §2.5): only for a capped,
    * converted or dropped fit, read from `planned.snap` so it survives a relaunch.
@@ -507,8 +509,9 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
     duration: ex.measurement === 'duration' ? { value: values.durationS } : null,
     target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral }),
-    planWas: set.planned.source === 'coach' && set.planned.coach ? planWasText(set.planned.coach.before, ex.loadConvention, eq) : null,
-    coachActionId: set.planned.source === 'coach' && set.planned.coach !== undefined && coachUndoRefusal(state, set.planned.coach.actionId) === null ? set.planned.coach.actionId : null,
+    planWas: carriesTodayAdjustment(set.planned) && set.planned.coach ? planWasText(set.planned.coach.before, ex.loadConvention, eq) : null,
+    coachActionId: carriesTodayAdjustment(set.planned) && set.planned.coach !== undefined && coachUndoRefusal(state, set.planned.coach.actionId) === null ? set.planned.coach.actionId : null,
+    adjustedBy: carriesTodayAdjustment(set.planned) ? (set.planned.source === 'built_in_rule' ? 'rule' : 'coach') : null,
     snapNote: setSnapNote(set.planned.snap, set.planned.load, { gymName: input.gymName, equipment: eq, unit: ex.unit }),
     hasExplanation: set.planned.load !== null || set.planned.reps !== null || set.planned.durationS !== null,
     painFlagged: input.painFlagged.has(ex.exerciseId) || painNote !== null,

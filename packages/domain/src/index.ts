@@ -57,6 +57,7 @@ export * from './session/swap-plan';
 export * from './session/substitutes';
 export * from './coach/trigger';
 export * from './coach/adjust';
+export * from './coach/session-adjust';
 export * from './coach/signals';
 export * from './coach/pain-words';
 export * from './coach/short-forms';

@@ -31,7 +31,7 @@ import {
 } from '../rest';
 import { deriveId, stableStringify } from '../stable';
 import { toIso, toMs } from '../time';
-import { coachUndoRefusal } from './coach-undo';
+import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
 import { isRoundEnd, nextPendingSet } from './order';
 
@@ -1309,21 +1309,33 @@ function handleAdjustPendingTargets(state: SessionAggregate, cmd: CommandOf<'adj
   if (cmd.addSets.some((a) => byId.has(a.newSetId))) return fail('invalid_values', 'That set ID is already used.');
 
   // `Why?` on a coach target (§2.12): set by the coach today, its reason in quotes, the same `Last time` as before.
-  const coachProvenance = (set: WorkoutSet): TargetProvenance => ({
-    source: 'coach',
-    setAt: cmd.at,
-    routineName: state.session.routineName,
-    requestedLoad: null,
-    basis: set.planned.provenance?.basis ?? null,
-    coach: { actionId: cmd.actionId, scope: 'today', reason: cmd.reason ?? null },
-    guardNotes: [],
-  });
+  // The built-in rule's change (CA6 revised) says so: `Built-in rule · <day>` and its own words, never `Coach`.
+  const coachProvenance = (set: WorkoutSet): TargetProvenance =>
+    cmd.rule !== undefined
+      ? {
+          source: 'rule',
+          setAt: cmd.at,
+          routineName: state.session.routineName,
+          requestedLoad: null,
+          basis: set.planned.provenance?.basis ?? null,
+          rule: cmd.rule,
+          guardNotes: [],
+        }
+      : {
+          source: 'coach',
+          setAt: cmd.at,
+          routineName: state.session.routineName,
+          requestedLoad: null,
+          basis: set.planned.provenance?.basis ?? null,
+          coach: { actionId: cmd.actionId, scope: 'today', reason: cmd.reason ?? null },
+          guardNotes: [],
+        };
   const gymChanges = state.session.gymChanges?.length ?? 0;
   const coachTarget = (set: WorkoutSet, target: { load: WorkoutSet['planned']['load']; reps: WorkoutSet['planned']['reps'] }): WorkoutSet['planned'] => ({
     ...set.planned,
     load: target.load,
     reps: target.reps,
-    source: 'coach',
+    source: cmd.rule !== undefined ? 'built_in_rule' : 'coach',
     provenance: coachProvenance(set),
     coach: { actionId: cmd.actionId, before: set.planned, gymChanges },
   });
@@ -1394,7 +1406,7 @@ function handleRevertTargetAdjustment(state: SessionAggregate, cmd: CommandOf<'r
   if (coachUndoRefusal(state, cmd.actionId) === 'gym_changed') return fail('gym_changed', 'The gym changed.');
   const removed = new Set(cmd.removedSetIds);
   const added = new Set(cmd.addedSetIds);
-  const ownTarget = (s: WorkoutSet): boolean => s.planned.source === 'coach' && s.planned.coach?.actionId === cmd.actionId;
+  const ownTarget = (s: WorkoutSet): boolean => carriesTodayAdjustment(s.planned, cmd.actionId);
   const changed = new Map<string, WorkoutSet>();
   const audit: SessionAggregate['audit'] = [...state.audit];
   const events: SessionEvent[] = [];
@@ -1550,7 +1562,7 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
       return state.session.routineName !== (command.name === null ? null : command.name.trim());
     case 'adjust_pending_targets':
       // Undone, or every set it set has since been logged or changed again, or the gym changed since.
-      return coachUndoRefusal(state, command.actionId) !== null || !state.sets.some((s) => s.planned.coach?.actionId === command.actionId && s.status === 'pending' && s.planned.source === 'coach');
+      return coachUndoRefusal(state, command.actionId) !== null || !state.sets.some((s) => s.status === 'pending' && carriesTodayAdjustment(s.planned, command.actionId));
     case 'revert_target_adjustment':
     case 'undo_change_gym':
     case 'finish':

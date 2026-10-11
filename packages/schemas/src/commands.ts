@@ -12,7 +12,7 @@ import {
 import { EquipmentInstanceSchema } from './equipment';
 import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
-import { PlannedSetSchema, PlannedSnapSchema, ResolvedRestSchema, SetExclusionsSchema, SetSideSchema, SetValuesSchema } from './session';
+import { PlannedSetSchema, PlannedSnapSchema, ResolvedRestSchema, RuleDecisionSchema, SetExclusionsSchema, SetSideSchema, SetValuesSchema } from './session';
 
 /**
  * Typed commands for the active-session state machine. Every mutating command
@@ -353,6 +353,19 @@ export const AdjustPendingTargetsCommandSchema = z.object({
   actionId: IdSchema,
   /** The coach's reason from the action record, kept on each changed target's `Why?` (in quotes). */
   reason: z.string().max(600).nullable().optional(),
+  /**
+   * Set when the built-in rule made the change, not the coach (CA6 revised,
+   * build 108 F2): each changed target gets `source: 'built_in_rule'` and a
+   * `rule` provenance with these words. Absent: the coach's change.
+   */
+  rule: z
+    .object({
+      name: z.string().min(1).max(300),
+      decision: RuleDecisionSchema,
+      summary: z.string().max(600),
+      facts: z.array(z.string().max(600)).max(20),
+    })
+    .optional(),
   changes: z.array(z.object({ setId: IdSchema, target: TargetValuesSchema })).max(40),
   removeSetIds: z.array(IdSchema).max(12),
   /** New pending sets, copying type and rest from `copyFromSetId`. IDs derive from the opId, so a replay adds the same rows. */

@@ -195,15 +195,17 @@ function adjustLine(exercises: readonly ExerciseTargetChanges[], mode: 'committe
   return `Suggested: ${body} ${targetsWord(count)}. Not applied.`;
 }
 
-function adjustSlot(exercises: readonly ExerciseTargetChanges[]): { title: string; detail: string } {
+/** `Coach adjusted sets 2–3`; the built-in rule's change (author `checks`, CA6 revised) reads `Adjusted sets 2–3`. */
+function adjustSlot(exercises: readonly ExerciseTargetChanges[], byCoach = true): { title: string; detail: string } {
+  const who = byCoach ? 'Coach adjusted' : 'Adjusted';
   const numbers = allSetNumbers(exercises);
   if (exercises.length > 1) {
     const list = exercises.map((e) => `${e.exerciseName} ${setNumbersText(e.changes.map((c) => c.setNumber)).replace(/^sets? /, '')}`).join(' · ');
-    return { title: `Coach adjusted ${String(numbers.length)} sets`, detail: list };
+    return { title: `${who} ${String(numbers.length)} sets`, detail: list };
   }
   const ex = exercises[0];
   const p = ex ? partsOf(ex) : { name: '', changed: [], removed: [], added: [] };
-  const title = `Coach adjusted ${setNumbersText(numbers)}`;
+  const title = `${who} ${setNumbersText(numbers)}`;
   const lines: string[] = [];
   const first = p.changed[0];
   if (first !== undefined) {
@@ -297,7 +299,7 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       if (st === 'committed') {
         const spoken = adjustSpoken(d.exercises);
         if (surface === 'slot') {
-          const slot = adjustSlot(d.exercises);
+          const slot = adjustSlot(d.exercises, record.author === 'coach');
           return make(status, slot.title, spoken, slot.detail);
         }
         return make(status, adjustLine(d.exercises, 'committed'), spoken);
