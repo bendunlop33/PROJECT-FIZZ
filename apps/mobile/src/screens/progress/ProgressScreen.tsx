@@ -242,7 +242,7 @@ export function ProgressScreen() {
           }}
           onEdit={(r) => {
             setTimeOpen(false);
-            navigation.navigate('Summary', { sessionId: r.sessionId, back: true });
+            navigation.navigate('Summary', { sessionId: r.sessionId, back: true, editTimes: true });
           }}
         />
       ) : null}

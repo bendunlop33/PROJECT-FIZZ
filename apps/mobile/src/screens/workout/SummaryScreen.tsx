@@ -37,8 +37,9 @@ export function SummaryScreen() {
   const services = useServices();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { sessionId, back = false, justFinished: finishedNow = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
-  const [times, setTimes] = useState(false);
+  const { sessionId, back = false, justFinished: finishedNow = false, editTimes = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
+  // Opened from Progress `Edit times`: the time correction shows at once, and closing it returns there (progress.md §2.3).
+  const [times, setTimes] = useState(editTimes);
   const [choosePain, setChoosePain] = useState(false);
   const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
   useEffect(() => {
@@ -537,11 +538,13 @@ export function SummaryScreen() {
         visible={times}
         onClose={() => {
           setTimes(false);
+          if (editTimes) done();
         }}
         onSaved={() => {
           setTimes(false);
           changed();
-          reload();
+          if (editTimes) done();
+          else reload();
         }}
       />
       <PainChooseSheet

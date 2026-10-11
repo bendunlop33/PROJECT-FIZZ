@@ -98,7 +98,8 @@ export type RootStackParams = {
   EditSet: { sessionId: string; setId: string };
   /** `back`: opened from history (Progress), so Done goes back there rather than to Today. */
   /** `justFinished`: reached by Finish itself; any other visit (Today, Progress) is static. */
-  Summary: { sessionId: string; back?: boolean; justFinished?: boolean };
+  /** `editTimes`: open straight into the time correction and go back when it closes (Progress `Edit times`, progress.md §2.3). */
+  Summary: { sessionId: string; back?: boolean; justFinished?: boolean; editTimes?: boolean };
   /**
    * Pain flag sheet (active-workout §2.14.4). From a set card, the workout
    * exercise makes `Before` / `Since` use its equipment.
