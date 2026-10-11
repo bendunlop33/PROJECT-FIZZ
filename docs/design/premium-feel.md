@@ -242,7 +242,7 @@ It opens a half sheet:
 **Routine list order** is creation order in this pass. Reordering comes with the routine editor.
 
 **Rename and delete.**
-- Routine: `⋯` → `Rename` (same sheet, title `Rename routine`, button `Save name`) or `Delete` (iOS confirm: `Delete Push A? Past workouts keep their name.` [Cancel] [Delete]). After deleting: toast `Deleted Push A` [Undo].
+- Routine: `⋯` → `Rename` (same sheet, title `Rename routine`, button `Save name`) or `Delete` (iOS confirm: `Delete Push A?` [Cancel] [Delete]). After deleting: toast `Deleted Push A` [Undo].
 - **Named workouts.** A workout's name is shown on Today, the workout header and the Summary. New command `rename_session { name, opId, expectedVersion }` (discriminated union in `packages/schemas/src/commands.ts`). Allowed while the workout is active and after it finishes (versioned, original kept in history). It is reachable from Workout `⋯` → `Rename workout` and by tapping the Summary title (pencil icon, 44 pt). A routine's name is copied into the session at start, so renaming a session never renames the routine.
 
 ---
@@ -539,7 +539,7 @@ Start notices: `Using saved targets.` · `Using last time’s numbers.`
 | Save sheet | `Save as routine` · `Name` · `3 exercises · 9 sets` · `Save routine` · `Give it a name` · `You already have a routine called Push A.` |
 | Toasts | `Saved routine Push A` · `Deleted Push A` · `Renamed to Push A` (each with `Undo`) |
 | Routine sheet | `Last done Thu 8 Oct at Main gym` · `Rule` tag + `Why?` → `Next targets from the built-in rule` (nothing when the routine's own targets are used) · `Start this routine` |
-| Delete confirm | `Delete Push A?` / `Past workouts keep their name.` / `Cancel` / `Delete` |
+| Delete confirm | `Delete Push A?` / `Cancel` / `Delete` |
 | Rename | `Rename routine` / `Rename workout` · `Save name` |
 | Permission sheet | `Rest alerts` · `Get an alert when rest ends while your phone is locked?` · `Allow` · `Not now` |
 | Alerts off (VoiceOver) | `Rest alerts are off. Opens iOS Settings.` · `Rest alerts are off. Asks to allow them.` |

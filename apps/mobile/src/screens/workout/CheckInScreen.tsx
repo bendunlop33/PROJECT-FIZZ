@@ -25,6 +25,7 @@ import { AppText, Chip, ChipRow, Eyebrow, Icon, PrimaryButton, SecondaryButton, 
 import { checkInSheetEnd } from '../../workout/overview';
 
 type Step = 'score' | 'reasons' | 'pain' | 'ill';
+const CHECK_IN_NOT_SAVED = 'Check-in wasn’t saved.';
 const SCORES: readonly CheckInScore[] = [1, 2, 3, 4, 5];
 
 /**
@@ -310,6 +311,11 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
       saved = r.ok ? r.checkIn : saved;
     }
     setBusy(false);
+    if (saved === null && checkInSheetEnd({ overview: overview !== undefined, gymId }) === 'back_to_overview') {
+      // Over the overview nothing starts here: say so on the sheet; the overview's Start still works (review r2 N4).
+      setError(CHECK_IN_NOT_SAVED);
+      return;
+    }
     if (saved === null) {
       // Never blocks logging (check-in.md §3 Write failed).
       await start({ kind: 'skipped', atUtc: services.now().utc }, { kind: 'info', text: 'Check-in wasn’t saved. Your workout started as normal.' });
@@ -386,7 +392,6 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
       return (
         <Sheet
           title="How are you feeling today?"
-          lead="Before your workout. Saved with it. Nothing changes unless you say so."
           bar={
             <SecondaryButton
               label="Skip"
@@ -423,7 +428,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
               <TextButton
                 label="Skip"
                 tone="secondary"
-                accessibilityHint="Keeps your score and starts the workout."
+                accessibilityHint={overview ? 'Keeps your score.' : 'Keeps your score and starts the workout.'}
                 onPress={() => {
                   if (record) void start({ kind: 'answered', checkInId: record.id }, savedToast(record));
                 }}

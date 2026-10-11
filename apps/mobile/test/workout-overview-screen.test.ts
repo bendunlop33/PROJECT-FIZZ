@@ -126,6 +126,18 @@ describe('the check-in sheet over the overview (§2.2, review S6)', () => {
     expect(body('skipWorkout')).toContain('popToToday(');
     expect(body('skipWorkout')).not.toContain('start(');
   });
+  it('r2 N3/N4: over the overview, Skip’s hint doesn’t promise a start, and a score that fails to save says so on the sheet', () => {
+    const src = read('screens/workout/CheckInScreen.tsx');
+    expect(src).toContain("accessibilityHint={overview ? 'Keeps your score.' : 'Keeps your score and starts the workout.'}");
+    const pick = src.slice(src.indexOf('async function pickScore('), src.indexOf('async function done('));
+    expect(pick.indexOf('setError(CHECK_IN_NOT_SAVED)')).toBeGreaterThan(-1);
+    expect(pick.indexOf('setError(CHECK_IN_NOT_SAVED)')).toBeLessThan(pick.indexOf('Your workout started as normal'));
+  });
+  it('r2 N2: no reassurance lead on the score step; Delete confirms with no rule line', () => {
+    expect(read('screens/workout/CheckInScreen.tsx')).not.toContain('Nothing changes unless you say so');
+    expect(read('screens/workout/WorkoutOverviewScreen.tsx')).not.toContain('Past workouts keep their name');
+    expect(read('screens/TodayScreen.tsx')).not.toContain('Past workouts keep their name');
+  });
   it('N1: with a saved score to load, the scale waits for it (no second check-in)', () => {
     const src = read('screens/workout/CheckInScreen.tsx');
     expect(src).toContain('disabled={existingId !== null && record === null}');

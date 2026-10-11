@@ -248,7 +248,7 @@ export function TodayScreen() {
   }
 
   function confirmDelete(row: RoutineRow) {
-    Alert.alert(`Delete ${row.name}?`, 'Past workouts keep their name.', [
+    Alert.alert(`Delete ${row.name}?`, undefined, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',

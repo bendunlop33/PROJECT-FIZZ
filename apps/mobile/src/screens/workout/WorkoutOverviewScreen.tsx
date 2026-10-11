@@ -313,7 +313,7 @@ export function WorkoutOverviewScreen() {
   function deleteRoutine() {
     const routine = page?.routine;
     if (!routine) return;
-    Alert.alert(`Delete ${routine.name}?`, 'Past workouts keep their name.', [
+    Alert.alert(`Delete ${routine.name}?`, undefined, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',

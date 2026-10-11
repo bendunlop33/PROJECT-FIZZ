@@ -101,8 +101,8 @@ The check-in is shown by one gate, `shouldAskCheckIn`, at every way of starting 
 
 - No `PrimaryButton` on this step: the five score buttons are the action, and none is accent-filled (accent stays for Today's Start, which is now behind the scrim, and for Log).
 - `Talk` is hidden when voice input isn't available; `Skip` then spans the full width.
-- Empty workout or no plan: the second line reads `Before your workout. Saved with it. Nothing changes unless you say so.`
-- Resume case (§3): the same sheet over Active workout. Line 2: `Before your first set. Saved with this workout. Nothing changes unless you say so.`
+- No second line under the title (minimal UI copy, CLAUDE.md 10 Oct 2026; review workout-overview r2 N2).
+- Resume case (§3): the same sheet over Active workout.
 
 ### 2.3 Step 2: What's up? (score at or below the "What's up?" setting; default 3 or lower)
 
@@ -364,7 +364,7 @@ The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is
 | Voice clarifying | Unclear phrase | `ClarifyChips` in the strip: `What number, 1 to 5?` / `Sore like after training, or pain?` / `3 or 4?` | — | Nothing saved until answered; `Not saved` after 30 s |
 | Voice saved | Clear phrase | Strip `✓ Got it · 3 of 5 · Tired` + `Heard: "…"`, then the sheet continues as if tapped | — | The in-workout toast carries [Change] |
 | Swiped away | Swipe down / escape | Back to Today, nothing started | — | Saved score (if any) stays, unlinked, reusable for 2 h |
-| Write failed | `recordCheckIn` fails | Workout starts anyway; toast `Check-in wasn't saved. Your workout started as normal.` | — | Never blocks logging. Session `checkIn: skipped` |
+| Write failed | `recordCheckIn` fails | Workout starts anyway; toast `Check-in wasn't saved. Your workout started as normal.` Over the Workout overview nothing starts: the sheet shows `Check-in wasn't saved.` and the overview's Start still works | — | Never blocks logging. Session `checkIn: skipped` |
 | Resume, not yet started | `Resume` or P6 auto-open of a session with 0 sets ever logged and `checkIn: pending` | Same sheet over Active workout (§2.2 Resume line) | — | Skip or swipe-down → stays in the workout, `skipped`. `Skip workout` → `discardWorkout` (0 sets; no Undo) + `skipScheduledSession` (Undo) |
 | Paused, not yet started | As above, workout paused | Same sheet | — | Answering doesn't resume; `Resume` stays the workout's primary |
 | Offline | No network | Identical sheet; everything is local | — | Only the in-workout offer differs (CI7) |
@@ -414,7 +414,7 @@ The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is
 | `‹ 3 of 5` (Step 2) | Back to Step 1 with `3` shown as chosen. A new score `updateCheckIn`s the same record | Choosing 4 or 5 from here starts the workout; selected reasons are kept in the record |
 | Reason chip | Toggles; nothing is written until `Done` | `Other…` focuses the note |
 | `Done` (Step 2) | `updateCheckIn(id, {reasons, note}, expectedVersion, opId)`, then the pain step, the ill step, or start | |
-| `Skip` (Step 2) | Starts with the score only; selected chips and the note are discarded | VoiceOver hint: "Keeps your score and starts the workout." |
+| `Skip` (Step 2) | Starts with the score only; selected chips and the note are discarded | VoiceOver hint: "Keeps your score and starts the workout." Over the Workout overview (nothing starts): "Keeps your score." |
 | Pain step `Flag n movements` | `setPainFlag({exerciseIds, active: true, area?, source: 'check_in'}, opId)`; `updateCheckIn(…, {painFlagIds})`; continue | Flag first, then everything else (CM4) |
 | Pain step `Not now` | No flag; continue | CI8 |
 | `Train anyway` | Start (answered) | |
@@ -510,7 +510,7 @@ Every value is either **what Ben said** (the check-in), a **target** or an **act
 | Element | Text |
 |---|---|
 | Title | `How are you feeling today?` |
-| Line 2 | `Before Push A. Saved with this workout. Nothing changes unless you say so.` · no plan: `Before your workout. Saved with it. Nothing changes unless you say so.` · Resume case: `Before your first set. Saved with this workout. Nothing changes unless you say so.` |
+| Line 2 | None (minimal UI copy, 10 Oct 2026) |
 | Scale | `1` `2` `3` `4` `5` · ends `1 = rough` · `5 = great` |
 | Step 1 actions | `Skip` · `Talk` · settings button (VoiceOver "Check-in settings") |
 | Step 2 | back `‹ 3 of 5` · `What's up?` · `Pick any that apply. Optional.` |

@@ -29,7 +29,7 @@ There is one primary action, `Start workout`. The page is read-only apart from t
 | `Empty workout`, `Build a workout` → `Start now`, Repeat → `Start workout`, voice "start my workout" | Unchanged: no overview. These keep the `CheckInSheet` from check-in.md when a check-in is due |
 | First ever (no history, no routines) | No overview. Today's First workout hero goes straight to an empty workout |
 
-Presentation: a full-screen modal that slides up (`presentation: 'fullScreenModal'`, standard native-stack animation). Start replaces it with Workout (Ready on the first pending set). Close (chevron-down, or swipe down from the top) returns to Today. Nothing is started.
+Presentation: a full-screen modal that slides up (`presentation: 'fullScreenModal'`, standard native-stack animation). Start replaces it with Workout (Ready on the first pending set). Close (chevron-down, or the VoiceOver escape) returns to Today; a `fullScreenModal` has no swipe-down dismiss (review r2 N5). Nothing is started.
 
 ### 2.2 Flow and tap count (to the first logged set)
 
@@ -37,7 +37,7 @@ Presentation: a full-screen modal that slides up (`presentation: 'fullScreenModa
 Today ─ Start workout ─► Overview ─┬─ Start workout ─────────────────────────────► Workout (Ready) ─ Log
                                    ├─ score 4–5 (above What's up?) ── saved ─► Start ─► Workout ─ Log
                                    ├─ score ≤ What's up? setting ─► What's up? sheet ─ Done/Skip ─► Overview ─ Start ─► …
-                                   └─ Close / swipe down ─► Today (nothing created; a tapped score stays saved, unlinked, 2 h)
+                                   └─ Close ─► Today (nothing created; a tapped score stays saved, unlinked, 2 h)
 ```
 
 | Case | Taps | Before (today.md / check-in.md) |
@@ -229,7 +229,7 @@ Follow-ups for the product manager (not edited here):
 
 ## 12. Acceptance checks
 
-- **OV1.** Today `Start workout` opens the overview with no session row created. Close or swipe down returns to Today with none.
+- **OV1.** Today `Start workout` opens the overview with no session row created. Close returns to Today with none.
 - **OV2.** Check-in not due: Start → Start → Log logs the first set in 3 taps. Due and ignored: 3 taps, and the session's `checkIn.kind` is `skipped`.
 - **OV3.** For every load convention (barbell total, per dumbbell, stack, assisted, bodyweight + added, timed), each row's sets, reps and load equal the pending targets of the session that Start creates (test over the shared dry run).
 - **OV4.** Changing the routine, gym equipment, pain flags or a D21 action after the page opened makes Start create nothing, re-render the rows and show `Targets updated`.
