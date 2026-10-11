@@ -21,8 +21,8 @@ export function ExportScreen() {
   const [kind, setKind] = useState<ExportKind>('your_data');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
-  const [data] = useScreenData((s) => s.data.summary());
-  const counts = data.state === 'ready' ? data.value.counts : null;
+  const [data] = useScreenData((s) => s.data.counts());
+  const counts = data.state === 'ready' ? data.value : null;
   const empty = counts !== null && (kind === 'your_data' ? counts.yourData.records : counts.coachingKnowledge.records) === 0;
 
   async function run() {
