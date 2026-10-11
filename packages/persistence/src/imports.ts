@@ -200,12 +200,16 @@ export class SqliteImports {
   }
 
   /**
-   * Local dates of imported workouts now in Recently deleted or awaiting the
-   * purge (§6.2, DW26): a re-import treats them as already in the app.
+   * Local dates of imported workouts in Recently deleted at `nowUtc` (§6.2,
+   * DW26): the re-import's `n are in Recently deleted.` Past their 30 days
+   * they aren't listed there, so they aren't counted (review r2 N1).
    */
-  deletedImportDates(ownerId: string): Promise<Set<string>> {
+  deletedImportDates(ownerId: string, nowUtc: string): Promise<Set<string>> {
     return this.db.read(async (q) => {
-      const rows = await q.getAll<{ d: string | null }>("SELECT local_date AS d FROM sessions WHERE owner_id = ? AND import_job_id IS NOT NULL AND status = 'deleted'", [ownerId]);
+      const rows = await q.getAll<{ d: string | null }>(
+        "SELECT local_date AS d FROM sessions WHERE owner_id = ? AND import_job_id IS NOT NULL AND status = 'deleted' AND purge_after_utc > ?",
+        [ownerId, nowUtc],
+      );
       return new Set(rows.map((r) => r.d).filter((d): d is string => d !== null));
     });
   }

@@ -354,7 +354,7 @@ export function createImportService(deps: ImportServiceDeps) {
 
   /** How many of the file's dates have an imported workout in Recently deleted (§6.2, DW26). */
   async function inRecentlyDeleted(ownerId: string, rows: readonly FitNotesRow[]): Promise<number> {
-    const deleted = await repos().imports.deletedImportDates(ownerId).catch(() => new Set<string>());
+    const deleted = await repos().imports.deletedImportDates(ownerId, deps.now().utc).catch(() => new Set<string>());
     if (deleted.size === 0) return 0;
     const dates = new Set(rows.map((r) => r.date).filter((d): d is string => d !== null));
     return [...dates].filter((d) => deleted.has(d)).length;

@@ -117,13 +117,15 @@ export function countDomains(tables: Record<string, readonly SqlRow[]>): DomainC
   const total = (t: Record<string, SqlRow[]>) => Object.values(t).reduce((s, rows) => s + rows.length, 0);
   const sessions = mine.sessions ?? [];
   const finished = new Set(sessions.filter(rowInHistory).map((s) => s.id));
+  const hiddenCheckIns = hiddenCheckInIds(sessions);
   return {
     yourData: {
       workouts: finished.size,
       sets: (mine.session_sets ?? []).filter((s) => s.status === 'completed' && finished.has(s.session_id ?? null)).length,
       gyms: n(mine, 'gyms'),
       routines: n(mine, 'routines'),
-      checkIns: n(mine, 'check_ins'),
+      // A check-in hidden with a deleted workout isn't counted (§5; review r2 S1).
+      checkIns: (mine.check_ins ?? []).filter((c) => !hiddenCheckIns.has(c.id ?? null)).length,
       painFlags: n(mine, 'pain_flags'),
       memories: (mine.memories ?? []).filter((m) => m.status === 'active').length,
       coachThreads: n(mine, 'coach_threads'),
@@ -178,7 +180,7 @@ export async function countDomainsIn(q: SqlExecutor): Promise<DomainCounts> {
       sets: await count(`SELECT COUNT(*) AS n FROM session_sets s JOIN sessions x ON x.id = s.session_id WHERE s.status = 'completed' AND ${inHistorySql('x')}`),
       gyms: mine.gyms ?? 0,
       routines: mine.routines ?? 0,
-      checkIns: mine.check_ins ?? 0,
+      checkIns: await count(`SELECT COUNT(*) AS n FROM check_ins c WHERE NOT (${HIDDEN_CHECK_IN_SQL})`),
       painFlags: mine.pain_flags ?? 0,
       memories: await count("SELECT COUNT(*) AS n FROM memories WHERE status = 'active'"),
       coachThreads: mine.coach_threads ?? 0,
@@ -251,14 +253,26 @@ const SESSION_CHILD_TABLES = [
   'coach_offers',
 ] as const;
 
+/** Check-ins hidden with deleted workouts (delete-workouts §5): a check-in belongs to at most one workout (`check_in_id` is unique). */
+function hiddenCheckInIds(sessions: readonly SqlRow[]): Set<SqlRow[string]> {
+  return new Set(sessions.filter((s) => s.status === 'deleted' && s.check_in_id !== null && s.check_in_id !== undefined).map((s) => s.check_in_id ?? null));
+}
+
+/** The same rule in SQL, for `countDomainsIn`. */
+const HIDDEN_CHECK_IN_SQL = `EXISTS (SELECT 1 FROM sessions d WHERE d.check_in_id = c.id AND d.status = 'deleted')`;
+
 /**
  * An export leaves out deleted workouts (Recently deleted and purge-due),
- * their rows and the tombstones of purged ones (delete-workouts §5, §6.3,
- * DW18): what Ben deleted isn't in a file he shares. Backups keep them
- * (§6.5); they go through `exportTables` directly.
+ * their rows, the tombstones of purged ones, the check-in hidden with each,
+ * and the coach's records derived from them (next-session targets, their
+ * uses, coach actions on that workout) (delete-workouts §5, §6.3, DW18;
+ * review r2 S1): what Ben deleted isn't in a file he shares. Conversations
+ * stay (DW-D6). Backups keep everything (§6.5); they go through
+ * `exportTables` directly.
  */
 export function withoutDeletedWorkouts<T extends Record<string, SqlRow[]>>(tables: T): T {
-  const deleted = new Set((tables.sessions ?? []).filter((s) => s.status === 'deleted').map((s) => s.id));
+  const sessions = tables.sessions ?? [];
+  const deleted = new Set(sessions.filter((s) => s.status === 'deleted').map((s) => s.id));
   const out: Record<string, SqlRow[]> = { ...tables };
   if (out.purged_sessions) out.purged_sessions = [];
   if (deleted.size === 0) return out as T;
@@ -266,6 +280,13 @@ export function withoutDeletedWorkouts<T extends Record<string, SqlRow[]>>(table
   for (const t of SESSION_CHILD_TABLES) {
     const rows = out[t];
     if (rows) out[t] = rows.filter((r) => !deleted.has(r.session_id ?? null));
+  }
+  const checkIns = hiddenCheckInIds(sessions);
+  if (out.check_ins) out.check_ins = out.check_ins.filter((r) => !checkIns.has(r.id ?? null));
+  if (out.coach_actions) out.coach_actions = out.coach_actions.filter((r) => !deleted.has(r.session_id ?? null));
+  for (const t of ['next_session_targets', 'next_target_uses'] as const) {
+    const rows = out[t];
+    if (rows) out[t] = rows.filter((r) => !deleted.has(r.source_session_id ?? null));
   }
   return out as T;
 }

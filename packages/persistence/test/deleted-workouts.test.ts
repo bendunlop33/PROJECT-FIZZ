@@ -167,6 +167,7 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
       listFinishedBetweenReadable: ids((await s.listFinishedBetweenReadable(OWNER, '2000-01-01T00:00:00.000Z', '2100-01-01T00:00:00.000Z')).sessions),
       latestFinished: (await s.latestFinished(OWNER))?.session.id ?? null,
       listRepeatableIds: await s.listRepeatableIds(OWNER, 100),
+      listPastWorkoutIds: await s.listPastWorkoutIds(OWNER, 100),
       listFinishedRefs: (await s.listFinishedRefs(OWNER, 100)).map((r) => r.sessionId),
       listExerciseHistory: (await store.listExerciseHistory(OWNER, BENCH)).map((h) => [h.sessionId, h.sets.length]),
       countRecords: await store.countRecords(),
@@ -243,8 +244,9 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
         lines: /status IN \('active', 'finished'\)|status <> 'reverted'"|job\.status === 'reverted'|status = 'deleted' AND purge_after_utc|AND status = 'deleted'"|status IN \('finished', 'deleted'\)/,
       },
       'packages/persistence/src/backup/backup.ts': { why: 'backup counts by status, each on its own line', lines: /discardedWorkouts:|deletedWorkouts:/ },
+      'packages/persistence/src/data-domains.ts': { why: 'check-ins hidden with a deleted workout in exports and counts (review r2 S1)', lines: /FROM sessions d WHERE d\.check_in_id = c\.id AND d\.status = 'deleted'/ },
       'apps/mobile/src/import/import-service.ts': { why: 'import-job status (`reverted` = undone), not a session', lines: /\b(?:job|j|current\?)\.status/ },
-      'apps/mobile/src/screens/coach/CoachSheetScreen.tsx': { why: 'the coach chip’s `Deleted workout` label (DW16)', lines: /deleted: d\.aggregate\.session\.status === 'deleted'/ },
+      'apps/mobile/src/screens/coach/CoachSheetScreen.tsx': { why: 'the coach chip’s `Deleted workout` label (DW16)', lines: /out: d\.aggregate\.session\.status === 'deleted' \? 'deleted'/ },
     };
     const offenders: string[] = [];
     const walk = (dir: string) => {
@@ -269,6 +271,65 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
     expect(offenders).toEqual([]);
   });
 
+  it('every SQL read of `sessions` filters with `inHistorySql`, or is listed with a reason (DW19, review r2 S3)', () => {
+    const root = join(__dirname, '..', '..', '..');
+    const dirs = ['packages/domain/src', 'packages/persistence/src', 'packages/coach/src', 'packages/schemas/src', 'packages/providers/src', 'apps/mobile/src'];
+    // Each listed reader, matched on the text of its query from `FROM`/`JOIN sessions` to the end of its string.
+    const allowed: Record<string, { why: string; query: RegExp }[]> = {
+      'packages/persistence/src/sessions.ts': [
+        { why: 'one session by ID, whatever its status: `readAggregate`, the revision guards, the purge’s checks and tombstone', query: /FROM sessions WHERE id = \?['`]$/ },
+        { why: 'the deletion lifecycle: the purge, Recently deleted and its count', query: /status = 'deleted'/ },
+        { why: '`active`: the one unfinished workout', query: /status = 'active'/ },
+        { why: '`byStartOp`: idempotent start by operation ID', query: /start_operation_id = \?'$/ },
+        { why: '`listIds`: integrity checks over every stored session', query: /^'SELECT id FROM sessions ORDER BY id'$/ },
+      ],
+      'packages/persistence/src/integrity.ts': [{ why: 'integrity checks over every stored session', query: /^'SELECT id FROM sessions ORDER BY id'$/ }],
+      'packages/persistence/src/coach.ts': [{ why: '`startedFrom`: was a workout started from this one (active included)', query: /status IN \('active', 'finished'\)/ }],
+      'packages/persistence/src/documents.ts': [{ why: 'a check-in still linked to any stored session (deleted ones can be restored)', query: /FROM sessions WHERE check_in_id IN/ }],
+      'packages/persistence/src/store.ts': [{ why: 'the backup status’ unfinished-workout count', query: /status = 'active'/ }],
+      'packages/persistence/src/data-domains.ts': [{ why: 'check-ins hidden with a deleted workout (export and counts)', query: /status = 'deleted'/ }],
+      'packages/persistence/src/imports.ts': [
+        { why: '`appDates`: dates with a workout in the app (active included)', query: /status IN \('active', 'finished'\)/ },
+        { why: 'an import job’s deleted count and its dates in Recently deleted', query: /status = 'deleted'/ },
+        { why: '`writtenDates`: an import’s rows already written, any status (resume)', query: /^'SELECT local_date AS d FROM sessions WHERE import_job_id = \?'$/ },
+        { why: 'idempotent import write by start operation ID', query: /start_operation_id = \?'$/ },
+      ],
+    };
+    const offenders: string[] = [];
+    let scanned = 0;
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) {
+          if (name !== 'schema' && name !== 'generated') walk(path);
+          continue;
+        }
+        if (!/\.tsx?$/.test(name)) continue;
+        const rel = relative(root, path);
+        for (const query of sessionQueries(readFileSync(path, 'utf8'))) {
+          scanned += 1;
+          if (query.includes('inHistorySql(')) continue;
+          if (allowed[rel]?.some((a) => a.query.test(query))) continue;
+          offenders.push(`${rel}: ${query}`);
+        }
+      }
+    };
+    for (const d of dirs) walk(join(root, d));
+    expect(offenders).toEqual([]);
+    // The scan found the store's readers (it didn't silently match nothing).
+    expect(scanned).toBeGreaterThan(30);
+  });
+
+  it('the reader scan catches a reader with no status filter at all (review r2 S3)', () => {
+    const q = (src: string) => sessionQueries(src).filter((x) => !x.includes('inHistorySql('));
+    expect(q("const r = await q.getFirst('SELECT id FROM sessions WHERE owner_id = ? ORDER BY started_at_utc DESC LIMIT 1', [o]);")).toEqual(["'SELECT id FROM sessions WHERE owner_id = ? ORDER BY started_at_utc DESC LIMIT 1'"]);
+    expect(q('const r = `SELECT s.id FROM session_sets x JOIN sessions s ON s.id = x.session_id\n WHERE x.status = ?`;')).toHaveLength(1);
+    expect(q('const r = `SELECT id FROM sessions WHERE owner_id = ? AND ${inHistorySql()} LIMIT 1`;')).toEqual([]);
+    expect(q("// a comment: don't FROM sessions\nconst r = `SELECT sum(${inHistorySql()}) FROM sessions WHERE import_job_id = ?`;")).toEqual([]);
+    // Two subqueries in one string are checked apart.
+    expect(q('`(SELECT count(*) FROM sessions WHERE ${inHistorySql()}) AS a, (SELECT count(*) FROM sessions WHERE owner_id = ?) AS b`')).toEqual(['FROM sessions WHERE owner_id = ?) AS b`']);
+  });
+
   it('the DW19 scan catches the readers the review found (S2)', () => {
     const patterns = [
       /status\s*(?:===|!==|=|<>|!=)\s*'(?:finished|discarded|reverted)'|status\s+(?:NOT\s+)?IN\s*\([^)]*'(?:finished|discarded|reverted)'/,
@@ -284,16 +345,93 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
   });
 });
 
+/**
+ * Every SQL query on `sessions` in a source file. String literals are found
+ * with a small lexer (comments skipped, template `${…}` nested); each one is
+ * cut at every `FROM sessions` / `JOIN sessions`, the first piece keeping the
+ * literal's start, so two subqueries in one string are checked apart. Throws
+ * if a clause is found outside any literal (the lexer lost its place).
+ */
+function sessionQueries(src: string): string[] {
+  const clause = /\b(?:FROM|JOIN)\s+sessions\b/g;
+  const literals: string[] = [];
+  const skipString = (i: number): number => {
+    const quote = src.charAt(i);
+    let j = i + 1;
+    while (j < src.length) {
+      const c = src.charAt(j);
+      if (c === '\\') j += 2;
+      else if (c === quote) return j + 1;
+      else if (quote === '`' && c === '$' && src.charAt(j + 1) === '{') j = skipExpr(j + 2);
+      else if (quote !== '`' && c === '\n') return j;
+      else j += 1;
+    }
+    return j;
+  };
+  const skipExpr = (j: number): number => {
+    let depth = 1;
+    while (j < src.length && depth > 0) {
+      const c = src.charAt(j);
+      if (c === "'" || c === '"' || c === '`') {
+        j = skipString(j);
+        continue;
+      }
+      if (c === '{') depth += 1;
+      else if (c === '}') depth -= 1;
+      j += 1;
+    }
+    return j;
+  };
+  let code = '';
+  for (let i = 0; i < src.length; ) {
+    const c = src.charAt(i);
+    if (c === '/' && src.charAt(i + 1) === '/') {
+      const nl = src.indexOf('\n', i);
+      i = nl === -1 ? src.length : nl;
+    } else if (c === '/' && src.charAt(i + 1) === '*') {
+      const close = src.indexOf('*/', i + 2);
+      i = close === -1 ? src.length : close + 2;
+    } else if (c === "'" || c === '"' || c === '`') {
+      const end = skipString(i);
+      literals.push(src.slice(i, end));
+      i = end;
+    } else {
+      code += c;
+      i += 1;
+    }
+  }
+  if (clause.test(code)) throw new Error('a sessions clause outside a string literal: the scan lost its place');
+  const out: string[] = [];
+  for (const lit of literals) {
+    const at = [...lit.matchAll(clause)].map((m) => m.index);
+    at.forEach((pos, i) => {
+      out.push(lit.slice(i === 0 ? 0 : pos, at[i + 1] ?? lit.length).replace(/\s+/g, ' ').trim());
+    });
+  }
+  return out;
+}
+
 describe('Recently deleted and the purge (§2.5, §6.4)', () => {
   it('lists deleted workouts newest deletion first until the end of their 30 days, then never (DW20, DW21)', async () => {
     const [a, b] = history;
     if (!a || !b) throw new Error('fixture');
     await del([a], 'del-a', NOW);
     await del([b], 'del-b', z('2026-10-10T09:00:00.000Z'));
-    expect((await store.repos.sessions.listRecentlyDeleted(OWNER, NOW.utc)).map((x) => x.session.id)).toEqual([b.session.id, a.session.id]);
+    expect((await store.repos.sessions.listRecentlyDeleted(OWNER, NOW.utc)).sessions.map((x) => x.session.id)).toEqual([b.session.id, a.session.id]);
     expect(await store.repos.sessions.countRecentlyDeleted(OWNER, NOW.utc)).toBe(2);
     // Day 31 for `a`: gone from the list even though the purge hasn't run.
-    expect((await store.repos.sessions.listRecentlyDeleted(OWNER, DAY_31.utc)).map((x) => x.session.id)).toEqual([b.session.id]);
+    expect((await store.repos.sessions.listRecentlyDeleted(OWNER, DAY_31.utc)).sessions.map((x) => x.session.id)).toEqual([b.session.id]);
+  });
+
+  it('one deleted workout that can’t be read is counted, and the others stay listed (review r2 S2)', async () => {
+    const [a, b] = history;
+    if (!a || !b) throw new Error('fixture');
+    await del([a, b]);
+    await store.db.driver.run("UPDATE sessions SET gym_changes = '{\"not\":\"a list\"}' WHERE id = ?", [a.session.id]);
+    const listed = await store.repos.sessions.listRecentlyDeleted(OWNER, NOW.utc);
+    expect(listed.sessions.map((x) => x.session.id)).toEqual([b.session.id]);
+    expect(listed.unreadable).toBe(1);
+    expect(await store.repos.sessions.countRecentlyDeleted(OWNER, NOW.utc)).toBe(2);
   });
 
   it('the purge removes every row of a purge-due workout and leaves only a tombstone with no training values (DW21)', async () => {
@@ -457,10 +595,12 @@ describe('imports (§6.2)', () => {
     if (!first) throw new Error('fixture');
     await del([first]);
     expect([...(await store.repos.imports.importedDates(OWNER)).keys()].sort()).toEqual(['2026-10-01', '2026-10-03']);
-    expect([...(await store.repos.imports.deletedImportDates(OWNER))]).toEqual(['2026-10-01']);
+    expect([...(await store.repos.imports.deletedImportDates(OWNER, NOW.utc))]).toEqual(['2026-10-01']);
+    // Past its 30 days but not yet purged: no longer counted as in Recently deleted (review r2 N1).
+    expect([...(await store.repos.imports.deletedImportDates(OWNER, DAY_31.utc))]).toEqual([]);
     await store.repos.sessions.purgeDeleted({ ownerId: OWNER, opId: 'p', at: DAY_31 });
     expect([...(await store.repos.imports.importedDates(OWNER)).keys()]).toEqual(['2026-10-03']);
-    expect([...(await store.repos.imports.deletedImportDates(OWNER))]).toEqual([]);
+    expect([...(await store.repos.imports.deletedImportDates(OWNER, NOW.utc))]).toEqual([]);
     expect((await checkIntegrity(store.db)).ok).toBe(true);
   });
 });
@@ -477,6 +617,45 @@ describe('exports and backups (§6.3, §6.5)', () => {
     expect(text).not.toContain(b.session.id);
     expect(mine.tables.purged_sessions).toBeUndefined();
     expect(mine.tables.sessions).toHaveLength(history.length - 2);
+  });
+
+  it('My data leaves out a deleted workout’s check-in, its next-session targets and the coach’s actions on it; a live workout’s check-in stays (DW18, §5; review r2 S1)', async () => {
+    const [a, b, c] = history;
+    const CI_A = '00000000-0000-4000-8000-00000000c1a0';
+    const CI_C = '00000000-0000-4000-8000-00000000c5a0';
+    if (!a || !b || !c) throw new Error('fixture');
+    await store.db.write(async (tx) => {
+      for (const ci of [CI_A, CI_C])
+        await tx.run('INSERT INTO check_ins (id, owner_id, recorded_at_utc, version, updated_at_utc, data) VALUES (?, ?, ?, 1, ?, ?)', [ci, OWNER, NOW.utc, NOW.utc, JSON.stringify({ note: ci === CI_A ? 'sore after test session' : 'fine' })]);
+      await tx.run("INSERT INTO next_session_targets (id, owner_id, source_session_id, exercise_id, action_id, status, version, updated_at_utc, data) VALUES ('nst-a', ?, ?, ?, 'act-a', 'saved', 1, ?, '{}')", [OWNER, a.session.id, BENCH, NOW.utc]);
+      await tx.run("INSERT INTO next_session_targets (id, owner_id, source_session_id, exercise_id, action_id, status, version, updated_at_utc, data) VALUES ('nst-c', ?, ?, ?, 'act-c', 'saved', 1, ?, '{}')", [OWNER, c.session.id, BENCH, NOW.utc]);
+      await tx.run("INSERT INTO next_target_uses (owner_id, start_op_id, source_session_id, created_at_utc) VALUES (?, 'use-a', ?, ?)", [OWNER, a.session.id, NOW.utc]);
+      await tx.run(
+        "INSERT INTO coach_actions (id, owner_id, op_id, turn_id, session_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES ('act-a', ?, 'op-act-a', NULL, ?, 'set_next_session_targets', 'committed', 1, ?, ?, '{}')",
+        [OWNER, a.session.id, NOW.utc, NOW.utc],
+      );
+    });
+    const answered = async (x: SessionAggregate, checkInId: string): Promise<SessionAggregate> => {
+      const next = { ...x, session: { ...x.session, checkIn: { kind: 'answered' as const, checkInId }, version: x.session.version + 1 }, revision: x.revision + 1 };
+      expect(await store.repos.sessions.save(next, x.revision)).toMatchObject({ ok: true });
+      return next;
+    };
+    const a2 = await answered(a, CI_A);
+    await answered(c, CI_C);
+    const before = await countDomainsIn(store.db.driver);
+    await del([a2, b]);
+    const mine = await exportDomain(store.db, 'your_data');
+    const text = JSON.stringify(mine);
+    for (const gone of [CI_A, 'nst-a', 'act-a', 'use-a', 'sore after test session']) expect(text).not.toContain(gone);
+    expect(mine.tables.check_ins?.map((r) => r.id)).toEqual([CI_C]);
+    expect(mine.tables.next_session_targets?.map((r) => r.id)).toEqual(['nst-c']);
+    // The counts agree with the export, in SQL and in JS.
+    const after = await countDomainsIn(store.db.driver);
+    expect(after.yourData.checkIns).toBe(before.yourData.checkIns - 1);
+    expect(after).toEqual(countDomains(await store.db.read((q) => exportTables(q))));
+    // Restore brings the check-in back into the count.
+    expect((await store.repos.sessions.restoreWorkouts({ ownerId: OWNER, items: [{ sessionId: a.session.id, expectedVersion: a2.session.version + 1 }], opId: 'res-a', at: NOW })).ok).toBe(true);
+    expect((await countDomainsIn(store.db.driver)).yourData.checkIns).toBe(before.yourData.checkIns);
   });
 
   it('a backup carries the deleted state and its dates; the restored workout is in Recently deleted, not history (DW27)', async () => {
@@ -503,12 +682,12 @@ describe('exports and backups (§6.3, §6.5)', () => {
         expect(restored).toMatchObject({ ok: true, status: 'restored' });
         const r = phone.store.repos.sessions;
         expect((await r.get(a.session.id))?.session).toMatchObject({ status: 'deleted', deletion: { at: NOW, opId: 'del-a', purgeAfterUtc: purgeAfterUtc(NOW) } });
-        expect((await r.listRecentlyDeleted(OWNER, '2026-10-12T08:00:00.000Z')).map((x) => x.session.id)).toEqual([a.session.id]);
+        expect((await r.listRecentlyDeleted(OWNER, '2026-10-12T08:00:00.000Z')).sessions.map((x) => x.session.id)).toEqual([a.session.id]);
         expect(await r.listRepeatableIds(OWNER, 100)).not.toContain(a.session.id);
         expect(await r.get(b.session.id)).toBeNull();
         expect(await r.isPurged(b.session.id)).toBe(true);
         // Past its 30 days at restore time: never shown, and the next purge removes it.
-        expect(await r.listRecentlyDeleted(OWNER, DAY_31.utc)).toEqual([]);
+        expect((await r.listRecentlyDeleted(OWNER, DAY_31.utc)).sessions).toEqual([]);
         expect(await r.purgeDeleted({ ownerId: OWNER, opId: 'after-restore', at: DAY_31 })).toMatchObject({ purged: [a.session.id] });
         expect((await checkIntegrity(phone.store.db)).ok).toBe(true);
         await phone.close();
