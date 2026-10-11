@@ -501,3 +501,55 @@ export function exercisesNamedIn(text: string, exercises: readonly { exerciseId:
   }
   return [...new Set(out)];
 }
+
+/** Name words too general to say which exercise was meant ("press", "machine", "seated"). */
+const GENERIC_NAME_WORDS = new Set([
+  'press', 'presses', 'row', 'rows', 'raise', 'raises', 'curl', 'curls', 'extension', 'extensions', 'fly', 'flye', 'flyes', 'flies',
+  'machine', 'cable', 'cables', 'dumbbell', 'dumbbells', 'db', 'barbell', 'bb', 'kettlebell', 'kb', 'band', 'smith', 'ez', 'bar',
+  'seated', 'standing', 'lying', 'incline', 'decline', 'flat', 'single', 'one', 'two', 'arm', 'grip', 'close', 'wide', 'narrow',
+  'paused', 'pause', 'deficit', 'front', 'rear', 'side', 'bodyweight', 'assisted', 'weighted', 'split', 'reverse', 'high', 'low',
+  'degree', 'the', 'and', 'with', 'on', 'to', 'up', 'down',
+]);
+
+/**
+ * Exercises a short name in the words could mean ("bench" for Bench press,
+ * "deadlifts" for Romanian deadlift), for Ben to pick from, never to act on
+ * alone. Only a distinctive word of the name counts: never a body part
+ * ("back" for Back squat) or a general word ("press").
+ */
+export function exercisesLooselyNamedIn(text: string, exercises: readonly { exerciseId: string; exerciseName: string }[]): string[] {
+  const words = (s: string): string[] => s.toLowerCase().replace(/[’']/g, '').split(/[^a-z0-9]+/).filter((w) => w.length > 0);
+  const said = new Set(words(text));
+  const has = (w: string): boolean => said.has(w) || said.has(`${w}s`) || said.has(`${w}es`) || (w.endsWith('s') && said.has(w.slice(0, -1)));
+  const out: string[] = [];
+  for (const ex of exercises) {
+    const distinctive = words(ex.exerciseName).filter((w) => w.length >= 3 && !GENERIC_NAME_WORDS.has(w) && !BODY_SET.has(w) && !BODY_QUALIFIERS.has(w));
+    if (distinctive.some(has)) out.push(ex.exerciseId);
+  }
+  return [...new Set(out)];
+}
+
+/**
+ * Which movements `Pain` flags after Ben mentions pain to the coach (review S5, r2 S1),
+ * in workout order. `pick` says to show them as chips rather than flag at once.
+ * - Whole names in his words: those (flagged at once when there's one).
+ * - Else short names ("bench"): those, with the exercise in focus, to pick from.
+ * - Else, in a workout, the exercise in focus; outside one, every movement to pick from.
+ */
+export function painFlagChoices(
+  words: string | null,
+  exercises: readonly { exerciseId: string; exerciseName: string }[],
+  focusExerciseId: string | null,
+): { exerciseIds: string[]; pick: boolean } {
+  const inOrder = (ids: ReadonlySet<string>): string[] => exercises.map((e) => e.exerciseId).filter((id) => ids.has(id));
+  const named = words === null ? [] : exercisesNamedIn(words, exercises);
+  if (named.length > 0) return { exerciseIds: inOrder(new Set(named)), pick: named.length > 1 };
+  const loose = words === null ? [] : exercisesLooselyNamedIn(words, exercises);
+  if (loose.length > 0) {
+    const ids = inOrder(new Set([...loose, ...(focusExerciseId === null ? [] : [focusExerciseId])]));
+    return { exerciseIds: ids, pick: true };
+  }
+  if (focusExerciseId !== null) return { exerciseIds: [focusExerciseId], pick: false };
+  const all = exercises.map((e) => e.exerciseId);
+  return { exerciseIds: all, pick: all.length > 1 };
+}

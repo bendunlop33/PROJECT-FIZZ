@@ -4,6 +4,7 @@ import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
 import { NBSP } from '@fizz/domain';
 import type { TextCoachState } from '@fizz/providers';
 
+import type { CoachEntry } from '../src/coach/coach-service';
 import { nextTimeView } from '../src/coach/next-time-view';
 import { statusView, threadRows } from '../src/coach/sheet-view';
 import { slotAfterTurn, slotView } from '../src/coach/slot-view';
@@ -171,6 +172,20 @@ describe('C7: in the workout (offer, Adjust, banner, Undo)', () => {
     return { s, sessionId: a.session.id, bench, pulldown, benchSets: setsOf(bench.id), pulldownSets: setsOf(pulldown.id) };
   }
 
+  it('in a workout, Pain flags the movement Ben named, not the one in focus; the focus row only when none is named (review r2 S1)', async () => {
+    const { s, sessionId, bench, pulldown } = await twoExerciseWorkout();
+    const entry = { kind: 'workout' as const, sessionId };
+    const focus = { exerciseId: pulldown.exerciseId, name: 'Lat pulldown' };
+    // Named in full: that movement, flagged at once.
+    expect(await s.coach.painChoices(entry, 'bench press earlier hurt my shoulder, go lighter', focus)).toEqual({ choices: [{ exerciseId: bench.exerciseId, name: 'Bench press' }], pick: false });
+    // A short name: that movement and the one in focus, to pick from (never Lat pulldown alone).
+    expect(await s.coach.painChoices(entry, 'bench earlier hurt my shoulder, go lighter', focus)).toEqual({ choices: [{ exerciseId: bench.exerciseId, name: 'Bench press' }, focus], pick: true });
+    expect((await s.coach.painChoices(entry, 'bench press and lat pulldown both hurt', focus)).choices.map((c) => c.name)).toEqual(['Bench press', 'Lat pulldown']);
+    // Nothing named: the one in focus.
+    expect(await s.coach.painChoices(entry, 'my elbow hurts', focus)).toEqual({ choices: [focus], pick: false });
+    expect(await s.coach.painChoices(entry, null, focus)).toEqual({ choices: [focus], pick: false });
+  });
+
   it('no offer for an exercise with no pending set left, even with another exercise still to do (review S1)', async () => {
     const { s, sessionId, benchSets, pulldownSets } = await twoExerciseWorkout();
     expect(pulldownSets.every((x) => x.status === 'pending')).toBe(true);
@@ -275,14 +290,20 @@ describe('Sore or pain? outside a workout (review S5)', () => {
   it('Today: the named movement, else the last workout’s movements to choose from; nothing to flag before any workout', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
-    expect(await s.coach.painChoices({ kind: 'today' }, 'my shoulder hurts')).toEqual([]);
+    expect(await s.coach.painChoices({ kind: 'today' }, 'my shoulder hurts')).toEqual({ choices: [], pick: false });
     const done = await logWorkout(h, s, gymId, [
       { exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] },
       { exercise: 'Lat pulldown', sets: [{ load: 50, reps: 10 }] },
     ]);
-    expect((await s.coach.painChoices({ kind: 'today' }, 'my shoulder hurts')).map((c) => c.name)).toEqual(['Bench press', 'Lat pulldown']);
-    expect((await s.coach.painChoices({ kind: 'today' }, 'shoulder hurts on bench press')).map((c) => c.name)).toEqual(['Bench press']);
-    expect((await s.coach.painChoices({ kind: 'summary', sessionId: done }, null)).map((c) => c.name)).toEqual(['Bench press', 'Lat pulldown']);
+    const names = async (words: string | null, entry: CoachEntry = { kind: 'today' }) => {
+      const r = await s.coach.painChoices(entry, words);
+      return { names: r.choices.map((c) => c.name), pick: r.pick };
+    };
+    expect(await names('my shoulder hurts')).toEqual({ names: ['Bench press', 'Lat pulldown'], pick: true });
+    expect(await names('shoulder hurts on bench press')).toEqual({ names: ['Bench press'], pick: false });
+    // A short name is offered to pick, never flagged on a guess.
+    expect(await names('bench hurt my shoulder')).toEqual({ names: ['Bench press'], pick: true });
+    expect(await names(null, { kind: 'summary', sessionId: done })).toEqual({ names: ['Bench press', 'Lat pulldown'], pick: true });
   });
 });
 

@@ -129,7 +129,7 @@ describe('the workout coach slot (one item: pending > banner > outcome > offer)'
   it('the banner hides Undo once the gym changed after the coach change (review r2 B1)', () => {
     const set = (gymChanges: number) => ({ id: ID(103), planned: { load: kg(97.5), reps: null, durationS: null, rpe: null, rir: null, source: 'coach' as const, coach: { actionId: ID(1), before: { load: kg(100), reps: null, durationS: null, rpe: null, rir: null }, gymChanges } } });
     const change = { actionId: ID(50), kind: 'change' as const };
-    const workout = (gymChanges: number, entries: (typeof change)[]) => ({ session: { gymChanges: entries }, sets: [set(gymChanges)] }) as unknown as Parameters<typeof slotView>[0]['workout'];
+    const workout = (gymChanges: number, entries: (typeof change)[]) => ({ session: { gymChanges: entries }, sets: [set(gymChanges)] }) as unknown as NonNullable<Parameters<typeof slotView>[0]['workout']>;
     expect(slotView({ pending: false, adjustment: adjust, outcome: null, offer: null, workout: workout(0, []) })).toMatchObject({ kind: 'banner', canUndo: true });
     expect(slotView({ pending: false, adjustment: adjust, outcome: null, offer: null, workout: workout(0, [change]) })).toMatchObject({ kind: 'banner', canUndo: false });
     expect(slotView({ pending: false, adjustment: adjust, outcome: null, offer: null, workout: workout(1, [change]) })).toMatchObject({ kind: 'banner', canUndo: true });

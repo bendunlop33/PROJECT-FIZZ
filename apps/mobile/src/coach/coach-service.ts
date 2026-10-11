@@ -33,9 +33,9 @@ import {
   DEFAULT_COACH_TRIGGER_THRESHOLDS,
   evaluateCoachTrigger,
   exercisesNamedForPain,
-  exercisesNamedIn,
   isTriggerKind,
   nextSessionBases,
+  painFlagChoices,
   shouldShowCoachOffer,
   toMs,
   unspecifiedPain,
@@ -396,7 +396,12 @@ export function createCoachService(deps: CoachServiceDeps) {
      * the workout in view (the Summary's, or the last finished one from
      * Today). Empty: nothing to flag, so the question isn't shown.
      */
-    async painChoices(entry: CoachEntry, words: string | null): Promise<{ exerciseId: string; name: string }[]> {
+    /**
+     * What `Pain` can flag after Ben mentions pain (`painFlagChoices`): the movements his words
+     * name; in a workout, else the exercise in focus (`focus`); else every movement of the
+     * workout (or the last one, from Today). `pick`: show them as chips (review S5, r2 S1).
+     */
+    async painChoices(entry: CoachEntry, words: string | null, focus: { exerciseId: string; name: string } | null = null): Promise<{ choices: { exerciseId: string; name: string }[]; pick: boolean }> {
       const p = await owner();
       const sessionId = entry.kind === 'today' ? ((await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []))[0]?.sessionId ?? null) : entry.sessionId;
       const session = sessionId === null ? null : await repos().sessions.get(sessionId).catch(() => null);
@@ -407,8 +412,10 @@ export function createCoachService(deps: CoachServiceDeps) {
         seen.add(e.exerciseId);
         all.push({ exerciseId: e.exerciseId, exerciseName: e.exerciseName });
       }
-      const named = words === null ? [] : exercisesNamedIn(words, all);
-      return (named.length > 0 ? all.filter((e) => named.includes(e.exerciseId)) : all).map((e) => ({ exerciseId: e.exerciseId, name: e.exerciseName }));
+      if (focus !== null && !seen.has(focus.exerciseId)) all.push({ exerciseId: focus.exerciseId, exerciseName: focus.name });
+      const r = painFlagChoices(words, all, focus?.exerciseId ?? null);
+      const name = new Map(all.map((e) => [e.exerciseId, e.exerciseName]));
+      return { choices: r.exerciseIds.map((id) => ({ exerciseId: id, name: name.get(id) ?? '' })), pick: r.pick };
     },
 
     async nextTargets(sessionId: string): Promise<NextSessionTargetRecord[]> {

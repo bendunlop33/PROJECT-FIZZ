@@ -67,9 +67,11 @@ export function CoachSheetScreen() {
   const [threads, setThreads] = useState<CoachThread[] | null>(null);
   const [workout, setWorkout] = useState<{ title: string | null; active: boolean; bar: string; exercise: { id: string; name: string } | null } | null>(null);
   const [askPain, setAskPain] = useState(false);
-  /** Outside a workout: the movements `Pain` can flag; `picking` shows them as chips. */
+  /** The movements `Pain` can flag (named, else the focus row, else all); `picking` shows them as chips. */
   const [painChoices, setPainChoices] = useState<{ exerciseId: string; name: string }[]>([]);
   const [picking, setPicking] = useState(false);
+  /** Show the choices as chips even when there is one (a short name, say "bench"; never flagged on a guess). */
+  const [painPick, setPainPick] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const lastInput = useRef<BenInput | null>(null);
   const sendGuard = useRef(0);
@@ -190,12 +192,13 @@ export function CoachSheetScreen() {
       setThreadId(r.threadId);
       setPicking(false);
       if (r.askPain === null) setAskPain(false);
-      else if (workout?.active === true && workout.exercise !== null) setAskPain(true);
       else {
-        // Outside a workout too (review S5): the named movement, or which one.
-        const choices = await services.coach.painChoices(entry, typed).catch(() => []);
-        setPainChoices(choices);
-        setAskPain(choices.length > 0);
+        // The movement Ben's words name (chips if several); in a workout, else the one in focus (review S5, r2 S1).
+        const focusEx = workout?.active === true && workout.exercise !== null ? { exerciseId: workout.exercise.id, name: workout.exercise.name } : null;
+        const pc = await services.coach.painChoices(entry, typed, focusEx).catch(() => ({ choices: focusEx === null ? [] : [focusEx], pick: false }));
+        setPainChoices(pc.choices);
+        setPainPick(pc.pick);
+        setAskPain(pc.choices.length > 0);
       }
       await loadRows(r.threadId);
       if (r.cards.length > 0) {
@@ -234,11 +237,9 @@ export function CoachSheetScreen() {
   }
 
   async function pain() {
-    const ex = workout?.active === true ? (workout.exercise ?? null) : null;
-    if (ex !== null) return flag(ex);
     const [only, ...more] = painChoices;
     if (only === undefined) return;
-    if (more.length === 0) return flag({ id: only.exerciseId, name: only.name });
+    if (more.length === 0 && !painPick) return flag({ id: only.exerciseId, name: only.name });
     setPicking(true);
   }
 
