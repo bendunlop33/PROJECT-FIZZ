@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Linking, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import type { ContextDescription } from '@fizz/coach';
+import { undoOpId, type ContextDescription } from '@fizz/coach';
 import { coachUndoRefusal, toMs } from '@fizz/domain';
 import type { BenInput, CoachThread } from '@fizz/schemas';
 
@@ -230,7 +230,7 @@ export function CoachSheetScreen() {
   }
 
   async function undo(actionId: string) {
-    const r = await services.coach.undo(actionId, `undo:${actionId}:${newUuid()}`).catch(() => null);
+    const r = await services.coach.undo(actionId, undoOpId(actionId)).catch(() => null);
     if (r === null) {
       setNotice('Couldn’t undo.');
       return;

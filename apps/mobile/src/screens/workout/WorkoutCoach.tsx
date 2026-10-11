@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 
-import { renderActionResult } from '@fizz/coach';
+import { renderActionResult, undoOpId } from '@fizz/coach';
 import type { CoachTrigger } from '@fizz/domain';
 import type { ActionRecord, BenInput, SessionAggregate } from '@fizz/schemas';
 
@@ -139,8 +139,9 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
       if (pending !== null) services.coach.stop(pending);
     },
     undo: (actionId) => {
+      // One opId per action: a double tap (or an Undo already made in the sheet) replays, never `already undone`.
       void services.coach
-        .undo(actionId, `undo:${actionId}:${newUuid()}`)
+        .undo(actionId, undoOpId(actionId))
         .then((r) => {
           // The line is rendered from the saved undo record (what came back, what was already logged).
           setAdjustment(null);

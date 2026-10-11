@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
+import { nextTargetTapOpId, renderActionResult, undoOpId, type CoachModelPort, type ModelEvent, type ModelRequest } from '@fizz/coach';
 import type { TextCoachState } from '@fizz/providers';
 
 import { nextTimeView } from '../src/coach/next-time-view';
@@ -218,5 +218,41 @@ describe('Try again retries its own turn, also after a relaunch', () => {
     const { services: third } = await h.launch();
     expect(await third.coach.runSummaryTurn(first)).toBeNull();
     expect(model.requests.length).toBe(calls);
+  });
+});
+
+describe('A double-tapped Undo undoes once and reports success both times', () => {
+  it('the workout banner / sheet card: the second tap replays the first, with the same line', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }, { load: 60, reps: 8 }] }]);
+    h.clockMs += 86_400_000;
+    const started = await s.workout.start({ gymId, opId: 'start-dbl', checkIn: null, nextOf: first });
+    if (!started.ok) throw new Error(started.error.message);
+    const sessionId = started.aggregate.session.id;
+    model = new StepModel([lowerPending(), () => replyWith('Lighter.')]);
+    const r = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'chip', chip: 'too_hard' }, turnId: h.ids() });
+    const actionId = r.cards.find((c) => c.record.detail.kind === 'adjust_pending_sets')?.record.actionId ?? '';
+    const [a, b] = await Promise.all([s.coach.undo(actionId, undoOpId(actionId)), s.coach.undo(actionId, undoOpId(actionId))]);
+    expect([a.result.status, b.result.status].sort()).toEqual(['replayed', 'written']);
+    expect(renderActionResult(b.undo, 'slot').text).toBe(renderActionResult(a.undo, 'slot').text);
+    expect(renderActionResult(b.undo, 'slot').text).not.toMatch(/Couldn/);
+  });
+
+  it('a Next time row: the second Undo tap replays, no “Changed since”', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }] }]);
+    model = new StepModel([saveNextTarget(), () => replyWith('Ok.')]);
+    await s.coach.runSummaryTurn(first);
+    const [row] = await s.coach.nextTargets(first);
+    if (!row) throw new Error('no row');
+    const [a, b] = await Promise.all([s.coach.tapNextTarget(row, 'undo', nextTargetTapOpId(row, 'undo')), s.coach.tapNextTarget(row, 'undo', nextTargetTapOpId(row, 'undo'))]);
+    expect([a.status, b.status].sort()).toEqual(['replayed', 'written']);
+    // A later tap on the row as it is now is a new intent.
+    const [now] = await s.coach.nextTargets(first);
+    if (!now) throw new Error('no row');
+    expect(nextTargetTapOpId(now, 'use_coach')).not.toBe(nextTargetTapOpId(row, 'use_coach'));
+    expect(await s.coach.tapNextTarget(now, 'use_coach', nextTargetTapOpId(now, 'use_coach'))).toMatchObject({ status: 'written', row: { status: 'saved' } });
   });
 });
