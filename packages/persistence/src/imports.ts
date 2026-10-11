@@ -18,7 +18,7 @@ import { aliasUses, localDateOf, toMs, type EarlierImport } from '@fizz/domain';
 import type { Database } from './database';
 import { EXERCISE_SPEC, listDocuments, saveDocumentIn, decodeDocument, type DocumentSpec } from './documents';
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
-import { checkRead, checkWrite, insert, parseJson, parseJsonOrNull, rowId } from './sql';
+import { checkRead, checkWrite, inHistorySql, insert, parseJson, parseJsonOrNull, rowId } from './sql';
 import { writeAggregate } from './sessions';
 
 /**
@@ -184,6 +184,32 @@ export class SqliteImports {
     });
   }
 
+  /**
+   * Workouts of a job by state (delete-workouts §6.2): `finished` in history,
+   * `deleted` in Recently deleted at `nowUtc` (the Undo alert's
+   * `Includes 3 in Recently deleted.`, the import's `· 3 deleted`).
+   */
+  jobWorkoutCounts(jobId: string, nowUtc: string): Promise<{ finished: number; deleted: number }> {
+    return this.db.read(async (q) => {
+      const row = await q.getFirst<{ finished: number | null; deleted: number | null }>(
+        `SELECT sum(${inHistorySql()}) AS finished, sum(status = 'deleted' AND purge_after_utc > ?) AS deleted FROM sessions WHERE import_job_id = ?`,
+        [nowUtc, jobId],
+      );
+      return { finished: row?.finished ?? 0, deleted: row?.deleted ?? 0 };
+    });
+  }
+
+  /**
+   * Local dates of imported workouts now in Recently deleted or awaiting the
+   * purge (§6.2, DW26): a re-import treats them as already in the app.
+   */
+  deletedImportDates(ownerId: string): Promise<Set<string>> {
+    return this.db.read(async (q) => {
+      const rows = await q.getAll<{ d: string | null }>("SELECT local_date AS d FROM sessions WHERE owner_id = ? AND import_job_id IS NOT NULL AND status = 'deleted'", [ownerId]);
+      return new Set(rows.map((r) => r.d).filter((d): d is string => d !== null));
+    });
+  }
+
   /** Workouts of a job already written (any status), by local date. */
   writtenDates(jobId: string): Promise<Set<string>> {
     return this.db.read(async (q) => {
@@ -268,8 +294,11 @@ export class SqliteImports {
       if (!job) return { ok: false, error: 'not_found' };
       if (job.status === 'reverted') return job.revert?.opId === opId ? { ok: true, job, duplicate: true, workouts: job.revert.workouts } : { ok: false, error: 'wrong_status' };
       if (job.version !== expectedVersion) return { ok: false, error: 'stale' };
+      // Deleted workouts of the import are reverted too and leave Recently deleted (delete-workouts §6.2, DW25).
       const changed = await tx.run(
-        "UPDATE sessions SET status = 'reverted', version = version + 1, revision = revision + 1, last_activity_at_utc = ? WHERE import_job_id = ? AND status = 'finished'",
+        `UPDATE sessions SET status = 'reverted', version = version + 1, revision = revision + 1, last_activity_at_utc = ?,
+           deleted_at_utc = NULL, deleted_at_tz = NULL, deleted_by_op_id = NULL, purge_after_utc = NULL
+         WHERE import_job_id = ? AND status IN ('finished', 'deleted')`,
         [at.utc, jobId],
       );
       const next: ImportJob = { ...job, status: 'reverted', revert: { at, opId, workouts: changed.changes }, version: job.version + 1, updatedAtUtc: at.utc };

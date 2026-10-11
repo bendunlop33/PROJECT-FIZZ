@@ -19,7 +19,7 @@ import {
   type PainFlag,
   type PlaybookCandidate,
 } from '@fizz/schemas';
-import { nextTargetSourceBasis, reduceSession } from '@fizz/domain';
+import { isInHistory, nextTargetSourceBasis, reduceSession } from '@fizz/domain';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
 import { decodeDocument, erase, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
@@ -405,7 +405,7 @@ export class SqliteCoachStore {
         const source = await readAggregate(tx, write.action.detail.kind === 'set_next_session_targets' ? write.action.detail.sourceSessionId : '');
         if (source === null || source.session.ownerId !== ownerId) throw new Rollback('missing');
         // The same sets as the review saw (CA10): a rename or a time edit since isn't a change to the targets' basis.
-        if (nextTargetSourceBasis(source) !== write.sourceBasis || source.session.status !== 'finished' || (await startedFrom(tx, ownerId, source.session.id)) !== null) throw new Rollback('stale_version');
+        if (nextTargetSourceBasis(source) !== write.sourceBasis || !isInHistory(source.session) || (await startedFrom(tx, ownerId, source.session.id)) !== null) throw new Rollback('stale_version');
         // A newer review replaces the rows, including a tap Ben made on an earlier review's row
         // (only reachable through his own `Try again` after a review that saved then failed; review N2).
         // The earlier review's card can't revert them after that (`changed_since`).

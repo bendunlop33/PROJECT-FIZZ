@@ -19,6 +19,7 @@ import { SqliteImports } from './imports';
 import { SqliteCoachStore } from './coach';
 import { SqliteDrafts } from './drafts';
 import { SqliteSessions } from './sessions';
+import { inHistorySql } from './sql';
 
 export interface SqliteRepositories extends Repositories {
   gyms: SqliteGyms;
@@ -100,10 +101,10 @@ export async function openStore(driver: SqlDriver, options: OpenStoreOptions = {
       db.read(async (q) => {
         const row = await q.getFirst<Record<keyof RecordCounts, number>>(
           `SELECT
-             (SELECT count(*) FROM sessions WHERE status = 'finished') AS finishedWorkouts,
+             (SELECT count(*) FROM sessions WHERE ${inHistorySql()}) AS finishedWorkouts,
              (SELECT count(*) FROM sessions WHERE status = 'active') AS unfinishedWorkouts,
              (SELECT count(*) FROM session_sets s JOIN sessions p ON p.id = s.session_id
-                WHERE s.status = 'completed' AND p.status = 'finished') AS loggedSets,
+                WHERE s.status = 'completed' AND ${inHistorySql('p')}) AS loggedSets,
              (SELECT count(*) FROM gyms) AS gyms,
              (SELECT count(*) FROM exercises) AS exercises`,
         );
@@ -116,7 +117,7 @@ export async function openStore(driver: SqlDriver, options: OpenStoreOptions = {
         };
       }),
     finishedWorkoutsDigest: () =>
-      db.read(async (q) => finishedWorkoutsDigest(await q.getAll<{ id: string; revision: number }>("SELECT id, revision FROM sessions WHERE status = 'finished'"))),
+      db.read(async (q) => finishedWorkoutsDigest(await q.getAll<{ id: string; revision: number }>(`SELECT id, revision FROM sessions WHERE ${inHistorySql()}`))),
     close: () => db.close(),
   };
 }
