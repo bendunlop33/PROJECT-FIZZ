@@ -9,6 +9,7 @@ import { FrequencyHeader, FrequencyRow, Segmented, WindowPicker } from '../../pr
 import { useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Screen, StatusLine, TextButton } from '../../ui';
+import { AskPill } from '../coach/AskPill';
 import { HowCountedSheet } from './sheets';
 
 /**
@@ -57,11 +58,23 @@ export function MusclesScreen() {
     );
   }
   const home = data.state === 'ready' ? data.value : null;
-  if (home === null) return <Screen>{null}</Screen>;
+  if (home === null) {
+    // Loading: nothing yet. Read with no profile (not reachable from home, review r2 N4): never a blank page.
+    return <Screen>{data.state === 'loading' ? null : <AppText variant="headline">Nothing to show yet</AppText>}</Screen>;
+  }
+  // Ask on every Progress screen, with this screen's window (spec §2.1, review r2 S3).
+  const days = home.days;
+  const ask = (
+    <AskPill
+      onPress={() => {
+        navigation.navigate('Coach', { entry: { kind: 'progress', days } });
+      }}
+    />
+  );
   if (home.view.dataState !== 'normal') {
     // Never a blank page (review N3).
     return (
-      <Screen>
+      <Screen floating={ask}>
         <AppText variant="headline">Nothing to show yet</AppText>
       </Screen>
     );
@@ -71,7 +84,7 @@ export function MusclesScreen() {
   const perWeek = view.window.days >= 14;
 
   return (
-    <Screen>
+    <Screen floating={ask}>
       <WindowPicker
         days={home.days}
         datesLine={view.datesLine}
