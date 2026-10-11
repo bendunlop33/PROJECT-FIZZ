@@ -182,7 +182,9 @@ export function openErrorView(r: OpenResult, locale?: string): OpenErrorView | n
         };
       }
       return {
-        text: `You imported this file on ${shortDateOf(r.job.startedAt.utc, r.job.startedAt.tz, locale)} (${plural(r.job.counts.workouts, 'workout', 'workouts')}). Nothing new to import.`,
+        text: `You imported this file on ${shortDateOf(r.job.startedAt.utc, r.job.startedAt.tz, locale)} (${plural(r.job.counts.workouts, 'workout', 'workouts')}). Nothing new to import.${
+          r.inRecentlyDeleted > 0 ? ` ${inRecentlyDeletedLine(r.inRecentlyDeleted)}` : ''
+        }`,
         firstLine: null,
         sameFileJobId: r.job.id,
       };
@@ -228,6 +230,8 @@ export interface PreviewView {
   kept: Line[];
   effortReview: string | null;
   datesRow: string | null;
+  /** `3 are in Recently deleted.` → Recently deleted (DW26); null when none. */
+  recentlyDeletedRow: string | null;
   gymRow: string;
   workoutsTitle: string;
   primary: { label: string; enabled: boolean };
@@ -325,6 +329,11 @@ export function assistedText(m: MachineExercise): string {
   return parts.length === 0 ? m.name : `${m.name} (${parts.join('; ')})`;
 }
 
+/** `3 are in Recently deleted.` (delete-workouts §6.2, §7, DW26). */
+export function inRecentlyDeletedLine(n: number): string {
+  return `${formatCount(n)} ${n === 1 ? 'is' : 'are'} in Recently deleted.`;
+}
+
 export function previewView(d: ImportDraft, locale?: string): PreviewView {
   const a = d.analysis;
   const r = a.counts.byResult;
@@ -398,6 +407,7 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
     kept,
     effortReview,
     datesRow,
+    recentlyDeletedRow: d.inRecentlyDeleted > 0 ? inRecentlyDeletedLine(d.inRecentlyDeleted) : null,
     gymRow: `Gym: ${gym ? `All at ${gym.name}` : 'Not recorded'}`,
     workoutsTitle: `Workouts (${formatCount(a.workouts.length)})`,
     primary,

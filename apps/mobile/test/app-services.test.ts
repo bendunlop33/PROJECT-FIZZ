@@ -296,8 +296,12 @@ describe('workouts and recovery', () => {
     await closeAll();
 
     const second = await ready();
+    // The launch backup and integrity check run in the background; under load `idle()` can look before the backup
+    // has started (review N6), so wait for what the test checks.
+    const landed = () => [...backupFiles.keys()].some((n) => n.endsWith('-auto.json'));
+    for (let i = 0; i < 1000 && (!landed() || second.services.integrity.last() === null); i += 1) await new Promise((r) => setTimeout(r, 10));
     await idle(second.services);
-    expect([...backupFiles.keys()].some((n) => n.endsWith('-auto.json'))).toBe(true);
+    expect(landed()).toBe(true);
     expect(second.services.integrity.last()?.report.ok).toBe(true);
   });
 });

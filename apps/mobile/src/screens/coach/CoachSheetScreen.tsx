@@ -65,7 +65,7 @@ export function CoachSheetScreen() {
   const [statusWhy, setStatusWhy] = useState(false);
   const [sees, setSees] = useState<ContextDescription | null>(null);
   const [threads, setThreads] = useState<CoachThread[] | null>(null);
-  const [workout, setWorkout] = useState<{ title: string | null; active: boolean; bar: string; exercise: { id: string; name: string } | null } | null>(null);
+  const [workout, setWorkout] = useState<{ title: string | null; active: boolean; deleted: boolean; bar: string; exercise: { id: string; name: string } | null } | null>(null);
   const [askPain, setAskPain] = useState(false);
   /** The movements `Pain` can flag (named, else the focus row, else all); `picking` shows them as chips. */
   const [painChoices, setPainChoices] = useState<{ exerciseId: string; name: string }[]>([]);
@@ -106,6 +106,8 @@ export function CoachSheetScreen() {
     setWorkout({
       title: d.aggregate.session.routineName ?? d.title,
       active,
+      // Out of the coach's context; the chip says so (delete-workouts §5, DW16).
+      deleted: d.aggregate.session.status === 'deleted',
       bar: workoutBarText(rest === null ? null : rest.kind === 'ended' ? { kind: 'ended' } : { kind: rest.kind, remainingMs: rest.remainingMs }, d.aggregate.session.pause !== null),
       exercise: v?.focus ? { id: v.focus.exerciseId, name: v.focus.exerciseName } : null,
     });
@@ -429,7 +431,7 @@ export function CoachSheetScreen() {
           style={{ alignSelf: 'flex-start', minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], paddingHorizontal: theme.space['3'], borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.control'], backgroundColor: theme.colors['bg.raised'] }}
         >
           <Icon name="eye" size={16} />
-          <AppText variant="label">{seesLabel(entry, workout?.title ?? null, workout?.active === true)}</AppText>
+          <AppText variant="label">{seesLabel(entry, workout?.title ?? null, workout?.active === true, workout?.deleted === true)}</AppText>
         </Pressable>
         {sees !== null ? <SeesPanel sees={sees} /> : null}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space['2'] }}>

@@ -98,6 +98,12 @@ export interface ImportDraft {
    * (review r3 S2).
    */
   importedBefore: { startedAt: ZonedTimestamp } | null;
+  /**
+   * Dates in this file whose imported workout is in Recently deleted (or
+   * awaiting the purge): they count as already in the app and aren't added
+   * again (delete-workouts §6.2, DW26).
+   */
+  inRecentlyDeleted: number;
 }
 
 export type OpenResult =
@@ -109,7 +115,7 @@ export type OpenResult =
    * continue it instead; review N1). A finished one is returned only when
    * the file has nothing new to import (check 21; review r3 S2).
    */
-  | { kind: 'same_file'; job: ImportJob; written: number; state: JobState }
+  | { kind: 'same_file'; job: ImportJob; written: number; state: JobState; inRecentlyDeleted: number }
   | { kind: 'preview'; draft: ImportDraft };
 
 export type AnswerResult =
@@ -342,7 +348,16 @@ export function createImportService(deps: ImportServiceDeps) {
       tz: d.tz,
       gyms: await gymsOf(d.ownerId),
       importedBefore: d.importedBefore ? { startedAt: d.importedBefore.startedAt } : null,
+      inRecentlyDeleted: await inRecentlyDeleted(d.ownerId, d.rows),
     };
+  }
+
+  /** How many of the file's dates have an imported workout in Recently deleted (§6.2, DW26). */
+  async function inRecentlyDeleted(ownerId: string, rows: readonly FitNotesRow[]): Promise<number> {
+    const deleted = await repos().imports.deletedImportDates(ownerId).catch(() => new Set<string>());
+    if (deleted.size === 0) return 0;
+    const dates = new Set(rows.map((r) => r.date).filter((d): d is string => d !== null));
+    return [...dates].filter((d) => deleted.has(d)).length;
   }
 
   async function writtenCount(jobId: string): Promise<number> {
@@ -491,13 +506,13 @@ export function createImportService(deps: ImportServiceDeps) {
       const found = (await repos().imports.listJobs(p.id)).find((j) => j.checksum === checksum && j.status !== 'reverted');
       const earlier = found ? await pastImport(await settle(found)) : null;
       // Its import isn't finished: point to it (review N1).
-      if (earlier && earlier.state !== 'finished') return { kind: 'same_file', job: earlier.job, written: earlier.written, state: earlier.state };
+      if (earlier && earlier.state !== 'finished') return { kind: 'same_file', job: earlier.job, written: earlier.written, state: earlier.state, inRecentlyDeleted: 0 };
       const loaded = await loadContext(p.id, p.preferredUnit, parsed.rows);
       // "Nothing new to import" only while it's true (review r3 S2): read with the answers Ben gave
       // last time, against what is in the app now, the file brings nothing in. A date that import
       // skipped because another import or a workout covered it, since undone or discarded, is offered again.
       if (earlier && nothingNew(analyseImport(parsed, loaded.ctx, earlier.job.answers))) {
-        return { kind: 'same_file', job: earlier.job, written: earlier.written, state: earlier.state };
+        return { kind: 'same_file', job: earlier.job, written: earlier.written, state: earlier.state, inRecentlyDeleted: await inRecentlyDeleted(p.id, parsed.rows) };
       }
       const id = deps.newId();
       // Ben's own answers fill in: this file's earlier import, and each name's dumbbell and barbell answers last time (review r4 S2, N2).

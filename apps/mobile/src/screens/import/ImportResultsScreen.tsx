@@ -11,8 +11,12 @@ import { formatTime } from '../../format/dates';
 import { resultsView, undoAlert, undoneToast } from '../../import/views';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
+import { deleteToolbarLabel, pastRowDetail, pastRowTitle, selectRowLabel } from '../../history/delete-view';
+import { DeleteToastView } from '../../history/DeleteToastView';
 import { useDeleteToast } from '../../history/useDeleteToast';
-import { AppText, Card, Group, PrimaryButton, Row, Screen, SectionHeader, StatusLine, TextButton, Toast } from '../../ui';
+import { useSelectDelete } from '../../history/useSelectDelete';
+import type { RepeatCandidate } from '../../services/workout-services';
+import { AppText, Card, DangerTextButton, Group, PrimaryButton, Row, Screen, SectionHeader, SelectionToolbar, SelectRow, StatusLine, TextButton } from '../../ui';
 
 const ICON_TONE = { done: 'done', info: 'info', warning: 'warning' } as const;
 
@@ -35,10 +39,13 @@ export function ImportResultsScreen() {
   const [undoOp] = useState(() => newUuid());
   // An imported workout deleted from its own view comes back here with Undo (delete-workouts DW24).
   const deleted = useDeleteToast();
-  const [data] = useScreenData(async (s) => {
-    const [job, block] = await Promise.all([s.imports.job(jobId), s.imports.blockedBy()]);
-    return { job, block };
+  const [data, reload] = useScreenData(async (s) => {
+    const [job, block, workouts] = await Promise.all([s.imports.job(jobId), s.imports.blockedBy(), s.history.importWorkouts(jobId)]);
+    return { job, block, workouts: workouts.rows };
   });
+  // Select in the import's workout list (§2.1, DW24): only its workouts still in history.
+  const selectable = data.state === 'ready' && data.value.job?.state !== 'undone' ? data.value.workouts : NO_ROWS;
+  const sel = useSelectDelete({ rows: selectable, loaded: data.state === 'ready', title: 'Import results', reload, toast: deleted });
   if (data.state !== 'ready') return <Screen>{null}</Screen>;
   const { job, block } = data.value;
   if (!job) {
@@ -91,6 +98,40 @@ export function ImportResultsScreen() {
     }
   }
 
+  const tz = services.now().tz;
+  if (sel.selecting) {
+    return (
+      <>
+        <Screen>
+          {sel.line ? (
+            <StatusLine
+              icon={sel.line.tone === 'warning' ? 'exclamationmark.triangle' : 'info.circle'}
+              tone={sel.line.tone}
+              text={sel.line.text}
+              {...(sel.line.retry ? { action: <TextButton label="Try again" onPress={sel.line.retry} /> } : {})}
+            />
+          ) : null}
+          <Group>
+            {selectable.map((c) => (
+              <SelectRow
+                key={c.sessionId}
+                title={pastRowTitle(c, tz)}
+                lines={[pastRowDetail(c)]}
+                selected={sel.selected.has(c.sessionId)}
+                accessibilityLabel={selectRowLabel(c, tz, sel.selected.has(c.sessionId))}
+                onToggle={() => {
+                  sel.toggle(c.sessionId);
+                }}
+              />
+            ))}
+          </Group>
+        </Screen>
+        <DeleteToastView state={deleted} />
+        <SelectionToolbar trailing={<DangerTextButton label={deleteToolbarLabel(sel.selected.size)} disabled={sel.selected.size === 0} onPress={sel.confirmSelected} />} />
+      </>
+    );
+  }
+
   return (
     <>
     <Screen
@@ -125,6 +166,7 @@ export function ImportResultsScreen() {
       </Card>
       {block !== null && (v.canContinue || v.canUndo) ? <StatusLine icon="info.circle" tone="info" text={`Finish or discard your workout first (${block.title}).`} /> : null}
       {note ? <StatusLine icon={note.ok ? 'checkmark.circle.fill' : 'exclamationmark.triangle'} tone={note.ok ? 'done' : 'warning'} text={note.text} /> : null}
+      {sel.line ? <StatusLine icon="info.circle" tone="info" text={sel.line.text} /> : null}
 
       {v.imported ? (
         <>
@@ -180,7 +222,9 @@ export function ImportResultsScreen() {
       <TextButton label="Save row-by-row results (CSV)" onPress={() => void saveResults()} />
       {v.canUndo ? <TextButton label="Undo this import" onPress={undo} disabled={block !== null} /> : null}
     </Screen>
-    {deleted.toast ? <Toast icon="trash" text={deleted.toast.text} {...(deleted.toast.action ? { action: deleted.toast.action } : {})} {...(deleted.toast.onAction ? { onAction: deleted.toast.onAction } : {})} /> : null}
+    <DeleteToastView state={deleted} />
     </>
   );
 }
+
+const NO_ROWS: RepeatCandidate[] = [];

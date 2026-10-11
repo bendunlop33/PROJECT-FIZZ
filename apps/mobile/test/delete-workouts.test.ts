@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { purgeAfterUtc } from '@fizz/domain';
 
 import { deletedToastText, goneOnText, keepSelection, pastRowTitle, recentlyDeletedDataRow, recentlyDeletedFooter, selectAllLabel, selectTitle, toggleAll } from '../src/history/delete-view';
-import { stateLine, undoAlert } from '../src/import/views';
+import { buildCheckResultView, buildRestorePreviewView } from '../src/backup/restore-view';
+import { IntentOps } from '../src/history/intent-ops';
+import { openErrorView, previewView, stateLine, undoAlert } from '../src/import/views';
 import type { PastImport } from '../src/import/import-service';
 import { createHarness, logWorkout, setUpGym, TZ, type Harness } from './harness';
 
@@ -184,3 +186,145 @@ describe('imports (§6.2, DW25)', () => {
     expect(undoAlert({ ...p, deleted: 0 }).message).not.toContain('Recently deleted');
   });
 });
+
+describe('imports: Select in the import’s list, re-import, undone and purged dates (DW24, DW26; review S5, N4)', () => {
+  const A1 = 'Date,Exercise,Category,Weight (kgs),Reps,Distance,Distance Unit,Time';
+  const FILE = [A1, '2026-09-01,Lat Pulldown,Back,45.0,10,,,', '2026-09-03,Lat Pulldown,Back,47.5,8,,,'].join('\n');
+  const MORE = [FILE, '2026-09-20,Lat Pulldown,Back,50.0,10,,,'].join('\n');
+
+  async function imported() {
+    h = createHarness('2026-10-06T17:00:00.000Z');
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    const opened = await s.imports.open({ name: 'FitNotes.csv', text: FILE });
+    if (opened.kind !== 'preview') throw new Error(opened.kind);
+    expect(opened.draft.inRecentlyDeleted).toBe(0);
+    const r = await s.imports.commit(opened.draft.draftId, opened.draft.mappingVersion, 'import-1');
+    if (!r.ok) throw new Error(r.reason);
+    return { s, jobId: r.jobId };
+  }
+
+  it('lists the import’s workouts for Select; deleting one leaves the list; a re-import counts it as in Recently deleted', async () => {
+    const { s, jobId } = await imported();
+    const listed = await s.history.importWorkouts(jobId);
+    expect(listed.rows.map((r) => r.localDate)).toEqual(['2026-09-01', '2026-09-03']);
+    expect(s.history.confirmView(listed.rows)).toMatchObject({ title: 'Delete 2 workouts?', importedLine: '2 imported' });
+    const [first] = listed.rows;
+    if (!first) throw new Error('no row');
+    expect((await s.history.deleteWorkouts([{ sessionId: first.sessionId, expectedVersion: first.version }], 'del-imp')).ok).toBe(true);
+    expect((await s.history.importWorkouts(jobId)).rows.map((r) => r.localDate)).toEqual(['2026-09-03']);
+
+    // The same file: nothing new, and it says one is in Recently deleted.
+    const same = await s.imports.open({ name: 'FitNotes.csv', text: FILE });
+    expect(same).toMatchObject({ kind: 'same_file', inRecentlyDeleted: 1 });
+    expect(openErrorView(same)?.text.endsWith(' 1 is in Recently deleted.')).toBe(true);
+    // A newer export: only the new date comes in; the preview line says why the deleted one doesn't.
+    const more = await s.imports.open({ name: 'FitNotes-2.csv', text: MORE });
+    if (more.kind !== 'preview') throw new Error(more.kind);
+    expect(more.draft.inRecentlyDeleted).toBe(1);
+    expect(more.draft.analysis.counts.workouts).toBe(1);
+    expect(previewView(more.draft).recentlyDeletedRow).toBe('1 is in Recently deleted.');
+    s.imports.discard(more.draft.draftId);
+  });
+
+  it('after Undo this import, a date view is neither live nor deletable (S5); after a purge it says the workout was deleted (N4)', async () => {
+    const { s, jobId } = await imported();
+    const rows = (await s.history.importWorkouts(jobId)).rows;
+    const [first, second] = rows;
+    if (!first || !second) throw new Error('rows');
+    // Purge the first.
+    expect((await s.history.deleteWorkouts([{ sessionId: first.sessionId, expectedVersion: first.version }], 'del-1')).ok).toBe(true);
+    expect(await s.history.deleteNow([first.sessionId], 'now-1')).toEqual({ ok: true, purged: 1 });
+    expect(await s.history.importDatePurged(jobId, '2026-09-01')).toBe(true);
+    expect(await s.history.importDatePurged(jobId, '2026-09-03')).toBe(false);
+    // Undo the import: the second is reverted, shown without Delete or Restore.
+    const job = await s.imports.job(jobId);
+    if (!job) throw new Error('no job');
+    expect((await s.imports.revert(jobId, job.job.version, 'undo-imp')).ok).toBe(true);
+    expect(await s.history.presence(second.sessionId)).toEqual({ kind: 'hidden' });
+    expect((await s.history.importWorkouts(jobId)).rows).toEqual([]);
+  });
+});
+
+describe('restore preview and backup check with deleted workouts (§6.5; review S1)', () => {
+  it('a backup made before a delete: the preview says they come back and counts Recently deleted on its own row', async () => {
+    const { s, second } = await twoWorkouts();
+    const autos = () => [...h.backupFiles.keys()].filter((n) => n.endsWith('-auto.json')).sort();
+    const before = autos().at(-1);
+    const text = before === undefined ? null : await s.restore.readOnPhone(before);
+    if (text === null) throw new Error('no backup');
+    await deleteSecond(s, second);
+    const preview = await s.restore.prepare(text);
+    if (!preview.ok) throw new Error('preview');
+    expect(preview.preview.deletedSinceBackup).toBe(1);
+    // Not counted again as a workout only on this phone, or changed.
+    expect(preview.preview.onlyOnPhone.workouts + preview.preview.changedOnPhone.workouts).toBe(0);
+    const view = buildRestorePreviewView(preview.preview, { nowMs: h.clockMs, tz: TZ });
+    expect(view.warnings).toContain('1 workout you deleted since this backup comes back.');
+    expect(view.rows.find((r) => r.label === 'Recently deleted')).toEqual({ label: 'Recently deleted', backup: '0', phone: '1' });
+    expect(view.rows.find((r) => r.label === 'Workouts')).toMatchObject({ backup: '2', phone: '1' });
+
+    // The launch after the delete backs up; that backup's check counts the deleted workout on its own line.
+    await h.forceClose();
+    h.clockMs += 10 * 60_000;
+    const again = await h.launch();
+    await h.settle(again.services);
+    for (let i = 0; i < 100 && autos().at(-1) === before; i += 1) await new Promise((r) => setTimeout(r, 10));
+    const after = autos().at(-1);
+    expect(after).not.toBe(before);
+    const afterText = after === undefined ? null : await again.services.restore.readOnPhone(after);
+    if (afterText === null) throw new Error('no backup');
+    const checked = await again.services.restore.check(afterText);
+    if (!checked.ok) throw new Error('check');
+    expect(buildCheckResultView(checked, { nowMs: h.clockMs, tz: TZ }, null).lines).toContain('1 deleted workout');
+  });
+});
+
+describe('op IDs per intent and the launch purge key (review S4, N1, N2)', () => {
+  it('the same intent reuses its op ID; another selection or version is a new one', () => {
+    let n = 0;
+    const ops = new IntentOps(() => `op-${String(++n)}`);
+    const a = { sessionId: 'a', expectedVersion: 3 };
+    const b = { sessionId: 'b', expectedVersion: 1 };
+    expect(ops.for('restore', [a, b])).toBe('op-1');
+    expect(ops.for('restore', [b, a])).toBe('op-1');
+    expect(ops.for('restore', [a])).toBe('op-2');
+    expect(ops.for('delete', [a])).toBe('op-3');
+    expect(ops.for('delete', [{ ...a, expectedVersion: 4 }])).toBe('op-4');
+  });
+
+  it('a double Restore is a duplicate, not `No longer available.`', async () => {
+    const { s, second } = await twoWorkouts();
+    const undo = await deleteSecond(s, second);
+    const ops = new IntentOps(() => `restore-${String(Math.random())}`);
+    const op = ops.for('restore', undo);
+    expect(await s.history.restoreWorkouts(undo, op)).toMatchObject({ ok: true, duplicate: false });
+    expect(await s.history.restoreWorkouts(undo, ops.for('restore', undo))).toMatchObject({ ok: true, duplicate: true });
+  });
+
+  it('a second launch purge the same day still purges what became due since', async () => {
+    const { s, first, second } = await twoWorkouts();
+    const firstRow = await s.repeat.describeById(first);
+    const secondRow = await s.repeat.describeById(second);
+    if (!firstRow || !secondRow) throw new Error('rows');
+    expect((await s.history.deleteWorkouts([{ sessionId: first, expectedVersion: firstRow.version }], 'del-a')).ok).toBe(true);
+    h.clockMs += 60_000;
+    expect((await s.history.deleteWorkouts([{ sessionId: second, expectedVersion: secondRow.version }], 'del-b')).ok).toBe(true);
+    // Day 31 for the first only, then for both, the same local day.
+    h.clockMs += 31 * DAY - 2 * 60 * 60_000;
+    const a = await s.history.purgeDue();
+    h.clockMs += 60 * 60_000;
+    const b = await s.history.purgeDue();
+    expect(a + b).toBe(2);
+    expect(await s.history.presence(first)).toEqual({ kind: 'gone' });
+    expect(await s.history.presence(second)).toEqual({ kind: 'gone' });
+  });
+});
+
+async function deleteSecond(s: Awaited<ReturnType<Harness['launch']>>['services'], sessionId: string) {
+  const row = await s.repeat.describeById(sessionId);
+  if (!row) throw new Error('no row');
+  const out = await s.history.deleteWorkouts([{ sessionId, expectedVersion: row.version }], `del-${sessionId}`);
+  if (!out.ok) throw new Error(out.message);
+  return out.refs.map((r) => ({ sessionId: r.sessionId, expectedVersion: r.version }));
+}

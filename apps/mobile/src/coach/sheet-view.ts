@@ -296,8 +296,9 @@ export type { ReplyItem };
 // ---------------------------------------------------------------------------
 // The sheet's context chip and workout bar (coach-sheet §2.1, §2.4)
 
-/** `Sees: Push A (live)`, `Sees: this workout`, `Sees: Today`. */
-export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active: boolean): string {
+/** `Sees: Push A (live)`, `Sees: this workout`, `Sees: Today`; `Deleted workout` once the thread's workout is deleted (delete-workouts §5, DW16). */
+export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active: boolean, deleted = false): string {
+  if (deleted && entry.kind !== 'today') return 'Deleted workout';
   switch (entry.kind) {
     case 'today':
       return 'Sees: Today';
