@@ -51,6 +51,7 @@ import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu } from '../../workout/exercise-menu';
 import { shouldCueRestEnd } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
+import { newerWorkoutData } from '../../workout/load-order';
 import { FinishSheet } from './FinishSheet';
 import { GymChip, GymPartDivider, GymReviewSheet, GymSwitchCard, GymSwitcherSheet, SnapNote } from './GymSwitch';
 import { afterSwitchRefused, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
@@ -148,7 +149,8 @@ export function WorkoutScreen() {
   const reload = useCallback(async () => {
     try {
       const d = await services.workout.load();
-      setData(d);
+      // A read that started before a newer write never replaces it on screen.
+      setData((cur) => newerWorkoutData(cur, d));
       setLoadError(null);
       return d;
     } catch (e) {
@@ -420,7 +422,7 @@ export function WorkoutScreen() {
     if (tickedFor.current === key) return;
     tickedFor.current = key;
     void services.workout.dispatch(data.aggregate.session.id, { type: 'tick', at: services.now() }).then((r) => {
-      if (r.ok) setData((d) => (d === 'loading' || d === null ? d : { ...d, aggregate: r.aggregate }));
+      if (r.ok) setData((cur) => (cur === 'loading' || cur === null ? cur : newerWorkoutData(cur, { ...cur, aggregate: r.aggregate })));
     });
   }, [now, data, services]);
 
@@ -492,7 +494,7 @@ export function WorkoutScreen() {
   async function run(command: SessionCommand): Promise<CommandOutcome> {
     const r = await services.workout.dispatch(session.id, command);
     if (r.ok) {
-      setData({ ...loaded, aggregate: r.aggregate });
+      setData((cur) => newerWorkoutData(cur, { ...loaded, aggregate: r.aggregate }));
       changed();
     } else if (r.error.code === 'stale_version' || r.error.code === 'write_conflict') {
       // Review N8: reload so the next try uses the latest version.
@@ -533,6 +535,11 @@ export function WorkoutScreen() {
     setBusy(false);
     if (!r.ok) {
       setBanners((b) => [...b.filter((x) => x.key !== 'write'), { key: 'write', severity: 'warning', text: r.error.code === 'write_failed' ? 'Set not saved. Try again.' : r.error.message }]);
+      return;
+    }
+    // Already saved by an earlier tap: the saved state is shown, without a second haptic, toast or coach check.
+    if (r.duplicate) {
+      setEdits(null);
       return;
     }
     // After the write, never on press-in. A heaviest-set record plays `record` instead of `commit` (premium-feel §5.1).
@@ -632,7 +639,7 @@ export function WorkoutScreen() {
       return;
     }
     haptic('undo');
-    setData({ ...fresh, aggregate: r.aggregate });
+    setData((cur) => newerWorkoutData(cur, { ...fresh, aggregate: r.aggregate }));
     changed();
     setToast(null);
   }
@@ -686,7 +693,7 @@ export function WorkoutScreen() {
       void reload();
       return;
     }
-    setData({ ...loaded, aggregate: r.aggregate });
+    setData((cur) => newerWorkoutData(cur, { ...loaded, aggregate: r.aggregate }));
     changed();
     const added = r.aggregate.sets.find((x) => !loaded.aggregate.sets.some((y) => y.id === x.id));
     const v = services.workout.view({ ...loaded, aggregate: r.aggregate }, clockNow(), null);
@@ -1521,7 +1528,7 @@ export function WorkoutScreen() {
                   void reload();
                   return;
                 }
-                setData({ ...loaded, aggregate: r.aggregate });
+                setData((cur) => newerWorkoutData(cur, { ...loaded, aggregate: r.aggregate }));
                 changed();
                 showToast({
                   text:
@@ -1575,7 +1582,7 @@ export function WorkoutScreen() {
             void reload();
             return r.error.code === 'stale_version' ? 'The workout changed. Try again.' : r.error.message;
           }
-          setData({ ...loaded, aggregate: r.aggregate });
+          setData((cur) => newerWorkoutData(cur, { ...loaded, aggregate: r.aggregate }));
           changed();
           return null;
         }}
@@ -1587,7 +1594,7 @@ export function WorkoutScreen() {
           setTimesOpen(false);
         }}
         onSaved={(d) => {
-          setData(d);
+          setData((cur) => newerWorkoutData(cur, d));
           changed();
           setTimesOpen(false);
           showToast({ text: 'Start time changed' });
