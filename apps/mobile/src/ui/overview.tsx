@@ -210,6 +210,20 @@ export interface OverviewRowProps {
   onWhy: () => void;
   onStillHurts?: (() => void) | undefined;
   onEditGym?: (() => void) | undefined;
+  /** The coach row's tap (§5): Undo on a coach target, `Use coach target` after an Undo. */
+  onCoach?: (() => void) | undefined;
+}
+
+/** `SourceTag` `Coach` (§5): the coach set this row's target. Icon and word, never colour alone. */
+function CoachTag() {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      <Icon name="text.bubble" color="text.secondary" size={11} />
+      <AppText variant="sectionLabel" color="text.secondary" style={{ lineHeight: 22 }}>
+        Coach
+      </AppText>
+    </View>
+  );
 }
 
 /**
@@ -218,11 +232,15 @@ export interface OverviewRowProps {
  * the snap changed the target here; the reason is in the panel. At AX sizes
  * the load stacks under the name.
  */
-export function OverviewRow({ row, detail, open, stacked, last, first, onToggle, onHowTo, onWhy, onStillHurts, onEditGym }: OverviewRowProps) {
+export function OverviewRow({ row, detail, open, stacked, last, first, onToggle, onHowTo, onWhy, onStillHurts, onEditGym, onCoach }: OverviewRowProps) {
   const theme = useTheme();
+  const coachLabel = row.coach === null ? null : row.coach.state === 'coach' ? 'Undo' : 'Use coach target';
   const right = (
     <View style={{ alignItems: stacked ? 'flex-start' : 'flex-end' }}>
-      <ChangeMarker marker={row.marker} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {row.coach?.state === 'coach' ? <CoachTag /> : null}
+        <ChangeMarker marker={row.marker} />
+      </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
         <AppText numeric color={row.load.none ? 'text.tertiary' : 'text.primary'} style={{ fontSize: 22, lineHeight: 26, fontWeight: '500', letterSpacing: -0.3, fontVariant: ['tabular-nums'] }}>
           {row.load.value}
@@ -266,6 +284,7 @@ export function OverviewRow({ row, detail, open, stacked, last, first, onToggle,
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
             <OutlinePill label="Why?" onPress={onWhy} accessibilityLabel={`Why this target for ${row.name}?`} />
             {onHowTo ? <OutlinePill label="How to" onPress={onHowTo} accessibilityLabel={`How to: ${row.name}`} /> : null}
+            {coachLabel !== null && onCoach ? <OutlinePill label={coachLabel} onPress={onCoach} accessibilityLabel={`${coachLabel}: ${row.name}`} /> : null}
           </View>
         </View>
       ) : null}

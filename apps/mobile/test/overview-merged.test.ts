@@ -1,24 +1,53 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
 import { loadCell, NBSP, type OverviewRow } from '@fizz/domain';
+import type { TextCoachState } from '@fizz/providers';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData } from '../src/services/workout-services';
+import { coachTapOf, coachUndoneText } from '../src/workout/overview';
 import { startFromOverview } from '../src/workout/overview-start';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
- * The overview after the gym-switch merge, on real SQLite: the preview is
- * the shared fit Start uses (`snapPlanToGym` through `planRoutineStart`),
- * also after the gym chip changes gym.
+ * The overview after the gym-switch and coach v1 merge, on real SQLite:
+ * the preview is the shared fit Start uses (`snapPlanToGym` through
+ * `planRoutineStart`), also after the gym chip changes gym; coach rows read
+ * the coach's stored next-session targets only (opening the page makes no
+ * model call), and Undo / `Use coach target` are the Summary's versioned taps.
  */
 
+class StepModel implements CoachModelPort {
+  readonly requests: ModelRequest[] = [];
+  constructor(private readonly steps: ((req: ModelRequest) => ModelEvent[])[]) {}
+  async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+    this.requests.push(request);
+    const step = this.steps[this.requests.length - 1];
+    const events = step === undefined ? [{ type: 'error' as const, error: 'unavailable' as const }] : step(request);
+    for (const e of events) {
+      await Promise.resolve();
+      yield e;
+    }
+  }
+}
+
+function workoutOf(req: ModelRequest): { sessionId: string; version: number; exercises: { exerciseId: string; name: string }[] } {
+  const block = req.input.find((i) => i.type === 'message' && i.role === 'developer' && i.content.startsWith('YOUR DATA'));
+  if (block?.type !== 'message') throw new Error('no context');
+  return (JSON.parse(block.content.slice(block.content.indexOf('\n') + 1)) as { workout: ReturnType<typeof workoutOf> }).workout;
+}
+
+const call = (name: string, args: unknown): ModelEvent[] => [{ type: 'tool_call', callId: `c-${name}`, name, arguments: JSON.stringify(args) }, { type: 'completed' }];
+const CONNECTED: TextCoachState = { status: 'ok', route: 'chatgpt_plan', email: 'ben@example.com', model: { slug: 'gpt-6.1-sol', displayName: 'GPT-6.1-Sol' } };
 const DAY = 86_400_000;
 
 let h: Harness;
+let model: StepModel;
 beforeEach(() => {
-  h = createHarness('2026-10-10T07:00:00.000Z');
+  model = new StepModel([]);
+  h = createHarness('2026-10-10T07:00:00.000Z', { coach: { model: () => model, connection: () => Promise.resolve(CONNECTED) } });
 });
 afterEach(async () => {
   await h.cleanup();
@@ -61,6 +90,9 @@ describe('preview == Start after a gym switch (shared fit)', () => {
     const main = await load(s, gymId);
     const mainDb = main.view.rows.find((r) => r.name === 'Dumbbell bench press');
     expect(mainDb?.rounded).toBe(false);
+    // No coach rows without stored coach targets.
+    expect(main.view.rows.every((r) => r.coach === null)).toBe(true);
+    expect(main.coachTargets).toEqual({});
 
     // What the chip does: select the gym, then the page re-reads at it.
     expect(await s.gyms.select(hotelId)).toMatchObject({ ok: true, changed: true });
@@ -88,5 +120,92 @@ describe('preview == Start after a gym switch (shared fit)', () => {
     const benchSets = agg.sets.filter((x) => x.sessionExerciseId === benchEx?.id && x.setType !== 'warmup');
     expect(dbSets.every((x) => x.planned.snap?.outcome === 'capped' && x.planned.snap.by === 'start' && x.planned.load?.value === 25)).toBe(true);
     expect(benchSets.every((x) => x.planned.load === null && x.planned.snap?.outcome === 'dropped' && x.planned.snap.reason === 'not_here')).toBe(true);
+  });
+});
+
+describe('coach rows (§5): stored targets only, Undo / Use coach target', () => {
+  async function withCoachTarget() {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [
+      { exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 7, rpe: 10 }, { load: 60, reps: 6, rpe: 10 }] },
+      { exercise: 'Barbell row', sets: [{ load: 50, reps: 10 }, { load: 50, reps: 10 }] },
+    ]);
+    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' });
+    if (!saved.ok) throw new Error(saved.message);
+    model = new StepModel([
+      (req) => {
+        const w = workoutOf(req);
+        const bench = w.exercises.find((e) => e.name === 'Bench press');
+        return call('set_next_session_targets', { sourceSessionId: w.sessionId, sourceVersion: w.version, targets: [{ exerciseId: bench?.exerciseId, target: { load: { value: 57.5, unit: 'kg', convention: 'total' }, reps: null }, sets: null, reason: 'Every set was RPE 10.' }] });
+      },
+      () => call('reply', { message: 'Ok.', offer: null }),
+    ]);
+    await s.coach.runSummaryTurn(first);
+    h.clockMs += 2 * DAY;
+    return { s, gymId, first };
+  }
+
+  it('the row the coach set shows the Coach state and its stored reason; opening the page makes no model call', async () => {
+    const { s, gymId } = await withCoachTarget();
+    const calls = model.requests.length;
+    const page = await load(s, gymId);
+    expect(model.requests.length).toBe(calls);
+    const bench = page.view.rows.find((r) => r.name === 'Bench press');
+    const row = page.view.rows.find((r) => r.name === 'Barbell row');
+    expect(bench?.coach).toMatchObject({ state: 'coach', reason: 'Every set was RPE 10.' });
+    expect(bench?.panel.find((l) => l.key === 'coach')).toMatchObject({ label: 'Coach', value: '“Every set was RPE 10.”' });
+    expect(bench?.load.value).toBe('57.5');
+    expect(bench?.accessibilityLabel).toContain('coach target');
+    expect(row?.coach).toBeNull();
+    expect(row?.panel.some((l) => l.key === 'coach')).toBe(false);
+    // Start creates the coach's target the page showed.
+    const r = await startFromOverview(ports(s, gymId), { page, opId: 'op-coach', checkIn: null });
+    if (r.kind !== 'started') throw new Error(r.kind);
+    for (const x of page.view.rows) matchesSession(x, r.outcome.aggregate);
+    expect(model.requests.length).toBe(calls);
+  });
+
+  it('Undo puts the built-in target back (key changes, the old page is stale); Use coach target restores it; a stale version is refused', async () => {
+    const { s, gymId } = await withCoachTarget();
+    const page = await load(s, gymId);
+    const bench = page.view.rows.find((r) => r.name === 'Bench press');
+    if (bench?.coach?.state !== 'coach') throw new Error('no coach row');
+    const record = page.coachTargets[bench.coach.rowId];
+    if (!record) throw new Error('no record');
+
+    const undone = await s.coach.tapNextTarget(record, coachTapOf('coach', record.status), 'tap-undo');
+    expect(undone).toMatchObject({ status: 'written', row: { status: 'undone' } });
+    expect(coachUndoneText('Bench press')).toBe('Bench press · coach target undone');
+    const after = await load(s, gymId);
+    const benchAfter = after.view.rows.find((r) => r.name === 'Bench press');
+    expect(benchAfter?.coach).toEqual({ state: 'built_in', rowId: record.id });
+    expect(benchAfter?.load.value).not.toBe('57.5');
+    expect(benchAfter?.panel.some((l) => l.key === 'coach')).toBe(false);
+    expect(after.view.previewKey).not.toBe(page.view.previewKey);
+    // Start against the page as it was before the Undo creates nothing (rule 5).
+    expect(await s.overview.start({ startOf: page.startOf, gymId, opId: 'op-stale', checkIn: null, expectedPreviewKey: page.view.previewKey })).toMatchObject({ ok: false, error: { code: 'stale_preview' } });
+    expect(await s.sessions.active()).toBeNull();
+
+    // A tap with the version the old page had is refused, never applied to newer state.
+    expect(await s.coach.tapNextTarget(record, 'undo', 'tap-stale')).toMatchObject({ status: 'not_possible', reason: 'changed_since' });
+
+    const latest = after.coachTargets[record.id];
+    if (!latest) throw new Error('no record');
+    expect(await s.coach.tapNextTarget(latest, coachTapOf('built_in', record.status), 'tap-use')).toMatchObject({ status: 'written', row: { status: 'saved' } });
+    const back = await load(s, gymId);
+    expect(back.view.rows.find((r) => r.name === 'Bench press')?.coach).toMatchObject({ state: 'coach' });
+    expect(back.view.rows.find((r) => r.name === 'Bench press')?.load.value).toBe('57.5');
+  });
+
+  it('a pain flag on the movement holds the coach’s target: no Coach row and no offer to put it back', async () => {
+    const { s, gymId } = await withCoachTarget();
+    const page = await load(s, gymId);
+    const bench = page.view.rows.find((r) => r.name === 'Bench press');
+    const ci = await s.checkIns.record({ checkInId: h.ids(), opId: h.ids(), score: 2 });
+    if (!ci.ok) throw new Error(ci.message);
+    expect((await s.pain.flagFromCheckIn({ checkIn: ci.checkIn, exercises: [{ id: bench?.exerciseId ?? '', name: 'Bench press' }], area: 'shoulder', opId: 'pain-1' })).ok).toBe(true);
+    const flagged = await load(s, gymId);
+    expect(flagged.view.rows.find((r) => r.name === 'Bench press')?.coach).toBeNull();
   });
 });

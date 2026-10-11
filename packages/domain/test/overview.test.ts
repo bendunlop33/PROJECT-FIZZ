@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { EquipmentInstance, Exercise, Load, PainFlag, Routine, SessionAggregate } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Load, NextSessionTargetRecord, PainFlag, PlannedSet, Routine, SessionAggregate } from '@fizz/schemas';
 
 import {
   bestSet,
@@ -16,7 +16,9 @@ import {
   overviewDoneBy,
   pastExercisesOf,
   planRoutineStart,
+  overviewCoachOf,
   platesText,
+  previewFence,
   previewKey,
   roundedText,
   sameEquipmentKind,
@@ -472,3 +474,79 @@ describe('buildWorkoutOverview over the shared dry run', () => {
     expect(JSON.stringify(out.aggregate)).toBe(before);
   });
 });
+
+describe('coach rows (§5): stored next-session targets only', () => {
+  const record = (over: Partial<NextSessionTargetRecord> = {}): NextSessionTargetRecord => ({
+    id: 'row-1',
+    ownerId: id(1),
+    version: 1,
+    createdAtUtc: at(0).utc,
+    updatedAtUtc: at(0).utc,
+    sourceSessionId: id(500),
+    sourceVersion: 3,
+    exerciseId: id(600),
+    exerciseName: 'Bench press',
+    actionId: 'act-1',
+    target: { load: kg(57.5), reps: null },
+    sets: null,
+    builtIn: null,
+    builtInSets: null,
+    size: 'small',
+    status: 'saved',
+    reason: 'Every set was RPE 10.',
+    guardNotes: [],
+    pctChange: -4.2,
+    usedBySessionId: null,
+    ...over,
+  });
+  const coachSet = (actionId = 'act-1'): { planned: PlannedSet } => ({
+    planned: {
+      load: kg(57.5),
+      reps: { min: 8, max: 8 },
+      durationS: null,
+      rpe: null,
+      rir: null,
+      source: 'coach',
+      provenance: { source: 'coach', setAt: at(0), routineName: null, requestedLoad: kg(57.5), basis: null, coach: { actionId, scope: 'next_session', reason: 'Every set was RPE 10.' }, guardNotes: [] },
+    },
+  });
+  const ruleSet = (): { planned: PlannedSet } => ({ planned: { load: kg(62.5), reps: { min: 8, max: 8 }, durationS: null, rpe: null, rir: null, source: 'built_in_rule' } });
+  const ctx = { sourceVersion: 3, painFlagged: false, painToday: false };
+
+  it('Coach tag and stored reason when Start uses the coach’s target; nothing without a stored row (no AI, no canned text)', () => {
+    expect(overviewCoachOf(coachSet(), record(), ctx)).toEqual({ state: 'coach', rowId: 'row-1', reason: 'Every set was RPE 10.' });
+    expect(overviewCoachOf(coachSet(), undefined, ctx)).toBeNull();
+    expect(overviewCoachOf(ruleSet(), undefined, ctx)).toBeNull();
+    // A set planned from another coach action isn't this row's.
+    expect(overviewCoachOf(coachSet('other'), record(), ctx)).toBeNull();
+  });
+
+  it('after Undo: the built-in target, with Use coach target only where Start would use it again', () => {
+    const undone = record({ status: 'undone', version: 2 });
+    expect(overviewCoachOf(ruleSet(), undone, ctx)).toEqual({ state: 'built_in', rowId: 'row-1' });
+    expect(overviewCoachOf(ruleSet(), { ...undone, usedBySessionId: id(700) }, ctx)).toBeNull();
+    expect(overviewCoachOf(ruleSet(), undone, { ...ctx, sourceVersion: 4 })).toBeNull();
+    expect(overviewCoachOf(ruleSet(), undone, { ...ctx, painFlagged: true })).toBeNull();
+    expect(overviewCoachOf(ruleSet(), undone, { ...ctx, painToday: true })).toBeNull();
+    // A suggestion (bigger change) or a declined one isn't a row change here.
+    expect(overviewCoachOf(ruleSet(), record({ status: 'proposed' }), ctx)).toBeNull();
+    expect(overviewCoachOf(ruleSet(), record({ status: 'not_applied' }), ctx)).toBeNull();
+  });
+
+  it('the stored rows are in the key and the start’s fence (ADR 0021): an Undo changes the key', () => {
+    const parts: PreviewKeyParts = {
+      target: { kind: 'next', sourceSessionId: id(500) },
+      routine: null,
+      gym: { id: GYM, equipment: [] },
+      source: { id: id(500), revision: 3 },
+      painFlags: [],
+      coachActions: [{ id: 'row-1', version: 1 }],
+      unit: 'kg',
+      checkIn: null,
+    };
+    expect(previewKey(parts)).not.toBe(previewKey({ ...parts, coachActions: [{ id: 'row-1', version: 2 }] }));
+    expect(previewFence(parts, id(1), null).sets).toContainEqual({ kind: 'next_session_targets', ownerId: id(1), sourceSessionId: id(500), members: [{ id: 'row-1', version: 1 }] });
+    expect(previewFence({ ...parts, source: null }, id(1), null).sets.some((x) => x.kind === 'next_session_targets')).toBe(false);
+  });
+});
+

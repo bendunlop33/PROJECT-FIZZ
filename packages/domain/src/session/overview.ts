@@ -1,6 +1,7 @@
 import type {
   EquipmentInstance,
   Exercise,
+  NextSessionTargetRecord,
   Load,
   LoadConvention,
   PainFlag,
@@ -390,7 +391,7 @@ export function setsDetail(working: readonly Pick<WorkoutSet, 'planned'>[], unil
 }
 
 export interface PanelLine {
-  key: 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag';
+  key: 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag' | 'coach';
   label: string;
   value: string;
   tone: 'normal' | 'warning';
@@ -419,6 +420,8 @@ export interface OverviewRow {
   missingEquipment: string | null;
   /** The first pending working set: `Why?` explains it. */
   firstSetId: string | null;
+  /** The coach's stored target for this row (§5): the `Coach` tag, its reason, Undo / `Use coach target`. */
+  coach: OverviewCoach | null;
   /** Superset partners' names, for VoiceOver (`Superset with Triceps pushdown`). */
   supersetWith: string[];
   accessibilityLabel: string;
@@ -446,7 +449,7 @@ export interface PreviewKeyParts {
   /** The workout the targets come from (its revision changes on a correction). */
   source: { id: string; revision: number } | null;
   painFlags: readonly { id: string; version: number }[];
-  /** Stored coach (D21) next-session actions. Empty until coach v1, which must add them to `previewFence` too (ADR 0019). */
+  /** The stored coach (D21) next-session targets for `source`, by row (ADR 0021): an Undo or a late result changes the key. */
   coachActions: readonly { id: string; version: number }[];
   unit: WeightUnit;
   /** An answered check-in today: pain mentioned there holds loads. */
@@ -490,6 +493,7 @@ export function previewFence(parts: PreviewKeyParts, ownerId: string, profile: {
     sets: [
       ...('typical' in parts.gym ? [] : [{ kind: 'gym_equipment' as const, gymId: parts.gym.id, members: parts.gym.equipment }]),
       { kind: 'active_pain_flags' as const, ownerId, members: parts.painFlags },
+      ...(parts.source ? [{ kind: 'next_session_targets' as const, ownerId, sourceSessionId: parts.source.id, members: parts.coachActions }] : []),
     ],
   };
 }
@@ -516,6 +520,43 @@ export interface OverviewInput {
   /** Null: no gym yet; the rows are fitted to the typical gym Start will save. */
   gym: { id: string; name: string } | null;
   key: PreviewKeyParts;
+  /**
+   * The coach's stored next-session targets for the workout the targets come
+   * from (D21, §5), as saved, with that workout's `session.version` and
+   * whether today's check-in mentioned pain (`withCoachTargets` then holds
+   * them). Read only: the page never calls the coach. Absent or empty:
+   * nothing coach-related renders.
+   */
+  coach?: { targets: readonly NextSessionTargetRecord[]; sourceVersion: number; painToday: boolean } | null;
+}
+
+/**
+ * A row's coach state (§5). `coach`: the first working set's target is the
+ * coach's stored one (Start uses it); `reason` is the stored reason. `built_in`:
+ * Ben undid it, so the built-in rule's target is used and the coach's can be
+ * put back. Null: the coach has nothing for this row.
+ */
+export type OverviewCoach =
+  | { state: 'coach'; rowId: string; reason: string | null }
+  | { state: 'built_in'; rowId: string };
+
+/**
+ * The coach state for one row, from the dry run's first working set and the
+ * stored rows. `Use coach target` is offered only where Start would use it
+ * again (not used, the same source version, no pain flag, no pain today).
+ */
+export function overviewCoachOf(
+  first: Pick<WorkoutSet, 'planned'> | null,
+  record: NextSessionTargetRecord | undefined,
+  ctx: { sourceVersion: number | null; painFlagged: boolean; painToday: boolean },
+): OverviewCoach | null {
+  if (record === undefined) return null;
+  const coach = first?.planned.provenance?.coach ?? null;
+  if (first?.planned.source === 'coach' && coach !== null && coach.actionId === record.actionId && (record.status === 'saved' || record.status === 'applied')) {
+    return { state: 'coach', rowId: record.id, reason: coach.reason ?? record.reason };
+  }
+  const usable = record.usedBySessionId === null && record.sourceVersion === ctx.sourceVersion && !ctx.painFlagged && !ctx.painToday;
+  return record.status === 'undone' && usable ? { state: 'built_in', rowId: record.id } : null;
 }
 
 export interface WorkoutOverview {
@@ -643,6 +684,8 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
   const ordered = [...aggregate.exercises].sort((a, b) => a.order - b.order);
   const sets = aggregate.sets.filter(live);
   const barbellEx = firstBarbell(aggregate);
+  const coachByExercise = new Map((input.coach?.targets ?? []).map((r) => [r.exerciseId, r]));
+  const sourceVersion = input.coach?.sourceVersion ?? null;
 
   const rows: OverviewRow[] = ordered.map((ex, i) => {
     const own = sets.filter((s) => s.sessionExerciseId === ex.id && s.pairedWithSetId === null).sort((a, b) => a.index - b.index);
@@ -700,6 +743,8 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
       panel.push({ key: 'gym', label: 'Gym', value: what, tone: 'warning' });
     }
     if (covering !== null) panel.push({ key: 'flag', label: 'Flag', value: flagText(covering.flag), tone: 'warning' });
+    const coach = overviewCoachOf(first, coachByExercise.get(ex.exerciseId), { sourceVersion, painFlagged: covering !== null, painToday: input.coach?.painToday === true });
+    if (coach?.state === 'coach' && coach.reason !== null) panel.push({ key: 'coach', label: 'Coach', value: `“${coach.reason}”`, tone: 'normal' });
 
     const supersetWith = ex.supersetGroup === null ? [] : ordered.filter((o) => o.id !== ex.id && o.supersetGroup === ex.supersetGroup).map((o) => o.exerciseName);
     const spokenSets = (() => {
@@ -717,6 +762,7 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
       load.spoken,
       rounded !== null && !dropped ? 'rounded to this gym' : null,
       markerSpoken(marker),
+      coach?.state === 'coach' ? 'coach target' : null,
     ]
       .filter((x): x is string => x !== null && x !== '')
       .join(', ');
@@ -736,6 +782,7 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
       painFlag: covering === null ? null : { id: covering.flag.id, version: covering.flag.version, checkDue: covering.checkDue },
       missingEquipment: missing,
       firstSetId: first?.id ?? null,
+      coach,
       supersetWith,
       accessibilityLabel,
     };

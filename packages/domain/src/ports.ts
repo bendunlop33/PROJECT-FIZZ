@@ -80,6 +80,8 @@ export interface WriteFence {
   sets: readonly (
     | { kind: 'gym_equipment'; gymId: string; members: readonly { id: string; version: number }[] }
     | { kind: 'active_pain_flags'; ownerId: string; members: readonly { id: string; version: number }[] }
+    /** The coach's stored next-session targets from one finished workout (D21; ADR 0021). */
+    | { kind: 'next_session_targets'; ownerId: string; sourceSessionId: string; members: readonly { id: string; version: number }[] }
   )[];
 }
 

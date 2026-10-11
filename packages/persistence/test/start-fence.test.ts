@@ -87,4 +87,14 @@ describe('fenced start', () => {
     expect(retry).toMatchObject({ ok: true, duplicate: true });
     if (retry.ok) expect(retry.aggregate.session.id).toBe(first.aggregate.session.id);
   });
+
+  it('the coach’s stored next-session targets (ADR 0021): the same rows start; a row that changed or appeared creates nothing', async () => {
+    const SOURCE = id(950);
+    const none = fence({ sets: [...fence().sets, { kind: 'next_session_targets', ownerId: OWNER, sourceSessionId: SOURCE, members: [] }] });
+    // A row the preview saw that is gone (or never stored) fails the set check.
+    const phantom = fence({ sets: [...fence().sets, { kind: 'next_session_targets', ownerId: OWNER, sourceSessionId: SOURCE, members: [{ id: id(951), version: 1 }] }] });
+    expect(await start(phantom)).toMatchObject({ ok: false, error: { code: 'stale_inputs' } });
+    expect(await store.repos.sessions.getActive(OWNER)).toBeNull();
+    expect((await start(none)).ok).toBe(true);
+  });
 });

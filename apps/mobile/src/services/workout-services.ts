@@ -111,6 +111,7 @@ import type {
   EquipmentInstance,
   Gym,
   Exercise,
+  NextSessionTargetRecord,
   PainArea,
   PainFlag,
   PlannedSet,
@@ -379,6 +380,8 @@ export interface OverviewData {
   planCheckIn: CheckIn | null;
   /** Ben's unit, for the `Typical equipment` preview. */
   unit: UserProfile['preferredUnit'];
+  /** The coach's stored next-session targets the rows name (`row.coach.rowId`), for Undo / `Use coach target` (§5). */
+  coachTargets: Readonly<Record<string, NextSessionTargetRecord>>;
 }
 
 export const STALE_PREVIEW = 'Targets updated';
@@ -1021,20 +1024,31 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return resolveNext(p, target.nextOf);
   }
 
+  /** The finished workout an overview's targets come from: the next session's source, or the routine's last workout. */
+  async function overviewSource(resolved: ResolvedOverview): Promise<SessionAggregate | null> {
+    if (resolved.kind === 'next') return resolved.source;
+    return resolved.ref === null ? null : repos().sessions.get(resolved.ref.sessionId).catch(() => null);
+  }
+
+  /** The coach's stored next-session targets from a finished workout (D21), as saved. A read only; never calls the coach. */
+  async function storedCoachTargets(ownerId: string, source: SessionAggregate | null): Promise<NextSessionTargetRecord[]> {
+    if (source === null) return [];
+    return ctx.store().repos.coach.listNextTargets(ownerId, source.session.id);
+  }
+
   /** `previewKey` inputs as stored now (workout-overview §7). `gymId` null: the typical gym Start will save. */
   async function previewKeyParts(p: UserProfile, resolved: ResolvedOverview, gymId: string | null, checkIn: CheckIn | null): Promise<PreviewKeyParts> {
     const equipment = gymId === null ? null : await repos().equipment.listByGym(gymId);
-    const sourceId = resolved.kind === 'next' ? resolved.source.session.id : (resolved.ref?.sessionId ?? null);
-    const source = resolved.kind === 'next' ? resolved.source : sourceId === null ? null : await repos().sessions.get(sourceId).catch(() => null);
+    const source = await overviewSource(resolved);
     const flags = await repos().painFlags.listActive(p.id);
+    const coachRows = await storedCoachTargets(p.id, source);
     return {
       target: resolved.kind === 'routine' ? { kind: 'routine', routineId: resolved.routine.id } : { kind: 'next', sourceSessionId: resolved.source.session.id },
       routine: resolved.kind === 'routine' ? { id: resolved.routine.id, version: resolved.routine.version } : null,
       gym: gymId === null || equipment === null ? { typical: true } : { id: gymId, equipment: equipment.map((e) => ({ id: e.id, version: e.version })) },
       source: source === null ? null : { id: source.session.id, revision: source.revision },
       painFlags: flags.map((f) => ({ id: f.id, version: f.version })),
-      // D21 coach actions arrive with coach v1; none are stored before then.
-      coachActions: [],
+      coachActions: coachRows.map((r) => ({ id: r.id, version: r.version })),
       unit: p.preferredUnit,
       checkIn: checkIn === null ? null : { id: checkIn.id, version: checkIn.version },
     };
@@ -1959,9 +1973,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const at = ctx.now();
         const title =
           resolved.kind === 'routine' ? resolved.routine.name : (storedName(resolved.source) ?? (await titleFor(resolved.source.exercises.map((e) => e.exerciseId))).title);
+        const source = await overviewSource(resolved);
+        // A failed read shows no coach rows; the key below reads them again, so a Start planned without them is refused.
+        const coachTargets = await storedCoachTargets(p.id, source).catch(() => [] as NextSessionTargetRecord[]);
         const view = buildWorkoutOverview({
           aggregate,
           fits: run.fits,
+          coach: source === null || coachTargets.length === 0 ? null : { targets: coachTargets, sourceVersion: source.session.version, painToday: unspecifiedPain(planCheckIn).active },
           pasts,
           painFlags: await repos().painFlags.listActive(p.id),
           exerciseInfo,
@@ -1982,6 +2000,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           checkIn: gate.kind === 'reuse' ? (reused ? { kind: 'reuse', checkIn: reused } : { kind: 'ask' }) : gate.kind === 'ask' ? { kind: 'ask' } : { kind: 'skip', reason: gate.reason },
           planCheckIn,
           unit: p.preferredUnit,
+          coachTargets: Object.fromEntries(coachTargets.map((r) => [r.id, r])),
         };
       } catch {
         return null;

@@ -15,6 +15,6 @@ Running the whole planner inside one SQLite transaction would mean every reposit
 
 ## Consequences
 - A change that lands after the key check, at any point before the write, creates nothing. The page re-reads and Ben taps Start again, with the same opId.
-- When coach v1 stores D21 actions, they must join `PreviewKeyParts.coachActions` **and** the fence (a new fence set), or this guarantee won't cover them.
+- Coach v1's stored D21 next-session targets (`next_session_targets`, migration 6) are in `PreviewKeyParts.coachActions` and in the fence as a `next_session_targets` set (owner + source workout, every row's ID and version), so an Undo or a late coach result after the key check creates nothing. No new migration.
 
 **Numbering:** written as 0019 on the overview branch; main took 0019 (gym switch) and 0020 (coach v1), so this is 0021. Reviews `workout-overview.md`, `-r2` and `-r3` call it ADR 0019.

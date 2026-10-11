@@ -118,12 +118,14 @@ Markers never use `status.done`, `status.danger` or `accent`. The panel's `CHANG
 
 ---
 
-## 5. Coach (hidden until coach v1 merges)
+## 5. Coach
 
-- **No coach configured, or coach v1 not merged:** nothing coach-related renders. There is no tag, no slot, no status line and no `Built-in rule` tag on rows. The `Why?` sheet still says `Set by Built-in rule`.
-- **Coach live, with a stored D21 small change for this routine:** the row adds `SourceTag` `Coach` (`text.bubble` icon + word) beside the marker. Its panel shows `COACH "…"` (the stored reason) and `Undo`. Undo calls the **same versioned command as the Summary's Next time row**: that exercise goes back to the built-in rule, the marker re-computes, a toast reads `Incline dumbbell press · built-in rule` [Undo], and the panel offers `Use coach target`. A stale version is rejected and the page re-renders (rule 5). This page is the last place to undo before Start uses the change.
+Built with the coach v1 merge. The rows read the coach's stored next-session targets only (`listNextTargets` for the workout the targets come from); opening the page never calls the coach.
+
+- **No stored coach target for a row (no coach configured, or none saved):** nothing coach-related renders. There is no tag, no slot, no status line and no `Built-in rule` tag on rows. The `Why?` sheet still says `Set by Built-in rule`.
+- **Coach live, with a stored D21 small change for this routine:** the row adds `SourceTag` `Coach` (`text.bubble` icon + word) beside the marker. Its panel shows `COACH "…"` (the stored reason) and `Undo`. Undo calls the **same versioned command as the Summary's Next time row**: that exercise goes back to the built-in rule, the marker re-computes, a toast reads `Incline dumbbell press · coach target undone` [Undo] (no rule label in the main UI, CLAUDE.md minimal copy), and the panel offers `Use coach target` (`Apply` again for a bigger change Ben had applied). `Use coach target` is offered only where Start would use it (not used, same source version, no pain flag, no pain in today's check-in). A stale version is rejected and the page re-renders (rule 5). This page is the last place to undo before Start uses the change.
 - **Coach configured but offline:** nothing on the page changes. Stored coach targets are still shown, because they are already saved. The `Why?` sheet says `Built-in rule (coach offline)` where it applies.
-- If a late coach result (CA10) saves new targets while the page is open, the affected rows update in place and the preview key changes (§7).
+- If a late coach result (CA10) saves new targets while the page is open, the affected rows update in place and the preview key changes (§7). The stored targets' IDs and versions are in `previewKey` and in Start's `WriteFence` (ADR 0021), so a change that lands after the key check creates nothing.
 - Opening the page never calls the coach, and the page has no lighter-session offer. CI5's offer stays in the first set card.
 
 ---

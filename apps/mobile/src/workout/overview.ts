@@ -1,5 +1,7 @@
 import { toMs, type CheckInGate, type OverviewBasis, type OverviewRow } from '@fizz/domain';
-import type { CheckIn, CheckInScore, SessionCheckIn } from '@fizz/schemas';
+import type { CheckIn, CheckInScore, NextSessionTargetRecord, SessionCheckIn } from '@fizz/schemas';
+
+import type { NextTimeTap } from '../coach/next-time-view';
 
 import type { OverviewData } from '../services/workout-services';
 
@@ -170,6 +172,27 @@ export function startFailure(code: string): StartFailure {
   if (code === 'stale_preview') return { kind: 'stale' };
   if (code === 'session_already_active') return { kind: 'active' };
   return { kind: 'failed' };
+}
+
+/**
+ * The `Next time` tap a coach row sends (§5): Undo on the coach's target;
+ * after it, the tap that puts it back (`Use coach target`, or `Apply` for a
+ * bigger change Ben had applied). `status`: the row's status before the Undo.
+ */
+export function coachTapOf(state: 'coach' | 'built_in', status: NextSessionTargetRecord['status']): NextTimeTap {
+  if (state === 'coach') return 'undo';
+  return status === 'applied' || status === 'proposed' ? 'apply' : 'use_coach';
+}
+
+/** The toast after Undo on a coach row (§5). */
+export function coachUndoneText(exerciseName: string): string {
+  return `${exerciseName} · coach target undone`;
+}
+
+/** A refused or failed coach-row tap (the Summary's words). */
+export function coachTapFailedText(reason: 'failed' | 'missing' | 'changed_since' | 'used'): string {
+  if (reason === 'failed') return 'Couldn’t save.';
+  return reason === 'used' ? 'Already used.' : 'Changed since. Check it again.';
 }
 
 export const OVERVIEW_COPY = {

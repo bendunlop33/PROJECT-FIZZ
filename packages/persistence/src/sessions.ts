@@ -430,7 +430,9 @@ export async function fenceHolds(tx: SqlExecutor, fence: WriteFence): Promise<bo
     const rows =
       set.kind === 'gym_equipment'
         ? await tx.getAll<{ id: string; version: number }>('SELECT id, version FROM equipment WHERE gym_id = ?', [set.gymId])
-        : await tx.getAll<{ id: string; version: number }>("SELECT id, version FROM pain_flags WHERE owner_id = ? AND status = 'active'", [set.ownerId]);
+        : set.kind === 'active_pain_flags'
+          ? await tx.getAll<{ id: string; version: number }>("SELECT id, version FROM pain_flags WHERE owner_id = ? AND status = 'active'", [set.ownerId])
+          : await tx.getAll<{ id: string; version: number }>('SELECT id, version FROM next_session_targets WHERE owner_id = ? AND source_session_id = ?', [set.ownerId, set.sourceSessionId]);
     if (rows.length !== set.members.length) return false;
     const want = new Map(set.members.map((m) => [m.id, m.version]));
     if (rows.some((r) => want.get(r.id) !== r.version)) return false;

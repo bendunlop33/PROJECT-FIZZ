@@ -22,6 +22,9 @@ import { createAfterDismiss } from '../../workout/after-dismiss';
 import {
   checkInRow,
   checkInRowLayout,
+  coachTapFailedText,
+  coachTapOf,
+  coachUndoneText,
   eyebrowText,
   gymToastText,
   OVERVIEW_COPY,
@@ -40,7 +43,8 @@ import { TargetWhyPanel } from './TargetWhyPanel';
  * workout`. Opening it makes no AI call, needs no network and writes nothing;
  * the rows come from the same dry run Start uses (`services.overview.load`).
  * This screen formats and lays out only: every number comes from the domain.
- * The coach is hidden until coach v1 merges (§5): nothing coach-related renders.
+ * Coach rows (§5) read the coach's stored next-session targets only; with
+ * none, nothing coach-related renders.
  */
 
 type Toasting = { text: string; action?: string; onAction?: () => void } | null;
@@ -358,6 +362,41 @@ export function WorkoutOverviewScreen() {
     setWhyVisible(true);
   }
 
+  /**
+   * Undo on a coach row, or `Use coach target` after one (§5): the same
+   * versioned tap as the Summary's `Next time` row. A stale version is
+   * refused and the page re-reads (rule 5).
+   */
+  async function tapCoach(r: OverviewData['view']['rows'][number]) {
+    if (!page || r.coach === null) return;
+    const record = page.coachTargets[r.coach.rowId];
+    if (!record) return;
+    const tap = coachTapOf(r.coach.state, record.status);
+    const done = await services.coach.tapNextTarget(record, tap, newUuid()).catch(() => null);
+    changed();
+    if (done === null || done.status === 'not_possible') {
+      setToast({ text: coachTapFailedText(done === null ? 'failed' : done.reason) });
+      reload();
+      return;
+    }
+    if (r.coach.state !== 'coach') return;
+    const saved = done.row;
+    setToast({
+      text: coachUndoneText(r.name),
+      action: 'Undo',
+      onAction: () => {
+        setToast(null);
+        void services.coach
+          .tapNextTarget(saved, coachTapOf('built_in', record.status), newUuid())
+          .catch(() => null)
+          .then((back) => {
+            if (back === null || back.status === 'not_possible') setToast({ text: coachTapFailedText(back === null ? 'failed' : back.reason) });
+            changed();
+          });
+      },
+    });
+  }
+
   function toggle(rowId: string) {
     // The panel opens in place; with Reduce Motion it appears without the height animation (§8).
     if (!theme.a11y.reduceMotion) LayoutAnimation.configureNext(LayoutAnimation.create(theme.timing.fast, 'easeOut', 'opacity'));
@@ -476,6 +515,13 @@ export function WorkoutOverviewScreen() {
           flagId
             ? () => {
                 navigation.navigate('PainFlag', { flagId });
+              }
+            : undefined
+        }
+        onCoach={
+          r.coach !== null
+            ? () => {
+                void tapCoach(r);
               }
             : undefined
         }
