@@ -1,4 +1,5 @@
-import type { CommandOf, PlannedSet, SessionAggregate, SetType, WeightUnit, WorkoutSet, ZonedTimestamp } from '@fizz/schemas';
+import type { CommandOf, PainFlag, PlannedSet, SessionAggregate, SetType, WeightUnit, WorkoutSet, ZonedTimestamp } from '@fizz/schemas';
+import type { PainStatus } from '../progression';
 import { currentGymEquipment } from './equipment-snapshot';
 import { snapPlanToGym } from './snap';
 import type { SubstituteSlot } from './substitutes';
@@ -9,7 +10,11 @@ import { swapSource, type SwapPlan } from './swap-plan';
  * pick applies at once with Undo). Pure.
  *
  * - `midSwapSlot`: the slot the Swap sheet ranks for: the row's **pending**
- *   sets only (done and skipped sets stay where they are, rule 2).
+ *   sets only (done and skipped sets stay where they are, rule 2). The
+ *   pending other side of a half-logged left/right pair stays too: it
+ *   finishes that pair on the original exercise (review gaps S1).
+ * - `swapPainCarry`: pain on the row being swapped holds the substitute
+ *   for today (B5, accepted 11 Oct; rule 9).
  * - `buildSwapExerciseCommand`: one new pending set per pending set, same
  *   set type, its target from the substitute's own plan (`substituteTargets`,
  *   never the original's load, GS3), fitted with the shared `snapPlanToGym`
@@ -17,8 +22,37 @@ import { swapSource, type SwapPlan } from './swap-plan';
  *   min/max; a load that can't be made here is left blank).
  */
 
+/**
+ * The row's sets a swap moves: pending, and not the other side of a
+ * left/right pair whose first side is logged (that set completes the pair
+ * on the original exercise, as a gym switch leaves it; review gaps S1).
+ */
 export function pendingSetsOf(state: SessionAggregate, sessionExerciseId: string): WorkoutSet[] {
-  return state.sets.filter((s) => s.sessionExerciseId === sessionExerciseId && s.status === 'pending').sort((a, b) => a.index - b.index);
+  return state.sets.filter((s) => s.sessionExerciseId === sessionExerciseId && s.status === 'pending' && s.pairedWithSetId === null).sort((a, b) => a.index - b.index);
+}
+
+/**
+ * B5 (accepted 11 Oct; rule 9; exercise-library §7 check 13): after pain on
+ * an exercise, a swap to a similar one doesn't go up today. Active when the
+ * row being swapped (or any row it was itself swapped from today) has an
+ * active pain flag, or a logged set on it is marked `pain`. The caller plans
+ * the substitute with this as its session pain, so its targets are held.
+ */
+export function swapPainCarry(state: SessionAggregate, sessionExerciseId: string, painFlags: readonly PainFlag[]): PainStatus {
+  const chain: string[] = [];
+  let id: string | undefined = sessionExerciseId;
+  while (id !== undefined && !chain.includes(id)) {
+    chain.push(id);
+    const row = state.exercises.find((e) => e.id === id);
+    id = row?.swappedFrom?.sessionExerciseId;
+  }
+  const rows = state.exercises.filter((e) => chain.includes(e.id));
+  const flags = painFlags.filter((f) => f.status === 'active' && rows.some((r) => r.exerciseId === f.exerciseId)).sort((a, b) => (a.reportedAt.utc < b.reportedAt.utc ? -1 : 1));
+  const marked = state.sets
+    .filter((s) => chain.includes(s.sessionExerciseId) && s.status === 'completed' && (s.exclusions ?? []).includes('pain'))
+    .sort((a, b) => ((a.completedAt?.utc ?? '') < (b.completedAt?.utc ?? '') ? -1 : 1));
+  const first = flags[0]?.reportedAt.utc ?? marked[0]?.completedAt?.utc ?? null;
+  return flags.length > 0 || marked.length > 0 ? { active: true, reportedAtUtc: first } : { active: false, reportedAtUtc: null };
 }
 
 /** The Swap sheet's slot for a row mid-workout: its pending sets. Null when nothing is left to swap. */

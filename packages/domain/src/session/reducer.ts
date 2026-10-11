@@ -34,6 +34,7 @@ import { deriveId, stableStringify } from '../stable';
 import { toIso, toMs } from '../time';
 import { coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
+import { pendingSetsOf } from './mid-swap';
 import { buildExecutionOrder, isRoundEnd, nextPendingSet } from './order';
 
 export type SessionErrorCode =
@@ -1492,7 +1493,8 @@ function handleSwapExercise(state: SessionAggregate, cmd: CommandOf<'swap_exerci
   if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed since Swap was opened.');
   const ex = state.exercises.find((e) => e.id === cmd.sessionExerciseId);
   if (!ex || ex.removed !== undefined) return fail('exercise_not_found', 'Exercise not found in this workout.');
-  const pending = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status === 'pending').sort((a, b) => a.index - b.index);
+  // The other side of a half-logged left/right pair stays on this row (review gaps S1).
+  const pending = pendingSetsOf(state, ex.id);
   if (pending.length === 0) return fail('set_not_pending', `Nothing left to swap: ${ex.exerciseName} is done.`);
   if (isWorkLive(state, pending.map((s) => s.id))) return fail('work_interval_running', 'Stop the work timer before swapping.');
   const from = cmd.sets.map((x) => x.fromSetId);

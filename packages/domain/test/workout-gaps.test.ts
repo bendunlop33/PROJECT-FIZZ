@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SessionAggregateSchema, type PlannedSet, type SessionAggregate, type SessionCommand } from '@fizz/schemas';
+import { SessionAggregateSchema, type PainFlag, type PlannedSet, type SessionAggregate, type SessionCommand } from '@fizz/schemas';
 import {
   buildActiveSetView,
   buildAddExerciseCommand,
@@ -7,6 +7,7 @@ import {
   isRemovable,
   midSwapSlot,
   reduceSession,
+  swapPainCarry,
   valuesText,
   type SwapPlan,
 } from '../src/index';
@@ -141,6 +142,74 @@ describe('swap an exercise mid-workout (EL4, B3)', () => {
     expectError(reduceSession(s, r.command), 'work_interval_running');
     // A different measurement is never offered (and never built).
     expect(buildSwapExerciseCommand({ aggregate: s, sessionExerciseId: hang, plan: chestPlan(45), gymName: 'Main', ownerUnit: 'kg', opId: 'sw2', at: at(3), newId: idGen(72_000) })).toEqual({ ok: false, reason: 'measurement' });
+  });
+});
+
+const painFlag = (exerciseId: string, status: PainFlag['status'] = 'active'): PainFlag => ({
+  id: id(7_700),
+  ownerId: profile().id,
+  version: 1,
+  createdAtUtc: at(310).utc,
+  updatedAtUtc: at(310).utc,
+  exerciseId,
+  exerciseName: 'Bench press',
+  area: 'shoulder',
+  source: 'workout',
+  checkInId: null,
+  reportedAt: at(310),
+  status,
+  clearedAtUtc: null,
+  createdByOpId: 'op-pain',
+});
+
+describe('swap after pain holds the substitute today (B5, rule 9; review gaps B1)', () => {
+  it('an active flag on the swapped exercise, or a logged set marked pain, carries; nothing else does', () => {
+    const s = midBench();
+    const row = benchRow(s);
+    expect(swapPainCarry(s, row, [])).toEqual({ active: false, reportedAtUtc: null });
+    expect(swapPainCarry(s, row, [painFlag(ROW)]).active).toBe(false);
+    expect(swapPainCarry(s, row, [painFlag(BENCH, 'cleared')]).active).toBe(false);
+    expect(swapPainCarry(s, row, [painFlag(BENCH)])).toEqual({ active: true, reportedAtUtc: at(310).utc });
+    // A set marked `pain` (the flag since cleared) still holds today.
+    const b1 = setsFor(s, BENCH)[1];
+    const marked: SessionAggregate = { ...s, sets: s.sets.map((x) => (x.id === b1?.id ? { ...x, exclusions: ['pain' as const] } : x)) };
+    expect(swapPainCarry(marked, row, [])).toEqual({ active: true, reportedAtUtc: b1?.completedAt?.utc ?? null });
+  });
+
+  it('swapping the substitute again still carries the original’s pain (Bench → Chest → …)', () => {
+    const s0 = midBench();
+    const s1 = apply(s0, swapCmd(s0, chestPlan(45)));
+    const chest = s1.exercises.find((e) => e.exerciseId === CHEST.id)?.id ?? '';
+    expect(swapPainCarry(s1, chest, [painFlag(BENCH)]).active).toBe(true);
+    expect(swapPainCarry(s1, chest, []).active).toBe(false);
+  });
+});
+
+describe('swap leaves a half-logged left/right pair alone (review gaps S1)', () => {
+  it('the pending other side stays on the original row; only the untouched sets move', () => {
+    let s = startFixture().state;
+    s = { ...s, exercises: s.exercises.map((e) => (e.exerciseId === BENCH ? { ...e, laterality: 'unilateral' as const } : e)), sets: s.sets.map((x) => (setsFor(s, BENCH).some((b) => b.id === x.id) ? { ...x, side: 'both' as const } : x)) };
+    const [w, b1] = setsFor(s, BENCH);
+    s = apply(s, logCmd(w?.id ?? '', values(kg(60), 10), 60));
+    s = apply(s, logCmd(b1?.id ?? '', values(kg(100), 8), 300, 'left-1', 'left'));
+    const partner = s.sets.find((x) => x.pairedWithSetId === b1?.id);
+    expect(partner?.status).toBe('pending');
+    // The slot is the untouched set 2 only.
+    expect(midSwapSlot(s, benchRow(s))?.workingSets).toBe(1);
+    const after = apply(s, swapCmd(s, chestPlan(45)));
+    expect(after.sets.find((x) => x.id === partner?.id)).toEqual(partner);
+    expect(setsFor(after, CHEST.id)).toHaveLength(1);
+    expect(after.exercises.find((e) => e.exerciseId === BENCH)?.removed).toBeUndefined();
+  });
+
+  it('nothing to swap when only the other side is left', () => {
+    let s = startFixture().state;
+    s = { ...s, exercises: s.exercises.map((e) => (e.exerciseId === BENCH ? { ...e, laterality: 'unilateral' as const } : e)), sets: s.sets.map((x) => (setsFor(s, BENCH).some((b) => b.id === x.id) ? { ...x, side: 'both' as const } : x)) };
+    const [w, b1, b2] = setsFor(s, BENCH);
+    s = apply(s, logCmd(w?.id ?? '', values(kg(60), 10), 60));
+    s = apply(s, logCmd(b1?.id ?? '', values(kg(100), 8), 300));
+    s = apply(s, logCmd(b2?.id ?? '', values(kg(100), 8), 500, 'left-2', 'left'));
+    expect(midSwapSlot(s, benchRow(s))).toBeNull();
   });
 });
 

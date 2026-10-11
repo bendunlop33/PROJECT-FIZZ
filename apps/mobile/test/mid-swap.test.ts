@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { workoutView } from '@fizz/coach';
 import { currentGymEquipment, isLoadAchievable } from '@fizz/domain';
 
-import { createHarness, setUpGym, type Harness } from './harness';
+import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
  * Swap an exercise mid-workout (exercise-library EL4, B3 accepted 11 Oct)
@@ -74,5 +74,63 @@ describe('mid-workout swap', () => {
     expect(workoutView(u.aggregate, 'Main Gym').exercises.map((e) => e.name)).toEqual(['Bench press']);
     // Nothing left to swap on a row with no pending set.
     expect(await s.workout.swapCandidates(sessionId, newRow?.id ?? '')).toBeNull();
+  });
+});
+
+describe('swap after pain (B5, rule 9; review gaps B1)', () => {
+  /** DB bench last done 30 kg each × 10 on every set (the rule would go up); today's Bench set 1 logged, maybe marked pain. */
+  async function benchThenSwap(pain: boolean) {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const db = 'Dumbbell bench press';
+    // As many sets as today's slot can have, so the rule's set count is met.
+    await logWorkout(h, s, gymId, [{ exercise: db, sets: Array.from({ length: 6 }, () => ({ load: 30, reps: 10 })) }]);
+    h.clockMs += 3 * 86_400_000;
+    const started = await s.workout.start({ gymId, opId: 'start-pain', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!started.ok) throw new Error(started.error.message);
+    const sessionId = started.aggregate.session.id;
+    const pick = (await s.workout.pickerExercises(sessionId, 'Bench press')).find((p) => p.exercise.name === 'Bench press');
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pick?.exercise.id ?? '', equipmentId: pick?.equipment[0]?.id ?? null, opId: 'add-bench' });
+    if (!added.ok) throw new Error(added.error.message);
+    const row = added.aggregate.exercises[0];
+    if (!row) throw new Error('row');
+    for (let i = 0; i < 3; i += 1) {
+      const r = await s.workout.dispatch(sessionId, { type: 'add_set', at: h.now(), opId: `add-set-${String(i)}`, sessionExerciseId: row.id, newSetId: h.ids(), setType: null });
+      if (!r.ok) throw new Error(r.error.message);
+    }
+    const first = (await s.workout.load(sessionId))?.aggregate.sets.filter((x) => x.sessionExerciseId === row.id && x.status === 'pending').sort((a, b) => a.index - b.index)[0];
+    h.clockMs += 60_000;
+    const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: 'log-1', setId: first?.id ?? '', values: { load: { value: 60, unit: 'kg', convention: 'total' }, reps: 8, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
+    if (!logged.ok) throw new Error(logged.error.message);
+    if (pain) {
+      const set = logged.aggregate.sets.find((x) => x.id === first?.id);
+      const r = await s.workout.correctSet({ sessionId, setId: set?.id ?? '', expectedSetVersion: set?.version ?? 0, patch: { exclusions: ['pain'] }, opId: 'pain-1' });
+      if (!r.ok) throw new Error('pain');
+    }
+    const sheet = await s.workout.swapCandidates(sessionId, row.id);
+    const choice = sheet?.rows.find((r) => r.name === db);
+    if (!sheet || !choice) throw new Error(`no ${db}: ${(sheet?.rows ?? []).map((r) => r.name).join(', ')}`);
+    const swapped = await s.workout.swapExercise({ sessionId, sessionExerciseId: row.id, exerciseId: choice.exerciseId, opId: 'swap-pain' });
+    if (!swapped.ok) throw new Error(swapped.error.message);
+    const newRow = swapped.aggregate.exercises.find((e) => e.swappedFrom?.opId === 'swap-pain');
+    const moved = swapped.aggregate.sets.filter((x) => x.sessionExerciseId === newRow?.id);
+    return { sheet, choice, moved };
+  }
+
+  it('Bench marked pain → swap to DB bench: the sheet says so and the new sets stay at 30 kg each', async () => {
+    const { sheet, choice, moved } = await benchThenSwap(true);
+    expect(sheet.painHeld).toBe(true);
+    expect(choice.targetText.replace(/\s/g, ' ')).toMatch(/^30 kg each × /);
+    expect(moved.length).toBeGreaterThan(0);
+    for (const m of moved) {
+      expect(m.planned.load).toEqual({ value: 30, unit: 'kg', convention: 'per_hand' });
+      expect(m.planned.reps?.max ?? 0).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it('with no pain the same history goes up', async () => {
+    const { sheet, moved } = await benchThenSwap(false);
+    expect(sheet.painHeld).toBe(false);
+    expect(moved.some((m) => (m.planned.load?.value ?? 0) > 30)).toBe(true);
   });
 });

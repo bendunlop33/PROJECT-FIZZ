@@ -2,9 +2,9 @@ import { ScrollView, useWindowDimensions, View } from 'react-native';
 
 import type { SwapSheet } from '../../services/workout-services';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, SubstituteRowView, TextButton } from '../../ui';
+import { AppText, BottomCard, StatusLine, SubstituteRowView, TextButton } from '../../ui';
 import { overviewLayout, OVERVIEW_COPY } from '../../workout/overview';
-import { noSwapsText, swapSubtitle } from '../../workout/overview-edits';
+import { noSwapsText, swapPainLine, swapSubtitle } from '../../workout/overview-edits';
 
 /**
  * The Swap sheet during a workout (exercise-library EL4, B3): the same rows
@@ -38,6 +38,7 @@ export function MidSwapSheet(props: {
         </View>
         <TextButton label={OVERVIEW_COPY.close} tone="secondary" onPress={props.onClose} />
       </View>
+      {sheet && swapPainLine(sheet.painHeld) !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={swapPainLine(sheet.painHeld) ?? ''} /> : null}
       {sheet && sheet.rows.length > 0 ? (
         <ScrollView>
           <View style={{ alignItems: 'flex-end', paddingBottom: theme.space['1'] }}>

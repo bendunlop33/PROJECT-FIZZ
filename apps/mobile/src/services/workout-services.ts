@@ -3,6 +3,7 @@ import {
   liveExercises,
   buildSwapExerciseCommand,
   midSwapSlot,
+  swapPainCarry,
   applyCheckInPatch,
   buildActiveSetView,
   buildLiftHighlight,
@@ -50,6 +51,7 @@ import {
   repeatPreviewLines,
   targetSummaryLines,
   unspecifiedPain,
+  painStatusFor,
   withCoachTargets,
   equipmentForExercise,
   searchExercises,
@@ -483,6 +485,8 @@ export interface SwapSheet {
   plannedName: string;
   gymName: string;
   rows: SubstituteRow[];
+  /** Pain on the exercise being swapped: the substitute's targets are held today (B5, rule 9). */
+  painHeld: boolean;
 }
 
 /** `Change Push A too ›` → Apply / Undo (TE4). */
@@ -1221,27 +1225,42 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** What `substituteTargets` and `rankSubstitutions` need at a gym (local reads only). */
-  async function substituteCtx(p: UserProfile, gymId: string, gymEquipment: readonly EquipmentInstance[] | undefined, today: CheckIn | null, exerciseIds: Iterable<string>) {
+  /**
+   * `carryFrom`: the exercise being swapped. An active pain flag on it holds
+   * the substitute today (B5, rule 9): it is planned as if pain was reported.
+   */
+  async function substituteCtx(p: UserProfile, gymId: string, gymEquipment: readonly EquipmentInstance[] | undefined, today: CheckIn | null, exerciseIds: Iterable<string>, carryFrom?: string) {
     const at = ctx.now();
     const gym = await repos().gyms.get(gymId).catch(() => null);
+    const painFlags = await repos().painFlags.listActive(p.id);
+    const checkInPain = unspecifiedPain(today);
+    const carried = carryFrom === undefined ? { active: false, reportedAtUtc: null } : painStatusFor(painFlags, carryFrom);
     return {
       ownerId: p.id,
       unit: p.preferredUnit,
       gym: { id: gymId, name: gym?.name ?? 'this gym', equipment: gymEquipment ?? (await repos().equipment.listByGym(gymId)) },
       knownEquipment: await allEquipment(p.id),
       lastUsedHere: await lastUsedFor(p.id, exerciseIds, gymId),
-      painFlags: await repos().painFlags.listActive(p.id),
-      sessionPain: unspecifiedPain(today),
+      painFlags,
+      sessionPain: checkInPain.active ? checkInPain : carried,
+      painCarried: carried.active,
       at,
       nowMs: toMs(at.utc),
     };
   }
 
-  /** `substituteCtx` for a running workout: its current gym's items as the workout has them, and its check-in. */
-  async function midSwapCtx(p: UserProfile, aggregate: SessionAggregate, exerciseIds: Iterable<string>) {
+  /**
+   * `substituteCtx` for a running workout: its current gym's items as the
+   * workout has them, and its check-in. Pain on the row being swapped (a
+   * flag, or a set marked `pain`) holds the substitute today (B5, rule 9):
+   * it is planned as if pain was reported in this workout.
+   */
+  async function midSwapCtx(p: UserProfile, aggregate: SessionAggregate, exerciseIds: Iterable<string>, fromSessionExerciseId: string) {
     const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId).catch(() => null) : null;
     const gymId = aggregate.session.gymId ?? 'no-gym';
-    return substituteCtx(p, gymId, currentGymEquipment(aggregate.session), ci ?? null, exerciseIds);
+    const base = await substituteCtx(p, gymId, currentGymEquipment(aggregate.session), ci ?? null, exerciseIds);
+    const carried = swapPainCarry(aggregate, fromSessionExerciseId, base.painFlags);
+    return { ...base, sessionPain: base.sessionPain.active ? base.sessionPain : carried, painCarried: carried.active };
   }
 
   /**
@@ -1261,7 +1280,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const exercise = await exerciseById(e.toExerciseId);
       if (slot === null || exercise === null) continue;
       const history = await historyFor(p.id, exercise.id).catch(() => [] as HistorySession[]);
-      swaps.set(e.slotKey, substituteTargets(slot, exercise, history, await substituteCtx(p, gymId, gymEquipment, today, [exercise.id])));
+      const from = basisSlots(sb).find((b) => b.slotKey === e.slotKey)?.exerciseId;
+      swaps.set(e.slotKey, substituteTargets(slot, exercise, history, await substituteCtx(p, gymId, gymEquipment, today, [exercise.id], from)));
     }
     return { draft, input: { draft: { id: draft.id, version: draft.version }, edits, swaps } };
   }
@@ -1894,9 +1914,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const pool = [...all.values()].filter((e) => (e.ownerId === null || e.ownerId === p.id) && ((e.catalogueKey !== undefined && e.catalogueKey !== null && keys.has(e.catalogueKey)) || (planned.family !== undefined && e.family === planned.family)));
         const histories = new Map<string, HistorySession[]>();
         for (const e of pool) histories.set(e.id, await historyFor(p.id, e.id).catch(() => [] as HistorySession[]));
-        const sctx = await midSwapCtx(p, aggregate, pool.map((e) => e.id));
+        const sctx = await midSwapCtx(p, aggregate, pool.map((e) => e.id), sessionExerciseId);
         const rows = rankSubstitutions({ ...sctx, slotExercise: planned, slot, exercises: pool, catalogueSubstitutions: subs, excludeExerciseIds: inWorkout, histories, planned: null });
-        return { slotKey: sessionExerciseId, plannedName: row.exerciseName, gymName: sctx.gym.name, rows };
+        return { slotKey: sessionExerciseId, plannedName: row.exerciseName, gymName: sctx.gym.name, rows, painHeld: sctx.painCarried };
       } catch {
         return null;
       }
@@ -1924,7 +1944,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (!row || slot === null) return failed('Nothing left to swap.');
       if (exercise === null) return { ok: false, error: { code: 'write_failed', message: 'Couldn’t save that exercise. Try again.' } };
       const history = await historyFor(p.id, exercise.id).catch(() => [] as HistorySession[]);
-      const sctx = await midSwapCtx(p, aggregate, [exercise.id]);
+      const sctx = await midSwapCtx(p, aggregate, [exercise.id], row.id);
       const plan = substituteTargets(slot, exercise, history, sctx);
       const built = buildSwapExerciseCommand({
         aggregate,
@@ -2779,7 +2799,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const pool = [...all.values()].filter((e) => (e.catalogueKey !== undefined && e.catalogueKey !== null && keys.has(e.catalogueKey)) || (planned.family !== undefined && e.family === planned.family) || e.id === planned.id);
         const histories = new Map<string, HistorySession[]>();
         for (const e of pool) histories.set(e.id, await historyFor(p.id, e.id).catch(() => [] as HistorySession[]));
-        const sctx = await substituteCtx(p, gymId, gymEquipment, planCheckIn, pool.map((e) => e.id));
+        const sctx = await substituteCtx(p, gymId, gymEquipment, planCheckIn, pool.map((e) => e.id), planned.id);
         // `Swap again`: the planned exercise first, with the target the plan gives it without this swap (what Undo restores).
         let plannedRow: { targetText: string; spoken: string } | null = null;
         if (resolvedEdits.swaps.has(req.slotKey)) {
@@ -2804,7 +2824,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           histories,
           planned: plannedRow,
         });
-        return { slotKey: req.slotKey, plannedName: planned.name, gymName: sctx.gym.name, rows };
+        return { slotKey: req.slotKey, plannedName: planned.name, gymName: sctx.gym.name, rows, painHeld: sctx.painCarried };
       } catch {
         return null;
       }
