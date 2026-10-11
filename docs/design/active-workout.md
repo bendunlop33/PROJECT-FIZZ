@@ -258,6 +258,12 @@ With the opt-in `Auto-save timed sets` setting (off by default), the result is s
 
 While the work timer runs or is paused, Finish, Delete set and Skip exercise (for this exercise) are refused by the domain (`work_interval_running`). The UI shows why and offers [Stop] (see §4.8). A Stop tapped just after the timer reached 0 simply shows `Log 0:45`; it is never an error.
 
+**As built (developer, 11 Oct).** Decided conservatively where this section left details open:
+- Timed exercises are in the exercise picker (they were hidden). The set card has a `Time` field (seconds, ±5 s, from 0:05) instead of reps. Before Start, the time in the field is what the timer runs (else the target, else 0:30); the primary reads `Start 0:45`.
+- While the timer runs, the field is replaced by the countdown (`Work 0:38`) and the primary reads `Stop`. At 0 there is one haptic while the app is on screen and the planned time fills the field; the primary becomes `Log 0:45`. A Stop leaves the time worked (`Log 0:38`).
+- Not built yet: the `Time.` spoken cue (needs the audio-session module), a notification or Live Activity at 0 while the phone is locked (the deadline is stored, so a relaunch catches up), and the opt-in `Auto-save timed sets` setting.
+- Next-time targets: the built-in rule has no rule for timed or distance sets, so an added timed exercise starts with one set prefilled from last time (`Add set` copies it). No progression is suggested for them.
+
 ### 2.8 Paused
 
 ```

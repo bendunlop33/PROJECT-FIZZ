@@ -51,7 +51,7 @@ import { NoteSheet } from './NoteSheet';
 import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './WorkoutCoach';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu } from '../../workout/exercise-menu';
-import { shouldCueRestEnd } from '../../workout/cues';
+import { shouldCueRestEnd, workTimerText } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { newerWorkoutData, withCommandResult } from '../../workout/load-order';
 import { logRefusal, reloadsAfterRefusal } from '../../workout/log-refusal';
@@ -140,6 +140,7 @@ export function WorkoutScreen() {
   const tickedFor = useRef<string | null>(null);
   const loadRef = useRef<TextInput>(null);
   const repsRef = useRef<TextInput>(null);
+  const timeRef = useRef<TextInput>(null);
   /** During rest the next set is folded away (D-Rest); this opens it. Reset when the set changes. */
   const [showNextSet, setShowNextSet] = useState(false);
   /** A field to focus once the editor is drawn (`Enter load` during rest opens it first). A fresh object per tap. */
@@ -147,7 +148,7 @@ export function WorkoutScreen() {
   useEffect(() => {
     if (focusRequest === null) return;
     const id = requestAnimationFrame(() => {
-      (focusRequest.field === 'load' ? loadRef : repsRef).current?.focus();
+      (focusRequest.field === 'load' ? loadRef : focusRequest.field === 'time' ? timeRef : repsRef).current?.focus();
       setFocusRequest(null);
     });
     return () => {
@@ -451,6 +452,23 @@ export function WorkoutScreen() {
       clearTimeout(t);
     };
   }, [edits, data, services]);
+
+  // Work timer end in the foreground (§2.7): one haptic at 0, then a tick saves the planned time as the draft.
+  useEffect(() => {
+    if (data === 'loading' || data === null) return;
+    const wi = data.aggregate.workInterval;
+    if (wi?.status !== 'running' || data.aggregate.session.pause !== null) return;
+    const deadline = toMs(wi.deadlineUtc);
+    if (now < deadline) return;
+    const key = `work:${wi.setId}:${wi.deadlineUtc}`;
+    if (shouldCueRestEnd(key, deadline, now, played.current)) haptic('restEnd');
+    played.current.add(key);
+    if (tickedFor.current === key) return;
+    tickedFor.current = key;
+    void services.workout.dispatch(data.aggregate.session.id, { type: 'tick', at: services.now() }).then((r) => {
+      if (r.ok) setData((cur) => (cur === 'loading' || cur === null ? cur : withCommandResult(cur, cur, r.aggregate)));
+    });
+  }, [now, data, services]);
 
   // Rest end in the foreground: persist the expiry (tick), one haptic, never late (rest-state §4.7).
   useEffect(() => {
@@ -1060,6 +1078,26 @@ export function WorkoutScreen() {
       }
       case 'resume':
         return { label: 'Resume', onPress: () => void pauseOrResume() };
+      case 'start_work': {
+        // A timed set (§2.7): the work timer runs; its end fills the time to log.
+        const durationS = view.primary.durationS;
+        return {
+          label: view.primary.label,
+          onPress: () => {
+            if (!focus) return;
+            haptic('step');
+            void run({ type: 'start_work_interval', at: services.now(), opId: newUuid(), setId: focus.setId, durationS });
+          },
+        };
+      }
+      case 'stop_work':
+        return {
+          label: 'Stop',
+          onPress: () => {
+            if (!focus) return;
+            void run({ type: 'stop_work_interval', at: services.now(), opId: newUuid(), setId: focus.setId });
+          },
+        };
       case 'add_exercise':
         return {
           label: 'Add exercise',
@@ -1304,6 +1342,26 @@ export function WorkoutScreen() {
               hint={focus.loadField.assisted ? 'More assistance is easier' : null}
               onChange={(v) => {
                 editLoad(focus, v);
+              }}
+            />
+          ) : null}
+          {focus.workTimer && (focus.workTimer.state === 'running' || focus.workTimer.state === 'paused') ? (
+            <View style={{ flex: 1, alignItems: 'flex-start', gap: theme.space['1'] }}>
+              <Eyebrow>Work</Eyebrow>
+              <TimerNumeral text={workTimerText(focus.workTimer.remainingMs)} accessibilityLabel={`Work time left ${workTimerText(focus.workTimer.remainingMs)}`} />
+            </View>
+          ) : focus.duration ? (
+            <NumberStepper
+              inputRef={timeRef}
+              flex={1}
+              label="Time"
+              unit="s"
+              value={focus.duration.value}
+              decimals={false}
+              down={focus.duration.down}
+              up={focus.duration.up}
+              onChange={(v) => {
+                setValues({ ...focus.draft, durationS: v === null ? null : Math.max(0, Math.round(v)) });
               }}
             />
           ) : null}

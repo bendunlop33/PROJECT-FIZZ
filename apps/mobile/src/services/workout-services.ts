@@ -188,6 +188,9 @@ export interface WorkoutServicesContext {
 
 export type CheckInWrite = { ok: true; checkIn: CheckIn; duplicate: boolean } | { ok: false; message: string; stale?: boolean };
 
+/** What the exercise picker offers: rep and timed exercises (active-workout §2.7). */
+export const PICKER_MEASUREMENTS: ReadonlySet<Exercise['measurement']> = new Set(['reps', 'duration']);
+
 const CHECK_IN_WRITE_FAILED = 'Check-in not saved';
 const RECENT_WINDOW_MS = 3 * 60 * 60 * 1000;
 /** Said on the workout when "Start next session" couldn't work out targets (review S2). */
@@ -1792,9 +1795,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async pickerExercises(sessionId: string, query: string, opts: { withCatalogue?: boolean } = {}): Promise<PickerExercise[]> {
       const aggregate = await repos().sessions.get(sessionId);
       const p = await ctx.profile();
-      const saved = (await repos().exercises.list()).filter((e) => e.measurement === 'reps' && (e.ownerId === null || e.ownerId === p?.id));
+      // Timed exercises (planks, hangs) are loggable with a work timer (§2.7).
+      const saved = (await repos().exercises.list()).filter((e) => PICKER_MEASUREMENTS.has(e.measurement) && (e.ownerId === null || e.ownerId === p?.id));
       const have = new Set(saved.map((e) => e.id));
-      const extra = opts.withCatalogue && ctx.catalogueExercises ? ctx.catalogueExercises().filter((e) => !have.has(e.id)) : [];
+      const extra = opts.withCatalogue && ctx.catalogueExercises ? ctx.catalogueExercises().filter((e) => !have.has(e.id) && PICKER_MEASUREMENTS.has(e.measurement)) : [];
       const all = [...saved, ...extra];
       // Only the current gym's items, also after a switch (gym-switch §4.3).
       const snapshot = aggregate ? currentGymEquipment(aggregate.session) : [];

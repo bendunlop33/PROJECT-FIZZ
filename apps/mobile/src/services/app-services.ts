@@ -432,7 +432,8 @@ export function createAppServices(deps: AppServicesDeps) {
       const at = '2026-10-10T00:00:00.000Z';
       catalogueRows = (deps.catalogue ? deps.catalogue() : bundledCatalogue().catalogue.entries).flatMap((entry) => {
         const row = toExerciseRow(entry, at);
-        return row.ok && row.exercise.measurement === 'reps' ? [row.exercise] : [];
+        // Every measurement: the picker chooses what it offers (`PICKER_MEASUREMENTS`); swaps match the slot's.
+        return row.ok ? [row.exercise] : [];
       });
     }
     return catalogueRows;

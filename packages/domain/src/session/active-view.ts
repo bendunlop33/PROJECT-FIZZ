@@ -217,7 +217,8 @@ export interface FocusView {
   draftSource: DraftSource | 'edited' | 'copied';
   loadField: LoadField | null;
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
-  duration: { value: number | null } | null;
+  /** Timed sets: the work time in seconds, stepping 5 s. */
+  duration: { value: number | null; down: StepTarget; up: StepTarget } | null;
   /** Distance sets: metres, stepping 5 m (sled push, carries). */
   distance: { value: number | null; down: StepTarget; up: StepTarget } | null;
   /**
@@ -290,6 +291,10 @@ export type PrimaryAction =
   /** A value is missing: the button focuses that field (audit F2), it never logs. */
   | { kind: 'enter'; label: string; field: 'load' | 'reps' | 'time' | 'distance' }
   | { kind: 'resume'; label: 'Resume' }
+  /** A timed set before its work timer runs (§2.7): `Start 0:45` runs `start_work_interval`. */
+  | { kind: 'start_work'; label: string; durationS: number }
+  /** The work timer is running or paused: `Stop` runs `stop_work_interval`; the time so far becomes the draft. */
+  | { kind: 'stop_work'; label: 'Stop' }
   | { kind: 'add_exercise'; label: 'Add exercise' }
   | { kind: 'finish'; label: 'Finish workout' }
   | { kind: 'none'; label: '' };
@@ -445,12 +450,23 @@ export interface WorkTimerView {
 export const DEFAULT_WORK_S = 30;
 
 function workTimerView(state: SessionAggregate, set: WorkoutSet, values: SetValues, nowMs: number): WorkTimerView {
-  const plannedS = set.planned.durationS ?? values.durationS ?? DEFAULT_WORK_S;
+  // The time in the field (Ben may change it before Start), else the target, else 30 s.
+  const plannedS = values.durationS !== null && values.durationS > 0 ? values.durationS : (set.planned.durationS ?? DEFAULT_WORK_S);
   const wi = state.workInterval?.setId === set.id ? state.workInterval : null;
   if (wi?.status === 'running') return { state: 'running', plannedS: wi.durationS, remainingMs: Math.max(0, toMs(wi.deadlineUtc) - nowMs), label: 'Stop' };
   if (wi?.status === 'paused') return { state: 'paused', plannedS: wi.durationS, remainingMs: wi.remainingMsAtPause ?? 0, label: 'Stop' };
   if (wi?.status === 'completed' || wi?.status === 'stopped') return { state: 'ended', plannedS: wi.durationS, remainingMs: null, label: `Start ${formatDuration(plannedS)}` };
   return { state: 'idle', plannedS, remainingMs: null, label: `Start ${formatDuration(plannedS)}` };
+}
+
+/** Work-time steps: 5 s, from 5 s up to 4 h (no equipment involved). */
+function durationSteps(value: number | null): { down: StepTarget; up: StepTarget } {
+  const v = value ?? 0;
+  const up = Math.min(4 * 3600, v + 5);
+  return {
+    up: v >= 4 * 3600 ? { enabled: false, reason: 'Maximum 4:00:00' } : { enabled: true, value: up, label: formatDuration(up) },
+    down: value === null || v - 5 < 5 ? { enabled: false, reason: 'Minimum 0:05' } : { enabled: true, value: v - 5, label: formatDuration(v - 5) },
+  };
 }
 
 /** Distance steps: 5 m, never below 0 (no equipment involved). */
@@ -559,7 +575,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     draftSource,
     loadField,
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
-    duration: ex.measurement === 'duration' ? { value: values.durationS } : null,
+    duration: ex.measurement === 'duration' ? { value: values.durationS, ...durationSteps(values.durationS) } : null,
     distance: ex.measurement === 'distance' ? { value: values.distanceM ?? null, ...distanceSteps(values.distanceM ?? null) } : null,
     workTimer: ex.measurement === 'duration' ? workTimerView(state, set, values, input.nowMs) : null,
     target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral }),
@@ -697,11 +713,13 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
   else if (phase.kind === 'paused') primary = { kind: 'resume', label: 'Resume' };
   else if (phase.kind === 'empty') primary = { kind: 'add_exercise', label: 'Add exercise' };
   else if (focus === null) primary = isOpenEndedWorkout(state) ? { kind: 'add_exercise', label: 'Add exercise' } : { kind: 'finish', label: 'Finish workout' };
+  // A timed set (§2.7): `Start 0:45` until its work timer runs, `Stop` while it runs, then `Log 0:38`.
+  else if (focus.workTimer?.state === 'running' || focus.workTimer?.state === 'paused') primary = { kind: 'stop_work', label: 'Stop' };
+  else if (focus.workTimer?.state === 'idle') primary = { kind: 'start_work', label: focus.workTimer.label, durationS: focus.workTimer.plannedS };
   else if (focus.logLabel === null) {
     const field = focus.missing ?? 'reps';
     primary = { kind: 'enter', field, label: field === 'load' ? 'Enter load' : field === 'time' ? 'Enter time' : field === 'distance' ? 'Enter distance' : 'Enter reps' };
-  }
-  else primary = { kind: 'log', label: focus.logLabel };
+  } else primary = { kind: 'log', label: focus.logLabel };
 
   const completed = liveSets.filter((s) => s.status === 'completed' && s.completedAt);
   const justSaved = buildJustSaved(state);

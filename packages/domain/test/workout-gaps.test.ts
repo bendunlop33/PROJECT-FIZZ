@@ -313,12 +313,32 @@ describe('timed sets: the work timer on the focus card (active-workout §2.7)', 
     const [h1] = setsFor(s, HANG);
     s = apply(s, { type: 'set_active_set', at: at(1), opId: 'act', setId: h1?.id ?? '', expectedVersion: s.session.version });
     expect(view(s, 2).focus?.workTimer).toEqual({ state: 'idle', plannedS: 45, remainingMs: null, label: 'Start 0:45' });
+    expect(view(s, 2).primary).toEqual({ kind: 'start_work', label: 'Start 0:45', durationS: 45 });
+    expect(view(s, 2).focus?.duration).toMatchObject({ value: 45, up: { enabled: true, value: 50 }, down: { enabled: true, value: 40 } });
     s = apply(s, { type: 'start_work_interval', at: at(10), opId: 'w', setId: h1?.id ?? '', durationS: 45 });
     expect(view(s, 20).focus?.workTimer).toMatchObject({ state: 'running', remainingMs: 35_000, label: 'Stop' });
+    expect(view(s, 20).primary).toEqual({ kind: 'stop_work', label: 'Stop' });
     s = apply(s, { type: 'stop_work_interval', at: at(48), opId: 'stop', setId: h1?.id ?? '' });
     const f = view(s, 49).focus;
     expect(f?.workTimer?.state).toBe('ended');
     expect(f?.duration?.value).toBe(38);
     expect(f?.logLabel).toContain('0:38');
+    expect(view(s, 49).primary.kind).toBe('log');
+  });
+
+  it('the time Ben sets before Start is what the timer runs; at 0 a tick fills the planned time', () => {
+    let s = startFixture().state;
+    const [h1] = setsFor(s, HANG);
+    s = apply(s, { type: 'set_active_set', at: at(1), opId: 'act', setId: h1?.id ?? '', expectedVersion: s.session.version });
+    s = apply(s, { type: 'save_draft', at: at(2), setId: h1?.id ?? '', values: values(null, null, { durationS: 60 }) });
+    expect(view(s, 3).primary).toEqual({ kind: 'start_work', label: 'Start 1:00', durationS: 60 });
+    s = apply(s, { type: 'start_work_interval', at: at(5), opId: 'w', setId: h1?.id ?? '', durationS: 60 });
+    s = apply(s, { type: 'tick', at: at(70) });
+    expect(view(s, 71).focus?.duration?.value).toBe(60);
+    expect(view(s, 71).primary).toMatchObject({ kind: 'log' });
+    // While the timer ran, Delete and Skip were refused (§2.7).
+    const s2 = apply(startFixture().state, { type: 'start_work_interval', at: at(5), opId: 'w', setId: h1?.id ?? '', durationS: 60 });
+    const hangRow = s2.exercises.find((e) => e.exerciseId === HANG)?.id ?? '';
+    expectError(reduceSession(s2, { type: 'skip_exercise', at: at(6), opId: 'sk', sessionExerciseId: hangRow }), 'work_interval_running');
   });
 });
