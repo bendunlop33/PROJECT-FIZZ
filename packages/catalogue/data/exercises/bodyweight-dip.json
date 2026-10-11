@@ -3,7 +3,7 @@
   "key": "bodyweight-dip",
   "tier": "basic",
   "name": "Dip",
-  "aliases": ["Parallel-bar dip", "Parallel bar dip", "Bar dip", "Chest dip", "Bodyweight dip"],
+  "aliases": ["Parallel-bar dip", "Parallel bar dip", "Bar dip", "Chest dip", "Bodyweight dip", "Parallel bar triceps dip", "Chest dips"],
   "family": "dip",
   "movementPattern": "vertical_push",
   "mechanic": "compound",

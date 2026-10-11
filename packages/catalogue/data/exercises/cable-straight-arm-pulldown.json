@@ -3,7 +3,7 @@
   "key": "cable-straight-arm-pulldown",
   "tier": "basic",
   "name": "Straight-arm pulldown",
-  "aliases": ["Straight-arm lat pulldown", "Straight arm pulldown", "Stiff-arm pulldown", "Cable pullover", "Standing cable pullover"],
+  "aliases": ["Straight-arm lat pulldown", "Straight arm pulldown", "Stiff-arm pulldown", "Cable pullover", "Standing cable pullover", "Straight-arm cable pushdown"],
   "family": "straight_arm_pulldown",
   "movementPattern": "vertical_pull",
   "mechanic": "isolation",

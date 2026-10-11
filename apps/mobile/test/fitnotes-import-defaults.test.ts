@@ -174,7 +174,17 @@ describe('FitNotes’ default names: nothing stored differs from the file withou
       });
 
       // Not vacuous: the sources do change values, and the rest are asked with nothing selected.
-      expect(halved.sort()).toEqual(['Arnold Dumbbell Press', 'Dumbbell Curl', 'Dumbbell Hammer Curl', 'Flat Dumbbell Bench Press', 'Flat Dumbbell Fly', 'Incline Dumbbell Bench Press', 'Seated Dumbbell Press']);
+      expect(halved.sort()).toEqual([
+        'Arnold Dumbbell Press',
+        'Dumbbell Curl',
+        'Dumbbell Hammer Curl',
+        'Flat Dumbbell Bench Press',
+        'Flat Dumbbell Fly',
+        'Incline Dumbbell Bench Press',
+        // A catalogue alias of the lateral raise (a pair), so its own name.
+        'Lateral Dumbbell Raise',
+        'Seated Dumbbell Press',
+      ]);
       expect(assisted).toEqual([]);
       // The dumbbell defaults whose count the name doesn't establish: asked, never halved by the group answer (review r5 S1).
       expect(askedPerHand.sort()).toEqual([
@@ -182,7 +192,6 @@ describe('FitNotes’ default names: nothing stored differs from the file withou
         'Dumbbell Row',
         'Front Dumbbell Raise',
         'Incline Dumbbell Fly',
-        'Lateral Dumbbell Raise',
         'Rear Delt Dumbbell Raise',
         'Seated Dumbbell Lateral Raise',
         'Seated Incline Dumbbell Curl',
@@ -258,7 +267,18 @@ describe('FitNotes’ default names: nothing stored differs from the file withou
     };
     expect(shown('Smith Machine Overhead Press')).toEqual(['no_match', null]);
     expect(shown('Smith Machine Close Grip Bench Press')).toEqual(['check', 'Smith machine bench press']);
-    expect(shown('Parallel Bar Triceps Dip')).toEqual(['check', 'Dip']);
+    // FitNotes defaults that are catalogue aliases now match exactly; ambiguous ones stay a Check.
+    expect(shown('Parallel Bar Triceps Dip')).toEqual(['matched', 'Dip']);
+    expect(shown('Flat Barbell Bench Press')).toEqual(['matched', 'Bench press']);
+    expect(shown('Leg Extension Machine')).toEqual(['matched', 'Leg extension']);
+    expect(shown('Seated Calf Raise Machine')).toEqual(['matched', 'Seated calf raise']);
+    expect(shown('Lateral Dumbbell Raise')).toEqual(['matched', 'Lateral raise']);
+    expect(shown('Rope Push Down')).toEqual(['matched', 'Rope triceps pushdown']);
+    expect(shown('Seated Machine Fly')).toEqual(['matched', 'Pec deck']);
+    expect(shown('Rear Delt Machine Fly')).toEqual(['matched', 'Reverse pec deck']);
+    expect(shown('Straight-Arm Cable Pushdown')).toEqual(['matched', 'Straight-arm pulldown']);
+    expect(shown('Barbell Shrug')).toEqual(['matched', 'Barbell shrug']);
+    expect(shown('Barbell Calf Raise')).toEqual(['matched', 'Standing barbell calf raise']);
     expect(shown('Lat Pulldown (Pulley)')).toEqual(['check', 'Lat pulldown']);
     expect(shown('Seated Cable Row (Pulley)')).toEqual(['check', 'Seated cable row']);
   });

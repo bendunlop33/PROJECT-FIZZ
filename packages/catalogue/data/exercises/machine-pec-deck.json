@@ -3,7 +3,7 @@
   "key": "machine-pec-deck",
   "tier": "basic",
   "name": "Pec deck",
-  "aliases": ["Pec deck fly", "Machine fly", "Pec fly", "Butterfly", "Machine chest fly", "Pec dec"],
+  "aliases": ["Pec deck fly", "Machine fly", "Pec fly", "Butterfly", "Machine chest fly", "Pec dec", "Seated machine fly"],
   "family": "chest_fly",
   "movementPattern": "horizontal_push",
   "mechanic": "isolation",

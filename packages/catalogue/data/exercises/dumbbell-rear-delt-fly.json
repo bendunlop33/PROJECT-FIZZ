@@ -3,7 +3,7 @@
   "key": "dumbbell-rear-delt-fly",
   "tier": "basic",
   "name": "Dumbbell rear-delt fly",
-  "aliases": ["Rear delt fly", "Rear-delt fly", "Bent-over reverse fly", "Bent-over lateral raise", "Rear delt raise", "DB reverse fly"],
+  "aliases": ["Rear delt fly", "Rear-delt fly", "Bent-over reverse fly", "Bent-over lateral raise", "Rear delt raise", "DB reverse fly", "Rear delt dumbbell fly", "Rear delt dumbell fly"],
   "family": "rear_delt_fly",
   "movementPattern": "horizontal_pull",
   "mechanic": "isolation",
