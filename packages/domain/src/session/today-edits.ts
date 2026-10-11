@@ -282,7 +282,15 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
     }
   }
 
-  if (edits.length > MAX_DRAFT_EDITS) return { kind: 'invalid', reason: 'too_many' };
+  // Only live edits count toward the cap (r1 N1); removed ones (each ↑/↓, Undo, `· planned`) are
+  // compacted oldest first, so a long session of moves never locks the draft. A compacted edit can
+  // no longer be brought back, which only affects Undo of something hundreds of taps old.
+  if (liveEdits(edits).length > MAX_DRAFT_EDITS) return { kind: 'invalid', reason: 'too_many' };
+  while (edits.length > MAX_DRAFT_EDITS) {
+    const i = edits.findIndex((e) => e.removed !== null && !added.includes(e.editId) && !removed.includes(e.editId));
+    if (i < 0) break;
+    edits.splice(i, 1);
+  }
   const tz = at.tz;
   const next: PreStartDraft = {
     id: current?.id ?? input.newDraftId,
@@ -420,6 +428,7 @@ export function resolveTodayEdits(slots: readonly TodaySlot[], edits: readonly T
     if (result === 'applied') out.swaps.set(e.slotKey, { editId: e.editId, toExerciseId: e.toExerciseId });
     out.outcomes.push({ editId: e.editId, kind: e.kind, result });
   }
+  dropDuplicateSwaps(slots, open, out);
   for (const e of open) {
     if (e.kind !== 'skip') continue;
     const result: EditResult = bySlot.has(e.slotKey) ? 'applied' : 'stale';
@@ -439,6 +448,39 @@ export function resolveTodayEdits(slots: readonly TodaySlot[], edits: readonly T
     out.outcomes.push({ editId: e.editId, kind: e.kind, result });
   }
   return out;
+}
+
+/**
+ * One exercise is never in two slots (review R2-S1). `swappedAway` above
+ * counts a slot whose swap then resolved `stale` (it keeps its own
+ * exercise), so another swap could still take that exercise. While any
+ * exercise is in two slots today, the latest-made applied swap among them
+ * is marked `stale` (its slot goes back to its own exercise, which is checked
+ * again on the next pass).
+ */
+function dropDuplicateSwaps(slots: readonly TodaySlot[], open: readonly TodayEdit[], out: ResolvedEdits): void {
+  const madeAt = new Map(open.map((e, i) => [e.editId, i]));
+  for (;;) {
+    const holders = new Map<string, string[]>();
+    for (const s of slots) {
+      const ex = out.swaps.get(s.slotKey)?.toExerciseId ?? s.exerciseId;
+      holders.set(ex, [...(holders.get(ex) ?? []), s.slotKey]);
+    }
+    let latest: { slotKey: string; editId: string; at: number } | null = null;
+    for (const keys of holders.values()) {
+      if (keys.length < 2) continue;
+      for (const k of keys) {
+        const sw = out.swaps.get(k);
+        const at = sw === undefined ? -1 : (madeAt.get(sw.editId) ?? -1);
+        if (sw !== undefined && (latest === null || at > latest.at)) latest = { slotKey: k, editId: sw.editId, at };
+      }
+    }
+    // Only the plan's own duplicates (no swap involved) are left: not today's edits to fix.
+    if (latest === null) return;
+    out.swaps.delete(latest.slotKey);
+    const o = out.outcomes.find((x) => x.editId === latest.editId);
+    if (o) o.result = 'stale';
+  }
 }
 
 /** Edits to mark removed on the next write (the plan no longer has a place for them). */

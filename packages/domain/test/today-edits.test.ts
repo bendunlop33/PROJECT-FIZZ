@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { EquipmentInstance, Exercise, Load, PainFlag, PreStartDraft, Routine, SessionAggregate, TodayEdit, ZonedTimestamp } from '@fizz/schemas';
-import { PreStartDraftSchema, SessionAggregateSchema } from '@fizz/schemas';
+import { MAX_DRAFT_EDITS, PreStartDraftSchema, SessionAggregateSchema } from '@fizz/schemas';
 
 import {
   applyDraftCommand,
@@ -254,6 +254,24 @@ describe('the pre-start draft: versioned, idempotent, expires at local midnight 
     expect(write(null, { type: 'edit', edit: { kind: 'order', slotKeys: SLOTS.map((s) => s.slotKey) } }, 'same')).toMatchObject({ kind: 'unchanged' });
   });
 
+  it('only live edits count toward the cap: a long run of moves never locks the draft; removed ones are compacted oldest first (review N2)', () => {
+    const a = [SLOT_INCLINE, SLOT_BENCH, SLOT_RAISE, SLOT_PUSHDOWN, SLOT_FLY];
+    const b = [SLOT_BENCH, SLOT_INCLINE, SLOT_RAISE, SLOT_PUSHDOWN, SLOT_FLY];
+    let d = written(write(null, { type: 'edit', edit: { kind: 'skip', slotKey: SLOT_FLY } }, 'cap-skip'));
+    const skipId = liveEdits(d.edits)[0]?.editId;
+    for (let i = 0; i < MAX_DRAFT_EDITS + 50; i += 1) d = written(write(d, { type: 'edit', edit: { kind: 'order', slotKeys: i % 2 === 0 ? a : b } }, `cap-${String(i)}`));
+    expect(d.edits.length).toBe(MAX_DRAFT_EDITS);
+    // The live skip (the oldest edit) and the live order are kept; the oldest removed orders went.
+    expect(liveEdits(d.edits).map((e) => e.kind)).toEqual(['skip', 'order']);
+    expect(d.edits[0]?.editId).toBe(skipId);
+    // Still writable, and the toast Undo still steps back one order.
+    const live = liveEdits(d.edits).find((e) => e.kind === 'order');
+    d = written(write(d, { type: 'undo', editId: live?.editId ?? '' }, 'cap-undo'));
+    expect(liveEdits(d.edits).find((e) => e.kind === 'order')).toMatchObject({ slotKeys: (MAX_DRAFT_EDITS + 50) % 2 === 0 ? a : b });
+    d = written(write(d, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH } }, 'cap-swap'));
+    expect(d.edits.length).toBe(MAX_DRAFT_EDITS);
+  });
+
   it('Reset order removes only the order; marking an edit redundant is one versioned write', () => {
     let d = written(write(null, { type: 'edit', edit: { kind: 'order', slotKeys: [SLOT_INCLINE, SLOT_BENCH, SLOT_RAISE, SLOT_PUSHDOWN, SLOT_FLY] } }, 'o1'));
     d = written(write(d, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH } }, 'o2'));
@@ -453,7 +471,7 @@ describe('planWithTodayEdits (TE2, TE-A2, TE-A3, TE-A8)', () => {
     expect(out.aggregate.session.todayEdits?.swapped).toEqual([{ sessionExerciseId: row?.id, slotKey: SLOT_BENCH, fromExerciseId: BENCH, fromExerciseName: 'Bench press' }]);
     // Why? says it was swapped before start, then explains the substitute's own target.
     const why = explainTarget({ aggregate: out.aggregate, setId: sets[0]?.id ?? '', nowMs: ms(0), basisNow: null, gymNames: {}, painFlags: [], history: DB_BENCH_HISTORY });
-    expect(why?.rows[0]).toEqual({ key: 'swapped', label: 'Swapped', lines: ['Before start · Bench press'], kind: 'app' });
+    expect(why?.rows[0]).toEqual({ key: 'swapped', label: null, lines: ['Swapped before start · Bench press'], kind: 'app' });
 
     // No history: the slot's sets and reps, no load at all.
     const plain = plan([edit({ kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: CHEST_PRESS })], { swaps: swapsFor(MAIN_GYM, [[SLOT_BENCH, CHEST_PRESS, []]]) });
@@ -764,5 +782,23 @@ describe('a swap never takes another slot’s exercise (review S5)', () => {
     expect(rows.map((e) => e.exerciseName).slice(0, 2)).toEqual(['Bench press', 'DB bench press']);
     expect(setsOf(out.aggregate, rows[1]?.id ?? '').map((s) => s.planned.load)).toEqual(own);
     expect(out.outcomes[0]?.result).toBe('stale');
+  });
+  it('a swap that resolves stale keeps its slot’s exercise: a later swap to it is stale too, so one exercise is never in two slots (review R2-S1)', () => {
+    // Bench → chest press, then fly → bench (allowed: bench was swapped away).
+    const toPress = edit({ kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: CHEST_PRESS });
+    const toBench = edit({ kind: 'swap', slotKey: SLOT_FLY, toExerciseId: BENCH });
+    expect(resolveTodayEdits(SLOTS, [toPress, toBench]).outcomes.map((o) => o.result)).toEqual(['applied', 'applied']);
+    // Then Push A is edited: chest press goes in the incline slot.
+    const withPress = basisSlots({ kind: 'routine', routine: { ...pushA(), exercises: pushA().exercises.map((x) => (x.id === SLOT_INCLINE ? { ...x, exerciseId: CHEST_PRESS } : x)) } });
+    const r = resolveTodayEdits(withPress, [toPress, toBench]);
+    expect(r.outcomes.map((o) => o.result)).toEqual(['stale', 'stale']);
+    expect(r.swaps.size).toBe(0);
+    const today = editedSlots(withPress, r).map((x) => x.exerciseId);
+    expect(today.filter((x) => x === BENCH)).toHaveLength(1);
+    expect(new Set(today).size).toBe(today.length);
+    expect(pruneOf(r.outcomes)).toEqual([
+      { editId: toPress.editId, why: 'stale' },
+      { editId: toBench.editId, why: 'stale' },
+    ]);
   });
 });

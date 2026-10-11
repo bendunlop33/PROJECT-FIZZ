@@ -53,7 +53,7 @@ export type TodayEditKind = TodayEdit['kind'];
 export const DraftStatusSchema = z.enum(['open', 'consumed', 'discarded', 'expired']);
 export type DraftStatus = z.infer<typeof DraftStatusSchema>;
 
-/** Most edits a draft keeps (append-only; a long Reorder session is many `order` edits). */
+/** Most edits a draft keeps. Only live edits count toward it; removed ones are compacted oldest first (a long Reorder session is many `order` edits). */
 export const MAX_DRAFT_EDITS = 400;
 /** Most operation IDs remembered for idempotency. */
 export const MAX_DRAFT_OPS = 400;
