@@ -55,6 +55,9 @@ jobs:
   # Cheap Linux job first, so a failing test or config never spends macOS minutes.
   check:
     name: Check (tests, types, lint, entitlements)
+    # Same gate as the build: Claude runs these checks locally before every push,
+    # so a push without [ios-build] (docs, merges) spends no Actions minutes.
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[ios-build]')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
