@@ -268,7 +268,7 @@ describe('muscles (checks 9–15, PG26, PG27)', () => {
     expect(fr.markedCounted).toBe(1);
     const home = buildProgressHomeView({ sessions: [s], exercises: INFO, today: TODAY, days: 7, grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
-    expect(home.muscles.notCounted).toMatchObject({ summary: '1 warm-up set · 1 rated under RPE 6', marked: '1 set you marked is counted here.' });
+    expect(home.muscles.notCounted).toMatchObject({ summary: '1 warm-up set · 1 rated under RPE 6', marked: '1 set you marked (spotted) is counted here.' });
   });
 
   it('check 14: 3 left + 3 right sets of a single-arm row count 3 sets', () => {
@@ -505,3 +505,73 @@ describe('projection from stored workouts (checks 5, 21, PG16, PG33)', () => {
     expect(toProgressSession({ ...agg, session: { ...agg.session, durationConfirmedAt: at(99_000) } }, 'Europe/London', 0)?.durationConfirmed).toBe(true);
   });
 });
+
+describe('review progress-A fixes (S6, S8, N1, N2, N5, N9)', () => {
+  const w7 = progressWindow(TODAY, 7);
+
+  it('S6: unilateral sides are paired before classifying; 3 L hard + 2 R hard + 1 R easy is 3 hard sets, nothing easy', () => {
+    const sides = [set({ side: 'left', rpe: 8 }), set({ side: 'right', rpe: 8 }), set({ side: 'left', rpe: 8 }), set({ side: 'right', rpe: 8 }), set({ side: 'left', rpe: 8 }), set({ side: 'right', rpe: 4 })];
+    const r = row('row', sides, { laterality: 'unilateral', convention: 'per_hand', equipmentKind: 'dumbbells' });
+    expect(countRowSets(r)).toMatchObject({ hard: 3, easy: 0, warmup: 0 });
+    const s = session('2026-10-08', { exercises: [r] });
+    const fr = muscleFrequency([s], INFO, w7, 'body_part');
+    expect(rowOf(fr, 'Back')?.sets).toBe(3);
+    expect(fr.notCounted.easy).toBe(0);
+    const cal = buildCalendarMonthView({ sessions: [s], exercises: INFO, month: '2026-10', today: TODAY });
+    expect(cal.days['2026-10-08']?.[0]?.detail).toMatch(/· 3 sets$/);
+  });
+
+  it('S6: a pair easy on both sides is 1 easy; a lone side counts 1; `both` sets count 1 each', () => {
+    const r = row('row', [set({ side: 'left', rpe: 4 }), set({ side: 'right', rpe: 5 }), set({ side: 'left' }), set({ side: 'both' }), set({ side: 'left', setType: 'warmup' }), set({ side: 'right', setType: 'warmup' })], { laterality: 'unilateral' });
+    // pairs by order: (L easy, R easy) = easy; (L hard, R warm-up) = hard; (L warm-up, —) = warm-up; plus `both` = hard.
+    expect(countRowSets(r)).toMatchObject({ hard: 2, easy: 1, warmup: 1 });
+  });
+
+  it('N1: the marked line names the marks, in the canonical order', () => {
+    const s = session('2026-10-08', { exercises: [row('bench', [set({ exclusions: ['pain'] }), set({ exclusions: ['spotted'] }), set({ exclusions: ['spotted'] })])] });
+    const fr = muscleFrequency([s], INFO, w7, 'body_part');
+    expect(fr.markedKinds).toEqual(['spotted', 'pain']);
+    const home = buildProgressHomeView({ sessions: [s], exercises: INFO, today: TODAY, days: 7, grouping: 'body_part' });
+    if (home.dataState !== 'normal') throw new Error('expected normal');
+    expect(home.muscles.notCounted.marked).toBe('3 sets you marked (spotted, pain) are counted here.');
+  });
+
+  it('N2: the dates line has a VoiceOver form with full month names and no dash', () => {
+    const home = buildProgressHomeView({ sessions: [session('2026-10-08')], exercises: INFO, today: TODAY, days: 30, grouping: 'body_part' });
+    if (home.dataState !== 'normal') throw new Error('expected normal');
+    expect(home.datesWords).toBe('12 September to 11 October');
+  });
+
+  it('N5: the same exercise twice in one workout gives two distinct record keys', () => {
+    const benchAt = (load: Load, reps: number, equipmentId: string) => row('bench', [set({ load, reps })], { exerciseName: 'Bench press', equipmentId });
+    const hist = (eq: string) => ['2026-09-01', '2026-09-05', '2026-09-09'].map((d) => session(d, { exercises: [benchAt(kg(100), 5, eq)] }));
+    const today = session('2026-10-01', { exercises: [benchAt(kg(105), 3, 'bar-1'), benchAt(kg(105), 3, 'bar-2')] });
+    const home = buildProgressHomeView({ sessions: [...hist('bar-1'), ...hist('bar-2'), today], exercises: INFO, today: TODAY, days: 30, grouping: 'body_part' });
+    if (home.dataState !== 'normal') throw new Error('expected normal');
+    const keys = home.records.items.map((r) => r.key);
+    expect(keys).toHaveLength(2);
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it('N9: a `BW + 10 kg` record reads "body weight plus 10 kilograms"', () => {
+    const dip = (d: string, v: number) => session(d, { exercises: [row('dip', [set({ load: kg(v, 'added'), reps: 8 })], { exerciseName: 'Dip', convention: 'added', equipmentKind: 'bodyweight_station' })] });
+    const home = buildProgressHomeView({ sessions: [dip('2026-09-01', 5), dip('2026-09-04', 5), dip('2026-09-07', 5), dip('2026-10-02', 10)], exercises: INFO, today: TODAY, days: 30, grouping: 'body_part' });
+    if (home.dataState !== 'normal') throw new Error('expected normal');
+    expect(sp(home.records.items[0]?.value)).toBe('BW + 10 kg × 8');
+    expect(home.records.items[0]?.words).toContain('Heaviest set, body weight plus 10 kilograms by 8');
+  });
+
+  it('S8: lb workouts count in time and muscles exactly as kg ones (units never change counts)', () => {
+    const lbSession = session('2026-10-08', { durationMs: 70 * MIN, exercises: [row('bench', [set({ load: lb(225), reps: 5 }), set({ load: lb(225), reps: 5 })], { unit: 'lb' })] });
+    const kgSession = session('2026-10-09', { durationMs: 50 * MIN, exercises: [row('bench', [set({ load: kg(100), reps: 5 })])] });
+    const t = timeInGym([lbSession, kgSession], w7);
+    expect(t).toMatchObject({ sessionCount: 2, timedCount: 2, totalMs: 120 * MIN, avgMs: 60 * MIN });
+    const fr = muscleFrequency([lbSession, kgSession], INFO, w7, 'body_part');
+    expect(rowOf(fr, 'Chest')).toMatchObject({ sessions: 2, sets: 3 });
+    expect(rowOf(fr, 'Triceps')).toMatchObject({ sessions: 1, sets: 1.5 });
+  });
+});
+
+function rowOf(fr: ReturnType<typeof muscleFrequency>, key: string) {
+  return fr.rows.find((r) => r.key === key);
+}

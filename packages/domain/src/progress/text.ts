@@ -49,6 +49,11 @@ export function rangeText(range: DateRange): string {
   return `${localDateText(range.from)} – ${localDateText(range.to)}`;
 }
 
+/** The dates line for VoiceOver: `12 September to 11 October`. */
+export function rangeWords(range: DateRange): string {
+  return `${dayMonthLong(range.from)} to ${dayMonthLong(range.to)}`;
+}
+
 /** `30 days`. */
 export function windowLabel(days: ProgressWindowDays): string {
   return `${String(days)} days`;

@@ -1,5 +1,6 @@
-import type { ExerciseSplit, ProgressGrouping } from '@fizz/schemas';
+import type { ExerciseSplit, ProgressGrouping, SetExclusion } from '@fizz/schemas';
 import { daysBetween } from '../calendar';
+import { normaliseExclusions } from '../exclusions';
 import { muscleRegion } from '../session/first-run';
 import { oneDecimal } from './activity';
 import { MUSCLE_GROUPS, muscleGroupOf, type MuscleGroup } from './muscle-groups';
@@ -72,26 +73,46 @@ export function exerciseSplit(info: MuscleInfo | undefined): ExerciseSplit {
   return muscleRegion({ movementPattern: info.movementPattern, primaryMuscles: [] }) ?? 'other';
 }
 
+/** A unit of work: one set, or one left + right pair of a unilateral exercise. Hard wins over easy, easy over warm-up. */
+function unitKind(sets: readonly ProgressSet[]): HardSetKind {
+  const kinds = sets.map(hardSetKind);
+  if (kinds.includes('hard')) return 'hard';
+  if (kinds.includes('easy')) return 'easy';
+  return 'warmup';
+}
+
 /**
  * Sets of one exercise row in one workout, by kind. A unilateral exercise's
- * left and right sets count once: `both` sets plus the busier side (as
- * `summariseVolume`), so 3 left + 3 right = 3 sets.
+ * left and right sets count once: they are paired first (the nth left with
+ * the nth right, in logged order) and each pair is classified once, hard if
+ * either side was hard. So 3 left + 3 right = 3 sets, and 3 left hard + 2
+ * right hard + 1 right easy = 3 hard sets, not 3 hard + 1 easy (review S6).
+ * `both` sets and any unpaired side set count 1 each.
  */
-export function countRowSets(ex: Pick<ProgressExercise, 'laterality' | 'sets'>): { hard: number; warmup: number; easy: number; markedHard: number } {
-  const tally = (pick: (s: ProgressSet) => boolean): number => {
-    const xs = ex.sets.filter(pick);
-    if (ex.laterality === 'bilateral') return xs.length;
-    const both = xs.filter((s) => s.side === 'both' || s.side === null).length;
-    const left = xs.filter((s) => s.side === 'left').length;
-    const right = xs.filter((s) => s.side === 'right').length;
-    return both + Math.max(left, right);
-  };
-  return {
-    hard: tally((s) => hardSetKind(s) === 'hard'),
-    warmup: tally((s) => hardSetKind(s) === 'warmup'),
-    easy: tally((s) => hardSetKind(s) === 'easy'),
-    markedHard: tally((s) => hardSetKind(s) === 'hard' && (s.exclusions?.length ?? 0) > 0),
-  };
+export function countRowSets(ex: Pick<ProgressExercise, 'laterality' | 'sets'>): { hard: number; warmup: number; easy: number; markedHard: number; markedKinds: SetExclusion[] } {
+  const units: ProgressSet[][] = [];
+  if (ex.laterality === 'bilateral') {
+    for (const s of ex.sets) units.push([s]);
+  } else {
+    const ordered = [...ex.sets].sort((a, b) => a.index - b.index);
+    const left = ordered.filter((s) => s.side === 'left');
+    const right = ordered.filter((s) => s.side === 'right');
+    for (const s of ordered) if (s.side === 'both' || s.side === null) units.push([s]);
+    for (let i = 0; i < Math.max(left.length, right.length); i += 1) units.push([left[i], right[i]].filter((x): x is ProgressSet => x !== undefined));
+  }
+  const out = { hard: 0, warmup: 0, easy: 0, markedHard: 0, markedKinds: [] as SetExclusion[] };
+  const kinds = new Set<SetExclusion>();
+  for (const unit of units) {
+    const kind = unitKind(unit);
+    out[kind] += 1;
+    if (kind !== 'hard') continue;
+    const marks = unit.filter((s) => hardSetKind(s) === 'hard').flatMap((s) => s.exclusions ?? []);
+    if (marks.length === 0) continue;
+    out.markedHard += 1;
+    for (const m of marks) kinds.add(m);
+  }
+  out.markedKinds = normaliseExclusions([...kinds]);
+  return out;
 }
 
 export interface FrequencyContributor {
@@ -134,6 +155,8 @@ export interface MuscleFrequency {
   };
   /** Hard sets Ben marked (spotted, pain, …) that still count here (PG21). */
   markedCounted: number;
+  /** The marks on those sets, in the canonical order (`spotted`, `pain`, …). */
+  markedKinds: SetExclusion[];
   /** Every hard set in the window (PPL rows add up to this). */
   hardSets: number;
 }
@@ -161,6 +184,7 @@ export function muscleFrequency(
   let warmups = 0;
   let easy = 0;
   let markedCounted = 0;
+  const markedKinds = new Set<SetExclusion>();
   let hardSets = 0;
   const noMuscles = new Map<string, { exerciseId: string; name: string; sets: number }>();
   const creditsCache = new Map<string, Map<string, 1 | 0.5>>();
@@ -185,6 +209,7 @@ export function muscleFrequency(
         warmups += n.warmup;
         easy += n.easy;
         markedCounted += n.markedHard;
+        for (const k of n.markedKinds) markedKinds.add(k);
         hardSets += n.hard;
         if (n.hard > 0 && credits.size === 0) {
           const name = exercises.get(ex.exerciseId)?.name ?? ex.exerciseName;
@@ -242,6 +267,7 @@ export function muscleFrequency(
     rows: grouping === 'ppl' ? rows.filter((r) => r.key !== 'other' || r.sets > 0 || r.sessions > 0) : rows,
     notCounted: { warmups, easy, noMuscles: [...noMuscles.values()].sort((a, b) => b.sets - a.sets || a.name.localeCompare(b.name)) },
     markedCounted,
+    markedKinds: normaliseExclusions([...markedKinds]),
     hardSets,
   };
 }

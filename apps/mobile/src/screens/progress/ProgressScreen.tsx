@@ -258,7 +258,7 @@ function Overview({
   const { activity, muscles, records } = view;
   return (
     <View style={{ gap: theme.space['5'] }}>
-      <WindowPicker days={home.days} datesLine={view.datesLine} datesWords={view.datesLine.replace('–', 'to')} onChange={onWindow} />
+      <WindowPicker days={home.days} datesLine={view.datesLine} datesWords={view.datesWords} onChange={onWindow} />
 
       <View style={{ gap: theme.space['2'] }}>
         <Pressable accessibilityRole="button" accessibilityLabel={activity.cardWords} onPress={onCalendar}>
@@ -355,7 +355,7 @@ function Overview({
         ) : (
           records.items.map((r) => (
             <Pressable
-              key={`${r.sessionId}:${r.exerciseId}`}
+              key={r.key}
               accessibilityRole="button"
               accessibilityLabel={r.words}
               accessibilityHint="Opens the workout"

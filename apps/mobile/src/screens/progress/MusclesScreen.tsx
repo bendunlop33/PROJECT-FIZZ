@@ -49,7 +49,7 @@ export function MusclesScreen() {
       <WindowPicker
         days={home.days}
         datesLine={view.datesLine}
-        datesWords={view.datesLine}
+        datesWords={view.datesWords}
         onChange={(days) => {
           change({ days });
         }}

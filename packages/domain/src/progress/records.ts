@@ -1,4 +1,4 @@
-import type { Load, LoadConvention, SetType, WeightUnit } from '@fizz/schemas';
+import type { EquipmentKind, Load, LoadConvention, SetType, WeightUnit } from '@fizz/schemas';
 import { loadText, NBSP } from '../display';
 import { isSetCountable } from '../exclusions';
 import { RECORD_MIN_SESSIONS } from '../session/records';
@@ -37,9 +37,13 @@ export interface ProgressRecord {
   kind: ProgressRecordKind;
   sessionId: string;
   date: string;
+  /** The workout row it came from (one exercise can appear twice in a workout, e.g. after a gym switch). */
+  sessionExerciseId: string;
   exerciseId: string;
   exerciseName: string;
   equipmentId: string | null;
+  /** From the workout's snapshot: tells `BW + 10 kg` from `10 kg plates` for an `added` load. */
+  equipmentKind: EquipmentKind | null;
   gymId: string | null;
   convention: LoadConvention;
   load: Load;
@@ -146,9 +150,11 @@ export function recordsInWindow(sessions: readonly ProgressSession[], window: Da
         kind,
         sessionId: s.sessionId,
         date: s.date,
+        sessionExerciseId: ex.sessionExerciseId,
         exerciseId: ex.exerciseId,
         exerciseName: ex.exerciseName,
         equipmentId: ex.equipmentId,
+        equipmentKind: ex.equipmentKind,
         gymId: ex.gymId,
         convention,
         load: shown.load,
@@ -200,9 +206,11 @@ export function recordsInWindow(sessions: readonly ProgressSession[], window: Da
     kind: r.kind,
     sessionId: r.sessionId,
     date: r.date,
+    sessionExerciseId: r.sessionExerciseId,
     exerciseId: r.exerciseId,
     exerciseName: r.exerciseName,
     equipmentId: r.equipmentId,
+    equipmentKind: r.equipmentKind,
     gymId: r.gymId,
     convention: r.convention,
     load: r.load,

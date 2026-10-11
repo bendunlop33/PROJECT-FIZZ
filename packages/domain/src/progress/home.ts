@@ -1,5 +1,6 @@
-import type { Load, ProgressGrouping, ProgressWindowDays } from '@fizz/schemas';
+import type { EquipmentKind, Load, ProgressGrouping, ProgressWindowDays } from '@fizz/schemas';
 import { formatNumber } from '../display';
+import { EXCLUSION_WORD } from '../exclusions';
 import { deriveWorkoutTitle } from '../session/first-run';
 import { countSessions, timeInGym, type DayCount, type LeftOutSession } from './activity';
 import { muscleFrequency, type MuscleInfo } from './muscles';
@@ -14,6 +15,7 @@ import {
   perWeekText,
   countNoun,
   rangeText,
+  rangeWords,
   setsText,
   setsWords,
   WEEKDAY_LETTER,
@@ -129,6 +131,8 @@ export interface MusclesView {
 }
 
 export interface RecordView {
+  /** Unique per row (`sessionExerciseId:kind`): the same exercise can appear twice in one workout. */
+  key: string;
   sessionId: string;
   exerciseId: string;
   /** `Bench press · Main Gym`. */
@@ -146,6 +150,8 @@ export type ProgressHomeView =
       window: ProgressWindow;
       windowLabel: string;
       datesLine: string;
+      /** The same dates for VoiceOver: `12 September to 11 October`. */
+      datesWords: string;
       activity: ActivityView;
       muscles: MusclesView;
       records: { items: RecordView[]; total: number; empty: string | null };
@@ -161,17 +167,24 @@ function sessionTitle(s: ProgressSession, exercises: ReadonlyMap<string, MuscleI
   return deriveWorkoutTitle(infos);
 }
 
-function massWords(load: Load): string {
+function massWords(load: Load, equipmentKind: EquipmentKind | null): string {
   const unit = load.unit === 'kg' ? 'kilograms' : 'pounds';
+  const mass = `${formatNumber(load.value)} ${unit}`;
+  if (load.convention === 'added') {
+    // `BW + 10 kg` reads "body weight plus 10 kilograms"; plate-loaded machines read their plates (review N9).
+    if (equipmentKind === 'plate_loaded_machine') return `${mass} of plates`;
+    return load.value === 0 ? 'body weight' : `body weight plus ${mass}`;
+  }
   const suffix = load.convention === 'per_hand' ? ' each' : load.convention === 'stack' ? ' on the stack' : '';
-  return `${formatNumber(load.value)} ${unit}${suffix}`;
+  return `${mass}${suffix}`;
 }
 
 function recordView(r: ProgressRecord, gymNames: Readonly<Record<string, string>>): RecordView {
   const gym = r.gymId === null || r.equipmentId === null ? null : (gymNames[r.gymId] ?? null);
   const title = gym === null ? r.exerciseName : `${r.exerciseName} · ${gym}`;
-  const what = r.kind === 'heaviest' ? `Heaviest set, ${massWords(r.load)} by ${String(r.reps)}` : `Most reps at ${massWords(r.load)}, ${String(r.reps)}`;
+  const what = r.kind === 'heaviest' ? `Heaviest set, ${massWords(r.load, r.equipmentKind)} by ${String(r.reps)}` : `Most reps at ${massWords(r.load, r.equipmentKind)}, ${String(r.reps)}`;
   return {
+    key: `${r.sessionExerciseId}:${r.kind}`,
     sessionId: r.sessionId,
     exerciseId: r.exerciseId,
     title,
@@ -304,7 +317,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
     notCounted: {
       summary: skipped.length === 0 ? null : skipped.join(' · '),
       noMuscles: freq.notCounted.noMuscles.map((n) => ({ exerciseId: n.exerciseId, text: `${n.name}: no muscles set (${countNoun(n.sets, 'set', 'sets')})` })),
-      marked: freq.markedCounted === 0 ? null : `${countNoun(freq.markedCounted, 'set', 'sets')} you marked ${freq.markedCounted === 1 ? 'is' : 'are'} counted here.`,
+      marked: freq.markedCounted === 0 ? null : `${countNoun(freq.markedCounted, 'set', 'sets')} you marked (${freq.markedKinds.map((k) => EXCLUSION_WORD[k]).join(', ')}) ${freq.markedCounted === 1 ? 'is' : 'are'} counted here.`,
     },
   };
 
@@ -315,6 +328,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
     window,
     windowLabel: label,
     datesLine: rangeText(window),
+    datesWords: rangeWords(window),
     activity,
     muscles,
     records: {
