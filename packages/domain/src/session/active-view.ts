@@ -17,6 +17,7 @@ import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, pa
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import type { HistorySession } from '../progression';
 import { toMs } from '../time';
+import { coachUndoRefusal } from './coach-undo';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, isEmptyPart, partRootOf } from './gym-switch';
 import { buildExecutionOrder, nextPendingSet } from './order';
@@ -203,6 +204,10 @@ export interface FocusView {
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
   duration: { value: number | null } | null;
   target: string | null;
+  /** `Plan was 100 kg × 6–8` when a coach adjustment set this target (coach-adjustments §2.7); else null. */
+  planWas: string | null;
+  /** The coach action behind this set's target, for `Undo coach change`; null when the target isn't the coach's or can't be undone (gym changed since). */
+  coachActionId: string | null;
   /**
    * `SnapNote` under the target (gym-switch §2.5): only for a capped,
    * converted or dropped fit, read from `planned.snap` so it survives a relaunch.
@@ -493,6 +498,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
     duration: ex.measurement === 'duration' ? { value: values.durationS } : null,
     target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral }),
+    planWas: set.planned.source === 'coach' && set.planned.coach ? planWasText(set.planned.coach.before, ex.loadConvention, eq) : null,
+    coachActionId: set.planned.source === 'coach' && set.planned.coach !== undefined && coachUndoRefusal(state, set.planned.coach.actionId) === null ? set.planned.coach.actionId : null,
     snapNote: setSnapNote(set.planned.snap, set.planned.load, { gymName: input.gymName, equipment: eq, unit: ex.unit }),
     hasExplanation: set.planned.load !== null || set.planned.reps !== null || set.planned.durationS !== null,
     painFlagged: input.painFlagged.has(ex.exerciseId) || painNote !== null,
@@ -739,4 +746,10 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
     painLine: exclusions.includes('pain') && !stored.includes('pain') ? exclusionPainLine(ex.exerciseName) : null,
     changed: JSON.stringify(values) !== JSON.stringify(set.actual) || exclusions.join() !== stored.join(),
   };
+}
+
+/** `Plan was 100 kg × 6–8` (the target a coach adjustment replaced). */
+function planWasText(before: WorkoutSet['planned'], convention: SessionExercise['loadConvention'], eq: EquipmentInstance | null | undefined): string | null {
+  const short = targetShort({ ...before, source: undefined }, { convention, ...(eq ? { equipment: eq } : {}) });
+  return short === null ? null : short.replace(/^Target /, 'Plan was ');
 }

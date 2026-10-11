@@ -46,6 +46,7 @@ import {
   type SymbolName,
 } from '../../ui';
 import { CoachSlot } from './CoachSlot';
+import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './WorkoutCoach';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu } from '../../workout/exercise-menu';
 import { shouldCueRestEnd } from '../../workout/cues';
@@ -423,6 +424,42 @@ export function WorkoutScreen() {
     });
   }, [now, data, services]);
 
+  // `valueChangeGuard` after a target changed under Ben's thumb; the timer is cleared on unmount (review N5).
+  const guardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armGuard = useCallback(() => {
+    setGuard(true);
+    if (guardTimer.current !== null) clearTimeout(guardTimer.current);
+    guardTimer.current = setTimeout(() => {
+      guardTimer.current = null;
+      setGuard(false);
+    }, TIMING.valueChangeGuard);
+  }, []);
+  useEffect(
+    () => () => {
+      if (guardTimer.current !== null) clearTimeout(guardTimer.current);
+    },
+    [],
+  );
+
+  // The coach in the workout (ADR 0020 C7). An applied change reloads the targets and guards Log for
+  // `timing.valueChangeGuard`, so a tap aimed at the old label never saves the new one (§4.3).
+  const coachSessionId = data === 'loading' || data === null ? null : data.aggregate.session.id;
+  const coach = useWorkoutCoach(
+    coachSessionId,
+    () => {
+      void reload();
+      changed();
+      armGuard();
+    },
+    data === 'loading' || data === null ? null : data.aggregate,
+  );
+  // An unanswered offer goes when the rest ends (§3.2).
+  const restRunning = data !== 'loading' && data !== null && data.aggregate.restTimer?.status === 'running';
+  const clearOffer = coach.clearOffer;
+  useEffect(() => {
+    if (!restRunning) clearOffer();
+  }, [restRunning, clearOffer]);
+
   if (loadError !== null && (data === 'loading' || data === null)) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top + theme.space['4'], paddingHorizontal: theme.space['4'], gap: theme.space['4'] }}>
@@ -512,6 +549,8 @@ export function WorkoutScreen() {
         .setRecord(session.id, loggedSetId)
         .catch(() => null)
         .then(showRecord);
+    // Path B: a pure check on the logged set, no AI call (coach-adjustments §4.2).
+    coach.afterLog(r.aggregate, loggedSetId);
     setEdits(null);
     whyEvent({ kind: 'logged' });
     setRestoredDraft(null);
@@ -574,10 +613,11 @@ export function WorkoutScreen() {
 
   function openExerciseMenu(f: FocusView) {
     const howTo = howToRouteFor(f, bundledHowToSources());
-    const menu = exerciseMenu(howTo !== null);
+    const menu = exerciseMenu(howTo !== null, f.coachActionId !== null);
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
+      if (action === 'undo_coach' && f.coachActionId !== null) coach.undo(f.coachActionId);
       if (action === 'add_set') void addSet(f.sessionExerciseId);
       if (action === 'add_exercise') navigation.navigate('ExercisePicker', { sessionId: session.id });
       if (action === 'delete_set') {
@@ -702,12 +742,7 @@ export function WorkoutScreen() {
     setSwitchCard(null);
     setReviewOpen(false);
     const after = fresh ? services.workout.view(fresh, clockNow(), null).primary.label : labelBefore;
-    if (logGuardAfterSwitch(labelBefore, after)) {
-      setGuard(true);
-      setTimeout(() => {
-        setGuard(false);
-      }, TIMING.valueChangeGuard);
-    }
+    if (logGuardAfterSwitch(labelBefore, after)) armGuard();
     showToast({
       text: switchedToast(card.proposal),
       action: 'Undo',
@@ -753,6 +788,25 @@ export function WorkoutScreen() {
   }
 
   /**
+   * `Adjust` → `Pain` (coach-adjustments §4.5): the flag is deterministic and
+   * works offline; then, if the coach can answer, it is asked to adjust with
+   * increases blocked. It never diagnoses.
+   */
+  async function painFromAdjust(f: FocusView) {
+    const r = await services.pain.flagMovement({ exerciseId: f.exerciseId, exerciseName: f.exerciseName, opId: newUuid() });
+    if (!r.ok) {
+      showToast({ icon: 'info.circle', text: r.message });
+      return;
+    }
+    haptic('step');
+    changed();
+    void reload();
+    // Undo takes back this tap's flag (a retraction, not a clear); an older flag isn't this tap's.
+    showToast({ icon: 'exclamationmark.triangle', text: `Pain noted · ${f.exerciseName}`, ...(r.flags.length > 0 ? { action: 'Undo', onAction: () => void services.pain.retract(r.flags, newUuid()).then(() => void reload()) } : {}) });
+    if (coach.availability?.status === 'ok') coach.ask({ kind: 'chip', chip: 'pain' });
+  }
+
+  /**
    * `⋯` (premium-feel §3.2, §10): Pause lives here, not in the header; paused, Resume is the one-tap primary.
    * `Rename workout` isn't offered on an open-ended workout in progress: it's named after Finish (its Summary).
    */
@@ -760,6 +814,7 @@ export function WorkoutScreen() {
     const items: { label: string; run: () => void }[] = [
       { label: session.pause === null ? 'Pause workout' : 'Resume workout', run: () => void pauseOrResume() },
       ...(view?.openEnded ? [] : [{ label: 'Rename workout', run: () => { renameOp.current = newUuid(); setRenameOpen(true); } }]),
+      { label: 'Ask the coach', run: () => { navigation.navigate('Coach', { entry: { kind: 'workout', sessionId: session.id } }); } },
       { label: 'Finish workout', run: () => { setFinishOpen(true); } },
       { label: 'Edit workout times', run: () => { setTimesOpen(true); } },
       { label: 'Discard workout', run: confirmDiscard },
@@ -848,6 +903,7 @@ export function WorkoutScreen() {
     // Changing effort never touches rest (invariant 5).
     const r = await run({ type: 'correct_set', at: services.now(), opId: newUuid(), setId: js.setId, expectedSetVersion: js.setVersion, patch: scale === 'rir' ? { rir: next } : { rpe: next } });
     if (!r.ok) showToast({ icon: 'info.circle', text: 'That set changed. Tap it to edit.' });
+    else coach.afterLog(r.aggregate, js.setId);
   }
 
   async function pauseOrResume() {
@@ -1005,7 +1061,7 @@ export function WorkoutScreen() {
           </RuledSection>
         ) : null}
         {/* The coach card's place (premium-feel §3.4); takes no space while empty. */}
-        <CoachSlot />
+        <CoachSlot>{coach.slot !== null ? <CoachSlotContent coach={coach} /> : null}</CoachSlot>
       </View>
     ) : null;
 
@@ -1051,6 +1107,7 @@ export function WorkoutScreen() {
             }}
           />
         ) : null}
+        <AdjustButton coach={coach} />
         <IconButton
           icon="ellipsis"
           label={`${focus.exerciseName} menu`}
@@ -1059,6 +1116,10 @@ export function WorkoutScreen() {
           }}
         />
       </View>
+
+      <AdjustRow coach={coach} sessionId={session.id} onPain={() => void painFromAdjust(focus)} />
+      {/* In Ready the slot sits under the header; offers only ever show during rest (§2.3). */}
+      {!resting && coach.slot !== null && coach.slot.kind !== 'offer' ? <CoachSlot>{<CoachSlotContent coach={coach} />}</CoachSlot> : null}
 
       {rest?.kind === 'ended' && !resting ? (
         <StatusLine
@@ -1145,6 +1206,11 @@ export function WorkoutScreen() {
             />
           ) : null}
         </View>
+        {focus.planWas !== null ? (
+          <AppText variant="callout" color="text.secondary" numeric>
+            {focus.planWas}
+          </AppText>
+        ) : null}
         {focus.snapNote ? <SnapNote note={focus.snapNote} /> : null}
         {why !== null && why.setId === focus.setId && !keypadOpen ? (
           <TargetWhyPanel

@@ -3,8 +3,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, toIso, toMs, type NextTimeRow, type WorkoutSummary } from '@fizz/domain';
+import { checkRoutineName, toIso, toMs, type WorkoutSummary } from '@fizz/domain';
+import { readTextCoachState } from '@fizz/providers';
 
+import { coachConnectionPorts } from '../../ai/coach-connection-ports';
+import { summaryCoachView } from '../../ai/coach-connection-view';
+import { nextTimeView, type NextTimeRowView, type NextTimeTap } from '../../coach/next-time-view';
 import { nowMs as clockNow } from '../../clock';
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
@@ -23,7 +27,8 @@ import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
  * Workout summary (workout-summary.md). Shown only after `finishWorkout`
  * committed. Facts first; `Next time` from the built-in rule, tagged with
  * its source; the check-in exactly as Ben gave it; the on-phone backup line.
- * No AI in this build: the coach note says so honestly.
+ * The coach has no summary turn in this build (ADR 0020 C8): the tag and the
+ * note follow the real connection state and never claim a coach review.
  */
 export function SummaryScreen() {
   const theme = useTheme();
@@ -44,12 +49,33 @@ export function SummaryScreen() {
       clearTimeout(t);
     };
   }, [toast]);
+  // True while this Summary's own review runs (shows `Reviewing…` on Next time).
+  const reviewing = useRef(false);
   const [data, reload] = useScreenData(async (s) => {
-    const [summary, backup, painFlags, routines] = await Promise.all([s.workout.summary(sessionId), s.backups.getStatus(), s.pain.active(), s.routines.list().catch(() => [])]);
+    // Keychain + settings file only, no network; a read failure counts as not connected.
+    const coach = summaryCoachView(await readTextCoachState(coachConnectionPorts().ports).catch(() => null));
+    const [summary, backup, painFlags, routines] = await Promise.all([s.workout.summary(sessionId, coach.coach), s.backups.getStatus(), s.pain.active(), s.routines.list().catch(() => [])]);
     // `Save as routine` is offered once: not for a routine's workout, nor one already saved as a routine.
     const savedAs = routines.find((r) => r.createdFromSessionId === sessionId) ?? null;
-    return { summary, backup, painFlags, savedAs };
+    // D21: the coach's saved targets over the built-in rule's, and the summary turn's checked reply as the note.
+    const [coachRows, availability, turnNote] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null)]);
+    const nextTime = summary === null ? null : nextTimeView({ title: summary.title, builtIn: summary.nextTime, coachRows, availability, reviewing: s.coach.summaryRunning(sessionId) !== null && reviewing.current });
+    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime };
   });
+  // The one coach review after Finish (D21). It runs in the service, so leaving the Summary doesn't stop it;
+  // its small changes are saved when it answers, until a workout starts from this one (CA10).
+  useEffect(() => {
+    if (!finishedNow) return;
+    const run = services.coach.runSummaryTurn(sessionId);
+    reviewing.current = true;
+    reload();
+    void run.finally(() => {
+      reviewing.current = false;
+      reload();
+      changed();
+    });
+  }, [finishedNow, services, sessionId, reload, changed]);
+
   // The name sheets (premium-feel §2.6): one opId per sheet opening, so a double tap saves once.
   const [nameSheet, setNameSheet] = useState<'routine' | 'workout' | null>(null);
   const [nameVisible, setNameVisible] = useState(false);
@@ -104,7 +130,16 @@ export function SummaryScreen() {
       </View>
     );
   }
-  const { summary: sum, backup, painFlags, savedAs } = data.value;
+  const { summary: sum, backup, painFlags, savedAs, coachNote, nextTime } = data.value;
+
+  async function tapNext(row: NextTimeRowView, tap: NextTimeTap) {
+    if (row.row === null) return;
+    const r = await services.coach.tapNextTarget(row.row, tap, newUuid()).catch(() => null);
+    if (r === null) setToast({ text: tap === 'undo' ? 'Couldn’t undo.' : 'Couldn’t save.' });
+    else if (r.status === 'not_possible') setToast({ text: r.reason === 'used' ? 'Already used.' : 'Changed since. Check it again.' });
+    reload();
+    changed();
+  }
   const canSaveRoutine = sum.routineId === null && sum.source === 'manual' && savedAs === null && sum.facts.workingSets + sum.facts.warmupSets > 0;
 
   async function saveRoutine(name: string): Promise<string | null> {
@@ -160,6 +195,7 @@ export function SummaryScreen() {
     reload();
     return null;
   }
+
   const flaggedHere = painFlags.filter((f) => sum.exercises.some((e) => e.exerciseId === f.exerciseId));
   const tz = sum.tz;
   const range = `${formatTime(toMs(sum.startedAtUtc), tz)}–${sum.endedAtUtc ? formatTime(toMs(sum.endedAtUtc), tz) : ''}`;
@@ -401,25 +437,60 @@ export function SummaryScreen() {
           </View>
         ) : null}
 
-        {sum.nextTime ? (
+        {nextTime ? (
           <View style={{ gap: theme.space['3'] }}>
-            <SectionHeader title="Next time" />
-            {sum.nextTime.emptyText ? (
+            <SectionHeader title={nextTime.heading} />
+            {nextTime.status !== null ? (
               <AppText variant="callout" color="text.secondary">
-                {sum.nextTime.emptyText}
+                {nextTime.status}
               </AppText>
             ) : null}
-            {sum.nextTime.rows.map((r) => (
-              <NextRow key={r.exerciseId} row={r} tag={sum.nextTime?.sourceTag ?? ''} />
+            {nextTime.emptyText ? (
+              <AppText variant="callout" color="text.secondary">
+                {nextTime.emptyText}
+              </AppText>
+            ) : null}
+            {nextTime.rows.map((r) => (
+              <NextRow key={r.key} row={r} onTap={(tap) => void tapNext(r, tap)} />
             ))}
+            {nextTime.undoAll !== null ? (
+              <TextButton
+                label="Undo all"
+                tone="secondary"
+                onPress={() => {
+                  const id = nextTime.undoAll?.actionId;
+                  if (id === undefined) return;
+                  void services.coach
+                    .undo(id, newUuid())
+                    .catch(() => {
+                      setToast({ text: 'Couldn’t undo.' });
+                    })
+                    .then(() => {
+                      reload();
+                      changed();
+                    });
+                }}
+              />
+            ) : null}
           </View>
         ) : null}
 
         <View style={{ gap: theme.space['1'] }}>
           <SectionHeader title="Coach note" />
-          <AppText variant="callout" color="text.secondary">
-            Coach not connected. Your workout is saved; a note can be added later.
-          </AppText>
+          {coachNote !== null ? (
+            <AppText variant="callout" color="text.secondary">
+              {coachNote}
+            </AppText>
+          ) : null}
+          {sum.dateOnly === null ? (
+            <TextButton
+              label="Ask about this workout"
+              tone="secondary"
+              onPress={() => {
+                navigation.navigate('Coach', { entry: { kind: 'summary', sessionId } });
+              }}
+            />
+          ) : null}
         </View>
 
         {/* A 0-set workout was offered Discard in the finish sheet; discarding a finished one isn't in the domain yet. */}
@@ -526,29 +597,49 @@ function Comparison({ c, tz }: { c: NonNullable<WorkoutSummary['comparison']>; t
   );
 }
 
-function NextRow({ row, tag }: { row: NextTimeRow; tag: string }) {
+/**
+ * One `Next time` row (D21): the target and its %, the source tag, `Why?`
+ * (the coach's reason, checks and the built-in rule's value, or the rule's
+ * own facts) and the row's buttons. Values come from the saved rows.
+ */
+function NextRow({ row, onTap }: { row: NextTimeRowView; onTap: (tap: NextTimeTap) => void }) {
   const theme = useTheme();
   const [why, setWhy] = useState(false);
   return (
     <Card>
       <AppText variant="headline">{row.exerciseName}</AppText>
       <AppText variant="body" numeric>
-        {row.target}
+        {row.pct === null ? row.target : `${row.target} · ${row.pct}`}
       </AppText>
-      <AppText variant="callout" color="text.secondary">
-        {row.summary}
-      </AppText>
-      <Tag text={tag} />
-      <TextButton
-        label={why ? `Rule: ${row.ruleName}` : 'Why?'}
-        tone="secondary"
-        onPress={() => {
-          setWhy((w) => !w);
-        }}
-      />
+      <Tag text={row.tag} />
+      {row.note !== null ? (
+        <AppText variant="callout" color="text.secondary">
+          {row.note}
+        </AppText>
+      ) : null}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: theme.space['8'] }}>
+        <TextButton
+          label={why ? 'Hide' : 'Why?'}
+          tone="secondary"
+          onPress={() => {
+            setWhy((w) => !w);
+          }}
+        />
+        <View style={{ flexDirection: 'row', gap: theme.space['4'] }}>
+          {row.actions.map((a) => (
+            <TextButton
+              key={a.tap}
+              label={a.label}
+              onPress={() => {
+                onTap(a.tap);
+              }}
+            />
+          ))}
+        </View>
+      </View>
       {why ? (
         <View style={{ gap: theme.space['1'] }}>
-          {row.facts.map((f) => (
+          {row.why.map((f) => (
             <AppText key={f} variant="callout" color="text.secondary">
               {`· ${f}`}
             </AppText>

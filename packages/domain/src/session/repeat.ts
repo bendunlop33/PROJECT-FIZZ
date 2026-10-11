@@ -286,8 +286,10 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     session: { ...out.aggregate.session, routineId: null },
     sets: out.aggregate.sets.map((s) => {
       // The synthetic routine isn't the source: the set Ben did last time is, or the built-in rule's target.
-      const fromRule = fromOf(s.id)?.from?.kind === 'rule';
-      const planned: PlannedSet = { ...s.planned, source: fromRule ? 'built_in_rule' : 'repeat' };
+      const from = fromOf(s.id)?.from;
+      // A coach target for next time (D21) keeps its source and its own `Why?`.
+      const source = from?.kind === 'rule' ? (from.planned.source === 'coach' ? 'coach' : 'built_in_rule') : 'repeat';
+      const planned: PlannedSet = { ...s.planned, source };
       const provenance = provenanceOf(s.id);
       if (provenance === null) delete planned.provenance;
       else planned.provenance = provenance;

@@ -14,6 +14,7 @@ import type {
   SetSide,
   SetSnapshot,
   SetValues,
+  TargetProvenance,
   WorkoutSet,
 } from '@fizz/schemas';
 import { isLoadAchievable } from '../equipment';
@@ -30,6 +31,7 @@ import {
 } from '../rest';
 import { deriveId, stableStringify } from '../stable';
 import { toIso, toMs } from '../time';
+import { coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
 import { isRoundEnd, nextPendingSet } from './order';
 
@@ -57,6 +59,8 @@ export type SessionErrorCode =
   | 'equipment_not_found'
   | 'equipment_incompatible'
   | 'gym_change_not_found'
+  /** A coach adjustment's Undo after the gym changed (its saved targets were for the old gym). */
+  | 'gym_changed'
   /** A discard whose `confirmedLoggedSets` doesn't match the logged sets it would discard. */
   | 'discard_unconfirmed';
 
@@ -107,7 +111,9 @@ export type SessionEvent =
   /** A gym switch (or `[Use changes today]`) or its Undo. `changedSetIds`: targets that changed. */
   | { type: 'GymChanged'; actionId: string; fromGymId: string | null; toGymId: string; changedSetIds: string[]; undo: boolean }
   | { type: 'SessionRenamed'; name: string | null }
-  | { type: 'FinishByChanged'; finishByUtc: string | null };
+  | { type: 'FinishByChanged'; finishByUtc: string | null }
+  /** A coach adjustment changed (or its Undo restored) pending targets. Cue layers rebuild the rest-end line. */
+  | { type: 'TargetsAdjusted'; actionId: string; setIds: string[]; reverted: boolean };
 
 export type ReduceResult =
   | {
@@ -1250,6 +1256,161 @@ function handleSaveDraft(state: SessionAggregate, cmd: CommandOf<'save_draft'>):
   return { ok: true, state: { ...state, sets: replaceSet(state.sets, { ...set, draft: cmd.values }) }, events: [] };
 }
 
+/**
+ * `adjust_pending_targets` (ADR 0020 §4): the coach's validated change to
+ * today's pending sets. Version-gated (rule 5); only pending sets change
+ * (rule 2); the target each set had is kept in `planned.coach.before`.
+ * Drafts are left alone: a set with no saved draft follows its new target,
+ * and one Ben edited keeps his edit (coach-adjustments §4.3).
+ */
+function handleAdjustPendingTargets(state: SessionAggregate, cmd: CommandOf<'adjust_pending_targets'>): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'Your workout moved on.');
+  const byId = new Map(state.sets.map((s) => [s.id, s]));
+  const touched = [...cmd.changes.map((c) => c.setId), ...cmd.removeSetIds, ...cmd.addSets.map((a) => a.copyFromSetId)];
+  for (const id of touched) {
+    const set = byId.get(id);
+    if (!set || set.status === 'deleted') return fail('set_not_found', 'Set not found.');
+  }
+  for (const id of [...cmd.changes.map((c) => c.setId), ...cmd.removeSetIds]) {
+    if (byId.get(id)?.status !== 'pending') return fail('set_not_pending', 'Only sets not done yet can change.');
+  }
+  if (isWorkLive(state, [...cmd.changes.map((c) => c.setId), ...cmd.removeSetIds])) return fail('work_interval_running', 'Stop the work timer first.');
+  const targetsToCheck = [...cmd.changes.map((c) => ({ setId: c.setId, target: c.target })), ...cmd.addSets.map((a) => ({ setId: a.copyFromSetId, target: a.target }))];
+  for (const c of targetsToCheck) {
+    const set = byId.get(c.setId);
+    const ex = set ? exerciseOf(state, set) : undefined;
+    if (!set || !ex) return fail('exercise_not_found', 'Exercise not found in this workout.');
+    const load = c.target.load;
+    if (load === null) continue;
+    if (load.convention !== ex.loadConvention || load.unit !== ex.unit) {
+      return fail(load.unit !== ex.unit ? 'unit_mismatch' : 'convention_mismatch', `The target doesn't match ${ex.exerciseName}'s ${ex.unit} ${ex.loadConvention} load.`);
+    }
+    // Rule 4, as for a gym switch: the load must be makeable on the row's current item, and an
+    // exercise that had equipment and has none left (or whose item is gone) can't carry one.
+    if (load.convention === 'bodyweight') continue;
+    const eq = equipmentOf(state, ex);
+    if (eq === undefined) {
+      const hadEquipment = ex.equipmentId !== null || (set.planned.snap?.intendedOn?.equipmentId ?? null) !== null;
+      if (hadEquipment) return fail('invalid_values', 'There’s no equipment here to check that load against.');
+    } else if (!isLoadAchievable(load, eq)) {
+      return fail('invalid_values', `That load can’t be made on ${eq.name}.`);
+    }
+  }
+  if (cmd.addSets.some((a) => byId.has(a.newSetId))) return fail('invalid_values', 'That set ID is already used.');
+
+  // `Why?` on a coach target (§2.12): set by the coach today, its reason in quotes, the same `Last time` as before.
+  const coachProvenance = (set: WorkoutSet): TargetProvenance => ({
+    source: 'coach',
+    setAt: cmd.at,
+    routineName: state.session.routineName,
+    requestedLoad: null,
+    basis: set.planned.provenance?.basis ?? null,
+    coach: { actionId: cmd.actionId, scope: 'today', reason: cmd.reason ?? null },
+    guardNotes: [],
+  });
+  const gymChanges = state.session.gymChanges?.length ?? 0;
+  const coachTarget = (set: WorkoutSet, target: { load: WorkoutSet['planned']['load']; reps: WorkoutSet['planned']['reps'] }): WorkoutSet['planned'] => ({
+    ...set.planned,
+    load: target.load,
+    reps: target.reps,
+    source: 'coach',
+    provenance: coachProvenance(set),
+    coach: { actionId: cmd.actionId, before: set.planned, gymChanges },
+  });
+  const changed = new Map<string, WorkoutSet>();
+  for (const c of cmd.changes) {
+    const set = byId.get(c.setId);
+    if (set) changed.set(set.id, { ...set, planned: coachTarget(set, c.target), version: set.version + 1 });
+  }
+  const audit: SessionAggregate['audit'] = [...state.audit];
+  const events: SessionEvent[] = [];
+  for (const id of cmd.removeSetIds) {
+    const set = byId.get(id);
+    if (!set) continue;
+    // The removed set remembers which action removed it, so that action's Undo can put it back.
+    const removed: WorkoutSet = { ...set, status: 'deleted', draft: null, planned: { ...set.planned, coach: { actionId: cmd.actionId, before: set.planned, gymChanges } }, version: set.version + 1 };
+    changed.set(id, removed);
+    audit.push({ id: `${cmd.opId}:deleted:${id}`, sessionId: state.session.id, setId: id, opId: cmd.opId, kind: 'deleted', atUtc: cmd.at.utc, before: snapshot(set), after: snapshot(removed) });
+    events.push({ type: 'SetDeleted', setId: id });
+  }
+  let sets = state.sets.map((s) => changed.get(s.id) ?? s);
+  let lastIndex = new Map<string, number>();
+  for (const s of sets) lastIndex.set(s.sessionExerciseId, Math.max(lastIndex.get(s.sessionExerciseId) ?? -1, s.index));
+  for (const a of cmd.addSets) {
+    const template = byId.get(a.copyFromSetId);
+    if (!template) continue;
+    const index = (lastIndex.get(template.sessionExerciseId) ?? template.index) + 1;
+    lastIndex = new Map(lastIndex).set(template.sessionExerciseId, index);
+    const added: WorkoutSet = {
+      id: a.newSetId,
+      sessionId: state.session.id,
+      sessionExerciseId: template.sessionExerciseId,
+      index,
+      setType: template.setType,
+      status: 'pending',
+      side: template.side === null ? null : 'both',
+      pairedWithSetId: null,
+      planned: coachTarget(template, a.target),
+      rest: template.rest,
+      actual: null,
+      draft: null,
+      completedAt: null,
+      completedByOpId: null,
+      undoCount: 0,
+      flags: [],
+      edited: false,
+      version: 1,
+    };
+    sets = [...sets, added];
+    events.push({ type: 'SetAdded', setId: added.id, sessionExerciseId: added.sessionExerciseId });
+  }
+  const setIds = [...cmd.changes.map((c) => c.setId), ...cmd.removeSetIds, ...cmd.addSets.map((a) => a.newSetId)];
+  if (setIds.length === 0) return { ok: true, state, events: [] };
+  events.push({ type: 'TargetsAdjusted', actionId: cmd.actionId, setIds, reverted: false });
+  const activeSetId = repointActive(state, sets, events);
+  return { ok: true, state: bumpVersion({ ...state, sets, audit }, activeSetId), events };
+}
+
+/**
+ * `revert_target_adjustment`: Undo of one coach adjustment. Only sets that
+ * still carry this action's target (pending, `planned.coach.actionId`) go
+ * back; a set logged since, or changed again by a later adjustment, stays
+ * as it is. Removed sets come back if still removed; added sets are removed
+ * if still pending. Refused once the gym changed after the adjustment: its
+ * saved targets (and removed sets' rows) were for the old gym's equipment
+ * (rule 4; ADR 0020 §4.3).
+ */
+function handleRevertTargetAdjustment(state: SessionAggregate, cmd: CommandOf<'revert_target_adjustment'>): Handled {
+  if (coachUndoRefusal(state, cmd.actionId) === 'gym_changed') return fail('gym_changed', 'The gym changed.');
+  const removed = new Set(cmd.removedSetIds);
+  const added = new Set(cmd.addedSetIds);
+  const ownTarget = (s: WorkoutSet): boolean => s.planned.source === 'coach' && s.planned.coach?.actionId === cmd.actionId;
+  const changed = new Map<string, WorkoutSet>();
+  const audit: SessionAggregate['audit'] = [...state.audit];
+  const events: SessionEvent[] = [];
+  for (const s of state.sets) {
+    const before = s.planned.coach?.before;
+    if (before === undefined || s.planned.coach?.actionId !== cmd.actionId) continue;
+    if (added.has(s.id)) {
+      if (s.status !== 'pending') continue;
+      const gone: WorkoutSet = { ...s, status: 'deleted', draft: null, version: s.version + 1 };
+      changed.set(s.id, gone);
+      audit.push({ id: `${cmd.opId}:deleted:${s.id}`, sessionId: state.session.id, setId: s.id, opId: cmd.opId, kind: 'deleted', atUtc: cmd.at.utc, before: snapshot(s), after: snapshot(gone) });
+      events.push({ type: 'SetDeleted', setId: s.id });
+    } else if (removed.has(s.id)) {
+      if (s.status !== 'deleted') continue;
+      changed.set(s.id, { ...s, status: 'pending', planned: before, version: s.version + 1 });
+    } else if (s.status === 'pending' && ownTarget(s)) {
+      changed.set(s.id, { ...s, planned: before, version: s.version + 1 });
+    }
+  }
+  if (changed.size === 0) return { ok: true, state, events: [] };
+  const sets = state.sets.map((s) => changed.get(s.id) ?? s);
+  events.push({ type: 'TargetsAdjusted', actionId: cmd.actionId, setIds: [...changed.keys()], reverted: true });
+  const activeSetId = repointActive(state, sets, events);
+  return { ok: true, state: bumpVersion({ ...state, sets, audit }, activeSetId), events };
+}
+
 function handleChangeGym(state: SessionAggregate, cmd: CommandOf<'change_gym'>): Handled {
   const r = applyChangeGym(state, cmd);
   if (!r.ok) return fail(r.code, r.message);
@@ -1311,6 +1472,10 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleRenameSession(state, command);
     case 'set_finish_by':
       return handleSetFinishBy(state, command, nowMs);
+    case 'adjust_pending_targets':
+      return handleAdjustPendingTargets(state, command);
+    case 'revert_target_adjustment':
+      return handleRevertTargetAdjustment(state, command);
     case 'tick':
       return { ok: true, state, events: [] };
   }
@@ -1373,6 +1538,10 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
     case 'rename_session':
       // A later rename (or its undo) replaced this name.
       return state.session.routineName !== (command.name === null ? null : command.name.trim());
+    case 'adjust_pending_targets':
+      // Undone, or every set it set has since been logged or changed again, or the gym changed since.
+      return coachUndoRefusal(state, command.actionId) !== null || !state.sets.some((s) => s.planned.coach?.actionId === command.actionId && s.status === 'pending' && s.planned.source === 'coach');
+    case 'revert_target_adjustment':
     case 'undo_change_gym':
     case 'finish':
     case 'discard':

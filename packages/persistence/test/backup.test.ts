@@ -403,6 +403,8 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
     delete tables.import_jobs;
     delete tables.import_rows;
     delete tables.exercise_aliases;
+    // …and nothing from schema 4 (coach).
+    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers']) Reflect.deleteProperty(tables, t);
     tables.sessions = (tables.sessions ?? []).map((row) => {
       const copy = { ...row };
       delete copy.check_in;
@@ -524,11 +526,14 @@ describe('merged schema: active-set (4) and gym switch (5)', () => {
       delete copy.equipment_version;
       return copy;
     });
-    const v4 = resign({ ...file, schemaVersion: 4, tables });
+    // Nor coach tables (schema 6).
+    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers']) Reflect.deleteProperty(tables, t);
+    const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
+    const v4 = resign({ ...file, schemaVersion: 4, tables, counts });
 
     const current = await openManager(dir());
     expect(await current.restore(v4, at(300))).toMatchObject({ ok: true, status: 'restored', preview: { needsMigration: true } });
-    expect(await current.store.db.read((q) => readUserVersion(q))).toBe(5);
+    expect(await current.store.db.read((q) => readUserVersion(q))).toBe(latestVersion());
     const read = await current.store.repos.sessions.get(w.session.id);
     expect(read).toEqual(w);
     expect(read?.sets.find((x) => x.id === first?.id)?.exclusions).toEqual(['pain']);
@@ -546,7 +551,7 @@ describe('merged schema: active-set (4) and gym switch (5)', () => {
     expect(s.sets.some((x) => x.exclusions?.includes('spotted'))).toBe(true);
     await source.store.repos.sessions.save(s, null);
     const backup = await createBackup(source.store, { at: at(500), app: APP });
-    expect(backup.schemaVersion).toBe(5);
+    expect(backup.schemaVersion).toBe(latestVersion());
     const target = await openManager(dir());
     expect(await target.restore(backup.text, at(600))).toMatchObject({ ok: true, status: 'restored' });
     expect(await target.store.repos.sessions.get(s.session.id)).toEqual(s);

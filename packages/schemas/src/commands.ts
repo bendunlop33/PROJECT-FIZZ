@@ -5,6 +5,7 @@ import {
   LoadConventionSchema,
   LoadSchema,
   OperationIdSchema,
+  RepRangeSchema,
   WeightUnitSchema,
   ZonedTimestampSchema,
 } from './common';
@@ -332,6 +333,46 @@ export const RenameSessionCommandSchema = z.object({
   expectedVersion: z.int().min(1),
 });
 
+/** A pending set's new load and reps target (both explicit; unit and convention in the load). */
+const TargetValuesSchema = z.object({ load: LoadSchema.nullable(), reps: RepRangeSchema.nullable() });
+
+/**
+ * A coach adjustment of today's pending sets (ADR 0020 §4, coach-adjustments
+ * path A), already checked by `validateTodayAdjustment`. Pending sets only;
+ * `expectedVersion` rejects it if the workout moved on (rule 5). Each
+ * changed set gets `planned.source: 'coach'` and keeps the target it
+ * replaced, so Undo puts exactly that back. Rest and done sets never change.
+ */
+export const AdjustPendingTargetsCommandSchema = z.object({
+  type: z.literal('adjust_pending_targets'),
+  ...base,
+  opId: OperationIdSchema,
+  expectedVersion: z.int().min(1),
+  actionId: IdSchema,
+  /** The coach's reason from the action record, kept on each changed target's `Why?` (in quotes). */
+  reason: z.string().max(600).nullable().optional(),
+  changes: z.array(z.object({ setId: IdSchema, target: TargetValuesSchema })).max(40),
+  removeSetIds: z.array(IdSchema).max(12),
+  /** New pending sets, copying type and rest from `copyFromSetId`. IDs derive from the opId, so a replay adds the same rows. */
+  addSets: z.array(z.object({ newSetId: IdSchema, copyFromSetId: IdSchema, target: TargetValuesSchema })).max(12),
+});
+
+/**
+ * Undo of one coach adjustment (Ben's tap). Restores the replaced target on
+ * sets that are still pending and still carry this action's target, puts
+ * back sets it removed and removes sets it added, if they're still pending.
+ * Sets logged since stay as they are (`Undone for set 4. Set 3 was already
+ * logged.`). Never version-gated: it only touches what this action set.
+ */
+export const RevertTargetAdjustmentCommandSchema = z.object({
+  type: z.literal('revert_target_adjustment'),
+  ...base,
+  opId: OperationIdSchema,
+  actionId: IdSchema,
+  removedSetIds: z.array(IdSchema).max(12),
+  addedSetIds: z.array(IdSchema).max(12),
+});
+
 /** One exercise row's pending sets, fitted to the new gym by `snapPlanToGym` (gym-switch §6.4). */
 export const ChangeGymSlotSchema = z.object({
   sessionExerciseId: IdSchema,
@@ -405,6 +446,8 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   SetRestAfterCommandSchema,
   RenameSessionCommandSchema,
   SetFinishByCommandSchema,
+  AdjustPendingTargetsCommandSchema,
+  RevertTargetAdjustmentCommandSchema,
   ChangeGymCommandSchema,
   UndoChangeGymCommandSchema,
 ]);

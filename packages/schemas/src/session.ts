@@ -141,12 +141,15 @@ export type SetSide = z.infer<typeof SetSideSchema>;
  * text; nothing comes from a model.
  *
  * Sources written today: `plan` (a routine's template, `startWorkout`),
- * `rule` (the built-in rule's next targets, `plannedSetsFromTargets`) and
- * `repeat` (a past workout's actual result, routines.md RT4). The coach,
- * warm-up, swap and builder sources in the spec are added with the code that
- * sets those targets.
+ * `rule` (the built-in rule's next targets, `plannedSetsFromTargets`),
+ * `repeat` (a past workout's actual result, routines.md RT4) and `coach`
+ * (a coach adjustment of today's sets or the coach's next-session target,
+ * ADR 0020 §4). The coach's own reason is the one model-written text here:
+ * it is shown in quotes as the coach's words, never as app text. The
+ * warm-up, swap and builder sources in the spec are added with the code
+ * that sets those targets.
  */
-export const TargetSourceSchema = z.enum(['plan', 'rule', 'repeat']);
+export const TargetSourceSchema = z.enum(['plan', 'rule', 'repeat', 'coach']);
 export type TargetSource = z.infer<typeof TargetSourceSchema>;
 
 /** A set the target was built from, as it was when the target was made (an **actual** result). */
@@ -222,6 +225,14 @@ export const TargetProvenanceSchema = z.object({
     })
     .optional(),
   step: TargetStepSchema.optional(),
+  /** `coach`: the action that set it (its record has the checks), today or next session, and the coach's reason. */
+  coach: z
+    .object({
+      actionId: IdSchema,
+      scope: z.enum(['today', 'next_session']),
+      reason: z.string().max(600).nullable(),
+    })
+    .optional(),
   /** Equipment notes made with the target: rounding, caps, conversions, drops. */
   guardNotes: z.array(z.string().min(1).max(300)).max(10),
 });
@@ -233,24 +244,45 @@ export type TargetProvenance = z.infer<typeof TargetProvenanceSchema>;
  * or none (sessions written before this field existed).
  * - `built_in_rule`: the built-in progression rule's Next time (ADR 0006 fallback).
  * - `repeat`: copied from a past workout's actual result (routines.md RT4).
+ * - `coach`: a coach adjustment or the coach's next-session target (ADR 0020 §4).
  */
-export const PlannedSourceSchema = z.enum(['built_in_rule', 'repeat']);
+export const PlannedSourceSchema = z.enum(['built_in_rule', 'repeat', 'coach']);
 export type PlannedSource = z.infer<typeof PlannedSourceSchema>;
 
-/** Planned (target) values, retained separately from the actual result. */
-export const PlannedSetSchema = z.object({
+/**
+ * Planned (target) values, retained separately from the actual result.
+ * `source: 'coach'` (ADR 0020 §4): a coach adjustment set this pending
+ * target; `coach` names the action and keeps the whole target it replaced,
+ * for `Plan was …` and for Undo, which puts exactly that back.
+ */
+export interface PlannedSet {
+  load: z.infer<typeof LoadSchema> | null;
+  reps: z.infer<typeof RepRangeSchema> | null;
+  durationS: number | null;
+  rpe: number | null;
+  rir: number | null;
+  source?: PlannedSource | undefined;
+  /** Absent on targets made before `Why?` existed (shown as `Not recorded`). */
+  provenance?: TargetProvenance | undefined;
+  snap?: PlannedSnap | undefined;
+  /** `gymChanges`: how many gym-change entries the workout had when the coach made this change (Undo is refused after a later one). */
+  coach?: { actionId: string; before: PlannedSet; gymChanges?: number | undefined } | undefined;
+}
+
+export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
   load: LoadSchema.nullable(),
   reps: RepRangeSchema.nullable(),
   durationS: DurationSecondsSchema.nullable(),
   rpe: RpeSchema.nullable(),
   rir: RirSchema.nullable(),
   source: PlannedSourceSchema.optional(),
-  /** Absent on targets made before `Why?` existed (shown as `Not recorded`). */
   provenance: TargetProvenanceSchema.optional(),
   /** How the load was fitted to the gym's equipment (GS-S1); absent = as intended. */
   snap: PlannedSnapSchema.optional(),
+  get coach() {
+    return z.object({ actionId: IdSchema, before: PlannedSetSchema, gymChanges: z.int().min(0).optional() }).optional();
+  },
 });
-export type PlannedSet = z.infer<typeof PlannedSetSchema>;
 
 export const WorkoutSetSchema = z.object({
   id: IdSchema,

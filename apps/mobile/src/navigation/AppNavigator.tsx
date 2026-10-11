@@ -29,6 +29,7 @@ import { ImportRunScreen } from '../screens/import/ImportRunScreen';
 import { PastImportsScreen } from '../screens/import/PastImportsScreen';
 import { AppStatusScreen } from '../screens/profile/AppStatusScreen';
 import { ChatGptSignInTestScreen } from '../screens/profile/ChatGptSignInTestScreen';
+import { CoachConnectionScreen } from '../screens/profile/CoachConnectionScreen';
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
 import { PainFlagSheet } from '../screens/workout/PainFlagSheet';
@@ -42,6 +43,7 @@ import { CheckInScreen } from '../screens/workout/CheckInScreen';
 import { EditSetScreen } from '../screens/workout/EditSetScreen';
 import { ExercisePickerScreen } from '../screens/workout/ExercisePickerScreen';
 import type { HowToScreen } from '../screens/workout/HowToScreen';
+import { CoachSheetScreen } from '../screens/coach/CoachSheetScreen';
 import { SummaryScreen } from '../screens/workout/SummaryScreen';
 import { WorkoutScreen } from '../screens/workout/WorkoutScreen';
 import type { SetupStep } from '../services/setup';
@@ -115,6 +117,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="DataBackup" component={DataBackupScreen} options={{ title: 'Data & backup' }} />
       <ProfileStack.Screen name="AppStatus" component={AppStatusScreen} options={{ title: 'App status' }} />
       <ProfileStack.Screen name="PainFlags" component={PainFlagsScreen} options={{ title: 'Pain flags' }} />
+      <ProfileStack.Screen name="CoachConnection" component={CoachConnectionScreen} options={{ title: 'Coach connection' }} />
       <ProfileStack.Screen name="GymDetail" component={GymDetailScreen} options={{ title: 'Gym' }} />
       <ProfileStack.Screen name="EquipmentEditor" component={EquipmentEditorScreen} options={{ title: 'Equipment' }} />
       <ProfileStack.Screen
@@ -263,6 +266,8 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               <RootStack.Screen name="AddGym" component={AddGymScreen} options={{ presentation: 'modal' }} />
               <RootStack.Screen name="PastWorkouts" component={PastWorkoutsScreen} options={{ headerShown: true, title: 'Past workouts' }} />
               <RootStack.Screen name="Repeat" component={RepeatScreen} options={{ headerShown: true, title: 'Repeat' }} />
+              {/* A side door, not a step: swipe down closes it and nothing in the workout waits for it (coach-sheet §1). */}
+              <RootStack.Screen name="Coach" component={CoachSheetScreen} options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
             </>
           ) : (
             <>

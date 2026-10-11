@@ -285,6 +285,7 @@ function wasWord(source: TargetProvenance['source']): 'Plan' | 'Last time' | 'Ta
     case 'repeat':
       return 'Last time';
     case 'rule':
+    case 'coach':
       return 'Target';
   }
 }

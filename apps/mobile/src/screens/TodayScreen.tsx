@@ -2,6 +2,8 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native';
 
+import { AskPill } from './coach/AskPill';
+
 import { discardCommand, discardConfirmation, formatDuration, formatMinutes, reasonsText, scoreText, sparklinePoints, toMs, weekStripLabel, type LiftHighlight, type ResumeRow, type TodayMain, type WeekDay } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
@@ -454,7 +456,7 @@ export function TodayScreen() {
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['6'], paddingBottom: theme.space['8'], gap: theme.space['6'] }}
+        contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['6'], paddingBottom: theme.space['8'] + 56, gap: theme.space['6'] }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], flexWrap: 'wrap' }}>
           <AppText variant="sectionLabel" color="text.secondary" accessibilityRole="header" style={{ fontSize: 13 }}>
@@ -574,6 +576,11 @@ export function TodayScreen() {
         {/* Shown in every state but Stale and First workout (premium-feel §2.1). */}
         {lift && main.kind !== 'stale' ? <LiftCard lift={lift} /> : null}
       </ScrollView>
+      <AskPill
+        onPress={() => {
+          navigation.navigate('Coach', { entry: { kind: 'today' } });
+        }}
+      />
       {alertsAsk.sheet}
       <RoutineSheet
         row={sheetRow}

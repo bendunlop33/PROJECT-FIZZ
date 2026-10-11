@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SessionAggregate } from '@fizz/schemas';
 import { createSessionService, newPainFlag } from '@fizz/domain';
 import { at, dumbbells, GYM, id, idGen, kg, logCmd, OWNER, profile, routine, routineExercise, SPLIT_SQUAT, template, values } from '@fizz/domain/testing';
-import { migrate, MIGRATIONS, openStore, type SqlDriver, type SqlValue } from '../src/index';
+import { latestVersion, migrate, MIGRATIONS, openStore, type SqlDriver, type SqlValue } from '../src/index';
 import { memoryDriver } from './helpers';
 
 /**
@@ -67,7 +67,7 @@ describe('a populated schema-4 database migrates in place to 5', () => {
     expect((await phone.getAll('PRAGMA table_info(sessions)')).some((c) => c.name === 'gym_changes')).toBe(false);
 
     const v5 = await openStore(phone);
-    expect(v5.migration).toMatchObject({ from: 4, to: 5, applied: [5] });
+    expect(v5.migration).toMatchObject({ from: 4, to: latestVersion(), applied: MIGRATIONS.slice(4).map((m) => m.version) });
     const read = await v5.repos.sessions.get(sessionId);
     expect(read).toEqual(latest);
     expect(read?.sets.find((s) => s.id === first?.id)?.exclusions).toEqual(['spotted']);

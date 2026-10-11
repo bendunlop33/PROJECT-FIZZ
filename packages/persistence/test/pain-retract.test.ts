@@ -26,7 +26,8 @@ describe('pain_flags at schema 4', () => {
     await expect(v3.db.write((tx) => tx.run("UPDATE pain_flags SET status = 'retracted' WHERE id = ?", [early.id]))).rejects.toThrow();
 
     const v4 = await openStore(driver);
-    expect(v4.migration.applied).toEqual([4, 5]);
+    // 4 (this rebuild) and every later step.
+    expect(v4.migration.applied).toEqual(MIGRATIONS.slice(3).map((m) => m.version));
     expect(await v4.repos.painFlags.get(active.id)).toEqual(active);
     expect(await v4.repos.painFlags.get(cleared.id)).toEqual(cleared);
 

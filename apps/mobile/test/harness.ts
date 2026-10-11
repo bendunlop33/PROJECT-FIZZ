@@ -10,7 +10,7 @@ import { createRestAlertController, type NotifierPort, type PlannedRestAlert } f
 import type { BackupFileStore, TextFile } from '../src/backup/backup-service';
 import { createExpoDatabaseHost } from '../src/data/expo-driver';
 import type { AppServices } from '../src/services/app-services';
-import { startApp, type StartupOutcome } from '../src/services/startup';
+import { startApp, type StartupDeps, type StartupOutcome } from '../src/services/startup';
 import { fakeHostDeps } from './fake-expo-sqlite';
 
 /**
@@ -38,7 +38,7 @@ export interface Harness {
  * generator. Two phones (a reinstall on another day) need both to differ,
  * as real installs do (review R1).
  */
-export function createHarness(start = '2026-10-08T17:00:00.000Z', opts: { idStart?: number } = {}): Harness {
+export function createHarness(start = '2026-10-08T17:00:00.000Z', opts: { idStart?: number; coach?: StartupDeps['coach'] } = {}): Harness {
   const dir = mkdtempSync(join(tmpdir(), 'fizz-harness-'));
   let dbNames = 0;
   let manifestText: string | null = null;
@@ -89,6 +89,7 @@ export function createHarness(start = '2026-10-08T17:00:00.000Z', opts: { idStar
         app: { name: 'GymSmarter', version: '0.1.0', build: 'test' },
         locale: 'en-GB',
         restAlerts: createRestAlertController(notifier),
+        ...(opts.coach === undefined ? {} : { coach: opts.coach }),
       });
       if (o.kind !== 'ready') throw new Error(o.kind);
       open.push(o.services);

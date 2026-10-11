@@ -1,6 +1,8 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { EquipmentKind, SetExclusion } from '@fizz/schemas';
 
+import type { CoachEntry } from '../coach/coach-service';
+
 export type ProfileStackParams = {
   ProfileHome: undefined;
   DataBackup: undefined;
@@ -15,6 +17,8 @@ export type ProfileStackParams = {
   EquipmentEditor: { gymId: string; equipmentId: string; kind: EquipmentKind; isNew: boolean };
   /** Spike S1 (Developer). */
   ChatGptSignInTest: undefined;
+  /** Profile → Coach connection (ai-connection.md, ADR 0020 C5). */
+  CoachConnection: undefined;
   /** FitNotes import (data-import-export §2.5): intro, file pick and file errors. */
   ImportIntro: undefined;
   /** The preview (§2.5 step 3). The draft lives in the import service until commit. */
@@ -77,6 +81,12 @@ export type RootStackParams = {
   PastWorkouts: undefined;
   /** Repeat a finished workout (routines.md §2.4). */
   Repeat: { sessionId: string };
+  /**
+   * The coach sheet (coach-sheet.md, ADR 0020 C6). Opened only by Ben (Ask,
+   * workout `⋯` → Ask the coach, Adjust → Type…, Summary → Ask about this
+   * workout); never by a trigger, timer or reply. `focus`: the field gets focus.
+   */
+  Coach: { entry: CoachEntry; focus?: boolean };
 };
 
 export type WorkoutToastParam =

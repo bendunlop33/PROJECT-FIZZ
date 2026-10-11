@@ -4,8 +4,11 @@ import { AppState, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { toMs } from '@fizz/domain';
+import { readTextCoachState } from '@fizz/providers';
 
+import { coachConnectionPorts } from '../ai/coach-connection-ports';
 import { clearDeliveredWorkoutAlerts, expoNotifier } from '../alerts/notifier';
+import { createPlanModelPort } from '../coach/plan-model-port';
 import { createRestAlertController } from '../alerts/rest-alerts';
 import { containerBackupFiles, containerTextFile } from '../device/files';
 import { expoDatabaseHost } from '../data/expo-sqlite-host';
@@ -75,6 +78,14 @@ function Launch() {
       newId: newUuid,
       app: appInfo(),
       restAlerts,
+      // The coach over the ChatGPT-plan route (ADR 0020 C5); the same Keychain items and fetch as the connection screen.
+      coach: {
+        model: () => {
+          const { ports } = coachConnectionPorts();
+          return createPlanModelPort({ fetch: ports.fetch, vault: ports.vault, settings: ports.settings, nowMs: ports.nowMs });
+        },
+        connection: () => readTextCoachState(coachConnectionPorts().ports),
+      },
     }).then((o) => {
       clearTimeout(timer);
       if (alive) setOutcome(o);

@@ -47,6 +47,7 @@ import {
   repeatPreviewLines,
   targetSummaryLines,
   unspecifiedPain,
+  withCoachTargets,
   equipmentForExercise,
   searchExercises,
   shouldAskCheckIn,
@@ -91,6 +92,7 @@ import {
   type TimeLeftSheetView,
   type TimeLeftView,
   type WorkoutSummary,
+  type CoachStatus,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type {
@@ -467,6 +469,34 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
 
     /**
+     * `Pain` from the workout's Adjust row or the coach sheet (coach-adjustments
+     * §4.5, coach-memory §2.5): deterministic, offline, no AI. One flag on this
+     * movement, its ID derived from the opId so a double tap flags once; an
+     * active flag already there is kept (never duplicated) and isn't this
+     * tap's to take back. Increases stop at once. `flags`: what Undo retracts.
+     */
+    async flagMovement(req: { exerciseId: string; exerciseName: string; opId: string }): Promise<{ ok: true; flags: PainFlagRef[] } | { ok: false; message: string }> {
+      try {
+        const p = await owner();
+        // This tap's own flag first (a retry or double tap gets the same Undo), then any other active one.
+        const id = deriveId(`pain:${req.opId}:${req.exerciseId}`);
+        const existing = await repos().painFlags.get(id);
+        if (existing) return { ok: true, flags: existing.status === 'active' ? [{ id, version: existing.version }] : [] };
+        const live = (await repos().painFlags.listActive(p.id)).find((f) => f.exerciseId === req.exerciseId);
+        if (live) return { ok: true, flags: [] };
+        const flag = newPainFlag({ id, ownerId: p.id, opId: req.opId, exerciseId: req.exerciseId, exerciseName: req.exerciseName, area: null, source: 'workout', checkInId: null, at: ctx.now() });
+        const saved = await repos().painFlags.save(flag, null);
+        if (!saved.ok) {
+          const raced = await repos().painFlags.get(id);
+          return raced ? { ok: true, flags: raced.status === 'active' ? [{ id, version: raced.version }] : [] } : { ok: false, message: 'The pain flag wasn’t saved. Try again.' };
+        }
+        return { ok: true, flags: [{ id, version: flag.version }] };
+      } catch {
+        return { ok: false, message: 'The pain flag wasn’t saved. Try again.' };
+      }
+    },
+
+    /**
      * Undo of a flag Ben just set (the `Pain noted` toast, the exclusion
      * toast after ticking `Pain`; review B2): a retraction, never a clear, so
      * no 8-week `Before flag` reference, cleared-flag history or
@@ -713,6 +743,29 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * mentioned there holds every load, like `planFor` (rule 9; review B2).
    */
   async function nextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
+    const builtIn = await builtInNextTargetsOf(p, source, today);
+    // D21: the coach's saved next-session targets win where they are still valid; the built-in rule is the fallback.
+    const rows = await ctx.store().repos.coach.listNextTargets(p.id, source.session.id).catch(() => []);
+    if (rows.length === 0) return builtIn;
+    const flags = await repos().painFlags.listActive(p.id);
+    return withCoachTargets(builtIn, rows, source, { flaggedExerciseIds: new Set(flags.map((f) => f.exerciseId)), painToday: unspecifiedPain(today).active });
+  }
+
+  /**
+   * Before a start from a finished workout: note which workout it starts
+   * from, so the coach's targets for that source count as used while the new
+   * workout exists and isn't discarded (D21; review S2, S3). Never blocks
+   * the start: if the note can't be saved, the targets just stay unused.
+   */
+  async function noteStartFrom(ownerId: string, sourceSessionId: string, opId: string): Promise<void> {
+    await ctx
+      .store()
+      .repos.coach.noteStartFrom(ownerId, sourceSessionId, opId, ctx.now().utc)
+      .catch(() => undefined);
+  }
+
+  /** The built-in rule's next targets only (playbook 7-F): the comparison and the fallback for the coach's. */
+  async function builtInNextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
     const out = new Map<string, { setType: SetType; planned: PlannedSet }[]>();
     const flags = await repos().painFlags.listActive(p.id);
     const now = unspecifiedPain(today);
@@ -791,12 +844,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * `today`: the check-in for the workout being started (pain holds loads).
    * Targets that can't be worked out leave the routine's own templates.
    */
-  async function routineStart(p: UserProfile, req: { routineId: string; gymId: string; opId: string; preview: boolean; checkIn?: SessionCheckIn | null; today?: CheckIn | null }) {
+  async function routineStart(p: UserProfile, req: { routineId: string; gymId: string; opId: string; preview: boolean; checkIn?: SessionCheckIn | null; today?: CheckIn | null; noteSource?: boolean }) {
     const routine = await repos().routines.get(req.routineId);
     const ref = routine ? (await finishedRefs(p.id)).find((f) => isFromRoutine(f, routine)) ?? null : null;
     const source = ref ? await repos().sessions.get(ref.sessionId).catch(() => null) : null;
     const targets = source ? await nextTargetsOf(p, source, req.today ?? null).catch(() => null) : null;
     const lastUsedHere = routine ? await lastUsedFor(p.id, routine.exercises.map((e) => e.exerciseId), req.gymId) : undefined;
+    if (req.noteSource === true && ref !== null && !req.preview) await noteStartFrom(p.id, ref.sessionId, req.opId);
     const r = await domain().startRoutine({
       ownerId: p.id,
       gymId: req.gymId,
@@ -830,6 +884,17 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   const workout = {
     /**
+     * The built-in rule's next targets for a finished workout (the summary
+     * turn's comparison and fallback, D21). Never the coach's own.
+     */
+    async builtInNextTargets(sessionId: string): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]> | null> {
+      const p = await ctx.profile();
+      const source = await repos().sessions.get(sessionId);
+      if (!p || !source) return null;
+      return builtInNextTargetsOf(p, source, null).catch(() => null);
+    },
+
+    /**
      * `startWorkout(…, opts.checkIn)` for an empty workout (no routines yet).
      * A gym is required (PM SP1). An answered check-in is linked in the same
      * write as the session; one already linked to another workout is refused.
@@ -847,7 +912,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (req.routineOf) {
         // A routine (premium-feel §2.6): its structure, with next targets from its last workout, fitted to this gym.
         const today = checkIn?.kind === 'answered' ? await repos().checkIns.get(checkIn.checkInId) : null;
-        const { r, targetsFailed } = await routineStart(p, { routineId: req.routineOf, gymId: req.gymId, opId: req.opId, preview: false, checkIn, today });
+        const { r, targetsFailed } = await routineStart(p, { routineId: req.routineOf, gymId: req.gymId, opId: req.opId, preview: false, checkIn, today, noteSource: true });
         if (!r.ok) {
           const e = r.error;
           if (e.code === 'nothing_to_start') return { ok: false, error: { code: 'not_found', message: e.message } };
@@ -866,6 +931,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         // No derived name (`Push`) is stored as if Ben chose it; titles are worked out when shown (review S3).
         // Same history mapping as Today's preview, so Start gives what the card showed (gym-switch GS3).
         const lastUsedHere = await lastUsedFor(p.id, source.exercises.map((e) => e.exerciseId), req.gymId);
+        await noteStartFrom(p.id, source.session.id, req.opId);
         const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.nextOf, targets: targets ?? new Map(), name: storedName(source) ?? GENERIC_WORKOUT_NAME, lastUsedHere });
         if (!r.ok) {
           const e = r.error;
@@ -1275,7 +1341,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       }
     },
 
-    async summary(sessionId: string): Promise<WorkoutSummary | null> {
+    /** `coach`: the coach's state from the AI connection (Keychain, read by the caller); it only changes the source tag. */
+    async summary(sessionId: string, coach: CoachStatus = 'not_connected'): Promise<WorkoutSummary | null> {
       const p = await ctx.profile();
       const aggregate = await repos().sessions.get(sessionId);
       if (!p || !aggregate) return null;
@@ -1305,7 +1372,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         rules,
         painFlags: await repos().painFlags.listActive(p.id),
         checkIn: ci,
-        coach: 'not_connected',
+        coach,
         exerciseInfo,
         gymNames,
       });

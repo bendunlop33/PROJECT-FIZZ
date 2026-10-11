@@ -337,7 +337,10 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
       const exId = exerciseOf.get(s.sessionExerciseId);
       // Targets from the rule say so; the routine's own templates carry no source (a routine template).
       if (exId === undefined || !targeted.has(exId) || s.setType === 'warmup') return s;
-      const plannedSet: PlannedSet = { ...s.planned, source: 'built_in_rule' };
+      // A coach target for next time (D21) keeps its source and its own `Why?`.
+      const templateId = out.setTemplateIds[s.id];
+      const fromCoach = templateId !== undefined && ruleOf.get(templateId)?.source === 'coach';
+      const plannedSet: PlannedSet = { ...s.planned, source: fromCoach ? 'coach' : 'built_in_rule' };
       const provenance = ruleProvenance(s.id);
       if (provenance === null) delete plannedSet.provenance;
       else plannedSet.provenance = provenance;

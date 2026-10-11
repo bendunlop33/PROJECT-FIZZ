@@ -23,6 +23,9 @@ import {
   FakeClock,
   FakeLoopback,
   MemoryVault,
+  TEST_DISCOVERY,
+  TEST_JWKS,
+  TEST_JWKS_URL,
   callbackFor,
   fakeFetch,
   jsonResponse,
@@ -86,7 +89,8 @@ function world(opts: {
           { type: 'response.completed', response: { id: 'resp_1', model: 'gpt-6.1-sol', usage: { input_tokens: 20, output_tokens: 2, total_tokens: 22 } } },
         ]),
       ]),
-    'https://auth.openai.com/.well-known/openid-configuration': () => jsonResponse(200, { revocation_endpoint: 'https://auth.openai.com/api/accounts/oauth/revoke' }),
+    'https://auth.openai.com/.well-known/openid-configuration': () => jsonResponse(200, TEST_DISCOVERY),
+    [TEST_JWKS_URL]: () => jsonResponse(200, TEST_JWKS),
     'https://auth.openai.com/api/accounts/oauth/revoke': () => textResponse(200, ''),
     ...opts.routes,
   });
@@ -265,6 +269,19 @@ describe('runSignInTest', () => {
     w.clock.advance(601_000);
     expect(await runRefreshStep(w.ports, undefined, { respectEarliestRefresh: true })).toBe(true);
     expect(parseTokens(w.vault.tokens)?.refreshToken).toBe('REFRESH-SECRET-2');
+  });
+
+  it('an ID token whose signature does not match the JWKS fails the ID token step; nothing stored (review S5)', async () => {
+    const w = world({ routes: { [TEST_JWKS_URL]: () => jsonResponse(200, { keys: [{ ...TEST_JWKS.keys[0], kid: 'rotated' }] }) } });
+    const run = await runSignInTest(w.ports);
+    expect(statusOf(run.steps)).toMatchObject({ id_token: 'fail', scopes: 'skipped', store: 'skipped' });
+    expect(run.steps.find((s) => s.id === 'id_token')?.summary).toBe('RS256 signature check failed: No OpenAI signing key matches the ID token');
+    expect(w.vault.tokens).toBeNull();
+  });
+
+  it('the ID token step says the signature was checked', async () => {
+    const run = await runSignInTest(world().ports);
+    expect(run.steps.find((s) => s.id === 'id_token')?.details).toContain('Checked: RS256 signature against OpenAI’s JWKS (from the discovery document)');
   });
 
   it('a different account on reauthorization is refused and credentials are not replaced', async () => {

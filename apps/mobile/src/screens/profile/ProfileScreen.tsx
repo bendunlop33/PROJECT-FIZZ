@@ -3,6 +3,10 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useEffect } from 'react';
 
 import { toMs } from '@fizz/domain';
+import { readTextCoachState } from '@fizz/providers';
+
+import { coachConnectionPorts } from '../../ai/coach-connection-ports';
+import { profileCoachLine } from '../../ai/coach-connection-view';
 
 import { useScreenData, useServices } from '../../shell/context';
 import { loadBanners } from '../../shell/system-banners';
@@ -26,8 +30,15 @@ export function ProfileScreen() {
   const install = useInstallStatus();
   const probe = useProbeResults();
   const [data, reload] = useScreenData(async (s) => {
-    const [backup, banners, pain, gyms] = await Promise.all([s.backups.getStatus(), loadBanners(s, install), s.pain.active(), s.gyms.list()]);
-    return { backup, banners, pain, gyms };
+    const [backup, banners, pain, gyms, coach] = await Promise.all([
+      s.backups.getStatus(),
+      loadBanners(s, install),
+      s.pain.active(),
+      s.gyms.list(),
+      // Keychain + settings file only; no network. A read failure shows as unknown, never as connected.
+      readTextCoachState(coachConnectionPorts().ports).catch(() => null),
+    ]);
+    return { backup, banners, pain, gyms, coach };
   });
   useEffect(() => {
     reload();
@@ -84,6 +95,18 @@ export function ProfileScreen() {
           subtitle={data.state === 'ready' ? (data.value.pain.length === 0 ? 'None' : `${String(data.value.pain.length)} active: ${data.value.pain.map((f) => f.exerciseName).join(', ')}`) : null}
           onPress={() => {
             navigation.navigate('PainFlags');
+          }}
+        />
+      </Group>
+
+      <SectionHeader title="Coach" />
+      <Group>
+        <Row
+          title="Coach connection"
+          icon="bubble.left.and.text.bubble.right"
+          subtitle={data.state === 'ready' ? (data.value.coach === null ? 'Couldn’t read the connection' : profileCoachLine(data.value.coach)) : null}
+          onPress={() => {
+            navigation.navigate('CoachConnection');
           }}
         />
       </Group>
