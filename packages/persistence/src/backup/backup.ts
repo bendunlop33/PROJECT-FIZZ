@@ -225,7 +225,7 @@ export function parseBackup(text: string, migrations: readonly Migration[] = MIG
  * Before loading: the backup's tables must be exactly those of an empty
  * database migrated to `file.schemaVersion`, and every column must exist.
  */
-export async function checkBackupShape(q: SqlExecutor, file: BackupFile): Promise<BackupError | null> {
+export async function checkBackupShape(q: SqlExecutor, file: Pick<BackupFile, 'schemaVersion' | 'tables'>): Promise<BackupError | null> {
   const expected = await tableNames(q);
   const given = Object.keys(file.tables).sort();
   if (stableStringify(expected) !== stableStringify(given)) {
@@ -255,7 +255,7 @@ export async function checkBackupShape(q: SqlExecutor, file: BackupFile): Promis
 }
 
 /** Insert every row of a backup (inside the caller's transaction). */
-export async function insertBackupRows(tx: SqlExecutor, file: BackupFile): Promise<void> {
+export async function insertBackupRows(tx: SqlExecutor, file: Pick<BackupFile, 'tables'>): Promise<void> {
   for (const [table, rows] of Object.entries(file.tables)) {
     for (const row of rows) await insert(tx, table, row);
   }

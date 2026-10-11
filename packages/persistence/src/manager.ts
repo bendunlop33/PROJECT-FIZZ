@@ -1,4 +1,4 @@
-import type { ZonedTimestamp } from '@fizz/schemas';
+import type { Exercise, ZonedTimestamp } from '@fizz/schemas';
 import {
   checkBackupShape,
   contentHash,
@@ -12,6 +12,8 @@ import {
   type BackupFile,
 } from './backup/backup';
 import { analyseReplace, type ReplaceCounts } from './backup/replace';
+import { countDomains, filterDomain, knowledgeExercisesInUse, type DomainCounts } from './data-domains';
+import { EXERCISE_SPEC, saveDocumentIn } from './documents';
 import type { DatabaseHost, SqlDriver, SqlRow } from './driver';
 import { checkIntegrity } from './integrity';
 import { latestVersion, migrate, MIGRATIONS, readUserVersion, sqlMigration, type Migration } from './migrations';
@@ -119,6 +121,23 @@ export type RestoreOutcome =
   | { ok: false; error: BackupError };
 
 export type RollbackOutcome = { ok: true; store: Store } | { ok: false; error: BackupError };
+
+/** What `Delete my data` / `Reset coaching knowledge` are confirmed against (rule 5: never applied to newer state). */
+export interface DomainSummary {
+  counts: DomainCounts;
+  /** Same form as a restore preview's stamp: the current content and the database slots. */
+  stamp: string;
+}
+
+export type DomainSwitchOutcome =
+  | {
+      ok: true;
+      /** `unchanged`: there was nothing to delete or reset; no file was switched. */
+      status: 'switched' | 'unchanged';
+      /** The store now in use. Recreate services from it (or relaunch). */
+      store: Store;
+    }
+  | { ok: false; error: BackupError };
 
 class RestoreAbort extends Error {
   constructor(readonly error: BackupError) {
@@ -293,7 +312,12 @@ export class DatabaseManager {
    * as an orphan first, so a crash leaves it to be removed on the next open.
    * On any failure the file is closed and removed, and nothing else changes.
    */
-  private async build(file: BackupFile, name: string, purpose: 'restore' | 'check'): Promise<{ ok: true; store: Store } | { ok: false; error: BackupError }> {
+  private async build(
+    file: Pick<BackupFile, 'schemaVersion' | 'tables'>,
+    name: string,
+    purpose: 'restore' | 'check',
+    seed?: readonly Exercise[],
+  ): Promise<{ ok: true; store: Store } | { ok: false; error: BackupError }> {
     const { host, migrations } = this.options;
     const notNew: BackupError = { code: 'restore_failed', message: `Restore failed: ${name} is already in use. Nothing was changed.` };
     if (name === this.slots.current || name === this.slots.previous || name === this.slots.orphan) return { ok: false, error: notNew };
@@ -317,6 +341,12 @@ export class DatabaseManager {
       await driver.withExclusiveTransaction(async (tx) => {
         await tx.exec('PRAGMA defer_foreign_keys = ON');
         await insertBackupRows(tx, file);
+        // Bundled coaching knowledge (a reset): only IDs not already there, validated like any write.
+        for (const e of seed ?? []) {
+          if (await tx.getFirst('SELECT 1 AS here FROM exercises WHERE id = ?', [e.id])) continue;
+          const saved = await saveDocumentIn(tx, EXERCISE_SPEC, e, null);
+          if (!saved.ok) throw new Error(`bundled exercise ${e.id} could not be saved`);
+        }
       });
       fresh = await openStore(driver, { migrations });
       const integrity = await checkIntegrity(fresh.db, latestVersion(migrations));
@@ -369,6 +399,124 @@ export class DatabaseManager {
       await this.replaceCurrent(store);
       return { ok: true, store };
     });
+  }
+
+  /** Counts per data domain and the stamp a Delete or Reset confirmation is made against. */
+  domainSummary(): Promise<DomainSummary> {
+    return this.exclusive(async () => {
+      const current = await this.readCurrent();
+      return { counts: countDomains(current.tables), stamp: this.stampOf(contentHash(current.schemaVersion, current.tables)) };
+    });
+  }
+
+  /**
+   * `Delete my data` (data-import-export §4.5 step 3; rule 10). Builds a new
+   * database holding only Coaching knowledge, checks it, and switches to it
+   * in one meta transaction: a force-close before the switch leaves every
+   * record as it was, after it leaves none of Ben's (all or nothing).
+   * Deleting rows inside SQLite isn't possible by design (append-only
+   * triggers, ADR 0005), so deleting is replacing the file.
+   *
+   * Then the old file and the rollback generation (both hold Ben's data) are
+   * removed via `forgetPrevious`, which a relaunch can finish if the app was
+   * closed in between. The last-restore record is cleared, so no
+   * `Undo last restore` brings the data back.
+   *
+   * With nothing of Ben's left this is `unchanged` (a repeat, or a resume).
+   */
+  deleteYourData(opts: { expectedStamp?: string } = {}): Promise<DomainSwitchOutcome> {
+    return this.exclusiveSafe(async (): Promise<DomainSwitchOutcome> => {
+      const current = await this.readCurrent();
+      if (opts.expectedStamp !== undefined && opts.expectedStamp !== this.stampOf(contentHash(current.schemaVersion, current.tables))) {
+        return { ok: false, error: { code: 'preview_stale', message: 'Your data changed since you confirmed. Nothing was deleted.' } };
+      }
+      const any = countDomains(current.tables).yourData.records > 0;
+      if (any) {
+        const name = this.options.newName();
+        const built = await this.build({ schemaVersion: current.schemaVersion, tables: filterDomain(current.tables, 'coaching_knowledge') }, name, 'check');
+        if (!built.ok) return built;
+        await this.switchTo(built.store, name);
+      }
+      await this.forgetPreviousNow();
+      return { ok: true, status: any ? 'switched' : 'unchanged', store: this.current };
+    });
+  }
+
+  /**
+   * `Reset coaching knowledge` (§4.5). Builds a new database with every Your
+   * data row unchanged, the knowledge exercises Ben's records use, and this
+   * build's bundled knowledge (`bundled`); anything else in Coaching
+   * knowledge (other exercises, playbook candidates) is gone. Switches in one
+   * meta transaction and keeps the database it replaced as the rollback
+   * generation. `unchanged` when the result would equal the current data.
+   */
+  resetKnowledge(bundled: readonly Exercise[], opts: { expectedStamp?: string } = {}): Promise<DomainSwitchOutcome> {
+    return this.exclusiveSafe(async (): Promise<DomainSwitchOutcome> => {
+      const current = await this.readCurrent();
+      const currentHash = contentHash(current.schemaVersion, current.tables);
+      if (opts.expectedStamp !== undefined && opts.expectedStamp !== this.stampOf(currentHash)) {
+        return { ok: false, error: { code: 'preview_stale', message: 'Your data changed since you confirmed. Nothing was reset.' } };
+      }
+      const inUse = knowledgeExercisesInUse(current.tables);
+      const tables = filterDomain(current.tables, 'your_data');
+      tables.exercises = [...(tables.exercises ?? []), ...(current.tables.exercises ?? []).filter((r) => r.owner_id === null && inUse.has(String(r.id)))];
+      const name = this.options.newName();
+      const built = await this.build({ schemaVersion: current.schemaVersion, tables }, name, 'check', bundled);
+      if (!built.ok) return built;
+      const after = await built.store.db.read(async (q) => ({ schemaVersion: await readUserVersion(q), tables: await exportTables(q) }));
+      if (contentHash(after.schemaVersion, after.tables) === currentHash) {
+        await quietly(() => built.store.close());
+        if (await quietly(() => this.options.host.remove(name))) await quietly(() => this.writeSlots({ ...this.slots, orphan: null }, null));
+        return { ok: true, status: 'unchanged', store: this.current };
+      }
+      await this.switchTo(built.store, name);
+      return { ok: true, status: 'switched', store: built.store };
+    });
+  }
+
+  /**
+   * Remove the rollback generation (after `Delete my data`, it holds Ben's
+   * data). Safe to repeat; a relaunch calls it again if the app was closed
+   * part-way.
+   */
+  forgetPrevious(): Promise<void> {
+    return this.exclusive(() => this.forgetPreviousNow());
+  }
+
+  private async forgetPreviousNow(): Promise<void> {
+    const previous = this.slots.previous;
+    if (previous !== null) {
+      await this.writeSlots({ ...this.slots, previous: null, orphan: previous }, 'dropped', null);
+      await this.options.host.remove(previous);
+      await this.writeSlots({ ...this.slots, orphan: null }, null);
+    } else if (this.switched !== null) {
+      await this.writeSlots({ ...this.slots }, this.orphanReason, null);
+    }
+    const orphan = this.slots.orphan;
+    if (orphan !== null && orphan !== this.slots.current) {
+      await this.options.host.remove(orphan);
+      await this.writeSlots({ ...this.slots, orphan: null }, null);
+    }
+  }
+
+  /**
+   * Switch to a freshly built file in one meta transaction. The old current
+   * becomes the rollback generation and the old rollback generation is
+   * dropped (as a restore does); the last-restore record is cleared.
+   */
+  private async switchTo(fresh: Store, name: string): Promise<void> {
+    try {
+      await this.writeSlots({ current: name, previous: this.slots.current, orphan: this.slots.previous }, 'dropped', null);
+    } catch (e) {
+      await quietly(() => fresh.close());
+      await quietly(() => this.options.host.remove(name));
+      throw e;
+    }
+    await this.replaceCurrent(fresh);
+  }
+
+  private async readCurrent(): Promise<{ schemaVersion: number; tables: Record<string, SqlRow[]> }> {
+    return this.current.db.read(async (q) => ({ schemaVersion: await readUserVersion(q), tables: await exportTables(q) }));
   }
 
   close(): Promise<void> {
@@ -451,10 +599,16 @@ export class DatabaseManager {
     }
   }
 
-  private async writeSlots(next: Slots, orphanReason: OrphanReason | null, switched?: LastSwitch): Promise<void> {
+  /** `switched`: record a restore/rollback; `null`: clear the record (delete, reset); omitted: keep it. */
+  private async writeSlots(next: Slots, orphanReason: OrphanReason | null, switched?: LastSwitch | null): Promise<void> {
     const reason = next.orphan === null ? null : orphanReason;
     await this.meta.withExclusiveTransaction(async (tx) => {
-      if (switched) {
+      if (switched === null) {
+        await tx.run(
+          'UPDATE database_slots SET current_name = ?, previous_name = ?, orphan_name = ?, orphan_reason = ?, switched_at_utc = NULL, switch_reason = NULL WHERE id = 1',
+          [next.current, next.previous, next.orphan, reason],
+        );
+      } else if (switched) {
         await tx.run(
           'UPDATE database_slots SET current_name = ?, previous_name = ?, orphan_name = ?, orphan_reason = ?, switched_at_utc = ?, switch_reason = ? WHERE id = 1',
           [next.current, next.previous, next.orphan, reason, switched.atUtc, switched.reason],
@@ -470,7 +624,7 @@ export class DatabaseManager {
     });
     this.slots = next;
     this.orphanReason = reason;
-    if (switched) this.switched = switched;
+    if (switched !== undefined) this.switched = switched;
   }
 
   /** `exclusive`, and an unexpected I/O error becomes `restore_failed` instead of a rejection (review S3). */

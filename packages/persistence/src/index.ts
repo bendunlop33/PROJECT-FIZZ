@@ -13,3 +13,4 @@ export * from './backup/sha256';
 export * from './backup/backup';
 export * from './backup/replace';
 export * from './manager';
+export * from './data-domains';
