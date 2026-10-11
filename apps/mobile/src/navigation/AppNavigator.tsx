@@ -282,8 +282,12 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               <RootStack.Screen name="PastWorkouts" component={PastWorkoutsScreen} options={{ headerShown: true, title: 'Past workouts' }} />
               <RootStack.Screen name="Repeat" component={RepeatScreen} options={{ headerShown: true, title: 'Repeat' }} />
               {/* The Workouts library (routines.md §A2.1); its editor is a sheet over the list or the overview (Cancel / Save). */}
-              <RootStack.Screen name="Workouts" component={WorkoutsScreen} options={{ headerShown: true, title: 'Workouts' }} />
-              <RootStack.Screen name="WorkoutEditor" component={WorkoutEditorScreen} options={{ presentation: 'modal', gestureEnabled: false, contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
+              <RootStack.Screen name="Workouts" component={WorkoutsScreen} options={{ headerShown: true, title: 'Workouts', ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
+              <RootStack.Screen
+                name="WorkoutEditor"
+                component={WorkoutEditorScreen}
+                options={{ presentation: 'modal', gestureEnabled: false, contentStyle: { backgroundColor: theme.colors['bg.canvas'] }, ...screenAnimation('Workout', theme.a11y.reduceMotion) }}
+              />
               {/* A side door, not a step: swipe down closes it and nothing in the workout waits for it (coach-sheet §1). */}
               <RootStack.Screen name="Coach" component={CoachSheetScreen} options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
             </>

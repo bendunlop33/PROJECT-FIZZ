@@ -278,10 +278,31 @@ describe('Save to Workouts (WL-A9, A10, A11, A12)', () => {
     expect(r.routine.exercises.map((e) => e.exerciseId)).toEqual(f.pushA.exercises.map((e) => e.exerciseId));
     expect(r.routine.exercises.flatMap((e) => e.setTemplates).every((t) => t.targetLoad === null)).toBe(true);
     expect(r.routine.createdFromSessionId).toBeNull();
+    // With today's edits (WL-A11): a swap is saved as swapped, a skipped row is left out.
+    const rowOf = (name: string) => page.view.rows.find((x) => x.name === name);
+    const bench = rowOf('Bench press');
+    const raise = rowOf('Lateral raise');
+    if (!bench || !raise) throw new Error('rows');
+    const skip = await s.overview.edit({ target, gymId: f.gymId, expectedDraftVersion: page.draft?.version ?? null, opId: 'skip-raise', edit: { kind: 'skip', slotKey: raise.slotKey } });
+    expect(skip.ok).toBe(true);
+    const p2 = await s.overview.load({ target, gymId: f.gymId });
+    const sheet = await s.overview.swapCandidates({ target, gymId: f.gymId, slotKey: bench.slotKey });
+    const sub = sheet?.rows[0];
+    if (!p2 || !sub) throw new Error('no swap');
+    const swap = await s.overview.edit({ target, gymId: f.gymId, expectedDraftVersion: p2.draft?.version ?? null, opId: 'swap-bench', edit: { kind: 'swap', slotKey: bench.slotKey, toExerciseId: sub.exerciseId } });
+    expect(swap.ok).toBe(true);
+    const p3 = await s.overview.load({ target, gymId: f.gymId });
+    if (!p3) throw new Error('no page');
+    const edited = await s.routines.saveFrom({ from: { ...from, previewKey: p3.view.previewKey }, name: 'Push A · swapped', addToRotation: false, opId: 'save-edited' });
+    if (!edited.ok) throw new Error(edited.message);
+    expect(edited.routine.exercises.map((e) => e.exerciseId)).toEqual([sub.exerciseId]);
+    // Push A itself is unchanged by the save (rule 2: template only through its own change card or the editor).
+    expect((await s.routines.editor({ routineId: f.pushA.id, gymId: f.gymId }))?.routine?.version).toBe(f.pushA.version);
+
     // The workout changes after the page was read: nothing saved.
     const ren = await s.routines.rename({ routineId: f.pushA.id, name: 'Push AA', expectedVersion: f.pushA.version, opId: 'ren-page' });
     expect(ren.ok).toBe(true);
-    expect(await s.routines.saveFrom({ from, name: 'Again', addToRotation: false, opId: 'save-page-2' })).toMatchObject({ ok: false, reason: 'stale_preview', message: 'Targets updated' });
+    expect(await s.routines.saveFrom({ from: { ...from, previewKey: p3.view.previewKey }, name: 'Again', addToRotation: false, opId: 'save-page-2' })).toMatchObject({ ok: false, reason: 'stale_preview', message: 'Targets updated' });
   });
 
   it('Main survives Duplicate and a backup restore (WL-A12)', async () => {
