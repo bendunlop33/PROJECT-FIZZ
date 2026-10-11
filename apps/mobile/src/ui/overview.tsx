@@ -6,6 +6,7 @@ import type { CheckInScore } from '@fizz/schemas';
 
 import { useTheme } from '../theme';
 import { coachPill, statStripStacked, tileLabel, type StripWrap } from '../workout/overview';
+import type { EditPill, EditPillKey, RowCustomAction } from '../workout/overview-edits';
 import { Icon } from './Icon';
 import { usePressScale } from './motion';
 import { AppText } from './Text';
@@ -86,7 +87,18 @@ export function StatStrip({ items, accessibilityLabel, ax }: { items: readonly S
 /** The one-word change marker (§4): tracked caps, `text.secondary`; HELD and NO LOAD in `status.warning` with the warning icon. */
 export function ChangeMarker({ marker }: { marker: MarkerWords }) {
   const color = marker.tone === 'warning' ? 'status.warning' : 'text.secondary';
-  const glyph = marker.glyph === 'up' ? 'arrow.up' : marker.glyph === 'down' ? 'arrow.down' : marker.glyph === 'warning' ? 'exclamationmark.triangle' : null;
+  const glyph =
+    marker.glyph === 'up'
+      ? 'arrow.up'
+      : marker.glyph === 'down'
+        ? 'arrow.down'
+        : marker.glyph === 'warning'
+          ? 'exclamationmark.triangle'
+          : marker.glyph === 'swap'
+            ? 'arrow.left.arrow.right'
+            : marker.glyph === 'skip'
+              ? 'minus.circle'
+              : null;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
       {glyph ? <Icon name={glyph} color={color} size={marker.glyph === 'warning' ? 13 : 11} weight="semibold" /> : null}
@@ -212,6 +224,16 @@ export interface OverviewRowProps {
   onEditGym?: (() => void) | undefined;
   /** The coach row's tap (§5): Undo on a coach target; `Use coach target` or `Apply` to put it back. */
   onCoach?: (() => void) | undefined;
+  /** Today's edit pills, first in the panel (overview-today-edits §2.2). */
+  editPills?: readonly EditPill[] | undefined;
+  onEditPill?: ((key: EditPillKey) => void) | undefined;
+  /** `Why?` is left out on a skipped row (§2.2). */
+  showWhy?: boolean | undefined;
+  /** VoiceOver custom actions for the row's edits (§4.5). */
+  customActions?: readonly RowCustomAction[] | undefined;
+  onCustomAction?: ((name: RowCustomAction['name']) => void) | undefined;
+  /** After the pills: `Change Push A too ›` or its change-review card (§2.5). */
+  footer?: ReactNode;
 }
 
 /** `SourceTag` `Coach` (§5): the coach set this row's target. Icon and word, never colour alone. */
@@ -232,9 +254,11 @@ function CoachTag() {
  * the snap changed the target here; the reason is in the panel. At AX sizes
  * the load stacks under the name.
  */
-export function OverviewRow({ row, detail, open, stacked, last, first, onToggle, onHowTo, onWhy, onStillHurts, onEditGym, onCoach }: OverviewRowProps) {
+export function OverviewRow({ row, detail, open, stacked, last, first, onToggle, onHowTo, onWhy, onStillHurts, onEditGym, onCoach, editPills = [], onEditPill, showWhy = true, customActions = [], onCustomAction, footer }: OverviewRowProps) {
   const theme = useTheme();
   const coachLabel = row.coach === null ? null : coachPill(row.coach).label;
+  // Skipped variant (design-system §9.66): name and detail in text.tertiary, load `—`.
+  const skipped = row.edit?.kind === 'skipped';
   const right = (
     <View style={{ alignItems: stacked ? 'flex-start' : 'flex-end' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -261,6 +285,11 @@ export function OverviewRow({ row, detail, open, stacked, last, first, onToggle,
         accessibilityLabel={row.accessibilityLabel}
         accessibilityHint={open ? 'Collapses.' : 'Expands.'}
         accessibilityState={{ expanded: open }}
+        accessibilityActions={customActions.map((a) => ({ name: a.name, label: a.label }))}
+        onAccessibilityAction={(e) => {
+          const hit = customActions.find((a) => a.name === e.nativeEvent.actionName);
+          if (hit && onCustomAction) onCustomAction(hit.name);
+        }}
         onPress={onToggle}
         style={({ pressed }) => ({ minHeight: 64, paddingVertical: theme.space['2'] + 2, flexDirection: 'row', gap: 6, backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent' })}
       >
@@ -270,8 +299,10 @@ export function OverviewRow({ row, detail, open, stacked, last, first, onToggle,
           </AppText>
         </View>
         <View style={{ flex: 1, gap: 3 }}>
-          <AppText variant="headline">{row.name}</AppText>
-          <AppText variant="callout" color="text.secondary" numeric>
+          <AppText variant="headline" color={skipped ? 'text.tertiary' : 'text.primary'}>
+            {row.name}
+          </AppText>
+          <AppText variant="callout" color={skipped ? 'text.tertiary' : 'text.secondary'} numeric>
             {detail}
           </AppText>
           {stacked ? right : null}
@@ -282,10 +313,21 @@ export function OverviewRow({ row, detail, open, stacked, last, first, onToggle,
         <View style={{ marginLeft: 36, marginBottom: theme.space['3'], backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, paddingHorizontal: theme.space['3'] + 2, paddingTop: theme.space['3'], paddingBottom: theme.space['3'] + 2, gap: theme.space['3'] }}>
           {row.panel.length > 0 ? <PanelLines lines={row.panel} stacked={stacked} stillHurts={row.painFlag?.checkDue === true} onStillHurts={onStillHurts} onEditGym={onEditGym} /> : null}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
-            <OutlinePill label="Why?" onPress={onWhy} accessibilityLabel={`Why this target for ${row.name}?`} />
+            {editPills.map((p) => (
+              <OutlinePill
+                key={p.key}
+                label={p.label}
+                accessibilityLabel={p.accessibilityLabel}
+                onPress={() => {
+                  onEditPill?.(p.key);
+                }}
+              />
+            ))}
             {onHowTo ? <OutlinePill label="How to" onPress={onHowTo} accessibilityLabel={`How to: ${row.name}`} /> : null}
+            {showWhy ? <OutlinePill label="Why?" onPress={onWhy} accessibilityLabel={`Why this target for ${row.name}?`} /> : null}
             {coachLabel !== null && onCoach ? <OutlinePill label={coachLabel} onPress={onCoach} accessibilityLabel={`${coachLabel}: ${row.name}`} /> : null}
           </View>
+          {footer ?? null}
         </View>
       ) : null}
     </View>

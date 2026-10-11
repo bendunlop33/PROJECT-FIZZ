@@ -67,7 +67,7 @@ describe('a populated schema-5 (gym switch) database migrates in place to 6 (coa
   it('keeps a switched workout, adds the coach tables, and the first Ask works', async () => {
     expect(MIGRATIONS.find((m) => m.version === 5)?.name).toBe('gym-switch');
     expect(MIGRATIONS.find((m) => m.version === 6)?.name).toBe('coach');
-    expect(latestVersion()).toBe(6);
+    expect(latestVersion()).toBeGreaterThanOrEqual(6);
 
     const source = memoryDriver();
     const made = await openStore(source);
@@ -84,7 +84,8 @@ describe('a populated schema-5 (gym switch) database migrates in place to 6 (coa
     for (const t of COACH_TABLES) expect(before.map((r) => r.name)).not.toContain(t);
 
     const v6 = await openStore(phone);
-    expect(v6.migration).toMatchObject({ from: 5, to: 6, applied: [6] });
+    expect(v6.migration).toMatchObject({ from: 5, to: latestVersion() });
+    expect(v6.migration.applied[0]).toBe(6);
     const after = await phone.getAll<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'");
     for (const t of COACH_TABLES) expect(after.map((r) => r.name)).toContain(t);
     expect(await v6.repos.sessions.get(switched.session.id)).toEqual(switched);

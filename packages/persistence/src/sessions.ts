@@ -62,6 +62,7 @@ function sessionRow(a: SessionAggregate): Record<string, SqlValue> {
     finish_by_utc: s.finishBy?.utc ?? null,
     finish_by_tz: s.finishBy?.tz ?? null,
     gym_changes: s.gymChanges === undefined ? null : JSON.stringify(s.gymChanges),
+    today_edits: s.todayEdits === undefined ? null : JSON.stringify(s.todayEdits),
   };
 }
 
@@ -117,6 +118,7 @@ function setRow(s: WorkoutSet, ordinal: number): Record<string, SqlValue> {
     flags: JSON.stringify(s.flags),
     // §2.13: NULL = the set counts (as for every set saved before schema 4).
     exclusions: s.exclusions && s.exclusions.length > 0 ? JSON.stringify(s.exclusions) : null,
+    skipped_by: s.skippedBy ?? null,
     edited: int(s.edited),
     version: s.version,
   };
@@ -212,6 +214,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       lastActivityAtUtc: s.last_activity_at_utc,
       checkIn: parseJsonOrNull(T, id, 'check_in', s.check_in ?? null),
       ...(s.finish_by_utc === null || s.finish_by_utc === undefined ? {} : { finishBy: { utc: s.finish_by_utc, tz: s.finish_by_tz } }),
+      ...(s.today_edits === null || s.today_edits === undefined ? {} : { todayEdits: parseJson(T, id, 'today_edits', s.today_edits) }),
     },
     exercises: exercises.map((e) => ({
       id: e.id,
@@ -265,6 +268,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
         undoCount: x.undo_count,
         flags: parseJson('session_sets', sid, 'flags', x.flags ?? null),
         ...exclusionsOf(parseJsonOrNull('session_sets', sid, 'exclusions', x.exclusions ?? null)),
+        ...(x.skipped_by === null || x.skipped_by === undefined ? {} : { skippedBy: x.skipped_by }),
         edited: bool(x.edited ?? null),
         version: x.version,
       };
@@ -414,6 +418,8 @@ const FENCE_SQL: Record<WriteFence['rows'][number]['table'], string> = {
   check_ins: 'SELECT version AS v FROM check_ins WHERE id = ?',
   profiles: 'SELECT version AS v FROM profiles WHERE id = ?',
   sessions: 'SELECT revision AS v FROM sessions WHERE id = ?',
+  // Only an open draft can be consumed: a discarded, consumed or expired one reads as changed.
+  pre_start_drafts: "SELECT version AS v FROM pre_start_drafts WHERE id = ? AND status = 'open'",
 };
 
 /**
@@ -437,6 +443,41 @@ export async function fenceHolds(tx: SqlExecutor, fence: WriteFence): Promise<bo
     const want = new Map(set.members.map((m) => [m.id, m.version]));
     if (rows.some((r) => want.get(r.id) !== r.version)) return false;
   }
+  return true;
+}
+
+/**
+ * A new session closes the owner's open pre-start drafts in its own
+ * transaction (ADR 0022 §3), so no start path can forget them: the draft it
+ * was started from (`session.todayEdits.draftId`) becomes `consumed` with
+ * the session's ID, and every other open draft becomes `discarded`. An
+ * imported (finished) workout leaves them alone. False
+ * (nothing written): the draft it names is no longer open, or its midnight
+ * has passed by the session's start (TE5): the caller reports it stale.
+ */
+async function closeDraftsOnStart(tx: SqlExecutor, a: SessionAggregate): Promise<boolean> {
+  // Only a workout being started closes drafts (an imported, finished workout doesn't).
+  if (a.session.status !== 'active') return true;
+  const owner = a.session.ownerId;
+  const startedAt = a.session.startedAt.utc;
+  const at = a.session.lastActivityAtUtc;
+  const from = a.session.todayEdits?.draftId ?? null;
+  if (from !== null) {
+    const row = await tx.getFirst<{ status: string; owner_id: string; expires_at_utc: string; version: number }>('SELECT status, owner_id, expires_at_utc, version FROM pre_start_drafts WHERE id = ?', [from]);
+    if (row?.status !== 'open' || row.owner_id !== owner || row.version !== a.session.todayEdits?.draftVersion || row.expires_at_utc <= startedAt) return false;
+    await tx.run(
+      `UPDATE pre_start_drafts SET status = 'consumed', version = version + 1, updated_at_utc = ?,
+         data = json_set(data, '$.status', 'consumed', '$.sessionId', ?, '$.version', version + 1, '$.updatedAtUtc', ?, '$.updatedAt.utc', ?)
+       WHERE id = ?`,
+      [at, a.session.id, at, at, from],
+    );
+  }
+  await tx.run(
+    `UPDATE pre_start_drafts SET status = 'discarded', version = version + 1, updated_at_utc = ?,
+       data = json_set(data, '$.status', 'discarded', '$.version', version + 1, '$.updatedAtUtc', ?, '$.updatedAt.utc', ?)
+     WHERE owner_id = ? AND status = 'open'`,
+    [at, at, at, owner],
+  );
   return true;
 }
 
@@ -553,6 +594,7 @@ export class SqliteSessions implements SessionRepository {
       const current = await tx.getFirst<{ revision: number }>('SELECT revision FROM sessions WHERE id = ?', [valid.session.id]);
       const currentRevision = current?.revision ?? null;
       if (currentRevision !== expectedRevision) return { ok: false, error: 'conflict', currentVersion: currentRevision };
+      if (expectedRevision === null && !(await closeDraftsOnStart(tx, valid))) return { ok: false, error: 'stale_inputs' };
       await writeAggregate(tx, valid);
       return { ok: true, version: valid.revision };
     });

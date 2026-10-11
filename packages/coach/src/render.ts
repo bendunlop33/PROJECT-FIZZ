@@ -331,6 +331,16 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const text = `Out of date: ${failureOr(record, 'your workout changed')}. Nothing changed.`;
       return make(status, text, text);
     }
+    case 'update_routine': {
+      // Ben's own change from today's edits (ADR 0022): the routine, from now on.
+      const what = d.changes.map((c) => c.text).join('; ');
+      if (st === 'committed') {
+        const text = `${d.routineName} changed: ${what}.`;
+        return make(status, text, speakable(text));
+      }
+      const text = `Couldn't change ${d.routineName}: ${failureOr(record, 'it changed since')}. Nothing changed.`;
+      return make(status, text, text);
+    }
     case 'set_pain_flag': {
       if (st === 'committed') {
         const text = `Pain flag on: ${namesText(d.exerciseNames)} · no increases`;

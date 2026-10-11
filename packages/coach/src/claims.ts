@@ -1028,6 +1028,7 @@ function factsOf(record: ActionRecord): RecordFacts {
       for (const n of d.exerciseNames) f.names.add(n.toLowerCase());
       break;
     case 'propose_next_workout_change':
+    case 'update_routine':
     case 'save_memory':
     case 'forget_memory':
     case 'add_playbook_candidate':

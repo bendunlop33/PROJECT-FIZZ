@@ -10,6 +10,7 @@ import {
 } from './common';
 import { PainAreaSchema, type PainFlag } from './checkin';
 import type { SessionCommand } from './commands';
+import { RoutineExerciseSchema } from './routine';
 
 /**
  * Coach v1 contracts (ADR 0020 §2, coach-contract.md §6). Tool arguments are
@@ -320,6 +321,23 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     changes: z.array(StructuralChangeLineSchema).min(1).max(6),
     /** App text after `Because:`. */
     because: z.string().min(1).max(200),
+  }),
+  /**
+   * Ben changed a routine from today's edits (`Change Push A too ›`, ADR 0022;
+   * overview-today-edits TE4): one slot's exercise replaced through a
+   * change-review card. `before`/`after` are the slot as it was and as Apply
+   * left it, so Undo puts exactly `before` back while the routine is still at
+   * `versionAfter`. `draft`: the pre-start draft edit Apply made redundant.
+   */
+  z.object({
+    kind: z.literal('update_routine'),
+    routineId: IdSchema,
+    routineName: z.string().min(1).max(120),
+    changes: z.array(StructuralChangeLineSchema).min(1).max(6),
+    slot: z.object({ before: RoutineExerciseSchema, after: RoutineExerciseSchema }),
+    versionBefore: z.int().min(1),
+    versionAfter: z.int().min(2),
+    draft: z.object({ id: IdSchema, editId: IdSchema }).nullable(),
   }),
   z.object({
     kind: z.literal('set_pain_flag'),

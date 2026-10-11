@@ -17,6 +17,7 @@ import { LocalDateSchema } from './import';
 import { EquipmentInstanceSchema } from './equipment';
 import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
+import { SessionTodayEditsSchema } from './draft';
 
 /** Values a set can hold: used for actual results and drafts alike. */
 export const SetValuesSchema = z.object({
@@ -314,6 +315,12 @@ export const WorkoutSetSchema = z.object({
    * so every change is versioned and audited, never silent (AW6).
    */
   exclusions: SetExclusionsSchema.optional(),
+  /**
+   * Why a `skipped` set was skipped (ADR 0022 §4): `before_start` from the
+   * Workout overview's `Skip today`. Absent = skipped in the workout (or
+   * written before this field existed).
+   */
+  skippedBy: z.enum(['before_start', 'in_workout']).optional(),
   edited: z.boolean(),
   version: z.int().min(1),
 }).refine(
@@ -491,6 +498,8 @@ export const WorkoutSessionSchema = z.object({
    * step 4, whether the coach may offer to shorten); never a set or rest.
    */
   finishBy: ZonedTimestampSchema.optional(),
+  /** The pre-start draft's edits this workout was started with (ADR 0022 §4). Absent = none. */
+  todayEdits: SessionTodayEditsSchema.optional(),
 });
 export type WorkoutSession = z.infer<typeof WorkoutSessionSchema>;
 

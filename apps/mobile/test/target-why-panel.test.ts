@@ -49,5 +49,6 @@ describe('Why? panel rules', () => {
     expect(whyLinkLabel(true)).toBe('Hide explanation');
     expect(whyRowAccessibilityLabel({ key: 'set_by', label: 'Set by', lines: ['Built-in rule · after Push A, 1 Oct'], kind: 'app' })).toBe('Set by: Built-in rule, after Push A, 1 Oct');
     expect(whyRowAccessibilityLabel({ key: 'last_time', label: 'Last time', lines: ['100 kg × 8, 8', '1 Oct · Main Gym'], kind: 'actual' })).toBe('Last time (what you did): 100 kg × 8, 8. 1 Oct, Main Gym');
+    expect(whyRowAccessibilityLabel({ key: 'swapped', label: null, lines: ['Swapped before start · Bench press'], kind: 'app' })).toBe('Swapped before start, Bench press');
   });
 });

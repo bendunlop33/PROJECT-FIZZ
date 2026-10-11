@@ -405,3 +405,34 @@ export function routineStartNotes(snap: SnapResult): RepeatNote[] {
   }
   return notes;
 }
+
+/**
+ * `Change Push A too ›` → Apply (overview-today-edits TE4): the routine with
+ * one slot's exercise replaced. Its item is cleared (the shared fit maps one
+ * at each gym, GS3) and its template loads go back to automatic: never
+ * converted from the old exercise's load (rule 4). Sets, reps, effort and
+ * rest are kept. Versioned and idempotent like every routine change.
+ */
+export function swapRoutineSlot(
+  current: Routine,
+  slotKey: string,
+  to: Pick<Exercise, 'id' | 'name'>,
+  expectedVersion: number,
+  opId: string,
+  at: ZonedTimestamp,
+): RoutineChange | { kind: 'invalid'; message: string } {
+  if (current.lastOpId === opId) return { kind: 'duplicate', current };
+  // A card shown before the routine moved is out of date, whatever it would change (CR4).
+  if (current.version !== expectedVersion) return { kind: 'stale', current };
+  const slot = current.exercises.find((e) => e.id === slotKey);
+  if (slot === undefined) return { kind: 'invalid', message: 'That exercise isn’t in the routine any more.' };
+  if (slot.exerciseId === to.id) return { kind: 'invalid', message: 'Already in the routine.' };
+  const replaced: RoutineExercise = {
+    ...slot,
+    exerciseId: to.id,
+    equipmentId: null,
+    progressionRuleId: null,
+    setTemplates: slot.setTemplates.map((t) => ({ ...t, targetLoad: null })),
+  };
+  return change(current, expectedVersion, opId, at, { exercises: current.exercises.map((e) => (e.id === slotKey ? replaced : e)) });
+}

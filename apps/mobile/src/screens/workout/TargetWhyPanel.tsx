@@ -108,9 +108,11 @@ function RowBody({ row, stacked, innerRef }: { row: WhyRow; stacked: boolean; in
   const theme = useTheme();
   return (
     <View ref={innerRef} accessible accessibilityLabel={whyRowAccessibilityLabel(row)} style={{ flexDirection: stacked ? 'column' : 'row', gap: stacked ? 2 : theme.space['2'] }}>
-      <AppText variant="label" color="text.secondary" style={stacked ? undefined : { width: LABEL_WIDTH }}>
-        {row.label}
-      </AppText>
+      {row.label === null ? null : (
+        <AppText variant="label" color="text.secondary" style={stacked ? undefined : { width: LABEL_WIDTH }}>
+          {row.label}
+        </AppText>
+      )}
       <View style={{ flex: stacked ? undefined : 1, gap: 2 }}>
         {row.lines.map((line, i) => (
           <View key={`${row.key}:${String(i)}`} style={{ flexDirection: 'row', gap: theme.space['1'], alignItems: 'flex-start' }}>
