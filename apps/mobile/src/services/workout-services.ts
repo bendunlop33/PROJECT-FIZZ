@@ -891,18 +891,32 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return { kind: 'next', source, basis: { kind: 'next_from', at: source.session.startedAt } };
   }
 
-  /** Up next (D19 rotation, as Today's card) or the routine asked for. */
-  async function resolveOverview(p: UserProfile, target: OverviewTarget | OverviewStartOf): Promise<ResolvedOverview | null> {
+  /**
+   * Up next (D19 rotation), the one resolver Today's card and the overview
+   * share (review S5): the rotation's routine when it can be started at this
+   * gym, else the last workout's next session. `run`: the routine's dry run,
+   * for Today's card. `gymEquipment`: the typical gym when there is none yet.
+   */
+  async function resolveUpNext(p: UserProfile, gymId: string, gymEquipment?: readonly EquipmentInstance[]) {
+    const { live, refs } = await routineRows(p.id).catch(() => ({ live: [] as Routine[], refs: [] as FinishedRef[] }));
+    const pick = nextInRotation(live, refs[0] ?? null);
+    if (pick.kind === 'routine') {
+      const run = await routineStart(p, { routineId: pick.routine.id, gymId, opId: `preview-next-routine:${pick.routine.id}`, preview: true, ...(gymEquipment ? { gymEquipment } : {}) });
+      if (run.r.ok) return { kind: 'routine' as const, routine: pick.routine, basis: pick.basis, run: { ...run, r: run.r } };
+    }
+    const last = (await repeat.candidates(1, { countImported: false })).rows[0];
+    return last ? { kind: 'next' as const, sessionId: last.sessionId } : null;
+  }
+
+  /** Up next (as Today's card, at this gym) or the routine asked for. */
+  async function resolveOverview(p: UserProfile, target: OverviewTarget | OverviewStartOf, gym?: { gymId: string; gymEquipment?: readonly EquipmentInstance[] | undefined }): Promise<ResolvedOverview | null> {
     if ('kind' in target) {
       if (target.kind === 'routine') return resolveRoutine(p, target.routineId, null);
-      const { live, refs } = await routineRows(p.id).catch(() => ({ live: [] as Routine[], refs: [] as FinishedRef[] }));
-      const pick = nextInRotation(live, refs[0] ?? null);
-      if (pick.kind === 'routine') {
-        const basis: OverviewBasis = pick.basis.kind === 'only' ? { kind: 'only' } : { kind: 'after', routineName: pick.basis.routineName, at: { utc: pick.basis.atUtc, tz: pick.basis.tz } };
-        return resolveRoutine(p, pick.routine.id, basis);
-      }
-      const last = (await repeat.candidates(1, { countImported: false })).rows[0];
-      return last ? resolveNext(p, last.sessionId) : null;
+      const up = await resolveUpNext(p, gym?.gymId ?? 'typical-gym-preview', gym?.gymEquipment);
+      if (up === null) return null;
+      if (up.kind === 'next') return resolveNext(p, up.sessionId);
+      const basis: OverviewBasis = up.basis.kind === 'only' ? { kind: 'only' } : { kind: 'after', routineName: up.basis.routineName, at: { utc: up.basis.atUtc, tz: up.basis.tz } };
+      return resolveRoutine(p, up.routine.id, basis);
     }
     if (target.routineOf !== undefined) return resolveRoutine(p, target.routineOf, null);
     return resolveNext(p, target.nextOf);
@@ -1632,29 +1646,26 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       try {
         const p = await ctx.profile();
         if (!p) return null;
-        // Rotation (D19, simplified): the routine after the one done last, when the last workout was a routine's.
-        const { live, refs } = await routineRows(p.id).catch(() => ({ live: [] as Routine[], refs: [] as FinishedRef[] }));
-        const pick = nextInRotation(live, refs[0] ?? null);
-        if (pick.kind === 'routine') {
-          const { r, ref } = await routineStart(p, { routineId: pick.routine.id, gymId, opId: `preview-next-routine:${pick.routine.id}`, preview: true });
-          if (r.ok) {
-            const derived = await titleFor(r.aggregate.exercises.map((e) => e.exerciseId));
-            return {
-              routine: { id: pick.routine.id, basis: pick.basis },
-              sourceSessionId: ref?.sessionId ?? null,
-              title: pick.routine.name,
-              muscles: derived.muscles,
-              exercises: repeatPreviewLines(r.aggregate).map((l) => ({ exerciseName: l.exerciseName, line: l.line })),
-              targets: targetSummaryLines(r.aggregate),
-              sets: r.aggregate.sets.length,
-              aboutMinutes: await aboutMinutes(p, r.aggregate),
-              sourceStartedAtUtc: ref?.startedAtUtc ?? null,
-              tz: ref?.tz ?? ctx.now().tz,
-            };
-          }
+        // Rotation (D19, simplified): the routine after the one done last, when the last workout was a routine's (the overview's resolver).
+        const up = await resolveUpNext(p, gymId);
+        if (up === null) return null;
+        if (up.kind === 'routine') {
+          const { r, ref } = up.run;
+          const derived = await titleFor(r.aggregate.exercises.map((e) => e.exerciseId));
+          return {
+            routine: { id: up.routine.id, basis: up.basis },
+            sourceSessionId: ref?.sessionId ?? null,
+            title: up.routine.name,
+            muscles: derived.muscles,
+            exercises: repeatPreviewLines(r.aggregate).map((l) => ({ exerciseName: l.exerciseName, line: l.line })),
+            targets: targetSummaryLines(r.aggregate),
+            sets: r.aggregate.sets.length,
+            aboutMinutes: await aboutMinutes(p, r.aggregate),
+            sourceStartedAtUtc: ref?.startedAtUtc ?? null,
+            tz: ref?.tz ?? ctx.now().tz,
+          };
         }
-        const last = (await repeat.candidates(1, { countImported: false })).rows[0];
-        if (!last) return null;
+        const last = { sessionId: up.sessionId };
         const source = await repos().sessions.get(last.sessionId);
         if (!source) return null;
         const targets = await nextTargetsOf(p, source);
@@ -1692,7 +1703,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const p = await ctx.profile();
         if (!p) return null;
         if (req.gymId === null && !req.typicalEquipment) return null;
-        const resolved = await resolveOverview(p, req.target);
+        const resolved = await resolveOverview(p, req.target, { gymId: req.gymId ?? 'typical-gym-preview', gymEquipment: req.gymId === null ? req.typicalEquipment : undefined });
         if (resolved === null) return null;
         const gate = await checkIns.gate().catch((): CheckInGate => ({ kind: 'ask' }));
         const reused = gate.kind === 'reuse' ? await repos().checkIns.get(gate.checkInId) : null;
@@ -1754,7 +1765,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       try {
         const p = await ctx.profile();
         if (!p) return null;
-        const resolved = await resolveOverview(p, req.target);
+        const resolved = await resolveOverview(p, req.target, { gymId: req.gymId ?? 'typical-gym-preview', gymEquipment: req.gymId === null ? req.typicalEquipment : undefined });
         if (resolved === null) return null;
         const today = req.checkInId ? await repos().checkIns.get(req.checkInId) : null;
         const run = await overviewDryRun(p, resolved, req.gymId ?? 'typical-gym-preview', today, req.gymId === null ? req.typicalEquipment : undefined);

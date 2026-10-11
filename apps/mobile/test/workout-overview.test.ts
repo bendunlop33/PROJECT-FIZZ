@@ -1,3 +1,7 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { loadCell, NBSP, type OverviewRow } from '@fizz/domain';
@@ -217,6 +221,38 @@ describe('Workout overview', () => {
     if (!fresh) throw new Error('no overview');
     const started = await s.overview.start({ startOf: fresh.startOf, gymId, opId: 'op-late', checkIn: null, expectedPreviewKey: fresh.view.previewKey });
     expect(started).toMatchObject({ ok: true, duplicate: false, aggregate: { session: { routineName: 'Push late' } } });
+  });
+
+  it('S5: when the rotation’s routine can’t start, Today’s card and the overview both fall back to the last workout’s next session', async () => {
+    let { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const a = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    const savedA = await s.routines.saveFromSession({ sessionId: a, name: 'Push A', opId: 'save-a' });
+    h.clockMs += DAY;
+    const b = await logWorkout(h, s, gymId, [{ exercise: 'Back squat', sets: [{ load: 80, reps: 5 }] }]);
+    const savedB = await s.routines.saveFromSession({ sessionId: b, name: 'Legs B', opId: 'save-b' });
+    if (!savedA.ok || !savedB.ok) throw new Error('routines not saved');
+    h.clockMs += DAY;
+    // Rotation: Legs B was done last, so Push A is up next. Make it unstartable (its exercise is gone).
+    await h.forceClose();
+    const file = readdirSync(h.dir).find((n) => /^training.*\.db$/.test(n));
+    if (!file) throw new Error('no database file');
+    const raw = new DatabaseSync(join(h.dir, file));
+    const row = raw.prepare('SELECT data FROM routines WHERE id = ?').get(savedA.routine.id) as { data: string };
+    const doc = JSON.parse(row.data) as { exercises: { exerciseId: string }[] };
+    for (const ex of doc.exercises) ex.exerciseId = '00000000-0000-4000-8000-00000000dead';
+    raw.prepare('UPDATE routines SET data = ? WHERE id = ?').run(JSON.stringify(doc), savedA.routine.id);
+    raw.close();
+    s = (await h.launch()).services;
+
+    const card = await s.next.preview(gymId);
+    expect(card).toMatchObject({ routine: null, sourceSessionId: b });
+    const page = await s.overview.load({ target: { kind: 'next' }, gymId });
+    if (!page) throw new Error('the overview must match Today’s Up next card');
+    expect(page.startOf).toEqual({ nextOf: b });
+    expect(page.view.rows.map((r) => r.name)).toEqual(['Back squat']);
+    const started = await s.overview.start({ startOf: page.startOf, gymId, opId: 'op-s5', checkIn: null, expectedPreviewKey: page.view.previewKey });
+    expect(started.ok).toBe(true);
   });
 
   it('an unreadable or missing target reads as null, never throws', async () => {
