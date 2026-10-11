@@ -4,16 +4,19 @@
  *
  * The category is the exercise's muscle group as Ben filed it in FitNotes. It
  * is user-editable (research `fitnotes-export-format.md` §3.4), so it is only
- * ever a hint: it can drop or demote a word suggestion whose primary muscles
- * contradict it (`Barbell Leg Curls` under Legs is never the barbell curl),
- * never make a match, and never change a stored value. A category this table
+ * ever a hint: it can drop a word suggestion whose primary muscles contradict
+ * it (`Barbell Leg Curls` under Legs is never the barbell curl) or break a
+ * tie, never promote a weaker suggestion, never make or question a match, and
+ * never change a stored value (ADR 0016). A category this table
  * doesn't know (`Cardio`, `Other`, a custom or translated one, blank) gives no
  * hint. Categories are data, never instructions (rule 8).
  *
  * Covers FitNotes (Android) defaults (Abs, Back, Biceps, Cardio, Chest, Legs,
- * Shoulders, Triceps) and FitNotes 2 (iPhone) muscle-level categories
- * (`Quadriceps`, `Hamstrings`, `Lats`, `Trapezius`, `Pectorals`,
- * `Back (Lower)`, `Calves`, …). Muscles are the catalogue vocabulary
+ * Shoulders, Triceps; research §3.4) and muscle-level names such as
+ * FitNotes 2 (iPhone) may use (`Quadriceps`, `Hamstrings`, `Lats`,
+ * `Trapezius`, `Pectorals`, `Back (Lower)`, `Calves`, …). The muscle-level
+ * names are assumed, not sourced: an unlisted one gives no hint, so a wrong
+ * guess here costs nothing. Muscles are the catalogue vocabulary
  * (`packages/catalogue/src/vocab.ts`). Each set is generous: it lists every
  * muscle an exercise filed there could plausibly have as a primary (a deadlift
  * under Back or Legs, a shrug under Shoulders), because a wrong contradiction
@@ -21,7 +24,8 @@
  */
 
 const DELTS = ['front_delts', 'side_delts', 'rear_delts'] as const;
-const BACK = ['lats', 'upper_back', 'traps', 'spinal_erectors', 'rear_delts'] as const;
+// Hinges (deadlift, RDL, trap-bar deadlift, swing) are filed under Back by FitNotes' own defaults.
+const BACK = ['lats', 'upper_back', 'traps', 'spinal_erectors', 'rear_delts', 'glutes', 'hamstrings'] as const;
 const CHEST = ['chest', 'upper_chest'] as const;
 const LEGS = ['quads', 'hamstrings', 'glutes', 'adductors', 'abductors', 'calves'] as const;
 const CORE = ['abs', 'obliques', 'core'] as const;
@@ -65,7 +69,7 @@ const CATEGORY_MUSCLES: Readonly<Record<string, readonly string[]>> = {
   'back middle': UPPER_BACK,
   quadricep: ['quads'],
   quad: ['quads'],
-  hamstring: ['hamstrings'],
+  hamstring: ['hamstrings', 'glutes'],
   glute: ['glutes', 'adductors', 'abductors'],
   gluteus: ['glutes', 'adductors', 'abductors'],
   calf: ['calves'],

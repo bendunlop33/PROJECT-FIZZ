@@ -41,6 +41,10 @@ describe('FitNotes categories → muscles', () => {
     // FitNotes (Android) defaults.
     ['Back', 'lats', 'triceps'],
     ['Back', 'spinal_erectors', 'chest'],
+    // Hinges are filed under Back (review import-names S1).
+    ['Back', 'hamstrings', 'quads'],
+    ['Back', 'glutes', 'triceps'],
+    ['Hamstrings', 'glutes', 'quads'],
     ['Chest', 'chest', 'lats'],
     ['Legs', 'hamstrings', 'biceps'],
     ['Legs', 'calves', 'triceps'],
@@ -100,12 +104,27 @@ describe('the category is a ranking hint in name matching', () => {
     expect(shown(name, null)).toEqual(plain);
   });
 
-  it('a contradicted suggestion is demoted: the best that agrees is suggested instead', () => {
+  it('a tie is broken by the category: of the equally good suggestions, the one that agrees', () => {
     // No equipment recorded, so `Barbell` neither agrees nor contradicts: the words tie and the barbell word picks the curl.
     const legCurl = cand('Leg curl', ['hamstrings'], []);
     expect(shown('Barbell Leg Curls', null, [BARBELL_CURL, legCurl])).toEqual(['check', 'Barbell curl']);
     expect(shown('Barbell Leg Curls', 'Legs', [BARBELL_CURL, legCurl])).toEqual(['check', 'Leg curl']);
     expect(shown('Barbell Leg Curls', 'Biceps', [BARBELL_CURL, legCurl])).toEqual(['check', 'Barbell curl']);
+  });
+
+  it('drop-only: a weaker suggestion the category agrees with is never promoted over the best one it contradicts (review import-names S1)', () => {
+    const rdl = cand('Romanian deadlift', ['hamstrings', 'glutes'], ['barbell'], 'total');
+    const deadlift = cand('Deadlift', ['spinal_erectors', 'glutes', 'hamstrings'], ['barbell'], 'total');
+    const closeGrip = cand('Close-grip bench press', ['triceps', 'chest'], ['barbell'], 'total');
+    const pulldown = cand('Neutral-grip pulldown', ['lats'], ['weight_stack'], 'stack', ['Close grip pulldown']);
+    expect(shown('Romanian Deadlifts', 'Back', [rdl, deadlift])).toEqual(['check', 'Romanian deadlift']);
+    expect(shown('Close Grip Bench', null, [closeGrip, pulldown])).toEqual(['check', 'Close-grip bench press']);
+    // The best is contradicted: nothing is suggested, not the weaker pulldown.
+    expect(shown('Close Grip Bench', 'Back', [closeGrip, pulldown])).toEqual(['no_match', null]);
+    // Back no longer contradicts a hinge.
+    const hipThrust = cand('Hip thrust', ['glutes'], ['barbell'], 'total');
+    expect(shown('Hip Thrusts', 'Hamstrings', [hipThrust])).toEqual(['check', 'Hip thrust']);
+    expect(shown('Hip Thrusts', 'Back', [hipThrust])).toEqual(['check', 'Hip thrust']);
   });
 
   it('never makes or changes a match: an exact name stays Matched under any category, and a hint never upgrades a Check', () => {

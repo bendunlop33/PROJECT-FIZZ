@@ -23,7 +23,7 @@ import type {
 import { deriveId } from '../stable';
 import { fromScaled, toScaled } from '../units';
 import { effortFromComment } from './effort';
-import type { FitNotesRow } from './fitnotes';
+import { FITNOTES_HEADERS, type FitNotesRow } from './fitnotes';
 import { categoryHint } from './category';
 import { equipmentInName, implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
 import type { RememberedTotal } from './remembered';
@@ -828,8 +828,9 @@ function matchIn(ctx: ImportContext, key: string, name: string, categories: read
 }
 
 /** The FitNotes `Category` cell (third column in every layout), trimmed. */
-function categoryOf(r: FitNotesRow): string {
-  return (r.cells[2] ?? '').trim();
+/** The row's `Category` cell, by the variant's header (review import-names N2); blank when the layout has none. */
+function categoryOf(r: FitNotesRow, at: number): string {
+  return at < 0 ? '' : (r.cells[at] ?? '').trim();
 }
 
 /**
@@ -845,10 +846,11 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
   const dateSkipped = (date: string): boolean => ctx.importedDates.has(date) || (ctx.appDates.has(date) && answers.existingDates === 'skip');
   // Every category each name was filed under, first seen first: the matcher's ranking hint.
   const categories = new Map<string, string[]>();
+  const categoryAt = FITNOTES_HEADERS[input.variant].indexOf('Category');
   for (const r of strength) {
     const key = nameKey(r.exercise);
     const list = categories.get(key) ?? [];
-    const c = categoryOf(r);
+    const c = categoryOf(r, categoryAt);
     if (c !== '' && !list.includes(c)) list.push(c);
     categories.set(key, list);
   }

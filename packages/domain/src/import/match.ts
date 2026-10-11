@@ -397,8 +397,6 @@ export function matchName(
     if (!kindFits(c, smith, assisted)) continue;
     // Never one dumbbell for a name that says two, or two for one that says one (review r5 N1).
     if (countContradicts(cue, c)) continue;
-    // Never an exercise whose primary muscles contradict the FitNotes category (a ranking hint only).
-    if (muscleFit(categoryMuscles, c.primaryMuscles) === 'contradicts') continue;
     const score = Math.max(...wordsOf(c).tokens.map((t) => similarity(words, t)));
     if (score < SUGGEST_THRESHOLD || score < best - TIE) continue;
     if (score > best + TIE) {
@@ -406,7 +404,11 @@ export function matchName(
       tied = [c];
     } else tied.push(c);
   }
-  const pick = tied.length === 0 ? null : breakTie(sameCount(tied, cue), named, categoryMuscles);
+  // The category hint is drop-only: the best score is taken over every fitting exercise first, and
+  // only one of those best that the category doesn't contradict is suggested. It never promotes a
+  // weaker one (`Romanian Deadlifts` under Back is never the deadlift; review import-names S1).
+  const agreeing = tied.filter((c) => muscleFit(categoryMuscles, c.primaryMuscles) !== 'contradicts');
+  const pick = agreeing.length === 0 ? null : breakTie(sameCount(agreeing, cue), named, categoryMuscles);
   if (pick !== null) return { status: 'check', exerciseId: pick, via: 'words', skip: false };
   return { status: 'no_match', exerciseId: null, via: null, skip: false };
 }
