@@ -6,7 +6,7 @@ import type { TextCoachState } from '@fizz/providers';
 import { nextTimeView } from '../src/coach/next-time-view';
 import { threadRows } from '../src/coach/sheet-view';
 import { slotAfterTurn, slotView, syncAdjustment } from '../src/coach/slot-view';
-import { CONNECTED, lowerPending, replyWith, saveNextTarget, StepModel } from './coach-model';
+import { CONNECTED, contextWorkout, lowerPending, replyWith, saveNextTarget, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /** Coach bugs found by the independent check (rule 3, honesty, Undo), each reproduced on real SQLite. */
@@ -279,5 +279,36 @@ describe('The workout banner follows an Undo made in the sheet', () => {
     expect(slotView({ pending: false, adjustment: fresh, outcome: null, offer: null, workout })).toEqual({ kind: 'outcome', text: 'Coach change undone.', retry: false });
     // Still live: the same record back.
     expect(await syncAdjustment(null, (id) => s.coach.getAction(id))).toBeNull();
+  });
+});
+
+describe('Undo all on the Summary works every time it is shown', () => {
+  it('Undo all → Use coach target on both → Undo all again undoes both rows', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [
+      { exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }] },
+      { exercise: 'Lat pulldown', sets: [{ load: 50, reps: 10, rpe: 10 }] },
+    ]);
+    model = new StepModel([
+      (req) => {
+        const w = contextWorkout(req);
+        const t = (i: number, value: number, convention: string) => ({ exerciseId: w.exercises[i]?.exerciseId, target: { load: { value, unit: 'kg', convention }, reps: null }, sets: null, reason: 'Heavy.' });
+        return toolCall('set_next_session_targets', { sourceSessionId: w.sessionId, sourceVersion: w.version, targets: [t(0, 57.5, 'total'), t(1, 47.5, 'stack')] });
+      },
+      () => replyWith('Ok.'),
+    ]);
+    await s.coach.runSummaryTurn(first);
+    const summary = await s.workout.summary(first, 'connected');
+    const view = async () => nextTimeView({ title: 'Workout', builtIn: summary?.nextTime ?? null, coachRows: await s.coach.nextTargets(first), availability: await s.coach.availability(), reviewing: false });
+    const before = await view();
+    expect(before?.undoAll?.rows).toHaveLength(2);
+    expect(await s.coach.undoNextTargets(before?.undoAll?.rows ?? [])).toEqual({ ok: true });
+    expect((await s.coach.nextTargets(first)).map((r) => r.status)).toEqual(['undone', 'undone']);
+    for (const r of await s.coach.nextTargets(first)) expect((await s.coach.tapNextTarget(r, 'use_coach', nextTargetTapOpId(r, 'use_coach'))).status).toBe('written');
+    const again = await view();
+    expect(again?.undoAll?.rows).toHaveLength(2);
+    expect(await s.coach.undoNextTargets(again?.undoAll?.rows ?? [])).toEqual({ ok: true });
+    expect((await s.coach.nextTargets(first)).map((r) => r.status)).toEqual(['undone', 'undone']);
   });
 });

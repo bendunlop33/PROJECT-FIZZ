@@ -17,6 +17,7 @@ import {
   createSessionReadExecutor,
   createStoreExecutors,
   describeCoachContext,
+  nextTargetTapOpId,
   nextTargetTapRecord,
   recoverCoachTurns,
   runCoachTurn,
@@ -462,6 +463,24 @@ export function createCoachService(deps: CoachServiceDeps) {
       const p = await owner();
       const { status, record } = nextTargetTapRecord(row, tap, { opId, now: deps.now() });
       return coachStore().setNextTargetStatus(p.id, { rowId: row.id, expectedVersion: row.version, status, record });
+    },
+
+    /**
+     * `Undo all` on the Summary: Undo on each live row, as its own tap. Row by
+     * row, so it works however the rows got back to `saved` (a `Use coach
+     * target` after an earlier Undo all leaves the coach's record undone).
+     */
+    async undoNextTargets(rows: readonly NextSessionTargetRecord[]): Promise<{ ok: boolean }> {
+      const p = await owner();
+      let ok = true;
+      for (const row of rows) {
+        const { status, record } = nextTargetTapRecord(row, 'undo', { opId: nextTargetTapOpId(row, 'undo'), now: deps.now() });
+        const r = await coachStore()
+          .setNextTargetStatus(p.id, { rowId: row.id, expectedVersion: row.version, status, record })
+          .catch(() => null);
+        if (r === null || r.status === 'not_possible') ok = false;
+      }
+      return { ok };
     },
 
     /** Restart recovery at launch: turns cut off by a force-close become `interrupted`. */

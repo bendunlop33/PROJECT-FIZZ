@@ -4,7 +4,7 @@ import { Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { checkRoutineName, toIso, toMs, type WorkoutSummary } from '@fizz/domain';
-import { nextTargetTapOpId, undoOpId } from '@fizz/coach';
+import { nextTargetTapOpId } from '@fizz/coach';
 import { readTextCoachState } from '@fizz/providers';
 
 import { coachConnectionPorts } from '../../ai/coach-connection-ports';
@@ -459,14 +459,13 @@ export function SummaryScreen() {
                 label="Undo all"
                 tone="secondary"
                 onPress={() => {
-                  const id = nextTime.undoAll?.actionId;
-                  if (id === undefined) return;
+                  const rows = nextTime.undoAll?.rows;
+                  if (rows === undefined) return;
                   void services.coach
-                    .undo(id, undoOpId(id))
-                    .catch(() => {
-                      setToast({ text: 'Couldn’t undo.' });
-                    })
-                    .then(() => {
+                    .undoNextTargets(rows)
+                    .catch(() => ({ ok: false }))
+                    .then((r) => {
+                      if (!r.ok) setToast({ text: 'Couldn’t undo.' });
                       reload();
                       changed();
                     });

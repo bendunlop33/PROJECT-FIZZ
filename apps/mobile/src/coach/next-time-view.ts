@@ -40,8 +40,8 @@ export interface NextTimeView {
   status: string | null;
   rows: NextTimeRowView[];
   emptyText: string | null;
-  /** `Undo all` when two or more coach targets are saved and none used. */
-  undoAll: { actionId: string } | null;
+  /** `Undo all` when two or more coach targets are saved and none used: an Undo on each of those rows. */
+  undoAll: { actionId: string; rows: NextSessionTargetRecord[] } | null;
 }
 
 function setsPart(sets: number | null): string {
@@ -118,7 +118,7 @@ export function nextTimeView(input: NextTimeInput): NextTimeView | null {
     status: input.reviewing ? 'Coach reviewing…' : null,
     rows,
     emptyText: rows.length === 0 ? input.builtIn.emptyText : null,
-    undoAll: live.length >= 2 && only !== undefined ? { actionId: only } : null,
+    undoAll: live.length >= 2 && only !== undefined ? { actionId: only, rows: live } : null,
   };
 }
 
