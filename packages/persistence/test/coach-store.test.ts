@@ -323,7 +323,7 @@ describe('integrity, backup and restore with coach data', () => {
     await src.close();
     const file = JSON.parse(made.text) as BackupFile;
     const tables = { ...file.tables };
-    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers']) Reflect.deleteProperty(tables, t);
+    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers', 'pre_start_drafts']) Reflect.deleteProperty(tables, t);
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
     const body: Omit<BackupFile, 'checksum'> = { ...file, schemaVersion: 3, tables, counts };
     Reflect.deleteProperty(body, 'checksum');

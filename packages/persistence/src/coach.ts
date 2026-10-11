@@ -73,6 +73,7 @@ function sessionOf(record: ActionRecord): string | null {
     case 'save_memory':
     case 'forget_memory':
     case 'add_playbook_candidate':
+    case 'update_routine':
     case 'undo':
       return null;
   }
@@ -125,18 +126,18 @@ export const COACH_DOCUMENT_TABLES: readonly DocumentTable[] = [
   { table: 'coach_messages', decode: decodeMessage },
 ];
 
-async function actionByOp(q: SqlExecutor, ownerId: string, opId: string): Promise<ActionRecord | null> {
+export async function actionByOp(q: SqlExecutor, ownerId: string, opId: string): Promise<ActionRecord | null> {
   const row = await q.getFirst('SELECT * FROM coach_actions WHERE owner_id = ? AND op_id = ?', [ownerId, opId]);
   return row ? decodeAction(row) : null;
 }
 
-async function actionById(q: SqlExecutor, actionId: string): Promise<{ record: ActionRecord; version: number; ownerId: string } | null> {
+export async function actionById(q: SqlExecutor, actionId: string): Promise<{ record: ActionRecord; version: number; ownerId: string } | null> {
   const row = await q.getFirst('SELECT * FROM coach_actions WHERE id = ?', [actionId]);
   if (row === null) return null;
   return { record: decodeAction(row), version: Number(row.version), ownerId: String(row.owner_id) };
 }
 
-async function insertAction(tx: SqlExecutor, ownerId: string, record: ActionRecord): Promise<void> {
+export async function insertAction(tx: SqlExecutor, ownerId: string, record: ActionRecord): Promise<void> {
   const valid = checkWrite(ActionRecordSchema, record, 'coach_actions', record.actionId);
   await insert(tx, 'coach_actions', {
     id: valid.actionId,
@@ -153,7 +154,7 @@ async function insertAction(tx: SqlExecutor, ownerId: string, record: ActionReco
   });
 }
 
-async function updateAction(tx: SqlExecutor, record: ActionRecord, expectedVersion: number, atUtc: string): Promise<boolean> {
+export async function updateAction(tx: SqlExecutor, record: ActionRecord, expectedVersion: number, atUtc: string): Promise<boolean> {
   const valid = checkWrite(ActionRecordSchema, record, 'coach_actions', record.actionId);
   const r = await tx.run('UPDATE coach_actions SET data = ?, status = ?, version = version + 1, updated_at_utc = ? WHERE id = ? AND version = ?', [
     JSON.stringify(valid),
@@ -532,7 +533,9 @@ export class SqliteCoachStore {
         }
         return undone > 0 ? 'ok' : 'changed_since';
       }
+      // Ben's routine change from today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.
       case 'propose_next_workout_change':
+      case 'update_routine':
       case 'undo':
         return 'unsupported';
     }

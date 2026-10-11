@@ -13,6 +13,7 @@ import {
 } from './backup/backup';
 import { analyseReplace, type ReplaceCounts } from './backup/replace';
 import type { DatabaseHost, SqlDriver, SqlRow } from './driver';
+import { discardOpenDrafts } from './drafts';
 import { checkIntegrity } from './integrity';
 import { latestVersion, migrate, MIGRATIONS, readUserVersion, sqlMigration, type Migration } from './migrations';
 import { openStore, type Store } from './store';
@@ -319,6 +320,8 @@ export class DatabaseManager {
         await insertBackupRows(tx, file);
       });
       fresh = await openStore(driver, { migrations });
+      // A restored phone never starts from an old pre-start draft (ADR 0022 §5): every open one is discarded.
+      await discardOpenDrafts(fresh.db);
       const integrity = await checkIntegrity(fresh.db, latestVersion(migrations));
       if (!integrity.ok) {
         throw new RestoreAbort({

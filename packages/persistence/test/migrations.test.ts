@@ -29,6 +29,7 @@ const TABLES = [
   'next_target_uses',
   'pain_flags',
   'playbook_candidates',
+  'pre_start_drafts',
   'processed_operations',
   'profiles',
   'progression_rules',
