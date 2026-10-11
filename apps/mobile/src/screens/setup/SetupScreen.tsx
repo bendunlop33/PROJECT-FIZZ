@@ -129,9 +129,6 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
               </View>
             ))}
           </View>
-          <AppText variant="callout" color="text.secondary">
-            Coach, goals and history import are optional and can come later.
-          </AppText>
         </StepFrame>
       );
 
@@ -140,7 +137,6 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
         <StepFrame
           step="Step 1 of 3"
           title="How you log"
-          explanation="You can change these any time in Profile."
           onBack={() => {
             setStep('welcome');
           }}
@@ -169,15 +165,9 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
                 <ChoiceCard title="Pounds (lb)" selected={unit === 'lb'} onPress={() => { setUnit('lb'); }} />
               </View>
             </View>
-            <AppText variant="callout" color="text.secondary">
-              Picked from your phone’s region. Each piece of equipment keeps its own unit, so a kg gym and a lb gym both work.
-            </AppText>
           </View>
           <View style={{ gap: theme.space['2'] }}>
             <Eyebrow>Rest times</Eyebrow>
-            <AppText variant="callout" color="text.secondary">
-              Starting points, not advice.
-            </AppText>
             <Group>
               {DEFAULT_REST_PRESETS.map((p) => (
                 <Row key={p.presetName} title={p.presetName === 'Standard' ? 'Standard (default)' : p.presetName} trailing={<AppText variant="body" numeric>{formatClock(p.seconds)}</AppText>} />
@@ -196,7 +186,6 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
           <StepFrame
             step="Step 2 of 3"
             title="Gym saved"
-            explanation="You can edit it later in the gym editor."
             onBack={() => {
               setStep('units');
             }}
@@ -267,7 +256,7 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
         >
           <AppText variant="body">Your data is saved and backed up on this phone.</AppText>
           <AppText variant="body">
-            Copies on the phone are lost if the app is deleted or re-signed with a different Apple ID. You can save a copy to Files any time.
+            Lost if the app is deleted or signed with another Apple ID. Save a copy to Files.
           </AppText>
           <SaveCopyToFiles variant="row" label="Save a copy to Files now" onSaved={setCopySaved} />
         </StepFrame>

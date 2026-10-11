@@ -216,9 +216,8 @@ In the workout's coach slot (coach-adjustments §2.1) or as a `PainFlagCard` in 
 │ Also flag similar movements?           │ CM5, only if catalogue has any
 │ [Lateral raise] [Arnold press]         │ opt-in, none preselected
 │                                        │
-│ If pain is sharp, keeps coming back or │ text.secondary
-│ doesn't settle, see a physio or        │
-│ doctor. The coach can't diagnose.      │
+│ Sharp or lasting pain: see a physio or │ text.secondary
+│ doctor.                                │
 │ [Undo]                                 │
 └────────────────────────────────────────┘
 ```
@@ -247,12 +246,10 @@ In the workout's coach slot (coach-adjustments §2.1) or as a `PainFlagCard` in 
 │ While flagged: no increases in load,   │
 │ reps or sets. Coach-built workouts     │
 │ leave these out.                       │
-│ If pain is sharp, keeps coming back or │
-│ doesn't settle, see a physio or        │
-│ doctor. The coach can't diagnose.      │
-│ Stop and get medical help now if you   │
-│ have chest pain, feel faint or have    │
-│ sudden severe pain.                    │
+│ Sharp or lasting pain: see a physio or │
+│ doctor.                                │
+│ Chest pain, faintness or sudden severe │
+│ pain: stop and get medical help now.   │
 ├────────────────────────────────────────┤
 │ [         Flag 1 movement            ] │ PrimaryButton
 └────────────────────────────────────────┘
@@ -392,8 +389,8 @@ Set in the instructions and checked by instruction tests (not by the UI):
 | Pain set | `Pain noted for Overhead press` · `No increases for this movement until you clear it.` |
 | Pain set offline | `Pain noted for Overhead press. Coach offline, so your sets are unchanged. Change them directly or skip the exercise.` |
 | Pain detail | `Where? (optional)` · `Shoulder` · `Elbow` · `Wrist` · `Back` · `Knee` · `Hip` · `Other…` · `Also flag similar movements?` |
-| See a professional | `If pain is sharp, keeps coming back or doesn't settle, see a physio or doctor. The coach can't diagnose.` |
-| Urgent (Add sheet only) | `Stop and get medical help now if you have chest pain, feel faint or have sudden severe pain.` |
+| See a professional | `Sharp or lasting pain: see a physio or doctor.` |
+| Urgent (Add sheet only) | `Chest pain, faintness or sudden severe pain: stop and get medical help now.` |
 | Pain effect | `While flagged: no increases in load, reps or sets. Coach-built workouts leave these out.` |
 | Pain row | `Overhead press · shoulder` · `Since 6 Oct · you, during Push A` · `No increases for this movement.` · [Clear…] |
 | Clear confirm | `Clear the pain flag for Overhead press?` · `Loads, reps and sets can go up again. The coach will start from your last sets, not from before the flag.` [Clear flag] [Keep it] |

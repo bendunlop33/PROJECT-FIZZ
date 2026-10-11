@@ -94,7 +94,7 @@ describe('evaluateCheckInOffer (check-in.md §4.4, check 16)', () => {
 
   it('is honest about the coach: nothing when not connected (CI7), one line when offline', () => {
     expect(run(ci(1), 'not_connected')).toBeNull();
-    expect(run(ci(1), 'offline')).toEqual({ kind: 'offline_line', text: 'Check-in saved. Coach offline, so today’s plan is unchanged.' });
+    expect(run(ci(1), 'offline')).toEqual({ kind: 'offline_line', text: 'Coach offline' });
   });
 
   it('never appears after a set is logged or with no pending working set', () => {

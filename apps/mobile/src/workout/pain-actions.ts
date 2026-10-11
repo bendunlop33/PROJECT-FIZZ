@@ -44,7 +44,7 @@ export async function answerStillHurts(services: AppServices, flagId: string, fl
     action: 'Undo',
     onAction: () => {
       void services.pain.undoStillHurts({ flagId, reviewOpId: r.reviewOpId, undoOpId: `undo:${opId}` }).then((ok) => {
-        done(ok ? { icon: 'info.circle', text: 'Answer undone. The check is still due.' } : { icon: 'info.circle', text: 'The pain flag changed since, so the answer wasn’t undone.' });
+        done(ok ? { icon: 'info.circle', text: 'Answer undone. The check is still due.' } : { icon: 'info.circle', text: 'Couldn’t undo: flag changed' });
       });
     },
   });
@@ -57,7 +57,7 @@ export async function answerStillHurts(services: AppServices, flagId: string, fl
  */
 export function confirmClearFlag(services: AppServices, flag: PainFlag, done: (t: PainToast) => void): void {
   const c = painClearConfirm(flag);
-  Alert.alert(c.title, c.message, [
+  Alert.alert(c.title, undefined, [
     {
       text: c.confirm,
       onPress: () => {
@@ -76,7 +76,7 @@ export function confirmClearFlag(services: AppServices, flag: PainFlag, done: (t
                   action: t.action,
                   onAction: () => {
                     void services.pain.undoClear([cleared]).then((ok) => {
-                      done(ok ? { icon: 'exclamationmark.triangle', text: `Pain flag back on for ${flag.exerciseName}` } : { icon: 'info.circle', text: 'The pain flag changed since, so it wasn’t put back. Check Profile › Pain flags.' });
+                      done(ok ? { icon: 'exclamationmark.triangle', text: `Pain flag back on for ${flag.exerciseName}` } : { icon: 'info.circle', text: 'Couldn’t undo: flag changed' });
                     });
                   },
                 }

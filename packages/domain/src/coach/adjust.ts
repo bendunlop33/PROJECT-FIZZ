@@ -16,6 +16,7 @@ import type {
 } from '@fizz/schemas';
 import { formatNumber, loadText } from '../display';
 import { compareDifficulty, loadDirection, roundToAvailableLoad, type RoundingPolicy } from '../equipment';
+import { boundWords, convertedWords } from '../session/fit-words';
 import { buildExecutionOrder } from '../session/order';
 import { equipmentOfRow } from '../session/equipment-snapshot';
 import { deriveId } from '../stable';
@@ -138,23 +139,6 @@ export function setNumbersText(numbers: readonly number[]): string {
   return contiguous ? `sets ${String(first)}–${String(last)}` : `sets ${sorted.join(', ')}`;
 }
 
-function snapWhere(eq: EquipmentInstance): string {
-  switch (eq.kind) {
-    case 'barbell':
-      return 'nearest your bar and plates allow';
-    case 'plate_loaded_machine':
-      return 'nearest your plates allow';
-    case 'dumbbells':
-      return 'nearest your dumbbell rack allows';
-    case 'weight_stack':
-      return 'nearest the stack allows';
-    case 'assisted_stack':
-      return 'nearest the assistance stack allows';
-    case 'bodyweight_station':
-      return 'nearest the equipment allows';
-  }
-}
-
 function equipmentNoun(eq: EquipmentInstance): string {
   switch (eq.kind) {
     case 'barbell':
@@ -175,7 +159,7 @@ type LoadOutcome =
   | { ok: true; load: Load; note: { kind: GuardNoteKind; text: string } | null; extra: { kind: GuardNoteKind; text: string } | null }
   | { ok: false; note: { kind: GuardNoteKind; text: string } };
 
-export function snapLoad(requested: Load, ex: SessionExercise, eq: EquipmentInstance | null, policy: RoundingPolicy, gymName: string | null): LoadOutcome {
+export function snapLoad(requested: Load, ex: SessionExercise, eq: EquipmentInstance | null, policy: RoundingPolicy): LoadOutcome {
   const asked = loadText(requested, requested.convention);
   if (ex.loadConvention === 'bodyweight') {
     if (requested.convention === 'bodyweight') return { ok: true, load: requested, note: null, extra: null };
@@ -206,14 +190,14 @@ export function snapLoad(requested: Load, ex: SessionExercise, eq: EquipmentInst
   const extra =
     r.convertedRequest === null
       ? null
-      : { kind: 'converted' as const, text: `The coach gave ${asked}; this ${equipmentNoun(eq)} is in ${eq.unit}, so it was converted.` };
+      : { kind: 'converted' as const, text: convertedWords(asked) };
   if (r.exact) return { ok: true, load: r.load, note: null, extra };
   if (r.bounded !== null && easierThanAsked) {
-    const where = gymName === null ? `this ${equipmentNoun(eq)}` : `${gymName}'s ${equipmentNoun(eq)}`;
-    const most = direction === 'resistance' ? 'the most' : 'the least assistance';
-    return { ok: true, load: r.load, note: { kind: 'capped', text: `Capped at ${got}: ${most} ${where} goes to.` }, extra };
+    // Short fit words (minimal-copy W13): the most a bar makes, or the least assistance a machine gives.
+    const text = direction === 'resistance' ? boundWords('max', got, false) : boundWords('min', got, true);
+    return { ok: true, load: r.load, note: { kind: 'capped', text }, extra };
   }
-  return { ok: true, load: r.load, note: { kind: 'snapped', text: `Rounded to ${got}: ${snapWhere(eq)}.` }, extra };
+  return { ok: true, load: r.load, note: { kind: 'snapped', text: `Rounded to ${got}` }, extra };
 }
 
 export function validReps(r: RepRange): boolean {
@@ -269,7 +253,7 @@ function messagePainBlock(m: MessagePain | null, ex: SessionExercise): { kind: G
     return { kind: 'pain_unspecified', text: `Not increasing anything: you mentioned ${what}.`, outcome: `Not increasing anything: you mentioned ${what}. Sets unchanged.` };
   }
   if (!m.exerciseIds.includes(ex.exerciseId)) return null;
-  return { kind: 'pain_blocked', text: `Not increasing ${ex.exerciseName}: you mentioned ${what}.`, outcome: `Not increasing ${ex.exerciseName}: you mentioned ${what}. Sets unchanged.` };
+  return { kind: 'pain_mentioned', text: `Not increasing ${ex.exerciseName}: you mentioned ${what}.`, outcome: `Not increasing ${ex.exerciseName}: you mentioned ${what}. Sets unchanged.` };
 }
 
 class Notes {
@@ -340,7 +324,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
       // Snap notes only count when the change is kept.
       const pending: { kind: GuardNoteKind; text: string }[] = [];
       if (ask.load !== null) {
-        const snapped = snapLoad(ask.load, ex, eq, policy, input.gymName);
+        const snapped = snapLoad(ask.load, ex, eq, policy);
         if (!snapped.ok) {
           notes.add(snapped.note.kind, snapped.note.text, setIds);
           blockedOutcomes.push(snapped.note.text.replace('Load unchanged.', 'Sets unchanged.'));

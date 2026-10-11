@@ -43,7 +43,7 @@ describe('Why? through the services', () => {
 
     const e = await s.workout.explainTarget(sessionId, setId);
     expect(rowsOf(e)).toEqual([
-      ['Set by', 'Built-in rule · after your 8 Oct workout', 'Double progression, 3–6 reps up to RPE 8.5 (built-in default for a main barbell lift, provisional)'],
+      ['Set by', 'Built-in rule · after your 8 Oct workout', '3–6 reps, up to RPE 8.5'],
       ['Last time', '100 kg × 6, 6, 6', 'RPE 8, 8, 8', '8 Oct · Main Gym · Barbell and plates'],
       ['Reason', 'Increase to 102.5 kg for 3–6 reps.', 'Last session: every counted set reached 6+ reps at 100 kg.'],
       ['Equipment', '+2.5 kg (+2.5%), the smallest step on this bar.'],
@@ -108,7 +108,7 @@ describe('Why? through the services', () => {
     const setId = aggregate.sets[0]?.id ?? '';
     const on = await s.workout.explainTarget(sessionId, setId);
     expect(rowsOf(on).filter((r) => r[0] === 'Pain' || r[0] === 'Before flag')).toEqual([
-      ['Pain', 'Flag on since 9 Oct (shoulder). Loads, reps and sets can’t go up.'],
+      ['Pain', 'Since 9 Oct (shoulder) · no increases'],
       ['Before flag', '105 kg × 5, 5, 5 · 8 Oct'],
     ]);
     expect(rowsOf(on)[2]?.[1]).toMatch(/^Progression for Bench press is paused because pain was reported/);
@@ -127,7 +127,7 @@ describe('Why? through the services', () => {
     const rows = rowsOf(await s.workout.explainTarget(sessionId, aggregate.sets[0]?.id ?? ''));
     expect(rows[0]?.[0]).toBe('Set by');
     expect(rows[0]?.[1]).toMatch(/^Built-in rule · /);
-    expect(rows.find((r) => r[0] === 'Reason')).toEqual(['Reason', 'Starting plan: 3 sets of 3–6 reps. You choose the load.']);
+    expect(rows.find((r) => r[0] === 'Reason')).toEqual(['Reason', '3 × 3–6 · load: your choice']);
     expect(rows.flat().join(' ')).not.toMatch(/Not recorded/);
   });
 

@@ -45,7 +45,7 @@ export function whyLinkLabel(open: boolean): string {
   return open ? 'Hide explanation' : 'Why this number?';
 }
 
-export const WHY_FAILED_TEXT = 'Couldn’t read where this target came from. Your workout isn’t affected.';
+export const WHY_FAILED_TEXT = 'Couldn’t load.';
 
 /** One row read as a sentence: label, then its lines; middle dots read as pauses. */
 export function whyRowAccessibilityLabel(row: WhyRow): string {

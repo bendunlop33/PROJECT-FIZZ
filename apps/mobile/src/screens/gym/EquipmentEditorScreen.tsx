@@ -146,7 +146,7 @@ export function EquipmentEditorScreen() {
                 selected={u === unit}
                 onPress={() => {
                   if (loaded.unitLocked && unit !== loaded.unit) {
-                    Alert.alert('Unit is locked', `This item has sets logged in ${loaded.unit}. To use ${unit}, add it as new equipment so history stays comparable.`);
+                    Alert.alert('Unit is locked', `Has ${loaded.unit} sets. Add new equipment for ${unit}.`);
                     return;
                   }
                   set({ unit });
@@ -155,7 +155,7 @@ export function EquipmentEditorScreen() {
             ))}
           </ChipRow>
           {loaded.unitLocked ? (
-            <AppText variant="callout" color="text.secondary">{`This item has sets logged in ${loaded.unit}. To use the other unit, add it as new equipment so history stays comparable.`}</AppText>
+            <AppText variant="callout" color="text.secondary">{`Has ${loaded.unit} sets. Add new equipment for ${loaded.unit === 'kg' ? 'lb' : 'kg'}.`}</AppText>
           ) : null}
         </View>
 
@@ -181,7 +181,7 @@ export function EquipmentEditorScreen() {
             <PlatesEditor plates={f.plates} unit={u} sides={f.loadingSides} onChange={(plates) => { set({ plates }); }} />
             <NumberField label="Most plates it takes (optional)" unit={`${u} of plates`} value={f.maxLoad} onChange={(maxLoad) => { set({ maxLoad }); }} />
             <AppText variant="callout" color="text.secondary">
-              Logged as plates added. The machine’s own resistance isn’t counted or estimated.
+              Logged as plates added
             </AppText>
           </>
         ) : null}
@@ -233,7 +233,7 @@ export function EquipmentEditorScreen() {
             <RangeFields range={f.range} unit={u} onChange={(range) => { set({ range, irregular: null }); }} />
             {f.kind === 'weight_stack' ? (
               <AppText variant="callout" color="text.secondary">
-                Numbers are as printed on the stack. They’re never converted to free-weight equivalents.
+                As printed on the stack
               </AppText>
             ) : null}
           </>
@@ -241,7 +241,7 @@ export function EquipmentEditorScreen() {
 
         {f.kind === 'bodyweight_station' ? (
           <AppText variant="callout" color="text.secondary">
-            Logged as bodyweight (BW). Adding weight with a belt isn’t supported yet.
+            Logged as bodyweight
           </AppText>
         ) : null}
 

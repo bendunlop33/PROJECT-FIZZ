@@ -26,7 +26,7 @@ export const restAlertIdentifier = (sessionId: string) => `fizz.rest.${sessionId
 export function nextSetLine(state: SessionAggregate): string {
   const set = state.sets.find((s) => s.id === state.session.activeSetId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
-  if (!set || !ex) return 'Ready when you are.';
+  if (!set || !ex) return 'Next set';
   const eq = ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
   const perSide = ex.laterality === 'unilateral' ? `${NBSP}per side` : '';
   const p = set.planned;

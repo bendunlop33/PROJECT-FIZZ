@@ -39,7 +39,7 @@ describe('repeat a past workout', () => {
     if (!data) throw new Error('no workout');
     expect(data.aggregate.sets.every((x) => x.status === 'pending')).toBe(true);
     const v = s.workout.view(data, h.clockMs, null);
-    expect(plain(v.focus?.target)).toBe('Target (as last time) 60 kg · 10 reps');
+    expect(plain(v.focus?.target)).toBe('Target 60 kg · 10 reps');
     expect(plain(v.primary.label)).toBe('Log 60 kg × 10');
     // One workout at a time.
     expect(await s.workout.start({ ...req, opId: 'repeat-2' })).toMatchObject({ ok: false, error: { code: 'session_already_active' } });
@@ -56,7 +56,7 @@ describe('repeat a past workout', () => {
 
     h.clockMs += 86_400_000;
     const preview = await s.repeat.preview(benchDay, hotelId);
-    expect(preview?.notes.map((n) => plain(n.text))).toEqual(['No Barbell and plates at Hotel Gym: no load target (last time 100 kg × 5).']);
+    expect(preview?.notes.map((n) => plain(n.text))).toEqual(['No load target · no barbell and plates here · last time 100 kg × 5']);
     expect(preview?.notes.some((n) => n.text.includes('Kept as done'))).toBe(false);
 
     const started = await s.workout.start({ gymId: hotelId, opId: 'repeat-hotel', checkIn: null, repeatOf: benchDay });

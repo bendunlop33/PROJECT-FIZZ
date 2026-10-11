@@ -154,7 +154,7 @@ describe('first run (onboarding.md §3.1)', () => {
     // Back, then Save gym again from a fresh visit (new ID): refused, honestly.
     expect(await s.setup.saveGym({ gymId: ids(), name: 'Main gym', draft })).toEqual({
       ok: false,
-      message: 'A gym is already saved. You can edit it later in the gym editor.',
+      message: 'A gym is already saved.',
     });
     // A retry of the first save is still a duplicate, not an error.
     expect(await s.setup.saveGym({ gymId: first, name: 'Main gym', draft })).toEqual({ ok: true });

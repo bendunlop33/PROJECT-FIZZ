@@ -8,7 +8,7 @@ import type { PainFlag } from '@fizz/schemas';
  * (active-workout §2.14.3), built in `@fizz/domain` so every place says the
  * same thing. `Clear flag` is the default style, not red: nothing is deleted.
  */
-export function painClearConfirm(flag: Pick<PainFlag, 'exerciseName' | 'reportedAt'>): { title: string; message: string; confirm: string; cancel: string } {
+export function painClearConfirm(flag: Pick<PainFlag, 'exerciseName'>): { title: string; confirm: string; cancel: string } {
   return confirmCopy(flag);
 }
 

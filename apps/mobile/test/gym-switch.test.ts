@@ -61,12 +61,12 @@ describe('gym switch through the services', () => {
     const p = await s.gymSwitch.propose(sessionId, hotelId);
     if (!p || !before) throw new Error('no proposal');
     expect(p.card.title).toBe('Switch to Hotel · Lisbon');
-    expect(p.card.notChanged).toEqual(['1 logged set stays as it is.']);
+    expect(p.card.notChanged).toEqual([]);
     expect(p.card.lines.map((l) => [l.exerciseName, l.after === null ? 'kept' : 'dropped'])).toEqual([
       ['Bench press', 'dropped'],
       ['Dumbbell bench press', 'kept'],
     ]);
-    expect(p.card.lines[1]?.notes.map((n) => n.text)).toEqual(['Capped: the most here is 25 kg each.']);
+    expect(p.card.lines[1]?.notes.map((n) => n.text)).toEqual(['Max here 25 kg each']);
     // Proposing changed nothing.
     expect(await s.workout.load(sessionId)).toEqual(before);
 
@@ -87,7 +87,7 @@ describe('gym switch through the services', () => {
     expect(data.gymName).toBe('Hotel · Lisbon');
     const v = s2.workout.view(data, h.clockMs, null);
     expect(v.focus?.exerciseName).toBe('Bench press');
-    expect(v.focus?.snapNote?.text).toBe('No Barbell and plates at Hotel · Lisbon. Plan was 100 kg.');
+    expect(v.focus?.snapNote?.text).toBe('No load target · no barbell and plates here · plan 100 kg');
     expect(v.focus?.rows.map((r) => [r.status, r.gymCaption, r.partStart])).toEqual([
       ['done', 'Main Gym', null],
       ['active', null, 'At Hotel · Lisbon'],
@@ -129,7 +129,7 @@ describe('gym switch through the services', () => {
     expect(refused).toMatchObject({ ok: false, message: 'Can’t undo: your workout changed since the switch.' });
     if (refused.ok) throw new Error('expected a refusal');
     expect(refused.back?.card.title).toBe('Switch back to Main Gym');
-    expect(refused.back?.card.lines.find((l) => l.exerciseName === 'Dumbbell bench press')?.notes.map((n) => n.text)).toEqual(['Back to the planned load.']);
+    expect(refused.back?.card.lines.find((l) => l.exerciseName === 'Dumbbell bench press')?.notes.map((n) => n.text)).toEqual(['Back to plan']);
     expect((await s.workout.load(sessionId))?.aggregate.session.gymId).toBe(hotelId);
   });
 
@@ -175,7 +175,7 @@ describe('gym switch through the services', () => {
     const atMain = await s.repeat.preview(past, mainId);
     const atHotel = await s.repeat.preview(past, hotelId);
     expect(atMain?.notes).toEqual([]);
-    expect(atHotel?.notes.map((n) => plain(n.text))).toEqual(['Capped: the most here is 25 kg each. Last time 32.5 kg each.']);
+    expect(atHotel?.notes.map((n) => plain(n.text))).toEqual(['Max here 25 kg each · last time 32.5 kg each']);
     expect(await s.sessions.active()).toBeNull();
   });
 
@@ -192,7 +192,7 @@ describe('gym switch through the services', () => {
     if (!atHotel) throw new Error('no preview');
     const bar = atHotel.notes.find((n) => n.exerciseName === 'Bench press');
     expect(bar?.tone).toBe('warning');
-    expect(plain(bar?.text)).toMatch(/^No .+ at Hotel · Lisbon: no load target \(last time 100 kg × 5\)\.$/);
+    expect(plain(bar?.text)).toMatch(/^No load target · no .+ here · last time 100 kg × 5$/);
     expect(atHotel.notes.find((n) => n.exerciseName === 'Dumbbell bench press')?.tone).toBe('info');
     h.clockMs += 86_400_000;
     const started = await s.workout.start({ gymId: hotelId, opId: 'repeat-at-hotel', checkIn: { kind: 'skipped', atUtc: h.now().utc }, repeatOf: past });
@@ -284,7 +284,7 @@ describe('the switch card on screen (gym-switch §2.2–§3.3)', () => {
     const v = switchCardView(card, data.aggregate);
     expect(v.title).toBe('Switch to Hotel · Lisbon');
     expect(v.tags).toEqual(['Checks', 'Today only']);
-    expect(v.notChanged).toEqual(['1 logged set stays as it is.']);
+    expect(v.notChanged).toEqual([]);
     expect(v.buttons.map((b) => b.label)).toEqual(['Not now', 'Switch']);
     expect(v.status).toBeNull();
     const applying = switchCardView({ ...card, status: 'applying' }, data.aggregate);
@@ -293,7 +293,7 @@ describe('the switch card on screen (gym-switch §2.2–§3.3)', () => {
       { id: 'switch', label: 'Switching…', disabled: true },
     ]);
     const failed = switchCardView({ ...card, status: 'error' }, data.aggregate);
-    expect(failed.status).toEqual({ tone: 'warning', text: 'Couldn’t switch gym. Nothing changed.' });
+    expect(failed.status).toEqual({ tone: 'warning', text: 'Couldn’t switch gym.' });
     expect(failed.buttons.at(-1)).toEqual({ id: 'try_again', label: 'Try again' });
   });
 
@@ -345,7 +345,7 @@ describe('the switch card on screen (gym-switch §2.2–§3.3)', () => {
     const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: v.focus?.opId ?? '', setId: v.focus?.setId ?? '', values: v.focus?.logValues ?? { load: null, reps: 8, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
     if (!logged.ok) throw new Error(logged.error.message);
     const stale = switchCardView(card, logged.aggregate);
-    expect(stale.status?.text).toBe('Out of date. Your workout changed since this was checked.');
+    expect(stale.status?.text).toBe('Out of date');
     expect(stale.buttons.map((b) => b.id)).toEqual(['dismiss', 'check_again']);
     expect(stale.tags).toBeNull();
     expect(stale.muted).toBe(true);
@@ -400,7 +400,7 @@ describe('the switch card on screen (gym-switch §2.2–§3.3)', () => {
     const many = { ...p, card: { ...p.card, lines: [...p.card.lines, ...p.card.lines, ...p.card.lines], visibleLines: 3, reviewLabel: 'Review all 6 changes ›' } };
     const card: OpenSwitchCard = { proposal: many, opId: 'op-4', status: 'ready' };
     const failed = reviewSheetView({ ...card, status: 'error' }, data.aggregate);
-    expect(failed.status).toEqual({ tone: 'warning', text: 'Couldn’t switch gym. Nothing changed.' });
+    expect(failed.status).toEqual({ tone: 'warning', text: 'Couldn’t switch gym.' });
     expect(failed.primary).toEqual({ id: 'try_again', label: 'Try again' });
     // A set logged while the sheet is open makes it Out of date: no Switch on the sheet.
     const v = s.workout.view(data, h.clockMs, null);
@@ -408,7 +408,7 @@ describe('the switch card on screen (gym-switch §2.2–§3.3)', () => {
     const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: v.focus?.opId ?? '', setId: v.focus?.setId ?? '', values: v.focus?.logValues ?? { load: null, reps: 8, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
     if (!logged.ok) throw new Error(logged.error.message);
     const stale = reviewSheetView(card, logged.aggregate);
-    expect(stale.status?.text).toBe('Out of date. Your workout changed since this was checked.');
+    expect(stale.status?.text).toBe('Out of date');
     expect(stale.primary).toEqual({ id: 'check_again', label: 'Check again' });
     expect(stale.secondary).toEqual({ id: 'dismiss', label: 'Dismiss' });
     expect(stale.tags).toBeNull();

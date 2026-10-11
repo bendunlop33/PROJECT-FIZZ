@@ -9,5 +9,5 @@ export function pickerEmptyText(load: PickerLoad, query: string): string {
   if (load === 'loading') return 'Loading exercises…';
   if (load === 'failed') return 'Couldn’t load exercises. Go back and try again.';
   if (q === '') return 'No exercises yet.';
-  return `No exercise matches “${q}”. Try a shorter word, like “press” or “row”.`;
+  return `No match for “${q}”`;
 }

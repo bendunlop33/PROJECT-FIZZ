@@ -119,7 +119,7 @@ export function ImportResultsScreen() {
           {v.from}
         </AppText>
       </Card>
-      {block !== null && v.canContinue ? <StatusLine icon="info.circle" tone="info" text={`Finish or discard your workout first (${block.title}).`} /> : null}
+      {block !== null && (v.canContinue || v.canUndo) ? <StatusLine icon="info.circle" tone="info" text={`Finish or discard your workout first (${block.title}).`} /> : null}
       {note ? <StatusLine icon={note.ok ? 'checkmark.circle.fill' : 'exclamationmark.triangle'} tone={note.ok ? 'done' : 'warning'} text={note.text} /> : null}
 
       {v.imported ? (
@@ -175,7 +175,6 @@ export function ImportResultsScreen() {
 
       <TextButton label="Save row-by-row results (CSV)" onPress={() => void saveResults()} />
       {v.canUndo ? <TextButton label="Undo this import" onPress={undo} disabled={block !== null} /> : null}
-      {v.canUndo && block !== null ? <AppText variant="callout" color="text.secondary">{`Undo is available after you finish or discard your workout (${block.title}).`}</AppText> : null}
     </Screen>
   );
 }

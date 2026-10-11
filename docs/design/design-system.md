@@ -336,7 +336,7 @@ Rules:
 | `timing.coachTimeout` | 20 s. A coach adjustment request, a coach-sheet turn or a voice question with no first answer (first chunk, tool call or result) by then shows `The coach didn't answer in time. Nothing changed.` Replaces coach-sheet's `timing.coachFirstToken` |
 | `timing.coachStreamStall` | 20 s without a new chunk in the middle of a coach reply → `The reply was cut off. Anything applied is shown above.` (coach-sheet.md §3) |
 | `timing.coachBuildTimeout` | 60 s. A workout-builder request with no answer by then shows `The coach didn't answer in time. Nothing was built.` |
-| `timing.signInTimeout` | 5 min. ChatGPT sign-in listener and browser sheet close; `Sign-in took too long. Nothing was connected.` (ai-connection.md §2.3) |
+| `timing.signInTimeout` | 5 min. ChatGPT sign-in listener and browser sheet close; `Sign-in took too long.` (ai-connection.md §2.3) |
 | `timing.placeholderDelay` | 300 ms. A local read that takes longer than this shows static grey placeholder rows (never shimmer). Under it, nothing extra shows |
 | `timing.coverDelay` | 1 s. A start-up or data operation shorter than this shows no `BlockingCover` (system-states.md §3.6) |
 | `timing.staleWorkout` | 6 h since the last activity. Under it a cold launch opens the workout (P6) and the `ResumeBar` shows; at or over it, Today shows the stale-workout card |
@@ -413,7 +413,7 @@ Target source (revision 2026-10-08, ADR 0006). A target's source is shown only w
 | Plan / built-in rule (in workout) | Default; no tag | `Target 100 kg × 6–8` | "Target …" |
 | Coach (in workout, pending sets) | Focused card, mini list, Overview | Label `Coach target`, `TargetSourceTag` `Coach`; Overview text badge `C` (set-type badge style); second line `Plan was …` in `text.secondary` | "Coach target, … Plan was …" |
 | Coach (summary `Next time`) | Summary rows | `TargetSourceTag` `Coach` | "Source: coach" |
-| Built-in rule (summary `Next time`) | Summary rows | `TargetSourceTag` `Built-in rule`, `Built-in rule (coach offline)` or `Built-in rule (coach unavailable)` | Same text |
+| Built-in rule (summary `Next time`) | Summary rows | `TargetSourceTag` `Rule` (`Why?` names the built-in rule) | Same text |
 
 **`TargetSourceTag`** (alias of `SourceTag`, §9.28, revision consolidation): a text tag, `type.label`, `text.secondary` on `bg.raised`, `radius.sm`, padding `space.1`/`space.2`. The `Coach` tag adds the `text.bubble` icon before the word (the same icon as the Talk button's text state). It is not tappable on its own. It never uses `accent` (accent stays for the primary action and the active set) and never relies on colour. New specs should say `SourceTag`.
 
@@ -765,7 +765,7 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 
 | Kind | Texts | Icon |
 |---|---|---|
-| Target source | `Coach` · `Built-in rule` · `Built-in rule (coach offline)` · `Built-in rule (coach unavailable)` · `Fixed` | `text.bubble` (Coach); none otherwise |
+| Target source | `Coach` · `Rule` · `Suggested` · `Fixed` | `text.bubble` (Coach); none otherwise |
 | Author of a routine, proposal or rule | `Coach` · `Ben` · `Checks` · `Imported` · `From the research` · `From your guide` | `text.bubble` · `person` · `checkmark.shield` · `square.and.arrow.down` · `books.vertical` · `book.closed` |
 | Data provenance | `Your logs` · `FitNotes import` · `Garmin file, imported 3 Oct` · `Built-in summary` | `iphone` · `square.and.arrow.down` · `gearshape` |
 | Value provenance (how trustworthy a stored value is) | `Typical values, not checked` · `Checked by you` · `Set in setup, 8 Oct` · `Changed by you, 12 Oct` · `From coach chat, 14 Oct · you confirmed` · (9 Oct) `Default` (a playbook number from the research, coaching-playbook PB14) | `questionmark.circle` · `checkmark` · none · `books.vertical` (Default) |

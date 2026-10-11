@@ -50,9 +50,6 @@ Two separate things are set up here, and the UI keeps them apart:
 │ Text coach                             │ type.headline
 │ ┌────────────────────────────────────┐ │
 │ │ ⊘ Not connected                    │ │ icon + word
-│ │ Logging, targets, rest timers and  │ │
-│ │ built-in progression work without  │ │
-│ │ the coach.                         │ │
 │ └────────────────────────────────────┘ │
 │                                        │
 │ Your ChatGPT Plus or Pro plan can run  │ type.callout
@@ -140,8 +137,6 @@ Sequence, all on the phone:
 │ ✓ Signed in as you@example.com         │ step 1
 │ … Checking coach access                │ step 2: scope chatgpt.tokens.use.direct
 │ ○ Finding available models             │ step 3: GET /v1/models
-│                                        │
-│ Nothing is used from your plan yet.    │ text.secondary
 └────────────────────────────────────────┘
 ```
 
@@ -322,19 +317,19 @@ A static 4pt bar under each line (filled share in `text.secondary`, no animation
 | Checking | §2.4 | — |
 | Connected (first time) | §2.5 | Coach available |
 | Connected | §2.6 | Route line `Using ChatGPT plan · Manage usage` |
-| Cancelled | Inline `Sign-in cancelled. Nothing was connected.` on §2.1 | — |
+| Cancelled | Inline `Sign-in cancelled.` on §2.1 | — |
 | Didn't come back | `The sign-in page didn't return to Fizz.` · `This can happen if you switch apps while signing in.` [Try again]. After 2 failures in a row: also `Signing in may not work on this iPhone yet.` [Use an OpenAI API key] | — |
-| Timed out (5 min) | `Sign-in took too long. Nothing was connected.` [Try again] | — |
+| Timed out (5 min) | `Sign-in took too long.` [Try again] | — |
 | Not eligible (`subscription_sharing_user_not_eligible`) | `⊘ This ChatGPT account can't be used by other apps.` · `Plus and Pro plans can, unless a work or school workspace blocks it.` [Use a different account] [Use an OpenAI API key]. **No automatic retry or repeated sign-in** | `Coach not connected` |
 | Coach access not granted (scope missing) | `Signed in, but ChatGPT didn't allow coach replies for this app.` [Try again] [Use an OpenAI API key] | `Coach not connected` |
 | Region not supported (403 region policy) | `ChatGPT plan use in other apps isn't available in your region.` [Use an OpenAI API key] | `Coach not connected` |
 | No network (before sign-in) | `Continue with ChatGPT` disabled, caption `Needs internet` | — |
 | Refreshing | Nothing shown (silent) | Unchanged |
 | Expired / revoked (refresh fails, 401) | Card `⚠ ChatGPT disconnected` · `Sign in again to use the coach. Your conversations and memory are kept.` [Sign in again] | Coach sheet banner `ChatGPT disconnected…` |
-| Usage limit (`subscription_sharing_usage_limit_exceeded`, 429) | Card `⚠ ChatGPT usage limit reached` · `The coach is paused. Logging and built-in targets still work.` · primary `Manage usage` · if a key exists: `Switch coach to your API key (paid) ›`. **No reset time is shown** (an app-specific cap may apply) | Coach sheet banner; `Adjust` outcome `Couldn't reach the coach (limit reached). Nothing changed.`; summary `Built-in rule (coach unavailable)` |
+| Usage limit (`subscription_sharing_usage_limit_exceeded`, 429) | Card `⚠ ChatGPT usage limit reached` · `Coach paused` · primary `Manage usage` · if a key exists: `Switch coach to your API key (paid) ›`. **No reset time is shown** (an app-specific cap may apply) | Coach sheet banner; `Adjust` outcome `Couldn't reach the coach (limit reached). Nothing changed.`; summary `Built-in rule (coach unavailable)` |
 | Usage temporarily unavailable (`subscription_sharing_usage_unavailable`) | `ChatGPT usage isn't available right now. Try again later.` [Try again] | `Couldn't reach the coach…` |
 | Model unavailable | `⚠ GPT-6.1 Sol isn't available any more.` [Choose model] (AC6) | Coach paused |
-| Disconnect confirm | Alert: `Disconnect ChatGPT? The coach stops until you connect again. Your workouts, conversations and memory stay.` [Disconnect] [Cancel] | — |
+| Disconnect confirm | Alert: `Disconnect ChatGPT?` (title and buttons only) [Disconnect] [Cancel] | — |
 | Disconnected | §2.1 with toast `ChatGPT disconnected` | `Coach not connected` |
 
 ### 3.2 Text coach: OpenAI API key
@@ -406,23 +401,23 @@ The arrow from `Limit` to `Key in use` exists only through Ben's tap and the cos
 | Element | Text |
 |---|---|
 | Screen | `Coach connection` · sections `Text coach` · `Coach uses` · `Coach voice` |
-| Not connected | `Not connected` · `Logging, targets, rest timers and built-in progression work without the coach.` |
+| Not connected | `Not connected` |
 | Plan pitch | `Your ChatGPT Plus or Pro plan can run the coach's text replies. Voice isn't included.` |
 | Primary | `Continue with ChatGPT` · `Use an OpenAI API key` · `Check and save key` · `Done` |
 | Links | `Use an OpenAI API key instead (paid) ›` · `Continue without the coach` · `Manage usage ›` |
 | Explainer | Title `Connect your ChatGPT plan` · bullets as §2.2 · `A ChatGPT sign-in page opens next. If you need a code from another app, have it ready first.` |
 | Waiting | `Waiting for ChatGPT sign-in` · `Finish signing in on the ChatGPT page.` |
-| Checking | `Connecting ChatGPT` · `Signed in as <email>` · `Checking coach access` · `Finding available models` · `Nothing is used from your plan yet.` |
+| Checking | `Connecting ChatGPT` · `Signed in as <email>` · `Checking coach access` · `Finding available models` |
 | First use | `You're using your ChatGPT plan` · `The coach's replies now count toward your ChatGPT plan. You can set a limit for this app and see usage in ChatGPT.` · `Voice isn't part of your plan. Spoken replies use Apple's voice.` · model tag `tested with Fizz` |
 | Connected | `Connected · ChatGPT plan` · `Signed in as <email>` · `Model: <display_name>` · `This week: 42 coach messages from this phone` · `Limits are set in ChatGPT.` |
 | Route options | `ChatGPT plan · Included` · `OpenAI API key · Paid · not set up` / `Paid · sk-…3F9a` |
 | Unsupported | `ChatGPT sign-in doesn't work on iPhone yet` · `OpenAI's sign-in for personal apps returns to a local address that this iPhone app can't receive yet. We'll turn it on if a test passes.` |
-| Failures | `Sign-in cancelled. Nothing was connected.` · `The sign-in page didn't return to Fizz.` · `This can happen if you switch apps while signing in.` · `Signing in may not work on this iPhone yet.` · `Sign-in took too long. Nothing was connected.` · `This ChatGPT account can't be used by other apps.` · `Plus and Pro plans can, unless a work or school workspace blocks it.` · `Signed in, but ChatGPT didn't allow coach replies for this app.` · `ChatGPT plan use in other apps isn't available in your region.` · `Needs internet` |
+| Failures | `Sign-in cancelled.` · `The sign-in page didn't return to Fizz.` · `This can happen if you switch apps while signing in.` · `Signing in may not work on this iPhone yet.` · `Sign-in took too long.` · `This ChatGPT account can't be used by other apps.` · `Plus and Pro plans can, unless a work or school workspace blocks it.` · `Signed in, but ChatGPT didn't allow coach replies for this app.` · `ChatGPT plan use in other apps isn't available in your region.` · `Needs internet` |
 | Expired | `ChatGPT disconnected` · `Sign in again to use the coach. Your conversations and memory are kept.` [Sign in again] |
-| Limit | `ChatGPT usage limit reached` · `The coach is paused. Logging and built-in targets still work.` [Manage usage] · `Switch coach to your API key (paid) ›` |
+| Limit | `ChatGPT usage limit reached` · `Coach paused` [Manage usage] · `Switch coach to your API key (paid) ›` |
 | Unavailable | `ChatGPT usage isn't available right now. Try again later.` |
 | Model gone | `<model> isn't available any more.` [Choose model] · toast `Coach will use <model>` |
-| Disconnect | `Disconnect ChatGPT` · `Disconnect ChatGPT? The coach stops until you connect again. Your workouts, conversations and memory stay.` [Disconnect] [Cancel] · toast `ChatGPT disconnected` |
+| Disconnect | `Disconnect ChatGPT` · `Disconnect ChatGPT?` [Disconnect] [Cancel] · toast `ChatGPT disconnected` |
 | Key screen | Title `OpenAI API key · text` / `OpenAI voice` · `OpenAI bills you for each coach message.` · cost estimate line with date · steps 1–2 · `Key` · `Paste` · `Stop at (this app's estimate)` · `The app stops sending before this. OpenAI's budget is the hard limit.` · `Stored in this iPhone's Keychain. Not in backups.` |
 | Key errors | `That doesn't look like an OpenAI key.` · `OpenAI didn't accept this key. Check you copied all of it.` · `This key works, but its project can't use any chat models. Check the project's model settings on OpenAI.` · `Can't check the key without internet.` |
 | Switch confirm | `Use your API key for the coach now?` · `OpenAI bills you for each message.` · `This month: $0.00 of your $5 cap.` [Keep ChatGPT plan] [Use API key] |
@@ -496,7 +491,7 @@ No new colours.
 - [onboarding.md](onboarding.md) §2.8: the optional first-run entry to §2.2 and §2.7.
 - [data-import-export.md](data-import-export.md) §2.7: `Delete my data` disconnects and removes keys.
 - [voice.md](voice.md) §6: speech input engine and the spoken-reply engine switch at runtime.
-- [coach-adjustments.md](coach-adjustments.md) §3.1 and [workout-summary.md](workout-summary.md): coach failure lines and `Built-in rule (coach unavailable)`.
+- [coach-adjustments.md](coach-adjustments.md) §3.1 and [workout-summary.md](workout-summary.md): coach failure lines and the `Rule` tag.
 - [rest-state.md](rest-state.md) §5: Conversation mode is selectable only when `getAiCapabilities` reports a route; set cues always Apple.
 - [today.md](today.md), [active-workout.md](active-workout.md) §4.7: `Offline` / `Ask` / `Coach not connected` states.
 - Research: [ai-access-and-voice.md](../research/ai-access-and-voice.md) §1 (OAuth, errors, UI guidelines), §3 (cost estimates), spike S1–S8.

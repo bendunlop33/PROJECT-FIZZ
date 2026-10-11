@@ -71,7 +71,7 @@ function AlertsAskCard({ visible, onAllow, onLater, onDismissed }: { visible: bo
           <AppText variant="title2" accessibilityRole="header">
             Rest alerts
           </AppText>
-          <AppText variant="body">Get an alert when rest ends while your phone is locked?</AppText>
+          <AppText variant="body">Alert when rest ends?</AppText>
           <PrimaryButton label="Allow" onPress={onAllow} />
           <View style={{ alignItems: 'center' }}>
             <TextButton label="Not now" tone="secondary" onPress={onLater} />

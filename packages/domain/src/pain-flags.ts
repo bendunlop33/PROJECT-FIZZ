@@ -31,8 +31,10 @@ export const PAIN_AREA_WORD: Readonly<Record<PainArea, string | null>> = {
   other: null,
 };
 
-export const PAIN_NO_INCREASES = 'No increases in load, reps or sets.';
-export const PAIN_PROFESSIONAL_TEXT = 'If pain is sharp, keeps coming back or doesn’t settle, see a physio or doctor. The coach can’t diagnose.';
+export const PAIN_NO_INCREASES = 'No increases';
+export const PAIN_PROFESSIONAL_TEXT = 'Sharp or lasting pain: see a physio or doctor.';
+/** The red-flag line on the check-in pain step: safety, so always visible (minimal-copy D2). */
+export const PAIN_RED_FLAG_TEXT = 'Chest pain, faintness or sudden severe pain: stop and get medical help now.';
 export const MAY_HURT_TAG = 'May hurt';
 
 const areaWord = (flag: Pick<PainFlag, 'area'>): string | null => (flag.area === null ? null : PAIN_AREA_WORD[flag.area]);
@@ -194,7 +196,7 @@ export function mayHurtConfirm(flag: Pick<PainFlag, 'exerciseName' | 'area' | 'r
   const area = areaWord(flag);
   return {
     title: `${flag.exerciseName} may hurt`,
-    message: `You flagged ${area === null ? '' : `${area} `}pain on it on ${painFlagDay(flag)}. Loads won’t go up while the flag is on.`,
+    message: `${area === null ? 'Pain' : `${area.charAt(0).toUpperCase()}${area.slice(1)} pain`} flagged ${painFlagDay(flag)}.`,
     confirm: 'Add anyway',
     cancel: 'Choose another',
   };
@@ -205,11 +207,14 @@ export function mayHurtAccessibility(flag: Pick<PainFlag, 'area'>): string {
   return `May hurt: you flagged ${area === null ? '' : `${area} `}pain on it.`;
 }
 
-/** The clear confirmation (AW10; revises coach-memory §2.7). Default style, not red: clearing isn't destructive. */
-export function painClearConfirm(flag: Pick<PainFlag, 'exerciseName' | 'reportedAt'>): { title: string; message: string; confirm: 'Clear flag'; cancel: 'Keep it' } {
+/**
+ * The clear confirmation (AW10; revises coach-memory §2.7). Default style, not
+ * red: clearing isn't destructive. Title and buttons only (minimal copy S11):
+ * the toast that follows has Undo.
+ */
+export function painClearConfirm(flag: Pick<PainFlag, 'exerciseName'>): { title: string; confirm: 'Clear flag'; cancel: 'Keep it' } {
   return {
     title: `Clear the pain flag on ${flag.exerciseName}?`,
-    message: `Loads, reps and sets can go up again, starting from your recent sets. Your sets from before ${painFlagDay(flag)} stay in your history as the reference.`,
     confirm: 'Clear flag',
     cancel: 'Keep it',
   };

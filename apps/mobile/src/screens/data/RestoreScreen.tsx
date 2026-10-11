@@ -13,7 +13,7 @@ import { plural } from '../../format/numbers';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useRelaunch, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Card, Group, PrimaryButton, Row, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
+import { AppText, Card, Group, InfoLine, PrimaryButton, Row, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
 import { BlockingCover } from './BlockingCover';
 import { SaveCopyToFiles } from './SaveCopyToFiles';
 
@@ -83,7 +83,7 @@ export function RestoreScreen(props: { mode?: 'restore' | 'check'; fromWelcome?:
     setStep({ kind: 'checking', label });
     const text = await read();
     if (text === null) {
-      setStep({ kind: 'error', label, text: 'That backup couldn’t be read from this phone. Nothing was changed.' });
+      setStep({ kind: 'error', label, text: 'That backup couldn’t be read from this phone. Data unchanged.' });
       return;
     }
     const r = isRestore ? await services.restore.prepare(text) : await services.restore.check(text);
@@ -106,7 +106,7 @@ export function RestoreScreen(props: { mode?: 'restore' | 'check'; fromWelcome?:
     const picked = await pickBackupFile().catch((e: unknown) => ({ kind: 'failed' as const, message: e instanceof Error ? e.message : String(e) }));
     if (picked.kind === 'cancelled') return;
     if (picked.kind === 'failed') {
-      setStep({ kind: 'error', label: 'File', text: `Couldn’t open that file: ${picked.message}. Nothing was changed.` });
+      setStep({ kind: 'error', label: 'File', text: `Couldn’t open that file: ${picked.message}. Data unchanged.` });
       return;
     }
     await examine(picked.name, () => Promise.resolve(picked.text));
@@ -192,9 +192,6 @@ export function RestoreScreen(props: { mode?: 'restore' | 'check'; fromWelcome?:
         <AppText variant="body">{`Your data now matches the backup ${step.view.made.replace(/^Made /, 'made ')}.`}</AppText>
         <AppText variant="callout" color="text.secondary" numeric>
           {step.counts}
-        </AppText>
-        <AppText variant="callout" color="text.secondary">
-          Done reopens GymSmarter’s data. Your previous data is kept until the next restore.
         </AppText>
         <TextButton label="Undo restore" onPress={undo} />
       </Screen>
@@ -316,14 +313,12 @@ export function RestoreScreen(props: { mode?: 'restore' | 'check'; fromWelcome?:
             </View>
           ) : null}
           {!isRestore ? (
-            <AppText variant="callout" color="text.secondary">
-              Checking rebuilds the backup in a test copy and checks every record, then throws the copy away. Nothing on this phone changes.
-            </AppText>
+            <InfoLine infoLabel="About checking" info="Checking rebuilds the backup in a test copy and checks every record, then throws the copy away. Nothing on this phone changes." />
           ) : null}
           <SectionHeader title="On this phone" />
           {copies.length === 0 ? (
             <AppText variant="callout" color="text.secondary">
-              No backups on this phone yet. The first one is made after your first workout.
+              No backups on this phone yet
             </AppText>
           ) : (
             <Group>
@@ -342,7 +337,7 @@ export function RestoreScreen(props: { mode?: 'restore' | 'check'; fromWelcome?:
             <Row title="Choose another file…" icon="folder" disabled={blockedForRestore} onPress={() => void chooseFile()} accessibilityHint="Opens Files to pick a GymSmarter backup" />
           </Group>
           <AppText variant="callout" color="text.secondary">
-            Backups on this phone are lost if GymSmarter is deleted or re-signed with another Apple ID. Copies you saved to Files are under Choose another file.
+            Copies in Files: Choose another file
           </AppText>
         </>
       ) : null}

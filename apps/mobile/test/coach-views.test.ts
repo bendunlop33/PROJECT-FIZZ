@@ -47,7 +47,8 @@ describe('status (minimal copy: a word or two, the rest behind Why?)', () => {
     expect(v.word).toBe(word);
     expect(v.canSend).toBe(canSend);
     if (word !== null) expect(word.split(' ').length).toBeLessThanOrEqual(2);
-    if (status !== 'ok') expect(v.why).not.toBeNull();
+    // Not connected: the `Connect` action is enough (minimal-copy W1).
+    if (status !== 'ok' && status !== 'not_connected') expect(v.why).not.toBeNull();
   });
 
   it('the route line always names the route; never a paid route', () => {
@@ -118,7 +119,8 @@ describe('the workout coach slot (one item: pending > banner > outcome > offer)'
   it('priority', () => {
     expect(slotView({ pending: true, adjustment: adjust, outcome: null, offer })).toMatchObject({ kind: 'pending' });
     const banner = slotView({ pending: false, adjustment: adjust, outcome: { text: 'x', retry: false }, offer });
-    expect(banner).toMatchObject({ kind: 'banner', canUndo: true, notes: ['Rounded to 97.5 kg: nearest your bar and plates allow.'] });
+    // W13: guard notes are Why? checks; only a pain block shows on the banner.
+    expect(banner).toMatchObject({ kind: 'banner', canUndo: true, notes: [] });
     expect(nb(banner?.kind === 'banner' ? banner.title : '')).toBe('Coach adjusted sets 3–4');
     expect(nb(banner?.kind === 'banner' ? banner.detail : '')).toBe('100 → 97.5 kg × 6–8');
     expect(slotView({ pending: false, adjustment: null, outcome: { text: 'Your workout moved on. Nothing changed.', retry: true }, offer })).toMatchObject({ kind: 'outcome', retry: true });
@@ -175,7 +177,7 @@ describe('Next time (D21): coach rows over the built-in rule', () => {
     const v = nextTimeView(input([coachRow(1, 'saved'), coachRow(2, 'saved')]));
     expect(v?.heading).toBe('Next time · Push A');
     expect(v?.rows[0]).toMatchObject({ tag: 'Coach', pct: '−4.2%', actions: [{ label: 'Undo', tap: 'undo' }] });
-    expect(v?.rows[0]?.why.map(nb)).toEqual(['“Every set was RPE 10.”', 'Built-in rule would be 62.5 kg × 8–10 · 3 sets']);
+    expect(v?.rows[0]?.why.map(nb)).toEqual(['“Every set was RPE 10.”', 'Rule: 62.5 kg × 8–10 · 3 sets']);
     expect(v?.undoAll).toEqual({ actionId: ID(77) });
   });
 
@@ -201,7 +203,7 @@ describe('Next time (D21): coach rows over the built-in rule', () => {
 
   it('undone → the built-in rule with Use coach target; proposed → Not now / Apply; used → no buttons', () => {
     const v = nextTimeView(input([coachRow(1, 'undone'), coachRow(2, 'proposed')]));
-    expect(v?.rows[0]).toMatchObject({ tag: 'Built-in rule', target: 'Target 61 kg × 8–10', actions: [{ label: 'Use coach target' }] });
+    expect(v?.rows[0]).toMatchObject({ tag: 'Rule', target: 'Target 61 kg × 8–10', actions: [{ label: 'Use coach target' }] });
     expect(v?.rows[1]).toMatchObject({ tag: 'Suggested', actions: [{ label: 'Not now' }, { label: 'Apply' }] });
     expect(v?.undoAll).toBeNull();
     const used = nextTimeView(input([coachRow(1, 'saved', { usedBySessionId: ID(99) })]));

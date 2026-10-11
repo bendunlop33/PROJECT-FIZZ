@@ -96,7 +96,7 @@ describe('correctSet with exclusion chips (§2.13, AW6)', () => {
     expect(set).not.toHaveProperty('exclusions');
     expect(after?.audit.filter((e) => e.setId === first.id).map((e) => e.kind)).toEqual(['logged', 'corrected', 'corrected']);
     // The toast's Undo again, after the set moved on: refused, never applied to newer state.
-    expect(await s.workout.undoMark({ sessionId, ...r.undo, opId: 'undo-2' })).toEqual({ ok: false, message: 'Can’t undo: this set changed. Tap it to edit.' });
+    expect(await s.workout.undoMark({ sessionId, ...r.undo, opId: 'undo-2' })).toEqual({ ok: false, message: 'Can’t undo: this set changed' });
   });
 
   it('a stale sheet writes nothing (no pain flag either)', async () => {

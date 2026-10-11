@@ -148,7 +148,7 @@ export interface WorkoutServicesContext {
 
 export type CheckInWrite = { ok: true; checkIn: CheckIn; duplicate: boolean } | { ok: false; message: string; stale?: boolean };
 
-const CHECK_IN_WRITE_FAILED = 'Check-in wasn’t saved. Your workout can start as normal.';
+const CHECK_IN_WRITE_FAILED = 'Check-in not saved';
 const RECENT_WINDOW_MS = 3 * 60 * 60 * 1000;
 /** Said on the workout when "Start next session" couldn't work out targets (review S2). */
 /** See `recordContext`. */
@@ -1443,7 +1443,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const r = ctx.afterCommand(
           await domain().dispatch(req.sessionId, { type: 'correct_set', at: ctx.now(), opId: req.opId, setId: req.setId, expectedSetVersion: req.setVersion, patch: { exclusions: req.previous } }),
         );
-        if (!r.ok) return { ok: false, message: r.error.code === 'stale_version' ? 'Can’t undo: this set changed. Tap it to edit.' : r.error.message };
+        if (!r.ok) return { ok: false, message: r.error.code === 'stale_version' ? 'Can’t undo: this set changed' : r.error.message };
         if (req.painFlags.length === 0) return { ok: true, message: null };
         const retracted = await pain.retract(req.painFlags, `${req.opId}:pain`);
         if (!retracted.ok) return { ok: false, message: 'Set undone. The pain flag wasn’t removed. Try again.' };
@@ -1546,7 +1546,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     /**
      * Add an exercise. Its sets are planned from the built-in rule's next
      * targets for this exercise and equipment (the same result the last
-     * Summary showed, labelled `Target (built-in rule)`; review S3), or one
+     * Summary showed, shown as `Target`, its source behind `Why?`; review S3, minimal-copy D1), or one
      * empty set when there's no comparable history.
      */
     async addExercise(req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string }): Promise<CommandOutcome> {
@@ -1716,7 +1716,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         return { ok: true, outcome: r, gymName: gym?.name ?? 'the last gym' };
       }
       const back = last.fromGymId === null ? null : await gymSwitch.propose(sessionId, last.fromGymId).catch(() => null);
-      return { ok: false, message: r.error.code === 'write_failed' ? 'Couldn’t undo. Nothing changed.' : 'Can’t undo: your workout changed since the switch.', back };
+      return { ok: false, message: r.error.code === 'write_failed' ? 'Couldn’t undo.' : 'Can’t undo: your workout changed since the switch.', back };
     },
   };
 

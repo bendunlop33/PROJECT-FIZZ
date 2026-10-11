@@ -231,7 +231,7 @@ function reasonRow(p: TargetProvenance | undefined, planned: PlannedSet, ex: Ses
     case 'plan':
       return { key: 'reason', label: 'Reason', lines: [`${p.routineName ?? 'Your routine'} sets ${planTargetText(planned, p.requestedLoad, ex, eq)}.`], kind: 'app' };
     case 'repeat':
-      return { key: 'reason', label: 'Reason', lines: ['What you did last time is today’s target. No progression is applied.'], kind: 'app' };
+      return { key: 'reason', label: 'Reason', lines: ['Same as last time'], kind: 'app' };
     case 'coach': {
       // The coach's own words, in quotes (never shown as app text); none given, no row.
       const reason = p.coach?.reason ?? null;
@@ -321,9 +321,9 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
   if (ref?.active) {
     const area = ref.flag.area === null ? null : PAIN_AREA_WORD[ref.flag.area];
     const since = dayMonthText(ref.flag.reportedAt.utc, ref.flag.reportedAt.tz);
-    const lines = [`Flag on since ${since}${area === null ? '' : ` (${area})`}. Loads, reps and sets can’t go up.`];
+    const lines = [`Since ${since}${area === null ? '' : ` (${area})`} · no increases`];
     // A flag set after the target was made doesn't change it (targets already planned stay as they are).
-    if (p !== undefined && toMs(ref.flag.reportedAt.utc) > toMs(p.setAt.utc)) lines.push('Flagged after this target was set, so the target wasn’t changed.');
+    if (p !== undefined && toMs(ref.flag.reportedAt.utc) > toMs(p.setAt.utc)) lines.push('Flagged after this target was set');
     // `Check due ›` opens the pain flag sheet with `Still hurts?` first (§2.14.2).
     const checkDue = isPainCheckDue(ref.flag, input.nowMs, tz);
     rows.push({ key: 'pain', label: 'Pain', lines, kind: 'warning', ...(checkDue ? { link: { kind: 'pain_flag', flagId: ref.flag.id, label: 'Check due ›' } } : {}) });

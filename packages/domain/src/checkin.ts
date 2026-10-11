@@ -179,7 +179,7 @@ export function evaluateCheckInOffer(input: {
     case 'not_connected':
       return null;
     case 'offline':
-      return { kind: 'offline_line', text: 'Check-in saved. Coach offline, so today’s plan is unchanged.' };
+      return { kind: 'offline_line', text: 'Coach offline' };
     case 'available':
       return { kind: 'offer', triggerId: `check_in_low:${checkIn.id}`, fact: checkInFact(checkIn) };
   }

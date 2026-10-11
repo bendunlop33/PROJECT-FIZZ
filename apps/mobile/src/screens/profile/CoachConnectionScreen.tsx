@@ -152,7 +152,7 @@ export function CoachConnectionScreen() {
         void clearProviderFailure(ports.settings).then(() => reload(models));
         return;
       case 'disconnect':
-        Alert.alert('Disconnect ChatGPT?', 'The coach stops until you connect again. Your workouts stay.', [
+        Alert.alert('Disconnect ChatGPT?', undefined, [
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Disconnect',
@@ -219,9 +219,11 @@ export function CoachConnectionScreen() {
             <StatusLine key={l.text} icon={l.icon} tone={l.tone} text={l.text} />
           ))}
         </View>
-        <AppText variant="callout" color="text.secondary">
-          {v.footnote}
-        </AppText>
+        {v.footnote !== null ? (
+          <AppText variant="callout" color="text.secondary">
+            {v.footnote}
+          </AppText>
+        ) : null}
       </Screen>
     );
   }

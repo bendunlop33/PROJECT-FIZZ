@@ -12,11 +12,12 @@ import type {
   TargetProvenance,
   ZonedTimestamp,
 } from '@fizz/schemas';
-import { loadText, NBSP } from '../display';
+import { formatNumber, loadText, NBSP } from '../display';
 import { loadDirection } from '../equipment';
 import { fitProvenance, startWarningNote } from '../target-provenance';
 import { toMs } from '../time';
 import { startWorkout, type StartWorkoutInput, type StartWorkoutOutput } from './create';
+import { boundWords, convertedWords, noLoadWords, roundedWords, withWas } from './fit-words';
 import type { RepeatNote } from './repeat';
 import type { SnapResult } from './snap';
 
@@ -312,10 +313,9 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
     ...(input.lastUsedHere ? { lastUsedHere: input.lastUsedHere } : {}),
     ...(input.checkIn !== undefined ? { checkIn: input.checkIn } : {}),
   });
-  const notes = routineStartNotes(out.snap, input.gymName ?? null);
-  for (const w of out.warnings) {
-    if (w.kind === 'exercise_missing') notes.push({ exerciseName: 'Exercise', text: 'An exercise in this routine is no longer in your list, so it was left out.', tone: 'warning' });
-  }
+  const notes = routineStartNotes(out.snap);
+  const missing = out.warnings.filter((w) => w.kind === 'exercise_missing').length;
+  if (missing > 0) notes.push({ exerciseName: 'Exercise', text: `${String(missing)} ${missing === 1 ? 'exercise' : 'exercises'} left out (not in your list)`, tone: 'warning' });
   const exerciseOf = new Map(out.aggregate.exercises.map((e) => [e.id, e.exerciseId]));
   const equipmentOfSlot = new Map(out.snap.slots.map((s) => [s.slotId, s.equipment]));
   const slotOfTemplate = new Map(resolved.flatMap((rex) => rex.setTemplates.map((t) => [t.id, rex.id] as const)));
@@ -360,10 +360,9 @@ function loadWord(l: Load, eq: EquipmentInstance | null = null): string {
  * workout order. Worded against the plan (never "last time"); a restore or a
  * pain hold says nothing at Start.
  */
-export function routineStartNotes(snap: SnapResult, gymName: string | null): RepeatNote[] {
+export function routineStartNotes(snap: SnapResult): RepeatNote[] {
   const notes: RepeatNote[] = [];
   const seen = new Set<string>();
-  const gym = gymName ?? 'this gym';
   for (const slot of snap.slots) {
     const eq = slot.equipment;
     for (const note of slot.notes) {
@@ -372,46 +371,29 @@ export function routineStartNotes(snap: SnapResult, gymName: string | null): Rep
       let text: string | null = null;
       if (req !== null) {
         const assisted = loadDirection(req.convention) === 'assistance';
+        const plan = loadWord(req);
         switch (note.kind) {
           case 'rounded':
+            text = top.load ? roundedWords({ was: 'plan', load: plan }) : null;
+            break;
           case 'converted':
-            text = top.load ? `Rounded from ${loadWord(req)} to ${loadWord(top.load, eq)} to match ${gym}.` : null;
+            text = top.load ? convertedWords(plan) : null;
             break;
           case 'capped':
-            text = top.load
-              ? assisted
-                ? `Set to ${loadWord(top.load, eq)}: the least assistance ${gym} gives. Plan was ${loadWord(req)}.`
-                : `Rounded down from ${loadWord(req)}: ${gym} stops at ${loadWord(top.load, eq)}.`
-              : null;
+            // Held at the easy end: the most a bar makes, the least assistance a machine gives.
+            text = top.load ? withWas(boundWords(assisted ? 'min' : 'max', assisted ? `${formatNumber(top.load.value)} ${top.load.unit}` : loadWord(top.load, eq), assisted), 'plan', plan) : null;
             break;
           case 'restored':
           case 'pain':
             text = null;
             break;
           case 'dropped':
-            switch (note.reason) {
-              case 'not_here':
-                text = `No ${note.equipmentName ?? 'equipment for it'} ${gymName ? `at ${gymName}` : 'here'}: no load target.`;
-                break;
-              case 'lightest_is_harder':
-                // N1: on an assisted machine the easiest end is the most assistance.
-                text = assisted
-                  ? `No load target: ${loadWord(req)} is more assistance than ${gym} gives.`
-                  : `No load target: the lightest at ${gym} is heavier than ${loadWord(req)}.`;
-                break;
-              case 'unit_not_convertible':
-                text = `No load target: ${loadWord(req)} is in another unit.`;
-                break;
-              case 'no_achievable_loads':
-                text = `No load target: ${gym} has no loads set up for ${loadWord(req)}.`;
-                break;
-              case 'convention_mismatch':
-                text = `No load target: the ${loadWord(req)} was on different equipment.`;
-                break;
-              case 'pain_flag':
-                text = null;
-                break;
+            if (note.reason === 'pain_flag') {
+              text = null;
+              break;
             }
+            text = noLoadWords(note.reason, { equipmentName: note.equipmentName, unit: req.unit, requested: assisted ? `${formatNumber(req.value)} ${req.unit}` : plan, assisted });
+            if (note.reason !== 'lightest_is_harder') text = withWas(text, 'plan', plan);
             break;
         }
       }

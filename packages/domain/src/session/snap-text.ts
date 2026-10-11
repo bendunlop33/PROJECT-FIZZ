@@ -1,6 +1,6 @@
 import type { EquipmentInstance, Load, PlannedSnap, WeightUnit } from '@fizz/schemas';
-import { loadText, NBSP, type LoadContext } from '../display';
-import { getAchievableLoads, loadsByDifficulty } from '../equipment';
+import { formatNumber, loadText, NBSP, type LoadContext } from '../display';
+import { boundWords, convertedWords, droppedWords, nameInLine, noLoadWords, roundedWords, withWas } from './fit-words';
 import type { SnapNote, SnapSlotResult } from './snap';
 
 /**
@@ -27,59 +27,41 @@ function kindCtx(kind: string | undefined): LoadContext {
   return kind !== undefined && INSTANCE_KINDS.has(kind) ? { kind: kind as EquipmentInstance['kind'] } : null;
 }
 
-function inUnitWord(eq: EquipmentInstance | null, unit: WeightUnit): string {
-  switch (eq?.kind) {
-    case 'dumbbells':
-      return `Dumbbells here are in ${unit}.`;
-    case 'barbell':
-    case 'plate_loaded_machine':
-      return `Plates here are in ${unit}.`;
-    case 'weight_stack':
-    case 'assisted_stack':
-      return `The stack here is in ${unit}.`;
-    case 'bodyweight_station':
-    case undefined:
-      return `Loads here are in ${unit}.`;
-  }
-}
-
 type SlotInfo = Pick<SnapSlotResult, 'equipment' | 'exerciseName' | 'sourceEquipment' | 'unit'>;
 
-/** A change line's note on the switch card (`ⓘ` facts, `⚠` for a dropped load or pain). */
+/** A change line's note on the switch card (`ⓘ` facts, `⚠` for a dropped load or pain), in the short fit words. */
 export function cardNoteText(note: SnapNote, slot: SlotInfo): NoteLine | null {
   const top = note.top;
   const here = slot.equipment;
   const src = kindCtx(slot.sourceEquipment?.kind);
   switch (note.kind) {
     case 'rounded':
-      return { tone: 'info', text: 'Rounded down to the nearest load here.' };
+      return { tone: 'info', text: roundedWords() };
     case 'capped':
-      return top.load ? { tone: 'info', text: `Capped: the most here is ${loadWords(top.load, here)}.` } : null;
+      return top.load ? { tone: 'info', text: cappedWords(top.load, here) } : null;
     case 'converted':
-      return { tone: 'info', text: `${inUnitWord(slot.equipment, slot.unit)} Rounded down.` };
+      return { tone: 'info', text: 'Converted · rounded' };
     case 'restored':
-      return { tone: 'info', text: 'Back to the planned load.' };
+      return { tone: 'info', text: 'Back to plan' };
     case 'pain':
-      return { tone: 'warning', text: `Pain flag on ${slot.exerciseName}: no increases.` };
+      return { tone: 'warning', text: droppedWords('pain_flag', { unit: slot.unit }) };
     case 'dropped': {
-      const from = top.intended ? loadWords(top.intended, src) : 'the planned load';
-      switch (note.reason) {
-        case 'not_here':
-          // No swap exists in the app yet (gym-switch GS5 is deferred), so the card doesn't offer one.
-          return { tone: 'warning', text: `No ${note.equipmentName ?? 'equipment for it'} here. Enter your own load, or skip it after switching.` };
-        case 'convention_mismatch':
-          return { tone: 'warning', text: `This is a different kind of machine, so ${from} isn’t converted.` };
-        case 'lightest_is_harder':
-          return { tone: 'warning', text: `The lightest here is ${note.lightest ? loadWords(note.lightest, here) : 'heavier'}, heavier than planned.` };
-        case 'no_achievable_loads':
-          return { tone: 'warning', text: `${note.equipmentName ?? 'The equipment'} here can’t make any load as set up.` };
-        case 'unit_not_convertible':
-          return { tone: 'warning', text: `Plan says ${from}. Nothing here can check it in ${slot.unit}.` };
-        case 'pain_flag':
-          return null; // said once by the `pain` note
-      }
+      if (note.reason === 'pain_flag') return null; // said once by the `pain` note
+      const assisted = top.intended?.convention === 'assistance';
+      const asked = top.intended ? (assisted ? `${formatNumber(top.intended.value)} ${top.intended.unit}` : loadWords(top.intended, src)) : null;
+      // No swap exists in the app yet (gym-switch GS5 is deferred), so the card doesn't offer one.
+      return { tone: 'warning', text: droppedWords(note.reason, { equipmentName: note.equipmentName, unit: top.intended?.unit ?? slot.unit, requested: asked, assisted }) };
     }
   }
+}
+
+/**
+ * A capped load is held at the easy end: the most a bar or rack makes, or
+ * the least assistance an assisted machine gives (`snap.ts`, review S1).
+ */
+function cappedWords(load: Load, here: LoadContext): string {
+  const assisted = load.convention === 'assistance';
+  return assisted ? boundWords('min', `${formatNumber(load.value)} ${load.unit}`, true) : boundWords('max', loadWords(load, here), false);
 }
 
 function amountText(top: SnapNote['top']): string {
@@ -88,40 +70,29 @@ function amountText(top: SnapNote['top']): string {
   return '';
 }
 
-/** Repeat's notes (routines.md §2.4): the same results, worded as "last time". */
-export function repeatNoteText(note: SnapNote, slot: SlotInfo, gymName: string | null): string | null {
+/** Repeat's notes (routines.md §2.4): the same results, worded as "last time" (short fit words, `fit-words.ts`). */
+export function repeatNoteText(note: SnapNote, slot: SlotInfo): string | null {
   const top = note.top;
-  const at = gymName ? `at ${gymName}` : 'here';
   const here = slot.equipment;
   const src = kindCtx(slot.sourceEquipment?.kind);
+  const last = top.intended ? loadWords(top.intended, src) : null;
   switch (note.kind) {
     case 'rounded':
-      return top.intended ? `Rounded down to what ${gymName ?? 'this gym'} has. Last time ${loadWords(top.intended, src)}.` : null;
+      return last ? roundedWords({ was: 'last time', load: last }) : null;
     case 'capped':
-      return top.load && top.intended ? `Capped: the most here is ${loadWords(top.load, here)}. Last time ${loadWords(top.intended, src)}.` : null;
+      return top.load && last ? withWas(cappedWords(top.load, here), 'last time', last) : null;
     case 'converted':
-      return top.load && top.intended ? `Rounded from ${loadWords(top.intended, src)} to ${loadWords(top.load, here)} to match this gym.` : null;
+      return top.load && last ? convertedWords(last) : null;
     case 'restored':
     case 'pain':
       return null;
     case 'dropped': {
-      const from = top.intended ? loadWords(top.intended, src) : null;
-      switch (note.reason) {
-        case 'not_here':
-          return from === null
-            ? `No ${note.equipmentName ?? 'equipment for it'} ${at}.`
-            : `No ${note.equipmentName ?? 'equipment for it'} ${at}: no load target (last time ${from}${amountText(top)}).`;
-        case 'lightest_is_harder':
-          return `No load target: last time was ${from ?? 'lighter'}, and the lightest here is ${note.lightest ? loadWords(note.lightest, here) : 'heavier'}.`;
-        case 'unit_not_convertible':
-          return `No load target: last time was ${from ?? 'in another unit'}, and there's no equipment here to check a ${slot.unit} load on.`;
-        case 'convention_mismatch':
-          return `No load target: the ${from ?? 'load'} was on different equipment.`;
-        case 'no_achievable_loads':
-          return `No load target: this gym has no loads set up for ${from ?? 'it'}.`;
-        case 'pain_flag':
-          return null;
-      }
+      if (note.reason === 'pain_flag') return null;
+      const assisted = top.intended?.convention === 'assistance';
+      const asked = assisted && top.intended ? `${formatNumber(top.intended.value)} ${top.intended.unit}` : last;
+      const words = noLoadWords(note.reason, { equipmentName: note.equipmentName, unit: top.intended?.unit ?? slot.unit, requested: asked, assisted });
+      if (note.reason === 'lightest_is_harder') return words;
+      return withWas(words, 'last time', last === null ? null : `${last}${amountText(top)}`);
     }
   }
 }
@@ -139,34 +110,30 @@ export function setSnapNote(
 ): NoteLine | null {
   if (snap === undefined) return null;
   const plan = snap.intended ? loadWords(snap.intended, kindCtx(snap.intendedOn?.kind)) : null;
-  const planWas = plan ? ` Plan was ${plan}.` : '';
   switch (snap.outcome) {
     case 'exact':
     case 'rounded':
     case 'restored':
       return null;
     case 'capped':
-      return load ? { tone: 'info', text: `Capped: the most here is ${loadWords(load, ctx.equipment)}.${planWas}` } : null;
+      return load ? { tone: 'info', text: withWas(load.convention === 'assistance' ? 'Least assistance here' : 'Max here', 'plan', plan) } : null;
     case 'converted':
-      return load && plan ? { tone: 'info', text: `Rounded from ${plan} to ${loadWords(load, ctx.equipment)} to match this gym.` } : null;
+      return load && plan ? { tone: 'info', text: convertedWords(plan) } : null;
     case 'dropped': {
-      const at = ctx.gymName ? ` at ${ctx.gymName}` : ' here';
+      // The full sentence is in `Why?` (the `Equipment` row); the card says only what's missing.
       switch (snap.reason) {
         case 'not_here':
-          return { tone: 'warning', text: `No ${snap.intendedOn?.name ?? 'equipment for it'}${at}.${planWas}` };
-        case 'lightest_is_harder': {
-          const easiest = ctx.equipment ? loadsByDifficulty(getAchievableLoads(ctx.equipment))[0] : undefined;
-          const lightest = easiest === undefined || !ctx.equipment ? null : loadWords({ value: easiest, unit: ctx.equipment.unit, convention: ctx.equipment.loadConvention }, ctx.equipment);
-          return { tone: 'warning', text: `The lightest here is ${lightest ?? 'heavier than planned'}${plan ? `, heavier than the plan’s ${plan}` : ''}.` };
-        }
+          return { tone: 'warning', text: withWas(snap.intendedOn?.name ? `No load target · no ${nameInLine(snap.intendedOn.name)} here` : 'No load target · not here', 'plan', plan) };
+        case 'lightest_is_harder':
+          return { tone: 'warning', text: withWas('No load target · lightest here is heavier', 'plan', plan) };
         case 'convention_mismatch':
-          return { tone: 'warning', text: `No load target: this is a different kind of machine.${planWas}` };
+          return { tone: 'warning', text: 'No load target · different machine' };
         case 'no_achievable_loads':
-          return { tone: 'warning', text: `No load target: ${ctx.equipment?.name ?? 'the equipment'} can’t make any load as set up.${planWas}` };
+          return { tone: 'warning', text: 'No load target · no loads set up' };
         case 'unit_not_convertible':
-          return { tone: 'warning', text: `No load target: nothing here can check it in ${ctx.unit}.${planWas}` };
+          return { tone: 'warning', text: `No load target · no ${ctx.unit} equipment` };
         case 'pain_flag':
-          return { tone: 'warning', text: `No load target while the pain flag is on.${planWas}` };
+          return { tone: 'warning', text: 'No load target · pain flag' };
         case undefined:
           return null;
       }

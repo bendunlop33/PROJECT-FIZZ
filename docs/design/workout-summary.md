@@ -22,7 +22,7 @@
 > No layout change.
 
 > **Revision 2026-10-09 (Ben's decision D21; CLAUDE.md rule 3, ADR 0006 amendment 2; competitor follow-up 7).** The coach's next-session targets are now the default. This replaces the review-fix wording above ("still the built-in rule") and the "If D21 option A" row, which is now the live behaviour.
-> - **Small changes are saved without a tap.** After the single coach call, its load, rep and set changes on the same exercises (coach-adjustments CA8) are saved for the next session of this routine. Each `Next time` row shows the target and its %, the coach's reason, guard notes, `Built-in rule would be …`, `Why?` and one-tap `Undo`. `Not now`, `Apply` and `Apply all coach targets` are gone from these rows; `Undo all` replaces the bulk button.
+> - **Small changes are saved without a tap.** After the single coach call, its load, rep and set changes on the same exercises (coach-adjustments CA8) are saved for the next session of this routine. Each `Next time` row shows the target and its %, the coach's reason, guard notes, `Rule: …`, `Why?` and one-tap `Undo`. `Not now`, `Apply` and `Apply all coach targets` are gone from these rows; `Undo all` replaces the bulk button.
 > - **Bigger changes** (more than one load step, more than ±2 reps or ±1 set, stall resets, deloads) still come as a `CoachTargetProposal` with Apply; the built-in rule's target stays in use until Ben applies.
 > - **The built-in rule (playbook 7-F) is the labelled fallback**: coach offline or unavailable, no coach target for an exercise, or Ben's Undo.
 > - **New region 6b:** a structural suggestion (swap, add or remove exercises, order) appears only when Ben asked for variety or something changed: goal, schedule, equipment or pain (coach-adjustments CA9). One `ChangeReviewCard` with `Because: …`, Apply and Undo.
@@ -58,14 +58,14 @@ Regions, top to bottom:
 4. **Comparison.** One comparable lift: today vs the last comparable session, plus a line explaining why they count as comparable.
 5. **Exercises.** One compact row per exercise: the name, the set count, and the actual results for the working sets. If the coach adjusted that exercise's sets during the workout, one extra line says so: `Coach adjusted sets 3–4 (RPE 10 on set 2)`.
 6. **Next time** (revised 9 Oct for D21). Heading `Next time · Push A` (the routine just done; it comes round again in the rotation). One row per exercise whose next target changes or is held for a listed reason. Each row names its source and shows its % change from the last working load. Built-in values come from playbook rule 7-F (equipment-aware):
-   - **Coach answered, small change (the default):** a `CoachTargetRow` (§8): tag `Coach`, `Target 97.5 kg × 6–8 · −2.5%` (from the saved action), the coach's one-sentence reason in quotes, guard notes, `Built-in rule would be 100 kg × 6–8` (`text.secondary`), `Why? ›` and [Undo]. It is already saved: nothing to apply. When at least one row is a coach target, the line `Set by the coach from today's workout.` sits under the heading, and with two or more, a secondary text button `Undo all`.
+   - **Coach answered, small change (the default):** a `CoachTargetRow` (§8): tag `Coach`, `Target 97.5 kg × 6–8 · −2.5%` (from the saved action), the coach's one-sentence reason in quotes, guard notes, `Rule: 100 kg × 6–8` (`text.secondary`), `Why? ›` and [Undo]. It is already saved: nothing to apply. When at least one row is a coach target, the line `Set by the coach from today's workout.` sits under the heading, and with two or more, a secondary text button `Undo all`.
    - **Coach agrees with the rule:** `Coach agrees: 100 kg × 6–8`, no buttons.
    - **Coach gave no target for this exercise:** the built-in rule's target tagged `Built-in rule` and `No coach target for this one.`
    - **Coach's change is bigger than small** (coach-adjustments CA8), including stall resets (rule 8) and deloads (rule 10): the built-in rule's target stays in use, tagged `Built-in rule`, with the coach's `CoachTargetProposal` under it: `More than a small change: tap Apply to use it.`, before (built-in) → after (coach), reason, `Why? ›`, [Not now] [Apply].
-   - **Coach offline, not connected or failed:** the built-in rule's target with `Built-in rule (coach offline)` or `Built-in rule (coach unavailable)`, and the rule's own explanation.
+   - **Coach offline, not connected or failed:** the built-in rule's target with the tag `Rule`, and the rule's own explanation.
    - **Coach still working:** the built-in rule's target tagged `Built-in rule` and the line `Coach is reviewing…`. When the coach's answer is saved, each row updates in place.
 6b. **Suggested change to Push A (rare; 9 Oct, D21).** Only when Ben asked for variety, or `getStructuralChangeSignals` reports that something changed: goal, schedule, equipment or pain (coach-adjustments CA9). At most one `ChangeReviewCard` (author `Coach`): `Because: …` (app text from the signal), scope `Push A from now on`, change lines (`Cable fly → Pec deck`), the coach's reason, `Why? ›`, [Not now] [Apply]. Never shown without a request or signal.
-7. **Coach note (optional, loads later).** One observation. It comes from the same single coach call as the targets. Its sentences pass the claim check ([coach-contract.md](coach-contract.md) CC3): a sentence that claims a change that wasn't saved is hidden, with `ⓘ Only the changes shown under Next time were made. One line said otherwise and is hidden.`
+7. **Coach note (optional, loads later).** One observation. It comes from the same single coach call as the targets. Its sentences pass the claim check ([coach-contract.md](coach-contract.md) CC3): a sentence that claims a change that wasn't saved is hidden, with `ⓘ Only the changes shown were made · 1 line hidden`
 8. **Footer bar (fixed).** [Edit workout] (secondary) and [Done] (primary). `Share / export` sits in the overflow `⋯` in the title row.
 
 ```
@@ -99,14 +99,14 @@ Regions, top to bottom:
 │ Incline DB press                       │
 │ Target 32.5 kg each × 8–10 · +8.3%     │ % from code (buildStepCard)
 │ You did 10 reps on every set at 30 kg. │
-│ Built-in rule (coach offline)          │ source tag
+│ Rule                                   │ source tag
 │ Rule: smallest step at Main Gym ·      │ 7-F explanation
 │ Why? ›                                 │
 │ Triceps pushdown                       │
 │ Same target: 35 kg stack × 10–12       │
 │ Only 1 of 3 working sets was logged on │
 │ 8 Oct; holding.                        │
-│ Built-in rule (coach offline)          │
+│ Rule                                   │
 │ Rule: holding · Why? ›                 │
 │                                        │
 │ Coach note                             │
@@ -130,7 +130,7 @@ Regions, top to bottom:
 │ short; hold a little lighter."         │ (claim-checked)
 │ Rounded to 97.5 kg: nearest your bar   │ guard note (validator)
 │ and plates allow.                      │
-│ Built-in rule would be 100 kg × 6–8    │ text.secondary (a target)
+│ Rule: 100 kg × 6–8                     │ text.secondary (a target)
 │ Why? ›                       [ Undo ]  │ 44pt+ hit areas, ≥ space.8 apart
 │                                        │
 │ Overhead press               [Coach]   │
@@ -170,14 +170,14 @@ Built-in rule text comes from `calculateNextTargets`. Coach targets, % changes a
 | State | Trigger | Display |
 |---|---|---|
 | Saving | `finishWorkout` in progress (normally < 200 ms) | The Finish sheet shows `Saving…`. The summary isn't shown until the commit |
-| Save failed | The SQLite write failed | Stay on Active workout with the banner `Couldn't finish the workout. Nothing was lost; try again.` [Try again]. **Never show a summary that isn't saved** |
+| Save failed | The SQLite write failed | Stay on Active workout with the banner `Couldn't finish. Try again.` [Try again]. **Never show a summary that isn't saved** |
 | Normal | Commit OK | As in the wireframe |
-| No comparison available | No compatible previous session | `First time logging Bench press with this barbell at Main Gym. Nothing to compare yet.` |
-| Not comparable | History exists but with different equipment, convention or set type | `Last bench press was at Hotel Gym (different bar). Not compared.` |
+| No comparison available | No compatible previous session | `First time` |
+| Not comparable | History exists but with different equipment, convention or set type | `Not compared · different equipment` |
 | Short or empty workout | 0 working sets | Facts only. The comparison and next-time sections are hidden. The footer adds `Discard workout` as a danger text link (confirmation required) |
 | Skipped sets | Pending sets at finish | `Working sets 16 (2 skipped)`. Skipped sets appear in the exercise rows as `skipped` text |
 | Timing corrected | The end time chosen in the finish sheet differs from the tap time (`finishWorkout` `endedAt`), or a time was edited later with `updateSessionTiming` | The title line reads `18:02–19:24 (end time edited)` or `(start time edited)`. The timing audit keeps the original values. Active time is recomputed: only paused time inside the new start–end window is subtracted (a pause after the corrected end isn't) |
-| Next time: no change | The rules keep the same targets | `No target changes. Same targets next time.` |
+| Next time: no change | The rules keep the same targets | `Same targets next time` |
 | Next time: held, incomplete | Fewer completed working sets than the rule prescribes | `Bench press` · `Same target: 100 kg × 6–8` · domain fact, e.g. `Only 2 of 4 working sets were logged on 8 Oct; holding.` |
 | Next time: held, all skipped | Every working set of an exercise was skipped | `No working sets were logged on 8 Oct (all skipped); holding.` The target stays at the last performed load |
 | Next time: held, side lagging | Unilateral exercise where one side met the rule and the other didn't, or the sides have unequal set counts | `Single-arm cable row` · `Same target: 25 kg stack × 8–10` · domain fact, e.g. `The left side reached 8+ reps on every set within the effort limit, but the right side didn't (lowest 7 reps); holding.` or `Only 2 of 3 working sets had both sides logged on 8 Oct (left 3, right 2: the right side is behind); holding.` |
@@ -186,16 +186,16 @@ Built-in rule text comes from `calculateNextTargets`. Coach targets, % changes a
 | Deleted sets | Sets deleted during the workout | Not shown and not counted. Visible only in the edit history |
 | Next time: at equipment max | The rule hits the equipment maximum | `Dumbbells max out at 30 kg each at Main Gym. Next time: aim for more reps at 30 kg.` (from the domain, not invented) |
 | Pain reported during session | A pain note was logged for a movement | `Progression paused for Overhead press because you noted pain. Targets stay the same until you clear it.` [Review] (rule 9). No diagnosis |
-| Coach: not connected | No AI route | Note: `Coach not connected. Your workout is saved; a note can be added later.` Next time rows: built-in rule targets tagged `Built-in rule (coach offline)` |
-| Coach: offline | The route exists but there's no network | Note: `Coach note will be added when you're back online.` (it retries when the app is next opened with a connection, never in a background loop). Rows tagged `Built-in rule (coach offline)`. When the coach answers later, and this routine hasn't started again, its small changes are saved then (coach-adjustments CA10) and show in this session's summary in history, with Undo |
+| Coach: not connected | No AI route | Note: `Coach not connected. Your workout is saved; a note can be added later.` Next time rows: built-in rule targets tagged `Rule` |
+| Coach: offline | The route exists but there's no network | Note: `Coach note will be added when you're back online.` (it retries when the app is next opened with a connection, never in a background loop). Rows tagged `Rule`. When the coach answers later, and this routine hasn't started again, its small changes are saved then (coach-adjustments CA10) and show in this session's summary in history, with Undo |
 | Coach: loading | Request in flight | Note: `Coach note: writing…` (static icon, no spinner animation beyond the system activity indicator). Rows show the built-in rule target tagged `Built-in rule` plus `Coach is reviewing…`. **Done stays enabled**. When the answer is saved, rows update in place with no animation, and VoiceOver announces once, politely: `Coach set 2 targets for next Push A.` |
-| Coach: ready, saved (D21) | Note and targets received; small changes saved in one action | 2–3 sentence note. Each changed row is a `CoachTargetRow`: `Target 97.5 kg × 6–8 · −2.5%`, tag `Coach`, reason, guard notes, `Built-in rule would be 100 kg × 6–8`, `Why? ›`, [Undo]. Heading line `Set by the coach from today's workout.` |
+| Coach: ready, saved (D21) | Note and targets received; small changes saved in one action | 2–3 sentence note. Each changed row is a `CoachTargetRow`: `Target 97.5 kg × 6–8 · −2.5%`, tag `Coach`, reason, guard notes, `Rule: 100 kg × 6–8`, `Why? ›`, [Undo]. Heading line `Set by the coach from today's workout.` |
 | Coach: agrees | Coach target equals the built-in rule target | `Coach agrees: 100 kg × 6–8`. No buttons |
 | Coach: no target for an exercise | The coach answered but gave no target for it, or its target was dropped by the checks | Built-in target tagged `Built-in rule` + `No coach target for this one.` `Why?` names any dropped target and its reason (e.g. `Not used: an extra set you didn't ask for.`) |
 | Coach: bigger change (CA8) | The coach's target is more than one load step, ±2 reps or ±1 set, or a stall reset or deload | Not saved. Built-in target in use (`Built-in rule`), with the `CoachTargetProposal` below: `More than a small change: tap Apply to use it.` + before/after, reason, [Not now] [Apply]. Apply / Not now / Undo / Out of date / Expired follow change-review.md (CR7, CR8) |
-| Coach: guard applied | `validateCoachProposal` snapped or capped the coach's load | Guard note under the reason, e.g. `Rounded to 97.5 kg: nearest your bar and plates allow.` / `Capped at 30 kg each: the most Main Gym's rack goes to.` The saved target is the guarded one |
+| Coach: guard applied | `validateCoachProposal` snapped or capped the coach's load | Guard note under the reason, e.g. `Rounded to 97.5 kg` / `Max here 30 kg each` The saved target is the guarded one |
 | Coach: pain-blocked | The coach gave an increase on a pain-flagged movement | `Not increasing: you flagged shoulder pain. Same target: 50 kg × 6–8`. Nothing saved for that exercise, no Undo. The built-in rule also holds (`halted_pain`) |
-| Coach: failed | Error or quota | Note: `Couldn't get a coach note (limit reached).` [Try again]. Rows tagged `Built-in rule (coach unavailable)`. It never falls back to a paid route. A successful `Try again` saves the coach's small changes as above |
+| Coach: failed | Error or quota | Note: `Couldn't get a coach note (limit reached).` [Try again]. Rows tagged `Rule`. It never falls back to a paid route. A successful `Try again` saves the coach's small changes as above |
 | Coach target undone | `Undo` on a row | That exercise only: the built-in rule's target is in use, tagged `Built-in rule`, with `You undid the coach's target.` and `Use coach target: 97.5 kg × 6–8`. Other rows keep their coach targets |
 | Coach target used again | `Use coach target` | Back to the saved state with [Undo] (Ben's own request, saved at once) |
 | All undone | `Undo all` | Every coach row as "undone", in one transaction. Toast `Built-in rule for next Push A (3 exercises)` [Undo] |
@@ -203,7 +203,7 @@ Built-in rule text comes from `calculateNextTargets`. Coach targets, % changes a
 | Next session started | This routine's next session started | Rows lose Undo and read `Used in Push A, 10 Oct.` In that workout, the set card's `Why?` → `Use built-in rule` (active-workout AW4) changes that day's sets |
 | Structural suggestion (region 6b) | Ben asked for variety, or a signal exists (CA9), and the coach proposed a structural change | One `ChangeReviewCard`: `Because: …`, scope `Push A from now on`, change lines, reason, [Not now] [Apply]. Applied: `✓ Applied to Push A from now on` [Undo]. Out of date or expired as change-review.md (CR8: expires when Push A next starts) |
 | Structural, no request or signal | The coach returned a structural change anyway | Not shown. `Why?` → `Not used: changing exercises wasn't asked for.` (coach-contract CC10) |
-| Hidden coach line | A note or reason sentence claims a change that wasn't saved | The sentence is hidden; `ⓘ Only the changes shown under Next time were made. One line said otherwise and is hidden.` (coach-contract CC3) |
+| Hidden coach line | A note or reason sentence claims a change that wasn't saved | The sentence is hidden; `ⓘ Only the changes shown were made · 1 line hidden` (coach-contract CC3) |
 | Built-in step over 10% (review fixes) | 7-F's next achievable load is more than ~10% heavier (e.g. 10 → 12 kg dumbbells, +20%) | `Same load, one more rep: 10 kg each × 13` (a **target**) + `Next dumbbell is 12 kg, +20%: adding reps first.` No added set. At the rep cap: `Holding at 10 kg each × 15. Next step is +20%. Microplates or the coach can help.` |
 | Check-in answered (2026-10-09) | `session.checkIn.kind = 'answered'` | Region 2a `CheckInLine` with score, reasons and note exactly as given |
 | Check-in skipped / not asked | `skipped` or `not_asked` | No check-in line; nothing says it was skipped |
@@ -257,28 +257,28 @@ Undo:
 | Element | Text |
 |---|---|
 | Saved banner | `Workout saved on this phone` |
-| Backup line | `Backing up…` · `Backed up on this phone · 19:05` · `Last backup on this phone didn't save. Open Data & backup ›` |
+| Backup line | `Backing up…` · `Backed up on this phone · 19:05` · `⚠ Backup didn't save ›` |
 | Title line | `Thu 8 Oct · Main Gym · 18:02–19:04` |
-| Check-in (2026-10-09) | `How you said you felt: 2 of 5` · reasons `Tired · Poor sleep` · note `"Baby was up at 3"` (what Ben said, as given) · pain prompt `You mentioned pain before this workout. Flag the movements that hurt so loads don't go up.` [Choose movements ›] · adjustment line `Coach adjusted sets 2–6 (lighter session; you said 2 of 5)` |
+| Check-in (2026-10-09) | `How you said you felt: 2 of 5` · reasons `Tired · Poor sleep` · note `"Baby was up at 3"` (what Ben said, as given) · pain prompt `⚠ Pain mentioned · which movements?` [Choose movements] · adjustment line `Coach adjusted sets 2–6 (lighter session; you said 2 of 5)` |
 | Facts labels | `Active time`, `Exercises`, `Working sets`, `Warm-up sets` |
 | Fact values | `54 min`, `5 of 5`, `16 (2 skipped)`, `4` |
 | Comparison heading | `Compared with last time` |
 | Comparison rows | `Today 102.5 kg × 6` / `1 Oct 100 kg × 8`. Both are **actual results** |
 | Comparability line | `Same barbell at Main Gym, working sets` |
 | Estimates (if shown) | `Estimated 1RM 123 kg (estimate, Epley formula)`. This is optional and off by default. If it appears, it always says "estimate" |
-| Not comparable | `Last bench press was at Hotel Gym (different bar). Not compared.` |
-| First time | `First time logging Bench press with this barbell at Main Gym. Nothing to compare yet.` |
+| Not comparable | `Not compared · different equipment` |
+| First time | `First time` |
 | Next time heading | `Next time · Push A` · (9 Oct, D21) `Set by the coach from today's workout.` · `Undo all` |
 | Next time row (built-in rule) | `Incline DB press: target 32.5 kg each × 8–10 · +8.3%` (a **target**; % from code) + reason `You did 10 reps on every set at 30 kg.` + source tag + `Rule: smallest step at Main Gym` (revised in the review fixes; was `Rule: double progression`) · held rows `Rule: holding` · big step `Next dumbbell is 12 kg, +20%: adding reps first.` · at the cap `Holding at 10 kg each × 15. Next step is +20%. Microplates or the coach can help.` |
-| Source tags | `Coach` · `Built-in rule` · `Built-in rule (coach offline)` (no route or no network) · `Built-in rule (coach unavailable)` (error or limit) |
-| Next time row (coach, saved by default; 9 Oct) | `Target 97.5 kg × 6–8 · −2.5%` (a **target**) · reason in quotes (one sentence) · guard note · `Built-in rule would be 100 kg × 6–8` (a **target**) · `Why? ›` · `Undo` |
+| Source tags | `Coach` · `Rule` (every built-in row; the coach's state is the `Coach note` line) · `Suggested` |
+| Next time row (coach, saved by default; 9 Oct) | `Target 97.5 kg × 6–8 · −2.5%` (a **target**) · reason in quotes (one sentence) · guard note · `Rule: 100 kg × 6–8` (a **target**) · `Why? ›` · `Undo` |
 | Undone (9 Oct) | `Target 100 kg × 6–8` + tag `Built-in rule` + `You undid the coach's target.` + `Use coach target: 97.5 kg × 6–8` · toast after `Undo all`: `Built-in rule for next Push A (3 exercises)` [Undo] |
 | No coach target (9 Oct) | `No coach target for this one.` · `Why?` → `Not used: an extra set you didn't ask for.` |
 | Bigger change (9 Oct) | `More than a small change: tap Apply to use it.` · `Built-in rule 100 kg × 6–8` → `Coach 90 kg × 6–8` (both **targets**) · `Why? ›` · `Not now` · `Apply` · applied `✓ Coach target applied to next Push A: 90 kg × 6–8` [Undo] |
 | Based on edited sets (9 Oct) | `Based on set values you've since edited.` [Use built-in rule: 100 kg × 6–8] [Ask the coach again] |
 | Used (9 Oct) | `Used in Push A, 10 Oct.` |
 | Structural card (9 Oct, region 6b) | `Suggested change to Push A` · `Because:` + one of `you asked for more variety on 8 Oct.` · `you flagged pain on Overhead press.` · `your goal changed to Muscle on 9 Oct.` · `you now lift 3 days a week (was 4).` · `Main Gym's equipment changed on 9 Oct.` · `you switched to Hotel · Lisbon in this workout.` · scope `Push A from now on` · `Not now` · `Apply` · applied `✓ Applied to Push A from now on` [Undo] |
-| Hidden coach line (9 Oct) | `Only the changes shown under Next time were made. One line said otherwise and is hidden.` |
+| Hidden coach line (9 Oct) | `Only the changes shown were made · 1 line hidden` |
 | Coach agrees | `Coach agrees: 100 kg × 6–8` (a **target**) |
 | Coach reviewing | `Coach is reviewing…` · VoiceOver on arrival `Coach set 2 targets for next Push A.` |
 | Pain-blocked | `Not increasing: you flagged shoulder pain. Same target: 50 kg × 6–8` |
@@ -286,7 +286,6 @@ Undo:
 | No change | `Same targets next time.` |
 | Held (side lagging) | `Same target: 25 kg stack × 8–10` (a **target**) + the domain's fact naming the lagging side, e.g. `… within the effort limit, but the right side didn't (lowest 7 reps); holding.` |
 | No feasible load | `No load target` + the domain's summary ending `Fix the equipment profile.` + [Update gym]. A null load reads "bodyweight" only for the `bodyweight` convention (or `added` with nothing added); otherwise "no load" |
-| Time-edit helper (under the start/end pickers in Edit workout) | `Active time counts from start to end, minus pauses inside that window.` |
 | Held (incomplete) | `Same target: 100 kg × 6–8` (a **target**) + the domain's fact, e.g. `Only 2 of 4 working sets were logged on 8 Oct; holding.` |
 | Coach heading | `Coach note` |
 | Coach states | see §3 |
@@ -305,7 +304,7 @@ The summary makes **no personal-best claims** unless the domain confirms that th
   - exercise rows
   - `timingEdited`
 - `getComparableHistory(exerciseId, equipmentId, filters)` is used inside the summary build.
-- `calculateNextTargets(history, rule, equipment)` returns the changed targets and an explanation for each, with equipment bounds applied. It is always computed: it's the fallback when the coach is offline, gives no target or is undone (D21), and the comparison value (`Built-in rule would be …`, or "before" on a bigger-change proposal) on every coach row. (Review fixes) It implements playbook rule 7-F: the smallest achievable step, reps first when the step is over ~10% or at max, then hold, never an added set. Each result carries `pctChange` from `buildStepCard`. Until the build enforces the 10% limit (`maxLoadJump: null` today), `getRuleImplementationStatus` reports the gap (coaching-playbook PB15).
+- `calculateNextTargets(history, rule, equipment)` returns the changed targets and an explanation for each, with equipment bounds applied. It is always computed: it's the fallback when the coach is offline, gives no target or is undone (D21), and the comparison value (`Rule: …`, or "before" on a bigger-change proposal) on every coach row. (Review fixes) It implements playbook rule 7-F: the smallest achievable step, reps first when the step is over ~10% or at max, then hold, never an added set. Each result carries `pctChange` from `buildStepCard`. Until the build enforces the 10% limit (`maxLoadJump: null` today), `getRuleImplementationStatus` reports the gap (coaching-playbook PB15).
 - `buildWorkoutSummary(sessionId)` also returns `nextTime[]`: `{exerciseId, builtIn, coachStatus: 'unavailable' | 'offline' | 'loading' | 'ready' | 'failed', coachTarget?: {actionId, after, pctChange, reason, guardNotes, status: 'saved' | 'undone' | 'used' | 'based_on_edited', rendered}, coachProposal?: {proposalId, after, reason, guardNotes, scope, status}, dropped?: [{kind, detail}]}`, and per exercise `adjustments[]` from the workout (coach-adjustments §6). (9 Oct, D21) `coachTarget` is a small change saved by default; `coachProposal` is now only for bigger changes. It also returns `routine {id, name}` for the heading, `structuralProposal?: {proposalId, signal: {kind, fact, at}, changes, reason, scope, status}` (region 6b) and `hiddenLines[]` for the coach note (coach-contract §6).
 - (9 Oct, D21) The summary coach turn: `runCoachTurn` with the summary context and the tool `set_next_session_targets` (plus the structural proposal tools only when `getStructuralChangeSignals` returns a signal or Ben asked, coach-contract CC10). Its result goes through `validateCoachProposal`, then `classifyNextSessionChange` (coach-adjustments CA8). Small changes are saved with `applyCoachProposal(id, {kind: 'default_next_session', expectedVersion, opId})`: one transaction, one `actionId`, one `ActionRecord` with the reason, evidence and guard notes. Per-row Undo is `undoAction(actionId, {exerciseId})`; `Use coach target` is `reapplyCoachTarget`. Every row line and number is `renderActionResult` output (coach-contract CC1); the note and reasons go through `checkReplyClaims` (CC3).
 - `correctSet` for edits (timing as above).
@@ -329,16 +328,16 @@ The summary makes **no personal-best claims** unless the domain confirms that th
 6. Any estimated 1RM text contains the word "estimate". No PR or "best" claim appears for non-comparable lifts.
 7. Built-in rule values under `Next time` come from `calculateNextTargets` and match the domain unit tests. Every `Next time` value, from either source, is labelled as a target, carries a source tag and its % change from the last working load, and never exceeds equipment maximums.
 8. Pressing `Done` while the coach note is loading returns to Today without an error. The note appears later in the session history.
-9. (Revised 9 Oct, D21) A small coach next-time target is already saved when its row appears. The row shows the target with its %, the `Coach` tag, the coach's reason, `Built-in rule would be …`, `Why?` and Undo, under the heading `Next time · Push A`, and it never edits completed sets. A bigger change shows as a proposal with the built-in value as before, the coach value as after, Apply and Undo.
+9. (Revised 9 Oct, D21) A small coach next-time target is already saved when its row appears. The row shows the target with its %, the `Coach` tag, the coach's reason, `Rule: …`, `Why?` and Undo, under the heading `Next time · Push A`, and it never edits completed sets. A bigger change shows as a proposal with the built-in value as before, the coach value as after, Apply and Undo.
 10. Editing the end time keeps the original timestamp in the audit, and the summary shows `(end time edited)`.
 11. Only `Done` is styled as primary. There are no animated elements.
 12. Finish a workout with 2 of 4 prescribed bench working sets done, both at the top of the range. `Next time` shows `Same target` with the domain's "Only 2 of 4…; holding." fact, never an increase.
 13. Deleted sets never appear in the exercise rows or counts. A unilateral Left + Right pair counts as one working set.
 14. A unilateral exercise where the right side fell short shows `Same target` under `Next time` with the domain's fact naming the right side, never an increase.
 15. An exercise whose equipment can make no load shows `No load target` with `Fix the equipment profile.` and [Update gym] under `Next time`, never "bodyweight".
-16. With airplane mode on, every `Next time` row is tagged `Built-in rule (coach offline)` and shows the rule's explanation; no row says `Coach` and no coach text appears.
+16. With airplane mode on, every `Next time` row is tagged `Rule` and shows the rule's explanation; no row says `Coach` and no coach text appears.
 17. (Revised 9 Oct, D21) With the coach connected, finishing makes exactly **one** coach call (note + targets). Its small changes are saved with no tap, and the next Push A plans them (the set card's `Why?` row `Set by` reads `Coach · after Push A, 8 Oct`, active-workout §2.12). Exercises with no coach target use the built-in rule's, tagged `Built-in rule`. The playbook screen reads 7-F `In use: when there's no coach target`, never "not in use".
-18. A coach proposal of 98 kg on a 2.5 kg-step barbell shows 97.5 kg with `Rounded to 97.5 kg: nearest your bar and plates allow.`; a proposal above a rack maximum shows the capped value and `Capped at …`.
+18. A coach proposal of 98 kg on a 2.5 kg-step barbell shows 97.5 kg with `Rounded to 97.5 kg`; a proposal above a rack maximum shows the capped value and `Capped at …`.
 19. With a pain flag active, a coach increase for that movement shows `Not increasing: you flagged … pain.` with no Apply or Undo, and nothing is saved for it.
 20. (Revised 9 Oct, D21) `Undo` on the Bench press row → that row shows the built-in rule's target with `Use coach target`, the other coach rows are unchanged, and the next Push A plans the built-in rule's bench target. `Use coach target` puts the coach's back. `Undo all` reverts every coach row in one transaction, and its toast's Undo restores them.
 21. (Revised 9 Oct) Correcting a set in Edit workout after coach targets were saved adds `Based on set values you've since edited.` to the affected rows; the saved targets don't change and no coach call is made until Ben taps `Ask the coach again`. A bigger-change proposal becomes `Out of date` (Apply hidden).
@@ -354,11 +353,11 @@ The summary makes **no personal-best claims** unless the domain confirms that th
 31. (9 Oct, CA9) A workout with no request or signal never shows region 6b, and the provider request has no structural proposal tool. After Ben says "give me some variety on Push A" earlier in the week, the next Push A summary can show one card with `Because: you asked for more variety on …`; Apply changes Push A from now on, Undo restores it, and a voice "yes" doesn't apply it.
 32. (9 Oct, CA9) A pain flag set on Overhead press during the workout is a signal. Any structural card's reason contains no diagnosis (instruction test), and a suggested swap never brings back a pain-flagged movement (the validator removes it, as workout-builder WB4).
 33. (9 Oct, CA10) Tap `Done` while `Coach is reviewing…`: when the answer arrives, its small changes are saved; the summary in history shows them with Undo; starting Push A uses them. If Push A starts before the answer arrives, the answer's targets are dropped as stale and Push A uses the built-in rule's.
-34. (9 Oct) With airplane mode on, every row is tagged `Built-in rule (coach offline)` and no row says `Coach`. Back online before the next Push A, the coach's answer saves its small changes and the history summary shows them.
+34. (9 Oct) With airplane mode on, every row is tagged `Rule` and no row says `Coach`. Back online before the next Push A, the coach's answer saves its small changes and the history summary shows them.
 35. (9 Oct) Once the next Push A has started, this summary's coach rows read `Used in Push A, 10 Oct.` with no Undo.
 36. (9 Oct, coach-contract) Every target number under `Next time` equals the saved `ActionRecord` value (same unit and convention). Stub the coach note to say "I've raised overhead press to 52.5 kg" while a pain flag blocks it: the sentence is hidden, the note shows the hidden-line note, and the row shows `Not increasing: you flagged shoulder pain.`
 37. (9 Oct) `Undo` and `Use coach target` have ≥ 44pt hit areas, are ≥ `space.8` from `Why? ›`, and only `Done` is styled as primary, with region 6b showing.
-38. (9 Oct) VoiceOver reads a coach row as "Bench press, coach target, 97.5 kilograms, 6 to 8 reps, down 2.5 percent. Built-in rule would be 100 kilograms." and the source is never conveyed by colour alone.
+38. (9 Oct) VoiceOver reads a coach row as "Bench press, coach target, 97.5 kilograms, 6 to 8 reps, down 2.5 percent. Rule: 100 kilograms." and the source is never conveyed by colour alone.
 39. (9 Oct, D19) The `Next time` heading names the routine just done (`Next time · Push A`), and those targets are used the next time Push A starts, whether the rotation offers it or Ben picks it himself.
 
 ## 8. Components (9 Oct; for the design-system owner to merge, this spec doesn't edit design-system.md)
@@ -367,6 +366,6 @@ No new colours or timing tokens.
 
 | Component | Spec |
 |---|---|
-| `CoachTargetRow` | The D21 default state of `CoachTargetProposal` (design-system §9.16), summary only. Rows: exercise name (`type.headline`) + `TargetSourceTag` `Coach`; `Target 97.5 kg × 6–8 · −2.5%` (`type.body`, tabular; % in `text.secondary`); reason in quotes (`type.callout`, 2 lines max, the rest in `Why?`); optional guard note (`type.callout`, `text.secondary`, `info.circle`; pain uses `exclamationmark.triangle` in `status.warning`); `Built-in rule would be 100 kg × 6–8` (`type.callout`, `text.secondary`); action row `Why? ›` (left) and `Undo` (right), `accent` text buttons, ≥ 44pt hit areas, ≥ `space.8` apart. Variants: **undone** (tag `Built-in rule`, line `You undid the coach's target.`, `Use coach target: …` text button), **based on edited** (`exclamationmark.triangle` + text, two text buttons), **used** (no buttons, `Used in Push A, 10 Oct.`). No animation when a row updates from `Coach is reviewing…` |
+| `CoachTargetRow` | The D21 default state of `CoachTargetProposal` (design-system §9.16), summary only. Rows: exercise name (`type.headline`) + `TargetSourceTag` `Coach`; `Target 97.5 kg × 6–8 · −2.5%` (`type.body`, tabular; % in `text.secondary`); reason in quotes (`type.callout`, 2 lines max, the rest in `Why?`); optional guard note (`type.callout`, `text.secondary`, `info.circle`; pain uses `exclamationmark.triangle` in `status.warning`); `Rule: 100 kg × 6–8` (`type.callout`, `text.secondary`); action row `Why? ›` (left) and `Undo` (right), `accent` text buttons, ≥ 44pt hit areas, ≥ `space.8` apart. Variants: **undone** (tag `Built-in rule`, line `You undid the coach's target.`, `Use coach target: …` text button), **based on edited** (`exclamationmark.triangle` + text, two text buttons), **used** (no buttons, `Used in Push A, 10 Oct.`). No animation when a row updates from `Coach is reviewing…` |
 | `CoachTargetProposal` | Unchanged frame; now only for bigger changes. Adds the first line `More than a small change: tap Apply to use it.` |
 | Region 6b | The existing `ChangeReviewCard` (design-system §9.11) with author `Coach`, a `Because:` line (`type.callout`, `text.secondary`) above the scope, and Apply as a secondary accent button so `Done` stays the only primary |

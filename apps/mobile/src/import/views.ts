@@ -101,10 +101,9 @@ export interface IntroView {
 }
 
 export const INTRO_COPY = {
-  lead: 'Bring in your FitNotes history from a CSV export.',
-  step1: 'In FitNotes, export a CSV and save it to Files.',
-  step2: 'Choose it here. You’ll see what will be imported before anything is saved.',
-  works: 'Works with FitNotes (Android) and FitNotes 2 (iPhone) CSV files.',
+  line: 'Export a CSV from FitNotes to Files, then choose it.',
+  /** Behind the line's `ⓘ`. */
+  info: 'FitNotes or FitNotes 2',
 } as const;
 
 export function blockLine(b: ImportBlock, time: string): string {
@@ -119,7 +118,7 @@ function stoppedAt(p: Pick<PastImport, 'written' | 'total'>): string {
 }
 
 export function pausedLine(p: Pick<PastImport, 'written' | 'total'>): string {
-  return p.written >= p.total ? `${stoppedAt(p).slice(0, -1)}; Continue import finishes it.` : stoppedAt(p);
+  return stoppedAt(p);
 }
 
 /**
@@ -128,7 +127,7 @@ export function pausedLine(p: Pick<PastImport, 'written' | 'total'>): string {
  * rather than looking empty.
  */
 export function importedNotListedLine(n: number): string {
-  return `${plural(n, 'workout', 'workouts')} imported from FitNotes ${n === 1 ? 'isn’t' : 'aren’t'} listed: imported workouts can’t be repeated yet. They’re in Data & backup, under Past imports.`;
+  return `${plural(n, 'imported workout', 'imported workouts')} not listed ›`;
 }
 
 /**
@@ -137,7 +136,7 @@ export function importedNotListedLine(n: number): string {
  * each workout saves whole or not at all, and `Try again` checks.
  */
 export function writeFailedLine(r: { written: number; date: string; message: string }, locale?: string): string {
-  return `Workout ${formatCount(r.written + 1)} (${longDate(r.date, locale)}) may not have saved: ${r.message}. ${plural(r.written, 'workout is', 'workouts are')} in before it. Each workout saves whole or not at all; Try again checks and carries on.`;
+  return `Workout ${formatCount(r.written + 1)} (${longDate(r.date, locale)}) may not have saved: ${r.message}. ${plural(r.written, 'workout is', 'workouts are')} in before it.`;
 }
 
 export function introView(input: { block: ImportBlock | null; blockTime: string; paused: PastImport | null }): IntroView {
@@ -165,7 +164,7 @@ export function openErrorView(r: OpenResult, locale?: string): OpenErrorView | n
     case 'body_tracker':
       return { text: 'This looks like a FitNotes Body Tracker export. Choose the Workout Data export.', firstLine: r.firstLine, sameFileJobId: null };
     case 'unknown_header':
-      return { text: 'GymSmarter doesn’t recognise this file’s columns yet. Nothing was guessed.', firstLine: r.firstLine, sameFileJobId: null };
+      return { text: 'GymSmarter doesn’t recognise this file’s columns yet.', firstLine: r.firstLine, sameFileJobId: null };
     case 'same_file':
       // Its import isn't finished: say where it stopped and point to Continue once (review N1, r2 N1).
       if (r.state === 'paused') {
@@ -340,28 +339,28 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
   if (r.unreadable > 0) {
     skipped.push({
       key: 'unreadable',
-      line: info(`${plural(r.unreadable, 'row', 'rows')} can’t be read`, a.decimalCommaRows > 0 ? 'This file may use decimal commas (22,5). Nothing was guessed.' : undefined),
+      line: info(`${plural(r.unreadable, 'row', 'rows')} can’t be read`, a.decimalCommaRows > 0 ? 'This file may use decimal commas (22,5).' : undefined),
     });
   }
   if (d.answers.existingDates === 'skip' && a.appDates.count > 0) {
     skipped.push({ key: 'date_exists', line: info(`${plural(a.appDates.count, 'date already has', 'dates already have')} a GymSmarter workout`, `Newest: ${longDate(a.appDates.newest ?? '', locale)}`) });
   }
   for (const e of a.alreadyImported.imports) {
-    skipped.push({ key: 'duplicate', line: info(`${plural(e.dates, 'workout', 'workouts')} came in with your import on ${shortDateOf(e.startedAtUtc, e.tz, locale)}. They’ll be skipped.`, 'GymSmarter’s version always wins, including sets you corrected since.') });
+    skipped.push({ key: 'duplicate', line: info(`${plural(e.dates, 'workout', 'workouts')} came in with your import on ${shortDateOf(e.startedAtUtc, e.tz, locale)}. They’ll be skipped.`) });
   }
   if (skippedExerciseSets(a) > 0) skipped.push({ key: 'exercise', line: info(`${plural(skippedExerciseSets(a), 'set', 'sets')} of exercises you chose to skip`) });
 
   const kept: Line[] = [];
   if (a.comments > 0) kept.push(info(`${plural(a.comments, 'comment', 'comments')}, kept with each set as written`));
   else if (!variantHasComments(d.variant)) kept.push(info('No comments in this file (FitNotes export without comments)'));
-  kept.push(info('FitNotes files have no times. These workouts show the date only.'));
+  kept.push(info('Date only (no times)'));
   if (a.machines.length > 0) {
     // Assistance reads the number the other way round (more is easier): name those exercises (review r5 S3), each with what it imports as (review r6 N2).
     const assisted = a.machines.filter((m) => m.convention === 'assistance').map(assistedText);
-    kept.push(info('Machines: imported as stack readings, plates added or assistance, by exercise', assisted.length === 0 ? undefined : `Read as assistance (more weight is easier): ${assisted.join(', ')}`));
+    kept.push(info('Machines: by exercise', assisted.length === 0 ? undefined : `Read as assistance (more weight is easier): ${assisted.join(', ')}`));
   }
   if (a.barless.length > 0) kept.push(info(`Kettlebell and other no-bar weights imported as written (${a.barless.map((b) => b.name).join(', ')})`));
-  kept.push(info('Warm-ups aren’t marked in FitNotes files, so every set comes in as a working set.'));
+  kept.push(info('All sets as working sets'));
 
   const effortReview =
     a.effort.candidates.length === 0
@@ -387,7 +386,7 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
       ? {
           icon: 'info.circle',
           tone: 'info',
-          text: `You imported this file on ${shortDateOf(before.startedAt.utc, before.startedAt.tz, locale)}. Workouts from it that are still in GymSmarter are skipped; dates that aren’t in GymSmarter now are offered again, with your answers from then filled in.`,
+          text: `Imported before on ${shortDateOf(before.startedAt.utc, before.startedAt.tz, locale)} · new dates only`,
         }
       : null,
     detection: `${appLabel(d.variant)} · ${unitsLabel(a.units)}`,
@@ -576,7 +575,7 @@ export interface PerHandRowView {
 
 export interface PerHandView {
   title: string;
-  lead: string;
+  lead: string | null;
   /** The group question, asked only for exercises done with two dumbbells; null when the file has none. */
   question: string | null;
   options: OptionView<'each' | 'both'>[];
@@ -650,7 +649,7 @@ export function perHandOptions(a: ImportAnalysis, locale?: string): PerHandView 
   const lone = known.length === 1 && known[0]?.implements === 2 && known[0].override === null;
   return {
     title: 'Dumbbell weights',
-    lead: 'FitNotes doesn’t record whether a dumbbell weight is one dumbbell or both together.',
+    lead: null,
     question: q.pairs === 0 ? null : `For ${q.pairs === 1 ? 'this exercise' : `these ${String(q.pairs)} exercises`} with two dumbbells, “${v}” means:`,
     options:
       q.pairs === 0
@@ -665,7 +664,7 @@ export function perHandOptions(a: ImportAnalysis, locale?: string): PerHandView 
         ? null
         : {
             title: 'One dumbbell or two?',
-            lead: `GymSmarter doesn’t know whether ${unknown.length === 1 ? 'this exercise uses' : 'these exercises use'} one dumbbell or two. Choose for each.`,
+            lead: 'Choose for each',
             rows: unknown.map(perHandRow),
           },
     rows:
@@ -759,7 +758,7 @@ export interface TotalRowView {
 
 export interface TotalView {
   title: string;
-  lead: string;
+  lead: string | null;
   /** The group question, for exercises with no answer of their own; null when there are none. */
   question: string | null;
   /** Only `Total as written`: no group answer adds a bar weight (PM decision after review r7). */
@@ -854,21 +853,21 @@ export function totalOptions(a: ImportAnalysis, locale?: string): TotalView | nu
           unit,
           value: b.weight[unit],
           label: `${BAR_WORD[b.bar]} weight (${unit}), added to “plates only” values`,
-          missing: b.missing.includes(unit) ? `Enter your ${BAR_NAME[b.bar]}’s weight in ${unit}. Plates-only sets on it can’t be imported without it.` : null,
+          missing: b.missing.includes(unit) ? `${BAR_WORD[b.bar]} weight needed (${unit})` : null,
         }),
       ),
     );
   const unit = ex?.unit ?? 'kg';
   return {
     title: 'Barbell weights',
-    lead: 'FitNotes doesn’t record whether a barbell weight includes the bar. Weights are imported as written unless you choose “Plates only” for an exercise below.',
+    lead: null,
     question: q.grouped === 0 ? null : `For ${q.grouped === 1 ? 'this exercise' : `these ${String(q.grouped)} exercises`}, “${v}” means:`,
     options: q.grouped === 0 ? [] : [{ value: 'total', label: 'Total as written', detail: `Nothing added: imported as ${v}${NBSP}${unit}`, selected: q.answer === 'total' }],
     example: ex ? `Example from your file (${dayMonthYear(ex.date, locale)}): ${ex.name}  ${v}${NBSP}×${NBSP}${String(ex.reps)}` : null,
     barWeights,
     platesOnly: {
       title: 'Plates only (bar not counted)?',
-      lead: 'Choose “Plates only” for any exercise whose weights don’t include the bar. Check the bar: its weight is added.',
+      lead: 'Bar weight is added',
       rows: q.exercises.map(totalRow),
     },
   };

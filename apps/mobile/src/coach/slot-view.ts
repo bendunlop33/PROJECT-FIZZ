@@ -30,13 +30,25 @@ export interface SlotInput {
   workout?: Pick<SessionAggregate, 'session' | 'sets'> | null;
 }
 
+/**
+ * The banner's visible notes (minimal-copy W13): only a pain block, as one
+ * short warning. Every other guard note is a `Why?` check. `Pain flag` only
+ * when a saved flag blocked it (`pain_blocked`); a pain mention in chat or
+ * the check-in writes no flag, so it reads `Pain mentioned` (review B1).
+ */
+function slotNotes(notes: readonly { kind: string }[]): string[] {
+  if (notes.some((n) => n.kind === 'pain_blocked')) return ['Pain flag · no increases'];
+  if (notes.some((n) => n.kind === 'pain_mentioned' || n.kind === 'pain_unspecified')) return ['Pain mentioned · no increases'];
+  return [];
+}
+
 export function slotView(input: SlotInput): SlotView | null {
   if (input.pending) return { kind: 'pending', title: 'Coach is working…', cancel: true };
   const a = input.adjustment;
   if (a !== null && a.detail.kind === 'adjust_pending_sets' && a.status === 'committed') {
     const r = renderActionResult(a, 'slot');
     if (a.undoneBy !== null) return { kind: 'outcome', text: 'Coach change undone.', retry: false };
-    return { kind: 'banner', actionId: a.actionId, title: r.text, detail: r.detail, notes: [...new Set(a.guardNotes.filter((n) => n.kind !== 'completed_set_dropped').map((n) => n.text))].slice(0, 2), canUndo: input.workout == null || coachUndoRefusal(input.workout, a.actionId) === null };
+    return { kind: 'banner', actionId: a.actionId, title: r.text, detail: r.detail, notes: slotNotes(a.guardNotes), canUndo: input.workout == null || coachUndoRefusal(input.workout, a.actionId) === null };
   }
   if (input.outcome !== null) return { kind: 'outcome', text: input.outcome.text, retry: input.outcome.retry };
   if (input.offer !== null) return { kind: 'offer', prompt: input.offer.prompt, fact: input.offer.fact, triggerKind: input.offer.kind };
@@ -53,7 +65,7 @@ export function slotAfterTurn(result: CoachTurnResult): { adjustment: ActionReco
   if (committed !== null) return { adjustment: committed, outcome: null };
   const refused = adjust[0];
   if (refused !== undefined) {
-    const text = refused.status === 'stale' ? 'Your workout moved on. Nothing changed.' : renderActionResult(refused, 'slot').text;
+    const text = refused.status === 'stale' ? 'Out of date' : renderActionResult(refused, 'slot').text;
     return { adjustment: null, outcome: { text, retry: refused.status === 'stale' } };
   }
   const failed = outcomeFor(result.status, result.error, result.cards.length > 0);
@@ -84,7 +96,7 @@ export interface AdjustControlView {
 export function adjustControlView(a: CoachAvailability): AdjustControlView {
   if (a.status === 'ok') return { caption: null, chips: ['too_hard', 'too_easy', 'pain', 'type'], line: null };
   if (a.status === 'offline') return { caption: 'Offline', chips: ['too_hard', 'too_easy', 'pain', 'type'], line: null };
-  return { caption: a.status === 'not_connected' ? 'Not connected' : 'Unavailable', chips: ['pain'], line: 'Sets unchanged.' };
+  return { caption: a.status === 'not_connected' ? 'Not connected' : 'Unavailable', chips: ['pain'], line: null };
 }
 
 export const ADJUST_CHIP_LABEL: Record<AdjustControlView['chips'][number], string> = { too_hard: 'Too hard', too_easy: 'Too easy', pain: 'Pain', type: 'Type…' };

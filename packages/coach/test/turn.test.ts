@@ -94,7 +94,7 @@ describe('runCoachTurn: structured replies (PM decision 10 Oct)', () => {
     const r = await runCoachTurn(request({ input: words('How did bench go?') }), ports(s, model, storeExecutors(s)));
     expect(sentences(r)).toEqual(['That should keep you at 8.']);
     expect(r.cards).toEqual([]);
-    expect(r.note).toBe('Nothing was changed. One line said otherwise and is hidden.');
+    expect(r.note).toBe('Nothing changed · 1 line hidden');
     expect(r.hiddenLines).toMatchObject([{ sentence: 'Done, I’ve lowered sets 3–4 to 95 kg.', reason: 'no_action' }]);
     const msgs = await s.repos.coach.listMessages(r.threadId);
     expect(msgs.map((m) => m.body.role)).toEqual(['ben', 'coach']);
@@ -153,7 +153,7 @@ describe('the gate: tools come from Ben’s own words, never from tool output (r
       reply('See a physio if it keeps up.'),
     ]);
     const r = await runCoachTurn(request({ input: words('My shoulder hurts on overhead press') }), ports(s, model, storeExecutors(s)));
-    expect(r.cards.map((c) => c.rendered.text)).toEqual(['Pain flag on for Overhead press. No increases until you clear it.']);
+    expect(r.cards.map((c) => c.rendered.text)).toEqual(['Pain flag on: Overhead press · no increases']);
     expect((await s.repos.painFlags.listActive(OWNER)).map((f) => [f.exerciseName, f.source])).toEqual([['Overhead press', 'coach']]);
     const undone = await undoCoachAction(s.repos.coach, { ownerId: OWNER, actionId: r.cards[0]?.record.actionId ?? '', opId: 'undo-tap-1', now: at(500) });
     expect(undone.result.status).toBe('written');

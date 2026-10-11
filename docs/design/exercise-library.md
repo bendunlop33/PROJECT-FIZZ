@@ -103,9 +103,7 @@ Row rules (`ExerciseRow`, 52pt min):
 ```
 ┌────────────────────────────────────────┐
 │ Overhead press may hurt                │
-│ You flagged shoulder pain on it on     │
-│ 6 Oct. Loads won't go up while the     │
-│ flag is on.                            │
+│ Shoulder pain flagged 6 Oct.           │
 │ [ Add anyway ]                         │
 │ [ Choose another ]                     │ cancel role
 └────────────────────────────────────────┘
@@ -378,7 +376,7 @@ A row whose equipment isn't at this gym (with `At <gym>` off) asks before adding
 | Sections | `Recent` · `All exercises` · `12 more not at Main Gym. Show ›` |
 | Chips | `At Main Gym` · `Any gym` · `Muscle` · `Movement` · `Equipment` · `Movement: Vertical pull` · `Muscle: 2` · `Clear` · `Done` |
 | Row | `Last 100 kg × 8 · 6 Oct` · `Last at Hotel Gym: 60 kg × 10 · 12 Sep` · `No history` · `per side` · `Time` · `Busy today` · `Not at Main Gym` · `Custom` · `May hurt` (2026-10-09; was `Pain flagged`) · `Already in this workout` |
-| May hurt (2026-10-09) | Confirm `Overhead press may hurt` / `You flagged shoulder pain on it on 6 Oct. Loads won't go up while the flag is on.` (no area: `You flagged pain on it on 6 Oct.`) [Add anyway] [Choose another] · combined `Overhead press may hurt, and Main Gym has no landmine. Add anyway?` · Pick several line `May hurt: you flagged shoulder pain on 6 Oct. Loads won't go up while the flag is on.` · VoiceOver tag "May hurt: you flagged shoulder pain on it." |
+| May hurt (2026-10-09) | Confirm `Overhead press may hurt` / `Shoulder pain flagged 6 Oct.` (no area: `Pain flagged 6 Oct.`) [Add anyway] [Choose another] · combined `Overhead press may hurt, and Main Gym has no landmine. Add anyway?` · Pick several line `May hurt: you flagged shoulder pain on 6 Oct. Loads won't go up while the flag is on.` · VoiceOver tag "May hurt: you flagged shoulder pain on it." |
 | Pick several | `Selected: Bench press, Cable fly` · primary `Add 2 exercises` / `Add exercise` / disabled `Select exercises` |
 | No gym | `No gym selected, so equipment isn't checked.` [Add gym] |
 | Not at gym confirm | `Main Gym has no cable station. Add Cable fly anyway?` [Add] [Cancel] |

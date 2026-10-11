@@ -460,7 +460,7 @@ All loads, reps and rest on the review screen are **targets**. The list is heade
 | Guard: not today | `Left out Barbell row: you said no barbell today.` (substitution as for swapped, if one exists) |
 | Guard: pain | `Left out Overhead press: you flagged shoulder pain.` (no area: `…you flagged pain on Overhead press.`) |
 | Guard: rounded | Row: `Rounded down from 28 kg.` · Summary: `Rounded 2 loads to your equipment.` |
-| Guard: capped | `Capped at 30 kg each: the most Main Gym's rack goes to.` |
+| Guard: capped | `Max here 30 kg each` |
 | Guard: no history | (row line only) `No history: start light, enter your load.` |
 | Guard: unknown exercise | `Left out "Landmine twist": not in your exercise list.` |
 | Guard: over length | `About 52 min: longer than the 45 min you asked for.` |

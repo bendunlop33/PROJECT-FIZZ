@@ -263,7 +263,7 @@ describe('planRoutineStart (start a routine with next-session targets)', () => {
     const small = barbell({ plates: [{ mass: 20, count: 2 }] });
     const out = planRoutineStart({ ...base, gymEquipment: [small, stack()], targets: new Map([[BENCH, plan(105, [6, 8])]]) });
     expect(setsFor(out.aggregate, BENCH).map((x) => x.planned.load?.value)).toEqual([60, 60, 60]);
-    expect(out.notes).toContainEqual({ exerciseName: 'Bench press', text: 'Rounded down from 105 kg: this gym stops at 60 kg.', tone: 'info' });
+    expect(out.notes).toContainEqual({ exerciseName: 'Bench press', text: 'Max here 60 kg · plan 105 kg', tone: 'info' });
   });
 
   it('kg targets at an lb dumbbell rack: per hand, converted toward easier', () => {
@@ -274,7 +274,7 @@ describe('planRoutineStart (start a routine with next-session targets)', () => {
     const r: Routine = { ...pushA, exercises: [routineExercise(630, { exerciseId: DB, equipmentId: kgRack.id, setTemplates: [template(6301, { targetLoad: kg(22.5, 'per_hand') })] })] };
     const out = planRoutineStart({ ...base, routine: r, exercises: exs, gymEquipment: [lbRack], knownEquipment: new Map([[kgRack.id, kgRack]]) });
     expect(setsFor(out.aggregate, DB)[0]?.planned.load).toEqual(lb(45, 'per_hand'));
-    expect(out.notes.map((n) => n.text)).toContain('Rounded from 22.5 kg each to 45 lb each to match this gym.');
+    expect(out.notes.map((n) => n.text)).toContain('Converted from 22.5 kg each');
   });
 
   it('assisted machine: rounding goes toward more assistance (easier), never less', () => {
@@ -291,8 +291,8 @@ describe('planRoutineStart (start a routine with next-session targets)', () => {
     const out = planRoutineStart({ ...base, gymEquipment: [dumbbells()], knownEquipment: new Map([[barbell().id, barbell()], [stack().id, stack()]]) });
     expect(setsFor(out.aggregate, BENCH).every((x) => x.planned.load === null)).toBe(true);
     expect(setsFor(out.aggregate, BENCH).map((x) => x.planned.reps?.min)).toEqual([10, 6, 5]);
-    expect(out.notes).toContainEqual({ exerciseName: 'Bench press', text: 'No Olympic bar here: no load target.', tone: 'warning' });
-    expect(out.notes).toContainEqual({ exerciseName: 'Cable row', text: 'No Cable stack here: no load target.', tone: 'warning' });
+    expect(out.notes).toContainEqual({ exerciseName: 'Bench press', text: 'No load target · no olympic bar here · plan 102.5 kg', tone: 'warning' });
+    expect(out.notes).toContainEqual({ exerciseName: 'Cable row', text: 'No load target · no cable stack here · plan 50 kg stack', tone: 'warning' });
   });
 
   it('the same kind at another gym is used when the routine’s own item isn’t there', () => {

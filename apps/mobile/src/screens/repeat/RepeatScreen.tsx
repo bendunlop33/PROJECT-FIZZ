@@ -120,7 +120,7 @@ export function RepeatScreen() {
     changed();
     if (gate.kind === 'reuse') {
       const ci = await services.checkIns.get(gate.checkInId);
-      navigation.dispatch(openStartedWorkout(ci ? { toast: { kind: 'check_in', text: `Using your check-in from ${formatTime(toMs(ci.recordedAt.utc), ci.recordedAt.tz)} · ${scoreText(ci.score)}`, checkInId: ci.id } } : undefined));
+      navigation.dispatch(openStartedWorkout(ci ? { toast: { kind: 'check_in', text: `Check-in ${formatTime(toMs(ci.recordedAt.utc), ci.recordedAt.tz)} · ${scoreText(ci.score)}`, checkInId: ci.id } } : undefined));
       return;
     }
     navigation.dispatch(openStartedWorkout());
@@ -147,7 +147,7 @@ export function RepeatScreen() {
             }}
           />
         </View>
-        <AppText variant="callout">{`Targets are what you did on ${day}. Nothing is marked done. Progression isn’t applied.`}</AppText>
+        <AppText variant="callout">{`Targets: as on ${day}`}</AppText>
       </View>
       <AppText variant="label" color="text.secondary">
         All values are targets.

@@ -84,7 +84,7 @@ export type SetupWriteResult = { ok: true } | { ok: false; message: string };
 
 export type IntegrityCheck = { atUtc: string; tz: string; report: IntegrityReport } | null;
 
-const WRITE_FAILED = 'Couldn’t save this. Nothing was changed; try again.';
+const WRITE_FAILED = 'Couldn’t save. Try again.';
 
 export function createAppServices(deps: AppServicesDeps) {
   const repos = (): SqliteRepositories => deps.manager.store.repos;
@@ -206,7 +206,7 @@ export function createAppServices(deps: AppServicesDeps) {
       // editor's updateGym exists). A retry with the same ID stays a duplicate.
       const inSetup = profile.setup !== undefined && profile.setup.completedAtUtc === undefined;
       if (inSetup && existing.some((g) => g.id !== req.gymId)) {
-        return { ok: false, message: 'A gym is already saved. You can edit it later in the gym editor.' };
+        return { ok: false, message: 'A gym is already saved.' };
       }
       const result = materialiseGymDraft(req.draft, {
         name: req.name,

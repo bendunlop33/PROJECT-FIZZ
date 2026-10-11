@@ -29,7 +29,7 @@ export function BlockingCover({ visible, title, lines }: { visible: boolean; tit
           ))}
         </View>
         <AppText variant="callout" color="text.secondary" align="center">
-          Keep GymSmarter open. If it closes now, your current data stays as it is.
+          Keep GymSmarter open.
         </AppText>
       </View>
     </Modal>

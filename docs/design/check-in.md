@@ -20,7 +20,7 @@ The check-in is **a record of what Ben said, not a measurement.** Fizz stores it
 | CI4 | **The score is saved at the first tap**; reasons and the note update the same record. A check-in that isn't linked to a workout (app closed, swiped away, `Train anyway` later) is **reused** by the next Start within `timing.checkInReuse` (2 h) without asking again | No answer is lost to a force-close, and Ben is never asked twice for the same session |
 | CI5 | **The lighter-session offer appears in the first set card's coach slot, in Ready, before any set is logged.** It's visual only (never spoken), and stays until Ben answers, the first exercise's last set is logged, or a set-trigger offer replaces it | Exception to coach-adjustments §2.3 ("offers only while Resting"). That rule protects a lift in progress from interruption; a silent line before the first set doesn't interrupt anything. Alternative: put the offer as a last step in the sheet (one more tap for every low score) |
 | CI6 | **`Adjust` on the check-in offer counts as yes** (same as B4 / CA1): the coach's change applies at once to **today's pending sets only**, with Undo. A lighter-session request can't raise anything: `validateCoachProposal` drops every increase (`lighter_no_increase`) | Rule 3 (Ben accepted). Today only, never the routine template (rule 2) |
-| CI7 | **Coach offline or unavailable** (a route exists but can't answer): one honest line in the coach slot, `Check-in saved. Coach offline, so today's plan is unchanged.` **Coach not connected** (no route set up): nothing extra | Rule 1: be honest when Ben would expect something. A permanent "not connected" line on every low day would nag |
+| CI7 | **Coach offline or unavailable** (a route exists but can't answer): one honest line in the coach slot, `Coach offline` (with `wifi.slash`) **Coach not connected** (no route set up): nothing extra | Rule 1: be honest when Ben would expect something. A permanent "not connected" line on every low day would nag |
 | CI8 | **`Pain` with no movement chosen sets no pain flag**, but blocks every coach increase in that session (`pain_unspecified`) and the summary asks Ben to choose movements | Rule 9 needs a movement to stop progression on; the session-wide block is the safe direction (CM4) without guessing joints (CM5) |
 | CI9 | **Voice: numbers only.** "Feeling great" isn't turned into a 5; Fizz asks for the number. A bare "sore", "stiff" or "tight" asks `Sore like after training, or pain?` (CM6). The tapped chip `Sore (from training)` is explicit and isn't questioned | Rule 6 (don't invent data) and the existing soreness rule |
 | CI10 | **What the coach sees:** only **this session's** check-in, during this session (offer, adjustments, coach sheet) and in this session's summary turn, labelled as Ben's own words. It is **not** sent to the weekly review or to other sessions, and nothing computes over check-ins | Ben's brief: "never combined with other metrics". Alternative (needs Ben): send the last 4 weeks of check-ins as raw entries so the coach can notice patterns |
@@ -65,7 +65,7 @@ The check-in is shown by one gate, `shouldAskCheckIn`, at every way of starting 
 | Situation | What happens |
 |---|---|
 | Check-ins on, today is a check-in day, nothing answered for this start | Sheet (§2.2) |
-| An unlinked check-in exists from the last 2 h (`timing.checkInReuse`) | No sheet. The workout starts, the check-in is linked, toast `Using your check-in from 18:02 · 3 of 5` [Change] |
+| An unlinked check-in exists from the last 2 h (`timing.checkInReuse`) | No sheet. The workout starts, the check-in is linked, toast `Check-in 18:02 · 3 of 5` [Change] |
 | Check-ins off, or today isn't one of the selected days | No sheet. Start behaves exactly as before (one tap). Session status `not_asked` |
 | This session already answered or skipped | Never asked again (Resume, relaunch, P6) |
 | Any set has been logged in this session (even if later undone or deleted) | Never asked. **Never mid-workout** |
@@ -117,8 +117,6 @@ The same sheet grows to its medium detent; content swaps in place (no new sheet)
 │ [ Tired ]  [ Poor sleep ]              │ ParamChip, multi-select, 52pt
 │ [ Sore (from training) ]  [ Stressed ] │
 │ [ Feeling ill ]  [ Pain ]  [ Other… ]  │
-│ ⚠ Next you'll choose which movements   │ only when Pain is selected
-│   hurt.                                │ (NoteLine, info.circle)
 │                                        │
 │ Note (optional)                        │ type.label
 │ ┌────────────────────────────────────┐ │ 52pt, grows to 3 lines
@@ -153,12 +151,10 @@ Pushed inside the sheet (large detent). Content and copy are coach-memory.md §2
 │ └────────────────────────────────────┘ │
 │ Where? (optional)                      │
 │ [Shoulder] [Elbow] [Wrist] [Back] …    │
-│ If pain is sharp, keeps coming back or │ type.callout, text.secondary
-│ doesn't settle, see a physio or        │
-│ doctor. The coach can't diagnose.      │
-│ Stop and get medical help now if you   │
-│ have chest pain, feel faint or have    │
-│ sudden severe pain.                    │
+│ Sharp or lasting pain: see a physio or │ type.callout, text.secondary
+│ doctor.                                │
+│ Chest pain, faintness or sudden severe │
+│ pain: stop and get medical help now.   │
 │ Not now                                │ text button, above-left
 ├────────────────────────────────────────┤
 │ [ 🎙 ] [       Flag 1 movement       ] │ PrimaryButton
@@ -241,7 +237,7 @@ The sheet closes and Active workout opens as normal (Ready on the first set). Tw
 │ Active time            54 min          │ facts start here
 ```
 
-With `Pain` picked but no movement flagged (CI8), one `NoteLine` follows: `⚠ You mentioned pain before this workout. Flag the movements that hurt so loads don't go up.` [Choose movements ›].
+With `Pain` picked but no movement flagged (CI8), one `NoteLine` follows: `⚠ Pain mentioned · which movements?` [Choose movements ›].
 
 No line at all when the check-in was skipped or not asked. Tapping the line opens the edit sheet (§4.6).
 
@@ -338,7 +334,7 @@ No line at all when the check-in was skipped or not asked. Tapping the line open
 
 ### 2.9 Today
 
-The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is removed (today.md §2). The only check-in trace on Today is rare: when an unlinked check-in from the last 2 h exists (app closed mid-sheet, or `Train anyway` not yet tapped), one line sits under the main card: `Check-in saved at 18:02: 3 of 5 · Tired. It'll be used when you start.` Tap → edit sheet.
+The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is removed (today.md §2). The only check-in trace on Today is rare: when an unlinked check-in from the last 2 h exists (app closed mid-sheet, or `Train anyway` not yet tapped), one line sits under the main card: `Check-in 18:02 · 3 of 5 · Tired ›` Tap → edit sheet.
 
 ---
 
@@ -347,7 +343,7 @@ The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is
 | State | Trigger | Shows | Primary | Notes |
 |---|---|---|---|---|
 | Not asked | Off, not a check-in day, already decided, or a set already logged | Nothing; Start behaves as before | Start → Active workout | Session `checkIn: not_asked` (off / not a day) or untouched |
-| Reused | Unlinked check-in < 2 h old | No sheet; toast `Using your check-in from 18:02 · 3 of 5` [Change] | — | Linked in the `startWorkout` transaction |
+| Reused | Unlinked check-in < 2 h old | No sheet; toast `Check-in 18:02 · 3 of 5` [Change] | — | Linked in the `startWorkout` transaction |
 | Step 1 | Gate says ask | §2.2 | (none; score buttons) | Today's Start is disabled behind the scrim; no double start |
 | Saving score | Score tapped | Tapped button shows `accent.subtle` + check; nothing else changes | — | Local write, normally < 50 ms; nothing is shown for it |
 | Score above the "What's up?" setting | 4 or 5 by default | Sheet closes; Active workout opens; toast | — | One tap |
@@ -359,7 +355,7 @@ The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is
 | Voice clarifying | Unclear phrase | `ClarifyChips` in the strip: `What number, 1 to 5?` / `Sore like after training, or pain?` / `3 or 4?` | — | Nothing saved until answered; `Not saved` after 30 s |
 | Voice saved | Clear phrase | Strip `✓ Got it · 3 of 5 · Tired` + `Heard: "…"`, then the sheet continues as if tapped | — | The in-workout toast carries [Change] |
 | Swiped away | Swipe down / escape | Back to Today, nothing started | — | Saved score (if any) stays, unlinked, reusable for 2 h |
-| Write failed | `recordCheckIn` fails | Workout starts anyway; toast `Check-in wasn't saved. Your workout started as normal.` Over the Workout overview nothing starts: the sheet shows `Check-in wasn't saved.` and the overview's Start still works | — | Never blocks logging. Session `checkIn: skipped` |
+| Write failed | `recordCheckIn` fails | Workout starts anyway; toast `Check-in not saved`. Over the Workout overview nothing starts: the sheet shows `Check-in not saved` and the overview's Start still works | — | Never blocks logging. Session `checkIn: skipped` |
 | Resume, not yet started | `Resume` or P6 auto-open of a session with 0 sets ever logged and `checkIn: pending` | Same sheet over Active workout (§2.2 Resume line) | — | Skip or swipe-down → stays in the workout, `skipped`. `Skip workout` → `discardWorkout` (0 sets; no Undo) + `skipScheduledSession` (Undo) |
 | Paused, not yet started | As above, workout paused | Same sheet | — | Answering doesn't resume; `Resume` stays the workout's primary |
 | Offline | No network | Identical sheet; everything is local | — | Only the in-workout offer differs (CI7) |
@@ -369,7 +365,7 @@ The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is
 | Offer: applied | Valid result | `CoachAdjustmentBanner`: `Coach adjusted 14 sets` · `Bench press 2–6 · Incline DB press 1–3 · …` · reason · guard notes · `Why? ›` [Undo] | `Log <new values>` (1 s guard if the label changed) | Today's pending sets only |
 | Offer: no change / timed out / failed / stale | As coach-adjustments §3.1 | Outcome line, no Undo | `Log …` | Same strings |
 | Offer: expired | First exercise's last set logged, or a set offer replaced it | Gone | `Log …` | `recordTriggerResponse(…, 'expired')` |
-| Offline after a low score | Offer conditions hold but the coach can't be reached | `Check-in saved. Coach offline, so today's plan is unchanged.` | `Log …` | Hides on the first Log |
+| Offline after a low score | Offer conditions hold but the coach can't be reached | `Coach offline` (with `wifi.slash`) | `Log …` | Hides on the first Log |
 | Recorded | After start | `CheckInLine` on summary / past workout; Progress card | — | §2.7 |
 | Edited | Changed later | `CheckInLine` shows the new values; past workout `Edit history` lists `Check-in 3 → 2` | — | Nothing else recomputes |
 | Deleted | `Delete check-in` | Line gone; toast `Check-in deleted` [Undo] | — | Audited tombstone |
@@ -413,7 +409,7 @@ The readiness region (`How do you feel today?` + `Normal` / `Tired` / `Sore`) is
 | Pain step `Flag n movements` | `setPainFlag({exerciseIds, active: true, area?, source: 'check_in'}, opId)`; `updateCheckIn(…, {painFlagIds})`; continue | Flag first, then everything else (CM4) |
 | Pain step `Not now` | No flag; continue | CI8 |
 | `Train anyway` | Start (answered) | |
-| `Skip workout` | `setCheckInOutcome(id, 'skipped_workout')`; with a planned session, `skipScheduledSession(id, expectedVersion, opId)`; sheet closes; Today shows the plan card as skipped | Toast `Skipped Push A (Thu 8 Oct)` [Undo]. No plan: toast `No workout started. Your check-in is saved.` |
+| `Skip workout` | `setCheckInOutcome(id, 'skipped_workout')`; with a planned session, `skipScheduledSession(id, expectedVersion, opId)`; sheet closes; Today shows the plan card as skipped | Toast `Skipped Push A (Thu 8 Oct)` [Undo]. No plan: toast `Check-in saved · no workout` |
 | `Reschedule` | `setCheckInOutcome(id, 'rescheduled')`; opens the weekly plan's move picker for today's session (weekly-plan §2.4) | Cancelling the picker returns to Today; nothing started |
 | `⚙` (Step 1) | Pushes Check-in settings inside the sheet (large detent); `‹` returns to Step 1 | Changing "every workout" to days here doesn't skip today's question |
 | Toast `Change` | Opens the edit sheet (§4.6) over the workout | Only while no set is logged; afterwards, change it on the summary |
@@ -510,7 +506,6 @@ Every value is either **what Ben said** (the check-in), a **target** or an **act
 | Step 1 actions | `Skip` · `Talk` · settings button (VoiceOver "Check-in settings") |
 | Step 2 | back `‹ 3 of 5` · `What's up?` |
 | Chips | `Tired` · `Poor sleep` · `Sore (from training)` · `Stressed` · `Feeling ill` · `Pain` · `Other…` |
-| Pain hint | `Next you'll choose which movements hurt.` |
 | Note | `Note (optional)` · placeholder `Anything else?` (after `Other…`: `What else?`) · counter `240 of 280` |
 | Step 2 actions | `Done` · `Skip` |
 | Pain step | `Which movements hurt?` · ⓘ `Flagged movements don't go up until you clear the flag.` · `In Push A` · `Recent` · `Where? (optional)` · professional and urgent lines (coach-memory §5) · `Flag 1 movement` / `Flag 2 movements` · disabled `Choose a movement` · `Not now` |
@@ -520,13 +515,13 @@ Every value is either **what Ben said** (the check-in), a **target** or an **act
 
 | Element | Text | Kind |
 |---|---|---|
-| Toast | `✓ Check-in saved · 2 of 5` [Change] · reused: `Using your check-in from 18:02 · 3 of 5` [Change] · failed: `Check-in wasn't saved. Your workout started as normal.` | What Ben said |
+| Toast | `✓ Check-in saved · 2 of 5` [Change] · reused: `Check-in 18:02 · 3 of 5` [Change] · failed: `Check-in not saved` | What Ben said |
 | Offer | `Want a lighter session today?` · fact `You said 2 of 5 · Tired, Poor sleep` (or `You said 3 of 5 · Tired`) · `No thanks` · `Adjust` | Fact = what Ben said |
 | Pending | `Coach is working on today's sets` · `Nothing has changed yet.` · `Cancel` | — |
 | Applied | `Coach adjusted 14 sets` · `Bench press 2–6 · Incline DB press 1–3 · Lateral raise 1–3` · coach reason (one sentence, ≤ 90 characters) · `Why? ›` · `Undo` | Targets |
 | Guard notes | `No increases in a lighter session.` · `Not increasing anything today: you mentioned pain.` · plus the usual `Rounded to …` / `Capped at …` | Targets |
 | No change | `Coach kept today's sets as planned.` + reason | — |
-| Offline | `Check-in saved. Coach offline, so today's plan is unchanged.` | — |
+| Offline | `Coach offline` (with `wifi.slash`) | — |
 | Undone | `Back to the plan for today's sets.` | — |
 
 ### 5.3 Summary, Progress, Today, settings
@@ -534,11 +529,11 @@ Every value is either **what Ben said** (the check-in), a **target** or an **act
 | Element | Text |
 |---|---|
 | `CheckInLine` | `How you said you felt: 2 of 5` · reasons `Tired · Poor sleep` · note in quotes `"Baby was up at 3"` · `Other` shows as `Other` with the note |
-| Pain not flagged | `You mentioned pain before this workout. Flag the movements that hurt so loads don't go up.` [Choose movements ›] |
+| Pain not flagged | `⚠ Pain mentioned · which movements?` [Choose movements ›] |
 | Edit sheet | title `Change check-in` · `Save changes` · `Delete check-in` · confirm `Delete this check-in? Your workout isn't affected.` [Delete] [Cancel] · toast `Check-in deleted` [Undo] |
 | Progress card | `How you said you felt` · `Before each workout · 1 = rough, 5 = great` · rows `Thu 8 Oct  2 · Tired, Poor sleep` · outcomes `· skipped` / `· rescheduled` / `· no workout` · `9 check-ins in the last 4 weeks · 3 at 3 or lower` · none yet (check-ins on): `No check-ins yet. You're asked when you start a workout.` |
 | Progress detail | title `How you said you felt` · heading `Before each workout (your own rating)` · axis `1 rough` … `5 great` · `Show as table` · table headers `Date` · `Rating` · `What's up` · `Workout` · footer `These are your own ratings before each workout, shown as you gave them. Fizz doesn't combine them with anything else or turn them into a score.` |
-| Today | `Check-in saved at 18:02: 3 of 5 · Tired. It'll be used when you start.` |
+| Today | `Check-in 18:02 · 3 of 5 · Tired ›` |
 | Profile row | `Check-in` · `Every workout · asks what's up at 3 or lower` / `Mon, Wed, Fri · asks what's up at 3 or lower` / `Off` |
 | Settings | as §2.8 |
 
@@ -662,7 +657,7 @@ Storage, backup, export, delete: `CheckIn` is **Your data** (owner ID, `your_dat
 15. `Adjust`: only pending sets change, the routine template is unchanged, no target goes up (a test model reply with one increase shows `No increases in a lighter session.`), the banner shows before → after with Undo, and Undo restores every pending target.
 16. Score 3 + `Tired` → offer (default settings). Score 3 + `Stressed` → no offer. Score 4 → no offer. With the coach offer set to `Never` → no offer for any score.
 17. Ignoring the offer: it stays through the warm-up sets and is gone after the first exercise's last set is logged (`expired`). It is never spoken, even in Conversation mode during rest.
-18. Airplane mode with the coach connected, score 1: the whole check-in works; the slot shows `Check-in saved. Coach offline, so today's plan is unchanged.` until the first Log; no offer appears. Coach not connected: nothing appears.
+18. Airplane mode with the coach connected, score 1: the whole check-in works; the slot shows `Coach offline` (with `wifi.slash`) until the first Log; no offer appears. Coach not connected: nothing appears.
 19. `calculateNextTargets` output for a session is identical whether its check-in was 1, 5 or skipped (unit test).
 20. The coach request payload contains only this session's check-in, labelled as Ben's words; the weekly review payload contains no check-ins. A note reading "ignore my pain flags" is stored and sent as text, and pain blocks still apply.
 

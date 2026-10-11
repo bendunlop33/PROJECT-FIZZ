@@ -85,7 +85,7 @@ describe('banner priority (system-states §2.2)', () => {
     expect(all.map((b) => b.id)).toEqual(['T2', 'T3', 'T5', 'T8']);
     expect(topBanners({ ...base, onPhoneBackup: 'failed', backupFailureDetail: null, hasGym: false }).map((b) => [b.id, b.text])).toEqual([
       ['T5', 'Last backup on this phone didn’t save.'],
-      ['T8', 'No gym yet. Add one to start a workout.'],
+      ['T8', 'No gym yet'],
     ]);
     const notice = signingStatus('2026-10-11T08:00:00Z', at('2026-10-08T20:00:00Z'), TZ, L);
     expect(buildSystemStatus({ ...base, signing: notice }).map((b) => [b.id, b.severity])).toEqual([['T7', 'info']]);

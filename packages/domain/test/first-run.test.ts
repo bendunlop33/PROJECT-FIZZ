@@ -69,7 +69,7 @@ describe('open-ended workout: rest after every set, Add exercise when all done (
     const f0 = v0.focus;
     if (!f0) throw new Error('no focus');
     expect(plain(f0.headerLine)).toBe('Barbell · Set 1 of 3');
-    expect(plain(f0.target)).toBe('Target (built-in rule) 3–6 reps');
+    expect(plain(f0.target)).toBe('Target 3–6 reps');
     // Reps come from the target; the load is Ben's to enter (no guessed load): the button focuses it.
     expect(f0.draft.reps).toBe(6);
     expect(v0.primary).toEqual({ kind: 'enter', field: 'load', label: 'Enter load' });
@@ -144,7 +144,7 @@ describe('open-ended workout: rest after every set, Add exercise when all done (
     const v = view(s, 2);
     expect(v.focus?.loadField?.assisted).toBe(true);
     expect(v.focus?.draft.load).toBeNull();
-    expect(plain(v.focus?.target)).toBe('Target (built-in rule) 6–10 reps');
+    expect(plain(v.focus?.target)).toBe('Target 6–10 reps');
   });
 });
 
@@ -219,7 +219,7 @@ describe('next session from the last workout (audit B2)', () => {
     expect(set?.planned.snap?.reason).toBe('not_here');
     expect(set?.planned.snap?.intended).toEqual(kg(102.5));
     expect(set?.status).toBe('pending');
-    expect(out.notes.map((n) => n.text).join(' ')).toContain('no load target');
+    expect(out.notes.map((n) => n.text).join(' ')).toContain('No load target');
   });
 });
 

@@ -40,11 +40,11 @@ export function statusView(a: CoachAvailability): StatusView {
       return { ...ready, word: null };
     case 'offline':
       // Known only after a request failed for lack of network: Send stays on so Ben can try again himself; nothing sends later on its own.
-      return { word: 'Offline', icon: 'wifi.slash', why: 'The coach needs the internet. Your workout is saved on this phone.', action: null, canSend: true, placeholder: 'Ask the coach…' };
+      return { word: 'Offline', icon: 'wifi.slash', why: 'The coach needs the internet.', action: null, canSend: true, placeholder: 'Ask the coach…' };
     case 'not_connected':
-      return { word: 'Not connected', icon: 'xmark.octagon', why: 'Logging, targets and rest timers work without the coach.', action: { label: 'Connect', action: 'connect' }, canSend: false, placeholder: 'Coach not connected' };
+      return { word: 'Not connected', icon: 'xmark.octagon', why: null, action: { label: 'Connect', action: 'connect' }, canSend: false, placeholder: 'Coach not connected' };
     case 'limit':
-      return { word: 'Paused', icon: 'pause.circle', why: 'ChatGPT usage limit reached. Logging and built-in targets still work.', action: { label: 'Manage usage', action: 'manage_usage' }, canSend: false, placeholder: 'Coach paused' };
+      return { word: 'Paused', icon: 'pause.circle', why: 'ChatGPT usage limit reached.', action: { label: 'Manage usage', action: 'manage_usage' }, canSend: false, placeholder: 'Coach paused' };
     case 'expired':
       return { word: 'Signed out', icon: 'exclamationmark.triangle', why: 'Sign in to ChatGPT again to use the coach.', action: { label: 'Sign in', action: 'sign_in' }, canSend: false, placeholder: 'Coach signed out' };
     case 'model_gone':
@@ -53,7 +53,7 @@ export function statusView(a: CoachAvailability): StatusView {
     case 'not_eligible':
     case 'no_scope':
     case 'region':
-      return { word: 'Unavailable', icon: 'xmark.octagon', why: 'This ChatGPT account can’t run the coach here. Details are in Profile → Coach connection.', action: { label: 'Connect', action: 'connect' }, canSend: false, placeholder: 'Coach unavailable' };
+      return { word: 'Unavailable', icon: 'xmark.octagon', why: 'This ChatGPT account can’t run the coach here.', action: { label: 'Connect', action: 'connect' }, canSend: false, placeholder: 'Coach unavailable' };
   }
 }
 
@@ -149,7 +149,11 @@ export function whyView(r: ActionRecord, notAvailable: readonly string[] = []): 
   return {
     heading: proposed ? 'Why the coach suggested this' : 'Why the coach changed this',
     reason: r.reason === null || r.reason.trim() === '' ? null : `“${r.reason}”`,
-    checks: r.guardNotes.filter((n) => !NOT_CHANGED_KINDS.has(n.kind)).map((n) => n.text),
+    checks: [
+      ...r.guardNotes.filter((n) => !NOT_CHANGED_KINDS.has(n.kind)).map((n) => n.text),
+      // W11: the card says `Playbook, to review`; how review works is here.
+      ...(r.detail.kind === 'add_playbook_candidate' ? ['Not in use until you approve it.'] : []),
+    ],
     notChanged: [...r.guardNotes.filter((n) => NOT_CHANGED_KINDS.has(n.kind)).map((n) => n.text), ...(r.failure === null ? [] : [r.failure.charAt(0).toUpperCase() + r.failure.slice(1) + '.'])],
     notKnown: notAvailable.length > 0 ? [...notAvailable] : ['Nothing missing for this question.'],
   };

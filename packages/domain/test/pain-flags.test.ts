@@ -201,12 +201,12 @@ describe('copy (active-workout §5, exercise-library §5, today.md §5)', () => 
   it('picker: `May hurt` confirm with area and date; no area reads `pain` alone; never “safe”', () => {
     expect(mapPlain(mayHurtConfirm(f))).toEqual({
       title: 'Overhead press may hurt',
-      message: 'You flagged shoulder pain on it on 6 Oct. Loads won’t go up while the flag is on.',
+      message: 'Shoulder pain flagged 6 Oct.',
       confirm: 'Add anyway',
       cancel: 'Choose another',
     });
-    expect(plain(mayHurtConfirm({ ...f, area: null }).message)).toBe('You flagged pain on it on 6 Oct. Loads won’t go up while the flag is on.');
-    expect(plain(mayHurtConfirm({ ...f, area: 'other' }).message)).toBe('You flagged pain on it on 6 Oct. Loads won’t go up while the flag is on.');
+    expect(plain(mayHurtConfirm({ ...f, area: null }).message)).toBe('Pain flagged 6 Oct.');
+    expect(plain(mayHurtConfirm({ ...f, area: 'other' }).message)).toBe('Pain flagged 6 Oct.');
     expect(mayHurtAccessibility(f)).toBe('May hurt: you flagged shoulder pain on it.');
     expect(JSON.stringify(mayHurtConfirm(f)).toLowerCase()).not.toMatch(/safe|injur|strain|tendon/);
   });
@@ -225,7 +225,6 @@ describe('copy (active-workout §5, exercise-library §5, today.md §5)', () => 
   it('clear confirmation (AW10): default wording, the reference kept, and the toast', () => {
     expect(mapPlain(painClearConfirm(f))).toEqual({
       title: 'Clear the pain flag on Overhead press?',
-      message: 'Loads, reps and sets can go up again, starting from your recent sets. Your sets from before 6 Oct stay in your history as the reference.',
       confirm: 'Clear flag',
       cancel: 'Keep it',
     });
@@ -377,11 +376,11 @@ describe('buildPainFlagSheet (§2.14.4)', () => {
     const sheet = buildPainFlagSheet({ flag: f, history, nowMs: ms(9 * DAY), tz: TZ, exercise: press, anchor: { equipmentId: BAR.id, unit: 'kg', loadConvention: 'total', equipment: BAR } });
     expect(sheet.heading).toBe('Overhead press · shoulder');
     expect(plain(sheet.since)).toBe('Since 13 Oct (4 days) · you, in a check-in');
-    expect(sheet.effect).toBe('No increases in load, reps or sets.');
+    expect(sheet.effect).toBe('No increases');
     expect(plain(sheet.before)).toBe('8 Oct · 57.5 kg × 5, 4');
     expect(plain(sheet.sinceFlag)).toBe('16 Oct · 50 kg × 8, 8, 8');
     expect(sheet.checkDue).toBe(false);
-    expect(sheet.professional).toBe('If pain is sharp, keeps coming back or doesn’t settle, see a physio or doctor. The coach can’t diagnose.');
+    expect(sheet.professional).toBe('Sharp or lasting pain: see a physio or doctor.');
     expect(buildPainFlagSheet({ flag: f, history, nowMs: ms(20 * DAY), tz: TZ, exercise: press }).checkDue).toBe(true);
   });
 

@@ -33,11 +33,15 @@ import { summariseVolume } from './volume';
  */
 export type CoachStatus = 'not_connected' | 'unavailable' | 'connected';
 
-/** Source tag on every `Next time` row (ADR 0006). Every target here comes from the built-in rule. */
+/**
+ * Source tag on every built-in `Next time` row (ADR 0006): one word, `Rule`
+ * (minimal-copy D1). The coach's status is the `Coach note` line, not the
+ * tag; `Why?` names the rule in full (`Set by: Built-in rule · …`).
+ */
 export const BUILT_IN_SOURCE_TAG: Record<CoachStatus, string> = {
-  not_connected: 'Built-in rule (coach not connected)',
-  unavailable: 'Built-in rule (coach unavailable)',
-  connected: 'Built-in rule',
+  not_connected: 'Rule',
+  unavailable: 'Rule',
+  connected: 'Rule',
 };
 
 export interface SummaryInput {
@@ -304,10 +308,10 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
       const logged = others.filter((h) => !h.imported);
       comparison =
         logged.length > 0
-          ? { kind: 'not_comparable', text: `Last ${ex.exerciseName} was with different equipment or units. Not compared.` }
+          ? { kind: 'not_comparable', text: 'Not compared · different equipment' }
           : others.length > 0
-            ? { kind: 'not_comparable', text: `Earlier ${ex.exerciseName} sets were imported from FitNotes. Not compared.` }
-            : { kind: 'first_time', text: `First time logging ${ex.exerciseName}${eq ? ` with ${eq.name}` : ''}${input.gymName ? ` at ${input.gymName}` : ''}. Nothing to compare yet.` };
+            ? { kind: 'not_comparable', text: 'Not compared · imported' }
+            : { kind: 'first_time', text: 'First time' };
     }
   }
 
@@ -384,7 +388,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     nextTime:
       workingSets === 0 || imported
         ? null
-        : { sourceTag: BUILT_IN_SOURCE_TAG[input.coach], rows, emptyText: rows.length === 0 ? 'No target changes. Same targets next time.' : null },
+        : { sourceTag: BUILT_IN_SOURCE_TAG[input.coach], rows, emptyText: rows.length === 0 ? 'Same targets next time' : null },
     empty: workingSets === 0,
     highlight: workingSets === 0 || imported ? null : summaryHighlight(state, input.history),
     records: workingSets === 0 || imported ? [] : sessionRecords({ aggregate: state, gymName: input.gymName, ...(input.gymNames ? { gymNames: input.gymNames } : {}), history: input.history }),

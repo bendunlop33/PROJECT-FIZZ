@@ -76,12 +76,12 @@ describe('buildWorkoutSummary', () => {
     expect(plain(sum.comparison.todayText)).toBe('60 kg × 12');
     expect(plain(sum.comparison.why)).toBe('Same Olympic bar at Main Gym, working sets');
     expect(sum.exercises.map((e) => [e.name, e.setsText, plain(e.results)])).toEqual([['Bench press', '3 sets', '60×12 · 60×12 · 60×12']]);
-    expect(sum.nextTime?.sourceTag).toBe('Built-in rule (coach not connected)');
+    expect(sum.nextTime?.sourceTag).toBe('Rule');
     // The tag names the built-in rule whatever the coach's state: no coach targets exist in this build.
-    expect(buildWorkoutSummary(input(s, [lastWeek], { coach: 'unavailable' })).nextTime?.sourceTag).toBe('Built-in rule (coach unavailable)');
-    expect(buildWorkoutSummary(input(s, [lastWeek], { coach: 'connected' })).nextTime?.sourceTag).toBe('Built-in rule');
+    expect(buildWorkoutSummary(input(s, [lastWeek], { coach: 'unavailable' })).nextTime?.sourceTag).toBe('Rule');
+    expect(buildWorkoutSummary(input(s, [lastWeek], { coach: 'connected' })).nextTime?.sourceTag).toBe('Rule');
     expect(sum.nextTime?.rows.map((r) => [r.kind, plain(r.target), r.decision, r.ruleName])).toEqual([
-      ['change', 'Target 62.5 kg × 8–12', 'increase_load', 'Double progression, 8–12 reps up to RPE 9 (built-in default for an accessory lift, provisional)'],
+      ['change', 'Target 62.5 kg × 8–12', 'increase_load', '8–12 reps, up to RPE 9'],
     ]);
     expect(sum.nextTime?.rows[0]?.summary).toContain('Increase to 62.5');
   });
@@ -92,7 +92,7 @@ describe('buildWorkoutSummary', () => {
     s = finish(s, 600);
     const sum = buildWorkoutSummary(input(s, []));
     expect(sum.facts.skippedSets).toBe(1);
-    expect(sum.comparison).toEqual({ kind: 'first_time', text: 'First time logging Bench press with Olympic bar at Main Gym. Nothing to compare yet.' });
+    expect(sum.comparison).toEqual({ kind: 'first_time', text: 'First time' });
     // Even a first time is listed when it held because sets were skipped.
     expect(sum.nextTime?.rows.map((r) => r.kind)).toEqual(['held']);
     const again = buildWorkoutSummary(input(s, [lastWeek]));
@@ -131,7 +131,7 @@ describe('buildWorkoutSummary', () => {
   it('a first, complete session lists nothing: Same targets next time', () => {
     const s = finish(logAll(workout(BENCH, bar, 2), [values(kg(60), 10), values(kg(60), 9)], 0), 600);
     const sum = buildWorkoutSummary(input(s, []));
-    expect(sum.nextTime).toEqual({ sourceTag: 'Built-in rule (coach not connected)', rows: [], emptyText: 'No target changes. Same targets next time.' });
+    expect(sum.nextTime).toEqual({ sourceTag: 'Rule', rows: [], emptyText: 'Same targets next time' });
   });
 
   it('a workout with no working sets hides comparison and Next time', () => {
@@ -365,7 +365,7 @@ describe('imported history is never comparable while P-I3 is open (review r2 B1)
     if (!ex) throw new Error('no exercise');
     expect(lastComparableSession(history, ex)).toBeNull();
     const sum = buildWorkoutSummary(input(s, history));
-    expect(sum.comparison).toEqual({ kind: 'not_comparable', text: 'Earlier Lat pulldown sets were imported from FitNotes. Not compared.' });
+    expect(sum.comparison).toEqual({ kind: 'not_comparable', text: 'Not compared · imported' });
     // 45 > 40 would be "Heaviest" against FitNotes; it isn't compared.
     expect(sum.highlight).toBeNull();
     expect(JSON.stringify(sum)).not.toContain('Main Gym, working sets');

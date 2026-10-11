@@ -235,6 +235,8 @@ export const GuardNoteKindSchema = z.enum([
   'capped',
   'converted',
   'pain_blocked',
+  /** Ben mentioned pain on this movement in this turn; no pain flag exists (review B1). */
+  'pain_mentioned',
   'pain_unspecified',
   'lighter_no_increase',
   'no_achievable_load',

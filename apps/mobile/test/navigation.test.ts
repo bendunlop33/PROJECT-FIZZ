@@ -1,7 +1,10 @@
 import { StackRouter, type StackNavigationState, type ParamListBase } from '@react-navigation/routers';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
-import { openStartedWorkout, openWorkoutToCheckGym, popToTabs, popToToday, replaceWithSummary } from '../src/navigation/actions';
+import { openGymFromWorkout, openStartedWorkout, openWorkoutToCheckGym, popToTabs, popToToday, replaceWithSummary } from '../src/navigation/actions';
 import { initialRootState } from '../src/navigation/initial-state';
 
 describe('root stack at launch (review S5)', () => {
@@ -66,7 +69,7 @@ describe('root stack after Finish, Done and Discard (review B1)', () => {
     s = apply(s, goBack);
     s = apply(s, navigate('Workout'));
     expect(names(s)).toEqual(['Tabs', 'Workout']);
-    s = apply(apply(start(), navigate('CheckIn', { mode: 'start', gymId: 'g' })), popToToday('No workout started.'));
+    s = apply(apply(start(), navigate('CheckIn', { mode: 'start', gymId: 'g' })), popToToday('Check-in saved · no workout'));
     expect(names(s)).toEqual(['Tabs']);
   });
 
@@ -84,6 +87,26 @@ describe('root stack after Finish, Done and Discard (review B1)', () => {
     s = apply(s, openWorkoutToCheckGym('gym-1', 'n-1'));
     expect(names(s)).toEqual(['Tabs', 'Workout']);
     expect(s.routes[1]?.params).toEqual({ checkGym: { gymId: 'gym-1', nonce: 'n-1' } });
+  });
+
+  it('the off-profile line (audit A3) opens Gym detail over the gym list, where [Use changes today] returns to the workout', () => {
+    let s = apply(start(), navigate('Workout'));
+    const action = openGymFromWorkout('gym-1');
+    // Gym detail (it has `Use changes today`), not the equipment editor, whose saves only reach future workouts.
+    expect(action.payload.params).toEqual({ screen: 'Profile', params: { screen: 'GymDetail', params: { gymId: 'gym-1' }, initial: false } });
+    s = apply(s, action);
+    expect(names(s)).toEqual(['Tabs']);
+    expect(s.routes[0]?.params).toEqual(action.payload.params);
+    s = apply(s, openWorkoutToCheckGym('gym-1', 'n-2'));
+    expect(names(s)).toEqual(['Tabs', 'Workout']);
+    expect(s.routes[1]?.params).toEqual({ checkGym: { gymId: 'gym-1', nonce: 'n-2' } });
+  });
+
+  it('the workout screen uses that action for the off-profile line, not the equipment editor (review minimal-copy r2 S1)', () => {
+    const src = readFileSync(join(import.meta.dirname, '../src/screens/workout/WorkoutScreen.tsx'), 'utf8');
+    const fn = src.slice(src.indexOf('function openOffProfileEquipment'), src.indexOf('function painOutcome'));
+    expect(fn).toMatch(/openGymFromWorkout\(eq\.gymId\)/);
+    expect(fn).not.toMatch(/EquipmentEditor/);
   });
 });
 

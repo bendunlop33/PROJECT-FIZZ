@@ -54,7 +54,7 @@ It has no primary action of its own. On every surface it covers, the primary act
 | Coach sheet reply | Action card (coach-sheet §2.6) and inline `ActionResultLine` for each token | Reasons, explanations, questions, suggestions; checked sentence by sentence |
 | Workout coach slot | `CoachAdjustmentBanner` lines 1–2 and guard notes (coach-adjustments §2.5) | The one-sentence reason, in quotes, checked |
 | Voice strip and speech | `rendered.spoken` from the action (the `buildSetCue` family) | The checked reply sentences, only when the turn began by voice (voice.md) |
-| Summary `Next time` | Each row's target, % change, `Built-in rule would be …` and status (workout-summary §2) | The coach's reason in quotes, and the coach note; both checked |
+| Summary `Next time` | Each row's target, % change, `Rule: …` and status (workout-summary §2) | The coach's reason in quotes, and the coach note; both checked |
 | Workout builder | Draft rows, `Checks` and the diff (workout-builder §3.3–3.4) | The rationale (≤ 240 characters), checked |
 | Plan proposals | `ChangeReviewCard` / `ProposalCard` lines and status words (change-review) | The reason, checked |
 
@@ -153,8 +153,8 @@ The rows are generated from the tool registry's declarations (`listCoachCapabili
 |---|---|---|
 | Normal, change saved | Tool returns `committed`; the reply mentions it with a token or a matching claim | Card or banner + `ActionResultLine` (or the kept sentence). No note |
 | Proposed, not applied | Tool returns `proposed` | Proposal card with `Not now` / `Apply`. A token renders `Suggested: … Not applied.` A sentence claiming it was applied is hidden |
-| Claim with no action | A sentence claims a change; no committed action of that kind this turn | Sentence hidden. `ⓘ Nothing was changed. One line said otherwise and is hidden.` Spoken (voice turns only): "Nothing was changed." |
-| Claim that doesn't match | Committed actions exist, but the claim names something else (another set, another exercise) | Sentence hidden. `ⓘ Only the changes shown here were made. One line said otherwise and is hidden.` |
+| Claim with no action | A sentence claims a change; no committed action of that kind this turn | Sentence hidden. `ⓘ Nothing changed · 1 line hidden` Spoken (voice turns only): "Nothing was changed." |
+| Claim that doesn't match | Committed actions exist, but the claim names something else (another set, another exercise) | Sentence hidden. `ⓘ Only the changes shown were made · 1 line hidden` |
 | Number mismatch | A matching claim names a number that differs from the saved one | The sentence is replaced by the rendered line (CC4). No note: the shown line is correct |
 | Rejected / stale / failed | Tool returns `rejected`, `stale` or `failed` | Outcome line from the result, e.g. `Couldn't change sets 3–4: your workout moved on. Nothing changed.` Any claim of success is hidden |
 | Partly applied | Some changes committed, some dropped by the guardrails | Card shows what was saved plus guard notes (`Not increasing Overhead press: you flagged shoulder pain.`). A claim covering the dropped part is hidden |
@@ -182,7 +182,7 @@ Transitions for one sentence of model text:
 |---|---|---|
 | `ActionResultLine` | Scrolls to its card, or opens that action's `Why?` | VoiceOver reads it as app text: "Saved change. Changed sets 3 and 4 to 95 kilograms for 8, targets." |
 | Card `Undo` | `undoAction(actionId)` as the card's own spec says | Voice "undo" undoes the most recent action of any kind **made in the current session or the current coach thread**, and the strip names it (coach-adjustments §4.4). (10 Oct) It never reaches a previous workout's summary action (the D21 next-session targets): at the start of a workout with nothing logged yet, "undo" answers `Nothing to undo in this workout.` Changing those targets is the set card's `Why?` → `Use built-in rule` |
-| `ClaimCheckNote` | Opens the reply's `Why?` at `Not shown` | VoiceOver: "Note. Only the changes shown here were made. One line said otherwise and is hidden." |
+| `ClaimCheckNote` | Opens the reply's `Why?` at `Not shown` | VoiceOver: "Note. Only the changes shown were made. 1 line hidden." |
 | `Why?` → `Not shown` | Lists hidden sentences verbatim with the reason: `No change was saved in this reply.` / `It named set 4; only sets 3–4 changed.` | Read-only |
 | `What the coach can do` | `Done` closes | Opened from Profile → Coach and from the context view's footer link `What the coach can do ›` |
 
@@ -201,11 +201,11 @@ Every number in a rendered line says **target** or **actual**, with its unit.
 | Log a set (`log_set`) | `Logged set 3 · Bench press: 100 kg × 8 (actual).` | — | `Couldn't log set 3: <reason>. Nothing was saved.` |
 | Today's sets (`adjust_pending_sets`) | `Changed sets 3–4 to 95 kg × 8 (targets).` | `Suggested: sets 3–4 at 95 kg × 8 (targets). Not applied.` | `Couldn't change sets 3–4: your workout moved on. Nothing changed.` |
 | Correct a set Ben named (`correct_set`) | `Corrected set 2 · Bench press: 100 → 95 kg × 8 (actual). The original is kept.` | `Suggested correction: set 2, 100 → 95 kg × 8 (actual). Not applied.` | `Couldn't correct set 2: it changed since. Nothing changed.` |
-| Next-session targets (`set_next_session_targets`, D21) | `Next Push A: Bench press 97.5 kg × 6–8 (target).` | `Suggested for next Push A: Bench press 90 kg × 6–8 (target). Not applied.` (bigger than small) | `Couldn't set next targets. The built-in rule's are used.` |
+| Next-session targets (`set_next_session_targets`, D21) | `Next Push A: Bench press 97.5 kg × 6–8 (target).` | `Suggested for next Push A: Bench press 90 kg × 6–8 (target). Not applied.` (bigger than small) | `Couldn't set next targets.` (the rows show the `Rule` tag) |
 | Plan changes (swap, template, rotation, schedule, goals, programme) | — (always proposals) | `Suggested: Push A from now on, Cable fly → Pec deck. Not applied.` | `Out of date: your <goal / days / equipment> changed. Nothing changed.` |
-| Memory | `Saved to memory: "Trains before work".` · forget: `Forgot: "Doesn't like lunges". Undo is on the card.` | `Suggested memory: "…". Not saved.` | `Couldn't save that memory. Nothing changed.` |
-| Pain flag on | `Pain flag on for Overhead press. No increases until you clear it.` | — | — |
-| Playbook candidate | `Added to your playbook to review: "…". Not in use until you approve it.` | — | — |
+| Memory | `Saved to memory: "Trains before work".` · forget: `Forgot: "Doesn't like lunges"` | `Suggested memory: "…". Not saved.` | `Couldn't save that memory.` |
+| Pain flag on | `Pain flag on: Overhead press · no increases` | — | — |
+| Playbook candidate | `Playbook, to review: "…"` (Why?: `Not in use until you approve it.`) | — | — |
 | Undo | `Undone: the change to sets 3–4. Back to 100 kg × 6–8 (targets).` | — | `Couldn't undo: set 3 is done. A suggestion for set 4 is below.` |
 | Earlier action (CC5) | adds `· 18:21` and, if undone, `· undone 18:24` | adds `· not applied` | — |
 
@@ -215,14 +215,14 @@ Spoken versions (`rendered.spoken`) follow coach-adjustments §5.3: "Sets 3 and 
 
 | Element | Text |
 |---|---|
-| No action saved | `Nothing was changed. One line said otherwise and is hidden.` |
-| Some actions saved | `Only the changes shown here were made. One line said otherwise and is hidden.` |
+| No action saved | `Nothing changed · 1 line hidden` |
+| Some actions saved | `Only the changes shown were made · 1 line hidden` |
 | Banner variant | `Only sets 3–4 were changed.` |
-| Summary note variant | `Only the changes shown under Next time were made. One line said otherwise and is hidden.` |
-| Unknown token | (nothing shown for the token) + `Nothing was changed. One line said otherwise and is hidden.` |
+| Summary note variant | `Only the changes shown were made · 1 line hidden` |
+| Unknown token | (nothing shown for the token) + `Nothing changed · 1 line hidden` |
 | Tool log, blocked tool | `Not allowed: delete_set` |
 | `Why?` section | `Not shown` · reasons `No change was saved in this reply.` · `It named set 4; only sets 3–4 changed.` · `The saved load is 97.5 kg; the reply said 98 kg.` |
-| Spoken (voice turns only) | "Nothing was changed." |
+| Spoken (voice turns only) | "Nothing changed." |
 | Capability sheet | title `What the coach can do` · intro `The coach only says something changed when the app has saved that change. You can undo every change it makes.` · sections `When you ask` · `After each workout` · `Only as a suggestion you apply` · `Never` · rows as §2.5 · link elsewhere `What the coach can do ›` |
 | Pain flag asked to clear | `The coach can't clear pain flags. Clear it in Pain flags when you're ready.` [Pain flags ›] (app text, shown as the outcome line when Ben asks the coach to clear one) |
 | Asked to delete history | `The coach can't delete workouts or sets. You can edit a set yourself, or discard an unfinished workout.` (app text, outcome line) |
@@ -286,14 +286,14 @@ Existing (brief §8; coach-sheet §6; coach-adjustments §6; change-review §6):
 ## 7. Acceptance checks
 
 1. **Registry test.** A unit test enumerates every `ToolDeclaration` and fails if any has an effect other than `read`, `append`, `versioned_update` or `propose`, or if a `versioned_update` tool can write a finished session or done set without keeping the previous version. Adding a stub `delete_workout` to the registry makes CI fail.
-2. **Phantom change.** Stub the model to reply "Done, I've lowered sets 3–4 to 95 kg." with no tool call: the sentence is neither shown nor spoken; `Nothing was changed. One line said otherwise and is hidden.` appears; targets are unchanged; `Why?` → `Not shown` lists the sentence with `No change was saved in this reply.`
+2. **Phantom change.** Stub the model to reply "Done, I've lowered sets 3–4 to 95 kg." with no tool call: the sentence is neither shown nor spoken; `Nothing changed · 1 line hidden` appears; targets are unchanged; `Why?` → `Not shown` lists the sentence with `No change was saved in this reply.`
 3. **Snapped number.** Stub `adjust_pending_sets` to commit 97.5 kg (validator snapped from 98) while the model text says "98 kg": the screen and speech say 97.5 kg; "98" appears nowhere except `Why?`.
 4. **Stale result.** Stub the tool to return `stale` and the model to say "Changed": the outcome line reads `Couldn't change sets 3–4: your workout moved on. Nothing changed.` and nothing changed.
 5. **Proposal claimed as applied.** Stub `propose_template_change` (with a variety request) and the model text "I've swapped cable fly for pec deck": the claim is hidden; the card says `Not applied` with `Not now` / `Apply`; the routine is unchanged.
 6. **Idempotent writes.** Replaying the same tool call (same `opId`) after a dropped connection creates one `ActionRecord`, one change and one rendered line.
 7. **Corrections keep history.** "The last one was 95" with the set named → set 2 shows 95 kg with `Edited`; its history shows 100 kg as the original; Progress uses 95 kg (brief scenario 5). A stubbed `delete_set` call is refused (`Not allowed: delete_set`), and the set is still there.
 8. **Force-close mid-turn.** Commit a change, then kill the app before the reply finishes: on reopen the card is there once, the partial text isn't padded, and no sentence claims a change that has no card.
-9. **Voice.** For a voice turn whose reply contains a hidden claim, the TTS log contains "Nothing was changed." (or only the rendered spoken lines) and never the hidden sentence.
+9. **Voice.** For a voice turn whose reply contains a hidden claim, the TTS log contains "Nothing changed." (or only the rendered spoken lines) and never the hidden sentence.
 10. **Pain flags.** "My shoulder hurts on this" sets a flag through `set_pain_flag` with Undo. "Clear my shoulder flag" makes no change and shows the fixed `The coach can't clear pain flags…` line and the `Pain flags ›` link.
 11. **Capability sheet.** `What the coach can do` matches the registry declarations (snapshot test); adding a tool without a `plainLabel` fails the test.
 12. **Summary (D21).** With a shoulder pain flag on Overhead press, stub the coach note "I've raised overhead press to 52.5 kg": the note sentence is hidden with the Summary note variant; the `Next time` row shows `Not increasing: you flagged shoulder pain.`

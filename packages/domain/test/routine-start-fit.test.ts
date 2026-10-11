@@ -61,10 +61,10 @@ describe('Routine Start at the hotel, then switch back to Main (review S1, GS2)'
     expect(exerciseSets(s, INCLINE)[0]?.planned.snap).toMatchObject({ intended: kg(32.5, 'per_hand'), outcome: 'capped' });
   });
 
-  it('notes name the gym (N2)', () => {
-    expect(out.notes).toContainEqual({ exerciseName: 'Bench press', text: 'No Olympic bar at Hotel · Lisbon: no load target.', tone: 'warning' });
-    expect(out.notes).toContainEqual({ exerciseName: 'Cable row', text: 'No Cable station at Hotel · Lisbon: no load target.', tone: 'warning' });
-    expect(out.notes).toContainEqual({ exerciseName: 'Incline DB press', text: 'Rounded down from 32.5 kg each: Hotel · Lisbon stops at 20 kg each.', tone: 'info' });
+  it('notes say what is missing or capped here (N2, minimal copy)', () => {
+    expect(out.notes).toContainEqual({ exerciseName: 'Bench press', text: 'No load target · no olympic bar here · plan 100 kg', tone: 'warning' });
+    expect(out.notes).toContainEqual({ exerciseName: 'Cable row', text: 'No load target · no cable station here · plan 50 kg stack', tone: 'warning' });
+    expect(out.notes).toContainEqual({ exerciseName: 'Incline DB press', text: 'Max here 20 kg each · plan 32.5 kg each', tone: 'info' });
   });
 
   it('Why? on a dropped routine-template load says why (N3)', () => {
@@ -115,6 +115,16 @@ describe('Routine Start uses GS3 like Start, Repeat and the switch (one rule)', 
   });
 });
 
+describe('Routine Start with exercises no longer in the list (minimal-copy review S4)', () => {
+  it('says once, briefly, how many were left out', () => {
+    const exs = new Map([...EXERCISES].filter(([k]) => k !== INCLINE && k !== LATERAL));
+    const out = startAt(MAIN, MAIN_EQ, { exercises: exs });
+    expect(out.notes.filter((n) => n.text.includes('left out'))).toEqual([{ exerciseName: 'Exercise', text: '2 exercises left out (not in your list)', tone: 'warning' }]);
+    const one = startAt(MAIN, MAIN_EQ, { exercises: new Map([...EXERCISES].filter(([k]) => k !== LATERAL)) });
+    expect(one.notes.filter((n) => n.text.includes('left out')).map((n) => n.text)).toEqual(['1 exercise left out (not in your list)']);
+  });
+});
+
 describe('Routine Start on an assisted machine (N1)', () => {
   const PULL = id(851);
   const exs = new Map([[PULL, exercise(851, 'Assisted pull-up', { compatibleEquipment: ['assisted_stack'], defaultLoadConvention: 'assistance' })]]);
@@ -124,13 +134,13 @@ describe('Routine Start on an assisted machine (N1)', () => {
   it('more assistance than the machine gives: dropped, worded as assistance, never "heavier"', () => {
     const out = startAt(MAIN, [machine], { routine: r, exercises: exs });
     expect(out.aggregate.sets[0]?.planned.load).toBeNull();
-    expect(out.notes).toEqual([{ exerciseName: 'Assisted pull-up', text: 'No load target: Assist 50 kg is more assistance than Main Gym gives.', tone: 'warning' }]);
+    expect(out.notes).toEqual([{ exerciseName: 'Assisted pull-up', text: 'No load target · most assistance here is under 50 kg', tone: 'warning' }]);
     expect(out.aggregate.sets[0]?.planned.provenance?.guardNotes.map(plain)).toEqual(['No load target: plan was Assist 50 kg, more assistance than this machine gives.']);
   });
 });
 
 describe('session service: startRoutine passes the gym name and last-used item (N2)', () => {
-  it('notes name the gym', async () => {
+  it('notes come through the service', async () => {
     const repos = createMemoryRepositories();
     await repos.profiles.save(profile(), null);
     await repos.gyms.save({ id: HOTEL, ownerId: OWNER, version: 1, createdAtUtc: at(0).utc, updatedAtUtc: at(0).utc, name: 'Hotel · Lisbon', isDefault: false }, null);
@@ -140,7 +150,7 @@ describe('session service: startRoutine passes the gym name and last-used item (
     const svc = createSessionService(repos, idGen(40_000));
     const r = await svc.startRoutine({ ownerId: OWNER, gymId: HOTEL, routineId: PUSH_A.id, opId: 'tap', at: at(10), preview: true, lastUsedHere: () => null });
     if (!r.ok) throw new Error(r.error.message);
-    expect(r.notes).toContainEqual({ exerciseName: 'Bench press', text: 'No Olympic bar at Hotel · Lisbon: no load target.', tone: 'warning' });
+    expect(r.notes).toContainEqual({ exerciseName: 'Bench press', text: 'No load target · no olympic bar here · plan 100 kg', tone: 'warning' });
   });
 });
 

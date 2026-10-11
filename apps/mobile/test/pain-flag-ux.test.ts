@@ -52,7 +52,7 @@ describe('picker `May hurt` (EL9, check 50)', () => {
     const bench = rows.find((r) => r.exercise.name === 'Bench press');
     expect(bench?.mayHurt?.confirm).toEqual({
       title: 'Bench press may hurt',
-      message: 'You flagged shoulder pain on it on 9 Oct. Loads won’t go up while the flag is on.',
+      message: 'Shoulder pain flagged 9 Oct.',
       confirm: 'Add anyway',
       cancel: 'Choose another',
     });
@@ -213,13 +213,13 @@ describe('pain flag sheet and the pre-flag reference (§2.14.3–2.14.4, check 5
     expect(sheet).toMatchObject({
       heading: 'Bench press · shoulder',
       since: 'Since 9 Oct (14 days) · you, in a check-in',
-      effect: 'No increases in load, reps or sets.',
+      effect: 'No increases',
       checkDue: true,
       active: true,
     });
     expect(sheet?.before).toMatch(/^8\u00a0Oct · 100/);
     expect(sheet?.sinceFlag).toMatch(/^10\u00a0Oct · 90/);
-    expect(sheet?.clearConfirm.message).toBe('Loads, reps and sets can go up again, starting from your recent sets. Your sets from before 9 Oct stay in your history as the reference.');
+    expect(sheet?.clearConfirm).not.toHaveProperty('message');
 
     const v = await flagVersion(s, flagId);
     expect((await s.pain.clearConfirmed({ flagId, expectedVersion: v })).ok).toBe(true);

@@ -43,7 +43,7 @@ export type EquipmentSave =
   | { ok: false; reason: 'stale'; message: string; latest: EquipmentInstance | null }
   | { ok: false; reason: 'failed'; message: string };
 
-const FAILED = 'Couldn’t save this. Your changes are still here.';
+const FAILED = 'Couldn’t save. Try again.';
 
 /** Content that matters for "is this save a repeat?" (not version or timestamps). */
 function content(eq: EquipmentInstance): string {
@@ -108,7 +108,7 @@ export function createGymServices(ctx: GymServicesContext) {
           return {
             ok: false,
             reason: 'unit_locked',
-            message: `This item has sets logged in ${base.unit}. To use ${req.form.unit}, add it as new equipment so history stays comparable.`,
+            message: `Has ${base.unit} sets. Add new equipment for ${req.form.unit}.`,
           };
         }
         const built = applyEquipmentForm(req.form, base, { id: req.equipmentId, ownerId: p.id, gymId: req.gymId, atUtc: ctx.now().utc });

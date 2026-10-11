@@ -69,7 +69,7 @@ export function buildRestorePreviewView(p: RestorePreview, ctx: WhenContext): Re
   const lines = replaceLines(p, ctx);
   const notes: string[] = [];
   if (p.needsMigration) notes.push('This backup is from an older GymSmarter. It’s updated as it’s restored.');
-  notes.push('Coach sign-in and API keys aren’t part of backups. Yours stay as they are.');
+  notes.push('Coach sign-in not included');
   notes.push('You can undo this from Data & backup.');
 
   const confirm =
@@ -137,24 +137,24 @@ function replaceLines(p: RestorePreview, ctx: WhenContext): { long: string; shor
   return out;
 }
 
-/** One line per failure (data-import-export §3.3, §5). Every one says nothing changed. */
+/** One line per failure (data-import-export §3.3, §5). Every one ends `Data unchanged.` (minimal-copy O14). */
 export function describeBackupError(e: BackupError): string {
   switch (e.code) {
     case 'not_a_backup':
-      return 'This isn’t a GymSmarter backup file. Nothing was changed.';
+      return 'This isn’t a GymSmarter backup file. Data unchanged.';
     case 'checksum_mismatch':
     case 'counts_mismatch':
-      return 'This backup file is damaged (its checksum doesn’t match). Nothing was changed.';
+      return 'This backup file is damaged (its checksum doesn’t match). Data unchanged.';
     case 'malformed':
-      return 'This backup file is damaged or incomplete. Nothing was changed.';
+      return 'This backup file is damaged or incomplete. Data unchanged.';
     case 'backup_too_new':
     case 'schema_too_new':
-      return 'This backup was made by a newer GymSmarter. Install that build or newer first. Nothing was changed.';
+      return 'This backup was made by a newer GymSmarter. Install that build or newer first. Data unchanged.';
     case 'unexpected_tables':
     case 'unexpected_columns':
-      return 'This backup doesn’t match any GymSmarter database layout, so it wasn’t read. Nothing was changed.';
+      return 'This backup doesn’t match any GymSmarter database layout, so it wasn’t read. Data unchanged.';
     case 'integrity_failed':
-      return `This backup has ${plural(e.issues?.length ?? 1, 'damaged record', 'damaged records')}, so it can’t be restored. Nothing was changed.`;
+      return `This backup has ${plural(e.issues?.length ?? 1, 'damaged record', 'damaged records')}, so it can’t be restored. Data unchanged.`;
     case 'preview_stale':
       return 'Your data changed since this preview, so nothing was restored. Check the updated preview and confirm again.';
     case 'nothing_to_roll_back':

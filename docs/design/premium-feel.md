@@ -128,8 +128,6 @@ The ask pill (today.md region 7) isn't built yet. When it is, the content keeps 
 ```
 │ TODAY                                  │
 │ First workout                          │
-│ Pick an exercise and log your first    │
-│ set. Common lifts are at the top.      │
 │ ╭────────────────────────────────────╮ │
 │ │           Start workout            │ │
 │ ╰────────────────────────────────────╯ │
@@ -541,7 +539,7 @@ Start notices: `Using saved targets.` · `Using last time’s numbers.`
 | Routine sheet | `Last done Thu 8 Oct at Main gym` · `Rule` tag + `Why?` → `Next targets from the built-in rule` (nothing when the routine's own targets are used) · `Start this routine` |
 | Delete confirm | `Delete Push A?` / `Cancel` / `Delete` |
 | Rename | `Rename routine` / `Rename workout` · `Save name` |
-| Permission sheet | `Rest alerts` · `Get an alert when rest ends while your phone is locked?` · `Allow` · `Not now` |
+| Permission sheet | `Rest alerts` · `Alert when rest ends?` · `Allow` · `Not now` |
 | Alerts off (VoiceOver) | `Rest alerts are off. Opens iOS Settings.` · `Rest alerts are off. Asks to allow them.` |
 | Rest next | `Next · Set 2 · 60 kg × 3–6` · `Next · Incline dumbbell press · 30 kg each × 8–10` |
 | Rest end | `READY` |

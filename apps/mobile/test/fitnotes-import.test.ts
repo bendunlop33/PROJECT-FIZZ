@@ -169,7 +169,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(previewView(reopened.draft, 'en-GB').notice).toEqual({
       icon: 'info.circle',
       tone: 'info',
-      text: 'You imported this file on Thu 8 Oct. Workouts from it that are still in GymSmarter are skipped; dates that aren’t in GymSmarter now are offered again, with your answers from then filled in.',
+      text: 'Imported before on Thu 8 Oct · new dates only',
     });
     // 20 Sep is still in (from b.csv) and skipped; the three dates a.csv brought are offered again.
     expect(reopened.draft.analysis.alreadyImported).toMatchObject({ dates: 1, imports: [{ jobId: b.jobId, dates: 1 }] });
@@ -447,7 +447,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(today.aggregate.sets.map((x) => x.planned.load?.value ?? null).filter((v) => v === 40 || v === 140 || v === 90)).toEqual([]);
     // The summary doesn't compare with FitNotes, or claim it was the same set-up at this gym.
     const sum = await s.workout.summary(sid);
-    expect(sum?.comparison).toEqual({ kind: 'not_comparable', text: 'Earlier Dumbbell bench press sets were imported from FitNotes. Not compared.' });
+    expect(sum?.comparison).toEqual({ kind: 'not_comparable', text: 'Not compared · imported' });
     expect(sum?.highlight).toBeNull();
     expect(JSON.stringify(sum)).not.toMatch(/Same set-up|FitNotes, 1 Oct/);
     const benchOnly = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
@@ -463,7 +463,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(await s.imports.commit(draft.draftId, draft.mappingVersion, 'op-1')).toMatchObject({ ok: true });
     h.clockMs += 86_400_000;
     const sid = await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 45, reps: 10 }] }]);
-    expect((await s.workout.summary(sid))?.comparison).toEqual({ kind: 'not_comparable', text: 'Earlier Lat pulldown sets were imported from FitNotes. Not compared.' });
+    expect((await s.workout.summary(sid))?.comparison).toEqual({ kind: 'not_comparable', text: 'Not compared · imported' });
   });
 
   it('tells file kinds apart by content and stops on an unknown header (DX5, check 16)', async () => {
@@ -582,7 +582,7 @@ describe('FitNotes import: closed or failed right after the last workout (review
     expect(introView({ block: null, blockTime: '', paused }).primary).toEqual({ label: 'Continue import', enabled: true });
     const job = await next.svc.job(jobId);
     if (!job) throw new Error('no job');
-    expect(resultsView(job, 'en-GB')).toMatchObject({ canContinue: true, canUndo: true, banner: { text: 'Import not finished. All 2 workouts are in your history; Continue import finishes it.' } });
+    expect(resultsView(job, 'en-GB')).toMatchObject({ canContinue: true, canUndo: true, banner: { text: 'Import not finished. All 2 workouts are in your history.' } });
     // Another file waits for this one, and says so.
     const other = await next.svc.open({ name: 'g.csv', text: [A1, '2026-09-05,Lat pulldown,Back,45,10,,,'].join('\n') });
     if (other.kind !== 'preview') throw new Error(other.kind);

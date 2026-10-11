@@ -81,7 +81,7 @@ describe('import preview wording', () => {
       ['cardio', '1 cardio row (not imported yet)', null],
       ['unreadable', '1 row can’t be read', null],
     ]);
-    expect(v.kept.map((k) => k.text)).toContain('FitNotes files have no times. These workouts show the date only.');
+    expect(v.kept.map((k) => k.text)).toContain('Date only (no times)');
     expect(v.kept.map((k) => k.text)).toContain('1 comment, kept with each set as written');
     expect(v.effortReview).toBe('1 comment looks like effort ratings. Kept as notes only · Review');
     expect(v.gymRow).toBe('Gym: Not recorded');
@@ -178,7 +178,7 @@ describe('import preview wording', () => {
     ]);
     expect(q?.barWeights).toEqual([
       { bar: 'barbell', unit: 'kg', value: 20, label: 'Bar weight (kg), added to “plates only” values', missing: null },
-      { bar: 'ez_bar', unit: 'kg', value: null, label: 'EZ-bar weight (kg), added to “plates only” values', missing: 'Enter your EZ bar’s weight in kg. Plates-only sets on it can’t be imported without it.' },
+      { bar: 'ez_bar', unit: 'kg', value: null, label: 'EZ-bar weight (kg), added to “plates only” values', missing: 'EZ-bar weight needed (kg)' },
     ]);
     const v = previewView(d, 'en-GB');
     expect(v.questions.map((x) => x.line.text)).toEqual(['EZ-bar weight needed for “plates only”']);
@@ -261,7 +261,7 @@ describe('import preview wording', () => {
     expect(before?.question).toBe('For this exercise with two dumbbells, “60” means:');
     expect(before?.ask).toEqual({
       title: 'One dumbbell or two?',
-      lead: 'GymSmarter doesn’t know whether this exercise uses one dumbbell or two. Choose for each.',
+      lead: 'Choose for each',
       rows: [
         {
           key: 'zottman curl',
@@ -784,7 +784,7 @@ describe('import preview wording', () => {
     expect(openErrorView({ kind: 'empty' })?.text).toBe('This file is empty.');
     expect(openErrorView({ kind: 'not_csv' })?.text).toBe('This isn’t a CSV file.');
     expect(openErrorView({ kind: 'fitnotes_backup' })?.text).toBe('This is a FitNotes backup, not a CSV. In FitNotes, export a CSV and choose that.');
-    expect(openErrorView({ kind: 'unknown_header', firstLine: 'a,b' })).toEqual({ text: 'GymSmarter doesn’t recognise this file’s columns yet. Nothing was guessed.', firstLine: 'a,b', sameFileJobId: null });
+    expect(openErrorView({ kind: 'unknown_header', firstLine: 'a,b' })).toEqual({ text: 'GymSmarter doesn’t recognise this file’s columns yet.', firstLine: 'a,b', sameFileJobId: null });
     expect(openErrorView({ kind: 'body_tracker', firstLine: 'Date,Weight' })?.text).toBe('This looks like a FitNotes Body Tracker export. Choose the Workout Data export.');
   });
 });
@@ -869,7 +869,7 @@ describe('importing, results, past imports and undo wording', () => {
     expect(v.paused?.text).toBe('Import paused at 1 of 2 workouts. The 1 is in your history.');
     expect(v.primary).toEqual({ label: 'Continue import', enabled: true });
     // Every workout in but not marked finished (closed right at the end; review B1).
-    expect(pausedLine({ written: 2, total: 2 })).toBe('Import not finished. All 2 workouts are in your history; Continue import finishes it.');
+    expect(pausedLine({ written: 2, total: 2 })).toBe('Import not finished. All 2 workouts are in your history.');
     // The same file again while it's unfinished: Continue said once; a running import isn't called paused (review r2 N1).
     const job = paused?.job;
     if (!job) throw new Error('no job');
@@ -891,7 +891,7 @@ describe('import wording without a database', () => {
     expect(barWeightEntry('7,5', olympic)).toEqual({ save: 7.5, endText: '7,5', warning: null });
     expect(barWeightEntry('20', olympic)).toEqual({ save: null, endText: '20', warning: null });
     // An EZ bar has no default: an empty field shows what's missing, and nothing is invented.
-    const ez = { value: null, unit: 'kg' as const, missing: 'Enter your EZ bar’s weight in kg. Plates-only sets on it can’t be imported without it.' };
+    const ez = { value: null, unit: 'kg' as const, missing: 'EZ-bar weight needed (kg)' };
     expect(barWeightEntry('', ez)).toEqual({ save: null, endText: '', warning: ez.missing });
     expect(barWeightEntry('0', ez)).toEqual({ save: null, endText: '0', warning: 'Enter a bar weight above 0.' });
     expect(barWeightEntry('10', ez)).toEqual({ save: 10, endText: '10', warning: null });
@@ -904,18 +904,18 @@ describe('import wording without a database', () => {
     const lb = { value: 45, unit: 'lb' as const, missing: null };
     expect(barWeightEntry('220', lb)).toMatchObject({ save: 220, warning: null });
     expect(barWeightEntry('450', lb)).toEqual({ save: null, endText: '45', warning: `Enter a bar weight up to 220${NBSP}lb. Until you do, 45${NBSP}lb is added to plates-only values.` });
-    const ez = { value: null, unit: 'kg' as const, missing: 'Enter your EZ bar’s weight in kg. Plates-only sets on it can’t be imported without it.' };
+    const ez = { value: null, unit: 'kg' as const, missing: 'EZ-bar weight needed (kg)' };
     expect(barWeightEntry('150', ez)).toEqual({ save: null, endText: '150', warning: `Enter a bar weight up to 100${NBSP}kg.` });
   });
 
   it('Past workouts says imported workouts are left out (review r2 B1)', () => {
-    expect(importedNotListedLine(1)).toBe('1 workout imported from FitNotes isn’t listed: imported workouts can’t be repeated yet. They’re in Data & backup, under Past imports.');
-    expect(importedNotListedLine(412)).toBe('412 workouts imported from FitNotes aren’t listed: imported workouts can’t be repeated yet. They’re in Data & backup, under Past imports.');
+    expect(importedNotListedLine(1)).toBe('1 imported workout not listed ›');
+    expect(importedNotListedLine(412)).toBe('412 imported workouts not listed ›');
   });
 
   it('a workout whose save wasn’t confirmed is never called failed (review r2 N4)', () => {
     expect(writeFailedLine({ written: 1, date: '2026-09-03', message: 'disk full' }, 'en-GB')).toBe(
-      'Workout 2 (Thu 3 Sept 2026) may not have saved: disk full. 1 workout is in before it. Each workout saves whole or not at all; Try again checks and carries on.',
+      'Workout 2 (Thu 3 Sept 2026) may not have saved: disk full. 1 workout is in before it.',
     );
   });
 });

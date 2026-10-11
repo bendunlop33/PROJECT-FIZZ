@@ -152,7 +152,7 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
     const notes: GuardNote[] = [];
     let load = basis.last.load;
     if (t.target.load !== null) {
-      const snapped = snapLoad(t.target.load, ex, basis.equipment, 'nearest', input.gymName);
+      const snapped = snapLoad(t.target.load, ex, basis.equipment, 'nearest');
       if (!snapped.ok) {
         drop(snapped.note.kind, snapped.note.text.replace('Load unchanged.', 'Not used.'));
         continue;

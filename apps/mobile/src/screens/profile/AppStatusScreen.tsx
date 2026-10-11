@@ -88,7 +88,7 @@ export function AppStatusScreen() {
             icon={integrity.report.ok ? 'checkmark.circle.fill' : 'exclamationmark.triangle'}
             tone={integrity.report.ok ? 'done' : 'warning'}
             text={integrity.report.ok ? 'Last full check: no problems' : `Last full check: ${plural(integrity.report.issues.length, 'damaged record', 'damaged records')}`}
-            detail={`${formatWhen(toMs(integrity.atUtc), nowMs, now.tz)}${integrity.report.ok ? '' : '. GymSmarter won’t change or guess damaged records.'}`}
+            detail={formatWhen(toMs(integrity.atUtc), nowMs, now.tz)}
             action={<TextButton label={checking ? 'Checking…' : 'Check'} onPress={() => void checkAll()} disabled={checking} />}
           />
         )}
@@ -132,7 +132,7 @@ export function AppStatusScreen() {
       <SectionHeader title="Last error" />
       <View style={{ gap: theme.space['2'] }}>
         {lastError === null ? (
-          <StatusLine icon="checkmark.circle.fill" tone="done" text="No error recorded" detail="Errors the app catches are recorded here. If the app closed and nothing is here, it was a native or animation-thread crash: try Profile › Developer › Exercise guide animations off." />
+          <StatusLine icon="checkmark.circle.fill" tone="done" text="No error recorded" infoLabel="About errors" info="Errors the app catches are recorded here. If the app closed and nothing is here, it was a native or animation-thread crash: try Profile › Developer › Exercise guide animations off." />
         ) : (
           <>
             <StatusLine

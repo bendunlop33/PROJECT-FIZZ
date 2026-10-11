@@ -71,7 +71,7 @@ describe('reply pipeline with a fake model (coach-contract checks 2–5)', () =>
     const { shown, hidden, note } = await play(model, {});
     expect(texts(shown)).toEqual(['That should keep you at 8.']);
     expect(hidden).toEqual([{ sentence: 'Done, I’ve lowered sets 3–4 to 95 kg.', reason: 'no_action', detail: 'No change was saved in this reply.' }]);
-    expect(note).toEqual({ text: 'Nothing was changed. One line said otherwise and is hidden.', spoken: 'Nothing was changed.' });
+    expect(note).toEqual({ text: 'Nothing changed · 1 line hidden', spoken: 'Nothing changed.' });
     const stored = toHiddenLines('turn-1', hidden, '2026-10-10T17:21:00.000Z');
     expect(stored[0]).toMatchObject({ turnId: 'turn-1', reason: 'no_action' });
   });
@@ -85,7 +85,7 @@ describe('reply pipeline with a fake model (coach-contract checks 2–5)', () =>
     expect(texts(shown)).toEqual(['Set 2 was RPE 10.']);
     expect(texts(shown).join(' ')).not.toContain('98');
     expect(hidden[0]).toMatchObject({ reason: 'numbers_differ', detail: 'The saved load is 97.5 kg; the reply said 98 kg.' });
-    expect(note?.text).toBe('Only the changes shown here were made. One line said otherwise and is hidden.');
+    expect(note?.text).toBe('Only the changes shown were made · 1 line hidden');
   });
 
   it('check 4: a stale result with "Changed" shows only the outcome line', async () => {
@@ -93,7 +93,7 @@ describe('reply pipeline with a fake model (coach-contract checks 2–5)', () =>
     const model = new ScriptedCoachModel([[{ type: 'tool_call', callId: 'a1', name: 'adjust_pending_sets', arguments: '{}' }, ...chunked('Changed sets 3–4. [[a1]]'), { type: 'completed' }]]);
     const { shown, note } = await play(model, { a1: stale });
     expect(texts(shown)).toEqual(["[app] Couldn't change sets 3–4: your workout moved on. Nothing changed."]);
-    expect(note?.text).toBe('Nothing was changed. One line said otherwise and is hidden.');
+    expect(note?.text).toBe('Nothing changed · 1 line hidden');
   });
 
   it('check 5: a proposal claimed as applied is hidden; the card says Not applied', async () => {
@@ -126,11 +126,11 @@ describe('reply pipeline with a fake model (coach-contract checks 2–5)', () =>
     const saved = benchAdjust();
     const steps = [{ type: 'tool_call' as const, callId: 'a1', name: 'adjust_pending_sets', arguments: '{}' }, ...chunked('I’ve lowered sets 3–4 to 95 kg and dropped set 4.'), { type: 'completed' as const }];
     const sheet = await play(new ScriptedCoachModel([steps]), { a1: saved });
-    expect(sheet.note?.text).toBe('Only the changes shown here were made. One line said otherwise and is hidden.');
+    expect(sheet.note?.text).toBe('Only the changes shown were made · 1 line hidden');
     const slot = await play(new ScriptedCoachModel([steps]), { a1: saved }, 'slot');
     expect(slot.note?.text).toBe('Only sets 3–4 were changed.');
     const summary = await play(new ScriptedCoachModel([steps]), { a1: saved }, 'summary');
-    expect(summary.note?.text).toBe('Only the changes shown under Next time were made. One line said otherwise and is hidden.');
+    expect(summary.note?.text).toBe('Only the changes shown were made · 1 line hidden');
   });
 
   it('the fake model records what each request offered', async () => {
@@ -229,7 +229,7 @@ describe('the fixed no-change line: phrase-based `topic` mode (review r4 spec is
     const f = createReplyFilter({ ledger: current, surface: 'sheet' });
     const shown = [...f.push('Back at 100. '), ...f.end(true)];
     expect(shown.filter((i) => i.kind === 'sentence')).toEqual([]);
-    expect(f.note()?.text).toBe('Nothing was changed. One line said otherwise and is hidden.');
+    expect(f.note()?.text).toBe('Nothing changed · 1 line hidden');
   });
 
   it('topic mode adds the line to training talk; off adds nothing', () => {

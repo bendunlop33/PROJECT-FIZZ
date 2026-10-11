@@ -64,8 +64,8 @@ Never used for status: system alerts (kept for confirming destructive actions), 
 | # | Rule | Example |
 |---|---|---|
 | W1 | Say what happened, plainly | `The folder can't be reached.` |
-| W2 | Say what still works, especially logging | `Logging and built-in targets still work.` |
-| W3 | Claim data is safe only when that's guaranteed by construction (a rolled-back transaction, an untouched file) or checked | `Nothing was changed.` after a rollback; never "everything's fine" after an unknown error |
+| W2 | Logging always works, so screens don't say so (minimal copy); an unavailable coach shows its status word (`Offline`, `Paused`, `Not connected`) | `Coach paused` |
+| W3 | Claim data is safe only when that's guaranteed by construction (a rolled-back transaction, an untouched file) or checked | `Couldn't X.` already says nothing happened; a data-at-risk failure (database won't open, restore or migration fails) adds `Data unchanged` (minimal-copy audit §1 rule 1); never "everything's fine" after an unknown error |
 | W4 | At most one action, named for what it does | [Open Settings], [Back up now], not [OK] |
 | W5 | No blame, no "Oops", no exclamation marks | — |
 | W6 | Exact dates, times and counts with tabular numerals. If a value is estimated, say "about" | `Signed until Sun 11 Oct, 09:00` / `about Thu 15 Oct` |
@@ -177,7 +177,7 @@ Each row: how it's detected, where it shows (S1–S6 from §2.1), exact copy, th
 
 | State | Detected by | Surfaces | Copy | Action | Clears |
 |---|---|---|---|---|---|
-| Offline | `getConnectivity()` (system network path) | S1 only: Talk `Offline`, `Adjust` `Coach offline`, coach sheet banner, summary coach note, workout builder. **No banner on Today or in the workout**: logging needs no network | Coach sheet: `No connection. The coach needs the internet. Your workout is saved on this phone.` · Summary: `Coach note will be added when you're back online.` · App status: `⚠ Coach: no connection` | None | Network returns (banners clear by themselves; nothing queued is sent on its own, coach-sheet.md CS4) |
+| Offline | `getConnectivity()` (system network path) | S1 only: Talk `Offline`, `Adjust` `Coach offline`, coach sheet banner, summary coach note, workout builder. **No banner on Today or in the workout**: logging needs no network | Coach sheet: `No connection. The coach needs the internet.` · Summary: `Coach note will be added when you're back online.` · App status: `⚠ Coach: no connection` | None | Network returns (banners clear by themselves; nothing queued is sent on its own, coach-sheet.md CS4) |
 | Offline, OpenAI voice selected | Same, while the OpenAI voice route is chosen for coach replies | Voice strip, once per workout; Voice settings | `OpenAI voice isn't available offline. Using the Apple voice.` | None | Network returns |
 | Offline, copy saved to iCloud Drive | Same, after a copy to Files is written | Data & backup card | `iCloud uploads it when you're back online.` | None | Network returns |
 
@@ -188,8 +188,8 @@ Owned by [coach-sheet.md](coach-sheet.md) §3 and [ai-connection.md](ai-connecti
 | State | Talk caption (S1) | Coach sheet banner (S4) | App status (S2) | Rules |
 |---|---|---|---|---|
 | Not connected | `Offline` (`text.bubble` + slash) | `Coach not connected. Logging, targets and rest timers work without it.` [Connect] | `– Coach: not connected` [Connect ›] | No canned replies (rule 1) |
-| Offline | `Offline` | `No connection. The coach needs the internet. Your workout is saved on this phone.` | `⚠ Coach: no connection` | — |
-| Limit reached (ChatGPT plan) | `Offline` | `ChatGPT usage limit reached. The coach is paused.` [Manage usage] · `Logging and built-in targets still work.` · if an API key exists: `Switch coach to your API key (paid) ›` | `⚠ Coach: ChatGPT usage limit reached` | Never switches route on its own (rule 7). No guessed reset time |
+| Offline | `Offline` | `No connection. The coach needs the internet.` | `⚠ Coach: no connection` | — |
+| Limit reached (ChatGPT plan) | `Offline` | `ChatGPT usage limit reached. The coach is paused.` [Manage usage] · if an API key exists: `Switch coach to your API key (paid) ›` | `⚠ Coach: ChatGPT usage limit reached` | Never switches route on its own (rule 7). No guessed reset time |
 | API spend cap reached | `Offline` | `Paused: you've reached your $5.00 cap for October.` [Change cap] | `⚠ Coach: monthly cap reached` | Cap and spend come from Fizz's own records (ai-connection.md) |
 | API key out of credit / rejected | `Offline` | `Your OpenAI API key was rejected (<reason from OpenAI>).` [Check key] | `⚠ Coach: API key rejected` | — |
 | Signed out / expired / revoked | `Offline` | `ChatGPT disconnected. Sign in again to use the coach.` [Sign in] | `⚠ Coach: signed out` [Sign in ›] | Old threads stay readable |
@@ -223,7 +223,7 @@ Each permission is asked in context, with priming first (onboarding.md §4.6). T
 
 | Permission / capability | State | Inline (S1) | App status (S2) | Action |
 |---|---|---|---|---|
-| Notifications | Not asked | First rest: `Get an alert when rest ends while your phone is locked?` [Allow] [Not now] (rest-state.md) | `– Notifications: not asked yet` | [Allow] |
+| Notifications | Not asked | First rest: `Alert when rest ends?` [Allow] [Not now] (rest-state.md) | `– Notifications: not asked yet` | [Allow] |
 | | Denied | Voice & alerts: `Rest alerts are off in iOS Settings.` | `⚠ Notifications: off in iOS Settings` | [Open Settings] |
 | | Sounds off for Fizz | Voice & alerts Alert check | `⚠ Notifications: sounds off for Fizz` | [Open Settings] |
 | Microphone | Denied | Talk shows `Ask`; voice strip: `Voice isn't available: microphone is off in iOS Settings` [Settings] (active-workout.md §2.5) | `⚠ Microphone: off in iOS Settings` | [Open Settings] |
@@ -318,14 +318,14 @@ Detected when a record fails validation on read (`CorruptDataError`), when `crea
 
 | State | Surface | Copy | Action |
 |---|---|---|---|
-| Set didn't save | Active workout banner (active-workout.md) | `Couldn't save this set. Your entry is still here.` | [Try again] (same operation ID) |
-| Finish didn't save | Active workout banner (workout-summary.md) | `Couldn't finish the workout. Nothing was lost; try again.` | [Try again] |
+| Set didn't save | Active workout banner (active-workout.md) | `Set not saved. Try again.` | [Try again] (same operation ID) |
+| Finish didn't save | Active workout banner (workout-summary.md) | `Couldn't finish. Try again.` | [Try again] |
 | Storage full | Where the write failed | `This iPhone is out of space, so Fizz can't save. Your entry is still here. Free up some space, then try again.` | [Try again] |
-| A command failed and rolled back | Where it was tapped (inline line or toast-free row) | `Couldn't <action>: <short reason>. Nothing was changed.` e.g. `Couldn't delete set 1: it changed since you opened it. Nothing was changed.` | One relevant action |
+| A command failed and rolled back | Where it was tapped (inline line or toast-free row) | `Couldn't <action>: <short reason>.` e.g. `Couldn't delete set 1: it changed since you opened it.` | One relevant action |
 | Out of date (version conflict) | Card or row (design-system §9.11) | `Out of date. Your workout changed since this was suggested.` | [Dismiss] |
-| Undo rejected | Toast (active-workout.md §4.9) | `Can't undo: set 2 changed. Tap it to edit or delete.` | — |
+| Undo rejected | Toast (active-workout.md §4.9) | `Can't undo: set 2 changed` | — |
 | Screen error (render crash) | Replaces that screen only | `Something went wrong on this screen. Saved workouts aren't affected.` | [Go to Today] · [Copy details] |
-| Restore interrupted | Today info banner, one launch (T9) | `A restore was interrupted. Your data is as it was before.` | — |
+| Restore interrupted | Today info banner, one launch (T9) | `Restore didn't finish · data unchanged` | — |
 | Import paused | Today info banner, one launch (T9) | `FitNotes import paused at 180 of 412 workouts.` | [Continue ›] |
 
 "Saved workouts aren't affected" on the screen-error state is true by construction: screens never write to SQLite directly; every write goes through a service in one transaction.
@@ -336,7 +336,7 @@ Only these block logging. Each uses `BlockingCover`; none can be dismissed; each
 
 | Operation | Title | Close-safety line | Owner |
 |---|---|---|---|
-| Restore | `Restoring your data` | `Keep Fizz open. If it closes now, your current data stays as it is.` | data-import-export.md |
+| Restore | `Restoring your data` | `Keep Fizz open.` | data-import-export.md |
 | Undo restore | `Switching back to your previous data` | same | data-import-export.md |
 | Delete all data | `Deleting your data…` | `If Fizz closes, it finishes deleting when it next opens.` | data-import-export.md |
 | Database update | `Updating your data for build 13` | `Keep Fizz open. If it closes, the update carries on next time.` | here (§3.6) |
@@ -363,7 +363,7 @@ While a cover is up: notification taps and `fizz://` links are held and dropped 
 | Area | Strings |
 |---|---|
 | Durability | `Unsaved edit restored` · `Saving…` · `Saved` · `✓ Set 2 saved · 100 kg × 8` · `Workout saved on this phone` · `Saved on this phone` · `Backed up on this phone · 19:05` · `Copy saved to Files · Thu 8 Oct` · `No copy off this phone yet` · `Coach note will be added when you're back online.` |
-| Offline | `No connection. The coach needs the internet. Your workout is saved on this phone.` · `OpenAI voice isn't available offline. Using the Apple voice.` · `iCloud uploads it when you're back online.` |
+| Offline | `No connection. The coach needs the internet.` · `OpenAI voice isn't available offline. Using the Apple voice.` · `iCloud uploads it when you're back online.` |
 | Coach | as §3.2 (owned by coach-sheet.md) |
 | Permissions | `Rest alerts are off in iOS Settings.` · `Voice isn't available: microphone is off in iOS Settings` · `Voice isn't available: speech recognition is off in iOS Settings` · `Voice isn't available: speech recognition for English (UK) isn't on this iPhone yet.` · `Lock Screen timer: Live Activities are off for Fizz in iOS Settings` · `Turned off in iOS Settings` · `Open Settings` |
 | Signing | `Refresh Fizz in SideStore by Sat` · `Refresh Fizz in SideStore today, by 21:00` · `Refresh Fizz in SideStore by tomorrow 09:00` · `Signed until Sun 11 Oct, 09:00` · `Refresh weekly in SideStore` · `Signing date unknown. Refresh weekly in SideStore.` · `I refreshed today` · `Signed until about Thu 15 Oct (estimated from your refresh on 8 Oct)` · notification `Refresh Fizz by Sat` / `Fizz stops opening on Sun at 09:00 until it's refreshed. Open SideStore on Wi-Fi with LocalDevVPN on.` · How sheet §3.5 |

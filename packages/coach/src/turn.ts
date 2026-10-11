@@ -232,7 +232,7 @@ const TOOL_READ_LINE: Partial<Record<string, string>> = {
   get_active_session: "Read today's workout",
   get_recent_training: 'Read your history',
   get_gym_equipment: 'Read your gym’s equipment',
-  get_progression_targets: 'Read the built-in rule’s targets',
+  get_progression_targets: 'Read next targets',
   get_recent_actions: 'Read earlier coach changes',
 };
 

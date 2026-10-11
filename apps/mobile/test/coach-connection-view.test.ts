@@ -27,7 +27,7 @@ const ALL: TextCoachStatus[] = ['ok', 'not_connected', 'expired', 'limit', 'not_
 describe('Coach connection status card (ai-connection §2.1, §2.6, §3.1)', () => {
   it('not connected: the plan pitch and Continue with ChatGPT, no Disconnect', () => {
     const v = connectionStatusView(state('not_connected', { email: null, model: null }), null);
-    expect(v.card).toMatchObject({ icon: 'xmark.circle', title: 'Not connected', lines: ['Logging, targets, rest timers and built-in progression work without the coach.'] });
+    expect(v.card).toMatchObject({ icon: 'xmark.circle', title: 'Not connected', lines: [] });
     expect(v.primary).toEqual({ label: 'Continue with ChatGPT', action: 'open_explainer' });
     expect(v.pitch).toContain('Voice isn’t included.');
     expect(v.showDisconnect).toBe(false);
@@ -67,7 +67,7 @@ describe('Coach connection status card (ai-connection §2.1, §2.6, §3.1)', () 
   it('limit: Manage usage is the primary; only Ben’s Check again lifts the pause; no reset time (check 6)', () => {
     const v = connectionStatusView(state('limit'), null);
     expect(v.card.title).toBe('ChatGPT usage limit reached');
-    expect(v.card.lines).toEqual(['The coach is paused. Logging and built-in targets still work.']);
+    expect(v.card.lines).toEqual(['Coach paused']);
     expect(v.primary).toEqual({ label: 'Manage usage', action: 'manage_usage' });
     expect(v.links).toEqual([{ label: 'Check again', action: 'check_again' }]);
     expect(JSON.stringify(v)).not.toMatch(/reset|resets|try again at|\d{1,2}:\d{2}/i);
@@ -119,15 +119,15 @@ describe('sign-in steps and outcomes', () => {
     expect(icons('models')).toEqual(['checkmark.circle.fill', 'checkmark.circle.fill', 'ellipsis']);
     const v = checkingView({ kind: 'checking', step: 'models', email: 'ben@example.com' });
     expect(v.lines.map((l) => l.text)).toEqual(['Signed in as ben@example.com', 'Checking coach access', 'Finding available models']);
-    expect(v.footnote).toBe('Nothing is used from your plan yet.');
+    expect(v.footnote).toBeNull();
   });
 
   it('outcomes use the spec lines; the second didn’t-return adds the may-not-work line (check 4)', () => {
-    expect(connectNotice({ kind: 'cancelled' }, 0)?.text).toBe('Sign-in cancelled. Nothing was connected.');
-    expect(connectNotice({ kind: 'timed_out' }, 0)).toMatchObject({ text: 'Sign-in took too long. Nothing was connected.', retry: true });
+    expect(connectNotice({ kind: 'cancelled' }, 0)?.text).toBe('Sign-in cancelled.');
+    expect(connectNotice({ kind: 'timed_out' }, 0)).toMatchObject({ text: 'Sign-in took too long.', retry: true });
     expect(connectNotice({ kind: 'didnt_return', detail: 'x' }, 1)?.detail).toBe('This can happen if you switch apps while signing in.');
     expect(connectNotice({ kind: 'didnt_return', detail: 'x' }, 2)?.detail).toContain('Signing in may not work on this iPhone yet.');
-    expect(connectNotice({ kind: 'no_scope' }, 0)).toMatchObject({ text: 'Signed in, but ChatGPT didn’t allow coach replies for this app.', detail: 'Nothing was stored.' });
+    expect(connectNotice({ kind: 'no_scope' }, 0)).toMatchObject({ text: 'Signed in, but ChatGPT didn’t allow coach replies for this app.', detail: null });
   });
 
   it('not eligible is not offered as a retry (check 5)', () => {

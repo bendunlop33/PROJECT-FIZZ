@@ -3,9 +3,10 @@ import { useNavigation } from '@react-navigation/native';
 import { toMs } from '@fizz/domain';
 
 import { formatShortDate } from '../format/dates';
+import { importedNotListedLine } from '../import/views';
 import { plural } from '../format/numbers';
 import { useScreenData, useServices } from '../shell/context';
-import { AppText, Group, Row, Screen, SectionHeader, StatusLine, TextButton } from '../ui';
+import { AppText, Group, LinkLine, Row, Screen, SectionHeader, StatusLine, TextButton } from '../ui';
 
 /**
  * Progress (audit F6): until progress.md's charts are built, an honest list
@@ -30,7 +31,7 @@ export function ProgressScreen() {
           <SectionHeader title="Workouts" />
           {data.value.rows.length === 0 ? (
             <AppText variant="callout" color="text.secondary">
-              No finished workouts yet. They’ll show here, newest first.
+              No finished workouts yet
             </AppText>
           ) : (
             <Group>
@@ -51,11 +52,18 @@ export function ProgressScreen() {
             <StatusLine icon="exclamationmark.triangle" tone="warning" text={`${plural(data.value.unreadable, 'workout', 'workouts')} couldn’t be read and ${data.value.unreadable === 1 ? 'isn’t' : 'aren’t'} listed.`} />
           ) : null}
           {data.value.importedNotListed > 0 ? (
-            <StatusLine icon="info.circle" tone="info" text={`${plural(data.value.importedNotListed, 'workout', 'workouts')} imported from FitNotes ${data.value.importedNotListed === 1 ? 'isn’t' : 'aren’t'} listed here yet. They’re in Data & backup, under Past imports.`} />
+            // I4's short form, as on Start from a past workout (review S4).
+            <LinkLine
+              accessibilityLabel={`${importedNotListedLine(data.value.importedNotListed).replace(' ›', '')}. Opens Past imports.`}
+              onPress={() => {
+                navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'PastImports', initial: false } });
+              }}
+            >
+              <AppText variant="callout" color="text.secondary">
+                {importedNotListedLine(data.value.importedNotListed)}
+              </AppText>
+            </LinkLine>
           ) : null}
-          <AppText variant="callout" color="text.tertiary">
-            Trends and records come in a later build.
-          </AppText>
         </>
       ) : null}
     </Screen>

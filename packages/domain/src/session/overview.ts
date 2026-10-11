@@ -27,6 +27,7 @@ import type { WriteFence } from '../ports';
 import type { SetFit } from './create';
 import { estimateRemainingDuration } from './duration';
 import { muscleWords } from './first-run';
+import { droppedWords } from './fit-words';
 
 /**
  * The Workout overview (workout-overview.md): the one page before the first
@@ -391,7 +392,7 @@ export function setsDetail(working: readonly Pick<WorkoutSet, 'planned'>[], unil
 }
 
 export interface PanelLine {
-  key: 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag' | 'coach';
+  key: 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag' | 'coach' | 'rule';
   label: string;
   value: string;
   tone: 'normal' | 'warning';
@@ -745,22 +746,19 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     if (rounded !== null && !dropped) panel.push({ key: 'rounded', label: 'Rounded', value: roundedText(rounded, eq), tone: 'normal' });
     const missing = dropped?.reason === 'equipment_not_in_gym' ? dropped.missing : null;
     if (dropped !== null) {
-      const what =
-        dropped.reason === 'equipment_not_in_gym'
-          ? `No ${(missing ?? 'equipment for this').toLowerCase()} here`
-          : dropped.reason === 'unit_not_convertible'
-            ? `Nothing here takes ${dropped.requested.unit}`
-            : dropped.reason === 'lightest_is_harder'
-              ? dropped.requested.convention === 'assistance'
-                ? `Most assistance here is under ${formatNumber(dropped.requested.value)}${NBSP}${dropped.requested.unit}`
-                : `Lightest here is above ${loadWord(dropped.requested)}`
-              : dropped.reason === 'no_achievable_loads'
-                ? 'No loads set up here'
-                : 'Different equipment here';
+      const assisted = dropped.requested.convention === 'assistance';
+      const what = droppedWords(dropped.reason, {
+        equipmentName: missing,
+        unit: dropped.requested.unit,
+        requested: assisted ? `${formatNumber(dropped.requested.value)}${NBSP}${dropped.requested.unit}` : loadWord(dropped.requested),
+        assisted,
+      });
       panel.push({ key: 'gym', label: 'Gym', value: what, tone: 'warning' });
     }
     if (covering !== null) panel.push({ key: 'flag', label: 'Flag', value: flagText(covering.flag), tone: 'warning' });
     const coach = overviewCoachOf(first, coachByExercise.get(ex.exerciseId), { sourceVersion, painFlagged: covering !== null, painToday: input.coach?.painToday === true });
+    // D1 (minimal copy): a built-in rule target says so in one word, as a coach target does; the rule in full is behind `Why?`.
+    if (coach?.state !== 'coach' && first?.planned.source === 'built_in_rule') panel.push({ key: 'rule', label: 'Rule', value: first.planned.provenance?.rule?.name ?? 'Built-in', tone: 'normal' });
     if (coach?.state === 'coach' && coach.reason !== null) panel.push({ key: 'coach', label: 'Coach', value: `“${coach.reason}”`, tone: 'normal' });
     if (coach?.state === 'built_in') panel.push({ key: 'coach', label: 'Coach', value: coach.target, tone: 'normal' });
 

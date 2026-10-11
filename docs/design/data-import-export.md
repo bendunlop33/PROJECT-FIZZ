@@ -150,8 +150,7 @@ Status card variants (icon + text, never colour alone; see §3.1 for triggers):
 
 │ ⚠ Last backup on this phone didn't     │ status.warning
 │   save                                 │
-│ This iPhone is out of space. Your      │
-│ workouts are still saved on this phone.│
+│ This iPhone is out of space.           │
 │ [      Back up on this phone now     ] │
 
 │ ⚠ Copy to Files didn't save            │ status.warning (automatic off-phone on)
@@ -165,7 +164,7 @@ Status card variants (icon + text, never colour alone; see §3.1 for triggers):
 
 ### 2.2 Save a copy to Files, and the backup folder sheet
 
-**`Save a copy to Files`** (any time, and in every safeguard prompt) writes the newest backup through the system export picker. The default location is iCloud Drive when available. One line above the picker: `Backups are plain files with your training data and coaching knowledge. They never contain your coach sign-in or API keys.` If the chosen location is inside Fizz's own container: `That's inside Fizz, so it's lost with the app. Choose iCloud Drive or another folder.` After success, toast `✓ Copy saved to Files · iCloud Drive › Fizz backups`.
+**`Save a copy to Files`** (any time, and in every safeguard prompt) writes the newest backup through the system export picker. The default location is iCloud Drive when available. One line above the picker: `ⓘ` → `Backups are plain files with your training data and coaching knowledge. They never contain your coach sign-in or API keys.` If the chosen location is inside Fizz's own container: `That's inside Fizz, so it's lost with the app. Choose iCloud Drive or another folder.` After success, toast `✓ Copy saved to Files · iCloud Drive › Fizz backups`.
 
 **Backup folder sheet** (only for `Also back up off the phone automatically`). Medium detent.
 
@@ -356,17 +355,8 @@ Same choose screen as §2.3 step 1 (no unfinished-workout restriction: checking 
 ┌────────────────────────────────────────┐
 │ ‹ Back      Import from FitNotes       │
 ├────────────────────────────────────────┤
-│ Bring in your FitNotes history from a  │
-│ CSV export.                            │
-│                                        │
-│ 1  In FitNotes, export a CSV and save  │
-│    it to Files.                        │
-│ 2  Choose it here. You'll see what     │
-│    will be imported before anything    │
-│    is saved.                           │
-│                                        │
-│ Works with FitNotes (Android) and      │
-│ FitNotes 2 (iPhone) CSV files.         │
+│ Export a CSV from FitNotes to Files,   │
+│ then choose it. ⓘ                      │
 ├────────────────────────────────────────┤
 │ [           Choose CSV file          ] │
 └────────────────────────────────────────┘
@@ -404,8 +394,7 @@ No menu paths inside FitNotes are given: they're unverified, and wrong instructi
 │ Kept as written                        │
 │ ⓘ 212 comments, kept as notes        › │
 │   47 look like effort ratings. Review  │
-│ ⓘ FitNotes files have no times. These  │
-│   workouts show the date only.         │
+│ ⓘ Date only (no times)                 │
 │ Gym: Not recorded                    › │
 │                                        │
 │ Workouts (412)                         │
@@ -458,10 +447,6 @@ Once every question is answered the primary becomes `Import 412 workouts` (accen
 ┌────────────────────────────────────────┐
 │ ‹ Back       Dumbbell weights     Done │
 ├────────────────────────────────────────┤
-│ FitNotes doesn't record whether a      │
-│ dumbbell weight is one dumbbell or     │
-│ both together.                         │
-│                                        │
 │ For these 9 exercises, "22.5" means:   │
 │ ( ) Each dumbbell                      │
 │     Imported as 22.5 kg each           │
@@ -749,8 +734,8 @@ Revised (consolidation; backups in the app by default). `getBackupStatus` decide
 |---|---|---|---|
 | Backed up on this phone | The newest automatic backup in Fizz's container includes every finished workout | `✓ Backed up on this phone · 19:05` | Summary line `Backed up on this phone · 19:05` (X2) |
 | Backing up | `createBackup` + write in progress (normally < 2 s) | `Backing up…` (static icon) | Summary line `Backing up…` |
-| Nothing yet | No workout finished yet | `✓ Saved on this phone` · `The first backup runs after your first workout.` | — |
-| Failed: storage full | Write failed for lack of space | `⚠ Last backup on this phone didn't save` · `This iPhone is out of space. Your workouts are still saved on this phone.` + `Back up on this phone now` | Today banner (system-states.md T5); never in a workout |
+| Nothing yet | No workout finished yet | `✓ Saved on this phone` | — |
+| Failed: storage full | Write failed for lack of space | `⚠ Last backup on this phone didn't save` · `This iPhone is out of space.` + `Back up on this phone now` | Today banner (system-states.md T5); never in a workout |
 | Automatic backups off | Ben turned `After each workout` off | `ⓘ Automatic backups are off` · `Your workouts are saved on this phone, with no backup copy.` + `Turn on` | Profile row line |
 | Includes damaged records | `createBackup` returned an integrity report with problems (ADR 0005 #3) | `⚠ Backup saved, but it can't be restored` · `It includes 1 damaged record (workout on Tue 6 Oct). Your newest good backup: Sun 4 Oct.` + `Details` | system-states.md data integrity |
 
@@ -784,13 +769,13 @@ Durability wording is exactly design-system §7.1. The off-phone file is written
 | Checking | §2.3 step 2 | Preview, or a failure state below |
 | Preview | §2.3 step 3 | Restore / Back |
 | Identical | Preview replaced by `This backup matches your data on this phone. Nothing to restore.` | `Done` |
-| Not a Fizz backup | `This isn't a Fizz backup file. Nothing was changed.` | Choose another |
-| Damaged file | `This backup file is damaged (its checksum doesn't match). Nothing was changed.` + `Your newest good backup: Sun 4 Oct` when one is known | Choose another |
-| Damaged records | `This backup has 2 damaged records (workouts on Mon 5 Oct and Tue 6 Oct), so it can't be restored. Nothing was changed.` No "skip damaged records" option (ADR 0005 #3) | Choose another |
-| From a newer Fizz | `This backup was made by a newer Fizz (build 15). Install build 15 or newer first. Nothing was changed.` | `Done` |
+| Not a Fizz backup | `This isn't a Fizz backup file. Data unchanged.` | Choose another |
+| Damaged file | `This backup file is damaged (its checksum doesn't match). Data unchanged.` + `Your newest good backup: Sun 4 Oct` when one is known | Choose another |
+| Damaged records | `This backup has 2 damaged records (workouts on Mon 5 Oct and Tue 6 Oct), so it can't be restored. Data unchanged.` No "skip damaged records" option (ADR 0005 #3) | Choose another |
+| From a newer Fizz | `This backup was made by a newer Fizz (build 15). Install build 15 or newer first. Data unchanged.` | `Done` |
 | Restoring | `BlockingCover` (§2.3 step 5). Logging blocked: the database is closed. Alerts cancelled, Live Activity ended | Done, or failed |
 | Failed before the switch | `Restore didn't finish: <reason>. Your data is as it was.` | Back to preview |
-| Interrupted (app killed) | Next launch, before anything else: `A restore was interrupted. Your data is as it was before.` (StatusBanner, once) | Today |
+| Interrupted (app killed) | Next launch, before anything else: `Restore didn't finish · data unchanged` (StatusBanner, once) | Today |
 | Done | §2.3 step 6 | `Done` → Today with fresh services; normal cold-start logic runs (flow §4.2) |
 | Undo restore available | `Undo last restore` row with `Brings back your data from before Thu 8 Oct, 19:20` | Rollback |
 | Undo with an unfinished workout from the backup | (PM decision on review SP2, 2026-10-09.) Undo stays available when the only unfinished workout came in with the restored data and hasn't been touched since the switch; the row adds `The unfinished workout came with the restored data and stays in it.` A workout started or continued after the switch blocks Undo as DX4 says (`Finish or discard your workout first (Push A)`) | Rollback |
@@ -806,10 +791,10 @@ Durability wording is exactly design-system §7.1. The off-phone file is written
 | FitNotes backup, not CSV | `This looks like a FitNotes backup, not a CSV export. Export a CSV from FitNotes and choose that.` | `Choose another file` |
 | Unknown header | (Revised 9 Oct.) A saved layout with the same columns imports it offline (§9.2.7). Otherwise `New file layout` (§9.2.2) offers `Read with the coach`, or shows the honest unavailable state (§9.3.2) with the first line in a monospaced box (max 3 lines, tail ellipsis) and `Share first line` (ADR 0016 difference 3). Nothing guessed | `Read with the coach`, or `Choose another file` |
 | Same file again | `You imported this file on Thu 8 Oct (412 workouts). Nothing new to import.` + `View that import ›` | `Done` |
-| Newer export of an earlier file | Preview as normal, plus `ⓘ 312 workouts came in with your import on Thu 8 Oct. They'll be skipped.` Fizz's version always wins, including sets Ben corrected since | as preview |
+| Newer export of an earlier file | Preview as normal, plus `ⓘ 312 workouts came in with your import on Thu 8 Oct. They'll be skipped.` (Fizz's version always wins) | as preview |
 | Needs answers | §2.5 step 3 | Disabled `Answer 3 questions to import` |
 | Ready | All answered | `Import 412 workouts` |
-| Backing up first | Commit tapped | `Backing up on this phone before import…` then importing. The confirm step before it offers `Save a copy to Files first` (safeguard, §4.1a) |
+| Backing up first | Commit tapped | `Backing up…` then importing. The confirm step before it offers `Save a copy to Files first` (safeguard, §4.1a) |
 | Importing | §2.5 step 4 | — |
 | Stopped / interrupted | `Import paused at 180 of 412 workouts. The 180 are in your history.` | `Continue import` + text button `Undo this import` |
 | Write failed mid-way | `Couldn't save workout 181 (Mon 3 Jun 2024): <reason>. 180 workouts are in. Nothing was half-saved.` | `Try again` + `Undo this import` |
@@ -925,34 +910,34 @@ At each of these moments Fizz shows one inline `NoteLine` with a one-tap `Second
 | Element | Text |
 |---|---|
 | Hub title | `Data & backup` |
-| Status, on this phone | `✓ Backed up on this phone · 19:05` · `✓ Saved on this phone` + `The first backup runs after your first workout.` · `⚠ Last backup on this phone didn't save` · `ⓘ Automatic backups are off` · `Backing up…` |
+| Status, on this phone | `✓ Backed up on this phone · 19:05` · `✓ Saved on this phone` · `⚠ Last backup on this phone didn't save` · `ⓘ Automatic backups are off` · `Backing up…` |
 | Status, off this phone | `✓ Copy saved to Files · Thu 8 Oct` · `ⓘ No copy off this phone yet` · `ⓘ No copy off this phone since 8 Sep` · `⚠ Copy to Files didn't save` |
-| Status details | `👤 Your data: 412 workouts · 4,105 sets` · `📚 Coaching knowledge: 9 rules · 412 exercises` · `Copies on this phone are lost if Fizz is deleted or re-signed with another Apple ID.` · `The folder can't be reached. Your backups on this phone are fine.` · `This iPhone is out of space. Your workouts are still saved on this phone.` · `iCloud uploads it when you're back online.` |
+| Status details | `👤 Your data: 412 workouts · 4,105 sets` · `📚 Coaching knowledge: 9 rules · 412 exercises` · `Copies on this phone are lost if Fizz is deleted or re-signed with another Apple ID.` · `The folder can't be reached. Your backups on this phone are fine.` · `This iPhone is out of space.` · `iCloud uploads it when you're back online.` |
 | Buttons | `Save a copy to Files` · `Save a copy to Files first` · `Skip` · `Back up on this phone now` · `Send a copy…` · `Choose backup folder` · `Check` · `Restore your data` · `Restore coaching knowledge` · `Restore both` · `Choose what to restore` · `Undo restore` · `Choose CSV file` · `Import 412 workouts` · `Answer 3 questions to import` · `Export` · `Delete my data` · `Reset coaching knowledge` · `Done` |
 | Settings rows | `Backups on this phone` · `After each workout` · `Keep automatic backups` · `Copies on this phone` · `Off this phone (optional)` · `Also back up off the phone automatically` · `Remind me if there's no copy off this phone` · `Turn off automatic backups? Your workouts stay saved on this phone, but there'll be no backup copy.` [Turn off] [Cancel] |
-| Files copy | `Backups are plain files with your training data and coaching knowledge. They never contain your coach sign-in or API keys.` · `That's inside Fizz, so it's lost with the app. Choose iCloud Drive or another folder.` · folder sheet title `Back up off the phone automatically` · `After each workout, Fizz also saves a copy in a folder you choose, like iCloud Drive. It survives if the app is deleted.` |
+| Files copy | `ⓘ` → `Backups are plain files with your training data and coaching knowledge. They never contain your coach sign-in or API keys.` · `That's inside Fizz, so it's lost with the app. Choose iCloud Drive or another folder.` · folder sheet title `Back up off the phone automatically` · `After each workout, Fizz also saves a copy in a folder you choose, like iCloud Drive. It survives if the app is deleted.` |
 | Safeguards | as §4.1a |
 | File names | `fizz-backup-2026-10-08-1905-auto.json` · `fizz-backup-2026-10-08-1912.json` (manual). Local time in the name; UTC + zone inside the file. One file, two sections (`your_data`, `coaching_knowledge`) |
 | Toasts | `✓ Copy saved to Files · iCloud Drive › Fizz backups` · `412 workouts hidden. You can import the file again.` · `Coaching knowledge reset to build 12.` [Undo] |
 | Trial run | `Before real workouts: do the trial run in the SideStore guide (save a copy to Files, update over the top, skip a refresh, restore).` · `Mark as done` · after: `Trial run done · Fri 9 Oct` |
 | Restore preview | `Made Thu 8 Oct 2026, 19:05` · `✓ Checked: complete, no damaged records` · section heads `Your data` / `Coaching knowledge` · column heads `Backup` / `This phone` · `Same as this phone` · `⚠ 3 workouts on this phone aren't in this backup (newest: Sat 10 Oct). They'll be replaced.` · `ⓘ Restoring this replaces approved rules and your exercise list. Your workouts aren't touched.` · `ⓘ 2 exercises in your routines aren't in this phone's exercise list: Landmine press, Hatfield squat. They show as "Exercise missing" until you add them or restore coaching knowledge.` · `Kept: 3 exercises your workouts use.` · `ⓘ This backup is from an older Fizz. It's updated as it's restored.` · `ⓘ Coach sign-in and API keys aren't part of backups. Yours stay as they are.` (on a fresh install: `… You'll connect the coach again in Profile.`) · `ⓘ You can undo this from Data & backup.` |
 | Restore alert | `Replace your data on this phone?` / `3 workouts on this phone aren't in the backup from Thu 8 Oct, 19:05. Coaching knowledge isn't changed. You can undo this from Data & backup.` [Cancel] [Restore] · `Replace coaching knowledge?` / `2 approved rules on this phone aren't in the backup. Your data isn't changed.` |
-| Restoring cover | `Restoring your data` · `Backup checked` · `Workouts loaded (412)` · `Checking every record` · `Switching to the restored data` · `Keep Fizz open. If it closes now, your current data stays as it is.` |
+| Restoring cover | `Restoring your data` · `Backup checked` · `Workouts loaded (412)` · `Checking every record` · `Switching to the restored data` · `Keep Fizz open.` |
 | Restore done | `✓ Restored` · `Your data now matches the backup from Thu 8 Oct, 19:05.` |
-| Restore failures | `This isn't a Fizz backup file. Nothing was changed.` · `This backup file is damaged (its checksum doesn't match). Nothing was changed.` · `This backup has 2 damaged records (…), so it can't be restored. Nothing was changed.` · `This backup was made by a newer Fizz (build 15). Install build 15 or newer first. Nothing was changed.` · `This backup matches your data on this phone. Nothing to restore.` · `Restore didn't finish: <reason>. Your data is as it was.` · `A restore was interrupted. Your data is as it was before.` · `Finish or discard your workout first (Push A, started 18:02).` |
+| Restore failures | `This isn't a Fizz backup file. Data unchanged.` · `This backup file is damaged (its checksum doesn't match). Data unchanged.` · `This backup has 2 damaged records (…), so it can't be restored. Data unchanged.` · `This backup was made by a newer Fizz (build 15). Install build 15 or newer first. Data unchanged.` · `This backup matches your data on this phone. Nothing to restore.` · `Restore didn't finish: <reason>. Your data is as it was.` · `Restore didn't finish · data unchanged` · `Finish or discard your workout first (Push A, started 18:02).` |
 | Undo restore | Row `Undo last restore` + `Brings back your data from before Thu 8 Oct, 19:20` · alert `Bring back your data from before Thu 8 Oct, 19:20? The restored backup is kept, so you can switch again.` · after: `Switch back to the restored backup` |
 | Check result | `✓ This backup restores` · `⚠ This backup won't restore` · `Nothing on this phone was changed.` · `Your newest good backup: Sun 4 Oct.` |
-| Import intro | `Bring in your FitNotes history from a CSV export.` · `In FitNotes, export a CSV and save it to Files.` · `Choose it here. You'll see what will be imported before anything is saved.` · `Works with FitNotes (Android) and FitNotes 2 (iPhone) CSV files.` |
+| Import intro | `Export a CSV from FitNotes to Files, then choose it.` + `ⓘ` → `FitNotes or FitNotes 2` |
 | Import detection | `FitNotes (Android) CSV · weights in kg` · `FitNotes 2 (iPhone) CSV · weights in lb` · `4,212 rows · 2 Mar 2019 – 1 Oct 2026` |
 | Preview headings | `Will import` · `Needs your answer (3)` · `Will be skipped` · `Kept as written` · `Workouts (412)` |
 | Skips | `86 cardio rows (not imported yet)` · `7 rows can't be read` · `3 dates already have a Fizz workout` · `312 workouts came in with your import on Thu 8 Oct. They'll be skipped.` |
-| Kept as written | `212 comments, kept as notes` · `47 look like effort ratings. Review` · `FitNotes files have no times. These workouts show the date only.` |
+| Kept as written | `212 comments, kept as notes` · `47 look like effort ratings. Review` · `Date only (no times)` |
 | Match status | `Matched` · `Check` · `No match` · buttons `Use this` · `Choose…` · `Add new` · `Skip` · `34 matched by name · Show` |
-| Convention questions | `FitNotes doesn't record whether a dumbbell weight is one dumbbell or both together.` · `For these 9 exercises, "22.5" means:` · `Each dumbbell` / `Imported as 22.5 kg each` · `Both dumbbells together` / `Imported as 11.25 kg each` · `Total as written` · `Nothing added: imported as 100 kg` · `Plates only (bar not counted)?` · `Bar: Olympic bar (from Bench press)` · `If plates only: 60 kg → 80 kg total (plates + 20 kg bar)` · `Plates only` · `Your answer last time` · `Weight added to bodyweight` · `Assistance from a machine` · `Values in your file: 0 to 20, none negative` · `Different for some?` · `Same` |
+| Convention questions | `For these 9 exercises, "22.5" means:` · `Each dumbbell` / `Imported as 22.5 kg each` · `Both dumbbells together` / `Imported as 11.25 kg each` · `Total as written` · `Nothing added: imported as 100 kg` · `Plates only (bar not counted)?` · `Bar: Olympic bar (from Bench press)` · `If plates only: 60 kg → 80 kg total (plates + 20 kg bar)` · `Plates only` · `Your answer last time` · `Weight added to bodyweight` · `Assistance from a machine` · `Values in your file: 0 to 20, none negative` · `Different for some?` · `Same` |
 | Other questions | `Rows have values in both the kg and lb columns. Which did you enter in FitNotes?` · `Keep as notes only` / `Review and import as RPE` · `Skip those dates` / `Import them as extra workouts` · `Not recorded` / `All at Main Gym` |
 | Provenance (history set detail) | `Imported from FitNotes on Thu 8 Oct 2026 · row 4,180` · `Original: Flat Barbell Bench Press · 100 kgs · 8 reps · "@8 felt heavy"` |
 | Import errors | `This file is empty.` · `This isn't a CSV file.` · `This looks like a FitNotes backup, not a CSV export. Export a CSV from FitNotes and choose that.` · `Fizz doesn't recognise this file's columns yet.` · `Copy first line` · `You imported this file on Thu 8 Oct (412 workouts). Nothing new to import.` |
-| Importing | `Importing from FitNotes` · `180 of 412 workouts` · `Keep Fizz open. If it closes, you can carry on from here.` · `Backing up on this phone before import…` · `Import paused at 180 of 412 workouts. The 180 are in your history.` · `Continue import` |
+| Importing | `Importing from FitNotes` · `180 of 412 workouts` · `Keep Fizz open.` · `Backing up…` · `Import paused at 180 of 412 workouts. The 180 are in your history.` · `Continue import` |
 | Results | `✓ Import finished` · `412 workouts · 4,105 sets added` · `Save row-by-row results (CSV)` · `Undo this import` · row detail `Row 1,204 · 2024-05-03 · Treadmill · 5 km · 25:00 — cardio isn't imported yet` |
 | Undo import alert | `Undo this import?` / `412 workouts from FitNotes_Export_2026_10_01.csv will be hidden from history, Progress and targets. Your other workouts aren't touched.` [Cancel] [Undo import] |
 | Export | `What to export` · `My data` · `Coaching knowledge only` / `Rules, sources and the exercise list. Nothing about you.` · `Spreadsheet (CSV)` / `One row per set. Opens in Numbers, Excel or Google Sheets.` · `Full data (JSON)` / `Workouts, routines, gyms, coach decisions and memories.` · `FitNotes 2 CSV` / `For importing into FitNotes 2. Set types, RPE and load conventions are lost.` · `Include warm-up sets` · `Exports can't be restored into Fizz. Use Save a copy to Files for that.` · `No workouts in this range.` · `Preparing…` |
@@ -1017,7 +1002,7 @@ Restore
 9. Restoring a file identical to the data shows `This backup matches…` and leaves the rollback target unchanged.
 10. A file with an edited byte shows the checksum failure; a backup from a higher schema shows the newer-Fizz message; neither changes the database file (compare its hash before and after).
 11. During the restore cover, no Log, notification tap or deep link can write; queued writes on the old store fail with "Database is closed" and nothing reaches the new file (ADR 0005).
-12. Force-quit during the cover before the switch: on relaunch the old data is intact and `A restore was interrupted…` shows once. Force-quit after the switch: restored data shows.
+12. Force-quit during the cover before the switch: on relaunch the old data is intact and `Restore didn't finish…` shows once. Force-quit after the switch: restored data shows.
 13. `Undo restore` brings back the previous data; `Switch back to the restored backup` swaps again.
 13a. Restoring only `Your data` leaves every coaching-knowledge table byte-identical (approved rules, catalogue, aliases); restoring only `Coaching knowledge` leaves every owner-scoped record identical. Missing exercise references are listed in the preview and nothing is added to coaching knowledge silently.
 13b. On a non-empty phone neither section is pre-ticked and the primary reads `Choose what to restore`.

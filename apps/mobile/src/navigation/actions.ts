@@ -44,6 +44,17 @@ export function openWorkoutToCheckGym(gymId: string, nonce: string) {
   return { type: 'NAVIGATE', payload: { name: 'Workout', params: { checkGym: { gymId, nonce } } } } as const;
 }
 
+/**
+ * The off-profile line on the set card (minimal-copy audit A3): to that gym's
+ * detail, stacked on the gym list in Profile. Today's workout checks loads
+ * against the gym as it was at start, so an equipment fix only reaches it
+ * through Gym detail's `Use changes today` (`openWorkoutToCheckGym`). Leaves
+ * the workout minimised over Today.
+ */
+export function openGymFromWorkout(gymId: string): PopToTabsAction {
+  return popToTabs({ screen: 'Profile', params: { screen: 'GymDetail', params: { gymId }, initial: false } });
+}
+
 /** Replace the Workout with its Summary (after Finish). The only path that plays the finish moment (premium-feel §6). */
 export function replaceWithSummary(sessionId: string) {
   return { type: 'REPLACE', payload: { name: 'Summary', params: { sessionId, justFinished: true } } } as const;

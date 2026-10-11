@@ -137,7 +137,7 @@ describe('explainTarget: built-in rule target (check 39)', () => {
     const after = explain(now, { basisNow: basis, history: [...h, ...hist(newer)], painFlags: [flag(3)], nowMs: ms(4 * DAY) });
     expect(rowsOf(after).slice(0, 4)).toEqual(rowsOf(before));
     // The flag itself is shown as it is now, and says it came after the target.
-    expect(rowsOf(after)[4]).toEqual(['Pain', 'Flag on since 11 Oct (shoulder). Loads, reps and sets can’t go up.', 'Flagged after this target was set, so the target wasn’t changed.']);
+    expect(rowsOf(after)[4]).toEqual(['Pain', 'Since 11 Oct (shoulder) · no increases', 'Flagged after this target was set']);
     expect(after?.rows[4]?.kind).toBe('warning');
   });
 
@@ -233,7 +233,7 @@ describe('explainTarget: routine and Repeat targets', () => {
     expect(rowsOf(e)).toEqual([
       ['Set by', 'Repeat of Push A, 8 Oct'],
       ['Last time', '102.5 kg × 8', 'RPE 9', '8 Oct · Main Gym · Olympic bar'],
-      ['Reason', 'What you did last time is today’s target. No progression is applied.'],
+      ['Reason', 'Same as last time'],
       ['Equipment', 'Capped at 100 kg: the most this bar makes. Last time was 102.5 kg.'],
     ]);
   });
@@ -291,7 +291,7 @@ describe('explainTarget: pain flags (Pain and Before flag rows)', () => {
       ['Set by', 'Built-in rule · after your 10 Oct workout', 'Double progression 6–8'],
       ['Last time', '100 kg × 8, 8', 'RPE 8, 8', '10 Oct · Main Gym · Olympic bar'],
       ['Reason', 'Progression for Bench press is paused because pain was reported on 2026-10-09. Targets are not increased.', 'Targets are not increased while a pain flag is active. Clear the flag when you are ready.'],
-      ['Pain', 'Flag on since 9 Oct (shoulder). Loads, reps and sets can’t go up.'],
+      ['Pain', 'Since 9 Oct (shoulder) · no increases'],
       ['Before flag', '105 kg × 6, 6 · 8 Oct'],
     ]);
     expect(e?.rows.find((r) => r.key === 'before_flag')?.kind).toBe('actual');
@@ -315,7 +315,7 @@ describe('explainTarget: pain flags (Pain and Before flag rows)', () => {
 
   it('a flag with no area, and a flag on another movement', () => {
     const noArea = flag(1, { area: null });
-    expect(rowsOf(explain(now, { history: h, painFlags: [noArea], nowMs: ms(3 * DAY + 60) })).find((r) => r[0] === 'Pain')).toEqual(['Pain', 'Flag on since 9 Oct. Loads, reps and sets can’t go up.']);
+    expect(rowsOf(explain(now, { history: h, painFlags: [noArea], nowMs: ms(3 * DAY + 60) })).find((r) => r[0] === 'Pain')).toEqual(['Pain', 'Since 9 Oct · no increases']);
     const other = flag(1, { exerciseId: ROW, exerciseName: 'Cable row' });
     expect(rowsOf(explain(now, { history: h, painFlags: [other], nowMs: ms(3 * DAY + 60) })).map((r) => r[0])).toEqual(['Set by', 'Last time', 'Reason']);
   });

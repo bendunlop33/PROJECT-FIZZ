@@ -117,21 +117,21 @@ function Launch() {
       return (
         <MessageScreen
           title="Your data was saved by a newer GymSmarter"
-          lines={['This build can’t open it. Install the newer build in SideStore. Nothing has been changed.', outcome.message]}
+          lines={['This build can’t open it. Install the newer build in SideStore. Data unchanged.', outcome.message]}
         />
       );
     case 'sqlite_too_old':
       return (
         <MessageScreen
           title="GymSmarter can’t open its database on this iPhone"
-          lines={[`The database engine is SQLite ${outcome.version}; GymSmarter needs 3.37 or newer. Nothing has been changed.`]}
+          lines={[`The database engine is SQLite ${outcome.version}; GymSmarter needs 3.37 or newer. Data unchanged.`]}
         />
       );
     case 'open_failed':
       return (
         <MessageScreen
           title="Couldn’t open your training data."
-          lines={[outcome.message, 'Nothing has been changed. Your backups on this phone and in Files are untouched; restoring one needs the data to open first, so try again or contact the developer.']}
+          lines={[outcome.message, 'Data unchanged · backups untouched']}
         >
           {retry}
         </MessageScreen>

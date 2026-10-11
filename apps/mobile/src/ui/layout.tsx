@@ -179,10 +179,30 @@ export const TONE_COLOR: Record<Tone, ColorToken> = {
 };
 
 /** `StatusRow` / `StatusLabel` (§9.40): icon + words, never colour alone. */
-export function StatusLine({ icon, tone, text, detail, action }: { icon: SymbolName; tone: Tone; text: string; detail?: string | null; action?: ReactNode }) {
+export function StatusLine({
+  icon,
+  tone,
+  text,
+  detail,
+  info,
+  infoLabel = 'Details',
+  action,
+}: {
+  icon: SymbolName;
+  tone: Tone;
+  text: string;
+  detail?: string | null;
+  /** Behind an ⓘ (minimal copy): shown only on a tap, for example an error's own message. */
+  info?: string | null;
+  /** The ⓘ's VoiceOver label, in context (`Error details`), never a bare `Info` (review N1). */
+  infoLabel?: string;
+  action?: ReactNode;
+}) {
   const theme = useTheme();
+  const [infoOpen, setInfoOpen] = useState(false);
+  const hasInfo = info !== undefined && info !== null && info !== '';
   return (
-    <View style={{ flexDirection: 'row', gap: theme.space['3'], alignItems: 'flex-start', minHeight: theme.target.min.height }} accessible accessibilityLabel={[text, detail].filter(Boolean).join('. ')}>
+    <View style={{ flexDirection: 'row', gap: theme.space['3'], alignItems: 'flex-start', minHeight: theme.target.min.height }} accessible={!hasInfo} accessibilityLabel={[text, detail].filter(Boolean).join('. ')}>
       <View style={{ paddingTop: 2 }}>
         <Icon name={icon} color={TONE_COLOR[tone]} />
       </View>
@@ -195,8 +215,66 @@ export function StatusLine({ icon, tone, text, detail, action }: { icon: SymbolN
             {detail}
           </AppText>
         ) : null}
+        {hasInfo && infoOpen ? (
+          <AppText variant="callout" color="text.secondary" numeric>
+            {info}
+          </AppText>
+        ) : null}
       </View>
+      {hasInfo ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={infoLabel}
+          accessibilityState={{ expanded: infoOpen }}
+          hitSlop={12}
+          style={{ paddingTop: 2 }}
+          onPress={() => {
+            setInfoOpen((o) => !o);
+          }}
+        >
+          <Icon name="info.circle" color="text.secondary" size={18} />
+        </Pressable>
+      ) : null}
       {action}
+    </View>
+  );
+}
+
+/**
+ * A short line with an optional `ⓘ` (minimal copy): the explanation shows only
+ * on a tap. With no `info` it is a plain line.
+ */
+export function InfoLine({ text, info, variant = 'body', infoLabel = 'Details' }: { text?: string | null; info?: string | null; variant?: 'body' | 'callout'; infoLabel?: string }) {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  const hasInfo = info !== undefined && info !== null && info !== '';
+  return (
+    <View style={{ gap: theme.space['1'] }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+        {text ? (
+          <AppText variant={variant} style={{ flexShrink: 1 }}>
+            {text}
+          </AppText>
+        ) : null}
+        {hasInfo ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={infoLabel}
+            accessibilityState={{ expanded: open }}
+            hitSlop={12}
+            onPress={() => {
+              setOpen((o) => !o);
+            }}
+          >
+            <Icon name="info.circle" color="text.secondary" size={18} />
+          </Pressable>
+        ) : null}
+      </View>
+      {hasInfo && open ? (
+        <AppText variant="callout" color="text.secondary">
+          {info}
+        </AppText>
+      ) : null}
     </View>
   );
 }
