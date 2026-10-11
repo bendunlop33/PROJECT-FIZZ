@@ -2,6 +2,7 @@ import { View } from 'react-native';
 
 import type { ActivityView, TimeSheetRow } from '@fizz/domain';
 
+import { HOW_COUNTED_LINES, TIME_SHEET_COPY } from '../../progress/copy';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, OutlinePill, TextButton } from '../../ui';
 
@@ -32,16 +33,16 @@ function LeftOutRow({ row, onCount, onEdit }: { row: TimeSheetRow; onCount?: (r:
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
         {onCount ? (
           <OutlinePill
-            label="Count it"
-            accessibilityLabel={`Count it: ${row.text}`}
+            label={TIME_SHEET_COPY.countIt}
+            accessibilityLabel={`${TIME_SHEET_COPY.countIt}: ${row.text}`}
             onPress={() => {
               onCount(row);
             }}
           />
         ) : null}
         <OutlinePill
-          label="Edit times"
-          accessibilityLabel={`Edit times: ${row.text}`}
+          label={TIME_SHEET_COPY.editTimes}
+          accessibilityLabel={`${TIME_SHEET_COPY.editTimes}: ${row.text}`}
           onPress={() => {
             onEdit(row);
           }}
@@ -55,14 +56,14 @@ export function TimeSheet({ visible, sheet, onClose, onCount, onEdit }: { visibl
   const theme = useTheme();
   return (
     <BottomCard visible={visible} onClose={onClose}>
-      <Heading title="Time in gym" onDone={onClose} />
+      <Heading title={TIME_SHEET_COPY.title} onDone={onClose} />
       <AppText variant="body" numeric>
         {sheet.countLine}
       </AppText>
       {sheet.overCap.length > 0 ? (
         <View style={{ gap: theme.space['3'] }}>
           <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
-            OVER 4 H
+            {TIME_SHEET_COPY.overCap}
           </AppText>
           {sheet.overCap.map((r) => (
             <LeftOutRow key={r.sessionId} row={r} onCount={onCount} onEdit={onEdit} />
@@ -72,7 +73,7 @@ export function TimeSheet({ visible, sheet, onClose, onCount, onEdit }: { visibl
       {sheet.noEnd.length > 0 ? (
         <View style={{ gap: theme.space['3'] }}>
           <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
-            NO END TIME
+            {TIME_SHEET_COPY.noEnd}
           </AppText>
           {sheet.noEnd.map((r) => (
             <LeftOutRow key={r.sessionId} row={r} onEdit={onEdit} />
@@ -82,7 +83,7 @@ export function TimeSheet({ visible, sheet, onClose, onCount, onEdit }: { visibl
       {sheet.imported !== null ? (
         <View style={{ gap: theme.space['2'] }}>
           <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
-            NO TIMES
+            {TIME_SHEET_COPY.imported}
           </AppText>
           <AppText variant="body" numeric>
             {sheet.imported}
@@ -90,7 +91,7 @@ export function TimeSheet({ visible, sheet, onClose, onCount, onEdit }: { visibl
         </View>
       ) : null}
       <AppText variant="callout" color="text.secondary">
-        Time is start to finish, minus pauses, the same as each workout’s summary.
+        {TIME_SHEET_COPY.footer}
       </AppText>
     </BottomCard>
   );
@@ -98,14 +99,7 @@ export function TimeSheet({ visible, sheet, onClose, onCount, onEdit }: { visibl
 
 export function HowCountedSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const theme = useTheme();
-  const lines = [
-    'Sets are completed working sets rated RPE 6 or harder, or not rated. Warm-ups and easier sets aren’t counted.',
-    'Body parts: a set counts 1 for the muscles an exercise mainly works and ½ for helpers. Bench press: 1 chest, ½ shoulders, ½ triceps.',
-    'Push/Pull/Legs: each exercise belongs to one group, and each set counts 1 there.',
-    'Sessions are workouts with at least 1 counted set for that group.',
-    'Sets you marked spotted, painful or with form breaking still count here, because you did the work.',
-    'This counts work done. It doesn’t measure recovery or fatigue.',
-  ];
+  const lines = HOW_COUNTED_LINES;
   return (
     <BottomCard visible={visible} onClose={onClose}>
       <Heading title="How this is counted" onDone={onClose} />

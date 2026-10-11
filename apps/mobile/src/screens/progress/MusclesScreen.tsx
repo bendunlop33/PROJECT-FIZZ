@@ -1,4 +1,4 @@
-import { useRoute, type RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
@@ -19,27 +19,53 @@ import { HowCountedSheet } from './sheets';
 export function MusclesScreen() {
   const theme = useTheme();
   const services = useServices();
+  const navigation = useNavigation();
   const route = useRoute<RouteProp<ProgressStackParams, 'ProgressMuscles'>>();
-  const [req, setReq] = useState<{ days?: ProgressWindowDays; grouping?: ProgressGrouping }>({});
-  const [data, reload] = useScreenData((s) => s.progress.home(req));
+  // No local window or grouping: the service holds the one shared choice (check 15).
+  const [data, reload] = useScreenData((s) => s.progress.home());
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(route.params.group ? [route.params.group] : []));
   const [howOpen, setHowOpen] = useState(false);
 
   const change = (patch: { days?: ProgressWindowDays; grouping?: ProgressGrouping }) => {
-    setReq((r) => ({ ...r, ...patch }));
+    const saved = services.progress.saveSettings(patch);
     reload();
-    void services.progress.saveSettings(patch);
+    void saved.then(reload);
   };
 
   if (data.state === 'error') {
     return (
       <Screen>
-        <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t open your training data." info={data.message} infoLabel="Error details" action={<TextButton label="Try again" onPress={reload} />} />
+        <StatusLine
+          icon="exclamationmark.triangle"
+          tone="warning"
+          text="Couldn’t open your training data."
+          info={data.message}
+          infoLabel="Error details"
+          action={
+            <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+              <TextButton label="Try again" onPress={reload} />
+              <TextButton
+                label="Restore from backup"
+                onPress={() => {
+                  navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'Restore', params: { mode: 'restore' }, initial: false } });
+                }}
+              />
+            </View>
+          }
+        />
       </Screen>
     );
   }
   const home = data.state === 'ready' ? data.value : null;
-  if (home?.view.dataState !== 'normal') return <Screen>{null}</Screen>;
+  if (home === null) return <Screen>{null}</Screen>;
+  if (home.view.dataState !== 'normal') {
+    // Never a blank page (review N3).
+    return (
+      <Screen>
+        <AppText variant="headline">Nothing to show yet</AppText>
+      </Screen>
+    );
+  }
   const view = home.view;
   const m = view.muscles;
   const perWeek = view.window.days >= 14;
@@ -85,6 +111,12 @@ export function MusclesScreen() {
                   });
                 }}
               />
+              {/* A group at 0 shows when it was last trained under the row, expanded or not (§2.4, §3.2). */}
+              {r.zero && !expanded ? (
+                <AppText variant="callout" color="text.tertiary" numeric style={{ paddingLeft: theme.space['3'], paddingBottom: theme.space['2'] }}>
+                  {r.lastTrained}
+                </AppText>
+              ) : null}
               {expanded ? (
                 <View style={{ paddingLeft: theme.space['3'], paddingBottom: theme.space['3'], gap: theme.space['1'] }}>
                   <AppText variant="callout" color="text.secondary" numeric>

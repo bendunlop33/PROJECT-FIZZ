@@ -2,10 +2,11 @@ import { useNavigation } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
-import { toMs, type ProgressHomeView, type TimeSheetRow } from '@fizz/domain';
+import { toMs, type ProgressHomeView } from '@fizz/domain';
 import type { ProgressGrouping, ProgressWindowDays } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
+import { runCountIt, type CountItToast } from '../../progress/count-it';
 import { ActivityBars, FrequencyHeader, FrequencyRow, ResumeBar, Segmented, useAx, WindowPicker } from '../../progress/components';
 import type { ProgressHome } from '../../services/progress-service';
 import { useScreenData, useServices } from '../../shell/context';
@@ -23,7 +24,7 @@ import { HowCountedSheet, TimeSheet } from './sheets';
  * and computes nothing.
  */
 
-type Toasted = { text: string; action?: string; onAction?: () => void } | null;
+type Toasted = CountItToast | null;
 
 export function ProgressScreen() {
   const theme = useTheme();
@@ -32,13 +33,16 @@ export function ProgressScreen() {
   const ax = useAx();
   const [segment, setSegment] = useState<'overview' | 'calendar'>('overview');
   const [month, setMonth] = useState<string | null>(null);
-  const [req, setReq] = useState<{ days?: ProgressWindowDays; grouping?: ProgressGrouping }>({});
-  const [data, reload] = useScreenData((s) => s.progress.home(req));
+  const [calendarSeen, setCalendarSeen] = useState(false);
+  // No local window or grouping: the service holds the one shared choice, so home and Muscles never disagree (check 15).
+  const [data, reload] = useScreenData((s) => s.progress.home());
   const [timeOpen, setTimeOpen] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
   const [toast, setToast] = useState<Toasted>(null);
   const [placeholder, setPlaceholder] = useState(false);
+  const [toastHeight, setToastHeight] = useState(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inFlight = useRef(new Set<string>());
 
   useEffect(() => {
     // Loading: nothing for `timing.placeholderDelay`, then still grey blocks (no shimmer).
@@ -65,31 +69,27 @@ export function ProgressScreen() {
   };
 
   const change = (patch: { days?: ProgressWindowDays; grouping?: ProgressGrouping }) => {
-    setReq((r) => ({ ...r, ...patch }));
+    // The choice is shared the moment it's made; reload again once saved (a failed save falls back to the saved setting).
+    const saved = services.progress.saveSettings(patch);
     reload();
-    void services.progress.saveSettings(patch);
+    void saved.then(reload);
   };
 
-  const countIt = async (row: TimeSheetRow) => {
-    const out = await services.progress.confirmDuration({ sessionId: row.sessionId, expectedVersion: row.version, opId: newUuid() });
-    if (!out.ok) {
-      show({ text: out.message });
-      reload();
-      return;
-    }
-    reload();
-    const duration = row.text.split(' · ').at(-1) ?? '';
-    show({
-      text: `Counted ${row.title}, ${duration}`,
-      action: 'Undo',
-      onAction: () => {
-        setToast(null);
-        void services.progress.undoConfirmDuration({ sessionId: out.sessionId, expectedVersion: out.version, opId: newUuid() }).then((u) => {
-          if (!u.ok) show({ text: u.message });
-          reload();
-        });
-      },
-    });
+  const hide = () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(null);
+  };
+
+  const countDeps = {
+    confirm: (req: { sessionId: string; expectedVersion: number; opId: string }) => services.progress.confirmDuration(req),
+    undo: (req: { sessionId: string; expectedVersion: number; opId: string }) => services.progress.undoConfirmDuration(req),
+    newId: newUuid,
+    closeSheet: () => {
+      setTimeOpen(false);
+    },
+    show,
+    hide,
+    reload,
   };
 
   const home: ProgressHome | null = data.state === 'ready' ? data.value : null;
@@ -107,7 +107,10 @@ export function ProgressScreen() {
             { key: 'calendar', label: 'Calendar' },
           ]}
           selected={segment}
-          onSelect={setSegment}
+          onSelect={(k) => {
+            if (k === 'calendar') setCalendarSeen(true);
+            setSegment(k);
+          }}
           label="Progress"
         />
       ) : null}
@@ -137,20 +140,25 @@ export function ProgressScreen() {
       />
     );
   } else if (home === null) {
-    body = data.state === 'loading' && placeholder ? <Placeholder /> : null;
+    // Loading: grey blocks after the delay. Ready with no profile: the empty state, never a blank page (review N3).
+    body = data.state === 'loading' ? (placeholder ? <Placeholder /> : null) : <EmptyState hasResume={false} />;
   } else if (home.view.dataState === 'empty') {
     body = <EmptyState hasResume={resume !== null} />;
-  } else if (segment === 'calendar') {
-    body = (
-      <CalendarView
-        month={month}
-        onMonth={(m) => {
-          setMonth(m);
-        }}
-      />
-    );
   } else {
+    // Both segments stay mounted once seen, so each keeps its place (selected day, scroll) on `Overview ⇄ Calendar` (§3.5).
     body = (
+      <>
+        {calendarSeen || segment === 'calendar' ? (
+          <View style={segment === 'calendar' ? null : { display: 'none' }}>
+            <CalendarView
+              month={month}
+              onMonth={(m) => {
+                setMonth(m);
+              }}
+            />
+          </View>
+        ) : null}
+        <View style={segment === 'overview' ? null : { display: 'none' }}>
       <Overview
         home={home}
         view={home.view}
@@ -163,6 +171,7 @@ export function ProgressScreen() {
         }}
         onCalendar={() => {
           setMonth(null);
+          setCalendarSeen(true);
           setSegment('calendar');
         }}
         onTime={() => {
@@ -178,24 +187,40 @@ export function ProgressScreen() {
           navigation.navigate('Summary', { sessionId, back: true });
         }}
       />
+        </View>
+      </>
     );
   }
 
+  const days = home?.days ?? null;
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'] + 56, gap: theme.space['5'] }}
-      >
-        {header}
-        {body}
-      </ScrollView>
-      <AskPill
-        onPress={() => {
-          navigation.navigate('Coach', { entry: { kind: 'today' } });
-        }}
-      />
-      {toast ? <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
+      {/* Everything that floats (Ask, toast) lives in this area, which ends above the ResumeBar, so the bar never covers them (review S1). */}
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'] + 56 + (toast ? toastHeight : 0), gap: theme.space['5'] }}
+        >
+          {header}
+          {body}
+        </ScrollView>
+        <AskPill
+          bottom={theme.space['4'] + (toast ? toastHeight : 0)}
+          onPress={() => {
+            navigation.navigate('Coach', { entry: days === null ? { kind: 'today' } : { kind: 'progress', days } });
+          }}
+        />
+        {toast ? (
+          <View
+            style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}
+            onLayout={(e) => {
+              setToastHeight(e.nativeEvent.layout.height);
+            }}
+          >
+            <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} />
+          </View>
+        ) : null}
+      </View>
       {resume ? (
         <ResumeBar
           bar={resume}
@@ -213,7 +238,7 @@ export function ProgressScreen() {
             setTimeOpen(false);
           }}
           onCount={(r) => {
-            void countIt(r);
+            void runCountIt(r, countDeps, inFlight.current);
           }}
           onEdit={(r) => {
             setTimeOpen(false);
