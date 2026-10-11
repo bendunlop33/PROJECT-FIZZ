@@ -76,8 +76,15 @@ export function EditSetScreen() {
       return;
     }
     changed();
+    // F4: a corrected rep or effort count runs the same offer check as a log (rule T: every logged working set).
+    const effortOrReps = patch.reps !== undefined || patch.rpe !== undefined || patch.rir !== undefined;
+    const corrected = effortOrReps ? { corrected: { setId, key: saveOp } } : {};
     if (r.toast !== null && r.undo !== null) {
-      navigation.navigate('Workout', { toast: { kind: 'exclusion', key: saveOp, text: r.toast, undo: { sessionId, ...r.undo } } });
+      navigation.navigate('Workout', { toast: { kind: 'exclusion', key: saveOp, text: r.toast, undo: { sessionId, ...r.undo } }, ...corrected });
+      return;
+    }
+    if (effortOrReps) {
+      navigation.navigate('Workout', corrected);
       return;
     }
     navigation.goBack();

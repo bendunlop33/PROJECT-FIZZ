@@ -460,6 +460,15 @@ export function WorkoutScreen() {
     },
     data === 'loading' || data === null ? null : data.aggregate,
   );
+  // F4: back from correcting a logged set's reps or effort: the offer check runs on the saved correction.
+  const corrected = route.params?.corrected;
+  const afterLog = coach.afterLog;
+  useEffect(() => {
+    if (corrected === undefined || !firstTime(`corrected:${corrected.key}`)) return;
+    void reload().then((d) => {
+      if (d?.aggregate.sets.some((x) => x.id === corrected.setId && x.status === 'completed')) afterLog(d.aggregate, corrected.setId);
+    });
+  }, [corrected?.key]);
   // An unanswered offer goes when the rest ends (§3.2).
   const restRunning = data !== 'loading' && data !== null && data.aggregate.restTimer?.status === 'running';
   const clearOffer = coach.clearOffer;
@@ -656,7 +665,7 @@ export function WorkoutScreen() {
 
   function openExerciseMenu(f: FocusView) {
     const howTo = howToRouteFor(f, bundledHowToSources());
-    const menu = exerciseMenu(howTo !== null, f.coachActionId !== null);
+    const menu = exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true);
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
