@@ -66,7 +66,7 @@ describe('root stack after Finish, Done and Discard (review B1)', () => {
     s = apply(s, goBack);
     s = apply(s, navigate('Workout'));
     expect(names(s)).toEqual(['Tabs', 'Workout']);
-    s = apply(apply(start(), navigate('CheckIn', { mode: 'start', gymId: 'g' })), popToToday('No workout started.'));
+    s = apply(apply(start(), navigate('CheckIn', { mode: 'start', gymId: 'g' })), popToToday('Check-in saved · no workout'));
     expect(names(s)).toEqual(['Tabs']);
   });
 

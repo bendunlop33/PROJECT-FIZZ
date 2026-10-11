@@ -10,6 +10,8 @@ import {
   DEFAULT_CHECK_IN_SETTINGS,
   PAIN_AREA_LABEL,
   PAIN_AREAS,
+  PAIN_PROFESSIONAL_TEXT,
+  PAIN_RED_FLAG_TEXT,
   scoreText,
   searchExercises,
 } from '@fizz/domain';
@@ -25,7 +27,7 @@ import { AppText, Chip, ChipRow, Eyebrow, Icon, PrimaryButton, SecondaryButton, 
 import { checkInSheetEnd } from '../../workout/overview';
 
 type Step = 'score' | 'reasons' | 'pain' | 'ill';
-const CHECK_IN_NOT_SAVED = 'Check-in wasn’t saved.';
+const CHECK_IN_NOT_SAVED = 'Check-in not saved';
 const SCORES: readonly CheckInScore[] = [1, 2, 3, 4, 5];
 
 /**
@@ -204,7 +206,6 @@ function ReasonsEditor({ reasons, setReasons, note, setNote, noteRef }: { reason
           />
         ))}
       </ChipRow>
-      {reasons.includes('pain') ? <StatusLine icon="info.circle" tone="info" text="Next you’ll choose which movements hurt." /> : null}
       <View style={{ gap: theme.space['1'] }}>
         <Eyebrow>Note (optional)</Eyebrow>
         <TextField
@@ -342,7 +343,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
     }
     if (saved === null) {
       // Never blocks logging (check-in.md §3 Write failed).
-      await start({ kind: 'skipped', atUtc: services.now().utc }, { kind: 'info', text: 'Check-in wasn’t saved. Your workout started as normal.' });
+      await start({ kind: 'skipped', atUtc: services.now().utc }, { kind: 'info', text: CHECK_IN_NOT_SAVED });
       return;
     }
     setRecord(saved);
@@ -399,7 +400,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
     await services.checkIns.update(record.id, { outcome: 'skipped_workout' }, record.version, `${recordOp}:skip`);
     setBusy(false);
     changed();
-    navigation.dispatch(popToToday('No workout started. Your check-in is saved.'));
+    navigation.dispatch(popToToday('Check-in saved · no workout'));
   }
 
   const errorLine = error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null;
@@ -516,10 +517,10 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
             ))}
           </ChipRow>
           <AppText variant="callout" color="text.secondary">
-            If pain is sharp, keeps coming back or doesn’t settle, see a physio or doctor. The coach can’t diagnose.
+            {PAIN_PROFESSIONAL_TEXT}
           </AppText>
           <AppText variant="callout" color="text.secondary">
-            Stop and get medical help now if you have chest pain, feel faint or have sudden severe pain.
+            {PAIN_RED_FLAG_TEXT}
           </AppText>
           {errorLine}
         </Sheet>
@@ -598,7 +599,7 @@ function EditCheckIn({ checkInId }: { checkInId: string }) {
   }
 
   return (
-    <Sheet title="Change check-in" lead="Changing it never changes your sets or next-time targets." bar={<PrimaryButton label="Save changes" busy={busy} disabled={record === null} onPress={() => void save()} />}>
+    <Sheet title="Change check-in" bar={<PrimaryButton label="Save changes" busy={busy} disabled={record === null} onPress={() => void save()} />}>
       <ScoreRow chosen={score} onPick={setScore} />
       <ReasonsEditor reasons={reasons} setReasons={setReasons} note={note} setNote={setNote} noteRef={noteRef} />
       {message ? <StatusLine icon="info.circle" tone="info" text={message} /> : null}

@@ -381,7 +381,7 @@ describe('buildPainFlagSheet (§2.14.4)', () => {
     expect(plain(sheet.before)).toBe('8 Oct · 57.5 kg × 5, 4');
     expect(plain(sheet.sinceFlag)).toBe('16 Oct · 50 kg × 8, 8, 8');
     expect(sheet.checkDue).toBe(false);
-    expect(sheet.professional).toBe('If pain is sharp, keeps coming back or doesn’t settle, see a physio or doctor. The coach can’t diagnose.');
+    expect(sheet.professional).toBe('Sharp or lasting pain: see a physio or doctor.');
     expect(buildPainFlagSheet({ flag: f, history, nowMs: ms(20 * DAY), tz: TZ, exercise: press }).checkDue).toBe(true);
   });
 

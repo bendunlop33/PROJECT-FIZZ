@@ -131,7 +131,7 @@ describe('the check-in sheet over the overview (§2.2, review S6)', () => {
     expect(src).toContain("accessibilityHint={overview ? 'Keeps your score.' : 'Keeps your score and starts the workout.'}");
     const pick = src.slice(src.indexOf('async function pickScore('), src.indexOf('async function done('));
     expect(pick.indexOf('setError(CHECK_IN_NOT_SAVED)')).toBeGreaterThan(-1);
-    expect(pick.indexOf('setError(CHECK_IN_NOT_SAVED)')).toBeLessThan(pick.indexOf('Your workout started as normal'));
+    expect(pick.indexOf('setError(CHECK_IN_NOT_SAVED)')).toBeLessThan(pick.indexOf("{ kind: 'info', text: CHECK_IN_NOT_SAVED }"));
   });
   it('r2 N2: no reassurance lead on the score step; Delete confirms with no rule line', () => {
     expect(read('screens/workout/CheckInScreen.tsx')).not.toContain('Nothing changes unless you say so');

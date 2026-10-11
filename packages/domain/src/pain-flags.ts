@@ -32,7 +32,9 @@ export const PAIN_AREA_WORD: Readonly<Record<PainArea, string | null>> = {
 };
 
 export const PAIN_NO_INCREASES = 'No increases in load, reps or sets.';
-export const PAIN_PROFESSIONAL_TEXT = 'If pain is sharp, keeps coming back or doesn’t settle, see a physio or doctor. The coach can’t diagnose.';
+export const PAIN_PROFESSIONAL_TEXT = 'Sharp or lasting pain: see a physio or doctor.';
+/** The red-flag line on the check-in pain step: safety, so always visible (minimal-copy D2). */
+export const PAIN_RED_FLAG_TEXT = 'Chest pain, faintness or sudden severe pain: stop and get medical help now.';
 export const MAY_HURT_TAG = 'May hurt';
 
 const areaWord = (flag: Pick<PainFlag, 'area'>): string | null => (flag.area === null ? null : PAIN_AREA_WORD[flag.area]);

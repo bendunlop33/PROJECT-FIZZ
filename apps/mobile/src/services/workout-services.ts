@@ -148,7 +148,7 @@ export interface WorkoutServicesContext {
 
 export type CheckInWrite = { ok: true; checkIn: CheckIn; duplicate: boolean } | { ok: false; message: string; stale?: boolean };
 
-const CHECK_IN_WRITE_FAILED = 'Check-in wasn’t saved. Your workout can start as normal.';
+const CHECK_IN_WRITE_FAILED = 'Check-in not saved';
 const RECENT_WINDOW_MS = 3 * 60 * 60 * 1000;
 /** Said on the workout when "Start next session" couldn't work out targets (review S2). */
 /** See `recordContext`. */
