@@ -21,6 +21,7 @@ import { AppText, BottomCard, CheckInScale, Icon, OverviewRow, PrimaryButton, St
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import {
   checkInRow,
+  checkInRowLayout,
   eyebrowText,
   gymToastText,
   OVERVIEW_COPY,
@@ -53,8 +54,12 @@ export function WorkoutOverviewScreen() {
   const changed = useDataChanged();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { fontScale } = useWindowDimensions();
+  const { fontScale, width: windowWidth } = useWindowDimensions();
   const { stacked } = overviewLayout(fontScale);
+  // The check-in row's measured width and its label's (OV14): estimated from the window until measured.
+  const [rowWidth, setRowWidth] = useState<number | null>(null);
+  const [labelWidth, setLabelWidth] = useState<number | null>(null);
+  const checkInFit = checkInRowLayout({ available: rowWidth ?? windowWidth - 2 * theme.components.screenMargin, labelWidth, fontScale });
   const { target } = useRoute<RouteProp<RootStackParams, 'WorkoutOverview'>>().params;
   const alertsAsk = useStartAlertsAsk();
 
@@ -348,30 +353,40 @@ export function WorkoutOverviewScreen() {
     setOpen((o) => panelReducer(o, { kind: 'toggle', rowId }));
   }
 
+  // The gym chip grows with its text (minHeight, never a fixed height); at AX sizes it moves under the bar (OV14).
+  const gymChip = page ? (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={page.view.gym ? `Gym: ${page.view.gym.name}. Change gym.` : OVERVIEW_COPY.addGym}
+      onPress={chooseGym}
+      style={{ minHeight: 44, justifyContent: 'center', flexShrink: 1 }}
+    >
+      <View style={{ minHeight: 34, paddingHorizontal: 14, paddingVertical: 4, borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.control'], flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
+        <AppText variant="label" style={{ flexShrink: 1 }}>
+          {page.view.gym?.name ?? OVERVIEW_COPY.addGym}
+        </AppText>
+        {page.view.gym ? <Icon name="chevron.down" color="text.secondary" size={10} /> : null}
+      </View>
+    </Pressable>
+  ) : null;
+
   const topBar = (
-    <View style={{ height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: theme.space['2'], paddingRight: theme.space['3'] }}>
-      <Pressable accessibilityRole="button" accessibilityLabel={OVERVIEW_COPY.close} onPress={close} hitSlop={4} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon name="chevron.down" color="text.primary" size={20} weight="semibold" />
-      </Pressable>
-      {page ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={page.view.gym ? `Gym: ${page.view.gym.name}. Change gym.` : OVERVIEW_COPY.addGym}
-            onPress={chooseGym}
-            style={{ minHeight: 44, justifyContent: 'center' }}
-          >
-            <View style={{ height: 34, paddingHorizontal: 14, borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.control'], flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <AppText variant="label">{page.view.gym?.name ?? OVERVIEW_COPY.addGym}</AppText>
-              {page.view.gym ? <Icon name="chevron.down" color="text.secondary" size={10} /> : null}
-            </View>
-          </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="More" onPress={menu} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="ellipsis" color="text.primary" size={20} />
-          </Pressable>
-        </View>
-      ) : null}
-    </View>
+    <>
+      <View style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: theme.space['2'], paddingRight: theme.space['3'] }}>
+        <Pressable accessibilityRole="button" accessibilityLabel={OVERVIEW_COPY.close} onPress={close} hitSlop={4} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="chevron.down" color="text.primary" size={20} weight="semibold" />
+        </Pressable>
+        {page ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], flexShrink: 1 }}>
+            {stacked ? null : gymChip}
+            <Pressable accessibilityRole="button" accessibilityLabel="More" onPress={menu} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="ellipsis" color="text.primary" size={20} />
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+      {stacked && gymChip ? <View style={{ paddingHorizontal: theme.components.screenMargin, alignItems: 'flex-start' }}>{gymChip}</View> : null}
+    </>
   );
 
   const shell = (body: React.ReactNode, bar: React.ReactNode = null) => (
@@ -521,23 +536,35 @@ export function WorkoutOverviewScreen() {
         </View>
       ) : null}
       {row?.shown ? (
-        stacked ? (
-          <View style={{ paddingTop: theme.space['2'] }}>
+        <View
+          style={{ paddingTop: theme.space['2'] }}
+          onLayout={(e) => {
+            setRowWidth(e.nativeEvent.layout.width);
+          }}
+        >
+          {checkInFit === 'collapsed' ? (
             <TextButton
               label={row.selected === null ? `${OVERVIEW_COPY.checkIn} ›` : `${OVERVIEW_COPY.checkIn} · ${String(row.selected)} ›`}
               onPress={() => {
                 navigation.navigate('CheckIn', { mode: 'overview', checkInId: row.record?.id ?? null, atScore: true });
               }}
             />
-          </View>
-        ) : (
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: theme.space['2'] }}>
-            <AppText variant="sectionLabel" color="text.tertiary">
-              {OVERVIEW_COPY.checkIn}
-            </AppText>
-            <CheckInScale selected={row.selected} disabled={busy || scoring} onPick={(n) => void pickScore(n)} />
-          </View>
-        )
+          ) : (
+            // Label beside the tiles when both fit the measured width, else above them (B2).
+            <View style={{ flexDirection: checkInFit === 'inline' ? 'row' : 'column', alignItems: checkInFit === 'inline' ? 'center' : 'flex-start', justifyContent: 'space-between', rowGap: theme.space['2'] }}>
+              <View
+                onLayout={(e) => {
+                  setLabelWidth(e.nativeEvent.layout.width);
+                }}
+              >
+                <AppText variant="sectionLabel" color="text.tertiary">
+                  {OVERVIEW_COPY.checkIn}
+                </AppText>
+              </View>
+              <CheckInScale selected={row.selected} disabled={busy || scoring} onPick={(n) => void pickScore(n)} />
+            </View>
+          )}
+        </View>
       ) : null}
       {startError ? (
         <View accessible accessibilityLabel={startError} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], marginTop: theme.space['3'] }}>

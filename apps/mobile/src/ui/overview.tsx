@@ -127,18 +127,35 @@ export function OutlinePill({ label, onPress, accessibilityLabel }: { label: str
   );
 }
 
-function PanelLines({ lines, onStillHurts, onEditGym, stillHurts }: { lines: readonly PanelLine[]; stillHurts: boolean; onStillHurts?: (() => void) | undefined; onEditGym?: (() => void) | undefined }) {
+/**
+ * The panel's facts: label then value. The label column is a minimum, never
+ * a fixed width, so a longer label pushes the value along or onto the next
+ * line; at AX sizes each label sits over its value (OV14, review B2).
+ */
+function PanelLines({
+  lines,
+  onStillHurts,
+  onEditGym,
+  stillHurts,
+  stacked,
+}: {
+  lines: readonly PanelLine[];
+  stillHurts: boolean;
+  stacked: boolean;
+  onStillHurts?: (() => void) | undefined;
+  onEditGym?: (() => void) | undefined;
+}) {
   const theme = useTheme();
   return (
-    <View style={{ gap: 6 }}>
+    <View style={{ gap: stacked ? theme.space['2'] : 6 }}>
       {lines.map((l) => (
-        <View key={l.key} accessible accessibilityLabel={`${l.label}: ${l.value}`} style={{ flexDirection: 'row', gap: theme.space['2'] + 2, flexWrap: 'wrap' }}>
-          <View style={{ width: 80 }}>
+        <View key={l.key} accessible accessibilityLabel={`${l.label}: ${l.value}`} style={{ flexDirection: stacked ? 'column' : 'row', columnGap: theme.space['2'] + 2, rowGap: 2, flexWrap: stacked ? 'nowrap' : 'wrap' }}>
+          <View style={{ minWidth: stacked ? undefined : 80 }}>
             <AppText variant="sectionLabel" color="text.tertiary" style={{ lineHeight: 22 }}>
               {l.label}
             </AppText>
           </View>
-          <View style={{ flex: 1, minWidth: 160, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 6 }}>
+          <View style={{ flex: stacked ? undefined : 1, minWidth: stacked ? undefined : 160, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 6 }}>
             {l.tone === 'warning' ? <Icon name="exclamationmark.triangle" color="status.warning" size={13} /> : null}
             <AppText variant="callout" numeric color={l.tone === 'warning' ? 'status.warning' : 'text.primary'}>
               {l.value}
@@ -213,7 +230,7 @@ export function OverviewRow({ row, detail, open, stacked, last, first, onToggle,
         onPress={onToggle}
         style={({ pressed }) => ({ minHeight: 64, paddingVertical: theme.space['2'] + 2, flexDirection: 'row', gap: 6, backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent' })}
       >
-        <View style={{ width: 30 }}>
+        <View style={{ minWidth: 30 }}>
           <AppText numeric color="text.tertiary" style={{ fontSize: 16, lineHeight: 22, fontWeight: '500', fontVariant: ['tabular-nums'] }}>
             {row.indexText}
           </AppText>
@@ -229,7 +246,7 @@ export function OverviewRow({ row, detail, open, stacked, last, first, onToggle,
       </Pressable>
       {open ? (
         <View style={{ marginLeft: 36, marginBottom: theme.space['3'], backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, paddingHorizontal: theme.space['3'] + 2, paddingTop: theme.space['3'], paddingBottom: theme.space['3'] + 2, gap: theme.space['3'] }}>
-          {row.panel.length > 0 ? <PanelLines lines={row.panel} stillHurts={row.painFlag?.checkDue === true} onStillHurts={onStillHurts} onEditGym={onEditGym} /> : null}
+          {row.panel.length > 0 ? <PanelLines lines={row.panel} stacked={stacked} stillHurts={row.painFlag?.checkDue === true} onStillHurts={onStillHurts} onEditGym={onEditGym} /> : null}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
             <OutlinePill label="Why?" onPress={onWhy} accessibilityLabel={`Why this target for ${row.name}?`} />
             {onHowTo ? <OutlinePill label="How to" onPress={onHowTo} accessibilityLabel={`How to: ${row.name}`} /> : null}

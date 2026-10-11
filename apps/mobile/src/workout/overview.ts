@@ -102,6 +102,25 @@ export function overviewLayout(fontScale: number): { stacked: boolean } {
   return { stacked: fontScale >= AX_FONT_SCALE };
 }
 
+/** The inline tiles (§3.9): five 50 pt tiles with 6 pt gaps. Fixed size (their digit is capped at ×1.4). */
+export const CHECK_IN_TILES_WIDTH = 5 * 50 + 4 * 6;
+/** The gap between the `CHECK-IN` label and the tiles when they share a line. */
+export const CHECK_IN_LABEL_GAP = 12;
+
+/**
+ * How the inline check-in row fits (§3.9, OV14; review B2), from measured
+ * widths (onLayout), not the font scale alone:
+ * - `inline`: label and tiles on one line;
+ * - `over`: the label above the tiles (a narrow phone, or xLarge–xxxLarge text);
+ * - `collapsed`: `Check-in ›` opening the sheet at the score (AX sizes, or no room for the tiles).
+ * `labelWidth` null: not measured yet, so the label is estimated from the font scale.
+ */
+export function checkInRowLayout(p: { available: number; labelWidth: number | null; fontScale: number }): 'inline' | 'over' | 'collapsed' {
+  if (p.fontScale >= AX_FONT_SCALE || p.available < CHECK_IN_TILES_WIDTH) return 'collapsed';
+  const label = p.labelWidth ?? 64 * p.fontScale;
+  return label + CHECK_IN_LABEL_GAP + CHECK_IN_TILES_WIDTH <= p.available ? 'inline' : 'over';
+}
+
 /** The row's detail line at a size: the warm-up fragment drops first when stacked. */
 export function rowDetail(row: Pick<OverviewRow, 'detail' | 'warmups'>, stacked: boolean): string {
   if (!stacked || row.warmups === null) return row.detail;

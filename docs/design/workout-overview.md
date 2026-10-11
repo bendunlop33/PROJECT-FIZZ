@@ -93,7 +93,7 @@ Canvas `bg.canvas`, side margin 20 (`components.screenMargin`). The list scrolls
 
    Actions are outline pills, 44 pt: `How to` (exercise guide), `History` (Progress → exercise), `Why?` (the `TargetWhyPanel` content from active-workout §2.12, in a sheet), and `Undo` / `Use coach target` on coach rows (§5).
 9. **Fixed bottom bar** on the canvas, with no rule above it and a 14 pt fade over the list:
-   - **Check-in row** (only when due or reused). A `CHECK-IN` label on the left, five tiles `1`–`5` on the right (`CheckInScale`, 50 × 52 pt at 390 pt, `radius.pill`, `border.control` outline). The selected tile is `accent.subtle` fill + 2 pt `accent` border + `checkmark`, **never an accent fill**, so Start stays the only filled pill. There are no end labels: VoiceOver says "1 of 5, rough" … "5 of 5, great". Keep **≥ 20 pt** between the tiles and Start.
+   - **Check-in row** (only when due or reused). A `CHECK-IN` label on the left, five tiles `1`–`5` on the right (`CheckInScale`, 50 × 52 pt at 390 pt, `radius.pill`, `border.control` outline). The selected tile is `accent.subtle` fill + 2 pt `accent` border + `checkmark`, **never an accent fill**, so Start stays the only filled pill. There are no end labels: VoiceOver says "1 of 5, rough" … "5 of 5, great". Keep **≥ 20 pt** between the tiles and Start. The row fits by measured width (onLayout), not only the font scale: label and tiles on one line when `label + 12 + 274 pt` fits; otherwise the label sits above the tiles (375 pt phones, xLarge–xxxLarge text); at AX sizes, or with no room for the 274 pt of tiles, it collapses to `Check-in ›`.
    - `Start workout`: `PrimaryButton`, 60 pt pill, `accent` / `on.accent`, full width.
 
 ---

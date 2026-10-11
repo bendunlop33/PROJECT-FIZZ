@@ -9,7 +9,9 @@ import type { CheckIn } from '@fizz/schemas';
 
 import { openStartedWorkout, popToTabs } from '../src/navigation/actions';
 import {
+  CHECK_IN_TILES_WIDTH,
   checkInRow,
+  checkInRowLayout,
   checkInSheetEnd,
   eyebrowText,
   gymToastText,
@@ -143,6 +145,18 @@ describe('Dynamic Type and failures (§8, OV14)', () => {
     expect(rowDetail(row, true)).toBe('3 × 6–8');
     expect(rowDetail({ detail: '3 × 8', warmups: null }, true)).toBe('3 × 8');
   });
+  it('B2: the check-in row fits by measured width: inline, label over the tiles, or collapsed', () => {
+    expect(CHECK_IN_TILES_WIDTH).toBe(274);
+    // 390 pt phone, 20 pt margins (350 available), default text: label (~64) + 12 + 274 = 350 fits.
+    expect(checkInRowLayout({ available: 350, labelWidth: 64, fontScale: 1 })).toBe('inline');
+    // A 375 pt phone at the default size, or xLarge–xxxLarge (×1.12–×1.35, below AX): label over the tiles.
+    expect(checkInRowLayout({ available: 335, labelWidth: 64, fontScale: 1 })).toBe('over');
+    expect(checkInRowLayout({ available: 350, labelWidth: 86, fontScale: 1.35 })).toBe('over');
+    expect(checkInRowLayout({ available: 350, labelWidth: null, fontScale: 1.12 })).toBe('over');
+    // AX sizes, or no room even for the tiles: `Check-in ›`.
+    expect(checkInRowLayout({ available: 350, labelWidth: 64, fontScale: 1.65 })).toBe('collapsed');
+    expect(checkInRowLayout({ available: 270, labelWidth: 40, fontScale: 1 })).toBe('collapsed');
+  });
   it('a stale preview re-renders, an active workout goes to Today, anything else says Couldn’t start', () => {
     expect(startFailure('stale_preview')).toEqual({ kind: 'stale' });
     expect(startFailure('session_already_active')).toEqual({ kind: 'active' });
@@ -227,6 +241,21 @@ describe('source checks', () => {
     expect(screen).toContain('emptyOp.current ??= newUuid();');
     // The writes themselves live in overview-start.ts (tested on real SQLite); the screen never calls them directly.
     expect(screen).not.toMatch(/services\.overview\.start\(\{|services\.checkIns\.record\(\{/);
+  });
+
+  it('B2/OV14: no fixed height or width wraps text that scales; the chip moves under the bar at AX sizes; panel labels stack', () => {
+    const sizes = (src: string) => [...src.matchAll(/\b(height|width): (\d+)/g)].map((m) => `${m[1] ?? ''}:${m[2] ?? ''}`);
+    // Only icon buttons (44), the superset bar (3), the fade (14) and the tiles (50 × 52; their digit is capped at ×1.4).
+    expect(sizes(screen).sort()).toEqual(['height:14', 'height:44', 'height:44', 'width:44', 'width:44']);
+    expect(sizes(ui).sort()).toEqual(['height:52', 'width:3', 'width:50']);
+    expect(ui).toMatch(/height: 52,[\s\S]*maxFontSizeMultiplier=\{1\.4\}/);
+    expect(screen).toContain('minHeight: 48');
+    expect(screen).toContain('minHeight: 34');
+    expect(screen).toContain('{stacked ? null : gymChip}');
+    expect(screen).toContain('{stacked && gymChip ?');
+    expect(ui).toContain("flexDirection: stacked ? 'column' : 'row', columnGap");
+    expect(ui).toContain('minWidth: stacked ? undefined : 80');
+    expect(screen).toContain('checkInRowLayout({ available: rowWidth ??');
   });
 
   it('Reduce Motion: the panel appears without the height animation', () => {
