@@ -13,8 +13,8 @@ import { useDataChanged, useScreenData, useServices } from '../../shell/context'
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Card, PrimaryButton, Screen, StatusLine, TextButton } from '../../ui';
 import { GymChip, GymSwitcherSheet } from '../workout/GymSwitch';
-import { createAfterDismiss } from '../../workout/after-dismiss';
-import { NameSheet } from '../routines/NameSheet';
+import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
+import { LIBRARY_COPY_UI } from '../../workout/library-view';
 
 /**
  * Repeat a workout (routines.md §2.4): the targets the new workout will have
@@ -38,11 +38,18 @@ export function RepeatScreen() {
   const [chosenGymId, setChosenGymId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const alertsAsk = useStartAlertsAsk();
-  // `Save as routine` (routines.md §4.6, premium-feel §2.6): one opId per sheet opening.
-  const [saveOpen, setSaveOpen] = useState(false);
-  const saveOp = useRef(newUuid());
-  const [saveAfter] = useState(() => createAfterDismiss());
+  // `Save to Workouts` (routines.md §4.6, WL6): Repeat's save keeps the loads as Fixed. One opId per sheet opening.
   const [saved, setSaved] = useState<{ id: string; name: string; version: number } | null>(null);
+  const saveSheet = useSaveToWorkouts(
+    (made) => {
+      setSaved({ id: made.id, name: made.name, version: made.version });
+      changed();
+      reload();
+    },
+    () => {
+      setError(LIBRARY_COPY_UI.nothingToSave);
+    },
+  );
   const [data, reload] = useScreenData(async (s) => {
     const gyms = await s.yourData.gyms();
     const gym = gyms.find((g) => g.id === chosenGymId) ?? (await s.yourData.currentGym());
@@ -69,18 +76,6 @@ export function RepeatScreen() {
   }
   const { gym, preview, active, choices, sourceGymName, savedAs } = data.value;
 
-  async function saveRoutine(name: string): Promise<string | null> {
-    const r = await services.routines.saveFromSession({ sessionId, name, opId: saveOp.current });
-    if (!r.ok) return r.message;
-    const made = r.routine;
-    saveAfter.arm(() => {
-      setSaved({ id: made.id, name: made.name, version: made.version });
-    });
-    setSaveOpen(false);
-    changed();
-    reload();
-    return null;
-  }
   const day = formatDayMonth(toMs(preview.sourceStartedAtUtc), preview.tz);
 
   async function start() {
@@ -172,7 +167,7 @@ export function RepeatScreen() {
         <StatusLine
           icon="checkmark.circle.fill"
           tone="done"
-          text={`Saved routine ${saved.name}`}
+          text={LIBRARY_COPY_UI.savedLink(saved.name).replace(' ›', '')}
           action={
             <TextButton
               label="Undo"
@@ -191,10 +186,9 @@ export function RepeatScreen() {
       ) : savedAs === null ? (
         <View style={{ alignSelf: 'flex-start' }}>
           <TextButton
-            label="Save as routine"
+            label={LIBRARY_COPY_UI.saveToWorkouts}
             onPress={() => {
-              saveOp.current = newUuid();
-              setSaveOpen(true);
+              void saveSheet.open({ kind: 'session', sessionId, keepLoads: true }, preview.title);
             }}
           />
         </View>
@@ -218,19 +212,7 @@ export function RepeatScreen() {
         }}
       />
       {alertsAsk.sheet}
-      <NameSheet
-        visible={saveOpen}
-        title="Save as routine"
-        buttonLabel="Save routine"
-        initialName={preview.title}
-        detail={`${String(preview.exercises.length)} ${preview.exercises.length === 1 ? 'exercise' : 'exercises'}`}
-        check={(n) => services.routines.checkName(n)}
-        onSubmit={saveRoutine}
-        onClose={() => {
-          setSaveOpen(false);
-        }}
-        onDismissed={saveAfter.dismissed}
-      />
+      {saveSheet.sheet}
     </Screen>
   );
 }

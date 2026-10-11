@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, View } from 'react-native';
+import { ActionSheetIOS, Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { checkRoutineName, toIso, toMs, type WorkoutSummary } from '@fizz/domain';
@@ -22,6 +22,8 @@ import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, Chip, Checkl
 import { stepTime } from '../../workout/finish';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { NameSheet } from '../routines/NameSheet';
+import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
+import { LIBRARY_COPY_UI } from '../../workout/library-view';
 import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
 
 /**
@@ -56,7 +58,7 @@ export function SummaryScreen() {
     // Keychain + settings file only, no network; a read failure counts as not connected.
     const coach = summaryCoachView(await readTextCoachState(coachConnectionPorts().ports).catch(() => null));
     const [summary, backup, painFlags, routines] = await Promise.all([s.workout.summary(sessionId, coach.coach), s.backups.getStatus(), s.pain.active(), s.routines.list().catch(() => [])]);
-    // `Save as routine` is offered once: not for a routine's workout, nor one already saved as a routine.
+    // `Save to Workouts` (routines.md §A2.6): once saved from here, the link reads `Saved · Legs ›`.
     const savedAs = routines.find((r) => r.createdFromSessionId === sessionId) ?? null;
     // D21: the coach's saved targets over the built-in rule's, and the summary turn's checked reply as the note.
     const [coachRows, stale, availability, turnNote] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.staleNextTargets(sessionId).catch(() => new Set<string>()), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null)]);
@@ -78,15 +80,38 @@ export function SummaryScreen() {
   }, [finishedNow, services, sessionId, reload, changed]);
 
   // The name sheets (premium-feel §2.6): one opId per sheet opening, so a double tap saves once.
-  const [nameSheet, setNameSheet] = useState<'routine' | 'workout' | null>(null);
+  const [nameSheet, setNameSheet] = useState<'workout' | null>(null);
   const [nameVisible, setNameVisible] = useState(false);
   const nameOp = useRef(newUuid());
   const [nameAfter] = useState(() => createAfterDismiss());
-  const openName = (kind: 'routine' | 'workout') => {
+  const openName = (kind: 'workout') => {
     nameOp.current = newUuid();
     setNameSheet(kind);
     setNameVisible(true);
   };
+
+  // `Save to Workouts` (WL6): any finished workout, one sheet; Undo deletes the new workout.
+  const saveSheet = useSaveToWorkouts(
+    (made) => {
+      changed();
+      reload();
+      setToast({
+        text: LIBRARY_COPY_UI.savedToWorkouts,
+        action: LIBRARY_COPY_UI.undo,
+        onAction: () => {
+          setToast(null);
+          void services.routines.remove({ routineId: made.id, expectedVersion: made.version, opId: newUuid() }).then((u) => {
+            if (!u.ok) setToast({ text: u.message });
+            changed();
+            reload();
+          });
+        },
+      });
+    },
+    () => {
+      setToast({ text: LIBRARY_COPY_UI.nothingToSave });
+    },
+  );
 
   const done = () => {
     if (back && navigation.canGoBack()) navigation.goBack();
@@ -142,32 +167,9 @@ export function SummaryScreen() {
     reload();
     changed();
   }
-  const canSaveRoutine = sum.routineId === null && sum.source === 'manual' && savedAs === null && sum.facts.workingSets + sum.facts.warmupSets > 0;
-
-  async function saveRoutine(name: string): Promise<string | null> {
-    const r = await services.routines.saveFromSession({ sessionId, name, opId: nameOp.current });
-    if (!r.ok) return r.message;
-    const made = r.routine;
-    nameAfter.arm(() => {
-      setNameSheet(null);
-      setToast({
-        text: `Saved routine ${made.name}`,
-        action: 'Undo',
-        onAction: () => {
-          setToast(null);
-          void services.routines.remove({ routineId: made.id, expectedVersion: made.version, opId: newUuid() }).then((u) => {
-            if (!u.ok) setToast({ text: u.message });
-            changed();
-            reload();
-          });
-        },
-      });
-    });
-    setNameVisible(false);
-    changed();
-    reload();
-    return null;
-  }
+  // From a saved workout, the save lives in `⋯` so it doesn't read as a prompt (§A2.6).
+  const fromSaved = sum.routineId !== null;
+  const openSave = () => void saveSheet.open({ kind: 'session', sessionId }, sum.storedName ?? null);
 
   async function renameWorkout(name: string): Promise<string | null> {
     const before = sum.storedName;
@@ -258,15 +260,38 @@ export function SummaryScreen() {
               >
                 <Icon name="pencil" color="text.secondary" size={18} />
               </Pressable>
-            </View>
-            {canSaveRoutine ? (
-              <View style={{ alignSelf: 'flex-start' }}>
-                <TextButton
-                  label="Save as routine"
+              {fromSaved && savedAs === null ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="More"
+                  accessibilityActions={[{ name: LIBRARY_COPY_UI.saveToWorkouts, label: LIBRARY_COPY_UI.saveToWorkouts }]}
+                  onAccessibilityAction={openSave}
                   onPress={() => {
-                    openName('routine');
+                    const options = [LIBRARY_COPY_UI.saveToWorkouts, LIBRARY_COPY_UI.cancel];
+                    ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: 1 }, (i) => {
+                      if (i === 0) openSave();
+                    });
                   }}
-                />
+                  style={({ pressed }) => ({ minWidth: theme.target.min.width, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+                >
+                  <Icon name="ellipsis" color="text.secondary" size={18} />
+                </Pressable>
+              ) : null}
+            </View>
+            {savedAs !== null ? (
+              <LinkLine
+                accessibilityLabel={`Saved to Workouts as ${savedAs.name}. Opens it.`}
+                onPress={() => {
+                  navigation.navigate('WorkoutOverview', { target: { kind: 'routine', routineId: savedAs.id } });
+                }}
+              >
+                <AppText variant="callout" color="text.secondary">
+                  {LIBRARY_COPY_UI.savedLink(savedAs.name)}
+                </AppText>
+              </LinkLine>
+            ) : !fromSaved ? (
+              <View style={{ alignSelf: 'flex-start' }}>
+                <TextButton label={LIBRARY_COPY_UI.saveToWorkouts} onPress={openSave} />
               </View>
             ) : null}
           </View>
@@ -516,22 +541,18 @@ export function SummaryScreen() {
       {nameSheet !== null ? (
         <NameSheet
           visible={nameVisible}
-          title={nameSheet === 'routine' ? 'Save as routine' : 'Rename workout'}
-          buttonLabel={nameSheet === 'routine' ? 'Save routine' : 'Save name'}
+          title="Rename workout"
+          buttonLabel="Save name"
           initialName={sum.title}
-          detail={
-            nameSheet === 'routine'
-              ? `${String(sum.facts.exercisesDone)} ${sum.facts.exercisesDone === 1 ? 'exercise' : 'exercises'} · ${String(sum.facts.workingSets + sum.facts.warmupSets)} sets`
-              : null
-          }
-          check={nameSheet === 'routine' ? (n) => services.routines.checkName(n) : (n) => Promise.resolve(checkRoutineName(n, []))}
-          onSubmit={nameSheet === 'routine' ? saveRoutine : renameWorkout}
+          check={(n) => Promise.resolve(checkRoutineName(n, []))}
+          onSubmit={renameWorkout}
           onClose={() => {
             setNameVisible(false);
           }}
           onDismissed={nameAfter.dismissed}
         />
       ) : null}
+      {saveSheet.sheet}
       <EditTimesSheet
         summary={sum}
         visible={times}

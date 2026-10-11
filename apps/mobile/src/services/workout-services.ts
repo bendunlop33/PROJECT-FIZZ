@@ -390,6 +390,9 @@ export interface RoutineRow {
   sets: number;
   lastDone: { atUtc: string; tz: string } | null;
   createdFromSessionId: string | null;
+  /** In Ben's rotation (RT9); also its place there, for an Undo of `Remove from rotation`. */
+  inRotation: boolean;
+  rotationAtUtc: string;
 }
 
 /** The routine sheet: what `Start this routine` would create at this gym. Saves nothing. */
@@ -1105,7 +1108,17 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const rows = live.map((r) => {
       const c = routineCounts(r);
       const done = last.get(r.id) ?? null;
-      return { id: r.id, name: r.name, version: r.version, exercises: c.exercises, sets: c.sets, lastDone: done ? { atUtc: done.startedAtUtc, tz: done.tz } : null, createdFromSessionId: r.createdFromSessionId ?? null };
+      return {
+        id: r.id,
+        name: r.name,
+        version: r.version,
+        exercises: c.exercises,
+        sets: c.sets,
+        lastDone: done ? { atUtc: done.startedAtUtc, tz: done.tz } : null,
+        createdFromSessionId: r.createdFromSessionId ?? null,
+        inRotation: r.inRotation !== false,
+        rotationAtUtc: r.rotationAtUtc ?? r.createdAtUtc,
+      };
     });
     return { rows, live, refs };
   }
@@ -2460,13 +2473,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     /**
      * The save sheet's prefill (§A2.5): the name (the workout's or the
      * page's, else `Workout · Sun 11 Oct`) and what will be saved. Null:
-     * nothing to save (all skipped, or only warm-ups), so no sheet opens.
+     * nothing to save (all skipped, or only warm-ups), so no sheet opens;
+     * `stale`: the page is out of date (`Targets updated`).
      */
-    async saveSource(from: SaveFrom, fallbackName: string | null = null): Promise<SaveSource | null> {
+    async saveSource(from: SaveFrom, fallbackName: string | null = null): Promise<SaveSource | 'stale' | null> {
       try {
         const p = await owner();
         const r = await routineFromSource(p, from, { id: deriveId('save-source'), name: 'x', opId: 'save-source', inRotation: false });
-        if (r === null || r === 'stale') return null;
+        if (r === 'stale') return 'stale';
+        if (r === null) return null;
         let name = fallbackName;
         if (name === null && from.kind === 'session') {
           const source = await repos().sessions.get(from.sessionId).catch(() => null);
@@ -2527,15 +2542,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const p = await owner();
         const current = await repos().routines.get(req.routineId);
         const to = await ensureExercise(req.toExerciseId);
-        if (!current || current.ownerId !== p.id || to === null) return { ok: false, reason: 'missing', message: 'That routine wasn’t found.' };
+        if (!current || current.ownerId !== p.id || to === null) return { ok: false, reason: 'missing', message: LIBRARY_COPY.notFound };
         const at = ctx.now();
         const c = swapRoutineSlot(current, req.slotKey, to, req.expectedRoutineVersion, req.opId, at);
         if (c.kind === 'invalid') return { ok: false, reason: 'invalid', message: c.message };
-        if (c.kind === 'stale') return { ok: false, reason: 'stale', message: 'The routine changed. Check it and try again.' };
+        if (c.kind === 'stale') return { ok: false, reason: 'stale', message: LIBRARY_COPY.changed(current.name) };
         const before = current.exercises.find((e) => e.id === req.slotKey);
         const next = c.kind === 'write' ? c.next : c.current;
         const after = next.exercises.find((e) => e.id === req.slotKey);
-        if (before === undefined || after === undefined) return { ok: false, reason: 'invalid', message: 'That exercise isn’t in the routine any more.' };
+        if (before === undefined || after === undefined) return { ok: false, reason: 'invalid', message: 'That exercise isn’t in the workout any more.' };
         const fromName = (await exerciseById(before.exerciseId))?.name ?? 'Exercise';
         const versionBefore = c.kind === 'write' ? current.version : current.version - 1;
         const action: ActionRecord = {
@@ -2563,11 +2578,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           createdAt: at,
         };
         const r = await ctx.store().repos.drafts.applyRoutineChange({ ownerId: p.id, routine: next, expectedRoutineVersion: c.kind === 'write' ? c.expectedVersion : current.version - 1, action, at });
-        if (r.status === 'missing') return { ok: false, reason: 'missing', message: 'That routine wasn’t found.' };
-        if (r.status === 'stale') return { ok: false, reason: 'stale', message: 'The routine changed. Check it and try again.' };
+        if (r.status === 'missing') return { ok: false, reason: 'missing', message: LIBRARY_COPY.notFound };
+        if (r.status === 'stale') return { ok: false, reason: 'stale', message: LIBRARY_COPY.changed(current.name) };
         return { ok: true, action: r.action, routine: r.routine, duplicate: r.status === 'replayed' };
       } catch {
-        return { ok: false, reason: 'failed', message: 'Couldn’t save the routine. Try again.' };
+        return { ok: false, reason: 'failed', message: LIBRARY_COPY.saveFailed };
       }
     },
 
@@ -2598,7 +2613,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         }
         return { ok: true, action: r.undo, routine: r.routine, duplicate: r.status === 'replayed' };
       } catch {
-        return { ok: false, reason: 'failed', message: 'Couldn’t save the routine. Try again.' };
+        return { ok: false, reason: 'failed', message: LIBRARY_COPY.saveFailed };
       }
     },
 

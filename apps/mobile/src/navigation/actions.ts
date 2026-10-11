@@ -1,6 +1,6 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 
-import type { RootStackParams, TabParams } from './types';
+import type { LibraryToastParam, RootStackParams, TabParams } from './types';
 
 /**
  * Root-stack actions that land on a tab (review workout-loop B1).
@@ -58,4 +58,22 @@ export function openGymFromWorkout(gymId: string): PopToTabsAction {
 /** Replace the Workout with its Summary (after Finish). The only path that plays the finish moment (premium-feel §6). */
 export function replaceWithSummary(sessionId: string) {
   return { type: 'REPLACE', payload: { name: 'Summary', params: { sessionId, justFinished: true } } } as const;
+}
+
+/**
+ * The editor's `Save` (routines.md §A3): back to the list or the overview it
+ * was opened from, handing over the toast (`Saved Push A` [Undo]). The
+ * overview keeps its target (params merge).
+ */
+export function popToFromEditor(from: 'Workouts' | 'WorkoutOverview', toast: LibraryToastParam) {
+  return { type: 'POP_TO', payload: { name: from, params: { toast }, merge: true } } as const;
+}
+
+/**
+ * `Edit workouts` from the overview's picker (§A2.4): the list takes the
+ * overview's place, so a row's overview is a fresh page (never a stale one
+ * found under the list).
+ */
+export function replaceWithWorkouts() {
+  return { type: 'REPLACE', payload: { name: 'Workouts', params: {} } } as const;
 }

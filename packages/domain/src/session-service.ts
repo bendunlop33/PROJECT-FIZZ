@@ -242,7 +242,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     const owner = await repos.profiles.get(req.ownerId);
     if (!owner) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
     const routine = await repos.routines.get(req.routineId);
-    if (!routine || routine.ownerId !== req.ownerId || isDeleted(routine)) return { ok: false, error: { code: 'not_found', message: 'That routine wasn’t found.' } };
+    if (!routine || routine.ownerId !== req.ownerId || isDeleted(routine)) return { ok: false, error: { code: 'not_found', message: 'That workout wasn’t found.' } };
     const exercises = new Map<string, Exercise>();
     for (const rex of routine.exercises) {
       const ex = await repos.exercises.get(rex.exerciseId);
@@ -274,7 +274,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     } }, req.today ?? NO_EDITS);
     const today: TodayPlanInfo = { slotOf: out.slotOf, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots };
-    if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This routine has no exercises to start.' } };
+    if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This workout has no exercises to start.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false, fits: out.fits, today };
     const saved = await trySave(() => repos.sessions.save(out.aggregate, null, req.fence));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };

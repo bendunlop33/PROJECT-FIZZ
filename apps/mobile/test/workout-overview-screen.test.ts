@@ -152,11 +152,11 @@ describe('words on the page (§3.2, §9)', () => {
   const at = { utc: '2026-10-08T17:00:00.000Z', tz: 'Europe/London' };
   it('eyebrow variants', () => {
     expect(eyebrowText({ kind: 'after', routineName: 'Pull A', at }, day)).toBe('After Pull A · Thu 8 Oct');
-    expect(eyebrowText({ kind: 'only' }, day)).toBe('Only routine');
+    expect(eyebrowText({ kind: 'only' }, day)).toBe('Only workout');
     expect(eyebrowText({ kind: 'rotation_start' }, day)).toBe('Start of your rotation');
     expect(eyebrowText({ kind: 'last_done', at }, day)).toBe('Last done Thu 8 Oct');
     expect(eyebrowText({ kind: 'next_from', at }, day)).toBe('Next session · from Thu 8 Oct');
-    expect(eyebrowText({ kind: 'new_routine' }, day)).toBe('New routine');
+    expect(eyebrowText({ kind: 'new_routine' }, day)).toBe('New workout');
   });
   it('every fixed string is in the spec’s copy list or states table (minimal copy)', () => {
     const spec = readFileSync(join(__dirname, '..', '..', '..', 'docs', 'design', 'workout-overview.md'), 'utf8');
@@ -365,11 +365,11 @@ describe('source checks', () => {
     expect(screen.match(/<SessionPickerSheet\b/g)).toHaveLength(1);
   });
 
-  it('session-picker r2 N1/N2: row actions wait while a switch is loading; Undo of Save as routine switches back only when the delete worked', () => {
+  it('session-picker r2 N1/N2: row actions wait while a switch is loading; Save to Workouts saves what the page shows and stays on it (WL6)', () => {
     expect(screen).toContain('if (switching.current) return;');
     expect(screen).toContain('if (!page || r.coach === null || switching.current) return;');
     expect(screen).toContain('if (!page || switching.current) return null;');
     expect(screen).toContain('if (!page || switching.current) return;');
-    expect(screen).toMatch(/if \(!u\.ok\) \{\n\s*setToast\(\{ text: u\.message \}\);\n\s*return;\n\s*\}\n\s*void switchTo\(before\);/);
+    expect(screen).toContain("void saveSheet.open({ kind: 'preview', target, gymId: page.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? null, previewKey: page.view.previewKey }, page.view.title);");
   });
 });

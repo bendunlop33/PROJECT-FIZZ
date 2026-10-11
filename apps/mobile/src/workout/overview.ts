@@ -92,7 +92,7 @@ export function eyebrowText(basis: OverviewBasis, day: (ms: number, tz: string) 
     case 'after':
       return `After ${basis.routineName} · ${day(toMs(basis.at.utc), basis.at.tz)}`;
     case 'only':
-      return 'Only routine';
+      return 'Only workout';
     case 'rotation_start':
       return 'Start of your rotation';
     case 'last_done':
@@ -100,7 +100,7 @@ export function eyebrowText(basis: OverviewBasis, day: (ms: number, tz: string) 
     case 'next_from':
       return `Next session · from ${day(toMs(basis.at.utc), basis.at.tz)}`;
     case 'new_routine':
-      return 'New routine';
+      return 'New workout';
   }
 }
 

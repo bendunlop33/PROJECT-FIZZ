@@ -40,6 +40,8 @@ import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ProgressScreen } from '../screens/ProgressScreen';
 import { PastWorkoutsScreen } from '../screens/repeat/PastWorkoutsScreen';
 import { RepeatScreen } from '../screens/repeat/RepeatScreen';
+import { WorkoutEditorScreen } from '../screens/routines/WorkoutEditorScreen';
+import { WorkoutsScreen } from '../screens/routines/WorkoutsScreen';
 import { SetupScreen } from '../screens/setup/SetupScreen';
 import { TodayScreen } from '../screens/TodayScreen';
 import { CheckInScreen } from '../screens/workout/CheckInScreen';
@@ -279,6 +281,9 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               <RootStack.Screen name="AddGym" component={AddGymScreen} options={{ presentation: 'modal' }} />
               <RootStack.Screen name="PastWorkouts" component={PastWorkoutsScreen} options={{ headerShown: true, title: 'Past workouts' }} />
               <RootStack.Screen name="Repeat" component={RepeatScreen} options={{ headerShown: true, title: 'Repeat' }} />
+              {/* The Workouts library (routines.md §A2.1); its editor is a sheet over the list or the overview (Cancel / Save). */}
+              <RootStack.Screen name="Workouts" component={WorkoutsScreen} options={{ headerShown: true, title: 'Workouts' }} />
+              <RootStack.Screen name="WorkoutEditor" component={WorkoutEditorScreen} options={{ presentation: 'modal', gestureEnabled: false, contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
               {/* A side door, not a step: swipe down closes it and nothing in the workout waits for it (coach-sheet §1). */}
               <RootStack.Screen name="Coach" component={CoachSheetScreen} options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
             </>

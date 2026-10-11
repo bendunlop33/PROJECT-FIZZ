@@ -550,8 +550,8 @@ export function swapRoutineSlot(
   // A card shown before the routine moved is out of date, whatever it would change (CR4).
   if (current.version !== expectedVersion) return { kind: 'stale', current };
   const slot = current.exercises.find((e) => e.id === slotKey);
-  if (slot === undefined) return { kind: 'invalid', message: 'That exercise isn’t in the routine any more.' };
-  if (slot.exerciseId === to.id) return { kind: 'invalid', message: 'Already in the routine.' };
+  if (slot === undefined) return { kind: 'invalid', message: 'That exercise isn’t in the workout any more.' };
+  if (slot.exerciseId === to.id) return { kind: 'invalid', message: 'Already in the workout.' };
   const replaced: RoutineExercise = {
     ...slot,
     exerciseId: to.id,

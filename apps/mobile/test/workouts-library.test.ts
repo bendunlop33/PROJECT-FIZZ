@@ -220,6 +220,7 @@ describe('Save to Workouts (WL-A9, A10, A11, A12)', () => {
     ]);
     const before = await s.workout.load(sid);
     const src = await s.routines.saveSource({ kind: 'session', sessionId: sid });
+    if (src === 'stale') throw new Error('stale');
     expect(plain(src?.name)).toBe('Workout · Mon 5 Oct');
     expect(src?.detail).toBe('2 exercises · 5 sets');
     const r = await s.routines.saveFrom({ from: { kind: 'session', sessionId: sid }, name: src?.name ?? '', addToRotation: false, opId: 'save-empty' });
@@ -270,7 +271,8 @@ describe('Save to Workouts (WL-A9, A10, A11, A12)', () => {
     const page = await s.overview.load({ target, gymId: f.gymId });
     if (!page) throw new Error('no page');
     const from = { kind: 'preview' as const, target, gymId: f.gymId, previewKey: page.view.previewKey };
-    expect((await s.routines.saveSource(from, 'Push A'))?.detail).toBe('2 exercises · 3 sets');
+    const src = await s.routines.saveSource(from, 'Push A');
+    expect(src !== 'stale' && src?.detail).toBe('2 exercises · 3 sets');
     const r = await s.routines.saveFrom({ from, name: 'Push A · short', addToRotation: false, opId: 'save-page' });
     if (!r.ok) throw new Error(r.message);
     expect(r.routine.exercises.map((e) => e.exerciseId)).toEqual(f.pushA.exercises.map((e) => e.exerciseId));

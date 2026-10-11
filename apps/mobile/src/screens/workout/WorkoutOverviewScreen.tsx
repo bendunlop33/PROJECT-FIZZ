@@ -12,9 +12,9 @@ import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
 import { formatShortDate } from '../../format/dates';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
-import { openStartedWorkout, popToTabs, popToToday } from '../../navigation/actions';
-import type { RootStackParams } from '../../navigation/types';
-import type { DraftWrite, OverviewData, OverviewTarget, SessionList, SessionPickerRow, SwapSheet } from '../../services/workout-services';
+import { openStartedWorkout, popToTabs, popToToday, replaceWithWorkouts } from '../../navigation/actions';
+import type { LibraryToastParam, RootStackParams } from '../../navigation/types';
+import { STALE_PREVIEW, type DraftWrite, type OverviewData, type OverviewTarget, type SessionList, type SessionPickerRow, type SwapSheet } from '../../services/workout-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, Icon, OverviewRow, PrimaryButton, ReorderRow, StatStrip, SubstituteRowView, SupersetBracket, TextButton, Toast } from '../../ui';
@@ -55,6 +55,8 @@ import {
   type RowCustomAction,
 } from '../../workout/overview-edits';
 import { NameSheet } from '../routines/NameSheet';
+import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
+import { LIBRARY_COPY_UI, LIBRARY_TOASTS } from '../../workout/library-view';
 import { isShownRow, SESSION_PICKER_COPY, switchSession } from '../../workout/session-picker';
 import { SessionPickerSheet } from './SessionPickerSheet';
 import { TargetWhyPanel } from './TargetWhyPanel';
@@ -90,14 +92,12 @@ export function WorkoutOverviewScreen() {
   const [rowWidth, setRowWidth] = useState<number | null>(null);
   const [labelWidth, setLabelWidth] = useState<number | null>(null);
   const checkInFit = checkInRowLayout({ available: rowWidth ?? windowWidth - 2 * theme.components.screenMargin, labelWidth, fontScale });
-  const routeTarget = useRoute<RouteProp<RootStackParams, 'WorkoutOverview'>>().params.target;
+  const routeParams = useRoute<RouteProp<RootStackParams, 'WorkoutOverview'>>().params;
+  const routeTarget = routeParams.target;
   // The session shown: the one opened, until Ben picks another from the title (session-picker §4.2, in place).
   const [target, setTarget] = useState<OverviewTarget>(routeTarget);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerList, setPickerList] = useState<SessionList | null | 'loading'>('loading');
-  const [saveAsVisible, setSaveAsVisible] = useState(false);
-  const [saveAsOp, setSaveAsOp] = useState(newUuid);
-  const [saveAsAfter] = useState(() => createAfterDismiss());
   const [pickerAfter] = useState(() => createAfterDismiss());
   const scrollRef = useRef<ScrollView>(null);
   const alertsAsk = useStartAlertsAsk();
@@ -148,6 +148,28 @@ export function WorkoutOverviewScreen() {
     return page;
   });
   const page = data.state === 'ready' ? data.value : null;
+  // `Save to Workouts` (routines.md WL6): what the page shows; nothing to save or an out-of-date page says so.
+  const saveSheet = useSaveToWorkouts(
+    (r) => {
+      changed();
+      showLibraryToast({ key: r.id, text: LIBRARY_COPY_UI.savedToWorkouts, undo: { kind: 'delete', routineId: r.id, version: r.version } });
+    },
+    () => {
+      setToast({ text: LIBRARY_COPY_UI.nothingToSave });
+    },
+    () => {
+      setToast({ text: STALE_PREVIEW });
+      reload();
+    },
+  );
+  // Back from the editor (`Saved Push A` [Undo]): the page re-reads the new version.
+  const handedToast = routeParams.toast;
+  useEffect(() => {
+    if (!handedToast) return;
+    reload();
+    showLibraryToast(handedToast);
+    navigation.setParams({ toast: undefined } as never);
+  }, [handedToast?.key]);
   // True from a session switch's first read until its page is shown: row actions would name the new target with the old page (r2 N1).
   const switching = useRef(false);
   useEffect(() => {
@@ -405,9 +427,9 @@ export function WorkoutOverviewScreen() {
   function menu() {
     const routine = page?.routine ?? null;
     const edits = page ? editMenuItems(page.view) : [];
-    // `Save as routine` (session-picker §4.3): a session from history, while the page has no today's edits (a draft is never re-keyed).
-    const canSave = page !== null && page.startOf.nextOf !== undefined && page.view.editCount === 0;
-    const options = [...edits, ...(canSave ? [SESSION_PICKER_COPY.saveAsRoutine] : []), OVERVIEW_COPY.emptyWorkout, ...(routine ? [OVERVIEW_COPY.rename, OVERVIEW_COPY.delete] : []), 'Cancel'];
+    // `Save to Workouts` (routines.md WL6): exactly what the page shows, today's edits included.
+    const library = routine ? [LIBRARY_COPY_UI.editWorkout, LIBRARY_COPY_UI.duplicate, routine.inRotation ? LIBRARY_COPY_UI.removeFromRotation : LIBRARY_COPY_UI.addToRotation] : [];
+    const options = [...edits, ...library, ...(page !== null ? [LIBRARY_COPY_UI.saveToWorkouts] : []), OVERVIEW_COPY.emptyWorkout, ...(routine ? [OVERVIEW_COPY.rename, OVERVIEW_COPY.delete] : []), 'Cancel'];
     ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1, ...(routine ? { destructiveButtonIndex: options.indexOf(OVERVIEW_COPY.delete) } : {}) }, (i) => {
       const picked = options[i];
       if (picked === TODAY_EDITS_COPY.reorder) {
@@ -415,16 +437,76 @@ export function WorkoutOverviewScreen() {
         setReordering(true);
       }
       if (picked === TODAY_EDITS_COPY.resetEdits) void resetEdits();
-      if (picked === SESSION_PICKER_COPY.saveAsRoutine) {
-        setSaveAsOp(newUuid());
-        setSaveAsVisible(true);
+      if (picked === LIBRARY_COPY_UI.saveToWorkouts && page !== null) {
+        void saveSheet.open({ kind: 'preview', target, gymId: page.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? null, previewKey: page.view.previewKey }, page.view.title);
       }
+      if (picked === LIBRARY_COPY_UI.editWorkout && routine) navigation.navigate('WorkoutEditor', { routineId: routine.id, from: 'WorkoutOverview' });
+      if (picked === LIBRARY_COPY_UI.duplicate && routine) void duplicateRoutine(routine.id);
+      if ((picked === LIBRARY_COPY_UI.addToRotation || picked === LIBRARY_COPY_UI.removeFromRotation) && routine) void toggleRotation(routine);
       if (picked === OVERVIEW_COPY.emptyWorkout) void startEmpty();
       if (picked === OVERVIEW_COPY.rename) {
         setRenameOp(newUuid());
         setRenameVisible(true);
       }
       if (picked === OVERVIEW_COPY.delete) deleteRoutine();
+    });
+  }
+
+  /** `Duplicate` (§4.4): the copy opens in the editor (name selected); the toast's Undo deletes it. */
+  async function duplicateRoutine(routineId: string) {
+    const r = await services.routines.duplicate({ routineId, opId: newUuid() });
+    if (!r.ok) {
+      setToast({ text: r.message });
+      return;
+    }
+    changed();
+    showLibraryToast({ key: r.routine.id, text: LIBRARY_TOASTS.saved(r.routine.name), undo: { kind: 'delete', routineId: r.routine.id, version: r.routine.version } });
+    navigation.navigate('WorkoutEditor', { routineId: r.routine.id, from: 'WorkoutOverview', selectName: true });
+  }
+
+  /** `Add to rotation` / `Remove from rotation` (RT9), with Undo back to the same place. */
+  async function toggleRotation(routine: NonNullable<NonNullable<typeof page>['routine']>) {
+    const on = !routine.inRotation;
+    const r = await services.routines.setRotation({ routineId: routine.id, on, expectedVersion: routine.version, opId: newUuid() });
+    if (!r.ok) {
+      setToast({ text: r.message });
+      reload();
+      return;
+    }
+    changed();
+    const done = r.routine;
+    setToast({
+      text: on ? LIBRARY_TOASTS.added(routine.name) : LIBRARY_TOASTS.removed(routine.name),
+      action: LIBRARY_COPY_UI.undo,
+      onAction: () => {
+        setToast(null);
+        void services.routines.setRotation({ routineId: done.id, on: !on, expectedVersion: done.version, opId: newUuid(), placeAtUtc: on ? null : routine.rotationAtUtc }).then((u) => {
+          changed();
+          if (!u.ok) setToast({ text: u.message });
+        });
+      },
+    });
+  }
+
+  /** A library toast (`Saved Push A` [Undo]): Undo reverts an editor save or deletes a new workout. */
+  function showLibraryToast(t: LibraryToastParam) {
+    const undo = t.undo;
+    setToast({
+      text: t.text,
+      ...(undo
+        ? {
+            action: LIBRARY_COPY_UI.undo,
+            onAction: () => {
+              setToast(null);
+              const run = undo.kind === 'revert' ? services.routines.revert({ actionId: undo.actionId, opId: newUuid() }) : services.routines.remove({ routineId: undo.routineId, expectedVersion: undo.version, opId: newUuid() });
+              void run.then((r) => {
+                changed();
+                reload();
+                if (!r.ok) setToast({ text: r.message });
+              });
+            },
+          }
+        : {}),
     });
   }
 
@@ -478,38 +560,6 @@ export function WorkoutOverviewScreen() {
     setPickerVisible(false);
     if (page !== null && isShownRow(row, page.startOf)) return;
     void switchTo(row.target);
-  }
-
-  /** `Save as routine` → the name prompt → one routine from the source workout (idempotent on `opId`), then the page on it. Undo deletes it. */
-  async function saveAsRoutine(name: string): Promise<string | null> {
-    const sourceId = page?.startOf.nextOf;
-    if (sourceId === undefined) return null;
-    const before = target;
-    const r = await services.routines.saveFromSession({ sessionId: sourceId, name, opId: saveAsOp });
-    if (!r.ok) return r.message;
-    const saved = r.routine;
-    saveAsAfter.arm(() => {
-      void switchTo({ kind: 'routine', routineId: saved.id });
-      setToast({
-        text: SESSION_PICKER_COPY.savedAsRoutine,
-        action: 'Undo',
-        onAction: () => {
-          setToast(null);
-          void services.routines.remove({ routineId: saved.id, expectedVersion: saved.version, opId: newUuid() }).then((u) => {
-            changed();
-            // The routine is still there when the delete failed: stay on it (r2 N2).
-            if (!u.ok) {
-              setToast({ text: u.message });
-              return;
-            }
-            void switchTo(before);
-          });
-        },
-      });
-    });
-    setSaveAsVisible(false);
-    changed();
-    return null;
   }
 
   async function showWhy(sessionExerciseId: string, name: string) {
@@ -802,6 +852,12 @@ export function WorkoutOverviewScreen() {
       onPastWorkouts={() => {
         pickerAfter.arm(() => {
           navigation.navigate('PastWorkouts');
+        });
+        setPickerVisible(false);
+      }}
+      onEditWorkouts={() => {
+        pickerAfter.arm(() => {
+          navigation.dispatch(replaceWithWorkouts());
         });
         setPickerVisible(false);
       }}
@@ -1149,24 +1205,11 @@ export function WorkoutOverviewScreen() {
         {why ? <TargetWhyPanel panel={why.explanation ? { setId: why.explanation.setId, status: 'ready', explanation: why.explanation } : { setId: '', status: 'failed' }} /> : null}
       </BottomCard>
       {pickerSheet}
-      {page.startOf.nextOf !== undefined ? (
-        <NameSheet
-          visible={saveAsVisible}
-          title={SESSION_PICKER_COPY.saveAsRoutine}
-          buttonLabel="Save"
-          initialName={view.title}
-          check={(n) => services.routines.checkName(n, null)}
-          onSubmit={saveAsRoutine}
-          onClose={() => {
-            setSaveAsVisible(false);
-          }}
-          onDismissed={saveAsAfter.dismissed}
-        />
-      ) : null}
+      {saveSheet.sheet}
       {page.routine ? (
         <NameSheet
           visible={renameVisible}
-          title="Rename routine"
+          title="Rename workout"
           buttonLabel="Save name"
           initialName={page.routine.name}
           check={(n) => services.routines.checkName(n, page.routine?.id ?? null)}
