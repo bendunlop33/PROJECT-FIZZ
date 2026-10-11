@@ -233,6 +233,8 @@ export function WorkoutOverviewScreen() {
         );
         if (r.kind === 'started') {
           changed();
+          // Something opened over the page while Start ran (r3 S1): leave the session for Today's Resume, never reset under it.
+          if (!navigation.isFocused()) return;
           navigation.dispatch(openStartedWorkout(r.outcome.notice ? { toast: { kind: 'info', text: r.outcome.notice } } : undefined));
         } else if (r.kind === 'stale') {
           // Nothing was created and the page changed: the rows re-render with what Start would make now (rule 5).
@@ -554,6 +556,7 @@ export function WorkoutOverviewScreen() {
           {checkInFit === 'collapsed' ? (
             <TextButton
               label={row.selected === null ? `${OVERVIEW_COPY.checkIn} ›` : `${OVERVIEW_COPY.checkIn} · ${String(row.selected)} ›`}
+              disabled={busy || scoring}
               onPress={() => {
                 navigation.navigate('CheckIn', { mode: 'overview', checkInId: row.record?.id ?? null, atScore: true });
               }}

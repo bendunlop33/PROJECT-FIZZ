@@ -287,6 +287,11 @@ describe('source checks', () => {
     expect(screen).toContain('scoreWrite.current = write;');
     expect(screen).not.toContain('startCheckIn(');
     expect(screen).toContain('disabled={busy || scoring}');
+    // r3 S1: both the inline tiles and the AX `Check-in ›` button are off while Start or a score write runs.
+    expect(screen.match(/disabled=\{busy \|\| scoring\}/g)).toHaveLength(2);
+    expect(screen).toMatch(/OVERVIEW_COPY\.checkIn\} ›`[^\n]*\n\s*disabled=\{busy \|\| scoring\}\n\s*onPress=\{\(\) => \{\n\s*navigation\.navigate\('CheckIn'/);
+    // r3 S1: focus is re-checked after the write, right before the stack reset.
+    expect(screen).toMatch(/if \(r\.kind === 'started'\) \{\n\s*changed\(\);\n\s*\/\/[^\n]*\n\s*if \(!navigation\.isFocused\(\)\) return;\n\s*navigation\.dispatch\(openStartedWorkout\(r\.outcome/);
     expect(screen).toContain('if (!page || busy || scoreGuard.running()) return;');
     expect(screen.match(/await startGuard\.run\(/g)).toHaveLength(2);
     expect(screen).toContain('startOp.current ??= newUuid();');
