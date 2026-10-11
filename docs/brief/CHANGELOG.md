@@ -147,3 +147,7 @@ Recorded so the open scope is tracked; nothing here is approved yet. Details in 
 - **Undo last reset (§3.6):** the code brings back only Coaching knowledge and keeps everything logged since the reset; §3.6 calls it the restore mechanism (a whole-file swap, which reverted workouts logged since). Ben to confirm; §3.6 would then say so.
 - **Reset with Undo last restore pending (§3.6):** the code replaces the restore's Undo copy; when that copy holds data not on the phone, the Reset alert names it and Reset saves it as an on-phone backup first. Ben to confirm, or choose refusing Reset or keeping Undo last restore instead.
 - **Spec wording:** §4.5 step 3's "cached import files" should also name the copies made when Ben picks a backup to restore or check (the code removes all of them).
+
+## 2026-10-11: Sending data to ChatGPT (Ben)
+- **Approved:** "Fine to send stuff to ChatGPT." Answers data-import-export §9.8 question 2: the any-app import may send column names plus up to 30 code-chosen sample rows (or 120 note lines) to the ChatGPT-plan route, shown first behind `See what's sent`. Same consent covers the coach's existing context (Your data, quoted as data). Rule 7 unchanged: never a paid route without explicit opt-in.
+- Still open for the any-app import: §9.8 Q1 (which apps besides FitNotes; a real sample file is needed) and Q3 (API-key fallback if the plan route can't carry it).
