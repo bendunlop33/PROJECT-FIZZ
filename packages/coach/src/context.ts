@@ -64,6 +64,12 @@ export interface CoachContextInput {
   builtInNext?: readonly { exerciseId: string; name: string; target: CoachTarget; sets: number }[];
   /** Characters of earlier messages to send at most (CS2). */
   historyBudgetChars?: number;
+  /**
+   * Whether the coach can read Ben's training before this workout
+   * (`get_recent_training`). Absent or false: the context says it isn't
+   * available, so the coach never invents trends (rule 6; review S4).
+   */
+  trainingHistoryAvailable?: boolean;
 }
 
 export interface SessionSetView {
@@ -193,6 +199,9 @@ export function buildCoachingKnowledge(catalogue: readonly CatalogueCue[]): Coac
   };
 }
 
+/** Said while no read port for past workouts is built (review S4). */
+export const NO_TRAINING_HISTORY = 'Training history before this workout: not available';
+
 /** What the coach doesn't have in v1. Labelled, never guessed (rule 6, D15). */
 export const NOT_AVAILABLE: readonly string[] = [
   'Goals and training schedule: not set in this app yet',
@@ -236,7 +245,7 @@ function messageText(m: CoachMessage): string | null {
 export function buildCoachContext(input: CoachContextInput): CoachContext {
   const yourData = buildYourData(input);
   const coachingKnowledge = buildCoachingKnowledge(input.catalogue);
-  const notAvailable = [...NOT_AVAILABLE];
+  const notAvailable = input.trainingHistoryAvailable === true ? [...NOT_AVAILABLE] : [NO_TRAINING_HISTORY, ...NOT_AVAILABLE];
   const history = historyItems(input.thread, input.historyBudgetChars ?? 6000);
   const contextHash = deriveId(stableStringify({ v: CONTEXT_FORMAT_VERSION, yourData, coachingKnowledge, notAvailable, history }));
   return { formatVersion: CONTEXT_FORMAT_VERSION, contextHash, yourData, coachingKnowledge, notAvailable, history, messagesSent: history.length };
