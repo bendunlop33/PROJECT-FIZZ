@@ -1,4 +1,4 @@
-import type { CommandOf, EquipmentInstance, Load, Measurement, PainFlag, ZonedTimestamp, SessionAggregate, SessionExercise, SetExclusion, SetSide, SetValues, WorkoutSet } from '@fizz/schemas';
+import type { CommandOf, EquipmentInstance, Load, Measurement, PainFlag, ZonedTimestamp, SessionAggregate, SessionExercise, SetExclusion, SetSide, SetType, SetValues, WorkoutSet } from '@fizz/schemas';
 import {
   EQUIPMENT_WORD,
   SET_TYPE_BADGE,
@@ -792,22 +792,32 @@ export interface SetEditView {
   exclusions: SetExclusion[];
   /** `This also puts a pain flag on Bench press: …` while `Pain` is ticked and wasn't before (AW7). */
   painLine: string | null;
-  /** Values or exclusions differ from the stored set: `Save changes` is enabled. */
+  /**
+   * Set type control (brief §1; backlog 4.1): one choice per type, in
+   * workout order. `changed` says the type differs from the stored one, so
+   * `correct_set` carries `setType` only then.
+   */
+  setType: { value: SetType; changed: boolean; choices: { type: SetType; label: string; selected: boolean }[] };
+  /** Values, exclusions or the set type differ from the stored set: `Save changes` is enabled. */
   changed: boolean;
 }
+
+/** The set types in the order a workout uses them (Edit set's control). */
+export const SET_TYPE_ORDER: readonly SetType[] = ['warmup', 'working', 'top', 'backoff', 'drop'];
 
 /**
  * The correction sheet for a logged set (active-workout §4.4): the same
  * equipment-aware steppers as the set card. `correct_set` saves it; the rest
  * timer is never touched (invariant 5).
  */
-export function buildSetEditView(state: SessionAggregate, setId: string, edits: SetValues | null, exclusionEdits: readonly SetExclusion[] | null = null): SetEditView | null {
+export function buildSetEditView(state: SessionAggregate, setId: string, edits: SetValues | null, exclusionEdits: readonly SetExclusion[] | null = null, setTypeEdit: SetType | null = null): SetEditView | null {
   const set = state.sets.find((s) => s.id === setId);
   if (!set || set.status !== 'completed' || !set.actual) return null;
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
   if (!ex) return null;
   const eq = equipmentOf(state, ex);
   const values = edits ?? set.actual;
+  const setType = setTypeEdit ?? set.setType;
   const stored = normaliseExclusions(set.exclusions);
   const exclusions = exclusionEdits === null ? stored : normaliseExclusions(exclusionEdits);
   const label = loadFieldLabel(ex.loadConvention, eq);
@@ -827,7 +837,8 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
     text: valuesText(values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
     exclusions,
     painLine: exclusions.includes('pain') && !stored.includes('pain') ? exclusionPainLine(ex.exerciseName) : null,
-    changed: JSON.stringify(values) !== JSON.stringify(set.actual) || exclusions.join() !== stored.join(),
+    setType: { value: setType, changed: setType !== set.setType, choices: SET_TYPE_ORDER.map((t) => ({ type: t, label: SET_TYPE_WORD[t], selected: t === setType })) },
+    changed: JSON.stringify(values) !== JSON.stringify(set.actual) || exclusions.join() !== stored.join() || setType !== set.setType,
   };
 }
 

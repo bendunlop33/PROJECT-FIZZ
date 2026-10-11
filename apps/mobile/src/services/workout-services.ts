@@ -1641,7 +1641,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       sessionId: string;
       setId: string;
       expectedSetVersion: number;
-      patch: Partial<SetValues> & { exclusions?: SetExclusion[] };
+      patch: Partial<SetValues> & { exclusions?: SetExclusion[]; setType?: SetType };
       opId: string;
     }): Promise<SetCorrectionWrite> {
       const failed = { ok: false as const, stale: false, message: 'The change wasn’t saved. Try again.' };

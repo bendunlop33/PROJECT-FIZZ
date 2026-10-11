@@ -4,7 +4,7 @@ import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { buildSetEditView, EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
-import type { SessionAggregate, SetExclusion, SetValues } from '@fizz/schemas';
+import type { SessionAggregate, SetExclusion, SetType, SetValues } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
 import { formatTime } from '../../format/dates';
@@ -33,6 +33,7 @@ export function EditSetScreen() {
   const [aggregate, setAggregate] = useState<SessionAggregate | null>(null);
   const [values, setValues] = useState<SetValues | null>(null);
   const [exclusions, setExclusions] = useState<SetExclusion[] | null>(null);
+  const [setType, setSetType] = useState<SetType | null>(null);
   const [effortScale, setEffortScale] = useState<'rpe' | 'rir' | 'off'>('rpe');
   const [error, setError] = useState<string | null>(null);
   const [saveOp] = useState(newUuid);
@@ -51,7 +52,7 @@ export function EditSetScreen() {
     void load();
   }, [sessionId, setId]);
 
-  const view = aggregate ? buildSetEditView(aggregate, setId, values, exclusions) : null;
+  const view = aggregate ? buildSetEditView(aggregate, setId, values, exclusions, setType) : null;
   if (!aggregate || !view) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'], padding: theme.space['4'] }}>
@@ -79,11 +80,13 @@ export function EditSetScreen() {
         if (JSON.stringify(current[k]) !== JSON.stringify(actual[k])) Object.assign(patch, { [k]: current[k] });
       }
       if (exclusions !== null) patch.exclusions = view.exclusions;
-      const r = await services.workout.correctSet({ sessionId, setId, expectedSetVersion: view.setVersion, patch, opId: saveOp });
+      const typed: Parameters<typeof services.workout.correctSet>[0]['patch'] = view.setType.changed ? { ...patch, setType: view.setType.value } : patch;
+      const r = await services.workout.correctSet({ sessionId, setId, expectedSetVersion: view.setVersion, patch: typed, opId: saveOp });
       if (!r.ok) {
         setError(r.message);
         setValues(null);
         setExclusions(null);
+        setSetType(null);
         void load();
         return;
       }
@@ -190,6 +193,23 @@ export function EditSetScreen() {
             </ChipRow>
           </View>
         ) : null}
+        <View style={{ gap: theme.space['2'] }}>
+          <AppText variant="label" color="text.secondary">
+            Set type
+          </AppText>
+          <ChipRow>
+            {view.setType.choices.map((c) => (
+              <Chip
+                key={c.type}
+                label={c.label}
+                selected={c.selected}
+                onPress={() => {
+                  setSetType(c.type);
+                }}
+              />
+            ))}
+          </ChipRow>
+        </View>
         <View style={{ gap: theme.space['2'] }}>
           <AppText variant="label" color="text.secondary" accessibilityRole="header">
             {EXCLUSION_HEADING}
