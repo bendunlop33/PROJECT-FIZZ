@@ -41,6 +41,7 @@ import { createRestoreService } from '../backup/restore-service';
 import { createDataDomainService, type CredentialPort, type PersonalFilesPort } from '../backup/data-domain-service';
 import { createImportService } from '../import/import-service';
 import { createGymServices } from './gym-services';
+import { createHistoryServices } from './history-services';
 import { createWorkoutServices, STALE_PREVIEW, type OverviewStartOf, type OverviewTarget, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
 
@@ -569,6 +570,15 @@ export function createAppServices(deps: AppServicesDeps) {
     },
   });
 
+  /** Deleting past workouts: delete, Undo, Recently deleted, Restore, purge (delete-workouts.md). */
+  const history = createHistoryServices({
+    repos,
+    now: deps.now,
+    profile: getProfile,
+    describe: (a, gyms) => loop.repeat.describe(a, gyms),
+    activeWorkout: () => sessions.active(),
+  });
+
   /** Export, Delete my data and Reset coaching knowledge, by data domain (rule 10). */
   const data = createDataDomainService({
     manager: deps.manager,
@@ -586,6 +596,7 @@ export function createAppServices(deps: AppServicesDeps) {
 
   return {
     ...loop,
+    history,
     overview,
     data,
     coach,

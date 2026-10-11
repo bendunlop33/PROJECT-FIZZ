@@ -153,7 +153,9 @@ export function createCoachService(deps: CoachServiceDeps) {
 
   async function sessionOf(entry: CoachEntry): Promise<SessionAggregate | null> {
     if (entry.kind === 'today') return null;
-    return repos().sessions.get(entry.sessionId).catch(() => null);
+    const a = await repos().sessions.get(entry.sessionId).catch(() => null);
+    // A deleted workout is out of the coach's context (delete-workouts §5); its thread keeps its text.
+    return a?.session.status === 'deleted' ? null : a;
   }
 
   /** CS1: a workout's own thread; outside a workout the last general thread if used in the last 6 hours. */

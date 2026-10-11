@@ -925,7 +925,12 @@ export function progressView(written: number, total: number): { text: string; fr
 export function stateLine(p: PastImport, locale?: string): Line {
   switch (p.state) {
     case 'finished':
-      return { icon: 'checkmark.circle.fill', tone: 'done', text: `Finished · ${plural(p.written, 'workout', 'workouts')}` };
+      return {
+        icon: 'checkmark.circle.fill',
+        tone: 'done',
+        // delete-workouts §5: `412 workouts · 3 deleted` while some are in Recently deleted.
+        text: `Finished · ${plural(p.written, 'workout', 'workouts')}${p.deleted > 0 ? ` · ${formatCount(p.deleted)} deleted` : ''}`,
+      };
     case 'running':
       return { icon: 'info.circle', tone: 'info', text: `Importing… ${progressView(p.written, p.total).text}` };
     case 'paused':
@@ -990,7 +995,9 @@ export function resultsView(p: PastImport & { rows: readonly ImportRow[] }, loca
 export function undoAlert(p: PastImport): { title: string; message: string } {
   return {
     title: 'Undo this import?',
-    message: `${plural(p.written, 'workout', 'workouts')} from ${p.job.fileName} will be hidden from history, Progress and targets. Your other workouts aren’t touched.`,
+    message: `${plural(p.written, 'workout', 'workouts')} from ${p.job.fileName} will be hidden from history, Progress and targets. Your other workouts aren’t touched.${
+      p.deleted > 0 ? `\nIncludes ${formatCount(p.deleted)} in Recently deleted.` : ''
+    }`,
   };
 }
 

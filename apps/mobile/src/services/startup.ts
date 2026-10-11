@@ -123,7 +123,15 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     // in small turns so a Log isn't held behind it (review S4). The catch-up
     // backup exports everything in one turn, so it waits while a workout is
     // unfinished; finishing that workout backs up anyway.
-    if (recoveryError === null && recovery?.state.session.status !== 'active') void services.backups.ensureBackedUp().catch(() => null);
+    // Workouts past their 30 days in Recently deleted are purged after that check, silently,
+    // never while a workout is unfinished (delete-workouts §6.4).
+    if (recoveryError === null && recovery?.state.session.status !== 'active') {
+      void services.backups
+        .ensureBackedUp()
+        .catch(() => null)
+        .then(() => services.history.purgeDue())
+        .catch(() => 0);
+    }
     void services.integrity.checkAll().catch(() => null);
     return { kind: 'ready', services, migration: manager.store.migration, sqliteVersion, setup, recovery, recoveryError, personalDataCleared, signOutNotConfirmed };
   } catch (e) {

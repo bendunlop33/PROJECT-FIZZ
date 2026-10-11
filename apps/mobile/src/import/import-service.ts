@@ -166,6 +166,8 @@ export interface PastImport {
   written: number;
   total: number;
   state: JobState;
+  /** Its workouts now in Recently deleted (delete-workouts §6.2). */
+  deleted: number;
 }
 
 export interface ImportedSetProvenance {
@@ -356,7 +358,9 @@ export function createImportService(deps: ImportServiceDeps) {
 
   async function pastImport(job: ImportJob): Promise<PastImport> {
     const written = await writtenCount(job.id);
-    return { job, written, total: job.counts.workouts, state: stateOf(job) };
+    // Its workouts in Recently deleted (delete-workouts §6.2): `412 workouts · 3 deleted`, and the Undo alert's line.
+    const deleted = job.status === 'reverted' ? 0 : (await repos().imports.jobWorkoutCounts(job.id, deps.now().utc).catch(() => ({ deleted: 0 }))).deleted;
+    return { job, written, total: job.counts.workouts, state: stateOf(job), deleted };
   }
 
   /**
