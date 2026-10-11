@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -400,7 +400,7 @@ export function WorkoutScreen() {
     if (!edits || data === 'loading' || data === null) return;
     const sessionId = data.aggregate.session.id;
     const t = setTimeout(() => {
-      void services.workout.dispatch(sessionId, { type: 'save_draft', at: services.now(), setId: edits.setId, values: edits.values });
+      void services.workout.dispatch(sessionId, saveDraftCommand(edits, services.now()));
     }, 300);
     return () => {
       clearTimeout(t);
@@ -606,7 +606,7 @@ export function WorkoutScreen() {
       return;
     }
     void services.workout
-      .dispatch(session.id, { type: 'save_draft', at: services.now(), setId: draft.setId, values: draft.values })
+      .dispatch(session.id, saveDraftCommand(draft, services.now()))
       .then((r) => r.ok)
       .catch(() => false)
       .then((ok) => {

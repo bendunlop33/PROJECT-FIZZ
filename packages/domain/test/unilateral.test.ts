@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, type SessionAggregate } from '@fizz/schemas';
-import { reduceSession, startWorkout, summariseVolume } from '../src/index';
+import { buildActiveSetView, reduceSession, saveDraftCommand, startWorkout, summariseVolume } from '../src/index';
 import { at, barbell, dumbbells, exercise, GYM, idGen, kg, profile, routine, routineExercise, template, values } from './fixtures';
 import { apply, expectError, expectOk, logCmd } from './session-fixture';
 
@@ -192,5 +192,42 @@ describe('other-side rows (review R4, ADR 0003)', () => {
     const other2 = s.session.activeSetId ?? '';
     s = apply(s, { type: 'delete_set', at: at(130), opId: 'd2', setId: other2, expectedSetVersion: 1 });
     expect(s.sets.find((x) => x.id === p2.id)?.status).toBe('completed');
+  });
+});
+
+describe('the side chosen before logging is saved with the draft', () => {
+  const view = (s: SessionAggregate) => buildActiveSetView({ aggregate: s, nowMs: Date.parse(at(30).utc), gymName: null, previous: {}, painFlagged: new Set(), edits: null });
+
+  it('save_draft keeps Left, so a remount (no screen edits) still logs left and adds the right side', () => {
+    let s = start();
+    const [s1] = splitSets(s);
+    if (!s1) throw new Error('fixture');
+    // The screen's edits after tapping Left, as its debounced save sends them.
+    const cmd = saveDraftCommand({ setId: s1.id, values: values(kg(17.5, 'per_hand'), 9), side: 'left' }, at(20));
+    expect(cmd).toMatchObject({ type: 'save_draft', setId: s1.id, side: 'left' });
+    expect('side' in saveDraftCommand({ setId: s1.id, values: values(kg(17.5, 'per_hand'), 9) }, at(20))).toBe(false);
+    s = apply(s, cmd);
+    expect(s.sets.find((x) => x.id === s1.id)).toMatchObject({ status: 'pending', side: 'left', draft: values(kg(17.5, 'per_hand'), 9) });
+    const focus = view({ ...s, session: { ...s.session, activeSetId: s1.id } }).focus;
+    expect(focus?.side).toEqual({ kind: 'choice', value: 'left' });
+    expect(focus?.logSide).toBe('left');
+    s = apply(s, logCmd(s1.id, values(kg(17.5, 'per_hand'), 9), 40, 'log-left', focus?.logSide));
+    expect(s.sets.find((x) => x.id === s1.id)).toMatchObject({ status: 'completed', side: 'left' });
+    expect(splitSets(s).filter((x) => x.pairedWithSetId === s1.id).map((x) => [x.status, x.side])).toEqual([['pending', 'right']]);
+  });
+
+  it('a draft without a side leaves the side alone; a side is rejected on bilateral sets and fixed other-side rows', () => {
+    let s = start();
+    const [s1, s2] = splitSets(s);
+    if (!s1 || !s2) throw new Error('fixture');
+    s = apply(s, { type: 'save_draft', at: at(20), setId: s2.id, values: values(kg(15, 'per_hand'), 8), side: 'right' });
+    s = apply(s, { type: 'save_draft', at: at(21), setId: s2.id, values: values(kg(15, 'per_hand'), 9) });
+    expect(s.sets.find((x) => x.id === s2.id)?.side).toBe('right');
+    const bench = s.sets.find((x) => x.sessionExerciseId === s.exercises[1]?.id);
+    expectError(reduceSession(s, { type: 'save_draft', at: at(22), setId: bench?.id ?? '', values: values(kg(60), 5), side: 'left' }), 'invalid_values');
+    s = apply(s, logCmd(s1.id, values(kg(15, 'per_hand'), 10), 60, 'log-l', 'left'));
+    const other = s.session.activeSetId ?? '';
+    expectError(reduceSession(s, { type: 'save_draft', at: at(70), setId: other, values: values(kg(15, 'per_hand'), 10), side: 'left' }), 'invalid_values');
+    expectOk(reduceSession(s, { type: 'save_draft', at: at(71), setId: other, values: values(kg(15, 'per_hand'), 10), side: 'right' }));
   });
 });
