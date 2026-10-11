@@ -523,8 +523,39 @@ describe('review progress-A fixes (S6, S8, N1, N2, N5, N9)', () => {
 
   it('S6: a pair easy on both sides is 1 easy; a lone side counts 1; `both` sets count 1 each', () => {
     const r = row('row', [set({ side: 'left', rpe: 4 }), set({ side: 'right', rpe: 5 }), set({ side: 'left' }), set({ side: 'both' }), set({ side: 'left', setType: 'warmup' }), set({ side: 'right', setType: 'warmup' })], { laterality: 'unilateral' });
-    // pairs by order: (L easy, R easy) = easy; (L hard, R warm-up) = hard; (L warm-up, —) = warm-up; plus `both` = hard.
+    // pairs within set type: working (L hard, —) = hard, then (L easy, R easy) = easy; warm-up (L, R) = warm-up; plus `both` = hard.
     expect(countRowSets(r)).toMatchObject({ hard: 2, easy: 1, warmup: 1 });
+  });
+
+  it('r2 S2: a lone left warm-up before 3 left + 3 right working sets is 3 hard + 1 warm-up, not 4 hard', () => {
+    const sides = [set({ side: 'left', setType: 'warmup' }), set({ side: 'left' }), set({ side: 'left' }), set({ side: 'left' }), set({ side: 'right' }), set({ side: 'right' }), set({ side: 'right' })];
+    const r = row('row', sides, { laterality: 'unilateral', convention: 'per_hand', equipmentKind: 'dumbbells' });
+    expect(countRowSets(r)).toMatchObject({ hard: 3, easy: 0, warmup: 1 });
+    const s = session('2026-10-08', { exercises: [r] });
+    const fr = muscleFrequency([s], INFO, w7, 'body_part');
+    expect(rowOf(fr, 'Back')?.sets).toBe(3);
+    expect(fr.notCounted.warmups).toBe(1);
+    const cal = buildCalendarMonthView({ sessions: [s], exercises: INFO, month: '2026-10', today: TODAY });
+    expect(cal.days['2026-10-08']?.[0]?.detail).toMatch(/· 3 sets$/);
+  });
+
+  it('r2 S2: a lone easy side set before the working pairs is 1 easy, and the pairs stay 2 hard', () => {
+    const sides = [set({ side: 'left', rpe: 4 }), set({ side: 'left', rpe: 8 }), set({ side: 'right', rpe: 8 }), set({ side: 'left', rpe: 8 }), set({ side: 'right', rpe: 8 })];
+    const r = row('row', sides, { laterality: 'unilateral' });
+    // Hard sides pair first: 2 hard pairs; the left easy set is the third unit. Not 3 hard (pairing by position would give that).
+    expect(countRowSets(r)).toMatchObject({ hard: 2, easy: 1, warmup: 0 });
+  });
+
+  it('r2 S2: mixed RPE within one set type (round-1 case) is unchanged', () => {
+    const sides = [set({ side: 'left', rpe: 5 }), set({ side: 'right', rpe: 8 }), set({ side: 'left', rpe: 5 }), set({ side: 'right', rpe: 5 })];
+    const r = row('row', sides, { laterality: 'unilateral' });
+    expect(countRowSets(r)).toMatchObject({ hard: 1, easy: 1, warmup: 0 });
+  });
+
+  it('r2 S2: pairs never cross set types (top and backoff pair separately)', () => {
+    const sides = [set({ side: 'left', setType: 'top' }), set({ side: 'right', setType: 'top' }), set({ side: 'left', setType: 'backoff' }), set({ side: 'left', setType: 'backoff' }), set({ side: 'right', setType: 'backoff' }), set({ side: 'right', setType: 'backoff' })];
+    const r = row('row', sides, { laterality: 'unilateral' });
+    expect(countRowSets(r)).toMatchObject({ hard: 3, easy: 0, warmup: 0 });
   });
 
   it('N1: the marked line names the marks, in the canonical order', () => {

@@ -83,10 +83,14 @@ function unitKind(sets: readonly ProgressSet[]): HardSetKind {
 
 /**
  * Sets of one exercise row in one workout, by kind. A unilateral exercise's
- * left and right sets count once: they are paired first (the nth left with
- * the nth right, in logged order) and each pair is classified once, hard if
- * either side was hard. So 3 left + 3 right = 3 sets, and 3 left hard + 2
- * right hard + 1 right easy = 3 hard sets, not 3 hard + 1 easy (review S6).
+ * left and right sets count once. They are paired within a set type (left
+ * warm-ups with right warm-ups, working with working, and so on): hard sides
+ * pair with hard sides first, then the rest pair in logged order. Each pair is
+ * classified once, hard if either side was hard. So:
+ * - 3 left + 3 right = 3 sets;
+ * - 3 left hard + 2 right hard + 1 right easy = 3 hard, not 3 hard + 1 easy (review S6);
+ * - 1 left warm-up + 3 left + 3 right = 3 hard + 1 warm-up (review r2 S2);
+ * - 1 left easy + 2 left hard + 2 right hard = 2 hard + 1 easy (review r2 S2).
  * `both` sets and any unpaired side set count 1 each.
  */
 export function countRowSets(ex: Pick<ProgressExercise, 'laterality' | 'sets'>): { hard: number; warmup: number; easy: number; markedHard: number; markedKinds: SetExclusion[] } {
@@ -95,10 +99,26 @@ export function countRowSets(ex: Pick<ProgressExercise, 'laterality' | 'sets'>):
     for (const s of ex.sets) units.push([s]);
   } else {
     const ordered = [...ex.sets].sort((a, b) => a.index - b.index);
-    const left = ordered.filter((s) => s.side === 'left');
-    const right = ordered.filter((s) => s.side === 'right');
     for (const s of ordered) if (s.side === 'both' || s.side === null) units.push([s]);
-    for (let i = 0; i < Math.max(left.length, right.length); i += 1) units.push([left[i], right[i]].filter((x): x is ProgressSet => x !== undefined));
+    // Pair within a set type (review r2 S2): a lone left warm-up must not pair with the first right working set.
+    const types = [...new Set(ordered.map((s) => s.setType))];
+    for (const type of types) {
+      const left = ordered.filter((s) => s.side === 'left' && s.setType === type);
+      const right = ordered.filter((s) => s.side === 'right' && s.setType === type);
+      // Hard sides pair with hard sides, then the rest pair in order, so the
+      // count doesn't depend on where an easy side set was logged.
+      const leftHard = left.filter(isHardSet);
+      const rightHard = right.filter(isHardSet);
+      const leftRest = left.filter((s) => !isHardSet(s));
+      const rightRest = right.filter((s) => !isHardSet(s));
+      const hardUnits = Math.max(leftHard.length, rightHard.length);
+      for (let i = 0; i < hardUnits; i += 1) units.push([leftHard[i], rightHard[i]].filter((x): x is ProgressSet => x !== undefined));
+      // A side short of hard sets has its other sets fill those hard pairs first (3 L hard + 2 R hard + 1 R easy = 3 hard).
+      const restUnits = Math.max(left.length, right.length) - hardUnits;
+      const leftSpare = leftRest.slice(hardUnits - leftHard.length);
+      const rightSpare = rightRest.slice(hardUnits - rightHard.length);
+      for (let i = 0; i < restUnits; i += 1) units.push([leftSpare[i], rightSpare[i]].filter((x): x is ProgressSet => x !== undefined));
+    }
   }
   const out = { hard: 0, warmup: 0, easy: 0, markedHard: 0, markedKinds: [] as SetExclusion[] };
   const kinds = new Set<SetExclusion>();
