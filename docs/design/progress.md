@@ -275,7 +275,8 @@ In the Push/Pull/Legs view, the expanded lines list exercises with their sets (`
 > **Push/Pull/Legs:** each exercise belongs to one group, and each set counts 1 there.
 > **Sessions** are workouts with at least 1 counted set for that group.
 > Sets you marked spotted, painful or with form breaking still count here, because you did the work.
-> This counts work done. It doesn't measure recovery or fatigue.
+
+(v1.0 had a last line, "This counts work done. It doesn't measure recovery or fatigue." It was dropped in build because check 23 bars "recovery" and "fatigue" on every Progress screen; review progress-A SP1.)
 
 ### 2.5 Calendar, slice A
 
@@ -762,9 +763,9 @@ Checks:
 11. **Push/Pull/Legs counting.** The same 4 bench sets give Push `1 · 4`; Push + Pull + Legs + Core + Other equals the total hard sets in the window.
 12. **Fixed rows.** Body parts always shows the 11 groups in fixed order, including groups at `0 · 0`; Push/Pull/Legs always shows Push, Pull, Legs and Core, and Other only when above 0.
 13. **Hard sets.** Warm-ups and sets rated RPE 5 are left out and listed under `Not counted`; unrated sets (including every FitNotes set) count; a set marked `Spotted` counts and the Muscles screen says so.
-14. **Unilateral.** 3 left + 3 right sets of a single-arm row count 3 sets.
+14. **Unilateral.** 3 left + 3 right sets of a single-arm row count 3 sets. Sides pair within a set type (warm-ups with warm-ups, working with working), hard sides first: a left warm-up then 3 left + 3 right working sets count 3 sets and 1 warm-up; 1 easy + 2 hard left with 2 hard right count 2 sets and 1 easy. (Pairing rule added in build for review progress-A-r2 S2/SP6; designer to confirm.)
 15. **Muscles screen** uses the same window and grouping as home; changing either on one screen changes the other. Expanding Chest lists each contributing exercise with `sets × factor = total`.
-16. **Untagged exercises** are listed under `Not counted` with a link to set muscles. Saving muscles recomputes the home, with Undo.
+16. **Untagged exercises** are listed under `Not counted` with a link to set muscles. Saving muscles recomputes the home, with Undo. **Open (O-PG6):** no muscle editor exists, so slice A lists untagged exercises with no link and this check is unmet. Slice A is not complete on this check until Ben decides O-PG6.
 17. **Records** only come from workouts logged in the app, need ≥ 3 earlier sessions on the same equipment, convention and unit, and never appear for import dates. A heavier imported set suppresses the claim. Rows have no badge, trophy, colour or animation.
 18. **Calendar.** The month grid shows `●` on workout days (`●2` for two), the day list opens the workout's Summary, and back returns to the same day. Imported workouts read `Imported · 22 sets` with no times.
 19. **Empty.** A fresh install shows only `Nothing to show yet` with `Go to Today` and `Import FitNotes history`: no window picker, axes or empty headings.
@@ -828,3 +829,4 @@ Checks:
 | O-PG4 | Is Push/Pull/Legs/Core the right second grouping, or do you want Upper/Lower too? | PPL + Core only |
 | O-PG5 | Bring back the weekly streak line? | Off |
 | P-PG1 | Approve the brief §12 Page 6 wording in §0.1 | Spec proceeds as written; brief unchanged until approved |
+| O-PG6 | Check 16 needs a muscle editor (set muscles on an exercise, with Undo), which doesn't exist. Move check 16 to the slice that builds the editor, or add the editor to slice A? (review progress-A SP2) | Slice A ships without the editor; untagged exercises are listed with no link |
