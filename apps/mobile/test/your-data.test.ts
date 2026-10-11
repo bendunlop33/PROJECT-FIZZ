@@ -685,6 +685,47 @@ describe('Reset coaching knowledge', () => {
   });
 });
 
+describe('with a saved pre-start draft (review r4 B1, S1)', () => {
+  it('Data & backup, Export, Reset, Undo last reset and Delete all work; Reset keeps the draft, Delete removes it', async () => {
+    h = createHarness('2026-10-08T17:00:00.000Z', { credentials: fakeKeychain().port, personalFiles: fakeFiles().port });
+    const { services: s } = await h.launch();
+    const { gymId } = await bensData(s);
+    h.clockMs += 3_600_000;
+    await logWorkout(h, s, gymId, [
+      { exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] },
+      { exercise: 'Lateral raise', sets: [{ load: 10, reps: 12 }] },
+    ]);
+    h.clockMs += 86_400_000;
+    // Skip today on the overview: one saved draft row.
+    const page = await s.overview.load({ target: { kind: 'next' }, gymId });
+    const row = page?.view.rows.find((r) => r.name === 'Lateral raise');
+    if (!page || !row) throw new Error('no overview');
+    const edited = await s.overview.edit({ target: { kind: 'next' }, gymId, expectedDraftVersion: null, opId: 'skip-1', edit: { kind: 'skip', slotKey: row.slotKey } });
+    expect(edited).toMatchObject({ ok: true });
+    const draftNow = async () => (await s.overview.load({ target: { kind: 'next' }, gymId }))?.draft ?? null;
+    const draft = await draftNow();
+    expect(draft).not.toBeNull();
+
+    // Data & backup loads; the draft is exported with My data only.
+    const summary = await s.data.summary();
+    expect(summary.counts.yourData.records).toBeGreaterThan(0);
+    expect(tablesOf((await s.data.buildExport('your_data')).text).pre_start_drafts?.map((d) => [d.id, d.status])).toEqual([[draft?.id, 'open']]);
+    expect(tablesOf((await s.data.buildExport('coaching_knowledge')).text).pre_start_drafts).toBeUndefined();
+
+    // Reset keeps today's edits exactly as they were, and so does its Undo.
+    expect(await s.data.resetCoachingKnowledge({ opId: 'reset-1', stamp: summary.stamp })).toMatchObject({ ok: true });
+    expect(await draftNow()).toEqual(draft);
+    expect(await s.restore.undo()).toEqual({ ok: true });
+    expect(await draftNow()).toEqual(draft);
+
+    // Delete removes it with the rest of Your data.
+    const r = await s.data.deleteMyData({ opId: 'delete-1', stamp: (await s.data.summary()).stamp });
+    expect(r).toMatchObject({ ok: true, duplicate: false });
+    expect((await s.data.summary()).counts.yourData.records).toBe(0);
+    expect(tablesOf((await s.data.buildExport('your_data')).text).pre_start_drafts).toBeUndefined();
+  });
+});
+
 describe('Export', () => {
   it('My data and Coaching knowledge only go to the folder Ben picks; each holds one domain only (check 29a)', async () => {
     h = createHarness();
