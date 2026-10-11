@@ -114,7 +114,7 @@ There is a 52pt bar above the action bar: `⏱ Rest 2:47   [−30] [+30] [Skip]`
 | Transition (optional) | After an exercise's final set, only if Ben has configured one: `Move to Incline DB press · 0:30` | Commit | As Running |
 | Coach offer | Rest runs as normal; the coach slot shows `That looked hard. Adjust remaining sets?` (or `That looked easy. …`) with the trigger fact and [No thanks] [Adjust] | `evaluateCoachTrigger` fired on the just-saved set (on commit, or on an effort chip tap), the coach is reachable, and CA4 allows it | `No thanks`, `Adjust` (→ Coach working), the next Log, or Finish |
 | Coach working / adjusted | Rest runs as normal; pending line, then the adjustment banner with Undo. `Up next` and the Log label update to the coach target | Ben asked (voice, text, `Adjust`) or accepted an offer | The next Log collapses the banner; the coach markers stay |
-| Notifications not allowed | Rest works normally. A one-time inline row in the rest card: `Get an alert when rest ends while your phone is locked?` [Allow] [Not now] | First rest of the first workout, if permission is undetermined | Answering. If it's denied, Profile shows `Rest alerts are off in iOS Settings` |
+| Notifications not allowed | Rest works normally. A one-time inline row in the rest card: `Alert when rest ends?` [Allow] [Not now] | First rest of the first workout, if permission is undetermined | Answering. If it's denied, Profile shows `Rest alerts are off in iOS Settings` |
 
 ## 4. Interactions and timer behaviour
 

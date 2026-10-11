@@ -223,7 +223,7 @@ Each permission is asked in context, with priming first (onboarding.md §4.6). T
 
 | Permission / capability | State | Inline (S1) | App status (S2) | Action |
 |---|---|---|---|---|
-| Notifications | Not asked | First rest: `Get an alert when rest ends while your phone is locked?` [Allow] [Not now] (rest-state.md) | `– Notifications: not asked yet` | [Allow] |
+| Notifications | Not asked | First rest: `Alert when rest ends?` [Allow] [Not now] (rest-state.md) | `– Notifications: not asked yet` | [Allow] |
 | | Denied | Voice & alerts: `Rest alerts are off in iOS Settings.` | `⚠ Notifications: off in iOS Settings` | [Open Settings] |
 | | Sounds off for Fizz | Voice & alerts Alert check | `⚠ Notifications: sounds off for Fizz` | [Open Settings] |
 | Microphone | Denied | Talk shows `Ask`; voice strip: `Voice isn't available: microphone is off in iOS Settings` [Settings] (active-workout.md §2.5) | `⚠ Microphone: off in iOS Settings` | [Open Settings] |

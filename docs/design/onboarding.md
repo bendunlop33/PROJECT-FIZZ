@@ -542,7 +542,7 @@ No system permission prompt appears during onboarding. Each permission is asked 
 
 | Permission | Asked when | Priming (in-app, before the system prompt) | If denied |
 |---|---|---|---|
-| Notifications | First rest of the first workout (rest-state.md §3, `Notifications not allowed` row), or Profile → Voice & alerts → `Allow` | `Get an alert when rest ends while your phone is locked?` [Allow] [Not now]. Defined in rest-state.md | Rest still runs on screen. Profile: `Rest alerts are off in iOS Settings` [Open Settings] |
+| Notifications | First rest of the first workout (rest-state.md §3, `Notifications not allowed` row), or Profile → Voice & alerts → `Allow` | `Alert when rest ends?` [Allow] [Not now]. Defined in rest-state.md | Rest still runs on screen. Profile: `Rest alerts are off in iOS Settings` [Open Settings] |
 | Microphone + Speech recognition | First tap on Talk, or first time Ben picks `Conversation` or turns on `Listen during rest` | In the voice strip: `Talk uses the microphone. Speech is turned into text on this phone, and the audio isn't saved.` [Continue] [Not now]. Then the two system prompts in a row | Talk shows `Ask` (text). Strip: `Voice isn't available: microphone is off in iOS Settings` [Settings] (active-workout.md §2.5) |
 | Loud alerts (AlarmKit) | Ben turns on `Loud rest alerts` in Profile | Sheet: `Loud alerts ring even in silent mode and Focus, with a full-screen alarm. Best for long rests.` [Turn on] [Cancel] | The switch returns to off with `Turned off in iOS Settings` |
 | Personal Voice | Ben chooses `Personal Voice` in the voice picker | `iOS will ask to let this app use your Personal Voice for spoken cues.` [Continue] [Cancel] | The row reads `Not allowed in iOS Settings` |
