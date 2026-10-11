@@ -174,11 +174,12 @@ describe('Next time (D21): coach rows over the built-in rule', () => {
   const input = (rows: NextSessionTargetRecord[], reviewing = false) => ({ title: 'Push A', builtIn: { sourceTag: 'Built-in rule', rows: [builtInRow('Bench press', 1), builtInRow('Row', 2)], emptyText: null }, coachRows: rows, availability: avail('ok'), reviewing });
 
   it('a saved row: Coach tag, %, reason and built-in comparison behind Why?, Undo; Undo all with two saved', () => {
-    const v = nextTimeView(input([coachRow(1, 'saved'), coachRow(2, 'saved')]));
+    const saved = [coachRow(1, 'saved'), coachRow(2, 'saved')];
+    const v = nextTimeView(input(saved));
     expect(v?.heading).toBe('Next time · Push A');
     expect(v?.rows[0]).toMatchObject({ tag: 'Coach', pct: '−4.2%', actions: [{ label: 'Undo', tap: 'undo' }] });
     expect(v?.rows[0]?.why.map(nb)).toEqual(['“Every set was RPE 10.”', 'Rule: 62.5 kg × 8–10 · 3 sets']);
-    expect(v?.undoAll).toEqual({ actionId: ID(77) });
+    expect(v?.undoAll).toEqual({ actionId: ID(77), rows: saved });
   });
 
   it('the coach note drops a number about an exercise without a saved coach target (review S5)', () => {

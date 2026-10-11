@@ -202,6 +202,23 @@ describe('next-session targets (C8, D21): small saved by default, bigger propose
     expect(await s.repos.coach.setNextTargetStatus(OWNER, { rowId: row.id, expectedVersion: undone?.version ?? 0, ...again })).toMatchObject({ status: 'written', row: { status: 'saved' } });
   });
 
+  it('several row taps are one write: one refused tap writes none of them; a repeat replays (review S3)', async () => {
+    const s = await store();
+    const source = await saved(s, finished());
+    await runCoachTurn(request({ kind: 'summary', input: { kind: 'summary' }, context: { session: source, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(s, new ScriptedCoachModel([[call('set_next_session_targets', nextArgs(7)), { type: 'completed' }], reply('Ok.')]), summaryExecutors(s, source)));
+    const bench = await s.repos.coach.getNextTarget(nextTargetRowId(SESSION, BENCH_ID));
+    const other = await s.repos.coach.getNextTarget(nextTargetRowId(SESSION, DB_ID));
+    if (bench === null || other === null) throw new Error('no rows');
+    const tap = (row: typeof bench, opId: string, version = row.version) => ({ rowId: row.id, expectedVersion: version, ...nextTargetTapRecord(row, row.status === 'proposed' ? 'not_now' : 'undo', { opId, now: at(700) }) });
+    // The second tap is stale (Ben's view had an older version): nothing is written, not even the first.
+    expect(await s.repos.coach.setNextTargetStatuses(OWNER, [tap(bench, 'all-1'), tap(other, 'all-2', other.version - 1)])).toEqual({ status: 'not_possible', rowId: other.id, reason: 'changed_since' });
+    expect(await s.repos.coach.getNextTarget(bench.id)).toMatchObject({ status: 'saved', version: bench.version });
+    expect(await s.repos.coach.findActionByOpId(OWNER, 'all-1')).toBeNull();
+    // Both fit: both written in one go; the same taps again replay.
+    expect(await s.repos.coach.setNextTargetStatuses(OWNER, [tap(bench, 'all-3'), tap(other, 'all-4')])).toMatchObject({ status: 'written', rows: [{ status: 'undone' }, { status: 'not_applied' }] });
+    expect(await s.repos.coach.setNextTargetStatuses(OWNER, [tap(bench, 'all-3'), tap(other, 'all-4')])).toMatchObject({ status: 'replayed' });
+  });
+
   it('CA10: an answer after a workout started from this one is stale and saves nothing', async () => {
     const s = await store();
     const source = await saved(s, finished());

@@ -1,4 +1,4 @@
-import { deriveId, validateNextSessionTargets, validateTodayAdjustment, type AdjustIntent, type ExerciseAdjustmentPlan, type MessagePain, type NextSessionBasis } from '@fizz/domain';
+import { deriveId, nextTargetSourceBasis, validateNextSessionTargets, validateTodayAdjustment, type AdjustIntent, type ExerciseAdjustmentPlan, type MessagePain, type NextSessionBasis } from '@fizz/domain';
 import type {
   ActionDetail,
   ActionRecord,
@@ -358,6 +358,25 @@ const UNDO_FAILURE: Record<Extract<CoachUndoResult, { status: 'not_possible' }>[
 };
 
 /**
+ * The operation ID of Ben's Undo of one action, from any surface (banner,
+ * card, Summary). An action is undone at most once, so every Undo tap on it
+ * is the same intent: a double tap, or a tap on the sheet after the banner's,
+ * replays the first instead of reporting `already undone`.
+ */
+export function undoOpId(actionId: string): string {
+  return `undo:${actionId}`;
+}
+
+/**
+ * The operation ID of one tap on a `Next time` row: the same tap on the same
+ * version of the row is one intent (a double tap replays); after the row
+ * moves on, a tap is a new one.
+ */
+export function nextTargetTapOpId(row: Pick<NextSessionTargetRecord, 'id' | 'version'>, tap: NextTargetTap): string {
+  return `next-tap:${row.id}:${String(row.version)}:${tap}`;
+}
+
+/**
  * Undo one coach action from its card. `opId` is the tap's own operation ID,
  * so a double tap undoes once. A refused undo is returned as a record that
  * isn't saved (`Couldn't undo: …`), never as a sentence claiming it worked.
@@ -480,6 +499,7 @@ export function createNextTargetsExecutor(deps: NextTargetsDeps): ToolExecutor {
       updatedAtUtc: ctx.now.utc,
       sourceSessionId: deps.source.session.id,
       sourceVersion: deps.source.session.version,
+      sourceBasis: nextTargetSourceBasis(deps.source),
       exerciseId: r.exerciseId,
       exerciseName: r.exerciseName,
       actionId: record.actionId,
@@ -494,7 +514,7 @@ export function createNextTargetsExecutor(deps: NextTargetsDeps): ToolExecutor {
       pctChange: r.pctChange,
       usedBySessionId: null,
     }));
-    const w = await deps.store.commit(ctx.ownerId, { kind: 'next_session_targets', action: record, rows, sourceVersion: deps.source.session.version });
+    const w = await deps.store.commit(ctx.ownerId, { kind: 'next_session_targets', action: record, rows, sourceVersion: deps.source.session.version, sourceBasis: nextTargetSourceBasis(deps.source) });
     if (w.status === 'conflict') return refuse(w.reason === 'stale_version' ? 'stale' : 'rejected', w.reason === 'stale_version' ? null : 'the workout wasn’t found', notes);
     return { kind: 'action', record: w.action, replayed: w.status === 'replayed' };
   };

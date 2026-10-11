@@ -4,6 +4,7 @@ import { Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { checkRoutineName, toIso, toMs, type WorkoutSummary } from '@fizz/domain';
+import { nextTargetTapOpId } from '@fizz/coach';
 import { readTextCoachState } from '@fizz/providers';
 
 import { coachConnectionPorts } from '../../ai/coach-connection-ports';
@@ -58,8 +59,8 @@ export function SummaryScreen() {
     // `Save as routine` is offered once: not for a routine's workout, nor one already saved as a routine.
     const savedAs = routines.find((r) => r.createdFromSessionId === sessionId) ?? null;
     // D21: the coach's saved targets over the built-in rule's, and the summary turn's checked reply as the note.
-    const [coachRows, availability, turnNote] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null)]);
-    const nextTime = summary === null ? null : nextTimeView({ title: summary.title, builtIn: summary.nextTime, coachRows, availability, reviewing: s.coach.summaryRunning(sessionId) !== null && reviewing.current });
+    const [coachRows, stale, availability, turnNote] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.staleNextTargets(sessionId).catch(() => new Set<string>()), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null)]);
+    const nextTime = summary === null ? null : nextTimeView({ title: summary.title, builtIn: summary.nextTime, coachRows, stale, availability, reviewing: s.coach.summaryRunning(sessionId) !== null && reviewing.current });
     return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime };
   });
   // The one coach review after Finish (D21). It runs in the service, so leaving the Summary doesn't stop it;
@@ -134,7 +135,8 @@ export function SummaryScreen() {
 
   async function tapNext(row: NextTimeRowView, tap: NextTimeTap) {
     if (row.row === null) return;
-    const r = await services.coach.tapNextTarget(row.row, tap, newUuid()).catch(() => null);
+    // One opId per tap on this version of the row: a double tap replays instead of reading as `Changed since`.
+    const r = await services.coach.tapNextTarget(row.row, tap, nextTargetTapOpId(row.row, tap)).catch(() => null);
     if (r === null) setToast({ text: tap === 'undo' ? 'Couldn’t undo.' : 'Couldn’t save.' });
     else if (r.status === 'not_possible') setToast({ text: r.reason === 'used' ? 'Already used.' : 'Changed since. Check it again.' });
     reload();
@@ -457,14 +459,13 @@ export function SummaryScreen() {
                 label="Undo all"
                 tone="secondary"
                 onPress={() => {
-                  const id = nextTime.undoAll?.actionId;
-                  if (id === undefined) return;
+                  const all = nextTime.undoAll;
+                  if (all === null) return;
                   void services.coach
-                    .undo(id, newUuid())
-                    .catch(() => {
-                      setToast({ text: 'Couldn’t undo.' });
-                    })
-                    .then(() => {
+                    .undoNextTargets(all.actionId, all.rows)
+                    .catch(() => ({ ok: false }))
+                    .then((r) => {
+                      if (!r.ok) setToast({ text: 'Couldn’t undo.' });
                       reload();
                       changed();
                     });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CoachTarget, NextSessionTarget, PainFlag, SessionAggregate, SessionExercise } from '@fizz/schemas';
-import { classifyNextSessionChange, pctText, validateNextSessionTargets, type NextSessionBasis } from '../src/index';
+import { classifyNextSessionChange, nextTargetFitsSource, nextTargetSourceBasis, pctText, validateNextSessionTargets, type NextSessionBasis } from '../src/index';
 import { assisted, barbell, dumbbells, id, kg, lb, OWNER } from './fixtures';
 
 const t = (load: number | null, min: number, max: number, convention: 'total' | 'per_hand' | 'assistance' = 'total', unit: 'kg' | 'lb' = 'kg'): CoachTarget => ({
@@ -94,5 +94,18 @@ describe('validateNextSessionTargets (rule 4 snap and cap, rule 9 pain, D21)', (
     const r = validateNextSessionTargets({ source, bases, targets: [ask(BENCH.exerciseId, t(97.5, 6, 8), 4)], painFlags: [], gymName: null, ctx });
     expect(r.rows[0]).toMatchObject({ sets: 3, size: 'small' });
     expect(r.rows[0]?.guardNotes.map((n) => n.kind)).toContain('too_many_sets');
+  });
+});
+
+describe('nextTargetFitsSource (a rename doesn’t make the coach’s targets stale; a correction does)', () => {
+  const set = (id: string, version: number) => ({ id, status: 'completed', version }) as unknown as SessionAggregate['sets'][number];
+  it('the basis follows the sets only; rows saved before it existed fall back to the session version', () => {
+    const basis = nextTargetSourceBasis({ sets: [set('a', 2), set('b', 2)] });
+    expect(nextTargetSourceBasis({ sets: [set('b', 2), set('a', 2)] })).toBe(basis);
+    expect(nextTargetSourceBasis({ sets: [set('a', 3), set('b', 2)] })).not.toBe(basis);
+    expect(nextTargetFitsSource({ sourceVersion: 5, sourceBasis: basis }, { version: 6, basis })).toBe(true);
+    expect(nextTargetFitsSource({ sourceVersion: 5, sourceBasis: basis }, { version: 5, basis: 'other' })).toBe(false);
+    expect(nextTargetFitsSource({ sourceVersion: 5 }, { version: 5, basis })).toBe(true);
+    expect(nextTargetFitsSource({ sourceVersion: 5 }, { version: 6, basis })).toBe(false);
   });
 });

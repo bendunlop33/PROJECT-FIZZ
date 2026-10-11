@@ -17,11 +17,13 @@ import {
   createSessionReadExecutor,
   createStoreExecutors,
   describeCoachContext,
+  nextTargetTapOpId,
   nextTargetTapRecord,
   recoverCoachTurns,
   runCoachTurn,
   storeTodayTargets,
   undoCoachAction,
+  undoOpId,
   type CoachExecutors,
   type CoachModelPort,
   type CoachTurnProgress,
@@ -34,9 +36,13 @@ import {
   evaluateCoachTrigger,
   exercisesNamedForPain,
   isTriggerKind,
+  lastAdjustedVersion,
   nextSessionBases,
+  nextTargetFitsSource,
+  nextTargetSourceBasis,
   painFlagChoices,
   shouldShowCoachOffer,
+  todayAdjustmentIds,
   toMs,
   unspecifiedPain,
   type CoachTrigger,
@@ -101,6 +107,8 @@ export interface ThreadData {
 }
 
 const GENERAL_REUSE_MS = 6 * 60 * 60 * 1000;
+/** How long one network failure reads as `Offline` (coach-sheet §4: it clears by itself when the network returns). */
+export const OFFLINE_HOLD_MS = 60 * 1000;
 
 /** Exercise IDs Ben named in his words, matched to the workout's exercises (for rule 9's `messagePain`). */
 export function namedExercises(text: string, session: SessionAggregate | null): string[] {
@@ -114,7 +122,8 @@ export function createCoachService(deps: CoachServiceDeps) {
   const summaryRuns = new Map<string, Promise<CoachTurnResult | null>>();
   const offerLogs = new Map<string, OfferLogEntry[]>();
   const offerQueues = new Map<string, Promise<unknown>>();
-  let lastNetworkFailure = false;
+  /** When the last request failed for lack of network (UTC ms); a completed turn clears it, and it lapses after `OFFLINE_HOLD_MS`. */
+  let lastNetworkFailureMs: number | null = null;
 
   /** The workout's offer log: from memory, else the store (a relaunch keeps CA4's once-per-kind). */
   async function offerLogOf(sessionId: string): Promise<OfferLogEntry[]> {
@@ -137,7 +146,8 @@ export function createCoachService(deps: CoachServiceDeps) {
   async function availability(): Promise<CoachAvailability> {
     if (deps.connection === undefined || deps.model === undefined) return { status: 'not_connected', model: null };
     const s = await deps.connection().catch((): TextCoachState => ({ status: 'not_connected', route: null, email: null, model: null }));
-    const status: CoachStatus = s.status === 'ok' && lastNetworkFailure ? 'offline' : s.status;
+    const offline = lastNetworkFailureMs !== null && toMs(deps.now().utc) - lastNetworkFailureMs < OFFLINE_HOLD_MS;
+    const status: CoachStatus = s.status === 'ok' && offline ? 'offline' : s.status;
     return { status, model: s.model?.slug ?? null };
   }
 
@@ -294,8 +304,8 @@ export function createCoachService(deps: CoachServiceDeps) {
         },
         { model, store: coachStore(), executors, now: deps.now, newId: deps.newId },
       );
-      if (result.error === 'network') lastNetworkFailure = true;
-      else if (result.status === 'completed') lastNetworkFailure = false;
+      if (result.error === 'network') lastNetworkFailureMs = toMs(deps.now().utc);
+      else if (result.status === 'completed') lastNetworkFailureMs = null;
       if (session !== null && result.cards.some((c) => c.record.detail.kind === 'adjust_pending_sets' && c.record.status === 'committed')) {
         const fresh = await repos().sessions.get(session.session.id).catch(() => null);
         if (fresh !== null) deps.onSessionChanged?.(fresh);
@@ -347,23 +357,38 @@ export function createCoachService(deps: CoachServiceDeps) {
     /**
      * The one summary turn after a workout (D21, CA10). Runs in the
      * background; leaving the Summary doesn't stop it. Once per workout: a
-     * workout whose thread already has a summary turn is skipped.
+     * workout whose thread already has a completed summary turn is skipped;
+     * one cut off or failed runs again (`Try again`). `Offline`
+     * after an earlier failure still tries (the network may be back); a
+     * review skipped because the coach can't answer isn't remembered, so a
+     * later call runs it.
      */
     runSummaryTurn(sessionId: string): Promise<CoachTurnResult | null> {
       const existing = summaryRuns.get(sessionId);
       if (existing !== undefined) return existing;
+      let skipped = false;
+      let finished = false;
       const run = (async (): Promise<CoachTurnResult | null> => {
         const a = await availability();
-        if (a.status !== 'ok') return null;
+        if (a.status !== 'ok' && a.status !== 'offline') {
+          skipped = true;
+          return null;
+        }
         const entry: CoachEntry = { kind: 'summary', sessionId };
         const threadId = await resolveThread(entry);
         if (threadId !== null) {
           const data = await loadThread(threadId);
-          if (data !== null && [...data.turns.values()].some((t) => t.kind === 'summary')) return null;
+          if (data !== null && [...data.turns.values()].some((t) => t.kind === 'summary' && t.status === 'completed')) return null;
         }
-        return send({ entry, threadId, input: { kind: 'summary' }, turnId: deps.newId(), summary: true });
+        const r = await send({ entry, threadId, input: { kind: 'summary' }, turnId: deps.newId(), summary: true });
+        finished = r.status === 'completed';
+        return r;
       })().catch(() => null);
       summaryRuns.set(sessionId, run);
+      // Only a running or completed review is remembered; a skipped or failed one can be run again.
+      void run.then(() => {
+        if ((skipped || !finished) && summaryRuns.get(sessionId) === run) summaryRuns.delete(sessionId);
+      });
       return run;
     },
 
@@ -387,7 +412,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       const p = await owner();
       const [source, rows] = await Promise.all([repos().sessions.get(sessionId).catch(() => null), coachStore().listNextTargets(p.id, sessionId).catch(() => [])]);
       const names = [...new Set((source?.exercises ?? []).map((e) => e.exerciseName))];
-      const text = summaryNoteSentences(sentences, names, rows).join(' ');
+      const fits = source === null ? null : { version: source.session.version, basis: nextTargetSourceBasis(source) };
+      const text = summaryNoteSentences(sentences, names, fits === null ? rows : rows.filter((r) => nextTargetFitsSource(r, fits))).join(' ');
       return text === '' ? null : text;
     },
 
@@ -424,11 +450,42 @@ export function createCoachService(deps: CoachServiceDeps) {
       return coachStore().listNextTargets(p.id, sessionId);
     },
 
+    /** IDs of this workout's saved rows that no longer fit it (a set corrected since; a rename doesn't count). */
+    async staleNextTargets(sessionId: string): Promise<Set<string>> {
+      const p = await owner();
+      const [source, rows] = await Promise.all([repos().sessions.get(sessionId).catch(() => null), coachStore().listNextTargets(p.id, sessionId).catch(() => [])]);
+      if (source === null) return new Set();
+      const fits = { version: source.session.version, basis: nextTargetSourceBasis(source) };
+      return new Set(rows.filter((r) => !nextTargetFitsSource(r, fits)).map((r) => r.id));
+    },
+
     /** Ben's tap on a `Next time` row: Undo, Use coach target, Apply, Not now. */
     async tapNextTarget(row: NextSessionTargetRecord, tap: NextTargetTap, opId: string) {
       const p = await owner();
       const { status, record } = nextTargetTapRecord(row, tap, { opId, now: deps.now() });
       return coachStore().setNextTargetStatus(p.id, { rowId: row.id, expectedVersion: row.version, status, record });
+    },
+
+    /**
+     * `Undo all` on the Summary for the coach's one review (`actionId`). While
+     * that record is live, it is undone as a whole, so its card in the coach
+     * sheet reads `Undone` too (review B1). Once it is already undone (a `Use
+     * coach target` after an earlier Undo all), the live rows are undone as
+     * one write. Either way all rows change or none do (review S3); a repeat
+     * tap replays.
+     */
+    async undoNextTargets(actionId: string, rows: readonly NextSessionTargetRecord[]): Promise<{ ok: boolean }> {
+      const p = await owner();
+      const action = await coachStore().getAction(actionId).catch(() => null);
+      if (action !== null && action.status === 'committed' && action.undoneBy === null) {
+        const r = await undoCoachAction(coachStore(), { ownerId: p.id, actionId, opId: undoOpId(actionId), now: deps.now() }).catch(() => null);
+        return { ok: r !== null && (r.result.status === 'written' || r.result.status === 'replayed') };
+      }
+      const taps = rows.map((row) => ({ rowId: row.id, expectedVersion: row.version, ...nextTargetTapRecord(row, 'undo', { opId: nextTargetTapOpId(row, 'undo'), now: deps.now() }) }));
+      const r = await coachStore()
+        .setNextTargetStatuses(p.id, taps)
+        .catch(() => null);
+      return { ok: r !== null && r.status !== 'not_possible' };
     },
 
     /** Restart recovery at launch: turns cut off by a force-close become `interrupted`. */
@@ -465,7 +522,18 @@ export function createCoachService(deps: CoachServiceDeps) {
     // Nothing to adjust when this exercise has no pending set left (review S1).
     if (!live.some((s) => s.status === 'pending')) return null;
     const log = await offerLogOf(a.session.id);
-    const adjusted = a.sets.filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.planned.source === 'coach').length > 0 ? a.session.version : null;
+    // CA4: only an adjustment applied during this workout re-opens the offer, at the version it was applied (not the
+    // current one, and not the coach's next-session target the workout started with).
+    const ids = todayAdjustmentIds(a.sets, set.sessionExerciseId);
+    const appliedAt = new Map<string, number>();
+    for (const id of ids) {
+      const r = await coachStore()
+        .getAction(id)
+        .catch(() => null);
+      const v = r?.status === 'committed' && r.undoneBy === null ? r.entityVersions.find((e) => e.entity === 'session' && e.id === a.session.id)?.after : null;
+      if (typeof v === 'number') appliedAt.set(id, v);
+    }
+    const adjusted = lastAdjustedVersion(ids, appliedAt);
     if (!shouldShowCoachOffer({ trigger, sessionExerciseId: set.sessionExerciseId, resting: input.resting, coachReachable: input.coachReachable, pending: input.pending, log, lastAdjustedAtVersion: adjusted })) return null;
     const entry: OfferLogEntry = { sessionExerciseId: set.sessionExerciseId, kind: trigger.kind, atVersion: a.session.version };
     offerLogs.set(a.session.id, [...log.filter((e) => e.sessionExerciseId !== entry.sessionExerciseId || e.kind !== entry.kind), entry]);

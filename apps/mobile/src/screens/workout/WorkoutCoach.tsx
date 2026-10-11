@@ -2,13 +2,13 @@ import { useNavigation } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 
-import { renderActionResult } from '@fizz/coach';
+import { renderActionResult, undoOpId } from '@fizz/coach';
 import type { CoachTrigger } from '@fizz/domain';
 import type { ActionRecord, BenInput, SessionAggregate } from '@fizz/schemas';
 
 import type { CoachAvailability } from '../../coach/coach-service';
 import { whyView, type WhyView } from '../../coach/sheet-view';
-import { ADJUST_CHIP_LABEL, adjustControlView, chipForTrigger, slotAfterFailure, slotAfterTurn, slotView, type SlotView } from '../../coach/slot-view';
+import { ADJUST_CHIP_LABEL, adjustControlView, chipForTrigger, slotAfterFailure, slotAfterTurn, slotView, syncAdjustment, type SlotView } from '../../coach/slot-view';
 import { newUuid } from '../../device/runtime';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -64,6 +64,21 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
     void services.coach.availability().then(setAvailability);
   }, [services]);
 
+  // Each time the workout reloads (focus, after a change), the banner's record is read again: an Undo
+  // made in the sheet shows here as undone, not as a live Undo.
+  const liveAdjustment = adjustment?.undoneBy === null ? adjustment : null;
+  useEffect(() => {
+    if (liveAdjustment === null) return;
+    let alive = true;
+    void syncAdjustment(liveAdjustment, (id) => services.coach.getAction(id)).then((fresh) => {
+      // Only an Undo since changes what's shown (setting an equal record again would only re-run this).
+      if (alive && fresh !== null && fresh.undoneBy !== null) setAdjustment((cur) => (cur?.actionId === fresh.actionId ? fresh : cur));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [services, liveAdjustment, workout]);
+
   const ask = useCallback(
     (input: BenInput) => {
       if (sessionId === null || pending !== null) return;
@@ -116,8 +131,13 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
       const resting = aggregate.restTimer?.status === 'running';
       const check = ++offerCheck.current;
       setOffer(null);
+      // Re-read the status on each log: `Offline` from an earlier failure lapses once the network is back.
       void services.coach
-        .offerAfterLog({ aggregate, setId, resting, coachReachable: availability?.status === 'ok', pending: pending !== null })
+        .availability()
+        .then((now) => {
+          setAvailability(now);
+          return services.coach.offerAfterLog({ aggregate, setId, resting, coachReachable: now.status === 'ok', pending: pending !== null });
+        })
         .catch(() => null)
         .then((next) => {
           if (check === offerCheck.current) setOffer(next);
@@ -134,8 +154,9 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
       if (pending !== null) services.coach.stop(pending);
     },
     undo: (actionId) => {
+      // One opId per action: a double tap (or an Undo already made in the sheet) replays, never `already undone`.
       void services.coach
-        .undo(actionId, `undo:${actionId}:${newUuid()}`)
+        .undo(actionId, undoOpId(actionId))
         .then((r) => {
           // The line is rendered from the saved undo record (what came back, what was already logged).
           setAdjustment(null);

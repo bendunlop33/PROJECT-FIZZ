@@ -61,6 +61,7 @@ import {
   isFromRoutine,
   liveRoutines,
   nextInRotation,
+  nextTargetSourceBasis,
   renameRoutine,
   restoreRoutine,
   routineCounts,
@@ -2384,7 +2385,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const view = buildWorkoutOverview({
           aggregate,
           fits: run.fits,
-          coach: source === null || coachTargets.length === 0 ? null : { targets: coachTargets, sourceVersion: source.session.version, painToday: unspecifiedPain(planCheckIn).active },
+          coach: source === null || coachTargets.length === 0 ? null : { targets: coachTargets, sourceVersion: source.session.version, sourceBasis: nextTargetSourceBasis(source), painToday: unspecifiedPain(planCheckIn).active },
           pasts,
           painFlags: await repos().painFlags.listActive(p.id),
           exerciseInfo,
