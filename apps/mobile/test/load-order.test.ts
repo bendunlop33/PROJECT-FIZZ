@@ -113,19 +113,53 @@ describe('newerWorkoutData: a slow reload never overwrites a newer write', () =>
     expect(newerWorkoutData(newerWorkoutData(shown, beforeStart), beforeStop)).toEqual(shown);
   });
 
-  it('a rejected stale read still brings its fresh side data (pain flags, history, names)', async () => {
+  it('a rejected stale read keeps the gym name with the newer workout, and brings its fresher pain flags when it started last', async () => {
     const { s, sessionId } = await benchReady();
     const before = await s.workout.load();
     if (!before) throw new Error('no workout');
     const r = await s.workout.dispatch(sessionId, { type: 'pause', at: h.now(), opId: 'pause-1' });
     if (!r.ok) throw new Error(r.error.message);
     const shown = withCommandResult(before, before, r.aggregate);
-    // A reload read the workout before the pause, but its side data is newer (a pain flag was just saved).
-    const staleWithNewFlags: ActiveWorkoutData = { ...before, gymName: 'Renamed gym' };
-    const merged = newerWorkoutData(shown, staleWithNewFlags);
+    if (shown === 'loading' || shown === null) throw new Error('nothing shown');
+    expect(shown.painFlags).toEqual([]);
+    // A reload read the workout before the pause, then the pain flags after one was saved.
+    const bench = before.aggregate.exercises[0]?.exerciseId ?? '';
+    const flagged = await s.pain.flagMovement({ exerciseId: bench, exerciseName: 'Bench press', opId: 'pain-1' });
+    if (!flagged.ok) throw new Error('not flagged');
+    const withFlag = await s.workout.load();
+    if (!withFlag) throw new Error('no workout');
+    expect(withFlag.painFlags).toHaveLength(1);
+    const stale: ActiveWorkoutData = { ...before, gymName: 'Older gym', painFlags: withFlag.painFlags, painFlagged: withFlag.painFlagged };
+    const merged = newerWorkoutData(shown, stale, { startedLast: true });
     if (merged === 'loading' || merged === null) throw new Error('nothing shown');
     expect(merged.aggregate).toBe(r.aggregate);
-    expect(merged.gymName).toBe('Renamed gym');
+    // Derived from the aggregate: follows the workout that won.
+    expect(merged.gymName).toBe(shown.gymName);
+    expect(merged.previous).toBe(shown.previous);
+    expect(merged.title).toBe(shown.title);
+    expect(merged.checkIn).toBe(shown.checkIn);
+    // Independent of the aggregate: from the read that started last.
+    expect(merged.painFlags).toEqual(withFlag.painFlags);
+    expect(merged.painFlagged.has(bench)).toBe(true);
+    // The same stale read, when a later read already landed: nothing of it is taken.
+    expect(newerWorkoutData(shown, stale, { startedLast: false })).toBe(shown);
+  });
+
+  it('a newer workout from a read that started earlier: its workout and gym name, the later read\'s pain flags', async () => {
+    const { s, sessionId } = await benchReady();
+    const before = await s.workout.load();
+    if (!before) throw new Error('no workout');
+    const r = await s.workout.dispatch(sessionId, { type: 'pause', at: h.now(), opId: 'pause-1' });
+    if (!r.ok) throw new Error(r.error.message);
+    const later = await s.workout.load();
+    if (!later) throw new Error('no workout');
+    const shown: ActiveWorkoutData = { ...before, painFlagged: new Set(['later']) };
+    const earlier: ActiveWorkoutData = { ...later, gymName: 'Newer gym', painFlagged: new Set(['earlier']) };
+    const merged = newerWorkoutData(shown, earlier, { startedLast: false });
+    if (merged === 'loading' || merged === null) throw new Error('nothing shown');
+    expect(merged.aggregate).toBe(later.aggregate);
+    expect(merged.gymName).toBe('Newer gym');
+    expect([...merged.painFlagged]).toEqual(['later']);
   });
 
   it('a command result merges into what is on screen now, not the snapshot it was issued from', async () => {
@@ -143,6 +177,9 @@ describe('newerWorkoutData: a slow reload never overwrites a newer write', () =>
     expect(withCommandResult(shown, snapshot, snapshot.aggregate)).toEqual(shown);
     // Nothing of this workout shown: the snapshot it was issued from carries the side data.
     expect(withCommandResult('loading', snapshot, r.aggregate)).toEqual({ ...snapshot, aggregate: r.aggregate });
+    // A reload found no active workout (finished or discarded elsewhere): a late result for it stays hidden.
+    expect(withCommandResult(null, snapshot, { ...r.aggregate, session: { ...r.aggregate.session, status: 'finished' } })).toBeNull();
+    expect(withCommandResult(null, snapshot, r.aggregate)).toEqual({ ...snapshot, aggregate: r.aggregate });
   });
 
   it('the foreground tick: an older read of the same rest is ignored; a newer one is adopted', async () => {
