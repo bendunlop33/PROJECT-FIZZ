@@ -20,12 +20,21 @@ export interface DropWordsInput {
   assisted?: boolean;
 }
 
+/**
+ * An equipment name mid-sentence: a plain name (`Barbell`, `Smith machine`)
+ * reads lower-case, a name with its own capitals (`Rogue Ohio Bar`) keeps
+ * the user's casing (review N3).
+ */
+export function nameInLine(name: string): string {
+  return /^[A-Z][^A-Z]*$/.test(name) ? name.charAt(0).toLowerCase() + name.slice(1) : name;
+}
+
 /** Why a load target was dropped here: `No barbell here`, `Nothing here takes kg`, `Lightest here is above 20 kg`. */
 export function droppedWords(reason: DropReason, input: DropWordsInput): string {
   switch (reason) {
     case 'not_here':
     case 'equipment_not_in_gym':
-      return `No ${(input.equipmentName ?? 'equipment for this').toLowerCase()} here`;
+      return `No ${input.equipmentName ? nameInLine(input.equipmentName) : 'equipment for this'} here`;
     case 'unit_not_convertible':
       return `Nothing here takes ${input.unit}`;
     case 'lightest_is_harder':

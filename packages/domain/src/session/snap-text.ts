@@ -1,6 +1,6 @@
 import type { EquipmentInstance, Load, PlannedSnap, WeightUnit } from '@fizz/schemas';
 import { formatNumber, loadText, NBSP, type LoadContext } from '../display';
-import { boundWords, convertedWords, droppedWords, noLoadWords, roundedWords, withWas } from './fit-words';
+import { boundWords, convertedWords, droppedWords, nameInLine, noLoadWords, roundedWords, withWas } from './fit-words';
 import type { SnapNote, SnapSlotResult } from './snap';
 
 /**
@@ -38,7 +38,7 @@ export function cardNoteText(note: SnapNote, slot: SlotInfo): NoteLine | null {
     case 'rounded':
       return { tone: 'info', text: roundedWords() };
     case 'capped':
-      return top.load ? { tone: 'info', text: boundWords('max', loadWords(top.load, here), false) } : null;
+      return top.load ? { tone: 'info', text: cappedWords(top.load, here) } : null;
     case 'converted':
       return { tone: 'info', text: 'Converted · rounded' };
     case 'restored':
@@ -53,6 +53,15 @@ export function cardNoteText(note: SnapNote, slot: SlotInfo): NoteLine | null {
       return { tone: 'warning', text: droppedWords(note.reason, { equipmentName: note.equipmentName, unit: top.intended?.unit ?? slot.unit, requested: asked, assisted }) };
     }
   }
+}
+
+/**
+ * A capped load is held at the easy end: the most a bar or rack makes, or
+ * the least assistance an assisted machine gives (`snap.ts`, review S1).
+ */
+function cappedWords(load: Load, here: LoadContext): string {
+  const assisted = load.convention === 'assistance';
+  return assisted ? boundWords('min', `${formatNumber(load.value)} ${load.unit}`, true) : boundWords('max', loadWords(load, here), false);
 }
 
 function amountText(top: SnapNote['top']): string {
@@ -71,7 +80,7 @@ export function repeatNoteText(note: SnapNote, slot: SlotInfo): string | null {
     case 'rounded':
       return last ? roundedWords({ was: 'last time', load: last }) : null;
     case 'capped':
-      return top.load && last ? withWas(boundWords('max', loadWords(top.load, here), false), 'last time', last) : null;
+      return top.load && last ? withWas(cappedWords(top.load, here), 'last time', last) : null;
     case 'converted':
       return top.load && last ? convertedWords(last) : null;
     case 'restored':
@@ -107,14 +116,14 @@ export function setSnapNote(
     case 'restored':
       return null;
     case 'capped':
-      return load ? { tone: 'info', text: withWas('Max here', 'plan', plan) } : null;
+      return load ? { tone: 'info', text: withWas(load.convention === 'assistance' ? 'Least assistance here' : 'Max here', 'plan', plan) } : null;
     case 'converted':
       return load && plan ? { tone: 'info', text: convertedWords(plan) } : null;
     case 'dropped': {
       // The full sentence is in `Why?` (the `Equipment` row); the card says only what's missing.
       switch (snap.reason) {
         case 'not_here':
-          return { tone: 'warning', text: withWas(`No load target · no ${(snap.intendedOn?.name ?? 'equipment for it').toLowerCase()} here`, 'plan', plan) };
+          return { tone: 'warning', text: withWas(snap.intendedOn?.name ? `No load target · no ${nameInLine(snap.intendedOn.name)} here` : 'No load target · not here', 'plan', plan) };
         case 'lightest_is_harder':
           return { tone: 'warning', text: withWas('No load target · lightest here is heavier', 'plan', plan) };
         case 'convention_mismatch':
