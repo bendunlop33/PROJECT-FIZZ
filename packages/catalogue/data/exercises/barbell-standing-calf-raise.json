@@ -3,7 +3,7 @@
   "key": "barbell-standing-calf-raise",
   "tier": "rich",
   "name": "Standing barbell calf raise",
-  "aliases": ["Barbell calf raise", "Barbell calf raises", "Barbell standing calf raise", "Standing calf raise (barbell)"],
+  "aliases": ["Barbell standing calf raise", "Standing calf raise (barbell)"],
   "family": "calf_raise",
   "movementPattern": "calves",
   "mechanic": "isolation",
@@ -114,8 +114,8 @@
       "note": "Approximate drawing targets, not measured data. Negative ankleDorsiflexion means the ankle is pointed (plantarflexed)."
     },
     {
-      "field": "aliases[0]",
-      "note": "\"Barbell calf raise\" is taken as the standing version (FitNotes' default name; the seated barbell version is rare). Load convention is total either way."
+      "field": "aliases",
+      "note": "\"Barbell calf raise\" (FitNotes' default name) is deliberately not an alias: it doesn't say standing or seated. An import suggests this entry as a Check and Ben confirms (review import-names S3)."
     }
   ],
   "review": { "status": "draft", "benApprovedOn": null }

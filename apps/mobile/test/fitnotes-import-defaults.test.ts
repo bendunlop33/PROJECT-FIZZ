@@ -204,6 +204,20 @@ describe('FitNotes’ default names: nothing stored differs from the file withou
     });
   }
 
+  for (const unit of ['kg', 'lb'] as const) {
+    it(`in ${unit}: the rear-delt dumbbell fly alias is a pair, halved by "Both together"; a misspelling of it is asked, never halved (review import-names S2)`, async () => {
+      const names = ['Rear Delt Dumbbell Fly', 'Rear Delt Dumbell Fly'];
+      const { askedPerHand, stored, shown, exerciseOf } = await importAll(unit, names);
+      expect(exerciseOf.get('Rear Delt Dumbbell Fly')?.name).toBe('Dumbbell rear-delt fly');
+      expect(exerciseOf.get('Rear Delt Dumbell Fly')?.name).toBe('Dumbbell rear-delt fly');
+      expect(stored.get('Rear Delt Dumbbell Fly')).toMatchObject({ value: rawOf(0) / 2, unit, convention: 'per_hand' });
+      expect(shown.get('Rear Delt Dumbbell Fly')).toBe(rawOf(0) / 2);
+      // Not a catalogue name: its count isn't known, so it is asked and read as written ("One dumbbell").
+      expect(askedPerHand).toEqual(['Rear Delt Dumbell Fly']);
+      expect(stored.get('Rear Delt Dumbell Fly')).toMatchObject({ value: rawOf(1), unit, convention: 'per_hand' });
+    });
+  }
+
   /** The review's Smith + Barbell and Assisted + Machine names (review r6 B2, B3), with plain Smith and assisted ones. */
   const TRICKY: readonly string[] = [
     'Smith Machine Barbell Squat',
@@ -278,7 +292,8 @@ describe('FitNotes’ default names: nothing stored differs from the file withou
     expect(shown('Rear Delt Machine Fly')).toEqual(['matched', 'Reverse pec deck']);
     expect(shown('Straight-Arm Cable Pushdown')).toEqual(['matched', 'Straight-arm pulldown']);
     expect(shown('Barbell Shrug')).toEqual(['matched', 'Barbell shrug']);
-    expect(shown('Barbell Calf Raise')).toEqual(['matched', 'Standing barbell calf raise']);
+    // Doesn't say standing or seated: Ben confirms (review import-names S3).
+    expect(shown('Barbell Calf Raise')).toEqual(['check', 'Standing barbell calf raise']);
     expect(shown('Lat Pulldown (Pulley)')).toEqual(['check', 'Lat pulldown']);
     expect(shown('Seated Cable Row (Pulley)')).toEqual(['check', 'Seated cable row']);
   });

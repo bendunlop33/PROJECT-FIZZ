@@ -380,7 +380,7 @@ describe('import preview wording', () => {
     expect(shown('Dumbbell Skullcrusher')).toEqual(['no_match', null]);
     expect(shown('Barbell Shrug')).toEqual(['matched', 'Barbell shrug']);
     expect(shown('Machine Shrug')).toEqual(['no_match', null]);
-    expect(shown('Barbell Calf Raise')).toEqual(['matched', 'Standing barbell calf raise']);
+    expect(shown('Barbell Calf Raise')).toEqual(['check', 'Standing barbell calf raise']);
     expect(shown('Lateral Machine Raise')).toEqual(['check', 'Cable lateral raise']);
     // A Smith machine is its own kind: only a Smith exercise, and only for the same movement (review r5 S3).
     expect(shown('Smith Machine Close Grip Bench Press')).toEqual(['check', 'Smith machine bench press']);

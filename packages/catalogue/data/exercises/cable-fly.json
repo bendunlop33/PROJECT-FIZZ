@@ -3,7 +3,7 @@
   "key": "cable-fly",
   "tier": "basic",
   "name": "Cable fly",
-  "aliases": ["Cable crossover", "Cable chest fly", "Cable flye", "Standing cable fly", "Cable crossover fly", "Cable crossovers"],
+  "aliases": ["Cable crossover", "Cable chest fly", "Cable flye", "Standing cable fly", "Cable crossover fly"],
   "family": "chest_fly",
   "movementPattern": "horizontal_push",
   "mechanic": "isolation",
