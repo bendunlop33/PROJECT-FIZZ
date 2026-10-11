@@ -28,9 +28,10 @@ describe('pain flags after the toast', () => {
     await s.workout.dispatch(started.aggregate.session.id, { type: 'discard', at: h.now(), opId: 'd', expectedVersion: started.aggregate.session.version, confirmedLoggedSets: 0 });
     const second = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [1, 2, 3].map(() => ({ load: 100, reps: 6, rpe: 8 })) }, { exercise: 'Lat pulldown', sets: [1, 2].map(() => ({ load: 40, reps: 10, rpe: 8 })) }]);
     let sum = await s.workout.summary(second);
+    // Playbook 7-F: the stack's next step (40 → 45 kg) is over 10%, so Lat pulldown progresses reps; either way it isn't held.
     expect(sum?.nextTime?.rows.map((r) => [r.exerciseName, r.decision])).toEqual([
       ['Bench press', 'increase_load'],
-      ['Lat pulldown', 'increase_load'],
+      ['Lat pulldown', 'increase_reps'],
     ]);
 
     // Flag Bench press from a check-in that mentioned pain (the Summary's sheet does this).
@@ -41,7 +42,7 @@ describe('pain flags after the toast', () => {
     expect(flagged.ok).toBe(true);
     sum = await s.workout.summary(second);
     expect(sum?.nextTime?.rows.find((r) => r.exerciseName === 'Bench press')?.decision).toBe('halted_pain');
-    expect(sum?.nextTime?.rows.find((r) => r.exerciseName === 'Lat pulldown')?.decision).toBe('increase_load');
+    expect(sum?.nextTime?.rows.find((r) => r.exerciseName === 'Lat pulldown')?.decision).toBe('increase_reps');
     expect((await s.pain.active()).map((f) => f.exerciseName)).toEqual(['Bench press']);
 
     // Profile → Pain flags → Clear.

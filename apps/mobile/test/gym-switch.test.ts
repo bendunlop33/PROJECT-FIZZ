@@ -276,14 +276,15 @@ describe('next session after a split exercise (review r2 B1)', () => {
     const rows = sum?.nextTime?.rows.filter((r) => r.exerciseName === 'Dumbbell bench press') ?? [];
     // One row, from the Hotel part (the latest with equipment; spec §6.5), saying so. Its
     // other part isn't called "an earlier session left out", and 3 of 3 sets were done.
-    expect(rows.map((r) => [r.kind, plain(r.target), r.decision])).toEqual([['change', 'Target 22.5 kg each × 6–10', 'increase_load']]);
+    // Playbook 7-F: the Hotel rack's next step (20 → 22.5 kg each) is over 10%, so reps progress instead.
+    expect(rows.map((r) => [r.kind, plain(r.target), r.decision])).toEqual([['change', 'Target 20 kg each × 12', 'increase_reps']]);
     expect(rows[0]?.facts[0]).toBe('Done at more than one gym: target from your Hotel · Lisbon sets, for all 3 sets.');
     expect(rows[0]?.facts.some((f) => /left out|Only \d+ of/.test(f))).toBe(false);
 
     h.clockMs += 2 * 86_400_000;
     const preview = await s.next.preview(mainId);
     expect(preview?.exercises.map((e) => e.exerciseName)).toEqual(['Dumbbell bench press']);
-    expect(plain(preview?.exercises[0]?.line)).toBe('3 sets · 22.5 kg each × 6–10 · 22.5 kg each × 6–10 · 22.5 kg each × 6–10');
+    expect(plain(preview?.exercises[0]?.line)).toBe('3 sets · 20 kg each × 12 · 20 kg each × 12 · 20 kg each × 12');
     const next = await s.workout.start({ gymId: mainId, opId: 'split-next', checkIn: null, nextOf: sessionId });
     if (!next.ok) throw new Error(next.error.message);
     const exRows = next.aggregate.exercises.filter((e) => e.exerciseName === 'Dumbbell bench press');
@@ -291,7 +292,7 @@ describe('next session after a split exercise (review r2 B1)', () => {
     const sets = next.aggregate.sets.filter((x) => x.sessionExerciseId === exRows[0]?.id);
     expect(sets).toHaveLength(3);
     expect(sets.every((x) => x.planned.source === 'built_in_rule')).toBe(true);
-    expect(sets.map((x) => [x.planned.load?.value, x.planned.reps])).toEqual(Array.from({ length: 3 }, () => [22.5, { min: 6, max: 10 }]));
+    expect(sets.map((x) => [x.planned.load?.value, x.planned.reps])).toEqual(Array.from({ length: 3 }, () => [20, { min: 12, max: 12 }]));
     expect(repeatPreviewLines(next.aggregate).map((l) => l.line)).toEqual(preview?.exercises.map((e) => e.line));
   });
 });
