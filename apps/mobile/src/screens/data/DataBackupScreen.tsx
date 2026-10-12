@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useState } from 'react';
-import { Alert, View } from 'react-native';
+import { ActionSheetIOS, Alert, View } from 'react-native';
 
 import { toMs } from '@fizz/domain';
 
@@ -10,6 +10,7 @@ import { describeBackupError, rollbackConfirmMessage, rollbackRowView } from '..
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useRelaunch, useScreenData, useServices } from '../../shell/context';
+import { backupKeepView, KEEP_SAVE_FAILED } from '../../backup/status';
 import { formatShortDate, formatWhen } from '../../format/dates';
 import { formatCount, plural } from '../../format/numbers';
 import { pausedLine } from '../../import/views';
@@ -38,6 +39,7 @@ export function DataBackupScreen() {
   const [runResult, setRunResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [undoError, setUndoError] = useState<string | null>(null);
+  const [keepFailed, setKeepFailed] = useState(false);
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParams>>();
   const root = useNavigation();
   const relaunch = useRelaunch();
@@ -132,6 +134,24 @@ export function DataBackupScreen() {
   }
   const on = status.onPhone.line;
   const off = status.offPhone.line;
+  const keepView = backupKeepView(status.keep);
+
+  /** `Keep 7 / 14 / 30 / All copies` (DX9): an action sheet; applies at the next backup. */
+  function chooseKeep() {
+    const options = [...keepView.choices.map((c) => (c.keep === null ? 'Keep all copies' : `Keep ${c.label} copies`)), 'Cancel'];
+    ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1 }, (i) => {
+      const choice = keepView.choices[i];
+      if (!choice || choice.selected) return;
+      setKeepFailed(false);
+      void services.backups
+        .setKeep(choice.keep)
+        .catch(() => false)
+        .then((ok) => {
+          if (!ok) setKeepFailed(true);
+          changed();
+        });
+    });
+  }
 
   return (
     <Screen>
@@ -215,9 +235,14 @@ export function DataBackupScreen() {
 
       <SectionHeader title="Backups on this phone" />
       <Group>
-        <Row title="After each workout" subtitle="On · keeps the last 14" />
+        <Row title="After each workout" subtitle={keepView.subtitle} onPress={chooseKeep} />
         <Row title={running ? 'Backing up…' : 'Back up on this phone now'} icon="iphone" onPress={() => void backUpNow()} disabled={running} />
       </Group>
+      {keepFailed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={KEEP_SAVE_FAILED} /> : null}
+      {/* Ben, 11 Oct: copies are what's kept or replaced, never workouts. */}
+      <AppText variant="callout" color="text.secondary">
+        {keepView.line}
+      </AppText>
       {/* D3, shown once and always (review S3): phone backups made after a Files copy are still at risk. */}
       <AppText variant="callout" color="text.secondary">
         Lost if the app is deleted or signed with another Apple ID. Save a copy to Files.

@@ -9,6 +9,7 @@ import { MIGRATION_0006 } from './schema/0006-coach';
 import { MIGRATION_0007 } from './schema/0007-pre-start-drafts';
 import { upMigration0008 } from './schema/0008-deleted-workouts';
 import { MIGRATION_0009 } from './schema/0009-progress';
+import { MIGRATION_0010 } from './schema/0010-workout-gaps';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -18,11 +19,23 @@ import { MIGRATION_0009 } from './schema/0009-progress';
 export interface Migration {
   version: number;
   name: string;
+  /** The SQL, when the migration is plain SQL (`sqlMigration`); checked by `emptyMigrations`. */
+  sql?: string;
   up(tx: SqlExecutor): Promise<void>;
 }
 
 export function sqlMigration(version: number, name: string, sql: string): Migration {
-  return { version, name, up: (tx) => tx.exec(sql) };
+  return { version, name, sql, up: (tx) => tx.exec(sql) };
+}
+
+/**
+ * Versions whose SQL is empty: placeholders that must never reach Ben's
+ * phone (a database migrated past one never runs the real migration). The
+ * iOS build's check job fails while any exists (review gaps S5;
+ * `packages/persistence/test/release-migrations.test.ts`).
+ */
+export function emptyMigrations(migrations: readonly Migration[] = MIGRATIONS): number[] {
+  return migrations.filter((m) => m.sql !== undefined && m.sql.trim() === '').map((m) => m.version);
 }
 
 /** The app's migrations, in order. The last one's `version` is the current schema version. */
@@ -36,6 +49,7 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(7, 'pre-start-drafts', MIGRATION_0007),
   { version: 8, name: 'deleted-workouts', up: upMigration0008 },
   sqlMigration(9, 'progress', MIGRATION_0009),
+  sqlMigration(10, 'workout-gaps', MIGRATION_0010),
 ];
 
 export function latestVersion(migrations: readonly Migration[] = MIGRATIONS): number {

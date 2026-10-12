@@ -34,6 +34,10 @@ export interface HistorySet {
   reps: number | null;
   rpe: Rpe | null;
   rir: Rir | null;
+  /** Timed sets: the work time logged. Absent on rep sets. */
+  durationS?: number;
+  /** Distance sets: the metres logged. Absent on other sets. */
+  distanceM?: number;
   /** The stored set and its version (sets logged in the app), so `Why?` can tell when it was edited later. */
   setId?: string;
   version?: number;
@@ -369,7 +373,7 @@ type Step =
   | { kind: 'at_max' }
   /** Assisted: none left (`next` false), or, with no machine profile, the next step would leave none (`next` true). */
   | { kind: 'no_assistance_left'; next: boolean }
-  | { kind: 'jump_too_big'; next: number; maxJump: number }
+  | { kind: 'jump_too_big'; next: number; limit: string }
   | { kind: 'no_loads' };
 
 function nextHarderLoad(ctx: Ctx, current: number): Step {
@@ -396,7 +400,14 @@ function nextHarderLoad(ctx: Ctx, current: number): Step {
   if (rule.maxLoadJump !== null) {
     const maxJump = convertMass(rule.maxLoadJump, ctx.unit).value;
     if (Math.abs(toScaled(chosen) - toScaled(current)) > toScaled(maxJump)) {
-      return { kind: 'jump_too_big', next: chosen, maxJump };
+      return { kind: 'jump_too_big', next: chosen, limit: `${fromScaled(toScaled(maxJump))} ${ctx.unit}` };
+    }
+  }
+  // Playbook 7-F: more than ~10% heavier is too big a step; reps progress instead. Resistance only.
+  const pct = rule.maxLoadJumpPercent;
+  if (pct !== undefined && ctx.direction === 'resistance' && toScaled(current) > 0) {
+    if ((toScaled(chosen) - toScaled(current)) * 100 > toScaled(current) * pct) {
+      return { kind: 'jump_too_big', next: chosen, limit: `${String(pct)}%` };
     }
   }
   return { kind: 'load', value: chosen };
@@ -528,6 +539,11 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
 
   const L = reference.load;
   const lastText = fmt(ctx, L);
+  // Review failure-tests-r2 S2: with no equipment profile, a logged 0 on a load with no real zero
+  // (total, each, stack) isn't a reference to build on: never plan 0 + one step (a "2.5 kg barbell").
+  if (L !== null && (input.equipment ?? null) === null && ctx.direction === 'resistance' && ctx.convention !== 'added' && ctx.convention !== 'bodyweight' && toScaled(L) <= 0) {
+    return startingPoint(ctx, criteria, `Last load was ${formatLoad({ value: L, unit: ctx.unit, convention: ctx.convention })}, which isn't a load to plan.`);
+  }
   const complete = latest.prescribedDone >= required && !latest.unpairable;
   if (complete && latest.sides !== null) {
     // Review R4: the load goes up only when both sides qualify; say which side lagged.
@@ -597,7 +613,7 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
       case 'jump_too_big':
         return repStep(
           () =>
-            `the next available load, ${fmt(ctx, step.next)}, is a bigger jump than the rule allows (${fromScaled(toScaled(step.maxJump))} ${ctx.unit})`,
+            `the next available load, ${fmt(ctx, step.next)}, is a bigger jump than the rule allows (${step.limit})`,
         );
       case 'no_loads':
         // Unreachable: handled before any history is read. Kept so the switch stays exhaustive.
@@ -678,6 +694,9 @@ export function calculateNextTargets(input: NextTargetsInput): NextTargets {
 
   if (input.measurement === 'duration') {
     return unsupported(`Time-based progression isn't supported yet, so ${input.exerciseName} targets stay as planned.`);
+  }
+  if (input.measurement === 'distance') {
+    return unsupported(`Distance-based progression isn't supported yet, so ${input.exerciseName} targets stay as planned.`);
   }
   if (rule.method === 'top_set_backoff' && ctx.direction === 'assistance') {
     return unsupported('Top-set/back-off rules are not supported on assisted machines. Use double progression instead.');

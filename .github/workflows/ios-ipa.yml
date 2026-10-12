@@ -80,6 +80,12 @@ jobs:
             exit 1
           fi
       - run: npm run check
+      # A placeholder migration (empty SQL) must never reach the phone: a database
+      # migrated past it would never run the real one (review gaps S5).
+      - name: No placeholder migrations
+        run: npx vitest run packages/persistence/test/release-migrations.test.ts
+        env:
+          FIZZ_RELEASE_CHECK: '1'
       - name: Expo prebuild (config only)
         working-directory: apps/mobile
         run: npx expo prebuild --platform ios --no-install --clean

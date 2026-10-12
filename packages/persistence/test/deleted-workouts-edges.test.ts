@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { newCheckIn, newPainFlag, reduceSession, startWorkout } from '@fizz/domain';
+import { createSessionService, newCheckIn, newPainFlag, reduceSession, startWorkout } from '@fizz/domain';
 import { at, dumbbells, exercise, GYM, gym, HISTORY_EXERCISES, id, idGen, largeHistory, OWNER, profile, richFinishedSession, SPLIT_SQUAT } from '@fizz/domain/testing';
 import type { SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 import {
@@ -124,7 +124,7 @@ describe('migration 8 (review B1, S6)', () => {
     const old = memoryDriver();
     await copyInto(driver, old, 7);
     expect(await readUserVersion(old)).toBe(7);
-    // 8, then every later migration (9: Progress's Count it).
+    // 8, then every later migration (9: Progress's Count it, 10: workout gaps).
     expect(await migrate(old)).toMatchObject({ from: 7, to: latestVersion(), applied: MIGRATIONS.slice(7).map((m) => m.version) });
 
     const fresh = memoryDriver();
@@ -143,7 +143,7 @@ describe('migration 8 (review B1, S6)', () => {
 });
 
 describe('migration 9 on main’s schema 8 (review progress-merge S2)', () => {
-  it('a populated schema-8 database with deleted and purged workouts: only 9 applied, the same schema as a fresh database, every row kept, deleted workouts out of Progress', async () => {
+  it('a populated schema-8 database with deleted and purged workouts: 9 (and 10) applied, the same schema as a fresh database, every row kept, deleted workouts out of Progress', async () => {
     const { store, driver } = await mixedStore();
     cleanups.push(() => store.close());
     const finished = (await driver.getAll<{ id: string }>("SELECT id FROM sessions WHERE status = 'finished' ORDER BY started_at_utc, id")).map((r) => r.id);
@@ -165,7 +165,7 @@ describe('migration 9 on main’s schema 8 (review progress-merge S2)', () => {
     const old = memoryDriver();
     await copyInto(driver, old, 8);
     expect(await readUserVersion(old)).toBe(8);
-    expect(await migrate(old)).toMatchObject({ from: 8, to: latestVersion(), applied: [9] });
+    expect(await migrate(old)).toMatchObject({ from: 8, to: latestVersion(), applied: [9, 10] });
 
     const fresh = memoryDriver();
     cleanups.push(() => fresh.close());
@@ -185,6 +185,57 @@ describe('migration 9 on main’s schema 8 (review progress-merge S2)', () => {
     expect(listed).not.toContain(purged.session.id);
     expect((await migrated.repos.sessions.listRecentlyDeleted(OWNER, NOW.utc)).sessions.map((x) => x.session.id)).toEqual([kept.session.id]);
     expect(await migrated.repos.sessions.isPurged(purged.session.id)).toBe(true);
+  });
+});
+
+describe('migration 10 (workout gaps) on main’s schema 9', () => {
+  it('a populated schema-9 database (deleted, purged, a counted workout): only 10 applied, the same schema as a fresh database, every row kept, and the new columns take writes', async () => {
+    const { store, driver } = await mixedStore();
+    cleanups.push(() => store.close());
+    const finished = (await driver.getAll<{ id: string }>("SELECT id FROM sessions WHERE status = 'finished' ORDER BY started_at_utc, id")).map((r) => r.id);
+    const [kept, purged, counted] = await Promise.all(finished.slice(0, 3).map((sid) => store.repos.sessions.get(sid)));
+    if (!kept || !purged || !counted) throw new Error('fixture');
+    expect((await store.repos.sessions.deleteWorkouts({ ownerId: OWNER, items: [item(kept), item(purged)], opId: 'del-m10', at: NOW })).ok).toBe(true);
+    expect(await store.repos.sessions.purgeDeleted({ ownerId: OWNER, opId: 'purge-m10', at: NOW, sessionIds: [purged.session.id] })).toMatchObject({ ok: true, purged: [purged.session.id] });
+    // Schema 9's own column: `Count it` on a finished workout.
+    const service = createSessionService(store.repos, () => 'unused');
+    const count = await service.dispatch(counted.session.id, { type: 'confirm_session_duration', at: NOW, opId: 'count-m10', confirmed: true, expectedVersion: counted.session.version });
+    expect(count.ok).toBe(true);
+    const source = await exportTables(driver);
+
+    const old = memoryDriver();
+    await copyInto(driver, old, 9);
+    expect(await readUserVersion(old)).toBe(9);
+    expect(await old.getAll("SELECT duration_confirmed_at_utc AS u FROM sessions WHERE duration_confirmed_at_utc IS NOT NULL")).toEqual([{ u: NOW.utc }]);
+    expect(await migrate(old)).toMatchObject({ from: 9, to: latestVersion(), applied: [10] });
+    expect(latestVersion()).toBe(10);
+
+    const fresh = memoryDriver();
+    cleanups.push(() => fresh.close());
+    await migrate(fresh);
+    expect(await schemaDump(old)).toEqual(await schemaDump(fresh));
+    expect(await old.getAll('PRAGMA foreign_key_check')).toEqual([]);
+    expect(await old.getAll('PRAGMA integrity_check')).toEqual([{ integrity_check: 'ok' }]);
+    // Every row of every table as it was; the new columns empty on every old row.
+    expect(await exportTables(old)).toEqual(source);
+    expect(await old.getAll('SELECT count(*) AS n FROM session_exercises WHERE note IS NOT NULL OR removed IS NOT NULL OR swapped_from IS NOT NULL OR measures_distance IS NOT NULL')).toEqual([{ n: 0 }]);
+    expect(await old.getAll('SELECT count(*) AS n FROM session_sets WHERE note IS NOT NULL OR actual_distance_m IS NOT NULL')).toEqual([{ n: 0 }]);
+
+    const migrated = await openStore(old);
+    cleanups.push(() => migrated.close());
+    expect((await checkIntegrity(migrated.db)).ok).toBe(true);
+    expect(await migrated.countRecords()).toEqual(await store.countRecords());
+    expect((await migrated.repos.sessions.get(counted.session.id))?.session.durationConfirmedAt).toEqual(NOW);
+    expect((await migrated.repos.sessions.listRecentlyDeleted(OWNER, NOW.utc)).sessions.map((x) => x.session.id)).toEqual([kept.session.id]);
+    expect(await migrated.repos.sessions.isPurged(purged.session.id)).toBe(true);
+    // A note on a finished workout's exercise (allowed after Finish) lands in migration 10's column and reads back.
+    const before = await migrated.repos.sessions.get(counted.session.id);
+    const row = before?.exercises[0];
+    if (!before || !row) throw new Error('fixture');
+    const noted = await createSessionService(migrated.repos, () => 'unused').dispatch(before.session.id, { type: 'set_note', at: NOW, opId: 'note-m10', target: { kind: 'exercise', sessionExerciseId: row.id }, note: 'Bench at 3', expectedVersion: before.session.version });
+    expect(noted.ok).toBe(true);
+    expect(await old.getAll('SELECT note FROM session_exercises WHERE id = ?', [row.id])).toEqual([{ note: 'Bench at 3' }]);
+    expect((await migrated.repos.sessions.get(before.session.id))?.exercises[0]?.note).toBe('Bench at 3');
   });
 });
 

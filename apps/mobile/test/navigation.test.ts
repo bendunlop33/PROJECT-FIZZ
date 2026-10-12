@@ -149,7 +149,8 @@ describe('correction sheet back to the workout (review coach-fallback B1)', () =
   it('EditSetScreen returns with that action, never navigate(\'Workout\')', () => {
     const src = readFileSync(join(import.meta.dirname, '../src/screens/workout/EditSetScreen.tsx'), 'utf8');
     expect(src).not.toMatch(/navigate\(\s*'Workout'/);
-    expect(src.match(/dispatch\(returnToWorkout\(/g)?.length).toBe(2);
+    // Exclusion toast, `Set 2 updated` [Undo], the offer re-check alone, and `Set 2 deleted` [Undo] (workout gaps).
+    expect(src.match(/dispatch\(returnToWorkout\(/g)?.length).toBe(4);
   });
 });
 

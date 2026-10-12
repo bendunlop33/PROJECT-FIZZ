@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionAggregate } from '@fizz/schemas';
 
-import { estimateRemainingDuration, paceSamples, roundEstimateMinutes, startWorkout } from '../src/index';
+import { estimateRemainingDuration, estimateTimeLeft, paceSamplesOf, roundEstimateMinutes, startWorkout } from '../src/index';
 import { at, barbell, GYM, idGen, kg, profile, routine, routineExercise, stack, template, values } from './fixtures';
 import { apply, BENCH, exercises, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
@@ -36,7 +36,7 @@ describe('estimateRemainingDuration (active-workout §2.15.2)', () => {
     done = apply(done, logCmd(row[0]?.id ?? '', values(kg(50, 'stack'), 10), 580 + 1500));
     done = apply(done, logCmd(row[1]?.id ?? '', values(kg(50, 'stack'), 10), 580 + 1650));
     done = apply(done, { type: 'finish', at: at(3000), opId: 'f', expectedVersion: done.session.version, endedAt: null });
-    expect(paceSamples(done)).toEqual({ perSet: [60, 60, 60], changeover: [] });
+    expect(paceSamplesOf(done, Date.parse(at(3000).utc))).toEqual({ set: [60, 60, 60], changeover: [] });
     const e = estimateRemainingDuration(plain(), { recent: [done] });
     expect(e.pace).toMatchObject({ source: 'recent_workouts', secondsPerSet: 60, changeoverSeconds: 120 });
     expect(e.seconds).toBe(5 * 60 + 630 + 120);
@@ -51,5 +51,14 @@ describe('estimateRemainingDuration (active-workout §2.15.2)', () => {
     let s = startFixture().state;
     s = apply(s, logCmd(setsFor(s, BENCH)[0]?.id ?? '', values(kg(60), 10), 10));
     expect(estimateRemainingDuration(s).pendingSets).toBe(7);
+  });
+
+  it('is the same estimator as the workout’s Time left line (backlog §4.1: one estimator, not two)', () => {
+    const s = startFixture({ supersetTransitionS: 15 }).state;
+    const before = estimateRemainingDuration(s);
+    const live = estimateTimeLeft(s, { nowMs: Date.parse(s.session.startedAt.utc) });
+    expect(live?.seconds).toBe(before.seconds);
+    expect(live?.plannedRestSeconds).toBe(before.plannedRestSeconds);
+    expect(live?.pendingSets).toBe(before.pendingSets);
   });
 });

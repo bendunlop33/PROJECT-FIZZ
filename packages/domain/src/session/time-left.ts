@@ -4,7 +4,6 @@ import { formatDuration, formatElapsed, NBSP } from '../display';
 import { restRemainingMs } from '../rest';
 import { toIso, toMs } from '../time';
 import { isRoundEnd, nextPendingSet } from './order';
-import type { PaceSource } from './duration';
 import { dateOnlyOf, getActiveDurationMs, getSessionPhase, pausedMsWithin } from './view';
 import { isInHistory } from './deletion';
 
@@ -39,8 +38,8 @@ export interface PaceSamples {
   changeover: number[];
 }
 
-// The same three sources as the Up next / routine sheet estimate (`duration.ts`).
-export type { PaceSource };
+/** Where a pace figure came from (the sheet's tag). */
+export type PaceSource = 'this_workout' | 'recent_workouts' | 'default';
 
 export interface Pace {
   /** Source of the per-set figure (the tag the sheet shows). */
@@ -267,19 +266,28 @@ export interface EstimateOptions {
  * exercise outside a superset; plus what's left of a running rest. Null when
  * the workout isn't active or nothing is pending (the line is hidden).
  */
-export function estimateTimeLeft(state: SessionAggregate, opts: EstimateOptions): TimeLeftEstimate | null {
-  if (state.session.status !== 'active') return null;
+/** The pending sets' time at a given pace (shared by `estimateTimeLeft` and `estimateRemainingDuration`). */
+export interface PendingWork {
+  seconds: number;
+  lowSeconds: number;
+  highSeconds: number;
+  /** Planned rest still to come, including `currentRestS`. */
+  plannedRestSeconds: number;
+  pendingSets: number;
+  pendingExercises: number;
+}
+
+/**
+ * The one estimator behind every `about N min` (backlog §4.1: `duration.ts`
+ * and `time-left.ts` used to differ). Per pending set, in the order `log_set`
+ * would take them: Ben's per-set figure (plus a timed set's planned
+ * duration), the planned rest after it (none after the last), and a
+ * changeover when the next set is another exercise outside a superset; plus
+ * `currentRestS` of a running rest. Null when nothing is pending.
+ */
+export function estimatePendingWork(state: SessionAggregate, pace: Pace, currentRestS = 0): PendingWork | null {
   const plan = pendingPlan(state);
   if (plan.length === 0) return null;
-  const paused = state.session.pause !== null;
-  // While paused the estimate is frozen at the moment of the pause.
-  const nowMs = paused && state.session.pause ? toMs(state.session.pause.pausedAtUtc) : opts.nowMs;
-  const pace = resolvePace(paceSamplesOf(state, nowMs), opts.recent ?? { set: [], changeover: [] });
-
-  const timer = state.restTimer;
-  const phase = getSessionPhase(state, nowMs);
-  const currentRestS = timer && (phase.kind === 'resting' || timer.status === 'paused') ? restRemainingMs(timer, nowMs) / 1000 : 0;
-
   let restS = currentRestS;
   let workS = 0;
   // A move to a new exercise that hasn't happened yet: the last logged set
@@ -298,9 +306,29 @@ export function estimateTimeLeft(state: SessionAggregate, opts: EstimateOptions)
     if (step.changeover) changeovers += 1;
   }
   const total = (perSet: number, changeover: number) => restS + workS + plan.length * perSet + changeovers * changeover;
-  const seconds = total(pace.secondsPerSet, pace.changeoverSeconds);
-  const lowS = total(pace.low.secondsPerSet, pace.low.changeoverSeconds);
-  const highS = total(pace.high.secondsPerSet, pace.high.changeoverSeconds);
+  return {
+    seconds: total(pace.secondsPerSet, pace.changeoverSeconds),
+    lowSeconds: total(pace.low.secondsPerSet, pace.low.changeoverSeconds),
+    highSeconds: total(pace.high.secondsPerSet, pace.high.changeoverSeconds),
+    plannedRestSeconds: restS,
+    pendingSets: plan.length,
+    pendingExercises: new Set(plan.map((p) => p.set.sessionExerciseId)).size,
+  };
+}
+
+export function estimateTimeLeft(state: SessionAggregate, opts: EstimateOptions): TimeLeftEstimate | null {
+  if (state.session.status !== 'active') return null;
+  const paused = state.session.pause !== null;
+  // While paused the estimate is frozen at the moment of the pause.
+  const nowMs = paused && state.session.pause ? toMs(state.session.pause.pausedAtUtc) : opts.nowMs;
+  const pace = resolvePace(paceSamplesOf(state, nowMs), opts.recent ?? { set: [], changeover: [] });
+
+  const timer = state.restTimer;
+  const phase = getSessionPhase(state, nowMs);
+  const currentRestS = timer && (phase.kind === 'resting' || timer.status === 'paused') ? restRemainingMs(timer, nowMs) / 1000 : 0;
+  const work = estimatePendingWork(state, pace, currentRestS);
+  if (work === null) return null;
+  const { seconds, lowSeconds: lowS, highSeconds: highS } = work;
 
   const endMs = nowMs + seconds * 1000;
   const finishBy = opts.finishByUtc !== undefined ? opts.finishByUtc : (state.session.finishBy?.utc ?? null);
@@ -320,9 +348,9 @@ export function estimateTimeLeft(state: SessionAggregate, opts: EstimateOptions)
     finishBy,
     overByMinutes,
     pace,
-    plannedRestSeconds: restS,
-    pendingSets: plan.length,
-    pendingExercises: new Set(plan.map((p) => p.set.sessionExerciseId)).size,
+    plannedRestSeconds: work.plannedRestSeconds,
+    pendingSets: work.pendingSets,
+    pendingExercises: work.pendingExercises,
     paused,
   };
 }

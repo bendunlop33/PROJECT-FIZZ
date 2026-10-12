@@ -75,10 +75,28 @@ export interface RepeatNote {
   tone: 'info' | 'warning';
 }
 
+/**
+ * What Repeat leaves out, by exercise: skipped sets, and distance sets (a
+ * set template has no distance target yet, so a sled push isn't copied
+ * rather than copied wrong; review gaps S4).
+ */
+export type NotCopied = { kind: 'skipped'; exerciseName: string; skipped: number } | { kind: 'distance'; exerciseName: string; sets: number };
+
+/** `Not copied: 2 skipped sets (Cable fly), 3 distance sets (Sled push)`; null when nothing was left out. */
+export function notCopiedText(list: readonly NotCopied[]): string | null {
+  if (list.length === 0) return null;
+  const part = (n: NotCopied) => {
+    const count = n.kind === 'skipped' ? n.skipped : n.sets;
+    const what = n.kind === 'skipped' ? 'skipped' : 'distance';
+    return `${String(count)} ${what} ${count === 1 ? 'set' : 'sets'} (${n.exerciseName})`;
+  };
+  return `Not copied: ${list.map(part).join(', ')}`;
+}
+
 export interface RepeatOutput extends StartWorkoutOutput {
   notes: RepeatNote[];
-  /** `Not copied: 2 skipped sets (Cable fly)`. */
-  notCopied: { exerciseName: string; skipped: number }[];
+  /** `Not copied: 2 skipped sets (Cable fly), Sled push (distance)` (`notCopiedText`). */
+  notCopied: NotCopied[];
   /** Nothing to copy (no completed sets). */
   empty: boolean;
   /** The source part-root row each planned slot came from, by the plan's slot ID (`snap.slots[i].slotId`). */
@@ -112,7 +130,10 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     // A left/right pair is one prescribed set: the companion row isn't copied again.
     const done = own.filter((s) => s.status === 'completed' && s.actual !== null && s.pairedWithSetId === null);
     const skipped = own.filter((s) => s.status === 'skipped').length;
-    if (skipped > 0) notCopied.push({ exerciseName: sx.exerciseName, skipped });
+    if (skipped > 0) notCopied.push({ kind: 'skipped', exerciseName: sx.exerciseName, skipped });
+    // Distance-only sets have no template field to copy into (review gaps S4): listed, not dropped silently.
+    const distanceOnly = done.filter((s) => s.actual !== null && s.actual.reps === null && s.actual.durationS === null && s.actual.distanceM !== undefined && s.actual.distanceM !== null).length;
+    if (distanceOnly > 0) notCopied.push({ kind: 'distance', exerciseName: sx.exerciseName, sets: distanceOnly });
     if (done.length === 0) continue;
     const swap = input.swaps?.get(sx.id);
     if (swap !== undefined) {

@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import {
+  DistanceMetresSchema,
   DurationSecondsSchema,
   IdSchema,
+  NoteSchema,
   LoadConventionSchema,
   LoadSchema,
   OperationIdSchema,
@@ -26,6 +28,12 @@ export const SetValuesSchema = z.object({
   durationS: DurationSecondsSchema.nullable(),
   rpe: RpeSchema.nullable(),
   rir: RirSchema.nullable(),
+  /**
+   * Metres, for distance exercises (sled push, carries). Absent on every
+   * other set, and on sets saved before distance existed; writers omit it
+   * rather than store null (`withoutEmptyDistance`).
+   */
+  distanceM: DistanceMetresSchema.nullable().optional(),
 });
 export type SetValues = z.infer<typeof SetValuesSchema>;
 
@@ -260,6 +268,8 @@ export interface PlannedSet {
   load: z.infer<typeof LoadSchema> | null;
   reps: z.infer<typeof RepRangeSchema> | null;
   durationS: number | null;
+  /** Distance target in metres (distance exercises only); absent otherwise. */
+  distanceM?: number | null | undefined;
   rpe: number | null;
   rir: number | null;
   /**
@@ -281,6 +291,7 @@ export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
   load: LoadSchema.nullable(),
   reps: RepRangeSchema.nullable(),
   durationS: DurationSecondsSchema.nullable(),
+  distanceM: DistanceMetresSchema.nullable().optional(),
   rpe: RpeSchema.nullable(),
   rir: RirSchema.nullable(),
   rpeOverride: RpeSchema.optional(),
@@ -329,6 +340,8 @@ export const WorkoutSetSchema = z.object({
    * written before this field existed).
    */
   skippedBy: z.enum(['before_start', 'in_workout']).optional(),
+  /** Ben's note on this set (Your data). Changed only by `set_note`; never a result, never counted. */
+  note: NoteSchema.optional(),
   edited: z.boolean(),
   version: z.int().min(1),
 }).refine(
@@ -369,6 +382,21 @@ export const SessionExerciseSchema = z.object({
    * row (gym-switch GS6). Shown as one exercise in parts. Absent = not a continuation.
    */
   continuesFromId: IdSchema.optional(),
+  /** Ben's note on this exercise in this workout (Your data). Changed only by `set_note`. */
+  note: NoteSchema.optional(),
+  /**
+   * Removed from the workout because it was added by mistake (nothing was
+   * logged on it; exercise-library §4.6), or emptied by a swap. Its sets are
+   * deleted tombstones; the row stays for the audit and Undo, and every view
+   * leaves it out. Absent = in the workout.
+   */
+  removed: z.object({ opId: OperationIdSchema, at: ZonedTimestampSchema, by: z.enum(['remove', 'swap']) }).optional(),
+  /**
+   * Mid-workout swap (EL4, B3): this row took over the pending sets of
+   * `sessionExerciseId`'s exercise for today, by operation `opId` (its
+   * Undo). Done sets stayed on that row.
+   */
+  swappedFrom: z.object({ sessionExerciseId: IdSchema, opId: OperationIdSchema }).optional(),
 });
 export type SessionExercise = z.infer<typeof SessionExerciseSchema>;
 

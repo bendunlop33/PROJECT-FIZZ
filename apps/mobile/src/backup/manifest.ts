@@ -64,7 +64,12 @@ export type OffPhoneCopy = z.infer<typeof OffPhoneCopySchema>;
 
 export const BackupManifestSchema = z.object({
   version: z.literal(MANIFEST_VERSION),
-  keep: z.int().min(1).max(1000),
+  /**
+   * How many automatic copies to keep on the phone (DX9: 7, 14, 30 or null
+   * for All). Every copy is a full snapshot of every workout, so this only
+   * bounds storage; no workout is ever dropped by it (Ben, 11 Oct).
+   */
+  keep: z.int().min(1).max(1000).nullable(),
   onPhone: z.object({ files: z.array(BackupRecordSchema), lastAttempt: AttemptSchema.nullable() }),
   offPhone: z.object({
     lastCopy: OffPhoneCopySchema.nullable(),
@@ -137,7 +142,9 @@ export function backupFileName(ms: number, tz: string, kind: BackupRecord['kind'
  * that passed its integrity check (PM decision SP2): if every newer backup is
  * damaged, the last restorable one stays.
  */
-export function planRotation(files: readonly BackupRecord[], keep: number, justWritten: string): BackupRecord[] {
+export function planRotation(files: readonly BackupRecord[], keep: number | null, justWritten: string): BackupRecord[] {
+  // `Keep all copies`: nothing is ever rotated out.
+  if (keep === null) return [];
   const newestFirst = (a: BackupRecord, b: BackupRecord) => (a.createdAtUtc < b.createdAtUtc ? 1 : a.createdAtUtc > b.createdAtUtc ? -1 : 0);
   // Of this phone's data: a `kept_for_undo` backup is of another database (review r5 B1).
   const newestGood = [...files].filter((f) => f.integrityOk && f.reason !== 'kept_for_undo').sort(newestFirst)[0]?.fileName ?? null;

@@ -159,7 +159,13 @@ export type WorkoutToastParam =
       key: string;
       text: string;
       undo: { sessionId: string; setId: string; setVersion: number; previous: SetExclusion[]; painFlags: { id: string; version: number }[] };
-    };
+    }
+  /**
+   * Back from the correction sheet after `Delete set` or a value change
+   * (copy D4): `Set 2 deleted` [Undo] → `undo_op` on `targetOpId`, which is
+   * also the key, so each shows once.
+   */
+  | { kind: 'undo_op'; text: string; targetOpId: string };
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace

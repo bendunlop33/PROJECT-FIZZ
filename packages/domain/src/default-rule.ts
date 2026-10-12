@@ -13,8 +13,10 @@ import { deriveId } from './stable';
  * - `compound`: other compound lifts: 6–10 reps, RPE 9.
  * - `isolation`: isolation and accessory lifts: 8–12 reps, RPE 9.
  *
- * Loads always come from the equipment (rounded, never above its max), and
- * every rule reduces 10 % only after 2 missed sessions.
+ * Loads always come from the equipment (rounded, never above its max). A
+ * next load more than 10% heavier than the last is not taken: reps progress
+ * to the cap instead, then hold (playbook 7-F). Every rule reduces 10 % only
+ * after 2 missed sessions.
  */
 export type RuleCategory = 'main_barbell' | 'compound' | 'isolation';
 
@@ -94,9 +96,10 @@ export function builtInDefaultRule(ownerId: string, unit: WeightUnit, workingSet
   return {
     id: deriveId(`builtin-rule:${category}:double-${String(r.min)}-${String(r.max)}:${unit}`),
     ownerId,
-    version: 1,
+    // 2: playbook 7-F's 10% jump limit (11 Oct). Targets cite the version whose logic made them (review gaps N3).
+    version: 2,
     createdAtUtc: '2026-10-09T00:00:00.000Z',
-    updatedAtUtc: '2026-10-09T00:00:00.000Z',
+    updatedAtUtc: '2026-10-11T00:00:00.000Z',
     name: builtInRuleName(category),
     method: 'double_progression',
     repRange: { min: r.min, max: r.max },
@@ -109,5 +112,7 @@ export function builtInDefaultRule(ownerId: string, unit: WeightUnit, workingSet
     failuresBeforeReduce: 2,
     reducePercent: 10,
     maxLoadJump: null,
+    // Playbook 7-F: a next load more than 10% heavier progresses reps instead (equipment-aware-progression EQ9).
+    maxLoadJumpPercent: 10,
   };
 }

@@ -253,6 +253,19 @@ describe('(b) no target below the empty bar, between dumbbell or stack steps, or
     }
   });
 
+  it('with no equipment profile, a 0 history on total, each or stack plans no load, never 0 + one step (review failure-tests-r2 S2)', () => {
+    for (const convention of ['total', 'per_hand', 'stack'] as const) {
+      for (const unit of ['kg', 'lb'] as const) {
+        for (const shape of historyShapes(null, unit, convention, 0)) {
+          for (const { name, rule } of rulesFor(null, convention, unit)) {
+            const t = calculateNextTargets({ exerciseName: 'Lift', measurement: 'reps', history: shape.h, rule, equipment: null, unit, convention, pain: { active: false, reportedAtUtc: null } });
+            for (const s of t.sets) expect(s.load, `${convention} ${unit}, ${shape.name}, ${name} (${t.decision})`).toBeNull();
+          }
+        }
+      }
+    }
+  });
+
   it('a routine’s planned load at Start is snapped to the equipment from any value, in either unit', () => {
     for (const eq of EQUIPMENT) {
       for (const v of probeValues(eq)) {
