@@ -244,6 +244,27 @@ describe('Save to Workouts (WL-A9, A10, A11, A12)', () => {
     expect((await s.next.preview(gymId))?.routine).toBeNull();
   });
 
+  it('N6 (Ben, 12 Oct): a FROM HISTORY row saved under another name leaves its older sessions under FROM HISTORY; no history is rewritten', async () => {
+    const { services: s } = await h.launch();
+    const f = await fixture(s);
+    // A second, newer `Shoulders` workout.
+    const newer = await logWorkout(h, s, f.gymId, [{ exercise: 'Overhead press', sets: [{ load: 42.5, reps: 8 }] }]);
+    await rename(s, newer, 'Shoulders');
+    h.clockMs += DAY;
+    const row = (await library(s, f.gymId)).view.history.find((x) => x.label === 'Shoulders');
+    if (!row) throw new Error('no history');
+    expect(row.sourceSessionId).toBe(newer);
+    const r = await s.routines.saveFrom({ from: { kind: 'session', sessionId: row.sourceSessionId }, name: 'Shoulders A', addToRotation: false, opId: 'save-sh-a' });
+    if (!r.ok) throw new Error(r.message);
+    const after = await library(s, f.gymId);
+    expect(after.view.all.map((x) => x.name)).toContain('Shoulders A');
+    // The older `Shoulders` session keeps its name and stays a FROM HISTORY row (in the library and the picker).
+    expect(after.view.history.map((x) => [x.label, x.sourceSessionId])).toEqual([['Shoulders', f.shoulders]]);
+    expect((await s.sessions.list(f.gymId))?.fromHistory.map((x) => x.label)).toEqual(['Shoulders']);
+    expect((await s.workout.load(f.shoulders))?.aggregate.session.routineName).toBe('Shoulders');
+    expect((await s.workout.load(newer))?.aggregate.session.routineName).toBe('Shoulders');
+  });
+
   it('a history row saves from its latest workout and keeps its history; nothing to save says so', async () => {
     const { services: s } = await h.launch();
     const f = await fixture(s);
