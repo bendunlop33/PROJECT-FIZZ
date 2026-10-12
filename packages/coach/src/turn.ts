@@ -101,6 +101,12 @@ export interface CoachTurnRequest {
   namedExerciseIds?: readonly string[];
   /** A coach draft is in context (workout-builder BD16): Ben's change words make its next version. */
   draftInContext?: boolean;
+  /**
+   * The thread has a coach draft (or one is in context): "start it" / "save it"
+   * then gets the fixed `Tap Start workout when you're ready.` with no model
+   * call (BD15). Elsewhere those words go to the coach as usual.
+   */
+  draftInThread?: boolean;
   signal?: AbortSignal;
   /**
    * Live progress for the sheet (C6): each tool line and card as it is
@@ -396,7 +402,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
 
   const words = req.input.kind === 'words' ? req.input.text : null;
   // workout-builder BD15: "start it" / "save it" gets the fixed line and no model call; Start and Save are Ben's taps.
-  if (words !== null && req.kind === 'general' && asksToStartOrSave(words)) return fixedReply(req, ports, thread, START_BY_TAP_LINE, context.contextHash);
+  if (words !== null && req.kind === 'general' && (req.draftInThread === true || req.draftInContext === true) && asksToStartOrSave(words)) return fixedReply(req, ports, thread, START_BY_TAP_LINE, context.contextHash);
   const mention = words === null ? 'none' : classifyPainMention(words);
   const messagePain: MessagePain | null = words === null ? null : { mention, exerciseIds: req.namedExerciseIds ?? [], bodyPart: painBodyPart(words) };
 

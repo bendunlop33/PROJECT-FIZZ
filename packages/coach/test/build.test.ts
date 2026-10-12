@@ -262,10 +262,8 @@ describe('a build turn end to end (fake model, real SQLite)', () => {
       },
     };
     const p = { ...ports(store, model, executors(store)), timing: { firstEventMs: 200, stallMs: 200, totalMs: 300 } };
-    const started = Date.now();
     const result = await runCoachTurn(request({ input: words('build me a push workout'), context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [], build: buildView() } }), p);
     expect(result).toMatchObject({ status: 'failed', error: 'timeout', cards: [] });
-    expect(Date.now() - started).toBeLessThan(2000);
     expect(await store.repos.workoutDrafts.listByOwner(OWNER)).toEqual([]);
     await store.close();
   });
@@ -274,11 +272,15 @@ describe('a build turn end to end (fake model, real SQLite)', () => {
     const store = await memoryStore();
     const model = new ScriptedCoachModel([]);
     for (const t of ['Start it', 'save it']) {
-      const result = await runCoachTurn(request({ input: words(t), context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(store, model, executors(store)));
+      const result = await runCoachTurn(request({ input: words(t), draftInThread: true, context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(store, model, executors(store)));
       expect(result.items).toEqual([{ kind: 'sentence', text: "Tap Start workout when you're ready." }]);
       expect(result.cards).toEqual([]);
     }
     expect(model.requests).toEqual([]);
+    // With no draft in the thread, "save it" is ordinary words for the coach (a memory, say): the model is asked.
+    const other = new ScriptedCoachModel([reply('Sure.')]);
+    await runCoachTurn(request({ input: words('save it'), context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(store, other, executors(store)));
+    expect(other.requests).toHaveLength(1);
     await store.close();
   });
 

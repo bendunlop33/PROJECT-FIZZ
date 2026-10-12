@@ -398,9 +398,9 @@ describe('rule 8 and BD15', () => {
 
   it('WB20: "start it" gets the fixed line, no model call, and starts nothing', async () => {
     const { s } = await benWithHistory();
-    await buildPush(s);
+    const { result } = await buildPush(s);
     model = new StepModel([]);
-    const r = await ask(s, 'start it');
+    const r = await s.coach.send({ entry: { kind: 'today' }, threadId: result.threadId, input: { kind: 'words', text: 'start it', spoken: false }, turnId: h.ids() });
     expect(r.items).toEqual([{ kind: 'sentence', text: "Tap Start workout when you're ready." }]);
     expect(model.requests).toEqual([]);
     expect(await s.sessions.active()).toBeNull();

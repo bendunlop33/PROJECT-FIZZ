@@ -736,6 +736,16 @@ export function createCoachService(deps: CoachServiceDeps) {
     buildChips?: { minutes: number | null; focus: BuildFocus } | null;
   }
 
+  /** Whether a thread holds a coach draft card (BD15's fixed line applies there). Reads records only. */
+  async function threadHasDraft(threadId: string | null): Promise<boolean> {
+    if (threadId === null) return false;
+    const msgs = await coachStore().listMessages(threadId).catch(() => []);
+    for (const turnId of new Set(msgs.map((m) => m.turnId))) {
+      if ((await coachStore().listTurnActions(turnId).catch(() => [])).some((a) => a.detail.kind === 'build_workout' && a.status === 'committed')) return true;
+    }
+    return false;
+  }
+
   /** A coach draft of Ben's, open or not (the turn reads it; the executor refuses a closed one). */
   async function draftOf(p: UserProfile, draftId: string): Promise<WorkoutDraft | null> {
     const d = await repos().workoutDrafts.get(draftId).catch(() => null);
@@ -883,6 +893,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           structuralSignals: await structuralSignalsFor(p, session).catch(() => []),
           namedExerciseIds: req.input.kind === 'words' ? namedExercises(req.input.text, session) : [],
           ...(draftInContext !== null ? { draftInContext: true } : {}),
+          ...((await threadHasDraft(req.threadId)) ? { draftInThread: true } : {}),
           signal: stop.signal,
           ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
         },
