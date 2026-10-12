@@ -16,11 +16,11 @@
  * - `formatLastDone` (§6): `Today` / `Yesterday` / `N days ago` / `14 Aug` /
  *   `14 Aug 2025`.
  *
- * Ben's two open decisions (session-picker §9), both off until he decides:
- * `SESSION_PICKER_DECISIONS`. Decision 1 is a switch; Decision 2 is only a
- * marker until the service resolver is wired to `recommendSession`. Until
- * then imports are never grouped by Category and Up next keeps D19's "last
- * workout" fallback.
+ * Ben's two decisions (session-picker §9), both approved 11 Oct 2026
+ * (CHANGELOG "Backlog defaults accepted"): `SESSION_PICKER_DECISIONS`.
+ * Decision 1 (group imports by Category) is on. Decision 2 is only a marker
+ * until the service resolver is wired to `recommendSession`; until then Up
+ * next keeps D19's "last workout" fallback.
  */
 import type { ZonedTimestamp } from '@fizz/schemas';
 
@@ -40,11 +40,10 @@ const RELATIVE_DAYS_MAX = 13;
 const YEAR_AFTER_MONTHS = 11;
 
 /**
- * Ben's open decisions (session-picker §9). Both stay false until he
- * approves them and the CHANGELOG records it (review SI6).
- * - `groupImportsByCategory` (Decision 1): unnamed FitNotes imports become
- *   types by their `Category` label. Also needs P-I3: imported workouts
- *   can't be started yet, so such a type is `startable: false` (ADR 0016).
+ * Ben's decisions (session-picker §9), approved 11 Oct 2026 (CHANGELOG).
+ * - `groupImportsByCategory` (Decision 1, on): unnamed FitNotes imports
+ *   become types by their `Category` label, and start like any history
+ *   type (B7).
  * - `longestGapFallback` (Decision 2): a marker, not a switch yet (review
  *   r2 S4). The rule is built and tested (`recommendSession`), but the
  *   services don't read this flag: Today, the picker, the overview and the
@@ -57,7 +56,7 @@ export interface SessionPickerDecisions {
   longestGapFallback: false;
 }
 
-export const SESSION_PICKER_DECISIONS: Readonly<SessionPickerDecisions> = Object.freeze({ groupImportsByCategory: false, longestGapFallback: false });
+export const SESSION_PICKER_DECISIONS: Readonly<SessionPickerDecisions> = Object.freeze({ groupImportsByCategory: true, longestGapFallback: false });
 
 // ---------------------------------------------------------------------------
 // Names
@@ -181,11 +180,10 @@ export interface SessionType {
   /** Last done more than 42 days ago (listed under `OLDER`, never the longest-gap pick). */
   older: boolean;
   /**
-   * Whether Start can begin this type today. A routine always can (its own
-   * structure). A history type plans from its source workout, which can't
-   * be an imported one while P-I3 is open (ADR 0016: never repeated, loads
-   * never checked on equipment). Unstartable types are never recommended,
-   * and the service leaves them out of the picker until P-I3 is decided.
+   * Whether Start can begin this type today. Every type can since B7
+   * (approved 11 Oct 2026): a routine from its own structure, a history type
+   * from its source workout, imported ones included (their loads are fitted
+   * to the gym at Start). Kept so a future unstartable kind has a place.
    */
   startable: boolean;
 }
@@ -302,7 +300,8 @@ export function groupSessionTypes(input: DeriveSessionTypesInput): SessionTypeIn
       lastDone: newest.session.startedAt,
       exerciseCount: newest.session.exerciseCount,
       older: daysSince(newest.session.startedAt, input.now) > OLDER_AFTER_DAYS,
-      startable: !newest.session.imported,
+      // B7: an imported source is startable too; Start fits its loads to the gym (rule 4).
+      startable: true,
     });
   }
   // Routines were added first, in list order; history types follow by label.

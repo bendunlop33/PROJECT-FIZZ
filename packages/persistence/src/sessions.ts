@@ -752,15 +752,15 @@ export class SqliteSessions implements SessionRepository {
    * IDs of finished sessions with at least one completed set, newest first
    * (Repeat candidates, review S1). Reads no aggregates, so one undecodable
    * record never stops the list; callers decode each ID and skip failures.
-   * Imported (FitNotes) workouts aren't repeatable while P-I3 is open: their
-   * loads were never checked on any equipment (review r2 B1).
+   * Imported (FitNotes) workouts are included (B7): Repeat fits their loads
+   * to the gym's equipment like any other.
    */
   listRepeatableIds(ownerId: string, limit: number, offset = 0): Promise<string[]> {
     return this.db.read(async (q) =>
       (
         await q.getAll<{ id: string }>(
           `SELECT s.id AS id FROM sessions s
-           WHERE s.owner_id = ? AND ${inHistorySql('s')} AND s.source = 'manual'
+           WHERE s.owner_id = ? AND ${inHistorySql('s')}
              AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')
            ORDER BY s.started_at_utc DESC, s.id DESC LIMIT ? OFFSET ?`,
           [ownerId, limit, offset],
@@ -770,16 +770,17 @@ export class SqliteSessions implements SessionRepository {
   }
 
   /**
-   * IDs of every workout in history done in the app, with or without
-   * completed sets, newest first: Past workouts' list, where test sessions
-   * (`Finish anyway` with nothing logged) must be reachable to delete them
-   * (delete-workouts §2.3; review r2 B1). Paged by `offset` (B2).
+   * IDs of every workout in history, done in the app or imported (B7,
+   * delete-workouts DW-Q3), with or without completed sets, newest first:
+   * Past workouts' list, where test sessions (`Finish anyway` with nothing
+   * logged) must be reachable to delete them (delete-workouts §2.3; review
+   * r2 B1). Paged by `offset` (B2).
    */
   listPastWorkoutIds(ownerId: string, limit: number, offset = 0): Promise<string[]> {
     return this.db.read(async (q) =>
       (
         await q.getAll<{ id: string }>(
-          `SELECT id FROM sessions WHERE owner_id = ? AND ${inHistorySql()} AND source = 'manual'
+          `SELECT id FROM sessions WHERE owner_id = ? AND ${inHistorySql()}
            ORDER BY started_at_utc DESC, id DESC LIMIT ? OFFSET ?`,
           [ownerId, limit, offset],
         )
@@ -789,8 +790,10 @@ export class SqliteSessions implements SessionRepository {
 
   /**
    * The newest finished workouts done in the app with a completed set, as
-   * small rows (no aggregate decode): what the rotation and the routine
-   * list's `last done` read (premium-feel §2.6). Newest first.
+   * small rows (no aggregate decode): what the rotation, the routine
+   * list's `last done` and the pace estimate read (premium-feel §2.6).
+   * Newest first. Imported workouts stay out: they come from no routine and
+   * have no times.
    */
   listFinishedRefs(ownerId: string, limit: number): Promise<{ sessionId: string; routineId: string | null; startedAtUtc: string; tz: string }[]> {
     return this.db.read(async (q) =>
@@ -841,7 +844,7 @@ export class SqliteSessions implements SessionRepository {
     );
   }
 
-  /** Finished imported workouts with a completed set: the ones `listRepeatableIds` leaves out (review r2 B1). */
+  /** Finished imported workouts with a completed set (Data & backup counts). */
   countImportedFinished(ownerId: string): Promise<number> {
     return this.db.read(async (q) => {
       const row = await q.getFirst<{ n: number }>(

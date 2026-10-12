@@ -431,13 +431,11 @@ export interface RepeatCandidate {
 
 /**
  * Past workouts for Repeat; `unreadable` counts records skipped because they
- * failed to decode. Imported (FitNotes) workouts are never candidates while
- * P-I3 is open (review r2 B1); `importedNotListed` says how many were left out.
+ * failed to decode. Imported (FitNotes) workouts are candidates too (B7).
  */
 export interface RepeatCandidates {
   rows: RepeatCandidate[];
   unreadable: number;
-  importedNotListed: number;
 }
 
 export interface RepeatPreview {
@@ -1290,7 +1288,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const history = await historyFor(p.id, sx.exerciseId);
       const { result } = nextTargetsForBlock(
         block,
-        { ownerId: p.id, sessionId: source.session.id, count: 'done', exercise, rule: null, history, painFlags: flags, sessionPain },
+        // A FitNotes source recorded no item: its loads are fitted to the gym when the workout is built (B7; rule 4).
+        { ownerId: p.id, sessionId: source.session.id, count: 'done', exercise, rule: null, history, painFlags: flags, sessionPain, ...(source.session.source === 'import' ? { fitLater: true } : {}) },
         null,
       );
       // Rule provenance on each set, so `Why?` explains a progressed target as the rule's, never as a repeat (review B1.1).
@@ -1475,9 +1474,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   /** Session types for the picker and the library (session-picker §3, routines.md WL5). Local reads. */
   async function typeIndex(p: UserProfile, live: readonly Routine[]) {
     const rows = await repos().sessions.listSessionTypeRows(p.id, TYPE_ROW_LIMIT);
+    // Decision 1: unnamed imports are typed by their FitNotes Category; unreadable rows just leave them untyped.
+    const categories = SESSION_PICKER_DECISIONS.groupImportsByCategory && rows.some((r) => r.imported) ? await ctx.store().repos.imports.categoriesBySession(p.id).catch(() => new Map<string, Record<string, number>>()) : new Map<string, Record<string, number>>();
     return groupSessionTypes({
       routines: live.map((r) => ({ id: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null, exerciseCount: routineCounts(r).exercises })),
-      sessions: rows.map((r) => ({ id: r.sessionId, routineId: r.routineId, routineName: r.routineName, startedAt: { utc: r.startedAtUtc, tz: r.tz }, exerciseCount: r.exerciseCount, imported: r.imported })),
+      sessions: rows.map((r) => ({ id: r.sessionId, routineId: r.routineId, routineName: r.routineName, startedAt: { utc: r.startedAtUtc, tz: r.tz }, exerciseCount: r.exerciseCount, imported: r.imported, importCategories: categories.get(r.sessionId) ?? null })),
       now: ctx.now(),
       groupImportsByCategory: SESSION_PICKER_DECISIONS.groupImportsByCategory,
     });
@@ -1634,7 +1635,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   async function resolveNext(p: UserProfile, sourceSessionId: string): Promise<ResolvedOverview | null> {
     const source = await repos().sessions.get(sourceSessionId);
-    if (!source || source.session.ownerId !== p.id || !isInHistory(source.session) || source.session.source === 'import') return null;
+    // An imported (FitNotes) workout can be the source too (B7): Start fits its loads to the gym.
+    if (!source || source.session.ownerId !== p.id || !isInHistory(source.session)) return null;
     return { kind: 'next', source, basis: { kind: 'next_from', at: source.session.startedAt } };
   }
 
@@ -1652,7 +1654,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const run = await routineStart(p, { routineId: pick.routine.id, gymId, opId: `preview-next-routine:${pick.routine.id}`, preview: true, ...(gymEquipment ? { gymEquipment } : {}) });
       if (run.r.ok) return { kind: 'routine' as const, routine: pick.routine, basis: pick.basis, run: { ...run, r: run.r } };
     }
-    const last = (await repeat.candidates(1, { countImported: false })).rows[0];
+    const last = (await repeat.candidates(1)).rows[0];
     return last ? { kind: 'next' as const, sessionId: last.sessionId } : null;
   }
 
@@ -2107,7 +2109,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         });
         if (!r.ok) {
           const e = r.error;
-          if (e.code === 'nothing_to_repeat' || e.code === 'imported_not_repeatable') return { ok: false, error: { code: 'not_found', message: e.message } };
+          if (e.code === 'nothing_to_repeat') return { ok: false, error: { code: 'not_found', message: e.message } };
           if (e.code === 'stale_inputs') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
           return { ok: false, error: e };
         }
@@ -2121,7 +2123,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.repeatOf, lastUsedHere });
         if (!r.ok) {
           const e = r.error;
-          if (e.code === 'nothing_to_repeat' || e.code === 'imported_not_repeatable') return { ok: false, error: { code: 'not_found', message: e.message } };
+          if (e.code === 'nothing_to_repeat') return { ok: false, error: { code: 'not_found', message: e.message } };
           return { ok: false, error: e };
         }
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate };
@@ -2778,12 +2780,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * `Start from a past workout`: the newest `limit` finished workouts with
      * logged sets, newest first (review S1). Only those rows are decoded; a
      * record that fails to decode is skipped and counted, never thrown.
-     * Imported (FitNotes) workouts are left out and counted: their loads
-     * were never checked on any equipment, and P-I3 is open (review r2 B1).
+     * Imported (FitNotes) workouts are included (B7): Start fits their loads
+     * to the gym's equipment like any other (rule 4).
      */
-    async candidates(limit = 30, opts: { countImported?: boolean } = {}): Promise<RepeatCandidates> {
+    async candidates(limit = 30): Promise<RepeatCandidates> {
       const p = await ctx.profile();
-      if (!p) return { rows: [], unreadable: 0, importedNotListed: 0 };
+      if (!p) return { rows: [], unreadable: 0 };
       const gyms = new Map<string, string>();
       const rows: RepeatCandidate[] = [];
       let unreadable = 0;
@@ -2799,15 +2801,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
             unreadable += 1;
             continue;
           }
-          if (!a || a.session.source === 'import') continue;
+          if (!a) continue;
           const row = await repeat.describe(a, gyms);
           if (row.sets === 0) continue;
           rows.push(row);
         }
       }
-      // Only `Start from a past workout` shows this count; Today's row doesn't read it (review r3 N4).
-      const importedNotListed = opts.countImported === false ? 0 : await repos().sessions.countImportedFinished(p.id).catch(() => 0);
-      return { rows, unreadable, importedNotListed };
+      return { rows, unreadable };
     },
 
     /**
@@ -2845,7 +2845,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     /** Today's `Repeat last workout` row: the newest readable candidate, or null. Never throws (review S1). */
     async last(): Promise<RepeatCandidate | null> {
       try {
-        return (await repeat.candidates(1, { countImported: false })).rows[0] ?? null;
+        return (await repeat.candidates(1)).rows[0] ?? null;
       } catch {
         return null;
       }
@@ -3462,9 +3462,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * The session picker's rows (session-picker §3, §7): routines and named
      * workouts, one row per normalised name, in picker order. `UP NEXT` is
      * the session Today's card shows (the same D19 resolver), so the two
-     * always agree; Ben's Decision 2 (longest gap) stays off until he
-     * decides. Types that can't be started (an imported source, P-I3) are
-     * left out. Local reads only: no AI, no network, nothing written.
+     * always agree; Decision 2 (longest gap) isn't wired yet. Imported
+     * workouts are typed by FitNotes Category (Decision 1) and start like any
+     * other (B7). Local reads only: no AI, no network, nothing written.
      * Never throws: null when it can't be read.
      */
     async list(req: { gymId: string | null; typicalEquipment?: readonly EquipmentInstance[] }): Promise<SessionList | null> {

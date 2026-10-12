@@ -28,7 +28,6 @@ export const PAST_PAGE = 30;
 export interface PastWorkoutsPage {
   rows: RepeatCandidate[];
   unreadable: number;
-  importedNotListed: number;
   /** Older workouts exist beyond these rows. */
   more: boolean;
 }
@@ -143,18 +142,17 @@ export function createHistoryServices(ctx: HistoryServicesContext) {
     },
 
     /**
-     * Past workouts (§2.3): every workout logged in the app that is in
-     * history, newest first, including ones with nothing logged (review r2
-     * B1). Paged: `limit` rows from `offset`; `more` when older ones exist
-     * (B2). A record that can't be read is skipped and counted. Imported
-     * workouts are counted, not listed (P-I3); they are deleted from their
-     * import's view.
+     * Past workouts (§2.3): every workout in history, logged in the app or
+     * imported from FitNotes (B7, DW-Q3; rows carry `source`, shown with an
+     * `Imported` tag), newest first, including ones with nothing logged
+     * (review r2 B1). Paged: `limit` rows from `offset`; `more` when older
+     * ones exist (B2). A record that can't be read is skipped and counted.
      */
     async pastWorkouts(page: { limit?: number; offset?: number } = {}): Promise<PastWorkoutsPage> {
       const limit = page.limit ?? PAST_PAGE;
       const offset = page.offset ?? 0;
       const p = await ctx.profile();
-      if (!p) return { rows: [], unreadable: 0, importedNotListed: 0, more: false };
+      if (!p) return { rows: [], unreadable: 0, more: false };
       const ids = await repos().sessions.listPastWorkoutIds(p.id, limit + 1, offset);
       const gyms = new Map<string, string>();
       const rows: RepeatCandidate[] = [];
@@ -169,8 +167,7 @@ export function createHistoryServices(ctx: HistoryServicesContext) {
         }
         if (a) rows.push(await ctx.describe(a, gyms));
       }
-      const importedNotListed = await repos().sessions.countImportedFinished(p.id).catch(() => 0);
-      return { rows, unreadable, importedNotListed, more: ids.length > limit };
+      return { rows, unreadable, more: ids.length > limit };
     },
 
     /**

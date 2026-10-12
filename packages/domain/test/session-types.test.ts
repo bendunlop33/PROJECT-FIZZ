@@ -166,19 +166,20 @@ describe('deriveSessionTypes (§3.1)', () => {
 });
 
 describe('deriveSessionTypes: gates and keys', () => {
-  it('groups imports by Category only with Decision 1 on; it is off until Ben decides', () => {
-    expect(SESSION_PICKER_DECISIONS).toEqual({ groupImportsByCategory: false, longestGapFallback: false });
+  it('groups imports by Category with Decision 1 on (approved 11 Oct 2026); off, only routines', () => {
+    expect(SESSION_PICKER_DECISIONS).toEqual({ groupImportsByCategory: true, longestGapFallback: false });
     const { routines, sessions } = fixture();
-    const off = deriveWith({ routines, sessions, now: NOW, groupImportsByCategory: SESSION_PICKER_DECISIONS.groupImportsByCategory });
+    const on = deriveWith({ routines, sessions, now: NOW, groupImportsByCategory: SESSION_PICKER_DECISIONS.groupImportsByCategory });
+    expect(on.map((t) => t.label)).toEqual(expect.arrayContaining(['Arms', 'Full body', 'Back', 'Chest', 'Legs', 'Shoulders']));
+    const off = deriveWith({ routines, sessions, now: NOW, groupImportsByCategory: false });
     expect(off.map((t) => t.label)).toEqual(['Arms', 'Full body']);
   });
 
-  it('marks a type whose source is imported as not startable (P-I3), routines and app workouts as startable', () => {
+  it('every type is startable, imported sources included (B7: their loads are fitted to the gym at Start)', () => {
     const { routines, sessions } = fixture();
     const types = deriveSessionTypes({ routines, sessions: [...sessions, logged('s-push', '2026-10-10', { routineName: 'Push' })], now: NOW });
-    expect(types.filter((t) => !t.startable).map((t) => t.label)).toEqual(['Back', 'Chest', 'Legs', 'Shoulders']);
-    expect(types.find((t) => t.label === 'Push')?.startable).toBe(true);
-    expect(types.find((t) => t.label === 'Arms')?.startable).toBe(true);
+    expect(types.filter((t) => !t.startable)).toEqual([]);
+    expect(types.map((t) => t.label)).toEqual(expect.arrayContaining(['Back', 'Chest', 'Legs', 'Shoulders', 'Push', 'Arms']));
   });
 
   it('a named app workout joining an imported Category group makes it startable (its newest is the app one)', () => {
@@ -226,11 +227,11 @@ describe('recommendSession (§3.3, SP5; Decision 2)', () => {
     expect(recommendSession(routines, sessions, ref(nth(sessions, 4)))).toEqual({ key: 'name:legs', basis: { kind: 'longest_gap', lastDone: on('2026-10-05') } });
   });
 
-  it('never recommends an imported (unstartable) type while P-I3 is open (review B2)', () => {
+  it('recommends imported Category types like any other (B7)', () => {
     const { routines, sessions } = fixture();
-    // Every history type in the §8 fixture is imported; only Full body (OLDER) can start.
+    // Every history type in the §8 fixture is imported: the longest gap among them.
     const rec = recommendSession(routines, sessions, ref(nth(sessions, sessions.length - 1)));
-    expect(rec).toEqual({ key: 'routine:r-full', basis: { kind: 'from', lastDone: on('2026-08-14') } });
+    expect(rec).toEqual({ key: 'name:legs', basis: { kind: 'longest_gap', lastDone: on('2026-10-05') } });
     const withApp = [...sessions, logged('s-push', '2026-10-03', { routineName: 'Push' })];
     expect(recommendSession(routines, withApp, ref(nth(sessions, sessions.length - 1)))?.key).toBe('name:push');
   });

@@ -173,6 +173,36 @@ export class SqliteImports {
     });
   }
 
+  /**
+   * Working-set count per FitNotes `Category` cell for each imported workout
+   * (session-picker §3.2, Decision 1): read from the source rows kept with
+   * every imported set. Only sets still completed count (one deleted in the
+   * app doesn't). `Category` is the third column in every FitNotes layout
+   * (`Date, Exercise, Category, …`, `FITNOTES_HEADERS`). Empty cells are left
+   * out. Owner-scoped (Your data).
+   */
+  categoriesBySession(ownerId: string): Promise<Map<string, Record<string, number>>> {
+    return this.db.read(async (q) => {
+      const rows = await q.getAll<{ sid: string; cat: string | null; n: number }>(
+        `SELECT r.session_id AS sid, json_extract(r.cells, '$[2]') AS cat, count(*) AS n
+         FROM import_rows r
+         JOIN sessions s ON s.id = r.session_id
+         JOIN session_sets x ON x.id = r.set_id
+         WHERE s.owner_id = ? AND ${inHistorySql('s')} AND r.result = 'imported' AND x.status = 'completed' AND x.set_type <> 'warmup'
+         GROUP BY r.session_id, cat`,
+        [ownerId],
+      );
+      const out = new Map<string, Record<string, number>>();
+      for (const r of rows) {
+        if (typeof r.cat !== 'string' || r.cat.trim() === '') continue;
+        const m = out.get(r.sid) ?? {};
+        m[r.cat] = (m[r.cat] ?? 0) + r.n;
+        out.set(r.sid, m);
+      }
+      return out;
+    });
+  }
+
   /** Local dates (each in its own zone) of workouts logged in the app, unfinished included; imported ones excluded. */
   appDates(ownerId: string): Promise<Set<string>> {
     return this.db.read(async (q) => {

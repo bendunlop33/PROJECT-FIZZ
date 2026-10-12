@@ -3,6 +3,8 @@ import { loadText, NBSP, repRangeText, targetShort } from '../display';
 import { loadDirection } from '../equipment';
 import { fitProvenance, startWarningNote } from '../target-provenance';
 import { convertMass } from '../units';
+import { needsNoEquipment } from '../exercise-equipment';
+import { deriveId } from '../stable';
 import { startWorkoutWithMode, type StartWorkoutInput, type StartWorkoutOutput } from './create';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, partRootOf, partsOf } from './gym-switch';
@@ -114,8 +116,14 @@ export interface RepeatOutput extends StartWorkoutOutput {
   shapedFrom?: Record<string, ShapeBefore>;
 }
 
+/** The pin an exercise from a FitNotes workout starts from: no item recorded, so the shared fit maps one by kind (B7). */
+export function importPinId(exercise: Pick<Exercise, 'id'>): string {
+  return deriveId(`fitnotes-pin:${exercise.id}`);
+}
+
 export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   const src = input.source;
+  const imported = src.session.source === 'import';
   const notCopied: RepeatOutput['notCopied'] = [];
   const exercises = new Map<string, Exercise>();
   const routineExercises: RoutineExercise[] = [];
@@ -261,8 +269,10 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     routineExercises.push({
       id: rexId,
       exerciseId: exercise.id,
-      // Pinned to last time's item: `snapPlanToGym` maps it to this gym (GS3).
-      equipmentId: sourceEq?.id ?? null,
+      // Pinned to last time's item: `snapPlanToGym` maps it to this gym (GS3). A FitNotes
+      // workout recorded no item (B7): a pin found nowhere, so the fit maps one by the
+      // exercise's kinds and rounds toward easier, never above a max, or drops the load (rule 4).
+      equipmentId: sourceEq?.id ?? (imported && !needsNoEquipment(exercise) ? importPinId(exercise) : null),
       order: routineExercises.length,
       supersetGroup: sx.supersetGroup,
       setTemplates: templates,

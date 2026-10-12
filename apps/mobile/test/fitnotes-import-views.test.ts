@@ -6,7 +6,6 @@ import type { ImportDraft } from '../src/import/import-service';
 import {
   barWeightEntry,
   bodyweightOptions,
-  importedNotListedLine,
   importedSetLines,
   introView,
   namesView,
@@ -907,11 +906,6 @@ describe('import wording without a database', () => {
     expect(barWeightEntry('450', lb)).toEqual({ save: null, endText: '45', warning: `Enter a bar weight up to 220${NBSP}lb. Until you do, 45${NBSP}lb is added to plates-only values.` });
     const ez = { value: null, unit: 'kg' as const, missing: 'EZ-bar weight needed (kg)' };
     expect(barWeightEntry('150', ez)).toEqual({ save: null, endText: '150', warning: `Enter a bar weight up to 100${NBSP}kg.` });
-  });
-
-  it('Past workouts says imported workouts are left out (review r2 B1)', () => {
-    expect(importedNotListedLine(1)).toBe('1 imported workout not listed ›');
-    expect(importedNotListedLine(412)).toBe('412 imported workouts not listed ›');
   });
 
   it('a workout whose save wasn’t confirmed is never called failed (review r2 N4)', () => {
