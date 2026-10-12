@@ -571,7 +571,7 @@ describe('evaluateCoachTrigger (rule T, deviation from the target RPE; CHANGELOG
     ['RPE 6 at target 7: none', trig({ actual: e(6) }), 7, null],
     ['RIR 4 at a planned RIR 2: offer', trig({ plannedRir: 2, actual: e(null, 8, 4) }), undefined, 'rpe_low'],
     ['13 reps at RPE 5 (target 8): none', trig({ reps: [12, 15], actual: e(5, 13) }), 8, null],
-    ['RPE 8 on an all-out plan: easier than planned', trig({ plannedRpe: 10, actual: e(8) }), undefined, 'rpe_low'],
+    ['RPE 7 on an all-out plan: none (rule T: planned all-out never triggers)', trig({ plannedRpe: 10, actual: e(7) }), undefined, null],
     ['short reps at a low RPE is never "too easy"', trig({ actual: e(5, 6) }), 9, null],
     // no target at all: D20 thresholds
     ['no target, RPE 9.5: offer', trig({ actual: e(9.5) }), null, 'rpe_high'],

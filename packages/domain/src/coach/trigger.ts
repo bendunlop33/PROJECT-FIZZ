@@ -119,7 +119,8 @@ const NEVER_TRIGGERS: ReadonlySet<SetType> = new Set<SetType>(['warmup', 'drop']
  *   (≤ target − `clearlyBelowBy`). No effort logged still counts.
  * - `rpe_low`: logged effort ≤ target − `easierBy` (2), on a set of at most
  *   `easyMaxReps` reps whose reps weren't short.
- * A target of RPE 10 (planned all-out) never fires "too hard".
+ * A target of RPE 10 (planned all-out) never fires (CHANGELOG: never "too
+ * hard"; approved rule T: planned all-out sets never trigger at all).
  *
  * `targetRpe`: the resolved target (`targetRpeOf(…)?.rpe`); omitted, the
  * set's own planned RPE/RIR is used. With no target at all, the fixed D20
@@ -168,9 +169,10 @@ export function evaluateCoachTrigger(
     return null;
   }
 
-  const allOut = target >= 10;
-  if (!allOut && logged !== null && logged >= target + thresholds.harderBy) return make('rpe_high', effortFact());
-  if (!allOut && short && !(logged !== null && logged <= target - thresholds.clearlyBelowBy)) return make('reps_short', shortFact());
+  // A planned all-out set (target RPE 10) never triggers (rule T: "planned all-out/AMRAP sets never trigger").
+  if (target >= 10) return null;
+  if (logged !== null && logged >= target + thresholds.harderBy) return make('rpe_high', effortFact());
+  if (short && !(logged !== null && logged <= target - thresholds.clearlyBelowBy)) return make('reps_short', shortFact());
   if (logged !== null && !short && logged <= target - thresholds.easierBy && (reps === null || reps <= thresholds.easyMaxReps)) return make('rpe_low', effortFact());
   return null;
 }
