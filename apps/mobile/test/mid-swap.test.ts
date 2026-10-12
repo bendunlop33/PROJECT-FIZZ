@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { workoutView } from '@fizz/coach';
 import { currentGymEquipment, isLoadAchievable } from '@fizz/domain';
 
+import { exerciseMenu } from '../src/workout/exercise-menu';
+
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -132,5 +134,43 @@ describe('swap after pain (B5, rule 9; review gaps B1)', () => {
     const { sheet, moved } = await benchThenSwap(false);
     expect(sheet.painHeld).toBe(false);
     expect(moved.some((m) => (m.planned.load?.value ?? 0) > 30)).toBe(true);
+  });
+});
+
+describe('Swap exercise with only the other side of a pair left (review gaps r2 S1)', () => {
+  it('Left-only log on the last set: no Swap exercise in the menu, and swapCandidates is null', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const started = await s.workout.start({ gymId, opId: 'start-uni', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!started.ok) throw new Error(started.error.message);
+    const sessionId = started.aggregate.session.id;
+    const pick = (await s.workout.pickerExercises(sessionId, 'One-arm dumbbell row')).find((p) => p.exercise.name === 'One-arm dumbbell row');
+    if (!pick) throw new Error('no One-arm dumbbell row');
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: 'add-row' });
+    if (!added.ok) throw new Error(added.error.message);
+    const row = added.aggregate.exercises[0];
+    if (!row) throw new Error('row');
+    const pending = () => s.workout.load(sessionId).then((d) => (d?.aggregate.sets ?? []).filter((x) => x.sessionExerciseId === row.id && x.status === 'pending').sort((a, b) => a.index - b.index));
+    const one = { load: { value: 20, unit: 'kg' as const, convention: 'per_hand' as const }, reps: 10, durationS: null, rpe: null, rir: null };
+    // Log every set but the last as both sides, then the last one Left only.
+    for (let left = await pending(), i = 0; left.length > 1; left = await pending(), i += 1) {
+      h.clockMs += 60_000;
+      const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log-${String(i)}`, setId: left[0]?.id ?? '', values: one, restTimerId: h.ids() });
+      if (!r.ok) throw new Error(r.error.message);
+    }
+    const last = (await pending())[0];
+    h.clockMs += 60_000;
+    const lefty = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: 'log-left', setId: last?.id ?? '', values: one, restTimerId: h.ids(), side: 'left' });
+    if (!lefty.ok) throw new Error(lefty.error.message);
+
+    const data = await s.workout.load(sessionId);
+    if (!data) throw new Error('load');
+    const v = s.workout.view(data, h.clockMs, null);
+    // The Right side is still pending, so the old count said "swap".
+    expect(v.exercises.find((e) => e.sessionExerciseId === row.id)?.pendingSets).toBe(1);
+    expect(v.focus?.sessionExerciseId).toBe(row.id);
+    expect(v.focus?.swappable).toBe(false);
+    expect(exerciseMenu(false, false, { canSwap: v.focus?.swappable ?? false, canRemove: v.focus?.removable ?? false }).options).not.toContain('Swap exercise');
+    expect(await s.workout.swapCandidates(sessionId, row.id)).toBeNull();
   });
 });

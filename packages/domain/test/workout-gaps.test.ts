@@ -200,6 +200,7 @@ describe('swap leaves a half-logged left/right pair alone (review gaps S1)', () 
     expect(partner?.status).toBe('pending');
     // The slot is the untouched set 2 only.
     expect(midSwapSlot(s, benchRow(s))?.workingSets).toBe(1);
+    expect(view(s).focus?.swappable).toBe(true);
     const after = apply(s, swapCmd(s, chestPlan(45)));
     expect(after.sets.find((x) => x.id === partner?.id)).toEqual(partner);
     expect(setsFor(after, CHEST.id)).toHaveLength(1);
@@ -214,6 +215,11 @@ describe('swap leaves a half-logged left/right pair alone (review gaps S1)', () 
     s = apply(s, logCmd(b1?.id ?? '', values(kg(100), 8), 300));
     s = apply(s, logCmd(b2?.id ?? '', values(kg(100), 8), 500, 'left-2', 'left'));
     expect(midSwapSlot(s, benchRow(s))).toBeNull();
+    // The menu follows the same rule (review gaps r2 S1): the Right side is still pending, but no `Swap exercise`.
+    const v = view(s);
+    expect(v.exercises.find((e) => e.sessionExerciseId === benchRow(s))?.pendingSets).toBe(1);
+    expect(v.focus?.sessionExerciseId).toBe(benchRow(s));
+    expect(v.focus?.swappable).toBe(false);
   });
 });
 

@@ -25,6 +25,7 @@ import { blockSets, isEmptyPart, partRootOf } from './gym-switch';
 import { buildExecutionOrder, nextPendingSet } from './order';
 import { GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
 import { latestCommittedSetId } from './reducer';
+import { midSwapSlot } from './mid-swap';
 import { setSnapNote, type NoteLine } from './snap-text';
 import { buildTimeLeftView, type PaceSamples, type TimeLeftEstimate, type TimeLeftLineView } from './time-left';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
@@ -208,6 +209,8 @@ export interface FocusView {
   swappedFrom: { name: string; opId: string } | null;
   /** `Remove exercise` is offered: nothing on it is logged and it has no parts at another gym (exercise-library §4.6). */
   removable: boolean;
+  /** `Swap exercise` is offered: the row has pending sets a swap would move (`midSwapSlot`; not only a half-logged pair's other side, review gaps r2 S1). */
+  swappable: boolean;
   /** `Barbell · Set 2 of 4`, `Barbell · Warm-up · Set 1 of 4` (+ ` · per side`). */
   headerLine: string;
   setNumber: number;
@@ -564,6 +567,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     note: ex.note ?? null,
     swappedFrom: swappedFromOf(state, ex),
     removable: isRemovable(state, ex),
+    swappable: midSwapSlot(state, ex.id) !== null,
     headerLine: headerParts.filter((p): p is string => p !== null).join(' · '),
     setNumber,
     setCount: own.length,

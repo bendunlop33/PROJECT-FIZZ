@@ -718,8 +718,7 @@ export function WorkoutScreen() {
 
   function openExerciseMenu(f: FocusView) {
     const howTo = howToRouteFor(f, bundledHowToSources());
-    const pendingHere = view?.exercises.find((e) => e.sessionExerciseId === f.sessionExerciseId)?.pendingSets ?? 0;
-    const menu = exerciseMenu(howTo !== null, f.coachActionId !== null, { canSwap: pendingHere > 0, canUndoSwap: f.swappedFrom !== null, canRemove: f.removable });
+    const menu = exerciseMenu(howTo !== null, f.coachActionId !== null, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: f.removable });
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
