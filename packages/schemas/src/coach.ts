@@ -333,7 +333,8 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     kind: z.literal('update_routine'),
     routineId: IdSchema,
     routineName: z.string().min(1).max(120),
-    changes: z.array(StructuralChangeLineSchema).min(1).max(6),
+    /** Up to 6 for a one-slot change or an editor save; `Update Push A` (§11.5) lists one line per checked edit. */
+    changes: z.array(StructuralChangeLineSchema).min(1).max(40),
     /** A one-slot change (`Change Push A too ›`); absent for an editor save. */
     slot: z.object({ before: RoutineExerciseSchema, after: RoutineExerciseSchema }).optional(),
     /**
@@ -344,7 +345,12 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     before: RoutineSchema.optional(),
     versionBefore: z.int().min(1),
     versionAfter: z.int().min(2),
-    draft: z.object({ id: IdSchema, editId: IdSchema }).nullable(),
+    /**
+     * The draft edits the change made redundant (marked so in the same
+     * write; Undo brings them back). `editId` is the first; `editIds`, when
+     * present, is every one (`Update Push A`, overview-today-edits §11.5).
+     */
+    draft: z.object({ id: IdSchema, editId: IdSchema, editIds: z.array(IdSchema).min(1).max(80).optional() }).nullable(),
   }),
   z.object({
     kind: z.literal('set_pain_flag'),
