@@ -215,6 +215,53 @@ describe('duplicate and delete (WL-A7, A8)', () => {
 });
 
 describe('Save to Workouts (WL-A9, A10, A11, A12)', () => {
+  it('a sled push is left out and listed on the save sheet (review S1); Repeat’s save lists it too; nothing saved as timed', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const started = await s.workout.start({ gymId, opId: 'start-sled', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!started.ok) throw new Error(started.error.message);
+    const sessionId = started.aggregate.session.id;
+    const addAndLog = async (name: string, values: { load: { value: number; unit: 'kg'; convention: 'total' | 'added' } | null; reps: number | null; durationS: number | null; distanceM?: number }) => {
+      const pick = (await s.workout.pickerExercises(sessionId, name, { withCatalogue: true })).find((p) => p.exercise.name === name);
+      if (!pick) throw new Error(`no ${name}`);
+      const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: h.ids() });
+      if (!added.ok) throw new Error(added.error.message);
+      const ex = added.aggregate.exercises.at(-1);
+      const set = added.aggregate.sets.filter((x) => x.sessionExerciseId === ex?.id && x.setType !== 'warmup').sort((a, b) => a.index - b.index)[0];
+      if (!set) throw new Error('no set');
+      h.clockMs += 60_000;
+      const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: h.ids(), setId: set.id, values: { ...values, rpe: null, rir: null }, restTimerId: h.ids() });
+      if (!r.ok) throw new Error(r.error.message);
+    };
+    await addAndLog('Bench press', { load: { value: 60, unit: 'kg', convention: 'total' }, reps: 8, durationS: null });
+    await addAndLog('Sled push', { load: { value: 40, unit: 'kg', convention: 'added' }, reps: null, durationS: 30, distanceM: 20 });
+    const data = await s.workout.load(sessionId);
+    const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: h.ids(), expectedVersion: data?.aggregate.session.version ?? 0, endedAt: null });
+    if (!fin.ok) throw new Error(fin.error.message);
+    await h.settle(s);
+
+    const src = await s.routines.saveSource({ kind: 'session', sessionId });
+    if (src === 'stale' || src === null) throw new Error('no source');
+    expect(src.detail).toBe('1 exercise · 1 set');
+    expect(src.notSaved).toBe('Not copied: 1 distance set (Sled push)');
+    const r = await s.routines.saveFrom({ from: { kind: 'session', sessionId }, name: 'Legs', addToRotation: false, opId: 'save-legs' });
+    if (!r.ok) throw new Error(r.message);
+    expect(r.routine.exercises).toHaveLength(1);
+    expect(r.routine.exercises.flatMap((e) => e.setTemplates).every((t) => t.targetDurationS === null)).toBe(true);
+
+    // Repeat's save: the same sled push listed, never a timed template.
+    const rep = await s.routines.saveSource({ kind: 'repeat', sessionId, gymId });
+    if (rep === 'stale' || rep === null) throw new Error('no repeat source');
+    expect(rep.notSaved).toBe('Not copied: 1 distance set (Sled push)');
+    const rr = await s.routines.saveFrom({ from: { kind: 'repeat', sessionId, gymId }, name: 'Legs again', addToRotation: false, opId: 'save-legs-2' });
+    if (!rr.ok) throw new Error(rr.message);
+    expect(rr.routine.exercises.flatMap((e) => e.setTemplates).every((t) => t.targetDurationS === null)).toBe(true);
+    // A workout with no distance: nothing listed.
+    const plainSid = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    const none = await s.routines.saveSource({ kind: 'session', sessionId: plainSid });
+    expect(none !== 'stale' && none?.notSaved).toBeNull();
+  });
+
   it('an Empty workout saves done exercises and set counts with Auto loads; the next overview has targets from it; the workout is unchanged', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);

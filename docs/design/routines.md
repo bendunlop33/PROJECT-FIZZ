@@ -165,12 +165,14 @@ Same frame, action bar and keypad rules as v0.1 §2.3. Changes:
 │ │ Legs                               │ │ prefilled, text selected
 │ └────────────────────────────────────┘ │
 │ 5 exercises · 15 sets                  │ what will be saved
+│ Not copied: 3 distance sets (Sled push)│ only when something is left out
 │ Add to rotation               [  ○]    │ switch, off by default
 │ [               Save                 ] │ above the keyboard
 └────────────────────────────────────────┘
 ```
 
 - Name prefill: the session's name, the history type's label, the coach draft's name, or `Workout · Sun 11 Oct` for an unnamed one. A duplicate name shows `You already have Legs.` under the field and still saves (`checkRoutineName`).
+- A set template has no distance target yet, so a distance exercise (sled push, carry) is left out, never saved as reps or as a timed set. The sheet lists it under the summary in Repeat's wording (`notCopiedText`): `Not copied: 3 distance sets (Sled push)` (review workout-library-merge S1, 12 Oct 2026).
 - After `Save`: toast `Saved to Workouts` [Undo]. The entry point becomes `Saved · Legs ›` (opens the overview). Undo tombstones the new workout (and takes it out of the rotation if it was added).
 
 ### A2.6 Entry points for Save

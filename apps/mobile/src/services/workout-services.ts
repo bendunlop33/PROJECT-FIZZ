@@ -75,6 +75,10 @@ import {
   restoreRoutine,
   routineCounts,
   routineFromSession,
+  notSavedFromSession,
+  notSavedFromPlan,
+  mergeNotCopied,
+  notCopiedText,
   routineLastDone,
   ruleTargetRpes,
   type RuleExerciseInfo,
@@ -609,6 +613,8 @@ export type SaveFrom =
 export interface SaveSource {
   name: string;
   detail: string;
+  /** What isn't saved (`Not copied: 3 distance sets (Sled push)`, review S1); null when nothing is left out. */
+  notSaved: string | null;
 }
 
 export type LibrarySaveWrite = RoutineWrite | { ok: false; message: string; reason: 'nothing' | 'stale_preview' };
@@ -1394,12 +1400,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** A workout from a save source, not saved: what the sheet shows and what `saveFrom` writes. */
-  async function routineFromSource(p: UserProfile, from: SaveFrom, req: { id: string; name: string; opId: string; inRotation: boolean }): Promise<Routine | 'stale' | null> {
+  /** `notSaved`, when given, gets what the workout leaves out (distance sets, review S1), for the save sheet. */
+  async function routineFromSource(p: UserProfile, from: SaveFrom, req: { id: string; name: string; opId: string; inRotation: boolean }, notSaved?: NotCopied[]): Promise<Routine | 'stale' | null> {
     const at = ctx.now();
     if (from.kind === 'session') {
       const source = await repos().sessions.get(from.sessionId).catch(() => null);
       if (!source || source.session.ownerId !== p.id) return null;
       const isCompound = await compoundOf(source.exercises.map((e) => e.exerciseId));
+      notSaved?.push(...notSavedFromSession(source));
       return routineFromSession({ id: req.id, ownerId: p.id, name: req.name, opId: req.opId, source, at, newId: ctx.newId, inRotation: req.inRotation, isCompound });
     }
     if (from.kind === 'repeat') {
@@ -1408,11 +1416,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const isCompound = await compoundOf(r.plan.exercises.map((e) => e.exerciseId));
       // What the Repeat screen shows: last time's loads fitted to this gym, kept as Fixed (§4.6).
       const fixedSetIds = new Set(r.plan.sets.filter((s) => s.status === 'pending' && s.planned.load !== null).map((s) => s.id));
+      // Repeat's own distance-only sets (never copied) and any distance set the plan still holds.
+      notSaved?.push(...mergeNotCopied(r.out.notCopied.filter((n) => n.kind === 'distance'), notSavedFromPlan(r.plan)));
       return routineFromPlan({ id: req.id, ownerId: p.id, name: req.name, opId: req.opId, plan: r.plan, at, newId: ctx.newId, isCompound, inRotation: req.inRotation, fixedSetIds, createdFromSessionId: r.source.session.id });
     }
     const plan = await previewPlan(p, from);
     if (plan === null || plan === 'stale') return plan;
     const isCompound = await compoundOf(plan.aggregate.exercises.map((e) => e.exerciseId));
+    notSaved?.push(...notSavedFromPlan(plan.aggregate));
     return routineFromPlan({
       id: req.id,
       ownerId: p.id,
@@ -2861,7 +2872,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async saveSource(from: SaveFrom, fallbackName: string | null = null): Promise<SaveSource | 'stale' | null> {
       try {
         const p = await owner();
-        const r = await routineFromSource(p, from, { id: deriveId('save-source'), name: 'x', opId: 'save-source', inRotation: false });
+        const left: NotCopied[] = [];
+        const r = await routineFromSource(p, from, { id: deriveId('save-source'), name: 'x', opId: 'save-source', inRotation: false }, left);
         if (r === 'stale') return 'stale';
         if (r === null) return null;
         let name = fallbackName;
@@ -2869,7 +2881,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           const source = await repos().sessions.get(from.sessionId).catch(() => null);
           name = source === null ? null : (source.session.routineName ?? storedName(source) ?? unnamedWorkoutName(source.session.startedAt));
         }
-        return { name: name ?? unnamedWorkoutName(ctx.now()), detail: saveSheetDetail(r) };
+        return { name: name ?? unnamedWorkoutName(ctx.now()), detail: saveSheetDetail(r), notSaved: notCopiedText(left) };
       } catch {
         return null;
       }

@@ -15,6 +15,7 @@ import {
   restoreRoutine,
   routineCounts,
   routineFromSession,
+  notSavedFromSession,
   routineLastDone,
   startWorkout,
   targetSummaryLines,
@@ -96,6 +97,28 @@ describe('routineFromSession (Save as routine, premium-feel §2.6)', () => {
     expect(routineCounts(r)).toEqual({ exercises: 2, sets: 4 });
     // Saving never touches the finished workout.
     expect(JSON.stringify(source)).toBe(before);
+  });
+
+  it('distance sets (review S1): a distance-only set and a distance set with a time are both left out and listed, never saved as timed', () => {
+    const src = finishedPushA();
+    const row = src.exercises.find((e) => e.exerciseId === ROW);
+    if (!row) throw new Error('no row');
+    const doneRow = src.sets.filter((s) => s.sessionExerciseId === row.id && s.status === 'completed');
+    expect(doneRow).toHaveLength(1);
+    const sled: SessionAggregate = {
+      ...src,
+      exercises: src.exercises.map((e) => (e.id === row.id ? { ...e, measurement: 'distance' as const, exerciseName: 'Sled push' } : e)),
+      sets: src.sets.map((s) => (s.sessionExerciseId === row.id && s.actual !== null ? { ...s, actual: { ...s.actual, reps: null, durationS: 45, distanceM: 20 } } : s)),
+    };
+    const r = save(sled);
+    expect(r.exercises.map((e) => e.exerciseId)).toEqual([BENCH]);
+    expect(r.exercises.flatMap((e) => e.setTemplates).some((t) => t.targetDurationS !== null)).toBe(false);
+    expect(notSavedFromSession(sled)).toEqual([{ kind: 'distance', exerciseName: 'Sled push', sets: 1 }]);
+    // Distance only (no time): left out the same way.
+    const only: SessionAggregate = { ...sled, sets: sled.sets.map((s) => (s.sessionExerciseId === row.id && s.actual !== null ? { ...s, actual: { ...s.actual, durationS: null } } : s)) };
+    expect(save(only).exercises.map((e) => e.exerciseId)).toEqual([BENCH]);
+    expect(notSavedFromSession(only)).toEqual([{ kind: 'distance', exerciseName: 'Sled push', sets: 1 }]);
+    expect(notSavedFromSession(src)).toEqual([]);
   });
 
   it('an exercise with only warm-ups done is left out; nothing logged gives no routine', () => {

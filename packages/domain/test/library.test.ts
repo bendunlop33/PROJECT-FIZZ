@@ -21,6 +21,8 @@ import {
   routineChangeLines,
   routineEditDirty,
   routineFromPlan,
+  notSavedFromPlan,
+  notCopiedText,
   planSettingsOfRoutine,
   mergeRoutineEdits,
   startWorkout,
@@ -207,6 +209,28 @@ describe('routineFromPlan (save what the overview shows, WL-A11)', () => {
     let all = plan;
     for (const ex of plan.exercises) all = apply(all, { type: 'skip_exercise', at: at(3), opId: `s-${ex.id}`, sessionExerciseId: ex.id });
     expect(routineFromPlan({ id: id(962), ownerId: OWNER, name: 'X', opId: 'o', plan: all, at: at(4), newId: idGen(96_800), isCompound: compound })).toBeNull();
+  });
+});
+
+describe('routineFromPlan and distance sets (review S1)', () => {
+  it('a distance exercise is left out and listed, never saved as a timed set', () => {
+    const plan = startFixture().state;
+    const hang = plan.exercises.find((e) => e.exerciseId === HANG);
+    if (!hang) throw new Error('no hang');
+    // The timed hang as a carry: distance and time planned.
+    const carry = {
+      ...plan,
+      exercises: plan.exercises.map((e) => (e.id === hang.id ? { ...e, measurement: 'distance' as const, exerciseName: 'Farmer carry' } : e)),
+      sets: plan.sets.map((s) => (s.sessionExerciseId === hang.id ? { ...s, planned: { ...s.planned, distanceM: 40 } } : s)),
+    };
+    const n = carry.sets.filter((s) => s.sessionExerciseId === hang.id && s.status === 'pending' && s.pairedWithSetId === null).length;
+    expect(n).toBe(1);
+    const r = routineFromPlan({ id: id(963), ownerId: OWNER, name: 'X', opId: 'o', plan: carry, at: at(2), newId: idGen(96_900), isCompound: compound });
+    expect(r?.exercises.map((e) => e.exerciseId)).toEqual([BENCH, ROW, FACE]);
+    expect(r?.exercises.flatMap((e) => e.setTemplates).some((t) => t.targetReps === null)).toBe(false);
+    expect(notSavedFromPlan(carry)).toEqual([{ kind: 'distance', exerciseName: 'Farmer carry', sets: n }]);
+    expect(notCopiedText(notSavedFromPlan(carry))).toBe('Not copied: 1 distance set (Farmer carry)');
+    expect(notSavedFromPlan(plan)).toEqual([]);
   });
 });
 

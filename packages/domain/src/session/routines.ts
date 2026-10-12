@@ -11,6 +11,7 @@ import type {
   SetTemplate,
   SetType,
   TargetProvenance,
+  WorkoutSet,
   ZonedTimestamp,
 } from '@fizz/schemas';
 import { formatNumber, loadText, NBSP, repRangeText } from '../display';
@@ -21,7 +22,7 @@ import { startWorkout, type StartWorkoutInput, type StartWorkoutOutput } from '.
 import { blockSets, partRootOf, partsOf } from './gym-switch';
 import { boundWords, convertedWords, noLoadWords, roundedWords, withWas } from './fit-words';
 import type { NextTargetEntry } from '../coach/next-session';
-import type { RepeatNote } from './repeat';
+import type { NotCopied, RepeatNote } from './repeat';
 import type { SnapResult } from './snap';
 import { shapeOfTemplates, shapeTemplates, type ShapeBefore, type SlotShape } from './today-shape';
 import { isInHistory } from './deletion';
@@ -112,6 +113,62 @@ export interface RoutineFromSessionInput {
  * nothing qualifies or the workout isn't finished. The workout itself is
  * never changed.
  */
+/**
+ * A set a saved workout can't hold (review S1): a set template has no
+ * distance target yet, so a distance exercise (sled push, carry) is left
+ * out and listed, never saved as reps or as a timed set.
+ */
+export function isDistanceSet(ex: { measurement: string }, values: { distanceM?: number | null | undefined }): boolean {
+  return ex.measurement === 'distance' || (values.distanceM !== undefined && values.distanceM !== null);
+}
+
+/** Sets per exercise, in plan order, that `isDistanceSet` leaves out; warm-up-only exercises are left out anyway and not listed. */
+function distanceLeftOut(src: SessionAggregate, kept: (s: WorkoutSet) => boolean, valuesOf: (s: WorkoutSet) => { distanceM?: number | null | undefined } | null): NotCopied[] {
+  const out: NotCopied[] = [];
+  const roots = [...src.exercises].sort((a, b) => a.order - b.order).filter((sx) => partRootOf(src.exercises, sx.id) === sx.id);
+  for (const sx of roots) {
+    const sets = blockSets(src, sx.id).filter((s) => kept(s) && s.pairedWithSetId === null);
+    if (sets.every((s) => s.setType === 'warmup')) continue;
+    const n = sets.filter((s) => {
+      const v = valuesOf(s);
+      return v !== null && isDistanceSet(sx, v);
+    }).length;
+    if (n > 0) out.push({ kind: 'distance', exerciseName: sx.exerciseName, sets: n });
+  }
+  return out;
+}
+
+/** What `routineFromSession` leaves out of a finished workout (shown on the save sheet with `notCopiedText`). */
+export function notSavedFromSession(source: SessionAggregate): NotCopied[] {
+  return distanceLeftOut(
+    source,
+    (s) => s.status === 'completed' && s.actual !== null,
+    (s) => s.actual,
+  );
+}
+
+/** What `routineFromPlan` leaves out of a plan (shown on the save sheet with `notCopiedText`). */
+export function notSavedFromPlan(plan: SessionAggregate): NotCopied[] {
+  return distanceLeftOut(
+    plan,
+    (s) => s.status === 'pending',
+    (s) => s.planned,
+  );
+}
+
+/** Two left-out lists as one, by exercise name in first-seen order (Repeat's own list and the plan's). */
+export function mergeNotCopied(a: readonly NotCopied[], b: readonly NotCopied[]): NotCopied[] {
+  const out: NotCopied[] = [];
+  for (const n of [...a, ...b]) {
+    const i = out.findIndex((x) => x.kind === n.kind && x.exerciseName === n.exerciseName);
+    const prev = out[i];
+    if (prev === undefined) out.push({ ...n });
+    else if (prev.kind === 'skipped' && n.kind === 'skipped') out[i] = { ...prev, skipped: prev.skipped + n.skipped };
+    else if (prev.kind === 'distance' && n.kind === 'distance') out[i] = { ...prev, sets: prev.sets + n.sets };
+  }
+  return out;
+}
+
 export function routineFromSession(input: RoutineFromSessionInput): Routine | null {
   const src = input.source;
   if (!isInHistory(src.session)) return null;
@@ -127,7 +184,7 @@ export function routineFromSession(input: RoutineFromSessionInput): Routine | nu
     const restBySetType: Partial<Record<SetType, RestSetting>> = {};
     for (const s of done) {
       const a = s.actual;
-      if (a === null || (a.reps === null && a.durationS === null)) continue;
+      if (a === null || (a.reps === null && a.durationS === null) || isDistanceSet(sx, a)) continue;
       const reps = a.reps === null ? null : (s.planned.reps && a.reps >= s.planned.reps.min && a.reps <= s.planned.reps.max ? { ...s.planned.reps } : { min: a.reps, max: a.reps });
       templates.push({
         id: input.newId(),

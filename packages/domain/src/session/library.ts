@@ -5,7 +5,7 @@ import { weekdayOf } from '../calendar';
 import { equipmentForExercise, needsNoEquipment } from '../exercise-equipment';
 
 import { toMs } from '../time';
-import { isDeleted, isInRotation, rotationRoutines, ROUTINE_NAME_MAX, routineCounts, routineWrite, withDefaultMain, type RoutineChange } from './routines';
+import { isDeleted, isDistanceSet, isInRotation, rotationRoutines, ROUTINE_NAME_MAX, routineCounts, routineWrite, withDefaultMain, type RoutineChange } from './routines';
 import { formatLastDone, routineTypeKey, type SessionType } from './session-types';
 import { blockSets, partRootOf } from './gym-switch';
 
@@ -389,7 +389,7 @@ export function routineFromPlan(input: RoutineFromPlanInput): Routine | null {
     const row = input.fromRoutine?.rows.get(sx.id);
     for (const s of sets) {
       const p = s.planned;
-      if (p.reps === null && p.durationS === null) continue;
+      if ((p.reps === null && p.durationS === null) || isDistanceSet(sx, p)) continue;
       const pin = input.fromRoutine?.pins.get(s.id) ?? null;
       templates.push({
         id: input.newId(),

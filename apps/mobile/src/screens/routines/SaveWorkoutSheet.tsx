@@ -24,6 +24,7 @@ export function SaveWorkoutSheet({
   from,
   initialName,
   detail,
+  notSaved = null,
   onSaved,
   onClose,
   onDismissed,
@@ -33,6 +34,8 @@ export function SaveWorkoutSheet({
   initialName: string;
   /** `5 exercises · 15 sets`. */
   detail: string;
+  /** `Not copied: 3 distance sets (Sled push)` (review S1); null when nothing is left out. */
+  notSaved?: string | null;
   onSaved: (routine: Routine) => void;
   onClose: () => void;
   onDismissed?: () => void;
@@ -108,6 +111,11 @@ export function SaveWorkoutSheet({
       <AppText variant="callout" color="text.secondary" numeric>
         {detail}
       </AppText>
+      {notSaved !== null ? (
+        <AppText variant="callout" color="text.secondary" numeric>
+          {notSaved}
+        </AppText>
+      ) : null}
       <SwitchRow label={LIBRARY_COPY_UI.addToRotation} value={rotation} onChange={setRotation} />
       {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
       <PrimaryButton label={LIBRARY_COPY_UI.save} busy={busy} disabled={check?.ok !== true || from === null} onPress={() => void save()} />
@@ -134,7 +142,7 @@ function SwitchRow({ label, value, onChange }: { label: string; value: boolean; 
  */
 export function useSaveToWorkouts(onSaved: (routine: Routine) => void, onNothing: () => void, onStale: () => void = onNothing) {
   const services = useServices();
-  const [state, setState] = useState<{ from: SaveFrom; name: string; detail: string } | null>(null);
+  const [state, setState] = useState<{ from: SaveFrom; name: string; detail: string; notSaved: string | null } | null>(null);
   const [visible, setVisible] = useState(false);
   async function open(from: SaveFrom, fallbackName: string | null = null): Promise<void> {
     const src = await services.routines.saveSource(from, fallbackName).catch(() => null);
@@ -146,7 +154,7 @@ export function useSaveToWorkouts(onSaved: (routine: Routine) => void, onNothing
       onNothing();
       return;
     }
-    setState({ from, name: src.name, detail: src.detail });
+    setState({ from, name: src.name, detail: src.detail, notSaved: src.notSaved });
     setVisible(true);
   }
   const sheet = (
@@ -155,6 +163,7 @@ export function useSaveToWorkouts(onSaved: (routine: Routine) => void, onNothing
       from={state?.from ?? null}
       initialName={state?.name ?? ''}
       detail={state?.detail ?? ''}
+      notSaved={state?.notSaved ?? null}
       onSaved={(r) => {
         setVisible(false);
         onSaved(r);
