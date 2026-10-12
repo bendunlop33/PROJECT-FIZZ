@@ -245,7 +245,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Build a workout you ask for, as a draft you open, start or save',
     capabilitySection: 'when_you_ask',
     description:
-      'Build the workout Ben asked for, or a new version of the coach draft in context: exercises by catalogueId from YOUR DATA build.usable only, in order, with working sets, a rep range (or workSeconds for timed exercises), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. No loads or minutes: the app plans loads from his history and fits the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
+      'Build the workout Ben asked for (or agreed to add after you described it in this thread), or a new version of the coach draft in context. Use it only then, and always then: never describe the workout in reply instead. Exercises by catalogueId from YOUR DATA build.usable only, in order, with working sets, a rep range (or workSeconds for timed exercises), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. No loads or minutes: the app plans loads from his history and fits the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
   },
   {
     // Contract §6.1 says `ben_request`; ADR 0020 §2 proposes `none`. The approved

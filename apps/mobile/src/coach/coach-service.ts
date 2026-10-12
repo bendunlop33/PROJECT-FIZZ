@@ -40,7 +40,10 @@ import {
   DEFAULT_COACH_TIMING,
   classifyBenRequest,
   requestHas,
-  revisesDraft,
+  asksForBuild,
+  buildFollowUpIn,
+  buildRequestWords,
+  type BuildFollowUp,
   type AddableExercise,
   type BuildContextView,
   structuralTapRecord,
@@ -833,15 +836,25 @@ export function createCoachService(deps: CoachServiceDeps) {
    * the executor checks the call against the same gym, pain flags and
    * limits. Null when Ben didn't ask for a workout (or there's no gym at all).
    */
-  async function buildTurn(p: UserProfile, text: string, origin: 'chip' | 'card' | 'text' | 'voice', draft: WorkoutDraft | null, chips: { minutes: number | null; focus: BuildFocus } | null): Promise<{ view: BuildContextView; executors: CoachExecutors } | null> {
-    const asked = requestHas(classifyBenRequest(text, 'general'), 'build') || (draft !== null && revisesDraft(text));
-    if (!asked) return null;
+  async function buildTurn(
+    p: UserProfile,
+    said: string,
+    origin: 'chip' | 'card' | 'text' | 'voice',
+    draft: WorkoutDraft | null,
+    chips: { minutes: number | null; focus: BuildFocus } | null,
+    followUp: BuildFollowUp | null,
+  ): Promise<{ view: BuildContextView; executors: CoachExecutors } | null> {
+    // Build 131: the same decision as the turn gate (`gateFor`), so the tool is never withheld as "not in this build".
+    if (!asksForBuild({ turnKind: 'general', text: said, draftInContext: draft !== null, followUp })) return null;
+    // A follow-up ("yes add it") reads length and focus from Ben's earlier request too; never from the coach's text.
+    const text = buildRequestWords(said, followUp);
     const place = await buildGym(p);
     if (place === null) return null;
     const { gym } = place;
     const parent = draft === null ? null : currentDraftVersion(draft);
-    const minutes = chips?.minutes ?? parseRequestedMinutes(text) ?? parent?.fitMinutes ?? resolveBuildMinutes(null, null);
-    const focus: BuildFocus = chips !== null && chips.focus !== 'coach_picks' ? chips.focus : (parseRequestedFocus(text) ?? parent?.request.focus ?? 'coach_picks');
+    const prior = followUp?.priorBenText ?? null;
+    const minutes = chips?.minutes ?? parseRequestedMinutes(said) ?? (prior === null ? null : parseRequestedMinutes(prior)) ?? parent?.fitMinutes ?? resolveBuildMinutes(null, null);
+    const focus: BuildFocus = chips !== null && chips.focus !== 'coach_picks' ? chips.focus : (parseRequestedFocus(said) ?? (prior === null ? null : parseRequestedFocus(prior)) ?? parent?.request.focus ?? 'coach_picks');
     const pool = await exercisePool();
     const byId = new Map(pool.map((e) => [e.id, e]));
     const byKey = new Map(pool.flatMap((e) => (e.catalogueKey ? [[e.catalogueKey, e] as const] : [])));
@@ -933,7 +946,10 @@ export function createCoachService(deps: CoachServiceDeps) {
     const executors = await executorsFor(p, req.entry, kind, session, ctx.gymName, ctx.checkIn, await askedForMoreSets(req.threadId), offerScope);
     // workout-builder §8.2: a build turn (Ben asked for a workout, or to change the draft in context) gets its context and its one tool.
     const draftInContext = req.entry.kind === 'draft' ? await draftOf(p, req.entry.draftId) : null;
-    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null) : null;
+    // Build 131: a follow-up to a session the coach described in text ("yes add it"); the turn engine reads the same thread.
+    const history = kind === 'general' && req.input.kind === 'words' && req.threadId !== null ? await coachStore().listMessages(req.threadId).catch(() => []) : [];
+    const followUp = kind === 'general' && req.input.kind === 'words' ? buildFollowUpIn(history, req.input.text) : null;
+    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp) : null;
     if (build !== null) Object.assign(executors, build.executors);
     // (12 Oct) Ben asked to add an exercise in a workout turn: what can be added here, by ID.
     const addable = kind === 'workout' && session !== null && deps.coachAddInputs !== undefined && req.input.kind === 'words' && requestHas(classifyBenRequest(req.input.text, 'workout'), 'add') ? await addableFor(p, session) : null;

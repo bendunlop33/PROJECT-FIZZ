@@ -5,6 +5,7 @@ import { barbell, dumbbells, exercise, GYM, id, OWNER, TZ } from '@fizz/domain/t
 import type { Exercise, PainFlag, WorkoutDraft } from '@fizz/schemas';
 
 import {
+  BUILD_NUDGE_LINE,
   buildTurnRegistry,
   checkReplyClaims,
   classifyBenRequest,
@@ -219,8 +220,11 @@ describe('a build turn end to end (fake model, real SQLite)', () => {
 
   it('WB3: a plan written as text with no tool call stores nothing, and the turn says `No change made.`', async () => {
     const store = await memoryStore();
-    const model = new ScriptedCoachModel([reply('Try bench, then incline dumbbells and lateral raises.')]);
+    // Build 131: a text answer on a build turn is asked once more (not shown); a second text answer stands, with the line.
+    const model = new ScriptedCoachModel([reply('Try bench, then incline dumbbells and lateral raises.'), reply('Try bench, then incline dumbbells and lateral raises.')]);
     const result = await runCoachTurn(request({ input: words('build me a push workout'), context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [], build: buildView() } }), ports(store, model, executors(store)));
+    expect(model.requests).toHaveLength(2);
+    expect(JSON.stringify(model.requests[1]?.input)).toContain(BUILD_NUDGE_LINE);
     expect(result.cards).toEqual([]);
     expect(result.note).toBe('No change made.');
     expect(await store.repos.workoutDrafts.listByOwner(OWNER)).toEqual([]);
@@ -327,6 +331,23 @@ describe('a build turn end to end (fake model, real SQLite)', () => {
     const other = new ScriptedCoachModel([reply('Sure.')]);
     await runCoachTurn(request({ input: words('save it'), context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(store, other, executors(store)));
     expect(other.requests).toHaveLength(1);
+    await store.close();
+  });
+
+  it('build 131: with a draft in the thread, "save it" after a new session described in text builds that one (not the fixed line)', async () => {
+    const store = await memoryStore();
+    const m1 = new ScriptedCoachModel([[call('propose_workout', proposal()), { type: 'completed' }], reply('Here.')]);
+    const first = await runCoachTurn(request({ input: words(REQ.text), context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [], build: buildView() } }), ports(store, m1, executors(store)));
+    const m2 = new ScriptedCoachModel([reply('Pull: rows 3 × 8–10, pulldown 3 × 10–12, curls 2 × 12–15.')]);
+    await runCoachTurn(request({ input: words('what would a pull day look like?'), threadId: first.threadId, draftInThread: true }), ports(store, m2, executors(store)));
+    const m3 = new ScriptedCoachModel([[call('propose_workout', proposal({ exercises: [proposal().exercises[1]] }), 'c-2'), { type: 'completed' }], reply('Here.')]);
+    const third = await runCoachTurn(
+      request({ input: words('save it'), threadId: first.threadId, draftInThread: true, context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [], build: buildView() } }),
+      ports(store, m3, executors(store)),
+    );
+    expect(m3.offeredTools()[0]).toContain('propose_workout');
+    expect(third.cards[0]?.record).toMatchObject({ status: 'committed', detail: { kind: 'build_workout' } });
+    expect(await store.repos.workoutDrafts.listByOwner(OWNER)).toHaveLength(2);
     await store.close();
   });
 

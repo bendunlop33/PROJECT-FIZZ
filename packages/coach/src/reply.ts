@@ -1,5 +1,6 @@
 import { setNumbersText } from '@fizz/domain';
 import type { HiddenLine } from '@fizz/schemas';
+import { BUILD_ASK_LINE, claimsNoBuildTool } from './build-ask';
 import { checkReplyClaims, isChangeClaim, type TurnLedger } from './claims';
 import { normaliseForClaims } from './text';
 import { EXERCISE_WORD } from './vocab';
@@ -151,6 +152,9 @@ export function needsStructuralNoChangeLine(replyText: string, ledger: TurnLedge
 /** `Why?` → `Not shown` for a sentence that restated a saved change in its own words. */
 export const CARD_ONLY_DETAIL = 'Changes show on their cards, not in the reply.';
 
+/** `Why?` → `Not shown` for a sentence saying the app can't build a workout (build 131). */
+export const NO_BUILD_TOOL_DETAIL = 'The app can build a workout draft.';
+
 export type NoChangeLineMode = 'structural' | 'topic' | 'off';
 
 export interface ReplyFilterOptions {
@@ -174,6 +178,7 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
   const buffer = new SentenceBuffer();
   const hidden: HiddenLineDraft[] = [];
   const said: string[] = [];
+  let askLineShown = false;
 
   const process = (sentence: string): ReplyItem[] => {
     const ledger = options.ledger();
@@ -187,6 +192,15 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
     const actions = tokens.segments.filter((s) => s.kind === 'action');
     for (const a of actions) cited.add(a.actionId);
 
+    // Build 131: "I don't have access to a workout-creation tool" is never true: the app builds one when Ben
+    // asks. The sentence is hidden (listed in Why?) and the reply says, once, what works instead.
+    if (claimsNoBuildTool(tokens.plainText)) {
+      hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_BUILD_TOOL_DETAIL });
+      if (!askLineShown) out.push({ kind: 'sentence', text: BUILD_ASK_LINE });
+      askLineShown = true;
+      for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
+      return out;
+    }
     if (tokens.plainText.length > 0 && /[\p{L}\p{N}]/u.test(tokens.plainText)) {
       // Structural (PM decision 10 Oct): the card is how a change is shown, so the message may
       // describe a change only in a sentence that cites that change's token. Every other

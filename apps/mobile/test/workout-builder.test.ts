@@ -510,3 +510,59 @@ describe('rule 8 and BD15', () => {
     expect(await s.sessions.active()).toBeNull();
   });
 });
+
+describe('build 131: a workout from chat in Ben’s own words', () => {
+  /** The coach's text plan from the device thread (abridged). */
+  const PLAN = 'Bench press 3 × 6–8, incline dumbbell press 3 × 8–10, lateral raise 3 × 12–15, triceps pushdown 2 × 10–12, dumbbell split squat 2 × 8–10 per leg, and calf raise 2 × 12–15.';
+
+  it('turn 1 "Can you make me a push session with split squats…" is a build turn (the tool offered, a text answer nudged once); turn 2 "Yes u can add in the app" ends in a draft card', async () => {
+    const { s } = await benWithHistory();
+    // Turn 1: the model answers in text twice (build 131's B1). It is asked once more with the reason; nothing is saved.
+    model = new StepModel([() => replyWith(PLAN), () => replyWith(PLAN)]);
+    const first = await ask(s, 'Can you make me a push session with split squats and calf raises');
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('propose_workout');
+    expect(model.requests[0]?.instructions).toContain('Never write the workout out as text');
+    expect(JSON.stringify(model.requests[1]?.input)).toContain('call propose_workout now');
+    expect(first.cards).toEqual([]);
+    expect(first.note).toBe('No change made.');
+    expect(await s.coachDrafts.list()).toEqual([]);
+
+    // Turn 2: Ben agrees in his own words. The same decision opens the tool and builds its context.
+    model = new StepModel([pushStub(PUSH), () => replyWith('Bench first.')]);
+    const second = await s.coach.send({ entry: { kind: 'today' }, threadId: first.threadId, input: { kind: 'words', text: 'Yes u can add in the app', spoken: false }, turnId: h.ids() });
+    const req = model.requests[0] as ModelRequest;
+    expect(req.tools.map((t) => t.name)).toContain('propose_workout');
+    // Length and focus from Ben's words (the request before the plan), never from the coach's text.
+    expect(buildOf(req).request).toMatchObject({ quote: 'Can you make me a push session with split squats and calf raises\nYes u can add in the app', focus: 'push', minutes: 60 });
+    // The earlier plan is in the conversation the model sees, so it builds that session.
+    expect(JSON.stringify(req.input)).toContain('dumbbell split squat 2 × 8–10');
+    const card = second.cards[0]?.record;
+    expect(card).toMatchObject({ status: 'committed', detail: { kind: 'build_workout', name: 'Push · 60 min' } });
+    expect(second.items.map((i) => (i.kind === 'sentence' ? i.text : '')).join(' ')).not.toMatch(/don.t have access|can.t put it/i);
+    // Only a draft: no session started, no workout saved (BD12, BD15).
+    expect(await s.sessions.active()).toBeNull();
+    const draftId = card?.detail.kind === 'build_workout' ? card.detail.draftId : '';
+    expect(await s.coachDrafts.get(draftId)).toMatchObject({ status: 'open', routineId: null });
+  });
+
+  it('turn 1 built when the model calls `propose_workout` after the nudge; its text answer is never shown', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([() => replyWith(PLAN), pushStub(PUSH), () => replyWith('Bench first.')]);
+    const r = await ask(s, 'Can you make me a push session');
+    expect(r.cards[0]?.record).toMatchObject({ status: 'committed', detail: { kind: 'build_workout' } });
+    expect(r.items).toEqual([{ kind: 'sentence', text: 'Bench first.' }]);
+  });
+
+  it('a general turn without the tool never says the app can’t build one: the sentence is hidden and the reply says what works', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([() => replyWith("I can plan your session, but I can't put it into the app for you from here. Push first.")]);
+    const r = await ask(s, 'how is my bench going?');
+    expect(model.requests[0]?.tools.map((t) => t.name)).not.toContain('propose_workout');
+    expect(model.requests[0]?.instructions).toContain('Never say you or the app cannot add, save or build workouts');
+    expect(r.items).toEqual([
+      { kind: 'sentence', text: 'Say "Build me a workout" to get a draft.' },
+      { kind: 'sentence', text: 'Push first.' },
+    ]);
+    expect(r.hiddenLines.map((x) => x.reason)).toEqual(['no_action']);
+  });
+});

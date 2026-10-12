@@ -174,8 +174,19 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
 
 /** Instructions added to a turn that offers `propose_workout` (§7 coach message rules, BD1, BD15). */
 export const BUILD_INSTRUCTIONS = [
-  'To build the workout Ben asked for (or change the draft in context), call `propose_workout` once, using only catalogueIds from YOUR DATA build.usable.',
+  'Ben asked for a workout in the app. Call `propose_workout` first, once, using only catalogueIds from YOUR DATA build.usable. Never write the workout out as text in `reply`: a plan in text is not in the app.',
+  'If he is agreeing to a session you described earlier in this thread, build that session: the same exercises (or the closest in build.usable), sets and reps.',
+  'To change the draft in context, call `propose_workout` with the whole new version.',
   'Never give loads, weights or minutes: the app plans loads from his history and fits the length. Give targetRpe for every exercise. Stay within build.setBudget working sets.',
   'Its `message` (at most 240 characters) says why this selection and order, citing only facts given. No praise, scores, recovery claims or diagnoses.',
   'Never say the workout was saved, scheduled or started: Ben opens it, starts it or saves it himself. Then reply in one short sentence.',
+].join('\n');
+
+/**
+ * Added to a general turn that doesn't offer `propose_workout` (build 131): the app can build a
+ * workout, so the coach never says it can't; it points Ben to the words that build one.
+ */
+export const NO_BUILD_TOOL_INSTRUCTIONS = [
+  'The app builds workouts as drafts when Ben asks for one. Never say you or the app cannot add, save or build workouts, or that you have no tool for it.',
+  'If you describe a session for Ben, end by asking: "Want me to build it in the app?"',
 ].join('\n');

@@ -431,7 +431,11 @@ function lower(text: string): string {
       .replace(/\bi'd like\b/g, 'i would like')
       .replace(/\bgimme\b/g, 'give me')
       .replace(/\bwanna\b/g, 'want to')
-      .replace(/\blemme\b/g, 'let me'),
+      .replace(/\blemme\b/g, 'let me')
+      // (12 Oct, build 131) Text-speak: "can u make me a push sesh".
+      .replace(/\bu\b/g, 'you')
+      .replace(/\bur\b/g, 'your')
+      .replace(/\bsesh(es)?\b/g, 'session$1'),
   );
 }
 
@@ -598,11 +602,24 @@ const BUILD_VERB_STRONG = '(?:build|plan|create|design|write|put together|throw 
 const BUILD_VERB_WEAK = '(?:make|give|set up)';
 // A new workout has an article or adjective; "the", "my" and "this" point at one that exists ("make the session easier").
 const NEW_DET = '(?:a|an|another|one|new|quick|short|fresh)';
+// `lower()` reads "today's" as "today is" (the apostrophe-s expansion), so both forms count (build 131).
 const BUILD_DIRECT = new RegExp(
-  `^(?:${BUILD_VERB_STRONG}(?: me| us| out)?(?: (?:${NEW_DET}|today'?s|tonight'?s))+|${BUILD_VERB_WEAK}(?: me| us)?(?: ${NEW_DET})+)\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`,
+  `^(?:${BUILD_VERB_STRONG}(?: me| us| out)?(?: (?:${NEW_DET}|today'?s|tonight'?s|today is|tonight is))+|${BUILD_VERB_WEAK}(?: me| us)?(?: ${NEW_DET})+)\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`,
 );
 const BUILD_WANT = new RegExp(`^i (?:want|need|would like|'d like|fancy)(?: to do)? (?:a|an|another|one)\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`);
-const BUILD_LATER = /\b(?:programme|program|programs|programmes|mesocycle|block|weeks?|month|plan for the week|weekly plan|split)\b/;
+/** The focus words of a workout ("push", "legs", "upper body"), for wording with no article (build 131). */
+const FOCUS = '(?:push|pull|legs?|upper(?: body)?|lower(?: body)?|full[ -]body|chest|back|arms?|shoulders?|glutes?|core|abs)';
+const FOCUS_RUN = `${FOCUS}(?:(?: ?/ ?| and | & | \\+ | plus | )${FOCUS})*`;
+/** "can I have / get a push session" (build 131): asking for one. "get me a workout" alone stays out (review B1). */
+const BUILD_CAN_I = new RegExp(`^(?:can|could|may) i (?:please )?(?:have|get|grab) (?:${NEW_DET} )+.{0,80}?\\b${BUILD_NOUN}s?\\b`);
+/** "make me push session", "give me a push/legs day" (build 131): a focus right before the noun. */
+const BUILD_FOCUS = new RegExp(`^(?:make|give|build|plan|create|design|write)(?: me| us)?(?: (?:${NEW_DET}))* ${FOCUS_RUN} ${BUILD_NOUN}\\b`);
+/** "push session please", "push workout for today please" (build 131): no verb, but a plain ask. */
+const BUILD_PLEASE = new RegExp(`^(?:(?:a|an) )?(?:(?:quick|short) )?${FOCUS_RUN} ${BUILD_NOUN}(?: for (?:today|tonight|tomorrow))? please$`);
+/** "push and legs" inside one request: joined before the clause split reads "and" as a new clause (build 131). */
+const FOCUS_AND = new RegExp(`\\b(${FOCUS}) (?:and|&|plus) (?=${FOCUS}\\b)`, 'gi');
+// Build 131: "split" is later only as a programme split ("my upper/lower split"), never "split squats".
+const BUILD_LATER = /\b(?:programme|program|programs|programmes|mesocycle|block|weeks?|month|plan for the week|weekly plan|split(?! (?:squats?|stances?|lunges?|jerks?)\b))\b/;
 /**
  * Not a new workout (review B1): a change to the one in hand ("a lighter session", "the rest of
  * the session"), a read of Ben's records ("a summary of my last session") or advice ("some tips
@@ -614,7 +631,7 @@ function buildIn(clause: string): boolean {
   const c = clause.replace(POLITE, '');
   if (BUILD_LATER.test(c) || BUILD_NOT.test(c) || isOpinionQuestion(c)) return false;
   const body = ASK_PREFIX.exec(c)?.[1] ?? c;
-  return BUILD_DIRECT.test(body) || BUILD_WANT.test(c);
+  return BUILD_DIRECT.test(body) || BUILD_WANT.test(c) || BUILD_CAN_I.test(c) || BUILD_FOCUS.test(body) || BUILD_PLEASE.test(c);
 }
 
 /**
@@ -794,7 +811,16 @@ export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenR
     );
   if (structural) kinds.push('structural');
   // A whole workout (workout builder): its own kind, never a change to today's sets.
-  const building = open.filter((c) => buildIn(c.text)).map((c) => c.text);
+  // Build 131: an "if" doesn't hold a build back ("… if I only have 45 mins"): it only makes a draft
+  // Ben opens himself. A clause that is only the condition ("if it's too easy") never builds.
+  const buildable = all.filter((c) => c.label === null && !PLAYBOOK.test(c.text) && !/^(?:(?:and|so|but|ok|okay) )?(?:if|when|whenever|unless|in case|once)\b/.test(c.text));
+  // "make me a push and legs session": the focus words are joined first, so "and" doesn't split the request.
+  const joinedBuilds = (c: Clause): boolean => {
+    if (!c.first) return false;
+    const joined = c.sentence.replace(FOCUS_AND, '$1/');
+    return joined !== c.sentence && normalise(joined).some((x) => x.first && buildIn(x.text));
+  };
+  const building = buildable.filter((c) => buildIn(c.text) || joinedBuilds(c)).map((c) => c.text);
   if (building.length > 0) kinds.push('build');
   // (12 Oct) An exercise added today; a question only counts when it asks ("can you add curls?").
   const adds = open.filter((c) => addIn(c.text) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))));
