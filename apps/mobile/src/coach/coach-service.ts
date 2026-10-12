@@ -422,7 +422,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const roots =
       isInHistory(source.session)
         ? basisSlots({ kind: 'next', source })
-        : [...source.exercises].sort((a, b) => a.order - b.order).filter((e) => partRootOf(source.exercises, e.id) === e.id).map((e) => ({ slotKey: e.id, exerciseId: e.exerciseId, supersetGroup: e.supersetGroup }));
+        : [...source.exercises].sort((a, b) => a.order - b.order).filter((e) => e.removed === undefined && partRootOf(source.exercises, e.id) === e.id).map((e) => ({ slotKey: e.id, exerciseId: e.exerciseId, supersetGroup: e.supersetGroup }));
     if (roots.length === 0) return null;
     const name = (exerciseId: string) => source.exercises.find((e) => e.exerciseId === exerciseId)?.exerciseName ?? 'Exercise';
     return { basis: { kind: 'next', sourceSessionId: source.session.id }, basisVersion: null, label: source.session.routineName ?? 'workout', slots: roots.map((r) => ({ ...r, name: name(r.exerciseId) })) };
