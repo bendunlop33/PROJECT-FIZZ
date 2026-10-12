@@ -34,7 +34,7 @@ import {
 const SRC = join(__dirname, '..', 'src');
 const read = (p: string) => readFileSync(join(SRC, p), 'utf8');
 
-const actions = (over: Partial<RowActions> = {}): RowActions => ({ swap: true, undoSwap: false, skip: true, bringBack: false, doFirst: true, up: true, down: true, changeRoutine: false, ...over });
+const actions = (over: Partial<RowActions> = {}): RowActions => ({ swap: true, undoSwap: false, skip: true, bringBack: false, doFirst: true, up: true, down: true, changeRoutine: false, remove: false, ...over });
 function row(name: string, over: Partial<OverviewRow> = {}): OverviewRow {
   return { name, slotKey: `slot-${name}`, indexText: '01', edit: null, actions: actions(), ...over } as unknown as OverviewRow;
 }

@@ -89,6 +89,20 @@ import {
   substituteTargets,
   swapTargetText,
   swapRoutineSlot,
+  addTargets,
+  NBSP,
+  addedSlotShape,
+  applyEditsToRoutine,
+  equipmentHere,
+  rankAddCandidates,
+  substituteRow,
+  templateLinesFromEdits,
+  todayLoadNote,
+  todayShapes,
+  type RowShapeEdit,
+  type ShapeEditKind,
+  type TemplateLine,
+  type TodayEditBody,
   type DraftCommand,
   type EditOutcome,
   type OverviewToday,
@@ -156,6 +170,7 @@ import {
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type {
+  Load,
   ActionRecord,
   DraftBasis,
   PreStartDraft,
@@ -549,7 +564,26 @@ export interface OverviewData {
   removedEdits: number;
   /** Today's order differs from the plan's (Reorder's `Reset order`). */
   reordered: boolean;
+  /**
+   * `Update Push A ›` (overview-today-edits §11.5): the card's lines from
+   * today's edits, against the workout as this page read it. Null on a next
+   * session (that link reads `Save to Workouts ›`) or with nothing to list.
+   */
+  templateCard: { routineId: string; routineName: string; routineVersion: number; lines: TemplateLine[] } | null;
 }
+
+/** The Add exercise list (§11.4): rows with this gym's targets; `Nothing else here at Main gym.` when empty. */
+export interface AddSheet {
+  gymName: string;
+  rows: SubstituteRow[];
+  /** `Show all` was on (a pick with no usable item here shows `NO LOAD`). */
+  showAll: boolean;
+}
+
+/** `Update Push A` → Apply (§11.5): the routine write and Ben's record, or why nothing was written. */
+export type TemplateUpdateWrite =
+  | { ok: true; action: ActionRecord; routine: Routine; duplicate: boolean }
+  | { ok: false; reason: 'stale' | 'missing' | 'invalid' | 'failed'; message: string };
 
 /** A write to today's draft (overview-today-edits §4.2). `stale`: the page re-reads (rule 5). */
 export type DraftWrite =
@@ -577,6 +611,14 @@ export interface SwapSheet {
 export type TemplateSwapWrite =
   | { ok: true; action: ActionRecord; routine: Routine; duplicate: boolean }
   | { ok: false; reason: 'stale' | 'missing' | 'invalid' | 'failed' | 'changed_since'; message: string };
+
+/** One of today's edits as the page sends it (§4.2, §11.7). `add` names only the exercise: the new row's key comes from the opId. */
+export type OverviewEdit = Exclude<TodayEditBody, { kind: 'order' } | { kind: 'add' }> | { kind: 'add'; exerciseId: string };
+
+/** The slot key an added exercise gets: from the write's opId, so a retry names the same row. */
+export function addSlotKey(opId: string): string {
+  return deriveId(`today-add-slot:${opId}`);
+}
 
 export const DRAFT_COPY = {
   failed: 'Couldn’t save that edit.',
@@ -968,7 +1010,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   /** The substitutes today's swaps plan with (their own GS3 step 2 at this gym). */
   function swapExerciseIds(today: TodayEditsInput | undefined): string[] {
-    return today === undefined ? [] : [...today.swaps.values()].map((sp) => sp.exercise.id);
+    return today === undefined ? [] : [...today.swaps.values(), ...(today.adds?.values() ?? [])].map((sp) => sp.exercise.id);
   }
 
   /** GS3 step 2 for each exercise: the item it last used at `gymId`. History that can't be read is skipped. */
@@ -1447,7 +1489,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const history = await historyFor(p.id, exercise.id).catch(() => [] as HistorySession[]);
       swaps.set(e.slotKey, substituteTargets(slot, exercise, history, await substituteCtx(p, gymId, gymEquipment, today, [exercise.id])));
     }
-    return { draft, input: { draft: { id: draft.id, version: draft.version }, edits, swaps } };
+    // Added exercises (§11, TE16): each from its own history through the same path as a swap, never another exercise's load.
+    const adds = new Map<string, SwapPlan>();
+    for (const e of edits) {
+      if (e.kind !== 'add') continue;
+      const exercise = await exerciseById(e.exerciseId);
+      if (exercise === null) continue;
+      const history = await historyFor(p.id, exercise.id).catch(() => [] as HistorySession[]);
+      adds.set(e.slotKey, addTargets(exercise, history, await substituteCtx(p, gymId, gymEquipment, today, [exercise.id])));
+    }
+    return { draft, input: { draft: { id: draft.id, version: draft.version }, edits, swaps, adds } };
   }
 
   /** The overview's view of today's edits (§6.2): slot keys, today's order, what each applied edit did. */
@@ -1460,6 +1511,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const fromName = resolved.kind === 'next' ? resolved.source.exercises.find((x) => x.id === slotKey)?.exerciseName : (await exerciseById(base.exerciseId))?.name;
       swapped.set(slotKey, { editId: sw.editId, fromExerciseId: base.exerciseId, fromName: fromName ?? 'Exercise' });
     }
+    const shapeEdits = new Map<string, RowShapeEdit>();
+    const shapeAt = (k: string): RowShapeEdit => shapeEdits.get(k) ?? { sets: null, reps: null, load: null };
+    for (const [k, v] of info.resolved.sets) shapeEdits.set(k, { ...shapeAt(k), sets: v.editId });
+    for (const [k, v] of info.resolved.reps) shapeEdits.set(k, { ...shapeAt(k), reps: v.editId });
+    for (const [k, v] of info.resolved.loads) shapeEdits.set(k, { ...shapeAt(k), load: v.editId });
     return {
       slotOf: info.slotOf,
       slots: info.slots,
@@ -1468,7 +1524,22 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       editCount: editCountOf(info.resolved),
       draft: draft === null ? null : { id: draft.id, version: draft.version },
       routineName: resolved.kind === 'routine' ? resolved.routine.name : null,
+      added: new Map([...info.resolved.added].map(([k, v]) => [k, v.editId])),
+      shapeEdits,
+      plannedShape: info.plannedShape,
+      benLoads: new Map([...info.resolved.loads].map(([k, v]) => [k, v.load])),
     };
+  }
+
+  /** `Update Push A ›` (§11.5): today's template-able edits as lines, against the workout as read. */
+  async function templateCardOf(resolved: ResolvedOverview, run: { aggregate: SessionAggregate; today: TodayPlanInfo | null }): Promise<OverviewData['templateCard']> {
+    if (resolved.kind !== 'routine' || run.today === null) return null;
+    const names = new Map<string, string>();
+    for (const id of new Set([...resolved.routine.exercises.map((e) => e.exerciseId), ...[...run.today.resolved.swaps.values()].map((x) => x.toExerciseId), ...[...run.today.resolved.added.values()].map((x) => x.exerciseId)])) {
+      names.set(id, (await exerciseById(id))?.name ?? 'Exercise');
+    }
+    const lines = templateLinesFromEdits({ routine: resolved.routine, resolved: run.today.resolved, today: todayShapes(run.aggregate, run.today.slotOf), nameOf: (id) => names.get(id) ?? 'Exercise' });
+    return lines.length === 0 ? null : { routineId: resolved.routine.id, routineName: resolved.routine.name, routineVersion: resolved.routine.version, lines };
   }
 
   /** `previewKey` inputs as stored now (workout-overview §7). `gymId` null: the typical gym Start will save. */
@@ -2613,6 +2684,91 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
 
     /**
+     * `Update Push A ›` → Apply (overview-today-edits §11.5, TE15): the
+     * checked lines of today's edits written into the workout as its next
+     * version, through the editor's own `editRoutine`, with Ben's
+     * `update_routine` record (the version before kept, so `revert` is the
+     * Undo) and those draft edits marked redundant, in one transaction.
+     * Planned from the same dry run the page showed; a workout or draft that
+     * moved since is refused (rule 5). Swapped and added exercises go in
+     * with `Auto` loads; today's typed loads never go in (TE-B8).
+     */
+    async applyTodayEdits(req: {
+      target: OverviewTarget;
+      gymId: string | null;
+      typicalEquipment?: readonly EquipmentInstance[];
+      checkInId?: string | null;
+      routineId: string;
+      expectedRoutineVersion: number;
+      draft: { id: string; expectedVersion: number };
+      lineKeys: readonly string[];
+      opId: string;
+    }): Promise<TemplateUpdateWrite> {
+      try {
+        const p = await owner();
+        const current = await repos().routines.get(req.routineId);
+        if (!current || current.ownerId !== p.id || isDeleted(current)) return { ok: false, reason: 'missing', message: LIBRARY_COPY.notFound };
+        const actionId = deriveId(`update-routine:${req.opId}`);
+        const prior = await ctx.store().repos.coach.getAction(actionId).catch(() => null);
+        if (prior !== null) return { ok: true, action: prior, routine: current, duplicate: true };
+        if (current.version !== req.expectedRoutineVersion) return { ok: false, reason: 'stale', message: LIBRARY_COPY.changed(current.name) };
+        const gymEquipment = req.gymId === null ? req.typicalEquipment : undefined;
+        const gymId = req.gymId ?? 'typical-gym-preview';
+        const resolved = await resolveOverview(p, req.target, { gymId, gymEquipment });
+        if (resolved === null || resolved.kind !== 'routine' || resolved.routine.id !== current.id) return { ok: false, reason: 'stale', message: STALE_PREVIEW };
+        const { planCheckIn } = await overviewCheckIn(req.checkInId ?? null);
+        const t = await todayFor(p, resolved, gymId, gymEquipment, planCheckIn);
+        if (draftMismatch(req.draft, t.draft)) return { ok: false, reason: 'stale', message: STALE_PREVIEW };
+        const run = await overviewDryRun(p, resolved, gymId, planCheckIn, gymEquipment, t.input);
+        if (run === null || run.today === null || t.draft === null) return { ok: false, reason: 'stale', message: STALE_PREVIEW };
+        const card = await templateCardOf(resolved, run);
+        const chosen = (card?.lines ?? []).filter((l) => req.lineKeys.includes(l.key));
+        if (chosen.length === 0) return { ok: false, reason: 'invalid', message: LIBRARY_COPY.nothing };
+        for (const id of [...run.today.resolved.swaps.values()].map((x) => x.toExerciseId).concat([...run.today.resolved.added.values()].map((x) => x.exerciseId))) {
+          if ((await ensureExercise(id)) === null) return { ok: false, reason: 'missing', message: LIBRARY_COPY.notFound };
+        }
+        const at = ctx.now();
+        const today = todayShapes(run.aggregate, run.today.slotOf);
+        const c = applyEditsToRoutine({ current, lines: chosen, resolved: run.today.resolved, today, expectedVersion: req.expectedRoutineVersion, opId: req.opId, at, isCompound: await compoundOf(current.exercises.map((e) => e.exerciseId)) });
+        if (c.kind === 'invalid') return { ok: false, reason: 'invalid', message: c.message };
+        if (c.kind === 'stale') return { ok: false, reason: 'stale', message: LIBRARY_COPY.changed(current.name) };
+        if (c.kind === 'duplicate') return { ok: false, reason: 'stale', message: LIBRARY_COPY.changed(current.name) };
+        const editIds = chosen.flatMap((l) => l.editIds);
+        const kindOf = { swap: 'swap', add: 'add', remove: 'remove', order: 'reorder', sets: 'edit', reps: 'edit' } as const;
+        const action: ActionRecord = {
+          actionId,
+          turnId: null,
+          opId: req.opId,
+          status: 'committed',
+          author: 'ben',
+          detail: {
+            kind: 'update_routine',
+            routineId: current.id,
+            routineName: current.name,
+            changes: chosen.map((l) => ({ change: kindOf[l.kind], text: `${l.label}: ${l.text}${l.detail === null ? '' : ` ${l.detail}`}`.replaceAll(NBSP, ' ').slice(0, 200) })).slice(0, 40),
+            before: current,
+            versionBefore: current.version,
+            versionAfter: c.next.version,
+            draft: editIds[0] === undefined ? null : { id: t.draft.id, editId: editIds[0], editIds },
+          },
+          failure: null,
+          reason: null,
+          evidenceRefs: [],
+          guardNotes: [],
+          entityVersions: [{ entity: 'routine', id: current.id, before: current.version, after: c.next.version }],
+          undoneBy: null,
+          createdAt: at,
+        };
+        const r = await ctx.store().repos.drafts.applyRoutineChange({ ownerId: p.id, routine: c.next, expectedRoutineVersion: current.version, action, at });
+        if (r.status === 'missing') return { ok: false, reason: 'missing', message: LIBRARY_COPY.notFound };
+        if (r.status === 'stale') return { ok: false, reason: 'stale', message: LIBRARY_COPY.changed(current.name) };
+        return { ok: true, action: r.action, routine: r.routine, duplicate: r.status === 'replayed' };
+      } catch {
+        return { ok: false, reason: 'failed', message: LIBRARY_COPY.saveFailed };
+      }
+    },
+
+    /**
      * Undo of `Change Push A too ›` (TE4): the slot goes back exactly as it
      * was while the routine is still at the version Apply made, and today's
      * swap comes back. Otherwise nothing changes: `Can't undo: Push A changed since.`
@@ -2847,7 +3003,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const base = basisSlots(slotBasisOf(resolved));
       // A swap to an exercise that can't be found any more is pruned too, as the plan treats it (review N3).
       const known = new Set<string>();
-      for (const e of current === null ? [] : liveEdits(current.edits)) if (e.kind === 'swap' && (await exerciseById(e.toExerciseId)) !== null) known.add(e.toExerciseId);
+      for (const e of current === null ? [] : liveEdits(current.edits)) {
+        const exId = e.kind === 'swap' ? e.toExerciseId : e.kind === 'add' ? e.exerciseId : null;
+        if (exId !== null && (await exerciseById(exId)) !== null) known.add(exId);
+      }
       const resolvedEdits = current === null ? null : resolveTodayEdits(base, current.edits, (id) => known.has(id));
       const command = await make({ base, today: resolvedEdits === null ? base : editedSlots(base, resolvedEdits) });
       if (command === null) return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
@@ -2981,6 +3140,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           cleared,
           removedEdits: (run.today?.outcomes ?? []).filter((o: EditOutcome) => o.result === 'stale').length,
           reordered: (run.today?.resolved.order ?? null) !== null,
+          templateCard: await templateCardOf(resolved, run),
         };
       } catch {
         return null;
@@ -3032,16 +3192,72 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * (no Apply step: Ben choosing is consent, TE3); nothing outside today
      * changes. The first edit creates the draft (`expectedDraftVersion: null`).
      */
-    async edit(req: DraftTarget & { edit: { kind: 'swap'; slotKey: string; toExerciseId: string } | { kind: 'skip'; slotKey: string } }): Promise<DraftWrite> {
-      const edit = req.edit;
+    async edit(req: DraftTarget & { edit: OverviewEdit }): Promise<DraftWrite> {
+      const e = req.edit;
       return writeDraft(req, async ({ base }) => {
-        if (edit.kind === 'swap') {
+        if (e.kind === 'swap') {
           // The Swap sheet's own checks, again here (review S5): the same measurement, doable at this gym. Not in today's plan: `applyDraftCommand`.
-          if (!(await swapAllowed(req, base, edit.slotKey, edit.toExerciseId))) return null;
-          if ((await ensureExercise(edit.toExerciseId)) === null) return null;
+          if (!(await swapAllowed(req, base, e.slotKey, e.toExerciseId))) return null;
+          if ((await ensureExercise(e.toExerciseId)) === null) return null;
         }
-        return { type: 'edit', edit };
+        if (e.kind === 'add') {
+          // A picked catalogue exercise is saved as a row first (as the workout's `Add exercise` does). The new row's key comes from the opId, so a retry is the same row.
+          if ((await ensureExercise(e.exerciseId)) === null) return null;
+          return { type: 'edit', edit: { kind: 'add', slotKey: addSlotKey(req.opId), exerciseId: e.exerciseId } };
+        }
+        return { type: 'edit', edit: e };
       });
+    },
+
+    /** `Use planned` (reps, load) or a stepper back at the plan's count (§11.4): that edit on the slot is removed. */
+    clearEdit(req: DraftTarget & { kind: ShapeEditKind; slotKey: string }): Promise<DraftWrite> {
+      return writeDraft(req, () => ({ type: 'clear', kind: req.kind, slotKey: req.slotKey }));
+    },
+
+    /**
+     * The Add exercise list (§11.4, TE16): not in today's plan, doable here
+     * unless `showAll`, matching `query`; each row with the target the pick
+     * will plan (its own history, else `No history`), flagged ones marked.
+     * Reads only; never an AI call.
+     */
+    async addCandidates(req: { target: OverviewTarget; gymId: string | null; typicalEquipment?: readonly EquipmentInstance[]; checkInId?: string | null; query: string; showAll: boolean }): Promise<AddSheet | null> {
+      try {
+        const p = await owner();
+        const gymEquipment = req.gymId === null ? req.typicalEquipment : undefined;
+        const gymId = req.gymId ?? 'typical-gym-preview';
+        const resolved = await resolveOverview(p, req.target, { gymId, gymEquipment });
+        if (resolved === null) return null;
+        const { planCheckIn } = await overviewCheckIn(req.checkInId ?? null);
+        const t = await todayFor(p, resolved, gymId, gymEquipment, planCheckIn);
+        const base = basisSlots(slotBasisOf(resolved));
+        const inPlan = new Set([...base.map((b) => b.exerciseId), ...editedSlots(base, resolveTodayEdits(base, t.input.edits)).map((x) => x.exerciseId)]);
+        const all = new Map<string, Exercise>();
+        for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) all.set(e.id, e);
+        for (const e of ctx.catalogueExercises?.() ?? []) if (!all.has(e.id)) all.set(e.id, e);
+        const sctx = await substituteCtx(p, gymId, gymEquipment, planCheckIn, []);
+        const histories = new Map<string, HistorySession[]>();
+        for (const id of await workout.recentExerciseIds(40).catch(() => [] as string[])) histories.set(id, await historyFor(p.id, id).catch(() => [] as HistorySession[]));
+        const picked = rankAddCandidates({ exercises: [...all.values()], excludeExerciseIds: inPlan, query: req.query, gym: sctx.gym, showAll: req.showAll, histories, painFlags: sctx.painFlags, nowMs: sctx.nowMs, tz: sctx.at.tz });
+        const rows: SubstituteRow[] = [];
+        for (const e of picked) {
+          const history = histories.get(e.id) ?? (await historyFor(p.id, e.id).catch(() => [] as HistorySession[]));
+          const kind = equipmentHere(e, sctx).equipment?.kind ?? null;
+          rows.push(substituteRow(e, addedSlotShape(e, kind), history, { ...sctx, lastUsedHere: await lastUsedFor(p.id, [e.id], gymId) }));
+        }
+        return { gymName: sctx.gym.name, rows, showAll: req.showAll };
+      } catch {
+        return null;
+      }
+    },
+
+    /** The keypad's note for a typed load (§11.4): `Rounds to 97.5 kg here`, `Most here: 30 kg each`; null when makeable. Reads only. */
+    async loadNote(req: { equipmentId: string | null; load: Load }): Promise<string | null> {
+      try {
+        const eq = req.equipmentId === null ? null : await repos().equipment.get(req.equipmentId);
+        return todayLoadNote(req.load, eq ?? null);
+      } catch {
+        return null;
+      }
     },
 
     /**

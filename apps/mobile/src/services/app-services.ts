@@ -558,6 +558,22 @@ export function createAppServices(deps: AppServicesDeps) {
     async swapCandidates(req: Omit<Parameters<typeof loop.overview.swapCandidates>[0], 'typicalEquipment'>) {
       return loop.overview.swapCandidates({ ...req, ...(await typicalFor(req.gymId)) });
     },
+    // Full edit before start (overview-today-edits §11).
+    async clearEdit(req: Omit<Parameters<typeof loop.overview.clearEdit>[0], 'typicalEquipment'>) {
+      return loop.overview.clearEdit({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    async addCandidates(req: Omit<Parameters<typeof loop.overview.addCandidates>[0], 'typicalEquipment'>) {
+      return loop.overview.addCandidates({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    loadNote: (req: Parameters<typeof loop.overview.loadNote>[0]) => loop.overview.loadNote(req),
+  };
+
+  /** Workouts: `Update Push A` plans from the same page, so with no gym it is checked against the typical gym's items too. */
+  const routines = {
+    ...loop.routines,
+    async applyTodayEdits(req: Omit<Parameters<typeof loop.routines.applyTodayEdits>[0], 'typicalEquipment'>) {
+      return loop.routines.applyTodayEdits({ ...req, ...(await typicalFor(req.gymId)) });
+    },
   };
 
   async function typicalFor(gymId: string | null): Promise<{ typicalEquipment?: EquipmentInstance[] }> {
@@ -597,6 +613,7 @@ export function createAppServices(deps: AppServicesDeps) {
   return {
     ...loop,
     overview,
+    routines,
     data,
     coach,
     gyms,
