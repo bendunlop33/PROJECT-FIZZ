@@ -743,6 +743,28 @@ describe('CHANGELOG 2026-10-11: offers follow the target RPE, on real SQLite', (
     expect(left?.planned).toMatchObject({ load: { value: 57.5 }, rpeOverride: 8 });
   });
 
+  it('Ben’s override survives a force-close, and the offer after restart is judged against it', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    connection = NOT_CONNECTED;
+    const [s1, s2] = work;
+    if (!s1 || !s2) throw new Error('fixture');
+    const a = (await s.workout.load(sessionId))?.aggregate;
+    const cmd = { type: 'set_target_rpe' as const, at: h.now(), opId: 'rpe-today', expectedVersion: a?.session.version ?? 0, scope: { kind: 'today' as const }, rpe: 10 };
+    const r = await s.workout.dispatch(sessionId, cmd);
+    if (!r.ok) throw new Error(r.error.message);
+    await h.forceClose();
+    const { services: again } = await h.launch();
+    const data = await again.workout.load(sessionId);
+    if (!data) throw new Error('fixture');
+    expect(data.aggregate.sets.filter((x) => x.setType !== 'warmup').every((x) => x.planned.rpeOverride === 10)).toBe(true);
+    expect(plain(again.workout.view(data, h.clockMs, null).focus?.target)).toMatch(/@ RPE 10$/);
+    // The same op replayed after the restart applies once.
+    const dup = await again.workout.dispatch(sessionId, cmd);
+    expect(dup.ok && dup.aggregate.session.version).toBe(data.aggregate.session.version);
+    const logged = await log(again, sessionId, s1.id, 6, 'log-1', 10);
+    expect(await offerFor(again, logged, s1.id)).toBeNull();
+  });
+
   it('Ben’s case: 2 reps against 3–6 with no RPE still offers (built-in target 8.5)', async () => {
     const { s, sessionId, work } = await bensWorkout();
     connection = NOT_CONNECTED;
