@@ -22,7 +22,58 @@ export const FIT_COPY = {
   fitted: 'fitted',
   toast: (minutes: number) => `Fitted to ${String(minutes)} min`,
   howLong: 'How long?',
+  fitting: (minutes: number) => `Fitting to ${String(minutes)} min…`,
+  cancel: 'Cancel',
+  noAnswer: 'No answer from the coach',
+  couldntUse: 'Couldn’t use the coach’s version',
+  planChanged: 'Plan changed',
+  trimInstead: 'Trim instead',
+  askAgain: 'Ask again',
+  dismiss: 'Dismiss',
+  todayOnly: 'Today only',
+  apply: 'Apply',
+  notNow: 'Not now',
+  whyTitle: 'Why?',
+  notUsed: 'Not used',
 } as const;
+
+/** The coach fit's own card while it works or after it didn't apply (§3.4, §6). Static: no animation. */
+export type CoachFitCard =
+  | { kind: 'pending'; minutes: number }
+  | { kind: 'no_answer'; minutes: number }
+  | { kind: 'rejected'; minutes: number; reasons: string[] }
+  | { kind: 'plan_changed'; minutes: number };
+
+/** The card's line and buttons (§6 states): `Trim instead` only where a trim to that length would cut something. */
+export function coachFitCardView(card: CoachFitCard, trimWouldCut: boolean): { text: string; actions: ('cancel' | 'trim' | 'why' | 'dismiss' | 'ask_again')[] } {
+  switch (card.kind) {
+    case 'pending':
+      return { text: FIT_COPY.fitting(card.minutes), actions: ['cancel'] };
+    case 'no_answer':
+      return { text: FIT_COPY.noAnswer, actions: [...(trimWouldCut ? (['trim'] as const) : []), 'dismiss'] };
+    case 'rejected':
+      return { text: FIT_COPY.couldntUse, actions: ['why', ...(trimWouldCut ? (['trim'] as const) : []), 'dismiss'] };
+    case 'plan_changed':
+      return { text: FIT_COPY.planChanged, actions: ['ask_again', 'dismiss'] };
+  }
+}
+
+/** What a coach fit's outcome leaves on the page (§6): its own card, or nothing (applied: the FitCard; cancelled: nothing). */
+export function coachFitCardOf(outcome: { kind: 'applied' | 'rejected' | 'timeout' | 'plan_changed' | 'unavailable' | 'cancelled' | 'failed'; reasons?: string[] }, minutes: number): CoachFitCard | null {
+  switch (outcome.kind) {
+    case 'applied':
+    case 'cancelled':
+      return null;
+    case 'rejected':
+      return { kind: 'rejected', minutes, reasons: outcome.reasons ?? [] };
+    case 'plan_changed':
+      return { kind: 'plan_changed', minutes };
+    case 'timeout':
+    case 'unavailable':
+    case 'failed':
+      return { kind: 'no_answer', minutes };
+  }
+}
 
 /** The TIME tile as a button (§3.1, design-system §9.65 addendum): `≈ 44 min ▾` over `TIME · FIT 45` (clock) or `TIME`. */
 export function timeTile(view: Pick<WorkoutOverview, 'estimate' | 'fit'>, plainLabel: string): { label: string; clock: boolean; accessibilityLabel: string } | null {

@@ -200,3 +200,108 @@ export function FitCard({ fit, collapsed, onExpand, onUndo, onChange, onWhy }: F
     </View>
   );
 }
+
+/**
+ * The coach fit's own card (§3.4, §6): `[Coach] Fitting to 45 min…` with
+ * `Cancel` while it works (static, no spinner: the page stays usable), then
+ * `No answer from the coach`, `Couldn’t use the coach’s version` or `Plan
+ * changed` with their buttons.
+ */
+export function CoachFitStatusCard({ text, actions, onAction }: { text: string; actions: readonly ('cancel' | 'trim' | 'why' | 'dismiss' | 'ask_again')[]; onAction: (a: 'cancel' | 'trim' | 'why' | 'dismiss' | 'ask_again') => void }) {
+  const theme = useTheme();
+  const label = { cancel: FIT_COPY.cancel, trim: FIT_COPY.trimInstead, why: FIT_COPY.why, dismiss: FIT_COPY.dismiss, ask_again: FIT_COPY.askAgain } as const;
+  return (
+    <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, marginTop: theme.space['3'], padding: theme.space['3'], gap: theme.space['2'] }}>
+      <View accessible accessibilityLiveRegion="polite" accessibilityLabel={`Coach. ${text}`} style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: theme.space['2'] }}>
+        <CoachTag />
+        <AppText variant="headline" numeric>
+          {text}
+        </AppText>
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: theme.space['2'] }}>
+        {actions.map((a) => (
+          <OutlinePill
+            key={a}
+            label={label[a]}
+            onPress={() => {
+              onAction(a);
+            }}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/** A coach swap suggestion (§3.3, FT-C12): `Today only`, the change, `Not now` and `Apply`. Nothing is swapped until Apply. */
+export function FitSuggestionCard({ text, busy, onApply, onNotNow }: { text: string; busy: boolean; onApply: () => void; onNotNow: () => void }) {
+  const theme = useTheme();
+  return (
+    <View style={{ borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors['border.control'], padding: theme.space['3'], gap: theme.space['2'], marginTop: theme.space['2'] }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: theme.space['2'] }}>
+        <CoachTag />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: theme.colors['border.control'], borderRadius: theme.radius.sm, paddingVertical: theme.space['1'], paddingHorizontal: theme.space['2'] }}>
+          <Icon name="calendar" color="text.primary" size={12} />
+          <AppText variant="label">{FIT_COPY.todayOnly}</AppText>
+        </View>
+      </View>
+      <View accessible accessibilityLabel={`Swap today: ${text.replace('→', 'to')}`} style={{ flexDirection: 'row', gap: theme.space['2'] }}>
+        <Icon name="arrow.left.arrow.right" color="text.primary" size={13} />
+        <AppText variant="callout" style={{ flex: 1 }}>
+          {text}
+        </AppText>
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: theme.space['2'] }}>
+        <OutlinePill label={FIT_COPY.notNow} onPress={onNotNow} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Apply: ${text.replace('→', 'to')}, today only`}
+          accessibilityState={{ disabled: busy }}
+          disabled={busy}
+          onPress={onApply}
+          style={({ pressed }) => ({ minHeight: theme.target.min.height, paddingHorizontal: theme.space['4'], borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors.accent, backgroundColor: pressed ? theme.colors['accent.subtle'] : 'transparent', justifyContent: 'center' })}
+        >
+          <AppText variant="label" color="accent">
+            {FIT_COPY.apply}
+          </AppText>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/** `Why?` on the coach's fit (§7.2): its reason, the checks it passed, and what wasn't used. */
+export function FitWhySheet({ visible, reason, checks, notUsed, onClose }: { visible: boolean; reason: string | null; checks: readonly string[]; notUsed: readonly string[]; onClose: () => void }) {
+  const theme = useTheme();
+  return (
+    <BottomCard visible={visible} onClose={onClose}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <AppText variant="title2" accessibilityRole="header">
+          {FIT_COPY.whyTitle}
+        </AppText>
+        <TextButton label={FIT_COPY.close} tone="secondary" onPress={onClose} />
+      </View>
+      {reason !== null ? <AppText variant="body">{`“${reason}”`}</AppText> : null}
+      {checks.map((c) => (
+        <View key={c} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+          <Icon name="checkmark" color="text.secondary" size={13} />
+          <AppText variant="callout" color="text.secondary">
+            {c}
+          </AppText>
+        </View>
+      ))}
+      {notUsed.length > 0 ? (
+        <View style={{ gap: theme.space['1'] }}>
+          <AppText variant="label" color="text.secondary">
+            {FIT_COPY.notUsed}
+          </AppText>
+          {notUsed.map((n) => (
+            <AppText key={n} variant="callout" color="text.secondary">
+              {n}
+            </AppText>
+          ))}
+        </View>
+      ) : null}
+    </BottomCard>
+  );
+}

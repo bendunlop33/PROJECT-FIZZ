@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { howLongSheet, stepFitMinutes, type FitView, type OverviewRow, type WorkoutOverview } from '@fizz/domain';
 
-import { bringBackOf, FIT_COPY, fitCardCollapsed, fitHeaderSuffix, howLongOpen, timeTile } from '../src/workout/fit-view';
+import { bringBackOf, coachFitCardOf, coachFitCardView, FIT_COPY, fitCardCollapsed, fitHeaderSuffix, howLongOpen, timeTile } from '../src/workout/fit-view';
 import { listHeaderText } from '../src/workout/overview-edits';
 
 /**
@@ -87,6 +87,25 @@ describe('the list and the rows with a fit (§3.3)', () => {
   });
 });
 
+describe('the coach fit’s own card (§3.4, §6)', () => {
+  it('pending reads `Fitting to 45 min…` with Cancel; failures offer Trim instead only where a trim would cut', () => {
+    expect(coachFitCardView({ kind: 'pending', minutes: 45 }, true)).toEqual({ text: 'Fitting to 45 min…', actions: ['cancel'] });
+    expect(coachFitCardView({ kind: 'no_answer', minutes: 45 }, true)).toEqual({ text: 'No answer from the coach', actions: ['trim', 'dismiss'] });
+    expect(coachFitCardView({ kind: 'no_answer', minutes: 90 }, false)).toEqual({ text: 'No answer from the coach', actions: ['dismiss'] });
+    expect(coachFitCardView({ kind: 'rejected', minutes: 45, reasons: ['Bench press · rest stays as planned'] }, true)).toEqual({ text: 'Couldn’t use the coach’s version', actions: ['why', 'trim', 'dismiss'] });
+    expect(coachFitCardView({ kind: 'plan_changed', minutes: 45 }, true)).toEqual({ text: 'Plan changed', actions: ['ask_again', 'dismiss'] });
+  });
+
+  it('applied and cancelled leave no card; a timeout, offline or failure reads as no answer', () => {
+    expect(coachFitCardOf({ kind: 'applied' }, 45)).toBeNull();
+    expect(coachFitCardOf({ kind: 'cancelled' }, 45)).toBeNull();
+    expect(coachFitCardOf({ kind: 'timeout' }, 45)).toEqual({ kind: 'no_answer', minutes: 45 });
+    expect(coachFitCardOf({ kind: 'unavailable' }, 45)).toEqual({ kind: 'no_answer', minutes: 45 });
+    expect(coachFitCardOf({ kind: 'rejected', reasons: ['x'] }, 45)).toEqual({ kind: 'rejected', minutes: 45, reasons: ['x'] });
+    expect(coachFitCardOf({ kind: 'plan_changed' }, 45)).toEqual({ kind: 'plan_changed', minutes: 45 });
+  });
+});
+
 describe('source checks', () => {
   const screen = read('screens/workout/WorkoutOverviewScreen.tsx');
   const ui = read('ui/fit.tsx');
@@ -124,8 +143,15 @@ describe('source checks', () => {
     expect(ui).toMatch(/minHeight: 52/);
   });
 
-  it('the built-in trim never calls the coach in this build: Ask coach is disabled with `Coach offline`', () => {
-    expect(code(screen)).toMatch(/coachAvailable: false/);
-    expect(code(screen)).not.toMatch(/requestTodayFit/);
+  it('Ask coach goes through `requestCoachFit` only from the sheet; Cancel and Start abort it; a coach fit’s Undo is `undoCoachFit`', () => {
+    const c = code(screen);
+    expect(c).toMatch(/if \(sheet\?\.ask\.enabled === true\) void askCoach\(sheet\.selected\);/);
+    expect(c).toMatch(/services\.overview\s*\.requestCoachFit\(\{/);
+    expect(c).toMatch(/async function start\(\) \{\s*if \(!page\) return;\s*cancelCoachFit\(\);/);
+    expect(c).toMatch(/if \(fit\.by === 'coach' && fit\.actionId !== null\) void undoCoachFit\(fit\.actionId\);/);
+    // Availability is read from settings when the sheet opens; never assumed.
+    expect(c).toMatch(/services\.overview\s*\.coachFitAvailable\(\)/);
+    // The coach's answer is never computed or checked on the screen.
+    expect(c).not.toMatch(/validateTodayFit|fitToday\(|buildTodayFitRequest/);
   });
 });

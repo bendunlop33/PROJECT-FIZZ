@@ -17,8 +17,8 @@ import type { LibraryToastParam, RootStackParams } from '../../navigation/types'
 import { STALE_PREVIEW, type AddSheet, type DraftWrite, type OverviewData, type OverviewTarget, type SessionList, type SessionPickerRow, type SwapSheet } from '../../services/workout-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, EditLink, EditRow, FitCard, HowLongSheet, Icon, NumberAccessory, OverviewRow, PrimaryButton, StatStrip, SubstituteRowView, SupersetBracket, TextButton, Toast, UpdateCard } from '../../ui';
-import { bringBackOf, FIT_COPY, fitCardCollapsed, howLongOpen, timeTile } from '../../workout/fit-view';
+import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, CoachFitStatusCard, EditLink, EditRow, FitCard, FitSuggestionCard, FitWhySheet, HowLongSheet, Icon, NumberAccessory, OverviewRow, PrimaryButton, StatStrip, SubstituteRowView, SupersetBracket, TextButton, Toast, UpdateCard } from '../../ui';
+import { bringBackOf, coachFitCardOf, coachFitCardView, FIT_COPY, fitCardCollapsed, howLongOpen, timeTile, type CoachFitCard } from '../../workout/fit-view';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import {
   checkInRow,
@@ -181,6 +181,12 @@ export function WorkoutOverviewScreen() {
   // Fit to time (fit-to-time.md): the `How long?` sheet's own state, and the card folded after the first scroll.
   const [howLong, setHowLong] = useState<{ chosen: number | null; other: boolean; info: boolean } | null>(null);
   const [fitFolded, setFitFolded] = useState(false);
+  // `Ask coach` (fit-to-time §5): whether it can be tapped, the request running (Cancel, Start cancel it), its card, `Why?`, swaps Ben dismissed.
+  const [coachAvailable, setCoachAvailable] = useState(false);
+  const coachRun = useRef<AbortController | null>(null);
+  const [coachCard, setCoachCard] = useState<CoachFitCard | null>(null);
+  const [fitWhy, setFitWhy] = useState<{ reason: string | null; checks: string[]; notUsed: string[] } | null>(null);
+  const [dismissedSwaps, setDismissedSwaps] = useState<ReadonlySet<string>>(new Set());
   const shownToasts = useRef(new Set<string>());
 
   const [data, reload] = useScreenData(async (s) => {
@@ -220,6 +226,13 @@ export function WorkoutOverviewScreen() {
     if (data.state === 'ready' && data.value !== null) wroteDraft.current = wroteAfterRead(data.value.draft, wroteDraft.current, readSeq.current.get(data.value));
   }, [data]);
 
+  // Leaving the page cancels a coach fit still running (nothing from it is applied).
+  useEffect(
+    () => () => {
+      coachRun.current?.abort();
+    },
+    [],
+  );
   // `DONE BY` moves at most once a minute (timing.timeLeftRefresh, OV16).
   useEffect(() => {
     const t = setInterval(() => {
@@ -338,6 +351,8 @@ export function WorkoutOverviewScreen() {
 
   async function start() {
     if (!page) return;
+    // Start while the coach is fitting: the request is cancelled and nothing from it is applied (§3.4).
+    cancelCoachFit();
     // Read at the tap: a score write still running now is the one Start waits for (and stops on if it opens What's up?).
     const pending = scoreGuard.running() ? scoreWrite.current : null;
     await startGuard.run(async () => {
@@ -590,6 +605,11 @@ export function WorkoutOverviewScreen() {
           setRepsSlot(null);
           setLoadEdit(null);
           closeAdd();
+          // The fit belongs to the old page: a running coach request is cancelled, the sheet and cards close.
+          cancelCoachFit();
+          setHowLong(null);
+          setFitWhy(null);
+          setDismissedSwaps(new Set());
           wroteDraft.current = null;
           pendingSets.current.clear();
           shownPage.current += 1;
@@ -799,6 +819,74 @@ export function WorkoutOverviewScreen() {
   function openHowLong() {
     if (!page || switching.current) return;
     setHowLong(howLongOpen(page.view.fit));
+    // Settings only, no network: `Ask coach` is disabled with `Coach offline` when the coach can't be reached (FT-C9).
+    void services.overview
+      .coachFitAvailable()
+      .catch(() => false)
+      .then(setCoachAvailable);
+  }
+
+  /**
+   * `Ask coach` (FT6): applied at once with the coach card and Undo when it
+   * passes the checks (rule 3: Ben asked). The page stays usable while it
+   * works; an edit or Start meanwhile discards the answer.
+   */
+  async function askCoach(minutes: number) {
+    if (!page || switching.current || coachRun.current !== null) return;
+    setHowLong(null);
+    const run = new AbortController();
+    coachRun.current = run;
+    setCoachCard({ kind: 'pending', minutes });
+    const intent = `coach-fit:${String(minutes)}:${page.view.previewKey}`;
+    const r = await services.overview
+      .requestCoachFit({
+        target,
+        gymId: page.view.gym?.id ?? null,
+        checkInId: tappedRef.current?.id ?? page.planCheckIn?.id ?? null,
+        expectedDraftVersion: nextDraftVersion(page.draft, wroteDraft.current),
+        previewKey: page.view.previewKey,
+        minutes,
+        opId: ops.of(intent),
+        signal: run.signal,
+      })
+      .catch(() => ({ kind: 'failed' as const }));
+    // Cancelled (or Start) while it worked: nothing to show.
+    if (coachRun.current !== run) return;
+    coachRun.current = null;
+    if (r.kind !== 'failed' && r.kind !== 'cancelled') ops.done(intent);
+    if (r.kind === 'applied') {
+      setFitFolded(false);
+      writeSeq.current += 1;
+      changed();
+    }
+    setCoachCard(coachFitCardOf(r, minutes));
+  }
+
+  function cancelCoachFit() {
+    coachRun.current?.abort();
+    coachRun.current = null;
+    setCoachCard(null);
+  }
+
+  /** The coach fit's Undo (§5.3): every edit it made, in one write; a trim it replaced comes back. */
+  async function undoCoachFit(actionId: string) {
+    const intent = `undo-coach-fit:${actionId}`;
+    const r = await services.overview.undoCoachFit({ actionId, opId: ops.of(intent) }).catch(() => null);
+    if (r === null) {
+      setToast({ text: TODAY_EDITS_COPY.editFailed });
+      return;
+    }
+    ops.done(intent);
+    writeSeq.current += 1;
+    changed();
+    if (!r.ok) setToast({ text: TODAY_EDITS_COPY.editFailed });
+  }
+
+  /** A coach swap suggestion's `Apply` (FT-C12): Ben's own swap, today only, with Undo. */
+  async function applySuggestion(sg: { slotKey: string; toExerciseId: string; text: string }) {
+    const w = await writeEdit(`swap:${sg.slotKey}:${sg.toExerciseId}`, (b) => services.overview.edit({ ...b, edit: { kind: 'swap', slotKey: sg.slotKey, toExerciseId: sg.toExerciseId } }));
+    const added = w?.added[0];
+    if (w && added !== undefined) toastWithUndo(`${sg.text} · today`, (v) => undoEdit(added, v), w.draft?.version ?? null);
   }
 
   /** `Trim to 45 min`: the fit applies at once to the draft (offline, FT2); the toast's Undo takes it back. */
@@ -1244,8 +1332,7 @@ export function WorkoutOverviewScreen() {
           unfittedSeconds: view.fit?.beforeSeconds ?? view.estimate?.seconds ?? null,
           fitMinutes: view.fit?.minutes ?? null,
           chosen: howLong.chosen,
-          // The coach fit isn't wired yet in this build: `Ask coach` is honest about it.
-          coachAvailable: false,
+          coachAvailable,
           pace: page.pace,
         });
   const lastRowId = view.rows.at(-1)?.slotKey;
@@ -1425,6 +1512,32 @@ export function WorkoutOverviewScreen() {
           {view.muscles.slice(1).map((m) => ` · ${m}`).join('')}
         </AppText>
       ) : null}
+      {coachCard !== null ? (
+        (() => {
+          const c = coachCard;
+          const trimWouldCut = howLongSheet({ nowSeconds: view.estimate?.seconds ?? null, nowMinutes: view.estimate?.minutes ?? null, unfittedSeconds: view.fit?.beforeSeconds ?? view.estimate?.seconds ?? null, fitMinutes: view.fit?.minutes ?? null, chosen: c.minutes, coachAvailable: false }).trim.enabled;
+          const v = coachFitCardView(c, trimWouldCut);
+          return (
+            <CoachFitStatusCard
+              text={v.text}
+              actions={v.actions}
+              onAction={(a) => {
+                if (a === 'cancel') cancelCoachFit();
+                if (a === 'dismiss') setCoachCard(null);
+                if (a === 'why' && c.kind === 'rejected') setFitWhy({ reason: null, checks: [], notUsed: c.reasons });
+                if (a === 'trim') {
+                  setCoachCard(null);
+                  void trimTo(c.minutes);
+                }
+                if (a === 'ask_again') {
+                  setCoachCard(null);
+                  void askCoach(c.minutes);
+                }
+              }}
+            />
+          );
+        })()
+      ) : null}
       {view.fit !== null ? (
         <FitCard
           fit={view.fit}
@@ -1433,12 +1546,35 @@ export function WorkoutOverviewScreen() {
             setFitFolded(false);
           }}
           onUndo={() => {
-            const id = view.fit?.editId;
-            if (id !== undefined) void undoEdit(id);
+            const fit = view.fit;
+            if (fit === null) return;
+            if (fit.by === 'coach' && fit.actionId !== null) void undoCoachFit(fit.actionId);
+            else void undoEdit(fit.editId);
           }}
           onChange={openHowLong}
+          onWhy={
+            view.fit.by === 'coach' && page.coachFit !== null
+              ? () => {
+                  const cf = page.coachFit;
+                  if (cf !== null) setFitWhy({ reason: cf.reason, checks: cf.checks, notUsed: cf.rejected });
+                }
+              : undefined
+          }
         />
       ) : null}
+      {(page.coachFit?.suggestions ?? [])
+        .filter((sg) => !dismissedSwaps.has(`${sg.slotKey}:${sg.toExerciseId}`))
+        .map((sg) => (
+          <FitSuggestionCard
+            key={`${sg.slotKey}:${sg.toExerciseId}`}
+            text={sg.text}
+            busy={false}
+            onApply={() => void applySuggestion(sg)}
+            onNotNow={() => {
+              setDismissedSwaps((d) => new Set([...d, `${sg.slotKey}:${sg.toExerciseId}`]));
+            }}
+          />
+        ))}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 18, paddingBottom: theme.space['2'] }}>
         <AppText variant="sectionLabel" color="text.tertiary">
           {listHeaderText(view)}
@@ -1686,10 +1822,21 @@ export function WorkoutOverviewScreen() {
         onTrim={() => {
           if (sheet?.trim.enabled === true) void trimTo(sheet.trim.minutes);
         }}
-        onAsk={() => undefined}
+        onAsk={() => {
+          if (sheet?.ask.enabled === true) void askCoach(sheet.selected);
+        }}
         onClear={() => void clearFit()}
         onClose={() => {
           setHowLong(null);
+        }}
+      />
+      <FitWhySheet
+        visible={fitWhy !== null}
+        reason={fitWhy?.reason ?? null}
+        checks={fitWhy?.checks ?? []}
+        notUsed={fitWhy?.notUsed ?? []}
+        onClose={() => {
+          setFitWhy(null);
         }}
       />
       <NumberAccessory />
