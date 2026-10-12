@@ -3,6 +3,7 @@ import { TODAY_EDIT_LIMITS } from '@fizz/schemas';
 import { formatDuration, loadText, NBSP, repRangeText } from '../display';
 import type { FitTier } from '../session/fit-time';
 import { deriveId } from '../stable';
+import { targetRpeOf, targetRpeText } from './target-rpe';
 
 /**
  * `validateTodayFit` (fit-to-time §5.2): the deterministic guardrail between
@@ -235,7 +236,7 @@ export interface FitPlanItem {
   bensEdit: boolean;
   painFlag: boolean;
   supersetWith: string[];
-  /** `3 × 6–8 @ 100 kg · 2 warm-ups`. */
+  /** `3 × 6–8 @ 100 kg @ RPE 8 · 2 warm-ups` (the first working set's target RPE, `targetRpeOf`). */
   sets: string;
   restS: number | null;
   last: string | null;
@@ -254,6 +255,8 @@ export interface FitPlanInput {
   muscles: (exerciseId: string) => readonly string[];
   /** Last comparable session as done (`100 kg × 8, 8, 7 · 1 Oct`), or null. */
   lastOf: (sessionExerciseId: string) => string | null;
+  /** The built-in target RPE per session exercise (`ruleTargetRpes`): the last fallback of each set's target RPE. */
+  ruleTargetRpe?: Readonly<Record<string, number>>;
 }
 
 /** The plan items for the request and the slots for `validateTodayFit`, in today's order, one per slot. */
@@ -272,6 +275,9 @@ export function fitPlanOf(input: FitPlanInput): { items: FitPlanItem[]; slots: F
     const first = working[0];
     const amount = first?.planned.reps ? repRangeText(first.planned.reps) : first?.planned.durationS ? formatDuration(first.planned.durationS) : '—';
     const load = first?.planned.load ? ` @ ${loadText(first.planned.load, ex.loadConvention)}` : '';
+    // The target RPE goes with the plan (ADR 0006 amendment 3), so a fit keeps the effort the sets were planned at.
+    const rpe = first === undefined ? null : targetRpeOf(first, input.ruleTargetRpe?.[ex.id] ?? null);
+    const effort = rpe === null ? '' : ` ${targetRpeText(rpe.rpe)}`;
     const tier = input.tiers[slotKey] ?? 'C';
     const held = input.held(ex.exerciseId);
     items.push({
@@ -281,7 +287,7 @@ export function fitPlanOf(input: FitPlanInput): { items: FitPlanItem[]; slots: F
       bensEdit: input.benEdited.has(slotKey),
       painFlag: held,
       supersetWith: ex.supersetGroup === null ? [] : ordered.filter((o) => o.id !== ex.id && o.supersetGroup === ex.supersetGroup).map((o) => o.exerciseName),
-      sets: `${String(working.length)} × ${amount}${load}${warm > 0 ? ` · ${String(warm)} warm-up${warm === 1 ? '' : 's'}` : ''}`.replaceAll(NBSP, ' '),
+      sets: `${String(working.length)} × ${amount}${load}${effort}${warm > 0 ? ` · ${String(warm)} warm-up${warm === 1 ? '' : 's'}` : ''}`.replaceAll(NBSP, ' '),
       restS: first?.rest.seconds ?? null,
       last: input.lastOf(ex.id),
     });

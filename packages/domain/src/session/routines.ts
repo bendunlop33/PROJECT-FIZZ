@@ -491,7 +491,9 @@ export function routineTemplatesWithTargets(
     if (!unedited && (coachReps === null || !fitsRange(coachReps, t.targetReps))) return t;
     const id = o.newId();
     o.ruleOf.set(id, coachHere);
-    return unedited ? { ...t, id, targetLoad: coachPlan.load, targetReps: coachReps ?? t.targetReps } : { ...t, id, targetLoad: coachPlan.load };
+    // The coach's target RPE goes with its load (target RPE, ADR 0006 amendment 3): its load was chosen for that effort.
+    const effort = coachPlan.rpe !== null ? { targetRpe: coachPlan.rpe, targetRir: null } : {};
+    return unedited ? { ...t, id, targetLoad: coachPlan.load, targetReps: coachReps ?? t.targetReps, ...effort } : { ...t, id, targetLoad: coachPlan.load, ...effort };
   });
   // The workout's other set types (a back-off after a top set), its timed sets and, after Ben's edit,
   // sets the coach's reps don't fit keep the built-in rule's loads.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NextSessionTargetRecord, PlannedSet, Routine, SessionAggregate, SetTemplate, SetType } from '@fizz/schemas';
-import { planRoutineStart, reduceSession, routineTemplatesWithTargets, withCoachTargets, type NextTargetEntry } from '../src/index';
+import { planRoutineStart, reduceSession, routineTemplatesWithTargets, shapeTemplates, targetRpeOf, withCoachTargets, type NextTargetEntry } from '../src/index';
 import { at, id, idGen, kg, OWNER, profile, routine, routineExercise, template, values } from './fixtures';
 import { EXERCISES, exerciseSets, INCLINE, MAIN, MAIN_EQ, mainRack, pushA } from './gym-fixture';
 import { expectOk, logCmd } from './session-fixture';
@@ -240,5 +240,48 @@ describe('Start of a library workout edited after a coach target (B1, WL-A4, WL7
     expect(edited).toHaveLength(4);
     expect(edited[0]?.planned.provenance?.guardNotes).toContain('Kept your edit: 4 sets');
     expect(exerciseSets(start(library(at(0).utc, four), 3).aggregate, INCLINE)).toHaveLength(3);
+  });
+});
+
+/**
+ * Target RPE (ADR 0006 amendment 3) on a library workout: the coach's target
+ * RPE goes with its load wherever its load is used (WL7: unedited, or edited
+ * since with the coach's reps inside Ben's range), and sets Ben adds before
+ * Start carry the same target as the set they copy.
+ */
+describe('target RPE on a library workout (merge with target RPE)', () => {
+  const withRpe = (o: { sets?: number | null; count?: number }, rpe: number): NextTargetEntry[] => coachEntries(o).map((e) => ({ ...e, planned: { ...e.planned, rpe } }));
+
+  it('unedited since the coach target: its load, reps and target RPE are used', () => {
+    const ts = [1, 2, 3].map((n) => template(n, { targetReps: { min: 6, max: 8 }, targetRpe: 9 }));
+    const out = routineTemplatesWithTargets(ts, withRpe({ sets: 3 }, 8), { legacy: false, newId: idGen(51_000), ruleOf: new Map(), editedAtUtc: at(0).utc });
+    expect(out.map((t) => [t.targetLoad?.value ?? null, t.targetRpe, t.targetRir])).toEqual(Array(3).fill([100, 8, null]));
+  });
+
+  it('edited since, coach reps inside Ben’s range: his reps, the coach’s load and its target RPE', () => {
+    const ts = [1, 2, 3, 4].map((n) => template(n, { targetReps: { min: 4, max: 6 } }));
+    const out = routineTemplatesWithTargets(ts, withRpe({ sets: 3 }, 8), { legacy: false, newId: idGen(51_100), ruleOf: new Map(), editedAtUtc: at(2000).utc });
+    expect(out.map((t) => [t.targetLoad?.value ?? null, t.targetReps, t.targetRpe])).toEqual(Array(4).fill([100, { min: 4, max: 6 }, 8]));
+  });
+
+  it('edited since, coach reps outside his range: the built-in rule’s load, and the set keeps its own target RPE (not the coach’s)', () => {
+    const ts = [1, 2, 3, 4].map((n) => template(n, { targetReps: { min: 6, max: 8 }, targetRpe: 9 }));
+    const out = routineTemplatesWithTargets(ts, withRpe({ sets: 3 }, 7), { legacy: false, newId: idGen(51_200), ruleOf: new Map(), editedAtUtc: at(2000).utc });
+    expect(out.map((t) => [t.targetLoad?.value ?? null, t.targetRpe])).toEqual(Array(4).fill([97.5, 9]));
+  });
+
+  it('a coach target with no RPE leaves the template’s own RPE/RIR alone', () => {
+    const ts = [1, 2, 3].map((n) => template(n, { targetReps: { min: 6, max: 8 }, targetRir: 2 }));
+    const out = routineTemplatesWithTargets(ts, coachEntries({ sets: 3 }), { legacy: false, newId: idGen(51_300), ruleOf: new Map(), editedAtUtc: at(0).utc });
+    expect(out.map((t) => [t.targetRpe, t.targetRir])).toEqual(Array(3).fill([null, 2]));
+  });
+
+  it('sets Ben adds before Start copy the last working set’s target RPE; with none, they fall back to the rule’s like the others', () => {
+    const ts = [template(1, { setType: 'warmup', targetRpe: null }), ...[2, 3].map((n) => template(n, { targetRpe: 8.5 }))];
+    const more = shapeTemplates(ts, { workingSets: 4 }, { newId: idGen(51_400) });
+    expect(more.filter((t) => t.setType !== 'warmup').map((t) => t.targetRpe)).toEqual([8.5, 8.5, 8.5, 8.5]);
+    const plain = shapeTemplates([2, 3].map((n) => template(n)), { workingSets: 3 }, { newId: idGen(51_500) });
+    const targets = plain.map((t) => targetRpeOf({ setType: t.setType, planned: { rpe: t.targetRpe, rir: t.targetRir, source: 'built_in_rule' } }, 9));
+    expect(targets).toEqual(Array(3).fill({ rpe: 9, source: 'rule' }));
   });
 });

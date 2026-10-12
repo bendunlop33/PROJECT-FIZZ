@@ -3381,6 +3381,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       held,
       muscles: (id) => info.get(id)?.primaryMuscles ?? [],
       lastOf: (sx) => lastBySlot.get(run.today?.slotOf[sx] ?? sx) ?? null,
+      ruleTargetRpe: ruleTargetRpes(run.aggregate, (id) => (info.has(id) ? (info.get(id) ?? null) : undefined)),
     });
     const unfittedSeconds = estimateRemainingDuration(run.aggregate, { pace: page.pace }).seconds;
     const equipment = typical ?? (await repos().equipment.listByGym(gymId).catch(() => [] as EquipmentInstance[]));
