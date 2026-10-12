@@ -19,6 +19,8 @@ import type { SessionAggregate } from '@fizz/schemas';
  *   activity for the workout in progress (updated to its true state) and ends
  *   any others.
  * - Swiped away by Ben: not started again for that workout this run (§4.2).
+ *   Refused by iOS: tried again on the next reconcile (a Log, or the return
+ *   to the foreground), as the refusal may have been transient.
  * - Reconciles can be queued out of order (a coach turn's re-read lands after
  *   a Log). The last applied (workout, version) is kept and an older version
  *   of the same workout is ignored, so the Lock Screen never steps back from
@@ -78,7 +80,7 @@ export const DEADLINE_RECHECK_MS = 500;
 export function createLiveActivityController(port: LiveActivityPort, opts: { tz: (state: SessionAggregate) => string; clock?: ActivityClock }) {
   let current: { sessionId: string; id: string; key: string } | null = null;
   let adopted = false;
-  /** Workouts whose activity Ben swiped away, or that iOS refused, this run. */
+  /** Workouts whose activity Ben swiped away this run. */
   const skip = new Set<string>();
   let lastError: string | null = null;
   let failed = false;
@@ -166,10 +168,11 @@ export function createLiveActivityController(port: LiveActivityPort, opts: { tz:
         failed = false;
         lastError = null;
       } catch (e) {
-        // Refused (Live Activities off in Settings, or the extension can't run): the notification is the alert.
+        // Refused (Live Activities off in Settings, the app not in the foreground, or the extension can't run):
+        // the notification is the alert. Tried again on the next reconcile, since a refusal can be
+        // transient (review ben-bugs N3); only a swipe stops it for the workout.
         note(e);
         failed = true;
-        skip.add(content.sessionId);
       }
     } else if (current.key !== key) {
       try {

@@ -2,6 +2,8 @@
 
 **About 10 minutes on the iPhone, with a real (short) workout.** Needs the SideStore build with the App Group fix and the Live Activity extension (`FIZZ_LIVE_ACTIVITY` not `0`). Nothing in this list has run on a phone yet: the Capability probe's countdown passed, but the real rest flow is new in this build, and so is the bigger layout. Put **P**, **F** (with one line) or **–** in each row and paste the table back.
 
+**Status: open.** Ben's "countdown doesn't show in workout mode" report stays open until this table is filled in (review ben-bugs r2 S1). Every Live Activity test so far runs against a fake ActivityKit.
+
 Before you start: Settings › GymSmarter › Live Activities **on**; notifications allowed. Close the Capability probe's test countdown if it's still showing.
 
 ## What should happen
@@ -25,6 +27,8 @@ L12. **Swipe the activity away** during a rest: it stays gone for this workout (
 L13. **Finish** the workout: the activity disappears at once. **Discard** another test workout: same.
 L14. **Live Activities off** (Settings › GymSmarter › Live Activities off), start a workout and log a set: no activity, no error in the app, and the **Rest done** notification still arrives.
 L15. **VoiceOver** on the Lock Screen activity reads `Rest, until hh:mm. Next: <exercise>, set n of m, target … kilograms, … reps.` and the countdown.
+L16. **Capability probe during a workout.** With a rest running, open the Capability probe and run Live Activity, then go back and log the next set. The workout's activity is still there and switches to the new rest (the probe's own 2-minute countdown may show alongside it until it ends).
+L17. **Live Activities turned back on mid-workout.** With Live Activities off (after L14), keep the workout going, turn them on in Settings, return to GymSmarter and log a set: the workout's activity appears now (no relaunch needed).
 
 ## Results (paste back)
 
@@ -45,6 +49,8 @@ L15. **VoiceOver** on the Lock Screen activity reads `Rest, until hh:mm. Next: <
 | L13 Finish / Discard end it | | |
 | L14 Live Activities off: notification only | | |
 | L15 VoiceOver | | |
+| L16 probe during a workout leaves the workout's activity | | |
+| L17 Live Activities on again: activity on the next Log | | |
 
 ## Known limits (not faults)
 - Updates happen only while GymSmarter runs (no push on a free Apple ID). If the app is suspended when a rest ends, the activity shows **0:00** with the `Until` time until you open the app; the notification is the alert.

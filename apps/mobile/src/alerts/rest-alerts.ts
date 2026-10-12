@@ -126,33 +126,59 @@ export function createRestAlertController(notifier: NotifierPort, layers: { live
    * workout) clears it.
    */
   let applied: { sessionId: string; version: number } | null = null;
-  return {
-    reconcile(state: SessionAggregate | null, nowMs: number): Promise<void> {
-      chain = chain.then(async () => {
-        if (state !== null && applied !== null && applied.sessionId === state.session.id && state.session.version < applied.version) return;
-        applied = state === null ? null : { sessionId: state.session.id, version: state.session.version };
-        const planned = planRestAlert(state, nowMs);
-        // After a relaunch nothing is known: cancel by identifier first so a stale alert can't survive.
-        const known = current ?? (state ? { identifier: restAlertIdentifier(state.session.id), key: '' } : null);
-        for (const a of decideAlertActions(known, planned)) {
-          try {
-            if (a.kind === 'cancel') {
-              await notifier.cancel(a.identifier);
-              current = null;
-            } else {
-              await notifier.schedule(a.alert);
-              current = { identifier: a.alert.identifier, key: a.alert.key };
-            }
-            lastError = null;
-          } catch (e) {
-            lastError = e instanceof Error ? e.message : String(e);
+  /**
+   * Issue order of reconciles, for reads made outside any write (the
+   * launch/foreground `active()` read, review ben-bugs r2 N1). A read takes a
+   * ticket when it *starts*; if any reconcile was issued after that, the
+   * read's result is no newer than what is already queued and is dropped. The
+   * version guard can't do this for a late null or another workout's state.
+   */
+  let issued = 0;
+  let newest = 0;
+  function reconcile(state: SessionAggregate | null, nowMs: number, readTicket?: number): Promise<void> {
+    if (readTicket !== undefined && newest > readTicket) return chain.then(() => undefined);
+    newest = readTicket ?? ++issued;
+    chain = chain.then(async () => {
+      if (state !== null && applied !== null && applied.sessionId === state.session.id && state.session.version < applied.version) return;
+      applied = state === null ? null : { sessionId: state.session.id, version: state.session.version };
+      const planned = planRestAlert(state, nowMs);
+      // After a relaunch nothing is known: cancel by identifier first so a stale alert can't survive.
+      const known = current ?? (state ? { identifier: restAlertIdentifier(state.session.id), key: '' } : null);
+      for (const a of decideAlertActions(known, planned)) {
+        try {
+          if (a.kind === 'cancel') {
+            await notifier.cancel(a.identifier);
+            current = null;
+          } else {
+            await notifier.schedule(a.alert);
+            current = { identifier: a.alert.identifier, key: a.alert.key };
           }
+          lastError = null;
+        } catch (e) {
+          lastError = e instanceof Error ? e.message : String(e);
         }
-        if (planned === null) current = null;
-      });
-      // The Lock Screen Live Activity follows the same committed state; it never blocks or fails the notification.
-      const activity = layers.liveActivity?.reconcile(state, nowMs).catch(() => undefined) ?? Promise.resolve();
-      return Promise.all([chain, activity]).then(() => undefined);
+      }
+      if (planned === null) current = null;
+    });
+    // The Lock Screen Live Activity follows the same committed state; it never blocks or fails the notification.
+    const activity = layers.liveActivity?.reconcile(state, nowMs).catch(() => undefined) ?? Promise.resolve();
+    return Promise.all([chain, activity]).then(() => undefined);
+  }
+  return {
+    /** After a commit, with the state it committed. */
+    reconcile(state: SessionAggregate | null, nowMs: number): Promise<void> {
+      return reconcile(state, nowMs);
+    },
+    /**
+     * Launch and return to the foreground: read the workout in progress, then
+     * reconcile, unless a commit's reconcile was issued while the read ran
+     * (that state is at least as new). Never throws.
+     */
+    reconcileFromRead(read: () => Promise<SessionAggregate | null>, now: () => number): Promise<void> {
+      const ticket = ++issued;
+      return read()
+        .then((state) => reconcile(state, now(), ticket))
+        .catch(() => undefined);
     },
     /**
      * Delete my data: every workout alert goes, including one scheduled

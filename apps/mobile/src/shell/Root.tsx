@@ -52,17 +52,14 @@ const restAlerts = createRestAlertController(expoNotifier, { liveActivity });
 function useForegroundAlerts(services: AppServices) {
   useEffect(() => {
     // Launch: reconcile once, so a Live Activity left by a force-close is adopted or ended (§4.2).
-    void services.sessions
-      .active()
-      .then((a) => restAlerts.reconcile(a, toMs(services.now().utc)))
-      .catch(() => undefined);
+    // The read runs outside the write chain; a commit issued meanwhile wins (review ben-bugs r2 N1).
+    const readActive = () => services.sessions.active();
+    const now = () => toMs(services.now().utc);
+    void restAlerts.reconcileFromRead(readActive, now);
     const sub = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
       void clearDeliveredWorkoutAlerts().catch(() => undefined);
-      void services.sessions
-        .active()
-        .then((a) => restAlerts.reconcile(a, toMs(services.now().utc)))
-        .catch(() => undefined);
+      void restAlerts.reconcileFromRead(readActive, now);
     });
     return () => {
       sub.remove();

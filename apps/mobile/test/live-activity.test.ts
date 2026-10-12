@@ -6,6 +6,7 @@ import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import { createRestAlertController, type NotifierPort } from '../src/alerts/rest-alerts';
+import { createProbeActivityLedger } from '../src/live-activity/probe-ledger';
 import { createLiveActivityController, DEADLINE_RECHECK_MS, type ActivityClock, type LiveActivityPort, type WorkoutActivityProps } from '../src/live-activity/controller';
 import type { AppServices } from '../src/services/app-services';
 import { createHarness, logWorkout, setUpGym, TZ, type Harness } from './harness';
@@ -285,6 +286,48 @@ describe('Live Activity controller (pure, over a fake ActivityKit)', () => {
     expect(la.lastError).toContain('turned off');
   });
 
+  it('a refused start is tried again on the next reconcile; a swipe is not (review ben-bugs N3)', async () => {
+    const fake = fakeActivities();
+    fake.sys.refuse = true; // e.g. the coach turn's reconcile landed while the app was in the background
+    const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
+    const { state: ready } = startFixture();
+    await la.reconcile(ready, ms(1));
+    expect(la.status).toBe('failed');
+    expect(fake.running.size).toBe(0);
+    fake.sys.refuse = false;
+    const resting = loggedWarmup();
+    await la.reconcile(resting, ms(31));
+    expect(fake.only().props.state).toBe('resting');
+    expect(la.status).toBe('showing');
+    expect(la.lastError).toBeNull();
+    fake.swipe('la-1');
+    await la.reconcile(apply(resting, { type: 'skip_rest', at: at(40), opId: 'skip', timerId: resting.restTimer?.id ?? '' }), ms(41));
+    expect(fake.running.size).toBe(0);
+  });
+
+  it('the capability probe ends only its own earlier countdowns, never the workout’s (review ben-bugs N2)', async () => {
+    const fake = fakeActivities();
+    const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
+    const s = loggedWarmup();
+    await la.reconcile(s, ms(31));
+    const ledger = createProbeActivityLedger();
+    // Probe run 1 during the workout: nothing of the workout's is ended.
+    expect(ledger.toEnd(fake.port.listIds())).toEqual([]);
+    fake.running.set('probe-1', { props: fake.only().props, staleAtMs: null, updates: 0 });
+    ledger.started('probe-1');
+    // Probe run 2 ends probe 1 only.
+    const toEnd = ledger.toEnd(fake.port.listIds());
+    expect(toEnd).toEqual(['probe-1']);
+    for (const id of toEnd) {
+      fake.running.delete(id);
+      ledger.ended(id);
+    }
+    // The workout's activity is still updated in place, not treated as swiped.
+    await la.reconcile(apply(s, { type: 'skip_rest', at: at(40), opId: 'skip', timerId: s.restTimer?.id ?? '' }), ms(41));
+    expect(fake.only().props.state).toBe('ready');
+    expect(fake.calls).toEqual(['start la-1 resting', 'update la-1 ready']);
+  });
+
   it('Delete my data ends every activity except the workout in progress', async () => {
     const fake = fakeActivities();
     const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
@@ -429,6 +472,35 @@ describe('Live Activity through the app services: late reads, Undo, coach change
     await h.restAlerts?.reconcile(before, h.clockMs);
     expect(fake.only().props).toMatchObject({ state: 'resting', endMs: deadline });
     expect([...h.pending.values()].map((a) => a.fireAtMs)).toEqual([deadline]);
+  });
+
+  it('a launch/foreground read that starts before Start and lands after it (a late null) doesn’t end the new activity (review ben-bugs r2 N1)', async () => {
+    const fake = fakeActivities();
+    const harness = createHarness('2026-10-12T17:00:00.000Z', { liveActivity: fake.port });
+    h = harness;
+    const { services: s } = await harness.launch();
+    const gymId = await setUpGym(harness, s);
+    const alerts = harness.restAlerts;
+    if (!alerts) throw new Error('no alerts');
+    let land: (a: SessionAggregate | null) => void = () => undefined;
+    const late = alerts.reconcileFromRead(
+      () =>
+        new Promise<SessionAggregate | null>((r) => {
+          land = r;
+        }),
+      () => harness.clockMs,
+    );
+    await benchWorkout(harness, s, gymId);
+    expect(fake.only().props.state).toBe('ready');
+    land(null); // read before Start committed
+    await late;
+    expect(fake.only().props.state).toBe('ready');
+    expect(fake.calls.filter((c) => c.startsWith('end'))).toEqual([]);
+
+    // A read that starts after the commit is applied as usual.
+    await alerts.reconcileFromRead(() => s.sessions.active(), () => harness.clockMs);
+    expect(fake.only().props.state).toBe('ready');
+    expect(fake.calls.filter((c) => c.startsWith('start'))).toHaveLength(1);
   });
 
   it('Undo of the last set puts the same activity back to Ready with no countdown', async () => {
