@@ -225,8 +225,8 @@ export function ChartTable({ headers, rows, onOpen }: { headers: readonly [strin
   );
 }
 
-/** `RepTable` (§9.73): plain rows, each a button to the workout; `from 6 reps` notes; FitNotes tags; `Show all (n)`. */
-export function RepTable({ table, showAll, onShowAll, onOpen }: { table: RepTableView; showAll: boolean; onShowAll: () => void; onOpen: (sessionId: string) => void }) {
+/** `RepTable` (§9.73), also the distance `BEST DISTANCE` table: plain rows, each a button to the workout; `from 6 reps` notes; FitNotes tags; `Show all (n)`. */
+export function RepTable({ table, showAll, onShowAll, onOpen }: { table: Pick<RepTableView, 'headers' | 'rows' | 'initial'>; showAll: boolean; onShowAll: () => void; onOpen: (sessionId: string) => void }) {
   const theme = useTheme();
   const ax = useAx();
   const rows = showAll ? table.rows : table.rows.slice(0, table.initial);
