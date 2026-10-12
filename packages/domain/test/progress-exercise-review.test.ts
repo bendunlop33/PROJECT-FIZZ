@@ -16,8 +16,10 @@ import {
   type ProgressExercise,
   type ProgressSession,
   type ProgressSet,
+  toProgressSession,
 } from '../src/index';
-import { kg, lb } from './fixtures';
+import { at, kg, lb, values } from './fixtures';
+import { apply, BENCH, logCmd, setsFor, startFixture } from './session-fixture';
 
 /**
  * Review progress-B fixes: B1 (Latest and Change are sessions under weekly
@@ -130,6 +132,34 @@ describe('B1: under weekly bests, Latest and Change describe sessions', () => {
     expect(t.aggregation).toBe('weekly_best');
     expect(t.points.find((p) => p.sessionId === late.sessionId)?.date).toBe('2026-10-04');
   });
+
+  it('a session at 23:30Z on Sunday is Monday in London and Sunday in Los Angeles: the projected local date picks the week (r2 N2)', () => {
+    let s = startFixture().state;
+    s = apply(s, logCmd(setsFor(s, BENCH)[1]?.id ?? '', values(kg(150), 5), 60));
+    s = apply(s, { type: 'finish', at: at(3600), opId: 'f', expectedVersion: s.session.version, endedAt: null });
+    const sunday = { ...s, session: { ...s.session, startedAt: { utc: '2026-10-04T23:30:00.000Z', tz: 'Europe/London' } } };
+    const london = toProgressSession(sunday, 'Europe/London', 0);
+    const la = toProgressSession(sunday, 'America/Los_Angeles', 0);
+    if (!london || !la) throw new Error('projection');
+    expect([london.date, la.date]).toEqual(['2026-10-05', '2026-10-04']);
+    // Light daily sessions (100 × 5) from January push the chart to weekly bests; the 150 × 5 is the best of whichever week it lands in.
+    const benchRow = london.exercises.find((e) => e.exerciseId === BENCH) as ProgressExercise;
+    const many: ProgressSession[] = [];
+    for (let i = 0; i < TREND_MAX_POINTS + 10; i += 1) {
+      const date = addDaysIso('2026-01-05', i);
+      many.push({ ...london, sessionId: `light-${date}`, date, startedMs: Date.parse(`${date}T17:00:00.000Z`), exercises: [{ ...benchRow, sets: [set(kg(100), 5)] }] });
+    }
+    const weekOf = (p: ProgressSession) => {
+      const all = collectExerciseSeries([...many, p], BENCH);
+      expect(all).toHaveLength(1);
+      const t = exerciseTrend(all[0] as ExerciseSeries, 'top_set', 'all', TODAY);
+      expect(t.aggregation).toBe('weekly_best');
+      const point = t.points.find((x) => x.sessionId === p.sessionId);
+      return point === undefined ? null : mondayOf(point.date);
+    };
+    expect(weekOf(london)).toBe('2026-10-05');
+    expect(weekOf(la)).toBe('2026-09-28');
+  });
 });
 
 describe('S1: assisted records; timed has no records section', () => {
@@ -203,6 +233,56 @@ describe('S2: opening on an older workout widens the range to include it', () =>
   });
 });
 
+describe('r2 S1: opening an old workout under weekly bests selects its week', () => {
+  // Mon 140 × 5 and Thu 100 × 5 every week from 2 Jan 2023: `All` has more than 150 sessions, so weekly bests.
+  const sessions: ProgressSession[] = [];
+  for (let w = 0; ; w += 1) {
+    const mon = addDaysIso('2023-01-02', w * 7);
+    if (mon > TODAY) break;
+    sessions.push(bench(mon, [[140, 5]]));
+    const thu = addDaysIso(mon, 3);
+    if (thu <= TODAY) sessions.push(bench(thu, [[100, 5]]));
+  }
+  const thursday = (date: string) => sessions.find((x) => x.date === date) as ProgressSession;
+
+  for (const date of ['2023-03-09', '2025-06-12']) {
+    it(`a Thursday (${date}) that isn't its week's best: the week's point is selected, the panel is the workout's own value`, () => {
+      const opened = thursday(date);
+      const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, sessionId: opened.sessionId });
+      if (!v) throw new Error('view');
+      expect(v.range).toBe('all');
+      expect(v.heading.endsWith('· weekly best')).toBe(true);
+      expect(v.points.some((p) => p.sessionId === opened.sessionId)).toBe(false);
+      expect(v.selectedSessionId).toBe(opened.sessionId);
+      const sel = v.selection;
+      if (!sel) throw new Error('selection');
+      // The highlighted point is that week's Monday (140 × 5).
+      expect(v.points[sel.index]?.date).toBe(mondayOf(date));
+      expect(sp(v.points[sel.index]?.display)).toBe('≈163.5 kg');
+      // The panel describes the opened Thursday, and `Open workout ›` goes to it.
+      expect(sel.point.sessionId).toBe(opened.sessionId);
+      expect(sel.point.date).toBe(date);
+      expect(sp(sel.point.display)).toBe('≈116.5 kg');
+      expect(sel.point.title.startsWith('Thu')).toBe(true);
+      expect(sp(sel.point.detail)).toBe('Est. 1RM  ≈116.5 kg  from 100 kg × 5');
+    });
+  }
+
+  it('the week’s best workout selects its own point; a later fetch with `selectSessionId` keeps the selection without choosing the range', () => {
+    const mon = sessions.find((x) => x.date === '2025-06-09') as ProgressSession;
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, sessionId: mon.sessionId });
+    expect(v?.selection?.point.sessionId).toBe(mon.sessionId);
+    expect(v?.points[v.selection?.index ?? -1]?.sessionId).toBe(mon.sessionId);
+    const thu = thursday('2025-06-12');
+    const again = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, range: 'all', selectSessionId: thu.sessionId });
+    expect(again?.selectedSessionId).toBe(thu.sessionId);
+    expect(again?.points[again.selection?.index ?? -1]?.date).toBe('2025-06-09');
+    // `selectSessionId` doesn't widen: on the default `6 mo` the June 2025 workout isn't shown, so nothing is selected.
+    const narrow = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, selectSessionId: thu.sessionId });
+    expect([narrow?.range, narrow?.selectedSessionId, narrow?.selection]).toEqual(['6m', null, null]);
+  });
+});
+
 describe('S3: FitNotes series labels never collide', () => {
   it('total, stack, bodyweight and timed imports of one unit read differently', () => {
     const sessions = [
@@ -220,6 +300,22 @@ describe('S3: FitNotes series labels never collide', () => {
   it('a single FitNotes series keeps the short label; kg and lb differ already', () => {
     const sessions = [imported('2025-01-01', [row([set(kg(100), 5)])]), imported('2025-01-02', [row([set(lb(225), 5)], { unit: 'lb' })])];
     expect([...seriesLabels(collectExerciseSeries(sessions, 'bench'), {}).values()].sort()).toEqual(['FitNotes · kg', 'FitNotes · lb']);
+  });
+
+  it('a weighted and an unweighted timed import of one unit (plank) read differently (r2 S3)', () => {
+    const plank = (convention: 'total' | 'bodyweight', unit: 'kg' | 'lb' = 'kg') =>
+      imported('2025-01-01', [row([set(convention === 'total' ? (unit === 'kg' ? kg(10) : lb(25)) : null, null, { durationS: 45 })], { convention, measurement: 'duration', unit })]);
+    const two = [...seriesLabels(collectExerciseSeries([plank('bodyweight'), plank('total')], 'bench'), {}).values()];
+    expect(two.sort()).toEqual(['FitNotes · timed', 'FitNotes · timed · weighted']);
+    // With kg and lb of each: the unit, never the same label twice.
+    const four = [...seriesLabels(collectExerciseSeries([plank('bodyweight'), plank('total'), plank('bodyweight', 'lb'), plank('total', 'lb')], 'bench'), {}).values()];
+    expect(four.sort()).toEqual(['FitNotes · timed · kg', 'FitNotes · timed · lb', 'FitNotes · timed · weighted · kg', 'FitNotes · timed · weighted · lb']);
+  });
+
+  it('labels that still match after every step get an ordinal (last resort)', () => {
+    const a = { ...(collectExerciseSeries([imported('2025-01-01', [row([set(kg(100), 5)])])], 'bench')[0] as ExerciseSeries) };
+    const b = { ...a, id: `${a.id}-copy` };
+    expect([...seriesLabels([a, b], {}).values()]).toEqual(['FitNotes · kg · kg (1)', 'FitNotes · kg · kg (2)']);
   });
 
   it('timed imports in kg and lb fall back to the unit', () => {

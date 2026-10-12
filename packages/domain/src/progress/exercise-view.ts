@@ -14,6 +14,7 @@ import {
   hasRepTable,
   listProgressExercises,
   metricsFor,
+  mondayOf,
   repTableByReps,
   repTableByWeight,
   TREND_RANGES,
@@ -238,8 +239,9 @@ export function seriesLabels(series: readonly ExerciseSeries[], gymNames: Readon
     const eq = s.key.equipmentId === null ? 'No equipment' : (s.equipmentName ?? 'Equipment');
     base.set(s.id, gym === null ? eq : `${gym} · ${eq}`);
   }
-  // Two series that would read the same: say what differs (unit and convention, or timed), then the unit as a last resort.
-  const detail = (s: ExerciseSeries) => (s.key.measurement === 'duration' ? 'timed' : seriesUnitText(s));
+  // Two series that would read the same: say what differs (unit and convention, or timed and weighted), then the unit, then an ordinal as a last resort.
+  const loadedTimed = (s: ExerciseSeries) => s.key.measurement === 'duration' && s.key.convention !== 'bodyweight';
+  const detail = (s: ExerciseSeries) => (s.key.measurement !== 'duration' ? seriesUnitText(s) : loadedTimed(s) ? 'timed · weighted' : 'timed');
   const step1 = new Map<string, string>();
   const baseCounts = countLabels(base);
   for (const s of series) {
@@ -248,10 +250,23 @@ export function seriesLabels(series: readonly ExerciseSeries[], gymNames: Readon
     else step1.set(s.id, s.key.source === 'import' ? `FitNotes · ${detail(s)}` : `${l} · ${detail(s)}`);
   }
   const step1Counts = countLabels(step1);
-  const out = new Map<string, string>();
+  const step2 = new Map<string, string>();
   for (const s of series) {
     const l = step1.get(s.id) ?? '';
-    out.set(s.id, (step1Counts.get(l) ?? 0) > 1 ? `${l} · ${s.key.unit}` : l);
+    step2.set(s.id, (step1Counts.get(l) ?? 0) > 1 ? `${l} · ${loadedTimed(s) ? seriesUnitText(s) : s.key.unit}` : l);
+  }
+  const step2Counts = countLabels(step2);
+  const seen = new Map<string, number>();
+  const out = new Map<string, string>();
+  for (const s of series) {
+    const l = step2.get(s.id) ?? '';
+    if ((step2Counts.get(l) ?? 0) <= 1) {
+      out.set(s.id, l);
+      continue;
+    }
+    const k = (seen.get(l) ?? 0) + 1;
+    seen.set(l, k);
+    out.set(s.id, `${l} (${String(k)})`);
   }
   return out;
 }
@@ -381,8 +396,14 @@ export interface ExerciseDetailView {
   records: { items: RecordRowView[]; empty: string | null } | null;
   history: { unit: string; months: { month: string; title: string; rows: HistoryRowView[] }[]; more: { label: string; months: number } | null };
   pain: { flagId: string; text: string; words: string } | null;
-  /** The point to select on open (a home record or a past workout), when it has one. */
+  /** The workout opened on (a home record or a past workout), when the chart shows it: its own point, or its week's point under weekly bests. */
   selectedSessionId: string | null;
+  /**
+   * What to select for `selectedSessionId`: the chart point to highlight and
+   * the panel for that workout. Under weekly bests the point is the week's
+   * and the panel is the workout's own value (review progress-B r2 S1).
+   */
+  selection: { index: number; point: ChartPointView } | null;
 }
 
 export interface ExerciseDetailInput {
@@ -399,6 +420,8 @@ export interface ExerciseDetailInput {
   gymId?: string | null;
   /** Open on the series containing this workout, with its point selected (home record, past workout). */
   sessionId?: string | null;
+  /** Select this workout (its point, or its week's under weekly bests) without choosing the series or range, as after an opening. */
+  selectSessionId?: string | null;
   /** With `sessionId`: the workout row tapped (Summary), so the series is that row's even when the exercise is on two rows. */
   sessionExerciseId?: string | null;
   metric?: ExerciseMetric | null;
@@ -673,6 +696,34 @@ function headlineView(series: ExerciseSeries): { stats: { value: string; label: 
 }
 
 /**
+ * The workout opened on, selected: its own point, or under weekly bests the
+ * point of the week that holds it, with the workout's own value in the panel
+ * and `Open workout ›` going to it (review progress-B r2 S1). Null when the
+ * workout has no value in this metric and range (every set marked, say).
+ */
+function openedSelection(
+  sessionId: string | null,
+  trend: ReturnType<typeof exerciseTrend>,
+  points: readonly ChartPointView[],
+  series: ExerciseSeries,
+  metric: ExerciseMetric,
+  today: string,
+): { index: number; point: ChartPointView } | null {
+  if (sessionId === null) return null;
+  const own = trend.points.findIndex((p) => p.sessionId === sessionId);
+  if (own >= 0) {
+    const point = points[own];
+    return point === undefined ? null : { index: own, point };
+  }
+  if (trend.aggregation !== 'weekly_best') return null;
+  const mine = trend.sessionPoints.find((p) => p.sessionId === sessionId);
+  if (mine === undefined) return null;
+  const week = mondayOf(mine.date);
+  const index = trend.points.findIndex((p) => mondayOf(p.date) === week);
+  return index < 0 ? null : { index, point: pointView(mine, series, metric, today) };
+}
+
+/**
  * `buildExerciseDetailView`: everything exercise detail shows for one
  * series, metric and range. Returns null when the exercise has no finished
  * session.
@@ -785,7 +836,8 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
   const unit = series.kind === 'timed' ? 'min:s' : series.kind === 'bodyweight' ? 'reps' : `${seriesUnitText(series)} × reps`;
 
   const statStrip = headlineView(series);
-  const selected = input.sessionId && trend.points.some((p) => p.sessionId === input.sessionId) ? input.sessionId : null;
+  const selectId = input.sessionId ?? input.selectSessionId ?? null;
+  const selection = openedSelection(selectId, trend, points, series, metric, today);
 
   return {
     exerciseId: input.exerciseId,
@@ -822,7 +874,8 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
       more: hist.nextMonth === null ? null : { label: `Load ${monthLabel(hist.nextMonth, today)}`, months: historyMonths + 1 },
     },
     pain: input.painFlag ? { flagId: input.painFlag.flagId, text: `Pain flag since ${shortDate(input.painFlag.date, today)}`, words: `Pain flag since ${longDate(input.painFlag.date, today)}. Opens the flag.` } : null,
-    selectedSessionId: selected,
+    selectedSessionId: selection === null ? null : selectId,
+    selection,
   };
 }
 
