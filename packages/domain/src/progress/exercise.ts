@@ -301,7 +301,7 @@ type Distanced = ProgressSet & { distanceM: number };
 const distanced = (s: ProgressSet): s is Distanced => s.setType !== 'warmup' && s.distanceM !== undefined && s.distanceM > 0;
 
 /** The set's load when it is in the series' convention and unit (what a distance set carried or pushed). */
-function seriesLoadValue(s: ProgressSet, key: SeriesKey): number | null {
+export function seriesLoadValue(s: ProgressSet, key: SeriesKey): number | null {
   return s.load !== null && s.load.convention === key.convention && s.load.unit === key.unit ? s.load.value : null;
 }
 
@@ -650,7 +650,8 @@ export interface DistanceByLoadRow {
 /**
  * Distance series: one row per load, the longest countable set at that load
  * and the first date it was done; heaviest first, no load last. A set whose
- * load is in another convention or unit is left out.
+ * load is in another convention or unit is left out. 0 kg added (not plate
+ * loaded) is no load, matching the set text.
  */
 export function distanceTableByLoad(series: ExerciseSeries, bounds: DateRange): DistanceByLoadRow[] {
   if (series.kind !== 'distance') return [];
@@ -661,7 +662,9 @@ export function distanceTableByLoad(series: ExerciseSeries, bounds: DateRange): 
       if (!distanced(s) || !counts(s)) continue;
       if (s.load !== null && s.load.convention !== 'bodyweight' && seriesLoadValue(s, series.key) === null) continue;
       const v = seriesLoadValue(s, series.key);
-      const load = v === null || v === 0 ? null : v;
+      // 0 kg reads `No load` only where the set text says so too (added load, not a plate-loaded sled; review misc-fixes N1).
+      const zeroIsNone = series.key.convention === 'added' && series.equipmentKind !== 'plate_loaded_machine';
+      const load = v === null || (v === 0 && zeroIsNone) ? null : v;
       const cur = byLoad.get(load);
       if (cur === undefined || s.distanceM > cur.distanceM) byLoad.set(load, { load, distanceM: s.distanceM, date: ss.date, sessionId: ss.sessionId, source: ss.source });
     }

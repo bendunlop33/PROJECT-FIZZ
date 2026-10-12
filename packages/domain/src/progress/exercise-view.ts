@@ -18,6 +18,7 @@ import {
   mondayOf,
   repTableByReps,
   repTableByWeight,
+  seriesLoadValue,
   TREND_RANGES,
   trendRangeBounds,
   type ExerciseMetric,
@@ -616,6 +617,19 @@ function changeLine(first: TrendPoint, latest: TrendPoint, series: ExerciseSerie
       const what = series.kind === 'assisted' ? 'Same assistance' : 'Same load';
       const reps = r > 0 ? countNoun(r, 'more rep', 'more reps') : countNoun(-r, 'fewer rep', 'fewer reps');
       return { label: 'Change', value: `${what}, ${reps} than ${since}`, words: `${what}, ${reps} than ${sinceWords}`, direction: r > 0 ? 'up' : 'down' };
+    }
+    if (metric === 'best_distance' && latest.fromSet && first.fromSet) {
+      // Same metres, different load: on a sled, more load over a fixed distance is the progression (review misc-fixes S1).
+      const loadOf = (x: ProgressSet): number | null => (x.load === null ? 0 : seriesLoadValue(x, series.key));
+      const a = loadOf(first.fromSet);
+      const b = loadOf(latest.fromSet);
+      const l = a === null || b === null ? 0 : Math.round((b - a) * 100) / 100;
+      if (l !== 0) {
+        const more = l > 0 ? 'more' : 'less';
+        const each = series.key.convention === 'per_hand' ? ' each' : '';
+        const n = formatNumber(Math.abs(l));
+        return { label: 'Change', value: `Same distance, ${n}${NBSP}${series.key.unit} ${more}${each} than ${since}`, words: `Same distance, ${n} ${unitWords(series)} ${more}${each} than ${sinceWords}`, direction: l > 0 ? 'up' : 'down' };
+      }
     }
     return { label: 'Change', value: `Same as ${since}`, words: `Same as ${sinceWords}`, direction: 'same' };
   };

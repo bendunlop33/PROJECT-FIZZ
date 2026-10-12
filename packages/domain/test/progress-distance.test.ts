@@ -277,3 +277,125 @@ describe('exercise detail for a distance series', () => {
     expect(r.items).toEqual([]);
   });
 });
+
+describe('distance: load at the same distance, plate-loaded sleds, unloaded series (review misc-fixes S1, S2)', () => {
+  const plateRow = (sets: ProgressSet[]) => sledRow(sets, { equipmentId: 'sled-1', equipmentKind: 'plate_loaded_machine', equipmentName: 'Prowler' });
+
+  it('Best distance: the same metres with more load reads as more load, not "Same as"', () => {
+    const sessions = [session('2026-09-01', [sledRow([set(added(40), 25)])]), session('2026-10-01', [sledRow([set(added(80), 25)])])];
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'sled-push', today: TODAY, metric: 'best_distance' });
+    if (v === null) throw new Error('no view');
+    const change = v.panel.find((l) => l.label === 'Change');
+    expect(sp(change?.value)).toBe('Same distance, 40 kg more than 1 Sep');
+    expect(change?.words).toBe('Same distance, 40 kilograms more than 1 September');
+    expect(change?.direction).toBe('up');
+  });
+
+  it('Best distance: the same metres with less load reads down; the same load reads "Same as"', () => {
+    const less = buildExerciseDetailView({
+      sessions: [session('2026-09-01', [sledRow([set(added(80), 25)])]), session('2026-10-01', [sledRow([set(added(60), 25)])])],
+      exerciseId: 'sled-push',
+      today: TODAY,
+      metric: 'best_distance',
+    });
+    const c1 = less?.panel.find((l) => l.label === 'Change');
+    expect(sp(c1?.value)).toBe('Same distance, 20 kg less than 1 Sep');
+    expect(c1?.direction).toBe('down');
+    const same = buildExerciseDetailView({
+      sessions: [session('2026-09-01', [sledRow([set(added(60), 25)])]), session('2026-10-01', [sledRow([set(added(60), 25)])])],
+      exerciseId: 'sled-push',
+      today: TODAY,
+      metric: 'best_distance',
+    });
+    const c2 = same?.panel.find((l) => l.label === 'Change');
+    expect(sp(c2?.value)).toBe('Same as 1 Sep');
+    expect(c2?.direction).toBe('same');
+  });
+
+  it('Best distance: a per-hand carry at the same metres says each, in lb', () => {
+    const v = buildExerciseDetailView({
+      sessions: [session('2026-09-01', [carryRow([set(lb(50, 'per_hand'), 40)], { unit: 'lb' })]), session('2026-10-01', [carryRow([set(lb(60, 'per_hand'), 40)], { unit: 'lb' })])],
+      exerciseId: 'farmers-carry',
+      today: TODAY,
+      metric: 'best_distance',
+    });
+    const c = v?.panel.find((l) => l.label === 'Change');
+    expect(sp(c?.value)).toBe('Same distance, 10 lb more each than 1 Sep');
+    expect(c?.words).toBe('Same distance, 10 pounds more each than 1 September');
+  });
+
+  it('Total distance: the same metres with more load still reads "Same as" (load is not part of the total)', () => {
+    const sessions = [session('2026-09-01', [sledRow([set(added(40), 25)])]), session('2026-10-01', [sledRow([set(added(80), 25)])])];
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'sled-push', today: TODAY, metric: 'total_distance' });
+    expect(sp(v?.panel.find((l) => l.label === 'Change')?.value)).toBe('Same as 1 Sep');
+  });
+
+  it('a plate-loaded sled reads kg plates in points, StatStrip, table and history; 0 kg reads the same way everywhere', () => {
+    const sessions = [session('2026-09-01', [plateRow([set(added(0), 30)])]), session('2026-10-01', [plateRow([set(added(40), 25), set(added(0), 20)])])];
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'sled-push', today: TODAY, metric: 'best_distance' });
+    if (v === null) throw new Error('no view');
+    expect(v.points.map((p) => sp(p.display))).toEqual(['0 kg plates × 30 m', '40 kg plates × 25 m']);
+    expect(sp(v.stats[0]?.value)).toBe('0 kg plates × 30 m');
+    expect(v.distanceTable?.rows.map((r) => r.cells.map(sp))).toEqual([
+      ['40 kg plates', '25 m', '1 Oct'],
+      ['0 kg plates', '30 m', '1 Sep'],
+    ]);
+    expect(v.history.unit).toBe('kg plates × m');
+    expect(sp(v.history.months[0]?.rows[0]?.sets)).toBe('40×25 m · 0×20 m');
+    expect(JSON.stringify(v)).not.toMatch(/No load|BW \+/);
+  });
+
+  it('a bodyweight-convention distance series (walking lunge): metres alone, history in m, no load table', () => {
+    const lunge = (sets: ProgressSet[]) => sledRow(sets, { exerciseId: 'walking-lunge', exerciseName: 'Walking lunge', convention: 'bodyweight' });
+    const sessions = [session('2026-09-01', [lunge([set(null, 30), set(null, 40)])]), session('2026-10-01', [lunge([set(null, 50)])])];
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'walking-lunge', today: TODAY, metric: 'best_distance' });
+    if (v === null) throw new Error('no view');
+    expect(v.points.map((p) => sp(p.display))).toEqual(['40 m', '50 m']);
+    expect(v.stats.map((s) => [sp(s.value), s.label])).toEqual([
+      ['50 m', 'BEST DISTANCE'],
+      ['120 m', 'TOTAL DISTANCE'],
+      ['2', 'SESSIONS'],
+    ]);
+    expect(v.history.unit).toBe('m');
+    expect(sp(v.history.months[0]?.rows[0]?.sets)).toBe('50 m');
+    expect(v.distanceTable?.rows.map((r) => r.cells[0])).toEqual(['No load']);
+    expect(JSON.stringify([v.stats, v.points, v.panel, v.table, v.distanceTable, v.history])).not.toMatch(/kg|1RM|≈|BW/);
+  });
+
+  it('headline: equal metres across sessions, the heavier wins whichever came first', () => {
+    const later = onlySeries([session('2026-09-01', [sledRow([set(added(40), 25)])]), session('2026-10-01', [sledRow([set(added(80), 25)])])]);
+    expect(exerciseHeadline(later).bestDistance).toMatchObject({ date: '2026-10-01', set: { distanceM: 25, load: added(80) } });
+    const earlier = onlySeries([session('2026-09-01', [sledRow([set(added(80), 25)])]), session('2026-10-01', [sledRow([set(added(40), 25)])])]);
+    expect(exerciseHeadline(earlier).bestDistance).toMatchObject({ date: '2026-09-01', set: { distanceM: 25, load: added(80) } });
+    const longer = onlySeries([session('2026-09-01', [sledRow([set(added(80), 25)])]), session('2026-10-01', [sledRow([set(added(20), 26)])])]);
+    expect(exerciseHeadline(longer).bestDistance).toMatchObject({ date: '2026-10-01', set: { distanceM: 26 } });
+  });
+
+  it('BEST DISTANCE with nothing in range is an empty table (the screen says "None in this range."), not hidden', () => {
+    const v = buildExerciseDetailView({ sessions: [session('2025-01-10', [sledRow([set(added(40), 25)])])], exerciseId: 'sled-push', today: TODAY, metric: 'best_distance', range: '3m' });
+    if (v === null) throw new Error('no view');
+    expect(v.range).toBe('3m');
+    expect(v.distanceTable).not.toBeNull();
+    expect(v.distanceTable?.rows).toEqual([]);
+  });
+
+  it('Total distance on All with a long history: one point per week, the week’s best session total', () => {
+    const sessions: ProgressSession[] = [];
+    // 90 weeks, Monday and Thursday: 180 sessions, over TREND_MAX_POINTS.
+    const monday0 = Date.parse('2024-12-30T00:00:00Z');
+    for (let w = 0; w < 90; w += 1) {
+      const mon = new Date(monday0 + w * 7 * 86_400_000).toISOString().slice(0, 10);
+      const thu = new Date(monday0 + (w * 7 + 3) * 86_400_000).toISOString().slice(0, 10);
+      sessions.push(session(mon, [sledRow([set(added(40), 50), set(added(40), 50)])]));
+      sessions.push(session(thu, [sledRow([set(added(40), 101 + w)])]));
+    }
+    const ss = onlySeries(sessions);
+    const t = exerciseTrend(ss, 'total_distance', 'all', TODAY);
+    expect(t.aggregation).toBe('weekly_best');
+    expect(t.points).toHaveLength(90);
+    expect(t.points[0]).toMatchObject({ date: '2025-01-02', value: 101 });
+    expect(t.points[89]?.value).toBe(190);
+    // Every week's best is its Thursday (101 m and up), never a Monday's 100 m.
+    expect(t.points.every((p) => p.value >= 101 && new Date(`${p.date}T00:00:00Z`).getUTCDay() === 4)).toBe(true);
+  });
+});
