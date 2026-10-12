@@ -98,6 +98,10 @@ export function TrendChart({ points, markers, from, to, bars, axisUnit, axisForm
           if (grant.current?.wasSelected === true && !grant.current.moved) onSelect(null);
           grant.current = null;
         }}
+        onResponderTerminate={() => {
+          // A scroll took the touch over: drop the gesture so the next tap starts clean (review progress-B N5).
+          grant.current = null;
+        }}
       >
         {width > 0 ? (
           canvas.ok ? (

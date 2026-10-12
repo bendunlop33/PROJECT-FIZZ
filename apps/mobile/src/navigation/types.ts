@@ -63,7 +63,11 @@ export type ProgressStackParams = {
 export interface ExerciseDetailParams {
   exerciseId: string;
   sessionId?: string;
+  /** With `sessionId`: the Summary row tapped. */
+  sessionExerciseId?: string;
   equipmentId?: string;
+  /** Else a series at this gym (Workout overview `History`). */
+  gymId?: string;
   /** Shown in the header while loading. */
   name?: string;
 }

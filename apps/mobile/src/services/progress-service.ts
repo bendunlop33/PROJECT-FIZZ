@@ -72,8 +72,12 @@ export interface ExerciseDetailRequest {
   seriesId?: string | null;
   /** Prefer this equipment's series (Workout overview `History`). */
   equipmentId?: string | null;
+  /** Else a series at this gym (Workout overview `History`). */
+  gymId?: string | null;
   /** Open on the series with this workout, its point selected (home record, past workout). */
   sessionId?: string | null;
+  /** With `sessionId`: the workout row tapped (Summary). */
+  sessionExerciseId?: string | null;
   metric?: ExerciseMetric | null;
   range?: TrendRange | null;
   repBy?: 'weight' | 'reps';
@@ -237,7 +241,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const today = localDateOf(nowMs, profile.timezone);
       const [ctx, flags] = await Promise.all([context(profile), repos().painFlags.listActive(profile.id).catch(() => [])]);
       const pain = painFlagCovering(flags, req.exerciseId, nowMs, profile.timezone);
-      const opening = req.sessionId != null || req.equipmentId != null;
+      const opening = req.sessionId != null || req.equipmentId != null || req.gymId != null;
       const view = buildExerciseDetailView({
         sessions: ctx.sessions,
         exerciseId: req.exerciseId,
@@ -246,7 +250,9 @@ export function createProgressService(deps: ProgressServiceDeps) {
         name: ctx.exercises.get(req.exerciseId)?.name ?? '',
         seriesId: req.seriesId ?? (opening ? null : (next.seriesId ?? null)),
         equipmentId: req.equipmentId ?? null,
+        gymId: req.gymId ?? null,
         sessionId: req.sessionId ?? null,
+        sessionExerciseId: req.sessionExerciseId ?? null,
         metric: next.metric ?? null,
         range: next.range ?? null,
         repBy: next.repBy ?? 'weight',

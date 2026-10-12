@@ -187,7 +187,7 @@ export function ProgressScreen() {
           // Slice B: a record opens exercise detail on its series with its point selected (§4.1).
           navigation.navigate('Tabs', {
             screen: 'Progress',
-            params: { screen: 'ProgressExercise', params: { exerciseId: r.exerciseId, sessionId: r.sessionId, ...(r.equipmentId === null ? {} : { equipmentId: r.equipmentId }) } },
+            params: { screen: 'ProgressExercise', params: { exerciseId: r.exerciseId, sessionId: r.sessionId, sessionExerciseId: r.sessionExerciseId, ...(r.equipmentId === null ? {} : { equipmentId: r.equipmentId }) } },
           });
         }}
         onExercises={() => {
@@ -290,6 +290,9 @@ function Overview({
 }) {
   const theme = useTheme();
   const { activity, muscles, records } = view;
+  // `All records (n) ›` lists the rest in place (§2.2 region 5).
+  const [recordsAll, setRecordsAll] = useState(false);
+  const recordRows = recordsAll ? records.items : records.items.slice(0, records.initial);
   return (
     <View style={{ gap: theme.space['5'] }}>
       <WindowPicker days={home.days} datesLine={view.datesLine} datesWords={view.datesWords} onChange={onWindow} />
@@ -387,7 +390,7 @@ function Overview({
             {records.empty}
           </AppText>
         ) : (
-          records.items.map((r) => (
+          recordRows.map((r) => (
             <Pressable
               key={r.key}
               accessibilityRole="button"
@@ -406,6 +409,22 @@ function Overview({
             </Pressable>
           ))
         )}
+        {!recordsAll && records.more !== null ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={records.more.words}
+            accessibilityHint="Lists every record"
+            onPress={() => {
+              setRecordsAll(true);
+            }}
+            style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
+          >
+            <AppText variant="callout" color="text.secondary" style={{ flex: 1 }}>
+              {records.more.label}
+            </AppText>
+            <Icon name="chevron.right" color="text.tertiary" size={14} />
+          </Pressable>
+        ) : null}
       </View>
 
       <Pressable

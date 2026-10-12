@@ -931,9 +931,14 @@ export function WorkoutOverviewScreen() {
               }
             : undefined
         }
-        onHistory={() => {
-          navigation.navigate('ExerciseProgress', { exerciseId: r.exerciseId, name: r.name });
-        }}
+        onHistory={
+          r.hasHistory
+            ? () => {
+                // This gym's equipment for the row, else a series at this gym, else the most used (review progress-B S4).
+                navigation.navigate('ExerciseProgress', { exerciseId: r.exerciseId, name: r.name, ...(r.equipmentId === null ? {} : { equipmentId: r.equipmentId }), ...(gymId ? { gymId } : {}) });
+              }
+            : undefined
+        }
         onStillHurts={
           flagId
             ? () => {

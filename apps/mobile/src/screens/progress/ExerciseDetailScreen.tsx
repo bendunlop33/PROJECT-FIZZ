@@ -31,9 +31,11 @@ export function ExerciseDetailScreen() {
   const route = useRoute<Route>();
   const { exerciseId } = route.params;
   // `sessionId` / `equipmentId` pick the series on the first load only; afterwards Ben's choices rule.
-  const [opening, setOpening] = useState<{ sessionId?: string; equipmentId?: string } | null>(() => ({
+  const [opening, setOpening] = useState<{ sessionId?: string; sessionExerciseId?: string; equipmentId?: string; gymId?: string } | null>(() => ({
     ...(route.params.sessionId ? { sessionId: route.params.sessionId } : {}),
+    ...(route.params.sessionExerciseId ? { sessionExerciseId: route.params.sessionExerciseId } : {}),
     ...(route.params.equipmentId ? { equipmentId: route.params.equipmentId } : {}),
+    ...(route.params.gymId ? { gymId: route.params.gymId } : {}),
   }));
   const [seriesId, setSeriesId] = useState<string | null>(null);
   const [metric, setMetric] = useState<ExerciseMetric | null>(null);
@@ -71,9 +73,10 @@ export function ExerciseDetailScreen() {
     };
   }, []);
   useEffect(() => {
-    // Once the series is chosen from the opening workout, keep it (and stop forcing it).
+    // Once the series (and, for an older workout, the wider range) is chosen from the opening workout, keep it (and stop forcing it).
     if (view && opening !== null) {
       setSeriesId(view.seriesId);
+      if (opening.sessionId) setRange(view.range);
       setOpening(null);
     }
   }, [view, opening]);
@@ -125,7 +128,8 @@ export function ExerciseDetailScreen() {
   const selIndex = selectedId === null ? -1 : view.points.findIndex((p) => p.sessionId === selectedId);
   const sel = selIndex >= 0 ? (view.points[selIndex] ?? null) : null;
   const chartAction = view.chart.kind === 'too_few' || view.chart.kind === 'none_in_range' ? view.chart.action : null;
-  const recordRows = recordsAll ? view.records.items : view.records.items.slice(0, 5);
+  const records = view.records;
+  const recordRows = records === null ? [] : recordsAll ? records.items : records.items.slice(0, 5);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
@@ -374,40 +378,42 @@ export function ExerciseDetailScreen() {
           </View>
         ) : null}
 
-        <View style={{ gap: theme.space['2'] }}>
-          <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
-            RECORDS
-          </AppText>
-          {view.records.empty !== null ? (
-            <AppText variant="callout" color="text.secondary">
-              {view.records.empty}
+        {records === null ? null : (
+          <View style={{ gap: theme.space['2'] }}>
+            <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
+              RECORDS
             </AppText>
-          ) : (
-            recordRows.map((r) => (
-              <Pressable
-                key={r.key}
-                accessibilityRole="button"
-                accessibilityLabel={r.words}
-                accessibilityHint="Opens the workout"
+            {records.empty !== null ? (
+              <AppText variant="callout" color="text.secondary">
+                {records.empty}
+              </AppText>
+            ) : (
+              recordRows.map((r) => (
+                <Pressable
+                  key={r.key}
+                  accessibilityRole="button"
+                  accessibilityLabel={r.words}
+                  accessibilityHint="Opens the workout"
+                  onPress={() => {
+                    openWorkout(r.sessionId);
+                  }}
+                  style={({ pressed }) => ({ minHeight: theme.target.min.height, paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
+                >
+                  <AppText variant="body" numeric style={{ flex: 1 }}>{`${r.label}  ${r.value} · ${r.date}`}</AppText>
+                  <Icon name="chevron.right" color="text.tertiary" size={14} />
+                </Pressable>
+              ))
+            )}
+            {!recordsAll && records.items.length > 5 ? (
+              <TextButton
+                label={`Show all (${String(records.items.length)})`}
                 onPress={() => {
-                  openWorkout(r.sessionId);
+                  setRecordsAll(true);
                 }}
-                style={({ pressed }) => ({ minHeight: theme.target.min.height, paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
-              >
-                <AppText variant="body" numeric style={{ flex: 1 }}>{`${r.label}  ${r.value} · ${r.date}`}</AppText>
-                <Icon name="chevron.right" color="text.tertiary" size={14} />
-              </Pressable>
-            ))
-          )}
-          {!recordsAll && view.records.items.length > 5 ? (
-            <TextButton
-              label={`Show all (${String(view.records.items.length)})`}
-              onPress={() => {
-                setRecordsAll(true);
-              }}
-            />
-          ) : null}
-        </View>
+              />
+            ) : null}
+          </View>
+        )}
 
         <View style={{ gap: theme.space['2'] }}>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>

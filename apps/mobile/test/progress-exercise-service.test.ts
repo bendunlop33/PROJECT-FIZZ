@@ -54,7 +54,7 @@ describe('Exercises list and exercise detail through the services', () => {
     if (!detail) throw new Error('detail');
     expect(detail.metric).toBe('e1rm');
     expect(detail.points.map((p) => sp(p.display))).toEqual(['≈76 kg', '≈79 kg', '≈78 kg', '≈82.5 kg']);
-    expect(detail.records.items.map((r) => sp(r.label))).toEqual(['Most reps at 65 kg', 'Best Est. 1RM']);
+    expect(detail.records?.items.map((r) => sp(r.label))).toEqual(['Most reps at 65 kg', 'Best Est. 1RM']);
     expect(detail.pain).toBeNull();
 
     // Mark the last set `Pain`: no point, `Not counted`, history says so, and the pain line appears (PG21, check 32).
@@ -66,7 +66,7 @@ describe('Exercises list and exercise detail through the services', () => {
     expect(after?.points).toHaveLength(3);
     expect(after?.markers.map((m) => m.label)).toContain('Not counted');
     expect(after?.history.months[0]?.rows[0]?.sets).toBe('65×8 (pain)');
-    expect(after?.records.items).toEqual([]);
+    expect(after?.records?.items).toEqual([]);
     expect(sp(after?.pain?.text)).toBe('Pain flag since 9 Oct'); // flagged when marked, today
   });
 

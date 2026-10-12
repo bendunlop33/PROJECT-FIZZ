@@ -421,7 +421,7 @@ export function SummaryScreen() {
                   accessibilityLabel={`${e.name}, ${e.setsText}`}
                   accessibilityHint="Opens this exercise’s history"
                   onPress={() => {
-                    navigation.navigate('ExerciseProgress', { exerciseId: e.exerciseId, sessionId, name: e.name });
+                    navigation.navigate('ExerciseProgress', { exerciseId: e.exerciseId, sessionId, sessionExerciseId: e.sessionExerciseId, name: e.name });
                   }}
                   style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], opacity: pressed ? 0.6 : 1 })}
                 >
