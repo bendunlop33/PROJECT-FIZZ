@@ -34,8 +34,13 @@ export interface MonthCount {
   partial: boolean;
 }
 
-/** Up to this many days the bars are weeks; longer custom periods get one bar per month (26 weekly bars is the most that reads). */
-export const WEEK_BARS_MAX_DAYS = 26 * 7;
+/**
+ * Up to this many days the bars are weeks; longer custom periods get one bar
+ * per month. 20 weeks sits between the presets (`3 months` is 89–92 days,
+ * `6 months` 181–184), so each preset keeps one bar unit whatever today's date
+ * (review ben-bugs S1), and no week chart goes past 21 bars.
+ */
+export const WEEK_BARS_MAX_DAYS = 20 * 7;
 
 export interface SessionCounts {
   count: number;
@@ -44,9 +49,9 @@ export interface SessionCounts {
   perWeek: number | null;
   /** `7 days` and `14 days`: one cell per day, oldest first. */
   days: DayCount[] | null;
-  /** `30 days`, `60 days` and custom periods up to 26 weeks: one bar per Monday–Sunday week overlapping the window. The counts add up to `count`. */
+  /** `30 days`, `60 days` and custom periods up to 20 weeks: one bar per Monday–Sunday week overlapping the window. The counts add up to `count`. */
   weeks: WeekCount[] | null;
-  /** Custom periods over 26 weeks: one bar per calendar month overlapping the window (same rules as weeks). */
+  /** Custom periods over 20 weeks: one bar per calendar month overlapping the window (same rules as weeks). */
   months: MonthCount[] | null;
   /** The latest workout on or before the window's last day, for `Last workout: Fri 14 Aug`; null if none. */
   lastSessionDate: string | null;

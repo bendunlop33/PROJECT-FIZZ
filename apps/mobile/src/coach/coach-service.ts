@@ -83,6 +83,7 @@ import {
   ruleTargetRpes,
   progressWindowAt,
   customProgressWindow,
+  localDateOf,
   rangeText,
   shouldShowCoachOffer,
   targetRpeOf,
@@ -621,7 +622,7 @@ export function createCoachService(deps: CoachServiceDeps) {
   function openedFromOf(p: UserProfile, entry: CoachEntry): OpenedFrom | undefined {
     if (entry.kind === 'progress_exercise') return { screen: 'progress_exercise', exercise: entry.exerciseName, series: entry.seriesLabel, range: { from: entry.from, to: entry.to } };
     if (entry.kind !== 'progress') return undefined;
-    if (entry.range) return { screen: 'progress', window: { days: customProgressWindow(entry.range).days, from: entry.range.from, to: entry.range.to, label: rangeText(entry.range) } };
+    if (entry.range) return { screen: 'progress', window: { days: customProgressWindow(entry.range).days, from: entry.range.from, to: entry.range.to, label: rangeText(entry.range, localDateOf(toMs(deps.now().utc), p.timezone)) } };
     const w = progressWindowAt(toMs(deps.now().utc), p.timezone, entry.days);
     return { screen: 'progress', window: { days: entry.days, from: w.from, to: w.to } };
   }

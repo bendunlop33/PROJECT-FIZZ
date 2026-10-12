@@ -44,14 +44,31 @@ export function monthName(month: string): string {
   return MONTH_LONG[Number(month.split('-')[1]) - 1] ?? '';
 }
 
-/** The dates line under the picker: `12 Sep – 11 Oct`. */
-export function rangeText(range: DateRange): string {
-  return `${localDateText(range.from)} – ${localDateText(range.to)}`;
+/**
+ * The year a range's dates need: both ends' years when it crosses New Year,
+ * the end's year when it lies in another year than `today`, none otherwise.
+ * A period's dates are often its only label, so last year's September never
+ * reads as this year's (review ben-bugs B1).
+ */
+function rangeYears(range: DateRange, today: string): { from: string; to: string } {
+  const fromYear = range.from.slice(0, 4);
+  const toYear = range.to.slice(0, 4);
+  if (fromYear !== toYear) return { from: fromYear, to: toYear };
+  return { from: '', to: toYear === today.slice(0, 4) ? '' : toYear };
 }
 
-/** The dates line for VoiceOver: `12 September to 11 October`. */
-export function rangeWords(range: DateRange): string {
-  return `${dayMonthLong(range.from)} to ${dayMonthLong(range.to)}`;
+/** The dates line under the picker: `12 Sep – 11 Oct`, `1 Sep – 30 Sep 2025`, `13 Oct 2025 – 12 Oct 2026`. */
+export function rangeText(range: DateRange, today: string): string {
+  const y = rangeYears(range, today);
+  const withYear = (date: string, year: string): string => (year === '' ? localDateText(date) : `${localDateText(date)}${NBSP}${year}`);
+  return `${withYear(range.from, y.from)} – ${withYear(range.to, y.to)}`;
+}
+
+/** The dates line for VoiceOver: `12 September to 11 October`, with years as `rangeText` shows them. */
+export function rangeWords(range: DateRange, today: string): string {
+  const y = rangeYears(range, today);
+  const withYear = (date: string, year: string): string => (year === '' ? dayMonthLong(date) : `${dayMonthLong(date)} ${year}`);
+  return `${withYear(range.from, y.from)} to ${withYear(range.to, y.to)}`;
 }
 
 /** `30 days`. */

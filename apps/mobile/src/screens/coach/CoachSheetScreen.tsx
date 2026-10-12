@@ -4,7 +4,7 @@ import { KeyboardAvoidingView, Linking, Pressable, ScrollView, View, type TextIn
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { undoOpId, type ContextDescription } from '@fizz/coach';
-import { coachUndoRefusal, toMs } from '@fizz/domain';
+import { coachUndoRefusal, localDateOf, toMs } from '@fizz/domain';
 import type { BenInput, CoachThread } from '@fizz/schemas';
 
 import { MANAGE_USAGE_URL } from '../../ai/coach-connection-view';
@@ -464,7 +464,7 @@ export function CoachSheetScreen() {
           style={{ alignSelf: 'flex-start', minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], paddingHorizontal: theme.space['3'], borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.control'], backgroundColor: theme.colors['bg.raised'] }}
         >
           <Icon name="eye" size={16} />
-          <AppText variant="label">{seesLabel(entry, workout?.title ?? null, workout?.active === true, workout?.out ?? null)}</AppText>
+          <AppText variant="label">{seesLabel(entry, workout?.title ?? null, workout?.active === true, workout?.out ?? null, localDateOf(toMs(services.now().utc), services.now().tz))}</AppText>
         </Pressable>
         {sees !== null ? <SeesPanel sees={sees} /> : null}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space['2'] }}>

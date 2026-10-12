@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { SessionAggregate } from '@fizz/schemas';
 import {
   addDays,
   addMonths,
@@ -11,11 +12,17 @@ import {
   presetProgressRange,
   progressWindow,
   PROGRESS_MAX_PERIOD_DAYS,
+  rangeText,
+  rangeWords,
   stepPeriodDate,
   timeInGym,
+  toProgressSession,
   type MuscleInfo,
   type ProgressSession,
 } from '../src/index';
+import { toIso } from '../src/time';
+import { at } from './fixtures';
+import { apply, startFixture } from './session-fixture';
 
 /**
  * Progress windows on real-looking history (Ben, 12 Oct 2026: "something is
@@ -168,7 +175,7 @@ describe('custom period', () => {
     expect(stepPeriodDate('2025-01-20', { unit: 'month', by: -1 }, bounds)).toBe('2025-01-06');
   });
 
-  it('up to 26 weeks: week bars; longer: one bar per month, partial months marked, bars still add up', () => {
+  it('up to 20 weeks: week bars; longer: one bar per month, partial months marked, bars still add up', () => {
     const quarter = countSessions(HISTORY, customProgressWindow(presetProgressRange('2026-10-12', '3m')));
     expect(quarter.weeks?.length).toBe(14);
     expect(quarter.months).toBeNull();
@@ -190,10 +197,11 @@ describe('custom period', () => {
     const home = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today: '2026-10-12', days: 30, grouping: 'body_part', range: { from: '2025-11-01', to: '2026-04-30' } });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(home.window).toMatchObject({ preset: null, from: '2025-11-01', to: '2026-04-30', days: 181 });
-    expect(home.datesLine).toBe('1 Nov – 30 Apr');
+    expect(home.datesLine).toBe('1\u00a0Nov\u00a02025 – 30\u00a0Apr\u00a02026');
+    expect(home.datesWords).toBe('1 November 2025 to 30 April 2026');
     expect(home.activity.comparison.startsWith('Previous 181 days: ')).toBe(true);
-    expect(home.activity.sheet.countLine).toBe('1 Nov – 30 Apr: 0 of 77 sessions');
-    expect(home.records.empty).toBe('No new records, 1 Nov – 30 Apr.');
+    expect(home.activity.sheet.countLine).toBe('1\u00a0Nov\u00a02025 – 30\u00a0Apr\u00a02026: 0 of 77 sessions');
+    expect(home.records.empty).toBe('No new records, 1\u00a0Nov\u00a02025 – 30\u00a0Apr\u00a02026.');
 
     const yearly = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today: '2026-10-12', days: 30, grouping: 'body_part', range: presetProgressRange('2026-10-12', '1y') });
     if (yearly.dataState !== 'normal' || yearly.activity.bars.kind !== 'months') throw new Error('expected month bars');
@@ -204,5 +212,123 @@ describe('custom period', () => {
     if (short.dataState !== 'normal' || short.activity.bars.kind !== 'days') throw new Error('expected day cells');
     expect(short.activity.bars.rows.flatMap((r) => r.cells).some((c) => c.isToday)).toBe(false);
     expect(short.activity.bars.words.startsWith('1 September to 10 September: ')).toBe(true);
+  });
+});
+
+describe('a period’s dates carry the year when they need it (review ben-bugs B1)', () => {
+  const today = '2026-10-12';
+  const home = (range: { from: string; to: string }) => {
+    const v = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today, days: 30, grouping: 'body_part', range });
+    if (v.dataState !== 'normal') throw new Error('expected normal');
+    return v;
+  };
+
+  it('1 year: both ends name their year, never `13 Oct – 12 Oct`', () => {
+    const v = home(presetProgressRange(today, '1y'));
+    expect(v.datesLine).toBe('13\u00a0Oct\u00a02025 – 12\u00a0Oct\u00a02026');
+    expect(v.datesWords).toBe('13 October 2025 to 12 October 2026');
+  });
+
+  it('a month from last year names the year, so it never reads as this September', () => {
+    const last = home({ from: '2025-09-01', to: '2025-09-30' });
+    const now = home({ from: '2026-09-01', to: '2026-09-30' });
+    expect(last.datesLine).toBe('1\u00a0Sep – 30\u00a0Sep\u00a02025');
+    expect(last.datesWords).toBe('1 September to 30 September 2025');
+    expect(last.activity.sheet.countLine.startsWith('1\u00a0Sep – 30\u00a0Sep\u00a02025: ')).toBe(true);
+    expect(now.datesLine).toBe('1\u00a0Sep – 30\u00a0Sep');
+    expect(now.datesLine).not.toBe(last.datesLine);
+  });
+
+  it('a range over New Year names both years', () => {
+    expect(rangeText({ from: '2025-12-29', to: '2026-01-04' }, today)).toBe('29\u00a0Dec\u00a02025 – 4\u00a0Jan\u00a02026');
+    expect(rangeWords({ from: '2025-12-29', to: '2026-01-04' }, today)).toBe('29 December 2025 to 4 January 2026');
+  });
+
+  it('this year’s presets ending today keep the short form; with no known today the year is always named', () => {
+    expect(rangeText(presetProgressRange(today, '3m'), today)).toBe('13\u00a0Jul – 12\u00a0Oct');
+    expect(rangeText(progressWindow(today, 30), today)).toBe('13\u00a0Sep – 12\u00a0Oct');
+    expect(rangeText({ from: '2026-09-01', to: '2026-09-30' }, '')).toBe('1\u00a0Sep – 30\u00a0Sep\u00a02026');
+  });
+});
+
+describe('each preset keeps one bar unit whatever today’s date (review ben-bugs S1)', () => {
+  it('3 months is always weeks and 6 months and 1 year always months, every day of 2025–2026', () => {
+    for (let today = '2025-01-01'; today <= '2026-12-31'; today = addDays(today, 1)) {
+      const q = countSessions([], customProgressWindow(presetProgressRange(today, '3m')));
+      const h = countSessions([], customProgressWindow(presetProgressRange(today, '6m')));
+      const y = countSessions([], customProgressWindow(presetProgressRange(today, '1y')));
+      expect(q.weeks !== null && q.months === null, `3m on ${today}`).toBe(true);
+      expect(q.weeks?.length ?? 99).toBeLessThanOrEqual(14);
+      expect(h.months !== null && h.weeks === null, `6m on ${today}`).toBe(true);
+      expect(y.months !== null && y.weeks === null, `1y on ${today}`).toBe(true);
+    }
+  });
+});
+
+/**
+ * The reviewer's hand count (review ben-bugs, S4), through the owner-zone
+ * projection: logged workouts near midnight in BST and GMT, imported ones on
+ * the same local dates. Europe/London; today Mon 2 Nov 2026 (BST ended 25 Oct).
+ */
+describe('30 and 60 days across the DST end, through toProgressSession', () => {
+  const OWNER_TZ = 'Europe/London';
+  let k = 0;
+  function base(): SessionAggregate {
+    const s = startFixture().state;
+    return apply(s, { type: 'finish', at: at(60 * 60), opId: 'f', expectedVersion: s.session.version, endedAt: null });
+  }
+  function logged(utc: string): SessionAggregate {
+    const agg = base();
+    k += 1;
+    const end = toIso(Date.parse(utc) + 60 * MIN);
+    return { ...agg, session: { ...agg.session, id: `logged-${String(k)}`, startedAt: { utc, tz: OWNER_TZ }, endedAt: { utc: end, tz: OWNER_TZ } } };
+  }
+  function imported(localDate: string): SessionAggregate {
+    const agg = base();
+    k += 1;
+    return { ...agg, session: { ...agg.session, id: `imported-${String(k)}`, source: 'import' as const, localDate, startedAt: { utc: `${localDate}T12:00:00.000Z`, tz: OWNER_TZ } } };
+  }
+  const NOW = Date.parse('2026-11-02T12:00:00.000Z');
+  const stored = [
+    logged('2026-10-25T23:30:00.000Z'), // A: Sun 25 Oct (GMT)
+    logged('2026-10-04T23:30:00.000Z'), // B: Mon 5 Oct 00:30 BST
+    logged('2026-10-03T22:30:00.000Z'), // C: Sat 3 Oct 23:30 BST
+    imported('2026-10-04'), // D
+    imported('2026-09-02'), // E
+    logged('2026-09-03T23:15:00.000Z'), // F: Fri 4 Sep 00:15 BST
+    imported('2026-08-31'), // G
+    logged('2026-11-01T23:59:00.000Z'), // H: Sun 1 Nov (GMT)
+    logged('2026-11-02T00:30:00.000Z'), // I: Mon 2 Nov, today
+  ];
+  const sessions = stored.map((a) => toProgressSession(a, OWNER_TZ, NOW)).filter((x): x is ProgressSession => x !== null);
+  const today = '2026-11-02';
+
+  it('the local dates are the owner zone’s, not UTC’s', () => {
+    expect(sessions.map((x) => x.date)).toEqual(['2026-10-25', '2026-10-05', '2026-10-03', '2026-10-04', '2026-09-02', '2026-09-04', '2026-08-31', '2026-11-01', '2026-11-02']);
+  });
+
+  it('30 days: 5 sessions, previous 2, part weeks at both ends, 4 of 5 timed', () => {
+    const w = progressWindow(today, 30);
+    expect([w.from, w.to]).toEqual(['2026-10-04', '2026-11-02']);
+    const c = countSessions(sessions, w, today);
+    expect([c.count, c.previousCount, c.perWeek]).toEqual([5, 2, 1.2]);
+    expect(c.weeks?.map((b) => [b.from, b.count, b.partial])).toEqual([
+      ['2026-10-04', 1, true],
+      ['2026-10-05', 1, false],
+      ['2026-10-12', 0, false],
+      ['2026-10-19', 1, false],
+      ['2026-10-26', 1, false],
+      ['2026-11-02', 1, true],
+    ]);
+    expect(timeInGym(sessions, w).timedCount).toBe(4);
+  });
+
+  it('60 days: 7 sessions, previous 2, a Fri–Sun first bar, 6 of 7 timed', () => {
+    const w = progressWindow(today, 60);
+    const c = countSessions(sessions, w, today);
+    expect([c.count, c.previousCount, c.perWeek]).toEqual([7, 2, 0.8]);
+    expect(c.weeks?.map((b) => b.count)).toEqual([1, 0, 0, 0, 2, 1, 0, 1, 1, 1]);
+    expect(c.weeks?.[0]).toMatchObject({ from: '2026-09-04', to: '2026-09-06', partial: true });
+    expect(timeInGym(sessions, w).timedCount).toBe(6);
   });
 });

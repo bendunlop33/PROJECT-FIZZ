@@ -418,14 +418,16 @@ export function missingOutOfContext(presence: WorkoutPresence['kind']): WorkoutO
  * `Sees: Push A (live)`, `Sees: this workout`, `Sees: Today`; `Deleted
  * workout` once the thread's workout is deleted (delete-workouts §5, DW16),
  * `Workout unavailable` when the coach is given nothing of it (review r2 N3).
+ * A custom Progress period names its year unless `today` shows it's this
+ * year's (review ben-bugs B1); with no `today` the year is always named.
  */
-export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active: boolean, out: WorkoutOutOfContext | null = null): string {
+export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active: boolean, out: WorkoutOutOfContext | null = null, today: string | null = null): string {
   if (out !== null && entry.kind !== 'today') return out === 'deleted' ? 'Deleted workout' : 'Workout unavailable';
   switch (entry.kind) {
     case 'today':
       return 'Sees: Today';
     case 'progress':
-      return entry.range ? `Sees: Progress · ${rangeText(entry.range)}` : `Sees: Progress · last ${String(entry.days)} days`;
+      return entry.range ? `Sees: Progress · ${rangeText(entry.range, today ?? '')}` : `Sees: Progress · last ${String(entry.days)} days`;
     case 'progress_exercise':
       return `Sees: ${entry.exerciseName} · ${entry.seriesLabel}`;
     case 'summary':

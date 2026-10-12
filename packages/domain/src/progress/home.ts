@@ -232,7 +232,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
   const label = `${String(window.days)} days`;
   // A custom period may end before today: its words name the dates, never "last".
   const endsToday = window.to === input.today;
-  const span = endsToday ? `Last ${label}` : rangeText(window);
+  const span = endsToday ? `Last ${label}` : rangeText(window, input.today);
   const gymNames = input.gymNames ?? {};
   const byId = new Map(input.sessions.map((s) => [s.sessionId, s]));
   const titleOf = (id: string): string => {
@@ -260,7 +260,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
       const chunk = cells.slice(i, i + 7);
       rows.push({ firstDate: dayMonth(chunk[0]?.date ?? window.from), cells: chunk });
     }
-    bars = { kind: 'days', rows, words: dayStripWords(counts.days, endsToday ? `Last ${label}` : rangeWords(window)) };
+    bars = { kind: 'days', rows, words: dayStripWords(counts.days, endsToday ? `Last ${label}` : rangeWords(window, input.today)) };
   } else if (counts.months !== null) {
     const months = counts.months;
     const withYear = window.from.slice(0, 4) !== window.to.slice(0, 4);
@@ -357,8 +357,8 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
     dataState: 'normal',
     window,
     windowLabel: label,
-    datesLine: rangeText(window),
-    datesWords: rangeWords(window),
+    datesLine: rangeText(window, input.today),
+    datesWords: rangeWords(window, input.today),
     activity,
     muscles,
     records: {
@@ -366,7 +366,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
       total: rec.total,
       initial: HOME_RECORDS_INITIAL,
       more: listed > HOME_RECORDS_INITIAL ? { label: `All records (${String(listed)})`, words: `All records, ${String(listed)}.` } : null,
-      empty: rec.total === 0 ? (endsToday ? `No new records in the last ${label}.` : `No new records, ${rangeText(window)}.`) : null,
+      empty: rec.total === 0 ? (endsToday ? `No new records in the last ${label}.` : `No new records, ${rangeText(window, input.today)}.`) : null,
     },
   };
 }

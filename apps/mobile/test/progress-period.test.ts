@@ -88,10 +88,18 @@ describe('part-week bars', () => {
 
 describe('the coach on a custom period', () => {
   it('the sheet and `What the coach can see` name the dates, never "last N days"', async () => {
-    expect(seesLabel({ kind: 'progress', days: 30, range: { from: '2026-09-01', to: '2026-09-30' } }, null, false)).toBe('Sees: Progress · 1 Sep – 30 Sep');
+    expect(seesLabel({ kind: 'progress', days: 30, range: { from: '2026-09-01', to: '2026-09-30' } }, null, false, null, '2026-10-12')).toBe('Sees: Progress · 1\u00a0Sep – 30\u00a0Sep');
+    expect(seesLabel({ kind: 'progress', days: 30, range: { from: '2025-09-01', to: '2025-09-30' } }, null, false, null, '2026-10-12')).toBe('Sees: Progress · 1\u00a0Sep – 30\u00a0Sep\u00a02025');
+    expect(seesLabel({ kind: 'progress', days: 30, range: { from: '2025-10-13', to: '2026-10-12' } }, null, false, null, '2026-10-12')).toBe(
+      'Sees: Progress · 13\u00a0Oct\u00a02025 – 12\u00a0Oct\u00a02026',
+    );
+    // No known today: the year is named rather than guessed.
+    expect(seesLabel({ kind: 'progress', days: 30, range: { from: '2026-09-01', to: '2026-09-30' } }, null, false)).toBe('Sees: Progress · 1\u00a0Sep – 30\u00a0Sep\u00a02026');
     expect(seesLabel({ kind: 'progress', days: 30 }, null, false)).toBe('Sees: Progress · last 30 days');
     const s = await setUp();
     const d = await s.coach.describe({ kind: 'progress', days: 30, range: { from: '2026-09-01', to: '2026-09-30' } }, null);
-    expect(d.yourData).toContainEqual({ label: 'Opened from', detail: 'Progress · 1 Sep – 30 Sep' });
+    expect(d.yourData).toContainEqual({ label: 'Opened from', detail: 'Progress · 1\u00a0Sep – 30\u00a0Sep' });
+    const past = await s.coach.describe({ kind: 'progress', days: 30, range: { from: '2025-09-01', to: '2025-09-30' } }, null);
+    expect(past.yourData).toContainEqual({ label: 'Opened from', detail: 'Progress · 1\u00a0Sep – 30\u00a0Sep\u00a02025' });
   });
 });
