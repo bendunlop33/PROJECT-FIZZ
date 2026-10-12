@@ -8,6 +8,7 @@ import {
   deleteRoutine,
   deriveSessionTypes,
   duplicateRoutine,
+  editableEdit,
   editableExercises,
   editRoutine,
   isInRotation,
@@ -20,6 +21,9 @@ import {
   routineChangeLines,
   routineEditDirty,
   routineFromPlan,
+  planSettingsOfRoutine,
+  mergeRoutineEdits,
+  startWorkout,
   routineGymIssues,
   routineIssues,
   saveSheetDetail,
@@ -292,5 +296,75 @@ describe('library helpers', () => {
   it('unnamed name and save detail', () => {
     expect(plain(unnamedWorkoutName({ utc: '2026-10-11T08:00:00.000Z', tz: 'Europe/London' }))).toBe('Workout · Sun 11 Oct');
     expect(saveSheetDetail(made())).toBe('3 exercises · 6 sets');
+  });
+});
+
+describe('workout-library review A: what a save keeps (S2, S5, S3, N4)', () => {
+  it('S5: only the workout’s own set-type rest and per-set overrides are copied; default rest falls through', () => {
+    const plan = startFixture().state;
+    const rowEx = plan.exercises.find((e) => e.exerciseId === ROW);
+    const benchSets = setsFor(plan, BENCH).filter((s) => s.setType !== 'warmup');
+    const second = benchSets[1];
+    if (!rowEx || !second) throw new Error('fixture');
+    const changed = {
+      ...plan,
+      sets: plan.sets.map((s) => {
+        if (s.id === second.id) return { ...s, rest: { seconds: 240, source: 'set_override' as const, sourceLabel: 'Set override' } };
+        if (s.sessionExerciseId === rowEx.id) return { ...s, rest: { seconds: 90, source: 'exercise_default' as const, sourceLabel: 'Cable row default' } };
+        return s;
+      }),
+    };
+    const r = routineFromPlan({ id: id(970), ownerId: OWNER, name: 'X', opId: 'o', plan: changed, at: at(2), newId: idGen(97_000), isCompound: compound });
+    const bench = r?.exercises.find((e) => e.exerciseId === BENCH);
+    const row = r?.exercises.find((e) => e.exerciseId === ROW);
+    expect(bench?.restBySetType).toEqual({ warmup: { seconds: 60 }, working: { seconds: 180 } });
+    expect(bench?.setTemplates.filter((t) => t.setType !== 'warmup').map((t) => t.restOverrideS)).toEqual([null, 240]);
+    expect(row?.restBySetType).toEqual({});
+  });
+
+  it('S2, N9: a saved workout’s plan keeps its Fixed pins (unfitted), Main and item; a row swapped today keeps only Main', () => {
+    const { input } = startFixture();
+    const out = startWorkout(input);
+    const plan = out.aggregate;
+    if (input.routine === null) throw new Error('fixture');
+    const routine: Routine = { ...input.routine, source: 'ben', exercises: input.routine.exercises.map((e) => (e.exerciseId === BENCH ? { ...e, main: false, setTemplates: e.setTemplates.map((t, i) => (i === 2 ? { ...t, targetLoad: null } : t)) } : e.exerciseId === ROW ? { ...e, equipmentId: null } : e)) };
+    const slotOf = Object.fromEntries(plan.exercises.map((sx) => [sx.id, routine.exercises.find((e) => e.exerciseId === sx.exerciseId)?.id ?? '']));
+    const settings = planSettingsOfRoutine(routine, plan, slotOf, out.setTemplateIds);
+    const r = routineFromPlan({ id: id(971), ownerId: OWNER, name: 'Push A · short', opId: 'o', plan, at: at(2), newId: idGen(97_500), isCompound: compound, fromRoutine: settings });
+    const bench = r?.exercises.find((e) => e.exerciseId === BENCH);
+    expect(bench?.main).toBe(false);
+    expect(bench?.setTemplates.map((t) => t.targetLoad?.value ?? null)).toEqual([60, 100, null]);
+    expect(r?.exercises.find((e) => e.exerciseId === ROW)?.equipmentId).toBeNull();
+    // Without the workout's settings (a next session's plan) every load is Auto and Main is the rule's.
+    const plain = routineFromPlan({ id: id(972), ownerId: OWNER, name: 'X', opId: 'o', plan, at: at(2), newId: idGen(97_800), isCompound: compound });
+    expect(plain?.exercises[0]?.setTemplates.every((t) => t.targetLoad === null)).toBe(true);
+    expect(plain?.exercises[0]?.main).toBe(true);
+    // Swapped today: Main stays, the pins and item (the other exercise’s) don't.
+    const swapped = { ...plan, exercises: plan.exercises.map((sx) => (sx.exerciseId === BENCH ? { ...sx, exerciseId: ROW } : sx)) };
+    const s2 = planSettingsOfRoutine(routine, swapped, slotOf, out.setTemplateIds);
+    const benchRow = plan.exercises.find((sx) => sx.exerciseId === BENCH);
+    expect(s2.rows.get(benchRow?.id ?? '')).toEqual({ main: false, equipmentId: null });
+    expect([...s2.pins.keys()].some((k) => setsFor(plan, BENCH).some((s) => s.id === k))).toBe(false);
+    // A workout from before the library has no pins: its loads are last time's actuals.
+    expect(planSettingsOfRoutine({ ...routine, source: undefined }, plan, slotOf, out.setTemplateIds).pins.size).toBe(0);
+  });
+
+  it('S3: Keep both on a pre-library workout compares Auto with Auto, so no stale actual load becomes a Fixed pin', () => {
+    const legacy: Routine = { ...made(), source: undefined, exercises: made().exercises.map((e) => ({ ...e, setTemplates: e.setTemplates.map((t) => ({ ...t, targetLoad: kg(80) })) })) };
+    const base = editableEdit(legacy);
+    // Ben edits Row's reps; meanwhile the workout was renamed (still pre-library).
+    const mine = { ...base, exercises: base.exercises.map((e) => (e.exerciseId === ROW ? { ...e, setTemplates: e.setTemplates.map((t) => ({ ...t, targetReps: { min: 10, max: 12 } })) } : e)) };
+    const newer: Routine = { ...legacy, name: 'Push X', version: 2 };
+    const merged = mergeRoutineEdits(base, mine, editableEdit(newer));
+    expect(merged.conflicts).toEqual([]);
+    expect(merged.merged.name).toBe('Push X');
+    expect(merged.merged.exercises.flatMap((e) => e.setTemplates).every((t) => t.targetLoad === null)).toBe(true);
+    expect(merged.merged.exercises.find((e) => e.exerciseId === ROW)?.setTemplates[0]?.targetReps).toEqual({ min: 10, max: 12 });
+  });
+
+  it('N4: the first save of a pre-library workout lists only what Ben changed', () => {
+    const legacy: Routine = { ...made(), source: undefined, exercises: made().exercises.map((e) => ({ ...e, setTemplates: e.setTemplates.map((t) => ({ ...t, targetLoad: kg(80) })) })) };
+    const after = { name: 'Push B', exercises: editableExercises(legacy) };
+    expect(routineChangeLines(editableEdit(legacy), after, () => 'X').map((l) => l.text)).toEqual(['Renamed to Push B']);
   });
 });

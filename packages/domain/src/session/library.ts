@@ -1,4 +1,4 @@
-import type { EquipmentInstance, Exercise, RestSetting, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, ZonedTimestamp } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Load, RestSetting, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, ZonedTimestamp } from '@fizz/schemas';
 
 import { dayMonthText } from '../display';
 import { weekdayOf } from '../calendar';
@@ -189,6 +189,16 @@ export function editableExercises(r: Routine): RoutineExercise[] {
   return r.source === undefined ? sorted.map((e) => ({ ...e, setTemplates: e.setTemplates.map((t) => ({ ...t, targetLoad: null })) })) : sorted;
 }
 
+/**
+ * A stored workout as the editor works on it (`editableExercises`). Both the
+ * editor's base and a newer version for `Keep both` go through it, so a
+ * workout from before the library compares Auto with Auto and its stale
+ * actual loads never become Fixed pins (review S3).
+ */
+export function editableEdit(r: Routine): RoutineEdit {
+  return { name: r.name, exercises: editableExercises(r) };
+}
+
 export interface RoutineChangeLine {
   change: 'swap' | 'add' | 'remove' | 'reorder' | 'edit';
   text: string;
@@ -211,7 +221,7 @@ function slotShape(e: RoutineExercise): unknown {
  * What an editor save changed, as the record's lines (1–6): renamed,
  * exercises added, removed, replaced and reordered, then `N edited`.
  */
-export function routineChangeLines(before: Pick<Routine, 'name' | 'exercises'>, after: Pick<Routine, 'name' | 'exercises'>, nameOf: (exerciseId: string) => string): RoutineChangeLine[] {
+export function routineChangeLines(before: RoutineEdit, after: RoutineEdit, nameOf: (exerciseId: string) => string): RoutineChangeLine[] {
   const lines: RoutineChangeLine[] = [];
   if (before.name.trim() !== after.name.trim()) lines.push({ change: 'edit', text: `Renamed to ${after.name.trim()}`.slice(0, 200) });
   const beforeIds = new Map(before.exercises.map((e) => [e.id, e]));
@@ -263,6 +273,48 @@ export interface RoutineFromPlanInput {
   fixedSetIds?: ReadonlySet<string>;
   /** A next session's source workout, so the new workout keeps its history (WL5). Null for a routine's plan. */
   createdFromSessionId?: string | null;
+  /** The saved workout's own settings, when the plan is a saved workout's (`planSettingsOfRoutine`; review S2). */
+  fromRoutine?: PlanRoutineSettings;
+}
+
+/**
+ * What a saved workout's plan keeps from the workout itself when it is saved
+ * as a new one (review S2, N9): Ben's Fixed pins (by planned set, the
+ * workout's own unfitted load), and per row its `Main` and its item (null:
+ * mapped at each gym).
+ */
+export interface PlanRoutineSettings {
+  pins: ReadonlyMap<string, Load>;
+  rows: ReadonlyMap<string, { main: boolean | undefined; equipmentId: string | null }>;
+}
+
+/**
+ * `PlanRoutineSettings` for a saved workout's plan: `slotOf` (session row →
+ * `RoutineExercise.id`) and `setTemplateIds` (planned set → template) from
+ * the planner. A row swapped today keeps its `Main` but not the pins or the
+ * item (they belong to the other exercise). A workout from before the
+ * library has no pins (its stored loads are last time's actuals).
+ */
+export function planSettingsOfRoutine(routine: Pick<Routine, 'exercises' | 'source'>, plan: Pick<SessionAggregate, 'exercises' | 'sets'>, slotOf: Readonly<Record<string, string>>, setTemplateIds: Readonly<Record<string, string>>): PlanRoutineSettings {
+  const slots = new Map(routine.exercises.map((e) => [e.id, e]));
+  const pins = new Map<string, Load>();
+  const rows = new Map<string, { main: boolean | undefined; equipmentId: string | null }>();
+  for (const sx of plan.exercises) {
+    const key = slotOf[sx.id];
+    const slot = key === undefined ? undefined : slots.get(key);
+    if (slot === undefined) continue;
+    const same = slot.exerciseId === sx.exerciseId;
+    rows.set(sx.id, { main: slot.main, equipmentId: same ? slot.equipmentId : null });
+    if (!same || routine.source === undefined) continue;
+    const templates = new Map(slot.setTemplates.map((t) => [t.id, t]));
+    for (const set of plan.sets) {
+      if (set.sessionExerciseId !== sx.id) continue;
+      const templateId = setTemplateIds[set.id];
+      const load = templateId === undefined ? null : (templates.get(templateId)?.targetLoad ?? null);
+      if (load !== null) pins.set(set.id, load);
+    }
+  }
+  return { pins, rows };
 }
 
 /**
@@ -270,8 +322,12 @@ export interface RoutineFromPlanInput {
  * shows. Slots in shown order; skipped slots and skipped sets left out (any
  * reason); set types and counts, rep ranges or work time, rest by set type
  * and supersets as planned. Loads are `Auto` except the sets in
- * `fixedSetIds`. An exercise with only warm-ups left is left out. Null when
- * nothing is left (`Nothing to save`). The plan is never changed.
+ * `fixedSetIds` and a saved workout's own Fixed pins (`fromRoutine`, which
+ * also keeps each row's `Main` and item). Rest: only the workout's own
+ * set-type presets and per-set overrides are copied; rest from the
+ * exercise or global default is left to fall through (review S5). An
+ * exercise with only warm-ups left is left out. Null when nothing is left
+ * (`Nothing to save`). The plan is never changed.
  */
 export function routineFromPlan(input: RoutineFromPlanInput): Routine | null {
   const src = input.plan;
@@ -283,26 +339,29 @@ export function routineFromPlan(input: RoutineFromPlanInput): Routine | null {
     if (sets.every((s) => s.setType === 'warmup')) continue;
     const templates: SetTemplate[] = [];
     const restBySetType: Partial<Record<SetType, RestSetting>> = {};
+    const row = input.fromRoutine?.rows.get(sx.id);
     for (const s of sets) {
       const p = s.planned;
       if (p.reps === null && p.durationS === null) continue;
+      const pin = input.fromRoutine?.pins.get(s.id) ?? null;
       templates.push({
         id: input.newId(),
         setType: s.setType,
-        targetLoad: fixed.has(s.id) ? p.load : null,
+        targetLoad: fixed.has(s.id) ? p.load : pin,
         targetReps: p.reps === null ? null : { ...p.reps },
         targetDurationS: p.reps === null ? p.durationS : null,
         targetRpe: null,
         targetRir: null,
-        restOverrideS: null,
+        restOverrideS: s.rest.source === 'set_override' ? s.rest.seconds : null,
       });
-      if (restBySetType[s.setType] === undefined && s.rest.source !== 'not_recorded') restBySetType[s.setType] = { seconds: s.rest.seconds };
+      if (restBySetType[s.setType] === undefined && s.rest.source === 'routine_set_type') restBySetType[s.setType] = { seconds: s.rest.seconds };
     }
     if (templates.length === 0 || templates.every((t) => t.setType === 'warmup')) continue;
     exercises.push({
       id: input.newId(),
       exerciseId: sx.exerciseId,
-      equipmentId: sx.equipmentId,
+      equipmentId: row === undefined ? sx.equipmentId : row.equipmentId,
+      ...(row?.main !== undefined ? { main: row.main } : {}),
       order: exercises.length,
       supersetGroup: sx.supersetGroup,
       setTemplates: templates.slice(0, ROUTINE_MAX_SETS),

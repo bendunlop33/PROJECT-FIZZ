@@ -48,6 +48,7 @@ import {
   targetSummaryLines,
   unspecifiedPain,
   withCoachTargets,
+  type NextTargetEntry,
   equipmentForExercise,
   searchExercises,
   shouldAskCheckIn,
@@ -134,8 +135,11 @@ import {
   createRoutine,
   duplicateRoutine,
   editableExercises,
+  editableEdit,
   editRoutine,
   planRoutineStart,
+  planSettingsOfRoutine,
+  isDeleted,
   rotationRoutines,
   routineChangeLines,
   routineFromPlan,
@@ -490,6 +494,8 @@ export type RoutineEditWrite =
 /** What `Save to Workouts` saves (§A4.2): a finished workout, or exactly what an overview shows. */
 export type SaveFrom =
   | { kind: 'session'; sessionId: string; keepLoads?: boolean }
+  /** Repeat's `Save to Workouts` (§A2.6): the Repeat preview at this gym, its fitted loads as Fixed (review S4). */
+  | { kind: 'repeat'; sessionId: string; gymId: string }
   | { kind: 'preview'; target: OverviewTarget; gymId: string | null; checkInId?: string | null; typicalEquipment?: readonly EquipmentInstance[]; previewKey: string };
 
 /** The save sheet's prefill (§A2.5): name and `5 exercises · 15 sets`; null = `Nothing to save`. */
@@ -1017,7 +1023,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * `today`: the check-in answered for the workout being started; pain
    * mentioned there holds every load, like `planFor` (rule 9; review B2).
    */
-  async function nextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
+  async function nextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null): Promise<Map<string, NextTargetEntry[]>> {
     const builtIn = await builtInNextTargetsOf(p, source, today);
     // D21: the coach's saved next-session targets win where they are still valid; the built-in rule is the fallback.
     const rows = await ctx.store().repos.coach.listNextTargets(p.id, source.session.id).catch(() => []);
@@ -1221,8 +1227,17 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return again?.lastOpId === opId ? { ok: true, routine: again, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed };
   }
 
+  /** The Repeat preview at a gym (routines.md §2.4): the screen and its `Save to Workouts` plan the same way. Saves nothing. */
+  async function repeatPlan(p: UserProfile, sourceSessionId: string, gymId: string) {
+    const source = await repos().sessions.get(sourceSessionId);
+    if (!source || source.session.ownerId !== p.id) return null;
+    const lastUsedHere = await lastUsedFor(p.id, source.exercises.map((e) => e.exerciseId), gymId);
+    const out = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview:${sourceSessionId}`, at: ctx.now(), sourceSessionId, preview: true, lastUsedHere });
+    return out.ok ? { source, out, plan: out.aggregate } : null;
+  }
+
   /** What an overview shows, planned exactly as the page did (same draft, check-in and gym), and whether its key still matches. */
-  async function previewPlan(p: UserProfile, from: Extract<SaveFrom, { kind: 'preview' }>): Promise<{ aggregate: SessionAggregate; resolved: ResolvedOverview } | 'stale' | null> {
+  async function previewPlan(p: UserProfile, from: Extract<SaveFrom, { kind: 'preview' }>): Promise<{ aggregate: SessionAggregate; resolved: ResolvedOverview; today: TodayPlanInfo | null } | 'stale' | null> {
     const gymId = from.gymId ?? 'typical-gym-preview';
     const typical = from.gymId === null ? from.typicalEquipment : undefined;
     const resolved = await resolveOverview(p, from.target, { gymId, gymEquipment: typical });
@@ -1231,7 +1246,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const t = await todayFor(p, resolved, gymId, typical, planCheckIn);
     if (previewKey(await previewKeyParts(p, resolved, from.gymId, planCheckIn, t.draft)) !== from.previewKey) return 'stale';
     const run = await overviewDryRun(p, resolved, gymId, planCheckIn, typical, t.input);
-    return run === null ? null : { aggregate: run.aggregate, resolved };
+    return run === null ? null : { aggregate: run.aggregate, resolved, today: run.today };
   }
 
   /** A workout from a save source, not saved: what the sheet shows and what `saveFrom` writes. */
@@ -1242,6 +1257,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (!source || source.session.ownerId !== p.id) return null;
       const isCompound = await compoundOf(source.exercises.map((e) => e.exerciseId));
       return routineFromSession({ id: req.id, ownerId: p.id, name: req.name, opId: req.opId, source, at, newId: ctx.newId, keepLoads: from.keepLoads === true, inRotation: req.inRotation, isCompound });
+    }
+    if (from.kind === 'repeat') {
+      const r = await repeatPlan(p, from.sessionId, from.gymId);
+      if (r === null) return null;
+      const isCompound = await compoundOf(r.plan.exercises.map((e) => e.exerciseId));
+      // What the Repeat screen shows: last time's loads fitted to this gym, kept as Fixed (§4.6).
+      const fixedSetIds = new Set(r.plan.sets.filter((s) => s.status === 'pending' && s.planned.load !== null).map((s) => s.id));
+      return routineFromPlan({ id: req.id, ownerId: p.id, name: req.name, opId: req.opId, plan: r.plan, at, newId: ctx.newId, isCompound, inRotation: req.inRotation, fixedSetIds, createdFromSessionId: r.source.session.id });
     }
     const plan = await previewPlan(p, from);
     if (plan === null || plan === 'stale') return plan;
@@ -1258,6 +1281,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       inRotation: req.inRotation,
       // A next session's source keeps its history (WL5); a routine's plan is a new workout.
       createdFromSessionId: plan.resolved.kind === 'next' ? plan.resolved.source.session.id : null,
+      // A saved workout's own Fixed pins, Main and items are kept (review S2).
+      ...(plan.resolved.kind === 'routine' && plan.today?.setTemplateIds ? { fromRoutine: planSettingsOfRoutine(plan.resolved.routine, plan.aggregate, plan.today.slotOf, plan.today.setTemplateIds) } : {}),
     });
   }
 
@@ -2214,11 +2239,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async preview(sourceSessionId: string, gymId: string): Promise<RepeatPreview | null> {
       const p = await ctx.profile();
       if (!p) return null;
-      const source = await repos().sessions.get(sourceSessionId);
-      if (!source) return null;
-      const lastUsedHere = await lastUsedFor(p.id, source.exercises.map((e) => e.exerciseId), gymId);
-      const r = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview:${sourceSessionId}`, at: ctx.now(), sourceSessionId, preview: true, lastUsedHere });
-      if (!r.ok) return null;
+      const planned = await repeatPlan(p, sourceSessionId, gymId);
+      if (planned === null) return null;
+      const { source, out: r } = planned;
       const title = storedName(source) ?? (await titleFor(source.exercises.map((e) => e.exerciseId)).catch(() => ({ title: GENERIC_WORKOUT_NAME }))).title;
       return { title, exercises: repeatPreviewLines(r.aggregate), notes: r.notes, notCopied: r.notCopied, sourceGymId: source.session.gymId, sourceStartedAtUtc: source.session.startedAt.utc, tz: source.session.startedAt.tz };
     },
@@ -2415,7 +2438,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
             kind: 'update_routine',
             routineId: current.id,
             routineName: current.name,
-            changes: routineChangeLines(current, c.next, (id) => nameOf.get(id) ?? 'Exercise'),
+            // Against what the editor opened (a pre-library workout's loads read as Auto), so only Ben's changes are listed (review N4).
+            changes: routineChangeLines(editableEdit(current), c.next, (id) => nameOf.get(id) ?? 'Exercise'),
             before: current,
             versionBefore: current.version,
             versionAfter: c.next.version,
@@ -2458,6 +2482,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const current = await repos().routines.get(req.routineId);
         if (!current || current.ownerId !== p.id) return { ok: false, message: LIBRARY_COPY.notFound };
         const id = deriveId(`routine:${req.opId}`);
+        // A deleted workout isn't copied (as its other writes refuse); a retry of a copy made before still replays (review N5).
+        if (isDeleted(current) && (await repos().routines.get(id).catch(() => null)) === null) return { ok: false, message: LIBRARY_COPY.notFound };
         const isCompound = await compoundOf(current.exercises.map((e) => e.exerciseId));
         return await createOnce(id, req.opId, () => duplicateRoutine(current, { id, opId: req.opId, at: ctx.now(), newId: ctx.newId, isCompound }), LIBRARY_COPY.nothing);
       } catch {
@@ -2483,7 +2509,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (r === 'stale') return 'stale';
         if (r === null) return null;
         let name = fallbackName;
-        if (name === null && from.kind === 'session') {
+        if (name === null && (from.kind === 'session' || from.kind === 'repeat')) {
           const source = await repos().sessions.get(from.sessionId).catch(() => null);
           name = source === null ? null : (source.session.routineName ?? storedName(source) ?? unnamedWorkoutName(source.session.startedAt));
         }

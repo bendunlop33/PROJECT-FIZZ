@@ -59,6 +59,8 @@ const MAX_CONFLICT_RETRIES = 2;
 /** What a plan with today's edits says about them (ADR 0022): the overview's rows and stale/redundant edits. */
 export interface TodayPlanInfo {
   slotOf: Record<string, string>;
+  /** A saved workout's plan: each planned set's template in the workout (absent for a next session). */
+  setTemplateIds?: Record<string, string>;
   outcomes: EditOutcome[];
   resolved: ResolvedEdits;
   slots: TodaySlot[];
@@ -103,7 +105,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     const owner = await repos.profiles.get(req.ownerId);
     if (!owner) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
     const routine = req.routineId === null ? null : await repos.routines.get(req.routineId);
-    if (req.routineId !== null && !routine) return { ok: false, error: { code: 'not_found', message: 'Routine not found.' } };
+    if (req.routineId !== null && !routine) return { ok: false, error: { code: 'not_found', message: 'That workout wasn’t found.' } };
 
     const exercises = new Map<string, Exercise>();
     for (const rex of routine?.exercises ?? []) {
@@ -273,7 +275,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       ...(gym ? { gymName: gym.name } : {}),
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     } }, req.today ?? NO_EDITS);
-    const today: TodayPlanInfo = { slotOf: out.slotOf, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots };
+    const today: TodayPlanInfo = { slotOf: out.slotOf, setTemplateIds: out.setTemplateIds, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots };
     if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This workout has no exercises to start.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false, fits: out.fits, today };
     const saved = await trySave(() => repos.sessions.save(out.aggregate, null, req.fence));

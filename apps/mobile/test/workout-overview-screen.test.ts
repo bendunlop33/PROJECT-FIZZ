@@ -239,9 +239,9 @@ describe('route through the stack (§2.1)', () => {
   it('Close returns to Today with nothing started; Delete returns to Today with Undo', () => {
     let s = apply(router.getInitialState(options), navigate('WorkoutOverview', { target: { kind: 'routine', routineId: 'r1' } }));
     expect(names(apply(s, { type: 'GO_BACK' }))).toEqual(['Tabs']);
-    s = apply(s, popToTabs({ screen: 'Today', params: { toast: 'Deleted Push A', undoRoutine: { id: 'r1', version: 2 } } }));
+    s = apply(s, popToTabs({ screen: 'Today', params: { toast: 'Push A deleted', undoRoutine: { id: 'r1', version: 2 } } }));
     expect(names(s)).toEqual(['Tabs']);
-    expect(s.routes[0]?.params).toEqual({ screen: 'Today', params: { toast: 'Deleted Push A', undoRoutine: { id: 'r1', version: 2 } } });
+    expect(s.routes[0]?.params).toEqual({ screen: 'Today', params: { toast: 'Push A deleted', undoRoutine: { id: 'r1', version: 2 } } });
   });
 });
 

@@ -326,6 +326,69 @@ describe('Save to Workouts (WL-A9, A10, A11, A12)', () => {
   });
 });
 
+describe('workout-library review A: S2, S4, S5, N5', () => {
+  it('S2, S5: an overview save of a saved workout keeps its Fixed pin, Main and item; only its own rest presets and set overrides are copied', async () => {
+    const { services: s } = await h.launch();
+    const f = await fixture(s);
+    const ed = await s.routines.editor({ routineId: f.pushA.id, gymId: f.gymId });
+    const [bench, raise] = ed?.exercises ?? [];
+    if (!ed || !bench || !raise) throw new Error('no editor');
+    const pinned = {
+      ...bench,
+      main: false,
+      restBySetType: { working: { seconds: 150 } },
+      setTemplates: bench.setTemplates.map((t, i) => (t.setType === 'warmup' ? t : { ...t, targetLoad: i === 0 ? { value: 60, unit: 'kg' as const, convention: 'total' as const } : null, restOverrideS: i === 1 ? 200 : null })),
+    };
+    const u = await s.routines.update({ routineId: f.pushA.id, edit: { name: 'Push A', exercises: [pinned, { ...raise, main: true, restBySetType: {} }] }, expectedVersion: f.pushA.version, opId: 'pin-main' });
+    if (!u.ok) throw new Error(u.message);
+    const target = { kind: 'routine' as const, routineId: f.pushA.id };
+    const page = await s.overview.load({ target, gymId: f.gymId });
+    if (!page) throw new Error('no page');
+    const r = await s.routines.saveFrom({ from: { kind: 'preview', target, gymId: f.gymId, previewKey: page.view.previewKey }, name: 'Push A · 30 min', addToRotation: false, opId: 'save-pinned' });
+    if (!r.ok) throw new Error(r.message);
+    const [b, l] = r.routine.exercises;
+    expect(b?.main).toBe(false);
+    expect(l?.main).toBe(true);
+    expect(b?.setTemplates.filter((t) => t.setType !== 'warmup').map((t) => t.targetLoad?.value ?? null)).toEqual([60, null]);
+    expect(b?.equipmentId).toBe(bench.equipmentId);
+    expect(b?.restBySetType).toEqual({ working: { seconds: 150 } });
+    expect(b?.setTemplates.filter((t) => t.setType !== 'warmup').map((t) => t.restOverrideS)).toEqual([null, 200]);
+    // Lateral raise's rest came from the exercise or global default: not frozen into the copy.
+    expect(l?.restBySetType).toEqual({});
+  });
+
+  it('S4: Repeat saves the Repeat preview at this gym, its fitted loads as Fixed, linked to the workout it repeats', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const sid = await logWorkout(h, s, gymId, [{ exercise: 'Dumbbell bench press', sets: [{ load: 32.5, reps: 10 }, { load: 32.5, reps: 10 }] }]);
+    // Repeat at a gym whose rack tops out at 25 kg each.
+    const hotelId = h.ids();
+    expect((await s.setup.saveGym({ gymId: hotelId, name: 'Hotel gym', draft: s.coachingKnowledge.buildGymDraft('home_dumbbells', 'kg') })).ok).toBe(true);
+    const preview = await s.repeat.preview(sid, hotelId);
+    if (!preview) throw new Error('no preview');
+    const from = { kind: 'repeat' as const, sessionId: sid, gymId: hotelId };
+    const src = await s.routines.saveSource(from);
+    expect(src !== 'stale' && src?.detail).toBe('1 exercise · 2 sets');
+    const r = await s.routines.saveFrom({ from, name: 'DB', addToRotation: false, opId: 'save-repeat' });
+    if (!r.ok) throw new Error(r.message);
+    const loads = r.routine.exercises[0]?.setTemplates.map((t) => t.targetLoad) ?? [];
+    // What the screen showed (25 kg each), never last time's 32.5 kg each.
+    expect(loads).toEqual([25, 25].map((value) => ({ value, unit: 'kg', convention: 'per_hand' })));
+    expect(r.routine.createdFromSessionId).toBe(sid);
+  });
+
+  it('N5: a deleted workout is not duplicated; a retry of an earlier copy still replays', async () => {
+    const { services: s } = await h.launch();
+    const f = await fixture(s);
+    const d = await s.routines.duplicate({ routineId: f.pushA.id, opId: 'dup-before' });
+    if (!d.ok) throw new Error(d.message);
+    const del = await s.routines.remove({ routineId: f.pushA.id, expectedVersion: f.pushA.version, opId: 'del-dup' });
+    expect(del.ok).toBe(true);
+    expect(await s.routines.duplicate({ routineId: f.pushA.id, opId: 'dup-after' })).toMatchObject({ ok: false });
+    expect(await s.routines.duplicate({ routineId: f.pushA.id, opId: 'dup-before' })).toMatchObject({ ok: true, routine: { id: d.routine.id } });
+  });
+});
+
 describe('create (New workout) and offline (WL-A14)', () => {
   it('validates, saves once per opId, Main from the rule, and never calls a provider', async () => {
     const { services: s } = await h.launch();
