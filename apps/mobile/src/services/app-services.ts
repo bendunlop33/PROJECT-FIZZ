@@ -566,6 +566,13 @@ export function createAppServices(deps: AppServicesDeps) {
       return loop.overview.addCandidates({ ...req, ...(await typicalFor(req.gymId)) });
     },
     loadKeypad: (req: Parameters<typeof loop.overview.loadKeypad>[0]) => loop.overview.loadKeypad(req),
+    // Fit to time (fit-to-time.md): the built-in trim and `Clear fit`, offline.
+    async trimToFit(req: Omit<Parameters<typeof loop.overview.trimToFit>[0], 'typicalEquipment'>) {
+      return loop.overview.trimToFit({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    async clearFit(req: Omit<Parameters<typeof loop.overview.clearFit>[0], 'typicalEquipment'>) {
+      return loop.overview.clearFit({ ...req, ...(await typicalFor(req.gymId)) });
+    },
   };
 
   /** Workouts: `Update Push A` plans from the same page, so with no gym it is checked against the typical gym's items too. */

@@ -792,6 +792,17 @@ export function editCountOf(r: Pick<ResolvedEdits, 'swaps' | 'skipped' | 'order'
   return slots.size + (r.order === null ? 0 : 1);
 }
 
+/**
+ * The resolved edits without the coach's (a coach fit's skips, sets and
+ * adds): what a template change can carry. A fit is today only (rule 2);
+ * only Ben's own edits go to `Update Push A`.
+ */
+export function benOnly(r: ResolvedEdits): ResolvedEdits {
+  if (r.coachEdits.size === 0) return r;
+  const keep = <V extends { editId: string } | string>(m: ReadonlyMap<string, V>): Map<string, V> => new Map([...m].filter(([, v]) => !r.coachEdits.has(typeof v === 'string' ? v : v.editId)));
+  return { ...r, swaps: keep(r.swaps), skipped: keep(r.skipped), added: keep(r.added), sets: keep(r.sets), reps: keep(r.reps), loads: keep(r.loads) };
+}
+
 /** Slots Ben himself edited today (FT5: the built-in trim leaves them alone): added, or sets, reps or load changed. */
 export function benEditedSlots(r: Pick<ResolvedEdits, 'added' | 'sets' | 'reps' | 'loads' | 'coachEdits'>): Set<string> {
   const out = new Set<string>();

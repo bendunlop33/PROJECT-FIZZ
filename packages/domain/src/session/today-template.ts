@@ -3,7 +3,7 @@ import { formatDuration, NBSP, repRangeText } from '../display';
 import { deriveId } from '../stable';
 import { editableExercises, editRoutine } from './library';
 import type { RoutineChange } from './routines';
-import type { ResolvedEdits } from './today-edits';
+import { benOnly, type ResolvedEdits } from './today-edits';
 import { shapeOfTemplates, type ShapeBefore } from './today-shape';
 
 /**
@@ -70,7 +70,9 @@ export interface TemplateLinesInput {
 
 /** `templateLinesFromEdits` (§11.9): the card's lines, in the spec's order, with their default checks. */
 export function templateLinesFromEdits(input: TemplateLinesInput): TemplateLine[] {
-  const { routine, resolved, today, nameOf } = input;
+  const { routine, today, nameOf } = input;
+  // A coach fit is today only (fit-to-time, rule 2): never a template line.
+  const resolved = benOnly(input.resolved);
   const bySlot = new Map(editableExercises(routine).map((e) => [e.id, e]));
   const lines: TemplateLine[] = [];
   const line = (kind: TemplateLineKind, key: string, text: string, detail: string | null, editIds: string[], spoken: string): void => {
@@ -164,7 +166,8 @@ function withWorkingCount(templates: readonly SetTemplate[], count: number, newI
  * duplicate; an older version is stale and writes nothing, rule 5).
  */
 export function applyEditsToRoutine(input: ApplyTodayEditsInput): RoutineChange {
-  const { current, resolved, today, at, opId } = input;
+  const { current, today, at, opId } = input;
+  const resolved = benOnly(input.resolved);
   let n = 0;
   const newId = (): string => deriveId(`update-routine-template:${opId}:${String((n += 1))}`);
   const checked = new Set(input.lines.map((l) => l.key));

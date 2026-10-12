@@ -79,7 +79,8 @@ import {
   doableHere,
   draftBasisKey,
   draftIsLive,
-  editCountOf,
+  overviewTodayOf,
+  planPace,
   editedSlots,
   liveEdits,
   moveSlot,
@@ -102,7 +103,6 @@ import {
   templateLinesFromEdits,
   todayLoadNote,
   todayShapes,
-  type RowShapeEdit,
   type ShapeEditKind,
   type TemplateLine,
   type TodayEditBody,
@@ -1506,10 +1506,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const history = await historyFor(p.id, exercise.id).catch(() => [] as HistorySession[]);
       adds.set(e.slotKey, addTargets(exercise, history, await substituteCtx(p, gymId, gymEquipment, today, [exercise.id])));
     }
-    return { draft, input: { draft: { id: draft.id, version: draft.version }, edits, swaps, adds } };
+    // Fit to time (FT4): the pace the TIME tile uses and which movements a pain flag holds; read only with a live fit.
+    const fit = edits.some((e) => e.kind === 'fit') ? await fitContext(p) : undefined;
+    return { draft, input: { draft: { id: draft.id, version: draft.version }, edits, swaps, adds, ...(fit ? { fit } : {}) } };
   }
 
-  /** The overview's view of today's edits (§6.2): slot keys, today's order, what each applied edit did. */
+  /** What the built-in trim reads besides the plan (fit-to-time §4.1): Ben's recent pace and the active pain flags. Local only. */
+  async function fitContext(p: UserProfile): Promise<NonNullable<TodayEditsInput['fit']>> {
+    const at = ctx.now();
+    const flags = await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]);
+    return { pace: planPace(await recentFinished(p)), held: (exerciseId) => painFlagCovering(flags, exerciseId, toMs(at.utc), at.tz) !== null };
+  }
+
+  /** The overview's view of today's edits (§6.2): slot keys, today's order, what each applied edit did, and the live fit. */
   async function overviewToday(resolved: ResolvedOverview, info: TodayPlanInfo | null, draft: PreStartDraft | null): Promise<OverviewToday | null> {
     if (info === null) return null;
     const swapped = new Map<string, { editId: string; fromExerciseId: string; fromName: string }>();
@@ -1519,24 +1528,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const fromName = resolved.kind === 'next' ? resolved.source.exercises.find((x) => x.id === slotKey)?.exerciseName : (await exerciseById(base.exerciseId))?.name;
       swapped.set(slotKey, { editId: sw.editId, fromExerciseId: base.exerciseId, fromName: fromName ?? 'Exercise' });
     }
-    const shapeEdits = new Map<string, RowShapeEdit>();
-    const shapeAt = (k: string): RowShapeEdit => shapeEdits.get(k) ?? { sets: null, reps: null, load: null };
-    for (const [k, v] of info.resolved.sets) shapeEdits.set(k, { ...shapeAt(k), sets: v.editId });
-    for (const [k, v] of info.resolved.reps) shapeEdits.set(k, { ...shapeAt(k), reps: v.editId });
-    for (const [k, v] of info.resolved.loads) shapeEdits.set(k, { ...shapeAt(k), load: v.editId });
-    return {
-      slotOf: info.slotOf,
-      slots: info.slots,
-      swapped,
-      skipped: info.resolved.skipped,
-      editCount: editCountOf(info.resolved),
-      draft: draft === null ? null : { id: draft.id, version: draft.version },
-      routineName: resolved.kind === 'routine' ? resolved.routine.name : null,
-      added: new Map([...info.resolved.added].map(([k, v]) => [k, v.editId])),
-      shapeEdits,
-      plannedShape: info.plannedShape,
-      benLoads: new Map([...info.resolved.loads].map(([k, v]) => [k, v.load])),
-    };
+    return overviewTodayOf(info, { swapped, draft: draft === null ? null : { id: draft.id, version: draft.version }, routineName: resolved.kind === 'routine' ? resolved.routine.name : null });
   }
 
   /** `Update Push A ›` (§11.5): today's template-able edits as lines, against the workout as read. */
@@ -3135,6 +3127,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const source = await overviewSource(resolved);
         // A failed read shows no coach rows; the key below reads them again, so a Start planned without them is refused.
         const coachTargets = await storedCoachTargets(p.id, source).catch(() => [] as NextSessionTargetRecord[]);
+        const recent = await recentFinished(p);
         const view = buildWorkoutOverview({
           aggregate,
           fits: run.fits,
@@ -3142,7 +3135,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           pasts,
           painFlags: await repos().painFlags.listActive(p.id),
           exerciseInfo,
-          recent: await recentFinished(p),
+          recent,
+          // The same pace a fit trims with, so the tile and the card agree (FT7).
+          pace: planPace(recent),
           nowMs: toMs(at.utc),
           tz: at.tz,
           title,
@@ -3234,6 +3229,26 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         }
         return { type: 'edit', edit: e };
       });
+    },
+
+    /**
+     * `How long?` → `Trim to 45 min` (fit-to-time §3.2, FT2, FT4): the fit is
+     * written as intent; the built-in trim re-runs on every read. Offline,
+     * never an AI call. A length the plan already fits writes nothing
+     * (FT-C4: the sheet shows `Fits already`).
+     */
+    async trimToFit(req: DraftTarget & { minutes: number }): Promise<DraftWrite> {
+      const page = await overview.load({ target: req.target, gymId: req.gymId, ...(req.typicalEquipment ? { typicalEquipment: req.typicalEquipment } : {}) });
+      const unfitted = page?.view.fit?.beforeSeconds ?? page?.view.estimate?.seconds ?? null;
+      if (page !== null && unfitted !== null && unfitted <= req.minutes * 60) {
+        return { ok: true, draft: null, duplicate: false, added: [], removed: [] };
+      }
+      return writeDraft(req, () => ({ type: 'edit', edit: { kind: 'fit', minutes: req.minutes } }));
+    },
+
+    /** `Clear fit` (fit-to-time §3.2): the live fit, and a coach fit's own edits, removed; `removed` is what the toast's Undo restores. */
+    clearFit(req: DraftTarget): Promise<DraftWrite> {
+      return writeDraft(req, () => ({ type: 'clear_fit' }));
     },
 
     /** `Use planned` (reps, load) or a stepper back at the plan's count (§11.4): that edit on the slot is removed. */

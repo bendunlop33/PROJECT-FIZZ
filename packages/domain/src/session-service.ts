@@ -13,7 +13,7 @@ import { buildAddExerciseCommand, startWorkout, type AddExerciseInput, type SetF
 import { recoverSession, type RecoveryResult } from './session/recovery';
 import type { RepeatInput, RepeatNote, RepeatOutput } from './session/repeat';
 import { isDeleted, type RoutineStartInput } from './session/routines';
-import { planWithTodayEdits, type EditOutcome, type ResolvedEdits, type TodayEditsInput, type TodaySlot } from './session/today-edits';
+import { planWithTodayEdits, type EditOutcome, type FitOutcome, type ResolvedEdits, type TodayEditsInput, type TodaySlot } from './session/today-edits';
 import type { ShapeBefore } from './session/today-shape';
 import { reduceSession, type SessionError, type SessionEvent } from './session/reducer';
 
@@ -68,6 +68,8 @@ export interface TodayPlanInfo {
   baseSlots: TodaySlot[];
   /** Each slot as planned before today's sets, reps and load (§11). */
   plannedShape: Record<string, ShapeBefore>;
+  /** The live fit as planned (fit-to-time); null with none. */
+  fit: FitOutcome | null;
 }
 
 const NO_EDITS: TodayEditsInput = { draft: null, edits: [], swaps: new Map() };
@@ -208,7 +210,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       ...(gym ? { gymName: gym.name } : {}),
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     } }, req.today ?? NO_EDITS);
-    const today: TodayPlanInfo = { slotOf: out.slotOf, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape };
+    const today: TodayPlanInfo = { slotOf: out.slotOf, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit };
     if (out.empty) return { ok: false, error: { code: 'nothing_to_repeat', message: 'That workout has no logged sets to repeat.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false, fits: out.fits, today };
     const saved = await trySave(() => repos.sessions.save(out.aggregate, null, req.fence));
@@ -278,7 +280,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       ...(gym ? { gymName: gym.name } : {}),
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     } }, req.today ?? NO_EDITS);
-    const today: TodayPlanInfo = { slotOf: out.slotOf, setTemplateIds: out.setTemplateIds, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape };
+    const today: TodayPlanInfo = { slotOf: out.slotOf, setTemplateIds: out.setTemplateIds, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit };
     if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This workout has no exercises to start.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false, fits: out.fits, today };
     const saved = await trySave(() => repos.sessions.save(out.aggregate, null, req.fence));

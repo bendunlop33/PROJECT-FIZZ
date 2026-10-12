@@ -800,6 +800,9 @@ export interface FitView {
   beforeAfter: string;
   beforeMinutes: number;
   afterMinutes: number;
+  /** The unrounded estimates (what `Fits already` and a new fit compare against). */
+  beforeSeconds: number;
+  afterSeconds: number;
   /** One per slot, in today's order: `Cable fly · skipped`, `Lateral raise · 3 → 2 sets`, `Face pull · added · 2 × 12–15`. */
   lines: string[];
   /** The tile's label: `Time · fit 45` (shown in caps). */
@@ -839,6 +842,8 @@ export function fitView(fit: FitOutcome, nameOf: (slotKey: string) => string, de
     beforeAfter,
     beforeMinutes: before,
     afterMinutes: after,
+    beforeSeconds: fit.beforeSeconds,
+    afterSeconds: fit.afterSeconds,
     lines: lines.map((l) => l.text),
     tileLabel: `Time · fit ${String(fit.minutes)}`,
     accessibilityLabel: [spokenHead, spokenBa, ...lines.map((l) => l.spoken)].join('. ') + '.',
