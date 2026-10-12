@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
-import { NBSP } from '@fizz/domain';
+import { editableEdit, mergeRoutineEdits, NBSP } from '@fizz/domain';
 import type { TextCoachState } from '@fizz/providers';
 import type { Routine, SessionAggregate, SetTemplate } from '@fizz/schemas';
 
@@ -58,9 +58,10 @@ afterEach(async () => {
  * (`sets` sets) for next time. `order: 'target_first'` is the Summary order
  * (the coach turn runs, then Ben taps `Save to Workouts`; review r2 S1).
  */
-async function withCoachTarget(s: AppServices, sets: number | null, order: 'save_first' | 'target_first' = 'save_first'): Promise<{ gymId: string; routine: Routine; first: string }> {
+async function withCoachTarget(s: AppServices, sets: number | null, order: 'save_first' | 'target_first' = 'save_first', withPulldown = false): Promise<{ gymId: string; routine: Routine; first: string }> {
   const gymId = await setUpGym(h, s);
-  const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 8, rpe: 10 }] }]);
+  const pulldown = withPulldown ? [{ exercise: 'Lat pulldown', sets: [{ load: 50, reps: 10 }, { load: 50, reps: 10 }] }] : [];
+  const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 8, rpe: 10 }] }, ...pulldown]);
   const save = async (): Promise<Routine> => {
     const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1', addToRotation: true });
     if (!saved.ok) throw new Error(saved.message);
@@ -82,7 +83,7 @@ async function withCoachTarget(s: AppServices, sets: number | null, order: 'save
 }
 
 /** The editor's Bench slot with its working sets replaced by `make(base)`; warm-ups kept. */
-async function editBench(s: AppServices, gymId: string, routine: Routine, opId: string, make: (base: SetTemplate) => SetTemplate[]): Promise<void> {
+async function editBench(s: AppServices, gymId: string, routine: Routine, opId: string, make: (base: SetTemplate) => SetTemplate[]): Promise<{ routine: Routine; actionId: string | null }> {
   const ed = await s.routines.editor({ routineId: routine.id, gymId });
   const slot = ed?.exercises[0];
   const base = slot?.setTemplates.find((t) => t.setType !== 'warmup');
@@ -90,6 +91,7 @@ async function editBench(s: AppServices, gymId: string, routine: Routine, opId: 
   const sets = [...slot.setTemplates.filter((t) => t.setType === 'warmup'), ...make(base)];
   const u = await s.routines.update({ routineId: routine.id, edit: { name: 'Push A', exercises: [{ ...slot, setTemplates: sets }] }, expectedVersion: routine.version, opId });
   if (!u.ok) throw new Error(u.message);
+  return { routine: u.routine, actionId: u.actionId };
 }
 
 async function overviewAndStart(s: AppServices, gymId: string, routineId: string): Promise<{ detail: string | undefined; load: string | undefined; workingSets: number; started: SessionAggregate }> {
@@ -201,5 +203,55 @@ describe('B1: a coach target and a later editor change', () => {
     const { workingSets, started } = await overviewAndStart(s, gymId, routine.id);
     expect(working(started)).toHaveLength(2);
     expect(workingSets).toBe(2);
+  });
+
+  it('N15: Undo of an editor save made after the target brings the coach’s 2 sets back', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routine } = await withCoachTarget(s, 2);
+    h.clockMs += 60 * 60 * 1000;
+    const saved = await editBench(s, gymId, routine, 'four-then-undo', (base) => [1, 2, 3, 4].map(() => ({ ...base, id: h.ids(), targetLoad: null })));
+    expect(saved.routine.exercises[0]?.structureChangedAtUtc).toBe(h.now().utc);
+    h.clockMs += 60 * 1000;
+    const back = await s.routines.revert({ actionId: saved.actionId ?? '', opId: 'undo-four' });
+    if (!back.ok) throw new Error('revert');
+    expect(back.routine.exercises[0]?.structureChangedAtUtc).toBeUndefined();
+    h.clockMs += 2 * DAY;
+    const { workingSets, started } = await overviewAndStart(s, gymId, routine.id);
+    expect(working(started)).toHaveLength(2);
+    expect(workingSets).toBe(2);
+    expect(working(started).every((x) => x.planned.load?.value === 57.5 && x.planned.source === 'coach')).toBe(true);
+  });
+
+  it('N15: Keep both marks only the slot Ben changed; the other side’s slot keeps its own time, and his 4 Bench sets win', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routine } = await withCoachTarget(s, 2, 'save_first', true);
+    h.clockMs += 60 * 60 * 1000;
+    const ed = await s.routines.editor({ routineId: routine.id, gymId });
+    if (!ed) throw new Error('no editor');
+    const base = editableEdit(routine);
+    const [bench, pulldown] = ed.exercises;
+    if (!bench || !pulldown) throw new Error('fixture');
+    // The other side (an earlier editor or the coach's Apply) changes Lat pulldown's reps first.
+    const theirsAt = h.now().utc;
+    const theirs = await s.routines.update({ routineId: routine.id, edit: { name: 'Push A', exercises: [bench, { ...pulldown, setTemplates: pulldown.setTemplates.map((t) => (t.setType === 'warmup' ? t : { ...t, targetReps: { min: 12, max: 15 } })) }] }, expectedVersion: routine.version, opId: 'theirs' });
+    if (!theirs.ok) throw new Error(theirs.message);
+    // Ben, on the older version, makes Bench 4 sets: stale, then Keep both.
+    h.clockMs += 60 * 1000;
+    const work = bench.setTemplates.find((t) => t.setType !== 'warmup');
+    if (!work) throw new Error('no set');
+    const mine = { name: 'Push A', exercises: [{ ...bench, setTemplates: [...bench.setTemplates.filter((t) => t.setType === 'warmup'), ...[1, 2, 3, 4].map(() => ({ ...work, id: h.ids(), targetLoad: null }))] }, pulldown] };
+    const stale = await s.routines.update({ routineId: routine.id, edit: mine, expectedVersion: routine.version, opId: 'mine' });
+    if (stale.ok || stale.reason !== 'stale') throw new Error('expected stale');
+    const merge = mergeRoutineEdits(base, mine, editableEdit(stale.current));
+    expect(merge.conflicts).toEqual([]);
+    const mineAt = h.now().utc;
+    const kept = await s.routines.update({ routineId: routine.id, edit: merge.merged, expectedVersion: stale.current.version, opId: 'keep-both' });
+    if (!kept.ok) throw new Error(kept.message);
+    expect(kept.routine.exercises.map((e) => e.structureChangedAtUtc)).toEqual([mineAt, theirsAt]);
+    expect(mineAt).not.toBe(theirsAt);
+    h.clockMs += 2 * DAY;
+    const { started } = await overviewAndStart(s, gymId, routine.id);
+    const benchId = started.exercises.find((e) => e.exerciseId === bench.exerciseId)?.id;
+    expect(working(started).filter((x) => x.sessionExerciseId === benchId)).toHaveLength(4);
   });
 });
