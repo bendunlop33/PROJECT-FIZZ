@@ -125,6 +125,28 @@ describe('trainingOverviewView (get_training_overview, "How am I doing?")', () =
     const empty = trainingOverviewView({ weeks: 2, nowUtc: now, tz: TZ, sessions: [], gymNames: {} });
     expect(empty).toMatchObject({ workouts: 0, perWeek: 0, sessions: [], trends: [] });
   });
+
+  it('per week is over the weeks the history covers, not a window that predates it (review N4)', () => {
+    // 20 days of history, a 12-week window: 3 workouts over 20 days, not over 12 weeks.
+    const sessions = [workout(0, [{ load: 95, reps: 8 }]), workout(7, [{ load: 97.5, reps: 8 }]), workout(14, [{ load: 100, reps: 6 }])];
+    const v = trainingOverviewView({ weeks: 12, nowUtc: now, tz: TZ, sessions, gymNames: {}, firstWorkoutUtc: sessions[0]?.session.startedAt.utc ?? null });
+    expect(v).toMatchObject({ perWeek: 1, perWeekOverWeeks: 2.9 });
+    // A longer history: the window as before.
+    const long = trainingOverviewView({ weeks: 2, nowUtc: now, tz: TZ, sessions, gymNames: {}, firstWorkoutUtc: sessions[0]?.session.startedAt.utc ?? null });
+    expect(long).toMatchObject({ perWeekOverWeeks: 2 });
+    // Never less than a week.
+    const fresh = trainingOverviewView({ weeks: 4, nowUtc: now, tz: TZ, sessions: [workout(19, [{ load: 95, reps: 8 }])], gymNames: {}, firstWorkoutUtc: toIso(toMs(T0) + 19 * 86_400_000) });
+    expect(fresh).toMatchObject({ workouts: 1, perWeek: 1, perWeekOverWeeks: 1 });
+  });
+
+  it('working sets Ben marked as not counted are counted apart (review N5)', () => {
+    const v = trainingOverviewView({ weeks: 4, nowUtc: now, tz: TZ, sessions: [workout(7, [{ load: 120, reps: 8, exclusions: ['spotted'] }, { load: 95, reps: 8 }])], gymNames: {} });
+    const bench = v.sessions[0]?.exercises.find((e) => e.name === 'Bench press');
+    expect(bench).toMatchObject({ notCounted: 1 });
+    expect(bench?.top?.replace(/\u00a0/g, ' ')).toBe('95 kg × 8');
+    const row = v.sessions[0]?.exercises.find((e) => e.name === 'Cable row');
+    expect(row && 'notCounted' in row).toBe(false);
+  });
 });
 
 describe('equipmentView (get_gym_equipment)', () => {

@@ -417,7 +417,8 @@ export function createCoachService(deps: CoachServiceDeps) {
         const now = deps.now();
         const from = toIso(toMs(now.utc) - weeks * 7 * 86_400_000);
         const aggs = await repos().sessions.listFinishedBetween(p.id, from, now.utc).catch(() => [] as SessionAggregate[]);
-        return trainingOverviewView({ weeks, nowUtc: now.utc, tz: now.tz, sessions: aggs, gymNames: await gymNames() });
+        const firstWorkoutUtc = await repos().sessions.earliestFinishedStartUtc(p.id).catch(() => null);
+        return trainingOverviewView({ weeks, nowUtc: now.utc, tz: now.tz, sessions: aggs, gymNames: await gymNames(), firstWorkoutUtc });
       },
       async equipment(exerciseId) {
         const gym = await gymInContext(p, session);

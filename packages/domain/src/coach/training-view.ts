@@ -171,6 +171,8 @@ export interface OverviewExerciseLine {
   exerciseId: string;
   name: string;
   workingSets: number;
+  /** Of `workingSets`, how many Ben marked as not counted (spotted, form broke …); absent when none (review N5). */
+  notCounted?: number;
   /** The best counted working set of that workout, `100 kg × 8`; null when none counts. */
   top: string | null;
 }
@@ -202,8 +204,14 @@ export interface TrainingOverviewView {
   note: string;
   window: { weeks: number; from: string; to: string };
   workouts: number;
-  /** Workouts per week over the window, one decimal. */
+  /**
+   * Workouts per week, one decimal, over the weeks the history covers: the
+   * window, or the time since the first finished workout when that is
+   * later (review N4), never less than one week.
+   */
   perWeek: number;
+  /** The weeks `perWeek` is over, one decimal. */
+  perWeekOverWeeks: number;
   /** Newest first, at most `MAX_OVERVIEW_SESSIONS`. */
   sessions: OverviewSessionLine[];
   /** Exercises done in two or more workouts in the window, most often first. */
@@ -238,6 +246,8 @@ export interface TrainingOverviewInput {
   /** Finished workouts that started in the window. */
   sessions: readonly SessionAggregate[];
   gymNames: Readonly<Record<string, string>>;
+  /** When Ben's first finished workout started (any source); null or absent: the window is used as is. */
+  firstWorkoutUtc?: string | null;
 }
 
 /** `get_training_overview`: how often, what, and whether the main lifts moved, over the last weeks. */
@@ -263,7 +273,9 @@ export function trainingOverviewView(input: TrainingOverviewInput): TrainingOver
         const t = topOf(g);
         if (t !== null && (top === null || (t.load.unit === top.load.unit && t.load.convention === top.load.convention && better(t, top)))) top = t;
       }
-      exercises.push({ exerciseId: ex.exerciseId, name: ex.exerciseName, workingSets: sets.filter((s) => WORKING.has(s.setType)).length, top: top === null ? null : topText(top) });
+      const working = sets.filter((s) => WORKING.has(s.setType));
+      const notCounted = working.filter((s) => !isSetCountable(s, 'record')).length;
+      exercises.push({ exerciseId: ex.exerciseId, name: ex.exerciseName, workingSets: working.length, ...(notCounted > 0 ? { notCounted } : {}), top: top === null ? null : topText(top) });
       const entry = perExercise.get(ex.exerciseId) ?? { name: ex.exerciseName, tops: [] };
       entry.tops.push({ date, ms: toMs(agg.session.startedAt.utc), top });
       perExercise.set(ex.exerciseId, entry);
@@ -305,12 +317,17 @@ export function trainingOverviewView(input: TrainingOverviewInput): TrainingOver
       };
     });
   const workouts = sessions.length;
+  const nowMs = toMs(input.nowUtc);
+  const first = input.firstWorkoutUtc === undefined || input.firstWorkoutUtc === null ? null : toMs(input.firstWorkoutUtc);
+  const spanMs = first !== null && first > fromMs ? nowMs - first : nowMs - fromMs;
+  const overWeeks = Math.max(1, Math.round((spanMs / (7 * 86_400_000)) * 10) / 10);
   return {
     domain: YOUR_DATA,
     note: READ_NOTE,
     window: { weeks: input.weeks, from: localDateOf(fromMs, input.tz), to: localDateOf(toMs(input.nowUtc), input.tz) },
     workouts,
-    perWeek: Math.round((workouts / input.weeks) * 10) / 10,
+    perWeek: Math.round((workouts / overWeeks) * 10) / 10,
+    perWeekOverWeeks: overWeeks,
     sessions: sessions.slice(0, MAX_OVERVIEW_SESSIONS),
     trends,
   };

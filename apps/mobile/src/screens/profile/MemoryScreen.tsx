@@ -5,7 +5,7 @@ import { memoryScreenView, type MemoryRowView } from '../../coach/memory-view';
 import { newUuid } from '../../device/runtime';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, DangerTextButton, Group, PrimaryButton, Row, Screen, SectionHeader, StatusLine, TextButton, TextField, Toast } from '../../ui';
+import { AppText, BottomCard, DangerTextButton, DomainLabel, Group, PrimaryButton, Row, Screen, SectionHeader, StatusLine, TextButton, TextField, Toast } from '../../ui';
 
 /**
  * Profile → Coach → Memory (coach-memory §2.1–2.4, backlog §4.3): what the
@@ -73,6 +73,7 @@ export function MemoryScreen() {
   return (
     <Screen>
       {toast ? <Toast text={toast.text} {...(toast.undoActionId !== null ? { action: 'Undo', onAction: () => void undo(toast.undoActionId ?? '') } : {})} /> : null}
+      <DomainLabel domain="yourData" />
       {view.waiting.length > 0 ? (
         <>
           <SectionHeader title="Waiting for you" />
