@@ -199,4 +199,46 @@ describe('add an exercise from chat', () => {
     expect((await s2.coach.undo(record.actionId, `undo:${record.actionId}`)).result.status).toBe('written');
     expect((await rowsOf(s2, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Bench press']);
   });
+  it('two adds in one turn (review S1): the first returns the new version and row; the second uses them and both are added', async () => {
+    const { s, sessionId } = await benchWorkout();
+    const lastOutput = (req: ModelRequest): Record<string, unknown> => {
+      const out = [...req.input].reverse().find((i) => i.type === 'function_call_output');
+      if (out?.type !== 'function_call_output') throw new Error('no tool output');
+      return JSON.parse(out.output) as Record<string, unknown>;
+    };
+    let firstOut: Record<string, unknown> = {};
+    model = new StepModel([
+      addFromContext('Lateral raise'),
+      (req) => {
+        firstOut = lastOutput(req);
+        return addFromContext('Cable curl', { baseVersion: firstOut.sessionVersion, supersetWithSessionExerciseId: firstOut.sessionExerciseId })(req);
+      },
+      () => replyWith('Both in.'),
+    ]);
+    const r = await say(s, sessionId, 'add lateral raises and curls');
+    expect(r.cards.map((c) => c.record.status)).toEqual(['committed', 'committed']);
+    const rows = await rowsOf(s, sessionId);
+    const raise = rows.find((x) => x.row.exerciseName === 'Lateral raise');
+    expect(firstOut).toMatchObject({ status: 'committed', sessionExerciseId: raise?.row.id });
+    const d = await s.workout.load(sessionId);
+    expect(typeof firstOut.sessionVersion).toBe('number');
+    expect(firstOut.sessionVersion).toBeLessThan(d?.aggregate.session.version ?? 0);
+    expect(rows.map((x) => x.row.exerciseName)).toEqual(expect.arrayContaining(['Bench press', 'Lateral raise', 'Cable curl']));
+    const curl = rows.find((x) => x.row.exerciseName === 'Cable curl');
+    expect(curl?.row.supersetGroup ?? null).not.toBeNull();
+    expect(curl?.row.supersetGroup).toBe(raise?.row.supersetGroup);
+  });
+
+  it('a next-time add (review B2) never offers or commits today’s add; it opens the proposal tool instead', async () => {
+    const { s, sessionId } = await benchWorkout();
+    for (const text of ['add curls next time', 'can you add lateral raises to my routine', 'add face pulls from now on']) {
+      model = new StepModel([addFromContext('Lateral raise'), () => replyWith('Ok.')]);
+      const r = await say(s, sessionId, text);
+      const tools = model.requests[0]?.tools.map((t) => t.name) ?? [];
+      expect(tools).not.toContain('add_exercise_today');
+      expect(tools).toContain('propose_next_workout_change');
+      expect(r.cards.some((c) => c.record.detail.kind === 'add_exercise_today' && c.record.status === 'committed')).toBe(false);
+      expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Bench press']);
+    }
+  });
 });

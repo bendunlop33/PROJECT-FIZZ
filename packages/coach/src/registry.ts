@@ -141,7 +141,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: "Add an exercise to today's workout, with Undo",
     capabilitySection: 'when_you_ask',
     description:
-      "Add an exercise Ben asked for to today's workout: exerciseId from YOUR DATA addable (only those), working sets, a rep range (or workSeconds for a timed exercise), targetRpe, and optionally where it goes (after an exercise of today's workout, or in a superset with one that has a set left). No loads: the app plans them from his history on this gym's equipment, blank with no history. For one more set of an exercise already in the workout, use adjust_pending_sets. Done sets are never changed.",
+      "Add an exercise Ben asked for to today's workout: exerciseId from YOUR DATA addable (only those), working sets, a rep range (or workSeconds for a timed exercise), targetRpe, and optionally where it goes (after an exercise of today's workout, or in a superset with one that has a set left). No loads: the app plans them from his history on this gym's equipment, blank with no history. For one more set of an exercise already in the workout, use adjust_pending_sets. Done sets are never changed. An added exercise returns sessionVersion and sessionExerciseId: use that sessionVersion as baseVersion for the next change in this turn.",
   },
   {
     name: 'log_set',

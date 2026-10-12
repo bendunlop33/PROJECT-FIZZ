@@ -345,7 +345,20 @@ function toolOutput(result: ToolResult, ref: string | null): string {
   }
   if (result.kind === 'refused') return JSON.stringify({ status: 'not_allowed', line: result.line });
   const rendered = renderActionResult(result.record, 'sheet');
-  return JSON.stringify({ status: result.record.status, ref, line: rendered.text, guardNotes: result.record.guardNotes.map((n) => n.text), shownToBen: 'as a card' });
+  return JSON.stringify({ status: result.record.status, ref, line: rendered.text, guardNotes: result.record.guardNotes.map((n) => n.text), ...afterWrite(result.record), shownToBen: 'as a card' });
+}
+
+/**
+ * Review coach-add S1: after a committed change to today's workout, the session version it left
+ * (the next versioned call's `baseVersion`) and, for an added exercise, the new row's ID. Without
+ * them a second add in the same turn names the version the coach first read and is refused as stale.
+ */
+function afterWrite(record: ActionRecord): { sessionVersion?: number; sessionExerciseId?: string } {
+  if (record.status !== 'committed') return {};
+  const session = record.entityVersions.find((v) => v.entity === 'session');
+  const after = session?.after ?? null;
+  const version = after === null || after === session?.before ? {} : { sessionVersion: after };
+  return record.detail.kind === 'add_exercise_today' ? { ...version, sessionExerciseId: record.detail.sessionExerciseId } : version;
 }
 
 const INTERRUPTED_NOTE = 'Stopped.';
