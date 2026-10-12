@@ -136,8 +136,9 @@ export function WorkoutsScreen() {
           return;
         }
         changed();
-        showLibraryToast({ key: r.routine.id, text: LIBRARY_TOASTS.saved(r.routine.name), undo: { kind: 'delete', routineId: r.routine.id, version: r.routine.version } });
-        navigation.navigate('WorkoutEditor', { routineId: r.routine.id, from: 'Workouts', selectName: true });
+        // The toast comes back with Cancel, so its Undo is reachable (review S1).
+        const copyToast = { key: r.routine.id, text: LIBRARY_TOASTS.saved(r.routine.name), undo: { kind: 'delete' as const, routineId: r.routine.id, version: r.routine.version } };
+        navigation.navigate('WorkoutEditor', { routineId: r.routine.id, from: 'Workouts', selectName: true, copyToast });
       } else if (action === LIBRARY_COPY_UI.addToRotation || action === LIBRARY_COPY_UI.removeFromRotation) {
         const on = action === LIBRARY_COPY_UI.addToRotation;
         const before = await services.routines.editor({ routineId: row.routineId, gymId: null });

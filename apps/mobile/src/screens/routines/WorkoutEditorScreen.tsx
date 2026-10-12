@@ -10,6 +10,7 @@ import {
   editorItemFor,
   editorMainFlags,
   editorSetRows,
+  editableEdit,
   editorSummaryLine,
   fixedLoadFrame,
   fixedLoadNote,
@@ -32,7 +33,7 @@ import {
 import type { EquipmentInstance, LoadConvention, RoutineExercise, SetTemplate, SetType, WeightUnit } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
-import { popToFromEditor } from '../../navigation/actions';
+import { backFromEditor, popToFromEditor } from '../../navigation/actions';
 import type { LibraryToastParam, RootStackParams } from '../../navigation/types';
 import type { EditorExerciseInfo, RoutineEditorData } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
@@ -66,7 +67,7 @@ export function WorkoutEditorScreen() {
   const changed = useDataChanged();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { routineId, from, selectName } = useRoute<RouteProp<RootStackParams, 'WorkoutEditor'>>().params;
+  const { routineId, from, selectName, copyToast } = useRoute<RouteProp<RootStackParams, 'WorkoutEditor'>>().params;
   const [data, setData] = useState<RoutineEditorData | null | 'loading'>('loading');
   const [name, setName] = useState('');
   const [list, setList] = useState<RoutineExercise[]>([]);
@@ -148,7 +149,7 @@ export function WorkoutEditorScreen() {
 
   function cancel() {
     if (!dirty) {
-      navigation.goBack();
+      navigation.dispatch(backFromEditor(from, copyToast));
       return;
     }
     Alert.alert(EDITOR_COPY.discardTitle, undefined, [
@@ -157,7 +158,7 @@ export function WorkoutEditorScreen() {
         text: EDITOR_COPY.discard,
         style: 'destructive',
         onPress: () => {
-          navigation.goBack();
+          navigation.dispatch(backFromEditor(from, copyToast));
         },
       },
     ]);
@@ -185,7 +186,9 @@ export function WorkoutEditorScreen() {
       if (expectedVersion === null) return;
       const r = await services.routines.update({ routineId, edit: next, expectedVersion, opId: opId.current });
       if (r.ok) {
-        finish({ key: opId.current, text: LIBRARY_TOASTS.saved(r.routine.name), undo: r.actionId === null ? null : { kind: 'revert', actionId: r.actionId } });
+        // A fresh copy's Undo still removes the copy (review S1); otherwise it puts the last version back.
+        const undo = copyToast !== undefined ? { kind: 'delete' as const, routineId: r.routine.id, version: r.routine.version } : r.actionId === null ? null : { kind: 'revert' as const, actionId: r.actionId };
+        finish({ key: opId.current, text: LIBRARY_TOASTS.saved(r.routine.name), undo });
         return;
       }
       if (r.reason === 'stale') {
@@ -200,12 +203,13 @@ export function WorkoutEditorScreen() {
   }
 
   // Keep both (v0.1 §3.3): my edits on the newer version; a new opId, since it is a new save.
-  const merge = stale === null ? null : mergeRoutineEdits(base.current, edit, { name: stale.current.name, exercises: [...stale.current.exercises].sort((a, b) => a.order - b.order) }, picks);
+  // The newer version as the editor sees it (a pre-library workout's loads read as Auto), never raw (review S3).
+  const merge = stale === null ? null : mergeRoutineEdits(base.current, edit, editableEdit(stale.current), picks);
 
   function keepBoth() {
     if (stale === null || merge === null) return;
     const current = stale.current;
-    base.current = { name: current.name, exercises: [...current.exercises].sort((a, b) => a.order - b.order) };
+    base.current = editableEdit(current);
     setName(merge.merged.name);
     setList([...merge.merged.exercises]);
     setStale(null);

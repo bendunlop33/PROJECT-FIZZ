@@ -24,6 +24,7 @@ import { NameSheet } from './routines/NameSheet';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
+import { LIBRARY_TOASTS } from '../workout/library-view';
 
 /**
  * Today (today.md, D-Today mockup): date and gym, banners, one hero (Resume,
@@ -293,7 +294,7 @@ export function TodayScreen() {
             const gone = r.routine;
             changed();
             setToast({
-              text: `Deleted ${gone.name}`,
+              text: LIBRARY_TOASTS.deleted(gone.name),
               action: 'Undo',
               onAction: () => {
                 void services.routines.restore({ routineId: gone.id, expectedVersion: gone.version, opId: newUuid() }).then((u) => {

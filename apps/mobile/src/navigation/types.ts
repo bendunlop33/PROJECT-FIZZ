@@ -91,9 +91,10 @@ export type RootStackParams = {
   /**
    * The workout editor (§A2.3): a stored workout, or `New workout` (null).
    * `from`: where `Save` returns with its toast. `selectName`: a fresh copy
-   * from `Duplicate` (the name is selected).
+   * from `Duplicate` (the name is selected). `copyToast`: that copy's
+   * `Saved Push A copy` [Undo] toast, handed back on `Cancel` (review S1).
    */
-  WorkoutEditor: { routineId: string | null; from: 'Workouts' | 'WorkoutOverview'; selectName?: boolean };
+  WorkoutEditor: { routineId: string | null; from: 'Workouts' | 'WorkoutOverview'; selectName?: boolean; copyToast?: LibraryToastParam };
   ExercisePicker: { sessionId: string };
   /** How to (ADR 0013): guide, cues and mistakes for a catalogue exercise. Opened only when it has a how-to. */
   HowTo: { catalogueKey: string; name: string };

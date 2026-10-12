@@ -70,6 +70,15 @@ export function popToFromEditor(from: 'Workouts' | 'WorkoutOverview', toast: Lib
 }
 
 /**
+ * The editor's `Cancel` (or `Discard`): back where it came from. A fresh copy
+ * from `Duplicate` hands back its `Saved Push A copy` [Undo] toast, so the
+ * copy can still be undone (review S1); otherwise a plain back.
+ */
+export function backFromEditor(from: 'Workouts' | 'WorkoutOverview', copyToast: LibraryToastParam | undefined) {
+  return copyToast === undefined ? ({ type: 'GO_BACK' } as const) : popToFromEditor(from, copyToast);
+}
+
+/**
  * `Edit workouts` from the overview's picker (§A2.4): the list takes the
  * overview's place, so a row's overview is a fresh page (never a stale one
  * found under the list).

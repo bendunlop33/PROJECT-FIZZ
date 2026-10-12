@@ -38,7 +38,7 @@ export function RepeatScreen() {
   const [chosenGymId, setChosenGymId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const alertsAsk = useStartAlertsAsk();
-  // `Save to Workouts` (routines.md §4.6, WL6): Repeat's save keeps the loads as Fixed. One opId per sheet opening.
+  // `Save to Workouts` (routines.md §4.6, §A2.6, WL6): the Repeat preview at this gym, its loads as Fixed. One opId per sheet opening.
   const [saved, setSaved] = useState<{ id: string; name: string; version: number } | null>(null);
   const saveSheet = useSaveToWorkouts(
     (made) => {
@@ -188,7 +188,7 @@ export function RepeatScreen() {
           <TextButton
             label={LIBRARY_COPY_UI.saveToWorkouts}
             onPress={() => {
-              void saveSheet.open({ kind: 'session', sessionId, keepLoads: true }, preview.title);
+              void saveSheet.open({ kind: 'repeat', sessionId, gymId: gym.id }, preview.title);
             }}
           />
         </View>

@@ -417,7 +417,7 @@ export function WorkoutOverviewScreen() {
               return;
             }
             changed();
-            navigation.dispatch(popToTabs({ screen: 'Today', params: { toast: `Deleted ${r.routine.name}`, undoRoutine: { id: r.routine.id, version: r.routine.version } } }));
+            navigation.dispatch(popToTabs({ screen: 'Today', params: { toast: LIBRARY_TOASTS.deleted(r.routine.name), undoRoutine: { id: r.routine.id, version: r.routine.version } } }));
           });
         },
       },
@@ -460,8 +460,9 @@ export function WorkoutOverviewScreen() {
       return;
     }
     changed();
-    showLibraryToast({ key: r.routine.id, text: LIBRARY_TOASTS.saved(r.routine.name), undo: { kind: 'delete', routineId: r.routine.id, version: r.routine.version } });
-    navigation.navigate('WorkoutEditor', { routineId: r.routine.id, from: 'WorkoutOverview', selectName: true });
+    // The toast comes back with Cancel, so its Undo is reachable (review S1).
+    const copyToast = { key: r.routine.id, text: LIBRARY_TOASTS.saved(r.routine.name), undo: { kind: 'delete' as const, routineId: r.routine.id, version: r.routine.version } };
+    navigation.navigate('WorkoutEditor', { routineId: r.routine.id, from: 'WorkoutOverview', selectName: true, copyToast });
   }
 
   /** `Add to rotation` / `Remove from rotation` (RT9), with Undo back to the same place. */

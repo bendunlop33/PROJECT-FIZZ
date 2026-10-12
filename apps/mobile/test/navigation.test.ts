@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { openGymFromWorkout, openStartedWorkout, openWorkoutToCheckGym, popToFromEditor, popToTabs, popToToday, replaceWithSummary, replaceWithWorkouts } from '../src/navigation/actions';
+import { backFromEditor, openGymFromWorkout, openStartedWorkout, openWorkoutToCheckGym, popToFromEditor, popToTabs, popToToday, replaceWithSummary, replaceWithWorkouts } from '../src/navigation/actions';
 import { initialRootState } from '../src/navigation/initial-state';
 
 describe('root stack at launch (review S5)', () => {
@@ -147,6 +147,29 @@ describe('Workouts library routes (routines.md §A3)', () => {
     s = apply(s, popToFromEditor('WorkoutOverview', toast));
     expect(s.routes.map((r) => r.name)).toEqual(['Tabs', 'WorkoutOverview']);
     expect(s.routes[1]?.params).toEqual({ target: { kind: 'routine', routineId: 'r' }, toast });
+  });
+
+  it('Duplicate: Cancel in the fresh copy’s editor hands its Undo toast back to the list or the overview (review S1)', () => {
+    const copy = { key: 'c', text: 'Saved Push A copy', undo: { kind: 'delete' as const, routineId: 'c', version: 1 } };
+    let s = apply(router.getInitialState(options), navigate('Workouts'));
+    s = apply(s, navigate('WorkoutEditor', { routineId: 'c', from: 'Workouts', selectName: true, copyToast: copy }));
+    s = apply(s, backFromEditor('Workouts', copy));
+    expect(s.routes.map((r) => r.name)).toEqual(['Tabs', 'Workouts']);
+    expect(s.routes[1]?.params).toEqual({ toast: copy });
+    let o = apply(router.getInitialState(options), navigate('WorkoutOverview', { target: { kind: 'routine', routineId: 'r' } }));
+    o = apply(o, navigate('WorkoutEditor', { routineId: 'c', from: 'WorkoutOverview', selectName: true, copyToast: copy }));
+    o = apply(o, backFromEditor('WorkoutOverview', copy));
+    expect(o.routes[1]?.params).toEqual({ target: { kind: 'routine', routineId: 'r' }, toast: copy });
+    // Not a fresh copy: a plain back, no toast.
+    let e = apply(router.getInitialState(options), navigate('Workouts'));
+    e = apply(e, navigate('WorkoutEditor', { routineId: 'r', from: 'Workouts' }));
+    e = apply(e, backFromEditor('Workouts', undefined));
+    expect(e.routes.map((r) => r.name)).toEqual(['Tabs', 'Workouts']);
+    expect(e.routes[1]?.params).toEqual({});
+    // Both Duplicate entry points hand the toast to the editor instead of showing it under it; the editor's Cancel uses it.
+    const src = (f: string) => readFileSync(join(__dirname, '..', 'src', 'screens', f), 'utf8');
+    for (const f of ['routines/WorkoutsScreen.tsx', 'workout/WorkoutOverviewScreen.tsx']) expect(src(f)).toMatch(/selectName: true, copyToast \}\);/);
+    expect(src('routines/WorkoutEditorScreen.tsx').match(/navigation\.dispatch\(backFromEditor\(from, copyToast\)\)/g)).toHaveLength(2);
   });
 
   it('editor Save returns to the list; Edit workouts from the overview replaces it with the list', () => {

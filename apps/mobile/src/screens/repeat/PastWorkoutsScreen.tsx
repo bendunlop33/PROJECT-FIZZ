@@ -67,9 +67,6 @@ export function PastWorkoutsScreen() {
   return (
     <View style={{ flex: 1 }}>
     <Screen>
-      <AppText variant="callout" color="text.secondary">
-        Pick a workout to do again. Its sets become today’s targets; nothing is marked done.
-      </AppText>
       {data.value.unreadable > 0 ? (
         <StatusLine
           icon="exclamationmark.triangle"
