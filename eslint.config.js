@@ -24,7 +24,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['**/test/**', 'vitest.config.ts', 'eslint.config.js'],
+    files: ['**/test/**', 'vitest.config.ts', 'vitest.perf.config.ts', 'eslint.config.js'],
     rules: { 'no-restricted-globals': 'off' },
   },
   {

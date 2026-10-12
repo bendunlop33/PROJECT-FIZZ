@@ -12,6 +12,7 @@
     "packages/*/scripts",
     "scripts",
     "vitest.config.ts",
+    "vitest.perf.config.ts",
     "eslint.config.js"
   ]
 }
