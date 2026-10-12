@@ -16,7 +16,7 @@ interface ButtonProps {
  * design-system §9.2. The one accent-filled button on a screen; the label says
  * what will happen. 60pt tall, full width; corner from the look (D: pill).
  */
-export function PrimaryButton({ label, onPress, disabled = false, busy = false, accessibilityHint }: ButtonProps & { busy?: boolean }) {
+export function PrimaryButton({ label, onPress, disabled = false, busy = false, accessibilityHint, lead = null }: ButtonProps & { busy?: boolean; /** `Bench · ` before the label (Table, open row off-screen): truncates first; the label never does. */ lead?: string | null }) {
   const theme = useTheme();
   const press = usePressScale('primary');
   const inactive = disabled || busy;
@@ -25,7 +25,7 @@ export function PrimaryButton({ label, onPress, disabled = false, busy = false, 
     <Animated.View style={press.style}>
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={lead !== null ? `${lead}, ${label}` : label}
       accessibilityState={state}
       {...(accessibilityHint ? { accessibilityHint } : {})}
       disabled={inactive}
@@ -45,7 +45,12 @@ export function PrimaryButton({ label, onPress, disabled = false, busy = false, 
       })}
     >
       {busy ? <ActivityIndicator color={theme.colors['on.accent']} /> : null}
-      <AppText variant="headline" color={disabled ? 'text.secondary' : 'on.accent'} align="center">
+      {lead !== null ? (
+        <AppText variant="headline" color={disabled ? 'text.secondary' : 'on.accent'} numberOfLines={1} style={{ flexShrink: 1 }}>
+          {`${lead} ·`}
+        </AppText>
+      ) : null}
+      <AppText variant="headline" color={disabled ? 'text.secondary' : 'on.accent'} align="center" style={lead !== null ? { flexShrink: 0, maxWidth: '100%' } : undefined}>
         {label}
       </AppText>
     </Pressable>

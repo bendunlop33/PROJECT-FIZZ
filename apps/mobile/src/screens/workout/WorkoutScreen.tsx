@@ -1,9 +1,9 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, View, type TextInput } from 'react-native';
+import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, isRemovable, midSwapSlot, saveDraftCommand, tableLogLabel, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -66,16 +66,21 @@ import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../
 import { UNDO_TOAST } from '../../workout/undo-op';
 import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
+import { AX_FONT_SCALE } from '../../workout/overview';
+import { anchorReducer, selectCommand, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type ChipState } from '../../workout/table';
+import { ChatButton, DoneChip, NowChip, OpenSetRow, RestBar, WorkoutTable, type WorkoutTableHandle } from './WorkoutTable';
 
 /**
- * Active workout: focused set card, rest, summary hand-off
+ * Active workout: the Table view (default, active-workout §2A) or the
+ * focused set card (Focus, in `⋯`), rest, summary hand-off
  * (active-workout.md, rest-state.md, flow-first-milestone.md).
  *
  * Every value shown comes from `buildActiveSetView` (domain); this screen
  * only holds Ben's unsaved edits, the 1 s commit guard, and toasts. Every
  * write is one service command with an operation ID; the core never waits
- * on alerts, haptics or anything optional. Overview (`All`) and the custom
- * keypad are later items; the system number pad with a Done bar is used.
+ * on alerts, haptics or anything optional. Both views share one Log path
+ * (`log` below). The custom keypad is a later item; the system number pad
+ * with a Done bar is used.
  */
 
 interface ToastState {
@@ -118,7 +123,26 @@ export function WorkoutScreen() {
   const [swap, setSwap] = useState<{ sessionExerciseId: string; exerciseName: string; sheet: SwapSheet | null; loading: boolean } | null>(null);
   const [hiddenWarmUps, setHiddenWarmUps] = useState<string[]>([]);
   const [permission, setPermission] = useState<AlertPermission | 'unknown'>('unknown');
-  const { prefs } = useDevicePrefs();
+  const { prefs, update: updatePrefs } = useDevicePrefs();
+  /** Table (default) or Focus, remembered on this phone (active-workout §4.5). */
+  const mode = workoutViewOf(prefs.workoutView);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const { fontScale } = useWindowDimensions();
+  const ax = fontScale >= AX_FONT_SCALE;
+  // Table anchoring (§2A.4): only these events move the list; Ben's own scrolling always wins.
+  const [anchorRequest, setAnchorRequest] = useState<AnchorRequest | null>(null);
+  const reduceMotionRef = useRef(false);
+  reduceMotionRef.current = theme.a11y.reduceMotion;
+  const anchorEvent = useCallback((e: AnchorEvent) => {
+    setAnchorRequest((cur) => anchorReducer(cur, e, { reduceMotion: reduceMotionRef.current }));
+  }, []);
+  const [chips, setChips] = useState<ChipState>({ done: false, now: null });
+  const tableRef = useRef<WorkoutTableHandle>(null);
+  /** The full rest view over Table (tap on the rest bar's countdown, §2A.6). */
+  const [restFull, setRestFull] = useState(false);
+  /** The set the after-set block (effort, offer) belongs to: until the next Log or another row is selected. */
+  const [afterSetFor, setAfterSetFor] = useState<string | null>(null);
   const [restoredDraft, setRestoredDraft] = useState<string | null>(null);
   /** Gym switch (gym-switch.md): the switcher sheet's rows, the open card, its review sheet. */
   const [gymSheet, setGymSheet] = useState<GymChoice[] | null | 'closed'>('closed');
@@ -214,6 +238,8 @@ export function WorkoutScreen() {
     const shown = Keyboard.addListener('keyboardWillShow', () => {
       setKeypadOpen(true);
       whyEvent({ kind: 'keypad_opened' });
+      // Table: the open row stays visible above the keypad.
+      if (modeRef.current === 'table') anchorEvent({ kind: 'keypad_opened' });
     });
     const hidden = Keyboard.addListener('keyboardWillHide', () => {
       setKeypadOpen(false);
@@ -222,7 +248,7 @@ export function WorkoutScreen() {
       shown.remove();
       hidden.remove();
     };
-  }, [whyEvent]);
+  }, [whyEvent, anchorEvent]);
 
   useEffect(() => {
     void getAlertPermission()
@@ -373,7 +399,12 @@ export function WorkoutScreen() {
   const drawn = useRef(false);
   const hasView = view !== null;
   useEffect(() => {
-    if (hasView) drawn.current = true;
+    if (!hasView || drawn.current) return;
+    drawn.current = true;
+    // Opened (Start, Resume, relaunch after a force-close): anchored on the stored active set, no animation (§2A.4).
+    anchorEvent({ kind: 'opened' });
+    // Restored mid-rest: the after-set block (effort chips) belongs to the set just saved.
+    if (view.rest?.kind === 'running' && view.justSaved) setAfterSetFor(view.justSaved.setId);
   }, [hasView]);
 
   useEffect(() => {
@@ -388,6 +419,8 @@ export function WorkoutScreen() {
     };
   }, []);
   const timeLeft = useMemo(() => (data === 'loading' || data === null ? null : services.workout.timeLeft(data, timeLeftNow)), [services, data, timeLeftNow]);
+  // The Table's rows change on events (data, drafts) and its pain checks once a minute; never every second.
+  const table = useMemo(() => (data === 'loading' || data === null || mode !== 'table' ? null : services.workout.tableView(data, timeLeftNow, edits)), [services, data, timeLeftNow, edits, mode]);
 
   // Edits belong to one set; when the active set changes, they are dropped (they were saved as a draft).
   useEffect(() => {
@@ -645,6 +678,9 @@ export function WorkoutScreen() {
         .then(showRecord);
     // Path B: a pure check on the logged set, no AI call (coach-adjustments §4.2).
     coach.afterLog(r.aggregate, loggedSetId);
+    // Table: the saved row slides up and the next open row comes to the top (§2A.4 auto-advance).
+    setAfterSetFor(loggedSetId);
+    anchorEvent({ kind: 'logged' });
     setEdits(null);
     whyEvent({ kind: 'logged' });
     setRestoredDraft(null);
@@ -780,7 +816,86 @@ export function WorkoutScreen() {
     });
   }
 
-  async function openSwap(f: FocusView) {
+  /**
+   * `⋯` on a Table card that isn't the current one (§2A.7): the same menu,
+   * acting on that exercise; `Delete this set` acts on its next pending set.
+   * The current card uses `openExerciseMenu` (its open row's set).
+   */
+  function openCardMenu(sessionExerciseId: string) {
+    if (focus !== null && sessionExerciseId === focus.sessionExerciseId) {
+      openExerciseMenu(focus);
+      return;
+    }
+    const ex = loaded.aggregate.exercises.find((e) => e.id === sessionExerciseId);
+    if (!ex) return;
+    const card = { sessionExerciseId, exerciseId: ex.exerciseId, exerciseName: ex.exerciseName };
+    const next = loaded.aggregate.sets.filter((x) => x.sessionExerciseId === sessionExerciseId && x.status === 'pending').sort((a, b) => a.index - b.index)[0];
+    const howTo = howToRouteFor(card, bundledHowToSources());
+    const menu = exerciseMenu(howTo !== null, false, { canSwap: midSwapSlot(loaded.aggregate, sessionExerciseId) !== null, canRemove: isRemovable(loaded.aggregate, ex) });
+    ActionSheetIOS.showActionSheetWithOptions({ title: ex.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
+      const action = menu.actionAt(picked);
+      if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
+      if (action === 'add_set') void addSet(sessionExerciseId);
+      if (action === 'swap') void openSwap(card);
+      if (action === 'notes') setNoteFor({ sessionExerciseId, exerciseName: ex.exerciseName, note: ex.note ?? null });
+      if (action === 'add_exercise') navigation.navigate('ExercisePicker', { sessionId: session.id });
+      if (action === 'delete_set') {
+        if (!next) {
+          showToast({ icon: 'info.circle', text: 'No set left to delete' });
+          return;
+        }
+        const opId = newUuid();
+        const n = table?.blocks.flatMap((b) => (b.kind === 'exercise' ? b.card.rows : b.superset.rounds.flatMap((r) => r.rows))).find((r) => r.setId === next.id)?.number ?? 1;
+        void run({ type: 'delete_set', at: services.now(), opId, setId: next.id, expectedSetVersion: next.version }).then((r) => {
+          if (r.ok) toastUndoOp(UNDO_TOAST.deleted(n), opId, session.id);
+          else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
+        });
+      }
+      if (action === 'remove_exercise') {
+        const opId = newUuid();
+        void run({ type: 'remove_exercise', at: services.now(), opId, sessionExerciseId, expectedVersion: session.version }).then((r) => {
+          if (r.ok) toastUndoOp(UNDO_TOAST.removed(ex.exerciseName), opId, session.id);
+          else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
+        });
+      }
+      if (action === 'skip_exercise') {
+        const opId = newUuid();
+        void run({ type: 'skip_exercise', at: services.now(), opId, sessionExerciseId }).then((r) => {
+          if (r.ok) toastUndoOp(UNDO_TOAST.skipped(ex.exerciseName), opId, session.id);
+          else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
+        });
+      }
+    });
+  }
+
+  /** The exercise name `›` (§2A.7): How to, History, Rest after (the open row's), Notes. */
+  function openExerciseSheet(card: { sessionExerciseId: string; exerciseId: string; name: string; isCurrent: boolean }) {
+    const howTo = howToRouteFor({ exerciseId: card.exerciseId, exerciseName: card.name }, bundledHowToSources());
+    const ex = loaded.aggregate.exercises.find((e) => e.id === card.sessionExerciseId);
+    const items: { label: string; run: () => void }[] = [
+      ...(howTo !== null ? [{ label: 'How to', run: () => { navigation.navigate('HowTo', howTo); } }] : []),
+      { label: 'History', run: () => { navigation.navigate('ExerciseProgress', { exerciseId: card.exerciseId, name: card.name, ...(ex?.equipmentId ? { equipmentId: ex.equipmentId } : {}) }); } },
+      ...(card.isCurrent && focus !== null ? [{ label: `Rest after ${formatDuration(focus.restAfterS)}`, run: () => { setRestEditor(true); } }] : []),
+      { label: 'Notes', run: () => { setNoteFor({ sessionExerciseId: card.sessionExerciseId, exerciseName: card.name, note: ex?.note ?? null }); } },
+    ];
+    ActionSheetIOS.showActionSheetWithOptions({ title: card.name, options: [...items.map((x) => x.label), 'Cancel'], cancelButtonIndex: items.length }, (i) => {
+      items[i]?.run();
+    });
+  }
+
+  /** `⚠ Pain` on a Table header opens that movement's flag (§2.14.4). */
+  function openPainBadge(exerciseId: string) {
+    const flag = loaded.painFlags.find((f) => f.exerciseId === exerciseId && f.status === 'active');
+    if (flag) openPainFlag(flag.id);
+  }
+
+  /** A non-current row (or its ring) only becomes the open row: `set_active_set`, never a log (Ben, decision 4). */
+  function selectRow(setId: string) {
+    setAfterSetFor(null);
+    void run(selectCommand(setId, session.version, services.now(), newUuid()));
+  }
+
+  async function openSwap(f: Pick<FocusView, 'sessionExerciseId' | 'exerciseName'>) {
     setSwap({ sessionExerciseId: f.sessionExerciseId, exerciseName: f.exerciseName, sheet: null, loading: true });
     const sheet = await services.workout.swapCandidates(session.id, f.sessionExerciseId).catch(() => null);
     setSwap((cur) => (cur?.sessionExerciseId === f.sessionExerciseId ? { ...cur, sheet, loading: false } : cur));
@@ -995,18 +1110,37 @@ export function WorkoutScreen() {
    * `Rename workout` isn't offered on an open-ended workout in progress: it's named after Finish (its Summary).
    */
   function topMenu() {
-    const items: { label: string; run: () => void }[] = [
-      { label: session.pause === null ? 'Pause workout' : 'Resume workout', run: () => void pauseOrResume() },
-      ...(view?.openEnded ? [] : [{ label: 'Rename workout', run: () => { renameOp.current = newUuid(); setRenameOpen(true); } }]),
-      { label: 'Ask the coach', run: () => { navigation.navigate('Coach', { entry: { kind: 'workout', sessionId: session.id } }); } },
-      { label: 'Finish workout', run: () => { setFinishOpen(true); } },
-      { label: 'Edit workout times', run: () => { setTimesOpen(true); } },
-      { label: 'Discard workout', run: confirmDiscard },
-    ];
+    const run: Record<ReturnType<typeof workoutMenu>[number]['id'], () => void> = {
+      view: () => {
+        const next = mode === 'table' ? 'focus' : 'table';
+        updatePrefs({ workoutView: next });
+        // Back in Table: anchored on the open row again (check 10).
+        if (next === 'table') anchorEvent({ kind: 'view_switched' });
+      },
+      pause: () => void pauseOrResume(),
+      rename: () => {
+        renameOp.current = newUuid();
+        setRenameOpen(true);
+      },
+      gym: openGymSheet,
+      coach: openCoach,
+      finish: () => {
+        setFinishOpen(true);
+      },
+      edit_times: () => {
+        setTimesOpen(true);
+      },
+      discard: confirmDiscard,
+    };
+    const items = workoutMenu({ view: mode, paused: session.pause !== null, openEnded: view?.openEnded ?? false, ax, gymName: loaded.gymName }).map((m) => ({ label: m.label, run: run[m.id] }));
     const options = [...items.map((x) => x.label), 'Cancel'];
     ActionSheetIOS.showActionSheetWithOptions({ options, destructiveButtonIndex: items.length - 1, cancelButtonIndex: items.length }, (i) => {
       items[i]?.run();
     });
+  }
+
+  function openCoach() {
+    navigation.navigate('Coach', { entry: { kind: 'workout', sessionId: session.id } });
   }
 
   /** `Rename workout` (premium-feel §2.6): versioned; Undo renames back. The routine keeps its name. */
@@ -1166,22 +1300,25 @@ export function WorkoutScreen() {
   const lastExercise = view.exercises.at(-1) ?? null;
   const effortScale = loaded.effortScale;
 
+  const effortChips = (
+    <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
+      {(effortScale === 'rir' ? EFFORT_RIR : EFFORT_RPE).map((n) => (
+        <Chip
+          key={n}
+          grow
+          label={effortScale === 'rir' && n === 4 ? '4+' : String(n)}
+          accessibilityLabel={effortScale === 'rir' ? `${String(n)} reps in reserve` : `RPE ${String(n)}`}
+          selected={(effortScale === 'rir' ? view.justSaved?.rir : view.justSaved?.rpe) === n}
+          onPress={() => void effort(n)}
+        />
+      ))}
+    </View>
+  );
   const effortBlock =
     view.justSaved && effortScale !== 'off' ? (
       <View style={{ gap: theme.space['3'] }}>
         <Eyebrow>{effortScale === 'rir' ? 'Reps in reserve' : 'Effort'}</Eyebrow>
-        <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-          {(effortScale === 'rir' ? EFFORT_RIR : EFFORT_RPE).map((n) => (
-            <Chip
-              key={n}
-              grow
-              label={effortScale === 'rir' && n === 4 ? '4+' : String(n)}
-              accessibilityLabel={effortScale === 'rir' ? `${String(n)} reps in reserve` : `RPE ${String(n)}`}
-              selected={(effortScale === 'rir' ? view.justSaved?.rir : view.justSaved?.rpe) === n}
-              onPress={() => void effort(n)}
-            />
-          ))}
-        </View>
+        {effortChips}
       </View>
     ) : null;
 
@@ -1214,6 +1351,25 @@ export function WorkoutScreen() {
       <GymSwitchCard view={switchCardView(switchCard, loaded.aggregate)} onButton={onCardButton} />
     ) : null;
 
+  function adjustRest(deltaS: number) {
+    if (rest?.kind !== 'running') return;
+    void run({ type: 'adjust_rest', at: services.now(), opId: newUuid(), timerId: rest.timerId, deltaS }).then((r) => {
+      // −30 s to zero ends the rest here: play the rest-end cue once (review S6).
+      const key = r.ok ? restEndCueKey(r.events) : null;
+      if (key !== null && !played.current.has(key)) {
+        played.current.add(key);
+        haptic('restEnd');
+      }
+    });
+  }
+
+  function skipRest() {
+    if (rest?.kind !== 'running') return;
+    void run({ type: 'skip_rest', at: services.now(), opId: `skip:${rest.timerId}:${String(rest.timerVersion)}`, timerId: rest.timerId }).then((r) => {
+      if (r.ok) haptic('undo');
+    });
+  }
+
   const restPanel =
     resting ? (
       <View style={{ gap: theme.space['5'] }}>
@@ -1221,23 +1377,8 @@ export function WorkoutScreen() {
           rest={rest}
           ready={holding}
           upNext={view.upNext !== null ? `Next · ${view.upNext}` : focus === null ? (view.openEnded ? 'Next · add exercise' : null) : null}
-          onAdjust={(deltaS) => {
-            if (rest.kind !== 'running') return;
-            void run({ type: 'adjust_rest', at: services.now(), opId: newUuid(), timerId: rest.timerId, deltaS }).then((r) => {
-              // −30 s to zero ends the rest here: play the rest-end cue once (review S6).
-              const key = r.ok ? restEndCueKey(r.events) : null;
-              if (key !== null && !played.current.has(key)) {
-                played.current.add(key);
-                haptic('restEnd');
-              }
-            });
-          }}
-          onSkip={() => {
-            if (rest.kind !== 'running') return;
-            void run({ type: 'skip_rest', at: services.now(), opId: `skip:${rest.timerId}:${String(rest.timerVersion)}`, timerId: rest.timerId }).then((r) => {
-              if (r.ok) haptic('undo');
-            });
-          }}
+          onAdjust={adjustRest}
+          onSkip={skipRest}
         />
         {switchSlot}
         {view.justSaved ? (
@@ -1609,6 +1750,140 @@ export function WorkoutScreen() {
     </View>
   ) : null;
 
+  // ---- Table view (active-workout §2A) ----
+  const tableMode = mode === 'table' && table !== null && view.phase !== 'empty';
+  const pill = tableMode ? tableLogLabel(view.primary, table.log, { offscreen: chips.now !== null }) : null;
+  const barPrimary = pill === null ? primary : { ...primary, label: pill.label, lead: pill.lead };
+  const afterSetSaved = view.justSaved !== null && view.justSaved.setId === afterSetFor ? view.justSaved : null;
+  const painReviewNode =
+    view.painReview && afterSetSaved && view.painReview.afterSetId === afterSetSaved.setId ? (
+      <PainReviewLine
+        question={view.painReview.question}
+        fact={view.painReview.fact}
+        onStillHurts={() => {
+          const r = view.painReview;
+          if (r) void answerStillHurts(services, r.flagId, r.flagVersion, painOutcome);
+        }}
+        onBetter={() => {
+          const r = view.painReview;
+          if (!r) return;
+          void services.pain.get(r.flagId).then((flag) => {
+            if (flag) confirmClearFlag(services, flag, painOutcome);
+          });
+        }}
+      />
+    ) : null;
+  const effortHere = afterSetSaved !== null && effortScale !== 'off';
+  const afterSetNode =
+    tableMode && (effortHere || coach.slot !== null || switchSlot !== null || painReviewNode !== null || recordLine !== null) ? (
+      <View style={{ gap: theme.space['3'], paddingVertical: theme.space['3'] }}>
+        {switchSlot}
+        {effortHere ? (
+          <View style={{ gap: theme.space['2'] }}>
+            <AppText variant="label" color="text.tertiary">
+              {`${afterSetSaved.exerciseName !== focus?.exerciseName ? `${afterSetSaved.exerciseName.toUpperCase()} · ` : ''}SET ${String(afterSetSaved.setNumber)} ${effortScale === 'rir' ? 'REPS IN RESERVE' : 'EFFORT'}`}
+            </AppText>
+            {effortChips}
+          </View>
+        ) : null}
+        {recordLine}
+        {painReviewNode}
+        <CoachSlot>{coach.slot !== null ? <CoachSlotContent coach={coach} /> : null}</CoachSlot>
+      </View>
+    ) : null;
+  const afterSetKey = afterSetNode === null ? null : (afterSetSaved?.setId ?? 'slot');
+  const openRowNode = focus ? (
+    <OpenSetRow
+      focus={focus}
+      resting={view.phase === 'resting'}
+      ax={ax}
+      keypadOpen={keypadOpen}
+      caption={restored ? 'Unsaved edit restored' : copied}
+      timedLogLabel={view.primary.kind === 'start_work' ? view.primary.logLabel : null}
+      whyOpen={why !== null && why.setId === focus.setId}
+      whyPanel={
+        why !== null && why.setId === focus.setId ? (
+          <TargetWhyPanel
+            panel={why}
+            onPainFlag={(flagId) => {
+              openPainFlag(flagId, focus.sessionExerciseId);
+            }}
+          />
+        ) : null
+      }
+      loadRef={loadRef}
+      repsRef={repsRef}
+      timeRef={timeRef}
+      distanceRef={distanceRef}
+      onCopyLast={() => {
+        const prev = focus.previous;
+        if (!prev) return;
+        setEdits({ setId: focus.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
+      }}
+      onLoad={(v) => {
+        editLoad(focus, v);
+      }}
+      onReps={(v) => {
+        setValues({ ...focus.draft, reps: v === null ? null : Math.round(v) });
+      }}
+      onTime={(v) => {
+        setValues({ ...focus.draft, durationS: v === null ? null : Math.max(0, Math.round(v)) });
+      }}
+      onDistance={(v) => {
+        setValues({ ...focus.draft, distanceM: v === null ? null : Math.max(0, v) });
+      }}
+      onSide={(side) => {
+        setValues(focus.draft, side);
+      }}
+      onWhy={() => {
+        toggleWhy(focus);
+      }}
+      onRestAfter={() => {
+        setRestEditor(true);
+      }}
+      onPainFlag={() => {
+        openPainFlag(focus.painFlag?.flagId ?? '', focus.sessionExerciseId);
+      }}
+      onOffProfile={() => {
+        openOffProfileEquipment(focus.offProfileEquipment);
+      }}
+      onTimedLog={() => void log()}
+    />
+  ) : null;
+  const tableFooter = tableMode ? (
+    <>
+      {table.allDone ? (
+        <View style={{ gap: theme.space['3'] }}>
+          <AppText variant="title2" accessibilityRole="header">
+            {view.openEnded ? 'Exercise done' : 'All planned sets done.'}
+          </AppText>
+          {table.anchor === null ? afterSetNode : null}
+          {lastExercise ? (
+            <View style={{ alignItems: 'flex-start' }}>
+              <TextButton label="+ Add set" accessibilityLabel={`Add set to ${lastExercise.name}`} onPress={() => void addSet(lastExercise.sessionExerciseId)} />
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+      <View style={{ alignItems: 'flex-start', minHeight: theme.target.workout.height, justifyContent: 'center' }}>
+        <TextButton
+          label="+ Add exercise"
+          onPress={() => {
+            navigation.navigate('ExercisePicker', { sessionId: session.id });
+          }}
+        />
+      </View>
+      {timeLeft && !keypadOpen && !table.allDone ? (
+        <TimeLeftLine
+          view={timeLeft.view}
+          onPress={() => {
+            setTimeLeftOpen(true);
+          }}
+        />
+      ) : null}
+    </>
+  ) : null;
+
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <NumberAccessory />
@@ -1616,9 +1891,22 @@ export function WorkoutScreen() {
       <View style={{ paddingTop: insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingHorizontal: theme.space['2'], gap: theme.space['1'] }}>
           <IconButton icon="chevron.down" label="Minimise workout" onPress={close} />
-          <AppText variant="sectionLabel" color="text.secondary" numberOfLines={1} style={{ flex: 1, fontSize: 13 }} accessibilityRole="header">
-            {view.title}
-          </AppText>
+          {tableMode && chips.done ? (
+            <View style={{ flex: 1, alignItems: 'flex-start' }}>
+              <DoneChip
+                count={table.doneCount}
+                onPress={() => {
+                  tableRef.current?.scrollToTop(!theme.a11y.reduceMotion);
+                }}
+              />
+            </View>
+          ) : (
+            <AppText variant="sectionLabel" color="text.secondary" numberOfLines={1} style={{ flex: 1, fontSize: 13 }} accessibilityRole="header">
+              {view.title}
+            </AppText>
+          )}
+          {/* The gym chip sits in the top bar (§2); at AX1+ it moves into ⋯. */}
+          {!ax ? <GymChip gymName={loaded.gymName} onPress={openGymSheet} /> : null}
           <View accessible accessibilityLabel={`${view.paused ? 'Paused, ' : ''}active time ${formatElapsed(view.elapsedMs)}`} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
             {view.paused ? <Icon name="pause.circle.fill" color="status.warning" size={16} /> : null}
             <AppText variant="callout" numeric color={view.paused ? 'status.warning' : 'text.secondary'}>
@@ -1630,9 +1918,51 @@ export function WorkoutScreen() {
         </View>
       </View>
 
+      {tableMode ? (
+        <View style={{ flex: 1 }}>
+          {banners.length > 0 ? (
+            <View style={{ paddingHorizontal: theme.space['4'], gap: theme.space['2'] }}>
+              {banners
+                .filter((b) => !resting || b.key === 'write')
+                .map((b) => (
+                  <Banner key={b.key} severity={b.severity} text={b.text} />
+                ))}
+            </View>
+          ) : null}
+          <WorkoutTable
+            ref={tableRef}
+            table={table}
+            ax={ax}
+            reduceMotion={theme.a11y.reduceMotion}
+            openRow={openRowNode}
+            afterSet={table.anchor !== null ? afterSetNode : null}
+            afterSetKey={table.anchor !== null ? afterSetKey : null}
+            adjust={<AdjustButton coach={coach} />}
+            adjustRow={focus ? <AdjustRow coach={coach} sessionId={session.id} sessionExerciseId={focus.sessionExerciseId} onPain={() => void painFromAdjust(focus)} /> : null}
+            footer={tableFooter}
+            anchorRequest={anchorRequest}
+            onAnchorApplied={() => {
+              anchorEvent({ kind: 'applied' });
+            }}
+            onUserScroll={() => {
+              anchorEvent({ kind: 'user_scrolled' });
+            }}
+            onChips={setChips}
+            onEditSet={(setId) => {
+              navigation.navigate('EditSet', { sessionId: session.id, setId });
+            }}
+            onSelectSet={selectRow}
+            onAddSet={(id) => void addSet(id)}
+            onMenu={openCardMenu}
+            onName={openExerciseSheet}
+            onNote={(sessionExerciseId, exerciseName, note) => {
+              setNoteFor({ sessionExerciseId, exerciseName, note });
+            }}
+            onPainBadge={openPainBadge}
+          />
+        </View>
+      ) : (
       <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: theme.space['5'], paddingTop: theme.space['3'], gap: theme.space['5'], paddingBottom: theme.space['4'] }} keyboardShouldPersistTaps="handled">
-        {/* Workout status row: the gym this workout is at (gym-switch §2.1). Keypad drafts are kept. */}
-        <GymChip gymName={loaded.gymName} onPress={openGymSheet} />
         {/* Paused: the header pill and `REST · PAUSED` say it, no banner (§3.2). During rest only a failed write shows (§3.1). */}
         {banners
           .filter((b) => !resting || b.key === 'write')
@@ -1710,10 +2040,71 @@ export function WorkoutScreen() {
           </View>
         ) : null}
       </ScrollView>
+      )}
 
+      {tableMode && chips.now !== null ? (
+        <NowChip
+          direction={chips.now}
+          onPress={() => {
+            anchorEvent({ kind: 'now_chip' });
+          }}
+        />
+      ) : null}
       {toast ? <Toast key={toast.id} {...(toast.icon ? { icon: toast.icon } : {})} text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
-      {/* No Talk button until voice exists (critic T3): no dead control in the best thumb spot. */}
-      <ActionBar primary={primary} guard={guard || logBlockedBySwitch(switchCard)} />
+      {tableMode && rest !== null ? (
+        <RestBar
+          rest={rest}
+          onAdjust={adjustRest}
+          onSkip={skipRest}
+          onOpen={() => {
+            setRestFull(true);
+          }}
+        />
+      ) : null}
+      {/* `Chat` + Log (§2): the coach sheet shows its own honest status; Talk replaces Chat once voice ships. */}
+      <ActionBar talk={<ChatButton ax={ax} onPress={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} />
+
+      <Modal
+        visible={tableMode && restFull}
+        animationType={theme.a11y.reduceMotion ? 'fade' : 'slide'}
+        presentationStyle="fullScreen"
+        onRequestClose={() => {
+          setRestFull(false);
+        }}
+      >
+        <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingHorizontal: theme.space['2'] }}>
+            <IconButton
+              icon="chevron.down"
+              label="Back to the workout"
+              onPress={() => {
+                setRestFull(false);
+              }}
+            />
+          </View>
+          <ScrollView contentContainerStyle={{ paddingHorizontal: theme.space['5'], gap: theme.space['5'], paddingBottom: theme.space['4'] }}>
+            {rest !== null ? <RestPanel rest={rest} ready upNext={view.upNext !== null ? `Next · ${view.upNext}` : null} onAdjust={adjustRest} onSkip={skipRest} /> : null}
+            {view.justSaved ? (
+              <RuledSection>
+                {savedLine}
+                {effortBlock}
+              </RuledSection>
+            ) : null}
+            <CoachSlot>{coach.slot !== null ? <CoachSlotContent coach={coach} /> : null}</CoachSlot>
+          </ScrollView>
+          <ActionBar
+            primary={{
+              ...barPrimary,
+              onPress: () => {
+                // Log here saves the same set and returns to Table, anchored (WT25).
+                setRestFull(false);
+                barPrimary.onPress();
+              },
+            }}
+            guard={guard || logBlockedBySwitch(switchCard)}
+          />
+        </View>
+      </Modal>
 
       <NoteSheet
         visible={noteFor !== null}

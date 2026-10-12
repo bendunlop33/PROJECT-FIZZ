@@ -6,6 +6,7 @@ import {
   swapPainCarry,
   applyCheckInPatch,
   buildActiveSetView,
+  buildWorkoutTableView,
   buildLiftHighlight,
   buildAddSetContinuation,
   buildGymSwitchProposal,
@@ -114,6 +115,7 @@ import {
   recentPaceSamples,
   timeLeftSheet,
   type ActiveSetView,
+  type WorkoutTableView,
   type SetEditView,
   type SetRecord,
   type SetRecordInput,
@@ -1635,6 +1637,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const info = data.exerciseInfo ?? {};
       const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
       return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe });
+    },
+
+    /**
+     * `buildWorkoutTableView` (active-workout §2A.12) over the same input as
+     * `view`, so the Table and the open row (`view(...).focus`) can't disagree.
+     */
+    tableView(data: ActiveWorkoutData, nowMs: number, edits: DraftEdits | null): WorkoutTableView {
+      const info = data.exerciseInfo ?? {};
+      const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
+      return buildWorkoutTableView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe });
     },
 
     /** `buildSetEditView` over loaded data: the correction sheet, with the built-in target RPE as the default (CHANGELOG 2026-10-11 (b)). */

@@ -39,7 +39,7 @@ export function NumberAccessory() {
 }
 
 /** D tile − / +: a light glyph with a full 44 × 52 pt target. */
-function TileStep({ glyph, target, onStep, describe }: { glyph: string; target: StepTarget; onStep: (v: number) => void; describe: string }) {
+function TileStep({ glyph, target, onStep, describe, size }: { glyph: string; target: StepTarget; onStep: (v: number) => void; describe: string; size?: number | undefined }) {
   const theme = useTheme();
   const enabled = target.enabled;
   return (
@@ -57,8 +57,8 @@ function TileStep({ glyph, target, onStep, describe }: { glyph: string; target: 
         }
       }}
       style={({ pressed }) => ({
-        width: theme.target.min.width,
-        height: theme.target.workout.height,
+        width: size ?? theme.target.min.width,
+        height: size ?? theme.target.workout.height,
         borderRadius: theme.radius.pill,
         alignItems: 'center',
         justifyContent: 'center',
@@ -73,7 +73,7 @@ function TileStep({ glyph, target, onStep, describe }: { glyph: string; target: 
   );
 }
 
-function StepButton({ icon, target, onStep, describe }: { icon: SymbolName; target: StepTarget; onStep: (v: number) => void; describe: string }) {
+function StepButton({ icon, target, onStep, describe, size }: { icon: SymbolName; target: StepTarget; onStep: (v: number) => void; describe: string; size?: number | undefined }) {
   const theme = useTheme();
   const enabled = target.enabled;
   return (
@@ -90,8 +90,8 @@ function StepButton({ icon, target, onStep, describe }: { icon: SymbolName; targ
         }
       }}
       style={({ pressed }) => ({
-        width: theme.target.workout.width,
-        minHeight: theme.target.workout.height,
+        width: size ?? theme.target.workout.width,
+        minHeight: size ?? theme.target.workout.height,
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: theme.radius.sm,
@@ -122,6 +122,7 @@ export function NumberStepper({
   inputRef,
   flex = 1,
   onSurface = false,
+  stepSize,
 }: {
   label: string;
   unit: string | null;
@@ -138,6 +139,8 @@ export function NumberStepper({
   flex?: number;
   /** Shown on `bg.surface` (a sheet): the D tile uses `bg.raised` so it still reads as a tile. */
   onSurface?: boolean;
+  /** − / + button size (Table open row: 52 pt, 60 pt at AX1+; design-system §9.75). Default 44 × 52. */
+  stepSize?: number;
 }) {
   const theme = useTheme();
   const [text, setText] = useState(value === null ? '' : String(value));
@@ -201,7 +204,7 @@ export function NumberStepper({
             {label}
           </AppText>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} />
+            <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} />
             <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', flexShrink: 1 }}>
               {input}
               {unit ? (
@@ -210,7 +213,7 @@ export function NumberStepper({
                 </AppText>
               ) : null}
             </View>
-            <TileStep glyph="+" target={up} onStep={onChange} describe={increase} />
+            <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} />
           </View>
         </View>
         {!up.enabled && value !== null ? (
@@ -227,7 +230,7 @@ export function NumberStepper({
         {label}
       </AppText>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-        <StepButton icon="minus" target={down} onStep={onChange} describe={decrease} />
+        <StepButton icon="minus" target={down} onStep={onChange} describe={decrease} size={stepSize} />
         <View
           style={{
             flex: 1,
@@ -249,7 +252,7 @@ export function NumberStepper({
             </AppText>
           ) : null}
         </View>
-        <StepButton icon="plus" target={up} onStep={onChange} describe={increase} />
+        <StepButton icon="plus" target={up} onStep={onChange} describe={increase} size={stepSize} />
       </View>
       {!up.enabled && value !== null ? (
         <AppText variant="callout" color="text.secondary" numeric>
@@ -352,7 +355,7 @@ export function TalkButton({ onPress }: { onPress: () => void }) {
  * keyboard when open. Talk is passed only once voice exists; until then the
  * bar has no dead control (critic T3).
  */
-export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; primary: { label: string; onPress: () => void; disabled?: boolean; busy?: boolean }; guard?: boolean }) {
+export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; primary: { label: string; onPress: () => void; disabled?: boolean; busy?: boolean; lead?: string | null }; guard?: boolean }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
@@ -390,7 +393,7 @@ export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; p
             <AppText variant="headline">Saved</AppText>
           </View>
         ) : (
-          <PrimaryButton label={primary.label} onPress={primary.onPress} disabled={primary.disabled ?? false} busy={primary.busy ?? false} />
+          <PrimaryButton label={primary.label} lead={primary.lead ?? null} onPress={primary.onPress} disabled={primary.disabled ?? false} busy={primary.busy ?? false} />
         )}
       </View>
     </View>
