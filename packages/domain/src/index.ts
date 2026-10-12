@@ -28,6 +28,7 @@ export * from './display';
 export * from './starter-exercises';
 export * from './exercise-search';
 export * from './exercise-browse';
+export * from './session/add-shape';
 export * from './exercise-equipment';
 export * from './catalogue-id';
 export * from './default-rule';
