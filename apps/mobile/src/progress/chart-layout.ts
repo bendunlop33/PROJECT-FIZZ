@@ -21,6 +21,21 @@ export interface BarRect {
   zero: boolean;
   /** Centre, for the count above and the label under. */
   centreX: number;
+  /** The window cut this week (or month): drawn lighter, so a one-day bar never reads as an empty week. */
+  partial: boolean;
+}
+
+/** How much of the bar colour a part week keeps (the rest is the card behind it). */
+export const PARTIAL_BAR_MIX = 0.45;
+
+/** `#RRGGBB` `fg` over `bg` at `amount` (0–1), as an opaque `#RRGGBB`. Anything else returns `fg`. */
+export function mixHex(fg: string, bg: string, amount: number): string {
+  const parse = (h: string) => (/^#[0-9a-f]{6}$/i.test(h) ? [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)) : null);
+  const a = parse(fg);
+  const b = parse(bg);
+  if (a === null || b === null) return fg;
+  const t = Math.max(0, Math.min(1, amount));
+  return `#${a.map((v, i) => Math.round(v * t + (b[i] ?? 0) * (1 - t)).toString(16).padStart(2, '0')).join('')}`;
 }
 
 export const ZERO_STUB = 2;
@@ -30,7 +45,7 @@ export const ZERO_STUB = 2;
  * `maxBarWidth`, centred in its slot. Heights scale from 0 to `max` (the view
  * model passes max(3, largest) so one session never fills the plot).
  */
-export function weekBarsLayout(counts: readonly number[], width: number, max: number, dims: WeekBarsDims): BarRect[] {
+export function weekBarsLayout(counts: readonly number[], width: number, max: number, dims: WeekBarsDims, partial: readonly boolean[] = []): BarRect[] {
   const n = counts.length;
   if (n === 0 || width <= 0) return [];
   const slot = width / n;
@@ -39,7 +54,7 @@ export function weekBarsLayout(counts: readonly number[], width: number, max: nu
   return counts.map((c, i) => {
     const centreX = slot * i + slot / 2;
     const h = c <= 0 ? ZERO_STUB : Math.max(ZERO_STUB, Math.min(dims.height, c * scale));
-    return { x: centreX - barWidth / 2, y: dims.height - h, width: barWidth, height: h, zero: c <= 0, centreX };
+    return { x: centreX - barWidth / 2, y: dims.height - h, width: barWidth, height: h, zero: c <= 0, centreX, partial: partial[i] === true };
   });
 }
 

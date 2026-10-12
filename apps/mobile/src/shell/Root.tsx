@@ -10,13 +10,16 @@ import { coachConnectionPorts, deviceCredentials } from '../ai/coach-connection-
 import { clearDeliveredWorkoutAlerts, expoNotifier } from '../alerts/notifier';
 import { createPlanModelPort } from '../coach/plan-model-port';
 import { createRestAlertController } from '../alerts/rest-alerts';
+import { nowMs } from '../clock';
+import { createLiveActivityController } from '../live-activity/controller';
+import { lazyLiveActivityPort } from '../live-activity/lazy-port';
 import { containerBackupFiles, containerTextFile, emptyTemporaryFiles, removeContainerFiles } from '../device/files';
 import { createPersonalFiles, DEVICE_PREFS_FILE } from '../device/personal-files';
 import { expoDatabaseHost, removeDatabaseFiles } from '../data/expo-sqlite-host';
 import { deleteUnfinishedView } from '../backup/data-domain-view';
 import { DevicePrefsProvider, useDevicePrefs } from '../device/DevicePrefsContext';
 import { createPrefsHolder, DEFAULT_PREFS, type DevicePrefs } from '../device/prefs';
-import { appInfo, newUuid, nowZoned, whenIdle } from '../device/runtime';
+import { appInfo, deviceTimeZone, newUuid, nowZoned, whenIdle } from '../device/runtime';
 import { AppNavigator } from '../navigation/AppNavigator';
 import type { AppServices } from '../services/app-services';
 import { startApp, type StartupOutcome } from '../services/startup';
@@ -28,8 +31,18 @@ const BACKUP_MANIFEST = 'backup-state.json';
 /** Delete my data's marker and done op IDs (data-import-export §3.6 Interrupted). */
 const DATA_LEDGER = 'data-ops.json';
 
-/** One rest-alert controller for the app run (it remembers what is scheduled). */
-const restAlerts = createRestAlertController(expoNotifier);
+/**
+ * The workout's Lock Screen Live Activity (lock-screen-and-alerts §2.1): one
+ * per workout, driven by the same reconciles as the rest alert. `Until hh:mm`
+ * is in the phone's zone now, so it matches the Lock Screen clock.
+ */
+const liveActivity = createLiveActivityController(lazyLiveActivityPort, {
+  tz: () => deviceTimeZone(),
+  clock: { now: nowMs, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => { clearTimeout(h as ReturnType<typeof setTimeout>); } },
+});
+
+/** One rest-alert controller for the app run (it remembers what is scheduled); the Live Activity follows it. */
+const restAlerts = createRestAlertController(expoNotifier, { liveActivity });
 
 /**
  * On return to the foreground: delivered workout alerts are stale (the screen
@@ -38,13 +51,15 @@ const restAlerts = createRestAlertController(expoNotifier);
  */
 function useForegroundAlerts(services: AppServices) {
   useEffect(() => {
+    // Launch: reconcile once, so a Live Activity left by a force-close is adopted or ended (§4.2).
+    // The read runs outside the write chain; a commit issued meanwhile wins (review ben-bugs r2 N1).
+    const readActive = () => services.sessions.active();
+    const now = () => toMs(services.now().utc);
+    void restAlerts.reconcileFromRead(readActive, now);
     const sub = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
       void clearDeliveredWorkoutAlerts().catch(() => undefined);
-      void services.sessions
-        .active()
-        .then((a) => restAlerts.reconcile(a, toMs(services.now().utc)))
-        .catch(() => undefined);
+      void restAlerts.reconcileFromRead(readActive, now);
     });
     return () => {
       sub.remove();

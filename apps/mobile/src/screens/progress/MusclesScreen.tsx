@@ -10,7 +10,7 @@ import { useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Screen, StatusLine, TextButton } from '../../ui';
 import { AskPill } from '../coach/AskPill';
-import { HowCountedSheet } from './sheets';
+import { HowCountedSheet, PeriodSheet } from './sheets';
 
 /**
  * Muscles (progress.md §2.4): the same window and grouping as the home (one
@@ -26,6 +26,7 @@ export function MusclesScreen() {
   const [data, reload] = useScreenData((s) => s.progress.home());
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(route.params.group ? [route.params.group] : []));
   const [howOpen, setHowOpen] = useState(false);
+  const [periodOpen, setPeriodOpen] = useState(false);
 
   const change = (patch: { days?: ProgressWindowDays; grouping?: ProgressGrouping }) => {
     const saved = services.progress.saveSettings(patch);
@@ -67,7 +68,7 @@ export function MusclesScreen() {
   const ask = (
     <AskPill
       onPress={() => {
-        navigation.navigate('Coach', { entry: { kind: 'progress', days } });
+        navigation.navigate('Coach', { entry: { kind: 'progress', days, ...(home.range === null ? {} : { range: home.range }) } });
       }}
     />
   );
@@ -87,10 +88,14 @@ export function MusclesScreen() {
     <Screen floating={ask}>
       <WindowPicker
         days={home.days}
+        custom={home.range !== null}
         datesLine={view.datesLine}
         datesWords={view.datesWords}
         onChange={(days) => {
           change({ days });
+        }}
+        onPeriod={() => {
+          setPeriodOpen(true);
         }}
       />
       <Segmented
@@ -182,6 +187,29 @@ export function MusclesScreen() {
           How this is counted ›
         </AppText>
       </Pressable>
+      <PeriodSheet
+        visible={periodOpen}
+        today={home.today}
+        earliest={home.earliest}
+        current={{ from: view.window.from, to: view.window.to }}
+        onShow={(r) => {
+          setPeriodOpen(false);
+          services.progress.choosePeriod(r);
+          reload();
+        }}
+        onClear={
+          home.range === null
+            ? null
+            : () => {
+                setPeriodOpen(false);
+                services.progress.choosePeriod(null);
+                reload();
+              }
+        }
+        onClose={() => {
+          setPeriodOpen(false);
+        }}
+      />
       <HowCountedSheet
         visible={howOpen}
         onClose={() => {

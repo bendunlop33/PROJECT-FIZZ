@@ -269,6 +269,8 @@ export interface WorkoutServicesContext {
   profile: () => Promise<UserProfile | null>;
   /** Runs after every committed session command (backups, alerts). Never awaited by the caller's write. */
   afterCommand: (outcome: CommandOutcome) => CommandOutcome;
+  /** Runs after a workout starts (the Lock Screen Live Activity shows Ready). Never awaited. */
+  afterStart?: (aggregate: SessionAggregate) => void;
   /** The bundled catalogue as exercise rows (read on first use). Absent: the picker shows the database only. */
   catalogueExercises?: () => readonly Exercise[];
   /** A catalogue entry's substitutions (`variations.substitutions[].key`), in catalogue order (Coaching knowledge). Absent: none. */
@@ -2002,6 +2004,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      */
     async start(req: WorkoutStartRequest): Promise<WorkoutStartOutcome> {
       const r = await workout.startOnce(req);
+      if (r.ok) ctx.afterStart?.(r.aggregate);
       if (r.ok || (r.error.code !== 'write_failed' && r.error.code !== 'write_conflict')) return r;
       // Two taps raced and the other one's write landed (OV5): this tap is its duplicate, not a failure.
       const p = await ctx.profile();

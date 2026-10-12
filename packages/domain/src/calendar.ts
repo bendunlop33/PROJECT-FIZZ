@@ -121,3 +121,15 @@ export function weekdayIndexOfDate(localDate: string): number {
   const sundayFirst = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1)).getUTCDay();
   return (sundayFirst + 6) % 7;
 }
+
+/** `YYYY-MM-DD` plus whole months, the day clamped to the month's length. */
+export function addMonths(date: string, months: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const total = (y ?? 1970) * 12 + ((m ?? 1) - 1) + months;
+  const year = Math.floor(total / 12);
+  const month = (total % 12) + 1;
+  const last = daysBetween(`${pad4(year)}-${pad2(month)}-01`, month === 12 ? `${pad4(year + 1)}-01-01` : `${pad4(year)}-${pad2(month + 1)}-01`);
+  return `${pad4(year)}-${pad2(month)}-${pad2(Math.min(d ?? 1, last))}`;
+}
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const pad4 = (n: number) => String(n).padStart(4, '0');

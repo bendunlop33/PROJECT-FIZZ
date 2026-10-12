@@ -6,6 +6,7 @@ import {
   DEFAULT_PROGRESS_WINDOW,
   localDateOf,
   monthOf,
+  normaliseProgressRange,
   resumeBar,
   STALE_SESSION_MS,
   toMs,
@@ -19,6 +20,7 @@ import {
   type MuscleGroup,
   type TrendRange,
   type MuscleInfo,
+  type DateRange,
   type ProgressHomeView,
   type ProgressSession,
   type ResumeBar,
@@ -59,7 +61,13 @@ export interface ProgressServiceDeps {
 
 export interface ProgressHome {
   view: ProgressHomeView;
+  /** The preset in use, or the last one chosen when a custom period shows (it comes back on `Clear`). */
   days: ProgressWindowDays;
+  /** The custom period showing (made valid), or null for a preset. For this run of the app only: not saved. */
+  range: DateRange | null;
+  /** Today in Ben's zone, and the first workout's date (or today): the period sheet's bounds. */
+  today: string;
+  earliest: string;
   grouping: ProgressGrouping;
   /** Workouts that failed to read and aren't counted. */
   unreadable: number;
@@ -130,6 +138,13 @@ export function createProgressService(deps: ProgressServiceDeps) {
    * the tap already sees it. Tied to the open store: a restore drops it.
    */
   let chosen: { store: Store; days?: ProgressWindowDays; grouping?: ProgressGrouping } | null = null;
+  /**
+   * A custom period (Ben, 12 Oct 2026), shared by the home and Muscles like
+   * the window. In memory for this run only: a fixed date range saved in Your
+   * data would silently go stale, so a relaunch shows the saved preset.
+   * Choosing a preset clears it. Tied to the open store.
+   */
+  let period: { store: Store; range: DateRange } | null = null;
   let settingsWrites: Promise<unknown> = Promise.resolve();
   /** The tap that last set each field of `chosen`; a failed save drops only the fields it still owns (review r2 N2). */
   const fieldOwner: { days?: symbol; grouping?: symbol } = {};
@@ -294,7 +309,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
      * setting: just chosen, else saved in Your data), else `30 days` and
      * `Body parts`. Screens pass nothing, so they never disagree.
      */
-    async home(req: { days?: ProgressWindowDays; grouping?: ProgressGrouping } = {}): Promise<ProgressHome | null> {
+    async home(req: { days?: ProgressWindowDays; grouping?: ProgressGrouping; range?: DateRange } = {}): Promise<ProgressHome | null> {
       const profile = await deps.profile();
       if (!profile) return null;
       const pick = chosenNow();
@@ -302,11 +317,19 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const grouping = req.grouping ?? pick.grouping ?? profile.progress?.grouping ?? 'body_part';
       const now = deps.now();
       const nowMs = toMs(now.utc);
+      const today = localDateOf(nowMs, profile.timezone);
+      const asked = req.range ?? (req.days === undefined && period !== null && period.store === deps.store() ? period.range : null);
+      const range = asked === null ? null : normaliseProgressRange(asked, today);
       const ctx = await context(profile);
       const active = await repos().sessions.getActive(profile.id).catch(() => null);
+      let earliest = today;
+      for (const s of ctx.sessions) if (s.date < earliest) earliest = s.date;
       return {
-        view: buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today: localDateOf(nowMs, profile.timezone), days, grouping }),
+        view: buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, days, grouping, range }),
         days,
+        range,
+        today,
+        earliest,
         grouping,
         unreadable: ctx.unreadable,
         resume: resumeBar(active, nowMs),
@@ -358,7 +381,18 @@ export function createProgressService(deps: ProgressServiceDeps) {
      * On a failed save the fields it set are dropped (unless a later tap set
      * them again) and the saved setting shows again.
      */
+    /**
+     * Show a custom period (the period sheet's `Show`), or go back to the
+     * preset (null). Shared at once by the home and Muscles; not data, not
+     * saved, no Undo (Clear is the way back).
+     */
+    choosePeriod(range: DateRange | null): void {
+      period = range === null ? null : { store: deps.store(), range };
+    },
+
     saveSettings(patch: { days?: ProgressWindowDays; grouping?: ProgressGrouping }): Promise<{ ok: boolean }> {
+      // Choosing a preset ends a custom period.
+      if (patch.days !== undefined) period = null;
       const mine = { ...chosenNow(), ...patch, store: deps.store() };
       chosen = mine;
       const token = Symbol('settings tap');

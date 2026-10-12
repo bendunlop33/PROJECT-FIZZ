@@ -114,7 +114,7 @@ export interface AddableExercise {
 }
 
 export type OpenedFrom =
-  | { screen: 'progress'; window: { days: number; from: string; to: string } }
+  | { screen: 'progress'; window: { days: number; from: string; to: string; /** A custom period's dates (`1 Sep – 30 Sep`); absent = `last N days`. */ label?: string } }
   /** Exercise detail (progress.md slice B): the exercise, its series and the chart's range. A frame only, no numbers. */
   | { screen: 'progress_exercise'; exercise: string; series: string; range: { from: string; to: string } };
 
@@ -384,7 +384,7 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
   if (y.memories.length > 0) yourData.push({ label: 'Memories', detail: plural(y.memories.length, 'memory', 'memories') });
   if (y.openedFrom !== undefined) {
     const o = y.openedFrom;
-    yourData.push({ label: 'Opened from', detail: o.screen === 'progress' ? `Progress · last ${String(o.window.days)} days` : `Progress · ${o.exercise} · ${o.series}` });
+    yourData.push({ label: 'Opened from', detail: o.screen === 'progress' ? `Progress · ${o.window.label ?? `last ${String(o.window.days)} days`}` : `Progress · ${o.exercise} · ${o.series}` });
   }
   if (y.build !== undefined) {
     const b = y.build;

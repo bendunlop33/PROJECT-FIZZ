@@ -111,6 +111,9 @@ import {
   painFlagChoices,
   ruleTargetRpes,
   progressWindowAt,
+  customProgressWindow,
+  localDateOf,
+  rangeText,
   shouldShowCoachOffer,
   targetRpeOf,
   todayAdjustmentIds,
@@ -159,7 +162,7 @@ import type {
 export type CoachEntry =
   | { kind: 'today' }
   /** Progress (progress.md §2.1, §4.4): a general thread, framed by the window on screen. */
-  | { kind: 'progress'; days: ProgressWindowDays }
+  | { kind: 'progress'; days: ProgressWindowDays; /** A custom period on screen (replaces `days`). */ range?: { from: string; to: string } }
   /** Exercise detail (progress.md slice B): a general thread framed by the exercise, its series and the chart's dates. */
   | { kind: 'progress_exercise'; exerciseName: string; seriesLabel: string; from: string; to: string }
   | { kind: 'workout'; sessionId: string }
@@ -705,6 +708,7 @@ export function createCoachService(deps: CoachServiceDeps) {
   function openedFromOf(p: UserProfile, entry: CoachEntry): OpenedFrom | undefined {
     if (entry.kind === 'progress_exercise') return { screen: 'progress_exercise', exercise: entry.exerciseName, series: entry.seriesLabel, range: { from: entry.from, to: entry.to } };
     if (entry.kind !== 'progress') return undefined;
+    if (entry.range) return { screen: 'progress', window: { days: customProgressWindow(entry.range).days, from: entry.range.from, to: entry.range.to, label: rangeText(entry.range, localDateOf(toMs(deps.now().utc), p.timezone)) } };
     const w = progressWindowAt(toMs(deps.now().utc), p.timezone, entry.days);
     return { screen: 'progress', window: { days: entry.days, from: w.from, to: w.to } };
   }
@@ -1204,6 +1208,16 @@ export function createCoachService(deps: CoachServiceDeps) {
     noteStructuralRefused(checked: readonly string[], refused: readonly string[]): void {
       for (const id of checked) refusedApplies.delete(id);
       for (const id of refused) refusedApplies.add(id);
+    },
+
+    /**
+     * Today in Ben's profile timezone (`YYYY-MM-DD`), as the coach context
+     * dates the Progress window, so the sheet's `Sees:` label names the year
+     * the same way (review ben-bugs r2 N2). Null before setup.
+     */
+    async today(): Promise<string | null> {
+      const p = await deps.profile().catch(() => null);
+      return p === null ? null : localDateOf(toMs(deps.now().utc), p.timezone);
     },
 
     /** `What the coach can see` for this entry, from the same builder the request uses. */

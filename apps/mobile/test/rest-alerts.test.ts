@@ -135,6 +135,55 @@ describe('rest alert controller through a whole loop', () => {
     expect(afterDeadline.calls).toEqual([`cancel fizz.rest.${s.session.id}`]);
   });
 
+  it('an older version of the workout arriving after a Log can’t cancel the rest alert (review ben-bugs S2); a null clears the guard', async () => {
+    const fake = fakeNotifier();
+    const c = createRestAlertController(fake.port);
+    const { state } = startFixture();
+    const logged = apply(state, logCmd(setsFor(state, BENCH)[0]?.id ?? '', values(kg(60), 10), 5));
+    await c.reconcile(logged, ms(10));
+    await c.reconcile(state, ms(11)); // the coach turn's (or the launch) read from before the Log
+    expect([...fake.pending.values()].map((a) => a.fireAtMs)).toEqual([ms(65)]);
+    await c.reconcile(null, ms(12));
+    expect(fake.pending.size).toBe(0);
+    await c.reconcile(logged, ms(13));
+    expect(fake.pending.size).toBe(1);
+  });
+
+  it('a read that started before a commit and lands after it is dropped, even a null or another workout (review ben-bugs r2 N1)', async () => {
+    const fake = fakeNotifier();
+    const c = createRestAlertController(fake.port);
+    const { state } = startFixture();
+    const logged = apply(state, logCmd(setsFor(state, BENCH)[0]?.id ?? '', values(kg(60), 10), 5));
+    const deferred = () => {
+      let land: (a: SessionAggregate | null) => void = () => undefined;
+      const read = () =>
+        new Promise<SessionAggregate | null>((r) => {
+          land = r;
+        });
+      return { read, land: (a: SessionAggregate | null) => { land(a); } };
+    };
+    const a = deferred();
+    const lateNull = c.reconcileFromRead(a.read, () => ms(9));
+    await c.reconcile(logged, ms(10));
+    a.land(null);
+    await lateNull;
+    expect([...fake.pending.values()].map((x) => x.fireAtMs)).toEqual([ms(65)]);
+
+    // Another workout's state, read earlier, is dropped too (the version guard can't compare across workouts).
+    const other = startFixture().state;
+    const b = deferred();
+    const lateOther = c.reconcileFromRead(b.read, () => ms(11));
+    await c.reconcile(logged, ms(12));
+    b.land({ ...other, session: { ...other.session, id: 'another-workout' } });
+    await lateOther;
+    expect([...fake.pending.keys()]).toEqual([`fizz.rest.${logged.session.id}`]);
+
+    // A read started after the last commit applies; a failing read never throws.
+    await c.reconcileFromRead(() => Promise.resolve(null), () => ms(13));
+    expect(fake.pending.size).toBe(0);
+    await expect(c.reconcileFromRead(() => Promise.reject(new Error('locked')), () => ms(14))).resolves.toBeUndefined();
+  });
+
   it('a failing notifier never throws into logging', async () => {
     const { state } = startFixture();
     const s = apply(state, logCmd(setsFor(state, BENCH)[0]?.id ?? '', values(kg(60), 10), 5));

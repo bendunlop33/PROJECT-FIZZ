@@ -1,5 +1,5 @@
 import type { EquipmentKind, Load, LoadConvention, Measurement, WeightUnit } from '@fizz/schemas';
-import { addDays, daysBetween, weekdayIndexOfDate } from '../calendar';
+import { addDays, addMonths, daysBetween, weekdayIndexOfDate } from '../calendar';
 import { isSetCountable } from '../exclusions';
 import { e1rmConventionAllowed, estimateOneRepMax } from './e1rm';
 import type { ProgressExercise, ProgressSession, ProgressSet } from './projection';
@@ -380,17 +380,6 @@ function allMarked(ss: SeriesSession): boolean {
 // ---------------------------------------------------------------------------
 // Ranges
 
-/** `YYYY-MM-DD` plus whole months, the day clamped to the month's length. */
-export function addMonths(date: string, months: number): string {
-  const [y, m, d] = date.split('-').map(Number);
-  const total = (y ?? 1970) * 12 + ((m ?? 1) - 1) + months;
-  const year = Math.floor(total / 12);
-  const month = (total % 12) + 1;
-  const last = daysBetween(`${pad4(year)}-${pad2(month)}-01`, month === 12 ? `${pad4(year + 1)}-01-01` : `${pad4(year)}-${pad2(month + 1)}-01`);
-  return `${pad4(year)}-${pad2(month)}-${pad2(Math.min(d ?? 1, last))}`;
-}
-const pad2 = (n: number) => String(n).padStart(2, '0');
-const pad4 = (n: number) => String(n).padStart(4, '0');
 
 /**
  * The chart range, ending today inclusive: `6 mo` on 8 Oct is 9 Apr – 8 Oct.

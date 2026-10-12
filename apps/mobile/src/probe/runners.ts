@@ -14,6 +14,7 @@ import { widgetsDirectory } from 'expo-widgets';
 
 import AudioCoach from '../../modules/audio-coach';
 import { isoUtc, nowMs } from '../clock';
+import { createProbeActivityLedger } from '../live-activity/probe-ledger';
 import { restCountdownActivity } from '../live-activity/RestCountdownActivity';
 import { judgeAlarmKitStatus } from './alarmkit';
 import { analyseAppGroup, parseNativeAppGroupInfo } from './app-group';
@@ -495,6 +496,8 @@ export async function runAppGroupProbe(): Promise<ResultUpdate> {
 
 export const LIVE_ACTIVITY_DURATION_S = 120;
 
+const probeActivities = createProbeActivityLedger();
+
 export function liveActivityIncludedInBuild(): boolean {
   const extra: unknown = Constants.expoConfig?.extra;
   return typeof extra === 'object' && extra !== null && (extra as { includeLiveActivity?: unknown }).includeLiveActivity === true;
@@ -506,24 +509,41 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
   }
   try {
     const factory = restCountdownActivity();
-    for (const old of factory.getInstances()) await old.end('immediate');
+    // Only the probe's own earlier countdowns: a workout's activity is left alone (review ben-bugs N2).
+    const running = factory.getInstances();
+    for (const id of probeActivities.toEnd(running.map((a) => a.getId()))) {
+      await running.find((a) => a.getId() === id)?.end('immediate');
+      probeActivities.ended(id);
+    }
     const endsAtMs = now + LIVE_ACTIVITY_DURATION_S * 1000;
     // staleDate: the system can de-emphasise it once the countdown is over, so a
     // 0:00 timer doesn't sit on the Lock Screen looking live. The next Run (or
     // the timer below, if the app is still running) ends it.
     const instance = factory.start(
-      { startedAtMs: now, endsAtMs, nextLabel: 'Next: Bench press 100 kg × 8' },
+      {
+        state: 'resting',
+        title: 'Rest',
+        line1: 'Probe · Bench press · Set 2 of 3 next',
+        line2: 'Target 100\u00a0kg\u00a0×\u00a08',
+        startMs: now,
+        endMs: endsAtMs,
+        side: '',
+        a11y: 'Rest. Probe countdown.',
+      },
       undefined,
       // eslint-disable-next-line no-restricted-globals -- converting an injected time, not reading the clock
       new Date(endsAtMs),
     );
+    const probeId = instance.getId();
+    probeActivities.started(probeId);
     setTimeout(() => {
+      probeActivities.ended(probeId);
       void instance.end('default').catch(() => undefined);
     }, (LIVE_ACTIVITY_DURATION_S + 30) * 1000);
     return {
       status: 'needs_check',
       summary: `Started a ${LIVE_ACTIVITY_DURATION_S / 60}-minute countdown. Lock the phone to check`,
-      details: [`Activity ID ${instance.getId()}`, 'Started locally with no push token (free Apple ID)'],
+      details: [`Activity ID ${probeId}`, 'Started locally with no push token (free Apple ID)'],
     };
   } catch (e) {
     return {

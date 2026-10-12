@@ -17,6 +17,7 @@ export * from './session/summary';
 export * from './session/today';
 export * from './session/records';
 export * from './session/recovery';
+export * from './session/lock-screen';
 export * from './session/volume';
 export * from './session/time-left';
 export * from './ports';

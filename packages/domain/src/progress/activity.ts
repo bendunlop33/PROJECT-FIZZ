@@ -1,4 +1,4 @@
-import { addDays, daysBetween, weekdayIndexOfDate } from '../calendar';
+import { addDays, addMonths, daysBetween, weekdayIndexOfDate } from '../calendar';
 import type { ProgressSession } from './projection';
 import { inRange, type DateRange, type ProgressWindow } from './window';
 
@@ -25,6 +25,23 @@ export interface WeekCount {
   partial: boolean;
 }
 
+export interface MonthCount {
+  /** First date of this bar inside the window. */
+  from: string;
+  to: string;
+  count: number;
+  /** The window cut the month. */
+  partial: boolean;
+}
+
+/**
+ * Up to this many days the bars are weeks; longer custom periods get one bar
+ * per month. 20 weeks sits between the presets (`3 months` is 89–92 days,
+ * `6 months` 181–184), so each preset keeps one bar unit whatever today's date
+ * (review ben-bugs S1), and no week chart goes past 21 bars.
+ */
+export const WEEK_BARS_MAX_DAYS = 20 * 7;
+
 export interface SessionCounts {
   count: number;
   previousCount: number;
@@ -32,8 +49,10 @@ export interface SessionCounts {
   perWeek: number | null;
   /** `7 days` and `14 days`: one cell per day, oldest first. */
   days: DayCount[] | null;
-  /** `30 days` and `60 days`: one bar per Monday–Sunday week overlapping the window. The counts add up to `count`. */
+  /** `30 days`, `60 days` and custom periods up to 20 weeks: one bar per Monday–Sunday week overlapping the window. The counts add up to `count`. */
   weeks: WeekCount[] | null;
+  /** Custom periods over 20 weeks: one bar per calendar month overlapping the window (same rules as weeks). */
+  months: MonthCount[] | null;
   /** The latest workout on or before the window's last day, for `Last workout: Fri 14 Aug`; null if none. */
   lastSessionDate: string | null;
 }
@@ -49,7 +68,8 @@ function countBy(sessions: readonly ProgressSession[], range: DateRange): Map<st
   return out;
 }
 
-export function countSessions(sessions: readonly ProgressSession[], window: ProgressWindow): SessionCounts {
+/** `today` marks the day cell in bold; it defaults to the window's last day (the presets end today). */
+export function countSessions(sessions: readonly ProgressSession[], window: ProgressWindow, today: string = window.to): SessionCounts {
   const byDate = countBy(sessions, window);
   const count = [...byDate.values()].reduce((a, b) => a + b, 0);
   const previousCount = [...countBy(sessions, window.previous).values()].reduce((a, b) => a + b, 0);
@@ -60,11 +80,23 @@ export function countSessions(sessions: readonly ProgressSession[], window: Prog
   const daily = window.days <= 14;
   let days: DayCount[] | null = null;
   let weeks: WeekCount[] | null = null;
-  if (daily) {
+  let months: MonthCount[] | null = null;
+  if (totalDays > WEEK_BARS_MAX_DAYS) {
+    months = [];
+    let from = window.from;
+    while (from <= window.to) {
+      const monthEnd = addDays(addMonths(`${from.slice(0, 8)}01`, 1), -1);
+      const to = monthEnd < window.to ? monthEnd : window.to;
+      let n = 0;
+      for (let d = from; d <= to; d = addDays(d, 1)) n += byDate.get(d) ?? 0;
+      months.push({ from, to, count: n, partial: from.slice(8, 10) !== '01' || to !== monthEnd });
+      from = addDays(to, 1);
+    }
+  } else if (daily) {
     days = [];
     for (let i = 0; i < totalDays; i += 1) {
       const date = addDays(window.from, i);
-      days.push({ date, weekday: weekdayIndexOfDate(date), count: byDate.get(date) ?? 0, isToday: date === window.to });
+      days.push({ date, weekday: weekdayIndexOfDate(date), count: byDate.get(date) ?? 0, isToday: date === today });
     }
   } else {
     weeks = [];
@@ -84,6 +116,7 @@ export function countSessions(sessions: readonly ProgressSession[], window: Prog
     perWeek: window.days >= 14 ? oneDecimal(count / (totalDays / 7)) : null,
     days,
     weeks,
+    months,
     lastSessionDate,
   };
 }

@@ -422,7 +422,7 @@ describe('home view states (§3.1, check 19, 23)', () => {
     expect(home.activity.bars.words).toBe('Last 7 days: Tuesday 6 October, 1 workout; Thursday 8 October, 1 workout. Other days none.');
     const w30 = buildProgressHomeView({ sessions: CHECK1.map((d) => session(d)), exercises: INFO, today: TODAY, days: 30, grouping: 'body_part' });
     if (w30.dataState !== 'normal') throw new Error('expected normal');
-    expect(w30.activity.bars.words).toBe('Sessions per week: from 12 September, 1; from 14 September, 2; from 21 September, 2; from 28 September, 2; from 5 October, 2.');
+    expect(w30.activity.bars.words).toBe('Sessions per week: 12 to 13 September, 1; week from 14 September, 2; week from 21 September, 2; week from 28 September, 2; week from 5 October, 2.');
     expect(w30.activity.bars).toMatchObject({ kind: 'weeks', max: 3 });
   });
 
