@@ -58,6 +58,7 @@ export * from './session/lift-highlight';
 export * from './session/overview';
 export * from './session/today-edits';
 export * from './session/swap-plan';
+export * from './session/coach-draft';
 export * from './session/substitutes';
 export * from './session/mid-swap';
 export * from './session/today-shape';
