@@ -46,15 +46,17 @@ export function customProgressWindow(range: DateRange): ProgressWindow {
 export const PROGRESS_MAX_PERIOD_DAYS = 3 * 366;
 
 /**
- * A chosen period made valid: never past today, `from` on or before `to`,
+ * A chosen period made valid: never past today, reversed dates swapped,
  * and at most `PROGRESS_MAX_PERIOD_DAYS` long (the start moves, the end
  * stays). Dates are `YYYY-MM-DD`; anything else is refused (null).
  */
 export function normaliseProgressRange(range: DateRange, today: string): DateRange | null {
   const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && addDays(d, 0) === d;
   if (!ok(range.from) || !ok(range.to) || !ok(today)) return null;
-  const to = range.to > today ? today : range.to;
-  let from = range.from > to ? to : range.from;
+  // Reversed dates are swapped (review ben-bugs N6), then the end is pulled back to today.
+  const [start, end] = range.from <= range.to ? [range.from, range.to] : [range.to, range.from];
+  const to = end > today ? today : end;
+  let from = start > to ? to : start;
   if (daysBetween(from, to) + 1 > PROGRESS_MAX_PERIOD_DAYS) from = addDays(to, -(PROGRESS_MAX_PERIOD_DAYS - 1));
   return { from, to };
 }

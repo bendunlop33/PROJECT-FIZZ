@@ -68,6 +68,8 @@ export function CoachSheetScreen() {
   const [now, setNow] = useState(clockNow);
   const [statusWhy, setStatusWhy] = useState(false);
   const [sees, setSees] = useState<ContextDescription | null>(null);
+  /** Today in the profile zone, as the coach context uses (review ben-bugs r2 N2). */
+  const [profileToday, setProfileToday] = useState<string | null>(null);
   const [threads, setThreads] = useState<CoachThread[] | null>(null);
   const [workout, setWorkout] = useState<{ title: string | null; active: boolean; out: WorkoutOutOfContext | null; bar: string; exercise: { id: string; name: string } | null } | null>(null);
   const [askPain, setAskPain] = useState(false);
@@ -137,6 +139,9 @@ export function CoachSheetScreen() {
         const a = await services.coach.availability();
         if (!alive()) return;
         setAvailability(a);
+        const today = await services.coach.today().catch(() => null);
+        if (!alive()) return;
+        setProfileToday(today);
         const id = threadId === undefined ? await services.coach.resolveThread(entry).catch(() => null) : threadId;
         if (!alive()) return;
         if (threadId === undefined) setThreadId(id);
@@ -464,7 +469,7 @@ export function CoachSheetScreen() {
           style={{ alignSelf: 'flex-start', minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], paddingHorizontal: theme.space['3'], borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.control'], backgroundColor: theme.colors['bg.raised'] }}
         >
           <Icon name="eye" size={16} />
-          <AppText variant="label">{seesLabel(entry, workout?.title ?? null, workout?.active === true, workout?.out ?? null, localDateOf(toMs(services.now().utc), services.now().tz))}</AppText>
+          <AppText variant="label">{seesLabel(entry, workout?.title ?? null, workout?.active === true, workout?.out ?? null, profileToday ?? localDateOf(toMs(services.now().utc), services.now().tz))}</AppText>
         </Pressable>
         {sees !== null ? <SeesPanel sees={sees} /> : null}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space['2'] }}>

@@ -927,6 +927,16 @@ export function createCoachService(deps: CoachServiceDeps) {
       for (const id of refused) refusedApplies.add(id);
     },
 
+    /**
+     * Today in Ben's profile timezone (`YYYY-MM-DD`), as the coach context
+     * dates the Progress window, so the sheet's `Sees:` label names the year
+     * the same way (review ben-bugs r2 N2). Null before setup.
+     */
+    async today(): Promise<string | null> {
+      const p = await deps.profile().catch(() => null);
+      return p === null ? null : localDateOf(toMs(deps.now().utc), p.timezone);
+    },
+
     /** `What the coach can see` for this entry, from the same builder the request uses. */
     async describe(entry: CoachEntry, threadId: string | null): Promise<ContextDescription> {
       const p = await owner();

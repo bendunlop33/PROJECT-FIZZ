@@ -61,7 +61,7 @@ describe('custom period', () => {
     s.progress.choosePeriod({ from: '2026-10-01', to: '2026-12-31' });
     expect((await s.progress.home())?.range).toEqual({ from: '2026-10-01', to: '2026-10-12' });
     s.progress.choosePeriod({ from: '2026-10-10', to: '2026-10-02' });
-    expect((await s.progress.home())?.range).toEqual({ from: '2026-10-02', to: '2026-10-02' });
+    expect((await s.progress.home())?.range).toEqual({ from: '2026-10-02', to: '2026-10-10' });
   });
 
   it('is for this run only: a relaunch shows the saved preset', async () => {
@@ -101,5 +101,13 @@ describe('the coach on a custom period', () => {
     expect(d.yourData).toContainEqual({ label: 'Opened from', detail: 'Progress · 1\u00a0Sep – 30\u00a0Sep' });
     const past = await s.coach.describe({ kind: 'progress', days: 30, range: { from: '2025-09-01', to: '2025-09-30' } }, null);
     expect(past.yourData).toContainEqual({ label: 'Opened from', detail: 'Progress · 1\u00a0Sep – 30\u00a0Sep\u00a02025' });
+  });
+
+  it('the sheet’s `today` for `Sees:` is the profile zone’s, as the coach context uses (review ben-bugs r2 N2)', async () => {
+    const { services: fresh } = await h.launch();
+    expect(await fresh.coach.today()).toBeNull(); // before setup: no profile
+    const s = await setUp();
+    h.clockMs = Date.parse('2026-10-12T23:30:00.000Z'); // 00:30 on 13 Oct in London (BST)
+    expect(await s.coach.today()).toBe('2026-10-13');
   });
 });

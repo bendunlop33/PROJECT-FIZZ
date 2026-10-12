@@ -137,7 +137,8 @@ export function WindowPicker({
         onPress={onPeriod}
         style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? 0.6 : 1 })}
       >
-        <AppText variant="callout" color={custom ? 'text.primary' : 'text.secondary'} numeric style={custom ? { fontWeight: '600' } : undefined}>
+        {/* Can wrap at large text sizes (both years in early January, review ben-bugs r2 N3): it shrinks, the icon stays on screen. */}
+        <AppText variant="callout" color={custom ? 'text.primary' : 'text.secondary'} numeric style={custom ? { fontWeight: '600', flexShrink: 1 } : { flexShrink: 1 }}>
           {datesLine}
         </AppText>
         <Icon name="calendar" color="text.secondary" size={16} />

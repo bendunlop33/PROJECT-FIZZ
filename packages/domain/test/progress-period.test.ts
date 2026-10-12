@@ -151,7 +151,10 @@ describe('custom period', () => {
 
   it('normalise: never past today, from ≤ to, at most ~3 years, bad dates refused', () => {
     expect(normaliseProgressRange({ from: '2026-09-01', to: '2026-12-01' }, '2026-10-12')).toEqual({ from: '2026-09-01', to: '2026-10-12' });
-    expect(normaliseProgressRange({ from: '2026-10-20', to: '2026-10-01' }, '2026-10-12')).toEqual({ from: '2026-10-01', to: '2026-10-01' });
+    expect(normaliseProgressRange({ from: '2026-10-20', to: '2026-10-01' }, '2026-10-12')).toEqual({ from: '2026-10-01', to: '2026-10-12' });
+    expect(normaliseProgressRange({ from: '2026-10-10', to: '2026-10-02' }, '2026-10-12')).toEqual({ from: '2026-10-02', to: '2026-10-10' });
+    // Both after today: today only.
+    expect(normaliseProgressRange({ from: '2026-12-01', to: '2026-11-01' }, '2026-10-12')).toEqual({ from: '2026-10-12', to: '2026-10-12' });
     const long = normaliseProgressRange({ from: '2015-01-01', to: '2026-10-12' }, '2026-10-12');
     expect(long?.to).toBe('2026-10-12');
     expect(long?.from).toBe(addDays('2026-10-12', -(PROGRESS_MAX_PERIOD_DAYS - 1)));
@@ -241,6 +244,11 @@ describe('a period’s dates carry the year when they need it (review ben-bugs B
 
   it('a range over New Year names both years', () => {
     expect(rangeText({ from: '2025-12-29', to: '2026-01-04' }, today)).toBe('29\u00a0Dec\u00a02025 – 4\u00a0Jan\u00a02026');
+    // Early January's presets name both years; at large text sizes the line can only wrap at the dash,
+    // never inside a date (review ben-bugs r2 N3).
+    const jan = rangeText(progressWindow('2027-01-05', 30), '2027-01-05');
+    expect(jan).toBe('7\u00a0Dec\u00a02026 – 5\u00a0Jan\u00a02027');
+    expect(jan.split(' ')).toEqual(['7\u00a0Dec\u00a02026', '–', '5\u00a0Jan\u00a02027']);
     expect(rangeWords({ from: '2025-12-29', to: '2026-01-04' }, today)).toBe('29 December 2025 to 4 January 2026');
   });
 
