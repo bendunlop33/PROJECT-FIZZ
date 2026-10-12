@@ -21,13 +21,17 @@ export interface MemoryList {
   saved: Memory[];
 }
 
+/** A `suggested` memory still waiting for Ben: younger than `SUGGESTION_DAYS` (CM3). An older one has dropped off. */
+export function suggestionInDate(m: Pick<Memory, 'status' | 'createdAtUtc'>, nowUtc: string): boolean {
+  return m.status === 'suggested' && toMs(nowUtc) - toMs(m.createdAtUtc) < SUGGESTION_DAYS * 86_400_000;
+}
+
 export function memoryList(memories: readonly Memory[], nowUtc: string): MemoryList {
-  const now = toMs(nowUtc);
   const savedKeys = new Set(memories.filter((m) => m.status === 'active').map((m) => m.contentKey));
   const newest = (a: Memory, b: Memory) => (a.updatedAtUtc < b.updatedAtUtc ? 1 : a.updatedAtUtc > b.updatedAtUtc ? -1 : a.id.localeCompare(b.id));
   return {
     waiting: memories
-      .filter((m) => m.status === 'suggested' && !savedKeys.has(m.contentKey) && now - toMs(m.createdAtUtc) < SUGGESTION_DAYS * 86_400_000)
+      .filter((m) => !savedKeys.has(m.contentKey) && suggestionInDate(m, nowUtc))
       .sort(newest),
     saved: memories.filter((m) => m.status === 'active').sort(newest),
   };

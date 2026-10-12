@@ -20,7 +20,7 @@ import {
   type PainFlag,
   type PlaybookCandidate,
 } from '@fizz/schemas';
-import { chatSetUndoCommand, nextTargetSourceBasis, reduceSession } from '@fizz/domain';
+import { chatSetUndoCommand, nextTargetSourceBasis, reduceSession, suggestionInDate } from '@fizz/domain';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
 import { decodeDocument, erase, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
@@ -409,9 +409,13 @@ export class SqliteCoachStore {
       }
       case 'suggest_memory': {
         // CM1/CM2: a suggestion waits for Ben; one already saved or waiting with the same text isn't suggested again.
+        // One that dropped off after SUGGESTION_DAYS without an answer isn't waiting any more (review S6): the
+        // same words may be suggested again. The old row stays as it was (CM3).
         if (write.memory.ownerId !== ownerId) throw new Error('Memory owner differs from the store owner');
-        const live = await tx.getFirst("SELECT id FROM memories WHERE owner_id = ? AND content_key = ? AND status IN ('active', 'suggested')", [ownerId, write.memory.contentKey]);
-        if (live !== null) throw new Rollback('already_exists');
+        const saved = await tx.getFirst("SELECT id FROM memories WHERE owner_id = ? AND content_key = ? AND status = 'active'", [ownerId, write.memory.contentKey]);
+        if (saved !== null) throw new Rollback('already_exists');
+        const waiting = await tx.getAll("SELECT * FROM memories WHERE owner_id = ? AND content_key = ? AND status = 'suggested'", [ownerId, write.memory.contentKey]);
+        if (waiting.some((row) => suggestionInDate(decodeDocument(MEMORY_SPEC, row), write.memory.createdAtUtc))) throw new Rollback('already_exists');
         const r = await saveDocumentIn(tx, MEMORY_SPEC, write.memory, null);
         if (!r.ok) throw new Rollback('already_exists');
         return null;

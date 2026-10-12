@@ -86,6 +86,11 @@ describe('memory suggestions (CM1–CM3)', () => {
     expect(await s.coach.decideMemory(id1, 1, 'save')).toMatchObject({ status: 'stale' });
     const card = threadRows((await s.coach.loadThread(first.threadId)) ?? (null as never)).find((x) => x.kind === 'card');
     expect(card?.kind === 'card' ? card.card.status.word : null).toBe('Not saved');
+    // Dropped off after 14 days: the same words may be suggested again, and wait for Save (review S6).
+    model = new StepModel([() => toolCall('suggest_memory', { text: 'Dislikes lunges', quote: 'lunges again' }), () => replyWith('Ok.')]);
+    const later = await ask(s, 'lunges again, ugh');
+    expect(later.cards[0]?.record).toMatchObject({ status: 'proposed', detail: { kind: 'suggest_memory', text: 'Dislikes lunges' } });
+    expect((await s.coach.memories()).waiting.map((m) => m.text)).toEqual(['Dislikes lunges']);
 
     model = new StepModel([() => toolCall('suggest_memory', { text: 'Uses straps on rows', quote: 'straps' }), () => replyWith('Ok.')]);
     const third = await ask(s, 'I use straps on rows');
