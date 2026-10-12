@@ -273,6 +273,21 @@ export function nextSessionBases(
 type PlanEntry = { setType: SetType; planned: PlannedSet };
 
 /**
+ * A next-session plan entry. A coach entry (D21) also carries what a library
+ * workout needs to keep its own structure (review B1): the set count the
+ * coach chose (null: it kept the count), when the target became active
+ * (saved, or Applied by Ben; its `updatedAtUtc`), and the
+ * built-in rule's plan for the same exercise (for the workout's other set
+ * types). Not stored anywhere.
+ */
+/**
+ * `coach.rpe`: the coach's own target RPE (null: it set none). `planned.rpe`
+ * falls back to the built-in plan's, so it can't tell them apart; only the
+ * coach's own goes with its load on a saved workout (WL7, review S2).
+ */
+export type NextTargetEntry = PlanEntry & { coach?: { sets: number | null; setAtUtc: string; builtIn: readonly PlanEntry[]; rpe?: number | null | undefined } | undefined };
+
+/**
  * What the coach's next-session targets were worked out from: the source
  * workout's sets as they stand (each set's ID, status and version). A rename
  * or a time edit on the Summary leaves it as it is; a corrected set changes
@@ -306,8 +321,8 @@ export function withCoachTargets(
   rows: readonly NextSessionTargetRecord[],
   source: SessionAggregate,
   ctx: { flaggedExerciseIds: ReadonlySet<string>; painToday: boolean },
-): Map<string, PlanEntry[]> {
-  const out = new Map<string, PlanEntry[]>([...builtIn].map(([k, v]) => [k, [...v]]));
+): Map<string, NextTargetEntry[]> {
+  const out = new Map<string, NextTargetEntry[]>([...builtIn].map(([k, v]) => [k, [...v]]));
   if (ctx.painToday) return out;
   const fits = { version: source.session.version, basis: nextTargetSourceBasis(source) };
   for (const row of rows) {
@@ -323,9 +338,10 @@ export function withCoachTargets(
     const template = working[0]?.planned ?? lastWorking[0]?.planned ?? null;
     const setType: SetType = working[0]?.setType ?? lastWorking[0]?.setType ?? 'working';
     // `Why?` (§2.12): set by the coach after that workout, its reason in quotes, the rule's `Last time` kept.
+    // `setAt` is when the target became active (saved, or Applied later by Ben), the same time the WL7 comparison uses (review N14).
     const provenance: TargetProvenance = {
       source: 'coach',
-      setAt: { utc: row.createdAtUtc, tz: source.session.startedAt.tz },
+      setAt: { utc: row.updatedAtUtc, tz: source.session.startedAt.tz },
       routineName: source.session.routineName,
       requestedLoad: row.target.load,
       basis: working[0]?.planned.provenance?.basis ?? null,
@@ -333,7 +349,9 @@ export function withCoachTargets(
       guardNotes: row.guardNotes.map((n) => n.text).slice(0, 10),
     };
     const planned: PlannedSet = { load: row.target.load, reps: row.target.reps, durationS: null, rpe: row.target.rpe ?? template?.rpe ?? null, rir: row.target.rpe != null ? null : (template?.rir ?? null), source: 'coach', provenance };
-    out.set(row.exerciseId, [...warmups, ...Array.from({ length: count }, () => ({ setType, planned }))]);
+    // When the target became active (saved, or Applied later by Ben): a slot changed before that is not "since" (review S1).
+    const coach = { sets: row.sets, setAtUtc: row.updatedAtUtc, builtIn: plan, rpe: row.target.rpe ?? null };
+    out.set(row.exerciseId, [...warmups, ...Array.from({ length: count }, () => ({ setType, planned, coach }))]);
   }
   return out;
 }

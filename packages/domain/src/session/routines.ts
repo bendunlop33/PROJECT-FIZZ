@@ -7,20 +7,24 @@ import type {
   Routine,
   RoutineExercise,
   SessionAggregate,
+  SessionTodayEdits,
   SetTemplate,
   SetType,
   TargetProvenance,
+  WorkoutSet,
   ZonedTimestamp,
 } from '@fizz/schemas';
-import { formatNumber, loadText, NBSP } from '../display';
+import { formatNumber, loadText, NBSP, repRangeText } from '../display';
 import { loadDirection } from '../equipment';
 import { fitProvenance, startWarningNote } from '../target-provenance';
 import { toMs } from '../time';
 import { startWorkout, type StartWorkoutInput, type StartWorkoutOutput } from './create';
 import { blockSets, partRootOf, partsOf } from './gym-switch';
 import { boundWords, convertedWords, noLoadWords, roundedWords, withWas } from './fit-words';
-import type { RepeatNote } from './repeat';
+import type { NextTargetEntry } from '../coach/next-session';
+import type { NotCopied, RepeatNote } from './repeat';
 import type { SnapResult } from './snap';
+import { shapeOfTemplates, shapeTemplates, type ShapeBefore, type SlotShape } from './today-shape';
 import { isInHistory } from './deletion';
 
 /**
@@ -46,7 +50,7 @@ export function checkRoutineName(raw: string, existing: readonly Pick<Routine, '
   if (name.length === 0) return { ok: false, message: 'Give it a name' };
   if (name.length > ROUTINE_NAME_MAX) return { ok: false, message: 'Keep it under 120 characters' };
   const clash = existing.find((r) => r.id !== exceptId && !isDeleted(r) && r.name.trim().toLowerCase() === name.toLowerCase());
-  return { ok: true, name, note: clash ? `You already have a routine called ${clash.name}.` : null };
+  return { ok: true, name, note: clash ? `You already have ${clash.name}.` : null };
 }
 
 export function isDeleted(r: Pick<Routine, 'deletedAtUtc'>): boolean {
@@ -60,6 +64,23 @@ export function liveRoutines<R extends Pick<Routine, 'id' | 'createdAtUtc' | 'de
     .sort((a, b) => (a.createdAtUtc < b.createdAtUtc ? -1 : a.createdAtUtc > b.createdAtUtc ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
+/** In Ben's rotation (D19, RT9): absent means yes (every routine was, before the library). */
+export function isInRotation(r: Pick<Routine, 'inRotation'>): boolean {
+  return r.inRotation !== false;
+}
+
+/**
+ * The rotation (D19, RT9): live routines in it, in rotation order (when
+ * each joined; a routine from before the library joined when it was made).
+ * `nextInRotation` and Up next read only these.
+ */
+export function rotationRoutines<R extends Pick<Routine, 'id' | 'createdAtUtc' | 'deletedAtUtc' | 'inRotation' | 'rotationAtUtc'>>(all: readonly R[]): R[] {
+  const at = (r: R): string => r.rotationAtUtc ?? r.createdAtUtc;
+  return all
+    .filter((r) => !isDeleted(r) && isInRotation(r))
+    .sort((a, b) => (at(a) < at(b) ? -1 : at(a) > at(b) ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
 export interface RoutineFromSessionInput {
   id: string;
   ownerId: string;
@@ -68,21 +89,91 @@ export interface RoutineFromSessionInput {
   source: SessionAggregate;
   at: ZonedTimestamp;
   newId: () => string;
+  /**
+   * Repeat's `Save to Workouts` (routines.md §4.6): the loads done become
+   * Fixed. Otherwise every load is `Auto` (WL7): next targets come from the
+   * coach or the built-in rule, using the source workout as history.
+   */
+  keepLoads?: boolean;
+  /** `Add to rotation` on the save sheet (off by default, §A2.5). */
+  inRotation?: boolean;
+  /** For `Main` (WL9): whether an exercise is a compound one. Unknown = not. */
+  isCompound?: (exerciseId: string) => boolean;
 }
 
 /**
- * A routine from a finished workout (`Save as routine`). Keeps the exercise
- * order, equipment, set types, rep ranges (the plan's range when there was
- * one, else the reps done), rest by set type and supersets. Loads are the
- * actuals. Skipped and deleted sets aren't kept, a left/right pair counts
- * once, and an exercise with only warm-ups done is left out. Null when
- * nothing qualifies, or the workout isn't a finished one done in the app
- * (an imported workout's loads were never checked on equipment). The
- * workout itself is never changed.
+ * A workout saved from a finished one (`Save to Workouts`, routines.md WL6,
+ * WL7). Keeps the exercise order, set types and counts, rep ranges (the
+ * plan's range when there was one, else the reps done), rest by set type
+ * and supersets. Loads are `Auto` (null) unless `keepLoads`. Skipped and
+ * deleted sets aren't kept, a left/right pair counts once, and an exercise
+ * with only warm-ups done is left out. A workout done in the app keeps the
+ * item it was last done on; an imported one (FitNotes) pins none and never
+ * keeps a load (its loads were never checked on equipment). Null when
+ * nothing qualifies or the workout isn't finished. The workout itself is
+ * never changed.
  */
+/**
+ * A set a saved workout can't hold (review S1): a set template has no
+ * distance target yet, so a distance exercise (sled push, carry) is left
+ * out and listed, never saved as reps or as a timed set.
+ */
+export function isDistanceSet(ex: { measurement: string }, values: { distanceM?: number | null | undefined }): boolean {
+  return ex.measurement === 'distance' || (values.distanceM !== undefined && values.distanceM !== null);
+}
+
+/** Sets per exercise, in plan order, that `isDistanceSet` leaves out; warm-up-only exercises are left out anyway and not listed. */
+function distanceLeftOut(src: SessionAggregate, kept: (s: WorkoutSet) => boolean, valuesOf: (s: WorkoutSet) => { distanceM?: number | null | undefined } | null): NotCopied[] {
+  const out: NotCopied[] = [];
+  const roots = [...src.exercises].sort((a, b) => a.order - b.order).filter((sx) => partRootOf(src.exercises, sx.id) === sx.id);
+  for (const sx of roots) {
+    const sets = blockSets(src, sx.id).filter((s) => kept(s) && s.pairedWithSetId === null);
+    if (sets.every((s) => s.setType === 'warmup')) continue;
+    const n = sets.filter((s) => {
+      const v = valuesOf(s);
+      return v !== null && isDistanceSet(sx, v);
+    }).length;
+    if (n > 0) out.push({ kind: 'distance', exerciseName: sx.exerciseName, sets: n });
+  }
+  return out;
+}
+
+/** What `routineFromSession` leaves out of a finished workout (shown on the save sheet with `notCopiedText`). */
+export function notSavedFromSession(source: SessionAggregate): NotCopied[] {
+  return distanceLeftOut(
+    source,
+    (s) => s.status === 'completed' && s.actual !== null,
+    (s) => s.actual,
+  );
+}
+
+/** What `routineFromPlan` leaves out of a plan (shown on the save sheet with `notCopiedText`). */
+export function notSavedFromPlan(plan: SessionAggregate): NotCopied[] {
+  return distanceLeftOut(
+    plan,
+    (s) => s.status === 'pending',
+    (s) => s.planned,
+  );
+}
+
+/** Two left-out lists as one, by exercise name in first-seen order (Repeat's own list and the plan's). */
+export function mergeNotCopied(a: readonly NotCopied[], b: readonly NotCopied[]): NotCopied[] {
+  const out: NotCopied[] = [];
+  for (const n of [...a, ...b]) {
+    const i = out.findIndex((x) => x.kind === n.kind && x.exerciseName === n.exerciseName);
+    const prev = out[i];
+    if (prev === undefined) out.push({ ...n });
+    else if (prev.kind === 'skipped' && n.kind === 'skipped') out[i] = { ...prev, skipped: prev.skipped + n.skipped };
+    else if (prev.kind === 'distance' && n.kind === 'distance') out[i] = { ...prev, sets: prev.sets + n.sets };
+  }
+  return out;
+}
+
 export function routineFromSession(input: RoutineFromSessionInput): Routine | null {
   const src = input.source;
-  if (!isInHistory(src.session) || src.session.source !== 'manual') return null;
+  if (!isInHistory(src.session)) return null;
+  const imported = src.session.source === 'import';
+  const keepLoads = input.keepLoads === true && !imported;
   const exercises: RoutineExercise[] = [];
   // An exercise split across gyms (GS6) is one block of rows: one entry, its parts' done sets in execution order.
   const roots = [...src.exercises].sort((a, b) => a.order - b.order).filter((sx) => partRootOf(src.exercises, sx.id) === sx.id);
@@ -93,12 +184,12 @@ export function routineFromSession(input: RoutineFromSessionInput): Routine | nu
     const restBySetType: Partial<Record<SetType, RestSetting>> = {};
     for (const s of done) {
       const a = s.actual;
-      if (a === null || (a.reps === null && a.durationS === null)) continue;
+      if (a === null || (a.reps === null && a.durationS === null) || isDistanceSet(sx, a)) continue;
       const reps = a.reps === null ? null : (s.planned.reps && a.reps >= s.planned.reps.min && a.reps <= s.planned.reps.max ? { ...s.planned.reps } : { min: a.reps, max: a.reps });
       templates.push({
         id: input.newId(),
         setType: s.setType,
-        targetLoad: a.load,
+        targetLoad: keepLoads ? a.load : null,
         targetReps: reps,
         targetDurationS: reps === null ? a.durationS : null,
         targetRpe: null,
@@ -109,12 +200,13 @@ export function routineFromSession(input: RoutineFromSessionInput): Routine | nu
     }
     if (templates.length === 0) continue;
     // Pinned to the item it was last done on, as Repeat does: the latest part with done sets and equipment.
-    const equipmentId =
-      [...partsOf(src.exercises, sx.id)]
-        .reverse()
-        .filter((p) => done.some((d) => d.sessionExerciseId === p.id))
-        .map((p) => p.equipmentId)
-        .find((e) => e !== null) ?? null;
+    const equipmentId = imported
+      ? null
+      : ([...partsOf(src.exercises, sx.id)]
+          .reverse()
+          .filter((p) => done.some((d) => d.sessionExerciseId === p.id))
+          .map((p) => p.equipmentId)
+          .find((e) => e !== null) ?? null);
     exercises.push({
       id: input.newId(),
       exerciseId: sx.exerciseId,
@@ -124,10 +216,11 @@ export function routineFromSession(input: RoutineFromSessionInput): Routine | nu
       setTemplates: templates.slice(0, 30),
       restBySetType,
       transitionRestS: sx.transitionRestS,
-      progressionRuleId: sx.progressionRuleId,
+      progressionRuleId: imported ? null : sx.progressionRuleId,
     });
   }
   if (exercises.length === 0) return null;
+  const kept = exercises.slice(0, 40);
   return {
     id: input.id,
     ownerId: input.ownerId,
@@ -135,11 +228,40 @@ export function routineFromSession(input: RoutineFromSessionInput): Routine | nu
     createdAtUtc: input.at.utc,
     updatedAtUtc: input.at.utc,
     name: input.name.trim(),
-    exercises: exercises.slice(0, 40),
+    exercises: withDefaultMain(kept, input.isCompound ?? (() => false)),
     createdFromSessionId: src.session.id,
     deletedAtUtc: null,
     lastOpId: input.opId,
+    source: 'ben',
+    inRotation: input.inRotation === true,
+    ...(input.inRotation === true ? { rotationAtUtc: input.at.utc } : {}),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Main lifts (WL9)
+
+/**
+ * `Main` by the rule (routines.md WL9): compound exercises in the first two
+ * places are main; with none there, the first exercise is. Order is the
+ * array's order.
+ */
+export function defaultMain(exercises: readonly Pick<RoutineExercise, 'exerciseId'>[], isCompound: (exerciseId: string) => boolean): boolean[] {
+  const flags = exercises.map((e, i) => i < 2 && isCompound(e.exerciseId));
+  if (exercises.length > 0 && !flags.some(Boolean)) flags[0] = true;
+  return flags;
+}
+
+/** Each exercise's `Main`: Ben's stored choice, else the rule (older workouts, exercises not decided yet). */
+export function mainFlags(exercises: readonly Pick<RoutineExercise, 'exerciseId' | 'main'>[], isCompound: (exerciseId: string) => boolean): boolean[] {
+  const rule = defaultMain(exercises, isCompound);
+  return exercises.map((e, i) => e.main ?? rule[i] ?? false);
+}
+
+/** The exercises with every `Main` written down (on create and save). */
+export function withDefaultMain<E extends Pick<RoutineExercise, 'exerciseId' | 'main'>>(exercises: readonly E[], isCompound: (exerciseId: string) => boolean): E[] {
+  const flags = mainFlags(exercises, isCompound);
+  return exercises.map((e, i) => ({ ...e, main: flags[i] ?? false }));
 }
 
 /** `3 exercises · 9 sets` for a routine (working and warm-up sets). */
@@ -153,6 +275,11 @@ export function routineCounts(r: Pick<Routine, 'exercises'>): { exercises: numbe
  * saved again. `expectedVersion` is what the save must find stored.
  */
 export type RoutineChange = { kind: 'write'; next: Routine; expectedVersion: number } | { kind: 'duplicate'; current: Routine } | { kind: 'stale'; current: Routine } | { kind: 'invalid'; message: string };
+
+/** One versioned, idempotent change to a stored routine (every library write goes through this). */
+export function routineWrite(current: Routine, expectedVersion: number, opId: string, at: ZonedTimestamp, patch: Partial<Routine>): RoutineChange {
+  return change(current, expectedVersion, opId, at, patch);
+}
 
 function change(current: Routine, expectedVersion: number, opId: string, at: ZonedTimestamp, patch: Partial<Routine>): RoutineChange {
   if (current.lastOpId === opId) return { kind: 'duplicate', current };
@@ -239,7 +366,7 @@ export interface RoutineStartInput {
    * entry, or in more than one slot of the routine, use the routine's own
    * templates.
    */
-  targets?: ReadonlyMap<string, readonly { setType: SetType; planned: PlannedSet }[]>;
+  targets?: ReadonlyMap<string, readonly NextTargetEntry[]>;
   at: ZonedTimestamp;
   newId: () => string;
   checkIn?: StartWorkoutInput['checkIn'];
@@ -247,10 +374,17 @@ export interface RoutineStartInput {
   gymName?: string;
   /** GS3 step 2: the item an exercise last used at this gym. */
   lastUsedHere?: StartWorkoutInput['lastUsedHere'];
+  /**
+   * Today's shape per slot (`RoutineExercise.id`; overview-today-edits §11):
+   * Ben's sets, reps and load for today, applied after the targets.
+   */
+  shape?: ReadonlyMap<string, SlotShape>;
 }
 
 export interface RoutineStartOutput extends StartWorkoutOutput {
   notes: RepeatNote[];
+  /** Each slot as planned before today's shape (`shape` given only), by `RoutineExercise.id`. */
+  shapedFrom?: Record<string, ShapeBefore>;
 }
 
 /**
@@ -274,30 +408,29 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
   for (const rex of input.routine.exercises) slots.set(rex.exerciseId, (slots.get(rex.exerciseId) ?? 0) + 1);
   // Templates made from the built-in rule's targets. `Why?` then explains them as the rule's, never as the routine's own numbers (review B1.1).
   const ruleOf = new Map<string, PlannedSet>();
+  // A routine from before the library (no `source`) stored last time's actuals as its loads: next targets
+  // replace them, set for set, as they always have. A library workout's non-null load is Ben's Fixed pin.
+  const legacy = input.routine.source === undefined;
+  const shapedFrom: Record<string, ShapeBefore> = {};
   for (const rex of [...input.routine.exercises].sort((a, b) => a.order - b.order)) {
     const planned = (slots.get(rex.exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(rex.exerciseId);
     const useTargets = planned !== undefined && planned.length > 0;
     if (useTargets) targeted.add(rex.exerciseId);
-    const warmups = useTargets ? rex.setTemplates.filter((t) => t.setType === 'warmup') : [];
-    const source: SetTemplate[] = useTargets
-      ? [
-          ...warmups,
-          ...planned.map((p) => {
-            const id = input.newId();
-            ruleOf.set(id, p.planned);
-            return {
-              id,
-              setType: p.setType,
-              targetLoad: p.planned.load,
-              targetReps: p.planned.reps,
-              targetDurationS: p.planned.durationS,
-              targetRpe: p.planned.rpe,
-              targetRir: p.planned.rir,
-              restOverrideS: null,
-            };
-          }),
-        ]
-      : rex.setTemplates;
+    const targetedTemplates: SetTemplate[] = useTargets ? routineTemplatesWithTargets(rex.setTemplates, planned, { legacy, newId: input.newId, ruleOf, editedAtUtc: rex.structureChangedAtUtc }) : rex.setTemplates;
+    // Ben's today-only shape (§11) comes last: his choice for today wins over any target.
+    const shape = input.shape?.get(rex.id);
+    if (input.shape !== undefined) shapedFrom[rex.id] = shapeOfTemplates(targetedTemplates);
+    const source =
+      shape === undefined
+        ? targetedTemplates
+        : shapeTemplates(targetedTemplates, shape, {
+            newId: input.newId,
+            copied: (from, to) => {
+              const rule = ruleOf.get(from);
+              if (rule !== undefined) ruleOf.set(to, rule);
+            },
+            ownLoad: (id) => ruleOf.delete(id),
+          });
     const templates = source.filter((t) => t.targetReps !== null || t.targetDurationS !== null);
     if (templates.length === 0) continue;
     // The routine's own item and unfitted loads: the shared fit does the mapping and fitting (S1, ADR 0019).
@@ -344,11 +477,11 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
     session: { ...out.aggregate.session, routineId: input.routine.id, routineName: input.routine.name },
     sets: out.aggregate.sets.map((s) => {
       const exId = exerciseOf.get(s.sessionExerciseId);
-      // Targets from the rule say so; the routine's own templates carry no source (a routine template).
-      if (exId === undefined || !targeted.has(exId) || s.setType === 'warmup') return s;
-      // A coach target for next time (D21) keeps its source and its own `Why?`.
+      // Targets from the rule say so; the routine's own templates (warm-ups, Fixed pins) carry no source.
       const templateId = out.setTemplateIds[s.id];
-      const fromCoach = templateId !== undefined && ruleOf.get(templateId)?.source === 'coach';
+      if (exId === undefined || !targeted.has(exId) || s.setType === 'warmup' || templateId === undefined || !ruleOf.has(templateId)) return s;
+      // A coach target for next time (D21) keeps its source and its own `Why?`.
+      const fromCoach = ruleOf.get(templateId)?.source === 'coach';
       const plannedSet: PlannedSet = { ...s.planned, source: fromCoach ? 'coach' : 'built_in_rule' };
       const provenance = ruleProvenance(s.id);
       if (provenance === null) delete plannedSet.provenance;
@@ -356,7 +489,196 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
       return { ...s, planned: plannedSet };
     }),
   };
-  return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, fits: out.fits, notes };
+  return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, fits: out.fits, notes, ...(input.shape !== undefined ? { shapedFrom } : {}) };
+}
+
+/**
+ * One routine exercise's templates with next targets (routines.md RT3, D21).
+ * - A routine from before the library: the targets carry the working sets,
+ *   after the routine's warm-ups, as they always have (coach targets too: D21
+ *   lets its small changes add or drop a set).
+ * - A library workout is the structure: its set types, counts, reps and rest
+ *   (WL7). With the built-in rule, each `Auto` set takes the load of the
+ *   target for the same set (the k-th of its type, else the last of its
+ *   type, else the same place overall). A Fixed set keeps its load; an Auto
+ *   set with no target keeps no load.
+ * - A library workout with a coach target (review B1): the target goes on
+ *   the Auto rep sets of its set type (or, when the workout has none of that
+ *   type, its first working type); its other types, and timed sets, take the
+ *   built-in rule's loads as above. Set types are never merged.
+ *   - Slot not changed since the target became active (`editedAtUtc`, the
+ *     slot's `structureChangedAtUtc`, absent or ≤ the target's time): the
+ *     coach's load and reps, and its set count when it chose one and the
+ *     working sets are all one type.
+ *   - Changed since (Ben's later edit wins, WL7): the slot's own count and
+ *     reps. The coach's load is used only where its reps fit the set's range;
+ *     otherwise the built-in rule's load. `Why?` says what was kept.
+ * `ruleOf` collects the templates whose load came from a target.
+ */
+export function routineTemplatesWithTargets(
+  templates: readonly SetTemplate[],
+  planned: readonly NextTargetEntry[],
+  o: { legacy: boolean; newId: () => string; ruleOf: Map<string, PlannedSet>; editedAtUtc?: string | undefined },
+): SetTemplate[] {
+  const coachEntry = planned.find((p) => p.planned.source === 'coach' && p.setType !== 'warmup');
+  if (o.legacy) return legacyTemplates(templates, planned, o);
+  if (coachEntry === undefined) return withRuleLoads(templates, planned, o);
+  const working = templates.filter((t) => t.setType !== 'warmup');
+  const matchType = working.some((t) => t.setType === coachEntry.setType) ? coachEntry.setType : working[0]?.setType;
+  if (matchType === undefined) return [...templates];
+  const meta = coachEntry.coach;
+  const uniform = working.every((t) => t.setType === matchType);
+  const unedited = o.editedAtUtc === undefined || (meta !== undefined && toMs(o.editedAtUtc) <= toMs(meta.setAtUtc));
+  const shaped = unedited && meta !== undefined && meta.sets !== null && uniform ? withSetCount(templates, matchType, meta.sets, o.newId) : [...templates];
+  const coachPlan = coachEntry.planned;
+  const coachReps = coachPlan.reps;
+  // Ben's later edit: one short `Why?` line for what of the coach's target wasn't used.
+  const ofType = working.filter((t) => t.setType === matchType);
+  const kept: string[] = [];
+  if (!unedited && meta !== undefined && meta.sets !== null && uniform && meta.sets !== ofType.length) kept.push(`${String(ofType.length)} ${ofType.length === 1 ? 'set' : 'sets'}`);
+  if (!unedited && coachReps !== null) {
+    const ranges = [...new Set(ofType.flatMap((t) => (t.targetLoad === null && t.targetReps !== null && !sameRange(t.targetReps, coachReps) ? [repRangeText(t.targetReps)] : [])))];
+    if (ranges.length > 0) kept.push(`${ranges.join(', ')} reps`);
+  }
+  const note = kept.length > 0 ? `Kept your edit: ${kept.join(', ')}` : null;
+  const coachHere = note === null ? coachPlan : withGuardNote(coachPlan, note);
+  const coached = shaped.map((t) => {
+    if (t.setType !== matchType || t.targetLoad !== null || t.targetReps === null) return t;
+    // Changed since: the coach's load only where its reps fit Ben's range (else the built-in rule's, below).
+    if (!unedited && (coachReps === null || !fitsRange(coachReps, t.targetReps))) return t;
+    const id = o.newId();
+    o.ruleOf.set(id, coachHere);
+    // The coach's own target RPE goes with its load (target RPE, ADR 0006 amendment 3; WL7): its load was chosen for that effort.
+    // Not `coachPlan.rpe`, which falls back to the built-in plan's (review S2): with none from the coach the template keeps its own.
+    const coachRpe = meta?.rpe ?? null;
+    const effort = coachRpe !== null ? { targetRpe: coachRpe, targetRir: null } : {};
+    return unedited ? { ...t, id, targetLoad: coachPlan.load, targetReps: coachReps ?? t.targetReps, ...effort } : { ...t, id, targetLoad: coachPlan.load, ...effort };
+  });
+  // The workout's other set types (a back-off after a top set), its timed sets and, after Ben's edit,
+  // sets the coach's reps don't fit keep the built-in rule's loads.
+  const builtIn = meta?.builtIn ?? planned.filter((p) => p.planned.source !== 'coach');
+  const fromCoach = new Set(coached.filter((t) => o.ruleOf.get(t.id)?.source === 'coach').map((t) => t.id));
+  const before = new Set(coached.map((t) => t.id));
+  const out = withRuleLoads(coached, builtIn, o, (t) => !fromCoach.has(t.id));
+  if (note !== null) {
+    for (const t of out) {
+      const rule = t.setType === matchType && !before.has(t.id) ? o.ruleOf.get(t.id) : undefined;
+      if (rule !== undefined) o.ruleOf.set(t.id, withGuardNote(rule, note));
+    }
+  }
+  return out;
+}
+
+const sameRange = (a: { min: number; max: number }, b: { min: number; max: number }): boolean => a.min === b.min && a.max === b.max;
+/** The coach's reps sit inside Ben's range (so the load it chose for them suits his sets). */
+const fitsRange = (coach: { min: number; max: number }, range: { min: number; max: number }): boolean => coach.min >= range.min && coach.max <= range.max;
+
+function withGuardNote(p: PlannedSet, note: string): PlannedSet {
+  if (p.provenance === undefined) return p;
+  return { ...p, provenance: { ...p.provenance, guardNotes: [...p.provenance.guardNotes, note].slice(-10) } };
+}
+
+/**
+ * A routine from before the library is planned set for set from its last
+ * workout's next targets. A set count Ben changed for that day only (§11,
+ * `todayEdits.edited` with `sets`) isn't the workout's: those slots go back
+ * to the routine's own working-set count (TE-B13, review S1). Extra targets
+ * are dropped from the end; missing ones repeat the last working target.
+ * Library workouts are already planned from their own structure: unchanged.
+ */
+export function withoutTodayOnlySets(
+  targets: ReadonlyMap<string, readonly NextTargetEntry[]>,
+  routine: Pick<Routine, 'exercises' | 'source'>,
+  lastTodayEdits: Pick<SessionTodayEdits, 'edited'> | undefined,
+): Map<string, readonly NextTargetEntry[]> {
+  const out = new Map(targets);
+  if (routine.source !== undefined) return out;
+  for (const e of lastTodayEdits?.edited ?? []) {
+    if (!e.kinds.includes('sets')) continue;
+    const rex = routine.exercises.find((x) => x.id === e.slotKey);
+    const planned = rex === undefined ? undefined : out.get(rex.exerciseId);
+    if (rex === undefined || planned === undefined) continue;
+    const want = rex.setTemplates.filter((t) => t.setType !== 'warmup').length;
+    const working = planned.filter((p) => p.setType !== 'warmup');
+    const last = working.at(-1);
+    if (want < 1 || last === undefined || working.length === want) continue;
+    const kept = working.length > want ? working.slice(0, want) : [...working, ...Array.from({ length: want - working.length }, () => last)];
+    out.set(rex.exerciseId, [...planned.filter((p) => p.setType === 'warmup'), ...kept]);
+  }
+  return out;
+}
+
+/** A routine from before the library: the targets are the working sets (a stored load can't be told from a pin, so none is kept). */
+function legacyTemplates(templates: readonly SetTemplate[], planned: readonly NextTargetEntry[], o: { newId: () => string; ruleOf: Map<string, PlannedSet> }): SetTemplate[] {
+  return [
+    ...templates.filter((t) => t.setType === 'warmup'),
+    ...planned.map((p) => {
+      const id = o.newId();
+      o.ruleOf.set(id, p.planned);
+      return {
+        id,
+        setType: p.setType,
+        targetLoad: p.planned.load,
+        targetReps: p.planned.reps,
+        targetDurationS: p.planned.durationS,
+        targetRpe: p.planned.rpe,
+        targetRir: p.planned.rir,
+        restOverrideS: null,
+      };
+    }),
+  ];
+}
+
+/**
+ * The workout's templates with the built-in rule's loads on its Auto sets
+ * (only those `include` picks; all by default). Fixed sets and warm-ups
+ * stay as they are.
+ */
+function withRuleLoads(
+  templates: readonly SetTemplate[],
+  planned: readonly { setType: SetType; planned: PlannedSet }[],
+  o: { newId: () => string; ruleOf: Map<string, PlannedSet> },
+  include: (t: SetTemplate) => boolean = () => true,
+): SetTemplate[] {
+  const work = planned.filter((p) => p.setType !== 'warmup' && p.planned.source !== 'coach');
+  const seen = new Map<SetType, number>();
+  let overall = 0;
+  return templates.map((t) => {
+    if (t.setType === 'warmup') return t;
+    const k = seen.get(t.setType) ?? 0;
+    seen.set(t.setType, k + 1);
+    const place = overall;
+    overall += 1;
+    if (t.targetLoad !== null || !include(t)) return t;
+    const sameType = work.filter((p) => p.setType === t.setType);
+    const target = sameType[k] ?? sameType[sameType.length - 1] ?? work[place] ?? work[work.length - 1];
+    if (target === undefined || target.planned.load === null) return t;
+    const id = o.newId();
+    o.ruleOf.set(id, target.planned);
+    return { ...t, id, targetLoad: target.planned.load };
+  });
+}
+
+/**
+ * The coach's set count on a one-type workout: extra sets copy the last set
+ * of that type (as Auto), placed after it; fewer sets drop Auto sets from
+ * the end. Fixed sets are Ben's and never dropped; at least one set stays.
+ */
+function withSetCount(templates: readonly SetTemplate[], setType: SetType, count: number, newId: () => string): SetTemplate[] {
+  const ofType = templates.filter((t) => t.setType === setType);
+  const last = ofType[ofType.length - 1];
+  if (last === undefined || count === ofType.length) return [...templates];
+  if (count > ofType.length) {
+    const at = templates.indexOf(last) + 1;
+    const extra = Array.from({ length: count - ofType.length }, () => ({ ...last, id: newId(), targetLoad: null }));
+    return [...templates.slice(0, at), ...extra, ...templates.slice(at)];
+  }
+  const drop = new Set<string>();
+  for (const t of [...ofType].reverse()) {
+    if (ofType.length - drop.size <= Math.max(1, count)) break;
+    if (t.targetLoad === null) drop.add(t.id);
+  }
+  return templates.filter((t) => !drop.has(t.id));
 }
 
 /** A load as plain text (`32.5 kg each`, `Assist 30 kg`). */
@@ -434,14 +756,15 @@ export function swapRoutineSlot(
   // A card shown before the routine moved is out of date, whatever it would change (CR4).
   if (current.version !== expectedVersion) return { kind: 'stale', current };
   const slot = current.exercises.find((e) => e.id === slotKey);
-  if (slot === undefined) return { kind: 'invalid', message: 'That exercise isn’t in the routine any more.' };
-  if (slot.exerciseId === to.id) return { kind: 'invalid', message: 'Already in the routine.' };
+  if (slot === undefined) return { kind: 'invalid', message: 'That exercise isn’t in the workout any more.' };
+  if (slot.exerciseId === to.id) return { kind: 'invalid', message: 'Already in the workout.' };
   const replaced: RoutineExercise = {
     ...slot,
     exerciseId: to.id,
     equipmentId: null,
     progressionRuleId: null,
     setTemplates: slot.setTemplates.map((t) => ({ ...t, targetLoad: null })),
+    structureChangedAtUtc: at.utc,
   };
   return change(current, expectedVersion, opId, at, { exercises: current.exercises.map((e) => (e.id === slotKey ? replaced : e)) });
 }

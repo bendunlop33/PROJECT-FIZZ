@@ -29,7 +29,7 @@ export function deleteListView(summary: DataSummary): { removed: string[]; kept:
     removed: [
       `${plural(y.workouts, 'workout', 'workouts')} and all their sets`,
       'Your profile, gyms and equipment',
-      'Routines, check-ins and pain flags',
+      'Workouts, check-ins and pain flags',
       'Coach chats and memories',
       'Coach sign-in',
       'Your settings and scheduled alerts',

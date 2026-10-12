@@ -290,6 +290,8 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
       ],
       'packages/persistence/src/integrity.ts': [{ why: 'integrity checks over every stored session', query: /^'SELECT id FROM sessions ORDER BY id'$/ }],
       'packages/persistence/src/coach.ts': [{ why: '`startedFrom`: was a workout started from this one (active included)', query: /status IN \('active', 'finished'\)/ }],
+      // Fit to time (merge with the workout library): the start fence counts Starts, not history; purged starts are counted from their tombstones.
+      'packages/persistence/src/drafts.ts': [{ why: '`startFenceIn`: how many workouts Ben has started (any status), never decreasing', query: /^`SELECT \(SELECT COUNT\(\*\) FROM sessions WHERE owner_id = \? AND source = 'manual'\) \+ \(SELECT COUNT\(\*\) FROM purged_sessions WHERE owner_id = \? AND import_job_id IS NULL\) AS n`$/ }],
       'packages/persistence/src/documents.ts': [{ why: 'a check-in still linked to any stored session (deleted ones can be restored)', query: /FROM sessions WHERE check_in_id IN/ }],
       'packages/persistence/src/store.ts': [{ why: 'the backup status’ unfinished-workout count', query: /^FROM sessions WHERE status = 'active'\) AS unfinishedWorkouts, \(SELECT count\(\*\) FROM session_sets s$/ }],
       'packages/persistence/src/data-domains.ts': [{ why: 'check-ins hidden with a deleted workout (export and counts)', query: /^`EXISTS \(SELECT 1 FROM sessions d WHERE d\.check_in_id = c\.id AND d\.status = 'deleted'\)`$/ }],

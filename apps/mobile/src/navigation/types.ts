@@ -84,7 +84,8 @@ export type TabParams = {
    * `toast`: a one-off message after returning from the check-in (e.g. Skip workout).
    * `undoRoutine`: the toast offers Undo for a routine deleted from the Workout overview.
    */
-  Today: { toast?: string; undoRoutine?: { id: string; version: number } } | undefined;
+  /** `startEmpty`: `Empty workout` on the Workouts list, once per nonce (Today's own start, with its check-in gate). */
+  Today: { toast?: string; undoRoutine?: { id: string; version: number }; startEmpty?: string } | undefined;
   Progress: NavigatorScreenParams<ProgressStackParams> | undefined;
   Profile: NavigatorScreenParams<ProfileStackParams> | undefined;
 };
@@ -117,7 +118,16 @@ export type RootStackParams = {
    * routine from the list. Creates nothing until Start.
    */
   /** Up next, a routine, or a session type picked from its history (session-picker §7). */
-  WorkoutOverview: { target: { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string } };
+  WorkoutOverview: { target: { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string }; toast?: LibraryToastParam };
+  /** The Workouts library (routines.md §A2.1). `toast`: back from the editor (`Saved Push A` [Undo]). */
+  Workouts: { toast?: LibraryToastParam } | undefined;
+  /**
+   * The workout editor (§A2.3): a stored workout, or `New workout` (null).
+   * `from`: where `Save` returns with its toast. `selectName`: a fresh copy
+   * from `Duplicate` (the name is selected). `copyToast`: that copy's
+   * `Saved Push A copy` [Undo] toast, handed back on `Cancel` (review S1).
+   */
+  WorkoutEditor: { routineId: string | null; from: 'Workouts' | 'WorkoutOverview'; selectName?: boolean; copyToast?: LibraryToastParam };
   ExercisePicker: { sessionId: string };
   /** How to (ADR 0013): guide, cues and mistakes for a catalogue exercise. Opened only when it has a how-to. */
   HowTo: { catalogueKey: string; name: string };
@@ -147,6 +157,14 @@ export type RootStackParams = {
   /** Exercise detail over a past workout's Summary or the Workout overview (`History`). */
   ExerciseProgress: ExerciseDetailParams;
 };
+
+/** A library toast handed back to the screen below (`key`: shown once). */
+export interface LibraryToastParam {
+  key: string;
+  text: string;
+  /** `revert`: an editor save's Undo record; `delete`: Undo of a new workout (a tombstone). */
+  undo: { kind: 'revert'; actionId: string } | { kind: 'delete'; routineId: string; version: number } | null;
+}
 
 export type WorkoutToastParam =
   | { kind: 'check_in'; text: string; checkInId: string }

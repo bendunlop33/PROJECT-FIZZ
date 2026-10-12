@@ -1,14 +1,19 @@
 import { useNavigation } from '@react-navigation/native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { ActionSheetIOS, Pressable, View } from 'react-native';
 
 import { deleteToolbarLabel, pastRowDetail, pastRowOpens, pastRowTitle, recentlyDeletedFooter, rowCustomActions, selectRowLabel, unreadableLine } from '../../history/delete-view';
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { useDeleteToast } from '../../history/useDeleteToast';
 import { useSelectDelete } from '../../history/useSelectDelete';
 import { importedNotListedLine } from '../../import/views';
+import { newUuid } from '../../device/runtime';
 import { PAST_PAGE } from '../../services/history-services';
-import { useScreenData, useServices } from '../../shell/context';
-import { AppText, DangerTextButton, Group, LinkLine, Row, Screen, SelectionToolbar, SelectRow, StatusLine, TextButton } from '../../ui';
+import { useDataChanged, useScreenData, useServices } from '../../shell/context';
+import { TIMING } from '../../theme';
+import { AppText, DangerTextButton, Group, Icon, LinkLine, Row, Screen, SelectionToolbar, SelectRow, StatusLine, TextButton, Toast } from '../../ui';
+import { LIBRARY_COPY_UI } from '../../workout/library-view';
+import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
 
 /**
  * Past workouts (Today → `Past workouts`): pick one to repeat, or delete
@@ -17,7 +22,8 @@ import { AppText, DangerTextButton, Group, LinkLine, Row, Screen, SelectionToolb
  * (with `⋯`) instead of Repeat (review r2 B1, B2). `Select` → tick →
  * `Delete (n)` → one confirm sheet → one all-or-nothing write → toast with
  * Undo. VoiceOver has a `Delete` action on each row. Swipe-to-delete isn't
- * built (ADR 0024).
+ * built (ADR 0024). `⋯` on a row → `Save to Workouts` (routines.md §A2.6):
+ * what was done, loads Auto.
  * Imported FitNotes workouts aren't listed here (P-I3); they are deleted
  * from their import's view.
  */
@@ -32,6 +38,36 @@ export function PastWorkoutsScreen() {
   const rows = data.state === 'ready' ? data.value.list.rows : NO_ROWS;
   const sel = useSelectDelete({ rows, loaded: data.state === 'ready', title: 'Past workouts', reload, toast });
   const { selecting, selected, line } = sel;
+  const changed = useDataChanged();
+  const [saveToast, setSaveToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
+  useEffect(() => {
+    if (!saveToast) return;
+    const t = setTimeout(() => {
+      setSaveToast(null);
+    }, TIMING.undoToast);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [saveToast]);
+  const save = useSaveToWorkouts(
+    (made) => {
+      changed();
+      setSaveToast({
+        text: LIBRARY_COPY_UI.savedToWorkouts,
+        action: LIBRARY_COPY_UI.undo,
+        onAction: () => {
+          setSaveToast(null);
+          void services.routines.remove({ routineId: made.id, expectedVersion: made.version, opId: newUuid() }).then((u) => {
+            changed();
+            if (!u.ok) setSaveToast({ text: u.message });
+          });
+        },
+      });
+    },
+    () => {
+      setSaveToast({ text: LIBRARY_COPY_UI.nothingToSave });
+    },
+  );
 
   if (data.state === 'loading') return <Screen>{null}</Screen>;
   if (data.state === 'error') {
@@ -102,20 +138,39 @@ export function PastWorkoutsScreen() {
         ) : (
           <Group>
             {list.rows.map((c) => (
-              <Row
-                key={c.sessionId}
-                title={pastRowTitle(c, tz)}
-                subtitle={c.exerciseNames.join(', ')}
-                secondLine={pastRowDetail(c)}
-                actions={rowCustomActions('past')}
-                onAction={() => {
-                  sel.removeOne(c);
-                }}
-                onPress={() => {
-                  if (pastRowOpens(c) === 'summary') navigation.navigate('Summary', { sessionId: c.sessionId, back: true });
-                  else navigation.navigate('Repeat', { sessionId: c.sessionId });
-                }}
-              />
+              <View key={c.sessionId} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ flex: 1 }}>
+                  <Row
+                    title={pastRowTitle(c, tz)}
+                    subtitle={c.exerciseNames.join(', ')}
+                    secondLine={pastRowDetail(c)}
+                    actions={rowCustomActions('past')}
+                    onAction={() => {
+                      sel.removeOne(c);
+                    }}
+                    onPress={() => {
+                      if (pastRowOpens(c) === 'summary') navigation.navigate('Summary', { sessionId: c.sessionId, back: true });
+                      else navigation.navigate('Repeat', { sessionId: c.sessionId });
+                    }}
+                  />
+                </View>
+                {/* `⋯` → `Save to Workouts` (routines.md §A2.6): what was done, loads Auto. */}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`More, ${pastRowTitle(c, tz)}`}
+                  accessibilityActions={[{ name: LIBRARY_COPY_UI.saveToWorkouts, label: LIBRARY_COPY_UI.saveToWorkouts }]}
+                  onAccessibilityAction={() => void save.open({ kind: 'session', sessionId: c.sessionId }, null)}
+                  onPress={() => {
+                    const options = [LIBRARY_COPY_UI.saveToWorkouts, LIBRARY_COPY_UI.cancel];
+                    ActionSheetIOS.showActionSheetWithOptions({ title: pastRowTitle(c, tz), options, cancelButtonIndex: 1 }, (i) => {
+                      if (i === 0) void save.open({ kind: 'session', sessionId: c.sessionId }, null);
+                    });
+                  }}
+                  style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Icon name="ellipsis" color="text.secondary" />
+                </Pressable>
+              </View>
             ))}
           </Group>
         )}
@@ -141,6 +196,12 @@ export function PastWorkoutsScreen() {
         ) : null}
       </Screen>
       <DeleteToastView state={toast} />
+      {saveToast ? (
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 24 }}>
+          <Toast icon="info.circle" text={saveToast.text} {...(saveToast.action ? { action: saveToast.action } : {})} {...(saveToast.onAction ? { onAction: saveToast.onAction } : {})} />
+        </View>
+      ) : null}
+      {save.sheet}
       {selecting ? <SelectionToolbar trailing={<DangerTextButton label={deleteToolbarLabel(selected.size)} disabled={selected.size === 0} onPress={sel.confirmSelected} />} /> : null}
     </>
   );

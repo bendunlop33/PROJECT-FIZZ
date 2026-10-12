@@ -26,10 +26,15 @@ import { toMs } from '../time';
 import { convertMass, toScaled } from '../units';
 import type { WriteFence } from '../ports';
 import type { SetFit } from './create';
-import { estimateRemainingDuration } from './duration';
+import { estimateRemainingDuration, type ResolvedPace } from './duration';
 import { muscleWords } from './first-run';
 import { droppedWords } from './fit-words';
-import { slotMoves, type TodaySlot } from './today-edits';
+import { fitMinutesOf, overByMinutes, type FitStatus } from './fit-time';
+import { editCountOf, slotMoves, type FitLine, type FitOutcome, type TodayPlanOutput, type TodaySlot } from './today-edits';
+import type { ShapeBefore } from './today-shape';
+import { TODAY_EDIT_LIMITS } from '@fizz/schemas';
+import { roundToAvailableLoad } from '../equipment';
+import { loadText } from '../display';
 import { isInHistory } from './deletion';
 
 /**
@@ -171,7 +176,7 @@ export interface PlannedFirst {
   convention: LoadConvention;
 }
 
-export type ChangeMarkerKind = 'held' | 'new' | 'no_load' | 'up' | 'down' | 'reps_up' | 'reps_down' | 'sets_up' | 'sets_down' | 'same' | 'swapped' | 'skipped';
+export type ChangeMarkerKind = 'held' | 'new' | 'no_load' | 'up' | 'down' | 'reps_up' | 'reps_down' | 'sets_up' | 'sets_down' | 'same' | 'swapped' | 'skipped' | 'added' | 'edited' | 'trimmed';
 
 export type ChangeDelta =
   /** `from` is last time's load in today's unit (converted when it was in another unit). */
@@ -251,7 +256,7 @@ export function targetChangeMarker(planned: PlannedFirst, comparable: PastExerci
 export interface MarkerWords {
   /** Shown in tracked caps: `Up`, `Reps`, `No load`. */
   word: string;
-  glyph: 'up' | 'down' | 'warning' | 'swap' | 'skip' | null;
+  glyph: 'up' | 'down' | 'warning' | 'swap' | 'skip' | 'add' | 'edit' | 'clock' | null;
   /** `warning`: `status.warning` with its icon (HELD, NO LOAD). Never `status.done`, `status.danger` or the accent. */
   tone: 'warning' | 'secondary';
 }
@@ -282,6 +287,12 @@ export function markerWords(kind: ChangeMarkerKind): MarkerWords {
       return { word: 'Swapped', glyph: 'swap', tone: 'secondary' };
     case 'skipped':
       return { word: 'Skipped', glyph: 'skip', tone: 'secondary' };
+    case 'added':
+      return { word: 'Added', glyph: 'add', tone: 'secondary' };
+    case 'edited':
+      return { word: 'Edited', glyph: 'edit', tone: 'secondary' };
+    case 'trimmed':
+      return { word: 'Trimmed', glyph: 'clock', tone: 'secondary' };
   }
 }
 
@@ -324,6 +335,12 @@ export function markerSpoken(m: ChangeMarker): string {
       return 'swapped today';
     case 'skipped':
       return 'skipped today';
+    case 'added':
+      return 'added today';
+    case 'edited':
+      return 'edited today';
+    case 'trimmed':
+      return 'trimmed to fit';
     case 'up':
     case 'down':
     case 'reps_up':
@@ -403,14 +420,80 @@ export function setsDetail(working: readonly Pick<WorkoutSet, 'planned'>[], unil
 }
 
 export interface PanelLine {
-  key: 'swapped' | 'skipped' | 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag' | 'coach' | 'rule';
+  key: 'added' | 'swapped' | 'skipped' | 'fit' | 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag' | 'coach' | 'rule';
   label: string;
   value: string;
   tone: 'normal' | 'warning';
 }
 
-/** Today's edit on a row (overview-today-edits §2): swapped for another exercise, or skipped. */
-export type RowEdit = { kind: 'swapped'; editId: string; fromExerciseId: string; fromName: string } | { kind: 'skipped'; editId: string } | null;
+/**
+ * Today's edit on a row (overview-today-edits §2, §11): swapped for another
+ * exercise, skipped, or added today. A row the built-in fit skipped
+ * (fit-to-time §3.3) is `skipped` with `fitKeep`: its `Bring back` is Ben's
+ * own sets edit at that count (FT5), not an Undo of the fit; `editId` is the
+ * fit's.
+ */
+export type RowEdit = { kind: 'swapped'; editId: string; fromExerciseId: string; fromName: string } | { kind: 'skipped'; editId: string; fitKeep?: number } | { kind: 'added'; editId: string } | null;
+
+/** Ben's §11 edits on a row's sets, reps and load (their edit IDs), or null with none. */
+export interface RowShapeEdit {
+  sets: string | null;
+  reps: string | null;
+  load: string | null;
+}
+
+/** One `SetCountStepper` step: the count it writes, and whether that is the plan's own (the edit is then cleared). Null: disabled. */
+export type SetsStep = { workingSets: number; clear: boolean } | null;
+
+/**
+ * The step from `count` working sets by `delta` (`+1`, `−1`), against the
+ * plan's own count: a step back at the plan clears the edit. Null outside
+ * TE17's limits. The screen steps a quick second tap from the count its
+ * previous write left, not the page it tapped on (review S2).
+ */
+export function setsStepFrom(count: number, delta: 1 | -1, plannedCount: number | null): SetsStep {
+  const to = count + delta;
+  return to < TODAY_EDIT_LIMITS.minSets || to > TODAY_EDIT_LIMITS.maxSets ? null : { workingSets: to, clear: to === plannedCount };
+}
+
+/**
+ * A row in Edit mode (§11.3): the values its controls show and what each
+ * step writes. The screen lays it out and sends these values; it computes nothing.
+ */
+export interface EditRowView {
+  workingSets: number;
+  /** The plan's own working-set count (what a step back to clears the edit at). */
+  plannedSets: number;
+  /**
+   * What a step clears at: the plan's own count, or null on a row the fit
+   * trimmed (fit-to-time FT5: `[+]` back to the plan's count is Ben's own
+   * edit, never a clear that the trim would take again).
+   */
+  clearsAt: number | null;
+  /** `3 sets`. */
+  setsText: string;
+  setsDown: SetsStep;
+  setsUp: SetsStep;
+  /** `6–8 reps`, `0:45`. */
+  repsText: string;
+  reps: RepRange | null;
+  durationS: number | null;
+  timed: boolean;
+  repsEdited: boolean;
+  /** The RepsSheet's `Use planned` values (what the plan gives without the reps edit). */
+  plannedReps: { reps: RepRange | null; durationS: number | null };
+  /** `100 kg`, `30 kg each` (a target, fitted); null: no load target (`—`). */
+  loadText: string | null;
+  /** `—  No history`: no load target and no comparable history. */
+  noHistory: boolean;
+  /** The load is Ben's own for today (`[Ben]` tag). */
+  benLoad: boolean;
+  /** Ben's intended load (before the fit), when he typed one. */
+  intendedLoad: Load | null;
+  /** The keypad's frame (unit, convention, the item it is checked on); null where there is no load to set (bodyweight). */
+  keypad: { unit: WeightUnit; convention: LoadConvention; equipmentId: string | null; value: number | null } | null;
+  accessibilityLabel: string;
+}
 
 /**
  * Which of today's edits a row offers (§2.2), decided here so the screen
@@ -427,6 +510,8 @@ export interface RowActions {
   down: boolean;
   /** `Change Push A too ›` (routine basis, swapped rows). */
   changeRoutine: boolean;
+  /** `Remove` (§11.3): an exercise added today. */
+  remove: boolean;
 }
 
 export interface OverviewRow {
@@ -435,6 +520,10 @@ export interface OverviewRow {
   /** The plan slot this row is (routine: `RoutineExercise.id`; next: the source part-root row). Today's edits are keyed by it. */
   slotKey: string;
   edit: RowEdit;
+  /** §11: Ben's sets, reps and load edits on this row. */
+  shapeEdit: RowShapeEdit | null;
+  /** §11: the row's Edit mode controls. */
+  editRow: EditRowView;
   actions: RowActions;
   /** 1-based position on the page. */
   index: number;
@@ -558,6 +647,8 @@ export interface OverviewInput {
   exerciseInfo: Readonly<Record<string, Pick<Exercise, 'primaryMuscles'>>>;
   /** Ben's last finished workouts (pace). */
   recent: readonly SessionAggregate[];
+  /** The pace already worked out from `recent` (`planPace`), the same one a fit used; absent: from `recent`. */
+  pace?: ResolvedPace;
   nowMs: number;
   tz: string;
   title: string;
@@ -593,6 +684,50 @@ export interface OverviewToday {
   draft: { id: string; version: number } | null;
   /** The routine Change … too › would change; null for a next session. */
   routineName: string | null;
+  /** §11: exercises added today (slot key → edit ID). */
+  added?: ReadonlyMap<string, string>;
+  /** §11: Ben's sets, reps and load edits per slot. */
+  shapeEdits?: ReadonlyMap<string, RowShapeEdit>;
+  /** §11: each slot as planned before those edits (`planWithTodayEdits().plannedShape`). */
+  plannedShape?: Readonly<Record<string, ShapeBefore>>;
+  /** §11: Ben's intended loads today, per slot. */
+  benLoads?: ReadonlyMap<string, Load>;
+  /** Fit to time (fit-to-time §3.3): the live fit as planned; null or absent with none. */
+  fit?: FitOutcome | null;
+}
+
+/**
+ * `OverviewToday` from `planWithTodayEdits` (§6.2, §11, fit-to-time): the
+ * one place that decides which applied edits are Ben's on the page. The
+ * coach fit's own edits are the fit (its card and `TRIMMED`), never `✎
+ * EDITED` or `N EDITED`. `swapped`: each swapped slot's original (the caller
+ * looks its name up).
+ */
+export function overviewTodayOf(
+  out: Pick<TodayPlanOutput, 'slotOf' | 'slots' | 'resolved' | 'plannedShape' | 'fit'>,
+  p: { swapped: ReadonlyMap<string, { editId: string; fromExerciseId: string; fromName: string }>; draft: { id: string; version: number } | null; routineName: string | null },
+): OverviewToday {
+  const r = out.resolved;
+  const ben = <V extends { editId: string }>(m: ReadonlyMap<string, V>): [string, V][] => [...m].filter(([, v]) => !r.coachEdits.has(v.editId));
+  const shapeEdits = new Map<string, RowShapeEdit>();
+  const shapeAt = (k: string): RowShapeEdit => shapeEdits.get(k) ?? { sets: null, reps: null, load: null };
+  for (const [k, v] of ben(r.sets)) shapeEdits.set(k, { ...shapeAt(k), sets: v.editId });
+  for (const [k, v] of ben(r.reps)) shapeEdits.set(k, { ...shapeAt(k), reps: v.editId });
+  for (const [k, v] of ben(r.loads)) shapeEdits.set(k, { ...shapeAt(k), load: v.editId });
+  return {
+    slotOf: out.slotOf,
+    slots: out.slots,
+    swapped: p.swapped,
+    skipped: r.skipped,
+    editCount: editCountOf(r),
+    draft: p.draft,
+    routineName: p.routineName,
+    added: new Map([...r.added].map(([k, v]) => [k, v.editId])),
+    shapeEdits,
+    plannedShape: out.plannedShape,
+    benLoads: new Map(ben(r.loads).map(([k, v]) => [k, v.load])),
+    fit: out.fit,
+  };
 }
 
 /**
@@ -659,6 +794,72 @@ export interface WorkoutOverview {
   editCount: number;
   /** Today's pre-start draft, for the next write's `expectedDraftVersion`. */
   draft: { id: string; version: number } | null;
+  /** The live fit (fit-to-time §3.1, §3.3): the tile's label and the `FitCard`. Null with none. */
+  fit: FitView | null;
+}
+
+/** The `FitCard` and the tile with a live fit (fit-to-time §3.1, §3.3, §7.2). App text only; minutes from the estimate. */
+export interface FitView {
+  editId: string;
+  minutes: number;
+  by: 'built_in' | 'coach';
+  actionId: string | null;
+  status: FitStatus;
+  /** `Fitted to 45 min`, `Shortest: ≈ 52 min`, `Coach fitted to 45 min`. */
+  title: string;
+  /** `≈ 62 → 44 min`, or `≈ 52 min · 7 over 45` once a slot Ben kept stops it fitting. */
+  beforeAfter: string;
+  beforeMinutes: number;
+  afterMinutes: number;
+  /** The unrounded estimates (what `Fits already` and a new fit compare against). */
+  beforeSeconds: number;
+  afterSeconds: number;
+  /** One per slot, in today's order: `Cable fly · skipped`, `Lateral raise · 3 → 2 sets`, `Face pull · added · 2 × 12–15`. */
+  lines: string[];
+  /** The tile's label: `Time · fit 45` (shown in caps). */
+  tileLabel: string;
+  /** `Fitted to 45 minutes. About 62 to about 44 minutes. Cable fly skipped. …` */
+  accessibilityLabel: string;
+  /** Collapsed after the first scroll: `Fitted to 45 min · ≈ 44 min`. */
+  collapsed: string;
+}
+
+const minutesWord = (n: number): string => `${String(n)} ${n === 1 ? 'minute' : 'minutes'}`;
+
+/** The card's words for a fit (§3.3, §7.2). `nameOf` / `detailOf`: a slot's exercise name and its sets detail on the page. */
+export function fitView(fit: FitOutcome, nameOf: (slotKey: string) => string, detailOf: (slotKey: string) => string): FitView {
+  const before = fitMinutesOf(fit.beforeSeconds, 'fitted', fit.minutes);
+  const after = fitMinutesOf(fit.afterSeconds, fit.status, fit.minutes);
+  const over = fit.status === 'over';
+  const coach = fit.by === 'coach';
+  const title = coach ? `Coach fitted to ${String(fit.minutes)} min` : over && !fit.benKept ? `Shortest: ≈${NBSP}${String(after)}${NBSP}min` : `Fitted to ${String(fit.minutes)} min`;
+  const beforeAfter = over && (fit.benKept || coach) ? `≈${NBSP}${String(after)}${NBSP}min · ${String(overByMinutes(fit.afterSeconds, fit.minutes))} over ${String(fit.minutes)}` : `≈${NBSP}${String(before)} → ${String(after)}${NBSP}min`;
+  const lineText = (l: FitLine): { text: string; spoken: string } => {
+    const name = nameOf(l.slotKey);
+    if (l.kind === 'skip') return { text: `${name} · skipped`, spoken: `${name} skipped` };
+    if (l.kind === 'add') return { text: `${name} · added · ${detailOf(l.slotKey)}`, spoken: `${name} added` };
+    return { text: `${name} · ${String(l.from)} → ${String(l.to)}${NBSP}sets`, spoken: `${name} ${String(l.from)} to ${String(l.to)} sets` };
+  };
+  const lines = fit.lines.map(lineText);
+  const spokenHead = coach ? `Coach fitted to ${minutesWord(fit.minutes)}` : over && !fit.benKept ? `Shortest about ${minutesWord(after)}` : `Fitted to ${minutesWord(fit.minutes)}`;
+  const spokenBa = over && (fit.benKept || coach) ? `About ${minutesWord(after)}, ${String(overByMinutes(fit.afterSeconds, fit.minutes))} over ${String(fit.minutes)}` : `About ${minutesWord(before)} to about ${minutesWord(after)}`;
+  return {
+    editId: fit.editId,
+    minutes: fit.minutes,
+    by: fit.by,
+    actionId: fit.actionId,
+    status: fit.status,
+    title,
+    beforeAfter,
+    beforeMinutes: before,
+    afterMinutes: after,
+    beforeSeconds: fit.beforeSeconds,
+    afterSeconds: fit.afterSeconds,
+    lines: lines.map((l) => l.text),
+    tileLabel: `Time · fit ${String(fit.minutes)}`,
+    accessibilityLabel: [spokenHead, spokenBa, ...lines.map((l) => l.spoken)].join('. ') + '.',
+    collapsed: `${coach ? `Coach fitted to ${String(fit.minutes)} min` : over && !fit.benKept ? 'Shortest' : `Fitted to ${String(fit.minutes)} min`} · ≈${NBSP}${String(after)}${NBSP}min`,
+  };
 }
 
 function firstBarbell(aggregate: SessionAggregate, skippedRows: ReadonlySet<string>): SessionExercise | null {
@@ -771,7 +972,12 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
   const sets = aggregate.sets.filter(live);
   const today = input.today ?? null;
   const slotOf = (sxId: string): string => today?.slotOf[sxId] ?? sxId;
-  const skippedRows = new Set(ordered.filter((e) => today?.skipped.has(slotOf(e.id)) === true).map((e) => e.id));
+  // The live fit (fit-to-time §3.3): the built-in trim's cut sets, and each slot's line.
+  const fit = today?.fit ?? null;
+  const fitLines = new Map((fit?.lines ?? []).map((l) => [l.slotKey, l]));
+  const fitSkipped = (sxId: string): boolean => fit?.by === 'built_in' && fitLines.get(slotOf(sxId))?.kind === 'skip';
+  const fitCutSets = new Set(fit?.skipSetIds ?? []);
+  const skippedRows = new Set(ordered.filter((e) => today?.skipped.has(slotOf(e.id)) === true || fitSkipped(e.id)).map((e) => e.id));
   const barbellEx = firstBarbell(aggregate, skippedRows);
   const unskipped = ordered.length - skippedRows.size;
   const todaySlots: TodaySlot[] = today?.slots.length ? [...today.slots] : ordered.map((e) => ({ slotKey: e.id, exerciseId: e.exerciseId, supersetGroup: e.supersetGroup }));
@@ -780,7 +986,8 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
   const sourceBasis = input.coach?.sourceBasis ?? null;
 
   const rows: OverviewRow[] = ordered.map((ex, i) => {
-    const own = sets.filter((s) => s.sessionExerciseId === ex.id && s.pairedWithSetId === null).sort((a, b) => a.index - b.index);
+    // A trimmed row shows what is left (`2 × 12–15`); a skipped one, what it was.
+    const own = sets.filter((s) => s.sessionExerciseId === ex.id && s.pairedWithSetId === null && (skippedRows.has(ex.id) || !fitCutSets.has(s.id))).sort((a, b) => a.index - b.index);
     const working = own.filter((s) => isWorking(s.setType));
     const warm = own.filter((s) => !isWorking(s.setType));
     const first = working[0] ?? null;
@@ -799,11 +1006,37 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     const slotKey = slotOf(ex.id);
     const swappedFrom = today?.swapped.get(slotKey);
     const skipEdit = today?.skipped.get(slotKey);
-    const edit: RowEdit = skipEdit !== undefined ? { kind: 'skipped', editId: skipEdit } : swappedFrom !== undefined ? { kind: 'swapped', editId: swappedFrom.editId, fromExerciseId: swappedFrom.fromExerciseId, fromName: swappedFrom.fromName } : null;
+    const addEdit = today?.added?.get(slotKey);
+    const shapeEdit = today?.shapeEdits?.get(slotKey) ?? null;
+    const fitLine = fitLines.get(slotKey) ?? null;
+    const trimmed = fitLine?.kind === 'sets';
+    const edit: RowEdit =
+      skipEdit !== undefined
+        ? { kind: 'skipped', editId: skipEdit }
+        : fitSkipped(ex.id) && fit !== null
+          ? { kind: 'skipped', editId: fit.editId, fitKeep: own.filter((s) => isWorking(s.setType)).length }
+        : addEdit !== undefined
+          ? { kind: 'added', editId: addEdit }
+          : swappedFrom !== undefined
+            ? { kind: 'swapped', editId: swappedFrom.editId, fromExerciseId: swappedFrom.fromExerciseId, fromName: swappedFrom.fromName }
+            : null;
     const base = targetChangeMarker(planned, comparable, covering?.flag ?? null, firstFit);
-    // Precedence (§2.1): SKIPPED > HELD > NO LOAD > SWAPPED > the §4 markers.
+    // Precedence (§2.1, §11.3, fit-to-time §3.3): SKIPPED > HELD > NO LOAD > ADDED > SWAPPED > EDITED > TRIMMED > the §4 markers.
+    const warned = base.kind === 'held' || base.kind === 'no_load';
     const marker: ChangeMarker =
-      edit?.kind === 'skipped' ? { kind: 'skipped', delta: null, basis: null } : edit?.kind === 'swapped' && base.kind !== 'held' && base.kind !== 'no_load' ? { kind: 'swapped', delta: base.delta, basis: base.basis } : base;
+      edit?.kind === 'skipped'
+        ? { kind: 'skipped', delta: null, basis: null }
+        : warned
+          ? base
+          : edit?.kind === 'added'
+            ? { kind: 'added', delta: null, basis: null }
+            : edit?.kind === 'swapped'
+              ? { kind: 'swapped', delta: base.delta, basis: base.basis }
+              : shapeEdit !== null
+                ? { kind: 'edited', delta: base.delta, basis: base.basis }
+                : trimmed
+                  ? { kind: 'trimmed', delta: base.delta, basis: base.basis }
+                  : base;
     const words = markerWords(marker.kind);
     const load = edit?.kind === 'skipped' ? { value: '—', unit: null, spoken: 'skipped', none: true } : loadCell(planned.load, ex.loadConvention, eq?.kind ?? null, firstFit?.kind === 'dropped');
 
@@ -812,8 +1045,10 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     const detail = [setsText, warmups].filter((x): x is string => x !== null && x !== '').join(' · ');
 
     const panel: PanelLine[] = [];
+    if (edit?.kind === 'added') panel.push({ key: 'added', label: 'Added', value: 'Today', tone: 'normal' });
     if (edit?.kind === 'swapped') panel.push({ key: 'swapped', label: 'Swapped', value: `For ${edit.fromName} · today`, tone: 'normal' });
     if (edit?.kind === 'skipped') panel.push({ key: 'skipped', label: 'Skipped', value: 'Today', tone: 'normal' });
+    if (fitLine?.kind === 'sets' && fit !== null) panel.push({ key: 'fit', label: 'Fit', value: `${String(fitLine.from)} → ${String(fitLine.to)}${NBSP}sets · fit ${String(fit.minutes)}`, tone: 'normal' });
     const change = edit?.kind === 'skipped' ? null : changeText(marker);
     if (change !== null) panel.push({ key: 'change', label: 'Change', value: change, tone: 'normal' });
     const last = comparable === null ? null : lastText(comparable);
@@ -854,25 +1089,46 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     })();
     const moves = slotMoves(todaySlots, slotKey);
     const actions: RowActions = {
-      swap: edit?.kind !== 'skipped',
+      swap: edit?.kind !== 'skipped' && edit?.kind !== 'added',
       undoSwap: edit?.kind === 'swapped',
-      skip: edit?.kind !== 'skipped' && unskipped > 1,
+      skip: edit?.kind !== 'skipped' && edit?.kind !== 'added' && unskipped > 1,
       bringBack: edit?.kind === 'skipped',
       doFirst: edit?.kind !== 'skipped' && moves.first,
       up: moves.up,
       down: moves.down,
       changeRoutine: edit?.kind === 'swapped' && today?.routineName !== null && today?.routineName !== undefined,
+      remove: edit?.kind === 'added',
     };
+    const editRowBase = editRowView({
+      index: i + 1,
+      name: ex.exerciseName,
+      working,
+      edit,
+      shapeEdit,
+      plannedShape: today?.plannedShape?.[slotKey] ?? null,
+      load,
+      noHistory: planned.load === null && comparable === null && load.none,
+      benLoad: today?.benLoads?.get(slotKey) ?? null,
+      eq,
+      convention: ex.loadConvention,
+      unit: input.key.unit,
+      timed: ex.measurement !== 'reps',
+    });
+    // A trimmed row's stepper writes Ben's count (FT5: `[+]` takes the slot out of the fit), never a clear back to the trim.
+    const editRow: EditRowView = trimmed && shapeEdit === null ? { ...editRowBase, clearsAt: null, setsDown: keepStep(editRowBase.setsDown), setsUp: keepStep(editRowBase.setsUp) } : editRowBase;
     const accessibilityLabel = (edit?.kind === 'skipped' ? [String(i + 1), ex.exerciseName, 'skipped today'] : [
       String(i + 1),
       ex.exerciseName,
+      edit?.kind === 'added' ? 'added today' : null,
       edit?.kind === 'swapped' ? `swapped for ${edit.fromName} today` : null,
+      edit?.kind !== 'added' && shapeEdit !== null ? 'edited today' : null,
+      trimmed && shapeEdit === null && edit?.kind !== 'added' ? 'trimmed to fit' : null,
       supersetWith.length > 0 ? `superset with ${supersetWith.join(' and ')}` : null,
       spokenSets,
       warmups,
       load.spoken,
       rounded !== null && !dropped ? 'rounded to this gym' : null,
-      marker.kind === 'swapped' ? markerSpoken(base) : markerSpoken(marker),
+      marker.kind === 'swapped' || marker.kind === 'added' || marker.kind === 'edited' || marker.kind === 'trimmed' ? markerSpoken(base) : markerSpoken(marker),
       coach?.state === 'coach' ? 'coach target' : null,
     ])
       .filter((x): x is string => x !== null && x !== '')
@@ -883,6 +1139,8 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
       exerciseId: ex.exerciseId,
       slotKey,
       edit,
+      shapeEdit,
+      editRow,
       actions,
       index: i + 1,
       indexText: String(i + 1).padStart(2, '0'),
@@ -921,7 +1179,9 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
   });
 
   // Skipped rows stay in place but are left out of TIME, DONE BY, SETS and the muscles line (§2.1).
-  const est = estimateRemainingDuration(aggregate, { recent: input.recent });
+  const est = estimateRemainingDuration(aggregate, input.pace ? { pace: input.pace } : { recent: input.recent });
+  const rowBySlot = new Map(rows.map((r) => [r.slotKey, r]));
+  const view = fit === null ? null : fitView(fit, (k) => rowBySlot.get(k)?.name ?? 'Exercise', (k) => rowBySlot.get(k)?.detail ?? '');
   const muscles = muscleWords(
     ordered
       .filter((e) => !skippedRows.has(e.id))
@@ -933,16 +1193,20 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     title: input.title,
     basis: input.basis,
     gym: input.gym,
-    estimate: est.pendingSets === 0 ? null : { minutes: est.minutes, seconds: est.seconds },
-    workingSets: sets.filter((s) => s.pairedWithSetId === null && isWorking(s.setType) && !skippedRows.has(s.sessionExerciseId)).length,
+    // With a fit, the tile reads the card's number (an `over` fit never rounds to its own length).
+    estimate: est.pendingSets === 0 ? null : { minutes: view !== null && fit !== null ? fitMinutesOf(est.seconds, fit.status, fit.minutes) : est.minutes, seconds: est.seconds },
+    workingSets: sets.filter((s) => s.pairedWithSetId === null && isWorking(s.setType) && !skippedRows.has(s.sessionExerciseId) && !fitCutSets.has(s.id)).length,
     muscles,
     exerciseCount: ordered.length,
     groups,
     rows,
     editCount: today?.editCount ?? 0,
     draft: today?.draft ?? null,
+    fit: view,
   };
 }
+
+const keepStep = (step: SetsStep): SetsStep => (step === null ? null : { workingSets: step.workingSets, clear: false });
 
 const FIVE_MIN_MS = 5 * 60_000;
 
@@ -957,4 +1221,98 @@ export function statStripSpoken(estimateMinutes: number | null, doneByText: stri
   const sets = `${String(workingSets)} working ${workingSets === 1 ? 'set' : 'sets'}`;
   if (estimateMinutes === null || doneByText === null) return sets;
   return `About ${String(estimateMinutes)} ${estimateMinutes === 1 ? 'minute' : 'minutes'}, done about ${doneByText}, ${sets}`;
+}
+
+// ---------------------------------------------------------------------------
+// Edit mode (overview-today-edits §11)
+
+const spokenReps = (r: RepRange): string => (r.min === r.max ? `${String(r.min)} reps` : `${String(r.min)} to ${String(r.max)} reps`);
+
+/** One row's Edit mode controls: the stepper's steps, reps, the fitted load and the keypad's frame. */
+export function editRowView(i: {
+  index: number;
+  name: string;
+  working: readonly Pick<WorkoutSet, 'planned'>[];
+  edit: RowEdit;
+  shapeEdit: RowShapeEdit | null;
+  plannedShape: ShapeBefore | null;
+  load: LoadCell;
+  noHistory: boolean;
+  benLoad: Load | null;
+  eq: EquipmentInstance | null;
+  convention: LoadConvention;
+  unit: WeightUnit;
+  timed: boolean;
+}): EditRowView {
+  const n = i.working.length;
+  const first = i.working[0];
+  const plannedCount = i.plannedShape?.workingSets ?? n;
+  const reps = first?.planned.reps ?? null;
+  const durationS = first?.planned.durationS ?? null;
+  const repsText = reps !== null ? `${repRangeText(reps)}${NBSP}reps` : durationS !== null ? formatDuration(durationS) : '—';
+  const loadText = i.load.none ? null : i.load.unit === null ? i.load.value : `${i.load.value}${NBSP}${i.load.unit}`;
+  const bodyweight = i.convention === 'bodyweight';
+  const frameUnit = i.eq !== null && i.eq.kind !== 'bodyweight_station' ? i.eq.unit : (first?.planned.load?.unit ?? i.unit);
+  const frameConvention = i.eq !== null && i.eq.kind !== 'bodyweight_station' ? i.eq.loadConvention : i.convention;
+  const setsText = `${String(n)}${NBSP}${n === 1 ? 'set' : 'sets'}`;
+  const edited = i.edit?.kind !== 'added' && i.shapeEdit !== null;
+  const accessibilityLabel = [
+    String(i.index),
+    i.name,
+    i.edit?.kind === 'added' ? 'added' : edited ? 'edited' : null,
+    `${String(n)} ${n === 1 ? 'set' : 'sets'}`,
+    reps !== null ? spokenReps(reps) : durationS !== null ? formatDuration(durationS) : null,
+    i.noHistory ? 'no history' : i.load.spoken,
+    i.benLoad !== null ? 'your target today' : null,
+  ]
+    .filter((x): x is string => x !== null)
+    .join(', ');
+  return {
+    workingSets: n,
+    plannedSets: plannedCount,
+    clearsAt: plannedCount,
+    setsText,
+    setsDown: setsStepFrom(n, -1, plannedCount),
+    setsUp: setsStepFrom(n, 1, plannedCount),
+    repsText,
+    reps,
+    durationS,
+    timed: i.timed,
+    repsEdited: i.shapeEdit?.reps != null,
+    plannedReps: { reps: i.plannedShape?.reps ?? reps, durationS: i.plannedShape?.durationS ?? durationS },
+    loadText,
+    noHistory: i.noHistory,
+    benLoad: i.benLoad !== null,
+    intendedLoad: i.benLoad,
+    keypad: bodyweight ? null : { unit: frameUnit, convention: frameConvention, equipmentId: i.eq?.id ?? null, value: keypadValue([i.benLoad, first?.planned.load ?? null], frameUnit, frameConvention) },
+    accessibilityLabel,
+  };
+}
+
+/**
+ * The keypad's first value: the first of `loads` (Ben's intended load, then
+ * the fitted planned one) already in the frame's unit and convention. A
+ * number is never relabelled with another unit or convention (review B2):
+ * `37.5 kg each` at an lb rack opens at the fitted `80 lb each`, not `37.5 lb`.
+ */
+function keypadValue(loads: readonly (Load | null)[], unit: WeightUnit, convention: LoadConvention): number | null {
+  for (const l of loads) if (l !== null && l.unit === unit && l.convention === convention) return l.value;
+  return null;
+}
+
+/**
+ * The keypad's note before `Set target` (§11.4): `Rounds to 97.5 kg here`,
+ * `Most here: 30 kg each`, or why it can't be made. Null: makeable as typed
+ * (or nothing to check it on; the fit at Start still applies).
+ */
+export function todayLoadNote(load: Load, eq: EquipmentInstance | null): string | null {
+  if (eq === null || eq.kind === 'bodyweight_station') return null;
+  const r = roundToAvailableLoad(load, eq, 'easier');
+  if (!r.ok) return droppedWords(r.reason, { unit: load.unit });
+  if (r.exact && r.convertedRequest === null) return null;
+  const words = loadText(r.load, r.load.convention, eq).replaceAll(NBSP, ' ');
+  const assisted = loadDirection(eq.loadConvention) === 'assistance';
+  if (r.bounded === 'max') return assisted ? `Most assistance here: ${words}` : `Most here: ${words}`;
+  if (r.bounded === 'min') return assisted ? `Least assistance here: ${words}` : `Least here: ${words}`;
+  return `Rounds to ${words} here`;
 }

@@ -11,6 +11,7 @@ import type { SnapSetResult, SnapSlotResult } from './snap';
 import { GENERIC_WORKOUT_NAME } from './first-run';
 import { repeatNoteText } from './snap-text';
 import { swapEquipmentId, type SwapPlan } from './swap-plan';
+import { addedSlotShape, shapeOfTemplates, shapeTemplates, type ShapeBefore, type SlotShape } from './today-shape';
 
 /**
  * `Repeat last workout` / `Start from a past workout` (routines.md RT4, §2.4,
@@ -66,6 +67,14 @@ export interface RepeatInput {
    * no load), on its own item. Never from the original's loads.
    */
   swaps?: ReadonlyMap<string, SwapPlan>;
+  /** Today's shape per part-root row ID or added slot key (overview-today-edits §11), applied after the targets. */
+  shape?: ReadonlyMap<string, SlotShape>;
+  /**
+   * Exercises added today (§11), each with its own plan (`substituteTargets`
+   * on its default shape) and its place: `rank` is in the same order as the
+   * source rows' `order`.
+   */
+  added?: readonly { slotKey: string; rank: number; plan: SwapPlan }[];
 }
 
 export interface RepeatNote {
@@ -99,8 +108,10 @@ export interface RepeatOutput extends StartWorkoutOutput {
   notCopied: NotCopied[];
   /** Nothing to copy (no completed sets). */
   empty: boolean;
-  /** The source part-root row each planned slot came from, by the plan's slot ID (`snap.slots[i].slotId`). */
+  /** The source part-root row each planned slot came from, by the plan's slot ID (`snap.slots[i].slotId`); an added slot's own key. */
   slotSources: Record<string, string>;
+  /** Each slot as planned before today's shape (`shape` given only), by part-root row ID or added slot key. */
+  shapedFrom?: Record<string, ShapeBefore>;
 }
 
 export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
@@ -123,6 +134,23 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   // What each template came from: the done set it copies, or the built-in rule's planned set (Start next session).
   const copied = new Map<string, { kind: 'copy'; set: WorkoutSet } | { kind: 'rule'; planned: PlannedSet } | { kind: 'plain' }>();
   const slotSources: Record<string, string> = {};
+  /** Where each planned slot goes today (the source rows' `order`; an added one's `rank`). */
+  const rankOf = new Map<string, number>();
+  const shapedFrom: Record<string, ShapeBefore> = {};
+  /** Today's shape (§11) on one slot's templates, after its targets: copies keep their `Why?`; Ben's load has none. */
+  const shaped = (key: string, templates: SetTemplate[]): SetTemplate[] => {
+    if (input.shape !== undefined) shapedFrom[key] = shapeOfTemplates(templates);
+    const shape = input.shape?.get(key);
+    if (shape === undefined) return templates;
+    return shapeTemplates(templates, shape, {
+      newId: input.newId,
+      copied: (from, to) => {
+        const c = copied.get(from);
+        if (c !== undefined) copied.set(to, c);
+      },
+      ownLoad: (id) => copied.set(id, { kind: 'plain' }),
+    });
+  };
 
   for (const sx of roots) {
     const parts = partsOf(src.exercises, sx.id);
@@ -150,14 +178,18 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
                 const reps = s.actual?.reps ?? null;
                 return { setType: s.setType, load: null, reps: reps === null ? null : { min: reps, max: reps }, durationS: reps === null ? (s.actual?.durationS ?? null) : null, from: { kind: 'plain' as const } };
               });
-      const templates: SetTemplate[] = sources.map((a) => {
-        const templateId = input.newId();
-        copied.set(templateId, a.from);
-        return { id: templateId, setType: a.setType, targetLoad: a.load, targetReps: a.reps, targetDurationS: a.durationS, targetRpe: null, targetRir: null, restOverrideS: null };
-      });
+      const templates: SetTemplate[] = shaped(
+        sx.id,
+        sources.map((a) => {
+          const templateId = input.newId();
+          copied.set(templateId, a.from);
+          return { id: templateId, setType: a.setType, targetLoad: a.load, targetReps: a.reps, targetDurationS: a.durationS, targetRpe: null, targetRir: null, restOverrideS: null };
+        }),
+      );
       if (templates.length === 0) continue;
       const rexId = input.newId();
       slotSources[rexId] = sx.id;
+      rankOf.set(rexId, sx.order);
       routineExercises.push({
         id: rexId,
         exerciseId: swap.exercise.id,
@@ -205,7 +237,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       planned && planned.length > 0
         ? planned.map((p) => ({ setType: p.setType, load: p.planned.load, reps: p.planned.reps, durationS: p.planned.durationS, from: { kind: 'rule' as const, planned: p.planned } }))
         : doneWithReps.flatMap((s) => (s.actual === null ? [] : [{ setType: s.setType, load: s.actual.load, reps: s.actual.reps === null ? null : { min: s.actual.reps, max: s.actual.reps }, durationS: s.actual.durationS, from: { kind: 'copy' as const, set: s } }]));
-    const templates: SetTemplate[] = [];
+    let templates: SetTemplate[] = [];
     for (const a of sources) {
       const templateId = input.newId();
       copied.set(templateId, a.from);
@@ -221,9 +253,11 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
         restOverrideS: null,
       });
     }
+    templates = shaped(sx.id, templates);
     if (templates.length === 0) continue;
     const rexId = input.newId();
     slotSources[rexId] = sx.id;
+    rankOf.set(rexId, sx.order);
     routineExercises.push({
       id: rexId,
       exerciseId: exercise.id,
@@ -236,6 +270,36 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       transitionRestS: sx.transitionRestS,
       progressionRuleId: null,
     });
+  }
+
+  // Exercises added today (§11): their own targets, or the default shape with no load (never another exercise's).
+  for (const a of input.added ?? []) {
+    const sp = a.plan;
+    exercises.set(sp.exercise.id, sp.exercise);
+    if (sp.pin !== null) knownEquipment.set(sp.pin.id, sp.pin);
+    const plan = sp.plan ?? [];
+    const sources =
+      plan.length > 0
+        ? plan.map((p) => ({ setType: p.setType, load: p.planned.load, reps: p.planned.reps, durationS: p.planned.durationS, from: { kind: 'rule' as const, planned: p.planned } }))
+        : addedSlotShape(sp.exercise, sp.pin?.kind ?? null).templates.map((t) => ({ setType: t.setType, load: null, reps: t.reps, durationS: t.durationS, from: { kind: 'plain' as const } }));
+    const templates = shaped(
+      a.slotKey,
+      sources.map((x) => {
+        const templateId = input.newId();
+        copied.set(templateId, x.from);
+        return { id: templateId, setType: x.setType, targetLoad: x.load, targetReps: x.reps, targetDurationS: x.durationS, targetRpe: null, targetRir: null, restOverrideS: null };
+      }),
+    );
+    if (templates.length === 0) continue;
+    const rexId = input.newId();
+    slotSources[rexId] = a.slotKey;
+    rankOf.set(rexId, a.rank);
+    routineExercises.push({ id: rexId, exerciseId: sp.exercise.id, equipmentId: swapEquipmentId(sp), order: routineExercises.length, supersetGroup: null, setTemplates: templates, restBySetType: {}, transitionRestS: null, progressionRuleId: null });
+  }
+  // Today's order: the source rows' (edited) order, added exercises at their place.
+  if (input.added !== undefined && input.added.length > 0) {
+    const sorted = routineExercises.map((r, i) => ({ r, i })).sort((x, y) => (rankOf.get(x.r.id) ?? 0) - (rankOf.get(y.r.id) ?? 0) || x.i - y.i);
+    routineExercises.splice(0, routineExercises.length, ...sorted.map((x, i) => ({ ...x.r, order: i })));
   }
 
   const routine: Routine = {
@@ -369,7 +433,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       return { ...s, planned };
     }),
   };
-  return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, fits: out.fits, notes, notCopied, empty: routineExercises.length === 0, slotSources };
+  return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, fits: out.fits, notes, notCopied, empty: routineExercises.length === 0, slotSources, ...(input.shape !== undefined ? { shapedFrom } : {}) };
 }
 
 /**

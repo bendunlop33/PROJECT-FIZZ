@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, LayoutAnimation, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { overviewDoneBy, statStripSpoken, type TargetExplanation } from '@fizz/domain';
+import { howLongSheet, overviewDoneBy, stepFitMinutes, setsStepFrom, statStripSpoken, type SetsStep, type StepTarget, type TargetExplanation, type TemplateLine } from '@fizz/domain';
 import type { CheckIn, CheckInScore } from '@fizz/schemas';
 
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
@@ -12,12 +12,13 @@ import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
 import { formatShortDate } from '../../format/dates';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
-import { openStartedWorkout, popToTabs, popToToday } from '../../navigation/actions';
-import type { RootStackParams } from '../../navigation/types';
-import type { DraftWrite, OverviewData, OverviewTarget, SessionList, SessionPickerRow, SwapSheet } from '../../services/workout-services';
+import { openStartedWorkout, popToTabs, popToToday, replaceWithWorkouts } from '../../navigation/actions';
+import type { LibraryToastParam, RootStackParams } from '../../navigation/types';
+import { STALE_PREVIEW, type AddSheet, type DraftWrite, type OverviewData, type OverviewTarget, type SessionList, type SessionPickerRow, type SwapSheet } from '../../services/workout-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, Icon, OverviewRow, PrimaryButton, ReorderRow, StatStrip, StatusLine, SubstituteRowView, SupersetBracket, TextButton, Toast } from '../../ui';
+import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, CoachFitStatusCard, EditLink, EditRow, FitCard, FitSuggestionCard, FitWhySheet, HowLongSheet, Icon, NumberAccessory, OverviewRow, PrimaryButton, StatStrip, StatusLine, SubstituteRowView, SupersetBracket, TextButton, Toast, UpdateCard } from '../../ui';
+import { bringBackOf, coachFitCardOf, coachFitCardView, FIT_COPY, fitCardCollapsed, howLongOpen, timeTile, type CoachFitCard } from '../../workout/fit-view';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import {
   checkInRow,
@@ -37,15 +38,32 @@ import {
 import { checkInAtStart, createGuard, saveScore, scoreStepOf, staleStartToast, startEmptyFromOverview, startFromOverview, undoGymSwitch, type ScoreStep } from '../../workout/overview-start';
 import {
   changeCardState,
+  createEditLane,
   createOpIds,
+  nextDraftVersion,
+  stepperCount,
+  loadUnchanged,
+  queuedWriteLive,
+  wroteAfterRead,
   editMenuItems,
   editPills,
   editToast,
   listHeaderText,
   noSwapsText,
-  pageToast,
-  reorderUnits,
+  pageToasts,
   rowCustomActions,
+  defaultChecked,
+  EDIT_MODE_COPY,
+  editModeToast,
+  editMoves,
+  editRowCustomActions,
+  editTopBar,
+  loadPayload,
+  typedLoadText,
+  updateCardState,
+  updateLink,
+  type EditRowAction,
+  type EditRowPillKey,
   showsWhy,
   swapPainLine,
   swapSubtitle,
@@ -56,8 +74,11 @@ import {
   type RowCustomAction,
 } from '../../workout/overview-edits';
 import { NameSheet } from '../routines/NameSheet';
+import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
+import { LIBRARY_COPY_UI, LIBRARY_TOASTS } from '../../workout/library-view';
 import { isShownRow, SESSION_PICKER_COPY, switchSession } from '../../workout/session-picker';
 import { SessionPickerSheet } from './SessionPickerSheet';
+import { AddExerciseSheet, LoadSheet, RepsSheet } from './OverviewEditSheets';
 import { TargetWhyPanel } from './TargetWhyPanel';
 
 /**
@@ -78,6 +99,16 @@ import { TargetWhyPanel } from './TargetWhyPanel';
 type Toasting = { text: string; action?: string; onAction?: () => void } | null;
 
 const FADE_STEPS = 7;
+/** The Add list searches once typing pauses this long (each search reads up to 40 histories). */
+const ADD_SEARCH_PAUSE_MS = 250;
+
+/**
+ * Coach swap suggestions Ben tapped `Not now` on, by fit: kept for the app's
+ * run so the card stays gone when the page remounts (review C N2). A
+ * relaunch shows them again (not stored).
+ */
+const dismissedCoachSwaps = new Set<string>();
+const swapKey = (actionId: string, sg: { slotKey: string; toExerciseId: string }) => `${actionId}:${sg.slotKey}:${sg.toExerciseId}`;
 
 export function WorkoutOverviewScreen() {
   const theme = useTheme();
@@ -91,14 +122,12 @@ export function WorkoutOverviewScreen() {
   const [rowWidth, setRowWidth] = useState<number | null>(null);
   const [labelWidth, setLabelWidth] = useState<number | null>(null);
   const checkInFit = checkInRowLayout({ available: rowWidth ?? windowWidth - 2 * theme.components.screenMargin, labelWidth, fontScale });
-  const routeTarget = useRoute<RouteProp<RootStackParams, 'WorkoutOverview'>>().params.target;
+  const routeParams = useRoute<RouteProp<RootStackParams, 'WorkoutOverview'>>().params;
+  const routeTarget = routeParams.target;
   // The session shown: the one opened, until Ben picks another from the title (session-picker §4.2, in place).
   const [target, setTarget] = useState<OverviewTarget>(routeTarget);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerList, setPickerList] = useState<SessionList | null | 'loading'>('loading');
-  const [saveAsVisible, setSaveAsVisible] = useState(false);
-  const [saveAsOp, setSaveAsOp] = useState(newUuid);
-  const [saveAsAfter] = useState(() => createAfterDismiss());
   const [pickerAfter] = useState(() => createAfterDismiss());
   const scrollRef = useRef<ScrollView>(null);
   const alertsAsk = useStartAlertsAsk();
@@ -135,26 +164,86 @@ export function WorkoutOverviewScreen() {
   // After a gym switch: the rows before, to count what changed once the page reloads (OV12).
   const gymSwitch = useRef<{ name: string; before: OverviewData['view']['rows']; previousGymId: string | null } | null>(null);
   // Today's edits: one draft write at a time, one opId per intent until it lands (§4.2, §3).
-  const [editGuard] = useState(createGuard);
+  // Stepper taps queue behind a running write; other taps during one are dropped (review S2).
+  const [editGuard] = useState(createEditLane);
+  // The draft the last write left: the next write builds on it before the page re-reads (review S2).
+  // `seq`: the write count when it landed; a page read records the count it started at (review r2 N2).
+  const wroteDraft = useRef<{ id: string; version: number; seq: number } | null>(null);
+  const writeSeq = useRef(0);
+  const readSeq = useRef(new WeakMap<object, number>());
+  // Bumped each time a session switch shows a new page: a queued write tapped on the old one is dropped (review r2 N1).
+  const shownPage = useRef(0);
+  // Each row's working-set count as its last stepper write left it, with that write's draft version.
+  const pendingSets = useRef(new Map<string, { count: number; version: number }>());
   const [ops] = useState(() => createOpIds(newUuid));
-  const [reordering, setReordering] = useState(false);
+  // Edit mode (§11.3, TE11): every row's controls at once; `⋯ → Reorder` opens it too.
+  const [editing, setEditing] = useState(false);
+  const [repsSlot, setRepsSlot] = useState<string | null>(null);
+  const [loadEdit, setLoadEdit] = useState<{ slotKey: string; value: number | null; down: StepTarget; up: StepTarget; note: string | null } | null>(null);
+  const addSearch = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [adding, setAdding] = useState<{ query: string; showAll: boolean; sheet: AddSheet | null; loading: boolean } | null>(null);
+  // `Update Push A` (§11.5): the lines as the card opened, Ben's ticks, and the record once applied.
+  const [update, setUpdate] = useState<{ routineId: string; routineName: string; routineVersion: number; draftId: string; draftVersion: number; lines: TemplateLine[]; checked: Set<string>; applied: string | null } | null>(null);
   const [swap, setSwap] = useState<{ slotKey: string; sheet: SwapSheet | null; loading: boolean } | null>(null);
   const [card, setCard] = useState<ChangeCard | null>(null);
   const [cardBusy, setCardBusy] = useState(false);
+  // Fit to time (fit-to-time.md): the `How long?` sheet's own state, and the card folded after the first scroll.
+  const [howLong, setHowLong] = useState<{ chosen: number | null; other: boolean; info: boolean } | null>(null);
+  const [fitFolded, setFitFolded] = useState(false);
+  // `Ask coach` (fit-to-time §5): whether it can be tapped, the request running (Cancel, Start cancel it), its card, `Why?`, swaps Ben dismissed.
+  const [coachAvailable, setCoachAvailable] = useState(false);
+  const coachRun = useRef<AbortController | null>(null);
+  const [coachCard, setCoachCard] = useState<CoachFitCard | null>(null);
+  const [fitWhy, setFitWhy] = useState<{ reason: string | null; checks: string[]; notUsed: string[] } | null>(null);
+  const [dismissedSwaps, setDismissedSwaps] = useState<ReadonlySet<string>>(() => new Set(dismissedCoachSwaps));
   const shownToasts = useRef(new Set<string>());
+  // The page toasts still to show, one after another (merge r3 S1).
+  const pageToastQueue = useRef<{ key: string; text: string }[]>([]);
 
   const [data, reload] = useScreenData(async (s) => {
     const gym = await s.yourData.currentGym();
+    const seq = writeSeq.current;
     const page = await s.overview.load({ target, gymId: gym?.id ?? null, checkInId: tappedRef.current?.id ?? null });
+    if (page !== null) readSeq.current.set(page, seq);
     return page;
   });
   const page = data.state === 'ready' ? data.value : null;
+  // `Save to Workouts` (routines.md WL6): what the page shows; nothing to save or an out-of-date page says so.
+  const saveSheet = useSaveToWorkouts(
+    (r) => {
+      changed();
+      showLibraryToast({ key: r.id, text: LIBRARY_COPY_UI.savedToWorkouts, undo: { kind: 'delete', routineId: r.id, version: r.version } });
+    },
+    () => {
+      setToast({ text: LIBRARY_COPY_UI.nothingToSave });
+    },
+    () => {
+      setToast({ text: STALE_PREVIEW });
+      reload();
+    },
+  );
+  // Back from the editor (`Saved Push A` [Undo]): the page re-reads the new version.
+  const handedToast = routeParams.toast;
+  useEffect(() => {
+    if (!handedToast) return;
+    reload();
+    showLibraryToast(handedToast);
+    navigation.setParams({ toast: undefined } as never);
+  }, [handedToast?.key]);
   // True from a session switch's first read until its page is shown: row actions would name the new target with the old page (r2 N1).
   const switching = useRef(false);
   useEffect(() => {
     switching.current = false;
+    if (data.state === 'ready' && data.value !== null) wroteDraft.current = wroteAfterRead(data.value.draft, wroteDraft.current, readSeq.current.get(data.value));
   }, [data]);
 
+  // Leaving the page cancels a coach fit still running (nothing from it is applied).
+  useEffect(
+    () => () => {
+      coachRun.current?.abort();
+    },
+    [],
+  );
   // `DONE BY` moves at most once a minute (timing.timeLeftRefresh, OV16).
   useEffect(() => {
     const t = setInterval(() => {
@@ -194,14 +283,23 @@ export function WorkoutOverviewScreen() {
   useEffect(() => {
     if (page) setOpen((o) => panelReducer(o, { kind: 'rows', rowIds: page.view.rows.map((r) => r.slotKey) }));
   }, [page]);
-  // `Earlier edits cleared` / `Plan changed · 1 edit removed`, once.
+  // `Earlier edits cleared` / coach notices / `Plan changed · 1 edit removed`, once each, in turn.
   useEffect(() => {
     if (!page) return;
-    const t = pageToast(page, shownToasts.current);
-    if (t === null) return;
-    shownToasts.current.add(t.key);
-    setToast({ text: t.text });
+    const [first, ...rest] = pageToasts(page, shownToasts.current);
+    pageToastQueue.current = rest;
+    if (first === undefined) return;
+    shownToasts.current.add(first.key);
+    setToast({ text: first.text });
   }, [page]);
+  // The next page toast once the current toast has gone.
+  useEffect(() => {
+    if (toast) return;
+    const next = pageToastQueue.current.shift();
+    if (next === undefined) return;
+    shownToasts.current.add(next.key);
+    setToast({ text: next.text });
+  }, [toast]);
   // The gym toast, once the page has re-read at the new gym.
   useEffect(() => {
     const sw = gymSwitch.current;
@@ -273,6 +371,8 @@ export function WorkoutOverviewScreen() {
 
   async function start() {
     if (!page) return;
+    // Start while the coach is fitting: the request is cancelled and nothing from it is applied (§3.4).
+    cancelCoachFit();
     // Read at the tap: a score write still running now is the one Start waits for (and stops on if it opens What's up?).
     const pending = scoreGuard.running() ? scoreWrite.current : null;
     await startGuard.run(async () => {
@@ -396,7 +496,7 @@ export function WorkoutOverviewScreen() {
               return;
             }
             changed();
-            navigation.dispatch(popToTabs({ screen: 'Today', params: { toast: `Deleted ${r.routine.name}`, undoRoutine: { id: r.routine.id, version: r.routine.version } } }));
+            navigation.dispatch(popToTabs({ screen: 'Today', params: { toast: LIBRARY_TOASTS.deleted(r.routine.name), undoRoutine: { id: r.routine.id, version: r.routine.version } } }));
           });
         },
       },
@@ -406,26 +506,87 @@ export function WorkoutOverviewScreen() {
   function menu() {
     const routine = page?.routine ?? null;
     const edits = page ? editMenuItems(page.view) : [];
-    // `Save as routine` (session-picker §4.3): a session from history, while the page has no today's edits (a draft is never re-keyed).
-    const canSave = page !== null && page.startOf.nextOf !== undefined && page.view.editCount === 0;
-    const options = [...edits, ...(canSave ? [SESSION_PICKER_COPY.saveAsRoutine] : []), OVERVIEW_COPY.emptyWorkout, ...(routine ? [OVERVIEW_COPY.rename, OVERVIEW_COPY.delete] : []), 'Cancel'];
+    // `Save to Workouts` (routines.md WL6): exactly what the page shows, today's edits included.
+    const library = routine ? [LIBRARY_COPY_UI.editWorkout, LIBRARY_COPY_UI.duplicate, routine.inRotation ? LIBRARY_COPY_UI.removeFromRotation : LIBRARY_COPY_UI.addToRotation] : [];
+    const options = [...edits, ...library, ...(page !== null ? [LIBRARY_COPY_UI.saveToWorkouts] : []), OVERVIEW_COPY.emptyWorkout, ...(routine ? [OVERVIEW_COPY.rename, OVERVIEW_COPY.delete] : []), 'Cancel'];
     ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1, ...(routine ? { destructiveButtonIndex: options.indexOf(OVERVIEW_COPY.delete) } : {}) }, (i) => {
       const picked = options[i];
       if (picked === TODAY_EDITS_COPY.reorder) {
         setOpen(null);
-        setReordering(true);
+        setEditing(true);
       }
       if (picked === TODAY_EDITS_COPY.resetEdits) void resetEdits();
-      if (picked === SESSION_PICKER_COPY.saveAsRoutine) {
-        setSaveAsOp(newUuid());
-        setSaveAsVisible(true);
+      if (picked === LIBRARY_COPY_UI.saveToWorkouts && page !== null) {
+        void saveSheet.open({ kind: 'preview', target, gymId: page.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? null, previewKey: page.view.previewKey }, page.view.title);
       }
+      if (picked === LIBRARY_COPY_UI.editWorkout && routine) navigation.navigate('WorkoutEditor', { routineId: routine.id, from: 'WorkoutOverview' });
+      if (picked === LIBRARY_COPY_UI.duplicate && routine) void duplicateRoutine(routine.id);
+      if ((picked === LIBRARY_COPY_UI.addToRotation || picked === LIBRARY_COPY_UI.removeFromRotation) && routine) void toggleRotation(routine);
       if (picked === OVERVIEW_COPY.emptyWorkout) void startEmpty();
       if (picked === OVERVIEW_COPY.rename) {
         setRenameOp(newUuid());
         setRenameVisible(true);
       }
       if (picked === OVERVIEW_COPY.delete) deleteRoutine();
+    });
+  }
+
+  /** `Duplicate` (§4.4): the copy opens in the editor (name selected); the toast's Undo deletes it. */
+  async function duplicateRoutine(routineId: string) {
+    const r = await services.routines.duplicate({ routineId, opId: newUuid() });
+    if (!r.ok) {
+      setToast({ text: r.message });
+      return;
+    }
+    changed();
+    // The toast comes back with Cancel, so its Undo is reachable (review S1).
+    const copyToast = { key: r.routine.id, text: LIBRARY_TOASTS.saved(r.routine.name), undo: { kind: 'delete' as const, routineId: r.routine.id, version: r.routine.version } };
+    navigation.navigate('WorkoutEditor', { routineId: r.routine.id, from: 'WorkoutOverview', selectName: true, copyToast });
+  }
+
+  /** `Add to rotation` / `Remove from rotation` (RT9), with Undo back to the same place. */
+  async function toggleRotation(routine: NonNullable<NonNullable<typeof page>['routine']>) {
+    const on = !routine.inRotation;
+    const r = await services.routines.setRotation({ routineId: routine.id, on, expectedVersion: routine.version, opId: newUuid() });
+    if (!r.ok) {
+      setToast({ text: r.message });
+      reload();
+      return;
+    }
+    changed();
+    const done = r.routine;
+    setToast({
+      text: on ? LIBRARY_TOASTS.added(routine.name) : LIBRARY_TOASTS.removed(routine.name),
+      action: LIBRARY_COPY_UI.undo,
+      onAction: () => {
+        setToast(null);
+        void services.routines.setRotation({ routineId: done.id, on: !on, expectedVersion: done.version, opId: newUuid(), placeAtUtc: on ? null : routine.rotationAtUtc }).then((u) => {
+          changed();
+          if (!u.ok) setToast({ text: u.message });
+        });
+      },
+    });
+  }
+
+  /** A library toast (`Saved Push A` [Undo]): Undo reverts an editor save or deletes a new workout. */
+  function showLibraryToast(t: LibraryToastParam) {
+    const undo = t.undo;
+    setToast({
+      text: t.text,
+      ...(undo
+        ? {
+            action: LIBRARY_COPY_UI.undo,
+            onAction: () => {
+              setToast(null);
+              const run = undo.kind === 'revert' ? services.routines.revert({ actionId: undo.actionId, opId: newUuid() }) : services.routines.remove({ routineId: undo.routineId, expectedVersion: undo.version, opId: newUuid() });
+              void run.then((r) => {
+                changed();
+                reload();
+                if (!r.ok) setToast({ text: r.message });
+              });
+            },
+          }
+        : {}),
     });
   }
 
@@ -459,7 +620,19 @@ export function WorkoutOverviewScreen() {
           setOpen(null);
           setCard(null);
           setSwap(null);
-          setReordering(false);
+          setEditing(false);
+          setUpdate(null);
+          setRepsSlot(null);
+          setLoadEdit(null);
+          closeAdd();
+          // The fit belongs to the old page: a running coach request is cancelled, the sheet and cards close.
+          cancelCoachFit();
+          setHowLong(null);
+          setFitWhy(null);
+          setDismissedSwaps(new Set());
+          wroteDraft.current = null;
+          pendingSets.current.clear();
+          shownPage.current += 1;
           setStartError(null);
           setTarget(t);
           scrollRef.current?.scrollTo({ y: 0, animated: false });
@@ -479,38 +652,6 @@ export function WorkoutOverviewScreen() {
     setPickerVisible(false);
     if (page !== null && isShownRow(row, page.startOf)) return;
     void switchTo(row.target);
-  }
-
-  /** `Save as routine` → the name prompt → one routine from the source workout (idempotent on `opId`), then the page on it. Undo deletes it. */
-  async function saveAsRoutine(name: string): Promise<string | null> {
-    const sourceId = page?.startOf.nextOf;
-    if (sourceId === undefined) return null;
-    const before = target;
-    const r = await services.routines.saveFromSession({ sessionId: sourceId, name, opId: saveAsOp });
-    if (!r.ok) return r.message;
-    const saved = r.routine;
-    saveAsAfter.arm(() => {
-      void switchTo({ kind: 'routine', routineId: saved.id });
-      setToast({
-        text: SESSION_PICKER_COPY.savedAsRoutine,
-        action: 'Undo',
-        onAction: () => {
-          setToast(null);
-          void services.routines.remove({ routineId: saved.id, expectedVersion: saved.version, opId: newUuid() }).then((u) => {
-            changed();
-            // The routine is still there when the delete failed: stay on it (r2 N2).
-            if (!u.ok) {
-              setToast({ text: u.message });
-              return;
-            }
-            void switchTo(before);
-          });
-        },
-      });
-    });
-    setSaveAsVisible(false);
-    changed();
-    return null;
   }
 
   async function showWhy(sessionExerciseId: string, name: string) {
@@ -561,24 +702,45 @@ export function WorkoutOverviewScreen() {
    * version, idempotent on the intent's opId (a failed write's retry reuses
    * it). A stale version re-reads the page (rule 5).
    */
-  async function writeEdit(intent: string, call: (base: { target: typeof target; gymId: string | null; expectedDraftVersion: number | null; opId: string }) => Promise<DraftWrite>, version?: number | null): Promise<Extract<DraftWrite, { ok: true }> | null> {
+  async function writeEdit(
+    intent: string | (() => string | null),
+    call: (base: { target: typeof target; gymId: string | null; expectedDraftVersion: number | null; opId: string }) => Promise<DraftWrite>,
+    version?: number | null,
+    opts: { queue?: boolean } = {},
+  ): Promise<Extract<DraftWrite, { ok: true }> | null> {
     if (!page || switching.current) return null;
+    const tappedOn = shownPage.current;
     const result = await editGuard.run(async () => {
-      const base = { target, gymId: page.view.gym?.id ?? null, expectedDraftVersion: version === undefined ? (page.draft?.version ?? null) : version, opId: ops.of(intent) };
+      if (!queuedWriteLive(tappedOn, shownPage.current, switching.current)) return null;
+      // A queued tap names its intent when its turn comes (a stepper steps from the count the last write left).
+      const named = typeof intent === 'string' ? intent : intent();
+      if (named === null) return null;
+      const base = { target, gymId: page.view.gym?.id ?? null, expectedDraftVersion: version === undefined ? nextDraftVersion(page.draft, wroteDraft.current) : version, opId: ops.of(named) };
       const w = await call(base).catch(() => null);
       if (w === null || (!w.ok && w.reason === 'failed')) {
         setToast({ text: TODAY_EDITS_COPY.editFailed });
         return null;
       }
-      ops.done(intent);
+      ops.done(named);
+      // Before `changed()`: the re-read it starts counts as after this write.
+      writeSeq.current += 1;
       changed();
       if (!w.ok) {
-        setToast({ text: w.reason === 'stale' ? OVERVIEW_COPY.stale : TODAY_EDITS_COPY.editFailed });
+        // The service says which: the plan moved (`Targets updated`), or only the draft did (`Couldn't save that edit.`).
+        if (w.reason === 'stale') {
+          wroteDraft.current = null;
+          pendingSets.current.clear();
+        }
+        setToast({ text: w.reason === 'stale' ? w.message : TODAY_EDITS_COPY.editFailed });
         return null;
       }
-      haptic('step');
+      // `Fits already` writes nothing (no draft): no haptic for it (review C N5).
+      if (w.draft !== null) {
+        wroteDraft.current = { id: w.draft.id, version: w.draft.version, seq: writeSeq.current };
+        haptic('step');
+      }
       return w;
-    });
+    }, opts);
     return result ?? null;
   }
 
@@ -651,16 +813,125 @@ export function WorkoutOverviewScreen() {
     if (key === 'skip') void skipRow(r);
     if (key === 'do_first') void moveRow(r, 'first');
     if (key === 'undo_swap') void clearSwap(r.slotKey);
-    if (key === 'bring_back' && r.edit !== null) void undoEdit(r.edit.editId);
+    if (key === 'bring_back') void bringBack(r);
   }
 
   function customAction(r: OverviewData['view']['rows'][number], name: RowCustomAction['name']) {
     if (name === 'swap') void openSwap(r.slotKey);
     if (name === 'skip') void skipRow(r);
-    if (name === 'bring_back' && r.edit !== null) void undoEdit(r.edit.editId);
+    if (name === 'bring_back') void bringBack(r);
     if (name === 'do_first') void moveRow(r, 'first');
     if (name === 'move_up') void moveRow(r, 'up');
     if (name === 'move_down') void moveRow(r, 'down');
+  }
+
+  /** `Bring back` (§2.2): Undo of the skip; on a row the fit skipped, Ben's own sets edit, so the trim leaves it alone (fit-to-time FT5). */
+  async function bringBack(r: OverviewData['view']['rows'][number]) {
+    const b = bringBackOf(r);
+    if (b === null) return;
+    if (b.kind === 'undo') {
+      await undoEdit(b.editId);
+      return;
+    }
+    await writeEdit(`keep:${b.slotKey}`, (x) => services.overview.edit({ ...x, edit: { kind: 'sets', slotKey: b.slotKey, workingSets: b.workingSets } }));
+  }
+
+  // -------------------------------------------------------------------------
+  // Fit to time (fit-to-time.md): `How long?` on the TIME tile, the built-in trim, the card's Undo and Change.
+
+  function openHowLong() {
+    if (!page || switching.current) return;
+    setHowLong(howLongOpen(page.view.fit));
+    // Settings only, no network: `Ask coach` is disabled with `Coach offline` when the coach can't be reached (FT-C9).
+    void services.overview
+      .coachFitAvailable()
+      .catch(() => false)
+      .then(setCoachAvailable);
+  }
+
+  /**
+   * `Ask coach` (FT6): applied at once with the coach card and Undo when it
+   * passes the checks (rule 3: Ben asked). The page stays usable while it
+   * works; an edit or Start meanwhile discards the answer.
+   */
+  async function askCoach(minutes: number) {
+    if (!page || switching.current || coachRun.current !== null) return;
+    setHowLong(null);
+    const run = new AbortController();
+    coachRun.current = run;
+    setCoachCard({ kind: 'pending', minutes });
+    const intent = `coach-fit:${String(minutes)}:${page.view.previewKey}`;
+    const r = await services.overview
+      .requestCoachFit({
+        target,
+        gymId: page.view.gym?.id ?? null,
+        checkInId: tappedRef.current?.id ?? page.planCheckIn?.id ?? null,
+        expectedDraftVersion: nextDraftVersion(page.draft, wroteDraft.current),
+        previewKey: page.view.previewKey,
+        minutes,
+        opId: ops.of(intent),
+        signal: run.signal,
+      })
+      .catch(() => ({ kind: 'failed' as const }));
+    // Cancelled (or Start) while it worked: nothing to show. The service refuses the write once cancelled; a fit whose write was
+    // already under way when Cancel landed is taken back with its Undo, so nothing Ben cancelled stays (review C B1).
+    if (coachRun.current !== run) {
+      if (r.kind === 'applied' && !r.duplicate) void services.overview.undoCoachFit({ actionId: r.actionId, opId: `cancelled-coach-fit:${r.actionId}` }).catch(() => null);
+      return;
+    }
+    coachRun.current = null;
+    if (r.kind !== 'failed' && r.kind !== 'cancelled') ops.done(intent);
+    // The coach couldn't be reached: the sheet shows `Ask coach` disabled with `Coach offline` next time (FT-C9; review C S5).
+    if (r.kind === 'unavailable') setCoachAvailable(false);
+    if (r.kind === 'applied') {
+      setFitFolded(false);
+      writeSeq.current += 1;
+      changed();
+    }
+    setCoachCard(coachFitCardOf(r, minutes));
+  }
+
+  function cancelCoachFit() {
+    coachRun.current?.abort();
+    coachRun.current = null;
+    setCoachCard(null);
+  }
+
+  /** The coach fit's Undo (§5.3): every edit it made, in one write; a trim it replaced comes back. */
+  async function undoCoachFit(actionId: string) {
+    const intent = `undo-coach-fit:${actionId}`;
+    const r = await services.overview.undoCoachFit({ actionId, opId: ops.of(intent) }).catch(() => null);
+    if (r === null) {
+      setToast({ text: TODAY_EDITS_COPY.editFailed });
+      return;
+    }
+    ops.done(intent);
+    writeSeq.current += 1;
+    changed();
+    if (!r.ok) setToast({ text: TODAY_EDITS_COPY.editFailed });
+  }
+
+  /** A coach swap suggestion's `Apply` (FT-C12): Ben's own swap, today only, with Undo. */
+  async function applySuggestion(sg: { slotKey: string; toExerciseId: string; text: string }) {
+    const w = await writeEdit(`swap:${sg.slotKey}:${sg.toExerciseId}`, (b) => services.overview.edit({ ...b, edit: { kind: 'swap', slotKey: sg.slotKey, toExerciseId: sg.toExerciseId } }));
+    const added = w?.added[0];
+    if (w && added !== undefined) toastWithUndo(`${sg.text} · today`, (v) => undoEdit(added, v), w.draft?.version ?? null);
+  }
+
+  /** `Trim to 45 min`: the fit applies at once to the draft (offline, FT2); the toast's Undo takes it back. */
+  async function trimTo(minutes: number) {
+    setHowLong(null);
+    const w = await writeEdit(`fit:${String(minutes)}`, (b) => services.overview.trimToFit({ ...b, minutes }));
+    const added = w?.added[0];
+    if (w && added !== undefined) {
+      setFitFolded(false);
+      toastWithUndo(FIT_COPY.toast(minutes), (v) => undoEdit(added, v), w.draft?.version ?? null);
+    }
+  }
+
+  async function clearFit() {
+    setHowLong(null);
+    await writeEdit('clear-fit', (b) => services.overview.clearFit(b));
   }
 
   async function resetEdits() {
@@ -668,9 +939,214 @@ export function WorkoutOverviewScreen() {
     if (w && w.removed.length > 0) toastWithUndo(editToast.editsReset, (v) => restoreEdits(w.removed, v), w.draft?.version ?? null);
   }
 
-  async function resetOrder() {
-    const w = await writeEdit('reset-order', (b) => services.overview.resetOrder(b));
-    if (w && w.removed.length > 0) toastWithUndo(editToast.orderReset, (v) => restoreEdits(w.removed, v), w.draft?.version ?? null);
+  // -------------------------------------------------------------------------
+  // Edit mode (§11): sets, reps, today's load, add, remove. Each applies at once; steppers show no toast (TE14).
+
+  type Row = OverviewData['view']['rows'][number];
+
+  async function stepSets(r: Row, tapped: NonNullable<Row['editRow']['setsUp']>) {
+    const delta = tapped.workingSets > r.editRow.workingSets ? 1 : -1;
+    // Worked out when its turn comes, from the count the previous tap's write left (review S2).
+    const chosen: { step: SetsStep } = { step: null };
+    const intent = (): string | null => {
+      const from = stepperCount(r.editRow.workingSets, page?.draft?.version ?? null, pendingSets.current.get(r.slotKey));
+      const step = setsStepFrom(from, delta, r.editRow.clearsAt);
+      chosen.step = step;
+      if (step === null) return null;
+      return step.clear ? `sets:${r.slotKey}` : `sets:${r.slotKey}:${String(step.workingSets)}`;
+    };
+    const w = await writeEdit(
+      intent,
+      (b) => {
+        const s = chosen.step;
+        if (s === null) return Promise.resolve<DraftWrite>({ ok: false, reason: 'invalid', message: TODAY_EDITS_COPY.editFailed });
+        // Back at the plan's count clears the edit (`−` undoes `+` in place).
+        return s.clear ? services.overview.clearEdit({ ...b, kind: 'sets', slotKey: r.slotKey }) : services.overview.edit({ ...b, edit: { kind: 'sets', slotKey: r.slotKey, workingSets: s.workingSets } });
+      },
+      undefined,
+      { queue: true },
+    );
+    const done = chosen.step;
+    if (w !== null && w.draft !== null && done !== null) pendingSets.current.set(r.slotKey, { count: done.workingSets, version: w.draft.version });
+  }
+
+  async function doneReps(r: Row, payload: { kind: 'clear' } | { kind: 'reps'; reps: { min: number; max: number } | null; durationS: number | null }) {
+    setRepsSlot(null);
+    if (payload.kind === 'clear') {
+      if (r.editRow.repsEdited) await writeEdit(`reps-clear:${r.slotKey}`, (b) => services.overview.clearEdit({ ...b, kind: 'reps', slotKey: r.slotKey }));
+      return;
+    }
+    await writeEdit(`reps:${r.slotKey}:${JSON.stringify(payload)}`, (b) => services.overview.edit({ ...b, edit: { kind: 'reps', slotKey: r.slotKey, reps: payload.reps, durationS: payload.durationS } }));
+  }
+
+  async function openLoad(r: Row) {
+    const k = r.editRow.keypad;
+    if (k === null || switching.current) return;
+    const steps = await services.overview.loadKeypad({ equipmentId: k.equipmentId, unit: k.unit, convention: k.convention, value: k.value }).catch(() => null);
+    setLoadEdit({ slotKey: r.slotKey, value: k.value, down: steps?.down ?? { enabled: false, reason: '' }, up: steps?.up ?? { enabled: false, reason: '' }, note: steps?.note ?? null });
+  }
+
+  async function typeLoad(r: Row, value: number | null) {
+    const k = r.editRow.keypad;
+    if (k === null) return;
+    setLoadEdit((cur) => (cur?.slotKey === r.slotKey ? { ...cur, value } : cur));
+    const steps = await services.overview.loadKeypad({ equipmentId: k.equipmentId, unit: k.unit, convention: k.convention, value }).catch(() => null);
+    if (steps !== null) setLoadEdit((cur) => (cur?.slotKey === r.slotKey && cur.value === value ? { ...cur, ...steps } : cur));
+  }
+
+  async function setLoad(r: Row) {
+    const k = r.editRow.keypad;
+    const value = loadEdit?.value ?? null;
+    setLoadEdit(null);
+    if (k === null || value === null || loadUnchanged(r.editRow, value)) return;
+    const load = loadPayload(value, k);
+    if (load === null) return;
+    const w = await writeEdit(`load:${r.slotKey}:${String(value)}`, (b) => services.overview.edit({ ...b, edit: { kind: 'load', slotKey: r.slotKey, load } }));
+    const added = w?.added[0];
+    if (w && added !== undefined) toastWithUndo(editModeToast.target(typedLoadText(load)), (v) => undoEdit(added, v), w.draft?.version ?? null);
+  }
+
+  async function usePlannedLoad(r: Row) {
+    setLoadEdit(null);
+    await writeEdit(`load-clear:${r.slotKey}`, (b) => services.overview.clearEdit({ ...b, kind: 'load', slotKey: r.slotKey }));
+  }
+
+  async function removeAdded(r: Row) {
+    if (r.edit?.kind !== 'added') return;
+    const w = await undoEdit(r.edit.editId);
+    if (w && w.removed.length > 0) toastWithUndo(editModeToast.removed(r.name), (v) => restoreEdits(w.removed, v), w.draft?.version ?? null);
+  }
+
+  function closeAdd() {
+    if (addSearch.current !== null) clearTimeout(addSearch.current);
+    addSearch.current = null;
+    setAdding(null);
+  }
+
+  /** Typing in the Add list: the field updates at once; the search runs once typing pauses (review N4). */
+  function typeAdd(query: string) {
+    const showAll = adding?.showAll ?? false;
+    setAdding((cur) => (cur === null ? cur : { ...cur, query, loading: true }));
+    if (addSearch.current !== null) clearTimeout(addSearch.current);
+    addSearch.current = setTimeout(() => {
+      addSearch.current = null;
+      void loadAdd(query, showAll);
+    }, ADD_SEARCH_PAUSE_MS);
+  }
+
+  async function loadAdd(query: string, showAll: boolean) {
+    if (!page) return;
+    setAdding((cur) => ({ query, showAll, sheet: cur?.sheet ?? null, loading: true }));
+    const sheet = await services.overview.addCandidates({ target, gymId: page.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? page.planCheckIn?.id ?? null, query, showAll }).catch(() => null);
+    // Only the latest search lands.
+    setAdding((cur) => (cur !== null && cur.query === query && cur.showAll === showAll ? { query, showAll, sheet, loading: false } : cur));
+  }
+
+  async function pickAdd(row: AddSheet['rows'][number]) {
+    const go = async () => {
+      closeAdd();
+      const w = await writeEdit(`add:${row.exerciseId}`, (b) => services.overview.edit({ ...b, edit: { kind: 'add', exerciseId: row.exerciseId } }));
+      const added = w?.added[0];
+      if (w && added !== undefined) toastWithUndo(editModeToast.added(row.name), (v) => undoEdit(added, v), w.draft?.version ?? null);
+    };
+    if (row.mayHurt !== null) {
+      // EL9: a flagged exercise asks first; `Choose another` keeps the list open.
+      const c = row.mayHurt.confirm;
+      Alert.alert(c.title, c.message, [
+        { text: c.cancel, style: 'cancel' },
+        { text: c.confirm, onPress: () => void go() },
+      ]);
+      return;
+    }
+    await go();
+  }
+
+  function editRowPill(r: Row, key: EditRowPillKey) {
+    if (key === 'swap') void openSwap(r.slotKey);
+    if (key === 'skip') void skipRow(r);
+    if (key === 'bring_back') void bringBack(r);
+    if (key === 'remove') void removeAdded(r);
+  }
+
+  function editRowAction(r: Row, name: EditRowAction['name']) {
+    if (name === 'add_set' && r.editRow.setsUp) void stepSets(r, r.editRow.setsUp);
+    if (name === 'remove_set' && r.editRow.setsDown) void stepSets(r, r.editRow.setsDown);
+    if (name === 'change_reps') setRepsSlot(r.slotKey);
+    if (name === 'change_target') void openLoad(r);
+    if (name === 'move_up') void moveRow(r, 'up');
+    if (name === 'move_down') void moveRow(r, 'down');
+    if (name === 'swap' || name === 'skip' || name === 'bring_back' || name === 'remove') editRowPill(r, name);
+  }
+
+  /** `Update Push A ›` → the card, with skips unticked (TE15). `Save to Workouts ›` on a next session. */
+  function openUpdate() {
+    if (!page) return;
+    const link = updateLink(page);
+    if (link?.kind === 'save') {
+      void saveSheet.open({ kind: 'preview', target, gymId: page.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? null, previewKey: page.view.previewKey }, page.view.title);
+      return;
+    }
+    const c = page.templateCard;
+    if (c === null) return;
+    setUpdate({ routineId: c.routineId, routineName: c.routineName, routineVersion: c.routineVersion, draftId: c.draftId, draftVersion: c.draftVersion, lines: c.lines, checked: defaultChecked(c.lines), applied: null });
+  }
+
+  /** Apply (§11.5): the checked lines, versioned on the workout and on the draft the card was built from (rule 5, review B3). */
+  async function applyUpdate() {
+    const u = update;
+    if (!page || u === null) return;
+    const draft = { id: u.draftId, version: u.draftVersion };
+    await editGuard.run(async () => {
+      setCardBusy(true);
+      try {
+        const intent = `update:${u.routineId}:${String(u.routineVersion)}`;
+        const r = await services.routines
+          .applyTodayEdits({ target, gymId: page.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? page.planCheckIn?.id ?? null, routineId: u.routineId, expectedRoutineVersion: u.routineVersion, draft: { id: draft.id, expectedVersion: draft.version }, lineKeys: [...u.checked], opId: ops.of(intent) })
+          .catch(() => null);
+        if (r === null) {
+          setToast({ text: TODAY_EDITS_COPY.editFailed });
+          return;
+        }
+        ops.done(intent);
+        changed();
+        if (!r.ok) {
+          // Out of date: the card turns `Was suggested:` once the page re-reads; anything else says so.
+          if (r.reason !== 'stale') setToast({ text: r.message });
+          else if (page.routine?.version === u.routineVersion) setToast({ text: STALE_PREVIEW });
+          return;
+        }
+        const actionId = r.action.actionId;
+        setUpdate({ ...u, applied: actionId });
+        haptic('step');
+        setToast({
+          text: editModeToast.updated(u.routineName),
+          action: TODAY_EDITS_COPY.undo,
+          onAction: () => {
+            setToast(null);
+            void undoUpdate(actionId, u.routineName);
+          },
+        });
+      } finally {
+        setCardBusy(false);
+      }
+    });
+  }
+
+  async function undoUpdate(actionId: string, routineName: string) {
+    await editGuard.run(async () => {
+      const r = await services.routines.revert({ actionId, opId: ops.of(`undo-update:${actionId}`) }).catch(() => null);
+      if (r === null) {
+        setToast({ text: TODAY_EDITS_COPY.editFailed });
+        return;
+      }
+      ops.done(`undo-update:${actionId}`);
+      changed();
+      if (!r.ok) {
+        setToast({ text: r.reason === 'changed_since' ? editToast.cantUndo(routineName) : r.message });
+        return;
+      }
+      setUpdate(null);
+    });
   }
 
   /** `Change Push A too ›` → Apply (TE4): the routine from now on, with its own Undo. Versioned on the routine the card was opened on. */
@@ -750,21 +1226,23 @@ export function WorkoutOverviewScreen() {
     </Pressable>
   ) : null;
 
-  // Reorder mode (§2.3): `Reset order` (only when the order changed) and `Done`; Start stays live below.
-  const reorderBar = (
+  // Edit mode's bar (§11.3): `Reset` (only with edits) and `Done`; Start stays live below.
+  const editBar = (
     <View style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: theme.components.screenMargin }}>
-      {page?.reordered === true ? <TextButton label={TODAY_EDITS_COPY.resetOrder} tone="secondary" onPress={() => void resetOrder()} /> : <View />}
+      {page !== null && editTopBar(page.view).reset ? <TextButton label={EDIT_MODE_COPY.reset} tone="secondary" accessibilityLabel={TODAY_EDITS_COPY.resetEdits} onPress={() => void resetEdits()} /> : <View />}
       <TextButton
-        label={TODAY_EDITS_COPY.done}
+        label={EDIT_MODE_COPY.done}
         onPress={() => {
-          setReordering(false);
+          setEditing(false);
+          // An unapplied card closes with Edit mode: reopened, it is built from the draft as it is then (review B3).
+          setUpdate((u) => (u === null || u.applied === null ? null : u));
         }}
       />
     </View>
   );
 
-  const topBar = reordering && page ? (
-    reorderBar
+  const topBar = editing && page ? (
+    editBar
   ) : (
     <>
       <View style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: theme.space['2'], paddingRight: theme.space['3'] }}>
@@ -774,6 +1252,14 @@ export function WorkoutOverviewScreen() {
         {page ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], flexShrink: 1 }}>
             {stacked ? null : gymChip}
+            <TextButton
+              label={EDIT_MODE_COPY.edit}
+              accessibilityLabel="Edit today’s workout"
+              onPress={() => {
+                setOpen(null);
+                setEditing(true);
+              }}
+            />
             <Pressable accessibilityRole="button" accessibilityLabel="More" onPress={menu} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="ellipsis" color="text.primary" size={20} />
             </Pressable>
@@ -803,6 +1289,12 @@ export function WorkoutOverviewScreen() {
       onPastWorkouts={() => {
         pickerAfter.arm(() => {
           navigation.navigate('PastWorkouts');
+        });
+        setPickerVisible(false);
+      }}
+      onEditWorkouts={() => {
+        pickerAfter.arm(() => {
+          navigation.dispatch(replaceWithWorkouts());
         });
         setPickerVisible(false);
       }}
@@ -849,15 +1341,29 @@ export function WorkoutOverviewScreen() {
 
   const { view } = page;
   const done = view.estimate === null ? null : overviewDoneBy(now, view.estimate.seconds, services.now().tz);
+  // The TIME tile is the `How long?` button (fit-to-time FT1), in normal and Edit mode.
+  const tile = timeTile(view, OVERVIEW_COPY.time);
   const stats = [
-    ...(view.estimate !== null && done !== null
+    ...(view.estimate !== null && done !== null && tile !== null
       ? [
-          { value: String(view.estimate.minutes), approx: true, suffix: 'min', label: OVERVIEW_COPY.time },
-          { value: done.text, approx: true, label: OVERVIEW_COPY.doneBy },
+          { value: String(view.estimate.minutes), approx: true, suffix: 'min', label: tile.label, clock: tile.clock, button: { onPress: openHowLong, accessibilityLabel: tile.accessibilityLabel } },
+          { value: done.text, approx: true, label: OVERVIEW_COPY.doneBy, spoken: `Done about ${done.text}` },
         ]
       : []),
-    { value: String(view.workingSets), label: OVERVIEW_COPY.sets },
+    { value: String(view.workingSets), label: OVERVIEW_COPY.sets, spoken: `${String(view.workingSets)} working ${view.workingSets === 1 ? 'set' : 'sets'}` },
   ];
+  const sheet =
+    howLong === null
+      ? null
+      : howLongSheet({
+          nowSeconds: view.estimate?.seconds ?? null,
+          nowMinutes: view.estimate?.minutes ?? null,
+          unfittedSeconds: view.fit?.beforeSeconds ?? view.estimate?.seconds ?? null,
+          fitMinutes: view.fit?.minutes ?? null,
+          chosen: howLong.chosen,
+          coachAvailable,
+          pace: page.pace,
+        });
   const lastRowId = view.rows.at(-1)?.slotKey;
   const routineName = page.routine?.name ?? null;
 
@@ -966,8 +1472,47 @@ export function WorkoutOverviewScreen() {
     );
   };
 
+  const moves = editMoves(view.groups);
+  const link = updateLink(page);
+  const renderEditRow = (r: (typeof view.rows)[number]) => {
+    const m = moves.get(r.slotKey) ?? null;
+    return (
+      <EditRow
+        key={r.slotKey}
+        row={r}
+        moves={m}
+        stacked={stacked}
+        last={r.slotKey === lastRowId}
+        customActions={editRowCustomActions(r, m)}
+        onSets={(step) => void stepSets(r, step)}
+        onReps={() => {
+          setRepsSlot(r.slotKey);
+        }}
+        onLoad={() => void openLoad(r)}
+        onPill={(key) => {
+          editRowPill(r, key);
+        }}
+        onMove={(how) => void moveRow(r, how)}
+        onCustomAction={(name) => {
+          editRowAction(r, name);
+        }}
+      />
+    );
+  };
+  const repsRow = repsSlot === null ? null : (view.rows.find((r) => r.slotKey === repsSlot) ?? null);
+  const loadRow = loadEdit === null ? null : (view.rows.find((r) => r.slotKey === loadEdit.slotKey) ?? null);
+
   const body = (
-    <ScrollView ref={scrollRef} contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'] }}>
+    <ScrollView
+      ref={scrollRef}
+      keyboardShouldPersistTaps="handled"
+      scrollEventThrottle={100}
+      onScroll={(e) => {
+        const y = e.nativeEvent.contentOffset.y;
+        if (view.fit !== null && !fitFolded && fitCardCollapsed(fitFolded, y)) setFitFolded(true);
+      }}
+      contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'] }}
+    >
       <AppText variant="sectionLabel" color="text.tertiary" style={{ marginTop: 10 }}>
         {eyebrowText(view.basis, (ms, tz) => formatShortDate(ms, tz))}
       </AppText>
@@ -1004,6 +1549,72 @@ export function WorkoutOverviewScreen() {
           {view.muscles.slice(1).map((m) => ` · ${m}`).join('')}
         </AppText>
       ) : null}
+      {coachCard !== null ? (
+        (() => {
+          const c = coachCard;
+          const trimWouldCut = howLongSheet({ nowSeconds: view.estimate?.seconds ?? null, nowMinutes: view.estimate?.minutes ?? null, unfittedSeconds: view.fit?.beforeSeconds ?? view.estimate?.seconds ?? null, fitMinutes: view.fit?.minutes ?? null, chosen: c.minutes, coachAvailable: false }).trim.enabled;
+          const v = coachFitCardView(c, trimWouldCut);
+          return (
+            <CoachFitStatusCard
+              text={v.text}
+              offline={v.offline}
+              actions={v.actions}
+              onAction={(a) => {
+                if (a === 'cancel') cancelCoachFit();
+                if (a === 'dismiss') setCoachCard(null);
+                if (a === 'why' && c.kind === 'rejected') setFitWhy({ reason: null, checks: [], notUsed: c.reasons });
+                if (a === 'trim') {
+                  setCoachCard(null);
+                  void trimTo(c.minutes);
+                }
+                if (a === 'ask_again') {
+                  setCoachCard(null);
+                  void askCoach(c.minutes);
+                }
+              }}
+            />
+          );
+        })()
+      ) : null}
+      {view.fit !== null ? (
+        <FitCard
+          fit={view.fit}
+          collapsed={fitFolded}
+          onExpand={() => {
+            setFitFolded(false);
+          }}
+          onUndo={() => {
+            const fit = view.fit;
+            if (fit === null) return;
+            if (fit.by === 'coach' && fit.actionId !== null) void undoCoachFit(fit.actionId);
+            else void undoEdit(fit.editId);
+          }}
+          onChange={openHowLong}
+          onWhy={
+            view.fit.by === 'coach' && page.coachFit !== null
+              ? () => {
+                  const cf = page.coachFit;
+                  if (cf !== null) setFitWhy({ reason: cf.reason, checks: cf.checks, notUsed: cf.rejected });
+                }
+              : undefined
+          }
+        />
+      ) : null}
+      {(page.coachFit?.suggestions ?? [])
+        .filter((sg) => !dismissedSwaps.has(swapKey(page.coachFit?.actionId ?? '', sg)))
+        .map((sg) => (
+          <FitSuggestionCard
+            key={`${sg.slotKey}:${sg.toExerciseId}`}
+            text={sg.text}
+            busy={false}
+            onApply={() => void applySuggestion(sg)}
+            onNotNow={() => {
+              const k = swapKey(page.coachFit?.actionId ?? '', sg);
+              dismissedCoachSwaps.add(k);
+              setDismissedSwaps((d) => new Set([...d, k]));
+            }}
+          />
+        ))}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 18, paddingBottom: theme.space['2'] }}>
         <AppText variant="sectionLabel" color="text.tertiary">
           {listHeaderText(view)}
@@ -1012,23 +1623,55 @@ export function WorkoutOverviewScreen() {
           {OVERVIEW_COPY.target}
         </AppText>
       </View>
-      {reordering
-        ? reorderUnits(view.groups).map((u) => {
-            const r = view.rows.find((x) => x.slotKey === u.slotKey);
-            return (
-              <ReorderRow
-                key={u.slotKey}
-                unit={u}
-                stacked={stacked}
-                onUp={() => {
-                  if (r) void moveRow(r, 'up');
-                }}
-                onDown={() => {
-                  if (r) void moveRow(r, 'down');
-                }}
-              />
-            );
-          })
+      {editing
+        ? [
+            ...view.groups.map((g) =>
+              g.kind === 'single' ? (
+                renderEditRow(g.row)
+              ) : (
+                <SupersetBracket key={g.rows.map((r) => r.slotKey).join('+')}>{g.rows.map((r) => renderEditRow(r))}</SupersetBracket>
+              ),
+            ),
+            <EditLink key="add" text={EDIT_MODE_COPY.addExercise} icon="plus" onPress={() => void loadAdd('', false)} />,
+            ...(link !== null && update === null ? [<EditLink key="update" text={link.text} onPress={openUpdate} />] : []),
+            ...(update !== null
+              ? [
+                  (() => {
+                    const st = updateCardState(update, { routineVersion: page.routine?.version ?? null, draftVersion: page.draft?.version ?? null }, update.checked);
+                    return (
+                      <UpdateCard
+                        key="update-card"
+                        state={st.state}
+                        routineName={update.routineName}
+                        lines={update.lines}
+                        checked={update.checked}
+                        applyEnabled={st.applyEnabled}
+                        busy={cardBusy}
+                        onToggle={(key) => {
+                          setUpdate((u) => {
+                            if (u === null) return u;
+                            const next = new Set(u.checked);
+                            if (next.has(key)) next.delete(key);
+                            else next.add(key);
+                            return { ...u, checked: next };
+                          });
+                        }}
+                        onApply={() => void applyUpdate()}
+                        onNotNow={() => {
+                          setUpdate(null);
+                        }}
+                        onUndo={() => {
+                          if (update.applied !== null) void undoUpdate(update.applied, update.routineName);
+                        }}
+                        onDismiss={() => {
+                          setUpdate(null);
+                        }}
+                      />
+                    );
+                  })(),
+                ]
+              : []),
+          ]
         : view.groups.map((g) =>
             g.kind === 'single' ? (
               renderRow(g.row, false)
@@ -1158,25 +1801,92 @@ export function WorkoutOverviewScreen() {
         </AppText>
         {why ? <TargetWhyPanel panel={why.explanation ? { setId: why.explanation.setId, status: 'ready', explanation: why.explanation } : { setId: '', status: 'failed' }} /> : null}
       </BottomCard>
+      <RepsSheet
+        row={repsRow}
+        onDone={(payload) => {
+          if (repsRow) void doneReps(repsRow, payload);
+        }}
+        onUsePlanned={() => {
+          if (repsRow) void doneReps(repsRow, { kind: 'clear' });
+        }}
+        onClose={() => {
+          setRepsSlot(null);
+        }}
+      />
+      <LoadSheet
+        row={loadRow}
+        keypad={loadEdit}
+        onValue={(v) => {
+          if (loadRow) void typeLoad(loadRow, v);
+        }}
+        onSet={() => {
+          if (loadRow) void setLoad(loadRow);
+        }}
+        onUsePlanned={() => {
+          if (loadRow) void usePlannedLoad(loadRow);
+        }}
+        onClose={() => {
+          setLoadEdit(null);
+        }}
+      />
+      <AddExerciseSheet
+        visible={adding !== null}
+        sheet={adding?.sheet ?? null}
+        loading={adding?.loading ?? false}
+        query={adding?.query ?? ''}
+        stacked={stacked}
+        onQuery={typeAdd}
+        onShowAll={() => void loadAdd(adding?.query ?? '', true)}
+        onPick={(r) => void pickAdd(r)}
+        onClose={() => {
+          closeAdd();
+        }}
+      />
+      <HowLongSheet
+        visible={howLong !== null}
+        sheet={sheet}
+        otherOpen={howLong?.other ?? false}
+        infoOpen={howLong?.info ?? false}
+        busy={false}
+        onChip={(m) => {
+          setHowLong((h) => (h === null ? h : { ...h, chosen: m, other: false }));
+        }}
+        onOther={() => {
+          setHowLong((h) => (h === null ? h : { ...h, other: true, chosen: h.chosen ?? sheet?.selected ?? null }));
+        }}
+        onStep={(d) => {
+          setHowLong((h) => (h === null || sheet === null ? h : { ...h, chosen: stepFitMinutes(h.chosen ?? sheet.selected, d) }));
+        }}
+        onInfo={() => {
+          setHowLong((h) => (h === null ? h : { ...h, info: !h.info }));
+        }}
+        onTrim={() => {
+          if (sheet?.trim.enabled === true) void trimTo(sheet.trim.minutes);
+        }}
+        onAsk={() => {
+          if (sheet?.ask.enabled === true) void askCoach(sheet.selected);
+        }}
+        onClear={() => void clearFit()}
+        onClose={() => {
+          setHowLong(null);
+        }}
+      />
+      <FitWhySheet
+        visible={fitWhy !== null}
+        reason={fitWhy?.reason ?? null}
+        checks={fitWhy?.checks ?? []}
+        notUsed={fitWhy?.notUsed ?? []}
+        onClose={() => {
+          setFitWhy(null);
+        }}
+      />
+      <NumberAccessory />
       {pickerSheet}
-      {page.startOf.nextOf !== undefined ? (
-        <NameSheet
-          visible={saveAsVisible}
-          title={SESSION_PICKER_COPY.saveAsRoutine}
-          buttonLabel="Save"
-          initialName={view.title}
-          check={(n) => services.routines.checkName(n, null)}
-          onSubmit={saveAsRoutine}
-          onClose={() => {
-            setSaveAsVisible(false);
-          }}
-          onDismissed={saveAsAfter.dismissed}
-        />
-      ) : null}
+      {saveSheet.sheet}
       {page.routine ? (
         <NameSheet
           visible={renameVisible}
-          title="Rename routine"
+          title="Rename workout"
           buttonLabel="Save name"
           initialName={page.routine.name}
           check={(n) => services.routines.checkName(n, page.routine?.id ?? null)}

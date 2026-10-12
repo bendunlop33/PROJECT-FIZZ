@@ -23,6 +23,8 @@ import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, Chip, Checkl
 import { stepTime } from '../../workout/finish';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { NameSheet } from '../routines/NameSheet';
+import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
+import { LIBRARY_COPY_UI } from '../../workout/library-view';
 import { DELETE_COPY, deletedToastText, restoredToastText, summaryCanDelete } from '../../history/delete-view';
 import { handOffDeleteToast } from '../../history/toast-handoff';
 import { DeletedWorkoutView } from './DeletedWorkoutView';
@@ -61,7 +63,7 @@ export function SummaryScreen() {
     // Keychain + settings file only, no network; a read failure counts as not connected.
     const coach = summaryCoachView(await readTextCoachState(coachConnectionPorts().ports).catch(() => null));
     const [summary, backup, painFlags, routines] = await Promise.all([s.workout.summary(sessionId, coach.coach), s.backups.getStatus(), s.pain.active(), s.routines.list().catch(() => [])]);
-    // `Save as routine` is offered once: not for a routine's workout, nor one already saved as a routine.
+    // `Save to Workouts` (routines.md §A2.6): once saved from here, the link reads `Saved · Legs ›`.
     const savedAs = routines.find((r) => r.createdFromSessionId === sessionId) ?? null;
     // D21: the coach's saved targets over the built-in rule's, and the summary turn's checked reply as the note.
     const [coachRows, stale, availability, turnNote] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.staleNextTargets(sessionId).catch(() => new Set<string>()), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null)]);
@@ -86,17 +88,40 @@ export function SummaryScreen() {
   }, [finishedNow, services, sessionId, reload, changed]);
 
   // The name sheets (premium-feel §2.6): one opId per sheet opening, so a double tap saves once.
-  const [nameSheet, setNameSheet] = useState<'routine' | 'workout' | null>(null);
+  const [nameSheet, setNameSheet] = useState<'workout' | null>(null);
   const [nameVisible, setNameVisible] = useState(false);
   const nameOp = useRef(newUuid());
   const [nameAfter] = useState(() => createAfterDismiss());
   /** One op ID per Delete intent on this screen (a retry after a failure reuses it). */
   const deleteOp = useRef(newUuid());
-  const openName = (kind: 'routine' | 'workout') => {
+  const openName = (kind: 'workout') => {
     nameOp.current = newUuid();
     setNameSheet(kind);
     setNameVisible(true);
   };
+
+  // `Save to Workouts` (WL6): any finished workout, one sheet; Undo deletes the new workout.
+  const saveSheet = useSaveToWorkouts(
+    (made) => {
+      changed();
+      reload();
+      setToast({
+        text: LIBRARY_COPY_UI.savedToWorkouts,
+        action: LIBRARY_COPY_UI.undo,
+        onAction: () => {
+          setToast(null);
+          void services.routines.remove({ routineId: made.id, expectedVersion: made.version, opId: newUuid() }).then((u) => {
+            if (!u.ok) setToast({ text: u.message });
+            changed();
+            reload();
+          });
+        },
+      });
+    },
+    () => {
+      setToast({ text: LIBRARY_COPY_UI.nothingToSave });
+    },
+  );
 
   const done = () => {
     if (back && navigation.canGoBack()) navigation.goBack();
@@ -148,10 +173,20 @@ export function SummaryScreen() {
   const { summary: sum, backup, painFlags, savedAs, coachNote, nextTime, presence } = data.value;
   const canDelete = summaryCanDelete(presence);
 
+  // From a saved workout, the save lives in `⋯` so it doesn't read as a prompt (§A2.6).
+  const fromSaved = sum.routineId !== null;
+  const openSave = () => void saveSheet.open({ kind: 'session', sessionId }, sum.storedName ?? null);
+  /** `⋯`: `Save to Workouts` (from a saved workout not saved again, §A2.6) and `Delete workout` (delete-workouts §2.2). */
+  const moreItems: { label: string; run: () => void; destructive?: boolean }[] = [
+    ...(fromSaved && savedAs === null ? [{ label: LIBRARY_COPY_UI.saveToWorkouts, run: openSave }] : []),
+    ...(canDelete ? [{ label: DELETE_COPY.menuItem, run: () => void deleteThis(), destructive: true }] : []),
+  ];
   /** `⋯` → `Delete workout` (§2.2, DW1, DW2): the tap is the confirmation; Undo comes as a toast where Ben lands. */
   function openMenu() {
-    ActionSheetIOS.showActionSheetWithOptions({ options: [DELETE_COPY.menuItem, DELETE_COPY.cancel], destructiveButtonIndex: 0, cancelButtonIndex: 1 }, (i) => {
-      if (i === 0) void deleteThis();
+    const options = [...moreItems.map((m) => m.label), DELETE_COPY.cancel];
+    const destructive = moreItems.findIndex((m) => m.destructive === true);
+    ActionSheetIOS.showActionSheetWithOptions({ options, ...(destructive >= 0 ? { destructiveButtonIndex: destructive } : {}), cancelButtonIndex: moreItems.length }, (i) => {
+      moreItems[i]?.run();
     });
   }
   async function deleteThis() {
@@ -177,33 +212,6 @@ export function SummaryScreen() {
     reload();
     changed();
   }
-  const canSaveRoutine = sum.routineId === null && sum.source === 'manual' && savedAs === null && sum.facts.workingSets + sum.facts.warmupSets > 0;
-
-  async function saveRoutine(name: string): Promise<string | null> {
-    const r = await services.routines.saveFromSession({ sessionId, name, opId: nameOp.current });
-    if (!r.ok) return r.message;
-    const made = r.routine;
-    nameAfter.arm(() => {
-      setNameSheet(null);
-      setToast({
-        text: `Saved routine ${made.name}`,
-        action: 'Undo',
-        onAction: () => {
-          setToast(null);
-          void services.routines.remove({ routineId: made.id, expectedVersion: made.version, opId: newUuid() }).then((u) => {
-            if (!u.ok) setToast({ text: u.message });
-            changed();
-            reload();
-          });
-        },
-      });
-    });
-    setNameVisible(false);
-    changed();
-    reload();
-    return null;
-  }
-
   async function renameWorkout(name: string): Promise<string | null> {
     const before = sum.storedName;
     const r = await services.workout.dispatch(sessionId, { type: 'rename_session', at: services.now(), opId: nameOp.current, name, expectedVersion: sum.sessionVersion });
@@ -293,25 +301,35 @@ export function SummaryScreen() {
               >
                 <Icon name="pencil" color="text.secondary" size={18} />
               </Pressable>
-              {canDelete ? (
+              {(fromSaved && savedAs === null) || canDelete ? (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="More"
+                  accessibilityActions={moreItems.map((m) => ({ name: m.label, label: m.label }))}
+                  onAccessibilityAction={(e) => {
+                    moreItems.find((m) => m.label === e.nativeEvent.actionName)?.run();
+                  }}
                   onPress={openMenu}
                   style={({ pressed }) => ({ minWidth: theme.target.min.width, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
                 >
-                  <Icon name="ellipsis.circle" color="text.secondary" size={20} />
+                  <Icon name="ellipsis" color="text.secondary" size={18} />
                 </Pressable>
               ) : null}
             </View>
-            {canSaveRoutine ? (
+            {savedAs !== null ? (
+              <LinkLine
+                accessibilityLabel={`Saved to Workouts as ${savedAs.name}. Opens it.`}
+                onPress={() => {
+                  navigation.navigate('WorkoutOverview', { target: { kind: 'routine', routineId: savedAs.id } });
+                }}
+              >
+                <AppText variant="callout" color="text.secondary">
+                  {LIBRARY_COPY_UI.savedLink(savedAs.name)}
+                </AppText>
+              </LinkLine>
+            ) : !fromSaved ? (
               <View style={{ alignSelf: 'flex-start' }}>
-                <TextButton
-                  label="Save as routine"
-                  onPress={() => {
-                    openName('routine');
-                  }}
-                />
+                <TextButton label={LIBRARY_COPY_UI.saveToWorkouts} onPress={openSave} />
               </View>
             ) : null}
           </View>
@@ -571,22 +589,18 @@ export function SummaryScreen() {
       {nameSheet !== null ? (
         <NameSheet
           visible={nameVisible}
-          title={nameSheet === 'routine' ? 'Save as routine' : 'Rename workout'}
-          buttonLabel={nameSheet === 'routine' ? 'Save routine' : 'Save name'}
+          title="Rename workout"
+          buttonLabel="Save name"
           initialName={sum.title}
-          detail={
-            nameSheet === 'routine'
-              ? `${String(sum.facts.exercisesDone)} ${sum.facts.exercisesDone === 1 ? 'exercise' : 'exercises'} · ${String(sum.facts.workingSets + sum.facts.warmupSets)} sets`
-              : null
-          }
-          check={nameSheet === 'routine' ? (n) => services.routines.checkName(n) : (n) => Promise.resolve(checkRoutineName(n, []))}
-          onSubmit={nameSheet === 'routine' ? saveRoutine : renameWorkout}
+          check={(n) => Promise.resolve(checkRoutineName(n, []))}
+          onSubmit={renameWorkout}
           onClose={() => {
             setNameVisible(false);
           }}
           onDismissed={nameAfter.dismissed}
         />
       ) : null}
+      {saveSheet.sheet}
       <EditTimesSheet
         summary={sum}
         visible={times}

@@ -30,7 +30,7 @@ async function withRoutine(s: AppServices): Promise<{ gymId: string; routineId: 
     { exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }, { load: 60, reps: 8 }] },
     { exercise: 'Barbell row', sets: [{ load: 50, reps: 10 }, { load: 50, reps: 10 }] },
   ]);
-  const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' });
+  const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' , addToRotation: true });
   if (!saved.ok) throw new Error(saved.message);
   h.clockMs += 2 * DAY;
   return { gymId, routineId: saved.routine.id, first };
@@ -251,10 +251,10 @@ describe('Workout overview', () => {
     let { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     const a = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
-    const savedA = await s.routines.saveFromSession({ sessionId: a, name: 'Push A', opId: 'save-a' });
+    const savedA = await s.routines.saveFromSession({ sessionId: a, name: 'Push A', opId: 'save-a' , addToRotation: true });
     h.clockMs += DAY;
     const b = await logWorkout(h, s, gymId, [{ exercise: 'Back squat', sets: [{ load: 80, reps: 5 }] }]);
-    const savedB = await s.routines.saveFromSession({ sessionId: b, name: 'Legs B', opId: 'save-b' });
+    const savedB = await s.routines.saveFromSession({ sessionId: b, name: 'Legs B', opId: 'save-b' , addToRotation: true });
     if (!savedA.ok || !savedB.ok) throw new Error('routines not saved');
     h.clockMs += DAY;
     // Rotation: Legs B was done last, so Push A is up next. Make it unstartable (its exercise is gone).

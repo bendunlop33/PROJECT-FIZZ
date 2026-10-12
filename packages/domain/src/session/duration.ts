@@ -1,6 +1,6 @@
 import type { SessionAggregate } from '@fizz/schemas';
 import { toMs } from '../time';
-import { estimatePendingWork, paceSamplesOf, recentPaceSamples, resolvePace, roundTimeLeftMinutes, TIME_LEFT, type PaceSource } from './time-left';
+import { estimatePendingWork, paceSamplesOf, recentPaceSamples, resolvePace, roundTimeLeftMinutes, TIME_LEFT, type Pace, type PaceSource } from './time-left';
 
 /**
  * `about N min` for a workout not started yet (Up next, the routine sheet,
@@ -34,10 +34,25 @@ export function roundEstimateMinutes(seconds: number): number {
   return Math.max(1, roundTimeLeftMinutes(seconds));
 }
 
-/** `recent`: Ben's last few finished workouts (5 in the spec); their pace is used when this one has too little. */
-export function estimateRemainingDuration(state: SessionAggregate, opts: { recent?: readonly SessionAggregate[] } = {}): DurationEstimate {
+/** A pace already worked out (`planPace`), so a caller that re-estimates many times reads the history once. */
+export type ResolvedPace = Pace;
+
+/**
+ * The pace for a plan nothing of which is done yet (the overview, a fit
+ * before Start): Ben's recent workouts, else the defaults. Equal to what
+ * `estimateRemainingDuration` picks for an unstarted plan.
+ */
+export function planPace(recent: readonly SessionAggregate[] = []): ResolvedPace {
+  return resolvePace({ set: [], changeover: [] }, recentPaceSamples(recent));
+}
+
+/**
+ * `recent`: Ben's last few finished workouts (5 in the spec); their pace is used when this one has too little.
+ * `pace`: a pace already resolved (`planPace`); it replaces both this workout's and the recent samples.
+ */
+export function estimateRemainingDuration(state: SessionAggregate, opts: { recent?: readonly SessionAggregate[]; pace?: ResolvedPace } = {}): DurationEstimate {
   const nowMs = toMs(state.session.lastActivityAtUtc);
-  const pace = resolvePace(paceSamplesOf(state, nowMs), recentPaceSamples(opts.recent ?? []));
+  const pace = opts.pace ?? resolvePace(paceSamplesOf(state, nowMs), recentPaceSamples(opts.recent ?? []));
   const work = estimatePendingWork(state, pace);
   const seconds = work?.seconds ?? 0;
   return {

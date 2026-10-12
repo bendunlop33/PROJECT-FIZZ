@@ -13,7 +13,9 @@ import { buildAddExerciseCommand, startWorkout, type AddExerciseInput, type SetF
 import { recoverSession, type RecoveryResult } from './session/recovery';
 import type { RepeatInput, RepeatNote, RepeatOutput } from './session/repeat';
 import { isDeleted, type RoutineStartInput } from './session/routines';
-import { planWithTodayEdits, type EditOutcome, type ResolvedEdits, type TodayEditsInput, type TodaySlot } from './session/today-edits';
+import type { FitTier } from './session/fit-time';
+import { planWithTodayEdits, type EditOutcome, type FitOutcome, type ResolvedEdits, type TodayEditsInput, type TodaySlot } from './session/today-edits';
+import type { ShapeBefore } from './session/today-shape';
 import { reduceSession, type SessionError, type SessionEvent } from './session/reducer';
 import { isInHistory } from './session/deletion';
 
@@ -60,10 +62,18 @@ const MAX_CONFLICT_RETRIES = 2;
 /** What a plan with today's edits says about them (ADR 0022): the overview's rows and stale/redundant edits. */
 export interface TodayPlanInfo {
   slotOf: Record<string, string>;
+  /** A saved workout's plan: each planned set's template in the workout (absent for a next session). */
+  setTemplateIds?: Record<string, string>;
   outcomes: EditOutcome[];
   resolved: ResolvedEdits;
   slots: TodaySlot[];
   baseSlots: TodaySlot[];
+  /** Each slot as planned before today's sets, reps and load (§11). */
+  plannedShape: Record<string, ShapeBefore>;
+  /** The live fit as planned (fit-to-time); null with none. */
+  fit: FitOutcome | null;
+  /** Each slot's fit tier (fit-to-time §4.2). */
+  tiers: Record<string, FitTier>;
 }
 
 const NO_EDITS: TodayEditsInput = { draft: null, edits: [], swaps: new Map() };
@@ -104,7 +114,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     const owner = await repos.profiles.get(req.ownerId);
     if (!owner) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
     const routine = req.routineId === null ? null : await repos.routines.get(req.routineId);
-    if (req.routineId !== null && !routine) return { ok: false, error: { code: 'not_found', message: 'Routine not found.' } };
+    if (req.routineId !== null && !routine) return { ok: false, error: { code: 'not_found', message: 'That workout wasn’t found.' } };
 
     const exercises = new Map<string, Exercise>();
     for (const rex of routine?.exercises ?? []) {
@@ -204,7 +214,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       ...(gym ? { gymName: gym.name } : {}),
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     } }, req.today ?? NO_EDITS);
-    const today: TodayPlanInfo = { slotOf: out.slotOf, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots };
+    const today: TodayPlanInfo = { slotOf: out.slotOf, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
     if (out.empty) return { ok: false, error: { code: 'nothing_to_repeat', message: 'That workout has no logged sets to repeat.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false, fits: out.fits, today };
     const saved = await trySave(() => repos.sessions.save(out.aggregate, null, req.fence));
@@ -243,7 +253,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     const owner = await repos.profiles.get(req.ownerId);
     if (!owner) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
     const routine = await repos.routines.get(req.routineId);
-    if (!routine || routine.ownerId !== req.ownerId || isDeleted(routine)) return { ok: false, error: { code: 'not_found', message: 'That routine wasn’t found.' } };
+    if (!routine || routine.ownerId !== req.ownerId || isDeleted(routine)) return { ok: false, error: { code: 'not_found', message: 'That workout wasn’t found.' } };
     const exercises = new Map<string, Exercise>();
     for (const rex of routine.exercises) {
       const ex = await repos.exercises.get(rex.exerciseId);
@@ -274,8 +284,8 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       ...(gym ? { gymName: gym.name } : {}),
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     } }, req.today ?? NO_EDITS);
-    const today: TodayPlanInfo = { slotOf: out.slotOf, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots };
-    if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This routine has no exercises to start.' } };
+    const today: TodayPlanInfo = { slotOf: out.slotOf, setTemplateIds: out.setTemplateIds, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
+    if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This workout has no exercises to start.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false, fits: out.fits, today };
     const saved = await trySave(() => repos.sessions.save(out.aggregate, null, req.fence));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };

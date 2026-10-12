@@ -258,9 +258,30 @@ export function structuralDraftPlan(input: {
  * brought back by his toast Undo) is not listed: it is written again into
  * the new draft, as before. Pure.
  */
-type DraftEditLike = { opId: string; removed: { opId: string } | null } & ({ kind: 'swap'; slotKey: string; toExerciseId: string } | { kind: 'skip'; slotKey: string } | { kind: 'order'; slotKeys: readonly string[] });
+type DraftEditLike = { opId: string; removed: { opId: string } | null } & (
+  | { kind: 'swap'; slotKey: string; toExerciseId: string }
+  | { kind: 'skip'; slotKey: string }
+  | { kind: 'order'; slotKeys: readonly string[] }
+  /** Ben's other edits before Start (sets, reps, load, add, fit; workout library): never a coach Apply's, so never matched. */
+  | { kind: 'add' | 'sets' | 'reps' | 'load' | 'fit' }
+);
 
-const editBody = (e: DraftEditLike): string => (e.kind === 'swap' ? `swap:${e.slotKey}:${e.toExerciseId}` : e.kind === 'skip' ? `skip:${e.slotKey}` : `order:${e.slotKeys.join(',')}`);
+const editBody = (e: DraftEditLike): string => {
+  switch (e.kind) {
+    case 'swap':
+      return `swap:${e.slotKey}:${e.toExerciseId}`;
+    case 'skip':
+      return `skip:${e.slotKey}`;
+    case 'order':
+      return `order:${e.slotKeys.join(',')}`;
+    case 'add':
+    case 'sets':
+    case 'reps':
+    case 'load':
+    case 'fit':
+      return `other:${e.opId}`;
+  }
+};
 
 export function dismissedCoachEditOpIds(drafts: readonly { status: string; edits: readonly DraftEditLike[] }[]): string[] {
   const out = new Set<string>();

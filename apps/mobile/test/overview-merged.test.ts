@@ -81,7 +81,7 @@ describe('preview == Start after a gym switch (shared fit)', () => {
       { exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }] },
       { exercise: 'Dumbbell bench press', sets: [{ load: 32.5, reps: 10 }, { load: 32.5, reps: 10 }] },
     ]);
-    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' });
+    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' , addToRotation: true });
     if (!saved.ok) throw new Error(saved.message);
     h.clockMs += 2 * DAY;
     const hotelId = h.ids();
@@ -134,7 +134,7 @@ describe('coach rows (§5): stored targets only, Undo / Use coach target', () =>
       { exercise: 'Barbell row', sets: [{ load: 50, reps: 10 }, { load: 50, reps: 10 }] },
     ]);
     if (routine) {
-      const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' });
+      const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1' , addToRotation: true });
       if (!saved.ok) throw new Error(saved.message);
     }
     model = new StepModel([

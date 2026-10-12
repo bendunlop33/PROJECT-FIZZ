@@ -152,11 +152,11 @@ describe('words on the page (§3.2, §9)', () => {
   const at = { utc: '2026-10-08T17:00:00.000Z', tz: 'Europe/London' };
   it('eyebrow variants', () => {
     expect(eyebrowText({ kind: 'after', routineName: 'Pull A', at }, day)).toBe('After Pull A · Thu 8 Oct');
-    expect(eyebrowText({ kind: 'only' }, day)).toBe('Only routine');
+    expect(eyebrowText({ kind: 'only' }, day)).toBe('Only workout');
     expect(eyebrowText({ kind: 'rotation_start' }, day)).toBe('Start of your rotation');
     expect(eyebrowText({ kind: 'last_done', at }, day)).toBe('Last done Thu 8 Oct');
     expect(eyebrowText({ kind: 'next_from', at }, day)).toBe('Next session · from Thu 8 Oct');
-    expect(eyebrowText({ kind: 'new_routine' }, day)).toBe('New routine');
+    expect(eyebrowText({ kind: 'new_routine' }, day)).toBe('New workout');
   });
   it('every fixed string is in the spec’s copy list or states table (minimal copy)', () => {
     const spec = readFileSync(join(__dirname, '..', '..', '..', 'docs', 'design', 'workout-overview.md'), 'utf8');
@@ -239,9 +239,9 @@ describe('route through the stack (§2.1)', () => {
   it('Close returns to Today with nothing started; Delete returns to Today with Undo', () => {
     let s = apply(router.getInitialState(options), navigate('WorkoutOverview', { target: { kind: 'routine', routineId: 'r1' } }));
     expect(names(apply(s, { type: 'GO_BACK' }))).toEqual(['Tabs']);
-    s = apply(s, popToTabs({ screen: 'Today', params: { toast: 'Deleted Push A', undoRoutine: { id: 'r1', version: 2 } } }));
+    s = apply(s, popToTabs({ screen: 'Today', params: { toast: 'Push A deleted', undoRoutine: { id: 'r1', version: 2 } } }));
     expect(names(s)).toEqual(['Tabs']);
-    expect(s.routes[0]?.params).toEqual({ screen: 'Today', params: { toast: 'Deleted Push A', undoRoutine: { id: 'r1', version: 2 } } });
+    expect(s.routes[0]?.params).toEqual({ screen: 'Today', params: { toast: 'Push A deleted', undoRoutine: { id: 'r1', version: 2 } } });
   });
 });
 
@@ -346,7 +346,7 @@ describe('source checks', () => {
     expect(body).toContain('const done = await switchSession(');
     expect(body).toContain('load: (t) => services.overview.load({ target: t, gymId, checkInId: tappedRef.current?.id ?? null }),');
     const show = body.slice(body.indexOf('show: (t) => {'), body.indexOf('next,\n'));
-    for (const reset of ['startOp.current = null;', 'setOpen(null);', 'setCard(null);', 'setSwap(null);', 'setReordering(false);', 'setStartError(null);', 'setTarget(t);', 'reload();']) expect(show).toContain(reset);
+    for (const reset of ['startOp.current = null;', 'setOpen(null);', 'setCard(null);', 'setSwap(null);', 'setEditing(false);', 'setUpdate(null);', 'setRepsSlot(null);', 'setLoadEdit(null);', 'closeAdd();', 'wroteDraft.current = null;', 'pendingSets.current.clear();', 'setStartError(null);', 'setTarget(t);', 'reload();']) expect(show).toContain(reset);
     // Kept: the tapped score and the gym are never touched by a switch.
     expect(body).not.toMatch(/setTapped|tappedRef\.current =|gyms\.select|selectGym/);
     expect(body).toContain('const gymId = page?.view.gym?.id ??');
@@ -365,11 +365,11 @@ describe('source checks', () => {
     expect(screen.match(/<SessionPickerSheet\b/g)).toHaveLength(1);
   });
 
-  it('session-picker r2 N1/N2: row actions wait while a switch is loading; Undo of Save as routine switches back only when the delete worked', () => {
+  it('session-picker r2 N1/N2: row actions wait while a switch is loading; Save to Workouts saves what the page shows and stays on it (WL6)', () => {
     expect(screen).toContain('if (switching.current) return;');
     expect(screen).toContain('if (!page || r.coach === null || switching.current) return;');
     expect(screen).toContain('if (!page || switching.current) return null;');
     expect(screen).toContain('if (!page || switching.current) return;');
-    expect(screen).toMatch(/if \(!u\.ok\) \{\n\s*setToast\(\{ text: u\.message \}\);\n\s*return;\n\s*\}\n\s*void switchTo\(before\);/);
+    expect(screen).toContain("void saveSheet.open({ kind: 'preview', target, gymId: page.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? null, previewKey: page.view.previewKey }, page.view.title);");
   });
 });

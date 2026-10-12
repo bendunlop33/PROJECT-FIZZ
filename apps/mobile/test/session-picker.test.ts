@@ -11,7 +11,7 @@ import type { SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData, OverviewTarget, SessionList, SessionPickerRow } from '../src/services/workout-services';
 import { startFromOverview } from '../src/workout/overview-start';
-import { allRows, hasChoice, isShownRow, lastDoneText, pickerRowDetail, pickerRowLabel, SESSION_PICKER_COPY, switchSession, todaySessions } from '../src/workout/session-picker';
+import { allRows, hasChoice, isShownRow, lastDoneText, pickerRowDetail, pickerRowLabel, pickerSections, SESSION_PICKER_COPY, switchSession, todaySessions } from '../src/workout/session-picker';
 import { createHarness, logWorkout, setUpGym, TZ, type Harness } from './harness';
 
 /**
@@ -141,7 +141,14 @@ describe('services.sessions.list (session-picker §3, §7)', () => {
     const { gymId, unnamed, ids } = await split(s);
     const l = await list(s, gymId);
     // D19 (Decision 2 open): Up next is the last workout's next session, Chest; then the longest gap first.
-    expect(l.current.map((r) => r.label)).toEqual(['Chest', 'Legs', 'Shoulders', 'Back']);
+    expect(l.upNext?.label).toBe('Chest');
+    expect(l.workouts).toEqual([]);
+    expect(l.fromHistory.map((r) => r.label)).toEqual(['Legs', 'Shoulders', 'Back']);
+    expect(allRows(l).map((r) => r.label)).toEqual(['Chest', 'Legs', 'Shoulders', 'Back']);
+    expect(pickerSections(l).map((x) => [x.title, x.rows.length])).toEqual([
+      [null, 1],
+      ['From history', 3],
+    ]);
     expect(l.older).toEqual([]);
     expect(l.recommendedKey).toBe('name:chest');
     expect(allRows(l).some((r) => r.sourceSessionId === unnamed)).toBe(false);
@@ -163,7 +170,7 @@ describe('services.sessions.list (session-picker §3, §7)', () => {
   it('a routine joins its saved workout’s type, and with one routine the rotation names it Up next', async () => {
     const { services: s } = await h.launch();
     const { gymId, ids } = await split(s);
-    const saved = await s.routines.saveFromSession({ sessionId: ids.Chest, name: 'Chest', opId: 'save-chest' });
+    const saved = await s.routines.saveFromSession({ sessionId: ids.Chest, name: 'Chest', opId: 'save-chest' , addToRotation: true });
     if (!saved.ok) throw new Error(saved.message);
     const l = await list(s, gymId);
     expect(allRows(l).map((r) => r.label)).toEqual(['Chest', 'Legs', 'Shoulders', 'Back']);
@@ -190,8 +197,8 @@ describe('services.sessions.list (session-picker §3, §7)', () => {
     const { services: s } = await h.launch();
     expect(await s.sessions.list(null)).toBeNull();
     const gymId = await setUpGym(h, s);
-    expect(await list(s, gymId)).toEqual({ current: [], older: [], recommendedKey: null });
-    expect(await list(s, null)).toEqual({ current: [], older: [], recommendedKey: null });
+    expect(await list(s, gymId)).toEqual({ upNext: null, workouts: [], fromHistory: [], older: [], recommendedKey: null });
+    expect(await list(s, null)).toEqual({ upNext: null, workouts: [], fromHistory: [], older: [], recommendedKey: null });
   });
 
   it('sessions not done in 42 days are listed under OLDER, with the year once they are 11 months back', async () => {
@@ -203,7 +210,7 @@ describe('services.sessions.list (session-picker §3, §7)', () => {
     await name(s, await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]), 'Push');
     h.clockMs = Date.parse('2026-10-11T08:00:00.000Z');
     const l = await list(s, gymId);
-    expect(l.current.map((r) => r.label)).toEqual(['Push']);
+    expect(allRows(l).map((r) => r.label)).toEqual(['Push', 'Pull']);
     expect(l.older.map((r) => r.label)).toEqual(['Pull']);
     expect(plain(pickerRowDetail(rowOf(l, 'Pull'), s.now()))).toBe('14 Aug 2025 · 1 exercise');
   });
@@ -295,8 +302,8 @@ describe('Picking a session (SP6, SP9, SP10, SP12, SP14)', () => {
   it('SP13: Save as routine makes one routine from the source (a repeated opId gives one); the page reloads on it; Undo removes it', async () => {
     const { services: s } = await h.launch();
     const { gymId, ids } = await split(s);
-    const a = await s.routines.saveFromSession({ sessionId: ids.Legs, name: 'Legs', opId: 'save-legs' });
-    const b = await s.routines.saveFromSession({ sessionId: ids.Legs, name: 'Legs', opId: 'save-legs' });
+    const a = await s.routines.saveFromSession({ sessionId: ids.Legs, name: 'Legs', opId: 'save-legs' , addToRotation: true });
+    const b = await s.routines.saveFromSession({ sessionId: ids.Legs, name: 'Legs', opId: 'save-legs' , addToRotation: true });
     if (!a.ok || !b.ok) throw new Error('save failed');
     expect(b.routine.id).toBe(a.routine.id);
     expect((await s.routines.list()).map((r) => r.name)).toEqual(['Legs']);
@@ -329,7 +336,7 @@ describe('Up next only where the row opens it (review r2 B1)', () => {
       { exercise: 'Back squat', sets: [{ load: 100, reps: 5 }, { load: 100, reps: 5 }] },
       { exercise: 'Triceps pushdown', sets: [{ load: 25, reps: 12 }] },
     ]);
-    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Legs', opId: 'save-legs' });
+    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Legs', opId: 'save-legs' , addToRotation: true });
     if (!saved.ok) throw new Error(saved.message);
     h.clockMs = at('2026-10-08');
     const later = await logWorkout(h, s, gymId, [
@@ -378,7 +385,7 @@ describe('Up next only where the row opens it (review r2 B1)', () => {
   it('a routine that is Up next keeps the Up next row, opening the routine (with ✓), and Edited reads the routine’s draft', async () => {
     const { services: s } = await h.launch();
     const { gymId, ids } = await split(s);
-    const saved = await s.routines.saveFromSession({ sessionId: ids.Chest, name: 'Chest', opId: 'save-chest' });
+    const saved = await s.routines.saveFromSession({ sessionId: ids.Chest, name: 'Chest', opId: 'save-chest' , addToRotation: true });
     if (!saved.ok) throw new Error(saved.message);
     const chest = rowOf(await list(s, gymId), 'Chest');
     expect(chest).toMatchObject({ recommended: true, target: { kind: 'next' } });
@@ -405,7 +412,7 @@ describe('Done today and the in-place switch (§5, SP9, SP11, r2 S1)', () => {
   it('switching to a session that can’t be shown leaves the page as it was; a good one shows with the same check-in and gym', async () => {
     const { services: s } = await h.launch();
     const { gymId, ids } = await split(s);
-    const saved = await s.routines.saveFromSession({ sessionId: ids.Legs, name: 'Legs', opId: 'save-legs' });
+    const saved = await s.routines.saveFromSession({ sessionId: ids.Legs, name: 'Legs', opId: 'save-legs' , addToRotation: true });
     if (!saved.ok) throw new Error(saved.message);
     const legs = rowOf(await list(s, gymId), 'Legs');
     expect(legs.target).toEqual({ kind: 'routine', routineId: saved.routine.id });
@@ -524,9 +531,9 @@ describe('Picker view helpers', () => {
 
   it('a single session that is not Up next is still listed on Today (a routine never done stays reachable)', () => {
     const arms = row({ key: 'routine:r', label: 'Arms', kind: 'routine', routineId: 'r', sourceSessionId: null, lastDone: null, target: { kind: 'routine', routineId: 'r' } });
-    expect(todaySessions({ current: [arms], older: [], recommendedKey: null }, { includeUpNext: false })).toEqual({ rows: [arms], more: false });
-    expect(todaySessions({ current: [{ ...arms, recommended: true }], older: [], recommendedKey: 'routine:r' }, { includeUpNext: true }).rows).toEqual([]);
-    expect(hasChoice({ current: [arms], older: [], recommendedKey: null })).toBe(false);
+    expect(todaySessions({ upNext: null, workouts: [arms], fromHistory: [], older: [], recommendedKey: null }, { includeUpNext: false })).toEqual({ rows: [arms], more: false });
+    expect(todaySessions({ upNext: { ...arms, recommended: true }, workouts: [], fromHistory: [], older: [], recommendedKey: 'routine:r' }, { includeUpNext: true }).rows).toEqual([]);
+    expect(hasChoice({ upNext: null, workouts: [arms], fromHistory: [], older: [], recommendedKey: null })).toBe(false);
   });
 
   it('no list (unreadable) means no Change and no Sessions', () => {

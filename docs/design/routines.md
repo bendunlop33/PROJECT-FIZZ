@@ -1,4 +1,349 @@
-# Routines (list, detail, editor, duplicate, repeat last workout, start)
+# Workouts library (list, editor, duplicate, delete, start, save any workout)
+
+> **v1.0, 11 Oct 2026 (Ben's request on the session picker: "a whole depository to save and edit pre-existing workouts", "upload any workout from the new workout and save it into the back of workouts").** Part A below is the v1.0 spec and wins wherever it differs from the v0.1 text after it. v0.1 (§1–§7 further down) stays as the detailed reference for the editor's set sheet, rest sheet, supersets and Repeat. Research: [workout-library-and-duration.md](../research/workout-library-and-duration.md). Mockup: [mockups/workout-library.html](mockups/workout-library.html) (frames 1, 2 and 5). Related v1.0 specs: [overview-today-edits.md](overview-today-edits.md) §11 (edit before start, slice B) and [fit-to-time.md](fit-to-time.md) (slice C).
+>
+> Code and data keep the name `Routine` (`routines` table, `Routine` schema, `services.routines`). Only the UI says **Workouts** (WL1).
+
+---
+
+# Part A. Workouts library v1.0
+
+## A0. Decisions
+
+| # | Decision | Reason |
+|---|---|---|
+| WL1 | **UI name `Workouts`** for saved routines: Plan hub segment `Week` · `Workouts`, picker section `YOUR WORKOUTS`, actions `Save to Workouts`, `Edit workout`, `New workout`. History stays `Past workouts`. **Decision 1 for Ben** (research P4) | Ben's own word. "Routine" never appears in the UI after this change |
+| WL2 | **No folders in v1.** Sections are `YOUR ROTATION` (D19), `ALL WORKOUTS` and `FROM HISTORY`. Archive comes before folders if the list grows | Research R1/R8: one person, about 5–15 workouts. The rotation already groups the ones in use |
+| WL3 | **The Workout overview is the workout's detail page.** A library row opens the overview (targets, gym notes, time, today's edits, How long?, Start). The v0.1 Routine detail screen (§2.2) is dropped | One page answers "what's in it, will it work here, and can I change it for today". Edit before start (Ben's ask) lives where Start is |
+| WL4 | **The picker lists library workouts first**: the Up next row, then `YOUR WORKOUTS`, then `FROM HISTORY` (named and FitNotes-Category types that aren't saved workouts), then `OLDER`. Within a section, longest since last done first; never-done workouts last (`New`) | Ben's request. Amends session-picker SP-D3 (§A2.4) |
+| WL5 | **History types and saved workouts.** A history type whose normalised label equals a saved workout's name counts as that workout's history (named groups already do, SP §3.1; category groups now too). `FROM HISTORY` rows have a `Save` button | Saving `Legs` from an imported Category keeps its history, last-done date and next targets |
+| WL6 | **Save any workout**, always as a **new** workout, from: Summary (any workout, including an empty/ad-hoc one), a past workout's `⋯`, a `FROM HISTORY` row, the overview's `⋯` (with or without today's edits: it saves what the page shows), Repeat, and coach drafts (unchanged). One `SaveWorkoutSheet` everywhere | Ben: "upload any workout … and save it into the back of workouts". Never a prompt on Finish (research: Hevy/Strong complaints) |
+| WL7 | **Saved loads are `Auto`.** A workout saved from a session keeps exercises, order, set types and counts, rep ranges, rest by set type and supersets. Loads are `Auto` (next targets come from the coach's D21 target or the built-in rule, using the source session as history). Fixed loads only when Ben pins them in the editor. **Coach target vs Ben's later edit (Ben, 12 Oct 2026; CHANGELOG):** a coach target never changes a slot's set types. If the slot's structure hasn't changed since the target became active (saved, or Applied), the coach's load, reps and (on a one-type slot) set count apply. If Ben changed it since, his set count and reps win; the coach's load applies only where its reps fall inside his range, otherwise the built-in rule's load does, and the set's `Why?` gets one line (`Kept your edit: 4 sets, 6–8 reps`). "Changed" means the slot's exercise, set types, count, reps, work time or Fixed loads (`RoutineExercise.structureChangedAtUtc`); a rename, rest, `Main`, order, rotation toggle, delete/restore or saving the workout after the target doesn't count | A load copied from one session goes stale after one workout (RT3). Imported sessions can now be saved too: they have no checked loads to copy anyway. Ben's own later edit is newer than an automatic target (rule 3) |
+| WL8 | **Editor v1 scope** (§A2.3): name, exercises (add, replace, remove, reorder with buttons), sets per exercise (Warm-up / Working, plus Top, Back-off, Drop under `More`), reps (range or exact), load `Auto` / `Fixed`, rest by set type, superset Group / Ungroup, **`Main`** per exercise (WL9). **Later:** `% of top set`, AMRAP, Counts as heavy legs, Advanced (equipment pin, built-in rule, transition rest), Rest between sides, Version history screen | The XL backlog item becomes an L that unblocks the library. The deferred items have no user yet |
+| WL9 | **`Main` per exercise** (`RoutineExercise.main?: boolean`). Set when a workout is created or saved: on for compound exercises in the first two places, else the first exercise. Ben toggles it in the editor. Older workouts without the field use the same rule at read time | [fit-to-time.md](fit-to-time.md) keeps main lifts. Ben sees and controls which they are; nothing is guessed out of sight |
+| WL10 | **Every library write is versioned and undoable** with no new table: create, edit, duplicate, delete, rotation changes. An editor `Save` writes an `ActionRecord` (`update_routine`, author `ben`) holding the version before, so `Undo` survives a force-close | Rules 2 and 5. No migration for slice A |
+
+## A1. Purpose
+
+| Screen | Question | Primary action |
+|---|---|---|
+| **Workouts** (Plan hub segment) | "What workouts have I got, and which do I want to change?" | None on the list: a row opens its overview, where Start is. `＋` in the nav bar makes a new one |
+| **Overview** (opened from a row) | "What's in this workout today, and can I change it before I start?" | `Start workout` ([workout-overview.md](workout-overview.md), [overview-today-edits.md](overview-today-edits.md)) |
+| **Editor** | "Is this workout set up the way I train?" | `Save` |
+| **Save sheet** | "Keep this one?" | `Save` |
+
+## A2. Layout (390 × 844)
+
+### A2.1 Workouts list
+
+```
+┌────────────────────────────────────────┐
+│ ‹ Today           Plan             ＋  │ ＋ → New workout · New with coach
+│        [  Week  |✓Workouts ]           │ segmented, 44pt
+├────────────────────────────────────────┤
+│ YOUR ROTATION                Edit order│
+│ Legs A          [↻ UP NEXT]         ⋯  │ WorkoutRow ≥ 64pt, one button + ⋯
+│ 6 exercises · ≈ 60 min · 6 days ago    │
+│────────────────────────────────────────│
+│ Push A                              ⋯  │
+│ 5 exercises · ≈ 55 min · 4 days ago    │
+│────────────────────────────────────────│
+│ Pull A                              ⋯  │
+│ 6 exercises · ≈ 55 min · ⚠ 1 not here  │ gym problem at the selected gym
+│                                        │
+│ ALL WORKOUTS                   Recent ▾│
+│ Arms                                ⋯  │
+│ New · 4 exercises · ≈ 40 min           │
+│────────────────────────────────────────│
+│ Push · 45 min    [Coach]            ⋯  │ SourceTag only when not Ben's
+│ 6 exercises · ≈ 45 min · 8 Oct         │
+│                                        │
+│ FROM HISTORY                           │
+│ Shoulders                     [ Save ] │ SecondaryButton
+│ 5 exercises · 4 days ago               │
+│────────────────────────────────────────│
+│ Back                          [ Save ] │
+│ 6 exercises · 3 days ago               │
+│                                        │
+│ Empty workout                          │ underlined link, 44pt
+└────────────────────────────────────────┘
+```
+
+- **Row tap** → the overview for that workout (WL3). **`⋯`** (44 × 44) → `Edit workout` · `Duplicate` · `Add to rotation` / `Remove from rotation` · `Delete`. Long-press opens the same menu; nothing is swipe-only.
+- **Line 2** (all `type.callout`, `text.secondary`, tabular): exercise count · `≈ N min` (`estimateRemainingDuration` at the selected gym) · last done (`Today`, `Yesterday`, `N days ago` under 14 days, else `14 Aug`; `New` when never done). A gym problem replaces last done: `⚠ 1 not here` (icon + text).
+- `UP NEXT` is the session-picker tag (icon + word). The `SourceTag` shows only for `Coach` and `Imported`; Ben's own workouts carry no tag (minimal copy).
+- `FROM HISTORY` lists history types from `deriveSessionTypes` that don't match a saved workout (WL5), longest gap first, up to 10, then `Show all (14)`. Rows have no `⋯`. Row tap opens their overview (as the picker does).
+- `Sort` applies to `ALL WORKOUTS`: `Recent` (default) · `A–Z`.
+- No `Start` button on rows (replaces RT2): row → overview → `Start workout` is 2 taps from this list, and the check-in and gym notes are always seen first.
+
+### A2.2 `＋` menu
+
+`New workout` → editor (new) · `New with coach` → the builder's Build sheet ([workout-builder.md](workout-builder.md) §3.1). With the coach offline, `New with coach` shows `Coach offline` and stays tappable (it opens the builder's offline frame).
+
+**Depends on later slices (not in slice A's acceptance):** `New with coach` / `Coach offline` (here and in the empty state) needs the workout builder; `Edit order` and `Set up rotation ›` on `YOUR ROTATION` need Edit rotation (weekly-plan §2.4); the Plan hub `Week` · `Workouts` segment needs the Plan hub. Until then `＋` opens the editor directly and Today links to the list (`Workouts ›`).
+
+### A2.3 Editor (v1 scope, WL8)
+
+Same frame, action bar and keypad rules as v0.1 §2.3. Changes:
+
+```
+┌────────────────────────────────────────┐
+│ Cancel        Edit workout             │
+├────────────────────────────────────────┤
+│ Name                                   │
+│ ┌────────────────────────────────────┐ │
+│ │ Push A                             │ │
+│ └────────────────────────────────────┘ │
+│ 5 exercises · ≈ 55 min at Main gym     │ live
+│                                        │
+│ EXERCISES                              │
+│ ┌────────────────────────────────────┐ │
+│ │ 1 Bench press        [✓ Main]  ⋯   │ │ ParamChip toggle; ⋯: Replace,
+│ │ 1 W  Warm-up  Auto × 5     1:00    │ │  Superset with next, Move up,
+│ │ 2 T  Top      Auto × 4–6   3:00    │ │  Move down, Remove
+│ │ 3–5 Working   Auto × 6–8   2:00    │ │
+│ │ [+ Warm-up] [+ Working] [+ More ▾] │ │
+│ │ Rest by set type                 › │ │
+│ └────────────────────────────────────┘ │
+│ ┌────────────────────────────────────┐ │
+│ │ 2 Incline DB press   [ Main ]  ⋯   │ │
+│ │ 1–3 Working   Auto × 8–10  1:30    │ │
+│ │ [+ Warm-up] [+ Working] [+ More ▾] │ │
+│ └────────────────────────────────────┘ │
+│ ＋ Add exercise                        │
+├────────────────────────────────────────┤
+│ [                Save                ] │ above the keypad
+└────────────────────────────────────────┘
+```
+
+- **`Main`** (WL9) is a `ParamChip` toggle (icon `checkmark` + word when on, outline when off; never colour alone). VoiceOver: "Main lift, on".
+- **Reorder:** `Move up` / `Move down` in the exercise `⋯` and as VoiceOver custom actions (TE10 pattern). No drag in v1, so v0.1's Reorder mode is not built yet.
+- **Set sheet:** as v0.1 without `% of top set`, the AMRAP checkbox and Effort target. Load is `Auto` / `Fixed`. Fixed uses `WorkoutKeypad` with the default gym's steps and the same warnings.
+- **Not shown in v1:** `Routine settings`, `Advanced`, `Rest between sides`. Their stored values (if any) are kept untouched on Save.
+- `Cancel` with changes: `Discard changes?` [Discard] [Keep editing].
+
+### A2.4 Session picker (changes to session-picker §2.2)
+
+```
+┌────────────────────────────────────────┐
+│ Choose session                   Close │
+│                                        │
+│ ✓ Legs A          [↻ UP NEXT]          │ Up next always first
+│   6 days ago · 6 exercises             │
+│ YOUR WORKOUTS                          │
+│   Push A                               │
+│   4 days ago · 5 exercises · Edited    │
+│   Pull A                               │
+│   2 days ago · 6 exercises             │
+│   Arms                                 │
+│   New · 4 exercises                    │
+│ FROM HISTORY                           │
+│   Shoulders                            │
+│   4 days ago · 5 exercises             │
+│ OLDER                                  │
+│   Full body                            │
+│   14 Aug · 6 exercises                 │
+│                                        │
+│ Empty workout                          │
+│ Past workouts                          │
+│ Edit workouts                          │ → Plan hub, Workouts segment
+└────────────────────────────────────────┘
+```
+
+- Up next first, then `YOUR WORKOUTS`, `FROM HISTORY`, `OLDER` (WL4). A section with no rows is hidden. With only one section, its label is hidden too.
+- `OLDER` holds both kinds (not done in 42 days), library rows first.
+- Rows are still one button each and show no targets. Picking still opens or reloads the overview, where `Edit` and `How long?` are (overview-today-edits §11, fit-to-time.md).
+- Today's `SESSIONS` list uses the same order.
+
+### A2.5 Save sheet (`SaveWorkoutSheet`, medium detent)
+
+```
+┌────────────────────────────────────────┐
+│ Save to Workouts                Cancel │
+│ Name                                   │
+│ ┌────────────────────────────────────┐ │
+│ │ Legs                               │ │ prefilled, text selected
+│ └────────────────────────────────────┘ │
+│ 5 exercises · 15 sets                  │ what will be saved
+│ Not copied: 3 distance sets (Sled push)│ only when something is left out
+│ Add to rotation               [  ○]    │ switch, off by default
+│ [               Save                 ] │ above the keyboard
+└────────────────────────────────────────┘
+```
+
+- Name prefill: the session's name, the history type's label, the coach draft's name, or `Workout · Sun 11 Oct` for an unnamed one. A duplicate name shows `You already have Legs.` under the field and still saves (`checkRoutineName`).
+- A set template has no distance target yet, so a distance exercise (sled push, carry) is left out, never saved as reps or as a timed set. The sheet lists it under the summary in Repeat's wording (`notCopiedText`): `Not copied: 3 distance sets (Sled push)` (review workout-library-merge S1, 12 Oct 2026).
+- After `Save`: toast `Saved to Workouts` [Undo]. The entry point becomes `Saved · Legs ›` (opens the overview). Undo tombstones the new workout (and takes it out of the rotation if it was added).
+
+### A2.6 Entry points for Save
+
+| Where | Control | Saves |
+|---|---|---|
+| Summary (any finished workout, including one started empty) | Text link `Save to Workouts` under the title line. If the workout came from a saved workout, the link is in `⋯` instead, so it doesn't look like a prompt | The finished workout: done exercises and set counts, skipped left out |
+| Past workouts → a workout → `⋯` | `Save to Workouts` | Same |
+| Workouts list, `FROM HISTORY` row | `Save` | The type's most recent session (imported sessions included, WL7) |
+| Overview `⋯` | `Save to Workouts` (now also with today's edits; replaces session-picker §4.3's "hidden while edited") | Exactly what the page shows: today's edits applied, skipped rows (for any reason) left out. A fitted plan saves as fitted, so `Push A · 30 min` is easy to make |
+| Repeat | `Save to Workouts` (was `Save as routine`) | The Repeat preview |
+| Coach draft | `Save to Workouts` (workout-builder §3.8, unchanged apart from the label) | The draft |
+
+## A3. States
+
+| Where | State | Shows |
+|---|---|---|
+| List | Loading | Nothing for 300 ms, then static rows. Local only |
+| List | No saved workouts, no history | `No workouts yet.` · `New workout` · `New with coach` · `Empty workout` (links) |
+| List | No saved workouts, with history | `FROM HISTORY` only, with `Save` on each row. Common after a FitNotes import |
+| List | Normal | §A2.1 |
+| List | Workout in progress | `StatusBanner` `Push A in progress` [Resume]. Rows still open their overview, whose Start is replaced by Resume (OV11). Editing works and never changes the running workout |
+| List | No rotation | `YOUR ROTATION` hidden; `Set up rotation ›` link above `ALL WORKOUTS` |
+| List | Offline / AI unavailable | Identical, except `New with coach` shows `Coach offline` |
+| List | Database error | `Couldn't open your data.` [Try again] [Restore from backup] |
+| Editor | New / clean / dirty / invalid / conflict / save failed | As v0.1 §3.3 (labels with "routine" now say "workout": `Couldn't save Push A. Your edits are still here.`) |
+| Editor | Workout in progress is this one | Inline line `In progress · changes apply next time` |
+| Save sheet | Nothing to save (all skipped, or only warm-ups) | Sheet doesn't open; toast `Nothing to save` |
+| Save sheet | Save failed | `Couldn't save. Try again.` (same opId) |
+| Any | Force-close mid-edit | Editor edits are lost (Cancel semantics; the editor is a sit-down task). Saved versions and their Undo record survive |
+
+Transitions:
+
+```
+Today ─Change / All sessions─► Picker ─row─► Overview ─Start─► Workout
+                                   └─Edit workouts─► Workouts list
+Workouts list ─row─► Overview ─⋯ Edit workout─► Editor ─Save─► Overview (toast Undo)
+             ─⋯ Edit workout─► Editor ─Save─► list (toast Undo)
+             ─⋯ Duplicate─► Editor (copy, name selected)
+             ─⋯ Delete─► confirm ─► list (toast Undo)
+             ─FROM HISTORY Save─► Save sheet ─Save─► row moves to ALL WORKOUTS
+Summary / Past workout ─Save to Workouts─► Save sheet ─Save─► toast Undo
+```
+
+## A4. Interactions
+
+### A4.1 Tap counts
+
+| Path | Taps |
+|---|---|
+| Workouts list → first logged set | 3: row → `Start workout` → `Log` |
+| Today → any saved workout | 4: `Change` → row → Start → Log (unchanged from the picker) |
+| Save the workout just finished | 2: `Save to Workouts` → `Save` |
+| Duplicate | 2: `⋯` → `Duplicate` (opens the copy in the editor) |
+| Delete | 3: `⋯` → `Delete` → confirm |
+
+### A4.2 Commands (every write: `opId`; edits of an existing workout also `expectedVersion`)
+
+| Action | Call | Undo |
+|---|---|---|
+| New / Save in editor | `services.routines.create({draft, opId})` / `services.routines.update({routineId, patch, expectedVersion, opId})` | Toast → `services.routines.revert({actionId, opId})`: restores the stored `before` if the workout is still at the saved version; else `Can't undo: Push A changed since.` |
+| Duplicate | `services.routines.duplicate({routineId, opId})` → `Push A copy`, source `ben`, `createdFromRoutineId` | Delete the copy (toast) |
+| Delete | `services.routines.delete({routineId, expectedVersion, opId})` (tombstone; leaves the rotation in the same transaction) | Toast → `services.routines.restore(…)`, back at the same rotation place |
+| Save to Workouts | `services.routines.saveFrom({from: {kind: 'session', sessionId} \| {kind: 'type', key} \| {kind: 'preview', basis, draft: {id, version} \| null, previewKey}, name, addToRotation, opId})` | Toast → delete (tombstone) the new workout |
+| Add / remove rotation | As v0.1 RT9 | Toast |
+
+A repeated `opId` returns the existing result. A `preview` save with an out-of-date `previewKey` saves nothing and the overview re-reads (`Targets updated`).
+
+### A4.3 Voice
+
+None in the library or editor (sit-down tasks). For voice.md: "save this workout" on Summary opens the Save sheet (the tap on `Save` is still needed).
+
+### A4.4 Accessibility
+
+- `WorkoutRow`: "Push A, 5 exercises, about 55 minutes, last done 4 days ago. Button. Actions available." Custom actions: Edit workout, Duplicate, Add to rotation, Delete.
+- At AX1+ line 2 wraps; `Save` moves under the name on `FROM HISTORY` rows; nothing truncates.
+
+## A5. Copy
+
+Values are **targets** on the overview and in the editor (`Auto × 6–8`, `Fixed 60 kg`). Dates and `N days ago` are **actuals**. `≈ N min` is an **estimate**.
+
+| Element | Text |
+|---|---|
+| Hub | `Plan` · `Week` · `Workouts` |
+| Sections | `YOUR ROTATION` · `Edit order` · `ALL WORKOUTS` · `Recent` / `A–Z` · `FROM HISTORY` · `Show all (14)` · `Set up rotation ›` |
+| Row | `6 exercises · ≈ 60 min · 6 days ago` · `New` · `⚠ 1 not here` · `Save` |
+| `⋯` | `Edit workout` · `Duplicate` · `Add to rotation` · `Remove from rotation` · `Delete` |
+| `＋` | `New workout` · `New with coach` · `Coach offline` |
+| Empty | `No workouts yet.` · `New workout` · `New with coach` · `Empty workout` |
+| Editor | `New workout` / `Edit workout` · `Name` · `EXERCISES` · `Main` · `Add exercise` · `Save` · `No changes` · `Add a name` · `Add an exercise` · `In progress · changes apply next time` |
+| Picker | `YOUR WORKOUTS` · `FROM HISTORY` · `OLDER` · `Edit workouts` |
+| Save sheet | `Save to Workouts` · `Name` · `5 exercises · 15 sets` · `Add to rotation` · `Save` · `Cancel` · `You already have Legs.` |
+| Toasts | `Saved to Workouts` [Undo] · `Saved Push A` [Undo] · `Push A deleted` [Undo] · `Nothing to save` · `Can't undo: Push A changed since.` |
+| Confirm | `Delete Push A?` · `Past workouts stay.` · [Delete] [Cancel] |
+| After save | `Saved · Legs ›` |
+
+No lead text, no rule names, no reassurance lines. `Auto` keeps its info button (v0.1 §5) as the only explanation.
+
+A fresh copy (Duplicate) opens in the editor; its first `Save` toast `Saved Push A copy` [Undo] deletes the copy, edits included (WL-A7's Undo still removes it). Later saves' Undo restores the previous version as usual.
+
+## A6. Data needed
+
+**Existing:** `checkRoutineName`, `liveRoutines`, `routineFromSession`, `routineCounts`, `renameRoutine`, `deleteRoutine`, `restoreRoutine`, `isFromRoutine`, `routineLastDone`, `planRoutineStart`, `nextInRotation`, `deriveSessionTypes`, `recommendSession`, `orderSessionTypes`, `estimateRemainingDuration` (`duration.ts`), `snapPlanToGym`, `planWithTodayEdits`, `buildWorkoutOverview`, `ActionRecord` (`update_routine`).
+
+**Changed (pure, `packages/domain`, unit-tested):**
+
+| Function | Change |
+|---|---|
+| `routineFromSession` | Loads `Auto` (`targetLoad: null`) unless asked to keep Fixed (Repeat's save keeps them, as v0.1 §4.6). Accepts imported sessions (`source: 'import'`; `equipmentId: null`). Sets `main` (WL9) |
+| `deriveSessionTypes` | A category group whose normalised label equals a saved workout's name counts for that workout (WL5) |
+| `orderSessionTypes` | Returns `{upNext, workouts, fromHistory, older}` in WL4 order |
+
+**New (pure):**
+
+| Function | Contract |
+|---|---|
+| `routineFromPlan(preview, name, at, newId, fromRoutine?)` | A workout from an overview preview: slots in shown order, skipped slots and sets left out, set types and counts as shown, rep ranges or work time, supersets. Rest: only the workout's own set-type presets and per-set overrides (exercise and global defaults fall through). Loads `Auto` except sets whose load Ben set by hand today (kept Fixed). When the preview is a saved workout's, `planSettingsOfRoutine` keeps its own Fixed pins (its unfitted load), each row's `Main` and item; a row swapped today keeps only `Main`. Otherwise `main` from WL9 |
+| `defaultMain(exercises, catalogue)` | WL9 rule. Used on create/save and for older workouts at read |
+| `editRoutine(current, patch, expectedVersion, opId, at)` | `RoutineChange` like `renameRoutine`; validates (≥ 1 set per exercise, reps min ≤ max, ≤ 40 exercises, ≤ 30 sets each) |
+| `duplicateRoutine(current, newId, opId, at)` | Copy with new IDs, name `<name> copy`, not in the rotation |
+| `buildLibraryView({routines, finished, types, rotation, gym, now, tz})` | Rows for the three sections with counts, `≈` minutes, last done, gym issue count, source tag |
+
+**Schema (optional fields in the routine JSON; no migration):** `RoutineExercise.main?: boolean`, `RoutineExercise.structureChangedAtUtc?` (WL7; set by editor saves and slot swaps when the slot's structure changes), `Routine.source?: 'ben' | 'coach' | 'imported'`, `Routine.createdFromRoutineId?`. `ActionDetail` `update_routine` gains `{change: 'edit', before: Routine, afterVersion}`.
+
+**Services:** `services.routines.list / create / update / revert / duplicate / delete / restore / saveFrom`, `services.sessions.list` (new section order). Screens format only.
+
+## A7. Acceptance checks (slice A)
+
+Fixture: saved Push A, Pull A, Legs A (rotation, Legs A next), Arms (never done), coach-made `Push · 45 min`; FitNotes import with `Shoulders`, `Back` Category types; Main gym and Hotel gym.
+
+- **WL-A1.** The Workouts list shows `YOUR ROTATION` (Legs A `UP NEXT`, Push A, Pull A), `ALL WORKOUTS` (Arms `New`, `Push · 45 min` with `Coach` tag), `FROM HISTORY` (Shoulders, Back). No row has a `Start` button.
+- **WL-A2.** Row → overview → `Start workout` → `Log` reaches the first logged set in 3 taps from the list. The overview's rows equal the sets Start creates (OV3).
+- **WL-A3.** The picker lists Up next, then `YOUR WORKOUTS`, then `FROM HISTORY`, then `OLDER`; `Edit workouts` opens the list. Today's `SESSIONS` uses the same order.
+- **WL-A4.** Editor: add an exercise, add a working set, change reps to 6–8, pin a Fixed load of 37.5 kg each on a 30 kg rack (warning shown, saves), toggle `Main`, move an exercise up, group two exercises as a superset, Save. The overview shows the new structure; Fixed is capped at 30 kg each at Start. With a coach target saved before the edit, the overview and Start still show 6–8 and the new set count (WL7). (Typed entry for 37.5 kg past the stepper's rack max: confirm on device.)
+- **WL-A5.** `Undo` on `Saved Push A` restores the previous version, also after a force-close. If Push A changed after the save, Undo says `Can't undo: Push A changed since.` and changes nothing.
+- **WL-A6.** Two quick `Save` taps (same opId) write one version. A save against an older `expectedVersion` shows the conflict sheet (v0.1 §3.3); nothing is overwritten.
+- **WL-A7.** Duplicate makes `Push A copy` (not in the rotation) and opens it in the editor; toast Undo removes it.
+- **WL-A8.** Delete Push A confirms, removes it from the rotation, and Undo puts it back at the same place. Finished Push A workouts still open with their exercises.
+- **WL-A9.** Summary of an Empty workout shows `Save to Workouts`; saving creates a workout with the done exercises, set counts and rep ranges, loads `Auto`; the next overview for it shows targets from the built-in rule (or a D21 coach target) using that workout as history. The finished workout's version doesn't change.
+- **WL-A10.** (Uses a **named** imported type until session-picker Decision 1 enables FitNotes Category groups: `groupImportsByCategory` is off.) `Save` on the `Shoulders` history row creates `Shoulders` from the latest imported Shoulders session (no equipment pins, loads `Auto`). The row moves to `ALL WORKOUTS` with last done `4 days ago` (history kept, WL5).
+- **WL-A11.** Overview `⋯` → `Save to Workouts` with a swap and a skip saves the swapped exercise and leaves the skipped one out. With an out-of-date preview it saves nothing and shows `Targets updated`.
+- **WL-A12.** `Main` defaults: compound exercises in places 1–2 are on; an all-isolation workout has only the first on. Ben's toggle is stored and survives Save, Duplicate and backup/restore.
+- **WL-A13.** Editing Push A while a Push A workout is in progress shows `In progress · changes apply next time`; the running workout doesn't change.
+- **WL-A14.** Airplane mode, no AI: list, editor, Save, Duplicate, Delete, Undo, picker and overview all work; only `New with coach` reads `Coach offline`. No provider call is made by any library action.
+- **WL-A15.** Library data is Your data: in export, delete and backup with routines; never in Coaching knowledge; never in coach context except a workout Ben asks the coach about.
+- **WL-A16.** Every row, chip and button ≥ 44pt (rows ≥ 64pt); `UP NEXT`, `Main`, `⚠` and source tags carry an icon or word; tabular numbers; Dynamic Type to AX3 at 375pt with no sideways scroll; `Save` stays above the keyboard. No string in the library says "routine".
+
+### A7.1 Decisions (Ben, 12 Oct 2026) and open questions
+
+Decided (CHANGELOG 2026-10-12):
+1. **WL7, coach target vs Ben's later edit: confirmed as built.** His later slot edit wins on set count and reps; the coach's load applies only where its reps fit his range, else the built-in rule's (`routineTemplatesWithTargets`). Where the coach's load is used, its target RPE goes with it.
+2. **N6, `FROM HISTORY` saved under another name: leave as is.** Saving the `Shoulders` row as `Shoulders A` links only the session saved; older `Shoulders` sessions stay as a `FROM HISTORY` row. No history is rewritten.
+
+Open (Ben to decide):
+3. **N13, rep-range-aware fallback load (backlog candidate).** When the coach's reps don't fit Ben's edited range, the fallback is the built-in rule's load, planned from the source session's reps (e.g. 8–10), not his new range (6–8). A start with no coach does the same today, so this isn't a regression. Candidate built-in rule improvement if Ben wants loads that follow an edited rep range.
+
+## A8. Build slices (this change)
+
+| Slice | Contents | Spec | Size | Migration |
+|---|---|---|---|---|
+| **A. Library + editor + save** | Plan hub `Workouts` segment, rows → overview, `⋯` actions, editor v1 (WL8), `Main` (WL9), Save sheet and all its entry points (WL6), picker order (WL4), history-type saves (WL5, WL7), editor Undo via ActionRecord | This Part A | L | None |
+| **B. Full edit before start** | Overview `Edit` mode (sets, reps, load for today, add exercise, swap, skip, reorder in one place), `Update Push A ›` as one change-review card | [overview-today-edits.md](overview-today-edits.md) §11 | M | None (new `TodayEdit` variants live in the draft's JSON) |
+| **C. Fit to time** | `How long?` on the TIME tile, built-in `fitPlanToMinutes`, coach fit, Finish by at Start, built-in Shorten mid-workout | [fit-to-time.md](fit-to-time.md) | M | **9** (small; coach fit only, §FT8) |
+
+Order: A, then B, then C. B doesn't need A (it works on today's routine and history bases); C's built-in part doesn't need B. Each slice is reviewable alone.
+
+---
+
+# Part B. v0.1 reference (superseded where Part A differs)
+
+Where v0.1 says "Routines", "routine" or `Save as routine`, read "Workouts", "workout" and `Save to Workouts`. Superseded outright: §1 RT2 (row `Start`), §2.1 (list layout and `Start quickly`; Repeat lives in Past workouts), §2.2 (Routine detail; replaced by the overview, WL3), the editor items deferred by WL8, and §4.2.
 
 > **Revision 2026-10-08 (consolidation).** The routine source tag (`Coach` / `Ben` / `Imported`) is the canonical `SourceTag` (design-system §9.28); `RoutineRow`, `SetTemplateRow`, `ReorderRow` and `PlanSegmentControl` are merged into design-system (§9.35, §9.37 area); the row's `Start` is a `SecondaryButton` (§9.2a). Routines are **Your data**; a routine that uses an exercise missing from this phone's coaching knowledge (after a one-section restore) shows `Exercise missing` (data-import-export.md §2.3).
 

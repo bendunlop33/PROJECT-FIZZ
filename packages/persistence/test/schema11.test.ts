@@ -19,9 +19,9 @@ describe('migration 11: coach set actions', () => {
     await migrate(db, MIGRATIONS, 10);
     await db.run(row('a1', 'update_routine'));
     await expect(db.run(row('a2', 'log_set'))).rejects.toThrow();
-    const report = await migrate(db);
-    expect(report).toEqual({ from: 10, to: latestVersion(), applied: [11] });
-    expect(latestVersion()).toBe(11);
+    const report = await migrate(db, MIGRATIONS, 11);
+    expect(report).toEqual({ from: 10, to: 11, applied: [11] });
+    expect(latestVersion()).toBeGreaterThanOrEqual(11);
     expect(await readUserVersion(db)).toBe(11);
     expect(await db.getFirst('SELECT kind FROM coach_actions WHERE id = ?', ['a1'])).toEqual({ kind: 'update_routine' });
     await db.run(row('a2', 'log_set'));

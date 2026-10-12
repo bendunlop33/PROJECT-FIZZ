@@ -482,6 +482,8 @@ export function createAppServices(deps: AppServicesDeps) {
     afterCommand,
     catalogueExercises,
     catalogueSubstitutions,
+    // `Ask coach` on How long? (fit-to-time §5): the coach's one request; `coach` is defined below and only read when Ben asks.
+    coachFit: (context, signal) => coach.fitToday(context, signal),
   });
 
   /** The coach (ADR 0020 C6–C8): threads, turns, Undo, the summary turn, next-session targets. */
@@ -530,10 +532,14 @@ export function createAppServices(deps: AppServicesDeps) {
    * earlier day's overview isn't written again (review S5). An edit the
    * draft's own checks refuse here (not doable at this gym, or no place for
    * it in the plan) is left out and reported (review S1): the card reads
-   * `Couldn't apply here` and the overview says so once.
+   * `Couldn't apply here` and the overview says so once. An Apply's changes
+   * are written together or not at all (review B2). A refused Apply is
+   * tried again on later loads (at a gym that can do it, or once the plan
+   * has room); when one lands like that, the overview says so once
+   * (`Coach change applied`, merge r2 S2), so it never appears unannounced.
    */
-  async function applyCoachChanges(target: OverviewTarget, gymId: string | null, startOf: OverviewStartOf, draftVersion: number | null): Promise<{ wrote: boolean; refused: number }> {
-    const none = { wrote: false, refused: 0 };
+  async function applyCoachChanges(target: OverviewTarget, gymId: string | null, startOf: OverviewStartOf, draftVersion: number | null): Promise<{ wrote: boolean; refused: number; landedLate: number }> {
+    const none = { wrote: false, refused: 0, landedLate: 0 };
     const basis: DraftBasis = startOf.routineOf !== undefined ? { kind: 'routine', routineId: startOf.routineOf } : { kind: 'next', sourceSessionId: startOf.nextOf };
     const applies = await coach.appliedStructural(basis);
     if (applies.length === 0) return none;
@@ -542,17 +548,22 @@ export function createAppServices(deps: AppServicesDeps) {
     const earlier = p === null ? [] : await repos().drafts.listForBasis(p.id, basis).catch(() => []);
     const plan = structuralDraftPlan({ applies, draftOpIds: draft?.opIds ?? null, liveEdits: draft === null ? [] : liveEdits(draft.edits), dismissedOpIds: dismissedCoachEditOpIds(earlier) });
     const refusedApplies = new Set<string>();
+    const landedLate = new Set<string>();
     let version = draftVersion;
     let wrote = false;
+    // One draft write per Apply (review B2): all of its changes are written, or none, so a card never stands half-applied.
+    const byApply = new Map<string, typeof plan.write>();
     for (const w of plan.write) {
-      const r = await overview.edit({ target, gymId, expectedDraftVersion: version, opId: w.opId, edit: w.edit });
+      const applyId = structuralApplyOf(w.opId) ?? w.opId;
+      byApply.set(applyId, [...(byApply.get(applyId) ?? []), w]);
+    }
+    for (const [applyId, writes] of byApply) {
+      const r = await overview.editBatch({ target, gymId, expectedDraftVersion: version, edits: writes });
       if (r.ok) {
         version = r.draft?.version ?? version;
         wrote = wrote || !r.duplicate;
-      } else if (r.reason === 'invalid') {
-        const applyId = structuralApplyOf(w.opId);
-        if (applyId !== null) refusedApplies.add(applyId);
-      }
+        if (!r.duplicate && coach.wasStructuralRefused(applyId)) landedLate.add(applyId);
+      } else if (r.reason === 'invalid') refusedApplies.add(applyId);
     }
     for (const editId of plan.remove) {
       const r = await overview.undoEdit({ target, gymId, expectedDraftVersion: version, opId: `coach-undo:${editId}`, editId });
@@ -565,7 +576,7 @@ export function createAppServices(deps: AppServicesDeps) {
       applies.map((a) => a.applyActionId),
       [...refusedApplies],
     );
-    return { wrote, refused: refusedApplies.size };
+    return { wrote, refused: refusedApplies.size, landedLate: landedLate.size };
   }
 
   /**
@@ -581,10 +592,10 @@ export function createAppServices(deps: AppServicesDeps) {
       const data = await read();
       if (data === null) return null;
       // Coach changes Ben applied for this workout (ADR 0020 §3) become today's edits, once; an undone one is taken back.
-      const coachChanges = await applyCoachChanges(req.target, req.gymId, data.startOf, data.draft?.version ?? null).catch(() => ({ wrote: false, refused: 0 }));
+      const coachChanges = await applyCoachChanges(req.target, req.gymId, data.startOf, data.draft?.version ?? null).catch(() => ({ wrote: false, refused: 0, landedLate: 0 }));
       const page = coachChanges.wrote ? await read() : data;
-      // A coach change the overview's own checks refused here (review S1): the page says so once.
-      return page === null ? null : { ...page, coachRefused: coachChanges.refused };
+      // A coach change the overview's own checks refused here (review S1), or one refused earlier that landed now (merge r2 S2): the page says so once.
+      return page === null ? null : { ...page, coachRefused: coachChanges.refused, coachLanded: coachChanges.landedLate };
     },
     async explain(req: { target: OverviewTarget; gymId: string | null; checkInId?: string | null; sessionExerciseId: string }) {
       const typical = req.gymId === null ? await typicalEquipment().catch(() => null) : null;
@@ -617,6 +628,9 @@ export function createAppServices(deps: AppServicesDeps) {
     async edit(req: Omit<Parameters<typeof loop.overview.edit>[0], 'typicalEquipment'>) {
       return loop.overview.edit({ ...req, ...(await typicalFor(req.gymId)) });
     },
+    async editBatch(req: Omit<Parameters<typeof loop.overview.editBatch>[0], 'typicalEquipment'>) {
+      return loop.overview.editBatch({ ...req, ...(await typicalFor(req.gymId)) });
+    },
     async move(req: Omit<Parameters<typeof loop.overview.move>[0], 'typicalEquipment'>) {
       return loop.overview.move({ ...req, ...(await typicalFor(req.gymId)) });
     },
@@ -637,6 +651,38 @@ export function createAppServices(deps: AppServicesDeps) {
     },
     async swapCandidates(req: Omit<Parameters<typeof loop.overview.swapCandidates>[0], 'typicalEquipment'>) {
       return loop.overview.swapCandidates({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    // Full edit before start (overview-today-edits §11).
+    async clearEdit(req: Omit<Parameters<typeof loop.overview.clearEdit>[0], 'typicalEquipment'>) {
+      return loop.overview.clearEdit({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    async addCandidates(req: Omit<Parameters<typeof loop.overview.addCandidates>[0], 'typicalEquipment'>) {
+      return loop.overview.addCandidates({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    loadKeypad: (req: Parameters<typeof loop.overview.loadKeypad>[0]) => loop.overview.loadKeypad(req),
+    // Fit to time (fit-to-time.md): the built-in trim and `Clear fit`, offline.
+    async trimToFit(req: Omit<Parameters<typeof loop.overview.trimToFit>[0], 'typicalEquipment'>) {
+      return loop.overview.trimToFit({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    async clearFit(req: Omit<Parameters<typeof loop.overview.clearFit>[0], 'typicalEquipment'>) {
+      return loop.overview.clearFit({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    // The coach's fit (fit-to-time §5): only when Ben taps `Ask coach`; applied at once with Undo (rule 3).
+    async requestCoachFit(req: Omit<Parameters<typeof loop.overview.requestCoachFit>[0], 'typicalEquipment'>) {
+      return loop.overview.requestCoachFit({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    undoCoachFit: (req: Parameters<typeof loop.overview.undoCoachFit>[0]) => loop.overview.undoCoachFit(req),
+    /** Whether `Ask coach` can be tapped (connected and not offline): reads settings only, no network. */
+    async coachFitAvailable(): Promise<boolean> {
+      return (await coach.availability().catch(() => null))?.status === 'ok';
+    },
+  };
+
+  /** Workouts: `Update Push A` plans from the same page, so with no gym it is checked against the typical gym's items too. */
+  const routines = {
+    ...loop.routines,
+    async applyTodayEdits(req: Omit<Parameters<typeof loop.routines.applyTodayEdits>[0], 'typicalEquipment'>) {
+      return loop.routines.applyTodayEdits({ ...req, ...(await typicalFor(req.gymId)) });
     },
   };
 
@@ -702,6 +748,7 @@ export function createAppServices(deps: AppServicesDeps) {
     ...loop,
     history,
     overview,
+    routines,
     progress,
     data,
     coach,

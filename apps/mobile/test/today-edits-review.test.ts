@@ -85,7 +85,7 @@ async function withPush(s: AppServices, asRoutine: boolean): Promise<{ gymId: st
     { exercise: 'Triceps pushdown', sets: [{ load: 25, reps: 12 }, { load: 25, reps: 12 }] },
   ]);
   if (asRoutine) {
-    const saved = await s.routines.saveFromSession({ sessionId: push, name: 'Push A', opId: 'save-1' });
+    const saved = await s.routines.saveFromSession({ sessionId: push, name: 'Push A', opId: 'save-1' , addToRotation: true });
     if (!saved.ok) throw new Error(saved.message);
   }
   h.clockMs += 2 * DAY;
@@ -216,7 +216,7 @@ describe('S3: the substitute’s “last used here” item in the dry run, the S
       { exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }, { load: 60, reps: 8 }] },
       { exercise: 'Triceps pushdown', sets: [{ load: 25, reps: 12 }, { load: 25, reps: 12 }] },
     ]);
-    const saved = await s.routines.saveFromSession({ sessionId: push, name: 'Push A', opId: 'save-1' });
+    const saved = await s.routines.saveFromSession({ sessionId: push, name: 'Push A', opId: 'save-1' , addToRotation: true });
     if (!saved.ok) throw new Error(saved.message);
     h.clockMs += 2 * DAY;
 

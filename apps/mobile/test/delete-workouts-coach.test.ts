@@ -116,7 +116,9 @@ describe('coach next-session targets and a deleted source (DW13, DW14)', () => {
     const set = between.aggregate.sets.find((x) => x.setType !== 'warmup');
     if (!set) throw new Error('no set');
     h.clockMs += 60_000;
-    const logged = await s.workout.dispatch(between.aggregate.session.id, { type: 'log_set', at: h.now(), opId: 'log-between', setId: set.id, values: { load: set.planned.load, reps: 8, durationS: null, rpe: 8, rir: null }, restTimerId: h.ids() });
+    // A saved workout's loads are Auto (workout library WL7): with its only workout deleted there is no history, so no planned load; Ben types one.
+    expect(set.planned.load).toBeNull();
+    const logged = await s.workout.dispatch(between.aggregate.session.id, { type: 'log_set', at: h.now(), opId: 'log-between', setId: set.id, values: { load: { value: 60, unit: 'kg', convention: 'total' }, reps: 8, durationS: null, rpe: 8, rir: null }, restTimerId: h.ids() });
     if (!logged.ok) throw new Error(logged.error.message);
     const fin = await s.workout.dispatch(between.aggregate.session.id, { type: 'finish', at: h.now(), opId: 'fin-between', expectedVersion: logged.aggregate.session.version, endedAt: null });
     expect(fin.ok).toBe(true);

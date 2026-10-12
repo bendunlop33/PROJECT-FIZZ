@@ -46,6 +46,8 @@ import { ProgressScreen } from '../screens/progress/ProgressScreen';
 import { PastWorkoutsScreen } from '../screens/repeat/PastWorkoutsScreen';
 import { RecentlyDeletedScreen } from '../screens/repeat/RecentlyDeletedScreen';
 import { RepeatScreen } from '../screens/repeat/RepeatScreen';
+import { WorkoutEditorScreen } from '../screens/routines/WorkoutEditorScreen';
+import { WorkoutsScreen } from '../screens/routines/WorkoutsScreen';
 import { SetupScreen } from '../screens/setup/SetupScreen';
 import { TodayScreen } from '../screens/TodayScreen';
 import { CheckInScreen } from '../screens/workout/CheckInScreen';
@@ -301,6 +303,13 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               <RootStack.Screen name="PastWorkouts" component={PastWorkoutsScreen} options={{ headerShown: true, title: 'Past workouts' }} />
               <RootStack.Screen name="RecentlyDeleted" component={RecentlyDeletedScreen} options={{ headerShown: true, title: 'Recently deleted' }} />
               <RootStack.Screen name="Repeat" component={RepeatScreen} options={{ headerShown: true, title: 'Repeat' }} />
+              {/* The Workouts library (routines.md §A2.1); its editor is a sheet over the list or the overview (Cancel / Save). */}
+              <RootStack.Screen name="Workouts" component={WorkoutsScreen} options={{ headerShown: true, title: 'Workouts', ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
+              <RootStack.Screen
+                name="WorkoutEditor"
+                component={WorkoutEditorScreen}
+                options={{ presentation: 'modal', gestureEnabled: false, contentStyle: { backgroundColor: theme.colors['bg.canvas'] }, ...screenAnimation('Workout', theme.a11y.reduceMotion) }}
+              />
               {/* A side door, not a step: swipe down closes it and nothing in the workout waits for it (coach-sheet §1). */}
               {/* Exercise detail over a past workout's Summary or the Workout overview (`History`); swipe down or Done closes it. */}
               <RootStack.Screen name="ExerciseProgress" component={ExerciseDetailScreen} options={({ route }) => ({ presentation: 'modal', headerShown: true, title: route.params.name ?? '' })} />

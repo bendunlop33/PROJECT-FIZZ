@@ -382,6 +382,15 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const text = `Couldn't change ${d.routineName}: ${failureOr(record, 'it changed since')}. Nothing changed.`;
       return make(status, text, text);
     }
+    case 'fit_today': {
+      // The coach's fit to time (fit-to-time §5): today only, with Undo on its card.
+      if (st === 'committed') {
+        const text = `Fitted today to ${String(d.minutes)} min: about ${String(d.beforeMinutes)} to ${String(d.afterMinutes)} min.`;
+        return make(status, text, speakable(text));
+      }
+      const text = `Couldn't fit today to ${String(d.minutes)} min. Nothing changed.`;
+      return make(status, text, text);
+    }
     case 'set_pain_flag': {
       if (st === 'committed') {
         const text = `Pain flag on: ${namesText(d.exerciseNames)} · no increases`;

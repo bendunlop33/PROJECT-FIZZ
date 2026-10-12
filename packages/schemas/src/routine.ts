@@ -56,6 +56,20 @@ export const RoutineExerciseSchema = z.object({
    */
   transitionRestS: DurationSecondsSchema.nullable(),
   progressionRuleId: IdSchema.nullable(),
+  /**
+   * A main lift (routines.md WL9): the time fit never skips it. Set when a
+   * workout is created or saved; Ben toggles it in the editor. Absent (older
+   * workouts): `defaultMain` decides at read time.
+   */
+  main: z.boolean().optional(),
+  /**
+   * When Ben last changed this slot's structure in the editor (its exercise,
+   * set types, count, reps, work time or Fixed loads; routines.md WL7). A
+   * rename or a rotation toggle doesn't count. A coach next-session target
+   * set before it supplies loads only (Ben's later edit wins). Absent: not
+   * changed since the workout was made.
+   */
+  structureChangedAtUtc: UtcTimestampSchema.optional(),
 });
 export type RoutineExercise = z.infer<typeof RoutineExerciseSchema>;
 
@@ -74,6 +88,22 @@ export const RoutineSchema = RecordMetaSchema.extend({
   deletedAtUtc: UtcTimestampSchema.nullable().optional(),
   /** The operation that wrote this version, so a retried save, rename or delete is a no-op. */
   lastOpId: OperationIdSchema.optional(),
+  /**
+   * Who made it (routines.md WL1, RT5): `ben` (made, saved or edited by Ben),
+   * `coach` (the workout builder, until Ben edits it) or `imported`. Absent:
+   * a routine from before the library (v1.0); its template loads were last
+   * time's actuals, which next targets replace, so they read as `Auto`.
+   */
+  source: z.enum(['ben', 'coach', 'imported']).optional(),
+  /** `Duplicate` (routines.md §4.4): the workout it was copied from. */
+  createdFromRoutineId: IdSchema.nullable().optional(),
+  /**
+   * In Ben's rotation (D19, RT9). Absent = in it (every routine was, before
+   * the library); a workout saved or made since joins only when Ben says so.
+   */
+  inRotation: z.boolean().optional(),
+  /** Its place in the rotation: when it joined (absent = `createdAtUtc`). `Add to rotation` puts it at the end. */
+  rotationAtUtc: UtcTimestampSchema.optional(),
 });
 export type Routine = z.infer<typeof RoutineSchema>;
 

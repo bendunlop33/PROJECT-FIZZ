@@ -165,7 +165,7 @@ describe('migration 9 on main’s schema 8 (review progress-merge S2)', () => {
     const old = memoryDriver();
     await copyInto(driver, old, 8);
     expect(await readUserVersion(old)).toBe(8);
-    expect(await migrate(old)).toMatchObject({ from: 8, to: latestVersion(), applied: [9, 10, 11] });
+    expect(await migrate(old)).toMatchObject({ from: 8, to: latestVersion(), applied: [9, 10, 11, 12] });
 
     const fresh = memoryDriver();
     cleanups.push(() => fresh.close());
@@ -207,8 +207,8 @@ describe('migration 10 (workout gaps) on main’s schema 9', () => {
     await copyInto(driver, old, 9);
     expect(await readUserVersion(old)).toBe(9);
     expect(await old.getAll("SELECT duration_confirmed_at_utc AS u FROM sessions WHERE duration_confirmed_at_utc IS NOT NULL")).toEqual([{ u: NOW.utc }]);
-    expect(await migrate(old)).toMatchObject({ from: 9, to: latestVersion(), applied: [10, 11] });
-    expect(latestVersion()).toBe(11);
+    expect(await migrate(old)).toMatchObject({ from: 9, to: latestVersion(), applied: [10, 11, 12] });
+    expect(latestVersion()).toBe(12);
 
     const fresh = memoryDriver();
     cleanups.push(() => fresh.close());
@@ -260,7 +260,7 @@ describe('migration 11 (coach set actions) on main’s schema 10', () => {
     });
   };
 
-  it('a populated schema-10 database (deleted, purged, a workout-gaps note, memories, a forgotten one, playbook candidates, coach actions): only 11 applied, in place, every row kept, the same schema as a fresh database, and the new statuses take writes', async () => {
+  it('a populated schema-10 database (deleted, purged, a workout-gaps note, memories, a forgotten one, playbook candidates, coach actions): 11 then 12 (today fit) applied, in place, every row kept, the same schema as a fresh database, and the new statuses take writes', async () => {
     const { store, driver } = await mixedStore();
     cleanups.push(() => store.close());
     const finished = (await driver.getAll<{ id: string }>("SELECT id FROM sessions WHERE status = 'finished' ORDER BY started_at_utc, id")).map((r) => r.id);
@@ -292,8 +292,8 @@ describe('migration 11 (coach set actions) on main’s schema 10', () => {
     expect(await readUserVersion(old)).toBe(10);
     // Schema 10 refuses what 11 adds.
     await expect(old.run("UPDATE playbook_candidates SET status = 'approved'")).rejects.toThrow();
-    expect(await migrate(old)).toMatchObject({ from: 10, to: latestVersion(), applied: [11] });
-    expect(latestVersion()).toBe(11);
+    expect(await migrate(old)).toMatchObject({ from: 10, to: latestVersion(), applied: [11, 12] });
+    expect(latestVersion()).toBe(12);
 
     const fresh = memoryDriver();
     cleanups.push(() => fresh.close());
@@ -305,7 +305,7 @@ describe('migration 11 (coach set actions) on main’s schema 10', () => {
 
     const migrated = await openStore(old);
     cleanups.push(() => migrated.close());
-    expect(migrated.migration).toMatchObject({ from: 11, to: 11, applied: [] });
+    expect(migrated.migration).toMatchObject({ from: 12, to: 12, applied: [] });
     expect((await checkIntegrity(migrated.db)).ok).toBe(true);
     expect(await migrated.countRecords()).toEqual(await store.countRecords());
     expect((await migrated.repos.sessions.listRecentlyDeleted(OWNER, NOW.utc)).sessions.map((x) => x.session.id)).toEqual([kept.session.id]);
@@ -408,5 +408,20 @@ describe('the purge of a workout with a check-in, a pain flag and a coach offer 
     const report = await checkIntegrity(store.db);
     expect(report.issues).toEqual([]);
     expect(report.ok).toBe(true);
+  });
+});
+
+describe('the coach fit’s start fence with deleted and purged workouts (merge with the workout library)', () => {
+  it('counts every Start: deleting or purging a workout never lowers it, so a Start plus a purge between a fit’s request and its write still moves it', async () => {
+    const { store, driver } = await mixedStore();
+    cleanups.push(() => store.close());
+    const before = await store.repos.drafts.startFence(OWNER);
+    const finished = (await driver.getAll<{ id: string }>("SELECT id FROM sessions WHERE status = 'finished' AND source = 'manual' ORDER BY started_at_utc, id")).map((r) => r.id);
+    const one = await store.repos.sessions.get(finished[0] ?? '');
+    if (!one) throw new Error('fixture');
+    expect((await store.repos.sessions.deleteWorkouts({ ownerId: OWNER, items: [item(one)], opId: 'del-fence', at: NOW })).ok).toBe(true);
+    expect(await store.repos.drafts.startFence(OWNER)).toBe(before);
+    expect(await store.repos.sessions.purgeDeleted({ ownerId: OWNER, opId: 'purge-fence', at: NOW, sessionIds: [one.session.id] })).toMatchObject({ ok: true, purged: [one.session.id] });
+    expect(await store.repos.drafts.startFence(OWNER)).toBe(before);
   });
 });

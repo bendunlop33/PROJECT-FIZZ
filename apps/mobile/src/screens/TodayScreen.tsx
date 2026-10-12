@@ -26,6 +26,7 @@ import { NameSheet } from './routines/NameSheet';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
+import { LIBRARY_TOASTS } from '../workout/library-view';
 
 /**
  * Today (today.md, D-Today mockup): date and gym, banners, one hero (Resume,
@@ -139,6 +140,16 @@ export function TodayScreen() {
     });
     navigation.setParams({ toast: undefined, undoRoutine: undefined } as never);
   }, [handed, undoRoutine, navigation, services, changed]);
+
+  // `Empty workout` on the Workouts list: Today's own start (gym, alerts question, check-in gate), once per nonce.
+  const startEmpty = route.params?.startEmpty;
+  const startedEmpty = useRef<string | null>(null);
+  useEffect(() => {
+    if (startEmpty === undefined || data.state !== 'ready' || startedEmpty.current === startEmpty) return;
+    startedEmpty.current = startEmpty;
+    navigation.setParams({ startEmpty: undefined } as never);
+    void start({ kind: 'empty' });
+  }, [startEmpty, data.state]);
 
   /** Up next or a routine: the Workout overview, which creates nothing until its Start. */
   function openOverview(target: OverviewTarget) {
@@ -287,7 +298,7 @@ export function TodayScreen() {
             const gone = r.routine;
             changed();
             setToast({
-              text: `Deleted ${gone.name}`,
+              text: LIBRARY_TOASTS.deleted(gone.name),
               action: 'Undo',
               onAction: () => {
                 void services.routines.restore({ routineId: gone.id, expectedVersion: gone.version, opId: newUuid() }).then((u) => {
@@ -446,7 +457,7 @@ export function TodayScreen() {
           const exerciseCount = next.exercises.length;
           const basis =
             next.routine?.basis.kind === 'only'
-              ? 'Your only routine'
+              ? 'Your only workout'
               : next.routine?.basis.kind === 'after'
                 ? `After ${next.routine.basis.routineName} on ${formatShortDate(toMs(next.routine.basis.atUtc), next.routine.basis.tz)}`
                 : next.sourceStartedAtUtc !== null
@@ -636,7 +647,7 @@ export function TodayScreen() {
 
         {/* Your routines (premium-feel §2.1 region 6), only when the session list couldn't be read: routines stay reachable. */}
         {sessions === null && routines.length > 0 && main.kind !== 'resume' && main.kind !== 'stale' ? (
-          <RuledSection title="Your routines" gap="2">
+          <RuledSection title="Your workouts" gap="2">
             {(allRoutines ? routines : routines.slice(0, ROUTINE_CAP)).map((r, i) => (
               <FadeIn key={r.id} motion={i >= ROUTINE_CAP ? listEnterMotion(i - ROUTINE_CAP, theme.a11y.reduceMotion) : null}>
                 <RoutineListRow
@@ -657,7 +668,7 @@ export function TodayScreen() {
             {routines.length > ROUTINE_CAP && !allRoutines ? (
               <View style={{ alignSelf: 'flex-start' }}>
                 <TextButton
-                  label="All routines"
+                  label="All workouts"
                   icon="chevron.right"
                   tone="secondary"
                   onPress={() => {
@@ -667,6 +678,20 @@ export function TodayScreen() {
               </View>
             ) : null}
           </RuledSection>
+        ) : null}
+
+        {/* The Workouts library (routines.md §A2.1): always one tap from Today. */}
+        {main.kind !== 'resume' && main.kind !== 'stale' ? (
+          <View style={{ alignSelf: 'flex-start' }}>
+            <TextButton
+              label="Workouts"
+              icon="chevron.right"
+              tone="secondary"
+              onPress={() => {
+                navigation.navigate('Workouts');
+              }}
+            />
+          </View>
         ) : null}
 
         <RuledSection title="This week">
@@ -699,6 +724,12 @@ export function TodayScreen() {
           pickerAfter.arm(() => void start({ kind: 'empty' }));
           setPickerVisible(false);
         }}
+        onEditWorkouts={() => {
+          pickerAfter.arm(() => {
+            navigation.navigate('Workouts');
+          });
+          setPickerVisible(false);
+        }}
         onPastWorkouts={() => {
           pickerAfter.arm(() => {
             navigation.navigate('PastWorkouts');
@@ -710,7 +741,7 @@ export function TodayScreen() {
       {renameRow ? (
         <NameSheet
           visible={renameVisible}
-          title="Rename routine"
+          title="Rename workout"
           buttonLabel="Save name"
           initialName={renameRow.name}
           check={(n) => services.routines.checkName(n, renameRow.id)}
@@ -959,7 +990,7 @@ function RoutineListRow({ row, tz, onPress, onLongPress }: { row: RoutineRow; tz
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${row.name}, ${count}, ${row.lastDone ? `last done ${when}` : 'not done yet'}`}
-      accessibilityHint="Opens the routine's overview. Touch and hold to rename or delete."
+      accessibilityHint="Opens the workout's overview. Touch and hold to rename or delete."
       onPress={onPress}
       onLongPress={onLongPress}
       style={({ pressed }) => ({

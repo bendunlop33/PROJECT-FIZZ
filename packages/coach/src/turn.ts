@@ -240,13 +240,13 @@ const TOOL_READ_LINE: Partial<Record<string, string>> = {
   get_recent_actions: 'Read earlier coach changes',
 };
 
-type StepOutcome =
+export type StepOutcome =
   | { kind: 'call'; callId: string; name: string; arguments: string; extraCalls: number; text: string }
   | { kind: 'text'; text: string }
   | { kind: 'error'; error: ModelErrorKind };
 
 /** One model call, with the first-event and stall timeouts and Stop. */
-async function runStep(
+export async function runModelStep(
   model: CoachModelPort,
   request: Parameters<CoachModelPort['stream']>[0],
   timing: CoachTiming,
@@ -433,7 +433,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     }
     replyStream = new ReplyMessageStream();
     const stream = replyStream;
-    const out = await runStep(ports.model, { model: req.model, instructions: COACH_INSTRUCTIONS, input, tools, toolChoice: 'required', parallelToolCalls: false }, timing, req.signal, {
+    const out = await runModelStep(ports.model, { model: req.model, instructions: COACH_INSTRUCTIONS, input, tools, toolChoice: 'required', parallelToolCalls: false }, timing, req.signal, {
       onFirstEvent,
       onReplyDelta: (delta) => {
         const fresh = stream.push(delta);

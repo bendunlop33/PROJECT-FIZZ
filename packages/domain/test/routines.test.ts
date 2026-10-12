@@ -15,6 +15,7 @@ import {
   restoreRoutine,
   routineCounts,
   routineFromSession,
+  notSavedFromSession,
   routineLastDone,
   startWorkout,
   targetSummaryLines,
@@ -41,17 +42,41 @@ function finishedPushA(): SessionAggregate {
   return apply(s, { type: 'finish', at: at(900), opId: 'fin', expectedVersion: s.session.version, endedAt: null });
 }
 
-const save = (source: SessionAggregate, name = 'Push A', opId = 'save-1'): Routine => {
-  const r = routineFromSession({ id: id(700), ownerId: OWNER, name, opId, source, at: at(1000), newId: idGen(70_000) });
+const save = (source: SessionAggregate, name = 'Push A', opId = 'save-1', o: { keepLoads?: boolean; inRotation?: boolean } = {}): Routine => {
+  const r = routineFromSession({ id: id(700), ownerId: OWNER, name, opId, source, at: at(1000), newId: idGen(70_000), ...o });
   if (!r) throw new Error('no routine');
   return r;
 };
 
+/** A routine as saved before the library (v1.0): last time's actuals as loads, no source, in the rotation. */
+const legacy = (r: Routine): Routine => {
+  const exercises = r.exercises.map((e) => {
+    const c = { ...e };
+    delete c.main;
+    return c;
+  });
+  const copy: Routine = { ...r, exercises };
+  delete copy.source;
+  delete copy.inRotation;
+  delete copy.rotationAtUtc;
+  return copy;
+};
+
 describe('routineFromSession (Save as routine, premium-feel §2.6)', () => {
-  it('keeps order, equipment, set types, rep ranges, rest by set type and supersets; loads are the actuals', () => {
+  it('keeps order, equipment, set types, rep ranges, rest by set type and supersets; loads are Auto (WL7)', () => {
+    const source = finishedPushA();
+    const auto = save(source);
+    expect(auto).toMatchObject({ source: 'ben', inRotation: false });
+    expect(auto.exercises.flatMap((e) => e.setTemplates).every((t) => t.targetLoad === null)).toBe(true);
+    expect(auto.exercises.map((e) => e.setTemplates.map((t) => [t.setType, t.targetReps]))).toEqual(save(source, 'Push A', 'save-1', { keepLoads: true }).exercises.map((e) => e.setTemplates.map((t) => [t.setType, t.targetReps])));
+    // Add to rotation: in it, at the end (when it was saved).
+    expect(save(source, 'Push A', 'save-1', { inRotation: true })).toMatchObject({ inRotation: true, rotationAtUtc: at(1000).utc });
+  });
+
+  it('Repeat’s save keeps the loads done as Fixed loads (v0.1 §4.6)', () => {
     const source = finishedPushA();
     const before = JSON.stringify(source);
-    const r = save(source);
+    const r = save(source, 'Push A', 'save-1', { keepLoads: true });
     expect(RoutineSchema.parse(r)).toEqual(r);
     expect(r).toMatchObject({ name: 'Push A', version: 1, createdFromSessionId: source.session.id, deletedAtUtc: null, lastOpId: 'save-1' });
     expect(r.exercises.map((e) => e.exerciseId)).toEqual([BENCH, ROW]);
@@ -74,6 +99,28 @@ describe('routineFromSession (Save as routine, premium-feel §2.6)', () => {
     expect(JSON.stringify(source)).toBe(before);
   });
 
+  it('distance sets (review S1): a distance-only set and a distance set with a time are both left out and listed, never saved as timed', () => {
+    const src = finishedPushA();
+    const row = src.exercises.find((e) => e.exerciseId === ROW);
+    if (!row) throw new Error('no row');
+    const doneRow = src.sets.filter((s) => s.sessionExerciseId === row.id && s.status === 'completed');
+    expect(doneRow).toHaveLength(1);
+    const sled: SessionAggregate = {
+      ...src,
+      exercises: src.exercises.map((e) => (e.id === row.id ? { ...e, measurement: 'distance' as const, exerciseName: 'Sled push' } : e)),
+      sets: src.sets.map((s) => (s.sessionExerciseId === row.id && s.actual !== null ? { ...s, actual: { ...s.actual, reps: null, durationS: 45, distanceM: 20 } } : s)),
+    };
+    const r = save(sled);
+    expect(r.exercises.map((e) => e.exerciseId)).toEqual([BENCH]);
+    expect(r.exercises.flatMap((e) => e.setTemplates).some((t) => t.targetDurationS !== null)).toBe(false);
+    expect(notSavedFromSession(sled)).toEqual([{ kind: 'distance', exerciseName: 'Sled push', sets: 1 }]);
+    // Distance only (no time): left out the same way.
+    const only: SessionAggregate = { ...sled, sets: sled.sets.map((s) => (s.sessionExerciseId === row.id && s.actual !== null ? { ...s, actual: { ...s.actual, durationS: null } } : s)) };
+    expect(save(only).exercises.map((e) => e.exerciseId)).toEqual([BENCH]);
+    expect(notSavedFromSession(only)).toEqual([{ kind: 'distance', exerciseName: 'Sled push', sets: 1 }]);
+    expect(notSavedFromSession(src)).toEqual([]);
+  });
+
   it('an exercise with only warm-ups done is left out; nothing logged gives no routine', () => {
     let s = startFixture().state;
     s = apply(s, logCmd(setsFor(s, BENCH)[0]?.id ?? '', values(kg(60), 10), 10));
@@ -85,12 +132,26 @@ describe('routineFromSession (Save as routine, premium-feel §2.6)', () => {
     expect(routineFromSession({ id: id(701), ownerId: OWNER, name: 'X', opId: 'o', source: empty, at: at(70), newId: idGen(71_000) })).toBeNull();
   });
 
-  it('only finished workouts done in the app: not an active one, not an imported one', () => {
+  it('only finished workouts; an imported one (WL7) saves with no item pinned and no loads, even with keepLoads', () => {
     const active = startFixture().state;
     expect(routineFromSession({ id: id(702), ownerId: OWNER, name: 'X', opId: 'o', source: active, at: at(70), newId: idGen(72_000) })).toBeNull();
     const finished = finishedPushA();
     const imported = { ...finished, session: { ...finished.session, source: 'import' as const } };
-    expect(routineFromSession({ id: id(703), ownerId: OWNER, name: 'X', opId: 'o', source: imported, at: at(70), newId: idGen(73_000) })).toBeNull();
+    const r = routineFromSession({ id: id(703), ownerId: OWNER, name: 'Shoulders', opId: 'o', source: imported, at: at(70), newId: idGen(73_000), keepLoads: true });
+    expect(r?.exercises.map((e) => e.exerciseId)).toEqual([BENCH, ROW]);
+    expect(r?.exercises.every((e) => e.equipmentId === null && e.progressionRuleId === null)).toBe(true);
+    expect(r?.exercises.flatMap((e) => e.setTemplates).every((t) => t.targetLoad === null)).toBe(true);
+    expect(r?.createdFromSessionId).toBe(imported.session.id);
+  });
+
+  it('Main (WL9): compound exercises in places 1–2; an all-isolation workout marks only the first', () => {
+    const source = finishedPushA();
+    const both = routineFromSession({ id: id(704), ownerId: OWNER, name: 'X', opId: 'o', source, at: at(70), newId: idGen(74_500), isCompound: () => true });
+    expect(both?.exercises.map((e) => e.main)).toEqual([true, true]);
+    const benchOnly = routineFromSession({ id: id(705), ownerId: OWNER, name: 'X', opId: 'o', source, at: at(70), newId: idGen(74_600), isCompound: (x) => x === BENCH });
+    expect(benchOnly?.exercises.map((e) => e.main)).toEqual([true, false]);
+    const none = routineFromSession({ id: id(706), ownerId: OWNER, name: 'X', opId: 'o', source, at: at(70), newId: idGen(74_700) });
+    expect(none?.exercises.map((e) => e.main)).toEqual([true, false]);
   });
 
   it('a left/right pair counts once', () => {
@@ -104,7 +165,7 @@ describe('routineFromSession (Save as routine, premium-feel §2.6)', () => {
     const companion = s.sets.find((x) => x.pairedWithSetId === set)?.id ?? '';
     s = apply(s, logCmd(companion, values(kg(20, 'per_hand'), 8), 60, 'r', 'right'));
     s = apply(s, { type: 'finish', at: at(300), opId: 'f', expectedVersion: s.session.version, endedAt: null });
-    const saved = save(s, 'Legs');
+    const saved = save(s, 'Legs', 'save-1', { keepLoads: true });
     expect(saved.exercises[0]?.setTemplates).toHaveLength(1);
     expect(saved.exercises[0]?.setTemplates[0]?.targetLoad).toEqual(kg(20, 'per_hand'));
   });
@@ -118,7 +179,7 @@ describe('routine names', () => {
     expect(checkRoutineName(` ${'x'.repeat(120)} `, existing)).toMatchObject({ ok: true });
   });
   it('a duplicate name is allowed with a note; a deleted routine or the one being renamed doesn’t count', () => {
-    expect(checkRoutineName('push a', existing)).toEqual({ ok: true, name: 'push a', note: 'You already have a routine called Push A.' });
+    expect(checkRoutineName('push a', existing)).toEqual({ ok: true, name: 'push a', note: 'You already have Push A.' });
     expect(checkRoutineName('Push A', existing, id(1))).toEqual({ ok: true, name: 'Push A', note: null });
     expect(checkRoutineName('Old', existing)).toEqual({ ok: true, name: 'Old', note: null });
   });
@@ -196,7 +257,7 @@ describe('rotation (D19, simplified: by what was done last)', () => {
 
 describe('planRoutineStart (start a routine with next-session targets)', () => {
   const source = finishedPushA();
-  const pushA = save(source);
+  const pushA = legacy(save(source, 'Push A', 'save-1', { keepLoads: true }));
   const plan = (load: number | null, reps: [number, number], n = 2, setType: SetType = 'working') =>
     Array.from({ length: n }, () => ({ setType, planned: { load: load === null ? null : kg(load), reps: { min: reps[0], max: reps[1] }, durationS: null, rpe: null, rir: null, source: 'built_in_rule' } satisfies PlannedSet }));
   const base = { opId: 'rs-1', owner: profile(), gymId: GYM, routine: pushA, exercises, knownEquipment: new Map(), at: at(86_400), newId: idGen(80_000) };

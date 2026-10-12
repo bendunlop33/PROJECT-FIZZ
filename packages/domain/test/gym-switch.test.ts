@@ -511,7 +511,7 @@ describe('Summary and history after a switch (check 24)', () => {
 
   it('Save as routine keeps a split exercise as one entry, its sets in order, on the latest part’s item', () => {
     const done = finishedAcrossGyms();
-    const r = routineFromSession({ id: id(90_001), ownerId: profile().id, name: 'Split', opId: 'save-split', source: done, at: at(90_000), newId: idGen(83_000) });
+    const r = routineFromSession({ id: id(90_001), ownerId: profile().id, name: 'Split', opId: 'save-split', source: done, at: at(90_000), newId: idGen(83_000), keepLoads: true });
     const incline = r?.exercises.filter((e) => e.exerciseId === INCLINE) ?? [];
     expect(incline).toHaveLength(1);
     expect(incline[0]?.equipmentId).toBe(hotelRack.id);

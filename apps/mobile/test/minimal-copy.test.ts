@@ -52,6 +52,7 @@ const EXCLUDED_DIRS = ['apps/mobile/src/probe/'];
 const WHY_ONLY: readonly { file: string; fragment: string; why: string }[] = [
   { file: 'packages/domain/src/session/target-why.ts', fragment: 'Built-in rule ·', why: '`Set by` in the set card’s Why? (D1)' },
   { file: 'packages/coach/src/executors.ts', fragment: 'no change from the built-in rule', why: 'a refused record’s failure, shown only in the card’s Why? (Not changed)' },
+  { file: 'apps/mobile/src/workout/library-view.ts', fragment: 'Worked out when you start', why: '`Auto` in the editor’s set sheet, shown only after its ⓘ tap (routines.md §A5)' },
 ];
 
 /** §12 check 1, with `’` and `'` both matched. */

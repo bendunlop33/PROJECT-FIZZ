@@ -359,7 +359,7 @@ describe('a populated schema-6 database migrates in place to 7', () => {
     await expect(phone.run("INSERT INTO coach_actions (id, owner_id, op_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES ('x', 'o', 'p', 'update_routine', 'committed', 1, 't', 't', '{}')")).rejects.toThrow();
 
     const v7 = await openStore(phone);
-    // Migration 7, then every later one (8: deleted workouts, 9: Progress, 10: workout gaps, 11: coach set actions).
+    // Migration 7, then every later one (8: deleted workouts, 9: Progress, 10: workout gaps, 11: coach set actions, 12: today fit).
     expect(v7.migration).toMatchObject({ from: 6, to: latestVersion(), applied: MIGRATIONS.slice(6).map((m) => m.version) });
     expect(await v7.repos.sessions.get(a.session.id)).toEqual(a);
     expect(await v7.repos.coach.getAction(coachRecord.actionId)).toEqual(coachRecord);
@@ -510,5 +510,156 @@ describe('review fixes: the template Undo keeps a newer swap (S4), rollback disc
     await expect(dst.store.db.write((tx) => tx.run('DELETE FROM coach_actions'))).rejects.toThrow(/never deleted/);
     expect((await checkIntegrity(dst.store.db)).ok).toBe(true);
     await dst.close();
+  });
+});
+
+describe('Update Push A: Apply and Undo over several draft edits (§11.5, TE-B7)', () => {
+  it('Apply marks every listed edit redundant with routine v2 in one transaction; Undo restores the whole workout and brings those edits back', async () => {
+    const store = await openStore(memoryDriver());
+    await seeded(store);
+    let draft = change(null, { type: 'edit', edit: { kind: 'sets', slotKey: SLOT_BENCH, workingSets: 4 } }, 'u-1');
+    draft = change(draft, { type: 'edit', edit: { kind: 'reps', slotKey: SLOT_BENCH, reps: { min: 3, max: 5 }, durationS: null } }, 'u-2');
+    draft = change(draft, { type: 'edit', edit: { kind: 'load', slotKey: SLOT_BENCH, load: { value: 105, unit: 'kg', convention: 'total' } } }, 'u-3');
+    await store.repos.drafts.save(draft, null);
+    const [setsEdit, repsEdit, loadEdit] = draft.edits.map((e) => e.editId);
+    const r1 = routine();
+    const bench = r1.exercises[0];
+    const lastSet = bench?.setTemplates.at(-1);
+    if (!bench || !lastSet || setsEdit === undefined || repsEdit === undefined || loadEdit === undefined) throw new Error('fixture');
+    const r2: Routine = { ...r1, version: 2, updatedAtUtc: at(30).utc, lastOpId: 'upd-1', source: 'ben', exercises: r1.exercises.map((x, i) => (i === 0 ? { ...x, setTemplates: [...x.setTemplates, { ...lastSet, id: id(9999), targetLoad: null }] } : x)) };
+    const action = ActionRecordSchema.parse({
+      ...updateAction('upd-1', bench, bench, null),
+      detail: { kind: 'update_routine', routineId: ROUTINE, routineName: 'Push A', changes: [{ change: 'edit', text: 'Sets: Bench press 3 → 4' }, { change: 'edit', text: 'Reps: Bench press 6–8 → 3–5' }], before: r1, versionBefore: 1, versionAfter: 2, draft: { id: draft.id, editId: setsEdit, editIds: [setsEdit, repsEdit] } },
+    });
+    expect(await store.repos.drafts.applyRoutineChange({ ownerId: OWNER, routine: r2, expectedRoutineVersion: 1, action, at: at(30) })).toMatchObject({ status: 'written' });
+    const d2 = await store.repos.drafts.get(draft.id);
+    expect(d2?.edits.map((e) => [e.kind, e.removed?.why ?? null])).toEqual([
+      ['sets', 'redundant'],
+      ['reps', 'redundant'],
+      // Today's load is never part of the template change (TE-B8).
+      ['load', null],
+    ]);
+    const undo = ActionRecordSchema.parse({ ...action, actionId: id(6200), opId: 'undo-upd', detail: { kind: 'undo', undoneActionId: action.actionId, what: 'the change to Push A', restored: [], alreadyLogged: [] }, createdAt: at(40) });
+    expect(await store.repos.drafts.undoRoutineChange({ ownerId: OWNER, undo, at: at(40), newRoutineAtUtc: at(40).utc })).toMatchObject({ status: 'written', routine: { version: 3 } });
+    expect((await store.repos.routines.get(ROUTINE))?.exercises).toEqual(r1.exercises);
+    const d3 = await store.repos.drafts.get(draft.id);
+    expect(d3?.edits.filter((e) => e.removed === null).map((e) => e.kind).sort()).toEqual(['load', 'reps', 'sets']);
+    expect((await checkIntegrity(store.db)).ok).toBe(true);
+    await store.close();
+  });
+
+  it('review N6: a card with more than six lines parses (the cap was raised to 40 for it); 41 is refused', () => {
+    const r1 = routine();
+    const bench = r1.exercises[0];
+    if (!bench) throw new Error('fixture');
+    const changes = (n: number) => Array.from({ length: n }, (_, i) => ({ change: 'edit' as const, text: `Sets: Exercise ${String(i)} 3 → 4` }));
+    const detail = (n: number) => ({ kind: 'update_routine', routineId: ROUTINE, routineName: 'Push A', changes: changes(n), before: r1, versionBefore: 1, versionAfter: 2, draft: null });
+    expect(ActionRecordSchema.safeParse({ ...updateAction('upd-n6', bench, bench, null), detail: detail(12) }).success).toBe(true);
+    expect(ActionRecordSchema.safeParse({ ...updateAction('upd-n6', bench, bench, null), detail: detail(40) }).success).toBe(true);
+    expect(ActionRecordSchema.safeParse({ ...updateAction('upd-n6', bench, bench, null), detail: detail(41) }).success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migration 12 and the coach's fit to time (fit-to-time §5, §8; FT-C15, FT-C17)
+
+const fitRecord = (opId: string, draft: PreStartDraft, fitEditId: string, editIds: string[]): ActionRecord =>
+  ActionRecordSchema.parse({
+    actionId: id(7700 + opId.length),
+    turnId: null,
+    opId,
+    status: 'committed',
+    author: 'coach',
+    detail: { kind: 'fit_today', workoutLabel: 'Push A', minutes: 45, beforeMinutes: 60, afterMinutes: 45, draftId: draft.id, fitEditId, editIds, lines: ['Cable fly · skipped'], rejected: [], suggestions: [] },
+    failure: null,
+    reason: 'Short on time.',
+    evidenceRefs: [],
+    guardNotes: [],
+    entityVersions: [],
+    undoneBy: null,
+    createdAt: at(10),
+  });
+
+describe('migration 12: coach actions take `fit_today` (fit-to-time §8)', () => {
+  it('a populated schema-11 database migrates in place, keeps its coach actions and trigger, and stores a coach fit with its draft in one write', async () => {
+    const source = memoryDriver();
+    const made = await openStore(source);
+    await seeded(made);
+    const phone = memoryDriver();
+    await migrate(phone, MIGRATIONS, 11);
+    const tables = await source.getAll<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
+    await phone.exec('PRAGMA foreign_keys = OFF');
+    for (const { name } of tables) {
+      const cols = new Set((await phone.getAll<{ name: string }>(`PRAGMA table_info(${name})`)).map((c) => c.name));
+      for (const row of cols.size === 0 ? [] : await source.getAll(`SELECT * FROM ${name}`)) {
+        const keys = Object.keys(row).filter((k) => cols.has(k));
+        await phone.run(`INSERT OR IGNORE INTO ${name} (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`, keys.map((k) => row[k] as SqlValue));
+      }
+    }
+    await phone.exec('PRAGMA foreign_keys = ON');
+    await made.close();
+    // At 11 the old CHECK refuses the new kind.
+    await expect(phone.run("INSERT INTO coach_actions (id, owner_id, op_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES ('x', 'o', 'p', 'fit_today', 'committed', 1, 't', 't', '{}')")).rejects.toThrow();
+    const before = await phone.getAll('SELECT * FROM coach_actions ORDER BY id');
+    const v12 = await openStore(phone);
+    expect(v12.migration).toMatchObject({ from: 11, to: 12, applied: [12] });
+    // Every coach action row is kept as it was (the rebuild copies them all).
+    expect(await v12.db.read((q) => q.getAll('SELECT * FROM coach_actions ORDER BY id'))).toEqual(before);
+
+    // The coach's fit: draft and record in one write, idempotent on the record's opId.
+    const draft = change(null, { type: 'coach_fit', minutes: 45, actionId: id(7709), edits: [{ kind: 'skip', slotKey: SLOT_BENCH }] }, 'coach-fit-op');
+    const fitEdit = draft.edits.find((e) => e.kind === 'fit');
+    const record = { ...fitRecord('coach-fit-op', draft, fitEdit?.editId ?? '', draft.edits.map((e) => e.editId)), actionId: id(7709) };
+    const startFence = await v12.repos.drafts.startFence(OWNER);
+    // A workout started since the request was sent (the fence moved), or a cancelled request: nothing written (review C B1).
+    expect(await v12.repos.drafts.applyCoachFit({ ownerId: OWNER, next: draft, expectedVersion: null, action: record, startFence: startFence - 1 })).toEqual({ status: 'started' });
+    expect(await v12.repos.drafts.applyCoachFit({ ownerId: OWNER, next: draft, expectedVersion: null, action: record, startFence, cancelled: () => true })).toEqual({ status: 'cancelled' });
+    expect(await v12.repos.coach.getAction(record.actionId)).toBeNull();
+    expect(await v12.repos.drafts.open(OWNER, draft.basis)).toBeNull();
+    const w = await v12.repos.drafts.applyCoachFit({ ownerId: OWNER, next: draft, expectedVersion: null, action: record, startFence });
+    expect(w).toMatchObject({ status: 'written' });
+    expect(await v12.repos.drafts.applyCoachFit({ ownerId: OWNER, next: draft, expectedVersion: null, action: record, startFence })).toMatchObject({ status: 'replayed' });
+    // A second fit against the version before: stale, nothing written.
+    const other = { ...fitRecord('coach-fit-2', draft, fitEdit?.editId ?? '', [fitEdit?.editId ?? '']), actionId: id(7710) };
+    expect(await v12.repos.drafts.applyCoachFit({ ownerId: OWNER, next: { ...draft, version: 2 }, expectedVersion: null, action: other, startFence })).toMatchObject({ status: 'stale' });
+    expect(await v12.repos.coach.getAction(id(7710))).toBeNull();
+
+    // Undo: every coach edit removed in one versioned write, with its `undo` record.
+    const undo = ActionRecordSchema.parse({ actionId: id(7720), turnId: null, opId: 'undo-fit', status: 'committed', author: 'ben', detail: { kind: 'undo', undoneActionId: id(7709), what: 'the fit to 45 min', restored: [], alreadyLogged: [] }, failure: null, reason: null, evidenceRefs: [], guardNotes: [], entityVersions: [], undoneBy: null, createdAt: at(20) });
+    const u = await v12.repos.drafts.undoCoachFit({ ownerId: OWNER, undo, at: at(20) });
+    if (u.status !== 'written') throw new Error(u.status);
+    expect(u.draft?.edits.every((e) => e.removed !== null)).toBe(true);
+    expect((await v12.repos.coach.getAction(id(7709)))?.undoneBy?.actionId).toBe(id(7720));
+    expect(await v12.repos.drafts.undoCoachFit({ ownerId: OWNER, undo, at: at(21) })).toMatchObject({ status: 'replayed' });
+    expect(await v12.repos.drafts.undoCoachFit({ ownerId: OWNER, undo: { ...undo, actionId: id(7721), opId: 'undo-fit-2' }, at: at(22) })).toMatchObject({ status: 'not_possible', reason: 'already_undone' });
+    await expect(v12.db.write((tx) => tx.run('DELETE FROM coach_actions'))).rejects.toThrow(/never deleted/);
+    expect((await checkIntegrity(v12.db)).ok).toBe(true);
+    await v12.close();
+  });
+});
+
+describe('migration 12 in place on a schema-11 database: 11\'s coach action kinds survive the rebuild', () => {
+  it('rows of every kind 11 added are kept; the new CHECK takes them and `fit_today`, refuses others; deletes still refused', async () => {
+    const db = memoryDriver();
+    await migrate(db, MIGRATIONS, 11);
+    const row = (rid: string, kind: string) =>
+      `INSERT INTO coach_actions (id, owner_id, op_id, turn_id, session_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES ('${rid}', 'o', 'op-${rid}', NULL, NULL, '${kind}', 'committed', 1, 't', 't', '{}')`;
+    for (const [rid, kind] of [['a1', 'log_set'], ['a2', 'correct_set'], ['a3', 'suggest_memory'], ['a4', 'update_routine'], ['a5', 'propose_next_workout_change']] as const) await db.run(row(rid, kind));
+    await expect(db.run(row('a6', 'fit_today'))).rejects.toThrow();
+    const before = await db.getAll('SELECT * FROM coach_actions ORDER BY id');
+    expect(await migrate(db)).toEqual({ from: 11, to: 12, applied: [12] });
+    expect(await db.getAll('SELECT * FROM coach_actions ORDER BY id')).toEqual(before);
+    await db.run(row('a6', 'fit_today'));
+    await db.run(row('a7', 'log_set'));
+    await expect(db.run(row('a8', 'not_a_kind'))).rejects.toThrow();
+    await expect(db.run(row('a9', 'log_set').replace("'op-a9'", "'op-a1'"))).rejects.toThrow();
+    await expect(db.run("DELETE FROM coach_actions WHERE id = 'a1'")).rejects.toThrow(/never deleted/);
+    expect(await db.getAll("SELECT name FROM sqlite_master WHERE tbl_name = 'coach_actions' AND type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_%' ORDER BY name")).toEqual([
+      { name: 'coach_actions_no_delete' },
+      { name: 'coach_actions_op' },
+      { name: 'coach_actions_owner' },
+      { name: 'coach_actions_session' },
+      { name: 'coach_actions_turn' },
+    ]);
   });
 });

@@ -1,5 +1,7 @@
 # Session picker (choose today's session, keep the recommendation)
 
+> **Revision 2026-10-11 (Workouts library, [routines.md](routines.md) §A2.4, WL4–WL6).** The sheet now lists the Up next row, then `YOUR WORKOUTS` (saved workouts), then `FROM HISTORY`, then `OLDER`, and adds the link `Edit workouts`. This amends SP-D3's single list. Category groups whose label matches a saved workout's name count as its history. §4.3 `Save as routine` becomes `Save to Workouts` and is allowed **with** today's edits (it saves what the page shows), which replaces "hidden while the page has today's edits" (SP13). Editing before Start happens on the overview: `Edit` ([overview-today-edits.md](overview-today-edits.md) §11) and `How long?` ([fit-to-time.md](fit-to-time.md)).
+
 Status: v0.1, 11 Oct 2026. Asked for by Ben: "I should be able to choose what day/type of session I am hitting too, as well as the recommendations." Mockup: [mockups/session-picker.html](mockups/session-picker.html) (Direction D dark, 390 × 844).
 
 Builds on [workout-overview.md](workout-overview.md), [overview-today-edits.md](overview-today-edits.md) (pre-start drafts, ADR 0022), premium-feel §2 (Today), routines.md, D19 (rotation) and D21 (coach next-session targets). Rules: CLAUDE.md 1, 2, 3, 4, 5, 6, 10 and the minimal-copy convention.
