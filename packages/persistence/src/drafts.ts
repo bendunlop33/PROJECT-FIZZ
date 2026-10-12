@@ -28,6 +28,16 @@ export type RoutineChangeResult =
   | { status: 'stale'; routine: Routine | null }
   | { status: 'missing' };
 
+/** The coach's fit (fit-to-time §5.2): written with its record, or why nothing was. */
+export type CoachFitResult =
+  | { status: 'written' | 'replayed'; action: ActionRecord; draft: PreStartDraft | null }
+  /** The draft moved since the request was sent (rule 5): nothing is written (`Plan changed`). */
+  | { status: 'stale'; draft: PreStartDraft | null };
+
+export type CoachFitUndo =
+  | { status: 'written' | 'replayed'; undo: ActionRecord; draft: PreStartDraft | null }
+  | { status: 'not_possible'; reason: 'missing' | 'already_undone' | 'changed_since' };
+
 export type RoutineChangeUndo =
   | { status: 'written' | 'replayed'; undo: ActionRecord; routine: Routine; draft: PreStartDraft | null }
   | { status: 'not_possible'; reason: 'missing' | 'already_undone' | 'changed_since' };
@@ -147,6 +157,64 @@ export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
         } else draft = d;
       }
       return { status: 'written', action: req.action, routine: req.routine, draft };
+    });
+  }
+
+  /**
+   * The coach's fit (fit-to-time §5.2, FT-C15, FT-C17): in one transaction,
+   * the draft at its next version (the coach's edits under one `actionId`)
+   * and the `fit_today` record. Idempotent on the record's `opId`; a draft
+   * that moved since the request was sent is `stale` and nothing is written.
+   * `expectedVersion` null: there was no draft (this write creates it).
+   */
+  applyCoachFit(req: { ownerId: string; next: PreStartDraft; expectedVersion: number | null; action: ActionRecord }): Promise<CoachFitResult> {
+    return this.db.write(async (tx): Promise<CoachFitResult> => {
+      const prior = await actionByOp(tx, req.ownerId, req.action.opId);
+      if (prior !== null) {
+        const d = prior.detail.kind === 'fit_today' ? prior.detail.draftId : null;
+        return { status: 'replayed', action: prior, draft: d === null ? null : await getDraft(tx, d) };
+      }
+      if (req.expectedVersion === null) {
+        const clash = await tx.getFirst<{ version: number }>("SELECT version FROM pre_start_drafts WHERE owner_id = ? AND basis_key = ? AND status = 'open'", [req.ownerId, draftBasisKey(req.next.basis)]);
+        if (clash !== null) return { status: 'stale', draft: await getDraft(tx, req.next.id) };
+      }
+      const saved = await saveDocumentIn(tx, DRAFT_SPEC, req.next, req.expectedVersion);
+      if (!saved.ok) return { status: 'stale', draft: await getDraft(tx, req.next.id) };
+      await insertAction(tx, req.ownerId, req.action);
+      return { status: 'written', action: req.action, draft: req.next };
+    });
+  }
+
+  /**
+   * Undo of the coach's fit (fit-to-time §5.3): every edit with its
+   * `actionId` removed in one versioned draft write (a built-in fit it
+   * replaced comes back), the record's `undoneBy` and the `undo` record, in
+   * one transaction. Idempotent on the undo's opId. A draft that's gone,
+   * closed or no longer holds that fit (Ben replaced or cleared it) changes
+   * nothing (`changed_since`).
+   */
+  undoCoachFit(req: { ownerId: string; undo: ActionRecord; at: ZonedTimestamp }): Promise<CoachFitUndo> {
+    if (req.undo.detail.kind !== 'undo') throw new TypeError('undoCoachFit() takes an undo record');
+    const targetId = req.undo.detail.undoneActionId;
+    return this.db.write(async (tx): Promise<CoachFitUndo> => {
+      const prior = await actionByOp(tx, req.ownerId, req.undo.opId);
+      const target = await actionById(tx, targetId);
+      if (target === null || target.ownerId !== req.ownerId || target.record.detail.kind !== 'fit_today') return { status: 'not_possible', reason: 'missing' };
+      const d = target.record.detail;
+      if (prior !== null) return { status: 'replayed', undo: prior, draft: await getDraft(tx, d.draftId) };
+      if (target.record.undoneBy !== null) return { status: 'not_possible', reason: 'already_undone' };
+      const current = await getDraft(tx, d.draftId);
+      if (current === null || current.status !== 'open' || current.expiresAtUtc <= req.at.utc) return { status: 'not_possible', reason: 'changed_since' };
+      const fit = current.edits.find((e) => e.kind === 'fit' && e.removed === null && e.author === 'coach' && e.actionId === targetId);
+      if (fit === undefined) return { status: 'not_possible', reason: 'changed_since' };
+      const change = applyDraftCommand({ current, expectedVersion: current.version, opId: req.undo.opId, at: req.at, ownerId: req.ownerId, basis: current.basis, newDraftId: current.id, slots: [], command: { type: 'undo', editId: fit.editId } });
+      if (change.kind !== 'write') return { status: 'not_possible', reason: 'changed_since' };
+      const r = await saveDocumentIn(tx, DRAFT_SPEC, change.next, current.version);
+      if (!r.ok) return { status: 'not_possible', reason: 'changed_since' };
+      const updated: ActionRecord = { ...target.record, undoneBy: { actionId: req.undo.actionId, atUtc: req.at.utc } };
+      if (!(await updateAction(tx, updated, target.version, req.at.utc))) throw new Error(`Action ${targetId} changed while it was being undone`);
+      await insertAction(tx, req.ownerId, req.undo);
+      return { status: 'written', undo: req.undo, draft: change.next };
     });
   }
 

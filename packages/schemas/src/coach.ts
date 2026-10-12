@@ -223,6 +223,40 @@ export const COACH_TOOL_ARGS = {
   add_playbook_candidate: AddPlaybookCandidateArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
+// ---------------------------------------------------------------------------
+// Fit to time: the coach's answer to `Ask coach` on `How long?` (fit-to-time §5)
+
+/**
+ * The one function the coach calls to fit today's plan (fit-to-time §5.2).
+ * Not a chat-turn tool: it is the only tool of its own request, sent when
+ * Ben taps `Ask coach`. Flat and closed for strict mode (every field
+ * present, `null` when unused). The app validates every edit
+ * (`validateTodayFit`); the model's minutes, if it gives any, are ignored.
+ */
+export const TODAY_FIT_TOOL_NAME = 'fit_today';
+
+export const TodayFitEditArgsSchema = z.strictObject({
+  kind: z.enum(['skip', 'sets', 'add', 'swap', 'superset', 'reps', 'load', 'rest']),
+  /** The plan slot (`slotKey` from the context); null for `add` and `superset`. */
+  slotKey: z.string().max(64).nullable(),
+  /** `add`: Ben's exercise to add; `swap`: the exercise to swap to. */
+  exerciseId: z.string().max(64).nullable(),
+  /** `sets`: the working-set count today. */
+  workingSets: z.int().min(0).max(20).nullable(),
+  /** `superset`: the slots to pair. */
+  slotKeys: z.array(z.string().max(64)).max(6).nullable(),
+  /** `load`, `rest` or `reps`: the number the model asked for (always refused in a fit). */
+  value: z.number().nullable(),
+});
+export type TodayFitEditArgs = z.infer<typeof TodayFitEditArgsSchema>;
+
+export const TodayFitArgsSchema = z.strictObject({
+  /** One or two sentences for `Why?`. */
+  reason: z.string().max(240),
+  edits: z.array(TodayFitEditArgsSchema).max(24),
+});
+export type TodayFitArgs = z.infer<typeof TodayFitArgsSchema>;
+
 /** A parsed, validated tool call: a discriminated union on `tool`. */
 export type CoachToolCall = {
   [K in CoachToolName]: { tool: K; args: z.infer<(typeof COACH_TOOL_ARGS)[K]> };
@@ -361,6 +395,27 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('save_memory'), memoryId: IdSchema, text: z.string().min(1).max(200) }),
   z.object({ kind: z.literal('forget_memory'), memoryId: IdSchema, text: z.string().min(1).max(200) }),
   z.object({ kind: z.literal('add_playbook_candidate'), candidateId: IdSchema, text: z.string().min(1).max(400) }),
+  /**
+   * Fit to time (fit-to-time §5): the coach's fit of today's plan, applied at
+   * once because Ben asked (rule 3), today only. `editIds`: the draft edits
+   * it wrote (the fit and its skips, sets and adds; one `actionId`), so Undo
+   * removes exactly those. `lines`, `rejected` and `suggestions` are app
+   * text: what changed, what the checks refused, and the swaps offered as a
+   * `Today only` card (never applied without Apply).
+   */
+  z.object({
+    kind: z.literal('fit_today'),
+    workoutLabel: z.string().min(1).max(120),
+    minutes: z.int().min(15).max(180),
+    beforeMinutes: z.int().min(0).max(600),
+    afterMinutes: z.int().min(0).max(600),
+    draftId: IdSchema,
+    fitEditId: IdSchema,
+    editIds: z.array(IdSchema).min(1).max(40),
+    lines: z.array(z.string().min(1).max(200)).max(40),
+    rejected: z.array(z.object({ text: z.string().min(1).max(200), why: z.string().min(1).max(40) })).max(40),
+    suggestions: z.array(z.object({ slotKey: IdSchema, toExerciseId: IdSchema, text: z.string().min(1).max(200) })).max(6),
+  }),
   z.object({
     kind: z.literal('undo'),
     undoneActionId: IdSchema,

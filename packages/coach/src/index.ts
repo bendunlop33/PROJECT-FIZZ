@@ -14,3 +14,4 @@ export * from './reply-stream';
 export * from './context';
 export * from './executors';
 export * from './turn';
+export * from './fit';

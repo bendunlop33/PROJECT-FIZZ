@@ -74,6 +74,7 @@ function sessionOf(record: ActionRecord): string | null {
     case 'forget_memory':
     case 'add_playbook_candidate':
     case 'update_routine':
+    case 'fit_today':
     case 'undo':
       return null;
   }
@@ -548,8 +549,10 @@ export class SqliteCoachStore {
         return undone > 0 ? 'ok' : 'changed_since';
       }
       // Ben's routine change from today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.
+      // The coach's fit to time has its own Undo (`drafts.undoCoachFit`), versioned on the draft.
       case 'propose_next_workout_change':
       case 'update_routine':
+      case 'fit_today':
       case 'undo':
         return 'unsupported';
     }
