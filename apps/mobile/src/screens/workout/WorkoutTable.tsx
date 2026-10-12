@@ -513,7 +513,7 @@ export function TableSetRow({ row, columns, ax, onPress }: { row: TableRow; colu
   const done = row.state === 'done';
   const skipped = row.state === 'skipped';
   const valueColor = done ? 'text.primary' : 'text.tertiary';
-  const valueStyle = { fontSize: 19, lineHeight: 24, fontWeight: done ? ('500' as const) : ('400' as const) };
+  const valueStyle = done ? { fontWeight: '500' as const } : undefined;
   const setLabel = row.memberTag ?? String(row.number);
   const second = done ? [row.notCounted, row.note, row.gymCaption, row.edited ? 'Edited' : null].filter((x): x is string => x !== null) : [];
   const marker = done ? (
@@ -594,13 +594,13 @@ export function TableSetRow({ row, columns, ax, onPress }: { row: TableRow; colu
               <>
                 {columns.loadLabel !== null ? (
                   <View style={{ flex: 1 }}>
-                    <AppText variant="body" color={valueColor} numeric style={valueStyle}>
+                    <AppText variant="rowValue" color={valueColor} numeric style={valueStyle}>
                       {row.cells.load ?? '—'}
                     </AppText>
                   </View>
                 ) : null}
                 <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <AppText variant="body" color={valueColor} numeric style={valueStyle}>
+                  <AppText variant="rowValue" color={valueColor} numeric style={valueStyle}>
                     {plainSpaces(row.cells.value)}
                   </AppText>
                   {row.effort !== null ? (

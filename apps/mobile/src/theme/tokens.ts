@@ -92,6 +92,7 @@ export const TYPE_TOKENS = [
   'callout',
   'label',
   'keypad',
+  'rowValue',
   'sectionLabel',
   'liveCountdown',
 ] as const;
@@ -238,6 +239,8 @@ export const NAVY_DIRECTION: ThemeDirection = {
     callout: { size: 16, lineHeight: 22, weight: '400', tabular: 'numeric', textStyle: 'callout', maxScale: 3 },
     label: { size: 16, lineHeight: 20, weight: '500', tabular: 'numeric', textStyle: 'callout', maxScale: 3 },
     keypad: { size: 28, lineHeight: 34, weight: '400', tabular: 'always', textStyle: 'title1', maxScale: 1.5 },
+    // Workout Table row values (design-system §3, 2026-10-12): Regular for targets; done rows set Medium.
+    rowValue: { size: 19, lineHeight: 24, weight: '400', tabular: 'always', textStyle: 'body', maxScale: 3 },
     // A has no separate section-label style: SettingsSectionHeader uses type.label (design-system §9.32).
     sectionLabel: { size: 16, lineHeight: 20, weight: '500', tabular: 'numeric', textStyle: 'callout', maxScale: 3 },
     // Banner size; Dynamic Island sizes are set in the widget (design-system §3).
