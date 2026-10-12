@@ -74,3 +74,13 @@ export function slotRepsDraft(templates: readonly { setType: string; targetReps:
   const r = first?.targetReps ?? { min: 8, max: 10 };
   return { kind: 'reps', exact: r.min === r.max, min: r.min, max: r.max };
 }
+
+/**
+ * Whether the sets control stacks each label above its control (EL-B24,
+ * design-system §9.88, review S3): as asked, else at AX1 and above
+ * (`fontScale >= axAt`), where a label, two 44pt circles and a value no
+ * longer share one row on a 375pt phone.
+ */
+export function setShapeStacked(asked: boolean | undefined, fontScale: number, axAt: number): boolean {
+  return asked ?? fontScale >= axAt;
+}

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Pressable, View, type AccessibilityActionEvent } from 'react-native';
+import { Pressable, useWindowDimensions, View, type AccessibilityActionEvent } from 'react-native';
 
 import type { StepTarget } from '@fizz/domain';
 
 import { useTheme } from '../theme';
+import { AX_FONT_SCALE } from '../workout/overview';
 import { repsDraftWith, repsSteps, type RepsDraft } from '../workout/overview-edits';
-import { countSteps, effortChoices, SET_SHAPE_COPY } from '../workout/set-shape-view';
+import { countSteps, effortChoices, SET_SHAPE_COPY, setShapeStacked } from '../workout/set-shape-view';
 import { TextButton } from './buttons';
 import { Icon } from './Icon';
 import { BottomCard } from './sheet';
@@ -117,13 +118,20 @@ export interface SetShapeControlProps {
   reps: { label: string; text: string; onPress: () => void } | null;
   /** `Target RPE` / `Target RIR`; null hides it (effort scale off). */
   effort: { label: string; text: string; onPress: () => void } | null;
+  /** Label above its control. Default: stacked at AX1 and above (EL-B24, review S3). */
   stacked?: boolean;
+}
+
+/** AX1 and above (Dynamic Type): labels go above their controls, so the two 44pt circles and the value keep a row of their own. */
+function useStacked(asked: boolean | undefined): boolean {
+  const { fontScale } = useWindowDimensions();
+  return setShapeStacked(asked, fontScale, AX_FONT_SCALE);
 }
 
 /** `SetShapeControl` (§9.88): up to four rows, ≥ 52pt, hairlines between. */
 export function SetShapeControl(p: SetShapeControlProps) {
   const theme = useTheme();
-  const stacked = p.stacked === true;
+  const stacked = useStacked(p.stacked);
   const rows = [
     <CountStepper key="sets" label={SET_SHAPE_COPY.sets} value={p.workingSets} limits={p.setsLimits} onChange={p.onSets} fewerLabel={SET_SHAPE_COPY.fewerSets} moreLabel={SET_SHAPE_COPY.moreSets} stacked={stacked} />,
     ...(p.warmups === null ? [] : [<CountStepper key="warm" label={SET_SHAPE_COPY.warmups} value={p.warmups} limits={p.warmupLimits} onChange={p.onWarmups} fewerLabel={SET_SHAPE_COPY.fewerWarmups} moreLabel={SET_SHAPE_COPY.moreWarmups} stacked={stacked} />]),
@@ -144,9 +152,10 @@ export function SetShapeControl(p: SetShapeControlProps) {
 /** `SetCountBar` (§9.88): one `Sets` row in a fixed 64pt bar above the keyboard and the sheet's primary. */
 export function SetCountBar({ value, limits, onChange }: { value: number; limits: { min: number; max: number }; onChange: (n: number) => void }) {
   const theme = useTheme();
+  const stacked = useStacked(undefined);
   return (
     <View style={{ minHeight: 64, justifyContent: 'center', backgroundColor: theme.colors['bg.surface'], borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], paddingVertical: theme.space['2'] }}>
-      <CountStepper label={SET_SHAPE_COPY.sets} value={value} limits={limits} onChange={onChange} fewerLabel={SET_SHAPE_COPY.fewerSets} moreLabel={SET_SHAPE_COPY.moreSets} />
+      <CountStepper label={SET_SHAPE_COPY.sets} value={value} limits={limits} onChange={onChange} fewerLabel={SET_SHAPE_COPY.fewerSets} moreLabel={SET_SHAPE_COPY.moreSets} stacked={stacked} />
     </View>
   );
 }

@@ -9,7 +9,8 @@ import { NBSP, NO_FILTERS, type AddDestination } from '@fizz/domain';
 import { backFromEditor, openLibrary, popToFromEditor } from '../src/navigation/actions';
 import { addEffortRow, addPrimary, addRepsRow, initialAddShape, posterSize, repsDraftOfShape, slotShapeOfAdd } from '../src/workout/exercise-info-view';
 import { filterChipLabel, filterOptions, toggled, withFilter } from '../src/workout/library-browse-view';
-import { countSteps, effortChoices, SET_BAR, shapeEffortRow, shapeRepsText, slotRepsDraft, stepperLimits } from '../src/workout/set-shape-view';
+import { countSteps, effortChoices, SET_BAR, setShapeStacked, shapeEffortRow, shapeRepsText, slotRepsDraft, stepperLimits } from '../src/workout/set-shape-view';
+import { AX_FONT_SCALE } from '../src/workout/overview';
 import { handOffLibraryToast, takeLibraryToast } from '../src/workout/library-toast';
 import { beginSaveEdit, saveEditRequest, settleSaveEdit, type SaveEditOutcome } from '../src/workout/save-edit-handoff';
 
@@ -236,5 +237,23 @@ describe('review library-browse B2: Save to Workouts → Edit ›', () => {
     expect(editor).toMatch(/services\.routines\.saveFrom\(\{ from: req\.from, name: next\.name\.trim\(\), addToRotation: req\.addToRotation, opId: req\.opId, edit: next \}\)/);
     expect(editor).toMatch(/settleSaveEdit\(saveAs, \{ kind: 'cancelled' \}\)/);
     expect(editor).toMatch(/settleSaveEdit\(saveAs, \{ kind: 'saved', routine: r\.routine \}\)/);
+  });
+});
+
+describe('review library-browse S3: the sets control stacks at AX sizes (EL-B24)', () => {
+  it('stacks at AX1 and above unless a caller says otherwise', () => {
+    expect(setShapeStacked(undefined, 1, AX_FONT_SCALE)).toBe(false);
+    expect(setShapeStacked(undefined, 1.35, AX_FONT_SCALE)).toBe(false);
+    expect(setShapeStacked(undefined, AX_FONT_SCALE, AX_FONT_SCALE)).toBe(true);
+    expect(setShapeStacked(undefined, 3.1, AX_FONT_SCALE)).toBe(true);
+    expect(setShapeStacked(false, 3.1, AX_FONT_SCALE)).toBe(false);
+    expect(setShapeStacked(true, 1, AX_FONT_SCALE)).toBe(true);
+  });
+
+  it('SetShapeControl and the Sets bar both use it, so every caller (editor card, Add sheet, pick sheets) stacks', () => {
+    const ui = code(read('ui/set-shape.tsx'));
+    expect(ui).toMatch(/const stacked = useStacked\(p\.stacked\);/);
+    expect(ui).toMatch(/const stacked = useStacked\(undefined\);/);
+    expect(ui).toMatch(/moreLabel=\{SET_SHAPE_COPY\.moreSets\} stacked=\{stacked\} \/>/);
   });
 });
